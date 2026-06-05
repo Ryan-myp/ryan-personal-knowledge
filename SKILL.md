@@ -24,6 +24,8 @@ metadata:
 ```
 /Users/yanping.ma/.hermes/skills/ryan-personal-knowledge/
 ├── SKILL.md                          # 本文件
+├── references/
+│   └── distilling-principles.md      # 从经验蒸馏 skill 的决策框架
 ├── templates/
 │   ├── learning-note.md              # 知识笔记模板
 │   ├── progress-log.md               # 学习进度日志模板

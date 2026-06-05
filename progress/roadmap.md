@@ -63,7 +63,7 @@
 ## 前沿追踪 (⭐)
 
 ### 工具
-- blogwatcher — 博客 RSS 监控
+- blogwatcher — 博客 RSS 监控 (v0.2.1, 已安装)
 - arxiv — 论文搜索
 - llm-wiki — 知识图谱
 
@@ -71,12 +71,12 @@
 - blog.anthropic.com (Claude)
 - openai.com/blog
 - blog.google/technology/ai
-- huggingface.co/blog
+- huggingface.co/blog ✅ (已配置, 793篇)
 - lilianweng.github.io (Lilian Weng)
 - karpathy.github.io
 
 ### 最近洞察
-{空 — 待 blogwatcher 配置完成后积累}
+- Hugging Face: Nemotron 3.5, EVA-Bench Data 2.0, hf CLI for agents
 
 ---
 
