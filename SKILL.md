@@ -1,0 +1,168 @@
+---
+name: ryan-personal-knowledge
+description: "Ryan 的个人学习仪表盘 + 知识库：追踪学习进度、沉淀广告业务/Agent技术知识、记录前沿洞察、管理碎片时间任务。"
+version: 1.0.0
+author: ryan
+platforms: [linux, macos]
+metadata:
+  hermes:
+    tags: [personal, learning, knowledge, progress, blogwatcher, notes]
+---
+
+# Ryan 个人学习仪表盘 + 知识库
+
+## 概述
+
+这是 Ryan 的个人学习与知识管理体系。包含：
+1. **学习进度追踪** — 四条学习线的状态和里程碑
+2. **知识库** — 广告业务、Agent 技术、全栈开发、前沿追踪的知识笔记
+3. **碎片任务管理** — 适合 15-30min 碎片时间完成的学习/沉淀任务
+4. **前沿监控** — 通过 blogwatcher 自动推送
+
+## 目录结构
+
+```
+/Users/yanping.ma/.hermes/skills/ryan-personal-knowledge/
+├── SKILL.md                          # 本文件
+├── templates/
+│   ├── learning-note.md              # 知识笔记模板
+│   ├── progress-log.md               # 学习进度日志模板
+│   └──前沿-insight.md                # 前沿洞察记录模板
+├── knowledge/
+│   ├── advertising/                  # 广告业务相关
+│   ├── agent-tech/                   # Agent 技术相关
+│   ├── fullstack/                    # 全栈开发相关
+│   └──前沿/                          # 前沿追踪
+├── progress/
+│   └── roadmap.md                    # 学习路线总览
+└── tasks/
+    └──碎片任务.md                     # 碎片任务看板
+```
+
+## 一、学习路线总览
+
+当前四条学习线：
+
+### 1. Agent 技术 (核心重点)
+- **目标**: 深入理解 Agent 架构、编排、Skill 工程、多 Agent 协作
+- **进度**: 查看 `progress/roadmap.md`
+- **里程碑**:
+  - [ ] 掌握 Hermes 配置与扩展
+  - [ ] 理解并实践多 Agent 并行调度
+  - [ ] 能够编写高质量 Skill
+  - [ ] 对比 Claude Code / Codex / OpenCode
+  - [ ] 构建个人 Skill 生态
+
+### 2. 全栈开发
+- **目标**: 提升工程能力，覆盖前后端 + DevOps
+- **进度**: 查看 `progress/roadmap.md`
+- **里程碑**:
+  - [ ] 掌握 TDD 工作流
+  - [ ] 系统化调试能力
+  - [ ] 熟练 Git worktree + PR 流程
+
+### 3. 广告业务深度
+- **目标**: 深入理解广告平台架构、API、数据流
+- **进度**: 查看 `progress/roadmap.md`
+- **里程碑**:
+  - [ ] 熟练 ad-knowledge-query 定位实现
+  - [ ] 能够沉淀业务文档
+  - [ ] 掌握测试设计流程
+
+### 4. 前沿追踪
+- **目标**: 持续跟踪 LLM / Agent / MLOps 前沿
+- **进度**: 通过 blogwatcher 自动推送，笔记存于 `knowledge/前沿/`
+- **工具**: blogwatcher + arxiv + llm-wiki
+
+## 二、知识库使用
+
+### 添加知识笔记
+
+当学习/工作中获得新认知时，使用 `templates/learning-note.md` 模板：
+
+```bash
+# 1. 复制模板
+cp templates/learning-note.md knowledge/agent-tech/某个主题.md
+
+# 2. 编辑内容
+# 填写：日期、标签、核心概念、实践心得、相关 links
+```
+
+### 笔记标签体系
+
+- `#agent-architecture` — Agent 架构相关
+- `#skill-engineering` — Skill 编写经验
+- `#ad-api` — 广告 API 知识
+- `#ad-dataflow` — 数据流/调用链
+- `#fullstack` — 全栈开发实践
+- `#frontend` — 前端相关
+- `#backend` — 后端相关
+- `#devops` — 运维/部署
+- `#前沿-llm` — LLM 前沿
+- `#前沿-agent` — Agent 前沿
+- `#前沿-mlops` — MLOps 前沿
+- `#排障经验` — 排坑记录
+- `#工具对比` — 工具选型对比
+
+## 三、碎片任务管理
+
+任务存储在 `tasks/碎片任务.md`，格式：
+
+```markdown
+## 待办
+- [ ] #agent-技术 #15min 读一篇 blogwatcher 推送的文章
+- [ ] #skill #20min 把 ad-knowledge-query 的坑蒸馏成 skill
+- [ ] #广告 #30min 给某个模块写知识库
+
+## 进行中
+- [x] #agent #30min 写第一个个人 skill
+
+## 已完成（归档到 history/）
+```
+
+### 碎片任务原则
+- 每个任务标注预计时间 (#15min / #20min / #30min / #60min)
+- 任务完成后更新状态，积累的经验蒸馏进知识库
+- 每周回顾一次，更新 roadmap.md
+
+## 四、进度日志
+
+每次学习后记录进度到 `progress/progress-log-YYYY-MM.md`：
+
+```markdown
+## 2025-01-15
+- 学习了什么
+- 实践了什么
+- 产出（笔记链接）
+- 下一步
+```
+
+## 五、使用场景
+
+### 场景 1: 收到新任务时
+1. 检查 `knowledge/` 是否有相关笔记
+2. 如果有，先复习再动手
+3. 完成后更新/新增笔记
+
+### 场景 2: 碎片时间学习时
+1. 查看 `tasks/碎片任务.md`，选一个任务
+2. 完成后更新进度 + 写笔记
+3. 把经验蒸馏成 skill（如果需要）
+
+### 场景 3: 积累到一定量时
+1. 考虑是否值得把经验蒸馏成独立 skill
+2. 更新 roadmap.md 的里程碑状态
+3. 清理过时的碎片任务
+
+### 场景 4: 前沿追踪
+1. blogwatcher 自动推送（需配置）
+2. 有价值的文章 → 写前沿洞察笔记
+3. 定期汇总到 `knowledge/前沿/summary-YYYY-QN.md`
+
+## 六、与 Hermes 现有体系的关系
+
+- 本 skill 是个人知识管理，不影响现有 skills（绝不修改用户已有的 skills）
+- 经验蒸馏成可复用 skill 时，新建独立 skill 文件（ryan-xxx- 前缀），不触碰已有 skill
+- 本 skill 的笔记供个人回顾，不自动加载到 agent prompt
+- 用 `session_search` 也可以搜历史对话中的知识点
+- 蒸馏决策框架见 `references/distilling-principles.md`
