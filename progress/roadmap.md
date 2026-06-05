@@ -21,6 +21,7 @@
 ### 已产出
 - 创建 ryan-personal-knowledge skill skeleton
 - 记录 ad-knowledge-query 两个已知坑
+- 集成 agentmemory 混合模式 (2025-06-05)
 
 ---
 

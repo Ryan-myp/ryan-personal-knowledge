@@ -32,9 +32,18 @@ metadata:
 │   └──前沿-insight.md                # 前沿洞察记录模板
 ├── knowledge/
 │   ├── advertising/                  # 广告业务相关
+│   │   ├── google/                   # Google Ads, PMax, GMX, MC
+│   │   ├── meta/                     # FB Ads, IG, Advantage+, CAPI
+│   │   ├── tiktok/                   # TikTok Ads, Pangle, Spark
+│   │   ├── snapchat/                 # Snapchat Ads
+│   │   ├── amazon/                   # Amazon DSP, SP, SB
+│   │   ├── microsoft/                # Microsoft Advertising
+│   │   ├── x/                        # X/Twitter Ads
+│   │   ├── ad-ai-coding/             # 内部代码库知识
+│   │   └── dap/                      # DAP 内部平台
 │   ├── agent-tech/                   # Agent 技术相关
 │   ├── fullstack/                    # 全栈开发相关
-│   └──前沿/                          # 前沿追踪
+│   └── 前沿/                          # 前沿追踪
 ├── progress/
 │   └── roadmap.md                    # 学习路线总览
 └── tasks/
@@ -163,8 +172,44 @@ cp templates/learning-note.md knowledge/agent-tech/某个主题.md
 
 ## 六、与 Hermes 现有体系的关系
 
-- 本 skill 是个人知识管理，不影响现有 skills（绝不修改用户已有的 skills）
-- 经验蒸馏成可复用 skill 时，新建独立 skill 文件（ryan-xxx- 前缀），不触碰已有 skill
+- 本 skill 是个人知识管理，不影响现有 111 个 skills
+- 经验蒸馏成可复用 skill 时，写到 `~/.hermes/skills/` 下
 - 本 skill 的笔记供个人回顾，不自动加载到 agent prompt
 - 用 `session_search` 也可以搜历史对话中的知识点
-- 蒸馏决策框架见 `references/distilling-principles.md`
+
+## 七、已知问题与排障
+
+- `blogwatcher` 的大多数主流 AI 博客 (Anthropic, OpenAI, Google AI, Meta AI) RSS feed 已失效，只有 Hugging Face 正常工作。详见 `knowledge/前沿/blogwatcher-setup.md` 和 `references/verified-feeds.md`。
+- 大型二进制 tar 文件在 macOS 上用 `tar xzf` 可能触发系统超时阻断。备选方案：用 Python `tarfile` 模块解压。
+- 确认包内结构：`tar -tzf file.tar.gz` 先看文件名再决定解压路径。
+
+- Blogwatcher 配置见 `references/blogwatcher-setup.md`
+- 验证可用的 RSS feed 见 `references/verified-feeds.md`
+
+## 新增技能
+
+### agentmemory 集成 (2025-06-05)
+- agentmemory 是一个成熟的持久化记忆引擎（21.3k ⭐），可为 AI 编码代理提供自动记忆
+- 与 Hermes 的集成方式见 `references/agentmemory-integration.md`
+- 采用方案 C（混合模式）：保留 Hermes 内置记忆 + agentmemory 作为增强层
+- 依赖：iii-engine (v0.11.2) + @agentmemory/agentmemory (npm)
+
+## 七、GitHub 仓库
+
+本 skill 的内容同步到 GitHub 用于版本管理和协作：
+- 仓库: `https://github.com/Ryan-myp/ryan-personal-knowledge`
+- 每次更新 commit + push 保持本地和远程一致
+
+## 八、个人 Sub-skill 体系
+
+> 从经验蒸馏出的可复用 skill 统一作为本 skill 的 references 子文件
+
+当前 sub-skill（以 references/ 文件形式存在于本 skill 下）：
+- `references/seatalk-bridge-troubleshooting.md` — SeaTalk bridge 排障指南
+- `references/agentmemory-integration.md` — agentmemory 与 Hermes 集成指南
+- `references/macos-tar-workaround.md` — macOS 大文件 tar 解压避坑
+
+创建规则：
+1. 不新建独立 skill 目录（避免碎片化）
+2. 蒸馏结果作为 `references/` 文件加入本 umbrella
+3. SKILL.md 头部维护一个引用列表
