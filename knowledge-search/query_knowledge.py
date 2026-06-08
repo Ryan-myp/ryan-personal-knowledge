@@ -285,6 +285,25 @@ def rrf_ranks(candidates: List[List[Dict]], k: int = RRF_K) -> List[Dict]:
 
 
 # ──────────────────────────────────────────────
+# LLM Wiki 工具函数 — 需要被 build_index 使用，放在前面
+# ──────────────────────────────────────────────
+
+WIKILINK_PATTERN = re.compile(r'\[\[([^\]]+)\]\]')
+WIKI_ENTITIES = {"entity", "concept", "comparison", "query", "summary", "article"}
+
+
+def extract_wikilinks(content: str) -> List[str]:
+    """提取文件中的 [[wikilink]] 语法"""
+    links = WIKILINK_PATTERN.findall(content)
+    return [l for l in links if not l.startswith('#') and not l.startswith('!')]
+
+
+def extract_frontmatter_type(frontmatter: Dict) -> Optional[str]:
+    """从 frontmatter 提取页面类型"""
+    return frontmatter.get("type", "").lower()
+
+
+# ──────────────────────────────────────────────
 # 5. 查询缓存（复用 biz-delivery query_cache.py 思路）
 # ──────────────────────────────────────────────
 
@@ -565,6 +584,7 @@ def main():
     parser.add_argument("--clear-cache", action="store_true", help="清除缓存")
     parser.add_argument("--rebuild", action="store_true", help="重建索引")
     parser.add_argument("--verbose", action="store_true", help="显示详细信息")
+    parser.add_argument("--wiki", action="store_true", help="强制启用 LLM Wiki 增强模式")
 
     args = parser.parse_args()
 
@@ -632,11 +652,22 @@ def main():
         parser.print_help()
         return
 
-    # 执行搜索
+    # 执行搜索 — 如果知识库有 wikilinks 或 entity 页面，自动用增强模式
     print(f"\n🔍 正在搜索: \"{args.query}\"")
 
     try:
-        result = run_pipeline(args.query, docs, config, cache)
+        # 先检查知识库是否包含 LLM Wiki 结构
+        has_wiki_structure = any(
+            re.search(r'^---\n.*type:\s*(entity|concept)', doc["full_content"], re.DOTALL)
+            for doc in docs
+        )
+        has_wikilinks = any(extract_wikilinks(doc.get("full_content", "")) for doc in docs)
+
+        if has_wiki_structure or has_wikilinks or args.wiki:
+            print(f"  🔗 LLM Wiki 模式: wikilinks={has_wikilinks}, entities={has_wiki_structure}")
+            result = run_pipeline_enhanced(args.query, docs, config, cache)
+        else:
+            result = run_pipeline(args.query, docs, config, cache)
     except Exception as e:
         print(f"❌ 搜索出错: {e}")
         import traceback
@@ -645,6 +676,270 @@ def main():
 
     # 输出结果
     print(format_result(result))
+
+
+# ──────────────────────────────────────────────
+# 8. LLM Wiki 模式 — Wikilinks + Entity 增强搜索
+#    参考 Andrej Karpathy 的 LLM Wiki 模式：
+#    1. [[wikilinks]] 建立文件间互连
+#    2. frontmatter 标注实体类型和标签
+#    3. 搜索时通过链接图找到相关页面
+# ──────────────────────────────────────────────
+
+# WIKILINK_PATTERN, WIKI_ENTITIES, extract_wikilinks, extract_frontmatter_type
+# 已在前面定义（被 build_index 使用），这里只定义搜索函数
+
+
+def search_wikilinks(query: str, docs: List[Dict], top_k: int = 10) -> List[Dict]:
+    """[[wikilinks]] 搜索 — 通过链接关系找到相关页面"""
+    query_lower = query.lower()
+    scored = []
+    query_words = set(re.findall(r'[\w\u4e00-\u9fff]+', query_lower))
+    if not query_words:
+        return []
+
+    for doc in docs:
+        wikilinks = doc.get("wikilinks", [])
+        if not wikilinks:
+            continue
+
+        matched_links = set()
+        for link in wikilinks:
+            link_clean = link.lower().lstrip('#')
+            for qw in query_words:
+                if qw in link_clean or link_clean in qw:
+                    matched_links.add(link)
+
+        if matched_links:
+            # 链接命中比内容命中权重更高（因为链接是人工建立的语义关系）
+            score = len(matched_links) / len(query_words) * 1.5
+            scored.append((score, doc))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [doc for _, doc in scored[:top_k]]
+
+
+def search_entity_pages(query: str, docs: List[Dict], top_k: int = 10) -> List[Dict]:
+    """Entity 页面优先 — frontmatter type=entity/concept 的页面排前面"""
+    query_lower = query.lower()
+    scored = []
+    query_words = set(re.findall(r'[\w\u4e00-\u9fff]+', query_lower))
+    if not query_words:
+        return []
+
+    for doc in docs:
+        page_type = doc.get("frontmatter_type", "")
+        # 实体页面（entity/concept）的页面通常更精确
+        if page_type in ("entity", "concept"):
+            # 检查实体页面是否命中关键词
+            content = doc.get("full_content", "").lower()
+            headings = " ".join(doc.get("headings", [])).lower()
+            search_text = content + " " + headings
+            word_hits = sum(1 for w in query_words if w in search_text)
+            if word_hits > 0:
+                # 实体页面权重加成 1.3x
+                base_score = word_hits / len(query_words) * 1.3
+                scored.append((base_score, doc))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [doc for _, doc in scored[:top_k]]
+
+
+def search_cross_reference(query: str, docs: List[Dict], top_k: int = 10) -> List[Dict]:
+    """Cross-reference 搜索 — 通过 wikilinks 找到被其他相关页面引用的页面"""
+    # 先用内容搜索找到种子文档
+    seed_docs = search_file_content(query, docs, top_k=5)
+    if not seed_docs:
+        return []
+
+    # 收集种子文档的 wikilinks
+    seed_links = set()
+    for doc in seed_docs:
+        seed_links.update(doc.get("wikilinks", []))
+
+    # 找到所有被 seed_links 引用的文档
+    scored = []
+    query_lower = query.lower()
+    query_words = set(re.findall(r'[\w\u4e00-\u9fff]+', query_lower))
+
+    for doc in docs:
+        if doc["file_path"] in [d["file_path"] for d in seed_docs]:
+            continue  # 跳过种子文档
+
+        # 这个文档的 wikilinks 是否指向种子文档的标题？
+        doc_links = doc.get("wikilinks", [])
+        seed_titles = set(d["file_name"].lower().replace(".md", "") for d in seed_docs)
+        cross_hits = 0
+        for link in doc_links:
+            link_clean = link.lower().replace("knowledge/", "").replace("/", "-").lstrip('#')
+            for seed_title in seed_titles:
+                if seed_title in link_clean or link_clean in seed_title:
+                    cross_hits += 1
+
+        if cross_hits > 0:
+            # Cross-reference 分数：被越多人引用，分数越高
+            score = cross_hits / len(query_words) * 0.8
+            scored.append((score, doc))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [doc for _, doc in scored[:top_k]]
+
+
+def extract_wikilinks_and_frontmatter(docs: List[Dict]) -> List[Dict]:
+    """增强文档索引：提取 wikilinks 和 frontmatter 类型"""
+    FRONTMATTER_RE = re.compile(r'^---\n(.*?)\n---', re.DOTALL)
+
+    for doc in docs:
+        content = doc["full_content"]
+
+        # 提取 wikilinks
+        doc["wikilinks"] = extract_wikilinks(content)
+
+        # 提取 frontmatter 类型
+        fm_match = FRONTMATTER_RE.search(content)
+        fm_content = fm_match.group(1) if fm_match else ""
+        try:
+            fm = json.loads(fm_content)
+            doc["frontmatter_type"] = extract_frontmatter_type(fm)
+            # 合并 frontmatter tags 到已有 tags
+            fm_tags = fm.get("tags", [])
+            if fm_tags:
+                existing_tags = set(doc.get("tags", []))
+                doc["tags"] = list(existing_tags | set(fm_tags))
+        except json.JSONDecodeError:
+            doc["frontmatter_type"] = ""
+
+    return docs
+
+
+# ──────────────────────────────────────────────
+# 9. 增强版 run_pipeline — 加入 LLM Wiki 模式
+# ──────────────────────────────────────────────
+
+def run_pipeline_enhanced(query: str, docs: List[Dict], config: dict, cache: QueryCache) -> Dict[str, Any]:
+    """
+    增强版搜索管线：在原有 RRF 融合基础上，加入 LLM Wiki 模式的 Wikilinks + Entity + Cross-reference
+    """
+    from .query_cache import QueryCache as QC  # avoid circular import
+    # 临时借用路径
+    import importlib.util
+    spec = importlib.util.find_spec("query_cache")
+    # 直接用内联的 cache 逻辑
+
+    intent, confidence = extract_intent(query)
+    scope_weights = get_scope_weights(intent)
+
+    params = f"enhanced=k={config['fusion']['top_k']}:{intent}"
+
+    # 增强索引：提取 wikilinks 和 frontmatter
+    docs = extract_wikilinks_and_frontmatter(docs)
+
+    # 构建完整的查询类型映射
+    query_type_map = {
+        "file_content": search_file_content,
+        "file_name": search_file_name,
+        "tags": search_tags,
+        "directory_path": search_directory,
+        "wikilinks": search_wikilinks,
+        "entity_pages": search_entity_pages,
+        "cross_reference": search_cross_reference,
+    }
+
+    # 使用增强版的融合路径配置
+    top_k = config["fusion"]["top_k"]
+    candidates = []
+    source_metadata = []
+    path_weights = []
+    path_results_cache = {}
+
+    # 动态决定哪些路径要参与融合（根据当前知识库是否有 wikilinks）
+    has_wikilinks_any = any(doc.get("wikilinks") for doc in docs)
+    has_entity_pages = any(doc.get("frontmatter_type") in WIKI_ENTITIES for doc in docs)
+
+    paths_to_use = list(config["fusion"]["paths"])  # 原有的 4 路
+
+    # 如果知识库中有 wikilinks，加入 wikilinks 和 cross-reference 搜索
+    if has_wikilinks_any:
+        paths_to_use.append({"name": "wikilinks", "weight": 0.1})
+        paths_to_use.append({"name": "cross_reference", "weight": 0.08})
+
+    # 如果知识库中有 entity 页面，加入 entity_pages 搜索
+    if has_entity_pages:
+        paths_to_use.append({"name": "entity_pages", "weight": 0.15})
+
+    for path_cfg in paths_to_use:
+        path_name = path_cfg["name"]
+        weight = path_cfg.get("weight", 1.0)
+        intent_w = scope_weights.get(path_name, 0.5)
+        effective_weight = weight * intent_w * (0.5 + 0.5 * confidence)
+
+        search_fn = query_type_map.get(path_name)
+        if search_fn:
+            results = search_fn(query, docs, top_k)
+            candidates.append(results)
+            source_metadata.append({
+                "path": path_name,
+                "weight": round(effective_weight, 3),
+                "count": len(results),
+            })
+            path_weights.append(effective_weight)
+            path_results_cache[path_name] = results
+
+    # RRF 融合
+    if candidates:
+        fused = rrf_ranks(candidates, k=config["fusion"]["rrf_k"])
+    else:
+        fused = []
+
+    # 计算最终得分
+    enhanced_results = []
+    for rank, doc in enumerate(fused):
+        total_score = 0.0
+        source_scores = []
+        for i, path_cfg in enumerate(paths_to_use):
+            path_name = path_cfg["name"]
+            weight = path_cfg.get("weight", 1.0) * scope_weights.get(path_name, 0.5) * (0.5 + 0.5 * confidence)
+
+            if path_name in path_results_cache:
+                path_results = path_results_cache[path_name]
+                for j, r in enumerate(path_results):
+                    if r["file_path"] == doc["file_path"]:
+                        rrf_contrib = weight * (1.0 / (RRF_K + j + 1))
+                        total_score += rrf_contrib
+                        source_scores.append((path_name, round(rrf_contrib, 6)))
+                        break
+
+        enhanced_results.append({
+            **doc,
+            "rrf_score": round(total_score, 6),
+            "source_scores": source_scores,
+            "intent": intent,
+            "confidence": round(confidence, 3),
+        })
+
+    # 入口文件惩罚
+    ENTRIES_PENALTY = 0.7
+    for r in enhanced_results:
+        if r.get("is_entry_file", False):
+            r["rrf_score"] *= ENTRIES_PENALTY
+            r["source_scores"] = [(k, round(v * ENTRIES_PENALTY, 6)) for k, v in r["source_scores"]]
+
+    enhanced_results.sort(key=lambda x: x["rrf_score"], reverse=True)
+    top_results = enhanced_results[:top_k]
+
+    result = {
+        "query": query,
+        "intent": intent,
+        "confidence": round(confidence, 3),
+        "scope_weights": scope_weights,
+        "paths": source_metadata,
+        "results": top_results,
+        "total_results": len(enhanced_results),
+        "wiki_enhanced": has_wikilinks_any or has_entity_pages,
+        "retrieved_from": "fresh",
+    }
+
+    return result
 
 
 if __name__ == "__main__":
