@@ -14,39 +14,46 @@ metadata:
 ## 概述
 
 这是 Ryan 的个人学习与知识管理体系。包含：
-1. **学习进度追踪** — 四条学习线的状态和里程碑
-2. **知识库** — 广告业务、Agent 技术、全栈开发、前沿追踪的知识笔记
+1. **成长计划** — 从 TL 到高级/资深专家的学习路线、目标、监督机制
+2. **知识库** — 广告业务、Agent技术、全栈开发、前沿追踪的知识笔记
 3. **碎片任务管理** — 适合 15-30min 碎片时间完成的学习/沉淀任务
 4. **前沿监控** — 通过 blogwatcher 自动推送
 
 ## 目录结构
 
 ```
-/Users/yanping.ma/.hermes/skills/ryan-personal-knowledge/
-├── SKILL.md                          # 本文件
+ryan-personal-knowledge/
+├── SKILL.md                              ← 主文件，定义使用规则
 ├── references/
-│   └── distilling-principles.md      # 从经验蒸馏 skill 的决策框架
+│   └── distilling-principles.md          ← 从经验蒸馏 skill 的决策框架
 ├── templates/
-│   ├── learning-note.md              # 知识笔记模板
-│   ├── progress-log.md               # 学习进度日志模板
-│   └──前沿-insight.md                # 前沿洞察记录模板
-├── knowledge/
-│   ├── advertising/                  # 广告业务相关
-│   │   ├── google/                   # Google Ads, PMax, GMX, MC
-│   │   ├── meta/                     # FB Ads, IG, Advantage+, CAPI
-│   │   ├── tiktok/                   # TikTok Ads, Pangle, Spark
-│   │   ├── snapchat/                 # Snapchat Ads
-│   │   ├── amazon/                   # Amazon DSP, SP, SB
-│   │   ├── microsoft/                # Microsoft Advertising
-│   │   ├── x/                        # X/Twitter Ads
-│   │   ├── ad-ai-coding/             # 内部代码库知识
-│   │   └── dap/                      # DAP 内部平台
-│   ├── agent-tech/                   # Agent 技术相关
-│   ├── fullstack/                    # 全栈开发相关
-│   └── 前沿/                          # 前沿追踪
+│   ├── learning-note.md                  ← 知识笔记模板
+│   ├── progress-log.md                   ← 学习进度日志模板
+│   └── 前沿-insight.md                   ← 前沿洞察模板
 ├── progress/
-│   └── roadmap.md                    # 学习路线总览
+│   └── roadmap.md                        ← 学习路线总览
+├── knowledge/
+│   ├── advertising/                      ← 广告业务知识
+│   │   ├── google/                       ← Google Ads, PMax, GMX
+│   │   ├── meta/                         ← FB Ads, IG, Advantage+
+│   │   ├── tiktok/                       ← TikTok Ads, Pangle
+│   │   ├── snapchat/                     ← Snapchat Ads
+│   │   ├── amazon/                       ← Amazon DSP
+│   │   ├── microsoft/                    ← Microsoft Advertising
+│   │   ├── x/                            ← X/Twitter Ads
+│   ├── agent-tech/                       ← Agent 技术知识
+│   ├── fullstack/                        ← 全栈开发知识
+│   ├── 前沿/                             ← 前沿追踪
+│   └── growth-plan/                      ← 成长计划（新增）
+│       └── growth-roadmap.md             ← 从TL到高级专家路线图
+├── books/
+│   ├── reading-list.md                   ← 待读书单
+│   ├── reading-progress.md               ← 阅读进度跟踪
+│   └── notes/                            ← 读书笔记
+│       └── {book-name}.md               ← 每本书的笔记
 └── tasks/
+    └── 碎片任务.md                       ← 碎片任务看板
+```
     └──碎片任务.md                     # 碎片任务看板
 ```
 
