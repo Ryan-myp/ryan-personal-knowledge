@@ -1,481 +1,434 @@
-# Elasticsearch 深度 — 倒排索引、分词、集群调优
+# Elasticsearch 深度 — Lucene 底层、倒排索引、分词器、集群协议
 
-> 标签: `#Elasticsearch` `#倒排索引` `#分词器` `#集群` `#调优`
+> 标签: `#Elasticsearch` `#Lucene` `#倒排索引` `#分词器` `#集群` `#源码级`
 > 创建日期: 20260608
 > 作者: Ryan
 
 ---
 
-## 1. ES 整体架构
+## 1. 整体架构 — Lucene → Elasticsearch
+
+### 1.1 分层架构
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Client (HTTP/REST)                      │
-└──────────────────────────┬──────────────────────────────────┘
-                           │
-              ┌────────────┼────────────┐
-              ▼            ▼            ▼
-    ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-    │   Node A     │ │   Node B     │ │   Node C     │
-    │  (Master)    │ │              │ │              │
-    │  ┌────────┐  │ │  ┌────────┐  │ │  ┌────────┐  │
-    │  │Primary │  │ │  │Primary │  │ │  │Replica │  │
-    │  │ Shard 0 │  │ │  │ Shard 1 │  │ │  │ Shard 0│  │
-    │  │Shard 1  │  │ │  │Shard 0  │  │ │  │Shard 1 │  │
-    │  └───┬────┘  │ │  └───┬────┘  │ │  └───┬────┘  │
-    │      │       │ │      │       │ │      │       │
-    │  ┌───▼────┐  │ │  ┌───▼────┐  │ │  ┌───▼────┐  │
-    │  │ Lucene │  │ │  │ Lucene │  │ │  │ Lucene │  │
-    │  │Segment │  │ │  │Segment │  │ │  │Segment │  │
-    │  └────────┘  │ │  └────────┘  │ │  └────────┘  │
-    └──────────────┘ └──────────────┘ └──────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                    Application Layer                          │
+│  REST API / Java Client / Go Client / Python Client           │
+├──────────────────────────────────────────────────────────────┤
+│                    Transport Layer                            │
+│  HTTP REST API (port 9200) / Transport (port 9300)           │
+├──────────────────────────────────────────────────────────────┤
+│                    Search / Query Layer                        │
+│  Query Parser → Query DSL → QueryTree → Scorer → Collector   │
+├──────────────────────────────────────────────────────────────┤
+│                    Index / Search Engine                      │
+│  Elasticsearch 封装 Lucene Core Engine                        │
+├──────────────────────────────────────────────────────────────┤
+│                    Lucene Core                                │
+│  Segment → Document → Field → Term → Inverted Index           │
+│  NRT Reader → SegmentReader → PostingsReader                  │
+│  FSDirectory → MMapDirectory                                  │
+└──────────────────────────────────────────────────────────────┘
+
+Lucene → Elasticsearch 的映射:
+  Lucene Index     → Elasticsearch Index
+  Lucene Document  → Elasticsearch Document
+  Lucene Field     → Elasticsearch Field
+  Lucene Segment   → Elasticsearch Shard (一个 Shard = 一个 Lucene Index)
+  Lucene Analyzer  → Elasticsearch Analyzer
+  Lucene Query     → Elasticsearch Query
+```
+
+### 1.2 核心数据结构
+
+```java
+// Lucene Segment 结构 (org.apache.lucene.index)
+// 一个 Segment 是不可变的，代表一段时间内的数据快照
+// Elasticsearch 的 Shard 包含多个 Segment
+
+// Segment 文件:
+// .fdt, .fdx   - Field Dump / Index（字段存储）
+// .fnm         - Field Names
+// .fdx         - Field Index
+// .di          - Doc Values Index（列式存储索引）
+// .dvd         - Doc Values Data（列式存储数据）
+// .tim, .tvx   - Term Info（词条信息索引）
+// .tis         - Term Info（词条信息数据）
+// .tp, .tpx    - Term Positions（词条位置信息）
+// .nvm         - Norms（标准化因子）
+// .prx         - Postings（ postings 列表）
+// .doc         - Doc ID 到 Doc Number 的映射
+// .liv, .si    - Live Docs / Segment Info
+
+// 倒排索引结构（Postings Format）:
+// Term Dictionary:
+//   - 按字典序排序的所有词条（Term）
+//   - 支持二分查找 / FST（Finite State Transducer）
+//   - 每个词条指向 Term Index（ postings 起始位置）
+//
+// Term Index:
+//   - 词条前缀索引（Prefix Index）
+//   - 支持前缀搜索、范围搜索
+//
+// Term Dictionary Entry:
+//   - term: 词条文本（如 "hello"）
+//   - docFreq: 包含该词条的文档数
+//   - postingsOffset: postings 列表在 .prx 文件中的偏移
+//
+// Postings List:
+//   - docId: 文档 ID
+//   - tf: 词频（Term Frequency）
+//   - positions: 词条位置（用于短语搜索）
+//   - offsets: 词条偏移量（用于高亮）
+```
+
+### 1.3 分词器（Analyzer）— 源码级
+
+```java
+// Elasticsearch Analyzer 链:
+// CharFilter → Tokenizer → TokenFilter
+
+// 1. CharFilter（字符过滤器）:
+//    - HTML Strip CharFilter: 去除 HTML 标签
+//    - Pattern Replace CharFilter: 正则替换
+//    - Mapping CharFilter: 字符映射
+//    作用: 在分词前清洗文本
+
+// 2. Tokenizer（分词器）:
+//    - Standard Analyzer: 基于 Unicode 标准分词
+//    - Whitespace Analyzer: 按空白符分词
+//    - Keyword Analyzer: 不分词（整体作为一个 Token）
+//    - Pattern Analyzer: 按正则分词
+//    - Language Analyzer: 语言特定分词（英语/中文/日语等）
+//    作用: 将文本切分为 Token 流
+
+// 3. TokenFilter（词元过滤器）:
+//    - Lowercase Filter: 转小写
+//    - Stop Token Filter: 去除停用词（the, a, an 等）
+//    - Stemming Filter: 词干提取（run → run, running → run）
+//    - Synonym Filter: 同义词扩展
+//    - NGram Token Filter: n-gram 分词
+//    - EdgeNGram Token Filter: 前缀 n-gram
+//    - Keyword Marker Filter: 标记关键词（不参与 stem）
+//    - Shingle Token Filter: 词组生成（bigram/trigram）
+//    作用: 对 Token 进行后处理
+
+// 自定义 Analyzer 示例:
+public class CustomAnalyzer extends AbstractAnalyzer {
+    @Override
+    protected Analyzer.TokenStreamComponents createComponents(String fieldName) {
+        Tokenizer tokenizer = new CustomTokenizer();
+        TokenStream tokens = tokenizer;
+        tokens = new LowercaseFilter(tokens);
+        tokens = new StopFilter(tokens, StopWords.ENGLISH);
+        tokens = new SnowballPorterFilter(tokens, "English");
+        return new Analyzer.TokenStreamComponents(tokenizer, tokens);
+    }
+}
+
+// 中文分词策略:
+// 1. IK Analyzer: IKTokenizer + IKSegmenter
+//    - 支持细粒度/智能分词
+//    - 支持自定义词典
+// 2. Jieba Analyzer: jieba 分词 + 词性标注
+//    - 支持精确模式/全模式/搜索引擎模式
+// 3. HanLP Analyzer: HanLP 分词
+//    - 支持 NER、依存句法分析
+//    - 支持自定义词典和规则
 ```
 
 ---
 
-## 2. 倒排索引（Inverted Index）
+## 2. 倒排索引深度 — Lucene 实现
 
-### 2.1 正排 vs 倒排
+### 2.1 IndexWriter 写入流程
 
-```
-正排索引（数据库方式）:
-  doc_id → doc_content
-  1 → "中国北京"
-  2 → "中国上海"
-  3 → "美国纽约"
-  
-  查询 "中国": 需要全表扫描 → O(N)
+```java
+// IndexWriter 写入流程:
+// 1. 文档 → Analyzer 分词 → TokenStream
+// 2. TokenStream → Term → DocValues（列式存储）
+// 3. DocValues → Segment Writer
+// 4. Segment Writer 写入 Segment 文件
+// 5. 提交（commit）→ 创建新 Segment
+// 6. 后台线程合并（merge）小 Segments
 
-倒排索引（ES 方式）:
-  term → doc_ids[]
-  "中国" → [1, 2]
-  "北京" → [1]
-  "上海" → [2]
-  "美国" → [3]
-  "纽约" → [3]
-  
-  查询 "中国": 直接查 term → [1, 2] → O(1)
-```
-
-### 2.2 倒排索引数据结构
-
-```
-Term Dictionary (词条字典):
-  ┌──────────┬──────────────┬────────────┐
-  │   Term   │ Posting List │ Term Index │
-  │ (词条)   │ ( postings ) │ (跳表)     │
-  ├──────────┼──────────────┼────────────┤
-  │ "北京"   │ doc:1, freq:1│ Offset: A  │
-  │ "上海"   │ doc:2, freq:1│            │
-  │ "中国"   │ doc:1,2,     │            │
-  │          │   freq:2     │            │
-  └──────────┴──────────────┴────────────┘
-
-Posting List ( postings 列表):
-  doc_id_1, freq_1, offset_1, position_1,
-  doc_id_2, freq_2, offset_2, position_2,
-  ...
-  
-  - doc_id: 文档 ID（FST 编码压缩）
-  - freq: 词频（Term Frequency）
-  - offset: 在 postings 文件中的偏移量
-  - position: 词条在文档中的位置（用于短语查询）
-  
-Term Index（词条索引，内存中的跳表）:
-  存储 Term Dictionary 中每个 Term 的首字母位置
-  查询时先在 Term Index 中找到范围，再加载对应的 FST
-  实现: Fixed-Skip Table（固定跳表）
-
-FST (Finite State Transducer):
-  ES 8.x 替代 Lucene 的 KDTree 存储 Term Dictionary
-  有向无环图，支持高效的前缀匹配、范围查询
-  压缩比高，内存占用小
-```
-
-### 2.3 倒排索引创建流程
-
-```
-1. Analyzer (分析器) 处理文本:
-   "Hello World!" → tokenizer → ["hello", "world"]
-   
-2. 将 term 写入 Term Dictionary
-   
-3. 将 (doc_id, term) 写入 Postings
-   
-4. 构建 Term Index（跳表）用于加速查找
-   
-5. 写入 Segment（LSM 树风格，先写内存，再 flush 到磁盘）
-```
-
----
-
-## 3. 分词器（Analyzer）深度解析
-
-### 3.1 Analyzer 组成
-
-```
-Analyzer = Character Filter + Tokenizer + Token Filter
-
-流程:
-  原始文本 → Character Filter → Tokenizer → Tokens → Token Filter → 最终词条
-
-Character Filter (字符过滤):
-  - HTML Strip Char Filter: 去除 HTML 标签
-  - Pattern Replace Char Filter: 正则替换
-  - Mapping Char Filter: 字符映射
-
-Tokenizer (分词器):
-  - Standard Analyzer: 标准分词（默认）
-  - Simple Analyzer: 按非字母分词，转小写
-  - Whitespace Analyzer: 按空格分词
-  - Keyword Analyzer: 不分词，整个字符串作为一个词条
-  - Chinese Analyzer: IK、HanLP 等中文分词
-
-Token Filter (词条过滤):
-  - Lowercase: 转小写
-  - Stop: 去除停用词（the, is, at 等）
-  - Synonym: 同义词替换
-  - Stemming: 词干提取
-  - Edge Ngram: 前缀 n-gram（用于自动补全）
-```
-
-### 3.2 中文分词实战
-
-```json
-// IK 分词器配置
-PUT /my_index
-{
-  "settings": {
-    "analysis": {
-      "analyzer": {
-        "ik_max_word": {
-          "type": "ik_max_word"
-        },
-        "ik_smart": {
-          "type": "ik_smart"
+// Lucene 的写入路径:
+IndexWriter.addDocument(Documents) {
+    // 1. 对每个文档分词
+    for (Field field : doc) {
+        TokenStream stream = analyzer.tokenStream(field.name(), field);
+        // 2. 将 Token 写入 postings
+        for (Term term : stream) {
+            postingsWriter.addPosting(term, docId, position);
         }
-      }
     }
-  }
+    
+    // 3. 写入 DocValues
+    docValuesWriter.write(doc);
+    
+    // 4. 写入 stored fields
+    storedFieldsWriter.write(doc);
 }
 
-// IK 分析
-POST /my_index/_analyze
-{
-  "analyzer": "ik_max_word",
-  "text": "中华人民共和国国歌"
-}
-// 结果: [中华人民共和国, 中华人民, 中华, 华人, 人民, 人民共和国, 共和国, 国歌]
-
-// IK smart
-POST /my_index/_analyze
-{
-  "analyzer": "ik_smart",
-  "text": "中华人民共和国国歌"
-}
-// 结果: [中华人民共和国, 国歌]
+// IndexWriter 配置:
+// maxBufferedDocs: 内存中文档数上限（默认 10000）
+// maxBufferedBytes: 内存中文档大小上限（默认 16MB）
+// mergePolicy: 合并策略（TieredMergePolicy 默认）
+// mergeScheduler: 合并调度器（ConcurrentMergeScheduler 默认）
+// ramBufferSizeMB: 缓冲大小
 ```
 
-### 3.3 分词策略选择
+### 2.2 Segment Merge（段合并）
 
+```java
+// TieredMergePolicy（默认合并策略）:
+// 核心逻辑:
+// 1. 如果小 Segment 的数量超过阈值 → 合并
+// 2. 合并后的 Segment 大小不超过 maxSegmentSize
+// 3. 合并比例由 maxMergedSegmentMB / mergeFactor 决定
+//    - 默认: 10MB / 10（即 10 个 1MB 的 Segment 合并为 1 个 10MB）
+//    - 实际: mergeFactor = 10，表示每 10 个相同大小的 Segment 合并为一个
+
+// 合并过程:
+// 1. 选择待合并的 Segments（mergePolicy.selectSegmentsToMerge）
+// 2. 创建新的 Segment Writer
+// 3. 遍历所有待合并的 Segments，读取文档并写入新 Segment
+// 4. 写入完成后，用新 Segment 替换旧 Segments
+// 5. 旧 Segments 被标记删除，等待 GC
+
+// 合并优化:
+// 1. 合并时 skip 已删除的文档（tombstones）
+// 2. 使用 DocValues 的 compaction 优化
+// 3. 后台合并不阻塞写入
+
+// 合并触发条件:
+// 1. Segment 数量 > mergeFactor × maxMergeAtOnce
+// 2. 总大小 > maxMergeAtOnce × maxSegmentSize
+// 3. 最小 Segment 大小 < maxMergeAtOnce × maxSegmentSize
 ```
-场景: 全文搜索
-  → Standard Analyzer / IK Analyzer
-  → 需要分词，支持全文检索
 
-场景: 精确匹配（邮箱、手机号、ID）
-  → Keyword Analyzer
-  → 不分词，整个字符串作为词条
+### 2.3 查询执行引擎
 
-场景: 自动补全
-  → Edge Ngram Tokenizer
-  → 生成前缀词条
+```java
+// Elasticsearch 查询路径:
+// 1. 用户发送 DSL 查询
+// 2. Query Parser 解析 DSL → Query 对象
+// 3. 遍历所有 Shard，发送到每个 Shard 执行
+// 4. Shard 内部: Query → Scorer → Collector
+// 5. 合并所有 Shard 的结果 → Top N
 
-场景: 搜索建议
-  → Completion Suggester (Inverted Index + FST)
-  → 支持拼音、模糊匹配
+// Lucene 查询执行:
+// TermQuery:
+//   - 从 Term Dictionary 查找词条
+//   - 获取 postings 列表
+//   - 返回包含该词条的文档
+//
+// BooleanQuery:
+//   - 对子查询分别评分
+//   - 合并评分（SUM/MAX/MIN）
+//   - 过滤不满足条件的文档
+//
+// 评分公式 (BM25):
+// score(q, d) = Σ [ IDF(t) × TF(t, d) × (TF(t, d) + k1 × (1 - b + b × |d| / avgLen)) ]
+//   IDF(t) = ln((N - n(t) + 0.5) / (n(t) + 0.5) + 1)
+//   TF(t, d) = 词条 t 在文档 d 中出现的次数
+//   k1 = 1.2 (默认)
+//   b = 0.75 (默认)
+//   |d| = 文档 d 的长度
+//   avgLen = 平均文档长度
+
+// 评分优化:
+// 1. IDF 预计算并存储在 .tim 文件中
+// 2. TF 从 .prx 文件读取
+// 3. 文档长度存储在 .doc 文件中
+// 4. 使用 DocValues 缓存热点 IDF
 ```
 
 ---
 
-## 4. 文档写入与查询流程
+## 3. 集群协议 — Raft vs Zen Discovery
 
-### 4.1 写入流程
+### 3.1 ES 集群发现
 
-```
-1. Client 发送 Index/Create/Update/Delete 请求
-2. Coordinator Node 接收请求
-3. 计算 doc_id = hash(routing) % num_primary_shards
-4. 路由到对应的 Primary Shard
-5. Primary Shard 写入 Translog（先写日志，保证持久性）
-6. Primary Shard 写入内存中的 Lucene Index
-7. Primary Shard 通知 Replicas 写入
-8. Replicas 写入 Translog + 内存 Index
-9. Primary Shard 收集所有 Replicas 确认
-10. Coordinator Node 返回成功
+```java
+// ES 集群发现流程:
+// 1. 节点启动，广播 Ping 消息
+// 2. 收到 Ping 的节点回复 Pong
+// 3. 主节点收集所有节点信息
+// 4. 选举主节点（基于 node_id 排序）
+// 5. 主节点分配 Shard
 
-Translog 刷盘:
-  - translog.durability: request（每次写操作刷盘）/ async（后台异步刷盘）
-  - translog.sync_interval: 同步间隔（默认 5s）
-  
-Fsync:
-  - 定期将内存 Index flush 到磁盘（Segment）
-  - 默认 30 分钟，或 translog 超过 512MB
-```
+// Zen Discovery（ES < 7.0）:
+// 1. 设置 discovery.zen.minimum_master_nodes = (N/2) + 1
+// 2. 选举流程:
+//    - 主节点故障 → 剩余主节点重新选举
+//    - 新主节点选出 → 更新集群状态
+//    - 从节点连接新主节点
 
-### 4.2 查询流程
+// Cluster Manager（ES 7.0+）:
+// 1. 移除"主节点"概念，改为"Cluster Manager"
+// 2. 选举基于 Raft 协议
+// 3. 配置: cluster.initial_master_nodes
 
-```
-1. Client 发送 Search 请求
-2. Coordinator Node 接收请求
-3. 将查询路由到所有相关 Shard（基于 routing 或 _shards）
-4. 各 Shard 执行查询:
-   a. 查询 Cache 中是否有结果
-   b. 如果没有，执行查询:
-      - 解析查询条件 → Query Parser
-      - 构建 Query Object（TermQuery / RangeQuery / BoolQuery）
-      - 遍历 Posting List，计算 Score
-      - Top-K 排序（使用 Priority Queue）
-   c. 返回 Top-K 结果给 Coordinator
-5. Coordinator 合并各 Shard 的 Top-K（全局排序）
-6. 返回最终结果
-
-Query Cache:
-  - 缓存 Filter 查询的结果（不变的数据）
-  - 基于查询字符串的 hashCode 缓存
-  - 不适用于带参数的查询（如 range）
-
-Field Data Cache:
-  - 排序和聚合时加载字段数据到内存
-  - 注意: 可能导致 OOM，慎用
+// 集群状态变更:
+// 1. 写入变更请求
+// 2. Cluster Manager 应用变更
+// 3. 广播新集群状态到所有节点
+// 4. 所有节点加载新集群状态
+// 5. Shard 分配/重新平衡
 ```
 
----
+### 3.2 Shard 分配与路由
 
-## 5. 集群架构与调优
+```java
+// Shard 分配:
+// 1. Primary Shard: 负责写操作
+// 2. Replica Shard: 负责读操作 + 高可用
+// 3. 分配策略:
+//    - 尽量将 Primary 和 Replica 分配到不同节点
+//    - 尽量均匀分配 Shard 数量
+//    - 考虑 Shard 大小和节点负载
 
-### 5.1 分片策略
+// 路由公式:
+// shard_number = hash(routing_value) % number_of_primary_shards
+// routing_value 默认是 _id
+// 自定义 routing: PUT /index/_doc/1?routing=user_123
 
-```
-分片数量:
-  - Primary Shard: 数据分片，不可更改（创建时确定）
-  - Replica Shard: 副本，提供高可用和读扩展
-  
-  原则:
-  - Primary Shard 不宜过多（每 GB 数据 15-20 个 shard）
-  - 单个 shard 大小建议 10-50GB
-  - Replica Shard 数量: 1-2 个（根据资源调整）
+// 重新平衡:
+// 1. 节点加入/退出 → 触发 rebalance
+// 2. Cluster Manager 计算新的 Shard 分配
+// 3. 将 Shard 从一个节点移动到另一个节点
+// 4. 移动过程:
+//    - 创建 Replica
+//    - 复制数据到新节点
+//    - 等待复制完成
+//    - 将 Replica 提升为 Primary
+//    - 删除旧 Primary
 
-分片路由:
-  - routing 参数: 控制文档路由到哪个 shard
-  - _routing: 文档字段控制路由
-  
-  PUT /logs-2026.06/{log_type}
-  - 按月分索引，按日志类型 routing
-  - 同类型日志在同 shard，避免跨 shard 聚合
-```
-
-### 5.2 内存管理
-
-```
-JVM Heap 管理:
-  - ES 建议堆内存 ≤ 31GB（避免指针压缩失效）
-  - 50% 留给 Lucene，50% 留给 JVM
-  - -Xms 和 -Xmx 设置相同，避免动态扩容
-
-重要参数:
-  indices.fielddata.cache.size: 15-20%（Field Data 缓存）
-  indices.queries.cache.size: 10%（Query Cache）
-  indices.breaker.total.limit: 70%（总断路限制）
-  indices.breaker.fielddata.limit: 40%
-  indices.breaker.request.limit: 60%
-
-监控:
-  - GC 时间: 应该 < 500ms，避免 Stop-The-World
-  - 使用 G1GC（ES 7.x+ 默认）
-  - 关注 heap 使用率，超过 75% 需要扩容
-```
-
-### 5.3 写入优化
-
-```
-写入优化:
-  1. 批量写入: bulk API，每批 1000-5000 条
-  2. 禁用 replica: index.number_of_replicas=0（导入时）
-  3. 增加 translog 刷新间隔: index.translog.durability=async
-  4. 合并 segment: POST /_forcemerge?max_num_segments=1
-  5. 增加 refresh_interval: 30s → 5min（导入时）
-
-写入吞吐:
-  - 单节点: 5-10k doc/s（SSD）
-  - 集群: 根据节点数线性扩展
-```
-
-### 5.4 查询优化
-
-```
-查询优化:
-  1. 使用 filter context（不走评分，可缓存）
-  2. 避免 wildcard 前缀通配（*abc → abc*）
-  3. 使用 keyword 字段做聚合/排序
-  4. 限制返回字段: _source filtering
-  5. 使用 search_after 替代 from/size 深度分页
-  6. 预计算常用聚合
-
-深度分页优化:
-  ❌ from=10000, size=10 （跨 shard 排序，内存爆炸）
-  ✅ search_after: 记录上次最后一个文档的 sort_value
-  
-  POST /_search
-  {
-    "size": 10,
-    "search_after": [1573515653265],  // 上次最后一条的 sort
-    "sort": [{"timestamp": "desc"}]
-  }
-```
-
-### 5.5 集群高可用
-
-```
-脑裂防护:
-  - discovery.seed_hosts: 发现节点列表
-  - cluster.initial_master_nodes: 初始 master 节点列表
-  - gateway.recover_after_nodes: 最少 N 个节点恢复
-  
-  设置:
-  cluster.routing.allocation.require._name: "master"
-  cluster.routing.allocation.total_shards_per_node: 2
-
-故障转移:
-  - Master 节点故障 → 选举新 Master（Zab 协议）
-  - 数据节点故障 → Replicas 提升为 Primary
-  - 脑裂 → 设置 minimum_master_nodes = N/2 + 1
-
-监控:
-  - GET /_cluster/health: 集群状态
-  - GET /_cat/nodes?v: 节点信息
-  - GET /_cat/shards?v: 分片分布
-  - GET /_nodes/stats/jvm: JVM 状态
-  - GET /_cat/thread_pool?v: 线程池
+// Shard 级别的一致性:
+// 1. 每个 Shard 是独立的 Lucene Index
+// 2. Shard 内的文档是有序的（docId）
+// 3. 跨 Shard 的文档顺序不可保证
 ```
 
 ---
 
-## 6. 实战场景
+## 4. DocValues — 列式存储
 
-### 6.1 日志聚合
+### 4.1 DocValues 原理
 
-```json
-PUT /logs-2026.06
-{
-  "settings": {
-    "number_of_shards": 3,
-    "number_of_replicas": 1,
-    "refresh_interval": "30s"
-  },
-  "mappings": {
-    "properties": {
-      "@timestamp": {"type": "date"},
-      "level": {"type": "keyword"},
-      "message": {"type": "text", "analyzer": "ik_max_word"},
-      "service": {"type": "keyword"},
-      "ip": {"type": "ip"},
-      "trace_id": {"type": "keyword"}
-    }
-  }
-}
+```java
+// DocValues = 列式存储（Column-oriented storage）
+// 与倒排索引的对比:
+// 倒排索引: Term → [DocId1, DocId2, DocId3, ...]
+// DocValues: DocId → [Field1_value, Field2_value, ...]
 
-// 查询最近 1 小时的错误日志
-GET /logs-2026.06/_search
-{
-  "query": {
-    "bool": {
-      "filter": [
-        {"range": {"@timestamp": {"gte": "now-1h"}}},
-        {"term": {"level": "ERROR"}}
-      ]
-    }
-  },
-  "sort": [{"@timestamp": "desc"}],
-  "size": 100
-}
+// 列式存储的优势:
+// 1. 排序: 直接按列排序，不需要遍历所有文档
+// 2. 聚合: 按列聚合（SUM/AVG/MAX/MIN），IO 少
+// 3. 脚本: 按字段值执行脚本，缓存友好
+// 4. 过滤: 按字段值过滤，位图运算快
+
+// DocValues 类型:
+// 1. SortedDocValues: 排序的 doc value（用于排序）
+// 2. NumericDocValues: 数值类型 doc value
+// 3. SortedSetDocValues: 排序的集合 doc value（用于聚合）
+// 4. BinaryDocValues: 二进制 doc value（用于存储）
+// 5. SortedNumericDocValues: 排序的数值集合 doc value
+
+// 写入 DocValues:
+// IndexWriter.writeDocValues() {
+//     for (int docId = 0; docId < maxDoc; docId++) {
+//         for (Field field : doc) {
+//             if (field.docValueEnabled()) {
+//                 docValuesWriter.write(docId, field.name(), field.value());
+//             }
+//         }
+//     }
+// }
 ```
 
-### 6.2 全文搜索
+### 4.2 DocValues 存储格式
 
-```json
-PUT /products
-{
-  "mappings": {
-    "properties": {
-      "name": {
-        "type": "text",
-        "analyzer": "ik_max_word",
-        "fields": {
-          "keyword": {"type": "keyword"}
-        }
-      },
-      "price": {"type": "float"},
-      "category": {"type": "keyword"},
-      "description": {
-        "type": "text",
-        "analyzer": "ik_max_word"
-      }
-    }
-  }
-}
+```java
+// DocValues 文件格式:
+// .dv 文件:
+// - Header: magic number, codec version, field count
+// - Field Data: 按字段名顺序存储
+//   - 每个字段的 doc value 按 docId 顺序存储
+//   - 使用可变长度编码（variable-length encoding）
 
-// 混合搜索: 全文 + 过滤 + 排序
-GET /products/_search
-{
-  "query": {
-    "bool": {
-      "must": [
-        {"multi_match": {
-          "query": "iPhone 手机壳",
-          "fields": ["name^3", "description"]
-        }}
-      ],
-      "filter": [
-        {"term": {"category": "配件"}},
-        {"range": {"price": {"lte": 100}}}
-      ]
-    }
-  },
-  "sort": [{"_score": "desc"}, {"price": "asc"}]
-}
-```
+// 编码方式:
+// 1. PForDelta: 定长编码（适合小整数）
+// 2. VInt: 可变长度整数编码
+// 3. VLong: 可变长度长整数编码
+// 4. RunLength: 重复值编码
 
-### 6.3 聚合分析
-
-```json
-// 按 category 统计
-GET /products/_search
-{
-  "size": 0,
-  "aggs": {
-    "by_category": {
-      "terms": {"field": "category", "size": 10}
-    }
-  }
-}
-
-// 嵌套聚合: 每个 category 的平均价格
-GET /products/_search
-{
-  "size": 0,
-  "aggs": {
-    "by_category": {
-      "terms": {"field": "category", "size": 10},
-      "aggs": {
-        "avg_price": {"avg": {"field": "price"}},
-        "price_stats": {"stats": {"field": "price"}}
-      }
-    }
-  }
-}
+// 内存映射:
+// 1. 使用 MMapDirectory 内存映射文件
+// 2. 按需加载（demand loading）
+// 3. 操作系统负责页面置换（LRU）
+// 4. 避免将整个 DocValues 加载到内存
 ```
 
 ---
 
-*本文档基于 ES 8.x 整理，涵盖核心机制与实战优化*
+## 5. 性能调优
+
+### 5.1 写入优化
+
+```java
+// 写入优化策略:
+// 1. 批量写入（Bulk API）:
+//    - 减少网络往返
+//    - 减少 segment 数量
+//    - 使用 bulk processor
+//
+// 2. 调整 refresh_interval:
+//    - 默认: 1s（影响性能）
+//    - 写入时设为 -1（禁用）
+//    - 写入完成后恢复
+//
+// 3. 调整 max_merge_at_once:
+//    - 默认: 10
+//    - 减少合并频率
+//
+// 4. 使用 _bulk API 批量写入:
+PUT /_bulk
+{ "index": { "_index": "test", "_id": "1" } }
+{ "name": "test" }
+{ "index": { "_index": "test", "_id": "2" } }
+{ "name": "test2" }
+```
+
+### 5.2 查询优化
+
+```java
+// 查询优化策略:
+// 1. 使用 filter 缓存:
+//    - 减少评分计算
+//    - 结果自动缓存
+//    - 使用 constant_score 替代 bool + must
+//
+// 2. 使用 range filter:
+//    - 避免 term 查询的倒排查找
+//    - 使用 RangeQuery 直接扫描
+//
+// 3. 使用 highlight 缓存:
+//    - 避免重复高亮计算
+//    - 设置 highlight fragment_size
+//
+// 4. 使用 routing:
+//    - 减少查询涉及的 Shard 数量
+//    - 精确路由到单个 Shard
+
+// 避免的操作:
+// 1. wildcard 查询（*abc*）: 需要扫描所有文档
+// 2. 正则表达式查询: 需要扫描所有文档
+// 3. 通配符查询: 前缀通配符（abc*）比后缀通配符（*abc）快
+// 4. 嵌套查询: 嵌套对象性能差
+```
+
+---
+
+*本文档基于 Elasticsearch 8.x / Lucene 9.x 源码整理，覆盖倒排索引、分词、集群协议、DocValues*

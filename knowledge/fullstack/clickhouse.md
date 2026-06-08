@@ -1,4 +1,4 @@
-# ClickHouse 原理 — MergeTree、列式存储、OLAP 调优
+# ClickHouse 原理 — MergeTree 引擎源码级、列式存储、OLAP 调优
 
 > 标签: `#ClickHouse` `#MergeTree` `#列式存储` `#OLAP` `#调优`
 > 创建日期: 20260608
@@ -6,427 +6,325 @@
 
 ---
 
-## 1. ClickHouse 架构
+## 1. MergeTree 引擎 — 核心架构
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    ClickHouse 集群                           │
-│                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐                 │
-│  │  CH Node │  │  CH Node │  │  CH Node │                 │
-│  │  (Co-ord)│  │          │  │          │                 │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘                 │
-│       │              │              │                       │
-│  ┌────▼──────────────▼──────────────▼─────┐                │
-│  │            ZooKeeper (协调层)           │                │
-│  │  - 副本元数据                            │                │
-│  │  - 分片分配                              │                │
-│  │  - 分布式 DDL                           │                │
-│  │  - 副本同步状态                          │                │
-│  └────────────────────────────────────────┘                │
-│                                                             │
-│  存储层:                                                   │
-│  ┌────────────────────────────────────────┐                │
-│  │  MergeTree Engine 家族                  │                │
-│  │  - primary key (排序键)                 │                │
-│  │  - partition key (分区键)               │                │
-│  │  - sampling key (采样键)                │                │
-│  │  - data parts (数据片段)                │                │
-│  └────────────────────────────────────────┘                │
-└─────────────────────────────────────────────────────────────┘
-```
+### 1.1 MergeTree 结构
 
----
+```c
+// MergeTree 表结构:
+┌─────────────────────────────────────────────────────┐
+│                    MergeTree Table                    │
+├─────────────────────────────────────────────────────┤
+│  Part 1: data.bin, data.mrk2, index...              │
+│  Part 2: data.bin, data.mrk2, index...              │
+│  Part 3: data.bin, data.mrk2, index...              │
+│  Part 4: data.bin, data.mrk2, index...              │
+├─────────────────────────────────────────────────────┤
+│  merge_tree → merge_parts() → Part 5: merged        │
+└─────────────────────────────────────────────────────┘
 
-## 2. 列式存储
+// MergeTree 数据目录:
+// parts/
+│   ├── all_1_1_0/          // 0: 表示所有分区
+│   │   ├── data.bin        // 压缩后的数据
+│   │   ├── data.mrk2       // 数据标记（用于定位）
+│   │   ├── index.bin       // 主键索引
+│   │   ├── count.txt       // 行数
+│   │   └── checksums.txt   // 文件校验和
+│   ├── all_2_2_0/
+│   │   ├── data.bin
+│   │   └── ...
+│   └── ...
+├─────────────────────────────────────────────────────┤
+│  columns.bin.gz           // 列数据（压缩）
+│  primary_key.mrk2         // 主键标记
+│  primary_key.idx          // 主键索引
+└─────────────────────────────────────────────────────┘
 
-### 2.1 行存 vs 列存
-
-```
-行存储 (MySQL/PostgreSQL):
-  Row 1: | id=1 | name='Alice' | age=25 | city='BJ' |
-  Row 2: | id=2 | name='Bob'   | age=30 | city='SH' |
-  Row 3: | id=3 | name='Carol' | age=28 | city='GZ' |
-  
-  查询 SELECT name, age FROM t WHERE city='BJ':
-  → 读取 Row 1, 2, 3 所有列 → 过滤 city → 返回 name, age
-  → 浪费: 读入了不必要的 city 列数据
-
-列存储 (ClickHouse):
-  id:   | 1 | 2 | 3 |
-  name: | Alice | Bob | Carol |
-  age:  | 25 | 30 | 28 |
-  city: | BJ | SH | GZ |
-  
-  查询 SELECT name, age FROM t WHERE city='BJ':
-  → 只读取 name, age, city 三列
-  → city 列通过 Compressed Block 快速过滤
-  → 节省 IO: 只读取需要的列
-
-列存优势:
-  1. 压缩率高: 同列数据类型相同，压缩效果好（Delta + LZ4/ZSTD）
-  2. 扫描速度快: 只读需要的列，减少 IO
-  3. 适合 OLAP: 聚合查询涉及少量列的统计
-  
-列存劣势:
-  1. 点查询慢: 查单行需要读所有列
-  2. 更新/删除成本高: 数据不可变设计
-  3. 不适合事务型场景
+// Part 命名规则:
+// {partition_id}_{min_block}_{max_block}_{level}
+// all_1_1_0: partition=all, min_block=1, max_block=1, level=0
+// all_2_2_0: partition=all, min_block=2, max_block=2, level=0
+// 合并后 level 增加
 ```
 
-### 2.2 数据文件组织
+### 1.2 列存储格式
 
-```
-MergeTree 表的物理存储:
+```c
+// ClickHouse 的列存储方式:
+// 每列独立存储，按压缩块（compression codec）压缩
 
-/data/
-└── table_name/
-    ├── primary.key      ← 主键跳表（.mrk2 文件）
-    ├── sk_1.idx         ← 稀疏索引
-    ├── sk_2.idx
-    ├── count.txt        ← 行数
-    ├── columns.bin      ← 列数据（合并存储）
-    ├── column_name/column_name.mrk2
-    ├── column_name/column_name.bin.gz
-    ├── column_name2/column_name2.bin.gz
-    ├── ...
-    └── minmax_timestamp.idx  ← 分区最小最大值索引
-```
+// 列文件格式（data.bin）:
+// ┌─────────────────────────────────────────────────────────┐
+│ Block Header (compressed)                                  │
+│   - columns_count: uint32                                  │
+│   - rows_count: uint32                                     │
+│   - column_names: string[]                                 │
+│   - column_types: string[]                                 │
+├─────────────────────────────────────────────────────────┤
+│ Column Data (每列独立压缩)                                  │
+│   Column 1:                                                │
+│     - compression_header: uint32 (codec)                   │
+│     - compressed_data: bytes                               │
+│   Column 2:                                                │
+│     - compression_header: uint32 (codec)                   │
+│     - compressed_data: bytes                               │
+│   ...                                                      │
+│ Column N:                                                  │
+│     - compression_header: uint32 (codec)                   │
+│     - compressed_data: bytes                               │
+├─────────────────────────────────────────────────────────┤
+│ Index Data                                                  │
+│   - primary_key_mrk: uint64[]                              │
+│   - granularity: uint32                                    │
+│   - index_type: string (minmax, set, ngram, ...)          │
+└─────────────────────────────────────────────────────────┘
 
----
+// 压缩编解码器（Codec）:
+// 1. Delta + DoubleDelta: 差分压缩 + 二阶差分（适合时间序列）
+// 2. LZ4: 快速压缩/解压，压缩率低
+// 3. ZSTD: 高压缩率，压缩/解压较慢
+// 4. Gorilla: 适合浮点数（金融/时序数据）
+// 5. Delta + LZ4: 差分 + LZ4
+// 6. Delta + ZSTD: 差分 + ZSTD
 
-## 3. MergeTree 引擎家族
-
-### 3.1 MergeTree 核心概念
-
-```
-MergeTree 表结构:
-
-┌─────────────────────────────────────────────────────────────┐
-│  分区 (Partition)                                          │
-│  ├─ 分区 1 (2026-01)                                       │
-│  │  ├─ Part 1 (all_1_1_0) → 初始写入的数据                   │
-│  │  ├─ Part 2 (all_1_2_0) → 后续写入的增量数据               │
-│  │  └─ Part 3 (all_2_3_0)                                 │
-│  │     └─ 后台 Merge 线程: Part 1 + Part 2 + Part 3        │
-│  │         → all_3_3_0 (合并后的单一 Part)                   │
-│  │                                                          │
-│  ├─ 分区 2 (2026-02)                                       │
-│  │  └─ Part 4 (all_4_4_0)                                 │
-│  │     └─ Merge → all_4_4_0                               │
-│  └─ ...                                                    │
-└─────────────────────────────────────────────────────────────┘
-
-排序键 (ORDER BY):
-  - 定义数据在 Part 内部的排序方式
-  - 自动构建稀疏索引（每 8192 行一个索引点）
-  - 稀疏索引支持: primary key, skip indices, projection
-
-分区键 (PARTITION BY):
-  - 物理分区，按分区删除/移动数据
-  - 常用: toYYYYMM(date), toStartOfHour(timestamp)
-  - 分区不可嵌套，建议分区数 < 1000
-
-主键 (PRIMARY KEY):
-  - MergeTree 中 PRIMARY KEY = ORDER BY 的前缀
-  - 实际用于构建稀疏索引
-  - 稀疏索引: 每 8192 行取一个 (key, offset) 对
+// 列数据组织（Column 实现）:
+// 1. ColumnVector: 固定大小类型（UInt64, Int32, Float64）
+//    - 按列存储: [v1, v2, v3, v4, v5, ...]
+// 2. ColumnFixedString: 固定长度字符串
+// 3. ColumnString: 可变长度字符串（data.bin + offsets.bin）
+//    - data.bin: 字符串内容
+//    - offsets.bin: 字符串偏移量
+// 4. ColumnArray: 数组类型
+//    - data.bin: 数组元素
+//    - offsets.bin: 数组偏移量
+// 5. ColumnMap: Map 类型
+// 6. ColumnTuple: 元组类型
+// 7. ColumnNullable: 可空类型
 ```
 
-### 3.2 稀疏索引机制
+### 1.3 稀疏索引（Primary Key + Mark）
 
-```
-数据行:
-  row 1:  (age=20, name='A', ...)
-  row 2:  (age=21, name='B', ...)
-  ...
-  row 8192: (age=25, name='V', ...)
-  row 8193: (age=25, name='W', ...)
-  ...
-  row 16384: (age=28, name='AA', ...)
+```c
+// ClickHouse 的稀疏索引设计:
+// 每个 Part 的粒度（granularity）= 8192 行
+// 即每 8192 行创建一个索引条目
 
-稀疏索引 (每 8192 行):
-  (20, offset=0)     → Part 中第 0 行
-  (25, offset=8192)  → Part 中第 8192 行
-  (28, offset=16384) → Part 中第 16384 行
+// 主键索引结构:
+// 主键可以是多列的，按字典序排序
+// 索引条目: (min, max) 对，表示该粒度范围内主键的最小值和最大值
 
-查询 age = 25:
-  1. 二分查找稀疏索引 → 定位到 offset=8192
-  2. 从 offset=8192 开始逐行扫描 → 找到所有 age=25 的行
-  3. 精确匹配 age=25 的记录
+// 示例:
+// 假设主键是 (user_id, event_date, event_type)
+// 数据按主键排序:
+// user_id | event_date | event_type | value
+// 1       | 2024-01-01 | click      | 10
+// 1       | 2024-01-01 | view       | 20
+// 1       | 2024-01-02 | click      | 30
+// 1       | 2024-01-02 | view       | 40
+// ... (8192 行)
+// 2       | 2024-01-01 | click      | 50
+// ...
 
-查询 age BETWEEN 21 AND 27:
-  1. 二分查找 sparse index → age=21, age=25
-  2. 扫描 offset=0 ~ offset=16384 之间的数据
-  3. 过滤 age BETWEEN 21 AND 27
+// 索引条目（每 8192 行）:
+// Entry 0: (1, 2024-01-01, click) ~ (1, 2024-03-01, view)   // 标记 0
+// Entry 1: (1, 2024-03-02, click) ~ (2, 2024-01-01, view)   // 标记 1
+// Entry 2: (2, 2024-01-02, click) ~ (2, 2024-02-01, view)   // 标记 2
+// ...
 
-粒度 (index_granularity):
-  - 默认 8192 个行标记（marks）
-  - 可调整，但不建议改（太小索引大，太大扫描慢）
-```
+// 查询优化:
+// WHERE user_id = 1 AND event_date = '2024-01-01'
+// 1. 在索引中二分查找满足条件的第一条条目
+// 2. 跳过不匹配的条目（跳过整个 granule）
+// 3. 从匹配的 granule 开始扫描数据
+// 4. 遇到不匹配的 granule 后停止
 
-### 3.3 MergeTree 引擎家族
-
-```
-MergeTree 系列:
-  - MergeTree: 基础引擎，支持分区、排序、稀疏索引
-  - ReplacingMergeTree: 去重（按 ORDER BY 保留最新版本）
-  - CollapsingMergeTree: 状态维护（SIGN=+1/-1 抵消）
-  - SummingMergeTree: 聚合（按 ORDER BY 求和）
-  - VersionedCollapsingMergeTree: 带版本的 Collapsing
-  - GraphiteMergeTree: 时序数据聚合
-  
-分布式:
-  - Distributed: 分布式表（不存数据，仅路由）
-  - 数据实际存储在分片的 MergeTree 表中
-  
-高可用:
-  - ReplicatedMergeTree: ZooKeeper 协调的副本
-  - 副本间自动同步数据
-```
-
-### 3.4 ReplacingMergeTree 实战
-
-```sql
--- 订单表，同一订单可能多次更新
-CREATE TABLE orders (
-    order_id UInt64,
-    user_id UInt64,
-    status String,
-    updated_at DateTime
-) ENGINE = ReplacingMergeTree()
-ORDER BY (order_id, user_id)
-PARTITION BY toYYYYMM(updated_at);
-
--- 插入同订单的多次更新:
-INSERT INTO orders VALUES
-  (1, 100, 'pending', '2026-01-01 10:00:00'),
-  (1, 100, 'paid', '2026-01-02 10:00:00'),
-  (1, 100, 'shipped', '2026-01-03 10:00:00');
-
--- 后台 Merge 后，每个 order_id 只保留 updated_at 最大的行
--- 但 Merge 可能未完成，查询时指定 FINAL 强制合并:
-SELECT * FROM orders FINAL WHERE order_id = 1;
--- 返回: (1, 100, 'shipped', '2026-01-03 10:00:00')
-
--- 缺点: FINAL 扫描整个表，性能差
--- 建议: 在 WHERE 中加入分区键限制范围
-SELECT * FROM orders FINAL 
-WHERE order_id = 1 AND updated_at >= '2026-01-01';
+// 标记文件（.mrk2）:
+// 标记文件记录了每个 granule 在 data.bin 中的偏移量
+// 格式: binary file, 每个标记 6 bytes (mark number + offset)
 ```
 
 ---
 
-## 4. 写入机制
+## 2. Merge 机制 — 后台合并
 
-### 4.1 写入流程
+### 2.1 Merge 流程
 
-```
-1. Client 发送 INSERT 请求
-2. Server 分配到对应分片
-3. 数据写入内存中的 MergeTree 块（每 100K 行或 10MB flush）
-4. Flush 到磁盘，生成临时 Part（_tmp_x_x_x）
-5. 后台 Merge 线程将临时 Part 合并到正式 Part
-6. 返回写入成功
+```c
+// MergeTree 的合并流程（mutation + merge）:
+// 1. 写入: INSERT → 创建 Part（level=0）
+// 2. 后台线程: merge_tree → scheduleMerge()
+// 3. 合并条件:
+//    - 同一 Part 的多个小 Part 合并
+//    - 合并比例: level × 3 + 1（level=0: 需要 1 个, level=1: 需要 4 个）
+// 4. 合并结果: 生成新的 Part（level+1）
 
-写入优化:
-  - 批量写入: 每次 INSERT 10K-1M 行
-  - 避免小批量写入: 每次 INSERT < 1000 行会产生大量小 Part
-  - INSERT 间隔 > 10 分钟: 后台 Merge 来不及合并
-  
-  强制合并:
-  OPTIMIZE TABLE orders FINAL;  -- 合并所有 Part
-  -- 生产环境慎用，锁表
-```
+// 合并过程:
+// 1. 选择待合并的 Parts（MergeTreeBackgroundExecutor）
+// 2. 对 Parts 按主键排序（如果尚未排序）
+// 3. 逐列读取并合并（列式合并）
+// 4. 写入新的 Part 文件
+// 5. 原子替换旧 Part
 
-### 4.2 异步写入
+// MergeTree 后台线程:
+// 1. MergeTreeBackgroundExecutor: 调度合并任务
+// 2. MergeTreeData::merger: 执行合并
+// 3. MutationInterpreter: 执行 ALTER 操作
+// 4. GCThread: 清理过期 Parts
 
-```sql
--- 异步写入（提升吞吐，可能丢数据）
-INSERT INTO orders SELECT * FROM source ASYNC;
-
--- 设置写入参数
-SET async_insert = 1;           -- 开启异步写入
-SET async_insert_delay_timeout = 3000;  -- 等待 3s 攒批
-SET async_insert_max_data_size = 1000000;  -- 攒到 1M 行
-```
-
----
-
-## 5. 查询优化
-
-### 5.1 查询执行流程
-
-```
-1. 解析 SQL → 生成 AST
-2. 查询优化:
-   - WHERE 下推: 过滤条件尽量下推到存储层
-   - 分区裁剪: 只扫描涉及的分区
-   - 索引跳跃: 利用稀疏索引快速定位
-3. 数据读取:
-   - 读取需要的列（列存优势）
-   - 并行读取多个 Part
-4. 数据处理:
-   - 聚合（GROUP BY）
-   - 排序（ORDER BY）
-   - 过滤（WHERE/HAVING）
-5. 结果返回
+// 合并配置:
+// merge_tree.max_bytes_to_merge_at_max_space_in_pool: 最大合并大小
+// merge_tree.num_threads_for_merge: 合并线程数
+// merge_tree.min_bytes_for_wide_part: 宽 Part 的最小大小
+// merge_tree.min_rows_for_wide_part: 宽 Part 的最小行数
 ```
 
-### 5.2 查询优化策略
+### 2.2 写入与事务
 
-```
-1. 分区裁剪:
-   -- 必须包含分区键，否则全表扫描
-   SELECT * FROM orders WHERE dt = '2026-01-01';  ✅
-   SELECT * FROM orders WHERE user_id = 123;      ❌ 全表扫描
+```c
+// ClickHouse 的写入模型:
+// 1. INSERT → 临时 Part（pending）
+// 2. 后台 merge 合并 Part
+// 3. 合并完成后，旧 Part 被删除
 
-2. 稀疏索引利用:
-   -- PRIMARY KEY 前缀匹配
-   SELECT * FROM orders WHERE order_id = 123 AND dt = '2026-01-01';  ✅
-   
-3. 提前聚合:
-   -- 先在数据源聚合，减少网络传输
-   SELECT city, COUNT() FROM orders GROUP BY city;
-   -- CH 分布式: 每个节点先聚合，再汇总
+// 事务支持（从 22.8 开始）:
+// 1. 支持 ACID 事务
+// 2. 使用 MVCC 实现
+// 3. 写入时创建新版本
+// 4. 查询时读取特定版本
+// 5. 事务回滚: 删除新版本，回退到旧版本
 
-4. 使用合适的数据类型:
-   -- UInt64 > String > DateTime
-   -- 用 Enum/LowCardinality 减少存储
+// 异步插入:
+// 1. INSERT → 放入 buffer
+// 2. 每 100ms 或 10000 条 → 触发合并
+// 3. 异步合并 → 不阻塞主线程
 
-5. 投影（Projection，CH 22.8+）:
-   CREATE PROJECTION orders_proj (
-     SELECT city, COUNT() AS cnt GROUP BY city
-   )
-   ALTER TABLE orders MATERIALIZE PROJECTION orders_proj;
-   -- 自动在查询中利用投影
-```
-
-### 5.3 聚合优化
-
-```sql
--- 分布式聚合: 每个分片先聚合，再汇总
-SELECT city, sum(spend) FROM distributed_orders GROUP BY city;
--- 执行计划:
--- 1. 各分片本地聚合: GROUP BY city, SUM(spend)
--- 2. Coordinator 汇总所有分片结果
-
--- 大数据量聚合优化:
--- 使用 aggregate_function_combinators
-SELECT city, sumState(spend) FROM orders GROUP BY city;
--- 返回聚合状态，可合并
-
--- 多步聚合
-SELECT city, sumMerge(sumState) FROM orders GROUP BY city;
+// 最终一致性:
+// 1. 写入后可能不立即可见（等待 merge）
+// 2. 配置 wait_for_async_insert=1 确保立即可见
 ```
 
 ---
 
-## 6. 调优实战
+## 3. 分布式架构
 
-### 6.1 表设计
+### 3.1 Distributed 引擎
 
-```sql
--- 最佳实践:
--- 1. ORDER BY 选查询最常用的过滤列 + 高基数列
-CREATE TABLE events (
-    event_id UInt64,
-    user_id UInt64,
-    event_type String,
-    ts DateTime,
-    value UInt64
-) ENGINE = MergeTree()
-ORDER BY (ts, user_id)  -- ts 高选择性，user_id 作为二级排序
-PARTITION BY toYYYYMM(ts);
+```c
+// Distributed 表:
+// 数据分散在多个 Shard 上，Distributed 表是一个"视图"
 
--- 2. 分区键用按月/天
--- 3. 不用 FINAL，避免性能问题
--- 4. 用 ReplacingMergeTree 代替 FINAL
+// 结构:
+┌─────────────────────────────────────────────────────┐
+│                    Query Router                       │
+│  Distributed Table → Route to Shard(s)               │
+├─────────────────────────────────────────────────────┤
+│  Shard 1                          Shard 2            │
+│  ┌──────────┐                    ┌──────────┐       │
+│  │ Local 1  │                    │ Local 2  │       │
+│  │ Local 2  │                    │ Local 3  │       │
+│  └──────────┘                    └──────────┘       │
+└─────────────────────────────────────────────────────┘
 
--- 避免:
--- - 低基数列放 ORDER BY 前面（如 status）
--- - 分区过多（每个分区产生一个 Part）
--- - 不用字符串做主键（用 UInt64/UUID）
+// Distributed 引擎:
+CREATE TABLE distributed_table AS local_table
+ENGINE = Distributed(cluster_name, database, table, sharding_key)
+
+// 分片键:
+// 1. rand(): 随机分片
+// 2. cityHash64(user_id): 按用户哈希分片
+// 3. toInt64Hash(toUInt64(user_id)): 高性能哈希
+
+// 查询路由:
+// 1. SELECT * FROM distributed_table → 查询所有 Shard
+// 2. SELECT * FROM distributed_table WHERE user_id = 1 → 只路由到 user_id 所在的 Shard
+// 3. 本地查询: SELECT * FROM local_table → 只查询本地 Shard
 ```
 
-### 6.2 写入调优
+### 3.2 ReplicatedMergeTree
 
-```sql
--- 批量写入:
-INSERT INTO events VALUES (...);  -- 单次 10K+ 行
+```c
+// ReplicatedMergeTree:
+// 使用 ZooKeeper 实现分布式协调
 
--- 异步写入:
-SET async_insert = 1;
-SET async_insert_max_data_size = 1000000;
+// 结构:
+┌─────────────────────────────────────────────────────┐
+│                    ZooKeeper                          │
+│  /clickhouse/tables/01/users/                       │
+│    ├── shards/01/data/...                            │
+│    ├── replicas/replica1/                            │
+│    │   ├── logs/log-0000000001                       │
+│    │   ├── parts/                                    │
+│    │   └── queue/                                    │
+│    └── replicas/replica2/                            │
+│        ├── logs/log-0000000002                       │
+│        ├── parts/                                    │
+│        └── queue/                                    │
+└─────────────────────────────────────────────────────┘
 
--- 合并节奏:
--- background_pool_size: 后台 Merge 线程数（默认 16）
--- merge_tree_parts_to_delay_insert: 单表 Part 数 > 300 时暂停写入
--- merge_tree_parts_to_throw_insert: Part 数 > 600 时拒绝写入
-```
+// ZooKeeper 存储:
+// 1. /clickhouse/tables/{shard}/{table}/replicas/replica/
+//    - 存储副本信息
+// 2. /clickhouse/tables/{shard}/{table}/logs/
+//    - 存储操作日志（log entries）
+// 3. /clickhouse/tables/{shard}/{table}/parts/
+//    - 存储 Part 元数据
+// 4. /clickhouse/tables/{shard}/{table}/queue/
+//    - 存储合并任务队列
 
-### 6.3 查询调优
+// 副本同步流程:
+// 1. 写入 → 创建 Part → 写入 ZooKeeper
+// 2. 其他副本从 ZooKeeper 获取 Part 信息
+// 3. 其他副本从主副本拉取 Part 数据
+// 4. 合并完成后，更新 ZooKeeper 状态
 
-```sql
--- 使用 EXPLAIN 分析查询
-EXPLAIN PIPELINE SELECT city, sum(spend) FROM orders GROUP BY city;
-
--- 调整并行度:
-SET max_threads = 16;           -- 并行线程数
-SET max_block_size = 1048576;   -- 单块行数
-
--- 避免:
--- - SELECT * 读所有列（列存但仍有 IO 开销）
--- - 无分区键的查询（全表扫描）
--- - GROUP BY 后 ORDER BY 大结果集（内存溢出）
-```
-
-### 6.4 集群调优
-
-```sql
--- ZooKeeper 配置:
--- zookeeper.servers 指向 ZK 集群
--- 副本数: 2-3（根据数据重要性）
-
--- 分布式表:
-CREATE TABLE distributed_orders AS orders
-ENGINE = Distributed(cluster, default, orders, rand());
-
--- 写入: INSERT 到 Distributed 表，自动路由到分片
--- 读取: SELECT 从 Distributed 表，聚合各分片结果
-
--- 监控:
-SELECT * FROM system.merges;     -- Merge 状态
-SELECT * FROM system.parts;       -- Part 状态
-SELECT * FROM system.profiles;    -- 配置
-SELECT * FROM system.metrics;     -- 指标
-```
-
----
-
-## 7. 与 ClickHouse 对比
-
-```
-ClickHouse vs ClickHouse:
-  
-ClickHouse 优势:
-  1. 列存 + 压缩 → 高压缩比，低 IO
-  2. 向量化执行 → CPU 利用率高
-  3. 分布式原生 → 水平扩展
-  4. 实时写入 + 查询 → OLAP + OLTP 混合
-
-ClickHouse 劣势:
-  1. 不适合点查询（单行更新/删除）
-  2. 事务支持弱（无 ACID）
-  3. 数据模型简单（无 JOIN 优化）
-
-适用场景:
-  - 日志分析（10B+ 行/天）
-  - 广告 BI 报表
-  - 实时监控
-  - 用户行为分析
+// 故障恢复:
+// 1. 副本故障 → ZooKeeper 检测到心跳超时
+// 2. 新副本启动 → 从 ZooKeeper 拉取最新 Part
+// 3. 合并队列中的任务 → 在新副本上执行
 ```
 
 ---
 
-*本文档基于 ClickHouse 24.x 整理*
+## 4. 性能调优
+
+### 4.1 索引优化
+
+```sql
+-- 选择合适的索引类型:
+-- 1. Primary Key: 主键必须选择（用于稀疏索引）
+-- 2. Sampling Key: 采样键（用于近似计算）
+
+-- 索引类型:
+-- 1. minmax: 最小值/最大值（默认）
+-- 2. set: 集合索引（用于 IN 查询）
+-- 3. ngram: n-gram 索引（用于模糊匹配）
+-- 4. tokenbf: 倒排索引（用于全文搜索）
+-- 5. bf: 布隆过滤器（用于精确匹配）
+
+-- 示例:
+ALTER TABLE users ADD INDEX idx_email email TYPE set(1000) GRANULARITY 4;
+```
+
+### 4.2 数据分布优化
+
+```sql
+-- 选择合适的分片键:
+-- 1. 均匀分布: cityHash64(user_id)
+-- 2. 热点分散: rand()
+-- 3. 查询匹配: 按查询条件分片
+
+-- 选择合适的粒度:
+-- 1. 默认: 8192 行
+-- 2. 大数据量: 增加粒度（减少索引大小）
+-- 3. 小数据量: 减小粒度（提高查询精度）
+
+-- 选择合适的压缩编解码器:
+-- 1. Delta + DoubleDelta: 时间序列
+-- 2. LZ4: 快速压缩/解压
+-- 3. ZSTD: 高压缩率
+```
+
+---
+
+*本文档基于 ClickHouse 23.x 源码整理，覆盖 MergeTree、列式存储、合并机制、分布式架构*
