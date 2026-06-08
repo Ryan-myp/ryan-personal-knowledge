@@ -1,7 +1,7 @@
 ---
 name: ryan-personal-knowledge
 description: "Ryan 的个人学习仪表盘 + 知识库：追踪学习进度、沉淀广告业务/Agent技术知识、记录前沿洞察、管理碎片时间任务。"
-version: 1.0.0
+version: 1.1.0
 author: ryan
 platforms: [linux, macos]
 metadata:
