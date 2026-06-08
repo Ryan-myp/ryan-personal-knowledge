@@ -1,0 +1,77 @@
+{
+  "name": "knowledge-search",
+  "version": "1.0.0",
+  "description": "Ryan 个人知识库搜索引擎 — 复用 biz-delivery 框架的意图识别、RRF融合、缓存能力",
+  "knowledge_base": {
+    "root_dir": "../..",
+    "md_files_dir": "../..",
+    "index_cache": "./.cache/index.json",
+    "query_cache": "./.cache/query.json"
+  },
+  "routing": {
+    "enabled": true,
+    "intents": ["query", "question", "explain", "compare", "debug"],
+    "scope_weights": {
+      "query": {
+        "file_content": 0.8,
+        "file_name": 0.5,
+        "tags": 0.7,
+        "directory_path": 0.6
+      },
+      "question": {
+        "file_content": 0.8,
+        "file_name": 0.4,
+        "tags": 0.6,
+        "directory_path": 0.5
+      },
+      "explain": {
+        "file_content": 0.9,
+        "file_name": 0.3,
+        "tags": 0.7,
+        "directory_path": 0.5
+      },
+      "compare": {
+        "file_content": 0.7,
+        "file_name": 0.5,
+        "tags": 0.8,
+        "directory_path": 0.6
+      },
+      "debug": {
+        "file_content": 0.9,
+        "file_name": 0.4,
+        "tags": 0.8,
+        "directory_path": 0.5
+      }
+    }
+  },
+  "fusion": {
+    "rrf_k": 60,
+    "top_k": 10,
+    "paths": [
+      {
+        "name": "file_content",
+        "weight": 1.0,
+        "description": "文件内容全文匹配"
+      },
+      {
+        "name": "file_name",
+        "weight": 0.6,
+        "description": "文件名/标题匹配"
+      },
+      {
+        "name": "tags",
+        "weight": 0.8,
+        "description": "标签/关键词匹配"
+      },
+      {
+        "name": "directory_path",
+        "weight": 0.5,
+        "description": "目录路径匹配"
+      }
+    ]
+  },
+  "cache": {
+    "ttl_seconds": 3600,
+    "enabled": true
+  }
+}

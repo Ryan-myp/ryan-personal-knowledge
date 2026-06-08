@@ -184,7 +184,94 @@ cp templates/learning-note.md knowledge/agent-tech/某个主题.md
 - 本 skill 的笔记供个人回顾，不自动加载到 agent prompt
 - 用 `session_search` 也可以搜历史对话中的知识点
 
-## 七、已知问题与排障
+## 七、知识库搜索 — 如何快速查找知识
+
+知识库内置了基于 biz-delivery 框架的轻量级搜索引擎 `knowledge-search/`，支持意图识别 + 多路融合查询。
+
+### 快速使用
+
+```bash
+# 进入 knowledge-search 目录
+cd knowledge-search
+
+# 基础搜索 — 关键词匹配
+python3 query_knowledge.py "Redis 相关的书"
+
+# 查询意图 — 自动识别"查找/查看"类查询
+python3 query_knowledge.py "我想看 Redis 相关的书"
+
+# 提问意图 — 自动识别"怎么/如何"类问题
+python3 query_knowledge.py "怎么集成 agentmemory"
+
+# 对比意图 — 自动识别"对比/比较"类查询
+python3 query_knowledge.py "对比 agentmemory 的三种方案"
+
+# 排障意图 — 自动识别"排障/错误"类问题
+python3 query_knowledge.py "seaTalk bridge 怎么排障"
+```
+
+### 搜索维度
+搜索引擎从 4 个维度交叉匹配，RRF 融合排序：
+
+1. **📄 文件内容** — 全文关键词匹配（权重最高）
+2. **📁 目录路径** — 文件所在目录匹配（如 agent-tech, advertising）
+3. **🏷️ 标签** — #tag 关键词匹配（如 #前沿, #agent-技术）
+4. **📑 文件名/标题** — Markdown 文件名和 # 标题匹配
+
+### 意图自动识别
+
+搜索引擎会自动识别你的查询意图，选择最优搜索策略：
+
+| 意图 | 触发词 | 权重倾向 |
+|------|--------|---------|
+| query (查询) | 查看/查找/获取 | 文件内容 0.8 |
+| question (提问) | 怎么/如何/为什么 | 文件内容 0.8 |
+| explain (解释) | 原理/机制/解释 | 文件内容 0.9 |
+| compare (对比) | 对比/比较/区别 | 标签 0.8 |
+| debug (排障) | 排障/错误/bug | 文件内容 0.9 |
+
+### 高级选项
+
+```bash
+# 重建索引（当新增/修改文件后）
+python3 query_knowledge.py "关键词" --rebuild
+
+# 清除查询缓存
+python3 query_knowledge.py "关键词" --clear-cache
+
+# 查看详细信息
+python3 query_knowledge.py "关键词" --verbose
+```
+
+### 工作原理
+
+```text
+用户查询
+    │
+    ▼
+意图识别 → 选择各搜索维度的权重
+    │
+    ▼
+多路并行查询（内容 / 文件名 / 标签 / 目录）
+    │
+    ▼
+RRF 融合（按命中排名加权）
+    │
+    ▼
+返回排序后的 Top-K 结果 + 摘要 + 标签
+```
+
+### 与 biz-delivery 的关系
+
+`knowledge-search` 复用了 biz-delivery 框架的核心能力：
+- 意图识别逻辑 → 来自 `biz-delivery/scripts/smart_routing.py`
+- RRF 融合引擎 → 来自 `biz-delivery/scripts/rrf_fusion.py`
+- 查询缓存机制 → 来自 `biz-delivery/scripts/query_cache.py`
+- 配置化 Profile → 类似 biz-delivery 的 profile.json
+
+---
+
+## 八、已知问题与排障
 
 - `blogwatcher` 的大多数主流 AI 博客 (Anthropic, OpenAI, Google AI, Meta AI) RSS feed 已失效，只有 Hugging Face 正常工作。详见 `knowledge/前沿/blogwatcher-setup.md` 和 `references/verified-feeds.md`。
 - 大型二进制 tar 文件在 macOS 上用 `tar xzf` 可能触发系统超时阻断。备选方案：用 Python `tarfile` 模块解压。
