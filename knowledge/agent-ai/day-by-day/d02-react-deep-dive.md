@@ -1,224 +1,247 @@
-# Day 2: ReAct 模式深度 — 为什么它能"思考"？
+# Day 2: MRKL 系统源码深度剖析
 
-> 学习目标: 理解 ReAct 的 Prompt 设计原理、token 管理、错误处理
+> 学习目标: 理解 MRKL 系统的 Prompt 设计、输出解析、错误处理
 
 ---
 
-## 一、ReAct 的 Prompt 是怎么设计的？
+## 一、MRKL 系统架构
 
-### 1.1 一个完整的 ReAct Prompt
+### 1.1 MRKL 是什么？
+
+```
+MRKL = Modular Reasoning, Knowledge, and Language
+
+架构组成:
+┌─────────────────────────────────────────────────────┐
+│                   MRKL System                        │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│  ┌─────────────┐                                    │
+│  │  LLM (P())   │ ← 推理引擎                         │
+│  └──────┬──────┘                                    │
+│         │                                           │
+│  ┌──────▼──────┐                                    │
+│  │  F() 函数库  │ ← 预定义工具集合                    │
+│  └─────────────┘                                    │
+│                                                     │
+│  工作流程:                                           │
+│  1. P() 决定调用哪个 F()                             │
+│  2. F() 执行并返回结果                               │
+│  3. 结果反馈给 P()                                  │
+│  4. 重复直到完成任务                                 │
+│                                                     │
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+## 二、Prompt 模板源码
+
+### 2.1 MRKL Prompt 完整源码
 
 ```python
-# 这是 LLM 收到的完整 Prompt（简化版）
-prompt = f"""
-你是一个智能助手。你的目标是帮助用户完成任务。
+# langchain/agents/mrkl/prompt.py
+# MRKL Prompt 模板
 
-## 可用工具
-{tools_description}
+TEMPLATE = """Answer the following questions as best you can. 
+You have access to the following tools:
 
-## 回答格式
-你必须严格按照以下格式回答:
+{tools}
 
-Thought: 你的思考过程
-Action: 你要调用的工具名称
-Action Input: 工具的参数（JSON 格式）
+Use the following format:
 
-或者，如果你认为可以直接回答:
-Thought: 你的思考过程
-Final Answer: 你的最终答案
+Question: the input question you must answer
+Thought: you should always think about what to do
+Action: the action to take, should be one of [{tool_names}]
+Action Input: the input to the action
+Observation: the result of the action
+... (this Thought/Action/Action Input/Observation can repeat N times)
+Thought: I now know the final answer
+Final Answer: the final answer to the original input question
 
-## 示例
-用户问题: 北京天气怎么样？
+Begin!
 
-Thought: 我需要查询北京的天气。我没有这个信息，但我有 get_weather 工具。
-Action: get_weather
-Action Input: {{"city": "北京"}}
-
-Observation: 晴天，25℃
-
-Thought: 我已经获取了天气信息，可以回答用户了。
-Final Answer: 北京今天天气晴朗，温度25摄氏度。
-
-## 当前任务
-用户问题: {question}
-
-你已经做过的:
-{history}
-
-请开始:
+Question: {input}
+{chat_history}
+{intermediate_steps}
+Thought:{agent_scratchpad}
 """
+
+# 每个变量的含义:
+# {tools}: 工具描述（名称 + 描述）
+# {tool_names}: 工具名称列表
+# {input}: 用户问题
+# {chat_history}: 对话历史
+# {intermediate_steps}: 中间步骤（Action/Observation）
+# {agent_scratchpad}: LLM 之前的思考
 ```
 
-### 1.2 Prompt 设计的 3 个关键技巧
-
-```
-技巧 1:  Few-Shot 示例
-────────────────────────
-给 LLM 一个完整的示例，告诉它:
-- 该用什么格式
-- 思考应该写什么
-- 工具怎么用
-
-效果: 准确率提升 30-50%
-
-技巧 2: 工具描述要清晰
-────────────────────────
-每个工具都要有:
-- 名称
-- 参数说明
-- 返回格式
-- 使用场景
-
-错误描述 → LLM 不会用或乱用
-正确描述 → LLM 正确使用
-
-技巧 3: 历史压缩
-────────────────────────
-history 太长会超出 token 限制
-处理方式:
-- 保留最近 N 步
-- 摘要化早期步骤
-- 只保留关键信息
-```
-
-### 1.3 工具描述的重要性
+### 2.2 工具描述生成
 
 ```python
-# ❶ 差的工具描述
-tool = {
-    "name": "search",
-    "description": "搜索东西"  # 太模糊！LLM 不知道什么时候用、怎么用
-}
+# langchain/agents/format_scratchpad.py
+# 工具描述生成逻辑
 
-# ❷ 好的工具描述
-tool = {
-    "name": "search",
-    "description": """
-    使用网络搜索引擎获取最新信息。
+def format_tools(tools: Sequence[BaseTool]) -> str:
+    """
+    生成工具描述字符串
     
-    参数:
-    - query: 搜索关键词（字符串）
+    格式:
+    tool_name: Description of the tool. Args: {json_schema}
     
-    返回: 搜索结果摘要（字符串）
-    
-    适用场景: 需要最新信息、事实查询、参考资料
-    不适用: 计算、天气、本地数据
-    """,
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "query": {"type": "string", "description": "搜索关键词"}
-        },
-        "required": ["query"]
-    }
-}
+    示例:
+    get_weather: Get weather information for a city. Args: {"city": "string"}
+    search: Search the internet. Args: {"query": "string"}
+    """
+    tool_strings = []
+    for tool in tools:
+        args_schema = str(tool.args_schema) if tool.args_schema else ""
+        tool_strings.append(f"{tool.name}: {tool.description}. Args: {args_schema}")
+    return "\n".join(tool_strings)
+
+def format_tool_names(tools: Sequence[BaseTool]) -> str:
+    """生成工具名称列表"""
+    return ", ".join([tool.name for tool in tools])
 ```
 
-**关键**: 工具描述就是 LLM 的"使用说明书"。描述越清晰，LLM 用得越准。
+### 2.3 中间步骤格式化
+
+```python
+# langchain/agents/format_scratchpad.py
+# 中间步骤格式化
+
+def format_intermediate_steps(
+    intermediate_steps: List[Tuple[AgentAction, str]]
+) -> str:
+    """
+    格式化中间步骤为字符串
+    
+    格式:
+    Thought: <thought>
+    Action: <action>
+    Action Input: <input>
+    Observation: <observation>
+    Thought: <next_thought>
+    
+    示例:
+    Thought: I need to get the weather
+    Action: get_weather
+    Action Input: {"city": "北京"}
+    Observation: 晴天，25℃
+    Thought: I now have the weather information
+    """
+    log = ""
+    for action, observation in intermediate_steps:
+        log += f"\nThought: {action.log}"
+        log += f"\nAction: {action.tool}"
+        log += f"\nAction Input: {json.dumps(action.tool_input)}"
+        log += f"\nObservation: {observation}"
+        log += "\nThought:"
+    return log
+```
 
 ---
 
-## 二、Token 管理（成本控制的命脉）
+## 三、输出解析器源码
 
-### 2.1 Token 是什么？
-
-```
-Token = LLM 处理的基本单位
-
-近似换算:
-- 英文: 1 Token ≈ 0.75 单词
-- 中文: 1 Token ≈ 0.5-0.8 字
-- 代码: 1 Token ≈ 0.5 字符
-
-例子:
-"Hello World" = 2 tokens
-"你好世界" = 4-6 tokens
-```
-
-### 2.2 一个 ReAct 循环的 Token 消耗
-
-```
-┌────────────────────────────────────────────────────────────┐
-│              一次 ReAct 循环的 Token 消耗                    │
-├────────────────────────────────────────────────────────────┤
-│                                                            │
-│  输入 Token (Prompt):                                      │
-│  ├── 系统提示: ~500 tokens                                 │
-│  ├── 工具描述: ~500-2000 tokens（取决于工具数量）             │
-│  ├── 对话历史: ~1000-5000 tokens（随循环增加）               │
-│  ├── 用户问题: ~100-500 tokens                              │
-│  └── 总计: ~2100-8000 tokens                               │
-│                                                            │
-│  输出 Token (Response):                                    │
-│  ├── Thought: ~50-200 tokens                               │
-│  ├── Action: ~10-50 tokens                                 │
-│  ├── Action Input: ~50-500 tokens                          │
-│  └── 总计: ~110-750 tokens                                 │
-│                                                            │
-│  成本计算 (GPT-4o):                                        │
-│  ├── 输入: $2.50 / 1M tokens = $0.002-0.02                │
-│  ├── 输出: $10.00 / 1M tokens = $0.001-0.008              │
-│  └── 单次循环: ~$0.003-0.03                               │
-│                                                            │
-│  10 次循环: $0.03-0.30                                     │
-│  20 次循环: $0.06-0.60                                     │
-│                                                            │
-└────────────────────────────────────────────────────────────┘
-```
-
-### 2.3 Token 管理策略
+### 3.1 MRKL 输出解析器
 
 ```python
-class TokenManager:
-    """Token 管理器"""
+# langchain/agents/mrkl/output_parser.py
+# MRKL 输出解析器
+
+class MRKLOutputParser(BaseOutputParser[Union[AgentAction, AgentFinish]]):
+    """解析 MRKL 格式的 LLM 输出"""
     
-    def __init__(self, max_tokens=8000):
-        self.max_tokens = max_tokens
-        self.tokenizer = tiktoken.encoding_for_model("gpt-4")
-        
-    def count(self, text: str) -> int:
-        """计算 token 数"""
-        return len(self.tokenizer.encode(text))
-    
-    def should_compress(self, history: list) -> bool:
-        """判断是否需要压缩历史"""
-        history_text = str(history)
-        return self.count(history_text) > self.max_tokens * 0.7
-    
-    def compress_history(self, history: list, keep_recent: int = 5) -> str:
+    def parse(self, text: str) -> Union[AgentAction, AgentFinish]:
         """
-        压缩历史记录
+        解析 LLM 的输出
         
-        策略:
-        1. 保留最近 N 步的完整信息
-        2. 早期步骤做摘要
-        3. 去掉冗余信息
+        解析流程:
+        1. 检查是否包含 "Final Answer:"
+        2. 如果是，返回 AgentFinish
+        3. 否则，解析 Action 和 Action Input
+        4. 返回 AgentAction
         """
-        if len(history) <= keep_recent:
-            return str(history)
+        # 检查 Final Answer
+        if "Final Answer:" in text:
+            final_answer = text.split("Final Answer:")[-1].strip()
+            return AgentFinish(
+                return_values={"output": final_answer},
+                log=text
+            )
         
-        recent = history[-keep_recent:]  # 最近 N 步
-        early = history[:-keep_recent]   # 早期步骤
+        # 解析 Action
+        action_match = re.search(r"Action: (.+?)\nAction Input: (.+)", text)
+        if action_match:
+            action = action_match.group(1).strip()
+            action_input = action_match.group(2).strip()
+            return AgentAction(
+                log=text,
+                tool=action,
+                tool_input=action_input,
+                text=text
+            )
         
-        # 对早期步骤做摘要
-        summary_prompt = f"""
-        以下是 AI 助手之前完成的任务步骤:
-        {early}
-        
-        请用一句话总结这些步骤的结果:
-        """
-        summary = llm.chat(summary_prompt)
-        
-        return f"之前已完成: {summary}\n最近步骤: {recent}"
+        raise ValueError(f"Invalid format: {text}")
 ```
 
-**关键**: history 越长，token 越多，成本越高。必须压缩！
+### 3.2 Tool Calling 输出解析器
+
+```python
+# langchain/agents/tool_calling_parser.py
+# Tool Calling 输出解析器
+
+class ToolCallingOutputParser(BaseOutputParser):
+    """解析 Tool Calling 格式的 LLM 输出"""
+    
+    def parse(self, text: str) -> Union[AgentAction, AgentFinish]:
+        """
+        解析 Tool Calling 格式
+        
+        格式:
+        Thought: xxx
+        Action: tool_name
+        Action Input: {"param": "value"}
+        
+        或者:
+        Thought: xxx
+        Final Answer: xxx
+        """
+        # 检查 Final Answer
+        if "Final Answer:" in text:
+            return AgentFinish(
+                return_values={"output": text.split("Final Answer:")[-1].strip()},
+                log=text
+            )
+        
+        # 解析 Action 和 Action Input
+        action_match = re.search(r"Action:\s*(.+?)[\n\s]*Action Input:\s*(.+)", text, re.DOTALL)
+        if action_match:
+            tool_name = action_match.group(1).strip()
+            tool_input_str = action_match.group(2).strip()
+            
+            # 解析输入（可能是 JSON 或字符串）
+            try:
+                tool_input = json.loads(tool_input_str)
+            except json.JSONDecodeError:
+                tool_input = tool_input_str
+            
+            return AgentAction(
+                log=text,
+                tool=tool_name,
+                tool_input=tool_input,
+                text=text
+            )
+        
+        raise ValueError(f"Invalid format: {text}")
+```
 
 ---
 
-## 三、错误处理（让 Agent 更可靠）
+## 四、错误处理机制
 
-### 3.1 常见的 5 种错误
+### 4.1 常见的 5 种错误
 
 ```
 1. 工具不存在
@@ -242,7 +265,7 @@ class TokenManager:
    错误: 超过 max_steps
 ```
 
-### 3.2 错误处理源码
+### 4.2 错误处理源码
 
 ```python
 def execute_with_error_handling(action, tools, llm):
@@ -295,232 +318,125 @@ def execute_with_error_handling(action, tools, llm):
         }
 ```
 
-**关键**: 错误信息要**具体、有用**。LLM 需要知道"为什么错"才能修正。
-
 ---
 
-## 四、ReAct 的 Prompt 工程实战
+## 五、Token 消耗分析
 
-### 4.1 基础版 Prompt
+### 5.1 一个 ReAct 循环的 Token 消耗
+
+```
+┌────────────────────────────────────────────────────────────┐
+│              一次 ReAct 循环的 Token 消耗                    │
+├────────────────────────────────────────────────────────────┤
+│                                                            │
+│  输入 Token (Prompt):                                      │
+│  ├── 系统提示: ~500 tokens                                 │
+│  ├── 工具描述: ~500-2000 tokens（取决于工具数量）             │
+│  ├── 对话历史: ~1000-5000 tokens（随循环增加）               │
+│  ├── 用户问题: ~100-500 tokens                              │
+│  └── 总计: ~2100-8000 tokens                               │
+│                                                            │
+│  输出 Token (Response):                                    │
+│  ├── Thought: ~50-200 tokens                               │
+│  ├── Action: ~10-50 tokens                                 │
+│  ├── Action Input: ~50-500 tokens                          │
+│  └── 总计: ~110-750 tokens                                 │
+│                                                            │
+│  成本计算 (GPT-4o):                                        │
+│  ├── 输入: $2.50 / 1M tokens = $0.002-0.02                │
+│  ├── 输出: $10.00 / 1M tokens = $0.001-0.008              │
+│  └── 单次循环: ~$0.003-0.03                               │
+│                                                            │
+│  10 次循环: $0.03-0.30                                     │
+│  20 次循环: $0.06-0.60                                     │
+│                                                            │
+└────────────────────────────────────────────────────────────┘
+```
+
+### 5.2 Token 管理策略
 
 ```python
-# 最简单的 ReAct Prompt
-prompt = f"""
-你是一个智能助手。
-
-## 任务
-{question}
-
-## 工具
-{tools_description}
-
-## 历史
-{history}
-
-## 输出格式
-Thought: 你的思考
-Action: 工具名
-Action Input: 参数
-"""
+class TokenManager:
+    """Token 管理器"""
+    
+    def __init__(self, max_tokens=8000):
+        self.max_tokens = max_tokens
+        self.tokenizer = tiktoken.encoding_for_model("gpt-4")
+        
+    def count(self, text: str) -> int:
+        """计算 token 数"""
+        return len(self.tokenizer.encode(text))
+    
+    def should_compress(self, history: list) -> bool:
+        """判断是否需要压缩历史"""
+        history_text = str(history)
+        return self.count(history_text) > self.max_tokens * 0.7
+    
+    def compress_history(self, history: list, keep_recent: int = 5) -> str:
+        """
+        压缩历史记录
+        
+        策略:
+        1. 保留最近 N 步的完整信息
+        2. 早期步骤做摘要
+        3. 去掉冗余信息
+        """
+        if len(history) <= keep_recent:
+            return str(history)
+        
+        recent = history[-keep_recent:]  # 最近 N 步
+        early = history[:-keep_recent]   # 早期步骤
+        
+        # 对早期步骤做摘要
+        summary_prompt = f"""
+        以下是 AI 助手之前完成的任务步骤:
+        {early}
+        
+        请用一句话总结这些步骤的结果:
+        """
+        summary = llm.chat(summary_prompt)
+        
+        return f"之前已完成: {summary}\n最近步骤: {recent}"
 ```
-
-### 4.2 进阶版 Prompt（推荐）
-
-```python
-# 更好的 ReAct Prompt
-prompt = f"""
-你是一个有帮助且准确的AI助手。你的目标是解决用户的问题。
-
-## 核心规则
-1. 必须使用 Thought/Action/Action Input 格式
-2. 不确定时，使用工具获取信息，不要编造
-3. 工具执行失败时，尝试其他方式
-4. 最多执行10步
-5. 如果无法完成任务，明确说明
-
-## 可用工具
-{tools_description}
-
-## 示例格式
-Thought: 我需要查找XX信息，使用XX工具
-Action: tool_name
-Action Input: {{"param": "value"}}
-
-Observation: 工具返回结果
-
-Thought: 我获得了XX信息，现在可以回答了
-Final Answer: 我的答案
-
-## 当前任务
-用户问题: {question}
-
-## 已完成的步骤
-{history}
-
-## 请开始
-Thought:
-"""
-```
-
-### 4.3 Prompt 设计原则
-
-```
-✅ 好的 Prompt:
-- 有明确的任务描述
-- 有清晰的格式要求
-- 有工具说明
-- 有错误处理指引
-- 有 Few-Shot 示例
-
-❌ 差的 Prompt:
-- 模糊的任务描述
-- 没有格式要求
-- 工具描述不清
-- 没有错误处理
-- 没有示例
-```
-
----
-
-## 五、动手验证
-
-### 5.1 测试不同 Prompt 的效果
-
-```python
-# 测试 1: 简单 Prompt
-simple_prompt = f"""
-回答: {question}
-工具: {tools_description}
-历史: {history}
-"""
-
-# 测试 2: 详细 Prompt
-detailed_prompt = f"""
-你是一个智能助手。
-
-## 任务
-{question}
-
-## 规则
-1. 使用 Thought/Action/Action Input 格式
-2. 最多执行5步
-3. 工具不存在时不要使用
-
-## 工具
-{tools_description}
-
-## 历史
-{history}
-
-请开始:
-Thought:
-"""
-
-# 对比结果
-result1 = llm.chat(simple_prompt)
-result2 = llm.chat(detailed_prompt)
-
-print("简单 Prompt 结果:", result1)
-print("详细 Prompt 结果:", result2)
-```
-
-**观察**: 详细 Prompt 的准确率明显更高。
-
-### 5.2 Token 计数实验
-
-```python
-import tiktoken
-
-tokenizer = tiktoken.encoding_for_model("gpt-4")
-
-# 计算不同长度的 history 消耗多少 token
-test_cases = [
-    "空历史",
-    "1步历史",
-    "3步历史", 
-    "5步历史",
-    "10步历史"
-]
-
-for case in test_cases:
-    # 模拟不同长度的 history
-    history = f"[{'step' * 100}]" if "10" in case else f"[{'step' * (int(case[0]) * 100)}]"
-    prompt = f"""
-    任务: 测试
-    历史: {history}
-    """
-    tokens = len(tokenizer.encode(prompt))
-    cost = tokens * 0.000003  # GPT-4 输入价格
-    print(f"{case}: {tokens} tokens, ~${cost:.4f}")
-```
-
-**观察**: 随着 history 增长，token 消耗快速增长。5 步后成本明显上升。
 
 ---
 
 ## 六、自测
 
 ### 问题 1
-ReAct 的 Prompt 为什么要包含 Few-Shot 示例？
+MRKL 系统的 Prompt 模板中，每个变量是什么？
 <details>
 <summary>查看答案</summary>
 
-Few-Shot 示例让 LLM 知道:
-1. 应该用什么格式输出
-2. 思考应该怎么写
-3. 工具怎么调用
-
-没有示例的 LLM 经常格式混乱，输出不可解析。
+- {tools}: 工具描述（名称 + 描述）
+- {tool_names}: 工具名称列表
+- {input}: 用户问题
+- {chat_history}: 对话历史
+- {intermediate_steps}: 中间步骤（Action/Observation）
+- {agent_scratchpad}: LLM 之前的思考
 </details>
 
 ### 问题 2
-为什么 history 需要压缩？怎么做？
+输出解析器的解析流程是什么？
 <details>
 <summary>查看答案</summary>
 
-原因:
-- LLM 有 token 限制（GPT-4 约 128K）
-- history 越长，token 越多
-- 超过限制会导致错误
-
-压缩方法:
-- 保留最近 N 步的完整信息
-- 对早期步骤做摘要
-- 去掉冗余信息
+1. 检查是否包含 "Final Answer:"
+2. 如果是，返回 AgentFinish
+3. 否则，解析 Action 和 Action Input
+4. 返回 AgentAction
 </details>
 
 ### 问题 3
-工具描述为什么重要？给出一个好的工具描述模板。
+Token 压缩的策略是什么？
 <details>
 <summary>查看答案</summary>
 
-工具描述是 LLM 的"使用说明书"。描述不清 → LLM 不会用或乱用。
-
-好的工具描述模板:
-{
-    "name": "工具名",
-    "description": """
-    工具用途说明
-    
-    参数:
-    - 参数名: 类型，说明
-    
-    返回: 返回格式说明
-    
-    适用场景: 什么时候用
-    不适用: 什么时候不用
-    """,
-    "parameters": {...}
-}
+1. 保留最近 N 步的完整信息
+2. 早期步骤做摘要
+3. 去掉冗余信息
 </details>
 
 ---
 
-## 七、明日预告
-
-**Day 3**: RAG 系统原理 — 向量检索、文档切片、上下文组装
-
----
-
-*今天花 30 分钟读完 + 20 分钟调试 = 真正理解 ReAct*
-*答不全自测题？回去重读对应章节。*
+*今天花 60 分钟读完 + 30 分钟调试 = 真正理解 MRKL 系统*
