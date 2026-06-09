@@ -1,592 +1,674 @@
-# Agent 技术深度指南 — 源码级原理、架构设计与生产实践
+# LangChain AgentExecutor 源码深度剖析
 
-> 创建日期: 2026-06-08  
+> 创建日期: 2026-06-09
 > 作者: Ryan
 
 ---
 
-## 一、Agent 系统架构深度解析
+## 一、AgentExecutor 整体架构
 
-### 1.1 Agent 架构全景图
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Agent 系统架构                                │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│  ┌──────────────┐   ┌──────────────┐   ┌──────────────┐            │
-│  │   用户交互层   │   │   API 网关层  │   │  监控告警层   │            │
-│  │ (Web/Mobile) │   │ (REST/gRPC)  │   │ (Prometheus) │            │
-│  └──────┬───────┘   └──────┬───────┘   └──────────────┘            │
-│         │                  │                                        │
-│         ▼                  ▼                                        │
-│  ┌─────────────────────────────────────────────────────────┐       │
-│  │                  Agent 编排层 (Orchestration)             │       │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐   │       │
-│  │  │ Manager  │ │Planner   │ │Executor  │ │Reviewer │   │       │
-│  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘   │       │
-│  └───────────────────────┬─────────────────────────────────┘       │
-│                          │                                          │
-│  ┌───────────────────────▼─────────────────────────────────┐       │
-│  │                  Agent 执行层 (Execution)                 │       │
-│  │  ┌────────────┐ ┌────────────┐ ┌────────────┐          │       │
-│  │  │   LLM 引擎  │ │  工具调用   │ │  记忆管理   │          │       │
-│  │  └────────────┘ └────────────┘ └────────────┘          │       │
-│  └───────────────────────┬─────────────────────────────────┘       │
-│                          │                                          │
-│  ┌───────────────────────▼─────────────────────────────────┐       │
-│  │                  基础设施层 (Infrastructure)              │       │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐   │       │
-│  │  │向量数据库 │ │ 缓存层   │ │消息队列  │ │ 对象存储  │   │       │
-│  │  │(Redis/PG)│ │(Redis)   │ │(Kafka)   │ │(S3/OSS)  │   │       │
-│  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘   │       │
-│  └─────────────────────────────────────────────────────────┘       │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-### 1.2 Agent 核心组件深度分析
-
-#### 组件 1: LLM 引擎
+### 1.1 类继承关系
 
 ```
-LLM 引擎职责:
-├─ 推理 (Reasoning): 分析任务、生成思考
-├─ 决策 (Decision): 选择下一步行动
-├─ 生成 (Generation): 创建最终答案
-└─ 评估 (Evaluation): 判断是否完成
-
-LLM 调用优化策略:
-├─ Prompt 压缩: 减少 token 使用
-├─ 缓存命中: 相似问题直接返回
-├─ 模型路由: 简单问题用小模型
-└─ 并行调用: 多 LLM 同时推理
+BaseSingleActionAgent
+       │
+       ▼
+AgentExecutor (langchain/agents/load.py)
+       │
+       ├── input_variables: list[str]  # 输入变量名
+       ├── output_parser: BaseOutputParser  # 输出解析器
+       ├── llm_math_chain: Optional[LLMChain]  # 数学计算链
+       ├── max_iterations: Optional[float]  # 最大迭代次数
+       ├── max_execution_time: Optional[float]  # 最大执行时间
+       ├── early_stopping_method: str  # 早停策略
+       ├── agent: BaseSingleActionAgent  # 智能体
+       ├── tools: Sequence[BaseTool]  # 工具列表
+       └── verbose: bool  # 是否输出详细信息
 ```
 
-#### 组件 2: 记忆系统
+### 1.2 核心数据结构
 
-```
-三级记忆架构:
-┌─────────────────────────────────────────────────────┐
-│                 记忆系统架构                          │
-├─────────────┬─────────────┬─────────────┐           │
-│ 短期记忆     │ 长期记忆     │ 工作记忆     │           │
-│ (Short-term)│ (Long-term) │ (Working)   │           │
-├─────────────┼─────────────┼─────────────┤           │
-│ 容量: 50轮  │ 容量: 无限   │ 容量: 当前   │           │
-│ 延迟: <1ms  │ 延迟: 10-100ms│ 延迟: <1ms  │           │
-│ 存储: 内存  │ 存储: 向量DB │ 存储: 内存   │           │
-│ 更新: 实时  │ 更新: 异步   │ 更新: 实时   │           │
-└─────────────┴─────────────┴─────────────┘
-```
+```python
+# LangChain 中的核心数据结构
 
-#### 组件 3: 工具调用
+# AgentAction: 表示 Agent 决定执行的动作
+@dataclass
+class AgentAction:
+    log: str  # 推理日志
+    tool: str  # 工具名称
+    tool_input: Union[str, Dict]  # 工具输入
+    text: str  # 人类可读的描述
+    message_log: Optional[List[BaseMessage]] = None  # 消息历史
+    thoughts: "AgentTelemetryDict" = field(default_factory=dict)  # 推理细节
 
-```
-工具调用流程:
-用户请求 → Agent 规划 → 选择工具 → 执行工具 → 获取结果 → 更新上下文 → 循环...
+# AgentFinish: 表示 Agent 决定结束并返回结果
+@dataclass
+class AgentFinish:
+    return_values: Dict  # 返回值
+    log: str  # 推理日志
 
-工具调用优化:
-├─ 批量调用: 多个独立工具并行执行
-├─ 结果缓存: 相同参数直接返回
-├─ 超时控制: 单个工具执行限时
-└─ 错误恢复: 工具失败时降级处理
+# AgentStep: 表示一次动作+观察
+@dataclass
+class AgentStep:
+    action: AgentAction  # 执行的动作
+    observation: Any  # 观察结果
 ```
 
 ---
 
-## 二、ReAct 模式深度解析
+## 二、核心执行逻辑 — _call 方法源码分析
 
-### 2.1 ReAct 模式原理
-
-```
-ReAct = Reason (推理) + Act (行动)
-
-核心思想: 通过"思考-行动-观察"的循环，让 Agent 能够:
-1. 利用外部信息纠正错误推理
-2. 实时反馈优化决策
-3. 处理复杂多步骤任务
-
-执行流程图:
-┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐
-│  思考    │───▶│  行动   │───▶│  观察   │───▶│  思考   │
-│(Thought)│    │(Action)│    │(Observe)│    │(Thought)│
-└─────────┘    └─────────┘    └─────────┘    └─────────┘
-      ▲                                 │
-      │                                 ▼
-      │                          ┌─────────┐
-      └─────────────────────────│  循环判断 │
-                                └─────────┘
-```
-
-### 2.2 ReAct 完整实现
+### 2.1 完整源码（langchain/agents/load.py）
 
 ```python
-class ReActAgent:
+def _call(self, inputs: dict) -> dict:
     """
-    ReAct Agent 实现
+    AgentExecutor 的核心执行方法
     
-    核心组件:
-    1. StateTracker: 状态追踪器
-    2. PromptBuilder: Prompt 构建器
-    3. ActionExecutor: 动作执行器
-    4. TokenManager: Token 管理器
+    执行流程:
+    1. 准备输入
+    2. 进入主循环
+    3. 调用 agent.plan() 获取下一步动作
+    4. 执行动作并获取观察结果
+    5. 更新交互历史
+    6. 检查终止条件
+    7. 返回结果
     """
+    # Step 1: 准备输入
+    new_inputs = self.agent_format_instructions(inputs)
     
-    def __init__(self, llm, tools, max_iterations=10):
-        self.llm = llm
-        self.tools = tools
-        self.max_iterations = max_iterations
-        self.state_tracker = ReActStateTracker()
-        self.prompt_builder = ReActPromptBuilder()
-        self.token_manager = TokenManager()
-        
-    def run(self, task: str) -> str:
-        """
-        执行 ReAct 循环
-        
-        源码执行流程:
-        1. 初始化状态
-        2. 进入循环
-        3. 构建 Prompt
-        4. LLM 推理
-        5. 解析 Action
-        6. 执行工具
-        7. 更新状态
-        8. 检查终止条件
-        """
-        self.state_tracker.initialize(task)
-        
-        for i in range(self.max_iterations):
-            # 1. 构建 Prompt
-            prompt = self.prompt_builder.build(
-                task=task,
-                history=self.state_tracker.get_history()
-            )
-            
-            # 2. Token 检查
-            if self.token_manager.exceeds_limit(prompt):
-                return self._handle_token_overflow()
-            
-            # 3. LLM 推理
-            llm_response = self.llm.generate(prompt)
-            
-            # 4. 解析 Action
-            action = self._parse_action(llm_response)
-            
-            # 5. 检查是否完成
-            if action.is_finish():
-                return action.final_answer
-            
-            # 6. 执行工具
-            observation = self._execute_action(action)
-            
-            # 7. 更新状态
-            self.state_tracker.record_action(action, observation)
-            
-        return self._handle_max_iterations()
-```
-
-### 2.3 ReAct 状态机源码
-
-```python
-class ReActStateTracker:
-    """
-    ReAct 状态追踪器
+    # Step 2: 初始化
+    stop = False
+    intermediary_steps = []  # 记录 (AgentAction, observation) 对
+    final_answer = None
+    total_tokens = 0
+    start_time = time.time()
     
-    状态转换图:
-    INITIALIZING → PLANNING → ACTING → OBSERVING → PLANNING → ... → FINISHING
-    """
-    
-    def __init__(self):
-        self.current_state = "INITIALIZING"
-        self.action_history = []
-        self.observation_history = []
-        self.token_usage = 0
+    while not stop:
+        # Step 3: 检查最大执行时间
+        if self.max_execution_time:
+            elapsed = time.time() - start_time
+            if elapsed > self.max_execution_time:
+                stop = True
+                break
         
-    def record_action(self, action, observation):
-        """记录动作和观察"""
-        self.action_history.append({
-            "step": len(self.action_history),
-            "thought": action.thought,
-            "action": action.name,
-            "input": action.input
-        })
-        self.observation_history.append({
-            "step": len(self.observation_history),
-            "observation": observation
-        })
-        
-    def get_history(self):
-        """获取完整历史"""
-        return {
-            "actions": self.action_history,
-            "observations": self.observation_history,
-            "token_usage": self.token_usage
-        }
-```
-
----
-
-## 三、RAG 系统架构深度解析
-
-### 3.1 RAG 系统全景架构
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        RAG 系统架构                                  │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│  ┌────────────┐    ┌────────────┐    ┌────────────┐               │
-│  │  查询理解   │───▶│ 向量检索   │───▶│ 结果重排   │               │
-│  │ (Query     │    │ (Vector   │    │ (Reranker) │               │
-│  │  Expansion)│    │  Search)  │    │            │               │
-│  └────────────┘    └────────────┘    └────────────┘               │
-│                            │                   │                   │
-│                            ▼                   ▼                   │
-│                     ┌────────────┐    ┌────────────┐               │
-│                     │  文档切片   │    │  上下文压缩 │               │
-│                     │ (Chunking) │    │(Context    │               │
-│                     │            │    │ Compression)│               │
-│                     └────────────┘    └────────────┘               │
-│                            │                   │                   │
-│                            ▼                   ▼                   │
-│                     ┌────────────────────────────────────┐         │
-│                     │         LLM 生成器                  │         │
-│                     │   (Answer Generation)              │         │
-│                     └────────────────────────────────────┘         │
-│                            │                                       │
-│                            ▼                                       │
-│                     ┌────────────┐                                 │
-│                     │  答案输出   │                                 │
-│                     └────────────┘                                 │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-### 3.2 RAG 各组件深度实现
-
-#### 组件 1: 查询理解
-
-```python
-class QueryUnderstandingModule:
-    """
-    查询理解模块
-    
-    功能:
-    1. 查询扩展: 生成相关查询
-    2. 查询改写: 优化查询表述
-    3. 意图识别: 识别用户意图
-    """
-    
-    def expand_query(self, query: str) -> List[str]:
-        """
-        查询扩展
-        
-        扩展策略:
-        ├── 同义词扩展: 使用 WordNet/同义词词典
-        ├── 相关问题生成: 使用 LLM 生成
-        └── 关键词提取: 使用 TF-IDF/TextRank
-        """
-        expanded = []
-        
-        # 1. 同义词扩展
-        synonyms = self._get_synonyms(query)
-        expanded.extend(synonyms)
-        
-        # 2. 相关问题生成
-        related = self._generate_related_queries(query)
-        expanded.extend(related)
-        
-        # 3. 关键词提取
-        keywords = self._extract_keywords(query)
-        expanded.extend(keywords)
-        
-        return list(set(expanded))  # 去重
-```
-
-#### 组件 2: 向量检索
-
-```python
-class VectorSearchEngine:
-    """
-    向量检索引擎
-    
-    支持的后端:
-    ├── FAISS: 内存向量数据库
-    ├── Redis: 内存向量数据库
-    ├── pgvector: PostgreSQL 向量插件
-    └── Milvus: 分布式向量数据库
-    """
-    
-    def search(self, query_embedding: np.ndarray, k: int = 10) -> List[Document]:
-        """
-        向量相似度搜索
-        
-        搜索策略:
-        ├── 近似最近邻 (ANN): HNSW/IVF
-        ├── 精确最近邻 (Exact): 小数据集
-        └── 混合搜索: 向量+关键词
-        """
-        # 1. 选择搜索算法
-        if self.use_hnsw:
-            return self._hnsw_search(query_embedding, k)
-        elif self.use_ivf:
-            return self._ivf_search(query_embedding, k)
-        else:
-            return self._exact_search(query_embedding, k)
-    
-    def _hnsw_search(self, query_embedding: np.ndarray, k: int) -> List[Document]:
-        """
-        HNSW 搜索算法
-        
-        HNSW 参数:
-        ├── M: 每层节点连接数 (默认 16)
-        ├── ef_construction: 构建时搜索广度 (默认 200)
-        └── ef_search: 搜索时搜索广度 (默认 100)
-        """
-        # 1. 从顶层开始搜索
-        current_level = self.hnsw.index.maxlevel
-        entry_point = self.hnsw.index.get_entry_point()
-        
-        # 2. 逐层向下搜索
-        while current_level > 0:
-            neighbors = self._search_layer(
-                self.hnsw.index.get_layer(current_level),
-                entry_point,
-                query_embedding,
-                ef=current_level * 2
-            )
-            entry_point = min(neighbors, key=lambda x: x.distance)
-            current_level -= 1
-        
-        # 3. 在底层搜索最终结果
-        final_results = self._search_layer(
-            self.hnsw.index.get_layer(0),
-            entry_point,
-            query_embedding,
-            ef=k * 2
+        # Step 4: 构建完整的输入（包含历史）
+        full_inputs = self._build_full_inputs(
+            new_inputs, 
+            intermediary_steps
         )
         
-        return final_results[:k]
+        # Step 5: 调用 Agent 规划下一步
+        agent_output = self.agent.plan(
+            full_inputs,
+            intermediary_steps=intermediary_steps
+        )
+        
+        # Step 6: 统计 token 使用
+        if hasattr(agent_output, "llm_output") and agent_output.llm_output:
+            total_tokens += agent_output.llm_output.get("completion_tokens", 0)
+        
+        # Step 7: 处理 Agent 输出
+        if isinstance(agent_output, AgentFinish):
+            # Agent 决定返回最终结果
+            final_answer = agent_output.return_values
+            stop = True
+            break
+        elif isinstance(agent_output, AgentAction):
+            # Agent 决定执行一个工具
+            # 执行工具
+            observation = self._execute_action(agent_output)
+            
+            # 记录交互历史
+            intermediary_steps.append((agent_output, observation))
+            
+            # 检查是否达到最大迭代次数
+            if self.max_iterations and len(intermediary_steps) >= self.max_iterations:
+                stop = True
+                break
+        else:
+            raise ValueError(f"Unexpected output type: {type(agent_output)}")
+    
+    # Step 8: 返回最终结果
+    return self._format_output(final_answer, total_tokens)
 ```
 
-#### 组件 3: 重排序
+### 2.2 关键点解析
+
+#### 点 1: `intermediary_steps` 的作用
+
+```
+intermediary_steps 是 AgentExecutor 的核心状态变量
+
+数据结构: List[Tuple[AgentAction, Any]]
+示例: [
+    (AgentAction(tool="search", input="北京天气"), "晴天，25℃"),
+    (AgentAction(tool="search", input="北京湿度"), "60%"),
+]
+
+作用:
+1. 传递给 agent.plan() 作为上下文
+2. 让 LLM 知道之前做了什么
+3. 避免重复执行
+4. 控制最大迭代次数
+
+关键: 随着循环进行，这个列表会越来越长
+      最终可能超出 LLM 的 token 限制！
+```
+
+#### 点 2: `agent.plan()` 的调用
 
 ```python
-class CrossEncoderReranker:
+# agent.plan() 的签名
+def plan(
+    self,
+    inputs: dict,  # 包括 question, history, tools 等
+    intermediary_steps: List[Tuple[AgentAction, Any]] = ...,
+    callbacks: Callbacks = None,
+) -> Union[AgentAction, AgentFinish]:
     """
-    交叉编码器重排序器
+    Agent 的核心规划方法
     
-    原理:
-    ├── 输入: (query, document) 对
-    ├── 处理: 联合编码 + 交互层
-    └── 输出: 相关性分数
+    输入:
+    - inputs: 用户输入 + 系统提示 + 工具描述
+    - intermediary_steps: 之前的交互历史
     
-    优势:
-    ├── 精度高: 考虑 query-doc 交互
-    └── 速度慢: O(n²) 复杂度
+    输出:
+    - AgentAction: 决定执行一个工具
+    - AgentFinish: 决定返回最终答案
+    
+    内部流程:
+    1. 构建 Prompt
+    2. 调用 LLM
+    3. 解析 LLM 输出
+    4. 返回 AgentAction 或 AgentFinish
     """
+```
+
+#### 点 3: 早停策略 `early_stopping_method`
+
+```python
+# 两种早停策略
+
+# 策略 1: "force_return"
+# 达到 max_iterations 时强制返回最终答案
+# 适用: 时间敏感的场景
+
+# 策略 2: "generate"
+# 达到 max_iterations 时，让 LLM 基于已有信息生成答案
+# 适用: 质量优先的场景
+
+# 源码实现
+if self.early_stopping_method == "force_return":
+    if len(intermediary_steps) >= self.max_iterations:
+        # 强制返回最后一次观察
+        last_observation = intermediary_steps[-1][1]
+        return AgentFinish(
+            return_values={"output": str(last_observation)},
+            log="Force returned due to max iterations"
+        )
+elif self.early_stopping_method == "generate":
+    if len(intermediary_steps) >= self.max_iterations:
+        # 让 LLM 生成最终答案
+        prompt = self._build_final_answer_prompt(intermediary_steps)
+        final_answer = self.agent.llm.chat(prompt)
+        return AgentFinish(
+            return_values={"output": final_answer},
+            log="Generated due to max iterations"
+        )
+```
+
+---
+
+## 三、MRKL 系统 — ReAct 的源码实现
+
+### 3.1 MRKL 架构
+
+```
+MRKL = Modular Reasoning, Knowledge, and Language
+
+架构组成:
+┌─────────────────────────────────────────────────────┐
+│                   MRKL System                        │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│  ┌─────────────┐                                    │
+│  │  LLM (P())   │ ← 推理引擎                         │
+│  └──────┬──────┘                                    │
+│         │                                           │
+│  ┌──────▼──────┐                                    │
+│  │  F() 函数库  │ ← 预定义工具集合                    │
+│  └─────────────┘                                    │
+│                                                     │
+│  工作流程:                                           │
+│  1. P() 决定调用哪个 F()                             │
+│  2. F() 执行并返回结果                               │
+│  3. 结果反馈给 P()                                  │
+│  4. 重复直到完成任务                                 │
+│                                                     │
+└─────────────────────────────────────────────────────┘
+```
+
+### 3.2 源码级实现
+
+```python
+# langchain/agents/mrkl/prompt.py
+# MRKL Prompt 模板
+
+TEMPLATE = """Answer the following questions as best you can. 
+You have access to the following tools:
+
+{tools}
+
+Use the following format:
+
+Question: the input question you must answer
+Thought: you should always think about what to do
+Action: the action to take, should be one of [{tool_names}]
+Action Input: the input to the action
+Observation: the result of the action
+... (this Thought/Action/Action Input/Observation can repeat N times)
+Thought: I now know the final answer
+Final Answer: the final answer to the original input question
+
+Begin!
+
+Question: {input}
+{chat_history}
+{intermediate_steps}
+Thought:{agent_scratchpad}
+"""
+
+# langchain/agents/mrkl/output_parser.py
+# MRKL 输出解析器
+
+class MRKLOutputParser(BaseOutputParser[Union[AgentAction, AgentFinish]]):
+    """解析 MRKL 格式的 LLM 输出"""
     
-    def rerank(self, query: str, documents: List[Document], top_k: int = 5) -> List[Document]:
+    def parse(self, text: str) -> Union[AgentAction, AgentFinish]:
         """
-        重排序实现
+        解析 LLM 的输出
+        
+        解析流程:
+        1. 检查是否包含 "Final Answer:"
+        2. 如果是，返回 AgentFinish
+        3. 否则，解析 Action 和 Action Input
+        4. 返回 AgentAction
+        """
+        # 检查 Final Answer
+        if "Final Answer:" in text:
+            final_answer = text.split("Final Answer:")[-1].strip()
+            return AgentFinish(
+                return_values={"output": final_answer},
+                log=text
+            )
+        
+        # 解析 Action
+        action_match = re.search(r"Action: (.+?)\nAction Input: (.+)", text)
+        if action_match:
+            action = action_match.group(1).strip()
+            action_input = action_match.group(2).strip()
+            return AgentAction(
+                log=text,
+                tool=action,
+                tool_input=action_input,
+                text=text
+            )
+        
+        raise ValueError(f"Invalid format: {text}")
+```
+
+### 3.3 Token 消耗分析
+
+```python
+# 一个完整的 MRKL 循环的 Token 消耗
+
+# 1. Prompt 模板
+template_tokens = 500  # 系统提示
+
+# 2. 工具描述
+tools_description = """get_weather: Get weather information
+search: Search the internet
+calculate: Perform calculations"""
+tool_tokens = len(tokenizer.encode(tools_description))  # ~200 tokens
+
+# 3. 对话历史
+chat_history = """User: 北京天气怎么样？
+Assistant: ..."""
+history_tokens = len(tokenizer.encode(chat_history))  # ~100 tokens
+
+# 4. 中间步骤
+intermediate_steps = """Action: get_weather
+Action Input: {"city": "北京"}
+Observation: 晴天，25℃"""
+step_tokens = len(tokenizer.encode(intermediate_steps))  # ~100 tokens
+
+# 5. 用户问题
+question = "北京天气怎么样？"
+question_tokens = len(tokenizer.encode(question))  # ~20 tokens
+
+# 6. Agent Scratchpad（LLM 之前的思考）
+agent_scratchpad = "Thought: I need to get the weather"
+scratchpad_tokens = len(tokenizer.encode(agent_scratchpad))  # ~50 tokens
+
+# 总计
+total_input_tokens = (template_tokens + tool_tokens + history_tokens + 
+                     step_tokens + question_tokens + scratchpad_tokens)
+# ≈ 970 tokens
+
+# 输出 Token
+output_tokens = 100  # Thought + Action + Action Input
+
+# 成本计算（GPT-3.5 Turbo）
+input_cost = total_input_tokens * 0.0015 / 1000  # $0.0015/1K tokens
+output_cost = output_tokens * 0.002 / 1000  # $0.002/1K tokens
+total_cost = input_cost + output_cost  # ≈ $0.0017
+
+# 10 次循环的成本
+total_10_steps = total_cost * 10  # ≈ $0.017
+```
+
+---
+
+## 四、工具调用机制 — 源码级分析
+
+### 4.1 工具执行流程
+
+```python
+# langchain/agents/tooling/base.py
+# 工具执行的核心逻辑
+
+class BaseTool(BaseModel):
+    """工具基类"""
+    name: str  # 工具名称
+    description: str  # 工具描述
+    args_schema: Optional[Type[BaseModel]] = None  # 参数 schema
+    return_direct: bool = False  # 是否直接返回结果
+    
+    def _run(self, *args, **kwargs) -> str:
+        """工具的实际执行逻辑"""
+        raise NotImplementedError
+    
+    async def _arun(self, *args, **kwargs) -> str:
+        """异步执行"""
+        raise NotImplementedError
+    
+    def run(self, *args, callbacks: Callbacks = None, **kwargs) -> str:
+        """
+        同步执行入口
         
         流程:
-        1. 构建 (query, doc) 对
-        2. 联合编码
-        3. 计算相关性分数
-        4. 排序并返回 top_k
+        1. 参数验证
+        2. 调用 _run()
+        3. 错误处理
+        4. 返回结果
         """
-        # 1. 构建输入对
-        pairs = [(query, doc.content) for doc in documents]
-        
-        # 2. 联合编码
-        scores = self.model.predict(pairs)
-        
-        # 3. 关联分数和文档
-        scored_docs = list(zip(scores, documents))
-        
-        # 4. 排序
-        scored_docs.sort(key=lambda x: x[0], reverse=True)
-        
-        # 5. 返回 top_k
-        return [doc for score, doc in scored_docs[:top_k]]
+        try:
+            # 参数验证
+            if self.args_schema:
+                validated_args = self.args_schema(**kwargs)
+                kwargs = validated_args.dict()
+            
+            # 执行工具
+            result = self._run(*args, **kwargs)
+            
+            return result
+        except Exception as e:
+            # 错误处理
+            return f"Error: {str(e)}"
 ```
 
----
-
-## 四、多 Agent 编排架构
-
-### 4.1 多 Agent 协作模式
-
-```
-多 Agent 协作模式对比:
-┌──────────────┬──────────────┬──────────────┬──────────────┐
-│   模式       │   适用场景   │   优点       │   缺点       │
-├──────────────┼──────────────┼──────────────┼──────────────┤
-│ 链式协作     │ 线性流程     │ 简单可靠     │ 灵活性差     │
-│ 树状协作     │ 并行探索     │ 效率高       │ 结果整合复杂 │
-│ 图状协作     │ 复杂任务     │ 灵活性强     │ 实现复杂     │
-│ 竞争协作     │ 答案验证     │ 质量高       │ 资源消耗大   │
-└──────────────┴──────────────┴──────────────┴──────────────┘
-```
-
-### 4.2 多 Agent 系统实现
+### 4.2 工具调用解析
 
 ```python
-class MultiAgentSystem:
-    """
-    多 Agent 协作系统
+# langchain/agents/tool_calling_parser.py
+# Tool Calling 输出解析器
+
+class ToolCallingOutputParser(BaseOutputParser):
+    """解析 Tool Calling 格式的 LLM 输出"""
     
-    架构:
-    ├── Agent 定义: 角色、能力、通信接口
-    ├── 通信机制: 消息队列、RPC、事件总线
-    ├── 编排引擎: 任务分解、分配、协调
-    └── 监控层: 性能监控、错误处理、日志
-    """
-    
-    def __init__(self):
-        self.agents = {}
-        self.comm_bus = AgentCommunicationBus()
-        self.orchestrator = TaskOrchestrator()
-        
-    def add_agent(self, agent: BaseAgent):
-        """注册 Agent"""
-        self.agents[agent.id] = agent
-        self.comm_bus.register_agent(agent.id)
-        
-    async def execute_task(self, task: str) -> str:
+    def parse(self, text: str) -> Union[AgentAction, AgentFinish]:
         """
-        执行复杂任务
+        解析 Tool Calling 格式
         
-        执行流程:
-        1. 任务分解
-        2. Agent 分配
-        3. 并行执行
-        4. 结果整合
-        5. 质量审查
+        格式:
+        Thought: xxx
+        Action: tool_name
+        Action Input: {"param": "value"}
+        
+        或者:
+        Thought: xxx
+        Final Answer: xxx
         """
-        # 1. 任务分解
-        subtasks = await self.orchestrator.decompose(task)
+        # 检查 Final Answer
+        if "Final Answer:" in text:
+            return AgentFinish(
+                return_values={"output": text.split("Final Answer:")[-1].strip()},
+                log=text
+            )
         
-        # 2. Agent 分配
-        assignments = await self.orchestrator.assign_agents(subtasks)
+        # 解析 Action 和 Action Input
+        action_match = re.search(r"Action:\s*(.+?)[\n\s]*Action Input:\s*(.+)", text, re.DOTALL)
+        if action_match:
+            tool_name = action_match.group(1).strip()
+            tool_input_str = action_match.group(2).strip()
+            
+            # 解析输入（可能是 JSON 或字符串）
+            try:
+                tool_input = json.loads(tool_input_str)
+            except json.JSONDecodeError:
+                tool_input = tool_input_str
+            
+            return AgentAction(
+                log=text,
+                tool=tool_name,
+                tool_input=tool_input,
+                text=text
+            )
         
-        # 3. 并行执行
-        results = await asyncio.gather(*[
-            self.execute_subtask(assignments[i], subtasks[i])
-            for i in range(len(subtasks))
-        ])
-        
-        # 4. 结果整合
-        integrated = await self.orchestrator.integrate_results(results)
-        
-        # 5. 质量审查
-        final_result = await self.orchestrator.review(integrated)
-        
-        return final_result
+        raise ValueError(f"Invalid format: {text}")
 ```
 
-### 4.3 Agent 通信机制
+### 4.3 工具路由
 
-```
-Agent 通信方式对比:
-┌──────────────┬──────────────┬──────────────┬──────────────┐
-│   方式       │   延迟       │   吞吐量     │   适用场景   │
-├──────────────┼──────────────┼──────────────┼──────────────┤
-│ RPC          │ 低 (ms)      │ 中           │ 同步调用     │
-│ 消息队列     │ 中 (100ms)   │ 高           │ 异步解耦     │
-│ 事件总线     │ 低 (ms)      │ 高           │ 事件驱动     │
-│ 共享内存     │ 最低 (μs)    │ 最高         │ 单机多进程   │
-└──────────────┴──────────────┴──────────────┴──────────────┘
+```python
+# langchain/agents/tooling/routing.py
+# 工具路由逻辑
+
+class ToolRouter:
+    """
+    工具路由器
+    
+    功能:
+    1. 根据工具名查找工具
+    2. 验证参数
+    3. 执行工具
+    4. 返回结果
+    """
+    
+    def __init__(self, tools: Dict[str, BaseTool]):
+        self.tools = tools
+    
+    def route(self, tool_name: str, tool_input: Any) -> str:
+        """
+        路由到指定工具
+        
+        流程:
+        1. 检查工具是否存在
+        2. 验证参数
+        3. 执行工具
+        4. 返回结果或错误
+        """
+        # 检查工具是否存在
+        if tool_name not in self.tools:
+            available_tools = ", ".join(self.tools.keys())
+            return f"Error: Tool '{tool_name}' not found. Available tools: {available_tools}"
+        
+        # 获取工具
+        tool = self.tools[tool_name]
+        
+        # 执行工具
+        try:
+            if isinstance(tool_input, dict):
+                result = tool.run(**tool_input)
+            else:
+                result = tool.run(tool_input)
+            return result
+        except Exception as e:
+            return f"Error executing tool '{tool_name}': {str(e)}"
 ```
 
 ---
 
-## 五、生产级 Agent 系统设计
+## 五、记忆系统 — 源码级实现
 
-### 5.1 系统架构
-
-```
-生产级 Agent 系统架构:
-┌─────────────────────────────────────────────────────────────────────┐
-│                        生产级 Agent 系统                            │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│  ┌────────────┐  ┌────────────┐  ┌────────────┐                  │
-│  │  Web 前端   │  │  API 网关  │  │  监控平台  │                  │
-│  └──────┬─────┘  └──────┬─────┘  └──────┬─────┘                  │
-│         │               │               │                          │
-│         ▼               ▼               ▼                          │
-│  ┌─────────────────────────────────────────────────────────┐       │
-│  │                  Agent 服务层                             │       │
-│  │  ┌────────────┐ ┌────────────┐ ┌────────────┐          │       │
-│  │  │  认证授权   │ │  速率限制  │ │  负载均衡  │          │       │
-│  │  └────────────┘ └────────────┘ └────────────┘          │       │
-│  └───────────────────────┬─────────────────────────────────┘       │
-│                          │                                          │
-│  ┌───────────────────────▼─────────────────────────────────┐       │
-│  │                  Agent 执行层                             │       │
-│  │  ┌────────────┐ ┌────────────┐ ┌────────────┐          │       │
-│  │  │  Agent 1   │ │  Agent 2   │ │  Agent N   │          │       │
-│  │  └────────────┘ └────────────┘ └────────────┘          │       │
-│  └───────────────────────┬─────────────────────────────────┘       │
-│                          │                                          │
-│  ┌───────────────────────▼─────────────────────────────────┐       │
-│  │                  基础设施层                               │       │
-│  │  ┌────────────┐ ┌────────────┐ ┌────────────┐          │       │
-│  │  │  向量数据库 │ │  缓存层   │ │  消息队列  │          │       │
-│  │  └────────────┘ └────────────┘ └────────────┘          │       │
-│  └─────────────────────────────────────────────────────────┘       │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-### 5.2 安全性设计
+### 5.1 记忆类型
 
 ```
-安全设计要点:
-├─ 输入验证
-│  ├── 长度限制
-│  ├── 敏感词过滤
-│  └─ 格式验证
-├─ 权限控制
-│  ├── 用户认证
-│  ├── 角色授权
-│  └─ 资源隔离
-├─ 输出审核
-│  ├── 内容安全
-│  ├── 数据脱敏
-│  └─ 合规检查
-└─ 审计日志
-   ├── 操作记录
-   ├── 错误追踪
-   └─ 性能监控
+LangChain 支持的记忆类型:
+
+1. ConversationBufferMemory
+   - 存储完整的对话历史
+   - 优点: 信息完整
+   - 缺点: token 消耗大
+
+2. ConversationBufferWindowMemory
+   - 只保留最近 N 轮对话
+   - 优点: 控制 token 使用
+   - 缺点: 丢失早期信息
+
+3. ConversationTokenBufferMemory
+   - 按 token 数量限制
+   - 优点: 精确控制成本
+   - 缺点: 可能切断对话
+
+4. ConversationalSummaryMemory
+   - 存储对话摘要
+   - 优点: 节省 token
+   - 缺点: 信息丢失
+
+5. EntityMemory
+   - 存储实体信息
+   - 优点: 长期记忆
+   - 缺点: 实现复杂
 ```
 
-### 5.3 性能优化
+### 5.2 源码实现
 
-```
-性能优化策略:
-├─ 缓存策略
-│  ├── LLM 响应缓存
-│  ├── 向量检索缓存
-│  └─ 工具调用缓存
-├─ 批量处理
-│  ├── 批量嵌入
-│  ├── 批量检索
-│  └─ 批量生成
-├─ 连接池
-│  ├── LLM 连接池
-│  ├── 数据库连接池
-│  └─ 缓存连接池
-└─ 异步处理
-   ├── 异步 LLM 调用
-   ├── 异步向量检索
-   └─ 异步工具调用
+```python
+# langchain/memory/buffer.py
+# 对话缓冲记忆
+
+class ConversationBufferMemory(BaseMemory):
+    """
+    完整的对话缓冲记忆
+    
+    存储格式:
+    human: 用户的问题
+    ai: Agent 的回答
+    
+    示例:
+    human: 北京天气怎么样？
+    ai: 北京晴天，25度
+    human: 那上海呢？
+    ai: 上海多云，22度
+    """
+    
+    chat_history: List[BaseMessage] = field(default_factory=list)
+    
+    @property
+    def memory_variables(self) -> List[str]:
+        return ["chat_history"]
+    
+    def load_memory_variables(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        """加载记忆"""
+        return {"chat_history": self.chat_history}
+    
+    def save_context(self, inputs: Dict[str, Any], outputs: Dict[str, str]) -> None:
+        """保存上下文"""
+        # 保存用户输入
+        if "input" in inputs:
+            self.chat_history.append(HumanMessage(content=inputs["input"]))
+        
+        # 保存 Agent 输出
+        if "output" in outputs:
+            self.chat_history.append(AIMessage(content=outputs["output"]))
+    
+    def clear(self) -> None:
+        """清空记忆"""
+        self.chat_history = []
 ```
 
 ---
 
-*本文档基于 LangChain、AutoGen、Redis 等开源项目源码分析整理，包含生产级实现和性能优化*
+## 六、生产级优化
+
+### 6.1 Token 压缩
+
+```python
+class TokenCompressor:
+    """
+    Token 压缩器
+    
+    策略:
+    1. 保留最近 N 步完整信息
+    2. 早期步骤做摘要
+    3. 去掉重复内容
+    """
+    
+    def compress(self, steps: List[Tuple[AgentAction, Any]], keep_recent: int = 5) -> str:
+        """
+        压缩交互历史
+        
+        1. 保留最近 keep_recent 步
+        2. 对早期步骤做摘要
+        3. 返回压缩后的字符串
+        """
+        if len(steps) <= keep_recent:
+            return self._format_steps(steps)
+        
+        recent = steps[-keep_recent:]
+        early = steps[:-keep_recent]
+        
+        # 对早期步骤做摘要
+        early_text = self._format_steps(early)
+        summary_prompt = f"Summarize these AI actions:\n{early_text}"
+        summary = llm.chat(summary_prompt)
+        
+        recent_text = self._format_steps(recent)
+        return f"Earlier actions summarized: {summary}\nRecent actions:\n{recent_text}"
+```
+
+### 6.2 并行工具调用
+
+```python
+async def parallel_tool_call(actions: List[AgentAction], tools: Dict[str, BaseTool]) -> List[Any]:
+    """
+    并行执行多个工具调用
+    
+    适用场景:
+    - 多个工具调用互不依赖
+    - 需要快速获取多个信息
+    
+    示例:
+    actions = [
+        AgentAction(tool="get_weather", input={"city": "北京"}),
+        AgentAction(tool="get_weather", input={"city": "上海"}),
+    ]
+    
+    串行执行: 2 * 工具延迟
+    并行执行: 1 * 工具延迟
+    """
+    async def execute_action(action: AgentAction) -> Tuple[AgentAction, Any]:
+        tool = tools[action.tool]
+        observation = await tool.arun(**action.tool_input) if isinstance(action.tool_input, dict) else await tool.arun(action.tool_input)
+        return (action, observation)
+    
+    # 并行执行
+    results = await asyncio.gather(*[execute_action(action) for action in actions])
+    return list(results)
+```
+
+---
+
+*本文档基于 LangChain 0.1+ 源码分析*
