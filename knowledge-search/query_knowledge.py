@@ -820,10 +820,7 @@ def run_pipeline_enhanced(query: str, docs: List[Dict], config: dict, cache: Que
     """
     增强版搜索管线：在原有 RRF 融合基础上，加入 LLM Wiki 模式的 Wikilinks + Entity + Cross-reference
     """
-    from .query_cache import QueryCache as QC  # avoid circular import
-    # 临时借用路径
-    import importlib.util
-    spec = importlib.util.find_spec("query_cache")
+    # query_cache 已内联，直接使用 QueryCache 类
     # 直接用内联的 cache 逻辑
 
     intent, confidence = extract_intent(query)
