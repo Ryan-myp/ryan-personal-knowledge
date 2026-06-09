@@ -8,17 +8,17 @@
 
 ## 一、Agent 核心原理 — 源码级理解
 
-### 1.1 Agent 的本质
+### 1.1 Agent 的本质与架构
 
 ```
 Agent = LLM(推理) + Memory(记忆) + Tools(工具) + Planning(规划)
 
-不是简单的"聊天机器人"，而是能够：
-1. 理解复杂任务
-2. 自主规划步骤
-3. 调用外部工具
-4. 管理记忆上下文
-5. 迭代优化结果
+核心能力:
+1. 理解复杂任务 — 自然语言解析
+2. 自主规划步骤 — Chain of Thought
+3. 调用外部工具 — Function Calling
+4. 管理记忆上下文 — 短期/长期/工作记忆
+5. 迭代优化结果 — ReAct 循环
 ```
 
 ### 1.2 核心组件深度解析
@@ -26,7 +26,7 @@ Agent = LLM(推理) + Memory(记忆) + Tools(工具) + Planning(规划)
 #### 1.2.1 LLM 作为 Agent 大脑
 
 ```python
-# LLM 在 Agent 中的角色
+# LLM 在 Agent 中的角色实现
 class AgentBrain:
     def __init__(self, model="gpt-4"):
         self.model = model
@@ -63,7 +63,7 @@ class AgentBrain:
         return self.model.generate(prompt, temperature=0.1)
 ```
 
-**关键点**：
+**关键点**:
 - temperature 控制创造性：推理时用 0.3，决策时用 0.1
 - Prompt 工程比调参更重要：结构化提示词提升 30%+ 效果
 
@@ -206,7 +206,7 @@ ReAct = Reason(推理) + Act(行动)
 ReAct 模式:
 思考 → 行动 → 观察 → 思考 → 行动 → 观察 → 答案
 
-优势：
+优势:
 1. 利用外部信息纠正错误推理
 2. 实时反馈优化决策
 3. 处理复杂多步骤任务
@@ -404,4 +404,188 @@ class VectorDB:
     def __init__(self, provider="faiss"):
         if provider == "faiss":
             self.index = faiss.IndexFlatL2(1536)  # Ada-002 维度
-        elif provider =...[truncated]
+        elif provider == "redis":
+            self.connection = redis.Redis(host='localhost', port=6379, db=0)
+        elif provider == "pgvector":
+            self.connection = psycopg2.connect("dbname=vector_db")
+            
+    def search(self, embedding: list, k: int = 10) -> list:
+        """向量搜索"""
+        if self.provider == "faiss":
+            distances, indices = self.index.search(embedding, k)
+            return self.get_documents(indices)
+        elif self.provider == "redis":
+            return self.redis_search(embedding, k)
+        elif self.provider == "pgvector":
+            return self.pgvector_search(embedding, k)
+```
+
+---
+
+## 四、多 Agent 编排 — 协作模式
+
+### 4.1 多 Agent 系统架构
+
+```python
+# 多 Agent 协作模式
+class MultiAgentSystem:
+    def __init__(self):
+        self.agents = {
+            "researcher": ResearchAgent(),  # 研究专家
+            "coder": CoderAgent(),         # 编码专家
+            "reviewer": ReviewAgent(),     # 审查专家
+            "manager": ManagerAgent()      # 任务管理器
+        }
+    
+    def collaborate(self, task):
+        # 1. 任务分解
+        subtasks = self.agents["manager"].decompose(task)
+        
+        # 2. 分配执行
+        results = {}
+        for subtask in subtasks:
+            agent_name = self.assign_agent(subtask)
+            results[subtask] = self.agents[agent_name].execute(subtask)
+        
+        # 3. 结果整合
+        return self.integrate_results(results)
+
+# 具体 Agent 实现
+class ResearchAgent:
+    def __init__(self):
+        self.tools = ToolRegistry()
+        self.memory = AgentMemory()
+        
+    def execute(self, task: str) -> str:
+        """研究任务执行"""
+        # 1. 搜索相关信息
+        search_results = self.search_web(task)
+        
+        # 2. 分析信息
+        analysis = self.analyze_results(search_results)
+        
+        # 3. 生成报告
+        report = self.generate_report(analysis)
+        
+        return report
+
+class CoderAgent:
+    def __init__(self):
+        self.code_executor = CodeExecutor()
+        
+    def execute(self, task: str) -> str:
+        """编码任务执行"""
+        # 1. 生成代码
+        code = self.generate_code(task)
+        
+        # 2. 执行代码
+        result = self.code_executor.run(code)
+        
+        # 3. 验证结果
+        if not self.validate_result(result):
+            code = self.fix_code(code, result)
+            result = self.code_executor.run(code)
+            
+        return result
+```
+
+### 4.2 Agent 架构模式对比
+
+| 模式 | 适用场景 | 示例 |
+|------|---------|------|
+| **单 Agent** | 简单任务 | 客服机器人 |
+| **链式 Agent** | 线性流程 | 研究→分析→报告 |
+| **树状 Agent** | 并行探索 | 多路径调研 |
+| **图状 Agent** | 复杂协作 | 多角色协作 |
+
+---
+
+## 五、生产级 Agent 系统 — 部署实践
+
+### 5.1 安全性设计
+
+```python
+# 生产环境 Agent 架构
+class ProductionAgent:
+    def __init__(self):
+        self.llm = LLMProvider()
+        self.memory = PersistentMemory()
+        self.tools = ToolRegistry()
+        self.monitoring = MonitoringSystem()
+        
+    def run_with_safety(self, task):
+        """带安全限制的 Agent 运行"""
+        try:
+            # 1. 输入验证
+            if not self.validate_input(task):
+                return "输入不合法"
+            
+            # 2. 执行 Agent
+            result = self.execute_task(task)
+            
+            # 3. 输出审核
+            return self.audit_output(result)
+            
+        except Exception as e:
+            self.monitoring.log_error(e)
+            return "系统错误"
+    
+    def validate_input(self, task: str) -> bool:
+        """输入验证"""
+        # 检查敏感词
+        if self.contains_sensitive_words(task):
+            return False
+        
+        # 检查长度限制
+        if len(task) > 1000:
+            return False
+        
+        return True
+    
+    def audit_output(self, output: str) -> str:
+        """输出审核"""
+        # 检查输出内容
+        if self.contains_harmful_content(output):
+            return "输出包含不适当内容"
+        
+        return output
+```
+
+### 5.2 性能优化
+
+| 优化点 | 方法 | 效果 |
+|--------|------|------|
+| **缓存** | 相似查询缓存 | 减少 LLM 调用 30%+ |
+| **批处理** | 批量处理请求 | 提高吞吐量 |
+| **流式** | Streaming response | 降低首字延迟 |
+| **模型选择** | 大小模型分工 | 成本降低 50%+ |
+
+### 5.3 可观测性
+
+```python
+# Agent 可观测性
+class AgentMonitor:
+    def log(self, event: dict):
+        """记录 Agent 执行事件"""
+        self.traces.append({
+            "timestamp": datetime.now(),
+            "agent_id": event["agent_id"],
+            "action": event["action"],
+            "input": event["input"],
+            "output": event["output"],
+            "latency": event["latency"],
+            "cost": event["cost"]
+        })
+    
+    def analyze(self):
+        """分析 Agent 性能"""
+        return {
+            "avg_latency": self.calculate_avg_latency(),
+            "error_rate": self.calculate_error_rate(),
+            "cost_per_task": self.calculate_cost_per_task()
+        }
+```
+
+---
+
+*本文档基于微信读书《Agent设计模式》《智能体一本通》《大模型RAG实战》《AI Agent开发》整理，包含完整代码实现和生产级最佳实践*
