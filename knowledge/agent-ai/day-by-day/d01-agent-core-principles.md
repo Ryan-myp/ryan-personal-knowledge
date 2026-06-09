@@ -1,12 +1,157 @@
-# Day 1: AgentExecutor 源码深度剖析
+# Day 1: AgentExecutor — 从入门到源码级
 
-> 学习目标: 看完能给别人讲清楚 AgentExecutor 怎么工作
+> 学习目标: 先理解 Agent 是什么、怎么用，再深入源码
 
 ---
 
-## 一、AgentExecutor 的整体架构
+## 第一部分：入门引导（5 分钟速览）
 
-### 1.1 类继承关系
+### 1.1 Agent 是什么？
+
+```
+Agent = 能自主做决策的智能体
+
+它不是聊天机器人。聊天机器人是你问它答。
+Agent 是你给它一个目标，它自己决定怎么做。
+
+简单例子:
+用户: "帮我查一下北京今天的天气，然后告诉我该穿什么"
+
+Chatbot: "北京今天晴天，25度。"（只回答问题）
+
+Agent: 
+  1. 思考: 我需要查天气
+  2. 行动: 调用 get_weather 工具
+  3. 观察: 返回"晴天，25度"
+  4. 思考: 我还需要知道穿衣建议
+  5. 行动: 调用穿衣建议工具
+  6. 回答: "北京今天晴天，25度。建议穿短袖。"
+```
+
+### 1.2 Agent 的 4 个核心组件
+
+```
+┌─────────────────────────────────────────┐
+│              Agent 系统                   │
+│                                         │
+│  ┌───────────┐                          │
+│  │  LLM 大脑  │ ← 推理、决策、生成        │
+│  │ (Think)   │                          │
+│  └─────┬─────┘                          │
+│        │                               │
+│  ┌─────▼─────┐   ┌──────────┐          │
+│  │  记忆系统  │←─▶│  工具    │          │
+│  │ (Memory)  │   │ (Tools)  │          │
+│  └───────────┘   └──────────┘          │
+│                                         │
+│  ┌───────────┐                          │
+│  │  规划器    │ ← 分解任务、安排步骤     │
+│  │ (Plan)    │                          │
+│  └───────────┘                          │
+└─────────────────────────────────────────┘
+```
+
+### 1.3 Agent 是怎么工作的？
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Agent 执行循环                             │
+│                                                             │
+│  1. 接收任务                                                 │
+│     用户: "帮我查一下北京今天的天气"                           │
+│         │                                                   │
+│         ▼                                                   │
+│  2. LLM 思考                                                 │
+│     "我需要知道天气 → 我需要调用工具"                         │
+│         │                                                   │
+│         ▼                                                   │
+│  3. 选择工具                                                 │
+│     "get_weather 工具，参数: city=北京"                       │
+│         │                                                   │
+│         ▼                                                   │
+│  4. 执行工具                                                 │
+│     调用 get_weather(city="北京") → 返回 "晴天，25℃"          │
+│         │                                                   │
+│         ▼                                                   │
+│  5. 观察结果                                                 │
+│     "天气数据: 晴天，25℃"                                    │
+│         │                                                   │
+│         ▼                                                   │
+│  6. 回到第 2 步（LLM 再次思考）                               │
+│     "我拿到了天气数据 → 现在可以回答用户了"                    │
+│         │                                                   │
+│         ▼                                                   │
+│  7. 生成最终答案                                             │
+│     "北京今天天气晴朗，温度 25 摄氏度。"                       │
+│         │                                                   │
+│         ▼                                                   │
+│  8. 返回给用户                                               │
+│     ✓ 任务完成                                               │
+│                                                             │
+│  ⚠️ 如果循环超过 10 次，视为失败                               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 1.4 快速体验
+
+```python
+# 安装依赖
+pip install langchain langchain-openai
+
+# 创建简单 Agent
+from langchain_openai import ChatOpenAI
+from langchain_core.tools import tool
+
+# 定义工具
+@tool
+def get_weather(city: str) -> str:
+    """获取指定城市的天气"""
+    return f"{city}的天气是晴天，温度 25 度"
+
+# 创建 LLM
+llm = ChatOpenAI(model="gpt-3.5-turbo")
+
+# 创建 Agent
+from langchain.agents import create_tool_calling_agent, AgentExecutor
+
+tools = [get_weather]
+agent = create_tool_calling_agent(llm, tools, None)
+executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+# 运行
+result = executor.invoke({"input": "北京天气怎么样？"})
+print(result["output"])
+```
+
+运行后会看到：
+
+```
+Thought: The user is asking about the weather in Beijing.
+I should use the get_weather tool.
+Action: get_weather
+Action Input: {"city": "北京"}
+Observation: 北京的天气是晴天，温度 25 度
+Thought: I now have the weather information for Beijing.
+Final Answer: 北京天气是晴天，温度 25 度。
+```
+
+### 1.5 关键概念总结
+
+| 概念 | 说明 |
+|------|------|
+| **Agent** | 能自主做决策的智能体 |
+| **工具** | Agent 调用的外部能力（搜索、计算等） |
+| **记忆** | 记录之前的交互历史 |
+| **ReAct** | 思考→行动→观察→思考的循环模式 |
+| **max_steps** | 防止死循环，最多执行 N 步 |
+
+---
+
+## 第二部分：源码级深度剖析
+
+### 2.1 AgentExecutor 的整体架构
+
+#### 类继承关系
 
 ```
 BaseSingleActionAgent
@@ -22,7 +167,7 @@ AgentExecutor 是 LangChain 中 Agent 系统的核心执行类。它负责：
 - 记录交互历史
 - 返回最终结果
 
-### 1.2 核心属性
+#### 核心属性
 
 ```python
 class AgentExecutor:
@@ -56,11 +201,9 @@ class AgentExecutor:
     verbose: bool = False
 ```
 
----
+### 2.2 核心数据结构
 
-## 二、核心数据结构
-
-### 2.1 AgentAction
+#### AgentAction
 
 ```python
 @dataclass
@@ -75,7 +218,7 @@ class AgentAction:
     thoughts: Dict = field(default_factory=dict)  # 推理细节
 ```
 
-### 2.2 AgentFinish
+#### AgentFinish
 
 ```python
 @dataclass
@@ -86,7 +229,7 @@ class AgentFinish:
     log: str  # 推理日志
 ```
 
-### 2.3 AgentStep
+#### AgentStep
 
 ```python
 @dataclass
@@ -97,11 +240,9 @@ class AgentStep:
     observation: Any  # 观察结果（工具返回）
 ```
 
----
+### 2.3 核心执行逻辑（逐行解析）
 
-## 三、核心执行逻辑（逐行解析）
-
-### 3.1 _call 方法源码
+#### _call 方法源码
 
 ```python
 def _call(self, inputs: dict) -> dict:
@@ -181,9 +322,9 @@ def _call(self, inputs: dict) -> dict:
     )
 ```
 
-### 3.2 关键点解析
+#### 关键点解析
 
-#### 点 1: `intermediary_steps` 的作用
+##### 点 1: `intermediary_steps` 的作用
 
 ```
 intermediary_steps 是 AgentExecutor 的核心状态变量
@@ -204,7 +345,7 @@ intermediary_steps 是 AgentExecutor 的核心状态变量
       最终可能超出 LLM 的 token 限制！
 ```
 
-#### 点 2: `agent.plan()` 的调用
+##### 点 2: `agent.plan()` 的调用
 
 ```python
 # agent.plan() 的签名
@@ -233,7 +374,7 @@ def plan(
     """
 ```
 
-#### 点 3: 早停策略 `early_stopping_method`
+##### 点 3: 早停策略 `early_stopping_method`
 
 ```python
 # 两种早停策略
@@ -266,11 +407,9 @@ elif self.early_stopping_method == "generate":
         )
 ```
 
----
+### 2.4 Token 消耗分析
 
-## 四、Token 消耗分析
-
-### 4.1 一个完整循环的 Token 消耗
+#### 一个完整循环的 Token 消耗
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -301,7 +440,7 @@ elif self.early_stopping_method == "generate":
 └────────────────────────────────────────────────────────────┘
 ```
 
-### 4.2 Token 管理策略
+#### Token 管理策略
 
 ```python
 class TokenManager:
@@ -347,11 +486,9 @@ class TokenManager:
         return f"之前已完成: {summary}\n最近步骤: {recent}"
 ```
 
----
+### 2.5 工具调用机制
 
-## 五、工具调用机制
-
-### 5.1 工具执行流程
+#### 工具执行流程
 
 ```python
 # langchain/agents/tooling/base.py
@@ -397,7 +534,7 @@ class BaseTool(BaseModel):
             return f"Error: {str(e)}"
 ```
 
-### 5.2 工具路由
+#### 工具路由
 
 ```python
 # langchain/agents/tooling/routing.py
@@ -446,11 +583,9 @@ class ToolRouter:
             return f"Error executing tool '{tool_name}': {str(e)}"
 ```
 
----
+### 2.6 记忆系统
 
-## 六、记忆系统
-
-### 6.1 记忆类型对比
+#### 记忆类型对比
 
 ```
 LangChain 支持的记忆类型:
@@ -481,7 +616,7 @@ LangChain 支持的记忆类型:
    - 缺点: 实现复杂
 ```
 
-### 6.2 对话缓冲记忆源码
+#### 对话缓冲记忆源码
 
 ```python
 # langchain/memory/buffer.py
@@ -497,9 +632,9 @@ class ConversationBufferMemory(BaseMemory):
     
     示例:
     human: 北京天气怎么样？
-    ai: 北京晴天，25度
+    ai: 北京晴天，25 度
     human: 那上海呢？
-    ai: 上海多云，22度
+    ai: 上海多云，22 度
     """
     
     chat_history: List[BaseMessage] = field(default_factory=list)
@@ -529,7 +664,7 @@ class ConversationBufferMemory(BaseMemory):
 
 ---
 
-## 七、自测
+## 第三部分：自测
 
 ### 问题 1
 AgentExecutor 的 `intermediary_steps` 为什么重要？
@@ -569,9 +704,9 @@ Token 压缩的策略是什么？
 
 ---
 
-## 八、动手验证
+## 第四部分：动手验证
 
-### 8.1 运行一个简单 Agent
+### 4.1 运行一个简单 Agent
 
 ```python
 from langchain_openai import ChatOpenAI
@@ -603,7 +738,7 @@ result = executor.invoke({"input": "北京天气怎么样？"})
 print("\n最终答案:", result["output"])
 ```
 
-### 8.2 观察什么？
+### 4.2 观察什么？
 
 运行后看 verbose 输出，你会看到：
 
@@ -615,7 +750,7 @@ Action: get_weather
 Action Input: {"city": "北京"}
 Observation: 晴天，25℃
 Thought: I now have the weather information for Beijing.
-Final Answer: 北京天气是晴天，温度25摄氏度。
+Final Answer: 北京天气是晴天，温度 25 摄氏度。
 
 > Finished chain.
 ```
@@ -628,4 +763,5 @@ Final Answer: 北京天气是晴天，温度25摄氏度。
 
 ---
 
-*今天花 60 分钟读完 + 30 分钟调试 = 真正理解 AgentExecutor 源码*
+*今天花 60-90 分钟：前 5 分钟入门，40 分钟源码分析，15 分钟动手验证*
+*答不出自测题？回去重读对应章节。*

@@ -1,15 +1,22 @@
-# Day 2: MRKL 系统源码深度剖析
+# Day 2: MRKL 系统 — 从入门到源码级
 
-> 学习目标: 理解 MRKL 系统的 Prompt 设计、输出解析、错误处理
+> 学习目标: 先理解 MRKL 是什么、怎么用，再深入源码
 
 ---
 
-## 一、MRKL 系统架构
+## 第一部分：入门引导（5 分钟速览）
 
-### 1.1 MRKL 是什么？
+### 2.1 MRKL 是什么？
 
 ```
 MRKL = Modular Reasoning, Knowledge, and Language
+     = 模块化推理、知识和语言
+
+这是一个架构模式，让 LLM 能调用外部工具。
+
+简单理解:
+LLM 本身不会搜索、不会计算、不会查数据库。
+MRKL 给 LLM 装上了"手"和"脚"。
 
 架构组成:
 ┌─────────────────────────────────────────────────────┐
@@ -17,11 +24,11 @@ MRKL = Modular Reasoning, Knowledge, and Language
 ├─────────────────────────────────────────────────────┤
 │                                                     │
 │  ┌─────────────┐                                    │
-│  │  LLM (P())   │ ← 推理引擎                         │
+│  │  LLM (P())   │ ← 推理引擎（大脑）                  │
 │  └──────┬──────┘                                    │
 │         │                                           │
 │  ┌──────▼──────┐                                    │
-│  │  F() 函数库  │ ← 预定义工具集合                    │
+│  │  F() 函数库  │ ← 预定义工具集合（手和脚）           │
 │  └─────────────┘                                    │
 │                                                     │
 │  工作流程:                                           │
@@ -33,11 +40,128 @@ MRKL = Modular Reasoning, Knowledge, and Language
 └─────────────────────────────────────────────────────┘
 ```
 
+### 2.2 ReAct 模式
+
+```
+ReAct = Reason（推理）+ Act（行动）
+
+为什么叫 ReAct？
+因为它是"推理"和"行动"交替进行。
+
+执行流程图:
+┌──────────────────────────────────────────────────────────────┐
+│                    ReAct 循环                                 │
+│                                                              │
+│  ┌──────────┐    ┌──────────┐    ┌──────────┐              │
+│  │  Thought │───▶│  Action  │───▶│Observe   │              │
+│  │  思考    │    │  行动    │    │  观察    │              │
+│  │          │    │          │    │          │              │
+│  │ "我需要  │    │ 调用     │    │ "工具    │              │
+│  │ 查天气"  │    │get_weather│   │ 返回晴天  │              │
+│  └──────────┘    └──────────┘    └──────────┘              │
+│       ▲                                    │                │
+│       │                                    ▼                │
+│       │                          ┌──────────┐              │
+│       └──────────────────────────│  循环判断 │              │
+│                                  │          │              │
+│                              ┌───┤ 继续？   │──┐            │
+│                              │   └──────────┘  │            │
+│                              │        │        │            │
+│                              │    ┌───┴──┐     │            │
+│                              │    │ 继续  │  停止│            │
+│                              │    └───────┘     │            │
+│                              │     │       │    │            │
+│                              │     ▼       ▼    │            │
+│                              │  思考   Final    │            │
+│                              │  下一步   Answer │            │
+│                              └─────────────────┘            │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### 2.3 一个完整的 ReAct 输出示例
+
+假设用户问："从北京到上海的高铁要多长时间？"
+
+```
+=== Step 1 ===
+Thought: 我不知道北京到上海高铁的时间，我需要搜索一下。
+Action: search
+Action Input: {"query": "北京到上海高铁时间"}
+
+=== Step 2 ===
+Observation: 北京南到上海虹桥的高铁约 4-6 小时
+Thought: 我找到了答案，可以回答用户了。
+Final Answer: 北京到上海的高铁大约需要 4-6 小时，具体取决于车次类型。
+G 字头高铁最快约 4 小时 18 分钟。
+```
+
+**注意看**:
+1. LLM 先"思考"（Thought）
+2. 然后"行动"（Action）
+3. 然后"观察"（Observation）——工具返回的结果
+4. 然后再"思考"，决定下一步
+5. 最后给出"最终答案"（Final Answer）
+
+**这就是 ReAct 的核心**：思考→行动→观察→思考→...→回答
+
+### 2.4 快速体验
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain_core.tools import tool
+from langchain.agents import create_tool_calling_agent, AgentExecutor
+
+# 定义工具
+@tool
+def search(query: str) -> str:
+    """搜索互联网信息"""
+    return "北京到上海高铁约 4-6 小时"
+
+@tool
+def calculate(expression: str) -> str:
+    """数学计算"""
+    return str(eval(expression))
+
+# 创建 LLM
+llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
+
+# 创建 Agent
+tools = [search, calculate]
+agent = create_tool_calling_agent(llm, tools, None)
+executor = AgentExecutor(agent=agent, tools=tools, verbose=True, max_iterations=5)
+
+# 运行
+result = executor.invoke({"input": "北京到上海高铁需要多长时间？"})
+print(result["output"])
+```
+
+运行后你会看到完整的 ReAct 循环：
+
+```
+Thought: I need to search for the travel time between Beijing and Shanghai
+Action: search
+Action Input: {"query": "北京到上海高铁时间"}
+Observation: 北京到上海高铁约 4-6 小时
+Thought: I now know the final answer
+Final Answer: 北京到上海的高铁大约需要 4-6 小时。
+```
+
+### 2.5 关键概念总结
+
+| 概念 | 说明 |
+|------|------|
+| **MRKL** | 让 LLM 调用外部工具的架构模式 |
+| **ReAct** | 思考→行动→观察→思考的循环模式 |
+| **Thought** | LLM 的推理过程 |
+| **Action** | LLM 决定的下一步行动 |
+| **Observation** | 工具执行的结果 |
+| **Final Answer** | LLM 给出的最终答案 |
+
 ---
 
-## 二、Prompt 模板源码
+## 第二部分：源码级深度剖析
 
-### 2.1 MRKL Prompt 完整源码
+### 2.6 MRKL Prompt 模板源码
 
 ```python
 # langchain/agents/mrkl/prompt.py
@@ -76,7 +200,7 @@ Thought:{agent_scratchpad}
 # {agent_scratchpad}: LLM 之前的思考
 ```
 
-### 2.2 工具描述生成
+### 2.7 工具描述生成
 
 ```python
 # langchain/agents/format_scratchpad.py
@@ -104,7 +228,7 @@ def format_tool_names(tools: Sequence[BaseTool]) -> str:
     return ", ".join([tool.name for tool in tools])
 ```
 
-### 2.3 中间步骤格式化
+### 2.8 中间步骤格式化
 
 ```python
 # langchain/agents/format_scratchpad.py
@@ -140,11 +264,9 @@ def format_intermediate_steps(
     return log
 ```
 
----
+### 2.9 输出解析器源码
 
-## 三、输出解析器源码
-
-### 3.1 MRKL 输出解析器
+#### MRKL 输出解析器
 
 ```python
 # langchain/agents/mrkl/output_parser.py
@@ -186,7 +308,7 @@ class MRKLOutputParser(BaseOutputParser[Union[AgentAction, AgentFinish]]):
         raise ValueError(f"Invalid format: {text}")
 ```
 
-### 3.2 Tool Calling 输出解析器
+#### Tool Calling 输出解析器
 
 ```python
 # langchain/agents/tool_calling_parser.py
@@ -237,11 +359,9 @@ class ToolCallingOutputParser(BaseOutputParser):
         raise ValueError(f"Invalid format: {text}")
 ```
 
----
+### 2.10 错误处理机制
 
-## 四、错误处理机制
-
-### 4.1 常见的 5 种错误
+#### 常见的 5 种错误
 
 ```
 1. 工具不存在
@@ -265,7 +385,7 @@ class ToolCallingOutputParser(BaseOutputParser):
    错误: 超过 max_steps
 ```
 
-### 4.2 错误处理源码
+#### 错误处理源码
 
 ```python
 def execute_with_error_handling(action, tools, llm):
@@ -318,11 +438,9 @@ def execute_with_error_handling(action, tools, llm):
         }
 ```
 
----
+### 2.11 Token 消耗分析
 
-## 五、Token 消耗分析
-
-### 5.1 一个 ReAct 循环的 Token 消耗
+#### 一个 ReAct 循环的 Token 消耗
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -353,7 +471,7 @@ def execute_with_error_handling(action, tools, llm):
 └────────────────────────────────────────────────────────────┘
 ```
 
-### 5.2 Token 管理策略
+#### Token 管理策略
 
 ```python
 class TokenManager:
@@ -401,7 +519,7 @@ class TokenManager:
 
 ---
 
-## 六、自测
+## 第三部分：自测
 
 ### 问题 1
 MRKL 系统的 Prompt 模板中，每个变量是什么？
@@ -439,4 +557,81 @@ Token 压缩的策略是什么？
 
 ---
 
-*今天花 60 分钟读完 + 30 分钟调试 = 真正理解 MRKL 系统*
+## 第四部分：动手验证
+
+### 4.1 测试不同 Prompt 的效果
+
+```python
+# 测试 1: 简单 Prompt
+simple_prompt = f"""
+回答: {question}
+工具: {tools_description}
+历史: {history}
+"""
+
+# 测试 2: 详细 Prompt
+detailed_prompt = f"""
+你是一个智能助手。
+
+## 任务
+{question}
+
+## 规则
+1. 使用 Thought/Action/Action Input 格式
+2. 最多执行 5 步
+3. 工具不存在时不要使用
+
+## 工具
+{tools_description}
+
+## 历史
+{history}
+
+请开始:
+Thought:
+"""
+
+# 对比结果
+result1 = llm.chat(simple_prompt)
+result2 = llm.chat(detailed_prompt)
+
+print("简单 Prompt 结果:", result1)
+print("详细 Prompt 结果:", result2)
+```
+
+**观察**: 详细 Prompt 的准确率明显更高。
+
+### 4.2 Token 计数实验
+
+```python
+import tiktoken
+
+tokenizer = tiktoken.encoding_for_model("gpt-4")
+
+# 计算不同长度的 history 消耗多少 token
+test_cases = [
+    "空历史",
+    "1 步历史",
+    "3 步历史", 
+    "5 步历史",
+    "10 步历史"
+]
+
+for case in test_cases:
+    # 模拟不同长度的 history
+    history = f"[{'step' * 100}]" if "10" in case else f"[{'step' * (int(case[0]) * 100)}]"
+    prompt = f"""
+    任务: 测试
+    历史: {history}
+    """
+    tokens = len(tokenizer.encode(prompt))
+    cost = tokens * 0.000003  # GPT-4 输入价格
+    print(f"{case}: {tokens} tokens, ~${cost:.4f}")
+```
+
+**观察**: 随着 history 增长，token 消耗快速增长。5 步后成本明显上升。
+
+---
+
+*今天花 60-90 分钟：前 5 分钟入门，40 分钟源码分析，15 分钟动手验证*
+*答不出自测题？回去重读对应章节。*
