@@ -13,35 +13,38 @@
 Meta Ads 是 Meta（Facebook + Instagram）的广告投放平台
 用户可以在 Facebook、Instagram、Messenger、Audience Network 上投放广告
 
-核心产品:
-├─ Facebook Ads (Facebook 广告)
-├─ Instagram Ads (Instagram 广告)
-├─ Messenger Ads (Messenger 广告)
-├─ Audience Network (广告网络)
-└─ Advantage+ (AI 优化广告)
+核心广告形式:
+├─ Facebook Feed Ads (信息流广告)
+├─ Instagram Feed Ads (Instagram 信息流)
+├─ Stories Ads (Stories 广告)
+├─ Reels Ads (Reels 短视频广告)
+├─ Messenger Ads (消息广告)
+├─ Audience Network Ads (受众网络)
+└─ Marketplace Ads (市场广告)
 ```
 
-### 1.2 为什么需要 API？
+### 1.2 为什么需要 Meta Ads API？
 
 ```
 没有 API:
-- 手动操作 Facebook Ads Manager
-- 无法批量管理多个广告账户
+- 手动操作 Ads Manager
+- 无法批量创建广告
 - 无法自动优化广告
+- 无法拉取数据做分析
 
 有 API:
-- 批量管理广告账户
-- 自动优化广告（根据数据调出价）
-- 数据拉取和分析
-- 集成内部系统
+- 批量管理成千上万广告账户
+- 自动创建和调整广告系列
+- 拉取数据做归因分析
+- 与内部系统打通
 ```
 
 ### 1.3 API 架构总览
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                  Meta Ads API 架构                           │
-│                                                             │
+┌──────────────────────────────────────────────────────────────┐
+│               Meta Ads API 架构                               │
+│                                                              │
 │  ┌──────────────┐                                          │
 │  │  你的系统     │                                          │
 │  │  (Client)    │                                          │
@@ -49,62 +52,82 @@ Meta Ads 是 Meta（Facebook + Instagram）的广告投放平台
 │         │ HTTPS REST API                                    │
 │         ▼                                                   │
 │  ┌────────────────────────────────────────────────────────┐│
-│  │               Meta Ads API Server                       ││
+│  │              Meta Graph API Server                      ││
 │  │                                                        ││
 │  │  ┌────────────────────────────────────────────────────┐││
-│  │  │              GraphQL Layer                         │││
+│  │  │           Authentication                           │││
+│  │  │           (OAuth2 + User Token / App Token)        │││
 │  │  └────────────┬───────────────────────────────────────┘││
 │  │               │                                        ││
 │  │  ┌────────────▼───────────────────────────────────────┐││
-│  │  │           业务逻辑层                                 │││
-│  │  │           (AdAccount, Campaign, Ad, Image...)      │││
+│  │  │           GraphQL 查询层                             │││
+│  │  │           (支持复杂查询和字段选择)                   │││
 │  │  └────────────────────────────────────────────────────┘││
 │  └────────────────────────────────────────────────────────┘│
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+│                                                              │
+│  重要概念:                                                   │
+│  ├── User Token: 代表广告账户管理员                        ││
+│  ├── App Access Token: 代表应用                            ││
+│  ├── Ad Account: 广告账户                                  ││
+│  ├── Campaign: 广告系列                                    ││
+│  ├── Ad Set: 广告组                                        ││
+│  └── Ad: 广告                                              ││
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ### 1.4 快速体验
 
-```bash
-# 1. 安装 Meta Ads API SDK
-pip install facebook-business
+```python
+# 1. 安装 Facebook SDK
+# pip install facebook-sdk
 
-# 2. Python 示例
-from facebook_business.api import FacebookAdsApi
-from facebook_business.adobjects.adaccount import AdAccount
-from facebook_business.adobjects.campaign import Campaign
+import facebook
 
-# 配置
-ACCESS_TOKEN = 'YOUR_ACCESS_TOKEN'
-APP_SECRET = 'YOUR_APP_SECRET'
-APP_ID = 'YOUR_APP_ID'
+# 2. 获取 User Token
+# 流程: 用户授权 → 获取 code → 交换 token
+# 参考: https://developers.facebook.com/docs/facebook-login/guides/advanced/manual-flow/
 
-FacebookAdsApi.init(ACCESS_TOKEN, APP_SECRET, APP_ID)
+ACCESS_TOKEN = "EAABwzLix1YBO...YOUR_TOKEN"
+AD_ACCOUNT_ID = "act_your_ad_account_id"  # 以 act_ 开头
 
-# 查询广告数据
-my_account = AdAccount('act_YOUR_AD_ACCOUNT_ID')
-params = {
-    'level': 'ad',
-    'date_preset': 'last_7_days',
-}
-stats = my_account.get_insights(params=params)
+# 3. 获取广告数据
+api = facebook.GraphAPI(ACCESS_TOKEN)
 
-for insight in stats:
-    print(f"广告: {insight['name']}")
-    print(f"展示: {insight['actions'][0]['value']}")
+# 查询广告账户信息
+account = api.get_object(
+    f"{AD_ACCOUNT_ID}",
+    fields="name,account_status,spend_cap"
+)
+print(f"账户: {account['name']}")
+print(f"状态: {account['account_status']}")
+
+# 查询广告系列
+campaigns = api.get_connections(
+    parent_id=AD_ACCOUNT_ID,
+    connection_name="campaigns",
+    fields="name,status,objective,budget_remaining"
+)
+
+for campaign in campaigns["data"]:
+    print(f"系列: {campaign['name']}")
+    print(f"  状态: {campaign['status']}")
+    print(f"  目标: {campaign['objective']}")
 ```
 
-### 1.5 关键概念总结
+### 1.5 关键概念速记
 
 | 概念 | 说明 |
 |------|------|
-| **Access Token** | API 访问令牌，有有效期 |
-| **Ad Account** | 广告账户 |
-| **Campaign** | 广告系列 |
-| **Ad Set** | 广告组（定向、预算、出价） |
-| **Ad** | 广告素材 |
-| **Insights** | 广告数据指标 |
+| **Access Token** | User Token（用户授权）或 App Access Token（应用级） |
+| **User Token** | 代表广告账户管理员的访问令牌，需要用户授权 |
+| **Ad Account ID** | 广告账户 ID（以 `act_` 开头） |
+| **Campaign** | 广告系列（顶层） |
+| **Ad Set** | 广告组（中间层） |
+| **Ad** | 广告（最底层） |
+| **Objective** | 广告目标（转化、流量、品牌认知等） |
+| **Bid Amount** | 出价金额（单位：最小额货币） |
+| **Graph API** | Meta 的 RESTful API 接口 |
+| **App ID** | 应用 ID，用于创建 App Token |
 
 ---
 
@@ -113,432 +136,579 @@ for insight in stats:
 ### 2.1 认证流程源码
 
 ```python
-# facebook_business/api.py
-# Meta Ads API 认证
+# meta_ads/auth/oauth.py
+# Meta OAuth2 认证流程
 
-class FacebookAdsApi:
+class MetaOAuthClient:
+    """
+    Meta OAuth2 认证客户端
+    
+    认证方式:
+    ├── User Token: 代表用户（广告账户管理员）
+    │   └─ 需要用户授权，有效期短（通常 60 天）
+    └── App Access Token: 代表应用
+        └─ 基于 App ID + App Secret，不会过期
+    
+    授权流程:
+    1. 用户授权 → 获取 code
+    2. 用 code 交换 access_token
+    3. 使用 access_token 调用 API
+    """
+    
+    AUTH_URL = "https://www.facebook.com/dialog/oauth"
+    TOKEN_URL = "https://graph.facebook.com/v18.0/oauth/access_token"
+    GRAPH_API_URL = "https://graph.facebook.com/v18.0"
+    
+    def __init__(self, app_id: str, app_secret: str):
+        self.app_id = app_id
+        self.app_secret = app_secret
+        self.access_token = None
+        self.refresh_token = None
+    
+    def generate_auth_url(self, redirect_uri: str, scope: str = "ads_management") -> str:
+        """
+        生成授权 URL
+        
+        参数:
+        ├── redirect_uri: 回调 URL
+        └── scope: 权限范围
+        
+        常用 scope:
+        ├── ads_management: 广告管理
+        ├── ads_read: 广告读取
+        ├── pages_read_engagement: 页面互动读取
+        └── instagram_basic: Instagram 基础访问
+        """
+        params = {
+            "client_id": self.app_id,
+            "redirect_uri": redirect_uri,
+            "scope": scope,
+            "response_type": "code",
+        }
+        
+        return f"{self.AUTH_URL}?{self._urlencode(params)}"
+    
+    def exchange_code_for_token(self, code: str, redirect_uri: str) -> dict:
+        """
+        用 code 换取 access_token
+        
+        流程:
+        1. 用户点击授权 URL → 跳转到 redirect_uri
+        2. redirect_uri 中包含 code 参数
+        3. 用 code 交换 access_token
+        """
+        params = {
+            "client_id": self.app_id,
+            "client_secret": self.app_secret,
+            "code": code,
+            "redirect_uri": redirect_uri,
+        }
+        
+        response = self._request("POST", self.TOKEN_URL, params=params)
+        
+        token_data = self._parse_response(response)
+        
+        self.access_token = token_data["access_token"]
+        self.refresh_token = token_data.get("refresh_token", "")
+        
+        return token_data
+    
+    def _long_lived_token(self, short_lived_token: str) -> dict:
+        """
+        将短期 token（60 天）转换为长期 token（2 年）
+        
+        流程:
+        1. 使用短 token 请求长 token
+        2. Meta 返回有效期 2 年的 token
+        """
+        params = {
+            "grant_type": "fb_exchange_token",
+            "fb_exchange_token": short_lived_token,
+        }
+        
+        response = self._request("GET", self.TOKEN_URL, params=params)
+        return self._parse_response(response)
+    
+    def refresh_token(self, refresh_token: str) -> dict:
+        """
+        刷新 access_token
+        
+        流程:
+        1. 发送 POST 请求
+        2. 传入 refresh_token
+        3. 获取新的 access_token
+        """
+        params = {
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+        }
+        
+        response = self._request("POST", self.TOKEN_URL, params=params)
+        return self._parse_response(response)
+    
+    def _request(self, method: str, url: str, params: dict = None) -> dict:
+        """发送 HTTP 请求"""
+        import requests
+        
+        response = requests.request(
+            method, url, params=params,
+            timeout=30
+        )
+        return response
+    
+    def _parse_response(self, response) -> dict:
+        """解析响应"""
+        import requests
+        
+        if not isinstance(response, dict):
+            response = response.json()
+        
+        # 检查错误
+        if "error" in response:
+            raise MetaAdsAPIError(
+                error_code=response["error"]["code"],
+                message=response["error"]["message"],
+            )
+        
+        return response
+
+
+class MetaAdsAPIError(Exception):
+    """Meta Ads API 错误"""
+    
+    ERROR_MESSAGES = {
+        200: "权限被拒绝",
+        201: "请求被拒绝（参数错误）",
+        368: "用户取消了授权",
+        400: "请求格式错误",
+        401: "Token 无效",
+        403: "权限不足",
+        404: "资源不存在",
+        405: "请求方法不允许",
+        407: "IP 被禁用",
+        408: "应用被禁用",
+        409: "资源冲突",
+        410: "资源已删除",
+        411: "字段不存在",
+        412: "参数无效",
+        413: "应用未配置",
+        414: "速率限制",
+        415: "不支持的格式",
+        416: "应用超过限制",
+        417: "业务账户被禁用",
+        418: "页面权限不足",
+        419: "Instagram 账户权限不足",
+        420: "用户被禁用",
+        421: "广告账户被禁用",
+        422: "字段类型错误",
+        423: "广告组已存在",
+        424: "广告已存在",
+        425: "预算冲突",
+        426: "频率限制",
+        427: "广告系列状态错误",
+        428: "广告组状态错误",
+        429: "广告状态错误",
+    }
+    
+    def __init__(self, error_code: int, message: str):
+        self.error_code = error_code
+        self.message = message
+        self.display_message = self.ERROR_MESSAGES.get(error_code, message)
+        super().__init__(f"[{error_code}] {self.display_message}")
+```
+
+### 2.2 Graph API 查询源码
+
+```python
+# meta_ads/client.py
+# Meta Graph API 客户端
+
+class MetaAdsClient:
     """
     Meta Ads API 客户端
     
-    认证方式:
-    ├── User Token: 用户授权令牌
-    │   ├── 需要用户登录
-    │   ├── 权限: ads_management, read_insights
-    │   └── 有效期: 60 天
-    │
-    ├── App Token: 应用令牌
-    │   ├── 用于系统级操作
-    │   ├── 有效期: 无限（除非撤销）
-    │   └── 需要 App Secret
-    │
-    └── Customer Access Token: 客户令牌
-        ├── 代理商专用
-        ├── 管理多个广告账户
-        └── 权限继承自父账户
+    Graph API 基础 URL: https://graph.facebook.com/v18.0
+    
+    支持的版本:
+    ├── v18.0: 当前推荐版本（2024）
+    └── v17.0: 旧版本
+    
+    API 端点:
+    ├── GET /{ad_account_id}: 获取广告账户信息
+    ├── GET /{ad_account_id}/campaigns: 获取广告系列
+    ├── GET /{ad_account_id}/adsets: 获取广告组
+    ├── GET /{ad_account_id}/ads: 获取广告
+    ├── POST /{ad_account_id}/campaigns: 创建广告系列
+    ├── POST /{ad_account_id}/adsets: 创建广告组
+    ├── POST /{ad_account_id}/ads: 创建广告
+    └── GET /{ad_account_id}/insights: 获取洞察数据
     """
     
-    _API_VERSION = 'v18.0'
-    _APP_SECRET = None
+    GRAPH_API_URL = "https://graph.facebook.com/v18.0"
     
-    @classmethod
-    def init(cls, access_token, app_secret=None, app_id=None):
+    def __init__(self, access_token: str):
+        self.access_token = access_token
+        self._last_request_time = 0
+        self._request_count = 0
+        self._max_requests_per_minute = 10000
+    
+    def _get_headers(self) -> dict:
+        """获取请求头"""
+        return {
+            "Authorization": f"OAuth {self.access_token}",
+            "Content-Type": "application/json",
+        }
+    
+    def get(self, path: str, fields: list = None, params: dict = None) -> dict:
         """
-        初始化 API 客户端
-        
-        流程:
-        1. 验证 access_token 格式
-        2. 设置全局配置
-        3. 建立会话
-        """
-        if not cls._validate_token(access_token):
-            raise ValueError("Invalid access token")
-        
-        cls._APP_SECRET = app_secret or cls._APP_SECRET
-        cls._access_token = access_token
-        cls._session = requests.Session()
-        cls._session.headers.update({
-            'Authorization': f'Bearer {access_token}',
-            'Content-Type': 'application/json',
-        })
-    
-    @classmethod
-    def _validate_token(cls, token: str) -> bool:
-        """验证 token"""
-        # token 格式: 有 28-50 个字符
-        return 28 <= len(token) <= 50
-    
-    @classmethod
-    def get_api_version(cls) -> str:
-        """获取当前 API 版本"""
-        return cls._API_VERSION
-```
-
-### 2.2 请求执行源码
-
-```python
-# facebook_business/adobjects/ad.py
-# Ad 对象操作
-
-class Ad(BaseAdObject):
-    """
-    广告对象
-    
-    常用方法:
-    ├── get(): 获取广告详情
-    ├── update(): 更新广告
-    ├── delete(): 删除广告
-    ├── get_insights(): 获取广告数据
-    └── create(): 创建广告
-    """
-    
-    def get_insights(
-        self,
-        fields: list = None,
-        params: dict = None,
-        date_preset: str = 'last_7_days',
-    ):
-        """
-        获取广告数据
+        GET 请求
         
         参数:
-        ├── fields: 要获取的字段
-        ├── params: 查询参数
-        └── date_preset: 日期预设
-        
-        支持的 date_preset:
-        ├── today: 今天
-        ├── yesterday: 昨天
-        ├── last_7_days: 过去 7 天
-        ├── last_30_days: 过去 30 天
-        ├── this_month: 本月
-        ├── last_month: 上月
-        ├── lifetime: 全部
-        └── custom: 自定义日期
+        ├── path: API 路径（如 "/act_123456/campaigns"）
+        ├── fields: 要获取的字段列表
+        └── params: 查询参数
         """
-        api_version = FacebookAdsApi.get_api_version()
-        url = f'/{api_version}/{self.get_id()}/insights'
+        import requests
         
-        default_params = {
-            'date_preset': date_preset,
-            'level': 'ad',
-        }
+        url = f"{self.GRAPH_API_URL}{path}"
         
+        request_params = params or {}
         if fields:
-            default_params['fields'] = ','.join(fields)
+            request_params["fields"] = ",".join(fields)
         
-        if params:
-            default_params.update(params)
+        response = requests.get(
+            url,
+            headers=self._get_headers(),
+            params=request_params,
+        )
         
-        response = requests.get(url, params=default_params)
-        response.raise_for_status()
-        
-        return response.json()['data']
-```
-
-### 2.3 批量操作源码
-
-```python
-# facebook_business/adobjects/adaccount.py
-# 批量操作
-
-class AdAccount(BaseAdObject):
-    """
-    广告账户操作
+        return self._handle_response(response)
     
-    批量操作支持:
-    ├── 创建多个广告
-    ├── 更新多个广告
-    ├── 删除多个广告
-    └── 批量获取数据
-    """
-    
-    def create_campaign(
-        self,
-        name: str,
-        advertising_channel_type: str,
-        optimization_goal: str,
-        status: str = 'PAUSED',
-    ) -> 'Campaign':
+    def post(self, path: str, data: dict = None) -> dict:
         """
-        创建广告系列
-        
-        流程:
-        1. 构建 POST 请求
-        2. 设置广告系列参数
-        3. 执行请求
-        4. 返回创建结果
-        """
-        params = {
-            'name': name,
-            'advertising_channel_type': advertising_channel_type,
-            'optimization_goal': optimization_goal,
-            'status': status,
-        }
-        
-        return self.create_campaign(params)
-    
-    def bulk_create_ads(
-        self,
-        ad_data_list: list,
-        sync_mode: bool = False,
-    ) -> list:
-        """
-        批量创建广告
+        POST 请求（创建/更新）
         
         参数:
-        ├── ad_data_list: 广告数据列表
-        │   ├── {name, creative, ...}
-        │   ├── {name, creative, ...}
-        │   └── ...
-        └── sync_mode: 是否同步执行
-        
-        流程:
-        1. 验证每个广告数据
-        2. 分批发送请求（每批 20 个）
-        3. 等待执行完成
-        4. 返回结果列表
+        └── data: 请求体
         """
-        results = []
-        batch_size = 20
+        import requests
         
-        for i in range(0, len(ad_data_list), batch_size):
-            batch = ad_data_list[i:i+batch_size]
-            
-            # 构建批量请求
-            operations = []
-            for ad_data in batch:
-                operation = {
-                    'node_id': self.get_id(),
-                    'operation': 'POST',
-                    'path': '/ads',
-                    'body': ad_data,
-                }
-                operations.append(operation)
-            
-            # 执行批量请求
-            response = self.api.execute_bulk(operations)
-            results.extend(response)
+        url = f"{self.GRAPH_API_URL}{path}"
         
-        return results
-```
-
-### 2.4 数据查询源码
-
-```python
-# facebook_business/adobjects/adaccount.py
-# 数据查询
-
-class AdAccount(BaseAdObject):
-    """
-    广告账户数据查询
+        response = requests.post(
+            url,
+            headers=self._get_headers(),
+            json=data,
+        )
+        
+        return self._handle_response(response)
     
-    支持的查询级别:
-    ├── account: 广告账户级别
-    ├── campaign: 广告系列级别
-    ├── adset: 广告组级别
-    ├── ad: 广告级别
-    └── day: 按天
-    
-    支持的指标:
-    ├── impressions: 展示
-    ├── reach: 触达人数
-    ├── clicks: 点击
-    ├── ctr: 点击率
-    ├── cpc: 每次点击费用
-    ├── conversions: 转化
-    ├── cost_per_conversion: 每次转化费用
-    └── roas: 广告回报率
-    """
-    
-    def get_insights(
-        self,
-        fields: list = None,
-        params: dict = None,
-        date_preset: str = 'last_7_days',
-        level: str = 'ad',
-        breakdowns: list = None,
-    ):
+    def get_insights(self, account_id: str, level: str = "ad",
+                     time_range: dict = None, fields: list = None) -> dict:
         """
-        获取广告数据
+        获取洞察数据
         
         参数:
-        ├── fields: 要获取的字段
-        ├── params: 查询参数
-        ├── date_preset: 日期预设
-        ├── level: 查询级别
-        └── breakdowns: 拆分维度
+        ├── account_id: 广告账户 ID（act_123456）
+        ├── level: 聚合级别（account/campaign/adset/ad）
+        ├── time_range: 时间范围
+        │   ├── since: 开始日期（YYYY-MM-DD）
+        │   └── until: 结束日期（YYYY-MM-DD）
+        └── fields: 要获取的指标字段
         
-        支持的 breakdowns:
-        ├── time: 按时间拆分
-        ├── age: 按年龄拆分
-        ├── gender: 按性别拆分
-        ├── country: 按国家拆分
-        ├── platform: 按平台拆分
-        └── device: 按设备拆分
+        常用字段:
+        ├── impressions: 展示
+        ├── clicks: 点击
+        ├── spend: 花费
+        ├── cpc: 平均 CPC
+        ├── ctr: 点击率
+        ├── conversions: 转化
+        ├── cost_per_action_type: 每次行动费用
+        ├── purchase_roas: 购买 ROAS
+        └── value_per_ad_set: 每广告组价值
         """
-        api_version = FacebookAdsApi.get_api_version()
-        url = f'/{api_version}/{self.get_id()}/insights'
+        path = f"/act_{account_id}/insights"
         
-        default_params = {
-            'date_preset': date_preset,
-            'level': level,
-        }
-        
+        params = {"level": level}
+        if time_range:
+            if "since" in time_range:
+                params["since"] = time_range["since"]
+            if "until" in time_range:
+                params["until"] = time_range["until"]
         if fields:
-            default_params['fields'] = ','.join(fields)
+            params["access_token"] = self.access_token
         
-        if breakdowns:
-            default_params['breakdowns'] = ','.join(breakdowns)
-        
-        if params:
-            default_params.update(params)
-        
-        response = requests.get(url, params=default_params)
-        response.raise_for_status()
-        
-        return response.json()['data']
+        return self.get(path, fields=fields, params=params)
 ```
 
-### 2.5 错误处理源码
+### 2.3 创建广告系列源码
 
 ```python
-# facebook_business/exceptions.py
-# 错误处理
+# meta_ads/campaign.py
+# 广告系列 CRUD 操作
 
-import facebook_business
-from facebook_business import FacebookRequestError
-
-class FacebookRequestError(FacebookRequestError):
+class CampaignBuilder:
     """
-    Meta API 请求错误
+    广告系列构建器
     
-    常见错误:
-    ├── 100: Invalid parameter
-    ├── 200: Permissions error
-    ├── 368: Duplicate request
-    ├── 800: Rate limit
-    ├── 803: Policy violation
-    └── 908: App disabled
-    
-    处理策略:
-    ├── 自动重试: 500 系列错误
-    ├── 用户提示: 3xx 系列错误
-    └── 记录日志: 所有错误
+    广告系列层级:
+    ┌─────────────────────────────────────────────────────┐
+    │                  Ad Account                          │
+    │  ┌───────────────────────────────────────────────┐  │
+    │  │  Campaign (广告系列)                           │  │
+    │  │  - 广告目标 (objective)                       │  │
+    │  │  - 预算                                        │  │
+    │  │  ┌──────────────────────────────────────────┐ │  │
+    │  │  │  Ad Set (广告组)                         │ │  │
+    │  │  │  - 定向 (targeting)                      │ │  │
+    │  │  │  - 预算 (budget)                         │ │  │
+    │  │  │  - 排期 (schedule)                       │ │  │
+    │  │  │  ┌─────────────────────────────────────┐│ │  │
+    │  │  │  │  Ad (广告)                          ││ │  │
+    │  │  │  │  - 创意 (creative)                  ││ │  │
+    │  │  │  │  - 文案 (copy)                      ││ │  │
+    │  │  │  │  - 链接 (url)                       ││ │  │
+    │  │  │  └─────────────────────────────────────┘│ │  │
+    │  │  └──────────────────────────────────────────┘ │  │
+    │  └───────────────────────────────────────────────┘  │
+    └─────────────────────────────────────────────────────┘
     """
     
-    ERROR_CODES = {
-        100: "Invalid parameter",
-        200: "Permissions error",
-        368: "Duplicate request",
-        800: "Rate limit",
-        803: "Policy violation",
-        908: "App disabled",
-        909: "App not active",
-        910: "App suspended",
+    OBJECTIVES = {
+        "CONVERSIONS": "转化（最常见）",
+        "TRAFFIC": "流量",
+        "BRAND_AWARENESS": "品牌认知",
+        "REACH": "触达",
+        "VIDEO_VIEWS": "视频观看",
+        "LEAD_GENERATION": "销售线索",
+        "MESSAGES": "消息",
+        "CATALOG_SALES": "商品目录销售",
+        "APP_INSTALLS": "应用安装",
     }
     
-    def __init__(self, error_code, error_message, error_subcode=None):
-        self.error_code = error_code
-        self.error_message = error_message
-        self.error_subcode = error_subcode
-        super().__init__(error_message)
+    BUDGET_OPTIONS = {
+        "DAILY": "日预算",
+        "LIFETIME": "总预算（全周期）",
+    }
     
-    def handle_error(self):
+    @classmethod
+    def create_conversion_campaign(cls, client: MetaAdsClient, 
+                                    account_id: str, 
+                                    name: str,
+                                    daily_budget_usd: float,
+                                    objective: str = "CONVERSIONS") -> str:
         """
-        错误处理
+        创建转化目标广告系列
         
-        返回:
-        ├── True: 已处理
-        └── False: 需要重试
+        流程:
+        1. 设置广告目标
+        2. 设置预算
+        3. 设置优化目标
+        4. 设置事件集
+        5. 发送 POST 请求
+        6. 返回广告系列 ID
+        
+        参数:
+        ├── client: Meta Ads 客户端
+        ├── account_id: 广告账户 ID（act_123456）
+        ├── name: 广告系列名称
+        ├── daily_budget_usd: 日预算
+        └── objective: 广告目标
         """
-        # 可重试的错误
-        if self.error_code == 800:  # 速率限制
-            return self._handle_rate_limit()
-        elif self.error_code == 368:  # 重复请求
-            return True
-        elif self.error_code in (200, 803, 908):  # 权限/策略/应用
-            return False
+        path = f"/act_{account_id}/campaigns"
         
-        return False
+        # 预算转换（Meta 使用最小额货币单位）
+        budget_amount = int(daily_budget_usd * 100)  # 转换为分
+        
+        data = {
+            "name": name,
+            "objective": objective,
+            "status": "PAUSED",  # 创建后先暂停
+            "special_ad_categories": [],
+            "daily_budget": budget_amount,
+            "optimization_goal": "LINK_CLICKS",
+            "billing_event": "IMPRESSIONS",
+        }
+        
+        response = client.post(path, data=data)
+        
+        campaign_id = response["id"]
+        return str(campaign_id)
+    
+    @classmethod
+    def create_ad_set(cls, client: MetaAdsClient,
+                      account_id: str,
+                      campaign_id: str,
+                      name: str,
+                      daily_budget_usd: float,
+                      targeting: dict = None,
+                      start_date: str = None,
+                      end_date: str = None) -> str:
+        """
+        创建广告组
+        
+        参数:
+        ├── targeting: 定向条件
+        │   ├── geo_locations: 地理位置
+        │   │   ├── countries: 国家代码（如 "US", "CN"）
+        │   │   └── regions: 地区
+        │   ├── age_min, age_max: 年龄范围
+        │   ├── genders: 性别（1=女性，2=男性）
+        │   ├── interests: 兴趣标签
+        │   └── behaviors: 行为标签
+        └── 其他: 预算、排期等
+        """
+        path = f"/act_{account_id}/adsets"
+        
+        budget_amount = int(daily_budget_usd * 100)
+        
+        # 构建定向
+        if targeting is None:
+            targeting = {
+                "geo_locations": {"countries": ["US"]},
+                "age_min": 18,
+                "age_max": 65,
+                "genders": [1, 2],
+            }
+        
+        data = {
+            "name": name,
+            "campaign_id": campaign_id,
+            "status": "PAUSED",
+            "daily_budget": budget_amount,
+            "targeting": targeting,
+            "bid_amount": 100,  # 1.00 USD（以分为单位）
+        }
+        
+        if start_date:
+            data["start_time"] = start_date
+        if end_date:
+            data["end_time"] = end_date
+        
+        response = client.post(path, data=data)
+        
+        return str(response["id"])
 ```
 
-### 2.6 速率限制源码
+### 2.4 批量操作源码
 
 ```python
-# facebook_business/ratelimit.py
-# 速率限制
+# meta_ads/batch.py
+# 批量操作
 
-import time
-from functools import wraps
-
-class RateLimitExceeded(Exception):
-    """速率限制异常"""
-    pass
-
-def handle_rate_limit(func):
+class BatchRequest:
     """
-    速率限制处理装饰器
+    批量请求
     
-    流程:
-    1. 执行函数
-    2. 捕获 RateLimitExceeded 异常
-    3. 等待后重试
-    4. 最多重试 3 次
-    """
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                return func(*args, **kwargs)
-            except RateLimitExceeded as e:
-                if attempt == max_retries - 1:
-                    raise
-                # 指数退避
-                wait_time = 2 ** (attempt + 1)
-                time.sleep(wait_time)
-        return None
-    return wrapper
-
-class MetaRateLimiter:
-    """
-    Meta 速率限制器
+    Meta API 支持批量操作，最多 50 个请求一组
     
-    限制规则:
-    ├── 每个 ad account 的速率限制
-    ├── 根据 access_token 类型不同
-    ├── User Token: 每分钟 200 次
-    ├── App Token: 每分钟 1000 次
-    └── Customer Token: 每分钟 500 次
+    使用方式:
+    1. 创建 BatchRequest 对象
+    2. 添加多个请求
+    3. 执行批量
+    4. 处理响应
     
-    检测:
-    ├── 响应头: X-App-Usage
-    ├── 响应头: X-Page-Usage
-    └── 响应体: error subcode 800
+    优势:
+    ├── 减少 HTTP 连接次数
+    ├── 提高吞吐量
+    └── 减少网络开销
     """
     
-    def __init__(self, max_requests_per_minute=200):
-        self.max_requests = max_requests_per_minute
-        self.request_count = 0
-        self.window_start = time.time()
+    def __init__(self, client: MetaAdsClient):
+        self.client = client
+        self._requests = []
+        self._request_id = 0
     
-    def check(self):
-        """检查速率限制"""
-        elapsed = time.time() - self.window_start
+    def add_get(self, path: str, fields: list = None, 
+                params: dict = None, name: str = None) -> str:
+        """
+        添加 GET 请求
         
-        # 窗口过期
-        if elapsed > 60:
-            self.request_count = 0
-            self.window_start = time.time()
+        参数:
+        └── name: 请求的引用名称（用于获取响应）
+        """
+        request_id = name or f"req_{self._request_id}"
+        self._request_id += 1
         
-        # 超过限制
-        if self.request_count >= self.max_requests:
-            wait_time = 60 - elapsed
-            time.sleep(wait_time)
-            self.request_count = 0
-            self.window_start = time.time()
+        self._requests.append({
+            "method": "GET",
+            "path": path,
+            "fields": fields,
+            "params": params,
+            "name": request_id,
+        })
         
-        self.request_count += 1
+        return request_id
+    
+    def add_post(self, path: str, data: dict = None, 
+                 name: str = None) -> str:
+        """添加 POST 请求"""
+        request_id = name or f"req_{self._request_id}"
+        self._request_id += 1
+        
+        self._requests.append({
+            "method": "POST",
+            "path": path,
+            "data": data,
+            "name": request_id,
+        })
+        
+        return request_id
+    
+    def execute(self) -> dict:
+        """
+        执行批量请求
+        
+        返回:
+        └── 以 name 为键的响应字典
+        """
+        import requests
+        
+        path = f"/?batch={self._requests}"
+        
+        # 构建 batch 数据
+        batch_data = []
+        for req in self._requests:
+            batch_data.append(req)
+        
+        response = requests.post(
+            f"{self.client.GRAPH_API_URL}{path}",
+            headers=self.client._get_headers(),
+            json=batch_data,
+        )
+        
+        # 解析批量响应
+        raw_response = response.json()
+        results = {}
+        
+        for i, resp in enumerate(raw_response):
+            request_id = self._requests[i].get("name")
+            if "error" in resp:
+                results[request_id] = {
+                    "error": resp["error"]["message"],
+                    "code": resp["error"].get("code"),
+                }
+            else:
+                results[request_id] = resp
+        
+        return results
+
+
+# 使用示例
+client = MetaAdsClient("YOUR_ACCESS_TOKEN")
+batch = BatchRequest(client)
+
+# 添加多个请求
+batch.add_get("/act_123456/campaigns", fields=["name", "status"], name="campaigns")
+batch.add_get("/act_123456/adsets", fields=["name", "status"], name="adsets")
+batch.add_get("/act_123456/ads", fields=["name", "status"], name="ads")
+
+# 执行批量
+results = batch.execute()
+
+print(f"广告系列: {len(results['campaigns'])}")
+print(f"广告组: {len(results['adsets'])}")
+print(f"广告: {len(results['ads'])}")
 ```
 
 ---
@@ -546,84 +716,85 @@ class MetaRateLimiter:
 ## 第三部分：自测
 
 ### 问题 1
-Meta Ads API 支持的认证方式有哪些？
+Meta Ads API 中，广告账户 ID 的格式是什么？
 <details>
 <summary>查看答案</summary>
 
-- User Token: 用户授权，有效期 60 天
-- App Token: 应用令牌，长期有效
-- Customer Access Token: 代理商专用
+- 格式：`act_` + 数字
+- 示例：`act_1234567890`
 </details>
 
 ### 问题 2
-date_preset 支持哪些值？
+Graph API 的常用版本有哪些？
 <details>
 <summary>查看答案</summary>
 
-- today, yesterday
-- last_7_days, last_30_days
-- this_month, last_month
-- lifetime, custom
+- v18.0: 当前推荐版本（2024）
+- v17.0: 旧版本
+- 版本号格式：v{year}.{version}
 </details>
 
 ### 问题 3
-错误码 800 是什么意思？如何处理？
+Meta Ads API 支持批量操作吗？最多多少个请求？
 <details>
 <summary>查看答案</summary>
 
-- 错误码 800: 速率限制
-- 处理: 等待后重试（指数退避）
+- 支持批量操作
+- 最多 50 个请求一组
 </details>
 
 ---
 
 ## 第四部分：动手验证
 
-### 4.1 查询广告数据
+### 4.1 获取广告数据
 
 ```python
-from facebook_business.api import FacebookAdsApi
-from facebook_business.adobjects.adaccount import AdAccount
+from meta_ads.client import MetaAdsClient
 
-FacebookAdsApi.init(ACCESS_TOKEN, APP_SECRET, APP_ID)
+client = MetaAdsClient("YOUR_ACCESS_TOKEN")
 
-my_account = AdAccount('act_YOUR_AD_ACCOUNT_ID')
-stats = my_account.get_insights(
-    params={
-        'level': 'ad',
-        'date_preset': 'last_7_days',
-    }
+# 获取广告系列
+campaigns = client.get(
+    path="/act_123456/campaigns",
+    fields=["name", "status", "objective"],
 )
 
-for insight in stats:
-    print(f"广告: {insight['name']}")
-    print(f"展示: {insight['impressions']}")
-    print(f"点击: {insight['clicks']}")
+for campaign in campaigns.get("data", []):
+    print(f"系列: {campaign['name']}")
+    print(f"  状态: {campaign['status']}")
+    print(f"  目标: {campaign['objective']}")
 ```
 
 ### 4.2 创建广告
 
 ```python
-from facebook_business.adobjects.ad import Ad
-from facebook_business.adobjects.adaccount import AdAccount
+from meta_ads.campaign import CampaignBuilder
 
-my_account = AdAccount('act_YOUR_AD_ACCOUNT_ID')
+# 创建广告系列
+campaign_id = CampaignBuilder.create_conversion_campaign(
+    client=client,
+    account_id="1234567890",
+    name="测试广告系列",
+    daily_budget_usd=50.0,
+    objective="CONVERSIONS",
+)
 
-ad = my_account.create_ad({
-    Ad.Field.name: '测试广告',
-    Ad.Field.campaign_id: 'YOUR_CAMPAIGN_ID',
-    Ad.Field.adset_id: 'YOUR_ADSET_ID',
-    Ad.Field.status: Ad.Status.paused,
-    Ad.Field.ad Creatives: [
-        {
-            AdCreative.Field.title: '测试',
-            AdCreative.Field.body: '测试广告',
-            AdCreative.Field.image_hash: image_hash,
-        }
-    ],
-})
+# 创建广告组
+ad_set_id = CampaignBuilder.create_ad_set(
+    client=client,
+    account_id="1234567890",
+    campaign_id=campaign_id,
+    name="测试广告组",
+    daily_budget_usd=50.0,
+    targeting={
+        "geo_locations": {"countries": ["US"]},
+        "age_min": 18,
+        "age_max": 35,
+    }
+)
 
-print(f"创建成功: {ad[Ad.Field.id]}")
+print(f"创建的广告组 ID: {ad_set_id}")
 ```
 
 ---

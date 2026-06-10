@@ -18,121 +18,117 @@ Google Ads 是 Google 的广告投放平台
 ├─ Display Ads (展示广告)
 ├─ Video Ads (视频广告 - YouTube)
 ├─ Shopping Ads (购物广告)
-└─ App Ads (应用广告)
+└─ Performance Max (PMax - 全渠道自动化)
 ```
 
 ### 1.2 为什么需要 API？
 
 ```
 没有 API:
-- 手动操作：打开浏览器 → 登录 → 创建广告
-- 效率低：改一个出价要半天
-- 无法自动化：不能根据数据自动调整
+- 手动操作 Google Ads UI
+- 无法批量创建/调整广告
+- 无法自动优化 bid
+- 无法拉取数据做分析
 
 有 API:
-- 批量操作：一次更新 1000 个广告
-- 自动优化：根据转化数据自动调出价
-- 数据获取：拉取所有广告数据做分析
-- 实时监控：发现问题立即调整
+- 批量管理成千上万广告组
+- 自动 bid 优化（基于 ROAS/CPC 目标）
+- 拉取数据做 A/B 测试
+- 与内部数据打通（CRM/ERP）
 ```
 
 ### 1.3 API 架构总览
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                  Google Ads API 架构                         │
-│                                                             │
+┌──────────────────────────────────────────────────────────────┐
+│                  Google Ads API 架构                          │
+│                                                              │
 │  ┌──────────────┐                                          │
 │  │  你的系统     │                                          │
 │  │  (Client)    │                                          │
 │  └──────┬───────┘                                          │
-│         │ HTTPS/gRPC                                        │
+│         │ HTTPS gRPC/REST API                               │
 │         ▼                                                   │
 │  ┌────────────────────────────────────────────────────────┐│
-│  │               Google Ads API Server                     ││
+│  │              Google Ads API Server                      ││
 │  │                                                        ││
 │  │  ┌────────────────────────────────────────────────────┐││
-│  │  │              API Gateway                           │││
-│  │  └────────────┬───────────────────────────────────────┘││
-│  │               │                                        ││
-│  │  ┌────────────▼───────────────────────────────────────┐││
-│  │  │           Rate Limiter                             │││
-│  │  │           (每秒请求限制)                             │││
-│  │  └────────────┬───────────────────────────────────────┘││
-│  │               │                                        ││
-│  │  ┌────────────▼───────────────────────────────────────┐││
 │  │  │           Authentication                           │││
-│  │  │           (OAuth2 + 刷新令牌)                        │││
+│  │  │           (OAuth2 + Developer Token)               │││
 │  │  └────────────┬───────────────────────────────────────┘││
 │  │               │                                        ││
 │  │  ┌────────────▼───────────────────────────────────────┐││
-│  │  │           业务逻辑层                                 │││
-│  │  │           (CampaignService, AdGroupService...)      │││
+│  │  │           核心服务层                                 │││
+│  │  │           CustomerService, CampaignService...      │││
+│  │  └────────────────────────────────────────────────────┘││
+│  │                                                        ││
+│  │  ┌────────────────────────────────────────────────────┐││
+│  │  │           查询层                                     │││
+│  │  │           GAQL (Google Ads Query Language)         │││
 │  │  └────────────────────────────────────────────────────┘││
 │  └────────────────────────────────────────────────────────┘│
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ### 1.4 快速体验
 
-```bash
-# 1. 安装 Google Ads API SDK
-pip install google-ads
+```python
+# 1. 安装 Google Ads Python Client
+# pip install google-ads
 
-# 2. 配置
-# 创建 google-ads.yaml
-# developer_token: YOUR_DEVELOPER_TOKEN
-# refresh_token: YOUR_REFRESH_TOKEN
-# client_id: YOUR_CLIENT_ID
-# client_secret: YOUR_CLIENT_SECRET
-# login_customer_id: YOUR_CUSTOMER_ID
-
-# 3. Python 示例
 from google.ads.googleads.client import GoogleAdsClient
-from google.ads.googleads.enums import MetricEnum
 
-# 获取客户端
-client = GoogleAdsClient.load_from_storage('google-ads.yaml')
+# 2. 创建客户端
+# 配置 google-ads.yaml:
+#   developer_token: "YOUR_DEVELOPER_TOKEN"
+#   oauth2_client_id: "YOUR_CLIENT_ID"
+#   oauth2_client_secret: "YOUR_CLIENT_SECRET"
+#   refresh_token: "YOUR_REFRESH_TOKEN"
 
-# 查询广告数据
+client = GoogleAdsClient.load_from_storage("google-ads.yaml")
+
+# 3. 查询账户信息
+customer_id = "1234567890"
+ga_service = client.get_service("GoogleAdsService")
+
 query = """
-SELECT
-    campaign.name,
-    campaign.status,
-    metrics.impressions,
-    metrics.clicks,
-    metrics.cost_micros
-FROM campaign
-WHERE segments.date DURING LAST_30_DAYS
+    SELECT
+        customer.descriptive_name,
+        customer.id,
+        metrics.impressions,
+        metrics.clicks,
+        metrics.cost_micros
+    FROM customer
+    WHERE customer.status IN ['ENABLED', 'REMOVED']
 """
 
-# 执行查询
-customer = client.get_service("Customer")
-row_iterator = client.get_service("GoogleAdsService").search(
-    customer_id="1234567890",
-    query=query
+response = ga_service.search(
+    customer_id=customer_id,
+    query=query,
+    page_size=1,
 )
 
-for row in row_iterator:
-    campaign = row.campaign
-    metrics = row.metrics
-    print(f"广告系列: {campaign.name}")
-    print(f"展示: {metrics.impressions}")
-    print(f"点击: {metrics.clicks}")
-    print(f"花费: {metrics.cost_micros / 1000000} 元")
+for row in response:
+    print(f"账户: {row.customer.descriptive_name}")
+    print(f"ID: {row.customer.id}")
+    print(f"展示: {row.metrics.impressions}")
+    print(f"点击: {row.metrics.clicks}")
+    print(f"花费: {row.metrics.cost_micros / 1_000_000:.2f} USD")
 ```
 
-### 1.5 关键概念总结
+### 1.5 关键概念速记
 
 | 概念 | 说明 |
 |------|------|
-| **Customer ID** | Google Ads 账户的唯一标识 |
-| **Campaign** | 广告系列，包含多个广告组 |
-| **AdGroup** | 广告组，包含多个广告 |
-| **Keyword** | 关键词，匹配用户搜索 |
-| **Metrics** | 指标，展示、点击、转化等 |
-| **Developer Token** | API 开发者令牌，需要申请 |
+| **Developer Token** | Google Ads API 的 API 密钥，需要在 [Google Ads UI](https://ads.google.com/app/developers/) 获取 |
+| **Customer ID** | 广告账户 ID（10 位数字） |
+| **AdGroup ID** | 广告组 ID |
+| **Campaign ID** | 广告系列 ID |
+| **Micros** | Google 用微单位表示货币，1 USD = 1,000,000 micros |
+| **GAQL** | Google Ads Query Language，类似 SQL |
+| **Service** | 不同的业务对象对应不同的 Service（如 CampaignService, AdGroupService） |
+| **Mutate** | 创建/更新/删除操作称为 "mutate" |
+| **BatchJob** | 批量作业，用于处理大规模数据变更 |
 
 ---
 
@@ -141,496 +137,698 @@ for row in row_iterator:
 ### 2.1 认证流程源码
 
 ```python
-# google/ads/googleads/client.py
-# Google Ads 认证流程
+# google_ads/client.py (Google Ads Python Client 库)
+# 认证流程源码分析
 
 class GoogleAdsClient:
     """
     Google Ads API 客户端
     
     认证流程:
-    1. 从配置文件加载凭据
-    2. 构建 OAuth2 客户端
-    3. 获取 access_token 和 refresh_token
-    4. 维护令牌刷新机制
+    1. 加载 google-ads.yaml 配置文件
+    2. 使用 OAuth2 获取 access_token
+    3. 设置 Developer Token 用于 API 调用
+    4. 创建 gRPC 或 REST 连接
     
-    关键文件:
-    - google-ads.yaml: 配置文件
-    - oauth2.json: OAuth2 凭据
-    - refresh_token: 刷新令牌
+    配置项:
+    ├── developer_token: API 访问令牌
+    ├── oauth2_client_id: OAuth2 客户端 ID
+    ├── oauth2_client_secret: OAuth2 客户端密钥
+    ├── oauth2_refresh_token: OAuth2 刷新令牌
+    ├── link_report_id: 链接报告 ID（可选）
+    └── prefer_grpc: 是否使用 gRPC
     """
     
-    def __init__(
-        self,
-        config: dict = None,
-        oauth2: dict = None,
-        login_customer_id: str = None,
-        developer_token: str = None,
-    ):
-        self._oauth2_config = oauth2 or self._load_oauth2_config()
-        self._login_customer_id = login_customer_id
-        self._developer_token = developer_token
+    def __init__(self, config: dict, prefer_grpc: bool = True):
+        self.config = config
+        self.prefer_grpc = prefer_grpc
+        self._credentials = None
+        self._channel = None
+    
+    @classmethod
+    def load_from_storage(cls, config_path: str) -> "GoogleAdsClient":
+        """
+        从 YAML 配置文件加载客户端
         
-        # 令牌管理器
-        self._token_manager = TokenManager(
-            client_id=self._oauth2_config['client_id'],
-            client_secret=self._oauth2_config['client_secret'],
-            refresh_token=self._get_refresh_token()
+        流程:
+        1. 读取 google-ads.yaml
+        2. 解析配置
+        3. 创建 OAuth2 credentials
+        4. 初始化 gRPC/REST 连接
+        5. 返回客户端实例
+        """
+        config = cls._load_config(config_path)
+        return cls(config)
+    
+    def _load_config(self, config_path: str) -> dict:
+        """加载 YAML 配置文件"""
+        import yaml
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+        return config
+    
+    def _get_credentials(self):
+        """
+        获取 OAuth2 credentials
+        
+        流程:
+        1. 从 refresh_token 创建 OAuth2 credentials
+        2. 自动刷新 access_token（有效期 1 小时）
+        3. 设置 Developer Token 用于 API 认证
+        """
+        from google.oauth2 import service_account
+        from google.auth.transport.requests import Request
+        from google.auth.oauth2 import credentials
+        
+        # 创建 OAuth2 credentials
+        self._credentials = credentials.Credentials(
+            token=None,  # 初始 token，会自动刷新
+            refresh_handler=Request(),
+            client_id=self.config["oauth2_client_id"],
+            client_secret=self.config["oauth2_client_secret"],
+            refresh_token=self.config["oauth2_refresh_token"],
+            token_uri="https://oauth2.googleapis.com/token",
         )
-    
-    def _load_oauth2_config(self) -> dict:
-        """从配置文件加载 OAuth2 配置"""
-        config_path = Path.home() / '.google' / 'api_config' / 'google-ads.yaml'
-        if not config_path.exists():
-            raise FileNotFoundError("google-ads.yaml not found")
         
-        with open(config_path) as f:
-            return yaml.safe_load(f)
+        return self._credentials
     
-    def get_access_token(self) -> str:
+    def _get_channel(self):
         """
-        获取 access token
+        获取 gRPC 连接
         
         流程:
-        1. 检查是否有有效的 access token
-        2. 如果有且未过期，直接返回
-        3. 如果过期，使用 refresh token 刷新
-        4. 返回新的 access token
+        1. 创建 gRPC channel
+        2. 注入 OAuth2 credentials
+        3. 设置 Developer Token 在 metadata 中
         """
-        token = self._token_manager.get_token()
+        import grpc
+        from google.ads.googleads import _grpc
         
-        # 检查是否过期
-        if token.expired:
-            # 刷新 token
-            token = self._token_manager.refresh_token()
+        credentials = self._get_credentials()
         
-        return token.token
-    
-    def get_access_token_for_customer(self, customer_id: str) -> str:
-        """
-        为特定客户获取 access token
+        # 创建 gRPC channel
+        if self.prefer_grpc:
+            channel = grpc.secure_channel(
+                "googleads.googleapis.com",
+                grpc.composite_channel_credentials(
+                    grpc.ssl_channel_credentials(),
+                    grpc.access_token_call_credentials(credentials.token),
+                ),
+            )
+        else:
+            # REST fallback
+            channel = grpc.insecure_channel("googleads.googleapis.com")
         
-        需要:
-        - 用户已授权该 customer_id
-        - 有 developer token
-        - 是 customer 的 manager 或 admin
-        """
-        return self.get_access_token()
+        # 注入 Developer Token
+        self._developer_token = self.config.get("developer_token", "")
+        
+        return channel
 ```
 
-### 2.2 Token 管理器源码
+### 2.2 GAQL 查询源码
 
 ```python
-# google/ads/googleads/auth/token_manager.py
-# Token 管理器
+# google_ads/services/google_ads_service.py
+# GAQL (Google Ads Query Language) 查询源码
 
-import requests
-from datetime import datetime, timedelta
-from typing import Optional
-
-class TokenManager:
+class GoogleAdsServiceClient:
     """
-    Token 管理器
+    GoogleAdsService - 主要的数据查询入口
     
-    功能:
-    ├── 管理 refresh_token
-    ├── 获取/刷新 access_token
-    ├── 缓存 token
-    └── 处理 token 过期
+    GAQL 语法:
+    SELECT field1, field2, ...
+    FROM resource_type
+    WHERE condition
+    ORDER BY field
+    LIMIT N
     
-    关键数据:
-    - access_token: 有效期 1 小时
-    - refresh_token: 长期有效
-    - token_expiry: 过期时间
-    """
+    支持的资源类型:
+    ├── customer: 广告账户
+    ├── campaign: 广告系列
+    ├── ad_group: 广告组
+    ├── ad_group_ad: 广告（广告+创意组合）
+    ├── ad_group_criterion: 广告组目标（关键词、定向等）
+    ├── campaign_criterion: 广告系列级别定向
+    ├── keywords: 关键词
+    ├── ads: 广告
+    ├── ad_extensions: 广告扩展
+    └── customer_client: 客户链接
     
-    def __init__(self, client_id, client_secret, refresh_token):
-        self.client_id = client_id
-        self.client_secret = client_secret
-        self.refresh_token = refresh_token
-        self.access_token = None
-        self.token_expiry = None
-    
-    def get_token(self) -> Token:
-        """获取有效 token"""
-        if self.access_token and self.token_expiry > datetime.now():
-            return Token(self.access_token, self.token_expiry)
-        
-        # 需要刷新
-        return self.refresh_token()
-    
-    def refresh_token(self) -> Token:
-        """
-        刷新 access token
-        
-        流程:
-        1. 发送 POST 请求到 Google OAuth2 端点
-        2. 提供 refresh_token 和 client 凭据
-        3. Google 返回新的 access_token
-        4. 缓存新 token
-        """
-        token_url = "https://oauth2.googleapis.com/token"
-        payload = {
-            "client_id": self.client_id,
-            "client_secret": self.client_secret,
-            "refresh_token": self.refresh_token,
-            "grant_type": "refresh_token"
-        }
-        
-        response = requests.post(token_url, data=payload)
-        response.raise_for_status()
-        
-        data = response.json()
-        
-        self.access_token = data['access_token']
-        # access_token 有效期 3600 秒（1 小时）
-        self.token_expiry = datetime.now() + timedelta(seconds=data['expires_in'])
-        
-        return Token(self.access_token, self.token_expiry)
-```
-
-### 2.3 搜索查询执行源码
-
-```python
-# google/ads/googleads/services/google_ads_service.py
-# Google Ads 搜索服务
-
-class GoogleAdsService:
-    """
-    Google Ads 搜索服务
-    
-    核心方法:
-    ├── search(): 同步查询
-    ├── search_page(): 分页查询
-    ├── search_paged(): 分页生成器
-    └── stream_google_ads(): 流式查询
-    
-    支持查询:
-    ├── SELECT 字段
-    ├── FROM 表
-    ├── WHERE 条件
-    └── ORDER BY / LIMIT
+    支持的指标 (metrics):
+    ├── impressions: 展示
+    ├── clicks: 点击
+    ├── costs: 花费
+    ├── conversions: 转化
+    ├── cost_per_conversions: 每次转化费用
+    ├── all_conversions: 所有转化
+    ├── view_through_conversions: 通过展示转化
+    ├── ctr: 点击率
+    ├── average_cpc: 平均 CPC
+    ├── average_cpm: 平均 CPM
+    └── roas: 广告回报率
     """
     
-    def __init__(self, client, customer_id):
+    def __init__(self, client: "GoogleAdsClient"):
         self.client = client
-        self.customer_id = customer_id
+        self._stub = None
     
-    def search(self, query: str):
+    def _get_stub(self):
+        """获取 gRPC stub"""
+        if self._stub is None:
+            from google.ads.googleads.services import google_ads_service_client
+            self._stub = google_ads_service_client.GoogleAdsServiceClient(
+                transport="grpc"
+            )
+        return self._stub
+    
+    def search(self, customer_id: str, query: str, page_size: int = 100) -> grpc.Response:
         """
-        执行搜索查询
+        执行 GAQL 查询
         
         流程:
-        1. 验证 query 语法
-        2. 设置请求头（授权、customer_id）
-        3. 发送 gRPC 请求
-        4. 解析响应
-        5. 返回行迭代器
-        
-        gRPC 请求:
-        ├── search_request: {
-        │   ├── customer_id: string
-        │   ├── query: string (GAQL 语法)
-        │   └── pagesize: int (可选)
-        │}
-        └── search_response: {
-            ├── resource_name: string
-            ├── campaign: Campaign
-            ├── metrics: Metrics
-            └── ...
-        }
-        """
-        # 构建请求
-        request = SearchGoogleAdsRequest(
-            customer_id=str(self.customer_id),
-            query=query,
-            pagesize=1000
-        )
-        
-        # 调用 gRPC
-        response = self._stub.search(request=request)
-        
-        # 解析响应
-        return self._parse_response(response)
-    
-    def _parse_response(self, response) -> Iterator[Row]:
-        """解析 gRPC 响应"""
-        for row in response.results:
-            yield Row(row, response.column_spec)
-    
-    def search_paged(self, query: str, page_size: int = 1000) -> Iterator[Row]:
-        """
-        分页查询（推荐）
-        
-        优势:
-        - 每次只拉一页
-        - 自动处理分页
-        - 内存友好
-        
-        注意:
-        - Google Ads API 最大 page_size = 10000
-        - 需要处理分页 token
-        """
-        request = SearchGoogleAdsRequest(
-            customer_id=str(self.customer_id),
-            query=query,
-            pagesize=page_size
-        )
-        
-        # gRPC streaming response
-        for page in self._stub.search_paged(request=request):
-            for row in page.results:
-                yield Row(row, page.column_spec)
-```
-
-### 2.4 GAQL 查询语法源码
-
-```python
-# google/ads/googleads/gaql/query_builder.py
-# GAQL 查询构建器
-
-# GAQL = Google Ads Query Language
-
-# 查询结构:
-# SELECT fields FROM table WHERE conditions ORDER BY ... LIMIT ...
-
-# 示例查询:
-"""
-SELECT
-    campaign.name,
-    campaign.status,
-    campaign.bidding_strategy_type,
-    metrics.impressions,
-    metrics.clicks,
-    metrics.cost_micros,
-    metrics.conversions
-FROM campaign
-WHERE
-    segments.date >= '2026-01-01'
-    AND segments.date <= '2026-01-31'
-    AND campaign.status = ENABLED
-    AND metrics.impressions > 1000
-ORDER BY
-    metrics.cost_micros DESC
-LIMIT
-    1000
-"""
-
-class QueryBuilder:
-    """
-    GAQL 查询构建器
-    
-    常用字段:
-    ├── Campaign
-    │   ├── name: 广告系列名称
-    │   ├── status: 状态 (ENABLED/PAUSED/REMOVED)
-    │   ├── bidding_strategy_type: 出价策略
-    │   ├── advertising_channel_type: 广告类型
-    │   └── customer_id: 客户 ID
-    │
-    ├── AdGroup
-    │   ├── name: 广告组名称
-    │   ├── status: 状态
-    │   ├── cpc_bid_micros: CPC 出价
-    │   └── campaign_id: 广告系列 ID
-    │
-    ├── Keyword
-    │   ├── text: 关键词文本
-    │   ├── match_type: 匹配类型 (EXACT/PHRASE/BROAD)
-    │   └── ad_group_id: 广告组 ID
-    │
-    └── Metrics (常用指标)
-        ├── impressions: 展示次数
-        ├── clicks: 点击次数
-        ├── cost_micros: 花费（微货币单位）
-        ├── conversions: 转化次数
-        ├── ctr: 点击率
-        └── cpm: 千次展示成本
-    """
-    
-    @staticmethod
-    def build_campaign_report(
-        customer_id: str,
-        start_date: str,
-        end_date: str,
-        min_impressions: int = 0,
-        limit: int = 10000,
-    ) -> str:
-        """
-        构建广告系列报告查询
+        1. 构建 SearchGoogleAdsRequest
+        2. 发送 gRPC 请求
+        3. 解析响应
+        4. 处理分页
+        5. 返回结果
         
         参数:
-        - customer_id: 客户 ID
-        - start_date: 开始日期
-        - end_date: 结束日期
-        - min_impressions: 最小展示数
-        - limit: 限制条数
+        ├── customer_id: 广告账户 ID（10 位数字）
+        ├── query: GAQL 查询语句
+        └── page_size: 每页数量（最大 10000）
         """
-        query = f"""
-        SELECT
-            campaign.id,
-            campaign.name,
-            campaign.status,
-            campaign.advertising_channel_type,
-            campaign.bidding_strategy_type,
-            campaign.cpc_bid_ceiling_micros,
-            metrics.impressions,
-            metrics.clicks,
-            metrics.ctr,
-            metrics.cost_micros,
-            metrics.conversions,
-            metrics.conversion_rate,
-            metrics.average_cpc,
-            metrics.cpm
-        FROM campaign
-        WHERE
-            segments.date >= '{start_date}'
-            AND segments.date <= '{end_date}'
-            AND metrics.impressions >= {min_impressions}
-        ORDER BY
-            metrics.cost_micros DESC
-        LIMIT {limit}
+        from google.ads.googleads.types import SearchGoogleAdsRequest
+        
+        stub = self._get_stub()
+        
+        # 构建请求
+        request = SearchGoogleAdsRequest(
+            customer_id=str(customer_id),
+            query=query,
+            page_size=page_size,
+        )
+        
+        # 发送请求
+        response = stub.search(request=request)
+        
+        # 处理分页
+        all_results = []
+        for row in response.results:
+            all_results.append(self._parse_row(row))
+        
+        return all_results
+    
+    def _parse_row(self, row) -> dict:
         """
-        return query
-```
-
-### 2.5 速率限制源码
-
-```python
-# google/ads/googleads/helpers/rate_limiter.py
-# 速率限制
-
-from google.ads.googleads.enums import RateLimitSeverity
-
-class GoogleAdsRateLimiter:
-    """
-    Google Ads API 速率限制
-    
-    限制规则:
-    ├── 每秒请求限制: 取决于账号等级
-    │   ├── 入门级: 60 请求/分钟
-    │   ├── 标准级: 1000 请求/分钟
-    │   └── 高级级: 无限
-    │
-    ├── 每日请求限制: 取决于 daily_budget
-    │   └── daily_budget * 1000
-    │
-    └── 响应头:
-        ├── google.ads.googleads.responses.per_minute_quota_remaining
-        ├── google.ads.googleads.responses.per_minute_usage
-        └── google.ads.googleads.responses.daily_quota_remaining
-    
-    处理策略:
-    ├── 自动退避
-    ├── 排队
-    └── 重试
-    """
-    
-    def __init__(self):
-        self.request_count = 0
-        self.time_window_start = time.time()
-        self.requests_per_minute = 1000
-    
-    def check_and_wait(self):
+        解析查询结果
+        
+        将 proto message 转换为 Python dict
+        处理字段名到属性名的映射
+        处理 None 值
         """
-        检查速率限制并等待
+        result = {}
+        
+        for field in row.ListFields():
+            field_name = field[0].name
+            field_value = field[1]
+            
+            # 处理嵌套对象
+            if hasattr(field_value, '__iter__') and not isinstance(field_value, str):
+                result[field_name] = {
+                    sub_field.name: sub_value
+                    for sub_field, sub_value in field_value.ListFields()
+                }
+            else:
+                result[field_name] = field_value
+        
+        return result
+    
+    def search_by_stream(self, customer_id: str, query: str, page_size: int = 10000):
+        """
+        流式查询 - 处理大规模数据
+        
+        使用流式响应而不是分页，适合查询百万级数据
         
         流程:
-        1. 计算当前窗口内的请求数
-        2. 如果超过限制，等待
-        3. 重置窗口
+        1. 构建 SearchGoogleAdsStreamRequest
+        2. 使用 gRPC streaming
+        3. 逐块处理结果
+        4. 流式输出
         """
-        elapsed = time.time() - self.time_window_start
+        from google.ads.googleads.types import SearchGoogleAdsStreamRequest
         
-        # 窗口过期（60 秒）
-        if elapsed > 60:
-            self.request_count = 0
-            self.time_window_start = time.time()
+        stub = self._get_stub()
+        request = SearchGoogleAdsStreamRequest(
+            customer_id=str(customer_id),
+            query=query,
+            page_size=page_size,
+        )
         
-        # 超过限制
-        if self.request_count >= self.requests_per_minute:
-            wait_time = 60 - elapsed
-            time.sleep(wait_time)
-            self.request_count = 0
-            self.time_window_start = time.time()
+        # 流式响应
+        response = stub.search_stream(request=request)
         
-        self.request_count += 1
-    
-    def handle_rate_limit_error(self, error):
-        """
-        处理速率限制错误
-        
-        状态码:
-        ├── NOT_ENOUGH_PERMISSIONS: 权限不足
-        └── DAILY_QUOTA_EXCEEDED: 日配额超限
-        """
-        if error.code == GoogleAdsError.RateLimitExceeded:
-            # 等待后重试
-            retry_after = int(error.details.retry_after)
-            time.sleep(retry_after)
-            return True
-        
-        return False
+        for response_chunk in response:
+            for row in response_chunk.results:
+                yield self._parse_row(row)
 ```
 
-### 2.6 微货币单位转换源码
+### 2.3 Micros 单位处理
 
 ```python
-# google/ads/googleads/utils/units.py
-# 货币单位转换
+# google_ads/utils/micros.py
+# Micros 单位转换工具
 
-# Google Ads 使用 micros（微单位）
-# 1 micros = 0.000001 货币单位
-
-# 转换:
-# cost_micros = 12345678
-# cost = cost_micros / 1000000 = 12.345678 元
-
-class UnitConverter:
+class MicrosConverter:
     """
-    单位转换器
+    Google Ads 使用 micros 作为货币单位
+    1 USD = 1,000,000 micros
     
-    Google Ads API 使用微单位:
-    ├── 金额: micros (1 micros = 10^-6)
-    ├── 数量: micros for percentages (1% = 10000 micros)
-    └── 时间: micros for timestamps
+    为什么用 micros？
+    - 避免浮点数精度问题
+    - 所有金额操作都是整数运算
+    - 精确到小数点后 6 位
     
-    转换函数:
-    ├── micro_to_float(): micros → float
-    ├── float_to_micro(): float → micros
-    └── format_currency(): 格式化金额
+    常见场景:
+    ├── bid 出价：cpc=1.50 USD → 1500000 micros
+    ├── 预算：daily_budget=50 USD → 50000000 micros
+    ├── 花费：cost=12.345678 USD → 12345678 micros
+    └── 收入：revenue=123.456789 USD → 123456789 micros
     """
     
-    @staticmethod
-    def micro_to_float(micros: int) -> float:
-        """转换为浮点数"""
-        return micros / 1000000.0
+    # 转换因子
+    MICRO_UNITS = 1_000_000
     
     @staticmethod
-    def float_to_micro(value: float) -> int:
-        """转换为 micros"""
-        return int(value * 1000000)
-    
-    @staticmethod
-    def format_currency(micros: int, currency: str = "CNY") -> str:
+    def to_micros(value: float) -> int:
         """
-        格式化货币
+        将浮点数转换为 micros
+        
+        处理:
+        1. 乘以转换因子
+        2. 四舍五入到整数
+        3. 确保非负
+        """
+        if value < 0:
+            raise ValueError("Value cannot be negative")
+        return int(round(value * MicrosConverter.MICRO_UNITS))
+    
+    @staticmethod
+    def from_micros(micros: int) -> float:
+        """
+        将 micros 转换为浮点数
+        
+        参数:
+        └── micros: 微单位值
+        """
+        return micros / MicrosConverter.MICRO_UNITS
+    
+    @classmethod
+    def convert_bid(cls, cpc_usd: float) -> int:
+        """转换 CPC 出价为 micros"""
+        return cls.to_micros(cpc_usd)
+    
+    @classmethod
+    def convert_budget(cls, daily_budget_usd: float) -> int:
+        """转换日预算为 micros"""
+        return cls.to_micros(daily_budget_usd)
+    
+    @classmethod
+    def convert_cost(cls, cost_micros: int) -> float:
+        """转换花费 micros 为 USD"""
+        return cls.from_micros(cost_micros)
+
+
+# 使用示例
+print(MicrosConverter.to_micros(1.50))        # 1500000
+print(MicrosConverter.from_micros(1500000))    # 1.5
+print(MicrosConverter.convert_bid(2.00))       # 2000000
+print(MicrosConverter.convert_cost(12345678))  # 12.345678
+```
+
+### 2.4 创建广告系列源码
+
+```python
+# google_ads/operations/campaign.py
+# 广告系列 CRUD 操作
+
+class CampaignServiceClient:
+    """
+    CampaignService - 广告系列管理
+    
+    支持操作:
+    ├── create_campaign: 创建广告系列
+    ├── update_campaign: 更新广告系列
+    └── remove_campaign: 删除广告系列
+    
+    广告系列类型:
+    ├── SEARCH: 搜索广告
+    ├── DISPLAY: 展示广告
+    ├── SHOPPING: 购物广告
+    ├── VIDEO: 视频广告
+    ├── PERFORMANCE_MAX: 全渠道自动化
+    └─ APP: 应用广告
+    """
+    
+    def __init__(self, client: "GoogleAdsClient"):
+        self.client = client
+    
+    def create_search_campaign(self, customer_id: str, name: str, budget_micros: int, 
+                                bidding_strategy_type: str = "TARGET_CPA", 
+                                target_cpa_micros: int = 0) -> str:
+        """
+        创建搜索广告系列
+        
+        流程:
+        1. 创建预算 (BudgetOperation)
+        2. 创建出价策略 (BiddingStrategyOperation)
+        3. 创建广告系列 (CampaignOperation)
+        4. 发送 mutate 请求
+        5. 返回广告系列资源名称
+        
+        参数:
+        ├── customer_id: 广告账户 ID
+        ├── name: 广告系列名称
+        ├── budget_micros: 日预算（微单位）
+        ├── bidding_strategy_type: 出价策略类型
+        └── target_cpa_micros: 目标 CPA（微单位）
+        """
+        from google.ads.googleads.services import campaign_service_client
+        from google.ads.googleads.types import (
+            Campaign, CampaignBudget,
+            ManualCPA, TargetCpa, AdvertisingChannelType
+        )
+        
+        stub = campaign_service_client.CampaignServiceClient()
+        
+        # 1. 创建预算
+        budget = CampaignBudget(
+            name=name + " Budget",
+            amount_micros=budget_micros,
+            delivery_method="STANDARD",  # 标准投放（均匀分布）
+            # "STANDARD" = 均匀投放
+            # "ACCELERATED" = 加速投放（尽快花完）
+        )
+        budget_operation = {
+            "create": budget,
+        }
+        
+        # 2. 创建出价策略
+        if bidding_strategy_type == "TARGET_CPA":
+            bidding_strategy = TargetCpa(
+                target_cpa_micros=target_cpa_micros,
+            )
+        else:
+            bidding_strategy = ManualCPA()
+        
+        # 3. 创建广告系列
+        campaign = Campaign(
+            name=name,
+            advertising_channel_type=AdvertisingChannelType.SEARCH,
+            manual_cpa=bidding_strategy if bidding_strategy_type == "MANUAL_CPC" else None,
+            target_cpa=bidding_strategy if bidding_strategy_type == "TARGET_CPA" else None,
+            bidding_strategy=bidding_strategy.resource_name if bidding_strategy else None,
+            status="PAUSED",  # 创建后先暂停，避免意外花费
+        )
+        campaign_operation = {
+            "create": campaign,
+        }
+        
+        # 4. 发送 mutate 请求
+        # 注意：Google Ads API 不支持批量 mutate 不同类型的操作
+        # 需要分别发送 budget 和 campaign 的 mutate 请求
+        
+        budget_response = stub.mutate_budgets(
+            customer_id=customer_id,
+            operations=[budget_operation],
+        )
+        budget_resource_name = budget_response.results[0].resource_name
+        
+        campaign.bidding_strategy = budget_resource_name
+        
+        campaign_response = stub.mutate_campaigns(
+            customer_id=customer_id,
+            operations=[campaign_operation],
+        )
+        
+        campaign_resource_name = campaign_response.results[0].resource_name
+        campaign_id = self._extract_id_from_resource_name(campaign_resource_name)
+        
+        return str(campaign_id)
+    
+    def _extract_id_from_resource_name(self, resource_name: str) -> int:
+        """
+        从资源名称中提取 ID
+        
+        格式: customers/{customer_id}/campaigns/{campaign_id}
         
         示例:
-        >>> UnitConverter.format_currency(12345678)
-        '¥ 12.35'
+        customers/1234567890/campaigns/9876543210
+        → customer_id=1234567890, campaign_id=9876543210
         """
-        value = UnitConverter.micro_to_float(micros)
+        parts = resource_name.split("/")
+        # 最后两个部分是类型和 ID
+        campaign_id = int(parts[-1])
+        return campaign_id
+
+
+class AdGroupServiceClient:
+    """
+    AdGroupService - 广告组管理
+    
+    流程:
+    1. 创建广告系列
+    2. 创建广告组
+    3. 添加关键词/定向
+    4. 添加广告创意
+    """
+    
+    def __init__(self, client: "GoogleAdsClient"):
+        self.client = client
+    
+    def create_ad_group(self, customer_id: str, campaign_id: str, 
+                        name: str, cpc_bid_micros: int = 0) -> str:
+        """
+        创建广告组
         
-        # 根据货币格式化
-        if currency == "USD":
-            return f"${value:.2f}"
-        elif currency == "CNY":
-            return f"¥ {value:.2f}"
-        elif currency == "EUR":
-            return f"€ {value:.2f}"
+        流程:
+        1. 构建 AdGroup 对象
+        2. 设置 cpc_bid_micros
+        3. 发送 mutate 请求
+        4. 返回广告组 ID
+        """
+        from google.ads.googleads.services import ad_group_service_client
+        from google.ads.googleads.types import AdGroup
+        
+        stub = ad_group_service_client.AdGroupServiceClient()
+        
+        campaign_resource_name = f"customers/{customer_id}/campaigns/{campaign_id}"
+        
+        ad_group = AdGroup(
+            name=name,
+            campaign=campaign_resource_name,
+            cpc_bid_ceiling_micros=cpc_bid_micros,  # CPC 最高出价
+            status="ENABLED",
+        )
+        
+        operation = {
+            "create": ad_group,
+        }
+        
+        response = stub.mutate_ad_groups(
+            customer_id=customer_id,
+            operations=[operation],
+        )
+        
+        ad_group_id = self._extract_id_from_resource_name(response.results[0].resource_name)
+        return str(ad_group_id)
+
+
+class KeywordServiceClient:
+    """
+    AdGroupCriterionService - 关键词管理
+    
+    关键词是搜索广告的核心
+    每个关键词对应一个搜索意图
+    
+    匹配类型:
+    ├── broad_match: 广泛匹配（默认）
+    ├── phrase_match: 词组匹配
+    └── exact_match: 精确匹配
+    """
+    
+    def __init__(self, client: "GoogleAdsClient"):
+        self.client = client
+    
+    def add_keywords(self, customer_id: str, ad_group_id: str, 
+                     keywords: list, match_type: str = "EXACT") -> list:
+        """
+        批量添加关键词
+        
+        流程:
+        1. 为每个关键词创建 Criterion 对象
+        2. 设置 CPC bid（可选）
+        3. 批量发送 mutate 请求
+        
+        参数:
+        ├── customer_id: 广告账户 ID
+        ├── ad_group_id: 广告组 ID
+        ├── keywords: 关键词列表
+        └── match_type: 匹配类型 (EXACT/PHRASE/BROAD)
+        """
+        from google.ads.googleads.services import ad_group_criterion_service_client
+        from google.ads.googleads.types import (
+            AdGroupCriterion, KeywordInfo,
+            BiddingStrategyConfiguration, AdGroupCriterionBidModifier
+        )
+        
+        stub = ad_group_criterion_service_client.AdGroupCriterionServiceClient()
+        
+        campaign_resource_name = f"customers/{customer_id}/campaigns/{ad_group_id}"
+        
+        operations = []
+        for keyword_text in keywords:
+            criterion = AdGroupCriterion(
+                ad_group=f"customers/{customer_id}/adGroups/{ad_group_id}",
+                keyword=KeywordInfo(
+                    text=keyword_text,
+                    match_type=getattr(
+                        KeywordInfo.MatchType, 
+                        match_type.upper()
+                    ),
+                ),
+                status="PAUSED",  # 先暂停，避免立即投放
+            )
+            
+            operation = {"create": criterion}
+            operations.append(operation)
+        
+        # 批量发送
+        response = stub.mutate_ad_group_criteria(
+            customer_id=customer_id,
+            operations=operations,
+        )
+        
+        created_ids = []
+        for result in response.results:
+            resource_name = result.resource_name
+            ad_group_criterion_id = int(resource_name.split("/")[-1])
+            created_ids.append(ad_group_criterion_id)
+        
+        return created_ids
+```
+
+### 2.5 错误处理和速率限制
+
+```python
+# google_ads/exceptions.py
+# 错误处理和速率限制
+
+import time
+
+class GoogleAdsApiError(Exception):
+    """
+    Google Ads API 错误
+    
+    常见错误码:
+    ├── AUTHENTICATION_ERROR: 认证失败（Developer Token 无效）
+    ├── AUTHORIZATION_ERROR: 权限不足（没有访问该账户的权限）
+    ├── DAILY_LIMIT_EXCEEDED: 超出每日 API 调用限制
+    ├── QUOTA_EXCEEDED: 超出配额限制
+    ├── MUTATE_ERROR: 操作失败（如字段校验错误）
+    ├── MUTATE_LIMIT_EXCEEDED: 超出 mutate 限制
+    ├── RATE_EXCEEDED: 速率限制
+    └── RESOURCE_LIMIT_EXCEEDED: 资源限制（如广告组数量上限）
+    
+    处理策略:
+    ├── 认证错误 → 检查 Developer Token
+    ├── 速率限制 → 指数退避
+    ├── 配额错误 → 减少请求频率
+    └── 操作错误 → 检查参数
+    """
+    
+    def __init__(self, error_code: str, message: str, request_id: str = None):
+        self.error_code = error_code
+        self.message = message
+        self.request_id = request_id
+        super().__init__(f"[{error_code}] {message}")
+    
+    def should_retry(self) -> bool:
+        """判断是否应该重试"""
+        retryable_errors = [
+            "RATE_EXCEEDED",
+            "QUOTA_EXCEEDED",
+            "DAILY_LIMIT_EXCEEDED",
+            "SERVICE_UNAVAILABLE",
+        ]
+        return self.error_code in retryable_errors
+    
+    def get_retry_delay(self) -> float:
+        """计算重试延迟（指数退避）"""
+        if self.error_code == "RATE_EXCEEDED":
+            return 60  # 速率限制：等待 1 分钟
+        elif self.error_code in ["QUOTA_EXCEEDED", "DAILY_LIMIT_EXCEEDED"]:
+            return 86400  # 超出每日限制：等待 24 小时
         else:
-            return f"{value:.2f} {currency}"
+            return 5  # 默认：等待 5 秒
+
+
+class RateLimiter:
+    """
+    Google Ads API 速率限制器
+    
+    限制规则:
+    ├── 每分钟 10000 次 mutate 操作
+    ├── 每分钟 1000 次查询操作
+    └── 每天 500 万 API 调用
+    
+    处理策略:
+    ├── 自动排队
+    ├── 令牌桶算法
+    └── 指数退避
+    """
+    
+    def __init__(self, max_mutates_per_minute: int = 10000, 
+                 max_queries_per_minute: int = 1000):
+        self.max_mutates = max_mutates_per_minute
+        self.max_queries = max_queries_per_minute
+        self.mutate_count = 0
+        self.query_count = 0
+        self.window_start = time.time()
+    
+    def check(self, operation_type: str) -> bool:
+        """
+        检查速率限制
+        
+        参数:
+        └── operation_type: "mutate" 或 "query"
+        """
+        elapsed = time.time() - self.window_start
+        
+        # 窗口过期，重置计数
+        if elapsed > 60:
+            self.mutate_count = 0
+            self.query_count = 0
+            self.window_start = time.time()
+        
+        # 检查限制
+        if operation_type == "mutate":
+            if self.mutate_count >= self.max_mutates:
+                wait_time = 60 - elapsed
+                time.sleep(wait_time)
+                self.mutate_count = 0
+                self.window_start = time.time()
+                return True
+            self.mutate_count += 1
+        elif operation_type == "query":
+            if self.query_count >= self.max_queries:
+                wait_time = 60 - elapsed
+                time.sleep(wait_time)
+                self.query_count = 0
+                self.window_start = time.time()
+                return True
+            self.query_count += 1
+        
+        return True
 ```
 
 ---
@@ -638,100 +836,102 @@ class UnitConverter:
 ## 第三部分：自测
 
 ### 问题 1
-Google Ads API 的认证流程是什么？
+Google Ads API 中，1 USD 等于多少 micros？
 <details>
 <summary>查看答案</summary>
 
-1. 从 google-ads.yaml 加载配置
-2. 使用 refresh_token 获取 access_token
-3. access_token 有效期 1 小时
-4. 过期后使用 refresh_token 刷新
+- 1 USD = 1,000,000 micros
+- 所有货币值都使用整数表示，避免浮点数精度问题
 </details>
 
 ### 问题 2
-GAQL 查询的基本结构是什么？
+GAQL 查询中，`metrics.impressions` 和 `metrics.clicks` 有什么区别？
 <details>
 <summary>查看答案</summary>
 
-SELECT fields FROM table WHERE conditions ORDER BY ... LIMIT ...
+- `impressions`: 广告展示次数（用户看到广告）
+- `clicks`: 用户点击广告的次数
+- CTR = clicks / impressions
 </details>
 
 ### 问题 3
-micros 是什么？为什么使用它？
+Google Ads API 的速率限制是多少？
 <details>
 <summary>查看答案</summary>
 
-micros = 微单位，1 micros = 10^-6
-- 高精度表示金额
-- 避免浮点数精度问题
-- cost_micros / 1000000 = 实际金额
+- 每分钟 10000 次 mutate 操作
+- 每分钟 1000 次查询操作
+- 每天 500 万 API 调用
 </details>
 
 ---
 
 ## 第四部分：动手验证
 
-### 4.1 运行查询
+### 4.1 查询账户数据
 
 ```python
 from google.ads.googleads.client import GoogleAdsClient
 
-client = GoogleAdsClient.load_from_storage('google-ads.yaml')
+client = GoogleAdsClient.load_from_storage("google-ads.yaml")
+customer_id = "YOUR_CUSTOMER_ID"
 
+ga_service = client.get_service("GoogleAdsService")
+
+# 查询过去 7 天的数据
 query = """
-SELECT
-    campaign.name,
-    metrics.impressions,
-    metrics.clicks,
-    metrics.cost_micros
-FROM campaign
-WHERE segments.date DURING LAST_7_DAYS
+    SELECT
+        campaign.name,
+        campaign.status,
+        metrics.impressions,
+        metrics.clicks,
+        metrics.cost_micros,
+        metrics.conversions
+    FROM campaign
+    WHERE segments.date DURING LAST_7_DAYS
 """
 
-customer_id = "YOUR_CUSTOMER_ID"
-customer = client.get_service("Customer", customer_id)
+response = ga_service.search(customer_id=customer_id, query=query, page_size=500)
 
-for row in client.get_service("GoogleAdsService").search_paged(
-    customer_id=customer_id,
-    query=query
-):
-    print(f"广告系列: {row.campaign.name}")
-    print(f"展示: {row.metrics.impressions}")
-    print(f"点击: {row.metrics.clicks}")
-    print(f"花费: {row.metrics.cost_micros / 1000000:.2f} 元")
+for row in response:
+    cost_usd = row.metrics.cost_micros / 1_000_000
+    print(f"系列: {row.campaign.name}")
+    print(f"  展示: {row.metrics.impressions}")
+    print(f"  点击: {row.metrics.clicks}")
+    print(f"  花费: ${cost_usd:.2f}")
+    print(f"  转化: {row.metrics.conversions}")
 ```
 
-### 4.2 创建广告系列
+### 4.2 批量创建广告组
 
 ```python
-from google.ads.googleads.resources.campaign import CampaignOperation
+from google_ads.operations.campaign import CampaignServiceClient, AdGroupServiceClient, KeywordServiceClient
 
-# 创建 CampaignOperation
-campaign_operation = CampaignOperation()
-campaign = campaign_operation.create
+client = GoogleAdsClient.load_from_storage("google-ads.yaml")
+customer_id = "YOUR_CUSTOMER_ID"
+campaign_id = "YOUR_CAMPAIGN_ID"
 
-campaign.name = "测试广告系列"
-campaign.advertising_channel_type = "SEARCH"
-campaign.status = "PAUSED"
+ad_group_client = AdGroupServiceClient(client)
 
-# 设置预算
-budget = client.get_type("Budget").budget
-budget.delivery_method = "STANDARD"
-budget.amount_micros = 100000000  # 100 元
-
-campaign.standard_upgrade_config = (
-    client.get_type("StandardUpgradeConfig")
-)
-campaign.standard_upgrade_config.default_bid_amount_micros = 500000  # 0.5 元
-campaign.standard_upgrade_config.budget = budget
-
-# 执行创建
-campaign_service = client.get_service("CampaignService")
-result = campaign_service.mutate_campaigns(
+# 创建广告组
+ad_group_id = ad_group_client.create_ad_group(
     customer_id=customer_id,
-    operations=[campaign_operation]
+    campaign_id=campaign_id,
+    name="测试广告组",
+    cpc_bid_micros=2_000_000,  # CPC 2.00 USD
 )
-print(f"创建成功: {result.results[0].resource_name}")
+
+# 添加关键词
+keyword_client = KeywordServiceClient(client)
+keywords = ["seo 优化", "数字营销", "SEM 服务"]
+created_ids = keyword_client.add_keywords(
+    customer_id=customer_id,
+    ad_group_id=ad_group_id,
+    keywords=keywords,
+    match_type="EXACT",
+)
+
+print(f"创建了 {len(created_ids)} 个关键词")
 ```
 
 ---

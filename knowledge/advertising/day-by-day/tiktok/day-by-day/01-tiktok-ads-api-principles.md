@@ -34,15 +34,14 @@ TikTok Ads 是 TikTok 的广告投放平台
 - 批量管理广告账户
 - 自动创建和调整广告
 - 拉取数据进行分析
-- 集成内部系统
 ```
 
 ### 1.3 API 架构总览
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                  TikTok Ads API 架构                         │
-│                                                             │
+│               TikTok Ads API 架构                            │
+│                                                              │
 │  ┌──────────────┐                                          │
 │  │  你的系统     │                                          │
 │  │  (Client)    │                                          │
@@ -50,7 +49,7 @@ TikTok Ads 是 TikTok 的广告投放平台
 │         │ HTTPS REST API                                    │
 │         ▼                                                   │
 │  ┌────────────────────────────────────────────────────────┐│
-│  │               TikTok Ads API Server                     ││
+│  │              TikTok Ads API Server                      ││
 │  │                                                        ││
 │  │  ┌────────────────────────────────────────────────────┐││
 │  │  │           Authentication                           │││
@@ -59,35 +58,31 @@ TikTok Ads 是 TikTok 的广告投放平台
 │  │               │                                        ││
 │  │  ┌────────────▼───────────────────────────────────────┐││
 │  │  │           业务逻辑层                                 │││
-│  │  │           (Ad Account, Campaign, Ad, Creative...)  │││
+│  │  │           Ad Account, Campaign, Ad, Creative...    │││
 │  │  └────────────────────────────────────────────────────┘││
 │  └────────────────────────────────────────────────────────┘│
-│                                                             │
+│                                                              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ### 1.4 快速体验
 
-```bash
+```python
 # 1. 安装 TikTok Ads API SDK
 pip install tiktok-api
 
 # 2. Python 示例
 from tiktok_ads.tiktok_client import TiktokClient
 
-# 配置
 client = TiktokClient(
     access_token='YOUR_ACCESS_TOKEN',
     advertiser_id='YOUR_ADVERTISER_ID',
 )
 
-# 查询广告数据
+# 查询广告账户
 response = client.get(
     path='/ad-accounts',
-    params={
-        'page': 1,
-        'page_size': 10,
-    }
+    params={'page': 1, 'page_size': 10}
 )
 
 for account in response.get('data', {}).get('list', []):
@@ -96,7 +91,7 @@ for account in response.get('data', {}).get('list', []):
     print(f"状态: {account['status']}")
 ```
 
-### 1.5 关键概念总结
+### 1.5 关键概念速记
 
 | 概念 | 说明 |
 |------|------|
@@ -115,7 +110,7 @@ for account in response.get('data', {}).get('list', []):
 
 ```python
 # tiktok_ads/auth/oauth.py
-# TikTok Ads OAuth 认证
+# TikTok OAuth 认证
 
 class TikTokOAuthClient:
     """
@@ -134,8 +129,8 @@ class TikTokOAuthClient:
     └── scope: 权限范围
     """
     
-    TOKEN_URL = 'https://ad.tiktok.com/api/v2/oauth2/token/'
-    AUTH_URL = 'https://www.tiktok.com/auth/authorize/'
+    TOKEN_URL='https://business-api.tiktok.com/portal/login'
+    AUTH_URL='https://business-api.tiktok.com/portal/'
     
     def __init__(self, app_id, app_secret):
         self.app_id = app_id
@@ -145,12 +140,7 @@ class TikTokOAuthClient:
         self.token_expiry = None
     
     def generate_auth_url(self, redirect_uri, state=None):
-        """
-        生成授权 URL
-        
-        用户点击后会被重定向到 redirect_uri
-        redirect_uri 中会包含 code 参数
-        """
+        """生成授权 URL"""
         params = {
             'client_key': self.app_id,
             'redirect_uri': redirect_uri,
@@ -162,15 +152,7 @@ class TikTokOAuthClient:
         return f"{self.AUTH_URL}?{urlencode(params)}"
     
     def exchange_code_for_token(self, code, redirect_uri):
-        """
-        用 code 换取 access_token
-        
-        流程:
-        1. 发送 POST 请求到 token 端点
-        2. 传入 code、app_id、app_secret
-        3. 获取 access_token 和 refresh_token
-        4. 缓存 token
-        """
+        """用 code 换取 access_token"""
         data = {
             'client_key': self.app_id,
             'client_secret': self.app_secret,
@@ -186,20 +168,12 @@ class TikTokOAuthClient:
         
         self.access_token = token_data['access_token']
         self.refresh_token = token_data['refresh_token']
-        # access_token 有效期 86400 秒（24 小时）
         self.token_expiry = time.time() + token_data['expires_in']
         
         return token_data
     
     def refresh_token(self):
-        """
-        刷新 access_token
-        
-        流程:
-        1. 发送 POST 请求到 token 端点
-        2. 传入 refresh_token
-        3. 获取新的 access_token
-        """
+        """刷新 access_token"""
         data = {
             'client_key': self.app_id,
             'grant_type': 'refresh_token',
@@ -212,7 +186,6 @@ class TikTokOAuthClient:
         token_data = response.json()
         
         self.access_token = token_data['access_token']
-        # 刷新后会获得新的 refresh_token
         self.refresh_token = token_data.get('refresh_token', self.refresh_token)
         self.token_expiry = time.time() + token_data['expires_in']
         
@@ -280,17 +253,7 @@ class TiktokClient:
         return self._handle_response(response)
     
     def _handle_response(self, response):
-        """
-        处理响应
-        
-        格式:
-        {
-            "request_id": "xxx",
-            "code": 0,
-            "message": "success",
-            "data": { ... }
-        }
-        """
+        """处理响应"""
         if response.status_code != 200:
             raise TikTokAPIError(f"HTTP {response.status_code}")
         
@@ -312,48 +275,21 @@ class TiktokClient:
 # 广告账户操作
 
 class AdAccount:
-    """
-    广告账户操作
-    
-    常用方法:
-    ├── list(): 列出广告账户
-    ├── create(): 创建广告账户
-    ├── update(): 更新广告账户
-    ├── delete(): 删除广告账户
-    └── get_insights(): 获取数据
-    """
+    """广告账户操作"""
     
     def __init__(self, client):
         self.client = client
     
     def list(self, status=None, page=1, page_size=10):
-        """
-        列出广告账户
-        
-        支持过滤:
-        ├── status: 状态 (ON/OFF)
-        ├── page: 页码
-        └── page_size: 每页数量
-        """
-        params = {
-            'page': page,
-            'page_size': page_size,
-        }
-        
+        """列出广告账户"""
+        params = {'page': page, 'page_size': page_size}
         if status:
             params['status'] = status
         
         return self.client.get('/ad-accounts', params=params)
     
     def create(self, name, currency, time_zone):
-        """
-        创建广告账户
-        
-        参数:
-        ├── name: 账户名称
-        ├── currency: 货币 (CNY/USD/...)
-        └── time_zone: 时区
-        """
+        """创建广告账户"""
         data = {
             'advertiser_name': name,
             'currency': currency,
@@ -363,17 +299,7 @@ class AdAccount:
         return self.client.post('/advertisers', data=data)
     
     def get_insights(self, advertiser_id, date_preset=None, date_start=None, date_end=None, breakdowns=None, stats_type='ALL'):
-        """
-        获取广告数据
-        
-        参数:
-        ├── advertiser_id: 广告账户 ID
-        ├── date_preset: 日期预设
-        ├── date_start: 开始日期
-        ├── date_end: 结束日期
-        ├── breakdowns: 拆分维度
-        └── stats_type: 统计类型 (ALL/COST/CLICK/CONVERSION)
-        """
+        """获取广告数据"""
         data = {
             'advertiser_ids': [advertiser_id],
             'report_type': 'CAMPAIGN_AD_GROUP_AD',
@@ -399,42 +325,12 @@ class AdAccount:
 # 报表数据查询
 
 class ReportClient:
-    """
-    报表数据查询
+    """报表数据查询"""
     
-    支持的数据维度:
-    ├── 时间维度: day, week, month
-    ├── 广告维度: campaign, ad_group, ad
-    ├── 人群维度: age, gender, region
-    ├── 设备维度: platform, device
-    
-    支持的指标:
-    ├── impressions: 展示
-    ├── clicks: 点击
-    ├── ctr: 点击率
-    ├── cpc: 每次点击费用
-    ├── conversions: 转化
-    ├── cost_per_conversion: 每次转化费用
-    └── roas: 广告回报率
-    """
-    
-    def get_campaign_insights(
-        self,
-        advertiser_id,
-        start_date,
-        end_date,
-        metrics=['impressions', 'clicks', 'cost'],
-        breakdowns=['day'],
-    ):
-        """
-        获取广告系列数据
-        
-        流程:
-        1. 构建请求
-        2. 发送 POST 请求
-        3. 解析响应
-        4. 返回数据列表
-        """
+    def get_campaign_insights(self, advertiser_id, start_date, end_date,
+                              metrics=['impressions', 'clicks', 'cost'],
+                              breakdowns=['day']):
+        """获取广告系列数据"""
         data = {
             'advertiser_ids': [advertiser_id],
             'report_name': 'campaign_insights',
@@ -468,8 +364,7 @@ class ReportClient:
 # 错误处理
 
 class TikTokAPIError(Exception):
-    """
-    TikTok API 错误
+    """TikTok API 错误
     
     常见错误码:
     ├── 62201: 权限不足
@@ -478,11 +373,6 @@ class TikTokAPIError(Exception):
     ├── 62204: 参数错误
     ├── 62205: 余额不足
     └── 62206: 频率限制
-    
-    处理策略:
-    ├── 自动重试: 频率限制
-    ├── 用户提示: 权限不足
-    └── 记录日志: 所有错误
     """
     
     ERROR_MESSAGES = {
@@ -500,24 +390,14 @@ class TikTokAPIError(Exception):
         super().__init__(message)
     
     def handle_error(self):
-        """
-        错误处理
-        
-        返回:
-        ├── True: 已处理
-        └── False: 需要重试
-        """
+        """错误处理"""
         if self.error_code == 62202:  # Token 过期
-            # 需要刷新 token
             return 'refresh_token'
         elif self.error_code == 62206:  # 频率限制
-            # 等待后重试
             return 'retry'
         elif self.error_code == 62201:  # 权限不足
-            # 提示用户
             return 'permission_error'
         elif self.error_code == 62204:  # 参数错误
-            # 检查参数
             return 'parameter_error'
         
         return False
@@ -529,8 +409,6 @@ class TikTokAPIError(Exception):
 # tiktok_ads/ratelimit.py
 # 速率限制
 
-import time
-
 class TikTokRateLimiter:
     """
     TikTok 速率限制器
@@ -539,11 +417,6 @@ class TikTokRateLimiter:
     ├── 每个 advertiser 每分钟 30 次请求
     ├── 超过限制返回 62206 错误
     └── 需要指数退避
-    
-    处理策略:
-    ├── 自动排队
-    ├── 指数退避
-    └── 重试机制
     """
     
     def __init__(self, max_requests_per_minute=30):
@@ -555,12 +428,10 @@ class TikTokRateLimiter:
         """检查速率限制"""
         elapsed = time.time() - self.window_start
         
-        # 窗口过期
         if elapsed > 60:
             self.request_count = 0
             self.window_start = time.time()
         
-        # 超过限制
         if self.request_count >= self.max_requests:
             wait_time = 60 - elapsed
             time.sleep(wait_time)
@@ -570,11 +441,7 @@ class TikTokRateLimiter:
         self.request_count += 1
     
     def handle_rate_limit(self, error_code):
-        """
-        处理速率限制错误
-        
-        错误码 62206: 频率限制
-        """
+        """处理速率限制错误"""
         if error_code == 62206:
             wait_time = 2 ** (self.request_count % 4)  # 指数退避
             time.sleep(wait_time)
@@ -593,7 +460,6 @@ TikTok Ads API 的 access_token 有效期多久？
 
 - access_token: 24 小时
 - refresh_token: 30 天
-- 使用 refresh_token 刷新 access_token
 </details>
 
 ### 问题 2
