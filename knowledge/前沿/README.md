@@ -2,10 +2,11 @@
 
 > 通过 blogwatcher/arxiv 收集的 LLM/Agent/MLOps 前沿洞察
 
-## 结构建议
+## 文档
 
-- `insights/` — 单篇洞察笔记
-- `summaries/` — 季度/月度汇总
+| 文档 | 说明 |
+|------|------|
+| [blogwatcher-setup.md](./blogwatcher-setup.md) | Blogwatcher RSS 配置指南 |
 
 ## 推荐关注的博客
 

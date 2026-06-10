@@ -173,3 +173,86 @@ python3 scripts/run_pipeline.py \
 - ad-ai-coding = 业务逻辑（怎么审、怎么生成）
 - biz-delivery = 基础设施（怎么查、怎么提取知识）
 - agentmemory = 增强层（语义记忆 + 跨会话关联）
+
+---
+
+## 源码级补充：核心接口定义
+
+### 知识提取接口（Go 抽象）
+
+```go
+// 知识提取的核心抽象
+type KnowledgeExtractor interface {
+    // Extract 从代码/文档提取结构化知识
+    Extract(ctx context.Context, source Source) ([]KnowledgeItem, error)
+}
+
+type KnowledgeItem struct {
+    Kind       string            `json:"kind"` // "function"|"class"|"flow"|"contract"
+    Name       string            `json:"name"`
+    Location   Location          `json:"location"`
+    Signature  string            `json:"signature"`
+    ControlFlow  *ControlFlowGraph `json:"cfg,omitempty"`
+    DataFlow   *DataFlowGraph    `json:"dfg,omitempty"`
+    CallGraph  *CallGraph        `json:"callgraph,omitempty"`
+    Semantics  SemanticSummary   `json:"semantics"`
+    Tags       []string          `json:"tags"`
+    Confidence float64           `json:"confidence"`
+}
+```
+
+### 意图路由核心逻辑
+
+```go
+// IntentRouter 意图路由
+type IntentRouter struct {
+    patterns map[string]*IntentPattern  // 18种意图模式
+    weightMap map[string]ScopeWeight    // 意图→scope权重
+    cache     *QueryCache
+}
+
+type ScopeWeight struct {
+    Code    float64  // 代码查询权重
+    APIDocs float64  // API文档权重
+    Schema  float64  // Schema权重
+}
+
+// Route 根据查询文本自动路由到最佳查询路径
+func (r *IntentRouter) Route(query string) []Scope {
+    intent := r.classify(query)          // 意图识别
+    weights := r.weightMap[intent]        // 获取权重
+    
+    // 选 top-3 scopes
+    scopes := topKByWeight(weights, 3)
+    
+    // 缓存命中检查
+    if cached := r.cache.Get(query, scopes); cached != nil {
+        return cached
+    }
+    
+    return scopes
+}
+```
+
+### RRF 融合核心公式
+
+```
+Score(item) = Σ 1 / (rank_i + k)
+其中:
+- rank_i = 第 i 路检索中 item 的排名（从 1 开始）
+- k = 60 (论文推荐值)
+- 求和范围 = 所有检索路
+
+优势：无需分数归一化，天然处理不同路的结果数差异
+```
+
+---
+
+## 新业务接入 Checklist
+
+- [ ] 初始化 Profile（定义仓库路径、术语映射）
+- [ ] 实现 `fetch_prd.py`（PRD 获取）
+- [ ] 配置 API Docs 缓存（`ensure_api_docs.sh`）
+- [ ] 构建知识库索引（`ensure_knowledge_base.sh`）
+- [ ] 端到端测试：PRD → TD → 开发计划 → 测试用例
+- [ ] 验证知识提取：对已知代码做 query_evidence 测试

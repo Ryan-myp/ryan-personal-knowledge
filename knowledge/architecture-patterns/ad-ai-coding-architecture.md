@@ -191,3 +191,116 @@ python3 scripts/run_pipeline.py \
   --text "<PRD内容>" \
   --output-dir delivery/my-feature
 ```
+
+---
+
+## 源码级补充：核心接口定义
+
+### Skill 执行接口
+
+```go
+// 每个 Skill 的核心执行接口
+type SkillExecutor interface {
+    Name() string
+    Version() string
+    Execute(ctx SkillContext) (Result, error)
+    PreValidate() error
+    PostProcess(result Result) Result
+}
+
+// SkillContext 执行上下文
+type SkillContext struct {
+    Input       string            // 输入（PRD/需求描述等）
+    Profile     *BusinessProfile  // 业务 Profile
+    Evidence    []EvidenceItem    // 查询证据
+    KnowledgeDB *KnowledgeDB      // 知识库
+    Hooks       HookRegistry      // Hook 注册器
+}
+```
+
+### Hook 系统接口
+
+```go
+// Hook 注册表
+type HookRegistry struct {
+    hooks map[string][]func(ctx SkillContext) (SkillContext, error)
+}
+
+// 核心 Hook 类型
+const (
+    HookBeforeFetchPRD    = "before_fetch_prd"
+    HookAfterFetchPRD     = "after_fetch_prd"
+    HookBeforeReview      = "before_review"
+    HookAfterReview       = "after_review"
+    HookBeforeGenerateTD  = "before_generate_td"
+    HookAfterGenerateTD   = "after_generate_td"
+    HookBeforeGenTestCase = "before_gen_test_case"
+    HookAfterGenTestCase  = "after_gen_test_case"
+)
+
+// 业务 Hook 实现示例
+func init() {
+    // 广告平台术语映射 Hook
+    HookRegistry.Register("map_terms", func(ctx SkillContext) (SkillContext, error) {
+        terms := map[string]string{
+            "广告组":   "AdGroup",
+            "广告活动": "Campaign",
+            "转化":    "Conversion",
+            // ... 18种术语映射
+        }
+        ctx.Input = mapTerms(ctx.Input, terms)
+        return ctx, nil
+    })
+}
+```
+
+### Profile Schema
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Business Profile",
+  "properties": {
+    "business_domain": { "type": "string", "description": "业务域名标识" },
+    "repositories": {
+      "type": "array",
+      "items": { "type": "string", "format": "path" }
+    },
+    "domain_terms": {
+      "type": "object",
+      "description": "业务术语 → 代码关键词映射",
+      "additionalProperties": { "type": "string" }
+    },
+    "evidence_sources": {
+      "type": "array",
+      "items": { "enum": ["code", "api_docs", "schema", "git_log"] }
+    },
+    "review_rules": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "scenario_cards_path": { "type": "string" },
+    "custom_hooks": {
+      "type": "object",
+      "properties": {
+        "fetch_prd": { "type": "string" },
+        "validate": { "type": "string" },
+        "map_terms": { "type": "string" }
+      }
+    }
+  },
+  "required": ["business_domain", "repositories"]
+}
+```
+
+---
+
+## 设计决策记录 (ADR)
+
+| # | 决策 | 原因 | 影响 |
+|---|------|------|------|
+| 1 | 广告术语放 Profile 而非硬编码 | 新业务不需要修改引擎 | 引擎保持通用 |
+| 2 | PRD 获取放 Hooks | 不同业务 PRD 来源不同 | 灵活适配 Confluence/Wiki/文件 |
+| 3 | RRF 融合代替加权平均 | 无需分数归一化 | 减少调参，更稳定 |
+| 4 | 4 层分离架构 | 业务隔离 | 新业务只需改 Profile + Hooks |
+| 5 | 学习事件记录闭环 | 查询失败可追溯 | 持续改进查询准确率 |
