@@ -471,3 +471,36 @@ bid* = min(v, E[b_(k+1)])
 
 *今天花 90 分钟：深入掌握广告竞价算法数学推导*
 *答不出自测题？回去重读对应章节。*
+
+```go
+package bidding
+
+import (
+	"fmt"
+	"math"
+)
+
+type BidStrategy string
+const (
+	StrategyFirstPrice BidStrategy = "FIRST_PRICE"
+	StrategySecondPrice BidStrategy = "SECOND_PRICE"
+)
+
+func CalculateBid(trueValue, maxBid float64, strategy BidStrategy) float64 {
+	switch strategy {
+	case StrategyFirstPrice:
+		return math.Min(trueValue, maxBid)
+	case StrategySecondPrice:
+		return math.Min(trueValue*0.95, maxBid)
+	default:
+		return math.Min(trueValue, maxBid)
+	}
+}
+
+func main() {
+	fmt.Printf("First Price: $%.2f
+", CalculateBid(2.0, 5.0, StrategyFirstPrice))
+	fmt.Printf("Second Price: $%.2f
+", CalculateBid(2.0, 5.0, StrategySecondPrice))
+}
+

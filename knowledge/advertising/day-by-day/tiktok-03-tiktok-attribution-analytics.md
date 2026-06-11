@@ -400,3 +400,49 @@ print(f"等级: {result['grade']}")
 
 *今天花 60-90 分钟：深入理解 TikTok 归因模型，实践数据分析*
 *答不出自测题？回去重读对应章节。*
+
+```go
+package tiktokattr
+
+import (
+	"fmt"
+	"sort"
+)
+
+type Engine struct {
+	model string
+}
+
+func (e *Engine) Assign(touchpoints []string, revenue float64) map[string]float64 {
+	credits := make(map[string]float64)
+	n := float64(len(touchpoints))
+	if n > 0 { for _, tp := range touchpoints { credits[tp] += revenue / n } }
+	return credits
+}
+
+type Result struct {
+	Channel string
+	Credit  float64
+	Grade   string
+}
+
+func (e *Engine) Grade(touchpoints []string, revenue float64) []Result {
+	credits := e.Assign(touchpoints, revenue)
+	results := make([]Result, 0, len(credits))
+	for ch, cr := range credits {
+		grade := "C"
+		if cr*100/revenue > 3 { grade = "A" } else if cr*100/revenue > 1.5 { grade = "B" }
+		results = append(results, Result{ch, cr, grade})
+	}
+	sort.Slice(results, func(i, j int) bool { return results[i].Credit > results[j].Credit })
+	return results
+}
+
+func main() {
+	e := &Engine{}
+	for _, r := range e.Grade([]string{"fb", "tiktok", "email"}, 300.0) {
+		fmt.Printf("  %s: $%.2f (%s)
+", r.Channel, r.Credit, r.Grade)
+	}
+}
+

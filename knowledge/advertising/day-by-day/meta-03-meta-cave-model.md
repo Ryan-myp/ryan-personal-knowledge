@@ -406,3 +406,32 @@ cph.print_summary()
 
 *今天花 90 分钟：深入理解 CAVE 模型和生存分析*
 *答不出自测题？回去重读对应章节。*
+
+```go
+package cave
+
+import (
+	"fmt"
+	"math"
+)
+
+type SurvivalModel struct {
+	lambda float64
+}
+
+func NewSurvivalModel(h float64) *SurvivalModel { return &SurvivalModel{lambda: h} }
+
+func (m *SurvivalModel) Survival(t float64) float64 {
+	return math.Exp(-m.lambda * t)
+}
+
+func (m *SurvivalModel) Median() float64 {
+	return math.Ln2 / m.lambda
+}
+
+func main() {
+	m := NewSurvivalModel(0.1)
+	fmt.Printf("S(10)=%.4f, Median=%.2f
+", m.Survival(10), m.Median())
+}
+

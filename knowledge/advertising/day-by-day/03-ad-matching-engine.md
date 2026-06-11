@@ -350,3 +350,46 @@ Re-Ranking 的主要策略有哪些？
 
 *今天花 90 分钟：深入掌握广告匹配引擎技术*
 *答不出自测题？回去重读对应章节。*
+
+```go
+package matching
+
+import (
+	"fmt"
+	"strings"
+)
+
+type Matcher struct {
+	exact  map[string]string
+	phrase map[string]string
+}
+
+func NewMatcher() *Matcher {
+	return &Matcher{exact: make(map[string]string), phrase: make(map[string]string)}
+}
+
+func (m *Matcher) Add(kw, adGroup, matchType string) {
+	lower := strings.ToLower(kw)
+	switch matchType {
+	case "exact": m.exact[lower] = adGroup
+	case "phrase": m.phrase[lower] = adGroup
+	}
+}
+
+func (m *Matcher) Match(query string) []string {
+	lower := strings.ToLower(query)
+	var matches []string
+	if ag, ok := m.exact[lower]; ok { matches = append(matches, ag) }
+	for kw, ag := range m.phrase { if strings.Contains(lower, kw) { matches = append(matches, ag) } }
+	return matches
+}
+
+func main() {
+	m := NewMatcher()
+	m.Add("running shoes", "ag_1", "exact")
+	m.Add("shoes", "ag_2", "phrase")
+	matches := m.Match("best running shoes")
+	fmt.Printf("Matches: %v
+", matches)
+}
+

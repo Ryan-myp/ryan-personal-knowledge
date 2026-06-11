@@ -484,3 +484,64 @@ Purchase, Lead, AddToCart, InitiateCheckout, CompleteRegistration, ViewContent, 
 
 *今天花 90 分钟：系统掌握 TikTok Ads 平台功能体系*
 *答不出自测题？回去重读对应章节。*
+
+```go
+package tiktokads
+
+import (
+	"fmt"
+	"sync"
+)
+
+type ProductType string
+const (
+	ProductVideo ProductType = "VIDEO"
+	ProductCollection ProductType = "COLLECTION"
+	ProductStandard ProductType = "STANDARD"
+)
+
+type Campaign struct {
+	ID            string
+	Name          string
+	Objective     string
+	PromotionType ProductType
+	DailyBudget   float64
+	Status        string
+}
+
+type Creative struct {
+	ID       string
+	VideoURL string
+	Headline string
+	CTA      string
+}
+
+type TikTokAdsManager struct {
+	mu        sync.Mutex
+	campaigns map[string]*Campaign
+}
+
+func (m *TikTokAdsManager) CreateCampaign(name, obj string, budget float64) *Campaign {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cp := &Campaign{ID: fmt.Sprintf("camp_%d", len(m.campaigns)), Name: name,
+		Objective: obj, DailyBudget: budget, Status: "ENABLED"}
+	m.campaigns[cp.ID] = cp
+	return cp
+}
+
+func (m *TikTokAdsManager) GetCampaigns() []*Campaign {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := make([]*Campaign, 0, len(m.campaigns))
+	for _, cp := range m.campaigns { result = append(result, cp) }
+	return result
+}
+
+func main() {
+	m := &TikTokAdsManager{campaigns: make(map[string]*Campaign)}
+	cp := m.CreateCampaign("Summer Sale", "VIDEO", 100.0)
+	fmt.Printf("Created: %s (%s)
+", cp.Name, cp.Status)
+}
+

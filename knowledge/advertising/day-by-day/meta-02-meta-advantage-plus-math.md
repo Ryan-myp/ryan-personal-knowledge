@@ -437,3 +437,49 @@ for i in range(5):
 
 *今天花 90 分钟：深入理解 Advantage+ 的数学本质*
 *答不出自测题？回去重读对应章节。*
+
+```go
+package advantageplus
+
+import (
+	"fmt"
+	"math"
+)
+
+type MAB struct {
+	arms    []string
+	alpha   []float64
+	beta    []float64
+}
+
+func NewMAB(arms []string) *MAB {
+	a := make([]float64, len(arms))
+	b := make([]float64, len(arms))
+	for i := range a { a[i] = 1.0; b[i] = 1.0 }
+	return &MAB{arms: arms, alpha: a, beta: b}
+}
+
+func (m *MAB) Pull(arm int) { m.alpha[arm] += 1.0 }
+func (m *MAB) Select() int {
+	best, bestMean := 0, m.alpha[0]/(m.alpha[0]+m.beta[0])
+	for i, a := range m.alpha {
+		mean := a / (a + m.beta[i])
+		if mean > bestMean { bestMean = mean; best = i }
+	}
+	return best
+}
+
+func (m *MAB) Summary() {
+	for i, arm := range m.arms {
+		mean := m.alpha[i] / (m.alpha[i] + m.beta[i])
+		fmt.Printf("  %s: mean=%.2f
+", arm, mean)
+	}
+}
+
+func main() {
+	mab := NewMAB([]string{"A", "B", "C"})
+	for i := 0; i < 10; i++ { mab.Pull(mab.Select()) }
+	mab.Summary()
+}
+

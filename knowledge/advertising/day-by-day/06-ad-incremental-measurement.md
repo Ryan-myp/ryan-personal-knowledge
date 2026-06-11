@@ -508,3 +508,54 @@ Parallel Trends Assumption (平行趋势假设):
 
 *今天花 90 分钟：深入掌握广告增量测量技术*
 *答不出自测题？回去重读对应章节。*
+
+---
+
+### 增量测量的 Go 实现
+
+```go
+package increment
+
+import (
+	"fmt"
+	"math"
+)
+
+type UpliftModel struct {
+	controlData   []Metric
+	treatmentData []Metric
+}
+
+type Metric struct {
+	Value float64
+	Type  string
+}
+
+func (m *UpliftModel) AddControl(v []Metric)   { m.controlData = v }
+func (m *UpliftModel) AddTreatment(v []Metric) { m.treatmentData = v }
+
+func (m *UpliftModel) CalculateUplift(metric string) float64 {
+	var ctrl, treat float64
+	for _, v := range m.controlData { if v.Type == metric { ctrl += v.Value } }
+	for _, v := range m.treatmentData { if v.Type == metric { treat += v.Value } }
+	cN := float64(len(m.controlData))
+	tN := float64(len(m.treatmentData))
+	cM := ctrl / cN
+	tM := treat / tN
+	if cM == 0 { return 0 }
+	return (tM - cM) / cM
+}
+
+func (m *UpliftModel) PValue(metric string) float64 {
+	u := m.CalculateUplift(metric)
+	n := float64(len(m.controlData) + len(m.treatmentData))
+	return math.Exp(-u*u*n/2)
+}
+
+func main() {
+	m := &UpliftModel{}
+	m.AddControl([]Metric{{Value: 100, Type: "c"}, {120, "c"}, {90, "c"}})
+	m.AddTreatment([]Metric{{150, "c"}, {130, "c"}, {160, "c"}})
+	fmt.Printf("Uplift: %.2f%%\n", m.CalculateUplift("c")*100)
+}
+```

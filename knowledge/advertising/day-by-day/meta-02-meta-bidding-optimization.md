@@ -509,3 +509,98 @@ print(f"ROAS: {best['roas']}")
 
 *今天花 60-90 分钟：深入理解 Meta 竞价机制，实践优化策略*
 *答不出自测题？回去重读对应章节。*
+
+---
+
+### Meta 竞价的 Go 实现
+
+```go
+package metabidding
+
+import (
+	"fmt"
+	"math"
+	"sync"
+	"time"
+)
+
+type BidType string
+const (
+	BidTypeCPC BidType = "CPC"
+	BidTypeCPM BidType = "CPM"
+	BidTypeOCPM BidType = "OCPM"
+)
+
+type Bidder struct {
+	bidType   BidType
+	targetCPA float64
+	targetROAS float64
+	history   []BidRecord
+	mu        sync.RWMutex
+}
+
+type BidRecord struct {
+	AdID     string
+	Clicked  bool
+	Converted bool
+	BidPrice float64
+	Value    float64
+	Time     time.Time
+}
+
+func NewBidder(bt BidType, targetCPA, targetROAS float64) *Bidder {
+	return &Bidder{bidType: bt, targetCPA: targetCPA, targetROAS: targetROAS}
+}
+
+func (b *Bidder) CalculateBid(ctr, cvr float64, bidCap float64) float64 {
+	switch b.bidType {
+	case BidTypeCPC:
+		return math.Min(ctr*100, bidCap)
+	case BidTypeCPM:
+		return math.Min(ctr*cvr*1000, bidCap)
+	case BidTypeOCPM:
+		pCTR := ctr
+		pCVR := cvr
+		expectedCPA := pCTR * pCVR * 1000
+		if expectedCPA > 0 {
+			return math.Min(b.targetCPA*expectedCPA, bidCap)
+		}
+		return 1.0
+	default:
+		return 1.0
+	}
+}
+
+func (b *Bidder) AddRecord(r *BidRecord) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.history = append(b.history, *r)
+}
+
+func (b *Bidder) GetMetrics() (int, float64, float64, float64) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	impressions, clicks, convs, revenue := 0, 0, 0, 0.0
+	for _, r := range b.history {
+		if r.Clicked { clicks++ }
+		if r.Converted { convs++; revenue += r.Value }
+	}
+	// 假设 impression = clicks * 3 (简化)
+	impressions = clicks * 3
+	ctr := 0.0
+	if impressions > 0 { ctr = float64(clicks) / float64(impressions) }
+	cpa := 0.0
+	if convs > 0 { cpa = float64(clicks) * 1.0 / float64(convs) }
+	roas := 0.0
+	if clicks > 0 { roas = revenue / float64(clicks) }
+	return impressions, ctr, cpa, roas
+}
+
+func main() {
+	bidder := NewBidder(BidTypeOCPM, 50.0, 3.0)
+	bidder.AddRecord(&BidRecord{AdID: "ad1", Clicked: true, BidPrice: 1.5})
+	bidder.AddRecord(&BidRecord{AdID: "ad1", Clicked: true, Converted: true, Value: 150, BidPrice: 1.2})
+	imp, ctr, cpa, roas := bidder.GetMetrics()
+	fmt.Printf("Imp: %d, CTR: %.4f, CPA: %.2f, ROAS: %.2f\n", imp, ctr, cpa, roas)
+	fmt.Printf("Bid: $%.4f\n", bidder.CalculateBid(0.03, 0.05, 5.0))
+}

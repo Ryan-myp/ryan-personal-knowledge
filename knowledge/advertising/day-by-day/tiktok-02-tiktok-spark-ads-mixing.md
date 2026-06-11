@@ -454,3 +454,49 @@ print(f"推荐投放: {result['recommended']}")
 
 *今天花 90 分钟：深入理解 Spark Ads 和混排机制*
 *答不出自测题？回去重读对应章节。*
+
+```go
+package sparkmixing
+
+import (
+	"fmt"
+	"sort"
+)
+
+type SparkAd struct {
+	ID         string
+	Type       string
+	Engagement float64
+	CTR        float64
+}
+
+type Engine struct {
+	ads []*SparkAd
+}
+
+func (e *Engine) AddAd(ad *SparkAd) { e.ads = append(e.ads, ad) }
+
+func (e *Engine) Score(ad *SparkAd) float64 {
+	return ad.CTR*0.5 + ad.Engagement*0.5
+}
+
+func (e *Engine) Rank(n int) []*SparkAd {
+	scored := make([]struct{ ad *SparkAd; score float64 }, len(e.ads))
+	for i, ad := range e.ads { scored[i] = struct{ ad *SparkAd; score float64 }{ad, e.Score(ad)} }
+	sort.Slice(scored, func(i, j int) bool { return scored[i].score > scored[j].score })
+	if n > len(scored) { n = len(scored) }
+	result := make([]*SparkAd, n)
+	for i := 0; i < n; i++ { result[i] = scored[i].ad }
+	return result
+}
+
+func main() {
+	e := &Engine{}
+	e.AddAd(&SparkAd{ID: "spark1", Type: "spark", Engagement: 0.12, CTR: 0.05})
+	e.AddAd(&SparkAd{ID: "org1", Type: "organic", Engagement: 0.08, CTR: 0.02})
+	for _, ad := range e.Rank(2) {
+		fmt.Printf("  %s (%s): %.4f
+", ad.ID, ad.Type, e.Score(ad))
+	}
+}
+

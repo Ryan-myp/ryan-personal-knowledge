@@ -407,3 +407,46 @@ PSA 成本低但需要大量用户，Geo-Lift 成本高但更真实
 
 *今天花 90 分钟：深入掌握广告归因建模*
 *答不出自测题？回去重读对应章节。*
+
+```go
+package attribution
+
+import (
+	"fmt"
+)
+
+type MarkovChain struct {
+	transitions map[string]map[string]float64
+	conversions map[string]float64
+}
+
+func NewMarkov() *MarkovChain {
+	return &MarkovChain{
+		transitions: make(map[string]map[string]float64),
+		conversions: make(map[string]float64),
+	}
+}
+
+func (m *MarkovChain) AddPath(path []string, converted bool) {
+	for i := 0; i < len(path); i++ {
+		from := path[i]
+		if m.transitions[from] == nil { m.transitions[from] = make(map[string]float64) }
+		if i+1 < len(path) { m.transitions[from][path[i+1]]++ }
+	}
+	if converted && len(path) > 0 { m.conversions[path[len(path)-1]]++ }
+}
+
+func (m *MarkovChain) Impact() map[string]float64 {
+	impact := make(map[string]float64)
+	for ch := range m.transitions { impact[ch] = float64(len(m.conversions)) }
+	return impact
+}
+
+func main() {
+	m := NewMarkov()
+	m.AddPath([]string{"fb", "google", "email"}, true)
+	m.AddPath([]string{"google", "email"}, true)
+	for ch, imp := range m.Impact() { fmt.Printf("  %s: %.0f
+", ch, imp) }
+}
+

@@ -478,3 +478,50 @@ print(f"整体 ROAS: {result['overall_roas']:.2f}")
 
 *今天花 60-90 分钟：深入理解 Meta 归因模型，实践数据分析*
 *答不出自测题？回去重读对应章节。*
+
+```go
+package metaanalytics
+
+import (
+	"fmt"
+	"sort"
+	"time"
+)
+
+type AttributionModel string
+const (
+	ModelLastClick AttributionModel = "LAST_CLICK"
+	ModelLinear AttributionModel = "LINEAR"
+	ModelTimeDecay AttributionModel = "TIME_DECAY"
+)
+
+type ConversionPath struct {
+	Touchpoints []Touchpoint
+	Revenue     float64
+}
+
+type Touchpoint struct {
+	Channel   string
+	Timestamp time.Time
+}
+
+type AttributionResult struct {
+	Channel string
+	Credit  float64
+}
+
+func AssignPath(path *ConversionPath, model AttributionModel) []AttributionResult {
+	credits := make(map[string]float64)
+	switch model {
+	case ModelLastClick:
+		if len(path.Touchpoints) > 0 { credits[path.Touchpoints[len(path.Touchpoints)-1].Channel] = path.Revenue }
+	case ModelLinear:
+		n := float64(len(path.Touchpoints))
+		if n > 0 { for _, tp := range path.Touchpoints { credits[tp.Channel] += path.Revenue / n } }
+	}
+	res := make([]AttributionResult, 0, len(credits))
+	for ch, cr := range credits { res = append(res, AttributionResult{ch, cr}) }
+	sort.Slice(res, func(i, j int) bool { return res[i].Credit > res[j].Credit })
+	return res
+}
+

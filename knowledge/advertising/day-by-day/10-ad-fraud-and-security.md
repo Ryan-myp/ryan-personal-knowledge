@@ -466,3 +466,52 @@ complete = 0: 供应链不完整，有节点缺失 (可能域欺骗)
 
 *今天花 90 分钟：深入掌握广告反欺诈技术*
 *答不出自测题？回去重读对应章节。*
+
+```go
+package fraud
+
+import (
+	"fmt"
+	"sync"
+)
+
+type Click struct {
+	UserID string
+	IP     string
+	Action string
+}
+
+type FraudDetector struct {
+	clicks  map[string][]Click
+	limits  map[string]int
+	mu      sync.Mutex
+}
+
+func NewDetector() *FraudDetector {
+	return &FraudDetector{clicks: make(map[string][]Click), limits: map[string]int{"user": 10, "ip": 50}}
+}
+
+func (f *FraudDetector) Record(c Click) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.clicks[c.UserID] = append(f.clicks[c.UserID], c)
+}
+
+func (f *FraudDetector) DetectFraud() map[string]int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	suspicious := make(map[string]int)
+	for uid, clicks := range f.clicks {
+		if len(clicks) > f.limits["user"] { suspicious[uid] = len(clicks) }
+	}
+	return suspicious
+}
+
+func main() {
+	d := NewDetector()
+	for i := 0; i < 15; i++ { d.Record(Click{UserID: "bot1", Action: "click"}) }
+	fraud := d.DetectFraud()
+	for uid, count := range fraud { fmt.Printf("Suspicious %s: %d clicks
+", uid, count) }
+}
+
