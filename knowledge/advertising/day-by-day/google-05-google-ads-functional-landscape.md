@@ -628,5 +628,218 @@ tCPA, tROAS, Max Conversions, Max Conversion Value 都需要 ≥15 次转化/月
 
 ---
 
+### Google Ads 功能体系的 Go 实现
+
+```go
+// Google Ads 功能体系: 广告系列 + 出价策略 + 归因引擎 Go 实现
+package googleads
+
+import (
+	"fmt"
+	"math"
+	"sort"
+	"sync"
+	"time"
+)
+
+type AdType string
+const (
+	AdTypeSearch AdType = "SEARCH"
+	AdTypeShopping AdType = "SHOPPING"
+	AdTypeDisplay AdType = "DISPLAY"
+	AdTypePerformanceMax AdType = "PERFORMANCE_MAX"
+)
+
+type BidStrategy string
+const (
+	StrategyManualCPC BidStrategy = "MANUAL_CPC"
+	StrategyTargetCPA BidStrategy = "TARGET_CPA"
+	StrategyTargetROAS BidStrategy = "TARGET_ROAS"
+	StrategyMaxConversions BidStrategy = "MAX_CONVERSIONS"
+	StrategyEnhancedCPC BidStrategy = "ENHANCED_CPC"
+)
+
+// RSA 资源池
+type RSAPool struct {
+	Headlines    []string
+	Descriptions []string
+	MaxTitle     int
+	MaxDesc      int
+}
+
+func (p *RSAPool) GenerateCombinations(max int) [][]string {
+	combos := make([][]string, 0, max)
+	for i := 0; i < max && i < len(p.Headlines)*len(p.Descriptions); i++ {
+		combo := make([]string, 0, 5)
+		nT := min(5, max(2, len(p.Headlines)/3))
+		nD := min(2, len(p.Descriptions))
+		for j := 0; j < nT && j < len(p.Headlines); j++ {
+			combo = append(combo, fmt.Sprintf("H%d: %s", j, p.Headlines[j]))
+		}
+		for j := 0; j < nD && j < len(p.Descriptions); j++ {
+			combo = append(combo, fmt.Sprintf("D%d: %s", j, p.Descriptions[j]))
+		}
+		combos = append(combos, combo)
+	}
+	return combos
+}
+
+// BidEngine 出价引擎
+type BidEngine struct {
+	strategy   BidStrategy
+	targetCPA  float64
+	targetROAS float64
+	history    []*BidRecord
+	mu         sync.RWMutex
+}
+
+type BidRecord struct {
+	Converted bool
+	Revenue   float64
+	BidPrice  float64
+	Timestamp time.Time
+}
+
+func NewBidEngine(s BidStrategy, tCPA, tROAS float64) *BidEngine {
+	return &BidEngine{strategy: s, targetCPA: tCPA, targetROAS: tROAS}
+}
+
+func (e *BidEngine) CalculateBid(ctr, cvr, aov float64) float64 {
+	switch e.strategy {
+	case StrategyManualCPC:
+		return 1.0
+	case StrategyEnhancedCPC:
+		if cvr > 0.05 { return 1.5 }
+		return 0.8
+	case StrategyTargetCPA:
+		return max(ctr*cvr*e.targetCPA, 0.01)
+	case StrategyTargetROAS:
+		return max((ctr*cvr*aov)/e.targetROAS, 0.01)
+	case StrategyMaxConversions:
+		return 2.0
+	default:
+		return 1.0
+	}
+}
+
+func (e *BidEngine) Record(r *BidRecord) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.history = append(e.history, r)
+}
+
+func (e *BidEngine) GetStats() (int, float64, float64) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	clicks, convs, revenue := len(e.history), 0, 0.0
+	for _, r := range e.history {
+		if r.Converted { convs++; revenue += r.Revenue }
+	}
+	cpa := 0.0
+	if convs > 0 { cpa = float64(clicks) * 1.0 / float64(convs) }
+	roas := 0.0
+	if clicks > 0 { roas = revenue / float64(clicks) }
+	return clicks, cpa, roas
+}
+
+// AttributionModel 归因模型
+type AttributionModel string
+const (
+	LastClick AttributionModel = "LAST_CLICK"
+	FirstClick AttributionModel = "FIRST_CLICK"
+	Linear AttributionModel = "LINEAR"
+	TimeDecay AttributionModel = "TIME_DECAY"
+	PositionBase AttributionModel = "POSITION_BASED"
+)
+
+type AttributionEvent struct {
+	Channel string
+	Type    string // click, impression, conversion
+	Timestamp time.Time
+}
+
+type ConversionPath struct {
+	Events   []AttributionEvent
+	Revenue  float64
+}
+
+// AttributionEngine 归因引擎
+type AttributionEngine struct {
+	model AttributionModel
+}
+
+func (e *AttributionEngine) Assign(path *ConversionPath) map[string]float64 {
+	credits := make(map[string]float64)
+	clicks := make([]AttributionEvent, 0)
+	for _, ev := range path.Events {
+		if ev.Type == "click" { clicks = append(clicks, ev) }
+	}
+	switch e.model {
+	case LastClick:
+		if len(clicks) > 0 { credits[clicks[len(clicks)-1].Channel] = 1.0 }
+	case FirstClick:
+		if len(clicks) > 0 { credits[clicks[0].Channel] = 1.0 }
+	case Linear:
+		if len(clicks) > 0 {
+			for _, c := range clicks { credits[c.Channel] += 1.0 / float64(len(clicks)) }
+		}
+	case TimeDecay:
+		totalW := 0.0
+		type we struct { ch string; w float64 }
+		var ws []we
+		for _, c := range clicks {
+			days := path.Events[len(path.Events)-1].Timestamp.Sub(c.Timestamp).Hours() / 24
+			w := math.Exp(-0.5 * days)
+			ws = append(ws, we{c.Channel, w})
+			totalW += w
+		}
+		for _, w := range ws { credits[w.ch] += w.w / totalW }
+	case PositionBase:
+		if len(clicks) == 1 { credits[clicks[0].Channel] = 1.0 }
+		if len(clicks) > 1 {
+			credits[clicks[0].Channel] += 0.4
+			credits[clicks[len(clicks)-1].Channel] += 0.4
+			if len(clicks) > 2 {
+				rem := 0.2 / float64(len(clicks)-2)
+				for i := 1; i < len(clicks)-1; i++ { credits[clicks[i].Channel] += rem }
+			}
+		}
+	}
+	return credits
+}
+
+func min(a, b int) int { if a < b { return a }; return b }
+func max(a, b int) int { if a > b { return a }; return b }
+
+func main() {
+	// RSA 组合
+	pool := &RSAPool{
+		Headlines: []string{"Running Shoes", "50% Off", "Free Shipping", "Best Rated", "Shop Now"},
+		Descriptions: []string{"Premium quality", "1000+ reviews", "Limited offer"},
+	}
+	fmt.Printf("RSA combos: %d\n", len(pool.GenerateCombinations(5)))
+
+	// 出价
+	eng := NewBidEngine(StrategyTargetCPA, 50.0, 0)
+	fmt.Printf("Bid: $%.2f\n", eng.CalculateBid(0.03, 0.05, 200.0))
+
+	// 归因
+	ae := &AttributionEngine{model: TimeDecay}
+	path := &ConversionPath{
+		Events: []AttributionEvent{
+			{Channel: "search", Type: "click", Timestamp: time.Now().Add(-7*24*time.Hour)},
+			{Channel: "display", Type: "click", Timestamp: time.Now().Add(-3*24*time.Hour)},
+			{Channel: "search", Type: "click", Timestamp: time.Now().Add(-1*24*time.Hour)},
+		},
+		Revenue: 150.0,
+	}
+	for ch, c := range ae.Assign(path) {
+		fmt.Printf("  %s: %.2f\n", ch, c)
+	}
+}
+```
+
+---
+
 *今天花 90 分钟：系统掌握 Google Ads 平台功能体系*
 *答不出自测题？回去重读对应章节。*

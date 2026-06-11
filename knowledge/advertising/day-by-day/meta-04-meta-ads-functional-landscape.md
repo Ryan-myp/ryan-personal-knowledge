@@ -606,5 +606,127 @@ Meta 批量操作每 600 秒的限制是多少？
 
 ---
 
+### Meta Ads 功能体系的 Go 实现
+
+```go
+package metaads
+
+import (
+	"encoding/json"
+	"fmt"
+	"sync"
+	"time"
+)
+
+type AdFormat string
+const (
+	FormatImage AdFormat = "IMAGE"
+	FormatVideo AdFormat = "VIDEO"
+	FormatCarousel AdFormat = "CAROUSEL"
+	FormatCollection AdFormat = "COLLECTION"
+)
+
+type CampaignObjective string
+const (
+	ObjectiveBrandAwareness CampaignObjective = "BRAND_AWARENESS"
+	ObjectiveReach CampaignObjective = "REACH"
+	ObjectiveTraffic CampaignObjective = "TRAFFIC"
+	ObjectiveEngagement CampaignObjective = "ENGAGEMENT"
+	ObjectiveLeads CampaignObjective = "LEADS"
+	ObjectiveSales CampaignObjective = "SALES"
+)
+
+type Campaign struct {
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	Objective    CampaignObjective `json:"objective"`
+	Status       string            `json:"status"`
+	DailyBudget  float64           `json:"daily_budget"`
+	SpecialAdCat string            `json:"special_ad_category"`
+	AdSets       []*AdSet          `json:"ad_sets"`
+}
+
+type AdSet struct {
+	ID         string        `json:"id"`
+	Name       string        `json:"name"`
+	Status     string        `json:"status"`
+	BidAmount  float64       `json:"bid_amount"`
+	OptimizationGoal string   `json:"optimization_goal"`
+	Targeting  *Targeting    `json:"targeting"`
+}
+
+type Targeting struct {
+	GeoLocations map[string]interface{} `json:"geo_locations"`
+	Ages         []int                  `json:"ages"`
+	Genders      []int                  `json:"genders"`
+	Interests    []map[string]string    `json:"interests"`
+}
+
+type DynamicProductAd struct {
+	SetID    string   `json:"set_id"`
+	ImageURL string   `json:"image_url"`
+	Headline string   `json:"headline"`
+	CTA      string   `json:"cta"`
+	Products []string `json:"products"`
+}
+
+type BatchOperation struct {
+	requests []*BatchReq
+	mu       sync.Mutex
+}
+
+type BatchReq struct {
+	Name   string            `json:"name"`
+	Method string            `json:"method"`
+	Path   string            `json:"path"`
+	Params map[string]string `json:"params"`
+}
+
+func (b *BatchOperation) AddCampaign(name, obj string, budget float64) string {
+	id := fmt.Sprintf("camp_%d", len(b.requests))
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.requests = append(b.requests, &BatchReq{
+		Name: id, Method: "POST", Path: "/act_123/campaigns",
+		Params: map[string]string{"name": name, "objective": string(obj), "daily_budget": fmt.Sprintf("%.0f", budget)},
+	})
+	return id
+}
+
+func (b *BatchOperation) Execute() ([]BatchResp, error) {
+	b.mu.Lock()
+	reqs := make([]*BatchReq, len(b.requests))
+	copy(reqs, b.requests)
+	b.mu.Unlock()
+	var results []BatchResp
+	for i := 0; i < len(reqs); i += 50 {
+		end := i + 50
+		if end > len(reqs) { end = len(reqs) }
+		chunk := reqs[i:end]
+		results = append(results, BatchResp{Status: 200, Body: json.RawMessage("{}")})
+	}
+	return results, nil
+}
+
+type BatchResp struct {
+	Status  int
+	Body    json.RawMessage
+	Headers map[string]string
+}
+
+func main() {
+	camp := &Campaign{Name: "Summer Sale", Objective: ObjectiveSales, DailyBudget: 500.0}
+	fmt.Printf("Campaign: %s (%s)\n", camp.Name, camp.Objective)
+
+	batch := &BatchOperation{}
+	batch.AddCampaign("Sale Q1", ObjectiveSales, 1000)
+	batch.AddCampaign("Brand Awareness", ObjectiveBrandAwareness, 2000)
+	resps, _ := batch.Execute()
+	fmt.Printf("Batch: %d requests\n", len(resps))
+}
+```
+
+---
+
 *今天花 90 分钟：系统掌握 Meta Ads 平台功能体系*
 *答不出自测题？回去重读对应章节。*

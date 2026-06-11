@@ -327,7 +327,175 @@ results = query_impact(
 |------|------|------|
 | Python AST | 标准库 ast | 零依赖 |
 | Java AST | JavaParser | 成熟稳定 |
-| TS AST | ts-morph | 基于 TypeScript Compiler API |
-| 存储 | SQLite | 轻量、FTS5、零依赖 |
-| 索引 | BM25 + 向量 | 混合搜索 |
-| 图谱查询 | SQL JOIN + 递归CTE | SQLite 支持 |
+|| TS AST | ts-morph | 基于 TypeScript Compiler API |
+|| 存储 | SQLite | 轻量、FTS5、零依赖 |
+|| 索引 | BM25 + 向量 | 混合搜索 |
+|| 图谱查询 | SQL JOIN + 递归CTE | SQLite 支持 |
+
+---
+
+### 知识抽取引擎的 Go 实现
+
+```go
+package knowledge
+
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+	"sync"
+)
+
+// Entity 实体
+type Entity struct {
+	ID       string   `json:"id"`
+	Name     string   `json:"name"`
+	Type     string   `json:"type"` // class, property, relationship
+	Properties map[string]string `json:"properties"`
+}
+
+// KnowledgeTriple 知识三元组
+type KnowledgeTriple struct {
+	Subject    string `json:"subject"`
+	Predicate  string `json:"predicate"`
+	Object     string `json:"object"`
+	Confidence float64 `json:"confidence"`
+	Source     string  `json:"source"`
+}
+
+// KnowledgeGraph 知识图谱
+type KnowledgeGraph struct {
+	entities   map[string]*Entity
+	triples    []*KnowledgeTriple
+	adjacency  map[string][]string
+	mu         sync.RWMutex
+}
+
+// NewKnowledgeGraph 创建知识图谱
+func NewKnowledgeGraph() *KnowledgeGraph {
+	return &KnowledgeGraph{
+		entities:  make(map[string]*Entity),
+		adjacency: make(map[string][]string),
+	}
+}
+
+// AddEntity 添加实体
+func (kg *KnowledgeGraph) AddEntity(e *Entity) {
+	kg.mu.Lock()
+	defer kg.mu.Unlock()
+	kg.entities[e.ID] = e
+}
+
+// AddTriple 添加三元组
+func (kg *KnowledgeGraph) AddTriple(t *KnowledgeTriple) {
+	kg.mu.Lock()
+	defer kg.mu.Unlock()
+	kg.triples = append(kg.triples, t)
+	kg.adjacency[t.Subject] = append(kg.adjacency[t.Subject], t.Object)
+}
+
+// GetNeighbors 获取实体的邻居（一跳关系）
+func (kg *KnowledgeGraph) GetNeighbors(entityID string) []string {
+	kg.mu.RLock()
+	defer kg.mu.RUnlock()
+	return kg.adjacency[entityID]
+}
+
+// FindPath 查找两个实体之间的最短路径 (BFS)
+func (kg *KnowledgeGraph) FindPath(start, end string) [][]string {
+	kg.mu.RLock()
+	defer kg.mu.RUnlock()
+
+	queue := [][]string{{start}}
+	visited := map[string]bool{start: true}
+
+	for len(queue) > 0 {
+		path := queue[0]
+		queue = queue[1:]
+		current := path[len(path)-1]
+
+		if current == end {
+			return [][]string{path}
+		}
+
+		for _, neighbor := range kg.adjacency[current] {
+			if !visited[neighbor] {
+				visited[neighbor] = true
+				newPath := make([]string, len(path)+1)
+				copy(newPath, path)
+				newPath[len(path)] = neighbor
+				queue = append(queue, newPath)
+			}
+		}
+	}
+	return nil
+}
+
+// ExtractKeywords 关键词提取 (TF-IDF 简化版)
+type KeywordExtractor struct {
+	stopwords map[string]bool
+}
+
+func NewKeywordExtractor() *KeywordExtractor {
+	sw := map[string]bool{
+		"the": true, "a": true, "an": true, "and": true,
+		"of": true, "in": true, "to": true, "for": true,
+		"is": true, "are": true, "was": true, "were": true,
+	}
+	return &KeywordExtractor{stopwords: sw}
+}
+
+func (e *KeywordExtractor) Extract(text string, topN int) []string {
+	words := strings.Fields(strings.ToLower(text))
+	freq := make(map[string]int)
+	for _, w := range words {
+		if !e.stopwords[w] && len(w) > 2 {
+			freq[w]++
+		}
+	}
+
+	type kw struct{ word string; count int }
+	results := make([]kw, 0, len(freq))
+	for w, c := range freq {
+		results = append(results, kw{w, c})
+	}
+
+	// 排序取 topN
+	for i := 0; i < len(results); i++ {
+		for j := i + 1; j < len(results); j++ {
+			if results[j].count > results[i].count {
+				results[i], results[j] = results[j], results[i]
+			}
+		}
+	}
+
+	top := topN
+	if top > len(results) { top = len(results) }
+	var keywords []string
+	for i := 0; i < top; i++ {
+		keywords = append(keywords, results[i].word)
+	}
+	return keywords
+}
+
+// ==================== 使用示例 ====================
+
+func main() {
+	// 知识图谱
+	kg := NewKnowledgeGraph()
+	kg.AddEntity(&Entity{ID: "go", Name: "Go 语言", Type: "programming_language"})
+	kg.AddEntity(&Entity{ID: "redis", Name: "Redis", Type: "database"})
+	kg.AddTriple(&KnowledgeTriple{Subject: "go", Predicate: "uses", Object: "redis", Confidence: 0.9})
+
+	fmt.Printf("Neighbors of 'go': %v\n", kg.GetNeighbors("go"))
+	path := kg.FindPath("go", "redis")
+	if path != nil {
+		fmt.Printf("Path: %v\n", path[0])
+	}
+
+	// 关键词提取
+	extractor := NewKeywordExtractor()
+	text := "Go is a statically typed compiled programming language designed for efficiency and simplicity"
+	kws := extractor.Extract(text, 5)
+	fmt.Printf("Keywords: %v\n", kws)
+}

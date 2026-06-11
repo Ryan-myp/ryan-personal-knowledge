@@ -830,3 +830,50 @@ func min(a, b int) int {
 	if a < b { return a }
 	return b
 }
+```
+
+---
+
+## 第六部分：自测题
+
+### 问题 1
+LangChain Agent 的主循环中，`Action → Observation` 模式的关键设计原则是什么？
+
+<details>
+<summary>查看答案</summary>
+
+核心原则：**Agent 不是直接执行操作，而是先输出 Action（工具名+参数），由环境执行后返回 Observation，Agent 再根据 Observation 决定下一步**。
+
+这个设计实现了：
+1. **解耦**：Agent 不负责具体工具实现
+2. **可观测性**：每一步 Action/Observation 都可记录
+3. **容错**：工具失败时 Agent 可以尝试其他工具或回退
+4. **人类在环**：可以在 Observation 阶段插入人工审核
+
+</details>
+
+### 问题 2
+Go 的 `MemoryStore` 为什么用 `sync.RWMutex` 而不是 `sync.Mutex`？
+
+<details>
+<summary>查看答案</summary>
+
+`RWMutex` 允许多个读操作并发执行，写操作独占。对于 MemoryStore：
+- `GetShort()` 是读操作，可以被多个 goroutine 同时调用
+- `AddShort()` / `AddLong()` 是写操作，需要独占
+
+如果只用普通 `Mutex`，所有操作都会串行化，在高并发场景下性能较差。`RWMutex` 在读多写少的场景下性能更好。
+
+</details>
+
+### 问题 3
+`ToolExecutor.ExecuteParallel` 中，为什么要在 goroutine 里用 `defer wg.Done()` 而不是在函数末尾调用？
+
+<details>
+<parameter>
+<summary>查看答案</summary>
+
+defer 确保无论函数如何返回（正常返回、panic、early return），`Done()` 都会被调用。如果在函数末尾手动调用，一旦中间有 panic 或提前 return，`Done()` 就不会被执行，导致 `Wait()` 永久阻塞。
+
+</details>
+

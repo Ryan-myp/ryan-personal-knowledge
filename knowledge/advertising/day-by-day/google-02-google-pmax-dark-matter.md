@@ -570,5 +570,173 @@ for asset_type, analysis in result.items():
 
 ---
 
+### PMax 创意资产优化的 Go 实现
+
+```go
+package pmax
+
+import (
+	"fmt"
+	"math/rand"
+	"sort"
+	"sync"
+	"time"
+)
+
+type AssetType string
+const (
+	AssetHeadline AssetType = "HEADLINE"
+	AssetDescription AssetType = "DESCRIPTION"
+	AssetImage AssetType = "IMAGE"
+	AssetVideo AssetType = "VIDEO"
+	AssetLogo AssetType = "LOGO"
+	AssetPromoAsset AssetType = "PROMO_ASSET"
+)
+
+type Asset struct {
+	Type      AssetType `json:"type"`
+	Source    string    `json:"source"` // GENERATED, CLIENT_UPLOADED
+	Status    string    `json:"status"`
+	Value     string    `json:"value"`
+	PerfScore float64   `json:"perf_score"`
+}
+
+type AssetGroup struct {
+	ID      string   `json:"id"`
+	Name    string   `json:"name"`
+	Assets  []*Asset `json:"assets"`
+	Signals []*Signal `json:"signals"`
+}
+
+type Signal struct {
+	Type          string         `json:"type"`
+	Values        []string       `json:"values"`
+	Performance[]float64      `json:"performance"`
+}
+
+type CreativePerformance struct {
+	CreativeID      string  `json:"creative_id"`
+	Impressions     int     `json:"impressions"`
+	Clicks          int     `json:"clicks"`
+	Conversions     int     `json:"conversions"`
+	Revenue         float64 `json:"revenue"`
+	CTR             float64 `json:"ctr"`
+	CVR             float64 `json:"cvr"`
+	ROAS            float64 `json:"roas"`
+}
+
+type CreativeAnalyzer struct {
+	assets     map[AssetType][]*Asset
+	perf       []*CreativePerformance
+	mu         sync.RWMutex
+}
+
+func (a *CreativeAnalyzer) ScoreAsset(asset *Asset, ctype AssetType) float64 {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	totalImp, totalConv := 0, 0
+	for _, p := range a.perf {
+		if p.Conversions > 0 && p.Impressions > 0 {
+			totalConv += p.Conversions
+			totalImp += p.Impressions
+		}
+	}
+	baseScore := asset.PerfScore
+	if baseScore == 0 {
+		baseScore = 0.5 // 默认
+	}
+	// 资产质量分 = 历史表现 × 权重
+	switch ctype {
+	case AssetHeadline:
+		return baseScore * 0.3 + rand.Float64()*0.2
+	case AssetImage:
+		return baseScore * 0.4 + rand.Float64()*0.15
+	case AssetDescription:
+		return baseScore * 0.2 + rand.Float64()*0.25
+	default:
+		return baseScore * 0.3
+	}
+}
+
+func (a *CreativeAnalyzer) AnalyzeAssets() map[AssetType][]*Asset {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	result := make(map[AssetType][]*Asset)
+	for _, asset := range a.assets {
+		for _, a := range asset {
+			key := a.Type
+			if _, ok := result[key]; !ok {
+				result[key] = make([]*Asset, 0)
+			}
+			result[key] = append(result[key], a)
+		}
+	}
+	for _, assets := range result {
+		sort.Slice(assets, func(i, j int) bool {
+			return assets[i].PerfScore > assets[j].PerfScore
+		})
+	}
+	return result
+}
+
+func (a *CreativeAnalyzer) RecordPerformance(cp *CreativePerformance) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.perf = append(a.perf, cp)
+}
+
+type PerformanceMaxOptimizer struct {
+	targetROAS float64
+	budget     float64
+	groups     []*AssetGroup
+}
+
+func NewPMaxOptimizer(targetROAS, budget float64) *PerformanceMaxOptimizer {
+	return &PerformanceMaxOptimizer{targetROAS: targetROAS, budget: budget}
+}
+
+func (o *PerformanceMaxOptimizer) AllocateBudget() map[string]float64 {
+	weights := make(map[string]float64)
+	totalWeight := 0.0
+	for _, g := range o.groups {
+		w := 0.0
+		for _, asset := range g.Assets {
+			if asset.PerfScore > 0 {
+				w += asset.PerfScore
+			}
+		}
+		weights[g.ID] = w
+		totalWeight += w
+	}
+	budget := make(map[string]float64)
+	for id, w := range weights {
+		if totalWeight > 0 {
+			budget[id] = (w / totalWeight) * o.budget
+		} else {
+			budget[id] = o.budget / float64(len(o.groups))
+		}
+	}
+	return budget
+}
+
+func main() {
+	analyzer := &CreativeAnalyzer{assets: make(map[AssetType][]*Asset)}
+	asset := &Asset{Type: AssetHeadline, Value: "Summer Sale", PerfScore: 0.85}
+	fmt.Printf("Asset score: %.2f\n", analyzer.ScoreAsset(asset, AssetHeadline))
+
+	optimizer := NewPMaxOptimizer(3.0, 1000.0)
+	optimizer.groups = []*AssetGroup{
+		{ID: "ag1", Assets: []*Asset{{PerfScore: 0.9}, {PerfScore: 0.7}}},
+		{ID: "ag2", Assets: []*Asset{{PerfScore: 0.6}, {PerfScore: 0.8}}},
+	}
+	budget := optimizer.AllocateBudget()
+	for id, b := range budget {
+		fmt.Printf("Budget %s: $%.2f\n", id, b)
+	}
+}
+```
+
+---
+
 *今天花 90 分钟：深入理解 PMax 的 AI 引擎和创意优化*
 *答不出自测题？回去重读对应章节。*

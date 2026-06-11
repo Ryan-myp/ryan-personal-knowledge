@@ -558,5 +558,102 @@ for channel, credit in attribution.items():
 
 ---
 
-*今天花 60-90 分钟：深入理解归因模型，实践数据分析*
-*答不出自测题？回去重读对应章节。*
+### 归因分析引擎的 Go 实现
+
+```go
+package analytics
+
+import (
+	"fmt"
+	"sort"
+	"time"
+)
+
+type ModelType string
+const (
+	ModelLinear ModelType = "LINEAR"
+	ModelTimeDecay ModelType = "TIME_DECAY"
+	ModelDataDriven ModelType = "DATA_DRIVEN"
+)
+
+type ConversionPath struct {
+	Touchpoints []Touchpoint `json:"touchpoints"`
+	Converted   bool         `json:"converted"`
+	Revenue     float64      `json:"revenue"`
+}
+
+type Touchpoint struct {
+	Channel   string    `json:"channel"`
+	Type      string    `json:"type"`
+	Timestamp time.Time `json:"timestamp"`
+	Value     float64   `json:"value"`
+}
+
+type AttributionResult struct {
+	Channel string
+	Credit  float64
+	Revenue float64
+}
+
+func AssignPath(path *ConversionPath, model ModelType) []AttributionResult {
+	results := make(map[string]float64)
+
+	switch model {
+	case ModelLinear:
+		clicks := 0
+		for _, tp := range path.Touchpoints {
+			if tp.Type == "click" { clicks++ }
+		}
+		if clicks > 0 {
+			for _, tp := range path.Touchpoints {
+				if tp.Type == "click" {
+					results[tp.Channel] += path.Revenue / float64(clicks)
+				}
+			}
+		}
+
+	case ModelTimeDecay:
+		var weighted []struct{ ch string; w float64 }
+		for i, tp := range path.Touchpoints {
+			if tp.Type == "click" {
+				days := path.Touchpoints[len(path.Touchpoints)-1].Timestamp.Sub(tp.Timestamp).Hours() / 24
+				w := 1.0 / (1.0 + days)
+				weighted = append(weighted, struct{ ch string; w float64 }{tp.Channel, w})
+			}
+		}
+		total := 0.0
+		for _, w := range weighted { total += w.w }
+		for _, w := range weighted {
+			results[w.ch] += w.w / total * path.Revenue
+		}
+
+	case ModelDataDriven:
+		for _, tp := range path.Touchpoints {
+			if tp.Type == "conversion" {
+				results[tp.Channel] += tp.Value
+			}
+		}
+	}
+
+	res := make([]AttributionResult, 0, len(results))
+	for ch, cr := range results {
+		res = append(res, AttributionResult{Channel: ch, Credit: cr, Revenue: cr})
+	}
+	sort.Slice(res, func(i, j int) bool { return res[i].Credit > res[j].Credit })
+	return res
+}
+
+func main() {
+	path := &ConversionPath{
+		Converted: true, Revenue: 200.0,
+		Touchpoints: []Touchpoint{
+			{Channel: "search", Type: "click", Timestamp: time.Now().Add(-7*24*time.Hour)},
+			{Channel: "display", Type: "impression", Timestamp: time.Now().Add(-5*24*time.Hour)},
+			{Channel: "search", Type: "click", Timestamp: time.Now().Add(-3*24*time.Hour)},
+			{Channel: "email", Type: "click", Timestamp: time.Now().Add(-1*24*time.Hour)},
+		},
+	}
+	for _, r := range AssignPath(path, ModelTimeDecay) {
+		fmt.Printf("  %s: $%.2f\n", r.Channel, r.Credit)
+	}
+}

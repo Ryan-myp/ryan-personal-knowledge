@@ -570,5 +570,165 @@ search 和 search_stream 的区别是什么？
 
 ---
 
-*今天花 90 分钟：深入掌握 Google Ads API 高级功能*
-*答不出自测题？回去重读对应章节。*
+### Google Ads API 高级功能的 Go 实现
+
+```go
+package googleadsapi
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"sync"
+	"time"
+)
+
+type CustomerService struct {
+	clientKey    string
+	clientSecret string
+	tokenURL     string
+	refreshToken string
+	mu           sync.Mutex
+	accessToken  string
+	expiresAt    time.Time
+}
+
+type BiddingError struct {
+	ErrorCode   string `json:"error_code"`
+	Description string `json:"description"`
+}
+
+type CampaignCriterion struct {
+	Campaign string      `json:"campaign"`
+	Criterion interface{} `json:"criterion"`
+	Bidding  *Bidding    `json:"bidding_settings,omitempty"`
+}
+
+type Bidding struct {
+	TargetCpa float64 `json:"target_cpa,omitempty"`
+	TargetRoas float64 `json:"target_roas,omitempty"`
+}
+
+type AdGroupCriterion struct {
+	AdGroup    string      `json:"ad_group"`
+	Criterion  interface{} `json:"criterion"`
+	Bidding    *Bidding    `json:"bidding_settings,omitempty"`
+	Status     string      `json:"status"`
+}
+
+type GoogleAdsClient struct {
+	customerID string
+	version    string
+	endpoint   string
+	mu         sync.RWMutex
+}
+
+func (c *GoogleAdsClient) Search(ctx context.Context, query string) ([]*GoogleAdsRow, error) {
+	return nil, nil
+}
+
+func (c *GoogleAdsClient) SearchStream(ctx context.Context, query string) (<-chan *GoogleAdsRow, error) {
+	ch := make(chan *GoogleAdsRow, 100)
+	go func() {
+		defer close(ch)
+		// 流式返回结果
+		for i := 0; i < 10; i++ {
+			row := &GoogleAdsRow{ResourceName: fmt.Sprintf("customers/123/adGroups/456")}
+			select {
+			case ch <- row:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return ch, nil
+}
+
+type GoogleAdsRow struct {
+	ResourceName string                 `json:"resource_name"`
+	Campaign     map[string]interface{} `json:"campaign"`
+	AdGroup      map[string]interface{} `json:"ad_group"`
+	Statistics   map[string]interface{} `json:"stats"`
+}
+
+func (c *GoogleAdsClient) BatchMutate(ctx context.Context, ops []*MutateOperation) (*BatchMutateResponse, error) {
+	resp := &BatchMutateResponse{}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	errCh := make(chan error, len(ops))
+
+	for _, op := range ops {
+		wg.Add(1)
+		go func(o *MutateOperation) {
+			defer wg.Done()
+			if err := c.mutateOne(ctx, o); err != nil {
+				errCh <- err
+				return
+			}
+			mu.Lock()
+			resp.Results = append(resp.Results, o.ResourceName)
+			mu.Unlock()
+		}(op)
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			return resp, err
+		}
+	}
+	return resp, nil
+}
+
+func (c *GoogleAdsClient) mutateOne(ctx context.Context, op *MutateOperation) error {
+	return nil
+}
+
+type MutateOperation struct {
+	Operation    string                 `json:"operation"`
+	ResourceName string                 `json:"resource_name"`
+	Campaign     *CampaignCreate        `json:"campaign_create,omitempty"`
+	AdGroup      *AdGroupCreate         `json:"ad_group_create,omitempty"`
+}
+
+type CampaignCreate struct {
+	Name     string                 `json:"name"`
+	Status   string                 `json:"status"`
+	Settings map[string]interface{} `json:"settings"`
+}
+
+type AdGroupCreate struct {
+	Name       string            `json:"name"`
+	Campaign   string            `json:"campaign"`
+	StatsRound string            `json:"stats_rounding_mode"`
+}
+
+type BatchMutateResponse struct {
+	Results []string          `json:"results"`
+	Errors  []BiddingError    `json:"errors"`
+}
+
+func main() {
+	client := &GoogleAdsClient{customerID: "123", version: "v17", endpoint: "https://googleads.googleapis.com"}
+
+	ctx := context.Background()
+	rows, _ := client.Search(ctx, "SELECT campaign.id, campaign.name FROM campaign")
+	fmt.Printf("Found %d campaigns\n", len(rows))
+
+	ch, _ := client.SearchStream(ctx, "SELECT ad_group.id, ad_group.name FROM ad_group")
+	count := 0
+	for row := range ch {
+		fmt.Printf("  AdGroup: %s\n", row.ResourceName)
+		count++
+	}
+	fmt.Printf("Stream: %d ad groups\n", count)
+
+	batch := &GoogleAdsClient{customerID: "123"}
+	ops := []*MutateOperation{
+		{Operation: "create", Campaign: &CampaignCreate{Name: "Test Campaign", Status: "PAUSED"}},
+		{Operation: "create", AdGroup: &AdGroupCreate{Name: "Test AdGroup", Campaign: "customers/123/campaigns/456"}},
+	}
+	resp, _ := batch.BatchMutate(ctx, ops)
+	fmt.Printf("Batch: %d results\n", len(resp.Results))
+}
