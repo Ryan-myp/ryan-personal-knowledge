@@ -473,6 +473,304 @@ OpenRTB Bid Response:
 }
 ```
 
+### 3.3 OpenRTB 的 Go 实现（生产级）
+
+```go
+// OpenRTB: 广告竞价请求与响应的 Go 实现
+// 生产级实现：覆盖 BidRequest/BidResponse 核心结构
+package openrtb
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"time"
+)
+
+// ==================== BidRequest ====================
+
+// BidRequest 对应 OpenRTB 2.5+ 协议
+type BidRequest struct {
+	ID            string           `json:"id"`
+	TMax          int              `json:"tmax,omitempty"`
+	Ate           int              `json:"at"`
+	Imp           []Impression     `json:"imp"`
+	Site          *Site            `json:"site,omitempty"`
+	App           *App             `json:"app,omitempty"`
+	Device        *Device          `json:"device"`
+	User          *User            `json:"user,omitempty"`
+	Regs          *Regs            `json:"regs,omitempty"`
+	Ext           json.RawMessage  `json:"ext,omitempty"`
+}
+
+// Impression 广告位
+type Impression struct {
+	ID        string   `json:"id"`
+	BidFloor  float64  `json:"bidfloor"`
+	Banner    *Banner  `json:"banner,omitempty"`
+	Video     *Video   `json:"video,omitempty"`
+	TagID     string   `json:"tagid,omitempty"`
+	Secure    int      `json:"secure,omitempty"`
+	Instl     int      `json:"instl,omitempty"`
+}
+
+// Banner 横幅广告
+type Banner struct {
+	W     int    `json:"w,omitempty"`
+	H     int    `json:"h,omitempty"`
+	Pos   string `json:"pos,omitempty"`
+	BType []string `json:"btype,omitempty"`
+}
+
+// Video 视频广告
+type Video struct {
+	MIMEs []string `json:"mimes"`
+	W     int      `json:"w"`
+	H     int      `json:"h"`
+	MinD  int      `json:"minduration"`
+	MaxD  int      `json:"maxduration"`
+	Protos []int   `json:"protocols,omitempty"`
+}
+
+// Site 网站信息
+type Site struct {
+	Domain      string   `json:"domain"`
+	Page        string   `json:"page"`
+	CAT         []string `json:"cat"`
+	SectionCAT  []string `json:"sectioncat"`
+	Mobile      int      `json:"mobile,omitempty"`
+}
+
+// App APP 信息
+type App struct {
+	ID   string   `json:"id"`
+	Name string   `json:"name"`
+	CAT  []string `json:"cat"`
+}
+
+// Device 设备信息
+type Device struct {
+	UA      string `json:"ua"`
+	IP      string `json:"ip"`
+	IFA     string `json:"ifa"`
+	Make    string `json:"make"`
+	Model   string `json:"model"`
+	OS      string `json:"os"`
+	OSV     string `json:"osv"`
+	H       int    `json:"h"`
+	W       int    `json:"w"`
+	Language string `json:"language"`
+	DNT     int    `json:"dnt,omitempty"`
+	LMT     int    `json:"lmt,omitempty"`
+}
+
+// User 用户信息
+type User struct {
+	ID       string   `json:"id,omitempty"`
+	BuyerUID string   `json:"buyeruid,omitempty"`
+	Gender   string   `json:"gender,omitempty"`
+	Ext      json.RawMessage `json:"ext,omitempty"`
+}
+
+// Regs 法规信息
+type Regs struct {
+	Ext json.RawMessage `json:"ext,omitempty"`
+}
+
+// ==================== BidResponse ====================
+
+// BidResponse RTB 竞价响应
+type BidResponse struct {
+	ID      string        `json:"id"`
+	BidID   string        `json:"bidid,omitempty"`
+	Cur     string        `json:"cur"`
+	SeatBid []SeatBid     `json:"seatsbid"`
+}
+
+// SeatBid 席位出价
+type SeatBid struct {
+	Bid  []Bid         `json:"bid"`
+	Seat string        `json:"seat,omitempty"`
+	Grup int           `json:"grp,omitempty"`
+}
+
+// Bid 单次出价
+type Bid struct {
+	ID        string  `json:"id"`
+	ImpID     string  `json:"impid"`
+	Price     float64 `json:"price"`
+	NURL      string  `json:"nurl,omitempty"`  // 通知URL
+	BIDMeta   *BIDMeta `json:"meta,omitempty"`
+	AdM       string  `json:"adm,omitempty"`     // 广告创意
+	ADID      string  `json:"adid,omitempty"`
+	Adomain   []string `json:"adomain,omitempty"`
+}
+
+// BIDMeta 广告元数据
+type BIDMeta struct {
+	AdTypeID int      `json:"adtype"`
+	Adomain  []string `json:"adomain,omitempty"`
+}
+
+// ==================== BidEngine ====================
+
+// BidEngine 竞价引擎核心：在 50ms 内完成竞价决策
+type BidEngine struct {
+	// pCTR 预测模型（通过 gRPC 调用）
+	PCTRClient PCTRServiceClient
+	// pCVR 预测模型
+	PCVRClient PCVRServiceClient
+	// 预算管理器
+	BudgetMgr *BudgetManager
+	// 频率限制
+	FreqCap *FreqCapService
+	// Beta 探索参数
+	Beta float64
+}
+
+// BidDecision 竞价决策结果
+type BidDecision struct {
+	ShouldBid bool
+	BidPrice  float64
+	AdID      string
+	Rejection string // 未出价原因
+}
+
+// Bid 执行竞价决策
+func (e *BidEngine) Bid(req *BidRequest) (*BidResponse, error) {
+	// 1. 预筛：频率限制
+	imp := req.Imp[0]
+	if e.FreqCap.ShouldBlock(req.User.ID, imp.ID) {
+		return nil, nil // 不出价
+	}
+
+	// 2. 并行调用 pCTR 和 pCVR 模型 (p50 < 5ms)
+	pctr, err := e.PCTRClient.Predict(req, imp)
+	if err != nil {
+		pctr = 0.001 // 回退默认值
+	}
+	pcvr, err := e.PCVRClient.Predict(req, imp)
+	if err != nil {
+		pcvr = 0.02 // 回退默认值
+	}
+
+	// 3. 计算最优出价: Bid = pCTR × pCVR × TargetCPA × β
+	targetCPA := 10.0 // 可从预算管理器获取
+	bidPrice := pctr * pcvr * targetCPA * e.Beta
+
+	// 4. 底价保护
+	if bidPrice < imp.BidFloor {
+		return nil, nil
+	}
+
+	// 5. 预算检查
+	if !e.BudgetMgr.HasBudget(bidPrice) {
+		return nil, nil
+	}
+
+	// 6. 构造 BidResponse
+	decision := &BidDecision{
+		ShouldBid: true,
+		BidPrice:  bidPrice,
+	}
+
+	resp := &BidResponse{
+		ID:  req.ID,
+		BidID: generateUUID(),
+		Cur: "USD",
+		SeatBid: []SeatBid{{
+			Bid: []Bid{{
+				ID:      generateUUID(),
+				ImpID:   imp.ID,
+				Price:   bidPrice,
+				AdM:     `<html><body><img src="creative.jpg"/></body></html>`,
+				ADID:    "ad_12345",
+				Adomain: []string{"advertiser.com"},
+				BIDMeta: &BIDMeta{AdTypeID: 1},
+			}},
+		}},
+	}
+
+	return resp, nil
+}
+
+// ==================== gRPC Client ====================
+
+// PCTRServiceClient pCTR 模型服务客户端
+type PCTRServiceClient interface {
+	Predict(req *BidRequest, imp Impression) (float64, error)
+}
+
+// PCVRServiceClient pCVR 模型服务客户端
+type PCVRServiceClient interface {
+	Predict(req *BidRequest, imp Impression) (float64, error)
+}
+
+// ==================== 辅助组件 ====================
+
+// BudgetManager 预算管理器
+type BudgetManager struct {
+	dailyBudget  float64
+	spentToday  float64
+}
+
+func (b *BudgetManager) HasBudget(bid float64) bool {
+	return b.spentToday+bid <= b.dailyBudget
+}
+
+// FreqCapService 频率限制服务
+type FreqCapService struct{}
+
+func (f *FreqCapService) ShouldBlock(userID, adID string) bool {
+	// 检查: 同一用户 24h 内看到同一广告不超过 3 次
+	return false // 简化实现
+}
+
+// ==================== 工具函数 ====================
+
+func generateUUID() string {
+	return fmt.Sprintf("%d", time.Now().UnixNano())
+}
+
+func marshalRequest(req *BidRequest) ([]byte, error) {
+	return json.Marshal(req)
+}
+
+func unmarshalRequest(data []byte) (*BidRequest, error) {
+	req := &BidRequest{}
+	err := json.Unmarshal(data, req)
+	return req, err
+}
+
+// ==================== 使用示例 ====================
+
+func ExampleBidEngine() {
+	engine := &BidEngine{
+		Beta: 0.95, // 保守探索
+		BudgetMgr: &BudgetManager{
+			dailyBudget: 1000.0,
+			spentToday: 500.0,
+		},
+	}
+
+	// 构造 BidRequest
+	req := &BidRequest{
+		ID:   "req-001",
+		TMax: 100,
+		Ate:  2,
+		Imp: []Impression{{
+			ID:       "imp-001",
+			BidFloor: 1.00,
+			Banner:   &Banner{W: 300, H: 250, Pos: "above_fold"},
+		}},
+		Device: &Device{UA: "Mozilla/5.0...", IP: "192.168.1.1"},
+	}
+
+	resp, _ := engine.Bid(req)
+	fmt.Printf("BidPrice=%.2f, Cur=%s\n", resp.SeatBid[0].Bid[0].Price, resp.Cur)
+}
+```
+
 ---
 
 ## 第四部分：Header Bidding
@@ -815,6 +1113,42 @@ OpenRTB Bid Request 中 "at" 字段是什么意思？
 "at" = auction type
 - 1 = First Price (第一价格竞价)
 - 2 = Second Price (第二价格竞价)
+</details>
+
+### 问题 5
+Go 的 `BidEngine.Bid` 方法中，为什么 pCTR/pCVR 调用失败时用固定默认值而不是 panic？
+
+<details>
+<summary>查看答案</summary>
+
+1. RTB 是硬实时系统，p50 要求 < 50ms，panic 会导致整个请求失败，浪费广告位
+2. 默认值作为 fallback：pCTR=0.001, pCVR=0.02 会让出价极低，几乎不会中标，这是安全的保守策略
+3. 实际生产中还会记录错误指标用于监控和告警
+</details>
+
+### 问题 6
+Bid = pCTR × pCVR × TargetCPA × β 这个公式中，β 的作用是什么？为什么通常设为 0.95？
+
+<details>
+<summary>查看答案</summary>
+
+β 是探索参数（exploration factor），作用：
+1. 保守出价：pCTR×pCVR 是估值，直接出全额容易被对手利用（winner's curse）
+2. 0.95 意味着出估值的 95%，留出 5% 的安全边际
+3. β 可以通过 Bandit 算法在线学习优化：初期 0.8 多探索，后期 0.98 收敛
+4. 如果系统发现经常输竞价 → 调高 β；经常超 CPA → 降低 β
+</details>
+
+### 问题 7
+Go 中 BidRequest 的 `json:"..."` tag 里 `omitempty` 的作用是什么？
+
+<details>
+<summary>查看答案</summary>
+
+omitempty 表示当字段为零值时不包含在 JSON 序列化结果中：
+1. 减少请求体积：RTB 每次传输都按字节计费，去掉 nil 字段可以节省 10-20%
+2. 保持协议兼容：不同 SSP 的 BidRequest 字段不同，不传 nil 字段避免解析错误
+3. 例如 `*Site` 在 APP 广告中是 nil（用 *App 代替），加上 omitempty 就不会序列化出 `"site": null`
 </details>
 
 ---

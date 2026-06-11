@@ -797,7 +797,821 @@ ad_set_id = CampaignBuilder.create_ad_set(
 print(f"创建的广告组 ID: {ad_set_id}")
 ```
 
----
+### 5. Go 实现：Meta Ads Campaign 管理客户端
 
-*今天花 60-90 分钟：前 5 分钟入门，40 分钟源码分析，15 分钟动手验证*
-*答不出自测题？回去重读对应章节。*
+```go
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
+	"sync"
+	"time"
+)
+
+// MetaAdsClient 封装 Meta Graph API 的认证、限流、批量请求
+type MetaAdsClient struct {
+	accessToken string
+	baseURL     string
+	httpClient  *http.Client
+	mu          sync.Mutex
+	lastCallAt  time.Time
+	rateLimit   int // 每分钟最大请求数
+}
+
+// Campaign 广告系列资源模型
+type Campaign struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Status    string    `json:"status"` // ACTIVE, PAUSED, DELETED
+	Objective string    `json:"objective"`
+	StartDate *time.Time `json:"start_time,omitempty"`
+	EndDate   *time.Time `json:"end_time,omitempty"`
+	DailyBudget int64   `json:"daily_budget,omitempty"` // 单位为分
+	CreatedAt time.Time `json:"created_time"`
+	UpdatedAt time.Time `json:"updated_time"`
+}
+
+// AdSet 广告组资源模型
+type AdSet struct {
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	Status       string    `json:"status"`
+	CampaignID   string    `json:"campaign_id"`
+	DailyBudget  int64     `json:"daily_budget"`
+	StartDate    *time.Time `json:"start_time,omitempty"`
+	EndDate      *time.Time `json:"end_time,omitempty"`
+	Targeting    json.RawMessage `json:"targeting"` // 灵活 targeting 结构
+	BidAmount    *int64    `json:"bid_info,omitempty"`
+	CreatedAt    time.Time `json:"created_time"`
+}
+
+// Ad 广告资源模型
+type Ad struct {
+	ID         string    `json:"id"`
+	Name       string    `json:"name"`
+	Status     string    `json:"status"`
+	AdSetID    string    `json:"ad_group_id"`
+	CreativeID string    `json:"creative_id"`
+	CreatedAt  time.Time `json:"created_time"`
+}
+
+// NewMetaAdsClient 创建客户端，默认 600 次/分钟限流
+func NewMetaAdsClient(accessToken string) *MetaAdsClient {
+	return &MetaAdsClient{
+		accessToken: accessToken,
+		baseURL:     "https://graph.facebook.com/v20.0",
+		httpClient: &http.Client{
+			Timeout: 30 * time.Second,
+		},
+		rateLimit: 600,
+	}
+}
+
+// getHeaders 返回带认证头的 HTTP 请求头
+func (c *MetaAdsClient) getHeaders() http.Header {
+	return http.Header{
+		"Authorization":     {fmt.Sprintf("Bearer %s", c.accessToken)},
+		"Content-Type":      {"application/json"},
+		"User-Agent":        {"MetaAds-Go-SDK/1.0"},
+	}
+}
+
+// RateLimitWait 限流等待：确保距上次请求至少间隔 rateLimit 毫秒
+func (c *MetaAdsClient) RateLimitWait() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	minInterval := time.Minute / time.Duration(c.rateLimit)
+	elapsed := time.Since(c.lastCallAt)
+	if elapsed < minInterval {
+		time.Sleep(minInterval - elapsed)
+	}
+	c.lastCallAt = time.Now()
+}
+
+// Get 执行 GET 请求，支持分页自动拉取
+func (c *MetaAdsClient) Get(ctx context.Context, path string, fields []string) ([]json.RawMessage, error) {
+	c.RateLimitWait()
+	v := url.Values{}
+	v.Set("fields", strings.Join(fields, ","))
+	v.Set("access_token", c.accessToken)
+	uri := fmt.Sprintf("%s%s?%s", c.baseURL, path, v.Encode())
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, uri, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header = c.getHeaders()
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("GET %s: %w", uri, err)
+	}
+	defer resp.Body.Close()
+
+	var result map[string]json.RawMessage
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	data, ok := result["data"]
+	if !ok {
+		return nil, fmt.Errorf("no data field in response")
+	}
+
+	// 递归拉取下一页
+	nextURL, hasNext := result["paging"], false
+	if nextMap, ok := result["paging"].(map[string]json.RawMessage); ok {
+		if next, ok := nextMap["next"]; ok {
+			var nextStr string
+			json.Unmarshal(next, &nextStr)
+			if nextStr != "" {
+				hasNext = true
+				nextURL = []byte(nextStr)
+			}
+		}
+	}
+
+	var records []json.RawMessage
+	if err := json.Unmarshal(data, &records); err != nil {
+		return nil, fmt.Errorf("unmarshal data: %w", err)
+	}
+
+	if hasNext {
+		var nextStr string
+		json.Unmarshal(nextURL, &nextStr)
+		nextStr = strings.Trim(nextStr, `"`)
+		// 解析下一页 URL
+		parsed, _ := url.Parse(nextStr)
+		nextPath := parsed.Path
+		if nextQuery := parsed.RawQuery; nextQuery != "" {
+			nextPath += "?" + nextQuery
+		}
+		// 分页只拉一次，避免递归过深
+		if len(fields) > 0 {
+			paged, err := c.Get(ctx, nextPath, fields)
+			if err == nil {
+				records = append(records, paged...)
+			}
+		}
+	}
+
+	return records, nil
+}
+
+// CampaignService 广告系列管理服务
+type CampaignService struct {
+	client *MetaAdsClient
+}
+
+func NewCampaignService(client *MetaAdsClient) *CampaignService {
+	return &CampaignService{client: client}
+}
+
+// List 列出指定广告账户下所有广告系列
+func (s *CampaignService) List(ctx context.Context, accountID string) ([]Campaign, error) {
+	path := fmt.Sprintf("/act_%s/campaigns", accountID)
+	records, err := s.client.Get(ctx, path, []string{
+		"id", "name", "status", "objective",
+		"start_time", "end_time", "daily_budget",
+		"created_time", "updated_time",
+	})
+	if err != nil {
+		return nil, err
+	}
+	var campaigns []Campaign
+	for _, r := range records {
+		var c Campaign
+		if err := json.Unmarshal(r, &c); err != nil {
+			return nil, fmt.Errorf("unmarshal campaign %s: %w", string(r[:min(20, len(r))]), err)
+		}
+		campaigns = append(campaigns, c)
+	}
+	return campaigns, nil
+}
+
+// Create 创建广告系列
+func (s *CampaignService) Create(ctx context.Context, accountID string, params map[string]interface{}) (*Campaign, error) {
+	s.client.RateLimitWait()
+	data, _ := json.Marshal(params)
+	params["access_token"] = s.client.accessToken
+
+	uri := fmt.Sprintf("%s/act_%s/campaigns", s.client.baseURL, accountID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, uri, strings.NewReader(string(data)))
+	if err != nil {
+		return nil, err
+	}
+	req.Header = s.client.getHeaders()
+
+	resp, err := s.client.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return &Campaign{ID: result.ID}, nil
+}
+
+// AdSetService 广告组管理服务
+type AdSetService struct {
+	client *MetaAdsClient
+}
+
+func NewAdSetService(client *MetaAdsClient) *AdSetService {
+	return &AdSetService{client: client}
+}
+
+// Create 创建广告组
+func (s *AdSetService) Create(ctx context.Context, accountID, campaignID string, params map[string]interface{}) (*AdSet, error) {
+	s.client.RateLimitWait()
+	params["campaign_id"] = campaignID
+	data, _ := json.Marshal(params)
+	params["access_token"] = s.client.accessToken
+
+	uri := fmt.Sprintf("%s/act_%s/adsets", s.client.baseURL, accountID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, uri, strings.NewReader(string(data)))
+	if err != nil {
+		return nil, err
+	}
+	req.Header = s.client.getHeaders()
+
+	resp, err := s.client.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return &AdSet{ID: result.ID}, nil
+}
+
+// BatchService 批量请求服务：合并多个 API 调用到一个 HTTP 请求
+type BatchService struct {
+	client *MetaAdsClient
+	batches []batchEntry
+}
+
+type batchEntry struct {
+	method       string
+	path         string
+	body         string
+	params       url.Values
+	resultName   string // e.g. "create_campaign"
+}
+
+func NewBatchService(client *MetaAdsClient) *BatchService {
+	return &BatchService{client: client}
+}
+
+// Add 添加一个批量请求
+func (b *BatchService) Add(method, path, resultName string, params url.Values, body string) {
+	b.batches = append(b.batches, batchEntry{
+		method:     method,
+		path:       path,
+		body:       body,
+		params:     params,
+		resultName: resultName,
+	})
+}
+
+// Execute 执行批量请求
+func (b *BatchService) Execute(ctx context.Context) ([]map[string]any, error) {
+	if len(b.batches) == 0 {
+		return nil, nil
+	}
+	b.client.RateLimitWait()
+
+	var requests []map[string]any
+	for _, entry := range b.batches {
+		req := map[string]any{
+			"method": entry.method,
+			"relative_url": entry.path,
+		}
+		if entry.body != "" {
+			req["body"] = entry.body
+		} else if entry.params != nil {
+			req["body"] = entry.params.Encode()
+		}
+		if entry.resultName != "" {
+			req["name"] = entry.resultName
+		}
+		requests = append(requests, req)
+	}
+
+	data, _ := json.Marshal(requests)
+	uri := fmt.Sprintf("%s", b.client.baseURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, uri, strings.NewReader(string(data)))
+	if err != nil {
+		return nil, err
+	}
+	req.Header = b.client.getHeaders()
+	req.URL.Path += "/batch"
+	req.URL.RawQuery = url.Values{"access_token": {b.client.accessToken}}.Encode()
+
+	resp, err := b.client.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var results []map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func main() {
+	client := NewMetaAdsClient("YOUR_ACCESS_TOKEN")
+	campaignSvc := NewCampaignService(client)
+	adSetSvc := NewAdSetService(client)
+
+	ctx := context.Background()
+
+	// 列出广告系列
+	campaigns, err := campaignSvc.List(ctx, "YOUR_AD_ACCOUNT_ID")
+	if err != nil {
+		fmt.Printf("error: %v\n", err)
+		return
+	}
+	for _, c := range campaigns {
+		fmt.Printf("Campaign: %s [%s] budget=%d\n", c.Name, c.Status, c.DailyBudget)
+	}
+
+	// 创建广告系列
+	newCampaign, err := campaignSvc.Create(ctx, "YOUR_AD_ACCOUNT_ID", map[string]interface{}{
+		"name":         "My Campaign",
+		"objective":    "CONVERSIONS",
+		"status":       "ACTIVE",
+		"daily_budget": 5000, // 50 USD in cents
+	})
+	if err != nil {
+		fmt.Printf("create campaign error: %v\n", err)
+		return
+	}
+	fmt.Printf("Created campaign: %s\n", newCampaign.ID)
+
+	// 使用批量 API
+	batchSvc := NewBatchService(client)
+	batchSvc.Add(
+		"GET", "act_YOUR_AD_ACCOUNT_ID/campaigns?fields=name,status,daily_budget",
+		"list_campaigns", nil, "",
+	)
+	batchSvc.Add(
+		"GET", "act_YOUR_AD_ACCOUNT_ID/adsets?fields=name,status",
+		"list_adsets", nil, "",
+	)
+	results, err := batchSvc.Execute(ctx)
+	if err != nil {
+		fmt.Printf("batch error: %v\n", err)
+	} else {
+		for _, r := range results {
+			for _, r := range results {
+				fmt.Printf("batch result: %v\n", r)
+			}
+			}
+			```
+
+			### Meta Ads API 的 Go 实现（生产级）
+
+			```go
+			// Meta Ads API: Go 语言生产级 SDK 实现
+			// 覆盖 OAuth 认证、端点调用、批量操作、速率限制
+			package metaads
+
+			import (
+			"encoding/json"
+			"fmt"
+			"net/http"
+			"strings"
+			"sync"
+			"time"
+			)
+
+			// ==================== OAuth 认证 ====================
+
+			// MetaAdsClient 完整的 Meta Ads API 客户端
+			type MetaAdsClient struct {
+			AppID         string
+			AppSecret     string
+			AccessToken   string
+			APIVersion    string // 如 "v21.0"
+			BaseURL       string
+			httpClient    *http.Client
+			tokenMux      sync.Mutex // token 并发保护
+			lastTokenTime time.Time
+			}
+
+			// NewMetaAdsClient 创建客户端
+			func NewMetaAdsClient(appID, appSecret, accessToken string) *MetaAdsClient {
+			return &MetaAdsClient{
+				AppID:       appID,
+				AppSecret:   appSecret,
+				AccessToken: accessToken,
+				APIVersion:  "v21.0",
+				BaseURL:     "https://graph.facebook.com",
+				httpClient: &http.Client{
+					Timeout: 30 * time.Second,
+				},
+			}
+			}
+
+			// ExchangeCode 用 authorization code 换 access_token
+			func (c *MetaAdsClient) ExchangeCode(code, redirectURI string) (tokenResp, error) {
+			params := url.Values{}
+			params.Set("client_id", c.AppID)
+			params.Set("client_secret", c.AppSecret)
+			params.Set("code", code)
+			params.Set("redirect_uri", redirectURI)
+			params.Set("grant_type", "authorization_code")
+
+			resp, err := c.post("/oauth/access_token", params)
+			if err != nil {
+				return tokenResp{}, err
+			}
+			return parseTokenResponse(resp)
+			}
+
+			// ShortToLongToken 短期 token → 长期 token（60 天 → 2 年）
+			func (c *MetaAdsClient) ShortToLongToken(shortToken string) (tokenResp, error) {
+			params := url.Values{}
+			params.Set("grant_type", "fb_exchange_token")
+			params.Set("fb_exchange_token", shortToken)
+
+			resp, err := c.get("/oauth/access_token", params)
+			if err != nil {
+				return tokenResp{}, err
+			}
+			return parseTokenResponse(resp)
+			}
+
+			// RefreshToken 刷新 access_token
+			func (c *MetaAdsClient) RefreshToken(refreshToken string) (tokenResp, error) {
+			params := url.Values{}
+			params.Set("grant_type", "refresh_token")
+			params.Set("refresh_token", refreshToken)
+
+			resp, err := c.post("/oauth/access_token", params)
+			if err != nil {
+				return tokenResp{}, err
+			}
+			return parseTokenResponse(resp)
+			}
+
+			// ==================== 核心端点 ====================
+
+			// Campaign 广告系列
+			type Campaign struct {
+			ID            string  `json:"id"`
+			Name          string  `json:"name"`
+			Status        string  `json:"status"` // ACTIVE, PAUSED, ARCHIVED
+			BudgetAmount   *int64  `json:"daily_budget,omitempty"`
+			BidAmount      *int64  `json:"promoted_object,omitempty"`
+			AdvertisingType string `json:"advertising_type,omitempty"`
+			}
+
+			// AdSet 广告组
+			type AdSet struct {
+			ID            string  `json:"id"`
+			Name          string  `json:"name"`
+			Status        string  `json:"status"`
+			DayParts       []int   `json:"dayparts,omitempty"`
+			BidAmount      *int64  `json:"bid_amount,omitempty"`
+			Targeting      *Target `json:"targeting,omitempty"`
+			}
+
+			// Target 定向条件
+			type Target struct {
+			GEOLocations *GEO `json:"geo_locations,omitempty"`
+			Ages         []int `json:"ages,omitempty"`
+			Genders      []int `json:"genders,omitempty"`
+			}
+
+			// GEO 地理位置
+			type GEO struct {
+			Countries    []string `json:"countries,omitempty"`
+			Cities       []string `json:"cities,omitempty"`
+			Radius       int      `json:"radius,omitempty"`
+			}
+
+			// Ad 广告
+			type Ad struct {
+			ID        string   `json:"id"`
+			Name      string   `json:"name"`
+			Status    string   `json:"status"`
+			Body      string   `json:"body,omitempty"`
+			Title     string   `json:"title,omitempty"`
+			ImageURLs []string `json:"attachment,omitempty"`
+			}
+
+			// CampaignResp 广告系列列表响应
+			type CampaignResp struct {
+			Data  []Campaign       `json:"data"`
+			Paging *Paging         `json:"paging,omitempty"`
+			}
+
+			// Paging 分页信息
+			type Paging struct {
+			Cursor string `json:"cursors,omitempty"`
+			Next   string `json:"next,omitempty"`
+			}
+
+			// GetCampaigns 获取广告系列列表
+			func (c *MetaAdsClient) GetCampaigns(adAccountId string, fields []string) ([]Campaign, error) {
+			path := fmt.Sprintf("/%s/%s/campaigns", c.APIVersion, adAccountId)
+			params := url.Values{}
+			params.Set("fields", strings.Join(fields, ","))
+			params.Set("access_token", c.AccessToken)
+
+			resp, err := c.get(path, params)
+			if err != nil {
+				return nil, err
+			}
+
+			var result CampaignResp
+			if err := json.Unmarshal(resp, &result); err != nil {
+				return nil, fmt.Errorf("parse campaigns: %w", err)
+			}
+			return result.Data, nil
+			}
+
+			// GetCampaignInsights 获取广告系列洞察数据
+			func (c *MetaAdsClient) GetCampaignInsights(
+			adAccountId string,
+			ids []string,
+			metrics []string,
+			timeRange map[string]string,
+			) ([]map[string]interface{}, error) {
+			path := fmt.Sprintf("/%s/%s/insights", c.APIVersion, adAccountId)
+			params := url.Values{}
+			params.Set("ids", strings.Join(ids, ","))
+			params.Set("metrics", strings.Join(metrics, ","))
+			if start, ok := timeRange["start_date"]; ok {
+				params.Set("time_range[start_date]", start)
+			}
+			if end, ok := timeRange["end_date"]; ok {
+				params.Set("time_range[end_date]", end)
+			}
+			params.Set("access_token", c.AccessToken)
+
+			resp, err := c.get(path, params)
+			if err != nil {
+				return nil, err
+			}
+
+			var result struct {
+				Data []map[string]interface{} `json:"data"`
+			}
+			if err := json.Unmarshal(resp, &result); err != nil {
+				return nil, fmt.Errorf("parse insights: %w", err)
+			}
+			return result.Data, nil
+			}
+
+			// ==================== 批量操作 ====================
+
+			// BatchRequest 批量请求
+			type BatchRequest struct {
+			Method   string            `json:"method"`
+			Path     string            `json:"path"`
+			Body     map[string]string `json:"body,omitempty"`
+			Headers  map[string]string `json:"headers,omitempty"`
+			}
+
+			// BatchResponse 批量响应
+			type BatchResponse struct {
+			Status  int               `json:"status"`
+			Body    json.RawMessage   `json:"body"`
+			Headers map[string]string `json:"headers"`
+			}
+
+			// ExecuteBatch 执行批量操作（一次 HTTP 完成多个 API 调用）
+			func (c *MetaAdsClient) ExecuteBatch(
+			adAccountId string,
+			reqs []BatchRequest,
+			) ([]BatchResponse, error) {
+			if len(reqs) == 0 {
+				return nil, nil
+			}
+			if len(reqs) > 50 {
+				reqs = reqs[:50] // Meta 限制每批最多 50 个
+			}
+
+			path := fmt.Sprintf("/%s/%s/batch", c.APIVersion, adAccountId)
+			params := url.Values{}
+			bodyJSON, _ := json.Marshal(reqs)
+			params.Set("requests", string(bodyJSON))
+			params.Set("access_token", c.AccessToken)
+
+			resp, err := c.post(path, params)
+			if err != nil {
+				return nil, err
+			}
+
+			var result []BatchResponse
+			if err := json.Unmarshal(resp, &result); err != nil {
+				return nil, fmt.Errorf("parse batch response: %w", err)
+			}
+			return result, nil
+			}
+
+			// ==================== 速率限制 ====================
+
+			// RateLimiter 基于 Graph API Rate Limit 的实现
+			type RateLimiter struct {
+			maxCallsPerHour int
+			callCount       int
+			windowStart     time.Time
+			mu              sync.Mutex
+			}
+
+			// NewRateLimiter 创建限流器（默认 200 calls/hour）
+			func NewRateLimiter(maxCallsPerHour int) *RateLimiter {
+			if maxCallsPerHour == 0 {
+				maxCallsPerHour = 200 // Graph API 默认限制
+			}
+			return &RateLimiter{
+				maxCallsPerHour: maxCallsPerHour,
+				windowStart:     time.Now(),
+			}
+			}
+
+			// Wait 等待直到可以发送请求
+			func (rl *RateLimiter) Wait() {
+			rl.mu.Lock()
+			defer rl.mu.Unlock()
+
+			now := time.Now()
+			if now.Sub(rl.windowStart) > time.Hour {
+				rl.windowStart = now
+				rl.callCount = 0
+			}
+
+			if rl.callCount >= rl.maxCallsPerHour {
+				// 等待窗口结束
+				deadline := rl.windowStart.Add(time.Hour)
+				time.Sleep(time.Until(deadline))
+				rl.windowStart = time.Now()
+				rl.callCount = 0
+			}
+			rl.callCount++
+			}
+
+			// ==================== 错误处理 ====================
+
+			// MetaAdsAPIError API 错误
+			type MetaAdsAPIError struct {
+			Code      int    `json:"code"`
+			Message   string `json:"message"`
+			Type      string `json:"type"`
+			FBTraceID string `json:"fbtrace_id,omitempty"`
+			}
+
+			func (e *MetaAdsAPIError) Error() string {
+			return fmt.Sprintf("Meta Ads API error [%d]: %s (type: %s, trace: %s)",
+				e.Code, e.Message, e.Type, e.FBTraceID)
+			}
+
+			// ==================== 内部方法 ====================
+
+			type tokenResp struct {
+			AccessToken  string `json:"access_token"`
+			ExpiresIn    int    `json:"expires_in"`
+			RefreshToken string `json:"refresh_token"`
+			}
+
+			func parseTokenResponse(data json.RawMessage) (tokenResp, error) {
+			var resp tokenResp
+			err := json.Unmarshal(data, &resp)
+			return resp, err
+			}
+
+			func (c *MetaAdsClient) get(path string, params url.Values) (json.RawMessage, error) {
+			url := c.BaseURL + path + "?" + params.Encode()
+			resp, err := c.httpClient.Get(url)
+			if err != nil {
+				return nil, err
+			}
+			defer resp.Body.Close()
+
+			var result json.RawMessage
+			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+				return nil, err
+			}
+
+			var errorCheck struct {
+				Error struct {
+					Code    int    `json:"code"`
+					Message string `json:"message"`
+				} `json:"error"`
+			}
+			if err := json.Unmarshal(result, &errorCheck); err == nil {
+				if errorCheck.Error.Code != 0 {
+					return nil, &MetaAdsAPIError{
+						Code:    errorCheck.Error.Code,
+						Message: errorCheck.Error.Message,
+						Type:    "OAuthException",
+					}
+				}
+			}
+			return result, nil
+			}
+
+			func (c *MetaAdsClient) post(path string, params url.Values) (json.RawMessage, error) {
+			url := c.BaseURL + path
+			resp, err := c.httpClient.PostForm(url, params)
+			if err != nil {
+				return nil, err
+			}
+			defer resp.Body.Close()
+
+			var result json.RawMessage
+			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+				return nil, err
+			}
+			return result, nil
+			}
+
+			// ==================== 使用示例 ====================
+
+			func main() {
+			// 1. 创建客户端
+			client := NewMetaAdsClient(
+				"your_app_id",
+				"your_app_secret",
+				"EAABwzLixnjYBO7...",
+			)
+
+			// 2. 限流器
+			limiter := NewRateLimiter(200)
+
+			// 3. 获取广告系列
+			limiter.Wait()
+			campaigns, err := client.GetCampaigns(
+				"act_123456789",
+				[]string{"id", "name", "status", "daily_budget", "created_time"},
+			)
+			if err != nil {
+				fmt.Printf("error: %v\n", err)
+				return
+			}
+			for _, c := range campaigns {
+				fmt.Printf("Campaign: %s - %s (%s)\n", c.ID, c.Name, c.Status)
+			}
+
+			// 4. 批量操作：创建 Campaign + AdSet + Ad
+			batchReqs := []BatchRequest{
+				{
+					Method: "POST",
+					Path:   "/act_123456789/campaigns",
+					Body: map[string]string{
+						"name":               "Summer Sale Campaign",
+						"objective":          "OUTCOME_RESULTS",
+						"status":             "PAUSED",
+						"daily_budget":       "5000",
+					},
+				},
+				{
+					Method: "POST",
+					Path:   "/act_123456789/adset",
+					Body: map[string]string{
+						"name":       "Prospecting AdSet",
+						"campaign_id":  "[response:0.id]", // 引用上一步结果
+						"status":     "PAUSED",
+						"daily_budget": "2000",
+					},
+				},
+			}
+			results, err := client.ExecuteBatch("act_123456789", batchReqs)
+			for _, r := range results {
+				fmt.Printf("Batch result: status=%d\n", r.Status)
+			}
+			}
+			```
+
+			---
+
+			*今天花 60-90 分钟：前 5 分钟入门，40 分钟源码分析，15 分钟动手验证*
+			*答不出自测题？回去重读对应章节。*

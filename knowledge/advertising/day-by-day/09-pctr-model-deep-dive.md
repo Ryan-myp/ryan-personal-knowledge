@@ -318,6 +318,244 @@ def compute_auc(preds: torch.Tensor, targets: torch.Tensor) -> float:
     return auc.item()
 ```
 
+### 3.2 Go 实现 — FTRL 在线学习器
+
+```go
+// ftrl.go — FTRL-Proximal 在线 CTR 学习器（Go 版）
+package ctr
+
+import (
+	"fmt"
+	"math"
+	"sync"
+)
+
+// FeatureBucket 特征桶
+type FeatureBucket struct {
+	Hash    int64  // 特征哈希值
+	Feature string // 原始特征名（可选）
+}
+
+// FTRLProximal 在线学习参数
+type FTRLParams struct {
+	Alpha float64 // 学习率 (默认 0.05)
+	Beta  float64 // 平滑参数 (默认 1.0)
+	L1    float64 // L1 正则化 (默认 0.0)
+	L2    float64 // L2 正则化 (默认 0.1)
+}
+
+// FTRLState FTRL 状态 (per-bucket)
+type FTRLState struct {
+	w float64 // 权重
+	z float64 // 累积梯度
+	n float64 // 梯度平方和
+}
+
+// FTRLProximal 在线学习器
+type FTRLProximal struct {
+	params  FTRLParams
+	state   map[int64]*FTRLState
+	mu      sync.RWMutex
+	features []FeatureBucket
+}
+
+// NewFTRLProximal 创建在线学习器
+func NewFTRLProximal(params FTRLParams) *FTRLProximal {
+	return &FTRLProximal{
+		params:  params,
+		state:   make(map[int64]*FTRLState),
+		features: make([]FeatureBucket, 0, 10000),
+	}
+}
+
+// HashFeature 哈希特征名
+func HashFeature(name string) int64 {
+	// 简单哈希 (生产环境用 murmur3)
+	hash := int64(0)
+	for _, c := range name {
+		hash = hash*31 + int64(c)
+	}
+	return hash
+}
+
+// Sigmoid 数值稳定的 sigmoid
+func Sigmoid(x float64) float64 {
+	if x >= 0 {
+		return 1.0 / (1.0 + math.Exp(-x))
+	}
+	expX := math.Exp(x)
+	return expX / (1.0 + expX)
+}
+
+// Predict 预测点击概率
+func (f *FTRLProximal) Predict(features []FeatureBucket) float64 {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	var score float64
+	for _, feat := range features {
+		if state, ok := f.state[feat.Hash]; ok {
+			score += state.w
+		}
+	}
+	return Sigmoid(score)
+}
+
+// Update 在线更新 (在线学习核心)
+func (f *FTRLProximal) Update(features []FeatureBucket, label float64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	// 1. 预测
+	p := f.predictLocked(features)
+
+	// 2. 计算梯度: l = p - y
+	grad := p - label
+
+	// 3. 更新每个特征
+	for _, feat := range features {
+		h := feat.Hash
+		state := f.getOrInitState(h)
+
+		// FTRL 更新公式:
+		// σ_i = (√(n_i + σ²) - √n_i) / α
+		// w_i = -1/L2 * (L1 * sign(z_i) - z_i) / (α/σ_i + L2)
+		σ := math.Sqrt(float64(state.n+1)) - math.Sqrt(float64(state.n))
+		σ += f.params.Beta // 防止除以零
+
+		// 累积 z 和 n
+		state.z += grad - (state.z - grad*math.Sqrt(float64(state.n+1)-math.Sqrt(float64(state.n))))
+		state.n += grad * grad
+
+		// 稀疏 L1 正则化 (产生稀疏解的关键!)
+		w := -f.params.L1 * math.Signum(state.z)
+		if state.z > 0 {
+			w = math.Max(0, state.z-f.params.L1) / (f.params.Alpha*σ/f.params.Beta + f.params.L2)
+		} else {
+			w = -math.Max(0, -state.z-f.params.L1) / (f.params.Alpha*σ/f.params.Beta + f.params.L2)
+		}
+
+		// 如果 L1 正则化使权重归零 → 删除状态 (稀疏化)
+		if math.Abs(w) < 1e-10 {
+			delete(f.state, h)
+		} else {
+			state.w = w
+		}
+	}
+}
+
+func (f *FTRLProximal) predictLocked(features []FeatureBucket) float64 {
+	var score float64
+	for _, feat := range features {
+		if state, ok := f.state[feat.Hash]; ok {
+			score += state.w
+		}
+	}
+	return Sigmoid(score)
+}
+```
+
+### 3.3 Wide & Deep 架构 — Go 实现
+
+```go
+// wide_deep.go — Wide & Deep 模型实现
+package ctr
+
+import (
+	"math"
+)
+
+// WideDeepModel Wide & Deep 模型
+type WideDeepModel struct {
+	// Wide: 线性 + 特征交叉
+	WideWeights []float64  // 线性权重
+	WideCrosses []CrossFeat // 交叉特征
+
+	// Deep: DNN
+	HiddenDims []int      // 隐藏层维度 [256, 128, 64]
+	Weights    [][]float64 // 权重矩阵 [layer][input_dim × output_dim]
+	Biases     []float64    // 偏置向量
+
+	Embeddings map[string][]float64 // 共享 embedding
+}
+
+// CrossFeat 交叉特征
+type CrossFeat struct {
+	FieldA string
+	FieldB string
+	Weight float64
+}
+
+// Forward 前向传播
+func (m *WideDeepModel) Forward(features map[string]string, embeddingLookup func(string) []float64) float64 {
+	// Wide 部分
+	wideScore := m.widePart(features, embeddingLookup)
+
+	// Deep 部分 (DNN)
+	deepEmbed := m.deepPart(features, embeddingLookup)
+
+	// 合并输出: σ(α * wide + β * deep)
+	combined := 0.5 * wideScore + 0.5 * deepScore
+	return Sigmoid(combined)
+}
+
+// widePart Wide 部分 (线性 + 人工交叉)
+func (m *WideDeepModel) widePart(features map[string]string, lookup func(string) []float64) float64 {
+	var score float64
+
+	// 线性部分
+	for i, w := range m.WideWeights {
+		featVal := 1.0 // one-hot 激活
+		score += w * featVal
+	}
+
+	// 交叉部分: 人工设计的特征交叉
+	for _, cross := range m.WideCrosses {
+		valA := features[cross.FieldA]
+		valB := features[cross.FieldB]
+		if valA != "" && valB != "" {
+			score += m.crossEmbed(valA, valB) * cross.Weight
+		}
+	}
+
+	return score
+}
+
+// deepPart Deep 部分 (DNN + Embedding)
+func (m *WideDeepModel) deepPart(features map[string]string, lookup func(string) []float64) float64 {
+	// 1. 获取 embedding
+	var embedding []float64
+	for field, val := range features {
+		if vec := lookup(val); vec != nil {
+			embedding = append(embedding, vec...)
+		}
+	}
+
+	// 2. DNN 前向传播
+	output := embedding
+	for layerIdx := range m.HiddenDims {
+		layer := m.Weights[layerIdx]
+		bias := m.Biases[layerIdx]
+		output = m.matmulReLU(output, layer, bias)
+	}
+
+	return output
+}
+
+// matmulReLU 矩阵乘法 + ReLU
+func (m *WideDeepModel) matmulReLU(input []float64, weights [][]float64, bias []float64) []float64 {
+	output := make([]float64, len(bias))
+	for i, b := range bias {
+		sum := b
+		for j, x := range input {
+			sum += x * weights[i][j]
+		}
+		output[i] = math.Max(0, sum) // ReLU
+	}
+	return output
+}
+```
+
 ---
 
 ## 第三部分：DeepFM 模型
@@ -825,6 +1063,159 @@ class MMoETrainer:
 
 ---
 
+### 5.3 Go 实现：FTRL-Proximal 在线学习
+
+```go
+// FTRLProximal implements the Follow-The-Regularized-Leader
+// with Proximal point estimator, used by Google for online CTR estimation.
+// Reference: "Ad Click Prediction: a View from the Trenches" (McMahan et al., 2013)
+package pctr
+
+import (
+	"fmt"
+	"math"
+	"sync"
+)
+
+// FeatureHash hashes a feature string to a bucket index.
+// Used to reduce memory for sparse features (feature hashing / hashing trick).
+func FeatureHash(feature string, numBuckets int) int {
+	h := uint64(len(feature))
+	for i := 0; i < len(feature); i++ {
+		h = h*31 + uint64(feature[i])
+	}
+	return int(h%uint64(numBuckets))
+}
+
+// FTRLState tracks per-feature FTRL state.
+type FTRLState struct {
+	w     float64 // current weight
+	z     float64 // sum of gradients
+	n     float64 // sum of squared gradients
+}
+
+// FTRLProximal implements online learning for pCTR with L1/L2 regularization.
+type FTRLProximal struct {
+	numBuckets int
+	alpha      float64 // learning rate scaling
+	beta       float64 // learning rate smoothing
+	l1         float64 // L1 regularization strength
+	l2         float64 // L2 regularization strength
+
+	mu    float64 // learning rate shift
+	state map[int]*FTRLState
+	mu    *sync.Mutex
+}
+
+// NewFTRLProximal creates a configured FTRL model.
+// numBuckets: feature hashing bucket count (e.g., 2^20)
+func NewFTRLProximal(numBuckets int, alpha, beta, l1, l2 float64) *FTRLProximal {
+	return &FTRLProximal{
+		numBuckets: numBuckets,
+		alpha:      alpha,
+		beta:       beta,
+		l1:         l1,
+		l2:         l2,
+		mu:         0,
+		state:      make(map[int]*FTRLState),
+		mu: &sync.Mutex{},
+	}
+}
+
+// sigmoid computes 1 / (1 + exp(-x)) with numerical stability.
+func sigmoid(x float64) float64 {
+	if x >= 0 {
+		e := math.Exp(-x)
+		return 1.0 / (1.0 + e)
+	}
+	e := math.Exp(x)
+	return e / (1.0 + e)
+}
+
+// Predict returns the pCTR prediction for given feature buckets.
+func (f *FTRLProximal) Predict(features []int) float64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	p := 0.0
+	for _, bucket := range features {
+		s := f.getOrInitState(bucket)
+		p += s.w
+	}
+	return sigmoid(p)
+}
+
+// Train updates model weights with one (features, label) sample.
+func (f *FTRLProximal) Train(features []int, label float64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	// Compute prediction before update
+	pred := f.Predict(features)
+	pred = math.Max(pred, 1e-15)
+	pred = math.Min(pred, 1-1e-15)
+	predLabel := math.Log(pred / (1.0 - pred)) // logit
+
+	// Compute gradient (BCE loss)
+	gradient := pred - label // d(BCE)/d(linear)
+
+	// Update each feature
+	for _, bucket := range features {
+		s := f.getOrInitState(bucket)
+
+		// FTRL update rule
+		// a_i = (sqrt(n_i + g_i^2) + beta) / alpha - sqrt(n_i) / beta
+		// w_i = -l1 * sign(z_i) / (l2 + a_i)  if |z_i| <= l1
+		// w_i = -(z_i + l1 * sign(z_i)) / (2 * l2 + a_i)  otherwise
+
+		a_i := (math.Sqrt(s.n+gradient*gradient) + f.beta) / f.alpha -
+			math.Sqrt(s.n) / f.beta
+
+		oldW := s.w
+		zNew := s.z + gradient
+		nNew := s.n + gradient*gradient
+
+		// Apply proximal operator
+		if math.Abs(zNew) <= f.l1 {
+			s.w = 0
+		} else {
+			sign := math.Copysign(1, zNew)
+			s.w = -((zNew + f.l1*sign) / (2*f.l2 + a_i))
+		}
+
+		s.z = zNew
+		s.n = nNew
+
+		// Store delta for efficient loss notification
+		_ = oldW
+	}
+}
+
+// getOrInitState retrieves or initializes FTRL state for a bucket.
+func (f *FTRLProximal) getOrInitState(bucket int) *FTRLState {
+	if s, ok := f.state[bucket]; ok {
+		return s
+	}
+	s := &FTRLState{w: 0, z: 0, n: 0}
+	f.state[bucket] = s
+	return s
+}
+
+// Serialize exports current weights for model serving.
+func (f *FTRLProximal) Serialize() map[int]float64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	out := make(map[int]float64, len(f.state))
+	for bucket, s := range f.state {
+		out[bucket] = s.w
+	}
+	return out
+}
+```
+
+---
+
 ## 第五部分：pCTR 训练与优化
 
 ### 5.1 训练策略
@@ -908,7 +1299,7 @@ pCTR 线上服务架构:
 
 ## 第六部分：自测题
 
-### 问题 1
+### 问题 1（基础）
 Wide & Deep 的 Wide 和 Deep 部分分别解决什么问题？
 
 <details>
@@ -919,7 +1310,7 @@ Deep: 泛化能力，自动学习密集弱信号（DNN 自动特征）
 联合训练兼顾记忆力和泛化力
 </details>
 
-### 问题 2
+### 问题 2（基础）
 DeepFM 的 FM 部分如何工作？
 
 <details>
@@ -931,7 +1322,7 @@ FM 自动捕获一阶/二阶特征交叉:
 无需人工设计，自动学习
 </details>
 
-### 问题 3
+### 问题 3（进阶）
 MMoE 如何缓解任务间冲突？
 
 <details>
@@ -941,6 +1332,59 @@ MMoE 如何缓解任务间冲突？
 - 任务 A 可能偏好 Expert 1,3,5
 - 任务 B 可能偏好 Expert 2,4,6
 - 自动分配专家到合适任务，避免负迁移
+</details>
+
+### 问题 4（进阶）
+FTRL-Proximal 相比 Adam 在在线 CTR 学习中有什么优势？
+
+<details>
+<summary>查看答案</summary>
+
+FTRL-Proximal 优势:
+1. 稀疏特征天然友好：只对激活的特征做更新，内存 O(特征数)
+2. 支持 L1 正则化：自动产生稀疏解，适合百万级特征
+3. 在线学习：每来一个样本就更新，无需等待 batch
+4. 收敛理论保证：在凸损失函数下有 regret bound
+5. 不需要 GPU：纯 CPU 计算，适合低延迟场景
+
+Adam 劣势:
+1. 需要全量梯度更新，不适合超大规模稀疏特征
+2. 内存占用大：需要维护每个参数的 momentum 和 variance
+3. 不适合在线场景：需要 batch 数据
+</details>
+
+### 问题 5（实战）
+pCTR 模型线上服务如何实现 <5ms P99 延迟？
+
+<details>
+<summary>查看答案</summary>
+
+1. 特征缓存：用户画像/广告特征全部走 Redis Cluster，P99 < 1ms
+2. 特征哈希：用 feature hashing 替代 embedding lookup，消除内存查询
+3. 模型量化：FP32 → INT8，减少内存带宽
+4. 批量推理：同一 batch 的请求合并为一个 tensor 推理
+5. gRPC + 零拷贝序列化：Protocol Buffers 替代 JSON
+6. 预测缓存：相同特征组合直接命中缓存（key = hash(features)）
+7. 模型裁剪：移除低贡献层，减少 FLOPs
+8. 部署：模型服务与竞价服务同机部署，避免网络跳转
+</details>
+
+### 问题 6（实战）
+Go 中 FTRLProximal 的 sigmoid 函数为什么做了数值稳定处理？
+
+<details>
+<summary>查看答案</summary>
+
+直接计算 1/(1+exp(-x)) 在 x 很大或很小时会溢出:
+- x > 709: exp(-x) ≈ 0, 1/(1+0) = 1 ✓ 没问题
+- x < -709: exp(-x) 溢出为 Inf, 1/(1+Inf) = 0 ✓ 也没问题
+- 但 x 接近 ±709 时 exp 会接近 float64 极限
+
+数值稳定的写法:
+- x >= 0: return 1/(1+exp(-x))   — exp(-x) 很小，安全
+- x < 0:  return exp(x)/(1+exp(x))  — exp(x) 很小，安全
+
+这样避免了 exp 溢出到 Inf/NaN，确保预测值始终在 (0, 1) 范围内。
 </details>
 
 ---

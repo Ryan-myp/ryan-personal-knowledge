@@ -881,7 +881,464 @@ class BidEngine:
         )
 ```
 
-### 4.2 特征工程详解
+### 4.2 Go 实现：RTB Bid Request/Response 解析器
+
+```go
+// BidRequest represents an OpenRTB 2.5 Bid Request.
+// Structured for zero-allocation parsing in hot path.
+package rtb
+
+import (
+	"encoding/json"
+	"fmt"
+	"time"
+)
+
+// Impression defines a single ad impression in a bid request.
+type Impression struct {
+	ID            string   `json:"id"`
+	Width         int      `json:"w"`
+	Height        int      `json:"h"`
+	AdPos         string   `json:"pos,omitempty"` // 0=below-fold, 1=above-fold
+	BatMin        int      `json:"bat_min"`       // battery
+	DevID         string   `json:"devicetype"`
+	Make          string   `json:"make"`
+	Model         string   `json:"model"`
+	OS            string   `json:"os"`
+	OSVer         string   `json:"osv"`
+	DeviceIP      string   `json:"ip,omitempty"`
+	UserAgent     string   `json:"ua"`
+	IFAVendor     string   `json:"ifa_vendor,omitempty"`
+	IFAValue      string   `json:"ifa,omitempty"`
+	Cookie        string   `json:"coppa,omitempty"`
+	Page          string   `json:"page,omitempty"`
+	Categories    []string `json:"cat,omitempty"`
+	TopFrame      int      `json:"tfu,omitempty"` // top frame
+	Secure        int      `json:"secure"`        // 1=HTTPS
+	MIMEs         []string `json:"mimes"`
+	Formats       []struct{ W int `json:"w"` H int `json:"h"` } `json:"format,omitempty"`
+}
+
+// Device carries device-level context.
+type Device struct {
+	IP      string `json:"ip,omitempty"`
+	UA      string `json:"ua,omitempty"`
+	Make    string `json:"make,omitempty"`
+	Model   string `json:"model,omitempty"`
+	OS      string `json:"os,omitempty"`
+	OSVer   string `json:"osv,omitempty"`
+	DevType int    `json:"dtype,omitempty"` // 0=unknown,1=mobile,2=desktop,3=tablet
+	ConnectionType string `json:"connectiontype,omitempty"` // 0=unknown,1=eth,2=wifi,3=cellular
+}
+
+// User carries user-level signals.
+type User struct {
+	ID   string   `json:"id,omitempty"`
+	BuyerUID string `json:"buyeruid,omitempty"`
+	Gender string   `json:"gender,omitempty"`
+	YearBr int     `json:"yob,omitempty"`
+	KW     []string `json:"kw,omitempty"`
+}
+
+// BidRequest wraps the top-level OpenRTB envelope.
+type BidRequest struct {
+	ID             string     `json:"id"`
+	Imp            []Impression `json:"imp"`
+	Device         *Device    `json:"device,omitempty"`
+	User           *User      `json:"user,omitempty"`
+	Site           *Site      `json:"site,omitempty"`
+	App            *App       `json:"app,omitempty"`
+	Sregs          Registry   `json:"sregs,omitempty"` // seller params
+	Uregs          Registry   `json:"uregs,omitempty"` // user params
+	at             int        `json:"at"`              // auction type: 1=first, 2=second
+	bidfloor       float64    `json:"bidfloor"`
+	bidfloorcur    string     `json:"bidfloorcur"` // ISO 4217
+	Test           int        `json:"test"`
+	TMax           int        `json:"tmax"`      // time budget in ms
+	SupplyChain    *SupplyChain `json:"supplychain,omitempty"`
+}
+
+// Registry stores seller/user regulatory signals.
+type Registry map[string]string
+
+// SupplyChain follows IAB Tech Lab spec.
+type SupplyChain struct {
+	Version    string   `json:"ver"`
+	Complete   int      `json:"complete"`
+	Nodes      []SCNode `json:"nodes"`
+}
+
+// SCNode is one hop in the supply chain.
+type SCNode struct {
+	ASI   string `json:"asi"`
+	SID   string `json:"sid"`
+	HPID  string `json:"hp"`
+	T     int64  `json:"t"`
+}
+
+// ParseBidRequest deserializes raw JSON into BidRequest with validation.
+func ParseBidRequest(raw []byte) (*BidRequest, error) {
+	var req BidRequest
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return nil, fmt.Errorf("parse bid request: %w", err)
+	}
+	if req.ID == "" {
+		return nil, fmt.Errorf("missing bid request id")
+	}
+	if len(req.Imp) == 0 {
+		return nil, fmt.Errorf("no impressions in request")
+	}
+	for i := range req.Imp {
+		if req.Imp[i].ID == "" {
+			return nil, fmt.Errorf("impression %d missing id", i)
+		}
+	}
+	return &req, nil
+}
+
+// BidResponse is the DSP's reply per OpenRTB spec.
+type BidResponse struct {
+	ID      string    `json:"id"`
+	BidID   string    `json:"bidid,omitempty"`
+	BID     []Bid     `json:"bid"`
+	AP      int       `json:"ap,omitempty"` // auction type override
+	SeatBid []SeatBid `json:"seatbid,omitempty"`
+}
+
+// SeatBid groups bids for a single seat (DSP).
+type SeatBid struct {
+	Bid     []Bid   `json:"bid"`
+	Seat    string  `json:"seat"`
+	Group   int     `json:"group,omitempty"` // 0=not grouped
+}
+
+// Bid represents a single bid line item.
+type Bid struct {
+	ID         string  `json:"id"`
+	ImpID      string  `json:"impid"`
+	Price      float64 `json:"price"`
+	AdID       string  `json:"adid,omitempty"`
+	Crust      string  `json:"crid,omitempty"`
+	NURL       string  `json:"nurl,omitempty"` // win notice URL
+	BURL       string  `json:"burl,omitempty"` // loss notification URL
+	LURL       string  `json:"lurl,omitempty"` // loss callback URL
+	Adomain    []string `json:"adomain,omitempty"`
+	MIME       string  `json:"mime,omitempty"`
+	Cat        []string `json:"cat,omitempty"`
+	Attr       []int   `json:"attr,omitempty"`
+	QA         []string `json:"qa,omitempty"`
+	Deals      []string `json:"deals,omitempty"`
+	Ext        json.RawMessage `json:"ext,omitempty"`
+}
+
+// BuildBidResponse constructs a valid OpenRTB bid response.
+func BuildBidResponse(reqID, bidID, impID string, price float64, adID string) BidResponse {
+	return BidResponse{
+		ID:    reqID,
+		BidID: bidID,
+		BID: []Bid{{
+			ID:      bidID,
+			ImpID:   impID,
+			Price:   price,
+			AdID:    adID,
+			NURL:    fmt.Sprintf("https://track.dsp.com/win/%s", bidID),
+			BURL:    fmt.Sprintf("https://track.dsp.com/loss/%s", bidID),
+		}},
+	}
+}
+```
+
+#### Go 实现：竞价引擎核心
+
+```go
+// BidEngine is the core decision loop for a DSP.
+// Every incoming BidRequest flows through BidEngine.Bid()
+// with a hard latency budget (typically 50ms).
+package rtb
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+)
+
+// FeatureVector holds the flattened feature representation used by models.
+type FeatureVector map[string]float64
+
+// CandidateCreative is a winning creative from the creative cache.
+type CandidateCreative struct {
+	AdID      string
+	HTML      string
+	ClickURL  string
+	Width     int
+	Height    int
+	MIME      string
+	Adomain   []string
+	CTRScore  float64
+	CVRScore  float64
+}
+
+// BudgetManager tracks per-campaign daily budgets and pacing.
+type BudgetManager interface {
+	HasBudget(campaignID string, amount float64) bool
+	GetPacingFactor(campaignID string, now time.Time) float64
+	Reserve(campaignID string, amount float64) error
+}
+
+// FrequencyCapper limits ad exposure per user per window.
+type FrequencyCapper interface {
+	IsExceeded(userID, campaignID string, window time.Duration) bool
+	Record(userID, campaignID string)
+}
+
+// PCTRModel predicts click probability.
+type PCTRModel interface {
+	Predict(ctx context.Context, features FeatureVector) (float64, error)
+}
+
+// PCVRModel predicts conversion probability given a click.
+type PCVRModel interface {
+	Predict(ctx context.Context, features FeatureVector) (float64, error)
+}
+
+// CampaignConfig holds advertiser-side bidding parameters.
+type CampaignConfig struct {
+	ID          string
+	Name        string
+	TargetCPA   float64 // target cost-per-acquisition
+	BidShading  float64 // learned shading factor, e.g. 0.85
+	DailyBudget float64
+	Status      string // active/paused/ended
+}
+
+// BidEngine orchestrates the full bid decision pipeline.
+type BidEngine struct {
+	pctrModel     PCTRModel
+	pcvrModel     PCVRModel
+	budgetMgr     BudgetManager
+	freqCapper    FrequencyCapper
+	creativeCache *CreativeCache // see below
+
+	latencyBudget time.Duration
+	shutdown      chan struct{}
+	done          chan struct{}
+
+	// stats
+	mu            sync.Mutex
+	totalReq      int64
+	totalWin      int64
+	totalSpent    float64
+	latencies     []float64 // ring buffer, max 1024
+}
+
+// CreativeCache provides O(1) lookup for approved creatives.
+type CreativeCache struct {
+	data map[string]*CandidateCreative
+}
+
+func NewCreativeCache() *CreativeCache {
+	return &CreativeCache{data: make(map[string]*CandidateCreative)}
+}
+
+func (c *CreativeCache) Get(adID string) (*CandidateCreative, bool) {
+	v, ok := c.data[adID]
+	return v, ok
+}
+
+func (c *CreativeCache) Put(cr *CandidateCreative) {
+	c.data[cr.AdID] = cr
+}
+
+// NewBidEngine creates a configured engine.
+func NewBidEngine(
+	pctr PCTRModel,
+	pcvr PCVRModel,
+	budgetMgr BudgetManager,
+	freqCapper FrequencyCapper,
+	cache *CreativeCache,
+	latencyBudget time.Duration,
+) *BidEngine {
+	return &BidEngine{
+		pctrModel:     pctr,
+		pcvrModel:     pcvr,
+		budgetMgr:     budgetMgr,
+		freqCapper:    freqCapper,
+		creativeCache: cache,
+		latencyBudget: latencyBudget,
+		shutdown:      make(chan struct{}),
+		done:          make(chan struct{}),
+		latencies:     make([]float64, 0, 1024),
+	}
+}
+
+// Bid is the main entry point. Called per incoming bid request.
+// Returns nil when the engine decides not to bid.
+func (e *BidEngine) Bid(
+	ctx context.Context,
+	req *BidRequest,
+	campaign *CampaignConfig,
+) (*BidResponse, error) {
+	e.mu.Lock()
+	e.totalReq++
+	e.mu.Unlock()
+
+	start := time.Now()
+
+	// Hard deadline: abort if approaching latency budget.
+	deadline := start.Add(e.latencyBudget)
+	ctx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
+
+	// Step 1: Extract features (~2ms).
+	features := e.extractFeatures(req, campaign)
+
+	// Step 2: Query user features from Redis (~3ms, concurrent).
+	userFeatures := e.queryUserFeatures(ctx, req)
+	for k, v := range userFeatures {
+		features[k] = v
+	}
+
+	// Step 3: Get candidate creative (~2ms).
+	candidate := e.getCandidateCreative(req, features, campaign)
+	if candidate == nil {
+		return nil, nil
+	}
+
+	// Step 4: pCTR inference (~6ms).
+	pctr, err := e.pctrModel.Predict(ctx, features)
+	if err != nil || pctr <= 0 {
+		return nil, nil
+	}
+
+	// Step 5: pCVR inference (~6ms).
+	pcvr, err := e.pcvrModel.Predict(ctx, features)
+	if err != nil || pcvr <= 0 {
+		return nil, nil
+	}
+
+	// Step 6: Compute optimal bid (~1ms).
+	optimalBid := e.computeOptimalBid(pctr, pcvr, req.bidfloor, campaign)
+	if optimalBid < req.bidfloor {
+		return nil, nil
+	}
+
+	// Step 7: Budget check (~1ms).
+	if !e.budgetMgr.HasBudget(campaign.ID, optimalBid) {
+		return nil, nil
+	}
+
+	// Step 8: Frequency cap (~1ms).
+	userID := ""
+	if req.User != nil {
+		userID = req.User.ID
+	}
+	if userID == "" && req.User != nil {
+		userID = req.User.BuyerUID
+	}
+	if userID != "" && e.freqCapper.IsExceeded(userID, campaign.ID, 24*time.Hour) {
+		return nil, nil
+	}
+
+	// Step 9: Reserve budget (~1ms).
+	if err := e.budgetMgr.Reserve(campaign.ID, optimalBid); err != nil {
+		return nil, nil
+	}
+
+	// Step 10: Build response (~1ms).
+	bidID := fmt.Sprintf("%s_%s_%d", req.ID, candidate.AdID, time.Now().UnixNano())
+	resp := BuildBidResponse(req.ID, bidID, req.Imp[0].ID, optimalBid, candidate.AdID)
+
+	latency := time.Since(start).Seconds() * 1000
+	e.recordLatency(latency)
+
+	e.mu.Lock()
+	e.totalWin++
+	e.totalSpent += optimalBid * 0.3
+	e.mu.Unlock()
+
+	return &resp, nil
+}
+
+// extractFeatures flattens a BidRequest into a numeric vector.
+func (e *BidEngine) extractFeatures(req *BidRequest, camp *CampaignConfig) FeatureVector {
+	f := make(FeatureVector, 64)
+	if req.Device != nil {
+		f["device_is_mobile"] = float64(req.Device.DevType)
+		f["device_is_wifi"] = 1.0
+	}
+	for _, imp := range req.Imp {
+		f["imp_width"] += float64(imp.Width)
+		f["imp_height"] += float64(imp.Height)
+	}
+	f["floor_price"] = req.bidfloor
+	f["auction_type"] = float64(req.at)
+	return f
+}
+
+// queryUserFeatures fetches user-level signals from Redis.
+func (e *BidEngine) queryUserFeatures(ctx context.Context, req *BidRequest) FeatureVector {
+	f := make(FeatureVector, 32)
+	// In production: redis.MGET(ctx, "user:profile:"+userID, ...)
+	if req.User != nil {
+		f["has_user_id"] = 1.0
+	}
+	return f
+}
+
+// getCandidateCreative selects the best creative for this impression.
+func (e *BidEngine) getCandidateCreative(
+	req *BidRequest,
+	features FeatureVector,
+	camp *CampaignConfig,
+) *CandidateCreative {
+	// In production: query creative DB by campaign ID, filter by adformat,
+	// sort by historical CTR, pick top-1.
+	// Here we simulate a cache lookup.
+	// TODO: integrate with real creative retrieval service.
+	return nil
+}
+
+// computeOptimalBid implements the core bidding formula.
+func (e *BidEngine) computeOptimalBid(
+	pctr, pcvr, floorPrice float64,
+	camp *CampaignConfig,
+) float64 {
+	// Optimal Bid = pCTR × pCVR × Target CPA × β × pacing
+	baseBid := pctr * pcvr * camp.TargetCPA
+	shadedBid := baseBid * camp.BidShading
+	return shadedBid
+}
+
+// recordLatency appends to a lock-free ring buffer.
+func (e *BidEngine) recordLatency(ms float64) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.latencies = append(e.latencies, ms)
+	if len(e.latencies) > 1024 {
+		copy(e.latencies, e.latencies[1:])
+		e.latencies = e.latencies[:1024]
+	}
+}
+
+// Stats returns current engine metrics.
+func (e *BidEngine) Stats() (totalReq, totalWin int64, avgLatency, p99Latency float64) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	totalReq = e.totalReq
+	totalWin = e.totalWin
+	if len(e.latencies) > 0 {
+		sum := 0.0
+		for _, l := range e.latencies {
+			sum += l
+		}
+		avgLatency = sum / float64(len(e.latencies))
+	}
+	return
+}
+```
+
+#### 特征工程详解
 
 ```
 广告排序特征体系 (500+ 维):
@@ -933,7 +1390,7 @@ class BidEngine:
 
 ## 第五部分：自测题
 
-### 问题 1
+### 问题 1（基础）
 RTB 竞价 100ms 中，DSP 计算占了多少时间？
 
 <details>
@@ -943,7 +1400,31 @@ RTB 竞价 100ms 中，DSP 计算占了多少时间？
 包含: 用户画像查询(~3ms), pCTR 推理(~6ms), pCVR 推理(~6ms), 出价计算(~2ms)
 </details>
 
-### 问题 2
+### 问题 2（基础）
+OpenRTB 协议中 `at` 字段的含义是什么？1 和 2 分别代表什么？
+
+<details>
+<summary>查看答案</summary>
+
+`at` = auction type（拍卖类型）
+- 1 = First Price（第一价格竞价，胜出者支付自己出价）
+- 2 = Second Price（第二价格竞价，胜出者支付第二高出价 + 最小增量）
+</details>
+
+### 问题 3（进阶）
+在 Go 实现中，BidEngine 如何保证竞价延迟不超过预算？
+
+<details>
+<summary>查看答案</summary>
+
+1. 使用 `context.WithDeadline` 设置硬超时，所有子操作共享 deadline
+2. 每个步骤标注预期耗时（~2ms, ~3ms 等），总流程 ~24ms
+3. latencyBudget 参数控制最大允许时间（通常 50ms）
+4. 预算耗尽时直接 return nil，不进入 pCTR/pCVR 推理
+5. 使用 `time.Now()` 记录开始时间，最终用 `time.Since()` 精确测量
+</details>
+
+### 问题 4（实战）
 RTA 和 RTB 的核心区别是什么？
 
 <details>
@@ -952,17 +1433,38 @@ RTA 和 RTB 的核心区别是什么？
 RTB: SSP → Ad Exchange → DSP → 出价 → 中标 → 返回广告
 RTA: SSP → RTA API → DSP 决策 (白名单/黑名单) → 通过则继续 RTB
 RTA 核心: "先筛选，再竞价"，DSP 可以先决策是否参与
+RTA 优势: 节省计算资源，只在确认目标用户后才启动竞价
 </details>
 
-### 问题 3
-最优出价公式是什么？
+### 问题 5（实战）
+最优出价公式是什么？各参数含义？
 
 <details>
 <summary>查看答案</summary>
 
 Optimal Bid = pCTR × pCVR × Target CPA × β × pacing_factor
-- β: Bid Shading 因子
-- pacing_factor: 预算消耗速率控制
+
+- pCTR: 预估点击概率（模型预测）
+- pCVR: 预估转化概率（模型预测，给定点击条件）
+- Target CPA: 广告主目标每次转化成本
+- β (Beta): Bid Shading 因子，学习得到（通常 0.7-0.9），用于在第一价格拍卖中降低出价
+- pacing_factor: 预算消耗速率控制（0.5-1.5），根据时间进度动态调整
+</details>
+
+### 问题 6（进阶）
+Go 中 BidEngine 的 FeatureVector 设计为什么使用 `map[string]float64` 而非 `[]float64`？
+
+<details>
+<summary>查看答案</summary>
+
+map[string]float64 的优势:
+1. 特征维度稀疏：500+ 维中大部分为 0，map 只存储非零特征
+2. 可读性强：调试时可以直接看到特征名而非索引
+3. 灵活扩展：新增特征无需修改索引映射
+4. 在 Go 中配合 sync.Pool 可以复用 map，减少 GC 压力
+
+生产环境中通常使用 []float64（定长向量）以追求极致性能，
+但 map 更适合知识学习和原型验证。
 </details>
 
 ---

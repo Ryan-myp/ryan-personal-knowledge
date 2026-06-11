@@ -757,6 +757,744 @@ for opt in optimizations:
     print(f"  影响: {opt['impact']}")
 ```
 
+### 5. Go 实现：Google Ads 竞价优化器
+
+```go
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"math"
+	"sync"
+	"time"
+)
+
+// GoogleAdsBiddingClient 封装 Google Ads 竞价 API 操作
+type GoogleAdsBiddingClient struct {
+	customerID   string
+	accessToken  string
+	httpClient   *http.Client
+	mu           sync.Mutex
+	requestCount int
+}
+
+// BidStrategy 竞价策略基类
+type BidStrategy interface {
+	Name() string
+	CalculateBid(params BidParams) float64
+	RequiresConversionData() bool
+	RequiresHistory() bool
+}
+
+// BidParams 竞价参数
+type BidParams struct {
+	CustomerID string
+	AdGroupID  string
+	CampaignID string
+	Keyword    string
+	MatchType  string // EXACT, PHRASE, BROAD
+	Position   float64 // 广告位
+	QualityScore int   // 质量得分
+	HistoricalCTR float64
+	HistoricalCVR float64
+	TargetCPA  float64
+	TargetROAS float64
+	MaxCPC     float64
+	MinCPC     float64
+}
+
+// ManualBidding 手动 CPC 竞价
+type ManualBidding struct {
+	maxBid float64
+}
+
+func NewManualBidding(maxBid float64) *ManualBidding {
+	return &ManualBidding{maxBid: maxBid}
+}
+
+func (m *ManualBidding) Name() string { return "MANUAL_CPC" }
+func (m *ManualBidding) RequiresConversionData() bool { return false }
+func (m *ManualBidding) RequiresHistory() bool          { return false }
+func (m *ManualBidding) CalculateBid(params BidParams) float64 {
+	return m.maxBid
+}
+
+// TargetCPABidding tCPA 竞价策略
+type TargetCPABidding struct {
+	targetCPA    float64
+	sensitivity  float64 // 调整敏感度 0.5-1.5
+	learningRate float64 // 学习率
+	history      []CPARecord
+	mu           sync.Mutex
+}
+
+type CPARecord struct {
+	Clicks    int
+	Conversions int
+	ClickCost float64
+	Timestamp time.Time
+}
+
+func NewTargetCPABidding(targetCPA float64) *TargetCPABidding {
+	return &TargetCPABidding{
+		targetCPA:    targetCPA,
+		sensitivity:  0.8,
+		learningRate: 0.05,
+	}
+}
+
+func (t *TargetCPABidding) Name() string { return "TARGET_CPA" }
+func (t *TargetCPABidding) RequiresConversionData() bool { return true }
+func (t *TargetCPABidding) RequiresHistory() bool        { return true }
+
+func (t *TargetCPABidding) RecordClick(cost float64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.history = append(t.history, CPARecord{Clicks: 1, ClickCost: cost})
+}
+
+func (t *TargetCPABidding) RecordConversion(clickCost, conversionValue float64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	// 更新最近记录
+	if len(t.history) > 0 {
+		t.history[len(t.history)-1].Conversions = 1
+	}
+}
+
+func (t *TargetCPABidding) CalculateBid(params BidParams) float64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	// 计算历史 CPA
+	var totalCost, totalConversions float64
+	for _, r := range t.history {
+		totalCost += r.ClickCost
+		totalConversions += float64(r.Conversions)
+	}
+
+	avgCPA := totalCost / (totalConversions + 1)
+
+	// 基于历史 CPA 和目标 CPA 调整出价
+	if avgCPA > t.targetCPA {
+		// 实际 CPA 高于目标，降低出价
+		adjustment := 1.0 - t.sensitivity*(avgCPA/t.targetCPA-1.0)
+		if adjustment < 0.5 {
+			adjustment = 0.5
+		}
+		bid := params.TargetCPA * adjustment / (params.HistoricalCVR + 1e-10)
+		return clamp(bid, params.MinCPC, params.MaxCPC)
+	} else if avgCPA < t.targetCPa*0.8 {
+		// 实际 CPA 低于目标，可以提高出价获取更多流量
+		adjustment := 1.0 + t.sensitivity*(1.0-avgCPA/t.targetCPA)*0.5
+		if adjustment > 1.5 {
+			adjustment = 1.5
+		}
+		bid := params.TargetCPA * adjustment / (params.HistoricalCVR + 1e-10)
+		return clamp(bid, params.MinCPC, params.MaxCPC)
+	}
+
+	// 稳定状态，返回基准出价
+	bid := params.TargetCPA * params.HistoricalCVR / (params.HistoricalCTR + 1e-10)
+	return clamp(bid, params.MinCPC, params.MaxCPC)
+}
+
+// TargetROAS 目标 ROAS 竞价策略
+type TargetROAS struct {
+	targetROAS  float64
+	sensitivity float64
+	history     []ROASRecord
+	mu          sync.Mutex
+}
+
+type ROASRecord struct {
+	Cost        float64
+	ConversionValue float64
+	Timestamp   time.Time
+}
+
+func NewTargetROAS(targetROAS float64) *TargetROAS {
+	return &TargetROAS{
+		targetROAS:  targetROAS,
+		sensitivity: 0.6,
+	}
+}
+
+func (t *TargetROAS) Name() string { return "TARGET_ROAS" }
+func (t *TargetROAS) RequiresConversionData() bool { return true }
+func (t *TargetROAS) RequiresHistory() bool        { return true }
+
+func (t *TargetROAS) RecordRecord(cost, value float64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.history = append(t.history, ROASRecord{Cost: cost, ConversionValue: value})
+}
+
+func (t *TargetROAS) CalculateBid(params BidParams) float64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	// 计算历史 ROAS
+	var totalCost, totalValue float64
+	for _, r := range t.history {
+		totalCost += r.Cost
+		totalValue += r.ConversionValue
+	}
+
+	avgROAS := totalValue / (totalCost + 1)
+
+	// 基于目标 ROAS 调整
+	roasAdjustment := t.targetROAS / (avgROAS + 1)
+	if roasAdjustment > 2.0 {
+		roasAdjustment = 2.0
+	} else if roasAdjustment < 0.3 {
+		roasAdjustment = 0.3
+	}
+
+	bid := params.MaxCPC * roasAdjustment
+	return clamp(bid, params.MinCPC, params.MaxCPC)
+}
+
+// EnhancedCPA 智能优化 CPC (eCPC)
+type EnhancedCPA struct {
+	baseBid      float64
+	convRate     float64
+	maxAdjustment float64
+}
+
+func NewEnhancedCPA(baseBid, convRate float64) *EnhancedCPA {
+	return &EnhancedCPA{
+		baseBid:       baseBid,
+		convRate:      convRate,
+		maxAdjustment: 0.5, // 最大调整 50%
+	}
+}
+
+func (e *EnhancedCPA) Name() string { return "ENHANCED_CPC" }
+func (e *EnhancedCPA) RequiresConversionData() bool { return true }
+func (e *EnhancedCPA) RequiresHistory() bool        { return false }
+
+func (e *EnhancedCPA) CalculateBid(params BidParams) float64 {
+	// eCPC = baseBid * (1 + conversion_probability * adjustment_factor)
+	bid := e.baseBid
+	if params.HistoricalCVR > e.convRate {
+		// 高转化潜力，提高出价
+		factor := (params.HistoricalCVR - e.convRate) / (e.convRate + 1e-10)
+		adjustment := factor * e.maxAdjustment
+		if adjustment > e.maxAdjustment {
+			adjustment = e.maxAdjustment
+		}
+		bid = e.baseBid * (1 + adjustment)
+	} else if params.HistoricalCVR < e.convRate*0.5 {
+		// 低转化潜力，降低出价
+		adjustment := 1.0 - (e.convRate-params.HistoricalCVR)/e.convRate*0.5
+		bid = e.baseBid * adjustment
+	}
+	return clamp(bid, params.MinCPC, params.MaxCPC)
+}
+
+// clamp 范围限制
+func clamp(x, min, max float64) float64 {
+	if x < min {
+		return min
+	}
+	if x > max {
+		return max
+	}
+	return x
+}
+
+// BidOptimizer 竞价优化器：汇总策略管理
+type BidOptimizer struct {
+	strategies map[string]BidStrategy
+	client     *GoogleAdsBiddingClient
+}
+
+func NewBidOptimizer(client *GoogleAdsBiddingClient) *BidOptimizer {
+	return &BidOptimizer{
+		strategies: make(map[string]BidStrategy),
+		client:     client,
+	}
+}
+
+// Register 注册竞价策略
+func (b *BidOptimizer) Register(name string, strategy BidStrategy) {
+	b.strategies[name] = strategy
+}
+
+// OptimizeBid 优化竞价
+func (b *BidOptimizer) OptimizeBid(strategyName string, params BidParams) float64 {
+	strategy, ok := b.strategies[strategyName]
+	if !ok {
+		fmt.Printf("strategy %s not found, using manual bidding\n", strategyName)
+		return params.MaxCPC * 0.5
+	}
+	return strategy.CalculateBid(params)
+}
+
+// BatchOptimize 批量优化多个关键词的竞价
+func (b *BidOptimizer) BatchOptimize(
+	ctx context.Context,
+	strategyName string,
+	keywords []KeywordBidInfo,
+) []BidRecommendation {
+	var recommendations []BidRecommendation
+
+	for _, kw := range keywords {
+		params := BidParams{
+			CustomerID:      kw.CustomerID,
+			AdGroupID:       kw.AdGroupID,
+			Keyword:         kw.Keyword,
+			MatchType:       kw.MatchType,
+			Position:        kw.Position,
+			QualityScore:    kw.QualityScore,
+			HistoricalCTR:   kw.HistoricalCTR,
+			HistoricalCVR:   kw.HistoricalCVR,
+			TargetCPA:       kw.TargetCPA,
+			TargetROAS:      kw.TargetROAS,
+			MaxCPC:          kw.MaxCPC,
+			MinCPC:          kw.MinCPC,
+		}
+		newBid := b.OptimizeBid(strategyName, params)
+		recommendations = append(recommendations, BidRecommendation{
+			Keyword:      kw.Keyword,
+			MatchType:    kw.MatchType,
+			OldBid:       kw.CurrentBid,
+			NewBid:       newBid,
+			ChangePercent:  calculateChangePct(kw.CurrentBid, newBid),
+			Confidence:     kw.QualityScore / 10.0,
+			LastUpdated:    time.Now(),
+		})
+	}
+	return recommendations
+}
+
+// KeywordBidInfo 关键词竞价信息
+type KeywordBidInfo struct {
+	CustomerID     string
+	AdGroupID      string
+	Keyword        string
+	MatchType      string
+	CurrentBid     float64
+	Position       float64
+	QualityScore   int
+	HistoricalCTR  float64
+	HistoricalCVR  float64
+	TargetCPA      float64
+	TargetROAS     float64
+	MaxCPC         float64
+	MinCPC         float64
+}
+
+// BidRecommendation 竞价推荐结果
+type BidRecommendation struct {
+	Keyword      string
+	MatchType    string
+	OldBid       float64
+	NewBid       float64
+	ChangePercent float64
+	Confidence   float64
+	LastUpdated  time.Time
+}
+
+func calculateChangePct(old, newB float64) float64 {
+	if old == 0 {
+		return 0
+	}
+	return (newB - old) / old * 100
+}
+
+// BidAdjustment 广告位调整
+type BidAdjustment struct {
+	Adjustment  float64
+	BidModifier float64
+	Network     string
+	Reason      string
+}
+
+// ApplyPositionAdjustment 应用广告位调整
+func (b *BidOptimizer) ApplyPositionAdjustment(baseBid float64, targetPosition string) float64 {
+	var modifier float64
+	switch targetPosition {
+	case "TOP":
+		modifier = 1.2
+	case "ABSOLUTE_TOP":
+		modifier = 1.5
+	case "PAGE":
+		modifier = 0.8
+	default:
+		modifier = 1.0
+	}
+	return baseBid * modifier
+}
+
+// ApplyQualityScoreAdjustment 基于质量得分调整
+func (b *BidOptimizer) ApplyQualityScoreAdjustment(baseBid float64, qualityScore int) float64 {
+	// 质量得分越高，所需出价越低
+	// Score 10 → 0.5x, Score 5 → 1.0x, Score 1 → 2.0x
+	scoreFactor := (11 - qualityScore) / 5.0
+	if scoreFactor > 2.0 {
+		scoreFactor = 2.0
+	} else if scoreFactor < 0.3 {
+		scoreFactor = 0.3
+	}
+	return baseBid * scoreFactor
+}
+
+func main() {
+	optimizer := BidOptimizer{strategies: make(map[string]BidStrategy)}
+	optimizer.Register("MANUAL_CPC", NewManualBidding(2.0))
+	optimizer.Register("TARGET_CPA", NewTargetCPABidding(15.0))
+	optimizer.Register("TARGET_ROAS", NewTargetROAS(400.0))
+	optimizer.Register("ECPC", NewEnhancedCPA(1.5, 0.03))
+
+	// 关键词列表
+	keywords := []KeywordBidInfo{
+		{
+			CustomerID:      "1234567890",
+			AdGroupID:       "111",
+			Keyword:         "digital marketing",
+			MatchType:       "EXACT",
+			CurrentBid:      1.50,
+			Position:        1.5,
+			QualityScore:    8,
+			HistoricalCTR:   0.05,
+			HistoricalCVR:   0.02,
+			TargetCPA:       15.0,
+			MaxCPC:          5.0,
+			MinCPC:          0.10,
+		},
+		{
+			CustomerID:      "1234567890",
+			AdGroupID:       "111",
+			Keyword:         "seo services",
+			MatchType:       "PHRASE",
+			CurrentBid:      2.00,
+			Position:        2.0,
+			QualityScore:    6,
+			HistoricalCTR:   0.03,
+			HistoricalCVR:   0.015,
+			TargetCPA:       15.0,
+			MaxCPC:          8.0,
+			MinCPC:          0.10,
+		},
+	}
+
+	// 批量优化
+	recommendations := optimizer.BatchOptimize(context.Background(), "TARGET_CPA", keywords)
+	for _, rec := range recommendations {
+		direction := "↑"
+		if rec.ChangePercent < 0 {
+			direction = "↓"
+		}
+		fmt.Printf("[%s] Keyword: %s (%s) %.2f → %.2f (%s%.1f%%) confidence=%.0f%%\n",
+			rec.MatchType, rec.Keyword, direction, rec.OldBid, rec.NewBid,
+			direction, rec.ChangePercent, rec.Confidence*100)
+	}
+
+	// 质量得分调整示例
+	baseBid := 2.0
+	highQS := optimizer.ApplyQualityScoreAdjustment(baseBid, 9)
+	lowQS := optimizer.ApplyQualityScoreAdjustment(baseBid, 3)
+	fmt.Printf("QualityScore 9: bid=%.2f, QualityScore 3: bid=%.2f\n", highQS, lowQS)
+}
+```
+
+---
+
+### Google 竞价优化的 Go 实现
+
+```go
+// Google 竞价优化: 智能出价算法实现
+// 覆盖 Target CPA、Target ROAS、Bid Shading
+package googlebidding
+
+import (
+	"fmt"
+	"math"
+	"math/rand"
+	"sync"
+	"time"
+)
+
+// ==================== 竞价策略 ====================
+
+// BidStrategy 竞价策略
+type BidStrategy string
+
+const (
+	StrategyManualCPM      BidStrategy = "MANUAL_CPM"
+	StrategyTargetCPA      BidStrategy = "TARGET_CPA"
+	StrategyTargetROAS     BidStrategy = "TARGET_ROAS"
+	StrategyMaxConversions BidStrategy = "MAXIMIZE_CONVERSIONS"
+	StrategyTargetSPD      BidStrategy = "TARGET_Spend"
+	StrategyEnhancedCPM    BidStrategy = "ENHANCED_CPM"
+)
+
+// ==================== 智能出价引擎 ====================
+
+// SmartBidEngine 智能竞价引擎
+type SmartBidEngine struct {
+	strategy     BidStrategy
+	targetCPA    float64  // Target CPA 目标
+	targetROAS   float64  // Target ROAS 目标 (3.0 = 300%)
+	beta         float64  // 探索因子
+	conversionHistory []Conversion
+	rng          *rand.Rand
+	mu           sync.RWMutex
+}
+
+// Conversion 转化数据
+type Conversion struct {
+	Value     float64
+	Timestamp time.Time
+	BidPrice  float64
+	ClickID   string
+}
+
+// NewSmartBidEngine 创建智能出价引擎
+func NewSmartBidEngine(strategy BidStrategy, targetCPA, targetROAS float64) *SmartBidEngine {
+	return &SmartBidEngine{
+		strategy: strategy,
+		targetCPA: math.Max(targetCPA, 1.0),
+		targetROAS: math.Max(targetROAS, 1.0),
+		beta:     0.95,
+		rng:      rand.New(rand.NewSource(time.Now().UnixNano())),
+	}
+}
+
+// ==================== Target CPA 算法 ====================
+
+// TargetCPABid 计算 Target CPA 出价
+func (e *SmartBidEngine) TargetCPABid(
+	pCTR, pCVR, historicalCPA float64,
+) float64 {
+	// Bid = pCTR × pCVR × TargetCPA × β
+	bid := pCTR * pCVR * e.targetCPA * e.beta
+
+	// 自适应 β：根据历史 CPA 偏差调整
+	adaptiveBeta := e.adaptiveBeta()
+	bid *= adaptiveBeta
+
+	// 价格平滑：防止出价波动过大
+	bid = e.smoothBid(bid)
+
+	return bid
+}
+
+// adaptiveBeta 自适应探索因子
+func (e *SmartBidEngine) adaptiveBeta() float64 {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	if len(e.conversionHistory) < 10 {
+		return e.beta
+	}
+
+	// 计算平均实际 CPA
+	var totalCost, totalConv float64
+	for _, c := range e.conversionHistory[len(e.conversionHistory)-50:] {
+		totalCost += c.BidPrice
+		if c.Value > 0 {
+			totalConv++
+		}
+	}
+
+	actualCPA := 0.0
+	if totalConv > 0 {
+		actualCPA = totalCost / totalConv
+	}
+
+	// CPA 偏差调整
+	cpvRatio := e.targetCPA / actualCPA
+	if cpvRatio > 1.1 {
+		// 实际 CPA 高于目标 → 降低出价
+		return e.beta * 0.9
+	}
+	if cpvRatio < 0.9 {
+		// 实际 CPA 低于目标 → 提高出价
+		return e.beta * 1.1
+	}
+	return e.beta
+}
+
+// smoothBid 价格平滑
+func (e *SmartBidEngine) smoothBid(bid float64) float64 {
+	// 限制单次出价波动不超过 ±50%
+	if bid > 0 {
+		lastBid := e.getLastBid()
+		if lastBid > 0 {
+			if bid > lastBid*1.5 {
+				bid = lastBid * 1.5
+			}
+			if bid < lastBid*0.5 {
+				bid = lastBid * 0.5
+			}
+		}
+	}
+	return bid
+}
+
+// ==================== Target ROAS 算法 ====================
+
+// TargetROASBid 计算 Target ROAS 出价
+func (e *SmartBidEngine) TargetROASBid(
+	pCTR, pCVR, avgOrderValue float64,
+) float64 {
+	// Bid = pCTR × pCVR × AvgOrderValue × TargetROAS × β
+	// 目标: Revenue / Cost = TargetROAS
+	// Cost = Revenue / TargetROAS = pCTR × pCVR × AvgOrderValue / TargetROAS
+	bid := pCTR * pCVR * avgOrderValue / e.targetROAS * e.beta
+	return e.smoothBid(bid)
+}
+
+// ==================== Bid Shading ====================
+
+// BidShader 出价衰减器
+type BidShader struct {
+	historicalBids []float64  // 历史中标/落标价格
+	windowSize     int
+}
+
+// NewBidShader 创建出价衰减器
+func NewBidShader(windowSize int) *BidShader {
+	if windowSize == 0 {
+		windowSize = 1000
+	}
+	return &BidShader{
+		historicalBids: make([]float64, 0, windowSize),
+		windowSize:     windowSize,
+	}
+}
+
+// Shade 对原始出价进行衰减
+func (s *BidShader) Shade(rawBid float64, minFloor float64) float64 {
+	if len(s.historicalBids) == 0 {
+		return rawBid // 无数据，原出价
+	}
+
+	// 计算历史中标价格分布
+	sorted := make([]float64, len(s.historicalBids))
+	copy(sorted, s.historicalBids)
+	sort.Float64s(sorted)
+
+	// P80: 80% 的竞价中，这个价格是中标价
+	p80Idx := int(float64(len(sorted)) * 0.80)
+	if p80Idx >= len(sorted) {
+		p80Idx = len(sorted) - 1
+	}
+	p80 := sorted[p80Idx]
+
+	// 衰减后出价 = min(rawBid, P80)
+	shaded := math.Min(rawBid, p80)
+
+	// 底价保护
+	if shaded < minFloor {
+		shaded = minFloor
+	}
+
+	return shaded
+}
+
+// RecordBid 记录竞价结果用于学习
+func (s *BidShader) RecordBid(bid float64, won bool) {
+	s.historicalBids = append(s.historicalBids, bid)
+	if len(s.historicalBids) > s.windowSize {
+		s.historicalBids = s.historicalBids[1:]
+	}
+}
+
+// ==================== 预算 pacing ====================
+
+// BudgetPacer 预算 pacing 控制器
+type BudgetPacer struct {
+	dailyBudget  float64
+	spent       float64
+	startTime    time.Time
+	duration     time.Duration // 投放时长
+	budgetSpend  BudgetSpendType
+}
+
+type BudgetSpendType int
+
+const (
+	SpendEvenly BudgetSpendType = iota // 均匀消耗
+	SpendFrontload                     // 前期快速消耗
+	SpendBackload                      // 后期加速消耗
+)
+
+// GetCurrentBidMultiplier 获取当前预算调整的出价乘数
+func (p *BudgetPacer) GetCurrentBidMultiplier() float64 {
+	elapsed := time.Since(p.startTime).Seconds()
+	dayFraction := elapsed / (24 * 3600) // 今日已过去的比例
+
+	// 计算目标消耗进度
+	var targetFraction float64
+	switch p.budgetSpend {
+	case SpendEvenly:
+		targetFraction = dayFraction
+	case SpendFrontload:
+		targetFraction = math.Pow(dayFraction, 0.5) // 前期快
+	case SpendBackload:
+		targetFraction = math.Pow(dayFraction, 2.0) // 后期快
+	default:
+		targetFraction = dayFraction
+	}
+
+	// 计算实际消耗进度
+	actualFraction := p.spent / p.dailyBudget
+
+	// 如果实际慢于目标 → 提高出价乘数
+	if actualFraction < targetFraction*0.9 {
+		return 1.2 // 提高 20% 出价
+	}
+	if actualFraction > targetFraction*1.1 {
+		return 0.8 // 降低 20% 出价
+	}
+	return 1.0
+}
+
+// HasBudget 检查是否还有预算
+func (p *BudgetPacer) HasBudget(bid float64) bool {
+	remaining := p.dailyBudget - p.spent
+	return remaining >= bid && actualFraction < 1.0
+}
+
+// ==================== 使用示例 ====================
+
+func main() {
+	// 1. Target CPA 引擎
+	cpaEngine := NewSmartBidEngine(StrategyTargetCPA, 50.0, 0)
+	bid := cpaEngine.TargetCPABid(0.03, 0.05, 60.0)
+	fmt.Printf("Target CPA Bid: $%.2f\n", bid)
+
+	// 2. Target ROAS 引擎
+	roasEngine := NewSmartBidEngine(StrategyTargetROAS, 0, 3.0)
+	bid = roasEngine.TargetROASBid(0.03, 0.05, 200.0)
+	fmt.Printf("Target ROAS Bid: $%.2f\n", bid)
+
+	// 3. Bid Shading
+	shader := NewBidShader(1000)
+	shader.RecordBid(1.5, true)
+	shader.RecordBid(2.0, true)
+	shader.RecordBid(1.8, false)
+	shaded := shader.Shade(3.0, 1.0)
+	fmt.Printf("Shaded Bid: $%.2f\n", shaded)
+
+	// 4. Budget Pacing
+	pacer := &BudgetPacer{
+		dailyBudget: 1000.0,
+		spent:      200.0,
+		startTime:  time.Now(),
+		budgetSpend: SpendEvenly,
+	}
+	multiplier := pacer.GetCurrentBidMultiplier()
+	fmt.Printf("Budget Multiplier: %.2f\n", multiplier)
+}
+```
+
 ---
 
 *今天花 60-90 分钟：深入理解竞价机制，实践优化策略*

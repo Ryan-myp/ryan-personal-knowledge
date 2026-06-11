@@ -1055,5 +1055,323 @@ Rate limit exceeded (超出速率限制)
 
 ---
 
-*今天花 90 分钟：深入掌握 TikTok Marketing API 高级用法*
-*答不出自测题？回去重读对应章节。*
+### TikTok Ads API 高级用法的 Go 实现
+
+```go
+// TikTok Ads API 高级用法: OAuth、创意管理、转化追踪、商品 Feed
+package tiktokads
+
+import (
+	"encoding/json"
+	"fmt"
+	"math"
+	"sync"
+	"time"
+)
+
+// ==================== TikTok OAuth ====================
+
+// TikTokClient TikTok API 客户端
+type TikTokClient struct {
+	AccessToken   string
+	RefreshToken  string
+	ExpiresIn     int
+	ExpiresAt     time.Time
+	AccessDomain  string
+	clientID      string
+	clientSecret  string
+	mu            sync.Mutex
+}
+
+// NewTikTokClient 创建客户端
+func NewTikTokClient(clientID, clientSecret string) *TikTokClient {
+	return &TikTokClient{
+		AccessDomain: "https://ad.tiktok.com",
+		clientID:     clientID,
+		clientSecret: clientSecret,
+	}
+}
+
+// GetOAuthURL 生成 OAuth 授权 URL
+func (c *TikTokClient) GetOAuthURL(redirectURI string, state string, scope string) string {
+	params := fmt.Sprintf("client_key=%s&response_type=code&redirect_uri=%s&state=%s&scope=%s",
+		c.clientID, redirectURI, state, scope)
+	return fmt.Sprintf("%s/authorize/?%s", c.AccessDomain, params)
+}
+
+// ExchangeCode 用 code 换 access_token
+func (c *TikTokClient) ExchangeCode(code, redirectURI string) error {
+	type req struct {
+		Code         string `json:"code"`
+		GrantType    string `json:"grant_type"`
+		RedirectURI  string `json:"redirect_uri"`
+		ClientKey    string `json:"client_key"`
+		ClientSecret string `json:"client_secret"`
+	}
+
+	resp, err := c.doJSON(fmt.Sprintf("%s/oauth/token/", c.AccessDomain), req{
+		Code:         code,
+		GrantType:    "authorization_code",
+		RedirectURI:  redirectURI,
+		ClientKey:    c.clientID,
+		ClientSecret: c.clientSecret,
+	})
+	if err != nil {
+		return err
+	}
+
+	type tokenResp struct {
+		AccessToken  string `json:"access_token"`
+		ExpiresIn    int    `json:"expires_in"`
+		RefreshToken string `json:"refresh_token"`
+	}
+	var tr tokenResp
+	if err := json.Unmarshal(resp, &tr); err != nil {
+		return err
+	}
+
+	c.AccessToken = tr.AccessToken
+	c.RefreshToken = tr.RefreshToken
+	c.ExpiresIn = tr.ExpiresIn
+	c.ExpiresAt = time.Now().Add(time.Duration(tr.ExpiresIn) * time.Second)
+	return nil
+}
+
+// RefreshToken 刷新 access_token
+func (c *TikTokClient) RefreshToken() error {
+	type req struct {
+		GrantType    string `json:"grant_type"`
+		ClientKey    string `json:"client_key"`
+		ClientSecret string `json:"client_secret"`
+		RefreshToken string `json:"refresh_token"`
+	}
+
+	resp, err := c.doJSON(fmt.Sprintf("%s/oauth/refresh_token/", c.AccessDomain), req{
+		GrantType:    "authorization_code",
+		ClientKey:    c.clientID,
+		ClientSecret: c.clientSecret,
+		RefreshToken: c.RefreshToken,
+	})
+	if err != nil {
+		return err
+	}
+
+	type tokenResp struct {
+		AccessToken  string `json:"access_token"`
+		ExpiresIn    int    `json:"expires_in"`
+		RefreshToken string `json:"refresh_token"`
+	}
+	var tr tokenResp
+	if err := json.Unmarshal(resp, &tr); err != nil {
+		return err
+	}
+
+	c.AccessToken = tr.AccessToken
+	c.RefreshToken = tr.RefreshToken
+	c.ExpiresIn = tr.ExpiresIn
+	c.ExpiresAt = time.Now().Add(time.Duration(tr.ExpiresIn) * time.Second)
+	return nil
+}
+
+// ==================== 创意管理 ====================
+
+// Creative 创意
+type Creative struct {
+	ID               int64    `json:"id,omitempty"`
+	Name             string   `json:"name"`
+	Role             string   `json:"role"` // MAIN, SECONDARY, THUMBNAIL
+	Type             string   `json:"type"` // IMAGE, VIDEO, CAROUSEL
+	Title            string   `json:"title,omitempty"`
+	Description      string   `json:"description,omitempty"`
+	Images           []Image  `json:"images,omitempty"`
+	Videos           []Video  `json:"videos,omitempty"`
+	LinkTitle        string   `json:"link_title,omitempty"`
+	LinkURL          string   `json:"link_url"`
+	CTAType          string   `json:"cta_type,omitempty"`
+	EnableAutoOptimize bool  `json:"enable_auto_optimize,omitempty"`
+}
+
+type Image struct {
+	ImageURL string `json:"image_url"`
+	ImgHeight int  `json:"img_height"`
+	ImgWidth  int  `json:"img_width"`
+}
+
+type Video struct {
+	VideoKey string `json:"video_key"`
+	Duration int    `json:"duration"`
+}
+
+// ==================== 转化追踪 ====================
+
+// PixelEvent 转化事件
+type PixelEvent struct {
+	EventName string                 `json:"event_name"`
+	EventTime int64                  `json:"event_time"`
+	EventID   string                 `json:"event_id"`
+	Content   map[string]interface{} `json:"content,omitempty"`
+	UserData  map[string]interface{} `json:"user_data,omitempty"`
+	CustomData map[string]interface{} `json:"custom_data,omitempty"`
+}
+
+// ReportClient 报告客户端
+type ReportClient struct {
+	client     *TikTokClient
+	reportJobID string
+}
+
+// GenerateReport 生成转化报告
+func (r *ReportClient) GenerateReport(
+	accountID string,
+	reportType string,
+	reportScope string,
+	timeRange map[string]string,
+) (string, error) {
+	type req struct {
+		ReportSpec ReportSpec `json:"report_spec"`
+	}
+	type ReportSpec struct {
+		ReportName   string            `json:"report_name"`
+		AccessType   string            `json:"access_type"`
+		ReportType   string            `json:"report_type"`
+		TimeScope    TimeScope         `json:"time_scope"`
+		Datasets     []string          `json:"datasets"`
+		Columns      []string          `json:"columns"`
+		Filters      []FilterCondition `json:"filters,omitempty"`
+	}
+	type TimeScope struct {
+		ReportingType string            `json:"reporting_type"`
+		StartTime     int64             `json:"start_time"`
+		EndTime       int64             `json:"end_time"`
+	}
+
+	reqBody := req{
+		ReportSpec: ReportSpec{
+			ReportName:   fmt.Sprintf("report_%d", time.Now().Unix()),
+			AccessType:   "ASYNC_JOB",
+			ReportType:   reportType,
+			Datasets:     []string{"INSIGHTS"},
+			Columns:      []string{"campaign_id", "adset_id", "ad_id", "impressions", "clicks", "cost", "conversions"},
+			TimeScope: TimeScope{
+				ReportingType: "DATE",
+				StartTime:     timeRange["start"],
+				EndTime:       timeRange["end"],
+			},
+		},
+	}
+
+	resp, err := r.client.doJSON(
+		fmt.Sprintf("/plus/v1/report/async/report/generate/%s", accountID),
+		reqBody,
+	)
+	if err != nil {
+		return "", err
+	}
+
+	type genResp struct {
+		ReportJobID string `json:"report_job_id"`
+	}
+	var gr genResp
+	json.Unmarshal(resp, &gr)
+	return gr.ReportJobID, nil
+}
+
+// ==================== 商品 Feed 管理 ====================
+
+// FeedItem 商品条目
+type FeedItem struct {
+	ID           string         `json:"id"`
+	Title        string         `json:"title"`
+	Description  string         `json:"description"`
+	Price        Price          `json:"price"`
+	Availability string         `json:"availability"` // available, out_of_stock
+	ImageLink    string         `json:"image_link"`
+	Link         string         `json:"link"`
+	Category     string         `json:"category,omitempty"`
+	GTIN         string         `json:"gtin,omitempty"`
+	Condition    string         `json:"condition,omitempty"`
+}
+
+type Price struct {
+	Value   float64 `json:"value"`
+	Currency string  `json:"currency"`
+}
+
+// FeedUploader 商品 Feed 上传器
+type FeedUploader struct {
+	client *TikTokClient
+	mu     sync.Mutex
+}
+
+// UploadFeed 上传商品 Feed (支持增量更新)
+func (u *FeedUploader) UploadFeed(
+	accountID string,
+	feedID string,
+	items []FeedItem,
+	updateType string, // FULL_UPDATE, DELTA
+) error {
+	// TikTok 限制每批最多 5000 个商品
+	const batchSize = 5000
+	for i := 0; i < len(items); i += batchSize {
+		end := i + batchSize
+		if end > len(items) {
+			end = len(items)
+		}
+		chunk := items[i:end]
+
+		req := map[string]interface{}{
+			"feed_id":    feedID,
+			"items":      chunk,
+			"update_type": updateType,
+		}
+
+		_, err := u.client.doJSON(
+			fmt.Sprintf("/plus/v1/products/%s/feed/%s/items", accountID, feedID),
+			req,
+		)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ==================== 内部方法 ====================
+
+func (c *TikTokClient) doJSON(url string, body interface{}) ([]byte, error) {
+	// 发送 HTTP POST + JSON body
+	return []byte(`{}`), nil
+}
+
+// ==================== 使用示例 ====================
+
+func main() {
+	// 1. OAuth
+	client := NewTikTokClient("your_client_key", "your_client_secret")
+	authURL := client.GetOAuthURL("https://yourapp.com/callback", "random_state", "read,write")
+	fmt.Printf("Auth URL: %s\n", authURL)
+
+	// 2. 创建创意
+	creative := &Creative{
+		Name:  "Summer Sale Creative",
+		Type:  "IMAGE",
+		Title: "Up to 50% Off",
+		LinkURL: "https://shop.example.com/summer",
+		Images: []Image{{
+			ImageURL: "https://cdn.example.com/summer.jpg",
+			ImgHeight: 1080,
+			ImgWidth: 1080,
+		}},
+	}
+	fmt.Printf("Creative: %s\n", creative.Name)
+
+	// 3. 商品 Feed 上传
+	uploader := &FeedUploader{client: client}
+	items := []FeedItem{
+		{ID: "p001", Title: "Running Shoes", Price: Price{Value: 89.99, Currency: "USD"},
+			ImageLink: "https://cdn.example.com/shoe1.jpg", Availability: "available"},
+		{ID: "p002", Title: "Wireless Headphones", Price: Price{Value: 49.99, Currency: "USD"},
+			ImageLink: "https://cdn.example.com/headphone1.jpg", Availability: "available"},
+	}
+	// uploader.UploadFeed("act_123", "feed_456", items, "FULL_UPDATE")
+}

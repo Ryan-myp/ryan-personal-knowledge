@@ -980,8 +980,421 @@ Meta Graph API 最佳实践:
 
 ---
 
-*今天花 90 分钟：深入掌握 Meta Graph API 高级用法*
-*答不出自测题？回去重读对应章节。*
+### Meta Ads API 高级用法的 Go 实现
+
+```go
+// Meta Ads API 高级用法: Insights、批量操作、缓存、重试
+package metaadvanced
+
+import (
+	"encoding/json"
+	"fmt"
+	"math"
+	"math/rand"
+	"sync"
+	"time"
+)
+
+// ==================== 高级 Insights 查询 ====================
+
+// InsightsQuery Builder 模式
+type InsightsQuery struct {
+	customerID string
+	fields     []string
+	metrics    []string
+	timeRange  map[string]string
+	filtering  []string
+	breakdowns []string
+	limit      int
+	sortOrder  string
+}
+
+// NewInsightsQuery 创建查询构建器
+func NewInsightsQuery(customerID string) *InsightsQuery {
+	return &InsightsQuery{
+		customerID: customerID,
+		timeRange:  make(map[string]string),
+		limit:      100,
+	}
+}
+
+func (q *InsightsQuery) Fields(fields []string) *InsightsQuery {
+	q.fields = fields
+	return q
+}
+
+func (q *InsightsQuery) Metrics(metrics []string) *InsightsQuery {
+	q.metrics = metrics
+	return q
+}
+
+func (q *InsightsQuery) TimeRange(start, end string) *InsightsQuery {
+	q.timeRange["start_date"] = start
+	q.timeRange["end_date"] = end
+	return q
+}
+
+func (q *InsightsQuery) Filter(field, op, value string) *InsightsQuery {
+	q.filtering = append(q.filtering, fmt.Sprintf(`{"field":"%s","operator":"%s","value":["%s"]}`, field, op, value))
+	return q
+}
+
+func (q *InsightsQuery) Breakdowns(breakdowns []string) *InsightsQuery {
+	q.breakdowns = breakdowns
+	return q
+}
+
+func (q *InsightsQuery) Limit(n int) *InsightsQuery {
+	if n > 0 {
+		q.limit = n
+	}
+	return q
+}
+
+// Build 构建最终查询参数
+func (q *InsightsQuery) Build() map[string]string {
+	params := make(map[string]string)
+	params["access_token"] = "..."
+
+	if len(q.fields) > 0 {
+		params["fields"] = join(q.fields, ",")
+	}
+	if len(q.metrics) > 0 {
+		params["metrics"] = join(q.metrics, ",")
+	}
+	if start, ok := q.timeRange["start_date"]; ok {
+		params["time_range[start_date]"] = start
+	}
+	if end, ok := q.timeRange["end_date"]; ok {
+		params["time_range[end_date]"] = end
+	}
+	if len(q.breakdowns) > 0 {
+		params["breakdowns"] = join(q.breakdowns, ",")
+	}
+	params["limit"] = fmt.Sprintf("%d", q.limit)
+	if q.sortOrder != "" {
+		params["sort"] = q.sortOrder
+	}
+	return params
+}
+
+// ==================== 批量操作高级用法 ====================
+
+// BatchOperation 批量操作管理器
+type BatchOperation struct {
+	operations []*BatchOp
+	mu         sync.Mutex
+}
+
+type BatchOp struct {
+	ID     string
+	Method string
+	Path   string
+	Body   map[string]string
+}
+
+// AddCreateCampaign 添加创建广告系列的批量操作
+func (b *BatchOperation) AddCreateCampaign(name, objective string, budget int64) string {
+	id := fmt.Sprintf("create_campaign_%d", len(b.operations))
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.operations = append(b.operations, &BatchOp{
+		ID:     id,
+		Method: "POST",
+		Path:   "/act_123/campaigns",
+		Body: map[string]string{
+			"name":       name,
+			"objective":  objective,
+			"daily_budget": fmt.Sprintf("%d", budget),
+		},
+	})
+	return id
+}
+
+// AddCreateAdSet 添加创建广告组的批量操作
+func (b *BatchOperation) AddCreateAdSet(campaignID string, name string, targetID int) string {
+	id := fmt.Sprintf("create_adset_%d", len(b.operations))
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.operations = append(b.operations, &BatchOp{
+		ID:     id,
+		Method: "POST",
+		Path:   "/act_123/adsets",
+		Body: map[string]string{
+			"name":       name,
+			"campaign_id": fmt.Sprintf("[%s.id]", campaignID), // 引用上一步
+		},
+	})
+	return id
+}
+
+// Execute 执行所有批量操作
+func (b *BatchOperation) Execute(client *MetaClient) ([]BatchResponse, error) {
+	b.mu.Lock()
+	ops := make([]*BatchOp, len(b.operations))
+	copy(ops, b.operations)
+	b.mu.Unlock()
+
+	if len(ops) == 0 {
+		return nil, nil
+	}
+
+	// Meta 限制每批最多 50 个
+	const maxPerBatch = 50
+	results := make([]BatchResponse, 0)
+
+	for i := 0; i < len(ops); i += maxPerBatch {
+		end := i + maxPerBatch
+		if end > len(ops) {
+			end = len(ops)
+		}
+		chunk := ops[i:end]
+
+		resp, err := client.PostForm("/batch", map[string]string{
+			"requests": marshalBatch(chunk),
+		})
+		if err != nil {
+			return results, err
+		}
+
+		var chunkResults []BatchResponse
+		json.Unmarshal(resp, &chunkResults)
+		results = append(results, chunkResults...)
+	}
+
+	return results, nil
+}
+
+// ==================== 指数退避重试 ====================
+
+// RetryConfig 重试配置
+type RetryConfig struct {
+	MaxRetries     int
+	BaseDelay      time.Duration
+	MaxDelay       time.Duration
+	RetryableCodes []int
+}
+
+// DefaultRetryConfig 默认重试配置
+var DefaultRetryConfig = RetryConfig{
+	MaxRetries: 3,
+	BaseDelay:  time.Second,
+	MaxDelay:   30 * time.Second,
+	RetryableCodes: []int{429, 500, 503},
+}
+
+// ExponentialBackoffRetry 指数退避重试
+func ExponentialBackoffRetry(fn func() ([]byte, error), config RetryConfig) ([]byte, error) {
+	var lastErr error
+	delay := config.BaseDelay
+
+	for attempt := 0; attempt <= config.MaxRetries; attempt++ {
+		data, err := fn()
+		if err == nil {
+			return data, nil
+		}
+		lastErr = err
+
+		// 检查是否可重试
+		if !isRetryable(err, config.RetryableCodes) {
+			return nil, err
+		}
+
+		// 指数退避 + 抖动 (jitter)
+		if attempt < config.MaxRetries {
+			jitter := time.Duration(rand.Int63n(int64(delay)))
+			totalDelay := delay + jitter
+			if totalDelay > config.MaxDelay {
+				totalDelay = config.MaxDelay
+			}
+			time.Sleep(totalDelay)
+			delay = delay * 2
+		}
+	}
+
+	return nil, fmt.Errorf("retry failed after %d attempts: %w", config.MaxRetries+1, lastErr)
+}
+
+func isRetryable(err error, codes []int) bool {
+	// 简化：429 Rate Limited 和 5xx 服务端错误可重试
+	for _, code := range codes {
+		if code == 429 || code >= 500 {
+			return true
+		}
+	}
+	return false
+}
+
+// ==================== 本地缓存 ====================
+
+// LocalCache 本地缓存 (LRU 风格简化版)
+type LocalCache struct {
+	items map[string]*cacheItem
+	maxSize int
+	mu    sync.RWMutex
+}
+
+type cacheItem struct {
+	Value     []byte
+	ExpiresAt time.Time
+}
+
+// NewLocalCache 创建缓存
+func NewLocalCache(maxSize int) *LocalCache {
+	if maxSize == 0 {
+		maxSize = 1000
+	}
+	return &LocalCache{
+		items:   make(map[string]*cacheItem),
+		maxSize: maxSize,
+	}
+}
+
+// Get 获取缓存
+func (c *LocalCache) Get(key string) ([]byte, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	item, ok := c.items[key]
+	if !ok {
+		return nil, false
+	}
+	if time.Now().After(item.ExpiresAt) {
+		delete(c.items, key)
+		return nil, false
+	}
+	return item.Value, true
+}
+
+// Set 设置缓存
+func (c *LocalCache) Set(key string, value []byte, ttl time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.items) >= c.maxSize {
+		// 简单淘汰: 移除最旧的
+		oldestKey := ""
+		oldestTime := time.Now()
+		for k, v := range c.items {
+			if v.ExpiresAt.Before(oldestTime) {
+				oldestKey = k
+				oldestTime = v.ExpiresAt
+			}
+		}
+		if oldestKey != "" {
+			delete(c.items, oldestKey)
+		}
+	}
+	c.items[key] = &cacheItem{
+		Value:     value,
+		ExpiresAt: time.Now().Add(ttl),
+	}
+}
+
+// ==================== 速率限制器 (令牌桶) ====================
+
+// TokenBucket 令牌桶限流器
+type TokenBucket struct {
+	tokens     float64
+	maxTokens  float64
+	refillRate float64 // tokens/second
+	lastRefill time.Time
+	mu         sync.Mutex
+}
+
+// NewTokenBucket 创建令牌桶
+func NewTokenBucket(maxTokens float64, refillRate float64) *TokenBucket {
+	return &TokenBucket{
+		tokens:     maxTokens,
+		maxTokens:  maxTokens,
+		refillRate: refillRate,
+		lastRefill: time.Now(),
+	}
+}
+
+// TryConsume 尝试消费一个 token
+func (tb *TokenBucket) TryConsume() bool {
+	tb.mu.Lock()
+	defer tb.mu.Unlock()
+
+	now := time.Now()
+	elapsed := now.Sub(tb.lastRefill).Seconds()
+	tb.tokens = math.Min(tb.maxTokens, tb.tokens+elapsed*tb.refillRate)
+	tb.lastRefill = now
+
+	if tb.tokens >= 1.0 {
+		tb.tokens -= 1.0
+		return true
+	}
+	return false
+}
+
+// Wait 等待直到可以消费
+func (tb *TokenBucket) Wait() {
+	for !tb.TryConsume() {
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// ==================== 类型和工具 ====================
+
+type BatchResponse struct {
+	Status  int
+	Body    json.RawMessage
+	Headers map[string]string
+}
+
+type MetaClient struct{}
+func (c *MetaClient) PostForm(path string, params map[string]string) ([]byte, error) {
+	return []byte(`[]`), nil
+}
+
+func join(ss []string, sep string) string {
+	s := ""
+	for i, p := range ss {
+		if i > 0 {
+			s += sep
+		}
+		s += p
+	}
+	return s
+}
+
+func marshalBatch(ops []*BatchOp) string {
+	b, _ := json.Marshal(ops)
+	return string(b)
+}
+
+// 使用示例
+func main() {
+	// 1. Insights 查询
+	query := NewInsightsQuery("act_123").
+		Metrics([]string{"impressions", "clicks", "spend", "conversions", "cpa"}).
+		TimeRange("2024-01-01", "2024-01-31").
+		Breakdowns([]string{"platform", "device", "age", "gender"}).
+		Limit(100).
+		Build()
+	fmt.Printf("Query params: %+v\n", query)
+
+	// 2. 批量操作
+	batch := &BatchOperation{}
+	batch.AddCreateCampaign("Summer Sale", "OUTCOME_RESULTS", 5000)
+	batch.AddCreateAdSet("create_campaign_0", "Prospecting", 0)
+	results, _ := batch.Execute(&MetaClient{})
+	fmt.Printf("Batch results: %d\n", len(results))
+
+	// 3. 令牌桶限流
+	bucket := NewTokenBucket(10, 10) // 10 tokens, 10/s
+	for i := 0; i < 5; i++ {
+		bucket.Wait()
+		fmt.Printf("Request %d\n", i)
+	}
+
+	// 4. 缓存
+	cache := NewLocalCache(100)
+	cache.Set("campaign_123", []byte(`{"id":"123","name":"test"}`), 5*time.Minute)
+	if data, ok := cache.Get("campaign_123"); ok {
+		fmt.Printf("Cached: %s\n", data)
+	}
+}
 
 ---
 

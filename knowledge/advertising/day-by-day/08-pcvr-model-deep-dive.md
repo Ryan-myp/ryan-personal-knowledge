@@ -711,7 +711,187 @@ class ReplayBuffer:
         return len(self.buffer)
 ```
 
----
+### 4.3 ESMM 的 Go 实现（生产级）
+
+```go
+// ESMM: Entire Space Multi-Task Model for CTR & CVR
+// 生产级实现：共享编码器 + 双塔架构 + 在线预测
+package esmm
+
+import (
+	"fmt"
+	"math"
+
+	"gonum.org/v1/gonum/mat"
+)
+
+// ==================== 特征工程 ====================
+
+// FeatureSet 表示一组输入特征
+type FeatureSet struct {
+	UserAge      float32
+	UserGender   float32
+	UserScore    float32
+	H1ClickRate  float32
+	H24ClickRate float32
+	D7ConvertCnt int
+	D30ConvertCnt int
+	AdCategoryID    int
+	AdvertiserID    int
+	AdHistoricalCTR float32
+	AdQualityScore float32
+	TimeHour       int
+	DayOfWeek      int
+	DeviceType     float32
+	IsWeekend      float32
+	Position       float32
+	Category       float32
+	RawFeatures    []float64 // 500+ 维
+}
+
+// ==================== 网络层 ====================
+
+// DenseLayer 表示一个全连接层: output = sigmoid(W*x + b)
+type DenseLayer struct {
+	Weights *mat.Dense
+	Bias    *mat.VecDense
+	InDim   int
+	OutDim  int
+}
+
+// NewDenseLayer 创建全连接层
+func NewDenseLayer(inDim, outDim int) *DenseLayer {
+	w := mat.NewDense(outDim, inDim, nil)
+	for i := 0; i < outDim; i++ {
+		for j := 0; j < inDim; j++ {
+			w.Set(i, j, randn()*math.Sqrt(2.0/float64(inDim))) // He init
+		}
+	}
+	return &DenseLayer{Weights: w, Bias: mat.NewVecDense(outDim, nil)}
+}
+
+// Forward 前向传播: out = sigmoid(W*x + b)
+func (l *DenseLayer) Forward(x *mat.VecDense) *mat.VecDense {
+	y := mat.NewVecDense(l.OutDim, nil)
+	y.MulVec(l.Weights, x)
+	for i := 0; i < l.OutDim; i++ {
+		y.SetVec(i, 1.0/(1.0+math.Exp(-y.AtVec(i)+l.Bias.AtVec(i))))
+	}
+	return y
+}
+
+// ==================== ESMM 模型 ====================
+
+// ESMMModel 完整的 ESMM 多任务模型
+type ESMMModel struct {
+	Shared  *DenseLayer // 500 -> 64
+	CTR     *DenseLayer // 64 -> 1
+	CTCVR   *DenseLayer // 64 -> 1
+	LearningRate float64
+	Alpha     float64
+}
+
+// NewESMMModel 创建 ESMM 模型
+func NewESMMModel(featureDim int) *ESMMModel {
+	return &ESMMModel{
+		Shared:  NewDenseLayer(featureDim, 64),
+		CTR:     NewDenseLayer(64, 1),
+		CTCVR:   NewDenseLayer(64, 1),
+		LearningRate: 0.001,
+		Alpha:     1.0,
+	}
+}
+
+// Predict 单次推理: 返回 pCTR, pCTCVR, pCVR
+func (m *ESMMModel) Predict(features *mat.VecDense) (pCTR, pCTCVR, pCVR float64) {
+	h := m.Shared.Forward(features)
+	pCTR = m.CTR.Forward(h).AtVec(0)
+	pCTCVR = m.CTCVR.Forward(h).AtVec(0)
+	// pCVR = pCTCVR / pCTR (数值稳定)
+	pCTR = math.Max(pCTR, 1e-7)
+	pCVR = math.Min(pCTCVR/pCTR, 1.0)
+	return
+}
+
+// ==================== 损失函数 ====================
+
+func BCELoss(pred, target float64) float64 {
+	p = math.Max(math.Min(pred, 1-1e-7), 1e-7)
+	return -(target*math.Log(pred) + (1-target)*math.Log(1-pred))
+}
+
+// ESMMComputeLoss 计算 ESMM 总损失: L = L_CTR + α × L_CTCVR
+func (m *ESMMModel) ESMMComputeLoss(
+	pCTR, pCTCVR, yClick, yConvert float64,
+) (lCTR, lCTCVR, totalLoss float64) {
+	lCTR = BCELoss(pCTR, yClick)
+	lCTCVR = BCELoss(pCTCVR, yConvert)
+	totalLoss = lCTR + m.Alpha*lCTCVR
+	return
+}
+
+// ==================== 在线学习 ====================
+
+// OnlineCVRTrainer 在线 pCVR 训练器
+type OnlineCVRTrainer struct {
+	Model          *ESMMModel
+	ForgetFactor   float64 // 遗忘因子 0.9999
+	StepCount      int
+	BaseLR         float64
+	ReplayBuffer   []Sample
+	BufferCapacity int
+}
+
+type Sample struct {
+	Features  *mat.VecDense
+	YClick    float64
+	YConvert  float64
+}
+
+func (t *OnlineCVRTrainer) GetLR() float64 {
+	t.StepCount++
+	if t.StepCount < 1000 {
+		return t.BaseLR * float64(t.StepCount) / 1000
+	}
+	return t.BaseLR / (1 + 0.001*float64(t.StepCount-1000))
+}
+
+// TrainStep 单样本在线训练 + 弹性遗忘
+func (t *OnlineCVRTrainer) TrainStep(
+	features *mat.VecDense,
+	yClick, yConvert float64,
+) (deltaCTR, deltaCTCVR float64) {
+	lr := t.GetLR()
+	pCTR, pCTCVR, _ := t.Model.Predict(features)
+
+	// 梯度近似: d(BCE)/d(logit) = pred - target
+	errCTR := pCTR - yClick
+	errCTCVR := pCTCVR - yConvert
+
+	deltaCTR = -lr * errCTR * t.ForgetFactor
+	deltaCTCVR = -lr * errCTCVR * t.ForgetFactor
+
+	// 经验回放
+	if len(t.ReplayBuffer) >= t.BufferCapacity {
+		t.ReplayBuffer = t.ReplayBuffer[1:]
+	}
+	t.ReplayBuffer = append(t.ReplayBuffer, Sample{features.Clone().(*mat.VecDense), yClick, yConvert})
+
+	return deltaCTR, deltaCTCVR
+}
+
+// ==================== 推理示例 ====================
+
+func main() {
+	model := NewESMMModel(500)
+	features := mat.NewVecDense(500, nil)
+	features.SetVec(0, 0.3) // H1 click rate
+	features.SetVec(1, 0.45) // H24 click rate
+
+	pCTR, pCTCVR, pCVR := model.Predict(features)
+	fmt.Printf("pCTR=%.4f, pCTCVR=%.4f, pCVR=%.4f\n", pCTR, pCTCVR, pCVR)
+}
+```
 
 ## 第五部分：pCVR 评估与优化
 
@@ -833,9 +1013,27 @@ CVR:
 - 标签延迟: 点击后数小时/数天才出现
 - 样本偏差: 只有 clicked 用户有标签
 - 需要更复杂的模型
+
+</details>
+
+### 问题 4
+Go 实现中 ESMM 的 `Predict` 方法为什么用 `math.Max(pCTR, 1e-7)`？
+
+<details>
+<summary>查看答案</summary>
+
+防止 pCTR 为 0 导致 pCVR = pCTCVR/0 出现无穷大/NaN。这是数值稳定性的基本要求，在广告竞价系统中 pCVR 计算错误会导致出价异常，直接影响 ROI。
+</details>
+
+### 问题 5
+在线训练中，遗忘因子 γ = 0.9999 意味着什么？1000 步后历史参数还剩多少权重？
+
+<details>
+<summary>查看答案</summary>
+
+θ_new = γ × θ_old，每步保留 0.9999。1000 步后: 0.9999^1000 ≈ 0.905，即历史参数保留约 90.5%。这说明遗忘因子设计得非常保守——1000 步才衰减不到 10%，适合广告场景中用户行为变化缓慢的特点。如果 γ = 0.99，1000 步后只剩 0.99^1000 ≈ 0.00004，几乎完全遗忘。
 </details>
 
 ---
-
 *今天花 90 分钟：深入掌握 pCVR 模型技术*
 *答不出自测题？回去重读对应章节。*

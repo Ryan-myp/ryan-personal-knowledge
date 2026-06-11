@@ -291,7 +291,7 @@ class CreativeManager:
     """
     创意管理器 — 管理创意库、组合、评分
     """
-    
+
     def __init__(self):
         # 创意库: type → {element_id → CreativeElement}
         self.creative_pool: Dict[str, Dict[str, CreativeElement]] = defaultdict(dict)
@@ -299,11 +299,11 @@ class CreativeManager:
         self.combination_cache: Dict[str, CreativeCombination] = {}
         # 元素权重 (交互模型)
         self.element_weights: Dict[str, float] = {}
-    
+
     def add_creative(self, element: CreativeElement):
         """添加创意元素到库"""
         self.creative_pool[element.element_type][element.element_id] = element
-    
+
     def get_candidates(
         self,
         ad_format: str,  # banner/video/native
@@ -311,11 +311,11 @@ class CreativeManager:
     ) -> List[CreativeElement]:
         """
         获取候选创意元素
-        
+
         按品牌和格式筛选
         """
         candidates = {}
-        
+
         if ad_format == 'banner':
             # Banner: image + headline + cta
             candidates['image'] = self._get_best_images(brand_id, top_k=3)
@@ -332,9 +332,9 @@ class CreativeManager:
             candidates['headline'] = self._get_best_headlines(brand_id, top_k=3)
             candidates['description'] = self._get_best_descriptions(brand_id, top_k=3)
             candidates['cta'] = self._get_best_cta(brand_id, top_k=2)
-        
+
         return candidates
-    
+
     def compose_creative(
         self,
         candidates: Dict[str, List[CreativeElement]],
@@ -342,9 +342,9 @@ class CreativeManager:
     ) -> CreativeCombination:
         """
         组合最佳创意
-        
+
         方法: Factorization (快速)
-        
+
         Args:
             candidates: 各类型的候选元素
             user_context: 用户上下文特征
@@ -1123,5 +1123,480 @@ DCO 的三种方法分别是什么？
 
 ---
 
-*今天花 90 分钟：深入掌握 DSP 创意生成与优化*
-*答不出自测题？回去重读对应章节。*
+### DSP 创意生成的 Go 实现
+
+```go
+// DSP 创意生成: Creative Factory + DCO + AI 生成 + 数据管道
+package dspcreative
+
+import (
+	"encoding/json"
+	"fmt"
+	"math"
+	"math/rand"
+	"sort"
+	"sync"
+	"time"
+)
+
+// ==================== 创意工厂架构 ====================
+
+// CreativeFactory 创意工厂：组合式创意生成
+type CreativeFactory struct {
+	templates   []Template
+	variants    []VariantGenerator
+	brandRules  []BrandRule
+	pools       *PoolManager
+	mu          sync.RWMutex
+}
+
+// Template 创意模板
+type Template struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Type  string `json:"type"` // HORIZONTAL, VERTICAL, SQUARE, STORIES
+	Slots []Slot `json:"slots"`
+}
+
+// Slot 创意槽位
+type Slot struct {
+	ID        string `json:"id"`
+	Type      string `json:"type"` // logo, headline, body, image, cta
+	MinSize   [2]int `json:"min_size"`  // [w, h]
+	MaxSize   [2]int `json:"max_size"`
+	Required  bool   `json:"required"`
+}
+
+// VariantGenerator 变体生成器
+type VariantGenerator struct {
+	Name      string `json:"name"`
+	MaxCount  int    `json:"max_count"`
+	Weight    float64 `json:"weight"`
+	Params    map[string]interface{} `json:"params"`
+}
+
+// BrandRule 品牌规范规则
+type BrandRule struct {
+	Type      string `json:"type"` // color, font, logo, copy
+	Condition string `json:"condition"`
+	MaxViolation int  `json:"max_violation"` // 允许最大违规数
+}
+
+// ==================== AI 创意生成 ====================
+
+// AIModel 创意生成模型接口
+type AIModel interface {
+	// GenerateImage 根据 prompt 生成图像
+	GenerateImage(prompt string, width, height int) ([]byte, error)
+	// GenerateHeadlines 生成广告文案标题
+	GenerateHeadlines(productName string, maxCount int) ([]string, error)
+	// ScoreCreative 评估创意的预期效果
+	ScoreCreative(creative *Creative) float64
+}
+
+// Creative 生成的创意
+type Creative struct {
+	ID           string               `json:"id"`
+	TemplateID   string               `json:"template_id"`
+	Type         string               `json:"type"`
+	Title        string               `json:"title"`
+	Description  string               `json:"description"`
+	Images       []ImageAsset         `json:"images"`
+	VideoURL     string               `json:"video_url,omitempty"`
+	CTAText      string               `json:"cta_text"`
+	LinkURL      string               `json:"link_url"`
+	Variants     []CreativeVariant    `json:"variants,omitempty"`
+	PredictedCTR float64              `json:"predicted_ctr"`
+}
+
+type ImageAsset struct {
+	URL    string `json:"url"`
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
+	Type   string `json:"type"` // primary, secondary, icon
+}
+
+type CreativeVariant struct {
+	ID     string  `json:"id"`
+	Weight float64 `json:"weight"`
+}
+
+// DCOEngine 动态创意优化引擎
+type DCOEngine struct {
+	templates    []Template
+	assetPool    *AssetPool
+	performance  map[string]*CreativeStats
+	mu           sync.RWMutex
+	bestVariant  map[string]int // templateID -> best variant ID
+}
+
+type CreativeStats struct {
+	Impressions  int     `json:"impressions"`
+	Clicks       int     `json:"clicks"`
+	Revenue      float64 `json:"revenue"`
+	CTR          float64 `json:"ctr"`
+	ConversionR  float64 `json:"conversion_rate"`
+	TotalSpent   float64 `json:"total_spent"`
+	LastUpdated  time.Time
+}
+
+// GenerateDCOCreative 生成动态创意
+func (e *DCOEngine) GenerateDCOCreative(
+	productName string,
+	category string,
+	targetAudience string,
+	model AIModel,
+) *Creative {
+	// 1. 选择最佳模板
+	template := e.selectBestTemplate(productName, category)
+
+	// 2. 生成文案 (A/B/C 版本)
+	headlines, err := model.GenerateHeadlines(productName, 3)
+	if err != nil {
+		headlines = []string{productName, productName + " - 限时优惠", "立即抢购" + productName}
+	}
+
+	// 3. 生成图片
+	images, err := model.GenerateImage(
+		fmt.Sprintf("Professional product photo of %s, white background, %s style", productName, category),
+		1080, 1080,
+	)
+	if err != nil {
+		images = []byte{} // fallback
+	}
+
+	// 4. 选择最佳 CTA
+	cta := e.selectCTA(targetAudience)
+
+	// 5. 预测 CTR
+	predictedCTR := e.predictCTR(template.ID, category, targetAudience)
+
+	return &Creative{
+		ID:          fmt.Sprintf("creative_%d", time.Now().UnixNano()),
+		TemplateID:  template.ID,
+		Type:        template.Type,
+		Title:       headlines[0],
+		Description: headlines[1],
+		Images: []ImageAsset{{
+			URL:    "generated_image_url",
+			Width:  1080,
+			Height: 1080,
+			Type:   "primary",
+		}},
+		CTAText:      cta,
+		LinkURL:      fmt.Sprintf("https://shop.example.com/%s", productName),
+		PredictedCTR: predictedCTR,
+	}
+}
+
+// selectBestTemplate 选择最佳模板
+func (e *DCOEngine) selectBestTemplate(productName, category string) Template {
+	// 根据品类选择模板
+	type score struct {
+		id     string
+		score  float64
+	}
+	var scores []score
+	for _, t := range e.templates {
+		s := e.templateScore(t, productName, category)
+		scores = append(scores, score{t.ID, s})
+	}
+	sort.Slice(scores, func(i, j int) bool { return scores[i].score > scores[j].score })
+	for _, s := range scores {
+		for _, t := range e.templates {
+			if t.ID == s.id {
+				return t
+			}
+		}
+	}
+	return e.templates[0]
+}
+
+func (e *DCOEngine) templateScore(t Template, product, category string) float64 {
+	// 简单评分: 模板匹配度 + 历史表现
+	baseScore := 0.5
+	if t.Type == "SQUARE" {
+		baseScore = 0.7 // 社媒广告 SQUARE 通常表现更好
+	}
+	return baseScore
+}
+
+// selectCTA 根据受众选择 CTA
+func (e *DCOEngine) selectCTA(audience string) string {
+	switch audience {
+	case "new":
+		return "Learn More"
+	case "returning":
+		return "Shop Now"
+	case "cart_abandoners":
+		return "Complete Your Purchase"
+	default:
+		return "Shop Now"
+	}
+}
+
+// predictCTR 预测点击率
+func (e *DCOEngine) predictCTR(templateID, category, audience string) float64 {
+	base := 0.02 // 基准 CTR
+	// 根据品类调整
+	categoryBoosts := map[string]float64{
+		"fashion":     0.03,
+		"electronics": 0.02,
+		"home":        0.015,
+	}
+	// 根据受众调整
+	audienceBoosts := map[string]float64{
+		"returning":     0.01,
+		"cart_abandoners": 0.015,
+	}
+	return base + categoryBoosts[category] + audienceBoosts[audience]
+}
+
+// ==================== 创意 A/B 测试 ====================
+
+// ABTest 创意 A/B 测试
+type ABTest struct {
+	ID           string
+	Name         string
+	Creatives    []*Creative
+	Weights      []float64 // 分配权重 (总和为 1)
+	TotalBudget  float64
+	Spent        float64
+	StartTime    time.Time
+	Duration     time.Duration
+	Stopped      bool
+	mu           sync.Mutex
+}
+
+// NewABTest 创建 A/B 测试
+func NewABTest(name string, creatives []*Creative) *ABTest {
+	weights := make([]float64, len(creatives))
+	total := 0.0
+	for i := range weights {
+		weights[i] = 1.0
+		total += 1.0
+	}
+	// 归一化
+	for i := range weights {
+		weights[i] /= total
+	}
+
+	return &ABTest{
+		ID:       fmt.Sprintf("abtest_%d", time.Now().UnixNano()),
+		Name:     name,
+		Creatives: creatives,
+		Weights:  weights,
+		StartTime: time.Now(),
+	}
+}
+
+// NextCreative 根据权重选择下一个创意
+func (t *ABTest) NextCreative() *Creative {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.Stopped {
+		return t.Creatives[0] // 停止后默认第一个
+	}
+
+	// 根据权重随机选择
+	r := rand.Float64()
+	cumulative := 0.0
+	for i, w := range t.Weights {
+		cumulative += w
+		if r <= cumulative {
+			return t.Creatives[i]
+		}
+	}
+	return t.Creatives[len(t.Creatives)-1]
+}
+
+// RecordImpression 记录展示
+func (t *ABTest) RecordImpression(creativeID string, clicked bool) {
+	// 更新统计
+}
+
+// RecordConversion 记录转化
+func (t *ABTest) RecordConversion(creativeID string, revenue float64) {
+	// 更新统计
+}
+
+// Analyze 分析测试结果
+func (t *ABTest) Analyze() map[string]*CreativeStats {
+	// 统计各创意表现
+	stats := make(map[string]*CreativeStats)
+	for _, c := range t.Creatives {
+		stats[c.ID] = &CreativeStats{}
+	}
+	return stats
+}
+
+// ==================== 创意数据管道 ====================
+
+// CreativeDataPipeline 创意数据管道
+type CreativeDataPipeline struct {
+	creativeDB  *CreativeDB
+	statsDB     *StatsDB
+	alerts      []AlertCondition
+	mu          sync.Mutex
+}
+
+// ProcessCreativeEvent 处理创意事件
+func (p *CreativeDataPipeline) ProcessCreativeEvent(event CreativeEvent) error {
+	// 1. 存储展示/点击数据
+	p.statsDB.RecordImpression(event.CreativeID, event.Timestamp)
+	if event.Clicked {
+		p.statsDB.RecordClick(event.CreativeID, event.Timestamp)
+	}
+	if event.Converted {
+		p.statsDB.RecordConversion(event.CreativeID, event.Timestamp, event.Revenue)
+	}
+
+	// 2. 检查品牌规范
+	for _, rule := range p.alerts {
+		if rule.Check(event) {
+			p.sendAlert(event, rule)
+		}
+	}
+
+	return nil
+}
+
+// CreativeEvent 创意事件
+type CreativeEvent struct {
+	CreativeID string
+	Type       string // impression, click, conversion
+	Timestamp  time.Time
+	Clicked    bool
+	Converted  bool
+	Revenue    float64
+	Content    string // 创意内容用于品牌规范检查
+}
+
+// AlertCondition 告警条件
+type AlertCondition struct {
+	Name    string
+	Checker func(event CreativeEvent) bool
+}
+
+// ==================== 创意质量评估 ====================
+
+// QualityScorer 创意质量评分器
+type QualityScorer struct {
+	brandColors  []string
+	brandFonts   []string
+	bannedWords  []string
+}
+
+// ScoreCreativeQuality 评估创意质量
+func (s *QualityScorer) ScoreCreativeQuality(title, description string, imageType string) (int, string) {
+	score := 10
+	issues := []string{}
+
+	// 文案质量检查
+	titleLower := title
+	descLower := description
+
+	// 检查违规词
+	bannedCount := 0
+	for _, word := range s.bannedWords {
+		if contains(titleLower, word) || contains(descLower, word) {
+			bannedCount++
+			issues = append(issues, fmt.Sprintf("包含违规词: %s", word))
+		}
+	}
+	score -= bannedCount * 2
+
+	// 标题长度检查
+	if len(title) > 50 {
+		score -= 1
+		issues = append(issues, "标题过长 (>50 字符)")
+	}
+	if len(title) < 10 {
+		score -= 1
+		issues = append(issues, "标题过短 (<10 字符)")
+	}
+
+	// 包含数字通常提升 CTR
+	if containsNumber(title) || containsNumber(descLower) {
+		score += 1
+	}
+
+	if score < 0 {
+		score = 0
+	}
+
+	issueStr := ""
+	if len(issues) > 0 {
+		issueStr = fmt.Sprintf("问题: %v", issues)
+	}
+
+	return score, issueStr
+}
+
+// ==================== 工具函数 ====================
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && s != "" && substr != ""
+}
+
+func containsNumber(s string) bool {
+	for _, c := range s {
+		if c >= '0' && c <= '9' {
+			return true
+		}
+	}
+	return false
+}
+
+// PoolManager 素材池管理
+type PoolManager struct{}
+
+// AssetPool 素材库
+type AssetPool struct{}
+
+// CreativeDB 创意数据库
+type CreativeDB struct{}
+
+// StatsDB 统计数据库
+type StatsDB struct{}
+func (d *StatsDB) RecordImpression(_, string, _ time.Time) {}
+func (d *StatsDB) RecordClick(_, string, _ time.Time)      {}
+func (d *StatsDB) RecordConversion(_, string, _ time.Time, _ float64) {}
+
+// ==================== 使用示例 ====================
+
+func main() {
+	// 1. DCO 引擎生成创意
+	engine := &DCOEngine{}
+	creative := engine.GenerateDCOCreative(
+		"无线蓝牙耳机",
+		"electronics",
+		"returning",
+		nil, // 实际应传入 AIModel
+	)
+	fmt.Printf("Generated: %s (CTR: %.4f)\n", creative.Title, creative.PredictedCTR)
+
+	// 2. A/B 测试
+	creatives := []*Creative{
+		{ID: "a", Title: "Save 50% Today", CTAText: "Shop Now"},
+		{ID: "b", Title: "New Arrival", CTAText: "Learn More"},
+		{ID: "c", Title: "Limited Offer", CTAText: "Get Deal"},
+	}
+	test := NewABTest("Creative Test Q1", creatives)
+	for i := 0; i < 5; i++ {
+		chosen := test.NextCreative()
+		fmt.Printf("  Showing: %s - %s\n", chosen.ID, chosen.Title)
+	}
+
+	// 3. 质量评分
+	scorer := &QualityScorer{
+		bannedWords: []string{"cheap", "scam", "fraud"},
+	}
+	score, issues := scorer.ScoreCreativeQuality(
+		"Best Wireless Headphones 2024",
+		"Up to 50% off - best deal ever",
+		"image",
+	)
+	fmt.Printf("Quality: %d/10, Issues: %s\n", score, issues)
+}

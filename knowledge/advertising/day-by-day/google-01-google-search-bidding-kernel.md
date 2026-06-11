@@ -736,7 +736,362 @@ for kw in results['new_keywords']:
     print(f"  {kw['search_term']} (转化:{kw['conversions']}, CPA:${kw['cost_per_conversion']:.2f})")
 ```
 
----
+### 搜索广告竞价内核的 Go 实现
 
-*今天花 90 分钟：深入理解搜索广告竞价内核，掌握底层原理与生产排障*
-*答不出自测题？回去重读对应章节。*
+```go
+// 搜索广告竞价内核: 从关键词匹配到 Ad Auction
+// 覆盖 BM25 匹配、Quality Score 计算、Ad Rank、出价优化
+package searchbidding
+
+import (
+	"math"
+	"sort"
+	"strings"
+	"sync"
+)
+
+// ==================== 关键词匹配 ====================
+
+// KeywordMatcher 关键词匹配引擎
+type KeywordMatcher struct {
+	// 倒排索引: term -> []keyword
+	index map[string][]string
+	// 关键词到广告组的映射
+	kwToAdGroups map[string][]string
+	// BM25 参数
+	k float64 // 词长归一化因子 (默认 1.2)
+	b float64 // 长度衰减因子 (默认 0.75)
+}
+
+// NewKeywordMatcher 创建关键词匹配器
+func NewKeywordMatcher(k, b float64) *KeywordMatcher {
+	if k == 0 {
+		k = 1.2
+	}
+	if b == 0 {
+		b = 0.75
+	}
+	return &KeywordMatcher{
+		index:        make(map[string][]string),
+		kwToAdGroups: make(map[string][]string),
+		k:            k,
+		b:            b,
+	}
+}
+
+// AddKeyword 注册关键词及其关联的广告组
+func (m *KeywordMatcher) AddKeyword(keyword, adGroup string) {
+	m.kwToAdGroups[keyword] = append(m.kwToAdGroups[keyword], adGroup)
+	// 分词并建立倒排
+	for _, token := range tokenize(keyword) {
+		m.index[token] = append(m.index[token], keyword)
+	}
+}
+
+// Match 搜索查询 → 匹配的关键词 (BM25 打分)
+func (m *KeywordMatcher) Match(query string, limit int) []MatchResult {
+	queryTokens := tokenize(query)
+	if len(queryTokens) == 0 {
+		return nil
+	}
+
+	scores := make(map[string]float64)
+
+	// BM25 打分
+	for _, qToken := range queryTokens {
+		if keywords, ok := m.index[qToken]; ok {
+			for _, kw := range keywords {
+				scores[kw] += bm25Score(query, queryTokens, kw, m.k, m.b)
+			}
+		}
+	}
+
+	// 按分数排序
+	type scoreItem struct {
+		Keyword string
+		Score   float64
+	}
+	results := make([]scoreItem, 0, len(scores))
+	for kw, score := range scores {
+		results = append(results, scoreItem{kw, score})
+	}
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Score > results[j].Score
+	})
+
+	limit = min(limit, len(results))
+	out := make([]MatchResult, limit)
+	for i := 0; i < limit; i++ {
+		out[i] = MatchResult{
+			Keyword: results[i].Keyword,
+			Score:   results[i].Score,
+		}
+	}
+	return out
+}
+
+// bm25Score BM25 相关性打分
+func bm25Score(query string, queryTokens []string, doc string, k, b float64) float64 {
+	docTokens := tokenize(doc)
+	docLen := float64(len(docTokens))
+	qLen := float64(len(queryTokens))
+
+	var score float64
+	// 去重查询词
+	seen := make(map[string]bool)
+	for _, t := range queryTokens {
+		if seen[t] {
+			continue
+		}
+		seen[t] = true
+
+		// TF: 词在文档中出现次数
+		var tf float64
+		for _, dt := range docTokens {
+			if dt == t {
+				tf++
+			}
+		}
+		tf = tf / docLen
+
+		// IDF
+		// (简化: 假设所有词在索引中均匀分布)
+		idf := math.Log(1.0 + 1.0/(1.0+tf))
+
+		// BM25 公式
+		score += idf * (tf * (k + 1.0)) / (tf + k*(1.0-b+b*docLen/qLen))
+	}
+	return score
+}
+
+// ==================== 质量得分 ====================
+
+// QualityScore 质量得分组件
+type QualityScore struct {
+	ExpectedCTR    float64 // 预期点击率 (0-1)
+	LandingPageExp float64 // 落地页体验 (1-10)
+	AdRelevance    float64 // 广告相关性 (1-10)
+	Overall        float64 // 综合质量得分 (1-10)
+}
+
+// CalculateQualityScore 计算质量得分
+func CalculateQualityScore(
+	historicalCTR float64,
+	landingPageScore float64,
+	adRelevance float64,
+) QualityScore {
+	// 预期点击率: 基于历史数据 + 上下文
+	expectedCTR := min(historicalCTR, 0.15) // 上限 15%
+
+	// 综合质量 = 加权平均 (CTR 权重最高)
+	overall := expectedCTR*10.0*0.5 +
+		landingPageScore*0.3 +
+		adRelevance*0.2
+
+	if overall > 10 {
+		overall = 10
+	}
+
+	return QualityScore{
+		ExpectedCTR:    expectedCTR,
+		LandingPageExp: landingPageScore,
+		AdRelevance:    adRelevance,
+		Overall:        overall,
+	}
+}
+
+// ==================== Ad Auction ====================
+
+// AdCandidate 候选广告
+type AdCandidate struct {
+	AdID         string
+	Keyword      string
+	Bid          float64          // 关键词出价
+	QualityScore QualityScore     // 质量得分
+	AdGroup      string
+}
+
+// AdRankResult 竞价结果
+type AdRankResult struct {
+	Ad       *AdCandidate
+	AdRank   float64    // 广告排名分数
+	BidPrice float64    // 实际支付价格
+	Position int        // 广告位置 (1=顶部)
+}
+
+// RunAuction 执行 Ad Auction
+func RunAuction(candidates []*AdCandidate, positionLimit int) []AdRankResult {
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	// 计算每个候选的 Ad Rank
+	type rankedAd struct {
+		Ad     *AdCandidate
+		AdRank float64
+	}
+	ranked := make([]rankedAd, len(candidates))
+	for i, c := range candidates {
+		// Ad Rank = Bid × Quality Score
+		ranked[i] = rankedAd{
+			Ad:     c,
+			AdRank: c.Bid * c.QualityScore.Overall,
+		}
+	}
+
+	// 按 Ad Rank 降序排列
+	sort.Slice(ranked, func(i, j int) bool {
+		return ranked[i].AdRank > ranked[j].AdRank
+	})
+
+	// 确定排名和实际价格 (第二价格机制)
+	results := make([]AdRankResult, min(positionLimit, len(ranked)))
+	for i, r := range ranked {
+		if i >= positionLimit {
+			break
+		}
+
+		results[i] = AdRankResult{
+			Ad:     r.Ad,
+			AdRank: r.AdRank,
+			Position: i + 1,
+		}
+
+		// 实际价格: 下一名 Ad Rank / 自己的质量得分 + 最小增量
+		if i+1 < len(ranked) {
+			minBid := ranked[i+1].AdRank / r.Ad.QualityScore.Overall
+			results[i].BidPrice = minBid + 0.01
+		} else {
+			results[i].BidPrice = r.Ad.Bid // 最后一名用自己的出价
+		}
+	}
+
+	return results
+}
+
+// ==================== 实时出价优化 ====================
+
+// RealTimeBidOptimizer 实时出价优化器
+type RealTimeBidOptimizer struct {
+	historicalData map[string][]BidHistory // adID -> 历史出价记录
+	mu             sync.RWMutex
+}
+
+type BidHistory struct {
+	BidPrice  float64
+	Clicked   bool
+	Converted bool
+	Revenue   float64
+	Timestamp time.Time
+}
+
+// OptimizeBid 根据历史数据优化出价
+func (o *RealTimeBidOptimizer) OptimizeBid(
+	adID, keyword string,
+	baseBid float64,
+	targetCPA float64,
+) float64 {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+
+	history, ok := o.historicalData[adID]
+	if !ok || len(history) < 10 {
+		return baseBid // 数据不足，用基准出价
+	}
+
+	// 计算该关键词的转化率和平均 CPA
+	var clicks, conversions int
+	var totalCost, totalRevenue float64
+	recent := history[len(history)-100:] // 最近 100 次
+	for _, h := range recent {
+		totalCost += h.BidPrice
+		if h.Clicked {
+			clicks++
+			if h.Converted {
+				conversions++
+				totalRevenue += h.Revenue
+			}
+		}
+	}
+
+	ctr := float64(clicks) / float64(len(recent))
+	cvr := float64(conversions) / float64(clicks)
+	actualCPA := 0.0
+	if conversions > 0 {
+		actualCPA = totalCost / float64(conversions)
+	}
+
+	// 出价调整
+	adjustedBid := baseBid
+	if actualCPA > targetCPA {
+		// CPA 偏高 → 降低出价
+		ratio := targetCPA / actualCPA
+		adjustedBid *= 0.5 + ratio*0.5 // 0.5 ~ 1.0 之间
+	} else if ctr < 0.01 {
+		// CTR 太低 → 降低出价
+		adjustedBid *= 0.8
+	}
+
+	return max(adjustedBid, 0.01) // 最低 $0.01
+}
+
+// RecordHistory 记录出价历史
+func (o *RealTimeBidOptimizer) RecordHistory(adID string, h BidHistory) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.historicalData[adID] = append(o.historicalData[adID], h)
+}
+
+// ==================== 工具函数 ====================
+
+func tokenize(s string) []string {
+	// 简单分词: 转小写 + 按空格分割
+	lower := strings.ToLower(s)
+	return strings.Fields(lower)
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func max(a, b float64) float64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// MatchResult 关键词匹配结果
+type MatchResult struct {
+	Keyword string
+	Score   float64
+}
+
+// 使用示例
+func main() {
+	// 1. 关键词匹配
+	matcher := NewKeywordMatcher(1.2, 0.75)
+	matcher.AddKeyword("best running shoes", "ag_001")
+	matcher.AddKeyword("cheap running shoes", "ag_002")
+	matcher.AddKeyword("buy running shoes online", "ag_003")
+
+	results := matcher.Match("best running shoes for sale", 3)
+	for _, r := range results {
+		fmt.Printf("  %s (score: %.2f)\n", r.Keyword, r.Score)
+	}
+
+	// 2. Ad Auction
+	candidates := []*AdCandidate{
+		{AdID: "ad1", Bid: 2.0, QualityScore: QualityScore{Overall: 8.0}},
+		{AdID: "ad2", Bid: 1.5, QualityScore: QualityScore{Overall: 9.0}},
+		{AdID: "ad3", Bid: 3.0, QualityScore: QualityScore{Overall: 5.0}},
+	}
+	results2 := RunAuction(candidates, 3)
+	for _, r := range results2 {
+		fmt.Printf("  Ad %s: AdRank=%.2f, Bid=$%.3f, Pos=%d\n",
+			r.Ad.AdID, r.AdRank, r.BidPrice, r.Position)
+	}
+}

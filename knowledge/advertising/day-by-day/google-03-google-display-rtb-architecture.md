@@ -787,7 +787,701 @@ print(f"出价: ${bid:.4f}")
 print(f"期望 CPA: ${bidder.target_cpa:.2f}")
 ```
 
----
+### 5. Go 实现：RTB 竞价引擎
 
-*今天花 90 分钟：深入理解 RTB 技术栈和 DSP 出价内核*
-*答不出自测题？回去重读对应章节。*
+```go
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"math"
+	"sync"
+	"time"
+)
+
+// BidRequest 竞价请求 (OpenRTB 格式)
+type BidRequest struct {
+	ID            string          `json:"id"`
+	Impressions   []Impression    `json:"imp"`
+	Site          *Site           `json:"site,omitempty"`
+	App           *App            `json:"app,omitempty"`
+	User          *User           `json:"user,omitempty"`
+	Device        *Device         `json:"device,omitempty"`
+	Source        *BidRequestSource `json:"source,omitempty"`
+	SellerNetwork SellerNetwork   `json:"seller_network,omitempty"`
+	Test          int             `json:"test,omitempty"`
+}
+
+type BidRequestSource struct {
+	ContactData string `json:"contact_data,omitempty"`
+	Codec         string `json:"codec,omitempty"`
+}
+
+type SellerNetwork struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Version string `json:"version"`
+}
+
+// Impression 展示位信息
+type Impression struct {
+	ID            string          `json:"id"`
+	Banner        *Banner         `json:"banner,omitempty"`
+	Video         *Video          `json:"video,omitempty"`
+	Native        *Native         `json:"native,omitempty"`
+	Instl         int             `json:"instl,omitempty"`
+	TagID         string          `json:"tag_id,omitempty"`
+	BidFloor      float64         `json:"bidfloor"`
+	BidFloorMicro int64           `json:"bidfloormicros,omitempty"`
+	Secure        int             `json:"secure,omitempty"`
+	VideoMimes    []string        `json:"video_mimes,omitempty"`
+	Placement     int             `json:"placement,omitempty"`
+	QASettings    json.RawMessage `json:"qasettings,omitempty"`
+	Attrs         []string        `json:"attrs,omitempty"`
+}
+
+type Banner struct {
+	W     int     `json:"w,omitempty"`
+	H     int     `json:"h,omitempty"`
+	WMax  int     `json:"wmax,omitempty"`
+	HMax  int     `json:"hmax,omitempty"`
+	Format []BannerFormat `json:"format,omitempty"`
+}
+
+type BannerFormat struct {
+	W int `json:"w"`
+	H int `json:"h"`
+}
+
+type Video struct {
+	Mimes  []string  `json:"mimes"`
+	Protocols []int  `json:"protocols"`
+	MaxBitrate int `json:"maxbitrate"`
+	MaxDuration int `json:"maxduration"`
+	W      int `json:"w,omitempty"`
+	H      int `json:"h,omitempty"`
+	StartDelay int `json:"startdelay,omitempty"`
+	Linearity int `json:"linearity"`
+}
+
+type Native struct {
+	Request string `json:"request"`
+	ResponseTypes []string `json:"response_types,omitempty"`
+}
+
+type Site struct {
+	ID       string `json:"id,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Domain   string `json:"domain,omitempty"`
+	Cat      []string `json:"cat,omitempty"`
+	SectionCat []string `json:"sectioncat,omitempty"`
+	PageCat  []string `json:"pagecat,omitempty"`
+}
+
+type App struct {
+	ID     string `json:"id,omitempty"`
+	Name   string `json:"name,omitempty"`
+	Domain string `json:"domain,omitempty"`
+	Cat    []string `json:"cat,omitempty"`
+}
+
+type User struct {
+	ID     string   `json:"id,omitempty"`
+	BuyerUID string `json:"buyeruid,omitempty"`
+	Keywords string   `json:"keywords,omitempty"`
+	Guest  int      `json:"guest,omitempty"`
+	YOB    int      `json:"yob,omitempty"`
+	Gender string   `json:"gender,omitempty"`
+}
+
+type Device struct {
+	UA       string `json:"ua,omitempty"`
+	IP       string `json:"ip,omitempty"`
+	DPID     string `json:"dpid,omitempty"`
+	Model    string `json:"model,omitempty"`
+	DeviceType int  `json:"devicetype"`
+	ConnectionType int `json:"connectiontype"`
+	Carrier string   `json:"carrier,omitempty"`
+}
+
+// BidResponse 竞价响应
+type BidResponse struct {
+	ID      string        `json:"id"`
+	BidID   string        `json:"bidid,omitempty"`
+	Budget  []BudgetResult `json:"budget,omitempty"`
+	SeatBid []SeatBid     `json:"seatbid"`
+	Seat    string        `json:"seat,omitempty"`
+	NBanner int           `json:"nbanner,omitempty"`
+	NVideo  int           `json:"nvideo,omitempty"`
+	NNative int           `json:"nnative,omitempty"`
+}
+
+type BudgetResult struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+	Budget int64  `json:"budget"`
+}
+
+type SeatBid struct {
+	Bid  []Bid     `json:"bid"`
+	Seat string    `json:"seat"`
+}
+
+type Bid struct {
+	ID            string  `json:"id"`
+	BidID         string  `json:"bidid,omitempty"`
+ impID         string  `json:"impid"`
+	Price         float64 `json:"price"`
+	AdM           string  `json:"adm"`
+	AdID          string  `json:"adid,omitempty"`
+	Adomain       []string `json:"adomain,omitempty"`
+	Iurl          string  `json:"iurl,omitempty"`
+	Crid          string  `json:"crid,omitempty"`
+	W             int     `json:"w,omitempty"`
+	H             int     `json:"h,omitempty"`
+	Qur           string  `json:"qurl,omitempty"`
+	Cat           []string `json:"cat,omitempty"`
+	Mtype         int     `json:"mtype,omitempty"`
+	DealID        string  `json:"dealid,omitempty"`
+	Bundle        string  `json:"bundle,omitempty"`
+	Ver           string  `json:"ver,omitempty"`
+}
+
+// AdBidder 广告竞价器
+type AdBidder struct {
+	mu             sync.Mutex
+	pClickModels   map[string]*pClickModel
+	pCvrModels     map[string]*pCvrModel
+	bidHistory     []BidRecord
+	maxBid         float64
+	targetCPA      float64
+	timeout        time.Duration
+}
+
+type pClickModel struct {
+	features map[string]float64
+	weights  map[string]float64
+	bias     float64
+}
+
+type pCvrModel struct {
+	features map[string]float64
+	weights  map[string]float64
+	bias     float64
+}
+
+type BidRecord struct {
+	RequestID string
+	ImpID     string
+	BidPrice  float64
+	Won       bool
+	Timestamp time.Time
+}
+
+// NewAdBidder 创建竞价器
+func NewAdBidder(maxBid, targetCPA float64) *AdBidder {
+	return &AdBidder{
+		pClickModels: make(map[string]*pClickModel),
+		pCvrModels:   make(map[string]*pCvrModel),
+		maxBid:       maxBid,
+		targetCPA:    targetCPA,
+		timeout:      100 * time.Millisecond, // RTB 竞价通常 100ms 内完成
+	}
+}
+
+// RegisterModel 注册 pCTR/pCVR 模型
+func (b *AdBidder) RegisterModel(modelType, name string, weights map[string]float64, bias float64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if modelType == "pctr" {
+		b.pClickModels[name] = &pClickModel{features: map[string]float64{}, weights: weights, bias: bias}
+	} else {
+		b.pCvrModels[name] = &pCvrModel{features: map[string]float64{}, weights: weights, bias: bias}
+	}
+}
+
+// sigmoid sigmoid 函数
+func sigmoid(x float64) float64 {
+	return 1.0 / (1.0 + math.Exp(-x))
+}
+
+// PredictCTR 预测点击率
+func (b *AdBidder) PredictCTR(features map[string]float64, modelName string) float64 {
+	b.mu.Lock()
+	model, ok := b.pClickModels[modelName]
+	b.mu.Unlock()
+	if !ok {
+		return 0.01 // 默认 1%
+	}
+	score := model.bias
+	for k, v := range model.weights {
+		score += v * features[k]
+	}
+	return sigmoid(score)
+}
+
+// PredictCVR 预测转化率
+func (b *AdBidder) PredictCVR(features map[string]float64, modelName string) float64 {
+	b.mu.Lock()
+	model, ok := b.pCvrModels[modelName]
+	b.mu.Unlock()
+	if !ok {
+		return 0.005 // 默认 0.5%
+	}
+	score := model.bias
+	for k, v := range model.weights {
+		score += v * features[k]
+	}
+	return sigmoid(score)
+}
+
+// CalculateBid 计算最优出价
+func (b *AdBidder) CalculateBid(ctr, cvr float64) float64 {
+	// eCPA = bid * pClick * pCVR → bid = targetCPA * pCVR / pClick
+	eCPA := ctr * cvr * b.targetCPA
+	bid := b.targetCPA * cvr / (ctr + 1e-10)
+	// 限制最大出价
+	if bid > b.maxBid {
+		bid = b.maxBid
+	}
+	return bid
+}
+
+// RecordBid 记录竞价结果
+func (b *AdBidder) RecordBid(requestID, impID string, price float64, won bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.bidHistory = append(b.bidHistory, BidRecord{
+		RequestID: requestID,
+		ImpID:     impID,
+		BidPrice:  price,
+		Won:       won,
+		Timestamp: time.Now(),
+	})
+}
+
+// RTBBidder 完整的 RTB 竞价流水线
+type RTBBidder struct {
+	bidder *AdBidder
+	tracker *BidTracker
+}
+
+type BidTracker struct {
+	mu           sync.Mutex
+	impressions  int
+	clicks       int
+	conversions  int
+	totalSpent   float64
+}
+
+func (t *BidTracker) Impression() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.impressions++
+}
+
+func (t *BidTracker) Click() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.clicks++
+}
+
+func (t *BidTracker) Conversion(value float64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.conversions++
+	t.totalSpent += value
+}
+
+func (t *BidTracker) Stats() (float64, float64, float64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	cvr := float64(t.conversions) / float64(t.clicks+1)
+	cpc := t.totalSpent / float64(t.clicks+1)
+	return float64(t.impressions), cvr, cpc
+}
+
+func NewRTBBidder(maxBid, targetCPA float64) *RTBBidder {
+	return &RTBBidder{
+		bidder:  NewAdBidder(maxBid, targetCPA),
+		tracker: &BidTracker{},
+	}
+}
+
+// Process 处理单个竞价请求
+func (r *RTBBidder) Process(ctx context.Context, req *BidRequest) (*BidResponse, error) {
+	if len(req.Impressions) == 0 {
+		return nil, fmt.Errorf("no impressions in request")
+	}
+	imp := req.Impressions[0]
+
+	// 提取特征
+	features := map[string]float64{
+		"device_type": float64(req.Device.DeviceType),
+		"connection":  float64(req.Device.ConnectionType),
+	}
+
+	// 1. 预测 CTR
+	ctr := r.bidder.PredictCTR(features, "default")
+
+	// 2. 预测 CVR
+	cvr := r.bidder.PredictCVR(features, "default")
+
+	// 3. 计算出价
+	bidPrice := r.bidder.CalculateBid(ctr, cvr)
+
+	// 4. 考虑底价
+	if bidPrice < imp.BidFloor {
+		return nil, nil // 出价低于底价，放弃竞价
+	}
+
+	// 5. 构建响应
+	seatBid := SeatBid{
+		Bid: []Bid{
+			{
+				ID:     "bid-" + time.Now().Format("20060102150405"),
+				impID:  imp.ID,
+				Price:  bidPrice,
+				AdM:    "<creative><img src=\"https://ads.example.com/c?id=123\"/></creative>",
+				Adomain: []string{"example.com"},
+				W:      300,
+				H:      250,
+			},
+		},
+		Seat: "dsp-1",
+	}
+
+	return &BidResponse{
+		ID:      req.ID,
+		BidID:   fmt.Sprintf("bid-response-%d", time.Now().UnixNano()),
+		SeatBid: []SeatBid{seatBid},
+		Seat:    "dsp-1",
+	}, nil
+}
+
+// main 演示
+func main() {
+	bidder := NewRTBBidder(5.0, 20.0)
+	bidder.bidder.RegisterModel("pctr", "default", map[string]float64{
+		"device_type": 0.1,
+		"connection":  0.05,
+	}, 0.01)
+	bidder.bidder.RegisterModel("pcvr", "default", map[string]float64{
+		"device_type": 0.2,
+	}, 0.005)
+
+	// 模拟竞价请求
+	req := &BidRequest{
+		ID:   "req-001",
+		Test: 1,
+		Impressions: []Impression{
+			{
+				ID:          "imp-001",
+				BidFloor:    0.5,
+				BidFloorMicro: 500000,
+				TagID:       "ad-slot-123",
+				Instl:       0,
+				Banner: &Banner{
+					W: 300,
+					H: 250,
+					Format: []BannerFormat{{W: 300, H: 250}},
+				},
+			},
+		},
+		Device: &Device{
+			DeviceType:   2,    // MOBILE
+			ConnectionType: 5,  // WIF
+			IP:           "192.168.1.1",
+			UA:           "Mozilla/5.0",
+		},
+		Site: &Site{
+			Domain: "example.com",
+			Name:   "Example Site",
+		},
+	}
+
+	resp, err := bidder.Process(context.Background(), req)
+	if err != nil {
+		fmt.Printf("error: %v\n", err)
+		return
+	}
+	if resp == nil {
+		fmt.Println("no bid")
+		return
+	}
+	for _, sb := range resp.SeatBid {
+		for _, bid := range sb.Bid {
+			fmt.Printf("Bid: impID=%s price=%.4f ad=%.20s\n", bid.impID, bid.Price, bid.AdM)
+		}
+	}
+}
+```
+
+### Google Display RTB 的 Go 实现
+
+```go
+// Google Display RTB: 展示广告竞价引擎
+// 覆盖 RTB 请求解析、出价决策、创意渲染
+package displayrtb
+
+import (
+	"encoding/json"
+	"fmt"
+	"sync"
+	"time"
+)
+
+// ==================== Display BidRequest ====================
+
+// DisplayBidRequest 展示广告竞价请求
+type DisplayBidRequest struct {
+	ID        string      `json:"id"`
+	TMax      int         `json:"tmax"`
+	Impressions []Impression `json:"imp"`
+	Site      *Site       `json:"site,omitempty"`
+	App       *App        `json:"app,omitempty"`
+	Device    *Device     `json:"device"`
+	User      *User       `json:"user,omitempty"`
+	At        int         `json:"at"` // 竞价类型
+}
+
+// Impression 展示位
+type Impression struct {
+	ID        string  `json:"id"`
+	Banner    *Banner `json:"banner"`
+	BidFloor  float64 `json:"bidfloor"`
+	Secure    int     `json:"secure"`
+}
+
+// Banner 展示位尺寸
+type Banner struct {
+	W    int    `json:"w,omitempty"`
+	H    int    `json:"h,omitempty"`
+	Pos  string `json:"pos"`  // above_fold, below_fold, sidebar
+	BType []string `json:"btype"`
+}
+
+// ==================== 创意格式 ====================
+
+// CreativeType 创意格式
+type CreativeType string
+
+const (
+	CreativeBanner    CreativeType = "banner"
+	CreativeVideo     CreativeType = "video"
+	CreativeNative    CreativeType = "native"
+	CreativeHTML      CreativeType = "html"
+	CreativeRewarded  CreativeType = "rewarded"
+)
+
+// Creative 创意内容
+type Creative struct {
+	Type        CreativeType `json:"type"`
+	HTML        string       `json:"html,omitempty"`        // HTML5 创意
+	VideoURL    string       `json:"video_url,omitempty"`   // 视频 URL
+	NativeAds   *NativeAd    `json:"native,omitempty"`      // 原生广告
+	Width       int          `json:"w"`
+	Height      int          `json:"h"`
+	ClickURLs   []string     `json:"clicktracking_urls"`
+	ImpURLs     []string     `json:"imptracking_urls"`
+	VideoSeq    int          `json:"videoseq,omitempty"` // 视频序号 (预加载/中插/后贴)
+	Duration    int          `json:"duration,omitempty"` // 视频时长 (秒)
+}
+
+// NativeAd 原生广告
+type NativeAd struct {
+	Title     string   `json:"title"`
+	Body      string   `json:"body"`
+	Image     string   `json:"image"`
+	CTA       string   `json:"cta"`
+	Icon      string   `json:"icon"`
+	Sponsored string   `json:"sponsored"`
+}
+
+// ==================== DSP 出价决策 ====================
+
+// DisplayBidEngine 展示广告竞价引擎
+type DisplayBidEngine struct {
+	models   *ModelClient
+	budget   *BudgetMgr
+	freqCap  *FreqCap
+	beta     float64
+}
+
+// BidResult 出价结果
+type BidResult struct {
+	ShouldBid bool
+	Price     float64
+	Creative  *Creative
+	Rejection string
+}
+
+// Bid 执行展示广告竞价
+func (e *DisplayBidEngine) Bid(req *DisplayBidRequest) (*BidResult, error) {
+	imp := req.Impressions[0]
+
+	// 1. 频控检查
+	if e.freqCap.ShouldBlock(req.User.ID, imp.ID) {
+		return &BidResult{Rejection: "freq_cap"}, nil
+	}
+
+	// 2. 创意匹配（根据 slot size + context）
+	creative := e.matchCreative(imp, req)
+	if creative == nil {
+		return &BidResult{Rejection: "no_creative"}, nil
+	}
+
+	// 3. 模型预测: pCTR, pCVR
+	pCTR, pCVR, err := e.models.Predict(req, imp)
+	if err != nil {
+		pCTR, pCVR = 0.001, 0.02
+	}
+
+	// 4. 展示广告出价 = pCTR × TargetCPM × β
+	// 注意：展示广告用 CPM 出价而非 CPA
+	targetCPM := 5.0
+	price := pCTR * targetCPM * e.beta
+
+	// 5. 底价保护
+	if price < imp.BidFloor {
+		return &BidResult{Rejection: "below_floor"}, nil
+	}
+
+	// 6. 预算检查
+	if !e.budget.Check(price) {
+		return &BidResult{Rejection: "budget_exhausted"}, nil
+	}
+
+	return &BidResult{
+		ShouldBid: true,
+		Price:     price,
+		Creative:  creative,
+	}, nil
+}
+
+// matchCreative 根据 slot 尺寸和内容匹配创意
+func (e *DisplayBidEngine) matchCreative(imp Impression, req *DisplayBidRequest) *Creative {
+	// 简单实现：匹配第一个符合条件的创意
+	// 生产环境用 Redis 预加载 + 内容标签匹配
+	for _, c := range e.availableCreatives {
+		if c.Width == imp.Banner.W && c.Height == imp.Banner.H {
+			return &c
+		}
+	}
+	return nil
+}
+
+// ==================== 实时渲染 ====================
+
+// RenderEngine 广告创意实时渲染
+type RenderEngine struct {
+	creativeDB *CreativeDB
+	cache      *sync.Map // creativeID -> *Creative
+}
+
+// RenderResponse 渲染响应
+type RenderResponse struct {
+	Creative *Creative
+	Tracking []string // 追踪像素 URL
+}
+
+// Render 渲染广告创意
+func (r *RenderEngine) Render(creativeID string, req *DisplayBidRequest) (*RenderResponse, error) {
+	// 1. 从缓存/DB 获取创意
+	creative, ok := r.cache.Load(creativeID)
+	if !ok {
+		creative = r.creativeDB.Get(creativeID)
+		r.cache.Store(creativeID, creative)
+	}
+
+	// 2. 根据用户上下文替换动态变量
+	rendered := r.interpolate(creative.HTML, req)
+
+	// 3. 生成追踪像素
+	tracking := r.generateTracking(rendered, req)
+
+	return &RenderResponse{
+		Creative: &Creative{HTML: rendered, Type: "html"},
+		Tracking: tracking,
+	}, nil
+}
+
+// interpolate 替换 HTML 中的动态变量
+func (r *RenderEngine) interpolate(html string, req *DisplayBidRequest) string {
+	html = replaceVar(html, "{click_url}", "https://dsp.com/c?click=123")
+	html = replaceVar(html, "{impression_url}", "https://dsp.com/i?imp=456")
+	return html
+}
+
+func replaceVar(s, tag, val string) string {
+	// 简单字符串替换，实际用模板引擎
+	return s
+}
+
+func (r *RenderEngine) generateTracking(creative *Creative, req *DisplayBidRequest) []string {
+	// 生成 impression tracking + click tracking URL
+	return append(creative.ImpURLs, creative.ClickURLs...)
+}
+
+// ==================== 广告竞价响应 ====================
+
+// DisplayBidResponse 展示广告竞价响应
+type DisplayBidResponse struct {
+	ID       string     `json:"id"`
+	SeatBid  []SeatBid  `json:"seatsbid"`
+}
+
+// SeatBid 席位出价
+type SeatBid struct {
+	Bid  []DisplayBid `json:"bid"`
+}
+
+// DisplayBid 展示广告出价
+type DisplayBid struct {
+	ID     string `json:"id"`
+	ImpID  string `json:"impid"`
+	Price  float64 `json:"price"`
+	AdM    string  `json:"adm"`    // HTML 创意
+	NURL   string  `json:"nurl"`   // 中标通知
+	AdID   string  `json:"adid"`
+}
+
+// ==================== 使用示例 ====================
+
+func main() {
+	engine := &DisplayBidEngine{
+		models: &ModelClient{},
+		beta:   0.95,
+	}
+
+	req := &DisplayBidRequest{
+		ID:   "req-001",
+		TMax: 100,
+		Impressions: []Impression{{
+			ID:       "imp-001",
+			BidFloor: 2.0,
+			Banner:   &Banner{W: 300, H: 250, Pos: "above_fold"},
+		}},
+	}
+
+	result, _ := engine.Bid(req)
+	if result.ShouldBid {
+		fmt.Printf("Bid: $%.3f CPM, Creative: %s\n", result.Price, result.Creative.Type)
+	}
+}
+
+type ModelClient struct{}
+func (m *ModelClient) Predict(req *DisplayBidRequest, imp Impression) (float64, float64, error) { return 0.02, 0.05, nil }
+
+type BudgetMgr struct{}
+func (b *BudgetMgr) Check(float64) bool { return true }
+
+type FreqCap struct{}
+func (f *FreqCap) ShouldBlock(_, _ string) bool { return false }
+
+type CreativeDB struct{}
+func (c *CreativeDB) Get(id string) *Creative { return &Creative{Width: 300, Height: 250, HTML: "<div>Ad</div>"} }
+
+var availableCreatives = []Creative{{Width: 300, Height: 250, HTML: "<div>300x250 Ad</div>"}}
