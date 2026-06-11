@@ -525,3 +525,105 @@ for k, v in result.items():
 
 *今天花 90 分钟：深入理解 TikTok 推荐系统与广告推荐机制*
 *答不出自测题？回去重读对应章节。*
+
+---
+
+### TikTok 推荐算法的 Go 实现
+
+```go
+package tiktokrec
+
+import (
+	"fmt"
+	"math/rand"
+	"sort"
+	"time"
+)
+
+type Content struct {
+	ID       string
+	AuthorID string
+	Tags     []string
+	WatchTime int
+	Likes   int
+	Comments int
+	Shares  int
+}
+
+type User struct {
+	ID       string
+	Watched  []string
+	Followed []string
+	Liked    []string
+	Tags     []string
+}
+
+type RecommendationEngine struct {
+	users    map[string]*User
+	contents map[string]*Content
+	rand     *rand.Rand
+}
+
+func NewRecEngine() *RecommendationEngine {
+	return &RecommendationEngine{
+		users: make(map[string]*User),
+		contents: make(map[string]*Content),
+		rand: rand.New(rand.NewSource(time.Now().UnixNano())),
+	}
+}
+
+func (e *RecommendationEngine) AddUser(u *User) { e.users[u.ID] = u }
+func (e *RecommendationEngine) AddContent(c *Content) { e.contents[c.ID] = c }
+
+func (e *RecommendationEngine) Recommend(userID string, n int) []*Content {
+	user, ok := e.users[userID]
+	if !ok {
+		return nil
+	}
+
+	type scoredContent struct {
+		content *Content
+		score   float64
+	}
+
+	candidates := make([]scoredContent, 0)
+	for _, c := range e.contents {
+		// 评分: 标签匹配 + 互动权重
+		score := 0.0
+		for _, tag := range c.Tags {
+			for _, ut := range user.Tags {
+				if tag == ut { score += 0.3 }
+			}
+		}
+		// 作者相关性
+		for _, aw := range user.Watched {
+			if aw == c.AuthorID { score += 0.2 }
+		}
+		// 内容热度
+		score += float64(c.Likes)*0.01 + float64(c.Comments)*0.05 + float64(c.Shares)*0.1
+		// 随机探索
+		score += e.rand.Float64() * 0.1
+		candidates = append(candidates, scoredContent{c, score})
+	}
+
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].score > candidates[j].score })
+
+	if n > len(candidates) { n = len(candidates) }
+	result := make([]*Content, n)
+	for i := 0; i < n; i++ {
+		result[i] = candidates[i].content
+	}
+	return result
+}
+
+func main() {
+	engine := NewRecEngine()
+	engine.AddUser(&User{ID: "user1", Tags: []string{"cooking", "travel"}})
+	engine.AddContent(&Content{ID: "c1", Tags: []string{"cooking", "recipe"}, Likes: 100, Comments: 50})
+	engine.AddContent(&Content{ID: "c2", Tags: []string{"travel", "tips"}, Likes: 200, Comments: 80})
+
+	recs := engine.Recommend("user1", 2)
+	for _, r := range recs {
+		fmt.Printf("  Recommend: %s (tags: %v)\n", r.ID, r.Tags)
+	}
+}

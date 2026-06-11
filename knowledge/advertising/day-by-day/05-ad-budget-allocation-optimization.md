@@ -542,3 +542,162 @@ Thompson Sampling 如何用于预算分配？
 
 *今天花 90 分钟：深入掌握广告预算分配与优化策略*
 *答不出自测题？回去重读对应章节。*
+
+---
+
+### 预算分配的 Go 实现
+
+```go
+package budget
+
+import (
+	"fmt"
+	"math"
+	"sort"
+	"sync"
+)
+
+type Campaign struct {
+	ID           string
+	Name         string
+	DailyBudget  float64
+	TotalBudget  float64
+	CampaignType string
+	Status       string
+}
+
+type CampaignStats struct {
+	CampaignID   string
+	Impressions  int
+	Clicks       int
+	Conversions  int
+	Spend        float64
+	Revenue      float64
+	CTR          float64
+	CVR          float64
+	ROAS         float64
+}
+
+type BudgetOptimizer struct {
+	totalBudget float64
+	campaigns   map[string]*Campaign
+	stats       map[string]*CampaignStats
+	mu          sync.RWMutex
+}
+
+func NewBudgetOptimizer(total float64) *BudgetOptimizer {
+	return &BudgetOptimizer{totalBudget: total}
+}
+
+func (o *BudgetOptimizer) AddCampaign(c *Campaign) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.campaigns[c.ID] = c
+}
+
+func (o *BudgetOptimizer) AddStats(s *CampaignStats) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.stats[s.CampaignID] = s
+}
+
+func (o *BudgetOptimizer) Optimize() map[string]float64 {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+
+	type alloc struct{ id string; roas float64 }
+	candidates := make([]alloc, 0)
+	for id, s := range o.stats {
+		if s.ROAS > 0 {
+			candidates = append(candidates, alloc{id, s.ROAS})
+		}
+	}
+
+	if len(candidates) == 0 {
+		// 均匀分配
+		count := len(o.campaigns)
+		if count > 0 {
+			share := o.totalBudget / float64(count)
+			result := make(map[string]float64)
+			for id := range o.campaigns {
+				result[id] = share
+			}
+			return result
+		}
+		return nil
+	}
+
+	// 按 ROAS 权重分配
+	totalROAS := 0.0
+	for _, c := range candidates {
+		totalROAS += c.roas
+	}
+
+	result := make(map[string]float64)
+	for _, c := range candidates {
+		result[c.id] = (c.roas / totalROAS) * o.totalBudget
+	}
+
+	// 设置上下限
+	minBudget := o.totalBudget * 0.05
+	maxBudget := o.totalBudget * 0.4
+	for id := range result {
+		result[id] = math.Max(minBudget, math.Min(maxBudget, result[id]))
+	}
+
+	return result
+}
+
+// MultiArmedBandit 多臂老虎机预算分配
+type MultiArmedBandit struct {
+	rewards map[string][]float64
+	epsilon float64
+	mu      sync.RWMutex
+}
+
+func NewMAB(epsilon float64) *MultiArmedBandit {
+	return &MultiArmedBandit{epsilon: epsilon, rewards: make(map[string][]float64)}
+}
+
+func (m *MultiArmedBandit) Pull(campaignID string) float64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.rewards[campaignID] = append(m.rewards[campaignID], 1.0)
+	return 1.0
+}
+
+func (m *MultiArmedBandit) Select() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	bestID := ""
+	bestMean := 0.0
+	for id, rewards := range m.rewards {
+		sum := 0.0
+		for _, r := range rewards { sum += r }
+		mean := sum / float64(len(rewards))
+		if mean > bestMean {
+			bestMean = mean
+			bestID = id
+		}
+	}
+	if m.epsilon > 0 && math.Abs(math.Remainder(bestMean, 1)) > 1-m.epsilon {
+		bestID = ""
+	}
+	return bestID
+}
+
+func main() {
+	optimizer := NewBudgetOptimizer(1000.0)
+	optimizer.AddCampaign(&Campaign{ID: "tiktok", Name: "TikTok", TotalBudget: 300})
+	optimizer.AddCampaign(&Campaign{ID: "meta", Name: "Meta", TotalBudget: 400})
+	optimizer.AddCampaign(&Campaign{ID: "google", Name: "Google", TotalBudget: 500})
+	optimizer.AddStats(&CampaignStats{CampaignID: "tiktok", ROAS: 2.5})
+	optimizer.AddStats(&CampaignStats{CampaignID: "meta", ROAS: 3.0})
+	optimizer.AddStats(&CampaignStats{CampaignID: "google", ROAS: 4.0})
+
+	alloc := optimizer.Optimize()
+	for id, b := range alloc {
+		fmt.Printf("  %s: $%.2f\n", id, b)
+	}
+}

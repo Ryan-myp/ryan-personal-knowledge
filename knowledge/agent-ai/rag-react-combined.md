@@ -287,4 +287,78 @@ ReAct 循环:
 
 ---
 
+### React + Agent 的 Go 实现
+
+```go
+package react
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"sync"
+)
+
+type Thought struct {
+	Reasoning string
+	Action    string
+	Input     string
+}
+
+type Agent struct {
+	tools map[string]Tool
+	mu    sync.Mutex
+	memo  []string
+}
+
+type Tool interface {
+	Name() string
+	Execute(ctx context.Context, input string) (string, error)
+}
+
+func (a *Agent) Step(ctx context.Context, thought *Thought) (string, error) {
+	tool, ok := a.tools[thought.Action]
+	if !ok {
+		return "", fmt.Errorf("unknown tool: %s", thought.Action)
+	}
+	return tool.Execute(ctx, thought.Input)
+}
+
+func (a *Agent) RunReact(ctx context.Context, query string, maxSteps int) (string, error) {
+	a.mu.Lock()
+	a.memo = append(a.memo, query)
+	a.mu.Unlock()
+
+	for i := 0; i < maxSteps; i++ {
+		thought := &Thought{
+			Reasoning: fmt.Sprintf("Step %d: Analyzing query", i+1),
+			Action:    "search",
+			Input:     query,
+		}
+		obs, err := a.Step(ctx, thought)
+		if err != nil {
+			return "", err
+		}
+		if strings.Contains(obs, "FINAL") {
+			return obs, nil
+		}
+	}
+	return "Max steps reached", nil
+}
+
+func main() {
+	a := &Agent{tools: map[string]Tool{
+		"search": &mockTool{},
+	}}
+	result, _ := a.RunReact(context.Background(), "What is RAG?", 3)
+	fmt.Printf("Result: %s\n", result)
+}
+
+type mockTool struct{}
+
+func (t *mockTool) Name() string { return "search" }
+func (t *mockTool) Execute(ctx context.Context, input string) (string, error) {
+	return "FINAL: RAG = Retrieval Augmented Generation", nil
+}
+
 *本文基于微信读书《Agent设计模式》及相关技术文档整理*

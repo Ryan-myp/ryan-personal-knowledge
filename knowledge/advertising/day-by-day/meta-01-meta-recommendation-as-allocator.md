@@ -513,3 +513,85 @@ for ad in ads_data:
 
 *今天花 90 分钟：深入理解 Meta 推荐系统与广告分配机制*
 *答不出自测题？回去重读对应章节。*
+
+---
+
+### Meta 推荐系统的 Go 实现
+
+```go
+package metarec
+
+import (
+	"fmt"
+	"math"
+	"sort"
+)
+
+type Ad struct {
+	ID       string
+	RelevanceScore float64
+	Bid      float64
+	Preview  string
+	UserID   string
+}
+
+type ScoreComponents struct {
+	AdRelevanceScore float64
+	Bid              float64
+	EstimatedActRate float64
+}
+
+type Recommender struct {
+	ads       []*Ad
+	users     map[string][]string
+}
+
+func NewRecommender() *Recommender {
+	return &Recommender{users: make(map[string][]string)}
+}
+
+func (r *Recommender) AddAd(ad *Ad) { r.ads = append(r.ads, ad) }
+func (r *Recommender) AddUser(userID string, prefs []string) { r.users[userID] = prefs }
+
+func (r *Recommender) ScoreAd(ad *Ad, userPrefs []string) float64 {
+	relevance := 0.0
+	for _, pref := range userPrefs {
+		if contains(ad.Preview, pref) { relevance += 0.4 }
+	}
+	return relevance*0.5 + ad.Bid*0.3 + ad.RelevanceScore*0.2
+}
+
+func contains(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr { return true }
+	}
+	return false
+}
+
+func (r *Recommender) GetRecommendations(userID string, n int) []*Ad {
+	userPrefs, ok := r.users[userID]
+	if !ok { return nil }
+
+	type scored struct { ad *Ad; score float64 }
+	scoredAds := make([]scored, 0, len(r.ads))
+	for _, ad := range r.ads {
+		s := r.ScoreAd(ad, userPrefs)
+		scoredAds = append(scoredAds, scored{ad, s})
+	}
+	sort.Slice(scoredAds, func(i, j int) bool { return scoredAds[i].score > scoredAds[j].score })
+	if n > len(scoredAds) { n = len(scoredAds) }
+	result := make([]*Ad, n)
+	for i := 0; i < n; i++ { result[i] = scoredAds[i].ad }
+	return result
+}
+
+func main() {
+	rec := NewRecommender()
+	rec.AddAd(&Ad{ID: "ad1", RelevanceScore: 0.8, Bid: 2.0, Preview: "Shoes"})
+	rec.AddAd(&Ad{ID: "ad2", RelevanceScore: 0.6, Bid: 1.5, Preview: "Bags"})
+	rec.AddUser("user1", []string{"Shoes", "Fashion"})
+	recs := rec.GetRecommendations("user1", 2)
+	for _, r := range recs {
+		fmt.Printf("  %s: %.2f\n", r.ID, r.RelevanceScore)
+	}
+}

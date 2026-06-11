@@ -516,3 +516,46 @@ for rec in result['recommendations']:
 
 *今天花 60-90 分钟：深入理解 TikTok 竞价机制，实践优化策略*
 *答不出自测题？回去重读对应章节。*
+
+---
+
+### TikTok 竞价的 Go 实现
+
+```go
+package tiktokbidding
+
+import (
+	"fmt"
+	"math"
+	"time"
+)
+
+type BidType string
+const (
+	BidTypeOCPM BidType = "OCPM"
+	BidTypeCPC  BidType = "CPC"
+	BidTypeCPA  BidType = "CPA"
+)
+
+type TikTokOptimizer struct {
+	bidType    BidType
+	targetCPA  float64
+	targetROAS float64
+	learningRate float64
+	weights    []float64 // [ctr_weight, cvr_weight]
+}
+
+func (o *TikTokOptimizer) UpdateWeights(actualCPA float64) {
+	if actualCPA > o.targetCPA {
+		o.weights[0] *= 0.95 // 降低 ctr 权重
+		o.weights[1] *= 1.05 // 提高 cvr 权重
+	} else {
+		o.weights[0] *= 1.05
+		o.weights[1] *= 0.95
+	}
+}
+
+func main() {
+	opt := &TikTokOptimizer{bidType: BidTypeOCPM, targetCPA: 50.0, learningRate: 0.01, weights: []float64{0.5, 0.5}}
+	fmt.Printf("Type: %s, Target CPA: $%.2f\n", opt.bidType, opt.targetCPA)
+}

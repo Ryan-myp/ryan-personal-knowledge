@@ -537,3 +537,109 @@ Amazon 广告有三种竞价方式，分别是什么？
 
 *今天花 90 分钟：系统掌握 Amazon Ads 平台功能体系*
 *答不出自测题？回去重读对应章节。*
+
+---
+
+### Amazon Ads 功能体系的 Go 实现
+
+```go
+package amazonads
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+type AdType string
+const (
+	AdTypeSponsoredProducts AdType = "SPONSORED_PRODUCTS"
+	AdTypeSponsoredBrands AdType = "SPONSORED_BRANDS"
+	AdTypeSponsoredDisplay AdType = "SPONSORED_DISPLAY"
+)
+
+type CampaignObjective string
+const (
+	ObjectiveSales CampaignObjective = "SALES"
+	ObjectiveTraffic CampaignObjective = "TRAFFIC"
+	ObjectiveBrandAwareness CampaignObjective = "BRAND_AWARENESS"
+)
+
+type SponsoredProduct struct {
+	ProductID    string
+	Asin         string
+	Bid          float64
+	State        string
+	CampaignID   string
+	Targeting    string
+}
+
+type SponsoredBrand struct {
+	BrandName  string
+	Headline   string
+	Products   []string
+	Bid        float64
+	CampaignID string
+}
+
+type AdGroup struct {
+	ID     string
+	Name   string
+	Type   AdType
+	Status string
+	Ads    []interface{}
+}
+
+type AmazonAdsClient struct {
+	portfolioID string
+	mu          sync.Mutex
+	campaigns   map[string]*Campaign
+	adGroups    map[string]*AdGroup
+}
+
+func NewAmazonAdsClient(portfolioID string) *AmazonAdsClient {
+	return &AmazonAdsClient{portfolioID: portfolioID, campaigns: make(map[string]*Campaign)}
+}
+
+type Campaign struct {
+	ID          string
+	Name        string
+	Type        AdType
+	Objective   CampaignObjective
+	PortfolioID string
+	DailyBudget float64
+	Status      string
+	StartDate   time.Time
+	EndDate     time.Time
+}
+
+func (c *AmazonAdsClient) CreateCampaign(name string, adType AdType, objective CampaignObjective, budget float64) *Campaign {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	cp := &Campaign{
+		ID: fmt.Sprintf("camp_%d", len(c.campaigns)),
+		Name: name, Type: adType, Objective: objective,
+		PortfolioID: c.portfolioID, DailyBudget: budget, Status: "ENABLED",
+	}
+	c.campaigns[cp.ID] = cp
+	return cp
+}
+
+func (c *AmazonAdsClient) GetCampaigns() []*Campaign {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	result := make([]*Campaign, 0, len(c.campaigns))
+	for _, cp := range c.campaigns {
+		result = append(result, cp)
+	}
+	return result
+}
+
+func main() {
+	client := NewAmazonAdsClient("portfolio_123")
+	cp := client.CreateCampaign("Summer Sale", AdTypeSponsoredProducts, ObjectiveSales, 100.0)
+	fmt.Printf("Created: %s (%s)\n", cp.Name, cp.Type)
+	for _, c := range client.GetCampaigns() {
+		fmt.Printf("  %s: $%.0f/day\n", c.Name, c.DailyBudget)
+	}
+}

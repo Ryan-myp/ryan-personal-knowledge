@@ -499,3 +499,28 @@ func main() {
 	kws := extractor.Extract(text, 5)
 	fmt.Printf("Keywords: %v\n", kws)
 }
+```
+
+---
+
+## 自测题
+
+### 问题 1
+知识图谱的 BFS 最短路径算法中，visited 集合为什么在入队时就标记而不是出队时？
+
+<details>
+<summary>查看答案</summary>
+
+如果在出队时标记，同一节点可能通过不同路径多次入队，导致队列膨胀。在入队时标记可以确保每个节点只入队一次，时间复杂度 O(V+E)。
+
+</details>
+
+### 问题 2
+TF-IDF 关键词提取中，为什么需要停用词表？
+
+<details>
+<summary>查看答案</summary>
+
+停用词（the, a, is 等）出现频率极高但不携带区分性语义。不加过滤的话，它们会占据 top-N 名额。去掉停用词后，真正有区分度的关键词才能浮现。
+
+</details>

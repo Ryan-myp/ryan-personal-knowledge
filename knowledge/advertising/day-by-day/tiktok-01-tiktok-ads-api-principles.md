@@ -530,3 +530,77 @@ for data in insights:
 
 *今天花 60-90 分钟：前 5 分钟入门，40 分钟源码分析，15 分钟动手验证*
 *答不出自测题？回去重读对应章节。*
+
+---
+
+### TikTok Ads API 原理的 Go 实现
+
+```go
+package tiktokapi
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+type Platform string
+const (
+	PlatformTikTok Platform = "TIKTOK"
+	PlatformByteGMA Platform = "BYTE_GMA"
+)
+
+type Placement string
+const (
+	PlacementFeed Placement = "FEED"
+	PlacementSearch Placement = "SEARCH"
+	PlacementPostDetail Placement = "POST_DETAIL"
+	PlacementSplash Placement = "SPLASH"
+)
+
+type Campaign struct {
+	ID           string
+	Name         string
+	Platform     Platform
+	Placement    Placement
+	DailyBudget  float64
+	BidAmount    float64
+	Status       string
+	PromotionObj string
+}
+
+type Creative struct {
+	ID       string
+	Name     string
+	Type     string
+	Images   []string
+	Videos   []string
+	Headline string
+	Description string
+}
+
+type TikTokClient struct {
+	accessToken  string
+	refreshToken string
+	expiresAt    time.Time
+	mu           sync.Mutex
+}
+
+func (c *TikTokClient) GetOAuthURL(state string) string {
+	return fmt.Sprintf("https://www.tiktok.com/authorize/?client_id=xxx&state=%s", state)
+}
+
+func (c *TikTokClient) RefreshToken() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if time.Now().Before(c.expiresAt) {
+		return nil
+	}
+	return nil
+}
+
+func main() {
+	client := &TikTokClient{}
+	cp := &Campaign{Name: "TikTok Campaign", Platform: PlatformTikTok, Placement: PlacementFeed, DailyBudget: 100}
+	fmt.Printf("Campaign: %s [%s]\n", cp.Name, cp.Placement)
+}
