@@ -1,50 +1,29 @@
-# 前沿追踪 - Blogwatcher 配置报告
+---
 
-**日期**: 2025-06-05
-**分类**: 前沿追踪
-**标签**: #前沿 #blogwatcher
+## 自测题
 
-## 配置状态
+### 问题 1
+BlogWatcher 为什么用 Python 而不是 Go？
 
-### 已配置博客
+<details>
+<summary>查看答案</summary>
 
-#### ✅ 正常运行
-- **Hugging Face Blog** - RSS模式
-  - URL: https://huggingface.co/blog
-  - Feed: https://huggingface.co/blog/feed.xml
-  - 文章数: 793篇
-  - 最近文章:
-    - Nemotron 3.5 Content Safety (2026-06-04)
-    - EVA-Bench Data 2.0 (2026-06-04)
-    - Designing the hf CLI as an agent-optimized way to work with the Hub (2026-06-04)
+1. **RSS 生态**：Python 的 feedparser 是最成熟的 RSS 解析库
+2. **邮件发送**：Python 的 smtplib 简单好用
+3. **脚本性质**：BlogWatcher 是低频运行的脚本，Go 的编译启动时间反而浪费
+4. **Go 也适用**：如果要用 Go，可以用 gofeed 库替代
 
-#### ⚠️ 需要修复
-- **Anthropic Blog** - 307重定向错误
-- **OpenAI Blog** - 403禁止访问
-- **Google AI Blog** - 301重定向错误
-- **Meta AI Blog** - HTML抓取成功但0篇文章
-- **TikTok Tech Blog** - 302重定向错误
+</details>
 
-## 常用命令
+### 问题 2
+RSS 在 AI 时代还有什么价值？
 
-```bash
-# 扫描所有博客
-blogwatcher-cli scan
+<details>
+<summary>查看答案</summary>
 
-# 查看未读文章
-blogwatcher-cli articles
+1. **去中心化**：RSS 不依赖任何平台，内容所有权归用户
+2. **无算法干扰**：看到最新文章，不被推荐算法过滤
+3. **Agent 数据源**：LLM Agent 可以通过 RSS 获取最新信息
+4. **技术博客**：大多数技术博客都提供 RSS，是获取前沿知识的好渠道
 
-# 按博客筛选
-blogwatcher-cli articles --blog "Hugging Face Blog"
-
-# 标记文章已读
-blogwatcher-cli read 1
-
-# 查看已配置博客
-blogwatcher-cli blogs
-```
-
-## 后续优化
-- 需要手动修复其他博客的RSS feed URL或HTML选择器
-- 可以设置 cron job 定期自动扫描
-- 值得关注的文章可以整理到 `knowledge/前沿/insights/` 目录
+</details>
