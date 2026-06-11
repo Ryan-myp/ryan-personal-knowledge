@@ -4,6 +4,91 @@
 
 ---
 
+### RAG 优化的 Go 实现
+
+```go
+package ragopt
+
+import (
+	"fmt"
+	"strings"
+)
+
+type QueryRewriter struct {
+	stopwords map[string]bool
+}
+
+func NewQueryRewriter() *QueryRewriter {
+	sw := map[string]bool{"what": true, "is": true, "the": true, "a": true, "an": true}
+	return &QueryRewriter{stopwords: sw}
+}
+
+func (r *QueryRewriter) Rewrite(query string) []string {
+	words := strings.Fields(strings.ToLower(query))
+	var keywords []string
+	for _, w := range words {
+		if !r.stopwords[w] {
+			keywords = append(keywords, w)
+		}
+	}
+	return keywords
+}
+
+type Reranker struct {
+	promptBoost float64
+}
+
+func NewReranker(promptBoost float64) *Reranker {
+	return &Reranker{promptBoost: promptBoost}
+}
+
+type SearchResult struct {
+	DocumentID string
+	Score      float64
+	Relevance  float64
+}
+
+func (r *Reranker) Rank(results []SearchResult, query string) []SearchResult {
+	for i, res := range results {
+		relevance := res.Score
+		doc := res.DocumentID
+		for _, kw := range strings.Fields(strings.ToLower(query)) {
+			if strings.Contains(strings.ToLower(doc), kw) {
+				relevance += r.promptBoost
+			}
+		}
+		results[i].Relevance = relevance
+	}
+	for i := 0; i < len(results); i++ {
+		for j := i + 1; j < len(results); j++ {
+			if results[j].Relevance > results[i].Relevance {
+				results[i], results[j] = results[j], results[i]
+			}
+		}
+	}
+	return results
+}
+
+func main() {
+	rewriter := NewQueryRewriter()
+	kws := rewriter.Rewrite("What is the best RAG framework in 2024?")
+	fmt.Printf("Keywords: %v\n", kws)
+
+	reranker := NewReranker(0.3)
+	results := []SearchResult{
+		{DocumentID: "langchain_rag_guide", Score: 0.7},
+		{DocumentID: "llamaindex_retrieval", Score: 0.6},
+		{DocumentID: "rag_optimization_tips", Score: 0.8},
+	}
+	ranked := reranker.Rank(results, "RAG framework")
+	for _, r := range ranked {
+		fmt.Printf("  %s: %.2f\n", r.DocumentID, r.Relevance)
+	}
+}
+```
+
+---
+
 ## 自测题
 
 ### 问题 1

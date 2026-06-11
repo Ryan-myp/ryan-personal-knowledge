@@ -4,6 +4,91 @@
 
 ---
 
+### Multi-Agent 系统的 Go 实现
+
+```go
+package multiagent
+
+import (
+	"context"
+	"fmt"
+	"sync"
+)
+
+type Agent struct {
+	ID     string
+	Role   string
+	Tools  []string
+	mu     sync.Mutex
+	memory []string
+}
+
+type Message struct {
+	From      string
+	To        string
+	Content   string
+	Timestamp int64
+}
+
+type Coordinator struct {
+	agents map[string]*Agent
+	mu     sync.Mutex
+	msgLog []Message
+}
+
+func NewCoordinator() *Coordinator {
+	return &Coordinator{agents: make(map[string]*Agent), msgLog: make([]Message, 0)}
+}
+
+func (c *Coordinator) RegisterAgent(agent *Agent) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.agents[agent.ID] = agent
+}
+
+func (c *Coordinator) SendMessage(from, to, content string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	msg := Message{From: from, To: to, Content: content}
+	c.msgLog = append(c.msgLog, msg)
+
+	agent, ok := c.agents[to]
+	if ok {
+		agent.mu.Lock()
+		agent.memory = append(agent.memory, content)
+		agent.mu.Unlock()
+	}
+}
+
+func (c *Coordinator) GetAgentMemory(agentID string) []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if agent, ok := c.agents[agentID]; ok {
+		agent.mu.Lock()
+		defer agent.mu.Unlock()
+		result := make([]string, len(agent.memory))
+		copy(result, agent.memory)
+		return result
+	}
+	return nil
+}
+
+func main() {
+	coord := NewCoordinator()
+	coord.RegisterAgent(&Agent{ID: "researcher", Role: "research", Tools: []string{"search"}})
+	coord.RegisterAgent(&Agent{ID: "writer", Role: "writer", Tools: []string{"write"}})
+
+	coord.SendMessage("researcher", "writer", "Go is a compiled language")
+	coord.SendMessage("writer", "researcher", "Thanks, I'll incorporate this")
+
+	mem := coord.GetAgentMemory("writer")
+	fmt.Printf("Writer memory: %v\n", mem)
+	fmt.Printf("Total messages: %d\n", len(coord.msgLog))
+}
+```
+
+---
+
 ## 自测题
 
 ### 问题 1

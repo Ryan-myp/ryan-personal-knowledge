@@ -4,6 +4,119 @@
 
 ---
 
+### Agent 安全和可观测性的 Go 实现
+
+```go
+package observability
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+type Trace struct {
+	TraceID   string
+	SpanID    string
+	Operation string
+	Duration  time.Duration
+	Timestamp time.Time
+	Children  []*Span
+}
+
+type Span struct {
+	TraceID   string
+	SpanID    string
+	Operation string
+	Start     time.Time
+	End       time.Time
+	Labels    map[string]string
+}
+
+func (s *Span) EndSpan() {
+	s.End = time.Now()
+}
+
+type Tracer struct {
+	traces map[string]*Trace
+	spanID int
+	mu     sync.Mutex
+}
+
+func NewTracer() *Tracer {
+	return &Tracer{traces: make(map[string]*Trace), spanID: 1}
+}
+
+func (t *Tracer) StartSpan(operation string) *Span {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	id := t.spanID
+	t.spanID++
+	span := &Span{
+		TraceID:   fmt.Sprintf("trace_%d", id/100),
+		SpanID:    fmt.Sprintf("span_%d", id),
+		Operation: operation,
+		Start:     time.Now(),
+		Labels:    make(map[string]string),
+	}
+	traceID := fmt.Sprintf("trace_%d", id/100)
+	if _, ok := t.traces[traceID]; !ok {
+		t.traces[traceID] = &Trace{TraceID: traceID, Operation: operation}
+	}
+	return span
+}
+
+func (t *Tracer) GetTraces() map[string]*Trace {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	result := make(map[string]*Trace)
+	for k, v := range t.traces {
+		result[k] = v
+	}
+	return result
+}
+
+type Logger struct {
+	entries []LogEntry
+	mu      sync.Mutex
+}
+
+type LogEntry struct {
+	Timestamp time.Time
+	Level     string
+	Message   string
+}
+
+func NewLogger() *Logger { return &Logger{entries: make([]LogEntry, 0)} }
+
+func (l *Logger) Info(msg string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.entries = append(l.entries, LogEntry{time.Now(), "INFO", msg})
+}
+
+func (l *Logger) Error(msg string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.entries = append(l.entries, LogEntry{time.Now(), "ERROR", msg})
+}
+
+func main() {
+	tracer := NewTracer()
+	span := tracer.StartSpan("rag_query")
+	time.Sleep(10 * time.Millisecond)
+	span.EndSpan()
+	fmt.Printf("Span %s: %s (%v)\n", span.SpanID, span.Operation, span.End.Sub(span.Start))
+
+	logger := NewLogger()
+	logger.Info("Query processed")
+	logger.Error("Connection timeout")
+	fmt.Printf("Log entries: %d\n", len(logger.entries))
+}
+```
+
+---
+
 ## 自测题
 
 ### 问题 1

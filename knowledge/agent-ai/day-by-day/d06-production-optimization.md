@@ -4,6 +4,90 @@
 
 ---
 
+### Agent 生产优化的 Go 实现
+
+```go
+package agentprod
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+type TokenCounter struct {
+	promptTokens     int
+	completionTokens int
+	totalTokens      int
+	mu               sync.Mutex
+}
+
+func (tc *TokenCounter) RecordPrompt(n int) {
+	tc.mu.Lock()
+	defer tc.mu.Unlock()
+	tc.promptTokens += n
+	tc.totalTokens += n
+}
+
+func (tc *TokenCounter) RecordCompletion(n int) {
+	tc.mu.Lock()
+	defer tc.mu.Unlock()
+	tc.completionTokens += n
+	tc.totalTokens += n
+}
+
+func (tc *TokenCounter) Stats() (int, int, int) {
+	tc.mu.Lock()
+	defer tc.mu.Unlock()
+	return tc.promptTokens, tc.completionTokens, tc.totalTokens
+}
+
+type Cache struct {
+	items map[string]cacheEntry
+	mu    sync.RWMutex
+}
+
+type cacheEntry struct {
+	key     string
+	value   string
+	created time.Time
+	ttl     time.Duration
+}
+
+func NewCache() *Cache { return &Cache{items: make(map[string]cacheEntry)} }
+
+func (c *Cache) Get(key string) (string, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	entry, ok := c.items[key]
+	if !ok || time.Now().After(entry.created.Add(entry.ttl)) {
+		delete(c.items, key)
+		return "", false
+	}
+	return entry.value, true
+}
+
+func (c *Cache) Set(key, value string, ttl time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.items[key] = cacheEntry{key: key, value: value, created: time.Now(), ttl: ttl}
+}
+
+func main() {
+	tc := &TokenCounter{}
+	tc.RecordPrompt(100)
+	tc.RecordCompletion(50)
+	p, c, t := tc.Stats()
+	fmt.Printf("Tokens: prompt=%d, completion=%d, total=%d\n", p, c, t)
+
+	cache := NewCache()
+	cache.Set("query_1", "RAG answer", 5*time.Minute)
+	if v, ok := cache.Get("query_1"); ok { fmt.Printf("Cache hit: %s\n", v) }
+}
+```
+
+---
+
 ## 自测题
 
 ### 问题 1
