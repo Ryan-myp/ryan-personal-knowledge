@@ -649,5 +649,202 @@ for state, effect in effects.items():
 
 ---
 
-*今天花 90 分钟：深入理解数据回流和归因引擎*
+### 数据回流归因的 Go 实现
+
+```go
+// 数据回流归因: Markov Chain + 增量归因引擎 Go 实现
+package attribution
+
+import (
+	"fmt"
+	"math"
+	"sort"
+	"time"
+)
+
+// Channel 广告渠道
+type Channel struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// ChannelImpact 渠道影响值
+type ChannelImpact struct {
+	ChannelID       string  `json:"channel_id"`
+	OriginalValue   float64 `json:"original_value"`
+	RemovalValue    float64 `json:"removal_value"`
+	AttributionValue float64 `json:"attribution_value"`
+	ConversionRate  float64 `json:"conversion_rate"`
+	RemovalImpact   float64 `json:"removal_impact"`
+}
+
+// MarkovAttribution Markov 链归因引擎
+type MarkovAttribution struct {
+	channels    map[string]*Channel
+	transitions map[string]map[string]float64 // from -> to -> count
+	conversions map[string]float64             // channel -> conversion count
+}
+
+// NewMarkovAttribution 创建归因引擎
+func NewMarkovAttribution() *MarkovAttribution {
+	return &MarkovAttribution{
+		channels:    make(map[string]*Channel),
+		transitions: make(map[string]map[string]float64),
+		conversions: make(map[string]float64),
+	}
+}
+
+// AddChannel 注册渠道
+func (m *MarkovAttribution) AddChannel(ch *Channel) {
+	m.channels[ch.ID] = ch
+}
+
+// AddPath 添加转化路径
+func (m *MarkovAttribution) AddPath(path []string, converted bool) {
+	for i := 0; i < len(path); i++ {
+		from := path[i]
+		if m.transitions[from] == nil {
+			m.transitions[from] = make(map[string]float64)
+		}
+		if i+1 < len(path) {
+			to := path[i+1]
+			m.transitions[from][to]++
+		}
+	}
+	if converted {
+		if last := path[len(path)-1]; last != "" {
+			m.conversions[last]++
+		}
+	}
+}
+
+// ComputeImpact 计算各渠道影响值
+func (m *MarkovAttribution) ComputeImpact() []*ChannelImpact {
+	impacts := make([]*ChannelImpact, 0, len(m.channels))
+	totalConversions := 0.0
+	for _, c := range m.conversions {
+		totalConversions += c
+	}
+
+	for chID := range m.channels {
+		originalCR := m.calcConversionRate()
+		removalCR := m.calcConversionRateWithChannel(chID, true)
+
+		attribution := 0.0
+		if totalConversions > 0 {
+			attribution = (originalCR - removalCR) / totalConversions * totalConversions
+		}
+		impact := originalCR - removalCR
+
+		impacts = append(impacts, &ChannelImpact{
+			ChannelID:        chID,
+			OriginalValue:    originalCR,
+			RemovalValue:     removalCR,
+			AttributionValue: attribution,
+			ConversionRate:   originalCR,
+			RemovalImpact:    impact,
+		})
+	}
+
+	sort.Slice(impacts, func(i, j int) bool {
+		return impacts[i].AttributionValue > impacts[j].AttributionValue
+	})
+	return impacts
+}
+
+func (m *MarkovAttribution) calcConversionRate() float64 {
+	totalTransitions := 0.0
+	for _, targets := range m.transitions {
+		for _, count := range targets {
+			totalTransitions += count
+		}
+	}
+	if totalTransitions == 0 {
+		return 0
+	}
+	return float64(len(m.conversions)) / totalTransitions
+}
+
+func (m *MarkovAttribution) calcConversionRateWithChannel(removeCh string, remove bool) float64 {
+	// 简化计算: 移除该渠道的转移概率
+	// 实际实现需要做马尔可夫链求解
+	baseRate := m.calcConversionRate()
+	if !remove {
+		return baseRate
+	}
+	return baseRate * 0.8 // 简化: 移除一个渠道降低 20% 转化率
+}
+
+// IncrementalROI 增量 ROI 计算
+type IncrementalROI struct {
+	GroupControl   *TestGroup
+	Treatment      *TestGroup
+	IncrementalConv float64
+	IncrementalROI  float64
+}
+
+type TestGroup struct {
+	Users    int
+	Convs    int
+	Spend    float64
+	Revenue  float64
+}
+
+// CalculateIncrementalROI 计算增量 ROI
+func CalculateIncrementalROI(control, treatment *TestGroup) *IncrementalROI {
+	controlCR := float64(control.Convs) / float64(control.Users)
+	treatmentCR := float64(treatment.Convs) / float64(treatment.Users)
+	incrementalCR := treatmentCR - controlCR
+	incrementalConv := incrementalCR * float64(treatment.Users)
+	incrementalCost := treatment.Spend - control.Spend
+	incrementalRev := treatment.Revenue - control.Revenue
+	incrementalROI := 0.0
+	if incrementalCost > 0 {
+		incrementalROI = incrementalRev / incrementalCost - 1
+	}
+
+	return &IncrementalROI{
+		GroupControl:    control,
+		Treatment:       treatment,
+		IncrementalConv: incrementalConv,
+		IncrementalROI:  incrementalROI,
+	}
+}
+
+// ==================== 使用示例 ====================
+
+func main() {
+	// 1. Markov 归因
+	attribution := NewMarkovAttribution()
+	attribution.AddChannel(&Channel{ID: "tiktok", Name: "TikTok"})
+	attribution.AddChannel(&Channel{ID: "meta", Name: "Meta"})
+	attribution.AddChannel(&Channel{ID: "google", Name: "Google"})
+
+	// 添加转化路径
+	paths := [][]string{
+		{"tiktok", "meta", "google", ""},
+		{"meta", "google", ""},
+		{"google", ""},
+		{"tiktok", "google", ""},
+		{"meta", ""},
+	}
+	for _, p := range paths {
+		attribution.AddPath(p, true)
+	}
+
+	impacts := attribution.ComputeImpact()
+	fmt.Println("=== Markov 归因结果 ===")
+	for _, imp := range impacts {
+		fmt.Printf("  %s: 归因 %.2f, 转化率 %.4f\n",
+			imp.ChannelID, imp.AttributionValue, imp.ConversionRate)
+	}
+
+	// 2. 增量 ROI
+	control := &TestGroup{Users: 10000, Convs: 50, Spend: 5000, Revenue: 15000}
+	treatment := &TestGroup{Users: 10000, Convs: 80, Spend: 8000, Revenue: 24000}
+	roi := CalculateIncrementalROI(control, treatment)
+	fmt.Printf("\n=== 增量 ROI ===\n")
+	fmt.Printf("  增量转化: %.0f, 增量 ROI: %.2f\n",
+		roi.IncrementalConv, roi.IncrementalROI)
+}
 *答不出自测题？回去重读对应章节。*

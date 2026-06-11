@@ -670,5 +670,292 @@ Amazon 广告 API 的速率限制是多少？
 
 ---
 
-*今天花 90 分钟：深入掌握 Amazon Advertising API 高级用法*
-*答不出自测题？回去重读对应章节。*
+### Amazon Ads API 的 Go 实现
+
+```go
+// Amazon Ads API: Go 生产级客户端实现
+// 覆盖 OAuth2、SP/MC API、广告系列管理、报告下载
+package amazonads
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"time"
+)
+
+// ==================== Amazon 认证 ====================
+
+// AmazonClient Amazon API 客户端
+type AmazonClient struct {
+	baseURL      string
+	clientKey    string
+	clientSecret string
+	accessToken  string
+	expiresIn    int
+	expiresAt    time.Time
+	httpClient   *http.Client
+}
+
+// NewAmazonClient 创建客户端
+func NewAmazonClient(clientKey, clientSecret string) *AmazonClient {
+	return &AmazonClient{
+		baseURL:      "https://advertising.api.amazon.com",
+		clientKey:    clientKey,
+		clientSecret: clientSecret,
+		httpClient:   &http.Client{Timeout: 30 * time.Second},
+	}
+}
+
+// Authenticate OAuth2 认证
+func (c *AmazonClient) Authenticate() error {
+	reqBody := map[string]string{
+		"grant_type":    "client_credentials",
+		"client_id":     c.clientKey,
+		"client_secret": c.clientSecret,
+	}
+
+	req, _ := json.Marshal(reqBody)
+	resp, err := c.httpClient.Post(
+		"https://api.amazon.com/auth/o2/token",
+		"application/json",
+		bytes.NewReader(req),
+	)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	c.accessToken, _ = result["access_token"].(string)
+	c.expiresIn = int(result["expires_in"].(float64))
+	c.expiresAt = time.Now().Add(time.Duration(c.expiresIn) * time.Second)
+	return nil
+}
+
+func (c *AmazonClient) hasToken() bool {
+	return c.accessToken != "" && time.Now().Before(c.expiresAt)
+}
+
+// ==================== SP API 接口封装 ====================
+
+// Campaign Amazon 广告系列
+type Campaign struct {
+	CampaignId          string  `json:"campaignId"`
+	CampaignName        string  `json:"campaignName"`
+	CampaignType        string  `json:"campaignType"`
+	State               string  `json:"state"`
+	BudgetAmount        float64 `json:"budgetAmount"`
+	BudgetCurrencyCode  string  `json:"budgetCurrencyCode"`
+	BudgetPeriod        string  `json:"budgetPeriod"`
+	TargetingReturnType string  `json:"targetingReturnType"`
+}
+
+// AdGroup 广告组
+type AdGroup struct {
+	AdGroupId   string  `json:"adGroupId"`
+	AdGroupName string  `json:"adGroupName"`
+	Bid         float64 `json:"bid"`
+	State       string  `json:"state"`
+}
+
+// Ad 广告
+type Ad struct {
+	AdId       string `json:"adId"`
+	Name       string `json:"name"`
+	AdGroupId  string `json:"adGroupId"`
+	CampaignId string `json:"campaignId"`
+}
+
+// ==================== 广告系列 CRUD ====================
+
+// CreateCampaign 创建广告系列
+func (c *AmazonClient) CreateCampaign(campaign *Campaign) (*Campaign, error) {
+	if !c.hasToken() {
+		return nil, fmt.Errorf("not authenticated")
+	}
+
+	body, _ := json.Marshal(campaign)
+	req, _ := http.NewRequest("POST",
+		c.baseURL+"/sp/campaigns",
+		bytes.NewReader(body),
+	)
+	req.Header.Set("Authorization", "Bearer "+c.accessToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result Campaign
+	json.NewDecoder(resp.Body).Decode(&result)
+	return &result, nil
+}
+
+// GetCampaign 获取广告系列
+func (c *AmazonClient) GetCampaign(campaignId string) (*Campaign, error) {
+	if !c.hasToken() {
+		return nil, fmt.Errorf("not authenticated")
+	}
+
+	req, _ := http.NewRequest("GET",
+		c.baseURL+"/sp/campaigns/"+campaignId,
+		nil,
+	)
+	req.Header.Set("Authorization", "Bearer "+c.accessToken)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result Campaign
+	json.NewDecoder(resp.Body).Decode(&result)
+	return &result, nil
+}
+
+// ==================== 广告组管理 ====================
+
+// CreateAdGroup 创建广告组
+func (c *AmazonClient) CreateAdGroup(campaignId string, adGroup *AdGroup) (*AdGroup, error) {
+	if !c.hasToken() {
+		return nil, fmt.Errorf("not authenticated")
+	}
+
+	body, _ := json.Marshal(adGroup)
+	req, _ := http.NewRequest("POST",
+		c.baseURL+"/sp/campaigns/"+campaignId+"/adgroups",
+		bytes.NewReader(body),
+	)
+	req.Header.Set("Authorization", "Bearer "+c.accessToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result AdGroup
+	json.NewDecoder(resp.Body).Decode(&result)
+	return &result, nil
+}
+
+// UpdateBid 更新出价
+func (c *AmazonClient) UpdateBid(adGroupId string, newBid float64) error {
+	if !c.hasToken() {
+		return fmt.Errorf("not authenticated")
+	}
+
+	type bidUpdate struct {
+		Bid float64 `json:"bid"`
+	}
+	body, _ := json.Marshal(bidUpdate{Bid: newBid})
+
+	req, _ := http.NewRequest("PUT",
+		c.baseURL+"/sp/adgroups/"+adGroupId+"/bids",
+		bytes.NewReader(body),
+	)
+	req.Header.Set("Authorization", "Bearer "+c.accessToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
+}
+
+// ==================== 报告管理 ====================
+
+// ReportResponse 报告响应
+type ReportResponse struct {
+	ReportId          string `json:"reportId"`
+	ReportType        string `json:"reportType"`
+	State             string `json:"state"`
+	DownloadURL       string `json:"downloadUrl"`
+	ErrorDescription  string `json:"errorDescription"`
+}
+
+// GenerateReport 生成广告报告
+func (c *AmazonClient) GenerateReport(reportType string, params map[string]string) (string, error) {
+	if !c.hasToken() {
+		return "", fmt.Errorf("not authenticated")
+	}
+
+	reportSpec := map[string]interface{}{
+		"reportType":   reportType,
+		"dateRange":    params["dateRange"],
+		"dimensions":   params["dimensions"],
+		"metrics":      params["metrics"],
+	}
+
+	body, _ := json.Marshal(reportSpec)
+	req, _ := http.NewRequest("POST",
+		c.baseURL+"/reports",
+		bytes.NewReader(body),
+	)
+	req.Header.Set("Authorization", "Bearer "+c.accessToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var result ReportResponse
+	json.NewDecoder(resp.Body).Decode(&result)
+	return result.ReportId, nil
+}
+
+// DownloadReport 下载报告
+func (c *AmazonClient) DownloadReport(reportId string) ([]byte, error) {
+	if !c.hasToken() {
+		return nil, fmt.Errorf("not authenticated")
+	}
+
+	req, _ := http.NewRequest("GET",
+		c.baseURL+"/reports/"+reportId+"/download",
+		nil,
+	)
+	req.Header.Set("Authorization", "Bearer "+c.accessToken)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	return io.ReadAll(resp.Body)
+}
+
+// ==================== 使用示例 ====================
+
+func main() {
+	client := NewAmazonClient("your_key", "your_secret")
+
+	// 认证
+	// client.Authenticate()
+
+	// 创建广告系列
+	// camp := &Campaign{
+	// 	CampaignName: "Summer Sale",
+	// 	CampaignType: "sponsoredProducts",
+	// 	BudgetAmount: 100.0,
+	// 	BudgetPeriod: "DAILY",
+	// }
+	// created, _ := client.CreateCampaign(camp)
+	// fmt.Printf("Created campaign: %s\n", created.CampaignId)
+
+	// 更新出价
+	// client.UpdateBid("ag_123", 1.50)
+}

@@ -672,5 +672,432 @@ Acquisition → Activation → Retention → Revenue → Referral
 
 ---
 
-*今天花 90 分钟：深入掌握广告数据管道与增长黑客*
-*答不出自测题？回去重读对应章节。*
+### 广告数据管道的 Go 实现
+
+```go
+// 广告数据管道: 从数据采集到归因的 Go 实现
+// 覆盖事件采集、流处理、特征管道、归因计算
+package datapipeline
+
+import (
+	"encoding/json"
+	"fmt"
+	"sync"
+	"time"
+)
+
+// ==================== 事件模型 ====================
+
+// EventType 事件类型
+type EventType string
+
+const (
+	EventImpression    EventType = "impression"
+	EventClick         EventType = "click"
+	EventConversion    EventType = "conversion"
+	EventViewContent   EventType = "view_content"
+	EventAddToCart     EventType = "add_to_cart"
+	EventPurchase      EventType = "purchase"
+	EventEngageAd      EventType = "engage_ad"
+)
+
+// AdEvent 广告事件
+type AdEvent struct {
+	ID          string    `json:"event_id"`
+	Type        EventType `json:"event_type"`
+	Timestamp   time.Time `json:"timestamp"`
+	UserID      string    `json:"user_id"`
+	CampaignID  string    `json:"campaign_id"`
+	AdGroupID   string    `json:"ad_group_id"`
+	AdID        string    `json:"ad_id"`
+	CreativeID  string    `json:"creative_id"`
+	Platform    string    `json:"platform"`
+	IP          string    `json:"ip"`
+	UserAgent   string    `json:"user_agent"`
+	DeviceType  string    `json:"device_type"`
+	Location    string    `json:"location"`
+	Value       float64   `json:"value"`
+	Currency    string    `json:"currency"`
+	ConversionID string   `json:"conversion_id"`
+	Extras      map[string]string `json:"extras,omitempty"`
+}
+
+// ==================== 事件采集 ====================
+
+// EventCollector 事件采集器 — 支持批量上报 + 本地缓存
+type EventCollector struct {
+	batchSize  int
+	buffer     []AdEvent
+	flushCh    chan []AdEvent
+	mu         sync.Mutex
+	processed  int
+	dropped    int
+}
+
+// NewEventCollector 创建采集器
+func NewEventCollector(batchSize int) *EventCollector {
+	if batchSize == 0 {
+		batchSize = 100
+	}
+	c := &EventCollector{
+		batchSize: batchSize,
+		buffer:    make([]AdEvent, 0, batchSize),
+		flushCh:   make(chan []AdEvent, 10),
+	}
+	go c.flushLoop()
+	return c
+}
+
+// Collect 收集一个事件
+func (c *EventCollector) Collect(event AdEvent) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.buffer = append(c.buffer, event)
+	c.processed++
+
+	if len(c.buffer) >= c.batchSize {
+		batch := make([]AdEvent, len(c.buffer))
+		copy(batch, c.buffer)
+		c.buffer = c.buffer[:0]
+		c.flushCh <- batch
+	}
+	return nil
+}
+
+// Flush 强制刷新缓冲区
+func (c *EventCollector) Flush() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if len(c.buffer) == 0 {
+		return
+	}
+	batch := make([]AdEvent, len(c.buffer))
+	copy(batch, c.buffer)
+	c.buffer = c.buffer[:0]
+	c.flushCh <- batch
+}
+
+// flushLoop 后台刷新循环
+func (c *EventCollector) flushLoop() {
+	for batch := range c.flushCh {
+		// 发送到 Kafka / HTTP API
+		c.sendToPipe(batch)
+	}
+}
+
+// sendToPipe 发送到管道
+func (c *EventCollector) sendToPipe(batch []AdEvent) {
+	for _, e := range batch {
+		fmt.Printf("[pipe] %s: %s by %s (%.2f)\n",
+			e.Type, e.CampaignID, e.UserID, e.Value)
+	}
+}
+
+// ==================== 实时特征计算 ====================
+
+// FeatureStore 实时特征存储
+type FeatureStore struct {
+	userFeatures map[string]*UserFeatures
+	campaignFeatures map[string]*CampaignFeatures
+	windowSize time.Duration
+	mu         sync.RWMutex
+}
+
+type UserFeatures struct {
+	UserID           string    `json:"user_id"`
+	LastClickTime    time.Time `json:"last_click_time"`
+	Clicks24h        int       `json:"clicks_24h"`
+	Conversions24h   int       `json:"conversions_24h"`
+	Spend24h         float64   `json:"spend_24h"`
+	AvgOrderValue    float64   `json:"avg_order_value"`
+	DeviceType       string    `json:"device_type"`
+	TopPlatform      string    `json:"top_platform"`
+}
+
+type CampaignFeatures struct {
+	CampaignID      string    `json:"campaign_id"`
+	LastImpression  time.Time `json:"last_impression"`
+	Impressions24h  int       `json:"impressions_24h"`
+	Clicks24h       int       `json:"clicks_24h"`
+	Conversions24h  int       `json:"conversions_24h"`
+	Spend24h        float64   `json:"spend_24h"`
+	CTR             float64   `json:"ctr"`
+	CPA             float64   `json:"cpa"`
+}
+
+// NewFeatureStore 创建特征存储
+func NewFeatureStore() *FeatureStore {
+	return &FeatureStore{
+		userFeatures:     make(map[string]*UserFeatures),
+		campaignFeatures: make(map[string]*CampaignFeatures),
+		windowSize:       24 * time.Hour,
+	}
+}
+
+// Update 更新特征
+func (f *FeatureStore) Update(event AdEvent) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	now := time.Now()
+	windowStart := now.Add(-f.windowSize)
+
+	// 更新用户特征
+	if event.UserID != "" {
+		uf, ok := f.userFeatures[event.UserID]
+		if !ok {
+			uf = &UserFeatures{UserID: event.UserID}
+			f.userFeatures[event.UserID] = uf
+		}
+		uf.LastClickTime = now
+
+		switch event.Type {
+		case EventClick:
+			uf.Clicks24h++
+		case EventConversion, EventPurchase:
+			uf.Conversions24h++
+			if uf.AvgOrderValue == 0 {
+				uf.AvgOrderValue = event.Value
+			} else {
+				uf.AvgOrderValue = uf.AvgOrderValue*0.9 + event.Value*0.1
+			}
+		}
+		uf.Spend24h += event.Value
+		uf.DeviceType = event.DeviceType
+	}
+
+	// 更新广告系列特征
+	if event.CampaignID != "" {
+		cf, ok := f.campaignFeatures[event.CampaignID]
+		if !ok {
+			cf = &CampaignFeatures{CampaignID: event.CampaignID}
+			f.campaignFeatures[event.CampaignID] = cf
+		}
+		cf.LastImpression = now
+
+		switch event.Type {
+		case EventImpression:
+			cf.Impressions24h++
+		case EventClick:
+			cf.Clicks24h++
+		case EventConversion, EventPurchase:
+			cf.Conversions24h++
+			cf.CPA = cf.Spend24h / float64(cf.Conversions24h)
+		}
+		cf.Spend24h += event.Value
+		cf.CTR = float64(cf.Clicks24h) / float64(cf.Impressions24h)
+	}
+}
+
+// GetUserFeatures 获取用户特征
+func (f *FeatureStore) GetUserFeatures(userID string) *UserFeatures {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.userFeatures[userID]
+}
+
+// ==================== 增量归因 ====================
+
+// AttributionModel 归因模型
+type AttributionModel string
+
+const (
+	LastClick    AttributionModel = "LAST_CLICK"
+	FirstClick   AttributionModel = "FIRST_CLICK"
+	Linear       AttributionModel = "LINEAR"
+	TimeDecay    AttributionModel = "TIME_DECAY"
+ PositionBased AttributionModel = "POSITION_BASED"
+)
+
+// ConversionPath 转化路径
+type ConversionPath struct {
+	ConversionID string
+	UserID       string
+	Events       []AdEvent
+	Value        float64
+}
+
+// IncrementalAttribution 增量归因引擎
+type IncrementalAttribution struct {
+	model  AttributionModel
+	window time.Duration
+}
+
+// NewIncrementalAttribution 创建归因引擎
+func NewIncrementalAttribution(model AttributionModel, window time.Duration) *IncrementalAttribution {
+	if window == 0 {
+		window = 7 * 24 * time.Hour // 7 天归因窗口
+	}
+	return &IncrementalAttribution{
+		model:  model,
+		window: window,
+	}
+}
+
+// Attribute 对转化路径进行归因
+func (a *IncrementalAttribution) Attribute(path *ConversionPath) map[string]float64 {
+	credits := make(map[string]float64)
+
+	switch a.model {
+	case LastClick:
+		// 最后点击归因: 100% 给最后一个点击
+		lastClick := a.lastEvent(path, EventClick)
+		if lastClick != nil {
+			credits[lastClick.AdID] = 1.0
+		}
+
+	case FirstClick:
+		// 首次点击归因
+		firstClick := a.firstEvent(path, EventClick)
+		if firstClick != nil {
+			credits[firstClick.AdID] = 1.0
+		}
+
+	case Linear:
+		// 线性归因: 所有点击平分
+		clicks := a.clickEvents(path)
+		if len(clicks) > 0 {
+			for _, e := range clicks {
+				credits[e.AdID] += 1.0 / float64(len(clicks))
+			}
+		}
+
+	case TimeDecay:
+		// 时间衰减: 越接近转化的点击权重越高
+		clicks := a.clickEvents(path)
+		if len(clicks) > 0 {
+			totalWeight := 0.0
+			for i := range clicks {
+				t := clicks[i].Timestamp
+				daysToConversion := path.Events[len(path.Events)-1].Sub(t).Hours() / 24
+				weight := math.Exp(-0.5 * daysToConversion)
+				clicks[i].extraWeight = weight
+				totalWeight += weight
+			}
+			for _, e := range clicks {
+				credits[e.AdID] += e.extraWeight / totalWeight
+			}
+		}
+
+	case PositionBased:
+		// 位置归因: 首 40% + 末 40% + 中间平分
+		clicks := a.clickEvents(path)
+		if len(clicks) > 0 {
+			if len(clicks) == 1 {
+				credits[clicks[0].AdID] = 1.0
+			} else {
+				credits[clicks[0].AdID] = 0.4
+				credits[clicks[len(clicks)-1].AdID] = 0.4
+				if len(clicks) > 2 {
+					remaining := 0.2 / float64(len(clicks)-2)
+					for i := 1; i < len(clicks)-1; i++ {
+						credits[clicks[i].AdID] += remaining
+					}
+				}
+			}
+		}
+	}
+
+	return credits
+}
+
+// ==================== 归因工具函数 ====================
+
+func (a *IncrementalAttribution) clickEvents(path *ConversionPath) []AdEvent {
+	var clicks []AdEvent
+	for _, e := range path.Events {
+		if e.Type == EventClick {
+			clicks = append(clicks, e)
+		}
+	}
+	return clicks
+}
+
+func (a *IncrementalAttribution) lastEvent(path *ConversionPath, typ EventType) *AdEvent {
+	for i := len(path.Events) - 1; i >= 0; i-- {
+		if path.Events[i].Type == typ {
+			return &path.Events[i]
+		}
+	}
+	return nil
+}
+
+func (a *IncrementalAttribution) firstEvent(path *ConversionPath, typ EventType) *AdEvent {
+	for i := range path.Events {
+		if path.Events[i].Type == typ {
+			return &path.Events[i]
+		}
+	}
+	return nil
+}
+
+// ==================== 使用示例 ====================
+
+func main() {
+	// 1. 事件采集
+	collector := NewEventCollector(100)
+	collector.Collect(AdEvent{
+		ID:         "evt_001",
+		Type:       EventImpression,
+		Timestamp:  time.Now(),
+		UserID:     "user_123",
+		CampaignID: "camp_summer",
+		AdID:       "ad_456",
+		Platform:   "tiktok",
+	})
+
+	// 2. 特征更新
+	store := NewFeatureStore()
+	store.Update(AdEvent{
+		Type:       EventClick,
+		UserID:     "user_123",
+		CampaignID: "camp_summer",
+		AdID:       "ad_456",
+		DeviceType: "mobile",
+	})
+	store.Update(AdEvent{
+		Type:       EventPurchase,
+		UserID:     "user_123",
+		Value:      99.99,
+		CampaignID: "camp_summer",
+		AdID:       "ad_456",
+	})
+	uf := store.GetUserFeatures("user_123")
+	if uf != nil {
+		fmt.Printf("User features: clicks=%d, conversions=%d, spend=%.2f\n",
+			uf.Clicks24h, uf.Conversions24h, uf.Spend24h)
+	}
+
+	// 3. 归因计算
+	path := &ConversionPath{
+		ConversionID: "conv_001",
+		UserID:       "user_123",
+		Events: []AdEvent{
+			{ID: "e1", Type: EventImpression, AdID: "ad_a", Timestamp: time.Now().Add(-7 * 24 * time.Hour)},
+			{ID: "e2", Type: EventClick, AdID: "ad_a", Timestamp: time.Now().Add(-6 * 24 * time.Hour)},
+			{ID: "e3", Type: EventImpression, AdID: "ad_b", Timestamp: time.Now().Add(-4 * 24 * time.Hour)},
+			{ID: "e4", Type: EventClick, AdID: "ad_b", Timestamp: time.Now().Add(-3 * 24 * time.Hour)},
+			{ID: "e5", Type: EventImpression, AdID: "ad_c", Timestamp: time.Now().Add(-1 * 24 * time.Hour)},
+			{ID: "e6", Type: EventClick, AdID: "ad_c", Timestamp: time.Now().Add(-2 * time.Hour)},
+			{ID: "e7", Type: EventPurchase, AdID: "ad_c", Value: 150.0, Timestamp: time.Now()},
+		},
+		Value: 150.0,
+	}
+
+	// Last Click
+	lastClick := NewIncrementalAttribution(LastClick, 0)
+	credits := lastClick.Attribute(path)
+	fmt.Printf("Last Click: %v\n", credits)
+
+	// Linear
+	linear := NewIncrementalAttribution(Linear, 0)
+	credits = linear.Attribute(path)
+	fmt.Printf("Linear: %v\n", credits)
+
+	// Position Based
+	posBased := NewIncrementalAttribution(PositionBased, 0)
+	credits = posBased.Attribute(path)
+	fmt.Printf("Position Based: %v\n", credits)
+}

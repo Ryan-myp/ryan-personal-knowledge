@@ -794,3 +794,130 @@ print(f"不同问题: {time.time()-start:.2f}s")
 - [ ] 分析 Agent 系统性能瓶颈
 
 **每项都做到，才算真正掌握。**
+
+---
+
+### Agent 编排的 Go 实现
+
+```go
+// Agent 多步编排: Tool Executor + 并行执行
+package agentorchestrate
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+)
+
+type Tool interface {
+	Name() string
+	Execute(ctx context.Context, input map[string]interface{}) (interface{}, error)
+}
+
+type Action struct {
+	Tool       string                 `json:"tool"`
+	Input      map[string]interface{} `json:"input"`
+	IsParallel bool                   `json:"is_parallel"`
+}
+
+type ExecutionResult struct {
+	Action *Action
+	Output interface{}
+	Error  error
+	Cost   time.Duration
+}
+
+type ToolExecutor struct {
+	tools map[string]Tool
+	mu    sync.RWMutex
+}
+
+func NewToolExecutor(tools []Tool) *ToolExecutor {
+	te := &ToolExecutor{tools: make(map[string]Tool)}
+	for _, t := range tools {
+		te.tools[t.Name()] = t
+	}
+	return te
+}
+
+func (te *ToolExecutor) Execute(ctx context.Context, action *Action) *ExecutionResult {
+	start := time.Now()
+	tool, ok := te.tools[action.Tool]
+	if !ok {
+		return &ExecutionResult{Error: fmt.Errorf("tool %s not found", action.Tool), Cost: time.Since(start)}
+	}
+	output, err := tool.Execute(ctx, action.Input)
+	return &ExecutionResult{Output: output, Error: err, Cost: time.Since(start)}
+}
+
+func (te *ToolExecutor) ExecuteParallel(ctx context.Context, actions []*Action) []*ExecutionResult {
+	var wg sync.WaitGroup
+	results := make([]*ExecutionResult, len(actions))
+	for i, action := range actions {
+		wg.Add(1)
+		go func(idx int, act *Action) {
+			defer wg.Done()
+			results[idx] = te.Execute(ctx, act)
+		}(i, action)
+	}
+	wg.Wait()
+	return results
+}
+
+type MultiStepAgent struct {
+	executor *ToolExecutor
+	maxSteps int
+	timeout  time.Duration
+	memory   []map[string]interface{}
+}
+
+func (a *MultiStepAgent) RunMultiStep(initialState map[string]interface{}, plan []Action) ([]*ExecutionResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), a.timeout)
+	defer cancel()
+
+	results := make([]*ExecutionResult, 0, len(plan))
+	state := initialState
+
+	for _, step := range plan {
+		action := &Action{Tool: step.Tool, Input: step.Input}
+		action.Input["context"] = state
+
+		result := a.executor.Execute(ctx, action)
+		results = append(results, result)
+
+		if result.Error != nil {
+			return results, fmt.Errorf("step %d (%s) failed: %w", len(results), step.Tool, result.Error)
+		}
+		if output, ok := result.Output.(map[string]interface{}); ok {
+			for k, v := range output {
+				state[k] = v
+			}
+		}
+		a.memory = append(a.memory, map[string]interface{}{
+			"step": len(results), "tool": step.Tool, "result": result.Output,
+		})
+	}
+	return results, nil
+}
+```
+
+### 问题 1
+Go 的 `ToolExecutor.ExecuteParallel` 为什么用 WaitGroup 而不是 channel 做 goroutine 同步？
+
+<details>
+<summary>查看答案</summary>
+
+WaitGroup 更适合"等所有 goroutine 完成"的场景。Channel 需要显式关闭和接收，容易忘记导致 goroutine 泄露或 panic。WaitGroup 语义更清晰：Add(1) → 启动 goroutine → Done() 在 defer 中 → Wait() 阻塞等待。
+
+</details>
+
+### 问题 2
+MultiStepAgent 的上下文状态传递为什么用 `map[string]interface{}` 而不是 struct？
+
+<details>
+<summary>查看答案</summary>
+
+动态扩展性。Agent 的工具输出格式各异，struct 需要预先定义字段。Map 可以动态添加任意 key-value，适合工具间自由传递数据。性能上 map 略慢但可接受（Agent 延迟主要在线程调用上）。
+
+</details>

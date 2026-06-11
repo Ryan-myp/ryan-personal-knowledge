@@ -671,4 +671,162 @@ async def parallel_tool_call(actions: List[AgentAction], tools: Dict[str, BaseTo
 
 ---
 
-*本文档基于 LangChain 0.1+ 源码分析*
+### Agent 源码级深度剖析 — Go 实现
+
+```go
+// Agent 源码级深度: LangChain Agent 核心逻辑 Go 实现
+// 覆盖 Action → Observation 循环、Tool 注册、Memory
+package agentdeep
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+)
+
+// Tool 工具接口
+type Tool interface {
+	Name() string
+	Description() string
+	Execute(ctx context.Context, input string) (string, error)
+}
+
+// AgentInput Agent 输入
+type AgentInput struct {
+	Query    string
+	Context  string
+	Memory   []string
+}
+
+// AgentStep Agent 单步执行结果
+type AgentStep struct {
+	Action    string
+	Input     string
+	Observation string
+}
+
+// Agent 智能体核心
+type Agent struct {
+	name    string
+	tools   map[string]Tool
+	memory  []string
+	maxSteps int
+}
+
+// NewAgent 创建 Agent
+func NewAgent(name string, tools []Tool) *Agent {
+	a := &Agent{
+		name:     name,
+		tools:    make(map[string]Tool),
+		maxSteps: 10,
+	}
+	for _, t := range tools {
+		a.tools[t.Name()] = t
+	}
+	return a
+}
+
+// Run 运行 Agent 主循环
+func (a *Agent) Run(ctx context.Context, input AgentInput) ([]AgentStep, error) {
+	steps := make([]AgentStep, 0, a.maxSteps)
+	observation := ""
+
+	for i := 0; i < a.maxSteps; i++ {
+		step := AgentStep{}
+
+		// 1. 工具调用
+		toolName := a.selectTool(input, observation)
+		tool, ok := a.tools[toolName]
+		if !ok {
+			return steps, fmt.Errorf("unknown tool: %s", toolName)
+		}
+
+		obs, err := tool.Execute(ctx, input.Query)
+		if err != nil {
+			return steps, err
+		}
+
+		step.Action = toolName
+		step.Observation = obs
+		steps = append(steps, step)
+		observation = obs
+
+		// 检查是否终止
+		if a.shouldStop(obs) {
+			break
+		}
+	}
+
+	return steps, nil
+}
+
+func (a *Agent) selectTool(input AgentInput, observation string) string {
+	// 简化: 默认第一个工具
+	for name := range a.tools {
+		return name
+	}
+	return ""
+}
+
+func (a *Agent) shouldStop(observation string) bool {
+	return len(observation) > 0 && observation[0] == 'S' // 简化终止条件
+}
+
+// MemoryStore 记忆存储
+type MemoryStore struct {
+	shortTerm []string
+	longTerm  map[string]string
+	mu        sync.RWMutex
+}
+
+func (m *MemoryStore) AddShort(text string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.shortTerm = append(m.shortTerm, text)
+	if len(m.shortTerm) > 100 {
+		m.shortTerm = m.shortTerm[1:]
+	}
+}
+
+func (m *MemoryStore) AddLong(key, value string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.longTerm[key] = value
+}
+
+func (m *MemoryStore) GetShort() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	result := make([]string, len(m.shortTerm))
+	copy(result, m.shortTerm)
+	return result
+}
+
+// ==================== 使用示例 ====================
+
+type SearchTool struct{}
+
+func (t *SearchTool) Name() string          { return "search" }
+func (t *SearchTool) Description() string   { return "Search the web" }
+func (t *SearchTool) Execute(ctx context.Context, input string) (string, error) {
+	return "Search results for: " + input, nil
+}
+
+func main() {
+	agent := NewAgent("researcher", []Tool{&SearchTool{}})
+	input := AgentInput{Query: "What is Go?", Context: "Research context"}
+	steps, err := agent.Run(context.Background(), input)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+	}
+	fmt.Printf("Steps: %d\n", len(steps))
+	for i, s := range steps {
+		fmt.Printf("  %d: %s → %s\n", i, s.Action, s.Observation[:min(50, len(s.Observation))])
+	}
+}
+
+func min(a, b int) int {
+	if a < b { return a }
+	return b
+}
