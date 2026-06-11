@@ -362,3 +362,38 @@ func (t *mockTool) Execute(ctx context.Context, input string) (string, error) {
 }
 
 *本文基于微信读书《Agent设计模式》及相关技术文档整理*
+
+---
+
+## 自测题
+
+### 问题 1
+RAG + React 结合后，LLM 在哪个阶段执行检索？为什么不是每次 Thought 都检索？
+
+<details>
+<summary>查看答案</summary>
+
+**最佳实践是在 Thought 阶段判断是否需要检索，而非每次 Action 都检索**。
+
+原因：
+1. **成本**：每次 Thought 都检索会增加 LLM API 调用和向量数据库查询
+2. **缓存**：相同查询的结果可以缓存复用
+3. **效率**：Agent 可以先用自己的知识回答，遇到知识盲区才触发检索
+4. **延迟**：检索需要时间，减少检索次数能降低端到端响应延迟
+
+</details>
+
+### 问题 2
+Go 的 `context.Context` 在 Agent 系统中为什么比直接用 `chan` 更合适？
+
+<details>
+<summary>查看答案</summary>
+
+1. **传播性**：Context 可以层层传递，chan 需要手动转发
+2. **取消机制**：`ctx.Done()` 天然支持超时和取消
+3. **Value 携带**：可以携带请求级数据（trace ID、用户信息）
+4. **结构化**：`go context` 是 Go 的官方最佳实践
+
+chan 更适合并发数据流，Context 更适合请求级生命周期管理。Agent 的 RunReact 需要的是请求级管理，所以 Context 更合适。
+
+</details>
