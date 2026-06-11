@@ -1,262 +1,4 @@
-# Agent 技术学习路线图 — 从入门到精通
-
-> 创建日期: 2026-06-09  
-> 作者: Ryan
-
 ---
-
-## 🎯 学习目标
-
-完成这个学习路径后，你应该能够：
-
-1. **理解 Agent 核心原理** — 知道 Agent 怎么工作，能画架构图
-2. **掌握 ReAct 模式** — 能实现一个完整的 Agent 循环
-3. **设计 RAG 系统** — 能搭建检索增强生成系统
-4. **优化 Agent 性能** — 能解决 Token 消耗、延迟等问题
-5. **设计多 Agent 系统** — 能设计复杂任务的协作方案
-6. **生产级部署** — 能设计安全、可观测的 Agent 系统
-
----
-
-## 📅 学习路径（7 天）
-
-```
-第 1-2 天: Agent 基础（原理 + ReAct）
-    │
-    ▼
-第 3-4 天: RAG 系统（原理 + 优化）
-    │
-    ▼
-第 5 天: 多 Agent 协作
-    │
-    ▼
-第 6-7 天: 生产级系统（优化 + 安全）
-```
-
----
-
-## 📖 每个模块的学习结构
-
-### 对于每个模块（如"Agent 核心原理"），你会学到：
-
-1. **核心概念** — 什么是 Agent？为什么需要？
-2. **架构图解** — 系统怎么组成？数据怎么流？
-3. **源码级分析** — LangChain 源码怎么实现的？
-4. **关键参数** — 每个参数什么含义？怎么调优？
-5. **常见错误** — 会遇到什么问题？怎么解决？
-6. **实战代码** — 可运行的代码示例
-7. **自测题** — 检验你是否真懂了
-
----
-
-## 🗺️ 详细学习路径
-
-### 第 1 天: Agent 核心原理
-
-**学习目标**: 理解 Agent 是什么、怎么工作
-
-**学习文件**: [d01-agent-core-principles.md](./d01-agent-core-principles.md)
-
-**学习要点**:
-1. Agent vs Chatbot 的本质区别
-2. Agent 的 4 个核心组件
-3. Agent 执行循环（思考→行动→观察→思考）
-4. ReAct 模式原理
-5. 源码级 Agent 实现
-
-**自测标准**:
-- [ ] 能给别人讲清楚 Agent 是什么
-- [ ] 能画出 Agent 执行流程图
-- [ ] 能解释为什么需要 max_steps
-- [ ] 能说出 ReAct 的完整循环
-
----
-
-### 第 2 天: ReAct 模式深度
-
-**学习目标**: 掌握 ReAct 的 Prompt 设计、Token 管理、错误处理
-
-**学习文件**: [d02-react-deep-dive.md](./d02-react-deep-dive.md)
-
-**学习要点**:
-1. ReAct 的 Prompt 设计原理
-2. Token 消耗分析与控制
-3. 错误处理机制
-4. 工具描述的重要性
-5. 历史压缩策略
-
-**自测标准**:
-- [ ] 能写出完整的 ReAct Prompt
-- [ ] 能计算一次循环的 Token 消耗
-- [ ] 能设计错误处理流程
-- [ ] 能解释为什么需要历史压缩
-
----
-
-### 第 3 天: RAG 系统原理
-
-**学习目标**: 理解 RAG 完整流程，能解释每个组件的作用
-
-**学习文件**: [d03-rag-principles.md](./d03-rag-principles.md)
-
-**学习要点**:
-1. RAG 的完整流程图
-2. 文档切片策略
-3. 向量化原理
-4. 向量数据库选择
-5. 重排序机制
-6. 上下文组装
-
-**自测标准**:
-- [ ] 能画出 RAG 完整流程图
-- [ ] 能解释为什么需要文档切片
-- [ ] 能说明向量检索的原理
-- [ ] 能设计一个完整的 RAG 系统
-
----
-
-### 第 4 天: RAG 优化策略
-
-**学习目标**: 掌握 RAG 的常见问题和优化方法
-
-**学习文件**: [d04-rag-optimization.md](./d04-rag-optimization.md)
-
-**学习要点**:
-1. 查询扩展
-2. 上下文压缩
-3. 混合检索
-4. 性能优化
-
-**自测标准**:
-- [ ] 能实现查询扩展
-- [ ] 能设计上下文压缩策略
-- [ ] 能对比向量检索和关键词检索
-- [ ] 能优化 RAG 的检索准确率
-
----
-
-### 第 5 天: 多 Agent 协作模式
-
-**学习目标**: 理解多 Agent 协作的原理和实现
-
-**学习文件**: [d05-multi-agent.md](./d05-multi-agent.md)
-
-**学习要点**:
-1. 4 种协作模式对比
-2. 源码实现
-3. 通信机制
-4. 编排引擎
-
-**自测标准**:
-- [ ] 能画出 4 种协作模式的图
-- [ ] 能解释什么时候用哪种模式
-- [ ] 能实现一个简单的多 Agent 系统
-
----
-
-### 第 6 天: 生产级 Agent 系统
-
-**学习目标**: 掌握生产环境下的 Agent 系统优化
-
-**学习文件**: [d06-production-optimization.md](./d06-production-optimization.md)
-
-**学习要点**:
-1. 缓存策略
-2. Token 管理
-3. 并行处理
-4. 性能监控
-
-**自测标准**:
-- [ ] 能设计缓存策略
-- [ ] 能实现 Token 压缩
-- [ ] 能实现并行工具调用
-- [ ] 能设计监控系统
-
----
-
-### 第 7 天: Agent 安全与可观测性
-
-**学习目标**: 掌握生产环境下的 Agent 安全设计和监控
-
-**学习文件**: [d07-security-observability.md](./d07-security-observability.md)
-
-**学习要点**:
-1. 安全性设计
-2. 输入验证
-3. 输出审核
-4. 审计日志
-5. 监控指标
-
-**自测标准**:
-- [ ] 能设计安全架构
-- [ ] 能实现输入验证
-- [ ] 能设计监控指标
-- [ ] 能写出审计日志
-
----
-
-## 📚 配套资料
-
-### 深度参考文档
-
-| 文档 | 内容 | 适用阶段 |
-|------|------|---------|
-| [agent-deep-dive.md](./agent-deep-dive.md) | LangChain 源码级分析 | 第 1-2 天学习时参考 |
-| [rag-deep-dive.md](./rag-deep-dive.md) | RAG 系统深度解析 | 第 3-4 天学习时参考 |
-| [react-deep-dive.md](./react-deep-dive.md) | ReAct 模式深度分析 | 第 1-2 天学习时参考 |
-
-### 实践项目
-
-| 项目 | 内容 | 适用阶段 |
-|------|------|---------|
-| demo01-simple-agent | 简单 Agent 实现 | 第 1 天 |
-| demo02-react-agent | ReAct Agent 实现 | 第 2 天 |
-| demo03-rag-system | RAG 系统实现 | 第 3 天 |
-| demo04-multi-agent | 多 Agent 系统 | 第 5 天 |
-
----
-
-## ✅ 学习验收标准
-
-完成 7 天后，你应该能：
-
-### 理论基础（必会）
-
-- [ ] 解释 Agent 和 Chatbot 的区别
-- [ ] 画出 Agent 执行流程图
-- [ ] 解释 ReAct 模式的完整循环
-- [ ] 解释 RAG 的完整流程
-- [ ] 解释向量检索的原理
-- [ ] 解释多 Agent 协作的 4 种模式
-
-### 实践能力（必会）
-
-- [ ] 手写一个完整的 ReAct 循环
-- [ ] 搭建一个 RAG 系统
-- [ ] 优化 RAG 的检索准确率
-- [ ] 设计一个多 Agent 协作方案
-- [ ] 实现缓存策略
-- [ ] 设计安全架构
-
-### 进阶能力（选会）
-
-- [ ] 实现 Token 压缩
-- [ ] 实现并行工具调用
-- [ ] 设计监控系统
-- [ ] 实现审计日志
-
----
-
-## 💡 学习建议
-
-1. **每天花 30-60 分钟**，不要贪多
-2. **先读文档，再动手验证**
-3. **答不出自测题就回去重读**
-4. **遇到问题先查文档，再问人**
-5. **学完一个模块，总结要点**
-
----
-
 *这份路线图由浅入深，每天有明确的学习目标和自测标准。*  
 *完成 7 天后，你对 Agent 技术的理解将达到源码级深度。*
 
@@ -293,3 +35,71 @@ RAG 是**数据层**，Agent 是**控制层**。理解 RAG 先掌握：
 这条规则强制你在"感觉懂了"之后再做一轮客观验证，避免虚假自信。
 
 </details>
+
+---
+
+### 学习路线的 Go 实现
+
+```go
+package learnroadmap
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+type Module struct {
+	Name      string
+	Topic     string
+	Completed bool
+}
+
+type ModuleTracker struct {
+	modules   []*Module
+	mu        sync.Mutex
+	startTime time.Time
+}
+
+func NewModuleTracker() *ModuleTracker {
+	return &ModuleTracker{
+		modules: []*Module{
+			{Name: "Day 1", Topic: "Agent Basics"},
+			{Name: "Day 2", Topic: "ReAct Pattern"},
+			{Name: "Day 3", Topic: "RAG Pipeline"},
+			{Name: "Day 4", Topic: "RAG Optimization"},
+			{Name: "Day 5", Topic: "Multi-Agent"},
+			{Name: "Day 6", Topic: "Production"},
+			{Name: "Day 7", Topic: "Observability"},
+		},
+		startTime: time.Now(),
+	}
+}
+
+func (t *ModuleTracker) Complete(idx int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if idx >= 0 && idx < len(t.modules) {
+		t.modules[idx].Completed = true
+	}
+}
+
+func (t *ModuleTracker) Status() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	done := 0
+	var remaining []string
+	for _, m := range t.modules {
+		if m.Completed { done++ } else { remaining = append(remaining, m.Topic) }
+	}
+	days := time.Since(t.startTime).Hours() / 24
+	return fmt.Sprintf("%d/7 done (%.1f days), remaining: %v", done, days, remaining)
+}
+
+func main() {
+	tracker := NewModuleTracker()
+	tracker.Complete(0)
+	tracker.Complete(1)
+	fmt.Printf("Status: %s\n", tracker.Status())
+}
+```
