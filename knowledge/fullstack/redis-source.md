@@ -1,102 +1,3 @@
-//    active-defrag-threshold-upper 100
-//    active-defrag-cycle-min 5
-//    active-defrag-cycle-max 25
-```
-
----
-
-### Redis 的 Go 实现
-
-```go
-package redis
-
-import (
-	"fmt"
-	"sync"
-	"time"
-)
-
-type KVStore struct {
-	data    map[string]string
-	expires map[string]time.Time
-	mu      sync.RWMutex
-}
-
-func NewKVStore() *KVStore {
-	return &KVStore{data: make(map[string]string)}
-}
-
-func (s *KVStore) Set(key, value string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.data[key] = value
-}
-
-func (s *KVStore) Get(key string) (string, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if exp, ok := s.expires[key]; ok && time.Now().After(exp) {
-		delete(s.data, key)
-		delete(s.expires, key)
-		return "", false
-	}
-	v, ok := s.data[key]
-	return v, ok
-}
-
-func (s *KVStore) SetEx(key, value string, ttl time.Duration) {
-	s.Set(key, value)
-	s.expires[key] = time.Now().Add(ttl)
-}
-
-type PubSub struct {
-	subscribers map[string][]chan string
-	mu          sync.Mutex
-}
-
-func NewPubSub() *PubSub { return &PubSub{subscribers: make(map[string][]chan string)} }
-
-func (ps *PubSub) Subscribe(channel string) chan string {
-	ch := make(chan string, 100)
-	ps.mu.Lock()
-	ps.subscribers[channel] = append(ps.subscribers[channel], ch)
-	ps.mu.Unlock()
-	return ch
-}
-
-func (ps *PubSub) Publish(channel, msg string) {
-	ps.mu.Lock()
-	for _, ch := range ps.subscribers[channel] {
-		select {
-		case ch <- msg:
-		default:
-		}
-	}
-	ps.mu.Unlock()
-}
-
-type ClusterNode struct {
-	ID       string
-	Addr     string
-	Role     string
-	Slots    []int
-	PingTime time.Duration
-}
-
-type Cluster struct {
-	nodes []*ClusterNode
-	mu    sync.RWMutex
-}
-
-func (c *Cluster) AddNode(n *ClusterNode) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.nodes = append(c.nodes, n)
-}
-
-func main() {
-	store := NewKVStore()
-	store.Set("name", "ryan")
 	store.SetEx("session", "abc123", 30*time.Minute)
 	if v, ok := store.Get("name"); ok { fmt.Printf("name=%s\n", v) }
 
@@ -105,4 +6,33 @@ func main() {
 	ps.Publish("news", "Hello")
 	fmt.Printf("Received: %s\n", <-ch)
 }
-```
+
+---
+
+## 自测题
+
+### 问题 1
+Redis 的 RDB 和 AOF 持久化各有什么优缺点？
+
+<details>
+<summary>查看答案</summary>
+
+1. **RDB**: 定时快照，恢复快，数据可能丢失（最后一次快照到崩溃）
+2. **AOF**: 每命令追加，数据更安全，文件更大，恢复更慢
+3. **混合持久化**: RDB 快照 + AOF 增量，兼顾速度和安全性
+4. **实际生产**: 推荐 AOF+混合持久化，RDB 仅做冷备
+
+</details>
+
+### 问题 2
+Redis 的过期策略为什么用惰性删除+定期删除？
+
+<details>
+<summary>查看答案</summary>
+
+1. **惰性删除**: 访问键时检查过期，延迟释放内存，但可能大量过期键堆积
+2. **定期删除**: 周期性抽查 key space，逐步清理过期键
+3. **组合策略**: 惰性删除保证实时性，定期删除防止堆积
+4. **内存淘汰**: 如果内存满了，触发 LRU/LFU 淘汰策略
+
+</details>
