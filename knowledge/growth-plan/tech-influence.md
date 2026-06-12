@@ -497,4 +497,90 @@ SEO:
 
 ---
 
-*本文档基于技术影响力最佳实践整理。影响力是持续投入的结果, 从写第一篇博客开始。*
+## 自测题
+
+### 问题 1
+Go 中如何实现一个高性能的并发博客统计系统？
+
+<details>
+<summary>查看答案</summary>
+
+1. **并发安全**：使用 sync.RWMutex 保护统计计数器
+2. **异步写入**：使用 goroutine + channel 异步写入数据库
+3. **示例**：
+```go
+type StatsCollector struct {
+    mu       sync.RWMutex
+    counts   map[string]int
+    updateCh chan UpdateEvent
+}
+
+func (sc *StatsCollector) RecordPageView(article string) {
+    sc.mu.Lock()
+    sc.counts[article]++
+    sc.mu.Unlock()
+    
+    sc.updateCh <- UpdateEvent{Article: article, Views: sc.counts[article]}
+}
+
+func (sc *StatsCollector) Run() {
+    for event := range sc.updateCh {
+        // 异步写入数据库
+        db.Insert(event.Article, event.Views)
+    }
+}
+```
+4. **注意事项**：避免频繁数据库写入，使用批量写入
+5. **监控**：使用 Prometheus 暴露统计数据
+
+</details>
+
+### 问题 2
+技术分享中如何处理 Q&A 环节的难题？
+
+<details>
+<summary>查看答案</summary>
+
+1. **诚实面对**：不知道就说不知道，不要硬撑
+2. **记录问题**：记下问题，会后调查再回答
+3. **引导讨论**：将问题引导到团队讨论
+4. **提供资源**：提供相关链接、文档、论文
+5. **后续跟进**：通过邮件、博客、社交媒体回复
+6. **转化为内容**：将高频问题转化为技术博客
+
+</details>
+
+### 问题 3
+Go 中如何实现一个简单的开源项目模板？
+
+<details>
+<summary>查看答案</summary>
+
+1. **目录结构**：
+```go
+my-project/
+├── cmd/           # 可执行文件
+├── internal/      # 内部包
+├── pkg/           # 外部包
+├── docs/          # 文档
+├── .github/       # GitHub 配置
+├── Makefile       # 构建命令
+├── go.mod         # 依赖管理
+└── README.md      # 项目说明
+```
+2. **Makefile 示例**：
+```make
+.PHONY: build test lint clean
+build:
+	go build -o bin/my-project ./cmd/my-project
+test:
+	go test -v ./...
+lint:
+	golangci-lint run
+clean:
+	rm -rf bin/
+```
+3. **GitHub Action**：CI/CD 自动化测试
+4. **文档**：README.md + CONTRIBUTING.md + CODE_OF_CONDUCT.md
+
+</details>

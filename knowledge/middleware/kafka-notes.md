@@ -412,4 +412,79 @@ docker exec -it kafka-single kafka-console-consumer.sh \
 
 ---
 
+## 自测题
+
+### 问题 1
+Go 中如何实现一个高性能的 Kafka Producer？
+
+<details>
+<summary>查看答案</summary>
+
+1. **批量发送**：使用 sync.Pool 预分配 buffer，批量发送
+2. **异步处理**：使用 goroutine + channel 异步处理消息
+3. **重试机制**：网络异常时自动重试 3 次
+4. **示例**：
+```go
+type KafkaProducer struct {
+    topics  map[string]*sync.Pool
+    msgCh   chan *Message
+    doneCh  chan struct{}
+}
+
+func (kp *KafkaProducer) Produce(msg *Message) error {
+    kp.msgCh <- msg
+    return nil
+}
+
+func (kp *KafkaProducer) Run() {
+    for msg := range kp.msgCh {
+        batch := kp.getBatch(msg.Topic)
+        batch.push(msg)
+        if batch.full() {
+            kp.flushBatch(batch)
+        }
+    }
+}
+```
+5. **注意事项**：避免频繁 GC，使用连接池
+
+</details>
+
+### 问题 2
+Kafka 的 Partition 设计原则是什么？
+
+<details>
+<summary>查看答案</summary>
+
+1. **均匀分布**：避免热点 Partition
+2. **容量规划**：根据数据量和吞吐量确定 Partition 数量
+3. **消息有序**：同一业务的消息发往同一 Partition
+4. **示例**：按 user_id 取模
+```go
+partition := hash(user_id) % numPartitions
+```
+5. **注意事项**：Partition 数量不能随意减少
+
+</details>
+
+### 问题 3
+Kafka Consumer 的 Rebalance 机制如何处理？
+
+<details>
+<summary>查看答案</summary>
+
+1. **触发条件**：Consumer 加入/退出、Partition 增减
+2. **协作式 Rebalance**：Cooperative Sticky 算法减少停顿
+3. **示例**：
+```go
+consumer, err := kafka.NewConsumer(kafka.ConfigMap{
+    "bootstrap.servers": "kafka1:9092,kafka2:9092",
+    "group.id":          "my-group",
+    "partition.assignment.strategy": "cooperative-sticky",
+})
+```
+4. **注意事项**：Rebalance 期间消费者会暂停消费
+5. **优化**：使用长轮询、调整 session.timeout.ms
+
+</details>
 *本笔记基于微信读书《Kafka权威指南（第2版）》及生产实践整理。深入分析请参见 kafka-deep.md 和 kafka-rebalance.md。*

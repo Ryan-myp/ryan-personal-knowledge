@@ -2,21 +2,62 @@
 
 ### 3.1 设计模式源码
 
-（以下内容基于 Java 源码分析，展示设计模式的实际落地）
+（以下内容基于 Go 源码分析，展示设计模式的实际落地）
 
-```java
-// Observer Pattern - Java Collection Framework 中的实际实现
-public interface Observer {
-    void update(Observable o, Object arg);
+```go
+// Observer Pattern - Go 的 channel 实现
+type EventPublisher struct {
+    subscribers map[string][]chan interface{}
 }
 
-// Strategy Pattern - Collections.sort() 的实现
-public static <T> void sort(List<T> list, Comparator<? super T> c) {
-    list.sort(c); // 策略接口
+func (ep *EventPublisher) Subscribe(eventType string) chan interface{} {
+    ch := make(chan interface{}, 100)
+    ep.subscribers[eventType] = append(ep.subscribers[eventType], ch)
+    return ch
 }
 
-// Decorator Pattern - Java I/O 的实现
-BufferedReader br = new BufferedReader(new FileReader("file.txt"));
+func (ep *EventPublisher) Publish(eventType string, data interface{}) {
+    for _, ch := range ep.subscribers[eventType] {
+        go func(c chan interface{}) {
+            c <- data
+        }(ch)
+    }
+}
+
+// Strategy Pattern - Go 的接口实现
+type SortStrategy interface {
+    Sort(data []int) []int
+}
+
+type QuickSort struct{}
+
+func (qs *QuickSort) Sort(data []int) []int {
+    if len(data) <= 1 {
+        return data
+    }
+    // 快速排序实现
+    return data
+}
+
+// Decorator Pattern - Go 的中间件实现
+func LoggingMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        start := time.Now()
+        next.ServeHTTP(w, r)
+        log.Printf("Request: %s %s %v", r.Method, r.URL.Path, time.Since(start))
+    })
+}
+
+func AuthMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        token := r.Header.Get("Authorization")
+        if !validateToken(token) {
+            http.Error(w, "Unauthorized", http.StatusUnauthorized)
+            return
+        }
+        next.ServeHTTP(w, r)
+    })
+}
 ```
 
 ---

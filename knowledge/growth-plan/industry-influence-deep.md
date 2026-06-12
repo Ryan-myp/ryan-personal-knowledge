@@ -548,4 +548,70 @@ git push origin fix/issue-123
 
 ---
 
-*本文档基于技术演讲最佳实践和开源贡献方法论整理。建议从技术分享开始, 逐步建立行业影响力。*
+## 自测题
+
+### 问题 1
+Go 中如何实现一个高性能的开源贡献追踪系统？
+
+<details>
+<summary>查看答案</summary>
+
+1. **并发安全**：使用 sync.RWMutex 保护贡献计数器
+2. **异步处理**：使用 goroutine + channel 异步处理 PR/Merge
+3. **示例**：
+```go
+type ContributionTracker struct {
+    mu      sync.RWMutex
+    stats   map[string]ContributionStats
+    eventCh chan ContributionEvent
+}
+
+func (ct *ContributionTracker) TrackPR(repo, author string, status string) {
+    ct.mu.Lock()
+    ct.stats[repo].PRs++
+    ct.mu.Unlock()
+    
+    ct.eventCh <- ContributionEvent{Repo: repo, Author: author, Status: status}
+}
+
+func (ct *ContributionTracker) Run() {
+    for event := range ct.eventCh {
+        // 异步更新统计
+        db.UpdateContribution(event.Repo, event.Author, event.Status)
+    }
+}
+```
+4. **注意事项**：避免频繁数据库写入，使用批量写入
+5. **监控**：使用 Prometheus 暴露统计指标
+
+</details>
+
+### 问题 2
+技术影响力建设中如何平衡深度内容和轻量内容？
+
+<details>
+<summary>查看答案</summary>
+
+1. **70/30 原则**：70% 深度内容 + 30% 轻量内容
+2. **深度内容**：博客/白皮书/技术书籍/开源文档
+3. **轻量内容**：Twitter/朋友圈/短视频/技术问答
+4. **深度内容建立权威，轻量内容建立存在感**
+5. **发布频率**：深度月更 2-4 篇，轻量周更 5-10 条
+6. **效果评估**：深度看阅读量/引用，轻量看互动率/转发量
+
+</details>
+
+### 问题 3
+开源项目如何建立和维护社区？
+
+<details>
+<summary>查看答案</summary>
+
+1. **文档齐全**：README.md + CONTRIBUTING.md + CODE_OF_CONDUCT.md
+2. **Issue 模板**：规范 Issue 报告格式
+3. **Pull Request 模板**：规范 PR 提交格式
+4. **Label 体系**：bug/enhancement/good-first-issue/help-wanted
+5. **定期发布**：保持稳定发布节奏
+6. **社区活动**：定期举办 Meetup/线上分享
+7. **贡献者认可**：感谢贡献者，授予 Committer 权限
+8. **Discord/Slack**：建立社区沟通渠道
