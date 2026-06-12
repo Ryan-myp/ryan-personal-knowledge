@@ -39,3 +39,63 @@
 2. **答题**：1 小时后闭卷回答
 3. **回顾**：24 小时后回顾答案
 4. **错题**：标记错题，3 天后重测
+
+---
+
+## Go 实现示例
+
+### 学习笔记系统
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+    "path/filepath"
+    "time"
+)
+
+type Note struct {
+    Title   string
+    Content string
+    Date    time.Time
+    Tags    []string
+    Questions []Question
+}
+
+type Question struct {
+    Question string
+    Answer   string
+    Mastered bool
+}
+
+func (n *Note) Save(outputDir string) error {
+    filename := filepath.Join(outputDir, 
+        sanitizeFilename(n.Title)+".md")
+    
+    content := fmt.Sprintf("# %s\n\n%s\n\n", n.Title, n.Content)
+    for _, q := range n.Questions {
+        content += fmt.Sprintf("## Q: %s\n\n%s\n\n---\n\n", 
+            q.Question, q.Answer)
+    }
+    
+    return os.WriteFile(filename, []byte(content), 0644)
+}
+
+func sanitizeFilename(name string) string {
+    // 去除特殊字符
+    result := ""
+    for _, r := range name {
+        if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+           (r >= '0' && r <= '9') || r == ' ' || r == '-' || r == '_' {
+            result += string(r)
+        }
+    }
+    return result
+}
+```
+
+---
+
+*本文档基于日常学习系统整理。*

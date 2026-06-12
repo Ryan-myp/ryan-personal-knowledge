@@ -56,6 +56,12 @@ func GetLogger() *Logger { return defaultLogger }
 // - 双检：拿到锁后还要再检查 done
 // - atomic.StoreUint32 写 done，保证 happens-before 关系
 // - Go 的 sync.Once 保证 f() 只执行一次，且 Do() 返回前已完成
+
+</details>
+
+---
+
+*本文档基于设计模式与系统架构整理。*
 ```
 
 #### 工厂方法 vs 抽象工厂

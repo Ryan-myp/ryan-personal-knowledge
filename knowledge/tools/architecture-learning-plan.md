@@ -22,3 +22,62 @@
 - **书籍**：《DDIA》《架构整洁之道》《Go 语言程序设计》
 - **论文**：Raft、CFS、BBR
 - **工具**：pprof、trace、eBPF、Wireshark
+
+---
+
+## 实战项目
+
+### 用 Go 实现 Raft 共识算法
+
+```go
+package main
+
+type RaftNode struct {
+    role      string
+    term      int
+    log       []LogEntry
+}
+
+type LogEntry struct {
+    Term  int
+    Command string
+}
+
+func (r *RaftNode) StartCommand(cmd string) {
+    if r.role != "leader" {
+        return
+    }
+    
+    entry := LogEntry{
+        Term:    r.term,
+        Command: cmd,
+    }
+    
+    r.log = append(r.log, entry)
+    // 复制给 followers
+    for _, follower := range r.followers {
+        go r.replicate(follower, entry)
+    }
+}
+```
+
+---
+
+## 自测题
+
+### 问题 1
+学习分布式系统时，为什么建议先学 Raft 再学 Paxos？
+
+<details>
+<summary>查看答案</summary>
+
+1. **Raft 更易理解**：显式的 Leader 选举，日志复制简单
+2. **Paxos 复杂**：多阶段协议，实现难度大
+3. **实际项目**：Etcd、Consul 都基于 Raft
+4. **学习顺序**：Raft → 实现 → Paxos → Multi-Paxos
+
+</details>
+
+---
+
+*本文档基于架构学习规划整理。*

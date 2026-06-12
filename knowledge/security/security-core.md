@@ -1541,3 +1541,152 @@ func insecureGenerateToken(userID string) (string, error) {
 - [ ] DDoS 防护预案演练
 - [ ] 限流 + 熔断 + 降级三级防护
 - [ ] 安全扫描集成 CI/CD
+
+---
+
+## 自测题
+
+### 问题 1
+JWT 如何实现 Token 轮换（ROTATION）防止 Token 泄露？
+
+<details>
+<summary>查看答案</summary>
+
+1. **Access Token + Refresh Token 双 Token 机制**：
+   - Access Token：短期（15min），用于 API 鉴权
+   - Refresh Token：长期（7d），用于换取新的 Access Token
+2. **ROTATION 机制**：
+   - 每次 Refresh 时生成新的 Refresh Token
+   - 旧 Refresh Token 失效（黑名单或版本号）
+   - 防止 Refresh Token 泄露后被长期滥用
+3. **Go 实现**：
+```go
+type JWTManager struct {
+    secret     []byte
+    refreshDB  *sql.DB
+}
+
+func (j *JWTManager) RefreshAccessToken(oldRefresh string) (string, error) {
+    claims, err := j.validateRefresh(oldRefresh)
+    if err != nil {
+        return "", err
+    }
+    
+    // 检查旧 Refresh Token 是否在黑名单
+    if j.isBlacklisted(oldRefresh) {
+        return "", fmt.Errorf("refresh token revoked")
+    }
+    
+    // 生成新 Access Token
+    newAccess := j.signAccessToken(claims.UserID)
+    
+    // 生成新 Refresh Token
+    newRefresh := j.signRefreshToken(claims.UserID)
+    
+    // 旧 Refresh Token 加入黑名单
+    j.addToBlacklist(oldRefresh)
+    
+    return newAccess, nil
+}
+```
+4. **安全增强**：
+   - Refresh Token 绑定设备指纹
+   - 异常登录时强制刷新所有 Token
+   - Token 泄露检测（异常频率使用）
+
+</details>
+
+### 问题 2
+RBAC 权限继承冲突如何解决？
+
+<details>
+<summary>查看答案</summary>
+
+1. **权限叠加**：用户拥有所有角色的权限并集
+2. **冲突解决**：Deny > Allow（拒绝优先）
+3. **Go 实现**：
+```go
+type RBACEngine struct {
+    roles       map[string]*Role
+    users       map[string]*User
+    denyCache   map[string]map[string]bool  // user→resource→denied
+}
+
+func (r *RBACEngine) CheckPermission(userID, resource, action string) bool {
+    user := r.users[userID]
+    
+    // 检查是否有 Deny 权限
+    if r.hasDeny(user, resource, action) {
+        return false
+    }
+    
+    // 检查是否有 Allow 权限
+    return r.hasAllow(user, resource, action)
+}
+
+func (r *RBACEngine) hasDeny(user *User, resource, action string) bool {
+    for _, role := range user.Roles {
+        if role.HasDeny(resource, action) {
+            return true
+        }
+    }
+    return false
+}
+```
+4. **实际场景**：广告主管理员可以管理广告计划，但不能删除账户
+
+</details>
+
+### 问题 3
+广告平台 DDoS 防护中，限流算法如何选择？
+
+<details>
+<summary>查看答案</summary>
+
+1. **Token Bucket（令牌桶）**：
+   - 固定速率产生令牌，请求消耗令牌
+   - 允许突发流量（适合竞价接口）
+2. **Sliding Window（滑动窗口）**：
+   - 精确控制单位时间内请求数
+   - 适合日志上报接口
+3. **Per-Key Limiter**：
+   - 按 API Key/IP 分别限流
+   - 防止单个用户耗尽配额
+4. **Go 实现**：
+```go
+type TokenBucket struct {
+    tokens     int
+    maxTokens  int
+    refillRate time.Duration
+    lastRefill time.Time
+}
+
+func (tb *TokenBucket) Allow() bool {
+    tb.refill()
+    if tb.tokens > 0 {
+        tb.tokens--
+        return true
+    }
+    return false
+}
+
+func (tb *TokenBucket) refill() {
+    now := time.Now()
+    elapsed := now.Sub(tb.lastRefill)
+    tb.tokens += int(elapsed / tb.refillRate)
+    if tb.tokens > tb.maxTokens {
+        tb.tokens = tb.maxTokens
+    }
+    tb.lastRefill = now
+}
+```
+5. **广告平台选择**：
+   - 竞价接口：Token Bucket（允许突发）
+   - 日志上报：Sliding Window（精确控制）
+   - API 调用：Per-Key Limiter（公平分配）
+
+</details>
+
+---
+
+*本文档基于安全最佳实践整理，结合广告平台实战场景。*
