@@ -1,0 +1,601 @@
+{
+  "query": "Redis 持久化",
+  "intent": "unknown",
+  "confidence": 0.0,
+  "scope_weights": {
+    "file_content": 0.8,
+    "file_name": 0.5,
+    "tags": 0.6,
+    "directory_path": 0.5
+  },
+  "paths": [
+    {
+      "path": "file_content",
+      "weight": 0.4,
+      "count": 10
+    },
+    {
+      "path": "file_name",
+      "weight": 0.15,
+      "count": 3
+    },
+    {
+      "path": "tags",
+      "weight": 0.24,
+      "count": 1
+    },
+    {
+      "path": "directory_path",
+      "weight": 0.125,
+      "count": 0
+    },
+    {
+      "path": "wikilinks",
+      "weight": 0.025,
+      "count": 0
+    },
+    {
+      "path": "cross_reference",
+      "weight": 0.02,
+      "count": 0
+    }
+  ],
+  "results": [
+    {
+      "file_path": "/Users/yanping.ma/ryan-personal-knowledge/knowledge/fullstack/redis-source.md",
+      "file_name": "redis-source.md",
+      "directory": "fullstack",
+      "parent_dir": "knowledge",
+      "tags": [
+        "#Redis",
+        "#数据结构",
+        "#持久化",
+        "#cluster",
+        "#一致性",
+        "#源码级",
+        "#define"
+      ],
+      "headings": [
+        "Redis 源码级深度 — dict/sds/skiplist、RDB/AOF、cluster gossip、一致性协议",
+        "1. 对象系统 & SDS — 源码级",
+        "1.1 robj 与类型编码",
+        "1.2 SDS — Simple Dynamic String 源码",
+        "2. dict 哈希表 — 源码级",
+        "2.1 dict 结构",
+        "2.2 rehash（渐进式扩容）",
+        "2.3 冲突解决",
+        "3. 跳表（skiplist）— ZSet 底层实现",
+        "3.1 zskiplist 结构",
+        "3.2 跳表插入/删除",
+        "4. 持久化 — RDB/AOF 源码级",
+        "4.1 RDB（Redis Database）",
+        "4.2 AOF（Append Only File）",
+        "4.3 RDB vs AOF 对比",
+        "5. Cluster 集群 — gossip 协议",
+        "5.1 cluster 架构",
+        "5.2 gossip 协议",
+        "6. 一致性协议 — 主从复制",
+        "6.1 复制状态机",
+        "6.2 一致性保证",
+        "7. 内存管理",
+        "7.1 内存分配",
+        "7.2 内存碎片"
+      ],
+      "content_preview": "# Redis 源码级深度 — dict/sds/skiplist、RDB/AOF、cluster gossip、一致性协议\n\n> 标签: `#Redis` `#数据结构` `#持久化` `#cluster` `#一致性` `#源码级`\n> 创建日期: 20260608\n> 作者: Ryan\n\n---\n\n## 1. 对象系统 & SDS — 源码级\n\n### 1.1 robj 与类型编码\n\n```c\n// server.h — 对象系统\ntypedef struct redisObject {\n    unsigned type:4;           // 对象类型\n    unsigned encoding:4;       // 编码方式\n    unsigned lru:LRU_BITS;     // LRU 时钟（24 bits）\n    int refcount;              // 引用计数（-1 表示共享，共享对象池）\n    void *ptr;                 // 指向实际数据的指针\n} robj;\n\n// 类型枚举:\n#defin",
+      "full_content": "# Redis 源码级深度 — dict/sds/skiplist、RDB/AOF、cluster gossip、一致性协议\n\n> 标签: `#Redis` `#数据结构` `#持久化` `#cluster` `#一致性` `#源码级`\n> 创建日期: 20260608\n> 作者: Ryan\n\n---\n\n## 1. 对象系统 & SDS — 源码级\n\n### 1.1 robj 与类型编码\n\n```c\n// server.h — 对象系统\ntypedef struct redisObject {\n    unsigned type:4;           // 对象类型\n    unsigned encoding:4;       // 编码方式\n    unsigned lru:LRU_BITS;     // LRU 时钟（24 bits）\n    int refcount;              // 引用计数（-1 表示共享，共享对象池）\n    void *ptr;                 // 指向实际数据的指针\n} robj;\n\n// 类型枚举:\n#define OBJ_STRING 0\n#define OBJ_LIST 1\n#define OBJ_SET 2\n#define OBJ_ZSET 3\n#define OBJ_HASH 4\n#define OBJ_STREAM 5\n\n// 编码枚举:\n#define OBJ_ENCODING_RAW 0        // 简单动态字符串（SDS）\n#define OBJ_ENCODING_INT 1        // 整数（long）\n#define OBJ_ENCODING_HT 2         // 哈希表（dict）\n#define OBJ_ENCODING_ZIPLIST 3    // 压缩列表\n#define OBJ_ENCODING_LISTPACK 4   // 列表包（Redis 7.0+，替代 ziplist）\n#define OBJ_ENCODING_LINKEDLIST 5 // 链表\n#define OBJ_ENCODING_QUICKLIST 6  // 快速链表（Redis 4.0+）\n#define OBJ_ENCODING_SKIPLIST 7   // 跳表\n#define OBJ_ENCODING_INTSET 8     // 整数集合\n#define OBJ_ENCODING_STREAM 9     // Stream 数据结构\n#define OBJ_ENCODING_STREAM_LISTPACKS 10 // Stream 内部编码\n\n// 自动编码切换逻辑:\n// String:\n//   - 值是 long 类型 → OBJ_ENCODING_INT\n//   - 值 <= 44 字节 → OBJ_ENCODING_RAW (SDS)\n//   - 值 > 44 字节 → OBJ_ENCODING Embstr（embstr 是 SDS 和 robj 连续分配的优化）\n// List:\n//   - 数据量少 + 元素短 → OBJ_ENCODING_ZIPLIST\n//   - 数据量大 → OBJ_ENCODING_QUICKLIST\n// Hash:\n//   - 数据量少 + key/value 短 → OBJ_ENCODING_ZIPLIST\n//   - 数据量大 → OBJ_ENCODING_HT\n// Set:\n//   - 全是整数且数量少 → OBJ_ENCODING_INTSET\n//   - 其他 → OBJ_ENCODING_HT\n// ZSet:\n//   - 数据量少 + 元素短 → OBJ_ENCODING_ZIPLIST\n//   - 数据量大 → OBJ_ENCODING_SKIPLIST + HT\n```\n\n### 1.2 SDS — Simple Dynamic String 源码\n\n```c\n// sds.h — SDS 结构（Redis 4.0+ 变长头部）\nstruct sdshdr8 {\n    uint8_t len;        // 已用字节数（低 7 bits）\n    uint8_t free;       // 剩余字节数（低 7 bits）\n    uint8_t alloc;      // 总分配字节数（低 7 bits）\n    unsigned char flags; // 3 bits type + 5 bits unused\n    char buf[];         // 数据数组\n};\n\n// SDS 分配:\n// SDS_TYPE_5: flags=00, 不分配 buf（仅用于短字符串，len < 32）\n// SDS_TYPE_8: flags=01, 头部 3 bytes\n// SDS_TYPE_16: flags=10, 头部 5 bytes\n// SDS_TYPE_32: flags=110, 头部 9 bytes\n// SDS_TYPE_64: flags=111, 头部 17 bytes\n\n// 空间预分配策略:\n// 1. SDS 不为空时: len < 1MB → 分配 len * 2（翻倍）\n//                  len >= 1MB → 分配 len + 1MB（只加 1MB）\n// 2. SDS 为空时: 分配 1 byte（最小分配）\n// 3. 惰性空间释放: sdsrange/sdslen 缩小时，不 free，free 字段增加\n\n// SDS API:\nsds sdsnewlen(const void *init, size_t initlen);\nsds sdscatlen(sds s, const void *t, size_t len);\nsds sdscatfmt(sds s, const char *fmt, ...);  // 格式化追加\nvoid sdsfree(sds s);\nsize_t sdslen(const sds s);\nsize_t sdsavail(const sds s);\n\n// SDS vs C 字符串:\n// C 字符串: strlen() O(N), 必须 \\0 结尾, 不能存二进制\n// SDS: len() O(1), 不依赖 \\0, 二进制安全\n```\n\n---\n\n## 2. dict 哈希表 — 源码级\n\n### 2.1 dict 结构\n\n```c\n// dict.h — 哈希表结构\ntypedef struct dict {\n    dictType *type;         // 类型相关函数\n    void *privdata;         // 私有数据\n    \n    dictht ht[2];           // 双哈希表（rehash 用）\n    long rehashidx;         // rehash 进度（-1 = 不在 rehash）\n    int iterators;          // 活跃迭代器数量\n    unsigned long size;     // 总槽数（ht[0].size + ht[1].size）\n    unsigned long sizemask; // 掩码（size - 1）\n    unsigned long used;     // 已有节点数\n} dict;\n\n// dictht — 哈希表\ntypedef struct dictht {\n    dictEntry **table;      // 哈希表数组（指针数组）\n    unsigned long size;     // 数组大小（2 的幂）\n    unsigned long sizemask; // size - 1\n    unsigned long used;     // 节点数\n} dictht;\n\n// dictEntry — 哈希表节点\ntypedef struct dictEntry {\n    void *key;              // 键\n    union {\n        void *val;\n        uint64_t u64;\n        int64_t s64;\n        double d;\n    } v;                    // 值\n    struct dictEntry *next; // 链表（冲突解决）\n} dictEntry;\n\n// dictType — 类型相关函数（多态）\ntypedef struct dictType {\n    uint64_t (*hashFunction)(const void *key);  // 哈希函数\n    void *(*keyDup)(void *privdata, const void *key);  // 键复制\n    void *(*valDup)(void *privdata, const void *obj);  // 值复制\n    int (*keyCompare)(void *privdata, const void *key1, const void *key2);  // 键比较\n    void (*keyDestructor)(void *privdata, void *key);  // 键析构\n    void (*valDestructor)(void *privdata, void *obj);  // 值析构\n} dictType;\n```\n\n### 2.2 rehash（渐进式扩容）\n\n```c\n// rehash 触发条件:\n// 1. 负载因子 >= 1 且没有 BGSAVE 在进行 → 立即扩容（负载因子 = used / size）\n// 2. 负载因子 >= 5 且没有 BGSAVE → 立即扩容（强制触发）\n// 3. 负载因子 >= 1 且有 BGSAVE → 延迟扩容（渐进式）\n\n// rehash 过程:\nvoid dictRehash(dict *d, int steps) {\n    // 每次只迁移 steps 个 bucket（渐进式，不阻塞）\n    while (d->rehashidx != -1 && steps > 0) {\n        // 找到下一个非空 bucket\n        while (d->ht[0].table[d->rehashidx] == NULL) {\n            d->rehashidx++;\n        }\n        \n        // 迁移一个 bucket 的所有节点到 ht[1]\n        dictEntry *de = d->ht[0].table[d->rehashidx];\n        while (de) {\n            // 计算在新哈希表中的位置\n            unsigned long hash = dictHash(d, de->key);\n            unsigned long index = hash & d->ht[1].sizemask;\n            \n            // 插入到 ht[1]\n            de->next = d->ht[1].table[index];\n            d->ht[1].table[index] = de;\n            d->ht[1].used++;\n            \n            // 移动到下一个节点\n            de = de->next;\n        }\n        \n        d->ht[0].table[d->rehashidx] = NULL;\n        d->rehashidx++;\n        steps--;\n    }\n}\n\n// 渐进式 rehash 的关键:\n// 1. ht[0] 和 ht[1] 同时存在\n// 2. 新写入/查找/删除操作同时在两个表上进行\n// 3. 迁移完成后释放 ht[0]\n\n// 时间复杂度:\n// 单次 rehash: O(1)（每次迁移一个 bucket）\n// 总时间: O(N)（N = 旧表大小）\n// 空间复杂度: O(N)（双表共存）\n```\n\n### 2.3 冲突解决\n\n```c\n// Redis 哈希表使用链地址法解决冲突\n// 冲突链的尾部插入策略:\n// dictAdd → dictGenericAdd → dictAddRaw\n// dictAddRaw 总是将新节点插入到桶的头部（O(1)）\n\n// 哈希函数:\n// 对于字符串键: dictGenHashFunction → djb2 哈希\n// djb2: hash = ((hash << 5) + hash) + string[i]\n// 对于整数键: 直接使用整数值\n\n// 为什么用 djb2？\n// 1. 速度快：位运算\n// 2. 分散性好：低字节影响高字节\n```\n\n---\n\n## 3. 跳表（skiplist）— ZSet 底层实现\n\n### 3.1 zskiplist 结构\n\n```c\n// zskiplist.h — 跳表结构\ntypedef struct zskiplist {\n    struct zskiplistNode *header, *tail;  // 头尾节点\n    unsigned long length;                  // 节点数\n    int level;                             // 最大层数\n} zskiplist;\n\n// zskiplistNode — 跳表节点\ntypedef struct zskiplistNode {\n    sds ele;                  // 元素（字符串）\n    double score;             // 分数\n    struct zskiplistNode *backward; // 后退指针\n    struct zskiplistLevel {\n        struct zskiplistNode *forward; // 前向指针\n        unsigned long span;            // 跨度（到下一个节点的距离）\n    } level[];  // 变长数组，最多 32 层\n} zskiplistNode;\n\n// 跳跃节点层级概率:\n// level 1: P = 1/4\n// level 2: P = 1/16\n// level 3: P = 1/64\n// ...\n// level N: P = (1/4)^N\n\n// 平均层数: 1 / (1 - 1/4) = 4/3 ≈ 1.33\n// 最大层数: 32（硬编码上限）\n```\n\n### 3.2 跳表插入/删除\n\n```c\n// 插入 O(log N):\nvoid zslInsert(zskiplist *zsl, double score, sds ele) {\n    // 1. 找到插入位置（从高层向下逐层查找）\n    zskiplistNode *update[MAXLEVEL]; // 记录每层的前驱\n    unsigned int rank[MAXLEVEL];     // 记录每层的排名\n    \n    zskiplistNode *x = zsl->header;\n    for (int i = zsl->level - 1; i >= 0; i--) {\n        rank[i] = (i == zsl->level - 1) ? 0 : rank[i + 1];\n        while (x->level[i].forward && \n               (x->level[i].forward->score < score ||\n                (x->level[i].forward->score == score && sdscmp(x->level[i].forward->ele, ele) < 0))) {\n            rank[i] += x->level[i].span;\n            x = x->level[i].forward;\n        }\n        update[i] = x; // 记录前驱\n    }\n    \n    // 2. 生成随机层级\n    int level = zslRandomLevel();\n    \n    // 3. 创建新节点\n    zskiplistNode *newNode = zslCreateNode(level, score, ele);\n    \n    // 4. 更新指针\n    for (int i = 0; i < level; i++) {\n        newNode->level[i].forward = update[i]->level[i].forward;\n        update[i]->level[i].forward = newNode;\n        newNode->level[i].span = update[i]->level[i].span - (rank[0] - rank[i]);\n        update[i]->level[i].span += (rank[0] - rank[i]);\n    }\n    \n    // 5. 更新高层的跨度\n    for (int i = level; i < zsl->level; i++) {\n        update[i]->level[i].span++;\n    }\n    \n    // 6. 更新 head 的跨度\n    if (x->level[0].forward) {\n        x->level[0].span++;\n    }\n    \n    // 7. 处理并列分数: 按 lexicographical order 排序\n    // (Redis 5.0+ 引入字典序排序)\n}\n```\n\n---\n\n## 4. 持久化 — RDB/AOF 源码级\n\n### 4.1 RDB（Redis Database）\n\n```c\n// rdb.h — RDB 文件格式\n// 结构: Header + Entry Sequence + Footer\n\n// Header:\n// - RDB 版本号（Magic Number: REDIS0011）\n// - 创建时间戳\n// - 辅助数据（aof-preamble 等）\n\n// Entry:\n// - Type Byte（操作类型）\n//   - RDB_OPCODE_EXPIRETIME_MS: 过期时间（毫秒）\n//   - RDB_OPCODE_EXPIRETIME: 过期时间（秒）\n//   - RDB_OPCODE_SELECTDB: 数据库编号\n//   - RDB_OPCODE_EOF: 文件结束\n//   - RDB_OPCODE_AUX: 辅助数据\n//   - RDB_OPCODE_RESIZEDB: 哈希表大小\n//   - 0-127: 短字符串（带类型）\n//   - 128-191: 16-bit 长度字符串\n//   - 192-254: 32-bit 长度字符串\n//   - 255: 特殊操作码\n// - Data（字符串值或键值对）\n\n// 压缩:\n// - LZF: 用于短字符串\n// - ZSTD: Redis 6.2+ 支持\n// - 整数编码: 直接存整数，不转字符串\n\n// save 流程:\nvoid rdbSave(int dirfd, rdbSaveInfo *rsi, unsigned flags) {\n    // 1. fork 子进程\n    pid_t child = fork();\n    if (child == 0) {\n        // 子进程: 写入 RDB 文件\n        rdbSaveRio(rdb, NULL, NULL, flags);\n        _exit(0);\n    } else {\n        // 父进程: 等待子进程完成\n        rdbChildBlock childInfo;\n        rdbPrepareForSave(&childInfo);\n        \n        // 触发 BGSAVE 阻塞点\n        atomicSetLongLong(&server.rdb_child_start_time, ustime());\n        \n        // 等待子进程退出\n        while (waitpid(child, &stat, WNOHANG) == 0) {\n            sleep(1);\n        }\n    }\n}\n\n// copy-on-write 机制:\n// fork 后，父进程的内存页变为只读\n// 子进程读取时，如果父进程修改了页，操作系统复制该页\n// 这样子进程读取的是 fork 时刻的快照\n// 代价: 如果父进程写压力大，COW 频繁，内存翻倍\n```\n\n### 4.2 AOF（Append Only File）\n\n```c\n// aof.h — AOF 文件结构\n// 格式: Redis Protocol（RESP）\n// 每条记录是一个完整的 Redis 命令\n// EX: SET key value\n// EX: EXPIRE key timeout\n// EX: DEL key\n\n// aofState:\n// AOF_OFF    // 关闭\n// AOF_ENABLED // 启用\n// AOF_WRITE   // 正在写入 RDB 文件\n\n// 写入策略:\n// 1. no: 不写入（操作系统决定）\n// 2. everysec: 每秒写入（默认，最多丢 1 秒数据）\n// 3. always: 每次写入都 fsync（最安全，性能最差）\n\n// aofRewrite — AOF 重写（消除冗余命令）:\nvoid aofRewriteBackground(int flags) {\n    // 1. fork 子进程\n    pid_t child = fork();\n    if (child == 0) {\n        // 子进程: 遍历所有 key，生成 SET/EXPIRE 等命令\n        // 不读 AOF 文件，直接读内存数据\n        aofRewriteBufferWrite();\n        _exit(0);\n    }\n}\n\n// AOF 重写 + 复制（Redis 5.0+ 改进）:\n// 1. 子进程开始重写，生成重写缓冲区\n// 2. 主进程将新命令同时写入 base AOF + 重写缓冲区\n// 3. 子进程完成重写后，发送 base AOF 到从库\n// 4. 主进程发送重写缓冲区中的命令到从库\n// 5. 从库: 先加载 base AOF，再回放增量命令\n\n// AOF 文件结构:\n// Header:\n//   - RDB 头（用于快速启动时跳过）\n//   - AOF 魔术头（REDIS0011）\n// Data:\n//   - Redis 协议命令\n// Footer:\n//   - RDB 尾\n//   - AOF 校验和\n```\n\n### 4.3 RDB vs AOF 对比\n\n```c\n// 选择策略:\n// 同时启用 RDB + AOF（推荐）:\n// - RDB: 定期全量快照\n// - AOF: 每秒追加命令\n// 启动时: 先加载 AOF（恢复最新数据），再加载 RDB（如果需要回退到更早快照）\n\n// 恢复速度:\n// RDB: 快（加载快照文件）\n// AOF: 慢（回放命令）\n\n// 数据完整性:\n// RDB: 可能丢最近一次快照的数据\n// AOF: 最多丢 1 秒（everysec 策略）\n\n// 文件大小:\n// RDB: 小（压缩 + 二进制）\n// AOF: 大（文本命令）\n```\n\n---\n\n## 5. Cluster 集群 — gossip 协议\n\n### 5.1 cluster 架构\n\n```c\n// cluster.h — 集群配置\ntypedef struct clusterState {\n    clusterNode *myself;         // 当前节点\n    clusterNode **slots_to_node; // 槽位 → 节点映射\n    clusterNode **migrating;     // 正在迁移的槽位\n    clusterNode **importing;     // 正在导入的槽位\n    \n    int slot_end;                // 槽位范围结束\n    int slot_start;              // 槽位范围开始\n    \n    clusterNode *failover_auth_node; // 故障转移候选节点\n    long long failover_auth_request; // 故障转移请求\n    long long failover_auth_sent;     // 故障转移已发送\n    \n    uint64_t configEpoch;      // 配置纪元\n    int slots_sub_slots;       // 已分配的槽位数\n    \n    clusterLink **links;       // 与所有节点的链接\n    int links_count;           // 链接数量\n    \n    // 节点信息\n    clusterNode **nodes;       // 所有节点列表\n    int cluster_size;          // 集群大小\n    unsigned long long cluster_size_slots;  // 集群槽位总数\n    \n    // 节点发现\n    int failover_recovery;     // 故障恢复标志\n    int cluster_stats_messages_sent; // 发送消息数\n    int cluster_stats_messages_received; // 接收消息数\n    \n    // 槽位分配\n    unsigned long cluster_known_nodes; // 已知节点数\n    unsigned long cluster_size;       // 集群大小\n    unsigned long long cluster_stats_messages_examined;\n    \n    // 节点\n    struct clusterNode {\n        char name[CLUSTER_NAMELEN];   // 节点名称（40 hex 字符）\n        int flags;                    // 节点标志\n        int numslots;                 // 槽位数\n        int numsubslots;              // 子槽位数\n        struct clusterNode *slaveof;  // 主节点（如果是从节点）\n        mstime_t ping_sent;           // 最后 ping 时间\n        mstime_t pong_received;       // 最后 pong 时间\n        mstime_t fail_time;           // 失败时间\n        mstime_t voted_time;          // 投票时间\n        mstime_t repl_offset_time;    // 复制偏移量时间\n        mstime_t orphaned_time;       // 孤立时间\n        double ping_lag;              // ping 延迟\n        long long repl_offset;        // 复制偏移量\n        int fail_time_ms;             // 失败时间戳\n        int config_epoch;             // 配置纪元\n        int numreplicas;              // 从节点数\n        int slots[16384];             // 槽位分配\n        int *slots_array;             // 槽位数组\n        int *subslots;                // 子槽位\n        int slot_start, slot_end;     // 槽位范围\n        int slot_count;               // 槽位数量\n    };\n} clusterState;\n```\n\n### 5.2 gossip 协议\n\n```c\n// cluster.c — gossip 协议实现\n\n// 消息类型:\n// PING: 发现/心跳\n// PONG: PING 的响应\n// MEET: 主动发现\n// FAILOVER_AUTH_REQUEST: 故障转移请求\n// FAILOVER_AUTH_ACK: 故障转移确认\n// FAIL: 故障通知\n// BUSY: 集群忙碌\n\n// gossip 协议:\n// 1. 每个节点定期（1 秒）向随机 N 个节点发送 PING\n// 2. PING 包含:\n//    - 自己的信息（名称、标志、槽位分配、配置纪元）\n//    - 其他 N 个节点的信息\n// 3. 收到 PING 后回复 PONG\n// 4. PONG 包含:\n//    - 接收到的 PING 的内容\n//    - 自己的信息\n\n// 节点发现:\n// 新节点 JOIN:\n// 1. 节点 A 发送 MEET 消息给集群中的某个节点\n// 2. 该节点将 A 加入自己的节点列表\n// 3. A 节点通过 gossip 了解到所有节点\n// 4. A 节点获取槽位分配信息\n// 5. A 节点开始处理自己的槽位\n\n// 故障检测:\n// 1. 节点 A 定期检查节点 B 的 pong_received\n// 2. 如果 pong_received 超过 cluster-node-timeout（默认 15 秒），标记为 PFAIL（可能失败）\n// 3. 如果有超过半数的主节点标记 B 为 PFAIL，升级为 FAIL\n// 4. FAIL 的节点的主从切换流程:\n//    a. 从节点发现主节点 FAIL\n//    b. 从节点发起故障转移请求\n//    c. 集群中其他主节点投票\n//    d. 获得多数票的从节点提升为主节点\n//    e. 新主节点接管槽位\n//    f. 旧主节点恢复后变为从节点\n```\n\n---\n\n## 6. 一致性协议 — 主从复制\n\n### 6.1 复制状态机\n\n```c\n// replication.c — 复制状态机\n\ntypedef enum {\n    REPL_STATE_NONE,         // 无复制\n    REPL_STATE_CONNECT,      // 连接中\n    REPL_STATE_TRANSFER,     // 传输 RDB 中\n    REPL_STATE_ONLINE,       // 在线\n    REPL_STATE_SEND_BULK     // 发送增量数据\n} replState;\n\n// 复制流程:\n// 1. MASTER → SLAVE: SYNC 命令\n// 2. MASTER fork 子进程生成 RDB\n// 3. MASTER 将 RDB 发送给 SLAVE\n// 4. SLAVE 加载 RDB（全量同步）\n// 5. MASTER 将同步期间的命令写入 replaybuf\n// 6. MASTER 将 replaybuf 发送给 SLAVE\n// 7. SLAVE 回放命令（增量同步）\n// 8. 之后 Master 持续将新命令发送给 Slave（PSYNC）\n\n// PSYNC（部分重同步）:\n// SLAVE → MASTER: PSYNC <replication_id> <offset>\n// MASTER 响应:\n//   - FULLRESYNC <replication_id> <offset>: 需要全量同步\n//   - PARTIAL_OK: 可以部分重同步\n//   - PARTIAL_FAIL: 需要全量同步（主库缓冲区清空）\n\n// 复制偏移量:\n// master_repl_offset: 主库的复制偏移量\n// slave_repl_offset: 从库的复制偏移量\n// master_repl_offset - slave_repl_offset = 复制延迟（字节）\n\n// 心跳:\n// 每秒发送一次 PING 保持连接\n```\n\n### 6.2 一致性保证\n\n```c\n// Redis 一致性模型:\n// 1. 单线程: 命令原子执行，不会交错\n// 2. 主从复制: 异步复制（可能丢数据）\n// 3. 集群: 最终一致性（CAP 中的 AP）\n\n// 如何保证强一致?\n// 1. 使用 MULTI/EXEC（事务）: 保证命令原子执行\n// 2. 使用 WATCH: 乐观锁（CAS）\n// 3. 使用 Lua 脚本: 原子执行\n\n// 但 Redis 没有传统 ACID 事务:\n// - 没有回滚（rollback）\n// - 没有隔离级别\n// - 命令执行失败后，后续命令仍然执行\n```\n\n---\n\n## 7. 内存管理\n\n### 7.1 内存分配\n\n```c\n// zmalloc.h — Redis 内存管理\nvoid *zmalloc(size_t size);\nvoid zfree(void *ptr);\nvoid *zcalloc(size_t size);\nvoid *zrealloc(void *ptr, size_t size);\nsize_t zmalloc_size(const void *ptr);\nsize_t zmalloc_used_memory(void);\n\n// Redis 使用的 allocator:\n// jemalloc (默认, Linux): 减少内存碎片\n// libc malloc (MacOS, Windows): 系统默认\n// tcmalloc (Google): 高性能\n\n// 内存限制:\n// maxmemory 配置:\n//   - noeviction: 不驱逐，直接返回错误\n//   - allkeys-lru: 全局 LRU 驱逐\n//   - volatile-lru: 只驱逐有过期时间的 key\n//   - allkeys-random: 随机驱逐\n//   - volatile-random: 随机驱逐有过期时间的 key\n//   - volatile-ttl: 驱逐最近过期的 key\n//   - allkeys-lfu: LFU 驱逐（Redis 4.0+）\n//   - volatile-lfu: LFU 驱逐有过期时间的 key\n\n// LRU 近似算法:\n// 采样 N 个 key（默认 5），淘汰最久未使用的\n// 不是精确的 LRU，但 O(1) 时间复杂度\n```\n\n### 7.2 内存碎片\n\n```c\n// 内存碎片原因:\n// 1. 频繁分配/释放小对象\n// 2. 不同大小的对象交替分配\n// 3. allocator 的内存对齐和页边界\n\n// 监控:\n// INFO memory 中的:\n//   - used_memory: 实际使用\n//   - used_memory_rss: 操作系统看到的内存\n//   - mem_fragmentation_ratio: used_memory_rss / used_memory\n//     - > 1.5: 高碎片\n//     - < 1.0: 使用了 overcommit（可能 OOM）\n\n// 解决:\n// 1. 重启 Redis（释放碎片）\n// 2. 启用 active-defrag:\n//    activedefrag yes\n//    active-defrag-threshold-lower 10\n//    active-defrag-threshold-upper 100\n//    active-defrag-cycle-min 5\n//    active-defrag-cycle-max 25\n```\n\n---\n\n*本文档基于 Redis 7.0 源码整理，覆盖核心数据结构、持久化、集群、一致性*\n",
+      "word_count": 2278,
+      "is_entry_file": false,
+      "wikilinks": [],
+      "frontmatter_type": "",
+      "created": "",
+      "rrf_score": 0.012454,
+      "source_scores": [
+        [
+          "file_content",
+          0.006061
+        ],
+        [
+          "file_name",
+          0.002459
+        ],
+        [
+          "tags",
+          0.003934
+        ]
+      ],
+      "intent": "unknown",
+      "confidence": 0.0
+    },
+    {
+      "file_path": "/Users/yanping.ma/ryan-personal-knowledge/knowledge/tools/tech-interview-qa.md",
+      "file_name": "tech-interview-qa.md",
+      "directory": "tools",
+      "parent_dir": "knowledge",
+      "tags": [],
+      "headings": [
+        "广告技术专家考核题库 — 标准答案（源码级深度）",
+        "第一题：MySQL MVCC — Next-Key Lock 原理",
+        "场景",
+        "答案",
+        "第二题：Go GMP 调度器",
+        "场景",
+        "答案",
+        "第三题：广告竞价",
+        "场景",
+        "答案",
+        "第四题：Redis",
+        "场景",
+        "答案",
+        "第五题：Kafka",
+        "场景",
+        "答案",
+        "第六题：Elasticsearch",
+        "场景",
+        "答案",
+        "第七题：ClickHouse",
+        "场景",
+        "答案",
+        "第八题：设计模式 + Go 实战",
+        "场景",
+        "答案",
+        "第九题：广告数据分析",
+        "场景",
+        "答案",
+        "第十题：系统设计",
+        "场景",
+        "答案"
+      ],
+      "content_preview": "# 广告技术专家考核题库 — 标准答案（源码级深度）\n\n> 创建日期: 20260608\n> 作者: Ryan\n\n---\n\n## 第一题：MySQL MVCC — Next-Key Lock 原理\n\n### 场景\nRR 隔离级别下，UPDATE `ad_report WHERE campaign_id = ?` 加锁。campaign_id 是普通索引。\n\n### 答案\n\n**为什么加 Next-Key Lock 而不是 Record Lock？**\n\n因为 campaign_id 是**普通索引**（非唯一索引），InnoDB 需要防止幻读：\n- 如果只锁记录，其他事务可以 INSERT 到相邻间隙 → 幻读\n- 所以加 Next-Key Lock = Record Lock（锁记录本身）+ Gap Lock（锁前面的间隙）\n\n**源码级分析：**\n\n```c\n// row_upd_build_index_constraint() — 构建索引约束\n// 决定锁类型:\n// - UNIQUE_INDEX → Lock Record（唯一索引，不会幻读）\n// - NON_UNIQUE",
+      "full_content": "# 广告技术专家考核题库 — 标准答案（源码级深度）\n\n> 创建日期: 20260608\n> 作者: Ryan\n\n---\n\n## 第一题：MySQL MVCC — Next-Key Lock 原理\n\n### 场景\nRR 隔离级别下，UPDATE `ad_report WHERE campaign_id = ?` 加锁。campaign_id 是普通索引。\n\n### 答案\n\n**为什么加 Next-Key Lock 而不是 Record Lock？**\n\n因为 campaign_id 是**普通索引**（非唯一索引），InnoDB 需要防止幻读：\n- 如果只锁记录，其他事务可以 INSERT 到相邻间隙 → 幻读\n- 所以加 Next-Key Lock = Record Lock（锁记录本身）+ Gap Lock（锁前面的间隙）\n\n**源码级分析：**\n\n```c\n// row_upd_build_index_constraint() — 构建索引约束\n// 决定锁类型:\n// - UNIQUE_INDEX → Lock Record（唯一索引，不会幻读）\n// - NON_UNIQUE_INDEX → Lock Next-Key（非唯一索引，需要防幻读）\n\n// lock_rec_build() — 构建记录锁\n// 参数:\n// - page_no: 页号\n// - heap_no: 堆号（记录在页中的位置）\n// - mode: 锁模式（X/S/IX/IS）\n\n// 关键逻辑:\nif (index->is_meta() || index->type != DICT_STATS || \n    dict_table_is_clust(table) || dict_table_is_purgeable(table)) {\n    // 主键索引或特殊索引 → Record Lock\n} else {\n    // 普通索引 → Next-Key Lock\n}\n```\n\n**排查步骤：**\n1. `SELECT * FROM information_schema.INNODB_LOCKS;`\n2. `SELECT * FROM information_schema.INNODB_LOCK_WAITS;`\n3. `SELECT * FROM information_schema.INNODB_TRX;`\n4. 定位锁类型 → Record/Gap/Next-Key/Insert Intention\n\n**解决：**\n- 加唯一索引 → 降级为 Record Lock\n- 缩短事务\n- 批量更新按主键顺序（避免死锁）\n\n---\n\n## 第二题：Go GMP 调度器\n\n### 场景\nGo 服务 P99 从 50ms 飙到 2s，1000+ goroutine 在 Grunnable 排队。\n\n### 答案\n\n**为什么 M 不够用？**\n\n1. `GOMAXPROCS` 默认等于 CPU 核心数，但如果没设置，只有 1 个 M\n2. 大量 G 在执行系统调用（如 IO），绑定 M 被阻塞\n3. P 的本地队列满（256个），G 被移到全局队列，调度开销大\n\n**GMP 结构体（runtime2.go）：**\n\n```go\ntype g struct {\n    stack   stack        // 栈\n    sched   gobuf        // 调度信息\n    m       *m           // 当前绑定的 M\n    status  uint32       // Grunnable/Grunning/Gwaiting 等\n}\n\ntype m struct {\n    g0     *g           // 系统 goroutine（调度用）\n    curg   *g           // 当前用户 goroutine\n    p      p            // 绑定的 P\n}\n\ntype p struct {\n    status      uint32\n    runqhead    uint32       // 本地队列头\n    runqtail    uint32       // 本地队列尾\n    runq        [256]g       // 本地队列（最多 256）\n    runnext     *g           // 下一个要执行的 G\n}\n```\n\n**调度流程（schedule()）：**\n1. 从 P 本地队列取 G（`runqget()`）\n2. 本地空，从其他 P 偷 G（`findrunnable()`，偷一半）\n3. 偷不到，从全局队列取（`globrunqget()`）\n4. 全局也空，M 休眠\n\n**为什么你的场景 P99 飙升？**\n- 1000 个 G 排队 → 局部队列满（256）→ 全队列也满\n- 调度器频繁锁竞争\n- GOMAXPROCS=32 降一半 → 增加了 P 数量，减少锁竞争\n\n**根本原因可能是：**\n- 大量 G 在执行系统调用阻塞（如 HTTP 请求、DB 查询）\n- channel 缓冲不够导致 goroutine 频繁阻塞\n- 没有用 goroutine pool\n\n---\n\n## 第三题：广告竞价\n\n### 场景\n广告列表不能让同一品牌连续出现。\n\n### 答案\n\n**放在哪个阶段？**\n\n**重排阶段（Re-ranking）**，不是精排。原因：\n- 精排目标：找出最优广告（eCPM 最高）\n- 去重是用户体验优化，不应影响排序逻辑\n- 重排可以在保持排序基本不变的情况下做多样性\n\n**如何平衡排序公平性？**\n- 允许同一品牌在 N 个广告位内出现（N=3）\n- 多样性加权: `eCPM × (1 + position × 0.1)`\n- 位置越靠后，加权越高\n\n**VCG vs 第一价格：**\n- 去重场景下 VCG 更公平\n- VCG 定价: `price = 如果没有 winner 时其他广告的最大总效用 - 有 winner 时的总效用`\n- 实际中第一价格更简单，RTB 行业主流用第一价格\n\n---\n\n## 第四题：Redis\n\n### 场景\n缓存击穿 + Cluster 跨 slot 查询\n\n### 答案\n\n**缓存击穿解决方案：**\n- 互斥锁方案：锁超时 → 穿透\n- **推荐：逻辑过期**。不设置 TTL，而是在值里存过期时间，读取时发现过期，异步重建缓存并返回旧值\n\n**Cluster 跨 slot 查询：**\n- 用哈希标签: `KEYS{user}:1001`, `KEYS{user}:1002` → 都在同一个 slot\n- 或在客户端分片查询后聚合\n\n**Rehash 期间影响：**\n- 内存翻倍（两个哈希表同时存在）\n- 写入：写入 ht[1]，性能不变\n- 读取：可能查两个哈希表，略有下降\n- 渐进式 rehash：每次写入迁移一个 bucket\n\n```c\n// dictAdd():\nfunc dictAdd(d *dict, key, val) {\n    if d.rehashidx >= 0 {\n        // rehash 中，写入 ht[1]\n        dictAddToHT(d.ht[1], key, val)\n    } else {\n        dictAddToHT(d.ht[0], key, val)\n    }\n}\n\n// dictFind():\nfunc dictFind(d *dict, key) {\n    if d.rehashidx >= 0 {\n        // 先在 ht[1] 找，再在 ht[0] 找\n        if val := dictFindInHT(d.ht[1], key); val != nil {\n            return val\n        }\n        return dictFindInHT(d.ht[0], key)\n    }\n    return dictFindInHT(d.ht[0], key)\n}\n```\n\n---\n\n## 第五题：Kafka\n\n### 场景\n消费者 Rebalance 导致流处理停顿 30 秒\n\n### 答案\n\n**Rebalance 触发条件：**\n1. 消费者加入 Consumer Group\n2. 消费者离开（关闭、崩溃、网络分区）\n3. Topic 分区变化\n4. 心跳超时（session.timeout.ms）\n\n**三个参数关系：**\n```\nheartbeat.interval.ms < session.timeout.ms / 3\nmax.poll.interval.ms > session.timeout.ms * 10\n```\n\n**Rebalance 策略选择：**\n- **Range**（默认）：简单但不均衡\n- **RoundRobin**：均匀但全量迁移\n- **CooperativeSticky**（推荐）：增量迁移，只移动变化的分区\n\n**优化方案：**\n1. 用 CooperativeSticky\n2. 调整超时参数\n3. 预提交 offset\n4. 考虑用 Kafka Streams（自带状态恢复）\n\n---\n\n## 第六题：Elasticsearch\n\n### 场景\n搜索延迟从 10ms 涨到 500ms\n\n### 答案\n\n**排查步骤：**\n1. 查 JVM GC: `jstat -gcutil <pid> 1000`\n2. 查 ES 指标: `_cluster/health`, `_nodes/stats`\n3. 查 slow query log\n4. 查 CPU/IO 占用\n\n**分词器：**\n- IK 分词器：支持自定义词典，适合中文\n- 标准分词器：按 Unicode 分词，不区分语言\n\n**Segment Merge 影响：**\n- Merge 过程会读取多个 segment，增加 IO\n- 但 ES 有后台合并机制，影响有限\n- 如果 merge 太频繁，说明写入量太大\n\n---\n\n## 第七题：ClickHouse\n\n### 场景\n`SELECT date, campaign_id, count() GROUP BY date, campaign_id` 跑几分钟\n\n### 答案\n\n**Sorting Key 加速：**\n- ClickHouse 按 sorting key 排序存储\n- GROUP BY 可以利用排序做内存聚合，避免磁盘 IO\n\n**高基数 GROUP BY 优化：**\n- 用 `uniqCombined` 替代 `count(distinct)`\n- 用 `GROUP BY` 预聚合，再聚合\n- 用 `MATERIALIZED VIEW` 预计算\n\n**手动 MERGE vs 自动 MERGE：**\n- 自动：后台合并，透明\n- 手动：`ALTER TABLE ... MERGE`，用于优化小分区\n- 手动在分区刚创建时有用\n\n---\n\n## 第八题：设计模式 + Go 实战\n\n### 场景\n5 个广告平台 API 统一接入\n\n### 答案\n\n**Go 接口 + 组合模式：**\n\n```go\ntype AdPlatformAPI interface {\n    CreateCampaign(ctx context.Context, req *CreateCampaignRequest) (*Campaign, error)\n    Bid(ctx context.Context, req *BidRequest) (*BidResponse, error)\n}\n\n// 各平台实现独立，互不影响\ntype GoogleAdsAdapter struct { client *google.Client }\ntype MetaAdsAdapter struct { client *meta.Client }\ntype TikTokAdsAdapter struct { client *tiktok.Client }\n\n// 使用:\nvar api AdPlatformAPI = &GoogleAdsAdapter{client: gc}\n```\n\n**防腐层：**\n- 每个平台适配器独立\n- 改 Google 不影响其他\n\n**限流：**\n- 令牌桶算法\n- 按平台独立限流\n- 全局熔断\n\n---\n\n## 第九题：广告数据分析\n\n### 场景\nFacebook ROI 下降 20%\n\n### 答案\n\n**拆解方法：**\n- A/B Test 思路：拆解变量（出价、定向、创意、时段）\n- 归因模型：看各渠道贡献\n\n**LTV/CAC：**\n- LTV = Σ(ARPU_m × Retention_m) / (1 + r)^m\n- LTV:CAC ≥ 3 健康\n- CAC 上升但 LTV 不变 → 获客渠道质量下降\n\n**Shapley Value 近似：**\n- Monte Carlo 采样\n- 随机排列触点，计算平均边际贡献\n\n---\n\n## 第十题：系统设计\n\n### 场景\n设计广告竞价系统（10万 QPS，P99 < 100ms）\n\n### 答案\n\n**架构图：**\n```\n┌──────────┐  ┌──────────┐  ┌──────────┐\n│ 负载均衡  │→ │竞价引擎  │→ │ 广告库   │\n│ (Nginx)  │  │(Go)      │  │(MySQL)  │\n└──────────┘  └──────────┘  └──────────┘\n                   │\n                   ▼\n            ┌──────────┐\n            │用户画像  │\n            │(Redis)  │\n            └──────────┘\n```\n\n**用户画像存储：**\n- Redis: 热点用户画像\n- ES: 用户特征检索\n- MySQL: 持久化\n\n**竞价引擎扩展：**\n- 分片: 按 campaign_id 哈希\n- 缓存: 广告特征缓存\n- 异步: 预算控制异步化\n\n**预算控制一致性：**\n- Redis 原子操作（INCR/DECR）\n- 异步对账（每分钟一次）\n\n**容灾：**\n- 降级: 某个平台挂了，自动切换\n- 熔断: 服务异常时熔断\n- 超时: 所有调用设置超时\n",
+      "word_count": 885,
+      "is_entry_file": false,
+      "wikilinks": [],
+      "frontmatter_type": "",
+      "created": "",
+      "rrf_score": 0.008573,
+      "source_scores": [
+        [
+          "file_content",
+          0.006154
+        ],
+        [
+          "file_name",
+          0.002419
+        ]
+      ],
+      "intent": "unknown",
+      "confidence": 0.0
+    },
+    {
+      "file_path": "/Users/yanping.ma/ryan-personal-knowledge/knowledge/growth-plan/growth-roadmap.md",
+      "file_name": "growth-roadmap.md",
+      "directory": "growth-plan",
+      "parent_dir": "knowledge",
+      "tags": [
+        "#成长规划",
+        "#技术专家",
+        "#广告业务"
+      ],
+      "headings": [
+        "Ryan 的成长体系 — 从 TL 到高级/资深专家",
+        "当前定位",
+        "成长维度与深度要求",
+        "维度 1：技术深度",
+        "维度 2：架构与工程",
+        "维度 3：业务能力（广告方向）",
+        "维度 4：视野与管理",
+        "推荐书单与学习计划",
+        "核心书籍（按优先级排序）",
+        "Tier 1：必读（1-3 个月）",
+        "Tier 2：重要（3-6 个月）",
+        "Tier 3：扩展（6-12 个月）",
+        "你的微信读书书架已有书籍（需要精读）",
+        "学习方式与监督机制",
+        "每周学习节奏（碎片时间优化）",
+        "学习监督机制",
+        "1. 阅读进度跟踪",
+        "查看微信读书阅读进度",
+        "本周读了什么书？读了多少页？",
+        "查看微信读书阅读统计",
+        "本周阅读时长、天数、偏好",
+        "2. 知识沉淀要求",
+        "3. 季度目标设定",
+        "监督规则",
+        "与微信读书的集成",
+        "学习流程",
+        "微信读书能力",
+        "成长指标（OKR）",
+        "O1：技术深度 — 从\"会用\"到\"源码级理解\"",
+        "O2：架构与工程 — 从\"写代码\"到\"设计系统\"",
+        "O3：广告业务 — 从\"了解\"到\"深厚造诣\"",
+        "O4：领导力 — 从\"TL\"到\"高级专家\""
+      ],
+      "content_preview": "# Ryan 的成长体系 — 从 TL 到高级/资深专家\n\n**日期**: 2025-06-05\n**标签**: #成长规划 #技术专家 #广告业务\n\n## 当前定位\n\n- **角色**: TL（团队 Leader）\n- **级别**: 专家工程师 → 目标：高级专家 / 资深专家\n- **时间框架**: 6-12 个月加速成长\n\n## 成长维度与深度要求\n\n### 维度 1：技术深度\n\n> 不能停留在\"会用\"层面，要达到深刻理解源码原理、性能调优、架构设计的水平\n\n| 技术领域 | 当前水平 | 目标水平 | 核心学习要点 |\n|---------|---------|---------|-------------|\n| **Redis** | 会用 | 源码级理解、集群架构、性能调优、一致性保证 | 数据结构源码、持久化机制、集群分片算法、缓存一致性方案、热点 Key 治理 |\n| **MySQL** | 会用 | 锁机制深入、执行计划优化、分库分表、高可用架构 | InnoDB 引擎源码、MVCC 原理、B+Tree 优化、XA 事务、主从复制原理 |\n| **Elasticse",
+      "full_content": "# Ryan 的成长体系 — 从 TL 到高级/资深专家\n\n**日期**: 2025-06-05\n**标签**: #成长规划 #技术专家 #广告业务\n\n## 当前定位\n\n- **角色**: TL（团队 Leader）\n- **级别**: 专家工程师 → 目标：高级专家 / 资深专家\n- **时间框架**: 6-12 个月加速成长\n\n## 成长维度与深度要求\n\n### 维度 1：技术深度\n\n> 不能停留在\"会用\"层面，要达到深刻理解源码原理、性能调优、架构设计的水平\n\n| 技术领域 | 当前水平 | 目标水平 | 核心学习要点 |\n|---------|---------|---------|-------------|\n| **Redis** | 会用 | 源码级理解、集群架构、性能调优、一致性保证 | 数据结构源码、持久化机制、集群分片算法、缓存一致性方案、热点 Key 治理 |\n| **MySQL** | 会用 | 锁机制深入、执行计划优化、分库分表、高可用架构 | InnoDB 引擎源码、MVCC 原理、B+Tree 优化、XA 事务、主从复制原理 |\n| **Elasticsearch** | 会用 | 倒排索引原理、分词优化、集群调优、大数据量场景 | Lucene 底层原理、搜索性能优化、分片策略、数据倾斜治理 |\n| **ClickHouse** | 了解 | 列式存储架构、MergeTree 引擎原理、 OLAP 调优 | 向量化执行、数据压缩、物化视图、分布式查询优化 |\n| **Go** | 会用 | 并发模型深入、GC 调优、性能剖析、标准库源码 | GMP 调度器、GC 三色标记、runtime 源码、pprof 深度使用 |\n| **大数据** | 了解 | Hadoop/Spark 架构、数据管道设计、流批一体 | 数据建模、ETL 设计、实时计算、数据治理 |\n| **数据分析** | 基础 | 统计方法、指标体系设计、归因分析 | A/B Test、LTV/CAC、归因模型、数据驱动决策 |\n\n### 维度 2：架构与工程\n\n> 从\"能写代码\"到\"能设计系统\"，从\"能调 bug\"到\"能预防问题\"\n\n| 领域 | 当前水平 | 目标水平 | 核心学习要点 |\n|------|---------|---------|-------------|\n| **设计模式** | 了解 | 能灵活组合使用、能识别坏味道、能写重构方案 | 23 种模式 + 组合模式、架构模式（CQRS/EventSourcing）、反模式识别 |\n| **系统架构** | 一般 | 能独立设计分布式系统、容量规划、容灾 | 微服务治理、服务网格、分布式事务、CAP 取舍、混沌工程 |\n| **Agent 大模型** | 起步 | 能设计生产级 Agent 系统 | LangChain/LlamaIndex、多 Agent 编排、RAG 架构、Function Calling、ReAct 模式 |\n| **DevOps** | 一般 | 能设计 CI/CD 流水线、可观测性体系 | Kubernetes、Prometheus、Grafana、OpenTelemetry |\n\n### 维度 3：业务能力（广告方向）\n\n> 广告是核心战场，要从\"了解\"到\"深厚造诣\"\n\n| 广告领域 | 深度要求 | 学习目标 |\n|---------|---------|---------|\n| **广告系统架构** | 深刻理解 | 竞价系统（RTB）、广告排序、流量分配、竞价策略 |\n| **投放产品** | 全面掌握 | Google Ads (PMax/GMX)、Meta (Advantage+)、TikTok (Spark Ads)、DV360 |\n| **数据与归因** | 精通 | 数据回流、归因模型、LTV 计算、ROI 优化 |\n| **广告平台 API** | 专家级 | Marketing API 设计、数据同步、批量操作、错误处理 |\n| **行业洞察** | 前沿跟踪 | AI 在广告中的应用、隐私计算、第一方数据策略 |\n\n### 维度 4：视野与管理\n\n> 从\"管项目\"到\"管战略\"，从\"写代码\"到\"带人\"\n\n| 领域 | 学习目标 |\n|------|---------|\n| **技术领导力** | 技术愿景规划、架构决策、技术债务管理 |\n| **团队管理** | 人才选拔培养、绩效体系、团队协作机制 |\n| **商业思维** | 产品思维、ROI 意识、商业敏感度 |\n| **行业影响力** | 技术分享、开源贡献、行业演讲 |\n\n## 推荐书单与学习计划\n\n### 核心书籍（按优先级排序）\n\n#### Tier 1：必读（1-3 个月）\n\n| 书籍 | 领域 | 核心价值 | 预计学习时长 |\n|------|------|---------|-------------|\n| **《系统设计导论》** | 架构设计 | 分布式系统设计方法论 | 3 周 |\n| **《深入理解计算机系统》** | 系统底层 | CSAPP 经典，理解底层原理 | 6 周 |\n| **《Go 语言设计与实现》** | Go 深入 | 源码级 Go 理解 | 4 周 |\n| **《RAG 实战》** | Agent/AI | RAG 系统设计实战 | 3 周 |\n| **《广告算法与实践》** | 广告业务 | 广告竞价/排序/推荐算法 | 4 周 |\n\n#### Tier 2：重要（3-6 个月）\n\n| 书籍 | 领域 | 核心价值 | 预计学习时长 |\n|------|------|---------|-------------|\n| **《Redis 设计与实现》** | Redis | Redis 源码深入理解 | 2 周 |\n| **《MySQL 技术内幕》** | MySQL | InnoDB 引擎原理 | 2 周 |\n| **《数据密集型应用系统设计》** | 系统架构 | DDD 经典，数据系统设计 | 4 周 |\n| **《设计模式：可复用面向对象软件的基础》** | 设计模式 | 23 种设计模式 | 4 周 |\n| **《ClickHouse 内核剖析》** | 大数据 | ClickHouse 原理与调优 | 2 周 |\n| **《大规模深度学习系统》** | 大数据 | 大规模 ML 工程实践 | 3 周 |\n\n#### Tier 3：扩展（6-12 个月）\n\n| 书籍 | 领域 | 核心价值 | 预计学习时长 |\n|------|------|---------|-------------|\n| **《架构整洁之道》** | 架构 | 整洁架构思想 | 2 周 |\n| **《Kubernetes 权威指南》** | DevOps | K8s 系统级掌握 | 3 周 |\n| **《机器学习系统设计》** | AI/ML | ML 系统从理论到工程 | 4 周 |\n| **《广告技术架构与实战》** | 广告 | 广告系统全链路 | 4 周 |\n\n### 你的微信读书书架已有书籍（需要精读）\n\n**AI/Agent 相关：**\n- ✅ `Agent设计模式` — 精读，做笔记\n- ✅ `大模型RAG实战` — 精读，做笔记\n- ✅ `智能体一本通` — 精读，提炼实践方法\n- ✅ `这就是GEO：在AI流量红利中抢占先机` — 精读，理解商业应用\n\n**技术深入：**\n- ✅ `精通AST-GREP` — 精读，掌握代码理解工具\n- ✅ `奇妙的JavaScript` — 选读\n- ✅ `技术管理必修课` — 精读，TL 必备\n\n**电商/商业：**\n- ✅ `Shopee跨境电商卖家实战指南` — 精读，辅助开店\n- ✅ `管好你的钱` — 选读\n- ✅ `慢慢变富` — 选读\n\n## 学习方式与监督机制\n\n### 每周学习节奏（碎片时间优化）\n\n| 时间 | 学习内容 | 预计时长 |\n|------|---------|---------|\n| **周一** | 技术深度（Redis/MySQL/Go） | 30min × 1 |\n| **周二** | Agent/AI 技术 | 30min × 1 |\n| **周三** | 广告业务深度 | 30min × 1 |\n| **周四** | 架构与工程 | 30min × 1 |\n| **周五** | 每周复盘 + 下周计划 | 30min × 1 |\n| **周末** | 大块学习时间（选读） | 2-4h |\n\n### 学习监督机制\n\n#### 1. 阅读进度跟踪\n\n每周检查：\n```bash\n# 查看微信读书阅读进度\n# 本周读了什么书？读了多少页？\n\n# 查看微信读书阅读统计\n# 本周阅读时长、天数、偏好\n```\n\n#### 2. 知识沉淀要求\n\n每读完一本书（或一本书的核心章节），必须：\n- **写读书笔记** — 存在 `ryan-personal-knowledge/knowledge/` 下\n- **提炼实践要点** — 这本书的什么技能可以应用到工作中\n- **更新知识图谱** — 新增/更新节点到知识图谱\n\n#### 3. 季度目标设定\n\n每 3 个月回顾：\n- 完成了哪些里程碑？\n- 阅读进度是否符合预期？\n- 技术/业务/管理维度是否均衡？\n- 是否需要调整书单？\n\n### 监督规则\n\n1. **每周日晚** — 我来检查你的微信读书阅读进度\n2. **每月 1 号** — 回顾上月阅读笔记，检查知识沉淀\n3. **每季度** — 重新评估成长目标，更新书单\n4. **每本新书读完** — 必须产出知识笔记\n\n## 与微信读书的集成\n\n### 学习流程\n\n```text\n微信读书书架\n    │\n    ▼\n推荐书籍 → 加入待读书单\n    │\n    ▼\n阅读进度跟踪 → 每周检查\n    │\n    ▼\n划线/想法 → 自动提取\n    │\n    ▼\n知识笔记生成 → 沉淀到知识库\n    │\n    ▼\n知识图谱更新 → 持续进化\n```\n\n### 微信读书能力\n\n已集成的能力：\n- 📚 **书架管理** — 查看书架、阅读进度\n- 📝 **笔记划线** — 查看个人笔记、导出笔记\n- 📊 **阅读统计** — 时长、天数、偏好分析\n- 🔍 **书籍搜索** — 发现新书\n- ⭐ **书籍点评** — 查看公开点评\n- 📖 **推荐好书** — 个性化推荐\n\n## 成长指标（OKR）\n\n### O1：技术深度 — 从\"会用\"到\"源码级理解\"\n\n| KR | 衡量标准 | 目标时间 |\n|----|---------|---------|\n| Redis 源码级理解 | 能解释 GMP 调度、持久化、集群原理 | Q3 2025 |\n| Go 并发模型深入 | 能写高性能并发程序，会用 pprof | Q3 2025 |\n| 数据库内核理解 | 能优化慢查询、设计分库分表方案 | Q4 2025 |\n| ClickHouse 精通 | 能设计 OLAP 系统、性能调优 | Q4 2025 |\n\n### O2：架构与工程 — 从\"写代码\"到\"设计系统\"\n\n| KR | 衡量标准 | 目标时间 |\n|----|---------|---------|\n| 系统架构设计 | 能独立设计大型分布式系统 | Q3 2025 |\n| 设计模式精通 | 能识别并重构坏代码 | Q3 2025 |\n| Agent 系统设计 | 能设计生产级多 Agent 系统 | Q4 2025 |\n\n### O3：广告业务 — 从\"了解\"到\"深厚造诣\"\n\n| KR | 衡量标准 | 目标时间 |\n|----|---------|---------|\n| 广告系统架构 | 能解释竞价/排序/流量分配原理 | Q3 2025 |\n| 多平台 API 专家级 | 熟悉 Google/Meta/TikTok/DV360 | Q4 2025 |\n| 数据驱动广告 | 能设计归因模型、优化 ROI | Q4 2025 |\n\n### O4：领导力 — 从\"TL\"到\"高级专家\"\n\n| KR | 衡量标准 | 目标时间 |\n|----|---------|---------|\n| 技术领导力 | 制定团队技术路线图 | Q3 2025 |\n| 人才培养 | 建立梯队、培养 2-3 名骨干 | Q4 2025 |\n| 行业影响力 | 技术分享/文章/演讲 | 持续进行 |\n",
+      "word_count": 928,
+      "is_entry_file": false,
+      "wikilinks": [],
+      "frontmatter_type": "",
+      "created": "",
+      "rrf_score": 0.006452,
+      "source_scores": [
+        [
+          "file_content",
+          0.006452
+        ]
+      ],
+      "intent": "unknown",
+      "confidence": 0.0
+    },
+    {
+      "file_path": "/Users/yanping.ma/ryan-personal-knowledge/knowledge/tools/architecture-learning-plan.md",
+      "file_name": "architecture-learning-plan.md",
+      "directory": "tools",
+      "parent_dir": "knowledge",
+      "tags": [
+        "#架构",
+        "#学习路径",
+        "#重点模块"
+      ],
+      "headings": [
+        "架构与工程模块学习计划",
+        "一、架构模块书籍清单（按优先级排序）",
+        "Tier 1：必读核心（2-4 周/本）",
+        "Tier 2：重要提升（2-3 周/本）",
+        "Tier 3：专业深化（1-2 周/本）",
+        "二、架构模块学习路径",
+        "第 1 阶段：架构基础（2-3 周）",
+        "第 2 阶段：架构模式（3-4 周）",
+        "第 3 阶段：分布式系统（4-6 周）",
+        "第 4 阶段：专业深化（2-3 周）",
+        "三、架构模块检验题库",
+        "架构设计基础（示例）",
+        "架构模式（示例）",
+        "分布式系统（示例）",
+        "四、学习监督机制",
+        "每周检查",
+        "月度评估",
+        "季度回顾"
+      ],
+      "content_preview": "# 架构与工程模块学习计划\n\n> 创建日期: 2026-06-08\n> 标签: #架构 #学习路径 #重点模块\n\n---\n\n## 一、架构模块书籍清单（按优先级排序）\n\n### Tier 1：必读核心（2-4 周/本）\n\n| 书籍 | 核心价值 | 学习重点 |\n|------|---------|---------|\n| **《从程序员到架构师》** | 大数据量、缓存、高并发、微服务、多团队协同实战 | 架构设计方法论、工程实践 |\n| **《搞定系统设计》** | 面试敲开大厂的门 | 系统设计方法论、系统设计面试技巧 |\n| **《架构师应该知道的37件事》** | 架构师知识体系全景 | 架构师必备知识、思维模式 |\n| **《微服务设计》** | 微服务架构设计与实践 | 微服务拆分、治理、部署 |\n\n### Tier 2：重要提升（2-3 周/本）\n\n| 书籍 | 核心价值 | 学习重点 |\n|------|---------|---------|\n| **《架构解密：从分布式到微服务》** | 架构演进路径 | 分布式系统、微服务架构 |\n| **《分布式系统架构》**",
+      "full_content": "# 架构与工程模块学习计划\n\n> 创建日期: 2026-06-08\n> 标签: #架构 #学习路径 #重点模块\n\n---\n\n## 一、架构模块书籍清单（按优先级排序）\n\n### Tier 1：必读核心（2-4 周/本）\n\n| 书籍 | 核心价值 | 学习重点 |\n|------|---------|---------|\n| **《从程序员到架构师》** | 大数据量、缓存、高并发、微服务、多团队协同实战 | 架构设计方法论、工程实践 |\n| **《搞定系统设计》** | 面试敲开大厂的门 | 系统设计方法论、系统设计面试技巧 |\n| **《架构师应该知道的37件事》** | 架构师知识体系全景 | 架构师必备知识、思维模式 |\n| **《微服务设计》** | 微服务架构设计与实践 | 微服务拆分、治理、部署 |\n\n### Tier 2：重要提升（2-3 周/本）\n\n| 书籍 | 核心价值 | 学习重点 |\n|------|---------|---------|\n| **《架构解密：从分布式到微服务》** | 架构演进路径 | 分布式系统、微服务架构 |\n| **《分布式系统架构》** | 架构策略与难题求解 | 分布式系统原理、架构策略 |\n| **《分布式架构原理与实践》** | 架构实践 | 分布式系统实现、工程实践 |\n| **《企业应用架构模式》** | 架构模式 | 常见架构模式、模式识别 |\n| **《设计模式：可复用面向对象软件的基础》** | 23种设计模式经典 | 设计模式原理、应用场景 |\n\n### Tier 3：专业深化（1-2 周/本）\n\n| 书籍 | 核心价值 | 学习重点 |\n|------|---------|---------|\n| **《凤凰架构》** | 大型分布式系统设计 | 可靠系统设计、架构策略 |\n| **《从Paxos到Zookeeper》** | 分布式一致性原理 | Paxos、Zookeeper、Raft |\n| **《Kubernetes快速入门》** | K8s 容器编排 | Kubernetes、容器化部署 |\n| **《Redis设计与实现》** | Redis 源码级理解 | 数据结构、持久化、集群 |\n\n---\n\n## 二、架构模块学习路径\n\n### 第 1 阶段：架构基础（2-3 周）\n\n**目标**: 掌握架构设计方法论和基本思维\n\n**学习顺序**:\n1. 《从程序员到架构师》 → 核心：实战经验总结\n2. 《架构师应该知道的37件事》 → 核心：知识体系全景\n3. 《搞定系统设计》 → 核心：系统设计面试\n\n**检验重点**:\n- 能解释架构设计的 5 个核心维度（性能、可用性、可扩展性、安全性、可维护性）\n- 能画出常见系统的架构图\n- 能解释 CAP 定理的实际应用\n\n### 第 2 阶段：架构模式（3-4 周）\n\n**目标**: 掌握常用架构模式和设计模式\n\n**学习顺序**:\n1. 《设计模式》 → 23 种设计模式\n2. 《企业应用架构模式》 → 架构模式\n3. 《微服务设计》 → 微服务架构\n4. 《架构解密：从分布式到微服务》 → 架构演进\n\n**检验重点**:\n- 能识别常见架构模式（分层、MVC、CQRS、EventSourcing）\n- 能解释设计模式在 Go 中的实现\n- 能画出微服务架构图\n\n### 第 3 阶段：分布式系统（4-6 周）\n\n**目标**: 掌握分布式系统原理和架构\n\n**学习顺序**:\n1. 《分布式系统架构》 → 架构策略\n2. 《分布式架构原理与实践》 → 工程实践\n3. 《从Paxos到Zookeeper》 → 一致性协议\n4. 《凤凰架构》 → 大型分布式系统设计\n\n**检验重点**:\n- 能解释 CAP、BASE 理论\n- 能实现分布式事务（2PC/Saga/TCC）\n- 能设计高可用架构\n\n### 第 4 阶段：专业深化（2-3 周）\n\n**目标**: 掌握特定领域的架构技术\n\n**学习顺序**:\n1. 《Kubernetes快速入门》 → K8s 容器编排\n2. 《Redis设计与实现》 → Redis 源码\n3. 《凤凰架构》 → 大型分布式系统设计\n\n**检验重点**:\n- 能设计基于 K8s 的部署架构\n- 能解释 Redis 集群原理\n- 能画出复杂系统的架构图\n\n---\n\n## 三、架构模块检验题库\n\n### 架构设计基础（示例）\n\n| # | 题目 | 难度 | 考察点 |\n|---|------|------|--------|\n| 1 | 架构设计的 5 个核心维度是什么？如何权衡？ | ⭐⭐⭐ | 设计思维 |\n| 2 | CAP 定理在实际系统选型中的应用 | ⭐⭐⭐⭐ | 分布式理论 |\n| 3 | 微服务拆分的边界如何确定？ | ⭐⭐⭐⭐ | 架构设计 |\n| 4 | 如何评估一个系统的架构质量？ | ⭐⭐⭐ | 评估方法 |\n| 5 | 单体架构 vs 微服务架构的选型 | ⭐⭐⭐ | 架构决策 |\n\n### 架构模式（示例）\n\n| # | 题目 | 难度 | 考察点 |\n|---|------|------|--------|\n| 1 | CQRS 和 Event Sourcing 的适用场景 | ⭐⭐⭐⭐ | 架构模式 |\n| 2 | 防腐层（ACL）的设计原则 | ⭐⭐⭐ | 架构模式 |\n| 3 | 微服务架构中的服务治理模式 | ⭐⭐⭐⭐ | 微服务 |\n| 4 | 分布式事务的 4 种解决方案 | ⭐⭐⭐⭐⭐ | 分布式事务 |\n| 5 | 分层架构中的常见反模式 | ⭐⭐⭐ | 反模式识别 |\n\n### 分布式系统（示例）\n\n| # | 题目 | 难度 | 考察点 |\n|---|------|------|--------|\n| 1 | Paxos 算法的原理和实现 | ⭐⭐⭐⭐⭐ | 一致性协议 |\n| 2 | Raft 算法相比 Paxos 的优势 | ⭐⭐⭐⭐ | 一致性协议 |\n| 3 | 分布式锁的实现方案对比 | ⭐⭐⭐⭐ | 分布式协调 |\n| 4 | 服务发现机制的实现原理 | ⭐⭐⭐⭐ | 微服务治理 |\n| 5 | 分布式追踪（Distributed Tracing）的实现 | ⭐⭐⭐ | 可观测性 |\n\n---\n\n## 四、学习监督机制\n\n### 每周检查\n\n1. **阅读进度**: 本周读了哪本书？读了多少页？\n2. **知识沉淀**: 是否写了读书笔记？\n3. **实践应用**: 能否用学到的知识解决实际问题？\n\n### 月度评估\n\n1. **模块完成度**: 当前阶段的学习进度\n2. **知识掌握度**: 通过检验题目的得分\n3. **实践能力**: 是否能画出系统架构图\n\n### 季度回顾\n\n1. **里程碑**: 完成了哪些书籍的学习？\n2. **能力提升**: 架构设计能力提升了多少？\n3. **调整计划**: 是否需要调整学习顺序？\n\n---\n\n*本文件定义架构模块的学习路径和检验标准*\n",
+      "word_count": 504,
+      "is_entry_file": false,
+      "wikilinks": [],
+      "frontmatter_type": "",
+      "created": "",
+      "rrf_score": 0.006349,
+      "source_scores": [
+        [
+          "file_content",
+          0.006349
+        ]
+      ],
+      "intent": "unknown",
+      "confidence": 0.0
+    },
+    {
+      "file_path": "/Users/yanping.ma/ryan-personal-knowledge/knowledge/tools/daily-learning-system.md",
+      "file_name": "daily-learning-system.md",
+      "directory": "tools",
+      "parent_dir": "knowledge",
+      "tags": [
+        "#成长计划",
+        "#每日学习",
+        "#检验闭环"
+      ],
+      "headings": [
+        "每日学习 + 检验系统",
+        "一、执行流程",
+        "二、每日学习计划（按成长路线图模块轮换）",
+        "模块优先级与周期",
+        "三、每周学习节奏",
+        "四、架构与工程模块（重点加强）",
+        "核心学习要点",
+        "五、架构与工程题库（20+ 题/模块）",
+        "设计模式（示例）",
+        "系统架构（示例）",
+        "Agent 大模型（示例）",
+        "六、使用方式"
+      ],
+      "content_preview": "# 每日学习 + 检验系统\n\n> 创建日期: 2026-06-08\n> 标签: #成长计划 #每日学习 #检验闭环\n\n---\n\n## 一、执行流程\n\n```\n每天早上 9:00\n    │\n    ▼\n推送今日学习任务（30min 阅读）\n    │\n    ▼\n你学习（碎片时间）\n    │\n    ▼\n你随时发消息：\"学完了\" 或 \"来考我\"\n    │\n    ▼\n我出题检验（深度问答）\n    │\n    ▼\n你回答\n    │\n    ▼\n我打分 + 给答案 + 评分 + 给出下次改进方向\n    │\n    ▼\n记录到进度表（session_search）\n```\n\n---\n\n## 二、每日学习计划（按成长路线图模块轮换）\n\n### 模块优先级与周期\n\n```\n第 1-2 周：Go 深入（GMP/GC/内存分配器）\n第 3-4 周：MySQL 内核（MVCC/锁/XA事务）\n第 5-6 周：Redis 源码（dict/sds/持久化/Cluster）\n第 7-8 周：广告系统架构（竞价/排序/流量分配）\n第 9-10 周：Elasticsearch（倒排索引/分词/集群）\n",
+      "full_content": "# 每日学习 + 检验系统\n\n> 创建日期: 2026-06-08\n> 标签: #成长计划 #每日学习 #检验闭环\n\n---\n\n## 一、执行流程\n\n```\n每天早上 9:00\n    │\n    ▼\n推送今日学习任务（30min 阅读）\n    │\n    ▼\n你学习（碎片时间）\n    │\n    ▼\n你随时发消息：\"学完了\" 或 \"来考我\"\n    │\n    ▼\n我出题检验（深度问答）\n    │\n    ▼\n你回答\n    │\n    ▼\n我打分 + 给答案 + 评分 + 给出下次改进方向\n    │\n    ▼\n记录到进度表（session_search）\n```\n\n---\n\n## 二、每日学习计划（按成长路线图模块轮换）\n\n### 模块优先级与周期\n\n```\n第 1-2 周：Go 深入（GMP/GC/内存分配器）\n第 3-4 周：MySQL 内核（MVCC/锁/XA事务）\n第 5-6 周：Redis 源码（dict/sds/持久化/Cluster）\n第 7-8 周：广告系统架构（竞价/排序/流量分配）\n第 9-10 周：Elasticsearch（倒排索引/分词/集群）\n第 11-12 周：ClickHouse（MergeTree/列存储）\n第 13-14 周：Kafka（Broker/分区/消费者/Rebalance）\n第 15-16 周：设计模式+架构（Go实现/DDD/Saga）\n第 17-18 周：广告数据分析（A/B Test/归因/LTV/CAC）\n第 19-20 周：大数据系统（Hadoop/Spark/Flink）\n第 21-22 周：架构与工程（微服务治理/CAP/DistributedTransaction）\n第 23-24 周：Agent大模型（LangChain/Multi-Agent/RAG架构）\n第 25-26 周：DevOps（K8s/Prometheus/Grafana/OpenTelemetry）\n```\n\n---\n\n## 三、每周学习节奏\n\n| 时间 | 学习内容 | 预计时长 |\n|------|---------|---------|\n| **周一** | 技术深度（Redis/MySQL/Go） | 30min |\n| **周二** | Agent/AI 技术 | 30min |\n| **周三** | 广告业务深度 | 30min |\n| **周四** | 架构与工程（重点！） | 30min |\n| **周五** | 每周复盘 + 下周计划 | 30min |\n| **周末** | 大块学习时间（选读） | 2-4h |\n\n---\n\n## 四、架构与工程模块（重点加强）\n\n### 核心学习要点\n\n| 领域 | 当前水平 | 目标水平 | 核心学习要点 |\n|------|---------|---------|-------------|\n| **设计模式** | 了解 | 能灵活组合使用、能识别坏味道、能写重构方案 | 23 种模式 + 组合模式、架构模式（CQRS/EventSourcing）、反模式识别 |\n| **系统架构** | 一般 | 能独立设计分布式系统、容量规划、容灾 | 微服务治理、服务网格、分布式事务、CAP 取舍、混沌工程 |\n| **Agent 大模型** | 起步 | 能设计生产级 Agent 系统 | LangChain/LlamaIndex、多 Agent 编排、RAG 架构、Function Calling、ReAct 模式 |\n| **DevOps** | 一般 | 能设计 CI/CD 流水线、可观测性体系 | Kubernetes、Prometheus、Grafana、OpenTelemetry |\n\n---\n\n## 五、架构与工程题库（20+ 题/模块）\n\n### 设计模式（示例）\n\n| # | 题目 | 难度 | 考察点 |\n|---|------|------|--------|\n| 1 | 23 种设计模式中，哪些在 Go 中最常用？为什么？ | ⭐⭐ | Go 习惯 |\n| 2 | DDD 中聚合根和值对象的区别？如何确定聚合边界？ | ⭐⭐⭐⭐ | DDD |\n| 3 | CQRS 和 Event Sourcing 的适用场景和反模式 | ⭐⭐⭐⭐ | 架构模式 |\n| 4 | Saga 模式在分布式事务中的应用 | ⭐⭐⭐⭐⭐ | 分布式事务 |\n| 5 | 防腐层（Anti-Corruption Layer）的设计原则 | ⭐⭐⭐ | 架构模式 |\n\n### 系统架构（示例）\n\n| # | 题目 | 难度 | 考察点 |\n|---|------|------|--------|\n| 1 | 微服务治理中的服务发现、负载均衡、熔断降级机制 | ⭐⭐⭐⭐ | 微服务 |\n| 2 | CAP 定理在实际系统选型中的应用 | ⭐⭐⭐ | 分布式系统 |\n| 3 | 分布式事务的 4 种解决方案（2PC/3PC/Saga/TCC） | ⭐⭐⭐⭐⭐ | 分布式事务 |\n| 4 | 容量规划和压测方法论 | ⭐⭐⭐ | 架构设计 |\n| 5 | 混沌工程的核心原则和实践 | ⭐⭐⭐ | 容灾设计 |\n\n### Agent 大模型（示例）\n\n| # | 题目 | 难度 | 考察点 |\n|---|------|------|--------|\n| 1 | RAG 系统的完整架构设计（检索→重排→生成） | ⭐⭐⭐⭐ | RAG |\n| 2 | 多 Agent 编排中的任务分解和协作模式 | ⭐⭐⭐⭐⭐ | Agent架构 |\n| 3 | Function Calling 的实现原理和应用场景 | ⭐⭐⭐ | Agent交互 |\n| 4 | LangChain 的核心组件和工作流 | ⭐⭐⭐ | 框架使用 |\n| 5 | ReAct 模式的实现和优势 | ⭐⭐⭐⭐ | Agent推理 |\n\n---\n\n## 六、使用方式\n\n1. **手动触发**：每次你发消息说\"今日学习\"或\"来考我\"，我从当前模块取一题考你\n2. **自动推送**：可以用 cron job 每天早上 9 点推送学习任务（需配置）\n3. **灵活选择**：也可以指定模块，比如\"考我 MySQL\"\n\n---\n\n*本文件定义学习闭环的执行规则*\n",
+      "word_count": 434,
+      "is_entry_file": false,
+      "wikilinks": [],
+      "frontmatter_type": "",
+      "created": "",
+      "rrf_score": 0.00625,
+      "source_scores": [
+        [
+          "file_content",
+          0.00625
+        ]
+      ],
+      "intent": "unknown",
+      "confidence": 0.0
+    },
+    {
+      "file_path": "/Users/yanping.ma/ryan-personal-knowledge/books/reading-list.md",
+      "file_name": "reading-list.md",
+      "directory": "books",
+      "parent_dir": "ryan-personal-knowledge",
+      "tags": [],
+      "headings": [
+        "待读书单 — Ryan 的成长计划",
+        "Tier 1：必读（1-3 个月）",
+        "Tier 2：重要（3-6 个月）",
+        "Tier 3：扩展（6-12 个月）",
+        "微信读书书架已有书籍（需要精读）",
+        "每周学习计划"
+      ],
+      "content_preview": "# 待读书单 — Ryan 的成长计划\n\n**最后更新**: 2026-06-08\n\n## Tier 1：必读（1-3 个月）\n\n| 书名 | 领域 | 优先级 | 状态 |\n|------|------|--------|------|\n| 系统设计导论 | 架构设计 | P0 | 待开始 |\n| 深入理解计算机系统 | 系统底层 | P0 | 待开始 |\n| Go 语言设计与实现 | Go 深入 | P0 | 待开始 |\n| RAG 实战 | Agent/AI | P0 | ✅ 在读（微信读书） |\n| 广告算法与实践 | 广告业务 | P0 | 待开始 |\n\n## Tier 2：重要（3-6 个月）\n\n| 书名 | 领域 | 优先级 | 状态 |\n|------|------|--------|------|\n| Redis 设计与实现 | Redis | P1 | 待开始 |\n| MySQL 技术内幕 | MySQL | P1 | 待开始 |\n| 数据密集型应用系统设计 | 系统架构 | P1 | 待开始 |\n| 设计模式 | 设计模式 | P1 | 待开始 |\n| Click",
+      "full_content": "# 待读书单 — Ryan 的成长计划\n\n**最后更新**: 2026-06-08\n\n## Tier 1：必读（1-3 个月）\n\n| 书名 | 领域 | 优先级 | 状态 |\n|------|------|--------|------|\n| 系统设计导论 | 架构设计 | P0 | 待开始 |\n| 深入理解计算机系统 | 系统底层 | P0 | 待开始 |\n| Go 语言设计与实现 | Go 深入 | P0 | 待开始 |\n| RAG 实战 | Agent/AI | P0 | ✅ 在读（微信读书） |\n| 广告算法与实践 | 广告业务 | P0 | 待开始 |\n\n## Tier 2：重要（3-6 个月）\n\n| 书名 | 领域 | 优先级 | 状态 |\n|------|------|--------|------|\n| Redis 设计与实现 | Redis | P1 | 待开始 |\n| MySQL 技术内幕 | MySQL | P1 | 待开始 |\n| 数据密集型应用系统设计 | 系统架构 | P1 | 待开始 |\n| 设计模式 | 设计模式 | P1 | 待开始 |\n| ClickHouse 内核剖析 | 大数据 | P1 | 待开始 |\n| 大规模深度学习系统 | 大数据 | P1 | 待开始 |\n\n## Tier 3：扩展（6-12 个月）\n\n| 书名 | 领域 | 优先级 | 状态 |\n|------|------|--------|------|\n| 架构整洁之道 | 架构 | P2 | 待开始 |\n| Kubernetes 权威指南 | DevOps | P2 | 待开始 |\n| 机器学习系统设计 | AI/ML | P2 | 待开始 |\n| 广告技术架构与实战 | 广告 | P2 | 待开始 |\n\n## 微信读书书架已有书籍（需要精读）\n\n| 书名 | 领域 | 优先级 | 状态 |\n|------|------|--------|------|\n| Agent设计模式 | AI/Agent | P0 | ✅ 在读 |\n| 大模型RAG实战 | AI/RAG | P0 | ✅ 在读 |\n| 智能体一本通 | AI/Agent | P1 | 待开始 |\n| 这就是GEO | AI商业化 | P1 | 待开始 |\n| 精通AST-GREP | 工具 | P1 | 待开始 |\n| 技术管理必修课 | 管理 | P1 | 待开始 |\n| Shopee跨境电商 | 电商 | P2 | 待开始 |\n| 管好你的钱 | 投资 | P2 | 待开始 |\n| 慢慢变富 | 投资 | P2 | 待开始 |\n\n## 每周学习计划\n\n- **周一**: 技术深度（Redis/MySQL/Go）— 30min\n- **周二**: Agent/AI 技术 — 30min\n- **周三**: 广告业务深度 — 30min\n- **周四**: 架构与工程 — 30min\n- **周五**: 每周复盘 + 下周计划 — 30min\n- **周末**: 大块学习时间（选读）— 2-4h\n",
+      "word_count": 320,
+      "is_entry_file": false,
+      "wikilinks": [],
+      "frontmatter_type": "",
+      "created": "",
+      "rrf_score": 0.00597,
+      "source_scores": [
+        [
+          "file_content",
+          0.00597
+        ]
+      ],
+      "intent": "unknown",
+      "confidence": 0.0
+    },
+    {
+      "file_path": "/Users/yanping.ma/ryan-personal-knowledge/knowledge/ad-ads/ad-system-architecture.md",
+      "file_name": "ad-system-architecture.md",
+      "directory": "ad-ads",
+      "parent_dir": "knowledge",
+      "tags": [
+        "#广告系统",
+        "#竞价",
+        "#RTB",
+        "#广告排序",
+        "#流量分配",
+        "#oCPX"
+      ],
+      "headings": [
+        "广告系统架构 — 竞价、排序、流量分配",
+        "1. 广告系统整体架构",
+        "1.1 广告请求全流程",
+        "1.2 核心架构组件",
+        "1.3 核心指标",
+        "2. 竞价系统 (RTB)",
+        "2.1 实时竞价流程",
+        "2.2 出价公式",
+        "基础出价（cCPM）",
+        "oCPX 出价（核心公式）",
+        "pCTR 模型演进",
+        "2.3 拍卖机制",
+        "3. 广告排序",
+        "3.1 多目标排序公式",
+        "3.2 双塔模型结构",
+        "3.3 特征工程体系",
+        "3.4 排序系统性能优化",
+        "4. 流量分配",
+        "4.1 广告位分配策略",
+        "4.2 预算 Pacing 控制",
+        "4.3 公平性 vs 收益最大化",
+        "5. 广告平台 API 对比",
+        "5.1 Google Ads API",
+        "5.2 Meta Marketing API",
+        "5.3 TikTok Ads API",
+        "5.4 DV360 (Google Display & Video 360)",
+        "5.5 API 对比总结"
+      ],
+      "content_preview": "# 广告系统架构 — 竞价、排序、流量分配\n\n> 标签: `#广告系统` `#竞价` `#RTB` `#广告排序` `#流量分配` `#oCPX`\n> 创建日期: 20260608\n> 作者: Ryan\n\n---\n\n## 1. 广告系统整体架构\n\n### 1.1 广告请求全流程\n\n```\n用户打开页面/App\n    │\n    ▼\n请求广告位 (Ad Slot Request)\n    │\n    ├──→ ① 广告位验证 (Slot Validation)\n    │      - 广告位有效性、频控、黑名单\n    │      - 返回：广告位 ID + 页面上下文\n    │\n    ├──→ ② 用户画像检索 (User Profiling)\n    │      - 用户 ID、设备 ID、兴趣标签、历史行为\n    │      - 从 Redis 缓存加载用户特征\n    │\n    ├──→ ③ 广告预筛选 (Pre-filter)\n    │      - 定向条件过滤：地域、年龄、兴趣、设备\n    │      - 频控过滤：用户今日已展示次数、转化次数\n  ",
+      "full_content": "# 广告系统架构 — 竞价、排序、流量分配\n\n> 标签: `#广告系统` `#竞价` `#RTB` `#广告排序` `#流量分配` `#oCPX`\n> 创建日期: 20260608\n> 作者: Ryan\n\n---\n\n## 1. 广告系统整体架构\n\n### 1.1 广告请求全流程\n\n```\n用户打开页面/App\n    │\n    ▼\n请求广告位 (Ad Slot Request)\n    │\n    ├──→ ① 广告位验证 (Slot Validation)\n    │      - 广告位有效性、频控、黑名单\n    │      - 返回：广告位 ID + 页面上下文\n    │\n    ├──→ ② 用户画像检索 (User Profiling)\n    │      - 用户 ID、设备 ID、兴趣标签、历史行为\n    │      - 从 Redis 缓存加载用户特征\n    │\n    ├──→ ③ 广告预筛选 (Pre-filter)\n    │      - 定向条件过滤：地域、年龄、兴趣、设备\n    │      - 频控过滤：用户今日已展示次数、转化次数\n    │      - 黑名单过滤：已转化用户、竞品广告\n    │      - 输出：候选广告集 (Candidate Ads)\n    │\n    ├──→ ④ 粗排 (Pre-ranking)\n    │      - 快速特征提取 + 轻量模型\n    │      - 从百万级候选广告中筛选 Top-K (K≈1000)\n    │      - 策略：倒排索引 + 规则匹配\n    │\n    ├──→ ⑤ 精排 (Ranking)\n    │      - 深度模型预测 pCTR / pCVR / pCTC\n    │      - 多目标排序融合\n    │      - 输出：排序分数 + eCPM\n    │\n    ├──→ ⑥ 竞价策略 (Bidding)\n    │      - 根据 pCTR × pCVR 计算出价\n    │      - oCPX 目标转化出价\n    │      - 预算 Pacing 控制\n    │\n    ├──→ ⑦ 流量分配 (Allocation)\n    │      - 广告位混排：自然内容 vs 广告\n    │      - 广告间混排：竞价广告 vs 保量广告\n    │\n    └──→ ⑧ 返回广告列表 (Ad Response)\n           - 返回广告素材 + 追踪 URL + 竞价 ID (Bid ID)\n```\n\n### 1.2 核心架构组件\n\n```\n┌──────────────────────────────────────────────────────────────┐\n│                      Ad Request Pipeline                     │\n│                                                              │\n│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐         │\n│  │ Pre-    │  │ Pre-    │  │ Rank-   │  │ Bid &   │         │\n│  │ filter  │──│ ranking │──│ ing     │──│ Pacing  │──→ Ad   │\n│  │ (ms级)  │  │ (10ms级)│  │ (50ms级)│  │ (5ms级) │   List  │\n│  └─────────┘  └─────────┘  └─────────┘  └─────────┘         │\n│       │             │             │             │             │\n│       ▼             ▼             ▼             ▼             │\n│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐         │\n│  │ 用户画像│  │ 候选广告│  │ 排序模型│  │ 出价策略│         │\n│  │ Redis   │  │ 倒排索引│  │ 深度学习│  │ 预算控制│         │\n│  └─────────┘  └─────────┘  └─────────┘  └─────────┘         │\n│                                                              │\n│  ┌──────────────────────────────────────────────────────┐    │\n│  │              Feature Store (实时特征计算)              │    │\n│  │  用户特征 │ 广告特征 │ 上下文特征 │ 交叉特征           │    │\n│  └──────────────────────────────────────────────────────┘    │\n└──────────────────────────────────────────────────────────────┘\n```\n\n### 1.3 核心指标\n\n| 指标 | 公式 | 说明 |\n|------|------|------|\n| **eCPM** | pCTR × pCVR × bid × 1000 | 千次展示期望收入 |\n| **CTR** | 点击数 / 展示数 | 点击率 |\n| **CVR** | 转化数 / 点击数 | 转化率 |\n| **oCPM** | eCPM 基于转化出价 | 广告主付转化费，平台按转化计算 eCPM |\n| **RoAS** | 广告收入 / 广告花费 | 投资回报率 |\n\n---\n\n## 2. 竞价系统 (RTB)\n\n### 2.1 实时竞价流程\n\n```\nStep 1: 广告请求到达 SSP/Ad Server\n         │\n         ▼\nStep 2: 构造 Bid Request\n         {\n           \"imp\": [{\"id\": \"imp1\", \"w\": 300, \"h\": 250}],\n           \"user\": {\"id\": \"user123\", \"demographics\": {...}},\n           \"device\": {\"ua\": \"...\", \"ip\": \"...\"},\n           \"site\": {\"id\": \"site456\", \"cat\": [\"BUS\", \"TECH\"]},\n           \"at\": 2,           // 拍卖类型(1=第一价格, 2=第二价格)\n           \"tmax\": 100,     // 超时 100ms\n           \"bidfloor\": 0.5  // 底价\n         }\n         │\n         ▼\nStep 3: 发送给 Bidder (广告主/DSP)\n         POST /openrtb/bid HTTP/1.1\n         {\"source\": \"...\", \"seatbid\": [...]}\n         │\n         ▼\nStep 4: Bidder 返回竞价决策\n         {\n           \"id\": \"bid-req-001\",\n           \"seatbid\": [{\n             \"bid\": [{\n               \"id\": \"bid-001\",\n               \"impid\": \"imp1\",\n               \"price\": 2.5,\n               \"adid\": \"ad-789\",\n               \"adm\": \"<creative>\"\n             }]\n           }]\n         }\n         │\n         ▼\nStep 5: 选出 Winner（最高价 ≥ bidfloor）\n         Winner: Bidder A (price=2.5)\n         Price: 第二价格 (≈ Bidder B 的价格)\n         │\n         ▼\nStep 6: 返回广告 + 发送 Win/Loss Notification\n         Win: POST /notify/win {bidId: \"bid-001\"}\n         Loss: POST /notify/loss {bidId: \"bid-002\"}\n```\n\n### 2.2 出价公式\n\n#### 基础出价（cCPM）\n\n```\nbid = bid_cap  // 广告主直接出价（CPC/CPM/CPT）\n```\n\n#### oCPX 出价（核心公式）\n\n广告主按转化出价（CPC/CPA/CPA），平台需要将其转为 CPM 竞价：\n\n```\nqCPM = qCTR × qCVR × bid\n\n其中：\n  qCTR = 模型预测的点击概率\n  qCVR = 模型预测的转化概率\n  bid  = 广告主设定的单次转化出价（如 oCPC=5元/点击）\n\n实际竞价时：\n  bid = qCTR × qCVR × oCPA × β\n\n  β = 出价系数（可调参数，控制激进/保守程度）\n      β > 1  → 激进出价，抢占更多流量\n      β < 1  → 保守出价，控制成本\n```\n\n#### pCTR 模型演进\n\n```\n阶段 1: LR (逻辑回归)\n  pCTR = σ(w0 + w1·x1 + w2·x2 + ... + wn·xn)\n  优点：简单、快速\n  缺点：无法捕捉非线性特征交互\n\n阶段 2: GBDT + LR (Facebook/Facebook 早期)\n  GBDT 自动做特征选择 → 离散化 → 输入 LR\n  优点：效果好，工业界经典\n  缺点：特征工程依赖人工\n\n阶段 3: DeepFM (滴滴/Google)\n  FM 层自动捕捉一阶/二阶特征交叉\n  Deep 层捕捉高阶特征交互\n  pCTR = sigmoid(Dense_output × FM_output)\n\n阶段 4: DIN (Deep Interest Network, 阿里)\n  引入 Attention 机制建模用户兴趣\n  候选广告 vs 用户历史行为序列\n  pCTR = DIN_model(user_history, candidate_ad, context)\n\n阶段 5: 多塔模型 + 实时特征\n  Tower 结构：User Tower / Ad Tower / Context Tower\n  实时特征：用户最近1分钟行为、实时搜索词\n  多目标：同时预测 pCTR / pCVR / pShare / pWatch\n```\n\n### 2.3 拍卖机制\n\n| 类型 | 机制 | 广告主出价 | 实际支付 | 适用场景 |\n|------|------|-----------|---------|---------|\n| **第一价格** | 最高价中标 | bid | bid | 程序化直接购买 |\n| **第二价格** | 最高价中标 | bid | 第二高价 | 传统 RTB（逐渐淘汰） |\n| **广义第二价格 (GSP)** | 按排序位置定价 | bid | 下一位出价 × 质量分 | Google Ads 主流 |\n| **VCG** | Vickrey-Clarke-Groves | bid | 外部性损失 | 理论最优，少用 |\n\n**GSP 实际定价公式**：\n\n```\n假设广告位按 eCPM 排序：\n  Ad1: eCPM1 = pCTR1 × bid1 = 5.0\n  Ad2: eCPM2 = pCTR2 × bid2 = 3.0\n  Ad3: eCPM3 = pCTR3 × bid3 = 2.0\n\nAd1 实际支付 = (eCPM2 / pCTR1) + ε\n  = (3.0 / pCTR1) + ε\n\nAd2 实际支付 = (eCPM3 / pCTR2) + ε\n  = (2.0 / pCTR2) + ε\n\nε = 最小竞价单位（如 0.000001 元）\n```\n\n---\n\n## 3. 广告排序\n\n### 3.1 多目标排序公式\n\n```\n综合得分 = α·pCTR + β·pCVR·CPA + γ·engagement + δ·广告主出价·RoAS_constraint\n\n实际排序时（eCPM 排序）：\n  eCPM = pCTR × pCVR × bid × 1000\n\n多目标融合（双塔 + 多任务）：\n  Score = w1·pCTR + w2·pCVR + w3·pEngagement + w4·bid_normalized\n\n其中权重 w1~w4 通过多任务学习 (MMoE / PleM) 自动优化。\n```\n\n### 3.2 双塔模型结构\n\n```\n                  ┌─────────────┐\n                  │   Query     │\n                  │   Tower     │\n                  │             │\n                  │ User Profile│──→ User Embedding (128-dim)\n                  │ User History│\n                  │ Interests   │\n                  └─────────────┘\n                          │\n                          ▼\n                  ┌─────────────┐\n                  │  Similarity │\n                  │  Computation│\n                  │  (Dot Prod) │\n                  └─────────────┘\n                          │\n                          ▼\n                  ┌─────────────┐\n                  │   Key       │\n                  │   Tower     │\n                  │             │\n                  │ Ad Profile  │──→ Ad Embedding (128-dim)\n                  │ Ad Category │\n                  │ Bid Price   │\n                  └─────────────┘\n\n  Score = UserEmbedding · AdEmbedding = Σ(ui × ai)\n```\n\n### 3.3 特征工程体系\n\n```\n特征类别        示例                                    来源\n─────────────────────────────────────────────────────────────\n用户特征       年龄、性别、城市、设备型号               用户画像 DB\n              近7天点击/转化行为                        行为日志\n              兴趣标签 (电商/游戏/汽车)                 兴趣模型\n              LTV 预估                                 用户价值模型\n\n广告特征       广告主 ID、行业、出价、素材类型           广告数据库\n              广告创意 embedding                        素材模型\n              广告历史 CTR/CVR                          统计特征\n              广告时长/曝光天数                          投放设置\n\n上下文特征     时间 (时/日/周)、地理位置                 请求上下文\n              页面类型/内容分类                         页面上下文\n              网络环境 (WiFi/4G/5G)                    设备信息\n\n交叉特征       用户年龄 × 广告行业                     人工构造\n              用户历史 × 广告创意 embedding             模型自动学习\n              城市等级 × 广告类型                       人工构造\n```\n\n### 3.4 排序系统性能优化\n\n```\n目标：RTB 场景下，广告排序 P99 延迟 < 100ms\n\n优化策略：\n1. 粗排：倒排索引 + 规则过滤，从 100 万候选 → Top 1000 (1ms)\n2. 精排：\n   - 模型蒸馏：大模型 → 小模型（100层 Transformer → 12层）\n   - 特征采样：只使用 Top-K 最重要特征（减少特征数 80%）\n   - 模型缓存：热门广告/用户对的预测结果缓存 (Redis)\n   - 量化：INT8 量化模型，推理速度提升 3-5x\n3. 并行化：\n   - 用户特征、广告特征、上下文特征并行提取\n   - 多个子模型并行推理\n4. 分布式：\n   - 特征服务：Redis 分布式特征缓存\n   - 模型服务：TF Serving / ONNX Runtime 分布式部署\n```\n\n---\n\n## 4. 流量分配\n\n### 4.1 广告位分配策略\n\n```\n广告位场景: 信息流中插入广告\n\n策略 A: 纯竞价 (Pure Bidding)\n  所有广告位 → 竞价排序 → 选出最高 eCPM 的广告\n  优点：平台收益最大化\n  缺点：用户体验下降（广告太多）\n\n策略 B: 固定比例 (Fixed Ratio)\n  每 N 条内容插入 1 条广告\n  优点：用户体验可控\n  缺点：收益可能不是最优\n\n策略 C: 混合模式 (Hybrid) ⭐ 推荐\n  - 竞价广告位：80% 的广告位参与竞价\n  - 保量广告位：20% 的广告位用于保量客户\n  - 广告/内容混排：每隔 3-5 条内容插入广告\n  - 广告间混排：竞价广告按 eCPM 排序插入\n```\n\n### 4.2 预算 Pacing 控制\n\n```\n问题：广告主预算有限，需要在整个投放期内均匀消耗\n\n方法 1: 全局 Pacing\n  pacing_factor = min(1.0, budget_spent / (budget_total × time_elapsed / time_total))\n  effective_bid = original_bid × pacing_factor\n\n  优点：简单\n  缺点：忽略不同时间段的流量价值差异\n\n方法 2: 基于期望的 Pacing (Optimal Pacing)\n  optimal_bid(t) = bid_base × (1 - F(t)) / f(t)\n\n  其中：\n    F(t) = 到时间 t 为止的预算消耗比例\n    f(t) = 时间段 t 的流量密度函数\n    bid_base = 广告基础出价\n\n  优点：在流量高峰期提高出价，低峰期降低出价\n  缺点：需要准确预测流量分布\n\n方法 3: 强化学习 Pacing (RL-based)\n  State: (剩余预算, 剩余时间, 当前流量, 历史消耗曲线)\n  Action: 出价系数 β ∈ [0.1, 1.0]\n  Reward: - |实际消耗 - 目标消耗| + RoAS 奖励\n\n  优点：自适应，能处理流量波动\n  缺点：需要大量训练数据和复杂实现\n```\n\n### 4.3 公平性 vs 收益最大化\n\n```\n问题：竞价系统如何平衡广告主公平性和平台收益？\n\n方案：引入多样性约束 (Diversity Constraint)\n\n  目标函数：\n    max Σ (eCPM_i × x_i)  -- 收益最大化\n    s.t.  Σ x_i ≤ k       -- 每轮最多展示 k 个广告\n          diversity(x) ≥ D  -- 多样性约束\n          budget_pacing(x) ≤ B  -- 预算消耗约束\n\n  Diversity 度量：\n    diversity(x) = 1 - Σ (ad_category_i 的广告占比)²\n    -- 避免同一行业/广告主占据所有广告位\n```\n\n---\n\n## 5. 广告平台 API 对比\n\n### 5.1 Google Ads API\n\n```\n架构: RESTful + gRPC\n端点: https://googleads.googleapis.com/v16/customers/{customer_id}\n\n认证: OAuth2 + Developer Token\n限流: 1000 RPM per customer\n数据回流: Conversion Upload API\n\n核心资源:\n  - Campaign: 广告系列\n  - AdGroup: 广告组\n  - Ad: 广告创意\n  - Keyword: 关键词\n  - BidStrategy: 出价策略\n  - CustomerClient: 代理商结构\n\n示例查询 (GraphQL):\n  GET /customers/123/report\n  {\n    \"query\": \"\"\"\n      SELECT campaign.name, metrics.clicks, metrics.costMicros\n      FROM campaign\n      WHERE segments.date DURING LAST_30_DAYS\n    \"\"\"\n  }\n\n特点:\n  ✅ 功能最全，覆盖所有广告产品\n  ✅ 支持 PMax (Performance Max) 自动化\n  ✅ 数据粒度细（可下到关键词级别）\n  ❌ API 限制严格（1000 RPM）\n  ❌ 学习曲线陡峭\n```\n\n### 5.2 Meta Marketing API\n\n```\n架构: RESTful\n端点: https://graph.facebook.com/v18.0/\n认证: OAuth2 (Page Access Token)\n限流: 基于 app 的 Rate Limit\n\n核心资源:\n  - ad_account: 广告账户\n  - campaign: 广告系列\n  - ad_set: 广告组\n  - ad: 广告创意\n  - conversion_event: 转化事件\n  - pixel: 像素追踪\n\nAdvantage+ 投放 API:\n  POST /v18.0/{ad_account_id}/campaigns\n  {\n    \"name\": \"Advantage+ Shopping Campaign\",\n    \"objective\": \"SALES\",\n    \"special_ad_categories\": [],\n    \"promotion_status\": \"ACTIVE\",\n    \"daily_budget\": 5000,  // 单位: 最小货币单位\n    \"campaign_group_status\": \"ACTIVE\",\n    \"special_ad_category\": \"NONE\"\n  }\n\n事件追踪:\n  - 基础事件: PageView, ViewContent, AddToCart, Purchase\n  - 自定义事件: 通过 Conversion API 上报\n  - 转化窗口: 7天点击 / 1天浏览\n\n特点:\n  ✅ Advantage+ 自动化投放效果好\n  ✅ 社交属性强，适合品牌广告\n  ❌ 隐私政策变化影响数据质量 (iOS ATT)\n  ❌ Conversion API 配置复杂\n```\n\n### 5.3 TikTok Ads API\n\n```\n架构: RESTful\n端点: https://business-api.tiktok.com/portal/\n认证: OAuth2 (Access Token + App Secret)\n限流: 50 RPS per app\n\n核心资源:\n  - ad_account: 广告账户\n  - campaign: 广告系列\n  - adgroup: 广告组\n  - creative: 创意素材\n  - event: 事件追踪\n\nSpark Ads (达人广告):\n  POST /open_api/v2/spark/ad/\n  {\n    \"ad_account_id\": 123456,\n    \"campaign_id\": 789012,\n    \"adgroup_id\": 345678,\n    \"creator_ids\": [987654],\n    \"creative_type\": \"SPARK\"\n  }\n\n事件追踪 (TikTok Pixel + SDK):\n  - 基础事件: PageVisit, Search, ProductView, AddToCart, CheckoutStart, Purchase\n  - 自定义参数: 商品 ID、金额、分类\n  - 归因窗口: 7天点击 / 1天浏览\n\n特点:\n  ✅ 短视频内容原生性强\n  ✅ 年轻用户群体\n  ❌ API 文档更新慢\n  ❌ 数据延迟较高（2-4 小时）\n```\n\n### 5.4 DV360 (Google Display & Video 360)\n\n```\n架构: OAuth2 + RTB\n端点: DV360 API + OpenRTB 2.5\n认证: OAuth2 (Service Account)\n\n核心功能:\n  - Programmatic 程序化购买\n  - RTB 竞价 (OpenRTB)\n  - 私有交易市场 (PMP/PPI)\n  - 保底购买 (Guarified)\n  - 跨屏投放\n  - 品牌安全 (品牌视图)\n\nOpenRTB Bid Response 示例:\n  {\n    \"id\": \"bid-response-123\",\n    \"seatbid\": [{\n      \"bid\": [{\n        \"id\": \"bid-001\",\n        \"impid\": \"imp-001\",\n        \"price\": 3.5,\n        \"cur\": \"USD\",\n        \"crid\": \"creative-123\",\n        \"adm\": \"<iframe>...</iframe>\",\n        \"api\": 2,\n        \"protocol\": 2,\n        \"ext\": {\n          \"dv360\": {\n            \"buyerBidCreativeId\": \"dv-creative-123\",\n            \"lineItemId\": \"dv-line-456\"\n          }\n        }\n      }]\n    }],\n    \"bidid\": \"bid-id-789\"\n  }\n\n特点:\n  ✅ 企业级程序化购买平台\n  ✅ 覆盖全球 Ad Exchange\n  ✅ 品牌安全工具链完整\n  ❌ 需要 Google 代理商认证\n  ❌ 学习成本极高\n```\n\n### 5.5 API 对比总结\n\n| 维度 | Google Ads | Meta | TikTok | DV360 |\n|------|-----------|------|--------|-------|\n| **认证方式** | OAuth2 + Dev Token | OAuth2 | OAuth2 | OAuth2 + Service Account |\n| **限流** | 1000 RPM | App 级 | 50 RPS | 根据配额 |\n| **数据粒度** | 关键词级 | 广告组级 | 广告组级 | RTB 级 |\n| **归因窗口** | 30天点击/7天浏览 | 28天点击/1天浏览 | 7天点击/1天浏览 | 可自定义 |\n| **自动化** | PMax | Advantage+ | Smart Bidding | 算法优化 |\n| **最适合** | 搜索/搜索展示 | 社交/品牌 | 短视频/年轻用户 | 程序化购买 |\n\n---\n\n*本文档基于广告行业通用知识整理，适用于有基础的工程师*\n",
+      "word_count": 1699,
+      "is_entry_file": false,
+      "wikilinks": [],
+      "frontmatter_type": "",
+      "created": "",
+      "rrf_score": 0.005882,
+      "source_scores": [
+        [
+          "file_content",
+          0.005882
+        ]
+      ],
+      "intent": "unknown",
+      "confidence": 0.0
+    },
+    {
+      "file_path": "/Users/yanping.ma/ryan-personal-knowledge/knowledge/agent-ai/agentmemory-analysis.md",
+      "file_name": "agentmemory-analysis.md",
+      "directory": "agent-ai",
+      "parent_dir": "knowledge",
+      "tags": [
+        "#前沿-agent",
+        "#工具对比"
+      ],
+      "headings": [
+        "agentmemory 集成分析",
+        "项目概况",
+        "核心能力",
+        "1. 记忆流水线",
+        "2. 4层记忆整合",
+        "3. 检索能力",
+        "4. Hermes 集成方式 (关键!)",
+        "复制 integrations/hermes 到 ~/.hermes/plugins/agentmemory",
+        "与 Hermes 内置记忆的对比",
+        "集成建议",
+        "方案 A: 轻量 MCP 集成 (推荐先试)",
+        "方案 B: 深度集成",
+        "方案 C: 混合模式",
+        "依赖",
+        "优点",
+        "缺点",
+        "下一步行动"
+      ],
+      "content_preview": "# agentmemory 集成分析\n\n**日期**: 2025-06-05\n**标签**: #前沿-agent #工具对比\n\n## 项目概况\n\n**agentmemory** (21.3k ⭐) — 为 AI 编码代理提供持久化记忆引擎\n- 安装: `npm install -g @agentmemory/agentmemory`\n- 启动后: 记忆服务器 (:3111) + 实时查看器 (:3113)\n- 支持: Claude Code, Codex, Cursor, **Hermes**, Gemini CLI 等 30+ 代理\n\n## 核心能力\n\n### 1. 记忆流水线\n```\nPostToolUse hook → SHA-256去重 → 隐私过滤 → 存储观测\n→ LLM压缩 → 结构化事实 + 概念 + 叙事\n→ 向量嵌入 → BM25 + 向量索引\n```\n\n### 2. 4层记忆整合\n| 层级 | 内容 | 类比 |\n|------|------|------|\n| Working | 原始观测 | 短期记忆 |\n| Episodic | 会话摘要 | 「发生了什么」",
+      "full_content": "# agentmemory 集成分析\n\n**日期**: 2025-06-05\n**标签**: #前沿-agent #工具对比\n\n## 项目概况\n\n**agentmemory** (21.3k ⭐) — 为 AI 编码代理提供持久化记忆引擎\n- 安装: `npm install -g @agentmemory/agentmemory`\n- 启动后: 记忆服务器 (:3111) + 实时查看器 (:3113)\n- 支持: Claude Code, Codex, Cursor, **Hermes**, Gemini CLI 等 30+ 代理\n\n## 核心能力\n\n### 1. 记忆流水线\n```\nPostToolUse hook → SHA-256去重 → 隐私过滤 → 存储观测\n→ LLM压缩 → 结构化事实 + 概念 + 叙事\n→ 向量嵌入 → BM25 + 向量索引\n```\n\n### 2. 4层记忆整合\n| 层级 | 内容 | 类比 |\n|------|------|------|\n| Working | 原始观测 | 短期记忆 |\n| Episodic | 会话摘要 | 「发生了什么」 |\n| Semantic | 提取的事实 | 「我知道什么」 |\n| Procedural | 工作流与决策 | 「怎么做」 |\n\n### 3. 检索能力\n- BM25 (关键词) + Vector (语义) + Graph (知识图谱)\n- RRF 融合 (Reciprocal Rank Fusion)\n- R@5 检索准确率: 95.2%\n- Token 节省 ~92%\n\n### 4. Hermes 集成方式 (关键!)\n在 `~/.hermes/config.yaml` 添加:\n```yaml\nmcp_servers:\n  agentmemory:\n    command: npx\n    args: [\"-y\", \"@agentmemory/mcp\"]\n\nmemory:\n  provider: agentmemory\n```\n\n或更深的插件集成:\n```bash\n# 复制 integrations/hermes 到 ~/.hermes/plugins/agentmemory\n```\n这会提供 6-hook 记忆提供者集成:\n- 预 LLM 上下文注入\n- 轮次捕获\n- MEMORY.md 镜像\n- System prompt 块\n\n## 与 Hermes 内置记忆的对比\n\n| 维度 | Hermes 内置记忆 | agentmemory |\n|------|----------------|-------------|\n| 检索方式 | SQLite + FTS5 | BM25 + Vector + Graph |\n| Token 效率 | 全量加载 | 只加载 top-K (~1900 tokens) |\n| 跨代理 | 每代理独立文件 | MCP 统一记忆 |\n| 记忆生命周期 | 静态 | 自动衰减 + 遗忘 |\n| 实时查看 | 无 | 端口 3113 |\n\n## 集成建议\n\n### 方案 A: 轻量 MCP 集成 (推荐先试)\n- 只加 MCP server，不动 Hermes memory 配置\n- 获得 53 个 memory tools 可用\n- 不破坏现有记忆体系\n\n### 方案 B: 深度集成\n- 设置 `memory.provider: agentmemory`\n- 替换 Hermes 内置记忆\n- 获得 hook 级自动捕获\n\n### 方案 C: 混合模式\n- 保留 Hermes 内置记忆作为基础\n- agentmemory 作为增强层 (语义搜索 + 跨会话记忆)\n- 通过 `/recall` 和 `/remember` 斜杠命令手动调用\n\n## 依赖\n- Node.js (npm)\n- iii-engine (v0.11.2 固定版本)\n- 可选: 本地嵌入 (npm install @xenova/transformers)\n\n## 优点\n1. 成熟度高 (21.3k ⭐, 124 PR, 成熟生态)\n2. Hermes 官方支持 (有专门的 integration guide)\n3. 多代理统一记忆\n4. Token 节省显著\n5. 有实时查看器\n\n## 缺点\n1. 依赖 iii-engine (需要单独安装原生二进制)\n2. 增加一个后台进程\n3. 嵌入模型需要额外配置才能达到最佳效果\n4. 学习成本不低\n\n## 下一步行动\n1. 评估 iii-engine 安装难度 (macOS arm64 有预构建二进制)\n2. 决定集成方案 (A/B/C)\n3. 先试 MCP 方案，不满意再考虑深度集成\n",
+      "word_count": 368,
+      "is_entry_file": false,
+      "wikilinks": [],
+      "frontmatter_type": "",
+      "created": "",
+      "rrf_score": 0.005797,
+      "source_scores": [
+        [
+          "file_content",
+          0.005797
+        ]
+      ],
+      "intent": "unknown",
+      "confidence": 0.0
+    },
+    {
+      "file_path": "/Users/yanping.ma/ryan-personal-knowledge/knowledge/agent-ai/day-by-day/d03-rag-principles.md",
+      "file_name": "d03-rag-principles.md",
+      "directory": "day-by-day",
+      "parent_dir": "agent-ai",
+      "tags": [],
+      "headings": [
+        "Day 3: RAG 系统原理 — 检索增强生成",
+        "一、RAG 是什么？为什么需要它？",
+        "1.1 问题背景",
+        "1.2 RAG 完整流程图",
+        "二、RAG 的 5 个核心组件",
+        "组件 1: 文档切片 (Chunking)",
+        "组件 2: 向量化 (Embedding)",
+        "组件 3: 向量数据库",
+        "组件 4: 重排序 (Reranking)",
+        "组件 5: 上下文组装",
+        "三、源码级理解",
+        "3.1 完整的 RAG 实现",
+        "四、自测",
+        "问题 1",
+        "问题 2",
+        "问题 3",
+        "五、动手验证",
+        "1. 准备文档",
+        "2. 切片",
+        "3. 创建向量数据库",
+        "4. 检索"
+      ],
+      "content_preview": "# Day 3: RAG 系统原理 — 检索增强生成\n\n> 学习目标: 理解 RAG 完整流程，能解释每个组件的作用\n\n---\n\n## 一、RAG 是什么？为什么需要它？\n\n### 1.1 问题背景\n\n```\nLLM 的局限性:\n├─ 训练数据有截止时间（不知道最新信息）\n├─ 私有数据无法访问（公司文档、个人笔记）\n└─ 幻觉问题（编造事实）\n\n解决方案: RAG\nRetrieval-Augmented Generation = 检索增强生成\n\n核心思想:\n用户问题 → 检索相关知识 → 组装上下文 → LLM 生成答案\n```\n\n### 1.2 RAG 完整流程图\n\n```\n┌─────────────────────────────────────────────────────────────┐\n│                    RAG 系统完整流程                           │\n│                                                             │\n│  ┌──────────┐    ",
+      "full_content": "# Day 3: RAG 系统原理 — 检索增强生成\n\n> 学习目标: 理解 RAG 完整流程，能解释每个组件的作用\n\n---\n\n## 一、RAG 是什么？为什么需要它？\n\n### 1.1 问题背景\n\n```\nLLM 的局限性:\n├─ 训练数据有截止时间（不知道最新信息）\n├─ 私有数据无法访问（公司文档、个人笔记）\n└─ 幻觉问题（编造事实）\n\n解决方案: RAG\nRetrieval-Augmented Generation = 检索增强生成\n\n核心思想:\n用户问题 → 检索相关知识 → 组装上下文 → LLM 生成答案\n```\n\n### 1.2 RAG 完整流程图\n\n```\n┌─────────────────────────────────────────────────────────────┐\n│                    RAG 系统完整流程                           │\n│                                                             │\n│  ┌──────────┐                                               │\n│  │ 文档入库  │                                               │\n│  └────┬─────┘                                               │\n│       │                                                     │\n│       ▼                                                     │\n│  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │\n│  │  文档切片    │→│  向量化       │→│  存储到向量数据库  │  │\n│  │ (Chunking)  │  │ (Embedding)  │  │   (FAISS/Redis)  │  │\n│  └─────────────┘  └──────────────┘  └──────────────────┘  │\n│                                                             │\n│  ┌────────────────────────────────────────────────────────┐ │\n│  │  用户提问: \"什么是 RAG？\"                               │ │\n│  └──────────────────────┬─────────────────────────────────┘ │\n│                         │                                   │\n│                         ▼                                   │\n│  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │\n│  │  问题向量化  │→│  向量检索     │→│  获取 Top-K 文档  │  │\n│  └─────────────┘  └──────────────┘  └──────────────────┘  │\n│                         │                                   │\n│                         ▼                                   │\n│  ┌────────────────────────────────────────────────────────┐ │\n│  │  组装 Prompt:                                         │ │\n│  │  \"基于以下上下文回答问题:                               │ │\n│  │   上下文: [文档1]\\n[文档2]\\n[文档3]                    │ │\n│  │   问题: 什么是 RAG？\"                                  │ │\n│  └──────────────────────┬─────────────────────────────────┘ │\n│                         │                                   │\n│                         ▼                                   │\n│  ┌────────────────────────────────────────────────────────┐ │\n│  │  LLM 生成答案                                          │ │\n│  └────────────────────────────────────────────────────────┘ │\n│                                                             │\n└─────────────────────────────────────────────────────────────┘\n```\n\n---\n\n## 二、RAG 的 5 个核心组件\n\n### 组件 1: 文档切片 (Chunking)\n\n```\n为什么需要切片？\n- LLM 有 token 限制（GPT-4 约 128K）\n- 不能一次性加载全部文档\n- 需要切成小块，每次只检索相关的\n\n切片策略:\n┌─────────────────────────────────────────────────────┐\n│ 1. 固定长度切片                                        │\n│    每 500 tokens 切一块                               │\n│    优点: 简单                                          │\n│    缺点: 可能切断语义                                   │\n│                                                     │\n│ 2. 按段落切片                                          │\n│    按空行/换行符切分                                   │\n│    优点: 保持段落完整性                                 │\n│    缺点: 段落可能太长或太短                             │\n│                                                     │\n│ 3. 语义切片（推荐）                                     │\n│    按句子边界切分，保证每块有完整语义                    │\n│    优点: 语义连续                                      │\n│    缺点: 实现复杂                                      │\n└─────────────────────────────────────────────────────┘\n\n关键参数:\n- chunk_size: 每块大小（500-1000 tokens）\n- chunk_overlap: 重叠部分（100-200 tokens）\n- 重叠目的: 保持语义连续性，避免关键信息被切断\n```\n\n### 组件 2: 向量化 (Embedding)\n\n```\n什么是 Embedding？\n- 把文本转换成数字向量\n- 语义相似的文本，向量也相似\n- 常用模型: text-embedding-ada-002 (1536维)\n\n为什么需要向量化？\n- 向量数据库用向量相似度搜索\n- \"北京天气\" 和 \"北京气温\" 的向量很接近\n- 即使用词不同也能匹配到\n\nEmbedding 过程:\n\"什么是 RAG？\"\n    ↓\n[0.12, -0.34, 0.56, ..., 0.23]  (1536个数字)\n```\n\n### 组件 3: 向量数据库\n\n```\n常用向量数据库对比:\n┌──────────┬──────────┬──────────┬──────────┐\n│ 数据库   │ 速度     │ 规模     │ 特点     │\n├──────────┼──────────┼──────────┼──────────┤\n│ FAISS    │ 快       │ 单机     │ 内存型   │\n│ Redis    │ 很快     │ 单机     │ 内存型   │\n│ pgvector │ 中       │ 可分布式 │ PostgreSQL │\n│ Milvus   │ 快       │ 分布式   │ 大规模   │\n└──────────┴──────────┴──────────┴──────────┘\n\n搜索算法:\n- 精确搜索: 遍历所有向量，准确但慢\n- HNSW: 近似最近邻，快且准确（推荐）\n- IVF: 倒排索引，适合大数据\n```\n\n### 组件 4: 重排序 (Reranking)\n\n```\n为什么要重排序？\n- 向量检索返回 Top-K（比如 10 个）\n- 但这些可能不够准确\n- 重排序模型对 (query, doc) 对打分\n- 重新排序后取 Top-N（比如 5 个）\n\n重排序流程:\n原始检索结果（10个）\n    ↓\nCrossEncoder 打分\n    ↓\n排序\n    ↓\n取 Top-5\n```\n\n### 组件 5: 上下文组装\n\n```\nPrompt 组装:\n┌─────────────────────────────────────────────────────┐\n│ 你是一位专业的问答助手。请基于以下上下文回答问题。      │\n│                                                     │\n│ 上下文:                                             │\n│ -------------------------------------------------   │\n│ [文档1的内容]                                      │\n│ -------------------------------------------------   │\n│ [文档2的内容]                                      │\n│ -------------------------------------------------   │\n│ [文档3的内容]                                      │\n│ -------------------------------------------------   │\n│                                                     │\n│ 问题: {question}                                    │\n│                                                     │\n│ 要求:                                               │\n│ 1. 只基于提供的上下文回答问题                         │\n│ 2. 如果上下文中没有相关信息，说明\"抱歉...\"           │\n│ 3. 回答要准确、详细                                  │\n└─────────────────────────────────────────────────────┘\n```\n\n---\n\n## 三、源码级理解\n\n### 3.1 完整的 RAG 实现\n\n```python\nclass SimpleRAG:\n    \"\"\"简化版 RAG 系统\"\"\"\n    \n    def __init__(self):\n        self.embedder = OpenAIEmbeddings()\n        self.vector_db = FAISS()\n        \n    def ingest(self, documents: List[str]):\n        \"\"\"\n        文档入库流程\n        \n        1. 切片\n        2. 向量化\n        3. 存储\n        \"\"\"\n        # 1. 切片\n        chunks = self.chunk_documents(documents)\n        \n        # 2. 向量化\n        embeddings = self.embedder.embed_documents(chunks)\n        \n        # 3. 存储\n        self.vector_db.add_embeddings(chunks, embeddings)\n    \n    def query(self, question: str) -> str:\n        \"\"\"\n        查询流程\n        \n        1. 向量化问题\n        2. 检索相似文档\n        3. 组装 Prompt\n        4. LLM 生成\n        \"\"\"\n        # 1. 向量化问题\n        question_embedding = self.embedder.embed_query(question)\n        \n        # 2. 检索（返回最相关的3个文档）\n        relevant_docs = self.vector_db.similarity_search(\n            question_embedding,\n            k=3\n        )\n        \n        # 3. 组装上下文\n        context = \"\\n\\n\".join([doc.page_content for doc in relevant_docs])\n        \n        # 4. 组装 Prompt\n        prompt = f\"\"\"\n        基于以下上下文回答问题:\n        \n        上下文:\n        {context}\n        \n        问题: {question}\n        \n        请给出准确的答案。\n        \"\"\"\n        \n        # 5. LLM 生成\n        response = llm.chat(prompt)\n        return response\n    \n    def chunk_documents(self, documents: List[str]) -> List[str]:\n        \"\"\"\n        文档切片\n        \n        策略:\n        - 按句子切分\n        - 每块 500 tokens\n        - 重叠 100 tokens\n        \"\"\"\n        chunks = []\n        for doc in documents:\n            sentences = doc.split('. ')\n            current_chunk = \"\"\n            for sentence in sentences:\n                if len(current_chunk) + len(sentence) < 500:\n                    current_chunk += sentence + \". \"\n                else:\n                    chunks.append(current_chunk.strip())\n                    current_chunk = sentence + \". \"\n            if current_chunk:\n                chunks.append(current_chunk.strip())\n        return chunks\n```\n\n---\n\n## 四、自测\n\n### 问题 1\n为什么需要文档切片？\n<details>\n<summary>查看答案</summary>\n\n1. LLM 有 token 限制\n2. 不需要一次性加载全部文档\n3. 每次只检索相关的\n4. 节省成本和延迟\n</details>\n\n### 问题 2\n什么是 Embedding？为什么需要它？\n<details>\n<summary>查看答案</summary>\n\nEmbedding 是把文本转换成数字向量。\n\n需要的原因:\n- 向量数据库用向量相似度搜索\n- 语义相似的文本，向量也相似\n- \"北京天气\" 和 \"北京气温\" 能匹配到\n</details>\n\n### 问题 3\n重排序的作用是什么？\n<details>\n<summary>查看答案</summary>\n\n- 向量检索返回 Top-K（如 10 个）\n- 但这些可能不够准确\n- 重排序模型对 (query, doc) 对打分\n- 重新排序后取 Top-N（如 5 个）\n- 精度更高\n</details>\n\n---\n\n## 五、动手验证\n\n```python\n# 1. 准备文档\ndocuments = [\n    \"RAG 是一种检索增强生成的技术。\",\n    \"它通过检索相关知识来增强 LLM 的回答能力。\",\n    \"RAG 的核心组件包括向量化、向量数据库和重排序。\"\n]\n\n# 2. 切片\nsplitter = RecursiveCharacterTextSplitter(\n    chunk_size=100,\n    chunk_overlap=20\n)\nchunks = splitter.split_text(\"\\n\".join(documents))\n\n# 3. 创建向量数据库\nvectorstore = Chroma.from_texts(\n    texts=chunks,\n    embedding=OpenAIEmbeddings()\n)\n\n# 4. 检索\nresults = vectorstore.similarity_search(\"什么是 RAG?\", k=2)\nfor r in results:\n    print(\"文档:\", r.page_content)\n```\n\n---\n\n*今天花 30 分钟读完 + 20 分钟调试 = 真正理解 RAG*\n",
+      "word_count": 809,
+      "is_entry_file": false,
+      "wikilinks": [],
+      "frontmatter_type": "",
+      "created": "",
+      "rrf_score": 0.005714,
+      "source_scores": [
+        [
+          "file_content",
+          0.005714
+        ]
+      ],
+      "intent": "unknown",
+      "confidence": 0.0
+    },
+    {
+      "file_path": "/Users/yanping.ma/ryan-personal-knowledge/SKILL.md",
+      "file_name": "SKILL.md",
+      "directory": "ryan-personal-knowledge",
+      "parent_dir": "yanping.ma",
+      "tags": [
+        "#agent-architecture",
+        "#skill-engineering",
+        "#ad-api",
+        "#ad-dataflow",
+        "#fullstack",
+        "#frontend",
+        "#backend",
+        "#devops",
+        "#前沿-llm",
+        "#前沿-agent",
+        "#前沿-mlops",
+        "#排障经验",
+        "#工具对比",
+        "#agent-技术",
+        "#15min",
+        "#skill",
+        "#20min",
+        "#广告",
+        "#30min",
+        "#agent",
+        "#60min",
+        "#tag",
+        "#前沿"
+      ],
+      "headings": [
+        "Ryan 个人学习仪表盘 + 知识库",
+        "概述",
+        "目录结构",
+        "一、学习路线总览",
+        "1. Agent 技术 (核心重点)",
+        "2. 全栈开发",
+        "3. 广告业务深度",
+        "4. 前沿追踪",
+        "二、知识库使用",
+        "添加知识笔记",
+        "1. 复制模板",
+        "2. 编辑内容",
+        "填写：日期、标签、核心概念、实践心得、相关 links",
+        "笔记标签体系",
+        "三、碎片任务管理",
+        "待办",
+        "进行中",
+        "已完成（归档到 history/）",
+        "碎片任务原则",
+        "四、进度日志",
+        "2025-01-15",
+        "五、使用场景",
+        "场景 1: 收到新任务时",
+        "场景 2: 碎片时间学习时",
+        "场景 3: 积累到一定量时",
+        "场景 4: 前沿追踪",
+        "六、与 Hermes 现有体系的关系",
+        "七、知识库搜索 — 如何快速查找知识",
+        "快速使用",
+        "进入 knowledge-search 目录",
+        "基础搜索 — 关键词匹配",
+        "查询意图 — 自动识别\"查找/查看\"类查询",
+        "提问意图 — 自动识别\"怎么/如何\"类问题",
+        "对比意图 — 自动识别\"对比/比较\"类查询",
+        "排障意图 — 自动识别\"排障/错误\"类问题",
+        "搜索维度",
+        "意图自动识别",
+        "高级选项",
+        "重建索引（当新增/修改文件后）",
+        "清除查询缓存",
+        "查看详细信息",
+        "工作原理",
+        "与 biz-delivery 的关系",
+        "八、已知问题与排障",
+        "新增技能",
+        "agentmemory 集成 (2025-06-05)",
+        "七、GitHub 仓库",
+        "八、个人 Sub-skill 体系"
+      ],
+      "content_preview": "---\nname: ryan-personal-knowledge\ndescription: \"Ryan 的个人学习仪表盘 + 知识库：追踪学习进度、沉淀广告业务/Agent技术知识、记录前沿洞察、管理碎片时间任务。\"\nversion: 1.1.0\nauthor: ryan\nplatforms: [linux, macos]\nmetadata:\n  hermes:\n    tags: [personal, learning, knowledge, progress, blogwatcher, notes]\n---\n\n# Ryan 个人学习仪表盘 + 知识库\n\n## 概述\n\n这是 Ryan 的个人学习与知识管理体系。包含：\n1. **成长计划** — 从 TL 到高级/资深专家的学习路线、目标、监督机制\n2. **知识库** — 广告业务、Agent技术、全栈开发、前沿追踪的知识笔记\n3. **碎片任务管理** — 适合 15-30min 碎片时间完成的学习/沉淀任务\n4. **前沿监控** — 通过 blogwatcher 自动推送\n\n## 目录结构\n\n```\nryan-persona",
+      "full_content": "---\nname: ryan-personal-knowledge\ndescription: \"Ryan 的个人学习仪表盘 + 知识库：追踪学习进度、沉淀广告业务/Agent技术知识、记录前沿洞察、管理碎片时间任务。\"\nversion: 1.1.0\nauthor: ryan\nplatforms: [linux, macos]\nmetadata:\n  hermes:\n    tags: [personal, learning, knowledge, progress, blogwatcher, notes]\n---\n\n# Ryan 个人学习仪表盘 + 知识库\n\n## 概述\n\n这是 Ryan 的个人学习与知识管理体系。包含：\n1. **成长计划** — 从 TL 到高级/资深专家的学习路线、目标、监督机制\n2. **知识库** — 广告业务、Agent技术、全栈开发、前沿追踪的知识笔记\n3. **碎片任务管理** — 适合 15-30min 碎片时间完成的学习/沉淀任务\n4. **前沿监控** — 通过 blogwatcher 自动推送\n\n## 目录结构\n\n```\nryan-personal-knowledge/\n├── SKILL.md                              ← 主文件，定义使用规则\n├── references/\n│   └── distilling-principles.md          ← 从经验蒸馏 skill 的决策框架\n├── templates/\n│   ├── learning-note.md                  ← 知识笔记模板\n│   ├── progress-log.md                   ← 学习进度日志模板\n│   └── 前沿-insight.md                   ← 前沿洞察模板\n├── progress/\n│   └── roadmap.md                        ← 学习路线总览\n├── knowledge/\n│   ├── advertising/                      ← 广告业务知识\n│   │   ├── google/                       ← Google Ads, PMax, GMX\n│   │   ├── meta/                         ← FB Ads, IG, Advantage+\n│   │   ├── tiktok/                       ← TikTok Ads, Pangle\n│   │   ├── snapchat/                     ← Snapchat Ads\n│   │   ├── amazon/                       ← Amazon DSP\n│   │   ├── microsoft/                    ← Microsoft Advertising\n│   │   ├── x/                            ← X/Twitter Ads\n│   ├── agent-tech/                       ← Agent 技术知识\n│   ├── fullstack/                        ← 全栈开发知识\n│   ├── 前沿/                             ← 前沿追踪\n│   └── growth-plan/                      ← 成长计划（新增）\n│       └── growth-roadmap.md             ← 从TL到高级专家路线图\n├── books/\n│   ├── reading-list.md                   ← 待读书单\n│   ├── reading-progress.md               ← 阅读进度跟踪\n│   └── notes/                            ← 读书笔记\n│       └── {book-name}.md               ← 每本书的笔记\n└── tasks/\n    └── 碎片任务.md                       ← 碎片任务看板\n```\n    └──碎片任务.md                     # 碎片任务看板\n```\n\n## 一、学习路线总览\n\n当前四条学习线：\n\n### 1. Agent 技术 (核心重点)\n- **目标**: 深入理解 Agent 架构、编排、Skill 工程、多 Agent 协作\n- **进度**: 查看 `progress/roadmap.md`\n- **里程碑**:\n  - [ ] 掌握 Hermes 配置与扩展\n  - [ ] 理解并实践多 Agent 并行调度\n  - [ ] 能够编写高质量 Skill\n  - [ ] 对比 Claude Code / Codex / OpenCode\n  - [ ] 构建个人 Skill 生态\n\n### 2. 全栈开发\n- **目标**: 提升工程能力，覆盖前后端 + DevOps\n- **进度**: 查看 `progress/roadmap.md`\n- **里程碑**:\n  - [ ] 掌握 TDD 工作流\n  - [ ] 系统化调试能力\n  - [ ] 熟练 Git worktree + PR 流程\n\n### 3. 广告业务深度\n- **目标**: 深入理解广告平台架构、API、数据流\n- **进度**: 查看 `progress/roadmap.md`\n- **里程碑**:\n  - [ ] 熟练 ad-knowledge-query 定位实现\n  - [ ] 能够沉淀业务文档\n  - [ ] 掌握测试设计流程\n\n### 4. 前沿追踪\n- **目标**: 持续跟踪 LLM / Agent / MLOps 前沿\n- **进度**: 通过 blogwatcher 自动推送，笔记存于 `knowledge/前沿/`\n- **工具**: blogwatcher + arxiv + llm-wiki\n\n## 二、知识库使用\n\n### 添加知识笔记\n\n当学习/工作中获得新认知时，使用 `templates/learning-note.md` 模板：\n\n```bash\n# 1. 复制模板\ncp templates/learning-note.md knowledge/agent-tech/某个主题.md\n\n# 2. 编辑内容\n# 填写：日期、标签、核心概念、实践心得、相关 links\n```\n\n### 笔记标签体系\n\n- `#agent-architecture` — Agent 架构相关\n- `#skill-engineering` — Skill 编写经验\n- `#ad-api` — 广告 API 知识\n- `#ad-dataflow` — 数据流/调用链\n- `#fullstack` — 全栈开发实践\n- `#frontend` — 前端相关\n- `#backend` — 后端相关\n- `#devops` — 运维/部署\n- `#前沿-llm` — LLM 前沿\n- `#前沿-agent` — Agent 前沿\n- `#前沿-mlops` — MLOps 前沿\n- `#排障经验` — 排坑记录\n- `#工具对比` — 工具选型对比\n\n## 三、碎片任务管理\n\n任务存储在 `tasks/碎片任务.md`，格式：\n\n```markdown\n## 待办\n- [ ] #agent-技术 #15min 读一篇 blogwatcher 推送的文章\n- [ ] #skill #20min 把 ad-knowledge-query 的坑蒸馏成 skill\n- [ ] #广告 #30min 给某个模块写知识库\n\n## 进行中\n- [x] #agent #30min 写第一个个人 skill\n\n## 已完成（归档到 history/）\n```\n\n### 碎片任务原则\n- 每个任务标注预计时间 (#15min / #20min / #30min / #60min)\n- 任务完成后更新状态，积累的经验蒸馏进知识库\n- 每周回顾一次，更新 roadmap.md\n\n## 四、进度日志\n\n每次学习后记录进度到 `progress/progress-log-YYYY-MM.md`：\n\n```markdown\n## 2025-01-15\n- 学习了什么\n- 实践了什么\n- 产出（笔记链接）\n- 下一步\n```\n\n## 五、使用场景\n\n### 场景 1: 收到新任务时\n1. 检查 `knowledge/` 是否有相关笔记\n2. 如果有，先复习再动手\n3. 完成后更新/新增笔记\n\n### 场景 2: 碎片时间学习时\n1. 查看 `tasks/碎片任务.md`，选一个任务\n2. 完成后更新进度 + 写笔记\n3. 把经验蒸馏成 skill（如果需要）\n\n### 场景 3: 积累到一定量时\n1. 考虑是否值得把经验蒸馏成独立 skill\n2. 更新 roadmap.md 的里程碑状态\n3. 清理过时的碎片任务\n\n### 场景 4: 前沿追踪\n1. blogwatcher 自动推送（需配置）\n2. 有价值的文章 → 写前沿洞察笔记\n3. 定期汇总到 `knowledge/前沿/summary-YYYY-QN.md`\n\n## 六、与 Hermes 现有体系的关系\n\n- 本 skill 是个人知识管理，不影响现有 111 个 skills\n- 经验蒸馏成可复用 skill 时，写到 `~/.hermes/skills/` 下\n- 本 skill 的笔记供个人回顾，不自动加载到 agent prompt\n- 用 `session_search` 也可以搜历史对话中的知识点\n\n## 七、知识库搜索 — 如何快速查找知识\n\n知识库内置了基于 biz-delivery 框架的轻量级搜索引擎 `knowledge-search/`，支持意图识别 + 多路融合查询。\n\n### 快速使用\n\n```bash\n# 进入 knowledge-search 目录\ncd knowledge-search\n\n# 基础搜索 — 关键词匹配\npython3 query_knowledge.py \"Redis 相关的书\"\n\n# 查询意图 — 自动识别\"查找/查看\"类查询\npython3 query_knowledge.py \"我想看 Redis 相关的书\"\n\n# 提问意图 — 自动识别\"怎么/如何\"类问题\npython3 query_knowledge.py \"怎么集成 agentmemory\"\n\n# 对比意图 — 自动识别\"对比/比较\"类查询\npython3 query_knowledge.py \"对比 agentmemory 的三种方案\"\n\n# 排障意图 — 自动识别\"排障/错误\"类问题\npython3 query_knowledge.py \"seaTalk bridge 怎么排障\"\n```\n\n### 搜索维度\n搜索引擎从 4 个维度交叉匹配，RRF 融合排序：\n\n1. **📄 文件内容** — 全文关键词匹配（权重最高）\n2. **📁 目录路径** — 文件所在目录匹配（如 agent-tech, advertising）\n3. **🏷️ 标签** — #tag 关键词匹配（如 #前沿, #agent-技术）\n4. **📑 文件名/标题** — Markdown 文件名和 # 标题匹配\n\n### 意图自动识别\n\n搜索引擎会自动识别你的查询意图，选择最优搜索策略：\n\n| 意图 | 触发词 | 权重倾向 |\n|------|--------|---------|\n| query (查询) | 查看/查找/获取 | 文件内容 0.8 |\n| question (提问) | 怎么/如何/为什么 | 文件内容 0.8 |\n| explain (解释) | 原理/机制/解释 | 文件内容 0.9 |\n| compare (对比) | 对比/比较/区别 | 标签 0.8 |\n| debug (排障) | 排障/错误/bug | 文件内容 0.9 |\n\n### 高级选项\n\n```bash\n# 重建索引（当新增/修改文件后）\npython3 query_knowledge.py \"关键词\" --rebuild\n\n# 清除查询缓存\npython3 query_knowledge.py \"关键词\" --clear-cache\n\n# 查看详细信息\npython3 query_knowledge.py \"关键词\" --verbose\n```\n\n### 工作原理\n\n```text\n用户查询\n    │\n    ▼\n意图识别 → 选择各搜索维度的权重\n    │\n    ▼\n多路并行查询（内容 / 文件名 / 标签 / 目录）\n    │\n    ▼\nRRF 融合（按命中排名加权）\n    │\n    ▼\n返回排序后的 Top-K 结果 + 摘要 + 标签\n```\n\n### 与 biz-delivery 的关系\n\n`knowledge-search` 复用了 biz-delivery 框架的核心能力：\n- 意图识别逻辑 → 来自 `biz-delivery/scripts/smart_routing.py`\n- RRF 融合引擎 → 来自 `biz-delivery/scripts/rrf_fusion.py`\n- 查询缓存机制 → 来自 `biz-delivery/scripts/query_cache.py`\n- 配置化 Profile → 类似 biz-delivery 的 profile.json\n\n---\n\n## 八、已知问题与排障\n\n- `blogwatcher` 的大多数主流 AI 博客 (Anthropic, OpenAI, Google AI, Meta AI) RSS feed 已失效，只有 Hugging Face 正常工作。详见 `knowledge/前沿/blogwatcher-setup.md` 和 `references/verified-feeds.md`。\n- 大型二进制 tar 文件在 macOS 上用 `tar xzf` 可能触发系统超时阻断。备选方案：用 Python `tarfile` 模块解压。\n- 确认包内结构：`tar -tzf file.tar.gz` 先看文件名再决定解压路径。\n\n- Blogwatcher 配置见 `references/blogwatcher-setup.md`\n- 验证可用的 RSS feed 见 `references/verified-feeds.md`\n\n## 新增技能\n\n### agentmemory 集成 (2025-06-05)\n- agentmemory 是一个成熟的持久化记忆引擎（21.3k ⭐），可为 AI 编码代理提供自动记忆\n- 与 Hermes 的集成方式见 `references/agentmemory-integration.md`\n- 采用方案 C（混合模式）：保留 Hermes 内置记忆 + agentmemory 作为增强层\n- 依赖：iii-engine (v0.11.2) + @agentmemory/agentmemory (npm)\n\n## 七、GitHub 仓库\n\n本 skill 的内容同步到 GitHub 用于版本管理和协作：\n- 仓库: `https://github.com/Ryan-myp/ryan-personal-knowledge`\n- 每次更新 commit + push 保持本地和远程一致\n\n## 八、个人 Sub-skill 体系\n\n> 从经验蒸馏出的可复用 skill 统一作为本 skill 的 references 子文件\n\n当前 sub-skill（以 references/ 文件形式存在于本 skill 下）：\n- `references/seatalk-bridge-troubleshooting.md` — SeaTalk bridge 排障指南\n- `references/agentmemory-integration.md` — agentmemory 与 Hermes 集成指南\n- `references/macos-tar-workaround.md` — macOS 大文件 tar 解压避坑\n\n创建规则：\n1. 不新建独立 skill 目录（避免碎片化）\n2. 蒸馏结果作为 `references/` 文件加入本 umbrella\n3. SKILL.md 头部维护一个引用列表\n",
+      "word_count": 983,
+      "is_entry_file": true,
+      "wikilinks": [],
+      "frontmatter_type": "",
+      "created": "",
+      "rrf_score": 0.0045899,
+      "source_scores": [
+        [
+          "file_content",
+          0.00459
+        ]
+      ],
+      "intent": "unknown",
+      "confidence": 0.0
+    }
+  ],
+  "total_results": 11,
+  "retrieved_from": "fresh",
+  "wiki_enhanced": true,
+  "cached_at": 1780982632.1500192
+}

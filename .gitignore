@@ -1,1 +1,39 @@
-knowledge-search/.cache/
+# Secrets & Credentials
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.jks
+credentials.json
+service-account.json
+tokens.json
+oauth_tokens.json
+access_token*
+refresh_token*
+
+# Local config with secrets
+config.local.yaml
+config.local.yml
+config.local.json
+
+# API keys / tokens (patterns)
+**/*token*
+**/*secret*
+**/*credential*
+**/*apikey*
+**/*password*
+
+# Generated temp files
+*.tmp
+*.swp
+*~
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Go cache
+go.mod.cache
+go.sum

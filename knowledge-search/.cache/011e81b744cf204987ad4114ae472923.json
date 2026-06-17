@@ -1,0 +1,552 @@
+{
+  "query": "设计模式",
+  "intent": "unknown",
+  "confidence": 0.0,
+  "scope_weights": {
+    "file_content": 0.8,
+    "file_name": 0.5,
+    "tags": 0.6,
+    "directory_path": 0.5
+  },
+  "paths": [
+    {
+      "path": "file_content",
+      "weight": 0.4,
+      "count": 10
+    },
+    {
+      "path": "file_name",
+      "weight": 0.15,
+      "count": 7
+    },
+    {
+      "path": "tags",
+      "weight": 0.24,
+      "count": 3
+    },
+    {
+      "path": "directory_path",
+      "weight": 0.125,
+      "count": 0
+    },
+    {
+      "path": "wikilinks",
+      "weight": 0.025,
+      "count": 0
+    },
+    {
+      "path": "cross_reference",
+      "weight": 0.02,
+      "count": 0
+    }
+  ],
+  "results": [
+    {
+      "file_path": "/Users/yanping.ma/ryan-personal-knowledge/knowledge/architecture/design-patterns-architecture.md",
+      "file_name": "design-patterns-architecture.md",
+      "directory": "architecture",
+      "parent_dir": "knowledge",
+      "tags": [
+        "#设计模式",
+        "#DDD",
+        "#CQRS",
+        "#EventSourcing",
+        "#系统架构"
+      ],
+      "headings": [
+        "设计模式与系统架构深度解析",
+        "1. 23 种设计模式实战分类",
+        "1.1 创建型模式（关注对象创建）",
+        "单例模式（Singleton）— 线程安全版",
+        "工厂方法 vs 抽象工厂",
+        "建造者模式（Builder）— 复杂对象构造",
+        "1.2 结构型模式（关注类/对象组合）",
+        "适配器模式（Adapter）",
+        "装饰器模式（Decorator）— Go 的接口组合优势",
+        "代理模式（Proxy）— 远程代理/缓存代理",
+        "1.3 行为型模式（关注对象间通信）",
+        "策略模式（Strategy）— 广告出价策略",
+        "观察者模式（Observer）— Event Bus",
+        "模板方法模式（Template Method）— 广告请求处理管线",
+        "2. DDD（领域驱动设计）",
+        "2.1 战略设计",
+        "2.2 战术设计：聚合根 + 实体 + 值对象",
+        "2.3 应用层 + 领域层分离",
+        "3. CQRS + Event Sourcing",
+        "3.1 CQRS（命令查询职责分离）",
+        "3.2 Event Sourcing 实现",
+        "3.3 Saga 模式（分布式事务）",
+        "4. 架构模式",
+        "4.1 微服务架构模式",
+        "4.2 容量规划",
+        "4.3 容灾架构"
+      ],
+      "content_preview": "# 设计模式与系统架构深度解析\n\n> 标签: `#设计模式` `#DDD` `#CQRS` `#EventSourcing` `#系统架构`\n> 创建日期: 20260608\n> 作者: Ryan\n\n---\n\n## 1. 23 种设计模式实战分类\n\n### 1.1 创建型模式（关注对象创建）\n\n#### 单例模式（Singleton）— 线程安全版\n\n```go\n// 双重检查锁定（Double-Checked Locking）\ntype Singleton struct{}\n\nvar instance *Singleton\nvar once sync.Once\n\nfunc GetInstance() *Singleton {\n    once.Do(func() {\n        instance = &Singleton{}\n    })\n    return instance\n}\n\n// 更简洁的 Go 方式（package level 变量）\nvar defaultClient = &HTTPClient{timeout: 30 * time.Second}\n// Go 的 ",
+      "full_content": "# 设计模式与系统架构深度解析\n\n> 标签: `#设计模式` `#DDD` `#CQRS` `#EventSourcing` `#系统架构`\n> 创建日期: 20260608\n> 作者: Ryan\n\n---\n\n## 1. 23 种设计模式实战分类\n\n### 1.1 创建型模式（关注对象创建）\n\n#### 单例模式（Singleton）— 线程安全版\n\n```go\n// 双重检查锁定（Double-Checked Locking）\ntype Singleton struct{}\n\nvar instance *Singleton\nvar once sync.Once\n\nfunc GetInstance() *Singleton {\n    once.Do(func() {\n        instance = &Singleton{}\n    })\n    return instance\n}\n\n// 更简洁的 Go 方式（package level 变量）\nvar defaultClient = &HTTPClient{timeout: 30 * time.Second}\n// Go 的 init() 保证线程安全，无需额外同步\n```\n\n**适用场景**：数据库连接池、配置管理器、日志器\n**不适用**：有状态的单例（并发冲突）\n\n#### 工厂方法 vs 抽象工厂\n\n```go\n// 工厂方法：一个产品等级结构\ntype Shape interface {\n    Draw()\n}\n\ntype Circle struct{}\nfunc (c Circle) Draw() { fmt.Println(\"Circle\") }\n\ntype Factory interface {\n    CreateShape() Shape\n}\n\ntype CircleFactory struct{}\nfunc (f CircleFactory) CreateShape() Shape { return Circle{} }\n\n// 抽象工厂：多个产品等级结构\ntype Button interface {\n    Render()\n}\ntype TextField interface {\n    Render()\n}\n\ntype GUIFactory interface {\n    CreateButton() Button\n    CreateTextField() TextField\n}\n\ntype MacOSFactory struct{}\nfunc (f MacOSFactory) CreateButton() Button { return MacOSButton{} }\nfunc (f MacOSFactory) CreateTextField() TextField { return MacOSTextField{} }\n\ntype WindowsFactory struct{}\nfunc (f WindowsFactory) CreateButton() Button { return WindowsButton{} }\nfunc (f WindowsFactory) CreateTextField() TextField { return WindowsTextField{} }\n```\n\n#### 建造者模式（Builder）— 复杂对象构造\n\n```go\n// 链式调用\ntype HTTPClient struct {\n    BaseURL   string\n    Timeout   time.Duration\n    Header    map[string]string\n    Transport http.RoundTripper\n}\n\ntype HTTPClientBuilder struct {\n    client HTTPClient\n}\n\nfunc NewHTTPClientBuilder() *HTTPClientBuilder {\n    return &HTTPClientBuilder{\n        client: HTTPClient{\n            Timeout: 30 * time.Second,\n            Header:  make(map[string]string),\n        },\n    }\n}\n\nfunc (b *HTTPClientBuilder) BaseURL(url string) *HTTPClientBuilder {\n    b.client.BaseURL = url\n    return b\n}\n\nfunc (b *HTTPClientBuilder) Timeout(d time.Duration) *HTTPClientBuilder {\n    b.client.Timeout = d\n    return b\n}\n\nfunc (b *HTTPClientBuilder) AddHeader(key, value string) *HTTPClientBuilder {\n    b.client.Header[key] = value\n    return b\n}\n\nfunc (b *HTTPClientBuilder) Build() *HTTPClient {\n    return &b.client\n}\n\n// 使用:\nclient := NewHTTPClientBuilder().\n    BaseURL(\"https://api.example.com\").\n    Timeout(10 * time.Second).\n    AddHeader(\"Authorization\", \"Bearer xxx\").\n    Build()\n```\n\n### 1.2 结构型模式（关注类/对象组合）\n\n#### 适配器模式（Adapter）\n\n```go\n// 旧接口 vs 新接口\ntype LegacyAPI interface {\n    GetUserData(id int) (string, error)\n}\n\ntype NewAPI interface {\n    GetUser(userID string) (*User, error)\n}\n\n// 适配器: 将新接口适配为旧接口\ntype Adapter struct {\n    newAPI NewAPI\n}\n\nfunc (a *Adapter) GetUserData(id int) (string, error) {\n    user, err := a.newAPI.GetUser(strconv.Itoa(id))\n    if err != nil {\n        return \"\", err\n    }\n    return user.Name, nil\n}\n```\n\n#### 装饰器模式（Decorator）— Go 的接口组合优势\n\n```go\ntype Reader interface {\n    Read(p []byte) (int, error)\n}\n\n// 基础 Reader\ntype FileReader struct {\n    file *os.File\n}\n\n// 装饰器 1: 带缓冲\ntype BufferedReader struct {\n    r Reader\n    buf []byte\n}\nfunc (b *BufferedReader) Read(p []byte) (int, error) {\n    // 先读入 buffer，再从 buffer 读取\n    return bufio.NewReader(b.r).Read(p)\n}\n\n// 装饰器 2: 带缓存\ntype CachingReader struct {\n    r       Reader\n    cache   map[string][]byte\n}\nfunc (c *CachingReader) Read(p []byte) (int, error) {\n    // 先查缓存\n    // 缓存未命中 → 读取原始 reader → 写缓存\n    return 0, nil\n}\n\n// 链式组合\nr := &CachingReader{\n    r: &BufferedReader{\n        r: &FileReader{file: f},\n    },\n}\n```\n\n#### 代理模式（Proxy）— 远程代理/缓存代理\n\n```go\ntype Image interface {\n    Display()\n}\n\ntype RealImage struct {\n    filename string\n}\nfunc (r *RealImage) LoadFromDisk() {\n    // 从网络/磁盘加载\n}\nfunc (r *RealImage) Display() {\n    fmt.Printf(\"Displaying %s\", r.filename)\n}\n\n// 代理: 延迟加载\ntype ProxyImage struct {\n    image     *RealImage\n    filename  string\n}\nfunc (p *ProxyImage) Display() {\n    if p.image == nil {\n        p.image = &RealImage{filename: p.filename}\n        p.image.LoadFromDisk()  // 懒加载\n    }\n    p.image.Display()\n}\n```\n\n### 1.3 行为型模式（关注对象间通信）\n\n#### 策略模式（Strategy）— 广告出价策略\n\n```go\ntype BidStrategy interface {\n    CalculateBid(candidate *Candidate, context *Context) float64\n}\n\n// 固定出价\ntype FixedBidStrategy struct {\n    price float64\n}\nfunc (f *FixedBidStrategy) CalculateBid(c *Candidate, ctx *Context) float64 {\n    return f.price\n}\n\n// oCPX 出价\ntype OCPXBidStrategy struct {\n    targetCostPerAction float64\n    pCTR float64\n    pCVR float64\n}\nfunc (o *OCPXBidStrategy) CalculateBid(c *Candidate, ctx *Context) float64 {\n    return o.pCTR * o.pCVR * o.targetCostPerAction\n}\n\n// 动态出价（基于历史转化数据）\ntype DynamicBidStrategy struct {\n    historicalConversionRate float64\n    budget                   float64\n}\nfunc (d *DynamicBidStrategy) CalculateBid(c *Candidate, ctx *Context) float64 {\n    // 基于实时流量和预算剩余动态调整\n    return d.calcDynamicBid(ctx)\n}\n\n// 策略上下文: 支持运行时切换\ntype BidStrategyContext struct {\n    strategy BidStrategy\n}\nfunc (c *BidStrategyContext) SetStrategy(s BidStrategy) {\n    c.strategy = s\n}\nfunc (c *BidStrategyContext) ExecuteBid(cand *Candidate, ctx *Context) float64 {\n    return c.strategy.CalculateBid(cand, ctx)\n}\n```\n\n#### 观察者模式（Observer）— Event Bus\n\n```go\ntype Event interface {\n    Name() string\n    Data() interface{}\n}\n\ntype EventHandler func(Event) error\n\ntype EventBus struct {\n    handlers map[string][]EventHandler\n    mu       sync.RWMutex\n}\n\nfunc NewEventBus() *EventBus {\n    return &EventBus{handlers: make(map[string][]EventHandler)}\n}\n\nfunc (eb *EventBus) Subscribe(eventType string, handler EventHandler) {\n    eb.mu.Lock()\n    defer eb.mu.Unlock()\n    eb.handlers[eventType] = append(eb.handlers[eventType], handler)\n}\n\nfunc (eb *EventBus) Publish(event Event) error {\n    eb.mu.RLock()\n    handlers := eb.handlers[event.Name()]\n    eb.mu.RUnlock()\n    \n    for _, h := range handlers {\n        if err := h(event); err != nil {\n            return err\n        }\n    }\n    return nil\n}\n\n// 使用:\nbus := NewEventBus()\nbus.Subscribe(\"ad.impression\", func(e Event) error {\n    // 记录展示\n    return nil\n})\nbus.Subscribe(\"ad.click\", func(e Event) error {\n    // 记录点击\n    return nil\n})\nbus.Publish(&ImpressionEvent{AdID: 123})\n```\n\n#### 模板方法模式（Template Method）— 广告请求处理管线\n\n```go\ntype AdPipeline interface {\n    Execute(ctx *Context) (*AdResponse, error)\n}\n\ntype BasePipeline struct{}\n\nfunc (b *BasePipeline) Execute(ctx *Context) (*AdResponse, error) {\n    // 1. 前置处理（所有管线共享）\n    if err := b.validate(ctx); err != nil {\n        return nil, err\n    }\n    \n    // 2. 核心步骤（由子类实现）\n    candidates, err := b.fetchCandidates(ctx)\n    if err != nil {\n        return nil, err\n    }\n    \n    // 3. 排序 & 筛选\n    ranked, err := b.rankAndFilter(ctx, candidates)\n    if err != nil {\n        return nil, err\n    }\n    \n    // 4. 后置处理\n    return b.postProcess(ctx, ranked)\n}\n\n// 子类实现具体管线\ntype BiddingPipeline struct{ BasePipeline }\nfunc (b *BiddingPipeline) fetchCandidates(ctx *Context) ([]*AdCandidate, error) {\n    // 竞价候选集获取\n}\nfunc (b *BiddingPipeline) rankAndFilter(ctx *Context, candidates []*AdCandidate) ([]*AdCandidate, error) {\n    // eCPM 排序 + 频控过滤\n}\n\ntype GuaranteePipeline struct{ BasePipeline }\nfunc (g *GuaranteePipeline) fetchCandidates(ctx *Context) ([]*AdCandidate, error) {\n    // 保量广告候选\n}\n```\n\n---\n\n## 2. DDD（领域驱动设计）\n\n### 2.1 战略设计\n\n```\n限界上下文（Bounded Context）:\n┌──────────────┐    ┌──────────────┐    ┌──────────────┐\n│   广告系统    │    │   投放系统    │    │   结算系统    │\n│              │    │              │    │              │\n│ AdContext    │───▶│ CampaignCtx  │───▶│ BillingCtx   │\n│              │    │              │    │              │\n│ - Ad         │    │ - Plan       │    │ - Invoice    │\n│ - Campaign   │    │ - Budget     │    │ - Settlement │\n│ - Creative   │    │ - Schedule   │    │ - Report     │\n└──────────────┘    └──────────────┘    └──────────────┘\n       │                    │                    │\n       └────────────────────┼────────────────────┘\n                            │\n                    共享内核（Shared Kernel）\n                 广告ID / 用户ID / 时间戳\n```\n\n### 2.2 战术设计：聚合根 + 实体 + 值对象\n\n```go\n// 聚合根: Campaign（广告系列）\ntype Campaign struct {\n    ID         CampaignID\n    Name       string\n    Budget     Budget\n    Status     CampaignStatus\n    Schedule   Schedule\n    Bidding    BiddingStrategy\n    targets    []Target\n    creativeIDs []CreativeID\n    updatedAt  time.Time\n}\n\n// 值对象: 不可变，用值比较\ntype Budget struct {\n    Amount money.Money\n    Type   BudgetType  // Daily/Total/Lifetime\n}\n\ntype BiddingStrategy struct {\n    Type       BidType  // oCPM/oCPC/CPC\n    MaxBid     money.Money\n    MinBid     money.Money\n    Pacing     PacingStrategy\n}\n\n// 实体: 有唯一 ID\ntype Ad struct {\n    ID          AdID\n    CampaignID  CampaignID\n    Status      AdStatus\n    Impressions int64\n    Clicks      int64\n    Conversions int64\n}\n\n// 领域事件\ntype CampaignBudgetUpdated struct {\n    CampaignID CampaignID\n    OldBudget  Budget\n    NewBudget  Budget\n    Timestamp  time.Time\n}\n\n// 聚合内部方法: 保证不变量\nfunc (c *Campaign) UpdateBudget(newBudget Budget) error {\n    if newBudget.Amount <= 0 {\n        return ErrInvalidBudget\n    }\n    if newBudget.Amount > c.Budget.Amount * 5 {\n        return ErrBudgetTooLarge  // 不能超过原预算 5 倍\n    }\n    \n    oldBudget := c.Budget\n    c.Budget = newBudget\n    c.updatedAt = time.Now()\n    \n    // 发布领域事件\n    domainEvent := CampaignBudgetUpdated{\n        CampaignID: c.ID,\n        OldBudget:  oldBudget,\n        NewBudget:  newBudget,\n        Timestamp:  time.Now(),\n    }\n    return domainEvent.Publish()\n}\n```\n\n### 2.3 应用层 + 领域层分离\n\n```go\n// 应用层: 编排业务流程\ntype CampaignService struct {\n    campaignRepo  repository.CampaignRepository\n    budgetRepo    repository.BudgetRepository\n    eventPublisher EventPublisher\n}\n\nfunc (s *CampaignService) CreateCampaign(input CreateCampaignInput) (*Campaign, error) {\n    // 1. 验证输入\n    if err := input.Validate(); err != nil {\n        return nil, err\n    }\n    \n    // 2. 创建聚合根\n    campaign := Campaign{\n        ID:   GenerateID(),\n        Name: input.Name,\n        Budget: Budget{\n            Amount: input.Budget,\n            Type:   Daily,\n        },\n        Status: Draft,\n    }\n    \n    // 3. 持久化\n    if err := s.campaignRepo.Save(&campaign); err != nil {\n        return nil, err\n    }\n    \n    // 4. 发布事件\n    s.eventPublisher.Publish(CampaignCreated{\n        CampaignID: campaign.ID,\n        Timestamp:  time.Now(),\n    })\n    \n    return &campaign, nil\n}\n```\n\n---\n\n## 3. CQRS + Event Sourcing\n\n### 3.1 CQRS（命令查询职责分离）\n\n```\nCommand (写):    Query (读):\n    │                  │\n    ▼                  ▼\nWrite Model       Read Model\n    │                  │\n    ▼                  ▼\nCommand Handler   Query Handler\n    │                  │\n    ▼                  ▼\nDomain Model      Projections\n    │                  │\n    ▼                  ▼\nEvent Store      Cache / Materialized View\n```\n\n```go\n// 命令\ntype CreateCampaignCommand struct {\n    UserID    string\n    Name      string\n    Budget    money.Money\n    StartDate time.Time\n}\n\n// 查询\ntype GetCampaignQuery struct {\n    CampaignID string\n    UserID     string\n}\n\n// 投影（Projection）: 从事件流生成读模型\ntype CampaignProjection struct {\n    ID         string\n    Name       string\n    Budget     money.Money\n    Spent      money.Money\n    Impressions int64\n    Clicks     int64\n}\n\n// 事件处理: 更新投影\nfunc (p *CampaignProjectionHandler) Handle(event CampaignBudgetUpdated) {\n    projection := p.loadOrCreateProjection(event.CampaignID)\n    projection.Budget = event.NewBudget\n    p.saveProjection(projection)\n}\n\nfunc (p *CampaignProjectionHandler) Handle(event ImpressionRecorded) {\n    projection := p.loadOrCreateProjection(event.CampaignID)\n    projection.Impressions++\n    p.saveProjection(projection)\n}\n```\n\n### 3.2 Event Sourcing 实现\n\n```go\n// 事件接口\ntype DomainEvent interface {\n    EventType() string\n    AggregateID() string\n    Timestamp() time.Time\n}\n\n// 具体事件\ntype CampaignCreated struct {\n    AggregateID string\n    UserID      string\n    Name        string\n    Budget      money.Money\n    Timestamp   time.Time\n}\n\ntype BudgetUpdated struct {\n    AggregateID string\n    OldBudget   money.Money\n    NewBudget   money.Money\n    Timestamp   time.Time\n}\n\n// 事件存储\ntype EventStore interface {\n    Append(events []DomainEvent) error\n    GetEvents(aggregateID string) ([]DomainEvent, error)\n    GetSnapshot(aggregateID string) (interface{}, error)\n}\n\n// 聚合根实现\ntype EventSourcedAggregate struct {\n    ID          string\n    Version     int\n    Events      []DomainEvent\n    state       map[string]interface{}\n}\n\nfunc (a *EventSourcedAggregate) Apply(events []DomainEvent) {\n    for _, e := range events {\n        switch ev := e.(type) {\n        case CampaignCreated:\n            a.state[\"name\"] = ev.Name\n            a.state[\"budget\"] = ev.Budget\n        case BudgetUpdated:\n            a.state[\"budget\"] = ev.NewBudget\n        }\n    }\n    a.Version += len(events)\n}\n\nfunc (a *EventSourcedAggregate) Save(events []DomainEvent) error {\n    a.Events = append(a.Events, events...)\n    a.Apply(events)\n    return a.eventStore.Append(events)\n}\n```\n\n### 3.3 Saga 模式（分布式事务）\n\n```go\n// 跨多个微服务的补偿事务\ntype CampaignCreationSaga struct {\n    campaignSvc  CampaignService\n    budgetSvc    BudgetService\n    notifySvc    NotificationService\n}\n\nfunc (s *CampaignCreationSaga) Execute(cmd CreateCampaignCommand) error {\n    // 1. 创建广告系列\n    campaign, err := s.campaignSvc.CreateCampaign(cmd)\n    if err != nil {\n        return err\n    }\n    \n    // 2. 冻结预算\n    err = s.budgetSvc.FreezeBudget(campaign.UserID, cmd.Budget)\n    if err != nil {\n        // 补偿: 删除广告系列\n        s.campaignSvc.Delete(campaign.ID)\n        return err\n    }\n    \n    // 3. 发送通知\n    err = s.notifySvc.SendNotification(campaign.UserID, \"campaign.created\")\n    if err != nil {\n        // 补偿: 解冻预算\n        s.budgetSvc.UnfreezeBudget(campaign.UserID, cmd.Budget)\n        s.campaignSvc.Delete(campaign.ID)\n        return err\n    }\n    \n    return nil\n}\n```\n\n---\n\n## 4. 架构模式\n\n### 4.1 微服务架构模式\n\n```\n┌─────────────────────────────────────────────────────────────┐\n│                       API Gateway                            │\n│                   (Kong / Nginx)                             │\n└──────────────────────────┬──────────────────────────────────┘\n                           │\n              ┌────────────┼────────────┐\n              ▼            ▼            ▼\n    ┌─────────────┐ ┌─────────────┐ ┌─────────────┐\n    │ 广告服务     │ │ 投放服务     │ │ 结算服务     │\n    │             │ │             │ │             │\n    │ REST/gRPC   │ │ REST/gRPC   │ │ REST/gRPC   │\n    │             │ │             │ │             │\n    │ Event Bus   │ │ Event Bus   │ │ Event Bus   │\n    └──────┬──────┘ └──────┬──────┘ └──────┬──────┘\n           │               │               │\n    ┌──────▼──────┐ ┌──────▼──────┐ ┌──────▼──────┐\n    │ 广告数据库   │ │ 投放数据库   │ │ 结算数据库   │\n    └─────────────┘ └─────────────┘ └─────────────┘\n\n    关键原则:\n    - 每个服务独立部署，独立数据库\n    - 服务间通过事件/消息通信（最终一致性）\n    - API Gateway 统一入口，鉴权、限流、路由\n```\n\n### 4.2 容量规划\n\n```\n公式:\n  QPS = 日活用户 × 人均请求数 / (86400 × 平均活跃时段比例)\n  \n  单实例 QPS = 总 QPS / 实例数 × 安全系数(1.5~2.0)\n  \n  实例数 = ceil(总 QPS / 单实例QPS / 安全系数)\n\n例如: 日活 100 万, 人均 100 请求, 活跃时段 8h\n  QPS = 100万 × 100 / (8 × 3600) ≈ 3472 QPS\n  假设单实例 500 QPS，安全系数 2.0:\n  实例数 = ceil(3472 / 500 / 2.0) = 4 个实例\n```\n\n### 4.3 容灾架构\n\n```\nLevel 1: 单机多副本（单机 → 多实例）\nLevel 2: 同城双活（A zone + B zone，同步复制）\nLevel 3: 异地多活（Region A + Region B，异步复制）\n\n数据一致性:\n  - 强一致: Raft/Paxos（适合用户数据）\n  - 最终一致: 异步复制 + 冲突解决（适合日志数据）\n  \n故障切换:\n  1. 健康检查 → 检测失败\n  2. DNS/负载均衡切换 → 新实例\n  3. 数据恢复 → 从副本同步\n  4. 流量恢复 → 逐步恢复\n```\n\n---\n\n*本文档整理自《设计模式》《实现领域驱动设计》《数据密集型应用系统设计》*\n",
+      "word_count": 1798,
+      "is_entry_file": false,
+      "wikilinks": [],
+      "frontmatter_type": "",
+      "created": "",
+      "rrf_score": 0.012134,
+      "source_scores": [
+        [
+          "file_content",
+          0.005882
+        ],
+        [
+          "file_name",
+          0.002381
+        ],
+        [
+          "tags",
+          0.003871
+        ]
+      ],
+      "intent": "unknown",
+      "confidence": 0.0
+    },
+    {
+      "file_path": "/Users/yanping.ma/ryan-personal-knowledge/knowledge/architecture/design-patterns-section-1.md",
+      "file_name": "design-patterns-section-1.md",
+      "directory": "architecture",
+      "parent_dir": "knowledge",
+      "tags": [
+        "#设计模式",
+        "#DDD",
+        "#CQRS",
+        "#EventSourcing",
+        "#Saga",
+        "#Go",
+        "#源码级"
+      ],
+      "headings": [
+        "设计模式与系统架构 — Go 源码级 23 种模式、DDD、CQRS、Saga、分布式协议",
+        "1. 23 种设计模式 — Go 源码级实现",
+        "1.1 创建型模式（Creational）",
+        "单例模式（Singleton）— Go 三种实现",
+        "工厂方法 vs 抽象工厂"
+      ],
+      "content_preview": "# 设计模式与系统架构 — Go 源码级 23 种模式、DDD、CQRS、Saga、分布式协议\n\n> 标签: `#设计模式` `#DDD` `#CQRS` `#EventSourcing` `#Saga` `#Go` `#源码级`\n> 创建日期: 20260608\n> 作者: Ryan\n\n---\n\n## 1. 23 种设计模式 — Go 源码级实现\n\n### 1.1 创建型模式（Creational）\n\n#### 单例模式（Singleton）— Go 三种实现\n\n```go\n// 方式1: sync.Once（Go 推荐做法）\ntype Config struct {\n    mu   sync.Mutex\n    m    map[string]string\n}\n\nvar (\n    once   sync.Once\n    config *Config\n)\n\nfunc GetConfig() *Config {\n    once.Do(func() {\n        config = &Config{\n            m: make(map[string]string)",
+      "full_content": "# 设计模式与系统架构 — Go 源码级 23 种模式、DDD、CQRS、Saga、分布式协议\n\n> 标签: `#设计模式` `#DDD` `#CQRS` `#EventSourcing` `#Saga` `#Go` `#源码级`\n> 创建日期: 20260608\n> 作者: Ryan\n\n---\n\n## 1. 23 种设计模式 — Go 源码级实现\n\n### 1.1 创建型模式（Creational）\n\n#### 单例模式（Singleton）— Go 三种实现\n\n```go\n// 方式1: sync.Once（Go 推荐做法）\ntype Config struct {\n    mu   sync.Mutex\n    m    map[string]string\n}\n\nvar (\n    once   sync.Once\n    config *Config\n)\n\nfunc GetConfig() *Config {\n    once.Do(func() {\n        config = &Config{\n            m: make(map[string]string),\n        }\n        config.m[\"timeout\"] = \"30s\"\n    })\n    return config\n}\n\n// 方式2: init() 函数（最简洁，全局唯一）\nvar defaultLogger = &Logger{level: \"info\"}\n\nfunc GetLogger() *Logger { return defaultLogger }\n\n// sync.Once 源码剖析（src/sync/once.go）:\n// type Once struct {\n//     done uint32 // atomic, 0=未执行, 1=已执行\n//     m    Mutex\n// }\n// func (o *Once) Do(f func()) {\n//     if atomic.LoadUint32(&o.done) == 1 { return }\n//     o.m.Lock()\n//     defer o.m.Unlock()\n//     if o.done == 0 { f(); atomic.StoreUint32(&o.done, 1) }\n// }\n//\n// 关键点:\n// - atomic.LoadUint32 读 done，未执行时走锁路径\n// - 双检：拿到锁后还要再检查 done\n// - atomic.StoreUint32 写 done，保证 happens-before 关系\n// - Go 的 sync.Once 保证 f() 只执行一次，且 Do() 返回前已完成\n```\n\n#### 工厂方法 vs 抽象工厂\n\n```go\n// 场景: 广告平台的多种计费方式\npackage billing\n\ntype Bidder interface {\n    Bid(event AdEvent) (float64, error)\n}\n\ntype CPMBidder struct{}\n\nfunc (b *CPMBidder) Bid(event AdEvent) (float64, error) {\n    return float64(event.Impressions) * 0.001, nil\n}\n\ntype CP...[truncated]",
+      "word_count": 213,
+      "is_entry_file": false,
+      "wikilinks": [],
+      "frontmatter_type": "",
+      "created": "",
+      "rrf_score": 0.01195,
+      "source_scores": [
+        [
+          "file_content",
+          0.005797
+        ],
+        [
+          "file_name",
+          0.002344
+        ],
+        [
+          "tags",
+          0.00381
+        ]
+      ],
+      "intent": "unknown",
+      "confidence": 0.0
+    },
+    {
+      "file_path": "/Users/yanping.ma/ryan-personal-knowledge/docs/agent-learning-plan.md",
+      "file_name": "agent-learning-plan.md",
+      "directory": "docs",
+      "parent_dir": "ryan-personal-knowledge",
+      "tags": [],
+      "headings": [
+        "Agent 学习文档",
+        "📚 书架 Agent/AI 相关书籍",
+        "Agent/AI 相关书籍",
+        "🎯 学习目标",
+        "📖 学习路径",
+        "第1阶段：基础概念",
+        "第2阶段：实践应用",
+        "第3阶段：进阶",
+        "🔧 实践项目",
+        "1. 基础 Agent 实现",
+        "2. RAG 系统集成",
+        "3. Agent 设计模式",
+        "📊 评估标准",
+        "📝 笔记模板",
+        "{书名} - 学习笔记",
+        "核心观点",
+        "实践心得",
+        "关键知识点",
+        "📅 学习计划",
+        "📚 参考资料",
+        "🤖 Demo 代码"
+      ],
+      "content_preview": "# Agent 学习文档\n\n## 📚 书架 Agent/AI 相关书籍\n\n- 235 本电子书，1 本有声书，1 个文章收藏\n- 总计: 237 条\n\n### Agent/AI 相关书籍\n- 这就是GEO：在AI流量红利中抢占先机 — 张其来 武寒波\n- 智能体一本通：打造你的全能助手 — 苏小文 刘玫燚 刘源\n- Agent设计模式 图解可复用智能体架构 — 黄佳\n- 大模型RAG实战：RAG原理、应用与系统构建 — 汪鹏 谷清水 卞龙鹏\n\n## 🎯 学习目标\n\n掌握 Agent 设计模式、系统架构、RAG 原理，能够设计和实现可复用的智能体架构。\n\n## 📖 学习路径\n\n### 第1阶段：基础概念\n- Agent 设计模式（黄佳《Agent设计模式》）\n- 智能体架构原理\n- RAG 基础\n\n### 第2阶段：实践应用\n- 实现一个简单的 Agent\n- 集成 RAG 系统\n- 使用设计模式优化 Agent\n\n### 第3阶段：进阶\n- GEO 与 AI 流量红利\n- 构建可复用智能体\n- 实际项目应用\n\n## 🔧 实践项目\n\n### 1. 基础 Agent 实现\n实现一个基于 L",
+      "full_content": "# Agent 学习文档\n\n## 📚 书架 Agent/AI 相关书籍\n\n- 235 本电子书，1 本有声书，1 个文章收藏\n- 总计: 237 条\n\n### Agent/AI 相关书籍\n- 这就是GEO：在AI流量红利中抢占先机 — 张其来 武寒波\n- 智能体一本通：打造你的全能助手 — 苏小文 刘玫燚 刘源\n- Agent设计模式 图解可复用智能体架构 — 黄佳\n- 大模型RAG实战：RAG原理、应用与系统构建 — 汪鹏 谷清水 卞龙鹏\n\n## 🎯 学习目标\n\n掌握 Agent 设计模式、系统架构、RAG 原理，能够设计和实现可复用的智能体架构。\n\n## 📖 学习路径\n\n### 第1阶段：基础概念\n- Agent 设计模式（黄佳《Agent设计模式》）\n- 智能体架构原理\n- RAG 基础\n\n### 第2阶段：实践应用\n- 实现一个简单的 Agent\n- 集成 RAG 系统\n- 使用设计模式优化 Agent\n\n### 第3阶段：进阶\n- GEO 与 AI 流量红利\n- 构建可复用智能体\n- 实际项目应用\n\n## 🔧 实践项目\n\n### 1. 基础 Agent 实现\n实现一个基于 LLM 的简单 Agent，支持：\n- 意图识别\n- 工具调用\n- 任务执行\n\n### 2. RAG 系统集成\n实现一个 RAG 系统，包括：\n- 文档索引\n- 语义搜索\n- 答案生成\n\n### 3. Agent 设计模式\n应用常见的 Agent 设计模式：\n- 单 Agent 模式\n- 多 Agent 协作模式\n- 层次化 Agent 模式\n\n## 📊 评估标准\n\n- 理解 Agent 核心概念\n- 能够设计简单的 Agent 系统\n- 掌握 RAG 原理和应用\n- 能够使用设计模式优化 Agent\n\n## 📝 笔记模板\n\n```markdown\n# {书名} - 学习笔记\n\n## 核心观点\n- 观点1\n- 观点2\n\n## 实践心得\n{结合实际工作的思考}\n\n## 关键知识点\n- 知识点1\n- 知识点2\n```\n\n## 📅 学习计划\n\n- **第1周**: 阅读《Agent设计模式》，理解 Agent 核心概念\n- **第2周**: 阅读《大模型RAG实战》，掌握 RAG 原理\n- **第3周**: 实现基础 Agent 项目\n- **第4周**: 实现 RAG 系统\n- **第5周**: 应用设计模式优化 Agent\n- **第6周**: 完成综合项目\n\n## 📚 参考资料\n\n- 微信读书书架\n- Agent 设计模式文档\n- RAG 实战指南\n- 智能体架构教程\n\n## 🤖 Demo 代码\n\n- 基础 Agent 实现: `demos/basic-agent.py`\n- 支持意图识别、工具调用、任务执行\n",
+      "word_count": 231,
+      "is_entry_file": false,
+      "wikilinks": [],
+      "frontmatter_type": "",
+      "created": "",
+      "rrf_score": 0.008808,
+      "source_scores": [
+        [
+          "file_content",
+          0.006349
+        ],
+        [
+          "file_name",
+          0.002459
+        ]
+      ],
+      "intent": "unknown",
+      "confidence": 0.0
+    },
+    {
+      "file_path": "/Users/yanping.ma/ryan-personal-knowledge/knowledge/architecture-patterns/agent-design-patterns-notes.md",
+      "file_name": "agent-design-patterns-notes.md",
+      "directory": "architecture-patterns",
+      "parent_dir": "knowledge",
+      "tags": [],
+      "headings": [
+        "Agent设计模式 学习笔记 — 基于黄佳《Agent设计模式：图解可复用智能体架构》",
+        "📚 全书结构概览",
+        "🎯 核心思想",
+        "Agent 的本质转变",
+        "设计模式的再发明",
+        "🧠 核心模式详解",
+        "1. 感知模式 (Chapter 4)",
+        "2. 记忆模式 (Chapter 5)",
+        "3. 推理模式 (Chapter 6)",
+        "4. 行动模式 (Chapter 7)",
+        "5. 反思模式 (Chapter 8)",
+        "6. 协作模式 (Chapter 9)",
+        "💡 实战应用",
+        "场景 1：智能客服系统",
+        "场景 2：数据分析 Agent",
+        "场景 3：内容创作 Agent",
+        "📖 关键洞见",
+        "🎓 学习建议",
+        "优先掌握",
+        "进阶方向",
+        "实践路径",
+        "📊 模式复杂度对比",
+        "📝 下一步"
+      ],
+      "content_preview": "# Agent设计模式 学习笔记 — 基于黄佳《Agent设计模式：图解可复用智能体架构》\n\n> 作者: 黄佳 | 微信读书 bookId: 3300199180 | 学习日期: 2026-06-08\n\n---\n\n## 📚 全书结构概览\n\n**上篇：智能设计的哲学**\n1. 从结构到智能：设计模式的世纪旅程\n2. 从模式到意图：软件工程的范式迁移\n3. 从设计到演化，欢迎来到Agent时代\n\n**下篇：智能设计模式**\n4. 感知模式（注意力聚焦、多模态融合、主动感知）\n5. 记忆模式（分层记忆、RAG、情节记忆）\n6. 推理模式（思维链、思维树、思维图、类比推理）\n7. 行动模式（ReAct、规划-执行、工具编排、自适应策略）\n8. 反思模式（自我修正、反思记忆、元学习）\n9. 协作模式（辩论、委托、路由、群体）\n\n---\n\n## 🎯 核心思想\n\n### Agent 的本质转变\n- **从工具到伙伴**：Agent 不再是被动工具，而是能主动推理和行动的伙伴\n- **从确定性到概率性**：传统软件工程处理确定性，Agent 系统处理概率性\n- **从结构到意图**：设计重点从“如何构",
+      "full_content": "# Agent设计模式 学习笔记 — 基于黄佳《Agent设计模式：图解可复用智能体架构》\n\n> 作者: 黄佳 | 微信读书 bookId: 3300199180 | 学习日期: 2026-06-08\n\n---\n\n## 📚 全书结构概览\n\n**上篇：智能设计的哲学**\n1. 从结构到智能：设计模式的世纪旅程\n2. 从模式到意图：软件工程的范式迁移\n3. 从设计到演化，欢迎来到Agent时代\n\n**下篇：智能设计模式**\n4. 感知模式（注意力聚焦、多模态融合、主动感知）\n5. 记忆模式（分层记忆、RAG、情节记忆）\n6. 推理模式（思维链、思维树、思维图、类比推理）\n7. 行动模式（ReAct、规划-执行、工具编排、自适应策略）\n8. 反思模式（自我修正、反思记忆、元学习）\n9. 协作模式（辩论、委托、路由、群体）\n\n---\n\n## 🎯 核心思想\n\n### Agent 的本质转变\n- **从工具到伙伴**：Agent 不再是被动工具，而是能主动推理和行动的伙伴\n- **从确定性到概率性**：传统软件工程处理确定性，Agent 系统处理概率性\n- **从结构到意图**：设计重点从“如何构建”转向“如何表达意图”\n\n### 设计模式的再发明\n传统 GoF 设计模式解决的是**对象协作的秩序问题**，而 Agent 设计模式解决的是**智能体的感知-推理-行动闭环**。\n\n---\n\n## 🧠 核心模式详解\n\n### 1. 感知模式 (Chapter 4)\n\n**注意力聚焦模式**\n- 核心：在海量信息中选择性关注\n- 应用：RAG 系统中的文档检索、多 Agent 系统的信息过滤\n- 实现：基于嵌入的语义相似度排序\n\n**多模态融合模式**\n- 核心：整合文本、图像、音频等多种输入\n- 应用：多模态 Agent、语音助手、视觉问答\n- 实现：跨模态对齐、联合表示学习\n\n**主动感知模式**\n- 核心：Agent 主动发起感知行为\n- 应用：搜索 Agent、实验设计 Agent\n- 实现：基于策略的感知规划\n\n### 2. 记忆模式 (Chapter 5)\n\n**分层记忆模式**\n- 核心：区分短期记忆、长期记忆、情景记忆\n- 应用：对话系统、持续学习 Agent\n- 实现：向量数据库 + 结构化存储\n\n**RAG 模式** ⭐\n- 核心：检索增强生成，外挂知识库\n- 应用：知识问答、文档分析、企业知识库\n- 实现：Embedding → 检索 → 生成\n- 关键点：检索质量决定生成质量\n\n**情节记忆模式**\n- 核心：记录 Agent 的交互历史和经验\n- 应用：个性化服务、长期对话\n- 实现：时序数据库 + 经验总结\n\n### 3. 推理模式 (Chapter 6)\n\n**思维链模式 (CoT)**\n- 核心：将复杂问题分解为中间步骤\n- 应用：数学推理、逻辑推理、代码生成\n- 实现：Few-shot CoT、Self-Consistency\n\n**思维树模式 (ToT)**\n- 核心：探索多种推理路径，回溯最优解\n- 应用：游戏策略、代码调试、方案设计\n- 实现：MCTS（蒙特卡洛树搜索）\n\n**思维图模式 (GoT)**\n- 核心：支持循环和分支的推理图结构\n- 应用：复杂系统调试、多步规划\n- 实现：图神经网络 + 动态推理\n\n**类比推理模式**\n- 核心：通过类比解决新问题\n- 应用：创新设计、跨领域迁移\n- 实现：结构映射引擎、类比检索\n\n### 4. 行动模式 (Chapter 7)\n\n**ReAct 模式** ⭐\n- 核心：推理与行动交替进行\n- 应用：工具使用 Agent、自动客服\n- 实现：Thought → Action → Observation → Thought...\n\n**规划-执行模式**\n- 核心：先规划再执行，动态调整\n- 应用：任务自动化、工作流编排\n- 实现：分层规划、执行监控\n\n**工具编排模式**\n- 核心：协调多个工具完成复杂任务\n- 应用：API 调用、多服务集成\n- 实现：工具描述、依赖分析、错误恢复\n\n**自适应策略模式**\n- 核心：根据反馈调整策略\n- 应用：个性化推荐、动态定价\n- 实现：强化学习、Bandit 算法\n\n### 5. 反思模式 (Chapter 8)\n\n**自我修正模式**\n- 核心：识别并修正自身错误\n- 应用：代码生成、事实核查\n- 实现：Self-Correction、交叉验证\n\n**反思记忆模式**\n- 核心：从经验中学习并更新策略\n- 应用：持续改进的 Agent\n- 实现：经验池、策略更新\n\n**元学习模式**\n- 核心：学习“如何学习”\n- 应用：快速适应新领域\n- 实现：MAML、元训练\n\n### 6. 协作模式 (Chapter 9)\n\n**辩论模式**\n- 核心：多 Agent 辩论达成共识\n- 应用：决策支持、事实核查\n- 实现：红蓝对抗、投票机制\n\n**委托模式**\n- 核心：任务分解和任务分配\n- 应用：分布式 Agent 系统\n- 实现：任务描述、能力匹配\n\n**路由模式**\n- 核心：根据问题类型选择专家 Agent\n- 应用：多领域客服、分类系统\n- 实现：意图识别 + 路由策略\n\n**群体模式**\n- 核心：多 Agent 协同涌现智能\n- 应用：大规模内容生成、仿真\n- 实现：群体智能、涌现机制\n\n---\n\n## 💡 实战应用\n\n### 场景 1：智能客服系统\n- 感知：多模态输入（文本/语音）\n- 记忆：RAG + 对话历史\n- 推理：CoT 逻辑推理\n- 行动：调用 API 查询订单\n- 反思：根据用户反馈优化回答\n\n### 场景 2：数据分析 Agent\n- 感知：读取数据源、理解需求\n- 记忆：历史查询和经验\n- 推理：思维树探索分析路径\n- 行动：执行 SQL、生成图表\n- 反思：验证结果合理性\n\n### 场景 3：内容创作 Agent\n- 感知：搜索素材、理解主题\n- 记忆：风格指南、品牌调性\n- 推理：类比推理找创意\n- 行动：生成草稿、调用工具\n- 反思：自我修正、风格调整\n\n---\n\n## 📖 关键洞见\n\n1. **模式是通用语言**：Agent 设计模式不是代码实现，而是沟通架构思想的通用语言\n\n2. **从确定性到概率性**：传统软件是确定性的，Agent 系统是概率性的，需要新的设计哲学\n\n3. **人机协作新契约**：Agent 不是替代人类，而是与人类形成新的协作关系\n\n4. **熵的园丁**：Agent 工程不是对抗熵增，而是像园丁一样引导系统自组织\n\n---\n\n## 🎓 学习建议\n\n### 优先掌握\n1. **RAG 模式** - 最实用，企业落地首选\n2. **ReAct 模式** - 工具使用的基础\n3. **思维链模式** - 提升推理能力\n\n### 进阶方向\n1. **多模态融合** - 未来趋势\n2. **群体模式** - 大规模应用\n3. **元学习** - 持续适应\n\n### 实践路径\n1. 先用 RAG + ReAct 实现基础 Agent\n2. 加入 CoT 提升推理能力\n3. 探索多 Agent 协作\n4. 研究元学习和反思机制\n\n---\n\n## 📊 模式复杂度对比\n\n| 模式 | 复杂度 | 实用性 | 推荐指数 |\n|------|--------|--------|----------|\n| RAG | ⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |\n| ReAct | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |\n| CoT | ⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ |\n| 思维树 | ⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐ |\n| 多模态融合 | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐ |\n| 群体模式 | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ |\n\n---\n\n## 📝 下一步\n\n- [ ] 实现 RAG + ReAct 基础 Agent\n- [ ] 学习 CoT 推理优化\n- [ ] 研究多 Agent 协作架构\n- [ ] 探索元学习在 Agent 中的应用\n\n---\n\n*本笔记基于微信读书《Agent设计模式：图解可复用智能体架构》目录结构生成，结合 LLM 知识库提炼。*\n",
+      "word_count": 514,
+      "is_entry_file": false,
+      "wikilinks": [],
+      "frontmatter_type": "",
+      "created": "",
+      "rrf_score": 0.008022,
+      "source_scores": [
+        [
+          "file_content",
+          0.005714
+        ],
+        [
+          "file_name",
+          0.002308
+        ]
+      ],
+      "intent": "unknown",
+      "confidence": 0.0
+    },
+    {
+      "file_path": "/Users/yanping.ma/ryan-personal-knowledge/books/reading-list.md",
+      "file_name": "reading-list.md",
+      "directory": "books",
+      "parent_dir": "ryan-personal-knowledge",
+      "tags": [],
+      "headings": [
+        "待读书单 — Ryan 的成长计划",
+        "Tier 1：必读（1-3 个月）",
+        "Tier 2：重要（3-6 个月）",
+        "Tier 3：扩展（6-12 个月）",
+        "微信读书书架已有书籍（需要精读）",
+        "每周学习计划"
+      ],
+      "content_preview": "# 待读书单 — Ryan 的成长计划\n\n**最后更新**: 2026-06-08\n\n## Tier 1：必读（1-3 个月）\n\n| 书名 | 领域 | 优先级 | 状态 |\n|------|------|--------|------|\n| 系统设计导论 | 架构设计 | P0 | 待开始 |\n| 深入理解计算机系统 | 系统底层 | P0 | 待开始 |\n| Go 语言设计与实现 | Go 深入 | P0 | 待开始 |\n| RAG 实战 | Agent/AI | P0 | ✅ 在读（微信读书） |\n| 广告算法与实践 | 广告业务 | P0 | 待开始 |\n\n## Tier 2：重要（3-6 个月）\n\n| 书名 | 领域 | 优先级 | 状态 |\n|------|------|--------|------|\n| Redis 设计与实现 | Redis | P1 | 待开始 |\n| MySQL 技术内幕 | MySQL | P1 | 待开始 |\n| 数据密集型应用系统设计 | 系统架构 | P1 | 待开始 |\n| 设计模式 | 设计模式 | P1 | 待开始 |\n| Click",
+      "full_content": "# 待读书单 — Ryan 的成长计划\n\n**最后更新**: 2026-06-08\n\n## Tier 1：必读（1-3 个月）\n\n| 书名 | 领域 | 优先级 | 状态 |\n|------|------|--------|------|\n| 系统设计导论 | 架构设计 | P0 | 待开始 |\n| 深入理解计算机系统 | 系统底层 | P0 | 待开始 |\n| Go 语言设计与实现 | Go 深入 | P0 | 待开始 |\n| RAG 实战 | Agent/AI | P0 | ✅ 在读（微信读书） |\n| 广告算法与实践 | 广告业务 | P0 | 待开始 |\n\n## Tier 2：重要（3-6 个月）\n\n| 书名 | 领域 | 优先级 | 状态 |\n|------|------|--------|------|\n| Redis 设计与实现 | Redis | P1 | 待开始 |\n| MySQL 技术内幕 | MySQL | P1 | 待开始 |\n| 数据密集型应用系统设计 | 系统架构 | P1 | 待开始 |\n| 设计模式 | 设计模式 | P1 | 待开始 |\n| ClickHouse 内核剖析 | 大数据 | P1 | 待开始 |\n| 大规模深度学习系统 | 大数据 | P1 | 待开始 |\n\n## Tier 3：扩展（6-12 个月）\n\n| 书名 | 领域 | 优先级 | 状态 |\n|------|------|--------|------|\n| 架构整洁之道 | 架构 | P2 | 待开始 |\n| Kubernetes 权威指南 | DevOps | P2 | 待开始 |\n| 机器学习系统设计 | AI/ML | P2 | 待开始 |\n| 广告技术架构与实战 | 广告 | P2 | 待开始 |\n\n## 微信读书书架已有书籍（需要精读）\n\n| 书名 | 领域 | 优先级 | 状态 |\n|------|------|--------|------|\n| Agent设计模式 | AI/Agent | P0 | ✅ 在读 |\n| 大模型RAG实战 | AI/RAG | P0 | ✅ 在读 |\n| 智能体一本通 | AI/Agent | P1 | 待开始 |\n| 这就是GEO | AI商业化 | P1 | 待开始 |\n| 精通AST-GREP | 工具 | P1 | 待开始 |\n| 技术管理必修课 | 管理 | P1 | 待开始 |\n| Shopee跨境电商 | 电商 | P2 | 待开始 |\n| 管好你的钱 | 投资 | P2 | 待开始 |\n| 慢慢变富 | 投资 | P2 | 待开始 |\n\n## 每周学习计划\n\n- **周一**: 技术深度（Redis/MySQL/Go）— 30min\n- **周二**: Agent/AI 技术 — 30min\n- **周三**: 广告业务深度 — 30min\n- **周四**: 架构与工程 — 30min\n- **周五**: 每周复盘 + 下周计划 — 30min\n- **周末**: 大块学习时间（选读）— 2-4h\n",
+      "word_count": 320,
+      "is_entry_file": false,
+      "wikilinks": [],
+      "frontmatter_type": "",
+      "created": "",
+      "rrf_score": 0.006557,
+      "source_scores": [
+        [
+          "file_content",
+          0.006557
+        ]
+      ],
+      "intent": "unknown",
+      "confidence": 0.0
+    },
+    {
+      "file_path": "/Users/yanping.ma/ryan-personal-knowledge/books/reading-progress.md",
+      "file_name": "reading-progress.md",
+      "directory": "books",
+      "parent_dir": "ryan-personal-knowledge",
+      "tags": [],
+      "headings": [
+        "阅读进度跟踪 — Ryan",
+        "当前在读",
+        "已完成",
+        "下周计划",
+        "每周检查"
+      ],
+      "content_preview": "# 阅读进度跟踪 — Ryan\n\n**最后更新**: 2026-06-08\n\n## 当前在读\n\n| 书名 | 微信读书 | 进度 | 开始日期 | 目标完成 | 状态 |\n|------|---------|------|---------|---------|------|\n| 大模型RAG实战 | ✅ | 20% | 2025-06-05 | 2025-06-20 | 进行中 |\n| Agent设计模式 | ✅ | 10% | 2025-06-05 | 2025-06-20 | 进行中 |\n\n## 已完成\n\n| 书名 | 完成日期 | 笔记链接 | 收获 |\n|------|---------|---------|------|\n| - | - | - | - |\n\n## 下周计划\n\n- [ ] RAG 实战 — 第 1-3 章\n- [ ] Agent 设计模式 — 第 1-2 章\n- [ ] 完成 2 篇笔记\n\n## 每周检查\n\n每周日检查：\n- 本周读了多少页/多少小时？\n- 读了哪本书？\n- 有什么收获要写笔记？\n",
+      "full_content": "# 阅读进度跟踪 — Ryan\n\n**最后更新**: 2026-06-08\n\n## 当前在读\n\n| 书名 | 微信读书 | 进度 | 开始日期 | 目标完成 | 状态 |\n|------|---------|------|---------|---------|------|\n| 大模型RAG实战 | ✅ | 20% | 2025-06-05 | 2025-06-20 | 进行中 |\n| Agent设计模式 | ✅ | 10% | 2025-06-05 | 2025-06-20 | 进行中 |\n\n## 已完成\n\n| 书名 | 完成日期 | 笔记链接 | 收获 |\n|------|---------|---------|------|\n| - | - | - | - |\n\n## 下周计划\n\n- [ ] RAG 实战 — 第 1-3 章\n- [ ] Agent 设计模式 — 第 1-2 章\n- [ ] 完成 2 篇笔记\n\n## 每周检查\n\n每周日检查：\n- 本周读了多少页/多少小时？\n- 读了哪本书？\n- 有什么收获要写笔记？\n",
+      "word_count": 104,
+      "is_entry_file": false,
+      "wikilinks": [],
+      "frontmatter_type": "",
+      "created": "",
+      "rrf_score": 0.006452,
+      "source_scores": [
+        [
+          "file_content",
+          0.006452
+        ]
+      ],
+      "intent": "unknown",
+      "confidence": 0.0
+    },
+    {
+      "file_path": "/Users/yanping.ma/ryan-personal-knowledge/knowledge/architecture/design-patterns-architecture-deep.md",
+      "file_name": "design-patterns-architecture-deep.md",
+      "directory": "architecture",
+      "parent_dir": "knowledge",
+      "tags": [
+        "#设计模式",
+        "#DDD",
+        "#CQRS",
+        "#EventSourcing",
+        "#Saga",
+        "#Go",
+        "#源码级"
+      ],
+      "headings": [
+        "设计模式与系统架构 — Go 源码级 23 种模式、DDD、CQRS、Saga、分布式协议",
+        "1. 23 种设计模式 — Go 源码级实现",
+        "1.1 创建型模式（Creational）",
+        "单例模式（Singleton）— Go 三种实现",
+        "工厂方法 vs 抽象工厂",
+        "建造者模式（Builder）",
+        "原型模式（Prototype）— Go 的 clone",
+        "1.2 结构型模式（Structural）",
+        "适配器模式（Adapter）— 广告平台 API 统一",
+        "装饰器模式（Decorator）— 请求链式增强",
+        "代理模式（Proxy）— 懒加载缓存",
+        "1.3 行为型模式（Behavioral）",
+        "策略模式（Strategy）— 竞价策略",
+        "观察者模式（Observer）— 广告事件通知",
+        "模板方法模式（Template Method）",
+        "2. DDD — Go 源码级实现",
+        "2.1 限界上下文（Bounded Context）",
+        "2.2 聚合根 + 值对象",
+        "2.3 领域事件",
+        "3. CQRS + Event Sourcing",
+        "3.1 CQRS 架构",
+        "3.2 事件溯源（Event Sourcing）",
+        "4. Saga 模式 — 分布式事务",
+        "4.1 Saga 编排（Orchestration）",
+        "5. 分布式协议深度",
+        "5.1 CAP 定理",
+        "5.2 Raft 协议（Go 实现）"
+      ],
+      "content_preview": "# 设计模式与系统架构 — Go 源码级 23 种模式、DDD、CQRS、Saga、分布式协议\n\n> 标签: `#设计模式` `#DDD` `#CQRS` `#EventSourcing` `#Saga` `#Go` `#源码级`\n> 创建日期: 20260608\n> 作者: Ryan\n\n---\n\n## 1. 23 种设计模式 — Go 源码级实现\n\n### 1.1 创建型模式（Creational）\n\n#### 单例模式（Singleton）— Go 三种实现\n\n```go\n// 方式1: sync.Once（Go 推荐做法）\ntype Config struct {\n    mu   sync.Mutex\n    m    map[string]string\n}\n\nvar (\n    once   sync.Once\n    config *Config\n)\n\nfunc GetConfig() *Config {\n    once.Do(func() {\n        config = &Config{m: make(map[string]string)}\n        con",
+      "full_content": "# 设计模式与系统架构 — Go 源码级 23 种模式、DDD、CQRS、Saga、分布式协议\n\n> 标签: `#设计模式` `#DDD` `#CQRS` `#EventSourcing` `#Saga` `#Go` `#源码级`\n> 创建日期: 20260608\n> 作者: Ryan\n\n---\n\n## 1. 23 种设计模式 — Go 源码级实现\n\n### 1.1 创建型模式（Creational）\n\n#### 单例模式（Singleton）— Go 三种实现\n\n```go\n// 方式1: sync.Once（Go 推荐做法）\ntype Config struct {\n    mu   sync.Mutex\n    m    map[string]string\n}\n\nvar (\n    once   sync.Once\n    config *Config\n)\n\nfunc GetConfig() *Config {\n    once.Do(func() {\n        config = &Config{m: make(map[string]string)}\n        config.m[\"timeout\"] = \"30s\"\n    })\n    return config\n}\n\n// 方式2: init() + 包级变量（最简洁）\nvar defaultLogger = &Logger{level: \"info\"}\nfunc GetLogger() *Logger { return defaultLogger }\n\n// sync.Once 源码剖析（src/sync/once.go）:\n// type Once struct {\n//     done uint32 // atomic, 0=未执行, 1=已执行\n//     m    Mutex\n// }\n// func (o *Once) Do(f func()) {\n//     if atomic.LoadUint32(&o.done) == 1 { return }\n//     o.m.Lock()\n//     defer o.m.Unlock()\n//     if o.done == 0 { f(); atomic.StoreUint32(&o.done, 1) }\n// }\n//\n// 关键点:\n// - atomic.LoadUint32 读 done，未执行时走锁路径\n// - 双检：拿到锁后还要再检查 done（其他 goroutine 可能先完成了）\n// - atomic.StoreUint32 写 done，保证 happens-before 关系\n// - Go 的 sync.Once 保证 f() 只执行一次，且 Do() 返回前已完成\n```\n\n#### 工厂方法 vs 抽象工厂\n\n```go\n// 场景: 广告平台的多种计费方式\npackage billing\n\ntype Bidder interface {\n    Bid(event AdEvent) (float64, error)\n}\n\ntype CPMBidder struct{}\nfunc (b *CPMBidder) Bid(event AdEvent) (float64, error) {\n    return float64(event.Impressions) * 0.001, nil\n}\n\ntype CPCBidder struct{}\nfunc (b *CPCBidder) Bid(event AdEvent) (float64, error) {\n    return float64(event.Clicks) * 0.05, nil\n}\n\ntype OCPMBidder struct{ TargetCPA float64 }\nfunc (b *OCPMBidder) Bid(event AdEvent) (float64, error) {\n    return event.ctr * event.cvr * b.TargetCPA * 1000, nil\n}\n\n// 工厂接口（Factory Method 模式）\ntype BidderFactory interface {\n    CreateBidder() Bidder\n}\n\ntype CPMBidderFactory struct{}\nfunc (f *CPMBidderFactory) CreateBidder() Bidder {\n    return &CPMBidder{}\n}\n\n// 使用:\ntype Campaign struct {\n    bidder Bidder\n}\n\nfunc NewCampaign(factory BidderFactory) *Campaign {\n    return &Campaign{\n        bidder: factory.CreateBidder(),\n    }\n}\n\n// 抽象工厂: 一组相关/依赖对象的家族（不限制类型）\ntype BiddingSystem interface {\n    CreateBidder() Bidder\n    CreatePacer() *BudgetPacer\n    CreateTracker() *ConversionTracker\n}\n\n// Java 用多态实现抽象工厂，Go 用接口 + 工厂函数\n// Go 更惯用的方式: 组合 + 接口，不使用复杂工厂模式\nfunc NewCampaign(cfg CampaignConfig) *Campaign {\n    // 直接用结构体字面量 + 默认值，替代工厂\n    return &Campaign{\n        Bidder: cfg.BidStrategy,       // 注入\n        Pacer:  cfg.BudgetPacer,       // 注入\n        Tracker: cfg.ConversionTracker, // 注入\n    }\n}\n```\n\n#### 建造者模式（Builder）\n\n```go\n// 场景: 构建复杂的广告查询条件\ntype AdQuery struct {\n    UserID          string\n    CampaignID      string\n    StartTime       time.Time\n    EndTime         time.Time\n    TargetInterests []string\n    MinCPM          float64\n    MaxCPM          float64\n    ExcludeBrands   []string\n}\n\ntype AdQueryBuilder struct {\n    query AdQuery\n}\n\nfunc NewAdQuery() *AdQueryBuilder {\n    return &AdQueryBuilder{query: AdQuery{}}\n}\n\nfunc (b *AdQueryBuilder) UserID(uid string) *AdQueryBuilder {\n    b.query.UserID = uid\n    return b\n}\n\nfunc (b *AdQueryBuilder) CampaignID(cid string) *AdQueryBuilder {\n    b.query.CampaignID = cid\n    return b\n}\n\nfunc (b *AdQueryBuilder) TimeRange(start, end time.Time) *AdQueryBuilder {\n    b.query.StartTime = start\n    b.query.EndTime = end\n    return b\n}\n\nfunc (b *AdQueryBuilder) TargetInterest(interest string) *AdQueryBuilder {\n    b.query.TargetInterests = append(b.query.TargetInterests, interest)\n    return b\n}\n\nfunc (b *AdQueryBuilder) CPMRange(min, max float64) *AdQueryBuilder {\n    b.query.MinCPM = min\n    b.query.MaxCPM = max\n    return b\n}\n\nfunc (b *AdQueryBuilder) Build() (*AdQuery, error) {\n    if (b.query.EndTime.IsZero() || b.query.StartTime.IsZero()) {\n        return nil, errors.New(\"time range required\")\n    }\n    result := b.query\n    return &result, nil\n}\n\n// 使用:\nquery, err := NewAdQuery().\n    UserID(\"user_123\").\n    TimeRange(start, end).\n    TargetInterest(\"tech\").\n    TargetInterest(\"finance\").\n    CPMRange(1.0, 10.0).\n    Build()\n```\n\n#### 原型模式（Prototype）— Go 的 clone\n\n```go\n// 场景: 广告计划模板克隆\ntype AdCampaign struct {\n    ID             string\n    Name           string\n    Budget         *Budget\n    TargetInterests []string\n}\n\nfunc (c *AdCampaign) Clone() *AdCampaign {\n    clone := *c // 浅拷贝\n    // 深拷贝可变字段\n    clone.Budget = &Budget{\n        Total:  c.Budget.Total,\n        Daily:  c.Budget.Daily,\n        Currency: c.Budget.Currency,\n    }\n    clone.TargetInterests = make([]string, len(c.TargetInterests))\n    copy(clone.TargetInterests, c.TargetInterests)\n    return &clone\n}\n```\n\n---\n\n### 1.2 结构型模式（Structural）\n\n#### 适配器模式（Adapter）— 广告平台 API 统一\n\n```go\n// 场景: 统一 Google Ads、Meta、TikTok 的 API 调用\ntype AdPlatformAPI interface {\n    CreateCampaign(ctx context.Context, req *CreateCampaignRequest) (*Campaign, error)\n    Bid(ctx context.Context, req *BidRequest) (*BidResponse, error)\n    GetReport(ctx context.Context, start, end time.Time) (*Report, error)\n}\n\n// Google Ads 适配器\ntype GoogleAdsAdapter struct {\n    client *googleads.Client\n}\n\nfunc (a *GoogleAdsAdapter) CreateCampaign(ctx context.Context, req *CreateCampaignRequest) (*Campaign, error) {\n    // 转换为 Google Ads API 格式\n    gReq := googleAdsMapper.ToGoogleRequest(req)\n    resp, err := a.client.CampaignService.CreateCampaign(ctx, gReq)\n    if err != nil {\n        return nil, err\n    }\n    return googleAdsMapper.ToInternalCampaign(resp), nil\n}\n\nfunc (a *GoogleAdsAdapter) Bid(ctx context.Context, req *BidRequest) (*BidResponse, error) {\n    oBiddingReq := dv360Mapper.ToOpenBidding(req)\n    resp, err := a.client.OpenBidding.Bid(ctx, oBiddingReq)\n    if err != nil {\n        return nil, err\n    }\n    return dv360Mapper.ToBidResponse(resp), nil\n}\n\n// 使用:\nvar api AdPlatformAPI = &GoogleAdsAdapter{client: googleClient}\ncampaign, _ := api.CreateCampaign(ctx, req)\n```\n\n#### 装饰器模式（Decorator）— 请求链式增强\n\n```go\n// 场景: 广告请求的链式增强（认证→限流→缓存→日志）\ntype AdHandler interface {\n    Handle(ctx context.Context, req *AdRequest) (*AdResponse, error)\n}\n\ntype baseHandler struct{}\n\nfunc (h *baseHandler) Handle(ctx context.Context, req *AdRequest) (*AdResponse, error) {\n    return adService.GetAds(req)\n}\n\n// 认证装饰器\ntype authDecorator struct {\n    next AdHandler\n}\n\nfunc (d *authDecorator) Handle(ctx context.Context, req *AdRequest) (*AdResponse, error) {\n    token := req.Header[\"Authorization\"]\n    if token == \"\" {\n        return nil, errors.New(\"auth required\")\n    }\n    if !authService.Validate(token) {\n        return nil, errors.New(\"invalid token\")\n    }\n    req.UserID = authService.GetUserID(token)\n    return d.next.Handle(ctx, req)\n}\n\n// 限流装饰器\ntype rateLimitDecorator struct {\n    next      AdHandler\n    limiter   *rate.Limiter\n}\n\nfunc (d *rateLimitDecorator) Handle(ctx context.Context, req *AdRequest) (*AdResponse, error) {\n    if !d.limiter.Allow() {\n        return nil, errors.New(\"rate limit exceeded\")\n    }\n    return d.next.Handle(ctx, req)\n}\n\n// 缓存装饰器\ntype cacheDecorator struct {\n    next  AdHandler\n    cache *sync.Map // map[string]*AdResponse\n}\n\nfunc (d *cacheDecorator) Handle(ctx context.Context, req *AdRequest) (*AdResponse, error) {\n    key := generateCacheKey(req)\n    if cached, ok := d.cache.Load(key); ok {\n        return cached.(*AdResponse), nil\n    }\n    resp, err := d.next.Handle(ctx, req)\n    if err == nil {\n        d.cache.Store(key, resp)\n    }\n    return resp, err\n}\n\n// 组装:\nvar handler AdHandler = &baseHandler{}\nhandler = &cacheDecorator{next: handler, cache: &sync.Map{}}\nhandler = &rateLimitDecorator{next: handler, limiter: rate.NewLimiter(1000, 1000)}\nhandler = &authDecorator{next: handler}\n// 顺序: auth → rateLimit → cache → base\n```\n\n#### 代理模式（Proxy）— 懒加载缓存\n\n```go\ntype AdProvider interface {\n    GetAds(campaignID string) ([]Ad, error)\n}\n\ntype adProviderReal struct{}\n\nfunc (p *adProviderReal) GetAds(campaignID string) ([]Ad, error) {\n    return adRepository.findByCampaignID(campaignID)\n}\n\ntype adProviderCacheProxy struct {\n    real  AdProvider\n    cache sync.Map\n}\n\nfunc (p *adProviderCacheProxy) GetAds(campaignID string) ([]Ad, error) {\n    if cached, ok := p.cache.Load(campaignID); ok {\n        return cached.([]Ad), nil\n    }\n    ads, err := p.real.GetAds(campaignID)\n    if err == nil {\n        p.cache.Store(campaignID, ads)\n    }\n    return ads, err\n}\n```\n\n---\n\n### 1.3 行为型模式（Behavioral）\n\n#### 策略模式（Strategy）— 竞价策略\n\n```go\n// 场景: 不同竞价策略，运行时可切换\ntype BiddingStrategy interface {\n    CalculateBid(ctr, cvr float64, targetCPA float64) float64\n}\n\ntype FirstPriceStrategy struct{}\n\nfunc (s *FirstPriceStrategy) CalculateBid(ctr, cvr, targetCPA float64) float64 {\n    ecpm := ctr * cvr * 1000\n    return ecpm // 出价 = eCPM\n}\n\ntype BudgetPacingStrategy struct {\n    pacer *BudgetPacer\n}\n\nfunc (s *BudgetPacingStrategy) CalculateBid(ctr, cvr, targetCPA float64) float64 {\n    ecpm := ctr * cvr * 1000\n    factor := s.pacer.GetAdjustFactor() // 根据预算消耗调整\n    return ecpm * factor\n}\n\n// 使用:\nvar strategy BiddingStrategy = &BudgetPacingStrategy{pacer: pacing}\nbid := strategy.CalculateBid(ctr, cvr, targetCPA)\n```\n\n#### 观察者模式（Observer）— 广告事件通知\n\n```go\n// 场景: 广告曝光/点击/转化事件，通知多个系统\ntype AdEvent struct {\n    Type      EventType\n    CampaignID string\n    UserID    string\n    Timestamp time.Time\n}\n\ntype EventType string\n\nconst (\n    IMPRESSION EventType = \"impression\"\n    CLICK      EventType = \"click\"\n    CONVERSION EventType = \"conversion\"\n)\n\ntype AdEventListener interface {\n    OnImpression(ctx context.Context, event AdEvent)\n    OnClick(ctx context.Context, event AdEvent)\n    OnConversion(ctx context.Context, event AdEvent)\n}\n\ntype EventBus struct {\n    listeners map[EventType][]AdEventListener\n    mu        sync.RWMutex\n}\n\nfunc NewEventBus() *EventBus {\n    return &EventBus{\n        listeners: make(map[EventType][]AdEventListener),\n    }\n}\n\nfunc (b *EventBus) Register(eventType EventType, listener AdEventListener) {\n    b.mu.Lock()\n    defer b.mu.Unlock()\n    b.listeners[eventType] = append(b.listeners[eventType], listener)\n}\n\nfunc (b *EventBus) Emit(event AdEvent) {\n    b.mu.RLock()\n    listeners := b.listeners[event.Type]\n    b.mu.RUnlock()\n    \n    for _, listener := range listeners {\n        switch event.Type {\n        case IMPRESSION:\n            listener.OnImpression(context.Background(), event)\n        case CLICK:\n            listener.OnClick(context.Background(), event)\n        case CONVERSION:\n            listener.OnConversion(context.Background(), event)\n        }\n    }\n}\n\n// 监听器实现:\ntype AnalyticsListener struct { analytics AnalyticsService }\nfunc (l *AnalyticsListener) OnImpression(ctx context.Context, event AdEvent) {\n    l.analytics.TrackImpression(event)\n}\n\ntype BudgetListener struct { budget BudgetService }\nfunc (l *BudgetListener) OnConversion(ctx context.Context, event AdEvent) {\n    l.budget.TrackConversion(event)\n}\n\n// 使用:\nbus := NewEventBus()\nbus.Register(CONVERSION, &BudgetListener{budget: budgetSvc})\nbus.Register(IMPRESSION, &AnalyticsListener{analytics: analyticsSvc})\nbus.Emit(AdEvent{Type: CONVERSION, CampaignID: \"c1\", UserID: \"u1\"})\n// 同时通知 Budget 和 Analytics\n```\n\n#### 模板方法模式（Template Method）\n\n```go\n// 场景: 统一的竞价流程，不同子类可覆盖特定步骤\ntype BidProcessor interface {\n    Process(ctx context.Context, ad Ad, user User, context Context) (*BidResult, error)\n}\n\ntype BaseBidProcessor struct{}\n\nfunc (p *BaseBidProcessor) Process(ctx context.Context, ad Ad, user User, context Context) (*BidResult, error) {\n    // Step 1: 预筛选\n    if !p.preFilter(ad, user, context) {\n        return nil, errors.New(\"pre-filter failed\")\n    }\n    // Step 2: 预测\n    pctr := p.predictCTR(ad, user, context)\n    pcvr := p.predictCVR(ad, user, context)\n    // Step 3: 计算出价（由子类实现）\n    bid := p.calculateBid(pctr, pcvr)\n    // Step 4: 预算检查\n    if !p.checkBudget(ad) {\n        return nil, errors.New(\"budget exceeded\")\n    }\n    // Step 5: 返回\n    return &BidResult{AdID: ad.ID, Bid: bid, PCTR: pctr, PCVR: pcvr}, nil\n}\n\nfunc (p *BaseBidProcessor) preFilter(ad Ad, user User, context Context) bool {\n    return ad.IsActive() && user.IsAllowed(ad)\n}\n\nfunc (p *BaseBidProcessor) predictCTR(ad Ad, user User, context Context) float64 {\n    return ctrModel.Predict(ad, user, context)\n}\n\nfunc (p *BaseBidProcessor) predictCVR(ad Ad, user User, context Context) float64 {\n    return cvrModel.Predict(ad, user, context)\n}\n\nfunc (p *BaseBidProcessor) checkBudget(ad Ad) bool {\n    return budgetService.HasBudget(ad)\n}\n\n// oCPM 处理器（覆盖 calculateBid）:\ntype OCPMBidProcessor struct{ BaseBidProcessor; TargetCPA float64 }\n\nfunc (p *OCPMBidProcessor) calculateBid(pctr, pcvr float64) float64 {\n    return pctr * pcvr * p.TargetCPA * 1000 // oCPM 公式\n}\n\n// CPC 处理器（覆盖 calculateBid）:\ntype CPCBidProcessor struct{ BaseBidProcessor; TargetCPA float64 }\n\nfunc (p *CPCBidProcessor) calculateBid(pctr, pcvr float64) float64 {\n    return pcvr * p.TargetCPA // CPC 公式\n}\n\n// 使用:\nvar processor BidProcessor = &OCPMBidProcessor{TargetCPA: 10.0}\nresult, _ := processor.Process(ctx, ad, user, context)\n```\n\n---\n\n## 2. DDD — Go 源码级实现\n\n### 2.1 限界上下文（Bounded Context）\n\n```\n广告平台限界上下文:\n┌─────────────┐  ┌─────────────┐  ┌─────────────┐\n│   竞价上下文   │  │   投放上下文   │  │   报告上下文   │\n│             │  │             │  │             │\n│ BidRequest  │  │ Campaign    │  │ Report      │\n│ BidResponse │  │ Delivery    │  │ Metrics     │\n│ BidEngine   │  │ Budget      │  │ Analytics   │\n│ Auction     │  │ Pacing      │  │ Dashboard   │\n└─────────────┘  └─────────────┘  └─────────────┘\n       │                │                │\n       └────────────────┼────────────────┘\n                        │ 共享内核\n              ┌─────────────────────┐\n              │   用户画像上下文      │\n              │                     │\n              │ UserProfile         │\n              │ UserInterests       │\n              │ BehaviorHistory     │\n              └─────────────────────┘\n              \n// 上下文映射:\n// - 发布/订阅: 竞价上下文 → 报告上下文（通过 Kafka 事件）\n// - 防腐层: 广告平台 API 适配层（隔离外部 API 变更影响）\n```\n\n### 2.2 聚合根 + 值对象\n\n```go\n// 聚合根（Aggregate Root）\ntype Campaign struct {\n    ID       string\n    Name     string\n    Budget   *Budget          // 值对象\n    Schedule *Schedule        // 值对象\n    Status   CampaignStatus\n    AdGroups []*AdGroup       // 子聚合\n    events   []DomainEvent    // 待发布事件\n}\n\nfunc NewCampaign(name string, budget *Budget, schedule *Schedule) *Campaign {\n    if budget.Total < 0 || budget.Total > 1000000 {\n        panic(\"invalid budget\")\n    }\n    return &Campaign{\n        ID:       uuid.New().String(),\n        Name:     name,\n        Budget:   budget,\n        Schedule: schedule,\n        Status:   StatusActive,\n    }\n}\n\n// 不变性约束\nfunc (c *Campaign) Pause() error {\n    if c.Status != StatusActive {\n        return fmt.Errorf(\"only active campaigns can be paused\")\n    }\n    c.Status = StatusPaused\n    c.events = append(c.events, &CampaignPausedEvent{\n        CampaignID: c.ID, Budget: c.Budget,\n    })\n    return nil\n}\n\nfunc (c *Campaign) Resume() error {\n    if c.Status != StatusPaused {\n        return fmt.Errorf(\"only paused campaigns can be resumed\")\n    }\n    c.Status = StatusActive\n    c.events = append(c.events, &CampaignResumedEvent{\n        CampaignID: c.ID,\n    })\n    return nil\n}\n\nfunc (c *Campaign) UncommittedEvents() []DomainEvent {\n    return c.events\n}\n\nfunc (c *Campaign) ClearEvents() {\n    c.events = nil\n}\n\n// 值对象（不可变）: 预算\ntype Budget struct {\n    Total    float64\n    Daily    float64\n    Currency string\n}\n\nfunc (b *Budget) Clone() *Budget {\n    return &Budget{\n        Total:    b.Total,\n        Daily:    b.Daily,\n        Currency: b.Currency,\n    }\n}\n\nfunc (b *Budget) Equal(o *Budget) bool {\n    return b.Total == o.Total && b.Daily == o.Daily && b.Currency == o.Currency\n}\n\n// 值对象: 排期\ntype Schedule struct {\n    Start        time.Time\n    End          time.Time\n    DailySchedule map[int]TimeRange // 星期 → 时间段\n}\n\nfunc (s *Schedule) IsCurrentTimeInRange() bool {\n    now := time.Now()\n    if now.Before(s.Start) || now.After(s.End) {\n        return false\n    }\n    dayOfWeek := int(now.Weekday())\n    if range, ok := s.DailySchedule[dayOfWeek]; ok {\n        currentTime := Time(now.Hour(), now.Minute())\n        return currentTime >= range.Start && currentTime <= range.End\n    }\n    return true\n}\n```\n\n### 2.3 领域事件\n\n```go\n// 领域事件接口\ntype DomainEvent interface {\n    OccurredOn() time.Time\n}\n\ntype CampaignBudgetExceededEvent struct {\n    CampaignID string\n    Budget     float64\n    Spent      float64\n    occurredAt time.Time\n}\n\nfunc (e *CampaignBudgetExceededEvent) OccurredOn() time.Time {\n    return e.occurredAt\n}\n\n// 事件发布器\ntype DomainEventPublisher interface {\n    Publish(event DomainEvent) error\n}\n\ntype eventPublisherImpl struct {\n    bus       *EventBus\n    pending   []DomainEvent\n    mu        sync.Mutex\n}\n\nfunc (p *eventPublisherImpl) Publish(event DomainEvent) {\n    p.mu.Lock()\n    defer p.mu.Unlock()\n    p.pending = append(p.pending, event)\n}\n\nfunc (p *eventPublisherImpl) FlushAndPublish() {\n    p.mu.Lock()\n    defer p.mu.Unlock()\n    for _, event := range p.pending {\n        p.bus.EmitAdEvent(event)\n    }\n    p.pending = nil\n}\n```\n\n---\n\n## 3. CQRS + Event Sourcing\n\n### 3.1 CQRS 架构\n\n```\n┌─────────────┐        ┌─────────────┐\n│   Command   │        │   Query     │\n│   Model     │        │   Model     │\n└──────┬──────┘        └──────┬──────┘\n       │                      │\n       ▼                      ▼\n  ┌──────────┐         ┌──────────┐\n  │ Event    │         │ Material-│\n  │ Store    │         │  ized View│\n  └──────────┘         └──────────┘\n       │\n       ▼\n  ┌──────────┐\n  │ Read DB  │\n  └──────────┘\n\n// 命令处理:\ntype CampaignCreateCommandHandler struct {\n    repo   CampaignRepository\n    pub    DomainEventPublisher\n}\n\nfunc (h *CampaignCreateCommandHandler) Handle(ctx context.Context, cmd CreateCampaignCmd) error {\n    campaign := NewCampaign(cmd.Name, cmd.Budget, cmd.Schedule)\n    campaign.Pause() // 先暂停，再激活\n    h.repo.Save(campaign)\n    for _, event := range campaign.UncommittedEvents() {\n        h.pub.Publish(event)\n    }\n    campaign.ClearEvents()\n    return nil\n}\n\n// 查询处理:\ntype CampaignReportQueryHandler struct {\n    queryRepo CampaignReportRepository\n}\n\nfunc (h *CampaignReportQueryHandler) Handle(query CampaignReportQuery) (*Report, error) {\n    return h.queryRepo.FindByCampaignID(query.CampaignID)\n}\n```\n\n### 3.2 事件溯源（Event Sourcing）\n\n```go\n// 事件存储\ntype EventStore interface {\n    Append(aggregateID string, events []DomainEvent) error\n    Load(aggregateID string) ([]DomainEvent, error)\n}\n\n// 事件溯源仓库\ntype eventSourcingRepository struct {\n    store EventStore\n}\n\nfunc (r *eventSourcingRepository) Load(id string) (*Campaign, error) {\n    events, err := r.store.Load(id)\n    if err != nil {\n        return nil, err\n    }\n    campaign := &Campaign{ID: id}\n    for _, event := range events {\n        campaign.Apply(event)\n    }\n    return campaign, nil\n}\n\nfunc (r *eventSourcingRepository) Save(campaign *Campaign) error {\n    events := campaign.UncommittedEvents()\n    if len(events) > 0 {\n        err := r.store.Append(campaign.ID, events)\n        campaign.ClearEvents()\n        return err\n    }\n    return nil\n}\n\n// 聚合根应用事件\nfunc (c *Campaign) Apply(event DomainEvent) {\n    switch e := event.(type) {\n    case *CampaignCreatedEvent:\n        c.Name = e.Name\n        c.Status = StatusActive\n    case *CampaignPausedEvent:\n        c.Status = StatusPaused\n    case *CampaignBudgetUpdatedEvent:\n        c.Budget = e.NewBudget\n    }\n}\n```\n\n---\n\n## 4. Saga 模式 — 分布式事务\n\n### 4.1 Saga 编排（Orchestration）\n\n```go\n// 场景: 创建广告计划 + 分配预算 + 发送通知\ntype campaignCreationOrchestrator struct {\n    campaignSvc   CampaignService\n    budgetSvc     BudgetService\n    notificationSvc NotificationService\n}\n\ntype SagaStep struct {\n    Name     string\n    Payload  interface{}\n    Compensate func(interface{}) error\n}\n\nfunc (o *campaignCreationOrchestrator) CreateCampaign(\n    ctx context.Context, req *CreateCampaignRequest,\n) (string, error) {\n    steps := []SagaStep{\n        {\n            Name: \"create_campaign\",\n            Payload: nil,\n            Compensate: func(p interface{}) error {\n                return o.campaignSvc.DeleteCampaign(ctx, p.(string))\n            },\n        },\n        {\n            Name: \"allocate_budget\",\n            Payload: nil,\n            Compensate: func(p interface{}) error {\n                return o.budgetSvc.ReleaseBudget(ctx, p.(string))\n            },\n        },\n        {\n            Name: \"send_notification\",\n            Payload: nil,\n            Compensate: func(p interface{}) error {\n                return nil // 通知无需补偿\n            },\n        },\n    }\n    \n    var completed []interface{}\n    \n    // 正向执行\n    for _, step := range steps {\n        var payload interface{}\n        var err error\n        \n        switch step.Name {\n        case \"create_campaign\":\n            cid, err := o.campaignSvc.CreateCampaign(ctx, req)\n            payload = cid\n            completed = append(completed, cid)\n        case \"allocate_budget\":\n            cid := completed[0].(string)\n            err = o.budgetSvc.AllocateBudget(ctx, cid, req.Budget)\n        case \"send_notification\":\n            cid := completed[0].(string)\n            err = o.notificationSvc.SendCampaignCreated(ctx, cid)\n        }\n        \n        if err != nil {\n            // 补偿: 反向执行\n            for i := len(completed) - 1; i >= 0; i-- {\n                steps[i].Compensate(completed[i])\n            }\n            return \"\", fmt.Errorf(\"saga failed at %s: %w\", step.Name, err)\n        }\n    }\n    \n    return completed[0].(string), nil\n}\n```\n\n---\n\n## 5. 分布式协议深度\n\n### 5.1 CAP 定理\n\n```\nCAP 定理: 一致性（Consistency）、可用性（Availability）、分区容错性（Partition Tolerance）\n不可能同时满足三个，最多满足两个。\n\n证明:\n1. 网络分区 P 发生（节点 A 和 B 不能通信）\n2. 节点 A 收到写请求:\n   - 满足 C: 必须将写入传播到其他节点 → 需等待网络恢复\n   - 但这违反 A: 节点 A 在等待期间不能响应\n3. 结论: C + A + P 不能同时满足\n\n实际选择:\n1. CP: ZooKeeper、HBase、Redis Cluster（分区时拒绝服务）\n2. AP: Cassandra、DynamoDB、Eureka（分区时返回旧数据）\n3. CA: 单节点数据库（不适用分布式系统）\n```\n\n### 5.2 Raft 协议（Go 实现）\n\n```go\n// Raft 节点状态\ntype NodeState int\n\nconst (\n    Follower NodeState = iota\n    Candidate\n    Leader\n)\n\ntype RaftNode struct {\n    state         NodeState\n    currentTerm   int\n    votedFor      string\n    log           []LogEntry\n    commitIndex   int\n    lastApplied  int\n    \n    // Leader 状态\n    nextIndex   map[string]int // follower → 下一个要发送的 index\n    matchIndex  map[string]int // follower → 已复制的最高 index\n    peers       []string\n    stopChan    chan struct{}\n}\n\nfunc (r *RaftNode) startElection() {\n    r.currentTerm++\n    r.state = Candidate\n    r.votedFor = r.selfID()\n    \n    votes := 1 // 投给自己\n    \n    for _, peer := range r.peers {\n        r.sendRequestVote(peer, r.currentTerm, r.votedFor)\n    }\n}\n\nfunc (r *RaftNode) becomeLeader() {\n    r.state = Leader\n    // 初始化 nextIndex 和 matchIndex\n    for _, peer := range r.peers {\n        r.nextIndex[peer] = len(r.log) + 1\n        r.matchIndex[peer] = 0\n    }\n    go r.heartbeatLoop()\n}\n\nfunc (r *RaftNode) heartbeatLoop() {\n    ticker := time.NewTicker(heartbeatInterval)\n    defer ticker.Stop()\n    for {\n        select {\n        case <-ticker.C:\n            r.sendAppendEntriesAll()\n        case <-r.stopChan:\n            return\n        }\n    }\n}\n\nfunc (r *RaftNode) sendAppendEntriesAll() {\n    for _, peer := range r.peers {\n        prevLogIndex := r.nextIndex[peer] - 1\n        prevLogTerm := r.log[prevLogIndex].Term\n        entries := r.log[r.nextIndex[peer]:]\n        \n        r.sendAppendEntries(peer, r.currentTerm, r.selfID(),\n            prevLogIndex, prevLogTerm, entries, r.commitIndex)\n    }\n}\n\n// Raft 日志复制:\n// 1. Client → Leader: WriteRequest(key, value)\n// 2. Leader → append(log): 追加到本地日志\n// 3. Leader → Followers: AppendEntries(logEntry)\n// 4. Followers → Leader: AppendEntriesResponse(matchIndex)\n// 5. Leader → majority: 多数确认 → commitIndex++\n// 6. Leader → Client: WriteResponse\n```\n\n---\n\n*本文档基于 Go 实现的设计模式、DDD、CQRS、Saga、Raft 源码整理*\n\n",
+      "word_count": 2680,
+      "is_entry_file": false,
+      "wikilinks": [],
+      "frontmatter_type": "",
+      "created": "",
+      "rrf_score": 0.006354,
+      "source_scores": [
+        [
+          "file_name",
+          0.002419
+        ],
+        [
+          "tags",
+          0.003934
+        ]
+      ],
+      "intent": "unknown",
+      "confidence": 0.0
+    },
+    {
+      "file_path": "/Users/yanping.ma/ryan-personal-knowledge/knowledge/agent-ai/agent-learning-roadmap.md",
+      "file_name": "agent-learning-roadmap.md",
+      "directory": "agent-ai",
+      "parent_dir": "knowledge",
+      "tags": [
+        "#Agent",
+        "#AIAgent",
+        "#RAG",
+        "#ReAct",
+        "#多Agent编排"
+      ],
+      "headings": [
+        "Agent 技术学习路径 — 从基础到生产级系统设计",
+        "一、学习路径概览",
+        "二、第一阶段：Agent 基础理论（1-2 周）",
+        "核心概念",
+        "1. Agent 的定义与组成",
+        "Agent 基本组成",
+        "2. 核心组件详解",
+        "学习重点",
+        "三、第二阶段：核心模式（2-3 周）",
+        "1. ReAct 模式（推理+行动）",
+        "ReAct 模式核心循环",
+        "2. 工具调用（Function Calling）",
+        "工具调用实现",
+        "Agent 自动选择工具",
+        "3. 记忆系统",
+        "混合记忆架构",
+        "四、第三阶段：系统设计（2-3 周）",
+        "1. RAG 系统架构",
+        "2. 多 Agent 编排",
+        "多 Agent 协作模式",
+        "3. Agent 架构模式",
+        "五、第四阶段：实战应用（2-3 周）",
+        "1. 生产级 Agent 系统",
+        "生产环境 Agent 架构",
+        "2. 性能优化",
+        "3. 可观测性",
+        "Agent 可观测性",
+        "六、学习资源推荐",
+        "必读书籍（按优先级）",
+        "关键概念清单",
+        "七、检验标准",
+        "第一阶段检验",
+        "第二阶段检验",
+        "第三阶段检验",
+        "第四阶段检验"
+      ],
+      "content_preview": "# Agent 技术学习路径 — 从基础到生产级系统设计\n\n> 创建日期: 2026-06-08\n> 标签: #Agent #AIAgent #RAG #ReAct #多Agent编排\n\n---\n\n## 一、学习路径概览\n\n```\n基础理论 → 核心模式 → 系统设计 → 实战应用\n    │           │           │           │\n    ▼           ▼           ▼           ▼\nAgent 原理   核心模式    架构设计    生产部署\nReAct 模式   工具调用    系统架构    性能优化\n记忆机制     规划推理    多Agent    可观测性\n```\n\n---\n\n## 二、第一阶段：Agent 基础理论（1-2 周）\n\n### 核心概念\n\n#### 1. Agent 的定义与组成\n\n```python\n# Agent 基本组成\nclass Agent:\n    def __init__(self):\n        self.llm = LLM()           # 大脑：语言模型\n  ",
+      "full_content": "# Agent 技术学习路径 — 从基础到生产级系统设计\n\n> 创建日期: 2026-06-08\n> 标签: #Agent #AIAgent #RAG #ReAct #多Agent编排\n\n---\n\n## 一、学习路径概览\n\n```\n基础理论 → 核心模式 → 系统设计 → 实战应用\n    │           │           │           │\n    ▼           ▼           ▼           ▼\nAgent 原理   核心模式    架构设计    生产部署\nReAct 模式   工具调用    系统架构    性能优化\n记忆机制     规划推理    多Agent    可观测性\n```\n\n---\n\n## 二、第一阶段：Agent 基础理论（1-2 周）\n\n### 核心概念\n\n#### 1. Agent 的定义与组成\n\n```python\n# Agent 基本组成\nclass Agent:\n    def __init__(self):\n        self.llm = LLM()           # 大脑：语言模型\n        self.memory = Memory()     # 记忆：短期+长期\n        self.tools = Tools()       # 工具：API/函数调用\n        self.plan = Planner()      # 规划：任务分解\n        \n    def run(self, task: str) -> str:\n        # 1. 理解任务\n        # 2. 规划步骤\n        # 3. 执行循环\n        # 4. 输出结果\n        return result\n```\n\n#### 2. 核心组件详解\n\n| 组件 | 作用 | 实现方式 |\n|------|------|---------|\n| **LLM** | 推理和决策 | GPT-4/Claude/本地模型 |\n| **记忆** | 上下文管理 | 向量数据库/摘要/对话历史 |\n| **工具** | 扩展能力 | Function Calling/OpenAPI |\n| **规划** | 任务分解 | Chain of Thought/ReAct |\n\n### 学习重点\n\n- Agent 的基本架构和工作流程\n- LLM 作为 Agent \"大脑\"的原理\n- 记忆系统的设计（短期 vs 长期）\n- 工具调用的机制（Function Calling）\n\n---\n\n## 三、第二阶段：核心模式（2-3 周）\n\n### 1. ReAct 模式（推理+行动）\n\n```python\n# ReAct 模式核心循环\ndef react_loop(agent, task):\n    \"\"\"ReAct: Reason + Act\"\"\"\n    while not done:\n        # 思考阶段\n        thought = agent.llm.think(context)\n        \n        # 行动阶段\n        action = agent.select_action(thought)\n        observation = agent.execute(action)\n        \n        # 更新上下文\n        context += f\"Thought: {thought}\\nAction: {action}\\nObservation: {observation}\"\n    \n    return agent.llm.answer(context)\n```\n\n**关键理解**：\n- 为什么 ReAct 比 Chain-of-Thought 更好？\n- 如何平衡思考和行动的比例？\n- 观察结果如何处理和融入上下文？\n\n### 2. 工具调用（Function Calling）\n\n```python\n# 工具调用实现\n@agent.tool\ndef search_web(query: str) -> str:\n    \"\"\"网络搜索工具\"\"\"\n    return web_search(query)\n\n@agent.tool\ndef run_code(code: str) -> str:\n    \"\"\"代码执行工具\"\"\"\n    return execute_python(code)\n\n# Agent 自动选择工具\nagent.plan([\n    \"搜索最新新闻\",\n    \"执行数据分析\",\n    \"生成可视化图表\"\n])\n```\n\n### 3. 记忆系统\n\n```python\n# 混合记忆架构\nclass Memory:\n    def __init__(self):\n        self.short_term = []      # 短期记忆：最近对话\n        self.long_term = VectorDB() # 长期记忆：向量检索\n        self.working = {}         # 工作记忆：当前任务\n        \n    def remember(self, experience):\n        \"\"\"经验存储\"\"\"\n        self.short_term.append(experience)\n        self.long_term.add(experience)\n        \n    def recall(self, query):\n        \"\"\"记忆检索\"\"\"\n        # 从短期和长期记忆中检索相关信息\n        return self.short_term[-10:] + self.long_term.search(query)\n```\n\n---\n\n## 四、第三阶段：系统设计（2-3 周）\n\n### 1. RAG 系统架构\n\n```\n用户请求\n    │\n    ▼\n┌─────────────┐\n│   查询理解    │\n└──────┬──────┘\n       │\n       ▼\n┌─────────────┐\n│  向量检索    │ ←── 知识库（向量数据库）\n└──────┬──────┘\n       │\n       ▼\n┌─────────────┐\n│  结果重排    │ ←── 相关性排序\n└──────┬──────┘\n       │\n       ▼\n┌─────────────┐\n│   上下文组装  │\n└──────┬──────┘\n       │\n       ▼\n┌─────────────┐\n│   LLM 生成   │\n└──────┬──────┘\n       │\n       ▼\n   最终答案\n```\n\n### 2. 多 Agent 编排\n\n```python\n# 多 Agent 协作模式\nclass MultiAgentSystem:\n    def __init__(self):\n        self.agents = {\n            \"researcher\": ResearchAgent(),  # 研究专家\n            \"coder\": CoderAgent(),         # 编码专家\n            \"reviewer\": ReviewAgent(),     # 审查专家\n            \"manager\": ManagerAgent()      # 任务管理器\n        }\n    \n    def collaborate(self, task):\n        # 1. 任务分解\n        subtasks = self.agents[\"manager\"].decompose(task)\n        \n        # 2. 分配执行\n        results = {}\n        for subtask in subtasks:\n            agent_name = self.assign_agent(subtask)\n            results[subtask] = self.agents[agent_name].execute(subtask)\n        \n        # 3. 结果整合\n        return self.integrate_results(results)\n```\n\n### 3. Agent 架构模式\n\n| 模式 | 适用场景 | 示例 |\n|------|---------|------|\n| **单 Agent** | 简单任务 | 客服机器人 |\n| **链式 Agent** | 线性流程 | 研究→分析→报告 |\n| **树状 Agent** | 并行探索 | 多路径调研 |\n| **图状 Agent** | 复杂协作 | 多角色协作 |\n\n---\n\n## 五、第四阶段：实战应用（2-3 周）\n\n### 1. 生产级 Agent 系统\n\n```python\n# 生产环境 Agent 架构\nclass ProductionAgent:\n    def __init__(self):\n        self.llm = LLMProvider()\n        self.memory = PersistentMemory()\n        self.tools = ToolRegistry()\n        self.monitoring = MonitoringSystem()\n        \n    def run_with_safety(self, task):\n        \"\"\"带安全限制的 Agent 运行\"\"\"\n        try:\n            # 1. 输入验证\n            if not self.validate_input(task):\n                return \"输入不合法\"\n            \n            # 2. 执行 Agent\n            result = self.execute_task(task)\n            \n            # 3. 输出审核\n            return self.audit_output(result)\n            \n        except Exception as e:\n            self.monitoring.log_error(e)\n            return \"系统错误\"\n```\n\n### 2. 性能优化\n\n| 优化点 | 方法 | 效果 |\n|--------|------|------|\n| **缓存** | 相似查询缓存 | 减少 LLM 调用 30%+ |\n| **批处理** | 批量处理请求 | 提高吞吐量 |\n| **流式** | Streaming response | 降低首字延迟 |\n| **模型选择** | 大小模型分工 | 成本降低 50%+ |\n\n### 3. 可观测性\n\n```python\n# Agent 可观测性\nclass AgentMonitor:\n    def log(self, event: dict):\n        \"\"\"记录 Agent 执行事件\"\"\"\n        self.traces.append({\n            \"timestamp\": datetime.now(),\n            \"agent_id\": event[\"agent_id\"],\n            \"action\": event[\"action\"],\n            \"input\": event[\"input\"],\n            \"output\": event[\"output\"],\n            \"latency\": event[\"latency\"],\n            \"cost\": event[\"cost\"]\n        })\n    \n    def analyze(self):\n        \"\"\"分析 Agent 性能\"\"\"\n        return {\n            \"avg_latency\": self.calculate_avg_latency(),\n            \"error_rate\": self.calculate_error_rate(),\n            \"cost_per_task\": self.calculate_cost_per_task()\n        }\n```\n\n---\n\n## 六、学习资源推荐\n\n### 必读书籍（按优先级）\n\n| 书籍 | 核心价值 | 学习时间 |\n|------|---------|---------|\n| **《Agent设计模式》** | 可复用智能体架构 | 2 周 |\n| **《智能体一本通》** | Agent 全面指南 | 2 周 |\n| **《大模型RAG实战》** | RAG 系统设计 | 2 周 |\n| **《AI Agent开发》** | 零基础构建 | 1 周 |\n\n### 关键概念清单\n\n- [ ] Agent 的基本组成和工作流程\n- [ ] ReAct 模式的原理和实现\n- [ ] 工具调用的机制和最佳实践\n- [ ] 记忆系统的设计（短期/长期/工作）\n- [ ] RAG 系统的完整架构\n- [ ] 多 Agent 编排模式\n- [ ] 生产级 Agent 的安全和监控\n- [ ] 性能优化策略\n- [ ] 可观测性设计\n\n---\n\n## 七、检验标准\n\n完成每个阶段后，你应该能够：\n\n### 第一阶段检验\n- 画出 Agent 的基本架构图\n- 解释 LLM 作为 Agent 大脑的原理\n- 区分短期记忆和长期记忆的不同用途\n\n### 第二阶段检验\n- 实现一个基本的 ReAct 循环\n- 设计工具调用的接口\n- 实现一个简单的记忆系统\n\n### 第三阶段检验\n- 设计一个完整的 RAG 系统\n- 设计多 Agent 协作架构\n- 选择合适的 Agent 架构模式\n\n### 第四阶段检验\n- 实现一个生产级 Agent 系统\n- 设计性能优化方案\n- 实现可观测性系统\n\n---\n\n*基于微信读书《Agent设计模式》《智能体一本通》《大模型RAG实战》《AI Agent开发》整理*\n",
+      "word_count": 768,
+      "is_entry_file": false,
+      "wikilinks": [],
+      "frontmatter_type": "",
+      "created": "",
+      "rrf_score": 0.00625,
+      "source_scores": [
+        [
+          "file_content",
+          0.00625
+        ]
+      ],
+      "intent": "unknown",
+      "confidence": 0.0
+    },
+    {
+      "file_path": "/Users/yanping.ma/ryan-personal-knowledge/knowledge/agent-ai/rag-deep-dive.md",
+      "file_name": "rag-deep-dive.md",
+      "directory": "agent-ai",
+      "parent_dir": "knowledge",
+      "tags": [
+        "#RAG",
+        "#检索增强",
+        "#知识库",
+        "#大模型"
+      ],
+      "headings": [
+        "RAG 深度解析 — 检索增强生成",
+        "1. RAG 是什么？",
+        "核心思路",
+        "工作流程",
+        "2. 核心挑战与解决方案",
+        "挑战 1: 检索质量决定上限",
+        "挑战 2: 上下文窗口限制",
+        "挑战 3: 噪声处理",
+        "3. 关键技术实现",
+        "3.1 文档分块 (Chunking)",
+        "3.2 向量化 (Embedding)",
+        "获取文本向量",
+        "3.3 检索策略",
+        "向量相似度检索示例",
+        "4. 实际应用场景",
+        "场景 1: 企业知识库问答",
+        "场景 2: 法律/医疗咨询",
+        "场景 3: 客服系统",
+        "5. 性能优化建议",
+        "6. 相关资源"
+      ],
+      "content_preview": "# RAG 深度解析 — 检索增强生成\n\n> 标签: `#RAG` `#检索增强` `#知识库` `#大模型`\n> 创建日期: 2026-06-08\n> 作者: Ryan\n\n---\n\n## 1. RAG 是什么？\n\nRAG（Retrieval-Augmented Generation）是一种**将外部知识库与大语言模型结合**的技术架构。\n\n### 核心思路\n传统的 LLM 只能依赖训练数据，而 RAG 让 LLM 能够：\n- **访问实时信息** - 知识库可以随时更新\n- **引用具体来源** - 每个回答都有据可查\n- **减少幻觉** - 基于真实文档生成，而非凭空想象\n\n### 工作流程\n```\n用户问题 → 文本向量化 → 知识库检索 → 返回相关片段 → LLM 综合回答\n```\n\n---\n\n## 2. 核心挑战与解决方案\n\n### 挑战 1: 检索质量决定上限\n**问题**：如果检索到的文档不相关，生成质量再高也没用\n\n**解决方案**：\n- **文档分块优化**\n  - 固定长度分块：简单但可能切断语义\n  - 语义分块：按段落/章节自然边界分割\n  - 重叠分块：相",
+      "full_content": "# RAG 深度解析 — 检索增强生成\n\n> 标签: `#RAG` `#检索增强` `#知识库` `#大模型`\n> 创建日期: 2026-06-08\n> 作者: Ryan\n\n---\n\n## 1. RAG 是什么？\n\nRAG（Retrieval-Augmented Generation）是一种**将外部知识库与大语言模型结合**的技术架构。\n\n### 核心思路\n传统的 LLM 只能依赖训练数据，而 RAG 让 LLM 能够：\n- **访问实时信息** - 知识库可以随时更新\n- **引用具体来源** - 每个回答都有据可查\n- **减少幻觉** - 基于真实文档生成，而非凭空想象\n\n### 工作流程\n```\n用户问题 → 文本向量化 → 知识库检索 → 返回相关片段 → LLM 综合回答\n```\n\n---\n\n## 2. 核心挑战与解决方案\n\n### 挑战 1: 检索质量决定上限\n**问题**：如果检索到的文档不相关，生成质量再高也没用\n\n**解决方案**：\n- **文档分块优化**\n  - 固定长度分块：简单但可能切断语义\n  - 语义分块：按段落/章节自然边界分割\n  - 重叠分块：相邻 chunk 保留 10-20% 重叠，避免信息断裂\n  \n- **混合检索策略**\n  - 向量检索：理解语义相似性\n  - 关键词检索（BM25）：精确匹配专业术语\n  - 两者加权融合，兼顾语义和精确\n\n### 挑战 2: 上下文窗口限制\n**问题**：LLM 的上下文窗口有限，如何包含足够的信息？\n\n**解决方案**：\n- **重排序（Re-ranking）** - 先粗筛再精排\n  1. 向量检索返回 Top-50 候选\n  2. 重排序模型对候选精排\n  3. 取 Top-5 放入上下文\n  \n- **分层检索** - 先获取大纲再深入细节\n\n### 挑战 3: 噪声处理\n**问题**：检索结果可能包含不相关或矛盾信息\n\n**解决方案**：\n- **提示词工程** - 引导 LLM 关注相关信息\n- **置信度过滤** - 只保留高相似度文档\n- **矛盾处理** - 当存在矛盾信息时，让 LLM 指出并分析\n\n---\n\n## 3. 关键技术实现\n\n### 3.1 文档分块 (Chunking)\n\n```python\ndef chunk_document(text, chunk_size=500, overlap=50):\n    \"\"\"\n    文档分块 - 基础版本\n    :param text: 输入文本\n    :param chunk_size: 每个 chunk 的大小\n    :param overlap: 相邻 chunk 的重叠部分\n    :return: 分块后的文本列表\n    \"\"\"\n    chunks = []\n    for i in range(0, len(text), chunk_size - overlap):\n        chunks.append(text[i:i+chunk_size])\n    return chunks\n```\n\n**进阶策略**：\n- **按标题分块** - 以标题为边界分割文档\n- **按段落分块** - 保持段落完整性\n- **递归分块** - 先大后小，保持层级结构\n\n### 3.2 向量化 (Embedding)\n\n```python\nfrom openai import OpenAI\nclient = OpenAI()\n\n# 获取文本向量\nresponse = client.embeddings.create(\n    model=\"text-embedding-ada-002\",  # 或使用其他 embedding 模型\n    input=text\n)\nembedding = response.data[0].embedding\n```\n\n**选择建议**：\n- **中文场景**：使用专门优化的中文 embedding 模型\n- **领域适配**：通用模型 vs 专业领域模型\n- **向量维度**：影响精度和性能，通常 1536-3072 维\n\n### 3.3 检索策略\n\n```python\n# 向量相似度检索示例\ndef search_similar(query_vector, db, top_k=5):\n    \"\"\"\n    向量相似度检索\n    :param query_vector: 查询向量\n    :param db: 向量数据库\n    :param top_k: 返回结果数量\n    :return: 相关文档列表\n    \"\"\"\n    similarities = db.similarity_search(query_vector, k=top_k)\n    return similarities\n```\n\n**高级策略**：\n- **混合检索**：向量检索 + 关键词检索融合\n- **元数据过滤**：结合文档类型、时间等元信息\n- **查询扩展**：自动扩展查询词，提高召回率\n\n---\n\n## 4. 实际应用场景\n\n### 场景 1: 企业知识库问答\n- **需求**：员工查询公司内部文档\n- **实现**：将公司文档向量化，支持自然语言查询\n- **优势**：减少重复问答，提高信息获取效率\n\n### 场景 2: 法律/医疗咨询\n- **需求**：基于最新法规/文献提供专业建议\n- **实现**：更新专业知识库，LLM 基于最新信息回答\n- **优势**：减少法律/医疗风险，回答有据可查\n\n### 场景 3: 客服系统\n- **需求**：快速回答客户常见问题\n- **实现**：产品文档 + 历史对话记录作为知识库\n- **优势**：7x24 小时服务，保持一致性\n\n---\n\n## 5. 性能优化建议\n\n1. **索引优化** - 选择合适的索引算法（HNSW、IVF 等）\n2. **缓存策略** - 缓存常见查询结果\n3. **增量更新** - 知识库增量更新，避免全量重建\n4. **负载均衡** - 分布式检索部署\n\n---\n\n## 6. 相关资源\n\n- 参考书籍：《大模型RAG实战：RAG原理、应用与系统构建》\n- 开源项目：LangChain, LlamaIndex\n- 向量数据库：Milvus, FAISS, Pinecone\n\n---\n\n*本文基于微信读书《Agent设计模式》及相关技术文档整理*\n",
+      "word_count": 352,
+      "is_entry_file": false,
+      "wikilinks": [],
+      "frontmatter_type": "",
+      "created": "",
+      "rrf_score": 0.006154,
+      "source_scores": [
+        [
+          "file_content",
+          0.006154
+        ]
+      ],
+      "intent": "unknown",
+      "confidence": 0.0
+    },
+    {
+      "file_path": "/Users/yanping.ma/ryan-personal-knowledge/knowledge/agent-ai/rag-react-combined.md",
+      "file_name": "rag-react-combined.md",
+      "directory": "agent-ai",
+      "parent_dir": "knowledge",
+      "tags": [
+        "#RAG",
+        "#ReAct",
+        "#智能体",
+        "#组合模式"
+      ],
+      "headings": [
+        "RAG + ReAct 组合使用指南",
+        "1. 组合模式概述",
+        "核心优势",
+        "架构示意图",
+        "2. 实现架构",
+        "2.1 核心组件",
+        "2.2 工具集成",
+        "3. 实际应用场景",
+        "场景 1: 智能客服系统",
+        "场景 2: 数据分析助手",
+        "场景 3: 研究助理",
+        "4. 优化策略",
+        "4.1 性能优化",
+        "4.2 质量优化",
+        "5. 最佳实践",
+        "5.1 工具设计原则",
+        "5.2 提示词设计",
+        "5.3 监控和调试",
+        "6. 相关资源"
+      ],
+      "content_preview": "# RAG + ReAct 组合使用指南\n\n> 标签: `#RAG` `#ReAct` `#智能体` `#组合模式`\n> 创建日期: 2026-06-08\n> 作者: Ryan\n\n---\n\n## 1. 组合模式概述\n\nRAG（检索增强生成）和 ReAct（推理与行动交替）结合使用，创造出功能强大的智能体架构。\n\n### 核心优势\n- **知识获取** - RAG 提供准确、最新的知识库\n- **灵活执行** - ReAct 支持调用各种工具和 API\n- **自主决策** - Agent 能自主决定何时检索、何时执行\n- **可解释性** - 完整的推理和决策链路\n\n### 架构示意图\n```\n                    ┌─────────────────────┐\n                    │    用户请求         │\n                    └──────────┬──────────┘\n                               │\n                    ┌──────────▼──────",
+      "full_content": "# RAG + ReAct 组合使用指南\n\n> 标签: `#RAG` `#ReAct` `#智能体` `#组合模式`\n> 创建日期: 2026-06-08\n> 作者: Ryan\n\n---\n\n## 1. 组合模式概述\n\nRAG（检索增强生成）和 ReAct（推理与行动交替）结合使用，创造出功能强大的智能体架构。\n\n### 核心优势\n- **知识获取** - RAG 提供准确、最新的知识库\n- **灵活执行** - ReAct 支持调用各种工具和 API\n- **自主决策** - Agent 能自主决定何时检索、何时执行\n- **可解释性** - 完整的推理和决策链路\n\n### 架构示意图\n```\n                    ┌─────────────────────┐\n                    │    用户请求         │\n                    └──────────┬──────────┘\n                               │\n                    ┌──────────▼──────────┐\n                    │   ReAct 控制器      │\n                    │  (推理与行动交替)    │\n                    └──────────┬──────────┘\n                               │\n          ┌────────────────────┼────────────────────┐\n          │                    │                    │\n┌─────────▼─────────┐ ┌───────▼───────┐ ┌─────────▼─────────┐\n│   RAG 检索模块     │ │  工具调用模块  │ │   外部 API 模块    │\n│  (知识库查询)      │ │  (本地工具)   │ │  (外部服务)       │\n└───────────────────┘ └───────────────┘ └───────────────────┘\n          │                    │                    │\n          └────────────────────┼────────────────────┘\n                               │\n                    ┌──────────▼──────────┐\n                    │   答案生成模块      │\n                    │  (综合所有信息)      │\n                    └──────────┬──────────┘\n                               │\n                    ┌──────────▼──────────┐\n                    │    最终答案         │\n                    └─────────────────────┘\n```\n\n---\n\n## 2. 实现架构\n\n### 2.1 核心组件\n\n```python\nclass RagReactAgent:\n    \"\"\"RAG + ReAct 组合智能体\"\"\"\n    \n    def __init__(self):\n        # RAG 系统\n        self.rag_system = RAGSystem()\n        \n        # 可用工具集\n        self.tools = {\n            \"search_knowledge\": self.rag_system.search,  # 检索知识库\n            \"call_api\": self.make_api_call,              # 调用外部 API\n            \"calculate\": self.calculate,                 # 数学计算\n            \"send_message\": self.send_message            # 发送消息\n        }\n        \n        # 语言模型\n        self.llm = LLMClient()\n    \n    def process(self, question):\n        \"\"\"处理用户请求\"\"\"\n        history = []\n        max_iterations = 10\n        \n        for i in range(max_iterations):\n            # 1. 思考：LLM 决定下一步行动\n            thought_action = self.llm.generate_thought_action(\n                question, history, self.tools\n            )\n            \n            # 2. 执行行动\n            if thought_action.action:\n                result = self.execute_tool(\n                    thought_action.action,\n                    thought_action.parameters\n                )\n                \n                # 记录到历史\n                history.append({\n                    \"thought\": thought_action.thought,\n                    \"action\": thought_action.action,\n                    \"observation\": result\n                })\n                \n                # 检查是否完成\n                if self.is_complete(thought_action.thought):\n                    break\n            else:\n                break\n        \n        # 3. 生成最终答案\n        return self.generate_final_answer(question, history)\n    \n    def execute_tool(self, action_name, parameters):\n        \"\"\"执行工具调用\"\"\"\n        if action_name in self.tools:\n            return self.tools[action_name](**parameters)\n        else:\n            return f\"错误：未找到工具 {action_name}\"\n```\n\n### 2.2 工具集成\n\n```python\nclass RAGSystem:\n    \"\"\"RAG 检索系统\"\"\"\n    \n    def __init__(self):\n        self.vector_db = VectorDatabase()\n        self.embedding_model = EmbeddingModel()\n    \n    def search(self, query):\n        \"\"\"检索相关知识\"\"\"\n        # 1. 向量化查询\n        query_vector = self.embedding_model.encode(query)\n        \n        # 2. 向量相似度搜索\n        results = self.vector_db.similarity_search(query_vector, top_k=5)\n        \n        # 3. 格式化结果\n        return self.format_results(results)\n\nclass APIConnector:\n    \"\"\"外部 API 连接器\"\"\"\n    \n    def __init__(self, api_key):\n        self.api_key = api_key\n        self.base_url = \"https://api.example.com\"\n    \n    def call(self, endpoint, params):\n        \"\"\"调用外部 API\"\"\"\n        # 实现 API 调用逻辑\n        pass\n```\n\n---\n\n## 3. 实际应用场景\n\n### 场景 1: 智能客服系统\n\n```\n用户: \"我上周下的订单什么时候能到？\"\n\nReAct 循环:\n  Thought: 需要查询用户订单状态\n  Action: search_knowledge(query=\"用户123订单状态\")\n  Observation: {\"order_id\": \"ORD456\", \"status\": \"shipped\", \"tracking\": \"XYZ789\"}\n  \n  Thought: 需要获取物流信息\n  Action: call_api(endpoint=\"/tracking\", params={\"tracking_id\": \"XYZ789\"})\n  Observation: {\"carrier\": \"顺丰\", \"eta\": \"2026-06-10\", \"location\": \"北京分拣中心\"}\n  \n  Thought: 需要生成回复\n  Action: send_message(\"您的订单ORD456已通过顺丰发货，物流单号XYZ789，预计6月10日送达，当前在北京分拣中心。\")\n```\n\n### 场景 2: 数据分析助手\n\n```\n用户: \"分析一下上季度销售数据，看看哪些产品表现最好\"\n\nReAct 循环:\n  Thought: 需要查询销售数据\n  Action: call_api(endpoint=\"/sales\", params={\"quarter\": \"Q1-2026\"})\n  Observation: {\"data\": [...], \"total_revenue\": 1500000}\n  \n  Thought: 需要分析产品表现\n  Action: search_knowledge(query=\"产品绩效分析方法\")\n  Observation: [\"基于销售额排名\", \"基于增长率\", \"基于利润率\"]\n  \n  Thought: 需要计算各项指标\n  Action: calculate(expression=\"calculate_metrics(data)\")\n  Observation: {\"top_products\": [\"产品A\", \"产品B\", \"产品C\"]}\n  \n  Thought: 需要生成报告\n  Action: send_message(\"上季度表现最好的产品是：1. 产品A (收入50万) 2. 产品B (收入40万) 3. 产品C (收入30万)\")\n```\n\n### 场景 3: 研究助理\n\n```\n用户: \"帮我找一下关于 Transformer 架构的最新研究进展\"\n\nReAct 循环:\n  Thought: 需要检索最新研究\n  Action: search_knowledge(query=\"Transformer 架构 最新研究 2026\")\n  Observation: [\"论文1: 改进的注意力机制\", \"论文2: 更高效的训练方法\"]\n  \n  Thought: 需要获取论文详情\n  Action: call_api(endpoint=\"/paper\", params={\"id\": \"paper1\"})\n  Observation: {\"title\": \"高效Transformer\", \"abstract\": \"...\", \"methods\": [\"方法1\", \"方法2\"]}\n  \n  Thought: 需要综合信息\n  Action: send_message(\"最新研究进展包括：1. 改进的注意力机制 - 效率提升30% 2. 新的训练方法 - 收敛速度提升50%\")\n```\n\n---\n\n## 4. 优化策略\n\n### 4.1 性能优化\n\n1. **缓存机制**\n   ```python\n   class CachedRAGSystem:\n       def __init__(self):\n           self.cache = {}\n       \n       def search(self, query):\n           if query in self.cache:\n               return self.cache[query]\n           \n           result = self.rag_system.search(query)\n           self.cache[query] = result\n           return result\n   ```\n\n2. **并行处理**\n   ```python\n   import asyncio\n   \n   async def parallel_execution(actions):\n       \"\"\"并行执行独立行动\"\"\"\n       tasks = [execute_action(action) for action in actions]\n       return await asyncio.gather(*tasks)\n   ```\n\n3. **增量更新**\n   - 知识库增量更新而非全量重建\n   - 向量数据库增量索引\n\n### 4.2 质量优化\n\n1. **查询优化**\n   - 自动扩展查询词\n   - 查询重写和规范化\n\n2. **结果重排序**\n   - 使用重排序模型精排\n   - 结合多种信号（相似度、时效性、权威性）\n\n3. **答案验证**\n   - 交叉验证多个来源\n   - 置信度评估\n\n---\n\n## 5. 最佳实践\n\n### 5.1 工具设计原则\n- **清晰的描述** - 每个工具都有详细的描述\n- **标准化的接口** - 统一的参数和返回格式\n- **错误处理** - 完善的异常处理和重试机制\n\n### 5.2 提示词设计\n- **结构化输出** - 要求 Thought-Action-Observation 格式\n- **明确约束** - 限制行动范围和工具选择\n- **进度跟踪** - 监控任务完成度\n\n### 5.3 监控和调试\n- **完整日志** - 记录所有 Thought-Action-Observation 步骤\n- **性能指标** - 监控响应时间和成功率\n- **用户反馈** - 收集用户评价用于优化\n\n---\n\n## 6. 相关资源\n\n- 参考书籍：《Agent设计模式：图解可复用智能体架构》\n- 论文：ReAct: Synergizing Reasoning and Acting in Language Models\n- 开源项目：LangChain, LlamaIndex, AutoGPT\n\n---\n\n*本文基于微信读书《Agent设计模式》及相关技术文档整理*\n",
+      "word_count": 601,
+      "is_entry_file": false,
+      "wikilinks": [],
+      "frontmatter_type": "",
+      "created": "",
+      "rrf_score": 0.006061,
+      "source_scores": [
+        [
+          "file_content",
+          0.006061
+        ]
+      ],
+      "intent": "unknown",
+      "confidence": 0.0
+    }
+  ],
+  "total_results": 13,
+  "retrieved_from": "fresh",
+  "wiki_enhanced": true,
+  "cached_at": 1780983854.783241
+}
