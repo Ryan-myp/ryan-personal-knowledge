@@ -1,151 +1,124 @@
-# Web3/区块链与边缘计算深度：从去中心化架构到边缘智能
+# Web3 智能合约与边缘计算深度实战
 
-> 从区块链共识到边缘计算架构，逐层解析前沿技术核心原理
+## 一、Web3 智能合约
 
----
-
-## 第一部分：区块链基础
-
-### 区块链架构
+### 1.1 智能合约架构
 
 ```
-区块链核心组件：
-┌─────────────────────────────────────────────────────────────────────┐
-│ 1. 区块                                                               │
-│    ├── 头：元数据（哈希/时间戳/Nonce）                               │
-│    ├── 体：交易列表                                                 │
-│    └── 链接：前一个区块哈希                                         │
-│                                                                     │
-│ 2. 共识机制                                                          │
-│    ├── PoW：工作量证明                                               │
-│    ├── PoS：权益证明                                                 │
-│    ├── DPoS：委托权益证明                                           │
-│    └── PBFT：实用拜占庭容错                                         │
-│                                                                     │
-│ 3. 智能合约                                                          │
-│    ├── 以太坊：EVM                                                 │
-│    ├── Solana：Sealevel                                           │
-│    └── Cardano：Plutus                                            │
-└─────────────────────────────────────────────────────────────────────┘
+智能合约结构:
+├── 状态变量 (Storage)
+│   └── 持久化数据
+├── 函数 (Functions)
+│   ├── 纯函数 (Pure)
+│   ├── 视图函数 (View)
+│   └── 修改状态函数
+├── 事件 (Events)
+│   └── 链下监听
+└── 修饰器 (Modifiers)
+    └── 权限控制
 ```
 
-### 共识算法对比
+### 1.2 Solidity 实战
 
-```
-共识算法对比：
-┌────────────────┬────────────┬────────────┬────────────┐
-│     特性       │  PoW       │  PoS       │  DPoS      │
-├────────────────┼────────────┼────────────┼────────────┤
-│ 能耗           │ 高         │ 低         │ 低         │
-│ 吞吐量         │ 低         │ 中         │ 高         │
-│ 去中心化       │ 高         │ 中         │ 低         │
-│ 安全性         │ 高         │ 中         │ 中         │
-│ 典型应用       │ Bitcoin    │ Ethereum   │ EOS        │
-└────────────────┴────────────┴────────────┴────────────┘
-```
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
 
----
-
-## 第二部分：边缘计算
-
-### 边缘计算架构
-
-```
-边缘计算架构：
-┌─────────────────────────────────────────────────────────────────────┐
-│ 1. 层级结构                                                          │
-│    ├── 云中心：核心计算和存储                                       │
-│    ├── 边缘节点：区域计算和缓存                                     │
-│    └── 终端设备：数据采集和执行                                     │
-│                                                                     │
-│ 2. 核心特性                                                          │
-│    ├── 低延迟：靠近数据源处理                                       │
-│    ├── 带宽节省：本地处理减少数据传输                               │
-│    └── 隐私保护：数据本地化处理                                     │
-│                                                                     │
-│ 3. 应用场景                                                          │
-│    ├── 物联网：智能家居/工业 IoT                                    │
-│    ├── 自动驾驶：实时决策                                           │
-│    └── AR/VR：沉浸式体验                                            │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-### 边缘计算 vs 云计算
-
-```
-边缘计算与云计算对比：
-┌────────────────┬────────────┬────────────┐
-│     特性       │  边缘计算   │  云计算    │
-├────────────────┼────────────┼────────────┤
-│ 延迟           │ 低         │ 高         │
-│ 带宽           │ 节省       │ 消耗       │
-│ 隐私           │ 高         │ 中         │
-│ 可扩展性       │ 中         │ 高         │
-│ 管理复杂度     │ 高         │ 低         │
-│ 适用场景       │ 实时处理   │ 批量处理   │
-└────────────────┴────────────┴────────────┘
+contract AdToken {
+    address public owner;
+    mapping(address => uint256) public balances;
+    mapping(address => mapping(address => uint256)) public allowances;
+    
+    event Transfer(address indexed from, address indexed to, uint256 value);
+    event Approval(address indexed owner, address indexed spender, uint256 value);
+    
+    constructor() {
+        owner = msg.sender;
+        balances[msg.sender] = 1000000 * 10**18;
+    }
+    
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Not owner");
+        _;
+    }
+    
+    function transfer(address to, uint256 amount) public returns (bool) {
+        require(balances[msg.sender] >= amount, "Insufficient balance");
+        require(to != address(0), "Invalid address");
+        
+        balances[msg.sender] -= amount;
+        balances[to] += amount;
+        
+        emit Transfer(msg.sender, to, amount);
+        return true;
+    }
+    
+    function approve(address spender, uint256 amount) public returns (bool) {
+        allowances[msg.sender][spender] = amount;
+        emit Approval(msg.sender, spender, amount);
+        return true;
+    }
+}
 ```
 
----
+## 二、边缘计算
 
-## 第三部分：Web3 应用
-
-### Web3 技术栈
+### 2.1 边缘计算架构
 
 ```
-Web3 技术栈：
-┌─────────────────────────────────────────────────────────────────────┐
-│ 1. 底层协议                                                          │
-│    ├── 区块链：以太坊/Solana/Cardano                                │
-│    ├── P2P 网络：libp2p                                           │
-│    └── 存储：IPFS/Arweave                                         │
-│                                                                     │
-│ 2. 中间件                                                              │
-│    ├── 智能合约：Solidity/Rust                                      │
-│    ├── 预言机：Chainlink                                           │
-│    └── 跨链：Polkadot/Cosmos                                      │
-│                                                                     │
-│ 3. 应用层                                                            │
-│    ├── DeFi：去中心化金融                                           │
-│    ├── NFT：非同质化代币                                           │
-│    └── DAO：去中心化自治组织                                       │
-└─────────────────────────────────────────────────────────────────────┘
+边缘计算层级:
+├── 云端 (Cloud)
+│   ├── 集中训练
+│   └── 全局管理
+├── 边缘节点 (Edge)
+│   ├── 模型推理
+│   └── 数据预处理
+└── 终端设备 (Device)
+    ├── 数据采集
+    └── 实时响应
 ```
 
-### 去中心化身份
+### 2.2 Go 实现边缘推理
 
+```go
+package edge
+
+import (
+	"context"
+	"log"
+	"time"
+)
+
+type EdgeNode struct {
+	model     Model
+	localDB   *LocalDB
+	cloudConn *CloudConnection
+}
+
+func (e *EdgeNode) Predict(ctx context.Context, data []byte) (*Prediction, error) {
+	start := time.Now()
+	
+	result, err := e.model.Infer(data)
+	if err != nil {
+		log.Printf("Local infer failed: %v", err)
+		return e.cloudConn.RemoteInfer(ctx, data)
+	}
+	
+	e.localDB.Save(result)
+	log.Printf("Prediction completed in %v", time.Since(start))
+	return result, nil
+}
 ```
-去中心化身份：
-┌─────────────────────────────────────────────────────────────────────┐
-│ 1. DID 标准                                                          │
-│    ├── W3C DID：去中心化标识符                                      │
-│    ├── VC：可验证凭证                                               │
-│    └── VP：可验证凭证展示                                           │
-│                                                                     │
-│ 2. 优势                                                              │
-│    ├── 用户控制：用户完全控制自己的身份数据                           │
-│    ├── 隐私保护：选择性披露                                         │
-│    └── 互操作性：跨平台身份                                         │
-│                                                                     │
-│ 3. 挑战                                                              │
-│    ├── 用户体验：私钥管理复杂                                       │
-│    ├── 法律合规：身份法律效力                                       │
-│    └── 技术成熟度：生态系统不完善                                   │
-└─────────────────────────────────────────────────────────────────────┘
+
+## 三、自测题
+
+1. 智能合约的核心组件有哪些？
+2. 边缘计算相比云计算有什么优势？
+
+## 四、动手验证
+
+```bash
+# 1. 部署智能合约
+# 2. 测试边缘推理
+# 3. 监控性能
 ```
-
----
-
-## 第四部分：自测题
-
-### Q1: 区块链的三大核心组件？
-
-**A**: 区块（头/体/链接）、共识机制（PoW/PoS/DPoS/PBFT）、智能合约（EVM/Sealevel/Plutus）。
-
-### Q2: 边缘计算的三大核心特性？
-
-**A**: 低延迟（靠近数据源处理）、带宽节省（本地处理减少数据传输）、隐私保护（数据本地化处理）。
-
-### Q3: Web3 技术栈的三层结构？
-
-**A**: 底层协议（区块链/P2P 网络/存储）、中间件（智能合约/预言机/跨链）、应用层（DeFi/NFT/DAO）。
