@@ -240,3 +240,146 @@ k 通常取 60
 ❌ 重排序（Cross-Encoder）
 ❌ RAG 评估（RAGAS）
 ```
+
+---
+
+## 第七部分：Go 生产级实现
+
+### Weread RAG 检索增强生成 — Go 源码
+
+```go
+package main
+
+import (
+	"fmt"
+	"math"
+	"sync"
+	"time"
+)
+
+// Document represents a chunk of text for RAG retrieval.
+type Document struct {
+	ID        string
+	Title     string
+	Content   string
+	Embedding []float64
+	Metadata  map[string]string
+}
+
+// RAGRetriever retrieves relevant documents for a query.
+type RAGRetriever struct {
+	mu         sync.RWMutex
+	documents  []*Document
+	topK       int
+	similarity float64 // minimum similarity threshold
+}
+
+func NewRAGRetriever(topK int, minSimilarity float64) *RAGRetriever {
+	return &RAGRetriever{
+		documents:  make([]*Document, 0),
+		topK:       topK,
+		similarity: minSimilarity,
+	}
+}
+
+// AddDocument adds a document to the retrieval index.
+func (r *RAGRetriever) AddDocument(doc *Document) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.documents = append(r.documents, doc)
+}
+
+// Retrieve finds the top-K most similar documents.
+func (r *RAGRetriever) Retrieve(queryEmbedding []float64) ([]*Document, []float64) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	type scoredDoc struct {
+		doc     *Document
+		score   float64
+	}
+
+	var scored []scoredDoc
+	for _, doc := range r.documents {
+		sim := cosineSimilarity(queryEmbedding, doc.Embedding)
+		if sim >= r.similarity {
+			scored = append(scored, scoredDoc{doc, sim})
+		}
+	}
+
+	// Sort by score descending
+	sort.Slice(scored, func(i, j int) bool {
+		return scored[i].score > scored[j].score
+	})
+
+	// Take top K
+	var results []*Document
+	var scores []float64
+	for i := 0; i < r.topK && i < len(scored); i++ {
+		results = append(results, scored[i].doc)
+		scores = append(scores, scored[i].score)
+	}
+
+	return results, scores
+}
+
+// cosineSimilarity computes the cosine similarity between two vectors.
+func cosineSimilarity(a, b []float64) float64 {
+	if len(a) != len(b) {
+		return 0.0
+	}
+
+	var dot, magA, magB float64
+	for i := range a {
+		dot += a[i] * b[i]
+		magA += a[i] * a[i]
+		magB += b[i] * b[i]
+	}
+
+	if magA == 0 || magB == 0 {
+		return 0.0
+	}
+
+	return dot / (math.Sqrt(magA) * math.Sqrt(magB))
+}
+```
+
+---
+
+## 第八部分：自测题
+
+### 问题 1：为什么 RAG 检索用余弦相似度而非欧氏距离？
+
+<details>
+<summary>查看答案</summary>
+
+余弦相似度的优势：
+1. **方向敏感**：关注向量方向而非长度，适合文本语义
+2. **尺度不变**：不受向量范数影响
+3. **标准化**：结果始终在 [-1, 1] 范围内
+
+欧氏距离对向量长度敏感，不适合高维稀疏的文本嵌入。
+
+</details>
+
+### 问题 2：Retrieve 函数中为什么用 RLock 而非 Lock？
+
+<details>
+<summary>查看答案</summary>
+
+Retrieve 是纯读操作，不修改 documents 列表。使用 RLock 允许多个检索请求并发执行，而 Lock 会阻塞所有其他操作。在高并发场景下，RWMutex 的性能优势明显。
+
+</details>
+
+### 问题 3：RAG 系统中 topK 和 similarity 阈值如何平衡召回率和准确率？
+
+<details>
+<summary>查看答案</summary>
+
+- **topK 大**：召回率高但可能引入噪声
+- **similarity 高**：准确率高但可能漏掉相关文档
+- **平衡策略**：先用高相似度过滤，再取 topK
+
+实际生产中可以用动态阈值：根据查询复杂度调整参数。
+
+</details>

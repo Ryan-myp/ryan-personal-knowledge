@@ -195,3 +195,169 @@ result = registry.execute("search_ads", {"keyword": "ads", "platform": "google"}
 ### Q3: AI Agent 开发框架选择？
 
 **A**: 快速原型用 OpenAI Functions，生产环境用 LangChain，多智能体用 AutoGen。
+
+---
+
+## 第七部分：Go 生产级实现
+
+### Geo-Agent 地理位置书籍推荐 — Go 源码
+
+```go
+package main
+
+import (
+	"fmt"
+	"math"
+	"sync"
+	"time"
+)
+
+// Location represents a geographic coordinate.
+type Location struct {
+	Latitude  float64
+	Longitude float64
+}
+
+// Bookstore represents a physical bookstore with inventory.
+type Bookstore struct {
+	ID        string
+	Name      string
+	Location  Location
+	Address   string
+	Inventory map[string]int // bookID -> quantity
+}
+
+// GeoBookRecommender recommends books based on location and availability.
+type GeoBookRecommender struct {
+	mu          sync.RWMutex
+	bookstores  map[string]*Bookstore
+	userLocations map[string]Location
+	cache       map[string][]Recommendation
+}
+
+type Recommendation struct {
+	BookID     string
+	StoreID    string
+	Distance   float64 // km
+	Availability int   // quantity in stock
+	Score      float64
+}
+
+func NewGeoBookRecommender() *GeoBookRecommender {
+	return &GeoBookRecommender{
+		bookstores:    make(map[string]*Bookstore),
+		userLocations: make(map[string]Location),
+		cache:         make(map[string][]Recommendation),
+	}
+}
+
+// AddBookstore registers a bookstore.
+func (r *GeoBookRecommender) AddBookstore(bs *Bookstore) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.bookstores[bs.ID] = bs
+}
+
+// RecommendNearby finds nearby books for a user.
+func (r *GeoBookRecommender) RecommendNearby(userID string, maxDistance float64, n int) ([]Recommendation, error) {
+	userLoc, exists := r.userLocations[userID]
+	if !exists {
+		return nil, fmt.Errorf("user %s location not found", userID)
+	}
+
+	var recommendations []Recommendation
+
+	r.mu.RLock()
+	for _, bs := range r.bookstores {
+		distance := r.haversineDistance(userLoc, bs.Location)
+		if distance > maxDistance {
+			continue
+		}
+
+		for bookID, qty := range bs.Inventory {
+			if qty > 0 {
+				recommendations = append(recommendations, Recommendation{
+					BookID:       bookID,
+					StoreID:      bs.ID,
+					Distance:     math.Round(distance*100) / 100,
+					Availability: qty,
+					Score:        1.0 / (1.0 + distance), // closer = higher score
+				})
+			}
+		}
+	}
+	r.mu.RUnlock()
+
+	// Sort by score descending
+	sort.Slice(recommendations, func(i, j int) bool {
+		return recommendations[i].Score > recommendations[j].Score
+	})
+
+	if len(recommendations) > n {
+		recommendations = recommendations[:n]
+	}
+
+	return recommendations, nil
+}
+
+// haversineDistance calculates distance between two coordinates in km.
+func (r *GeoBookRecommender) haversineDistance(a, b Location) float64 {
+	const R = 6371.0 // Earth radius in km
+	dLat := (b.Latitude - a.Latitude) * math.Pi / 180.0
+	dLon := (b.Longitude - a.Longitude) * math.Pi / 180.0
+
+	aLat := a.Latitude * math.Pi / 180.0
+	bLat := b.Latitude * math.Pi / 180.0
+
+	h := math.Sin(dLat/2)*math.Sin(dLat/2) +
+		math.Cos(aLat)*math.Cos(bLat)*
+			math.Sin(dLon/2)*math.Sin(dLon/2)
+
+	c := 2 * math.Atan2(math.Sqrt(h), math.Sqrt(1-h))
+	return R * c
+}
+```
+
+---
+
+## 第八部分：自测题
+
+### 问题 1：为什么用 Haversine 公式而非欧氏距离计算地理位置距离？
+
+<details>
+<summary>查看答案</summary>
+
+地球是球体，欧氏距离在大范围时会引入显著误差：
+- Haversine 公式考虑了球面几何
+- 在短距离（< 10km）两者差异很小
+- 在城市范围内（< 50km），Haversine 精度足够
+
+对于超近距离（< 1km），可以用简化的平面近似。
+
+</details>
+
+### 问题 2：Recommendation 中 Score = 1/(1+distance) 的设计意图是什么？
+
+<details>
+<summary>查看答案</summary>
+
+这个公式确保：
+1. **距离越近分数越高**：1km 的分数是 0.5，10km 是 0.09
+2. **平滑衰减**：不是硬 cutoff，而是渐进降低
+3. **归一化**：分数始终在 (0, 1] 范围内
+
+实际生产中可以加入库存权重：`score = inventory / (1 + distance)`
+
+</details>
+
+### 问题 3：Geo-Agent 和传统推荐系统的核心区别是什么？
+
+<details>
+<summary>查看答案</summary>
+
+1. **地理约束**：传统系统只看内容匹配，Geo-Agent 还考虑物理距离
+2. **实时库存**：需要查询实体书店的实时库存
+3. **用户体验**：用户可能想亲自去书店，距离是关键因素
+4. **数据维度**：多了 Location 维度的索引和查询
+
+</details>

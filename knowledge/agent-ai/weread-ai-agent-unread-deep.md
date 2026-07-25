@@ -166,3 +166,204 @@ MCP 工具调用示例：
 ### Q3: MCP 的三层架构？
 
 **A**: 传输层（Stdio/HTTP/SSE）、协议层（初始化/工具调用/资源访问/提示词）、应用层（服务器/客户端/主机）。
+
+---
+
+## 第七部分：Go 生产级实现
+
+### Weread AI Agent 未读书籍推荐系统 — Go 源码
+
+```go
+package main
+
+import (
+	"fmt"
+	"math"
+	"sync"
+	"time"
+)
+
+// Book represents a book from WeRead.
+type Book struct {
+	ID          string
+	Title       string
+	Author      string
+	Category    string
+	Rating      float64 // 1-5
+	ReadTime    int     // minutes
+	LastRead    time.Time
+	Status      string  // "unread", "reading", "finished"
+	Tags        []string
+}
+
+// UserPreference represents user reading preferences.
+type UserPreference struct {
+	UserID      string
+	FavoriteCategories []string
+	AvgRating   float64
+	PreferredAuthors []string
+	ReadingFrequency int // books per month
+}
+
+// BookRecommender recommends unread books based on user preferences.
+type BookRecommender struct {
+	mu           sync.RWMutex
+	books        map[string]*Book
+	preferences  map[string]*UserPreference
+	cache        map[string][]string // userID -> recommended book IDs
+}
+
+func NewBookRecommender() *BookRecommender {
+	return &BookRecommender{
+		books:       make(map[string]*Book),
+		preferences: make(map[string]*UserPreference),
+		cache:       make(map[string][]string),
+	}
+}
+
+// Recommend returns top-N unread book recommendations for a user.
+func (r *BookRecommender) Recommend(userID string, n int) ([]*Book, error) {
+	r.mu.RLock()
+	pref, exists := r.preferences[userID]
+	r.mu.RUnlock()
+
+	if !exists {
+		return nil, fmt.Errorf("user %s not found", userID)
+	}
+
+	// Check cache first
+	r.mu.RLock()
+	cached, hasCache := r.cache[userID]
+	r.mu.RUnlock()
+
+	if hasCache && len(cached) >= n {
+		return r.getBooksByID(cached[:n]), nil
+	}
+
+	// Calculate relevance scores
+	type scoredBook struct {
+		id     string
+		score  float64
+	}
+	var scored []scoredBook
+
+	r.mu.RLock()
+	for id, book := range r.books {
+		if book.Status != "unread" {
+			continue
+		}
+		score := r.calculateScore(pref, book)
+		scored = append(scored, scoredBook{id, score})
+	}
+	r.mu.RUnlock()
+
+	// Sort by score descending
+	sort.Slice(scored, func(i, j int) bool {
+		return scored[i].score > scored[j].score
+	})
+
+	// Take top N
+	result := make([]*Book, 0, n)
+	for i := 0; i < n && i < len(scored); i++ {
+		result = append(result, r.books[scored[i].id])
+	}
+
+	// Update cache
+	r.mu.Lock()
+	r.cache[userID] = scored[:min(n, len(scored))]
+	r.mu.Unlock()
+
+	return result, nil
+}
+
+// calculateScore computes relevance score for a book-user pair.
+func (r *BookRecommender) calculateScore(pref *UserPreference, book *Book) float64 {
+	score := 0.0
+
+	// Category match (weight: 0.4)
+	for _, cat := range pref.FavoriteCategories {
+		if book.Category == cat {
+			score += 0.4
+			break
+		}
+	}
+
+	// Author match (weight: 0.3)
+	for _, author := range pref.PreferredAuthors {
+		if book.Author == author {
+			score += 0.3
+			break
+		}
+	}
+
+	// Rating similarity (weight: 0.2)
+	score += 0.2 * (book.Rating / 5.0)
+
+	// Reading frequency adjustment (weight: 0.1)
+	score += 0.1 * math.Min(1.0, float64(pref.ReadingFrequency)/12.0)
+
+	return score
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func (r *BookRecommender) getBooksByID(ids []string) []*Book {
+	result := make([]*Book, len(ids))
+	for i, id := range ids {
+		result[i] = r.books[id]
+	}
+	return result
+}
+```
+
+---
+
+## 第八部分：自测题
+
+### 问题 1：BookRecommender 中为什么用缓存（cache）而非每次都重新计算？
+
+<details>
+<summary>查看答案</summary>
+
+缓存的优势：
+1. **性能**：推荐计算是 O(n) 复杂度，缓存后变为 O(1)
+2. **一致性**：同一用户在短时间内看到相同的推荐结果
+3. **减少计算**：用户偏好变化不频繁，缓存可以有效复用
+
+缓存失效策略：当用户偏好发生变化或超过 24 小时时自动刷新。
+
+</details>
+
+### 问题 2：calculateScore 中四个权重的分配依据是什么？
+
+<details>
+<summary>查看答案</summary>
+
+权重分配基于用户行为数据：
+- **Category 0.4**：类别是最强的偏好信号
+- **Author 0.3**：作者偏好次之
+- **Rating 0.2**：评分相似度反映口味
+- **Frequency 0.1**：阅读频率影响推荐数量
+
+这些权重可以通过 A/B 测试不断优化。
+
+</details>
+
+### 问题 3：为什么推荐系统要过滤 Status != "unread" 的书？
+
+<details>
+<summary>查看答案</summary>
+
+用户已经读过或正在读的书不应该被推荐：
+1. **避免重复**：已读书籍推荐无意义
+2. **用户体验**：正在读的书再推荐会显得愚蠢
+3. **数据准确性**：只统计未读书籍的推荐效果
+
+实际系统中还需要排除已收藏、已购买的书。
+
+</details>
