@@ -422,3 +422,318 @@ WHERE trx_started < NOW() - INTERVAL 1 HOUR;
 # 2. 优化事务，减少事务持续时间
 # 3. 增加 undo tablespace 大小
 ```
+
+---
+
+## Go 代码实战：MySQL InnoDB 完整实现
+
+### 1. MVCC + 事务隔离级别实现
+
+```go
+package innodb
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+)
+
+// IsolationLevel 隔离级别
+type IsolationLevel int
+
+const (
+	ReadUncommitted IsolationLevel = iota
+	ReadCommitted
+	RepeatableRead
+	Serializable
+)
+
+// Transaction 事务
+type Transaction struct {
+	ID          uint64
+	Level       IsolationLevel
+	readView    *ReadView
+	status      TxnStatus // active, committed, aborted
+	startTime   time.Time
+	mu          sync.Mutex
+	locks       map[string]*RowLock
+	undoLog     *UndoLog
+}
+
+type TxnStatus int
+
+const (
+	TxnActive TxnStatus = iota
+	TxnCommitted
+	TxnAborted
+)
+
+func NewTransaction(id uint64, level IsolationLevel) *Transaction {
+	return &Transaction{
+		ID:        id,
+		Level:     level,
+		status:    TxnActive,
+		startTime: time.Now(),
+		locks:     make(map[string]*RowLock),
+		undoLog:   NewUndoLog(),
+	}
+}
+
+// Read 带 MVCC 的读取
+func (tx *Transaction) Read(ctx context.Context, table string, key string) ([]byte, error) {
+	if tx.status != TxnActive {
+		return nil, fmt.Errorf("transaction not active")
+	}
+	
+	// 获取记录
+	record := db.GetRecord(table, key)
+	if record == nil {
+		return nil, nil
+	}
+	
+	// MVCC 可见性判断
+	switch tx.Level {
+	case ReadCommitted:
+		// RC: 每次 SELECT 创建新 ReadView
+		rv := createNewReadView()
+		if !rv.IsVisible(record.TXID, record.DeleteBit) {
+			// 遍历 undo log 找可见版本
+			return tx.getPreviousVersion(record)
+		}
+	case RepeatableRead:
+		// RR: 复用第一次创建的 ReadView
+		if tx.readView == nil {
+			tx.readView = createNewReadView()
+		}
+		if !tx.readView.IsVisible(record.TXID, record.DeleteBit) {
+			return tx.getPreviousVersion(record)
+		}
+	}
+	
+	return record.Data, nil
+}
+
+func (tx *Transaction) getPreviousVersion(record *Record) ([]byte, error) {
+	version := tx.undoLog.GetVersion(record, record.TXID)
+	for version != nil {
+		if tx.readView != nil && tx.readView.IsVisible(version.TXID, version.DeleteBit) {
+			return version.Data, nil
+		}
+		if readView := tx.createReadView(); readView.IsVisible(version.TXID, version.DeleteBit) {
+			return version.Data, nil
+		}
+		version = version.Prev
+	}
+	return nil, fmt.Errorf("no visible version found")
+}
+
+// Write 带锁的写入
+func (tx *Transaction) Write(ctx context.Context, table string, key string, data []byte) error {
+	if tx.status != TxnActive {
+		return fmt.Errorf("transaction not active")
+	}
+	
+	lockKey := table + ":" + key
+	
+	// 加排他锁
+	if err := tx.acquireLock(lockKey, LockExclusive); err != nil {
+		return err
+	}
+	
+	// 写 undo log
+	tx.undoLog.CreateVersion(table, key, data)
+	
+	// 写数据
+	db.SetRecord(table, key, data, tx.ID)
+	
+	return nil
+}
+
+func (tx *Transaction) Commit() error {
+	tx.mu.Lock()
+	defer tx.mu.Unlock()
+	
+	// 两阶段提交
+	// Phase 1: Prepare
+	if err := prepareCommit(tx.ID); err != nil {
+		tx.Abort()
+		return err
+	}
+	
+	// Phase 2: Commit
+	if err := commitTxn(tx.ID); err != nil {
+		tx.Abort()
+		return err
+	}
+	
+	tx.status = TxnCommitted
+	tx.releaseAllLocks()
+	return nil
+}
+
+func (tx *Transaction) Abort() {
+	tx.mu.Lock()
+	defer tx.mu.Unlock()
+	
+	rollbackTxn(tx.ID)
+	tx.undoLog.Rollback(tx.ID)
+	tx.releaseAllLocks()
+	tx.status = TxnAborted
+}
+```
+
+### 2. B+ Tree 索引实现
+
+```go
+package innodb
+
+import "sort"
+
+// BPlusTree B+ 树索引
+type BPlusTree struct {
+	root     *BPlusNode
+	order    int // 阶数（每个节点最多 order-1 个键）
+	height   int
+	entryNum int
+}
+
+type BPlusNode struct {
+	isLeaf   bool
+	keys     []string       // 键
+	values   []interface{}  // 值（叶子节点存数据，内部节点存子节点指针）
+	children []*BPlusNode   // 子节点（仅内部节点）
+	next     *BPlusNode     // 右兄弟指针（叶子链表）
+}
+
+func NewBPlusTree(order int) *BPlusTree {
+	return &BPlusTree{
+		root:  &BPlusNode{isLeaf: true},
+		order: order,
+	}
+}
+
+func (t *BPlusTree) Insert(key string, value interface{}) {
+	if t.root.isLeaf && len(t.root.keys) >= t.order-1 {
+		// 根节点满，分裂
+		newRoot := &BPlusNode{isLeaf: false}
+		newRoot.children = append(newRoot.children, t.root)
+		t.root = newRoot
+		t.split(newRoot)
+	}
+	
+	t.insertInto(t.root, key, value)
+	t.entryNum++
+}
+
+func (t *BPlusTree) insertInto(node *BPlusNode, key string, value interface{}) {
+	if node.isLeaf {
+		// 找到插入位置
+		idx := sort.SearchStrings(node.keys, key)
+		
+		node.keys = append(node.keys, "")
+		copy(node.keys[idx+1:], node.keys[idx:])
+		node.keys[idx] = key
+		
+		node.values = append(node.values, nil)
+		copy(node.values[idx+1:], node.values[idx:])
+		node.values[idx] = value
+	} else {
+		// 找到子节点
+		idx := sort.SearchStrings(node.keys, key)
+		t.insertInto(node.children[idx], key, value)
+		
+		// 子节点满了，分裂
+		if len(node.children[idx].keys) >= t.order-1 {
+			t.splitChild(node, idx)
+		}
+	}
+}
+
+func (t *BPlusTree) split(node *BPlusNode) {
+	mid := t.order / 2
+	left := &BPlusNode{isLeaf: node.isLeaf}
+	right := &BPlusNode{isLeaf: node.isLeaf}
+	
+	left.keys = node.keys[:mid]
+	left.values = node.values[:mid]
+	
+	right.keys = node.keys[mid:]
+	right.values = node.values[mid:]
+	
+	if !node.isLeaf {
+		left.children = node.children[:mid+1]
+		right.children = node.children[mid+1:]
+	}
+	
+	// 更新父节点
+	// ...
+}
+
+func (t *BPlusTree) Search(key string) (interface{}, bool) {
+	return t.searchNode(t.root, key)
+}
+
+func (t *BPlusTree) searchNode(node *BPlusNode, key string) (interface{}, bool) {
+	idx := sort.SearchStrings(node.keys, key)
+	
+	if idx < len(node.keys) && node.keys[idx] == key {
+		return node.values[idx], true
+	}
+	
+	if node.isLeaf {
+		return nil, false
+	}
+	
+	return t.searchNode(node.children[idx], key)
+}
+```
+
+### 自测题
+
+<details>
+<summary>Q1: 两阶段提交（2PC）在 MySQL 中具体怎么工作？prepare 和 commit 分别写什么日志？</summary>
+
+**答案**：
+
+**流程**：
+```
+1. Prepare: 写 REDO LOG (prepare状态) → fsync
+2. Commit:  写 REDO LOG (commit状态) → fsync
+3. 如果 prepare 后崩溃，恢复时检查 REDO LOG：
+   - prepare 状态 → 回滚
+   - commit 状态 → 提交
+```
+
+**关键点**：REDO LOG 是顺序写，binlog 是随机写。2PC 保证两者一致性——先写 redo prepare，再写 binlog，最后写 redo commit。
+
+</details>
+
+<details>
+<summary>Q2: B+ Tree 相比 B Tree 为什么更适合做数据库索引？</summary>
+
+**答案**：
+
+| 特性 | B+ Tree | B Tree |
+|------|---------|--------|
+| 非叶子节点存数据 | ❌ 只存键 | ✅ 存键+数据 |
+| 磁盘IO次数 | 少（非叶子节点可存更多键） | 多 |
+| 范围查询 | ✅ 叶子链表 O(n) | ❌ 需要中序遍历 |
+| 查询稳定性 | ✅ 所有查询深度相同 | ❌ 深度不同 |
+
+广告平台用 InnoDB 做核心存储——范围查询（时间范围、预算范围）非常频繁，B+ Tree 是必然选择。
+
+</details>
+
+<details>
+<summary>Q3: MVCC 在 Serializable 隔离级别下为什么不适用？</summary>
+
+**答案**：
+
+**Serializable 是最强隔离级别**——事务串行执行，完全等效于串行执行。
+
+MVCC 通过多版本实现**非阻塞读**，但无法解决**写冲突**——两个事务同时修改同一行，MVCC 无法检测到这种冲突（因为读的是自己的快照）。
+
+Serializable 的实现方式：**对所有表加共享锁**，任何读写都互斥。性能最差但最安全。
+
+</details>

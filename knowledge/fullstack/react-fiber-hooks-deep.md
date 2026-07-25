@@ -911,3 +911,254 @@ function App() {
 - 原子化状态（细粒度更新）：Jotai
 - 表单状态：React Hook Form
 ```
+
+---
+
+## Go 代码实战：前后端协作核心模块
+
+### 1. GraphQL Gateway（Go 后端）
+
+```go
+package graphql
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"sync"
+)
+
+// FieldResolver 字段解析器
+type FieldResolver func(ctx context.Context, obj interface{}, args map[string]interface{}) (interface{}, error)
+
+// ObjectType 对象类型定义
+type ObjectType struct {
+	Name        string
+	Fields      map[string]FieldDefinition
+}
+
+type FieldDefinition struct {
+	Type     string
+	Args     map[string]string
+	Resolve  FieldResolver
+}
+
+// Schema GraphQL Schema
+type Schema struct {
+	types    map[string]*ObjectType
+	mutations map[string]FieldResolver
+	queries   map[string]FieldResolver
+}
+
+func NewSchema() *Schema {
+	return &Schema{
+		types:     make(map[string]*ObjectType),
+		mutations: make(map[string]FieldResolver),
+		queries:   make(map[string]FieldResolver),
+	}
+}
+
+func (s *Schema) AddType(t *ObjectType) {
+	s.types[t.Name] = t
+}
+
+func (s *Schema) AddQuery(name string, resolve FieldResolver) {
+	s.queries[name] = resolve
+}
+
+func (s *Schema) AddMutation(name string, resolve FieldResolver) {
+	s.mutations[name] = resolve
+}
+
+// Executor GraphQL 执行器
+type Executor struct {
+	schema *Schema
+	cache  *sync.Map // query_hash -> result
+}
+
+func NewExecutor(schema *Schema) *Executor {
+	return &Executor{
+		schema: schema,
+		cache:  &sync.Map{},
+	}
+}
+
+func (e *Executor) Execute(ctx context.Context, query string, variables map[string]interface{}) (map[string]interface{}, error) {
+	// 缓存查询结果（相同 query + variables）
+	cacheKey := fmt.Sprintf("%s:%s", query, jsonEncode(variables))
+	if cached, ok := e.cache.Load(cacheKey); ok {
+		return cached.(map[string]interface{}), nil
+	}
+	
+	// 解析查询
+	parsed, err := parseQuery(query)
+	if err != nil {
+		return nil, err
+	}
+	
+	// 执行
+	result := make(map[string]interface{})
+	for _, selection := range parsed.Selections {
+		if resolver, ok := e.schema.queries[selection.Name]; ok {
+			val, err := resolver(ctx, nil, selection.Args)
+			if err != nil {
+				return nil, err
+			}
+			result[selection.Name] = val
+		}
+	}
+	
+	e.cache.Store(cacheKey, result)
+	return result, nil
+}
+
+func jsonEncode(v interface{}) string {
+	b, _ := json.Marshal(v)
+	return string(b)
+}
+```
+
+### 2. WebSocket 实时推送
+
+```go
+package websocket
+
+import (
+	"encoding/json"
+	"net/http"
+	"sync"
+	"time"
+	
+	"github.com/gorilla/websocket"
+)
+
+// Client WebSocket 客户端
+type Client struct {
+	conn   *websocket.Conn
+	send   chan []byte
+	mu     sync.Mutex
+	alive  bool
+}
+
+// Hub 管理所有连接
+type Hub struct {
+	clients    map[string]*Client
+	register   chan *Client
+	unregister chan *Client
+	mu         sync.RWMutex
+}
+
+var defaultHub = &Hub{
+	clients:    make(map[string]*Client),
+	register:   make(chan *Client),
+	unregister: make(chan *Client),
+}
+
+func (h *Hub) Run() {
+	for {
+		select {
+		case client := <-h.register:
+			h.mu.Lock()
+			h.clients[client.ID] = client
+			h.mu.Unlock()
+			
+		case client := <-h.unregister:
+			h.mu.Lock()
+			if _, ok := h.clients[client.ID]; ok {
+				delete(h.clients, client.ID)
+				close(client.send)
+			}
+			h.mu.Unlock()
+		}
+	}
+}
+
+func (h *Hub) Broadcast(message []byte) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	
+	for _, client := range h.clients {
+		select {
+		case client.send <- message:
+		default:
+			close(client.send)
+			delete(h.clients, client.ID)
+		}
+	}
+}
+
+func (h *Hub) SendTo(userID string, message []byte) {
+	h.mu.RLock()
+	client, ok := h.clients[userID]
+	h.mu.RUnlock()
+	
+	if ok {
+		select {
+		case client.send <- message:
+		default:
+			// 发送失败，标记离线
+		}
+	}
+}
+```
+
+### 自测题
+
+<details>
+<summary>Q1: GraphQL 的 FieldResolver 为什么用 interface{} 而不是泛型？</summary>
+
+**答案**：
+
+**历史原因**：GraphQL 规范先于 Go generics（1.18）。interface{} 提供了最大灵活性——可以返回任何类型。
+
+**现代替代方案**：
+```go
+// Go 1.18+ 可以用泛型
+type Resolver[T any] func(ctx context.Context, obj T, args map[string]interface{}) (T, error)
+```
+
+但实际生产中还是 interface{} 更常见——因为 GraphQL 本身就是动态类型的。
+
+</details>
+
+<details>
+<summary>Q2: WebSocket Hub 的 Broadcast 中 select default 为什么是必要的？</summary>
+
+**答案**：
+
+**防止阻塞整个广播**：如果一个客户端的 send channel 满了（消费者慢），不加 default 会导致所有其他客户端也被阻塞。
+
+```go
+select {
+case client.send <- message:  // 正常发送
+default:                       // 客户端慢，跳过
+    close(client.send)          // 标记断开
+    delete(h.clients, client.ID)
+}
+```
+
+这是**背压处理**的标准模式——宁可丢消息给慢客户端，也不能拖垮整个服务。
+
+</details>
+
+<details>
+<summary>Q3: GraphQL Executor 的缓存策略有什么局限？生产环境如何改进？</summary>
+
+**答案**：
+
+**当前局限**：
+1. 内存缓存重启丢失
+2. 没有 TTL（永不过期）
+3. 没有区分读/写操作
+
+**改进方案**：
+```go
+// 方案1: Redis 缓存（分布式）
+// 方案2: 带 TTL 的 LRU cache
+// 方案3: DataLoader 批量+缓存（解决 N+1 问题）
+
+// DataLoader 是 GraphQL 性能优化的关键：
+// 将多个 goroutine 的同类查询合并为一次批量查询
+```
+
+</details>

@@ -532,3 +532,263 @@ GC 调优要点：
 3. 减少指针数量（降低 GC 扫描时间）
 4. 使用 []byte 替代 string（减少拷贝）
 ```
+
+---
+
+## Go 代码实战：Go Runtime 核心机制模拟
+
+### 1. Goroutine Scheduler（GMP 模型简化版）
+
+```go
+package runtime
+
+import (
+	"sync"
+	"sync/atomic"
+)
+
+// G Goroutine
+type G struct {
+	stack     stack
+	sp        uintptr
+	pc        uintptr
+	next      *G
+	status    uint32 // running, runnable, waiting, dead
+	fn        func()
+	arg       interface{}
+}
+
+type stack struct {
+	lo uintptr
+	hi uintptr
+}
+
+// M OS Thread
+type M struct {
+	g0      *G       // 系统 goroutine（调度用）
+	curG    *G       // 当前用户 goroutine
+	p       *P       // 绑定的 P
+	nextM   *M
+}
+
+// P Process（处理器）
+type P struct {
+	id          int32
+	status      uint32 // active, stopped, idle
+	runq        runQueue // 本地运行队列
+	runnext     *G       // 下一个要运行的G
+	nwait       uint32   // 等待中的G数
+	ngrab       uint32   // 从其他P抓取的G数
+	runnableG   uint32   // 可运行的G总数
+	m           *M       // 绑定的M
+}
+
+type runQueue struct {
+	items []*G
+	head  uint32
+	tail  uint32
+	size  uint32
+}
+
+// Scheduler 调度器
+type Scheduler struct {
+	ms    []*M
+	ps    []*P
+	nps   int32
+	gfree *G
+	mu    sync.Mutex
+}
+
+var globalScheduler = &Scheduler{
+	ps: make([]*P, 0, 256),
+}
+
+func (s *Scheduler) init() {
+	// 创建P（默认GOMAXPROCS个）
+	n := atomic.LoadInt32(&gomaxprocs)
+	for i := int32(0); i < n; i++ {
+		p := &P{id: i}
+		s.ps = append(s.ps, p)
+	}
+	
+	// 创建M（启动线程）
+	m := &M{g0: s.newSystemG()}
+	s.ms = append(s.ms, m)
+	go m.schedule()
+}
+
+func (s *Scheduler) newG(fn func()) *G {
+	g := &G{fn: fn, status: _Grunnable}
+	if g.stack.hi == 0 {
+		g.stack = s.allocStack()
+	}
+	return g
+}
+
+func (s *Scheduler) schedule(ctx context.Context) {
+	m := getCurrentM()
+	p := s.acquireP()
+	m.p = p
+	
+	for {
+		// 1. 从本地队列取G
+		g := p.runq.pop()
+		
+		// 2. 如果没有，尝试从全局队列偷
+		if g == nil {
+			g = s.globalRunq.pop()
+		}
+		
+		// 3. 如果还没有，从其他P偷（work stealing）
+		if g == nil {
+			g = s.steal(p)
+		}
+		
+		// 4. 执行G
+		if g != nil {
+			s.execute(m, p, g)
+		} else {
+			systemSleep() // 没有任务时休眠
+		}
+	}
+}
+
+func (s *Scheduler) steal(p *P) *G {
+	// 随机选一个P偷一半的G
+	target := randomP(p)
+	if target == nil || target.runq.size < 2 {
+		return nil
+	}
+	
+	half := target.runq.size / 2
+	// 偷取（双端队列尾部）
+	return target.runq.popHalf(half)
+}
+```
+
+### 2. Channel 实现
+
+```go
+package runtime
+
+import "sync"
+
+// Chan 通道实现
+type Chan struct {
+	elemSize uintptr
+	dataPtr  unsafe.Pointer
+	lock     mutex
+	buf      *hchanBuf
+	sendx    uint32 // 发送索引
+	recvx    uint32 // 接收索引
+	count    uint32 // 当前元素数
+	full     uint32 // 是否满
+	qsize    uint32 // 缓冲区大小
+}
+
+type hchanBuf struct {
+	bytes unsafe.Pointer
+}
+
+// Send 发送数据
+func (c *Chan) Send(elem unsafe.Pointer) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	
+	// 有等待的接收者？直接传递
+	if w := c.recvq.pop(); w != nil {
+		w.elem = elem
+		w.status = _Sent
+		wake(w)
+		return
+	}
+	
+	// 缓冲区未满？入队
+	if c.count < c.qsize {
+		c.buf[c.sendx] = elem
+		c.sendx = (c.sendx + 1) % c.qsize
+		c.count++
+		return
+	}
+	
+	// 缓冲区满，阻塞等待
+	w := &waiter{elem: elem, status: _Sending}
+	c.sendq.push(w)
+	block(w)
+}
+
+// Recv 接收数据
+func (c *Chan) Recv() (unsafe.Pointer, bool) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	
+	// 缓冲区有数据？出队
+	if c.count > 0 {
+		elem := c.buf[c.recvx]
+		c.recvx = (c.recvx + 1) % c.qsize
+		c.count--
+		
+		// 有等待的发送者？直接传递
+		if s := c.sendq.pop(); s != nil {
+			s.status = _Received
+			wake(s)
+		}
+		
+		return elem, true
+	}
+	
+	// 无数据，阻塞等待
+	w := &waiter{status: _Receiving}
+	c.recvq.push(w)
+	block(w)
+	return nil, false
+}
+```
+
+### 自测题
+
+<details>
+<summary>Q1: GMP 模型中 P 的数量为什么默认是 GOMAXPROCS（CPU核心数）？设太多或太少会怎样？</summary>
+
+**答案**：
+
+**原理**：每个 P 绑定一个 M（OS线程），M 执行 G（goroutine）。P 的数量 = 最大并行度。
+
+| P数量 | 问题 | 场景 |
+|-------|------|------|
+| 1 | 无法利用多核 | 调试 |
+| CPU核心数 | 最优 | **生产默认** |
+| >> CPU核心数 | 上下文切换开销大 | 高IO密集型 |
+| << CPU核心数 | 浪费算力 | 错误配置 |
+
+Go 1.5+ 默认 GOMAXPROCS = NumCPU()。
+
+</details>
+
+<details>
+<summary>Q2: Channel 的缓冲区大小如何影响程序行为？无缓冲和有缓冲的区别？</summary>
+
+**答案**：
+
+| 类型 | 行为 | 同步性 | 适用场景 |
+|------|------|--------|---------|
+| 无缓冲 `make(chan T)` | send 和 recv 必须同时就绪 | **同步** | 信号量、通知 |
+| 有缓冲 `make(chan T, n)` | 缓冲未满时 send 不阻塞 | **异步** | 生产者-消费者 |
+
+**关键**：无缓冲 channel 是"握手协议"——send 和 recv 配对执行。这是 Go 中实现同步的最佳方式。
+
+</details>
+
+<details>
+<summary>Q3: Work Stealing 算法中，为什么从目标P的"尾部"偷而不是头部？</summary>
+
+**答案**：
+
+**缓存友好性**：
+- 头部是最近入队的（LIFO），可能被其他M正在访问
+- 尾部是较早入队的，当前P不太可能正在处理
+- 从尾部偷减少 cache line 冲突
+
+这本质上是 **deque（双端队列）** 的设计——本地P从头部取（LIFO，局部性好），远程M从尾部偷（避免竞争）。
+
+</details>

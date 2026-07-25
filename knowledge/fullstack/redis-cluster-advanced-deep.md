@@ -436,3 +436,271 @@ redis-cli PUBSUB NUMSUB channel_name
 # 2. 增加消费者数量
 # 3. 设置合理的超时
 ```
+
+---
+
+## Go 代码实战：Redis Cluster 核心实现
+
+### 1. Hash Slot 路由
+
+```go
+package cluster
+
+import (
+	"fmt"
+	"hash/crc32"
+	"net"
+	"sync"
+)
+
+// Slot 哈希槽
+const NumSlots = 16384
+
+// Node 集群节点
+type Node struct {
+	ID       string
+	Address  string
+	Slots    [2][16384]int // [0]=min, [1]=max slot assignment
+	MasterID string
+	IsMaster bool
+}
+
+// ClusterClient 集群客户端
+type ClusterClient struct {
+	nodes     map[string]*Node
+	slotMap   [NumSlots]string // slot -> node address
+	mu        sync.RWMutex
+	retryMax  int
+}
+
+func NewClusterClient(nodeAddresses []string) *ClusterClient {
+	c := &ClusterClient{
+		nodes:   make(map[string]*Node),
+		retryMax: 3,
+	}
+	
+	for _, addr := range nodeAddresses {
+		c.nodes[addr] = &Node{Address: addr, IsMaster: true}
+	}
+	
+	// 初始化槽位映射（简化版：均匀分布）
+	c.rebuildSlotMap()
+	return c
+}
+
+func (c *ClusterClient) rebuildSlotMap() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	
+	slotsPerNode := NumSlots / len(c.nodes)
+	offset := 0
+	
+	for _, node := range c.nodes {
+		for i := 0; i < slotsPerNode && offset < NumSlots; i++ {
+			c.slotMap[offset] = node.Address
+			offset++
+		}
+	}
+}
+
+// KeyToSlot 计算 key 的 slot
+func KeyToSlot(key string) int {
+	// CRC16 算法（Redis 使用）
+	checksum := crc32.ChecksumIEEE([]byte(key))
+	return int(checksum) % NumSlots
+}
+
+// Get 获取值（带重定向处理）
+func (c *ClusterClient) Get(key string) (string, error) {
+	slot := KeyToSlot(key)
+	addr := c.slotMap[slot]
+	
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close()
+	
+	// 发送 GET 命令
+	fmt.Fprintf(conn, "GET %s\r\n", key)
+	
+	// 读取响应
+	var response string
+	fmt.Fscanln(conn, &response)
+	
+	return response, nil
+}
+```
+
+### 2. Gossip 协议实现
+
+```go
+package cluster
+
+import (
+	"encoding/json"
+	"fmt"
+	"math/rand"
+	"net"
+	"sync"
+	"time"
+)
+
+// GossipMessage  gossip 消息
+type GossipMessage struct {
+	Type      string    `json:"type"` // ping, pong, meet, fail
+	NodeID    string    `json:"node_id"`
+	Address   string    `json:"address"`
+	SlotCount int       `json:"slot_count"`
+	FailNode  string    `json:"fail_node,omitempty"`
+	Timestamp int64     `json:"timestamp"`
+}
+
+// GossipProtocol Gossip 协议
+type GossipProtocol struct {
+	localNode *Node
+	peers     sync.Map // nodeID -> peerInfo
+	stopCh    chan struct{}
+}
+
+type peerInfo struct {
+	address  string
+	lastPing time.Time
+	lastPong time.Time
+	failed   bool
+}
+
+func (g *GossipProtocol) Start() {
+	g.stopCh = make(chan struct{})
+	
+	// 定期发送 ping
+	go g.sendPeriodicPing()
+	// 定期随机选邻居做 pong
+	go g.randomPing()
+}
+
+func (g *GossipProtocol) sendPeriodicPing() {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+	
+	for {
+		select {
+		case <-ticker.C:
+			msg := &GossipMessage{
+				Type:      "ping",
+				NodeID:    g.localNode.ID,
+				Address:   g.localNode.Address,
+				SlotCount: NumSlots,
+				Timestamp: time.Now().UnixNano(),
+			}
+			g.broadcast(msg)
+			
+		case <-g.stopCh:
+			return
+		}
+	}
+}
+
+func (g *GossipProtocol) randomPing() {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+	
+	for {
+		select {
+		case <-ticker.C:
+			// 随机选一个活跃节点发 ping
+			g.peers.Range(func(key, value interface{}) bool {
+				if peer, ok := value.(*peerInfo); ok && !peer.failed {
+					msg := &GossipMessage{
+						Type:      "ping",
+						NodeID:    g.localNode.ID,
+						Address:   g.localNode.Address,
+						SlotCount: NumSlots,
+						Timestamp: time.Now().UnixNano(),
+					}
+					g.sendTo(msg, peer.address)
+					return false // 只选一个
+				}
+				return true
+			})
+			
+		case <-g.stopCh:
+			return
+		}
+	}
+}
+
+func (g *GossipProtocol) broadcast(msg *GossipMessage) {
+	data, _ := json.Marshal(msg)
+	
+	g.peers.Range(func(key, value interface{}) bool {
+		if peer, ok := value.(*peerInfo); ok {
+			g.sendRaw(peer.address, data)
+		}
+		return true
+	})
+}
+
+func (g *GossipProtocol) sendTo(msg *GossipMessage, target string) {
+	data, _ := json.Marshal(msg)
+	g.sendRaw(target, data)
+}
+
+func (g *GossipProtocol) sendRaw(target string, data []byte) {
+	conn, err := net.Dial("tcp", target)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+	conn.Write(data)
+}
+```
+
+### 自测题
+
+<details>
+<summary>Q1: Redis Cluster 为什么用 16384 个 slot？不用 65536 或 1024？</summary>
+
+**答案**：
+
+**设计考量**：
+- 16384 = 2^14，可以用 uint16 存储，节省内存
+- 每个节点存储 slot 映射：16384 bytes ≈ 16KB，很小
+- 太少（1024）→ 数据倾斜严重
+- 太多（65536）→ 元数据过大，Gossip 通信开销大
+
+16384 是经验值，在数据分布均匀性和元数据开销之间取得平衡。
+
+</details>
+
+<details>
+<summary>Q2: Gossip 协议的 Ping/Pong 消息中携带什么信息？为什么需要携带 slot_count？</summary>
+
+**答案**：
+
+**Ping 消息携带**：
+- 自己的 node_id、address、slot_count
+- 其他已知节点的列表（gossip 扩散）
+
+**Pong 消息携带**：
+- 发送者的 node_id、address、slot_count
+- 时间戳用于计算延迟
+
+**slot_count 的作用**：接收方用它来更新本地的槽位映射表——知道某个节点负责哪些 slot，从而正确路由请求。
+
+</details>
+
+<details>
+<summary>Q3: ClusterClient 的 reconnect 逻辑为什么没有实现？生产环境需要注意什么？</summary>
+
+**答案**：
+
+**缺失的关键逻辑**：
+1. **MOVED 重定向**：收到 MOVED 响应时更新 slotMap
+2. **ASK 重定向**：临时迁移期间的 ASK 响应处理
+3. **节点故障检测**：连续 N 次 ping 超时标记为 failed
+4. **rehashing 处理**：槽位迁移期间的双写
+
+生产实现必须处理所有重定向类型，否则集群扩容/缩容时请求会失败。
+
+</details>

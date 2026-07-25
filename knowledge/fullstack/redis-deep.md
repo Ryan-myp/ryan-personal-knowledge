@@ -609,3 +609,202 @@ redis-cli SLOWLOG GET 10
 # 3. 大 key 删除 → 用 UNLINK
 # 4. 长时间事务 → 拆分
 ```
+
+---
+
+## Go 代码实战：Redis 核心数据结构 Go 实现
+
+### 1. SDS（Simple Dynamic String）实现
+
+```go
+package redis
+
+import (
+	"bytes"
+	"encoding/binary"
+)
+
+// SDS 简单动态字符串
+type SDS struct {
+	buf      []byte
+	len      int32
+	capacity int32
+	flags    uint8 // 编码类型
+}
+
+const (
+	SDS5   = 0 // len < 32
+	SDS8   = 1
+	SDS16  = 2
+	SDS32  = 3
+	SDS64  = 4
+)
+
+func NewSDS(initial string) *SDS {
+	s := &SDS{
+		buf: make([]byte, 0, len(initial)+1),
+	}
+	s.buf = append(s.buf, initial...)
+	s.buf = append(s.buf, 0) // null terminator
+	s.len = int32(len(initial))
+	s.capacity = int32(cap(s.buf)) - 1
+	return s
+}
+
+func (s *SDS) Append(data []byte) *SDS {
+	need := s.len + int32(len(data))
+	if need > s.capacity {
+		s.grow(need)
+	}
+	copy(s.buf[s.len:], data)
+	s.len += int32(len(data))
+	s.buf[s.len] = 0 // 更新null terminator
+	return s
+}
+
+func (s *SDS) grow(minCapacity int32) {
+	newCapacity := max(minCapacity*2, s.capacity)
+	newBuf := make([]byte, newCapacity+1)
+	copy(newBuf, s.buf[:s.len])
+	s.buf = newBuf
+	s.capacity = newCapacity
+}
+
+func (s *SDS) String() string {
+	return string(s.buf[:s.len])
+}
+
+func (s *SDS) Len() int { return int(s.len) }
+```
+
+### 2. Intset（整数集合）
+
+```go
+package redis
+
+import "sort"
+
+// Intset 整数集合（压缩集合）
+type Intset struct {
+	encoding  uint8 // INTSET_ENC_INT16/32/64
+	contents  []int64
+	capacity  int
+}
+
+const (
+	INTSET_ENC_INT16 = 2
+	INTSET_ENC_INT32 = 4
+	INTSET_ENC_INT64 = 8
+)
+
+func NewIntset() *Intset {
+	return &Intset{
+		encoding: INTSET_ENC_INT16,
+		contents: make([]int64, 0, 4),
+	}
+}
+
+func (is *Intset) Add(value int64) bool {
+	// 检查是否已存在
+	idx := is.search(value)
+	if idx >= 0 {
+		return false // 已存在
+	}
+	
+	// 可能需要升级编码
+	is.upgradeIfNeeded(value)
+	
+	// 插入到排序位置
+	is.contents = append(is.contents, 0)
+	copy(is.contents[idx+1:], is.contents[idx:])
+	is.contents[idx] = value
+	return true
+}
+
+func (is *Intset) search(value int64) int {
+	lo, hi := 0, len(is.contents)-1
+	for lo <= hi {
+		mid := (lo + hi) / 2
+		if is.contents[mid] == value {
+			return mid
+		} else if is.contents[mid] < value {
+			lo = mid + 1
+		} else {
+			hi = mid - 1
+		}
+	}
+	return lo
+}
+
+func (is *Intset) upgradeIfNeeded(value int64) {
+	var neededSize int
+	switch is.encoding {
+	case INTSET_ENC_INT16:
+		if value > 32767 || value < -32768 {
+			neededSize = INTSET_ENC_INT32
+		}
+	case INTSET_ENC_INT32:
+		if value > 2147483647 || value < -2147483648 {
+			neededSize = INTSET_ENC_INT64
+		}
+	}
+	
+	if neededSize > 0 {
+		old := make([]int64, len(is.contents))
+		copy(old, is.contents)
+		
+		is.contents = make([]int64, len(old))
+		for i, v := range old {
+			is.contents[i] = v
+		}
+		is.encoding = neededSize
+	}
+}
+```
+
+### 自测题
+
+<details>
+<summary>Q1: SDS 为什么比 C 的 char* 更好？</summary>
+
+**答案**：
+
+| 特性 | C string | SDS |
+|------|----------|-----|
+| O(1) 获取长度 | ❌ strlen O(n) | ✅ 直接读 len 字段 |
+| 防缓冲区溢出 | ❌ 手动管理 | ✅ append 自动扩容 |
+| 二进制安全 | ❌ \0 终止 | ✅ 有 len，可存任意字节 |
+| 空间预分配 | ❌ | ✅ 惰性释放策略 |
+
+广告平台中 SDS 用于存储用户ID、广告ID等高频操作场景——O(1) 长度查询对性能影响巨大。
+
+</details>
+
+<details>
+<summary>Q2: Intset 的编码升级是不可逆的吗？为什么？</summary>
+
+**答案**：
+
+**是的，不可逆**。原因：
+1. 升级后所有值都按新编码存储，降级需要重新编码所有元素
+2. 升级只在添加更大值时触发，是**渐进式**的（16→32→64）
+3. 反向降级不划算：删除一个大值后，集合可能只剩小值，但编码不会降
+
+这是空间换时间的经典设计——升级一次就够了。
+
+</details>
+
+<details>
+<summary>Q3: SDS 的 grow() 用 capacity*2 扩容有什么风险？Redis 实际怎么做的？</summary>
+
+**答案**：
+
+**风险**：连续追加时可能过度分配内存。
+
+**Redis 实际策略**：
+- 如果 SDS 长度 < 1MB：扩容为原来的 2 倍
+- 如果 SDS 长度 ≥ 1MB：每次只扩容 1MB
+
+这避免了小字符串浪费，也防止大字符串频繁扩容。
+
+</details>

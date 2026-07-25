@@ -221,3 +221,166 @@ Saga 模式：
 ### Q3: 广告系统用什么一致性模型？
 
 **A**: 预算扣减用强一致性（TCC），查询用最终一致性（缓存）。
+
+---
+
+## Go 代码实战：分布式系统核心模式
+
+### 1. 分布式锁（Redlock 简化版）
+
+```go
+package distributed
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/redis/go-redis/v9"
+)
+
+// DistributedLock 分布式锁
+type DistributedLock struct {
+	rdb      *redis.Client
+	key      string
+	value    string
+	ttl      time.Duration
+	retry    int
+	interval time.Duration
+}
+
+func NewDistributedLock(rdb *redis.Client, key string, ttl time.Duration) *DistributedLock {
+	return &DistributedLock{
+		rdb: rdb,
+		key: key,
+		value: fmt.Sprintf("%d-%d", time.Now().UnixNano(), rand.Intn(100000)),
+		ttl:  ttl,
+	}
+}
+
+// Acquire 获取锁
+func (l *DistributedLock) Acquire(ctx context.Context) error {
+	for i := 0; i < l.retry; i++ {
+		ok, err := l.rdb.SetNX(ctx, l.key, l.value, l.ttl).Result()
+		if err != nil {
+			return err
+		}
+		if ok {
+			return nil
+		}
+		time.Sleep(l.interval)
+	}
+	return fmt.Errorf("failed to acquire lock after %d retries", l.retry)
+}
+
+// Release 释放锁（只释放自己的锁）
+func (l *DistributedLock) Release(ctx context.Context) error {
+	script := `
+		if redis.call("get", KEYS[1]) == ARGV[1] then
+			return redis.call("del", KEYS[1])
+		else
+			return 0
+		end
+	`
+	result, err := redis.NewScript(script).Run(ctx, l.rdb, []string{l.key}, l.value).Int()
+	if err != nil {
+		return err
+	}
+	if result == 0 {
+		return fmt.Errorf("lock not owned by this process")
+	}
+	return nil
+}
+```
+
+### 2. 分布式事务（Saga 模式）
+
+```go
+package saga
+
+import (
+	"context"
+	"fmt"
+)
+
+// Step Saga步骤
+type Step struct {
+	Name     string
+	Action   func(ctx context.Context) error
+	Compensate func(ctx context.Context) error
+}
+
+// Saga 编排器
+type Saga struct {
+	steps []*Step
+	index int
+}
+
+func NewSaga(steps ...*Step) *Saga {
+	return &Saga{steps: steps}
+}
+
+func (s *Saga) Execute(ctx context.Context) error {
+	// 正向执行
+	for i, step := range s.steps {
+		if err := step.Action(ctx); err != nil {
+			// 回滚已执行的步骤
+			s.compensate(ctx, i-1)
+			return fmt.Errorf("step %s failed: %w", step.Name, err)
+		}
+		s.index = i
+	}
+	return nil
+}
+
+func (s *Saga) compensate(ctx context.Context, from int) {
+	for i := from; i >= 0; i-- {
+		if err := s.steps[i].Compensate(ctx); err != nil {
+			// 补偿失败需要人工介入
+			log.Error("compensation failed", "step", s.steps[i].Name, "error", err)
+		}
+	}
+}
+```
+
+### 自测题
+
+<details>
+<summary>Q1: 分布式锁的 value 为什么用随机值而不是进程ID？</summary>
+
+**答案**：
+
+**问题**：如果用进程ID，锁过期后其他进程可能误删别人的锁。
+
+**随机值方案**：每个进程生成唯一 value（UUID+时间戳），释放时用 Lua 脚本原子检查+删除——只有持有者能释放。这是 Redlock 的核心设计。
+
+</details>
+
+<details>
+<summary>Q2: Saga 模式的补偿失败如何处理？（补偿本身也可能失败）</summary>
+
+**答案**：
+
+**三级策略**：
+1. **自动重试**：补偿操作幂等，重试3次
+2. **死信队列**：补偿失败的消息进入 DLQ
+3. **人工介入**：运维后台手动补偿
+
+关键：**所有操作必须幂等**。补偿操作不是"撤销"，而是"确保状态一致"。
+
+</details>
+
+<details>
+<summary>Q3: Redlock vs Redis SET NX 单实例锁，什么场景用哪个？</summary>
+
+**答案**：
+
+| 特性 | 单实例 SET NX | Redlock（多实例） |
+|------|-------------|------------------|
+| 复杂度 | 低 | 高（N个Redis实例） |
+| 安全性 | 单点故障时不安全 | 多数派存活才安全 |
+| 适用场景 | 内部系统、可接受风险 | **金融/支付等关键场景** |
+
+广告平台预算扣减用 Redlock，普通业务锁用单实例即可。
+
+</details>

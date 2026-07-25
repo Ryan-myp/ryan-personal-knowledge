@@ -570,3 +570,287 @@ redis-cli SLOWLOG GET 10
 # 3. 大 key 删除 → 用 UNLINK
 # 4. 长时间事务 → 拆分
 ```
+
+---
+
+## Go 代码实战：Redis Event Loop + AOF/RDB 持久化
+
+### 1. Event Loop 实现（epoll 简化版）
+
+```go
+package eventloop
+
+import (
+	"fmt"
+	"net"
+	"sync"
+	"syscall"
+	"time"
+)
+
+// Event 事件
+type Event struct {
+	fd      int
+	masks   uint32 // READ, WRITE, ERROR
+	handler func(*EventLoop, *Event)
+	data    interface{}
+}
+
+const (
+	EventRead  uint32 = 1 << iota
+	EventWrite
+	EventError
+)
+
+// EventLoop 事件循环
+type EventLoop struct {
+	epfd     int
+	events   [1024]syscall.EpollEvent // epoll_wait 结果
+	registry map[int]*Event            // fd -> Event
+	mu       sync.RWMutex
+	quit     chan struct{}
+}
+
+func NewEventLoop() (*EventLoop, error) {
+	epfd, err := syscall.EpollCreate1(0)
+	if err != nil {
+		return nil, err
+	}
+	
+	return &EventLoop{
+		epfd:     epfd,
+		registry: make(map[int]*Event),
+		quit:     make(chan struct{}),
+	}, nil
+}
+
+func (el *EventLoop) AddRead(fd int, handler func(*EventLoop, *Event)) error {
+	el.mu.Lock()
+	defer el.mu.Unlock()
+	
+	event := &Event{fd: fd, masks: EventRead, handler: handler}
+	el.registry[fd] = event
+	
+	ev := syscall.EpollEvent{
+		Fd:      int32(fd),
+		Events:  syscall.EPOLLIN,
+	}
+	return syscall.EpollCtl(el.epfd, syscall.EPOLL_CTL_ADD, fd, &ev)
+}
+
+func (el *EventLoop) Run() error {
+	for {
+		n, err := syscall.EpollWait(el.epfd, el.events[:], 100)
+		if err != nil {
+			if err == syscall.EINTR {
+				continue
+			}
+			return err
+		}
+		
+		for i := 0; i < n; i++ {
+			fd := int(el.events[i].Fd)
+			el.mu.RLock()
+			event, ok := el.registry[fd]
+			el.mu.RUnlock()
+			
+			if !ok {
+				continue
+			}
+			
+			// 分发事件
+			if el.events[i].Events&syscall.EPOLLIN != 0 {
+				event.handler(el, event)
+			}
+			if el.events[i].Events&syscall.EPOLLHUP != 0 {
+				el.remove(fd)
+			}
+		}
+		
+		select {
+		case <-el.quit:
+			return nil
+		default:
+		}
+	}
+}
+
+func (el *EventLoop) remove(fd int) {
+	el.mu.Lock()
+	defer el.mu.Unlock()
+	delete(el.registry, fd)
+	syscall.EpollCtl(el.epfd, syscall.EPOLL_CTL_DEL, fd, nil)
+}
+
+func (el *EventLoop) Shutdown() {
+	close(el.quit)
+	syscall.Close(el.epfd)
+}
+```
+
+### 2. AOF 持久化
+
+```go
+package persistence
+
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"sync"
+)
+
+// AOFWriter AOF写入器
+type AOFWriter struct {
+	mu        sync.Mutex
+	file      *os.File
+	writer    *bufio.Writer
+	fsyncFreq FsyncFrequency // always, everysec, no
+	counter   int
+}
+
+type FsyncFrequency int
+
+const (
+	FsyncAlways FsyncFrequency = iota
+	FsyncEverySec
+	FsyncNo
+)
+
+func NewAOFWriter(path string, freq FsyncFrequency) (*AOFWriter, error) {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return nil, err
+	}
+	
+	return &AOFWriter{
+		file:      f,
+		writer:    bufio.NewWriter(f),
+		fsyncFreq: freq,
+	}, nil
+}
+
+func (w *AOFWriter) Write(cmd []byte) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	
+	_, err := w.writer.Write(cmd)
+	w.writer.WriteByte('\n')
+	w.counter++
+	
+	// fsync 策略
+	switch w.fsyncFreq {
+	case FsyncAlways:
+		w.file.Sync() // 每次写都 fsync
+	case FsyncEverySec:
+		if w.counter >= 1000 { // 约每秒
+			w.file.Sync()
+			w.counter = 0
+		}
+	case FsyncNo:
+		// 操作系统决定
+	}
+	
+	return err
+}
+
+func (w *AOFWriter) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.file.Close()
+}
+
+// AOFRewriter AOF重写（BGREWRITEAOF）
+type AOFRewriter struct {
+	mu         sync.Mutex
+	running    bool
+	doneCh     chan struct{}
+}
+
+func (r *AOFRewriter) Start(db *Database) (<-chan int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	
+	if r.running {
+		return nil, fmt.Errorf("rewrite already running")
+	}
+	
+	r.running = true
+	r.doneCh = make(chan struct{})
+	progress := make(chan int64, 1)
+	
+	go func() {
+		defer close(r.doneCh)
+		defer close(progress)
+		
+		// 遍历数据库，生成 SET 命令
+		totalKeys := 0
+		db.Range(func(key string, value interface{}) bool {
+			cmd := fmt.Sprintf("SET %s %v\r\n", key, value)
+			// 写入临时 AOF
+			totalKeys++
+			if totalKeys%1000 == 0 {
+				progress <- int64(totalKeys)
+			}
+			return true
+		})
+		
+		// 原子替换
+		os.Rename("aof.tmp", "aof.rdb")
+		r.running = false
+	}()
+	
+	return progress, nil
+}
+```
+
+### 自测题
+
+<details>
+<summary>Q1: epoll LT（水平触发）和 ET（边缘触发）的区别？Redis 用哪个？</summary>
+
+**答案**：
+
+| 模式 | 行为 | 特点 |
+|------|------|------|
+| LT (Level Triggered) | 只要 fd 可读就反复通知 | **默认，安全但效率低** |
+| ET (Edge Triggered) | fd 状态变化时只通知一次 | 高效但必须一次性读完 |
+
+**Redis 用 LT 模式**——因为 Redis 是单线程模型，不需要极致性能。ET 需要 non-blocking I/O + 循环读直到 EAGAIN，复杂度高且容易丢数据。
+
+</details>
+
+<details>
+<summary>Q2: AOF 的三种 fsync 策略对性能和数据丢失的影响？</summary>
+
+**答案**：
+
+| 策略 | 性能 | 数据丢失风险 | 适用场景 |
+|------|------|------------|---------|
+| always | 最低（~90K ops/s） | 零 | 金融级 |
+| everysec | 高（~100K ops/s） | ≤1秒 | **生产默认** |
+| no | 最高 | 取决于OS | 缓存场景 |
+
+广告平台推荐 everysec——性能损失小，最多丢1秒数据（可接受）。
+
+</details>
+
+<details>
+<summary>Q3: AOF 重写期间如何保证不丢失新写入的数据？</summary>
+
+**答案**：
+
+**AOF Rewrite 过程**：
+```
+1. 启动 rewrite → 创建子进程
+2. 子进程遍历内存数据 → 生成新 AOF 文件（aof.tmp）
+3. 主进程同时收到新写入 → 追加到两个地方：
+   - 原有 AOF 文件（aof.rdb）
+   - AOF rewrite buffer（内存）
+4. 子进程完成 → 主进程将 buffer 内容追加到 aof.tmp
+5. 原子替换：mv aof.tmp → aof.rdb
+```
+
+关键：**rewrite buffer** 确保重写期间的写入不丢失。这是 Redis 的核心设计之一。
+
+</details>

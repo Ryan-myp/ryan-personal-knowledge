@@ -138,3 +138,216 @@ Go 性能优化清单：
 ### Q3: 微服务拆分原则？
 
 **A**: 按业务域、粒度适中、接口稳定、数据隔离、独立部署。
+
+---
+
+## Go 代码实战：高并发架构核心模式
+
+### 1. Worker Pool + Task Queue（生产级）
+
+```go
+package workerpool
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"sync/atomic"
+)
+
+// Task 任务定义
+type Task struct {
+	ID       string
+	Payload  []byte
+	Deadline time.Time
+	Retries  int
+}
+
+// Result 任务结果
+type Result struct {
+	TaskID string
+	Output []byte
+	Err    error
+}
+
+// WorkerPool 工作池
+type WorkerPool struct {
+	tasks    chan *Task
+	results  chan *Result
+	workers  int
+	wg       sync.WaitGroup
+	stopped  atomic.Bool
+	ctx      context.Context
+	cancel   context.CancelFunc
+}
+
+func NewWorkerPool(ctx context.Context, workers, queueSize int) *WorkerPool {
+	cctx, cancel := context.WithCancel(ctx)
+	return &WorkerPool{
+		tasks:   make(chan *Task, queueSize),
+		results: make(chan *Result, queueSize),
+		workers: workers,
+		ctx:     cctx,
+		cancel:  cancel,
+	}
+}
+
+func (wp *WorkerPool) Start() {
+	for i := 0; i < wp.workers; i++ {
+		wp.wg.Add(1)
+		go wp.worker(i)
+	}
+}
+
+func (wp *WorkerPool) worker(id int) {
+	defer wp.wg.Done()
+	for {
+		select {
+		case task, ok := <-wp.tasks:
+			if !ok {
+				return
+			}
+			result := wp.process(task)
+			wp.results <- result
+			
+		case <-wp.ctx.Done():
+			return
+		}
+	}
+}
+
+func (wp *WorkerPool) process(task *Task) *Result {
+	// 模拟处理
+	output := doWork(task.Payload)
+	return &Result{
+		TaskID: task.ID,
+		Output: output,
+	}
+}
+
+func (wp *WorkerPool) Submit(task *Task) error {
+	if wp.stopped.Load() {
+		return fmt.Errorf("pool stopped")
+	}
+	
+	select {
+	case wp.tasks <- task:
+		return nil
+	case <-wp.ctx.Done():
+		return wp.ctx.Err()
+	default:
+		return fmt.Errorf("task queue full")
+	}
+}
+
+func (wp *WorkerPool) Results() <-chan *Result {
+	return wp.results
+}
+
+func (wp *WorkerPool) Stop() {
+	wp.stopped.Store(true)
+	wp.cancel()
+	close(wp.tasks)
+	wp.wg.Wait()
+	close(wp.results)
+}
+```
+
+### 2. 优雅关闭（Graceful Shutdown）
+
+```go
+package server
+
+import (
+	"context"
+	"net/http"
+	"os/signal"
+	"syscall"
+	"time"
+)
+
+// GracefulServer 支持优雅关闭的服务器
+type GracefulServer struct {
+	httpServer *http.Server
+	workerPool *WorkerPool
+}
+
+func (s *GracefulServer) Start(ctx context.Context) error {
+	s.workerPool.Start()
+	
+	// 信号监听
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	
+	go func() {
+		<-sigCh
+		s.shutdown(ctx)
+	}()
+	
+	return s.httpServer.ListenAndServe()
+}
+
+func (s *GracefulServer) shutdown(ctx context.Context) {
+	// 1. 停止接受新请求
+	s.httpServer.Shutdown(ctx)
+	
+	// 2. 等待现有请求完成
+	done := make(chan struct{})
+	go func() {
+		s.workerPool.Stop()
+		close(done)
+	}()
+	
+	select {
+	case <-done:
+		fmt.Println("shutdown complete")
+	case <-time.After(30 * time.Second):
+		fmt.Println("shutdown timeout, force exit")
+	}
+}
+```
+
+### 自测题
+
+<details>
+<summary>Q1: WorkerPool 的 queueSize 设多少合适？太大和太小的影响？</summary>
+
+**答案**：
+
+| queueSize | 优点 | 缺点 | 适用场景 |
+|-----------|------|------|---------|
+| 0（无缓冲） | 零内存，天然背压 | 提交阻塞 | 低延迟要求 |
+| 100-1000 | 吸收突发 | OOM风险 | **生产标准** |
+| 10000+ | 完全异步 | 内存占用大，延迟不可控 | 批量离线任务 |
+
+**选择原则**：queueSize = workers × 平均处理时间 / 目标延迟。例如 100 workers × 10ms / 5ms = 200。
+
+</details>
+
+<details>
+<summary>Q2: GracefulShutdown 中为什么先 stop accepting 再 stop workers？顺序反了会怎样？</summary>
+
+**答案**：
+
+**正确顺序**：
+1. `httpServer.Shutdown()` → 停止接受新请求，但继续处理已有请求
+2. `workerPool.Stop()` → 停止处理新任务，等队列清空
+
+**反序的后果**：如果先停 worker pool，httpServer 还在接受请求 → 请求进来后找不到 worker → panic 或返回错误。
+
+</details>
+
+<details>
+<summary>Q3: sync/atomic.Bool 相比 sync.Mutex 保护 bool 变量有什么优势？</summary>
+
+**答案**：
+
+| 特性 | atomic.Bool | sync.Mutex |
+|------|-------------|------------|
+| 性能 | 无锁，CPU指令级 | 有锁，可能阻塞 |
+| 适用场景 | 单变量读写 | 复杂状态 |
+| 可组合性 | ❌ 只能保护一个值 | ✅ 可保护任意数据 |
+
+广告平台中 `stopped` 这种简单标志位用 atomic，因为它只需要原子读写，不需要保护复合状态。
+
+</details>

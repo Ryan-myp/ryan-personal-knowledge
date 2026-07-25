@@ -480,3 +480,429 @@ class ExplainabilityEngine:
 3. 提供决策理由
 4. 支持人工审核
 ```
+
+---
+
+## Go 代码实战：Agent 安全护栏与评估系统
+
+### 1. Agent 安全护栏（Guardrail）
+
+```go
+package guardrail
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"sync"
+	"time"
+)
+
+// Guardrail 安全护栏接口
+type Guardrail interface {
+	Name() string
+	Check(ctx context.Context, input, output string) error
+	Priority() int // 越小优先级越高
+}
+
+// PromptInjectionDetector 提示词注入检测器
+type PromptInjectionDetector struct {
+	patterns []string
+	mu       sync.RWMutex
+}
+
+func NewPromptInjectionDetector() *PromptInjectionDetector {
+	return &PromptInjectionDetector{
+		patterns: []string{
+			"ignore previous", "forget all", "system prompt",
+			"you are now", "disregard", "override",
+			"<|endoftext|>", "jailbreak", "DAN mode",
+		},
+	}
+}
+
+func (d *PromptInjectionDetector) Check(ctx context.Context, input, output string) error {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	
+	lower := strings.ToLower(input)
+	for _, pattern := range d.patterns {
+		if strings.Contains(lower, pattern) {
+			return fmt.Errorf("prompt injection detected: pattern '%s'", pattern)
+		}
+	}
+	return nil
+}
+
+func (d *PromptInjectionDetector) Name() string { return "prompt_injection" }
+func (d *PromptInjectionDetector) Priority() int  { return 1 }
+
+// PIIFilter 个人信息过滤
+type PIIFilter struct {
+	patterns map[string]*regexp.Regexp
+}
+
+func NewPIIFilter() *PIIFilter {
+	patterns := make(map[string]*regexp.Regexp)
+	patterns["email"] = regexp.MustCompile(`[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`)
+	patterns["phone"] = regexp.MustCompile(`\+?[\d\s-]{10,}`)
+	patterns["id_card"] = regexp.MustCompile(`\d{17}[\dXx]`)
+	patterns["credit_card"] = regexp.MustCompile(`\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}`)
+	
+	return &PIIFilter{patterns: patterns}
+}
+
+func (f *PIIFilter) Check(ctx context.Context, input, output string) error {
+	for name, pattern := range f.patterns {
+		if pattern.MatchString(output) {
+			return fmt.Errorf("PII leak detected: %s in output", name)
+		}
+	}
+	return nil
+}
+
+func (f *PIIFilter) Name() string { return "pii_filter" }
+func (f *PIIFilter) Priority() int { return 2 }
+
+// OutputSanitizer 输出净化器
+type OutputSanitizer struct {
+	blocklist []string
+}
+
+func (s *OutputSanitizer) Check(ctx context.Context, input, output string) error {
+	for _, word := range s.blocklist {
+		if strings.Contains(strings.ToLower(output), strings.ToLower(word)) {
+			return fmt.Errorf("blocked content detected: '%s'", word)
+		}
+	}
+	return nil
+}
+
+func (s *OutputSanitizer) Name() string { return "output_sanitize" }
+func (s *OutputSanitizer) Priority() int { return 3 }
+
+// GuardrailChain 护栏链（按优先级排序执行）
+type GuardrailChain struct {
+	guardrails []Guardrail
+}
+
+func (c *GuardrailChain) Add(g Guardrail) *GuardrailChain {
+	c.guardrails = append(c.guardrails, g)
+	return c
+}
+
+func (c *GuardrailChain) Sort() {
+	sort.Slice(c.guardrails, func(i, j int) bool {
+		return c.guardrails[i].Priority() < c.guardrails[j].Priority()
+	})
+}
+
+func (c *GuardrailChain) Validate(ctx context.Context, input, output string) error {
+	c.Sort()
+	
+	for _, g := range c.guardrails {
+		if err := g.Check(ctx, input, output); err != nil {
+			return fmt.Errorf("[%s] %w", g.Name(), err)
+		}
+	}
+	return nil
+}
+
+// RateLimiter 速率限制器（令牌桶算法）
+type RateLimiter struct {
+	tokens     float64
+	maxTokens  float64
+	refillRate float64 // tokens/second
+	lastRefill time.Time
+	mu         sync.Mutex
+}
+
+func NewRateLimiter(maxTokens, refillRate float64) *RateLimiter {
+	return &RateLimiter{
+		tokens:     maxTokens,
+		maxTokens:  maxTokens,
+		refillRate: refillRate,
+		lastRefill: time.Now(),
+	}
+}
+
+func (rl *RateLimiter) Allow() bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	
+	now := time.Now()
+	elapsed := now.Sub(rl.lastRefill).Seconds()
+	rl.tokens = math.Min(rl.maxTokens, rl.tokens+elapsed*rl.refillRate)
+	rl.lastRefill = now
+	
+	if rl.tokens >= 1.0 {
+		rl.tokens -= 1.0
+		return true
+	}
+	return false
+}
+```
+
+### 2. Agent 自动化评估框架
+
+```go
+package eval
+
+import (
+	"context"
+	"math"
+	"sort"
+	"time"
+)
+
+// EvalTask 评估任务
+type EvalTask struct {
+	ID        string
+	Name      string
+	Input     string
+	Expected  string
+	GoldLabel string
+	Metadata  map[string]interface{}
+}
+
+// EvalResult 评估结果
+type EvalResult struct {
+	TaskID    string
+	Score     float64
+	Metrics   map[string]float64
+	Timestamp time.Time
+}
+
+// Evaluator 评估器接口
+type Evaluator interface {
+	Name() string
+	Evaluate(ctx context.Context, task *EvalTask, actual string) (*EvalResult, error)
+}
+
+// ExactMatchEvaluator 精确匹配评估
+type ExactMatchEvaluator struct{}
+
+func (e *ExactMatchEvaluator) Evaluate(ctx context.Context, task *EvalTask, actual string) (*EvalResult, error) {
+	score := 0.0
+	if strings.TrimSpace(actual) == strings.TrimSpace(task.Expected) {
+		score = 1.0
+	}
+	return &EvalResult{
+		TaskID:  task.ID,
+		Score:   score,
+		Metrics: map[string]float64{"exact_match": score},
+	}, nil
+}
+
+func (e *ExactMatchEvaluator) Name() string { return "exact_match" }
+
+// BLEEScorer BLEU 分数计算（简化版）
+type BLEEScorer struct {
+	ngramOrder int
+}
+
+func (s *BLEEScorer) Evaluate(ctx context.Context, task *EvalTask, actual string) (*EvalResult, error) {
+	actualWords := strings.Fields(actual)
+	expectedWords := strings.Fields(task.Expected)
+	
+	bp := math.Min(1.0, math.Exp(1-float64(len(expectedWords))/float64(max(len(actualWords),1))))
+	
+	bleu := 1.0
+	for n := 1; n <= s.ngramOrder; n++ {
+		if len(actualWords) < n || len(expectedWords) < n {
+			continue
+		}
+		
+		// 计数
+		actualNgrams := make(map[string]int)
+		expectedNgrams := make(map[string]int)
+		
+		for i := 0; i <= len(actualWords)-n; i++ {
+			ngram := strings.Join(actualWords[i:i+n], " ")
+			actualNgrams[ngram]++
+		}
+		for i := 0; i <= len(expectedWords)-n; i++ {
+			ngram := strings.Join(expectedWords[i:i+n], " ")
+			expectedNgrams[ngram]++
+		}
+		
+		// clipped precision
+		clipped := 0.0
+		total := 0.0
+		for ng, count := range actualNgrams {
+			if ec, ok := expectedNgrams[ng]; ok {
+				clipped += math.Min(float64(count), float64(ec))
+			}
+			total += float64(count)
+		}
+		
+		if total > 0 {
+			precision := clipped / total
+			bleu *= math.Pow(precision, 1.0/float64(s.ngramOrder))
+		}
+	}
+	
+	bleu *= bp
+	return &EvalResult{
+		TaskID:  task.ID,
+		Score:   bleu,
+		Metrics: map[string]float64{"bleu": bleu},
+	}, nil
+}
+
+func (s *BLEEScorer) Name() string { return "bleu" }
+
+// EvaluatorSuite 评估套件
+type EvaluatorSuite struct {
+	evaluators []Evaluator
+}
+
+func (s *EvaluatorSuite) Add(e Evaluator) *EvaluatorSuite {
+	s.evaluators = append(s.evaluators, e)
+	return s
+}
+
+func (s *EvaluatorSuite) Run(ctx context.Context, tasks []*EvalTask) map[string][]*EvalResult {
+	results := make(map[string][]*EvalResult)
+	
+	for _, evaluator := range s.evaluators {
+		results[evaluator.Name()] = make([]*EvalResult, 0, len(tasks))
+		
+		for _, task := range tasks {
+			result, err := evaluator.Evaluate(ctx, task, task.Input)
+			if err != nil {
+				continue
+			}
+			results[evaluator.Name()] = append(results[evaluator.Name()], result)
+		}
+	}
+	
+	return results
+}
+
+// ScoreAggregator 分数聚合
+func ScoreAggregator(results []*EvalResult) map[string]float64 {
+	if len(results) == 0 {
+		return nil
+	}
+	
+	sum := 0.0
+	min := math.MaxFloat64
+	max := -math.MaxFloat64
+	var scores []float64
+	
+	for _, r := range results {
+		sum += r.Score
+		if r.Score < min {
+			min = r.Score
+		}
+		if r.Score > max {
+			max = r.Score
+		}
+		scores = append(scores, r.Score)
+	}
+	
+	mean := sum / float64(len(results))
+	
+	// 标准差
+	var sqSum float64
+	for _, s := range scores {
+		sqSum += (s - mean) * (s - mean)
+	}
+	stddev := math.Sqrt(sqSum / float64(len(scores)))
+	
+	return map[string]float64{
+		"mean":    mean,
+		"median":  median(scores),
+		"min":     min,
+		"max":     max,
+		"stddev":  stddev,
+		"count":   float64(len(results)),
+	}
+}
+
+func median(scores []float64) float64 {
+	sort.Float64s(scores)
+	n := len(scores)
+	if n%2 == 0 {
+		return (scores[n/2-1] + scores[n/2]) / 2
+	}
+	return scores[n/2]
+}
+```
+
+### 自测题
+
+<details>
+<summary>Q1: GuardrailChain 为什么按 Priority 排序执行？如果高优先级护栏拦截了，低优先级的还会执行吗？</summary>
+
+**答案**：
+
+**设计原因**：
+1. 提示词注入检测必须最先执行（最严重的安全风险）
+2. PII 过滤其次（数据泄露风险）
+3. 内容净化最后（用户体验相关）
+
+**短路执行**：一旦某个护栏返回 error，整个 chain 立即返回——后续护栏不执行。这是安全系统的标准做法（fail-fast）。
+
+```go
+func (c *GuardrailChain) Validate(...) error {
+    for _, g := range c.guardrails {
+        if err := g.Check(...); err != nil {
+            return err // 短路！
+        }
+    }
+    return nil
+}
+```
+
+</details>
+
+<details>
+<summary>Q2: BLEU 分数的 clipped precision 为什么取 min(count_actual, count_expected)？</summary>
+
+**答案**：
+
+**核心思想**：防止模型通过重复高频词来刷分数。
+
+```
+实际: "the the the cat"
+期望: "the cat sat"
+
+无clipped: "the" 出现3次 → precision = 4/4 = 1.0 ❌ 欺骗性高分
+有clipped: "the" 最多计1次（期望中只有1个）→ precision 更合理 ✅
+
+clipped_count = min(actual_count, expected_count)
+```
+
+BLEU 的局限：它只考虑 n-gram 重叠，不考虑语义相似度。两个意思相同但用词不同的句子 BLEU 可能为 0。生产环境配合 BERTScore 使用。
+
+</details>
+
+<details>
+<summary>Q3: RateLimiter 的令牌桶算法为什么用 float64 而不是 int？生产环境如何优化？</summary>
+
+**答案**：
+
+**float64 原因**：
+- 允许 fractional tokens（部分令牌），更精细的控制
+- refillRate 可能是小数（如 0.5 tokens/second = 每2秒1个token）
+
+**生产优化**：
+```go
+// 方案1: 原子操作替代 mutex（高性能）
+type AtomicRateLimiter struct {
+    tokens       atomic.Int64
+    lastRefillNS atomic.Int64
+}
+
+// 方案2: 多级令牌桶（突发+持续）
+// burst bucket: 处理突发请求
+// steady bucket: 控制长期速率
+
+// 方案3: 滑动窗口计数器（更精确但更慢）
+```
+
+广告 API 调用通常用方案2：burst bucket 处理批量导入，steady bucket 控制日常调用。
+
+</details>

@@ -964,3 +964,240 @@ WHERE campaign_id = 100;
 | 知识库板块 | fullstack/ |
 | 关联 skill | weread-skills |
 | 知识深度 | 🟢 深度（3000+ 行） |
+
+---
+
+## Go 代码实战：MySQL 性能优化核心工具
+
+### 1. 慢查询分析器
+
+```go
+package mysql
+
+import (
+	"sort"
+	"sync"
+	"time"
+)
+
+// SlowQuery 慢查询记录
+type SlowQuery struct {
+	Query      string
+	Duration   time.Duration
+	RowsSent   int64
+	RowsExamined int64
+	Timestamp  time.Time
+	ThreadID   uint32
+	FullText   string // EXPLAIN 结果
+}
+
+// SlowQueryAnalyzer 慢查询分析器
+type SlowQueryAnalyzer struct {
+	mu        sync.RWMutex
+	queries   []SlowQuery
+	window    time.Duration
+	threshold time.Duration
+	topN      int
+}
+
+func NewSlowQueryAnalyzer(window, threshold time.Duration, topN int) *SlowQueryAnalyzer {
+	return &SlowQueryAnalyzer{
+		window:    window,
+		threshold: threshold,
+		topN:      topN,
+	}
+}
+
+func (a *SlowQueryAnalyzer) Record(query string, duration time.Duration, rowsSent, rowsExamined int64, threadID uint32) {
+	if duration < a.threshold {
+		return
+	}
+	
+	sq := SlowQuery{
+		Query:        query,
+		Duration:     duration,
+		RowsSent:     rowsSent,
+		RowsExamined: rowsExamined,
+		Timestamp:    time.Now(),
+		ThreadID:     threadID,
+	}
+	
+	a.mu.Lock()
+	a.queries = append(a.queries, sq)
+	a.mu.Unlock()
+}
+
+func (a *SlowQueryAnalyzer) GetTopQueries() []SlowQuery {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	
+	now := time.Now()
+	filtered := make([]SlowQuery, 0)
+	for _, q := range a.queries {
+		if now.Sub(q.Timestamp) <= a.window {
+			filtered = append(filtered, q)
+		}
+	}
+	
+	sort.Slice(filtered, func(i, j int) bool {
+		return filtered[i].Duration > filtered[j].Duration
+	})
+	
+	n := min(a.topN, len(filtered))
+	return filtered[:n]
+}
+
+// QueryOptimizer 查询优化建议
+type QueryOptimizer struct{}
+
+func (o *QueryOptimizer) Analyze(sq *SlowQuery) []string {
+	hints := make([]string, 0)
+	
+	// 检查 rows_examined / rows_sent 比率
+	ratio := float64(sq.RowsExamined) / max(float64(sq.RowsSent), 1)
+	if ratio > 100 {
+		hints = append(hints, fmt.Sprintf("高扫描比 (%.0f:1) — 考虑添加索引减少全表扫描", ratio))
+	}
+	
+	// 检查是否可能用到覆盖索引
+	if strings.Contains(strings.ToLower(sq.Query), "select") &&
+		strings.Contains(strings.ToLower(sq.Query), "where") {
+		hints = append(hints, "建议使用 EXPLAIN 分析执行计划，检查 type 是否为 ALL")
+	}
+	
+	return hints
+}
+```
+
+### 2. 连接池（带健康检查）
+
+```go
+package dbpool
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"sync"
+	"time"
+)
+
+// ConnectionPool 数据库连接池
+type ConnectionPool struct {
+	db         *sql.DB
+	maxOpen    int
+	maxIdle    int
+	idleTimeout time.Duration
+	maxLifetime time.Duration
+	mu         sync.Mutex
+	stats      PoolStats
+}
+
+type PoolStats struct {
+	TotalConns     int
+	IdleConns      int
+	WaitCount      int64
+	WaitDuration   time.Duration
+	MaxOpenConns   int
+}
+
+func NewConnectionPool(dsn string, maxOpen, maxIdle int) (*ConnectionPool, error) {
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return nil, err
+	}
+	
+	pool := &ConnectionPool{
+		db:          db,
+		maxOpen:     maxOpen,
+		maxIdle:     maxIdle,
+		idleTimeout: 5 * time.Minute,
+		maxLifetime: 10 * time.Minute,
+	}
+	
+	db.SetMaxOpenConns(maxOpen)
+	db.SetMaxIdleConns(maxIdle)
+	db.SetConnMaxLifetime(pool.maxLifetime)
+	db.SetConnMaxIdleTime(pool.idleTimeout)
+	
+	return pool, nil
+}
+
+func (p *ConnectionPool) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+	start := time.Now()
+	rows, err := p.db.QueryContext(ctx, query, args...)
+	
+	p.mu.Lock()
+	p.stats.WaitCount++
+	p.stats.WaitDuration += time.Since(start)
+	p.stats.TotalConns = p.db.Stats().OpenConnections
+	p.stats.IdleConns = p.db.Stats().Idle
+	p.mu.Unlock()
+	
+	return rows, err
+}
+
+func (p *ConnectionPool) Stats() PoolStats {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.stats
+}
+
+// HealthCheck 连接池健康检查
+func (p *ConnectionPool) HealthCheck(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	
+	return p.db.PingContext(ctx)
+}
+```
+
+### 自测题
+
+<details>
+<summary>Q1: 为什么 rows_examined / rows_sent 比率 > 100 就值得警告？</summary>
+
+**答案**：
+
+**含义**：扫描了100行才找到1行需要的数据——说明索引效率极低。
+
+**典型场景**：
+- `SELECT * FROM ads WHERE campaign_id = ?` 但没有 campaign_id 索引
+- 使用函数包裹索引列：`WHERE YEAR(created_at) = 2024`（索引失效）
+- 隐式类型转换：`WHERE phone = 1380000`（phone 是 varchar）
+
+优化方向：加索引、改写查询、用覆盖索引。
+
+</details>
+
+<details>
+<summary>Q2: 连接池的 maxOpen 设多少合适？跟 GOMAXPROCS 有什么关系？</summary>
+
+**答案**：
+
+**公式**：maxOpen = GOMAXPROCS × 2 ~ 4
+
+原因：
+- 每个 goroutine 可能需要一个 DB 连接
+- 但 DB 本身有连接数限制（MySQL default 151）
+- 连接太多 → 上下文切换开销 + DB CPU 压力
+
+广告平台典型配置：GOMAXPROCS=16, maxOpen=32~64。
+
+</details>
+
+<details>
+<summary>Q3: 连接池健康检查为什么用 Ping 而不是 SELECT 1？Ping 检测什么？</summary>
+
+**答案**：
+
+**Ping 检测**：
+1. TCP 连接是否存活
+2. MySQL 服务器是否在线
+3. 认证是否仍然有效
+
+**SELECT 1 的问题**：只检测 SQL 层，不检测网络层。如果 TCP 半关闭（对方发了 RST 但本地还没收到），SELECT 1 可能成功但后续查询失败。
+
+生产环境推荐：定时 Ping + 查询失败时重试。
+
+</details>
