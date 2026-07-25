@@ -464,3 +464,419 @@ WHERE trx_started < NOW() - INTERVAL 1 HOUR;
 -- 2. 优化事务，减少事务持续时间
 -- 3. 增加 undo tablespace 大小
 ```
+
+---
+
+## Go 代码实战：InnoDB Buffer Pool 与 Redo Log 模拟
+
+### 1. Buffer Pool 实现（LRU + Flush List）
+
+```go
+package innodb
+
+import (
+	"sync"
+	"time"
+)
+
+const (
+	PageDefaultSize = 16 * 1024 // 16KB
+	BufferPoolSize  = 1024      // 默认1024页
+)
+
+// Page 内存页
+type Page struct {
+	ID       uint64 // page_id
+	Data     []byte // 页数据（16KB）
+	LSN      uint64 // 最后修改的LSN
+	Dirty    bool   // 脏页标记
+	FlushLST uint64 // flush_list 中的位置
+	LSN      uint64
+	Free     bool
+}
+
+func NewPage(id uint64) *Page {
+	return &Page{
+		ID:   id,
+		Data: make([]byte, PageDefaultSize),
+		Free: true,
+	}
+}
+
+// LRUList 双向链表实现的LRU
+type LRUList struct {
+	head *node
+	tail *node
+	size int
+	mu   sync.Mutex
+}
+
+type node struct {
+	page *Page
+	prev *node
+	next *node
+}
+
+func (l *LRUList) AddToFront(p *Page) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	
+	n := &node{page: p}
+	if l.head == nil {
+		l.head = n
+		l.tail = n
+	} else {
+		n.next = l.head
+		l.head.prev = n
+		l.head = n
+	}
+	l.size++
+}
+
+func (l *LRUList) MoveToFront(n *node) {
+	if n == l.head {
+		return // 已在头部
+	}
+	// 从当前位置移除
+	if n.prev != nil {
+		n.prev.next = n.next
+	}
+	if n.next != nil {
+		n.next.prev = n.prev
+	} else {
+		l.tail = n.prev
+	}
+	// 移到头部
+	n.prev = nil
+	n.next = l.head
+	if l.head != nil {
+		l.head.prev = n
+	}
+	l.head = n
+	if l.tail == nil {
+		l.tail = n
+	}
+}
+
+func (l *LRUList) RemoveLast() *Page {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	
+	if l.tail == nil {
+		return nil
+	}
+	
+	page := l.tail.page
+	l.tail = l.tail.prev
+	if l.tail != nil {
+		l.tail.next = nil
+	} else {
+		l.head = nil
+	}
+	l.size--
+	return page
+}
+
+// BufferPool 缓冲池核心
+type BufferPool struct {
+	pages      map[uint64]*Page // page_id -> page
+	lru        *LRUList
+	flushList  []*Page          // 脏页链表
+	poolSize   int
+	freeList   []*Page
+	mu         sync.Mutex
+}
+
+func NewBufferPool(size int) *BufferPool {
+	pool := &BufferPool{
+		pages:    make(map[uint64]*Page),
+		lru:      &LRUList{},
+		flushList: make([]*Page, 0),
+		poolSize: size,
+		freeList: make([]*Page, 0, size),
+	}
+	
+	// 预分配页面
+	for i := 0; i < size; i++ {
+		pool.freeList = append(pool.freeList, NewPage(uint64(i)))
+	}
+	
+	return pool
+}
+
+// GetPage 获取页面（含换入逻辑）
+func (bp *BufferPool) GetPage(pageID uint64) (*Page, error) {
+	bp.mu.Lock()
+	defer bp.mu.Unlock()
+	
+	// 1. 检查是否在池中
+	if page, ok := bp.pages[pageID]; ok {
+		bp.lru.MoveToFront(&node{page: page})
+		return page, nil
+	}
+	
+	// 2. 池满，淘汰LRU末尾
+	if len(bp.pages) >= bp.poolSize {
+		evicted := bp.lru.RemoveLast()
+		if evicted != nil {
+			delete(bp.pages, evicted.ID)
+			bp.freeList = append(bp.freeList, evicted)
+			
+			// 如果是脏页，加入flush list
+			if evicted.Dirty {
+				bp.flushList = append(bp.flushList, evicted)
+			}
+		}
+	}
+	
+	// 3. 创建新页面或从free list取
+	var page *Page
+	if len(bp.freeList) > 0 {
+		page = bp.freeList[len(bp.freeList)-1]
+		bp.freeList = bp.freeList[:len(bp.freeList)-1]
+	} else {
+		page = NewPage(pageID)
+	}
+	
+	page.ID = pageID
+	page.Free = false
+	bp.pages[pageID] = page
+	bp.lru.AddToFront(page)
+	
+	return page, nil
+}
+
+// MarkDirty 标记脏页
+func (bp *BufferPool) MarkDirty(page *Page) {
+	page.Dirty = true
+	// 加入flush list（如果不在）
+	for _, p := range bp.flushList {
+		if p.ID == page.ID {
+			return
+		}
+	}
+	bp.flushList = append(bp.flushList, page)
+}
+
+// Checkpoint 检查点（刷脏页到磁盘）
+func (bp *BufferPool) Checkpoint(targetLSN uint64) int {
+	bp.mu.Lock()
+	defer bp.mu.Unlock()
+	
+	brushed := 0
+	for _, page := range bp.flushList {
+		if page.LSN >= targetLSN {
+			break
+		}
+		
+		// 写入磁盘（简化）
+		bp.writePageToDisk(page)
+		page.Dirty = false
+		brushed++
+	}
+	
+	// 清理已刷的脏页
+	cleaned := make([]*Page, 0)
+	for _, page := range bp.flushList {
+		if page.Dirty {
+			cleaned = append(cleaned, page)
+		}
+	}
+	bp.flushList = cleaned
+	
+	return brushed
+}
+
+func (bp *BufferPool) writePageToDisk(page *Page) {
+	// 实际实现：syscall.Write(fd, page.Data, page.ID)
+	_ = page
+}
+```
+
+### 2. Redo Log 实现
+
+```go
+package innodb
+
+import (
+	"encoding/binary"
+	"os"
+	"sync"
+)
+
+const (
+	RedoLogSize      = 256 * 1024 * 1024 // 256MB
+	RedoLogBlockSize = 512               // 512字节
+)
+
+// RedoLog 重做日志
+type RedoLog struct {
+	mu        sync.Mutex
+	file      *os.File
+	writePos  uint64 // 当前写入位置
+	checkPoint uint64 // 检查点位置
+	buffer    []byte // 内存缓冲
+	written   uint64 // 已写入字节数
+}
+
+func NewRedoLog(path string) (*RedoLog, error) {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		return nil, err
+	}
+	
+	return &RedoLog{
+		file:   f,
+		buffer: make([]byte, RedoLogBlockSize),
+	}, nil
+}
+
+// WriteRedoLog 写入重做日志
+func (rl *RedoLog) WriteRedoLog(pageID uint64, offset uint32, data []byte) error {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	
+	// 环形缓冲区检查
+	if rl.writePos >= RedoLogSize {
+		rl.writePos = 0 // 回绕
+	}
+	
+	// 构建redo记录
+	rec := &RedoRecord{
+		PageID:  pageID,
+		Offset:  offset,
+		Data:    data,
+		LSN:     rl.written,
+		Checksum: rl.checksum(data),
+	}
+	
+	// 写入内存buffer
+	binary.LittleEndian.PutUint64(rl.buffer[0:8], rec.PageID)
+	binary.LittleEndian.PutUint32(rl.buffer[8:12], rec.Offset)
+	copy(rl.buffer[12:12+len(rec.Data)], rec.Data)
+	
+	// 刷盘策略：writethrough（每次fsync）
+	_, err := rl.file.WriteAt(rl.buffer[0:len(rl.buffer)], int64(rl.writePos))
+	if err != nil {
+		return err
+	}
+	
+	rl.file.Sync() // fsync
+	rl.writePos += RedoLogBlockSize
+	rl.written += uint64(len(rl.buffer))
+	
+	return nil
+}
+
+// RedoRecord 重做记录格式
+type RedoRecord struct {
+	PageID  uint64
+	Offset  uint32
+	Data    []byte
+	LSN     uint64
+	Checksum uint32
+}
+
+func (rl *RedoLog) checksum(data []byte) uint32 {
+	// CRC32校验
+	table := crc32.MakeTable(crc32.IEEE)
+	return crc32.Checksum(data, table)
+}
+
+// Recover 崩溃恢复（Redo + Undo）
+func (rl *RedoLog) Recover(checkpointLSN uint64) ([]*RedoRecord, error) {
+	records := make([]*RedoRecord, 0)
+	
+	// 1. 从checkpointLSN开始扫描redo log
+	pos := checkpointLSN % RedoLogSize
+	for pos < rl.written {
+		rec, err := rl.readRecord(pos)
+		if err != nil {
+			break
+		}
+		records = append(records, rec)
+		pos += RedoLogBlockSize
+	}
+	
+	// 2. 按LSN排序
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].LSN < records[j].LSN
+	})
+	
+	// 3. Redo: 重做已提交事务的修改
+	// 4. Undo: 回滚未提交事务
+	// ... 恢复逻辑
+	
+	return records, nil
+}
+```
+
+### 自测题
+
+<details>
+<summary>Q1: Buffer Pool 的 Dirty Page 什么时候刷盘？WAL机制为什么能提升10-100倍性能？</summary>
+
+**答案**：
+
+**刷盘触发条件**：
+1. **Checkpoint**：当 redo log 快满了（写满75%），强制刷脏页
+2. **空闲页面不足**：需要新页面但 buffer pool 满了
+3. **InnoDB Monitor**：后台线程定期扫描（约1秒间隔）
+4. **Shutdown**：优雅关闭时刷全部脏页
+
+**WAL 性能提升原理**：
+```
+传统方式（随机写）: 磁盘 seek ~10ms/次 → 100 IOPS
+WAL方式（顺序写）: 磁盘顺序写 ~200MB/s → 百万 IOPS
+
+关键：redo log 是顺序追加写，而数据页是随机写。
+把随机写变成顺序写，性能提升100x+
+```
+
+</details>
+
+<details>
+<summary>Q2: Redo Log 的环形缓冲区写满后怎么处理？checkpoint 的作用是什么？</summary>
+
+**答案**：
+
+**流程**：
+```
+write_pos →→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→
+            |                          |
+           旧数据                    新写入
+           
+1. write_pos 到达 RedoLogSize 末尾 → 回绕到 0
+2. 但不能覆盖 checkpoint 位置的数据
+3. checkpoint 推进：刷脏页到磁盘 → 更新 checkpoint_lsn
+4. 如果 write_pos 追上 checkpoint → 阻塞等待
+```
+
+**checkpoint 作用**：标记"这个LSN之前的redo记录可以安全删除"。没有checkpoint，redo log会无限增长。
+
+</details>
+
+<details>
+<summary>Q3: Buffer Pool 的 LRU 改进版（Young-Free List）解决了什么问题？</summary>
+
+**答案**：
+
+**经典 LRU 问题**：全表扫描会污染 LRU 列表——大量新页被放到头部，真正热数据被挤到尾部。
+
+**InnoDB 改进**：
+```
+LRU List 分成三部分：
+┌─────────────────────────────────────────────┐
+│  Young List    │  Free List  │  Old List    │
+│  (最近访问)     │  (新页面)    │  (老页面)     │
+│                                              │
+│  插入位置: Young 头部                        │
+│  旧→新转换: Old → Young → Free → 淘汰       │
+└─────────────────────────────────────────────┘
+
+关键：新页面先放 Free List，访问后才进 Young，
+再访问才进入 Old。Old 中的页面才可能被淘汰。
+全表扫描的页面在 Old 之前就淘汰了。
+```
+
+</details>

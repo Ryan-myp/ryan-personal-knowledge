@@ -499,3 +499,236 @@ class DialogueManager:
 3. 提供快捷方式
 4. 记录对话日志
 ```
+
+---
+
+## 第七部分：Go 生产级实现
+
+### AI 对话系统 — Go 源码
+
+```go
+package main
+
+import (
+	"fmt"
+	"strings"
+	"sync"
+	"time"
+)
+
+// Message represents a conversation message.
+type Message struct {
+	ID        string
+	UserID    string
+	Role      string // "user", "assistant", "system"
+	Content   string
+	Timestamp time.Time
+}
+
+// DialogueState tracks the state of a conversation.
+type DialogueState struct {
+	UserID       string
+	Context      []Message
+	CurrentTurn  int
+	Intent       string
+	Entities     map[string]string
+	SessionStart time.Time
+}
+
+// DialogSystem manages multi-turn conversations.
+type DialogSystem struct {
+	mu          sync.RWMutex
+	sessions    map[string]*DialogueState
+	intentModel IntentClassifier
+	entityExtractor EntityExtractor
+}
+
+type IntentClassifier interface {
+	Classify(text string) (string, float64)
+}
+
+type EntityExtractor interface {
+	Extract(text string) map[string]string
+}
+
+func NewDialogSystem() *DialogSystem {
+	return &DialogSystem{
+		sessions:    make(map[string]*DialogueState),
+		intentModel: &DefaultIntentClassifier{},
+		entityExtractor: &DefaultEntityExtractor{},
+	}
+}
+
+// StartSession creates a new dialogue session.
+func (d *DialogSystem) StartSession(userID string) *DialogueState {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	state := &DialogueState{
+		UserID:       userID,
+		Context:      make([]Message, 0),
+		SessionStart: time.Now(),
+	}
+	d.sessions[userID] = state
+	return state
+}
+
+// ProcessMessage handles a user message and returns assistant response.
+func (d *DialogSystem) ProcessMessage(userID, message string) (*Message, error) {
+	d.mu.Lock()
+	state, exists := d.sessions[userID]
+	if !exists {
+		state = d.StartSession(userID)
+	}
+	d.mu.Unlock()
+
+	// Add user message to context
+	userMsg := Message{
+		ID:        fmt.Sprintf("msg-%d", time.Now().UnixNano()),
+		UserID:    userID,
+		Role:      "user",
+		Content:   message,
+		Timestamp: time.Now(),
+	}
+	state.Context = append(state.Context, userMsg)
+
+	// Classify intent
+	intent, confidence := d.intentModel.Classify(message)
+	state.Intent = intent
+
+	// Extract entities
+	entities := d.entityExtractor.Extract(message)
+	state.Entities = entities
+
+	// Generate response
+	response := d.generateResponse(state, message, intent, entities)
+
+	// Add assistant message to context
+	assistantMsg := Message{
+		ID:        fmt.Sprintf("msg-%d", time.Now().UnixNano()),
+		UserID:    userID,
+		Role:      "assistant",
+		Content:   response,
+		Timestamp: time.Now(),
+	}
+	state.Context = append(state.Context, assistantMsg)
+	state.CurrentTurn++
+
+	return &assistantMsg, nil
+}
+
+func (d *DialogSystem) generateResponse(state *DialogueState, message, intent string, entities map[string]string) string {
+	switch intent {
+	case "query_campaign":
+		return d.handleQueryCampaign(entities)
+	case "optimize_bid":
+		return d.handleOptimizeBid(entities)
+	case "create_campaign":
+		return d.handleCreateCampaign(entities)
+	default:
+		return "I can help with campaign management, bid optimization, and performance analysis."
+	}
+}
+
+func (d *DialogSystem) handleQueryCampaign(entities map[string]string) string {
+	campaignID := entities["campaign_id"]
+	return fmt.Sprintf("Here's the performance data for campaign %s...", campaignID)
+}
+
+func (d *DialogSystem) handleOptimizeBid(entities map[string]string) string {
+	targetCPA := entities["target_cpa"]
+	return fmt.Sprintf("Based on target CPA of $%s, I recommend adjusting bids by...", targetCPA)
+}
+
+func (d *DialogSystem) handleCreateCampaign(entities map[string]string) string {
+	name := entities["campaign_name"]
+	return fmt.Sprintf("Creating campaign '%s' with the specified parameters...", name)
+}
+
+// DefaultIntentClassifier is a simple rule-based intent classifier.
+type DefaultIntentClassifier struct{}
+
+func (c *DefaultIntentClassifier) Classify(text string) (string, float64) {
+	text = strings.ToLower(text)
+
+	patterns := map[string][]string{
+		"query_campaign": {"performance", "stats", "report", "data"},
+		"optimize_bid":   {"bid", "optimize", "adjust", "cpc"},
+		"create_campaign": {"create", "new", "setup", "start"},
+	}
+
+	for intent, keywords := range patterns {
+		for _, keyword := range keywords {
+			if strings.Contains(text, keyword) {
+				return intent, 0.8
+			}
+		}
+	}
+
+	return "unknown", 0.5
+}
+
+// DefaultEntityExtractor extracts key-value entities from text.
+type DefaultEntityExtractor struct{}
+
+func (e *DefaultEntityExtractor) Extract(text string) map[string]string {
+	entities := make(map[string]string)
+	text = strings.ToLower(text)
+
+	// Extract campaign ID
+	if idx := strings.Index(text, "campaign "); idx != -1 {
+		entities["campaign_id"] = text[idx+9:]
+	}
+
+	// Extract CPA value
+	if strings.Contains(text, "cpa $") || strings.Contains(text, "cpa $") {
+		entities["target_cpa"] = "$10" // placeholder
+	}
+
+	return entities
+}
+```
+
+---
+
+## 第八部分：自测题
+
+### 问题 1：为什么 DialogSystem 用 RWMutex 而非 Mutex？
+
+<details>
+<summary>查看答案</summary>
+
+ProcessMessage 是写操作（修改 sessions map），用 Lock。
+但如果有只读操作（如 GetSession），可以用 RLock 并发执行。
+
+当前实现中大部分是写操作，RWMutex 优势不明显。但如果增加查询接口，RWMutex 可以提升并发性能。
+
+</details>
+
+### 问题 2：DefaultIntentClassifier 为什么返回 0.8 作为置信度？
+
+<details>
+<summary>查看答案</summary>
+
+0.8 是经验值，表示规则匹配的确定性：
+- 精确匹配关键词：0.9
+- 模糊匹配：0.7-0.8
+- 无匹配：0.5
+
+实际生产中应该用 ML 模型（如 BERT）获得更准确的置信度。
+
+</details>
+
+### 问题 3：为什么 Context 存储在 DialogueState 中而非单独管理？
+
+<details>
+<summary>查看答案</summary>
+
+Context 是会话状态的核心部分，存储在一起的好处：
+1. **原子性**：会话创建和上下文更新在同一锁保护下
+2. **简化查询**：获取完整对话历史只需一次查找
+3. **内存局部性**：相关数据放在一起，缓存友好
+
+缺点是 Context 可能很大，需要限制长度（通常保留最近 10-20 条消息）。
+
+</details>

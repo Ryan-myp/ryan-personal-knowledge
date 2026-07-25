@@ -126,3 +126,247 @@ DSP 系统架构：
 ### Q3: 广告数据分析的四层？
 
 **A**: 描述性分析、诊断性分析、预测性分析、处方性分析。
+
+---
+
+## Go 代码实战：DSP 核心模块实现
+
+### 竞价引擎并发处理
+
+```go
+package dsp
+
+import (
+	"context"
+	"sync"
+	"time"
+)
+
+// BidRequestHandler 竞价请求处理器
+type BidRequestHandler struct {
+	pool       *WorkerPool
+	index      *MemoryIndex
+	ranker     *RankingEngine
+	budgetMgr  *BudgetManager
+	freqCtrl   *FrequencyController
+}
+
+// MemoryIndex 内存索引（用户→广告映射）
+type MemoryIndex struct {
+	mu          sync.RWMutex
+	userTarget  map[string][]*Ad // user_id -> ads
+	geoTarget   map[string][]*Ad // region_code -> ads
+	interestMap map[string][]*Ad // interest_tag -> ads
+}
+
+func (idx *MemoryIndex) GetCandidateAds(userID string, geo string, interests []string) []*Ad {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	
+	var candidates []*Ad
+	
+	// 1. 用户维度召回
+	if ads, ok := idx.userTarget[userID]; ok {
+		candidates = append(candidates, ads...)
+	}
+	
+	// 2. 地域维度召回
+	if ads, ok := idx.geoTarget[geo]; ok {
+		candidates = idx.mergeCandidates(candidates, ads)
+	}
+	
+	// 3. 兴趣维度召回
+	for _, tag := range interests {
+		if ads, ok := idx.interestMap[tag]; ok {
+			candidates = idx.mergeCandidates(candidates, ads)
+		}
+	}
+	
+	return idx.dedup(candidates)
+}
+
+func (idx *MemoryIndex) mergeCandidates(base, new []*Ad) []*Ad {
+	existing := make(map[string]bool, len(base))
+	for _, ad := range base {
+		existing[ad.ID] = true
+	}
+	for _, ad := range new {
+		if !existing[ad.ID] {
+			base = append(base, ad)
+			existing[ad.ID] = true
+		}
+	}
+	return base
+}
+
+func (idx *MemoryIndex) dedup(ads []*Ad) []*Ad {
+	seen := make(map[string]bool, len(ads))
+	result := make([]*Ad, 0, len(ads))
+	for _, ad := range ads {
+		if !seen[ad.ID] {
+			seen[ad.ID] = true
+			result = append(result, ad)
+		}
+	}
+	return result
+}
+
+// BudgetManager 预算管理器（支持 oCPX）
+type BudgetManager struct {
+	mu       sync.Mutex
+	campaigns map[string]*CampaignBudget
+}
+
+type CampaignBudget struct {
+	ID           string
+	DailyLimit   float64
+	TotalLimit   float64
+	DailySpent   float64
+	TotalSpent   float64
+	oCPXTarget   float64 // oCPA/oCPC 目标转化成本
+	estimatedCVR float64 // 预估CVR用于oCPX出价
+}
+
+func (bm *BudgetManager) CalculateBid(campID string, pCTR, pCVR float64, minCPM float64) float64 {
+	bm.mu.Lock()
+	defer bm.mu.Unlock()
+	
+	cb := bm.campaigns[campID]
+	
+	// oCPX 出价公式: bid = target_cost × pCTR × pCVR
+	if cb.oCPXTarget > 0 {
+		bid := cb.oCPXTarget * pCTR * pCVR
+		return max(bid, minCPM)
+	}
+	
+	// 传统 CPC/CPM 出价
+	return max(pCTR*100, minCPM)
+}
+
+// WorkerPool 工作池（限制并发度）
+type WorkerPool struct {
+	sem chan struct{}
+	wg  sync.WaitGroup
+}
+
+func NewWorkerPool(size int) *WorkerPool {
+	return &WorkerPool{
+		sem: make(chan struct{}, size),
+	}
+}
+
+func (wp *WorkerPool) Submit(ctx context.Context, fn func() error) error {
+	wp.sem <- struct{}{}
+	wp.wg.Add(1)
+	
+	go func() {
+		defer wp.wg.Done()
+		defer func() { <-wp.sem }()
+		_ = fn()
+	}()
+	return nil
+}
+
+// Pipeline 竞价流水线
+func (h *BidRequestHandler) ProcessBid(ctx context.Context, req *BidRequest) (*BidResponse, error) {
+	// Stage 1: 召回候选广告（内存索引，<1ms）
+	candidates := h.index.GetCandidateAds(req.UserID, req.Geo, req.Interests)
+	
+	// Stage 2: 频次控制过滤（内存+布隆过滤器）
+	filtered := make([]*Ad, 0, len(candidates))
+	for _, ad := range candidates {
+		if h.freqCtrl.Check(ad.CampaignID, req.UserID) {
+			filtered = append(filtered, ad)
+		}
+	}
+	
+	// Stage 3: 粗排（特征计算 + 轻量模型，<5ms）
+	type scoredAd struct {
+		ad     *Ad
+		score  float64
+		pCTR   float64
+		pCVR   float64
+	}
+	scored := make([]scoredAd, 0, len(filtered))
+	for _, ad := range filtered {
+		pCTR := h.ranker.PredictCTR(ctx, ad, req)
+		pCVR := h.ranker.PredictCVR(ctx, ad, req)
+		bid := h.budgetMgr.CalculateBid(ad.CampaignID, pCTR, pCVR, ad.MinCPM)
+		if bid >= ad.MinCPM {
+			scored = append(scored, scoredAd{ad, bid, pCTR, pCVR})
+		}
+	}
+	
+	// Stage 4: 精排 + 重排（<10ms）
+	topN := h.ranker.SortAndRerank(scored, req)
+	
+	// Stage 5: 返回最高分
+	if len(topN) == 0 {
+		return nil, nil
+	}
+	
+	return &BidResponse{
+		BidPrice: topN[0].score,
+		Creative: topN[0].ad.Creative,
+	}, nil
+}
+```
+
+### 自测题
+
+<details>
+<summary>Q1: MemoryIndex 的 mergeCandidates 为什么用 map[string]bool 做去重而不是先合并再遍历？</summary>
+
+**答案**：
+
+**时间复杂度对比**：
+| 方法 | 时间复杂度 | 空间复杂度 | 说明 |
+|------|-----------|-----------|------|
+| 先合并再去重 | O(n×m) | O(n+m) | 每次 append 后线性搜索已存在ID |
+| map 边合并在去重 | O(n+m) | O(n+m) | 单次哈希查找 O(1) |
+
+生产环境用 `map[string]bool` 是标准做法。但注意：**预分配容量** `make(map[string]bool, len(base)+len(new))` 可以避免扩容开销。在竞价引擎中，每次纳秒都重要。
+
+</details>
+
+<details>
+<summary>Q2: oCPX 出价公式 `bid = target_cost × pCTR × pCVR` 在 pCVR 极低时会导致什么问题？如何解决？</summary>
+
+**答案**：
+
+**问题**：当 pCVR < 0.001（千分之一）时，出价会趋近于 0，导致广告永远拿不到展示——即使 target_cost=50元，pCTR=0.02，pCVR=0.0001 → bid=0.0001元，低于任何 minCPM。
+
+**解决方案**：
+```go
+// 方案1: 设置出价下限
+bid := max(cb.oCPXTarget*pCTR*pCVR, minCPM)
+
+// 方案2: CVR 平滑（加拉普拉斯平滑）
+smoothCVR := (estimatedConversions + 1) / (estimatedImpressions + 2)
+
+// 方案3: 探索-利用平衡（Bandit算法）
+// 对新广告给予探索机会，不纯依赖 pCVR
+```
+
+实际生产中三种方案组合使用：平滑 + 下限 + 探索。
+
+</details>
+
+<details>
+<summary>Q3: WorkerPool 的 sem channel 方案相比 sync.WaitGroup 有什么优势？什么场景应该用哪个？</summary>
+
+**答案**：
+
+| 特性 | sem channel | sync.WaitGroup |
+|------|-------------|----------------|
+| 并发控制 | ✅ 天然限流 | ❌ 需要额外机制 |
+| 背压 | ✅ channel 满时阻塞 | ❌ 无背压 |
+| 优雅关闭 | ✅ context 取消 | ⚠️ 需配合 channel |
+| 简单等待 | ⚠️ 需 wg.Wait() | ✅ 直接 Wait() |
+
+**选择原则**：
+- **竞价引擎**：必须用 sem channel（限制 goroutine 数防止 OOM）
+- **一次性批处理**：用 WaitGroup（如批量更新预算）
+- **生产级**：sem + WaitGroup 组合使用
+
+</details>

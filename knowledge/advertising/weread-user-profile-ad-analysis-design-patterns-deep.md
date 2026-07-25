@@ -227,3 +227,287 @@ Go 中的行为型模式：
 ### Q3: Go 中最常用的设计模式？
 
 **A**: 工厂模式（创建处理器）、策略模式（竞价策略）、装饰器模式（日志/缓存）。
+
+---
+
+## Go 代码实战：用户画像 + 设计模式
+
+### 1. 用户画像标签系统（策略模式 + 工厂模式）
+
+```go
+package profile
+
+import (
+	"context"
+	"encoding/json"
+	"sync"
+)
+
+// Tag 用户标签
+type Tag struct {
+	Key       string  `json:"key"`
+	Value     string  `json:"value"`
+	Score     float64 `json:"score"`
+	Source    string  `json:"source"` // behavioral, demographic, inferred
+	TTL       int     `json:"ttl"`    // 过期时间(秒)
+}
+
+// UserProfile 用户画像（分层模型）
+type UserProfile struct {
+	UserID      string   `json:"user_id"`
+	Demographic Demographics `json:"demographic"`
+	Interests   []string `json:"interests"`
+	Behaviors   []Behavior `json:"behaviors"`
+	Predictions map[string]float64 `json:"predictions"` // CTR/CVR/ARPU预测
+	UpdatedAt   int64    `json:"updated_at"`
+}
+
+// Demographics 人口统计学特征
+type Demographics struct {
+	Age     int    `json:"age"`
+	Gender  string `json:"gender"`
+	Income  string `json:"income"` // low/mid/high
+	Location string `json:"location"`
+	Education string `json:"education"`
+}
+
+// Behavior 行为事件
+type Behavior struct {
+	Type      string  `json:"type"` // view/click/purchase/share
+	Timestamp int64   `json:"timestamp"`
+	TargetID  string  `json:"target_id"`
+	Metadata  json.RawMessage `json:"metadata"`
+}
+
+// TagExtractor 标签提取器接口（策略模式）
+type TagExtractor interface {
+	Extract(ctx context.Context, userID string) ([]*Tag, error)
+	Name() string
+}
+
+// BehavioralTagExtractor 行为标签提取器
+type BehavioralTagExtractor struct {
+	cache *sync.Map // user_id -> tags
+}
+
+func (e *BehavioralTagExtractor) Extract(ctx context.Context, userID string) ([]*Tag, error) {
+	// 从行为日志中提取兴趣标签
+	// 示例：最近7天浏览最多的3个品类
+	type := "interest_category"
+	score := 0.95
+	return []*Tag{
+		{Key: type, Value: "tech", Score: score, Source: "behavioral"},
+		{Key: type, Value: "finance", Score: score - 0.1, Source: "behavioral"},
+	}, nil
+}
+
+func (e *BehavioralTagExtractor) Name() string { return "behavioral" }
+
+// DemographicTagExtractor 人口统计学标签提取器
+type DemographicTagExtractor struct{}
+
+func (e *DemographicTagExtractor) Extract(ctx context.Context, userID string) ([]*Tag, error) {
+	return []*Tag{
+		{Key: "age_group", Value: "25-34", Score: 0.8, Source: "demographic"},
+		{Key: "gender", Value: "male", Score: 0.9, Source: "demographic"},
+		{Key: "income_level", Value: "high", Score: 0.7, Source: "demographic"},
+	}, nil
+}
+
+func (e *DemographicTagExtractor) Name() string { return "demographic" }
+
+// InferredTagExtractor 推断标签提取器
+type InferredTagExtractor struct{}
+
+func (e *InferredTagExtractor) Extract(ctx context.Context, userID string) ([]*Tag, error) {
+	// 基于协同过滤推断
+	return []*Tag{
+		{Key: "purchase_intent", Value: "high", Score: 0.85, Source: "inferred"},
+		{Key: "churn_risk", Value: "low", Score: 0.92, Source: "inferred"},
+	}, nil
+}
+
+func (e *InferredTagExtractor) Name() string { return "inferred" }
+
+// TagEngine 标签引擎（工厂模式）
+type TagEngine struct {
+	extractors []TagExtractor
+}
+
+func NewTagEngine() *TagEngine {
+	return &TagEngine{
+		extractors: []TagExtractor{
+			&BehavioralTagExtractor{},
+			&DemographicTagExtractor{},
+			&InferredTagExtractor{},
+		},
+	}
+}
+
+func (e *TagEngine) BuildProfile(ctx context.Context, userID string) (*UserProfile, error) {
+	var wg sync.WaitGroup
+	tagCh := make(chan []*Tag, len(e.extractors))
+	
+	for _, ext := range e.extractors {
+		wg.Add(1)
+		go func(extractor TagExtractor) {
+			defer wg.Done()
+			tags, err := extractor.Extract(ctx, userID)
+			if err != nil {
+				return // 忽略单个提取器失败
+			}
+			tagCh <- tags
+		}(ext)
+	}
+	
+	go func() { wg.Wait(); close(tagCh) }()
+	
+	var allTags []*Tag
+	for tags := range tagCh {
+		allTags = append(allTags, tags...)
+	}
+	
+	return e.mergeToProfile(userID, allTags), nil
+}
+```
+
+### 2. 广告推荐装饰器模式
+
+```go
+package ad
+
+// AdDecorator 广告装饰器接口
+type AdDecorator interface {
+	Decorate(ad *Ad, context *BidContext) *Ad
+	Name() string
+}
+
+// FrequencyCapDecorator 频次控制装饰器
+type FrequencyCapDecorator struct {
+	controller *FrequencyController
+}
+
+func (d *FrequencyCapDecorator) Decorate(ad *Ad, ctx *BidContext) *Ad {
+	if !d.controller.ShouldShow(ctx.CampaignID, ctx.UserID) {
+		return nil
+	}
+	return ad
+}
+
+func (d *FrequencyCapDecorator) Name() string { return "frequency_cap" }
+
+// BudgetCheckDecorator 预算检查装饰器
+type BudgetCheckDecorator struct {
+	manager *BudgetManager
+}
+
+func (d *BudgetCheckDecorator) Decorate(ad *Ad, ctx *BidContext) *Ad {
+	if !d.manager.HasBudget(ctx.CampaignID) {
+		return nil
+	}
+	return ad
+}
+
+func (d *BudgetCheckDecorator) Name() string { return "budget_check" }
+
+// BlacklistDecorator 黑名单装饰器
+type BlacklistDecorator struct {
+	blocklist map[string]bool
+}
+
+func (d *BlacklistDecorator) Decorate(ad *Ad, ctx *BidContext) *Ad {
+	if d.blocklist[ctx.UserID] {
+		return nil
+	}
+	return ad
+}
+
+func (d *BlacklistDecorator) Name() string { return "blacklist" }
+
+// AdFilterChain 装饰器链
+type AdFilterChain struct {
+	decorators []AdDecorator
+}
+
+func (c *AdFilterChain) Add(decorator AdDecorator) *AdFilterChain {
+	c.decorators = append(c.decorators, decorator)
+	return c
+}
+
+func (c *AdFilterChain) Filter(ads []*Ad, ctx *BidContext) []*Ad {
+	result := ads
+	for _, dec := range c.decorators {
+		filtered := make([]*Ad, 0, len(result))
+		for _, ad := range result {
+			if decorated := dec.Decorate(ad, ctx); decorated != nil {
+				filtered = append(filtered, decorated)
+			}
+		}
+		result = filtered
+	}
+	return result
+}
+```
+
+### 自测题
+
+<details>
+<summary>Q1: 用户画像的三种标签来源（behavioral/demographic/inferred）在生产环境如何加权？</summary>
+
+**答案**：
+
+**加权公式**：
+```
+final_score = w1 × behavioral_score + w2 × demographic_score + w3 × inferred_score
+
+典型权重：
+- behavioral: 0.5（最实时、最准确）
+- demographic: 0.2（稳定但粗糙）
+- inferred: 0.3（有模型置信度）
+```
+
+**关键决策**：behavioral 权重最高因为：① 用户行为是真实意图 ② 时效性强 ③ 可更新。demographic 权重低因为：① 数据可能过时 ② 群体统计不代表个体。
+
+</details>
+
+<details>
+<summary>Q2: 装饰器模式的 Filter 链为什么用串行而非并行？有什么风险？</summary>
+
+**答案**：
+
+**串行原因**：装饰器之间有依赖关系——必须先做 budget_check，再做 frequency_cap，最后做 blacklist。如果并行执行，budget 耗尽后还做频次检查就是浪费计算资源。
+
+**风险与优化**：
+```go
+// 优化：短路执行
+func (c *AdFilterChain) Filter(ads []*Ad, ctx *BidContext) []*Ad {
+	result := ads
+	for _, dec := range c.decorators {
+		// 如果已经空了，直接返回（短路）
+		if len(result) == 0 {
+			break
+		}
+		// ... 继续过滤
+	}
+	return result
+}
+```
+
+</details>
+
+<details>
+<summary>Q3: TagEngine.BuildProfile 中并发提取标签，如果某个提取器返回错误，为什么选择忽略而不是返回错误？</summary>
+
+**答案**：
+
+**设计决策**：用户画像系统是**容错系统**——部分标签缺失不影响整体可用性。
+
+| 策略 | 优点 | 缺点 | 适用场景 |
+|------|------|------|---------|
+| 忽略单个失败 | 不影响其他标签 | 可能缺少重要维度 | **画像系统** |
+| 返回全部失败 | 保证完整性 | 一个标签缺失导致整个画像不可用 | 金融风控 |
+| 降级方案 | 用缓存兜底 | 增加复杂度 | 生产标准 |
+
+实际生产中会加降级：如果 behavioral 提取器失败，使用上次缓存的标签。
+
+</details>

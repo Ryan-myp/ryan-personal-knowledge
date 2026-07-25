@@ -364,3 +364,303 @@ Extra: Using union(age_idx,city_idx); Using temporary
 4. 避免在索引列上做函数运算
 5. 减少回表（使用覆盖索引）
 6. 分页优化（延迟关联）
+
+---
+
+## Go 代码实战：InnoDB 事务锁模拟与排障
+
+### 1. Next-Key Lock 模拟实现
+
+```go
+package innodb
+
+import (
+	"sync"
+)
+
+// Record 数据行记录
+type Record struct {
+	ID        int64
+	Data      string
+	TXID      uint64 // 最后修改的事务ID
+	DeleteBit bool   // 逻辑删除标记
+}
+
+// LockType 锁类型
+type LockType int
+
+const (
+	LockNone LockType = iota
+	LockRecord    // 记录锁
+	LockGap       // 间隙锁
+	LockNextKey   // 临键锁（记录+间隙）
+	LockIntent    // 意向锁
+)
+
+// RowLock 行级锁
+type RowLock struct {
+	RecordID int64
+	Type     LockType
+	TXID     uint64
+	WaitChan chan struct{} // 等待唤醒的channel
+}
+
+// LockManager 锁管理器（简化版）
+type LockManager struct {
+	mu        sync.Mutex
+	locks     map[int64]*RowLock // 记录锁
+	gapLocks  []GapLock          // 间隙锁
+	waitQueue map[uint64][]*RowLock // TXID -> 等待中的锁
+}
+
+// GapLock 间隙锁
+type GapLock struct {
+	LowerBound int64
+	UpperBound int64
+	TXID       uint64
+}
+
+func NewLockManager() *LockManager {
+	return &LockManager{
+		locks:     make(map[int64]*RowLock),
+		waitQueue: make(map[uint64][]*RowLock),
+	}
+}
+
+// AcquireLock 获取锁（含阻塞等待逻辑）
+func (lm *LockManager) AcquireLock(txid uint64, recordID int64, lockType LockType) error {
+	lm.mu.Lock()
+	defer lm.mu.Unlock()
+	
+	// 检查是否已持有
+	if existing, ok := lm.locks[recordID]; ok && existing.TXID == txid {
+		return nil // 同一事务可升级
+	}
+	
+	// 检查是否有冲突锁
+	if blocker, ok := lm.locks[recordID]; ok && blocker.TXID != txid {
+		// 冲突！加入等待队列
+		lm.waitQueue[txid] = append(lm.waitQueue[txid], &RowLock{
+			RecordID: recordID,
+			Type:     lockType,
+			TXID:     txid,
+			WaitChan: make(chan struct{}),
+		})
+		lm.mu.Unlock()
+		
+		// 阻塞等待
+		<-(&RowLock{WaitChan: make(chan struct{})}.WaitChan)
+		lm.mu.Lock()
+		return nil
+	}
+	
+	// 无冲突，直接加锁
+	lm.locks[recordID] = &RowLock{
+		RecordID: recordID,
+		Type:     lockType,
+		TXID:     txid,
+	}
+	return nil
+}
+
+// ReleaseLocks 释放事务持有的所有锁（commit/rollback时调用）
+func (lm *LockManager) ReleaseLocks(txid uint64) {
+	lm.mu.Lock()
+	defer lm.mu.Unlock()
+	
+	for id, lock := range lm.locks {
+		if lock.TXID == txid {
+			delete(lm.locks, id)
+		}
+	}
+	
+	// 唤醒等待队列中的事务
+	for waitTXID, waits := range lm.waitQueue {
+		if len(waits) > 0 {
+			close(waits[0].WaitChan)
+		}
+	}
+}
+
+// DeadlockDetector 死锁检测（基于等待图DFS）
+type DeadlockDetector struct {
+	waitForGraph map[uint64]uint64 // waiterTXID -> holderTXID
+}
+
+func (d *DeadlockDetector) DetectCycle(waiter, holder uint64) bool {
+	d.waitForGraph[waiter] = holder
+	
+	// DFS 检测环
+	visited := make(map[uint64]bool)
+	current := holder
+	for current != 0 {
+		if visited[current] {
+			return true // 检测到环 → 死锁
+		}
+		visited[current] = true
+		current = d.waitForGraph[current]
+	}
+	return false
+}
+```
+
+### 2. MVCC Read View 实现
+
+```go
+package innodb
+
+import (
+	"fmt"
+	"sort"
+)
+
+// ReadView MVCC读视图
+type ReadView struct {
+	mixTrxID  uint64 // 创建时最小活跃事务ID
+	maxTrxID  uint64 // 创建时最大事务ID+1
+	cursorTrxID uint64 // 当前事务ID
+	trxIDs    []uint64 // 活跃事务ID列表
+}
+
+// CreateReadView 创建读视图（RR隔离级别下只创建一次）
+func CreateReadView(activeTXIDs []uint64, currentTXID uint64) *ReadView {
+	sort.Slice(activeTXIDs, func(i, j int) bool {
+		return activeTXIDs[i] < activeTXIDs[j]
+	})
+	
+	minID := activeTXIDs[0]
+	maxID := activeTXIDs[len(activeTXIDs)-1] + 1
+	
+	return &ReadView{
+		mixTrxID:    minID,
+		maxTrxID:    maxID,
+		cursorTrxID: currentTXID,
+		trxIDs:      activeTXIDs,
+	}
+}
+
+// IsVisible 判断记录对当前读视图是否可见
+func (rv *ReadView) IsVisible(recordTXID uint64, deleteBit bool) bool {
+	// 1. 记录已被当前事务删除 → 不可见
+	if deleteBit {
+		return false
+	}
+	
+	// 2. 记录由当前事务创建 → 可见
+	if recordTXID == rv.cursorTrxID {
+		return true
+	}
+	
+	// 3. 记录在ReadView创建前已提交 → 可见
+	if recordTXID < rv.mixTrxID {
+		return true
+	}
+	
+	// 4. 记录在ReadView创建后才启动 → 不可见
+	if recordTXID >= rv.maxTrxID {
+		return false
+	}
+	
+	// 5. 记录在活跃列表中 → 未提交，不可见
+	for _, txid := range rv.trxIDs {
+		if txid == recordTXID {
+			return false
+		}
+	}
+	
+	return true
+}
+
+// UndoLogVersion 回滚版本链节点
+type UndoLogVersion struct {
+	TXID      uint64
+	PrevPtr   *UndoLogVersion
+	Record    *Record
+	DeleteBit bool
+}
+
+// GetLatestVisible 遍历版本链找到第一个可见的版本
+func GetLatestVisible(head *UndoLogVersion, view *ReadView) (*Record, error) {
+	for v := head; v != nil; v = v.PrevPtr {
+		if view.IsVisible(v.TXID, v.DeleteBit) {
+			if v.DeleteBit {
+				return nil, fmt.Errorf("record deleted")
+			}
+			return v.Record, nil
+		}
+	}
+	return nil, fmt.Errorf("no visible version found")
+}
+```
+
+### 自测题
+
+<details>
+<summary>Q1: 为什么 InnoDB 的 Next-Key Lock 要同时锁记录和间隙？不用 Record Lock 够吗？</summary>
+
+**答案**：
+
+**问题场景**：假设表中有 ID=1,3,5 三行。事务 A `SELECT * FROM t WHERE id=3 FOR UPDATE` 加了记录锁(3)。此时事务 B `INSERT INTO t VALUES (2,...)` — 如果只有记录锁，B 可以插入 2，然后 C `INSERT INTO t VALUES (4,...)` 也可以插入，造成**幻读**。
+
+**Next-Key Lock = Record Lock + Gap Lock**：
+- Record Lock(3)：锁住 ID=3 这行
+- Gap Lock(1,3)：锁住 (1,3) 这个区间，阻止插入 2
+- Gap Lock(3,5)：锁住 (3,5) 这个区间，阻止插入 4
+
+这样 INSERT 2 和 INSERT 4 都会被阻塞，避免幻读。
+
+</details>
+
+<details>
+<summary>Q2: DeadlockDetector 的 DFS 检测死锁在大规模系统中有什么性能问题？如何优化？</summary>
+
+**答案**：
+
+**问题**：
+1. DFS O(V+E) 每次都要遍历整个等待图——V=活跃事务数可能上万
+2. 每次锁请求都触发检测会严重影响吞吐
+
+**优化方案**：
+```go
+// 方案1: 按需检测（推荐）
+// 只在发生超时等待时才触发检测，而非每次加锁
+func (d *DeadlockDetector) detectOnTimeout() {
+    // 等待超时后才构建完整等待图并DFS
+}
+
+// 方案2: 预检测（预防优于检测）
+// 使用拓扑排序提前检测潜在死锁
+// 方案3: 随机回退
+// 让一个事务随机回滚，打破死锁（简单但不够智能）
+
+// 生产环境：方案1 + 方案3 组合
+// 默认不检测（零开销），超时后检测，检测到死锁随机回滚
+```
+
+MySQL InnoDB 实际采用：等待图 + 超时检测 + 回滚最小事务（基于 undo log 大小）。
+
+</details>
+
+<details>
+<summary>Q3: MVCC 的 ReadView 在 RC 和 RR 隔离级别下有什么区别？为什么 RC 有幻读而 RR 没有？</summary>
+
+**答案**：
+
+| 特性 | RC（读已提交） | RR（可重复读） |
+|------|--------------|--------------|
+| ReadView 创建时机 | **每次 SELECT 都创建新视图** | 事务中**第一次 SELECT 创建，之后复用** |
+| 可见性判断 | 每次都重新评估 | 始终用同一个视图 |
+| 幻读 | ✅ 有（新提交的数据对新视图可见） | ❌ 无（旧视图看不到新数据） |
+| 一致性非锁定读 | ✅ | ✅ |
+
+**RC 幻读示例**：
+```
+T1: BEGIN;
+T2: INSERT INTO t VALUES (10); COMMIT;
+T3: SELECT * FROM t;  -- 看到 ID=10（新ReadView）
+T4: SELECT * FROM t;  -- 又看到 ID=10（又一个新ReadView）← 幻读
+```
+
+**RR 无幻读**：T3 和 T4 用同一个 ReadView，T2 的 INSERT 在 ReadView 创建后才提交，所以两次都看不到。
+
+</details>
