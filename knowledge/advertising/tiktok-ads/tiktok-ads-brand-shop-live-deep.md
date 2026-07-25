@@ -755,3 +755,154 @@ TikTok Shop
 # - 直播中监控
 # - 直播后复盘
 ```
+
+---
+
+## 第七部分：Go 生产级实现
+
+### TikTok Shop 广告竞价系统 — Go 源码
+
+```go
+package main
+
+import (
+	"fmt"
+	"math"
+	"sync"
+	"time"
+)
+
+// ShopAd represents a TikTok Shop advertising placement.
+type ShopAd struct {
+	ID            string
+	ProductID     string
+	Category      string
+	BaseBid       float64
+	MaxBid        float64
+	CommissionRate float64
+	Status        string
+}
+
+// LiveStreamAd represents a live streaming ad placement.
+type LiveStreamAd struct {
+	ID           string
+	LivestreamID string
+	HostID       string
+	ViewerCount  int64
+	AvgWatchTime time.Duration
+	BaseBid      float64
+	MaxBid       float64
+}
+
+// ShopBidOptimizer optimizes bids for TikTok Shop ads.
+type ShopBidOptimizer struct {
+	mu       sync.RWMutex
+	shopAds  map[string]*ShopAd
+	liveAds  map[string]*LiveStreamAd
+	history  []BidRecord
+}
+
+type BidRecord struct {
+	Timestamp   time.Time
+	AdType      string
+	AdID        string
+	BidAmount   float64
+	Conversion  bool
+	Revenue     float64
+}
+
+func NewShopBidOptimizer() *ShopBidOptimizer {
+	return &ShopBidOptimizer{
+		shopAds: make(map[string]*ShopAd),
+		liveAds: make(map[string]*LiveStreamAd),
+	}
+}
+
+// OptimizeShopBid calculates optimal bid for a shop product.
+func (o *ShopBidOptimizer) OptimizeShopBid(productID string, targetROAS float64) (float64, error) {
+	o.mu.RLock()
+	ad, exists := o.shopAds[productID]
+	o.mu.RUnlock()
+
+	if !exists {
+		return 0, fmt.Errorf("shop ad %s not found", productID)
+	}
+
+	// ROAS-based bid calculation
+	// bid = avg_order_value * conversion_rate * target_roas
+	avgOrderValue := 25.0 // placeholder
+	conversionRate := 0.03 // 3% typical e-commerce CR
+	bid := avgOrderValue * conversionRate / targetROAS
+
+	// Apply commission rate adjustment
+	bid *= (1 + ad.CommissionRate)
+
+	// Cap at max bid
+	bid = math.Min(bid, ad.MaxBid)
+
+	return math.Round(bid*100) / 100, nil
+}
+
+// OptimizeLiveBid calculates optimal bid for a live stream ad.
+func (o *ShopBidOptimizer) OptimizeLiveBid(liveID string, targetCPA float64) (float64, error) {
+	o.mu.RLock()
+	ad, exists := o.liveAds[liveID]
+	o.mu.RUnlock()
+
+	if !exists {
+		return 0, fmt.Errorf("live ad %s not found", liveID)
+	}
+
+	// Viewer engagement based bid
+	viewerScore := math.Log(float64(ad.ViewerCount)+1) * (ad.AvgWatchTime.Seconds() / 60.0)
+	bid := targetCPA * viewerScore * 0.01
+
+	bid = math.Min(bid, ad.MaxBid)
+	return math.Round(bid*100) / 100, nil
+}
+```
+
+---
+
+## 第八部分：自测题
+
+### 问题 1：ShopBidOptimizer 中为什么用 `avg_order_value * conversion_rate / target_ROAS` 计算出价？
+
+<details>
+<summary>查看答案</summary>
+
+这是 ROAS 优化的标准公式：
+```
+ROAS = Revenue / Ad Spend
+Ad Spend = Revenue / ROAS
+Per-click bid = (AOV * CVR) / TargetROAS
+```
+
+确保每点击成本与预期回报匹配，维持目标 ROAS。
+
+</details>
+
+### 问题 2：LiveStreamAd 的 bid 计算中为什么用对数缩放 viewer count？
+
+<details>
+<summary>查看答案</summary>
+
+观众数量的边际效应递减：
+- 100 → 1000 观众：价值大幅提升
+- 10000 → 10100 观众：价值提升很小
+
+log 缩放准确反映这种非线性关系，避免高观看量导致出价过高。
+
+</details>
+
+### 问题 3：TikTok Shop 和传统电商广告的核心区别是什么？
+
+<details>
+<summary>查看答案</summary>
+
+1. **闭环转化**：TikTok Shop 支持站内直接购买，转化路径更短
+2. **内容驱动**：直播和短视频是主要转化场景
+3. **佣金影响**：平台佣金率直接影响出价策略
+4. **实时性**：直播广告的出价需要实时调整
+
+</details>

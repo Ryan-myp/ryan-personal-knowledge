@@ -399,3 +399,148 @@ TikTok 算法分析
 # - 分析表现
 # - 调整策略
 ```
+
+---
+
+## 第七部分：Go 生产级实现
+
+### TikTok Marketing API Client — Go 源码
+
+```go
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"sync"
+	"time"
+)
+
+// TikTokAPIClient handles TikTok Marketing API interactions.
+type TikTokAPIClient struct {
+	baseURL     string
+	clientID    string
+	clientSecret string
+	authToken   string
+	tokenExpiry time.Time
+	mu          sync.Mutex
+	httpClient  *http.Client
+}
+
+func NewTikTokAPIClient(clientID, clientSecret string) *TikTokAPIClient {
+	return &TikTokAPIClient{
+		baseURL:      "https://api-tk.tiktok.com/openapi/v2",
+		clientID:     clientID,
+		clientSecret: clientSecret,
+		httpClient:   &http.Client{Timeout: 30 * time.Second},
+	}
+}
+
+func (c *TikTokAPIClient) getAuthToken() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.authToken != "" && time.Now().Before(c.tokenExpiry.Add(-5*time.Minute)) {
+		return nil
+	}
+
+	resp, err := c.httpClient.PostForm("https://open-api.tiktok.com/platform/oauth/", map[string][]string{
+		"grant_type":    {"client_credentials"},
+		"client_id":     {c.clientID},
+		"client_secret": {c.clientSecret},
+	})
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	var tokenResp struct {
+		AccessToken string `json:"access_token"`
+		ExpiresIn   int    `json:"expire_seconds"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return err
+	}
+
+	c.authToken = tokenResp.AccessToken
+	c.tokenExpiry = time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
+	return nil
+}
+
+// CreateCampaign creates a new TikTok ad campaign.
+func (c *TikTokAPIClient) CreateCampaign(name, objective string, budget float64) (*Campaign, error) {
+	if err := c.getAuthToken(); err != nil {
+		return nil, err
+	}
+
+	payload := map[string]interface{}{
+		"name":     name,
+		"objective": objective,
+		"daily_budget": budget,
+	}
+	body, _ := json.Marshal(payload)
+
+	req, _ := http.NewRequest("POST", c.baseURL+"/campaign/", nil)
+	req.Header.Set("Authorization", "Bearer "+c.authToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result Campaign
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+type Campaign struct {
+	ID        string  `json:"id"`
+	Name      string  `json:"name"`
+	Objective string  `json:"objective"`
+	Budget    float64 `json:"daily_budget"`
+	Status    string  `json:"status"`
+}
+```
+
+---
+
+## 第八部分：自测题
+
+### 问题 1：TikTok API 和 Google Ads API 在认证方式上有什么主要区别？
+
+<details>
+<summary>查看答案</summary>
+
+TikTok 使用简化的 OAuth2 流程，端点是 `platform/oauth/`，而 Google 使用标准的 `oauth2/v4/token`。TikTok 的 token 有效期通常更短（24小时 vs Google 的 1小时），需要更频繁地刷新。
+
+</details>
+
+### 问题 2：为什么 TikTok API 的 HTTP Client Timeout 也设为 30 秒？
+
+<details>
+<summary>查看答案</summary>
+
+与 Google Ads API 类似，30 秒是合理的默认值。TikTok API 响应通常在 1-3 秒，30 秒可以处理网络波动。对于批量操作可以考虑设置更长的超时。
+
+</details>
+
+### 问题 3：CreateCampaign 中 objective 参数的作用是什么？
+
+<details>
+<summary>查看答案</summary>
+
+objective 参数决定广告优化目标：
+- CONVERSION：转化优化
+- CLICK：点击优化
+- BRAND_AWARENESS：品牌认知
+- APP_PROMOTION：应用推广
+
+不同目标会影响出价策略和竞价方式。
+
+</details>
