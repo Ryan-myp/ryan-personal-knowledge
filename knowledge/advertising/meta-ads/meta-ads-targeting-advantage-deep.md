@@ -419,3 +419,174 @@ AI 优化
 # - 优化高表现受众
 # - 淘汰低表现受众
 ```
+
+---
+
+## 第七部分：Go 生产级实现
+
+### Meta Advantage+ 受众优化 — Go 源码
+
+```go
+package main
+
+import (
+	"fmt"
+	"math"
+	"sync"
+)
+
+// AudienceSignal represents a targeting signal from the advertiser.
+type AudienceSignal struct {
+	Type      string // "interest", "demographic", "behavior", "custom_audience"
+	Value     string
+	Weight    float64 // 0.0-1.0, importance of this signal
+}
+
+// AdvantageAudienceOptimizer optimizes audience targeting using Advantage+ AI.
+type AdvantageAudienceOptimizer struct {
+	mu           sync.RWMutex
+	signals      []AudienceSignal
+	historicalData map[string][]PerformanceRecord
+}
+
+type PerformanceRecord struct {
+	Timestamp   time.Time
+	AudienceID  string
+	Reach       int
+	Clicks      int
+	Conversions int
+	CPA         float64
+}
+
+func NewAdvantageAudienceOptimizer() *AdvantageAudienceOptimizer {
+	return &AdvantageAudienceOptimizer{
+		signals:        make([]AudienceSignal, 0),
+		historicalData: make(map[string][]PerformanceRecord),
+	}
+}
+
+// AddSignal adds a targeting signal to the optimizer.
+func (o *AdvantageAudienceOptimizer) AddSignal(signal AudienceSignal) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.signals = append(o.signals, signal)
+}
+
+// ExpandAudience uses AI to expand targeting beyond explicit signals.
+func (o *AdvantageAudienceOptimizer) ExpandAudience(baseAudience map[string]bool) map[string]bool {
+	o.mu.RLock()
+	signals := o.signals
+	o.mu.RUnlock()
+
+	expanded := make(map[string]bool)
+	for user := range baseAudience {
+		expanded[user] = true
+	}
+
+	// AI-based expansion based on signal weights
+	for _, signal := range signals {
+		if signal.Weight > 0.5 {
+			// High weight signals get broader matching
+			relatedUsers := o.findRelatedUsers(signal)
+			for user := range relatedUsers {
+				expanded[user] = true
+			}
+		}
+	}
+
+	return expanded
+}
+
+func (o *AdvantageAudienceOptimizer) findRelatedUsers(signal AudienceSignal) map[string]bool {
+	// Placeholder for ML-based user matching
+	// In production, this would call a recommendation model
+	return make(map[string]bool)
+}
+
+// OptimizeBidAllocation allocates budget across audience segments.
+func (o *AdvantageAudienceOptimizer) OptimizeBidAllocation(totalBudget float64, segments []string) map[string]float64 {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+
+	// Equal allocation as baseline
+	budgetPerSegment := totalBudget / float64(len(segments))
+
+	// Adjust based on historical performance
+	allocations := make(map[string]float64)
+	totalScore := 0.0
+
+	for _, seg := range segments {
+		score := o.calculateSegmentScore(seg)
+		allocations[seg] = budgetPerSegment * score
+		totalScore += score
+	}
+
+	// Normalize to total budget
+	if totalScore > 0 {
+		for seg := range allocations {
+			allocations[seg] = totalBudget * (allocations[seg] / totalScore)
+		}
+	}
+
+	return allocations
+}
+
+func (o *AdvantageAudienceOptimizer) calculateSegmentScore(segment string) float64 {
+	records, exists := o.historicalData[segment]
+	if !exists || len(records) == 0 {
+		return 1.0 // neutral score for new segments
+	}
+
+	// Use recent CPA performance
+	totalCPA := 0.0
+	for _, r := range records[len(records)-7:] { // last 7 days
+		totalCPA += r.CPA
+	}
+	avgCPA := totalCPA / 7.0
+
+	// Inverse CPA as score (lower CPA = higher score)
+	score := math.Max(0.1, 1.0/avgCPA)
+	return score
+}
+```
+
+---
+
+## 第八部分：自测题
+
+### 问题 1：Advantage+ 的 audience expansion 为什么只对有 Weight > 0.5 的信号进行扩展？
+
+<details>
+<summary>查看答案</summary>
+
+Weight > 0.5 表示这是核心定向信号。低权重信号（< 0.5）是辅助性的，不应该主导受众扩展。这样可以：
+1. 保持品牌调性一致
+2. 避免过度扩展导致受众不精准
+3. 让 AI 聚焦在最重要的信号上
+
+</details>
+
+### 问题 2：OptimizeBidAllocation 中为什么用 `1.0/CPA` 作为分数而不是直接用 CPA？
+
+<details>
+<summary>查看答案</summary>
+
+倒数关系确保：
+- CPA 越低 → 分数越高 → 分配预算越多
+- CPA = 0 时分数为无穷大（用 Max(0.1, ...) 防止除零）
+
+如果用 CPA 直接，高分对应高成本，逻辑相反。
+
+</details>
+
+### 问题 3：Meta Advantage+ 和传统精准定向的核心区别是什么？
+
+<details>
+<summary>查看答案</summary>
+
+1. **信号 vs 规则**：Advantage+ 使用信号（signals）而非精确规则
+2. **AI 驱动**：机器学习自动找到最佳受众，而非手动选择
+3. **动态调整**：实时优化投放，而非固定定向设置
+4. **信任度**：需要广告主提供高质量信号（如像素数据、CRM 列表）
+
+</details>

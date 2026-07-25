@@ -440,3 +440,108 @@ Breakdowns: age, gender, country, region, city, device_platform
 # - 分析表现
 # - 调整策略
 ```
+
+---
+
+## 第七部分：Go 生产级实现
+
+### Meta Marketing API Client — Go 源码
+
+```go
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"sync"
+	"time"
+)
+
+// MetaAPIClient handles Meta Marketing API interactions.
+type MetaAPIClient struct {
+	baseURL     string
+	accessToken string
+	mu          sync.Mutex
+	httpClient  *http.Client
+}
+
+func NewMetaAPIClient(accessToken string) *MetaAPIClient {
+	return &MetaAPIClient{
+		baseURL:     "https://graph.facebook.com/v18.0",
+		accessToken: accessToken,
+		httpClient:  &http.Client{Timeout: 30 * time.Second},
+	}
+}
+
+// CreateAdCampaign creates a new ad campaign via Marketing API.
+func (c *MetaAPIClient) CreateAdCampaign(accountID, name string, objective string) (*Campaign, error) {
+	url := fmt.Sprintf("%s/%s/campaigns", c.baseURL, accountID)
+
+	payload := map[string]interface{}{
+		"name":      name,
+		"objective": objective,
+		"status":    "PAUSED", // start paused for review
+		"access_token": c.accessToken,
+	}
+
+	body, _ := json.Marshal(payload)
+	req, _ := http.NewRequest("POST", url, nil)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result Campaign
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+type Campaign struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Objective string `json:"objective"`
+	Status    string `json:"status"`
+}
+```
+
+---
+
+## 第八部分：自测题
+
+### 问题 1：为什么 Campaign 创建时状态设为 PAUSED 而非 ENABLED？
+
+<details>
+<summary>查看答案</summary>
+
+Meta 广告需要先通过审核才能投放。PAUSED 状态可以：
+1. 避免审核期间产生意外花费
+2. 给运营人员时间检查配置
+3. 审核通过后手动启用
+
+这是最佳实践，尤其对于高预算 Campaign。
+
+</details>
+
+### 问题 2：Meta Marketing API 和 TikTok Ads API 在认证方式上有什么区别？
+
+<details>
+<summary>查看答案</summary>
+
+Meta 使用 access_token（OAuth2 流程获取），TikTok 使用 client_id/client_secret 组合。Meta 的 token 有效期通常为 60 天，TikTok 为 24 小时。
+
+</details>
+
+### 问题 3：为什么 HTTP Client Timeout 设为 30 秒？
+
+<details>
+<summary>查看答案</summary>
+
+Meta Graph API 响应通常在 1-5 秒。30 秒超时可以处理网络波动，同时防止请求挂起过久。对于批量操作可以考虑设置更长的超时。
+
+</details>

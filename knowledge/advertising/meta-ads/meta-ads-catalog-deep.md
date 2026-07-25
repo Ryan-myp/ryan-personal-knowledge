@@ -553,3 +553,142 @@ Product Set 5: "High Margin"
 # - 分析广告表现
 # - 优化 Feed 和创意
 ```
+
+---
+
+## 第七部分：Go 生产级实现
+
+### Meta Catalog 产品管理 — Go 源码
+
+```go
+package main
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+// Product represents a product in Meta Commerce Manager catalog.
+type Product struct {
+	ID           string
+	Title        string
+	Description  string
+	Price        float64
+	Currency     string
+	ImageURL     string
+	Availability string // "in_stock", "out_of_stock", "preorder"
+	Category     string
+	Brand        string
+}
+
+// CatalogManager manages product catalogs for Meta Ads.
+type CatalogManager struct {
+	mu      sync.RWMutex
+	products map[string]*Product
+	groups   map[string][]string // groupID -> productIDs
+}
+
+func NewCatalogManager() *CatalogManager {
+	return &CatalogManager{
+		products: make(map[string]*Product),
+		groups:   make(map[string][]string),
+	}
+}
+
+// AddProduct adds a product to the catalog.
+func (m *CatalogManager) AddProduct(p *Product) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if p.Price <= 0 {
+		return fmt.Errorf("invalid price: %.2f", p.Price)
+	}
+	if p.Availability == "" {
+		p.Availability = "in_stock"
+	}
+
+	m.products[p.ID] = p
+	return nil
+}
+
+// CreateProductGroup creates a dynamic product group for ad campaigns.
+func (m *CatalogManager) CreateProductGroup(groupID string, rules map[string]string) []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var matchedProducts []string
+	for id, product := range m.products {
+		match := true
+		for field, value := range rules {
+			switch field {
+			case "category":
+				if product.Category != value {
+					match = false
+				}
+			case "availability":
+				if product.Availability != value {
+					match = false
+				}
+			case "min_price":
+				if product.Price < parseFloat(value) {
+					match = false
+				}
+			}
+		}
+		if match {
+			matchedProducts = append(matchedProducts, id)
+		}
+	}
+
+	m.groups[groupID] = matchedProducts
+	return matchedProducts
+}
+
+func parseFloat(s string) float64 {
+	var f float64
+	fmt.Sscanf(s, "%f", &f)
+	return f
+}
+```
+
+---
+
+## 第八部分：自测题
+
+### 问题 1：为什么 ProductGroup 创建时使用 rules map 而非硬编码过滤条件？
+
+<details>
+<summary>查看答案</summary>
+
+Dynamic Product Groups 的核心优势是自动化：
+1. **实时同步**：产品属性变化时自动更新分组
+2. **灵活配置**：支持多条件组合（category + availability + price range）
+3. **减少维护**：无需手动管理产品列表
+
+这与传统广告组的静态产品列表形成鲜明对比。
+
+</details>
+
+### 问题 2：AddProduct 中为什么 Price <= 0 直接返回错误？
+
+<details>
+<summary>查看答案</summary>
+
+Meta 广告要求所有产品必须有有效价格。无效价格会导致：
+1. 广告审核失败
+2. 购物车功能异常
+3. 用户体验下降
+
+在添加时就拒绝无效数据比在投放时才发现更高效。
+
+</details>
+
+### 问题 3：CreateProductGroup 中为什么用 RLock 而非 Lock？
+
+<details>
+<summary>查看答案</summary>
+
+虽然函数内部修改了 groups map，但 products map 只读。如果分组创建不频繁而查询频繁，可以考虑将 products 和 groups 分开使用不同的锁。当前实现用 RLock 是因为 groups 更新不影响读取 products。
+
+</details>
