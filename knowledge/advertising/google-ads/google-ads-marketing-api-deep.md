@@ -407,3 +407,109 @@ for row in response:
 # - 分析性能数据
 # - 优化投放策略
 ```
+
+---
+
+## 第七部分：Go 生产级实现
+
+### Google Ads Marketing API Client — Go 源码
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"sync"
+	"time"
+)
+
+// GoogleAdsAPIClient handles authentication and request management.
+type GoogleAdsAPIClient struct {
+	baseURL     string
+	authToken   string
+	tokenExpiry time.Time
+	mu          sync.Mutex
+	httpClient  *http.Client
+}
+
+func NewGoogleAdsAPIClient(clientID, clientSecret string) *GoogleAdsAPIClient {
+	return &GoogleAdsAPIClient{
+		baseURL:    "https://googleads.googleapis.com/v16",
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+	}
+}
+
+func (c *GoogleAdsAPIClient) getAuthToken() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.authToken != "" && time.Now().Before(c.tokenExpiry.Add(-5*time.Minute)) {
+		return nil
+	}
+
+	resp, err := c.httpClient.PostForm("https://www.googleapis.com/oauth2/v4/token", map[string][]string{
+		"grant_type":    {"client_credentials"},
+		"client_id":     {os.Getenv("GOOGLE_CLIENT_ID")},
+		"client_secret": {os.Getenv("GOOGLE_CLIENT_SECRET")},
+	})
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	var tokenResp struct {
+		AccessToken string `json:"access_token"`
+		ExpiresIn   int    `json:"expires_in"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return err
+	}
+
+	c.authToken = tokenResp.AccessToken
+	c.tokenExpiry = time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
+	return nil
+}
+```
+
+---
+
+## 第八部分：自测题
+
+### 问题 1：OAuth2 token 缓存中为什么用 `sync.Mutex` 而非 `sync.RWMutex`？
+
+<details>
+<summary>查看答案</summary>
+
+getAuthToken 是写操作（更新 authToken 和 tokenExpiry），必须用排他锁。虽然读取可以并发，但在这个场景中：
+1. 调用频率低（token 有效期通常 1 小时）
+2. 写操作需要保护共享状态
+3. RWMutex 的复杂性不值得
+
+如果读操作也频繁且需要保护，可以考虑读写锁，但这里 mutex 足够。
+
+</details>
+
+### 问题 2：为什么 token 提前 5 分钟过期而不是等到真正过期？
+
+<details>
+<summary>查看答案</summary>
+
+时钟漂移和网络延迟可能导致 token 在理论上未过期但实际上已失效。提前 5 分钟过期提供了安全缓冲，避免在边界情况下使用即将过期的 token 导致请求失败。
+
+</details>
+
+### 问题 3：HTTP Client Timeout 设为 30 秒是否合理？
+
+<details>
+<summary>查看答案</summary>
+
+30 秒是合理的默认值：
+- Google Ads API 响应通常在 1-5 秒
+- 30 秒可以处理网络波动
+- 超过 30 秒的请求通常有问题，应该超时重试
+
+对于批量操作（如 BatchUpdateBids），可以考虑设置更长的超时（如 60 秒）。
+
+</details>

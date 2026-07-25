@@ -273,3 +273,257 @@ Step 3: 重新分配
 # - 调整地域出价
 # - 设置时段出价
 ```
+
+---
+
+## 第七部分：Go 生产级实现
+
+### Google Ads 智能出价优化器 — Go 源码
+
+```go
+package main
+
+import (
+	"fmt"
+	"math"
+	"sync"
+	"time"
+)
+
+// BidStrategy represents a Google Ads bidding strategy.
+type BidStrategy int
+
+const (
+	ManualCPC BidStrategy = iota
+	TargetCPA
+	TargetROAS
+	MaxConversions
+	EnhancedCPM
+)
+
+func (s BidStrategy) String() string {
+	return []string{"manual_cpc", "target_cpa", "target_roas", "max_conversions", "enhanced_cpm"}[s]
+}
+
+// AdGroup represents a Google Ads ad group.
+type AdGroup struct {
+	ID              string
+	Name            string
+	BidStrategy     BidStrategy
+	MaxCPC          float64
+	TargetCPA       float64
+	TargetROAS      float64
+	Status          string // "enabled", "paused", "removed"
+	DailyBudget     float64
+}
+
+// PerformanceMetrics tracks real-time performance data.
+type PerformanceMetrics struct {
+	Impressions  int
+	Clicks       int
+	Conversions  int
+	Cost         float64
+	Revenue      float64
+	AvgPosition  float64
+	CTR          float64
+	ConversionRate float64
+}
+
+// SmartBidOptimizer adjusts bids based on performance data.
+type SmartBidOptimizer struct {
+	mu          sync.RWMutex
+	adGroups    map[string]*AdGroup
+	metrics     map[string]*PerformanceMetrics
+	history     map[string][]BidAdjustment
+	learningRate float64
+}
+
+// BidAdjustment records a bid change for learning.
+type BidAdjustment struct {
+	Timestamp time.Time
+	OldBid    float64
+	NewBid    float64
+	Reason    string
+	Outcome   float64 // actual impact on conversions
+}
+
+// NewSmartBidOptimizer creates a new optimizer instance.
+func NewSmartBidOptimizer() *SmartBidOptimizer {
+	return &SmartBidOptimizer{
+		adGroups:     make(map[string]*AdGroup),
+		metrics:      make(map[string]*PerformanceMetrics),
+		history:      make(map[string][]BidAdjustment),
+		learningRate: 0.1,
+	}
+}
+
+// UpdateMetrics updates the performance metrics for an ad group.
+func (o *SmartBidOptimizer) UpdateMetrics(agID string, m *PerformanceMetrics) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.metrics[agID] = m
+}
+
+// CalculateOptimalBid determines the optimal CPC for an ad group.
+func (o *SmartBidOptimizer) CalculateOptimalBid(agID string) (float64, error) {
+	o.mu.RLock()
+	ag, exists := o.adGroups[agID]
+	metrics, hasMetrics := o.metrics[agID]
+	o.mu.RUnlock()
+
+	if !exists {
+		return 0, fmt.Errorf("ad group %s not found", agID)
+	}
+
+	var bid float64
+	switch ag.BidStrategy {
+	case TargetCPA:
+		bid = o.calculateTargetCPABid(ag, metrics)
+	case TargetROAS:
+		bid = o.calculateTargetROASBid(ag, metrics)
+	case MaxConversions:
+		bid = o.calculateMaxConversionsBid(ag, metrics)
+	case EnhancedCPM:
+		bid = o.calculateECPMBid(ag, metrics)
+	default:
+		bid = ag.MaxCPC
+	}
+
+	// Apply learning rate for gradual adjustments
+	o.mu.RLock()
+	history := o.history[agID]
+	o.mu.RUnlock()
+
+	if len(history) > 0 {
+		lastAdj := history[len(history)-1]
+		delta := bid - lastAdj.NewBid
+		bid = lastAdj.NewBid + delta*o.learningRate
+	}
+
+	return math.Round(bid*100) / 100, nil
+}
+
+func (o *SmartBidOptimizer) calculateTargetCPABid(ag *AdGroup, m *PerformanceMetrics) float64 {
+	if m.ConversionRate == 0 || m.Conversions == 0 {
+		return ag.TargetCPA * 0.5 // conservative start
+	}
+	// bid = target_CPA * conversion_rate * position_factor
+	positionFactor := 1.0
+	if m.AvgPosition < 2.0 {
+		positionFactor = 1.2 // boost for top positions
+	} else if m.AvgPosition > 4.0 {
+		positionFactor = 0.8 // reduce for lower positions
+	}
+	return ag.TargetCPA * m.ConversionRate * positionFactor
+}
+
+func (o *SmartBidOptimizer) calculateTargetROASBid(ag *AdGroup, m *PerformanceMetrics) float64 {
+	if m.Revenue == 0 || m.Conversions == 0 {
+		return ag.MaxCPC * 0.5
+	}
+	actualROAS := m.Revenue / m.Cost
+	targetRatio := ag.TargetROAS / actualROAS
+	// If actual ROAS < target, reduce bids; otherwise increase
+	bid := ag.MaxCPC * math.Min(1.5, math.Max(0.5, targetRatio))
+	return bid
+}
+
+func (o *SmartBidOptimizer) calculateMaxConversionsBid(ag *AdGroup, m *PerformanceMetrics) float64 {
+	// Bid up to budget limit to maximize conversions
+	dailyBudget := ag.DailyBudget
+	clicksPerDay := int(dailyBudget / math.Max(m.Cost/float64(m.Clicks), 0.01))
+	estimatedConv := clicksPerDay * m.ConversionRate
+
+	if estimatedConv > 0 {
+		return dailyBudget / float64(clicksPerDay)
+	}
+	return ag.MaxCPC * 0.8
+}
+
+func (o *SmartBidOptimizer) calculateECMPBid(ag *AdGroup, m *PerformanceMetrics) float64 {
+	// eCPM = CPC * CTR * 1000
+	ecpm := ag.MaxCPC * m.CTR * 1000
+	return ecpm / 1000 // convert back to effective CPC
+}
+
+// RecordAdjustment logs a bid adjustment for learning.
+func (o *SmartBidOptimizer) RecordAdjustment(agID string, adj BidAdjustment) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.history[agID] = append(o.history[agID], adj)
+	// Keep only last 30 days of history
+	cutoff := time.Now().Add(-30 * 24 * time.Hour)
+	i := 0
+	for _, h := range o.history[agID] {
+		if h.Timestamp.After(cutoff) {
+			o.history[agID][i] = h
+			i++
+		}
+	}
+	o.history[agID] = o.history[agID][:i]
+}
+```
+
+---
+
+## 第八部分：自测题
+
+### 问题 1：SmartBidOptimizer 中为什么用 learningRate 做渐进调整而不是直接应用新出价？
+
+<details>
+<summary>查看答案</summary>
+
+Google Ads 算法本身对出价突变非常敏感，直接大幅调整会导致：
+1. **学习期重置**：Google 需要重新收集数据，效果波动大
+2. **预算消耗过快**：出价突然提高可能导致预算在几小时内耗尽
+3. **质量分下降**：频繁调整可能影响广告质量评分
+
+使用 learningRate（通常 0.1-0.2）可以：
+- 每次调整不超过上次的 10%，平滑过渡
+- 给 Google 算法足够的学习时间
+- 降低 A/B 测试的噪声
+
+</details>
+
+### 问题 2：TargetROAS 策略中 `actualROAS/targetRatio` 的计算为什么用 `math.Min(1.5, math.Max(0.5, ...))` 限制范围？
+
+<details>
+<summary>查看答案</summary>
+
+这个限制防止出价极端波动：
+
+```
+ratio = targetROAS / actualROAS
+如果 ratio > 1.5：出价最多增加 50%
+如果 ratio < 0.5：出价最多减少 50%
+```
+
+原因：
+1. **避免过度反应**：短期 ROAS 波动可能是噪声，不是趋势
+2. **防止预算耗尽**：出价翻倍可能导致预算几分钟内花完
+3. **保持竞争力**：出价减半可能导致完全失去展示
+
+实际生产中可以使用更精细的控制：
+```go
+bidChange := math.Log(targetRatio) * 0.5  // 对数缩放，变化更平滑
+```
+
+</details>
+
+### 问题 3：RecordAdjustment 中为什么只保留 30 天的历史记录？
+
+<details>
+<summary>查看答案</summary>
+
+30 天是广告优化的黄金窗口：
+1. **数据相关性**：超过 30 天的数据可能因季节性、市场变化而失去参考价值
+2. **内存管理**：历史数据随时间线性增长，需要定期清理
+3. **学习周期**：Google Ads 智能出价的学习周期通常为 7-14 天，30 天足够覆盖多个学习周期
+
+如果业务有长周期特征（如年度促销），可以扩展为：
+```go
+cutoff := time.Now().Add(-90 * 24 * time.Hour) // 90天
+```
+但需要同时增加内存容量和计算开销。
+
+</details>

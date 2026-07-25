@@ -273,3 +273,224 @@ POST /displayvideo/v2/advertisers/{advertiser_id}/lineItems/{line_item_id}/conve
 # - 分析表现
 # - 调整策略
 ```
+
+---
+
+## 第七部分：Go 生产级实现
+
+### DV360 Marketing API Client — Go 源码
+
+```go
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+)
+
+// DV360Client is a production-grade client for DV360 Marketing API.
+type DV360Client struct {
+	baseURL    string
+	client     *http.Client
+	authToken  string
+	tokenExpiry time.Time
+	retryCount int
+}
+
+// NewDV360Client creates a new DV360 API client.
+func NewDV360Client(clientID, clientSecret string) *DV360Client {
+	return &DV360Client{
+		baseURL: "https://api.dev.verve.com",
+		client: &http.Client{
+			Timeout: 30 * time.Second,
+		},
+		authToken:  "",
+		tokenExpiry: time.Time{},
+		retryCount: 3,
+	}
+}
+
+// GetAuthToken retrieves and caches the OAuth2 token.
+func (c *DV360Client) GetAuthToken() (string, error) {
+	if c.authToken != "" && time.Now().Before(c.tokenExpiry.Add(-5*time.Minute)) {
+		return c.authToken, nil
+	}
+
+	resp, err := c.client.PostForm(c.baseURL+"/oauth/token", map[string][]string{
+		"grant_type":    {"client_credentials"},
+		"client_id":     {os.Getenv("DV360_CLIENT_ID")},
+		"client_secret": {os.Getenv("DV360_CLIENT_SECRET")},
+	})
+	if err != nil {
+		return "", fmt.Errorf("token request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var tokenResp struct {
+		AccessToken  string `json:"access_token"`
+		ExpiresIn    int    `json:"expires_in"`
+		TokenType    string `json:"token_type"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return "", fmt.Errorf("decode token response: %w", err)
+	}
+
+	c.authToken = tokenResp.AccessToken
+	c.tokenExpiry = time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
+	return c.authToken, nil
+}
+
+// Campaign represents a DV360 campaign.
+type Campaign struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Status      string    `json:"status"`
+	Budget      float64   `json:"budget"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// ListCampaigns fetches campaigns with pagination support.
+func (c *DV360Client) ListCampaigns(pageSize int, pageToken string) ([]Campaign, string, error) {
+	url := fmt.Sprintf("%s/v1/campaigns?pageSize=%d", c.baseURL, pageSize)
+	if pageToken != "" {
+		url += "&pageToken=" + pageToken
+	}
+
+	var campaigns []Campaign
+	var nextPageToken string
+
+	for attempts := 0; attempts <= c.retryCount; attempts++ {
+		token, err := c.GetAuthToken()
+		if err != nil {
+			return nil, "", err
+		}
+
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return nil, "", err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+
+		resp, err := c.client.Do(req)
+		if err != nil {
+			if attempts < c.retryCount {
+				time.Sleep(time.Duration(attempts+1) * time.Second)
+				continue
+			}
+			return nil, "", err
+		}
+
+		var result struct {
+			Campaigns     []Campaign `json:"campaigns"`
+			NextPageToken string     `json:"next_page_token"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return nil, "", err
+		}
+		resp.Body.Close()
+
+		campaigns = append(campaigns, result.Campaigns...)
+		nextPageToken = result.NextPageToken
+		break
+	}
+
+	return campaigns, nextPageToken, nil
+}
+
+// CreateCampaign creates a new campaign in DV360.
+func (c *DV360Client) CreateCampaign(name, status string, budget float64) (*Campaign, error) {
+	token, err := c.GetAuthToken()
+	if err != nil {
+		return nil, err
+	}
+
+	payload := map[string]interface{}{
+		"name":    name,
+		"status":  status,
+		"budget":  budget,
+	}
+	body, _ := json.Marshal(payload)
+
+	req, err := http.NewRequest("POST", c.baseURL+"/v1/campaigns", strings.NewReader(string(body)))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var campaign Campaign
+	if err := json.NewDecoder(resp.Body).Decode(&campaign); err != nil {
+		return nil, err
+	}
+	return &campaign, nil
+}
+```
+
+---
+
+## 第八部分：自测题
+
+### 问题 1：DV360 API 客户端中，为什么 token 缓存设置了 5 分钟的提前过期时间（`tokenExpiry.Add(-5*time.Minute)`）？
+
+<details>
+<summary>查看答案</summary>
+
+OAuth2 token 的有效期由 `expires_in` 字段决定。提前 5 分钟过期的原因是：
+1. **时钟漂移**：客户端和服务器时间可能有几秒到几分钟的差异
+2. **网络延迟**：API 请求处理时间可能接近 token 过期边界
+3. **并发安全**：多个 goroutine 同时检查 token 时，避免竞态条件导致重复刷新
+
+如果不设置提前过期，在 token 即将过期的瞬间发起的请求可能返回 401 Unauthorized。
+
+</details>
+
+### 问题 2：ListCampaigns 中的重试逻辑为什么用指数退避（`time.Duration(attempts+1) * time.Second`）？
+
+<details>
+<summary>查看答案</summary>
+
+指数退避的核心原因：
+1. **避免雪崩**：API 故障时大量请求同时重试会加剧服务器压力
+2. **给恢复留时间**：第一次失败后等 1 秒，第二次等 2 秒，第三次等 3 秒
+3. **幂等性保证**：GET 请求是幂等的，重试不会造成副作用
+
+如果 API 返回 HTTP 429（Too Many Requests），应该优先检查 Retry-After 头而非盲目重试。
+
+</details>
+
+### 问题 3：CreateCampaign 中使用 `map[string]interface{}` 作为 payload 而不是结构体，有什么优缺点？
+
+<details>
+<summary>查看答案</summary>
+
+优点：
+1. **灵活性**：可以动态添加可选字段（如 targeting、schedule）
+2. **快速原型**：API 字段变化时无需修改结构体定义
+
+缺点：
+1. **类型不安全**：编译期无法检查字段名拼写错误
+2. **缺少文档**：IDE 无法提供自动补全
+3. **序列化开销**：需要额外处理零值字段
+
+生产环境建议使用结构体 + JSON tag，可选字段用指针类型：
+
+```go
+type CreateCampaignRequest struct {
+	Name     string   `json:"name"`
+	Status   string   `json:"status"`
+	Budget   *float64 `json:"budget,omitempty"` // 可选字段
+}
+```
+
+</details>

@@ -184,3 +184,259 @@
 # - 调整预算分配
 # - 更新创意
 ```
+
+---
+
+## 第七部分：Go 生产级实现
+
+### 归因模型引擎 — Go 源码
+
+```go
+package main
+
+import (
+	"fmt"
+	"math"
+	"sort"
+	"sync"
+	"time"
+)
+
+// Touchpoint represents a user interaction with an ad.
+type Touchpoint struct {
+	ID         string
+	CampaignID string
+	Timestamp  time.Time
+	Channel    string // "search", "display", "video", "social"
+	Value      float64 // estimated conversion value
+}
+
+// AttributionResult holds the attribution output for a conversion.
+type AttributionResult struct {
+	Touchpoints []Touchpoint
+	Scores      map[string]float64 // campaignID -> attributed value
+	Model       string             // "last_click", "first_click", "linear", "time_decay", "position_based"
+}
+
+// AttributionEngine calculates conversion attribution across touchpoints.
+type AttributionEngine struct {
+	mu        sync.RWMutex
+	models    map[string]AttributionModel
+	history   []ConversionEvent
+}
+
+// ConversionEvent records a completed conversion with its touchpoints.
+type ConversionEvent struct {
+	UserID      string
+	Touchpoints []Touchpoint
+	ConvertedAt time.Time
+	ConversionValue float64
+}
+
+// AttributionModel defines the interface for attribution models.
+type AttributionModel interface {
+	Name() string
+	Attribute(touchpoints []Touchpoint, conversionValue float64) map[string]float64
+}
+
+// LastClickModel attributes 100% to the last touchpoint before conversion.
+type LastClickModel struct{}
+
+func (m *LastClickModel) Name() string { return "last_click" }
+
+func (m *LastClickModel) Attribute(touchpoints []Touchpoint, conversionValue float64) map[string]float64 {
+	result := make(map[string]float64)
+	if len(touchpoints) == 0 {
+		return result
+	}
+	// Sort by timestamp, last one gets full credit
+	sort.Slice(touchpoints, func(i, j int) bool {
+		return touchpoints[i].Timestamp.After(touchpoints[j].Timestamp)
+	})
+	result[touchpoints[0].CampaignID] = conversionValue
+	return result
+}
+
+// FirstClickModel attributes 100% to the first touchpoint.
+type FirstClickModel struct{}
+
+func (m *FirstClickModel) Name() string { return "first_click" }
+
+func (m *FirstClickModel) Attribute(touchpoints []Touchpoint, conversionValue float64) map[string]float64 {
+	result := make(map[string]float64)
+	if len(touchpoints) == 0 {
+		return result
+	}
+	sort.Slice(touchpoints, func(i, j int) bool {
+		return touchpoints[i].Timestamp.Before(touchpoints[j].Timestamp)
+	})
+	result[touchpoints[0].CampaignID] = conversionValue
+	return result
+}
+
+// LinearModel distributes credit equally across all touchpoints.
+type LinearModel struct{}
+
+func (m *LinearModel) Name() string { return "linear" }
+
+func (m *LinearModel) Attribute(touchpoints []Touchpoint, conversionValue float64) map[string]float64 {
+	result := make(map[string]float64)
+	if len(touchpoints) == 0 {
+		return result
+	}
+	credit := conversionValue / float64(len(touchpoints))
+	for _, tp := range touchpoints {
+		result[tp.CampaignID] += credit
+	}
+	return result
+}
+
+// TimeDecayModel gives more credit to touchpoints closer to conversion.
+type TimeDecayModel struct {
+	HalfLife time.Duration // conversion value halves every half-life period
+}
+
+func (m *TimeDecayModel) Name() string { return "time_decay" }
+
+func (m *TimeDecayModel) Attribute(touchpoints []Touchpoint, conversionValue float64) map[string]float64 {
+	result := make(map[string]float64)
+	if len(touchpoints) == 0 {
+		return result
+	}
+
+	// Calculate weights based on time decay
+	now := touchpoints[len(touchpoints)-1].Timestamp // assume sorted
+	var totalWeight float64
+	weights := make([]float64, len(touchpoints))
+
+	for i, tp := range touchpoints {
+		delta := now.Sub(tp.Timestamp).Hours()
+		weight := math.Pow(0.5, delta/m.HalfLife.Hours())
+		weights[i] = weight
+		totalWeight += weight
+	}
+
+	// Normalize and assign credit
+	for i, tp := range touchpoints {
+		result[tp.CampaignID] += conversionValue * (weights[i] / totalWeight)
+	}
+	return result
+}
+
+// PositionBasedModel gives 40% to first, 40% to last, 20% distributed among middle.
+type PositionBasedModel struct{}
+
+func (m *PositionBasedModel) Name() string { return "position_based" }
+
+func (m *PositionBasedModel) Attribute(touchpoints []Touchpoint, conversionValue float64) map[string]float64 {
+	result := make(map[string]float64)
+	if len(touchpoints) == 0 {
+		return result
+	}
+
+	first := touchpoints[0]
+	last := touchpoints[len(touchpoints)-1]
+	result[first.CampaignID] += conversionValue * 0.4
+	result[last.CampaignID] += conversionValue * 0.4
+
+	// Distribute remaining 20% among middle touchpoints
+	middleCount := len(touchpoints) - 2
+	if middleCount > 0 {
+		middleCredit := conversionValue * 0.2 / float64(middleCount)
+		for i := 1; i < len(touchpoints)-1; i++ {
+			result[touchpoints[i].CampaignID] += middleCredit
+		}
+	} else if len(touchpoints) == 1 {
+		result[touchpoints[0].CampaignID] = conversionValue
+	}
+
+	return result
+}
+
+// NewAttributionEngine creates a new attribution engine with all models.
+func NewAttributionEngine() *AttributionEngine {
+	return &AttributionEngine{
+		models: map[string]AttributionModel{
+			"last_click":      &LastClickModel{},
+			"first_click":     &FirstClickModel{},
+			"linear":          &LinearModel{},
+			"time_decay":      &TimeDecayModel{HalfLife: 1 * time.Hour},
+			"position_based":  &PositionBasedModel{},
+		},
+		history: make([]ConversionEvent, 0),
+	}
+}
+
+// Attribute converts a conversion event using the specified model.
+func (e *AttributionEngine) Attribute(event ConversionEvent, modelName string) (*AttributionResult, error) {
+	e.mu.RLock()
+	model, exists := e.models[modelName]
+	e.mu.RUnlock()
+
+	if !exists {
+		return nil, fmt.Errorf("unknown attribution model: %s", modelName)
+	}
+
+	scores := model.Attribute(event.Touchpoints, event.ConversionValue)
+	return &AttributionResult{
+		Touchpoints: event.Touchpoints,
+		Scores:      scores,
+		Model:       modelName,
+	}, nil
+}
+```
+
+---
+
+## 第八部分：自测题
+
+### 问题 1：时间衰减模型中为什么用 `math.Pow(0.5, delta/halfLife)` 而不是指数函数 `math.Exp`？
+
+<details>
+<summary>查看答案</summary>
+
+两者数学等价但语义不同：
+- `math.Pow(0.5, t)` 直接表达"每经过一个半衰期，权重减半"的直观概念
+- `math.Exp(-lambda*t)` 需要计算 lambda = ln(2)/halfLife，不够直观
+
+生产环境中推荐使用 `math.Pow(0.5, ...)` 因为：
+1. **可读性**：业务人员能理解"半衰期"概念
+2. **可调性**：修改 halfLife 参数即可调整衰减速率
+3. **数值稳定性**：对于长时间跨度的衰减，Pow 比 Exp 更稳定
+
+</details>
+
+### 问题 2：PositionBasedModel 中为什么首尾各给 40%，中间 20% 平分？
+
+<details>
+<summary>查看答案</summary>
+
+这个比例基于用户购买决策漏斗理论：
+- **首次接触（40%）**：负责品牌认知和第一印象，决定用户是否继续了解
+- **最终接触（40%）**：负责临门一脚，通常是促销信息或紧迫感触发
+- **中间触点（20%）**：负责持续教育和信任建立，虽然重要但不是决定性因素
+
+如果改为 30/30/40（中间更多），适合高考虑周期产品（如 B2B 软件）；
+如果改为 50/50/0，则完全忽略中间教育环节，不适合长转化路径。
+
+</details>
+
+### 问题 3：多模型归因对比时，如何判断哪个模型最准确？
+
+<details>
+<summary>查看答案</summary>
+
+没有绝对"最准确"的模型，不同场景适用不同模型：
+
+1. **Last Click**：简单直接，但低估上层漏斗（品牌广告）
+2. **First Click**：强调获客渠道，但高估首次曝光价值
+3. **Linear**：公平分配，但无法区分关键触点和次要触点
+4. **Time Decay**：适合短期转化，但对长期培育效果差
+5. **Position Based**：平衡首尾重要性，是通用选择
+
+验证方法：
+- A/B 测试：用不同模型分配预算，比较 ROAS
+- 交叉验证：检查模型预测与实际转化率的吻合度
+- 业务对齐：品牌广告用 First Click，效果广告用 Last Click
+
+</details>

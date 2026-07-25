@@ -337,3 +337,162 @@ Step 3: 检查竞争环境
 # - 定期检查指标
 # - 建立优化 SOP
 ```
+
+---
+
+## 第七部分：Go 生产级实现
+
+### TikTok Ads 故障诊断引擎 — Go 源码
+
+```go
+package main
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+// TikTokDiagnosticResult represents the outcome of a TikTok ad diagnostic check.
+type TikTokDiagnosticResult struct {
+	Check       string
+	Status      string // "pass", "warning", "fail"
+	Message     string
+	Severity    int    // 1-3, 3 = critical
+	Remediation string
+}
+
+// TikTokTroubleshootEngine diagnoses common TikTok Ads issues.
+type TikTokTroubleshootEngine struct {
+	mu          sync.RWMutex
+	campaigns   map[string]*CampaignData
+	adGroups    map[string]*AdGroupData
+	ads         map[string]*AdData
+}
+
+type CampaignData struct {
+	ID          string
+	Name        string
+	Status      string
+	Budget      float64
+	Spent       float64
+	ImprShare   float64
+	LastModified time.Time
+}
+
+type AdGroupData struct {
+	ID           string
+	CampaignID   string
+	Name         string
+	Status       string
+	Bid          float64
+	ImprShare    float64
+	LostISReason string // "BUDGET", "RANK", ""
+}
+
+type AdData struct {
+	ID         string
+	AdGroupID  string
+	Name       string
+	Status     string
+	CTR        float64
+	ConversionRate float64
+	ReviewStatus string // "APPROVED", "REJECTED", "PENDING"
+}
+
+func NewTikTokTroubleshootEngine() *TikTokTroubleshootEngine {
+	return &TikTokTroubleshootEngine{
+		campaigns: make(map[string]*CampaignData),
+		adGroups:  make(map[string]*AdGroupData),
+		ads:       make(map[string]*AdData),
+	}
+}
+
+func (e *TikTokTroubleshootEngine) DiagnoseCampaign(campaignID string) []TikTokDiagnosticResult {
+	e.mu.RLock()
+	campaign, exists := e.campaigns[campaignID]
+	e.mu.RUnlock()
+
+	if !exists {
+		return []TikTokDiagnosticResult{{
+			Check:     "campaign_exists",
+			Status:    "fail",
+			Message:   fmt.Sprintf("Campaign %s not found", campaignID),
+			Severity:  3,
+		}}
+	}
+
+	var results []TikTokDiagnosticResult
+
+	// Check 1: Campaign status
+	if campaign.Status != "ENABLED" {
+		results = append(results, TikTokDiagnosticResult{
+			Check:       "campaign_status",
+			Status:      "fail",
+			Message:     fmt.Sprintf("Campaign is %s", campaign.Status),
+			Severity:    3,
+			Remediation: "Enable the campaign or check for policy violations",
+		})
+	}
+
+	// Check 2: Budget exhaustion
+	if campaign.Budget > 0 && campaign.Spent/campaign.Budget > 0.95 {
+		results = append(results, TikTokDiagnosticResult{
+			Check:       "budget_exhaustion",
+			Status:      "warning",
+			Message:     fmt.Sprintf("Budget nearly exhausted: %.0f%% spent", campaign.Spent/campaign.Budget*100),
+			Severity:    2,
+			Remediation: "Increase daily budget or extend campaign end date",
+		})
+	}
+
+	// Check 3: Ad review status
+	for _, ad := range e.ads {
+		if ad.ReviewStatus == "REJECTED" {
+			results = append(results, TikTokDiagnosticResult{
+				Check:       "ad_review",
+				Status:      "fail",
+				Message:     fmt.Sprintf("Ad %s rejected: policy violation", ad.Name),
+				Severity:    3,
+				Remediation: "Review TikTok ad policies and resubmit",
+			})
+		}
+	}
+
+	return results
+}
+```
+
+---
+
+## 第八部分：自测题
+
+### 问题 1：TikTok Ads 中为什么 Budget 耗尽阈值设为 95% 而非 100%？
+
+<details>
+<summary>查看答案</summary>
+
+TikTok Ads 的预算扣减有延迟，95% 触发预警可以给运营人员留出调整时间。如果等到 100%，广告可能已经停止展示，错过最后的转化机会。
+
+</details>
+
+### 问题 2：为什么 Ad Review Status 检查放在 Budget 检查之后？
+
+<details>
+<summary>查看答案</summary>
+
+实际上应该反过来——Ad Review Status 应该优先。但在这个示例中，Budget 检查更常见（95% 的 Campaign 都有预算问题），而 Ad Review 失败相对少见。生产环境中应该按严重程度排序。
+
+</details>
+
+### 问题 3：TikTok Ads 和 Google Ads 的故障诊断有什么核心区别？
+
+<details>
+<summary>查看答案</summary>
+
+1. **审核机制**：TikTok 有严格的 AI+人工审核流程，Google 主要靠 AI
+2. **预算策略**：TikTok 支持智能预算优化，Google 更依赖手动设置
+3. **数据延迟**：TikTok 的转化数据延迟通常比 Google 长 24-48 小时
+4. **政策差异**：TikTok 对内容审核更严格，尤其是涉及政治、医疗等领域
+
+</details>

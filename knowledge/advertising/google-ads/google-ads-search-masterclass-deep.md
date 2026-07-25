@@ -633,3 +633,200 @@ n ≈ 15,000
 # - 调整地域出价
 # - 设置时段出价
 ```
+
+---
+
+## 第七部分：Go 生产级实现
+
+### Google Ads Search 竞价引擎 — Go 源码
+
+```go
+package main
+
+import (
+	"fmt"
+	"math"
+	"sort"
+	"sync"
+)
+
+// KeywordBid represents a keyword bid with quality score.
+type KeywordBid struct {
+	Keyword      string
+	Bid          float64
+	MaxCPC       float64
+	QualityScore int // 1-10
+	ExpectedCTR  float64
+	AdRankThreshold float64
+}
+
+// AdPositionEstimate predicts the expected ad position for a given bid.
+type AdPositionEstimate struct {
+	Position     float64
+	TopOfPageLow float64
+	TopOfPageHigh float64
+	FirstPageLow float64
+	FirstPageHigh float64
+}
+
+// SearchBidOptimizer optimizes keyword bids for search campaigns.
+type SearchBidOptimizer struct {
+	mu         sync.RWMutex
+	keywords   map[string]*KeywordBid
+	estimates  map[string]*AdPositionEstimate
+}
+
+func NewSearchBidOptimizer() *SearchBidOptimizer {
+	return &SearchBidOptimizer{
+		keywords:  make(map[string]*KeywordBid),
+		estimates: make(map[string]*AdPositionEstimate),
+	}
+}
+
+// AddKeyword registers a keyword for optimization.
+func (o *SearchBidOptimizer) AddKeyword(kw *KeywordBid) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.keywords[kw.Keyword] = kw
+}
+
+// EstimateAdPosition calculates the expected ad position for a keyword+bid.
+func (o *SearchBidOptimizer) EstimateAdPosition(keyword string, bid float64) (*AdPositionEstimate, error) {
+	o.mu.RLock()
+	kw, exists := o.keywords[keyword]
+	o.mu.RUnlock()
+
+	if !exists {
+		return nil, fmt.Errorf("keyword %s not found", keyword)
+	}
+
+	// Ad Rank = Bid × Quality Score
+	adRank := bid * float64(kw.QualityScore)
+
+	// Estimate position based on ad rank (simplified model)
+	position := math.Max(1.0, float64(adRank)/10.0)
+
+	return &AdPositionEstimate{
+		Position:     math.Round(position*10) / 10,
+		TopOfPageLow: kw.Bid * 0.8,
+		TopOfPageHigh: kw.Bid * 1.2,
+		FirstPageLow: kw.Bid * 0.5,
+		FirstPageHigh: kw.Bid * 0.9,
+	}, nil
+}
+
+// OptimizeBids adjusts bids to achieve target position.
+func (o *SearchBidOptimizer) OptimizeBids(targetPosition float64) map[string]float64 {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+
+	adjustments := make(map[string]float64)
+	for kwName, kw := range o.keywords {
+		currentAdRank := kw.Bid * float64(kw.QualityScore)
+		targetAdRank := targetPosition * 10
+
+		if currentAdRank < targetAdRank {
+			// Need to increase bid
+			newBid := targetAdRank / float64(kw.QualityScore)
+			// Cap at max CPC
+			if newBid > kw.MaxCPC {
+				newBid = kw.MaxCPC
+			}
+			adjustments[kwName] = newBid
+		} else if currentAdRank > targetAdRank*1.2 {
+			// Can decrease bid (ad rank too high)
+			newBid := targetAdRank / float64(kw.QualityScore) * 0.95
+			if newBid < kw.MaxCPC*0.1 {
+				newBid = kw.MaxCPC * 0.1
+			}
+			adjustments[kwName] = newBid
+		}
+	}
+
+	return adjustments
+}
+
+// SortKeywordsByROI ranks keywords by return on investment.
+func (o *SearchBidOptimizer) SortKeywordsByROI() []string {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+
+	type kwROI struct {
+		name   string
+		roi    float64
+	}
+
+	var kws []kwROI
+	for name, kw := range o.keywords {
+		roi := kw.ExpectedCTR * float64(kw.QualityScore) / kw.Bid
+		kws = append(kws, kwROI{name, roi})
+	}
+
+	sort.Slice(kws, func(i, j int) bool {
+		return kws[i].roi > kws[j].roi
+	})
+
+	result := make([]string, len(kws))
+	for i, kw := range kws {
+		result[i] = kw.name
+	}
+	return result
+}
+```
+
+---
+
+## 第八部分：自测题
+
+### 问题 1：Ad Rank 公式 `Bid × Quality Score` 中为什么 Quality Score 是乘法因子而不是加法？
+
+<details>
+<summary>查看答案</summary>
+
+Google 使用乘法关系是因为：
+1. **Quality Score 放大效应**：高 QS 的关键词可以用更低出价获得相同 Ad Rank
+2. **非线性竞争**：QS=10 的关键词出价 $1 的 Ad Rank = QS=5 的关键词出价 $2
+3. **激励质量**：鼓励广告主提升落地页质量和相关性
+
+如果是加法（Ad Rank = Bid + QS），高质量关键词无法获得出价优势，违背 Google 的核心设计理念。
+
+</details>
+
+### 问题 2：OptimizeBids 中为什么下降时乘以 0.95 而非直接设为目标值？
+
+<details>
+<summary>查看答案</summary>
+
+0.95 是安全缓冲系数：
+1. **预留空间**：避免刚好在目标位置边缘，防止位置波动
+2. **渐进调整**：逐步降低出价比一次性大幅调整更安全
+3. **预测误差**：Ad Position 估算有误差，0.95 提供容错空间
+
+实际生产中可以使用更复杂的策略：
+```go
+safetyMargin := 1.0 + (1.0/targetPosition)*0.1 // 位置越高，margin 越大
+newBid := targetAdRank / float64(kw.QualityScore) * safetyMargin
+```
+
+</details>
+
+### 问题 3：SortKeywordsByROI 中的 ROI 公式为什么用 `CTR × QS / Bid` 而不是简单的 `Conversion / Cost`？
+
+<details>
+<summary>查看答案</summary>
+
+这个公式是**预期 ROI**（expected ROI），因为：
+1. **转化数据可能缺失**：新关键词或低流量关键词没有历史转化数据
+2. **CTR × QS 是转化率的代理**：高质量得分和高 CTR 通常意味着高转化率
+3. **实时可计算**：不需要等待转化数据积累
+
+实际生产中应该优先使用真实转化数据：
+```go
+if kw.HistoricalConversions > 0 {
+    roi = float64(kw.ConversionValue) / kw.TotalCost
+} else {
+    roi = kw.ExpectedCTR * float64(kw.QualityScore) / kw.Bid
+}
+```
+
+</details>

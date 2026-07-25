@@ -317,3 +317,193 @@ Step 3: 检查竞争环境
 # - 模拟数据异常
 # - 验证排查流程
 ```
+
+---
+
+## 第七部分：Go 生产级实现
+
+### Google Ads 故障诊断引擎 — Go 源码
+
+```go
+package main
+
+import (
+	"fmt"
+	"strings"
+	"time"
+)
+
+// DiagnosticResult represents the outcome of a diagnostic check.
+type DiagnosticResult struct {
+	Check     string
+	Status    string // "pass", "warning", "fail"
+	Message   string
+	Severity  int    // 1-3, 3 = critical
+	Remediation string
+}
+
+// TroubleshootEngine diagnoses common Google Ads issues.
+type TroubleshootEngine struct {
+	campaigns map[string]*CampaignData
+}
+
+type CampaignData struct {
+	ID            string
+	Name          string
+	Status        string
+	ImprShare     float64 // impression share
+	SearchLostIS  float64 // search lost IS (rank)
+	BudgetLostIS  float64 // budget lost IS
+	AvgCPC        float64
+	CTR           float64
+	QualityScore  int
+	LastModified  time.Time
+}
+
+func NewTroubleshootEngine() *TroubleshootEngine {
+	return &TroubleshootEngine{
+		campaigns: make(map[string]*CampaignData),
+	}
+}
+
+func (e *TroubleshootEngine) Diagnose(campaignID string) []DiagnosticResult {
+	data, exists := e.campaigns[campaignID]
+	if !exists {
+		return []DiagnosticResult{{
+			Check:     "campaign_exists",
+			Status:    "fail",
+			Message:   fmt.Sprintf("Campaign %s not found", campaignID),
+			Severity:  3,
+		}}
+	}
+
+	var results []DiagnosticResult
+
+	// Check 1: Campaign status
+	if data.Status != "ENABLED" {
+		results = append(results, DiagnosticResult{
+			Check:     "campaign_status",
+			Status:    "fail",
+			Message:   fmt.Sprintf("Campaign is %s, should be ENABLED", data.Status),
+			Severity:  3,
+			Remediation: "Enable the campaign or create a new one",
+		})
+	}
+
+	// Check 2: Impression share
+	if data.ImprShare < 0.5 {
+		results = append(results, DiagnosticResult{
+			Check:     "impression_share",
+			Status:    "warning",
+			Message:   fmt.Sprintf("Impression share is %.1f%% (below 50%%)", data.ImprShare*100),
+			Severity:  2,
+			Remediation: "Increase bids or budget to improve impression share",
+		})
+	}
+
+	// Check 3: Budget lost impression share
+	if data.BudgetLostIS > 0.2 {
+		results = append(results, DiagnosticResult{
+			Check:     "budget_constraint",
+			Status:    "warning",
+			Message:   fmt.Sprintf("Budget lost IS is %.1f%% (>20%%)", data.BudgetLostIS*100),
+			Severity:  2,
+			Remediation: "Increase daily budget to capture more impressions",
+		})
+	}
+
+	// Check 4: Rank lost impression share
+	if data.SearchLostIS > 0.3 {
+		results = append(results, DiagnosticResult{
+			Check:     "rank_constraint",
+			Status:    "warning",
+			Message:   fmt.Sprintf("Rank lost IS is %.1f%% (>30%%)", data.SearchLostIS*100),
+			Severity:  2,
+			Remediation: "Increase bids or improve Quality Score",
+		})
+	}
+
+	// Check 5: CTR health
+	if data.CTR < 0.02 {
+		results = append(results, DiagnosticResult{
+			Check:     "ctr_health",
+			Status:    "warning",
+			Message:   fmt.Sprintf("CTR is %.2f%% (below 2%%)", data.CTR*100),
+			Severity:  2,
+			Remediation: "Improve ad copy relevance or test new creatives",
+		})
+	}
+
+	return results
+}
+
+// BatchDiagnose runs diagnostics on multiple campaigns.
+func (e *TroubleshootEngine) BatchDiagnose(campaignIDs []string) map[string][]DiagnosticResult {
+	results := make(map[string][]DiagnosticResult)
+	for _, id := range campaignIDs {
+		results[id] = e.Diagnose(id)
+	}
+	return results
+}
+
+// GetCriticalIssues returns only severity 3 issues across all campaigns.
+func (e *TroubleshootEngine) GetCriticalIssues() []DiagnosticResult {
+	var critical []DiagnosticResult
+	for id := range e.campaigns {
+		for _, r := range e.Diagnose(id) {
+			if r.Severity == 3 {
+				critical = append(critical, r)
+			}
+		}
+	}
+	return critical
+}
+```
+
+---
+
+## 第八部分：自测题
+
+### 问题 1：诊断引擎中为什么 Impression Share < 50% 标记为 warning 而非 fail？
+
+<details>
+<summary>查看答案</summary>
+
+IS < 50% 不一定表示有问题：
+1. **预算限制**：小预算 Campaign 可能故意控制展示量
+2. **精准定位**：高度定向的关键词可能天然 IS 较低
+3. **新 Campaign**：刚启动的 Campaign 还在积累数据
+
+所以用 warning 级别，需要结合 BudgetLostIS 和 SearchLostIS 综合判断。如果 BudgetLostIS > 20% 且 SearchLostIS < 10%，说明是预算问题而非定位问题。
+
+</details>
+
+### 问题 2：BatchDiagnose 和 GetCriticalIssues 的设计区别是什么？
+
+<details>
+<summary>查看答案</summary>
+
+BatchDiagnose 返回每个 Campaign 的完整诊断结果，适合详细分析。
+GetCriticalIssues 只返回严重问题（severity=3），适合快速告警。
+
+实际生产中应该结合使用：
+1. 定时运行 GetCriticalIssues 发送告警
+2. 人工查看时运行 BatchDiagnose 获取详细信息
+
+</details>
+
+### 问题 3：为什么诊断检查的顺序很重要？
+
+<details>
+<summary>查看答案</summary>
+
+诊断检查应该按严重性和排查逻辑排序：
+1. **campaign_status**（最优先）：Campaign 未启用是根本问题
+2. **impression_share**：整体展示情况
+3. **budget_constraint**：预算是否限制展示
+4. **rank_constraint**：出价是否太低
+5. **ctr_health**：广告文案质量
+
+如果 Campaign 未启用，后面的检查都没有意义。按优先级排序可以快速定位根因。
+
+</details>

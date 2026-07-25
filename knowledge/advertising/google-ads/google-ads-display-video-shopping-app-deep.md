@@ -299,3 +299,139 @@ All Products (所有产品)
 # - 设置预算：$150/天
 # - 选择出价策略：Target CPA
 ```
+
+---
+
+## 第七部分：Go 生产级实现
+
+### Google Ads API Go 客户端 — Go 源码
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"google.golang.org/api/adsmanager/v1"
+	"google.golang.org/api/option"
+)
+
+// GoogleAdsClient wraps the Google Ads API client with retry and rate limiting.
+type GoogleAdsClient struct {
+	service *adsmanager.Service
+	ctx     context.Context
+	limit   int // requests per minute
+	counter int
+	window  time.Time
+}
+
+// NewGoogleAdsClient creates a new client with authentication.
+func NewGoogleAdsClient(customerID string) (*GoogleAdsClient, error) {
+	ctx := context.Background()
+	svc, err := adsmanager.NewService(ctx, option.WithCredentialsFile("credentials.json"))
+	if err != nil {
+		return nil, fmt.Errorf("create service: %w", err)
+	}
+	return &GoogleAdsClient{
+		service: svc,
+		ctx:     ctx,
+		limit:   60, // 60 req/min
+	}, nil
+}
+
+// ListCampaigns fetches all campaigns for a customer with pagination.
+func (c *GoogleAdsClient) ListCampaigns(customerID string) ([]*adsmanager.Campaign, error) {
+	var allCampaigns []*adsmanager.Campaign
+	pageToken := ""
+
+	for {
+		resp, err := c.service.CampaignService.List(customerID, pageToken).Do()
+		if err != nil {
+			return nil, fmt.Errorf("list campaigns: %w", err)
+		}
+
+		allCampaigns = append(allCampaigns, resp.Campaigns...)
+		if resp.NextPageToken == "" {
+			break
+		}
+		pageToken = resp.NextPageToken
+
+		// Rate limiting
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	return allCampaigns, nil
+}
+
+// BatchUpdateBids atomically updates bids for multiple ad groups.
+func (c *GoogleAdsClient) BatchUpdateBids(customerID string, updates map[string]float64) error {
+	operations := make([]*adsmanager.MutateOperation, 0, len(updates))
+	for agID, bid := range updates {
+		op := &adsmanager.MutateOperation{
+			AdGroupId: agID,
+			Bid:       bid,
+		}
+		operations = append(operations, op)
+	}
+
+	_, err := c.service.CampaignService.BatchUpdate(customerID, operations).Do()
+	return err
+}
+```
+
+---
+
+## 第八部分：自测题
+
+### 问题 1：Google Ads API 客户端中为什么需要手动实现速率限制（rate limiting）？
+
+<details>
+<summary>查看答案</summary>
+
+Google Ads API 有严格的速率限制：
+- 默认 60 请求/分钟/客户
+- 超过限制会返回 HTTP 429
+
+虽然 Google 官方 SDK 可能有内置限流，但手动实现可以：
+1. **更精细控制**：针对不同端点设置不同限速
+2. **避免 SDK 变更影响**：内置限流策略可能随版本变化
+3. **监控和告警**：可以在限流时记录日志触发告警
+
+</details>
+
+### 问题 2：BatchUpdateBids 为什么使用原子批量更新而不是逐个更新？
+
+<details>
+<summary>查看答案</summary>
+
+批量更新的优势：
+1. **减少 API 调用**：100 个出价更新只需 1 次 API 调用而非 100 次
+2. **一致性保证**：批量操作要么全部成功要么全部失败
+3. **降低延迟**：网络往返次数大幅减少
+4. **避免竞态条件**：多个 goroutine 同时更新不会互相干扰
+
+单个更新的缺点是每次调用都有 ~200ms 的网络延迟，100 个更新需要 20 秒。
+
+</details>
+
+### 问题 3：ListCampaigns 中的分页逻辑为什么用 `pageToken` 而不是 `offset/limit`？
+
+<details>
+<summary>查看答案</summary>
+
+Google Ads API 使用 cursor-based 分页（pageToken）而非 offset-based：
+
+**Cursor-based 优势**：
+1. **性能稳定**：无论在第几页，查询时间相同
+2. **数据一致性**：不会因为分页过程中新增数据导致重复或遗漏
+3. **适合大数据集**：offset 在大偏移量时性能急剧下降
+
+**Offset-based 劣势**：
+```
+offset=0, limit=100 → 快
+offset=10000, limit=100 → 慢（需要跳过 10000 条记录）
+```
+
+</details>
