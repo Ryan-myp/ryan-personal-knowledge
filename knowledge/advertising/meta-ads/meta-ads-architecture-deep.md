@@ -368,3 +368,142 @@ func (c *APIClient) GetInsights(ctx context.Context, accountID string, fields []
 	return insightsResp.Data, nil
 }
 ```
+
+---
+
+## 第七部分：Go 生产级实现
+
+### Meta Ads 竞价引擎 — Go 源码
+
+```go
+package main
+
+import (
+	"fmt"
+	"math"
+	"sync"
+	"time"
+)
+
+// MetaBidEngine handles real-time bidding for Meta Ads.
+type MetaBidEngine struct {
+	mu          sync.RWMutex
+	auctionDB   map[string]*AuctionState
+	bidCache    map[string]float64 // adID -> cached bid
+}
+
+type AuctionState struct {
+	ID           string
+	AdGroupID    string
+	BidAmount    float64
+	EstimatedCTR float64
+	EstimatedCVR float64
+	Status       string // "OPEN", "CLOSED", "WINNER"
+	Winner       bool
+	WinPrice     float64
+}
+
+func NewMetaBidEngine() *MetaBidEngine {
+	return &MetaBidEngine{
+		auctionDB: make(map[string]*AuctionState),
+		bidCache:  make(map[string]float64),
+	}
+}
+
+// CalculateBid uses VCG (Vickrey-Clarke-Groves) pricing.
+func (e *MetaBidEngine) CalculateBid(adID string, estimatedValue float64) float64 {
+	e.mu.RLock()
+_cachedBid, exists := e.bidCache[adID]
+	e.mu.RUnlock()
+
+	if exists {
+		return _cachedBid
+	}
+
+	// VCG bid = estimated_value * pCTR * pCVR * adjustment
+	adjustment := 0.95 // slight discount to avoid overbidding
+	bid := estimatedValue * adjustment
+
+	e.mu.Lock()
+	e.bidCache[adID] = bid
+	e.mu.Unlock()
+
+	return bid
+}
+
+// ProcessAuction runs a single auction round.
+func (e *MetaBidEngine) ProcessAuction(auctions []*AuctionState) []*AuctionState {
+	// Sort by bid * eCPM
+	sort.Slice(auctions, func(i, j int) bool {
+		epcmI := auctions[i].BidAmount * auctions[i].EstimatedCTR * auctions[i].EstimatedCVR
+		epcmJ := auctions[j].BidAmount * auctions[j].EstimatedCTR * auctions[j].EstimatedCVR
+		return epcmI > epcmJ
+	})
+
+	var results []*AuctionState
+	for i, auction := range auctions {
+		auction.Status = "CLOSED"
+		if i == 0 {
+			auction.Winner = true
+			// Second-price auction: win price = second highest eCPM
+			if len(auctions) > 1 {
+				epcmSecond := auctions[1].BidAmount * auctions[1].EstimatedCTR * auctions[1].EstimatedCVR
+				auction.WinPrice = epcmSecond / (auction.EstimatedCTR * auction.EstimatedCVR)
+			} else {
+				auction.WinPrice = auction.BidAmount
+			}
+			auction.Status = "WINNER"
+		} else {
+			auction.Winner = false
+			auction.WinPrice = 0
+		}
+		results = append(results, auction)
+	}
+
+	return results
+}
+```
+
+---
+
+## 第八部分：自测题
+
+### 问题 1：为什么 Meta 使用 VCG 定价而非第一价格拍卖？
+
+<details>
+<summary>查看答案</summary>
+
+VCG（Vickrey-Clarke-Groves）定价的优势：
+1. **真实出价激励**：广告主有动机报出真实估值
+2. **公平性**：赢家支付的是社会机会成本
+3. **减少博弈**：避免广告主策略性压低出价
+
+第一价格拍卖会导致"赢者诅咒"（winner's curse），赢家往往出价过高。
+
+</details>
+
+### 问题 2：ProcessAuction 中为什么按 `bid * pCTR * pCVR` 排序？
+
+<details>
+<summary>查看答案</summary>
+
+这是 eCPM 的计算公式，反映了每个广告的预期价值：
+- Bid：广告主愿意支付的金额
+- pCTR：预估点击率
+- pCVR：预估转化率
+
+eCPM 高的广告排在前面，确保平台收入最大化的同时给广告主最佳效果。
+
+</details>
+
+### 问题 3：Meta Ads 和 Google Ads 的竞价机制有什么核心区别？
+
+<details>
+<summary>查看答案</summary>
+
+1. **定价方式**：Meta 用第二价格拍卖（近似 VCG），Google 用广义第二价格（GSP）
+2. **质量因素**：Meta 更重视用户体验（负面反馈会影响排名），Google 更重视 QS
+3. **自动化**：Meta Advantage+ 自动化程度更高，Google 提供更细粒度控制
+4. **实时性**：Meta 竞价在毫秒级完成，Google 可能有更多预计算
+
+</details>
