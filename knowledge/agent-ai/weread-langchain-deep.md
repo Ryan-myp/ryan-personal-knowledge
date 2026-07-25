@@ -325,3 +325,168 @@ except Exception as e:
 ### Q3: 三种记忆类型的区别？
 
 **A**: Buffer（完整对话）、Summary（摘要）、Vector（语义检索）。
+
+## Go 实现：LangChain 风格 Agent 框架
+
+```go
+package langchain
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"sync"
+	"time"
+)
+
+// Model LLM 模型接口
+type Model interface {
+	Generate(ctx context.Context, prompt string) (string, error)
+}
+
+// PromptTemplate 提示词模板
+type PromptTemplate struct {
+	Template string
+	Variables []string
+}
+
+func (t *PromptTemplate) Format(values map[string]string) string {
+	result := t.Template
+	for k, v := range values {
+		result = strings.ReplaceAll(result, "{"+k+"}", v)
+	}
+	return result
+}
+
+// Memory 记忆接口
+type Memory interface {
+	SaveContext(input, output string) error
+ LoadContext() (string, error)
+ Clear() error
+}
+
+// BufferMemory 完整对话缓冲记忆
+type BufferMemory struct {
+	mu       sync.Mutex
+	messages []Message
+	maxSize  int
+}
+
+type Message struct {
+	Role    string `json:"role"`    // "user", "assistant"
+	Content string `json:"content"`
+	Time    time.Time `json:"time"`
+}
+
+func (m *BufferMemory) SaveContext(input, output string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.messages = append(m.messages, Message{Role: "user", Content: input, Time: time.Now()})
+	m.messages = append(m.messages, Message{Role: "assistant", Content: output, Time: time.Now()})
+
+	// 限制大小，保留最近 N 条
+	if len(m.messages) > m.maxSize {
+		m.messages = m.messages[len(m.messages)-m.maxSize:]
+	}
+	return nil
+}
+
+func (m *BufferMemory) LoadContext() (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	var sb strings.Builder
+	for _, msg := range m.messages {
+		sb.WriteString(fmt.Sprintf("%s: %s\n", msg.Role, msg.Content))
+	}
+	return sb.String(), nil
+}
+
+// Chain 链式处理接口
+type Chain interface {
+	Run(ctx context.Context, input map[string]string) (map[string]string, error)
+}
+
+// LLMChain 基于 LLM 的链
+type LLMChain struct {
+	prompt *PromptTemplate
+	model  Model
+	memory *BufferMemory
+}
+
+func (c *LLMChain) Run(ctx context.Context, input map[string]string) (map[string]string, error) {
+	// 1. 加载记忆
+	context, _ := c.memory.LoadContext()
+	if context != "" {
+		input["chat_history"] = context
+	}
+
+	// 2. 格式化提示词
+	prompt := c.prompt.Format(input)
+
+	// 3. 调用 LLM
+	output, err := c.model.Generate(ctx, prompt)
+	if err != nil {
+		return nil, fmt.Errorf("llm generate: %w", err)
+	}
+
+	// 4. 保存记忆
+	c.memory.SaveContext(input["input"], output)
+
+	return map[string]string{"output": output}, nil
+}
+
+// RouterChain 路由链 - 根据问题类型分发
+type RouterChain struct {
+	routes []Route
+	defaultChain Chain
+	model Model
+}
+
+type Route struct {
+	Pattern   string
+	Destination Chain
+}
+
+func (rc *RouterChain) Run(ctx context.Context, input map[string]string) (map[string]string, error) {
+	question := input["input"]
+
+	// 用 LLM 判断意图
+	prompt := fmt.Sprintf("Classify this question into one of these categories: %s\nQuestion: %s\nReturn only the category name.",
+		rc.routePatterns(), question)
+
+	category, err := rc.model.Generate(ctx, prompt)
+	if err != nil {
+		// 降级到默认链
+		return rc.defaultChain.Run(ctx, input)
+	}
+
+	// 匹配路由
+	for _, route := range rc.routes {
+		if strings.Contains(strings.ToLower(route.Pattern), strings.ToLower(category)) {
+			return route.Destination.Run(ctx, input)
+		}
+	}
+
+	return rc.defaultChain.Run(ctx, input)
+}
+
+func (rc *RouterChain) routePatterns() string {
+	var patterns []string
+	for _, r := range rc.routes {
+		patterns = append(patterns, r.Pattern)
+	}
+	return strings.Join(patterns, ", ")
+}
+```
+
+## 动手验证
+
+```bash
+# 运行 LangChain 风格 Agent 测试
+go test -v ./langchain/... -run TestRouterChain
+
+# 交互式对话测试
+go run examples/chatbot/main.go --model gpt-4
+```

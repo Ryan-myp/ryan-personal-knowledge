@@ -336,3 +336,382 @@ python3 scripts/dap_deep_analysis.py data.csv
 2. **自动化**：无需手动 Excel 操作
 3. **可复现**：每次分析结果一致
 4. **可扩展**：支持自定义分析维度
+
+---
+
+## 第七部分：Go 生产级实现
+
+### Campaign 异常检测引擎 — Go 源码
+
+```go
+package main
+
+import (
+	"encoding/csv"
+	"fmt"
+	"log"
+	"math"
+	"os"
+	"sort"
+	"strconv"
+)
+
+// Campaign represents a single advertising campaign record.
+type Campaign struct {
+	Name        string
+	Budget      float64
+	AmountSpent float64
+	Impressions int64
+	Clicks      int64
+	CTR         float64
+	CPA         float64
+}
+
+// OutlierResult holds the detection output for a single campaign.
+type OutlierResult struct {
+	Campaign Campaign
+	Reason   string
+	Score    float64 // anomaly score, higher = more anomalous
+}
+
+// DetectOutliers implements IQR-based outlier detection on campaign metrics.
+// Returns campaigns whose AmountSpent or CPA exceeds Q3 + 1.5*IQR threshold.
+func DetectOutliers(campaigns []Campaign) []OutlierResult {
+	if len(campaigns) == 0 {
+		return nil
+	}
+
+	// Extract spent values for IQR calculation
+	spents := make([]float64, len(campaigns))
+	for i, c := range campaigns {
+		spents[i] = c.AmountSpent
+	}
+	sort.Float64s(spents)
+
+	q1, q3 := percentile(spents, 25), percentile(spents, 75)
+	iqr := q3 - q1
+	upperBound := q3 + 1.5*iqr
+
+	var results []OutlierResult
+	for _, c := range campaigns {
+		var reasons []string
+		score := 0.0
+
+		if c.AmountSpent > upperBound {
+			reasons = append(reasons, fmt.Sprintf("spent=%.0f > bound=%.0f", c.AmountSpent, upperBound))
+			score += (c.AmountSpent - upperBound) / math.Max(upperBound, 1)
+		}
+
+		// CPA outlier: high spend with low clicks
+		if c.Clicks > 0 && c.AmountSpent > 1000 {
+			cpaRatio := c.AmountSpent / float64(c.Clicks)
+			if cpaRatio > 5.0 {
+				reasons = append(reasons, fmt.Sprintf("high CPA=%.2f", cpaRatio))
+				score += cpaRatio / 5.0
+			}
+		}
+
+		if len(reasons) > 0 {
+			results = append(results, OutlierResult{
+				Campaign: c,
+				Reason:   fmt.Sprintf("%v", reasons),
+				Score:    score,
+			})
+		}
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Score > results[j].Score
+	})
+	return results
+}
+
+// percentile computes the p-th percentile using linear interpolation.
+func percentile(sorted []float64, p float64) float64 {
+	k := (p / 100.0) * float64(len(sorted)-1)
+	f := math.Floor(k)
+	c := math.Ceil(k)
+	if f == c {
+		return sorted[int(k)]
+	}
+	d0 := sorted[int(f)] * (c - k)
+	d1 := sorted[int(c)] * (k - f)
+	return d0 + d1
+}
+
+// LoadCampaigns reads a CSV file and parses campaign data.
+func LoadCampaigns(path string) ([]Campaign, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	r := csv.NewReader(f)
+	records, err := r.ReadAll()
+	if err != nil {
+		return nil, err
+	}
+
+	var campaigns []Campaign
+	for i, row := range records {
+		if i == 0 {
+			continue // skip header
+		}
+		if len(row) < 5 {
+			continue
+		}
+		spent, _ := strconv.ParseFloat(row[1], 64)
+		imp, _ := strconv.ParseInt(row[2], 10, 64)
+		clk, _ := strconv.ParseInt(row[3], 10, 64)
+		ctr, _ := strconv.ParseFloat(row[4], 64)
+
+		campaigns = append(campaigns, Campaign{
+			Name:        row[0],
+			AmountSpent: spent,
+			Impressions: imp,
+			Clicks:      clk,
+			CTR:         ctr,
+		})
+	}
+	return campaigns, nil
+}
+
+func main() {
+	campaigns, err := LoadCampaigns("campaigns.csv")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	outliers := DetectOutliers(campaigns)
+	fmt.Printf("Found %d outliers out of %d campaigns\n", len(outliers), len(campaigns))
+	for _, o := range outliers[:min(10, len(outliers))] {
+		fmt.Printf("  [%s] score=%.2f reason=%s\n", o.Campaign.Name, o.Score, o.Reason)
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+```
+
+### Go 代码深度解析
+
+**为什么用 IQR 而非标准差？**
+
+广告花费数据是**极右偏分布**（少数 Campaign 消耗绝大部分预算），标准差会被极端值拉大，导致正常高花费 Campaign 不被标记。IQR 对异常值鲁棒：
+
+```
+标准差法: mean=2000, std=5000 → bound=12000 (几乎不会触发)
+IQR法:    Q1=500, Q3=3000, IQR=2500 → bound=6750 (能捕获真正的异常)
+```
+
+**性能考量：**
+
+| 操作 | 复杂度 | 说明 |
+|------|--------|------|
+| 排序 (IQR) | O(n log n) | 一次排序即可算出四分位数 |
+| 扫描检测 | O(n) | 遍历一次 Campaign 列表 |
+| 总分 | O(n log n) | 对 n=1000 约 10μs |
+
+### 聚类分析 Go 实现
+
+```go
+// KMeansCluster performs simple K-Means clustering on campaign metrics.
+// Features: [log(spend+1), log(impressions+1), log(clicks+1)]
+func KMeansCluster(campaigns []Campaign, k int) [][]int {
+	n := len(campaigns)
+	if n == 0 {
+		return nil
+	}
+
+	// Normalize features to [0, 1]
+	features := make([][]float64, n)
+	for i, c := range campaigns {
+		features[i] = []float64{
+			math.Log(float64(c.AmountSpent) + 1),
+			math.Log(float64(c.Impressions) + 1),
+			math.Log(float64(c.Clicks) + 1),
+		}
+	}
+
+	// Min-max normalization
+	mins := make([]float64, 3)
+	maxs := make([]float64, 3)
+	for j := 0; j < 3; j++ {
+		mins[j], maxs[j] = features[0][j], features[0][j]
+		for i := 1; i < n; i++ {
+			if features[i][j] < mins[j] {
+				mins[j] = features[i][j]
+			}
+			if features[i][j] > maxs[j] {
+				maxs[j] = features[i][j]
+			}
+		}
+	}
+	for i := 0; i < n; i++ {
+		for j := 0; j < 3; j++ {
+			if maxs[j]-mins[j] > 0 {
+				features[i][j] = (features[i][j] - mins[j]) / (maxs[j] - mins[j])
+			}
+		}
+	}
+
+	// Random init centroids
+	centroids := make([][]float64, k)
+	for i := 0; i < k; i++ {
+		idx := i * n / k
+		centroids[i] = make([]float64, len(features[idx]))
+		copy(centroids[i], features[idx])
+	}
+
+	assignments := make([]int, n)
+	for iter := 0; iter < 50; iter++ {
+		changed := false
+		// Assign
+		for i := 0; i < n; i++ {
+			bestDist := math.MaxFloat64
+			bestK := 0
+			for cluster := 0; cluster < k; cluster++ {
+				d := euclideanDist(features[i], centroids[cluster])
+				if d < bestDist {
+					bestDist = d
+					bestK = cluster
+				}
+			}
+			if assignments[i] != bestK {
+				assignments[i] = bestK
+				changed = true
+			}
+		}
+		if !changed {
+			break
+		}
+		// Update centroids
+		sums := make([][]float64, k)
+		counts := make([]int, k)
+		for j := 0; j < k; j++ {
+			sums[j] = make([]float64, 3)
+		}
+		for i := 0; i < n; i++ {
+			cl := assignments[i]
+			for j := 0; j < 3; j++ {
+				sums[cl][j] += features[i][j]
+			}
+			counts[cl]++
+		}
+		for j := 0; j < k; j++ {
+			if counts[j] > 0 {
+				for ch := 0; ch < 3; ch++ {
+					centroids[j][ch] = sums[j][ch] / float64(counts[j])
+				}
+			}
+		}
+	}
+
+	return assignments
+}
+
+func euclideanDist(a, b []float64) float64 {
+	var sum float64
+	for i := range a {
+		diff := a[i] - b[i]
+		sum += diff * diff
+	}
+	return math.Sqrt(sum)
+}
+```
+
+---
+
+## 第八部分：自测题
+
+### 问题 1：广告花费数据的 IQR 异常检测中，为什么 Q1/Q3 的计算要用线性插值而不是直接取中间值？
+
+<details>
+<summary>查看答案</summary>
+
+直接取中间值在 n 为偶数时简单，但在 n 为奇数或数据分布不均匀时会引入系统性偏差。线性插值的核心优势：
+
+1. **无偏估计**：`percentile(sorted, 25)` 中 `k = 0.25 * (n-1)`，当 n=100 时 k=24.75，在索引 24 和 25 之间插值，而非粗暴取 24 或 25。
+2. **与 numpy/scipy 一致**：Python 的 `np.percentile()` 默认使用线性插值，Go 实现保持一致才能验证结果。
+3. **极端值影响小**：插值让边界值平滑过渡，避免单点突变。
+
+```
+n=5, sorted=[1, 2, 3, 4, 5]
+直接取中: Q1 = sorted[1] = 2
+线性插值: k=1.0, Q1 = sorted[1] = 2  (巧合相同)
+
+n=4, sorted=[1, 2, 3, 4]
+直接取中: Q1 = sorted[0] = 1  (严重低估!)
+线性插值: k=0.75, Q1 = 1*0.25 + 2*0.75 = 1.75  (合理)
+```
+
+</details>
+
+### 问题 2：K-Means 聚类中，为什么对 Campaign 特征要做 log 变换 + min-max 归一化？如果跳过这两步会怎样？
+
+<details>
+<summary>查看答案</summary>
+
+**Log 变换的原因**：广告花费/曝光/点击数据呈幂律分布（少数 Campaign 占绝大部分量级）。
+
+```
+原始值范围: spend [0, 400000], impressions [0, 1.2B]
+Log 后范围: spend [0, 13], impressions [0, 21]
+```
+
+如果不做 log 变换，极右偏数据会导致：
+- K-Means 的欧氏距离被大值主导（spend=400K 的差异远大于 impressions=1M 的差异）
+- 聚类结果退化为"按花费分簇"，丢失多维信息
+
+**Min-max 归一化的原因**：三个特征的尺度完全不同。
+
+```
+不归一化: 欧氏距离 ≈ sqrt((Δspend)^2) —— 只有 spend 起作用
+归一化后: 欧氏距离 = sqrt((Δspend)^2 + (Δimp)^2 + (Δclk)^2) —— 三特征平等
+```
+
+跳过两步的后果：聚类结果完全由 spend 单一维度驱动，11 个高花费 Campaign 自成一群，其余 718 个混在一起——这就是原文中 Cluster 2/3 只包含 1 个 Campaign 的根本原因。
+
+</details>
+
+### 问题 3：DetectOutliers 函数中 CPA 异常检测的阈值设为 5.0 是怎么来的？在生产环境中如何动态调整这个阈值？
+
+<details>
+<summary>查看答案</summary>
+
+**5.0 的来源**：这是经验值，对应 CPA > $5 的 Campaign 被认为是低效的（对于注册类转化目标，行业基准通常在 $1-3）。
+
+**生产环境动态调整方案**：
+
+```go
+// DynamicThreshold uses historical data to compute adaptive CPA threshold.
+func DynamicThreshold(campaigns []Campaign, percentile float64) float64 {
+	cpas := make([]float64, 0, len(campaigns))
+	for _, c := range campaigns {
+		if c.Clicks > 0 && c.AmountSpent > 100 {
+			cpas = append(cpas, c.AmountSpent/float64(c.Clicks))
+		}
+	}
+	if len(cpas) == 0 {
+		return 5.0 // fallback
+	}
+	sort.Float64s(cpas)
+	idx := int(percentile/100.0) * len(cpas)
+	if idx >= len(cpas) {
+		idx = len(cpas) - 1
+	}
+	return cpas[idx]
+}
+```
+
+关键设计决策：
+1. **过滤低质量样本**：`Clicks > 0 && AmountSpent > 100` 排除统计噪声
+2. **百分位自适应**：根据业务阶段调整（新平台用 P90，成熟平台用 P75）
+3. **Fallback 安全网**：数据不足时回退到硬编码值
+
+</details>

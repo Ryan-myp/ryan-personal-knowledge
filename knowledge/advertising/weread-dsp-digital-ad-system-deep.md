@@ -124,3 +124,156 @@ DSP 系统架构：
 ### Q3: 广告数据管道的三层？
 
 **A**: 采集层（日志）、处理层（实时/离线）、存储层（热/温/冷）。
+
+---
+
+## Go 实现：DSP 竞价引擎核心
+
+```go
+package dsp
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+)
+
+// DSPBidEngine DSP 竞价引擎 - 从用户请求到广告展示的完整链路
+type DSPBidEngine struct {
+	recall    RecallEngine   // 召回
+	ranking   RankingModel   // 排序模型 (DeepFM/DIN)
+	bidding   BiddingStrategy // 出价策略
+	freqCtrl  FreqController  // 频次控制
+	budgetMgr *BudgetManager  // 预算
+	cache     Cache           // Redis 缓存
+}
+
+// BidRequest DSP 侧收到的竞价请求
+type BidRequest struct {
+	UserID    string    `json:"user_id"`
+	DeviceID  string    `json:"device_id"`
+	AppID     string    `json:"app_id"`
+	AdSlotID  string    `json:"ad_slot_id"`
+	BidFloor  float64   `json:"bid_floor"` // 底价
+	Timestamp time.Time `json:"timestamp"`
+	TraceID   string    `json:"trace_id"`
+}
+
+// BidResponse DSP 返回的竞价响应
+type BidResponse struct {
+	BidID      string    `json:"bid_id"`
+	CreativeID string    `json:"creative_id"`
+	BidPrice   float64   `json:"bid_price"`
+	eCPM       float64   `json:"ecpm"`
+	Targeting  Targeting `json:"targeting"`
+}
+
+// Targeting 定向条件
+type Targeting struct {
+	Keywords []string `json:"keywords"`
+	Demographics Demographics `json:"demographics"`
+	Geo []GeoRegion `json:"geo"`
+}
+
+type Demographics struct {
+	AgeRange string `json:"age_range"` // "18-24","25-34"
+	Gender   string `json:"gender"`    // "M","F","ALL"
+}
+
+type GeoRegion struct {
+	Country string `json:"country"`
+	Province string `json:"province"`
+	City    string `json:"city"`
+}
+
+// Bid 核心竞价方法 - P99 < 90ms
+func (e *DSPBidEngine) Bid(ctx context.Context, req *BidRequest) (*BidResponse, error) {
+	start := time.Now()
+
+	// Step 1: 获取用户画像 (Redis pipeline: user_feat + user_profile)
+	userFeat, err := e.getUserFeatures(ctx, req.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("get user features: %w", err)
+	}
+
+	// Step 2: 召回候选广告 (多路并行: vector + rule + retention + hot)
+	candidates, err := e.recall.Recall(ctx, req, userFeat)
+	if err != nil {
+		return nil, fmt.Errorf("recall: %w", err)
+	}
+
+	// Step 3: 频次过滤 (检查用户是否已看过该广告)
+	candidates = e.freqCtrl.Filter(candidates, req.UserID)
+
+	// Step 4: 预算过滤
+	candidates = e.budgetMgr.Filter(candidates)
+
+	if len(candidates) == 0 {
+		return &BidResponse{BidID: req.TraceID}, nil
+	}
+
+	// Step 5: 排序 (DeepFM 批量推理)
+	scored, err := e.ranking.ScoreBatch(ctx, candidates, userFeat)
+	if err != nil {
+		return nil, fmt.Errorf("ranking: %w", err)
+	}
+
+	// Step 6: 出价 (根据 pCTR * pCVR * bidGoal 计算出价)
+	best := scored[0] // Top-1
+	bidPrice := e.bidding.Calculate(best)
+
+	// 确保不低于底价
+	if bidPrice < req.BidFloor {
+		bidPrice = req.BidFloor
+	}
+
+	eCPM := bidPrice * 1000 // CPC -> CPM 换算
+
+	latency := time.Since(start).Milliseconds()
+	if latency > 90 {
+		// 告警：P99 超标
+		fmt.Printf("[WARN] bid latency %.2fms exceeds 90ms target\n", float64(latency))
+	}
+
+	return &BidResponse{
+		BidID:      fmt.Sprintf("bid_%s", req.TraceID),
+		CreativeID: best.CreativeID,
+		BidPrice:   bidPrice,
+		eCPM:       eCPM,
+		Targeting:  best.Targeting,
+	}, nil
+}
+
+// getUserFeatures 从 Redis 批量获取用户特征
+func (e *DSPBidEngine) getUserFeatures(ctx context.Context, userID string) (UserFeatures, error) {
+	// Redis Pipeline: HGETALL user:features:{id} + HGETALL user:profile:{id}
+	pipeline := e.cache.NewPipeline()
+
+	featKey := fmt.Sprintf("user:features:%s", userID)
+	profKey := fmt.Sprintf("user:profile:%s", userID)
+
+	pipeline.HGetAll(ctx, featKey)
+	pipeline.HGetAll(ctx, profKey)
+
+	results, err := pipeline.Exec(ctx)
+	if err != nil {
+		return UserFeatures{}, err
+	}
+
+	// Parse results...
+	var feats UserFeatures
+	_ = results
+	return feats, nil
+}
+```
+
+## 关键参数调优
+
+| 参数 | 推荐值 | 说明 |
+|------|--------|------|
+| 召回候选集 | 500-1000 | 太多增加排序成本，太少丢失优质广告 |
+| 排序 Top-K | 3-10 | 重排后展示数量 |
+| 竞价超时 | 30ms | 召回阶段最大耗时 |
+| Redis TTL | 30min | 用户特征缓存过期时间 |
+| 预算扣减频率 | 实时 | 不能延迟，否则超投 |

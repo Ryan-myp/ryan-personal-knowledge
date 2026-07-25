@@ -272,3 +272,197 @@ dap-agent 使用的模式：
 ❌ 完整的 Reflection 迭代（只有 slot_guard 校验）
 ❌ 高级 Memory 检索（episodic 有但没用到）
 ```
+
+## Go 实现：Agent 设计模式核心
+
+```go
+package agent
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"sync"
+	"time"
+)
+
+// Agent 接口 - 所有 Agent 必须实现
+type Agent interface {
+	// Name 返回 Agent 名称
+	Name() string
+	// Process 处理用户请求，返回回复
+	Process(ctx context.Context, req *Request) (*Response, error)
+}
+
+// Request 用户请求
+type Request struct {
+	UserID    string            `json:"user_id"`
+	Message   string            `json:"message"`
+	Context   map[string]string `json:"context,omitempty"`
+	Timestamp time.Time         `json:"timestamp"`
+}
+
+// Response Agent 回复
+type Response struct {
+	Message   string            `json:"message"`
+	Intent    string            `json:"intent"`
+	Actions   []Action          `json:"actions,omitempty"`
+	Metadata  map[string]any    `json:"metadata,omitempty"`
+}
+
+// Action 要执行的动作
+type Action struct {
+	Type     string            `json:"type"`     // "create_campaign", "get_report", "optimize_bid"
+	Params   map[string]string `json:"params"`
+	Required bool              `json:"required"`
+}
+
+// --- ReAct Pattern: Reasoning + Acting ---
+
+// ReActAgent 推理-行动循环 Agent
+type ReActAgent struct {
+	llm       LLMClient
+	memory    *MemoryStore
+	tools     []Tool
+	maxSteps  int
+}
+
+func (a *ReActAgent) Process(ctx context.Context, req *Request) (*Response, error) {
+	thoughts := make([]string, 0, a.maxSteps)
+	observations := make([]string, 0, a.maxSteps)
+
+	for step := 0; step < a.maxSteps; step++ {
+		// Step 1: Think - 让 LLM 推理下一步
+		prompt := a.buildReactPrompt(req.Message, thoughts, observations)
+		thought, err := a.llm.Generate(ctx, prompt)
+		if err != nil {
+			return nil, fmt.Errorf("llm generate: %w", err)
+		}
+		thoughts = append(thoughts, thought)
+
+		// Step 2: Check if thought contains action
+		action, needsTool := a.parseAction(thought)
+		if !needsTool {
+			// Final answer
+			return &Response{Message: thought, Intent: "answer"}, nil
+		}
+
+		// Step 3: Act - 执行工具调用
+		result, err := a.executeAction(ctx, action)
+		if err != nil {
+			observations = append(observations, fmt.Sprintf("Error: %v", err))
+			continue
+		}
+		observations = append(observations, result)
+	}
+
+	return &Response{
+		Message:   "达到最大步骤数，无法完成",
+		Intent:    "timeout",
+		Metadata:  map[string]any{"steps": a.maxSteps},
+	}, nil
+}
+
+func (a *ReActAgent) buildReactPrompt(message string, thoughts, observations []string) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("User: %s\n\n", message))
+	sb.WriteString("Instructions: Think step by step. Use tools when needed.\n\n")
+
+	for i := range thoughts {
+		sb.WriteString(fmt.Sprintf("Thought %d: %s\n", i+1, thoughts[i]))
+		if i < len(observations) {
+			sb.WriteString(fmt.Sprintf("Observation %d: %s\n", i+1, observations[i]))
+		}
+	}
+
+	return sb.String()
+}
+
+// --- Tool-Use Pattern ---
+
+// Tool 工具接口
+type Tool interface {
+	Name() string
+	Description() string
+	Execute(ctx context.Context, params map[string]string) (string, error)
+}
+
+// MCPToolCaller MCP 工具调用器
+type MCPToolCaller struct {
+	mcpServer *MCPServer
+	timeout   time.Duration
+}
+
+func (c *MCPToolCaller) Execute(ctx context.Context, toolName string, params map[string]string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	result, err := c.mcpServer.CallTool(ctx, toolName, params)
+	if err != nil {
+		return "", fmt.Errorf("mcp call %s: %w", toolName, err)
+	}
+	return result, nil
+}
+
+// --- Plan-and-Execute Pattern ---
+
+// Planner 规划器 - 将复杂任务分解为子步骤
+type Planner struct {
+	llm LLMClient
+}
+
+type Plan struct {
+	Steps []PlanStep `json:"steps"`
+	Status string    `json:"status"` // "planning", "executing", "completed", "failed"
+}
+
+type PlanStep struct {
+	ID        string `json:"id"`
+	Action    string `json:"action"`
+	DependsOn []string `json:"depends_on"` // 依赖的前置步骤
+	Result    string `json:"result,omitempty"`
+	Success   bool   `json:"success,omitempty"`
+}
+
+// CreatePlan 创建执行计划
+func (p *Planner) CreatePlan(ctx context.Context, goal string) (*Plan, error) {
+	prompt := fmt.Sprintf("Break down this goal into executable steps:\n%s\n\nReturn JSON array of steps.", goal)
+
+	var plan Plan
+	// LLM generates structured plan...
+	_ = prompt
+	_ = ctx
+	return &plan, nil
+}
+
+// --- Multi-Agent Pattern ---
+
+// Dispatcher 多 Agent 分发器
+type Dispatcher struct {
+	agents map[string]Agent // intent -> Agent
+	mu     sync.RWMutex
+}
+
+func NewDispatcher() *Dispatcher {
+	return &Dispatcher{agents: make(map[string]Agent)}
+}
+
+func (d *Dispatcher) Register(intent string, agent Agent) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.agents[intent] = agent
+}
+
+// Dispatch 根据意图分发到对应 Agent
+func (d *Dispatcher) Dispatch(ctx context.Context, req *Request) (*Response, error) {
+	d.mu.RLock()
+	agent, ok := d.agents[req.Intent]
+	d.mu.RUnlock()
+
+	if !ok {
+		return &Response{Message: "未找到匹配的 Agent"}, nil
+	}
+
+	return agent.Process(ctx, req)
+}
+```

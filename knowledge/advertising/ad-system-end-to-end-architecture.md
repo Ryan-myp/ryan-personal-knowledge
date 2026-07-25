@@ -577,6 +577,387 @@
 
 ---
 
+## 第十一部分：生产级 Go 代码实现
+
+### 1. 竞价引擎核心（Bidder Service）
+
+```go
+package bidder
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+
+	"ad-platform/bidder/recall"
+	"ad-platform/bidder/rank"
+	"ad-platform/common/cache"
+	"ad-platform/common/metrics"
+)
+
+// BidRequest 竞价请求 - RTB OpenRTB 2.6 标准格式
+type BidRequest struct {
+	Impressions []Impression `json:"imp"`
+	User        User         `json:"user"`
+	Device      Device       `json:"device"`
+	AdSlot      AdSlot       `json:"adslot"`
+	Timestamp   time.Time    `json:"tstamp"`
+	TraceID     string       `json:"trace_id"`
+}
+
+type Impression struct {
+	ID      string  `json:"id"`
+	Width   int     `json:"w"`
+	Height  int     `json:"h"`
+	BidFloor float64 `json:"bidfloor"` // 底价
+}
+
+type User struct {
+	ID      string   `json:"id"`
+	Keywords []string `json:"keywords"`
+	Demographics Demographics `json:"demographics"`
+}
+
+type Demographics struct {
+	Age  int `json:"age"`
+	Gender string `json:"gender"` // M/F/Unknown
+}
+
+type Device struct {
+	IP      string `json:"ip"`
+	UserAgent string `json:"ua"`
+	DeviceID string `json:"did"`
+}
+
+type AdSlot struct {
+	ID          string   `json:"id"`
+	PlacementID string   `json:"placement_id"`
+	Formats     []string `json:"formats"`     // ["banner","video","native"]
+	PublisherID string   `json:"publisher_id"`
+}
+
+// BidResponse 竞价响应
+type BidResponse struct {
+	BidID       string           `json:"bid_id"`
+	CreativeIDs []string         `json:"crid"`
+	Bids        []Bid            `json:"bids"`
+	TraceID     string           `json:"trace_id"`
+	LatencyMs   int64            `json:"latency_ms"`
+}
+
+type Bid struct {
+	ImpID    string  `json:"impid"`
+	CreativeID string `json:"crid"`
+	BidPrice float64 `json:"price"` // 出价（CPC/CPM）
+	eCPM     float64 `json:"-"`     // 内部计算 eCPM
+}
+
+// BidderService 竞价服务 - 核心入口点
+type BidderService struct {
+	recallEngine recall.Engine    // 召回引擎
+	ranker       rank.Ranker      // 排序引擎
+	budgetMgr    *BudgetManager   // 预算管理器
+	freqCtrl     *FreqController  // 频次控制
+	cache        cache.Cache      // Redis 缓存
+	metrics      *metrics.Collector
+}
+
+func NewBidderService(
+	re recall.Engine,
+	rk rank.Ranker,
+	bm *BudgetManager,
+	fc *FreqController,
+	c cache.Cache,
+	m *metrics.Collector,
+) *BidderService {
+	return &BidderService{
+		recallEngine: re,
+		ranker:       rk,
+		budgetMgr:    bm,
+		freqCtrl:     fc,
+		cache:        c,
+		metrics:      m,
+	}
+}
+
+// Bid 处理一次竞价请求 - P99 < 90ms 的关键路径
+func (s *BidderService) Bid(ctx context.Context, req *BidRequest) (*BidResponse, error) {
+	start := time.Now()
+	traceID := req.TraceID
+
+	// Step 1: 并行召回（6路并行，取Top-K）
+	recallCtx, cancel := context.WithTimeout(ctx, 30*time.Millisecond)
+	defer cancel()
+
+	candidates := s.recallEngine.ParallelRecall(recallCtx, req) // 返回 ~500 条候选广告
+
+	// Step 2: 频次过滤 + 预算过滤
+	candidates = s.freqCtrl.Filter(recallCtx, candidates, req.User.ID)
+	candidates = s.budgetMgr.Filter(candidates)
+
+	if len(candidates) == 0 {
+		return &BidResponse{TraceID: traceID, LatencyMs: time.Since(start).Milliseconds()}, nil
+	}
+
+	// Step 3: 特征获取 + 排序（TensorRT 推理 < 10ms）
+	features := s.fetchFeatures(ctx, candidates, req)
+	scored := s.ranker.ScoreBatch(features) // DeepFM/DIN 批量推理
+
+	// Step 4: 重排（多样性 + 去重 + 业务规则）
+	final := s.ranker.Rerank(scored, req.AdSlot)
+
+	// Step 5: 生成竞价响应
+	bids := make([]Bid, 0, len(final))
+	for _, c := range final {
+		bids = append(bids, Bid{
+			ImpID:      req.Impressions[0].ID,
+			CreativeID: c.CreativeID,
+			BidPrice:   c.BidPrice,
+			eCPM:       c.eCPM,
+		})
+	}
+
+	latency := time.Since(start).Milliseconds()
+	s.metrics.ObserveBidLatency(latency, traceID)
+
+	return &BidResponse{
+		BidID:     fmt.Sprintf("bid_%s_%d", traceID, start.UnixNano()),
+		CreativeIDs: finalIDs(final),
+		Bids:      bids,
+		TraceID:   traceID,
+		LatencyMs: latency,
+	}, nil
+}
+
+// fetchFeatures 批量获取用户+广告特征（Redis Pipeline 优化）
+func (s *BidderService) fetchFeatures(ctx context.Context, ads []recall.Candidate, req *BidRequest) []rank.FeatureVector {
+	var mu sync.Mutex
+	features := make([]rank.FeatureVector, 0, len(ads))
+
+	// Pipeline 方式批量读取：用户特征 1 次 + 广告特征 N 次
+	userKey := fmt.Sprintf("user:feat:%s", req.User.ID)
+	userFeat, _ := s.cache.GetPipeline(ctx, userKey)
+
+	for _, ad := range ads {
+		adKey := fmt.Sprintf("ad:feat:%s", ad.AdID)
+		adFeat, _ := s.cache.GetPipeline(ctx, adKey)
+
+		mu.Lock()
+		features = append(features, rank.MergeFeatures(userFeat, adFeat))
+		mu.Unlock()
+	}
+	return features
+}
+
+func finalIDs(ads []rank.ScoredCandidate) []string {
+	ids := make([]string, len(ads))
+	for i, a := range ads {
+		ids[i] = a.CreativeID
+	}
+	return ids
+}
+```
+
+### 2. 预算原子扣减（Redis Lua + 异步落盘）
+
+```go
+package bidder
+
+import (
+	"context"
+	"fmt"
+
+	"ad-platform/common/cache"
+)
+
+const budgetLuaScript = `
+-- KEYS[1] = budget:key (如 "budget:camp_12345")
+-- ARGV[1] = amount (本次消耗，单位：分)
+-- ARGV[2] = total_budget (总预算，单位：分)
+
+local current = tonumber(redis.call('GET', KEYS[1]) or "0")
+local remaining = tonumber(ARGV[2]) - current
+
+if remaining < tonumber(ARGV[1]) then
+    return {0, remaining}  -- 预算不足
+end
+
+redis.call('INCRBY', KEYS[1], ARGV[1])
+return {1, remaining - tonumber(ARGV[1])}
+`
+
+// BudgetManager 预算管理器 - 保证原子性 + 最终一致性
+type BudgetManager struct {
+	redis   cache.Cache
+	channel chan budgetOp // 异步落盘通道
+	done    chan struct{}
+}
+
+type budgetOp struct {
+	campaignID string
+	amount     int64 // 单位：分
+	timestamp  time.Time
+}
+
+func NewBudgetManager(redis cache.Cache) *BudgetManager {
+	bm := &BudgetManager{
+		redis:   redis,
+		channel: make(chan budgetOp, 10000), // 10K buffer
+		done:    make(chan struct{}),
+	}
+	go bm.flushLoop() // 后台 goroutine 异步写入 MySQL
+	return bm
+}
+
+func (bm *BudgetManager) CheckAndDeduct(campID string, amount int64, totalBudget int64) (bool, int64, error) {
+	key := fmt.Sprintf("budget:%s", campID)
+	result, err := bm.redis.Eval(context.Background(), budgetLuaScript, []string{key}, fmt.Sprintf("%d", amount), fmt.Sprintf("%d", totalBudget))
+	if err != nil {
+		return false, 0, err
+	}
+
+	res := result.([]interface{})
+	allowed := int(res[0].(int64))
+	remaining := int(res[1].(int64))
+
+	if allowed == 1 {
+		// 异步落盘：写入 channel，不阻塞竞价主流程
+		select {
+		case bm.channel <- budgetOp{
+			campaignID: campID,
+			amount:     amount,
+			timestamp:  time.Now(),
+		}:
+		default:
+			// channel 满了，降级为同步写入（极端情况）
+			bm.flushSync(campID, amount)
+		}
+	}
+
+	return allowed == 1, int64(remaining), nil
+}
+
+// flushLoop 异步刷盘 - 批量写入 MySQL
+func (bm *BudgetManager) flushLoop() {
+	const batchSize = 500
+	const flushInterval = 100 * time.Millisecond
+
+	ticker := time.NewTicker(flushInterval)
+	defer ticker.Stop()
+
+	var ops []budgetOp
+
+	for {
+		select {
+		case op := <-bm.channel:
+			ops = append(ops, op)
+			if len(ops) >= batchSize {
+				bm.flushBatch(ops)
+				ops = ops[:0]
+			}
+		case <-ticker.C:
+			if len(ops) > 0 {
+				bm.flushBatch(ops)
+				ops = ops[:0]
+			}
+		case <-bm.done:
+			bm.flushBatch(ops) // 关闭前刷新剩余
+			return
+		}
+	}
+}
+
+func (bm *BudgetManager) flushBatch(ops []budgetOp) {
+	// 批量 INSERT ... ON DUPLICATE KEY UPDATE
+	// SQL: INSERT INTO campaign_budget (campaign_id, spent, updated_at)
+	//      VALUES (?, ?, NOW()) ON DUPLICATE KEY UPDATE spent = spent + VALUES(spent)
+	// ... 实际实现省略
+}
+```
+
+### 3. 多路召回并行引擎
+
+```go
+package recall
+
+import (
+	"context"
+	"sort"
+	"sync"
+)
+
+// Engine 召回引擎接口
+type Engine interface {
+	ParallelRecall(ctx context.Context, req *BidRequest) []Candidate
+}
+
+// Candidate 召回候选广告
+type Candidate struct {
+	AdID       string
+	CreativeID string
+	BidPrice   float64
+	Source     string // "vector"/"rule"/"retention"/"hot"/"geo"/"context"
+	Score      float64
+}
+
+// MultiPathRecall 多路召回实现 - 6路并行
+type MultiPathRecall struct {
+	pathways []Pathway
+	topK     int // 最终输出 Top-K
+}
+
+type Pathway interface {
+	Name() string
+	Recall(ctx context.Context, req *BidRequest) ([]Candidate, error)
+}
+
+func NewMultiPathRecall(paths []Pathway, topK int) *MultiPathRecall {
+	return &MultiPathRecall{pathways: paths, topK: topK}
+}
+
+// ParallelRecall 6路并行召回，合并后取 Top-K
+func (m *MultiPathRecall) ParallelRecall(ctx context.Context, req *BidRequest) []Candidate {
+	var wg sync.WaitGroup
+	results := make([][]Candidate, len(m.pathways))
+
+	// 每路独立 goroutine，互不阻塞
+	for i, pw := range m.pathways {
+		wg.Add(1)
+		go func(idx int, pathway Pathway) {
+			defer wg.Done()
+			cands, err := pathway.Recall(ctx, req)
+			if err != nil {
+				// 单路失败不影响其他路
+				return
+			}
+			results[idx] = cands
+		}(i, pw)
+	}
+
+	wg.Wait()
+
+	// 合并所有路的候选集
+	all := make([]Candidate, 0, m.topK*len(m.pathways))
+	for _, r := range results {
+		all = append(all, r...)
+	}
+
+	// 按 eCPM 降序排序，取 Top-K
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].Score > all[j].Score
+	})
+
+	if len(all) > m.topK {
+		all = all[:m.topK]
+	}
+
+	return all
+}
+```
+
+---
+
 ## 第十二部分：演进路线
 
 ```

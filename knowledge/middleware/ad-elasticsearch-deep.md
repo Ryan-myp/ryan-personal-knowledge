@@ -329,3 +329,144 @@ public class QueryPhase {
 3. 监控 JVM heap usage
 4. 定期 snapshot/restore
 ```
+
+## Go 实现：Elasticsearch 广告检索客户端
+
+```go
+package elasticsearch
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"time"
+)
+
+// Client ES 客户端
+type Client struct {
+	endpoint string
+	client   *http.Client
+}
+
+func NewClient(endpoint string) *Client {
+	return &Client{
+		endpoint: endpoint,
+		client: &http.Client{Timeout: 10 * time.Second},
+	}
+}
+
+// AdDoc 广告文档结构
+type AdDoc struct {
+	ID          string   `json:"id"`
+	CampaignID  string   `json:"campaign_id"`
+	CreativeIDs []string `json:"creative_ids"`
+	BidPrice    float64  `json:"bid_price"`
+	Status      string   `json:"status"` // ACTIVE/DISABLED
+	Targeting   Targeting `json:"targeting"`
+	Features    map[string]interface{} `json:"features"`
+}
+
+type Targeting struct {
+	Keywords []string `json:"keywords"`
+	Ages     []string `json:"ages"`
+	Genders  []string `json:"genders"`
+	Geos     []Geo    `json:"geos"`
+}
+
+type Geo struct {
+	Country  string `json:"country"`
+	Province string `json:"province"`
+	City     string `json:"city"`
+}
+
+// SearchAds 搜索广告 - 多条件联合查询
+func (c *Client) SearchAds(ctx context.Context, req *SearchRequest) ([]AdDoc, error) {
+	query := map[string]interface{}{
+		"query": map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must": []map[string]interface{}{
+					{"term": map[string]interface{}{"status": "ACTIVE"}},
+					{"range": map[string]interface{}{
+						"bid_price": map[string]interface{}{
+							"gte": req.MinBid,
+						},
+					}},
+				},
+				"filter": []map[string]interface{}{
+					{"terms": map[string]interface{}{"targeting.geos.country": req.Countries}},
+					{"terms": map[string]interface{}{"targeting.ages": req.Ages}},
+				},
+			},
+		},
+		"size": req.Size,
+		"sort": []map[string]interface{}{
+			{"bid_price": map[string]interface{}{"order": "desc"}},
+		},
+	}
+
+	body, _ := json.Marshal(query)
+	url := fmt.Sprintf("%s/%s/_search", c.endpoint, req.Index)
+
+	httpReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("es search: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var esResp struct {
+		Hits struct {
+			Hits []struct {
+				Source AdDoc `json:"_source"`
+			} `json:"hits"`
+		} `json:"hits"`
+	}
+	json.NewDecoder(resp.Body).Decode(&esResp)
+
+	ads := make([]AdDoc, len(esResp.Hits.Hits))
+	for i, h := range esResp.Hits.Hits {
+		ads[i] = h.Source
+	}
+	return ads, nil
+}
+
+// BulkIndex 批量索引广告文档
+func (c *Client) BulkIndex(ctx context.Context, docs []AdDoc) error {
+	var buf bytes.Buffer
+	for _, doc := range docs {
+		buf.WriteString(fmt.Sprintf(`{"index":{"_index":"%s"}}\n`, "ads"))
+		data, _ := json.Marshal(doc)
+		buf.Write(data)
+		buf.WriteByte('\n')
+	}
+
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost,
+		fmt.Sprintf("%s/_bulk", c.endpoint), &buf)
+	req.Header.Set("Content-Type", "application/x-ndjson")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("bulk index failed: %d", resp.StatusCode)
+	}
+	return nil
+}
+```
+
+## 动手验证
+
+```bash
+# 启动本地 ES 用于测试
+docker run -d -p 9200:9200 -e "discovery.type=single-node" elasticsearch:8.11.0
+
+# 运行 ES 检索测试
+go test -v ./middleware/elasticsearch/... -run TestSearchAds
+```

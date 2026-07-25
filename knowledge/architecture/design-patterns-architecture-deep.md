@@ -37,4 +37,134 @@ Go 的 interface 空接口 interface{} 作为函数参数有什么代价？
 3. **嵌入的局限性**：不能重写父结构体的方法，只能 override
 4. **推荐做法**：用组合 + 接口实现多态，而不是嵌入实现继承
 
+---
+
+## Go 实现：设计模式实战
+
+### 1. Strategy Pattern（策略模式）- 广告竞价策略
+
+```go
+package strategy
+
+// BidStrategy 竞价策略接口
+type BidStrategy interface {
+	CalculateBid(estimate float64, competition float64) float64
+	Name() string
+}
+
+// CPCStrategy CPC 出价策略
+type CPCStrategy struct{ baseBid float64 }
+
+func (s *CPCStrategy) CalculateBid(estimate, competition float64) float64 {
+	return s.baseBid * (1 + competition*0.1) // 竞争越激烈，出价越高
+}
+
+func (s *CPCStrategy) Name() string { return "cpc" }
+
+// oCPMStrategy oCPM 出价策略（目标 CPA）
+type oCPMStrategy struct {
+	targetCPA float64
+	pCTR      float64
+}
+
+func (s *oCPMStrategy) CalculateBid(estimate, competition float64) float64 {
+	// eCPM = CPA × pCTR × 1000 × bid_efficiency
+	bidEfficiency := 1.0 + competition*0.05
+	return s.targetCPA * s.pCTR * 1000 * bidEfficiency
+}
+
+func (s *oCPMStrategy) Name() string { return "ocpm" }
+
+// SmartStrategy 智能出价 - 根据数据自动选择策略
+type SmartStrategy struct {
+	strategies map[string]BidStrategy
+	metrics    *MetricsCollector
+}
+
+func (s *SmartStrategy) SelectStrategy(campaignID string) BidStrategy {
+	roi := s.metrics.GetROICampaign(campaignID)
+	if roi > 2.0 {
+		return s.strategies["ocpm"]
+	}
+	return s.strategies["cpc"]
+}
+```
+
+### 2. Circuit Breaker Pattern（熔断器）- API 调用保护
+
+```go
+package circuit
+
+import (
+	"sync"
+	"sync/atomic"
+	"time"
+)
+
+type State int
+
+const (
+	StateClosed   State = iota
+	StateOpen
+	StateHalfOpen
+)
+
+type CircuitBreaker struct {
+	state        State
+	failureCount int64
+	lastFailTime time.Time
+	mu           sync.Mutex
+	maxFailures  int
+	timeout      time.Duration
+}
+
+func NewCircuitBreaker(maxFailures int, timeout time.Duration) *CircuitBreaker {
+	return &CircuitBreaker{
+		state:       StateClosed,
+		maxFailures: maxFailures,
+		timeout:     timeout,
+	}
+}
+
+func (cb *CircuitBreaker) AllowRequest() bool {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	switch cb.state {
+	case StateClosed:
+		return true
+	case StateOpen:
+		if time.Since(cb.lastFailTime) > cb.timeout {
+			cb.state = StateHalfOpen
+			return true
+		}
+		return false
+	case StateHalfOpen:
+		return true
+	default:
+		return false
+	}
+}
+
+func (cb *CircuitBreaker) RecordSuccess() {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	atomic.StoreInt64(&cb.failureCount, 0)
+	if cb.state == StateHalfOpen {
+		cb.state = StateClosed
+	}
+}
+
+func (cb *CircuitBreaker) RecordFailure() {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	count := atomic.AddInt64(&cb.failureCount, 1)
+	cb.lastFailTime = time.Now()
+
+	if count >= int64(cb.maxFailures) {
+		cb.state = StateOpen
+	}
+}
+```
 </details>

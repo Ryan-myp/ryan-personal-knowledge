@@ -530,3 +530,166 @@ RL 出价系统如何保证安全？
 ---
 
 *本文档基于广告强化学习生产实战整理。*
+
+## Go 实现：RL 出价引擎核心
+
+```go
+package rl_bidding
+
+import (
+	"context"
+	"math"
+	"sync"
+	"time"
+)
+
+// RLAgent 强化学习出价 Agent
+type RLAgent struct {
+	mu          sync.RWMutex
+	qTable      map[string]map[float64]float64 // state -> action -> q_value
+	epsilon     float64                         // exploration rate
+	learningRate float64                        // α
+	discount    float64                         // γ
+	stateSpace  StateEncoder                    // 状态编码
+	actionSpace ActionDiscretizer               // 动作离散化
+}
+
+// BidState RL 状态空间
+type BidState struct {
+	UserID        string
+	CampaignID    string
+	AdSlotID      string
+	PrevCTR       float64   // 历史 CTR
+	PrevCVR       float64   // 历史 CVR
+	BudgetRemain  float64   // 剩余预算比例 (0-1)
+	TimeOfDay     int       // 0-23
+	DayOfWeek     int       // 0-6
+	CompetitiveIntensity float64 // 竞争强度
+}
+
+// BidAction RL 动作空间
+type BidAction struct {
+	Multiplier float64 // 出价倍数 (0.5x - 3.0x)
+}
+
+// QLearningBidder Q-Learning 出价器
+type QLearningBidder struct {
+	agent *RLAgent
+	baseBid float64
+	budgetMgr *BudgetManager
+}
+
+// Bid 使用 RL 模型计算最优出价
+func (b *QLearningBidder) Bid(ctx context.Context, state BidState) (*BidAction, float64, error) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	// Step 1: 状态编码为离散 key
+	stateKey := b.agent.stateSpace.Encode(state)
+
+	// Step 2: ε-greedy 探索/利用
+	action := b.selectAction(stateKey)
+
+	// Step 3: 计算实际出价
+	actualBid := b.baseBid * action.Multiplier
+
+	// Step 4: 预算约束检查
+	if !b.budgetMgr.HasEnoughBudget(actualBid) {
+		action = &BidAction{Multiplier: 0.5} // 降级：保守出价
+		actualBid = b.baseBid * action.Multiplier
+	}
+
+	return action, actualBid, nil
+}
+
+// selectAction ε-greedy 策略选择动作
+func (a *RLAgent) selectAction(stateKey string) *BidAction {
+	// Exploration: 随机探索
+	if math/rand.Float64() < a.epsilon {
+		return a.actionSpace.RandomAction()
+	}
+
+	// Exploitation: 选择 Q 值最大的动作
+	actions, ok := a.qTable[stateKey]
+	if !ok || len(actions) == 0 {
+		return a.actionSpace.RandomAction() // 冷启动
+	}
+
+	var bestAction *BidAction
+	bestQ := -math.MaxFloat64
+
+	for _, action := range a.actionSpace.AllActions() {
+		q := actions[action.Multiplier]
+		if q > bestQ {
+			bestQ = q
+			bestAction = &action
+		}
+	}
+
+	return bestAction
+}
+
+// Update 学习更新 - 收到转化反馈后调用
+func (a *RLAgent) Update(state BidState, action BidAction, reward float64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	stateKey := a.stateSpace.Encode(state)
+
+	// 初始化
+	if _, ok := a.qTable[stateKey]; !ok {
+		a.qTable[stateKey] = make(map[float64]float64)
+	}
+
+	oldQ := a.qTable[stateKey][action.Multiplier]
+
+	// Bellman 方程: Q(s,a) ← Q(s,a) + α[r + γ·max_a' Q(s',a') - Q(s,a)]
+	newStateKey := a.stateSpace.Encode(state) // 简化：假设状态不变
+	maxNextQ := 0.0
+	if nextActions, ok := a.qTable[newStateKey]; ok {
+		for _, q := range nextActions {
+			if q > maxNextQ {
+				maxNextQ = q
+			}
+		}
+	}
+
+	newQ := oldQ + a.learningRate*(reward + a.discount*maxNextQ - oldQ)
+	a.qTable[stateKey][action.Multiplier] = newQ
+}
+
+// StateEncoder 状态编码器 - 将连续状态离散化为可管理的状态空间
+type StateEncoder struct {
+	buckets []float64 // 分桶边界
+}
+
+func (e *StateEncoder) Encode(state BidState) string {
+	// 关键特征：prev_ctr, budget_remain, time_of_day
+	ctrBucket := e.bucket(state.PrevCTR, []float64{0, 0.01, 0.03, 0.05, 0.1, 1.0})
+	budgetBucket := e.bucket(state.BudgetRemain, []float64{0, 0.1, 0.3, 0.5, 0.7, 1.0})
+	timeBucket := state.TimeOfDay / 4 // 6 个时段
+
+	return fmt.Sprintf("ctr_%d_budget_%d_time_%d", ctrBucket, budgetBucket, timeBucket)
+}
+
+func (e *StateEncoder) bucket(val float64, bounds []float64) int {
+	for i, b := range bounds {
+		if val <= b {
+			return i
+		}
+	}
+	return len(bounds)
+}
+```
+
+## 动手验证：RL 出价模拟
+
+```bash
+# 运行 RL 竞价模拟器
+go run rl_bidder_simulator/main.go \
+  --campaign-id=camp_12345 \
+  --base-bid=2.5 \
+  --total-budget=10000 \
+  --duration=7d \
+  --eval-interval=1h
+```

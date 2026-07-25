@@ -283,3 +283,205 @@ TikTok 算法分析
 # - 广告报告
 # - 转化报告
 ```
+
+## Go 实现：TikTok Ads API 客户端
+
+```go
+package tiktok
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"sync"
+	"time"
+)
+
+// APIClient TikTok Ads API 客户端
+type APIClient struct {
+	baseURL    string
+	accessToken string
+	client     *http.Client
+	mu         sync.Mutex // token 刷新锁
+}
+
+const tiktokBaseURL = "https://adapi.tiktok.com/ads/v2"
+
+func NewAPIClient(accessToken string) *APIClient {
+	return &APIClient{
+		baseURL:     tiktokBaseURL,
+		accessToken: accessToken,
+		client: &http.Client{
+			Timeout: 30 * time.Second,
+		},
+	}
+}
+
+// Campaign 广告系列
+type Campaign struct {
+	ID            int64   `json:"id"`
+	Name          string  `json:"name"`
+	Status        string  `json:"status"` // ENABLED/DISABLED/PAUSED
+	PacingType    string  `json:"pacing_type"` // OPTIMIZE_PACING/DAILY_BUDGET
+	DailyBudget   int64   `json:"daily_budget"` // 单位：分
+	BidAmount     int64   `json:"bid_amount"` // CPC 出价，单位：分
+	ObjectiveType string  `json:"objective_type"` // APP_PROMOTION/LINK_CONVERSION
+}
+
+// CreateCampaign 创建广告系列
+func (c *APIClient) CreateCampaign(ctx context.Context, req *CreateCampaignRequest) (*Campaign, error) {
+	url := fmt.Sprintf("%s/campaign", c.baseURL)
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessToken))
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("do request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
+	}
+
+	var apiResp CreateCampaignResponse
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	return &Campaign{
+		ID:            apiResp.Data.Campaign.ID,
+		Name:          apiResp.Data.Campaign.Name,
+		Status:        apiResp.Data.Campaign.Status,
+		DailyBudget:   apiResp.Data.Campaign.DailyBudget,
+		BidAmount:     apiResp.Data.Campaign.BidAmount,
+		ObjectiveType: apiResp.Data.Campaign.ObjectiveType,
+	}, nil
+}
+
+// GetCampaignReport 获取广告报表（支持时间范围 + 维度筛选）
+func (c *APIClient) GetCampaignReport(ctx context.Context, campaignIDs []int64, startDate, endDate string) (*ReportData, error) {
+	url := fmt.Sprintf("%s/report/campaign", c.baseURL)
+
+	params := url.Values{}
+	for _, id := range campaignIDs {
+		params.Add("campaign_ids", fmt.Sprintf("%d", id))
+	}
+	params.Set("start_date", startDate)
+	params.Set("end_date", endDate)
+	params.Set("time_type", "DATE")
+
+	reportReq := ReportRequest{
+		ReportName: "campaign_report",
+		TimeType:   "DATE",
+		StartDate:  startDate,
+		EndDate:    endDate,
+		Columns: []string{
+			"CAMPAIGN_NAME", "CAMPAIGN_ID", "IMPRESSIONS",
+			"CLICKS", "CONVERSIONS", "SPEND",
+		},
+	}
+
+	body, _ := json.Marshal(reportReq)
+	httpReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, url+"?"+params.Encode(), bytes.NewReader(body))
+	httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessToken))
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.client.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var reportResp ReportResponse
+	if err := json.NewDecoder(resp.Body).Decode(&reportResp); err != nil {
+		return nil, err
+	}
+
+	return &reportResp.Data, nil
+}
+
+// BatchUpdateCampaigns 批量更新广告系列状态
+func (c *APIClient) BatchUpdateCampaigns(ctx context.Context, updates []CampaignUpdate) error {
+	url := fmt.Sprintf("%s/campaign/batch_update", c.baseURL)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"updates": updates,
+	})
+
+	httpReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessToken))
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.client.Do(httpReq)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("batch update failed: %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// CampaignOptimizer 广告优化器 - 自动调整出价和预算
+type CampaignOptimizer struct {
+	api      *APIClient
+	interval time.Duration
+}
+
+// RunOptimization 定时优化循环
+func (o *CampaignOptimizer) Run(ctx context.Context) error {
+	ticker := time.NewTicker(o.interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			o.optimizeOnce(ctx)
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+func (o *CampaignOptimizer) optimizeOnce(ctx context.Context) {
+	// 1. 拉取所有 Campaign 数据
+	campaigns := o.getActiveCampaigns(ctx)
+
+	// 2. 计算每个 Campaign 的 ROI
+	for _, camp := range campaigns {
+		report, err := o.api.GetCampaignReport(ctx, []int64{camp.ID}, "LAST_7DAYS", "TODAY")
+		if err != nil {
+			continue
+		}
+
+		// 3. 根据 CPA 和目标 CPA 调整出价
+		actualCPA := report.Spend / report.Conversions
+		targetCPA := float64(camp.BidAmount)
+
+		if actualCPA > targetCPA*1.5 {
+			// CPA 过高，降低出价
+			o.adjustBidDown(ctx, camp, actualCPA/targetCPA)
+		} else if actualCPA < targetCPA*0.7 && report.Impressions > 1000 {
+			// CPA 过低且有流量空间，提高出价
+			o.adjustBidUp(ctx, camp, targetCPA/actualCPA)
+		}
+	}
+}
+```

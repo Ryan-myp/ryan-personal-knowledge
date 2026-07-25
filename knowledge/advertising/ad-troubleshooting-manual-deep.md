@@ -279,3 +279,272 @@ eCPM 下降如何排查？
 ---
 
 *本文档基于广告系统排查生产实战整理。*
+
+## Go 实现：自动诊断引擎
+
+```go
+package diagnosis
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+)
+
+// DiagnosticEngine 自动诊断引擎 - 5大模块并行检查
+type DiagnosticEngine struct {
+	logger *Logger
+	metrics *MetricsCollector
+}
+
+// Issue 诊断发现的问题
+type Issue struct {
+	Module    string    `json:"module"`
+	Severity  string    `json:"severity"` // "critical", "warning", "info"
+	Message   string    `json:"message"`
+	Evidence  string    `json:"evidence"`
+	Suggestion string   `json:"suggestion"`
+}
+
+// DiagnosisReport 诊断报告
+type DiagnosisReport struct {
+	Timestamp time.Time `json:"timestamp"`
+	Issues    []Issue   `json:"issues"`
+	RootCause string    `json:"root_cause"`
+	Score     float64   `json:"score"` // 健康度 0-100
+}
+
+// DiagnoseCampaign 诊断广告组问题
+func (d *DiagnosticEngine) DiagnoseCampaign(ctx context.Context, campaignID string) (*DiagnosisReport, error) {
+	report := &DiagnosisReport{Timestamp: time.Now()}
+
+	// 5大模块并行检查
+	type result struct {
+		issues []Issue
+		err    error
+	}
+	ch := make(chan result, 5)
+
+	go d.checkImpressions(ctx, campaignID, ch)
+	go d.checkBidCompetitiveness(ctx, campaignID, ch)
+	go d.checkCTR(ctx, campaignID, ch)
+	go d.checkTargeting(ctx, campaignID, ch)
+	go d.checkBudget(ctx, campaignID, ch)
+
+	for i := 0; i < 5; i++ {
+		select {
+		case r := <-ch:
+			if r.err != nil {
+				d.logger.Warn("diagnostic check failed", "module", campaignID, "err", r.err)
+				continue
+			}
+			report.Issues = append(report.Issues, r.issues...)
+		case <-time.After(5 * time.Second):
+			d.logger.Warn("diagnostic timeout", "campaign", campaignID)
+		}
+	}
+
+	// 根因分析
+	report.RootCause = d.analyzeRootCause(report.Issues)
+	report.Score = d.calculateHealthScore(report.Issues)
+
+	return report, nil
+}
+
+// checkImpressions 检查展示量异常
+func (d *DiagnosticEngine) checkImpressions(ctx context.Context, campID string, ch chan<- result) {
+	// 查竞价日志：是否有 win / 出价 / 曝光
+	impressions, err := d.metrics.GetImpressions(ctx, campID, time.Now().Add(-24*time.Hour))
+	if err != nil {
+		ch <- result{err: fmt.Errorf("get impressions: %w", err)}
+		return
+	}
+
+	var issues []Issue
+	if impressions == 0 {
+		issues = append(issues, Issue{
+			Module:   "impressions",
+			Severity: "critical",
+			Message:  "广告 0 展示",
+			Evidence: fmt.Sprintf("24h impressions = %d", impressions),
+			Suggestion: "1. 检查竞价日志是否有 win\n2. 检查出价是否低于底价\n3. 检查定向条件是否过窄",
+		})
+	}
+	ch <- result{issues: issues}
+}
+
+// checkBidCompetitiveness 检查出价竞争力
+func (d *DiagnosticEngine) checkBidCompetitiveness(ctx context.Context, campID string, ch chan<- result) {
+	bid, avgBid, err := d.metrics.GetBidCompetitiveness(ctx, campID)
+	if err != nil {
+		ch <- result{err: err}
+		return
+	}
+
+	var issues []Issue
+	if bid < avgBid*0.8 {
+		issues = append(issues, Issue{
+			Module:   "bid",
+			Severity: "warning",
+			Message:  fmt.Sprintf("出价 %.2f 低于行业均价 %.2f", bid, avgBid),
+			Evidence: fmt.Sprintf("bid=%.2f, avg=%.2f, ratio=%.2f", bid, avgBid, bid/avgBid),
+			Suggestion: "提高出价或优化创意质量分以提升竞争力",
+		})
+	}
+	ch <- result{issues: issues}
+}
+
+// checkCTR 检查 CTR 异常
+func (d *DiagnosticEngine) checkCTR(ctx context.Context, campID string, ch chan<- result) {
+	ctr, prevCtr, err := d.metrics.GetCTR(ctx, campID)
+	if err != nil {
+		ch <- result{err: err}
+		return
+	}
+
+	var issues []Issue
+	if ctr < prevCtr*0.5 {
+		issues = append(issues, Issue{
+			Module:   "ctr",
+			Severity: "warning",
+			Message:  fmt.Sprintf("CTR 下降: %.4f → %.4f", prevCtr, ctr),
+			Evidence: fmt.Sprintf("current_ctr=%.4f, previous_ctr=%.4f, drop=%.1f%%", ctr, prevCtr, (prevCtr-ctr)/prevCtr*100),
+			Suggestion: "1. 检查创意是否疲劳（同一创意展示 > N 次）\n2. 检查流量质量变化\n3. 检查近期是否更换了创意",
+		})
+	}
+	ch <- result{issues: issues}
+}
+
+// checkTargeting 检查定向条件
+func (d *DiagnosticEngine) checkTargeting(ctx context.Context, campID string, ch chan<- result) {
+	targeting, err := d.metrics.GetTargeting(ctx, campID)
+	if err != nil {
+		ch <- result{err: err}
+		return
+	}
+
+	var issues []Issue
+	// 检查定向条件是否过窄
+	narrowCount := 0
+	if strings.Contains(targeting.AgeRange, "-") && len(strings.Split(targeting.AgeRange, "-")[0]) > 0 {
+		narrowCount++
+	}
+	if len(targeting.Geo) > 3 {
+		narrowCount++
+	}
+	if narrowCount >= 2 {
+		issues = append(issues, Issue{
+			Module:   "targeting",
+			Severity: "info",
+			Message:  "定向条件可能过窄",
+			Evidence: fmt.Sprintf("narrow_factors=%d", narrowCount),
+			Suggestion: "放宽定向条件以扩大可投放人群",
+		})
+	}
+	ch <- result{issues: issues}
+}
+
+// checkBudget 检查预算
+func (d *DiagnosticEngine) checkBudget(ctx context.Context, campID string, ch chan<- result) {
+	spent, budget, err := d.metrics.GetBudget(ctx, campID)
+	if err != nil {
+		ch <- result{err: err}
+		return
+	}
+
+	var issues []Issue
+	if spent >= budget {
+		issues = append(issues, Issue{
+			Module:   "budget",
+			Severity: "critical",
+			Message:  "预算已耗尽",
+			Evidence: fmt.Sprintf("spent=%.0f, budget=%.0f", spent, budget),
+			Suggestion: "增加预算或延长投放周期",
+		})
+	} else if float64(spent)/budget > 0.95 {
+		issues = append(issues, Issue{
+			Module:   "budget",
+			Severity: "warning",
+			Message:  "预算即将耗尽 (>95%)",
+			Evidence: fmt.Sprintf("spent=%.0f, budget=%.0f, usage=%.0f%%", spent, budget, float64(spent)/budget*100),
+			Suggestion: "提前准备预算补充方案",
+		})
+	}
+	ch <- result{issues: issues}
+}
+
+// analyzeRootCause 根因分析
+func (d *DiagnosticEngine) analyzeRootCause(issues []Issue) string {
+	// 按严重程度排序，取最严重的问题
+	criticalCount := 0
+	for _, issue := range issues {
+		if issue.Severity == "critical" {
+			criticalCount++
+		}
+	}
+	if criticalCount > 0 {
+		return fmt.Sprintf("发现 %d 个严重问题，需立即处理", criticalCount)
+	}
+	warningCount := 0
+	for _, issue := range issues {
+		if issue.Severity == "warning" {
+			warningCount++
+		}
+	}
+	if warningCount > 0 {
+		return fmt.Sprintf("发现 %d 个警告问题，建议优化", warningCount)
+	}
+	return "系统运行正常"
+}
+
+// calculateHealthScore 计算健康度分数
+func (d *DiagnosticEngine) calculateHealthScore(issues []Issue) float64 {
+	score := 100.0
+	for _, issue := range issues {
+		switch issue.Severity {
+		case "critical":
+			score -= 30
+		case "warning":
+			score -= 10
+		case "info":
+			score -= 5
+		}
+	}
+	if score < 0 {
+		score = 0
+	}
+	return score
+}
+```
+
+### 生产排障：eCPM 突然下降 50% 的案例
+
+**场景**: 某电商 Campaign eCPM 从 15 元骤降到 7.5 元
+
+**排查步骤**:
+1. **确认时间范围**: Grafana 查看 eCPM 曲线，确认下降时间点
+2. **拆解公式**: eCPM = CTR × CVR × targetCPA × 1000
+3. **逐项检查**:
+   - CTR: 从 2% → 1%（下降 50%）✓ 根因
+   - CVR: 稳定在 5%
+   - targetCPA: 未变更
+4. **定位 CTR 下降原因**:
+   - 对比创意数据：主图创意展示占比 80%，CTR 从 2.5% → 1.2%
+   - 结论：创意疲劳
+5. **解决方案**: 上传新创意 → CTR 恢复至 2.1% → eCPM 恢复至 14 元
+
+**Go 验证代码**:
+```go
+// 快速验证 CTR 下降是否由特定创意引起
+func diagnoseCreativeFatigue(ctx context.Context, campID string) {
+	creatives := getCreatives(ctx, campID)
+	for _, c := range creatives {
+		ctr := c.impressions > 0 ? float64(c.clicks)/float64(c.impressions) : 0
+		if c.impressions > 10000 && ctr < 0.01 {
+			fmt.Printf("[FATIGUE] creative=%s impressions=%d ctr=%.4f\n",
+				c.id, c.impressions, ctr)
+		}
+	}
+}
+```

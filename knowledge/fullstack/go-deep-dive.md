@@ -4,6 +4,129 @@
 // 8. 避免接口逃逸: 接口参数会触发 heap 分配
 ```
 
+## Go 实现：GMP 调度器核心
+
+```go
+package runtime
+
+import (
+	"sync"
+	"sync/atomic"
+)
+
+// P 逻辑处理器
+type P struct {
+	id          int32
+	status      uint32 // _Pidle, _Prunning, _Psystem, _Pgc
+	runq        runQueue   // 本地运行队列
+	runnext     *g         // 下一个要执行的 goroutine
+	pendrunq    gQueue     // 等待运行的 goroutine 队列
+	gcx         gcContext  // GC 上下文
+	m           *m         // 绑定的 M
+	mcount      int32      // P 创建数
+	mfreecount  int32      // P 释放数
+	// ... 更多字段
+}
+
+// M OS 线程
+type m struct {
+	g0      *g       // 系统 goroutine，用于调度
+	curg    *g       // 当前执行的 goroutine
+	p       puintptr // 绑定的 P
+	nextp   puintptr // 下一次要绑定的 P
+	stack   stack    // 当前栈
+	// ... 更多字段
+}
+
+// g Goroutine
+type g struct {
+	stack       stack    // 栈 [stack.lo, stack.hi]
+	stackguard0 uintptr  // 栈检查阈值 (goroutine 用户代码)
+	stackguard1 uintptr  // 栈检查阈值 (runtime 内部)
+	p           puintptr
+	m            *m
+	sched        context  // 调度上下文（保存/恢复）
+	atomicstatus uint32   // Grunning, Grunnable, Grunnable, etc.
+	goroutineID  int64
+	// ... 更多字段
+}
+
+// runQueue 双端队列 - Work-Stealing 的核心数据结构
+type runQueue struct {
+	head uint32
+	tail uint32
+	buf  [256]*g // 环形缓冲区
+}
+
+func (q *runQueue) push(g *g) {
+	// 从尾部入队
+	idx := atomic.AddUint32(&q.tail, 1) - 1
+	q.buf[idx%uint32(len(q.buf))] = g
+}
+
+func (q *runQueue) pop() *g {
+	// 从头部出队
+	for {
+		head := q.head
+		tail := q.tail
+		if head >= tail {
+			return nil // 空队列
+		}
+		if atomic.CompareAndSwapUint32(&q.head, head, head+1) {
+			g := q.buf[head%uint32(len(q.buf))]
+			q.buf[head%uint32(len(q.buf))] = nil // 避免内存泄漏
+			return g
+		}
+	}
+}
+
+// stealWork 从其他 P 偷取工作 - Work-Stealing 算法
+func (myP *P) stealWork() *g {
+	// 随机选择一个其他 P
+	for i := 0; i < 4; i++ { // 最多尝试 4 次
+		targetP := pickRandomP(myP.id)
+		if targetP == nil {
+			break
+		}
+		// 从目标 P 的尾部偷取（与 pop 不同端，减少竞争）
+		g := targetP.stealFromTail()
+		if g != nil {
+			return g
+		}
+	}
+	return nil
+}
+
+func (q *runQueue) stealFromTail() *g {
+	for {
+		tail := q.tail
+		head := q.head
+		if head >= tail {
+			return nil
+		}
+		// 从尾部偷取
+		if atomic.CompareAndSwapUint32(&q.tail, tail, tail-1) {
+			g := q.buf[(tail-1)%uint32(len(q.buf))]
+			q.buf[(tail-1)%uint32(len(q.buf))] = nil
+			return g
+		}
+	}
+}
+```
+
+## 动手验证
+
+```bash
+# 查看当前 GOMAXPROCS
+go env GOMAXPROCS
+
+# 运行 GMP 调度模拟测试
+go test -v ./runtime/... -run TestWorkStealing
+
+# 压测 goroutine 并发
+go run examples/gmp_bench/main.go --procs=8 --goroutines=100000
+```
+
 ---
 
 ## 自测题

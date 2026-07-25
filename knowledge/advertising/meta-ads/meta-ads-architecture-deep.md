@@ -268,3 +268,103 @@ Conversion (转化)
 # - 广告报告
 # - 转化报告
 ```
+
+## Go 实现：Meta Ads API 客户端
+
+```go
+package meta_ads
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"time"
+)
+
+// APIClient Meta (Facebook) Ads API 客户端
+type APIClient struct {
+	baseURL     string
+	accessToken string
+	client      *http.Client
+}
+
+const metaBaseURL = "https://graph.facebook.com/v18.0"
+
+func NewAPIClient(accessToken string) *APIClient {
+	return &APIClient{
+		baseURL:     metaBaseURL,
+		accessToken: accessToken,
+		client: &http.Client{Timeout: 30 * time.Second},
+	}
+}
+
+// Campaign 广告系列（Ads Manager API 结构）
+type Campaign struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Status      string   `json:"status"` // ACTIVE/PAUSED/DELETED
+	BudgetType  string   `json:"budget_type"` // DAILY/LIFETIME
+	DailyBudget int64    `json:"daily_budget,omitempty"`
+	LifetimeBudget int64 `json:"lifetime_budget,omitempty"`
+	OptimizationGoal string `json:"optimization_goal"` // IMPRESSIONS/LINK_CLICKS/CONVERSIONS
+	PromotedObject map[string]interface{} `json:"promoted_object"`
+}
+
+// CreateCampaign 创建广告系列
+func (c *APIClient) CreateCampaign(ctx context.Context, camp *Campaign) (*Campaign, error) {
+	nodeID := c.getNodeID() // 从 Business Manager 获取
+	url := fmt.Sprintf("%s/%s/campaigns", c.baseURL, nodeID)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"name":               camp.Name,
+		"status":             camp.Status,
+		"budget_type":        camp.BudgetType,
+		"daily_budget":       camp.DailyBudget,
+		"optimization_goal":  camp.OptimizationGoal,
+		"promoted_object":    camp.PromotedObject,
+	})
+
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
+	_ = body // simplified
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessToken))
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result Campaign
+	json.NewDecoder(resp.Body).Decode(&result)
+	return &result, nil
+}
+
+// GetInsights 获取广告指标数据
+func (c *APIClient) GetInsights(ctx context.Context, accountID string, fields []string, timeRange map[string]string) ([]map[string]interface{}, error) {
+	url := fmt.Sprintf("%s/%s/insights", c.baseURL, accountID)
+
+	params := "?"
+	for _, f := range fields {
+		params += fmt.Sprintf("&fields=%s", f)
+	}
+	params += fmt.Sprintf("&access_token=%s", c.accessToken)
+	if timeRange["start_date"] != "" {
+		params += fmt.Sprintf("&time_ranges=[{\"start_date\":\"%s\",\"end_date\":\"%s\",\"inquire_time_options\":false}]",
+			timeRange["start_date"], timeRange["end_date"])
+	}
+
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url+params, nil)
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var insightsResp struct {
+		Data []map[string]interface{} `json:"data"`
+	}
+	json.NewDecoder(resp.Body).Decode(&insightsResp)
+	return insightsResp.Data, nil
+}
+```

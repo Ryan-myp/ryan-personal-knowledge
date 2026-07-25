@@ -368,3 +368,183 @@ kafka-metadata.sh --snapshot /var/kafka-logs/meta.properties --command "controll
 # 2. Broker 频繁上下线 → 检查服务器稳定性
 # 3. 网络分区 → 检查网络拓扑
 ```
+
+## Go 实现：Kafka 生产者和消费者
+
+```go
+package kafka
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/IBM/sarama"
+)
+
+// ProducerConfig 生产者配置
+type ProducerConfig struct {
+	Brokers     []string
+	Topic       string
+	Acks        int           // -1=all, 1=leader, 0=none
+	Timeout     time.Duration
+	RetryMax    int
+}
+
+// Producer Kafka 消息生产者
+type Producer struct {
+	config ProducerConfig
+	client sarama.SyncProducer
+	mu     sync.Mutex
+}
+
+func NewProducer(cfg ProducerConfig) (*Producer, error) {
+	saramaCfg := sarama.NewConfig()
+	saramaCfg.Producer.RequiredAcks = sarama.RequiredAcks(cfg.Acks)
+	saramaCfg.Producer.Timeout = cfg.Timeout
+	saramaCfg.Producer.Retry.Max = cfg.RetryMax
+	saramaCfg.Producer.Return.Successes = true
+
+	client, err := sarama.NewSyncProducer(cfg.Brokers, saramaCfg)
+	if err != nil {
+		return nil, fmt.Errorf("kafka producer init: %w", err)
+	}
+
+	return &Producer{config: cfg, client: client}, nil
+}
+
+// SendMessage 发送单条广告事件消息
+func (p *Producer) SendMessage(ctx context.Context, event *AdEvent) error {
+	msg := &sarama.ProducerMessage{
+		Topic: p.config.Topic,
+		Key:   sarama.StringEncoder(event.CampaignID), // 按 campaign 分区
+		Value: sarama.ByteEncoder(mustMarshal(event)),
+	}
+
+	partition, offset, err := p.client.SendMessage(msg)
+	if err != nil {
+		return fmt.Errorf("send message to partition %d: %w", partition, err)
+	}
+
+	_ = offset
+	return nil
+}
+
+// SendBatch 批量发送（提高吞吐量）
+func (p *Producer) SendBatch(events []*AdEvent) error {
+	msgs := make([]*sarama.ProducerMessage, len(events))
+	for i, e := range events {
+		msgs[i] = &sarama.ProducerMessage{
+			Topic: p.config.Topic,
+			Key:   sarama.StringEncoder(e.CampaignID),
+			Value: sarama.ByteEncoder(mustMarshal(e)),
+		}
+	}
+
+	batchErr := p.client.SendBatch(sarama.ProducerBatch(msgs))
+	if batchErr != nil {
+		return fmt.Errorf("send batch: %w", batchErr)
+	}
+	return nil
+}
+
+// ConsumerConfig 消费者配置
+type ConsumerConfig struct {
+	Brokers      []string
+	Topic        string
+	GroupID      string
+	MinBytes     int           // 拉取最小字节数
+	MaxBytes     int           // 拉取最大字节数
+	MaxPollInterval time.Duration // 最大轮询间隔
+}
+
+// ConsumerGroup 消费者组 - 自动 rebalance
+type ConsumerGroup struct {
+	config ConsumerConfig
+	group  sarama.ConsumerGroup
+	handler Handler
+}
+
+type Handler interface {
+	Handle(ctx context.Context, topic string, partition int32, offset int64, key, value []byte) error
+}
+
+// Consume 消费消息循环
+func (c *ConsumerGroup) Consume(ctx context.Context) error {
+	cfg := sarama.NewConfig()
+	cfg.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategyRoundRobin{}
+	cfg.Consumer.MaxPollInterval = c.config.MaxPollInterval
+	cfg.Consumer.Offsets.Initial = sarama.OffsetNewest
+
+	group, err := sarama.NewConsumerGroup(c.config.Brokers, c.config.GroupID, cfg)
+	if err != nil {
+		return fmt.Errorf("kafka consumer group init: %w", err)
+	}
+	c.group = group
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	go func() {
+		for err := range group.Errors() {
+			fmt.Printf("[ERROR] consumer group error: %v\n", err)
+		}
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return c.group.Close()
+		default:
+		}
+
+		// Consume 会自动处理 rebalance
+		if err := c.group.Consume(ctx, []string{c.config.Topic}, c.handler); err != nil {
+			return fmt.Errorf("consume: %w", err)
+		}
+	}
+}
+
+// DefaultHandler 默认处理器实现
+type DefaultHandler struct {
+	processors map[string]MessageProcessor
+}
+
+type MessageProcessor func(ctx context.Context, key, value []byte) error
+
+func (h *DefaultHandler) Setup(sarama.ConsumerGroupSession) error   { return nil }
+func (h *DefaultHandler) Cleanup(sarama.ConsumerGroupSession) error { return nil }
+
+func (h *DefaultProcessor) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
+	for msg := range claim.Messages() {
+		processor, ok := h.processors[msg.Topic]
+		if !ok {
+			processor = h.defaultProcessor
+		}
+
+		err := processor(context.Background(), msg.Key, msg.Value)
+		if err != nil {
+			fmt.Printf("[ERROR] process message: %v\n", err)
+			continue
+		}
+
+		sess.MarkMessage(msg, "")
+	}
+	return nil
+}
+```
+
+## 动手验证
+
+```bash
+# 启动本地 Kafka
+docker-compose up -d kafka zookeeper
+
+# 运行 Kafka 生产者测试
+go test -v ./middleware/kafka/... -run TestProducer
+
+# 运行消费者测试
+go test -v ./middleware/kafka/... -run TestConsumerGroup
+```
