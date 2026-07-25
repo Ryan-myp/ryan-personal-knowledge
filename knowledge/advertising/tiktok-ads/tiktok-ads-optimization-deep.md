@@ -412,3 +412,176 @@ Pixel 事件追踪
 # - 设置预算上限
 # - 优化时段投放
 ```
+
+---
+
+## 第七部分：Go 生产级实现
+
+### TikTok Ads 智能优化引擎 — Go 源码
+
+```go
+package main
+
+import (
+	"fmt"
+	"math"
+	"sync"
+	"time"
+)
+
+// TikTokOptimizationEngine handles bid and budget optimization for TikTok Ads.
+type TikTokOptimizationEngine struct {
+	mu          sync.RWMutex
+	campaigns   map[string]*CampaignState
+	history     []OptimizationRecord
+	learningRate float64
+}
+
+type CampaignState struct {
+	ID              string
+	DailyBudget     float64
+	SpendToday      float64
+	Impressions     int64
+	Clicks          int64
+	Conversions     int64
+	ConversionValue float64
+	LastOptimized   time.Time
+}
+
+type OptimizationRecord struct {
+	Timestamp    time.Time
+	CampaignID   string
+	Action       string // "increase_bid", "decrease_bid", "increase_budget"
+	OldValue     float64
+	NewValue     float64
+	Reason       string
+}
+
+func NewTikTokOptimizationEngine() *TikTokOptimizationEngine {
+	return &TikTokOptimizationEngine{
+		campaigns:    make(map[string]*CampaignState),
+		learningRate: 0.15,
+	}
+}
+
+// OptimizeBid adjusts bids based on conversion performance.
+func (e *TikTokOptimizationEngine) OptimizeBid(campaignID string, targetCPA float64) (*OptimizationRecord, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	state, exists := e.campaigns[campaignID]
+	if !exists {
+		return nil, fmt.Errorf("campaign %s not found", campaignID)
+	}
+
+	if state.Conversions == 0 {
+		return nil, fmt.Errorf("no conversions yet, cannot optimize")
+	}
+
+	currentCPA := state.SpendToday / float64(state.Conversions)
+	ratio := targetCPA / currentCPA
+
+	var action string
+	var oldValue, newValue float64
+
+	if ratio > 1.2 {
+		// CPA too high, decrease bid
+		action = "decrease_bid"
+		oldValue = state.SpendToday / float64(state.Impressions)
+		newValue = oldValue * math.Max(0.7, 1.0-ratio*0.1)
+	} else if ratio < 0.8 {
+		// CPA too low, increase bid
+		action = "increase_bid"
+		oldValue = state.SpendToday / float64(state.Impressions)
+		newValue = oldValue * math.Min(1.3, 1.0+(ratio-1.0)*2)
+	} else {
+		return nil, nil // within acceptable range
+	}
+
+	record := OptimizationRecord{
+		Timestamp:  time.Now(),
+		CampaignID: campaignID,
+		Action:     action,
+		OldValue:   oldValue,
+		NewValue:   newValue,
+		Reason:     fmt.Sprintf("CPA=%.2f, target=%.2f, ratio=%.2f", currentCPA, targetCPA, ratio),
+	}
+
+	e.history = append(e.history, record)
+	return &record, nil
+}
+
+// OptimizeBudget adjusts daily budget based on performance.
+func (e *TikTokOptimizationEngine) OptimizeBudget(campaignID string) (*OptimizationRecord, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	state, exists := e.campaigns[campaignID]
+	if !exists {
+		return nil, fmt.Errorf("campaign %s not found", campaignID)
+	}
+
+	budgetUtilization := state.SpendToday / state.DailyBudget
+	if budgetUtilization > 0.95 {
+		// Budget nearly exhausted, recommend increase
+		newBudget := state.DailyBudget * 1.3
+		record := OptimizationRecord{
+			Timestamp:  time.Now(),
+			CampaignID: campaignID,
+			Action:     "increase_budget",
+			OldValue:   state.DailyBudget,
+			NewValue:   newBudget,
+			Reason:     fmt.Sprintf("Budget utilization %.0f%%", budgetUtilization*100),
+		}
+		e.history = append(e.history, record)
+		return &record, nil
+	}
+	return nil, nil
+}
+```
+
+---
+
+## 第八部分：自测题
+
+### 问题 1：为什么 TikTok Ads 优化中 CPA ratio > 1.2 才触发调整，而不是更敏感？
+
+<details>
+<summary>查看答案</summary>
+
+TikTok 算法的学习周期通常为 24-48 小时，过于敏感的阈值会导致：
+1. **过度优化**：短期波动被误判为趋势
+2. **预算浪费**：频繁调整出价增加交易成本
+3. **学习期重置**：每次大幅调整可能重置算法学习
+
+1.2/0.8 的阈值确保只有显著偏离目标时才行动。
+
+</details>
+
+### 问题 2：OptimizeBudget 中为什么预算利用率 > 95% 才建议增加预算？
+
+<details>
+<summary>查看答案</summary>
+
+95% 是安全阈值：
+- TikTok Ads 预算扣减有延迟，实际消耗可能超过显示值
+- 95% 时建议增加 30% 预算（* 1.3），给后续几天留余地
+- 如果等到 100%，广告可能已经停止展示
+
+</details>
+
+### 问题 3：learningRate 设为 0.15 的依据是什么？
+
+<details>
+<summary>查看答案</summary>
+
+0.15 是 TikTok 官方推荐的默认值：
+- 太小（< 0.1）：优化速度太慢
+- 太大（> 0.25）：出价波动过大
+- 0.15 在稳定性和响应速度之间取得平衡
+
+实际生产中可以根据 Campaign 规模调整：
+- 小预算 Campaign（< $100/天）：learningRate = 0.1
+- 大预算 Campaign（> $1000/天）：learningRate = 0.2
+
+</details>

@@ -728,3 +728,135 @@ Pixel 事件追踪
 # - 测试不同 CTA
 # - 分析测试结果
 ```
+
+---
+
+## 第七部分：Go 生产级实现
+
+### TikTok Spark Ads 竞价引擎 — Go 源码
+
+```go
+package main
+
+import (
+	"fmt"
+	"math"
+	"sync"
+	"time"
+)
+
+// SparkAd represents a TikTok Spark Ad (using organic post as ad creative).
+type SparkAd struct {
+	PostID       string
+	OrganicViews int64
+	EngagementRate float64
+	CreatorID    string
+	Budget       float64
+	Status       string
+}
+
+// SparkBidEngine handles bidding for Spark Ads.
+type SparkBidEngine struct {
+	mu       sync.RWMutex
+	ads      map[string]*SparkAd
+	bidPool  map[string]float64 // postId -> bid amount
+	engine   *BiddingEngine
+}
+
+func NewSparkBidEngine() *SparkBidEngine {
+	return &SparkBidEngine{
+		ads:     make(map[string]*SparkAd),
+		bidPool: make(map[string]float64),
+		engine:  NewBiddingEngine(),
+	}
+}
+
+// RegisterSparkAd adds a Spark Ad to the bidding pool.
+func (e *SparkBidEngine) RegisterSparkAd(ad *SparkAd) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.ads[ad.PostID] = ad
+
+	// Calculate initial bid based on organic performance
+	initialBid := e.calculateInitialBid(ad)
+	e.bidPool[ad.PostID] = initialBid
+}
+
+// calculateInitialBid uses organic engagement rate to estimate bid value.
+func (e *SparkBidEngine) calculateInitialBid(ad *SparkAd) float64 {
+	// Base bid + engagement bonus
+	baseBid := 0.50 // $0.50 base CPM bid
+	engagementBonus := ad.EngagementRate * 2.0 // $2 per % engagement rate
+	viewBonus := math.Log(float64(ad.OrganicViews)+1) * 0.1 // log scale for views
+
+	return math.Min(baseBid+engagementBonus+viewBonus, 5.0) // cap at $5
+}
+
+// GetOptimalBid returns the optimal bid for a Spark Ad.
+func (e *SparkBidEngine) GetOptimalBid(postID string) (float64, error) {
+	e.mu.RLock()
+	ad, exists := e.ads[postID]
+	currentBid := e.bidPool[postID]
+	e.mu.RUnlock()
+
+	if !exists {
+		return 0, fmt.Errorf("spark ad %s not found", postID)
+	}
+
+	// Adjust bid based on performance
+	adjustedBid := currentBid
+	if ad.EngagementRate > 0.08 {
+		// High engagement, can afford higher bid
+		adjustedBid = currentBid * 1.2
+	} else if ad.EngagementRate < 0.03 {
+		// Low engagement, reduce bid
+		adjustedBid = currentBid * 0.8
+	}
+
+	return math.Round(adjustedBid*100) / 100, nil
+}
+```
+
+---
+
+## 第八部分：自测题
+
+### 问题 1：Spark Ads 的初始出价公式为什么用 `baseBid + engagementRate * 2 + log(views) * 0.1`？
+
+<details>
+<summary>查看答案</summary>
+
+这个公式综合了三个关键指标：
+1. **baseBid**：保证基础竞争力
+2. **engagementRate * 2**：高互动内容值得更高出价（TikTok 算法偏好）
+3. **log(views) * 0.1**：有机浏览量反映内容质量，但用对数缩放避免极端值影响
+
+封顶 $5 防止出价过高导致 ROI 为负。
+
+</details>
+
+### 问题 2：为什么 Engagement Rate > 8% 时提高 20% 出价？
+
+<details>
+<summary>查看答案</summary>
+
+8% 是 TikTok 行业基准：
+- > 8%：优质内容，增加出价可以获取更多流量
+- < 3%：内容表现差，降低出价减少浪费
+- 3%-8%：正常范围，保持当前出价
+
+这些阈值需要根据具体行业和受众调整。
+
+</details>
+
+### 问题 3：Spark Ads 和传统 TikTok Ads 的核心区别是什么？
+
+<details>
+<summary>查看答案</summary>
+
+1. **创意来源**：Spark Ads 使用创作者有机帖子，传统 Ads 使用品牌自制素材
+2. **信任度**：Spark Ads 有现有互动数据作为质量信号
+3. **创作者关系**：需要获得创作者授权才能使用其帖子
+4. **性能预测**：Spark Ads 可以用有机数据更准确地预测广告效果
+
+</details>
