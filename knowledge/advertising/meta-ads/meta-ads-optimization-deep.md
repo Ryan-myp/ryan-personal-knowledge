@@ -413,3 +413,165 @@ iOS 14+ 影响
 # - 调整出价策略
 # - 设置预算上限
 ```
+
+---
+
+## 第七部分：Go 生产级实现
+
+### Meta Ads 智能出价优化 — Go 源码
+
+```go
+package main
+
+import (
+	"fmt"
+	"math"
+	"sync"
+	"time"
+)
+
+// MetaBidOptimizer optimizes bids for Meta Ads campaigns.
+type MetaBidOptimizer struct {
+	mu           sync.RWMutex
+	campaigns    map[string]*CampaignData
+	history      []BidAdjustment
+	learningRate float64
+}
+
+type CampaignData struct {
+	ID            string
+	Name          string
+	BidStrategy   string // "LOWEST_COST", "COST_CAP", "RETURN_ON_AD_SPEND"
+	DailyBudget   float64
+	SpendToday    float64
+	ImprShare     float64
+	AvgCPA        float64
+	TargetCPA     float64
+	LastOptimized time.Time
+}
+
+type BidAdjustment struct {
+	Timestamp time.Time
+	CampaignID string
+	OldBid    float64
+	NewBid    float64
+	Reason    string
+}
+
+func NewMetaBidOptimizer() *MetaBidOptimizer {
+	return &MetaBidOptimizer{
+		campaigns:    make(map[string]*CampaignData),
+		learningRate: 0.1,
+	}
+}
+
+// OptimizeBid adjusts bid based on campaign performance.
+func (o *MetaBidOptimizer) OptimizeBid(campaignID string, currentBid float64) (float64, error) {
+	o.mu.RLock()
+	campaign, exists := o.campaigns[campaignID]
+	o.mu.RUnlock()
+
+	if !exists {
+		return 0, fmt.Errorf("campaign %s not found", campaignID)
+	}
+
+	var newBid float64
+	switch campaign.BidStrategy {
+	case "LOWEST_COST":
+		newBid = o.optimizeLowestCost(campaign, currentBid)
+	case "COST_CAP":
+		newBid = o.optimizeCostCap(campaign, currentBid)
+	case "RETURN_ON_AD_SPEND":
+		newBid = o.optimizeROAS(campaign, currentBid)
+	default:
+		newBid = currentBid
+	}
+
+	// Apply learning rate for gradual adjustment
+	lastAdj := o.getLatestAdjustment(campaignID)
+	if lastAdj.OldBid > 0 {
+		delta := newBid - lastAdj.NewBid
+		newBid = lastAdj.NewBid + delta*o.learningRate
+	}
+
+	return math.Round(newBid*100) / 100, nil
+}
+
+func (o *MetaBidOptimizer) optimizeLowestCost(campaign *CampaignData, currentBid float64) float64 {
+	// If CPA < target, can increase bid to get more volume
+	ratio := campaign.TargetCPA / math.Max(campaign.AvgCPA, 0.01)
+	if ratio > 1.2 {
+		return currentBid * 1.1 // 10% increase
+	} else if ratio < 0.8 {
+		return currentBid * 0.9 // 10% decrease
+	}
+	return currentBid
+}
+
+func (o *MetaBidOptimizer) optimizeCostCap(campaign *CampaignData, currentBid float64) float64 {
+	// Cost Cap: keep bid near cap but adjust for volume
+	volumeRatio := campaign.ImprShare
+	if volumeRatio < 0.5 {
+		return currentBid * 1.2 // increase to capture more share
+	}
+	return currentBid
+}
+
+func (o *MetaBidOptimizer) optimizeROAS(campaign *CampaignData, currentBid float64) float64 {
+	roas := campaign.SpendToday / math.Max(campaign.AvgCPA, 0.01)
+	targetROAS := campaign.TargetCPA / campaign.DailyBudget
+	if roas < targetROAS {
+		return currentBid * 0.9 // reduce bid to improve ROAS
+	}
+	return currentBid * 1.05 // increase bid slightly
+}
+
+func (o *MetaBidOptimizer) getLatestAdjustment(campaignID string) BidAdjustment {
+	// Placeholder for history lookup
+	return BidAdjustment{}
+}
+```
+
+---
+
+## 第八部分：自测题
+
+### 问题 1：为什么 LOWEST_COST 策略中 ratio > 1.2 才增加 10% 出价？
+
+<details>
+<summary>查看答案</summary>
+
+1.2 是噪声过滤阈值：
+- CPA 波动 ±20% 以内视为正常波动
+- 只有显著偏离目标时才调整
+- 避免过度响应短期噪声
+
+如果设为 1.05，会导致频繁调整，增加优化噪声。
+
+</details>
+
+### 问题 2：COST_CAP 策略中为什么 ImprShare < 50% 时提高出价？
+
+<details>
+<summary>查看答案</summary>
+
+Impression Share 低说明：
+1. 出价可能低于竞争水平
+2. 预算可能不足
+3. 广告质量可能较低
+
+提高出价可以获取更多展示机会。但如果 IS 低是因为预算不足（而非出价），应该优先增加预算。
+
+</details>
+
+### 问题 3：Meta Ads 和 TikTok Ads 的优化策略有什么核心区别？
+
+<details>
+<summary>查看答案</summary>
+
+1. **出价策略**：Meta 支持 COST_CAP 和 ROAS 两种高级策略，TikTok 主要用 Target CPA
+2. **学习周期**：Meta 需要 ~50 次转化完成学习，TikTok 约 20-30 次
+3. **自动化程度**：Meta Advantage+ 更自动化，TikTok 需要更多手动优化
+4. **数据要求**：Meta 对像素数据依赖更强，TikTok 更依赖内容质量
+
+</details>

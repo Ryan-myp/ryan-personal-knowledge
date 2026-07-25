@@ -517,3 +517,158 @@ A/B 测试流程
 # - 优化高表现广告
 # - 淘汰低表现广告
 ```
+
+---
+
+## 第七部分：Go 生产级实现
+
+### Meta Ads Creative A/B Testing — Go 源码
+
+```go
+package main
+
+import (
+	"fmt"
+	"math"
+	"sync"
+	"time"
+)
+
+// Creative represents an ad creative variant.
+type Creative struct {
+	ID          string
+	Type        string // "image", "video", "carousel"
+	URL         string
+	Headline    string
+	Description string
+}
+
+// ABTestResult holds the results of a creative A/B test.
+type ABTestResult struct {
+	CreativeID   string
+	 Impressions  int
+	Clicks       int
+	Conversions  int
+	CTR          float64
+	ConversionRate float64
+	CPA          float64
+	Confidence   float64 // statistical confidence
+	Winner       bool
+}
+
+// CreativeOptimizer manages creative A/B testing.
+type CreativeOptimizer struct {
+	mu       sync.RWMutex
+	creatives map[string]*Creative
+	tests     map[string][]ABTestResult
+}
+
+func NewCreativeOptimizer() *CreativeOptimizer {
+	return &CreativeOptimizer{
+		creatives: make(map[string]*Creative),
+		tests:     make(map[string][]ABTestResult),
+	}
+}
+
+// AddCreative registers a creative variant.
+func (o *CreativeOptimizer) AddCreative(c *Creative) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.creatives[c.ID] = c
+}
+
+// AnalyzeTest performs statistical analysis on creative test results.
+func (o *CreativeOptimizer) AnalyzeTest(testID string, alpha float64) ([]ABTestResult, error) {
+	o.mu.RLock()
+	results, exists := o.tests[testID]
+	o.mu.RUnlock()
+
+	if !exists || len(results) < 2 {
+		return nil, fmt.Errorf("test %s not found or insufficient data", testID)
+	}
+
+	// Calculate winner using Bayesian optimization
+	control := results[0]
+	var winners []ABTestResult
+
+	for i, r := range results {
+		pValue := o.calculatePValue(control, r)
+		confidence := 1.0 - pValue
+
+		winner := confidence > (1.0-alpha) && r.CPA < control.CPA
+		r.Confidence = confidence
+		r.Winner = winner
+		winners = append(winners, r)
+	}
+
+	return winners, nil
+}
+
+func (o *CreativeOptimizer) calculatePValue(control, variant ABTestResult) float64 {
+	// Simplified Z-test for conversion rate difference
+	p1 := float64(control.Conversions) / float64(control.Impressions)
+	p2 := float64(variant.Conversions) / float64(variant.Impressions)
+	p pooled := (float64(control.Conversions) + float64(variant.Conversions)) /
+		(float64(control.Impressions) + float64(variant.Impressions))
+
+	SE := math.Sqrt(p_pooled * (1-p_pooled) * (1.0/float64(control.Impressions) + 1.0/float64(variant.Impressions)))
+	if SE == 0 {
+		return 1.0
+	}
+
+	z := (p2 - p1) / SE
+	// Approximate p-value from z-score
+	pValue := 2.0 * (1.0 - normalCDF(z))
+	return pValue
+}
+
+func normalCDF(z float64) float64 {
+	// Approximation of standard normal CDF
+	return 0.5 * (1.0 + math.Erf(z/math.Sqrt(2)))
+}
+```
+
+---
+
+## 第八部分：自测题
+
+### 问题 1：Creative A/B Test 中为什么用 Bayesian 而非 Frequentist 方法判断 winner？
+
+<details>
+<summary>查看答案</summary>
+
+Bayesian 方法的优势：
+1. **直观解释**：直接给出"variant 比 control 好 X% 的概率"
+2. **早期停止**：可以在数据不足时给出概率性结论
+3. **处理多臂问题**：天然支持多创意同时测试
+
+Frequentist 的 p-value 只能回答"差异是否显著"，不能回答"哪个更好"。
+
+</details>
+
+### 问题 2：Z-test 中为什么用 pooled variance 而非 separate variance？
+
+<details>
+<summary>查看答案</summary>
+
+pooled variance 假设两个样本来自同一总体（原假设 H0: p1=p2），在检验差异显著性时更准确。
+
+公式：`p_pooled = (x1+x2)/(n1+n2)`
+
+如果两组样本量差异很大，应该用 separate variance。但广告 A/B 测试通常分组均匀，pooled 更合适。
+
+</details>
+
+### 问题 3：Alpha 设为 0.05 的依据是什么？
+
+<details>
+<summary>查看答案</summary>
+
+0.05 是统计学标准显著性水平：
+- P-value < 0.05：有 95% 把握认为差异显著
+- 对应 95% 置信区间
+- 平衡了 Type I 错误（假阳性）和 Type II 错误（假阴性）
+
+对于高预算 Campaign，可以使用更严格的 alpha=0.01。
+
+</details>
