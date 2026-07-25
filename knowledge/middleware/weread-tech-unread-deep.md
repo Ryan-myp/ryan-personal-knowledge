@@ -155,3 +155,233 @@ Redis 核心数据结构：
 ### Q3: Kafka 生产环境关键配置？
 
 **A**: acks=all、retries=3、compression=lz4、min.insync.replicas=2。
+
+---
+
+## Go 代码实战：技术基础核心模块
+
+### 1. 连接池（通用）
+
+```go
+package pool
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+)
+
+// PooledObject 池化对象
+type PooledObject struct {
+	ID        int
+	CreatedAt time.Time
+	LastUsed  time.Time
+	InUse     bool
+}
+
+// ObjectPool 对象池（通用连接池）
+type ObjectPool struct {
+	factory     func() (interface{}, error)
+	destroy     func(interface{})
+	maxSize     int
+	idleTimeout time.Duration
+	mu          sync.Mutex
+	available   []interface{}
+	inUse       map[int]interface{}
+	nextID      int
+	stats       PoolStats
+}
+
+type PoolStats struct {
+	Created    int
+	Destroyed  int
+	WaitCount  int64
+	WaitTime   time.Duration
+}
+
+func NewObjectPool(factory func() (interface{}, error), maxSize int, idleTimeout time.Duration) *ObjectPool {
+	return &ObjectPool{
+		factory:     factory,
+		maxSize:     maxSize,
+		idleTimeout: idleTimeout,
+		inUse:       make(map[int]interface{}),
+	}
+}
+
+func (p *ObjectPool) Acquire(ctx context.Context) (interface{}, int, error) {
+	start := time.Now()
+	
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	
+	// 从空闲池取
+	if len(p.available) > 0 {
+		obj := p.available[len(p.available)-1]
+		p.available = p.available[:len(p.available)-1]
+		p.inUse[p.nextID] = obj
+		id := p.nextID
+		p.nextID++
+		return obj, id, nil
+	}
+	
+	// 创建新对象（未达上限）
+	if len(p.inUse)+len(p.available) < p.maxSize {
+		obj, err := p.factory()
+		if err != nil {
+			return nil, 0, err
+		}
+		p.inUse[p.nextID] = obj
+		id := p.nextID
+		p.nextID++
+		p.stats.Created++
+		return obj, id, nil
+	}
+	
+	// 池满，等待
+	select {
+	case <-time.After(5 * time.Second):
+		return nil, 0, fmt.Errorf("pool acquire timeout")
+	case <-ctx.Done():
+		return nil, 0, ctx.Err()
+	}
+}
+
+func (p *ObjectPool) Release(id int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	
+	obj, ok := p.inUse[id]
+	if !ok {
+		return
+	}
+	delete(p.inUse, id)
+	p.available = append(p.available, obj)
+}
+
+func (p *ObjectPool) Close() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	
+	for _, obj := range p.available {
+		if p.destroy != nil {
+			p.destroy(obj)
+			p.stats.Destroyed++
+		}
+	}
+	for _, obj := range p.inUse {
+		if p.destroy != nil {
+			p.destroy(obj)
+			p.stats.Destroyed++
+		}
+	}
+	p.available = nil
+	p.inUse = make(map[int]interface{})
+}
+```
+
+### 2. 限流器（漏桶算法）
+
+```go
+package rate
+
+import (
+	"sync"
+	"time"
+)
+
+// LeakyBucket 漏桶限流器
+type LeakyBucket struct {
+	mu         sync.Mutex
+	capacity   int
+	leakRate   time.Duration // 每多少秒漏一滴
+	water      int
+	lastLeak   time.Time
+}
+
+func NewLeakyBucket(capacity int, leakRate time.Duration) *LeakyBucket {
+	return &LeakyBucket{
+		capacity: capacity,
+		leakRate: leakRate,
+		lastLeak: time.Now(),
+	}
+}
+
+func (lb *LeakyBucket) Allow() bool {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+	
+	// 先漏水
+	lb.leak()
+	
+	// 检查是否满了
+	if lb.water >= lb.capacity {
+		return false
+	}
+	
+	// 加水
+	lb.water++
+	return true
+}
+
+func (lb *LeakyBucket) leak() {
+	now := time.Now()
+	elapsed := now.Sub(lb.lastLeak)
+	drops := int(elapsed / lb.leakRate)
+	
+	if drops > 0 {
+		lb.water = max(0, lb.water-drops)
+		lb.lastLeak = now
+	}
+}
+```
+
+### 自测题
+
+<details>
+<summary>Q1: ObjectPool 的 Release 为什么把对象放回 available 而不是直接销毁？</summary>
+
+**答案**：
+
+**复用 vs 新建**：
+- 新建对象（DB连接/HTTP客户端）成本高（TCP握手、内存分配）
+- 复用可以节省 80%+ 的创建开销
+- 但需要定期清理空闲对象（idle timeout）
+
+这是 **对象池模式** 的核心——用空间换时间。Go 标准库 `sync.Pool` 也是这个原理。
+
+</details>
+
+<details>
+<summary>Q2: 漏桶算法和令牌桶算法的区别？各适用于什么场景？</summary>
+
+**答案**：
+
+| 特性 | 漏桶 | 令牌桶 |
+|------|------|--------|
+| 输出速率 | **恒定**（匀速流出） | 可变（桶满时可突发） |
+| 突发处理 | ❌ 不允许 | ✅ 允许 |
+| 平滑流量 | ✅ | ❌ |
+| 适用场景 | CDN带宽控制、API限流 | 消息队列、突发请求 |
+
+广告平台：API调用用令牌桶（允许突发），CDN回源用漏桶（匀速）。
+
+</details>
+
+<details>
+<summary>Q3: ObjectPool 的 Acquire 超时为什么设 5 秒而不是更长？</summary>
+
+**答案**：
+
+**设计考量**：
+- 5秒太长 → 请求堆积，用户体验差
+- 5秒太短 → 短暂波动就失败
+
+实际生产中：
+- **HTTP请求**：超时 3-5 秒
+- **DB查询**：超时 1-3 秒
+- **RPC调用**：超时 100ms-1s
+
+关键：**超时时间必须小于客户端期望延迟**。广告竞价请求要求 <50ms，所以连接池获取必须 <1ms（无等待）。
+
+</details>

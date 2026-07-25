@@ -157,3 +157,288 @@ GMP 调度：
 ### Q3: Kafka 生产环境关键配置？
 
 **A**: acks=all、retries=3、compression=lz4、min.insync.replicas=2。
+
+---
+
+## Go 代码实战：Redis + Kafka + Go 集成模式
+
+### 1. CQRS 事件溯源（Command Query Responsibility Segregation）
+
+```go
+package cqrs
+
+import (
+	"context"
+	"encoding/json"
+	"sync"
+	"time"
+)
+
+// Event 领域事件
+type Event struct {
+	ID        string    `json:"id"`
+	Type      string    `json:"type"`
+	Timestamp time.Time `json:"timestamp"`
+	Payload   []byte    `json:"payload"`
+	Version   int       `json:"version"`
+}
+
+// Aggregate 聚合根
+type Aggregate struct {
+	ID        string
+	Version   int
+	State     map[string]interface{}
+	events    []Event
+	mu        sync.Mutex
+}
+
+func NewAggregate(id string) *Aggregate {
+	return &Aggregate{
+		ID:    id,
+		State: make(map[string]interface{}),
+	}
+}
+
+func (a *Aggregate) Apply(eventType string, payload interface{}) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	
+	data, _ := json.Marshal(payload)
+	event := Event{
+		ID:        generateID(),
+		Type:      eventType,
+		Timestamp: time.Now(),
+		Payload:   data,
+		Version:   a.Version + 1,
+	}
+	
+	a.events = append(a.events, event)
+	a.Version++
+	
+	// 应用事件到状态
+	a.applyEvent(&event)
+}
+
+func (a *Aggregate) applyEvent(e *Event) {
+	switch e.Type {
+	case "campaign_created":
+		var payload struct {
+			Name     string  `json:"name"`
+			Budget   float64 `json:"budget"`
+			TargetID string  `json:"target_id"`
+		}
+		json.Unmarshal(e.Payload, &payload)
+		a.State["name"] = payload.Name
+		a.State["budget"] = payload.Budget
+		a.State["target_id"] = payload.TargetID
+		a.State["status"] = "active"
+		
+	case "budget_updated":
+		var payload struct {
+			NewBudget float64 `json:"new_budget"`
+		}
+		json.Unmarshal(e.Payload, &payload)
+		a.State["budget"] = payload.NewBudget
+		
+	case "campaign_paused":
+		a.State["status"] = "paused"
+	}
+}
+
+// EventStore 事件存储
+type EventStore struct {
+	mu       sync.Mutex
+	events   []Event
+	handlers map[string][]func(*Event)
+}
+
+func NewEventStore() *EventStore {
+	return &EventStore{
+		handlers: make(map[string][]func(*Event)),
+	}
+}
+
+func (s *EventStore) Append(event *Event) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.events = append(s.events, *event)
+	
+	// 通知处理器
+	for _, handler := range s.handlers[event.Type] {
+		handler(event)
+	}
+	return nil
+}
+
+func (s *EventStore) RegisterHandler(eventType string, handler func(*Event)) {
+	s.handlers[eventType] = append(s.handlers[eventType], handler)
+}
+
+func (s *EventStore) GetEvents(aggregateID string) []Event {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	var result []Event
+	for _, e := range s.events {
+		if strings.Contains(string(e.Payload), aggregateID) || 
+		   strings.Contains(e.Type, aggregateID) {
+			result = append(result, e)
+		}
+	}
+	return result
+}
+```
+
+### 2. 读写分离路由
+
+```go
+package routing
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+)
+
+// Router 读写路由器
+type Router struct {
+	writeDB  *DBConn
+	readDBs  []*DBConn
+	mu       sync.RWMutex
+	stats    RoutingStats
+}
+
+type RoutingStats struct {
+	ReadCount  int64
+	WriteCount int64
+	LatencyUS  int64 // 微秒
+}
+
+func NewRouter(writeDSN, readDSNs []string) (*Router, error) {
+	writeDB, err := openDB(writeDSN)
+	if err != nil {
+		return nil, err
+	}
+	
+	readDBs := make([]*DBConn, 0, len(readDSNs))
+	for _, dsn := range readDSNs {
+		db, err := openDB(dsn)
+		if err != nil {
+			continue
+		}
+		readDBs = append(readDBs, db)
+	}
+	
+	return &Router{
+		writeDB: writeDB,
+		readDBs: readDBs,
+	}, nil
+}
+
+func (r *Router) Read(ctx context.Context, query string, args ...interface{}) (*Rows, error) {
+	start := time.Now()
+	
+	// 轮询选择读节点
+	r.mu.RLock()
+	db := r.readDBs[len(r.stats.ReadCount)%len(r.readDBs)]
+	r.mu.RUnlock()
+	
+	rows, err := db.QueryContext(ctx, query, args...)
+	
+	r.mu.Lock()
+	r.stats.ReadCount++
+	r.stats.LatencyUS += time.Since(start).Microseconds()
+	r.mu.Unlock()
+	
+	return rows, err
+}
+
+func (r *Router) Write(ctx context.Context, query string, args ...interface{}) (Result, error) {
+	start := time.Now()
+	
+	result, err := r.writeDB.ExecContext(ctx, query, args...)
+	
+	r.mu.Lock()
+	r.stats.WriteCount++
+	r.stats.LatencyUS += time.Since(start).Microseconds()
+	r.mu.Unlock()
+	
+	return result, err
+}
+
+// StaleReadDetector 主从延迟检测
+type StaleReadDetector struct {
+	writeBinlogPos uint64
+	readBinlogPos  map[int]uint64
+	mu             sync.RWMutex
+}
+
+func (d *StaleReadDetector) UpdateWritePos(pos uint64) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.writeBinlogPos = pos
+}
+
+func (d *StaleReadDetector) CheckStale(readIdx int) bool {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	
+	readPos, ok := d.readBinlogPos[readIdx]
+	if !ok {
+		return true // 未知位置，保守认为滞后
+	}
+	
+	return d.writeBinlogPos - readPos > 1000 // 延迟超过1000binlog
+}
+```
+
+### 自测题
+
+<details>
+<summary>Q1: CQRS 的事件溯源模式相比直接存状态有什么优势？</summary>
+
+**答案**：
+
+| 特性 | 直接存状态 | 事件溯源 |
+|------|-----------|---------|
+| 审计追踪 | ❌ 需要额外表 | ✅ 天然完整历史 |
+| 时间旅行 | ❌ | ✅ 重放事件重建任意时刻状态 |
+| 调试 | 困难 | 容易（看事件序列） |
+| 复杂度 | 低 | 高 |
+
+广告计费场景：**必须用事件溯源**——每笔消费都是不可变事件，方便对账和审计。
+
+</details>
+
+<details>
+<summary>Q2: 读写分离的主从延迟问题如何解决？</summary>
+
+**答案**：
+
+**三级方案**：
+1. **StaleReadDetector**：检测 binlog 延迟，延迟大时路由到写库
+2. **强制路由**：刚写入后的读取强制走写库（write-then-read）
+3. **最终一致性**：接受短暂不一致，业务层容忍
+
+广告平台推荐方案1+3：预算扣减后立即可见用方案2，报表查询用方案3。
+
+</details>
+
+<details>
+<summary>Q3: Router 的轮询读节点选择有什么缺点？生产环境用什么？</summary>
+
+**答案**：
+
+**轮询缺点**：不考虑节点负载差异——慢节点和快节点分到同样多的请求。
+
+**生产方案**：
+```go
+// 方案1: 加权轮询（基于响应时间动态调整权重）
+// 方案2: 最少连接（选当前连接数最少的）
+// 方案3: 一致性哈希（相同查询路由到同一节点，提高缓存命中率）
+```
+
+广告平台推荐方案3：用户画像查询用一致性哈希，相同用户总是路由到同一读节点 → Redis 缓存命中率高。
+
+</details>

@@ -358,3 +358,353 @@ spec:
 3. 回滚频率
 4. 漂移检测
 ```
+
+---
+
+## Go 代码实战：CI/CD Pipeline 编排
+
+### 1. Pipeline Runner（Pipeline 引擎）
+
+```go
+package pipeline
+
+import (
+	"context"
+	"fmt"
+	"os/exec"
+	"sync"
+	"time"
+)
+
+// Stage Pipeline阶段
+type Stage struct {
+	Name      string
+	Jobs      []*Job
+	Strategy  Strategy // parallel, serial
+}
+
+type Strategy int
+
+const (
+	Parallel Strategy = iota
+	Serial
+)
+
+// Job Pipeline任务
+type Job struct {
+	Name     string
+	Steps    []Step
+	Timeout  time.Duration
+	Retries  int
+	OnFailure string // continue, abort
+}
+
+type Step func(ctx context.Context) error
+
+// PipelineRunner Pipeline执行器
+type PipelineRunner struct {
+	stages []*Stage
+	results map[string]*JobResult
+	mu    sync.Mutex
+}
+
+type JobResult struct {
+	JobName  string
+	Status   string // success, failed, skipped
+	Duration time.Duration
+	Error    error
+}
+
+func NewPipelineRunner(stages ...*Stage) *PipelineRunner {
+	return &PipelineRunner{
+		stages:  stages,
+		results: make(map[string]*JobResult),
+	}
+}
+
+func (pr *PipelineRunner) Execute(ctx context.Context) error {
+	for _, stage := range pr.stages {
+		switch stage.Strategy {
+		case Parallel:
+			if err := pr.runParallel(ctx, stage); err != nil {
+				return err
+			}
+		case Serial:
+			if err := pr.runSerial(ctx, stage); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (pr *PipelineRunner) runParallel(ctx context.Context, stage *Stage) error {
+	var wg sync.WaitGroup
+	errCh := make(chan error, len(stage.Jobs))
+	
+	for _, job := range stage.Jobs {
+		wg.Add(1)
+		go func(j *Job) {
+			defer wg.Done()
+			
+			jobCtx, cancel := context.WithTimeout(ctx, j.Timeout)
+			defer cancel()
+			
+			for attempt := 0; attempt <= j.Retries; attempt++ {
+				select {
+				case <-jobCtx.Done():
+					pr.recordResult(j.Name, "failed", 0, jobCtx.Err())
+					errCh <- jobCtx.Err()
+					return
+				default:
+				}
+				
+				start := time.Now()
+				var lastErr error
+				for _, step := range j.Steps {
+					if err := step(jobCtx); err != nil {
+						lastErr = err
+						break
+					}
+				}
+				
+				duration := time.Since(start)
+				if lastErr == nil {
+					pr.recordResult(j.Name, "success", duration, nil)
+					return
+				}
+				
+				if attempt < j.Retries {
+					time.Sleep(time.Duration(attempt+1) * time.Second) // 指数退避
+					continue
+				}
+				
+				pr.recordResult(j.Name, "failed", duration, lastErr)
+				errCh <- lastErr
+			}
+		}(job)
+	}
+	
+	wg.Wait()
+	close(errCh)
+	
+	for err := range errCh {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (pr *PipelineRunner) runSerial(ctx context.Context, stage *Stage) error {
+	for _, job := range stage.Jobs {
+		jobCtx, cancel := context.WithTimeout(ctx, job.Timeout)
+		result := &JobResult{}
+		
+		for attempt := 0; attempt <= job.Retries; attempt++ {
+			start := time.Now()
+			var lastErr error
+			for _, step := range job.Steps {
+				if err := step(jobCtx); err != nil {
+					lastErr = err
+					break
+				}
+			}
+			result.Duration = time.Since(start)
+			result.JobName = job.Name
+			
+			if lastErr == nil {
+				result.Status = "success"
+				break
+			}
+			
+			if attempt < job.Retries {
+				time.Sleep(time.Duration(attempt+1) * time.Second)
+				continue
+			}
+			
+			result.Status = "failed"
+			result.Error = lastErr
+		}
+		
+		pr.mu.Lock()
+		pr.results[job.Name] = result
+		pr.mu.Unlock()
+		
+		if result.Status == "failed" {
+			return fmt.Errorf("job %s failed: %w", job.Name, result.Error)
+		}
+		cancel()
+	}
+	return nil
+}
+
+func (pr *PipelineRunner) recordResult(name, status string, dur time.Duration, err error) {
+	pr.mu.Lock()
+	defer pr.mu.Unlock()
+	pr.results[name] = &JobResult{
+		JobName:  name,
+		Status:   status,
+		Duration: dur,
+		Error:    err,
+	}
+}
+```
+
+### 2. ArgoCD Sync 控制器
+
+```go
+package argocd
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"time"
+)
+
+// AppStatus 应用状态
+type AppStatus struct {
+	Phase       string `json:"phase"`
+	Message     string `json:"message"`
+	Health      string `json:"health"`
+	Resources   []ResourceStatus `json:"resources"`
+}
+
+type ResourceStatus struct {
+	Kind      string `json:"kind"`
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+	Status    string `json:"status"`
+	Health    string `json:"health"`
+}
+
+// SyncController ArgoCD同步控制器
+type SyncController struct {
+	argocdURL  string
+	token      string
+	namespace  string
+	interval   time.Duration
+}
+
+func NewSyncController(url, token, ns string) *SyncController {
+	return &SyncController{
+		argocdURL: url,
+		token:     token,
+		namespace: ns,
+		interval:  30 * time.Second,
+	}
+}
+
+func (c *SyncController) SyncApp(ctx context.Context, appName string) (*AppStatus, error) {
+	// POST /api/v1/apps/{namespace}/{name}/sync
+	url := fmt.Sprintf("%s/api/v1/apps/%s/%s/sync", c.argocdURL, c.namespace, appName)
+	
+	payload := map[string]interface{}{
+		"revision": "HEAD",
+	}
+	body, _ := json.Marshal(payload)
+	
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Content-Type", "application/json")
+	
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	
+	data, _ := io.ReadAll(resp.Body)
+	var status AppStatus
+	json.Unmarshal(data, &status)
+	
+	return &status, nil
+}
+
+func (c *SyncController) GetAppStatus(ctx context.Context, appName string) (*AppStatus, error) {
+	url := fmt.Sprintf("%s/api/v1/apps/%s/%s", c.argocdURL, c.namespace, appName)
+	
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	
+	data, _ := io.ReadAll(resp.Body)
+	var status AppStatus
+	json.Unmarshal(data, &status)
+	
+	return &status, nil
+}
+```
+
+### 自测题
+
+<details>
+<summary>Q1: Pipeline 的 Parallel 策略中，为什么用 errCh 收集错误而不是直接 return？</summary>
+
+**答案**：
+
+**原因**：并行执行时一个 goroutine 的 return 不影响其他 goroutine。用 channel 收集所有错误，等全部完成后统一处理。
+
+```go
+errCh := make(chan error, len(stage.Jobs))
+// ... 每个 goroutine 发送错误到 errCh
+wg.Wait()
+close(errCh)
+for err := range errCh {
+    if err != nil { return err }
+}
+```
+
+这样可以确保所有 job 都执行完再返回——即使某个 job 失败了，其他 job 的结果也会被记录。
+
+</details>
+
+<details>
+<summary>Q2: 指数退避（Exponential Backoff）的公式是什么？为什么广告平台常用？</summary>
+
+**答案**：
+
+**公式**：`delay = base_delay × 2^attempt`
+
+| 重试次数 | 延迟 |
+|---------|------|
+| 0 | 0s |
+| 1 | 1s |
+| 2 | 2s |
+| 3 | 4s |
+| 4 | 8s |
+
+**广告平台场景**：Kafka 生产者发送失败、Redis 连接断开、DB 锁等待——这些瞬态故障用指数退避可以有效避免雪崩。
+
+</details>
+
+<details>
+<summary>Q3: ArgoCD 的 Sync 和 Poll 模式有什么区别？生产环境推荐哪个？</summary>
+
+**答案**：
+
+| 模式 | 机制 | 延迟 | 适用场景 |
+|------|------|------|---------|
+| Poll | 定时拉取 Git 变更 | interval 级别 | 开发环境 |
+| Webhook | Git push 触发 | 秒级 | **生产推荐** |
+
+ArgoCD 默认每3分钟 poll 一次 Git。生产环境配置 GitHub/GitLab webhook，推送后秒级同步。
+
+</details>

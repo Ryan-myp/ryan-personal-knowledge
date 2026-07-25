@@ -141,3 +141,257 @@ Broker 内部结构：
 ### Q3: 消费者组怎么工作？
 
 **A**: 每个 partition 只能被组内一个消费者消费，partition 数 = 消费者数的倍数时利用率最高。
+
+---
+
+## Go 代码实战：Kafka 核心组件 Go 实现
+
+### 1. Partition Leader Election（控制器选举）
+
+```go
+package kafka
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+)
+
+// Broker  Broker节点
+type Broker struct {
+	ID       int32
+	Host     string
+	Port     int
+	IsLeader bool
+	ISR      []int32 // In-Sync Replicas
+}
+
+// Controller 控制器
+type Controller struct {
+	brokers   sync.Map // brokerID -> *Broker
+	leaders   map[string][]int32 // topic:partition -> leaderID
+	mu        sync.RWMutex
+	elected   bool
+	term      int64
+	heartbeat chan struct{}
+}
+
+func NewController() *Controller {
+	return &Controller{
+		leaders:   make(map[string][]int32),
+		heartbeat: make(chan struct{}, 1),
+	}
+}
+
+func (c *Controller) Elect(brokerID int32, brokers []*Broker) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	
+	// 记录所有broker
+	for _, b := range brokers {
+		c.brokers.Store(b.ID, b)
+	}
+	
+	c.elected = true
+	c.term++
+	
+	// 触发 Leader Election
+	go c.leaderElection()
+	return nil
+}
+
+func (c *Controller) leaderElection() {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	
+	for {
+		select {
+		case <-ticker.C:
+			c.electLeadersForAllTopics()
+			
+		case <-c.heartbeat:
+			// 收到新leader心跳，检查ISR
+			c.checkISR()
+		}
+	}
+}
+
+func (c *Controller) electLeadersForAllTopics() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	
+	// 对每个 topic:partition，从 ISR 中选 leader
+	topics := c.getTopics()
+	for _, topic := range topics {
+		partitions := c.getPartitions(topic)
+		for _, p := range partitions {
+			key := fmt.Sprintf("%s:%d", topic, p)
+			isr := c.getISR(key)
+			if len(isr) == 0 {
+				continue
+			}
+			// 选 ISR 中第一个存活的 broker
+			for _, brokerID := range isr {
+				if c.isAlive(brokerID) {
+					c.leaders[key] = []int32{brokerID}
+					break
+				}
+			}
+		}
+	}
+}
+```
+
+### 2. Consumer Rebalance（协作式重平衡）
+
+```go
+package kafka
+
+import (
+	"sort"
+	"sync"
+)
+
+// CooperativeRebalancer 协作式重平衡器
+type CooperativeRebalancer struct {
+	members    sync.Map // memberID -> assigned partitions
+	currentGen int64
+}
+
+type Assignment struct {
+	MemberID   string
+	Partitions []int32
+}
+
+func (cr *CooperativeRebalancer) Rebalance(
+	newMembers []string, 
+	allPartitions []int32,
+) []Assignment {
+	cr.currentGen++
+	
+	assignments := make([]Assignment, 0, len(newMembers))
+	
+	// 1. 保留现有成员的分配（最小化扰动）
+	existing := make(map[string][]int32)
+	cr.members.Range(func(key, value interface{}) bool {
+		memberID := key.(string)
+		parts := value.([]int32)
+		
+		// 如果成员还在新列表中，保留其分配
+		for _, nm := range newMembers {
+			if nm == memberID {
+				existing[memberID] = parts
+				break
+			}
+		}
+		return true
+	})
+	
+	// 2. 找出未分配的 partition
+	unassigned := cr.getUnassigned(allPartitions, existing)
+	
+	// 3. 分配给新成员
+	for _, memberID := range newMembers {
+		if _, ok := existing[memberID]; !ok {
+			// 新成员：分配未分配的 partition
+			n := len(unassigned) / len(newMembers)
+			start := len(assignments) * n
+			end := start + n
+			if end > len(unassigned) {
+				end = len(unassigned)
+			}
+			assignments = append(assignments, Assignment{
+				MemberID:   memberID,
+				Partitions: unassigned[start:end],
+			})
+		} else {
+			// 已有分配
+			assignments = append(assignments, Assignment{
+				MemberID:   memberID,
+				Partitions: existing[memberID],
+			})
+		}
+	}
+	
+	// 更新状态
+	for _, a := range assignments {
+		cr.members.Store(a.MemberID, a.Partitions)
+	}
+	
+	return assignments
+}
+
+func (cr *CooperativeRebalancer) getUnassigned(
+	allParts []int32, 
+	existing map[string][]int32,
+) []int32 {
+	assigned := make(map[int32]bool)
+	for _, parts := range existing {
+		for _, p := range parts {
+			assigned[p] = true
+		}
+	}
+	
+	var unassigned []int32
+	for _, p := range allParts {
+		if !assigned[p] {
+			unassigned = append(unassigned, p)
+		}
+	}
+	sort.Slice(unassigned, func(i, j int) bool {
+		return unassigned[i] < unassigned[j]
+	})
+	return unassigned
+}
+```
+
+### 自测题
+
+<details>
+<summary>Q1: ISR（In-Sync Replicas）为什么不用所有副本而只同步副本选举 Leader？</summary>
+
+**答案**：
+
+**问题**：如果从所有副本中选 Leader，可能选到一个数据严重滞后的副本——导致数据丢失。
+
+**ISR 的作用**：
+- 只有跟 Leader 差距在 `replica.lag.time.max.ms`（默认30s）内的副本才留在 ISR
+- 确保新 Leader 至少有大部分数据
+- Leader 定期向 Follower 发送 FetchRequest 保持同步
+
+</details>
+
+<details>
+<summary>Q2: CooperativeSticky 重平衡相比 Range 策略的核心优势是什么？</summary>
+
+**答案**：
+
+| 特性 | Range | Cooperative Sticky |
+|------|-------|-------------------|
+| 重平衡影响 | 全量重新分配 | **增量迁移** |
+| 重复消费 | 高 | 低 |
+| 启动延迟 | 高 | 低 |
+| 复杂度 | 简单 | 复杂 |
+
+核心优势：**最小化扰动**。新增消费者时，只从现有消费者那里拿走少量分区，而不是全部打乱。
+
+</details>
+
+<details>
+<summary>Q3: Controller 的 heartbeat channel 为什么用 buffered channel（cap=1）？</summary>
+
+**答案**：
+
+**原因**：防止高频心跳堆积内存。
+
+```go
+heartbeat chan struct{} // cap=1
+
+// 即使每秒收到100次心跳，buffer里最多只有1个
+// 下次 tick 处理时会批量检查所有 ISR
+```
+
+这是经典的 **debounce 模式**——把高频事件合并为低频处理。
+
+</details>
