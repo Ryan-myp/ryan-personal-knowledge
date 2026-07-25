@@ -251,3 +251,579 @@
 □ 能指导团队成员成长
 □ 能在技术会议上分享
 ```
+
+## 六、Go 源码级实现：技术能力评估系统
+
+### 6.1 技能矩阵评估器
+
+```go
+package career
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+// SkillLevel 技能等级
+type SkillLevel int
+
+const (
+	Basic SkillLevel = iota
+	Intermediate
+	Advanced
+	Expert
+	ThoughtLeader
+)
+
+func (s SkillLevel) String() string {
+	names := map[SkillLevel]string{
+		Basic: "基础", Intermediate: "进阶", Advanced: "高级",
+		Expert: "专家", ThoughtLeader: "思想领袖",
+	}
+	return names[s]
+}
+
+// Competency 能力维度
+type Competency struct {
+	ID          string
+	Name        string
+	Description string
+	Categories  []SkillCategory
+}
+
+// SkillCategory 技能分类
+type SkillCategory struct {
+	Name      string
+	Skills    []Skill
+	TargetLevel SkillLevel
+}
+
+// Skill 具体技能
+type Skill struct {
+	Name        string
+	CurrentLevel SkillLevel
+	TargetLevel  SkillLevel
+	Evidence     []Evidence
+	LastUpdated  time.Time
+}
+
+// Evidence 证据
+type Evidence struct {
+	Type   string // project, article, talk, patent, code_review
+	Title  string
+	Date   time.Time
+	Link   string
+	Impact float64 // 0-100
+}
+
+// SkillMatrix 技能矩阵
+type SkillMatrix struct {
+	mu         sync.RWMutex
+	skills     map[string]*Skill
+	competencies map[string]*Competency
+	userID     string
+}
+
+// NewSkillMatrix 创建技能矩阵
+func NewSkillMatrix(userID string) *SkillMatrix {
+	return &SkillMatrix{
+		skills:       make(map[string]*Skill),
+		competencies: make(map[string]*Competency),
+		userID:       userID,
+	}
+}
+
+// AddSkill 添加技能
+func (sm *SkillMatrix) AddSkill(skill *Skill) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	
+	if skill.Name == "" {
+		return fmt.Errorf("skill name is required")
+	}
+	
+	sm.skills[skill.Name] = skill
+	skill.LastUpdated = time.Now()
+	
+	return nil
+}
+
+// AddEvidence 添加工匠证据
+func (sm *SkillMatrix) AddEvidence(skillName string, evidence Evidence) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	
+	skill, ok := sm.skills[skillName]
+	if !ok {
+		return fmt.Errorf("skill %s not found", skillName)
+	}
+	
+	evidence.Type = "code_review" // 默认类型
+	evidence.Date = time.Now()
+	skill.Evidence = append(skill.Evidence, evidence)
+	skill.LastUpdated = time.Now()
+	
+	return nil
+}
+
+// GetGap 计算技能差距
+func (sm *SkillMatrix) GetGap(skillName string) *SkillGap {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	
+	skill, ok := sm.skills[skillName]
+	if !ok {
+		return &SkillGap{SkillName: skillName, Missing: true}
+	}
+	
+	levelDiff := int(skill.TargetLevel) - int(skill.CurrentLevel)
+	progress := float64(skill.CurrentLevel) / float64(skill.TargetLevel)
+	
+	return &SkillGap{
+		SkillName:    skillName,
+		CurrentLevel: skill.CurrentLevel,
+		TargetLevel:  skill.TargetLevel,
+		LevelDiff:    levelDiff,
+		Progress:     progress,
+		Missing:      false,
+	}
+}
+
+// SkillGap 技能差距
+type SkillGap struct {
+	SkillName    string
+	CurrentLevel SkillLevel
+	TargetLevel  SkillLevel
+	LevelDiff    int
+	Progress     float64
+	Missing      bool
+}
+
+// OverallProgress 整体进度
+type OverallProgress struct {
+	TotalSkills    int
+	AchievedSkills int
+	OverallScore   float64
+	ByCategory     map[string]float64
+	WeakPoints     []string
+	StrongPoints   []string
+}
+
+// CalculateProgress 计算整体进度
+func (sm *SkillMatrix) CalculateProgress() *OverallProgress {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	
+	progress := &OverallProgress{
+		ByCategory: make(map[string]float64),
+	}
+	
+	var totalScore, categoryScore float64
+	var categoryCount, categoryAchieved int
+	
+	for name, skill := range sm.skills {
+		totalScore += float64(skill.CurrentLevel)
+		maxScore := float64(skill.TargetLevel)
+		if maxScore > 0 {
+			categoryScore += float64(skill.CurrentLevel) / maxScore
+			categoryCount++
+		}
+		
+		if skill.CurrentLevel >= skill.TargetLevel {
+			progress.AchievedSkills++
+			progress.StrongPoints = append(progress.StrongPoints, name)
+		} else if int(skill.TargetLevel)-int(skill.CurrentLevel) >= 2 {
+			progress.WeakPoints = append(progress.WeakPoints, name)
+		}
+	}
+	
+	progress.TotalSkills = len(sm.skills)
+	if categoryCount > 0 {
+		progress.OverallScore = categoryScore / float64(categoryCount) * 100
+	}
+	
+	return progress
+}
+
+// LearningPlan 学习计划
+type LearningPlan struct {
+	UserID      string
+	CreatedAt   time.Time
+	Tasks       []LearningTask
+	Priority    string // high, medium, low
+	Duration    time.Duration
+}
+
+// LearningTask 学习任务
+type LearningTask struct {
+	TaskID    string
+	Title     string
+	SkillName string
+	Type      string // read, practice, project, mentor
+	Duration  time.Duration
+	Resources []string
+	DueDate   time.Time
+	Completed bool
+}
+
+// GeneratePlan 生成学习计划
+func (sm *SkillMatrix) GeneratePlan(days int) *LearningPlan {
+	plan := &LearningPlan{
+		UserID:   sm.userID,
+		CreatedAt: time.Now(),
+		Duration: time.Duration(days) * 24 * time.Hour,
+	}
+	
+	// 按差距排序
+	type gapInfo struct {
+		name   string
+		diff   int
+		skill  *Skill
+	}
+	
+	var gaps []gapInfo
+	for name, skill := range sm.skills {
+		diff := int(skill.TargetLevel) - int(skill.CurrentLevel)
+		if diff > 0 {
+			gaps = append(gaps, gapInfo{name, diff, skill})
+		}
+	}
+	
+	// 按差距大小排序（优先补最大差距）
+	for i := 0; i < len(gaps); i++ {
+		for j := i + 1; j < len(gaps); j++ {
+			if gaps[j].diff > gaps[i].diff {
+				gaps[i], gaps[j] = gaps[j], gaps[i]
+			}
+		}
+	}
+	
+	// 为每个差距生成学习任务
+	for _, g := range gaps {
+		task := LearningTask{
+			TaskID:    fmt.Sprintf("task_%s", g.name),
+			Title:     fmt.Sprintf("提升 %s 到 %s", g.name, g.skill.TargetLevel),
+			SkillName: g.name,
+			Type:      "read",
+			Duration:  time.Duration(g.diff*30) * 24 * time.Hour,
+			DueDate:   time.Now().Add(time.Duration(g.diff*30) * 24 * time.Hour),
+		}
+		plan.Tasks = append(plan.Tasks, task)
+	}
+	
+	return plan
+}
+```
+
+### 6.2 面试模拟系统
+
+```go
+package career
+
+import (
+	"math/rand"
+	"strings"
+	"sync"
+	"time"
+)
+
+// InterviewQuestion 面试题目
+type InterviewQuestion struct {
+	ID        string
+	Category  string // go, mysql, redis, ads, architecture
+	Difficulty int    // 1-5
+	Question  string
+	Answer    string
+	KeyPoints []string
+	FollowUp  []string
+}
+
+// InterviewSession 面试会话
+type InterviewSession struct {
+	SessionID  string
+	StartTime  time.Time
+	Questions  []InterviewQuestion
+	Answers    []AnswerRecord
+	Scorer     *InterviewScorer
+}
+
+// AnswerRecord 回答记录
+type AnswerRecord struct {
+	QuestionID string
+	Answer     string
+	Score      float64
+	Feedback   string
+	Timestamp  time.Time
+}
+
+// InterviewScorer 面试评分器
+type InterviewScorer struct {
+	mu         sync.Mutex
+	questions  map[string][]InterviewQuestion
+	difficultyWeights map[int]float64
+}
+
+// NewInterviewScorer 创建评分器
+func NewInterviewScorer() *InterviewScorer {
+	return &InterviewScorer{
+		questions: make(map[string][]InterviewQuestion),
+		difficultyWeights: map[int]float64{
+			1: 0.4, 2: 0.6, 3: 0.8, 4: 0.9, 5: 1.0,
+		},
+	}
+}
+
+// AddQuestions 添加题库
+func (is *InterviewScorer) AddQuestions(qs []InterviewQuestion) {
+	is.mu.Lock()
+	defer is.mu.Unlock()
+	
+	for _, q := range qs {
+		is.questions[q.Category] = append(is.questions[q.Category], q)
+	}
+}
+
+// GenerateInterview 生成面试题目
+func (is *InterviewScorer) GenerateInterview(categories []string, count int, difficulty int) []InterviewQuestion {
+	is.mu.Lock()
+	defer is.mu.Unlock()
+	
+	var selected []InterviewQuestion
+	
+	for _, cat := range categories {
+		questions := is.questions[cat]
+		if len(questions) == 0 {
+			continue
+		}
+		
+		// 按难度筛选
+		var filtered []InterviewQuestion
+		for _, q := range questions {
+			if q.Difficulty == difficulty || q.Difficulty == difficulty+1 {
+				filtered = append(filtered, q)
+			}
+		}
+		
+		if len(filtered) > 0 {
+			selected = append(selected, filtered[rand.Intn(len(filtered))])
+		}
+	}
+	
+	// 限制数量
+	if len(selected) > count {
+		selected = selected[:count]
+	}
+	
+	return selected
+}
+
+// ScoreAnswer 评分回答
+func (is *InterviewScorer) ScoreAnswer(question InterviewQuestion, answer string) *ScoreResult {
+	result := &ScoreResult{
+		QuestionID: question.ID,
+		Keywords:   make(map[string]bool),
+	}
+	
+	answerLower := strings.ToLower(answer)
+	keyPointsLower := make([]string, len(question.KeyPoints))
+	for i, kp := range question.KeyPoints {
+		keyPointsLower[i] = strings.ToLower(kp)
+	}
+	
+	// 关键词匹配
+	for _, kp := range keyPointsLower {
+		if strings.Contains(answerLower, kp) {
+			result.Keywords[kp] = true
+			result.ScoredKeywords++
+		}
+	}
+	
+	// 长度评分（答案不能太短）
+	wordCount := len(strings.Fields(answer))
+	if wordCount < 20 {
+		result.Score *= 0.5
+		result.Feedback = "回答过于简短，需要更详细的解释"
+	} else if wordCount > 200 {
+		result.Score *= 1.1
+	}
+	
+	// 难度权重
+	result.Score *= is.difficultyWeights[question.Difficulty]
+	
+	// 归一化
+	if result.Score > 100 {
+		result.Score = 100
+	}
+	
+	return result
+}
+
+// ScoreResult 评分结果
+type ScoreResult struct {
+	QuestionID    string
+	Score         float64
+	KeyPoints     []string
+	ScoredKeywords int
+	Keywords      map[string]bool
+	Feedback      string
+}
+
+// InterviewReport 面试报告
+type InterviewReport struct {
+	SessionID  string
+	StartTime  time.Time
+	EndTime    time.Time
+	TotalScore float64
+	ByCategory map[string]float64
+	WeakAreas  []string
+	Strengths  []string
+	Advice     []string
+}
+
+// GenerateReport 生成面试报告
+func (is *InterviewScorer) GenerateReport(session *InterviewSession) *InterviewReport {
+	report := &InterviewReport{
+		SessionID:  session.SessionID,
+		StartTime:  session.StartTime,
+		EndTime:    time.Now(),
+		ByCategory: make(map[string]float64),
+	}
+	
+	var totalScore float64
+	var categoryScores map[string][]float64
+	
+	for _, record := range session.Answers {
+		totalScore += record.Score
+		
+		if categoryScores == nil {
+			categoryScores = make(map[string][]float64)
+		}
+		
+		// 简化：从问题中获取类别
+		for _, q := range session.Questions {
+			categoryScores[q.Category] = append(categoryScores[q.Category], record.Score)
+		}
+	}
+	
+	report.TotalScore = totalScore / float64(len(session.Answers))
+	
+	// 按类别统计
+	for cat, scores := range categoryScores {
+		sum := 0.0
+		for _, s := range scores {
+			sum += s
+		}
+		report.ByCategory[cat] = sum / float64(len(scores))
+	}
+	
+	// 找出薄弱环节
+	for cat, score := range report.ByCategory {
+		if score < 60 {
+			report.WeakAreas = append(report.WeakAreas, cat)
+		} else {
+			report.Strengths = append(report.Strengths, cat)
+		}
+	}
+	
+	// 生成建议
+	report.Advice = is.generateAdvice(report)
+	
+	return report
+}
+
+func (is *InterviewScorer) generateAdvice(report *InterviewReport) []string {
+	var advice []string
+	
+	for _, weak := range report.WeakAreas {
+		advice = append(advice, fmt.Sprintf("建议加强 %s 方面的学习", weak))
+	}
+	
+	if len(advice) == 0 {
+		advice = append(advice, "各项能力均衡，继续保持！")
+	}
+	
+	return advice
+}
+
+## 七、自测题
+
+### Q1: 技能矩阵中，如何客观评估一个人的技能等级？证据收集有哪些维度？
+
+<details>
+<summary>查看答案</summary>
+
+**答案：**
+
+技能等级评估标准：
+| 等级 | 标准 | 典型行为 |
+|------|------|----------|
+| Basic | 了解概念 | 能阅读代码，理解基本逻辑 |
+| Intermediate | 独立使用 | 能独立完成中等复杂度任务 |
+| Advanced | 优化改进 | 能优化性能，解决复杂问题 |
+| Expert | 设计架构 | 能设计系统架构，指导他人 |
+| ThoughtLeader | 行业影响 | 有技术影响力，输出行业观点 |
+
+证据收集维度：
+1. **项目贡献**：PR review、代码质量、bug 率
+2. **技术文章**：博客、内部分享、专利
+3. **技术演讲**：技术大会、团队分享
+4. **代码审查**：review 他人代码的质量和深度
+5. **mentorship**：指导他人的效果
+
+Go 实现要点：
+- 使用 Evidence 结构体记录每种证据
+- Impact 字段量化影响力（0-100）
+- CalculateProgress 按加权平均计算整体进度
+
+</details>
+
+### Q2: 面试模拟系统中，关键词匹配评分有什么局限性？如何改进？
+
+<details>
+<summary>查看答案</summary>
+
+**答案：**
+
+关键词匹配的局限性：
+1. **同义词遗漏**：回答用了"哈希表"但期望词是"hash map"
+2. **上下文无关**：关键词出现不代表理解正确
+3. **过度依赖长度**：长回答不一定好，短回答可能更精准
+4. **无法评估深度**：只检查表面关键词，不验证逻辑正确性
+
+改进方案：
+1. **语义相似度**：用向量嵌入计算余弦相似度（需要 ML 模型）
+2. **结构化评分**：将答案拆解为多个维度分别评分
+3. **Rubric 评分**：预先定义每个关键点的评分标准
+4. **人工复核**：AI 初筛 + 专家复核
+
+生产实践：Google/Meta 的面试系统都采用结构化评分 rubric，而不是简单的关键词匹配。
+
+</details>
+
+### Q3: 从 TL 到专家工程师的成长路径中，最关键的转变是什么？如何衡量是否完成了这个转变？
+
+<details>
+<summary>查看答案</summary>
+
+**答案：**
+
+最关键转变：
+1. **个人贡献 → 团队杠杆**：从自己写代码到让团队产出 10x
+2. **执行 → 决策**：从"怎么做"到"做什么/为什么做"
+3. **技术 → 商业**：从技术最优到商业价值最优
+4. **局部 → 全局**：从模块视角到系统/业务视角
+
+衡量标准：
+- **技术深度**：能否深入源码级理解（Go runtime、编译器优化）
+- **架构设计**：能否独立设计高并发/高可用系统
+- **广告 API 精通**：对 DSP/SSP/Ad Exchange 的深刻理解
+- **技术领导力**：能否带团队交付复杂项目
+
+成长路线图验证：
+- P5→P6：独立负责模块
+- P6→P7：独立负责系统
+- P7→P8：跨系统架构设计
+- P8→P9：技术战略规划
+
+</details>

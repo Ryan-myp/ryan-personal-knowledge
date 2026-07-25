@@ -486,3 +486,790 @@
 # - 调整预算分配
 # - 优化归因模型
 ```
+
+## 六、Go 源码级实现：创意管理与品牌安全
+
+### 6.1 创意上传与审核系统
+
+```go
+package dv360
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"image"
+	"image/jpeg"
+	"image/png"
+	"io"
+	"os"
+	"sync"
+	"time"
+)
+
+// CreativeFormat 创意格式枚举
+type CreativeFormat int
+
+const (
+	FormatBanner CreativeFormat = iota
+	FormatVideo
+	FormatHTML5
+	FormatNative
+	FormatAppInstall
+)
+
+// CreativeStatus 创意状态
+type CreativeStatus int
+
+const (
+	StatusPending CreativeStatus = iota
+	StatusApproved
+	StatusRejected
+	StatusUnderReview
+)
+
+// Creative 创意定义
+type Creative struct {
+	ID            string        `json:"id"`
+	CampaignID    string        `json:"campaign_id"`
+	Name          string        `json:"name"`
+	Format        CreativeFormat `json:"format"`
+	MediaType     string        `json:"media_type"` // image/jpeg, video/mp4, text/html
+	Width         int           `json:"width"`
+	Height        int           `json:"height"`
+	FileSize      int64         `json:"file_size"`
+	Digest        string        `json:"digest"`     // SHA256 哈希，用于去重
+	Status        CreativeStatus `json:"status"`
+	RejectReason  string        `json:"reject_reason,omitempty"`
+	CreatedAt     time.Time     `json:"created_at"`
+	ApprovedAt    time.Time     `json:"approved_at,omitempty"`
+}
+
+// CreativeManager 创意管理器
+type CreativeManager struct {
+	mu         sync.RWMutex
+	creatives  map[string]*Creative
+	registry   map[string][]string // campaignID -> creativeIDs
+	reviewers  []CreativeReviewer
+	logger     *Logger
+}
+
+// NewCreativeManager 创建创意管理器
+func NewCreativeManager() *CreativeManager {
+	return &CreativeManager{
+		creatives: make(map[string]*Creative),
+		registry:  make(map[string][]string),
+		logger:    NewLogger(),
+	}
+}
+
+// UploadCreative 上传创意（含去重检查）
+func (cm *CreativeManager) UploadCreative(campaignID string, file io.Reader, meta CreativeMeta) (*Creative, error) {
+	// 1. 读取文件内容并计算哈希
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return nil, fmt.Errorf("read file: %w", err)
+	}
+	
+	hash := sha256.Sum256(data)
+	digest := hex.EncodeToString(hash[:])
+	
+	// 2. 去重检查（基于 SHA256 哈希）
+	cm.mu.RLock()
+	for _, c := range cm.creatives {
+		if c.Digest == digest && c.Status == StatusApproved {
+			cm.mu.RUnlock()
+			return nil, fmt.Errorf("duplicate creative detected: %s", digest)
+		}
+	}
+	cm.mu.RUnlock()
+	
+	// 3. 格式验证
+	format, err := detectFormat(data)
+	if err != nil {
+		return nil, fmt.Errorf("detect format: %w", err)
+	}
+	
+	// 4. 尺寸验证
+	width, height, err := getImageDimensions(data, format)
+	if err != nil {
+		return nil, fmt.Errorf("get dimensions: %w", err)
+	}
+	
+	if !isValidSize(width, height, format) {
+		return nil, fmt.Errorf("invalid creative size: %dx%d for format %d", width, height, format)
+	}
+	
+	// 5. 文件大小限制
+	maxSize := getMaxFileSize(format)
+	if int64(len(data)) > maxSize {
+		return nil, fmt.Errorf("file too large: %d bytes, max %d", len(data), maxSize)
+	}
+	
+	// 6. 创建创意记录
+	creative := &Creative{
+		ID:         generateCreativeID(),
+		CampaignID: campaignID,
+		Name:       meta.Name,
+		Format:     format,
+		MediaType:  getMediaType(format),
+		Width:      width,
+		Height:     height,
+		FileSize:   int64(len(data)),
+		Digest:     digest,
+		Status:     StatusPending,
+		CreatedAt:  time.Now(),
+	}
+	
+	// 7. 保存到存储（简化：内存存储）
+	cm.mu.Lock()
+	cm.creatives[creative.ID] = creative
+	cm.registry[campaignID] = append(cm.registry[campaignID], creative.ID)
+	cm.mu.Unlock()
+	
+	// 8. 启动异步审核流程
+	go cm.reviewCreative(creative, data)
+	
+	return creative, nil
+}
+
+// reviewCreative 异步审核创意
+func (cm *CreativeManager) reviewCreative(creative *Creative, data []byte) {
+	// 1. AI 内容审核（NSFW/暴力/敏感内容检测）
+	for _, reviewer := range cm.reviewers {
+		result, err := reviewer.Review(creative, data)
+		if err != nil {
+			cm.logger.Error("reviewer error: %v", err)
+			continue
+		}
+		if !result.Pass {
+			creative.Status = StatusRejected
+			creative.RejectReason = result.Reason
+			return
+		}
+	}
+	
+	// 2. 品牌安全分类
+	category := classifyContent(creative, data)
+	if isBlockedCategory(category) {
+		creative.Status = StatusRejected
+		creative.RejectReason = "brand safety violation: " + category
+		return
+	}
+	
+	// 3. 通过审核
+	creative.Status = StatusApproved
+	creative.ApprovedAt = time.Now()
+}
+
+// detectFormat 检测文件格式
+func detectFormat(data []byte) (CreativeFormat, error) {
+	// JPEG: FF D8 FF
+	if len(data) >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF {
+		return FormatBanner, nil
+	}
+	// PNG: 89 50 4E 47
+	if len(data) >= 4 && data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47 {
+		return FormatBanner, nil
+	}
+	// HTML5: 检查是否包含 HTML 标签
+	if bytes.Contains(data, []byte("<html")) || bytes.Contains(data, []byte("<!DOCTYPE")) {
+		return FormatHTML5, nil
+	}
+	// MP4/MOV: 检查 ftyp box
+	if len(data) >= 12 && bytes.Equal(data[4:8], []byte("ftyp")) {
+		return FormatVideo, nil
+	}
+	return FormatBanner, fmt.Errorf("unknown format")
+}
+
+// getImageDimensions 获取图片尺寸
+func getImageDimensions(data []byte, format CreativeFormat) (int, int, error) {
+	switch format {
+	case FormatBanner:
+		img, _, err := image.Decode(bytes.NewReader(data))
+		if err != nil {
+			return 0, 0, err
+		}
+		return img.Bounds().Dx(), img.Bounds().Dy(), nil
+	default:
+		return 0, 0, fmt.Errorf("unsupported format for dimension check")
+	}
+}
+
+// isValidSize 验证创意尺寸是否符合标准
+func isValidSize(width, height int, format CreativeFormat) bool {
+	// IAB 标准尺寸
+	validSizes := map[CreativeFormat][]struct{ W, H int }{
+		FormatBanner: {
+			{728, 90}, {300, 250}, {336, 280}, {160, 600},
+			{300, 600}, {468, 60}, {320, 50}, {320, 100},
+		},
+		FormatHTML5: {
+			{300, 250}, {336, 280}, {728, 90}, {970, 250},
+		},
+	}
+	
+	sizes, ok := validSizes[format]
+	if !ok {
+		return true // 非 banner 格式不严格限制
+	}
+	
+	for _, s := range sizes {
+		if width == s.W && height == s.H {
+			return true
+		}
+	}
+	return false
+}
+
+// getMaxFileSize 获取最大文件大小限制
+func getMaxFileSize(format CreativeFormat) int64 {
+	limit := int64(150 * 1024) // 150KB for banner
+	if format == FormatVideo {
+		limit = 5 * 1024 * 1024 // 5MB for video
+	}
+	return limit
+}
+
+// CreativeMeta 创意元数据
+type CreativeMeta struct {
+	Name        string
+	Description string
+	TargetURL   string
+}
+
+// CreativeReviewer 创意审核器接口
+type CreativeReviewer interface {
+	Review(creative *Creative, data []byte) (*ReviewResult, error)
+}
+
+// ReviewResult 审核结果
+type ReviewResult struct {
+	Pass   bool
+	Reason string
+}
+
+// BrandSafetyClassifier 品牌安全分类器
+func classifyContent(creative *Creative, data []byte) string {
+	// 简化版：基于内容关键词和图像特征分类
+	// 生产环境使用 ML 模型
+	return "safe"
+}
+
+func isBlockedCategory(category string) bool {
+	blocked := map[string]bool{
+		"adult": true, "violence": true, "hate_speech": true,
+		"gambling": true, "alcohol": true, "tobacco": true,
+	}
+	return blocked[category]
+}
+
+var creativeIDCounter int64
+var creativeIDMu sync.Mutex
+
+func generateCreativeID() string {
+	creativeIDMu.Lock()
+	defer creativeIDMu.Unlock()
+	creativeIDCounter++
+	return fmt.Sprintf("cr_%d_%d", time.Now().UnixNano(), creativeIDCounter)
+}
+
+func getMediaType(format CreativeFormat) string {
+	types := map[CreativeFormat]string{
+		FormatBanner: "image/jpeg",
+		FormatVideo:  "video/mp4",
+		FormatHTML5:  "text/html",
+		FormatNative: "application/json",
+	}
+	return types[format]
+}
+
+// Logger 简化日志
+type Logger struct{}
+func NewLogger() *Logger { return &Logger{} }
+func (l *Logger) Error(fmt string, args ...interface{}) {}
+
+### 6.2 品牌安全过滤系统
+
+```go
+package dv360
+
+import (
+	"regexp"
+	"strings"
+	"sync"
+)
+
+// BrandSafetyEngine 品牌安全引擎
+type BrandSafetyEngine struct {
+	mu              sync.RWMutex
+	blockedKeywords []string       // 黑名单关键词
+	blockedCategories []string     // 黑名单分类
+	allowedDomains  map[string]bool // 白名单域名
+	blockedDomains  map[string]bool // 黑名单域名
+	keywordRegex    []*regexp.Regexp
+	domainCache     map[string]bool // 域名缓存
+}
+
+// NewBrandSafetyEngine 创建品牌安全引擎
+func NewBrandSafetyEngine() *BrandSafetyEngine {
+	return &BrandSafetyEngine{
+		allowedDomains: make(map[string]bool),
+		blockedDomains: make(map[string]bool),
+		domainCache:    make(map[string]bool),
+	}
+}
+
+// AddBlockedKeyword 添加黑名单关键词
+func (bs *BrandSafetyEngine) AddBlockedKeyword(kw string) {
+	bs.mu.Lock()
+	defer bs.mu.Unlock()
+	bs.blockedKeywords = append(bs.blockedKeywords, kw)
+	bs.rebuildRegex()
+}
+
+// AddAllowedDomain 添加白名单域名
+func (bs *BrandSafetyEngine) AddAllowedDomain(domain string) {
+	bs.mu.Lock()
+	defer bs.mu.Unlock()
+	domain = strings.ToLower(strings.TrimPrefix(domain, "https://"))
+	domain = strings.TrimPrefix(domain, "www.")
+	bs.allowedDomains[domain] = true
+}
+
+// AddBlockedDomain 添加黑名单域名
+func (bs *BrandSafetyEngine) AddBlockedDomain(domain string) {
+	bs.mu.Lock()
+	defer bs.mu.Unlock()
+	domain = strings.ToLower(strings.TrimPrefix(domain, "https://"))
+	domain = strings.TrimPrefix(domain, "www.")
+	bs.blockedDomains[domain] = true
+}
+
+// CheckPlacement 检查投放位置是否安全
+func (bs *BrandSafetyEngine) CheckPlacement(placement Placement) *SafetyResult {
+	result := &SafetyResult{Safe: true}
+	
+	// 1. 域名检查（优先使用缓存）
+	domain := normalizeDomain(placement.PageURL)
+	if cached, ok := bs.domainCache[domain]; ok {
+		if !cached {
+			result.Safe = false
+			result.Reason = "blocked domain"
+			return result
+		}
+		return result
+	}
+	
+	// 2. 白名单优先
+	if bs.allowedDomains[domain] {
+		bs.domainCache[domain] = true
+		return result
+	}
+	
+	// 3. 黑名单检查
+	if bs.blockedDomains[domain] {
+		bs.domainCache[domain] = false
+		result.Safe = false
+		result.Reason = "blocked domain: " + domain
+		return result
+	}
+	
+	// 4. 关键词检查
+	for _, kw := range bs.blockedKeywords {
+		if strings.Contains(strings.ToLower(placement.PageTitle), strings.ToLower(kw)) {
+			bs.domainCache[domain] = false
+			result.Safe = false
+			result.Reason = "blocked keyword: " + kw
+			return result
+		}
+	}
+	
+	// 5. 分类检查
+	if isInBlockedCategory(placement.Category) {
+		bs.domainCache[domain] = false
+		result.Safe = false
+		result.Reason = "blocked category: " + placement.Category
+		return result
+	}
+	
+	bs.domainCache[domain] = true
+	return result
+}
+
+// SafetyResult 安全检查结果
+type SafetyResult struct {
+	Safe     bool
+	Reason   string
+	Score    float64 // 0-1, 1 为完全安全
+}
+
+// Placement 投放位置信息
+type Placement struct {
+	PageURL   string
+	PageTitle string
+	Category  string
+	AdPosition int
+}
+
+func normalizeDomain(url string) string {
+	domain := strings.ToLower(url)
+	domain = strings.TrimPrefix(domain, "https://")
+	domain = strings.TrimPrefix(domain, "http://")
+	parts := strings.Split(domain, "/")
+	if len(parts) > 0 {
+		domain = parts[0]
+	}
+	domain = strings.TrimPrefix(domain, "www.")
+	return domain
+}
+
+func isInBlockedCategory(category string) bool {
+	blocked := map[string]bool{
+		"adult": true, "violence": true, "hate": true,
+		"gambling": true, "drugs": true, "weapons": true,
+	}
+	return blocked[strings.ToLower(category)]
+}
+
+func (bs *BrandSafetyEngine) rebuildRegex() {}
+
+// AdBlocker 广告拦截检测
+type AdBlocker struct {
+	mu          sync.RWMutex
+	blockRules  []BlockRule
+	cache       map[string]bool
+}
+
+// BlockRule 拦截规则
+type BlockRule struct {
+	Pattern    string
+	Selector   string // CSS selector
+	Domains    []string
+	Actions    []string // ["hide", "empty", "redirect"]
+}
+
+// NewAdBlocker 创建广告拦截检测器
+func NewAdBlocker() *AdBlocker {
+	return &AdBlocker{
+		cache: make(map[string]bool),
+	}
+}
+
+// IsAdBlocked 检测页面是否启用了广告拦截
+func (ab *AdBlocker) IsAdBlocked(pageHTML string) bool {
+	// 检查常见的广告容器元素是否存在
+	adsenseSelectors := []string{
+		'#adsbygoogle', '.adsbygoogle',
+		'#google_ads_frame', '.g-advert',
+		'.ad-container', '[class*="ad-"]',
+	}
+	
+	for _, sel := range adsenseSelectors {
+		if !containsElement(pageHTML, sel) {
+			return true // 广告容器不存在，可能被拦截
+		}
+	}
+	return false
+}
+
+func containsElement(html, selector string) bool {
+	return strings.Contains(html, selector)
+}
+```
+
+### 6.3 可见性追踪系统
+
+```go
+package dv360
+
+import (
+	"sync"
+	"time"
+)
+
+// ViewabilityTracker 可见性追踪器
+type ViewabilityTracker struct {
+	mu        sync.Mutex
+	impressions map[string]*ImpressionRecord
+}
+
+// ImpressionRecord 展示记录
+type ImpressionRecord struct {
+	ImpressionID string
+	CreativeID   string
+	StartTime    time.Time
+	ViewableTime time.Duration // 可见持续时间
+	IsViewable   bool          // 是否可见（>50%像素可见>1秒）
+	Score        float64       // 可见性分数 0-1
+}
+
+// NewViewabilityTracker 创建可见性追踪器
+func NewViewabilityTracker() *ViewabilityTracker {
+	return &ViewabilityTracker{
+		impressions: make(map[string]*ImpressionRecord),
+	}
+}
+
+// RecordImpression 记录展示开始
+func (vt *ViewabilityTracker) RecordImpression(impressionID, creativeID string) {
+	vt.mu.Lock()
+	defer vt.mu.Unlock()
+	
+	vt.impressions[impressionID] = &ImpressionRecord{
+		ImpressionID: impressionID,
+		CreativeID:   creativeID,
+		StartTime:    time.Now(),
+		Score:        0.0,
+	}
+}
+
+// UpdateViewability 更新可见性状态（由前端定时上报）
+func (vt *ViewabilityTracker) UpdateViewability(impressionID string, viewPct float64, durationMs int64) {
+	vt.mu.Lock()
+	defer vt.mu.Unlock()
+	
+	record, ok := vt.impressions[impressionID]
+	if !ok {
+		return
+	}
+	
+	record.ViewableTime += time.Duration(durationMs) * time.Millisecond
+	
+	// MRC 标准：>50% 像素可见持续 1 秒
+	if viewPct > 0.5 && record.ViewableTime >= time.Second {
+		record.IsViewable = true
+		record.Score = viewPct
+	} else if viewPct > 0.0 {
+		// 部分可见，按比例计分
+		record.Score = viewPct * float64(record.ViewableTime.Seconds()) / 1.0
+	}
+}
+
+// GetStats 获取可见性统计
+func (vt *ViewabilityTracker) GetStats() map[string]float64 {
+	vt.mu.Lock()
+	defer vt.mu.Unlock()
+	
+	stats := map[string]float64{
+		"total":      float64(len(vt.impressions)),
+		"viewable":   0,
+		"total_score": 0,
+	}
+	
+	for _, rec := range vt.impressions {
+		stats["total_score"] += rec.Score
+		if rec.IsViewable {
+			stats["viewable"]++
+		}
+	}
+	
+	if stats["total"] > 0 {
+		stats["viewability_rate"] = stats["viewable"] / stats["total"]
+		stats["avg_score"] = stats["total_score"] / stats["total"]
+	}
+	
+	return stats
+}
+```
+
+### 6.4 A/B 测试创意分析
+
+```go
+package dv360
+
+import (
+	"math"
+	"sync"
+	"time"
+)
+
+// ABTestVariant A/B 测试变体
+type ABTestVariant struct {
+	VariantID  string
+	Name       string
+	CreativeID string
+	Weight     float64 // 流量分配权重
+}
+
+// ABTestRunner A/B 测试运行器
+type ABTestRunner struct {
+	mu         sync.Mutex
+	tests      map[string]*ABTest
+	variants   map[string][]*ABTestVariant
+	allocators map[string]TrafficAllocator
+}
+
+// ABTest A/B 测试定义
+type ABTest struct {
+	TestID     string
+	Name       string
+	Variants   []*ABTestVariant
+	Status     string // running/completed
+	CreatedAt  time.Time
+	MinSamples int    // 最小样本量
+}
+
+// TrafficAllocator 流量分配器接口
+type TrafficAllocator interface {
+	Allocate(variantID string, totalAllocated float64) float64
+}
+
+// RandomAllocator 随机流量分配
+type RandomAllocator struct {
+	mu    sync.Mutex
+	total float64
+}
+
+func (ra *RandomAllocator) Allocate(variantID string, totalAllocated float64) float64 {
+	ra.mu.Lock()
+	defer ra.mu.Unlock()
+	ra.total++
+	
+	// 按权重分配
+	return totalAllocated * 0.5 // 简化：50/50
+}
+
+// TestResult 测试结果
+type TestResult struct {
+	VariantID   string
+	Impressions int
+	Clicks      int
+	Conversions int
+	CTR         float64
+	CVR         float64
+	Revenue     float64
+	Confidence  float64 // 统计置信度
+	Winner      bool
+}
+
+// AnalyzeResults 分析 A/B 测试结果
+func (tr *TestRunner) AnalyzeResults(testID string) ([]*TestResult, error) {
+	// 实现略
+	return nil, nil
+}
+
+// StatisticalTest 统计检验工具
+type StatisticalTest struct{}
+
+// ChiSquareTest 卡方检验
+func (st *StatisticalTest) ChiSquareTest(observed, expected []int) (float64, float64) {
+	var chi2 float64
+	for i := range observed {
+		diff := float64(observed[i] - expected[i])
+		chi2 += (diff * diff) / float64(expected[i])
+	}
+	
+	// 简化 p-value 计算
+	df := len(observed) - 1
+	pValue := chiSquarePValue(chi2, df)
+	
+	return chi2, pValue
+}
+
+func chiSquarePValue(chi2, df float64) float64 {
+	// 简化近似
+	return 1.0 / (1.0 + math.Exp(-chi2/df))
+}
+
+// BayesianTest 贝叶斯测试
+func (st *StatisticalTest) BayesianTest(successesA, trialsA, successesB, trialsB int) (float64, float64) {
+	// Beta-Binomial 模型
+	alphaA := float64(successesA + 1)
+	betaA := float64(trialsA - successesA + 1)
+	alphaB := float64(successesB + 1)
+	betaB := float64(trialsB - successesB + 1)
+	
+	// 蒙特卡洛模拟估算 P(A > B)
+	nSamples := 10000
+	aWins := 0
+	
+	for i := 0; i < nSamples; i++ {
+		sa := betaSample(alphaA, betaA)
+		sb := betaSample(alphaB, betaB)
+		if sa > sb {
+			aWins++
+		}
+	}
+	
+	confidence := float64(aWins) / float64(nSamples)
+	return confidence, alphaA / (alphaA + betaA)
+}
+
+func betaSample(alpha, beta float64) float64 {
+	// 简化：用正态近似
+	mean := alpha / (alpha + beta)
+	std := math.Sqrt((alpha * beta) / ((alpha + beta) * (alpha + beta) * (alpha + beta + 1)))
+	// Box-Muller 近似
+	return mean + std*0.5 // 简化采样
+}
+
+## 七、自测题
+
+### Q1: DV360 创意上传系统中，SHA256 去重是如何工作的？如果创意内容微调（如压缩质量变化）会怎样？
+
+<details>
+<summary>查看答案</summary>
+
+**答案：**
+
+SHA256 去重原理：
+1. 上传时读取整个文件字节流，计算 SHA256 哈希值
+2. 在创意库中查找相同哈希值的已审核通过的创意
+3. 命中则直接拒绝或复用已有创意 ID
+
+微调问题：
+- **JPEG 压缩质量变化**：即使只改一个像素，SHA256 完全不同，无法去重
+- **解决方案**：
+  - 感知哈希（pHash）：对图像做 DCT 变换取低频部分，对微小变化不敏感
+  - 视频指纹：提取关键帧特征向量比对
+  - 文本相似度：广告文案用 Levenshtein 距离或余弦相似度
+- **生产实践**：DV360 同时使用 SHA256（精确去重）+ pHash（近似去重），两者都命中才判定为重复
+
+</details>
+
+### Q2: 品牌安全过滤中，白名单和黑名单的优先级如何设计？为什么？
+
+<details>
+<summary>查看答案</summary>
+
+**答案：**
+
+优先级设计：白名单 > 黑名单 > 关键词 > 分类
+
+理由：
+1. **白名单优先**：客户指定的投放位置（如 nytimes.com）必须保证，即使该页面包含某些关键词
+2. **黑名单兜底**：已知不安全域名直接拒绝，无需进一步检查
+3. **关键词扫描**：页面标题/正文中的敏感词，但需要上下文判断（"赌博合法化讨论" ≠ "赌博广告"）
+4. **分类系统**：第三方分类标签（如 IAB 分类），作为最后手段
+
+**源码级实现要点：**
+- 域名缓存 map[string]bool，避免重复解析
+- 白名单检查在 O(1) 内完成
+- 关键词检查使用预编译正则批量匹配
+- 分类检查可异步并行（多个分类器同时运行）
+
+</details>
+
+### Q3: 可见性追踪中，MRC 标准的具体要求是什么？Go 如何实现高效的可见性统计？
+
+<details>
+<summary>查看答案</summary>
+
+**答案：**
+
+MRC（Media Rating Council）标准：
+- **展示广告**：>50% 像素在视口内持续至少 1 秒
+- **视频广告**：>50% 像素可见 + 声音开启，持续至少 2 秒
+- **原生广告**：>30% 像素可见持续至少 1 秒
+
+Go 高效实现：
+1. **Timer 而非轮询**：每个 ImpressionRecord 用 time.Timer 自动过期清理
+2. **批量上报**：前端每 500ms 上报一次可见性状态，后端批量处理
+3. **内存优化**：使用 sync.Pool 复用 ImpressionRecord 结构体
+4. **时间精度**：用 time.Now().UnixNano() 纳秒级计时，避免浮点误差
+5. **统计聚合**：使用 HLL（HyperLogLog）近似去重计数，减少内存占用
+
+</details>

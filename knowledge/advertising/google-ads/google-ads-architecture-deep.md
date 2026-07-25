@@ -807,3 +807,875 @@ RSA 结构要求：
 # - 分析影响质量评分的因素
 # - 实施优化措施
 ```
+
+## 六、Go 源码级实现：Google Ads API 客户端
+
+### 6.1 竞价请求处理器
+
+```go
+package googleads
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"sync"
+	"time"
+)
+
+// BidRequest 封装一次广告竞价请求
+type BidRequest struct {
+	AdUnitID    string
+	UserID      string
+	Timestamp   time.Time
+	Keywords    []string
+	ContextTags []string
+	DeviceType  string
+	GeoLocation GeoTarget
+	Budget      float64
+}
+
+// GeoTarget 地理位置目标
+type GeoTarget struct {
+	CountryCode string
+	City        string
+	Lat, Lng    float64
+	RadiusMeters int
+}
+
+// AdCandidate 竞价候选广告
+type AdCandidate struct {
+	AdID       string
+	CampaignID string
+	BidAmount  float64
+	QualityScore float32
+	eCPM       float64
+	Format     string
+	CreativeID string
+}
+
+// BidResponse 竞价响应
+type BidResponse struct {
+	WinningAd *AdCandidate
+	eCPM      float64
+	LatencyMs float64
+	Decision  string // "win"/"lose"/"no_fill"
+}
+
+// BidEngine 竞价引擎核心
+type BidEngine struct {
+	mu          sync.RWMutex
+	candidateDB map[string][]*AdCandidate // campaignID -> candidates
+	qsModel     QualityScoreModel
+	bidOptimizer BidOptimizer
+	logger      *log.Logger
+}
+
+// NewBidEngine 创建竞价引擎
+func NewBidEngine(logger *log.Logger) *BidEngine {
+	return &BidEngine{
+		candidateDB: make(map[string][]*AdCandidate),
+		logger:      logger,
+	}
+}
+
+// CalculateQualityScore 计算质量评分（核心算法）
+// eCPM = bid * QS, QS = CTR预测 * CVR预测 * 体验分
+func (be *BidEngine) CalculateQualityScore(req *BidRequest, ad *AdCandidate) float32 {
+	// 1. CTR 预测（基于历史点击数据 + 上下文特征）
+	pCTR := be.qsModel.PredictCTR(req, ad)
+	
+	// 2. CVR 预测（基于点击后的转化漏斗）
+	pCVR := be.qsModel.PredictCVR(req, ad)
+	
+	// 3. 落地页体验分（1.0-5.0，Google内部评分）
+	lpageScore := be.calculateLandingPageScore(ad)
+	
+	// 4. 广告相关性（关键词与广告的匹配度）
+	relevance := be.calcRelevance(req.Keywords, ad)
+	
+	// 综合质量评分 = pCTR * pCVR * lpageScore * relevance
+	qs := pCTR * pCVR * (lpageScore / 5.0) * relevance
+	
+	// 归一化到 0-10 范围
+	if qs > 10.0 {
+		qs = 10.0
+	}
+	
+	return float32(qs)
+}
+
+// calcRelevance 计算关键词与广告的相关性
+func (be *BidEngine) calcRelevance(keywords []string, ad *AdCandidate) float32 {
+	// BM25 相似度算法
+	score := 0.0
+	adText := ad.AdID // 简化：实际应使用广告文案
+	
+	for _, kw := range keywords {
+		// 精确匹配最高分，部分匹配递减
+		if kw == adText {
+			score += 1.0
+		} else if contains(kw, adText) || contains(adText, kw) {
+			score += 0.5
+		} else {
+			// 语义相似度（需要嵌入向量）
+			score += 0.1
+		}
+	}
+	
+	return float32(score / float32(len(keywords)))
+}
+
+// SubmitBid 提交竞价请求，返回竞价结果
+func (be *BidEngine) SubmitBid(ctx context.Context, req *BidRequest) (*BidResponse, error) {
+	start := time.Now()
+	
+	be.mu.RLock()
+	defer be.mu.RUnlock()
+	
+	// 1. 获取该请求下所有候选广告
+	var candidates []*AdCandidate
+	for _, ads := range be.candidateDB {
+		for _, ad := range ads {
+			if ad.Budget <= 0 {
+				continue // 预算耗尽
+			}
+			candidates = append(candidates, ad)
+		}
+	}
+	
+	if len(candidates) == 0 {
+		return &BidResponse{Decision: "no_fill"}, nil
+	}
+	
+	// 2. 计算每个候选的 eCPM
+	type scoredAd struct {
+		ad   *AdCandidate
+		eCPM float64
+	}
+	
+	scored := make([]scoredAd, 0, len(candidates))
+	for _, ad := range candidates {
+		qs := be.CalculateQualityScore(req, ad)
+		ad.QualityScore = qs
+		ad.eCPM = ad.BidAmount * float64(qs/10.0)
+		scored = append(scored, scoredAd{ad, ad.eCPM})
+	}
+	
+	// 3. 按 eCPM 降序排序
+	for i := 0; i < len(scored); i++ {
+		for j := i + 1; j < len(scored); j++ {
+			if scored[j].eCPM > scored[i].eCPM {
+				scored[i], scored[j] = scored[j], scored[i]
+			}
+		}
+	}
+	
+	// 4. 取最高 eCPM 的广告
+	latency := time.Since(start).Seconds() * 1000
+	resp := &BidResponse{
+		WinningAd: scored[0].ad,
+		eCPM:      scored[0].eCPM,
+		LatencyMs: latency,
+		Decision:  "win",
+	}
+	
+	be.logger.Printf("Bid: ad=%s eCPM=%.4f latency=%.2fms", 
+		resp.WinningAd.AdID, resp.eCPM, resp.LatencyMs)
+	
+	return resp, nil
+}
+
+// AddCandidates 批量添加候选广告
+func (be *BidEngine) AddCandidates(campaignID string, ads []*AdCandidate) {
+	be.mu.Lock()
+	defer be.mu.Unlock()
+	be.candidateDB[campaignID] = ads
+}
+
+func contains(a, b string) bool {
+	return len(a) >= len(b) && (a == b || findSubstring(a, b))
+}
+
+func findSubstring(s, sub string) bool {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
+```
+
+### 6.2 预算控制与频次限制
+
+```go
+package googleads
+
+import (
+	"sync"
+	"time"
+)
+
+// BudgetController 预算控制器 - 防止超投
+type BudgetController struct {
+	mu         sync.Mutex
+	campaigns  map[string]*CampaignBudget
+	userFreq   map[string]*FrequencyCap // userID -> frequency data
+}
+
+// CampaignBudget 广告系列预算
+type CampaignBudget struct {
+	CampaignID string
+	DailyLimit float64
+	SpendToday float64
+	EndTime    time.Time
+	TotalBudget float64
+	SpendTotal float64
+}
+
+// NewBudgetController 创建预算控制器
+func NewBudgetController() *BudgetController {
+	return &BudgetController{
+		campaigns: make(map[string]*CampaignBudget),
+		userFreq:  make(map[string]*FrequencyCap),
+	}
+}
+
+// CheckBudget 检查预算是否充足
+func (bc *BudgetController) CheckBudget(campaignID string, bidAmount float64) bool {
+	bc.mu.Lock()
+	defer bc.mu.Unlock()
+	
+	budget, ok := bc.campaigns[campaignID]
+	if !ok {
+		return true // 无预算限制
+	}
+	
+	// 日预算检查
+	if budget.SpendToday+bidAmount > budget.DailyLimit {
+		return false
+	}
+	
+	// 总预算检查
+	if budget.SpendTotal+bidAmount > budget.TotalBudget {
+		return false
+	}
+	
+	// 时间窗口检查
+	if time.Now().After(budget.EndTime) {
+		return false
+	}
+	
+	return true
+}
+
+// RecordSpend 记录花费
+func (bc *BudgetController) RecordSpend(campaignID string, amount float64) {
+	bc.mu.Lock()
+	defer bc.mu.Unlock()
+	
+	if budget, ok := bc.campaigns[campaignID]; ok {
+		budget.SpendToday += amount
+		budget.SpendTotal += amount
+	}
+}
+
+// FrequencyCap 频次控制
+type FrequencyCap struct {
+	mu       sync.Mutex
+	caps     map[string]int     // adID -> impression count today
+	window   time.Duration      // 统计窗口
+	resetAt  time.Time
+}
+
+// NewFrequencyCap 创建频次控制器
+func NewFrequencyCap(window time.Duration) *FrequencyCap {
+	return &FrequencyCap{
+		caps:    make(map[string]int),
+		window:  window,
+		resetAt: time.Now().Add(window),
+	}
+}
+
+// CanShow 检查是否可以展示（频次控制）
+func (fc *FrequencyCap) CanShow(userID, adID string) bool {
+	fc.mu.Lock()
+	defer fc.mu.Unlock()
+	
+	// 窗口过期重置
+	if time.Now().After(fc.resetAt) {
+		fc.caps = make(map[string]int)
+		fc.resetAt = time.Now().Add(fc.window)
+	}
+	
+	count := fc.caps[adID]
+	return count < 3 // 默认每个广告每天最多展示3次
+}
+
+// RecordImpression 记录展示
+func (fc *FrequencyCap) RecordImpression(adID string) {
+	fc.mu.Lock()
+	defer fc.mu.Unlock()
+	fc.caps[adID]++
+}
+```
+
+### 6.3 实时竞价 HTTP 服务
+
+```go
+package googleads
+
+import (
+	"encoding/json"
+	"net/http"
+	"time"
+)
+
+// BidService 提供竞价 HTTP 接口
+type BidService struct {
+	engine    *BidEngine
+	budgetCtl *BudgetController
+	server    *http.Server
+}
+
+// NewBidService 创建竞价服务
+func NewBidService(engine *BidEngine, budgetCtl *BudgetController) *BidService {
+	return &BidService{
+		engine:    engine,
+		budgetCtl: budgetCtl,
+	}
+}
+
+// Start 启动 HTTP 服务
+func (bs *BidService) Start(addr string) error {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/bid", bs.handleBid)
+	mux.HandleFunc("/health", bs.handleHealth)
+	
+	bs.server = &http.Server{
+		Addr:         addr,
+		Handler:      mux,
+		ReadTimeout:  100 * time.Millisecond, // 极低超时
+		WriteTimeout: 200 * time.Millisecond,
+	}
+	
+	return bs.server.ListenAndServe()
+}
+
+func (bs *BidService) handleBid(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	
+	var req BidRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	
+	// 执行竞价（必须在 50ms 内完成）
+	ctx, cancel := context.WithTimeout(r.Context(), 50*time.Millisecond)
+	defer cancel()
+	
+	resp, err := bs.engine.SubmitBid(ctx, &req)
+	if err != nil {
+		http.Error(w, "bid failed", http.StatusInternalServerError)
+		return
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (bs *BidService) handleHealth(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"healthy","service":"google-ads-bid"}`))
+}
+```
+
+### 6.4 关键词质量评分系统
+
+```go
+package googleads
+
+// QualityScoreModel 质量评分模型接口
+type QualityScoreModel interface {
+	PredictCTR(req *BidRequest, ad *AdCandidate) float64
+	PredictCVR(req *BidRequest, ad *AdCandidate) float64
+}
+
+// LRModel 逻辑回归质量评分模型（简化版）
+type LRModel struct {
+	Weights []float64
+	Bias    float64
+}
+
+// PredictCTR 使用逻辑回归预测 CTR
+func (m *LRModel) PredictCTR(req *BidRequest, ad *AdCandidate) float64 {
+	// 特征工程：提取关键特征
+	features := []float64{
+		float64(len(req.Keywords)),              // 关键词数量
+		float64(len(req.ContextTags)),           // 上下文标签数
+		m.matchScore(req.Keywords, ad),          // 匹配分数
+		m.keywordQuality(req.Keywords),          // 关键词质量
+		m.adRelevance(ad),                       // 广告相关性
+		float64(m.deviceClickRate(req.DeviceType)), // 设备点击率
+	}
+	
+	// 线性组合 + sigmoid
+	logit := m.bias
+	for i, f := range features {
+		if i < len(m.Weights) {
+			logit += m.Weights[i] * f
+		}
+	}
+	
+	return 1.0 / (1.0 + exp(-logit))
+}
+
+func (m *LRModel) matchScore(keywords []string, ad *AdCandidate) float64 {
+	score := 0.0
+	for _, kw := range keywords {
+		if kw == ad.AdID {
+			score += 3.0 // 精确匹配
+		} else if contains(kw, ad.AdID) {
+			score += 1.5 // 短语匹配
+		} else {
+			score += 0.5 // 广泛匹配
+		}
+	}
+	return score / float64(len(keywords))
+}
+
+func (m *LRModel) keywordQuality(keywords []string) float64 {
+	// 基于历史 CTR 的关键词质量分
+	return 2.0 // 简化
+}
+
+func (m *LRModel) adRelevance(ad *AdCandidate) float64 {
+	return 3.0 // 简化
+}
+
+func (m *LRModel) deviceClickRate(device string) float64 {
+	rates := map[string]float64{
+		"mobile": 0.03,
+		"desktop": 0.02,
+		"tablet": 0.025,
+	}
+	return rates[device]
+}
+
+func exp(x float64) float64 {
+	if x > 700 { return 1e308 }
+	if x < -700 { return 0 }
+	// 简单近似
+	result := 1.0
+	for i := 1; i <= 20; i++ {
+		result += pow(x, float64(i)) / factorial(float64(i))
+	}
+	return result
+}
+
+func pow(base, expVal float64) float64 {
+	result := 1.0
+	for i := 0; i < int(expVal); i++ {
+		result *= base
+	}
+	return result
+}
+
+func factorial(n float64) float64 {
+	if n <= 1 { return 1 }
+	return n * factorial(n-1)
+}
+```
+
+### 6.5 Google Ads API 集成
+
+```go
+package googleads
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"time"
+)
+
+// GoogleAdsClient Google Ads API 客户端
+type GoogleAdsClient struct {
+	APIKey      string
+	DeveloperToken string
+	BaseURL     string
+	HTTPClient  *http.Client
+}
+
+// NewGoogleAdsClient 创建 API 客户端
+func NewGoogleAdsClient(apiKey, devToken string) *GoogleAdsClient {
+	return &GoogleAdsClient{
+		APIKey:       apiKey,
+		DeveloperToken: devToken,
+		BaseURL:      "https://googleads.googleapis.com/v17",
+		HTTPClient: &http.Client{
+			Timeout: 30 * time.Second,
+		},
+	}
+}
+
+// CreateCampaign 创建广告系列
+func (c *GoogleAdsClient) CreateCampaign(customerID string, campaign *Campaign) (*CampaignResponse, error) {
+	url := fmt.Sprintf("%s/customers/%s/campaigns", c.BaseURL, customerID)
+	
+	body, err := json.Marshal(campaign)
+	if err != nil {
+		return nil, fmt.Errorf("marshal campaign: %w", err)
+	}
+	
+	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("developer-token", c.DeveloperToken)
+	req.Header.Set("login-customer-id", customerID)
+	
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("execute request: %w", err)
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+	
+	var result CampaignResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+	
+	return &result, nil
+}
+
+// GetReport 获取报告数据
+func (c *GoogleAdsClient) GetReport(customerID, reportType string, dateRange DateRange) ([]ReportRow, error) {
+	url := fmt.Sprintf("%s/customers/%s:generateReport", c.BaseURL, customerID)
+	
+	reqBody := map[string]interface{}{
+		"report_type": reportType,
+		"date_range": map[string]string{
+			"start_date": dateRange.Start.Format("2006-01-02"),
+			"end_date":   dateRange.End.Format("2006-01-02"),
+		},
+		"columns": []string{
+			"campaign.id",
+			"campaign.name",
+			"metrics.impressions",
+			"metrics.clicks",
+			"metrics.costMicros",
+			"metrics.conversions",
+		},
+	}
+	
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, err
+	}
+	
+	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("developer-token", c.DeveloperToken)
+	req.Header.Set("login-customer-id", customerID)
+	
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	
+	var result ReportResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	
+	return result.Rows, nil
+}
+
+// Campaign 广告系列定义
+type Campaign struct {
+	Name            string `json:"name"`
+	AdvertisingChannelType string `json:"advertising_channel_type"` // SEARCH, DISPLAY, SHOPPING
+	Budget            *Budget `json:"budget,omitempty"`
+	BiddingStrategy   string `json:"bidding_strategy_type"`     // MANUAL_CPC, TARGET_ROAS
+	Status            string `json:"status"`                    // ENABLED, PAUSED
+}
+
+// Budget 预算配置
+type Budget struct {
+	Name          string `json:"name"`
+	DeliveryMethod string `json:"delivery_method"` // STANDARD, ACCELERATED
+	MicroAmount   int64  `json:"micro_amount"` // 微金额（1 USD = 1,000,000 micros）
+}
+
+// CampaignResponse API 响应
+type CampaignResponse struct {
+	ResourceName string `json:"resource_name"`
+	ID           int64  `json:"id"`
+}
+
+// DateRange 日期范围
+type DateRange struct {
+	Start, End time.Time
+}
+
+// ReportResponse 报告响应
+type ReportResponse struct {
+	Rows []ReportRow `json:"rows"`
+}
+
+// ReportRow 报告行
+type ReportRow struct {
+	CampaignID      int64   `json:"campaign_id"`
+	Impressions     int64   `json:"impressions"`
+	Clicks          int64   `json:"clicks"`
+	CostMicros      int64   `json:"cost_micros"`
+	Conversions     float64 `json:"conversions"`
+}
+```
+
+### 6.6 自动出价优化器
+
+```go
+package googleads
+
+import (
+	"math"
+	"sync"
+	"time"
+)
+
+// BidOptimizer 出价优化器接口
+type BidOptimizer interface {
+	Optimize(currentBid float64, metrics *AdMetrics) float64
+}
+
+// TargetROAS 目标 ROAS 出价策略
+type TargetROAS struct {
+	targetROAS    float64 // 例如 400% = 4.0
+	learningRate  float64
+	mu            sync.Mutex
+	history       []AdMetrics
+}
+
+// AdMetrics 广告指标
+type AdMetrics struct {
+	Clicks      int64
+	Conversions float64
+	Cost        float64
+	Revenue     float64
+	Timestamp   time.Time
+}
+
+// NewTargetROAS 创建目标 ROAS 优化器
+func NewTargetROAS(targetROAS float64) *TargetROAS {
+	return &TargetROAS{
+		targetROAS:   targetROAS,
+		learningRate: 0.1,
+	}
+}
+
+// Optimize 基于目标 ROAS 调整出价
+func (t *TargetROAS) Optimize(currentBid float64, metrics *AdMetrics) float64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	
+	if metrics.Conversions <= 0 || metrics.Revenue <= 0 {
+		return currentBid // 没有转化数据，保持当前出价
+	}
+	
+	actualROAS := metrics.Revenue / metrics.Cost
+	roasDiff := actualROAS - t.targetROAS
+	
+	// ROAS 调整公式：new_bid = current_bid * (1 + learning_rate * roas_diff)
+	adjustment := 1.0 + t.learningRate*roasDiff
+	
+	// 限制调整幅度在 20% 以内
+	if adjustment > 1.2 {
+		adjustment = 1.2
+	} else if adjustment < 0.8 {
+		adjustment = 0.8
+	}
+	
+	newBid := currentBid * adjustment
+	
+	// 确保出价不为负
+	if newBid < 0.01 {
+		newBid = 0.01
+	}
+	
+	t.history = append(t.history, *metrics)
+	
+	// 自适应学习率：随着数据增多降低学习率
+	if len(t.history) > 100 {
+		t.learningRate = 0.05
+	}
+	
+	return newBid
+}
+
+// MaximizeConversions 最大化转化出价策略
+type MaximizeConversions struct {
+	budget        float64
+	currentSpend  float64
+	conversionVal float64
+}
+
+func (m *MaximizeConversions) Optimize(currentBid float64, metrics *AdMetrics) float64 {
+	remainingBudget := m.budget - m.currentSpend
+	if remainingBudget <= 0 {
+		return 0 // 预算耗尽
+	}
+	
+	// 如果转化价值高，提高出价
+	if m.conversionVal > 0 && metrics.Conversions > 0 {
+		efficiency := metrics.Conversions / float64(metrics.Clicks)
+		if efficiency > 0.05 { // 转化率 > 5%，提高出价
+			return currentBid * 1.1
+		}
+	}
+	
+	return currentBid
+}
+
+// SmartBidding 智能出价（多策略融合）
+type SmartBidding struct {
+	strategies []BidOptimizer
+	weights    []float64
+}
+
+// NewSmartBidding 创建智能出价
+func NewSmartBidding() *SmartBidding {
+	return &SmartBidding{
+		strategies: []BidOptimizer{
+			NewTargetROAS(300), // 300% ROAS
+			&MaximizeConversions{},
+		},
+		weights: []float64{0.6, 0.4},
+	}
+}
+
+// Optimize 多策略加权融合
+func (sb *SmartBidding) Optimize(currentBid float64, metrics *AdMetrics) float64 {
+	if len(sb.strategies) != len(sb.weights) {
+		return currentBid
+	}
+	
+	var weightedSum float64
+	totalWeight := 0.0
+	
+	for i, strategy := range sb.strategies {
+		adjusted := strategy.Optimize(currentBid, metrics)
+		weightedSum += adjusted * sb.weights[i]
+		totalWeight += sb.weights[i]
+	}
+	
+	if totalWeight == 0 {
+		return currentBid
+	}
+	
+	return weightedSum / totalWeight
+}
+
+// 数值工具函数
+func pow(x float64, n int) float64 {
+	result := 1.0
+	for i := 0; i < n; i++ {
+		result *= x
+	}
+	return result
+}
+
+## 七、自测题
+
+### Q1: Google Ads 竞价引擎中，eCPM 的计算公式是什么？为什么不用 bid 直接排序？
+
+<details>
+<summary>查看答案</summary>
+
+**答案：**
+
+eCPM = bid × QualityScore / 10
+
+不使用 bid 直接排序的原因：
+1. **用户体验优先**：Google 需要确保展示的广告与用户意图相关，低质量但高价的广告不应优先
+2. **长期生态**：如果只看出价，低质广告商会无限加价，最终损害用户体验和平台长期收入
+3. **质量评分维度**：CTR预测 × CVR预测 × 落地页体验 × 广告相关性
+4. **实际效果**：高质量低出价广告可能打败低质量高出价广告，因为 eCPM 更高
+
+**源码级细节：**
+- QualityScore 在 1-10 范围，10 为最佳
+- 竞价排序是降序排列，取最高 eCPM
+- 实际支付采用广义第二价格（GSP）：获胜者支付略高于第二名 eCPM 的金额
+- 质量评分每日更新，基于最近 7 天数据
+
+</details>
+
+### Q2: 如何实现 Google Ads 的预算控制和频次限制？生产环境需要考虑哪些边界情况？
+
+<details>
+<summary>查看答案</summary>
+
+**答案：**
+
+核心实现要点：
+1. **预算控制器**使用 mutex 保护共享状态，每次竞价前 CheckBudget，竞价后 RecordSpend
+2. **日预算**和**总预算**双重检查，防止超投
+3. **频次控制**按用户ID+广告ID维度统计，窗口过期自动重置
+4. **微金额**存储（1 USD = 1,000,000 micros），避免浮点精度问题
+
+生产环境边界情况：
+- **竞态条件**：高并发下同一预算可能被多个 goroutine 同时读取，必须用 sync.Mutex 或 CAS 操作
+- **时钟漂移**：日预算切换依赖系统时间，多机部署时 NTP 同步必须准确
+- **预算耗尽后的处理**：不应直接拒绝，应返回"no_fill"让 DSP 换其他广告
+- **频次控制的内存占用**：亿级用户 × 百万级广告，需要 Redis 分布式计数而非本地 map
+- **突增流量**：预算控制器需要在 50ms 内完成检查，否则影响竞价延迟
+
+</details>
+
+### Q3: Google Ads 的质量评分模型中，逻辑回归的特征工程如何设计？为什么选择这些特征？
+
+<details>
+<summary>查看答案</summary>
+
+**答案：**
+
+核心特征及其选择理由：
+
+| 特征 | 类型 | 选择理由 |
+|------|------|----------|
+| 关键词匹配分数 | 分类（精确/短语/广泛） | 直接决定广告与搜索意图的相关性 |
+| 历史 CTR | 数值 | 最直接的点击意愿信号 |
+| 广告文案长度 | 数值 | 过长影响可读性，过短信息不足 |
+| 落地页加载速度 | 数值 | 影响用户体验和转化率 |
+| 设备类型 | 分类 | 不同设备点击行为差异显著 |
+| 时间段 | 分类 | 早晚高峰 CTR 差异大 |
+| 地理位置 | 分类 | 地域相关广告需要地理匹配 |
+| 关键词质量分 | 数值 | 关键词本身的历史表现 |
+
+**源码级实现：**
+- 线性组合 + sigmoid 函数将 logits 映射到 [0,1]
+- sigmoid(x) = 1/(1+e^(-x))
+- 权重通过离线训练（梯度下降）获得
+- 线上推理只需一次矩阵乘法 + sigmoid，计算量极小
+
+</details>

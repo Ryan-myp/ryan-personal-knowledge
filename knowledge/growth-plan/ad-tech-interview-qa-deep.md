@@ -324,3 +324,635 @@ A:
 4. 实战经验：有生产排障案例
 5. 表达能力：逻辑清晰，有条理
 ```
+
+## 九、Go 源码级实现：广告技术核心算法
+
+### 9.1 竞价引擎核心实现
+
+```go
+package interview
+
+import (
+	"context"
+	"fmt"
+	"math"
+	"sort"
+	"sync"
+	"time"
+)
+
+// BidRequest 竞价请求
+type BidRequest struct {
+	RequestID string    `json:"request_id"`
+	Timestamp time.Time `json:"timestamp"`
+	User      UserSignal `json:"user"`
+	Context   Context   `json:"context"`
+	AdSlot    AdSlot    `json:"ad_slot"`
+}
+
+// UserSignal 用户信号
+type UserSignal struct {
+	UserID    string   `json:"user_id"`
+	Demographics map[string]string `json:"demographics"`
+	Interests []string `json:"interests"`
+	Browser   string   `json:"browser"`
+	Device    string   `json:"device"`
+}
+
+// Context 上下文
+type Context struct {
+	URL       string   `json:"url"`
+	PageTitle string   `json:"page_title"`
+	Keywords  []string `json:"keywords"`
+	Referrer  string   `json:"referrer"`
+}
+
+// AdSlot 广告位
+type AdSlot struct {
+	SlotID   string `json:"slot_id"`
+	Width    int    `json:"width"`
+	Height   int    `json:"height"`
+	Position string `json:"position"` // top, mid, bottom
+	Format   string `json:"format"`   // banner, native, video
+}
+
+// BidResponse 竞价响应
+type BidResponse struct {
+	ResponseID  string        `json:"response_id"`
+	WinningBid  *WinningBid   `json:"winning_bid,omitempty"`
+	SeatBid     []SeatBid     `json:"seatbid"`
+	PriceType   string        `json:"price_type"` // cpc, cpm, cpv
+	LatencyMs   float64       `json:"latency_ms"`
+}
+
+// WinningBid 中标出价
+type WinningBid struct {
+	AdID    string  `json:"ad_id"`
+	BidPrice float64 `json:"bid_price"`
+	eCPM    float64 `json:"ecpm"`
+	Creative  Creative `json:"creative"`
+}
+
+// SeatBid 座位出价
+type SeatBid struct {
+	Bid  Bid  `json:"bid"`
+	Seat string `json:"seat"`
+}
+
+// Bid 出价
+type Bid struct {
+	ID      string  `json:"id"`
+	AdID    string  `json:"ad_id"`
+	Price   float64 `json:"price"`
+	Creative Creative `json:"creative"`
+}
+
+// Creative 创意
+type Creative struct {
+	ID          string `json:"id"`
+	Type        string `json:"type"`
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
+	HTML        string `json:"html,omitempty"`
+	ClickURL    string `json:"click_url"`
+	TrackURLs   []string `json:"track_urls,omitempty"`
+}
+
+// BidEngine 竞价引擎
+type BidEngine struct {
+	mu         sync.RWMutex
+	auctioneer Auctioneer
+	filter     FilterChain
+	ranker     Ranker
+	logger     Logger
+}
+
+// NewBidEngine 创建竞价引擎
+func NewBidEngine(a Auctioneer, f FilterChain, r Ranker, l Logger) *BidEngine {
+	return &BidEngine{
+		auctioneer: a,
+		filter:     f,
+		ranker:     r,
+		logger:     l,
+	}
+}
+
+// Process 处理竞价请求（核心流程）
+func (be *BidEngine) Process(ctx context.Context, req *BidRequest) (*BidResponse, error) {
+	start := time.Now()
+	
+	// Step 1: 过滤（预筛选）
+	candidates, err := be.filter.Apply(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("filter: %w", err)
+	}
+	
+	if len(candidates) == 0 {
+		return &BidResponse{
+			ResponseID: req.RequestID,
+			PriceType:  "cpm",
+		}, nil
+	}
+	
+	// Step 2: 排序（计算 eCPM）
+	scored := be.ranker.ScoreCandidates(req, candidates)
+	
+	// Step 3: 拍卖（取最高 eCPM）
+	winner, secondBest, err := be.auctioneer.ConductAuction(scored)
+	if err != nil {
+		return nil, fmt.Errorf("auction: %w", err)
+	}
+	
+	latency := time.Since(start).Seconds() * 1000
+	
+	resp := &BidResponse{
+		ResponseID: req.RequestID,
+		SeatBid: []SeatBid{
+			{
+				Bid:  winner.Bid,
+				Seat: winner.Seat,
+			},
+		},
+		PriceType: "cpm",
+		LatencyMs: latency,
+	}
+	
+	if winner != nil {
+		resp.WinningBid = &WinningBid{
+			AdID:     winner.Bid.AdID,
+			BidPrice: winner.Price,
+			eCPM:     winner.eCPM,
+			Creative: winner.Bid.Creative,
+		}
+	}
+	
+	be.logger.Infof("Bid processed: id=%s eCPM=%.4f latency=%.2fms candidates=%d",
+		req.RequestID, resp.WinningBid.eCPM, latency, len(candidates))
+	
+	return resp, nil
+}
+
+// FilterChain 过滤器链（责任链模式）
+type FilterChain struct {
+	filters []BidFilter
+}
+
+// BidFilter 竞价过滤器接口
+type BidFilter interface {
+	Name() string
+	Apply(ctx context.Context, req *BidRequest, candidates []*Candidate) ([]*Candidate, error)
+}
+
+// Apply 执行过滤器链
+func (fc *FilterChain) Apply(ctx context.Context, req *BidRequest) ([]*Candidate, error) {
+	candidates := GetAllCandidates(req)
+	
+	for _, filter := range fc.filters {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+			var err error
+			candidates, err = filter.Apply(ctx, req, candidates)
+			if err != nil {
+				return nil, err
+			}
+			if len(candidates) == 0 {
+				return candidates, nil
+			}
+		}
+	}
+	
+	return candidates, nil
+}
+
+// Candidate 候选广告
+type Candidate struct {
+	AdID       string
+	CampaignID string
+	BidAmount  float64
+	eCPM       float64
+	Seat       string
+	Bid        Bid
+}
+
+// Ranker 排序器
+type Ranker interface {
+	ScoreCandidates(req *BidRequest, candidates []*Candidate) []*ScoredCandidate
+}
+
+// ScoredCandidate 评分后的候选
+type ScoredCandidate struct {
+	Candidate *Candidate
+	Score     float64
+	Rank      int
+}
+
+// Auctioneer 拍卖器
+type Auctioneer interface {
+	ConductAuction(scored []*ScoredCandidate) (*ScoredCandidate, *ScoredCandidate, error)
+}
+
+// SecondPriceAuction 第二价格拍卖实现
+type SecondPriceAuction struct{}
+
+func (spa *SecondPriceAuction) ConductAuction(scored []*ScoredCandidate) (*ScoredCandidate, *ScoredCandidate, error) {
+	// 按 eCPM 降序排序
+	sort.Slice(scored, func(i, j int) bool {
+		return scored[i].Score > scored[j].Score
+	})
+	
+	if len(scored) == 0 {
+		return nil, nil, fmt.Errorf("no candidates")
+	}
+	
+	winner := scored[0]
+	
+	// 第二价格：获胜者支付略高于第二名的价格
+	var secondPrice float64
+	if len(scored) > 1 {
+		secondPrice = scored[1].Score
+	} else {
+		secondPrice = winner.Candidate.BidAmount * 0.5 // 底价
+	}
+	
+	// 调整出价（第二价格）
+	winner.Candidate.Bid.Price = secondPrice + 0.01
+	winner.Candidate.eCPM = secondPrice + 0.01
+	
+	return winner, scored[min(1, len(scored)-1)], nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// Logger 日志接口
+type Logger interface {
+	Infof(fmt string, args ...interface{})
+	Errorf(fmt string, args ...interface{})
+}
+
+// GetAllCandidates 获取所有候选广告（简化版）
+func GetAllCandidates(req *BidRequest) []*Candidate {
+	// 生产环境从缓存/数据库获取
+	return []*Candidate{
+		{AdID: "ad_1", CampaignID: "camp_1", BidAmount: 2.5, Seat: "dsp_1"},
+		{AdID: "ad_2", CampaignID: "camp_2", BidAmount: 1.8, Seat: "dsp_2"},
+		{AdID: "ad_3", CampaignID: "camp_3", BidAmount: 3.0, Seat: "dsp_1"},
+	}
+}
+```
+
+### 9.2 排序模型实现
+
+```go
+package interview
+
+import "math"
+
+// RankModel 排序模型接口
+type RankModel interface {
+	PredictCTR(req *BidRequest, candidate *Candidate) float64
+	PredictCVR(req *BidRequest, candidate *Candidate) float64
+	PredictValue(req *BidRequest, candidate *Candidate) float64
+}
+
+// DeepFMModel DeepFM 排序模型
+type DeepFMModel struct {
+	EmbeddingDim int
+	Embeddings   map[string][][]float64 // field -> [dim]
+	WideWeights  []float64              // 宽层权重
+	DeepLayers   []LayerParams          // 深度网络层
+	Bias         float64                // 偏置项
+}
+
+// LayerParams 网络层参数
+type LayerParams struct {
+	Weights [][]float64
+	Bias    []float64
+	Activation string // relu, sigmoid, tanh
+}
+
+// PredictCTR 预测 CTR
+func (m *DeepFMModel) PredictCTR(req *BidRequest, candidate *Candidate) float64 {
+	// Wide 部分：交叉特征
+	wideScore := m.predictWide(req, candidate)
+	
+	// Deep 部分：深度特征
+	deepScore := m.predictDeep(req, candidate)
+	
+	// FM 部分：二阶特征交互
+	fmScore := m.predictFM(req, candidate)
+	
+	// DeepFM = Wide + FM + Deep
+	logit := wideScore + fmScore + deepScore + m.Bias
+	
+	return sigmoid(logit)
+}
+
+func (m *DeepFMModel) predictWide(req *BidRequest, candidate *Candidate) float64 {
+	features := m.extractWideFeatures(req, candidate)
+	score := m.Bias
+	for i, f := range features {
+		if i < len(m.WideWeights) {
+			score += m.WideWeights[i] * f
+		}
+	}
+	return score
+}
+
+func (m *DeepFMModel) predictDeep(req *BidRequest, candidate *Candidate) float64 {
+	features := m.extractDeepFeatures(req, candidate)
+	layerOutput := features
+	
+	for _, layer := range m.DeepLayers {
+		newOutput := make([]float64, len(layer.Weights))
+		for j := range newOutput {
+			sum := layer.Bias[j]
+			for i, val := range layerOutput {
+				if i < len(layer.Weights[j]) {
+					sum += layer.Weights[j][i] * val
+				}
+			}
+			newOutput[j] = activate(sum, layer.Activation)
+		}
+		layerOutput = newOutput
+	}
+	
+	// 取最后一个神经元的输出
+	return layerOutput[len(layerOutput)-1]
+}
+
+func (m *DeepFMModel) predictFM(req *BidRequest, candidate *Candidate) float64 {
+	features := m.extractFMFeatures(req, candidate)
+	dim := len(features)
+	
+	// FM: 0.5 * sum((sum(xi*vi)^2 - sum(xi^2*vi^2)))
+	sumVi := make([]float64, dim)
+	sumViSq := 0.0
+	
+	for i, xi := range features {
+		vi := xi // 简化：vi = xi
+		sumVi[i] += vi
+		sumViSq += xi * xi * vi * vi
+	}
+	
+	sumSquare := 0.0
+	for _, v := range sumVi {
+		sumSquare += v * v
+	}
+	
+	return 0.5 * (sumSquare - sumViSq)
+}
+
+func sigmoid(x float64) float64 {
+	if x > 500 { return 1.0 }
+	if x < -500 { return 0.0 }
+	return 1.0 / (1.0 + math.Exp(-x))
+}
+
+func activate(x float64, activation string) float64 {
+	switch activation {
+	case "relu":
+		if x > 0 { return x }
+		return 0
+	case "sigmoid":
+		return sigmoid(x)
+	case "tanh":
+		return math.Tanh(x)
+	default:
+		return x
+	}
+}
+
+func (m *DeepFMModel) extractWideFeatures(req *BidRequest, candidate *Candidate) []float64 {
+	return []float64{
+		float64(len(req.Context.Keywords)),
+		float64(len(req.User.Interests)),
+	}
+}
+
+func (m *DeepFMModel) extractDeepFeatures(req *BidRequest, candidate *Candidate) []float64 {
+	return []float64{
+		float64(len(req.Context.Keywords)),
+		float64(len(req.User.Interests)),
+		m.hashFeature(req.Context.URL),
+	}
+}
+
+func (m *DeepFMModel) extractFMFeatures(req *BidRequest, candidate *Candidate) []float64 {
+	return []float64{
+		float64(len(req.User.Interests)),
+		float64(len(req.Context.Keywords)),
+	}
+}
+
+func (m *DeepFMModel) hashFeature(s string) float64 {
+	h := uint32(5381)
+	for i := 0; i < len(s); i++ {
+		h = h*33 ^ uint32(s[i])
+	}
+	return float64(h) / float64(math.MaxUint32)
+}
+
+// FeatureStore 特征存储
+type FeatureStore struct {
+	mu    sync.RWMutex
+	cache map[string]map[string]float64 // key -> {feature_name: value}
+}
+
+func NewFeatureStore() *FeatureStore {
+	return &FeatureStore{
+		cache: make(map[string]map[string]float64),
+	}
+}
+
+func (fs *FeatureStore) GetFeatures(key string) map[string]float64 {
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+	
+	features, ok := fs.cache[key]
+	if !ok {
+		return make(map[string]float64)
+	}
+	
+	// 深拷贝
+	result := make(map[string]float64, len(features))
+	for k, v := range features {
+		result[k] = v
+	}
+	return result
+}
+
+func (fs *FeatureStore) SetFeatures(key string, features map[string]float64) {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	
+	fs.cache[key] = features
+}
+```
+
+### 9.3 A/B 测试统计引擎
+
+```go
+package interview
+
+import (
+	"math"
+	"time"
+)
+
+// ABTest A/B 测试
+type ABTest struct {
+	TestID       string
+	Variants     []Variant
+	Allocation   map[string]float64 // variant -> weight
+	StartedAt    time.Time
+	MinSamples   int
+	Confidence   float64 // 目标置信度，默认 0.95
+}
+
+// Variant 变体
+type Variant struct {
+	ID   string
+	Name string
+}
+
+// MetricResult 指标结果
+type MetricResult struct {
+	VariantID   string
+	Impressions int
+	Clicks      int
+	Conversions int
+	Revenue     float64
+	Cost        float64
+}
+
+// TestAnalyzer 测试分析器
+type TestAnalyzer struct {
+	test *ABTest
+}
+
+// Analyze 分析测试结果
+func (ta *TestAnalyzer) Analyze(results []MetricResult) *AnalysisOutput {
+	output := &AnalysisOutput{
+		Variants: make([]VariantAnalysis, len(results)),
+	}
+	
+	for i, r := range results {
+		va := VariantAnalysis{
+			VariantID:   r.VariantID,
+			Impressions: r.Impressions,
+			Clicks:      r.Clicks,
+			Conversions: r.Conversions,
+			Revenue:     r.Revenue,
+			Cost:        r.Cost,
+		}
+		
+		// 计算各项指标
+		if r.Impressions > 0 {
+			va.CTR = float64(r.Clicks) / float64(r.Impressions)
+			va.CVR = float64(r.Conversions) / float64(r.Clicks)
+			va.CPM = r.Cost / float64(r.Impressions) * 1000
+		}
+		if r.Clicks > 0 {
+			va.CPC = r.Cost / float64(r.Clicks)
+		}
+		if r.Cost > 0 {
+			va.ROAS = r.Revenue / r.Cost
+			va.CPA = r.Cost / float64(r.Conversions)
+		}
+		
+		// 统计显著性检验
+		va.PValue = ta.zTest(r.Clicks, r.Impressions)
+		va.Significant = va.PValue < 0.05
+		
+		output.Variants[i] = va
+	}
+	
+	// 确定 Winner
+	output.Winner = output.findWinner()
+	
+	return output
+}
+
+// zTest Z 检验比较两个比例的差异
+func (ta *TestAnalyzer) zTest(clicksA, impressionsA int) float64 {
+	if impressionsA == 0 {
+		return 1.0
+	}
+	
+	pA := float64(clicksA) / float64(impressionsA)
+	
+	// 与基准（所有变体的平均）比较
+	pBar := 0.05 // 假设基准 CTR 5%
+	n := float64(impressionsA)
+	
+	// 标准误
+	SE := math.Sqrt(pBar*(1-pBar)/n)
+	if SE == 0 {
+		return 1.0
+	}
+	
+	z := (pA - pBar) / SE
+	
+	// 简化 p-value 计算
+	return 2 * (1 - normalCDF(math.Abs(z)))
+}
+
+// normalCDF 正态分布累积函数（近似）
+func normalCDF(x float64) float64 {
+	// Abramowitz and Stegun 近似
+	a1, a2, a3, a4 := 0.254829592, -0.284496736, 1.421413741, -1.453152027
+	c := 0.3275911
+	
+	sign := 1.0
+	if x < 0 {
+		sign = -1
+	}
+	x = math.Abs(x)
+	
+	t := 1.0 / (1.0 + c*x)
+	y := 1.0 - (((((a4*t+a3)*t)+a2)*t)+a1)*t*math.Exp(-x*x/2)
+	
+	return 0.5 * (1.0 + sign*y)
+}
+
+// VariantAnalysis 变体分析结果
+type VariantAnalysis struct {
+	VariantID   string
+	Impressions int
+	Clicks      int
+	Conversions int
+	Revenue     float64
+	Cost        float64
+	CTR         float64
+	CVR         float64
+	CPC         float64
+	CPM         float64
+	ROAS        float64
+	CPA         float64
+	PValue      float64
+	Significant bool
+}
+
+// AnalysisOutput 分析输出
+type AnalysisOutput struct {
+	Variants []VariantAnalysis
+	Winner   *VariantAnalysis
+}
+
+func (ao *AnalysisOutput) findWinner() *VariantAnalysis {
+	var best *VariantAnalysis
+	for i := range ao.Variants {
+		if best == nil || ao.Variants[i].ROAS > best.ROAS {
+			best = &ao.Variants[i]
+		}
+	}
+	return best
+}
+```

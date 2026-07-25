@@ -344,3 +344,258 @@ DV360 适配器工具：
 ### Q3: 二次确认机制的三个层面？
 
 **A**: 操作分类（只读/普通/危险）、确认方式（文本/数字/签名）、确认流程（预览/提醒/执行）。
+
+---
+
+## Go 代码实战：MCP 工具实现深度
+
+### 1. MCP SSE 传输层（HTTP 长连接）
+
+```go
+package mcp
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"sync"
+)
+
+// SSETransport SSE 传输层（适合 HTTP 场景）
+type SSETransport struct {
+	mu         sync.Mutex
+	writers    map[http.ResponseWriter]struct{}
+	eventCh    chan *Message
+	stopCh     chan struct{}
+}
+
+func NewSSETransport() *SSETransport {
+	return &SSETransport{
+		writers: make(map[http.ResponseWriter]struct{}),
+		eventCh: make(chan *Message, 100),
+		stopCh:  make(chan struct{}),
+	}
+}
+
+func (t *SSETransport) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "GET":
+		t.handleSSE(w, r) // 接收事件
+	case "POST":
+		t.handleJSONRPC(w, r) // 发送消息
+	default:
+		http.Error(w, "Method not allowed", 405)
+	}
+}
+
+func (t *SSETransport) handleSSE(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", 500)
+		return
+	}
+	
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	
+	flusher.Flush()
+	
+	t.mu.Lock()
+	t.writers[w] = struct{}{}
+	t.mu.Unlock()
+	
+	defer func() {
+		t.mu.Lock()
+		delete(t.writers, w)
+		t.mu.Unlock()
+	}()
+	
+	ctx := r.Context()
+	for {
+		select {
+		case msg := <-t.eventCh:
+			data, _ := json.Marshal(msg)
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+			
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (t *SSETransport) handleJSONRPC(w http.ResponseWriter, r *http.Request) {
+	var msg Message
+	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	
+	// 处理消息...
+	_ = msg
+	w.WriteHeader(200)
+}
+
+func (t *SSETransport) Send(msg *Message) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	
+	for writer := range t.writers {
+		select {
+		case t.eventCh <- msg:
+		default:
+			// channel 满了，丢弃
+		}
+	}
+	return nil
+}
+```
+
+### 2. MCP 资源订阅系统
+
+```go
+package mcp
+
+import (
+	"context"
+	"encoding/json"
+	"sync"
+	"time"
+)
+
+// ResourceSubscription 资源订阅
+type ResourceSubscription struct {
+	URI        string
+	Callback   func(context.Context, []byte) error
+	LastUpdate time.Time
+}
+
+// ResourceServer 资源服务器
+type ResourceServer struct {
+	mu           sync.RWMutex
+	resources    map[string]ResourceData
+	subscriptions map[string][]*ResourceSubscription
+	pollInterval time.Duration
+}
+
+type ResourceData struct {
+	URI         string
+	Name        string
+	MIMEType    string
+	Content     []byte
+	Version     int64
+}
+
+func NewResourceServer(pollInterval time.Duration) *ResourceServer {
+	return &ResourceServer{
+		resources:     make(map[string]ResourceData),
+		subscriptions: make(map[string][]*ResourceSubscription),
+		pollInterval:  pollInterval,
+	}
+}
+
+func (rs *ResourceServer) Register(resource ResourceData) {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	rs.resources[resource.URI] = resource
+}
+
+func (rs *ResourceServer) Subscribe(uri string, callback func(context.Context, []byte) error) error {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	
+	sub := &ResourceSubscription{
+		URI:      uri,
+		Callback: callback,
+	}
+	
+	rs.subscriptions[uri] = append(rs.subscriptions[uri], sub)
+	return nil
+}
+
+func (rs *ResourceServer) StartPolling(ctx context.Context) error {
+	ticker := time.NewTicker(rs.pollInterval)
+	defer ticker.Close()
+	
+	for {
+		select {
+		case <-ticker.C:
+			rs.checkUpdates(ctx)
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+func (rs *ResourceServer) checkUpdates(ctx context.Context) {
+	rs.mu.RLock()
+	defer rs.mu.RUnlock()
+	
+	for uri, subs := range rs.subscriptions {
+		resource, ok := rs.resources[uri]
+		if !ok {
+			continue
+		}
+		
+		for _, sub := range subs {
+			if sub.LastUpdate.IsZero() || resource.Version > sub.LastUpdate.Unix() {
+				go func(s *ResourceSubscription, data []byte) {
+					_ = s.Callback(ctx, data)
+					s.LastUpdate = time.Now()
+				}(sub, resource.Content)
+			}
+		}
+	}
+}
+```
+
+### 自测题
+
+<details>
+<summary>Q1: SSE 传输相比 WebSocket 有什么优劣？MCP 为什么两种都支持？</summary>
+
+**答案**：
+
+| 特性 | SSE | WebSocket |
+|------|-----|-----------|
+| 方向 | 服务端→客户端（单向） | 双向 |
+| 可靠性 | 自动重连 | 需手动处理 |
+| 复杂度 | 低（HTTP 标准） | 高（需要协议处理） |
+| 适用场景 | 事件推送、日志流 | 实时交互、聊天 |
+
+MCP 支持两种：stdio 用于 CLI，SSE 用于 Web UI 推送，WebSocket 用于实时 Agent 对话。
+
+</details>
+
+<details>
+<summary>Q2: ResourceServer 的 checkUpdates 为什么用 goroutine 执行 Callback？</summary>
+
+**答案**：
+
+**原因**：Callback 可能耗时较长（如写文件、调 API），阻塞 update 检查循环会导致轮询间隔变长。
+
+**Trade-off**：
+- 并发执行：快速响应，但可能重复触发同一资源的更新
+- 串行执行：保证顺序，但延迟高
+
+生产环境用带限流的 goroutine pool 执行 callback。
+
+</details>
+
+<details>
+<summary>Q3: MCP 的 Resource 和 Tool 有什么区别？什么场景用哪个？</summary>
+
+**答案**：
+
+| 特性 | Resource | Tool |
+|------|---------|------|
+| 性质 | **数据**（只读） | **操作**（可写） |
+| 调用方式 | Agent 主动读取 | Agent 主动调用 |
+| 示例 | 用户画像、广告配置 | 创建 Campaign、暂停广告 |
+| 更新通知 | ✅ 支持订阅 | ❌ 不支持 |
+
+广告平台：用户画像用 Resource（Agent 读取），Campaign 管理用 Tool（Agent 操作）。
+
+</details>

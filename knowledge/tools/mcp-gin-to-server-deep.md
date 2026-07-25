@@ -167,3 +167,277 @@ MCP Server 架构：
 ### Q3: 认证授权的三个层面？
 
 **A**: 认证方式（JWT/OAuth2/API Key）、权限控制（RBAC/资源权限/操作权限）、审计日志（操作记录/变更追踪/安全事件）。
+
+---
+
+## Go 代码实战：Gin Web API 迁移到 MCP Server
+
+### 1. MCP Server 核心实现
+
+```go
+package mcp
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"sync"
+)
+
+// Message JSON-RPC 2.0 消息
+type Message struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      *int64          `json:"id,omitempty"`
+	Method  string          `json:"method"`
+	Params  json.RawMessage `json:"params,omitempty"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   *RPCError       `json:"error,omitempty"`
+}
+
+type RPCError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+// Tool MCP 工具定义
+type Tool struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	InputSchema json.RawMessage `json:"inputSchema"`
+	Handler     func(context.Context, json.RawMessage) (json.RawMessage, error)
+}
+
+// Resource MCP 资源定义
+type Resource struct {
+	URI         string          `json:"uri"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	MIMEType    string          `json:"mimeType,omitempty"`
+	ReadFunc    func(context.Context) (string, error)
+}
+
+// Server MCP 服务器
+type Server struct {
+	tools      map[string]*Tool
+	resources  map[string]*Resource
+	subscriptions map[string][]func(*Event)
+	mu       sync.RWMutex
+	handlers map[string]func(*Message) (*Message, error)
+}
+
+func NewServer() *Server {
+	s := &Server{
+		tools:       make(map[string]*Tool),
+		resources:   make(map[string]*Resource),
+		subscriptions: make(map[string][]func(*Event)),
+		handlers:    make(map[string]func(*Message) (*Message, error)),
+	}
+	
+	// 注册内置 handler
+	s.RegisterHandler("initialize", s.handleInitialize)
+	s.RegisterHandler("tools/list", s.handleToolsList)
+	s.RegisterHandler("tools/call", s.handleToolCall)
+	s.RegisterHandler("resources/list", s.handleResourcesList)
+	s.RegisterHandler("resources/read", s.handleResourceRead)
+	
+	return s
+}
+
+func (s *Server) RegisterHandler(method string, handler func(*Message) (*Message, error)) {
+	s.handlers[method] = handler
+}
+
+func (s *Server) RegisterTool(tool *Tool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tools[tool.Name] = tool
+}
+
+func (s *Server) RegisterResource(res *Resource) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.resources[res.URI] = res
+}
+
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var msg Message
+	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid JSON"})
+		return
+	}
+	
+	handler, ok := s.handlers[msg.Method]
+	if !ok {
+		w.WriteHeader(404)
+		json.NewEncoder(w).Encode(map[string]string{"error": "method not found"})
+		return
+	}
+	
+	result, err := handler(&msg)
+	if err != nil {
+		w.WriteHeader(500)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+func (s *Server) handleInitialize(msg *Message) (*Message, error) {
+	resp := &Message{
+		JSONRPC: "2.0",
+		Result: json.RawMessage(`{
+			"protocolVersion": "2024-11-05",
+			"serverInfo": {"name": "ad-platform-mcp", "version": "1.0.0"},
+			"capabilities": {
+				"tools": {},
+				"resources": {}
+			}
+		}`),
+	}
+	return resp, nil
+}
+
+func (s *Server) handleToolsList(msg *Message) (*Message, error) {
+	s.mu.RLock()
+	tools := make([]map[string]interface{}, 0, len(s.tools))
+	for name, tool := range s.tools {
+		tools = append(tools, map[string]interface{}{
+			"name":        name,
+			"description": tool.Description,
+			"inputSchema": json.RawMessage(tool.InputSchema),
+		})
+	}
+	s.mu.RUnlock()
+	
+	return &Message{
+		JSONRPC: "2.0",
+		Result:  json.RawMessage(fmt.Sprintf(`{"tools": %v}`, tools)),
+	}, nil
+}
+
+func (s *Server) handleToolCall(msg *Message) (*Message, error) {
+	var params struct {
+		Name      string          `json:"name"`
+		Arguments json.RawMessage `json:"arguments"`
+	}
+	json.Unmarshal(msg.Params, &params)
+	
+	tool, ok := s.tools[params.Name]
+	if !ok {
+		return &Message{
+			JSONRPC: "2.0",
+			Error:   &RPCError{Code: -32601, Message: fmt.Sprintf("tool not found: %s", params.Name)},
+		}, nil
+	}
+	
+	result, err := tool.Handler(context.Background(), params.Arguments)
+	if err != nil {
+		return &Message{
+			JSONRPC: "2.0",
+			Error:   &RPCError{Code: -32603, Message: err.Error()},
+		}, nil
+	}
+	
+	return &Message{
+		JSONRPC: "2.0",
+		Result:  result,
+	}, nil
+}
+
+func (s *Server) handleResourcesList(msg *Message) (*Message, error) {
+	s.mu.RLock()
+	resources := make([]map[string]interface{}, 0, len(s.resources))
+	for uri, res := range s.resources {
+		resources = append(resources, map[string]interface{}{
+			"uri":         uri,
+			"name":        res.Name,
+			"description": res.Description,
+		})
+	}
+	s.mu.RUnlock()
+	
+	return &Message{
+		JSONRPC: "2.0",
+		Result:  json.RawMessage(fmt.Sprintf(`{"resources": %v}`, resources)),
+	}, nil
+}
+
+func (s *Server) handleResourceRead(msg *Message) (*Message, error) {
+	var params struct {
+		URI string `json:"uri"`
+	}
+	json.Unmarshal(msg.Params, &params)
+	
+	res, ok := s.resources[params.URI]
+	if !ok {
+		return &Message{
+			JSONRPC: "2.0",
+			Error:   &RPCError{Code: -32601, Message: fmt.Sprintf("resource not found: %s", params.URI)},
+		}, nil
+	}
+	
+	content, err := res.ReadFunc(context.Background())
+	if err != nil {
+		return &Message{
+			JSONRPC: "2.0",
+			Error:   &RPCError{Code: -32603, Message: err.Error()},
+		}, nil
+	}
+	
+	return &Message{
+		JSONRPC: "2.0",
+		Result:  json.RawMessage(fmt.Sprintf(`{"content": %q}`, content)),
+	}, nil
+}
+```
+
+### 自测题
+
+<details>
+<summary>Q1: MCP Server 的 JSON-RPC 2.0 协议中，为什么用 id 字段关联请求和响应？</summary>
+
+**答案**：
+
+**JSON-RPC 2.0 规范**要求：
+- 请求必须有 `id`（用于关联响应）
+- 通知（Notification）没有 `id`（单向发送，不需要响应）
+- 响应必须回传相同的 `id`
+
+广告平台 MCP Server 中，id 用来追踪哪个 Agent 调用了哪个工具——这对审计和调试至关重要。
+
+</details>
+
+<details>
+<summary>Q2: Server 的 RegisterTool 为什么用 mutex 保护？handlers map 呢？</summary>
+
+**答案**：
+
+**tools map**：在 handleToolCall 中被并发读取（多个 goroutine 同时处理请求），需要 RWMutex。
+
+**handlers map**：只在初始化时写入，之后只读——可以用普通 map 或 init 时一次性写入。
+
+生产环境推荐：**所有共享 map 都用 RWMutex**，避免忘记加锁导致 race condition。
+
+</details>
+
+<details>
+<summary>Q3: Gin Controller 迁移到 MCP Tool 的核心转换规则是什么？</summary>
+
+**答案**：
+
+| Gin Controller | MCP Tool |
+|---------------|----------|
+| HTTP Handler func(w, r) | Tool Handler func(ctx, params) |
+| URL path + method | Tool name |
+| Query/Body params | InputSchema (JSON Schema) |
+| HTTP Response | JSON-RPC Result |
+| HTTP Error | RPCError |
+
+核心转换：**把 HTTP 路由逻辑抽象为工具调用逻辑**。
+
+</details>

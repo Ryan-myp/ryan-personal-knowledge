@@ -404,3 +404,367 @@ Level 1: 实时监控（Real-time）
 - [ ] 社群运营策略（建群/活跃/转化/裂变）
 - [ ] 数据可视化最佳实践（Dashboard 设计原则）
 - [ ] 归因分析模型（Last-click / Multi-touch / Markov）
+
+## 六、Go 源码级实现：用户增长与运营系统
+
+### 6.1 用户分层与触达引擎
+
+```go
+package growth
+
+import (
+	"fmt"
+	"math/rand"
+	"sync"
+	"time"
+)
+
+// UserSegment 用户分层
+type UserSegment int
+
+const (
+	SegmentNew UserSegment = iota
+	SegmentActive
+	SegmentAtRisk
+	SegmentChurned
+	SegmentVIP
+)
+
+// UserProfile 用户画像
+type UserProfile struct {
+	UserID        string    `json:"user_id"`
+	RegisterDate  time.Time `json:"register_date"`
+	LastActive    time.Time `json:"last_active"`
+	Tags          []string  `json:"tags"`
+	Segment       UserSegment `json:"segment"`
+	LTV           float64   `json:"ltv"`
+	BooksRead     int       `json:"books_read"`
+	AvgReadingMin float64   `json:"avg_reading_min"`
+	SessionCount  int       `json:"session_count"`
+}
+
+// OutreachEngine 触达引擎
+type OutreachEngine struct {
+	mu      sync.Mutex
+	channels []OutreachChannel
+	rules    []SegmentRule
+	cache    map[string]time.Time // userID -> lastOutreachTime
+}
+
+// OutreachChannel 触达渠道
+type OutreachChannel interface {
+	Name() string
+	Send(user *UserProfile, message Message) error
+	CostPerSend() float64
+}
+
+// Message 触达消息
+type Message struct {
+	Title    string
+	Body     string
+	Type     string // push, sms, email, in_app
+	Payload  map[string]interface{}
+	Schedule time.Time
+}
+
+// SegmentRule 分层规则
+type SegmentRule struct {
+	Name     string
+	Condition func(*UserProfile) bool
+	Segment  UserSegment
+}
+
+// NewOutreachEngine 创建触达引擎
+func NewOutreachEngine(channels []OutreachChannel) *OutreachEngine {
+	return &OutreachEngine{
+		channels: channels,
+		cache:    make(map[string]time.Time),
+	}
+}
+
+// AddRule 添加分层规则
+func (oe *OutreachEngine) AddRule(rule SegmentRule) {
+	oe.mu.Lock()
+	defer oe.mu.Unlock()
+	oe.rules = append(oe.rules, rule)
+}
+
+// ClassifyUser 对用户进行分层
+func (oe *OutreachEngine) ClassifyUser(user *UserProfile) UserSegment {
+	for _, rule := range oe.rules {
+		if rule.Condition(user) {
+			user.Segment = rule.Segment
+			return rule.Segment
+		}
+	}
+	return SegmentActive
+}
+
+// Outreach 执行触达
+func (oe *OutreachEngine) Outreach(user *UserProfile, message Message) error {
+	// 频率控制：同一用户每天最多触达 N 次
+	oe.mu.Lock()
+	lastTime, exists := oe.cache[user.UserID]
+	oe.mu.Unlock()
+	
+	if exists && time.Since(lastTime).Hours() < 24 {
+		return fmt.Errorf("rate limited: user %s already reached today", user.UserID)
+	}
+	
+	// 选择最优渠道
+	channel := oe.selectBestChannel(user, message)
+	if channel == nil {
+		return fmt.Errorf("no suitable channel")
+	}
+	
+	err := channel.Send(user, message)
+	if err != nil {
+		return err
+	}
+	
+	// 记录触达时间
+	oe.mu.Lock()
+	oe.cache[user.UserID] = time.Now()
+	oe.mu.Unlock()
+	
+	return nil
+}
+
+// selectBestChannel 选择最优触达渠道
+func (oe *OutreachEngine) selectBestChannel(user *UserProfile, message Message) OutreachChannel {
+	bestChannel := oe.channels[0]
+	bestScore := 0.0
+	
+	for _, ch := range oe.channels {
+		score := oe.calculateChannelScore(user, ch, message)
+		if score > bestScore {
+			bestScore = score
+			bestChannel = ch
+		}
+	}
+	
+	return bestChannel
+}
+
+func (oe *OutreachEngine) calculateChannelScore(user *UserProfile, ch OutreachChannel, msg Message) float64 {
+	score := 1.0
+	
+	// 用户偏好
+	for _, tag := range user.Tags {
+		if tag == ch.Name()+"_preferred" {
+			score *= 1.5
+		}
+	}
+	
+	// 成本效益
+	cost := ch.CostPerSend()
+	if cost > 0.1 {
+		score *= 0.8
+	}
+	
+	// 时效性
+	if msg.Type == "push" && time.Since(user.LastActive).Hours() < 24 {
+		score *= 1.2
+	}
+	
+	return score
+}
+
+// GrowthLoop 增长循环引擎
+type GrowthLoop struct {
+	mu         sync.Mutex
+	hypotheses []Hypothesis
+	results    map[string]*ExperimentResult
+}
+
+// Hypothesis 增长假设
+type Hypothesis struct {
+	ID          string
+	Description string
+	Variants    []Variant
+	Metric      string
+	Target      float64 // 预期提升百分比
+	Confidence  string  // high/medium/low
+}
+
+// Variant 实验变体
+type Variant struct {
+	ID   string
+	Name string
+}
+
+// ExperimentResult 实验结果
+type ExperimentResult struct {
+	HypothesisID string
+	StartedAt    time.Time
+	CompletedAt  time.Time
+	Data         map[string]MetricData
+	Winner       string
+	Significant  bool
+}
+
+// MetricData 指标数据
+type MetricData struct {
+	Impressions int
+	Value       float64
+	StdDev      float64
+}
+
+// RunExperiment 运行增长实验
+func (gl *GrowthLoop) RunExperiment(hyp Hypothesis, users []*UserProfile) *ExperimentResult {
+	result := &ExperimentResult{
+		HypothesisID: hyp.ID,
+		StartedAt:    time.Now(),
+		Data:         make(map[string]MetricData),
+	}
+	
+	// 随机分配用户到变体
+	rand.Shuffle(len(users), func(i, j int) {
+		users[i], users[j] = users[j], users[i]
+	})
+	
+	variantUsers := make(map[string][]*UserProfile)
+	for i, user := range users {
+		variantID := hyp.Variants[i%len(hyp.Variants)].ID
+		variantUsers[variantID] = append(variantUsers[variantID], user)
+	}
+	
+	// 收集各变体数据
+	for variantID, variantUsers := range variantUsers {
+		data := MetricData{Impressions: len(variantUsers)}
+		for _, u := range variantUsers {
+			data.Value += u.LTV
+		}
+		data.StdDev = calculateStdDev(variantUsers)
+		result.Data[variantID] = data
+	}
+	
+	// 统计检验
+	result.Significant = gl.statisticalTest(result)
+	if result.Significant {
+		result.Winner = gl.findWinner(result)
+	}
+	
+	result.CompletedAt = time.Now()
+	gl.results[hyp.ID] = result
+	
+	return result
+}
+
+func calculateStdDev(users []*UserProfile) float64 {
+	if len(users) == 0 {
+		return 0
+	}
+	sum := 0.0
+	for _, u := range users {
+		sum += u.LTV
+	}
+	avg := sum / float64(len(users))
+	
+	varSum := 0.0
+	for _, u := range users {
+		diff := u.LTV - avg
+		varSum += diff * diff
+	}
+	return math.Sqrt(varSum / float64(len(users)))
+}
+
+func (gl *GrowthLoop) statisticalTest(result *ExperimentResult) bool {
+	// 简化：如果样本量足够且差异 > 5% 则认为显著
+	for variantID, data := range result.Data {
+		if data.Impressions >= 1000 {
+			_ = variantID
+			return true
+		}
+	}
+	return false
+}
+
+func (gl *GrowthLoop) findWinner(result *ExperimentResult) string {
+	bestVariant := ""
+	bestValue := -1.0
+	
+	for variantID, data := range result.Data {
+		if data.Value > bestValue {
+			bestValue = data.Value
+			bestVariant = variantID
+		}
+	}
+	
+	return bestVariant
+}
+
+## 七、自测题
+
+### Q1: 用户分层系统中，如何设计规则引擎支持动态调整？生产环境如何避免规则冲突？
+
+<details>
+<summary>查看答案</summary>
+
+**答案：**
+
+规则引擎设计要点：
+1. **规则优先级**：每条规则带 priority 字段，高优先级先执行
+2. **规则冲突检测**：相同用户可能命中多条规则，取最高 priority 或加权平均
+3. **规则热更新**：使用 sync.RWMutex 保护规则列表，读多写少场景用 RLock
+4. **规则版本管理**：每次修改记录 version，支持回滚
+
+生产环境避坑：
+- 规则数量 > 100 时，线性扫描 O(n) 性能下降，改用决策树或规则索引
+- 用户画像更新频率高，需要 CQRS 模式：事件溯源 + 投影查询
+- 触达频率控制必须分布式（Redis INCR + EXPIRE），单机 map 在多实例下会失效
+
+</details>
+
+### Q2: A/B 测试中，样本量计算和统计显著性检验如何选择？Z 检验和贝叶斯方法各有什么优劣？
+
+<details>
+<summary>查看答案</summary>
+
+**答案：**
+
+样本量计算：
+- 基于 effect size、α（显著性水平）、β（功效）计算
+- 公式：n = 2 * (z_α/2 + z_β)² * σ² / Δ²
+- 广告场景通常 α=0.05, β=0.2（power=80%）
+
+Z 检验 vs 贝叶斯：
+| 维度 | Z 检验 | 贝叶斯 |
+|------|--------|--------|
+| 结果解释 | p-value < 0.05 认为显著 | P(A>B) = 95% 认为 A 更好 |
+| 样本量需求 | 需要固定样本量 | 可以随时查看，不需要固定 |
+| 先验信息 | 不考虑先验 | 可以加入先验分布 |
+| 多臂老虎机 | 不支持 | 天然支持（Thompson Sampling） |
+| 实现复杂度 | 简单 | 需要 MCMC 或共轭先验 |
+
+生产实践：Google Ads 内部同时使用两种方法，常规实验用 Z 检验，多臂老虎机用贝叶斯。
+
+</details>
+
+### Q3: 增长黑客的"北极星指标"如何确定？与 AARRR 漏斗的关系是什么？
+
+<details>
+<summary>查看答案</summary>
+
+**答案：**
+
+北极星指标选择原则：
+1. **反映核心价值**：微信读书的北极星是"月均阅读时长"而非"注册用户数"
+2. **可操作**：团队能直接影响该指标
+3. **领先指标**：能预测长期商业成功
+4. **简洁**：一句话能说清
+
+AARRR 与北极星关系：
+- Acquisition → 获取用户（注册、激活）
+- Activation → 用户首次体验价值（读完第一本书）
+- Retention → 留存（次日/7日/30日留存率）
+- Revenue → 变现（付费订阅、广告收入）
+- Referral → 传播（分享、推荐）
+- 北极星指标贯穿整个漏斗，是最终目标
+
+Go 实现要点：
+- 使用 Event Sourcing 记录每个用户的 AARRR 事件
+- 按天聚合计算各阶段转化率
+- 用 Go channel 做事件流处理，保证实时性
+
+</details>

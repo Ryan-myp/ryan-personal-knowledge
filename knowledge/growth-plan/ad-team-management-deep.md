@@ -215,3 +215,647 @@ Mentorship 计划：
 3. 创新鼓励
 4. 失败包容
 ```
+
+## 六、Go 源码级实现：团队管理与绩效系统
+
+### 6.1 OKR 追踪系统
+
+```go
+package management
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+// Objective 目标
+type Objective struct {
+	ID          string
+	Title       string
+	Description string
+	OwnerID     string
+	KeyResults  []KeyResult
+	Milestone   Milestone
+	Status      string // not_started, in_progress, achieved
+	Score       float64 // 0-1
+	StartDate   time.Time
+	EndDate     time.Time
+	CreatedAt   time.Time
+}
+
+// KeyResult 关键结果
+type KeyResult struct {
+	ID        string
+	Title     string
+	Type      string // effort_based, metric_based
+	Target    float64
+	Current   float64
+	Weight    float64 // 权重 0-1
+	Progress  float64 // 当前进度 0-1
+	OwnerID   string
+	DueDate   time.Time
+	Status    string
+}
+
+// Milestone 里程碑
+type Milestone struct {
+	Name     string
+	Deadline time.Time
+	Completed bool
+}
+
+// KRTracker OKR 追踪器
+type KRTracker struct {
+	mu         sync.RWMutex
+	objectives map[string]*Objective
+	users      map[string]*User
+}
+
+// User 用户
+type User struct {
+	ID           string
+	Name         string
+	Role         string
+	Objectives   []string // objective IDs
+	LastReviewAt time.Time
+}
+
+// NewKRTracker 创建 OKR 追踪器
+func NewKRTracker() *KRTracker {
+	return &KRTracker{
+		objectives: make(map[string]*Objective),
+		users:      make(map[string]*User),
+	}
+}
+
+// AddObjective 添加目标
+func (kt *KRTracker) AddObjective(obj *Objective) error {
+	kt.mu.Lock()
+	defer kt.mu.Unlock()
+	
+	if obj.ID == "" {
+		return fmt.Errorf("objective ID is required")
+	}
+	if _, exists := kt.objectives[obj.ID]; exists {
+		return fmt.Errorf("objective %s already exists", obj.ID)
+	}
+	
+	kt.objectives[obj.ID] = obj
+	return nil
+}
+
+// UpdateKeyResult 更新关键结果
+func (kt *KRTracker) UpdateKeyResult(objID, krID string, current float64) error {
+	kt.mu.Lock()
+	defer kt.mu.Unlock()
+	
+	obj, ok := kt.objectives[objID]
+	if !ok {
+		return fmt.Errorf("objective %s not found", objID)
+	}
+	
+	for i := range obj.KeyResults {
+		if obj.KeyResults[i].ID == krID {
+			obj.KeyResults[i].Current = current
+			if obj.KeyResults[i].Target > 0 {
+				obj.KeyResults[i].Progress = current / obj.KeyResults[i].Target
+			}
+			if obj.KeyResults[i].Progress >= 1.0 {
+				obj.KeyResults[i].Status = "achieved"
+			} else if obj.KeyResults[i].Progress > 0 {
+				obj.KeyResults[i].Status = "in_progress"
+			}
+			break
+		}
+	}
+	
+	// 重新计算目标总分
+	obj.Score = kt.calculateObjectiveScore(obj)
+	
+	return nil
+}
+
+// calculateObjectiveScore 计算目标得分（加权平均）
+func (kt *KRTracker) calculateObjectiveScore(obj *Objective) float64 {
+	if len(obj.KeyResults) == 0 {
+		return 0
+	}
+	
+	totalWeight := 0.0
+	weightedSum := 0.0
+	
+	for _, kr := range obj.KeyResults {
+		weight := kr.Weight
+		if weight == 0 {
+			weight = 1.0 / float64(len(obj.KeyResults))
+		}
+		weightedSum += kr.Progress * weight
+		totalWeight += weight
+	}
+	
+	if totalWeight == 0 {
+		return 0
+	}
+	
+	score := weightedSum / totalWeight
+	if score > 1.0 {
+		score = 1.0
+	}
+	
+	return score
+}
+
+// GetTeamScore 获取团队平均分
+func (kt *KRTracker) GetTeamScore() float64 {
+	kt.mu.RLock()
+	defer kt.mu.RUnlock()
+	
+	if len(kt.objectives) == 0 {
+		return 0
+	}
+	
+	total := 0.0
+	count := 0
+	
+	for _, obj := range kt.objectives {
+		if obj.Status != "achieved" {
+			total += obj.Score
+			count++
+		}
+	}
+	
+	if count == 0 {
+		return 1.0 // 全部达成
+	}
+	
+	return total / float64(count)
+}
+
+// GenerateReport 生成 OKR 报告
+func (kt *KRTracker) GenerateReport(teamID string) *OKRReport {
+	kt.mu.RLock()
+	defer kt.mu.RUnlock()
+	
+	report := &OKRReport{
+		TeamID:       teamID,
+		GeneratedAt:  time.Now(),
+		Objectives:   make([]ObjectiveSummary, 0),
+		AverageScore: kt.GetTeamScore(),
+	}
+	
+	for _, obj := range kt.objectives {
+		summary := ObjectiveSummary{
+			ID:    obj.ID,
+			Title: obj.Title,
+			Score: obj.Score,
+			Status: obj.Status,
+			KeyResults: make([]KRSummary, len(obj.KeyResults)),
+		}
+		
+		for i, kr := range obj.KeyResults {
+			summary.KeyResults[i] = KRSummary{
+				ID:       kr.ID,
+				Title:    kr.Title,
+				Progress: kr.Progress,
+				Status:   kr.Status,
+			}
+		}
+		
+		report.Objectives = append(report.Objectives, summary)
+	}
+	
+	return report
+}
+
+// OKRReport OKR 报告
+type OKRReport struct {
+	TeamID       string            `json:"team_id"`
+	GeneratedAt  time.Time         `json:"generated_at"`
+	Objectives   []ObjectiveSummary `json:"objectives"`
+	AverageScore float64           `json:"average_score"`
+}
+
+// ObjectiveSummary 目标摘要
+type ObjectiveSummary struct {
+	ID         string        `json:"id"`
+	Title      string        `json:"title"`
+	Score      float64       `json:"score"`
+	Status     string        `json:"status"`
+	KeyResults []KRSummary   `json:"key_results"`
+}
+
+// KRSummary 关键结果摘要
+type KRSummary struct {
+	ID       string  `json:"id"`
+	Title    string  `json:"title"`
+	Progress float64 `json:"progress"`
+	Status   string  `json:"status"`
+}
+```
+
+### 6.2 绩效评估系统
+
+```go
+package management
+
+import (
+	"math"
+	"sync"
+	"time"
+)
+
+// PerformanceEvaluator 绩效评估器
+type PerformanceEvaluator struct {
+	mu         sync.Mutex
+	evaluations map[string]*PerformanceRecord
+	competencies []Competency
+}
+
+// Competency 能力维度
+type Competency struct {
+	ID       string
+	Name     string
+	Weight   float64
+	Levels   []CompetencyLevel
+}
+
+// CompetencyLevel 能力等级
+type CompetencyLevel struct {
+	Level   int
+	Name    string
+	MinScore float64
+	MaxScore float64
+	Actions []string
+}
+
+// PerformanceRecord 绩效记录
+type PerformanceRecord struct {
+	UserID      string
+	EvaluatorID string
+	Period      string // Q1, Q2, Q3, Q4
+	OverallScore float64
+	CompetencyScores map[string]float64
+	GoalsAchieved float64 // 目标达成率
+	Teamwork    float64 // 团队协作分
+	Innovation  float64 // 创新能力分
+	Comments    string
+	CreatedAt   time.Time
+}
+
+// Evaluate 执行绩效评估
+func (pe *PerformanceEvaluator) Evaluate(record *PerformanceRecord) error {
+	pe.mu.Lock()
+	defer pe.mu.Unlock()
+	
+	// 计算加权总分
+	totalScore := 0.0
+	for compID, score := range record.CompetencyScores {
+		for _, comp := range pe.competencies {
+			if comp.ID == compID {
+				totalScore += score * comp.Weight
+				break
+			}
+		}
+	}
+	
+	record.OverallScore = totalScore
+	
+	// 存储记录
+	pe.evaluations[record.UserID] = record
+	
+	return nil
+}
+
+// GetRanking 获取团队排名
+func (pe *PerformanceEvaluator) GetRanking(period string) []*RankedUser {
+	pe.mu.Lock()
+	defer pe.mu.Unlock()
+	
+	ranked := make([]*RankedUser, 0)
+	
+	for userID, rec := range pe.evaluations {
+		if rec.Period == period {
+			ranked = append(ranked, &RankedUser{
+				UserID:   userID,
+				Score:    rec.OverallScore,
+				Goals:    rec.GoalsAchieved,
+				Teamwork: rec.Teamwork,
+			})
+		}
+	}
+	
+	// 按总分降序排序
+	for i := 0; i < len(ranked); i++ {
+		for j := i + 1; j < len(ranked); j++ {
+			if ranked[j].Score > ranked[i].Score {
+				ranked[i], ranked[j] = ranked[j], ranked[i]
+			}
+		}
+	}
+	
+	// 分配排名
+	for i, r := range ranked {
+		r.Rank = i + 1
+	}
+	
+	return ranked
+}
+
+// RankedUser 排名用户
+type RankedUser struct {
+	UserID   string
+	Rank     int
+	Score    float64
+	Goals    float64
+	Teamwork float64
+}
+
+// Calibrate 绩效校准（防止评分膨胀）
+func (pe *PerformanceEvaluator) Calibrate(records []*PerformanceRecord) {
+	// 正态分布校准
+	scores := make([]float64, len(records))
+	for i, r := range records {
+		scores[i] = r.OverallScore
+	}
+	
+	mean, stdDev := meanStdDev(scores)
+	
+	for i, r := range records {
+		// Z-score 标准化
+		zScore := (r.OverallScore - mean) / stdDev
+		
+		// 映射回 0-100 范围
+		calibrated := math.Round((zScore*15+75)*100) / 100
+		if calibrated > 100 {
+			calibrated = 100
+		}
+		if calibrated < 0 {
+			calibrated = 0
+		}
+		
+		r.OverallScore = calibrated
+	}
+}
+
+func meanStdDev(scores []float64) (float64, float64) {
+	if len(scores) == 0 {
+		return 0, 0
+	}
+	
+	sum := 0.0
+	for _, s := range scores {
+		sum += s
+	}
+	mean := sum / float64(len(scores))
+	
+	varSum := 0.0
+	for _, s := range scores {
+		diff := s - mean
+		varSum += diff * diff
+	}
+	stdDev := math.Sqrt(varSum / float64(len(scores)))
+	
+	if stdDev == 0 {
+		stdDev = 1 // 避免除零
+	}
+	
+	return mean, stdDev
+}
+```
+
+### 6.3 代码质量监控
+
+```go
+package management
+
+import (
+	"strings"
+	"sync"
+	"time"
+)
+
+// CodeQualityMonitor 代码质量监控
+type CodeQualityMonitor struct {
+	mu         sync.Mutex
+	metrics    map[string]*DeveloperMetrics
+	lastReview time.Time
+}
+
+// DeveloperMetrics 开发者指标
+type DeveloperMetrics struct {
+	DeveloperID  string
+	TotalPRs     int
+	MergedPRs    int
+	ReopenPRs    int
+	AvgReviewTime time.Duration
+	BugRate      float64 // 每千行 bug 数
+	CodeCoverage float64 // 测试覆盖率 0-1
+	LintErrors   int
+	Complexity   float64 // 圈复杂度平均值
+}
+
+// TrackPR 跟踪 PR 数据
+func (cm *CodeQualityMonitor) TrackPR(developerID string, pr PRData) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	
+	metrics, ok := cm.metrics[developerID]
+	if !ok {
+		metrics = &DeveloperMetrics{DeveloperID: developerID}
+		cm.metrics[developerID] = metrics
+	}
+	
+	metrics.TotalPRs++
+	if pr.Merged {
+		metrics.MergedPRs++
+	}
+	if pr.Reopened {
+		metrics.ReopenPRs++
+	}
+	
+	if pr.ReviewTime > 0 {
+		// 累加计算平均
+		prevTotal := metrics.AvgReviewTime.Hours() * float64(metrics.TotalPRs-1)
+		newTotal := prevTotal + pr.ReviewTime.Hours()
+		metrics.AvgReviewTime = time.Duration(int64(newTotal/float64(metrics.TotalPRs))*float64(time.Hour))
+	}
+}
+
+// GetHealthScore 获取团队健康度评分
+func (cm *CodeQualityMonitor) GetHealthScore() float64 {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	
+	if len(cm.metrics) == 0 {
+		return 0
+	}
+	
+	totalScore := 0.0
+	for _, m := range cm.metrics {
+		score := cm.developerScore(m)
+		totalScore += score
+	}
+	
+	return totalScore / float64(len(cm.metrics))
+}
+
+func (cm *CodeQualityMonitor) developerScore(m *DeveloperMetrics) float64 {
+	score := 100.0
+	
+	// PR 合并率（满分 25）
+	if m.TotalPRs > 0 {
+		mergeRate := float64(m.MergedPRs) / float64(m.TotalPRs)
+		score += (mergeRate - 0.8) * 25 // 80% 基准
+	}
+	
+	// 代码覆盖率（满分 25）
+	score += m.CodeCoverage * 25
+	
+	// Bug 率惩罚
+	score -= m.BugRate * 5
+	
+	// 审查时间惩罚（超过 48h 开始扣分）
+	if m.AvgReviewTime > 48*time.Hour {
+		extraHours := m.AvgReviewTime.Hours() - 48
+		score -= extraHours * 0.5
+	}
+	
+	// 圈复杂度惩罚
+	if m.Complexity > 15 {
+		score -= float64(m.Complexity-15) * 2
+	}
+	
+	if score < 0 {
+		score = 0
+	}
+	if score > 100 {
+		score = 100
+	}
+	
+	return score
+}
+
+// PRData PR 数据
+type PRData struct {
+	PRNumber   int
+	ReviewerID string
+	Merged     bool
+	Reopened   bool
+	ReviewTime time.Duration
+	Commits    int
+	Files      int
+}
+
+// CodeAnalyzer 代码分析器
+type CodeAnalyzer struct{}
+
+// AnalyzeFile 分析文件复杂度
+func (ca *CodeAnalyzer) AnalyzeFile(content string) FileAnalysis {
+	lines := strings.Split(content, "\n")
+	analysis := FileAnalysis{
+		TotalLines: len(lines),
+		CodeLines:  0,
+		CommentLines: 0,
+		BlankLines: 0,
+	}
+	
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			analysis.BlankLines++
+		} else if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "/*") {
+			analysis.CommentLines++
+		} else {
+			analysis.CodeLines++
+		}
+	}
+	
+	return analysis
+}
+
+// FileAnalysis 文件分析结果
+type FileAnalysis struct {
+	TotalLines   int
+	CodeLines    int
+	CommentLines int
+	BlankLines   int
+}
+
+## 七、自测题
+
+### Q1: OKR 系统中，关键结果的进度计算为什么用加权平均而不是简单平均？权重如何确定？
+
+<details>
+<summary>查看答案</summary>
+
+**答案：**
+
+加权平均 vs 简单平均：
+- 简单平均假设所有 KR 同等重要，但实际中不同 KR 对目标的影响差异很大
+- 例如：用户增长目标下，"DAU 从 100 万到 200 万"权重应为 0.6，"新增 3 个渠道"权重 0.4
+- 加权平均 = Σ(progress_i × weight_i) / Σ(weight_i)，确保权重和为 1
+
+权重确定方法：
+1. **管理层指定**：直接分配权重（快速但不精确）
+2. **历史数据驱动**：基于各 KR 对目标的贡献度反推权重
+3. **AHP 层次分析法**：两两比较重要性，计算特征向量
+4. **动态调整**：季度中期根据实际进展重新校准权重
+
+Go 实现要点：
+- 权重存储在 KeyResult.Weight 字段
+- calculateObjectiveScore 使用加权求和
+- 需要处理权重和不为 1 的情况（归一化）
+
+</details>
+
+### Q2: 绩效评估中的正态分布校准为什么必要？什么情况下不应该校准？
+
+<details>
+<summary>查看答案</summary>
+
+**答案：**
+
+校准的必要性：
+1. **防止评分膨胀**：管理者倾向于给高分，导致区分度下降
+2. **跨团队公平**：不同团队评分标准不一致，校准后可比
+3. **激励有效**：只有真实区分优劣，激励才有效
+
+不应该校准的场景：
+1. **小团队（<5人）**：样本量不足，正态分布假设不成立
+2. **全员优秀**：如果团队确实都表现优异，强制拉平会打击积极性
+3. **新团队**：没有历史数据建立基线
+
+生产实践：
+- Google 使用强制分布（20% S, 70% A, 10% B），但近年已取消
+- 现代做法：校准会议（calibration meeting），管理者集体讨论评分
+- Go 实现中，Z-score 标准化是可选的，可以配置是否启用
+
+</details>
+
+### Q3: 代码质量监控中，圈复杂度（Cyclomatic Complexity）如何计算？为什么 15 是警戒线？
+
+<details>
+<summary>查看答案</summary>
+
+**答案：**
+
+圈复杂度计算：
+- V(G) = E - N + 2P（E=边数，N=节点数，P=连通分量数）
+- 简化：V(G) = 判定节点数 + 1（if/for/while/case/&&/||）
+- 1-10：简单，可接受
+- 11-20：复杂，需要重构
+- 21+：非常复杂，必须重构
+
+为什么 15 是警戒线：
+1. **测试难度**：路径覆盖需要 2^15 = 32768 条测试路径
+2. **维护成本**：超过 15 的代码逻辑分支过多，容易遗漏边界条件
+3. **缺陷密度**：研究表明圈复杂度 > 15 的文件 bug 率高出 40%
+
+Go 实现要点：
+- 静态分析使用 go/ast 包遍历 AST
+- 统计控制流语句数量
+- 可以集成到 CI 流程中，超过阈值拒绝合并
+- 配合 gocyclo 工具自动检测
+
+</details>

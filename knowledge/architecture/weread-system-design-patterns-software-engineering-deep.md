@@ -192,3 +192,284 @@ Go 设计模式示例：
 ### Q3: SOLID 五大原则？
 
 **A**: 单一职责、开闭原则、里氏替换、接口隔离、依赖倒置。
+
+---
+
+## Go 代码实战：系统设计模式核心实现
+
+### 1. 观察者模式（事件总线）
+
+```go
+package eventbus
+
+import (
+	"context"
+	"sync"
+)
+
+// Event 事件
+type Event struct {
+	Type      string
+	Payload   interface{}
+	Timestamp int64
+}
+
+// Subscriber 订阅者
+type Subscriber struct {
+	ID    string
+	Topic string // * 表示订阅所有
+	Handler func(context.Context, *Event) error
+}
+
+// EventBus 事件总线
+type EventBus struct {
+	mu         sync.RWMutex
+	subscribers map[string][]*Subscriber
+	topics     map[string]bool
+}
+
+func NewEventBus() *EventBus {
+	return &EventBus{
+		subscribers: make(map[string][]*Subscriber),
+		topics:      make(map[string]bool),
+	}
+}
+
+func (eb *EventBus) Subscribe(topic string, handler func(context.Context, *Event) error) string {
+	id := generateID()
+	sub := &Subscriber{
+		ID:      id,
+		Topic:   topic,
+		Handler: handler,
+	}
+	
+	eb.mu.Lock()
+	eb.topics[topic] = true
+	eb.subscribers[topic] = append(eb.subscribers[topic], sub)
+	eb.mu.Unlock()
+	
+	return id
+}
+
+func (eb *EventBus) Publish(ctx context.Context, event *Event) error {
+	eb.mu.RLock()
+	defer eb.mu.RUnlock()
+	
+	// 精确匹配
+	for _, sub := range eb.subscribers[event.Type] {
+		if err := sub.Handler(ctx, event); err != nil {
+			// 单个订阅者失败，继续处理其他
+			log.Error("handler error", "subscriber", sub.ID, "error", err)
+		}
+	}
+	
+	// 通配符匹配（所有订阅者）
+	for _, sub := range eb.subscribers["*"] {
+		if err := sub.Handler(ctx, event); err != nil {
+			log.Error("wildcard handler error", "subscriber", sub.ID, "error", err)
+		}
+	}
+	
+	return nil
+}
+
+func (eb *EventBus) Unsubscribe(id string) {
+	eb.mu.Lock()
+	defer eb.mu.Unlock()
+	
+	for topic, subs := range eb.subscribers {
+		for i, sub := range subs {
+			if sub.ID == id {
+				eb.subscribers[topic] = append(subs[:i], subs[i+1:]...)
+				break
+			}
+		}
+	}
+}
+```
+
+### 2. 适配器模式（统一 API 接口）
+
+```go
+package adapter
+
+import (
+	"context"
+	"fmt"
+)
+
+// AdPlatform 广告平台接口（抽象）
+type AdPlatform interface {
+	Name() string
+	CreateCampaign(ctx context.Context, campaign *Campaign) (*Campaign, error)
+	GetStats(ctx context.Context, campaignID string) (*Stats, error)
+	PauseCampaign(ctx context.Context, campaignID string) error
+}
+
+// Campaign 广告系列（通用模型）
+type Campaign struct {
+	ID          string
+	Name        string
+	Budget      float64
+	Status      string
+	Platform    string
+	CreatedAt   int64
+}
+
+// Stats 统计数据（通用模型）
+type Stats struct {
+	Impressions int64   `json:"impressions"`
+	Clicks      int64   `json:"clicks"`
+	Conversions int64   `json:"conversions"`
+	Spend       float64 `json:"spend"`
+}
+
+// GoogleAdsAdapter Google Ads 适配器
+type GoogleAdsAdapter struct {
+	client *GoogleAdsClient
+}
+
+func (a *GoogleAdsAdapter) Name() string { return "google_ads" }
+
+func (a *GoogleAdsAdapter) CreateCampaign(ctx context.Context, campaign *Campaign) (*Campaign, error) {
+	// 转换通用模型为 Google Ads SDK 模型
+	gc := convertToGoogleCampaign(campaign)
+	result, err := a.client.CreateCampaign(ctx, gc)
+	if err != nil {
+		return nil, err
+	}
+	return convertFromGoogleCampaign(result), nil
+}
+
+func (a *GoogleAdsAdapter) GetStats(ctx context.Context, campaignID string) (*Stats, error) {
+	data, err := a.client.GetStats(ctx, campaignID)
+	if err != nil {
+		return nil, err
+	}
+	return &Stats{
+		Impressions: data.Impressions,
+		Clicks:      data.Clicks,
+		Conversions: data.Conversions,
+		Spend:       data.Spend,
+	}, nil
+}
+
+func (a *GoogleAdsAdapter) PauseCampaign(ctx context.Context, campaignID string) error {
+	return a.client.PauseCampaign(ctx, campaignID)
+}
+
+// MetaAdsAdapter Meta Ads 适配器
+type MetaAdsAdapter struct {
+	client *MetaAdsClient
+}
+
+func (a *MetaAdsAdapter) Name() string { return "meta_ads" }
+
+func (a *MetaAdsAdapter) CreateCampaign(ctx context.Context, campaign *Campaign) (*Campaign, error) {
+	mc := convertToMetaCampaign(campaign)
+	result, err := a.client.CreateAdAccountCampaign(ctx, mc)
+	if err != nil {
+		return nil, err
+	}
+	return convertFromMetaCampaign(result), nil
+}
+
+func (a *MetaAdsAdapter) GetStats(ctx context.Context, campaignID string) (*Stats, error) {
+	data, err := a.client.GetInsights(ctx, campaignID)
+	if err != nil {
+		return nil, err
+	}
+	return &Stats{
+		Impressions: data.Reach + data.Impressions,
+		Clicks:      data.LinkClicks,
+		Conversions: data.Actions,
+		Spend:       data.Spend,
+	}, nil
+}
+
+func (a *MetaAdsAdapter) PauseCampaign(ctx context.Context, campaignID string) error {
+	return a.client.UpdateCampaignStatus(ctx, campaignID, "PAUSED")
+}
+
+// PlatformRegistry 平台注册表（工厂模式）
+type PlatformRegistry struct {
+	adapters map[string]AdPlatform
+}
+
+func NewPlatformRegistry() *PlatformRegistry {
+	return &PlatformRegistry{
+		adapters: make(map[string]AdPlatform),
+	}
+}
+
+func (r *PlatformRegistry) Register(p AdPlatform) {
+	r.adapters[p.Name()] = p
+}
+
+func (r *PlatformRegistry) Get(name string) (AdPlatform, error) {
+	p, ok := r.adapters[name]
+	if !ok {
+		return nil, fmt.Errorf("platform %s not registered", name)
+	}
+	return p, nil
+}
+```
+
+### 自测题
+
+<details>
+<summary>Q1: EventBus 的 Publish 中为什么单个 handler 失败不影响其他 handler？</summary>
+
+**答案**：
+
+**解耦原则**：观察者模式中，每个订阅者是独立的。一个 handler 失败不应该影响其他 handler——这是 **fault isolation** 的核心思想。
+
+**Trade-off**：
+- 优点：一个模块崩溃不影响其他模块
+- 缺点：需要每个 handler 自己做错误处理和重试
+
+生产环境用 goroutine 异步执行每个 handler，避免阻塞发布者。
+
+</details>
+
+<details>
+<summary>Q2: Adapter 模式的 convertToXXX 函数为什么不能省略？直接调用各平台 SDK 不行吗？</summary>
+
+**答案**：
+
+**核心目的**：**隔离变化**。
+
+| 方案 | 优点 | 缺点 |
+|------|------|------|
+| 直接调用 SDK | 简单 | 业务代码耦合各平台 API |
+| Adapter 模式 | 业务代码只依赖抽象接口 | 需要写转换代码 |
+
+广告平台有 4+ 个平台（Google/Meta/TikTok/Amazon），每个平台的 API 字段名、分页方式、认证方式都不同。Adapter 让上层业务代码完全不知道底层差异。
+
+</details>
+
+<details>
+<summary>Q3: Observer 模式中，如果订阅者数量巨大（10万+），Publish 的性能瓶颈在哪？如何优化？</summary>
+
+**答案**：
+
+**瓶颈**：串行遍历 10 万个 handler → O(n) 线性扫描。
+
+**优化方案**：
+```go
+// 方案1: 分片并行（推荐）
+// 将 subscribers 分成 N 个 shard，每个 shard 独立 goroutine 处理
+
+// 方案2: 异步发布
+// Publish 只把事件放入 channel，由 worker pool 消费
+
+// 方案3: 主题聚合
+// 相同 topic 的 handler 合并为 batch 处理
+
+// 方案4: 使用 fan-out queue（Kafka topic）
+// 替代内存中的 subscriber 列表
+```
+
+广告平台推荐方案2+4：事件入 Kafka，消费者组处理实际逻辑。
+
+</details>

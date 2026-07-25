@@ -139,3 +139,146 @@
 ### Q3: 英语语法四大核心？
 
 **A**: 句子结构、时态系统、非谓语动词、虚拟语气。
+
+---
+
+## Go 代码实战：领导力原则评估系统
+
+### 1. 领导力行为评估器
+
+```go
+package leadership
+
+import (
+	"context"
+	"strings"
+	"sync"
+)
+
+// Principle 领导力原则
+type Principle struct {
+	ID          string
+	Name        string
+	Description string
+	Behaviors   []Behavior
+}
+
+// Behavior 行为指标
+type Behavior struct {
+	ID          string
+	Description string
+	Score       int     // 1-5
+	Evidence    string
+}
+
+// LeaderProfile 领导者画像
+type LeaderProfile struct {
+	ID          string
+	Name        string
+	Role        string
+	Principles  map[string]float64 // principle_id -> score
+	Evaluations []Evaluation
+}
+
+// Evaluator 评估器（基于行为证据）
+type Evaluator struct {
+	principles map[string]*Principle
+	mu         sync.RWMutex
+}
+
+func NewEvaluator(principles []*Principle) *Evaluator {
+	e := &Evaluator{principles: make(map[string]*Principle)}
+	for _, p := range principles {
+		e.principles[p.ID] = p
+	}
+	return e
+}
+
+func (e *Evaluator) Evaluate(ctx context.Context, profile *LeaderProfile, evidence string) (*LeaderProfile, error) {
+	evidenceLower := strings.ToLower(evidence)
+	
+	scores := make(map[string]float64)
+	
+	for _, principle := range e.principles {
+		score := 0.0
+		matchCount := 0
+		
+		for _, behavior := range principle.Behaviors {
+			if strings.Contains(evidenceLower, strings.ToLower(behavior.Description)) {
+				score += float64(behavior.Score)
+				matchCount++
+			}
+		}
+		
+		if matchCount > 0 {
+			scores[principle.ID] = score / float64(len(principle.Behaviors))
+		} else {
+			scores[principle.ID] = -1 // 未评估
+		}
+	}
+	
+	profile.Principles = scores
+	profile.Evaluations = append(profile.Evaluations, Evaluation{
+		Evidence: evidence,
+		Scores:   scores,
+	})
+	
+	return profile, nil
+}
+
+type Evaluation struct {
+	Evidence string
+	Scores   map[string]float64
+}
+```
+
+### 自测题
+
+<details>
+<summary>Q1: Amazon 的 Leadership Principles 中哪个最难量化？为什么？</summary>
+
+**答案**：
+
+**Invent and Simplify（创新与简化）**最难量化——因为：
+1. "创新"是主观判断，没有明确的行为指标
+2. "简化"需要对比基线，难以证明
+3. 结果导向强于过程导向
+
+生产环境用 **360度评估 + 具体项目案例** 来弥补自动化评估的不足。
+
+</details>
+
+<details>
+<summary>Q2: 领导力评估为什么用 map[string]float64 而不是结构化字段？</summary>
+
+**答案**：
+
+**灵活性**：Amazon 有16条原则，每条可能需要不同的评估维度。map 允许动态扩展。
+
+但更好的设计是用 **枚举类型 + 结构体**：
+```go
+type Scores struct {
+	CustomerObsession    float64
+	InventSimplify       float64
+	// ...
+}
+```
+
+当前实现适合原型，生产环境用结构体更安全。
+
+</details>
+
+<details>
+<summary>Q3: Evidence-based evaluation 相比 self-assessment 有什么优势？</summary>
+
+**答案**：
+
+| 维度 | Self-assessment | Evidence-based |
+|------|----------------|----------------|
+| 偏差 | 高（self-serving bias） | 低（客观事实） |
+| 成本 | 低 | 高（需要收集证据） |
+| 可信度 | 中 | 高 |
+
+广告团队管理推荐 **Evidence-based 为主 + Self-assessment 为辅** 的混合模式。
+
+</details>

@@ -150,3 +150,235 @@ Podman 核心命令：
 ### Q3: 小店经营的关键策略？
 
 **A**: 定位（细分市场）、产品（精选 SKU）、营销（社群运营）、财务（成本控制）。
+
+---
+
+## Go 代码实战：容器化部署工具
+
+### 1. Container Image Builder
+
+```go
+package container
+
+import (
+	"context"
+	"fmt"
+	"os/exec"
+	"sync"
+)
+
+// ImageBuilder 镜像构建器
+type ImageBuilder struct {
+	contextPath string
+	dockerfile  string
+	tags        []string
+	mu          sync.Mutex
+}
+
+func NewImageBuilder(contextPath, dockerfile string, tags ...string) *ImageBuilder {
+	return &ImageBuilder{
+		contextPath: contextPath,
+		dockerfile:  dockerfile,
+		tags:        tags,
+	}
+}
+
+func (b *ImageBuilder) Build(ctx context.Context) error {
+	args := []string{"build", "-f", b.dockerfile}
+	for _, tag := range b.tags {
+		args = append(args, "-t", tag)
+	}
+	args = append(args, b.contextPath)
+	
+	cmd := exec.CommandContext(ctx, "podman", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("build failed: %w\noutput: %s", err, output)
+	}
+	
+	fmt.Printf("Built images: %v\n", b.tags)
+	return nil
+}
+
+func (b *ImageBuilder) Push(ctx context.Context, registry string) error {
+	for _, tag := range b.tags {
+		pullCmd := exec.CommandContext(ctx, "podman", "tag", tag, fmt.Sprintf("%s/%s", registry, tag))
+		if err := pullCmd.Run(); err != nil {
+			return fmt.Errorf("tag failed: %w", err)
+		}
+		
+		pushCmd := exec.CommandContext(ctx, "podman", "push", fmt.Sprintf("%s/%s", registry, tag))
+		output, err := pushCmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("push failed: %w\noutput: %s", err, output)
+		}
+	}
+	return nil
+}
+```
+
+### 2. Health Check System
+
+```go
+package health
+
+import (
+	"context"
+	"net/http"
+	"time"
+)
+
+// HealthChecker 健康检查器
+type HealthChecker struct {
+	endpoints []Endpoint
+	interval  time.Duration
+	results   map[string]HealthStatus
+	mu        sync.RWMutex
+}
+
+type Endpoint struct {
+	Name    string
+	URL     string
+	Method  string
+	Timeout time.Duration
+}
+
+type HealthStatus struct {
+	Endpoint string
+	Status   string // healthy, degraded, unhealthy
+	Latency  time.Duration
+	Error    error
+	CheckedAt time.Time
+}
+
+func NewHealthChecker(endpoints []Endpoint, interval time.Duration) *HealthChecker {
+	return &HealthChecker{
+		endpoints: endpoints,
+		interval:  interval,
+		results:   make(map[string]HealthStatus),
+	}
+}
+
+func (hc *HealthChecker) Start(ctx context.Context) error {
+	ticker := time.NewTicker(hc.interval)
+	defer ticker.Stop()
+	
+	for {
+		select {
+		case <-ticker.C:
+			hc.checkAll(ctx)
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+func (hc *HealthChecker) checkAll(ctx context.Context) {
+	var wg sync.WaitGroup
+	
+	for _, ep := range hc.endpoints {
+		wg.Add(1)
+		go func(endpoint Endpoint) {
+			defer wg.Done()
+			status := hc.checkOne(ctx, endpoint)
+			
+			hc.mu.Lock()
+			hc.results[endpoint.Name] = status
+			hc.mu.Unlock()
+		}(ep)
+	}
+	
+	wg.Wait()
+}
+
+func (hc *HealthChecker) checkOne(ctx context.Context, ep Endpoint) HealthStatus {
+	start := time.Now()
+	
+	req, err := http.NewRequestWithContext(ctx, ep.Method, ep.URL, nil)
+	if err != nil {
+		return HealthStatus{
+			Endpoint:  ep.Name,
+			Status:    "unhealthy",
+			Latency:   time.Since(start),
+			Error:     err,
+			CheckedAt: time.Now(),
+		}
+	}
+	
+	resp, err := http.DefaultClient.Do(req)
+	latency := time.Since(start)
+	
+	status := "healthy"
+	if resp != nil && resp.StatusCode >= 500 {
+		status = "degraded"
+	} else if resp == nil || err != nil {
+		status = "unhealthy"
+	}
+	
+	return HealthStatus{
+		Endpoint:  ep.Name,
+		Status:    status,
+		Latency:   latency,
+		Error:     err,
+		CheckedAt: time.Now(),
+	}
+}
+```
+
+### 自测题
+
+<details>
+<summary>Q1: Podman vs Docker 的核心区别是什么？为什么广告平台推荐 Podman？</summary>
+
+**答案**：
+
+| 特性 | Docker | Podman |
+|------|--------|--------|
+| 守护进程 | ✅ dockerd | ❌ 无守护进程（rootless） |
+| 安全性 | root 运行 | **rootless，更安全** |
+| K8s 兼容 | 需要迁移 | **原生支持 Kubernetes YAML** |
+| 进程管理 | systemd | systemd compatible |
+
+广告平台用 K8s 部署，Podman 直接生成 K8s YAML，零迁移成本。
+
+</details>
+
+<details>
+<summary>Q2: HealthChecker 的并发检查有什么风险？如何防止检查风暴？</summary>
+
+**答案**：
+
+**风险**：N 个 endpoint × M 个实例 = N×M 个并发请求，可能压垮被监控的服务。
+
+**防护方案**：
+```go
+// 方案1: 限流 goroutine
+sem := make(chan struct{}, 10) // 最多10个并发检查
+
+// 方案2: 分片检查（每片间隔50ms）
+// 方案3: 指数退避（连续失败时减少检查频率）
+```
+
+</details>
+
+<details>
+<summary>Q3: Container Image 的多阶段构建有什么好处？</summary>
+
+**答案**：
+
+```dockerfile
+# Stage 1: 构建
+FROM golang:1.22 AS builder
+WORKDIR /app
+COPY . .
+RUN go build -o main .
+
+# Stage 2: 运行
+FROM alpine:3.19
+COPY --from=builder /app/main /main
+CMD ["/main"]
+```
+
+**好处**：最终镜像只包含运行时依赖（~30MB），不包含编译工具链（~1GB）。广告平台 CI/CD 中每个微服务都采用多阶段构建。
+
+</details>

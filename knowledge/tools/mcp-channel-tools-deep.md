@@ -196,3 +196,198 @@ TikTok Ads 适配器：
 ### Q3: 工具调用的三步流程？
 
 **A**: 请求处理（参数解析/验证/路由）、执行引擎（权限检查/工具执行/结果处理）、响应处理（错误处理/日志记录/返回结果）。
+
+---
+
+## Go 代码实战：MCP 通道与工具注册
+
+### 1. MCP Stdio 传输层实现
+
+```go
+package mcp
+
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"sync"
+)
+
+// StdioTransport stdio 传输层（MCP 默认传输）
+type StdioTransport struct {
+	stdin  io.Reader
+	stdout io.Writer
+	mu     sync.Mutex
+}
+
+func NewStdioTransport() *StdioTransport {
+	return &StdioTransport{
+		stdin:  os.Stdin,
+		stdout: os.Stdout,
+	}
+}
+
+func (t *StdioTransport) ReadMessage() (*Message, error) {
+	reader := bufio.NewReader(t.stdin)
+	
+	// 读取 Content-Length header
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return nil, err
+	}
+	
+	// 解析 Content-Length: <number>
+	var length int
+	fmt.Sscanf(line, "Content-Length: %d", &length)
+	
+	// 读取空行分隔符
+	reader.ReadString('\n')
+	reader.ReadString('\n')
+	
+	// 读取 JSON body
+	body := make([]byte, length)
+	io.ReadFull(reader, body)
+	
+	var msg Message
+	if err := json.Unmarshal(body, &msg); err != nil {
+		return nil, err
+	}
+	
+	return &msg, nil
+}
+
+func (t *StdioTransport) WriteMessage(msg *Message) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+	
+	fmt.Fprintf(t.stdout, "Content-Length: %d\r\n\r\n", len(data))
+	t.stdout.Write(data)
+	t.stdout.Write([]byte{'\r', '\n'})
+	
+	return nil
+}
+```
+
+### 2. 工具注册中心
+
+```go
+package registry
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"sync"
+)
+
+// ToolRegistry 工具注册中心
+type ToolRegistry struct {
+	mu       sync.RWMutex
+	tools    map[string]*RegisteredTool
+	schemas  map[string]json.RawMessage // name -> JSON Schema
+}
+
+type RegisteredTool struct {
+	Name        string
+	Description string
+	InputSchema json.RawMessage
+	Version     string
+	Category    string
+	Handler     func(context.Context, json.RawMessage) (json.RawMessage, error)
+	Metadata    map[string]interface{}
+}
+
+func NewToolRegistry() *ToolRegistry {
+	return &ToolRegistry{
+		tools:   make(map[string]*RegisteredTool),
+		schemas: make(map[string]json.RawMessage),
+	}
+}
+
+func (r *ToolRegistry) Register(tool *RegisteredTool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	
+	if _, exists := r.tools[tool.Name]; exists {
+		return fmt.Errorf("tool already registered: %s", tool.Name)
+	}
+	
+	r.tools[tool.Name] = tool
+	r.schemas[tool.Name] = tool.InputSchema
+	return nil
+}
+
+func (r *ToolRegistry) Call(ctx context.Context, name string, args json.RawMessage) (json.RawMessage, error) {
+	r.mu.RLock()
+	tool, ok := r.tools[name]
+	r.mu.RUnlock()
+	
+	if !ok {
+		return nil, fmt.Errorf("tool not found: %s", name)
+	}
+	
+	return tool.Handler(ctx, args)
+}
+
+func (r *ToolRegistry) List() []*RegisteredTool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	
+	result := make([]*RegisteredTool, 0, len(r.tools))
+	for _, tool := range r.tools {
+		result = append(result, tool)
+	}
+	return result
+}
+
+func (r *ToolRegistry) GetSchema(name string) (json.RawMessage, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	schema, ok := r.schemas[name]
+	return schema, ok
+}
+```
+
+### 自测题
+
+<details>
+<summary>Q1: MCP Stdio 传输的 Content-Length header 为什么是必需的？</summary>
+
+**答案**：
+
+**问题**：JSON 消息可能包含任意字符（包括换行符），stdin 是字节流，无法从内容本身判断消息边界。
+
+**Content-Length 的作用**：告诉客户端要读多少字节才是完整消息。这是 HTTP/1.1 也用的技术——在二进制协议中解决文本消息的定界问题。
+
+</details>
+
+<details>
+<summary>Q2: ToolRegistry 的 Register 为什么用锁而 Call 用 RLock？</summary>
+
+**答案**：
+
+**读写锁优化**：
+- Register 写操作少（初始化时调用一次）→ 用 Lock
+- Call 读操作多（每次工具调用都读）→ 用 RLock，允许多个并发调用
+
+这是标准的 **read-heavy workload** 优化模式。
+
+</details>
+
+<details>
+<summary>Q3: MCP 的 InputSchema 为什么用 JSON Schema 而不是 Go struct？</summary>
+
+**答案**：
+
+**跨语言兼容**：MCP 是协议层标准，客户端可能是 Python、Node.js 等。JSON Schema 是通用描述格式，所有语言都能解析。
+
+Go struct 只能在 Go 内部使用，无法序列化到协议层。JSON Schema 让 Agent 可以在运行时动态理解工具的参数结构。
+
+</details>
