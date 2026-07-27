@@ -416,6 +416,67 @@ func (e *ExecutionEngine) executeParallelNode(ctx context.Context, node *Node) e
 
 ---
 
+
+---
+
+## 第六部分：自测题
+
+### 问题 1
+Graph Agent 工作流编排中，条件节点如何实现分支逻辑？
+
+<details>
+<summary>查看答案</summary>
+
+1. **条件表达式**：使用 Go template 语法 `{{.field > threshold}}` 判断上下文变量
+2. **多路分支**：支持 if/else if/else，不同边连接后续节点
+3. **执行短路**：任一条件为 true 跳过其余检查，直接走匹配路径
+4. **变量传递**：分支继承前序节点输出变量用于条件计算
+5. **默认分支**：所有条件不匹配时走 else 或报错
+
+关键：条件节点只读不写上下文，纯根据当前值决定流向。
+</details>
+
+### 问题 2
+工具节点架构如何设计才能支持热插拔和沙箱隔离？
+
+<details>
+<summary>查看答案</summary>
+
+1. **统一接口**：`type Tool interface { Execute(context.Context, input) (interface{}, error) }`
+2. **注册表**：启动时扫描插件目录，自动注册实现类到全局 registry
+3. **动态加载**：支持 runtime 加载/卸载工具，无需重启服务
+4. **参数验证**：用 JSON Schema 校验输入，自动映射函数参数
+5. **资源限制**：每个工具配置 CPU/内存上限，超出终止
+6. **超时控制**：设置最大执行时间，超时强制 kill
+7. **安全沙箱**：网络访问白名单，文件系统只读挂载
+
+典型实现：biddingTool、creativeTool、monitoringTool 等各自独立。
+</details>
+
+### 问题 3
+可视化编排器如何将图形交互转换为可执行的工作流定义？
+
+<details>
+<summary>查看答案</summary>
+
+1. **状态管理**：Redux/Vuex 维护节点集合 [id, type, pos] 和边列表 [from, to]
+2. **拓扑排序**：导出时按依赖顺序生成节点序列确保合法执行顺序
+3. **循环检测**：构建有向图后运行 DFS 环检测，发现 cycle 阻止保存
+4. **反向渲染**：从工作流 JSON 还原图形节点，自动布局避开重叠
+5. **schema 版本**：{ "version": "1.0", "workflow": { "name", "nodes", "edges" } }
+6. **预览模拟**：dry-run 模式走一遍数据流，高亮显示每条边触发情况
+7. **导出兼容**：支持导出 YAML/JSON，可直接部署到生产环境
+
+```json
+{
+  "workflow": {
+    "name": "ad_optimization",
+    "nodes": [{"id": "start", "type": "start"}, {"id": "detect", "type": "tool"}],
+    "edges": [{"from": "start", "to": "detect", "condition": ".score > 0.8"}]
+  }
+}
+```
+</details>
 ## 第七部分：总结
 
 | 组件 | 描述 | 示例 |

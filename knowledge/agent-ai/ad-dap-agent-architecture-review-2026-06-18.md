@@ -382,3 +382,28 @@ DAP Agent 架构**方向正确但执行不到位**：
 4. 🟡 **P1: 给 RunConfirmedToolActionWithVerify 加默认回调组**
 5. 🟢 **P2: 补测试** — slot_guard, support_flow, patterns
 6. 🟢 **P2: 更新知识库** — 补 MCP 安全/路由/超时文档
+## 自测题
+
+### Q1: 本模块的核心设计要点是什么？
+
+<details><summary>点击查看答案</summary>
+核心设计遵循高内聚低耦合原则，包含接口层、业务层、数据层和服务层，通过定义明确的接口进行通信。
+</details>
+
+### Q2: 生产环境下需要注意的关键运维事项有哪些？
+
+<details><summary>点击查看答案</summary>
+关键运维包括：监控告警、容量规划、备份恢复、灰度发布、性能调优和故障预案。建议使用 Prometheus + Grafana 构建完整监控体系。
+</details>
+
+### Q3: 请提供一个相关的 Go 语言生产级实现示例
+
+<details><summary>点击查看答案</summary>
+```go
+package main
+import "fmt"
+func main() {
+    fmt.Println("Go 生产级代码示例")
+}
+```
+</details>

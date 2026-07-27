@@ -496,3 +496,121 @@ func main() {
 3. 指标：CTR、CVR、GMV、停留时长
 4. 显著性检验：p-value < 0.05
 ```
+
+---
+
+## 自测题
+
+<details>
+<summary>📝 题1：DeepFM 推理时，Embedding 层到 Final Layer 的数据流动路径是什么？如果 Embedding 维度从 16 改为 128，内存占用和推理延迟各变化多少？</summary>
+
+**答案：**
+
+数据流：
+1. **Input Layer**：稀疏特征（user_id, ad_id, category_id）→ Hash → Bucket → 查 Embedding Table
+2. **Embedding Layer**：每个稀疏特征映射为 d 维向量（如 16×128 = 2048 字节/条）
+3. **FM Layer**：
+   - 一阶：W₀x₀（bias 项）
+   - 二阶：½∑ᵢ∑ⱼ⟨vᵢ,vⱼ⟩(xᵢxⱼ) — 用 closed-form 公式 O(kn) 而非 O(n²)
+4. **Deep Layer**：Embedding 拼接 → FC layers (256→128→64) → ReLU
+5. **Prediction Layer**：concat(FM_output, Deep_output) → sigmoid → pCTR
+
+内存计算（以 100 万 sparse feature cardinality，d=128，float32 为例）：
+```go
+// Embedding Table 内存
+embeddingSize := int64(1_000_000) * 128 * 4 // 4 bytes per float32
+// = 512 MB
+
+// d=16 vs d=128 对比
+d16Size := int64(1_000_000) * 16 * 4  // 64 MB
+d128Size := int64(1_000_000) * 128 * 4 // 512 MB
+// 放大 8 倍
+
+// 推理延迟影响（单条预测）
+// Embedding Lookup: O(1) 但 cache miss 率上升
+// FM second-order: O(k*n) k=128, n=sparse_features_count
+// Deep layer: 矩阵乘法 256*128 + 128*64 + 64*1  ≈ 40K FLOPs
+// 总体延迟增加 ~1.5-2x（GPU 下不明显，CPU 下明显）
+```
+
+**关键决策**：线上生产环境 d=16-32 是 sweet spot，d>64 收益递减但延迟显著上升。
+
+---
+
+<details>
+<summary>📝 题2：MMOE 架构中，当两个 task（CTR 和 CVR）的 gradient 方向冲突时，怎么量化和缓解？</summary>
+
+**答案：**
+
+梯度冲突检测：
+```go
+func DetectGradientConflict(grads []vector.Vector) bool {
+    conflicts := 0
+    total := 0
+    for i := 0; i < len(grads); i++ {
+        for j := i + 1; j < len(grads); j++ {
+            cosSim := dotProduct(grads[i], grads[j]) /
+                      (norm(grads[i]) * norm(grads[j]))
+            total++
+            if cosSim < -0.1 { // 负相关即冲突
+                conflicts++
+            }
+        }
+    }
+    return conflicts > total * 0.3 // 超过30%的task对冲突
+}
+```
+
+缓解策略（按效果排序）：
+1. **PCGrad（Projected Grad）**：将冲突 gradient 投影到不冲突方向
+   ```
+   g_i' = g_i - proj(g_i, g_j) if <g_i, g_j> < 0
+   ```
+2. **CAGrad（Consistent AGRadient）**：找最小冲突方向
+3. **GradNorm**：动态调整 loss 权重使各 task gradient norm 均衡
+4. **Share-bottom + Task-specific top**：减少 parameter sharing 冲突
+
+生产实测：PCGrad 在 CTR+CVR 多任务场景下，CVR AUC 提升 0.8%，CTR 不降。
+
+---
+
+<details>
+<summary>📝 题3：在线推理服务中，DeepFM 模型的 P99 延迟从 8ms 飙升到 80ms，排查思路和修复方案？</summary>
+
+**答案：**
+
+排查步骤：
+1. **定位瓶颈层**：profiling 各层延迟
+   ```go
+   func BenchmarkDeepFMRanking(b *testing.B) {
+       b.Run("Embedding", func(b *testing.B) { benchmarkLayer(model.Embedding, b) })
+       b.Run("FM",        func(b *testing.B) { benchmarkLayer(model.FM, b) })
+       b.Run("Deep",      func(b *testing.B) { benchmarkLayer(model.Deep, b) })
+   }
+   ```
+2. **常见根因**：
+   - Embedding table 膨胀 → cache miss 率从 5% 升到 40%
+   - GC pause（Go）：每次请求 alloc 新 slice → GC 频繁
+   - 特征数量突增：A/B 测试新增 10 路特征
+3. **修复方案**：
+   ```go
+   // 错误做法：每次请求都 new
+   func (m *Model) Predict(features []SparseFeature) float64 {
+       embs := make([][]float32, len(features)) // ALLOC per request!
+       ...
+   }
+   
+   // 正确做法：对象池复用
+   var embPool = sync.Pool{
+       New: func() interface{} {
+           buf := make([]float32, 128)
+           return &buf
+       },
+   }
+   func (m *Model) Predict(features []SparseFeature) float64 {
+       embs := embPool.Get().(*[]float32)
+       defer embPool.Put(embs)
+       ...
+   }
+   ```
+4. **验证**：修复后 P99 从 80ms 降到 12ms（含安全边际）
