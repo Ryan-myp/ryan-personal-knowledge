@@ -116,3 +116,15 @@ Go 的 channel 在 Multi-Agent 通信中为什么比共享内存更安全？
 4. 消息传递天然支持异步和解耦
 
 </details>
+### 问题 3
+多 Agent 通信中如何保证消息顺序的一致性？
+
+<details>
+<summary>查看答案</summary>
+
+1. **单 channel 顺序**：同一个 receiver 使用单一 channel，go 保证 FIFO 交付顺序
+2. **带序号的消息**：每条消息携带 sequence number，receiver 按序重组乱序到达的包
+3. **sharded channel**：按 message.key hash 分到不同 channel，相同 key 的消息必走同 channel 保序
+4. **Barrier 同步**：在关键处理阶段使用 sync.WaitGroup 确保所有 agent 完成上一步再进入下一步
+5. **日志重放**：所有消息写入持久化 log，系统重启后可从最后已处理的 sequence 号重放恢复状态
+</details>

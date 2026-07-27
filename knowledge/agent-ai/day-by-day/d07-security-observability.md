@@ -144,3 +144,15 @@ Go 的 pprof 和自定义 Tracer 在 Agent 监控中各有什么作用？
 4. Tracer 适合排查业务问题（哪个 step 卡住了、哪个 tool 失败了）
 
 </details>
+### 问题 3
+Agent 执行过程中的敏感信息如何脱敏？
+
+<details>
+<summary>查看答案</summary>
+
+1. **红队测试**：定期用潜在有毒 query 测试 Agent，检查是否输出 PII（个人身份信息）或敏感数据
+2. **输出过滤**：正则表达式匹配 credit card number、phone number、email 等模式，发现即替换为 [REDACTED]
+3. **输入过滤**：user input 中包含敏感字段时提前拦截或标记为 high risk 需要 review
+4. **审计日志**：所有 input/output 记录到 immutable audit log，支持事后追溯和责任认定
+5. **权限隔离**：不同 role 的 Agent 可见不同数据范围，service account 遵循 least privilege 原则
+</details>

@@ -118,3 +118,17 @@ Agent 主循环中 `planAction` 返回 "finalize" 代表什么？
 4. 这是 ReAct 模式的终止条件之一
 
 </details>
+### 问题 3
+Agent 系统的可观测性监控指标应该包括哪些？
+
+<details>
+<summary>查看答案</summary>
+
+1. **吞吐率**：每秒处理的 request 数（QPS），反映系统承载能力
+2. **延迟分布**：P50/P90/P99 响应时间，定位慢请求和瓶颈
+3. **错误率**：failure / total ratio，异常比例过高需及时告警
+4. **tool 利用率**：各个 tool 被调用的频次，发现 hot paths 优化热点
+5. **memory 使用量**：Agent 会话占用的内存，防止泄漏和 OOM
+6. **token 用量**：每个 request 消耗的前向/后向 token，监控 cost 趋势
+7. **react 循环深度**：平均 step 数，过深可能表示 plan 困难或 tool 不够好
+</details>

@@ -406,3 +406,15 @@ func (idx *FTSIndex) Search(sessionID, query string, limit int) ([]*MemoryEntry,
 	
 	return entries, rows.Err()
 }
+### 问题 3
+Agent Memory 与外部存储（如 Redis）同步时的容错策略是什么？
+
+<details>
+<summary>查看答案</summary>
+
+1. **写入确认**：Redis SET 返回成功才认为内存持久化完成，失败则回滚本地变更
+2. **异步队列**：主线程将写操作放入缓冲队列，后台 Worker 批量刷入 Redis，避免阻塞
+3. **死信队列**：持续失败的记录进入 dead letter queue，人工介入排查而非无限重试
+4. **版本戳**：每个内存条目附带版本号，写 Redis 时比较 version 防止覆盖更新
+5. **熔断机制**：Redis 连续 N 次失败时触发熔断，暂停同步并告警，恢复后重放队列中积压项
+</details>

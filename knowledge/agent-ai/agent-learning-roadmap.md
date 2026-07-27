@@ -100,3 +100,14 @@ func main() {
 	fmt.Printf("Progress: %d/%d milestones done\n", done, total)
 }
 ```
+### 问题 3
+路线图的状态机如何实现阶段推进？
+
+<details>
+<summary>查看答案</summary>
+
+1. **顺序依赖**：phase n 必须在 phase n-1 完成后才能 unlock，防止跳跃式学习
+2. **前置条件检查**：每个阶段有 prerequisite（如 prerequisite_function 返回 true 才允许进入）. **自动检测**：scan user workspace detect completed artifacts（如 built binary / written test）自动 mark as done
+4. **手动 override**：对于特殊情况 allow admin force complete， bypass 自动检查但需 logged
+5. **回溯修正**：如果发现某阶段知识掌握不牢固，允许 rollback 到 previous stage 重新学习
+</details>

@@ -397,3 +397,15 @@ Go 的 `context.Context` 在 Agent 系统中为什么比直接用 `chan` 更合�
 chan 更适合并发数据流，Context 更适合请求级生命周期管理。Agent 的 RunReact 需要的是请求级管理，所以 Context 更合适。
 
 </details>
+### 问题 3
+Retrieval 阶段如何判断文档片段与 query 的相关性？
+
+<details>
+<summary>查看答案</summary>
+
+1. **向量相似度**：计算 query embedding 与各 document chunk embedding 的 cosine similarity
+2. **阈值过滤**：相似度低于阈值（如 0.5）的片段直接过滤，不进入 generation 阶段
+3. **多径检索**：同时用关键词（BM25）和向量搜索取 union，召回更多相关片段
+4. **重排序**：先用粗筛召回 top-K，再用 cross-encoder 重新打分选出 top-N
+5. **上下文裁剪**：超过 model window 长度的片段按 sliding window 切分，每个 chunk 独立评分
+</details>

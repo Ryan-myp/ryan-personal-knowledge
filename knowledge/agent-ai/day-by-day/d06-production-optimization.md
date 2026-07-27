@@ -115,3 +115,15 @@ Go 的 Cache 结构中 TTL 过期策略为什么不用定期清理？
 4. 缺点是内存中可能有短暂过期的数据，但通常可接受
 
 </details>
+### 问题 3
+生产环境 Agent 的超时控制策略是怎样的？
+
+<details>
+<summary>查看答案</summary>
+
+1. **per-step timeout**：每个 tool execution 设置 deadline context，超时强制取消并记录
+2. **total timeout**：整个 Run 过程设最大耗时限制，超限则返回 partial result 或 cancel
+3. **retry budget**：对 transient errors 允许最多 N 次 retry，超出则放弃并告警
+4. **circuit breaker**：某个 tool 连续失败次数超过阈值，暂时切断调用并快速失败，之后试探性恢复
+5. **降级方案**：关键路径超时返回 cached fallback value 或 default response，保证服务可用性优先强一致性
+</details>

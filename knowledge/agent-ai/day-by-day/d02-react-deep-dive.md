@@ -107,3 +107,15 @@ ReAct 模式中的 Thought 和 Observation 分别存在哪里？
 4. 实际系统中，Thought/Observation 也常存入日志系统用于调试
 
 </details>
+### 问题 3
+React Agent 的记忆 memory 如何实现结构化存储？
+
+<details>
+<summary>查看答案</summary>
+
+1. **Memo 切片**：每次 Observation 追加到 []string memo 切片，按时间顺序保存历史
+2. **结构化摘要**：定期将原始 memo summary 成 structured format（key-value pairs），减少 token 消耗
+3. ** relevance ranking**：给每个 memo 打分，按重要性排序，在上下文窗口满时优先保留高得分项
+4. **TTL 过期**：老记忆自动过期，避免记忆无限增长导致 context overflow
+5. **外部存储**：长-term memory 存入数据库（SQLite/Redis），short-term memory 存在内存中快速访问
+</details>

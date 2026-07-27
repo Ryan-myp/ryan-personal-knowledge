@@ -138,3 +138,16 @@ Go 的 vector search 中为什么用线性扫描而不是哈希？
 4. 大规模向量库会用 HNSW、IVF 等近似算法
 
 </details>
+### 问题 3
+RAG 系统中向量数据库选型的关键考量因素有哪些？
+
+<details>
+<summary>查看答案</summary>
+
+1. **查询延迟**：P99 延迟需满足实时要求（通常 < 100ms），影响用户体验
+2. **吞吐量**：QPS 能力是否能支撑峰值流量，是否需要水平扩展
+3. **索引类型**：HNSW/IVF-PQ/LSH 等不同算法在精度和速度上的 trade-off
+4. **距离度量**：cosine/similarity/euclidean distance 哪种更适合当前 embedding 模型
+5. **持久化恢复**：崩溃后能否快速 reload 索引，在线扩容是否无需停机
+6. **生态集成**：是否支持 Python/Go SDK，是否与 LangChain/LlamaIndex 等框架兼容
+</details>

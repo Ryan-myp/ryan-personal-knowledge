@@ -524,3 +524,15 @@ TF-IDF 关键词提取中，为什么需要停用词表？
 停用词（the, a, is 等）出现频率极高但不携带区分性语义。不加过滤的话，它们会占据 top-N 名额。去掉停用词后，真正有区分度的关键词才能浮现。
 
 </details>
+### 问题 3
+知识卡片提取中的实体识别如何工作？
+
+<details>
+<summary>查看答案</summary>
+
+1. **命名实体识别（NER）**：使用 spaCy / HuggingFace Transformers 抽取人名、组织名、日期、数值等实体
+2. **关系抽取**：识别实体之间的关系（如 "A 公司的 CEO 是 B" → relation: CEO_of，subject: A，object: B）
+3. **关键词提取**：TF-IDF/BM25/TextRank 提取文本中最能代表主题的关键词作为 tag
+4. **摘要生成**：对长文档生成 sentence-based 或 extractive summary 作为 knowledge card 的 concise description
+5. **分类标注**：将 extracted knowledge 分类到预设 taxonomy（如 advertising/agent-ai/fullstack 等目录）
+</details>

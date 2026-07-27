@@ -106,3 +106,15 @@ func (t *mock) Execute(ctx context.Context, input string) (string, error) {
 	return "RAG combines retrieval and generation", nil
 }
 ```
+### 问题 3
+如何设计 React Agent 的 Tool 注册机制？
+
+<details>
+<summary>查看答案</summary>
+
+1. **注册表模式**：维护 map[string]Tool，通过 Register(name tool) 函数添加新工具
+2. **接口最小化**：Tool 接口只需 Name() 和 Execute()，实现灵活扩展
+3. **并发安全**：注册时使用 sync.RWMutex 保护 map 写操作，读操作无锁
+4. **动态加载**：支持 runtime plugin 机制，热插拔新工具而不重启 Agent
+5. **元数据扩展**：额外提供 Description(), ParamSchema() 等可选方法供 UI 展示
+</details>

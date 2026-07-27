@@ -510,3 +510,15 @@ func (cw *ConcurrentWriter) GetWriter(sessionID string) (*MemoryStore, error) {
 	return store, nil
 }
 ```
+### 问题 3
+会话内存清理中的 LRU 算法如何实现？
+
+<details>
+<summary>查看答案</summary>
+
+1. **双向链表 + Hash Map**：map[sessionID]*ListNode + doubly linked list，实现 O(1) 查找和移动
+2. **访问即置顶**：每次 Get/LRU 命中时将对应节点移到链表头部（最常用）
+3. **尾部驱逐**：当容量超限时，删除链表尾部的 Least Recently Used 节点
+4. **容量管理**：maxEntries 参数控制最大条数，溢出时自动触发 prune
+5. **并发安全**：使用 sync.Mutex 保护链表结构，读写分离可用 sync.RWMutex
+</details>

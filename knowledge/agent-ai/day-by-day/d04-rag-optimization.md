@@ -116,3 +116,16 @@ Go 中怎么实现高效的 Reranking？
 4. 可以缓存 rerank 结果，相同 query 复用
 
 </details>
+### 问题 3
+RAG 的分块策略如何影响最终生成质量？
+
+<details>
+<summary>查看答案</summary>
+
+1. **块大小过大**：包含无关信息干扰 model attention，增加 token 成本和不必要噪声
+2. **块大小过小**：割裂上下文语义，model 无法理解碎片化内容的完整含义
+3. **固定长度分块**：按字符数/token 数切分简单粗暴，但可能切开句子破坏语义完整性
+4. **语义感知分块**：按段落/章节/自然边界切分，保持内容完整性，实现更好 recall
+5. **重叠分块**：相邻块之间保留 overlap（如 10%），确保跨越边界的关键词能被召回
+6. **层次化检索**：先 coarse 检索找到 relevant sections，再在这些 section 内 fine 检索到具体 chunks
+</details>
