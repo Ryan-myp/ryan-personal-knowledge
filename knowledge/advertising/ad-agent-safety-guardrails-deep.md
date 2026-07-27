@@ -709,6 +709,21 @@ func (m *Monitor) SendAlert(entry AuditEntry) {
    - 收紧相关参数校验规则
    - 降低敏感操作的频率限制
    - 增加人工审批环节
+
+### 问题 3
+如何防止 Agent 执行越权操作？
+
+<details>
+<summary>查看答案</summary>
+
+1. **指令白名单**：Agent 只能调用预注册的工具列表，unregistered tool 被拦截
+2. **参数校验**：每个工具的参数有类型/范围约束，超出即 reject
+3. **沙箱环境**：Agent 在受限容器中运行，无文件系统写权限，网络出口限制
+4. **人类回路**：涉及 budget 修改/campaign deletion 等高敏感操作需 human approval
+5. **行为审计**：所有 agent action 记录到 immutable log，支持事后回放和合规检查
+
+</details>
+
 </details>
 
 ---

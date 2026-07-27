@@ -288,6 +288,21 @@ func (fps *FloorPriceStrategy) Calculate(slotID, advertiserID int64) float64 {
 3. **个性化底价**：根据广告主出价能力调整
 4. **目标**：平衡填充率和收入
 5. **实现**：根据广告位 + 广告主动态计算
+
+### 问题 3
+SSP 侧填充率低的根本原因是什么？
+
+<details>
+<summary>查看答案</summary>
+
+1. **水falls 过低**：Header bidding waterfall 的底价设置太高，few bidders able to meet reserve
+2. **Bidder 覆盖不足**：接入的 Ad Exchange / DSP 数量有限，市场竞争不充分
+3. **Inventory 质量差**：页面内容敏感或不适合广告，brand safety filter 过滤掉优质 bidder
+4. **Ad 位布局不佳**：屏幕外的 fold below 位几乎无人报价，黄金位置太少
+5. **优化方案**：使用 dynamic floor pricing 实时调整每 impression 的 reserve price，引入程序化直接交易（PD）保底收入
+
+</details>
+
 </details>
 
 ---

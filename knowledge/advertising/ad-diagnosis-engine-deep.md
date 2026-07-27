@@ -853,6 +853,21 @@ func (de *DiagnosisEngine) GenerateSuggestions(problems []Problem) []string {
 5. **根因分析**：找到最关键的问题
 6. **生成建议**：给出解决建议
 7. **输出报告**：包含问题/根因/建议/指标趋势
+
+### 问题 3
+诊断引擎如何快速定位根因？
+
+<details>
+<summary>查看答案</summary>
+
+1. **并行检查**：5 大模块（展示/点击/计费/投放/创意）同时异步执行检查，不阻塞主流程
+2. **依赖图分析**：构建服务调用关系图，从 symptom 节点反向遍历找可能的 root cause
+3. **置信度评分**：每条检查规则返回 confidence score（0-1），超过阈值则标记为可疑点
+4. **关联分析**：将检查日志与 Prometheus 指标、ELK 日志关联，发现多维度异常的相关性
+5. **推荐修复**：基于历史故障库匹配相似 pattern，自动生成修复建议文档和操作命令
+
+</details>
+
 </details>
 
 ---

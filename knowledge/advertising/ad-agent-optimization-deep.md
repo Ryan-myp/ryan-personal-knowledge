@@ -707,6 +707,21 @@ ReAct 模式在广告 Agent 中如何工作？
 3. **Observation**: 工具返回结果
 4. **Repeat**: 重复直到达成目标
 5. **最大迭代**: 防止无限循环
+
+### 问题 3
+Agent 优化的监控指标体系如何构建？
+
+<details>
+<summary>查看答案</summary>
+
+1. **过程指标**：每秒处理的 optimization cycle 数（OPS）、单次迭代耗时、memory footprint
+2. **效果指标**：优化后 campaign 的 CPA 下降百分比、ROAS 提升幅度、budget utilization rate
+3. **稳定性指标**：优化跳动的方差、策略漂移检测（KL divergence 前后策略分布）、异常 rollback 次数
+4. **公平性指标**：不同 size advertiser 的优化效果是否公平，避免大 advertiser 垄断优化资源
+5. **可解释性指标**：每个优化动作的 explanation score（feature importance SHAP values），便于人工审核信任代理决策
+
+</details>
+
 </details>
 
 ---

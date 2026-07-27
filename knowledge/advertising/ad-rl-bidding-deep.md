@@ -525,6 +525,21 @@ RL 出价系统如何保证安全？
 3. **CPA 限制**：CPA 不超过目标的 1.5 倍
 4. **安全降级**：触发约束时降级到传统策略
 5. **A/B 测试**：小流量测试新策略
+
+### 问题 3
+强化学习出价中 reward 函数如何设计？
+
+<details>
+<summary>查看答案</summary>
+
+1. **即时 reward**：获得 conversion 时奖励 conversion_value - ad_cost，否则奖励 -cost
+2. **时序衰减**：使用 discounted return γ^t * r_t，长期转化给予适当权重衰减
+3. **正则项**：加入 penalty term 防止出价波动过大（∑(Δbid)²）保持稳定性
+4. **探索奖励**：在 exploration 阶段额外给予 small bonus encourage 尝试新策略
+5. **归因修正**：多触点归因模型（如 Shapley value）分配 credit 给各个曝光点，避免单次转化低估长期价值
+
+</details>
+
 </details>
 
 ---

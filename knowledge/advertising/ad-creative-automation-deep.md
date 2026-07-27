@@ -619,6 +619,21 @@ func (ts *ThompsonSampling) AutoEliminate(threshold float64) []string {
 4. **自动淘汰**：
    - CTR 低于阈值的变体自动淘汰
    - 释放流量给更好的变体
+
+### 问题 3
+自动化创意流水线中的质量控制如何实施？
+
+<details>
+<summary>查看答案</summary>
+
+1. **预生成校验**：AI 生成后先 run static analysis（OCR 文字识别、图像尺寸合规、brand color check）再进入人工审核
+2. **A/B 测试分流**：将新创意随机分组投放小流量（5%），对比 baseline CTR 达标后才进入主流水线
+3. **人工抽检比例**：根据 AI 置信度分层，高置信度 1% 抽检，中置信度 10%，低置信度 100% 人工审核
+4. **负面反馈闭环**：用户对创意的 skip/report 行为记录到 feedback DB，定期 retrain generator 模型
+5. **版本回滚机制**：一旦发现生成质量下降（CTR 低于阈值），自动回退到上一个 stable model checkpoint
+
+</details>
+
 </details>
 
 ---

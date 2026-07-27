@@ -274,6 +274,22 @@ eCPM 下降如何排查？
 3. 查流量质量：新用户占比？
 4. 查竞争环境：行业 eCPM？
 5. 查近期变更：出价/创意/定向？
+
+### 问题 3
+零展示问题的排查步骤是什么？
+
+<details>
+<summary>查看答案</summary>
+
+1. **检查 Campaign 状态**：确认处于 active 而非 paused/draft/expired 状态
+2. **Budget 检查**：daily budget 是否已 spend 完，remaining_budget > 0？
+3. **Targeting 验证**：geo/location/age/demographics 设置是否过于窄，导致无匹配人群
+4. **审核状态**：creative 是否通过审核（approved）还是 pending/rejected
+5. **竞争环境**：同时段同目标的竞价对手是否过多，eCPM 不够高未胜出
+6. **技术链路**：追踪 ID 是否存在，bid request 是否正确发送到 exchange，bid response 是否到达
+
+</details>
+
 </details>
 
 ---

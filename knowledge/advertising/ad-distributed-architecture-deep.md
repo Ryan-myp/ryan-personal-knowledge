@@ -734,6 +734,21 @@ Kafka 分区策略怎么选？
 2. **击穿**：互斥锁 + 永不过期
 3. **雪崩**：TTL 加随机值 + 多级缓存
 4. **一致性**：Cache-Aside + 延迟双删
+
+### 问题 3
+分布式系统中如何处理时钟同步问题？
+
+<details>
+<summary>查看答案</summary>
+
+1. **NTP 同步**：网络时间协议将本地时钟同步到精度毫秒级的时间服务器
+2. **Logical Clocks**：Lamport 单调递增的 Logical Timestamp，用于事件排序但不反映物理时间
+3. **Vector Clocks**：[process_id, timestamp] 向量，能够检测因果性和并发冲突
+4. **TrueTime**：Google Spanner 使用 GPS+原子钟提供带误差界的真实时间区间
+5. **Hybrid Time**：结合 NTP 物理时间和 Logical 逻辑时间，兼顾可用性和强一致性
+
+</details>
+
 </details>
 
 ---

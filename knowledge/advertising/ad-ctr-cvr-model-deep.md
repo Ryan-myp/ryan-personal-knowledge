@@ -523,6 +523,21 @@ func (me *ModelEvaluator) calculateAUC(predictions, actuals []float64) float64 {
 3. **PSI**：特征稳定性，< 0.1 稳定
 4. **Lift**：提升效果，> 1 有效
 5. **线上指标**：eCPM 提升
+
+### 问题 3
+CTR 模型训练中如何解决特征稀疏性问题？
+
+<details>
+<summary>查看答案</summary>
+
+1. **Embedding Layer**：将 categorical feature（user_id, ad_id）映射到低维 dense vector 表示
+2. **Feature Hashing**：使用 Hash Trick 将高维特征映射到固定长度的 hash space，减少内存
+3. **Hierarchical Softmax**：用 Huffman 树替代全 softmax，将 O(V) 降为 O(log V)，V 是类别数
+4. **Negative Sampling**：训练时只采样负例而非遍历所有负类，加速收敛
+5. **Wide & Deep**：Wide part memorize feature combinations（如 user×ad交叉），Deep part generalize 到未见组合
+
+</details>
+
 </details>
 
 ---

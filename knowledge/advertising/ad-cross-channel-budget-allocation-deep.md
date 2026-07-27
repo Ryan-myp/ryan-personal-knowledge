@@ -309,6 +309,21 @@ AI 分配结果：
 4. **CPA 约束**：渠道 CPA 不能超过目标的 1.5 倍
 5. **ROAS 约束**：渠道 ROAS 不能低于目标的 50%
 6. **容量约束**：每个渠道有最大展示容量
+
+### 问题 3
+跨渠道预算分配的多臂老虎机算法如何选择？
+
+<details>
+<summary>查看答案</summary>
+
+1. **ε-Greedy**：简单实现，ε% 时间随机探索，其余 exploit 当前最优 channel，适合稳定环境
+2. **UCB（Upper Confidence Bound）**：根据探索-利用权衡自动调整各通道采样频率，无需手动调 ε
+3. **Thompson Sampling**：贝叶斯方法，从 posterior distribution 采样选择 channel，收敛速度快于 UCB
+4. **Contextual Bandit**：引入 user context（device/os/location）使分配策略个性化，提高转化率
+5. **Hybrid Approach**：日常用 UCB/TS 快速收敛，在新 campaign launch 时用 ε-Greedy 确保探索，平衡 exploitation/exploration
+
+</details>
+
 </details>
 
 ---

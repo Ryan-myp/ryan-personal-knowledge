@@ -596,6 +596,21 @@ func (vm *VersionManager) GetDiff(templateID, version1, version2 string) (*Versi
 3. **对比**：版本差异对比
 4. **标签**：v1.0/v2.0
 5. **记录**：谁在什么时候改了什么
+
+### 问题 3
+模板引擎的版本兼容性如何保障？
+
+<details>
+<summary>查看答案</summary>
+
+1. **语义版本控制**：遵循 MAJOR.MINOR.PATCH 规则，MAJOR 变更时废弃不兼容语法
+2. **向后兼容**：MINOR 变更仅增加新功能，旧模板无需修改即可正常运行
+3. **弃用警告**：PATCH 版本中使用的 deprecated syntax 输出 warning 不报错，给迁移窗口期
+4. **多版本共存**：Template Registry 保存多个版本，运行时根据 campaign 配置指定版本
+5. **灰度发布**：新版本 template engine 先在 %5 流量上跑，验证无错误后再全量切换
+
+</details>
+
 </details>
 
 ---

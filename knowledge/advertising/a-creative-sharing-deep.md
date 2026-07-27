@@ -492,6 +492,21 @@ type ClassificationResult struct {
 3. **取最低分**：任一模糊都拒绝
 4. **音频审核**：敏感词检测
 5. **综合评分**：帧审核 × 0.7 + 音频 × 0.3
+
+### 问题 3
+创意共享的权限模型如何实现细粒度控制？
+
+<details>
+<summary>查看答案</summary>
+
+1. **RBAC 基础**：Role-Based Access Control，用户→角色→资源映射表
+2. **Attribute-Based**：ABAC 策略引擎，根据部门/项目标签动态决定是否允许访问
+3. **白名单机制**：特定 creative ID 的 explicit allow list override 默认拒绝策略
+4. **时间窗口**：创意有共享有效期，过期自动回收权限
+5. **审计日志**：所有 share 操作记录到 audit table，支持追溯和违规检测
+
+</details>
+
 </details>
 
 ---

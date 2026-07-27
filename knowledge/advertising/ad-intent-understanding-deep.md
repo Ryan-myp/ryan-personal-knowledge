@@ -289,6 +289,21 @@ LLM 分析:
 3. **长尾查询**：处理"适合扁平足的马拉松训练跑鞋"这样的复杂查询
 4. **用户画像**：推断用户的价格敏感度/品牌偏好
 5. **场景理解**：理解用户的使用场景和购买阶段
+
+### 问题 3
+意图识别的准确率如何持续提升？
+
+<details>
+<summary>查看答案</summary>
+
+1. **主动学习**：模型对低置信度的 query 标记待人工标注，定期补充训练集
+2. **多模型融合**：集成 rule-based matcher + BERT classifier + few-shot LLM，投票决定最终 intent
+3. **错误案例分析**：每周 review misclassified samples，找出共性 pattern 调整特征工程
+4. **领域自适应**：在目标广告域数据上继续 finetune 通用语言模型，学习行业特有术语
+5. **在线反馈闭环**：用户点击实际 ads 后的转化率作为隐式 feedback 强化学习 reward signal
+
+</details>
+
 </details>
 
 ---

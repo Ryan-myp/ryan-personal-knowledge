@@ -371,6 +371,21 @@ func (pb *PositionBias) AdjustECPM(ecpm float64, position int) float64 {
 3. **偏置系数**：顶部 1.2, 中部 1.0, 底部 0.8
 4. **目的**：公平评估不同位置的广告价值
 5. **实现**：根据历史数据计算偏置系数
+
+### 问题 3
+重排层如何保证广告结果的多样性？
+
+<details>
+<summary>查看答案</summary>
+
+1. **MMR（最大边际相关性）**：在排序过程中 penalize 与前文已选广告过于相似的候选，鼓励新颖性
+2. **按广告主去重**：同一个 zone 内最多展示某 advertiser 的 2-3 个广告，避免霸屏
+3. **按品类均衡**：确保不同 product category（服饰/食品/电子产品）的广告比例合理
+4. **位置偏置修正**：新广告给予一定的曝光补偿（position bias correction），避免马太效应
+5. **Bandit Exploration**：ε-greedy 或 Thompson sampling 探索一些低 eCPM 但新鲜的位置，发现新机会
+
+</details>
+
 </details>
 
 ---

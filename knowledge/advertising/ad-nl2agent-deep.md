@@ -766,6 +766,21 @@ NL2AD 的核心流程是什么？
 3. **灵活调整**：随时修改参数
 4. **实时反馈**：每步操作都有确认
 5. **自然交互**：说人话就行，不需要填表单
+
+### 问题 3
+NL2AD 系统的意图分类如何进行？
+
+<details>
+<summary>查看答案</summary>
+
+1. **预训练语言模型**：使用 RoBERTa/ERNIE 等 pretrained model 对输入 query 进行 encode
+2. **Fine-tuning**：在广告意图数据集上微调，标注类型包括 create_campaign/optimize_bid/audience_lookup/report_download
+3. **Prompt Engineering**：将 NL query 转换为结构化 JSON schema，LLM 直接输出结构化对话 state
+4. **Slot Filling**：命名实体识别抽取 budget、targeting、date_range 等关键槽位值
+5. **Ambiguity Resolution**：对模糊表达（如"优化一下"）通过多轮对话澄清具体优化对象和目标
+
+</details>
+
 </details>
 
 ---
