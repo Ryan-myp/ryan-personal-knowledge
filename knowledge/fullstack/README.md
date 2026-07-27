@@ -73,3 +73,17 @@ ClickHouse (列式存储/MergeTree)
     ↓
 大数据生态 (Hadoop/Spark/Flink)
 ```
+
+
+### 问题 3
+全栈开发中如何设计 API 版本兼容性？
+
+<details>
+<summary>查看答案</summary>
+
+1. **URL 版本控制**：/api/v1/resource、/api/v2/resource 显式区分版本
+2. **Header 版本控制**：Accept-Version header 保持 URL 干净，客户端管理版本协商
+3. **向后兼容**：新版本只新增字段/接口，不修改或删除已有行为，旧客户端不受影响
+4. **弃用策略**：旧版本发布前至少 6 个月发 Deprecation warning，给予迁移窗口期
+5. **路由隔离**：不同版本代码使用不同 package 或 handler prefix，逻辑清晰可维护
+</details>

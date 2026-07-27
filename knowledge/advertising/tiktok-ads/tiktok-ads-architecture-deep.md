@@ -503,10 +503,126 @@ func (o *CampaignOptimizer) optimizeOnce(ctx context.Context) {
 
 <details><summary>点击查看答案</summary>
 ```go
-package main
-import "fmt"
-func main() {
-    fmt.Println("Go 生产级代码示例")
+package tiktok
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"time"
+)
+
+// TikTokAdsClient TikTok Ads Marketing API 客户端
+type TikTokAdsClient struct {
+	httpClient *http.Client
+	token      string
+	baseURL    string
+	timeout    time.Duration
+}
+
+// NewTikTokAdsClient 创建新的 TikTok Ads 客户端
+func NewTikTokAdsClient(token, baseURL string) *TikTokAdsClient {
+	return &TikTokAdsClient{
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+		token:      token,
+		baseURL:    baseURL,
+		timeout:    30 * time.Second,
+	}
+}
+
+// Campaign 广告系列模型
+type Campaign struct {
+	ID          int64     `json:"id"`
+	Name        string    `json:"name"`
+	Objective   string    `json:"objective"`
+	BudgetAmount float64   `json:"budget_amount"`
+	Status      string    `json:"status"`
+}
+
+// GetCampaigns 批量获取广告系列信息
+func (c *TikTokAdsClient) GetCampaigns(ctx context.Context, campaignIDs []int64) ([]*Campaign, error) {
+	if len(campaignIDs) == 0 {
+		return nil, fmt.Errorf("empty campaign IDs")
+	}
+
+	url := c.baseURL + "/v3.0/campaigns/"
+	params := make(url.Values)
+	params.Set("campaign_ids", fmt.Sprintf("%v", campaignIDs))
+	url += "?" + params.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request failed: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status: %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode failed: %w", err)
+	}
+
+	camData, ok := result["data"].([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid data format")
+	}
+
+	campaigns := []*Campaign{}
+	for _, item := range camData {
+		data, ok2 := item.(map[string]interface{})
+		if !ok2 {
+			continue
+		}
+		campaigns = append(campaigns, &Campaign{
+			ID:         getInt64(data, "id"),
+			Name:       getString(data, "name"),
+			Objective:  getString(data, "objective"),
+			BudgetAmount: getFloat64(data, "budget_amount"),
+			Status:     getString(data, "status"),
+		})
+	}
+
+	return campaigns, nil
+}
+
+// getInt64 安全提取 int64
+func getInt64(m map[string]interface{}, key string) int64 {
+	v, ok := m[key].(float64)
+	if !ok {
+		return 0
+	}
+	return int64(v)
+}
+
+// getString 安全提取 string
+func getString(m map[string]interface{}, key string) string {
+	v, ok := m[key].(string)
+	if !ok {
+		return ""
+	}
+	return v
+}
+
+// getFloat64 安全提取 float64
+func getFloat64(m map[string]interface{}, key string) float64 {
+	v, ok := m[key].(float64)
+	if !ok {
+		return 0.0
+	}
+	return v
 }
 ```
 </details>

@@ -103,3 +103,17 @@ InnoDB 的 MVCC 为什么用 undo log 而不是多版本数据页？
 4. **redo/undo 分工**：redo 用于崩溃恢复，undo 用于 MVCC 和回滚
 
 </details>
+
+
+### 问题 3
+MySQL InnoDB 的 Buffer Pool 如何管理页的替换策略？
+
+<details>
+<summary>查看答案</summary>
+
+1. **LRU 链表**：分为 old 区和 new 区，刚读入的页进入 old 区，频繁访问的晋升到 new 区
+2. **midpoint 分区**：防止 full table scan 污染缓存，new 区容纳热 page，old 区暂存冷 page
+3. **Adaptive LRU**：根据访问频率动态调整 old/new 分区大小，高工作负载下扩大 new 区
+4. **Flush list**：独立于 LRU 的 dirty page 链表，由 flush thread 按 LSN 顺序刷盘
+5. **Doublewrite buffer**：写之前先 copy 到 doublewrite 区，防止部分页写失败导致 corruption，恢复时用备份覆盖损坏页
+</details>

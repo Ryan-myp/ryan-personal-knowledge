@@ -345,3 +345,17 @@ ClickHouse 的 MergeTree 相比传统 RDBMS 的索引有什么优势？
 ClickHouse 如何保证实时写入的查询性能？
 
 <details>
+
+
+### 问题 3
+ClickHouse MergeTree 引擎的 Primary Key 如何构建？
+
+<details>
+<summary>查看答案</summary>
+
+1. **数据排序**：写入时按 Primary Key 对数据进行物理排序，确保磁盘上有序存储
+2. **稀疏索引**：仅为主键的每 GRANA（默认 8192 行）建立索引项，大幅减少内存占用
+3. **范围扫描优化**：查询时通过主键快速定位到目标 GRANAs，跳过不匹配的数据块
+4. **组合主键**：支持多列主键，按字典序排序，提升复合条件查询效率
+5. **定期重组**：Mutation 操作会重排数据以维护主键顺序，background merge 自动触发
+</details>

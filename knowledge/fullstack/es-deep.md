@@ -130,3 +130,17 @@ Go map 不是并发安全的：
 4. ES 的 Index 用 RWMutex 是正确做法：Search 多读，Put 独占写
 
 </details>
+
+
+### 问题 3
+Elasticsearch 倒排索引的 Terms Dictionary 如何实现快速查找？
+
+<details>
+<summary>查看答案</summary>
+
+1. **FST（Finite State Transducer）**：压缩存储所有 term，前缀共享状态，space-efficient O(1) 查找 term 到 postings list 的映射
+2. **Block K-D Tree**：对 numeric/datetime 类型的 field 建立多维索引，支持范围查询加速
+3. **Norms 归一化因子**：存储 length normalization 信息，查询时 TF-IDF 计算用的权重系数
+4. **Doc Values**：列式存储的 disk-based 结构，用于 sorting/aggregations，避免内存开销
+5. **Field Data Cache**：动态缓存 frequently accessed field 的 in-memory 结构，跨查询复用避免重复加载
+</details>

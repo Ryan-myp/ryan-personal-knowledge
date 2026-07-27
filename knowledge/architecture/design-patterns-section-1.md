@@ -92,3 +92,76 @@ Go 选择组合的原因：
 4. Go 的匿名字段语法糖（Embedding）让组合比继承更简洁
 
 </details>
+### 问题 3
+观察者模式（Observer）在 Go 中如何用接口实现？请写出一个完整的生产级示例。
+
+<details>
+<summary>查看答案</summary>
+
+```go
+// Subject 被观察对象类型
+type Subject struct {
+    observers []Observer
+    state     int
+}
+
+// Observer 观察者接口（Go 的天然优势：无需显式定义）
+type Observer interface {
+    Update(message string)
+}
+
+// ConcreteObserver 具体观察者类型
+type ConcreteObserver struct {
+    name string
+}
+
+func (co *ConcreteObserver) Update(message string) {
+    fmt.Printf("%s 收到通知: %s\n", co.name, message)
+}
+
+func (s *Subject) Register(o Observer) {
+    s.observers = append(s.observers, o)
+}
+
+func (s *Subject) Remove(o Observer) {
+    for i, obs := range s.observers {
+        if obs == o {
+            s.observers = append(s.observers[:i], s.observers[i+1:]...)
+            return
+        }
+    }
+}
+
+func (s *subject) Notify() {
+    for _, o := range s.observers {
+        o.Update(fmt.Sprintf("state=%d", s.state))
+    }
+}
+
+func (s *Subject) SetState(newState int) {
+    s.state = newState
+    s.Notify()  // 状态改变时自动通知所有观察者
+}
+
+// 使用示例
+func main() {
+    subject := &Subject{}
+    observer1 := &ConcreteObserver{name:"观察者A"}
+    observer2 := &ConcreteObserver{name:"观察者B"}
+    
+    subject.Register(observer1)
+    subject.Register(observer2)
+    
+    subject.SetState(1)  // 输出：观察者A收到通知：state=1\n                     观察者B收到通知：state=1
+    subject.SetState(2)
+}
+```
+
+核心要点：
+1. **接口隐式实现**：ConcreteObserver 只需实现 Update() 方法，无需显式声明实现了 Observer 接口
+2. **松耦合**：Subject 只知道 Observer 接口，不知道具体观察者实现
+3. **动态注册/移除**：运行时可以动态改变观察者集合
+4. **推/拉模型**：这里使用推模型（直接发送消息），也可以改为拉模型（观察者主动取值）
+5. **并发安全**：生产环境需对 observers 切片加锁保护
+
+</details>

@@ -352,3 +352,39 @@ Go 的 goroutine 与 Linux 线程的关系是什么？
 1. **M:N 模型**：G（goroutine）→ M（OS 线程）→ P（调度器核心）
 2. **M 是线程**：Go 的 M 绑定到一个 OS 线程
 3. **G 是用户态线程**：Go Runtime 调度，无需 sys...[truncated]
+
+
+
+### 问题 2
+Linux TLB（Translation Lookaside Buffer）的工作原理及优化方法有哪些？
+
+<details>
+<summary>查看答案</summary>
+
+1. **TLB 作用**：加速虚拟地址到物理地址的转换，是页表的高速缓存
+2. **命中流程**：CPU 发出虚拟地址 → TLB 并行查找 → 命中则直接返回物理地址（1 cycle）；未命中则遍历页表（20+ cycles）
+3. **TLB 结构**：L1 TLB typically 48-64 entries, L2 TLB typically 512-1024 entries
+4. **广告平台优化**：
+   - 使用 huge page（2MB/1GB）减少 TLB 条目数，提高命中率
+   - 热点数据放在同一 NUMA 节点，减少跨节点访问
+   - 避免频繁切换进程导致 TLB flush
+5. **关键参数检查**：
+   ```bash
+   cat /proc/<pid>/status | grep -E 'Tcbp|Tcbh'
+   cat /proc/vmstat | grep tlbprefs
+   ```
+6. **Go 层面注意点**：大量 Goroutine 并发分配内存时，注意 NUMA 亲和性设置，避免跨节点内存分配导致的 TLB 压力
+
+</details>
+### 问题 3
+Linux CFS 调度器的核心数据结构是什么？
+
+<details>
+<summary>查看答案</summary>
+
+1. **红黑树（rb_root）**：每个 CPU 运行队列中的 runnable task 按 vruntime 排序插入红黑树
+2. **rb_node**：task_struct 内含 rb_node 节点，O(log N) 查找最小 vruntime 的 next task
+3. **vruntime**：累积加权执行时间，nice value 高的任务 vruntime 增长慢获得更多时间片
+4. **min_vruntime**：每 CPU 跟踪当前最小的 vruntime，用于新任务插入树的起始位置
+5. **调度周期**：period_time 决定每个任务在一个周期内应得的时间片，公平性保障基础
+</details>

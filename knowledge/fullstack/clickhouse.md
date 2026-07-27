@@ -106,3 +106,17 @@ Go 的 struct 组合在 ClickHouse 的 MergeTree 设计中如何体现？
 4. 实际 ClickHouse 用 C++ 实现，但 Go 的 struct 组合同样优雅
 
 </details>
+
+
+### 问题 3
+ClickHouse 的 columnstore 架构有什么优势？
+
+<details>
+<summary>查看答案</summary>
+
+1. **列式存储**：同一列数据连续存储，相同类型便于向量化处理和压缩
+2. **查询加速**：SELECT 只读取涉及的列，避免读取不必要字段大幅降低 I/O
+3. **压缩率高**：同类型数据局部性好，用 LZ4/ZSTD 等算法可达到 5-10 倍压缩比
+4. **向量化执行**：SIMD 指令一次处理多个值，利用 CPU 缓存预取提升吞吐量
+5. **谓词下推**：过滤条件在 storage engine 层尽早应用，减少数据传输量
+</details>

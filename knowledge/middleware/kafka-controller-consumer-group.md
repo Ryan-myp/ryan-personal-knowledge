@@ -366,7 +366,61 @@ Kafka 为什么选择顺序写磁盘而不是随机写？
 
 </details>
 
+
 ### 问题 2
 Consumer Group Rebalance 什么时候触发？
 
 <details>
+<summary>查看答案</summary>
+
+1. **成员变化**：消费者进程崩溃或新增
+2. **分区变化**：Broker 重启导致分区重新分配
+3. **订阅变化**：消费者 topic 订阅集改变
+4. **rebalance.interval.ms**：触发间隔限制
+
+</details>
+
+### 问题 3
+Kafka Consumer 如何实现精准一次语义（Exactly-Once）？
+
+<details>
+<summary>查看答案</summary>
+
+```go
+type ExactlyOneProcessor struct {
+    consumer *kafka.Consumer
+    producer *kafka.Producer
+    txnId    string
+}
+
+func (eop *ExactlyOneProcessor) Process() error {
+    if err := eop.producer.BeginTransaction(); err != nil {
+        return err
+    }
+    messages, err := eop.consumer.Poll(100)
+    if err != nil {
+        eop.producer.AbortTransaction()
+        return err
+    }
+    for _, msg := range messages {
+        result := process(msg)
+        if err := eop.producer.Send(msg.Topic, msg.Key, result); err != nil {
+            eop.producer.AbortTransaction()
+            return err
+        }
+    }
+    if err := eop.consumer.CommitMessages(messages); err != nil {
+        eop.producer.AbortTransaction()
+        return err
+    }
+    return eop.producer.CommitTransaction()
+}
+```
+
+核心要点：
+1. **事务标识符**：每个 ProducerSession 有唯一 txnId
+2. **原子提交**：offset commit 和 message send 在同一事务中
+3. **失败回滚**：任何步骤失败都调用 AbortTransaction()
+4. **幂等性**：idempotent=true 防止重复发送
+
+</details>

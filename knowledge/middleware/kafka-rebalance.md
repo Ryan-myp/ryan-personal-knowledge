@@ -118,3 +118,61 @@ Kafka 的 Rebalance 过程中，为什么消费者会短暂不可用？
 4. 解决方案：使用 StickyAssignor + 减少重平衡频率
 
 </details>
+### 问题 3
+StickyAssignor 如何实现分区分配的状态保持？
+
+<details>
+<summary>查看答案</summary>
+
+```go
+type StickyAssignor struct {
+    assignments map[string]map[int]string // partition → consumer
+}
+
+func (sa *StickyAssignor) Assign(
+    consumers []string, 
+    partitions int,
+) map[int]string {
+    // 1. 排序消费者和分区
+    sort.Strings(consumers)
+    sort.Ints(sa.partitions)
+    
+    n := len(consumers) * partitions / len(consumers)
+    
+    // 2. 生成基础轮询分配
+    assignment := make(map[int]string)
+    for i := 0; i < partitions; i++ {
+        assignment[i] = consumers[i%n]
+    }
+    
+    // 3. 如果现有分配差异大，才触发新的重新平衡
+    if sa.isAssignmentDiffers(assignment) {
+        // 最小化变更：只移动必要的分区
+        sa.optimizeForMinimalMigration(consumers, assignment)
+    }
+    
+    return assignment
+}
+
+func (sa *StickyAssignor) isAssignmentDiffers(
+    newAssign map[int]string,
+) bool {
+    // 比较新旧分配的差异，只有在差异超过阈值时触发 rebalance
+    changes := 0
+    for p, c := range newAssign {
+        if old, exists := sa.assignments[p]; !exists || old != c {
+            changes++
+        }
+    }
+    return changes > len(partitions)/4 // 允许最多25%的变化
+}
+```
+
+核心要点：
+1. **状态保持**：Assignor维护已分配状态，对比新旧差异
+2. **最小迁移**：只有当差异超过阈值（25%）时才重新分配
+3. **消费者存活检测**：通过心跳判断消费者是否存活
+4. **分区亲和性**：尽量将同一消费者的分区留在同一Broker附近
+5. **避免震荡**：减少不必要的Rebalance，提高集群稳定性
+
+</details>

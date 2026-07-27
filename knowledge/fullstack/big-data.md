@@ -98,3 +98,17 @@ Go 的并发模型（goroutine + channel）和 MapReduce 的 map/reduce 范式�
 4. Go 的 channel 天然支持 backpressure，MapReduce 需要显式控制
 
 </details>
+
+
+### 问题 3
+大数据计算框架 Spark 与 Flink 的核心区别是什么？
+
+<details>
+<summary>查看答案</summary>
+
+1. **处理模型**：Spark 是微批处理（micro-batch），Flink 是纯流式（true streaming）
+2. **延迟**：Spark 秒级延迟，Flink 毫秒级延迟适合实时场景
+3. **状态管理**：Flink 内建原生状态管理，Spark Streaming 需外部存储如 Kafka offset checkpoint
+4. **事件时间语义**：Flink 原生支持 event time 和 watermarking，Spark 较晚引入类似机制
+5. **容错机制**：两者都基于 checkpoint/savepoint，但 Flink 的 Chandy-Lamport 算法更轻量高效
+</details>

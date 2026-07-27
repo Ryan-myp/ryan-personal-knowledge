@@ -123,3 +123,48 @@ Go 的 `sync.Mutex` 在 Kafka Broker 的 Partition 中为什么比 `sync.RWMutex
 4. 实际 Kafka 用分段锁（segment lock）进一步优化
 
 </details>
+### 问题 3
+Kafka Consumer 如何实现心跳机制以保持活跃状态？
+
+<details>
+<summary>查看答案</summary>
+
+```go
+type Heartbeat struct {
+    consumer *Consumer
+    timeout  time.Duration
+    stop     chan struct{}
+}
+
+func (hb *Heartbeat) Start() error {
+    hb.stop = make(chan struct{})
+    go func() {
+        ticker := time.NewTicker(hb.timeout / 3)
+        defer ticker.Stop()
+        
+        for {
+            select case <-ticker.C:
+                if err := hb.consumer.SendHeartbeat(); err != nil {
+                    log.Printf("Heartbeat failed: %v", err)
+                }
+            case <-hb.stop:
+                return
+            }
+        }
+    }()
+    return nil
+}
+
+func (hb *Heartbeat) Stop() {
+    close(hb.stop)
+}
+```
+
+核心要点：
+1. **心跳间隔**：heartbeat.interval.ms 默认 3秒，定期发送心跳
+2. **会话超时**：session.timeout.ms 默认 45秒，超过未响应则视为失联
+3. **主动检测**：消费者在后台线程独立发送心跳，不阻塞消费逻辑
+4. **Broker确认**：Broker收到心跳后重置死超时计时器
+5. **失败处理**：连续心跳失败触发 Rebalance，重新分配分区
+
+</details>
