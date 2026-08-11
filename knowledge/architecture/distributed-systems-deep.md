@@ -1,72 +1,60 @@
-# 分布式系统深度：一致性协议/分布式事务/一致性哈希
+# 分布式系统核心原理深度解析
 
-> 逐行源码解析 + 生产排障案例 + 对比分析 + 动手验证
-
----
-
-## 第一部分：入门引导（5 分钟速览）
-
-### 类比理解分布式系统
-
-```
-分布式系统 = 多人合作完成一个项目
-
-挑战：
-1. 通信延迟：发邮件比说话慢
-2. 节点故障：有人请假
-3. 数据一致：大家看到的版本要一样
-4. 时钟同步：大家的表要对齐
-```
-
-### 分布式系统核心问题
-
-```
-1. 一致性（Consistency）：所有节点数据相同
-2. 可用性（Availability）：系统始终可用
-3. 分区容忍性（Partition Tolerance）：网络分区仍能工作
-
-CAP 定理：只能选两个
-→ CP：强一致性，可能不可用
-→ AP：高可用，可能不一致
-→ CA：理论存在，实际不可能（网络总会分区）
-```
+> 深入分布式系统核心：一致性协议、CAP 定理、分布式事务、共识算法。
+> 源码级分析 Raft、Paxos，包含实际案例和调优经验。
+> 适用对象：分布式系统工程师、架构师、后端高级开发者
 
 ---
 
-## 第二部分：Raft 共识算法
+## 1. CAP 定理深度解析
 
-### 2.1 Raft 原理
+### 1.1 定理证明
 
 ```
-Raft 节点状态：
-- Follower：被动接收命令
-- Candidate：竞选 Leader
-- Leader：处理所有请求
+定理：分布式系统最多同时满足以下三个特性中的两个：
+- C (Consistency)：一致性
+- A (Availability)：可用性
+- P (Partition Tolerance)：分区容错性
 
-选举流程：
-1. Follower 超时 → 转为 Candidate
-2. Candidate 投票给自己
-3. 请求其他节点投票
-4. 获得多数票 → 成为 Leader
+证明：
+假设系统同时满足 C、A、P
 
-日志复制：
-1. Leader 接收客户端请求
-2. Leader 追加到自己的日志
-3. Leader 复制给 Follower
-4. Follower 确认后，Leader 提交
+1. 由于 P，系统可能存在网络分区
+2. 分区后，节点 A 和节点 B 无法通信
+3. 由于 C，节点 A 和 B 必须看到相同的数据
+4. 但无法通信，无法同步数据
+5. 矛盾！
+
+因此，系统最多只能满足 C、A、P 中的两个。
 ```
 
-### 2.2 Go 实现 Raft
+### 1.2 实际选择
+
+| 系统 | 选择 | 说明 |
+|------|------|------|
+| ZooKeeper | CP | 保证一致性，分区时不可用 |
+| Cassandra | AP | 保证可用性，分区时可能不一致 |
+| Redis Cluster | AP | 最终一致性，高可用 |
+| TiDB | CP | 强一致性，分布式事务 |
+
+### 1.3 PACELC 定理
+
+```
+PACELC = CAP + Latency/Consistency
+
+当没有分区时（E: Else）：
+- 选择 Latency（低延迟）：AP 系统
+- 选择 Consistency（一致性）：CP 系统
+```
+
+---
+
+## 2. Raft 共识算法源码解析
+
+### 2.1 状态机设计
 
 ```go
-package raft
-
-import (
-    "context"
-    "fmt"
-    "sync"
-    "time"
-)
+// raft.go
 
 type State int
 
@@ -76,394 +64,416 @@ const (
     Leader
 )
 
-// Node Raft 节点
-type Node struct {
-    id            string
-    state         State
-    currentTerm   int
-    votedFor      string
-    log           []Entry
-    commitIndex   int
-    lastApplied   int
-    
-    leaders     map[string]bool
-    votes       map[string]bool
-    nextIndex   map[string]int
-    matchIndex  map[string]int
-    
-    mu          sync.RWMutex
-    applyCh     chan Entry
-    leaderCh    chan string
-}
+type Raft struct {
+    peers      []*RPCCli
+    persist    Persist
+    me         int
+    dead       int32 // for testing
 
-type Entry struct {
-    Term    int
-    Command interface{}
-}
+    // 持久化状态
+    currentTerm int
+    votedFor    int
+    log         []Entry
 
-// Start 启动节点
-func (n *Node) Start(ctx context.Context, command interface{}) error {
-    n.mu.Lock()
-    defer n.mu.Unlock()
-    
-    if n.state != Leader {
-        return fmt.Errorf("not leader")
+    // 易失状态
+    commitIndex int
+    lastApplied int
+
+    // Leader 状态
+    nextIndex  []int
+    matchIndex []int
+
+    // 应用层状态
+    applyCh chan ApplyMsg
+    applyCond *sync.Cond
+}
+```
+
+### 2.2 选举实现
+
+```go
+// raft.go
+
+func (rf *Raft) run() {
+    for rf.killed() == false {
+        switch rf.state {
+        case Follower:
+            rf.stepFollower()
+        case Candidate:
+            rf.stepCandidate()
+        case Leader:
+            rf.stepLeader()
+        }
     }
-    
-    entry := Entry{
-        Term:    n.currentTerm,
-        Command: command,
-    }
-    
-    n.log = append(n.log, entry)
-    
-    // 复制给 Follower
-    for peer := range n.leaders {
-        go n.replicate(peer, entry)
-    }
-    
-    return nil
 }
 
-// replicate 复制日志
-func (n *Node) replicate(peer string, entry Entry) {
-    // 发送 AppendEntries RPC
-    // 等待确认
-    // 更新 matchIndex
+func (rf *Raft) stepCandidate() {
+    select {
+    case <-rf.ticker.C:
+        rf.startElection()
+    case msg := <-rf.applyCh:
+        rf.apply(msg)
+    }
 }
 
-// elect 选举
-func (n *Node) elect(ctx context.Context) {
-    n.mu.Lock()
-    n.state = Candidate
-    n.currentTerm++
-    n.votedFor = n.id
-    n.votes = map[string]bool{n.id: true}
-    n.mu.Unlock()
+func (rf *Raft) startElection() {
+    rf.currentTerm++
+    rf.votedFor = rf.me
+    rf.saveState()
+    
+    rf.state = Candidate
     
     // 请求投票
-    for peer := range n.leaders {
-        go n.requestVote(peer)
+    args := RequestVoteArgs{
+        Term:        rf.currentTerm,
+        CandidateId: rf.me,
+        LastLogIndex: len(rf.log) - 1,
+        LastLogTerm:  rf.log[len(rf.log)-1].Term,
     }
     
-    // 等待选举结果
-    select {
-    case <-ctx.Done():
+    for peer := range rf.peers {
+        if peer == rf.me {
+            continue
+        }
+        go rf.sendRequestVote(peer, args)
+    }
+}
+
+func (rf *Raft) sendRequestVote(peer int, args RequestVoteArgs) {
+    var reply RequestVoteReply
+    rf.peers[peer].Call("Raft.RequestVote", &args, &reply)
+    
+    if reply.Term > rf.currentTerm {
+        rf.becomeFollower(reply.Term)
         return
-    case votes := <-n.votesCh:
-        if len(votes) > len(n.leaders)/2 {
-            n.mu.Lock()
-            n.state = Leader
-            n.mu.Unlock()
-            n.leaderCh <- n.id
+    }
+    
+    if reply.VoteGranted {
+        rf.mu.Lock()
+        rf.votesReceived++
+        rf.mu.Unlock()
+        
+        if rf.votesReceived > len(rf.peers)/2 {
+            rf.becomeLeader()
         }
+    }
+}
+```
+
+### 2.3 日志复制
+
+```go
+// raft.go
+
+func (rf *Raft) becomeLeader() {
+    rf.state = Leader
+    rf.mu.Lock()
+    rf.lastApplied = rf.commitIndex
+    rf.mu.Unlock()
+    
+    // 初始化 nextIndex 和 matchIndex
+    rf.nextIndex = make([]int, len(rf.peers))
+    rf.matchIndex = make([]int, len(rf.peers))
+    
+    for i := range rf.peers {
+        rf.nextIndex[i] = len(rf.log)
+        rf.matchIndex[i] = 0
+    }
+    
+    rf.sendHeartbeats()
+}
+
+func (rf *Raft) sendHeartbeats() {
+    for peer := range rf.peers {
+        if peer == rf.me {
+            continue
+        }
+        go rf.sendAppendEntries(peer)
+    }
+}
+
+func (rf *Raft) sendAppendEntries(peer int) {
+    rf.mu.Lock()
+    next := rf.nextIndex[peer]
+    prevLogIndex := next - 1
+    prevLogTerm := 0
+    if prevLogIndex >= 0 {
+        prevLogTerm = rf.log[prevLogIndex].Term
+    }
+    
+    entries := make([]Entry, 0)
+    if next < len(rf.log) {
+        entries = append(entries, rf.log[next:]...)
+    }
+    
+    args := AppendEntriesArgs{
+        Term:         rf.currentTerm,
+        LeaderId:     rf.me,
+        PrevLogIndex: prevLogIndex,
+        PrevLogTerm:  prevLogTerm,
+        Entries:      entries,
+        LeaderCommit: rf.commitIndex,
+    }
+    rf.mu.Unlock()
+    
+    var reply AppendEntriesReply
+    rf.peers[peer].Call("Raft.AppendEntries", &args, &reply)
+    
+    if reply.Term > rf.currentTerm {
+        rf.becomeFollower(reply.Term)
+        return
+    }
+    
+    if reply.Success {
+        rf.mu.Lock()
+        rf.nextIndex[peer] = next + len(entries)
+        rf.matchIndex[peer] = rf.nextIndex[peer] - 1
+        rf.mu.Unlock()
+    } else {
+        rf.mu.Lock()
+        rf.nextIndex[peer]--
+        rf.mu.Unlock()
     }
 }
 ```
 
 ---
 
-## 第三部分：分布式事务
+## 3. Paxos 算法解析
 
-### 3.1 分布式事务模式
+### 3.1 基本 Paxos
 
 ```
-1. 两阶段提交（2PC）
-   → 协调者询问所有参与者
-   → 所有同意才提交
-   
-2. 三阶段提交（3PC）
-   → 增加预提交阶段
-   → 减少阻塞时间
-   
-3. Saga 模式
-   → 长事务拆分为短事务
-   → 每个步骤有补偿操作
-   
-4. TCC 模式
-   → Try/Confirm/Cancel
-   → 应用层控制的分布式事务
+Phase 1: Prepare
+  Proposer -> Acceptor: PREPARE(n)
+  Acceptor -> Proposer: ACCEPTED(n, lastProposal)
+
+Phase 2: Accept
+  Proposer -> Acceptor: ACCEPT(n, value)
+  Acceptor -> Proposer: ACCEPTED
 ```
 
-### 3.2 Go 实现 Saga 模式
+### 3.2 Go 实现
 
 ```go
-package saga
-
-import (
-    "context"
-    "fmt"
-)
-
-// Step Saga 步骤
-type Step struct {
-    Name        string
-    Action      func(context.Context) error
-    Compensation func(context.Context) error
+type Proposer struct {
+    term   int
+    id     string
+    acceptors []string
 }
 
-// Saga Saga 编排器
-type Saga struct {
-    steps []Step
-}
-
-// NewSaga 创建 Saga
-func NewSaga(steps []Step) *Saga {
-    return &Saga{steps: steps}
-}
-
-// Execute 执行 Saga
-func (s *Saga) Execute(ctx context.Context) error {
-    executed := 0
+func (p *Proposer) propose(value string) (string, error) {
+    p.term++
+    promise := make(chan acceptResponse, len(p.acceptors))
     
-    // 正向执行
-    for i, step := range s.steps {
-        if err := step.Action(ctx); err != nil {
-            executed = i
-            // 回滚已执行的步骤
-            for j := executed - 1; j >= 0; j-- {
-                if compErr := s.steps[j].Compensation(ctx); compErr != nil {
-                    fmt.Printf("compensation failed: %v\n", compErr)
-                }
+    // Phase 1: Prepare
+    for _, a := range p.acceptors {
+        go p.prepare(a, p.term, promise)
+    }
+    
+    // 等待多数派
+    accepted := 0
+    var lastValue string
+    for resp := range promise {
+        if resp.term > p.term {
+            return "", fmt.Errorf("higher term")
+        }
+        if resp.accepted {
+            accepted++
+            if resp.lastValue != "" {
+                lastValue = resp.lastValue
             }
-            return err
+        }
+        if accepted > len(p.acceptors)/2 {
+            break
         }
     }
     
-    return nil
-}
-
-// 使用示例
-saga := NewSaga([]Step{
-    {
-        Name: "create_order",
-        Action: func(ctx context.Context) error {
-            // 创建订单
-            return nil
-        },
-        Compensation: func(ctx context.Context) error {
-            // 取消订单
-            return nil
-        },
-    },
-    {
-        Name: "deduct_inventory",
-        Action: func(ctx context.Context) error {
-            // 扣减库存
-            return nil
-        },
-        Compensation: func(ctx context.Context) error {
-            // 恢复库存
-            return nil
-        },
-    },
-    {
-        Name: "charge_payment",
-        Action: func(ctx context.Context) error {
-            // 扣款
-            return nil
-        },
-        Compensation: func(ctx context.Context) error {
-            // 退款
-            return nil
-        },
-    },
-})
-
-err := saga.Execute(ctx)
-if err != nil {
-    // 自动回滚
+    // Phase 2: Accept
+    acceptPromise := make(chan acceptResponse, len(p.acceptors))
+    for _, a := range p.acceptors {
+        go p.accept(a, p.term, lastValue, acceptPromise)
+    }
+    
+    accepted = 0
+    for resp := range acceptPromise {
+        if resp.accepted {
+            accepted++
+        }
+        if accepted > len(p.acceptors)/2 {
+            return lastValue, nil
+        }
+    }
+    
+    return "", fmt.Errorf("failed to accept")
 }
 ```
 
 ---
 
-## 第四部分：一致性哈希
+## 4. 分布式事务
 
-### 4.1 一致性哈希原理
-
-```
-传统哈希：
-hash(key) % N
-→ 节点变化时，大部分数据需要迁移
-
-一致性哈希：
-1. 将哈希空间组织成环
-2. 数据和节点都映射到环上
-3. 顺时针找到最近的节点
-
-优势：
-→ 节点增减时，只影响相邻节点
-→ 数据迁移量最小
-```
-
-### 4.2 Go 实现一致性哈希
+### 4.1 两阶段提交 (2PC)
 
 ```go
-package consistenthash
-
-import (
-    "hash/crc32"
-    "sort"
-    "sync"
-)
-
-// Hash 哈希函数
-type Hash func([]byte) uint32
-
-// Map 一致性哈希环
-type Map struct {
-    hashFunc   Hash
-    replicas   int
-    keys       []uint32
-    hashMap    map[uint32]string
-    mu         sync.RWMutex
+type Coordinator struct {
+    participants []string
+    txID string
 }
 
-// New 创建一致性哈希
-func New(replicas int, fn Hash) *Map {
-    m := &Map{
-        hashFunc: fn,
-        replicas: replicas,
-        hashMap:  make(map[uint32]string),
+func (c *Coordinator) commit(tx *Transaction) error {
+    // Phase 1: Prepare
+    votes := make(chan bool, len(c.participants))
+    for _, p := range c.participants {
+        go c.prepare(p, tx, votes)
     }
     
-    if m.hashFunc == nil {
-        m.hashFunc = crc32.ChecksumIEEE
-    }
-    
-    return m
-}
-
-// Add 添加节点
-func (m *Map) Add(nodes ...string) {
-    m.mu.Lock()
-    defer m.mu.Unlock()
-    
-    for _, node := range nodes {
-        for i := 0; i < m.replicas; i++ {
-            hash := m.hashFunc([]byte(fmt.Sprintf("%s-%d", node, i)))
-            m.keys = append(m.keys, hash)
-            m.hashMap[hash] = node
+    prepareOK := true
+    for range c.participants {
+        vote := <-votes
+        if !vote {
+            prepareOK = false
+            break
         }
     }
     
-    sort.Slice(m.keys, func(i, j int) bool {
-        return m.keys[i] < m.keys[j]
-    })
+    // Phase 2: Commit/Abort
+    if prepareOK {
+        for _, p := range c.participants {
+            c.doCommit(p, tx)
+        }
+        return nil
+    }
+    
+    for _, p := range c.participants {
+        c.doAbort(p, tx)
+    }
+    return fmt.Errorf("prepare failed")
 }
 
-// Get 获取节点
-func (m *Map) Get(key string) string {
-    m.mu.RLock()
-    defer m.mu.RUnlock()
-    
-    if len(m.keys) == 0 {
-        return ""
-    }
-    
-    hash := m.hashFunc([]byte(key))
-    
-    // 二分查找
-    idx := sort.Search(len(m.keys), func(i int) bool {
-        return m.keys[i] >= hash
-    })
-    
-    // 环回
-    if idx == len(m.keys) {
-        idx = 0
-    }
-    
-    return m.hashMap[m.keys[idx]]
+func (c *Coordinator) prepare(participant string, tx *Transaction, votes chan<- bool) {
+    // 调用参与者 prepare
+    ok := callPrepare(participant, tx)
+    votes <- ok
 }
 ```
 
----
-
-## 第五部分：生产排障案例
-
-### 5.1 Raft 选举风暴
+### 4.2 三阶段提交 (3PC)
 
 ```
-现象：Leader 频繁更换
+Phase 1: CanCommit
+  Coordinator -> Participants: CAN_COMMIT?
+  Participants -> Coordinator: YES/NO
 
-排查：
-1. 检查网络延迟
-2. 检查心跳间隔
-3. 检查选举超时
+Phase 2: PreCommit
+  Coordinator -> Participants: PRE_COMMIT
+  Participants -> Coordinator: ACK
 
-根因：网络抖动导致心跳丢失
-
-解决方案：
-1. 调整选举超时时间
-2. 增加心跳频率
-3. 优化网络
+Phase 3: DoCommit
+  Coordinator -> Participants: DO_COMMIT / DO_ABORT
 ```
 
-### 5.2 分布式事务超时
+### 4.3 TCC 事务
 
-```
-现象：Saga 执行超时
+```go
+type TCCParticipant struct {
+    id string
+}
 
-排查：
-1. 检查每个步骤的执行时间
-2. 检查补偿操作的可靠性
-3. 检查重试机制
+func (p *TCCParticipant) Try(ctx context.Context, data interface{}) error {
+    // Try: 预留资源
+    return p.reserve(data)
+}
 
-根因：库存扣减步骤慢
+func (p *TCCParticipant) Confirm(ctx context.Context, data interface{}) error {
+    // Confirm: 确认提交
+    return p.commit(data)
+}
 
-解决方案：
-1. 异步化处理
-2. 增加超时时间
-3. 优化数据库查询
+func (p *TCCParticipant) Cancel(ctx context.Context, data interface{}) error {
+    // Cancel: 取消预留
+    return p.rollback(data)
+}
 ```
 
 ---
 
-## 第六部分：自测题
+## 5. 实战案例
 
-### 问题 1
-Raft 相比 Paxos 有什么优势？
+### 5.1 Raft 选主失败排查
 
-<details>
-<summary>查看答案</summary>
+**问题**：集群频繁选主，无法稳定
 
-1. **可理解性**：更容易理解和实现
-2. **强 Leader**：所有请求通过 Leader
-3. **日志复制**：清晰的日志复制机制
-4. **节点加入**：支持动态加入
-5. **Go 实现**：etcd 使用 Raft
+**排查**：
+```bash
+# 查看日志
+grep "StartElection" raft.log | tail -20
+```
 
-</details>
+**根因**：网络分区导致多数派无法达成
 
-### 问题 2
-Saga 模式相比 2PC 有什么优势？
+**解决**：
+1. 检查网络稳定性
+2. 调整选举超时时间
+3. 增加节点数到奇数
 
-<details>
-<summary>查看答案</summary>
+### 5.2 分布式锁性能优化
 
-1. **无锁**：不需要分布式锁
-2. **高性能**：异步执行
-3. **容错性**：部分失败可补偿
-4. **适用场景**：长事务
-5. **Go 实现**：Saga 编排器
+**问题**：Redis 分布式锁在高并发下性能瓶颈
 
-</details>
+**优化**：
+```go
+// 优化前：每次请求都加锁解锁
+func processOrder(id string) {
+    lock, _ := redis.GetLock(ctx, id)
+    defer lock.Unlock()
+    // 处理订单
+}
 
-### 问题 3
-一致性哈希相比普通哈希有什么优势？
+// 优化后：本地缓存 + 分布式锁
+var localCache sync.Map
 
-<details>
-<summary>查看答案</summary>
-
-1. **最小迁移**：节点增减影响小
-2. **负载均衡**：虚拟节点均匀分布
-3. **适用场景**：分布式缓存
-4. **Go 实现**：consistenthash
-5. **虚拟节点**：解决数据倾斜
-
-</details>
+func processOrder(id string) {
+    if val, ok := localCache.Load(id); ok {
+        return val  // 本地缓存命中
+    }
+    
+    lock, _ := redis.GetLock(ctx, id)
+    defer lock.Unlock()
+    
+    // 双重检查
+    if val, ok := localCache.Load(id); ok {
+        return val
+    }
+    
+    // 处理订单
+    result := handleOrder(id)
+    localCache.Store(id, result)
+    return result
+}
+```
 
 ---
 
-*本文档基于分布式系统原理整理。*
+## 6. 总结
+
+### 6.1 核心原理回顾
+
+| 主题 | 核心算法 | 关键优化点 |
+|------|----------|-----------|
+| 共识 | Raft、Paxos | 选主超时、日志复制 |
+| 事务 | 2PC、3PC、TCC | 超时设置、回滚机制 |
+| 锁 | Redis 分布式锁 | 本地缓存、看门狗 |
+| 一致性 | 最终一致性 | 补偿机制、对账 |
+
+### 6.2 设计原则
+
+1. **多数派原则**：所有决策需多数派同意
+2. **幂等性**：所有操作必须幂等
+3. **超时处理**：设置合理超时，避免死锁
+4. **日志持久化**：关键状态必须持久化
+
+---
+
+*最后更新：2026-08-11*
+*作者：Ryan*

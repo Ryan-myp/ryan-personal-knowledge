@@ -1,164 +1,234 @@
-# Go 运行时深度：GMP 调度/内存管理/GC 源码级
+# Go 运行时源码级深度解析
 
-> 从 runtime 源码逐行解析 Go 调度器、内存管理和 GC 机制
+> 深入 Go 运行时核心：调度器、GC、内存分配、网络模型。
+> 源码级分析，包含关键数据结构、算法实现、性能调优。
+> 适用对象：Go 工程师、系统程序员、性能优化工程师
 
 ---
 
-## 第一部分：GMP 调度器源码深度
+## 1. Scheduler 调度器源码解析
 
-### GMP 架构
+### 1.1 GMP 模型架构
 
 ```
-Go 调度器模型：G-M-P
 ┌─────────────────────────────────────────────────────────────────────┐
-│ OS Thread (M)                                                        │
-│  ┌─────────────────────────────────────────────────────────────────┐ │
-│  │ P (Processor)                                                   │ │
-│  │                                                                 │ │
-│  │  runq[] (Local Run Queue) - 最多 256 个 Goroutine               │ │
-│  │  ├── G1 (ready)                                               │ │
-│  │  ├── G2 (ready)                                               │ │
-│  │  └── G3 (ready)                                               │ │
-│  │                                                                 │ │
-│  │  gfree[] (Free list - 空闲 Goroutine)                           │ │
-│  │                                                                 │ │
-│  │  schedtick (调度计数器)                                        │ │
-│  │  sysmontick (系统监控 tick)                                    │ │
-│  └─────────────────────────────────────────────────────────────────┘ │
-│                                                                        │
-│  Goroutine (G):                                                      │
-│  ├── stack [0-4GB] (初始 2KB, 动态伸缩)                               │ │
-│  ├── sched (上下文保存: SP, PC, BP)                                   │ │
-│  ├── goid (唯一 ID)                                                  │ │
-│  ├── status (Gidle/Grunning/Gwaiting/Gsyscall/Gpreamble)             │ │
-│  ├── param (用户参数)                                                │ │
-│  └── atomicstatus                                                  │ │
+│                        Go Scheduler 架构                            │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  M0 (OS Thread)         P0 (Processor)         G0 (System G)       │
+│  ┌─────────────┐       ┌─────────────┐       ┌─────────────┐       │
+│  │             │       │  runq: [G1] │       │  system     │       │
+│  │  User G     │◄─────►│             │◄─────►│  goroutine  │       │
+│  │  (working)  │  bind │  global:[]  │ sched │             │       │
+│  │             │       │  stash:[]   │       └─────────────┘       │
+│  └─────────────┘       └─────────────┘              │              │
+│         │                   │                       │              │
+│         │            steal from P1            work stealing        │
+│         │                   │                       │              │
+│  ┌─────────────┐       ┌─────────────┐              │              │
+│  │  M1 (OS)    │◄─────►│  P1         │              │              │
+│  │             │       │  runq: [G2] │              │              │
+│  └─────────────┘       └─────────────┘              │              │
+│                                                     │              │
+│  ┌─────────────────────────────────────────────┐   │              │
+│  │         Global Run Queue (GRQ)             │   │              │
+│  │  [G3] → [G4] → [G5] → ...                 │   │              │
+│  └─────────────────────────────────────────────┘   │              │
 └─────────────────────────────────────────────────────────────────────┘
-
-全局队列：
-• runq: 全局 goroutine 队列（当 P 本地队列满 256 时）
-• gfree: 全局空闲 goroutine 链表
-• netpoll: 网络事件就绪队列
 ```
 
-### schedule 源码逐行解析
+### 1.2 核心数据结构
 
-```c
-// Go 源码：src/runtime/proc.go - schedule
-func schedule(_g_ *g) {
-    var gp *g
-    var inheritTime bool
+```go
+// src/runtime/proc.go
+
+// P 结构体 - 处理器
+type p struct {
+    lock      mutex
+    status    uint32      // _Pidle, _Prunning, _Psyscall, _Pdead
+    id        int32
+    schedtick uint32
+    syscalltick uint32
     
-    // 1. 检查是否需要 GC 工作
-    if (gcBlackenEnabled != 0) {
-        gp = gcController.findRunnableGCWorker(_g_, inheritTime)
-        if gp != nil {
-            execute(gp, inheritTime)
-        }
-    }
+    // 本地运行队列
+    runq     []*g      // P 的本地运行队列
+    runqhead uint32    // 队头
+    runqtail uint32    // 队尾
+    runqlen  uint32    // 队列长度
     
-    // 2. 从当前 P 的本地队列获取 G
-    if gp == nil {
-        gp, inheritTime = runqgrab(_g_.m.p)
-        if gp == nil {
-            // 3. 本地队列为空，从全局队列获取
-            gp = globrunqget(_g_.m.p, 1)
-        }
-        if gp == nil {
-            // 4. 全局队列也为空，尝试偷取其他 P 的 G
-            gp = findrunnable()
-        }
-    }
+    // 工作窃取
+    wbuf       pfreezeworkbuf
+    pfreezeworkbufs pfreezeworkbuf
     
-    if gp == nil {
-        // 5. 没有任何 G 可执行，进入 idle 状态
-        mcall(goschedImpl)
-        return
-    }
-    
-    // 6. 切换到 G
-    if trace.enabled {
-        traceGoStart(gp)
-    }
-    
-    // 7. 保存当前 G 的上下文，切换到目标 G
-    gosched_impl(gp, _g_)
+    // 其他字段...
 }
 
-// runqgrab 从 P 的本地队列窃取最多 half 个 G
-func runqgrab(_p_ *p) (*g, bool) {
-    var gp *g
-    var stealTime bool
-    
-    // 1. 获取本地队列长度
-    n := runqgrablen(_p_)
-    if n == 0 {
-        return nil, false
-    }
-    
-    // 2. 窃取一半（避免 P 饥饿）
-    n = n / 2
-    if n == 0 {
-        n = 1
-    }
-    
-    // 3. 从队尾窃取（减少竞争）
-    for i := uint32(0); i < n; i++ {
-        gp = _p_.runq[_p_.runqhead + i]
-        if gp != nil {
-            _p_.runqhead = (_p_.runqhead + 1) % uint32(len(_p_.runq))
-        }
-    }
-    
-    return gp, stealTime
+// M 结构体 - 机器（OS 线程）
+type m struct {
+    g0      *g           // 系统 goroutine（用于栈管理）
+    curg    *g           // 当前运行的用户 goroutine
+    p       puintptr     // 绑定的 P
+    nextp   puintptr
+    id      int32
+    mcache  *mcache      // 线程本地缓存
+    freeze  bool
+    stopped bool
+    // ...
 }
 
-// findrunnable 寻找可执行的 G
-func findrunnable() *g {
+// G 结构体 - goroutine
+type g struct {
+    stack       stack       // 栈信息 [lo, hi)
+    stackguard0 uintptr    // 栈保护（防止溢出）
+    stackguard1 uintptr    // 栈保护（GOOS 专用）
+    fn          funcval    // 要执行的函数
+    pcsp        pcsp
+    pcprog      *prog
+    sp     uintptr
+    pc   uintptr
+    gopc  uintptr    // goroutine 创建点（PC）
+    startpc uintptr  // 开始执行的地址
+    
+    // 调度相关
+    sched      gsched
+    schedlink  guintptr
+    waitreason waitReason
+    
+    // 状态
+    status uint32   // Gidle, Grunnable, Grunning, Gsyscall, Gwaiting, Gdead
+    // ...
+}
+
+type gsched struct {
+    stack       stack      // goroutine 的栈
+    sp     uintptr      // 保存的 SP
+    pc   uintptr      // 保存的 PC
+    g     guintptr     // 对应的 G
+    lr    uintptr      // 保存的 LR
+    bp    uintptr      // 保存的 BP（GOARCH=amd64）
+}
+```
+
+### 1.3 调度器初始化
+
+```go
+// src/runtime/proc.go
+
+func schedinit() {
+    // 1. 计算 M 和 P 的数量
+    maxproc := gomaxprocs()
+    
+    // 2. 创建 P
+    for i := 0; i < maxproc; i++ {
+        pp := allocp()
+        pp.status = _Prunning
+        allp[i] = pp
+    }
+    
+    // 3. 启动第一个 M
+    newm(funcid_runtime_main, getg(), 0)
+}
+
+func newm(fn func(), _g_ *g, _p_ uintptr) {
+    // 创建新 OS 线程
+    mp := allocm(_g_, 0)
+    mp.startpc = funcPC(fn)
+    
+    // 创建线程
+    stack := mallocgc(stackalloc, nil, 0)
+    createg(stack)
+    
+    // 启动线程
+    oscall = sysmon
+}
+```
+
+### 1.4 调度循环
+
+```go
+// src/runtime/proc.go
+
+func schedule() {
     _g_ := getg()
-    _p_ := _g_.m.p.get()
     
-    // 1. 检查网络事件
-    if netpollinited() {
-        gp := netpoll(false)  // non-blocking
-        if gp != nil {
-            return gp
-        }
+    // 1. 释放当前 P
+    if _g_.p != 0 {
+        releasep()
     }
     
-    // 2. 从全局队列获取
-    gp := globrunqget(_p_, 1)
+    // 2. 获取新 P
+    acquirep()
+    
+    // 3. 执行 goroutine
+    gp := dropsched()
     if gp != nil {
-        return gp
+        gogo(&gp.sched)
     }
+}
+
+func reenterm() {
+    _g_ := getg()
     
-    // 3. 从其他 P 偷取（work stealing）
-    for i := 0; i < 4; i++ {
-        start := int(allp[nrand()%uint32(len(allp))])
-        for j := 0; j < 4; j++ {
-            p := allp[start+j%len(allp)]
-            if p == _p_ || p == nil {
-                continue
-            }
-            gp := runqgrab(p)
-            if gp != nil {
-                return gp
-            }
+    // 1. 恢复 P
+    acquirep(_g_.m.p)
+    
+    // 2. 继续调度
+    schedule()
+}
+```
+
+### 1.5 Work Stealing 算法
+
+```go
+// src/runtime/proc.go
+
+// 工作窃取
+func stealWork(now int64) (gp *g, netpol bool) {
+    var stats stealstats
+    
+    // 遍历所有 P，尝试窃取
+    for i := 0; i < len(allp); i++ {
+        pp := allp[runnext%uint32(len(allp))]
+        if pp == nil || pp == myp() {
+            continue
+        }
+        
+        // 尝试窃取一半的 goroutine
+        n := pp.runqlen / 2
+        if n < 1 {
+            n = 1
+        }
+        if n > pp.runqlen/2 + 1 {
+            n = pp.runqlen/2 + 1
+        }
+        
+        // 窃取
+        gp := globrunqget(pp, n)
+        if gp != nil {
+            stats.pickedup++
+            return gp, false
         }
     }
     
-    // 4. GC 工作
-    if gcBlackenEnabled != 0 {
-        gp := gcController.findRunnableGCWorker(_g_, false)
+    return nil, false
+}
+
+// 从全局队列获取
+func globrunqget(_p_ *p, batchSize int32) *g {
+    if sched.runqsize == 0 {
+        return nil
+    }
+    
+    n := min(batchSize, sched.runqsize)
+    sched.runqsize -= n
+    
+    // 批量转移
+    for i := int32(0); i < n; i++ {
+        gp := sched.runqpop()
         if gp != nil {
+            runqgrab(gp, _p_, n-i)
             return gp
         }
-    }
-    
-    // 5. 没有可执行的 G，挂起当前 M
-    if ioStop() {
-        stopm()
-        return findrunnable()
     }
     
     return nil
@@ -167,628 +237,502 @@ func findrunnable() *g {
 
 ---
 
-## 第二部分：内存管理源码深度
+## 2. GC 源码深度解析
 
-### 内存分配架构
+### 2.1 三色标记法实现
 
-```
-Go 内存管理层次：
-┌─────────────────────────────────────────────────────────────────────┐
-│ Malloc (malloc.go)                                                  │
-│  ├── mallocgc: 分配对象                                              │
-│  ├── free: 释放对象                                                 │
-│  └── newobject: 分配零值对象                                         │
-│                                                                     │
-│ Span (mspan.go)                                                     │
-│  ├── span: 连续内存块（由 page 组成）                                 │
-│  ├── spanclass: 大小类（128 种）                                     │
-│  │   ├── size class 0: 8 bytes                                     │
-│  │   ├── size class 1: 16 bytes                                    │
-│  │   ├── ...                                                       │
-│  │   └── size class 127: 32768 bytes                               │
-│  └── alloc: 从 span 中分配对象                                       │
-│                                                                     │
-│ MHeap (mheap.go)                                                    │
-│  ├── heaps: 内存堆（包含所有 span）                                   │
-│  ├── free: 空闲 span 链表                                           │
-│  └── sweep: 清扫线程                                               │
-│                                                                     │
-│ MCache (mcache.go)                                                  │
-│  ├── local: 每个 P 的本地缓存                                       │
-│  ├── spans: span 数组（按 spanclass 索引）                           │
-│  └── cache: 小对象缓存                                             │
-└─────────────────────────────────────────────────────────────────────┘
+```go
+// src/runtime/mgc.go
 
-内存分配策略：
-1. 小对象 (< 32KB): MCache → MSpan → MHeap → OS
-2. 大对象 (>= 32KB): MHeap → OS mmap
-3. 超大对象: mmap + 对齐到页边界
-```
+const (
+    __GCoff uint32 = iota  // 黑色（已扫描）
+    _GCmark                // 灰色（待扫描）
+    _GCscan                // 白色（未扫描）
+)
 
-### mallocgc 源码逐行解析
-
-```c
-// Go 源码：src/runtime/malloc.go - mallocgc
-func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
-    _g_ := getg()
-    
-    // 1. 检查是否是零大小对象
-    if size == 0 {
-        return unsafe.Pointer(&zerobase)
-    }
-    
-    // 2. 确定大小类
-    var sizeclass uint8
-    if size <= maxSmallSize {
-        sizeclass = size_to_class8((size + smallSizeDiv - 1) / smallSizeDiv)
-    } else {
-        sizeclass = size_to_class128((size + largeSizeDiv - 1) / largeSizeDiv)
-    }
-    
-    // 3. 获取对象实际大小
-    var spansize uintptr
-    if sizeclass != 0 {
-        spansize = class_to_size[sizeclass]
-    } else {
-        spansize = roundUp(size, PageSize)
-    }
-    
-    // 4. 检查是否需要分配
-    if spansize > maxMHeapMapped {
-        throw("object too large")
-    }
-    
-    // 5. 小对象：从 MCache 分配
-    if size <= maxSmallSize {
-        _p_ := _g_.m.p.get()
-        if _p_ == nil {
-            throw("mallocgc: no P")
+// GC 主循环
+func gcBgMarkWorker() {
+    for {
+        // 等待标记开始
+        <-markDone
+        
+        // 标记根对象
+        gcMarkRootCount++
+        gcMarkRoots()
+        
+        // 工作队列
+        for work.markrootJob != work.nmarkroot {
+            markrootBlock(gcw, work.markrootJob)
+            work.nfinished++
+            work.markrootJob++
         }
         
-        mc := _p_.mcache
-        
-        // 5.1 检查 MCache 是否有空间
-        if mc.freelist[sizeclass].empty() {
-            // 5.2 从 MHeap 获取新 span
-            span := mheap_.allocSmall(sizeclass)
-            if span == nil {
-                // 5.3 需要从 OS 分配新 span
-                span = mheap_.alloc(sizeclass, _p_.id)
-                if span == nil {
-                    throw("out of memory")
-                }
-                // 5.4 将 span 放入 MCache
-                mc.cache_alloc(span)
-            }
+        // drain 灰色对象队列
+        for gcw.tryDrainBgWQ() || gcw.drainWQ() {
+            // 处理灰色对象
         }
         
-        // 5.5 从 MCache 分配对象
-        obj := mc.nextFree(sizeclass)
-        
-        // 5.6 清零（如果需要）
-        if needzero && obj != nil {
-            memclrNoHeapPointers(obj, spansize)
+        // 等待所有工作完成
+        for atomic.Load(&work.nwait) > 0 {
+            // 自旋等待
         }
-        
-        return obj
     }
-    
-    // 6. 大对象：直接从 MHeap 分配
-    if spansize > maxMHeapMapped {
-        throw("object too large")
-    }
-    
-    // 6.1 从 MHeap 分配
-    span := mheap_.allocLarge(size, _g_.m.mcache)
-    if span == nil {
-        throw("out of memory")
-    }
-    
-    // 6.2 清零
-    if needzero {
-        memclrNoHeapPointers(span.base(), spansize)
-    }
-    
-    return span.base()
 }
 ```
 
-### mcache_nextFree 源码逐行解析
+### 2.2 写屏障实现
 
-```c
-// Go 源码：src/runtime/mcache.go - nextFree
-func (mc *mcache) nextFree(spc spanClass) unsafe.Pointer {
-    s := mc.spans[spc]
+```go
+// src/runtime/mwb.go
+
+// SATB (Static Atomic Barrier) 写屏障
+func writeBarrierFun() {
+    // 1. 获取旧值
+    old := *ptr
     
-    // 1. 检查 span 是否过期
-    if s.refcount != 0 {
-        throw("nextFree: bad reference count")
+    // 2. 如果旧值是黑色，重新标记为灰色
+    if isBlack(old) {
+        setGray(old)
+        addToGrayList(old)
     }
     
-    // 2. 检查 span 是否已满
-    if s.freeindex >= s.nelems {
-        // 2.1 从 MHeap 获取新 span
-        mc.grow(spc)
-        s = mc.spans[spc]
+    // 3. 写入新值
+    *ptr = newVal
+    
+    // 4. 标记新值为灰色
+    if !isMarked(newVal) {
+        setGray(newVal)
+    }
+}
+
+// 混合写屏障（Hybrid Write Barrier）
+func wbBufFull() {
+    // 将写屏障缓冲区刷到灰色队列
+    for _, p := range allp {
+        flushWbBuf(p)
+    }
+}
+```
+
+### 2.3 STW (Stop The World) 阶段
+
+```go
+// src/runtime/mgc.go
+
+func gcStart(trigger gcTrigger) {
+    // 1. STW 开始
+    stopTheWorld("GC start", stopReasonGCStart)
+    
+    // 2. 标记开始
+    startCycle()
+    
+    // 3. 启动后台标记
+    for _, p := range allp {
+        execute(bgMarkWorker)
     }
     
-    // 3. 分配对象
-    obj := unsafe.Pointer(s.base() + s.freeindex*s.elemsize)
+    // 4. STW 结束
+    startTheWorld()
+}
+
+func gcSyncMark() {
+    // 等待所有标记完成
+    for atomic.Load(&work.cycles) == cycle {
+        // 等待
+    }
     
-    // 4. 更新 freeindex
-    s.freeindex++
+    // 标记结束
+    endMark()
+}
+```
+
+---
+
+## 3. 内存分配源码解析
+
+### 3.1 三级分配器架构
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     Go 内存分配器架构                                │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  Thread Local                          Central Cache                │
+│  ┌──────────────┐                     ┌──────────────┐             │
+│  │  mcache      │                     │  mcentral    │             │
+│  │  (每个M)     │    补充              │  (每类大小)  │             │
+│  │              │◄───────────────────│              │             │
+│  │  alloc[67]   │    归还              │  free spans  │             │
+│  │              │                     │  full spans  │             │
+│  └──────────────┘                     └──────┬───────┘             │
+│                                               │                     │
+│                                          补充/归还                   │
+│                                               │                     │
+│                                    ┌──────────▼──────────┐         │
+│                                    │     mheap           │         │
+│                                    │   (全局堆管理器)     │         │
+│                                    │                     │         │
+│                                    │  spans[]            │         │
+│                                    │  free list          │         │
+│                                    │  page allocator     │         │
+│                                    └──────────┬──────────┘         │
+│                                               │                     │
+│                                          OS 分配 ( mmap )         │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 3.2 核心数据结构
+
+```go
+// src/runtime/malloc.go
+
+// mcache - 线程本地缓存
+type mcache struct {
+    sweepgen  uint32
+    alloc [numSpanClasses]*mspan  // 按大小类分配
     
-    // 5. 如果 span 已满，标记为 full
-    if s.freeindex >= s.nelems {
-        s.state = mSpanFull
-        mheap_.freeSpan(s)
+    // 每个大小类的缓存
+    small [8]cacheFreeList  // 小对象缓存
+    large [8]cacheFreeList // 大对象缓存
+}
+
+// mcentral - 中央缓存
+type mcentral struct {
+    lock     mutex
+    spans    []*mspan       // 空闲 span 列表
+    nonempty mSpanList      // 非空 span 列表
+    full     mSpanList      // 满 span 列表
+    
+    heapSize int64          // 已使用的堆空间
+}
+
+// mheap - 堆管理器
+type mheap struct {
+    lock      mutex
+    pages     pageAlloc      // 页面分配器
+    meta      hbitmap        // 元数据位图
+    inuse     hbitmap        // 使用中位图
+    free      mspanList      // 空闲 span 链表
+    allspans  **mspan       // 所有 span 数组
+}
+```
+
+### 3.3 分配流程
+
+```go
+// src/runtime/malloc.go
+
+func mallocgc(size uintptr, typ *_type, flags uint32) unsafe.Pointer {
+    _g_ := getg()
+    
+    // 1. 小对象（< 32KB）
+    if size <= maxSmallSize {
+        if size == 0 {
+            return unsafe.Pointer(&zerobase)
+        }
+        return mallocgcSmall(size, typ, flags)
+    }
+    
+    // 2. 大对象（>= 32KB）
+    return mallocgcLarge(size, typ, flags)
+}
+
+func mallocgcSmall(size uintptr, typ *_type, flags uint32) unsafe.Pointer {
+    _g_ := getg()
+    
+    // 1. 选择大小类
+    spanClass := sizeclass(size)
+    
+    // 2. 从 mcache 分配
+    c := _g_.m.mcache
+    span := c.alloc[spanClass]
+    
+    // 3. 如果 span 满了，从 mcentral 获取新 span
+    if span.full() {
+        span = centralFetch(spanClass)
+        c.alloc[spanClass] = span
+    }
+    
+    // 4. 从 span 中分配对象
+    obj := span.allocObject(size)
+    
+    // 5. 初始化对象
+    if typ != nil {
+        memclrNoHeapPointers(obj, size)
+    }
+    
+    // 6. 写屏障
+    if typ != nil && typ.gcdata != nil {
+        writeBarrierObj(obj, size)
     }
     
     return obj
 }
 
-// grow 从 MHeap 获取新 span
-func (mc *mcache) grow(spc spanClass) {
-    // 1. 从 MHeap 获取新 span
-    s := mheap_.allocSmall(spc)
-    if s == nil {
-        throw("out of memory")
+func mallocgcLarge(size uintptr, typ *_type, flags uint32) unsafe.Pointer {
+    // 直接从 mheap 分配
+    span := heapAlloc(size)
+    
+    // 清零
+    if typ == nil || typ.gcdata == nil {
+        memclrNoHeapPointers(span.base(), size)
     }
     
-    // 2. 重置 span
-    s.freeindex = 1
-    s.nelems = s.allocCount
-    
-    // 3. 放入 MCache
-    mc.spans[spc] = s
+    return unsafe.Pointer(span.base())
+}
+```
+
+### 3.4 sizeclass 映射
+
+```go
+// src/runtime/mcache.go
+
+var sizeclasses = [numSizeClasses]sizeClass {
+    // 小对象（8-32768 字节）
+    {0, 8},     // class 0: 0-8 bytes
+    {8, 8},     // class 1: 8-16 bytes
+    {16, 8},    // class 2: 16-24 bytes
+    {24, 8},    // class 3: 24-32 bytes
+    {32, 8},    // class 4: 32-48 bytes
+    ...
+    {32768, 8}, // class 66: 32768 bytes
+}
+
+func sizeclass(size uintptr) uint8 {
+    if size <= maxSmallSize {
+        // 小对象：查表
+        for i := uint8(0); i < numSizeClasses; i++ {
+            if size <= sizeclasses[i].size {
+                return i
+            }
+        }
+    }
+    // 大对象
+    return maxSizeClass
 }
 ```
 
 ---
 
-## 第三部分：GC 源码深度
+## 4. 网络模型源码解析
 
-### Tri-color Mark Sweep 算法
+### 4.1 epoll/kqueue 封装
 
-```
-三色标记法：
-┌─────────────────────────────────────────────────────────────────────┐
-│ 白色 (White) - 未被标记，可能是垃圾                                  │
-│ 灰色 (Gray) - 已被标记，但其引用的对象尚未完全标记                     │
-│ 黑色 (Black) - 已被标记，且其引用的对象已全部标记                      │
-│                                                                     │
-│ 规则：                                                              │
-│ 1. 根对象（全局变量、栈变量）→ 灰色                                   │
-│ 2. 灰色对象的引用对象 → 灰色                                         │
-│ 3. 灰色对象处理完所有引用 → 黑色                                     │
-│ 4. 白色对象在 GC 结束时仍存在 → 垃圾                                  │
-│                                                                     │
-│ 写屏障 (Write Barrier)：                                            │
-│ • 插入屏障：赋值时，将新对象标记为灰色                                 │
-│ • 删除屏障：删除引用时，将旧对象重新标记为灰色                         │
-└─────────────────────────────────────────────────────────────────────┘
+```go
+// src/runtime/netpoll_epoll.go
 
-Go GC 阶段：
-1. STW Mark Initiation: 标记开始，STW
-2. Concurrent Mark: 并发标记（与用户 goroutine 并行）
-3. STW Mark Termination: 标记结束，STW
-4. Concurrent Sweep: 并发清扫（与用户 goroutine 并行）
-5. STW Sweep Termination: 清扫结束，STW
-```
-
-### gcStart 源码逐行解析
-
-```c
-// Go 源码：src/runtime/mgc.go - gcStart
-func gcStart(gcTrigger) {
-    _g_ := getg()
-    
-    // 1. STW: 标记开始
-    gcMarkStart()
-    
-    // 2. 启动标记 worker goroutines
-    for i := 0; i < gomaxprocs; i++ {
-        gp := gfget()
-        if gp == nil {
-            throw("no free G")
-        }
-        gp.status = Grunning
-        gp.gopc = 0
-        gp.arg = nil
-        gp.argp = unsafe.Pointer(&gp.gopc)
-        gp.pc = 0
-        gp.sp = 0
-        gp.sched = _g_.sched
-        
-        // 启动标记 goroutine
-        go gcMarkWorker(i)
+// netpoll 实现（Linux epoll）
+func netpollinit() {
+    fd, err := epollCreate1(0)
+    if err != nil {
+        throw("netpoll: " + err.Error())
     }
-    
-    // 3. 等待所有标记 worker 完成
-    gcWaitOnMark()
-    
-    // 4. STW: 标记结束
-    gcMarkDone()
-    
-    // 5. 启动清扫 goroutine
-    for i := 0; i < gomaxprocs; i++ {
-        go gcSweepWorker(i)
-    }
-    
-    // 6. 等待清扫完成
-    gcWaitOnSweep()
-    
-    // 7. STW: 清扫结束
-    gcSweepDone()
+    netpollfd = fd
 }
 
-// gcMarkWorker 标记 worker
-func gcMarkWorker(work uint32) {
-    // 1. 获取标记工作单元
+func netpollet(fd int32, mode int16) {
+    var ev epollEvent
+    ev.Events = 0
+    if mode == 'r' || mode == 'b' {
+        ev.Events |= EPOLLIN
+    }
+    if mode == 'w' {
+        ev.Events |= EPOLLOUT
+    }
+    ev.Ptr = uintptr(mode<<16 | fd)
+    epollCtl(netpollfd, EPOLL_CTL_ADD, fd, &ev)
+}
+
+func netpollcancel(fd int32, mode int16) {
+    var ev epollEvent
+    ev.Events = 0
+    if mode == 'r' || mode == 'b' {
+        ev.Events |= EPOLLIN
+    }
+    if mode == 'w' {
+        ev.Events |= EPOLLOUT
+    }
+    epollCtl(netpollfd, EPOLL_CTL_DEL, fd, &ev)
+}
+```
+
+### 4.2 网络事件驱动
+
+```go
+// src/runtime/netpoll.go
+
+func netpollready(lock *mutex, fd int32, mode int16) {
+    var wg *g
+    if mode == 'r' || mode == 'b' {
+        wg = netread(fd)
+    } else if mode == 'w' {
+        wg = netwrite(fd)
+    }
+    
+    if wg != nil {
+        goready(wg, 0)
+    }
+}
+
+func netpollblock(g *g, mode int16) {
+    // 1. 设置 G 状态
+    g.status = Grunnable
+    g.fd = netpollfd
+    g.netpollmode = mode
+    
+    // 2. 注册到 netpoll
+    netpollet(g.fd, mode)
+    
+    // 3. 让出 CPU
+    dropg()
+    gosched()
+}
+```
+
+---
+
+## 5. 性能调优实战
+
+### 5.1 GOMAXPROCS 设置
+
+```go
+func main() {
+    // 1. 获取 CPU 核心数
+    numCPU := runtime.NumCPU()
+    
+    // 2. 设置 GOMAXPROCS
+    // - CPU 密集型：等于核心数
+    // - IO 密集型：2 * 核心数
+    runtime.GOMAXPROCS(numCPU)
+    
+    // 3. 验证设置
+    fmt.Printf("GOMAXPROCS: %d\n", runtime.GOMAXPROCS(0))
+}
+```
+
+### 5.2 内存优化
+
+```go
+// 避免内存分配
+func processBuffer(buf []byte) []byte {
+    // ❌ 不好：每次调用都分配新内存
+    result := make([]byte, len(buf))
+    copy(result, buf)
+    return result
+    
+    // ✅ 好：复用缓冲区
+    // 使用 sync.Pool
+}
+
+// sync.Pool 使用
+var bufferPool = sync.Pool{
+    New: func() interface{} {
+        return make([]byte, 0, 1024)
+    },
+}
+
+func processWithPool(data []byte) []byte {
+    buf := bufferPool.Get().([]byte)
+    defer bufferPool.Put(buf)
+    
+    buf = buf[:0]  // 重置长度
+    buf = append(buf, data...)
+    
+    return buf
+}
+```
+
+### 5.3 Goroutine 优化
+
+```go
+// 避免 Goroutine 泄漏
+func worker(ctx context.Context, ch chan int) {
     for {
-        // 1.1 从全局队列获取标记工作
-        gp := gcDrain(nil)
-        if gp == nil {
-            break
-        }
-        
-        // 1.2 标记该对象及其引用
-        markObject(gp)
-    }
-}
-
-// gcDrain 从队列中获取标记工作
-func gcDrain(_p_ *p) bool {
-    // 1. 从全局灰色队列获取
-    gp := gcw.popGrey()
-    if gp != nil {
-        return true
-    }
-    
-    // 2. 从 P 本地灰色队列获取
-    if _p_ != nil {
-        gp = _p_.gcw.popGrey()
-        if gp != nil {
-            return true
-        }
-    }
-    
-    // 3. 尝试从其他 P 偷取
-    for i := 0; i < 4; i++ {
-        start := int(nrand() % uint32(len(allp)))
-        for j := 0; j < 4; j++ {
-            p := allp[start+j%len(allp)]
-            if p == _p_ || p == nil {
-                continue
+        select {
+        case <-ctx.Done():
+            return  // 正确退出
+        case val, ok := <-ch:
+            if !ok {
+                return  // channel 关闭
             }
-            gp = p.gcw.popGrey()
-            if gp != nil {
-                return true
-            }
+            process(val)
         }
     }
+}
+
+// 使用 WaitGroup 等待
+func main() {
+    var wg sync.WaitGroup
     
-    return false
+    for i := 0; i < 10; i++ {
+        wg.Add(1)
+        go func(id int) {
+            defer wg.Done()
+            process(id)
+        }(i)
+    }
+    
+    wg.Wait()  // 等待所有 goroutine 完成
 }
 ```
 
 ---
 
-## 第四部分：自测题
+## 6. 调试工具
 
-### Q1: GMP 调度器和线程池的区别？
+### 6.1 pprof 使用
 
-**A**:
-| 维度 | GMP 调度器 | 线程池 |
-|------|-----------|--------|
-| 调度层级 | 用户态调度 | 内核态调度 |
-| 上下文切换 | 轻量（无系统调用） | 重量（需系统调用） |
-| Goroutine 数量 | 百万级 | 千级 |
-| 工作窃取 | 支持 | 不支持 |
-| 阻塞处理 | M 阻塞时 P 创建新 M | 线程阻塞需等待 |
+```bash
+# CPU profiling
+go tool pprof http://localhost:6060/debug/pprof/profile?seconds=30
 
-### Q2: Go GC 为什么是并发标记清扫？
+# Memory profiling
+go tool pprof http://localhost:6060/debug/pprof/heap
 
-**A**: 传统标记清扫需要 STW（Stop The World），导致停顿时间长。Go 采用并发标记清扫，标记和清扫都与用户 goroutine 并行，STW 时间极短（通常 < 1ms）。
+# Goroutine profiling
+go tool pprof http://localhost:6060/debug/pprof/goroutine
 
-### Q3: 内存分配中 MCache/MHeap/MSpan 的作用？
+# Mutex contention
+go tool pprof http://localhost:6060/debug/pprof/mutex
 
-**A**:
-- **MCache**: 每个 P 的本地缓存，避免锁竞争
-- **MSpan**: 连续内存块，管理页分配
-- **MHeap**: 全局内存堆，管理所有 span
-- 分配路径：MCache → MSpan → MHeap → OS
+# Block profiling
+go tool pprof http://localhost:6060/debug/pprof/block
+```
+
+### 6.2 常见性能问题
+
+| 问题 | 症状 | 排查工具 | 解决方案 |
+|------|------|----------|----------|
+| Goroutine 泄漏 | goroutine 数持续增长 | pprof goroutine | 检查 channel 关闭、context 取消 |
+| 内存泄漏 | heap 持续增长 | pprof heap | 检查全局变量引用 |
+| CPU 热点 | CPU 使用率高 | pprof profile | 优化热路径算法 |
+| 锁竞争 | 延迟高、吞吐低 | pprof mutex | 减少锁范围、使用 atomic |
+| 阻塞 | 延迟高 | pprof block | 优化 IO 操作 |
 
 ---
 
-## 第五部分：生产实践
+## 7. 总结
 
-### 1. 调度器调优
+### 7.1 核心原理回顾
 
-```
-调度器调优要点：
-1. GOMAXPROCS = CPU 核心数（默认自动）
-2. 避免大量 goroutine 阻塞（chan/lock）
-3. 使用 sync.Pool 复用对象
-4. 监控 goroutine 数量（runtime.NumGoroutine）
-```
+| 组件 | 核心机制 | 关键优化点 |
+|------|----------|-----------|
+| 调度器 | GMP 模型 + work stealing | 合理设置 GOMAXPROCS |
+| GC | 三色标记 + 写屏障 | 减少临时对象分配 |
+| 内存 | 三级分配器 | 使用 sync.Pool 复用 |
+| 网络 | epoll + G 调度 | 避免阻塞 OS 线程 |
 
-### 2. 内存优化
+### 7.2 性能优化 Checklist
 
-```
-内存优化要点：
-1. 使用对象池（sync.Pool）
-2. 避免大对象（> 32KB 不走 MCache）
-3. 减少 GC 压力（降低对象分配率）
-4. 监控 heap 使用（runtime.MemStats）
-```
-
-### 3. GC 调优
-
-```
-GC 调优要点：
-1. GOGC=100（默认），可适当调高
-2. 监控 GC 停顿时间（trace）
-3. 减少指针数量（降低 GC 扫描时间）
-4. 使用 []byte 替代 string（减少拷贝）
-```
+- [ ] 设置合适的 GOMAXPROCS
+- [ ] 使用 sync.Pool 复用对象
+- [ ] 优先使用 atomic 而非 Mutex
+- [ ] 避免在热路径分配内存
+- [ ] 正确关闭 channel
+- [ ] 使用 context 控制 goroutine 生命周期
+- [ ] 定期 profiling，定位瓶颈
 
 ---
 
-## Go 代码实战：Go Runtime 核心机制模拟
-
-### 1. Goroutine Scheduler（GMP 模型简化版）
-
-```go
-package runtime
-
-import (
-	"sync"
-	"sync/atomic"
-)
-
-// G Goroutine
-type G struct {
-	stack     stack
-	sp        uintptr
-	pc        uintptr
-	next      *G
-	status    uint32 // running, runnable, waiting, dead
-	fn        func()
-	arg       interface{}
-}
-
-type stack struct {
-	lo uintptr
-	hi uintptr
-}
-
-// M OS Thread
-type M struct {
-	g0      *G       // 系统 goroutine（调度用）
-	curG    *G       // 当前用户 goroutine
-	p       *P       // 绑定的 P
-	nextM   *M
-}
-
-// P Process（处理器）
-type P struct {
-	id          int32
-	status      uint32 // active, stopped, idle
-	runq        runQueue // 本地运行队列
-	runnext     *G       // 下一个要运行的G
-	nwait       uint32   // 等待中的G数
-	ngrab       uint32   // 从其他P抓取的G数
-	runnableG   uint32   // 可运行的G总数
-	m           *M       // 绑定的M
-}
-
-type runQueue struct {
-	items []*G
-	head  uint32
-	tail  uint32
-	size  uint32
-}
-
-// Scheduler 调度器
-type Scheduler struct {
-	ms    []*M
-	ps    []*P
-	nps   int32
-	gfree *G
-	mu    sync.Mutex
-}
-
-var globalScheduler = &Scheduler{
-	ps: make([]*P, 0, 256),
-}
-
-func (s *Scheduler) init() {
-	// 创建P（默认GOMAXPROCS个）
-	n := atomic.LoadInt32(&gomaxprocs)
-	for i := int32(0); i < n; i++ {
-		p := &P{id: i}
-		s.ps = append(s.ps, p)
-	}
-	
-	// 创建M（启动线程）
-	m := &M{g0: s.newSystemG()}
-	s.ms = append(s.ms, m)
-	go m.schedule()
-}
-
-func (s *Scheduler) newG(fn func()) *G {
-	g := &G{fn: fn, status: _Grunnable}
-	if g.stack.hi == 0 {
-		g.stack = s.allocStack()
-	}
-	return g
-}
-
-func (s *Scheduler) schedule(ctx context.Context) {
-	m := getCurrentM()
-	p := s.acquireP()
-	m.p = p
-	
-	for {
-		// 1. 从本地队列取G
-		g := p.runq.pop()
-		
-		// 2. 如果没有，尝试从全局队列偷
-		if g == nil {
-			g = s.globalRunq.pop()
-		}
-		
-		// 3. 如果还没有，从其他P偷（work stealing）
-		if g == nil {
-			g = s.steal(p)
-		}
-		
-		// 4. 执行G
-		if g != nil {
-			s.execute(m, p, g)
-		} else {
-			systemSleep() // 没有任务时休眠
-		}
-	}
-}
-
-func (s *Scheduler) steal(p *P) *G {
-	// 随机选一个P偷一半的G
-	target := randomP(p)
-	if target == nil || target.runq.size < 2 {
-		return nil
-	}
-	
-	half := target.runq.size / 2
-	// 偷取（双端队列尾部）
-	return target.runq.popHalf(half)
-}
-```
-
-### 2. Channel 实现
-
-```go
-package runtime
-
-import "sync"
-
-// Chan 通道实现
-type Chan struct {
-	elemSize uintptr
-	dataPtr  unsafe.Pointer
-	lock     mutex
-	buf      *hchanBuf
-	sendx    uint32 // 发送索引
-	recvx    uint32 // 接收索引
-	count    uint32 // 当前元素数
-	full     uint32 // 是否满
-	qsize    uint32 // 缓冲区大小
-}
-
-type hchanBuf struct {
-	bytes unsafe.Pointer
-}
-
-// Send 发送数据
-func (c *Chan) Send(elem unsafe.Pointer) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	
-	// 有等待的接收者？直接传递
-	if w := c.recvq.pop(); w != nil {
-		w.elem = elem
-		w.status = _Sent
-		wake(w)
-		return
-	}
-	
-	// 缓冲区未满？入队
-	if c.count < c.qsize {
-		c.buf[c.sendx] = elem
-		c.sendx = (c.sendx + 1) % c.qsize
-		c.count++
-		return
-	}
-	
-	// 缓冲区满，阻塞等待
-	w := &waiter{elem: elem, status: _Sending}
-	c.sendq.push(w)
-	block(w)
-}
-
-// Recv 接收数据
-func (c *Chan) Recv() (unsafe.Pointer, bool) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	
-	// 缓冲区有数据？出队
-	if c.count > 0 {
-		elem := c.buf[c.recvx]
-		c.recvx = (c.recvx + 1) % c.qsize
-		c.count--
-		
-		// 有等待的发送者？直接传递
-		if s := c.sendq.pop(); s != nil {
-			s.status = _Received
-			wake(s)
-		}
-		
-		return elem, true
-	}
-	
-	// 无数据，阻塞等待
-	w := &waiter{status: _Receiving}
-	c.recvq.push(w)
-	block(w)
-	return nil, false
-}
-```
-
-### 自测题
-
-<details>
-<summary>Q1: GMP 模型中 P 的数量为什么默认是 GOMAXPROCS（CPU核心数）？设太多或太少会怎样？</summary>
-
-**答案**：
-
-**原理**：每个 P 绑定一个 M（OS线程），M 执行 G（goroutine）。P 的数量 = 最大并行度。
-
-| P数量 | 问题 | 场景 |
-|-------|------|------|
-| 1 | 无法利用多核 | 调试 |
-| CPU核心数 | 最优 | **生产默认** |
-| >> CPU核心数 | 上下文切换开销大 | 高IO密集型 |
-| << CPU核心数 | 浪费算力 | 错误配置 |
-
-Go 1.5+ 默认 GOMAXPROCS = NumCPU()。
-
-</details>
-
-<details>
-<summary>Q2: Channel 的缓冲区大小如何影响程序行为？无缓冲和有缓冲的区别？</summary>
-
-**答案**：
-
-| 类型 | 行为 | 同步性 | 适用场景 |
-|------|------|--------|---------|
-| 无缓冲 `make(chan T)` | send 和 recv 必须同时就绪 | **同步** | 信号量、通知 |
-| 有缓冲 `make(chan T, n)` | 缓冲未满时 send 不阻塞 | **异步** | 生产者-消费者 |
-
-**关键**：无缓冲 channel 是"握手协议"——send 和 recv 配对执行。这是 Go 中实现同步的最佳方式。
-
-</details>
-
-<details>
-<summary>Q3: Work Stealing 算法中，为什么从目标P的"尾部"偷而不是头部？</summary>
-
-**答案**：
-
-**缓存友好性**：
-- 头部是最近入队的（LIFO），可能被其他M正在访问
-- 尾部是较早入队的，当前P不太可能正在处理
-- 从尾部偷减少 cache line 冲突
-
-这本质上是 **deque（双端队列）** 的设计——本地P从头部取（LIFO，局部性好），远程M从尾部偷（避免竞争）。
-
-</details>
+*最后更新：2026-08-11*
+*作者：Ryan*

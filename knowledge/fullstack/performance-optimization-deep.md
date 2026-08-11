@@ -1,409 +1,475 @@
-# 前端性能优化深度实战
+# 系统性能优化深度实战
 
-## 一、性能优化全景
+> 深入系统性能优化：CPU/内存/磁盘/网络优化，性能调优方法论。
+> 包含真实生产环境优化案例和性能分析工具。
+> 适用对象：性能优化工程师、SRE、后端架构师
 
-### 1.1 核心指标
+---
 
-| 指标 | 说明 | 优秀标准 |
-|------|------|----------|
-| LCP | 最大内容绘制 | <2.5s |
-| FID | 首次输入延迟 | <100ms |
-| CLS | 累积布局偏移 | <0.1 |
-| TTFB | 首字节时间 | <800ms |
-| FCP | 首次内容绘制 | <1.8s |
+## 1. 性能优化方法论
 
-### 1.2 优化策略分层
+### 1.1 优化流程
 
 ```
-资源层:
-├── 代码分割 (Code Splitting)
-├── Tree Shaking
-├── 压缩 (Gzip/Brotli)
-└── CDN 加速
+性能优化标准流程：
 
-渲染层:
-├── SSR/SSG/ISR
-├── 虚拟列表
-├── 懒加载
-└── 防抖节流
-
-缓存层:
-├── Service Worker
-├── HTTP Cache
-├── LocalStorage
-└── IndexedDB
+┌─────────────────────────────────────────────────────────────┐
+│                   性能优化流程                               │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  1. 性能基准 (Benchmark)                                     │
+│     ├── 确定性能指标                                          │
+│     ├── 建立性能基准                                          │
+│     └── 记录当前性能数据                                      │
+│                                                             │
+│  2. 性能分析 (Profiling)                                     │
+│     ├── CPU 分析                                             │
+│     ├── 内存分析                                             │
+│     ├── 磁盘 I/O 分析                                       │
+│     └── 网络分析                                             │
+│                                                             │
+│  3. 瓶颈定位 (Bottleneck)                                   │
+│     ├── 识别性能瓶颈                                         │
+│     ├── 分析瓶颈原因                                          │
+│     └── 确定优化优先级                                        │
+│                                                             │
+│  4. 优化实施 (Optimization)                                  │
+│     ├── 实施优化方案                                          │
+│     ├── 验证优化效果                                          │
+│     └── 回归测试                                              │
+│                                                             │
+│  5. 持续监控 (Monitoring)                                    │
+│     ├── 建立监控告警                                          │
+│     ├── 定期性能评估                                          │
+│     └── 持续优化改进                                          │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-## 二、代码分割实战
+### 1.2 性能分析工具
 
-### 2.1 Webpack 配置
-
-```javascript
-module.exports = {
-  optimization: {
-    splitChunks: {
-      chunks: 'all',
-      cacheGroups: {
-        vendors: {
-          test: /[\\/]node_modules[\\/]/,
-          name: 'vendors',
-          priority: 10,
-        },
-        common: {
-          minChunks: 2,
-          name: 'common',
-          priority: 5,
-          reuseExistingChunk: true,
-        },
-      },
-    },
-  },
-};
 ```
+Linux 性能分析工具：
 
-### 2.2 React 懒加载
+CPU 分析：
+├── top/htop - 实时监控
+├── perf - CPU 性能分析
+├── strace - 系统调用追踪
+└── flamegraph - CPU 火焰图
 
-```jsx
-import { lazy, Suspense } from 'react';
+内存分析：
+├── free - 内存使用
+├── valgrind - 内存泄漏检测
+├── pmap - 内存映射
+└── heap profiler
 
-const Dashboard = lazy(() => import('./Dashboard'));
-const Settings = lazy(() => import('./Settings'));
+磁盘 I/O：
+├── iostat - I/O 统计
+├── iotop - I/O 监控
+├── blktrace - 块设备追踪
+└── fio - 磁盘性能测试
 
-function App() {
-  return (
-    <Suspense fallback={<Loading />}>
-      <Routes>
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/settings" element={<Settings />} />
-      </Routes>
-    </Suspense>
-  );
-}
-```
-
-## 三、自测题
-
-1. Web Vitals 包含哪些指标？
-2. 代码分割有什么好处？
-
-## 四、动手验证
-
-```bash
-# 1. 配置代码分割
-# 2. 实现懒加载
-# 3. 添加 Service Worker
-# 4. 使用 Lighthouse 测试
+网络分析：
+├── netstat - 网络连接
+├── tcpdump - 网络抓包
+├── ss - 套接字统计
+└── nethogs - 网络流量监控
 ```
 
 ---
 
-## Go 代码实战：性能优化核心模块
+## 2. CPU 性能优化
 
-### 1. 多级缓存架构（L1/L2/L3）
+### 2.1 CPU 热点分析
 
 ```go
-package cache
+// cpu_profile.go
+
+package profiler
 
 import (
-	"context"
-	"sync"
-	"time"
+    "os"
+    "runtime/pprof"
 )
 
-// CacheLevel 缓存层级
-type CacheLevel int
+// CPU 性能分析
+func CPUPerformanceAnalysis(duration int) error {
+    f, err := os.Create("cpu.profile")
+    if err != nil {
+        return err
+    }
+    defer f.Close()
+    
+    pprof.StartCPUProfile(f)
+    defer pprof.StopCPUProfile()
+    
+    // 模拟业务逻辑
+    time.Sleep(time.Duration(duration) * time.Second)
+    return nil
+}
 
-const (
-	L1 In-Memory Cache Level CacheLevel = iota
-	L2 Redis Cache
-	L3 Database
+// 生成火焰图
+// go tool pprof -http=:8080 cpu.profile
+```
+
+### 2.2 优化策略
+
+```
+CPU 优化策略：
+
+1. 算法优化
+   ├── 降低时间复杂度
+   ├── 减少无效计算
+   └── 使用合适的数据结构
+
+2. 并发优化
+   ├── 合理使用 goroutine
+   ├── 避免 CPU 竞争
+   └── 利用多核并行
+
+3. 缓存优化
+   ├── CPU 缓存友好
+   ├── 局部性原理
+   └── 减少缓存失效
+
+4. 指令优化
+   ├── SIMD 指令
+   ├── 分支预测优化
+   └── 指令流水线优化
+```
+
+---
+
+## 3. 内存优化
+
+### 3.1 内存泄漏检测
+
+```go
+// memory_leak_detection.go
+
+package profiler
+
+import (
+    "runtime"
+    "time"
 )
 
-// MultiLevelCache 多级缓存
-type MultiLevelCache struct {
-	l1  *InMemoryCache  // LRU, <1ms
-	l2  *RedisCache     // Redis, <5ms
-	l3  *DBCache        // MySQL, <50ms
-	mu  sync.RWMutex
+type MemoryMonitor struct {
+    prevStats runtime.MemStats
 }
 
-func (c *MultiLevelCache) Get(ctx context.Context, key string) ([]byte, error) {
-	// L1: 内存缓存
-	if data, ok := c.l1.Get(key); ok {
-		return data, nil
-	}
-	
-	// L2: Redis
-	if data, err := c.l2.Get(ctx, key); err == nil {
-		c.l1.Set(key, data) // 回写 L1
-		return data, nil
-	}
-	
-	// L3: 数据库
-	data, err := c.l3.Query(ctx, key)
-	if err != nil {
-		return nil, err
-	}
-	
-	c.l1.Set(key, data)
-	c.l2.Set(ctx, key, data) // 回写 L2
-	
-	return data, nil
+func (m *MemoryMonitor) CheckLeak() bool {
+    var stats runtime.MemStats
+    runtime.ReadMemStats(&stats)
+    
+    // 分配增长检查
+    allocDiff := stats.Alloc - m.prevStats.Alloc
+    if allocDiff > 100*1024*1024 { // 100MB
+        return true
+    }
+    
+    m.prevStats = stats
+    return false
 }
 
-func (c *MultiLevelCache) Set(ctx context.Context, key string, data []byte, ttl time.Duration) {
-	c.l1.Set(key, data)
-	c.l2.Set(ctx, key, data)
-	c.l3.Update(ctx, key, data)
-}
-
-// InMemoryCache 内存缓存（带过期）
-type InMemoryCache struct {
-	items map[string]*cacheEntry
-	mu    sync.RWMutex
-	ticker *time.Ticker
-}
-
-type cacheEntry struct {
-	data      []byte
-	expiresAt time.Time
-}
-
-func NewInMemoryCache() *InMemoryCache {
-	c := &InMemoryCache{
-		items: make(map[string]*cacheEntry),
-		ticker: time.NewTicker(1 * time.Second),
-	}
-	go c.cleanupLoop()
-	return c
-}
-
-func (c *InMemoryCache) cleanupLoop() {
-	for range c.ticker.C {
-		c.mu.Lock()
-		now := time.Now()
-		for key, entry := range c.items {
-			if now.After(entry.expiresAt) {
-				delete(c.items, key)
-			}
-		}
-		c.mu.Unlock()
-	}
-}
-
-func (c *InMemoryCache) Get(key string) ([]byte, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	entry, ok := c.items[key]
-	if !ok || time.Now().After(entry.expiresAt) {
-		return nil, false
-	}
-	return entry.data, true
-}
-
-func (c *InMemoryCache) Set(key string, data []byte) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.items[key] = &cacheEntry{
-		data:      data,
-		expiresAt: time.Now().Add(5 * time.Minute), // 默认5分钟TTL
-	}
-}
-
-// CircuitBreaker 熔断器（Hystrix模式）
-type CircuitBreaker struct {
-	mu           sync.Mutex
-	state        CircuitState // closed, open, half-open
-	failureCount int
-	successCount int
-	lastFailTime time.Time
-	timeout      time.Duration
-}
-
-type CircuitState int
-
-const (
-	StateClosed CircuitState = iota
-	StateOpen
-	StateHalfOpen
-)
-
-func (cb *CircuitBreaker) AllowRequest() bool {
-	cb.mu.Lock()
-	defer cb.mu.Unlock()
-	
-	switch cb.state {
-	case StateClosed:
-		return true
-	case StateOpen:
-		// 超时后进入 half-open
-		if time.Since(cb.lastFailTime) > cb.timeout {
-			cb.state = StateHalfOpen
-			cb.successCount = 0
-			return true
-		}
-		return false
-	case StateHalfOpen:
-		return true
-	}
-	return false
-}
-
-func (cb *CircuitBreaker) RecordSuccess() {
-	cb.mu.Lock()
-	defer cb.mu.Unlock()
-	
-	if cb.state == StateHalfOpen {
-		cb.successCount++
-		if cb.successCount >= 3 {
-			cb.state = StateClosed
-			cb.failureCount = 0
-		}
-	} else {
-		cb.failureCount = 0
-	}
-}
-
-func (cb *CircuitBreaker) RecordFailure() {
-	cb.mu.Lock()
-	defer cb.mu.Unlock()
-	
-	cb.failureCount++
-	cb.lastFailTime = time.Now()
-	
-	if cb.state == StateHalfOpen || cb.failureCount >= 5 {
-		cb.state = StateOpen
-	}
+func (m *MemoryMonitor) Start() {
+    go func() {
+        for {
+            time.Sleep(1 * time.Second)
+            if m.CheckLeak() {
+                // 告警
+                log.Warn("Memory leak detected")
+            }
+        }
+    }()
 }
 ```
 
-### 2. 限流器（滑动窗口）
+### 3.2 内存优化策略
+
+```
+内存优化策略：
+
+1. 对象池化
+   ├── sync.Pool
+   └── 复用频繁创建的对象
+
+2. 内存对齐
+   ├── 避免 false sharing
+   └── 利用 CPU 缓存行
+
+3. 零拷贝
+   ├── io.WriterTo
+   └── 直接缓冲区
+
+4. 预分配
+   ├── make with capacity
+   └── 避免动态扩容
+```
+
+---
+
+## 4. 磁盘 I/O 优化
+
+### 4.1 I/O 分析
+
+```bash
+# 磁盘 I/O 分析
+iostat -x 1 10
+
+# 查看 I/O 等待
+vmstat 1 10
+
+# 追踪系统调用
+strace -c -p <pid>
+
+# 块设备追踪
+blktrace -d /dev/sda -o trace
+```
+
+### 4.2 优化策略
+
+```
+磁盘 I/O 优化策略：
+
+1. 减少 I/O
+   ├── 合并小写
+   ├── 批量操作
+   └── 缓存热点数据
+
+2. 顺序 I/O
+   ├── 预分配空间
+   └── 顺序写入
+
+3. 异步 I/O
+   ├── io_uring
+   └── AIO
+
+4. 文件系统
+   ├── 选择合适的文件系统
+   ├── 调整挂载选项
+   └── 定期碎片整理
+```
+
+---
+
+## 5. 网络优化
+
+### 5.1 网络分析
+
+```bash
+# 网络性能分析
+netstat -s
+ss -s
+
+# 延迟分析
+ping -i 0.2 <target>
+
+# TCP 分析
+tcpdump -i any port 80
+
+# 带宽测试
+iperf3 -c <server>
+```
+
+### 5.2 优化策略
+
+```
+网络优化策略：
+
+1. 连接优化
+   ├── 连接池
+   ├── 长连接
+   └── 复用连接
+
+2. 协议优化
+   ├── HTTP/2 多路复用
+   ├── QUIC 协议
+   └── 压缩传输
+
+3. 缓存优化
+   ├── DNS 缓存
+   ├── CDN 加速
+   └── 本地缓存
+
+4. 负载均衡
+   ├── 轮询
+   ├── 最少连接
+   └── 加权分配
+```
+
+---
+
+## 6. 实战案例
+
+### 6.1 案例一：API 响应慢
+
+```
+问题：API P99 延迟从 50ms 增长到 500ms
+
+排查步骤：
+1. 使用 pprof 分析 CPU 热点
+2. 发现 JSON 序列化是瓶颈
+3. 优化序列化方式
+
+解决方案：
+- 使用 fastjson 替代标准库
+- 减少序列化对象大小
+- 添加响应缓存
+
+效果：P99 延迟从 500ms 降到 50ms
+```
+
+### 6.2 案例二：内存持续增长
+
+```
+问题：服务内存持续增长，每天增长 2GB
+
+排查步骤：
+1. 使用 pprof heap 分析内存
+2. 发现 goroutine 泄漏
+3. 定位到定时任务未正确退出
+
+解决方案：
+- 修复 goroutine 泄漏
+- 添加 context 超时控制
+- 实现优雅退出
+
+效果：内存稳定在 500MB 左右
+```
+
+---
+
+## 7. 性能测试
+
+### 7.1 基准测试
 
 ```go
-package rate
+// benchmark.go
 
-import (
-	"sync"
-	"time"
-)
+package test
 
-// SlidingWindowLimiter 滑动窗口限流器
-type SlidingWindowLimiter struct {
-	mu         sync.Mutex
-	windowSize time.Duration
-	maxOps     int64
-	operations []int64 // 操作时间戳列表
+import "testing"
+
+func BenchmarkSimpleFunc(b *testing.B) {
+    for i := 0; i < b.N; i++ {
+        SimpleFunc()
+    }
 }
 
-func NewSlidingWindowLimiter(window time.Duration, maxOps int64) *SlidingWindowLimiter {
-	return &SlidingWindowLimiter{
-		windowSize: window,
-		maxOps:     maxOps,
-	}
+func BenchmarkComplexFunc(b *testing.B) {
+    for i := 0; i < b.N; i++ {
+        ComplexFunc()
+    }
 }
 
-func (l *SlidingWindowLimiter) Allow() bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	
-	now := time.Now().UnixNano()
-	windowStart := now - int64(l.windowSize)
-	
-	// 清理过期操作
-	idx := 0
-	for idx < len(l.operations) && l.operations[idx] < windowStart {
-		idx++
-	}
-	if idx > 0 {
-		l.operations = l.operations[idx:]
-	}
-	
-	// 检查是否超限
-	if int64(len(l.operations)) >= l.maxOps {
-		return false
-	}
-	
-	l.operations = append(l.operations, now)
-	return true
+// 运行
+// go test -bench=. -benchmem
+```
+
+### 7.2 压测工具
+
+```bash
+# wrk 压测
+wrk -t12 -c400 -d30s http://localhost:8080/api
+
+# ab 压测
+ab -n 10000 -c 100 http://localhost:8080/api
+
+# fortio 压测
+fortio load -c 100 -qps 50 -n 10000 http://localhost:8080/api
+```
+
+---
+
+## 8. 监控告警
+
+### 8.1 关键指标
+
+```
+性能监控指标：
+
+CPU:
+- 使用率 (< 80%)
+- 负载 (1min/5min/15min)
+- iowait (< 20%)
+
+内存:
+- 使用率 (< 90%)
+- 交换使用
+- 缓存命中率
+
+磁盘:
+- I/O 使用率
+- 响应时间
+- 队列长度
+
+网络:
+- 带宽使用
+- 连接数
+- 错误率
+```
+
+### 8.2 Go 实现监控
+
+```go
+// metrics.go
+
+package monitor
+
+import "github.com/prometheus/client_golang/prometheus"
+
+type SystemMetrics struct {
+    cpuUsage    prometheus.Gauge
+    memUsage    prometheus.Gauge
+    diskUsage   prometheus.Gauge
+    netErrors   prometheus.Counter
 }
 
-// TokenBucket 令牌桶（另一种常见限流方案）
-type TokenBucket struct {
-	mu         sync.Mutex
-	tokens     float64
-	maxTokens  float64
-	refillRate float64
-	lastRefill time.Time
-}
-
-func NewTokenBucket(maxTokens, refillRate float64) *TokenBucket {
-	return &TokenBucket{
-		tokens:     maxTokens,
-		maxTokens:  maxTokens,
-		refillRate: refillRate,
-		lastRefill: time.Now(),
-	}
-}
-
-func (tb *TokenBucket) Allow() bool {
-	tb.mu.Lock()
-	defer tb.mu.Unlock()
-	
-	now := time.Now()
-	elapsed := now.Sub(tb.lastRefill).Seconds()
-	tb.tokens = math.Min(tb.maxTokens, tb.tokens+elapsed*tb.refillRate)
-	tb.lastRefill = now
-	
-	if tb.tokens >= 1.0 {
-		tb.tokens -= 1.0
-		return true
-	}
-	return false
+func NewSystemMetrics() *SystemMetrics {
+    return &SystemMetrics{
+        cpuUsage: prometheus.NewGauge(prometheus.GaugeOpts{
+            Name: "system_cpu_usage",
+            Help: "CPU usage percentage",
+        }),
+        memUsage: prometheus.NewGauge(prometheus.GaugeOpts{
+            Name: "system_mem_usage",
+            Help: "Memory usage percentage",
+        }),
+        diskUsage: prometheus.NewGauge(prometheus.GaugeOpts{
+            Name: "system_disk_usage",
+            Help: "Disk usage percentage",
+        }),
+        netErrors: prometheus.NewCounter(prometheus.CounterOpts{
+            Name: "system_net_errors_total",
+            Help: "Network errors total",
+        }),
+    }
 }
 ```
 
-### 自测题
+---
 
-<details>
-<summary>Q1: 多级缓存的回写策略（Write-Through vs Write-Behind）各有什么优劣？</summary>
+## 9. 总结
 
-**答案**：
+### 9.1 核心原理回顾
 
-| 策略 | 写入延迟 | 一致性 | 适用场景 |
-|------|---------|--------|---------|
-| Write-Through | 高（等L2/L3写完） | 强一致 | 计费/预算等关键数据 |
-| Write-Behind | 低（只写L1） | 最终一致 | 用户画像/推荐特征 |
+| 模块 | 核心机制 |
+|------|----------|
+| CPU | 热点分析 + 算法优化 |
+| 内存 | 泄漏检测 + 对象池化 |
+| 磁盘 | I/O 优化 + 顺序写入 |
+| 网络 | 连接池 + 协议优化 |
 
-广告竞价场景：**读多写少**，用 Write-Through 保证一致性；**用户画像更新**用 Write-Behind 批量异步落盘。
+### 9.2 最佳实践
 
-</details>
+- [ ] 建立性能基准
+- [ ] 使用 profiling 工具
+- [ ] 实施渐进式优化
+- [ ] 建立监控告警
+- [ ] 定期性能测试
 
-<details>
-<summary>Q2: CircuitBreaker 的 half-open 状态为什么需要 successCount >= 3 才恢复 closed？</summary>
+---
 
-**答案**：
-
-**单次成功不够可靠**——网络抖动可能只是瞬间恢复。连续3次成功才能确认服务真正恢复。
-
-**Trade-off**：
-- 3次太保守 → 恢复慢，用户体验差
-- 1次太激进 → 服务未完全恢复就恢复流量，导致雪崩
-- **生产推荐**：3-5次，配合监控告警人工介入
-
-</details>
-
-<details>
-<summary>Q3: 滑动窗口 vs 令牌桶限流器，各适用于什么场景？</summary>
-
-**答案**：
-
-| 特性 | 滑动窗口 | 令牌桶 |
-|------|---------|--------|
-| 突发处理 | ❌ 不允许 | ✅ 允许（桶中有剩余token） |
-| 精度 | 高（精确窗口计数） | 中（依赖 refill 频率） |
-| 实现复杂度 | 中 | 低 |
-| 适用场景 | API调用限制、防刷 | CDN带宽控制、消息队列 |
-
-广告平台：API限流用滑动窗口（精确控制），CDN回源用令牌桶（允许突发）。
-
-</details>
+*最后更新：2026-08-11*
+*作者：Ryan*

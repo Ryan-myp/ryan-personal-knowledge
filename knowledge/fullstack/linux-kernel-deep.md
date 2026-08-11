@@ -1,416 +1,333 @@
-# Linux 内核深度：进程调度/内存管理/网络栈
+# Linux 内核深度解析
 
-> 逐行源码解析 + 生产排障案例 + 对比分析 + 动手验证
-
----
-
-## 第一部分：入门引导（5 分钟速览）
-
-### 类比理解 Linux 内核
-
-```
-Linux 内核 = 操作系统的心脏
-
-核心组件：
-1. 进程调度器：决定谁用 CPU
-2. 内存管理器：决定谁用多少内存
-3. 文件系统：决定数据怎么存
-4. 网络栈：决定数据怎么传输
-5. 设备驱动：决定怎么和硬件交互
-```
-
-### Linux 内核核心概念
-
-```
-1. 进程 vs 线程：进程是资源分配单位，线程是调度单位
-2. 虚拟内存：每个进程有独立的地址空间
-3. 页表：虚拟地址到物理地址的映射
-4. 中断：硬件或软件信号
-5. 系统调用：用户态到内核态的桥梁
-```
+> 深入 Linux 内核：进程调度、内存管理、网络栈、文件系统。
+> 源码级分析，包含生产环境调优。
+> 适用对象：系统工程师、DevOps、后端工程师
 
 ---
 
-## 第二部分：进程调度
+## 1. 进程调度
 
-### 2.1 CFS 调度器
+### 1.1 CFS 调度器
 
 ```
-CFS（Completely Fair Scheduler）：
+完全公平调度器 (CFS) 原理：
 
-核心思想：
-- 每个进程都应该得到公平的 CPU 时间
-- 使用红黑树管理进程
-- 按虚拟运行时间排序
+1. 虚拟运行时间 (vruntime)
+   - 每个进程维护一个 vruntime
+   - 调度器选择 vruntime 最小的进程
 
-关键概念：
--vruntime：虚拟运行时间
--weight：进程权重（nice 值）
--load：进程负载
+2. 权重计算
+   - nice 值决定权重
+   - nice -20: 权重 1024
+   - nice 0: 权重 100
+   - nice 19: 权重 10
+
+3. 调度决策
+   - 选择 vruntime 最小的进程
+   - 运行一个时间片后更新 vruntime
 ```
 
-### 2.2 Go 实现简易调度器
+### 1.2 Go 实现调度器
 
 ```go
+// scheduler.go
+
 package scheduler
 
 import (
     "container/heap"
-    "context"
     "sync"
-    "time"
 )
 
-// Process 进程
 type Process struct {
-    ID         int
-    Priority   int       // 0-19, 越小优先级越高
-    BurstTime  time.Duration
-    RemainTime time.Duration
-    ArrivalTime time.Time
-    VRuntime   time.Duration // 虚拟运行时间
+    id       int
+    vruntime int64
+    priority int
+    state    string
 }
 
-// Scheduler 调度器
-type Scheduler struct {
+type ProcessQueue struct {
     processes []*Process
-    running   *Process
     mu        sync.Mutex
-    ctx       context.Context
-    cancel    context.CancelFunc
 }
 
-func NewScheduler() *Scheduler {
-    ctx, cancel := context.WithCancel(context.Background())
-    return &Scheduler{
-        ctx: ctx,
-        cancel: cancel,
-    }
+func (pq *ProcessQueue) Add(p *Process) {
+    pq.mu.Lock()
+    defer pq.mu.Unlock()
+    pq.processes = append(pq.processes, p)
 }
 
-// AddProcess 添加进程
-func (s *Scheduler) AddProcess(p *Process) {
-    s.mu.Lock()
-    defer s.mu.Unlock()
+func (pq *ProcessQueue) Next() *Process {
+    pq.mu.Lock()
+    defer pq.mu.Unlock()
     
-    s.processes = append(s.processes, p)
-    heap.Fix(&s.processHeap, p.ID)
-}
-
-// Schedule 调度
-func (s *Scheduler) Schedule() *Process {
-    s.mu.Lock()
-    defer s.mu.Unlock()
-    
-    if len(s.processes) == 0 {
+    if len(pq.processes) == 0 {
         return nil
     }
     
-    // 选择 vruntime 最小的进程
-    minVRuntime := s.processes[0]
-    for _, p := range s.processes {
-        if p.VRuntime < minVRuntime.VRuntime {
-            minVRuntime = p
+    // 找 vruntime 最小的
+    min := pq.processes[0]
+    for _, p := range pq.processes[1:] {
+        if p.vruntime < min.vruntime {
+            min = p
         }
     }
     
-    // 从队列中移除
-    for i, p := range s.processes {
-        if p.ID == minVRuntime.ID {
-            s.processes = append(s.processes[:i], s.processes[i+1:]...)
-            break
-        }
-    }
-    
-    s.running = minVRuntime
-    return minVRuntime
+    // 移除并返回
+    pq.processes = remove(pq.processes, min)
+    return min
 }
 
-// Tick 时钟滴答
-func (s *Scheduler) Tick() {
-    if s.running == nil {
-        return
+func remove(processes []*Process, p *Process) []*Process {
+    for i, proc := range processes {
+        if proc.id == p.id {
+            return append(processes[:i], processes[i+1:]...)
+        }
     }
-    
-    s.running.VRuntime += time.Millisecond
-    s.running.RemainTime -= time.Millisecond
-    
-    if s.running.RemainTime <= 0 {
-        // 进程完成，放回队列
-        s.processes = append(s.processes, s.running)
-        s.running = nil
-    }
+    return processes
 }
 ```
 
 ---
 
-## 第三部分：内存管理
+## 2. 内存管理
 
-### 3.1 虚拟内存
+### 2.1 内存布局
 
 ```
-虚拟内存层次：
-L1 Cache (~1ns) → L2 Cache (~3ns) → L3 Cache (~15ns)
-→ 物理内存 (~100ns) → Swap (~10ms)
+进程内存布局：
 
-页表结构：
-4KB 页面 = 2^12
-x86-64 四级页表：
-PGD → PUD → PMD → PTE → Physical Address
-
-TLB（Translation Lookaside Buffer）：
-缓存页表转换，避免每次访问都查页表
+┌─────────────────────────────────────────────────────────────┐
+│                    用户空间                                  │
+├─────────────────────────────────────────────────────────────┤
+│  Stack (栈)                                                 │
+│  ├── 函数调用信息                                            │
+│  ├── 局部变量                                                │
+│  └── 向下增长                                                │
+├─────────────────────────────────────────────────────────────┤
+│  Heap (堆)                                                  │
+│  ├── malloc/new 分配                                         │
+│  └── 向上增长                                                │
+├─────────────────────────────────────────────────────────────┤
+│  Data (数据段)                                              │
+│  ├── 全局变量                                                │
+│  └── 静态变量                                                │
+├─────────────────────────────────────────────────────────────┤
+│  Text (代码段)                                              │
+│  └── 可执行代码                                              │
+├─────────────────────────────────────────────────────────────┤
+│                    内核空间                                  │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 Go 实现内存分配器
+### 2.2 虚拟内存
 
 ```go
+// virtual_memory.go
+
 package memory
 
-import (
-    "sync"
-    "unsafe"
-)
-
-// Allocator 内存分配器
-type Allocator struct {
-    pools     [32]*Pool  // 32 个大小类别
-    mu        sync.Mutex
+type VirtualMemory struct {
+    pages       map[uintptr]*Page
+    pageTable   *PageTable
 }
 
-type Pool struct {
-    size     uintptr
-    objects  chan []byte
-    capacity int
+type Page struct {
+    address  uintptr
+    physical uintptr
+    refCount int
+    dirty    bool
 }
 
-func NewAllocator() *Allocator {
-    a := &Allocator{}
-    
-    // 创建不同大小的池
-    sizes := []uintptr{16, 32, 64, 128, 256, 512, 1024, 2048, 4096}
-    for _, size := range sizes {
-        a.pools[sizeIndex(size)] = &Pool{
-            size:     size,
-            objects:  make(chan []byte, 100),
-            capacity: 100,
+type PageTable struct {
+    entries [4096]*Page
+}
+
+func (vm *VirtualMemory) Map(vaddr, paddr uintptr, size uintptr) error {
+    // 页表映射
+    for offset := uintptr(0); offset < size; offset += 4096 {
+        page := &Page{
+            address:  vaddr + offset,
+            physical: paddr + offset,
+            refCount: 1,
         }
+        vm.pages[page.address] = page
     }
-    
-    return a
-}
-
-func (a *Allocator) Alloc(size uintptr) unsafe.Pointer {
-    idx := sizeIndex(size)
-    
-    // 从小对象池中分配
-    if pool := a.pools[idx]; pool != nil {
-        select {
-        case obj := <-pool.objects:
-            return unsafe.Pointer(&obj[0])
-        default:
-            // 池空了，分配新对象
-            obj := make([]byte, pool.size)
-            return unsafe.Pointer(&obj[0])
-        }
-    }
-    
-    // 大对象直接分配
-    obj := make([]byte, size)
-    return unsafe.Pointer(&obj[0])
-}
-
-func (a *Allocator) Free(ptr unsafe.Pointer, size uintptr) {
-    idx := sizeIndex(size)
-    if pool := a.pools[idx]; pool != nil {
-        select {
-        case pool.objects <- *(*[]byte)(ptr):
-        default:
-            // 池满了，丢弃
-        }
-    }
-}
-
-func sizeIndex(size uintptr) int {
-    if size <= 16 {
-        return 0
-    }
-    idx := 0
-    for size > 16<<(idx+4) {
-        idx++
-    }
-    return idx
+    return nil
 }
 ```
 
 ---
 
-## 第四部分：网络栈
+## 3. 网络栈
 
-### 4.1 Linux 网络栈
+### 3.1 TCP 协议栈
 
 ```
-应用层 → socket() → sendto()
-  ↓
-传输层 → TCP/UDP 处理
-  ↓
-网络层 → IP 路由 → 选择网卡
-  ↓
-链路层 → Ethernet 封装 → 发送
+TCP 状态机：
+
+CLOSED ────► SYN_SENT ────► ESTABLISHED ────► CLOSE_WAIT
+   ▲                                         │
+   │                                         ▼
+   └──── FIN_WAIT ────► LAST_ACK ────► CLOSED
 ```
 
-### 4.2 Go 实现网络协议栈
+### 3.2 Go 实现 TCP 服务器
 
 ```go
+// tcp_server.go
+
 package network
 
 import (
-    "context"
-    "encoding/binary"
     "net"
+    "sync"
 )
 
-// ProtocolStack 协议栈
-type ProtocolStack struct {
-    transport *TransportLayer
-    network   *NetworkLayer
-    link      *LinkLayer
+type TCPServer struct {
+    listener    net.Listener
+    connections sync.Map
 }
 
-// TransportLayer 传输层
-type TransportLayer struct {
-    tcp  *TCPConnection
-    udp  *UDPConnection
+func NewTCPServer(addr string) (*TCPServer, error) {
+    listener, err := net.Listen("tcp", addr)
+    if err != nil {
+        return nil, err
+    }
+    return &TCPServer{listener: listener}, nil
 }
 
-// NetworkLayer 网络层
-type NetworkLayer struct {
-    routes []Route
+func (s *TCPServer) Start() {
+    for {
+        conn, err := s.listener.Accept()
+        if err != nil {
+            continue
+        }
+        s.connections.Store(conn.RemoteAddr().String(), conn)
+        go s.handle(conn)
+    }
 }
 
-type Route struct {
-    Destination string
-    Gateway     string
-    Interface   string
+func (s *TCPServer) handle(conn net.Conn) {
+    defer conn.Close()
+    buf := make([]byte, 4096)
+    for {
+        n, err := conn.Read(buf)
+        if err != nil {
+            return
+        }
+        // 处理请求
+    }
 }
+```
 
-// LinkLayer 链路层
-type LinkLayer struct {
-    interfaces map[string]*Interface
-}
+---
 
-type Interface struct {
-    Name    string
-    MAC     net.HardwareAddr
-    MTU     int
-}
+## 4. 文件系统
 
-// Send 发送数据包
-func (ps *ProtocolStack) Send(ctx context.Context, data []byte, dstIP string) error {
-    // 1. 查找路由
-    route := ps.network.FindRoute(dstIP)
-    if route == nil {
-        return fmt.Errorf("no route to host")
+### 4.1 VFS 层
+
+```
+虚拟文件系统 (VFS) 架构：
+
+┌─────────────────────────────────────────────────────────────┐
+│                     系统调用层                               │
+│  open(), read(), write(), close()                           │
+├─────────────────────────────────────────────────────────────┤
+│                     VFS 层                                  │
+│  ├── dentry (目录项缓存)                                    │
+│  ├── inode (文件元数据)                                     │
+│  └── file (打开的文件描述符)                                │
+├─────────────────────────────────────────────────────────────┤
+│                     文件系统层                              │
+│  ├── ext4                                                   │
+│  ├── xfs                                                    │
+│  └── btrfs                                                  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 4.2 文件缓存
+
+```
+页缓存 (Page Cache)：
+
+- 内核使用空闲内存缓存文件数据
+- 减少磁盘 I/O
+- 通过 drop_caches 清空缓存
+```
+
+---
+
+## 5. 性能调优
+
+### 5.1 内核参数
+
+```bash
+# 网络优化
+net.core.somaxconn = 65535
+net.ipv4.tcp_max_syn_backlog = 65535
+net.core.netdev_max_backlog = 65535
+
+# 文件描述符
+fs.file-max = 1000000
+fs.nr_open = 1000000
+
+# 内存优化
+vm.swappiness = 10
+vm.min_free_kbytes = 65536
+```
+
+### 5.2 Go 优化
+
+```go
+// optimize.go
+
+package main
+
+import (
+    "runtime"
+    "sync"
+)
+
+func main() {
+    // 设置 GOMAXPROCS
+    runtime.GOMAXPROCS(runtime.NumCPU())
+    
+    // 对象池
+    var pool sync.Pool
+    pool.New = func() interface{} {
+        return make([]byte, 1024)
     }
     
-    // 2. 封装 IP 包
-    ipPacket := ps.network.Encapsulate(data, route.Destination)
-    
-    // 3. 封装以太网帧
-    ethFrame := ps.link.Encapsulate(ipPacket, route.Interface)
-    
-    // 4. 发送
-    return ps.link.Send(ethFrame)
+    // 使用池
+    buf := pool.Get().([]byte)
+    defer pool.Put(buf)
 }
 ```
 
 ---
 
-## 第五部分：生产排障案例
+## 6. 总结
 
-### 5.1 CPU 飙高
+### 6.1 核心原理回顾
 
-```
-现象：服务器 CPU 使用率 100%
+| 模块 | 核心机制 |
+|------|----------|
+| 调度 | CFS 公平调度 |
+| 内存 | 虚拟内存 + 页表 |
+| 网络 | TCP/IP 协议栈 |
+| 文件 | VFS + 页缓存 |
 
-排查：
-1. top -H -p <pid> 查看线程
-2. strace -p <pid> 跟踪系统调用
-3. perf record 性能分析
+### 6.2 最佳实践
 
-根因：goroutine 泄漏导致 CPU 高
-
-解决方案：
-1. 使用 pprof 分析
-2. 修复 goroutine 泄漏
-3. 添加监控告警
-```
-
-### 5.2 内存泄漏
-
-```
-现象：服务器内存持续增长
-
-排查：
-1. free -m 查看内存使用
-2. pprof heap 查看堆内存
-3. dmesg 查看 OOM
-
-根因：大对象未及时释放
-
-解决方案：
-1. 使用 pprof 定位
-2. 优化内存分配
-3. 添加 GC 调优
-```
+- [ ] 合理设置内核参数
+- [ ] 监控系统资源
+- [ ] 优化 Go 运行时
+- [ ] 使用对象池
+- [ ] 调优网络栈
 
 ---
 
-## 第六部分：自测题
-
-### 问题 1
-CFS 调度器的工作原理？
-
-<details>
-<summary>查看答案</summary>
-
-1. **虚拟运行时间**：vruntime
-2. **红黑树**：按 vruntime 排序
-3. **公平性**：每个进程得到公平 CPU 时间
-4. **权重**：nice 值影响权重
-5. **Go 实现**：Scheduler
-
-</details>
-
-### 问题 2
-虚拟内存的优势？
-
-<details>
-<summary>查看答案</summary>
-
-1. **隔离**：每个进程独立地址空间
-2. **共享**：代码段可以共享
-3. **交换**：内存不足时 swap
-4. **保护**：内存访问保护
-5. **Go 实现**：Allocator
-
-</details>
-
-### 问题 3
-Linux 网络栈的工作流程？
-
-<details>
-<summary>查看答案</summary>
-
-1. **Socket API**：应用层接口
-2. **传输层**：TCP/UDP
-3. **网络层**：IP 路由
-4. **链路层**：Ethernet
-5. **Go 实现**：ProtocolStack
-
-</details>
-
----
-
-*本文档基于 Linux 内核原理整理。*
+*最后更新：2026-08-11*
+*作者：Ryan*
