@@ -133,9 +133,30 @@ def build_index(kb_root: Path) -> List[Dict]:
 # Multi-path search (knowledge-search specific)
 # ──────────────────────────────────────────────
 
+def _extract_terms(text: str) -> set:
+    """提取关键词，中英文分别处理"""
+    # 先按英文单词拆分，再按中文逐个字符拆分
+    parts = re.findall(r'[a-zA-Z]+|[\u4e00-\u9fff]+', text.lower())
+    # 中文部分进一步拆分为2-4字短语
+    terms = set()
+    for part in parts:
+        if re.match(r'^[a-zA-Z]+$', part):
+            terms.add(part)
+        elif len(part) >= 2:
+            # 中文：保留整体，同时添加2-4字滑动窗口
+            terms.add(part)
+            for i in range(len(part) - 1):
+                terms.add(part[i:i+2])
+            for i in range(len(part) - 2):
+                terms.add(part[i:i+3])
+            for i in range(len(part) - 3):
+                terms.add(part[i:i+4])
+    return terms
+
+
 def search_file_content(query: str, docs: List[Dict], top_k: int = 10) -> List[Dict]:
     """按文件内容搜索"""
-    query_terms = set(re.findall(r'[\w\u4e00-\u9fff]+', query.lower()))
+    query_terms = _extract_terms(query)
     if not query_terms:
         return []
 
@@ -165,7 +186,7 @@ def search_file_name(query: str, docs: List[Dict], top_k: int = 10) -> List[Dict
         if query_lower in text_to_check:
             score = 1.0
         else:
-            query_words = set(re.findall(r'[\w\u4e00-\u9fff]+', query_lower))
+            query_words = _extract_terms(query_lower)
             text_words = set(re.findall(r'[\w\u4e00-\u9fff]+', text_to_check))
             if query_words and text_words:
                 overlap = len(query_words & text_words)
@@ -183,7 +204,7 @@ def search_file_name(query: str, docs: List[Dict], top_k: int = 10) -> List[Dict
 def search_tags(query: str, docs: List[Dict], top_k: int = 10) -> List[Dict]:
     """按标签搜索"""
     query_lower = query.lower()
-    query_words = set(re.findall(r'[\w\u4e00-\u9fff]+', query_lower))
+    query_words = _extract_terms(query_lower)
     if not query_words:
         return []
 
@@ -213,7 +234,7 @@ def search_directory(query: str, docs: List[Dict], top_k: int = 10) -> List[Dict
         if query_lower in text_to_check:
             score = 1.0
         else:
-            query_words = set(re.findall(r'[\w\u4e00-\u9fff]+', query_lower))
+            query_words = _extract_terms(query_lower)
             text_words = set(re.findall(r'[\w\u4e00-\u9fff]+', text_to_check))
             if query_words and text_words:
                 overlap = len(query_words & text_words)
@@ -246,7 +267,7 @@ def extract_frontmatter_type(frontmatter: Dict) -> Optional[str]:
 def search_wikilinks(query: str, docs: List[Dict], top_k: int = 10) -> List[Dict]:
     """[[wikilinks]] 搜索 — 通过链接关系找到相关页面"""
     query_lower = query.lower()
-    query_words = set(re.findall(r'[\w\u4e00-\u9fff]+', query_lower))
+    query_words = _extract_terms(query_lower)
     if not query_words:
         return []
 
@@ -274,7 +295,7 @@ def search_wikilinks(query: str, docs: List[Dict], top_k: int = 10) -> List[Dict
 def search_entity_pages(query: str, docs: List[Dict], top_k: int = 10) -> List[Dict]:
     """Entity 页面优先 — frontmatter type=entity/concept 的页面排前面"""
     query_lower = query.lower()
-    query_words = set(re.findall(r'[\w\u4e00-\u9fff]+', query_lower))
+    query_words = _extract_terms(query_lower)
     if not query_words:
         return []
 
