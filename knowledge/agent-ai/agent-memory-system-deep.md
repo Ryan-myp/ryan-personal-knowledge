@@ -14,3 +14,10 @@
 1. 对话历史管理 → 结合[RAG检索增强](../agent-ai/rag-4.0-tech-deep.md)
 2. 用户偏好学习 → 结合[Agent自我进化](../agent-ai/agent-self-improve-deep.md)
 3. 长期记忆持久化 → 结合[向量数据库集成](../agent-ai/agent-memory-production-patterns-deep.md)
+
+---
+
+## 交叉引用
+- [Agent架构设计](./agent-architecture-deep.md)
+- [Agent生产部署](./agent-production-patterns-deep.md)
+- [RAG评估系统](./rag-evaluation-system-deep.md)

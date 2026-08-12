@@ -126,3 +126,10 @@ func (c *ToolCaller) execute(ctx context.Context, call ToolCall) ToolCall {
 2. **工具调用的关键挑战？**
    - 参数校验 + 超时控制 + 错误处理
 
+
+---
+
+## 交叉引用
+- [Agent架构设计](./agent-architecture-deep.md)
+- [Agent生产部署](./agent-production-patterns-deep.md)
+- [RAG评估系统](./rag-evaluation-system-deep.md)

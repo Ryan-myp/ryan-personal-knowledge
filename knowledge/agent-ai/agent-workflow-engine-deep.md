@@ -112,3 +112,10 @@ func (e *WorkflowEngine) Execute(ctx context.Context, input interface{}) (interf
 2. **如何处理循环和条件分支？**
    - 条件判断 + 状态追踪
 
+
+---
+
+## 交叉引用
+- [Agent架构设计](./agent-architecture-deep.md)
+- [Agent生产部署](./agent-production-patterns-deep.md)
+- [RAG评估系统](./rag-evaluation-system-deep.md)

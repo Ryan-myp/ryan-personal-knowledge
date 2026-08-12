@@ -1690,3 +1690,10 @@ func main() {
 1. 实时用户匹配 → 结合[DSP特征工程](./dsp-core-architecture-deep.md)
 2. 隐私保护设计 → 结合[RTA安全策略](./rta-privacy-security-deep.md)
 3. 性能优化 → 结合[Bidding监控体系](./bidding-monitoring-deep.md)
+
+---
+
+## 交叉引用
+- [DSP核心架构](./dsp-core-architecture-deep.md)
+- [竞价引擎指南](./bidding-engine-production-guide.md)
+- [广告单元路由](./ad-unit-routing-deep.md)
