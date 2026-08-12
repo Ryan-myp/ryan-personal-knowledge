@@ -1,9 +1,9 @@
-# 广告技术深度实现
+# agent-reasoning 2026深度实现
 
 > **版本**: v2.1  
 > **日期**: 2026-08-14  
 > **作者**: Ryan  
-> **分类**: 广告  
+> **分类**: 前沿  
 > **代码密度**: 30%
 
 ---
@@ -21,9 +21,9 @@
 ## 二、实现代码
 
 ```go
-package ad
+package frontier
 
-func ProcessAd() {}
+func Solve() {}
 ```
 
 ---
