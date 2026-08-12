@@ -1,0 +1,99 @@
+2026-08-13 01:12:30,847 - knowledge_guardian - INFO - 🚀 知识库优化守护进程启动
+2026-08-13 01:12:30,847 - knowledge_guardian - INFO - 🚀 知识库优化守护进程启动
+2026-08-13 01:12:30,847 - knowledge_guardian - INFO -    监听目录: /Users/yanping.ma/ryan-personal-knowledge/listener/notifications
+2026-08-13 01:12:30,847 - knowledge_guardian - INFO -    监听目录: /Users/yanping.ma/ryan-personal-knowledge/listener/notifications
+2026-08-13 01:12:30,847 - knowledge_guardian - INFO -    检查间隔: 10秒
+2026-08-13 01:12:30,847 - knowledge_guardian - INFO -    检查间隔: 10秒
+2026-08-13 01:12:40,851 - knowledge_guardian - INFO - 📥 检测到通知: test_auto - 测试自动优化
+2026-08-13 01:12:40,852 - knowledge_guardian - INFO - 📥 检测到通知: test_auto - 测试自动优化
+2026-08-13 01:12:40,852 - knowledge_guardian - INFO - 🔧 开始执行优化...
+2026-08-13 01:12:40,852 - knowledge_guardian - INFO - 🔧 开始执行优化...
+2026-08-13 01:12:40,892 - knowledge_guardian - ERROR - ❌ 优化脚本执行失败:   File "/Users/yanping.ma/ryan-personal-knowledge/scripts/auto-optimize.py", line 307
+    """
+       ^
+SyntaxError: f-string: empty expression not allowed
+
+2026-08-13 01:12:40,892 - knowledge_guardian - ERROR - ❌ 优化任务失败: test_auto
+2026-08-13 01:12:40,892 - knowledge_guardian - ERROR - ❌ 优化脚本执行失败:   File "/Users/yanping.ma/ryan-personal-knowledge/scripts/auto-optimize.py", line 307
+    """
+       ^
+SyntaxError: f-string: empty expression not allowed
+
+2026-08-13 01:12:40,892 - knowledge_guardian - ERROR - ❌ 优化任务失败: test_auto
+2026-08-13 01:14:36,890 - knowledge_guardian - INFO - 🚀 知识库优化守护进程启动
+2026-08-13 01:14:36,890 - knowledge_guardian - INFO -    监听目录: /Users/yanping.ma/ryan-personal-knowledge/listener/notifications
+2026-08-13 01:14:36,890 - knowledge_guardian - INFO -    检查间隔: 10秒
+2026-08-13 01:15:46,909 - knowledge_guardian - INFO - 📥 检测到通知: test_auto - 测试后台自动优化
+2026-08-13 01:15:46,909 - knowledge_guardian - INFO - 🔧 开始执行优化...
+2026-08-13 01:15:46,941 - knowledge_guardian - ERROR - ❌ 优化脚本执行失败:   File "/Users/yanping.ma/ryan-personal-knowledge/scripts/auto-optimize.py", line 307
+    """
+       ^
+SyntaxError: f-string: empty expression not allowed
+
+2026-08-13 01:15:46,941 - knowledge_guardian - ERROR - ❌ 优化任务失败: test_auto
+2026-08-13 01:15:56,947 - knowledge_guardian - INFO - 📥 检测到通知: test_auto - 测试后台自动优化
+2026-08-13 01:15:56,947 - knowledge_guardian - INFO - 🔧 开始执行优化...
+2026-08-13 01:15:57,001 - knowledge_guardian - ERROR - ❌ 优化脚本执行失败:   File "/Users/yanping.ma/ryan-personal-knowledge/scripts/auto-optimize.py", line 307
+    """
+       ^
+SyntaxError: f-string: empty expression not allowed
+
+2026-08-13 01:15:57,001 - knowledge_guardian - ERROR - ❌ 优化任务失败: test_auto
+2026-08-13 01:16:07,006 - knowledge_guardian - INFO - 📥 检测到通知: test_auto - 测试后台自动优化
+2026-08-13 01:16:07,006 - knowledge_guardian - INFO - 🔧 开始执行优化...
+2026-08-13 01:16:07,036 - knowledge_guardian - ERROR - ❌ 优化脚本执行失败:   File "/Users/yanping.ma/ryan-personal-knowledge/scripts/auto-optimize.py", line 307
+    """
+       ^
+SyntaxError: f-string: empty expression not allowed
+
+2026-08-13 01:16:07,036 - knowledge_guardian - ERROR - ❌ 优化任务失败: test_auto
+2026-08-13 01:16:17,043 - knowledge_guardian - INFO - 📥 检测到通知: test_auto - 测试后台自动优化
+2026-08-13 01:16:17,043 - knowledge_guardian - INFO - 🔧 开始执行优化...
+2026-08-13 01:16:17,074 - knowledge_guardian - ERROR - ❌ 优化脚本执行失败:   File "/Users/yanping.ma/ryan-personal-knowledge/scripts/auto-optimize.py", line 307
+    """
+       ^
+SyntaxError: f-string: empty expression not allowed
+
+2026-08-13 01:16:17,074 - knowledge_guardian - ERROR - ❌ 优化任务失败: test_auto
+2026-08-13 01:16:27,079 - knowledge_guardian - INFO - 📥 检测到通知: test_auto - 测试后台自动优化
+2026-08-13 01:16:27,079 - knowledge_guardian - INFO - 🔧 开始执行优化...
+2026-08-13 01:16:34,206 - knowledge_guardian - INFO - ✅ 优化脚本执行成功
+2026-08-13 01:16:34,206 - knowledge_guardian - INFO - nping.ma/ryan-personal-knowledge/knowledge/other/auto-generated-topic-deep.md (5KB)
+[2026-08-13 01:16:27] ✅ 生成文档: /Users/yanping.ma/ryan-personal-knowledge/knowledge/xfs/auto-generated-topic-deep.md (5KB)
+[2026-08-13 01:16:30] ✅ Git提交成功
+[2026-08-13 01:16:34] ✅ Git推送成功
+[2026-08-13 01:16:34] 
+✅ 本次生成 2 篇文档
+[2026-08-13 01:16:34] ============================================================
+[2026-08-13 01:16:34] 自动优化完成
+[2026-08-13 01:16:34] ============================================================
+
+2026-08-13 01:16:34,207 - knowledge_guardian - INFO - ✅ 优化任务完成: test_auto
+2026-08-13 01:16:34,207 - knowledge_guardian - INFO - 📥 检测到通知: test_fix - 测试修复后的自动优化
+2026-08-13 01:16:34,207 - knowledge_guardian - INFO - 🔧 开始执行优化...
+2026-08-13 01:16:41,066 - knowledge_guardian - INFO - ✅ 优化脚本执行成功
+2026-08-13 01:16:41,066 - knowledge_guardian - INFO - nping.ma/ryan-personal-knowledge/knowledge/ocaml/auto-generated-topic-deep.md (5KB)
+[2026-08-13 01:16:34] ✅ 生成文档: /Users/yanping.ma/ryan-personal-knowledge/knowledge/jwt/auto-generated-topic-deep.md (5KB)
+[2026-08-13 01:16:37] ✅ Git提交成功
+[2026-08-13 01:16:41] ✅ Git推送成功
+[2026-08-13 01:16:41] 
+✅ 本次生成 2 篇文档
+[2026-08-13 01:16:41] ============================================================
+[2026-08-13 01:16:41] 自动优化完成
+[2026-08-13 01:16:41] ============================================================
+
+2026-08-13 01:16:41,066 - knowledge_guardian - INFO - ✅ 优化任务完成: test_fix
+2026-08-13 01:17:01,076 - knowledge_guardian - INFO - 📥 检测到通知: hourly_optimize - 知识库小时级优化任务
+2026-08-13 01:17:01,076 - knowledge_guardian - INFO - 🔧 开始执行优化...
+2026-08-13 01:17:08,125 - knowledge_guardian - INFO - ✅ 优化脚本执行成功
+2026-08-13 01:17:08,125 - knowledge_guardian - INFO - ping.ma/ryan-personal-knowledge/knowledge/btrfs/auto-generated-topic-deep.md (5KB)
+[2026-08-13 01:17:01] ✅ 生成文档: /Users/yanping.ma/ryan-personal-knowledge/knowledge/mesh/auto-generated-topic-deep.md (5KB)
+[2026-08-13 01:17:04] ✅ Git提交成功
+[2026-08-13 01:17:08] ✅ Git推送成功
+[2026-08-13 01:17:08] 
+✅ 本次生成 2 篇文档
+[2026-08-13 01:17:08] ============================================================
+[2026-08-13 01:17:08] 自动优化完成
+[2026-08-13 01:17:08] ============================================================
+
+2026-08-13 01:17:08,126 - knowledge_guardian - INFO - ✅ 优化任务完成: hourly_optimize

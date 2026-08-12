@@ -1,0 +1,14 @@
+2026-08-13 01:10:24,088 - notify - INFO - 通知已发送: test - 测试通知 - 知识库优化
+2026-08-13 01:10:24,088 - notify - INFO - 通知已发送: hourly_optimize - 知识库小时级优化任务
+2026-08-13 01:10:24,088 - notify - INFO - 发送结果: {'macos': True, 'file': True, 'pi': True}
+2026-08-13 01:10:24,088 - notify - INFO - 发送结果: {'macos': True, 'file': True, 'pi': True}
+2026-08-13 01:12:35,219 - notify - INFO - 通知已发送: test_auto - 测试自动优化
+2026-08-13 01:12:35,220 - notify - INFO - 发送结果: {'macos': True, 'file': True, 'pi': True}
+2026-08-13 01:13:24,906 - notify - INFO - 通知已发送: test_extension - 测试pi扩展检测
+2026-08-13 01:13:24,906 - notify - INFO - 发送结果: {'macos': True, 'file': True, 'pi': True}
+2026-08-13 01:15:46,775 - notify - INFO - 通知已发送: test_auto - 测试后台自动优化
+2026-08-13 01:15:46,775 - notify - INFO - 发送结果: {'macos': True, 'file': True, 'pi': True}
+2026-08-13 01:16:21,786 - notify - INFO - 通知已发送: test_fix - 测试修复后的自动优化
+2026-08-13 01:16:21,786 - notify - INFO - 发送结果: {'macos': True, 'file': True, 'pi': True}
+2026-08-13 01:17:00,953 - notify - INFO - 通知已发送: hourly_optimize - 知识库小时级优化任务
+2026-08-13 01:17:00,954 - notify - INFO - 发送结果: {'macos': True, 'file': True, 'pi': True}

@@ -1,0 +1,13 @@
+{
+  "notification": {
+    "id": "notify_1786554981_22019",
+    "type": "test_fix",
+    "message": "测试修复后的自动优化",
+    "priority": "high",
+    "timestamp": "2026-08-13T01:16:21.740575",
+    "metadata": {},
+    "sent_at": "2026-08-13T01:16:21.740578"
+  },
+  "processed_at": "2026-08-13T01:16:41.066501",
+  "status": "success"
+}

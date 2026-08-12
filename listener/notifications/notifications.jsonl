@@ -1,2 +1,7 @@
 {"id": "notify_1786554623_17989", "type": "test", "message": "测试通知 - 知识库优化", "priority": "high", "timestamp": "2026-08-13T01:10:23.650865", "metadata": {}, "sent_at": "2026-08-13T01:10:23.650867"}
 {"id": "notify_1786554623_18006", "type": "hourly_optimize", "message": "知识库小时级优化任务", "priority": "normal", "timestamp": "2026-08-13T01:10:23.662489", "metadata": {"triggered_by": "cron", "source": "scripts/notify-optimize.sh"}, "sent_at": "2026-08-13T01:10:23.662493"}
+{"id": "notify_1786554755_19285", "type": "test_auto", "message": "测试自动优化", "priority": "high", "timestamp": "2026-08-13T01:12:35.159564", "metadata": {}, "sent_at": "2026-08-13T01:12:35.159566"}
+{"id": "notify_1786554804_19713", "type": "test_extension", "message": "测试pi扩展检测", "priority": "high", "timestamp": "2026-08-13T01:13:24.861297", "metadata": {}, "sent_at": "2026-08-13T01:13:24.861300"}
+{"id": "notify_1786554946_21673", "type": "test_auto", "message": "测试后台自动优化", "priority": "high", "timestamp": "2026-08-13T01:15:46.728565", "metadata": {}, "sent_at": "2026-08-13T01:15:46.728567"}
+{"id": "notify_1786554981_22019", "type": "test_fix", "message": "测试修复后的自动优化", "priority": "high", "timestamp": "2026-08-13T01:16:21.740575", "metadata": {}, "sent_at": "2026-08-13T01:16:21.740578"}
+{"id": "notify_1786555020_22393", "type": "hourly_optimize", "message": "知识库小时级优化任务", "priority": "normal", "timestamp": "2026-08-13T01:17:00.859440", "metadata": {"triggered_by": "cron", "source": "scripts/notify-optimize.sh"}, "sent_at": "2026-08-13T01:17:00.859445"}

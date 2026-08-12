@@ -1,0 +1,16 @@
+{
+  "notification": {
+    "id": "notify_1786555020_22393",
+    "type": "hourly_optimize",
+    "message": "知识库小时级优化任务",
+    "priority": "normal",
+    "timestamp": "2026-08-13T01:17:00.859440",
+    "metadata": {
+      "triggered_by": "cron",
+      "source": "scripts/notify-optimize.sh"
+    },
+    "sent_at": "2026-08-13T01:17:00.859445"
+  },
+  "processed_at": "2026-08-13T01:17:08.125946",
+  "status": "success"
+}

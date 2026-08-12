@@ -20,7 +20,7 @@ LOG_FILE = BASE_DIR / "logs" / "notify.log"
 
 # 通知渠道配置
 CHANNELS = {
-    "macos": True,           # macOS桌面通知
+    "macos": False,           # macOS桌面通知
     "telegram": False,       # Telegram Bot（需配置）
     "feishu": False,         # 飞书Webhook（需配置）
     "file": True,            # 文件记录

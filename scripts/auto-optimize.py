@@ -120,7 +120,7 @@ class CoreEngine:
     def __init__(self, config: Dict):
         self.config = config
         self.tasks: List[Task] = []
-        self.results: Dict[str, Any] = {}
+        self.results: Dict[str, Any] = {{}}
         self._lock = asyncio.Lock()
     
     async def process(self, task: Task) -> Any:

@@ -1,0 +1,13 @@
+{
+  "notification": {
+    "id": "notify_1786554946_21673",
+    "type": "test_auto",
+    "message": "测试后台自动优化",
+    "priority": "high",
+    "timestamp": "2026-08-13T01:15:46.728565",
+    "metadata": {},
+    "sent_at": "2026-08-13T01:15:46.728567"
+  },
+  "processed_at": "2026-08-13T01:16:34.206994",
+  "status": "success"
+}
