@@ -139,3 +139,43 @@ func main() {
 *文档版本: v1.0*  
 *最后更新: 2026-08-13*  
 *作者: Ryan*
+
+## 四、告警配置
+
+```yaml
+groups:
+- name: example
+  rules:
+  - alert: HighCPU
+    expr: process_cpu_seconds_total > 0.8
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High CPU usage"
+      
+  - alert: HighErrorRate
+    expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+    for: 10m
+    labels:
+      severity: critical
+    annotations:
+      summary: "High error rate"
+```
+
+---
+
+## 自测题
+
+### Q1: Prometheus的四种指标类型？
+**A**: Counter/Gauge/Histogram/Summary
+
+### Q2: 如何开发自定义Exporter？
+**A**: 使用prometheus/client_golang库，定义指标并暴露/metrics端点
+
+### Q3: Alertmanager的作用？
+**A**: 处理Prometheus告警，支持去重、分组、路由和静默
+
+---
+
+**关键词**: Prometheus, Exporter, Alertmanager, 监控, 告警

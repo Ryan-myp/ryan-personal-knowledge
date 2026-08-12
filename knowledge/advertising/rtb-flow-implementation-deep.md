@@ -508,3 +508,10 @@ BenchmarkModelInference-8     	    2000	    587234 ns/op	  8192 B/op	      64 al
 
 *最后更新：2026-08-12*
 *作者：Ryan*
+
+---
+
+## 交叉引用
+- [DSP核心架构](./dsp-core-architecture-deep.md)
+- [竞价引擎指南](./bidding-engine-production-guide.md)
+- [广告单元路由](./ad-unit-routing-deep.md)

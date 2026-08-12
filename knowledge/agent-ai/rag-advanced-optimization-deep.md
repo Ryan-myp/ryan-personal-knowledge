@@ -604,3 +604,10 @@ async def batch_retrieve(queries: List[str], k: int = 5) -> List[List[Document]]
 *文档版本: v1.0*  
 *最后更新: 2026-08-12*  
 *作者: Ryan*
+
+---
+
+## 交叉引用
+- [Agent架构设计](./agent-architecture-deep.md)
+- [Agent生产部署](./agent-production-patterns-deep.md)
+- [RAG评估系统](./rag-evaluation-system-deep.md)
