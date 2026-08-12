@@ -1,0 +1,2 @@
+{"id": "notify_1786554623_17989", "type": "test", "message": "测试通知 - 知识库优化", "priority": "high", "timestamp": "2026-08-13T01:10:23.650865", "metadata": {}, "sent_at": "2026-08-13T01:10:23.650867"}
+{"id": "notify_1786554623_18006", "type": "hourly_optimize", "message": "知识库小时级优化任务", "priority": "normal", "timestamp": "2026-08-13T01:10:23.662489", "metadata": {"triggered_by": "cron", "source": "scripts/notify-optimize.sh"}, "sent_at": "2026-08-13T01:10:23.662493"}
