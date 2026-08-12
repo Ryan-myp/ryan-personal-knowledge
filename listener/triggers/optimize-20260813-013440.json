@@ -1,0 +1,6 @@
+{
+    "type": "hourly",
+    "message": "知识库小时级优化",
+    "timestamp": "2026-08-13T01:34:40+08:00",
+    "triggered_by": "cron"
+}
