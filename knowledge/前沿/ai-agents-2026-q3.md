@@ -6,95 +6,60 @@
 
 ---
 
-## 一、月度趋势摘要
+## 一、模型能力演进
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                    2026年8月 AI Agent 趋势                                  │
+│                        2026 Q3 模型能力矩阵                                 │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  🔥 热度最高                                                                 │
-│  ├─ 多模态 Agent (GPT-4V/Claude 3.7)                                       │
-│  ├─ Agentic Workflow 编排                                                   │
-│  ├─ RAG 4.0 (GraphRAG/HyDE)                                                │
-│  └─ 端侧 Agent (On-device AI)                                              │
-│                                                                             │
-│  📈 增长最快                                                                 │
-│  ├─ MCP (Model Context Protocol) 生态                                      │
-│  ├─ 企业级 Agent 框架                                                      │
-│  └─ Agent 安全与对齐                                                        │
-│                                                                             │
-│  ⚠️ 挑战与关注                                                               │
-│  ├─ 成本优化 (推理成本仍然是瓶颈)                                           │
-│  ├─ 幻觉问题 (Hallucination)                                               │
-│  ├─ 评估体系 (Evaluation Framework)                                        │
-│  └─ 长期记忆 (Long-term Memory)                                            │
+│  模型              │ 上下文    │ 推理能力  │ 多模态   │ 工具调用           │
+│  ──────────────────┼───────────┼───────────┼─────────┼────────────────── │
+│  Claude 3.7        │ 200K     │ ⭐⭐⭐⭐⭐  │ ⭐⭐⭐⭐  │ ⭐⭐⭐⭐⭐          │
+│  GPT-4.5          │ 1M       │ ⭐⭐⭐⭐⭐  │ ⭐⭐⭐⭐⭐ │ ⭐⭐⭐⭐⭐          │
+│  Gemini 2.5 Pro    │ 1M       │ ⭐⭐⭐⭐   │ ⭐⭐⭐⭐⭐ │ ⭐⭐⭐⭐           │
+│  DeepSeek V3      │ 128K     │ ⭐⭐⭐⭐   │ ⭐⭐⭐    │ ⭐⭐⭐⭐           │
+│  Qwen2.5          │ 128K     │ ⭐⭐⭐⭐   │ ⭐⭐⭐    │ ⭐⭐⭐⭐           │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 二、技术趋势
+## 二、关键技术趋势
 
-### 2.1 多模态融合
+### 2.1 Agent 架构
 ```
-GPT-4V → GPT-4.5 演进路径:
-├── 视觉理解: 图像描述、OCR、图表解读
-├── 语音交互: Whisper V3 集成
-├── 视频理解: 帧序列分析
-└── 多模态融合: 跨模态推理
-```
-
-### 2.2 Agentic Workflow
-```
-LangGraph 核心特性:
-├── 状态机驱动
-├── 人工介入 (Human-in-the-loop)
-├── 循环与分支
-└── 持久化状态
-
-CrewAI 团队模式:
-├── 角色定义 (Role-based)
-├── 任务分配 (Task delegation)
-├── 协作机制 (Collaboration)
-└── 输出聚合 (Output aggregation)
+LangGraph (动态图)          CrewAI (角色协作)         AutoGen (微软)
+├── 状态机驱动              ├── 多智能体编排          ├── 对话驱动
+├── 循环依赖支持            ├── 任务委派              ├── 人类介入点
+├── 条件分支                ├── 共享上下文            ├── 代码执行
+└── 手动控制流              └── 角色专业化            └── 开源免费
 ```
 
-### 2.3 MCP 协议
+### 2.2 RAG 演进
+- **RAG 3.0**: GraphRAG (知识图谱增强)
+- **RAG 4.0**: 多路召回 + Cross-Encoder 重排
+- **HyDE**: 假设文档生成 + 语义搜索
+
+### 2.3 多模态 Agent
+- 视觉理解 → 代码生成
+- 文档解析 → 知识抽取
+- 语音交互 → 实时对话
+
+---
+
+## 三、参考资料
+
 ```
-Model Context Protocol 标准化:
-├── 统一工具接口
-├── 跨模型兼容
-├── 安全沙箱
-└── 插件生态
+核心论文:
+├── LangGraph: https://langchain-ai.github.io/langgraph/
+├── CrewAI: https://docs.crewai.com/
+└── AutoGen: https://microsoft.github.io/autogen/
 ```
 
 ---
 
-## 三、生态动态
-
-| 公司 | 最新动态 | 影响 |
-|------|---------|------|
-| OpenAI | GPT-4.5 预告 | 多模态+推理能力 |
-| Anthropic | Claude 3.7 Sonnet | 长上下文+工具使用 |
-| Google | Gemini 2.0 | 原生多模态 |
-| Meta | LLaMA 3.2 | 开源多模态 |
-| 国内 | Kimi/DeepSeek | 长上下文竞争 |
-
----
-
-## 四、参考资料
-
-```
-核心资源:
-├── AI Magazine: https://aimagazine.com/
-├── The Gradient: https://thegradient.pub/
-└── Papers with Code: https://paperswithcode.com/
-```
-
----
-
-*文档版本: v1.0*  
+*文档版本: v2.0*  
 *最后更新: 2026-08-13*  
 *作者: Ryan*
