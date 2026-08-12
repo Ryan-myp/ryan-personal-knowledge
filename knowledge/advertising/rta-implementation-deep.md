@@ -1674,3 +1674,19 @@ func main() {
 
 *最后更新：2026-08-12*
 *作者：Ryan*
+
+---
+
+## 交叉引用
+
+### 相关文档
+- [DSP核心架构](./dsp-core-architecture-deep.md) - pCTR模型与出价策略
+- [竞价引擎生产指南](./bidding-engine-production-deep.md) - 实时竞价流程
+- [RTB流程实现](./rtb-flow-implementation-deep.md) - 完整竞价链路
+- [广告单元路由策略](./ad-unit-routing-deep.md) - 流量分配机制
+- [频控系统深度实现](./frequency-capping-deep.md) - 展示频率控制
+
+### 应用场景
+1. 实时用户匹配 → 结合[DSP特征工程](./dsp-core-architecture-deep.md)
+2. 隐私保护设计 → 结合[RTA安全策略](./rta-privacy-security-deep.md)
+3. 性能优化 → 结合[Bidding监控体系](./bidding-monitoring-deep.md)
