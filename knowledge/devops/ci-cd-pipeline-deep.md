@@ -1,76 +1,72 @@
-# CI/CD流水线 深度分析
+# CI/CD 流水线深度实现
 
-> **领域**: devops
-> **版本**: v1.0
-> **难度**: 专家级
-> **阅读时间**: 90分钟
-
----
-
-## 目录
-1. [背景]
-2. [架构]
-3. [实现]
-4. [优化]
-5. [实践]
+> **文档级别**: Level 5 - 专家级  
+> **创建日期**: 2026-08-13  
+> **状态**: ✅ 已补齐
 
 ---
 
-## 背景
+## 一、GitLab CI 配置
 
-CI/CD流水线是devops领域的核心组件。
-实际生产场景:
-- 高并发请求处理
-- 实时数据一致性
-- 故障自动恢复
+```yaml
+# 文件: .gitlab-ci.yml
 
----
+stages:
+  - build
+  - test
+  - security
+  - deploy
 
-## 架构
+variables:
+  DOCKER_REGISTRY: registry.example.com
+  APP_NAME: ad-bidding
 
-系统架构设计:
-| 层级 | 组件 | 技术栈 |
-|------|------|--------|
-| 接入层 | API Gateway | Go |
-| 业务层 | 处理引擎 | Go/Python |
-| 数据层 | 存储引擎 | MySQL/Redis |
-| 监控层 | 可观测性 | Prometheus |
+build:
+  stage: build
+  script:
+    - docker build -t $DOCKER_REGISTRY/$APP_NAME:$CI_COMMIT_SHA .
+    - docker push $DOCKER_REGISTRY/$APP_NAME:$CI_COMMIT_SHA
+  only:
+    - main
 
----
+test:
+  stage: test
+  script:
+    - go test -v -race ./...
+    - go vet ./...
+  only:
+    - main
 
-## 实现
+security-scan:
+  stage: security
+  script:
+    - trivy image $DOCKER_REGISTRY/$APP_NAME:$CI_COMMIT_SHA
+    - sonar-scanner
+  only:
+    - main
 
-核心代码实现:
-```go
-type CI/CD流水线 struct {
-    mu       sync.RWMutex
-    state    map[string]interface{}
-    metrics  *Metrics
-}
+deploy:
+  stage: deploy
+  script:
+    - kubectl set image deployment/$APP_NAME app=$DOCKER_REGISTRY/$APP_NAME:$CI_COMMIT_SHA
+  when: manual
+  only:
+    - main
 ```
 
 ---
 
-## 优化
+## 二、参考资料
 
-性能优化策略:
-| 策略 | 实现 | 效果 |
-|------|------|------|
-| 内存池 | sync.Pool | 减少GC |
-| 批量 | Batch写 | 减少IO |
-| 缓存 | LRU Cache | 提高命中率 |
-| 异步 | Channel | 降低延迟 |
-
----
-
-## 实践
-
-生产部署经验:
-- 压测: 3倍峰值流量稳定运行72小时
-- 容灾: 单AZ故障自动切换
-- 监控: 全链路追踪，告警响应<1分钟
+```
+核心平台:
+├── GitLab CI: https://docs.gitlab.com/
+├── GitHub Actions: https://github.com/features/actions
+└── Jenkins: https://www.jenkins.io/
+```
 
 ---
 
-**文档版本**: v1.0
-**作者**: Expert Engineer
+*文档版本: v1.0*  
+*最后更新: 2026-08-13*  
+*作者: Ryan*
