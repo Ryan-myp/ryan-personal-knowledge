@@ -1,286 +1,103 @@
-# Agent 工具调用优化深度实现
+# Agent 工具调用优化深度实现 - 注册发现到熔断器
 
-> **文档级别**: Level 5 - 专家级  
-> **创建日期**: 2026-08-13  
-> **状态**: ✅ 已补齐
-
----
-
-## 一、工具调用架构
-
-```
-用户请求 → Agent 决策 → 工具执行 → 结果返回
-              │
-              ▼
-    ┌─────────────────┐
-    │   工具选择器    │◀──────────────▶ 结果缓存
-    │  (Tool Selector)│
-    └─────────────────┘
-              │
-              ▼
-    ┌─────────────────┐     ┌─────────────────┐
-    │   调用优化器    │     │   错误处理      │
-    │ (Call Optimizer)│     │ (Error Handler) │
-    └─────────────────┘     └─────────────────┘
-
-核心优化点:
-├─ 工具选择准确率 (>95%)
-├─ 调用延迟 (<200ms)
-├─ 并发控制 (避免过多并行调用)
-└─ 结果缓存 (相同输入复用结果)
-```
+> **版本**: v2.1  
+> **日期**: 2026-08-13  
+> **作者**: Ryan  
+> **分类**: Agent/工具调用  
+> **代码密度**: 30%
 
 ---
 
-## 二、工具注册与发现
+## 一、工具注册与发现
+
+```
+工具注册发现架构:
+┌─────────────────────────────────────────────────────────────────────┐
+│                                                                     │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐            │
+│  │ Tool A      │    │ Tool B      │    │ Tool C      │            │
+│  │ search      │    │ calculate   │    │ store       │            │
+│  └──────┬──────┘    └──────┬──────┘    └──────┬──────┘            │
+│         │                  │                  │                    │
+│         └──────────────────┼──────────────────┘                    │
+│                            ▼                                       │
+│                  ┌──────────────────┐                              │
+│                  │  Tool Registry   │                              │
+│                  │  (服务发现)       │                              │
+│                  └────────┬─────────┘                              │
+│                           │                                        │
+│         ┌─────────────────┼─────────────────┐                    │
+│         ▼                 ▼                 ▼                    │
+│  ┌─────────────┐   ┌─────────────┐   ┌─────────────┐            │
+│  │ Tool Caller │   │ Tool Router │   │  Monitor    │            │
+│  │  (调用方)    │   │  (路由)      │   │  (监控)     │            │
+│  └─────────────┘   └─────────────┘   └─────────────┘            │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 二、智能路由
 
 ```go
-// 文件: tools/registry.go
-package tools
+// tool/routing.go
+package tool
 
 import (
     "context"
-    "sync"
+    "strings"
 )
 
-// ToolDefinition 工具定义
-type ToolDefinition struct {
-    Name         string            `json:"name"`
-    Description  string            `json:"description"`
-    InputSchema  map[string]interface{} `json:"input_schema"`
-    Category     string            `json:"category"`
-    Priority     int               `json:"priority"`
-    Timeout      int               `json:"timeout"`
-    RetryPolicy  *RetryPolicy      `json:"retry_policy"`
-}
-
-// ToolRegistry 工具注册表
-type ToolRegistry struct {
-    mu         sync.RWMutex
-    tools      map[string]*ToolDefinition
-    categories map[string][]string
-}
-
-func NewToolRegistry() *ToolRegistry {
-    return &ToolRegistry{
-        tools:      make(map[string]*ToolDefinition),
-        categories: make(map[string][]string),
-    }
+// ToolRouter 工具路由器
+type ToolRouter struct {
+    tools map[string]Tool
+    index map[string][]string // 关键词 → 工具列表
 }
 
 // Register 注册工具
-func (r *ToolRegistry) Register(tool *ToolDefinition, handler ToolHandler) error {
-    r.mu.Lock()
-    defer r.mu.Unlock()
-    
-    if _, exists := r.tools[tool.Name]; exists {
-        return ErrToolAlreadyRegistered
+func (r *ToolRouter) Register(tool Tool) {
+    r.tools[tool.Name()] = tool
+    for _, keyword := range tool.Keywords() {
+        r.index[keyword] = append(r.index[keyword], tool.Name())
     }
-    
-    r.tools[tool.Name] = tool
-    r.categories[tool.Category] = append(r.categories[tool.Category], tool.Name)
-    return nil
 }
 
-// Discover 工具发现
-func (r *ToolRegistry) Discover(context Context) ([]*ToolDefinition, error) {
-    r.mu.RLock()
-    defer r.mu.RUnlock()
+// Route 智能路由
+func (r *ToolRouter) Route(ctx context.Context, query string) ([]string, error) {
+    // 1. 关键词匹配
+    keywords := tokenize(query)
+    candidates := make(map[string]int)
     
-    var available []*ToolDefinition
-    for _, tool := range r.tools {
-        if r.isToolAvailable(tool, context) {
-            available = append(available, tool)
-        }
-    }
-    return available, nil
-}
-```
-
----
-
-## 三、智能工具选择
-
-```go
-// 文件: tools/selector.go
-package tools
-
-import "context"
-
-// ToolSelector 工具选择器
-type ToolSelector struct {
-    ruleBased *RuleBasedSelector
-    mlBased   *MLBasedSelector
-    cache     *ToolSelectionCache
-}
-
-// SelectTools 选择工具
-func (s *ToolSelector) SelectTools(
-    ctx context.Context,
-    userInput string,
-    availableTools []*ToolDefinition,
-) ([]*ToolDefinition, error) {
-    
-    // 1. 检查缓存
-    if cached, ok := s.cache.Get(userInput); ok {
-        return cached, nil
-    }
-    
-    // 2. 规则匹配
-    ruleMatches := s.ruleBased.Match(userInput, availableTools)
-    
-    // 3. ML 模型预测
-    mlScores := s.mlBased.Predict(ctx, userInput, availableTools)
-    
-    // 4. 融合排序
-    selected := s.fuseResults(ruleMatches, mlScores, availableTools)
-    
-    // 5. 缓存结果
-    s.cache.Set(userInput, selected)
-    
-    return selected, nil
-}
-
-// fuseResults 融合结果
-func (s *ToolSelector) fuseResults(
-    ruleMatches []*ToolDefinition,
-    mlScores map[string]float64,
-    allTools []*ToolDefinition,
-) []*ToolDefinition {
-    
-    selected := make(map[string]*ToolDefinition)
-    for _, tool := range ruleMatches {
-        selected[tool.Name] = tool
-    }
-    
-    for name, score := range mlScores {
-        if score > 0.8 {
-            for _, tool := range allTools {
-                if tool.Name == name {
-                    selected[name] = tool
-                    break
-                }
+    for _, kw := range keywords {
+        if tools, ok := r.index[kw]; ok {
+            for _, t := range tools {
+                candidates[t]++
             }
         }
     }
     
-    var result []*ToolDefinition
-    for _, tool := range selected {
-        result = append(result, tool)
+    // 2. 排序 (TF-IDF加权)
+    type score struct {
+        name string
+        score int
     }
-    return result
-}
-```
-
----
-
-## 四、并行调用优化
-
-```go
-// 文件: tools/parallel_call.go
-package tools
-
-import (
-    "context"
-    "sync"
-    "time"
-)
-
-// ParallelCallOptimizer 并行调用优化器
-type ParallelCallOptimizer struct {
-    maxConcurrency int
-    timeout        time.Duration
-}
-
-func NewParallelCallOptimizer(maxConcurrency int, timeout time.Duration) *ParallelCallOptimizer {
-    return &ParallelCallOptimizer{
-        maxConcurrency: maxConcurrency,
-        timeout:        timeout,
+    var scored []score
+    for name, count := range candidates {
+        scored = append(scored, score{name, count})
     }
-}
-
-// ExecuteParallel 并行执行工具调用
-func (o *ParallelCallOptimizer) ExecuteParallel(
-    ctx context.Context,
-    calls []ToolCall,
-) ([]ToolResult, error) {
-    
-    results := make([]ToolResult, len(calls))
-    var wg sync.WaitGroup
-    semaphore := make(chan struct{}, o.maxConcurrency)
-    
-    for i, call := range calls {
-        wg.Add(1)
-        go func(idx int, c ToolCall) {
-            defer wg.Done()
-            
-            semaphore <- struct{}{}
-            defer func() { <-semaphore }()
-            
-            result, err := o.executeCall(ctx, c)
-            if err != nil {
-                results[idx] = ToolResult{Error: err, Status: "error"}
-                return
-            }
-            results[idx] = *result
-        }(i, call)
-    }
-    
-    wg.Wait()
-    return results, nil
-}
-```
-
----
-
-## 五、结果缓存优化
-
-```go
-// 文件: tools/result_cache.go
-package tools
-
-import (
-    "github.com/dgraph-io/ristretto"
-    "time"
-)
-
-// ResultCache 结果缓存
-type ResultCache struct {
-    cache *ristretto.Cache
-}
-
-func NewResultCache(maxCost int64) *ResultCache {
-    c, _ := ristretto.NewCache(&ristretto.Config{
-        NumCounters: 1e7,
-        MaxCost:     maxCost,
-        BufferItems: 64,
+    sort.Slice(scored, func(i, j int) bool {
+        return scored[i].score > scored[j].score
     })
-    return &ResultCache{cache: c}
-}
-
-// CacheAwareCall 缓存感知的工具调用
-func (c *ResultCache) CacheAwareCall(
-    ctx context.Context,
-    tool Tool,
-    args map[string]interface{},
-    callFn func(context.Context, map[string]interface{}) (*ToolResult, error),
-) (*ToolResult, error) {
     
-    key := GetCacheKey(tool.Name(), args)
-    
-    // 1. 尝试缓存
-    if cached, ok := c.cache.Get(key); ok {
-        return cached.(*ToolResult), nil
+    // 3. 返回Top-N
+    result := make([]string, 0, min(3, len(scored)))
+    for _, s := range scored {
+        result = append(result, s.name)
+        if len(result) >= 3 {
+            break
+        }
     }
-    
-    // 2. 执行调用
-    result, err := callFn(ctx, args)
-    if err != nil {
-        return nil, err
-    }
-    
-    // 3. 写入缓存 (TTL = 5分钟)
-    c.cache.Set(key, result, int64(len(result.Output)))
     
     return result, nil
 }
@@ -288,14 +105,87 @@ func (c *ResultCache) CacheAwareCall(
 
 ---
 
-## 六、熔断器模式
+## 三、并行调用优化
 
 ```go
-// 文件: tools/circuit_breaker.go
-package tools
+// tool/parallel.go
+package tool
 
 import (
     "context"
+    "sync"
+    "time"
+)
+
+// ParallelCaller 并行调用器
+type ParallelCaller struct {
+    maxConcurrent int
+    timeout       time.Duration
+}
+
+// CallParallel 并行调用多个工具
+func (c *ParallelCaller) CallParallel(ctx context.Context, calls []ToolCall) ([]CallResult, error) {
+    ctx, cancel := context.WithTimeout(ctx, c.timeout)
+    defer cancel()
+    
+    var wg sync.WaitGroup
+    results := make([]CallResult, len(calls))
+    errors := make([]error, len(calls))
+    
+    // 信号量控制并发
+    sem := make(chan struct{}, c.maxConcurrent)
+    
+    for i, call := range calls {
+        wg.Add(1)
+        sem <- struct{}{}
+        
+        go func(idx int, tc ToolCall) {
+            defer wg.Done()
+            defer func() { <-sem }()
+            
+            result, err := tc.Tool.Execute(ctx, tc.Input)
+            results[idx] = CallResult{
+                ToolName: tc.Tool.Name(),
+                Output:   result,
+                Error:    err,
+            }
+            errors[idx] = err
+        }(i, call)
+    }
+    
+    wg.Wait()
+    
+    // 检查错误
+    for _, err := range errors {
+        if err != nil {
+            return results, err
+        }
+    }
+    
+    return results, nil
+}
+
+type ToolCall struct {
+    Tool   Tool
+    Input  interface{}
+}
+
+type CallResult struct {
+    ToolName string
+    Output   interface{}
+    Error    error
+}
+```
+
+---
+
+## 四、熔断器模式
+
+```go
+// tool/circuit_breaker.go
+package tool
+
+import (
     "sync"
     "time"
 )
@@ -304,107 +194,79 @@ import (
 type CircuitState int
 
 const (
-    Closed   CircuitState = iota
-    Open                        
-    HalfOpen                    
+    CircuitClosed CircuitState = iota
+    CircuitOpen
+    CircuitHalfOpen
 )
 
 // CircuitBreaker 熔断器
 type CircuitBreaker struct {
-    mu               sync.Mutex
-    state            CircuitState
-    failureCount     int
-    successCount     int
-    failureThreshold int
-    successThreshold int
-    timeout          time.Duration
-    lastFailureTime  time.Time
+    mu           sync.Mutex
+    state        CircuitState
+    failureCount int
+    successCount int
+    threshold    int       // 失败阈值
+    resetTimeout time.Duration
+    lastFailure  time.Time
 }
 
-func NewCircuitBreaker(failureThreshold, successThreshold int, timeout time.Duration) *CircuitBreaker {
+// NewCircuitBreaker 创建熔断器
+func NewCircuitBreaker(threshold int, resetTimeout time.Duration) *CircuitBreaker {
     return &CircuitBreaker{
-        state:            Closed,
-        failureThreshold: failureThreshold,
-        successThreshold: successThreshold,
-        timeout:          timeout,
+        state:        CircuitClosed,
+        threshold:    threshold,
+        resetTimeout: resetTimeout,
     }
 }
 
-// Execute 执行操作
+// Execute 执行调用 (带熔断)
 func (cb *CircuitBreaker) Execute(ctx context.Context, fn func() error) error {
     cb.mu.Lock()
     defer cb.mu.Unlock()
     
-    if cb.state == Open {
-        if time.Since(cb.lastFailureTime) > cb.timeout {
-            cb.state = HalfOpen
-            cb.successCount = 0
+    // 检查是否需要打开
+    if cb.state == CircuitOpen {
+        if time.Since(cb.lastFailure) > cb.resetTimeout {
+            cb.state = CircuitHalfOpen
         } else {
             return ErrCircuitOpen
         }
     }
     
+    // 执行调用
     err := fn()
     
     if err != nil {
         cb.failureCount++
-        cb.lastFailureTime = time.Now()
-        if cb.failureCount >= cb.failureThreshold {
-            cb.state = Open
+        cb.lastFailure = time.Now()
+        if cb.failureCount >= cb.threshold {
+            cb.state = CircuitOpen
+            return ErrCircuitOpen
         }
         return err
     }
     
+    // 成功
     cb.failureCount = 0
     cb.successCount++
-    if cb.state == HalfOpen && cb.successCount >= cb.successThreshold {
-        cb.state = Closed
+    if cb.state == CircuitHalfOpen && cb.successCount >= 3 {
+        cb.state = CircuitClosed
     }
-    
     return nil
 }
+
+var (
+    ErrCircuitOpen = errors.New("circuit breaker is open")
+)
 ```
 
 ---
 
-## 七、性能基准
+## 五、自测题
 
-```
-优化策略            平均延迟    P99延迟    吞吐量提升
-──────────────────────────────────────────────────────
-串行调用            150ms      300ms      1x
-并行调用 (5并发)    45ms       120ms      2.5x
-+ 结果缓存          12ms       35ms       8x
-+ 智能重试          15ms       45ms       6x
-+ 熔断器            18ms       50ms       5x
+1. **工具路由为什么需要关键词索引？**
+   - O(1)查找比O(n)遍历高效得多
 
-推荐配置:
-├─ 默认并发数: 5
-├─ 超时时间: 200ms
-├─ 缓存 TTL: 300s
-└─ 熔断阈值: 失败 5 次 / 恢复 3 次成功
-```
+2. **熔断器的三个阶段？**
+   - Closed(正常) → Open(熔断) → HalfOpen(试探)
 
----
-
-## 八、实战排障指南
-
-```
-问题 1: 工具选择错误
-症状: 选择了不相关的工具
-解决方案: 优化工具描述，添加 Few-shot Prompting
-
-问题 2: 调用超时
-症状: 大量工具调用超时
-解决方案: 设置合理超时，实现熔断器
-
-问题 3: 缓存穿透
-症状: 缓存命中率极低
-解决方案: 使用布隆过滤器，缓存空结果
-```
-
----
-
-*文档版本: v1.0*  
-*最后更新: 2026-08-13*  
-*作者: Ryan*
