@@ -25,10 +25,12 @@ tags: [advertising, bidding, rtb, dsp, ssp, expert]
 - 频控与频次优化
 
 ### 3. 算法与模型
-- pCTR / pCVR 预估模型
+- pCTR / pCVR 预估模型 (DeepFM, DCN, xDeepFM)
 - eCPM 排序公式
--  Bid Shading 出价调整
+- Bid Shading 出价调整
 - 多臂老虎机 / Bandit 策略
+- ESMM 多目标学习
+- MMoE 多任务架构
 
 ### 4. 工程实现
 - 高并发竞价引擎（Go）
@@ -42,6 +44,7 @@ tags: [advertising, bidding, rtb, dsp, ssp, expert]
 |------|------|
 | RTB 架构 | `knowledge/advertising/rtb-system-design-deep.md` |
 | 竞价引擎 | `knowledge/advertising/ad-bidding-engine-deep.md` |
+| 广告算法 | `knowledge/agent-ai/weread-ad-algorithms-deep.md` |
 | DSP 竞价 | `knowledge/advertising/dsp-bidding-engine-deep.md` |
 | 出价策略 | `knowledge/advertising/ad-bidding-strategy-deep.md` |
 | 高频优化 | `knowledge/advertising/ad-rtb-performance-tuning.md` |

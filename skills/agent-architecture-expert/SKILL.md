@@ -43,6 +43,8 @@ tags: [agent, architecture, react, multi-agent, rag, expert]
 | 主题 | 文档 |
 |------|------|
 | Agent 架构 | `knowledge/agent-ai/agent-architecture-deep.md` |
+| 设计模式 | `knowledge/agent-ai/weread-agent-design-patterns-deep.md` |
+| LangChain | `knowledge/agent-ai/weread-langchain-deep.md` |
 | AgentExecutor | `knowledge/agent-ai/agent-deep-dive.md` |
 | Multi-Agent | `knowledge/agent-ai/ai-agent-system-design-deep-v2.md` |
 | ReAct | `knowledge/agent-ai/react-deep-dive.md` |

@@ -46,6 +46,7 @@ tags: [go, performance, runtime, concurrency, expert]
 | 主题 | 文档 |
 |------|------|
 | GMP 调度器 | `knowledge/fullstack/go-gmp-scheduler-deep.md` |
+| Go 设计实现 | `knowledge/fullstack/weread-go-design-deep.md` |
 | GC 原理 | `knowledge/fullstack/go-gc-deep.md` |
 | 内存模型 | `knowledge/fullstack/go-memory-model-deep.md` |
 | 网络轮询器 | `knowledge/fullstack/go-netpoller-deep.md` |

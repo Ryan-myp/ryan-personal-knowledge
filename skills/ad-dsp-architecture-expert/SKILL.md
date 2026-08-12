@@ -41,6 +41,7 @@ tags: [advertising, dsp, architecture, high-concurrency, expert]
 | 主题 | 文档 |
 |------|------|
 | DSP 架构 | `knowledge/advertising/ad-dsp-architecture-deep.md` |
+| 系统设计 | `knowledge/fullstack/weread-system-design-deep.md` |
 | DSP 核心引擎 | `knowledge/advertising/ad-dsp-core-engine-deep.md` |
 | 高并发设计 | `knowledge/advertising/dsp-high-concurrency-design-deep.md` |
 | DSP 系统深度 | `knowledge/advertising/dsp-system-deep-v3.md` |

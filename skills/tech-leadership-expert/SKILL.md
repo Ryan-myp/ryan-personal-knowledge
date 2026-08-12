@@ -41,6 +41,7 @@ tags: [leadership, architecture, influence, career, expert]
 | 主题 | 文档 |
 |------|------|
 | 技术领导力 | `knowledge/growth-plan/tech-leadership.md` |
+| 技术管理 | `knowledge/growth-plan/weread-tech-management-deep.md` |
 | 技术影响力 | `knowledge/growth-plan/tech-influence.md` |
 | 成长路线图 | `knowledge/growth-plan/growth-roadmap.md` |
 | 技术面试 | `knowledge/growth-plan/ad-tech-interview-qa-deep.md` |
