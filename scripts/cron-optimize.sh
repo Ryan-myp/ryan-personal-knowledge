@@ -1,20 +1,25 @@
 #!/bin/bash
-# Cron自动优化脚本 - 直接执行，不依赖Pi
+# Cron触发脚本 - 通知Pi执行优化（有AI参与）
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$REPO_DIR"
+TRIGGER_DIR="$REPO_DIR/listener/triggers"
+LOG_FILE="$REPO_DIR/logs/cron-trigger.log"
 
-echo "=== 开始知识库自动优化 ===" | tee -a logs/cron-auto.log
-echo "时间: $(date '+%Y-%m-%d %H:%M:%S')" | tee -a logs/cron-auto.log
+mkdir -p "$TRIGGER_DIR"
 
-# 执行优化
-python3 scripts/auto-optimize.py >> logs/cron-auto.log 2>&1
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+TYPE="${1:-hourly}"
+MESSAGE="${2:-知识库优化任务}"
 
-# Git提交
-git add -A
-COMMIT_MSG="feat: 自动优化 - $(date +%Y-%m-%d\ %H:%M)"
-git commit -m "$COMMIT_MSG" >> logs/cron-auto.log 2>&1
-git push >> logs/cron-auto.log 2>&1
+cat > "$TRIGGER_DIR/optimize-$TIMESTAMP.json" << INNER_EOF
+{
+    "type": "$TYPE",
+    "message": "$MESSAGE",
+    "timestamp": "$(date -Iseconds)",
+    "triggered_by": "cron",
+    "require_ai": true
+}
+INNER_EOF
 
-echo "" | tee -a logs/cron-auto.log
-echo "=== 优化完成 ===" | tee -a logs/cron-auto.log
+echo "✅ 触发文件已创建: optimize-$TIMESTAMP.json" | tee -a "$LOG_FILE"
+echo "   Pi将在下次会话时检测并执行AI优化" | tee -a "$LOG_FILE"
