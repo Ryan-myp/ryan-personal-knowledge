@@ -472,3 +472,134 @@ Google 广告曝光 → Google 广告点击 → 搜索品牌词 → 直接访问
 
 *最后更新：2026-08-11*
 *作者：Ryan*
+
+---
+
+## 自测题
+
+<details>
+<summary>Q1: 什么是Shapley Value归因模型？它解决了什么问题？</summary>
+
+**答案：**
+Shapley Value来自博弈论，用于公平分配合作收益。
+
+**核心公式**：
+```
+φ_i(v) = Σ_{S⊆N\{i}} (|S|!(n-|S|-1)! / n!) × (v(S∪{i}) - v(S))
+```
+
+**解决的问题**：
+- 传统最后点击归因忽略中间触点贡献
+- Shapley考虑所有可能的触点组合，公平分配功劳
+
+**实际案例**：
+| 触点序列 | 最后点击 | Shapley价值 |
+|----------|----------|-------------|
+| 展示→点击→转化 | 100%给点击 | 展示25%+点击50%+展示25% |
+
+</details>
+
+<details>
+<summary>Q2: 归因系统中如何处理数据不一致问题？</summary>
+
+**答案：**
+三级一致性保障：
+
+| 级别 | 机制 | 效果 |
+|------|------|------|
+| 写入层 | UUID唯一标识 | 防止重复计数 |
+| 传输层 | 消息队列事务 | 保证Exactly-Once |
+| 存储层 | 定期对账 | 修复累积误差 |
+
+```python
+class ReconciliationEngine:
+    def __init__(self):
+        self.source_db = MySQL()  # 广告平台数据
+        self.target_db = ClickHouse()  # 归因计算数据
+    
+    def reconcile(self, date: str) -> Dict:
+        """每日对账"""
+        source_count = self.source_db.query(f"SELECT COUNT(*) FROM events WHERE date='{date}'")
+        target_count = self.target_db.query(f"SELECT COUNT(*) FROM events WHERE date='{date}'")
+        
+        if abs(source_count - target_count) / source_count > 0.01:
+            self.trigger_repair(date)
+            return {"status": "drift", "diff": source_count - target_count}
+        return {"status": "ok"}
+```
+
+</details>
+
+<details>
+<summary>Q3: 反作弊系统中的多维度规则引擎如何设计？</summary>
+
+**答案：**
+四层规则架构：
+
+| 层级 | 规则类型 | 示例 |
+|------|----------|------|
+| 基础层 | IP黑名单 | 已知作弊IP直接拒绝 |
+| 行为层 | 频次异常 | 单用户1小时>100次点击 |
+| 关系层 | 团伙检测 | 同设备多个账号 |
+| 模型层 | GNN预测 | 图神经网络识别异常 |
+
+```go
+type RuleEngine struct {
+    rules []Rule
+}
+
+func (re *RuleEngine) Execute(ctx *BidContext) (bool, string) {
+    for _, rule := range re.rules {
+        if !rule.Eval(ctx) {
+            return false, rule.GetReason()
+        }
+    }
+    return true, ""
+}
+```
+
+</details>
+
+<details>
+<summary>Q4: 如何实现多渠道归因的数据打通？</summary>
+
+**答案：**
+采用Identity Graph技术：
+
+```
+┌─────────────────────────────────────────┐
+│          Identity Graph                 │
+│  ┌──────┐  ┌──────┐  ┌──────┐         │
+│  │ User │←→│ Device│←→│ Cookie│         │
+│  └──────┘  └──────┘  └──────┘         │
+│       ↑         ↑         ↑            │
+│  Email   Mobile    Web              │
+└─────────────────────────────────────────┘
+```
+
+**关键技术**：
+- Hash-based身份映射（SHA-256）
+- 概率匹配算法（置信度>0.8）
+- 实时图构建（Neo4j）
+
+</details>
+
+<details>
+<summary>Q5: 归因模型的选择标准是什么？</summary>
+
+**答案：**
+根据业务场景选择：
+
+| 场景 | 推荐模型 | 原因 |
+|------|----------|------|
+| 短期促销 | 最后点击 | 简单直接 |
+| 品牌广告 | 时间衰减 | 强调近期触达 |
+| 多渠道融合 | Shapley | 公平分配 |
+| 长决策链 | 位置归因 | 首尾兼顾 |
+
+</details>
+
+---
+
+*最后更新：2026-08-12*
+*升级：添加自测题（5道）*

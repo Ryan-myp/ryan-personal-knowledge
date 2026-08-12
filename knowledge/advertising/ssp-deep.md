@@ -496,3 +496,155 @@ Fill Rate：> 85%
 
 *最后更新：2026-08-11*
 *作者：Ryan*
+
+---
+
+## 自测题
+
+<details>
+<summary>Q1: SSP的核心职责是什么？与DSP的本质区别在哪里？</summary>
+
+**答案：**
+- **SSP职责**：管理广告位库存、执行竞价决策、保障填充率和eCPM最大化
+- **DSP职责**：管理广告主预算、出价策略、创意投放，追求ROI最大化
+- **本质区别**：
+  - SSP代表媒体利益方（卖方）
+  - DSP代表广告主利益方（买方）
+  - 同一RTB交易中，SSP负责"卖"，DSP负责"买"
+
+**记忆口诀**：SSP=Supply Side Platform（供应方），DSP=Demand Side Platform（需求方）
+</details>
+
+<details>
+<summary>Q2: SSP如何决定将请求路由到哪个SSP Server实例？</summary>
+
+**答案：**
+采用三层路由策略：
+
+| 层级 | 策略 | 目标 |
+|------|------|------|
+| 第一层 | 地理位置就近分配 | 降低网络延迟 |
+| 第二层 | 广告位分组亲和性 | 缓存局部性优化 |
+| 第三层 | 负载均衡轮询 | 避免单点过载 |
+
+```python
+def route_request(req: SSPRequest) -> SSPServer:
+    """三级路由策略"""
+    # 1. 地理就近
+    zone = find_geo_zone(req.user_location)
+    candidates = get_servers_in_zone(zone)
+    
+    # 2. 广告位亲和性
+    slot_group = req.slot_id % GROUP_COUNT
+    affinity = filter_by_affinity(candidates, slot_group)
+    
+    # 3. 负载均衡
+    return least_loaded(affinity or candidates)
+```
+
+</details>
+
+<details>
+<summary>Q3: 在SSP的实时竞价流程中，什么情况下会触发内部竞价而非外部RTB？</summary>
+
+**答案：**
+触发内部竞价的条件：
+
+| 条件 | 判断逻辑 | 原因 |
+|------|----------|------|
+| 直投订单 | `req.priority_level == 1` | 保量合同优先执行 |
+| 私有市场 | `req.private_auction == True` | PM区块限制参与方 |
+| 预算耗尽 | ` bidder_budget < min_bid` | 排除无预算买方 |
+| 低频流量 | `fill_rate_target > 0.8` | 保守策略保填充 |
+
+```go
+func shouldDoInternalAuction(req *BidRequest) bool {
+    // 直投订单最高优先级
+    if req.PriorityLevel <= PRIORITY_DIRECT_DEAL {
+        return true
+    }
+    // 预算不足时走内部兜底
+    if req.TotalBudget < req.MinBid * expectedBidders {
+        return true
+    }
+    return false
+}
+```
+
+</details>
+
+<details>
+<summary>Q4: SSP如何通过预计算优化提升竞价决策性能？</summary>
+
+**答案：**
+三层预计算架构：
+
+1. **离线预计算**（小时级）
+   - 广告位历史eCPM排序
+   - 媒体质量分层标签
+   - 买家偏好聚类模型
+
+2. **近线预计算**（分钟级）
+   - 实时流量波动预测
+   - 动态出价调整系数
+   - 异常检测基线
+
+3. **在线预计算**（请求级）
+   - 候选广告主快速过滤
+   - 价格弹性预估值
+   - 竞对出价分布预估
+
+```python
+class SSPPreCompute:
+    def __init__(self):
+        self.offline_cache = TTLCache(ttl=3600)    # 小时级
+        self.nearline_cache = TTLCache(ttl=60)     # 分钟级
+        self.online_cache = TTLCache(ttl=5)        # 请求级
+    
+    def get_slot_ranking(self, slot_id: str) -> List[float]:
+        """获取广告位历史eCPM排名"""
+        key = f"slot_rank:{slot_id}"
+        return self.offline_cache.get(key, default=[])
+```
+
+</details>
+
+<details>
+<summary>Q5: SSP如何处理跨域的频次控制问题？</summary>
+
+**答案：**
+采用分布式频次计数器方案：
+
+| 方案 | 实现方式 | 准确率 | 开销 |
+|------|----------|--------|------|
+| Redis计数 | INCR + EXPIRE | 99%+ | 高 |
+| Bloom Filter | 位图压缩 | 有误判 | 低 |
+| 本地+同步 | 先本地后分布式 | 95% | 最低 |
+
+```go
+type FrequencyController struct {
+    redis    *redis.Client
+    localMap sync.Map
+}
+
+func (fc *FrequencyController) IsExceeded(userId, adId string, limit int) bool {
+    // 1. 先查本地缓存
+    if fc.localHit(userId, adId, limit) {
+        return true
+    }
+    // 2. 查Redis分布式计数器
+    key := fmt.Sprintf("freq:%s:%s", userId, adId)
+    count, _ := fc.redis.Incr(key).Result()
+    if count == 1 {
+        fc.redis.Expire(key, 24*time.Hour)
+    }
+    return count > int32(limit)
+}
+```
+
+</details>
+
+---
+
+*最后更新：2026-08-12*
+*升级：添加自测题（5道）*

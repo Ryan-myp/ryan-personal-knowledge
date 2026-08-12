@@ -482,3 +482,84 @@ func (cm *ConsistencyManager) Retry(ctx context.Context, fn func() error) error 
 
 *最后更新：2026-08-11*
 *作者：Ryan*
+
+---
+
+## 自测题
+
+<details>
+<summary>Q1: RTB系统为什么要将延迟控制在50ms以内？这个阈值的决定因素是什么？</summary>
+
+**答案：**
+核心约束来自浏览器广告加载窗口：
+
+| 阶段 | 时间预算 | 说明 |
+|------|----------|------|
+| 浏览器发起请求 | 0ms | 用户行为触发 |
+| 传输到SSP Server | ~5ms | 网络延迟 |
+| SSP内部处理 | ~10ms | 过滤、排序 |
+| 发送请求到DSP | ~10ms | 网络往返 |
+| DSP出价计算 | ~15ms | 模型推理 |
+| 响应回传 | ~5ms | 网络往返 |
+| **总计** | **~50ms** | 超出则页面卡死 |
+
+超过50ms会导致：
+- 用户感知卡顿（>100ms即可察觉）
+- 广告位加载失败，触发fallback
+- 整体用户体验下降，媒体收入损失
+
+</details>
+
+<details>
+<summary>Q2: 为什么RTB系统要使用Worker Pool模式而不是线程池？</summary>
+
+**答案：**
+Go的Goroutine特性决定了Worker Pool的优势：
+
+| 维度 | 线程池 | Worker Pool (Goroutine) |
+|------|--------|------------------------|
+| 创建开销 | ~1MB/线程 | ~2KB/goroutine |
+| 上下文切换 | OS级（慢） | M:N调度（快） |
+| 并发数量 | 千级 | 百万级 |
+| 内存占用 | 高 | 极低 |
+
+</details>
+
+<details>
+<summary>Q3: 在分布式竞价系统中，如何保证出价的一致性和幂等性？</summary>
+
+**答案：**
+采用两阶段提交+幂等键设计：
+
+1. **幂等键生成**: `requestID + bidderID + timestamp`
+2. **分布式锁保护**: Redis SETNX防止重复处理
+3. **最终一致性补偿**: 定时对账+自动修复
+
+</details>
+
+<details>
+<summary>Q4: RTB系统的特征存储为什么选择Redis而非MySQL？</summary>
+
+**答案：**
+关键性能指标：
+- Redis读取：<1ms，MySQL：5-20ms
+- Redis并发：10万+ QPS，MySQL：1万 QPS
+- Redis支持复杂数据结构（Hash/List/Set）
+
+</details>
+
+<details>
+<summary>Q5: 如何设计和实现RTB系统的熔断降级机制？</summary>
+
+**答案：**
+三级熔断策略：
+- **警告级**: P99 > 100ms → 增加超时
+- **熔断级**: 错误率 > 10% → 拒绝新请求
+- **降级级**: 服务不可用 → 返回默认出价
+
+</details>
+
+---
+
+*最后更新：2026-08-12*
+*升级：添加自测题（5道）*

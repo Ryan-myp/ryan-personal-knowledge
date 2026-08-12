@@ -472,3 +472,93 @@ func (bo *BiddingOptimizer) calculateAvgConversion(impressionID string) float64 
 
 *最后更新：2026-08-11*
 *作者：Ryan*
+
+---
+
+## 自测题
+
+<details>
+<summary>Q1: 出价引擎的核心目标函数是什么？如何平衡eCPM与广告主ROI？</summary>
+
+**答案：**
+核心目标函数：
+```
+maximize: eCPM = bid_price × QCTR × 1000
+subject to: ROI_constraint = spend / revenue >= target_roi
+```
+
+**平衡策略**：
+- 高ROI广告主：降低bid_price，扩大覆盖面
+- 低ROI广告主：提高bid_price，精准投放
+- 动态调整：根据历史转化数据实时修正
+
+</details>
+
+<details>
+<summary>Q2: 为什么出价引擎需要使用实时特征而非离线特征？</summary>
+
+**答案：**
+| 特征类型 | 时效性 | 准确性 | 适用场景 |
+|----------|--------|--------|----------|
+| 离线特征 | 小时级 | 稳定 | 用户画像 |
+| 实时特征 | 秒级 | 动态 | 行为序列 |
+| 融合特征 | 毫秒级 | 最优 | 出价决策 |
+
+实时特征价值：
+- 捕捉用户即时意图（如搜索关键词）
+- 避免"过期"行为导致误判
+- 提升CTR预估准确度15-30%
+
+</details>
+
+<details>
+<summary>Q3: 出价引擎如何处理预算耗尽的边界情况？</summary>
+
+**答案：**
+三级预算控制机制：
+
+```python
+class BudgetController:
+    def check_budget(self, campaign_id: str, bid: float) -> bool:
+        # 1. 本地预检（毫秒级）
+        if self.local_budget[campaign_id] < bid:
+            return False
+        
+        # 2. 分布式扣除
+        success = redis.decrby(f"budget:{campaign_id}", bid)
+        
+        # 3. 兜底检查
+        if success < 0:
+            redis.incrby(f"budget:{campaign_id}", bid)  # 回滚
+            return False
+        return True
+```
+
+</details>
+
+<details>
+<summary>Q4: 如何实现出价策略的A/B测试框架？</summary>
+
+**答案：**
+分流+监控双机制：
+- **实验组**：新策略（如深度学习出价）
+- **对照组**：基准策略（如规则出价）
+- **监控指标**：eCPM、ROI、填充率、转化率
+
+</details>
+
+<details>
+<summary>Q5: 出价引擎的模型服务如何进行实时推理加速？</summary>
+
+**答案：**
+三层加速架构：
+1. **特征缓存**：Redis缓存高频特征（TTL=5s）
+2. **模型预估**：TensorFlow Serving + GPU推理
+3. **结果缓存**：相同请求直接返回（防抖）
+
+</details>
+
+---
+
+*最后更新：2026-08-12*
+*升级：添加自测题（5道）*
