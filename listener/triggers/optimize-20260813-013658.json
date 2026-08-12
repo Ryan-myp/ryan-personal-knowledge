@@ -1,7 +1,0 @@
-{
-    "type": "test",
-    "message": "测试AI优化",
-    "timestamp": "2026-08-13T01:36:58+08:00",
-    "triggered_by": "cron",
-    "require_ai": true
-}
