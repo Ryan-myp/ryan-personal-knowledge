@@ -1,129 +1,88 @@
-# Agent 调试指南深度实现 - 常见问题排查
+# Agent 调试指南深度实现 - 从日志到分布式追踪
 
 > **版本**: v2.1  
 > **日期**: 2026-08-14  
 > **作者**: Ryan  
-> **分类**: Agent/调试  
-> **代码密度**: 28%
+> **分类**: Agent/调试指南  
+> **代码密度**: 30%
 
 ---
 
-## 一、常见调试场景
+## 一、调试方法
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    Agent 常见问题排查                                │
+│                    Agent 调试方法                                   │
 │                                                                     │
-│  Problem 1: 工具调用失败                                            │
-│  ─────────────────────────────────                                 │
-│  症状:   Agent反复调用失败的工具                                   │
-│  原因:   工具注册错误 / 参数校验失败 / 超时                         │
-│  排查:   查看tool_call日志 → 检查参数格式 → 验证工具可用性           │
-│  解决:   添加重试机制 / 改善参数描述                                │
+│  Method 1: Structured Logging (结构化日志)                           │
+│  ─────────────────────────────                                      │
+│  • 统一日志格式: timestamp, level, trace_id, agent_id               │
+│  • 分层日志: DEBUG/INFO/WARN/ERROR                                 │
+│  • 关键节点日志: 输入/输出/工具调用/状态转换                         │
 │                                                                     │
-│  Problem 2: 幻觉输出                                                │
-│  ─────────────────────────────────                                 │
-│  症状:   Agent输出看似合理但事实错误                                 │
-│  原因:   RAG检索不准 / prompt引导不足 / 模型能力限制                 │
-│  排查:   检查检索结果 → 分析prompt结构 → 添加fact-check步骤         │
-│  解决:   优化检索 / 添加引用要求 / 使用更强大模型                   │
+│  Method 2: Distributed Tracing (分布式追踪)                          │
+│  ─────────────────────────────                                      │
+│  • OpenTelemetry集成                                                │
+│  • Span层级展示工具调用链                                            │
+│  • 延迟分解: 思考/等待/执行                                          │
 │                                                                     │
-│  Problem 3: 无限循环                                                │
-│  ─────────────────────────────────                                 │
-│  症状:   Agent陷入工具调用循环                                      │
-│  原因:   缺乏终止条件 / 状态未更新 / 循环检测缺失                    │
-│  排查:   启用step limit / 检查状态机转换 / 添加循环检测             │
-│  解决:   设置最大步数 / 添加visited集合 / 改进终止判断              │
-│                                                                     │
-│  Problem 4: 安全违规                                                │
-│  ─────────────────────────────────                                 │
-│  症状:   Agent输出有害内容或被jailbreak                             │
-│  原因:   护栏规则缺失 / prompt被绕过 / 工具权限过大                 │
-│  排查:   检查安全日志 / 分析输入模式 / 审查工具权限                 │
-│  解决:   增强护栏 / 添加input sanitization / 最小权限原则          │
+│  Method 3: Replay Debugging (回放调试)                                │
+│  ─────────────────────────────                                      │
+│  • 记录完整对话历史                                                  │
+│  • 重现特定场景                                                     │
+│  • 对比不同版本的Agent行为                                          │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 二、调试工具
+## 二、实现示例
 
 ```go
-// agent/debugger.go
+// agent/debug.go
 package agent
 
 import (
     "context"
-    "fmt"
-    "time"
+    "go.opentelemetry.io/otel/trace"
 )
 
-// Debugger 调试器
-type Debugger struct {
-    traces    []*Trace
-    breakpoints map[string]bool
+// DebugLogger 调试日志器
+type DebugLogger struct {
+    tracer trace.Tracer
 }
 
-// Trace 执行轨迹
-type Trace struct {
-    Step      int
-    Timestamp time.Time
-    Action    string      // think/tool_call/tool_result
-    Input     interface{}
-    Output    interface{}
-    Duration  time.Duration
-    Error     error
+// StartSpan 开始追踪span
+func (d *DebugLogger) StartSpan(ctx context.Context, name string) (context.Context, trace.Span) {
+    return d.tracer.Start(ctx, name)
 }
 
-// StepInto 单步执行
-func (d *Debugger) StepInto(ctx context.Context, agent *Agent) (*Trace, error) {
-    start := time.Now()
-    
-    trace := &Trace{
-        Step:      len(d.traces) + 1,
-        Timestamp: start,
-        Action:    "step_into",
+// LogToolCall 记录工具调用
+func (d *DebugLogger) LogToolCall(ctx context.Context, tool string, args, result interface{}) {
+    span := trace.SpanFromContext(ctx)
+    span.SetAttributes(
+        attribute.String("tool.name", tool),
+        attribute.String("tool.args", fmt.Sprintf("%v", args)),
+        attribute.String("tool.result", fmt.Sprintf("%v", result)),
+    )
+}
+
+// ReplayContext 回放上下文
+type ReplayContext struct {
+    Messages   []Message
+    ToolCalls  []ToolCall
+    Decisions  []Decision
+}
+
+// Replay 重放对话
+func (d *DebugLogger) Replay(ctx context.Context, replay *ReplayContext) error {
+    for _, msg := range replay.Messages {
+        d.logMessage(ctx, msg)
     }
-    
-    // 执行一步
-    result, err := agent.Step(ctx)
-    trace.Output = result
-    trace.Error = err
-    trace.Duration = time.Since(start)
-    
-    d.traces = append(d.traces, trace)
-    return trace, nil
-}
-
-// PrintTrace 打印轨迹
-func (d *Debugger) PrintTrace() {
-    fmt.Println("=== Agent Execution Trace ===")
-    for _, t := range d.traces {
-        fmt.Printf("[%d] %s (%.2fs)\n", t.Step, t.Action, t.Duration.Seconds())
-        if t.Input != nil {
-            fmt.Printf("  Input: %v\n", t.Input)
-        }
-        if t.Output != nil {
-            fmt.Printf("  Output: %v\n", t.Output)
-        }
-        if t.Error != nil {
-            fmt.Printf("  Error: %v\n", t.Error)
-        }
+    for _, call := range replay.ToolCalls {
+        d.logToolCall(ctx, call.Tool, call.Args, call.Result)
     }
-}
-
-// FindLoop 检测循环
-func (d *Debugger) FindLoop() bool {
-    seen := make(map[string]int)
-    for _, t := range d.traces {
-        key := fmt.Sprintf("%v", t.Input)
-        if count, ok := seen[key]; ok {
-            fmt.Printf("Loop detected! Input repeated at steps %d and %d\n", count, t.Step)
-            return true
-        }
-        seen[key] = t.Step
-    }
-    return false
+    return nil
 }
 ```
 
@@ -131,9 +90,9 @@ func (d *Debugger) FindLoop() bool {
 
 ## 三、自测题
 
-1. **Agent调试的难点？**
-   - 非确定性、多层抽象、长链条依赖
+1. **为什么需要结构化日志？**
+   - 便于检索和分析，支持自动化处理
 
-2. **如何定位幻觉问题？**
-   - 追踪检索结果 → 分析推理链 → 验证事实
+2. **分布式追踪的核心价值？**
+   - 定位性能瓶颈，理解调用链
 
