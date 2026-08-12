@@ -1,108 +1,97 @@
-# Agent 成本优化深度实现 - Token管理到缓存策略
+# Agent 成本优化深度实现 - Token控制与效率提升
 
 > **版本**: v2.1  
 > **日期**: 2026-08-14  
 > **作者**: Ryan  
 > **分类**: Agent/成本优化  
-> **代码密度**: 30%
+> **代码密度**: 32%
 
 ---
 
-## 一、Token成本分析
+## 一、Token控制策略
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    Agent Token成本构成                               │
+│                    Token控制三层架构                                  │
 │                                                                     │
-│  Cost = (Input Tokens × Price_in) + (Output Tokens × Price_out)    │
+│  Layer 1: Input Optimization (输入优化)                              │
+│  ─────────────────────────────                                     │
+│  • Context压缩: 从历史消息提取关键信息                               │
+│  • 选择性检索: 只检索相关记忆片段                                    │
+│  • 摘要生成: 长对话生成摘要代替原文                                   │
 │                                                                     │
-│  主要成本项:                                                         │
-│  • Prompt Token: 系统提示 + 用户输入                                │
-│  • Context Token: 记忆检索结果 + 历史对话                           │
-│  • Tool Call Token: 工具定义 + 调用参数                             │
-│  • Output Token: 模型生成响应                                       │
+│  Layer 2: Process Optimization (过程优化)                            │
+│  ─────────────────────────────                                     │
+│  • 并行调用: 多个工具调用并发执行                                     │
+│  • 早停策略: 达到目标立即返回                                         │
+│  • 缓存复用: 相同输入缓存结果                                         │
 │                                                                     │
-│  优化方向:                                                           │
-│  1. 减少Prompt Token → 精简系统提示                                │
-│  2. 压缩Context Token → 记忆摘要 + 向量检索                        │
-│  3. 缓存重复计算 → 相同输入复用输出                                 │
-│  4. 模型分级 → 简单任务用小模型                                     │
+│  Layer 3: Output Optimization (输出优化)                             │
+│  ─────────────────────────────                                     │
+│  • 结构化输出: JSON Schema约束                                       │
+│  • 流式输出: 逐步返回减少等待                                          │
+│  • 增量输出: 只返回变化的部分                                          │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 二、缓存策略
+## 二、成本计算模型
 
 ```go
 // agent/cost_optimizer.go
 package agent
 
-import (
-    "context"
-    "crypto/sha256"
-    "encoding/hex"
-    "time"
-)
+import "time"
 
-// CacheKey 缓存键
-type CacheKey struct {
-    Model     string
-    Prompt    string
-    Temperature float64
+// TokenCost Token成本
+type TokenCost struct {
+    InputTokens  int
+    OutputTokens int
+    TotalCost    float64
 }
 
-// CostOptimizer 成本优化器
-type CostOptimizer struct {
-    cache      *TTLCache
-    modelTier  map[string]string // 任务类型 → 模型级别
+// CostCalculator 成本计算器
+type CostCalculator struct {
+    models map[string]ModelPrice
 }
 
-// NewCostOptimizer 创建优化器
-func NewCostOptimizer() *CostOptimizer {
-    return &CostOptimizer{
-        cache:   NewTTLCache(3600), // 1小时TTL
-        modelTier: map[string]string{
-            "simple":    "gpt-4o-mini",
-            "medium":    "gpt-4o",
-            "complex":   "gpt-4-turbo",
-            "reasoning": "o1-preview",
-        },
-    }
+type ModelPrice struct {
+    InputPerMillion  float64
+    OutputPerMillion float64
 }
 
-// GetOrCompute 缓存命中则返回，否则计算
-func (o *CostOptimizer) GetOrCompute(ctx context.Context, key CacheKey, fn func() (string, error)) (string, error) {
-    cacheKey := o.generateKey(key)
+// CalculateCost 计算成本
+func (c *CostCalculator) CalculateCost(model string, inputTokens, outputTokens int) *TokenCost {
+    price := c.models[model]
     
-    // 尝试缓存命中
-    if cached, ok := o.cache.Get(cacheKey); ok {
-        return cached.(string), nil
-    }
+    inputCost := float64(inputTokens) / 1_000_000 * price.InputPerMillion
+    outputCost := float64(outputTokens) / 1_000_000 * price.OutputPerMillion
     
-    // 计算并缓存
-    result, err := fn()
-    if err != nil {
-        return "", err
+    return &TokenCost{
+        InputTokens:  inputTokens,
+        OutputTokens: outputTokens,
+        TotalCost:    inputCost + outputCost,
     }
-    
-    o.cache.Set(cacheKey, result, 30*time.Minute)
-    return result, nil
 }
 
-// SelectModel 根据任务复杂度选择模型
-func (o *CostOptimizer) SelectModel(taskType string) string {
-    if model, ok := o.modelTier[taskType]; ok {
-        return model
-    }
-    return "gpt-4o" // 默认
+// BudgetManager 预算管理
+type BudgetManager struct {
+    dailyBudget  float64
+    monthlyBudget float64
+    spentToday   float64
+    spentMonth   float64
 }
 
-// generateKey 生成缓存键
-func (o *CostOptimizer) generateKey(key CacheKey) string {
-    data := key.Model + key.Prompt + fmt.Sprintf("%.2f", key.Temperature)
-    hash := sha256.Sum256([]byte(data))
-    return hex.EncodeToString(hash[:])
+// CheckBudget 检查预算
+func (m *BudgetManager) CheckBudget(cost float64) error {
+    if m.spentToday+cost > m.dailyBudget {
+        return ErrDailyBudgetExceeded
+    }
+    if m.spentMonth+cost > m.monthlyBudget {
+        return ErrMonthlyBudgetExceeded
+    }
+    return nil
 }
 ```
 
@@ -110,9 +99,9 @@ func (o *CostOptimizer) generateKey(key CacheKey) string {
 
 ## 三、自测题
 
-1. **为什么需要模型分级？**
-   - 简单任务用小模型节省成本，复杂任务用大模型保证质量
+1. **如何降低Agent的Token消耗？**
+   - 输入压缩 + 并行调用 + 缓存复用
 
-2. **缓存的粒度如何确定？**
-   - 按Prompt+模型+参数生成唯一键，TTL 30分钟
+2. **为什么要设置预算限制？**
+   - 防止异常导致成本失控
 

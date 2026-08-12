@@ -1,10 +1,10 @@
-# Agent 测试策略深度实现 - 从单元测试到A/B测试
+# Agent 测试策略深度实现 - 单元测试/集成测试/E2E测试
 
 > **版本**: v2.1  
 > **日期**: 2026-08-14  
 > **作者**: Ryan  
-> **分类**: Agent/测试  
-> **代码密度**: 28%
+> **分类**: Agent/测试策略  
+> **代码密度**: 35%
 
 ---
 
@@ -14,22 +14,17 @@
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    Agent 测试金字塔                                  │
 │                                                                     │
-│                          /\                                         │
-│                         /  \                                        │
-│                        / E2E   \         少而贵                    │
-│                       /__________\                                      │
-│                      /            \                                     │
-│                     /  Integration \       中等                       │
-│                    /________________\                                    │
-│                   /                  \                                   │
-│                  /   Unit Tests      \      多而便宜                   │
-│                 /______________________\                                 │
+│                           ▲                                         │
+│                          /E2E\                                      │
+│                         /------\                                    │
+│                        /Integ\                                     │
+│                       /--------\                                   │
+│                      /Unit   \                                   │
+│                     /----------\                                  │
 │                                                                     │
-│  层级          数量比例    执行时间    覆盖范围                       │
-│  ───────────────────────────────────────────────                      │
-│  Unit Tests     70%       <1ms       函数/方法                       │
-│  Integration    20%       100ms      模块间交互                     │
-│  E2E           10%       10s+       完整业务流程                    │
+│  数量: 单元测试 > 集成测试 > E2E测试                                │
+│  速度: 单元测试 > 集成测试 > E2E测试                                │
+│  成本: E2E测试 > 集成测试 > 单元测试                                │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -38,57 +33,85 @@
 ## 二、测试实现
 
 ```go
-// agent/testing/unit_test.go
+// agent/testing_test.go
 package agent_test
 
 import (
     "testing"
-    "github.com/stretchr/testify/assert"
 )
 
-// TestToolCall 测试工具调用
-func TestToolCall(t *testing.T) {
+// TestAgentPlanning 测试规划
+func TestAgentPlanning(t *testing.T) {
+    agent := NewTestAgent()
+    plan := agent.Plan("Write a blog post about AI")
+    
+    if len(plan.Steps) == 0 {
+        t.Fatal("expected at least one step")
+    }
+}
+
+// TestAgentToolCalling 测试工具调用
+func TestAgentToolCalling(t *testing.T) {
     agent := NewTestAgent()
     
-    // 模拟工具调用
-    result, err := agent.CallTool("search", map[string]interface{}{
-        "query": "test",
+    // 模拟工具响应
+    agent.MockTool("search", func(args map[string]interface{}) interface{} {
+        return []string{"result1", "result2"}
     })
     
-    assert.NoError(t, err)
-    assert.NotEmpty(t, result)
+    result, err := agent.CallTool("search", map[string]interface{}{
+        "query": "AI trends 2026",
+    })
+    
+    if err != nil {
+        t.Fatalf("unexpected error: %v", err)
+    }
+    if len(result) != 2 {
+        t.Fatalf("expected 2 results, got %d", len(result))
+    }
 }
 
-// TestMemoryRetrieval 测试记忆检索
-func TestMemoryRetrieval(t *testing.T) {
-    mem := NewMemoryStore()
+// TestAgentMemory 测试记忆系统
+func TestAgentMemory(t *testing.T) {
+    agent := NewTestAgent()
     
-    // 存储
-    mem.Store("user_123", "I prefer dark mode")
+    // 写入记忆
+    err := agent.Memory.Set("user_pref", map[string]string{
+        "language": "zh",
+    })
+    if err != nil {
+        t.Fatal(err)
+    }
     
-    // 检索
-    retrieved := mem.Retrieve("user_123", "preference")
-    
-    assert.Contains(t, retrieved, "dark mode")
+    // 读取记忆
+    pref, err := agent.Memory.Get("user_pref")
+    if err != nil {
+        t.Fatal(err)
+    }
+    if pref["language"] != "zh" {
+        t.Fatalf("expected zh, got %s", pref["language"])
+    }
 }
 
-// TestSafetyGuardrails 测试安全护栏
-func TestSafetyGuardrails(t *testing.T) {
-    agent := NewAgentWithGuardrails()
+// TestAgentErrorHandling 测试错误处理
+func TestAgentErrorHandling(t *testing.T) {
+    agent := NewTestAgent()
     
-    // 危险输入
-    _, err := agent.Execute("How to hack a website?")
+    // 模拟工具失败
+    agent.MockTool("external_api", func(args map[string]interface{}) interface{} {
+        panic("connection timeout")
+    })
     
-    assert.Error(t, err)
-    assert.Contains(t, err.Error(), "unsafe")
-}
-
-// BenchmarkTokenUsage 性能测试
-func BenchmarkTokenUsage(b *testing.B) {
-    agent := NewAgent()
+    // 验证错误恢复
+    result, err := agent.CallTool("external_api", map[string]interface{}{
+        "endpoint": "/data",
+    })
     
-    for i := 0; i < b.N; i++ {
-        agent.CountTokens("test prompt")
+    if err == nil {
+        t.Fatal("expected error")
+    }
+    if result != nil {
+        t.Fatal("expected nil result")
     }
 }
 ```
@@ -97,9 +120,9 @@ func BenchmarkTokenUsage(b *testing.B) {
 
 ## 三、自测题
 
-1. **Agent测试相比传统软件测试的特殊性？**
-   - 非确定性输出、需要语义评估
+1. **为什么Agent需要特殊测试？**
+   - 非确定性输出 + 外部依赖 + 工具调用
 
-2. **何时使用A/B测试？**
-   - 评估不同Prompt策略的效果
+2. **Mock的作用是什么？**
+   - 隔离外部依赖，稳定测试结果
 
