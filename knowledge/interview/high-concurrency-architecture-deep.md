@@ -1,51 +1,79 @@
-# 高并发架构设计 - 资深专家深度实现
+# 高并发架构设计 --- 资深专家深度实现
 
-## 一、架构模式
+## 概述
+
+高并发系统设计是后端工程师的核心能力。本文总结秒杀、大促、实时竞价等场景的架构设计模式。
+
+## 一、架构分层
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                     高并发架构模式                                       │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│   Level 1: 流量控制                                                      │
-│   • 限流: Token Bucket / Leaky Bucket                                   │
-│   • 熔断: Circuit Breaker                                               │
-│   • 降级: Service Degradation                                           │
-│                                                                         │
-│   Level 2: 缓存优化                                                      │
-│   • 本地缓存: Caffeine / Guava                                          │
-│   • 分布式缓存: Redis / Memcached                                       │
-│   • CDN: 静态资源边缘缓存                                               │
-│                                                                         │
-│   Level 3: 异步处理                                                      │
-│   • 消息队列: Kafka / RabbitMQ                                          │
-│   • 事件驱动: Event Sourcing                                            │
-│   • 异步IO: Netty / epoll                                               │
-│                                                                         │
-│   Level 4: 数据分片                                                      │
-│   • 数据库分片: ShardingSphere                                          │
-│   • 读写分离: Master-Slave                                              │
-│   • 分布式事务: TCC / Saga                                            │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                    高并发架构分层                        │
+├─────────────────────────────────────────────────────────┤
+│  L7:  CDN / WAF / 负载均衡                               │
+│  L4:  Nginx / HAProxy                                   │
+│  App: 微服务 / 无状态服务                                │
+│  Cache: Redis集群 / 本地缓存                             │
+│  DB:   MySQL分库分表 / 读写分离                          │
+│  MQ:   Kafka / RocketMQ / RabbitMQ                     │
+│  Storage: 对象存储 / 时序数据库                          │
+└─────────────────────────────────────────────────────────┘
 ```
 
-## 二、限流实现
+## 二、核心模式
+
+### 2.1 读写分离
 
 ```go
-package ratelimit
+// 主从路由
+type DBRouter struct {
+    master *gorm.DB
+    slaves []*gorm.DB
+    index  int
+}
 
-import (
-    "sync"
-    "time"
-)
+func (r *DBRouter) Read() *gorm.DB {
+    slave := r.slaves[r.index%len(r.slaves)]
+    r.index++
+    return slave
+}
 
+func (r *DBRouter) Write() *gorm.DB {
+    return r.master
+}
+```
+
+### 2.2 缓存穿透防护
+
+```go
+// 布隆过滤器
+type BloomFilter struct {
+    bits   []uint64
+    size   int
+    hashFn func(string) uint64
+}
+
+func (bf *BloomFilter) Add(item string) {
+    h := bf.hashFn(item)
+    bf.bits[h%uint64(len(bf.bits)*64)] |= 1 << (h % 64)
+}
+
+func (bf *BloomFilter) MightContain(item string) bool {
+    h := bf.hashFn(item)
+    return (bf.bits[h%uint64(len(bf.bits)*64)] >> (h % 64)) & 1 == 1
+}
+```
+
+### 2.3 限流降级
+
+```go
+// 令牌桶限流
 type TokenBucket struct {
-    mu         sync.Mutex
     tokens     float64
-    capacity   float64
+    maxTokens  float64
     refillRate float64
     lastRefill time.Time
+    mu         sync.Mutex
 }
 
 func (tb *TokenBucket) Allow() bool {
@@ -53,83 +81,171 @@ func (tb *TokenBucket) Allow() bool {
     defer tb.mu.Unlock()
     
     now := time.Now()
-    elapsed := now.Sub(tb.lastRefill).Seconds()
-    tb.tokens = math.Min(tb.capacity, tb.tokens+elapsed*tb.refillRate)
+    tb.tokens += tb.refillRate * now.Sub(tb.lastRefill).Seconds()
+    if tb.tokens > tb.maxTokens {
+        tb.tokens = tb.maxTokens
+    }
     tb.lastRefill = now
     
-    if tb.tokens >= 1.0 {
-        tb.tokens -= 1.0
+    if tb.tokens >= 1 {
+        tb.tokens--
         return true
     }
     return false
 }
 ```
 
-## 三、熔断器实现
+## 三、容量规划
+
+### 3.1 压测模型
 
 ```go
-type CircuitBreaker struct {
-    state      CircuitState
-    mu         sync.Mutex
-    failures   int
-    success    int
-    threshold  int
-    timeout    time.Duration
-    lastFail   time.Time
-}
+// 容量估算公式
+// 峰值QPS = 日活 × 活跃度 × 转化率 / 高峰期时长
+// 服务器数量 = 峰值QPS / 单机QPS × 冗余系数
 
-func (cb *CircuitBreaker) Execute(fn func() error) error {
-    cb.mu.Lock()
-    state := cb.state
-    cb.mu.Unlock()
+func CalculateCapacity(dau, activityRate, conversionRate float64, 
+    peakHours float64, singleQPS int) int {
     
-    switch state {
-    case Closed:
-        return cb.closedState(fn)
-    case Open:
-        if time.Since(cb.lastFail) > cb.timeout {
-            cb.transitionToHalfOpen()
-            return cb.closedState(fn)
-        }
-        return ErrCircuitOpen
-    case HalfOpen:
-        return cb.halfOpenState(fn)
-    }
-    return nil
+    peakQPS := dau * activityRate * conversionRate / peakHours
+    machines := int(math.Ceil(peakQPS / float64(singleQPS) * 1.5))
+    return machines
 }
 ```
 
-## 四、面试高频题
+### 3.2 压测工具
 
-### Q1: 如何设计高并发系统？
+```bash
+# ab压测
+ab -n 10000 -c 100 http://example.com/api/test
 
-```
-A:
-1. 流量控制
-2. 缓存策略
-3. 异步处理
-4. 数据分片
-```
+# wrk压测
+wrk -t12 -c400 -d30s http://example.com/api/test
 
-### Q2: 限流算法有哪些？
-
-```
-A:
-1. 固定窗口
-2. 滑动窗口
-3. 令牌桶
-4. 漏桶
+# k6压测
+k6 run script.js
 ```
 
-## 五、自测题
+## 四、故障恢复
 
-1. 解释熔断器原理
-2. 如何实现分布式锁？
-3. 如何优化数据库性能？
+### 4.1 熔断降级
+
+```go
+import "github.com/sony/gobreaker"
+
+var settings = gobreaker.Settings{
+    Name:    "OrderService",
+    Timeout: 5 * time.Second,
+    ReadyToTrip: func(counts Countss) bool {
+        return counts.ConsecutiveFailures >= 5
+    },
+    OnStateChange: func(name string, from gobreaker.State, to gobreaker.State) {
+        log.Printf("%s: %s -> %s", name, from, to)
+    },
+}
+
+var breaker = gobreaker.NewCircuitBreaker(settings)
+
+func CallService() error {
+    result, err := breaker.Execute(func() (interface{}, error) {
+        return httpClient.Get("http://backend/api")
+    })
+    return err
+}
+```
+
+### 4.2 幂等设计
+
+```go
+// 基于Token的幂等
+type IdempotentHandler struct {
+    redis *redis.Client
+}
+
+func (h *IdempotentHandler) Handle(token string, handler func() error) error {
+    // 1. 检查Token是否存在
+    exist, _ := h.redis.Exists(context.Background(), 
+        fmt.Sprintf("idempotent:%s", token)).Result()
+    if exist > 0 {
+        return errors.New("重复请求")
+    }
+    
+    // 2. 设置Token（一次性）
+    h.redis.SetNX(context.Background(), 
+        fmt.Sprintf("idempotent:%s", token), "1", time.Minute*10)
+    
+    // 3. 执行业务逻辑
+    err := handler()
+    if err != nil {
+        h.redis.Del(context.Background(), 
+            fmt.Sprintf("idempotent:%s", token))
+    }
+    
+    return err
+}
+```
+
+## 五、监控告警
+
+### 5.1 核心指标
+
+```go
+type SystemMetrics struct {
+    CPUUsage    float64
+    MemoryUsage float64
+    DiskIO      float64
+    NetworkIn   float64
+    NetworkOut  float64
+    QPS         float64
+    LatencyP99  float64
+    ErrorRate   float64
+}
+```
+
+### 5.2 告警规则
+
+```yaml
+alerts:
+  - name: high_cpu
+    expr: cpu_usage > 80
+    for: 5m
+    labels:
+      severity: warning
+      
+  - name: high_error_rate
+    expr: error_rate > 0.05
+    for: 1m
+    labels:
+      severity: critical
+```
+
+## 六、面试高频题
+
+### 6.1 高频问题
+
+**Q1: 高并发系统的核心挑战是什么？**
+
+A: 流量控制、数据一致性、故障恢复、容量规划。
+
+**Q2: 如何设计一个限流器？**
+
+A: 令牌桶、漏桶、滑动窗口。
+
+**Q3: 如何保证数据一致性？**
+
+A: 最终一致性 + 补偿事务 + 对账机制。
+
+### 6.2 自测题
+
+1. 画出高并发系统架构图
+2. 设计一个限流器
+3. 分析缓存穿透/击穿/雪崩
+4. 设计幂等接口方案
+5. 解释熔断降级原理
 
 ---
 
-## 参考文档
-
-- [高并发设计模式](https://github.com/aaron24/high-concurrency-design)
-- [限流算法实现](https://github.com/alibaba/Sentinel)
+**创建时间**: 2026-10-17
+**作者**: Ryan
+**领域**: Interview / 系统设计
+**关键词**: high-concurrency, architecture, rate-limit, circuit-breaker, idempotent

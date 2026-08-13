@@ -1,191 +1,211 @@
-# 系统设计面试题库深度实现
+# 系统设计面试题库 --- 资深专家深度实现
 
-> **版本**: v1.0  
-> **日期**: 2026-08-13  
-> **作者**: Ryan  
-> **分类**: 面试/系统设计  
-> **题目数**: 15 道高频题
+## 概述
 
----
+系统设计是高级工程师招聘的核心考察点。本文总结高频系统设计题目的解题思路和参考实现。
 
-## 一、核心系统设计题
+## 一、常用设计模式
 
-### Q1: 设计一个短链接服务
+### 1.1 分层架构
 
-```go
-// 核心数据结构
-type ShortLink struct {
-    ID        uint64    `json:"id"`
-    Original  string    `json:"original"`
-    ShortCode string    `json:"short_code"`
-    CreatedAt time.Time `json:"created_at"`
-    ExpiresAt time.Time `json:"expires_at"`
-}
-
-// 编码方案: Base62
-func encodeID(id uint64) string {
-    const chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    var result strings.Builder
-    for id > 0 {
-        result.WriteByte(chars[id%62])
-        id /= 62
-    }
-    // 反转
-    s := result.String()
-    runes := []rune(s)
-    for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
-        runes[i], runes[j] = runes[j], runes[i]
-    }
-    return string(runes)
-}
-
-// 数据库设计
-CREATE TABLE short_links (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    short_code VARCHAR(10) UNIQUE NOT NULL,
-    original_url TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT NOW(),
-    expires_at TIMESTAMP,
-    click_count INT DEFAULT 0
-);
-
-CREATE INDEX idx_short_code ON short_links(short_code);
+```
+┌─────────────────────────────────────────────────────────┐
+│                    标准分层架构                          │
+├─────────────────────────────────────────────────────────┤
+│  API Layer:  RESTful API / GraphQL                      │
+│  Service Layer: 业务逻辑封装                           │
+│  Domain Layer: 核心业务模型                             │
+│  Infrastructure: 数据存储 / 消息队列                   │
+└─────────────────────────────────────────────────────────┘
 ```
 
----
+### 1.2 常用组件
 
-### Q2: 设计分布式 ID 生成器
+| 组件 | 用途 | 选型 |
+|------|------|------|
+| 缓存 | 加速读操作 | Redis / Memcached |
+| 消息队列 | 解耦/异步 | Kafka / RocketMQ |
+| 搜索引擎 | 全文检索 | Elasticsearch |
+| 数据库 | 持久化存储 | MySQL / PostgreSQL |
+
+## 二、高频题目
+
+### 2.1 短链接系统
 
 ```go
-// Snowflake 算法
-type Snowflake struct {
-    mu         sync.Mutex
-    lastTime   int64
-    workerID   int64
-    sequence   int64
+// 核心设计
+type ShortLinkService struct {
+    store    Store
+    cache    *redis.Client
+    generator *Snowflake
 }
 
-const (
-    workerBits  = 5
-    sequenceBits = 12
-    workerMax    = -1 ^ (-1 << workerBits)
-    sequenceMask = -1 ^ (-1 << sequenceBits)
-)
-
-func (s *Snowflake) NextID() int64 {
-    s.mu.Lock()
-    defer s.mu.Unlock()
+func (s *ShortLinkService) Create(originalURL string) (string, error) {
+    // 1. 生成短链
+    id := s.generator.Generate()
+    shortCode := IDToShortLink(id)
     
-    now := time.Now().UnixMilli()
-    if now < s.lastTime {
-        return s.NextID() // 时钟回拨
+    // 2. 存储映射
+    s.store.Save(shortCode, originalURL)
+    
+    // 3. 缓存
+    s.cache.Set(context.Background(), 
+        fmt.Sprintf("short:%s", shortCode), originalURL, 24*time.Hour)
+    
+    return shortCode, nil
+}
+```
+
+### 2.2 限流器
+
+```go
+type RateLimiter interface {
+    Allow(key string) bool
+}
+
+// 滑动窗口限流
+type SlidingWindowLimiter struct {
+    windowSize time.Duration
+    maxRequests int
+    redis *redis.Client
+}
+
+func (l *SlidingWindowLimiter) Allow(key string) bool {
+    ctx := context.Background()
+    now := time.Now()
+    
+    // 删除过期记录
+    l.redis.ZRemRangeByScore(ctx, key, 0, now.Add(-l.windowSize).UnixNano())
+    
+    // 检查数量
+    count := l.redis.ZCard(ctx, key).Val()
+    if count >= int64(l.maxRequests) {
+        return false
     }
     
-    if now == s.lastTime {
-        s.sequence = (s.sequence + 1) & sequenceMask
-        if s.sequence == 0 {
-            now = s.waitNextMillis(now)
+    // 添加新请求
+    l.redis.ZAdd(ctx, key, redis.Z{
+        Score:  float64(now.UnixNano()),
+        Member: fmt.Sprintf("%d", now.UnixNano()),
+    })
+    
+    return true
+}
+```
+
+### 2.3 分布式锁
+
+```go
+type DistributedLock struct {
+    redis *redis.Client
+    key   string
+    value string
+}
+
+func (l *DistributedLock) Lock(timeout time.Duration) bool {
+    ctx := context.Background()
+    end := time.Now().Add(timeout)
+    
+    for time.Now().Before(end) {
+        acquired, err := l.redis.SetNX(ctx, l.key, l.value, timeout).Result()
+        if err == nil && acquired {
+            return true
         }
-    } else {
-        s.sequence = 0
+        time.Sleep(100 * time.Millisecond)
     }
-    
-    s.lastTime = now
-    return ((now - epoch) << 22) | (s.workerID << 12) | s.sequence
+    return false
+}
+
+func (l *DistributedLock) Unlock() error {
+    // Lua脚本保证原子性
+    script := `
+        if redis.call("get", KEYS[1]) == ARGV[1] then
+            return redis.call("del", KEYS[1])
+        else
+            return 0
+        end
+    `
+    return l.redis.Eval(context.Background(), script, []string{l.key}, l.value).Err()
 }
 ```
 
----
+## 三、解题框架
 
-## 二、架构设计题
-
-### Q3: 设计一个高并发秒杀系统
+### 3.1 需求澄清
 
 ```
-秒杀流程:
-用户请求 → API 网关 → 限流 → 库存预扣 → 排队 → 异步下单 → 结果返回
+1. 功能需求
+   - 核心功能是什么？
+   - 有哪些约束条件？
 
-核心组件:
-├── 限流: Token Bucket / Leaky Bucket
-├── 库存: Redis 预扣 + MySQL 异步落库
-├── 排队: Redis List / Kafka
-└── 异步: Worker Pool 处理订单
+2. 规模估算
+   - 用户量级？
+   - QPS多少？
+   - 数据存储量？
+
+3. API设计
+   - 主要接口有哪些？
 ```
+
+### 3.2 容量估算
 
 ```go
-// 库存预扣
-func (s *SeckillService) PreDeductStock(itemID, userID string) error {
-    key := fmt.Sprintf("stock:%s", itemID)
-    
-    // Redis 原子扣减
-    remaining, err := s.rdb.Decr(context.Background(), key).Result()
-    if err != nil {
-        return err
-    }
-    
-    if remaining < 0 {
-        // 库存不足，回滚
-        s.rdb.Incr(context.Background(), key)
-        return ErrOutOfStock
-    }
-    
-    // 加入排队
-    s.rdb.LPush(context.Background(), "queue:"+itemID, userID)
-    return nil
+// 存储估算
+func EstimateStorage日均PV, retentionDays int) int64 {
+    dailyRecords := dailyPV * 1024  // 假设每PV 1KB
+    totalBytes := int64(dailyRecords) * retentionDays
+    return totalBytes / 1024 / 1024 / 1024  // GB
+}
+
+// 带宽估算
+func EstimateBandwidth(qps, avgSizeKB int) float64 {
+    return float64(qps) * float64(avgSizeKB) / 1024  // Gbps
 }
 ```
 
----
-
-### Q4: 设计实时推荐系统
+### 3.3 核心组件
 
 ```
-实时推荐架构:
-┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│   用户行为   │───▶│  实时特征    │───▶│  模型推理    │
-│   采集       │    │  引擎        │    │  (TensorRT) │
-└─────────────┘    └─────────────┘    └──────┬──────┘
-                                             │
-                              ┌──────────────┼──────────────┐
-                              ▼              ▼              ▼
-                        ┌─────────┐   ┌─────────┐   ┌─────────┐
-                        │ 冷启动   │   │ 协同过滤 │   │ 深度学习 │
-                        │ 策略     │   │ (Redis)  │   │ (GPU)   │
-                        └─────────┘   └─────────┘   └─────────┘
+┌─────────────────────────────────────────────────────────┐
+│                  系统设计检查清单                         │
+├─────────────────────────────────────────────────────────┤
+│ □ 数据存储选型                                          │
+│ □ 缓存策略                                              │
+│ □ 消息队列使用                                          │
+│ □ 负载均衡方案                                          │
+│ □ 限流降级策略                                          │
+│ □ 容灾备份                                              │
+│ □ 监控告警                                              │
+└─────────────────────────────────────────────────────────┘
 ```
 
+## 四、面试高频题
+
+### 4.1 高频问题
+
+**Q1: 如何设计一个URL短链系统？**
+
+A: 核心是ID生成和跳转，使用Base62编码自增ID或Hash值。
+
+**Q2: 如何设计一个限流器？**
+
+A: 令牌桶、漏桶、滑动窗口三种算法，根据场景选择。
+
+**Q3: 如何设计分布式锁？**
+
+A: Redis SETNX + Lua脚本保证原子性，考虑看门狗续期。
+
+### 4.2 自测题
+
+1. 设计一个分布式ID生成器
+2. 设计一个消息队列
+3. 设计一个定时任务系统
+4. 设计一个配置中心
+5. 设计一个服务注册发现
+
 ---
 
-## 三、15道高频题汇总
-
-| # | 题目 | 难度 | 核心考点 |
-|---|------|------|---------|
-| 1 | 短链接服务 | ⭐⭐⭐ | 编码设计 |
-| 2 | 分布式 ID | ⭐⭐⭐ | Snowflake |
-| 3 | 秒杀系统 | ⭐⭐⭐⭐ | 高并发 |
-| 4 | 实时推荐 | ⭐⭐⭐⭐ | 流处理 |
-| 5 | 消息队列 | ⭐⭐⭐⭐ | Kafka |
-| 6 | 缓存架构 | ⭐⭐⭐ | Redis |
-| 7 | 搜索引擎 | ⭐⭐⭐⭐ | ES |
-| 8 | 分布式事务 | ⭐⭐⭐⭐ | TCC/Saga |
-| 9 | API 网关 | ⭐⭐⭐ | 路由/限流 |
-| 10 | 日志系统 | ⭐⭐⭐ | ELK |
-| 11 | 配置中心 | ⭐⭐ | 一致性 |
-| 12 | 服务发现 | ⭐⭐⭐ | Consul |
-| 13 | 链路追踪 | ⭐⭐⭐ | Jaeger |
-| 14 | 数据库分片 | ⭐⭐⭐⭐ | Sharding |
-| 15 | CDN 架构 | ⭐⭐⭐ | 边缘计算 |
-
----
-
-## 四、自测题
-
-1. **Snowflake 如何解决时钟回拨问题？**
-   - 等待时钟追上或分配新 workerID
-
-2. **秒杀系统如何防止超卖？**
-   - Redis 原子扣减 + MySQL 最终一致
-
-3. **分布式事务的 CAP 权衡？**
-   - 强一致 (CP) vs 高可用 (AP)
-
+**创建时间**: 2026-10-17
+**作者**: Ryan
+**领域**: Interview / 系统设计
+**关键词**: system-design, interview, architecture, pattern
