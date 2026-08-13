@@ -5,110 +5,64 @@
 ### 1.1 多阶段构建
 
 ```dockerfile
-# 阶段1: 构建
 FROM golang:1.21-alpine AS builder
-RUN apk add --no-cache git
 WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
 COPY . .
-RUN go build -ldflags="-s -w" -o main .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app/server .
 
-# 阶段2: 运行
 FROM alpine:3.19
 RUN apk --no-cache add ca-certificates tzdata
-COPY --from=builder /app/main /main
+COPY --from=builder /app/server /server
 EXPOSE 8080
-USER 65534:65534
-CMD ["/main"]
+CMD ["/server"]
 ```
 
 ### 1.2 镜像瘦身
 
-```bash
-# 优化前: 850MB
-# 优化后: 25MB
-
-# 使用Alpine基础镜像
-FROM alpine:3.19
-
-# 合并RUN命令减少层数
-RUN apk add --no-cache git curl && \
-    mkdir -p /app && \
-    wget -O /app/app https://...
-
-# 使用.dockerignore
-node_modules/
-.git/
-*.md
-```
+| 优化项 | 优化前 | 优化后 |
+|--------|--------|--------|
+| 基础镜像 | Ubuntu 18.04 (72MB) | Alpine 3.19 (5MB) |
+| 构建方式 | 单阶段 | 多阶段 |
+| 层数 | 20层 | 5层 |
 
 ## 二、运行时优化
 
 ```yaml
-# deployment.yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: my-service
-spec:
-  template:
-    spec:
-      containers:
-      - name: app
-        image: my-app:latest
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "250m"
-          limits:
-            memory: "512Mi"
-            cpu: "500m"
-        securityContext:
-          readOnlyRootFilesystem: true
-          runAsNonRoot: true
-          runAsUser: 65534
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "250m"
+  limits:
+    memory: "512Mi"
+    cpu: "500m"
+securityContext:
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
 ```
 
-## 三、安全加固
-
-```dockerfile
-# 非root用户运行
-USER appuser
-
-# 只读根文件系统
-readOnlyRootFilesystem: true
-
-# 最小权限
-capabilities:
-  drop: ["ALL"]
-  add: ["NET_BIND_SERVICE"]
-```
-
-## 四、面试高频题
+## 三、面试高频题
 
 ### Q1: 如何优化Docker镜像大小？
 
 ```
 A:
-1. 使用多阶段构建
-2. 选择小基础镜像(Alpine/Distroless)
+1. 多阶段构建
+2. 使用Alpine基础镜像
 3. 合并RUN命令
 4. 使用.dockerignore
 ```
 
-### Q2: 如何保证容器安全？
+### Q2: 容器安全最佳实践？
 
 ```
 A:
 1. 非root运行
 2. 只读文件系统
 3. 镜像扫描
-4. 最小权限原则
+4. 最小权限
 ```
-
-## 五、自测题
-
-1. 实现一个安全的Go服务容器化配置
-2. 如何优化构建速度？
 
 ---
 
