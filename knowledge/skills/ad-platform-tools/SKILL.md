@@ -1,101 +1,112 @@
 ---
 name: ad-platform-tools
-description: 广告平台通用工具集，提供统一认证管理、多平台 API 调用、数据同步、报表聚合等跨平台工具能力
-version: 1.0.0
+description: 广告平台统一工具集 - 跨平台认证管理、数据同步、报表聚合、事件追踪等 30+ 通用工具
+version: 2.0.0
 author: Ryan
 created: 2026-08-14
-tags: [ads, tools, api, multi-platform, authentication, reporting]
+updated: 2026-08-14
+tags: [ads, tools, api, multi-platform, authentication, reporting, sync, unified]
 ---
 
-# 广告平台通用工具集
+# 广告平台统一工具集 v2.0
 
 ## 📌 工具集定位
 
 为 TikTok、Meta、Google Ads、DV360 四大广告平台提供统一的 API 调用工具，简化开发流程，提升效率。
 
-## 🎯 核心功能
+---
+
+## 🛠️ 可用 Tools（共 30+）
+
+### 🔐 统一认证管理（6 个）
+
+| Tool | 功能 | 参数 |
+|------|------|------|
+| `auth_configure` | 配置平台凭证 | platform, credentials |
+| `auth_test` | 测试连接 | platform |
+| `auth_refresh` | 刷新所有 Token | platform |
+| `auth_list_configured` | 列出已配置平台 | - |
+| `auth_get_token` | 获取指定平台 Token | platform |
+| `auth_clear_credentials` | 清除凭证 | platform |
+
+### 📊 跨平台数据同步（8 个）
+
+| Tool | 功能 | 参数 |
+|------|------|------|
+| `sync_accounts` | 同步所有账户 | platforms, force_refresh |
+| `sync_campaigns` | 同步广告系列 | account_ids, platforms, date_range |
+| `sync_ad_groups` | 同步广告组 | campaign_ids, platforms |
+| `sync_ads` | 同步广告创意 | ad_group_ids, platforms |
+| `sync_audiences` | 同步受众 | account_ids, platforms |
+| `sync_creatives` | 同步创意资产 | platforms |
+| `sync_products` | 同步产品目录 | account_ids, platforms |
+| `sync_all` | 全量同步 | platforms, include_history |
+
+### 📈 统一报表查询（6 个）
+
+| Tool | 功能 | 参数 |
+|------|------|------|
+| `get_report` | 查询单平台报表 | platform, account_id, date_range, metrics |
+| `aggregate_report` | 聚合多平台报表 | account_ids, date_range, metrics |
+| `compare_platforms` | 对比多平台表现 | account_ids, date_range, metrics |
+| `export_report` | 导出报表到 CSV/JSON | platform, query, format |
+| `get_metrics_summary` | 获取指标摘要 | account_ids, date_range |
+| `get_daily_trends` | 获取日趋势数据 | account_ids, days |
+
+### 🎯 跨平台事件追踪（5 个）
+
+| Tool | 功能 | 参数 |
+|------|------|------|
+| `track_event` | 追踪跨平台事件 | platform, pixel_id, event_data |
+| `track_multi_platform` | 跨平台追踪同一事件 | platforms, event_name, event_data |
+| `get_conversion_summary` | 获取转化汇总 | platforms, date_range |
+| `validate_pixel` | 验证 Pixel 有效性 | platform, pixel_id |
+| `test_conversion` | 测试转化追踪 | platform, pixel_id, event_name |
+
+### 🔧 通用广告操作（5 个）
+
+| Tool | 功能 | 参数 |
+|------|------|------|
+| `create_campaign` | 创建跨平台广告系列 | platform, config |
+| `update_campaign` | 更新广告系列 | platform, campaign_id, updates |
+| `pause_campaign` | 暂停广告系列 | platform, campaign_id |
+| `enable_campaign` | 启用广告系列 | platform, campaign_id |
+| `duplicate_campaign` | 复制广告系列 | platform, source_id, target_config |
+
+### 📋 辅助工具（5 个）
+
+| Tool | 功能 | 参数 |
+|------|------|------|
+| `list_platforms` | 列出所有平台 | - |
+| `get_platform_status` | 获取平台状态 | platform |
+| `check_rate_limits` | 检查 API 限流 | platform |
+| `get_quota_usage` | 获取配额使用情况 | platform |
+| `sync_config_to_env` | 同步配置到环境变量 | - |
+
+---
+
+## 📚 核心能力说明
 
 ### 1. 统一认证管理
+
 ```python
 from ad_platform_tools import AdPlatformManager
 
 manager = AdPlatformManager()
 
 # 配置各平台凭证
-manager.configure('tiktok', app_key='...', app_secret='...')
-manager.configure('meta', app_id='...', app_secret='...')
-manager.configure('google', developer_token='...', customer_id='...')
-manager.configure('dv360', service_account_file='...')
-```
-
-### 2. 跨平台数据同步
-```python
-# 同步账户信息
-accounts = manager.sync_accounts()
-
-# 同步广告系列
-campaigns = manager.sync_campaigns(account_ids)
-```
-
-### 3. 统一报表聚合
-```python
-# 获取多平台报表
-reports = manager.get_reports(
-    platform='all',
-    date_range={'start': '2026-01-01', 'end': '2026-08-14'},
-    metrics=['impressions', 'clicks', 'conversions', 'spend']
-)
-```
-
-## 🛠️ 可用 Tools
-
-| Tool | 功能 | 参数 |
-|------|------|------|
-| `auth_configure` | 配置平台凭证 | platform, credentials |
-| `auth_test` | 测试连接 | platform |
-| `sync_accounts` | 同步账户信息 | platforms |
-| `sync_campaigns` | 同步广告系列 | account_ids, platforms |
-| `sync_ad_groups` | 同步广告组 | campaign_ids, platforms |
-| `sync_ads` | 同步广告创意 | ad_group_ids, platforms |
-| `get_report` | 查询报表 | platform, account_id, date_range, metrics |
-| `aggregate_report` | 聚合多平台报表 | account_ids, date_range, metrics |
-| `track_event` | 追踪转化事件 | platform, pixel_id, event_data |
-| `list_creatives` | 列出创意资产 | platform, account_id |
-| `upload_creative` | 上传创意文件 | platform, account_id, file_path |
-| `manage_budget` | 管理预算 | platform, account_id, budget |
-
-## 📚 支持的插件
-
-| 插件 | 描述 | 状态 |
-|------|------|------|
-| `tiktok-ads-expert` | TikTok Ads API 专家技能 | ✅ 已配置 |
-| `meta-marketing-api-expert` | Meta Marketing API 专家技能 | ✅ 已配置 |
-| `google-ads-api-expert` | Google Ads API 专家技能 | ✅ 已配置 |
-| `dv360-expert` | Display & Video 360 专家技能 | ✅ 已配置 |
-
-## 💡 使用示例
-
-### 1. 配置平台凭证
-```python
-from ad_platform_tools import AdPlatformManager
-
-manager = AdPlatformManager()
-
-# TikTok
 manager.configure('tiktok', {
     'app_key': 'your_app_key',
     'app_secret': 'your_app_secret',
     'access_token': 'your_access_token'
 })
 
-# Meta
 manager.configure('meta', {
     'app_id': 'your_app_id',
     'app_secret': 'your_app_secret',
     'access_token': 'your_access_token'
 })
 
-# Google Ads
 manager.configure('google', {
     'developer_token': 'your_developer_token',
     'client_id': 'your_client_id',
@@ -104,36 +115,35 @@ manager.configure('google', {
     'customer_id': 'your_customer_id'
 })
 
-# DV360
-manager.configure('dv360', {
-    'service_account_file': 'path/to/service-account.json',
-    'customer_id': 'your_customer_id'
-})
-```
-
-### 2. 测试连接
-```python
-# 测试所有平台连接
+# 测试连接
 results = manager.test_connections()
 for platform, status in results.items():
-    print(f"{platform}: {status}")
+    print(f"{platform}: {'✅ 成功' if status else '❌ 失败'}")
 ```
 
-### 3. 同步数据
+### 2. 跨平台数据同步
+
 ```python
 # 同步所有账户
-accounts = manager.sync_accounts(platforms=['tiktok', 'meta', 'google', 'dv360'])
+accounts = manager.sync_accounts(platforms=['tiktok', 'meta', 'google'])
 print(f"同步了 {len(accounts)} 个账户")
 
 # 同步广告系列
 campaigns = manager.sync_campaigns(
     account_ids=[acc['id'] for acc in accounts],
-    platforms=['tiktok', 'meta', 'google']
+    platforms=['tiktok', 'meta', 'google'],
+    date_range={'start': '2026-08-01', 'end': '2026-08-14'}
 )
-print(f"同步了 {len(campaigns)} 个广告系列")
+
+# 同步受众
+audiences = manager.sync_audiences(
+    account_ids=[acc['id'] for acc in accounts],
+    platforms=['meta', 'google']
+)
 ```
 
-### 4. 查询报表
+### 3. 统一报表聚合
+
 ```python
 # 获取单个平台报表
 report = manager.get_report(
@@ -149,71 +159,90 @@ aggregate = manager.aggregate_report(
     date_range={'start': '2026-08-01', 'end': '2026-08-14'},
     metrics=['impressions', 'clicks', 'conversions', 'spend', 'roas']
 )
+
+# 对比多平台表现
+comparison = manager.compare_platforms(
+    account_ids=['tiktok-123', 'meta-456', 'google-789'],
+    date_range={'start': '2026-08-01', 'end': '2026-08-14'},
+    metrics=['spend', 'conversions', 'ctr', 'cpc']
+)
 ```
 
-### 5. 追踪转化事件
+### 4. 跨平台事件追踪
+
 ```python
-# TikTok Pixel
-manager.track_event(
-    platform='tiktok',
-    pixel_id='pixel_123',
+# 追踪跨平台转化事件
+manager.track_multi_platform(
+    platforms=['tiktok', 'meta', 'google'],
+    event_name='Purchase',
     event_data={
-        'event_name': 'Purchase',
         'value': 99.99,
         'currency': 'USD',
-        'user_email': 'user@example.com'
+        'transaction_id': 'txn_123'
     }
 )
 
-# Meta CAPI
-manager.track_event(
-    platform='meta',
-    pixel_id='pixel_456',
-    event_data={
-        'event_name': 'CompleteRegistration',
-        'value': 0,
-        'currency': 'USD',
-        'user_data': {
-            'email': 'user@example.com',
-            'phone': '1234567890'
-        }
-    }
+# 获取转化汇总
+conversion_summary = manager.get_conversion_summary(
+    platforms=['tiktok', 'meta', 'google'],
+    date_range={'start': '2026-08-01', 'end': '2026-08-14'}
 )
 ```
 
-## 🔐 凭证管理
+---
 
-### 1. 环境变量配置
-```bash
-# .env 文件
-TIKTOK_APP_KEY=your_app_key
-TIKTOK_APP_SECRET=your_app_secret
-TIKTOK_ACCESS_TOKEN=your_access_token
+## 💡 最佳实践
 
-META_APP_ID=your_app_id
-META_APP_SECRET=your_app_secret
-META_ACCESS_TOKEN=your_access_token
+### 1. 批量操作优化
 
-GOOGLE_DEVELOPER_TOKEN=your_developer_token
-GOOGLE_CLIENT_ID=your_client_id
-GOOGLE_CLIENT_SECRET=your_client_secret
-GOOGLE_REFRESH_TOKEN=your_refresh_token
-GOOGLE_CUSTOMER_ID=your_customer_id
-
-DV360_SERVICE_ACCOUNT_FILE=path/to/service-account.json
-DV360_CUSTOMER_ID=your_customer_id
+```python
+def batch_update_campaigns(manager, campaigns, updates):
+    """批量更新广告系列"""
+    results = []
+    for campaign in campaigns:
+        try:
+            result = manager.update_campaign(
+                platform=campaign['platform'],
+                campaign_id=campaign['id'],
+                updates=updates
+            )
+            results.append(result)
+        except Exception as e:
+            print(f"更新失败 {campaign['id']}: {e}")
+    return results
 ```
 
-### 2. 安全存储建议
-- 使用密钥管理服务（AWS Secrets Manager、Azure Key Vault）
-- 不要在代码中硬编码凭证
-- 定期轮换 Access Token
-- 限制 API 权限范围
+### 2. 错误处理与重试
 
-## ⚠️ 注意事项
+```python
+import time
 
-1. **速率限制**: 各平台都有 API 调用限制，请合理控制请求频率
-2. **凭证安全**: 妥善保管凭证信息，不要提交到版本控制系统
-3. **错误处理**: 实现完善的错误处理和重试机制
-4. **数据合规**: 遵守各平台的数据使用政策
-5. **版权合规**: 仅获取公开的技术文档和 API 数据
+def safe_operation(manager, func, *args, max_retries=3):
+    """安全操作（含重试）"""
+    for attempt in range(max_retries):
+        try:
+            return func(*args)
+        except Exception as e:
+            if 'rate limit' in str(e).lower() or 'quota' in str(e).lower():
+                wait_time = min(2 ** attempt * 60, 600)
+                print(f"限流，等待 {wait_time} 秒...")
+                time.sleep(wait_time)
+            else:
+                raise
+    raise Exception(f"重试 {max_retries} 次后仍失败")
+```
+
+---
+
+## 🎓 支持的 Skill 插件
+
+| 插件 | 描述 | 状态 |
+|------|------|------|
+| `tiktok-ads-expert` | TikTok Ads API 专家技能 | ✅ 已配置 |
+| `meta-marketing-api-expert` | Meta Marketing API 专家技能 | ✅ 已配置 |
+| `google-ads-api-expert` | Google Ads API 专家技能 | ✅ 已配置 |
+| `dv360-expert` | Display & Video 360 专家技能 | ✅ 已配置 |
+
+---
+
+*本工具集为跨平台广告管理的核心基础设施，可与各平台专家 Skills 配合使用。*

@@ -1,101 +1,22 @@
-# 广告平台专家 Skills 索引
+# 广告平台专家 Skills 索引 v2.0
 
-> **领域**: 广告投放 / 平台技能
-> **类型**: skills-index
+> **版本**: v2.0.0
 > **更新时间**: 2026-08-14
 > **作者**: Ryan
 
 ---
 
-## 📌 Skills 概述
+## 📌 Skills 概览
 
-本目录包含四大广告平台的专家 Skills，每个 Skill 提供完整的 API 调用能力和独家洞察。
+本索引包含四大广告平台的完整专家 Skills，每个 Skill 提供 45-60+ API 工具的完整调用能力。
 
----
-
-## 🎯 可用的 Skills
-
-### 1. TikTok Ads 专家
-**路径**: `skills/tiktok-ads-expert/SKILL.md`
-
-**核心能力:**
-- OAuth 认证管理
-- 广告系列/广告组/创意管理
-- Spark Ads（达人原生广告）
-- Pixel + Conversion API 事件追踪
-- 报表查询与数据分析
-
-**使用场景:**
-- 创建和管理 TikTok 广告活动
-- 配置 Spark Ads 达人合作
-- 追踪转化事件和归因分析
-
----
-
-### 2. Meta Marketing API 专家
-**路径**: `skills/meta-marketing-api-expert/SKILL.md`
-
-**核心能力:**
-- OAuth 2.0 认证与权限管理
-- Campaign/Ad Set/Ad 层级管理
-- Pixel 事件追踪与 CAPI 实现
-- 自定义受众与 Lookalike 受众管理
-- 报表分析与归因
-
-**使用场景:**
-- Facebook/Instagram 广告投放
-- 多渠道受众定向
-- 转化追踪与优化
-
----
-
-### 3. Google Ads API 专家
-**路径**: `skills/google-ads-api-expert/SKILL.md`
-
-**核心能力:**
-- OAuth + Developer Token 认证
-- Campaign/Ad Group/Keyword/Ad 全层级管理
-- Streaming Mutate 批量操作
-- 智能出价策略配置（Target CPA/ROAS）
-- 报表下载与数据分析
-
-**使用场景:**
-- Google Search/Shopping 广告投放
-- 批量操作优化
-- 智能出价策略配置
-
----
-
-### 4. Display & Video 360 专家
-**路径**: `skills/dv360-expert/SKILL.md`
-
-**核心能力:**
-- 服务账号认证
-- Line Item（媒体购买）管理
-- 创意上传与管理
-- 报表查询与分析
-- DSP 集成
-
-**使用场景:**
-- 程序化广告采购
-- 媒体购买管理
-- 创意资产审批
-
----
-
-### 5. 广告平台统一工具集
-**路径**: `skills/ad-platform-tools/SKILL.md`
-
-**核心能力:**
-- 统一认证管理（四大平台）
-- 跨平台数据同步
-- 统一报表聚合
-- 多平台事件追踪
-
-**使用场景:**
-- 跨平台账户管理
-- 多平台报表聚合
-- 统一事件追踪
+| Skill | 平台 | Tools 数量 | 覆盖范围 |
+|-------|------|-----------|---------|
+| **tiktok-ads-expert** | TikTok Ads | 50+ | Campaign/Ad Group/Ad/Spark Ads/Pixel/CAPI/报表 |
+| **meta-marketing-api-expert** | Meta/Facebook | 60+ | Campaign/Ad Set/Ad/受众/产品目录/动态广告/CAPI |
+| **google-ads-api-expert** | Google Ads | 55+ | Campaign/Ad Group/Keyword/Ad/智能出价/素材组 |
+| **dv360-expert** | DV360 | 45+ | Line Item/Flight/Creative/定向/报表 |
+| **ad-platform-tools** | 通用工具集 | 30+ | 跨平台认证/同步/报表聚合/事件追踪 |
 
 ---
 
@@ -104,34 +25,24 @@
 ### 1. 配置凭证
 
 ```bash
-# 复制凭证模板
 cp config/ad_platform_credentials_template.json config/ad_platform_credentials.json
-
-# 编辑凭证文件（务必保密！）
 nano config/ad_platform_credentials.json
 ```
 
 ### 2. 测试连接
 
 ```bash
-# 测试所有平台
 python3 scripts/ad_platform_api.py --all --test
-
-# 测试单个平台
-python3 scripts/ad_platform_api.py --platform meta --test
 ```
 
 ### 3. 使用 API
 
 ```bash
 # 获取账户列表
-python3 scripts/ad_platform_api.py --platform google --action list_accounts
+python3 scripts/ad_platform_api.py --platform meta --action list_accounts
 
 # 创建广告系列
-python3 scripts/ad_platform_api.py --platform meta --action create_campaign --name "Summer Sale"
-
-# 追踪转化事件
-python3 scripts/ad_platform_api.py --platform tiktok --action track_pixel --pixel_id "123"
+python3 scripts/ad_platform_api.py --platform google --action create_campaign --name "Summer Sale"
 ```
 
 ---
@@ -140,17 +51,17 @@ python3 scripts/ad_platform_api.py --platform tiktok --action track_pixel --pixe
 
 ```
 knowledge/skills/
-├── SKILLS_INDEX.md                    # 本索引文件
+├── SKILLS_INDEX.md                    # 本索引文档
 ├── tiktok-ads-expert/
-│   └── SKILL.md                       # TikTok Ads 专家技能
+│   └── SKILL.md                       # 50+ API 工具
 ├── meta-marketing-api-expert/
-│   └── SKILL.md                       # Meta Marketing API 专家技能
+│   └── SKILL.md                       # 60+ API 工具
 ├── google-ads-api-expert/
-│   └── SKILL.md                       # Google Ads API 专家技能
+│   └── SKILL.md                       # 55+ API 工具
 ├── dv360-expert/
-│   └── SKILL.md                       # DV360 专家技能
+│   └── SKILL.md                       # 45+ API 工具
 └── ad-platform-tools/
-    └── SKILL.md                       # 统一工具集技能
+    └── SKILL.md                       # 30+ 通用工具
 
 scripts/
 ├── ad_platform_api.py                 # 统一 API 调用脚本
@@ -158,8 +69,116 @@ scripts/
 └── platform_docs_scraper.py           # 文档刮削器
 
 config/
-└── ad_platform_credentials_template.json  # 凭证配置模板
+└── ad_platform_credentials_template.json  # 凭证模板
 ```
+
+---
+
+## 🎯 各 Skill 详细能力
+
+### TikTok Ads Expert (50+ Tools)
+
+**认证管理**: auth, refresh_token, get_account, list_accounts, validate_token
+
+**Campaign 管理**: create, update, get, list, pause, enable, delete, copy (8 tools)
+
+**Ad Group 管理**: create, update, get, list, pause, enable, delete, targeting, copy (10 tools)
+
+**Ad 创意管理**: create, update, get, list, pause, enable, delete, copy (8 tools)
+
+**Spark Ads**: create_spark_ad, list_creators, get_creator_info, authorize, revoke, list_videos (6 tools)
+
+**受众管理**: create, update, get, list, delete, estimate (6 tools)
+
+**素材管理**: upload_video, get_video, list_videos, delete_video, upload_image (5 tools)
+
+**报表分析**: query_report, get_campaign_report, get_adgroup_report, get_ad_report, export_report, get_metrics_summary (7 tools)
+
+**事件追踪**: track_pixel, send_capi_event, create_pixel, get_pixel, list_pixels (5 tools)
+
+**辅助工具**: list_locations, list_platforms, list_interests, list_languages, list_promotion_goals (5 tools)
+
+---
+
+### Meta Marketing API Expert (60+ Tools)
+
+**认证管理**: auth, refresh_token, get_account, list_accounts, validate_token, generate_user_token (7 tools)
+
+**Campaign 管理**: create, update, get, list, pause, enable, delete, copy, clone, insights (10 tools)
+
+**Ad Set 管理**: create, update, get, list, pause, enable, delete, targeting, copy, insights, batch_create (12 tools)
+
+**Ad 创意管理**: create, update, get, list, pause, enable, delete, copy, insights, batch_create (10 tools)
+
+**创意资产**: create_carousel, create_single_image, create_video, create_collection, upload_image, get_creative, list_creatives, delete_creative (8 tools)
+
+**受众管理**: create_custom_audience, update_custom_audience, get_custom_audience, list_custom_audiences, delete_custom_audience, create_lookalike, get_lookalike, estimate_audience, add_to_audience, remove_from_audience (10 tools)
+
+**产品目录**: create_catalog, get_catalog, list_catalogs, update_catalog, delete_catalog, upload_products, get_product, list_products (8 tools)
+
+**动态广告**: create_dras_campaign, create_dras_adset, create_dras_ad, update_dynamic_offer, list_dynamic_ads, get_dynamic_ad_insights (6 tools)
+
+**事件追踪**: create_pixel, get_pixel, list_pixels, track_pixel, send_capi_event, test_events (6 tools)
+
+**报表分析**: query_insights, get_campaign_insights, get_adset_insights, get_ad_insights, download_report, get_breakdown_insights, get_custom_tables (7 tools)
+
+**辅助工具**: list_locations, list_platforms, list_interests, list_behaviors, list_languages (5 tools)
+
+---
+
+### Google Ads API Expert (55+ Tools)
+
+**认证管理**: auth, get_customer, list_customers, list_accessible_customers, get_hierarchy, validate_token (6 tools)
+
+**Campaign 管理**: create, update, get, list, pause, enable, delete, copy, get_bidding_strategy, set_bidding_strategy, get_budget, list_ad_testing (12 tools)
+
+**Ad Group 管理**: create, update, get, list, pause, enable, delete, targeting, audience, cpc_bid (10 tools)
+
+**关键词管理**: add_keywords, update_keywords, get_keyword, list_keywords, remove_keywords, negative_keywords, get_metrics, list_auction_insights (8 tools)
+
+**广告创意管理**: create_text_ad, create_responsive_search_ad, create_expand_text_ad, get_ad, list_ads, pause, enable, delete, update, get_performance (10 tools)
+
+**素材组管理**: create_asset_group, update_asset_group, get_asset_group, list_asset_groups, pause, enable (6 tools)
+
+**智能出价**: create_target_cpa, create_target_roas, create_max_conversions, create_ecpa, get_bidding_strategy, list_bidding_strategies, update_bidding_strategy, delete_bidding_strategy, get_bid_loose, set_bid_multiplier (10 tools)
+
+**报表分析**: download_report, get_metrics, get_campaign_metrics, get_ad_group_metrics, get_keyword_metrics, get_ad_metrics, export_report, get_auction_insights (8 tools)
+
+**辅助工具**: list_locations, list_languages, list_ad_networks, list_device_types, list_placement_types (5 tools)
+
+---
+
+### DV360 Expert (45+ Tools)
+
+**认证管理**: auth, get_customer, list_customers, get_advertisers, get_advertiser, validate_credentials (6 tools)
+
+**Line Item 管理**: create, update, get, list, pause, enable, delete, copy, get_budget, update_budget, get_performance, batch_create (12 tools)
+
+**Flight 管理**: create, update, get, list, pause, enable, delete, extend (8 tools)
+
+**创意管理**: upload_creative, get_creative, list_creatives, update_creative, delete_creative, get_approval, list_templates, create_banner, create_video, create_native (10 tools)
+
+**定向管理**: create_targeting, get_targeting, list_targeting, update_targeting, delete_targeting, estimate_reach (6 tools)
+
+**报表分析**: get_report, get_line_item_report, get_creative_report, get_impression_report, get_click_report, export_report, get_breakdown_report (7 tools)
+
+**辅助工具**: list_platforms, list_device_types, list_ad_formats, list_brand_safety, list_viewability, list_geo_locations (6 tools)
+
+---
+
+### Ad Platform Tools (30+ Tools)
+
+**认证管理**: configure, test, refresh, list_configured, get_token, clear_credentials (6 tools)
+
+**数据同步**: sync_accounts, sync_campaigns, sync_ad_groups, sync_ads, sync_audiences, sync_creatives, sync_products, sync_all (8 tools)
+
+**报表聚合**: get_report, aggregate_report, compare_platforms, export_report, get_metrics_summary, get_daily_trends (6 tools)
+
+**事件追踪**: track_event, track_multi_platform, get_conversion_summary, validate_pixel, test_conversion (5 tools)
+
+**通用操作**: create_campaign, update_campaign, pause_campaign, enable_campaign, duplicate_campaign (5 tools)
+
+**辅助工具**: list_platforms, get_platform_status, check_rate_limits, get_quota_usage, sync_config_to_env (5 tools)
 
 ---
 
@@ -167,7 +186,7 @@ config/
 
 1. **凭证管理**
    - 使用环境变量或密钥管理服务
-   - 不要将 `ad_platform_credentials.json` 提交到 Git
+   - 不要将凭证提交到 Git
    - 定期轮换 Access Token
 
 2. **权限控制**
@@ -191,33 +210,4 @@ config/
 
 ---
 
-## 🎓 进阶使用
-
-### 批量操作
-
-```bash
-# 批量创建广告系列
-python3 scripts/ad_platform_api.py --platform google --action batch_create_campaigns --config campaigns.json
-
-# 批量同步账户
-python3 scripts/ad_platform_api.py --platform meta --action sync_accounts
-```
-
-### 定时任务
-
-```bash
-# 添加定时任务
-crontab scripts/ad_platform_cron.txt
-```
-
-### API 限流处理
-
-各平台都有 API 调用限制，脚本已内置自动重试和指数退避机制：
-- TikTok: 10,000 次/小时
-- Meta: 200,000 次/天
-- Google Ads: 100,000 Get/10,000 Mutate 次/天
-- DV360: 根据账户等级
-
----
-
-*本 Skills 系统设计为跨平台、可扩展的广告平台操作工具集。*
+*本 Skills 系统支持 50+ API 工具，覆盖广告投放的全生命周期管理。*
