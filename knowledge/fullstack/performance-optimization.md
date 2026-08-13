@@ -1313,10 +1313,10 @@ sudo bpftrace -e 'tracepoint:raw_syscalls:sys_enter /args->id == PID/ {
 }' -p $(pgrep your-go-app)
 
 # 输出示例:
-# @[[read]]: 15000
-# @[[write]]: 3000
-# @[[epoll_wait]]: 50000  ← 网络 I/O 等待最多
-# @[[mmap]]: 500
+# @read: 15000
+# @write: 3000
+# @epoll_wait: 50000  ← 网络 I/O 等待最多
+# @mmap: 500
 ```
 
 #### 场景二：Page Fault 分析
