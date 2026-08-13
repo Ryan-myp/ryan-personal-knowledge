@@ -1,137 +1,105 @@
-# Go并发模式 - 资深专家深度实现
+# Go并发模式实战 - 资深专家深度实现
 
-## 一、Worker Pool
-
-```go
-package concurrency
-
-type WorkerPool struct {
-    jobs    chan Job
-    results chan Result
-    workers int
-}
-
-func NewWorkerPool(workers, queueSize int) *WorkerPool {
-    return &WorkerPool{
-        jobs:    make(chan Job, queueSize),
-        results: make(chan Result, queueSize),
-        workers: workers,
-    }
-}
-
-func (wp *WorkerPool) Start() {
-    for i := 0; i < wp.workers; i++ {
-        go func(id int) {
-            for job := range wp.jobs {
-                result := wp.process(job)
-                wp.results <- result
-            }
-        }(i)
-    }
-}
-
-func (wp *WorkerPool) process(job Job) Result {
-    // 实际处理逻辑
-    return Result{
-        JobID: job.ID,
-        Data:  job.Data,
-    }
-}
-```
-
-## 二、Fan-out/Fan-in
+## 一、Worker Pool模式
 
 ```go
-func fanOut(in <-chan int, numWorkers int) <-chan int {
-    out := make(chan int)
-    for i := 0; i < numWorkers; i++ {
-        go func() {
-            for v := range in {
-                out <- v * 2
-            }
-        }()
+func worker(id int, jobs <-chan int, results chan<- int) {
+    for j := range jobs {
+        fmt.Printf("worker %d processing job %d\n", id, j)
+        time.Sleep(time.Second)
+        results <- j * 2
     }
-    return out
 }
 
-func fanIn(channels ...<-chan int) <-chan int {
-    out := make(chan int)
-    var wg sync.WaitGroup
+func main() {
+    jobs := make(chan int, 100)
+    results := make(chan int, 100)
     
-    for _, ch := range channels {
-        wg.Add(1)
-        go func(c <-chan int) {
-            defer wg.Done()
-            for v := range c {
-                out <- v
-            }
-        }(ch)
+    // 启动3个worker
+    for w := 1; w <= 3; w++ {
+        go worker(w, jobs, results)
     }
     
+    // 发送任务
     go func() {
-        wg.Wait()
-        close(out)
+        for j := 1; j <= 9; j++ {
+            jobs <- j
+        }
+        close(jobs)
     }()
     
-    return out
+    // 收集结果
+    for a := 1; a <= 9; a++ {
+        <-results
+    }
 }
 ```
 
-## 三、Context传播
+## 二、Pipeline模式
 
 ```go
-package context
+func generator(nums ...int) <-chan int {
+    out := make(chan int)
+    go func() {
+        for _, n := range nums {
+            out <- n
+        }
+        close(out)
+    }()
+    return out
+}
 
-import "context"
+func squarer(in <-chan int) <-chan int {
+    out := make(chan int)
+    go func() {
+        for n := range in {
+            out <- n * n
+        }
+        close(out)
+    }()
+    return out
+}
 
-func WithTimeout(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc)
-
-func WithCancel(parent context.Context) (context.Context, context.CancelFunc)
-
-func WithValue(parent context.Context, key, val any) context.Context
-
-// 请求级上下文链
-func HandleRequest(ctx context.Context, req *Request) (*Response, error) {
-    // 创建子上下文
-    childCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-    defer cancel()
+func main() {
+    // 创建pipeline
+    nums := generator(1, 2, 3, 4)
+    sq := squarer(nums)
     
-    // 传递值
-    ctx = context.WithValue(childCtx, "requestID", req.ID)
-    
-    // 执行处理
-    return process(ctx, req)
+    for v := range sq {
+        fmt.Println(v) // 输出: 1, 4, 9, 16
+    }
 }
 ```
 
-## 四、面试高频题
+## 三、面试高频题
 
-### Q1: Goroutine泄漏如何检测？
-
-```
-A:
-1. pprof goroutine分析
-2. 监控goroutine数量
-3. 检查channel未关闭
-```
-
-### Q2: 如何选择缓冲/无缓冲channel？
+### Q1: Worker Pool适合什么场景？
 
 ```
 A:
-• 无缓冲: 同步通信，强依赖
-• 有缓冲: 异步通信，流量控制
+1. 批量任务处理
+2. 限制并发数
+3. 资源隔离
 ```
 
-## 五、自测题
+### Q2: Pipeline如何实现？
 
-1. 解释Worker Pool模式
-2. 如何实现Fan-out/Fan-in？
-3. Context如何传播取消信号？
+```
+A:
+1. 管道串联
+2. 无阻塞传递
+3. 优雅关闭
+```
+
+## 四、自测题
+
+1. 解释Worker Pool
+2. 如何实现Pipeline？
+3. 如何处理错误传播？
 
 ---
 
 ## 参考文档
 
-- [Go并发模式官方指南](https://go.dev/doc/effective_go#concurrency)
-- [Go并发编程书籍](https://github.com/golang/go/wiki/Concurrency)
+- [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide)
+- [Go Blog: Concurrent Programming](https://go.dev/blog/pipelines)
