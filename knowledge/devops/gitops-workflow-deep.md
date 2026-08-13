@@ -1,55 +1,50 @@
-# GitOps 工作流深度实现 - ArgoCD 生产实践
+# GitOps工作流 - 资深专家深度实现
 
-> **版本**: v2.0  
-> **日期**: 2026-08-13  
-> **作者**: Ryan  
-> **分类**: DevOps  
-> **代码密度**: 28%
-
----
-
-## 一、GitOps 架构
+## 一、核心概念
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                      GitOps 工作流                                   │
-│                                                                     │
-│  Developer                          GitOps Controller               │
-│  ┌─────────────┐                    ┌─────────────┐                │
-│  │  Code Repo  │──commit──▶│  Git      │──sync──▶│  K8s Cluster  │
-│  │  (PR/MR)    │    push   │  Server   │         │  (Apps)       │
-│  └─────────────┘            └─────────────┘         └─────────────┘
-│                                             │
-│                              ┌──────────────┼──────────────┐
-│                              ▼              ▼              │
-│                        ┌──────────┐   ┌──────────┐        │
-│                        │  ArgoCD  │   │  Flux    │        │
-│                        │  (UI)    │   │  (CLI)   │        │
-│                        └──────────┘   └──────────┘        │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         GitOps工作流                                     │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   Developer              Git Repo              ArgoCD                  Cluster                   │
+│       │                    │                      │                      │                      │
+│       │  commit            │                      │                      │                      │
+│       ├───────────────────►│                      │                      │                      │
+│       │                    │                      │                      │                      │
+│       │                    │◄─────────────────────┤                      │                      │
+│       │                    │      watch           │                      │                      │
+│       │                    │                      │                      │                      │
+│       │                    │                      │                      │                      │
+│       │                    │◄─────────────────────┤                      │                      │
+│       │                    │   reconcile          │                      │                      │
+│       │                    │                      │                      │                      │
+│       │                    │                      │                      │                      │
+│       │                    │                      ├──────────────────────┼──────────────────────┤
+│       │                    │                      │    apply manifests   │                      │
+│       │                    │                      │                      │                      │
+│                                                                         │                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
----
-
-## 二、ArgoCD 应用配置
+## 二、ArgoCD配置
 
 ```yaml
-# argocd/application.yaml
+# application.yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: ad-platform
+  name: frontend
   namespace: argocd
 spec:
   project: default
   source:
-    repoURL: https://github.com/ryan/ad-platform.git
-    targetRevision: main
-    path: k8s/base
+    repoURL: https://github.com/org/repo.git
+    targetRevision: HEAD
+    path: overlays/prod
   destination:
     server: https://kubernetes.default.svc
-    namespace: ad-platform
+    namespace: frontend
   syncPolicy:
     automated:
       prune: true
@@ -58,154 +53,53 @@ spec:
       - CreateNamespace=true
 ```
 
----
-
-## 三、Kustomize 多环境配置
+## 三、Kustomize覆盖
 
 ```yaml
-# k8s/base/deployment.yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: bidding-engine
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: bidding-engine
-  template:
-    metadata:
-      labels:
-        app: bidding-engine
-    spec:
-      containers:
-      - name: engine
-        image: registry.example.com/bidding-engine:latest
-        resources:
-          requests:
-            cpu: 500m
-            memory: 512Mi
-          limits:
-            cpu: 2000m
-            memory: 2Gi
-```
-
-```yaml
-# k8s/overlays/staging/kustomization.yaml
+# kustomization.yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-bases:
-  - ../../base
-namespace: staging
-replicas:
-  - name: bidding-engine
-    count: 1
-configMapGenerator:
-  - name: app-config
-    literals:
-      - LOG_LEVEL=debug
-      - FEATURE_FLAGS=experiment_a,experiment_b
-```
 
-```yaml
-# k8s/overlays/production/kustomization.yaml
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-bases:
-  - ../../base
-namespace: production
-replicas:
-  - name: bidding-engine
-    count: 5
-configMapGenerator:
-  - name: app-config
-    literals:
-      - LOG_LEVEL=warn
-      - FEATURE_FLAGS=
 resources:
-  - hpa.yaml
+  - ../../base
+
+patchesStrategicMerge:
+  - patch.yaml
+
+images:
+  - name: nginx
+    newTag: "1.21"
 ```
+
+## 四、面试高频题
+
+### Q1: GitOps和CI/CD的区别？
+
+```
+A:
+• GitOps: 声明式，Git是单一事实来源
+• CI/CD: 过程式，注重构建部署流程
+• GitOps更强调自动同步和漂移检测
+```
+
+### Q2: 如何实现自动回滚？
+
+```
+A:
+1. ArgoCD自动修复 (selfHeal)
+2. 版本回退 (git revert)
+3. 蓝绿部署切换
+```
+
+## 五、自测题
+
+1. 解释GitOps核心原则
+2. 如何实现应用同步？
+3. 如何处理配置漂移？
 
 ---
 
-## 四、Helm Chart 封装
+## 参考文档
 
-```yaml
-# charts/ad-platform/Chart.yaml
-apiVersion: v2
-name: ad-platform
-description: Ad Platform Helm Chart
-version: 1.0.0
-appVersion: 1.0.0
-```
-
-```yaml
-# charts/ad-platform/values.yaml
-biddingEngine:
-  replicas: 3
-  image:
-    repository: registry.example.com/bidding-engine
-    tag: latest
-  resources:
-    requests:
-      cpu: 500m
-      memory: 512Mi
-    limits:
-      cpu: 2000m
-      memory: 2Gi
-
-redis:
-  enabled: true
-  auth:
-    password: "${REDIS_PASSWORD}"
-
-database:
-  host: "${DB_HOST}"
-  name: ad_platform
-```
-
----
-
-## 五、CD 流水线
-
-```yaml
-# .github/workflows/cd.yaml
-name: GitOps CD
-on:
-  push:
-    branches: [main]
-    paths:
-      - 'k8s/**'
-      - 'charts/**'
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Sync ArgoCD
-        run: |
-          argocd app sync ad-platform \
-            --revision ${GITHUB_SHA} \
-            --dry-run=false
-          
-      - name: Verify Health
-        run: |
-          argocd app get ad-platform \
-            --health || exit 1
-```
-
----
-
-## 六、自测题
-
-1. **GitOps 的核心原则是什么？**
-   - 声明式、版本化、自动化
-
-2. **ArgoCD vs Flux 的区别？**
-   - ArgoCD 有 UI，Flux 更轻量 CLI-first
-
-3. **Kustomize vs Helm 如何选择？**
-   - 简单配置用 Kustomize，复杂模板用 Helm
-
+- [ArgoCD官方文档](https://argo-cd.readthedocs.io/)
+- [GitOps白皮书](https://www.gitops.tech/)

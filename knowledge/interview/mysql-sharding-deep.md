@@ -2,151 +2,132 @@
 
 ## 一、分片策略
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        分库分表策略                                       │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│   水平分表:                                                               │
-│   • Hash分片: user_id % 16 → 16个分片                                    │
-│   • 范围分片: user_id 0-1000万 → 分片1, 1000-2000万 → 分片2             │
-│   • 时间分片: 按月分片                                                  │
-│                                                                         │
-│   垂直分库:                                                               │
-│   • 用户库: user, profile, settings                                     │
-│   • 订单库: order, payment, logistics                                   │
-│   • 商品库: product, category, inventory                                │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-## 二、Go实现
-
 ```go
 package sharding
 
-import (
-    "fmt"
+// 分片键选择
+type ShardKey string
+
+const (
+    UserID ShardKey = "user_id"
+    OrderID ShardKey = "order_id"
 )
 
-type ShardingStrategy interface {
-    GetShardKey(data interface{}) string
-    GetShardIndex(key string, totalShards int) int
+// 分片算法
+type ShardAlgorithm interface {
+    Shard(key uint64, shards int) int
 }
 
-// Hash分片策略
-type HashShardingStrategy struct{}
-
-func (h *HashShardingStrategy) GetShardIndex(key string, totalShards int) int {
-    hash := fnv32(key)
-    return int(hash % uint32(totalShards))
+// 一致性Hash
+type ConsistentHash struct {
+    circle map[int]string
+    nodes  []int
 }
 
-func fnv32(key string) uint32 {
-    hash := uint32(2166136261)
-    for i := 0; i < len(key); i++ {
-        hash ^= uint32(key[i])
-        hash *= 16777619
+func (ch *ConsistentHash) Shard(key uint64, shards int) int {
+    hash := murmurhash(key) % 1024
+    // 查找节点
+    for _, n := range ch.nodes {
+        if n >= hash {
+            return n
+        }
     }
-    return hash
-}
-
-// 路由到正确的数据库和表
-func (s *ShardingService) Route(tableName string, shardKey string) (dbIndex, tableIndex int) {
-    strategy := s.getStrategy(tableName)
-    index := strategy.GetShardIndex(shardKey, s.totalShards)
-    
-    dbIndex = index / s.tablesPerDB
-    tableIndex = index % s.tablesPerDB
-    
-    return
+    return ch.nodes[0]
 }
 ```
 
-## 三、分布式事务
+## 二、中间件方案
+
+```yaml
+# ShardingSphere配置
+spring:
+  shardingsphere:
+    datasource:
+      names: ds0,ds1
+      ds0:
+        driver-class-name: com.mysql.cj.jdbc.Driver
+        url: jdbc:mysql://localhost:3306/db0
+      ds1:
+        driver-class-name: com.mysql.cj.jdbc.Driver
+        url: jdbc:mysql://localhost:3306/db1
+    rules:
+      sharding:
+        tables:
+          orders:
+            actual-data-nodes: ds$->{0..1}.orders$->{0..1}
+            database-strategy:
+              hint:
+                algorithm-class-name: com.example.HintShardingAlgorithm
+            table-strategy:
+              inline:
+                sharding-column: order_id
+                algorithm-expression: orders$->{order_id % 2}
+```
+
+## 三、跨库查询
 
 ```go
-package distributed_txn
-
-import (
-    "context"
-)
-
-// TCC事务
-type TCCTransaction struct {
-    ctx context.Context
+// 分布式查询优化
+type DistributedQuery struct {
+    shards []string
 }
 
-func (t *TCCTransaction) Try() error {
-    // 尝试阶段: 执行业务逻辑，预留资源
-    return nil
-}
-
-func (t *TCCTransaction) Confirm() error {
-    // 确认阶段: 提交事务
-    return nil
-}
-
-func (t *TCCTransaction) Cancel() error {
-    // 取消阶段: 回滚事务
-    return nil
-}
-
-// 本地消息表
-type LocalMessageTable struct {
-    db *DB
-}
-
-func (m *LocalMessageTable) Send(msg *Message) error {
-    // 1. 写入本地消息表
-    err := m.db.Insert("messages", msg)
-    if err != nil {
-        return err
+func (dq *DistributedQuery) Query(sql string, params ...any) ([]map[string]any, error) {
+    var results []map[string]any
+    
+    // 并行查询所有分片
+    var wg sync.WaitGroup
+    mu := sync.Mutex{}
+    
+    for _, shard := range dq.shards {
+        wg.Add(1)
+        go func(s string) {
+            defer wg.Done()
+            conn := GetConnection(s)
+            rows, err := conn.Query(sql, params...)
+            if err != nil {
+                return
+            }
+            mu.Lock()
+            defer mu.Unlock()
+            results = append(results, scanRows(rows)...)
+        }(shard)
     }
     
-    // 2. 执行业务
-    err = m.executeBusiness(msg)
-    if err != nil {
-        // 业务失败，消息标记为失败
-        m.db.UpdateStatus(msg.ID, "failed")
-        return err
-    }
-    
-    // 3. 标记消息为已发送
-    m.db.UpdateStatus(msg.ID, "sent")
-    return nil
+    wg.Wait()
+    return results, nil
 }
 ```
 
 ## 四、面试高频题
 
-### Q1: 分库分表后如何解决跨分片查询？
+### Q1: 如何选择分片键？
 
 ```
 A:
-1. 避免跨分片查询
-2. 使用ES同步数据
-3. 分布式查询引擎（ShardingSphere）
+1. 查询频率高的字段
+2. 数据分布均匀的字段
+3. 避免跨库JOIN
 ```
 
-### Q2: 如何选择分片键？
+### Q2: 如何解决跨库分页？
 
 ```
 A:
-1. 高基数（唯一值多）
-2. 查询频繁
-3. 均匀分布
+1. 游标分页
+2. 延迟关联
+3. 本地分页合并
 ```
 
 ## 五、自测题
 
-1. 解释分库分表策略
-2. 如何实现分布式事务？
-3. 如何处理数据迁移？
+1. 解释分片策略
+2. 如何实现全局唯一ID？
+3. 如何处理跨库事务？
 
 ---
 
 ## 参考文档
 
-- [ShardingSphere](https://github.com/apache/shardingsphere)
+- [ShardingSphere文档](https://shardingsphere.apache.org/)
 - [MySQL官方文档](https://dev.mysql.com/doc/)

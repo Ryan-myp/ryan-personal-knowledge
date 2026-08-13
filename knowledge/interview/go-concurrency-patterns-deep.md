@@ -1,111 +1,73 @@
 # Go并发模式 - 资深专家深度实现
 
-## 一、Worker Pool模式
+## 一、Worker Pool
 
 ```go
-package workerpool
-
-import (
-    "sync"
-)
-
-type Job struct {
-    ID      int
-    Data    []byte
-    Result  chan []byte
-}
+package concurrency
 
 type WorkerPool struct {
+    jobs    chan Job
+    results chan Result
     workers int
-    jobs    chan *Job
-    wg      sync.WaitGroup
 }
 
 func NewWorkerPool(workers, queueSize int) *WorkerPool {
     return &WorkerPool{
+        jobs:    make(chan Job, queueSize),
+        results: make(chan Result, queueSize),
         workers: workers,
-        jobs:    make(chan *Job, queueSize),
     }
 }
 
 func (wp *WorkerPool) Start() {
-    // 启动worker
     for i := 0; i < wp.workers; i++ {
-        wp.wg.Add(1)
-        go wp.worker(i)
+        go func(id int) {
+            for job := range wp.jobs {
+                result := wp.process(job)
+                wp.results <- result
+            }
+        }(i)
     }
 }
 
-func (wp *WorkerPool) worker(id int) {
-    defer wp.wg.Done()
-    for job := range wp.jobs {
-        // 处理任务
-        result := process(job.Data)
-        job.Result <- result
+func (wp *WorkerPool) process(job Job) Result {
+    // 实际处理逻辑
+    return Result{
+        JobID: job.ID,
+        Data:  job.Data,
     }
-}
-
-func (wp *WorkerPool) Submit(job *Job) {
-    wp.jobs <- job
-}
-
-func (wp *WorkerPool) Stop() {
-    close(wp.jobs)
-    wp.wg.Wait()
 }
 ```
 
-## 二、Fan-Out/Fan-In模式
+## 二、Fan-out/Fan-in
 
 ```go
-package fanout
-
-import (
-    "sync"
-)
-
-func FanOut(in <-chan int, workers int) <-chan int {
+func fanOut(in <-chan int, numWorkers int) <-chan int {
     out := make(chan int)
-    var wg sync.WaitGroup
-    
-    // 启动多个worker
-    for i := 0; i < workers; i++ {
-        wg.Add(1)
+    for i := 0; i < numWorkers; i++ {
         go func() {
-            defer wg.Done()
             for v := range in {
                 out <- v * 2
             }
         }()
     }
-    
-    // 等待所有worker完成，关闭输出channel
-    go func() {
-        wg.Wait()
-        close(out)
-    }()
-    
     return out
 }
 
-func FanIn(channels ...<-chan int) <-chan int {
-    var wg sync.WaitGroup
+func fanIn(channels ...<-chan int) <-chan int {
     out := make(chan int)
+    var wg sync.WaitGroup
     
-    // 合并多个输入channel
-    output := func(c <-chan int) {
-        defer wg.Done()
-        for v := range c {
-            out <- v
-        }
+    for _, ch := range channels {
+        wg.Add(1)
+        go func(c <-chan int) {
+            defer wg.Done()
+            for v := range c {
+                out <- v
+            }
+        }(ch)
     }
     
-    wg.Add(len(channels))
-    for _, c := range channels {
-        go output(c)
-    }
-    
-    // 等待所有输入完成
     go func() {
         wg.Wait()
         close(out)
@@ -115,71 +77,61 @@ func FanIn(channels ...<-chan int) <-chan int {
 }
 ```
 
-## 三、Context取消模式
+## 三、Context传播
 
 ```go
 package context
 
-import (
-    "context"
-    "time"
-)
+import "context"
 
-func WithTimeout(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
-    return context.WithTimeout(parent, timeout)
-}
+func WithTimeout(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc)
 
-func ProcessWithTimeout(ctx context.Context, data []byte) ([]byte, error) {
-    // 检查是否已取消
-    select {
-    case <-ctx.Done():
-        return nil, ctx.Err()
-    default:
-    }
+func WithCancel(parent context.Context) (context.Context, context.CancelFunc)
+
+func WithValue(parent context.Context, key, val any) context.Context
+
+// 请求级上下文链
+func HandleRequest(ctx context.Context, req *Request) (*Response, error) {
+    // 创建子上下文
+    childCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+    defer cancel()
     
-    // 处理数据
-    result := process(data)
+    // 传递值
+    ctx = context.WithValue(childCtx, "requestID", req.ID)
     
-    // 定期检查取消状态
-    select {
-    case <-ctx.Done():
-        return nil, ctx.Err()
-    default:
-    }
-    
-    return result, nil
+    // 执行处理
+    return process(ctx, req)
 }
 ```
 
 ## 四、面试高频题
 
-### Q1: 如何避免goroutine泄漏？
+### Q1: Goroutine泄漏如何检测？
 
 ```
 A:
-1. 确保channel能被关闭
-2. 使用context控制生命周期
-3. 避免无条件阻塞在channel操作
+1. pprof goroutine分析
+2. 监控goroutine数量
+3. 检查channel未关闭
 ```
 
-### Q2: Channel vs Mutex如何选择？
+### Q2: 如何选择缓冲/无缓冲channel？
 
 ```
 A:
-• Channel: 数据传递，协程通信
-• Mutex: 共享状态保护
-• 原则: "不要通过共享内存来通信，要通过通信来共享内存"
+• 无缓冲: 同步通信，强依赖
+• 有缓冲: 异步通信，流量控制
 ```
 
 ## 五、自测题
 
 1. 解释Worker Pool模式
-2. 如何实现并发限制？
-3. 如何处理goroutine panic？
+2. 如何实现Fan-out/Fan-in？
+3. Context如何传播取消信号？
 
 ---
 
 ## 参考文档
 
-- [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide)
-- [Effective Go](https://go.dev/doc/effective_go)
+- [Go并发模式官方指南](https://go.dev/doc/effective_go#concurrency)
+- [Go并发编程书籍](https://github.com/golang/go/wiki/Concurrency)
