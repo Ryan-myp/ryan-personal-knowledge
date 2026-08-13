@@ -11,10 +11,12 @@ from distill_engine import DistillationEngine
 
 class SimpleProject:
     """简单项目配置"""
-    def __init__(self, name, github_url, branch="main"):
+    def __init__(self, name, github_url, branch="main", core_value=""):
         self.name = name
         self.github_url = github_url
         self.branch = branch
+        self.core_value = core_value
+        self.category = "database"
 
 
 async def main():
