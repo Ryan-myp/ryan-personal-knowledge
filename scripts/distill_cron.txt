@@ -1,0 +1,12 @@
+#!/bin/bash
+# 知识蒸馏定时任务
+# 用法: crontab distill_cron.txt
+
+# 每小时执行一次蒸馏
+0 * * * * cd /Users/yanping.ma/ryan-personal-knowledge && python3 scripts/distill_engine.py all 2>&1 >> logs/cron-distill.log
+
+# 每天凌晨 2 点执行完整蒸馏
+0 2 * * * cd /Users/yanping.ma/ryan-personal-knowledge && python3 scripts/distill_engine.py all 100 2>&1 >> logs/cron-distill-full.log
+
+# 每周日执行优先级为 1 的项目
+0 3 * * 0 cd /Users/yanping.ma/ryan-personal-knowledge && python3 scripts/distill_engine.py llm 2>&1 >> logs/cron-distill-llm.log
