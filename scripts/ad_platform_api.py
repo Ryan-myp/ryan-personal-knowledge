@@ -59,15 +59,29 @@ class AdPlatformClient:
     def _create_tiktok_client(self):
         """创建 TikTok 客户端"""
         try:
-            from tiktokads.business.sdk import Client
+            # 优先尝试官方 SDK
+            try:
+                from tiktokads.business.sdk import Client
+                creds = self.credentials.get('tiktok', {})
+                return Client(
+                    access_token=creds.get('access_token', ''),
+                    app_key=creds.get('app_key', ''),
+                    app_secret=creds.get('app_secret', '')
+                )
+            except ImportError:
+                pass
+            
+            # 回退到 requests 直接调用
             creds = self.credentials.get('tiktok', {})
-            return Client(
-                access_token=creds.get('access_token', ''),
-                app_key=creds.get('app_key', ''),
-                app_secret=creds.get('app_secret', '')
-            )
-        except ImportError:
-            print("❌ 请先安装 TikTok SDK: pip install tiktok-api")
+            return {
+                'type': 'requests',
+                'access_token': creds.get('access_token', ''),
+                'app_key': creds.get('app_key', ''),
+                'app_secret': creds.get('app_secret', ''),
+                'base_url': 'https://business-api.tiktok.com/portal/api/v20230728'
+            }
+        except Exception as e:
+            print(f"❌ TikTok 客户端初始化失败: {e}")
             sys.exit(1)
     
     def _create_meta_client(self):
