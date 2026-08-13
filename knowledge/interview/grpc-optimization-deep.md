@@ -1,184 +1,111 @@
 # gRPC性能优化 - 资深专家深度实现
 
-## 一、性能瓶颈分析
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      gRPC性能瓶颈                                         │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│   1. 序列化/反序列化                                                      │
-│   2. 网络传输                                                           │
-│   3. 流控控制                                                           │
-│   4. 连接管理                                                           │
-│   5. 负载均衡                                                           │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-## 二、序列化优化
-
-```go
-package proto
-
-import (
-    "google.golang.org/protobuf/proto"
-    "github.com/golang/protobuf/jsonpb"
-)
-
-// Protobuf序列化
-func MarshalProto(msg proto.Message) ([]byte, error) {
-    return proto.Marshal(msg)
-}
-
-func UnmarshalProto(data []byte, msg proto.Message) error {
-    return proto.Unmarshal(data, msg)
-}
-
-// JSONPb序列化（用于调试）
-func MarshalJSON(msg proto.Message) ([]byte, error) {
-    m := jsonpb.Marshaler{}
-    return m.MarshalToString(msg)
-}
-
-// 性能对比
-// Protobuf: ~10ns/op
-// JSON:     ~100ns/op
-// 压缩:     ~50% 体积减少
-```
-
-## 三、流式传输
+## 一、传输层优化
 
 ```go
 package grpc
 
 import (
-    "context"
     "google.golang.org/grpc"
-    "google.golang.org/grpc/stream"
+    "google.golang.org/grpc/credentials/insecure"
 )
 
-// Server Streaming
-func (s *Server) WatchEvents(req *WatchRequest, stream pb.EventService_WatchEventsServer) error {
-    for {
-        event, err := s.eventStore.GetNext()
-        if err != nil {
-            return err
-        }
-        if err := stream.Send(event); err != nil {
-            return err
-        }
+func NewOptimizedClient() *grpc.ClientConn {
+    conn, err := grpc.NewConnection(
+        "localhost:50051",
+        grpc.WithTransportCredentials(insecure.NewCredentials()),
+        grpc.WithKeepaliveParams(keepalive.ClientParameters{
+            Time:                10 * time.Second,
+            Timeout:             20 * time.Second,
+            PermitWithoutStream: true,
+        }),
+        grpc.WithInitialWindowSize(1<<20),
+        grpc.WithInitialConnWindowSize(1<<20),
+    )
+    return conn
+}
+```
+
+## 二、流式传输
+
+```go
+// 服务端流
+func (s *server) StreamData(req *Empty, stream pb.Service_StreamDataServer) error {
+    for i := 0; i < 100; i++ {
+        stream.Send(&Data{Value: i})
     }
+    return nil
 }
 
-// Client Streaming
-func (s *Server) CollectMetrics(stream pb.MetricService_CollectMetricsServer) error {
-    for {
-        metric, err := stream.Recv()
-        if err == io.EOF {
-            return nil
-        }
-        if err != nil {
-            return err
-        }
-        s.metricsStore.Save(metric)
-    }
-}
-
-// Bidirectional Streaming
-func (s *Server) StreamData(stream pb.DataService_StreamDataServer) error {
+// 客户端流
+func (s *server) CollectData(stream pb.Service_CollectDataServer) error {
+    var sum int32
     for {
         req, err := stream.Recv()
         if err == io.EOF {
-            return stream.SendAndClose(&Response{Data: processedData})
+            return stream.SendAndClose(&Result{Sum: sum})
         }
-        if err != nil {
-            return err
+        sum += req.Value
+    }
+}
+
+// 双向流
+func (s *server) Chat(stream pb.Service_ChatServer) error {
+    for {
+        req, err := stream.Recv()
+        if err == io.EOF {
+            return nil
         }
-        if err := stream.Send(process(req)); err != nil {
-            return err
-        }
+        stream.Send(&Response{Message: req.Message})
     }
 }
 ```
 
-## 四、负载均衡
+## 三、拦截器优化
 
 ```go
-package balancer
+type timingInterceptor struct{}
 
-import (
-    "google.golang.org/grpc"
-    "google.golang.org/grpc/balancer"
-    "google.golang.org/grpc/balancer/base"
-)
-
-// 轮询负载均衡器
-func NewRoundRobinBuilder() balancer.Builder {
-    return base.NewBalancerBuilder(
-        "round_robin",
-        &roundRobinPicker{},
-        base.Config{},
-    )
-}
-
-type roundRobinPicker struct {
-    currentIndex int
-}
-
-func (p *roundRobinPicker) Pick(info base.PickInfo) (base.PickResult, error) {
-    subconns := info.ReadySCs
-    if len(subconns) == 0 {
-        return base.PickResult{}, balancer.ErrNoSubConnAvailable
+func (i *timingInterceptor) UnaryInterceptor() grpc.UnaryServerInterceptor {
+    return func(ctx context.Context, req interface{}, 
+        info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+        start := time.Now()
+        resp, err := handler(ctx, req)
+        elapsed := time.Since(start)
+        log.Printf("RPC: %s, cost: %v", info.FullMethod, elapsed)
+        return resp, err
     }
-    
-    idx := p.currentIndex % len(subconns)
-    p.currentIndex++
-    
-    return base.PickResult{SubConn: subconns[idx]}, nil
-}
-
-// 自定义负载均衡策略
-func registerCustomBalancer() {
-    balancer.Register(&customBalancerBuilder{})
 }
 ```
 
-## 五、面试高频题
+## 四、面试高频题
 
-### Q1: gRPC相比HTTP/1.1有什么优势？
+### Q1: gRPC和REST的区别？
 
 ```
 A:
-• HTTP/2多路复用
-• Protobuf高效序列化
-• 原生流式支持
-• 代码生成
+• gRPC: HTTP/2 + Protobuf，高性能
+• REST: HTTP + JSON，兼容性好
 ```
 
-### Q2: 如何处理gRPC超时？
+### Q2: 如何实现服务熔断？
 
-```go
-func withTimeout(ctx context.Context, timeout time.Duration) context.Context {
-    return context.WithTimeout(ctx, timeout)
-}
-
-// 调用时
-ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-defer cancel()
-
-resp, err := client.SayHello(ctx, req)
+```
+A:
+1. Circuit Breaker模式
+2. 超时控制
+3. 重试策略
 ```
 
-## 六、自测题
+## 五、自测题
 
-1. gRPC流式有哪些类型？
-2. 如何实现gRPC拦截器？
-3. 如何监控gRPC性能？
+1. 解释流式传输类型
+2. 如何实现负载均衡？
+3. 如何优化延迟？
 
 ---
 
 ## 参考文档
 
 - [gRPC官方文档](https://grpc.io/docs/)
-- [Protobuf指南](https://protobuf.dev/)
+- [gRPC-go源码](https://github.com/grpc/grpc-go)

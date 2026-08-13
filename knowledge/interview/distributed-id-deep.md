@@ -1,19 +1,6 @@
-# 系统设计：分布式ID生成器 - 资深专家深度实现
+# 分布式ID生成 - 资深专家深度实现
 
 ## 一、Snowflake算法
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                     Snowflake ID结构 (64位)                              │
-├─────────────────────────────────────────────────────────────────────────┤
-│  符号  │            时间戳            │ 机器ID │     序列号      │
-│   1    │              41             │   10  │       12        │
-│        │                             │       │                 │
-│  负数  │         41位 = 69年         │ 1024台│    4096/毫秒    │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-## 二、Go实现
 
 ```go
 package snowflake
@@ -23,91 +10,115 @@ import (
     "time"
 )
 
-const (
-    epoch       = 1420041600000 // 2015-01-01
-    machineBits = 10
-    stepBits    = 12
-    
-    maxMachineId = -1 ^ (-1 << machineBits) // 1024
-    maxStep      = -1 ^ (-1 << stepBits)    // 4096
-)
-
 type Snowflake struct {
-    mu         sync.Mutex
-    machineID  int64
-    lastTime   int64
-    step       int64
+    mu          sync.Mutex
+    lastTs      int64
+    sequence    int64
+    workerId    int64
+    datacenterId int64
 }
 
-func NewSnowflake(machineID int64) *Snowflake {
-    if machineID < 0 || machineID > maxMachineId {
-        panic("machineID out of range")
-    }
-    return &Snowflake{
-        machineID: machineID,
-    }
-}
+const (
+    workerIdBits    = 5
+    datacenterIdBits = 5
+    maxWorkerId     = -1 ^ (-1 << workerIdBits)
+    maxDatacenterId = -1 ^ (-1 << datacenterIdBits)
+    sequenceBits    = 12
+    workerIdShift   = sequenceBits
+    datacenterIdShift = sequenceBits + workerIdBits
+    timestampLeftShift = sequenceBits + workerIdBits + datacenterIdBits
+    sequenceMask      = -1 ^ (-1 << sequenceBits)
+)
 
 func (s *Snowflake) NextID() int64 {
     s.mu.Lock()
     defer s.mu.Unlock()
     
-    now := time.Now().UnixMilli()
-    
-    // 时钟回拨检测
-    if now < s.lastTime {
-        panic("clock moved backwards")
+    ts := time.Now().UnixMilli()
+    if ts < s.lastTs {
+        return -1 // 时钟回拨
     }
     
-    if now == s.lastTime {
-        s.step++
-        if s.step > maxStep {
-            // 等待下一毫秒
-            for now <= s.lastTime {
-                now = time.Now().UnixMilli()
-            }
+    if ts == s.lastTs {
+        s.sequence = (s.sequence + 1) & sequenceMask
+        if s.sequence == 0 {
+            ts = s.waitNextMillis(ts)
         }
     } else {
-        s.step = 0
+        s.sequence = 0
     }
     
-    s.lastTime = now
-    
-    // 生成ID
-    id := (now-epoch)<<22 | (s.machineID << 12) | s.step
-    return id
+    s.lastTs = ts
+    return ((ts << timestampLeftShift) |
+        (s.datacenterId << datacenterIdShift) |
+        (s.workerId << workerIdShift) |
+        s.sequence)
 }
 ```
 
-## 三、面试高频题
+## 二、 UUID v7
 
-### Q1: Snowflake的问题是什么？
+```
+UUID v7 时间戳顺序:
+┌─────────────────────────────────────────────────────────────┐
+│  Timestamp (48 bits) | CRC (4 bits) | Version (4 bits)      │
+│                       │ Counter (12 bits)                   │
+└─────────────────────────────────────────────────────────────┘
+
+格式: XXXXXXXX-XXXX-7XXX-[89ab]XXX-XXXXXXXXXXXX
+```
+
+## 三、数据库方案
+
+```sql
+-- 自增ID
+CREATE TABLE orders (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    amount DECIMAL(10,2)
+);
+
+-- 分库分表ID生成
+CREATE TABLE sequence (
+    name VARCHAR(32) NOT NULL,
+    current_value BIGINT NOT NULL,
+    increment INT NOT NULL DEFAULT 1,
+    PRIMARY KEY (name)
+);
+
+-- 获取ID
+SELECT GET_SEQ_ID('order_id') as id;
+```
+
+## 四、面试高频题
+
+### Q1: Snowflake有什么缺点？
 
 ```
 A:
-1. 时钟回拨问题
-2. 机器ID分配
-3. 单点故障
+1. 依赖时钟，时钟回拨会失败
+2. 单机生成，有上限
+3. 需要分配worker_id
 ```
 
-### Q2: 如何解决时钟回拨？
+### Q2: 如何保证唯一性？
 
 ```
 A:
-1. 等待时钟同步
-2. 记录回拨时间
-3. 使用NTP同步
+1. 时间戳 + 机器ID + 序列号
+2. 本地缓存预分配
+3. 数据库号段模式
 ```
 
-## 四、自测题
+## 五、自测题
 
-1. 解释Snowflake算法原理
-2. 如何实现分布式ID生成器？
-3. 有哪些其他方案？
+1. 解释Snowflake算法
+2. 如何实现时钟回拨处理？
+3. 分布式ID方案有哪些？
 
 ---
 
 ## 参考文档
 
-- [Twitter Snowflake](https://github.com/twitter/snowflake)
-- [Leaf项目](https://github.com/Meituan-Dianping/Leaf)
+- [Snowflake源码](https://github.com/bwmarrin/snowflake)
+- [UUID v7 RFC](https://datatracker.ietf.org/doc/html/draft-ietf-uuidrev-rfc4122-bis)
