@@ -1,111 +1,71 @@
-# Elasticsearch架构 - 资深专家深度实现
+# ES架构深度 - 资深专家深度实现
 
-## 一、核心概念
+## 一、倒排索引
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                      Elasticsearch架构                                   │
+│                      倒排索引结构                                          │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
-│   Cluster                                                                │
-│   ├── Node 1                                                            │
-│   │   ├── Index: orders                                                 │
-│   │   │   ├── Shard 0 (Primary)                                         │
-│   │   │   ├── Shard 1 (Primary)                                         │
-│   │   │   └── Shard 2 (Replica)                                         │
-│   │   └── Index: products                                               │
-│   │       ├── Shard 0 (Primary)                                         │
-│   │       └── Shard 1 (Replica)                                         │
-│   │                                                                      │
-│   ├── Node 2                                                            │
-│   │   └── Replicas of Node 1                                            │
-│   │                                                                      │
-│   └── Node 3                                                            │
-│       └── Replicas of Node 1                                            │
-│                                                                         │
-│   特点:                                                                   │
-│   • 分布式搜索                                                           │
-│   • 倒排索引                                                             │
-│   • 近实时查询                                                           │
-│                                                                         │
+│   Term Dictionary (词项字典)                                             │
+│   ├── apple: [doc1, doc3, doc5]                                          │
+│   ├── banana: [doc2, doc4]                                               │
+│   └── cherry: [doc1, doc2, doc5]                                         │
+│                                                                         →
+│   Posting List ( postings list)                                           │
+│   ├── apple: {1, 3, 5} → freq: {2, 1, 3} → positions: {[0], [2], [1]}   │
+│   └── banana: {2, 4} → freq: {1, 2} → positions: {[1], [0, 3]}          │
+│                                                                         →
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 二、倒排索引
+## 二、分片架构
 
-```json
-{
-  "mappings": {
-    "properties": {
-      "title": {
-        "type": "text",
-        "analyzer": "standard"
-      },
-      "price": {
-        "type": "float"
-      },
-      "created_at": {
-        "type": "date"
-      }
-    }
-  }
-}
+```yaml
+# 分片配置
+cluster:
+  indices:
+    logs:
+      shards: 5           # 主分片
+      replicas: 1         # 副本分片
+      
+# 分布示例
+shard_0: primary → node1 | replica → node2
+shard_1: primary → node2 | replica → node3  
+shard_2: primary → node3 | replica → node1
+shard_3: primary → node1 | replica → node3
+shard_4: primary → node2 | replica → node1
 ```
 
-## 三、查询优化
+## 三、面试高频题
 
-```json
-// 分面搜索
-{
-  "aggs": {
-    "categories": {
-      "terms": {
-        "field": "category",
-        "size": 10
-      }
-    }
-  }
-}
-
-// 高亮显示
-{
-  "highlight": {
-    "fields": {
-      "title": {}
-    }
-  }
-}
-```
-
-## 四、面试高频题
-
-### Q1: ES如何保证高可用？
+### Q1: 倒排索引原理？
 
 ```
 A:
-1. 多副本机制
+1. 文本分词
+2. 建立Term-Doc映射
+3. 倒排快速检索
+```
+
+### Q2: 如何实现高可用？
+
+```
+A:
+1. 副本分片
 2. 自动故障转移
-3. 数据分片
+3. 脑裂防护
 ```
 
-### Q2: 如何优化查询性能？
+## 四、自测题
 
-```
-A:
-1. 合理分片
-2. 字段类型选择
-3. 缓存策略
-```
-
-## 五、自测题
-
-1. 解释倒排索引原理
-2. 如何实现全文检索？
-3. 如何优化写入性能？
+1. 解释倒排索引
+2. 如何实现分片？
+3. 如何优化查询性能？
 
 ---
 
 ## 参考文档
 
-- [ES官方文档](https://www.elastic.co/guide/en/elasticsearch/reference/current/index.html)
-- [ES源码](https://github.com/elastic/elasticsearch)
+- [ES官方文档](https://www.elastic.co/guide/en/elasticsearch/reference/current/)
+- [Elasticsearch白皮书](https://www.elastic.co/resources/elasticsearch-whitepaper)

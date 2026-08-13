@@ -1,120 +1,88 @@
-# Go内存管理 - 资深专家深度实现
+# Go内存管理深入 - 资深专家深度实现
 
-## 一、内存分配器
+## 一、内存层次
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                       Go内存分配架构                                     │
+│                      Go内存层次结构                                        │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
-│   heap                                                                 │
-│   ├── spans[0..n]                                                      │
-│   │   ├── span[0]  (small objects: < 32KB)                             │
-│   │   ├── span[1]  (large objects: >= 32KB)                            │
-│   │   └── span[n]                                                      │
-│   │                                                                       │
-│   ├── mcache (per-P cache)                                             │
-│   │   ├── tinyobj                                                      │
-│   │   ├── small[n]                                                     │
-│   │   └── large                                                        │
-│   │                                                                       │
-│   └── mheap (global heap)                                              │
-│       ├── central[n]                                                   │
-│       └── free                                                         │
-│                                                                         │
-│   特点:                                                                   │
-│   • 多级缓存                                                             │
-│   • 无锁分配                                                             │
-│   • 自动垃圾回收                                                         │
-│                                                                         │
+│   Stack (栈)                                                           │
+│   ├── 每个Goroutine独立                                                 │
+│   ├── 初始2KB，动态扩展                                                 │
+│   └── 线程本地存储(TLS)                                                  │
+│                                                                         →
+│   Heap (堆)                                                            │
+│   ├── Arena: 64MB大内存块                                                │
+│   ├── mcache: Per-P缓存，避免竞争                                        │
+│   └── mcentral: 中等大小对象                                              │
+│                                                                         →
+│   Span (跨度)                                                          │
+│   ├── 连续内存单元                                                       │
+│   ├── class: 对象大小类别                                                │
+│   └── free list: 空闲对象链                                               │
+│                                                                         →
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 二、分配器实现
+## 二、Arena分配
 
 ```go
-// src/runtime/malloc.go
-type mcache struct {
-    sweepgen   uint32
-    tiny       uintptr
-    tinyoffset uintptr
-    
-    // small size classes
-    small [numSpanClasses]struct {
-        alloc [8]freelist
-    }
-    
-    // large objects
-    large *[maxLargeSize]*mspan
+// arena.go
+type Arena struct {
+    base unsafe.Pointer
+    size uintptr
+    busy *busyAlloc
 }
 
-func (c *mcache) mallocx(size uintptr, flags uint8) unsafe.Pointer {
-    if size <= maxSmallSize {
-        if size < maxTinySize {
-            return c.tinyalloc(size)
+func (a *Arena) alloc(n uintptr, align uintptr) unsafe.Pointer {
+    // 对齐分配
+    end := a.base + a.size
+    cur := ptrmaskptr(a.base)
+    
+    // 找合适空间
+    for cur + n <= end {
+        if !busyAlloc.isBusy(cur, n) {
+            busyAlloc.mark(cur, n)
+            return unsafe.Pointer(cur)
         }
-        return c.allocklass(size, class_to_size[class])
+        cur += PageSize
     }
-    return c.malloclarge(size, flags)
+    
+    // 分配新span
+    return a.grow(n, align)
 }
 ```
 
-## 三、垃圾回收
+## 三、面试高频题
 
-```go
-// 三色标记法
-func gcMark() {
-    // 白色: 未访问
-    // 灰色: 已访问，子对象未扫描
-    // 黑色: 已访问，子对象已扫描
-    
-    for _, root := range roots {
-        if isRoot(root) {
-            mark(root)
-        }
-    }
-}
-
-func mark(obj *Object) {
-    obj.color = GRAY
-    for _, child := range obj.children {
-        if child.color == WHITE {
-            mark(child)
-        }
-    }
-    obj.color = BLACK
-}
-```
-
-## 四、面试高频题
-
-### Q1: Go内存分配如何避免碎片？
+### Q1: 栈和堆如何选择？
 
 ```
 A:
-1. 大小类划分
-2. 边界对齐
-3. 分代回收
+1. 栈: 生命周期明确的局部变量
+2. 堆: 逃逸变量/闭包捕获
+3. 逃逸分析决定
 ```
 
-### Q2: GC如何工作？
+### Q2: 如何优化内存？
 
 ```
 A:
-1. 三色标记
-2. 写屏障
-3. 并发回收
+1. 对象池复用
+2. 避免分配热点路径
+3. 使用[]byte替代string
 ```
 
-## 五、自测题
+## 四、自测题
 
-1. 解释内存分配器架构
-2. 如何实现无锁分配？
-3. 如何优化GC性能？
+1. 解释内存层次
+2. 如何实现Arena分配？
+3. 如何处理内存碎片？
 
 ---
 
 ## 参考文档
 
-- [Go内存管理源码](https://github.com/golang/go/blob/master/src/runtime/malloc.go)
-- [Go GC白皮书](https://go.dev/doc/gc-guide)
+- [Go内存分配器](https://github.com/golang/go/blob/master/src/runtime/mheap.go)
+- [Go运行时源码](https://github.com/golang/go/tree/master/src/runtime)

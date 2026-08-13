@@ -1,82 +1,47 @@
-# ClickHouse内核架构 - 资深专家深度实现
+# ClickHouse内核 - 资深专家深度实现
 
-## 一、架构概览
+## 一、列式存储
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                      ClickHouse内核架构                                  │
+│                      ClickHouse列存架构                                    │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
-│   Query Layer                                                            │
-│   ├── Query Parser (ANTLR)                                             │
-│   ├── Query Optimizer                                                  │
-│   └── Query Executor                                                   │
-│                │                                                        │
-│   Storage Layer                                                          │
-│   ├── Merge Tree Family                                                │
-│   │   ├── MergeTree                                                    │
-│   │   ├── ReplicatedMergeTree                                          │
-│   │   └── AggregatingMergeTree                                         │
-│   ├── Log Family                                                       │
-│   │   ├── TinyLog                                                      │
-│   │   ├── StripeLog                                                    │
-│   │   └── Memory                                                       │
-│   └── Special Family                                                   │
-│       ├── Dictionary                                                   │
-│       ├── Buffer                                                       │
-│       └── Distributed                                                  │
-│                                                                         │
-│   Engine Layer                                                           │
-│   ├── Replication (ZooKeeper)                                          │
-│   ├── Sharding                                                         │
-│   └── Partitioning                                                     │
-│                                                                         │
+│   Row (行式存储 - 写入)                                                  │
+│   └── [id: 1, name: "Alice", age: 25, city: "Beijing"]                  │
+│                                                                         →
+│   Column (列式存储 - 查询)                                               │
+│   └── id: [1, 2, 3, ...]                                                 │
+│      name: ["Alice", "Bob", ...]                                          │
+│      age: [25, 30, ...]                                                  │
+│                                                                         →
+│   Advantage: 只读需要的列，减少IO                                          │
+│                                                                         →
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 二、MergeTree引擎
+## 二、数据格式
 
 ```cpp
-class MergeTreeData : public IStorage
-{
-public:
-    // 写入数据
-    WriteBufferFromOwnFile createWriteBuffer(const String &part_name, 
-        const StorageMetadataPtr &metadata, int block_hash)
-    {
-        return WriteBufferFromOwnFile(data_path + part_name);
-    }
+// Native格式
+struct ColumnVector {
+    int8_t data[N];
+    int8_t null_map[N];
+    int32_t hash[N];
+};
+
+// 压缩: LZ4/ZSTD
+class ColumnCompressed : public ColumnVector {
+    uint8_t compressed[N];
+    size_t decompressed_size;
     
-    // 后台合并
-    void backgroundMerge(bool is_stale)
-    {
-        while (needMerge()) {
-            auto part = getPartToMerge();
-            mergeParts(part);
-        }
+    void decompress() {
+        lz4_decompress(compressed, decompressed);
     }
 };
 ```
 
-## 三、查询优化
-
-```sql
--- 物化视图
-CREATE MATERIALIZED VIEW orders_mv
-TO orders_summary AS
-SELECT 
-    city,
-    count() as order_count,
-    sum(amount) as total_amount
-FROM orders
-GROUP BY city;
-
--- 采样
-SELECT * FROM orders SAMPLE 0.1
-WHERE city = '北京';
-```
-
-## 四、面试高频题
+## 三、面试高频题
 
 ### Q1: ClickHouse为什么快？
 
@@ -85,27 +50,26 @@ A:
 1. 列式存储
 2. 向量化执行
 3. 数据压缩
-4. 并行计算
 ```
 
-### Q2: MergeTree工作原理？
+### Q2: 如何实现MergeTree？
 
 ```
 A:
-1. 数据分段写入
-2. 后台合并
-3. 稀疏索引
+1. 分区
+2. 主键
+3. 主键稀疏索引
 ```
 
-## 五、自测题
+## 四、自测题
 
-1. 解释列式存储优势
-2. 如何实现数据压缩？
-3. 如何优化查询性能？
+1. 解释列式存储
+2. 如何实现MergeTree？
+3. 如何进行聚合优化？
 
 ---
 
 ## 参考文档
 
-- [ClickHouse源码](https://github.com/ClickHouse/ClickHouse)
 - [ClickHouse文档](https://clickhouse.com/docs)
+- [ClickHouse源码](https://github.com/ClickHouse/ClickHouse)

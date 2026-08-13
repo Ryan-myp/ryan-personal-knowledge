@@ -1,129 +1,86 @@
-# Go调度器实现 - 资深专家深度实现
+# Go调度器深入 - 资深专家深度实现
 
-## 一、调度器架构
+## 一、GMP模型
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                       Go调度器架构                                       │
+│                      GMP调度模型                                          │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
+│   G (Goroutine)                                                         │
+│   ├── 用户态线程                                                          │
+│   ├── Stack: 2KB-1MB动态扩展                                              │
+│   └── Status: runnable/running/waiting                                   │
+│                                                                         →
+│   M (Machine)                                                           │
+│   ├── OS线程                                                              │
+│   ├── P引用                                                               │
+│   └── 阻塞时释放P                                                        │
+│                                                                         →
 │   P (Processor)                                                          │
-│   ├── M (Machine) - 线程                                                │
-│   ├── G (Goroutine) - 协程                                              │
-│   └── Local Queue - 本地队列                                            │
-│                                                                         │
-│   Global Queue                                                           │
-│   ├── Work Stealing                                                      │
-│   └── Hand-off                                                           │
-│                                                                         │
-│   特点:                                                                   │
-│   • M:N调度模型                                                          │
-│   • 工作窃取                                                              │
-│   • 协作式抢占                                                            │
-│                                                                         │
+│   ├── local queue: 256个G                                               │
+│   ├── global queue: 所有G共享                                             │
+│   └── 网络轮询器                                                          │
+│                                                                         →
+│   调度流程:                                                              │
+│   1. 新G → P的local queue                                               │
+│   2. P的queue满 → 推送到global queue或另一P                                │
+│   3. M空闲 → 从global queue获取G                                          │
+│   4. M阻塞 → 释放P，创建新M                                               │
+│                                                                         →
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 二、GMP模型
+## 二、Work Stealing
 
 ```go
-// src/runtime/proc.go
-type p struct {
-    lock      mutex
-    id        int32
-    status    uint32
-    runqhead  uint32
-    runqtail  uint32
-    runq      [256]guintptr
-    runnext   guintptr
-    goidbase  uint64
-    schedtick uint32
-    sysmonlock unlock
-    flags     uint32
-    
-    // 本地队列
-    deferpool    [5]*_defer
-    deferpoolbuf [5]*_defer
-}
-
-type m struct {
-    g0      *g        // 拥有栈空间的goroutine
-    curg    *g        // 当前运行的goroutine
-    p       pptr     // 绑定的p
-    nextp   pptr
-    id      int32
-    mcache  *mcache
-    lockedg guintptr
-}
-
-type g struct {
-    stack       stack      // 栈信息
-    sched       gstruct    // 调度信息
-    params      unsafe.Pointer
-    atomicstatus uint32    // 状态
-    goid        int64     // goroutine id
+// worksteal.go
+func (p *p) stealWork() *g {
+    // 从其他P的queue偷取一半
+    for {
+        victim := runqsteal(p, randomInt(numP))
+        if victim != nil {
+            return victim
+        }
+        // 尝试从全局queue获取
+        if g, ok := globrunqget(); ok {
+            return g
+        }
+        // 休眠等待
+        startTheWorldWithSema()
+    }
 }
 ```
 
-## 三、工作窃取
+## 三、面试高频题
 
-```go
-// src/runtime/proc.go
-func stealWork(batch []*g) int {
-    for _, _p_ := range allp {
-        if _p_ == myp || _p_.runnext != 0 {
-            continue
-        }
-        
-        n := readyFromRunQueue(_p_, &batch[len(batch):cap(batch)])
-        if n > 0 {
-            return len(batch)
-        }
-    }
-    return 0
-}
-
-func readyFromRunQueue(_p_ *p, batch *[]*g) int {
-    n := 0
-    for n < cap(*batch) && _p_.runqhead != _p_.runqtail {
-        g := _p_.runq[_p_.runqtail%uint32(len(_p_.runq))]
-        _p_.runqtail++
-        *batch = append(*batch, g)
-        n++
-    }
-    return n
-}
-```
-
-## 四、面试高频题
-
-### Q1: Go调度器如何解决GIL问题？
+### Q1: GMP模型优势？
 
 ```
 A:
-1. M:N调度模型
-2. 多P并行执行
-3. 工作窃取
+1. 工作窃取负载均衡
+2. 本地队列减少竞争
+3. 非抢占式调度
 ```
 
-### Q2: 如何实现抢占式调度？
+### Q2: 如何避免饥饿？
 
 ```
 A:
-1. 系统调用时检测
-2. 信号量中断
-3. 栈空间不足
+1. 系统G与用户G分离
+2. 全局队列优先
+3. 抢占机制
 ```
 
-## 五、自测题
+## 四、自测题
 
 1. 解释GMP模型
 2. 如何实现工作窃取？
-3. 如何避免死锁？
+3. 如何处理死锁？
 
 ---
 
 ## 参考文档
 
-- [Go调度器源码](https://github.com/golang/go/blob/master/src/runtime/proc.go)
-- [Go运行时](https://github.com/golang/go/wiki/Goroutines)
+- [Go运行时调度器](https://github.com/golang/go/blob/master/src/runtime/proc.go)
+- [Golang GC实现](https://github.com/golang/go/blob/master/src/runtime/mgc.go)
