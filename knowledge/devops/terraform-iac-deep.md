@@ -1,184 +1,192 @@
-# Terraform IaC 深度实现
+# Terraform IaC实战 - 资深专家深度实现
 
-> **文档级别**: Level 5 - 专家级  
-> **创建日期**: 2026-08-13  
-> **状态**: ✅ 已补齐
-
----
-
-## 一、State 管理
+## 一、核心概念
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                      Terraform State 架构                                  │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   ┌─────────────┐     ┌─────────────┐     ┌─────────────┐                │
-│   │   Dev       │     │   Staging   │     │   Production│                │
-│   │  (独立state) │     │  (独立state)│     │ (独立state) │                │
-│   └──────┬──────┘     └──────┬──────┘     └──────┬──────┘                │
-│          │                   │                   │                        │
-│          └───────────────────┼───────────────────┘                        │
-│                              │                                            │
-│                    ┌─────────▼─────────┐                                  │
-│                    │  Remote Backend   │                                  │
-│                    │  (S3 + DynamoDB)  │                                  │
-│                    └─────────┬─────────┘                                  │
-│                              │                                            │
-│                    ┌─────────▼─────────┐                                  │
-│                    │   State Locking   │                                   │
-│                    │  (DynamoDB)       │                                   │
-│                    └───────────────────┘                                  │
-│                                                                             │
-│  关键设计点:                                                               │
-│  • 每个环境独立 state 文件                                                │
-│  • 远程存储实现团队协作                                                   │
-│  • 状态锁定防止并发修改                                                   │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      Terraform架构                                        │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   Provider      Resource     State       Module        Workspace         │
+│   ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌─────────────┐  │
+│   │ AWS      │ │ EC2      │ │ local.tf │ │ network  │ │ production  │  │
+│   │ Azure    │ │ S3       │ │ remote   │ │ compute  │ │ staging     │  │
+│   │ K8s      │ │ RDS      │ │ state    │ │ security │ │ development │  │
+│   └──────────┘ └──────────┘ └──────────┘ └──────────┘ └─────────────┘  │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
----
-
-## 二、模块设计模式
+## 二、Provider配置
 
 ```hcl
-# 文件: modules/bidding-cluster/main.tf
-variable "cluster_name" {
-  type = string
-}
-
-variable "instance_type" {
-  type    = string
-  default = "c5.2xlarge"
-}
-
-variable "min_size" {
-  type    = number
-  default = 2
-}
-
-variable "max_size" {
-  type    = number
-  default = 10
-}
-
-# ─── VPC 配置 ───
-module "vpc" {
-  source      = "../../modules/vpc"
-  cluster_name = var.cluster_name
-}
-
-# ─── ECS Cluster ───
-resource "aws_ecs_cluster" "main" {
-  name = var.cluster_name
+# providers.tf
+terraform {
+  required_version = ">= 1.0.0"
   
-  setting {
-    name  = "containerInsights"
-    value = "enabled"
-  }
-}
-
-# ─── Auto Scaling Group ───
-resource "aws_autoscaling_group" "main" {
-  desired_capacity = var.min_size
-  max_capacity     = var.max_size
-  min_capacity     = var.min_size
-  
-  launch_template {
-    id      = aws_launch_template.main.id
-    version = "$Latest"
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.0"
+    }
   }
   
-  tag {
-    key                 = "Name"
-    value               = var.cluster_name
-    propagate_at_launch = true
+  backend "s3" {
+    bucket         = "terraform-state-ryan"
+    key            = "production/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "terraform-locks"
+    encrypt        = true
   }
 }
-
-# ─── Output ───
-output "cluster_arn" {
-  value = aws_ecs_cluster.main.arn
-}
-
-output "service_endpoint" {
-  value = aws_ecs_service.main.endpoint
-}
-```
-
----
-
-## 三、引用模式
-
-```hcl
-# 文件: environments/production/main.tf
 
 provider "aws" {
-  region = "us-east-1"
-}
-
-# ─── 模块引用 ───
-module "bidding_cluster" {
-  source         = "../../modules/bidding-cluster"
-  cluster_name   = "ad-bidding-prod"
-  instance_type  = "c5.4xlarge"
-  min_size       = 4
-  max_size       = 20
-}
-
-module "cache_layer" {
-  source         = "../../modules/redis-cluster"
-  cluster_name   = "ad-cache-prod"
-  node_count     = 3
-  node_type      = "cache.r6g.large"
-}
-
-module "monitoring" {
-  source         = "../../modules/monitoring"
-  cluster_name   = "ad-bidding-prod"
-  retention_days = 30
-}
-
-# ─── 数据引用 ───
-data "aws_ami" "bidding" {
-  most_recent = true
-  owners      = ["self"]
+  region = var.aws_region
   
-  filter {
-    name   = "name"
-    values = ["ad-bidding-ami-*"]
+  default_tags {
+    tags = {
+      Environment = var.environment
+      ManagedBy   = "terraform"
+      Team        = "platform"
+    }
   }
 }
 
-# ─── 输出汇总 ───
-output "cluster_endpoint" {
-  value = module.bidding_cluster.service_endpoint
+variable "aws_region" {
+  default = "us-east-1"
 }
 
-output "cache_endpoint" {
-  value = module.cache_layer.cache_endpoint
+variable "environment" {
+  type    = string
+  default = "production"
 }
 ```
+
+## 三、资源管理
+
+```hcl
+# modules/vpc/main.tf
+resource "aws_vpc" "main" {
+  cidr_block           = var.cidr_block
+  enable_dns_support   = true
+  enable_dns_hostnames = true
+  
+  tags = {
+    Name = "${var.environment}-vpc"
+  }
+}
+
+resource "aws_subnet" "public" {
+  count             = length(var.public_subnets)
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = var.public_subnets[count.index]
+  availability_zone = var.azs[count.index]
+  
+  map_public_ip_on_launch = true
+}
+
+resource "aws_internet_gateway" "main" {
+  vpc_id = aws_vpc.main.id
+}
+
+output "vpc_id" {
+  value = aws_vpc.main.id
+}
+
+output "public_subnet_ids" {
+  value = aws_subnet.public[*].id
+}
+```
+
+## 四、State管理
+
+```go
+package tfstate
+
+import (
+    "encoding/json"
+    "fmt"
+)
+
+// State 资源状态
+type State struct {
+    Version    int               `json:"version"`
+    Serial     int               `json:"serial"`
+    Lineage    string            `json:"lineage"`
+    Resources  []Resource        `json:"resources"`
+    Outputs    map[string]Output `json:"outputs"`
+}
+
+type Resource struct {
+    Type     string          `json:"type"`
+    Name     string          `json:"name"`
+    Provider string          `json:"provider"`
+    Instances []Instance     `json:"instances"`
+}
+
+type Instance struct {
+    SchemaVersion int                `json:"schema_version"`
+    Attributes    map[string]interface{} `json:"attributes"`
+    Dependencies  []string           `json:"dependencies"`
+}
+
+// Plan 计划内容
+type Plan struct {
+    FormatVersion    string            `json:"format_version"`
+    TFVersion        string            `json:"terraform_version"`
+    PlannedValues    PlannedValues     `json:"planned_values"`
+    ResourceChanges  []ResourceChange  `json:"resource_changes"`
+}
+
+type ResourceChange struct {
+    Address      string            `json:"address"`
+    Mode         string            `json:"mode"`
+    Type         string            `json:"type"`
+    Name         string            `json:"name"`
+    Change       Change            `json:"change"`
+}
+
+type Change struct {
+    Actions   []string          `json:"actions"`
+    Before    map[string]interface{} `json:"before"`
+    After     map[string]interface{} `json:"after"`
+}
+```
+
+## 五、面试高频题
+
+### Q1: Terraform State是什么？为什么重要？
+
+```
+A:
+• State记录了基础设施的实际状态
+• 用于追踪资源ID和属性
+• 支持依赖关系管理
+• 可以锁定防止并发修改
+```
+
+### Q2: 如何处理State漂移？
+
+```
+A:
+• 定期运行 terraform plan 检测漂移
+• 使用 terraform import 重新导入
+• 配置 CI/CD 流水线自动检测
+```
+
+## 六、自测题
+
+1. 如何管理多环境配置？
+2. Terraform模块化有什么好处？
+3. 如何处理依赖顺序问题？
 
 ---
 
-## 四、参考资料
+## 参考文档
 
-```
-核心文档:
-├── Terraform Docs: https://developer.hashicorp.com/terraform/docs
-├── AWS Terraform Provider: https://registry.terraform.io/providers/hashicorp/aws
-└── Terraform Best Practices: https://www.terraform-best-practices.com/
-
-工具:
-├── tflint: 静态检查
-├── checkov: 安全扫描
-└── tfsec: 合规检查
-```
-
----
-
-*文档版本: v1.0*  
-*最后更新: 2026-08-13*  
-*作者: Ryan*
+- [Terraform文档](https://www.terraform.io/docs/)
+- [Terraform最佳实践](https://www.terraform-best-practices.com/)
