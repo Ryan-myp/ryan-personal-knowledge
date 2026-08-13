@@ -272,3 +272,24 @@ A: 需要联系 Google 销售团队，申请 Developer Token 和测试账户。
 A:
 - **Programmatic Guaranteed**: 保量采购，保证展现量
 - **Preferred Deal**: 优先购买权，非保量
+
+---
+
+## 🛠️ 脚本调用方式
+
+当你需要执行上述工具时，**直接调用脚本**：
+
+```bash
+python3 /Users/yanping.ma/ryan-personal-knowledge/scripts/ad_platform_api.py \
+  --platform <platform> \
+  --action <action_name> \
+  [参数...]
+```
+
+### 凭证配置
+
+```bash
+cp config/ad_platform_credentials_template.json config/ad_platform_credentials.json
+nano config/ad_platform_credentials.json
+```
+

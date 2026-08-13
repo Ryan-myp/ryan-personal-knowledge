@@ -136,3 +136,24 @@ A: 检查 app 权限范围，确保包含 `ads_management`、`ads_read`、`pages
 
 **Q: 如何优化 CAPI 事件匹配率？**
 A: 提供完整用户数据（email、phone、name）、使用哈希加密、设置正确的 event_source_url。
+
+---
+
+## 🛠️ 脚本调用方式
+
+当你需要执行上述工具时，**直接调用脚本**：
+
+```bash
+python3 /Users/yanping.ma/ryan-personal-knowledge/scripts/ad_platform_api.py \
+  --platform <platform> \
+  --action <action_name> \
+  [参数...]
+```
+
+### 凭证配置
+
+```bash
+cp config/ad_platform_credentials_template.json config/ad_platform_credentials.json
+nano config/ad_platform_credentials.json
+```
+

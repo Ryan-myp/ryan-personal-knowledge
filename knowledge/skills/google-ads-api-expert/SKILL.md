@@ -157,3 +157,24 @@ A: 使用指数退避重试，实现请求队列，监控配额使用情况。
 
 **Q: Streaming Mutate 和普通 Mutate 有什么区别？**
 A: Streaming Mutate 可以批量处理大量操作，每个操作独立提交，失败不影响其他操作。
+
+---
+
+## 🛠️ 脚本调用方式
+
+当你需要执行上述工具时，**直接调用脚本**：
+
+```bash
+python3 /Users/yanping.ma/ryan-personal-knowledge/scripts/ad_platform_api.py \
+  --platform <platform> \
+  --action <action_name> \
+  [参数...]
+```
+
+### 凭证配置
+
+```bash
+cp config/ad_platform_credentials_template.json config/ad_platform_credentials.json
+nano config/ad_platform_credentials.json
+```
+

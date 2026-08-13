@@ -119,3 +119,36 @@ A: 优先使用 Conversion API，启用聚合事件测量，设置事件优先�
 
 **Q: 如何优化 Spark Ads 的投放效果？**
 A: 选择高互动创作者，使用原生视频内容，设置合理的转化目标。
+
+---
+
+## 🛠️ 脚本调用方式
+
+当你需要执行上述工具时，**直接调用脚本**：
+
+```bash
+python3 /Users/yanping.ma/ryan-personal-knowledge/scripts/ad_platform_api.py \
+  --platform tiktok \
+  --action <action_name> \
+  [参数...]
+```
+
+### 常用操作示例
+
+| 操作 | 命令 |
+|------|------|
+| 列出账户 | `--action list_accounts` |
+| 列出 Campaign | `--action list_campaigns --account-id act_xxx` |
+| 创建 Campaign | `--action create_campaign --account-id act_xxx --name "xxx" --budget 10000` |
+| 查询报表 | `--action get_report --account-id act_xxx --start 2026-08-01 --end 2026-08-14` |
+
+### 凭证配置
+
+```bash
+# 首次使用：复制模板
+cp config/ad_platform_credentials_template.json config/ad_platform_credentials.json
+
+# 编辑凭证（填入真实值）
+nano config/ad_platform_credentials.json
+```
+
