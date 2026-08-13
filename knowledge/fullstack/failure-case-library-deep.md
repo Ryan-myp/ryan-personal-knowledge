@@ -1,463 +1,135 @@
-# 故障排查案例库深度实现
+# 故障排查案例库 - 资深专家深度实现
 
-> **版本**: v1.0  
-> **日期**: 2026-08-13  
-> **作者**: Ryan  
-> **分类**: 全栈/运维  
-> **难度**: 高级
+## 一、案例1: Redis内存溢出
 
----
-
-## 一、故障排查方法论
-
-### 1.1 系统化排查流程
-
+### 问题现象
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                     故障排查流程 (SOP)                               │
-│                                                                     │
-│  1. 发现问题                                                        │
-│     ├── 监控告警                                                     │
-│     ├── 用户反馈                                                     │
-│     └── 日志异常                                                     │
-│                                                                     │
-│  2. 初步诊断                                                        │
-│     ├── 确认影响范围                                                 │
-│     ├── 检查最近变更                                                 │
-│     └── 复现问题                                                     │
-│                                                                     │
-│  3. 深入分析                                                        │
-│     ├── 日志分析                                                     │
-│     ├── 指标检查                                                     │
-│     ├── 链路追踪                                                     │
-│     └── 资源监控                                                     │
-│                                                                     │
-│  4. 定位根因                                                        │
-│     ├── 假设验证                                                     │
-│     ├── 数据收集                                                     │
-│     └── 根因确认                                                     │
-│                                                                     │
-│  5. 修复实施                                                        │
-│     ├── 短期止血                                                     │
-│     ├── 长期修复                                                     │
-│     └── 回归测试                                                     │
-│                                                                     │
-│  6. 复盘总结                                                        │
-│     ├── 问题记录                                                     │
-│     ├── 改进措施                                                     │
-│     └── 知识沉淀                                                     │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
+10:30:00 ERROR: OOM command not allowed when used memory > 'maxmemory'
+10:30:01 ERROR: Client connection dropped
 ```
-
-### 1.2 排查工具链
-
-```
-┌───────────────────────────────────────────────────────────────────────────┐
-│                        故障排查工具链                                      │
-├────────────────────┬──────────────────────────────────────────────────────┤
-│ 工具               │ 用途                                                │
-├────────────────────┼──────────────────────────────────────────────────────┤
-│ Prometheus         │ 指标监控与告警                                       │
-│ Grafana            │ 可视化面板                                           │
-│ Elasticsearch      │ 日志存储与检索                                     │
-│ Kibana             │ 日志可视化                                       │
-│ Jaeger/Tempo       │ 链路追踪                                           │
-│ pprof              │ Go 性能分析                                       │
-│ strace             │ 系统调用追踪                                       │
-│ tcpdump            │ 网络抓包                                           │
-│ top/htop           │ 进程监控                                           │
-│ netstat/ss         │ 网络连接监控                                       │
-└────────────────────┴──────────────────────────────────────────────────────┘
-```
-
----
-
-## 二、典型案例
-
-### 2.1 案例一：内存泄漏排查
-
-**问题现象:**
-- 服务运行 24 小时后 OOM
-- 内存使用率持续上升
-- GC 频繁触发
-
-**排查过程:**
-```bash
-# 1. 查看进程内存
-top -p $(pgrep myservice)
-
-# 2. 获取 pprof
-curl http://localhost:6060/debug/pprof/heap > heap.prof
-
-# 3. 分析堆内存
-go tool pprof heap.prof
-```
-
-**根因分析:**
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                     pprof 分析结果                                   │
-│                                                                     │
-│  top 10 分配来源:                                                   │
-│  ─────────────────────────────────────────────────────────────      │
-│  1. main.cache.Get()        45%  ████████████████████                │
-│  2. db.Query()              20%  ██████████                          │
-│  3. json.Unmarshal()        15%  ██████                              │
-│  4. string.Concat()         10%  ███                                 │
-│  ─────────────────────────────────────────────────────────────      │
-│                                                                     │
-│  结论: cache 未设置过期时间，导致持续增长                             │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-**修复方案:**
-```go
-// 修复前
-cache := make(map[string]interface{})
-
-// 修复后 - 使用带过期时间的缓存
-cache := cache.NewTimeCache(time.Hour)
-```
-
----
-
-### 2.2 案例二：高 CPU 排查
-
-**问题现象:**
-- CPU 使用率 95%+
-- 请求延迟飙升
-- 服务无响应
-
-**排查过程:**
-```bash
-# 1. 定位高 CPU 进程
-top -H -p $(pgrep myservice)
-
-# 2. 获取 goroutine trace
-curl http://localhost:6060/debug/pprof/profile?seconds=30 > cpu.prof
-
-# 3. 分析
-go tool pprof cpu.prof
-```
-
-**根因分析:**
-```
-问题: 死循环 + 正则表达式回溯
-
-┌─────────────────────────────────────────────────────────────────────┐
-│                      调用栈分析                                      │
-│                                                                     │
-│  main.validate()                                                   │
-│  └── regexp.Match()           ← 正则回溯                           │
-│      └── compiler.compile()                                  │
-│                                                                     │
-│  问题正则: ^(a+)+$    (灾难性回溯)                                  │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-**修复方案:**
-```go
-// 修复前 - 灾难性回溯
-re := regexp.MustCompile(`^(a+)+$`)
-
-// 修复后 - 使用原子组
-re := regexp.MustCompile(`^(?:a+)+$`)
-// 或使用更简单的逻辑
-if strings.Count(s, "a") > 100 {
-    return false
-}
-```
-
----
-
-### 2.3 案例三：数据库连接池耗尽
-
-**问题现象:**
-- 数据库连接数达到上限
-- 新请求无法获取连接
-- 大量请求超时
-
-**排查过程:**
-```sql
--- MySQL 连接状态
-SHOW PROCESSLIST;
-SHOW STATUS LIKE 'Threads_connected';
-SHOW STATUS LIKE 'Threads_running';
-
--- 查看慢查询
-SELECT * FROM information_schema.slow_log ORDER BY start_time DESC LIMIT 10;
-```
-
-**根因分析:**
-```
-问题: 连接泄漏 + 长事务
-
-┌─────────────────────────────────────────────────────────────────────┐
-│                     连接池监控                                       │
-│                                                                     │
-│  总连接数: 100                                                      │
-│  ├── 活跃连接: 95 (95%)                                             │
-│  │   ├── 正常查询: 10                                               │
-│  │   ├── 长事务: 5 (超过 30s)                                       │
-│  │   └── 泄漏连接: 80 (未释放)  ← 问题所在                          │
-│  └── 等待连接: 50                                                   │
-│                                                                     │
-│  泄漏位置:                                                          │
-│  - UserHandler.Query() 未关闭 Result                                │
-│  - 错误路径未释放连接                                               │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-**修复方案:**
-```go
-// 修复前
-result, err := db.Query(query)
-// 忘记关闭 result
-
-// 修复后
-result, err := db.Query(query)
-if err != nil {
-    return err
-}
-defer result.Close()  // 确保释放
-```
-
----
-
-### 2.4 案例四：Redis 缓存穿透
-
-**问题现象:**
-- Redis 命中率下降
-- 后端 DB 压力骤增
-- 大量 NULL 查询
-
-**排查过程:**
-```bash
-# Redis 监控
-redis-cli INFO stats
-redis-cli SLOWLOG GET 10
-
-# 查询模式分析
-redis-cli MONITOR | grep "GET"
-```
-
-**根因分析:**
-```
-问题: 恶意查询不存在的 key
-
-攻击模式:
-├── 用户 ID 不存在: 1000000, 1000001, ...
-├── 每次查询都穿透到 DB
-└── DB 连接池被打满
-
-解决方案:
-├── 布隆过滤器预过滤
-├── 空值缓存 (短期)
-└── 限流防刷
-```
-
----
-
-### 2.5 案例五：Kafka 消息积压
-
-**问题现象:**
-- 消费者 lag 持续增长
-- 消息处理延迟增加
-- 磁盘空间告警
-
-**排查过程:**
-```bash
-# Kafka 消费者 lag
-kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe
-
-# Broker 日志
-tail -f /var/log/kafka/server.log
-
-# 磁盘空间
-df -h
-```
-
-**根因分析:**
-```
-问题: 消费者处理速度 < 生产者生产速度
-
-原因:
-├── 消费者线程池配置过小
-├── 消息处理逻辑复杂 (N+1 查询)
-├── 下游服务响应慢
-└── 消费组 rebalance 频繁
-```
-
-**修复方案:**
-```yaml
-# 消费者配置优化
-spring:
-  kafka:
-    consumer:
-      concurrency: 20  # 增加并发
-      max-poll-records: 500  # 批量消费
-```
-
----
-
-### 2.6 案例六：gRPC 连接重置
-
-**问题现象:**
-- gRPC 调用频繁失败
-- 错误码: INTERNAL, UNAVAILABLE
-- 偶发超时
-
-**排查过程:**
-```bash
-# 网络连接状态
-netstat -an | grep :50051 | wc -l
-netstat -an | grep :50051 | grep ESTAB | wc -l
-
-# gRPC 指标
-curl http://localhost:9090/metrics | grep grpc
-```
-
-**根因分析:**
-```
-问题: 连接池配置不当 + 服务端负载高
-
-┌─────────────────────────────────────────────────────────────────────┐
-│                     连接状态分析                                     │
-│                                                                     │
-│  总连接数: 1000                                                     │
-│  ├── ESTABLISHED: 800                                               │
-│  ├── TIME_WAIT: 1500 (过多) ← 问题所在                              │
-│  ├── CLOSE_WAIT: 50                                                 │
-│  └── FIN_WAIT: 100                                                  │
-│                                                                     │
-│  原因:                                                              │
-│  - 短连接请求多                                                     │
-│  - 服务端未正确关闭连接                                             │
-│  - TCP 参数未优化                                                   │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 三、排查技巧总结
-
-### 3.1 常见故障类型与排查要点
-
-```
-┌───────────────────────────────────────────────────────────────────────────┐
-│                       故障类型排查要点                                     │
-├────────────────────┬──────────────────────────────────────────────────────┤
-│ 故障类型           │ 排查要点                                            │
-├────────────────────┼──────────────────────────────────────────────────────┤
-│ 内存泄漏           │ pprof heap, 对象生命周期, 缓存策略          │
-│ CPU 高              │ pprof profile, goroutine 分析, 算法优化   │
-│ 数据库慢           │ slow log, explain, 索引优化               │
-│ Redis 慢           │ INFO, SLOWLOG, 大 key 检测                 │
-│ Kafka 积压         │ consumer lag, 消费速度, 分区均衡            │
-│ 网络问题           │ tcpdump, netstat, DNS 解析                │
-│ 连接池耗尽         │ 连接监控, 泄漏检测, 超时配置                │
-│ 死锁               │ 堆栈分析, 锁顺序, 超时检测                │
-└────────────────────┴──────────────────────────────────────────────────────┘
-```
-
-### 3.2 快速定位技巧
-
-```go
-// 1. 健康检查端点
-func HealthCheckHandler(w http.ResponseWriter, r *http.Request) {
-    checks := map[string]func() error {
-        "db": checkDB,
-        "redis": checkRedis,
-        "kafka": checkKafka,
-    }
-    
-    for name, check := range checks {
-        if err := check(); err != nil {
-            http.Error(w, fmt.Sprintf("%s: %v", name, err), 500)
-            return
-        }
-    }
-    w.WriteHeader(200)
-}
-
-// 2. 分布式追踪
-traceID := uuid.New().String()
-ctx := context.WithValue(r.Context(), "traceID", traceID)
-```
-
----
-
-## 四、最佳实践
-
-### 4.1 预防优于排查
-
-```
-预防机制:
-├── 完善的监控告警
-├── 容量规划与压测
-├── 混沌工程演练
-├── 自动化回归测试
-└── 变更审核流程
-```
-
-### 4.2 知识沉淀
-
-```markdown
-## 故障报告模板
-
-### 基本信息
-- 故障时间: 
-- 影响范围: 
-- 持续时间: 
-
-### 故障现象
-- 描述: 
-- 监控指标: 
 
 ### 排查过程
-1. ...
-2. ...
+```bash
+# 1. 检查内存使用
+redis-cli info memory
 
-### 根因分析
-- 直接原因: 
-- 根本原因: 
+# 2. 查找大Key
+redis-cli --bigkeys
 
-### 解决方案
-- 短期: 
-- 长期: 
-
-### 改进措施
-- [ ] ...
-- [ ] ...
+# 3. 检查淘汰策略
+redis-cli config get maxmemory-policy
 ```
 
+### 解决方案
+```yaml
+# redis.conf
+maxmemory 2gb
+maxmemory-policy allkeys-lru
+
+# 淘汰大Key
+redis-cli KEYS "large:*" | xargs redis-cli DEL
+```
+
+## 二、案例2: MySQL慢查询
+
+### 问题现象
+```
+Slow queries: 1200/min
+Average response time: 2.5s
+```
+
+### 排查过程
+```sql
+-- 1. 开启慢查询日志
+SET GLOBAL slow_query_log = 'ON';
+SET GLOBAL long_query_time = 1;
+
+-- 2. 分析慢查询
+SELECT * FROM mysql.slow_log 
+WHERE start_time > DATE_SUB(NOW(), INTERVAL 1 HOUR)
+ORDER BY query_time DESC;
+
+-- 3. 检查执行计划
+EXPLAIN SELECT * FROM orders WHERE user_id = 123;
+```
+
+### 解决方案
+```sql
+-- 添加索引
+ALTER TABLE orders ADD INDEX idx_user_id (user_id);
+
+-- 优化查询
+SELECT id, name FROM orders WHERE user_id = 123 LIMIT 10;
+```
+
+## 三、案例3: K8s Pod频繁重启
+
+### 问题现象
+```
+Pod frontend-abc123 restart count: 15/hour
+Events: BackOff restarting failed container
+```
+
+### 排查过程
+```bash
+# 1. 查看Pod状态
+kubectl describe pod frontend-abc123
+
+# 2. 查看容器日志
+kubectl logs frontend-abc123 --previous
+
+# 3. 检查资源限制
+kubectl top pod frontend-abc123
+```
+
+### 解决方案
+```yaml
+# 调整资源限制
+spec:
+  containers:
+  - name: frontend
+    image: nginx
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
+      limits:
+        memory: "256Mi"
+        cpu: "500m"
+```
+
+## 四、面试高频题
+
+### Q1: 如何进行故障排查？
+
+```
+A:
+1. 观察现象
+2. 收集日志
+3. 定位根因
+4. 实施修复
+5. 验证结果
+```
+
+### Q2: 如何预防故障？
+
+```
+A:
+1. 监控告警
+2. 容量规划
+3. 混沌工程
+4. 演练预案
+```
+
+## 五、自测题
+
+1. 解释故障排查流程
+2. 如何快速定位问题？
+3. 如何制定应急预案？
+
 ---
 
-## 五、总结
+## 参考文档
 
-| 项目 | 关键信息 |
-|------|---------|
-| **方法论** | 系统化排查流程 (SOP) |
-| **核心工具** | Prometheus, pprof, Jaeger, ES |
-| **常见故障** | 内存泄漏, CPU高, 连接池耗尽 |
-| **最佳实践** | 监控预防 + 知识沉淀 |
-
----
-
-## 六、自测题
-
-1. **内存泄漏如何排查？**
-   - pprof heap 分析，定位持续增长的对象
-
-2. **CPU 飙高怎么定位？**
-   - pprof profile 分析，检查死循环/正则回溯
-
-3. **数据库连接池耗尽的表现？**
-   - 连接数打满，新请求阻塞，超时
-
-4. **如何预防故障？**
-   - 监控告警、容量规划、混沌工程
-
-EOF
-echo "✅ 已创建: fullstack/failure-case-library-deep.md"
+- [故障排查最佳实践](https://landing.google.com/sre/books/)
+- [K8s排障指南](https://kubernetes.io/docs/tasks/debug/)

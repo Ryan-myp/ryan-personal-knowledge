@@ -1,208 +1,135 @@
-# Prometheus Exporter 深度实现 - 自定义指标采集
+# Prometheus Exporter - 资深专家深度实现
 
-> **版本**: v2.0  
-> **日期**: 2026-08-13  
-> **作者**: Ryan  
-> **分类**: DevOps  
-> **代码密度**: 28%
-
----
-
-## 一、Exporter 架构
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    Prometheus Exporter 架构                          │
-│                                                                     │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐            │
-│  │ Prometheus  │───▶│  Exporter   │───▶│  Target     │            │
-│  │  Server     │    │  (HTTP)     │    │  (App/DB)   │            │
-│  └─────────────┘    └──────┬──────┘    └─────────────┘            │
-│                            │                                       │
-│              ┌─────────────┼─────────────┐                        │
-│              ▼             ▼             ▼                        │
-│        ┌──────────┐ ┌──────────┐ ┌──────────┐                    │
-│        │ Counter  │ │ Gauge    │ │ Histogram│                    │
-│        │ (计数器) │ │ (仪表盘) │ │ (直方图) │                    │
-│        └──────────┘ └──────────┘ └──────────┘                    │
-│                                                                     │
-│  常用 Exporter:                                                      │
-│  • node_exporter    - 服务器指标                                     │
-│  • mysql_exporter   - MySQL 指标                                     │
-│  • redis_exporter   - Redis 指标                                     │
-│  • blackbox_exporter - 黑盒探测                                      │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 二、自定义 Exporter (Go)
+## 一、Exporter架构
 
 ```go
-// exporter/custom.go
-package main
+package exporter
 
 import (
     "github.com/prometheus/client_golang/prometheus"
     "github.com/prometheus/client_golang/prometheus/promhttp"
-    "net/http"
-    "time"
 )
 
-// AdMetrics 广告业务指标
-type AdMetrics struct {
-    BidRequests      *prometheus.CounterVec
-    BidWins          *prometheus.CounterVec
-    BidLatency       *prometheus.HistogramVec
-    BudgetRemaining  *prometheus.GaugeVec
+type MetricExporter struct {
+    collector prometheus.Collector
+    registry  *prometheus.Registry
 }
 
-// NewAdMetrics 创建指标
-func NewAdMetrics() *AdMetrics {
-    return &AdMetrics{
-        BidRequests: prometheus.NewCounterVec(
-            prometheus.CounterOpts{
-                Name: "ad_bid_requests_total",
-                Help: "Total bid requests",
-            },
-            []string{"advertiser_id", "status"},
-        ),
-        BidWins: prometheus.NewCounterVec(
-            prometheus.CounterOpts{
-                Name: "ad_bid_wins_total",
-                Help: "Total bid wins",
-            },
-            []string{"advertiser_id"},
-        ),
-        BidLatency: prometheus.NewHistogramVec(
-            prometheus.HistogramOpts{
-                Name:    "ad_bid_latency_seconds",
-                Help:    "Bid latency distribution",
-                Buckets: []float64{0.001, 0.005, 0.01, 0.02, 0.05, 0.1},
-            },
-            []string{"advertiser_id"},
-        ),
-        BudgetRemaining: prometheus.NewGaugeVec(
+func NewExporter(name string) *MetricExporter {
+    return &MetricExporter{
+        collector: NewCollector(name),
+        registry:  prometheus.NewRegistry(),
+    }
+}
+
+func (e *MetricExporter) Start(addr string) {
+    e.registry.MustRegister(e.collector)
+    http.Handle("/metrics", promhttp.HandlerFor(e.registry, promhttp.HandlerOpts{}))
+    http.ListenAndServe(addr, nil)
+}
+```
+
+## 二、自定义Collector
+
+```go
+package exporter
+
+import "github.com/prometheus/client_golang/prometheus"
+
+type SystemCollector struct {
+    cpuUsage *prometheus.GaugeVec
+    memUsage *prometheus.GaugeVec
+}
+
+func NewSystemCollector() *SystemCollector {
+    return &SystemCollector{
+        cpuUsage: prometheus.NewGaugeVec(
             prometheus.GaugeOpts{
-                Name: "ad_budget_remaining",
-                Help: "Remaining budget",
+                Name: "system_cpu_usage",
+                Help: "CPU usage percentage",
             },
-            []string{"advertiser_id"},
+            []string{"host", "core"},
+        ),
+        memUsage: prometheus.NewGaugeVec(
+            prometheus.GaugeOpts{
+                Name: "system_memory_usage",
+                Help: "Memory usage in bytes",
+            },
+            []string{"host", "type"},
         ),
     }
 }
 
-// Register 注册指标
-func (m *AdMetrics) Register(registry *prometheus.Registry) {
-    registry.MustRegister(m.BidRequests)
-    registry.MustRegister(m.BidWins)
-    registry.MustRegister(m.BidLatency)
-    registry.MustRegister(m.BudgetRemaining)
+func (c *SystemCollector) Describe(ch chan<- *prometheus.Desc) {
+    c.cpuUsage.Describe(ch)
+    c.memUsage.Describe(ch)
 }
 
-// 主函数
-func main() {
-    metrics := NewAdMetrics()
-    registry := prometheus.NewRegistry()
-    metrics.Register(registry)
+func (c *SystemCollector) Collect(ch chan<- prometheus.Metric) {
+    // 收集CPU指标
+    cpuData := getCPUUsage()
+    for core, usage := range cpuData {
+        c.cpuUsage.WithLabelValues("host1", core).Set(usage)
+        ch <- c.cpuUsage.WithLabelValues("host1", core).Metric
+    }
     
-    http.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
-    http.ListenAndServe(":9100", nil)
+    // 收集内存指标
+    memData := getMemoryUsage()
+    for typ, usage := range memData {
+        c.memUsage.WithLabelValues("host1", typ).Set(usage)
+        ch <- c.memUsage.WithLabelValues("host1", typ).Metric
+    }
 }
 ```
 
----
+## 三、服务发现
 
-## 三、指标类型详解
-
-```go
-// exporter/metric_types.go
-package main
-
-import (
-    "github.com/prometheus/client_golang/prometheus"
-)
-
-// 1. Counter: 只增不减
-var requestCount = prometheus.NewCounter(prometheus.CounterOpts{
-    Name: "http_requests_total",
-    Help: "Total HTTP requests",
-})
-
-// 2. Gauge: 可增可减
-var temperature = prometheus.NewGauge(prometheus.GaugeOpts{
-    Name: "cpu_temperature_celsius",
-    Help: "CPU temperature",
-})
-
-// 3. Histogram: 直方图分布
-var requestDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
-    Name:    "http_request_duration_seconds",
-    Help:    "HTTP request duration",
-    Buckets: prometheus.ExponentialBuckets(0.001, 2, 10), // 1ms ~ 512ms
-})
-
-// 4. Summary: 分位数摘要
-var latencySummary = prometheus.NewSummary(prometheus.SummaryOpts{
-    Name:       "request_latency_seconds",
-    Help:       "Request latency summary",
-    Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
-})
+```yaml
+# scrape_configs
+- job_name: 'custom-exporters'
+  static_configs:
+    - targets: ['exporter1:9100', 'exporter2:9101']
+      labels:
+        environment: 'production'
+        
+- job_name: 'kubernetes-pods'
+  kubernetes_sd_configs:
+    - role: pod
+  relabel_configs:
+    - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+      action: keep
+      regex: true
 ```
 
----
+## 四、面试高频题
 
-## 四、Grafana Dashboard 配置
+### Q1: 如何创建自定义Exporter？
 
-```json
-{
-  "dashboard": {
-    "title": "广告竞价系统监控",
-    "panels": [
-      {
-        "title": "竞价请求速率",
-        "type": "graph",
-        "targets": [
-          {
-            "expr": "rate(ad_bid_requests_total[5m])",
-            "legendFormat": "{{advertiser_id}}"
-          }
-        ]
-      },
-      {
-        "title": "竞价延迟 P99",
-        "type": "graph",
-        "targets": [
-          {
-            "expr": "histogram_quantile(0.99, rate(ad_bid_latency_seconds_bucket[5m]))"
-          }
-        ]
-      },
-      {
-        "title": "预算剩余",
-        "type": "gauge",
-        "targets": [
-          {
-            "expr": "ad_budget_remaining",
-            "legendFormat": "{{advertiser_id}}"
-          }
-        ]
-      }
-    ]
-  }
-}
+```
+A:
+1. 实现Collector接口
+2. 定义指标类型
+3. 注册到Registry
 ```
 
----
+### Q2: 如何处理高基数标签？
+
+```
+A:
+1. 避免高基数标签
+2. 使用Histogram替代Counter
+3. 合理设计标签维度
+```
 
 ## 五、自测题
 
-1. **Counter 和 Gauge 的区别？**
-   - Counter 只增不减，Gauge 可增可减
+1. 解释Collector接口
+2. 如何实现服务发现？
+3. 如何优化采集性能？
 
-2. **Histogram 和 Summary 的区别？**
-   - Histogram 服务端计算分位数，Summary 客户端计算
+---
 
-3. **Exporter 端口为什么要独立？**
-   - 避免与业务端口冲突，支持独立监控
+## 参考文档
 
+- [Prometheus客户端库](https://github.com/prometheus/client_golang)
+- [Exporter最佳实践](https://prometheus.io/docs/instrumenting/writing_exporters/)
