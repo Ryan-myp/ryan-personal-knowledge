@@ -64,14 +64,17 @@ class KBHealthChecker:
             except:
                 pass
         
-        # 检查 wikilinks
+        # 检查 wikilinks (跳过代码块)
         link_pattern = re.compile(r'\[\[([^\]|]+)')
         for f in files:
             try:
                 content = f.read_text(encoding="utf-8")
-                for match in link_pattern.finditer(content):
+                # 移除代码块内容
+                clean_content = re.sub(r'```[^\n]*\n.*?```', '', content, flags=re.DOTALL)
+                for match in link_pattern.finditer(clean_content):
                     link = match.group(1).strip()
-                    if link and link not in all_titles:
+                    # 过滤掉代码语法 (如 Python 列表、bash 条件等)
+                    if link and link not in all_titles and not self._is_code_syntax(link):
                         broken.append({
                             "file": str(f.relative_to(self.kb_root)),
                             "link": link,
@@ -81,6 +84,25 @@ class KBHealthChecker:
                 pass
         
         return broken
+    
+    def _is_code_syntax(self, link: str) -> bool:
+        """判断是否是代码语法而非 wiki 链接"""
+        # Python 列表推导式: [query, doc.page_content] for doc in docs
+        if re.search(r'\].*\bfor\b', link):
+            return True
+        # Python pandas 列选择: ['step', 'users', 'conversion_rate']
+        if re.match(r"^\['.+\'\]$", link):
+            return True
+        # bash 条件: $# -gt 0
+        if '-gt' in link or '-lt' in link or '-eq' in link:
+            return True
+        # Python 矩阵: 0.0, 0.6, 0.4
+        if re.match(r"^[\d.\s,]+$", link) and ',' in link:
+            return True
+        # 简单的变量名列表
+        if re.match(r"^\[.+\]$", link) and ']' in link:
+            return True
+        return False
     
     def check_content_quality(self, files: List[Path]) -> Tuple[List[Dict], List[Dict]]:
         """检查内容质量"""
