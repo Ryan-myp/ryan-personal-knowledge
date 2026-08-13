@@ -1,170 +1,120 @@
-# 混沌工程深度实现
+# 混沌工程实践 - 资深专家深度实现
 
-> **文档级别**: Level 5 - 专家级  
-> **创建日期**: 2026-08-13  
-> **状态**: ✅ 已补齐
-
----
-
-## 一、混沌工程原则
+## 一、核心概念
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                      混沌工程核心原则                                       │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  1. 建立稳态假设                                                              │
-│     • 定义系统正常行为基线                                                    │
-│     • 监控关键指标 (延迟、错误率、吞吐量)                                     │
-│                                                                             │
-│  2. 假设灾难发生                                                              │
-│     • 任何时刻都可能有故障发生                                                │
-│     • 验证系统能否从故障中恢复                                                │
-│                                                                             │
-│  3. 运行实验                                                                  │
-│     • 在受控环境中引入故障                                                    │
-│     • 逐步增加故障规模                                                        │
-│                                                                             │
-│  4. 自动化与持续                                                              │
-│     • 将混沌实验集成到 CI/CD                                                  │
-│     • 定期运行以发现新问题                                                    │
-│                                                                             │
-│  5. 最小化爆炸半径                                                            │
-│     • 选择影响最小的实验范围                                                  │
-│     • 准备快速回滚方案                                                        │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    混沌工程基本原则                                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   原则                  | 说明                                    │
+│   ──────────────────────┼───────────────────────────────────────────│
+│   建立稳态假设          | 定义系统正常运行时的预期行为                  │
+│   引入真实故障          | 在生产环境模拟真实故障                      │
+│   最小化爆炸半径        | 控制实验影响范围，避免大规模故障              │
+│   自动化持续运行        | 将混沌实验集成到CI/CD流程中                 │
+│   变量多元化            | 覆盖多种故障类型和场景                      │
+│                                                                         →
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
----
+## 二、Chaos Mesh实现
 
-## 二、Chaos Mesh 实战
+```go
+package chaosmesh
 
-```yaml
-# 文件: chaos/mesh/pod-failure.yaml
-apiVersion: chaos-mesh.org/v1alpha1
-kind: PodChaos
-metadata:
-  name: ad-bidding-pod-failure
-  namespace: advertising
-spec:
-  action: pod-failure
-  mode: one
-  selector:
-    namespaces:
-      - advertising
-    labelSelectors:
-      app: ad-bidding
-  scheduler:
-    cron: '0 2 * * *'  # 每天凌晨2点执行
-    duration: '10m'    # 持续10分钟
-  
-  # 影响比例
-  percent: 10        # 10% 的 Pod
-  
-  # 恢复时间
-  gracePeriod: 5     # 等待5秒后开始
-  
-  # 实验配置
-  value:
-    delay: 30s       # 延迟30秒后执行
-    force: false
-```
+import (
+    "context"
+    "github.com/chaos-mesh/chaos-mesh/pkg/apis/chaosmesh/v1alpha1"
+)
 
----
+// ChaosEngine 混沌引擎
+type ChaosEngine struct {
+    client    *ChaosClient
+    namespace string
+}
 
-## 三、故障注入场景
+// PodChaos Pod故障注入
+type PodChaos struct {
+    Name      string
+    Namespace string
+    Selector  Selector
+    Action    v1alpha1.PodChaosAction
+}
 
-```python
-# 文件: chaos/injector.py
-
-import chaos_client
-from datetime import datetime
-
-class ChaosInjector:
-    """混沌工程注入器"""
+func (e *ChaosEngine) InjectPodKill(ctx context.Context, config PodChaos) error {
+    chaos := &v1alpha1.PodChaos{
+        ObjectMeta: metav1.ObjectMeta{
+            Name:      config.Name,
+            Namespace: config.Namespace,
+        },
+        Spec: v1alpha1.PodChaosSpec{
+            Action: string(v1alpha1.PodKillerAction),
+            Selector: config.Selector,
+            Mode: v1alpha1.OneMode,
+        },
+    }
     
-    def __init__(self, cluster_url: str):
-        self.client = chaos_client.ClusterClient(cluster_url)
-        
-    def inject_network_partition(self, target_pods: list, duration: int = 60):
-        """网络分区实验"""
-        experiment = {
-            "apiVersion": "chaos-mesh.org/v1alpha1",
-            "kind": "NetworkChaos",
-            "metadata": {
-                "name": f"net-partition-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                "namespace": "advertising"
+    return e.client.Create(ctx, chaos)
+}
+
+// NetworkChaos 网络故障注入
+type NetworkChaos struct {
+    Name      string
+    Namespace string
+    Selector  Selector
+    Action    v1alpha1.NetworkChaosAction
+}
+
+func (e *ChaosEngine) InjectNetworkDelay(ctx context.Context, config NetworkChaos) error {
+    chaos := &v1alpha1.NetworkChaos{
+        ObjectMeta: metav1.ObjectMeta{
+            Name:      config.Name,
+            Namespace: config.Namespace,
+        },
+        Spec: v1alpha1.NetworkChaosSpec{
+            Action: string(v1alpha1.NetworkDelayAction),
+            Selector: config.Selector,
+            Delay: &v1alpha1.NetworkDelay{
+                Latency: "100ms",
+                Correlation: "90",
             },
-            "spec": {
-                "action": "partition",
-                "mode": "one",
-                "selector": {
-                    "namespaces": ["advertising"],
-                    "labelSelectors": {"app": "ad-bidding"}
-                },
-                "delay": 1000,  # 延迟1秒
-                "duration": f"{duration}s"
-            }
-        }
-        return self.client.apply(experiment)
+        },
+    }
     
-    def inject_latency(self, target_pods: list, latency_ms: int = 500):
-        """网络延迟实验"""
-        experiment = {
-            "apiVersion": "chaos-mesh.org/v1alpha1",
-            "kind": "NetworkChaos",
-            "spec": {
-                "action": "delay",
-                "delay": {
-                    "latency": f"{latency_ms}ms",
-                    "correlation": "95%"
-                },
-                "selector": {
-                    "namespaces": ["advertising"],
-                    "labelSelectors": {"app": "ad-bidding"}
-                }
-            }
-        }
-        return self.client.apply(experiment)
-    
-    def inject_cpu_stress(self, target_pods: list, cpu_percent: int = 80):
-        """CPU 压力实验"""
-        experiment = {
-            "apiVersion": "chaos-mesh.org/v1alpha1",
-            "kind": "PodChaos",
-            "spec": {
-                "action": "cpu-stress",
-                "stressy": {
-                    "load": cpu_percent,
-                    "workers": 4
-                },
-                "selector": {
-                    "namespaces": ["advertising"],
-                    "labelSelectors": {"app": "ad-bidding"}
-                }
-            }
-        }
-        return self.client.apply(experiment)
+    return e.client.Create(ctx, chaos)
+}
 ```
+
+## 三、面试高频题
+
+### Q1: 混沌工程的核心价值？
+
+```
+A:
+1. 发现系统弱点
+2. 验证恢复能力
+3. 提升系统韧性
+```
+
+### Q2: 如何选择实验范围？
+
+```
+A:
+1. 评估爆炸半径
+2. 选择关键路径
+3. 设置止血方案
+```
+
+## 四、自测题
+
+1. 解释混沌工程原则
+2. 如何实现故障注入？
+3. 如何控制实验风险？
 
 ---
 
-## 四、参考资料
+## 参考文档
 
-```
-核心工具:
-├── Chaos Mesh: https://chaos-mesh.org/
-├── LitmusChaos: https://litmuschaos.io/
-└── Gremlin: https://www.gremlin.com/
-
-最佳实践:
-├── "Designing Resilient Systems" (Netflix)
-└── AWS Chaos Engineering Guide
-```
-
----
-
-*文档版本: v1.0*  
-*最后更新: 2026-08-13*  
-*作者: Ryan*
+- [Chaos Mesh](https://chaos-mesh.org/)
+- [Netflix Chaos Monkey](https://netflix.github.io/chaosmonkey/)
