@@ -1,166 +1,100 @@
 # Redis缓存模式 - 资深专家深度实现
 
-## 一、缓存模式对比
+## 一、缓存模式
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                      缓存模式                                             │
+│                    Redis 缓存模式                                          │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
-│   Cache-Aside (旁路缓存)    Read-Through (读穿透)    Write-Through (写穿透)│
-│   ┌──────────────┐         ┌──────────────┐         ┌──────────────┐    │
-│   │ App          │         │ App          │         │ App          │    │
-│   │ • Read cache │         │ • Read       │         │ • Write      │    │
-│   │ • Miss DB    │         │   proxy      │         │   cache+DB   │    │
-│   │ • Write DB   │         │ • Cache loads│         │              │    │
-│   │ • Delete cache│        │   from DB    │         │              │    │
-│   └──────────────┘         └──────────────┘         └──────────────┘    │
-│                                                                         │
+│   模式                | 适用场景                  | 特点                │
+│   ────────────────────┼─────────────────────────┼─────────────────────│
+│   Cache-Aside        | 读多写少                 │ 简单可靠            │
+│   Read-Through       | 读取为主                 │ 透明缓存            │
+│   Write-Through      | 一致性要求高             │ 同步写入            │
+│   Write-Behind       | 性能优先                 │ 异步写入            │
+│   Refresh-Ahead      | 热点数据                 │ 主动刷新            │
+│                                                                         →
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 二、Cache-Aside实现
+## 二、Cache-Aside模式
 
 ```go
 package cache
 
 import (
     "context"
-    "sync"
-    "time"
-    
-    "github.com/go-redis/redis/v8"
 )
 
+// CacheAside 缓存旁路模式
 type CacheAside struct {
-    redis  *redis.Client
-    db     *Database
-    local  *LocalCache
+    cache *RedisClient
+    db    *Database
 }
 
-func (c *CacheAside) Get(ctx context.Context, key string) (string, error) {
-    // L1: 本地缓存
-    if val, ok := c.local.Get(key); ok {
-        return val, nil
+// Get 获取数据
+func (c *CacheAside) Get(ctx context.Context, key string) ([]byte, error) {
+    // 1. 尝试从缓存获取
+    value, err := c.cache.Get(ctx, key)
+    if err == nil && value != nil {
+        return value, nil
     }
     
-    // L2: Redis缓存
-    val, err := c.redis.Get(ctx, key).Result()
-    if err == nil {
-        c.local.Set(key, val)
-        return val, nil
-    }
-    
-    // L3: 数据库
-    val, err = c.db.Get(ctx, key)
+    // 2. 缓存未命中，从数据库获取
+    data, err := c.db.Query(ctx, key)
     if err != nil {
-        return "", err
+        return nil, err
     }
     
-    // 回写缓存
-    c.redis.Set(ctx, key, val, 5*time.Minute)
-    c.local.Set(key, val)
+    // 3. 写入缓存
+    c.cache.Set(ctx, key, data, 5*time.Minute)
     
-    return val, nil
+    return data, nil
 }
 
-func (c *CacheAside) Set(ctx context.Context, key, val string) error {
-    // 先更新数据库
-    if err := c.db.Set(ctx, key, val); err != nil {
+// Set 更新数据
+func (c *CacheAside) Set(ctx context.Context, key string, value []byte) error {
+    // 1. 更新数据库
+    if err := c.db.Update(ctx, key, value); err != nil {
         return err
     }
     
-    // 再删除缓存（而非更新）
-    c.redis.Del(ctx, key)
-    c.local.Del(key)
+    // 2. 删除缓存（而非更新）
+    c.cache.Del(ctx, key)
     
     return nil
 }
 ```
 
-## 三、缓存一致性
+## 三、面试高频题
 
-### 3.1 延时双删
-
-```go
-func (c *Cache) SetWithDelayDelete(key, val string) error {
-    // 1. 删除缓存
-    c.redis.Del(key)
-    
-    // 2. 更新数据库
-    if err := c.db.Set(key, val); err != nil {
-        return err
-    }
-    
-    // 3. 延时再删一次（防止并发读写）
-    time.Sleep(500 * time.Millisecond)
-    c.redis.Del(key)
-    
-    return nil
-}
-```
-
-### 3.2 Canal订阅Binlog
-
-```go
-package binlog
-
-import (
-    "github.com/go-mysql-org/go-mysql/canal"
-)
-
-type CanalHandler struct {
-    cache *redis.Client
-}
-
-func (h *CanalHandler) OnRow(e *canal.RowEvent) error {
-    tableName := string(e.Table.Schema) + "." + string(e.Table.Name)
-    
-    switch e.EventName {
-    case canal.UpdateEvent:
-        h.handleUpdate(tableName, e.After)
-    case canal.DeleteEvent:
-        h.handleDelete(tableName, e.After)
-    }
-    return nil
-}
-
-func (h *CanalHandler) handleDelete(table string, data map[string]interface{}) {
-    key := buildKey(table, data["id"])
-    h.cache.Del(context.Background(), key)
-}
-```
-
-## 四、面试高频题
-
-### Q1: 缓存穿透/击穿/雪崩怎么解决？
+### Q1: Cache-Aside的优缺点？
 
 ```
 A:
-• 穿透: 布隆过滤器 + 空值缓存
-• 击穿: 互斥锁 + 永不过期
-• 雪崩: 随机TTL + 多级缓存
+1. 优点：简单可靠
+2. 缺点：首次请求慢
 ```
 
-### Q2: 如何选择缓存TTL？
+### Q2: 如何解决缓存穿透？
 
 ```
 A:
-• 根据数据变更频率
-• 热点数据设置较长TTL
-• 普通数据设置较短TTL
-• 添加随机抖动避免同时过期
+1. 布隆过滤器
+2. 缓存空值
+3. 参数校验
 ```
 
-## 五、自测题
+## 四、自测题
 
-1. 如何设计多级缓存架构？
-2. 缓存预热如何实现？
-3. 如何监控缓存命中率？
+1. 解释缓存模式
+2. 如何实现Cache-Aside？
+3. 如何解决穿透？
 
 ---
 
 ## 参考文档
 
-- [Redis最佳实践](https://redis.io/docs/manual/patterns/)
-- [缓存一致性方案](https://code.fasol.me/post/cache-consistency/)
+- [Redis Docs](https://redis.io/docs/)
+- [Cache Patterns](https://docs.microsoft.com/azure/architecture/patterns/cache-aside)
