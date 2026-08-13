@@ -1,66 +1,59 @@
 # Redis集群架构 - 资深专家深度实现
 
-## 一、Cluster架构
+## 一、Cluster模式
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                      Redis Cluster架构                                    │
+│                       Redis Cluster架构                                  │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
-│   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐               │
-│   │  Master 0   │    │  Master 1   │    │  Master 2   │               │
-│   │  (slots 0-5460)◄────────────────────────────────►(slots 10923-16383)│
-│   └──────┬──────┘    └──────┬──────┘    └──────┬──────┘               │
-│          │                  │                  │                       │
-│   ┌──────▼──────┐    ┌──────▼──────┐    ┌──────▼──────┐               │
-│   │  Slave 0    │    │  Slave 1    │    │  Slave 2    │               │
-│   └─────────────┘    └─────────────┘    └─────────────┘               │
+│   ┌──────────┐    ┌──────────┐    ┌──────────┐                         │
+│   │ Node 0   │    │ Node 1   │    │ Node 2   │                         │
+│   │(Master)  │◄──►│(Master)  │◄──►│(Master)  │                         │
+│   │  Slots   │    │  Slots   │    │  Slots   │                         │
+│   │  0-5460  │    │  5461-   │    │  10923-  │                         │
+│   │          │    │  10922   │    │  16383   │                         │
+│   └────┬─────┘    └────┬─────┘    └────┬─────┘                         │
+│        │               │               │                               │
+│   ┌────▼─────┐    ┌────▼─────┐    ┌────▼─────┐                         │
+│   │ Replica  │    │ Replica  │    │ Replica  │                         │
+│   │  Node 3  │    │  Node 4  │    │  Node 5  │                         │
+│   └──────────┘    └──────────┘    └──────────┘                         │
 │                                                                         │
-│   槽位数量: 16384                                                       │
-│   节点通信: Gossip协议                                                   │
+│   • 16384个哈希槽                                                        │
+│   • Gossip协议节点通信                                                   │
+│   • 自动故障转移                                                         │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 二、Go客户端实现
+## 二、数据分片
 
 ```go
-package rediscluster
+package cluster
 
-import (
-    "hash/crc16"
-    "sync"
-)
+import "hash/crc32"
 
-type ClusterClient struct {
-    nodes     []*Node
-    slots     [16384]*Node
-    mu        sync.RWMutex
+type Slot struct {
+    Start int
+    End   int
+    Node  string
 }
 
-type Node struct {
-    addr     string
-    master   bool
-    replicas []string
+func GetSlot(key string) int {
+    // CRC16哈希算法
+    c := crc32.ChecksumIEEE([]byte(key))
+    return int(c % 16384)
 }
 
-// 计算slot
-func (c *ClusterClient) getSlot(key string) int {
-    return int(crc16.Checksum([]byte(key), crc16.MakeTable(crc16.ECMAC)) & 16383)
-}
-
-// 获取节点
-func (c *ClusterClient) getNode(key string) *Node {
-    slot := c.getSlot(key)
-    return c.slots[slot]
-}
-
-// 重定向
-func (c *ClusterClient) redirectIfNeeded(err error, key string) (*Node, error) {
-    // MOVED slot node:port
-    // ASK slot node:port
-    // ...
-    return nil, nil
+func GetNode(slot int) string {
+    // 根据槽位获取节点
+    for _, s := range slots {
+        if slot >= s.Start && slot <= s.End {
+            return s.Node
+        }
+    }
+    return ""
 }
 ```
 
@@ -69,70 +62,59 @@ func (c *ClusterClient) redirectIfNeeded(err error, key string) (*Node, error) {
 ```go
 package failover
 
-import (
-    "time"
-)
-
-type FailoverManager struct {
-    cluster *Cluster
+// Redis Cluster故障转移流程
+type Failover struct {
+    master *Node
+    replica *Node
 }
 
-func (f *FailoverManager) detectFailure(node *Node) {
-    // 连续3次ping失败认为宕机
-    for i := 0; i < 3; i++ {
-        if !f.ping(node) {
-            time.Sleep(100 * time.Millisecond)
-        }
-    }
+func (f *Failover) Execute() error {
+    // 1. Replica发起故障转移
+    f.replica.clusterSaveConfig()
+    f.replica.clusterSetSlotMissing(slot)
     
-    // 触发故障转移
-    f.triggerFailover(node)
-}
-
-func (f *FailoverManager) triggerFailover(failedNode *Node) {
-    // 1. 选择一个从节点提升为主节点
-    replica := f.selectReplica(failedNode)
+    // 2. 选举成为新Master
+    f.replica.clusterFailoverReplaceSlots()
     
-    // 2. 执行SLAVEOF NO ONE
-    replica.execute("SLAVEOF NO ONE")
+    // 3. 通知其他节点
+    f.replica.broadcastFailoverAnnounce()
     
-    // 3. 其他节点更新槽位映射
-    f.updateSlotMapping(replica, failedNode.slots)
+    // 4. 旧Master降级为Replica
+    f.master.clusterSetSlave(f.replica)
     
-    // 4. 同步数据
-    f.syncData(replica, failedNode)
+    return nil
 }
 ```
 
 ## 四、面试高频题
 
-### Q1: Redis Cluster如何解决数据一致性？
+### Q1: Redis Cluster如何分片？
 
 ```
 A:
-• 主从复制（异步）
-• 哨兵机制
-• 客户端重试
+1. CRC16哈希算法
+2. 16384个槽位
+3. 槽位映射到节点
 ```
 
-### Q2: 如何处理热点key？
+### Q2: 如何实现高可用？
 
 ```
 A:
-1. 本地缓存
-2. 多级缓存
-3. 读写分离
+1. 主从复制
+2. 自动故障转移
+3. Gossip协议
 ```
 
 ## 五、自测题
 
-1. 解释Redis Cluster架构
+1. 解释Cluster分片原理
 2. 如何实现故障转移？
-3. 如何处理数据迁移？
+3. 如何处理跨Slot事务？
 
 ---
 
 ## 参考文档
 
-- [Redis官方文档](https://redis.io/docs/)
-- [Redis Cluster规范](https://redis.io/docs/refs/spec/cluster-spec/)
+- [Redis Cluster规范](https://redis.io/docs/reference/cluster-spec/)
+- [Redis源码](https://github.com/redis/redis)
