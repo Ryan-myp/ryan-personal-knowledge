@@ -37,3 +37,10 @@ config.local.json
 # Go cache
 go.mod.cache
 go.sum
+
+# 广告平台凭证（包含敏感信息）
+config/ad_platform_credentials.json
+config/*.json
+logs/*.json
+logs/*.log
+
