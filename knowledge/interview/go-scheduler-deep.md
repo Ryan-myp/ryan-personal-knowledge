@@ -1,158 +1,129 @@
-# Go运行时调度器 - 资深专家深度实现
+# Go调度器实现 - 资深专家深度实现
 
-## 一、GMP模型
+## 一、调度器架构
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                         Go Runtime调度器                                  │
+│                       Go调度器架构                                       │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
-│   G (Goroutine)         M (Machine/Thread)      P (Processor)           │
-│   ┌──────────┐          ┌──────────┐          ┌──────────┐            │
-│   │  local Q │◄────────►│  sysmon  │◄────────►│  runQ    │            │
-│   │  本地队列 │          │  (系统监控)│          │  运行队列 │            │
-│   └──────────┘          └──────────┘          └────┬─────┘            │
-│         ▲                                          │                 │
-│         │                    global Q ◄────────────┘                 │
-│         └────────────────────────────────────────────────            │
-│                     steal from other Ps                               │
+│   P (Processor)                                                          │
+│   ├── M (Machine) - 线程                                                │
+│   ├── G (Goroutine) - 协程                                              │
+│   └── Local Queue - 本地队列                                            │
 │                                                                         │
-│   调度流程:                                                             │
-│   1. G → runnable → P.runQ                                            │
-│   2. P调度G到M执行                                                      │
-│   3. G阻塞 → 放入 global Q 或 其他P的runQ                              │
-│   4. P空闲 → 从global Q或偷取                                           │
+│   Global Queue                                                           │
+│   ├── Work Stealing                                                      │
+│   └── Hand-off                                                           │
+│                                                                         │
+│   特点:                                                                   │
+│   • M:N调度模型                                                          │
+│   • 工作窃取                                                              │
+│   • 协作式抢占                                                            │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 二、调度器实现
+## 二、GMP模型
 
 ```go
-package runtime
-
-type schedt struct {
-    nprocs      uint32      // 逻辑处理器数量
-    nmidle      uint32      // 空闲M数量
-    nmsys       uint32      // 系统M数量
-    nmuintptr   uintptr     // M总数
+// src/runtime/proc.go
+type p struct {
+    lock      mutex
+    id        int32
+    status    uint32
+    runqhead  uint32
+    runqtail  uint32
+    runq      [256]guintptr
+    runnext   guintptr
+    goidbase  uint64
+    schedtick uint32
+    sysmonlock unlock
+    flags     uint32
     
-    g0      *g            // 调度goroutine
-    m0      *m            // 主m
-    allgs   **g           // 所有g
-    allm     *m            // 所有m (环形链表)
-    allp     **p           // 所有p
-    
-    lock mutex
-    
-    schedTick    uint64
-    schedWhen    int64
-    
-    // 全局队列
-    runqsize   int32
-    runq       *g
-    runqsize   int32
+    // 本地队列
+    deferpool    [5]*_defer
+    deferpoolbuf [5]*_defer
 }
 
-type p struct {
-    lock mutex
-    
-    status       uint32
-    id           int32
-    schedTick    uint32
-    
-    // 本地运行队列
-    runqhead   *g
-    runqtail   *g
-    runqsize   int32
-    
-    // 外部队列 (用于steal)
-    deferpool    []*defer
-    deferpoolp   *p
+type m struct {
+    g0      *g        // 拥有栈空间的goroutine
+    curg    *g        // 当前运行的goroutine
+    p       pptr     // 绑定的p
+    nextp   pptr
+    id      int32
+    mcache  *mcache
+    lockedg guintptr
 }
 
 type g struct {
-    stack       stack
-    sched       uintptr
-    spawnq      *g
-    
-    // 调度状态
-    status      uint32
-    atomicstatus guint32
-    
-    // 绑定关系
-    m           *m       // 当前绑定的m
-    p           *p       // 绑定的p
-    
-    // 队列链
-    allgnext    *g
-    schedlink   guintptr
+    stack       stack      // 栈信息
+    sched       gstruct    // 调度信息
+    params      unsafe.Pointer
+    atomicstatus uint32    // 状态
+    goid        int64     // goroutine id
 }
 ```
 
 ## 三、工作窃取
 
 ```go
-func (p *p) stealWork() *g {
-    // 随机选择另一个P
-    start := fastrand() % allp.len()
-    for i := 0; i < allp.len(); i++ {
-        next := (start + i) % allp.len()
-        if next == p.id {
+// src/runtime/proc.go
+func stealWork(batch []*g) int {
+    for _, _p_ := range allp {
+        if _p_ == myp || _p_.runnext != 0 {
             continue
         }
         
-        otherP := allp[next]
-        if otherP.runqsize > otherP.runqsize/2 {
-            // 偷取一半
-            n := otherP.runqsize / 2
-            g := otherP.runq
-            otherP.runq = g.schedlink.ptr()
-            otherP.runqsize -= n
-            
-            // 放入本地队列
-            for i := 0; i < n; i++ {
-                // ...
-            }
-            return g
+        n := readyFromRunQueue(_p_, &batch[len(batch):cap(batch)])
+        if n > 0 {
+            return len(batch)
         }
     }
-    return nil
+    return 0
+}
+
+func readyFromRunQueue(_p_ *p, batch *[]*g) int {
+    n := 0
+    for n < cap(*batch) && _p_.runqhead != _p_.runqtail {
+        g := _p_.runq[_p_.runqtail%uint32(len(_p_.runq))]
+        _p_.runqtail++
+        *batch = append(*batch, g)
+        n++
+    }
+    return n
 }
 ```
 
 ## 四、面试高频题
 
-### Q1: Go调度器有什么优势？
+### Q1: Go调度器如何解决GIL问题？
 
 ```
 A:
-1. O(1)调度
-2. 工作窃取负载均衡
-3. 系统调用不阻塞其他G
-4. 协程切换轻量
+1. M:N调度模型
+2. 多P并行执行
+3. 工作窃取
 ```
 
-### Q2: 什么是golang的Sysmon？
+### Q2: 如何实现抢占式调度？
 
 ```
 A:
-• 系统监控goroutine
-• 每10ms执行一次
-• 检查长时间运行的G
-• 强制抢占调度
-• 重置idle M的P
+1. 系统调用时检测
+2. 信号量中断
+3. 栈空间不足
 ```
 
 ## 五、自测题
 
-1. 解释GMP调度模型
+1. 解释GMP模型
 2. 如何实现工作窃取？
-3. 协程切换开销多大？
+3. 如何避免死锁？
 
 ---
 
 ## 参考文档
 
-- [Go源码sched.go](https://github.com/golang/go/blob/master/src/runtime/proc.go)
-- [Go调度器论文](https://go.dev/sched)
+- [Go调度器源码](https://github.com/golang/go/blob/master/src/runtime/proc.go)
+- [Go运行时](https://github.com/golang/go/wiki/Goroutines)

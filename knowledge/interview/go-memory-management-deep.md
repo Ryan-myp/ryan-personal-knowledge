@@ -2,129 +2,119 @@
 
 ## 一、内存分配器
 
-```c
-// src/runtime/malloc.c
-typedef struct {
-    mspan   *free;      /* list of free spans */
-    mspan   *all;       /* list of all spans */
-    int32_t   queues[NP] /* ngowersize classes */
-} mheap_t;
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                       Go内存分配架构                                     │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   heap                                                                 │
+│   ├── spans[0..n]                                                      │
+│   │   ├── span[0]  (small objects: < 32KB)                             │
+│   │   ├── span[1]  (large objects: >= 32KB)                            │
+│   │   └── span[n]                                                      │
+│   │                                                                       │
+│   ├── mcache (per-P cache)                                             │
+│   │   ├── tinyobj                                                      │
+│   │   ├── small[n]                                                     │
+│   │   └── large                                                        │
+│   │                                                                       │
+│   └── mheap (global heap)                                              │
+│       ├── central[n]                                                   │
+│       └── free                                                         │
+│                                                                         │
+│   特点:                                                                   │
+│   • 多级缓存                                                             │
+│   • 无锁分配                                                             │
+│   • 自动垃圾回收                                                         │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
-// 分配器层级:
-// • Thread cache (mcache): per-P缓存
-// • Central cache (mcentral): per-sizeclass缓存
-// • Heap (mheap): 全局堆
-void*
-malloc(size_t size) {
-    if (size < tinySize) {
-        return allocateSmall(size);
+## 二、分配器实现
+
+```go
+// src/runtime/malloc.go
+type mcache struct {
+    sweepgen   uint32
+    tiny       uintptr
+    tinyoffset uintptr
+    
+    // small size classes
+    small [numSpanClasses]struct {
+        alloc [8]freelist
     }
-    if (size <= maxSmallSize) {
-        return allocateCentral(size);
+    
+    // large objects
+    large *[maxLargeSize]*mspan
+}
+
+func (c *mcache) mallocx(size uintptr, flags uint8) unsafe.Pointer {
+    if size <= maxSmallSize {
+        if size < maxTinySize {
+            return c.tinyalloc(size)
+        }
+        return c.allocklass(size, class_to_size[class])
     }
-    return allocateLarge(size);
+    return c.malloclarge(size, flags)
 }
 ```
 
-## 二、GC标记清除
+## 三、垃圾回收
 
 ```go
-package gc
-
-type GC struct {
-    state    gcPhase
-    workers  int
-    helpRate float64
-}
-
-type gcPhase int
-
-const (
-    _gc_reset gcPhase = iota
-    gc_mark_start
-    gc_mark
-    gc_mark_stop
-    gc_cleanup
-)
-
-func (g *GC) start() {
-    // 1. STW: 标记根集
-    g.stopTheWorld()
+// 三色标记法
+func gcMark() {
+    // 白色: 未访问
+    // 灰色: 已访问，子对象未扫描
+    // 黑色: 已访问，子对象已扫描
     
-    // 2. 并发标记
-    g.concurrentMark()
-    
-    // 3. 标记终止
-    g.markTermination()
-    
-    // 4. 扫尾
-    g.cleanup()
-    
-    // 5. 重启世界
-    g.startTheWorld()
-}
-
-func (g *GC) concurrentMark() {
-    // 辅助GC
-    for assistWork < 0 {
-        g.gcWork.put(obj)
+    for _, root := range roots {
+        if isRoot(root) {
+            mark(root)
+        }
     }
-    
-    // 后台GC
-    go g.bgMark()
 }
-```
 
-## 三、内存对齐
-
-```go
-package memory
-
-import "unsafe"
-
-// 内存对齐规则
-type AlignedStruct struct {
-    a byte    // 1字节，偏移0
-    b int32   // 4字节，需要4对齐 → 填充3字节
-    c int64   // 8字节，需要8对齐 → 从8开始
-    d byte    // 1字节，偏移16
-} // 总大小: 24字节 (1+3+4+8+1+6填充)
-
-func alignSize(size int, alignment int) int {
-    return (size + alignment - 1) &^ (alignment - 1)
+func mark(obj *Object) {
+    obj.color = GRAY
+    for _, child := range obj.children {
+        if child.color == WHITE {
+            mark(child)
+        }
+    }
+    obj.color = BLACK
 }
 ```
 
 ## 四、面试高频题
 
-### Q1: Go的GC为什么快？
+### Q1: Go内存分配如何避免碎片？
 
 ```
 A:
-1. 三色标记法
+1. 大小类划分
+2. 边界对齐
+3. 分代回收
+```
+
+### Q2: GC如何工作？
+
+```
+A:
+1. 三色标记
 2. 写屏障
-3. 并发标记
-4. 混合写屏障
-```
-
-### Q2: 如何优化内存分配？
-
-```
-A:
-1. 对象池 (sync.Pool)
-2. 内存对齐
-3. 避免逃逸
+3. 并发回收
 ```
 
 ## 五、自测题
 
-1. 解释Go内存分配器架构
-2. 如何实现零开销GC？
-3. 如何优化内存使用？
+1. 解释内存分配器架构
+2. 如何实现无锁分配？
+3. 如何优化GC性能？
 
 ---
 
 ## 参考文档
 
-- [Go源码](https://github.com/golang/go/tree/master/src/runtime)
-- [Go内存管理白皮书](https://go.dev/doc/gc-guide)
+- [Go内存管理源码](https://github.com/golang/go/blob/master/src/runtime/malloc.go)
+- [Go GC白皮书](https://go.dev/doc/gc-guide)
