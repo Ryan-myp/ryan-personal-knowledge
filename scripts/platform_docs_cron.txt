@@ -1,0 +1,12 @@
+# 广告平台官方文档自动更新
+# 每周日凌晨 3:00 更新所有平台文档
+0 3 * * 0 cd /Users/yanping.ma/ryan-personal-knowledge && python3 scripts/fetch_platform_docs.py --all --mode hybrid >> logs/platform_docs_cron.log 2>&1
+
+# 每天凌晨 2:00 更新 Google Ads API（更新最频繁）
+0 2 * * * cd /Users/yanping.ma/ryan-personal-knowledge && python3 scripts/fetch_platform_docs.py --platform google-ads --mode hybrid >> logs/platform_docs_cron.log 2>&1
+
+# 每周二凌晨 1:00 更新 Meta Marketing API
+0 1 * * 2 cd /Users/yanping.ma/ryan-personal-knowledge && python3 scripts/fetch_platform_docs.py --platform facebook-ads --mode hybrid >> logs/platform_docs_cron.log 2>&1
+
+# 每周三凌晨 1:30 更新 TikTok Ads API
+30 1 * * 3 cd /Users/yanping.ma/ryan-personal-knowledge && python3 scripts/fetch_platform_docs.py --platform tiktok-ads --mode hybrid >> logs/platform_docs_cron.log 2>&1
