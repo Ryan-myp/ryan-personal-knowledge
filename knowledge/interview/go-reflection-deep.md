@@ -1,6 +1,6 @@
-# Go反射机制 - 资深专家深度实现
+# Go反射机制深入 - 资深专家深度实现
 
-## 一、Type和Value
+## 一、反射基础
 
 ```go
 package main
@@ -10,84 +10,130 @@ import (
     "reflect"
 )
 
-func reflectDemo(i interface{}) {
-    t := reflect.TypeOf(i)
-    v := reflect.ValueOf(i)
-    
-    fmt.Printf("Type: %v, Kind: %v\n", t, t.Kind())
-    fmt.Printf("Value: %v\n", v)
+func reflectType(v interface{}) {
+    t := reflect.TypeOf(v)
+    fmt.Printf("Type: %v, Kind: %v\n", t.Name(), t.Kind())
 }
 
-// 反射修改值
-func reflectModify(i interface{}) {
-    v := reflect.ValueOf(i).Elem()
-    v.SetInt(100)
-}
-
-func main() {
-    x := 42
-    reflectDemo(x)
-    
-    reflectModify(&x)
-    fmt.Println(x) // 100
+func reflectValue(v interface{}) {
+    val := reflect.ValueOf(v)
+    fmt.Printf("Value: %v, CanSet: %v\n", val, val.CanSet())
 }
 ```
 
-## 二、结构体反射
+## 二、反射原理
 
 ```go
-type User struct {
-    Name string `json:"name"`
-    Age  int    `json:"age"`
+// reflect.Type 实现
+typertype struct {
+    size       uintptr
+    ptrdata    uintptr
+    hash       uint32
+    tflag      tflag
+    align      uint8
+    fieldalign uint8
+    kind       uint8
+    alg        *typeAlg
+    gcdata    *byte
+    str       nameOff
+    ptrToThis typeOff
 }
 
-func reflectStruct(u User) {
-    t := reflect.TypeOf(u)
-    v := reflect.ValueOf(u)
+// reflect.Value 核心结构
+type value struct {
+    typ  unsafe.Pointer  // *rtype
+    ptr  unsafe.Pointer  // 数据指针
+    flag flag            // 访问权限
+}
+
+func (v value) Interface() interface{} {
+    if !v.ok() {
+        return nil
+    }
+    return unpackEface(v)
+}
+```
+
+## 三、反射应用
+
+```go
+// 动态调用方法
+func callMethod(obj interface{}, methodName string, args ...interface{}) interface{} {
+    v := reflect.ValueOf(obj)
+    m := v.MethodByName(methodName)
+    if !m.IsValid() {
+        panic(fmt.Sprintf("method %s not found", methodName))
+    }
     
-    for i := 0; i < t.NumField(); i++ {
+    in := make([]reflect.Value, len(args))
+    for i, arg := range args {
+        in[i] = reflect.ValueOf(arg)
+    }
+    
+    results := m.Call(in)
+    if len(results) > 0 {
+        return results[0].Interface()
+    }
+    return nil
+}
+
+// 结构体序列化
+func structToMap(s interface{}) map[string]interface{} {
+    v := reflect.ValueOf(s)
+    if v.Kind() == reflect.Ptr {
+        v = v.Elem()
+    }
+    
+    m := make(map[string]interface{})
+    t := v.Type()
+    
+    for i := 0; i < v.NumField(); i++ {
         field := t.Field(i)
         value := v.Field(i)
         
-        fmt.Printf("Field: %s, Type: %v, Value: %v\n", 
-            field.Name, field.Type, value)
-        
-        // 获取tag
+        // 获取json标签
         tag := field.Tag.Get("json")
-        fmt.Printf("Tag: %s\n", tag)
+        key := strings.Split(tag, ",")[0]
+        if key == "" {
+            key = field.Name
+        }
+        
+        m[key] = value.Interface()
     }
+    
+    return m
 }
 ```
 
-## 三、面试高频题
+## 四、面试高频题
 
-### Q1: 反射的性能开销？
-
-```
-A:
-1. 运行时类型检查
-2. 无法内联优化
-3. 建议使用interface传递
-```
-
-### Q2: 如何避免反射？
+### Q1: 反射的性能开销是什么？
 
 ```
 A:
-1. 使用泛型
-2. 使用interface
-3. 编译期生成代码
+1. 类型检查开销
+2. 间接寻址开销
+3. 无法内联优化
 ```
 
-## 四、自测题
+### Q2: 如何实现动态代理？
 
-1. 解释Type和Value关系
-2. 如何实现Set?
-3. 反射的性能影响？
+```
+A:
+1. 使用reflect包
+2. 拦截方法调用
+3. 转发到实际对象
+```
+
+## 五、自测题
+
+1. 解释反射原理
+2. 如何实现动态调用？
+3. 如何处理反射性能？
 
 ---
 
 ## 参考文档
 
-- [Go反射源码](https://github.com/golang/go/blob/master/src/reflect/type.go)
-- [Go博客: 反射](https://go.dev/blog/laws-of-reflection)
+- [Go Reflect Package](https://pkg.go.dev/reflect)
+- [Effective Go Reflection](https://go.dev/blog/effective-go)

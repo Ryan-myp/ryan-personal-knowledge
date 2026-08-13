@@ -1,89 +1,112 @@
 # 分布式锁实现 - 资深专家深度实现
 
-## 一、Redis分布式锁
+## 一、锁类型对比
 
-```java
-// 基本实现
-public class RedisLock {
-    private final RedisTemplate<String, String> redisTemplate;
-    private static final String LOCK_PREFIX = "lock:";
-    private static final Long RELEASE_SUCCESS = 1L;
-    
-    /**
-     * 加锁
-     * @param key 锁key
-     * @param value 请求标识
-     * @param expireTime 过期时间
-     */
-    public boolean tryLock(String key, String value, long expireTime) {
-        String lockKey = LOCK_PREFIX + key;
-        Boolean result = redisTemplate.opsForValue()
-            .setIfAbsent(lockKey, value, expireTime, TimeUnit.MILLISECONDS);
-        return Boolean.TRUE.equals(result);
-    }
-    
-    /**
-     * 释放锁
-     */
-    public boolean releaseLock(String key, String value) {
-        String lockKey = LOCK_PREFIX + key;
-        String currentValue = redisTemplate.opsForValue().get(lockKey);
-        
-        if (value.equals(currentValue)) {
-            redisTemplate.delete(lockKey);
-            return true;
-        }
-        return false;
-    }
-}
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    分布式锁实现方案                                        │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   方案              | 可靠性 | 性能   | 复杂度 | 适用场景                  │
+│   ──────────────────┼────────┼────────┼────────┼─────────────────────────│
+│   Redis SET NX      | 中     | 高     | 低     | 简单场景                    │
+│   Redis Redlock     | 高     | 中     | 高     | 高可用要求                    │
+│   ZooKeeper         | 高     | 中     | 中     | 有序锁需求                    │
+│   Etcd              | 高     | 高     | 中     | K8s生态                     │
+│   MySQL SELECT...   | 低     | 低     | 低     | 不推荐                      │
+│                                                                         →
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 二、Redisson实现
+## 二、Redis分布式锁实现
 
-```java
-// 使用Redisson
-RLock lock = redisson.getLock("myLock");
+```go
+package lock
 
-try {
-    // 尝试加锁，最多等待100秒，锁自动10秒后过期
-    if (lock.tryLock(100, 10, TimeUnit.SECONDS)) {
-        // 业务逻辑
-        doSomething();
+import (
+    "context"
+    "github.com/go-redis/redis/v8"
+    "time"
+)
+
+type RedisLock struct {
+    client *redis.Client
+    key    string
+    value  string
+}
+
+func NewRedisLock(client *redis.Client, key string) *RedisLock {
+    return &RedisLock{
+        client: client,
+        key:    key,
+        value:  uuid.New().String(),
     }
-} finally {
-    lock.unlock();
+}
+
+// Acquire 获取锁
+func (l *RedisLock) Acquire(ctx context.Context, ttl time.Duration) bool {
+    // SET key value NX PX ttl
+    result := l.client.Set(ctx, l.key, l.value, ttl, redis.SetNX)
+    return result.Val()
+}
+
+// Release 释放锁
+func (l *RedisLock) Release(ctx context.Context) bool {
+    // Lua脚本保证原子性
+    script := `
+    if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("del", KEYS[1])
+    else
+        return 0
+    end
+    `
+    result := l.client.Eval(ctx, script, []string{l.key}, l.value)
+    return result.Int() == 1
+}
+
+// Renew 续期（防止业务未执行完锁过期）
+func (l *RedisLock) Renew(ctx context.Context, ttl time.Duration) bool {
+    script := `
+    if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("pexpire", KEYS[1], ARGV[2])
+    else
+        return 0
+    end
+    `
+    result := l.client.Eval(ctx, script, []string{l.key}, l.value, ttl.Milliseconds())
+    return result.Int() == 1
 }
 ```
 
 ## 三、面试高频题
 
-### Q1: Redis分布式锁原理？
-
-```
-A:
-1. SET NX EX命令
-2. 原子性保证
-3. 看门狗续期
-```
-
-### Q2: 如何解决锁过期问题？
+### Q1: 如何解决锁过期问题？
 
 ```
 A:
 1. 看门狗机制
-2. 手动续期
-3. Redisson自动续期
+2. 异步续期
+3. Redlock算法
+```
+
+### Q2: Redlock算法原理？
+
+```
+A:
+1. N个Redis节点
+2. 多数派成功即成功
+3. 容错能力强
 ```
 
 ## 四、自测题
 
 1. 解释Redis锁原理
-2. 如何实现公平锁？
-3. 如何处理锁失效？
+2. 如何实现Redlock？
+3. 如何解决锁过期？
 
 ---
 
 ## 参考文档
 
-- [Redisson文档](https://github.com/redisson/redisson)
-- [分布式锁实现](https://github.com/redis/redis-py/blob/master/redis/lock.py)
+- [Redis分布式锁](https://redis.io/docs/reference/patterns/distributed-locks/)
+- [Redlock论文](https://redis.io/docs/reference/patterns/distributed-locks/)
