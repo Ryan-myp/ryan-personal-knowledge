@@ -1,126 +1,88 @@
 # Raft共识算法 - 资深专家深度实现
 
-## 一、核心概念
+## 一、状态机模型
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                        Raft共识算法                                      │
+│                       Raft状态机                                           │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
-│   Role: Leader / Follower / Candidate                                   │
-│                                                                         │
-│   Leader:                                                                 │
-│   • 处理所有客户端请求                                                   │
-│   • 复制日志到所有节点                                                   │
-│   • 心跳维持权威                                                         │
-│                                                                         │
-│   Follower:                                                              │
-│   • 响应Leader/Candidate请求                                             │
-│   • 不主动发起请求                                                         │
-│                                                                         │
-│   Candidate:                                                             │
-│   • 竞选Leader                                                            │
-│   • 获取多数票                                                             │
-│                                                                         │
-│   特点:                                                                   │
-│   • 强一致性                                                             │
-│   • 容错N/2节点                                                          │
-│   • 自动故障转移                                                           │
-│                                                                         │
+│   Follower                                                             │
+│   ├── 接收AppendEntries RPC                                              │
+│   ├── 投票给先到达的Candidate                                             │
+│   └── 心跳超时 → 成为Candidate                                            │
+│                                                                         →
+│   Candidate                                                            │
+│   ├── 发起选举                                                          │
+│   ├── 发送RequestVote RPC                                                │
+│   └── 获得多数票 → 成为Leader                                            │
+│                                                                         →
+│   Leader                                                                 │
+│   ├── 发送心跳                                                              │
+│   ├── 复制日志                                                              │
+│   └── 确定Committed Entry                                                │
+│                                                                         →
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 二、选举实现
+## 二、日志复制
 
 ```go
-type State int
-const (
-    Follower State = iota
-    Candidate
-    Leader
-)
-
-type Node struct {
-    state      State
-    term       int
-    votedFor   int
-    log        []Entry
-    
-    commitIndex int
-    lastApplied int
+type LogEntry struct {
+    Term     int
+    Index    int
+    Command  interface{}
 }
 
-func (n *Node) electionTimeout() {
-    timeout := time.Duration(rand.Intn(300)) + 150 * time.Millisecond
+// Leader复制日志
+func (l *Leader) appendEntry(entry LogEntry) {
+    l.mu.Lock()
+    defer l.mu.Unlock()
     
-    timer := time.NewTimer(timeout)
-    <-timer.C
+    l.logs = append(l.logs, entry)
+    l.nextIndex[l.peers] = len(l.logs) + 1
     
-    // 开始竞选
-    n.state = Candidate
-    n.term++
-    n.votedFor = n.id
-    
-    // 请求投票
-    for _, peer := range peers {
-        go n.requestVote(peer)
+    // 向所有Follower复制
+    for peer := range l.peers {
+        l.sendAppendEntries(peer, entry)
+    }
+}
+
+// Follower处理
+func (f *Follower) applyEntry(index int) {
+    if index > f.commitIndex {
+        entry := f.log[index]
+        f.stateMachine.Apply(entry.Command)
+        f.commitIndex = index
     }
 }
 ```
 
-## 三、日志复制
+## 三、面试高频题
 
-```go
-func (l *Leader) appendEntry(entry Entry) {
-    l.log = append(l.log, entry)
-    
-    // 发送给所有follower
-    for _, follower := range l.followers {
-        go l.sendAppendEntries(follower, entry)
-    }
-}
-
-func (l *Leader) commitEntry(index int) {
-    // 超过半数节点确认
-    ackCount := 0
-    for _, follower := range l.followers {
-        if follower.matchIndex >= index {
-            ackCount++
-        }
-    }
-    
-    if ackCount > len(l.followers)/2 {
-        l.commitIndex = index
-        l.applyToState(l.log[:index])
-    }
-}
-```
-
-## 四、面试高频题
-
-### Q1: Raft如何保证一致性？
+### Q1: 如何保证安全性？
 
 ```
 A:
-1. Leader全权处理
-2. 多数派确认
-3. 日志幂等
+1. 多数派原则
+2. Term单调递增
+3. Leader完整性
 ```
 
-### Q2: 如何实现故障转移？
+### Q2: 如何选择Leader？
 
 ```
 A:
-1. 超时选举
-2. Term递增
-3. 多数派胜出
+1. 投票机制
+2. 先至原则
+3. 随机超时
 ```
 
-## 五、自测题
+## 四、自测题
 
-1. 解释Raft三步选举
+1. 解释Raft三状态
 2. 如何实现日志复制？
-3. 如何保证安全性？
+3. 如何处理脑裂？
 
 ---
 
