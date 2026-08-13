@@ -1,161 +1,142 @@
 # Go网络编程 - 资深专家深度实现
 
-## 一、Netpoller架构
+## 一、网络模型
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                      Go Netpoller架构                                     │
+│                    Go网络编程模型                                          │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
-│   ┌──────────────┐    ┌──────────────┐    ┌──────────────┐            │
-│   │  netpoll     │    │  goroutine   │    │  system call │            │
-│   │  (epoll/kqueue)◄─────────────────►│  (用户态)      │            │
-│   └──────────────┘    └──────────────┘    └──────────────┘            │
-│                                                                         │
-│   实现:                                                                   │
-│   • Linux:    epoll                                                    │
-│   • macOS:    kqueue                                                   │
-│   • Windows:  IOCP                                                     │
-│                                                                         │
+│   I/O模型              | Go实现                  | 适用场景              │
+│   ─────────────────────┼────────────────────────┼─────────────────────│
+│   Blocking I/O         | net.Conn (默认)          │ 简单应用              │
+│   Non-blocking I/O     | netpoller               │ 高性能服务器           │
+│   Multiplexing         | epoll/kqueue             │ 大量连接              │
+│   Async I/O            | io.Reader/Writer        │ 抽象层                │
+│                                                                         →
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 二、epoll实现
+## 二、高性能服务器实现
 
 ```go
-package netpoll
+package server
 
 import (
-    "syscall"
-    "unsafe"
-)
-
-type Epoll struct {
-    fd      int
-    events  []syscall.EpollEvent
-    maxfds  int
-}
-
-func NewEpoll(maxfds int) (*Epoll, error) {
-    fd, err := syscall.EpollCreate1(0)
-    if err != nil {
-        return nil, err
-    }
-    
-    return &Epoll{
-        fd:     fd,
-        events: make([]syscall.EpollEvent, maxfds),
-        maxfds: maxfds,
-    }, nil
-}
-
-func (e *Epoll) Add(fd int, mode int) error {
-    event := syscall.EpollEvent{
-        Events: uint32(mode),
-        Fd:     int32(fd),
-    }
-    return syscall.EpollCtl(e.fd, syscall.EPOLL_CTL_ADD, fd, &event)
-}
-
-func (e *Epoll) Delete(fd int) error {
-    return syscall.EpollCtl(e.fd, syscall.EPOLL_CTL_DEL, fd, nil)
-}
-
-func (e *Epoll) Wait(timeout int) (int, error) {
-    n, err := syscall.EpollWait(e.fd, e.events, timeout)
-    if err != nil {
-        return 0, err
-    }
-    return n, nil
-}
-```
-
-## 三、TCP连接池
-
-```go
-package pool
-
-import (
+    "net"
     "sync"
-    "time"
 )
 
-type ConnPool struct {
-    mu         sync.Mutex
-    conns      []*Conn
-    maxIdle    int
-    maxLifetime time.Duration
+// Connection 连接管理
+type Connection struct {
+    conn    net.Conn
+    buf     []byte
+    inUse   bool
+    mu      sync.Mutex
 }
 
-type Conn struct {
-    net.Conn
-    created    time.Time
-    lastUse    time.Time
+func (c *Connection) Read(p []byte) (int, error) {
+    c.mu.Lock()
+    defer c.mu.Unlock()
+    return c.conn.Read(p)
 }
 
-func (p *ConnPool) Get() (*Conn, error) {
-    p.mu.Lock()
-    defer p.mu.Unlock()
+func (c *Connection) Write(p []byte) (int, error) {
+    c.mu.Lock()
+    defer c.mu.Unlock()
+    return c.conn.Write(p)
+}
+
+// Server 高性能服务器
+type Server struct {
+    addr    string
+    pool    sync.Pool
+    workers int
+}
+
+func NewServer(addr string, workers int) *Server {
+    return &Server{
+        addr:    addr,
+        workers: workers,
+        pool: sync.Pool{
+            New: func() interface{} {
+                return &Connection{buf: make([]byte, 32*1024)}
+            },
+        },
+    }
+}
+
+func (s *Server) Start() error {
+    listener, err := net.Listen("tcp", s.addr)
+    if err != nil {
+        return err
+    }
     
-    // 复用空闲连接
-    for len(p.conns) > 0 {
-        conn := p.conns[len(p.conns)-1]
-        p.conns = p.conns[:len(p.conns)-1]
-        
-        if conn.isAlive() {
-            return conn, nil
+    // 启动worker池
+    for i := 0; i < s.workers; i++ {
+        go s.worker()
+    }
+    
+    // 接受连接
+    for {
+        conn, err := listener.Accept()
+        if err != nil {
+            return err
         }
-    }
-    
-    // 创建新连接
-    return p.newConn()
-}
-
-func (p *ConnPool) Put(conn *Conn) {
-    p.mu.Lock()
-    defer p.mu.Unlock()
-    
-    if len(p.conns) < p.maxIdle && conn.isAlive() {
-        conn.lastUse = time.Now()
-        p.conns = append(p.conns, conn)
+        go s.handleConn(conn)
     }
 }
 
-func (c *Conn) isAlive() bool {
-    return time.Since(c.created) < c.pool.maxLifetime
+func (s *Server) worker() {
+    // 处理业务逻辑
+}
+
+func (s *Server) handleConn(conn net.Conn) {
+    c := s.pool.Get().(*Connection)
+    c.conn = conn
+    defer s.pool.Put(c)
+    
+    // 处理请求
+    buf := c.buf
+    for {
+        n, err := conn.Read(buf)
+        if err != nil {
+            return
+        }
+        s.process(buf[:n])
+    }
 }
 ```
 
-## 四、面试高频题
+## 三、面试高频题
 
-### Q1: Go的epoll和select有什么区别？
+### Q1: Go网络模型是什么？
 
 ```
 A:
-• select: O(n)复杂度，有限数量
-• epoll: O(1)复杂度，无限连接
-• Go使用epoll/kqueue实现高性能网络
+1. GMP调度器
+2. netpoller事件驱动
+3. 非阻塞I/O
 ```
 
-### Q2: 如何实现一个高性能的HTTP Server？
+### Q2: 如何实现高性能服务器？
 
 ```
 A:
 1. 连接池复用
-2. 读写分离
-3. 零拷贝
-4. 批量处理
+2. 零拷贝处理
+3. 异步I/O
 ```
 
-## 五、自测题
+## 四、自测题
 
-1. Go的Netpoller如何工作？
-2. 如何实现连接池？
-3. 如何优化网络IO性能？
+1. 解释Go网络模型
+2. 如何实现高性能服务器？
+3. 如何解决Goroutine泄漏？
 
 ---
 
 ## 参考文档
 
-- [Go源码](https://github.com/golang/go/tree/master/src/net)
-- [Linux epoll文档](https://man7.org/linux/man-pages/man7/epoll.7.html)
+- [Go Net Package](https://pkg.go.dev/net)
+- [Network Programming](https://go.dev/blog/linux-networking)
