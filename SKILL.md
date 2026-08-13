@@ -1,7 +1,7 @@
 ---
 name: ryan-personal-knowledge
 description: "Ryan 的个人学习仪表盘 + 专家级知识库：广告业务（竞价/平台API/归因/反作弊）+ Agent技术（架构/RAG/记忆）双精通"
-version: 3.0.0
+version: 3.1.0
 author: ryan
 platforms: [linux, macos]
 metadata:
@@ -9,7 +9,7 @@ metadata:
     tags: [personal, learning, knowledge, progress, blogwatcher, notes, expert]
 ---
 
-# Ryan 个人学习仪表盘 + 专家知识库 v3.0
+# Ryan 个人学习仪表盘 + 专家知识库 v3.1
 
 ## 🎯 定位与目标
 
@@ -72,10 +72,11 @@ metadata:
 ## 📊 知识库规模
 
 ```
-总文件数: 1205+ Markdown 文档
+总文件数: 1554+ Markdown 文档
 总大小:   17 MB
 总目录:   219 个子目录
 Expert Skills: 19 个可复用技能
+知识库搜索: 已解耦独立部署
 
 按领域分布:
 ├── advertising/    236 文件 — 广告业务深度解析

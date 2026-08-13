@@ -22,12 +22,16 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 # ──────────────────────────────────────────────
-# Import local modules (self-contained)
+# Import biz-delivery core modules
 # ──────────────────────────────────────────────
 
-sys.path.insert(0, str(Path(__file__).parent))
-from intent_router import extract_intent, INTENT_PATTERNS, get_scope_weights, get_query_type
-from rrf_fusion import rrf_ranks, rrf_ranks_compat, QueryCache
+_BD_SCRIPTS = Path.home() / "biz-delivery" / "scripts"
+if str(_BD_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_BD_SCRIPTS.parent))
+
+from scripts.smart_routing import extract_intent, INTENT_PATTERNS
+from scripts.query_cache import QueryCache
+from scripts.rrf_fusion import rrf_ranks
 
 # ──────────────────────────────────────────────
 # Knowledge-search specific: KB index & search
@@ -158,7 +162,7 @@ def search_file_content(query: str, docs: List[Dict], top_k: int = 10) -> List[D
 
     scored = []
     for doc in docs:
-        content_lower = doc.get("full_content", "").lower()
+        content_lower = doc["full_content"].lower()
         matched = sum(1 for term in query_terms if term in content_lower)
         if matched > 0:
             tf = matched / len(query_terms)
@@ -350,7 +354,7 @@ def extract_wikilinks_and_frontmatter(docs: List[Dict]) -> List[Dict]:
     FRONTMATTER_RE = re.compile(r'^---\n(.*?)\n---', re.DOTALL)
 
     for doc in docs:
-        content = doc.get("full_content", "")
+        content = doc["full_content"]
         doc["wikilinks"] = extract_wikilinks(content)
 
         fm_match = FRONTMATTER_RE.search(content)
@@ -427,14 +431,11 @@ def _run_pipeline(query: str, docs: List[Dict], config: dict, cache: QueryCache,
             path_results_cache[path_name] = results
 
     # RRF 融合
-    fused = rrf_ranks_compat(candidates, k=config["fusion"]["rrf_k"]) if candidates else {}
+    fused = rrf_ranks(candidates, k=config["fusion"]["rrf_k"]) if candidates else []
 
     # 计算最终得分
     results = []
-    # fused 现在是 dict {doc_id: score}，需要转换为 list
-    fused_list = list(fused.items()) if isinstance(fused, dict) else fused
-    for doc in docs:
-        doc_id = doc.get("file_path", doc.get("path", ""))
+    for doc in fused:
         total_score = 0.0
         source_scores = []
         for i, path_cfg in enumerate(paths_to_use):
@@ -444,8 +445,7 @@ def _run_pipeline(query: str, docs: List[Dict], config: dict, cache: QueryCache,
             if path_name in path_results_cache:
                 path_results = path_results_cache[path_name]
                 for j, r in enumerate(path_results):
-                    r_path = r.get("file_path", r.get("path", "")) if isinstance(r, dict) else r
-                    if r_path == doc_id:
+                    if r["file_path"] == doc["file_path"]:
                         rrf_contrib = weight * (1.0 / (60 + j + 1))
                         total_score += rrf_contrib
                         source_scores.append((path_name, round(rrf_contrib, 6)))
@@ -619,7 +619,7 @@ def main():
     # 初始化缓存
     cache_dir = script_dir / ".cache"
     cache_dir.mkdir(exist_ok=True)
-    cache = QueryCache(max_size=1000, ttl_seconds=3600)
+    cache = QueryCache(cache_dir, ttl_seconds=config.get("cache", {}).get("ttl_seconds", 3600))
 
     # 清除缓存
     if args.clear_cache:
@@ -672,7 +672,7 @@ def main():
     try:
         # 自动检测是否需要 Wiki 增强
         has_wiki_structure = any(
-            re.search(r'^---\n.*type:\s*(entity|concept)', doc.get("full_content", ""), re.DOTALL)
+            re.search(r'^---\n.*type:\s*(entity|concept)', doc["full_content"], re.DOTALL)
             for doc in docs
         )
         has_wikilinks = any(extract_wikilinks(doc.get("full_content", "")) for doc in docs)
