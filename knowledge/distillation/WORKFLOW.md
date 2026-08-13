@@ -105,14 +105,11 @@
 蒸馏完成后：
 
 ```bash
-# 1. 重建索引
 cd knowledge-search
 python3 query_knowledge.py "关键词" --rebuild
 
-# 2. 验证检索
 python3 query_knowledge.py "书中核心概念" --verbose
 
-# 3. 更新 skill 引用
 # 编辑对应的 SKILL.md，添加新的知识库引用
 ```
 

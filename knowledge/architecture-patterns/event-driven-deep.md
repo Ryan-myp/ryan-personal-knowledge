@@ -319,10 +319,6 @@ func (m *EventVersionManager) GetLatestSchema(eventType string) ([]byte, error) 
 ## 六、动手验证
 
 ```bash
-# 1. 搭建 Kafka 集群
-# 2. 实现事件生产者
-# 3. 实现事件消费者
-# 4. 测试事件处理
 ```
 ## 自测题
 

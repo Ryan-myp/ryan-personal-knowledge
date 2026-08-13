@@ -218,10 +218,6 @@ func (l *Logger) Info(traceID string, msg string, fields map[string]interface{})
 ## 六、动手验证
 
 ```bash
-# 1. 部署 Istio
-# 2. 配置流量规则
-# 3. 测试熔断降级
-# 4. 监控分布式追踪
 ```
 ## 自测题
 

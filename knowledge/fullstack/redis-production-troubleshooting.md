@@ -213,19 +213,14 @@ tail -f /var/log/redis/redis-server.log
 
 ```bash
 # 节点 Down 后的恢复步骤:
-# 1. 确认故障节点
 redis-cli CLUSTER NODES | grep fail
 
-# 2. 尝试重启故障节点
 systemctl restart redis-server
 
-# 3. 如果数据丢失，从主节点复制
 redis-cli CLUSTER FAILOVER
 
-# 4. 重新加入集群
 redis-cli CLUSTER MEET <ip> <port>
 
-# 5. 重新分配 slot
 redis-cli CLUSTER ADDSLOTS <slot1> <slot2> ...
 ```
 

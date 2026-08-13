@@ -1191,16 +1191,12 @@ net.ipv4.tcp_syncookies = 0
 
 ```bash
 # 排查步骤
-# 1. 检查上游服务健康
 curl -v http://10.0.1.10:8081/health
 
-# 2. 查看 Nginx error log
 tail -f /var/log/nginx/error.log | grep "upstream"
 
-# 3. 检查上游连接数
 ss -tnp | grep :8081 | wc -l
 
-# 4. 检查系统资源
 top -p $(pgrep nginx)
 ```
 
@@ -1228,26 +1224,20 @@ upstream bid_proxy {
 
 ```bash
 # 排查
-# 1. 查看哪个 worker 负载高
 ps -eo pid,pcpu,pmem,comm | grep nginx
 
-# 2. 分析请求耗时
 awk '{print $7}' /var/log/nginx/access.log | sort | uniq -c | sort -rn | head
 
-# 3. 检查 SSL 命中率
 nginx -V 2>&1 | grep -o with-http_ssl_module
 ```
 
 ```nginx
 # 优化方案
-# 1. 降低 gzip 压缩级别
 gzip_comp_level 4;  # 默认 6，降低到 4 减少 CPU 开销
 
-# 2. 启用 SSL session cache
 ssl_session_cache shared:SSL:50m;
 ssl_session_timeout 1d;
 
-# 3. 对静态文件禁用 gzip（浏览器已缓存）
 location ~* \.(jpg|jpeg|png|gif|ico|css|js)$ {
     gzip off;
     expires 30d;
@@ -1267,14 +1257,11 @@ ulimit -n
 cat /proc/$(pgrep nginx -o)/limits | grep "open files"
 
 # 解决方案
-# 1. 增加 nginx.conf 中的 worker_rlimit_nofile
 worker_rlimit_nofile 65535;
 
-# 2. 增加系统限制
 echo "* soft nofile 65535" >> /etc/security/limits.conf
 echo "* hard nofile 65535" >> /etc/security/limits.conf
 
-# 3. 重启 Nginx 生效
 nginx -s reload
 ```
 

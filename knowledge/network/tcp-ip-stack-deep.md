@@ -254,10 +254,6 @@ func UDPServer(addr string, handler func([]byte)) error {
 ## 五、动手验证
 
 ```bash
-# 1. 使用 tcpdump 抓包分析三次握手
-# 2. 使用 ss 查看连接状态
-# 3. 调整 sysctl 参数优化性能
-# 4. 使用 Go net 包实现高性能服务器
 ```
 ## 自测题
 

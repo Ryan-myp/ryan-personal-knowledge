@@ -871,16 +871,12 @@ TLS 握手失败：x509: certificate signed by unknown authority
 
 **排查步骤：**
 ```bash
-# 1. 检查证书有效期
 openssl x509 -in server.crt -noout -dates
 
-# 2. 检查证书链
 openssl verify -CAfile ca-bundle.crt server.crt
 
-# 3. 检查域名匹配
 openssl x509 -in server.crt -noout -text | grep -A1 "Subject Alternative Name"
 
-# 4. 检查吊销状态
 curl -v https://ocsp.int-x3.letsencrypt.org/
 ```
 

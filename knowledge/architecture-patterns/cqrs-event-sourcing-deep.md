@@ -393,10 +393,6 @@ func (p *OrderListProjection) Query(ctx context.Context, params map[string]inter
 ## 五、动手验证
 
 ```bash
-# 1. 实现 Event Store
-# 2. 创建聚合根
-# 3. 实现投影
-# 4. 测试 CQRS 查询
 ```
 ## 自测题
 

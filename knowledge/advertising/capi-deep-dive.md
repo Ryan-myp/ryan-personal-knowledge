@@ -921,11 +921,9 @@ CAPI 实施 Checklist:
 ### 6.1 CAPI 测试工具
 
 ```bash
-# 1. 使用 Meta 测试事件工具
 # Events Manager → Test Events → 获取 Test Event Code
 # → 使用 Test Event Code 发送测试事件
 
-# 2. 发送 CAPI 测试事件
 curl -X POST "https://graph.facebook.com/v18.0/YOUR_PIXEL_ID/events?test_event_code=YOUR_CODE" \
   -H "Content-Type: application/json" \
   -d '{
@@ -947,7 +945,6 @@ curl -X POST "https://graph.facebook.com/v18.0/YOUR_PIXEL_ID/events?test_event_c
     }]
   }'
 
-# 3. 验证事件是否被接收
 # Events Manager → Test Events → 查看实时事件流
 ```
 

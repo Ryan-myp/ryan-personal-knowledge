@@ -742,24 +742,18 @@ func normalizeSQL(sql string, args []interface{}) string {
 **排查步骤：**
 
 ```bash
-# 1. 在 Jaeger UI 搜索错误 Trace
 # 搜索条件：operation="POST /api/order", error=true
 
-# 2. 发现链路断裂点
 # Trace ID: a1b2c3d4e5f6
 # 调用链：UserSvc → OrderSvc → PaymentSvc → ❌ Timeout
 
-# 3. 分析 PaymentSvc 日志
-# 2026-07-10 14:23:15 ERROR payment.go:45 timeout waiting for response from bank API
 # 但银行 API 平均响应时间 200ms，为什么超时？
 
-# 4. 查看 PaymentSvc 的 Span 详情
 # Span: call-bank-api
 # Duration: 5000ms (timeout)
 # Tags: http.status_code=504
 # Logs: [{"timestamp":"...","message":"retry attempt 1"}, {"timestamp":"...","message":"retry attempt 2"}]
 
-# 5. 发现根本原因：PaymentSvc 配置了 3 次重试，每次 5s timeout
 # 总耗时 = 3 × 5s = 15s，远超前端 5s timeout
 ```
 

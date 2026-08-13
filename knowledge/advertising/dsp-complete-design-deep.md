@@ -236,26 +236,20 @@ Redis 的优势：
 ### 2.2 Redis 数据结构设计
 
 ```
-# 1. 广告索引（Sorted Set）
 ZADD ads:by_targeting:age_25_35:city_beijing 0 ad1 ad2 ad3
 ZADD ads:by_targeting:age_25_35:city_beijing 0 ad4 ad5 ad6
 # score = 0（均匀分布），用于快速获取候选广告
 
-# 2. 广告详情（Hash）
 HSET ad:ad1 name "Nike鞋" price 299.00 type "image" landing_url "https://nike.com"
 HSET ad:ad2 name "iPhone15" price 5999.00 type "video" landing_url "https://apple.com"
 
-# 3. 用户画像（Hash）
 HSET user:user123 age 28 gender M interests "tech,cars" last_visit "2024-01-15"
 
-# 4. 频次控制（String + EXPIRE）
 INCR freq:ad:ad1:user:user123:2024-01-15
 EXPIRE freq:ad:ad1:user:user123:2024-01-15 86400
 
-# 5. 预算控制（String）
 HSET budget:campaign:camp1 daily_spent 5000.00 total_budget 10000.00
 
-# 6. 广告缓存（Hash）
 HSET campaign:camp1 name "Nike春季促销" status 1 daily_budget 10000.00
 HSET adset:as1 name "运动鞋" targeting '{"age":[20,40],"cities":["北京","上海"]}'
 ```

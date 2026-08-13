@@ -359,34 +359,24 @@ receivers:
 ### 4.1 常用查询
 
 ```promql
-# 1. Pod重启次数
 rate(kube_pod_container_status_restarts_total[15m])
 
-# 2. CPU使用率
 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
 
-# 3. 内存使用率
 (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100
 
-# 4. 磁盘使用率
 (1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) * 100
 
-# 5. 网络流量
 rate(node_network_receive_bytes_total[5m]) * 8  # bits/s
 
-# 6. Pod状态
 kube_pod_status_phase{phase="Running"} == 1
 
-# 7. Deployment可用副本
 kube_deployment_status_replicas_available / kube_deployment_spec_replicas
 
-# 8. 请求延迟
 histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, service))
 
-# 9. QPS
 sum(rate(http_requests_total[5m])) by (service)
 
-# 10. 错误率
 sum(rate(http_requests_total{status=~"5.."}[5m])) by (service) / 
 sum(rate(http_requests_total[5m])) by (service)
 ```

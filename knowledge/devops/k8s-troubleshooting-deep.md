@@ -154,16 +154,12 @@ kubectl taint nodes <node>
 ### 3.1 DNS问题
 
 ```bash
-# 1. 测试DNS解析
 kubectl run test-dns --image=busybox --restart=Never -it --rm -- nslookup kubernetes.default
 
-# 2. 检查CoreDNS Pod
 kubectl get pods -n kube-system -l k8s-app=kube-dns
 
-# 3. 检查CoreDNS配置
 kubectl get configmap coredns -n kube-system -o yaml
 
-# 4. 查看CoreDNS日志
 kubectl logs -n kube-system -l k8s-app=kube-dns
 ```
 
@@ -199,35 +195,27 @@ data:
 ### 3.2 Service问题
 
 ```bash
-# 1. 检查Service和Endpoint
 kubectl get svc <svc-name> -n <namespace>
 kubectl get endpoints <svc-name> -n <namespace>
 
-# 2. 检查Selector匹配
 kubectl get pods -n <namespace> -l app=myapp
 
-# 3. 测试Service访问
 kubectl run tmp-shell --rm -it --image=bash --namespace=<ns> -- bash
 # 在Pod内测试
 curl http://<svc-name>:<port>
 
-# 4. 检查iptables规则
 iptables -t nat -L KUBE-SERVICES -n -v
 ```
 
 ### 3.3 Ingress问题
 
 ```bash
-# 1. 检查Ingress Controller
 kubectl get pods -n ingress-nginx
 
-# 2. 检查Ingress资源
 kubectl get ingress -A
 
-# 3. 查看Controller日志
 kubectl logs -n ingress-nginx -l app.kubernetes.io/name=ingress-nginx
 
-# 4. 测试路由
 kubectl port-forward svc/ingress-nginx-controller 8080:80 -n ingress-nginx
 curl http://localhost:8080/
 ```
@@ -311,14 +299,11 @@ crictl rm $(crictl ps -a -q)
 ### 5.1 API Server问题
 
 ```bash
-# 1. 检查API Server状态
 kubectl get nodes
 kubectl get cs
 
-# 2. 查看API Server日志
 kubectl logs -n kube-system kube-apiserver-<node>
 
-# 3. 检查etcd健康
 ETCDCTL_API=3 etcdctl endpoint health \
   --endpoints=https://127.0.0.1:2379 \
   --cacert=/etc/kubernetes/pki/etcd/ca.crt \
@@ -329,19 +314,16 @@ ETCDCTL_API=3 etcdctl endpoint health \
 ### 5.2 etcd问题
 
 ```bash
-# 1. 检查etcd成员
 ETCDCTL_API=3 etcdctl member list \
   --endpoints=https://127.0.0.1:2379 \
   --cacert=/etc/kubernetes/pki/etcd/ca.crt \
   --cert=/etc/kubernetes/pki/etcd/server.crt \
   --key=/etc/kubernetes/pki/etcd/server.key
 
-# 2. 检查etcd延迟
 ETCDCTL_API=3 etcdctl endpoint status \
   --endpoints=https://127.0.0.1:2379 \
   --write-out=table
 
-# 3. 常见问题
 # • etcd磁盘IO慢
 # • etcd存储空间不足
 # • etcd快照过大
@@ -350,10 +332,8 @@ ETCDCTL_API=3 etcdctl endpoint status \
 ### 5.3 Controller Manager问题
 
 ```bash
-# 1. 检查Controller Manager日志
 kubectl logs -n kube-system kube-controller-manager-<node>
 
-# 2. 检查常用Controller
 # • Node Controller: 节点健康检查
 # • ReplicaSet Controller: Pod副本管理
 # • Deployment Controller: 滚动更新

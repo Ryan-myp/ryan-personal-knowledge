@@ -690,21 +690,17 @@ type BlastRadius struct {
 
 **爆炸半径控制**:
 ```yaml
-# 1. 限制影响的 Pod 数量
 mode: random
 randomMax: 2  # 最多影响 2 个 Pod
 
-# 2. 限制影响的 Namespace
 selector:
   namespaces: [default]  # 只在 default namespace
 
-# 3. 限制影响的 Region/AZ
 selector:
   nodes:
     - node-1
     - node-2  # 只影响特定节点
 
-# 4. 设置 Kill Switch
 schedule:
   cron: "@every 5m"
   startStage:
@@ -716,10 +712,8 @@ schedule:
         expectedResult: "5"
         timeout: 300s  # 300 秒内未恢复, 自动停止
 
-# 5. 实验时长限制
 duration: 1m  # 最长 1 分钟
 
-# 6. 告警抑制
 # 实验期间抑制非实验相关的告警, 避免告警风暴
 ```
 </details>

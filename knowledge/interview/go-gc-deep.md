@@ -142,8 +142,6 @@ GOGC=100
 GOMEMLIMIT=1GiB
 
 # GC模式
-# 0: 清除模式 (ClearStacks)
-# 1: 抢占模式 (抢占标记)
 GOEXPERIMENT=concdelet  # 实验性并发清除
 
 # GC跟踪

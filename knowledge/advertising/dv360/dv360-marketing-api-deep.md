@@ -244,31 +244,25 @@ POST /displayvideo/v2/advertisers/{advertiser_id}/lineItems/{line_item_id}/conve
 ## 六、动手验证
 
 ```bash
-# 1. 配置 OAuth2 认证
 # - 创建 Service Account
 # - 下载密钥文件
 # - 授权 DV360 API
 
-# 2. 创建广告主
 # - 设置广告主名称
 # - 配置时区和货币
 
-# 3. 创建 IO 和 Line Item
 # - 设置预算
 # - 设置排期
 # - 选择交易类型
 
-# 4. 上传创意
 # - 准备创意素材
 # - 上传到 DV360
 # - 关联到 Line Item
 
-# 5. 设置定向
 # - 选择定向方式
 # - 配置受众
 # - 设置频率控制
 
-# 6. 监控和优化
 # - 查看报告
 # - 分析表现
 # - 调整策略

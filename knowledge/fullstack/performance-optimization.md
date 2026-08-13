@@ -281,10 +281,6 @@ go tool pprof -top cpu.prof
 
 # 输出示例：
 # Total: 50 samples
-#       20  40.0%  40.0%       20  40.0%  processImage (inline)
-#       15  30.0%  70.0%       15  30.0%  hash.MemEqual
-#       10  20.0%  90.0%       10  20.0%  crypto/sha256.block
-#        3   6.0%  96.0%        3   6.0%  runtime.memmove
 #
 # 解读：processImage 占 40%，是热点函数，应优先优化
 
@@ -440,8 +436,6 @@ func (s *ShardedCounter) Increment() int64 {
 go tool pprof -top -sample_index=contentions mutex.prof
 # 输出示例：
 # Total: 1500
-#      800  53.3%  53.3%      1200  80.0%  sync.(*Mutex).Unlock
-#       400  26.7%  80.0%       400  26.7%  main.(*Counter).Increment
 ```
 
 #### 模式四：反射/接口导致的热路径损耗
@@ -1061,9 +1055,6 @@ go tool trace -http=:8081 trace.out
 # 在终端分析
 go tool trace trace.out
 # 输出:
-# 2024/01/01 12:00:00 Parsing trace... (split trace v4)
-# 2024/01/01 12:00:01 Parsing trace v2...
-# 2024/01/01 12:00:01 Decompressing trace...
 # Tracing settings applied.
 # Opening browser. Trace viewer opened in default browser.
 ```
@@ -1253,17 +1244,13 @@ type traceRecord struct {
 ### 4.6 动手验证：Trace 实战
 
 ```bash
-# 1. 启动程序（确保导入了 net/http/pprof 和 runtime/trace）
 go run main.go
 
-# 2. 采集 trace
 curl -s "http://localhost:8080/debug/pprof/trace?seconds=10" > trace.out
 
-# 3. 分析
 go tool trace trace.out
 # 浏览器会自动打开 trace viewer
 
-# 4. 关注以下指标:
 #    - goroutine 数量变化
 #    - P 的利用率
 #    - syscall 等待时间

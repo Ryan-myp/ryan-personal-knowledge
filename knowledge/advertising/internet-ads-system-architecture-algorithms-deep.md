@@ -798,10 +798,6 @@ func (m *DeepFM) featureIndex(feat string) (int, bool) {
 ## 十、动手验证
 
 ```bash
-# 1. 实现广告匹配引擎
-# 2. 实现竞价策略
-# 3. 实现CTR预估模型
-# 4. 实现A/B测试分析
 ```
 ## 自测题
 

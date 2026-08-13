@@ -389,7 +389,6 @@ func (rc *ResilientHTTPClient) Do(ctx context.Context, req *http.Request) (*http
 **排查步骤：**
 
 ```bash
-# 1. 查看熔断器状态指标
 curl http://localhost:9090/metrics | grep circuit_breaker
 
 # 输出：
@@ -397,15 +396,12 @@ curl http://localhost:9090/metrics | grep circuit_breaker
 # circuit_breaker_total_calls{name="payment-service"} 1500
 # circuit_breaker_failure_rate{name="payment-service"} 0.62
 
-# 2. 分析原因：62% 失败率 > 50% 阈值，触发熔断
 
-# 3. 查看下游日志
 kubectl logs -l app=payment-service --tail=100 | grep ERROR
 
 # 发现：数据库连接池耗尽
 # pool_size=50, active=50, waiting=120
 
-# 4. 根因：支付高峰期并发请求过多，连接池不够
 ```
 
 **修复方案：**

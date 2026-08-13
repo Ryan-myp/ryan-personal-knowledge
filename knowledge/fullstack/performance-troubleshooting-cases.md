@@ -307,7 +307,6 @@ func GetUser(userID int64) (*User, error) {
 # 获取 goroutine profile
 curl http://localhost:6060/debug/pprof/goroutine?debug=2 > goroutine.prof
 
-# 分析
 go tool pprof goroutine.prof
 ```
 

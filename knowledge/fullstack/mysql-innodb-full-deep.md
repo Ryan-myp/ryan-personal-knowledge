@@ -383,9 +383,6 @@ SHOW STATUS LIKE 'Innodb_buffer_pool_read%';
 # 理想值 > 99%
 
 # 解决方案：
-# 1. 增加 innodb_buffer_pool_size（建议物理内存的 70-80%）
-# 2. 检查是否有全表扫描
-# 3. 优化慢查询
 ```
 
 ### 2. Redo Log 频繁刷盘
@@ -400,10 +397,6 @@ SHOW ENGINE INNODB STATUS\G
 # 差值越大，积压越多
 
 # 解决方案：
-# 1. 增加 innodb_log_file_size（默认 48MB，建议 1-2GB）
-# 2. 增加 innodb_log_files_in_group（默认 2）
-# 3. 使用 SSD 存储
-# 4. 调整 innodb_flush_log_at_trx_commit
 ```
 
 ### 3. Undo Log 膨胀
@@ -418,9 +411,6 @@ FROM information_schema.INNODB_TRX
 WHERE trx_started < NOW() - INTERVAL 1 HOUR;
 
 # 解决方案：
-# 1. 杀死长事务
-# 2. 优化事务，减少事务持续时间
-# 3. 增加 undo tablespace 大小
 ```
 
 ---

@@ -240,13 +240,10 @@ go tool pprof http://localhost:6060/debug/pprof/profile
 
 **排查过程**:
 ```bash
-# 1. 抓取heap profile
 wget http://localhost:6060/debug/pprof/heap
 
-# 2. 分析内存分配
 go tool pprof heap
 
-# 3. 定位泄漏点
 top 10 show
 ```
 

@@ -103,17 +103,13 @@ Go 的 M:N 模型：
 ### 2.6 调度相关调优
 
 ```bash
-# 1. 设置 CPU 亲和性（将进程绑定到特定 CPU 核）
 taskset -c 0,1 ./my-service
 
-# 2. 调整进程优先级
 nice -n -10 ./my-service
 
-# 3. 查看调度信息
 ps -eo pid,nice,pri,comm | head
 cat /proc/<pid>/sched
 
-# 4. 调整 GOMAXPROCS
 # Go 1.5+ 默认自动调整，无需手动设置
 ```
 

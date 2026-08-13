@@ -644,9 +644,6 @@ Certificate chain: 0 s:CN = dsp.example.com
 
 # 如果卡在这里超过 10 秒，说明握手超时
 # 可能原因:
-# 1. 服务端 CPU 负载过高，无法及时完成 ECDHE
-# 2. 网络拥塞，ClientHello 丢失
-# 3. 防火墙拦截了 TLS 握手包
 ```
 
 ```go
@@ -672,9 +669,6 @@ client := &http.Client{Transport: transport}
 $ openssl s_client -connect dsp.example.com:443 -showcerts
 
 # 常见问题:
-# 1. 缺少 intermediate certificate (Let's Encrypt R3)
-# 2. 证书过期
-# 3. 域名不匹配 (SAN 中没有请求的域名)
 
 # 验证证书
 $ openssl x509 -in cert.pem -noout -text | grep -A1 "Subject Alternative Name"
@@ -687,9 +681,6 @@ $ openssl x509 -in cert.pem -noout -text | grep -A1 "Subject Alternative Name"
 $ go tool pprof -http=:8080 http://dsp.example.com/debug/pprof/profile?seconds=30
 
 # 如果发现 crypto/tls 占用大量 CPU:
-# 1. 启用 session resumption (减少 ECDHE 计算)
-# 2. 使用 X25519 代替 P-256 (更快)
-# 3. 启用 HTTP/2 连接复用 (减少握手次数)
 ```
 
 ### 6.2 性能优化清单

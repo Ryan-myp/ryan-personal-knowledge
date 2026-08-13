@@ -1170,7 +1170,6 @@ func (b *backend) Defrag() error {
 # 典型配置：
 # --auto-compaction-mode=periodic
 # --auto-compaction-retention=1h    # 每小时 compaction
-# 
 # 或：
 # --auto-compaction-mode=revision
 # --auto-compaction-retention=10000 # 保留最近 10000 个 revision
@@ -1180,10 +1179,6 @@ func (b *backend) Defrag() error {
 # 一般每周 1-2 次，或在磁盘使用率 > 80% 时执行
 
 # 生产环境脚本示例：
-# 1. 先 compaction
-# 2. 等待 compaction 完成
-# 3. 在低峰期 defrag
-# 4. 验证数据完整性
 ```
 
 
@@ -1640,17 +1635,13 @@ $ etcdctl member list --write-out=table
 # 检查各成员状态
 
 解决方案：
-# 1. 手动触发 compaction
 $ etcdctl compact <revision>
 
-# 2. 在低峰期执行 defrag
 $ etcdctl defrag
 
-# 3. 调整自动 compaction 策略
 # --auto-compaction-mode=periodic
 # --auto-compaction-retention=1h
 
-# 4. 如果数据量过大，考虑增加 quota
 # --quota-backend-bytes=4294967296  # 4GB
 ```
 
@@ -1676,13 +1667,9 @@ $ etcdctl endpoint health --write-out=table
 # 检查各节点健康状态
 
 解决方案：
-# 1. 使用 NVMe SSD，避免 SATA SSD
-# 2. 调整 election-timeout：
 #    网络稳定：100ms * 10 = 1s
 #    网络不稳定：500ms * 10 = 5s
-# 3. 启用 mlock 防止 swap：
 #    --enable-mlock=true
-# 4. 调整 GC 目标：
 #    GOGC=100 (默认)
 ```
 
@@ -1706,10 +1693,6 @@ $ etcdctl endpoint status --write-out=json | jq '.[].Stats.WatchCount'
 # 查看各节点 watch 数量
 
 解决方案：
-# 1. 缩小 watch 范围（用 prefix 而非 watch /）
-# 2. 客户端实现 backpressure（channel 满时暂停消费）
-# 3. 批量操作使用 Txn 而非多次 Put
-# 4. 监控 slow watcher 数量
 ```
 
 #### 问题 4：客户端连接被拒绝
@@ -1725,17 +1708,14 @@ $ ss -s  # 查看 socket 统计
 $ ulimit -n  # 查看文件描述符限制
 
 解决方案：
-# 1. 增加文件描述符限制
 $ ulimit -n 65536
 
-# 2. 调整 etcd 连接池
 # clientv3.Config:
 #   DialTimeout: 5 * time.Second
 #   DialKeepAliveTime: 10 * time.Second
 #   DialKeepAliveTimeout: 5 * time.Second
 #   MaxCallSendMsgSize: 2 * 1024 * 1024  # 2MB
 
-# 3. 使用连接复用
 ```
 
 ### 11.2 性能调优 Checklist

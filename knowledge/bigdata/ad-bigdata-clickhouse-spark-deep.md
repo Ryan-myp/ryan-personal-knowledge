@@ -195,12 +195,10 @@ spark = SparkSession.builder \
     .config("spark.sql.shuffle.partitions", "200") \
     .getOrCreate()
 
-# 1. 加载事件数据
 impressions_df = spark.read.parquet("/data/ad/impressions")
 clicks_df = spark.read.parquet("/data/ad/clicks")
 conversions_df = spark.read.parquet("/data/ad/conversions")
 
-# 2. 用户级特征
 user_features = impressions_df.groupby("user_id").agg(
     count("*").alias("total_impressions_30d"),
     count("user_id").alias("unique_days_active_30d"),
@@ -212,7 +210,6 @@ user_features = impressions_df.groupby("user_id").agg(
     avg("cpc").alias("avg_cpc_30d"),
 )
 
-# 3. 广告系列级特征
 campaign_features = impressions_df.groupby("campaign_id").agg(
     count("*").alias("total_impressions"),
     _sum("clicks").alias("total_clicks"),
@@ -224,23 +221,19 @@ campaign_features = impressions_df.groupby("campaign_id").agg(
     _max("day").alias("last_active_day"),
 )
 
-# 4. 时间特征
 impressions_with_time = impressions_df.withColumn("hour", hour("timestamp")) \
     .withColumn("day_of_week", dayofweek("timestamp")) \
     .withColumn("is_weekend", (dayofweek("timestamp").isin(1, 7)).cast("int")) \
     .withColumn("is_holiday", (weekofyear("timestamp").isin(1, 52)).cast("int"))
 
-# 5. 交叉特征
 cross_features = impressions_df.groupby("campaign_id", "hour").agg(
     count("*").alias("impressions_by_hour"),
     _sum("clicks").alias("clicks_by_hour"),
 )
 
-# 6. 合并特征
 user_features_df = user_features.withColumnRenamed("user_id", "user_id")
 campaign_features_df = campaign_features.withColumnRenamed("campaign_id", "campaign_id")
 
-# 7. 向量化
 assembler = VectorAssembler(
     inputCols=["total_impressions_30d", "total_clicks_30d", "total_conversions_30d",
                "avg_ctr_30d", "avg_cpc_30d"],
@@ -250,7 +243,6 @@ final_df = assembler.transform(user_features_df)
 normalizer = Normalizer(inputCol="features", outputCol="normalized_features", p=2.0)
 final_df = normalizer.transform(final_df)
 
-# 8. 保存特征
 final_df.write.parquet("/data/features/user_features.parquet")
 ```
 

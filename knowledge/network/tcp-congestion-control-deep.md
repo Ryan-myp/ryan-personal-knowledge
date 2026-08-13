@@ -504,18 +504,14 @@ DCTCP     | 15ms| 18ms  | 30ms
 **排查步骤**：
 
 ```bash
-# 1. 检查当前拥塞控制算法
 $ sysctl net.ipv4.tcp_congestion_control
 net.ipv4.tcp_congestion_control = bbr
 
-# 2. 查看 RTT 分布
 $ ss -tn state established '( sport = :8080 )' | awk '{print $5}' | cut -d: -f1 | xargs -I{} dig +short @{} -t any | wc -l
 
-# 3. 检查队列深度
 $ tc qdisc show dev eth0
 qdisc fq_codel 0: dev eth0 limit 10240p
 
-# 4. 对比不同算法的表现
 $ sudo tc qdisc add dev eth0 root handle 1: prio bands 3
 $ sudo ipset create bbr_ips hash:ip
 $ iptables -t mangle -A OUTPUT -m set --match-set bbr_ips dst -j MARK --set-mark 1
@@ -556,7 +552,6 @@ sudo sysctl -w net.core.somaxconn=8192
 
 # 使用 Cubic 或 BBR
 sudo sysctl -w net.ipv4.tcp_congestion_control=cubic
-# 或
 sudo sysctl -w net.ipv4.tcp_congestion_control=bbr
 ```
 

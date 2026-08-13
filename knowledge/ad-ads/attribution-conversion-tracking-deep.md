@@ -950,16 +950,12 @@ func NewMultiModelAttribution() *MultiModelAttribution {
 ### 10.1 搭建归因测试环境
 
 ```bash
-# 1. 启动 Kafka
 docker-compose up -d kafka
 
-# 2. 启动 ClickHouse
 docker-compose up -d clickhouse
 
-# 3. 启动 Redis
 docker-compose up -d redis
 
-# 4. 运行归因引擎
 go run main.go --model=time_decay --window=30d
 ```
 

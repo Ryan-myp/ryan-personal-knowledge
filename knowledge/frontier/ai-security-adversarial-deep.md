@@ -305,10 +305,6 @@ func (d *Detector) Detect(ctx context.Context, event ClickEvent) (bool, float64)
 ## 六、动手验证
 
 ```bash
-# 1. 实现对抗训练
-# 2. 部署异常检测
-# 3. 配置告警规则
-# 4. 测试防御效果
 ```
 ## 自测题
 

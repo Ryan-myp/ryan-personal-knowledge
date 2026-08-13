@@ -118,9 +118,6 @@ func (e *EdgeNode) Predict(ctx context.Context, data []byte) (*Prediction, error
 ## 四、动手验证
 
 ```bash
-# 1. 部署智能合约
-# 2. 测试边缘推理
-# 3. 监控性能
 ```
 ## 自测题
 

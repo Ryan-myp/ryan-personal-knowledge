@@ -415,27 +415,22 @@ Breakdowns: age, gender, country, region, city, device_platform
 ## 六、动手验证
 
 ```bash
-# 1. 创建广告系列
 # - 选择目标
 # - 设置预算
 # - 选择出价策略
 
-# 2. 创建广告组
 # - 设置定向
 # - 选择投放位置
 # - 设置预算
 
-# 3. 创建广告创意
 # - 上传素材
 # - 编写文案
 # - 设置 CTA
 
-# 4. 配置转化追踪
 # - 安装 Pixel
 # - 配置 Conversion API
 # - 验证数据
 
-# 5. 监控和优化
 # - 查看 Insights
 # - 分析表现
 # - 调整策略

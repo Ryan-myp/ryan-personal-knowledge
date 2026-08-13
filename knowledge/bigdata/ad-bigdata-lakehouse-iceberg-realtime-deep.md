@@ -297,11 +297,6 @@ suite = context.data_sources["ad_events"].add_checkpoint(
 )
 
 # 质量规则：
-# 1. 完整性：event_type, campaign_id, timestamp 不能为空
-# 2. 有效性：amount >= 0, impressions >= 0
-# 3. 一致性：同一 campaign 的 platform 应该一致
-# 4. 时效性：timestamp 不应该超过 1 小时
-# 5. 唯一性：event_id 不能重复
 
 # 执行检查
 result = suite.run()

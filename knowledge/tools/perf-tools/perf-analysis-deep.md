@@ -109,13 +109,10 @@ go tool trace trace.out
 ### 3.1 生成火焰图
 
 ```bash
-# 1. 采样
 perf record -F 99 -g -- ./myapp
 
-# 2. 生成火焰图
 perf script | stackcollapse-perf.pl | flamegraph.pl > flame.svg
 
-# 3. 浏览器打开
 open flame.svg
 ```
 
@@ -142,7 +139,6 @@ open flame.svg
 ## 五、动手验证
 
 ```bash
-# 1. 创建一个测试程序
 cat > bench.go << 'EOF'
 package main
 
@@ -161,7 +157,6 @@ func main() {
 }
 EOF
 
-# 2. 运行并分析
 go run bench.go
 go tool pprof -http=:8081 bench.prof
 ```

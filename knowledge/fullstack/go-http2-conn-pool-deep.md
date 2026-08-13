@@ -421,9 +421,6 @@ import _ "net/http/pprof"
 curl -v --http2 https://example.com
 
 # 常见问题：
-# 1. 代理不支持 HTTP/2
-# 2. TLS 配置不正确
-# 3. 连接数超过 MAX_CONCURRENT_STREAMS
 ```
 
 ### 3. 连接池打满

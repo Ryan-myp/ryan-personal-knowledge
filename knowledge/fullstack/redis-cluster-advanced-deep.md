@@ -419,10 +419,6 @@ redis-cli INFO memory
 # maxmemory_human: 2.00G
 
 # 优化：
-# 1. 增加 maxmemory
-# 2. 调整淘汰策略
-# 3. 设置合理的 TTL
-# 4. 使用 Redis 4.0+ 的 LFU 策略
 ```
 
 ### 3. Pub/Sub 消息丢失
@@ -432,9 +428,6 @@ redis-cli INFO memory
 redis-cli PUBSUB NUMSUB channel_name
 
 # 优化：
-# 1. 使用 Redis Streams 替代 Pub/Sub
-# 2. 增加消费者数量
-# 3. 设置合理的超时
 ```
 
 ---

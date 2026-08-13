@@ -714,16 +714,12 @@ func findrunnable() *g {
 ### 9.3 调试技巧
 
 ```bash
-# 1. 启用详细调度日志
 GODEBUG=schedtrace=1000,scheddetail=1 ./your-app
 
-# 2. 捕获goroutine dump
 kill -SIGUSR1 <pid>
 
-# 3. 分析CPU profile
 go tool pprof http://localhost:6060/debug/pprof/profile?seconds=30
 
-# 4. 查看scheduler统计
 runtime Schedstats()
 ```
 

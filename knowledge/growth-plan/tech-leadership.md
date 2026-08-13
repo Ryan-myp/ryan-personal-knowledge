@@ -1531,10 +1531,8 @@ func (m *DebtManager) GetDebtByType() map[DebtType]int {
 ### 6.1 建立 ADR 机制
 
 ```bash
-# 1. 创建 ADR 目录
 mkdir -p decisions
 
-# 2. 创建第一个 ADR
 cat > decisions/ADR-001-kafka-for-event-sourcing.md << 'EOF'
 # ADR-001: 使用 Kafka 实现事件溯源
 
@@ -1558,7 +1556,6 @@ cat > decisions/ADR-001-kafka-for-event-sourcing.md << 'EOF'
 [正面/负面影响]
 EOF
 
-# 3. 提交
 git add decisions/
 git commit -m "docs: 建立 ADR 机制"
 ```
@@ -1566,7 +1563,6 @@ git commit -m "docs: 建立 ADR 机制"
 ### 6.2 建立技术债清单
 
 ```bash
-# 1. 创建技术债清单
 cat > tech-debt.md << 'EOF'
 # 技术债清单
 

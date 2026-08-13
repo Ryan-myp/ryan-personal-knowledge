@@ -113,21 +113,17 @@ from langchain_openai import ChatOpenAI
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.tools import tool
 
-# 1. 定义工具
 @tool
 def get_weather(city: str) -> str:
     """获取城市天气"""
     return f"{city}的天气是晴天，温度25度"
 
-# 2. 创建 LLM
 llm = ChatOpenAI(model="gpt-3.5-turbo")
 
-# 3. 创建 Agent
 tools = [get_weather]
 agent = create_tool_calling_agent(llm, tools, None)
 executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
 
-# 4. 运行
 result = executor.invoke({"input": "北京天气怎么样？"})
 print(result["output"])
 ```
@@ -397,14 +393,12 @@ class SimpleRAG:
 from langchain_chroma import Chroma
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-# 1. 准备文档
 documents = [
     "RAG 是一种检索增强生成的技术。",
     "它通过检索相关知识来增强 LLM 的回答能力。",
     "RAG 的核心组件包括向量化、向量数据库和重排序。"
 ]
 
-# 2. 切片
 splitter = RecursiveCharacterTextSplitter(
     chunk_size=100,
     chunk_overlap=20
@@ -412,13 +406,11 @@ splitter = RecursiveCharacterTextSplitter(
 chunks = splitter.split_text("\n".join(documents))
 print("切片结果:", chunks)
 
-# 3. 创建向量数据库
 vectorstore = Chroma.from_texts(
     texts=chunks,
     embedding=OpenAIEmbeddings()
 )
 
-# 4. 检索
 results = vectorstore.similarity_search("什么是 RAG?", k=2)
 for r in results:
     print("文档:", r.page_content)
@@ -623,7 +615,6 @@ for doc in ensemble_retriever.invoke("什么是 RAG?"):
 # pip install pyautogen
 import autogen
 
-# 1. 创建 Agent
 user_proxy = autogen.UserProxyAgent(
     name="User",
     human_input_mode="NEVER",
@@ -642,14 +633,12 @@ writer = autogen.AssistantAgent(
     system_message="你是一个写作专家，负责撰写报告。"
 )
 
-# 2. 启动对话
 user_proxy.initiate_chat(
     researcher,
     message="请研究 Python 的 GMP 调度器原理"
 )
 # researcher 会回复研究结果
 
-# 3. 传递给 Writer
 writer.send(
     researcher.last_message()["content"],
     user_proxy

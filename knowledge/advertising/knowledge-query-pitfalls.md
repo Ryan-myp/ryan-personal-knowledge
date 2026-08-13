@@ -14,15 +14,12 @@
 ## 调试方法
 
 ```bash
-# 1. 检查 query 是否正确路由到 knowledge_card
 curl -X POST http://localhost:8080/api/query \
   -H "Content-Type: application/json" \
   -d '{"query": "Redis cluster 怎么搭建", "scope": "code"}'
 
-# 2. 检查 scenario_card 是否命中
 # 查看 response 中的 source_mode 字段
 
-# 3. 检查 API 文档匹配
 # 查看 render_answer_context 中的 api_docs 字段
 ```
 

@@ -530,7 +530,6 @@ func (s *Service) CurrentRuntime(c *gin.Context) (*Account, string, bool) {
 **排查步骤**：
 
 ```bash
-# 1. 检查 password_hash 查询是否走索引
 EXPLAIN ANALYZE SELECT id, email, phone, name, role, tenant_id, workspace_id, status, COALESCE(password_hash, '')
 FROM users WHERE LOWER(email) = LOWER('test@example.com') LIMIT 1;
 

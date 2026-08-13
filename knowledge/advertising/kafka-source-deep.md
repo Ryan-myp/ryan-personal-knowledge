@@ -405,10 +405,6 @@ private void ensureActiveGroup() throws InterruptedException {
 kafka-topics.sh --describe --topic my-topic --bootstrap-server broker:9092
 
 # 常见问题：
-# 1. 网络延迟高 → 增加 replica.lag.time.max.ms
-# 2. 磁盘 IO 瓶颈 → 使用 SSD
-# 3. 消息太大 → 减小 max.message.bytes
-# 4. 副本数太多 → 减少 replicas 数量
 ```
 
 ### 2. Consumer 反复 Rebalance
@@ -418,10 +414,6 @@ kafka-topics.sh --describe --topic my-topic --bootstrap-server broker:9092
 kafka-consumer-groups.sh --describe --group my-group --bootstrap-server broker:9092
 
 # 常见问题：
-# 1. 处理时间过长 → 增加 max.poll.interval.ms
-# 2. 心跳超时 → 增加 session.timeout.ms
-# 3. GC 停顿 → 调整 JVM 参数
-# 4. 网络不稳定 → 检查网络延迟
 ```
 
 ### 3. Controller 频繁切换
@@ -431,9 +423,6 @@ kafka-consumer-groups.sh --describe --group my-group --bootstrap-server broker:9
 kafka-metadata.sh --snapshot /var/kafka-logs/meta.properties --command "controller"
 
 # 常见问题：
-# 1. ZK 会话超时 → 增加 zookeeper.session.timeout.ms
-# 2. Broker 频繁上下线 → 检查服务器稳定性
-# 3. 网络分区 → 检查网络拓扑
 ```
 
 ---

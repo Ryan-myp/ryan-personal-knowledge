@@ -457,21 +457,17 @@ func (c *DoHClient) Query(hostname string) ([]net.IP, error) {
 
 **排查**：
 ```bash
-# 1. 检查本地 DNS 缓存
 $ dig @127.0.0.1 weread.qq.com +short
 103.235.46.39
 
-# 2. 检查不同递归服务器的结果
 $ dig @8.8.8.8 weread.qq.com +short
 103.235.46.39
 $ dig @1.1.1.1 weread.qq.com +short
 103.235.46.39
 
-# 3. 检查 ISP DNS
 $ dig @isp-dns weread.qq.com +short
 192.168.1.100  ← 异常！
 
-# 4. 检查 TTL
 $ dig weread.qq.com +ttl
 ;; ANSWER SECTION:
 weread.qq.com.  300  IN  A  103.235.46.39

@@ -205,10 +205,6 @@ OpenFlow 流表匹配:
 ## 五、动手验证
 
 ```bash
-# 1. 使用 dig/nslookup 分析 DNS 查询
-# 2. 配置 DNSSEC 验证
-# 3. 测试 DoH/DoT
-# 4. 使用 Wireshark 分析 SDN 流量
 ```
 ## 自测题
 

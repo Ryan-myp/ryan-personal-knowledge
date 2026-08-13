@@ -360,10 +360,6 @@ func (n *Notifier) Notify(ctx context.Context, url string, payload interface{}) 
 ## 七、动手验证
 
 ```bash
-# 1. 实现 Saga 编排器
-# 2. 实现 TCC 服务
-# 3. 测试补偿逻辑
-# 4. 验证最终一致性
 ```
 ## 自测题
 

@@ -214,10 +214,8 @@ tail -f access.log | goaccess --log-format=COMBINED -o /dev/stdout
 ## 六、动手验证
 
 ```bash
-# 1. 安装 Delve
 go install github.com/go-delve/delve/cmd/dlv@latest
 
-# 2. 创建一个简单的 Go 程序
 cat > main.go << 'EOF'
 package main
 
@@ -241,13 +239,10 @@ func main() {
 }
 EOF
 
-# 3. 启动程序
 go run main.go &
 
-# 4. 使用 pprof 分析
 go tool pprof -http=:8081 http://localhost:6060/debug/pprof/profile?seconds=30
 
-# 5. 使用 Delve 调试
 dlv debug main.go
 (dlv) break main.go:15
 (dlv) continue

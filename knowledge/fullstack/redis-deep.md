@@ -578,9 +578,6 @@ SHOW STATUS LIKE 'Innodb_buffer_pool_read%';
 # 理想值 > 99%
 
 # 解决方案：
-# 1. 增加 innodb_buffer_pool_size（建议物理内存的 70-80%）
-# 2. 检查是否有全表扫描
-# 3. 优化慢查询
 ```
 
 ### 2. AOF 文件过大
@@ -604,10 +601,6 @@ redis-cli INFO aof
 redis-cli SLOWLOG GET 10
 
 # 常见阻塞原因：
-# 1. KEYS * → 改用 SCAN
-# 2. SORT 大列表 → 避免
-# 3. 大 key 删除 → 用 UNLINK
-# 4. 长时间事务 → 拆分
 ```
 
 ---

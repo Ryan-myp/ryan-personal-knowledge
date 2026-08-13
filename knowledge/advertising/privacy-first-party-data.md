@@ -918,14 +918,12 @@ GDPR 广告合规 Checklist:
 ### 8.1 测试第一方数据匹配
 
 ```bash
-# 1. 准备测试数据 (Hash)
 python3 -c "
 import hashlib
 print('Email Hash:', hashlib.sha256('test@example.com'.lower().strip().encode()).hexdigest())
 print('Phone Hash:', hashlib.sha256('+8613800138000'.lower().strip().encode()).hexdigest())
 "
 
-# 2. 发送测试事件
 curl -X POST "https://graph.facebook.com/v18.0/YOUR_PIXEL_ID/events?access_token=YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -944,20 +942,16 @@ curl -X POST "https://graph.facebook.com/v18.0/YOUR_PIXEL_ID/events?access_token
     }]
   }'
 
-# 3. 检查匹配分数
 # Events Manager → Diagnostics → 查看匹配分数
 ```
 
 ### 8.2 同意管理测试
 
 ```bash
-# 1. 测试 CMP 同意检查
 # 访问网站, 关闭所有 Cookie 同意, 检查是否加载了 Pixel
 
-# 2. 验证 CAPI 客户端不发送数据
 # 调试模式下, 检查网络请求是否被阻止
 
-# 3. 测试用户权利
 # 发送 GET /api/user/export 和 DELETE /api/user 测试数据导出/删除
 ```
 

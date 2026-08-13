@@ -410,15 +410,12 @@ run_cmd docker push myapp:latest
 ## 六、动手验证
 
 ```bash
-# 1. 安装 Cobra
 go get github.com/spf13/cobra@latest
 go get github.com/spf13/viper@latest
 
-# 2. 创建项目
 mkdir mycli && cd mycli
 go mod init mycli
 
-# 3. 编写 main.go
 cat > main.go << 'EOF'
 package main
 
@@ -443,7 +440,6 @@ func main() {
 }
 EOF
 
-# 4. 构建并测试
 go build -o mycli .
 ./mycli --help
 ./mycli

@@ -232,17 +232,13 @@ services:
 ## 七、动手验证
 
 ```bash
-# 1. 启动基础设施
 docker-compose up -d consul redis kafka clickhouse
 
-# 2. 启动服务
 make build
 make run
 
-# 3. 压测
 wrk -t12 -c400 -d30s http://localhost:8080/api/bid
 
-# 4. 分析数据
 clickhouse-client --query "SELECT ..."
 ```
 ## 自测题

@@ -530,25 +530,20 @@ Product Set 5: "High Margin"
 ## 八、动手验证
 
 ```bash
-# 1. 创建 Catalog
 # - 设置名称、国家、货币
 # - 获取 Catalog ID
 
-# 2. 上传商品
 # - 准备 TSV 文件
 # - 批量上传商品
 # - 验证商品数量
 
-# 3. 创建 Product Set
 # - 设置筛选规则
 # - 验证商品数量
 
-# 4. 创建 DPA 广告系列
 # - 选择 Catalog Sales 目标
 # - 选择 Product Set
 # - 设置受众和出价
 
-# 5. 监控和优化
 # - 查看商品同步状态
 # - 分析广告表现
 # - 优化 Feed 和创意

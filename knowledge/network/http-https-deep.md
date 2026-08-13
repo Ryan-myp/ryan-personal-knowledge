@@ -174,10 +174,6 @@ tlsConfig := &tls.Config{
 ## 五、动手验证
 
 ```bash
-# 1. 使用 curl 分析 HTTP 请求
-# 2. 使用 wireshark 抓包分析 TLS 握手
-# 3. 测试 HTTP/2 服务器推送
-# 4. 配置 Go TLS 参数
 ```
 ## 自测题
 

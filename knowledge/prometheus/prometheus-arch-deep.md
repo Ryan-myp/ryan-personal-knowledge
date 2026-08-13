@@ -141,10 +141,8 @@ func (wp *WorkerPool) Start(n int) {
 
 **排查步骤**:
 ```bash
-# 1. 抓取heap profile
 wget http://localhost:6060/debug/pprof/heap
 
-# 2. 分析内存分布
 go tool pprof heap
 top 10 show
 ```

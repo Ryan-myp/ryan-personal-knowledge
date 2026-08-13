@@ -1014,13 +1014,10 @@ P99 延迟从 50ms 飙升到 500ms
 **排查步骤：**
 
 ```bash
-# 1. 检查 Redis 延迟
 redis-cli --latency-history
 
-# 2. 检查 Elasticsearch 查询耗时
 GET _profile?human=true
 
-# 3. 检查 GC 停顿
 go tool trace trace.out | grep gc
 ```
 

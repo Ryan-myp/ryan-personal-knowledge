@@ -1076,14 +1076,11 @@ func buildVisibilitySQL(access governance.AccessContext) string {
 ### 8.1 本地搭建治理数据库
 
 ```bash
-# 1. 初始化 SQLite 数据库
 cd ~/ryan-personal-knowledge/knowledge/ad-platform-example
 sqlite3 governance.db < schema.sql
 
-# 2. 运行 EnsureDefaults 种子数据
 go run cmd/bootstrap/main.go
 
-# 3. 验证资源作用域
 sqlite3 governance.db "SELECT resource_type, resource_id, visibility, owner_id FROM resource_scopes LIMIT 10;"
 ```
 

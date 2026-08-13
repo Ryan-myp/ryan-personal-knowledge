@@ -176,16 +176,12 @@ Go版本: 1.21.5
 ### 5.2 诊断工具
 
 ```bash
-# 1. 查看goroutine dump
 curl http://localhost:6060/debug/pprof/goroutine?debug=2
 
-# 2. 查看CPU profile
 go tool pprof http://localhost:6060/debug/pprof/profile
 
-# 3. 查看内存profile
 go tool pprof http://localhost:6060/debug/pprof/heap
 
-# 4. 查看trace
 go tool trace trace.out
 ```
 

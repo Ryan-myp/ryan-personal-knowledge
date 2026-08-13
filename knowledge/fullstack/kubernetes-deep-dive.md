@@ -800,39 +800,31 @@ type CNIPlugin interface {
 ### 4.2 排障黄金命令
 
 ```bash
-# 1. 检查集群状态
 kubectl get nodes -o wide
 kubectl get namespaces
 kubectl api-resources
 
-# 2. 查看 Pod 详细信息 (排查 Pending/CrashLoop)
 kubectl describe pod <name> [-n <namespace>]
 kubectl get events --sort-by='.lastTimestamp'
 kubectl logs <pod-name> -n <namespace> --previous  # 查看上一次崩溃日志
 
-# 3. 查看资源使用
 kubectl top nodes
 kubectl top pods -n <namespace>
 
-# 4. 检查网络
 kubectl get svc
 kubectl get endpoints <service-name> -n <namespace>
 kubectl exec -it <pod> -- ping <target-ip>  # 测试 Pod 间连通
 
-# 5. 检查 Node 状态
 kubectl describe node <node-name>
 kubectl logs -n kube-system kubelet-<node-name>
 
-# 6. 检查 etcd
 etcdctl endpoint health --cacert=/etc/ssl/etcd/ssl/ca.crt \
   --cert=/etc/ssl/etcd/ssl/healthcheck-client.crt \
   --key=/etc/ssl/etcd/ssl/healthcheck-client.key
 
-# 7. 查看 API Server 性能
 kubectl proxy --port=8001
 curl http://localhost:8001/metrics  # Prometheus 指标
 
-# 8. 查看调度事件
 kubectl get events --field-selector reason=FailedScheduling
 ```
 
@@ -999,45 +991,35 @@ readinessProbe:
 ### 6.1 本地搭建 K8s 集群（minikube）
 
 ```bash
-# 1. 安装 minikube (macOS)
 brew install minikube
 brew install kubectl
 
-# 2. 启动集群
 minikube start --driver=docker --cpus=4 --memory=8192 --disk-size=50g
 
-# 3. 验证
 kubectl cluster-info
 kubectl get nodes
 kubectl get pods -A
 
-# 4. 部署测试
 kubectl create deployment hello-minikube --image=k8s.gcr.io/echoserver:1.4
 kubectl expose deployment hello-minikube --type=NodePort --port=8080
 minikube service hello-minikube
 
-# 5. 清理
 minikube delete
 ```
 
 ### 6.2 验证 Pod 调度行为
 
 ```bash
-# 1. 创建带资源限制的 Deployment
 kubectl create deployment test-resource --image=nginx:alpine --replicas=3
 
-# 2. 设置资源请求
 kubectl set resources deployment test-resource \
   --requests=cpu=100m,memory=128Mi \
   --limits=cpu=500m,memory=256Mi
 
-# 3. 观察调度
 kubectl get pods -o wide -w  # 实时观察调度结果
 
-# 4. 查看调度事件
 kubectl get events --sort-by='.lastTimestamp'
 
-# 5. 模拟节点压力 (驱逐测试)
 kubectl cordon <node-name>  # 标记节点不可调度
 kubectl drain <node-name> --ignore-daemonsets --delete-emptydir-data  # 驱逐 Pod
 kubectl uncordon <node-name>  # 重新可用
@@ -1046,19 +1028,15 @@ kubectl uncordon <node-name>  # 重新可用
 ### 6.3 验证 Service 网络
 
 ```bash
-# 1. 创建测试 Service
 kubectl create deployment nginx-test --image=nginx:alpine --replicas=2
 kubectl expose deployment nginx-test --port=80 --target-port=80
 
-# 2. 测试 Service 访问
 kubectl run -it --rm debug --image=busybox --restart=Never -- \
   wget -qO- --timeout=5 http://nginx-test
 
-# 3. 查看 Endpoint
 kubectl get endpoints nginx-test
 kubectl describe service nginx-test
 
-# 4. 模拟 Pod 故障，验证 readiness probe
 kubectl exec -it <pod-name> -- sh -c "kill -9 $(cat /tmp/pid)"
 # 观察: 从 Service 中自动移除
 ```

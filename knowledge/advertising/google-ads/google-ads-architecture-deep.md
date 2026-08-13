@@ -779,30 +779,24 @@ RSA 结构要求：
 ## 五、动手验证
 
 ```bash
-# 1. 创建 Google Ads 账户
 # 访问 https://ads.google.com
 
-# 2. 创建第一个搜索广告系列
 # - 选择目标：销售
 # - 选择类型：Search
 # - 设置预算：$50/天
 # - 选择出价策略：Maximize Clicks
 
-# 3. 创建广告组
 # - 命名：Running Shoes
 # - 添加关键词：[running shoes], "men running shoes", running shoes
 # - 添加否定关键词：[free], [cheap]
 
-# 4. 创建 RSA 广告
 # - 添加 5 个标题
 # - 添加 2 个描述
 # - 设置最终 URL
 
-# 5. 添加附加信息
 # - 站点链接：Shop Now, Sale Items
 # - 促销信息：Summer Sale - 50% Off
 
-# 6. 监控质量评分
 # - 检查关键词质量评分
 # - 分析影响质量评分的因素
 # - 实施优化措施

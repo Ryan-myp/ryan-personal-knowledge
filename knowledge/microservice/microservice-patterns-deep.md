@@ -1,458 +1,216 @@
-# 微服务架构模式深度实战
+# 微服务架构模式深度解析
 
-## 一、API Gateway 模式
+> 深入微服务核心模式：服务发现、API网关、Saga、Circuit Breaker、Sidecar。
+> 适用对象：架构师、后端工程师
 
-### 1.1 为什么需要 API Gateway？
+---
 
-微服务架构中，客户端需要调用多个服务。API Gateway 作为统一入口，解决鉴权、限流、路由等问题。
+## 1. 核心架构模式
 
-**核心功能：**
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     微服务架构全景图                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Client                                                         │
+│     │                                                           │
+│     ▼                                                           │
+│  ┌─────────────┐                                               │
+│  │ API Gateway │ ← 路由、限流、认证、日志                       │
+│  └──────┬──────┘                                               │
+│         │                                                       │
+│    ┌────┼────┬────┬────┬────┐                                  │
+│    ▼    ▼    ▼    ▼    ▼    ▼                                  │
+│  SvcA SvcB SvcC SvcD SvcE SvcF  ← 业务服务                     │
+│    │    │    │    │    │    │                                  │
+│    ▼    ▼    ▼    ▼    ▼    ▼                                  │
+│  [DB] [Cache] [MQ] [Search] [Stream]  ← 数据存储层            │
+│                                                                 │
+│  支撑组件: Service Mesh (Istio/Linkerd)                         │
+│           Config Center (Nacos/Apollo)                          │
+│           Registry (Consul/Etcd)                                │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-| 功能 | 说明 | 实现方式 |
-|------|------|----------|
-| 路由转发 | 将请求转发到后端服务 | 反向代理 |
-| 身份认证 | 验证用户身份 | JWT/OAuth2 |
-| 限流熔断 | 防止系统过载 | 令牌桶/漏桶 |
-| 日志监控 | 记录请求日志 | 结构化日志 |
-| 协议转换 | HTTP/gRPC 转换 | 适配器模式 |
+---
 
-### 1.2 Go 实现 API Gateway
+## 2. 服务发现与注册
+
+### 2.1 注册中心对比
 
 ```go
-package gateway
-
-import (
-	"context"
-	"net/http"
-	"net/http/httputil"
-	"net/url"
-	"sync"
-	"time"
-)
-
-type APIGateway struct {
-	routes      map[string]*Route
-	middlewares []MiddlewareFunc
-	timeout     time.Duration
-	stats       *StatsCollector
-	mu          sync.RWMutex
+// 服务发现接口
+type ServiceRegistry interface {
+    Register(service *ServiceInstance) error
+    Deregister(service *ServiceInstance) error
+    Discover(serviceName string) ([]*ServiceInstance, error)
+    Watch(serviceName string, watcher ServiceWatcher)
 }
 
-type Route struct {
-	Path       string
-	Backend    string
-	Methods    []string
-	Middleware []MiddlewareFunc
-	Timeout    time.Duration
-}
-
-type MiddlewareFunc func(http.Handler) http.Handler
-
-// AuthMiddleware 鉴权中间件
-func (g *APIGateway) AuthMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := r.Header.Get("Authorization")
-		if token == "" {
-			http.Error(w, "Missing token", http.StatusUnauthorized)
-			return
-		}
-		
-		claims, err := ValidateJWT(token)
-		if err != nil {
-			http.Error(w, "Invalid token", http.StatusUnauthorized)
-			return
-		}
-		
-		ctx := context.WithValue(r.Context(), "userID", claims.UserID)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
-
-// RateLimitMiddleware 限流中间件
-func (g *APIGateway) RateLimitMiddleware(limit int, window time.Duration) MiddlewareFunc {
-	buckets := make(map[string]*TokenBucket)
-	var mu sync.Mutex
-	
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			clientIP := getClientIP(r)
-			
-			mu.Lock()
-			bucket, exists := buckets[clientIP]
-			if !exists {
-				bucket = NewTokenBucket(limit, window)
-				buckets[clientIP] = bucket
-			}
-			mu.Unlock()
-			
-			if !bucket.Allow() {
-				g.stats.RecordRateLimit(clientIP)
-				http.Error(w, "Rate limited", http.StatusTooManyRequests)
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
-	}
-}
-
-// ServeHTTP 处理请求
-func (g *APIGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	route := g.findRoute(r.URL.Path)
-	if route == nil {
-		http.Error(w, "Not found", http.StatusNotFound)
-		return
-	}
-	
-	backendURL, _ := url.Parse(route.Backend)
-	proxy := httputil.NewSingleHostReverseProxy(backendURL)
-	
-	timeout := route.Timeout
-	if timeout == 0 {
-		timeout = 30 * time.Second
-	}
-	proxy.Timeout = timeout
-	
-	start := time.Now()
-	proxy.ServeHTTP(w, r)
-	duration := time.Since(start)
-	
-	g.stats.RecordRequest(route.Path, duration)
-}
-
-func (g *APIGateway) findRoute(path string) *Route {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	
-	if route, ok := g.routes[path]; ok {
-		return route
-	}
-	
-	for routePath, route := range g.routes {
-		if len(path) >= len(routePath) && path[:len(routePath)] == routePath {
-			return route
-		}
-	}
-	
-	return nil
+// 健康检查
+type HealthCheck interface {
+    Check(instance *ServiceInstance) bool
+    GetStatus(instance *ServiceInstance) HealthStatus
 }
 ```
 
-## 二、服务发现
-
-### 2.1 服务发现模式
+### 2.2 Consensus 算法
 
 ```
-注册中心:
-├── 服务注册: 服务启动时注册自己
-├── 服务续约: 定期发送心跳
-├── 服务注销: 服务关闭时注销
-└── 服务拉取: 客户端获取服务列表
+Raft 选举流程:
+1. Follower → Candidate (超时)
+2. Candidate → 请求投票
+3. 获得多数派投票 → Leader
+4. Leader → 复制日志 → 确认提交
 
-两种模式:
-├── 客户端侧负载均衡
-│   └── 客户端从注册中心获取服务列表
-└── 服务端侧负载均衡
-    └── 通过代理转发请求
+Zab (ZooKeeper):
+1. 广播提议
+2. Prepare 阶段
+3. Commit 阶段
+4. 同步更新
 ```
 
-### 2.2 Go 实现服务注册中心
+---
+
+## 3. 分布式事务
+
+### 3.1 Saga 模式
+
+```
+订单服务 ──▶ 库存服务 ──▶ 支付服务 ──▶ 积分服务
+  │             │             │             │
+  ▼             ▼             ▼             ▼
+补偿: 取消订单   恢复库存     退款         撤销积分
+
+补偿事务:
+- 幂等性保证
+- 最终一致性
+- 手动补偿 vs 自动补偿
+```
+
+### 3.2 TCC 模式
+
+```
+Try: 预留资源
+Confirm: 确认提交
+Cancel: 取消预留
+```
+
+---
+
+## 4. 熔断与限流
+
+### 4.1 Circuit Breaker
 
 ```go
-package discovery
-
-import (
-	"fmt"
-	"sync"
-	"time"
-)
-
-type ServiceInstance struct {
-	ID            string            `json:"id"`
-	Name          string            `json:"name"`
-	Address       string            `json:"address"`
-	Port          int               `json:"port"`
-	Healthy       bool              `json:"healthy"`
-	Tags          map[string]string `json:"tags"`
-	LastHeartbeat time.Time         `json:"last_heartbeat"`
-}
-
-type ServiceRegistry struct {
-	services map[string][]*ServiceInstance
-	mu       sync.RWMutex
-	ttl      time.Duration
-	stopCh   chan struct{}
-}
-
-func NewServiceRegistry(ttl time.Duration) *ServiceRegistry {
-	reg := &ServiceRegistry{
-		services: make(map[string][]*ServiceInstance),
-		ttl:      ttl,
-		stopCh:   make(chan struct{}),
-	}
-	go reg.healthCheck()
-	return reg
-}
-
-func (r *ServiceRegistry) Register(instance *ServiceInstance) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	
-	for _, existing := range r.services[instance.Name] {
-		if existing.ID == instance.ID {
-			existing.Address = instance.Address
-			existing.Port = instance.Port
-			existing.LastHeartbeat = time.Now()
-			existing.Healthy = true
-			return nil
-		}
-	}
-	
-	r.services[instance.Name] = append(r.services[instance.Name], instance)
-	return nil
-}
-
-func (r *ServiceRegistry) GetInstances(name string) ([]*ServiceInstance, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	
-	instances := r.services[name]
-	if len(instances) == 0 {
-		return nil, fmt.Errorf("no instances for %s", name)
-	}
-	
-	healthy := make([]*ServiceInstance, 0)
-	for _, inst := range instances {
-		if inst.Healthy && time.Since(inst.LastHeartbeat) < r.ttl {
-			healthy = append(healthy, inst)
-		}
-	}
-	
-	if len(healthy) == 0 {
-		return nil, fmt.Errorf("no healthy instances for %s", name)
-	}
-	
-	return healthy, nil
-}
-
-func (r *ServiceRegistry) healthCheck() {
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-	
-	for {
-		select {
-		case <-ticker.C:
-			r.checkHealth()
-		case <-r.stopCh:
-			return
-		}
-	}
-}
-```
-
-## 三、熔断器
-
-### 3.1 Circuit Breaker 状态机
-
-```
-CLOSED → OPEN (失败次数超过阈值)
-OPEN → HALF_OPEN (等待恢复时间)
-HALF_OPEN → CLOSED (成功次数达到阈值)
-HALF_OPEN → OPEN (失败)
-```
-
-### 3.2 Go 实现
-
-```go
-package circuitbreaker
-
-import (
-	"sync"
-	"time"
-)
-
-type State int
-
-const (
-	StateClosed State = iota
-	StateOpen
-	StateHalfOpen
-)
-
 type CircuitBreaker struct {
-	state        State
-	mu           sync.RWMutex
-	failures     int
-	successes    int
-	maxFailures  int
-	resetTimeout time.Duration
-	lastFailure  time.Time
-	halfOpenMax  int
+    state       CircuitState  // CLOSED, OPEN, HALF_OPEN
+    threshold   int           // 失败阈值
+    timeout     time.Duration // 恢复超时
+    halfOpenMax int           // HALF_OPEN 最大请求数
 }
 
-func NewCircuitBreaker(maxFailures int, resetTimeout time.Duration) *CircuitBreaker {
-	return &CircuitBreaker{
-		state:        StateClosed,
-		maxFailures:  maxFailures,
-		resetTimeout: resetTimeout,
-		halfOpenMax:  3,
-	}
-}
-
-func (cb *CircuitBreaker) Allow() bool {
-	cb.mu.RLock()
-	defer cb.mu.RUnlock()
-	
-	switch cb.state {
-	case StateClosed:
-		return true
-	case StateOpen:
-		if time.Since(cb.lastFailure) > cb.resetTimeout {
-			cb.mu.RUnlock()
-			cb.mu.Lock()
-			cb.state = StateHalfOpen
-			cb.successes = 0
-			cb.mu.Unlock()
-			cb.mu.RLock()
-			return true
-		}
-		return false
-	case StateHalfOpen:
-		return true
-	default:
-		return false
-	}
-}
-
-func (cb *CircuitBreaker) RecordSuccess() {
-	cb.mu.Lock()
-	defer cb.mu.Unlock()
-	
-	if cb.state == StateHalfOpen {
-		cb.successes++
-		if cb.successes >= cb.halfOpenMax {
-			cb.state = StateClosed
-			cb.failures = 0
-		}
-	} else {
-		cb.failures = 0
-	}
-}
-
-func (cb *CircuitBreaker) RecordFailure() {
-	cb.mu.Lock()
-	defer cb.mu.Unlock()
-	
-	cb.failures++
-	cb.lastFailure = time.Now()
-	
-	if cb.state == StateHalfOpen {
-		cb.state = StateOpen
-	} else if cb.failures >= cb.maxFailures {
-		cb.state = StateOpen
-	}
-}
+// 状态转换
+// CLOSED → OPEN: 失败率超过阈值
+// OPEN → HALF_OPEN: 超时后
+// HALF_OPEN → CLOSED: 成功请求达到阈值
+// HALF_OPEN → OPEN: 请求失败
 ```
 
-## 四、限流器
-
-### 4.1 令牌桶算法
+### 4.2 限流算法
 
 ```
-令牌桶:
-├── 固定速率生成令牌
-├── 请求消耗令牌
-└── 无令牌则拒绝
+令牌桶 (Token Bucket):
+- 匀速产生令牌
+- 请求消耗令牌
+- 突发流量可借用
 
-滑动窗口:
-├── 将时间窗口分成多个小格
-├── 统计每个小格的请求数
-└── 总和超过阈值则拒绝
+漏桶 (Leaky Bucket):
+- 匀速流出
+- 突发流量排队
+- 平滑输出
+
+滑动窗口 (Sliding Window):
+- 时间片统计
+- 动态调整
+- 精确控制
 ```
 
-### 4.2 Go 实现令牌桶
+---
 
-```go
-package ratelimit
+## 5. Sidecar 模式
 
-import (
-	"sync"
-	"time"
-)
-
-type TokenBucket struct {
-	tokens     float64
-	maxTokens  float64
-	refillRate float64 // tokens per second
-	lastRefill time.Time
-	mu         sync.Mutex
-}
-
-func NewTokenBucket(maxTokens float64, refillRate float64) *TokenBucket {
-	return &TokenBucket{
-		tokens:     maxTokens,
-		maxTokens:  maxTokens,
-		refillRate: refillRate,
-		lastRefill: time.Now(),
-	}
-}
-
-func (tb *TokenBucket) Allow() bool {
-	tb.mu.Lock()
-	defer tb.mu.Unlock()
-	
-	now := time.Now()
-	elapsed := now.Sub(tb.lastRefill).Seconds()
-	tb.tokens += elapsed * tb.refillRate
-	if tb.tokens > tb.maxTokens {
-		tb.tokens = tb.maxTokens
-	}
-	tb.lastRefill = now
-	
-	if tb.tokens >= 1 {
-		tb.tokens--
-		return true
-	}
-	return false
-}
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Sidecar 架构                                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  Application Container                                  │   │
+│  │  ┌─────────────┐    ┌─────────────┐                     │   │
+│  │  │  App Main   │◄──►│  Sidecar    │                     │   │
+│  │  │  Process    │    │  Proxy      │                     │   │
+│  │  └─────────────┘    └─────────────┘                     │   │
+│  │          │                  │                           │   │
+│  │          ▼                  ▼                           │   │
+│  │      [DB/Cache]       [Service Mesh]                    │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│  Sidecar 职责:                                                  │
+│  ├── 服务发现与注册                                             │
+│  ├── 负载均衡                                                   │
+│  ├── 熔断限流                                                   │
+│  ├── 链路追踪                                                   │
+│  ├── 安全认证                                                   │
+│  └── 流量管理                                                   │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-## 五、自测题
+---
 
-1. API Gateway 的核心功能有哪些？
-2. Circuit Breaker 的三种状态如何转换？
-3. 服务发现的健康检查机制是什么？
-4. 令牌桶算法与滑动窗口算法各有什么优缺点？
+## 6. API 网关模式
 
-## 六、动手验证
-
-```bash
-# 1. 实现 API Gateway
-# 2. 实现服务注册中心
-# 3. 实现熔断器
-# 4. 集成测试
+```yaml
+# 网关配置示例
+apiVersion: gateway.istio.io/v1beta1
+kind: EnvoyFilter
+metadata:
+  name: rate-limit
+spec:
+  workloadSelector:
+    labels:
+      app: gateway
+  configPatches:
+    - applyTo: HTTP_FILTER
+      match:
+        context: SIDECAR_INBOUND
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: envoy.filters.http.local_ratelimit
+          typed_config:
+            "@type": type.googleapis.com/udpa.type.v1.TypedStruct
+            type_url: type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
+            value:
+              stat_prefix: http_local_rate_limiter
+              token_bucket:
+                max_tokens: 1000
+                tokens_per_fill: 1000
+                fill_interval: 60s
 ```
-## 自测题
 
-### Q1: 本模块的核心设计要点是什么？
+---
 
-<details><summary>点击查看答案</summary>
-核心设计遵循高内聚低耦合原则，包含接口层、业务层、数据层和服务层，通过定义明确的接口进行通信。
-</details>
+## 7. 实践 Checklist
 
-### Q2: 生产环境下需要注意的关键运维事项有哪些？
+- [ ] 服务治理：注册中心、配置中心
+- [ ] 通信：gRPC/REST、序列化、负载均衡
+- [ ] 容错：熔断、降级、限流、重试
+- [ ] 事务：Saga、TCC、本地消息表
+- [ ] 可观测：日志、监控、链路追踪
+- [ ] 部署：容器化、CI/CD、灰度发布
 
-<details><summary>点击查看答案</summary>
-关键运维包括：监控告警、容量规划、备份恢复、灰度发布、性能调优和故障预案。建议使用 Prometheus + Grafana 构建完整监控体系。
-</details>
+---
 
-### Q3: 请提供一个相关的 Go 语言生产级实现示例
-
-<details><summary>点击查看答案</summary>
-```go
-package main
-import "fmt"
-func main() {
-    fmt.Println("Go 生产级代码示例")
-}
-```
-</details>
+**参考**: Martin Fowler Microservices、Netflix ArchUnit、Istio 官方文档
