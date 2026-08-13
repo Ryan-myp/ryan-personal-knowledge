@@ -1,105 +1,132 @@
 # Go并发模式实战 - 资深专家深度实现
 
-## 一、Worker Pool模式
+## 一、并发模式
 
-```go
-func worker(id int, jobs <-chan int, results chan<- int) {
-    for j := range jobs {
-        fmt.Printf("worker %d processing job %d\n", id, j)
-        time.Sleep(time.Second)
-        results <- j * 2
-    }
-}
-
-func main() {
-    jobs := make(chan int, 100)
-    results := make(chan int, 100)
-    
-    // 启动3个worker
-    for w := 1; w <= 3; w++ {
-        go worker(w, jobs, results)
-    }
-    
-    // 发送任务
-    go func() {
-        for j := 1; j <= 9; j++ {
-            jobs <- j
-        }
-        close(jobs)
-    }()
-    
-    // 收集结果
-    for a := 1; a <= 9; a++ {
-        <-results
-    }
-}
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     Go 并发模式                                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   模式              | 适用场景           | 实现方式                    │
+│   ──────────────────┼───────────────────┼─────────────────────────────│
+│   Worker Pool       | 批量任务处理        | 固定数量worker+任务队列        │
+│   Fan-Out/Fan-In    | 并行计算聚合       | 多goroutine+channel聚合       │
+│   Pipeline          | 流式处理           | 多级管道+数据流动             │
+│   Context           | 超时控制           | context.WithTimeout           │
+│   Select            | 多路复用           | select+case                   │
+│                                                                         →
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 二、Pipeline模式
+## 二、Worker Pool实现
 
 ```go
-func generator(nums ...int) <-chan int {
-    out := make(chan int)
-    go func() {
-        for _, n := range nums {
-            out <- n
-        }
-        close(out)
-    }()
-    return out
+package workerpool
+
+import (
+    "context"
+    "sync"
+)
+
+// WorkerPool 工作池
+type WorkerPool struct {
+    jobs    chan Job
+    results chan Result
+    wg      sync.WaitGroup
 }
 
-func squarer(in <-chan int) <-chan int {
-    out := make(chan int)
-    go func() {
-        for n := range in {
-            out <- n * n
-        }
-        close(out)
-    }()
-    return out
+type Job struct {
+    ID      int
+    Payload interface{}
 }
 
-func main() {
-    // 创建pipeline
-    nums := generator(1, 2, 3, 4)
-    sq := squarer(nums)
-    
-    for v := range sq {
-        fmt.Println(v) // 输出: 1, 4, 9, 16
+type Result struct {
+    JobID int
+    Value interface{}
+    Err   error
+}
+
+// NewWorkerPool 创建工作池
+func NewWorkerPool(numWorkers int, queueSize int) *WorkerPool {
+    return &WorkerPool{
+        jobs:    make(chan Job, queueSize),
+        results: make(chan Result, queueSize),
     }
+}
+
+// Start 启动worker
+func (wp *WorkerPool) Start(ctx context.Context, numWorkers int) {
+    for i := 0; i < numWorkers; i++ {
+        wp.wg.Add(1)
+        go func(id int) {
+            defer wp.wg.Done()
+            for job := range wp.jobs {
+                result := wp.process(ctx, job)
+                wp.results <- result
+            }
+        }(i)
+    }
+}
+
+// process 处理任务
+func (wp *WorkerPool) process(ctx context.Context, job Job) Result {
+    select {
+    case <-ctx.Done():
+        return Result{JobID: job.ID, Err: ctx.Err()}
+    default:
+        // 模拟处理
+        value := job.Payload.(string) + "-processed"
+        return Result{JobID: job.ID, Value: value}
+    }
+}
+
+// Submit 提交任务
+func (wp *WorkerPool) Submit(jobs []Job) {
+    for _, job := range jobs {
+        wp.jobs <- job
+    }
+    close(wp.jobs)
+}
+
+// Results 获取结果
+func (wp *WorkerPool) Results() <-chan Result {
+    go func() {
+        wp.wg.Wait()
+        close(wp.results)
+    }()
+    return wp.results
 }
 ```
 
 ## 三、面试高频题
 
-### Q1: Worker Pool适合什么场景？
+### Q1: 如何避免Goroutine泄漏？
 
 ```
 A:
-1. 批量任务处理
-2. 限制并发数
-3. 资源隔离
+1. 使用context控制退出
+2. 确保channel关闭
+3. 避免死锁
 ```
 
-### Q2: Pipeline如何实现？
+### Q2: 如何实现并行计算？
 
 ```
 A:
-1. 管道串联
-2. 无阻塞传递
-3. 优雅关闭
+1. Fan-Out分发任务
+2. Fan-In聚合结果
+3. 使用sync.WaitGroup等待
 ```
 
 ## 四、自测题
 
-1. 解释Worker Pool
-2. 如何实现Pipeline？
-3. 如何处理错误传播？
+1. 解释Worker Pool模式
+2. 如何实现Fan-Out/Fan-In？
+3. 如何避免Goroutine泄漏？
 
 ---
 
 ## 参考文档
 
-- [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide)
-- [Go Blog: Concurrent Programming](https://go.dev/blog/pipelines)
+- [Go Concurrency Patterns](https://go.dev/blog/pipelines)
+- [Go Wiki Concurrency](https://go.dev/wiki/ConcurrentPatterns)
