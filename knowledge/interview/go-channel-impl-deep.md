@@ -525,3 +525,22 @@ A:
 - [Go源码chan.go](https://github.com/golang/go/blob/master/src/runtime/chan.go)
 - [Go并发编程手册](https://go.dev/blog/pipelines)
 - [effective-go channel](https://go.dev/doc/effective_go#channels)
+
+---
+
+## 交叉引用
+
+### 相关文档
+- [Go Scheduler深入](./go-scheduler-deep.md) - 调度器实现
+- [Go GC深入](./go-gc-deep.md) - 垃圾回收机制
+- [Go内存管理](./go-memory-management-deep.md) - 内存分配
+- [Go性能分析实战](./go-profiling-production-deep.md) - 性能优化
+
+### 引用链
+```
+go-channel-impl-deep.md
+├── goroutine调度 → go-scheduler-deep.md
+├── GC处理 → go-gc-deep.md
+├── 内存分配 → go-memory-management-deep.md
+└── 性能优化 → go-profiling-production-deep.md
+```

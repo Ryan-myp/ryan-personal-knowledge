@@ -383,3 +383,22 @@ A:
 
 - [K8s存储文档](https://kubernetes.io/docs/concepts/storage/)
 - [CSI规范](https://github.com/container-storage-interface/spec)
+
+---
+
+## 交叉引用
+
+### 相关文档
+- [K8s调度器深入](./k8s-scheduler-deep.md) - 调度算法
+- [K8s网络插件](./k8s-network-plugin-deep.md) - 网络存储
+- [GitOps工作流](./gitops-workflow-deep.md) - 配置管理
+- [容器安全](./containers-security-deep.md) - 安全存储
+
+### 引用链
+```
+k8s-storage-deep.md
+├── CSI驱动 → k8s-scheduler-deep.md
+├── 网络存储 → k8s-network-plugin-deep.md
+├── 配置管理 → gitops-workflow-deep.md
+└── 安全策略 → containers-security-deep.md
+```
