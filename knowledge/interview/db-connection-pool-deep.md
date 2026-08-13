@@ -1,119 +1,83 @@
-# 数据库连接池 - 资深专家深度实现
+# MySQL连接池 - 资深专家深度实现
 
-## 一、连接池架构
+## 一、连接池原理
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                     数据库连接池架构                                     │
+│                      连接池架构                                            │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
-│   ┌─────────────┐      ┌─────────────┐      ┌─────────────┐           │
-│   │  App Pool   │──────►│  Idle Conns │──────►│  DB Server  │           │
-│   │  (本地)     │      │  (空闲)     │      │  (数据库)   │           │
-│   └─────────────┘      └─────────────┘      └─────────────┘           │
-│          │                       │                                       │
-│          │               ┌───────┴───────┐                             │
-│          │               │  Active Conns │                             │
-│          │               │  (使用中)     │                             │
-│          │               └───────────────┘                             │
-│          │                       │                                     │
-│          └───────────────────────┘                                     │
-│                          │                                             │
-│                   ┌──────┴──────┐                                      │
-│                   │  Connection │                                      │
-│                   │  Factory    │                                      │
-│                   └─────────────┘                                      │
-│                                                                         │
-│   关键参数:                                                              │
-│   • maxPoolSize: 最大连接数                                              │
-│   • minIdle: 最小空闲连接                                                │
-│   • maxWait: 最大等待时间                                                │
-│   • connectionTimeout: 连接超时                                          │
-│                                                                         │
+│   Client                                                                │
+│   ├── getConnection()                                                    │
+│   ├── use(connection)                                                    │
+│   └── close(connection) → return to pool                                 │
+│                                                                         →
+│   Connection Pool                                                       │
+│   ├── Idle Connections                                                   │
+│   ├── Active Connections                                                 │
+│   ├── Min/Max Connections                                                  │
+│   └── Eviction Policy                                                    │
+│                                                                         →
+│   MySQL Server                                                          │
+│   ├── Thread Pool                                                        │
+│   └── Connection Limit                                                   │
+│                                                                         →
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 二、HikariCP实现
+## 二、Go实现
 
-```java
-public class HikariPool extends HikariConfig implements PoolBase {
-    private final PriorityQueue<HikariConnectionHolder> pending;
-    private final List<HikariConnectionHolder> connections;
-    
-    @Override
-    public Connection getConnection(long timeout) throws SQLException {
-        // 1. 尝试从空闲池获取
-        HikariConnectionHolder connection = pollConnection(timeout);
-        if (connection != null) {
-            return connection;
-        }
-        
-        // 2. 创建新连接
-        if (poolSize < maximumPoolSize) {
-            connection = createPoolConnection();
-            return connection;
-        }
-        
-        // 3. 等待其他线程归还连接
-        return waitForConnection(timeout);
+```go
+import (
+    "database/sql"
+    "time"
+)
+
+func initDB(dsn string) (*sql.DB, error) {
+    db, err := sql.Open("mysql", dsn)
+    if err != nil {
+        return nil, err
     }
+    
+    // 连接池配置
+    db.SetMaxOpenConns(100)
+    db.SetMaxIdleConns(10)
+    db.SetConnMaxLifetime(time.Hour)
+    db.SetConnMaxIdleTime(10 * time.Minute)
+    
+    return db, nil
 }
 ```
 
-## 三、连接泄漏检测
+## 三、面试高频题
 
-```java
-public class ConnectionLeakDetector {
-    private static final long LEAK_THRESHOLD_MS = 2000;
-    
-    public static void trackLeak(Connection conn) {
-        StackTraceElement[] stack = Thread.currentThread().getStackTrace();
-        long startTime = System.currentTimeMillis();
-        
-        Timer timer = new Timer();
-        timer.schedule(new TimerTask() {
-            @Override
-            public void run() {
-                if (System.currentTimeMillis() - startTime > LEAK_THRESHOLD_MS) {
-                    logLeak(stack);
-                }
-            }
-        }, LEAK_THRESHOLD_MS);
-    }
-}
-```
-
-## 四、面试高频题
-
-### Q1: 连接池工作原理？
+### Q1: 连接池参数如何设置？
 
 ```
 A:
-1. 初始化连接池
-2. 复用连接
-3. 连接回收
-4. 健康检查
+1. MaxOpenConns: 根据QPS调整
+2. MaxIdleConns: 20-50%
+3. ConnMaxLifetime: 1小时
 ```
 
-### Q2: 如何选择合适的连接数？
+### Q2: 如何解决连接泄漏？
 
 ```
 A:
-1. 根据CPU核心数
-2. 根据磁盘IO能力
-3. 根据网络带宽
-4. 压测验证
+1. 及时close连接
+2. 设置超时
+3. 监控活跃连接
 ```
 
-## 五、自测题
+## 四、自测题
 
-1. 解释连接池工作原理
-2. 如何检测连接泄漏？
-3. 如何优化连接池性能？
+1. 解释连接池原理
+2. 如何配置参数？
+3. 如何检测泄漏？
 
 ---
 
 ## 参考文档
 
-- [HikariCP源码](https://github.com/brettwooldridge/HikariCP)
-- [连接池最佳实践](https://github.com/alibaba/druid/wiki)
+- [Go database/sql](https://pkg.go.dev/database/sql)
+- [MySQL连接池](https://dev.mysql.com/doc/refman/8.0/en/connection-pools.html)
