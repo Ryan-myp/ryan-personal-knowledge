@@ -1,37 +1,33 @@
-# 容器化与镜像优化深度实现 - 资深专家
+# 容器优化 - 资深专家深度实现
 
-## 一、镜像构建优化
+## 一、镜像优化
 
 ### 1.1 多阶段构建
 
 ```dockerfile
-# 第一阶段：编译
+# 构建阶段
 FROM golang:1.21 AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app/bin/server .
+RUN CGO_ENABLED=0 GOOS=linux go build -o app .
 
-# 第二阶段：运行时
-FROM scratch
-COPY --from=builder /app/bin/server /server
-EXPOSE 8080
-ENTRYPOINT ["/server"]
+# 运行阶段
+FROM alpine:3.18
+RUN apk --no-cache add ca-certificates tzdata
+COPY --from=builder /app/app /usr/local/bin/
+ENTRYPOINT ["app"]
 ```
 
-### 1.2 层级缓存优化
+### 1.2 镜像体积对比
 
-```dockerfile
-# 错误示例：频繁变更的代码放在前面
-COPY . .
-RUN go build
-
-# 正确示例：先复制依赖文件，利用缓存
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-RUN go build
+```
+基础镜像体积:
+- Ubuntu: 72MB
+- Alpine: 5MB
+- Distroless: 200KB
+- Scratch: 0B
 ```
 
 ## 二、运行时优化
@@ -39,40 +35,93 @@ RUN go build
 ### 2.1 资源限制
 
 ```yaml
-# Kubernetes资源配置
-resources:
-  limits:
-    cpu: "2"
-    memory: "2Gi"
-  requests:
-    cpu: "500m"
-    memory: "512Mi"
-
-# cgroup配置
-# memory.limit_in_bytes = 2147483648
-# cpu.cfs_quota_us = 200000
+# deployment.yaml
+spec:
+  containers:
+  - name: app
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "250m"
+      limits:
+        memory: "512Mi"
+        cpu: "1000m"
 ```
 
-### 2.2 安全加固
+### 2.2 健康检查
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 8080
+  initialDelaySeconds: 3
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 8080
+  initialDelaySeconds: 1
+  periodSeconds: 5
+```
+
+## 三、性能调优
+
+### 3.1 网络优化
+
+```bash
+# 调整内核参数
+sysctl -w net.core.somaxconn=65535
+sysctl -w net.ipv4.tcp_max_syn_backlog=65535
+```
+
+### 3.2 存储优化
+
+```yaml
+volumes:
+- name: tmp
+  emptyDir:
+    medium: Memory
+    sizeLimit: 100Mi
+```
+
+## 四、安全加固
 
 ```dockerfile
-# 非root用户运行
-USER nobody
-# 只读文件系统
-RO
-# 禁止信号
--no-new-privileges
+FROM gcr.io/distroless/static
+USER nonroot
+COPY --from=builder /app/app /
+ENTRYPOINT ["/app"]
 ```
 
-## 三、面试高频题
+## 五、面试高频题
 
-1. 如何实现最小镜像？
-2. 多阶段构建的原理？
-3. 容器安全最佳实践？
+### Q1: 如何优化容器启动速度？
+
+```
+A:
+1. 使用轻量级基础镜像
+2. 减少层数
+3. 并行拉取镜像层
+```
+
+### Q2: 如何监控容器资源？
+
+```
+A:
+1. cgroup统计
+2. metrics-server
+3. Prometheus exporter
+```
+
+## 六、自测题
+
+1. 设计一个最小化Go应用镜像
+2. 如何实现容器资源限制？
 
 ---
 
 ## 参考文档
 
-- [Docker Best Practices](https://docs.docker.com/develop/develop-images/dockerfile_best-practices/)
-- [Container Security](https://kubernetes.io/docs/concepts/security/)
+- [Docker官方文档](https://docs.docker.com/)

@@ -1,96 +1,179 @@
-# ES聚合查询 - 资深专家深度实现
+# Elasticsearch聚合查询 - 资深专家深度实现
 
 ## 一、聚合类型
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                   Elasticsearch 聚合类型                                   │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│   类型                | 用途                                    │
-│   ────────────────────┼──────────────────────────────────────────────│
-│   Metric              | 数值计算 (avg, sum, max, min)              │
-│   Bucket              | 分组统计 (terms, date_histogram)           │
-│   Pipeline            | 基于其他聚合 (moving_avg, derivative)       │
-│                                                                         →
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-## 二、聚合查询实现
+### 1.1 指标聚合
 
 ```json
 {
-  "size": 0,
-  "query": {
-    "term": {
-      "status": "active"
-    }
-  },
   "aggs": {
-    "by_category": {
+    "avg_price": { "avg": { "field": "price" } },
+    "total_sales": { "sum": { "field": "sales" } },
+    "max_price": { "max": { "field": "price" } },
+    "min_price": { "min": { "field": "price" } },
+    "stats_price": { "stats": { "field": "price" } }
+  }
+}
+```
+
+### 1.2 桶聚合
+
+```json
+{
+  "aggs": {
+    "groups": {
       "terms": {
         "field": "category",
         "size": 10
-      },
-      "aggs": {
-        "avg_price": {
-          "avg": {
-            "field": "price"
-          }
-        },
-        "price_stats": {
-          "stats": {
-            "field": "price"
-          }
-        }
-      }
-    },
-    "sales_over_time": {
-      "date_histogram": {
-        "field": "created_at",
-        "calendar_interval": "day"
-      },
-      "aggs": {
-        "total_sales": {
-          "sum": {
-            "field": "amount"
-          }
-        }
       }
     }
   }
 }
 ```
 
-## 三、面试高频题
+## 二、复杂聚合
 
-### Q1: 聚合的性能优化？
+### 2.1 嵌套聚合
+
+```json
+{
+  "aggs": {
+    "groups": {
+      "terms": { "field": "category" },
+      "aggs": {
+        "avg_price": { "avg": { "field": "price" } },
+        "price_stats": { "stats": { "field": "price" } }
+      }
+    }
+  }
+}
+```
+
+### 2.2 日期直方图
+
+```json
+{
+  "aggs": {
+    "sales_over_time": {
+      "date_histogram": {
+        "field": "created_at",
+        "fixed_interval": "1d",
+        "format": "yyyy-MM-dd"
+      },
+      "aggs": {
+        "total_sales": { "sum": { "field": "sales" } }
+      }
+    }
+  }
+}
+```
+
+### 2.3 范围聚合
+
+```json
+{
+  "aggs": {
+    "price_ranges": {
+      "range": {
+        "field": "price",
+        "ranges": [
+          { "to": 100 },
+          { "from": 100, "to": 500 },
+          { "from": 500 }
+        ]
+      }
+    }
+  }
+}
+```
+
+## 三、性能优化
+
+### 3.1 字段类型选择
+
+```
+推荐类型:
+- 数值: keyword (精确匹配)
+- 文本: text (全文检索) + keyword (精确匹配)
+- 日期: date
+- 地理: geo_point
+- 二进制: binary
+```
+
+### 3.2 聚合优化
+
+```json
+{
+  "aggs": {
+    "categories": {
+      "terms": {
+        "field": "category",
+        "size": 10,
+        "execution_hint": "map"  // 小基数用map
+      }
+    }
+  }
+}
+```
+
+## 四、Go客户端
+
+```go
+package elasticsearch
+
+import (
+	"context"
+	"github.com/olivere/elastic"
+)
+
+type ESClient struct {
+	client *elastic.Client
+	index  string
+}
+
+func NewESClient(addr string) (*ESClient, error) {
+	client, err := elastic.NewClient(elastic.SetURL(addr))
+	if err != nil {
+		return nil, err
+	}
+	return &ESClient{client: client}, nil
+}
+
+func (c *ESClient) Aggregation(query elastic.Query) (*elastic.SearchResult, error) {
+	res, err := c.client.Search(c.index).
+		Query(query).
+		Size(0).
+		Do(context.Background())
+	return res, err
+}
+```
+
+## 五、面试高频题
+
+### Q1: ES和MySQL有什么区别？
 
 ```
 A:
-1. 限制聚合深度
-2. 使用doc_values
-3. 预聚合数据
+ES: 倒排索引，适合全文搜索
+MySQL: B+树，适合事务处理
 ```
 
-### Q2: 如何处理大分页？
+### Q2: 如何优化ES查询性能？
 
 ```
 A:
-1. search_after
-2. 游标分页
-3. 限制结果集
+1. 使用filter替代query
+2. 避免深层分页
+3. 合理设置分片数
 ```
 
-## 四、自测题
+## 六、自测题
 
-1. 解释聚合类型
-2. 如何实现嵌套聚合？
-3. 如何优化性能？
+1. 如何实现多维度聚合？
+2. ES的分片和副本有什么区别？
 
 ---
 
 ## 参考文档
 
-- [ES Aggregations](https://www.elastic.co/guide/en/elasticsearch/reference/current/aggregations.html)
-- [ES Query DSL](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html)
+- [ES官方文档](https://www.elastic.co/guide/en/elasticsearch/reference/current/aggregations.html)

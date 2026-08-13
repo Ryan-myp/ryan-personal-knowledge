@@ -1,98 +1,138 @@
-# CI/CD 流水线优化 - 资深专家深度实现
+# CI/CD流程优化 - 资深专家深度实现
 
-## 一、流水线架构
+## 一、Pipeline架构
 
+### 1.1 多阶段流水线
+
+```yaml
+# .gitlab-ci.yml
+stages:
+  - build
+  - test
+  - deploy
+
+build:
+  stage: build
+  script:
+    - docker build -t myapp:$CI_COMMIT_SHA .
+  artifacts:
+    paths:
+      - build/
+
+test:
+  stage: test
+  script:
+    - go test ./...
+  needs: [build]
+
+deploy:
+  stage: deploy
+  script:
+    - kubectl apply -f k8s/
+  needs: [test]
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    CI/CD 流水线架构                                        │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│   Source → Build → Test → Scan → Deploy → Monitor                        │
-│     │        │       │       │        │         │                       │
-│     ▼        ▼       ▼       ▼        ▼         ▼                       │
-│   Git    Docker    Unit   Security  K8s     Prometheus                  │
-│          Build     Test    Scan     Apply    Monitoring                 │
-│                                                                         →
-└─────────────────────────────────────────────────────────────────────────┘
+
+### 1.2 并行构建
+
+```yaml
+parallel:
+  matrix:
+    - GOOS: [linux, darwin]
+      GOARCH: [amd64, arm64]
+  script:
+    - GOOS=$GOOS GOARCH=$GOARCH go build -o bin/$GOOS_$GOARCH
 ```
 
-## 二、GitLab CI配置
+## 二、缓存优化
+
+### 2.1 Go模块缓存
+
+```yaml
+cache:
+  key: "${CI_COMMIT_REF_SLUG}"
+  paths:
+    - ~/.cache/go-build
+    - ~/go/pkg/mod
+
+before_script:
+  - export GOMODCACHE=$CI_PROJECT_DIR/.mod-cache
+  - go mod download
+```
+
+### 2.2 Docker层缓存
+
+```dockerfile
+# 利用缓存层
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN go build -o app .
+```
+
+## 三、性能调优
+
+### 3.1 构建加速
+
+```yaml
+variables:
+  DOCKER_BUILDKIT: "1"
+  BUILDKIT_PROGRESS: "plain"
+
+build:
+  stage: build
+  script:
+    - docker build --progress=plain --cache-from=cache:latest -t app:latest .
+```
+
+### 3.2 并行测试
+
+```yaml
+test:
+  parallel: 4
+  script:
+    - go test -p 4 ./...
+```
+
+## 四、安全加固
 
 ```yaml
 stages:
   - build
-  - test
-  - security
+  - scan
   - deploy
 
-variables:
-  DOCKER_DRIVER: overlay2
-  APP_IMAGE: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
-
-# 构建阶段
-build:
-  stage: build
-  script:
-    - docker build -t $APP_IMAGE .
-    - docker push $APP_IMAGE
-  only:
-    - main
-
-# 测试阶段
-test:
-  stage: test
-  script:
-    - docker run --rm $APP_IMAGE go test ./...
-  needs: ["build"]
-
-# 安全扫描
 security-scan:
-  stage: security
+  stage: scan
   script:
-    - trivy image $APP_IMAGE
-    - grype $APP_IMAGE
-  needs: ["build"]
-
-# 部署阶段
-deploy:
-  stage: deploy
-  script:
-    - kubectl set image deployment/app app=$APP_IMAGE
-    - kubectl rollout status deployment/app
-  needs: ["build", "test", "security"]
-  only:
-    - main
+    - trivy image --severity HIGH,CRITICAL app:latest
+    - grype app:latest
+  allow_failure: true
 ```
 
-## 三、面试高频题
+## 五、面试高频题
 
-### Q1: 如何优化构建速度？
+### Q1: CI/CD的核心价值？
+
+```
+A: 自动化、快速反馈、持续交付
+```
+
+### Q2: 如何优化构建速度？
 
 ```
 A:
-1. 并行执行
+1. 并行构建
 2. 缓存依赖
-3. 多阶段构建
+3. 增量构建
 ```
 
-### Q2: 如何实现安全扫描？
+## 六、自测题
 
-```
-A:
-1. SAST静态分析
-2. DAST动态测试
-3. 依赖漏洞扫描
-```
-
-## 四、自测题
-
-1. 解释CI/CD流程
-2. 如何优化构建？
-3. 如何实现安全扫描？
+1. 设计一个完整的CI/CD流水线
+2. 如何实现构建缓存？
 
 ---
 
 ## 参考文档
 
-- [GitLab CI](https://docs.gitlab.com/ee/ci/)
-- [Tekton](https://tekton.dev/)
+- [GitLab CI文档](https://docs.gitlab.com/ee/ci/)
