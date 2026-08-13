@@ -1,87 +1,141 @@
 # Istio服务网格 - 资深专家深度实现
 
-## 一、架构设计
+## 一、核心组件
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    Istio服务网格架构                                       │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│   Control Plane                                                          │
-│   ├── Istiod (核心组件)                                                   │
-│   │   ├── Pilot (服务发现/路由)                                            │
-│   │   ├── Citadel (证书管理)                                              │
-│   │   └── Galley (配置验证)                                               │
-│   └── 配置注入                                                             │
-│                                                                         →
-│   Data Plane                                                             │
-│   └── Envoy Sidecar (每个Pod)                                              │
-│       ├── 流量拦截                                                          │
-│       ├── 安全通信                                                          │
-│       └── 可观测性                                                          │
-│                                                                         →
-└─────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                      Istio架构                                │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │ Control Plane                                       │   │
+│  │  ├── Istiod (Pilot)                                  │   │
+│  │  ├── Citadel (证书)                                  │   │
+│  │  └── Galley (配置验证)                               │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                           │                                 │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │ Data Plane (Envoy Sidecar)                          │   │
+│  │  ├── App Container                                   │   │
+│  │  └── Sidecar Proxy                                  │   │
+│  └─────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ## 二、流量管理
+
+### 2.1 VirtualService
 
 ```yaml
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
-  name: bookinfo
+  name: orders
 spec:
   hosts:
-  - reviews.example.com
+  - orders.default.svc.cluster.local
   http:
   - match:
     - headers:
-        end-user:
-          exact: john
+        x-user-type:
+          exact: premium
     route:
     - destination:
-        host: reviews
-        subset: v2
-    timeout: 10s
+        host: orders-v2
+        weight: 100
   - route:
     - destination:
-        host: reviews
-        subset: v1
-    fault:
-      abort:
-        percentage: 10
-        httpStatus: 500
+        host: orders-v1
+        weight: 90
+    - destination:
+        host: orders-v2
+        weight: 10
 ```
 
-## 三、面试高频题
+### 2.2 DestinationRule
 
-### Q1: Istio相比传统网关有什么优势？
+```yaml
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: orders
+spec:
+  host: orders.default.svc.cluster.local
+  trafficPolicy:
+    loadBalancer:
+      simple: ROUND_ROBIN
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        h2UpgradePolicy: DEFAULT
+        maxRequestsPerConnection: 10
+```
+
+## 三、安全策略
+
+### 3.1 mTLS
+
+```yaml
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+spec:
+  mtls:
+    mode: STRICT
+```
+
+### 3.2 AuthorizationPolicy
+
+```yaml
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: orders-policy
+spec:
+  selector:
+    matchLabels:
+      app: orders
+  rules:
+  - from:
+    - source:
+        principals: ["cluster.local/ns/default/sa/frontend"]
+    to:
+    - operation:
+        methods: ["GET", "POST"]
+        paths: ["/api/orders/*"]
+```
+
+## 四、可观测性
+
+```yaml
+# Prometheus指标
+istio_requests_total
+istio_request_duration_milliseconds
+istio_response_size_bytes
+```
+
+## 五、面试高频题
+
+### Q1: Istio和Service Mesh有什么区别？
 
 ```
-A:
-1. 服务发现自动
-2. mTLS默认
-3. 细粒度路由
+A: Istio是Service Mesh的实现之一。
 ```
 
-### Q2: 如何实现流量灰度？
+### Q2: 为什么需要Sidecar？
 
 ```
-A:
-1. VirtualService权重路由
-2. DestinationRule子集
-3. 金丝雀发布
+A: 隔离业务逻辑和基础设施，无侵入式治理。
 ```
 
-## 四、自测题
+## 六、自测题
 
-1. 解释Istio架构
-2. 如何实现流量管理？
-3. 如何保障安全？
+1. 解释Istio流量管理机制
+2. 如何实现金丝雀发布？
 
 ---
 
 ## 参考文档
 
-- [Istio Docs](https://istio.io/latest/docs/)
-- [Service Mesh](https://istio.io/latest/docs/concepts/what-is-istio/)
+- [Istio官方文档](https://istio.io/latest/docs/)

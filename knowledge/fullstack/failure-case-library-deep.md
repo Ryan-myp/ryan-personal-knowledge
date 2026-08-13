@@ -1,135 +1,122 @@
 # 故障排查案例库 - 资深专家深度实现
 
-## 一、案例1: Redis内存溢出
+## 一、典型故障案例
 
-### 问题现象
+### 1.1 案例一: Go Goroutine泄漏
+
+```go
+// 问题代码
+func ProcessOrders(ch <-chan Order) {
+    for order := range ch {
+        go func() {
+            // 业务处理
+            process(order)
+        }()
+    }
+}
+
+// 修复方案
+func ProcessOrders(ch <-chan Order, workerCount int) {
+    var wg sync.WaitGroup
+    for i := 0; i < workerCount; i++ {
+        wg.Add(1)
+        go func() {
+            defer wg.Done()
+            for order := range ch {
+                process(order)
+            }
+        }()
+    }
+    wg.Wait()
+}
 ```
-10:30:00 ERROR: OOM command not allowed when used memory > 'maxmemory'
-10:30:01 ERROR: Client connection dropped
+
+### 1.2 案例二: MySQL连接池耗尽
+
+```go
+// 问题: 连接未正确释放
+db, _ := sql.Open("mysql", dsn)
+db.SetMaxOpenConns(100)
+db.SetMaxIdleConns(10)
+
+// 正确配置
+db.SetConnMaxLifetime(5 * time.Minute)
+db.SetConnMaxIdleTime(2 * time.Minute)
 ```
 
-### 排查过程
-```bash
-# 1. 检查内存使用
-redis-cli info memory
+### 1.3 案例三: Redis缓存击穿
 
-# 2. 查找大Key
-redis-cli --bigkeys
-
-# 3. 检查淘汰策略
-redis-cli config get maxmemory-policy
+```go
+func GetWithMutex(key string) (string, error) {
+    val, err := redis.Get(key).Result()
+    if err == redis.Nil {
+        mu.Lock()
+        defer mu.Unlock()
+        
+        val, err = redis.Get(key).Result()
+        if err == redis.Nil {
+            val = queryDB(key)
+            redis.Set(key, val, time.Hour)
+        }
+    }
+    return val, err
+}
 ```
 
-### 解决方案
+## 二、监控告警
+
 ```yaml
-# redis.conf
-maxmemory 2gb
-maxmemory-policy allkeys-lru
-
-# 淘汰大Key
-redis-cli KEYS "large:*" | xargs redis-cli DEL
+# Prometheus告警规则
+groups:
+- name: services
+  rules:
+  - alert: HighErrorRate
+    expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "高错误率告警"
 ```
 
-## 二、案例2: MySQL慢查询
+## 三、应急预案
 
-### 问题现象
 ```
-Slow queries: 1200/min
-Average response time: 2.5s
-```
-
-### 排查过程
-```sql
--- 1. 开启慢查询日志
-SET GLOBAL slow_query_log = 'ON';
-SET GLOBAL long_query_time = 1;
-
--- 2. 分析慢查询
-SELECT * FROM mysql.slow_log 
-WHERE start_time > DATE_SUB(NOW(), INTERVAL 1 HOUR)
-ORDER BY query_time DESC;
-
--- 3. 检查执行计划
-EXPLAIN SELECT * FROM orders WHERE user_id = 123;
-```
-
-### 解决方案
-```sql
--- 添加索引
-ALTER TABLE orders ADD INDEX idx_user_id (user_id);
-
--- 优化查询
-SELECT id, name FROM orders WHERE user_id = 123 LIMIT 10;
-```
-
-## 三、案例3: K8s Pod频繁重启
-
-### 问题现象
-```
-Pod frontend-abc123 restart count: 15/hour
-Events: BackOff restarting failed container
-```
-
-### 排查过程
-```bash
-# 1. 查看Pod状态
-kubectl describe pod frontend-abc123
-
-# 2. 查看容器日志
-kubectl logs frontend-abc123 --previous
-
-# 3. 检查资源限制
-kubectl top pod frontend-abc123
-```
-
-### 解决方案
-```yaml
-# 调整资源限制
-spec:
-  containers:
-  - name: frontend
-    image: nginx
-    resources:
-      requests:
-        memory: "128Mi"
-        cpu: "100m"
-      limits:
-        memory: "256Mi"
-        cpu: "500m"
+1. 快速定位: 查看Prometheus/Grafana
+2. 止血操作: 重启/降级/限流
+3. 根因分析: 日志/trace分析
+4. 复盘改进: 编写案例文档
 ```
 
 ## 四、面试高频题
 
-### Q1: 如何进行故障排查？
-
-```
-A:
-1. 观察现象
-2. 收集日志
-3. 定位根因
-4. 实施修复
-5. 验证结果
-```
-
-### Q2: 如何预防故障？
+### Q1: 如何排查线上问题？
 
 ```
 A:
 1. 监控告警
-2. 容量规划
-3. 混沌工程
-4. 演练预案
+2. 日志分析
+3. 链路追踪
+4. 代码审查
+```
+
+### Q2: 常见性能问题有哪些？
+
+```
+A:
+1. 数据库慢查询
+2. 内存泄漏
+3. 连接池耗尽
+4. 锁竞争
 ```
 
 ## 五、自测题
 
-1. 解释故障排查流程
-2. 如何快速定位问题？
-3. 如何制定应急预案？
+1. 描述一次完整的故障排查过程
+2. 如何设计告警策略？
 
 ---
 
 ## 参考文档
 
-- [故障排查最佳实践](https://landing.google.com/sre/books/)
-- [K8s排障指南](https://kubernetes.io/docs/tasks/debug/)
+- [故障排查方法论](https://thenewstack.io/)
