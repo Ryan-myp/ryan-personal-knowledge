@@ -1,22 +1,19 @@
-# Go Channel实现原理 - 资深专家深度实现
+# Go Channel实现 - 资深专家深度实现
 
-## 一、Channel结构
+## 一、Channel数据结构
 
 ```go
 // src/runtime/chan.go
 type hchan struct {
-    qcount   uint           // 队列中元素总数
-    dataqsz  uint           // 循环队列大小
-    buf      unsafe.Pointer // 元素缓冲区
-    elemsize uint16
-    closed   uint32
-    elemtype *_type         // 元素类型
-    sendx    uint           // 发送索引
-    recvx    uint           // 接收索引
-    recvq    waitq          // 等待接收的goroutine队列
-    sendq    waitq          // 等待发送的goroutine队列
-    
-    lock mutex
+    mutex   mtx          // 互斥锁
+    qcount  uint         // 队列中元素数量
+    dataqsz uint         // 循环队列大小
+    elemsize uint16      // 每个元素的大小
+    closed  uint32       // 是否已关闭
+    elem    *_type       // 元素类型
+    chanbuf chanbuf     // 环形缓冲区
+    recvq   waitq      // 等待接收的goroutine队列
+    sendq   waitq      // 等待发送的goroutine队列
 }
 
 type waitq struct {
@@ -30,7 +27,7 @@ type waitq struct {
 ```go
 func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
     if c.closed != 0 {
-        throw("chansend: close")
+        panic(...)
     }
     
     if c.qcount == c.dataqsz {
@@ -38,107 +35,101 @@ func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
         if !block {
             return false
         }
-        // 等待接收者
+        // 等待接收
         gp := getg()
-        mysg := acquireSudog()
-        mysg.releasetime = monotime()
-        mysg.g = gp
-        mysg.ch = c
-        mysg.elem = ep
-        mysg.waitlink = nil
-        gp.waiting = mysg
-        c.sendq.enqueue(mysg)
-        goreleasetoken = semacquire(&c.lock)
-        // ... 等待唤醒
+        sg := allocSudog(c.elem)
+        gp.waiting = sg
+        sg.c = c
+        lock(&c.lock)
+        c.sendq.enqueue(sg)
+        sleep(gp, waitReasonChanSend)
+        unlock(&c.lock)
         return true
     }
     
     // 直接发送
-    if c.recvq.dequeue() {
-        // 有等待接收者，直接传递
-        copyTo(c.recvq.dequeue(), ep)
+    if c.qcount < c.dataqsz {
+        // 有空间，直接放入缓冲区
+        qp := chanbuf(c, c.recvq.first)
+        typedmemmove(c.elem, qp, ep)
+        c.recvq.dequeue()
+        c.qcount++
         return true
     }
     
-    // 放入缓冲区
-    copyTo(c.buf, ep)
-    c.sendx = (c.sendx + 1) % c.dataqsz
-    c.qcount++
-    return true
+    return false
 }
 ```
 
 ## 三、接收操作
 
 ```go
-func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, ok bool) {
-    if c.closed != 0 {
-        // 通道关闭
-        if c.qcount == 0 {
-            if ep != nil {
-                typedmemclr(c.elemtype, ep)
-            }
-            return true, false
+func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool) {
+    if c.closed == 0 && c.qcount == 0 {
+        // 空且未关闭
+        if !block {
+            return
         }
+        // 等待发送
+        gp := getg()
+        sg := allocSudog(c.elem)
+        gp.waiting = sg
+        sg.c = c
+        lock(&c.lock)
+        c.recvq.enqueue(sg)
+        sleep(gp, waitReasonChanRecv)
+        unlock(&c.lock)
+        selected = true
+        if ep != nil {
+            typedmemmove(c.elem, ep, qp)
+        }
+        return
     }
     
+    // 从缓冲区读取
     if c.qcount > 0 {
-        // 从缓冲区接收
+        qp := chanbuf(c, c.sendq.first)
         if ep != nil {
-            copyFrom(ep, c.recvq.dequeue())
+            typedmemmove(c.elem, ep, qp)
         }
-        c.recvx = (c.recvx + 1) % c.dataqsz
+        typedmemclr(c.elem, qp)
+        c.sendq.dequeue()
         c.qcount--
         return true, true
     }
     
-    if !block {
-        return false, false
-    }
-    
-    // 等待发送者
-    gp := getg()
-    mysg := acquireSudog()
-    mysg.g = gp
-    mysg.ch = c
-    if ep != nil {
-        mysg.elem = ep
-    }
-    gp.waiting = mysg
-    c.recvq.enqueue(mysg)
-    semrelease(&c.lock, false)
-    return true, true
+    return
 }
 ```
 
 ## 四、面试高频题
 
-### Q1: Channel底层如何实现？
+### Q1: Channel如何实现并发安全？
 
 ```
 A:
-1. 环形队列存储数据
-2. 等待队列管理goroutine
-3. 锁机制保证安全
+1. 内部互斥锁
+2. 等待队列管理
+3. 原子操作
 ```
 
-### Q2: 有缓冲和无缓冲Channel区别？
+### Q2: buffered和unbuffered的区别？
 
 ```
 A:
-• 无缓冲: 同步，必须同时send和receive
-• 有缓冲: 异步，缓冲区满才阻塞
+• buffered: 有缓冲区，发送不阻塞直到满
+• unbuffered: 无缓冲区，必须双方同时就绪
 ```
 
 ## 五、自测题
 
-1. 解释Channel内存布局
-2. 如何实现select语句？
-3. 如何处理Channel泄漏？
+1. 解释Channel内部结构
+2. 如何实现select？
+3. 如何处理关闭？
 
 ---
 
 ## 参考文档
 
 - [Go源码chan.go](https://github.com/golang/go/blob/master/src/runtime/chan.go)
-- [Go并发编程详解](https://github.com/golang/go/wiki/Channels)
+- [Go并发编程](https://go.dev/blog/pipelines)

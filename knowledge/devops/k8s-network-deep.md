@@ -1,113 +1,117 @@
-# K8s网络插件 - 资深专家深度实现
+# Kubernetes网络插件 - 资深专家深度实现
 
-## 一、CNI接口
-
-```go
-package cni
-
-// CNI Plugin接口
-type Plugin interface {
-    Add(ctx context.Context, nc *NetworkConfig) error
-    Delete(ctx context.Context, nc *NetworkConfig) error
-    Get(*cni.GetRequest, *cni.GetResponse) error
-    Version() string
-}
-
-// NetworkConfig
-type NetworkConfig struct {
-    Name       string           `json:"name"`
-    Type       string           `json:"type"`
-    IPAM       *IPAMConfig      `json:"ipam,omitempty"`
-    RuntimeCfg *RuntimeConfig   `json:"runtimeConfig,omitempty"`
-}
-```
-
-## 二、Calico架构
+## 一、网络模型
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                         Calico架构                                       │
+│                     K8s网络模型                                          │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
-│   etcd (全局配置)                                                        │
-│       │                                                                │
-│       ▼                                                                │
-│   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐               │
-│   │ Node BGP    │    │ Node BGP    │    │ Node BGP    │               │
-│   │ Router      │    │ Router      │    │ Router      │               │
-│   └──────┬──────┘    └──────┬──────┘    └──────┬──────┘               │
-│          │                  │                  │                       │
-│   ┌──────▼──────┐    ┌──────▼──────┐    ┌──────▼──────┐               │
-│   │  Felix      │    │  Felix      │    │  Felix      │               │
-│   │ (网络配置)  │    │ (网络配置)  │    │ (网络配置)  │               │
-│   └─────────────┘    └─────────────┘    └─────────────┘               │
+│   Pod Network:                                                          │
+│   • 每个Pod拥有独立IP                                                    │
+│   • Pod之间可直接通信                                                    │
+│   • 跨节点使用Overlay网络                                                │
+│                                                                         │
+│   Service Network:                                                      │
+│   • ClusterIP: 虚拟IP                                                   │
+│   • NodePort: 节点端口映射                                               │
+│   • LoadBalancer: 云厂商负载均衡                                         │
+│                                                                         │
+│   Network Policy:                                                       │
+│   • 入站规则                                                            │
+│   • 出站规则                                                            │
+│   • 命名空间隔离                                                         │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 三、网络策略
+## 二、Flannel实现
 
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: deny-all
-  namespace: production
-spec:
-  podSelector: {}
-  policyTypes:
-  - Ingress
-  - Egress
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-frontend
-  namespace: production
-spec:
-  podSelector:
-    matchLabels:
-      app: frontend
-  policyTypes:
-  - Ingress
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          app: backend
-    ports:
-    - protocol: TCP
-      port: 80
+```go
+package flannel
+
+import (
+    "net"
+)
+
+type Subnet struct {
+    Net    net.IPNet
+    EP     string
+    Private  bool
+}
+
+type Backend struct {
+    iface  *net.Interface
+    subnet Subnet
+}
+
+func (b *Backend) Route() ([]Route, error) {
+    // VxLAN封装
+    routes := []Route{
+        {
+            Destination: b.subnet.Net.IP.String(),
+            Gateway:     "0.0.0.0",
+            Device:      "vxlan-" + b.subnet.Net.String(),
+        },
+    }
+    return routes, nil
+}
+```
+
+## 三、Calico实现
+
+```go
+package calico
+
+import (
+    "github.com/projectcalico/api/pkg/apis/projectcalico/v3"
+)
+
+type BGPPeer struct {
+    Spec v3.BGPConfigurationSpec
+}
+
+type IPPool struct {
+    Spec v3.IPPoolSpec
+}
+
+func NewIPPools(c CIDR) *IPPools {
+    return &IPPools{
+        CIDR: c,
+        Size: 24,
+    }
+}
 ```
 
 ## 四、面试高频题
 
-### Q1: 为什么需要CNI？
+### Q1: K8s网络模型是什么？
 
 ```
 A:
-• 标准化容器网络接口
-• 插件化架构
-• 解耦网络和K8s核心
+1. Pod网络: 每个Pod独立IP
+2. Service网络: 虚拟IP负载均衡
+3. NetworkPolicy: 访问控制
 ```
 
-### Q2: Calico和Flannel的区别？
+### Q2: 如何实现Pod网络？
 
 ```
 A:
-• Calico: BGP路由，高性能，支持网络策略
-• Flannel: VXLAN overlay，简单易用
+1. CNI插件
+2. Overlay网络(VxLAN/IPIP)
+3. BGP路由
 ```
 
 ## 五、自测题
 
-1. 解释CNI接口规范
-2. 如何实现网络隔离？
-3. 如何优化网络性能？
+1. 解释CNI插件原理
+2. 如何实现服务发现？
+3. 如何配置网络策略？
 
 ---
 
 ## 参考文档
 
-- [CNI规范](https://github.com/containernetworking/cni)
-- [Calico官方文档](https://docs.projectcalico.org/)
+- [K8s网络规范](https://kubernetes.io/docs/concepts/cluster-administration/networking/)
+- [CNI规范](https://github.com/kubernetes/cni)

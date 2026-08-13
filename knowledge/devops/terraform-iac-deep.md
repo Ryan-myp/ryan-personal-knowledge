@@ -1,109 +1,119 @@
 # Terraform IaC - 资深专家深度实现
 
-## 一、核心架构
+## 一、核心概念
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                      Terraform架构                                       │
+│                      Terraform核心概念                                   │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
-│   Provider Registry         State File            Backend               │
-│   ┌─────────────┐         ┌─────────────┐      ┌─────────────┐         │
-│   │   AWS       │         │  local.tf   │      │   S3      │         │
-│   │   Azure     │    ───► │  state.json │◄────►│  Remote   │         │
-│   │   GCP       │         └─────────────┘      └─────────────┘         │
-│   │   ...       │                                              │         │
-│   └─────────────┘                                              │         │
-│            ▲                                                      ▼         │
-│            │                                                 ┌──────────┐   │
-│            └─────────────────────────────────────────────────►│  Apply   │   │
-│                                                              └──────────┘   │
+│   Provider:                                                              │
+│   • AWS / Azure / GCP / K8s                                           │
+│   • API封装                                                              │
+│                                                                         │
+│   Resource:                                                              │
+│   • 实际基础设施                                                          │
+│   • 声明式配置                                                           │
+│                                                                         │
+│   State:                                                                 │
+│   • 当前状态跟踪                                                          │
+│   • 增量更新                                                             │
+│                                                                         │
+│   Module:                                                                │
+│   • 代码复用                                                             │
+│   • 层次化组织                                                           │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 二、资源定义
+## 二、Provider配置
 
 ```hcl
-# 主资源
-resource "aws_instance" "web" {
-  ami           = var.ami_id
-  instance_type = var.instance_type
-  
-  tags = {
-    Name        = "web-server"
-    Environment = "production"
-  }
-  
-  lifecycle {
-    create_before_destroy = true
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.0"
+    }
   }
 }
 
-# 数据源
-data "aws_ami" "ubuntu" {
-  most_recent = true
-  owners      = ["099720109477"]
+provider "aws" {
+  region = var.aws_region
   
-  filter {
-    name   = "name"
-    values = ["ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*"]
+  default_tags {
+    tags = {
+      Environment = var.environment
+      ManagedBy   = "terraform"
+    }
   }
 }
 ```
 
-## 三、模块系统
+## 三、Resource定义
 
 ```hcl
-# modules/vpc/main.tf
-variable "cidr_block" {
-  type = string
-}
-
-resource "aws_vpc" "main" {
-  cidr_block = var.cidr_block
+resource "aws_instance" "web" {
+  ami           = data.aws_ami.latest.id
+  instance_type = var.instance_type
   
   tags = {
-    Name = "main-vpc"
+    Name = "${var.environment}-web"
+  }
+  
+  lifecycle {
+    create_before_destroy = true
+    prevent_destroy       = false
   }
 }
 
-# main.tf
-module "vpc" {
-  source     = "./modules/vpc"
-  cidr_block = "10.0.0.0/16"
+resource "aws_autoscaling_group" "web" {
+  desired_capacity = var.desired_capacity
+  max_size         = var.max_size
+  min_size         = var.min_size
+  
+  tag {
+    key                 = "Name"
+    value               = "${var.environment}-asg"
+    propagate_at_launch = true
+  }
 }
 ```
 
 ## 四、面试高频题
 
-### Q1: Terraform状态文件管理？
+### Q1: Terraform工作原理？
 
 ```
 A:
-1. 使用远程后端 (S3+DynamoDB)
-2. 状态锁定防止并发
-3. 状态加密
+1. 读取配置文件
+2. 生成执行计划
+3. 应用变更
+4. 更新状态
 ```
 
-### Q2: 如何处理依赖关系？
+### Q2: 如何处理状态冲突？
 
 ```
 A:
-1. 显式依赖 (depends_on)
-2. 引用输出 (outputs)
-3. 隐式依赖 (自动检测)
+1. 远程状态锁
+2. 分支管理
+3. 人工审核
 ```
 
 ## 五、自测题
 
 1. 解释Terraform工作流程
-2. 如何实现状态隔离？
-3. 如何处理漂移检测？
+2. 如何实现多环境部署？
+3. 如何处理敏感数据？
 
 ---
 
 ## 参考文档
 
-- [Terraform官方文档](https://developer.hashicorp.com/terraform/docs)
+- [Terraform文档](https://www.terraform.io/docs)
 - [Terraform源码](https://github.com/hashicorp/terraform)

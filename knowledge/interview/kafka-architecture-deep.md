@@ -1,99 +1,74 @@
 # Kafka架构深度 - 资深专家深度实现
 
-## 一、Broker架构
+## 一、核心组件
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                        Kafka Broker架构                                  │
+│                       Kafka集群架构                                      │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
-│   ┌─────────────────────────────────────────────────────────────────┐   │
-│   │                      Kafka Broker                               │   │
-│   │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐       │   │
-│   │  │  Log     │  │  Log     │  │  Log     │  │  Log     │       │   │
-│   │  │  Segment │  │  Segment │  │  Segment │  │  Segment │       │   │
-│   │  │   0      │  │   1      │  │   2      │  │   ...    │       │   │
-│   │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘       │   │
-│   │       │              │              │              │            │   │
-│   │  ┌────▼──────────────▼──────────────▼──────────────▼─────┐      │   │
-│   │  │                物理存储 (磁盘)                          │      │   │
-│   │  │  topic-partition-0.log / index / timeindex            │      │   │
-│   │  └───────────────────────────────────────────────────────┘      │   │
-│   └─────────────────────────────────────────────────────────────────┘   │
-│                                                                           │
-│   • Partition: 消息分区，并行处理                                          │
-│   • Replica: 副本，保证高可用                                              │
-│   • Leader: 主副本，处理读写                                               │
-│   • Follower: 从副本，同步数据                                             │
-│                                                                           │
+│   ┌─────────────┐                                                      │
+│   │   Producer  │ ◄── 发布消息                                         │
+│   └──────┬──────┘                                                      │
+│          │                                                             │
+│          ▼                                                             │
+│   ┌─────────────┐                                                      │
+│   │   Broker    │ ──► Topic: orders                                   │
+│   │   (Node 1)  │    Partition: 0,1,2,3                              │
+│   └──────┬──────┘    Offset: 0,1,2,3...                              │
+│          │                                                             │
+│          ▼                                                             │
+│   ┌─────────────┐                                                      │
+│   │   Consumer  │ ◄── 消费消息                                         │
+│   └─────────────┘                                                      │
+│                                                                         │
+│   特点:                                                                  │
+│   • 分布式日志                                                           │
+│   • 持久化存储                                                           │
+│   • 水平扩展                                                             │
+│                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 二、生产者实现
+## 二、Partition管理
 
 ```java
-public class KafkaProducerExample {
+public class Partition {
+    private final String topic;
+    private final int partitionId;
+    private final File logDir;
+    private long highWatermark;
+    private long logEndOffset;
     
-    private final KafkaProducer<String, String> producer;
+    // 日志段管理
+    private Map<Long, LogSegment> segments;
     
-    public KafkaProducerExample() {
-        Properties props = new Properties();
-        props.put("bootstrap.servers", "broker1:9092,broker2:9092");
-        props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
-        props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
-        props.put("acks", "all");  // 所有副本确认
-        props.put("retries", 3);
-        
-        this.producer = new KafkaProducer<>(props);
+    public void append(Message message) {
+        long offset = logEndOffset++;
+        segments.get(offset / segmentSize).append(message);
     }
     
-    public void sendMessage(String topic, String key, String value) {
-        ProducerRecord<String, String> record = new ProducerRecord<>(topic, key, value);
-        
-        producer.send(record, new Callback() {
-            @Override
-            public void onCompletion(RecordMetadata metadata, Exception exception) {
-                if (exception != null) {
-                    exception.printStackTrace();
-                } else {
-                    System.out.println("Sent to partition " + metadata.partition());
-                }
-            }
-        });
+    public Message read(long offset) {
+        return segments.get(offset / segmentSize).read(offset);
     }
 }
 ```
 
-## 三、消费者实现
+## 三、Controller选举
 
 ```java
-public class KafkaConsumerExample {
+public class KRaftController extends Controller {
+    private final RaftManager raft;
+    private volatile boolean isLeader;
     
-    private final KafkaConsumer<String, String> consumer;
-    
-    public KafkaConsumerExample() {
-        Properties props = new Properties();
-        props.put("bootstrap.servers", "broker1:9092,broker2:9092");
-        props.put("group.id", "test-group");
-        props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
-        props.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
-        props.put("auto.offset.reset", "earliest");
-        props.put("enable.auto.commit", "false");
-        
-        this.consumer = new KafkaConsumer<>(props);
-        consumer.subscribe(Collections.singletonList("test-topic"));
-    }
-    
-    public void pollMessages() {
-        while (true) {
-            ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(100));
-            
-            for (ConsumerRecord<String, String> record : records) {
-                System.out.printf("offset = %d, key = %s, value = %s%n", 
-                    record.offset(), record.key(), record.value());
+    @Override
+    public void run() {
+        while (!shuttingDown) {
+            if (raft.isLeader()) {
+                processMetadataChanges();
+                updatePartitionLeadership();
             }
-            
-            consumer.commitSync();
+            sleep(100);
         }
     }
 }
@@ -101,33 +76,33 @@ public class KafkaConsumerExample {
 
 ## 四、面试高频题
 
-### Q1: Kafka如何保证消息不丢失？
+### Q1: Kafka如何保证消息顺序？
 
 ```
 A:
-1. 生产者: acks=all
-2. Broker: replicas=3
-3. 消费者: 手动提交offset
+1. 单Partition内有序
+2. 分区键保证
+3. 消费端顺序处理
 ```
 
-### Q2: 什么是Consumer Group？
+### Q2: 如何实现Exactly-Once？
 
 ```
 A:
-• 消费者组实现负载均衡
-• 同一消息只被组内一个消费者处理
-• 组内消费者数不超过分区数
+1. 事务性Producer
+2. 幂等性Producer
+3. 两阶段提交
 ```
 
 ## 五、自测题
 
-1. 解释Kafka分区策略
-2. 如何实现Exactly-Once？
-3. 如何处理消息积压？
+1. 解释Partition原理
+2. 如何实现故障转移？
+3. 如何优化吞吐？
 
 ---
 
 ## 参考文档
 
-- [Kafka官方文档](https://kafka.apache.org/documentation/)
 - [Kafka源码](https://github.com/apache/kafka)
+- [Kafka设计文档](https://kafka.apache.org/design)

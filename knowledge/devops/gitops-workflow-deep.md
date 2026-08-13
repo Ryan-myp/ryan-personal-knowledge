@@ -1,50 +1,53 @@
 # GitOps工作流 - 资深专家深度实现
 
-## 一、核心概念
+## 一、GitOps架构
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                         GitOps工作流                                     │
+│                        GitOps工作流                                      │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
-│   Developer              Git Repo              ArgoCD                  Cluster                   │
-│       │                    │                      │                      │                      │
-│       │  commit            │                      │                      │                      │
-│       ├───────────────────►│                      │                      │                      │
-│       │                    │                      │                      │                      │
-│       │                    │◄─────────────────────┤                      │                      │
-│       │                    │      watch           │                      │                      │
-│       │                    │                      │                      │                      │
-│       │                    │                      │                      │                      │
-│       │                    │◄─────────────────────┤                      │                      │
-│       │                    │   reconcile          │                      │                      │
-│       │                    │                      │                      │                      │
-│       │                    │                      │                      │                      │
-│       │                    │                      ├──────────────────────┼──────────────────────┤
-│       │                    │                      │    apply manifests   │                      │
-│       │                    │                      │                      │                      │
-│                                                                         │                                                                         │
+│   Developer                                                             │
+│        │                                                                │
+│        ▼                                                                │
+│   ┌─────────┐      Push      ┌─────────┐      Reconcile      ┌───────┐│
+│   │  Code   │ ───────────►   │  Git    │ ────────────────►   │ K8s   ││
+│   │  Repo   │                │  Repo   │                     │ Cluster││
+│   └─────────┘                └─────────┘                     └───────┘│
+│                                       ▲                                  │
+│                                       │                                │
+│                              ┌────────┴────────┐                       │
+│                              │   ArgoCD/Flux  │                       │
+│                              │   (Op Controller)│                      │
+│                              └─────────────────┘                       │
+│                                                                         │
+│   核心原则:                                                              │
+│   • 声明式配置                                                          │
+│   • Git作为唯一真相源                                                    │
+│   • 自动同步                                                            │
+│   • 版本控制                                                            │
+│                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## 二、ArgoCD配置
 
 ```yaml
-# application.yaml
+# argocd-application.yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: frontend
+  name: my-app
   namespace: argocd
 spec:
   project: default
   source:
-    repoURL: https://github.com/org/repo.git
-    targetRevision: HEAD
-    path: overlays/prod
+    repoURL: https://github.com/example/k8s-manifests.git
+    targetRevision: main
+    path: overlays/production
   destination:
     server: https://kubernetes.default.svc
-    namespace: frontend
+    namespace: production
   syncPolicy:
     automated:
       prune: true
@@ -53,53 +56,63 @@ spec:
       - CreateNamespace=true
 ```
 
-## 三、Kustomize覆盖
+## 三、Pipeline设计
 
 ```yaml
-# kustomization.yaml
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
+# .gitlab-ci.yml
+stages:
+  - build
+  - test
+  - deploy
 
-resources:
-  - ../../base
+build:
+  stage: build
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA .
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
 
-patchesStrategicMerge:
-  - patch.yaml
+test:
+  stage: test
+  script:
+    - docker run $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA tests
 
-images:
-  - name: nginx
-    newTag: "1.21"
+deploy:
+  stage: deploy
+  script:
+    - argocd app sync my-app
+  only:
+    - main
 ```
 
 ## 四、面试高频题
 
-### Q1: GitOps和CI/CD的区别？
+### Q1: GitOps是什么？
 
 ```
 A:
-• GitOps: 声明式，Git是单一事实来源
-• CI/CD: 过程式，注重构建部署流程
-• GitOps更强调自动同步和漂移检测
+• 用Git管理基础设施配置
+• 自动同步集群状态
+• 版本控制和审计
 ```
 
-### Q2: 如何实现自动回滚？
+### Q2: 如何实现自动部署？
 
 ```
 A:
-1. ArgoCD自动修复 (selfHeal)
-2. 版本回退 (git revert)
-3. 蓝绿部署切换
+1. ArgoCD监听Git变化
+2. 自动拉取最新配置
+3. 同步到K8s集群
 ```
 
 ## 五、自测题
 
 1. 解释GitOps核心原则
-2. 如何实现应用同步？
+2. 如何配置自动同步？
 3. 如何处理配置漂移？
 
 ---
 
 ## 参考文档
 
-- [ArgoCD官方文档](https://argo-cd.readthedocs.io/)
-- [GitOps白皮书](https://www.gitops.tech/)
+- [ArgoCD文档](https://argo-cd.readthedocs.io/)
+- [GitOps规范](https://www.gitops.tech/)

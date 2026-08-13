@@ -2,120 +2,87 @@
 
 ## 一、事务隔离级别
 
-```sql
--- 四种隔离级别
-SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;  -- 读未提交
-SET TRANSACTION ISOLATION LEVEL READ COMMITTED;    -- 读已提交
-SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;   -- 可重复读 (MySQL默认)
-SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;      -- 串行化
 ```
-
-```
-┌─────────────┬──────────┬──────────┬──────────┬──────────┐
-│  隔离级别    │ 脏读     │ 不可重复读│ 幻读     │ 串行化   │
-├─────────────┼──────────┼──────────┼──────────┼──────────┤
-│ READ UNCOMMITTED│ ✗     │   ✗      │   ✗     │   ✓     │
-│ READ COMMITTED │ ✓      │   ✗      │   ✗     │   ✓     │
-│ REPEATABLE READ│ ✓      │   ✓      │   ✗*    │   ✓     │
-│ SERIALIZABLE   │ ✓      │   ✓      │   ✓     │   ✓     │
-└─────────────┴──────────┴──────────┴──────────┴──────────┘
-* InnoDB通过MVCC和Next-Key Lock解决幻读
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     事务隔离级别                                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   Isolation Level      | Dirty Read | Non-Repeatable | Phantom          │
+│   ---------------------|------------|----------------|------------------│
+│   READ UNCOMMITTED     |     Y      |       Y        |       Y          │
+│   READ COMMITTED       |     N      |       Y        |       Y          │
+│   REPEATABLE READ      |     N      |       N        |       Y          │
+│   SERIALIZABLE         |     N      |       N        |       N          │
+│                                                                         │
+│   MySQL默认: REPEATABLE READ                                            │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## 二、锁机制
 
-```go
-package lock
+```sql
+-- 表锁
+LOCK TABLES orders WRITE;
+UNLOCK TABLES;
 
-type LockType int
+-- 行锁
+START TRANSACTION;
+SELECT * FROM orders WHERE id = 1 FOR UPDATE;
+UPDATE orders SET status = 'paid' WHERE id = 1;
+COMMIT;
 
-const (
-    RecordLock LockType = iota  // 记录锁
-    GapLock                     // 间隙锁
-    NextKeyLock                 // 临键锁 (记录锁 + 间隙锁)
-)
-
-// InnoDB锁等待处理
-type LockWait struct {
-    Thd *Thd
-    Table *Table
-    Index *Index
-    Rec *Record
-    Mode LockMode
-}
-
-func (l *LockWait) TryLock() bool {
-    // 尝试获取锁
-    if l.Table.Lock.TryLock(l.Mode) {
-        return true
-    }
-    
-    // 加入等待队列
-    l.Thd.SetState(ThdWaiting)
-    l.Table.Lock.AddWaiter(l)
-    
-    // 等待锁释放
-    for !l.Table.Lock.IsLocked(l.Mode) {
-        // 超时检查
-        if l.Thd.IsTimeout() {
-            return false
-        }
-        // 死锁检测
-        if l.Table.Lock.HasDeadlock() {
-            return false
-        }
-    }
-    
-    return true
-}
+-- 间隙锁
+SELECT * FROM orders WHERE status = 'pending' FOR UPDATE;
+-- 锁住(status='pending')的间隙
 ```
 
 ## 三、MVCC实现
 
 ```c
-// 事务版本链结构
-typedef struct version_node {
-    void *prev;                   /* 前一个版本 */
-    void *data;                   /* 数据记录 */
-    roll_ptr_t roll_ptr;          /* 回滚指针 */
-    db_horowitz_id_t db_trx_id;   /* 事务ID */
-} version_node_t;
+// InnoDB MVCC实现
+struct trx {
+    uint64_t trx_id;
+    int64_t  roll_ptr;
+    trx_state_t state;
+};
 
-// 当前读 vs 快照读
-// 当前读: SELECT ... FOR UPDATE / LOCK IN SHARE MODE
-// 快照读: SELECT ... (普通查询)
+struct undo_log {
+    byte   type_hint;
+    byte   info_bits;
+    ut_ad  undo_log_no;
+    // 事务回滚指针
+};
 ```
 
 ## 四、面试高频题
 
-### Q1: MySQL事务隔离级别如何选择？
+### Q1: 什么是幻读？
 
 ```
 A:
-• 开发环境: REPEATABLE READ
-• 高性能: READ COMMITTED
-• 金融: SERIALIZABLE
+• 同一事务内，多次查询返回不同结果集
+• 通过间隙锁解决
 ```
 
-### Q2: 如何解决死锁？
+### Q2: 死锁如何产生？
 
 ```
 A:
-1. 统一访问顺序
-2. 设置锁超时
-3. 合理设计索引
-4. 减少事务粒度
+1. 事务A持有锁1，等待锁2
+2. 事务B持有锁2，等待锁1
+3. 形成循环等待
 ```
 
 ## 五、自测题
 
 1. 解释MVCC原理
-2. 如何实现间隙锁？
+2. 如何实现乐观锁？
 3. 如何优化锁性能？
 
 ---
 
 ## 参考文档
 
-- [MySQL官方文档](https://dev.mysql.com/doc/)
-- [InnoDB源码](https://github.com/mysql/mysql-server)
+- [MySQL InnoDB源码](https://github.com/mysql/mysql-server)
+- [ACID特性](https://en.wikipedia.org/wiki/ACID)
