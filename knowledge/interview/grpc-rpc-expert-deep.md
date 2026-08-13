@@ -1,47 +1,86 @@
-# 标题 - 资深专家深度实现
+# gRPC高性能RPC框架 - 资深专家深度实现
 
-## 一、核心概念
+## 一、核心原理
 
-### 1.1 定义
-[核心概念描述]
+### 1.1 HTTP/2特性利用
 
-### 1.2 关键特性
-- 特性1
-- 特性2
-- 特性3
-
-## 二、架构设计
-
-```go
-// 核心实现代码
-type Core struct {}
+```
+HTTP/2特性:
+- 多路复用: 多个请求共享一个TCP连接
+- 二进制分帧: 更高效的传输
+- 头部压缩: HPACK算法
+- 服务器推送: 提前下发资源
 ```
 
-## 三、生产实践
+### 1.2 Protobuf序列化
 
-### 3.1 最佳实践
-1. 实践1
-2. 实践2
+```protobuf
+message User {
+  int64 id = 1;
+  string name = 2;
+  string email = 3;
+  repeated string tags = 4;
+}
+```
 
-### 3.2 避坑指南
-- 问题1
-- 问题2
+## 二、性能优化
+
+### 2.1 连接池
+
+```go
+import "google.golang.org/grpc"
+
+conn, err := grpc.Dial("localhost:50051",
+    grpc.WithTransportCredentials(insecure.NewCredentials()),
+    grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(10*1024*1024)),
+)
+defer conn.Close()
+```
+
+### 2.2 流式处理
+
+```go
+func (s *server) StreamUsers(req *UserRequest, stream pb.UserService_StreamUsersServer) error {
+    for _, user := range users {
+        if err := stream.Send(user); err != nil {
+            return err
+        }
+    }
+    return nil
+}
+```
+
+## 三、负载均衡
+
+```go
+import "google.golang.org/grpc/balancer/roundrobin"
+
+conn, _ := grpc.Dial("lb:///my-service",
+    grpc.WithBalancerName(roundrobin.Name),
+)
+```
 
 ## 四、面试高频题
 
-### Q1: 核心问题？
-A: 核心答案
+### Q1: gRPC和REST的区别？
 
-### Q2: 进阶问题？
-A: 进阶答案
+```
+A: gRPC基于HTTP/2+Protobuf，性能更高；REST基于JSON，更易调试。
+```
+
+### Q2: 如何处理gRPC流式通信？
+
+```
+A: Server/Client/Bidi streaming三种模式。
+```
 
 ## 五、自测题
 
-1. 问题1
-2. 问题2
+1. 实现一个流式gRPC服务
+2. 如何进行gRPC性能压测？
 
 ---
 
 ## 参考文档
 
-- [相关文档](https://example.com)
+- [gRPC Go文档](https://grpc.io/docs/languages/go/)

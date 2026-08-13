@@ -1,127 +1,117 @@
-# 容器优化 - 资深专家深度实现
+# 容器化优化 - 资深专家深度实现
 
-## 一、镜像优化
+## 一、镜像优化策略
 
 ### 1.1 多阶段构建
 
 ```dockerfile
-# 构建阶段
-FROM golang:1.21 AS builder
+# 阶段1: 构建
+FROM golang:1.21-alpine AS builder
+RUN apk add --no-cache git
 WORKDIR /app
-COPY go.mod go.sum ./
-RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o app .
+RUN go build -ldflags="-s -w" -o main .
 
-# 运行阶段
-FROM alpine:3.18
+# 阶段2: 运行
+FROM alpine:3.19
 RUN apk --no-cache add ca-certificates tzdata
-COPY --from=builder /app/app /usr/local/bin/
-ENTRYPOINT ["app"]
+COPY --from=builder /app/main /main
+EXPOSE 8080
+USER 65534:65534
+CMD ["/main"]
 ```
 
-### 1.2 镜像体积对比
+### 1.2 镜像瘦身
 
-```
-基础镜像体积:
-- Ubuntu: 72MB
-- Alpine: 5MB
-- Distroless: 200KB
-- Scratch: 0B
+```bash
+# 优化前: 850MB
+# 优化后: 25MB
+
+# 使用Alpine基础镜像
+FROM alpine:3.19
+
+# 合并RUN命令减少层数
+RUN apk add --no-cache git curl && \
+    mkdir -p /app && \
+    wget -O /app/app https://...
+
+# 使用.dockerignore
+node_modules/
+.git/
+*.md
 ```
 
 ## 二、运行时优化
 
-### 2.1 资源限制
-
 ```yaml
 # deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-service
 spec:
-  containers:
-  - name: app
-    resources:
-      requests:
-        memory: "128Mi"
-        cpu: "250m"
-      limits:
-        memory: "512Mi"
-        cpu: "1000m"
+  template:
+    spec:
+      containers:
+      - name: app
+        image: my-app:latest
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        securityContext:
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65534
 ```
 
-### 2.2 健康检查
-
-```yaml
-livenessProbe:
-  httpGet:
-    path: /healthz
-    port: 8080
-  initialDelaySeconds: 3
-  periodSeconds: 10
-
-readinessProbe:
-  httpGet:
-    path: /ready
-    port: 8080
-  initialDelaySeconds: 1
-  periodSeconds: 5
-```
-
-## 三、性能调优
-
-### 3.1 网络优化
-
-```bash
-# 调整内核参数
-sysctl -w net.core.somaxconn=65535
-sysctl -w net.ipv4.tcp_max_syn_backlog=65535
-```
-
-### 3.2 存储优化
-
-```yaml
-volumes:
-- name: tmp
-  emptyDir:
-    medium: Memory
-    sizeLimit: 100Mi
-```
-
-## 四、安全加固
+## 三、安全加固
 
 ```dockerfile
-FROM gcr.io/distroless/static
-USER nonroot
-COPY --from=builder /app/app /
-ENTRYPOINT ["/app"]
+# 非root用户运行
+USER appuser
+
+# 只读根文件系统
+readOnlyRootFilesystem: true
+
+# 最小权限
+capabilities:
+  drop: ["ALL"]
+  add: ["NET_BIND_SERVICE"]
 ```
 
-## 五、面试高频题
+## 四、面试高频题
 
-### Q1: 如何优化容器启动速度？
-
-```
-A:
-1. 使用轻量级基础镜像
-2. 减少层数
-3. 并行拉取镜像层
-```
-
-### Q2: 如何监控容器资源？
+### Q1: 如何优化Docker镜像大小？
 
 ```
 A:
-1. cgroup统计
-2. metrics-server
-3. Prometheus exporter
+1. 使用多阶段构建
+2. 选择小基础镜像(Alpine/Distroless)
+3. 合并RUN命令
+4. 使用.dockerignore
 ```
 
-## 六、自测题
+### Q2: 如何保证容器安全？
 
-1. 设计一个最小化Go应用镜像
-2. 如何实现容器资源限制？
+```
+A:
+1. 非root运行
+2. 只读文件系统
+3. 镜像扫描
+4. 最小权限原则
+```
+
+## 五、自测题
+
+1. 实现一个安全的Go服务容器化配置
+2. 如何优化构建速度？
 
 ---
 
 ## 参考文档
 
-- [Docker官方文档](https://docs.docker.com/)
+- [Docker最佳实践](https://docs.docker.com/build/building/best-practices/)

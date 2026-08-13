@@ -1,124 +1,97 @@
 # 分布式ID生成 - 资深专家深度实现
 
-## 一、Snowflake算法
+## 一、常见方案对比
+
+| 方案 | 性能 | 可用性 | 复杂度 | 适用场景 |
+|------|------|--------|--------|----------|
+| UUID | 高 | 高 | 低 | 全局唯一 |
+| Snowflake | 高 | 中 | 中 | 分布式系统 |
+| Redis INCR | 高 | 中 | 低 | 简单场景 |
+| DB Auto Increment | 低 | 高 | 低 | 低并发 |
+| ULID | 中 | 高 | 低 | 时序友好 |
+
+## 二、Snowflake算法
 
 ```go
-package snowflake
-
-import (
-    "sync"
-    "time"
-)
-
 type Snowflake struct {
     mu          sync.Mutex
-    lastTs      int64
+    lastTS      int64
     sequence    int64
-    workerId    int64
-    datacenterId int64
+    workerID    int64
+    workerBits  uint8
+    stepBits    uint8
 }
-
-const (
-    workerIdBits    = 5
-    datacenterIdBits = 5
-    maxWorkerId     = -1 ^ (-1 << workerIdBits)
-    maxDatacenterId = -1 ^ (-1 << datacenterIdBits)
-    sequenceBits    = 12
-    workerIdShift   = sequenceBits
-    datacenterIdShift = sequenceBits + workerIdBits
-    timestampLeftShift = sequenceBits + workerIdBits + datacenterIdBits
-    sequenceMask      = -1 ^ (-1 << sequenceBits)
-)
 
 func (s *Snowflake) NextID() int64 {
     s.mu.Lock()
     defer s.mu.Unlock()
     
     ts := time.Now().UnixMilli()
-    if ts < s.lastTs {
-        return -1 // 时钟回拨
+    if ts < s.lastTS {
+        panic("clock moved backwards")
     }
     
-    if ts == s.lastTs {
-        s.sequence = (s.sequence + 1) & sequenceMask
+    if ts == s.lastTS {
+        s.sequence = (s.sequence + 1) & mask
         if s.sequence == 0 {
-            ts = s.waitNextMillis(ts)
+            ts = s.waitNextMillis()
         }
     } else {
         s.sequence = 0
     }
     
-    s.lastTs = ts
-    return ((ts << timestampLeftShift) |
-        (s.datacenterId << datacenterIdShift) |
-        (s.workerId << workerIdShift) |
-        s.sequence)
+    s.lastTS = ts
+    return ((ts - epoch) << timestampShift) | 
+           (s.workerID << workerShift) | 
+           s.sequence
 }
 ```
 
-## 二、 UUID v7
+## 三、生产级实现
 
-```
-UUID v7 时间戳顺序:
-┌─────────────────────────────────────────────────────────────┐
-│  Timestamp (48 bits) | CRC (4 bits) | Version (4 bits)      │
-│                       │ Counter (12 bits)                   │
-└─────────────────────────────────────────────────────────────┘
+```go
+// 支持时钟回拨
+func (s *Snowflake) waitNextMillis() int64 {
+    ts := time.Now().UnixMilli()
+    for ts <= s.lastTS {
+        ts = time.Now().UnixMilli()
+    }
+    return ts
+}
 
-格式: XXXXXXXX-XXXX-7XXX-[89ab]XXX-XXXXXXXXXXXX
-```
-
-## 三、数据库方案
-
-```sql
--- 自增ID
-CREATE TABLE orders (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    user_id BIGINT NOT NULL,
-    amount DECIMAL(10,2)
-);
-
--- 分库分表ID生成
-CREATE TABLE sequence (
-    name VARCHAR(32) NOT NULL,
-    current_value BIGINT NOT NULL,
-    increment INT NOT NULL DEFAULT 1,
-    PRIMARY KEY (name)
-);
-
--- 获取ID
-SELECT GET_SEQ_ID('order_id') as id;
+// 支持节点IP作为workerID
+func getWorkerID() int64 {
+    addrs, _ := net.InterfaceAddrs()
+    for _, addr := range addrs {
+        if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+            return int64(crc32.ChecksumIEEE(ipnet.IP.To4())) % 1024
+        }
+    }
+    return 0
+}
 ```
 
 ## 四、面试高频题
 
-### Q1: Snowflake有什么缺点？
+### Q1: Snowflake时钟回拨如何处理？
 
 ```
-A:
-1. 依赖时钟，时钟回拨会失败
-2. 单机生成，有上限
-3. 需要分配worker_id
+A: 等待时钟追上，或提高sequence速率。
 ```
 
-### Q2: 如何保证唯一性？
+### Q2: UUID和Snowflake有什么区别？
 
 ```
-A:
-1. 时间戳 + 机器ID + 序列号
-2. 本地缓存预分配
-3. 数据库号段模式
+A: UUID全局唯一但无序，Snowflake有序且性能更高。
 ```
 
 ## 五、自测题
 
-1. 解释Snowflake算法
-2. 如何实现时钟回拨处理？
-3. 分布式ID方案有哪些？
+1. 实现一个带时钟回拨处理的Snowflake
+2. 如何设计一个ID生成服务？
 
 ---
 
 ## 参考文档
 
-- [Snowflake源码](https://github.com/bwmarrin/snowflake)
-- [UUID v7 RFC](https://datatracker.ietf.org/doc/html/draft-ietf-uuidrev-rfc4122-bis)
+- [Snowflake论文](https://github.com/twitter/snowflake)
