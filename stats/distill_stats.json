@@ -1,0 +1,19 @@
+{
+  "total_distilled": 3,
+  "projects": {
+    "vLLM": {
+      "total_docs": 3,
+      "total_duration": 2.5,
+      "last_distill": "2026-08-13T23:37:08.686027"
+    }
+  },
+  "history": [
+    {
+      "project": "vLLM",
+      "docs": 3,
+      "duration": 2.5,
+      "time": "2026-08-13T23:37:08.686033"
+    }
+  ],
+  "last_update": "2026-08-13T23:37:08.686034"
+}
