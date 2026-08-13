@@ -1,404 +1,323 @@
-# K8s存储体系 - 资深专家深度实现
+# Kubernetes存储系统深度实现 - 资深专家
 
 ## 一、存储架构
 
-### 1.1 CSI架构
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                     Kubernetes CSI架构                                    │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│   Application ──► PVC ──► Pod                                         │
-│                    │                                                    │
-│                    ▼                                                    │
-│              VolumeAttach                                              │
-│                    │                                                    │
-│                    ▼                                                    │
-│              Controller Service（节点级）                               │
-│                    │                                                    │
-│                    ▼                                                    │
-│              Node Service（附件）                                        │
-│                    │                                                    │
-│                    ▼                                                    │
-│              CSI Driver                                                │
-│                    │                                                    │
-│                    ▼                                                    │
-│              External Storage System                                  │
-│                                                                         →
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-### 1.2 CSI核心组件
+### 1.1 PV/PVC模型
 
 ```go
-// CSI驱动程序接口
-type CSIDriver interface {
-    // 卷操作
-    CreateVolume(req *CreateVolumeRequest) (*CreateVolumeResponse, error)
-    DeleteVolume(req *DeleteVolumeRequest) (*DeleteVolumeResponse, error)
-    ControllerPublishVolume(req *ControllerPublishVolumeRequest) (*ControllerPublishVolumeResponse, error)
-    ControllerUnpublishVolume(req *ControllerUnpublishVolumeRequest) (*ControllerUnpublishVolumeResponse, error)
-    
-    // 节点操作
-    NodePublishVolume(req *NodePublishVolumeRequest) (*NodePublishVolumeResponse, error)
-    NodeUnpublishVolume(req *NodeUnpublishVolumeRequest) (*NodeUnpublishVolumeResponse, error)
-    
-    // 能力查询
-    GetPluginInfo() (*GetPluginInfoResponse, error)
-    GetCapabilities() (*GetPluginCapabilitiesResponse, error)
-}
-
-// 存储类定义
-type StorageClass struct {
-    Name           string
-    Provisioner    string
-    Parameters     map[string]string
-    ReclaimPolicy  ReclaimPolicy
-    VolumeBinding  VolumeBindingMode
-    AllowVolumeExpansion bool
-}
-```
-
-## 二、PV/PVC管理
-
-### 2.1 生命周期管理
-
-```go
+// PersistentVolume
 type PersistentVolume struct {
-    Spec   PVSpec
-    Status PVStatus
+    apiVersion string
+    kind       string
+    metadata   metav1.ObjectMeta
+    spec       PVSpec
+    status     PVStatus
 }
 
 type PVSpec struct {
-    Capacity         ResourceList
-    AccessModes      []AccessMode
-    PersistentVolumeReclaimPolicy ReclaimPolicy
-    StorageClassName string
-    MountOptions     []string
+    Capacity       ResourceList
+    AccessModes    []PersistentVolumeAccessMode
+    ReclaimPolicy  PersistentVolumeReclaimPolicy
+    StorageClass   string
+    MountOptions   []string
+    VolumeMode     *VolumeMode
+    NodeAffinity   *VolumeNodeAffinity
+    ClaimRef       *ObjectReference
+    CSI            *CSIPersistentVolumeSource
+    NFS            *NFSVolumeSource
+    AWSElasticBlockStore *AWSElasticBlockStoreVolumeSource
+}
+
+// PersistentVolumeClaim
+type PersistentVolumeClaim struct {
+    apiVersion string
+    kind       string
+    metadata   metav1.ObjectMeta
+    spec       PVCSpec
+    status     PVCStatus
+}
+
+type PVCSpec struct {
+    AccessModes      []PersistentVolumeAccessMode
+    VolumeName       string
+    StorageClassName *string
+    Resources        ResourceRequirements
     VolumeMode       *VolumeMode
-    Source           PVSource
+    Selector         *metav1.LabelSelector
 }
-
-type PVStatus struct {
-    Phase      VolumePhase
-    Message    string
-    Reason     string
-}
-
-// 生命周期状态转换
-type VolumePhase string
-
-const (
-    VolumePending   VolumePhase = "Pending"
-    VolumeAvailable VolumePhase = "Available"
-    VolumeBound     VolumePhase = "Bound"
-    VolumeReleased  VolumePhase = "Released"
-    VolumeFailed    VolumePhase = "Failed"
-)
 ```
 
-### 2.2 动态供给
+### 1.2 StorageClass
 
 ```go
+// StorageClass
+type StorageClass struct {
+    apiVersion string
+    kind       string
+    metadata   metav1.ObjectMeta
+    provisioner string
+    parameters map[string]string
+    reclaimPolicy *PersistentVolumeReclaimPolicy
+    volumeBindingMode *VolumeBindingMode
+}
+
+// 动态 Provisioner
 type Provisioner interface {
-    Provision(options ProvisionOptions) (*ProvisionedVolume, error)
-    Delete(volume *ProvisionedVolume) error
+    // 创建PV
+    Create(pvc *v1.PersistentVolumeClaim) (*v1.PersistentVolume, error)
+    
+    // 删除PV
+    Delete(volume *v1.PersistentVolume) error
+    
+    // 更新PV
+    Update(oldVolume, newVolume *v1.PersistentVolume) error
 }
 
-type ProvisionOptions struct {
-    StorageClass *StorageClass
-    PVName       string
-    Capacity     ResourceQuantity
-    Parameters   map[string]string
+// AWS EBS Provisioner
+type EBSProvisioner struct {
+    ec2      *ec2.EC2
+    iamRole  string
+    region   string
 }
 
-type ProvisionedVolume struct {
-    PV *PersistentVolume
-}
-
-// 实现动态供给
-func (p *NFSProvisioner) Provision(options ProvisionOptions) (*ProvisionedVolume, error) {
-    // 1. 创建NFS目录
-    path := p.createNFSDirectory(options.PVName)
-    
-    // 2. 创建PV对象
-    pv := &PersistentVolume{
-        ObjectMeta: metav1.ObjectMeta{
-            Name: options.PVName,
-        },
-        Spec: PVSpec{
-            Capacity: options.Capacity,
-            AccessModes: []v1.PersistentVolumeAccessMode{
-                v1.ReadWriteOnce,
-            },
-            PersistentVolumeReclaimPolicy: v1.PersistentVolumeReclaimRetain,
-            StorageClassName: options.StorageClass.Name,
-            NFS: &v1.NFSVolumeSource{
-                Server: p.server,
-                Path:   path,
-            },
-        },
-    }
-    
-    return &ProvisionedVolume{PV: pv}, nil
-}
-```
-
-## 三、存储插件实现
-
-### 3.1 自定义CSI驱动
-
-```go
-type MyCSIControllerServer struct {
-    driver *MyCSIDriver
-    volumeLocks *volumeLocks
-}
-
-func (c *MyCSIControllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
-    name := req.GetName()
-    
-    // 验证容量范围
-    capacity := req.GetCapacityRange().GetRequiredBytes()
-    if capacity < minCapacity || capacity > maxCapacity {
-        return nil, status.Errorf(codes.InvalidArgument, "Invalid capacity")
-    }
-    
-    // 生成唯一ID
-    volID := generateVolumeID(name)
-    
-    // 创建存储卷
-    vol, err := c.driver.createVolume(volID, capacity, req.GetParameters())
+func (p *EBSProvisioner) Create(pvc *v1.PersistentVolumeClaim) (*v1.PersistentVolume, error) {
+    // 1. 创建EBS卷
+    volume, err := p.ec2.CreateVolume(&ec2.CreateVolumeInput{
+        AvailabilityZone: aws.String(p.region + "a"),
+        Size:             aws.Int64(int64(pvc.Spec.Resources.Requests.Storage().Value() / 1024 / 1024 / 1024)),
+        VolumeType:       aws.String("gp3"),
+    })
     if err != nil {
         return nil, err
     }
     
-    // 返回响应
+    // 2. 创建PV
+    pv := &v1.PersistentVolume{
+        ObjectMeta: metav1.ObjectMeta{
+            GenerateName: "pv-",
+            Labels: map[string]string{
+                "storage-class": pvc.Spec.StorageClassName,
+            },
+        },
+        Spec: v1.PVSpec{
+            Capacity: v1.ResourceList{
+                v1.ResourceStorage: pvc.Spec.Resources.Requests.Storage(),
+            },
+            AccessModes: pvc.Spec.AccessModes,
+            PersistentVolumeSource: v1.PersistentVolumeSource{
+                CSI: &v1.CSIPersistentVolumeSource{
+                    Driver:       "ebs.csi.aws.com",
+                    VolumeHandle: aws.String(*volume.VolumeId),
+                },
+            },
+            MountOptions: []string{"noatime"},
+        },
+    }
+    
+    return pv, nil
+}
+```
+
+## 二、CSI驱动
+
+### 2.1 CSI规范
+
+```go
+// CSI Controller Service
+type ControllerService.go interface {
+    CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error)
+    DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error)
+    ControllerPublishVolume(ctx context.Context, req *csi.ControllerPublishVolumeRequest) (*csi.ControllerPublishVolumeResponse, error)
+    ControllerUnpublishVolume(ctx context.Context, req *csi.ControllerUnpublishVolumeRequest) (*csi.ControllerUnpublishVolumeResponse, error)
+    ControllerGetCapabilities(ctx context.Context, req *csi.ControllerGetCapabilitiesRequest) (*csi.ControllerGetCapabilitiesResponse, error)
+}
+
+// CSI Node Service
+type NodeService interface {
+    NodePublishVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error)
+    NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error)
+    NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error)
+    NodeGetCapabilities(ctx context.Context, req *csi.NodeGetCapabilitiesRequest) (*csi.NodeGetCapabilitiesResponse, error)
+}
+
+// CSI实现
+type CSIDriver struct {
+    name    string
+    version string
+    nodeID  string
+}
+
+func (d *CSIDriver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
+    params := req.GetParameters()
+    size := req.GetCapacityRange().GetRequiredBytes()
+    
+    // 调用底层存储API
+    volume, err := d.storageClient.CreateVolume(size, params)
+    if err != nil {
+        return nil, err
+    }
+    
     return &csi.CreateVolumeResponse{
         Volume: &csi.Volume{
-            VolumeId:      volID,
-            CapacityBytes: capacity,
-            AccessPoints:  vol.GetAccessPoints(),
+            VolumeId:      volume.ID,
+            CapacityBytes: volume.Size,
+            VolumeContext: params,
         },
     }, nil
 }
 ```
 
-### 3.2 节点服务实现
+### 2.2 Pod挂载
 
 ```go
-type MyCSINodeServer struct {
-    driver *MyCSIDriver
-    mount  *mount.SafeFormatAndMount
+// Volume挂载器
+type VolumeMounter struct {
+    kubeClient kubernetes.Interface
+    csiclient  *grpc.ClientConn
 }
 
-func (n *MyCSINodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
-    volumeID := req.GetVolumeId()
-    targetPath := req.GetTargetPath()
-    
-    // 检查目标路径
-    exists, err := n.mount.PathExists(targetPath)
-    if err != nil {
-        return nil, err
-    }
-    if !exists {
-        if err := os.MkdirAll(targetPath, 0750); err != nil {
-            return nil, err
-        }
-    }
-    
-    // 获取卷信息
-    vol, err := n.driver.getVolume(volumeID)
-    if err != nil {
-        return nil, err
-    }
-    
-    // 挂载卷
-    source := vol.GetSource()
-    fstype := req.GetVolumeCapability().GetMount().GetFsType()
-    
-    options := extractMountOptions(req.GetVolumeCapability().GetMount())
-    
-    if err := n.mount.Mount(source, targetPath, fstype, options); err != nil {
-        return nil, status.Errorf(codes.Internal, "Failed to mount: %v", err)
-    }
-    
-    return &csi.NodePublishVolumeResponse{}, nil
-}
-```
-
-## 四、存储优化策略
-
-### 4.1 性能调优
-
-```yaml
-# StorageClass配置
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: fast-ssd
-provisioner: kubernetes.io/aws-ebs
-parameters:
-  type: gp3
-  iopsPerGB: "100"
-  throughput: "500"
-  encrypted: "true"
-reclaimPolicy: Delete
-volumeBindingMode: WaitForFirstConsumer
-allowVolumeExpansion: true
-```
-
-### 4.2 容量规划
-
-```go
-type CapacityPlanner struct {
-    metrics *MetricsCollector
-    alerts  *AlertManager
-}
-
-func (p *CapacityPlanner) plan() (*CapacityPlan, error) {
-    // 收集指标
-    currentUsage := p.metrics.getCurrentUsage()
-    growthRate := p.metrics.calculateGrowthRate()
-    
-    // 预测未来需求
-    projected := currentUsage * (1 + growthRate)
-    
-    // 计算推荐容量
-    recommended := projected * 1.2 // 20% buffer
-    
-    // 检查告警阈值
-    if currentUsage > recommended * 0.8 {
-        p.alerts.trigger("CapacityWarning", currentUsage, recommended)
-    }
-    
-    return &CapacityPlan{
-        Current:     currentUsage,
-        Projected:   projected,
-        Recommended: recommended,
-    }, nil
-}
-```
-
-## 五、数据备份恢复
-
-### 5.1 Velero备份
-
-```yaml
-# Backup配置
-apiVersion: velero.io/v1
-kind: Backup
-metadata:
-  name: daily-backup
-  namespace: velero
-spec:
-  includedNamespaces:
-    - production
-    - staging
-  excludedNamespaces:
-    - kube-system
-  includeClusterResources: true
-  storageLocation: default
-  ttl: 720h
-  snapshotVolumes: true
-  volumeSnapshotLocations:
-    - aws-default
-```
-
-### 5.2 恢复流程
-
-```go
-type RestoreManager struct {
-    veleroClient *veleroclientset.Velerov1client
-    scheduler    *Scheduler
-}
-
-func (m *RestoreManager) restore(backupName string, targetNamespace string) error {
-    // 创建恢复请求
-    restore := &velerov1.Restore{
-        ObjectMeta: metav1.ObjectMeta{
-            GenerateName: "restore-",
-        },
-        Spec: velerov1.RestoreSpec{
-            BackupRef: &corev1.ObjectReference{
-                Name: backupName,
-            },
-            IncludedNamespaces: []string{targetNamespace},
-            ExistingResourcePolicy: "update",
-            RestorePVs: true,
-        },
-    }
-    
-    // 执行恢复
-    result, err := m.veleroClient.Velerov1().Restores(veleroNamespace).Create(context.TODO(), restore, metav1.CreateOptions{})
+// 执行挂载
+func (m *VolumeMounter) MountVolume(pod *v1.Pod, volume *v1.Volume, mountPath string) error {
+    // 1. 获取PV
+    pvName := volume.PersistentVolumeClaim.ClaimName
+    pv, err := m.kubeClient.CoreV1().PersistentVolumes().Get(context.Background(), pvName, metav1.GetOptions{})
     if err != nil {
         return err
     }
     
-    // 等待完成
-    return m.scheduler.waitForRestore(result.Name)
+    // 2. 调用CSI插件
+    req := &csi.NodePublishVolumeRequest{
+        VolumeId:         pv.Spec.CSI.VolumeHandle,
+        TargetPath:       mountPath,
+        StagingTargetPath: stagingPath,
+        VolumeCapability: &mountCapability,
+        ReadOnly:         false,
+    }
+    
+    resp, err := m.csiclient.NodePublishVolume(context.Background(), req)
+    if err != nil {
+        return err
+    }
+    
+    // 3. 创建挂载点
+    os.MkdirAll(mountPath, 0755)
+    
+    return nil
 }
 ```
 
-## 六、面试高频题
+## 三、存储策略
 
-### Q1: PV和PVC的区别？
+### 3.1 备份恢复
+
+```go
+// 备份控制器
+type BackupController struct {
+    kubeClient kubernetes.Interface
+    veleroClient *velerov1api.Clientset
+}
+
+// 创建备份
+func (c *BackupController) CreateBackup(namespace, name string) (*velerov1api.Backup, error) {
+    backup := &velerov1api.Backup{
+        ObjectMeta: metav1.ObjectMeta{
+            Name:      name,
+            Namespace: namespace,
+        },
+        Spec: velerov1api.BackupSpec{
+            IncludedNamespaces: []string{namespace},
+            StorageLocation:    "default",
+            TTL:                metav1.Duration{Duration: 7 * 24 * time.Hour},
+        },
+    }
+    
+    return c.veleroClient.Velerov1api().Backups(namespace).Create(context.Background(), backup, metav1.CreateOptions{})
+}
+
+// 恢复备份
+func (c *BackupController) RestoreBackup(namespace, backupName string) error {
+    restore := &velerov1api.Restore{
+        ObjectMeta: metav1.ObjectMeta{
+            Name:      fmt.Sprintf("restore-%s", time.Now().Format("20060102150405")),
+            Namespace: namespace,
+        },
+        Spec: velerov1api.RestoreSpec{
+            BackupName:    backupName,
+            IncludedNamespaces: []string{namespace},
+        },
+    }
+    
+    _, err := c.veleroClient.Velerov1api().Restores(namespace).Create(context.Background(), restore, metav1.CreateOptions{})
+    return err
+}
+```
+
+### 3.2 监控告警
+
+```go
+// 存储监控
+type StorageMonitor struct {
+    kubeClient kubernetes.Interface
+    alerts     AlertManager
+}
+
+// 检查存储使用率
+func (m *StorageMonitor) CheckCapacity(namespace string) error {
+    pvcs, err := m.kubeClient.CoreV1().PersistentVolumeClaims(namespace).List(context.Background(), metav1.ListOptions{})
+    if err != nil {
+        return err
+    }
+    
+    for _, pvc := range pvcs.Items {
+        usage := pvc.Status.Capacity.Storage().Value()
+        requested := pvc.Spec.Resources.Requests.Storage().Value()
+        
+        // 使用率超过80%告警
+        if float64(usage)/float64(requested) > 0.8 {
+            m.alerts.Send(Alert{
+                Type:    Warning,
+                Message: fmt.Sprintf("PVC %s/%s usage exceeding 80%%", namespace, pvc.Name),
+                Metric:  "pvc_usage_percent",
+                Value:   float64(usage) / float64(requested) * 100,
+            })
+        }
+    }
+    
+    return nil
+}
+```
+
+## 四、面试高频题
+
+### Q1: PV和PVC有什么区别？
 
 ```
 A:
-• PV: 集群中的存储资源
-• PVC: 用户对存储的请求
-• 关系: PVC绑定到PV
+- PV: 集群中的存储资源，管理员创建
+- PVC: 用户对存储的请求，用户创建
+- PV和PVC绑定后，用户才能使用
 ```
 
-### Q2: StorageClass的作用？
-
-```
-A:
-1. 动态供给存储
-2. 定义存储类型
-3. 配置参数（IOPS、吞吐量等）
-4. 控制回收策略
-```
-
-### Q3: 如何实现存储高可用？
+### Q2: 如何选择StorageClass？
 
 ```
 A:
-1. 多副本部署
-2. 跨可用区分布
-3. 定期备份
-4. 故障自动迁移
+1. 性能需求: SSD vs HDD
+2. 持久性: 本地 vs 网络
+3. 备份需求: 是否需要快照
+4. 成本考虑: 不同tier价格不同
 ```
 
-## 七、自测题
+## 五、自测题
 
-1. 解释CSI架构
-2. 如何实现动态供给？
-3. 存储容量如何规划？
+1. 解释PV/PVC绑定流程
+2. 如何实现CSI驱动？
+3. 存储备份如何设计？
 
 ---
 
 ## 参考文档
 
-- [K8s存储文档](https://kubernetes.io/docs/concepts/storage/)
-- [CSI规范](https://github.com/container-storage-interface/spec)
-
----
-
-## 交叉引用
-
-### 相关文档
-- [K8s调度器深入](./k8s-scheduler-deep.md) - 调度算法
-- [K8s网络插件](./k8s-network-plugin-deep.md) - 网络存储
-- [GitOps工作流](./gitops-workflow-deep.md) - 配置管理
-- [容器安全](./containers-security-deep.md) - 安全存储
-
-### 引用链
-```
-k8s-storage-deep.md
-├── CSI驱动 → k8s-scheduler-deep.md
-├── 网络存储 → k8s-network-plugin-deep.md
-├── 配置管理 → gitops-workflow-deep.md
-└── 安全策略 → containers-security-deep.md
-```
+- [K8s调度器深入](./k8s-scheduler-deep.md)
+- [K8s网络深入](./k8s-network-deep.md)
+- [GitOps工作流](../devops/gitops-workflow-deep.md)
