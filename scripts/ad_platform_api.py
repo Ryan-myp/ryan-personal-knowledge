@@ -126,7 +126,9 @@ class AdPlatformClient:
         }
         url = 'https://business-api.tiktok.com/open_api/v1.3/campaign/get/'
         resp = requests.get(url, headers=headers, params=params, timeout=30)
-        return resp.json().get('data', [])
+        # TikTok 响应格式: {"data": {"list": [...]}}
+        data = resp.json().get('data', {})
+        return data.get('list', []) if isinstance(data, dict) else data
     
     def tiktok_get_campaign(self, campaign_id: str, **kwargs) -> Dict:
         """获取广告系列详情 - 使用 open_api/v1.3 端点"""
@@ -137,12 +139,13 @@ class AdPlatformClient:
         headers = {'Access-Token': token, 'Content-Type': 'application/json'}
         params = {
             'advertiser_id': account_id,
-            'filtering': json.dumps({'campaign_ids': [campaign_id]})
+            'filtering': json.dumps([{'field': 'campaign_ids', 'operator': 'in', 'values': [campaign_id]}])
         }
         url = 'https://business-api.tiktok.com/open_api/v1.3/campaign/get/'
         resp = requests.get(url, headers=headers, params=params, timeout=30)
-        data = resp.json().get('data', [])
-        return data[0] if data else {}
+        data = resp.json().get('data', {})
+        campaigns = data.get('list', []) if isinstance(data, dict) else data
+        return campaigns[0] if campaigns else {}
     
     def tiktok_create_campaign(self, account_id: str, name: str, **kwargs) -> Dict:
         """创建广告系列"""
@@ -823,11 +826,27 @@ class AdPlatformClient:
         return {'id': customer_id, 'name': customer.descriptive_name}
     
     # ========== DV360 API (45+ tools) ==========
-    def dv360_list_advertisers(self, **kwargs) -> List[Dict]:
-        """列出广告主"""
-        service = self.get_client('dv360')
-        advertisers = service.users().me().advertisers().list().execute()
-        return advertisers.get('advertisers', [])
+    def dv360_list_advertisers(self, partner_id: str = None, **kwargs) -> List[Dict]:
+        """列出广告主 - 使用 v4 API"""
+        import subprocess
+        import json as json_lib
+        
+        # 使用 dv360_client.py 脚本
+        result = subprocess.run(
+            ['python3', 'scripts/dv360_client.py', 'advertisers', partner_id or '4659631', '20'],
+            capture_output=True, text=True, timeout=30
+        )
+        
+        # 解析输出中的 JSON
+        lines = result.stdout.split('\n')
+        for line in lines:
+            if line.strip().startswith('{'):
+                try:
+                    return json_lib.loads(line)
+                except:
+                    pass
+        
+        return {'advertisers': []}
     
     def dv360_get_advertiser(self, advertiser_id: str, **kwargs) -> Dict:
         """获取广告主详情"""
