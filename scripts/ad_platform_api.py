@@ -110,7 +110,7 @@ class AdPlatformClient:
         """列出 TikTok 广告账户"""
         client = self.get_client('tiktok')
         import requests
-        headers = {'Authorization': f'Bearer {client["access_token]"}'}
+        headers = {'Authorization': f'Bearer {client["access_token"]}'}  # noqa
         resp = requests.get(f'{client["base_url"]}/ads/account/', headers=headers)
         return resp.json().get('data', [])
     

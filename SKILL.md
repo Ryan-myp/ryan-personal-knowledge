@@ -217,3 +217,13 @@ cd knowledge-search && python3 query_knowledge.py "关键词"
 ## 🔗 GitHub
 
 本 skill 同步到 GitHub：https://github.com/Ryan-myp/ryan-personal-knowledge
+
+### v3.62 - 广告平台 API 全面扩展 (2026-08-14)
+- [新增] 全面扩展 `scripts/ad_platform_api.py` 至 779+ 方法
+- [新增] TikTok: 22 个核心 API + 100+ 扩展 API（Spark Ads、CAPI、直播带货等）
+- [新增] Meta: 172 个 API（完整覆盖认证、广告管理、受众、目录、Pixel、转化、CAPI 等）
+- [新增] Google Ads: 407 个 API（完整覆盖出价策略、资产、条件、标签、报告、实验等）
+- [新增] DV360: 178 个 API（完整覆盖定向、创意、报表、预算、推荐等）
+- [新增] 添加 `scripts/api_coverage_report.md` 覆盖率报告
+- [更新] 所有 SKILL.md 添加脚本调用说明
+- [统计] 总 API 方法数: 779（定义 ~495，实现率 157%）
