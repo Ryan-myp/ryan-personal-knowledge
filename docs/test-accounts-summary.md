@@ -1,53 +1,48 @@
 # 四平台测试账户汇总
 
-## 测试账户信息
+## 测试账户信息 (2026-08-14)
 
 | 平台 | 测试账户 ID | 状态 | 说明 |
 |------|------------|------|------|
-| Meta | 2806375919473667 | ✅ 可用 | 20 个 Campaigns, PAUSED |
-| TikTok | 7397068114548195329 | ✅ 可用 | Campaign 1836521788460274 已验证 |
-| Google Ads | 2493002626 (MCC) | ✅ 可用 | 有 46 个子账户 |
-| DV360 | 5110831 | ✅ 可用 | 多个 Campaigns |
-
-## 已验证功能
-
-### Meta (2806375919473667)
-- ✅ Campaign 列表查询
-- ✅ Campaign 详情查询
-- ⚠️ Ad Set/Ad 查询需要进一步测试
-
-### TikTok (7397068114548195329)
-- ✅ Campaign 查询 (1836521788460274)
-- ✅ Ad Groups 查询 (10 个)
-- ✅ Ads 查询 (10 个)
-- 💡 可用于调研完整层级结构
-
-### Google Ads (2493002626 - MCC)
-- ✅ MCC 账户查询
-- ✅ 子账户列表查询
-- ⚠️ 需要分别查询每个子账户的 Campaigns
-- 💡 可调研 Campaign 表现、预算分配
-
-### DV360 (5110831)
-- ✅ Partner 信息查询
-- ✅ Advertisers 列表查询
-- ✅ Campaigns 查询
-- 💡 可调研 Line Items 和 Flights
+| Meta | 2806375919473667 | ⚠️ 权限受限 | 无 ads_management 权限，需重新授权 |
+| TikTok | 7397068114548195329 | ⚠️ API 部分不可用 | Campaign 列表可用，其他端点 404 |
+| Google Ads | 9055507554 (子账户) | ⚠️ 环境限制 | 依赖 cryptography 库架构不兼容 (arm64 vs x86_64) |
+| DV360 | 5110831 | ⚠️ 依赖问题 | 同上，Service Account JWT 签名失败 |
 
 ## 配置文件位置
-- `config/ad_platform_credentials.json`
+- `config/ad_platform_credentials.json` — 凭证和测试账号映射
+- `docs/test-accounts-summary.md` — 本文档
 
-## 使用方法
+## 运行测试
 ```bash
-# Meta
-python3 scripts/query_campaign.py meta <CAMPAIGN_ID>
+# 综合测试
+python3 scripts/test_all_api.py
 
-# TikTok
-python3 scripts/query_tiktok_campaign.py <campaign_id> <advertiser_id>
-
-# Google Ads
-python3 scripts/query_google_campaign.py <CAMPAIGN_RESOURCE_NAME>
-
-# DV360
-python3 scripts/query_dv360_campaign.py <CAMPAIGN_ID>
+# Skills API 连通性测试
+python3 scripts/test_skills_api_v4.py
 ```
+
+## 已知问题
+
+### Meta
+- Token 缺少 `ads_management` / `ads_read` 权限
+- 需重新授权: https://www.facebook.com/dialog/oauth?client_id=&redirect_uri=&scope=ads_management,ads_read
+
+### Google Ads
+- Python 3.9 + arm64 macOS 上 `cryptography` 库有架构不兼容问题
+- 解决方案: 升级 Python 到 3.10+ 或重装 cryptography
+- 简化 REST 客户端可用但部分端点可能已废弃
+
+### TikTok
+- API 端点路径可能需要更新 (open_api/v1.3)
+- 部分端点返回 404
+
+### DV360
+- Service Account JWT 签名依赖 cryptography 库
+- 需要 Python 3.10+ 环境
+
+## 可用功能总结
+- Meta: `/me` 用户信息 ✅, `/me/accounts` 账户列表 ✅, Campaign 查询 ✅ (需正确权限的账户)
+- TikTok: Campaign 列表 ✅ (有限)
+- Google Ads: 本地选项数据 (Bid Strategy/Campaign Type) ✅, 需修复环境后才能测试真实 API
+- DV360: 本地选项数据 (Bid Strategy/Creative Format) ✅, 需修复环境后才能测试真实 API

@@ -717,6 +717,186 @@ App 广告的机器学习本质上是对“信号 → 出价”的学习。
 
 今明两章会把这些设计原则落成可执行的生产配置。
 
+### 2.6 转化回传与控制面：Go 工程落地
+
+增长团队的工程侧往往用 Go 写服务端回传与后台控制面。
+
+这里给出两个真实高频场景的 Go 示例：
+
+1. **服务端事件回传**：把 App 内的 purchase 事件（含价值）实时回传 Google，
+   供 conversion tracking 与 tROAS 使用；
+2. **GAQL 查询封装**：在 Go 服务里封装对 Google Ads REST 的查询，
+   用于周期性拉取 UAC 指标、做 BI 落库。
+
+#### 2.6.1 Go 服务端事件回传示例
+
+很多团队用 Firebase 或 MMP SDK 在端上上报，但**服务端回传**（尤其离线/服务器确认的订单）
+更可靠。这里展示一次 POST 到 Google Ads 的 GCLID/转化回传思路。
+
+```go
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"time"
+)
+
+// googleAdsClient 封装对 Google Ads API 的 POST 请求。
+type googleAdsClient struct {
+	baseURL        string
+	developerToken string
+	loginCustomer  string
+	accessToken    string
+	http           *http.Client
+}
+
+func newGoogleAdsClient(devToken, loginCustomer, accessToken string) *googleAdsClient {
+	return &googleAdsClient{
+		baseURL:        "https://googleads.googleapis.com/v24",
+		developerToken: devToken,
+		loginCustomer:  loginCustomer,
+		accessToken:    accessToken,
+		http:           &http.Client{Timeout: 30 * time.Second},
+	}
+}
+
+// post 通用 POST，签名与 Python 侧的 request 对应。
+func (c *googleAdsClient) post(ctx context.Context, endpoint string, body any) (map[string]any, error) {
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.baseURL+"/"+endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.accessToken)
+	req.Header.Set("developer-token", c.developerToken)
+	req.Header.Set("login-customer-id", c.loginCustomer)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var out map[string]any
+	// 简化：非 200 视为失败（真实代码需读 body 取 error.message）
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("google ads api status %d", resp.StatusCode)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// Search 执行 GAQL 查询（对应 Python search(customer_id, query)）。
+func (c *googleAdsClient) Search(ctx context.Context, customerID, query string) (map[string]any, error) {
+	return c.post(ctx, "customers/"+customerID+":search", map[string]any{
+		"query": query,
+	})
+}
+
+// ReportCampaign 拉取 App 系列的广告系列级指标。
+// 对应 Python generate_report 的 GAQL，但收敛到 App 子类型。
+func (c *googleAdsClient) ReportCampaign(ctx context.Context, customerID, start, end string) (map[string]any, error) {
+	q := fmt.Sprintf(`
+SELECT campaign.name,
+       metrics.impressions, metrics.clicks,
+       metrics.cost_micros, metrics.conversions, metrics.conversions_value
+FROM campaign
+WHERE segments.date BETWEEN '%s' AND '%s'
+  AND campaign.advertising_channel_sub_type IN
+      ('APP_CAMPAIGN', 'PERFORMANCE_MAX_FOR_ANDROID_APPS')`, start, end)
+	return c.Search(ctx, customerID, q)
+}
+
+func main() {
+	ctx := context.Background()
+	client := newGoogleAdsClient("DEV", "LOGIN", "TOKEN")
+
+	res, err := client.ReportCampaign(ctx, "1234567890", "2026-08-01", "2026-08-07")
+	if err != nil {
+		fmt.Println("err:", err)
+		return
+	}
+	// 处理 res（rows 在 res["results"]）
+	fmt.Printf("rows: %d\n", len(res["results"].([]any)))
+}
+```
+
+要点：
+
+- Go 侧签名 `post` / `Search` 与 Python 侧 `request` / `search` 一一对应；
+- `login-customer-id`（MCC）要带上，跨子账号查询才有效；
+- 组织列为 `campaign.*` + `metrics.*` + `segments.*`，与 GAQL 命名一致。
+
+#### 2.6.2 批量拉数与 BI 落库
+
+增长团队常把 UAC 指标落进数据仓库做长期观察。
+
+这里展示多日期循环拉数（示意，不含落库细节）：
+
+```go
+// 多日期聚合，按月循环拉取每日指标
+dates := []string{}
+for d := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC); d.Before(time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)); d = d.AddDate(0, 0, 1) {
+	dates = append(dates, d.Format("2006-01-02"))
+}
+
+for _, day := range dates {
+	q := fmt.Sprintf(`
+SELECT campaign.name, segments.date, metrics.cost_micros,
+       metrics.conversions, metrics.conversions_value
+FROM campaign
+WHERE segments.date = '%s'
+  AND campaign.advertising_channel_sub_type = 'APP_CAMPAIGN'`, day)
+	res, err := client.Search(ctx, "1234567890", q)
+	if err != nil {
+		fmt.Println("day", day, "fail", err)
+		continue
+	}
+	// append res 到落库 buffer
+	fmt.Println("fetched", day, len(res["results"].([]any)))
+}
+```
+
+#### 2.6.3 Go 侧与 Python 侧的分工建议
+
+| 职责 | 建议语言 | 说明 |
+| ---- | -------- | ---- |
+| 数据回传 / 后台控制面 | Go | 高并发、服务端稳定 |
+| 快速脚本 / 报表原型 | Python | 简洁、贴近 `google_ads_api.py` |
+| 周期任务 / 批处理 | Go / Python 均可 | 看既有基建 |
+
+两套能力你都要具备：Python 负责策略原型与快速验证，
+Go 负责线上稳定的回传与数据管道。
+
+#### 2.6.4 转化回传的健壮性设计
+
+回传是易碎链路，要做幂等与重试：
+
+- 用业务订单粒度做幂等键，避免重复回传导致重复计数；
+- 失败回传进入 MQ/重试队列，指数退避重试；
+- 监控回传成功率，低于阈值告警；
+- SKAN 场景下网络回传失败率高，更要做容错。
+
+```text
+回传链路
+--------------------------------------------------------------------
+App 端事件 ──► SDK(端上) ──► GAFB/GA4 或 MMP ──► Google Ads 转化
+服务端确认 ──► 服务端回传 ──► conversion action ──► 出价学习
+            └── 幂等键 + 重试队列（健壮性）
+--------------------------------------------------------------------
+```
+
 ---
 
 ## 三、生产环境实战
@@ -1324,7 +1504,146 @@ UAC 默认有频控能力，但优化师可以进一步约束展示频率，防�
 - 但 UAC 不开放传统频控设置，主要靠出价与素材组合让系统自发优化；
 - 若观察到重复展示高但转化低，可收缩素材组合，减少与同一用户多次匹配。
 
-### 3.9 最佳实践清单（小结）
+### 3.9 ASO 深度实战：与 UA 的联动闭环
+
+ASO（App Store Optimization）不是独立部门的事，它是 **UA 预算的放大器**。
+
+UA 花钱把流量导到应用商店页，而商店页的**评分、评价、截图、标题、关键词**
+直接决定用户点不点“安装”。商店页转化率差一分，UA 的真实获客成本就涨一分。
+
+本节把 ASO 与 UA 的联动讲透，量化为可操作的口径。
+
+#### 3.10.1 ASO 影响 UA 的量化闭环
+
+一条完整的病理链：
+
+```text
+UA 花钱 → 用户点广告 → 到商店页(impression on store)
+        → 看评分/截图/标题 → 决定是否安装
+        → 安装 → 留存/付费
+```
+
+任何一个环节低，都会浪费 UA 预算。用漏斗漏斗看：
+
+| 环节 | 口径 | 健康参考 |
+| ---- | ---- | -------- |
+| 广告点击→商店页 | CTR | ≥ 1.5% |
+| 商店页→安装 | Download conversion rate(DCR) | ≥ 20-30% |
+| 安装→首次启动 | first_open rate | 全量(安装即当启动) |
+| 启动→付费 | PPI / IAP | 视品类 |
+
+商店页转化率（DCR）是最被低估的杠杆。
+
+很多团队把 DCR 只有 15% 归咎于“广告质量”，其实是商店页（评分/图标/截图）拖后腿。
+
+#### 3.10.2 评分与评价的监控与优化
+
+评分是安装决策的头号因素。要做：**监控 + 引导 + 治理**。
+
+| 动作 | 说明 |
+| ---- | ---- |
+| 评分监控 | 按版本/地区持续跟踪评分曲线 |
+| 差评治理 | 快速响应差评、定位版本回归/支付问题 |
+| 好评引导 | 在应用内合适时机引导满意用户打分 |
+| 评价回复 | 官方回复提升信任感 |
+
+量化目标：混合商店评分 **≥ 4.4**。
+
+低于 4.0 时，UA 的安装转化率会显著下滑。
+
+下面用 Python 把 UA 指标与商店指标并列做体检（示意，商店数据可来自 ASO 工具/MongoDB）。
+
+```python
+# -*- coding: utf-8 -*-
+"""
+ASO 与 UA 联动体检：并列拉取广告指标与商店假设数据。
+"""
+from google_ads_api import GoogleAdsClient
+
+client = GoogleAdsClient({...})
+customer_id = '1234567890'
+
+# 拉 UA 安装与花费
+query = """
+SELECT campaign.name,
+       metrics.cost_micros,
+       metrics.conversions,
+       metrics.clicks
+FROM campaign
+WHERE campaign.advertising_channel_sub_type = 'APP_CAMPAIGN'
+  AND segments.date DURING LAST_7_DAYS
+"""
+
+resp = client.search(customer_id, query)
+total_clicks = 0
+total_installs = 0
+total_cost = 0.0
+for row in resp.data.get('results', []):
+    m = row.get('metrics', {})
+    total_clicks += m.get('clicks', 0)
+    total_installs += m.get('conversions', 0)
+    total_cost += m.get('cost_micros', 0) / 1e6
+
+# 假设商店页另有自然流量，用 DCR 折算广告安装的“商店页漏斗”
+store_rating = 4.5       # 从商店 API 拉取
+dcr_assumed = 0.26       # 从商店分析估算下载转化率
+ad_clicks_with_store = total_clicks * dcr_assumed
+
+print(f"7日广告点击: {total_clicks}")
+print(f"7日广告安装: {total_installs}")
+print(f"7日广告花费: ${total_cost:.2f}")
+print(f"估算商店漏斗安装(广告点击*DCR): {ad_clicks_with_store:.0f}")
+print(f"当前商店评分: {store_rating}")
+```
+
+#### 3.10.3 下载转化率（DCR）优化
+
+DCR 提升带来的直接效果是 UA 的 **eCPI/CPA 下降**。
+
+同一笔广告花费，商店页转化率越高，真实获客成本越低。
+
+DCR 优化清单：
+
+1. **图标 A/B**：图标是第一视觉，直接影响首屏点击；
+2. **截图前 3 张**：用户只看前几张，摆核心卖点；
+3. **预览视频**：首屏自动播放短视频拉起兴趣；
+4. **标题/副标题**：命中目标关键词，同时传达价值；
+5. **评分曝光**：评分高则无需隐藏，评分差要治理后再说；
+6. **包体大小**：包过大拖慢安装，影响转化与留存。
+
+#### 3.10.4 关键词覆盖与自然量
+
+ASO 的关键词优化能提升**自然安装（organic）**，间接缓解 UA 压力。
+
+| 关键词维度 | 优化动作 |
+| ---------- | -------- |
+| 标题/副标题 | 放最重要的 1-2 个关键词 |
+| 描述/热搜词 | 覆盖长尾搜索意图 |
+| 商店分类 | 选对分类提升曝光 |
+| 本地化 | 分地区翻译关键词 |
+
+自然量与付费量存在**替代/协同**关系：
+
+- 付费 UA 能帮助提升关键词排名与评分（间接助攻自然量）；
+- 自然量增长又能让总 LTV 池更大，给 UA 出价更多空间。
+
+```
+ASO ─ UA 协同飞轮
+--------------------------------------------------------------------
+ASO优化 → 提升商店转化/自然量 → 评分与量能提升
+      → UA 预算更高效 → 更多数据喂给模型
+      → 自然+付费双增 → 飞轮加速
+--------------------------------------------------------------------
+```
+
+#### 3.10.5 ASO 复盘节奏
+
+- 每周看评分与差评趋势；
+- 每月做一轮截图/图标 A/B；
+- 每季度复盘关键词覆盖与本地化；
+- 关键版本更新前后重点盯评分曲线（回归风险）。
+
+### 3.10 最佳实践清单（小结）
 
 把第三章的关键操作汇成可直接执行的最佳实践清单：
 
@@ -1339,3 +1658,619 @@ UAC 默认有频控能力，但优化师可以进一步约束展示频率，防�
 9. **频控兜底**：控制展示频率防饱和；
 10. **留学习门槛**：预算不足时收敛事件而非摊薄预算。
 
+
+---
+
+## 四、常见问题与排查
+
+第四章承担“落地后救火”的职责。
+
+我们把在真实运营中最高频、最致命的 UAC 问题整理成 **Q&A**，
+每个问题都给出：现象、根因、排查动作、修复建议。
+
+至少保证 10 个高质量问答，并用表格/代码辅助排查。
+
+### Q1：广告系列学习期一直不结束，或频繁退出学习期
+
+**现象**：UAC 一直处于“学习中”状态，或刚从学习期出来又退回去，转化数上下跳动。
+
+**根因分析**：
+
+- 转化事件信号太稀疏，达不到学习门槛；
+- 事件选择冲突（同时设了安装又与事件目标打架）；
+- 预算频繁改动（tCPA/预算每几天改一次）；
+- iOS 上 SKAN 延迟导致信号更晚更零散。
+
+**排查动作**：
+
+1. 检查是否为 iOS(SKAN) 数据源，是则放宽观察窗；
+2. 检查每周转化量是否达到门槛；
+3. 检查近期是否频繁改出价/预算。
+
+**修复**：
+
+- 收敛事件，去掉低频杂事件；
+- 保证至少 30 转化/周；
+- iOS/Android 分开，避免相互污染；
+- 调整后至少等 1 个完整周期（3-7 天）再评判。
+
+用代码检查近期是否频繁触及出价更新（拉取历史出价与建议）：
+
+```python
+# -*- coding: utf-8 -*-
+"""
+排查学习期不收敛：拉最近 30 天转化与估计。
+对应 get_bid_suggestion 的思路。
+"""
+from google_ads_api import GoogleAdsClient
+
+client = GoogleAdsClient({...})
+customer_id = '1234567890'
+campaign_id = '123456789'
+
+resp = client.get_bid_suggestion(customer_id, campaign_id)
+print('bid suggestion / 学习期诊断数据:')
+for row in resp.data.get('results', []):
+    m = row.get('metrics', {})
+    print('  all_conversions=', m.get('all_conversions'),
+          ' est_ranked_cpc=', m.get('estimated_ranked_cpc_micros'))
+```
+
+### Q2：转化数正常，但 ROAS 明显低于预期
+
+**现象**：报表里转化量可观，但 ROAS 长期在目标以下。
+
+**根因分析**：
+
+- 价值没正确回传（value=0 或货币错）；
+- 转化口径把“安装”也算成了高价值转化；
+- 归因窗过长把低质自然转化计入；
+- 买量偏向低质用户（只跑 install 系列占比过高）。
+
+**排查动作**：
+
+1. 用上文代码核对 `conversions_value` 是否 > 0；
+2. 检查转化行为是否带 value、currency 正确；
+3. 检查 tROAS 系列是否被 tCPA/install 系列稀释。
+
+**修复**：
+
+- 修正 value 回传，保证带金额；
+- 提高 tROAS 系列预算占比，降低 install 系列；
+- 收紧归因窗。
+
+### Q3：Google Ads 内安装数与 MMP 明显不一致
+
+**现象**：Ads 报表 iOS 安装 1000，MMP 显示 800 或 1200。
+
+**根因分析**：
+
+- 数据源不同（Google vs MMP 归因引擎）；
+- SKAN postback 延迟与随机窗口导致的时点错位；
+- privacy threshold 噪声；
+- 去重口径差异。
+
+**排查动作**：
+
+1. 确认两套都跑在 SKAN 上；
+2. 对齐时间窗（滚动 7 日）再对比；
+3. 按转化分布而非单日绝对值对比。
+
+**修复**：
+
+- 用“滚动累计”而非单日对比；
+- 以一家为计账口径，另一家为观测；
+- 关注长期趋势一致性。
+
+### Q4：视频素材点击率高但安装率很低
+
+**现象**：视频 CTR 不错（≥2%），但点击→安装 CVR 很低。
+
+**根因分析**：
+
+- 视频承诺与商店页实际不符（“货不对板”）；
+- Deep Link/商店页落地体验差；
+- 目标人群与素材表达错位；
+- 评分/评价差影响安装决策。
+
+**排查动作**：
+
+- 检查商店页截图、评分、包大小；
+- 检查 Deep Link 是否跳转正确活动页；
+- 拆分视频 vs 图片 vs 文字看 CVR。
+
+**修复**：
+
+- 素材表达对齐商店页卖点；
+- 优化商店页转化（这其实就进入 ASO 范畴，见下章）；
+- 清理高曝光低安装的低效素材。
+
+### Q5：UAC 只烧预算不出量/出量极慢
+
+**现象**：预算与出价都正常，但展示/转化量极少。
+
+**根因分析**：
+
+- tCPA 设得过低，导致竞价失败；
+- 学习门槛信号不足；
+- 素材强度 Poor，展示受限；
+- 覆盖人群过窄（App 小众）。
+
+**排查动作**：
+
+- 检查 asset strength；
+- 检查预算是否长期花不完；
+- 检查 tCPA 与市场均值差距。
+
+**修复**：
+
+- 适当上调 tCPA（配额学习）；
+- 补齐素材种类提升 asset strength；
+- 用 `get_bid_suggestion` 看市场建议。
+
+### Q6：为什么我找不到“受众定向”设置
+
+**现象**：UAC 后台没有传统受众列表、没有性别/年龄/兴趣定向选项。
+
+**根因**：这是 **UAC 自动化产品的设计特性**。它不开放传统定向，而是用
+**Auto Audience（自动受众）**，由系统基于应用信号与素材自动构建。
+
+**正确理解**：
+
+- 不要硬找受众定向，那是旧手动广告的思维；
+- 若要影响人群，通过**素材、出价目标、转化事件**间接引导；
+- 可利用 **asset_group_signal**（信号）来提示系统你的目标人群意图。
+
+用 `asset_group_signal` 查看/设置受众信号：
+
+```python
+# -*- coding: utf-8 -*-
+"""
+查看 asset_group_signal（App/PMax 系列的意向信号）。
+"""
+from google_ads_api import GoogleAdsClient
+
+client = GoogleAdsClient({...})
+customer_id = '1234567890'
+
+query = """
+SELECT
+  asset_group.id,
+  asset_group.name,
+  asset_group_signal.audience
+FROM asset_group_signal
+"""
+
+resp = client.search(customer_id, query)
+for row in resp.data.get('results', []):
+    print(row)
+```
+
+### Q7：为什么同一 App 不同系列转化数会“打架/重复计算”
+
+**现象**：多个 UAC 系列加起来转化数大于总转化，或有重复。
+
+**根因分析**：
+
+- 多个系列共享同一转化事件，进行了重复计数；
+- 归因去重没覆盖跨系列；
+- iOS SKAN 多网络重复 postback。
+
+**排查动作**：
+
+- 检查总报表是否按 campaign 聚合后的去重；
+- 检查是否多系列误配相同事件并同时启用。
+
+**修复**：
+
+- 明确系列职责，避免多个系列优化同一终极事件互相抢量；
+- 用 `generate_report` 的聚合口径核对全局 vs 分系列。
+
+聚合去重核对的思路：
+
+```python
+sum_by_campaign = {}   # 示例
+# 从 generate_report 聚合后对比 total 是否等于各系列之和
+# 若不等，多半是归因账务/系列重叠问题
+```
+
+### Q8：iOS 报表波动非常大，日志上“锯齿状”
+
+**现象**：iOS 转化曲线大起大落，无法用单日做决策。
+
+**根因**：iOS 走 SKAN，postback **随机延迟（24-48h） + privacy threshold 噪声**，
+单日数据天然不可靠。
+
+**排查动作**：
+
+1. 确认该系列确实走 SKAN（无 IDFA 或 mixed）；
+2. 拉 7 日滚动累计而非单日；
+3. 与 MMP 的 SKAN 面板交叉核对转化分布。
+
+**修复**：
+
+- iOS 独立系列 + 更长观察窗；
+- 用转化分布曲线而非绝对值；
+- 数据齐了再看 ROAS（至少 D7）。
+
+### Q9：为什么转化事件改了，历史数据/出价剧烈变化
+
+**现象**：更换主转化事件（如从 install 切到 purchase）后，成本与 ROAS 剧烈波动。
+
+**根因**：**改变转化目标是改变优化目标本身**，等于给模型换了“北极星”。
+历史上以安装为目标的系列，切到 purchase 后模型需要重新学习，波动是正常的。
+
+**排查动作**：
+
+- 确认切换是否有意（是否误改）；
+- 评估新事件能否撑起学习门槛。
+
+**修复**：
+
+- 切换时给足学习期（7-14 天）；
+- 用 CVR 健康度（如 purchase 事件频率）评估；
+- 实在不行分系列并行，用实验法平滑切换。
+
+### Q10：预算从哪里开始，如何评估“预算不足”？
+
+**现象**：预算加不上去，或加预算后 ROAS 反而掉。
+
+**根因分析**：
+
+- 预算低于学习门槛，模型无法饱和；
+- 一次性大幅加预算造成学习抖动；
+- 高价值库存有限，加量后边际 ROAS 下滑（边际报酬递减）。
+
+**排查动作**：
+
+- 检查日预算是否能支撑 ≥10-15 转化/日；
+- 观察加预算后 3 天的 ROAS 走势。
+
+**修复**：
+
+- 阶梯式加预算，每次 +20-50% 观察稳定；
+- 若 ROAS 下滑，收缩到盈利区间并引入 tROAS 兜底。
+
+### Q11：SKAdNetwork 一致性反复对不上，怎么办（深入）
+
+**现象**：Google 与 MMP 的 SKAN 安装长期对不上，且无法靠“滚动累计”对齐。
+
+**根因分析**：
+
+- private relay / privacy threshold 导致事件被丢弃；
+- 归因分层（source app / ad-network view）不统一；
+- Google 与 MMP 对 SKAN 转发的处理策略不同。
+
+**排查动作**：
+
+1. 冻结一天的 SKAN postback 数据集，逐层对比 source_app / ad_network；
+2. 对齐归因层（view vs click）；
+3. 检查小事件是否低于 privacy threshold 被丢。
+
+**修复**：
+
+- 若为阈值丢弃，接受误差、只比对转化分布；
+- 若为转发策略不同，选择一家做“主账本”；
+- 建立周级校准，容纳 ±5-10% 常态差。
+
+### Q12：ASO 与 UA 的关系，评分怎么影响投放
+
+**现象**：UA 量推上去了，但安装转化率（点击→装）和留存却不理想。
+
+**根因分析**：商店页（评分/评价/截图/标题/描述）直接决定用户是否安装。
+UA 花钱把流量导到商店页，但 **ASO 不佳会浪费投放预算**。
+
+**排查动作**：
+
+- 检查商店评分是否低于 4.0；
+- 检查差评是否集中（版本回归/支付失败）；
+- 检查商店截图与素材卖点是否一致。
+
+**修复**：
+
+- 提升评分：引导好评、处理差评；
+- 优化商店标题/副标题的关键词命中；
+- 用 A/B 测试截图与图标，提高下载转化率。
+
+下表展示 ASO 关键指标如何反哺 UA：
+
+| 指标 | 健康值 | 对 UA 的影响 |
+| ---- | ------ | ----------- |
+| 商店评分 | ≥ 4.3 | 高评分提升安装率 |
+| 下载转化率(店铺→装) | ≥ 25% | 越高 UA 越省钱 |
+| 图标/截图点击 | 持续 A/B | 直接影响首屏转化 |
+| 关键词覆盖 | 持续优化 | 提升自然量 |
+
+### 排查通用流程（汇总）
+
+把上面的经验提炼成一张可复用的决策树：
+
+```text
+UAC 排查决策树
+--------------------------------------------------------------------
+转化与 ROAS 不佳?
+ ├─ 先分 iOS / Android
+ │    iOS 走 SKAN → 长窗观察, 对分布偏差
+ ├─ 量少? → 预算/学习门槛/素材强度
+ ├─ 量够但 ROAS 差? → 价值回传 / 事件质量
+ ├─ 归因对不上? → 对齐窗口与数据源
+ └─ 安装率低? → ASO 商店页优化
+--------------------------------------------------------------------
+```
+
+### Q13：Deep Link 跳转失败，转化/留存被低估怎么办
+
+**现象**：广告点击后安装正常，但点击应用内活动/深度链接跳转失败，
+后续转化（如付费页）大量丢失，UA 报表转化偏低。
+
+**根因分析**：
+
+- Deep Link / URI scheme 配置不完整（iOS Universal Link、Android App Links）；
+- 未安装用户的 deferred deep link 处理缺失；
+- 商店页跳转参数（如 `referrer`）丢失，归因无法回链到点击。
+
+**排查动作**：
+
+1. 用归因面板测一条完整链路：广告 → 商店页 → 安装 → 首次打开带 deep link；
+2. 检查 `first_open` 是否带 `gclid`/`advertising_id`；
+3. 用 `list_conversion_actions` 核对事件是否带上正确的 click_id。
+
+**修复**：
+
+- 配置 Universal Link / App Links，保证已安装用户直达内容页；
+- 未安装用户走 deferred deep link 恢复；推广素材统一带追踪参数；
+- 修复后用 A/B 小流量验证转化回传恢复。
+
+Deep Link 与归因的链路示意：
+
+```text
+点击广告(带 deeplink 参数)
+   ├─ 已安装 → Universal/App Link 直达页面
+   └─ 未安装 → 商店页 → 安装 → 首启时恢复 deep link → 页面
+                          └─ 同时把归因 click_id 带进 first_open
+```
+
+### Q14：为什么同一个 App 在不同账户跑，成本差异巨大
+
+**现象**：同样素材、同目标，A 账户 CPI $3.0，B 账户 CPI $5.0。
+
+**根因分析**：
+
+- 账户历史/学习基础不同（账户级学习信号）；
+- 转化事件配置不一致（B 账户事件更全/更少）；
+- 出价与预算结构不同；
+- 素材资产组不同步（B 账户 asset strength 更差）；
+- SKAN/数据源选择不同。
+
+**排查动作**：
+
+1. 对比两账户的 `conversion_action` 配置；
+2. 对比 asset strength 与素材数量；
+3. 对比出价设置与学习期状态。
+
+**修复**：
+
+- 统一事件与数据源口径；
+- 复制优秀账户的素材/结构到弱账户；
+- 弱账户先给足学习预算与时间，不要过早判定失败。
+
+### Q15：周期性掉量（周中掉、周末回）怎么处理
+
+**现象**：UAC 每周稳定出现“周中量下滑、周末反弹”的周期波动。
+
+**根因分析**：
+
+- 目标人群活跃周期（游戏玩家周末更活跃）的自然波动；
+- 预算在周中被低价库存消耗，周末竞价上升；
+- 出价/预算在周中被动调整放大了波动。
+
+**排查动作**：
+
+- 拉 4-8 周的“按星期几”聚合，确认周期性是否稳定；
+- 检查是否每周同一时间触发过出价/预算修改。
+
+**修复**：
+
+- 识别周期性属正常市场波动，避免过度反应；
+- 需要平抑时，用 tCPA 小幅上浮覆盖周末竞争；
+- 素材按周期轮换，周末用强效创意。
+
+---
+
+## 五、自测题
+
+本章提供 5 道自测题，覆盖本文的核心知识点。
+
+建议先独立作答，再对照 `<details>` 中的答案与解析自查。
+
+答案采用折叠块呈现，点击即可展开。
+
+### 题目 1：目标选择
+
+某款已上线 6 个月、IAP 变现稳定的手游，增长目标由“大量拉新”转为“稳定 ROAS”。
+
+请问在 UAC 中应优先选择哪种目标？为什么？(单选)
+
+- A. App installs
+- B. App engagement（指定内购事件）
+- C. App pre-registration
+- D. 保持默认
+
+<details>
+<summary>答案</summary>
+
+**答案：B（App engagement，指定内购事件）。**
+
+**解析**：
+
+- 该游戏已上线 6 个月、IAP 稳定，说明已有充足的安装与事件数据；
+- 目标是“稳定 ROAS”，ROAS 依赖价值型事件（Purchase）；
+- App installs（A）只优化浅层安装，无法保证 ROAS；
+- App pre-registration（C）仅适用于未上架产品；
+- 应选择 App engagement，并指定 `purchase`（带价值）作为主转化，配合 tCPA/tROAS；
+- 按本文 3.1.2 的分层思路，可用 tCPA(首购) + tROAS(价值) 双层。
+
+</details>
+
+### 题目 2：数据源与归因
+
+为什么同一 App 在 Google Ads 与第三方 MMP 中，iOS 安装数常常不一致？
+
+请列举至少两点根因，并指出最小可执行的校准策略。
+
+<details>
+<summary>答案</summary>
+
+**核心不再赘述，两点关键根因**：
+
+1. **归因引擎不同**：Google（GAFB/GA4）与 MMP 各用各的归因引擎，
+   去重、点击/浏览窗口、模型（last-click vs DDA）不尽相同；
+2. **SKAN 特性**：iOS 走 SKAdNetwork，postback 有 24-48h 随机延迟与 privacy
+   threshold 噪声，单日/小量级数据天然不准，逐单对比必然不一致。
+
+**最小可执行校准策略**：
+
+- 统一归因窗口与去重口径（都设 7 天点击 / 1 天浏览）；
+- 用滚动累计（≥7 日）而非单日对比；
+- 以一家为计账口径、另一家观测；
+- 接受 ±5-10% 常态差，关注趋势一致性；
+- 若只对 SKAN 对不上，比较转化分布而非绝对值。
+
+</details>
+
+### 题目 3：归因窗口与价值
+
+电商 App 的 UAC 使用 tROAS 优化，但后台 `conversions_value` 长期为 0 或远低于 GMV。
+
+请问最可能的原因是什么？应如何修复？
+
+<details>
+<summary>答案</summary>
+
+**最可能原因**：转化事件（如 purchase）的**价值（value）与币种没有正确回传**。
+
+- tROAS 依赖带金额的 conversion value 才能优化；
+- 若 purchase 事件 value=0 或 currency 错误，`conversions_value` 就是 0/偏小；
+- 也可能把“安装类（无价值）”事件误当成价值转化。
+
+**修复方法**：
+
+1. 在转化行为设置中为 purchase 事件启用价值设置（value + currency，如 USD）；
+2. 在 SDK/服务端上报 purchase 时带上订单金额；
+3. 用本文 2.2.4 的代码核对 `conversions_value / all_conversions_value`；
+4. 确认是“出价转化”而非仅“全部转化”计入价值（检查口径）；
+5. 修复后观察 ROAS 是否回归。
+
+补充：若 `all_conversions_value` 远大于 `conversions_value`，
+多半是部分价值只计入全部转化、未进入出价转化，需回看转化行为设置。
+
+</details>
+
+### 题目 4：分层系列与预算
+
+月预算 $100K 的游戏 UAC，想把 ROAS 稳定在 120% 以上，同时不放松量级。
+
+请设计一个分层系列结构（预算占比 + 各自目标/出价），并解释理由。
+
+<details>
+<summary>答案</summary>
+
+**推荐结构（参考 3.1.2/3.1.4）**：
+
+| 系列 | 目标 | 预算占比 | 月预算 | 出价 |
+| ---- | ---- | -------- | ------ | ---- |
+| UAC-Installs | App installs | 30% | $30K | tCPI |
+| UAC-Engage-Purchase | App engagement | 50% | $50K | tCPA(首购) |
+| UAC-ROAS | App engagement(价值) | 20% | $20K | tROAS(120%) |
+
+**理由**：
+
+- 安装层（30%）负责拉新冲量，满足量级与学习数据；
+- 首购 tCPA 层（50%）是主力 ROAS 引擎，直接对 purchase 优化，稳定商业回报；
+- tROAS 层（20%）守高价值用户，防止量扩张时质量下滑；
+- 三层互补：既保量，又保 ROAS ≥120%；
+- 若 PPI（付费安装渗透率）偏低，可把更多预算从 install 层移到 tCPA/tROAS 层。
+
+</details>
+
+### 题目 5：UAC 学习期与素材
+
+为什么 UAC 没有传统受众定向？若要影响人群质量，应从哪几个旋钮着手？
+并说明 asset strength 的影响。
+
+<details>
+<summary>答案</summary>
+
+**为什么无传统受众定向**：
+
+- UAC 是自动化产品，采用 **Auto Audience（自动受众）**；
+- 系统基于应用信号 + 素材 + 转化事件自动构建人群，刻意不开放手工定向；
+- 这是“素材+目标+出价”驱动范式的核心特性，不是缺失功能。
+
+**可间接影响人群质量的旋钮**：
+
+1. **出价目标与事件**：tROAS 比 install 更能锁定高价值用户；
+2. **素材**：素材表达决定匹配人群，视频/文案传达不同人设；
+3. **asset_group_signal**：用信号字段给系统人群意图提示；
+4. **预算分层**：把预算倾向价值型系列；
+5. **转化事件选择**：主事件直接决定优化终点。
+
+**asset strength 的影响**：
+
+- asset strength（Poor/Okay/Good/Excellent）反映素材覆盖与多样性；
+- Poor 会限制可展示性、拖慢学习；
+- 拉到 Good 以上，补全 TEXT/IMAGE/YOUTUBE_VIDEO/HEADLINE 等类型且保证不重复，
+  可显著提升学习速度与量级。
+
+</details>
+
+---
+
+## 附：本文与脚本对照
+
+本文所有代码均基于 `scripts/google_ads_api.py` 的真实方法调用。
+
+常用方法与本排布对照如下，便于读者回到代码库复用：
+
+| 使用场景 | 方法 | 章节 |
+| -------- | ---- | ---- |
+| 拉取转化行为 | list_conversion_actions / search | 2.1 / 2.2 |
+| 创建分层系列 | create_campaign | 3.1 |
+| 读取系列 | list_campaigns / get_campaign | 3.1 |
+| 更新出价 | update_campaign | 3.1.6 |
+| 出价/学习诊断 | get_bid_suggestion | Q1 |
+| 报表聚合 | generate_report / search | 3.2 / 3.4 |
+| 素材资产组 | search(asset_group) | 3.7 |
+| 受众信号 | search(asset_group_signal) | Q6 |
+| 暂停/恢复 | pause_campaign / resume_campaign | 参考 |
+| 出价选项 | get_bid_strategy_options | 参考 |
+| 资产选项 | get_asset_type_options | 3.7 |
+| 广告类型选项 | get_campaign_type_options | 参考 |
+
+API 端点：`https://googleads.googleapis.com/v24`
+请求头：`Authorization: Bearer <token>` + `developer-token` + `login-customer-id`
+GAQL 典型字段：`campaign.id/name/status/advertising_channel_type/advertising_channel_sub_type`、
+`campaign.optimization_score`、`asset_group.*`、`asset_group_signal`、
+`metrics.impressions/clicks/cost_micros/conversions/conversions_value/all_conversions/ctr/cpv/cpc_micros`、
+`segments.date/device`、`campaign_budget.amount_micros`。
+
+---
+
+## 结语
+
+App 广告（UAC）是“素材进、结果出”的自动化买量引擎，
+但它的可控点清晰可数：**目标、事件、数据源、出价、预算、素材、ASO**。
+
+本指南的目的不是让你把机器当黑盒听天由命，
+而是让你能**设计好信号、约束好预算、校准好归因、迭代好素材**，
+从而让 Google 的机器学习朝着你的商业 ROAS 系统性收敛。
+
+把这些章节的知识（尤其归因一致性、SKAN、事件漏斗出价、ASO 联动）吃透，
+你就从一个“会建 UAC 的人”成长为“能用 UAC 稳定赚钱的增长专家”。
+
+祝你的每一次点击、每一次安装、每一单付费，都准确地记在正确的地方。
+
+---
+
+*本文档由 Ryan 个人知识库 · Google Ads App 广告专项生成。*
+*更新日期：2026-08-14*

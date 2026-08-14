@@ -2,13 +2,13 @@
   "TikTok": [
     {
       "method": "list_accounts",
-      "status": "❌",
-      "error": "Expecting value: line 1 column 1 (char 0)"
+      "status": "✅",
+      "count": 0
     },
     {
       "method": "list_campaigns",
-      "status": "❌",
-      "error": "Expecting value: line 1 column 1 (char 0)"
+      "status": "✅",
+      "count": 5
     },
     {
       "method": "get_campaign",
@@ -18,7 +18,7 @@
     {
       "method": "list_adgroups",
       "status": "❌",
-      "error": "Expecting value: line 1 column 1 (char 0)"
+      "error": "tiktok_list_adgroups() missing 1 required positional argument: 'advertiser_id'"
     },
     {
       "method": "get_adgroup",
@@ -28,7 +28,7 @@
     {
       "method": "list_ads",
       "status": "❌",
-      "error": "Expecting value: line 1 column 1 (char 0)"
+      "error": "tiktok_list_adgroups() missing 1 required positional argument: 'advertiser_id'"
     },
     {
       "method": "get_ad",
@@ -54,8 +54,8 @@
   "Meta": [
     {
       "method": "list_accounts",
-      "status": "❌",
-      "error": "No module named 'facebook_business.adaccounts'"
+      "status": "✅",
+      "count": 0
     },
     {
       "method": "list_campaigns",
@@ -69,28 +69,28 @@
     },
     {
       "method": "list_adsets",
-      "status": "❌",
-      "error": "type object 'AdSet' has no attribute 'get_adsets'"
+      "status": "✅",
+      "count": 1
     },
     {
       "method": "get_adset",
-      "status": "❌",
-      "error": "type object 'AdSet' has no attribute 'get_adsets'"
+      "status": "⚠️",
+      "note": "Invalid"
     },
     {
       "method": "list_ads",
-      "status": "❌",
-      "error": "type object 'Ad' has no attribute 'get_ads'"
+      "status": "✅",
+      "count": 1
     },
     {
       "method": "get_ad",
-      "status": "❌",
-      "error": "type object 'Ad' has no attribute 'get_ads'"
+      "status": "⚠️",
+      "note": "Invalid"
     },
     {
       "method": "list_audiences",
-      "status": "❌",
-      "error": "No module named 'facebook_business.adaccounts'"
+      "status": "✅",
+      "count": 20
     },
     {
       "method": "list_catalogs",
@@ -106,43 +106,43 @@
   "Google Ads": [
     {
       "method": "list_customers",
-      "status": "❌",
-      "error": "The client library configuration is missing the required \"use_proto_plus\" key. Please set this option to either \"True\" or \"False\". For more information about this option see the Protobuf Messages guide: https://developers.google.com/google-ads/api/docs/client-libs/python/protobuf-messages"
+      "status": "✅",
+      "count": 0
     },
     {
       "method": "list_campaigns",
       "status": "❌",
-      "error": "The client library configuration is missing the required \"use_proto_plus\" key. Please set this option to either \"True\" or \"False\". For more information about this option see the Protobuf Messages guide: https://developers.google.com/google-ads/api/docs/client-libs/python/protobuf-messages"
+      "error": "dlopen(/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so, 0x0002): tried: '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64')), '/System/Volumes/Preboot/Cryptexes/OS/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (no such file), '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64'))"
     },
     {
       "method": "get_campaign",
       "status": "❌",
-      "error": "The client library configuration is missing the required \"use_proto_plus\" key. Please set this option to either \"True\" or \"False\". For more information about this option see the Protobuf Messages guide: https://developers.google.com/google-ads/api/docs/client-libs/python/protobuf-messages"
+      "error": "dlopen(/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so, 0x0002): tried: '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64')), '/System/Volumes/Preboot/Cryptexes/OS/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (no such file), '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64'))"
     },
     {
       "method": "list_ad_groups",
       "status": "❌",
-      "error": "The client library configuration is missing the required \"use_proto_plus\" key. Please set this option to either \"True\" or \"False\". For more information about this option see the Protobuf Messages guide: https://developers.google.com/google-ads/api/docs/client-libs/python/protobuf-messages"
+      "error": "dlopen(/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so, 0x0002): tried: '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64')), '/System/Volumes/Preboot/Cryptexes/OS/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (no such file), '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64'))"
     },
     {
       "method": "list_keywords",
       "status": "❌",
-      "error": "The client library configuration is missing the required \"use_proto_plus\" key. Please set this option to either \"True\" or \"False\". For more information about this option see the Protobuf Messages guide: https://developers.google.com/google-ads/api/docs/client-libs/python/protobuf-messages"
+      "error": "'google_ads'"
     },
     {
       "method": "list_ads",
       "status": "❌",
-      "error": "The client library configuration is missing the required \"use_proto_plus\" key. Please set this option to either \"True\" or \"False\". For more information about this option see the Protobuf Messages guide: https://developers.google.com/google-ads/api/docs/client-libs/python/protobuf-messages"
+      "error": "dlopen(/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so, 0x0002): tried: '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64')), '/System/Volumes/Preboot/Cryptexes/OS/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (no such file), '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64'))"
     },
     {
       "method": "download_report",
       "status": "❌",
-      "error": "The client library configuration is missing the required \"use_proto_plus\" key. Please set this option to either \"True\" or \"False\". For more information about this option see the Protobuf Messages guide: https://developers.google.com/google-ads/api/docs/client-libs/python/protobuf-messages"
+      "error": "dlopen(/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so, 0x0002): tried: '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64')), '/System/Volumes/Preboot/Cryptexes/OS/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (no such file), '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64'))"
     },
     {
       "method": "get_customer_info",
       "status": "❌",
-      "error": "The client library configuration is missing the required \"use_proto_plus\" key. Please set this option to either \"True\" or \"False\". For more information about this option see the Protobuf Messages guide: https://developers.google.com/google-ads/api/docs/client-libs/python/protobuf-messages"
+      "error": "dlopen(/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so, 0x0002): tried: '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64')), '/System/Volumes/Preboot/Cryptexes/OS/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (no such file), '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64'))"
     }
   ],
   "DV360": [
@@ -154,17 +154,17 @@
     {
       "method": "get_advertiser",
       "status": "❌",
-      "error": "服务账号文件不存在: "
+      "error": "dlopen(/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so, 0x0002): tried: '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64')), '/System/Volumes/Preboot/Cryptexes/OS/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (no such file), '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64'))"
     },
     {
       "method": "list_line_items",
       "status": "❌",
-      "error": "服务账号文件不存在: "
+      "error": "dlopen(/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so, 0x0002): tried: '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64')), '/System/Volumes/Preboot/Cryptexes/OS/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (no such file), '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64'))"
     },
     {
       "method": "get_line_item",
       "status": "❌",
-      "error": "服务账号文件不存在: "
+      "error": "dlopen(/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so, 0x0002): tried: '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64')), '/System/Volumes/Preboot/Cryptexes/OS/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (no such file), '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64'))"
     },
     {
       "method": "list_flights",
@@ -174,27 +174,27 @@
     {
       "method": "list_creatives",
       "status": "❌",
-      "error": "dv360_list_creatives() missing 1 required positional argument: 'line_item_id'"
+      "error": "dv360_list_creatives() missing 1 required positional argument: 'partner_id'"
     },
     {
       "method": "list_audiences",
       "status": "❌",
-      "error": "服务账号文件不存在: "
+      "error": "dv360_list_audiences() missing 1 required positional argument: 'partner_id'"
     },
     {
       "method": "get_report",
       "status": "❌",
-      "error": "服务账号文件不存在: "
+      "error": "dlopen(/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so, 0x0002): tried: '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64')), '/System/Volumes/Preboot/Cryptexes/OS/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (no such file), '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64'))"
     },
     {
       "method": "list_targetings",
       "status": "❌",
-      "error": "服务账号文件不存在: "
+      "error": "dlopen(/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so, 0x0002): tried: '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64')), '/System/Volumes/Preboot/Cryptexes/OS/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (no such file), '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64'))"
     },
     {
       "method": "list_bidding_strategies",
       "status": "❌",
-      "error": "服务账号文件不存在: "
+      "error": "dlopen(/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so, 0x0002): tried: '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64')), '/System/Volumes/Preboot/Cryptexes/OS/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (no such file), '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64'))"
     }
   ]
 }
