@@ -5088,3 +5088,2236 @@ if __name__ == "__main__":
     def tiktok_create_support_ticket(self, account_id: str, **kwargs) -> Dict:
         """创建支持工单"""
         return {}
+
+# ========== Meta 补充 API (v2) ==========
+    def meta_list_instagram_accounts(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出 Instagram 商业账户"""
+        return []
+    
+    def meta_get_instagram_account(self, ig_account_id: str, **kwargs) -> Dict:
+        """获取 Instagram 账户详情"""
+        return {}
+    
+    def meta_list_instagram_posts(self, ig_account_id: str, **kwargs) -> List[Dict]:
+        """列出 Instagram 帖子"""
+        return []
+    
+    def meta_get_instagram_post(self, post_id: str, **kwargs) -> Dict:
+        """获取 Instagram 帖子详情"""
+        return {}
+    
+    def meta_list_instagram_comments(self, post_id: str, **kwargs) -> List[Dict]:
+        """列出 Instagram 评论"""
+        return []
+    
+    def meta_list_instagram_media(self, ig_account_id: str, **kwargs) -> List[Dict]:
+        """列出 Instagram 媒体"""
+        return []
+    
+    def meta_get_instagram_media(self, media_id: str, **kwargs) -> Dict:
+        """获取 Instagram 媒体详情"""
+        return {}
+    
+    def meta_list_instagram_hashtags(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出 Instagram 标签"""
+        return []
+    
+    def meta_get_instagram_hashtag(self, hashtag: str, **kwargs) -> Dict:
+        """获取 Instagram 标签详情"""
+        return {}
+    
+    def meta_list_instagram_locations(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出 Instagram 地点"""
+        return []
+    
+    def meta_get_instagram_location(self, location_id: str, **kwargs) -> Dict:
+        """获取 Instagram 地点详情"""
+        return {}
+    
+    def meta_list_instagram_insights(self, ig_account_id: str, **kwargs) -> Dict:
+        """获取 Instagram 洞察"""
+        return {}
+    
+    def meta_list_instagram_ads(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出 Instagram 广告"""
+        return []
+    
+    def meta_create_instagram_ad(self, adset_id: str, **kwargs) -> Dict:
+        """创建 Instagram 广告"""
+        return {}
+    
+    def meta_list_whatsapp_business_accounts(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出 WhatsApp 商业账户"""
+        return []
+    
+    def meta_get_whatsapp_business_account(self, waba_id: str, **kwargs) -> Dict:
+        """获取 WhatsApp 商业账户详情"""
+        return {}
+    
+    def meta_list_whatsapp_templates(self, waba_id: str, **kwargs) -> List[Dict]:
+        """列出 WhatsApp 消息模板"""
+        return []
+    
+    def meta_create_whatsapp_template(self, waba_id: str, **kwargs) -> Dict:
+        """创建 WhatsApp 消息模板"""
+        return {}
+    
+    def meta_update_whatsapp_template(self, template_id: str, **kwargs) -> Dict:
+        """更新 WhatsApp 消息模板"""
+        return {}
+    
+    def meta_delete_whatsapp_template(self, template_id: str, **kwargs) -> Dict:
+        """删除 WhatsApp 消息模板"""
+        return {}
+    
+    def meta_send_whatsapp_message(self, waba_id: str, **kwargs) -> Dict:
+        """发送 WhatsApp 消息"""
+        return {}
+    
+    def meta_list_phones(self, waba_id: str, **kwargs) -> List[Dict]:
+        """列出 WhatsApp 电话号码"""
+        return []
+    
+    def meta_get_phone(self, phone_id: str, **kwargs) -> Dict:
+        """获取 WhatsApp 电话号码详情"""
+        return {}
+    
+    def meta_list_phone_qr_codes(self, waba_id: str, **kwargs) -> List[Dict]:
+        """列出 WhatsApp 电话二维码"""
+        return []
+    
+    def meta_create_phone_qr_code(self, waba_id: str, **kwargs) -> Dict:
+        """创建 WhatsApp 电话二维码"""
+        return {}
+    
+    def meta_consume_phone_qr_code(self, qr_id: str, **kwargs) -> Dict:
+        """消费 WhatsApp 电话二维码"""
+        return {}
+    
+    def meta_list_automated_responses(self, waba_id: str, **kwargs) -> List[Dict]:
+        """列出 WhatsApp 自动回复"""
+        return []
+    
+    def meta_create_automated_response(self, waba_id: str, **kwargs) -> Dict:
+        """创建 WhatsApp 自动回复"""
+        return {}
+    
+    def meta_update_automated_response(self, response_id: str, **kwargs) -> Dict:
+        """更新 WhatsApp 自动回复"""
+        return {}
+    
+    def meta_delete_automated_response(self, response_id: str, **kwargs) -> Dict:
+        """删除 WhatsApp 自动回复"""
+        return {}
+    
+    def meta_list_messenger_apps(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出 Messenger 应用"""
+        return []
+    
+    def meta_get_messenger_app(self, app_id: str, **kwargs) -> Dict:
+        """获取 Messenger 应用详情"""
+        return {}
+    
+    def meta_list_messenger_profile(self, app_id: str, **kwargs) -> Dict:
+        """获取 Messenger 个人资料"""
+        return {}
+    
+    def meta_update_messenger_profile(self, app_id: str, **kwargs) -> Dict:
+        """更新 Messenger 个人资料"""
+        return {}
+    
+    def meta_list_thumbnails(self, app_id: str, **kwargs) -> List[Dict]:
+        """列出 Messenger 缩略图"""
+        return []
+    
+    def meta_create_thumbnail(self, app_id: str, **kwargs) -> Dict:
+        """创建 Messenger 缩略图"""
+        return {}
+    
+    def meta_delete_thumbnail(self, thumbnail_id: str, **kwargs) -> Dict:
+        """删除 Messenger 缩略图"""
+        return {}
+    
+    def meta_list_get_started_buttons(self, app_id: str, **kwargs) -> List[Dict]:
+        """列出 Messenger 开始按钮"""
+        return []
+    
+    def meta_create_get_started_button(self, app_id: str, **kwargs) -> Dict:
+        """创建 Messenger 开始按钮"""
+        return {}
+    
+    def meta_delete_get_started_button(self, app_id: str, **kwargs) -> Dict:
+        """删除 Messenger 开始按钮"""
+        return {}
+    
+    def meta_list_greeting_messages(self, app_id: str, **kwargs) -> List[Dict]:
+        """列出 Messenger 问候消息"""
+        return []
+    
+    def meta_create_greeting_message(self, app_id: str, **kwargs) -> Dict:
+        """创建 Messenger 问候消息"""
+        return {}
+    
+    def meta_delete_greeting_message(self, app_id: str, **kwargs) -> Dict:
+        """删除 Messenger 问候消息"""
+        return {}
+    
+    def meta_list_persistent_menus(self, app_id: str, **kwargs) -> List[Dict]:
+        """列出 Messenger 持久菜单"""
+        return []
+    
+    def meta_create_persistent_menu(self, app_id: str, **kwargs) -> Dict:
+        """创建 Messenger 持久菜单"""
+        return {}
+    
+    def meta_delete_persistent_menu(self, app_id: str, **kwargs) -> Dict:
+        """删除 Messenger 持久菜单"""
+        return {}
+    
+    def meta_list_domain_links(self, app_id: str, **kwargs) -> List[Dict]:
+        """列出 Messenger 域链接"""
+        return []
+    
+    def meta_create_domain_link(self, app_id: str, **kwargs) -> Dict:
+        """创建 Messenger 域链接"""
+        return {}
+    
+    def meta_delete_domain_link(self, link_id: str, **kwargs) -> Dict:
+        """删除 Messenger 域链接"""
+        return {}
+    
+    def meta_list_abandoned_carts(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出弃单"""
+        return []
+    
+    def meta_list_product_sets(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出产品组"""
+        return []
+    
+    def meta_create_product_set(self, account_id: str, **kwargs) -> Dict:
+        """创建产品组"""
+        return {}
+    
+    def meta_update_product_set(self, set_id: str, **kwargs) -> Dict:
+        """更新产品组"""
+        return {}
+    
+    def meta_delete_product_set(self, set_id: str, **kwargs) -> Dict:
+        """删除产品组"""
+        return {}
+    
+    def meta_list_product_groups(self, catalog_id: str, **kwargs) -> List[Dict]:
+        """列出产品分组"""
+        return []
+    
+    def meta_create_product_group(self, catalog_id: str, **kwargs) -> Dict:
+        """创建产品分组"""
+        return {}
+    
+    def meta_update_product_group(self, group_id: str, **kwargs) -> Dict:
+        """更新产品分组"""
+        return {}
+    
+    def meta_delete_product_group(self, group_id: str, **kwargs) -> Dict:
+        """删除产品分组"""
+        return {}
+    
+    def meta_list_promoted_products(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出推广产品"""
+        return []
+    
+    def meta_create_promoted_product(self, account_id: str, **kwargs) -> Dict:
+        """创建推广产品"""
+        return {}
+    
+    def meta_delete_promoted_product(self, product_id: str, **kwargs) -> Dict:
+        """删除推广产品"""
+        return {}
+    
+    def meta_list_dynamic_ad_campaigns(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出动态广告系列"""
+        return []
+    
+    def meta_create_dynamic_ad_campaign(self, account_id: str, **kwargs) -> Dict:
+        """创建动态广告系列"""
+        return {}
+    
+    def meta_list_dynamic_ad_sets(self, campaign_id: str, **kwargs) -> List[Dict]:
+        """列出动态广告组"""
+        return []
+    
+    def meta_create_dynamic_adset(self, campaign_id: str, **kwargs) -> Dict:
+        """创建动态广告组"""
+        return {}
+    
+    def meta_list_audience_rules(self, audience_id: str, **kwargs) -> List[Dict]:
+        """列出受众规则"""
+        return []
+    
+    def meta_create_audience_rule(self, audience_id: str, **kwargs) -> Dict:
+        """创建受众规则"""
+        return {}
+    
+    def meta_update_audience_rule(self, rule_id: str, **kwargs) -> Dict:
+        """更新受众规则"""
+        return {}
+    
+    def meta_delete_audience_rule(self, rule_id: str, **kwargs) -> Dict:
+        """删除受众规则"""
+        return {}
+    
+    def meta_list_audience_estimates(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出受众预估"""
+        return []
+    
+    def meta_get_audience_estimate(self, estimate_id: str, **kwargs) -> Dict:
+        """获取受众预估详情"""
+        return {}
+    
+    def meta_list_experiments(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出实验"""
+        return []
+    
+    def meta_create_experiment(self, account_id: str, **kwargs) -> Dict:
+        """创建实验"""
+        return {}
+    
+    def meta_get_experiment(self, experiment_id: str, **kwargs) -> Dict:
+        """获取实验详情"""
+        return {}
+    
+    def meta_update_experiment(self, experiment_id: str, **kwargs) -> Dict:
+        """更新实验"""
+        return {}
+    
+    def meta_pause_experiment(self, experiment_id: str, **kwargs) -> Dict:
+        """暂停实验"""
+        return {}
+    
+    def meta_resume_experiment(self, experiment_id: str, **kwargs) -> Dict:
+        """恢复实验"""
+        return {}
+    
+    def meta_delete_experiment(self, experiment_id: str, **kwargs) -> Dict:
+        """删除实验"""
+        return {}
+    
+    def meta_list_experiment_results(self, experiment_id: str, **kwargs) -> Dict:
+        """获取实验结果"""
+        return {}
+    
+    def meta_list_experiments_by_campaign(self, campaign_id: str, **kwargs) -> List[Dict]:
+        """列出实验（按广告系列）"""
+        return []
+    
+    def meta_list_experiments_by_adset(self, adset_id: str, **kwargs) -> List[Dict]:
+        """列出实验（按广告组）"""
+        return []
+    
+    def meta_list_saved_queries(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出保存的查询"""
+        return []
+    
+    def meta_create_saved_query(self, account_id: str, **kwargs) -> Dict:
+        """创建保存的查询"""
+        return {}
+    
+    def meta_delete_saved_query(self, query_id: str, **kwargs) -> Dict:
+        """删除保存的查询"""
+        return {}
+    
+    def meta_list_upload_sources(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出上传源"""
+        return []
+    
+    def meta_create_upload_source(self, account_id: str, **kwargs) -> Dict:
+        """创建上传源"""
+        return {}
+    
+    def meta_delete_upload_source(self, source_id: str, **kwargs) -> Dict:
+        """删除上传源"""
+        return {}
+    
+    def meta_list_offline_events(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出离线事件"""
+        return []
+    
+    def meta_upload_offline_events(self, pixel_id: str, **kwargs) -> Dict:
+        """上传离线事件"""
+        return {}
+    
+    def meta_list_event_match_keys(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出事件匹配键"""
+        return []
+    
+    def meta_create_event_match_key(self, pixel_id: str, **kwargs) -> Dict:
+        """创建事件匹配键"""
+        return {}
+    
+    def meta_delete_event_match_key(self, key_id: str, **kwargs) -> Dict:
+        """删除事件匹配键"""
+        return {}
+    
+    def meta_list_advanced_matching_fields(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出高级匹配字段"""
+        return []
+    
+    def meta_get_advanced_matching_status(self, pixel_id: str, **kwargs) -> Dict:
+        """获取高级匹配状态"""
+        return {}
+    
+    def meta_list_partner_categories(self, **kwargs) -> List[Dict]:
+        """列出合作伙伴类别"""
+        return []
+    
+    def meta_list_partner_integrations(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出合作伙伴集成"""
+        return []
+    
+    def meta_create_partner_integration(self, account_id: str, **kwargs) -> Dict:
+        """创建合作伙伴集成"""
+        return {}
+    
+    def meta_delete_partner_integration(self, integration_id: str, **kwargs) -> Dict:
+        """删除合作伙伴集成"""
+        return {}
+    
+    def meta_list_partner_features(self, partner_id: str, **kwargs) -> List[Dict]:
+        """列出合作伙伴功能"""
+        return []
+    
+    def meta_list_sponsored_content(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出赞助内容"""
+        return []
+    
+    def meta_create_sponsored_content(self, account_id: str, **kwargs) -> Dict:
+        """创建赞助内容"""
+        return {}
+    
+    def meta_list_content_library(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出内容库"""
+        return []
+    
+    def meta_get_content_library_item(self, item_id: str, **kwargs) -> Dict:
+        """获取内容库项目"""
+        return {}
+    
+    def meta_list_cross_account_campaigns(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出跨账户广告系列"""
+        return []
+    
+    def meta_list_cross_account_adsets(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出跨账户广告组"""
+        return []
+    
+    def meta_list_cross_account_ads(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出跨账户广告"""
+        return []
+    
+    def meta_list_shared_audiences(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出共享受众"""
+        return []
+    
+    def meta_share_audience(self, source_account: str, target_account: str, **kwargs) -> Dict:
+        """共享受众"""
+        return {}
+    
+    def meta_unshare_audience(self, audience_id: str, **kwargs) -> Dict:
+        """取消共享受众"""
+        return {}
+    
+    def meta_list_shared_creatives(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出共享创意"""
+        return []
+    
+    def meta_share_creative(self, source_account: str, target_account: str, **kwargs) -> Dict:
+        """共享创意"""
+        return {}
+    
+    def meta_unshare_creative(self, creative_id: str, **kwargs) -> Dict:
+        """取消共享创意"""
+        return {}
+    
+    def meta_list_shared_catalogs(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出共享目录"""
+        return []
+    
+    def meta_share_catalog(self, source_account: str, target_account: str, **kwargs) -> Dict:
+        """共享目录"""
+        return {}
+    
+    def meta_unshare_catalog(self, catalog_id: str, **kwargs) -> Dict:
+        """取消共享目录"""
+        return {}
+    
+    def meta_list_shared_budgets(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出共享预算"""
+        return []
+    
+    def meta_share_budget(self, source_account: str, target_account: str, **kwargs) -> Dict:
+        """共享预算"""
+        return {}
+    
+    def meta_unshare_budget(self, budget_id: str, **kwargs) -> Dict:
+        """取消共享预算"""
+        return {}
+    
+    def meta_list_performance_advisor(self, account_id: str, **kwargs) -> Dict:
+        """获取表现顾问"""
+        return {}
+    
+    def meta_list_recommendations_v2(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出推荐（v2）"""
+        return []
+    
+    def meta_apply_recommendation_v2(self, recommendation_id: str, **kwargs) -> Dict:
+        """应用推荐（v2）"""
+        return {}
+    
+    def meta_dismiss_recommendation_v2(self, recommendation_id: str, **kwargs) -> Dict:
+        """忽略推荐（v2）"""
+        return {}
+    
+    def meta_list_insights_jobs(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出洞察任务"""
+        return []
+    
+    def meta_create_insights_job(self, account_id: str, **kwargs) -> Dict:
+        """创建洞察任务"""
+        return {}
+    
+    def meta_get_insights_job(self, job_id: str, **kwargs) -> Dict:
+        """获取洞察任务"""
+        return {}
+    
+    def meta_cancel_insights_job(self, job_id: str, **kwargs) -> Dict:
+        """取消洞察任务"""
+        return {}
+    
+    def meta_list_async_operations(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出异步操作"""
+        return []
+    
+    def meta_get_async_operation(self, op_id: str, **kwargs) -> Dict:
+        """获取异步操作"""
+        return {}
+    
+    def meta_list_batch_results(self, batch_id: str, **kwargs) -> List[Dict]:
+        """列出批处理结果"""
+        return []
+    
+    def meta_validate_batch(self, batch_id: str, **kwargs) -> Dict:
+        """验证批处理"""
+        return {}
+    
+    def meta_list_upload_jobs(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出上传任务"""
+        return []
+    
+    def meta_get_upload_job(self, job_id: str, **kwargs) -> Dict:
+        """获取上传任务"""
+        return {}
+    
+    def meta_cancel_upload_job(self, job_id: str, **kwargs) -> Dict:
+        """取消上传任务"""
+        return {}
+    
+    def meta_list_creative_assets(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出创意资产"""
+        return []
+    
+    def meta_get_creative_asset(self, asset_id: str, **kwargs) -> Dict:
+        """获取创意资产"""
+        return {}
+    
+    def meta_list_creative_templates(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出创意模板"""
+        return []
+    
+    def meta_get_creative_template(self, template_id: str, **kwargs) -> Dict:
+        """获取创意模板"""
+        return {}
+    
+    def meta_create_creative_from_template(self, template_id: str, **kwargs) -> Dict:
+        """从模板创建创意"""
+        return {}
+    
+    def meta_list_creative_variants(self, creative_id: str, **kwargs) -> List[Dict]:
+        """列出创意变体"""
+        return []
+    
+    def meta_create_creative_variant(self, creative_id: str, **kwargs) -> Dict:
+        """创建创意变体"""
+        return {}
+    
+    def meta_get_creative_variant(self, variant_id: str, **kwargs) -> Dict:
+        """获取创意变体"""
+        return {}
+    
+    def meta_update_creative_variant(self, variant_id: str, **kwargs) -> Dict:
+        """更新创意变体"""
+        return {}
+    
+    def meta_delete_creative_variant(self, variant_id: str, **kwargs) -> Dict:
+        """删除创意变体"""
+        return {}
+    
+    def meta_list_creative_recommendations(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出创意推荐"""
+        return []
+    
+    def meta_get_creative_recommendation(self, rec_id: str, **kwargs) -> Dict:
+        """获取创意推荐"""
+        return {}
+    
+    def meta_apply_creative_recommendation(self, rec_id: str, **kwargs) -> Dict:
+        """应用创意推荐"""
+        return {}
+    
+    def meta_dismiss_creative_recommendation(self, rec_id: str, **kwargs) -> Dict:
+        """忽略创意推荐"""
+        return {}
+    
+    def meta_list_targeting_specs(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出定向规格"""
+        return []
+    
+    def meta_get_targeting_spec(self, spec_id: str, **kwargs) -> Dict:
+        """获取定向规格"""
+        return {}
+    
+    def meta_search_targeting(self, account_id: str, **kwargs) -> List[Dict]:
+        """搜索定向"""
+        return []
+    
+    def meta_list_targeting_estimates(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出定向预估"""
+        return []
+    
+    def meta_get_targeting_estimate(self, estimate_id: str, **kwargs) -> Dict:
+        """获取定向预估"""
+        return {}
+    
+    def meta_list_placement_targets(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出投放位置定向"""
+        return []
+    
+    def meta_list_auto_placement_targets(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出自动投放位置定向"""
+        return []
+    
+    def meta_list_managing_accounts(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出管理账户"""
+        return []
+    
+    def meta_list_linked_accounts(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出关联账户"""
+        return []
+    
+    def meta_list_subaccounts(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出子账户"""
+        return []
+    
+    def meta_list_account_permissions(self, account_id: str, **kwargs) -> Dict:
+        """列出账户权限"""
+        return {}
+    
+    def meta_list_role_permissions(self, role_id: str, **kwargs) -> Dict:
+        """列出角色权限"""
+        return {}
+    
+    def meta_list_roles(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出角色"""
+        return []
+    
+    def meta_create_role(self, account_id: str, **kwargs) -> Dict:
+        """创建角色"""
+        return {}
+    
+    def meta_update_role(self, role_id: str, **kwargs) -> Dict:
+        """更新角色"""
+        return {}
+    
+    def meta_delete_role(self, role_id: str, **kwargs) -> Dict:
+        """删除角色"""
+        return {}
+    
+    def meta_list_account_users(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出账户用户"""
+        return []
+    
+    def meta_add_account_user(self, account_id: str, **kwargs) -> Dict:
+        """添加账户用户"""
+        return {}
+    
+    def meta_remove_account_user(self, user_id: str, **kwargs) -> Dict:
+        """移除账户用户"""
+        return {}
+    
+    def meta_update_account_user(self, user_id: str, **kwargs) -> Dict:
+        """更新账户用户"""
+        return {}
+    
+    def meta_list_account_users_by_role(self, account_id: str, role_id: str, **kwargs) -> List[Dict]:
+        """按角色列出账户用户"""
+        return []
+    
+    def meta_list_custom_permissions(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出自定义权限"""
+        return []
+    
+    def meta_create_custom_permission(self, account_id: str, **kwargs) -> Dict:
+        """创建自定义权限"""
+        return {}
+    
+    def meta_update_custom_permission(self, perm_id: str, **kwargs) -> Dict:
+        """更新自定义权限"""
+        return {}
+    
+    def meta_delete_custom_permission(self, perm_id: str, **kwargs) -> Dict:
+        """删除自定义权限"""
+        return {}
+    
+    def meta_list_account_qualities(self, account_id: str, **kwargs) -> Dict:
+        """列出账户质量"""
+        return {}
+    
+    def meta_get_account_quality(self, account_id: str, **kwargs) -> Dict:
+        """获取账户质量"""
+        return {}
+    
+    def meta_list_account_issues(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出账户问题"""
+        return []
+    
+    def meta_resolve_account_issue(self, issue_id: str, **kwargs) -> Dict:
+        """解决账户问题"""
+        return {}
+    
+    def meta_list_credit_balance(self, account_id: str, **kwargs) -> Dict:
+        """列出信用余额"""
+        return {}
+    
+    def meta_list_promotions(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出促销"""
+        return []
+    
+    def meta_create_promotion(self, account_id: str, **kwargs) -> Dict:
+        """创建促销"""
+        return {}
+    
+    def meta_claim_promotion(self, promotion_id: str, **kwargs) -> Dict:
+        """领取促销"""
+        return {}
+    
+    def meta_list_promotion_balance(self, account_id: str, **kwargs) -> Dict:
+        """列出促销余额"""
+        return {}
+    
+    def meta_list_billing_events(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出计费事件"""
+        return []
+    
+    def meta_get_billing_summary(self, account_id: str, **kwargs) -> Dict:
+        """获取计费汇总"""
+        return {}
+    
+    def meta_list_chargebacks(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出拒付"""
+        return []
+    
+    def meta_list_funds_movements(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出资金变动"""
+        return []
+    
+    def meta_list_invoices(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出发票"""
+        return []
+    
+    def meta_get_invoice(self, invoice_id: str, **kwargs) -> Dict:
+        """获取发票详情"""
+        return {}
+    
+    def meta_list_payment_histories(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出支付历史"""
+        return []
+    
+    def meta_list_promo_codes(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出优惠码"""
+        return []
+    
+    def meta_validate_promo_code(self, code: str, **kwargs) -> Dict:
+        """验证优惠码"""
+        return {}
+    
+    def meta_list_account_limits_v2(self, account_id: str, **kwargs) -> Dict:
+        """列出账户限制（v2）"""
+        return {}
+    
+    def meta_get_account_limit(self, account_id: str, limit_type: str, **kwargs) -> Dict:
+        """获取账户限制"""
+        return {}
+    
+    def meta_list_api_versions_v2(self, **kwargs) -> List[Dict]:
+        """列出 API 版本（v2）"""
+        return []
+    
+    def meta_get_api_version_v2(self, version: str, **kwargs) -> Dict:
+        """获取 API 版本信息（v2）"""
+        return {}
+    
+    def meta_list_supported_versions(self, **kwargs) -> List[Dict]:
+        """列出支持的版本"""
+        return []
+    
+    def meta_get_version_info(self, version: str, **kwargs) -> Dict:
+        """获取版本信息"""
+        return {}
+    
+    def meta_list_deprecation_schedule(self, **kwargs) -> List[Dict]:
+        """列出弃用计划"""
+        return []
+    
+    def meta_list_beta_features(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出 Beta 功能"""
+        return []
+    
+    def meta_enable_beta_feature(self, account_id: str, feature: str, **kwargs) -> Dict:
+        """启用 Beta 功能"""
+        return {}
+    
+    def meta_disable_beta_feature(self, account_id: str, feature: str, **kwargs) -> Dict:
+        """禁用 Beta 功能"""
+        return {}
+    
+    def meta_list_feature_flags(self, account_id: str, **kwargs) -> Dict:
+        """列出功能标志"""
+        return {}
+    
+    def meta_get_feature_flag(self, account_id: str, flag: str, **kwargs) -> Dict:
+        """获取功能标志"""
+        return {}
+    
+    def meta_list_testing_accounts(self, app_id: str, **kwargs) -> List[Dict]:
+        """列出测试账户"""
+        return []
+    
+    def meta_create_testing_account(self, app_id: str, **kwargs) -> Dict:
+        """创建测试账户"""
+        return {}
+    
+    def meta_delete_testing_account(self, testing_user_id: str, **kwargs) -> Dict:
+        """删除测试账户"""
+        return {}
+    
+    def meta_list_test_tokens(self, app_id: str, **kwargs) -> List[Dict]:
+        """列出测试令牌"""
+        return []
+    
+    def meta_get_test_token(self, app_id: str, **kwargs) -> Dict:
+        """获取测试令牌"""
+        return {}
+    
+    def meta_list_app_properties(self, app_id: str, **kwargs) -> Dict:
+        """列出应用属性"""
+        return {}
+    
+    def meta_update_app_properties(self, app_id: str, **kwargs) -> Dict:
+        """更新应用属性"""
+        return {}
+    
+    def meta_list_app_checks(self, app_id: str, **kwargs) -> List[Dict]:
+        """列出应用检查"""
+        return []
+    
+    def meta_get_app_check(self, check_id: str, **kwargs) -> Dict:
+        """获取应用检查"""
+        return {}
+    
+    def meta_run_app_check(self, app_id: str, **kwargs) -> Dict:
+        """运行应用检查"""
+        return {}
+    
+    def meta_list_audit_logs_v2(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出审计日志（v2）"""
+        return []
+    
+    def meta_list_activity_logs_v2(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出活动日志（v2）"""
+        return []
+    
+    def meta_list_logged_actions(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出已记录操作"""
+        return []
+    
+    def meta_list_login_history(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出登录历史"""
+        return []
+    
+    def meta_list_security_settings(self, account_id: str, **kwargs) -> Dict:
+        """列出安全设置"""
+        return {}
+    
+    def meta_update_security_settings(self, account_id: str, **kwargs) -> Dict:
+        """更新安全设置"""
+        return {}
+    
+    def meta_list_two_factor_auth(self, account_id: str, **kwargs) -> Dict:
+        """列出双因素认证"""
+        return {}
+    
+    def meta_enable_two_factor_auth(self, account_id: str, **kwargs) -> Dict:
+        """启用双因素认证"""
+        return {}
+    
+    def meta_disable_two_factor_auth(self, account_id: str, **kwargs) -> Dict:
+        """禁用双因素认证"""
+        return {}
+    
+    def meta_list_recovery_codes(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出恢复码"""
+        return []
+    
+    def meta_list_data_uses(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出数据使用"""
+        return []
+    
+    def meta_create_data_use(self, account_id: str, **kwargs) -> Dict:
+        """创建数据使用"""
+        return {}
+    
+    def meta_update_data_use(self, use_id: str, **kwargs) -> Dict:
+        """更新数据使用"""
+        return {}
+    
+    def meta_delete_data_use(self, use_id: str, **kwargs) -> Dict:
+        """删除数据使用"""
+        return {}
+    
+    def meta_list_data_uses_limits(self, account_id: str, **kwargs) -> Dict:
+        """列出数据使用限制"""
+        return {}
+    
+    def meta_get_data_uses_limit(self, account_id: str, **kwargs) -> Dict:
+        """获取数据使用限制"""
+        return {}
+    
+    def meta_list_pixel_health(self, pixel_id: str, **kwargs) -> Dict:
+        """列出 Pixel 健康状态"""
+        return {}
+    
+    def meta_get_pixel_health(self, pixel_id: str, **kwargs) -> Dict:
+        """获取 Pixel 健康状态"""
+        return {}
+    
+    def meta_list_pixel_recommendations(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出 Pixel 推荐"""
+        return []
+    
+    def meta_apply_pixel_recommendation(self, pixel_id: str, rec_id: str, **kwargs) -> Dict:
+        """应用 Pixel 推荐"""
+        return {}
+    
+    def meta_dismiss_pixel_recommendation(self, pixel_id: str, rec_id: str, **kwargs) -> Dict:
+        """忽略 Pixel 推荐"""
+        return {}
+    
+    def meta_list_conversion_tracking(self, pixel_id: str, **kwargs) -> Dict:
+        """列出转化追踪"""
+        return {}
+    
+    def meta_update_conversion_tracking(self, pixel_id: str, **kwargs) -> Dict:
+        """更新转化追踪"""
+        return {}
+    
+    def meta_list_aggregated_event_measurement(self, pixel_id: str, **kwargs) -> Dict:
+        """列出聚合事件测量"""
+        return {}
+    
+    def meta_update_aggregated_event_measurement(self, pixel_id: str, **kwargs) -> Dict:
+        """更新聚合事件测量"""
+        return {}
+    
+    def meta_list_event_sources(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出事件源"""
+        return []
+    
+    def meta_create_event_source(self, pixel_id: str, **kwargs) -> Dict:
+        """创建事件源"""
+        return {}
+    
+    def meta_update_event_source(self, source_id: str, **kwargs) -> Dict:
+        """更新事件源"""
+        return {}
+    
+    def meta_delete_event_source(self, source_id: str, **kwargs) -> Dict:
+        """删除事件源"""
+        return {}
+    
+    def meta_list_event_match_quality(self, pixel_id: str, **kwargs) -> Dict:
+        """列出事件匹配质量"""
+        return {}
+    
+    def meta_list_matched_user_fields(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出匹配用户字段"""
+        return []
+    
+    def meta_list_event_priorities(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出事件优先级"""
+        return []
+    
+    def meta_set_event_priority(self, pixel_id: str, **kwargs) -> Dict:
+        """设置事件优先级"""
+        return {}
+    
+    def meta_get_event_priority(self, pixel_id: str, event_name: str, **kwargs) -> Dict:
+        """获取事件优先级"""
+        return {}
+    
+    def meta_list_standard_event_mapping(self, **kwargs) -> Dict:
+        """列出标准事件映射"""
+        return {}
+    
+    def meta_list_custom_event_mapping(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出自定义事件映射"""
+        return []
+    
+    def meta_create_custom_event_mapping(self, pixel_id: str, **kwargs) -> Dict:
+        """创建自定义事件映射"""
+        return {}
+    
+    def meta_update_custom_event_mapping(self, mapping_id: str, **kwargs) -> Dict:
+        """更新自定义事件映射"""
+        return {}
+    
+    def meta_delete_custom_event_mapping(self, mapping_id: str, **kwargs) -> Dict:
+        """删除自定义事件映射"""
+        return {}
+    
+    def meta_list_validation_issues(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出验证问题"""
+        return []
+    
+    def meta_get_validation_issue(self, issue_id: str, **kwargs) -> Dict:
+        """获取验证问题"""
+        return {}
+    
+    def meta_resolve_validation_issue(self, issue_id: str, **kwargs) -> Dict:
+        """解决验证问题"""
+        return {}
+    
+    def meta_list_event_log(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出事件日志"""
+        return []
+    
+    def meta_get_event_log_entry(self, entry_id: str, **kwargs) -> Dict:
+        """获取事件日志条目"""
+        return {}
+    
+    def meta_list_test_events(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出测试事件"""
+        return []
+    
+    def meta_create_test_event(self, pixel_id: str, **kwargs) -> Dict:
+        """创建测试事件"""
+        return {}
+    
+    def meta_delete_test_event(self, event_id: str, **kwargs) -> Dict:
+        """删除测试事件"""
+        return {}
+    
+    def meta_list_extended_token_info(self, access_token: str, **kwargs) -> Dict:
+        """列出扩展令牌信息"""
+        return {}
+    
+    def meta_validate_access_token(self, access_token: str, **kwargs) -> Dict:
+        """验证访问令牌"""
+        return {}
+    
+    def meta_debug_access_token(self, access_token: str, **kwargs) -> Dict:
+        """调试访问令牌"""
+        return {}
+    
+    def meta_list_token_permissions(self, access_token: str, **kwargs) -> List[Dict]:
+        """列出令牌权限"""
+        return []
+    
+    def meta_list_token_scopes(self, access_token: str, **kwargs) -> List[Dict]:
+        """列出令牌范围"""
+        return []
+    
+    def meta_get_token_info(self, access_token: str, **kwargs) -> Dict:
+        """获取令牌信息"""
+        return {}
+    
+    def meta_list_debug_tools(self, **kwargs) -> Dict:
+        """列出调试工具"""
+        return {}
+    
+    def meta_debug_graph_api(self, endpoint: str, **kwargs) -> Dict:
+        """调试 Graph API"""
+        return {}
+    
+    def meta_debug_access_token_expiry(self, access_token: str, **kwargs) -> Dict:
+        """调试访问令牌过期"""
+        return {}
+    
+    def meta_list_debug_permissions(self, access_token: str, **kwargs) -> Dict:
+        """列出调试权限"""
+        return {}
+    
+    def meta_list_upload_sources_v2(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出上传源（v2）"""
+        return []
+    
+    def meta_get_upload_source_v2(self, source_id: str, **kwargs) -> Dict:
+        """获取上传源（v2）"""
+        return {}
+    
+    def meta_list_conversions_by_account(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出账户转化（按账户）"""
+        return []
+    
+    def meta_list_conversions_by_pixel(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出 Pixel 转化（按 Pixel）"""
+        return []
+    
+    def meta_list_conversion_specs(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出转化规格"""
+        return []
+    
+    def meta_get_conversion_spec(self, spec_id: str, **kwargs) -> Dict:
+        """获取转化规格"""
+        return {}
+    
+    def meta_list_attribution_specs(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出归因规格"""
+        return []
+    
+    def meta_get_attribution_spec(self, spec_id: str, **kwargs) -> Dict:
+        """获取归因规格"""
+        return {}
+    
+    def meta_list_attribution_windows(self, **kwargs) -> List[Dict]:
+        """列出归因窗口"""
+        return []
+    
+    def meta_list_conversion_types(self, **kwargs) -> List[Dict]:
+        """列出转化类型"""
+        return []
+    
+    def meta_list_conversion_values(self, **kwargs) -> List[Dict]:
+        """列出转化值"""
+        return []
+    
+    def meta_list_conversion_landing_pages(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出转化着陆页"""
+        return []
+    
+    def meta_list_conversion_keywords(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出转化关键词"""
+        return []
+    
+    def meta_list_conversion_devices(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出转化设备"""
+        return []
+    
+    def meta_list_conversion_placements(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出转化投放位置"""
+        return []
+    
+    def meta_list_conversion_browsers(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出转化浏览器"""
+        return []
+    
+    def meta_list_conversion_operating_systems(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出转化操作系统"""
+        return []
+    
+    def meta_list_conversion_countries(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出转化国家"""
+        return []
+    
+    def meta_list_conversion_regions(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出转化地区"""
+        return []
+    
+    def meta_list_conversion_cities(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出转化城市"""
+        return []
+    
+    def meta_list_conversion_age_groups(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出转化年龄组"""
+        return []
+    
+    def meta_list_conversion_genders(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出转化性别"""
+        return []
+    
+    def meta_list_conversion_pifestyles(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出转化生活方式"""
+        return []
+    
+    def meta_list_conversion_interests(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出转化兴趣"""
+        return []
+    
+    def meta_list_conversion_behaviors(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出转化行为"""
+        return []
+    
+    # ========== Meta 补充 API (v3) - Instagram Shopping ==========
+    def meta_list_shop_accounts(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出商店账户"""
+        return []
+    
+    def meta_get_shop_account(self, shop_id: str, **kwargs) -> Dict:
+        """获取商店账户详情"""
+        return {}
+    
+    def meta_list_shop_categories(self, shop_id: str, **kwargs) -> List[Dict]:
+        """列出商店分类"""
+        return []
+    
+    def meta_list_shop_products_v2(self, shop_id: str, **kwargs) -> List[Dict]:
+        """列出商店产品（v2）"""
+        return []
+    
+    def meta_get_shop_product(self, product_id: str, **kwargs) -> Dict:
+        """获取商店产品详情"""
+        return {}
+    
+    def meta_create_shop_product(self, shop_id: str, **kwargs) -> Dict:
+        """创建商店产品"""
+        return {}
+    
+    def meta_update_shop_product(self, product_id: str, **kwargs) -> Dict:
+        """更新商店产品"""
+        return {}
+    
+    def meta_delete_shop_product(self, product_id: str, **kwargs) -> Dict:
+        """删除商店产品"""
+        return {}
+    
+    def meta_list_shop_product_sets(self, shop_id: str, **kwargs) -> List[Dict]:
+        """列出商店产品组"""
+        return []
+    
+    def meta_create_shop_product_set(self, shop_id: str, **kwargs) -> Dict:
+        """创建商店产品组"""
+        return {}
+    
+    def meta_update_shop_product_set(self, set_id: str, **kwargs) -> Dict:
+        """更新商店产品组"""
+        return {}
+    
+    def meta_delete_shop_product_set(self, set_id: str, **kwargs) -> Dict:
+        """删除商店产品组"""
+        return {}
+    
+    def meta_list_shop_collections(self, shop_id: str, **kwargs) -> List[Dict]:
+        """列出商店集合"""
+        return []
+    
+    def meta_create_shop_collection(self, shop_id: str, **kwargs) -> Dict:
+        """创建商店集合"""
+        return {}
+    
+    def meta_update_shop_collection(self, collection_id: str, **kwargs) -> Dict:
+        """更新商店集合"""
+        return {}
+    
+    def meta_delete_shop_collection(self, collection_id: str, **kwargs) -> Dict:
+        """删除商店集合"""
+        return {}
+    
+    def meta_list_shop_orders(self, shop_id: str, **kwargs) -> List[Dict]:
+        """列出商店订单"""
+        return []
+    
+    def meta_get_shop_order(self, order_id: str, **kwargs) -> Dict:
+        """获取商店订单详情"""
+        return {}
+    
+    def meta_update_shop_order(self, order_id: str, **kwargs) -> Dict:
+        """更新商店订单"""
+        return {}
+    
+    def meta_list_shop_invoices(self, shop_id: str, **kwargs) -> List[Dict]:
+        """列出商店发票"""
+        return []
+    
+    def meta_get_shop_invoice(self, invoice_id: str, **kwargs) -> Dict:
+        """获取商店发票详情"""
+        return {}
+    
+    def meta_list_shop_refunds(self, shop_id: str, **kwargs) -> List[Dict]:
+        """列出商店退款"""
+        return []
+    
+    def meta_create_shop_refund(self, shop_id: str, **kwargs) -> Dict:
+        """创建商店退款"""
+        return {}
+    
+    def meta_list_shop_fulfillments(self, shop_id: str, **kwargs) -> List[Dict]:
+        """列出商店履约"""
+        return []
+    
+    def meta_create_shop_fulfillment(self, shop_id: str, **kwargs) -> Dict:
+        """创建商店履约"""
+        return {}
+    
+    def meta_list_shop_shipping_labels(self, shop_id: str, **kwargs) -> List[Dict]:
+        """列出商店快递标签"""
+        return []
+    
+    def meta_create_shop_shipping_label(self, shop_id: str, **kwargs) -> Dict:
+        """创建商店快递标签"""
+        return {}
+    
+    def meta_list_shop_payments(self, shop_id: str, **kwargs) -> List[Dict]:
+        """列出商店付款"""
+        return []
+    
+    def meta_get_shop_payment(self, payment_id: str, **kwargs) -> Dict:
+        """获取商店付款详情"""
+        return {}
+    
+    def meta_list_shop_payouts(self, shop_id: str, **kwargs) -> List[Dict]:
+        """列出商店结算"""
+        return []
+    
+    def meta_get_shop_payout(self, payout_id: str, **kwargs) -> Dict:
+        """获取商店结算详情"""
+        return {}
+    
+    def meta_list_shop_disputes(self, shop_id: str, **kwargs) -> List[Dict]:
+        """列出商店争议"""
+        return []
+    
+    def meta_get_shop_dispute(self, dispute_id: str, **kwargs) -> Dict:
+        """获取商店争议详情"""
+        return {}
+    
+    def meta_respond_to_shop_dispute(self, dispute_id: str, **kwargs) -> Dict:
+        """回复商店争议"""
+        return {}
+    
+    def meta_list_shop_settings(self, shop_id: str, **kwargs) -> Dict:
+        """列出商店设置"""
+        return {}
+    
+    def meta_update_shop_settings(self, shop_id: str, **kwargs) -> Dict:
+        """更新商店设置"""
+        return {}
+    
+    def meta_list_shop_addresses(self, shop_id: str, **kwargs) -> List[Dict]:
+        """列出商店地址"""
+        return []
+    
+    def meta_create_shop_address(self, shop_id: str, **kwargs) -> Dict:
+        """创建商店地址"""
+        return {}
+    
+    def meta_update_shop_address(self, address_id: str, **kwargs) -> Dict:
+        """更新商店地址"""
+        return {}
+    
+    def meta_delete_shop_address(self, address_id: str, **kwargs) -> Dict:
+        """删除商店地址"""
+        return {}
+    
+    def meta_list_shop_hours(self, shop_id: str, **kwargs) -> List[Dict]:
+        """列出商店营业时间"""
+        return []
+    
+    def meta_update_shop_hours(self, shop_id: str, **kwargs) -> Dict:
+        """更新商店营业时间"""
+        return {}
+    
+    def meta_list_shop_social_links(self, shop_id: str, **kwargs) -> List[Dict]:
+        """列出商店社交链接"""
+        return []
+    
+    def meta_update_shop_social_links(self, shop_id: str, **kwargs) -> Dict:
+        """更新商店社交链接"""
+        return {}
+    
+    def meta_list_shop_photos(self, shop_id: str, **kwargs) -> List[Dict]:
+        """列出商店照片"""
+        return []
+    
+    def meta_upload_shop_photo(self, shop_id: str, **kwargs) -> Dict:
+        """上传商店照片"""
+        return {}
+    
+    def meta_delete_shop_photo(self, photo_id: str, **kwargs) -> Dict:
+        """删除商店照片"""
+        return {}
+    
+    def meta_list_shop_videos(self, shop_id: str, **kwargs) -> List[Dict]:
+        """列出商店视频"""
+        return []
+    
+    def meta_upload_shop_video(self, shop_id: str, **kwargs) -> Dict:
+        """上传商店视频"""
+        return {}
+    
+    def meta_delete_shop_video(self, video_id: str, **kwargs) -> Dict:
+        """删除商店视频"""
+        return {}
+    
+    def meta_list_shop_posts(self, shop_id: str, **kwargs) -> List[Dict]:
+        """列出商店帖子"""
+        return []
+    
+    def meta_create_shop_post(self, shop_id: str, **kwargs) -> Dict:
+        """创建商店帖子"""
+        return {}
+    
+    def meta_update_shop_post(self, post_id: str, **kwargs) -> Dict:
+        """更新商店帖子"""
+        return {}
+    
+    def meta_delete_shop_post(self, post_id: str, **kwargs) -> Dict:
+        """删除商店帖子"""
+        return {}
+    
+    def meta_list_shop_comments(self, post_id: str, **kwargs) -> List[Dict]:
+        """列出商店评论"""
+        return []
+    
+    def meta_create_shop_comment(self, post_id: str, **kwargs) -> Dict:
+        """创建商店评论"""
+        return {}
+    
+    def meta_delete_shop_comment(self, comment_id: str, **kwargs) -> Dict:
+        """删除商店评论"""
+        return {}
+    
+    def meta_list_shop_likes(self, post_id: str, **kwargs) -> List[Dict]:
+        """列出商店点赞"""
+        return []
+    
+    def meta_list_shop_insights(self, shop_id: str, **kwargs) -> Dict:
+        """列出商店洞察"""
+        return {}
+    
+    def meta_get_shop_insights(self, shop_id: str, **kwargs) -> Dict:
+        """获取商店洞察详情"""
+        return {}
+    
+    def meta_list_shop_performance(self, shop_id: str, **kwargs) -> Dict:
+        """列出商店表现"""
+        return {}
+    
+    def meta_get_shop_recommendations(self, shop_id: str, **kwargs) -> List[Dict]:
+        """获取商店推荐"""
+        return []
+    
+    def meta_apply_shop_recommendation(self, shop_id: str, rec_id: str, **kwargs) -> Dict:
+        """应用商店推荐"""
+        return {}
+    
+    # ========== Meta 补充 API (v4) - Advanced Targeting ==========
+    def meta_list_advanced_targeting(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出高级定向"""
+        return []
+    
+    def meta_get_advanced_targeting(self, targeting_id: str, **kwargs) -> Dict:
+        """获取高级定向详情"""
+        return {}
+    
+    def meta_create_advanced_targeting(self, account_id: str, **kwargs) -> Dict:
+        """创建高级定向"""
+        return {}
+    
+    def meta_update_advanced_targeting(self, targeting_id: str, **kwargs) -> Dict:
+        """更新高级定向"""
+        return {}
+    
+    def meta_delete_advanced_targeting(self, targeting_id: str, **kwargs) -> Dict:
+        """删除高级定向"""
+        return {}
+    
+    def meta_list_custom_audience_segments(self, audience_id: str, **kwargs) -> List[Dict]:
+        """列出自定义受众细分"""
+        return []
+    
+    def meta_get_custom_audience_segment(self, segment_id: str, **kwargs) -> Dict:
+        """获取自定义受众细分详情"""
+        return {}
+    
+    def meta_list_audience_insights(self, audience_id: str, **kwargs) -> Dict:
+        """列出受众洞察"""
+        return {}
+    
+    def meta_get_audience_insights(self, audience_id: str, **kwargs) -> Dict:
+        """获取受众洞察详情"""
+        return {}
+    
+    def meta_list_audience_breakdowns(self, audience_id: str, **kwargs) -> List[Dict]:
+        """列出受众细分"""
+        return []
+    
+    def meta_list_audience_trends(self, audience_id: str, **kwargs) -> List[Dict]:
+        """列出受众趋势"""
+        return []
+    
+    def meta_list_audience_forecasts(self, audience_id: str, **kwargs) -> List[Dict]:
+        """列出受众预测"""
+        return []
+    
+    def meta_get_audience_forecast(self, forecast_id: str, **kwargs) -> Dict:
+        """获取受众预测详情"""
+        return {}
+    
+    def meta_list_audience_recommendations(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出受众推荐"""
+        return []
+    
+    def meta_apply_audience_recommendation(self, account_id: str, rec_id: str, **kwargs) -> Dict:
+        """应用受众推荐"""
+        return {}
+    
+    # ========== Meta 补充 API (v5) - Advanced Analytics ==========
+    def meta_list_advanced_reports(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出高级报表"""
+        return []
+    
+    def meta_get_advanced_report(self, report_id: str, **kwargs) -> Dict:
+        """获取高级报表详情"""
+        return {}
+    
+    def meta_create_advanced_report(self, account_id: str, **kwargs) -> Dict:
+        """创建高级报表"""
+        return {}
+    
+    def meta_update_advanced_report(self, report_id: str, **kwargs) -> Dict:
+        """更新高级报表"""
+        return {}
+    
+    def meta_delete_advanced_report(self, report_id: str, **kwargs) -> Dict:
+        """删除高级报表"""
+        return {}
+    
+    def meta_list_custom_dashboards(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出自定义仪表板"""
+        return []
+    
+    def meta_get_custom_dashboard(self, dashboard_id: str, **kwargs) -> Dict:
+        """获取自定义仪表板详情"""
+        return {}
+    
+    def meta_create_custom_dashboard(self, account_id: str, **kwargs) -> Dict:
+        """创建自定义仪表板"""
+        return {}
+    
+    def meta_update_custom_dashboard(self, dashboard_id: str, **kwargs) -> Dict:
+        """更新自定义仪表板"""
+        return {}
+    
+    def meta_delete_custom_dashboard(self, dashboard_id: str, **kwargs) -> Dict:
+        """删除自定义仪表板"""
+        return {}
+    
+    def meta_list_dashboard_widgets(self, dashboard_id: str, **kwargs) -> List[Dict]:
+        """列出仪表板组件"""
+        return []
+    
+    def meta_add_dashboard_widget(self, dashboard_id: str, **kwargs) -> Dict:
+        """添加仪表板组件"""
+        return {}
+    
+    def meta_update_dashboard_widget(self, widget_id: str, **kwargs) -> Dict:
+        """更新仪表板组件"""
+        return {}
+    
+    def meta_delete_dashboard_widget(self, widget_id: str, **kwargs) -> Dict:
+        """删除仪表板组件"""
+        return {}
+    
+    def meta_list_custom_metrics(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出自定义指标"""
+        return []
+    
+    def meta_get_custom_metric(self, metric_id: str, **kwargs) -> Dict:
+        """获取自定义指标详情"""
+        return {}
+    
+    def meta_create_custom_metric(self, account_id: str, **kwargs) -> Dict:
+        """创建自定义指标"""
+        return {}
+    
+    def meta_update_custom_metric(self, metric_id: str, **kwargs) -> Dict:
+        """更新自定义指标"""
+        return {}
+    
+    def meta_delete_custom_metric(self, metric_id: str, **kwargs) -> Dict:
+        """删除自定义指标"""
+        return {}
+    
+    def meta_list_custom_segments(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出自定义细分"""
+        return []
+    
+    def meta_get_custom_segment(self, segment_id: str, **kwargs) -> Dict:
+        """获取自定义细分详情"""
+        return {}
+    
+    def meta_create_custom_segment(self, account_id: str, **kwargs) -> Dict:
+        """创建自定义细分"""
+        return {}
+    
+    def meta_update_custom_segment(self, segment_id: str, **kwargs) -> Dict:
+        """更新自定义细分"""
+        return {}
+    
+    def meta_delete_custom_segment(self, segment_id: str, **kwargs) -> Dict:
+        """删除自定义细分"""
+        return {}
+    
+    def meta_list_attribution_models(self, **kwargs) -> List[Dict]:
+        """列出归因模型"""
+        return []
+    
+    def meta_get_attribution_model(self, model_id: str, **kwargs) -> Dict:
+        """获取归因模型详情"""
+        return {}
+    
+    def meta_list_conversion_sources(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出转化来源"""
+        return []
+    
+    def meta_list_conversion_paths(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出转化路径"""
+        return []
+    
+    def meta_list_conversion_funnel(self, pixel_id: str, **kwargs) -> Dict:
+        """列出转化漏斗"""
+        return {}
+    
+    def meta_get_conversion_funnel(self, pixel_id: str, **kwargs) -> Dict:
+        """获取转化漏斗详情"""
+        return {}
+    
+    def meta_list_funnel_steps(self, funnel_id: str, **kwargs) -> List[Dict]:
+        """列出漏斗步骤"""
+        return []
+    
+    def meta_list_cross_channel_reports(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出跨渠道报表"""
+        return []
+    
+    def meta_get_cross_channel_report(self, report_id: str, **kwargs) -> Dict:
+        """获取跨渠道报表详情"""
+        return {}
+    
+    def meta_list_channel_contribution(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出渠道贡献"""
+        return []
+    
+    def meta_get_channel_contribution(self, channel_id: str, **kwargs) -> Dict:
+        """获取渠道贡献详情"""
+        return {}
+    
+    def meta_list_channel_insights(self, channel_id: str, **kwargs) -> Dict:
+        """列出渠道洞察"""
+        return {}
+    
+    def meta_list_channel_recommendations(self, channel_id: str, **kwargs) -> List[Dict]:
+        """列出渠道推荐"""
+        return []
+    
+    def meta_apply_channel_recommendation(self, channel_id: str, rec_id: str, **kwargs) -> Dict:
+        """应用渠道推荐"""
+        return {}
+    
+    # ========== Meta 补充 API (v6) - Automation ==========
+    def meta_list_automation_rules(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出自动化规则"""
+        return []
+    
+    def meta_get_automation_rule(self, rule_id: str, **kwargs) -> Dict:
+        """获取自动化规则详情"""
+        return {}
+    
+    def meta_create_automation_rule(self, account_id: str, **kwargs) -> Dict:
+        """创建自动化规则"""
+        return {}
+    
+    def meta_update_automation_rule(self, rule_id: str, **kwargs) -> Dict:
+        """更新自动化规则"""
+        return {}
+    
+    def meta_delete_automation_rule(self, rule_id: str, **kwargs) -> Dict:
+        """删除自动化规则"""
+        return {}
+    
+    def meta_list_automation_conditions(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出自动化条件"""
+        return []
+    
+    def meta_get_automation_condition(self, condition_id: str, **kwargs) -> Dict:
+        """获取自动化条件详情"""
+        return {}
+    
+    def meta_list_automation_actions(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出自动化操作"""
+        return []
+    
+    def meta_get_automation_action(self, action_id: str, **kwargs) -> Dict:
+        """获取自动化操作详情"""
+        return {}
+    
+    def meta_list_auto_ads(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出自动广告"""
+        return []
+    
+    def meta_create_auto_ad(self, account_id: str, **kwargs) -> Dict:
+        """创建自动广告"""
+        return {}
+    
+    def meta_get_auto_ad(self, auto_ad_id: str, **kwargs) -> Dict:
+        """获取自动广告详情"""
+        return {}
+    
+    def meta_update_auto_ad(self, auto_ad_id: str, **kwargs) -> Dict:
+        """更新自动广告"""
+        return {}
+    
+    def meta_pause_auto_ad(self, auto_ad_id: str, **kwargs) -> Dict:
+        """暂停自动广告"""
+        return {}
+    
+    def meta_resume_auto_ad(self, auto_ad_id: str, **kwargs) -> Dict:
+        """恢复自动广告"""
+        return {}
+    
+    def meta_delete_auto_ad(self, auto_ad_id: str, **kwargs) -> Dict:
+        """删除自动广告"""
+        return {}
+    
+    def meta_list_smart_campaigns(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出智能广告系列"""
+        return []
+    
+    def meta_create_smart_campaign(self, account_id: str, **kwargs) -> Dict:
+        """创建智能广告系列"""
+        return {}
+    
+    def meta_get_smart_campaign(self, campaign_id: str, **kwargs) -> Dict:
+        """获取智能广告系列详情"""
+        return {}
+    
+    def meta_update_smart_campaign(self, campaign_id: str, **kwargs) -> Dict:
+        """更新智能广告系列"""
+        return {}
+    
+    def meta_pause_smart_campaign(self, campaign_id: str, **kwargs) -> Dict:
+        """暂停智能广告系列"""
+        return {}
+    
+    def meta_resume_smart_campaign(self, campaign_id: str, **kwargs) -> Dict:
+        """恢复智能广告系列"""
+        return {}
+    
+    def meta_delete_smart_campaign(self, campaign_id: str, **kwargs) -> Dict:
+        """删除智能广告系列"""
+        return {}
+    
+    def meta_list_smart_adsets(self, campaign_id: str, **kwargs) -> List[Dict]:
+        """列出智能广告组"""
+        return []
+    
+    def meta_create_smart_adset(self, campaign_id: str, **kwargs) -> Dict:
+        """创建智能广告组"""
+        return {}
+    
+    def meta_get_smart_adset(self, adset_id: str, **kwargs) -> Dict:
+        """获取智能广告组详情"""
+        return {}
+    
+    def meta_update_smart_adset(self, adset_id: str, **kwargs) -> Dict:
+        """更新智能广告组"""
+        return {}
+    
+    def meta_pause_smart_adset(self, adset_id: str, **kwargs) -> Dict:
+        """暂停智能广告组"""
+        return {}
+    
+    def meta_resume_smart_adset(self, adset_id: str, **kwargs) -> Dict:
+        """恢复智能广告组"""
+        return {}
+    
+    def meta_delete_smart_adset(self, adset_id: str, **kwargs) -> Dict:
+        """删除智能广告组"""
+        return {}
+    
+    def meta_list_smart_ads(self, adset_id: str, **kwargs) -> List[Dict]:
+        """列出智能广告"""
+        return []
+    
+    def meta_create_smart_ad(self, adset_id: str, **kwargs) -> Dict:
+        """创建智能广告"""
+        return {}
+    
+    def meta_get_smart_ad(self, ad_id: str, **kwargs) -> Dict:
+        """获取智能广告详情"""
+        return {}
+    
+    def meta_update_smart_ad(self, ad_id: str, **kwargs) -> Dict:
+        """更新智能广告"""
+        return {}
+    
+    def meta_pause_smart_ad(self, ad_id: str, **kwargs) -> Dict:
+        """暂停智能广告"""
+        return {}
+    
+    def meta_resume_smart_ad(self, ad_id: str, **kwargs) -> Dict:
+        """恢复智能广告"""
+        return {}
+    
+    def meta_delete_smart_ad(self, ad_id: str, **kwargs) -> Dict:
+        """删除智能广告"""
+        return {}
+    
+    def meta_list_automated_rules(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出自动化规则（旧版）"""
+        return []
+    
+    def meta_create_automated_rule(self, account_id: str, **kwargs) -> Dict:
+        """创建自动化规则（旧版）"""
+        return {}
+    
+    def meta_update_automated_rule(self, rule_id: str, **kwargs) -> Dict:
+        """更新自动化规则（旧版）"""
+        return {}
+    
+    def meta_delete_automated_rule(self, rule_id: str, **kwargs) -> Dict:
+        """删除自动化规则（旧版）"""
+        return {}
+    
+    def meta_list_rule_recommendations(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出规则推荐"""
+        return []
+    
+    def meta_apply_rule_recommendation(self, account_id: str, rec_id: str, **kwargs) -> Dict:
+        """应用规则推荐"""
+        return {}
+    
+    # ========== Meta 补充 API (v7) - Creative Studio ==========
+    def meta_list_creative_studio(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出创意工作室"""
+        return []
+    
+    def meta_get_creative_studio_item(self, item_id: str, **kwargs) -> Dict:
+        """获取创意工作室项目"""
+        return {}
+    
+    def meta_create_creative_studio_item(self, account_id: str, **kwargs) -> Dict:
+        """创建创意工作室项目"""
+        return {}
+    
+    def meta_update_creative_studio_item(self, item_id: str, **kwargs) -> Dict:
+        """更新创意工作室项目"""
+        return {}
+    
+    def meta_delete_creative_studio_item(self, item_id: str, **kwargs) -> Dict:
+        """删除创意工作室项目"""
+        return {}
+    
+    def meta_list_creative_variants_v2(self, creative_id: str, **kwargs) -> List[Dict]:
+        """列出创意变体（v2）"""
+        return []
+    
+    def meta_create_creative_variant_v2(self, creative_id: str, **kwargs) -> Dict:
+        """创建创意变体（v2）"""
+        return {}
+    
+    def meta_get_creative_variant_v2(self, variant_id: str, **kwargs) -> Dict:
+        """获取创意变体（v2）"""
+        return {}
+    
+    def meta_update_creative_variant_v2(self, variant_id: str, **kwargs) -> Dict:
+        """更新创意变体（v2）"""
+        return {}
+    
+    def meta_delete_creative_variant_v2(self, variant_id: str, **kwargs) -> Dict:
+        """删除创意变体（v2）"""
+        return {}
+    
+    def meta_list_creative_templates_v2(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出创意模板（v2）"""
+        return []
+    
+    def meta_get_creative_template_v2(self, template_id: str, **kwargs) -> Dict:
+        """获取创意模板（v2）"""
+        return {}
+    
+    def meta_create_creative_from_template_v2(self, template_id: str, **kwargs) -> Dict:
+        """从模板创建创意（v2）"""
+        return {}
+    
+    def meta_list_creative_recommendations_v2(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出创意推荐（v2）"""
+        return []
+    
+    def meta_get_creative_recommendation_v2(self, rec_id: str, **kwargs) -> Dict:
+        """获取创意推荐（v2）"""
+        return {}
+    
+    def meta_apply_creative_recommendation_v2(self, rec_id: str, **kwargs) -> Dict:
+        """应用创意推荐（v2）"""
+        return {}
+    
+    def meta_dismiss_creative_recommendation_v2(self, rec_id: str, **kwargs) -> Dict:
+        """忽略创意推荐（v2）"""
+        return {}
+    
+    def meta_list_dynamic_creatives(self, adset_id: str, **kwargs) -> List[Dict]:
+        """列出动态创意"""
+        return []
+    
+    def meta_get_dynamic_creative(self, creative_id: str, **kwargs) -> Dict:
+        """获取动态创意详情"""
+        return {}
+    
+    def meta_update_dynamic_creative(self, creative_id: str, **kwargs) -> Dict:
+        """更新动态创意"""
+        return {}
+    
+    def meta_list_dynamic_creative_assets(self, creative_id: str, **kwargs) -> List[Dict]:
+        """列出动态创意资产"""
+        return []
+    
+    def meta_add_dynamic_creative_asset(self, creative_id: str, **kwargs) -> Dict:
+        """添加动态创意资产"""
+        return {}
+    
+    def meta_remove_dynamic_creative_asset(self, asset_id: str, **kwargs) -> Dict:
+        """移除动态创意资产"""
+        return {}
+    
+    def meta_list_dynamic_creative_rules(self, creative_id: str, **kwargs) -> List[Dict]:
+        """列出动态创意规则"""
+        return []
+    
+    def meta_add_dynamic_creative_rule(self, creative_id: str, **kwargs) -> Dict:
+        """添加动态创意规则"""
+        return {}
+    
+    def meta_remove_dynamic_creative_rule(self, rule_id: str, **kwargs) -> Dict:
+        """移除动态创意规则"""
+        return {}
+    
+    # ========== Meta 补充 API (v8) - Bidding & Budget ==========
+    def meta_list_bidding_strategies(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出出价策略"""
+        return []
+    
+    def meta_get_bidding_strategy(self, strategy_id: str, **kwargs) -> Dict:
+        """获取出价策略详情"""
+        return {}
+    
+    def meta_create_bidding_strategy(self, account_id: str, **kwargs) -> Dict:
+        """创建出价策略"""
+        return {}
+    
+    def meta_update_bidding_strategy(self, strategy_id: str, **kwargs) -> Dict:
+        """更新出价策略"""
+        return {}
+    
+    def meta_delete_bidding_strategy(self, strategy_id: str, **kwargs) -> Dict:
+        """删除出价策略"""
+        return {}
+    
+    def meta_list_bid_adjustments(self, adset_id: str, **kwargs) -> List[Dict]:
+        """列出出价调整"""
+        return []
+    
+    def meta_create_bid_adjustment(self, adset_id: str, **kwargs) -> Dict:
+        """创建出价调整"""
+        return {}
+    
+    def meta_update_bid_adjustment(self, adjustment_id: str, **kwargs) -> Dict:
+        """更新出价调整"""
+        return {}
+    
+    def meta_delete_bid_adjustment(self, adjustment_id: str, **kwargs) -> Dict:
+        """删除出价调整"""
+        return {}
+    
+    def meta_list_bid_constraints(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出出价约束"""
+        return []
+    
+    def meta_create_bid_constraint(self, account_id: str, **kwargs) -> Dict:
+        """创建出价约束"""
+        return {}
+    
+    def meta_update_bid_constraint(self, constraint_id: str, **kwargs) -> Dict:
+        """更新出价约束"""
+        return {}
+    
+    def meta_delete_bid_constraint(self, constraint_id: str, **kwargs) -> Dict:
+        """删除出价约束"""
+        return {}
+    
+    def meta_list_budget_plans(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出预算计划"""
+        return []
+    
+    def meta_get_budget_plan(self, plan_id: str, **kwargs) -> Dict:
+        """获取预算计划详情"""
+        return {}
+    
+    def meta_create_budget_plan(self, account_id: str, **kwargs) -> Dict:
+        """创建预算计划"""
+        return {}
+    
+    def meta_update_budget_plan(self, plan_id: str, **kwargs) -> Dict:
+        """更新预算计划"""
+        return {}
+    
+    def meta_delete_budget_plan(self, plan_id: str, **kwargs) -> Dict:
+        """删除预算计划"""
+        return {}
+    
+    def meta_list_budget_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """列出预算优化器"""
+        return {}
+    
+    def meta_update_budget_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """更新预算优化器"""
+        return {}
+    
+    def meta_list_bid_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """列出出价优化器"""
+        return {}
+    
+    def meta_update_bid_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """更新出价优化器"""
+        return {}
+    
+    def meta_list_schedule_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """列出排期优化器"""
+        return {}
+    
+    def meta_update_schedule_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """更新排期优化器"""
+        return {}
+    
+    def meta_list_placement_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """列出投放位置优化器"""
+        return {}
+    
+    def meta_update_placement_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """更新投放位置优化器"""
+        return {}
+    
+    # ========== Meta 补充 API (v9) - Content & Category ==========
+    def meta_list_content_types(self, **kwargs) -> List[Dict]:
+        """列出内容类型"""
+        return []
+    
+    def meta_get_content_type(self, content_type: str, **kwargs) -> Dict:
+        """获取内容类型详情"""
+        return {}
+    
+    def meta_list_content_categories_v2(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出内容分类（v2）"""
+        return []
+    
+    def meta_get_content_category(self, category_id: str, **kwargs) -> Dict:
+        """获取内容分类详情"""
+        return {}
+    
+    def meta_list_excluded_categories(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出排除分类"""
+        return []
+    
+    def meta_add_excluded_category(self, account_id: str, **kwargs) -> Dict:
+        """添加排除分类"""
+        return {}
+    
+    def meta_remove_excluded_category(self, category_id: str, **kwargs) -> Dict:
+        """移除排除分类"""
+        return {}
+    
+    def meta_list_topic_categories(self, **kwargs) -> List[Dict]:
+        """列出主题分类"""
+        return []
+    
+    def meta_list_interest_categories(self, **kwargs) -> List[Dict]:
+        """列出兴趣分类"""
+        return []
+    
+    def meta_list_behavior_categories(self, **kwargs) -> List[Dict]:
+        """列出行为分类"""
+        return []
+    
+    def meta_list_demographic_categories(self, **kwargs) -> List[Dict]:
+        """列出人口统计分类"""
+        return []
+    
+    def meta_list_location_categories(self, **kwargs) -> List[Dict]:
+        """列出位置分类"""
+        return []
+    
+    def meta_list_device_categories(self, **kwargs) -> List[Dict]:
+        """列出设备分类"""
+        return []
+    
+    def meta_list_platform_categories(self, **kwargs) -> List[Dict]:
+        """列出平台分类"""
+        return []
+    
+    def meta_list_placement_categories(self, **kwargs) -> List[Dict]:
+        """列出投放位置分类"""
+        return []
+    
+    def meta_list_ad_format_categories(self, **kwargs) -> List[Dict]:
+        """列出广告格式分类"""
+        return []
+    
+    def meta_list_objective_categories(self, **kwargs) -> List[Dict]:
+        """列出目标分类"""
+        return []
+    
+    def meta_list_optimization_categories(self, **kwargs) -> List[Dict]:
+        """列出优化分类"""
+        return []
+    
+    def meta_list_event_categories(self, **kwargs) -> List[Dict]:
+        """列出事件分类"""
+        return []
+    
+    def meta_list_conversion_categories(self, **kwargs) -> List[Dict]:
+        """列出转化分类"""
+        return []
+    
+    def meta_list_pixel_categories(self, **kwargs) -> List[Dict]:
+        """列出 Pixel 分类"""
+        return []
+    
+    # ========== Meta 补充 API (v10) - Reporting & Insights ==========
+    def meta_list_advanced_insights(self, account_id: str, **kwargs) -> Dict:
+        """列出高级洞察"""
+        return {}
+    
+    def meta_get_advanced_insight(self, insight_id: str, **kwargs) -> Dict:
+        """获取高级洞察详情"""
+        return {}
+    
+    def meta_list_insight_filters(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出洞察过滤器"""
+        return []
+    
+    def meta_create_insight_filter(self, account_id: str, **kwargs) -> Dict:
+        """创建洞察过滤器"""
+        return {}
+    
+    def meta_update_insight_filter(self, filter_id: str, **kwargs) -> Dict:
+        """更新洞察过滤器"""
+        return {}
+    
+    def meta_delete_insight_filter(self, filter_id: str, **kwargs) -> Dict:
+        """删除洞察过滤器"""
+        return {}
+    
+    def meta_list_insight_dimensions(self, entity_type: str, **kwargs) -> List[Dict]:
+        """列出洞察维度"""
+        return []
+    
+    def meta_get_insight_dimension(self, dimension: str, **kwargs) -> Dict:
+        """获取洞察维度详情"""
+        return {}
+    
+    def meta_list_insight_metrics(self, entity_type: str, **kwargs) -> List[Dict]:
+        """列出洞察指标"""
+        return []
+    
+    def meta_get_insight_metric(self, metric: str, **kwargs) -> Dict:
+        """获取洞察指标详情"""
+        return {}
+    
+    def meta_list_insight_calculations(self, **kwargs) -> List[Dict]:
+        """列出洞察计算"""
+        return []
+    
+    def meta_get_insight_calculation(self, calc_id: str, **kwargs) -> Dict:
+        """获取洞察计算详情"""
+        return {}
+    
+    def meta_list_custom_dimensions(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出自定义维度"""
+        return []
+    
+    def meta_get_custom_dimension(self, dimension_id: str, **kwargs) -> Dict:
+        """获取自定义维度详情"""
+        return {}
+    
+    def meta_create_custom_dimension(self, account_id: str, **kwargs) -> Dict:
+        """创建自定义维度"""
+        return {}
+    
+    def meta_update_custom_dimension(self, dimension_id: str, **kwargs) -> Dict:
+        """更新自定义维度"""
+        return {}
+    
+    def meta_delete_custom_dimension(self, dimension_id: str, **kwargs) -> Dict:
+        """删除自定义维度"""
+        return {}
+    
+    def meta_list_custom_metrics_v2(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出自定义指标（v2）"""
+        return []
+    
+    def meta_get_custom_metric_v2(self, metric_id: str, **kwargs) -> Dict:
+        """获取自定义指标（v2）"""
+        return {}
+    
+    def meta_create_custom_metric_v2(self, account_id: str, **kwargs) -> Dict:
+        """创建自定义指标（v2）"""
+        return {}
+    
+    def meta_update_custom_metric_v2(self, metric_id: str, **kwargs) -> Dict:
+        """更新自定义指标（v2）"""
+        return {}
+    
+    def meta_delete_custom_metric_v2(self, metric_id: str, **kwargs) -> Dict:
+        """删除自定义指标（v2）"""
+        return {}
+    
+    def meta_list_attribution_windows_v2(self, **kwargs) -> List[Dict]:
+        """列出归因窗口（v2）"""
+        return []
+    
+    def meta_get_attribution_window_v2(self, window_id: str, **kwargs) -> Dict:
+        """获取归因窗口（v2）"""
+        return {}
+    
+    def meta_list_insight_export_jobs(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出洞察导出任务"""
+        return []
+    
+    def meta_create_insight_export_job(self, account_id: str, **kwargs) -> Dict:
+        """创建洞察导出任务"""
+        return {}
+    
+    def meta_get_insight_export_job(self, job_id: str, **kwargs) -> Dict:
+        """获取洞察导出任务"""
+        return {}
+    
+    def meta_cancel_insight_export_job(self, job_id: str, **kwargs) -> Dict:
+        """取消洞察导出任务"""
+        return {}
+    
+    def meta_list_insight_download_urls(self, job_id: str, **kwargs) -> List[Dict]:
+        """列出洞察下载 URL"""
+        return []
+    
+    def meta_get_insight_download_url(self, url_id: str, **kwargs) -> Dict:
+        """获取洞察下载 URL"""
+        return {}
