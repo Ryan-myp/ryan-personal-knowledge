@@ -1466,3 +1466,818 @@ SPN 站点上的相关性判定比 Google.com 更宽松，
 4. 明确归因窗口口径并统一到同一时间范围后再对比。
 </details>
 
+
+---
+
+## 二、深度原理解析（补充 · 网络设置与去重）
+
+### 2.12 广告系列网络设置（NetworkSettings）深入
+
+每个搜索广告系列都有一组 `network_settings` 布尔开关，
+它们是控制流量来源的真正开关。
+理解这组开关，是学习 SPN 的第一步。
+
+主要的几个开关：
+
+| 字段 | 取值 | 含义 |
+|------|------|------|
+| targetGoogleSearch | true/false | 是否投 Google 搜索（Google.com） |
+| targetSearchNetwork | true/false | 是否投搜索合作伙伴（SPN） |
+| targetContentNetwork | true/false | 是否投展示网络（GDN） |
+| targetPartnerSearchNetwork | true/false | 是否投 Google 的合作伙伴搜索 |
+
+注意一个常见误区：
+`targetSearchNetwork` 在很多文档语境里，
+指的就是"搜索合作伙伴"。
+
+把它设成 false，广告就只投 Google.com；
+设成 true，Google.com + 搜索伙伴都会投。
+
+```python
+# 读取某广告系列的网络设置，判断 SPN 是否开启
+from scripts.google_ads_api import GoogleAdsApi
+
+api = GoogleAdsApi()
+campaign_id = "6543210987"
+
+r = api.get_campaign("1234567890", campaign_id)
+net = r.payload.get("network_settings", {})
+print("targetGoogleSearch  :", net.get("targetGoogleSearch"))
+print("targetSearchNetwork :", net.get("targetSearchNetwork"))   # SPN 总开关
+print("targetContentNetwork:", net.get("targetContentNetwork"))
+print("targetDisplayExpansion:", net.get("targetDisplayExpansion"))
+```
+
+### 2.13 去重逻辑：同一个用户为什么会重复计费
+
+SPN 场景有一个容易被忽略的去重问题：
+同一个搜索意图，可能先后在 Google.com 与某个合作站点上触发同一条广告。
+
+- 若用户先点了 Google.com 的广告，
+  又在合作站点点了同一广告，会形成"重复点击"。
+- Google 的去重机制会尝试识别，
+  但跨站点、跨设备、跨时段的去重并不完美。
+- 这可能导致点击量与转化之间的关联被放大，成本虚高。
+
+排查方向：
+1. 对比独立访客数（第三方）与 Google 点击数，
+   看明显高估的部分是否集中在 SPN。
+2. 关注"高频重复 IP + 短时间窗口"的点击模式。
+3. 若确认存在异常重复，可结合 placement 排除与负向词收敛。
+
+### 2.14 服务器选择：确定性的三个支柱
+
+Google 决定是否在某个合作站点展示你的广告，
+依赖三个支柱：
+
+1. 广告相关性：query 与关键词、广告文案的匹配度。
+2. 质量得分：广告与落地页的历史表现。
+3. 出价与预算：你愿意付多少、还有没有预算。
+
+在 SPN 上，这三个支柱的权重会倾向于"量"的贡献。
+也就是说，
+系统在 SPN 上比在 Google.com 上更愿意用"放宽相关性"来换取点击。
+
+理解这一点，就能解释：
+为什么同一个词，Google.com 命中 5 个查询，
+SPN 却可能命中 50 个查询——其中大量是长尾噪音。
+
+### 2.15 CPC 的形成与 SPN 的降价倾向
+
+在 SPN 站点上，由于竞争强度通常低于 Google.com，
+实际支付的 CPC（实际点击价格）往往更低。
+
+这是 SPN 的另一面：
+- 好处：同样预算能买到更多点击。
+- 坏处：这些点击质量低、转化率低，单位转化成本并不划算。
+
+所以判断 SPN 好坏，不能只看 CPC 低，
+要看"每转化成本"（CPA）与"每转化价值"（ROAS）。
+
+### 2.16 Go 代码示例：用 Go 客户端分析 SPN
+
+除了 Python，你的工具链里如果包含 Go 客户端，
+同样可以用 GAQL 解析 SPN 流量。
+下面是一段 Go 示例，读取某账户的频道拆分数据。
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+
+    "google.golang.org/api/option"
+    ads "github.com/googleads/google-ads-go/v24/services"
+)
+
+func main() {
+    ctx := context.Background()
+
+    // 使用 google-ads-go 客户端
+    svc, err := ads.NewGoogleAdsClient(
+        ctx,
+        option.WithCredentialsFile("creds.json"),
+        option.WithEndpoint("https://googleads.googleapis.com"),
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer svc.Close()
+
+    customerID := "1234567890"
+    query := `
+        SELECT
+            campaign.id,
+            segments.channel,
+            metrics.clicks,
+            metrics.cost_micros,
+            metrics.conversions
+        FROM campaign
+        WHERE segments.date DURING LAST_30_DAYS
+    `
+
+    stream := svc.GoogleAds.SearchStream(ctx,
+        &ads.SearchGoogleAdsStreamRequest{
+            CustomerId: customerID,
+            Query:      query,
+        })
+
+    for {
+        resp, err := stream.Recv()
+        if err != nil {
+            if err == io.EOF {
+                break
+            }
+            log.Fatal(err)
+        }
+        for _, row := range resp.Results {
+            ch := row.Segments.Channel
+            clicks := row.Metrics.Clicks
+            cost := row.Metrics.CostMicros
+            conv := row.Metrics.Conversions
+            fmt.Printf("channel=%v clicks=%v costMicros=%v conv=%v\n",
+                ch, clicks, cost, conv)
+        }
+    }
+}
+```
+
+这段代码的核心逻辑与 Python 版完全一致：
+用 `segments.channel` 把 SEARCH 与 SEARCH_PARTNERS 分开，
+再计算占比与成本。
+
+### 2.17 SPN 自动检测脚本（Python 调度版）
+
+生产环境里，SPN 体检不应该靠人肉跑。
+建议做成定时任务，每天/每周自动扫描全账户，
+发现"SPN 占比过高 + 质量差"的广告系列就告警。
+
+```python
+# SPN 自动检测与告警（可放入 cron / schedule）
+from scripts.google_ads_api import GoogleAdsApi
+
+THRESHOLD_SPN_SHARE = 25.0   # SPN 点击占比阈值 %
+THRESHOLD_CVR_RATIO = 0.6    # SPN_CVR / SEARCH_CVR 阈值
+
+def detect_spn_alerts(customer_id):
+    api = GoogleAdsApi()
+    query = f"""
+        SELECT
+            campaign.id,
+            campaign.name,
+            segments.channel,
+            metrics.clicks,
+            metrics.conversions
+        FROM campaign
+        WHERE segments.date DURING LAST_14_DAYS
+    """
+    resp = api.search(customer_id=customer_id, query=query)
+
+    agg = {}
+    for r in resp.rows:
+        cid = r["campaign.id"]
+        agg.setdefault(cid, {"name": r["campaign.name"], "SEARCH": [0, 0], "SP": [0, 0]})
+        key = "SP" if r["segments.channel"] == "SEARCH_PARTNERS" else "SEARCH"
+        agg[cid][key][0] += r["metrics.clicks"]
+        agg[cid][key][1] += r["metrics.conversions"]
+
+    alerts = []
+    for cid, d in agg.items():
+        s_clk, s_cv = d["SEARCH"]
+        p_clk, p_cv = d["SP"]
+        total = s_clk + p_clk
+        if total == 0:
+            continue
+        share = p_clk / total * 100
+        s_cvr = s_cv / s_clk if s_clk else 0
+        p_cvr = p_cv / p_clk if p_clk else 0
+        ratio = p_cvr / s_cvr if s_cvr else 0
+        if share >= THRESHOLD_SPN_SHARE and ratio < THRESHOLD_CVR_RATIO:
+            alerts.append({
+                "campaign_id": cid,
+                "name": d["name"],
+                "spn_share": round(share, 1),
+                "cvr_ratio": round(ratio, 2),
+            })
+    return alerts
+
+if __name__ == "__main__":
+    for a in detect_spn_alerts("1234567890"):
+        print(f"[ALERT] {a['name']} SPN 占比 {a['spn_share']}% "
+              f"CVR比值 {a['cvr_ratio']} => 建议拆分/降权")
+```
+
+把这段脚本接进 cron，每周五早上跑一次，
+把告警结果推进监控渠道，就能做到"SPN 异常早发现"。
+
+### 2.18 时间窗口对 SPN 判断的影响
+
+分析 SPN 时，时间窗口的选择会显著影响结论。
+
+- 太短（如 3 天）：SPN 样本量小，CVR 抖动大，容易误判。
+- 太长（如 90 天）：掩盖了近期趋势，无法及时发现劣化。
+- 建议：主结论用 28-30 天窗口，
+  趋势监控用 7 天滚动，综合判断。
+
+同时要注意转化延迟：
+搜索广告存在转化延迟，新投放的 SPN 系列
+在归因窗口内的转化数据会偏低。
+判断时要给"试用期"留 1-2 周再下结论。
+
+---
+
+## 三、生产环境实战（补充 · 更多业务场景）
+
+### 3.16 直播带货场景：SPN 与即时转化
+
+直播带货（Live Commerce）场景里，
+用户的决策窗口极短，转化高度依赖"即时购买冲动"。
+
+SPN 对直播间的价值与风险都很极端：
+
+- 价值：直播间的转化目标是"点击进入直播间看播"，
+  SPN 能带来高点击量，帮助填充直播间人气。
+- 风险：SPN 的低意图点击往往只是"路过"，不进直播间、
+  不下单，空耗预算，稀释整体 eCPV。
+
+实操方法：
+1. 用"进入直播间"作为转化事件（而非下单），
+   让出价模型按直播间进入成本优化。
+2. 对直播间，SPN 系列单独出价，
+   主要承接"正在搜相关商品/折扣"的用户。
+3. 直播结束即"暂停 SPN 系列"，避免夜间空耗。
+4. 直播高峰与低谷使用不同 Campaign scheduling 或预算。
+
+```python
+# 直播结束后暂停 SPN 增量系列
+from scripts.google_ads_api import GoogleAdsApi
+
+api = GoogleAdsApi()
+customer_id = "1234567890"
+spn_campaign_id = "6543210987"
+
+# 直播结束：暂停 SPN 系列，防止夜间空耗
+resp = api.pause_campaign(
+    customer_id=customer_id,
+    campaign_id=spn_campaign_id,
+)
+print("SPN 系列已暂停:", resp.payload)
+```
+
+次场直播开始前再 `resume_campaign` 恢复。
+一套"按场次启停"的打法，能显著提升直播间的流量性价比。
+
+### 3.17 品牌（Brand）场景：SPN 的品牌保护
+
+对品牌广告主而言，
+SPN 最大的风险是品牌词的"搭便车"与品牌安全污染。
+
+问题表现：
+1. 竞品可能通过 SPN 的放宽匹配，在合作站点截胡你的品牌词流量。
+2. 灰产工具站可能出现在品牌词的 SPN 展示位置上，拉低品牌形象。
+3. 品牌词的 SPN 点击往往来自"不精准用户"，转化率远低于 Google.com。
+
+品牌保护动作：
+1. 品牌核心词（商标词）只投 Google Only 系列，
+   从根上避免品牌词被 SPN 稀释。
+2. 在搜索词报告里监控竞品搭便车词，及时设为负向。
+3. 用 placement_view 检查品牌系列触达的合作站点，
+   对非品牌调性的站点做单站排除。
+
+```python
+# 品牌系列：强制仅 Google.com（排除 SPN）
+from scripts.google_ads_api import GoogleAdsApi
+
+api = GoogleAdsApi()
+customer_id = "1234567890"
+
+campaign = {
+    "name": "BRAND-Core-GoogleOnly",
+    "search_network": False,      # 排除搜索合作伙伴
+    "content_network": False,
+    "status": "PAUSED",
+    "channel": "SEARCH",
+    "budget_micros": 600_000_000,
+    "bidding": {"strategy": "TARGET_CPM", "target_cpm_micros": 500_00},
+}
+resp = api.create_campaign(customer_id=customer_id, campaign=campaign)
+print(resp.payload)
+```
+
+注意：品牌保护的核心是把"高价值品牌词"与"低质 SPN 流量"物理隔离，
+让品牌词只出现在 Google 自有搜索结果里。
+
+### 3.18 在线教育/留学场景的长期增长路径
+
+回到本章开头的教育案例，
+把"半年实验"延展成"长期增长框架"。
+
+阶段一（第 1-4 周）：拆分与基线建立。
+阶段二（第 5-12 周）：SPN 负向词收敛 + 长尾补充。
+阶段三（第 13-26 周）：预算再分配 + 双系列对照迭代。
+阶段四（第 27 周起）：把方法论沉淀为 SOP，匹配更多流量类目。
+
+长期看，
+SPN 不应该只是"低质流量的垃圾桶"，
+而应该成为"有控制的长尾增量来源"。
+
+只要你有能力为它单独维护关键词、出价与负向策略，
+SPN 就能在可控成本下持续贡献增量转化。
+
+### 3.19 APP 增长：用 get_bid_suggestion 辅助 SPN 压价
+
+对 APP 广告系列（APP_CAMPAIGN），
+虽然不能精确控制 SPN 开关，
+但可以通过出价建议辅助决策整体强度。
+
+```python
+from scripts.google_ads_api import GoogleAdsApi
+
+api = GoogleAdsApi()
+customer_id = "1234567890"
+campaign_id = "6543210987"
+
+# App 系列只建议/最小化 ROI 目标
+resp = api.get_bid_suggestion(
+    customer_id=customer_id,
+    campaign_id=campaign_id,
+)
+print("建议出价/目标:", resp.payload)
+
+# 若 PA 超标，直接压低预算来控量
+api.update_campaign(
+    customer_id=customer_id,
+    campaign_id=campaign_id,
+    updates={"budget_micros": 80_000_000},  # 示例压缩预算
+)
+```
+
+### 3.20 频道级流量分割的报表沉淀
+
+要持续观察 SPN，建议建立"频道级流量分割报表"，
+把 SEARCH / SEARCH_PARTNERS 做成标准可复用的产出物。
+
+```python
+# SPN / 非SPN 拆分周报生成
+from scripts.google_ads_api import GoogleAdsApi
+
+api = GoogleAdsApi()
+customer_id = "1234567890"
+
+data = {}
+for start in ["2026-07-01", "2026-07-08", "2026-07-15"]:
+    report = api.generate_report(
+        customer_id=customer_id,
+        date_range={"start": start, "end": start},  # 简化演示，实际按周
+    )
+    # 解析 report 并按 channel 聚合片段...
+    # (这里省略 report 解析细节，逻辑与 search 相同)
+
+print("SPN 周报已沉淀")
+```
+
+如果团队用的是 `{customer_id}:search` 流式接口，
+同样可以把合并好的频道数据写入 BI 表，
+长期跟踪 SPN 的健康度曲线。
+
+### 3.21 SPI 化：把 SPN 治理做进交付框架
+
+若你不仅是投放者，还负责搭建 Agent 化的投放工具，
+可以把"SPN 治理"做成一个可复用的服务接口：
+
+1. `spn.analyze(customer_id)`：返回 SPN 占比与质量评分。
+2. `spn.split(campaign_id)`：把某广告系列拆成 A/B 双系列。
+3. `spn.negative_suggest(customer_id)`：基于搜索词报告生成负向词建议。
+4. `spn.audit(customer_id)`：跑完整版治理 SOP 并输出报告。
+
+这样一个 SPI 化封装，
+能让"SPN 精细化"从"个别专家经验"变成"可复用的工程能力"，
+也是团队规模化运营 SPN 的正确姿势。
+
+### 3.22 本节补充小结
+
+- 直播带货要按场次启停 SPN 系列，转化事件用"进直播间"。
+- 品牌场景把品牌词强制隔离到 Google Only，做品牌保护。
+- 教育/留学走"拆分 → 负向 → 迭代 → SOP"的长期路径。
+- APP 增长靠出价建议与预算压缩间接控 SPN 量级。
+- 建立频道级分割报表 + SPI 化封装，让 SPN 治理可持续、可复用。
+
+---
+
+## 四、常见问题与排查（补充 · 深度排查细节）
+
+### Q21. 我的广告系列明明设置了"仅 Google.com"，为什么还有搜索伙伴流量？
+
+**可能原因是"网络设置显示"与实际生效不一致，或系列被系统改过。**
+
+排查动作：
+1. 用 `get_campaign` 打印 `network_settings.targetSearchNetwork`，
+   确认到底是 false 还是 true。
+2. 查看账户变更历史，确认是否有"自动优化"或他人改动过设置。
+3. 若 series 类型是 PMax 或 App，SPN 开关本就不暴露，
+   无法用此设置屏蔽。
+
+### Q22. SPN 与搜索广告系列的历史效果为什么不好比较？
+
+**因为两类流量天然不可比，强比会产生误导。**
+
+对比时要注意：
+1. 样本量与时间窗不一致（SPN 通常样本更多但质量差）。
+2. 归因差异（SPN 侦测不到更多转化）。
+3. 出价与预算结构不同。
+
+正确做法：
+1. 各自用"同一归因口径"统计 CPA / ROAS。
+2. 在同一时间窗内对比相对效率，而非绝对数值。
+3. 结论落到"该不该拆/怎么拆"，而不是"谁高谁低"。
+
+### Q23. 一个广告系列里 SPN 占比达 40%，正常吗？要不要拆？
+
+**偏高，值得警惕。**
+
+40% 的 SPN 占比意味着，
+你的主广告系列里有将近一半的点击来自非 Google 站点。
+如果这些流量转化质量差，会严重拖累整体效率。
+
+建议：
+1. 先确认 SPN 的 CVR / CPA 相对 Google.com 的情况。
+2. 若相对质量差，立即执行拆分，
+   把 SPN 单独隔离管理。
+3. 若相对质量尚可（CVR>60% baseline），
+   可保留合并，但要持续监控。
+
+### Q24. 我的 SPN 系列用了 TARGET_ROAS，为什么 ROAS 还是低？
+
+**因为 SPN 本身转化价值天花板低，TARGET_ROAS 只能给你预算内最优，而非提升价值上限。**
+
+排查动作：
+1. 检查 ROAS 目标是否设得合理（可先用历史值）。
+2. 看 SPN 的"高价值词"是否被竞品在 Google.com 抢走，
+   导致留给 SPN 的都是低价值长尾。
+3. 若 SPN 天然 ROAS 低，建议降低其预算占比，
+   把高价值词强制只投 Google.com。
+
+### Q25. 如何确认某个合作站点是否值得继续投？
+
+**用 placement_view 的"成本-转化"矩阵做二八判断。**
+
+判定：
+1. 累计成本高但 0 转化 → 直接排除。
+2. 成本高、转化低但 ROAS 略高于阈值 → 观察或降预算。
+3. 成本高、转化好 → 保留，甚至加预算。
+4. 成本低、转化 0 → 可忽略（不必逐站清理）。
+
+### Q26. SPN 的无效流量防护有什么具体手段？
+
+具体手段包括：
+1. 广告系列层级关闭 SPN（最彻底）。
+2. placement_view 单站排除。
+3. 落地页反爬/人机校验。
+4. 监控"短时间高频重复点击"模式。
+5. 高消耗、0 转化、异常点击的时段做预算熔断。
+
+### Q27. 为什么 SPN 在移动端占比更高？
+
+**因为移动端用户在合作站点内的"搜索行为"更容易被系统扩展到长尾与导航行为。**
+
+排查动作：
+1. 用 `segments.device` 叠加 `segments.channel`，
+   看 SPN 在 mobile/desktop/tablet 的分布。
+2. 若移动端 SPN 质量明显更差，
+   可考虑对移动端独立阈值或负向策略。
+3. 结合设备出价调整（mobile bid adjustment）控制移动端 SPN。
+
+### Q28. 全账户关闭 SPN 是最优解吗？
+
+**不一定。**
+
+全局关闭会损失 SPN 带来的真实增量长尾。
+更优的做法是"分级治理"：
+- 高价值品牌/核心词：强制 Google Only。
+- 探索性长尾：允许 SPN，但独立系列 + 低出价。
+- 明确劣化的广告系列：单独关闭 SPN。
+
+结论：用"精细化的双系列拆分"替代"全开或全关的粗放选择"。
+
+### Q29. 拆分后 SPN 系列长期没量，正常吗？
+
+**正常，尤其当你出价很低、词很窄时。**
+
+SPN 也需要足够出价与宽泛词才能获取量。
+排查动作：
+1. 检查出价是否低到无法竞争。
+2. 查看是否有资格获得搜索展示（quota share）。
+3. 适当放宽 SPN 系列的匹配类型或补充长尾词。
+
+### Q30. 有没有 CLI 一键体检 SPN 的工具思路？
+
+可以基于 `search` + `segments.channel` 封装一个 CLI：
+
+```python
+# 简单 CLI：spn-audit <customer_id>
+import sys
+from scripts.google_ads_api import GoogleAdsApi
+
+def main():
+    customer_id = sys.argv[1]
+    api = GoogleAdsApi()
+    q = f"""
+        SELECT campaign.id, segments.channel,
+               metrics.clicks, metrics.cost_micros, metrics.conversions
+        FROM campaign
+        WHERE segments.date DURING LAST_28_DAYS
+    """
+    r = api.search(customer_id, q)
+    total, sp = 0, 0
+    for row in r.rows:
+        total += row["metrics.clicks"]
+        if row["segments.channel"] == "SEARCH_PARTNERS":
+            sp += row["metrics.clicks"]
+    print(f"总点击={total} SPN点击={sp} SPN占比={sp/total*100 if total else 0:.1f}%")
+
+if __name__ == "__main__":
+    main()
+```
+
+把这套逻辑包成工程产物，
+就能在任何账户上"一条命令体检 SPN"。
+
+---
+
+
+---
+
+## 一、核心概念与架构（补充 · Google.com vs GSPN 全景对比）
+
+### 1.8 Google.com 与 GSPN 的关键差异总表
+
+很多投放者在做"要不要投 SPN"的决策时，
+最缺的就是一张可以对照的全景表。
+这里给出 Google.com 与 GSPN 的完整对比，
+覆盖从流量、质量到运营动作的全部关键维度。
+
+| 维度 | Google.com 搜索 | Search Partners (GSPN) |
+|------|----------------|------------------------|
+| 流量来源 | Google 自有搜索属性 | 第三方审核合作站点 |
+| 站点类型 | Google.com/本地化域名 | 门户、比价、垂直社区、工具站 |
+| 意图纯度 | 高，用户主动搜 | 中，语义放宽后意图被稀释 |
+| 匹配控制 | 相对严格 | 系统倾向更宽语义扩展 |
+| 点击成本 CPC | 通常更高 | 通常更低 |
+| 转化率 CVR | 基准 | 通常为基准的 1/3 到 2/3 |
+| 无效流量风险 | 低 | 中高（灰产工具站需特别警惕） |
+| 品牌安全风险 | 低 | 中（品牌词易被搭便车） |
+| 归因链路 | 完整 | 常被合作站点截断 |
+| 报告维度 | SEARCH | SEARCH_PARTNERS |
+| 开关粒度 | 广告系列层级 | 广告系列层级（与 Google.com 联动） |
+| 预算消耗 | 可控 | 需要独立隔离才能控 |
+| 智能出价信号 | 干净 | 容易被长尾噪音污染 |
+
+记住这张表，
+是判断任何"SPN 值不值得投"问题的起点。
+
+### 1.9 谁适合投 SPN，谁不适合
+
+不是所有账户都该投 SPN。
+做一个简单自检：
+
+**适合投 SPN 的情况：**
+- 转化漏斗足够宽（无需强意图即可转化的产品）。
+- 广告系列有"低成本探索长尾"的业务诉求。
+- 产品转化率对流量质量不敏感（如工具类下载）。
+- 能接受额外管理成本，有能力维护负向词与系列隔离。
+
+**不适合投 SPN 的情况：**
+- 高客单、长决策周期的产品（留学、出国、高端咨询）。
+- 品牌词为核心资产的品牌主（品牌保护优先）。
+- 转化信号少、数据稀疏的冷启动账户。
+- 团队无暇维护负向词与系列隔离，放任会导致浪费。
+
+### 1.10 透明度：Google 对 SPN 信息透明的边界
+
+Google 会给出合作站点的聚合信息，
+但不会给出一份完整的实时站点清单。
+
+这意味着：
+- "投了哪些站点"可以评估（placement_view 可见实际触达站）。
+- "未来会投哪些新站点"不可预测。
+- 你只能在"已发生"层面做排除，无法做"预防性清单"管理。
+
+这也是为什么 SPN 治理是持续性的：
+你永远要监控"新出现的劣质站点"，并逐个排除。
+
+---
+
+## 二、深度原理解析（补充 · 更多工程细节）
+
+### 2.19 GAQL 聚合细节：为什么"过滤器加法"会丢行
+
+在 GAQL 里把 `segments.channel` 当过滤条件使用时，
+要注意聚合语义：
+
+```sql
+-- 正确：分组显示两类频道
+SELECT segments.channel, metrics.clicks
+FROM campaign
+WHERE segments.date DURING LAST_30_DAYS
+
+-- 错误想法：WHERE segments.channel = 'SEARCH'
+-- 这会直接丢掉 SPN 数据行，无法做对比
+```
+
+排查习惯：
+先"全量分组输出"，再用代码做对比分析，
+不要先用 WHERE 把一半数据过滤掉再"找差异"。
+
+### 2.21 inspect 模式的合规运用
+
+在测试环境里，我们常用 `inspect` 模式来验证请求体，
+而不是真正调用线上 mutate。
+
+```python
+# 用一个 inspect 类请求验证 SPN 开关字段名
+payload = {
+    "name": "inspect-test",
+    "search_network": False,
+    "status": "PAUSED",
+}
+print(payload)  # 只打印检查，不真正创建
+```
+
+对"SPN 开关字段名是否对"这种小验证，
+本地 inspect 就够，不需要真的打到生产。
+
+### 2.20 抽样采样：不能把 SPN 当单一族群看待
+
+SPN 内部差异极大：有的站点质量接近 Google.com，
+有的站点几乎全是低质流量。
+
+所以最优解永远不是"SPN 开或关"，
+而是"拆出来后看站点分布，再逐个站点降权"。
+
+抽样节奏：
+1. 先看系列级：SPN 是否值得保留。
+2. 再看站点级：哪些站能投、哪些必须拉黑。
+3. 最后看词级：哪些词在 SPN 上是负资产。
+
+这三层抽样，就是 SPN 精细化治理的完整视角。
+
+---
+
+## 四、常见问题与排查（补充 · 最后一批 Q&A）
+
+### Q31. 我已经对某个合作站做了负向，为什么还出现在报表？
+
+**可能原因：负向生效有延迟，或你负向的是广告系列而不是账户级别。**
+
+排查动作：
+1. 查看负向词级别（广告系列级 vs 账户级 vs 共享列表）。
+2. 确认负向是否写在了"排除列表"而非"展示位置排除"。
+3. 负向动作通常 T+1 生效，当天报表仍有数据属正常。
+
+### Q32. SPN 的转化差，能不能通过再营销来救？
+
+**能，但这掩盖不了 SPN 本身的意图问题。**
+
+可以做的：
+1. 对 SPN 点击过的用户打再营销标签（remarketing tag）。
+2. 把这些人放进展示/搜索再营销受众，提升后续转化。
+3. 但 SPN 的"当次低质"是结构性差异，再营销只能二次收割。
+
+结论：
+再营销是"补刀"，不是"救命"。
+SPN 质量差的根本解法仍是负向与拆分。
+
+### Q33. 如何向老板汇报"SPN 到底花了多少钱"？
+
+**用标准口径做月报：**
+
+建议结构：
+1. 总览：SPN 点击占比、花费占比、转化占比（各一个月）。
+2. 效率对比：SPN CPA vs Google.com CPA。
+3. 处置动作：拆分/负向/单站排除清单。
+4. 收益证明：拆分后整体转化变化（如 +18% 案例）。
+
+```python
+# 生成简单月报数据
+from scripts.google_ads_api import GoogleAdsApi
+
+api = GoogleAdsApi()
+customer_id = "1234567890"
+r = api.generate_report(
+    customer_id=customer_id,
+    date_range={"start": "2026-07-01", "end": "2026-07-31"},
+)
+# 报告中 grep "SEARCH_PARTNERS" 行即可拿到 SPN 花费
+print("SPN 月度数据已生成")
+```
+
+### Q34. SPN 会不会挤占我 Google.com 的预算？
+
+**会，如果它们在同一个广告系列里。**
+
+由于合并投放时预算不分厨，
+SPN 的高点击低质量流量会大量消耗日预算，
+导致 Google.com 优质流量"没预算可花"。
+
+这正是"拆分"最大的收益点：
+拆开后，Google Only 系列预算专款专投，
+SPN 系列独立于预算之外，
+两边互不挤占。
+
+### Q35. SPN 系列的广告文案该怎么写？
+
+**建议与 Google Only 不同调性：**
+
+| 场景 | 建议文案方向 |
+|------|------------|
+| Google Only | 直接转化，强调 CT快速、价格优势 |
+| SPN | 强调品牌背书、权益、降低决策成本 |
+
+原因：SPN 用户意图更弱、信任更弱，
+把"先建立认知 + 把用户引向转化路径"放在首位。
+
+### Q36. 有没有适合出海的 SPN 经验？
+
+**有！出海账记 SPN 的道理一样，但注意语言差异。**
+
+- 英文站点的 SPN 更长尾、词更杂，负向词库更要建强。
+- 本地化小语种 SPN 站点少、但零散，需多留意。
+- 各地域的 SPN 占比差异明显，建议分地理观察。
+
+落地建议：
+1. 每个国家/区域单独跑一次"SPN 占比体检"。
+2. 按区域设立 SPN 拆分阈值。
+3. 把小语种负向词做进共享负向列表库。
+
+### Q37. SPN 系列能不能用共享预算（shared budget）？
+
+**能，但要注意互相挤占。**
+
+如果把多个广告系列放进同一个 shared budget，
+它们之间仍会为了流量互抢预算。
+
+建议：
+- Google Only 系列用独立预算。
+- SPN 增量系列可以用 shared budget 统一管理，
+  便于控制"SPN 总额度"。
+
+### Q38. 全账户 SPN 拆除后，什么时候该"重新开启"？
+
+**当你有明确理由想要更多增量时。**
+
+比如：
+1. 主系列预算充足、Google 侧已吃饱。
+2. 转化目标进入想要冲量的阶段。
+3. 有清晰的 SPN 独立系列与负向策略。
+
+建议流程：
+- 先开启"低预算 SPN 小号"（如 10% 预算），
+- 用 2 周做评估：CVR 是否高于底线。
+- 决定"保持 / 放大 / 再关"。
+
+### Q39. SPN 系列的广告时区怎么设？
+
+**保持默认时区即可，但要理解 SPN 跨站点时区差异。**
+
+- Google 的广告系列时区由账户统一决定。
+- 合作站点可能在不同时区，但计费按广告系列时区。
+- 若你发现凌晨 SPN 异常点击多，用时段出价调整来治理。
+
+### Q40. SPN 相比常规搜索探索性更强，投放时要放慢什么？
+
+**要 放慢"样本判断"。**
+
+SPN 的实验期要比 Google.com 长：
+因为访问的窗口差异、时区差异、站点差异，
+SPN 的判断至少需要 28 天再下结论，
+不要让 3-5 天的数据节奏过激地改结构。
+
+---
+
+> 本文档为 Ryan 个人知识库 · Google Ads 领域深度实战文档。
+> 聚焦 Search Partners Network 专项：流量分离、频道报告、
+> 排除策略、无效流量治理、双广告系列对照实验。
+> 与 google-ads-architecture-deep.md（搜索宏观）互为补充，
+> 本文深入的是 SEARCH_PARTNERS 这一具体细分方向。

@@ -95,6 +95,7 @@ Page-Level(通过 Page Token 间接获得):
 
 关键端点:
 ```
+```
 GET    /{instagram-account-id}                      读取账号信息
 GET    /{instagram-account-id}/shops                列出账号关联的商店
 GET    /{instagram-account-id}/product_tags         读取已打标内容
