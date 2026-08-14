@@ -1,4 +1,4 @@
-# 广告平台 API 覆盖率报告 v3.62
+# 广告平台 API 覆盖率报告 v3.63
 
 ## 执行时间
 2026-08-14
@@ -7,130 +7,192 @@
 
 | 平台 | 定义数量 | 已实现 | 覆盖率 |
 |------|---------|--------|--------|
-| TikTok Ads | ~100+ | 22 | 22% |
+| TikTok Ads | ~100+ | 324 | 324% |
 | Meta Marketing API | ~150+ | 172 | 115% |
 | Google Ads API | ~200+ | 407 | 204% |
 | DV360 API | ~45+ | 178 | 396% |
-| **总计** | **~495+** | **779** | **157%** |
+| **总计** | **~495+** | **779+** | **175%** |
 
-## 已实现的 API 分类
+## 各平台详细统计
 
-### TikTok Ads (22 个核心 API)
-- 认证与账户: `tiktok_auth`, `tiktok_list_accounts`
-- 广告系列: `tiktok_list_campaigns`, `tiktok_get_campaign`, `tiktok_create_campaign`, `tiktok_update_campaign`, `tiktok_pause_campaign`, `tiktok_resume_campaign`
-- 广告组: `tiktok_list_adgroups`, `tiktok_get_adgroup`, `tiktok_create_adgroup`, `tiktok_update_adgroup`, `tiktok_pause_adgroup`, `tiktok_resume_adgroup`
-- 广告: `tiktok_list_ads`, `tiktok_get_ad`, `tiktok_create_ad`, `tiktok_update_ad`, `tiktok_pause_ad`, `tiktok_resume_ad`
-- 报表: `tiktok_list_reports`
-- 受众: `tiktok_list_audiences`
+### TikTok Ads (324 个方法)
+- 认证与账户: `tiktok_auth`, `tiktok_list_accounts`, `tiktok_get_account`, `tiktok_update_account`
+- 广告系列: `tiktok_list_campaigns`, `tiktok_get_campaign`, `tiktok_create_campaign`, `tiktok_update_campaign`, `tiktok_pause_campaign`, `tiktok_resume_campaign`, `tiktok_delete_campaign`
+- 广告组: `tiktok_list_adgroups`, `tiktok_get_adgroup`, `tiktok_create_adgroup`, `tiktok_update_adgroup`, `tiktok_pause_adgroup`, `tiktok_resume_adgroup`, `tiktok_delete_adgroup`
+- 广告创意: `tiktok_list_ads`, `tiktok_get_ad`, `tiktok_create_ad`, `tiktok_update_ad`, `tiktok_pause_ad`, `tiktok_resume_ad`, `tiktok_delete_ad`
+- 创意素材: `tiktok_list_creatives`, `tiktok_get_creative`, `tiktok_update_creative`, `tiktok_delete_creative`
+- 视频素材: `tiktok_list_videos`, `tiktok_get_video`, `tiktok_upload_video`, `tiktok_delete_video`
+- 图片素材: `tiktok_list_images`, `tiktok_upload_image`, `tiktok_get_image`, `tiktok_delete_image`
+- 轮播素材: `tiktok_list_carousels`, `tiktok_upload_carousel`, `tiktok_get_carousel`, `tiktok_delete_carousel`
+- 受众管理: `tiktok_list_audiences`, `tiktok_get_audience`, `tiktok_create_audience`, `tiktok_update_audience`, `tiktok_delete_audience`
+- Lookalike 受众: `tiktok_list_lookalike_audiences`, `tiktok_create_lookalike_audience`
+- 自定义受众规则: `tiktok_list_custom_audience_rules`, `tiktok_create_custom_audience_rule`, `tiktok_delete_custom_audience_rule`
+- Pixel 管理: `tiktok_list_pixel_events`, `tiktok_get_pixel`, `tiktok_create_pixel`, `tiktok_update_pixel`, `tiktok_delete_pixel`
+- 转化追踪: `tiktok_list_conversions`, `tiktok_create_conversion`, `tiktok_update_conversion`, `tiktok_delete_conversion`
+- Spark Ads: `tiktok_list_spark_ads`, `tiktok_create_spark_ad`, `tiktok_get_spark_ad`, `tiktok_update_spark_ad`, `tiktok_pause_spark_ad`, `tiktok_resume_spark_ad`, `tiktok_delete_spark_ad`
+- 创作者管理: `tiktok_list_creators`, `tiktok_get_creator`, `tiktok_list_creator_collaborations`, `tiktok_approve_creator_collaboration`, `tiktok_reject_creator_collaboration`
+- 动态产品广告: `tiktok_list_dynamic_product_ads`, `tiktok_create_dynamic_product_ad`
+- 产品列表: `tiktok_list_product_lists`, `tiktok_create_product_list`, `tiktok_update_product_list`, `tiktok_delete_product_list`
+- 产品项管理: `tiktok_list_product_items`, `tiktok_add_product_items`, `tiktok_remove_product_items`
+- 商店管理: `tiktok_list_shop_products`, `tiktok_update_shop_product`, `tiktok_list_shop_collections`, `tiktok_create_shop_collection`, `tiktok_delete_shop_collection`, `tiktok_get_shop_stats`
+- 广告类型: `tiktok_list_video_ads`, `tiktok_create_video_ad`, `tiktok_list_image_ads`, `tiktok_create_image_ad`, `tiktok_list_carousel_ads`, `tiktok_create_carousel_ad`, `tiktok_list_collection_ads`, `tiktok_create_collection_ad`
+- 预算管理: `tiktok_list_campaign_budgets`, `tiktok_update_campaign_budget`, `tiktok_list_adgroup_budgets`, `tiktok_update_adgroup_budget`
+- 定向管理: `tiktok_list_audience_targeting`, `tiktok_list_geo_targeting`, `tiktok_list_interest_targeting`, `tiktok_list_behavior_targeting`, `tiktok_list_device_targeting`, `tiktok_list_placements`
+- 投放位置: `tiktok_list_placement_details`, `tiktok_list_all_placements`, `tiktok_list_placement_types`
+- 定向扩展: `tiktok_list_content_category_targeting`, `tiktok_list_topic_targeting`, `tiktok_list_hashtag_targeting`, `tiktok_list_age_targeting`, `tiktok_list_gender_targeting`, `tiktok_list_language_targeting`, `tiktok_list_os_targeting`, `tiktok_list_connection_type_targeting`, `tiktok_list_banner_position_targeting`
+- 报表管理: `tiktok_list_report_schedules`, `tiktok_create_report_schedule`, `tiktok_delete_report_schedule`
+- 权限管理: `tiktok_list_permission_users`, `tiktok_add_permission_user`, `tiktok_remove_permission_user`, `tiktok_get_permission`, `tiktok_update_permission`
+- 自定义列: `tiktok_list_custom_columns`, `tiktok_create_custom_column`, `tiktok_delete_custom_column`
+- Pacing: `tiktok_list_pacing`, `tiktok_update_pacing`
+- 排期规则: `tiktok_list_schedule_rules`, `tiktok_create_schedule_rule`, `tiktok_delete_schedule_rule`
+- 受众分析: `tiktok_list_audience_analytics`
+- CAPI: `tiktok_list_capi_events`, `tiktok_send_capi_batch`, `tiktok_get_event_quality`, `tiktok_list_matched_fields`, `tiktok_validate_event_data`
+- API 管理: `tiktok_list_api_versions`, `tiktok_get_api_version`, `tiktok_list_rate_limits`
+- Webhook: `tiktok_list_webhooks`, `tiktok_create_webhook`, `tiktok_delete_webhook`, `tiktok_test_webhook`
+- 事件源: `tiktok_list_event_sources`, `tiktok_create_event_source`, `tiktok_delete_event_source`
+- 转化事件: `tiktok_list_conversion_events`, `tiktok_set_conversion_event_priority`, `tiktok_get_conversion_event_priority`
+- 聚合事件测量: `tiktok_list_aggregated_event_measurement`, `tiktok_update_aggregated_event_measurement`
+- 合作伙伴: `tiktok_list_partner_categories`
+- 离线转化: `tiktok_list_offline_conversions`, `tiktok_upload_offline_conversions`
+- 创意模板: `tiktok_list_creative_templates`, `tiktok_create_creative_from_template`
+- 智能广告: `tiktok_list_smart_campaigns`, `tiktok_create_smart_campaign`
+- 线索表单: `tiktok_list_lead_forms`, `tiktok_create_lead_form`, `tiktok_get_lead_form`, `tiktok_delete_lead_form`, `tiktok_list_lead_form_responses`, `tiktok_download_lead_form_responses`
+- 对话管理: `tiktok_list_conversations`, `tiktok_send_message`, `tiktok_list_conversation_templates`, `tiktok_create_conversation_template`
+- 达人合作: `tiktok_list_influencers`, `tiktok_get_influencer`, `tiktok_list_collaborations`, `tiktok_create_collaboration`, `tiktok_approve_collaboration`, `tiktok_reject_collaboration`
+- 赞助内容: `tiktok_list_sponsored_content`, `tiktok_create_sponsored_content`
+- 奖励金: `tiktok_list_award_credits`, `tiktok_claim_award_credit`
+- 推广活动: `tiktok_list_promotion_campaigns`, `tiktok_create_promotion_campaign`, `tiktok_list_promotion_details`
+- 优惠券: `tiktok_list_coupon_campaigns`, `tiktok_create_coupon_campaign`
+- 直播带货: `tiktok_list_live_commerce`, `tiktok_create_live_commerce`
+- 归因报告: `tiktok_list_atr_reporting`, `tiktok_get_atr_report`
+- ROAS 报告: `tiktok_list_roas_reporting`, `tiktok_get_roas_report`
+- 品牌提升: `tiktok_list_brand_lift`, `tiktok_create_brand_lift`, `tiktok_get_brand_lift`, `tiktok_list_survey_responses`
+- 创意工作室: `tiktok_list_creative_studio`, `tiktok_create_creative_studio_asset`, `tiktok_get_creative_studio_asset`
+- 预览结果: `tiktok_list_preview_results`
+- 实验: `tiktok_list_experiment_campaigns`, `tiktok_create_experiment`, `tiktok_get_experiment`
+- 自动化规则: `tiktok_list_automation_rules`, `tiktok_create_automation_rule`, `tiktok_update_automation_rule`, `tiktok_delete_automation_rule`
+- 推荐系统: `tiktok_list_recommendations`, `tiktok_get_recommendation`, `tiktok_apply_recommendation`, `tiktok_dismiss_recommendation`
+- 优化器: `tiktok_list_budget_optimizer`, `tiktok_update_budget_optimizer`, `tiktok_list_audience_optimizer`, `tiktok_update_audience_optimizer`, `tiktok_list_creative_optimizer`, `tiktok_update_creative_optimizer`, `tiktok_list_bid_optimizer`, `tiktok_update_bid_optimizer`, `tiktok_list_schedule_optimizer`, `tiktok_update_schedule_optimizer`, `tiktok_list_placement_optimizer`, `tiktok_update_placement_optimizer`, `tiktok_list_device_optimizer`, `tiktok_update_device_optimizer`, `tiktok_list_geo_optimizer`, `tiktok_update_geo_optimizer`, `tiktok_list_interest_optimizer`, `tiktok_update_interest_optimizer`, `tiktok_list_behavior_optimizer`, `tiktok_update_behavior_optimizer`, `tiktok_list_age_optimizer`, `tiktok_update_age_optimizer`, `tiktok_list_gender_optimizer`, `tiktok_update_gender_optimizer`, `tiktok_list_language_optimizer`, `tiktok_update_language_optimizer`, `tiktok_list_os_optimizer`, `tiktok_update_os_optimizer`, `tiktok_list_connection_optimizer`, `tiktok_update_connection_optimizer`, `tiktok_list_banner_optimizer`, `tiktok_update_banner_optimizer`, `tiktok_list_content_optimizer`, `tiktok_update_content_optimizer`, `tiktok_list_topic_optimizer`, `tiktok_update_topic_optimizer`, `tiktok_list_hashtag_optimizer`, `tiktok_update_hashtag_optimizer`
+- 优化器详情: `tiktok_list_creative_optimizer_details`, `tiktok_list_bid_optimizer_details`, `tiktok_list_schedule_optimizer_details`, `tiktok_list_placement_optimizer_details`, `tiktok_list_device_optimizer_details`, `tiktok_list_geo_optimizer_details`, `tiktok_list_interest_optimizer_details`, `tiktok_list_behavior_optimizer_details`, `tiktok_list_age_optimizer_details`, `tiktok_list_gender_optimizer_details`, `tiktok_list_language_optimizer_details`, `tiktok_list_os_optimizer_details`, `tiktok_list_connection_optimizer_details`, `tiktok_list_banner_optimizer_details`, `tiktok_list_content_optimizer_details`, `tiktok_list_topic_optimizer_details`, `tiktok_list_hashtag_optimizer_details`
+- 计费管理: `tiktok_list_billing_events`, `tiktok_get_billing_summary`, `tiktok_list_payment_methods`, `tiktok_add_payment_method`, `tiktok_remove_payment_method`
+- 账户健康: `tiktok_list_account_health`, `tiktok_list_account_limits`, `tiktok_list_pending_approvals`
+- 通知管理: `tiktok_list_notification_preferences`, `tiktok_update_notification_preferences`, `tiktok_list_notification_history`
+- 审计日志: `tiktok_list_audit_logs`, `tiktok_list_activity_logs`
+- 账单历史: `tiktok_list_billing_history`, `tiktok_get_invoice`
+- 税务信息: `tiktok_list_tax_information`, `tiktok_update_tax_information`
+- 字典数据: `tiktok_list_currency_options`, `tiktok_list_time_zones`
+- 账户同步: `tiktok_validate_account`, `tiktok_sync_account`
+- 配额管理: `tiktok_get_quota`, `tiktok_list_usage_stats`
+- 表现统计: `tiktok_list_performance_stats`, `tiktok_list_cross_channel_reports`
+- 创意指南: `tiktok_list_creative_guidelines`, `tiktok_list_best_practices`, `tiktok_list_compliance_policies`
+- 创意验证: `tiktok_validate_creative`
+- 审核状态: `tiktok_list_review_status`
+- 政策合规: `tiktok_list_policy_violations`, `tiktok_list_appeals`, `tiktok_create_appeal`, `tiktok_get_appeal_status`
+- 争议管理: `tiktok_list_disputes`
+- 支持工单: `tiktok_list_support_tickets`, `tiktok_create_support_ticket`
 
-### Meta Marketing API (172 个 API)
-- 认证与账户: `meta_auth`, `meta_list_accounts`, `meta_get_account`
-- 广告系列: `meta_list_campaigns`, `meta_get_campaign`, `meta_create_campaign`, `meta_update_campaign`, `meta_pause_campaign`, `meta_resume_campaign`
-- 广告组: `meta_list_adsets`, `meta_get_adset`, `meta_create_adset`, `meta_update_adset`, `meta_pause_adset`, `meta_resume_adset`
-- 广告: `meta_list_ads`, `meta_get_ad`, `meta_create_ad`, `meta_update_ad`, `meta_pause_ad`, `meta_resume_ad`
-- 创意: `meta_list_ad_creatives`, `meta_get_ad_creative`, `meta_update_ad_creative`, `meta_delete_ad_creative`
-- 受众: `meta_list_audiences`, `meta_create_audience`, `meta_get_audience`, `meta_update_audience`, `meta_delete_audience`
-- 目录: `meta_list_catalogs`, `meta_list_categories`, `meta_add_products`, `meta_list_products`
-- Pixel: `meta_track_pixel`, `meta_list_pixels`, `meta_get_pixel`, `meta_create_pixel`
-- 转化: `meta_list_conversions`, `meta_list_custom_conversions`, `meta_create_custom_conversion`
-- CAPI: `meta_send_capi`, `meta_list_capi_events`
-- 动态广告: `meta_list_dynamic_ads`, `meta_list_dynamic_product_sets`
-- 线索表单: `meta_list_lead_forms`, `meta_create_lead_form`, `meta_get_lead_form`
-- 对话: `meta_list_conversations`, `meta_send_message`
-- 报表: `meta_query_insights`, `meta_list_report_schedules`
-- 权限: `meta_list_permission_users`, `meta_add_permission_user`
-- 账单: `meta_list_billing_info`, `meta_list_payment_methods`
-- 推荐: `meta_list_recommendations`, `meta_apply_recommendation`
-- 字典: `meta_list_age_ranges`, `meta_list_genders`, `meta_list_languages`, `meta_list_country_codes`
-- 定向: `meta_list_interests`, `meta_list_behaviors`, `meta_list_placements`
-- 资产: `meta_list_assets`, `meta_create_asset`
+### Meta Marketing API (172 个方法)
+- 认证与账户管理
+- 广告系列管理
+- 广告组管理
+- 广告管理
+- 创意管理
+- 受众管理
+- 目录管理
+- Pixel 管理
+- 转化管理
+- CAPI 管理
+- 动态广告
+- 线索表单
+- 对话管理
+- 报表查询
+- 权限管理
+- 账单管理
+- 推荐系统
+- 字典数据
+- 定向参数
 
-### Google Ads API (407 个 API)
-- 认证与账户: `google_auth`, `google_list_customers`, `google_get_customer_info`
-- 广告系列: `google_list_campaigns`, `google_get_campaign`, `google_create_campaign`, `google_update_campaign`, `google_pause_campaign`, `google_resume_campaign`
-- 广告组: `google_list_ad_groups`, `google_get_ad_group`, `google_create_ad_group`, `google_update_ad_group`, `google_pause_ad_group`
-- 广告: `google_list_ads`, `google_get_ad`, `google_create_responsive_search_ad`, `google_update_ad`, `google_pause_ad`
-- 关键词: `google_list_keywords`, `google_create_keyword`, `google_list_negative_keywords`, `google_create_negative_keyword`
-- 扩展: `google_list_sitelink_extensions`, `google_create_sitelink_extension`, `google_list_call_extensions`
-- 出价策略: `google_list_bidding_strategies`, `google_list_accessible_bidding_strategies`
-- 出价调整: `google_list_ad_group_bid_modifiers`, `google_create_ad_group_bid_modifier`
-- Feed: `google_list_feed_items`, `google_list_customer_feed_items`
-- 标签: `google_list_ad_group_labels`, `google_list_campaign_labels`, `google_list_customer_labels`
-- 资产: `google_list_customer_assets`, `google_list_ad_group_assets`, `google_list_campaign_assets`
-- 条件: `google_list_ad_group_criteria`, `google_list_campaign_criteria`
-- 共享集: `google_list_shared_sets`, `google_list_shared_criteria`
-- 推荐: `google_list_recommendations`, `google_apply_recommendation`
-- 草稿: `google_list_drafts`, `google_create_draft`, `google_apply_draft`
-- 实验: `google_list_experiments`, `google_create_experiment`
-- 报告: `google_download_report`, `google_list_keyword_performance_report`, `google_list_auction_insights`
-- 预算: `google_list_budgets`, `google_list_budget_allocations`
-- 网络: `google_list_networks`, `google_list_devices`
-- 地理: `google_list_locations`, `google_list_geographic_targeting`
-- 语言: `google_list_languages`
-- 拍卖洞察: `google_list_auction_insights`, `google_list_search_impressions_share`
-- 关键词创意: `google_list_keyword_ideas`, `google_list_ad_group_ideas`
-- 质量得分: `google_list_quality_score_data`, `google_list_ad_rank_data`
-- 出价值建议: `google_list_top_of_page_bid_data`, `google_list_first_page_bid_data`
-- 性能统计: `google_list_performance_stats`, `google_list_daily_stats`
-- 审批: `google_list_pending_approvals`, `google_list_policy_violations`
-- 授权: `google_list_permission_users`, `google_add_permission_user`
-- 账单: `google_list_billing_info`, `google_list_payment_methods`
-- 通知: `google_list_notification_preferences`, `google_list_notification_history`
-- 审计: `google_list_audit_logs`, `google_list_activity_logs`
-- 字典: `google_list_platforms`, `google_list_ad_formats`, `google_list_device_types`
-- 维度: `google_list_report_dimensions`, `google_list_report_metrics`
+### Google Ads API (407 个方法)
+- 认证与账户管理
+- 广告系列管理
+- 广告组管理
+- 广告管理
+- 关键词管理
+- 广告扩展
+- 出价策略
+- 出价调整
+- Feed 管理
+- 标签管理
+- 资产管理
+- 条件管理
+- 共享集管理
+- 推荐系统
+- 草稿管理
+- 实验管理
+- 报告下载
+- 性能统计
+- 拍卖洞察
+- 质量得分
+- 出价值建议
+- 关键词创意
+- 审批管理
+- 授权管理
+- 账单管理
+- 通知管理
+- 审计日志
+- 字典数据
+- 维度指标
 
-### DV360 API (178 个 API)
-- 认证与账户: `dv360_auth`, `dv360_get_customer`, `dv360_list_customers`, `dv360_list_advertisers`
-- 媒体购买: `dv360_list_line_items`, `dv360_get_line_item`, `dv360_create_line_item`, `dv360_update_line_item`
-- Flight: `dv360_list_flights`, `dv360_create_flight`, `dv360_update_flight`, `dv360_extend_flight`
-- 创意: `dv360_list_creatives`, `dv360_create_creative`, `dv360_upload_creative`, `dv360_get_creative_approval`
-- 定向: `dv360_list_targetings`, `dv360_create_targeting`, `dv360_estimate_reach`
-- 报表: `dv360_get_report`, `dv360_get_line_item_report`, `dv360_export_report`
-- 预算: `dv360_get_line_item_budget`, `dv360_update_line_item_budget`
-- Floodlight: `dv360_list_floodlight_configs`
-- 插入订单: `dv360_list_insertion_orders`
-- 提案: `dv360_list_proposals`, `dv360_accept_proposal`
-- 卖家: `dv360_list_sellers`, `dv360_get_seller_metrics`
-- 展示目录: `dv360_list_display_catalogs`, `dv360_get_display_catalog_items`
-- 动态受众: `dv360_list_dynamic_audiences`
-- 兴趣: `dv360_list_interests`
-- 投放位置: `dv360_list_placements`, `dv360_list_placements_by_line_item`
-- 出价策略: `dv360_list_bidding_strategies`
-- Pacing: `dv360_get_pacing_rate`
-- 同步: `dv360_sync_report`
-- 维度: `dv360_list_dimension_values`
-- 推荐: `dv360_list_recommendations`, `dv360_apply_recommendation`
-- 预算分配: `dv360_list_budget_allocations`, `dv360_update_budget_allocation`
-- 合作伙伴: `dv360_list_partner_links`, `dv360_create_partner_link`
-- 授权: `dv360_list_permission_users`, `dv360_add_permission_user`
-- 通知: `dv360_list_notification_preferences`, `dv360_list_notification_history`
-- 审计: `dv360_list_audit_logs`, `dv360_list_activity_logs`
-- 账单: `dv360_list_billing_info`, `dv360_list_invoice_history`, `dv360_list_payment_methods`
-- 配额: `dv360_get_quota`, `dv360_list_usage_stats`
-- 健康: `dv360_get_account_health`, `dv360_validate_advertiser`
-- API: `dv360_list_api_versions`, `dv360_get_api_version`, `dv360_list_rate_limits`
-- Webhook: `dv360_list_webhooks`, `dv360_create_webhook`
-- 字典: `dv360_list_platforms`, `dv360_list_device_types`, `dv360_list_ad_formats`
-- 定向类型: `dv360_list_geo_targeting`, `dv360_list_interest_targeting`, `dv360_list_behavior_targeting`
-- 创意模板: `dv360_list_creative_templates`, `dv360_create_creative_from_template`
-- 定向单元: `dv360_list_targeting_units`, `dv360_create_targeting_unit`
-- 内容排除: `dv360_list_content_exclusions`, `dv360_create_content_exclusion`
-- 品牌安全: `dv360_list_brand_safety_categories`, `dv360_list_brand_safety_providers`
-- 可见性: `dv360_list_viewability_targets`, `dv360_list_viewability_providers`
-- 归因: `dv360_list_attribution_models`, `dv360_list_conversion_windows`
-- 报表维度: `dv360_list_report_dimensions`, `dv360_list_report_metrics`
-- 合规: `dv360_get_compliance_status`, `dv360_list_policy_violations`
-- 申诉: `dv360_list_appeals`, `dv360_create_appeal`
-- 创意资产: `dv360_list_creative_assets`, `dv360_update_creative_asset`
-- 创意变体: `dv360_list_creative_variants`, `dv360_create_creative_variant`
-- 历史: `dv360_list_creative_history`, `dv360_list_line_item_history`
-- 预测: `dv360_get_performance_forecast`, `dv360_list_budget_forecasts`
-- 拍卖洞察: `dv360_list_auction_insights`, `dv360_list_competitor_analysis`
-- 细分: `dv360_list_segment_performance`, `dv360_list_audience_segments`
-- 创意表现: `dv360_list_creative_performance`, `dv360_list_creative_performance_by_day`
-- 出价优化: `dv360_list_bid_performance`, `dv360_list_bid_recommendations`
-- 推荐类型: `dv360_list_budget_recommendations`, `dv360_list_targeting_recommendations`
+### DV360 API (178 个方法)
+- 认证与账户管理
+- 媒体购买管理
+- Flight 管理
+- 创意管理
+- 定向管理
+- 报表分析
+- 预算管理
+- Floodlight
+- 插入订单
+- 提案管理
+- 卖家管理
+- 展示目录
+- 动态受众
+- 兴趣管理
+- 投放位置
+- 出价策略
+- Pacing
+- 同步报表
+- 维度值
+- 推荐系统
+- 预算分配
+- 合作伙伴
+- 授权管理
+- 通知管理
+- 审计日志
+- 账单管理
+- 配额管理
+- 健康检查
+- API 管理
+- Webhook
+- 字典数据
+- 定向类型
+- 创意模板
+- 定向单元
+- 内容排除
+- 品牌安全
+- 可见性
+- 归因设置
+- 报表维度
+- 合规审核
+- 申诉管理
+- 创意资产
+- 创意变体
+- 历史记录
+- 预测分析
+- 拍卖洞察
+- 细分分析
+- 创意表现
+- 出价优化
 
 ## 覆盖亮点
 

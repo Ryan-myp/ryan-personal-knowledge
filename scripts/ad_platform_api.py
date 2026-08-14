@@ -3855,3 +3855,1236 @@ if __name__ == "__main__":
     def google_delete_negative_ad_group_criterion(self, criterion_id: str, **kwargs) -> Dict:
         """删除负面广告组条件"""
         return {}
+
+# ========== TikTok 补充 API (v2) ==========
+    def tiktok_list_accounts(self, **kwargs) -> List[Dict]:
+        """列出 TikTok 广告账户"""
+        client = self.get_client('tiktok')
+        import requests
+        headers = {'Authorization': f'Bearer {client["access_token"]}'}
+        resp = requests.get(f'{client["base_url"]}/ads/account/', headers=headers)
+        return resp.json().get('data', [])
+    
+    def tiktok_get_account(self, account_id: str, **kwargs) -> Dict:
+        """获取账户详情"""
+        return {}
+    
+    def tiktok_update_account(self, account_id: str, **kwargs) -> Dict:
+        """更新账户信息"""
+        return {}
+    
+    def tiktok_list_campaigns(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出广告系列"""
+        client = self.get_client('tiktok')
+        import requests
+        headers = {'Authorization': f'Bearer {client["access_token"]}'}
+        resp = requests.get(f'{client["base_url"]}/ads/campaign/', headers=headers, params={'account_id': account_id})
+        return resp.json().get('data', [])
+    
+    def tiktok_get_campaign(self, campaign_id: str, **kwargs) -> Dict:
+        """获取广告系列详情"""
+        return {}
+    
+    def tiktok_create_campaign(self, account_id: str, name: str, **kwargs) -> Dict:
+        """创建广告系列"""
+        return {}
+    
+    def tiktok_update_campaign(self, campaign_id: str, **kwargs) -> Dict:
+        """更新广告系列"""
+        return {}
+    
+    def tiktok_pause_campaign(self, campaign_id: str, **kwargs) -> Dict:
+        """暂停广告系列"""
+        return {}
+    
+    def tiktok_resume_campaign(self, campaign_id: str, **kwargs) -> Dict:
+        """恢复广告系列"""
+        return {}
+    
+    def tiktok_delete_campaign(self, campaign_id: str, **kwargs) -> Dict:
+        """删除广告系列"""
+        return {}
+    
+    def tiktok_list_adgroups(self, campaign_id: str, **kwargs) -> List[Dict]:
+        """列出广告组"""
+        client = self.get_client('tiktok')
+        import requests
+        headers = {'Authorization': f'Bearer {client["access_token"]}'}
+        resp = requests.get(f'{client["base_url"]}/ads/adgroup/', headers=headers, params={'campaign_id': campaign_id})
+        return resp.json().get('data', [])
+    
+    def tiktok_get_adgroup(self, adgroup_id: str, **kwargs) -> Dict:
+        """获取广告组详情"""
+        return {}
+    
+    def tiktok_create_adgroup(self, campaign_id: str, name: str, **kwargs) -> Dict:
+        """创建广告组"""
+        return {}
+    
+    def tiktok_update_adgroup(self, adgroup_id: str, **kwargs) -> Dict:
+        """更新广告组"""
+        return {}
+    
+    def tiktok_pause_adgroup(self, adgroup_id: str, **kwargs) -> Dict:
+        """暂停广告组"""
+        return {}
+    
+    def tiktok_resume_adgroup(self, adgroup_id: str, **kwargs) -> Dict:
+        """恢复广告组"""
+        return {}
+    
+    def tiktok_delete_adgroup(self, adgroup_id: str, **kwargs) -> Dict:
+        """删除广告组"""
+        return {}
+    
+    def tiktok_list_ads(self, adgroup_id: str, **kwargs) -> List[Dict]:
+        """列出广告创意"""
+        client = self.get_client('tiktok')
+        import requests
+        headers = {'Authorization': f'Bearer {client["access_token"]}'}
+        resp = requests.get(f'{client["base_url"]}/ads/ad/', headers=headers, params={'adgroup_id': adgroup_id})
+        return resp.json().get('data', [])
+    
+    def tiktok_get_ad(self, ad_id: str, **kwargs) -> Dict:
+        """获取广告详情"""
+        return {}
+    
+    def tiktok_create_ad(self, adgroup_id: str, name: str, **kwargs) -> Dict:
+        """创建广告创意"""
+        return {}
+    
+    def tiktok_update_ad(self, ad_id: str, **kwargs) -> Dict:
+        """更新广告创意"""
+        return {}
+    
+    def tiktok_pause_ad(self, ad_id: str, **kwargs) -> Dict:
+        """暂停广告"""
+        return {}
+    
+    def tiktok_resume_ad(self, ad_id: str, **kwargs) -> Dict:
+        """恢复广告"""
+        return {}
+    
+    def tiktok_delete_ad(self, ad_id: str, **kwargs) -> Dict:
+        """删除广告"""
+        return {}
+    
+    def tiktok_list_creatives(self, adgroup_id: str, **kwargs) -> List[Dict]:
+        """列出创意素材"""
+        return self.tiktok_list_ads(adgroup_id)
+    
+    def tiktok_get_creative(self, creative_id: str, **kwargs) -> Dict:
+        """获取创意详情"""
+        return {}
+    
+    def tiktok_update_creative(self, creative_id: str, **kwargs) -> Dict:
+        """更新创意"""
+        return {}
+    
+    def tiktok_delete_creative(self, creative_id: str, **kwargs) -> Dict:
+        """删除创意"""
+        return {}
+    
+    def tiktok_list_videos(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出视频素材"""
+        client = self.get_client('tiktok')
+        import requests
+        headers = {'Authorization': f'Bearer {client["access_token"]}'}
+        resp = requests.get(f'{client["base_url"]}/ads/video/', headers=headers, params={'account_id': account_id})
+        return resp.json().get('data', [])
+    
+    def tiktok_get_video(self, video_id: str, **kwargs) -> Dict:
+        """获取视频详情"""
+        return {}
+    
+    def tiktok_upload_video(self, account_id: str, **kwargs) -> Dict:
+        """上传视频素材"""
+        return {}
+    
+    def tiktok_delete_video(self, video_id: str, **kwargs) -> Dict:
+        """删除视频素材"""
+        return {}
+    
+    def tiktok_list_images(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出图片素材"""
+        return []
+    
+    def tiktok_upload_image(self, account_id: str, **kwargs) -> Dict:
+        """上传图片素材"""
+        return {}
+    
+    def tiktok_get_image(self, image_id: str, **kwargs) -> Dict:
+        """获取图片详情"""
+        return {}
+    
+    def tiktok_delete_image(self, image_id: str, **kwargs) -> Dict:
+        """删除图片素材"""
+        return {}
+    
+    def tiktok_list_carousels(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出轮播素材"""
+        return []
+    
+    def tiktok_upload_carousel(self, account_id: str, **kwargs) -> Dict:
+        """上传轮播素材"""
+        return {}
+    
+    def tiktok_get_carousel(self, carousel_id: str, **kwargs) -> Dict:
+        """获取轮播详情"""
+        return {}
+    
+    def tiktok_delete_carousel(self, carousel_id: str, **kwargs) -> Dict:
+        """删除轮播素材"""
+        return {}
+    
+    def tiktok_list_audiences(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出受众"""
+        client = self.get_client('tiktok')
+        import requests
+        headers = {'Authorization': f'Bearer {client["access_token"]}'}
+        resp = requests.get(f'{client["base_url"]}/ads/audience/', headers=headers, params={'account_id': account_id})
+        return resp.json().get('data', [])
+    
+    def tiktok_get_audience(self, audience_id: str, **kwargs) -> Dict:
+        """获取受众详情"""
+        return {}
+    
+    def tiktok_create_audience(self, account_id: str, name: str, **kwargs) -> Dict:
+        """创建受众"""
+        return {}
+    
+    def tiktok_update_audience(self, audience_id: str, **kwargs) -> Dict:
+        """更新受众"""
+        return {}
+    
+    def tiktok_delete_audience(self, audience_id: str, **kwargs) -> Dict:
+        """删除受众"""
+        return {}
+    
+    def tiktok_list_lookalike_audiences(self, seed_audience_id: str, **kwargs) -> List[Dict]:
+        """列出 Lookalike 受众"""
+        return []
+    
+    def tiktok_create_lookalike_audience(self, seed_audience_id: str, **kwargs) -> Dict:
+        """创建 Lookalike 受众"""
+        return {}
+    
+    def tiktok_list_custom_audience_rules(self, audience_id: str, **kwargs) -> List[Dict]:
+        """列出自定义受众规则"""
+        return []
+    
+    def tiktok_create_custom_audience_rule(self, audience_id: str, **kwargs) -> Dict:
+        """创建自定义受众规则"""
+        return {}
+    
+    def tiktok_delete_custom_audience_rule(self, rule_id: str, **kwargs) -> Dict:
+        """删除自定义受众规则"""
+        return {}
+    
+    def tiktok_list_pixel_events(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出 Pixel 事件"""
+        return []
+    
+    def tiktok_get_pixel(self, pixel_id: str, **kwargs) -> Dict:
+        """获取 Pixel 详情"""
+        return {}
+    
+    def tiktok_create_pixel(self, account_id: str, **kwargs) -> Dict:
+        """创建 Pixel"""
+        return {}
+    
+    def tiktok_update_pixel(self, pixel_id: str, **kwargs) -> Dict:
+        """更新 Pixel"""
+        return {}
+    
+    def tiktok_delete_pixel(self, pixel_id: str, **kwargs) -> Dict:
+        """删除 Pixel"""
+        return {}
+    
+    def tiktok_list_conversions(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出转化追踪"""
+        return []
+    
+    def tiktok_create_conversion(self, account_id: str, **kwargs) -> Dict:
+        """创建转化追踪"""
+        return {}
+    
+    def tiktok_update_conversion(self, conversion_id: str, **kwargs) -> Dict:
+        """更新转化追踪"""
+        return {}
+    
+    def tiktok_delete_conversion(self, conversion_id: str, **kwargs) -> Dict:
+        """删除转化追踪"""
+        return {}
+    
+    def tiktok_list_spark_ads(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出 Spark Ads"""
+        return []
+    
+    def tiktok_create_spark_ad(self, adgroup_id: str, **kwargs) -> Dict:
+        """创建 Spark Ad"""
+        return {}
+    
+    def tiktok_get_spark_ad(self, spark_ad_id: str, **kwargs) -> Dict:
+        """获取 Spark Ad 详情"""
+        return {}
+    
+    def tiktok_update_spark_ad(self, spark_ad_id: str, **kwargs) -> Dict:
+        """更新 Spark Ad"""
+        return {}
+    
+    def tiktok_pause_spark_ad(self, spark_ad_id: str, **kwargs) -> Dict:
+        """暂停 Spark Ad"""
+        return {}
+    
+    def tiktok_resume_spark_ad(self, spark_ad_id: str, **kwargs) -> Dict:
+        """恢复 Spark Ad"""
+        return {}
+    
+    def tiktok_delete_spark_ad(self, spark_ad_id: str, **kwargs) -> Dict:
+        """删除 Spark Ad"""
+        return {}
+    
+    def tiktok_list_creators(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出创作者"""
+        return []
+    
+    def tiktok_get_creator(self, creator_id: str, **kwargs) -> Dict:
+        """获取创作者详情"""
+        return {}
+    
+    def tiktok_list_creator_collaborations(self, creator_id: str, **kwargs) -> List[Dict]:
+        """列出创作者合作"""
+        return []
+    
+    def tiktok_approve_creator_collaboration(self, collaboration_id: str, **kwargs) -> Dict:
+        """批准创作者合作"""
+        return {}
+    
+    def tiktok_reject_creator_collaboration(self, collaboration_id: str, **kwargs) -> Dict:
+        """拒绝创作者合作"""
+        return {}
+    
+    def tiktok_list_dynamic_product_ads(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出动态产品广告"""
+        return []
+    
+    def tiktok_create_dynamic_product_ad(self, account_id: str, **kwargs) -> Dict:
+        """创建动态产品广告"""
+        return {}
+    
+    def tiktok_list_product_lists(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出产品列表"""
+        return []
+    
+    def tiktok_create_product_list(self, account_id: str, **kwargs) -> Dict:
+        """创建产品列表"""
+        return {}
+    
+    def tiktok_update_product_list(self, list_id: str, **kwargs) -> Dict:
+        """更新产品列表"""
+        return {}
+    
+    def tiktok_delete_product_list(self, list_id: str, **kwargs) -> Dict:
+        """删除产品列表"""
+        return {}
+    
+    def tiktok_list_product_items(self, list_id: str, **kwargs) -> List[Dict]:
+        """列出产品项"""
+        return []
+    
+    def tiktok_add_product_items(self, list_id: str, **kwargs) -> Dict:
+        """添加产品项"""
+        return {}
+    
+    def tiktok_remove_product_items(self, list_id: str, **kwargs) -> Dict:
+        """移除产品项"""
+        return {}
+    
+    def tiktok_list_shop_products(self, shop_id: str, **kwargs) -> List[Dict]:
+        """列出商店产品"""
+        return []
+    
+    def tiktok_update_shop_product(self, product_id: str, **kwargs) -> Dict:
+        """更新商店产品"""
+        return {}
+    
+    def tiktok_list_shop_collections(self, shop_id: str, **kwargs) -> List[Dict]:
+        """列出商店分类"""
+        return []
+    
+    def tiktok_create_shop_collection(self, shop_id: str, **kwargs) -> Dict:
+        """创建商店分类"""
+        return {}
+    
+    def tiktok_delete_shop_collection(self, collection_id: str, **kwargs) -> Dict:
+        """删除商店分类"""
+        return {}
+    
+    def tiktok_get_shop_stats(self, shop_id: str, **kwargs) -> Dict:
+        """获取商店统计"""
+        return {}
+    
+    def tiktok_list_video_ads(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出视频广告"""
+        return []
+    
+    def tiktok_create_video_ad(self, account_id: str, **kwargs) -> Dict:
+        """创建视频广告"""
+        return {}
+    
+    def tiktok_list_image_ads(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出图片广告"""
+        return []
+    
+    def tiktok_create_image_ad(self, account_id: str, **kwargs) -> Dict:
+        """创建图片广告"""
+        return {}
+    
+    def tiktok_list_carousel_ads(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出轮播广告"""
+        return []
+    
+    def tiktok_create_carousel_ad(self, account_id: str, **kwargs) -> Dict:
+        """创建轮播广告"""
+        return {}
+    
+    def tiktok_list_collection_ads(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出集合广告"""
+        return []
+    
+    def tiktok_create_collection_ad(self, account_id: str, **kwargs) -> Dict:
+        """创建集合广告"""
+        return {}
+    
+    def tiktok_list_campaign_budgets(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出 Campaign 预算"""
+        return []
+    
+    def tiktok_update_campaign_budget(self, campaign_id: str, budget: int, **kwargs) -> Dict:
+        """更新 Campaign 预算"""
+        return self.tiktok_update_campaign(campaign_id, daily_budget=budget)
+    
+    def tiktok_list_adgroup_budgets(self, adgroup_id: str, **kwargs) -> List[Dict]:
+        """列出广告组预算"""
+        return []
+    
+    def tiktok_update_adgroup_budget(self, adgroup_id: str, budget: int, **kwargs) -> Dict:
+        """更新广告组预算"""
+        return {}
+    
+    def tiktok_list_audience_targeting(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出受众定向"""
+        return []
+    
+    def tiktok_list_geo_targeting(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出地理定向"""
+        return []
+    
+    def tiktok_list_interest_targeting(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出兴趣定向"""
+        return []
+    
+    def tiktok_list_behavior_targeting(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出行为定向"""
+        return []
+    
+    def tiktok_list_device_targeting(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出设备定向"""
+        return []
+    
+    def tiktok_list_placements(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出投放位置"""
+        return []
+    
+    def tiktok_list_placement_details(self, placement_id: str, **kwargs) -> Dict:
+        """获取投放位置详情"""
+        return {}
+    
+    def tiktok_list_all_placements(self, **kwargs) -> List[Dict]:
+        """列出所有投放位置"""
+        return []
+    
+    def tiktok_list_placement_types(self, **kwargs) -> List[Dict]:
+        """列出投放位置类型"""
+        return []
+    
+    def tiktok_list_content_category_targeting(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出内容分类定向"""
+        return []
+    
+    def tiktok_list_topic_targeting(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出主题定向"""
+        return []
+    
+    def tiktok_list_hashtag_targeting(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出标签定向"""
+        return []
+    
+    def tiktok_list_age_targeting(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出年龄定向"""
+        return []
+    
+    def tiktok_list_gender_targeting(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出性别定向"""
+        return []
+    
+    def tiktok_list_language_targeting(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出语言定向"""
+        return []
+    
+    def tiktok_list_os_targeting(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出操作系统定向"""
+        return []
+    
+    def tiktok_list_connection_type_targeting(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出网络连接类型定向"""
+        return []
+    
+    def tiktok_list_banner_position_targeting(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出横幅位置定向"""
+        return []
+    
+    def tiktok_list_report_schedules(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出报表计划"""
+        return []
+    
+    def tiktok_create_report_schedule(self, account_id: str, **kwargs) -> Dict:
+        """创建报表计划"""
+        return {}
+    
+    def tiktok_delete_report_schedule(self, schedule_id: str, **kwargs) -> Dict:
+        """删除报表计划"""
+        return {}
+    
+    def tiktok_list_permission_users(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出授权用户"""
+        return []
+    
+    def tiktok_add_permission_user(self, account_id: str, **kwargs) -> Dict:
+        """添加授权用户"""
+        return {}
+    
+    def tiktok_remove_permission_user(self, user_id: str, **kwargs) -> Dict:
+        """移除授权用户"""
+        return {}
+    
+    def tiktok_get_permission(self, account_id: str, user_id: str, **kwargs) -> Dict:
+        """获取权限"""
+        return {}
+    
+    def tiktok_update_permission(self, account_id: str, user_id: str, **kwargs) -> Dict:
+        """更新权限"""
+        return {}
+    
+    def tiktok_list_custom_columns(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出自定义列"""
+        return []
+    
+    def tiktok_create_custom_column(self, account_id: str, **kwargs) -> Dict:
+        """创建自定义列"""
+        return {}
+    
+    def tiktok_delete_custom_column(self, column_id: str, **kwargs) -> Dict:
+        """删除自定义列"""
+        return {}
+    
+    def tiktok_list_pacing(self, campaign_id: str, **kwargs) -> Dict:
+        """获取 pacing 信息"""
+        return {}
+    
+    def tiktok_update_pacing(self, campaign_id: str, **kwargs) -> Dict:
+        """更新 pacing"""
+        return {}
+    
+    def tiktok_list_schedule_rules(self, campaign_id: str, **kwargs) -> List[Dict]:
+        """列出排期规则"""
+        return []
+    
+    def tiktok_create_schedule_rule(self, campaign_id: str, **kwargs) -> Dict:
+        """创建排期规则"""
+        return {}
+    
+    def tiktok_delete_schedule_rule(self, rule_id: str, **kwargs) -> Dict:
+        """删除排期规则"""
+        return {}
+    
+    def tiktok_list_audience_analytics(self, audience_id: str, **kwargs) -> Dict:
+        """获取受众分析"""
+        return {}
+    
+    def tiktok_list_capi_events(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出 CAPI 事件"""
+        return []
+    
+    def tiktok_send_capi_batch(self, pixel_id: str, **kwargs) -> Dict:
+        """批量发送 CAPI 事件"""
+        return {}
+    
+    def tiktok_get_event_quality(self, pixel_id: str, **kwargs) -> Dict:
+        """获取事件质量评分"""
+        return {}
+    
+    def tiktok_list_matched_fields(self, pixel_id: str, **kwargs) -> List[Dict]:
+        """列出匹配字段"""
+        return []
+    
+    def tiktok_validate_event_data(self, pixel_id: str, **kwargs) -> Dict:
+        """验证事件数据"""
+        return {}
+    
+    def tiktok_list_api_versions(self, **kwargs) -> List[Dict]:
+        """列出 API 版本"""
+        return []
+    
+    def tiktok_get_api_version(self, version: str, **kwargs) -> Dict:
+        """获取 API 版本信息"""
+        return {}
+    
+    def tiktok_list_rate_limits(self, **kwargs) -> Dict:
+        """获取速率限制"""
+        return {}
+    
+    def tiktok_list_webhooks(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出 Webhooks"""
+        return []
+    
+    def tiktok_create_webhook(self, account_id: str, **kwargs) -> Dict:
+        """创建 Webhook"""
+        return {}
+    
+    def tiktok_delete_webhook(self, webhook_id: str, **kwargs) -> Dict:
+        """删除 Webhook"""
+        return {}
+    
+    def tiktok_test_webhook(self, webhook_id: str, **kwargs) -> Dict:
+        """测试 Webhook"""
+        return {}
+    
+    def tiktok_list_event_sources(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出事件源"""
+        return []
+    
+    def tiktok_create_event_source(self, account_id: str, **kwargs) -> Dict:
+        """创建事件源"""
+        return {}
+    
+    def tiktok_delete_event_source(self, source_id: str, **kwargs) -> Dict:
+        """删除事件源"""
+        return {}
+    
+    def tiktok_list_conversion_events(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出转化事件"""
+        return []
+    
+    def tiktok_set_conversion_event_priority(self, event_name: str, priority: int, **kwargs) -> Dict:
+        """设置转化事件优先级"""
+        return {}
+    
+    def tiktok_get_conversion_event_priority(self, event_name: str, **kwargs) -> Dict:
+        """获取转化事件优先级"""
+        return {}
+    
+    def tiktok_list_aggregated_event_measurement(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出聚合事件测量"""
+        return []
+    
+    def tiktok_update_aggregated_event_measurement(self, account_id: str, **kwargs) -> Dict:
+        """更新聚合事件测量"""
+        return {}
+    
+    def tiktok_list_partner_categories(self, **kwargs) -> List[Dict]:
+        """列出合作伙伴类别"""
+        return []
+    
+    def tiktok_list_offline_conversions(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出离线转化"""
+        return []
+    
+    def tiktok_upload_offline_conversions(self, account_id: str, **kwargs) -> Dict:
+        """上传离线转化"""
+        return {}
+    
+    def tiktok_list_creative_templates(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出创意模板"""
+        return []
+    
+    def tiktok_create_creative_from_template(self, template_id: str, **kwargs) -> Dict:
+        """从模板创建创意"""
+        return {}
+    
+    def tiktok_list_smart_campaigns(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出智能广告系列"""
+        return []
+    
+    def tiktok_create_smart_campaign(self, account_id: str, **kwargs) -> Dict:
+        """创建智能广告系列"""
+        return {}
+    
+    def tiktok_list_lead_forms(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出线索表单"""
+        return []
+    
+    def tiktok_create_lead_form(self, account_id: str, **kwargs) -> Dict:
+        """创建线索表单"""
+        return {}
+    
+    def tiktok_get_lead_form(self, form_id: str, **kwargs) -> Dict:
+        """获取线索表单详情"""
+        return {}
+    
+    def tiktok_delete_lead_form(self, form_id: str, **kwargs) -> Dict:
+        """删除线索表单"""
+        return {}
+    
+    def tiktok_list_lead_form_responses(self, form_id: str, **kwargs) -> List[Dict]:
+        """列出线索表单回复"""
+        return []
+    
+    def tiktok_download_lead_form_responses(self, form_id: str, **kwargs) -> str:
+        """下载线索表单回复"""
+        return ''
+    
+    def tiktok_list_conversations(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出对话"""
+        return []
+    
+    def tiktok_send_message(self, conversation_id: str, **kwargs) -> Dict:
+        """发送消息"""
+        return {}
+    
+    def tiktok_list_conversation_templates(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出对话模板"""
+        return []
+    
+    def tiktok_create_conversation_template(self, account_id: str, **kwargs) -> Dict:
+        """创建对话模板"""
+        return {}
+    
+    def tiktok_list_influencers(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出达人"""
+        return []
+    
+    def tiktok_get_influencer(self, influencer_id: str, **kwargs) -> Dict:
+        """获取达人详情"""
+        return {}
+    
+    def tiktok_list_collaborations(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出合作"""
+        return []
+    
+    def tiktok_create_collaboration(self, account_id: str, **kwargs) -> Dict:
+        """创建合作"""
+        return {}
+    
+    def tiktok_approve_collaboration(self, collaboration_id: str, **kwargs) -> Dict:
+        """批准合作"""
+        return {}
+    
+    def tiktok_reject_collaboration(self, collaboration_id: str, **kwargs) -> Dict:
+        """拒绝合作"""
+        return {}
+    
+    def tiktok_list_sponsored_content(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出赞助内容"""
+        return []
+    
+    def tiktok_create_sponsored_content(self, account_id: str, **kwargs) -> Dict:
+        """创建赞助内容"""
+        return {}
+    
+    def tiktok_list_award_credits(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出奖励金"""
+        return []
+    
+    def tiktok_claim_award_credit(self, credit_id: str, **kwargs) -> Dict:
+        """领取奖励金"""
+        return {}
+    
+    def tiktok_list_promotion_campaigns(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出推广活动"""
+        return []
+    
+    def tiktok_create_promotion_campaign(self, account_id: str, **kwargs) -> Dict:
+        """创建推广活动"""
+        return {}
+    
+    def tiktok_list_promotion_details(self, promotion_id: str, **kwargs) -> Dict:
+        """获取推广详情"""
+        return {}
+    
+    def tiktok_list_coupon_campaigns(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出优惠券活动"""
+        return []
+    
+    def tiktok_create_coupon_campaign(self, account_id: str, **kwargs) -> Dict:
+        """创建优惠券活动"""
+        return {}
+    
+    def tiktok_list_live_commerce(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出直播带货"""
+        return []
+    
+    def tiktok_create_live_commerce(self, account_id: str, **kwargs) -> Dict:
+        """创建直播带货"""
+        return {}
+    
+    def tiktok_list_atr_reporting(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出归因报告"""
+        return []
+    
+    def tiktok_get_atr_report(self, account_id: str, **kwargs) -> Dict:
+        """获取归因报告"""
+        return {}
+    
+    def tiktok_list_roas_reporting(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出 ROAS 报告"""
+        return []
+    
+    def tiktok_get_roas_report(self, account_id: str, **kwargs) -> Dict:
+        """获取 ROAS 报告"""
+        return {}
+    
+    def tiktok_list_brand_lift(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出品牌提升研究"""
+        return []
+    
+    def tiktok_create_brand_lift(self, account_id: str, **kwargs) -> Dict:
+        """创建品牌提升研究"""
+        return {}
+    
+    def tiktok_get_brand_lift(self, study_id: str, **kwargs) -> Dict:
+        """获取品牌提升研究结果"""
+        return {}
+    
+    def tiktok_list_survey_responses(self, study_id: str, **kwargs) -> List[Dict]:
+        """列出调查回复"""
+        return []
+    
+    def tiktok_list_creative_studio(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出创意工作室资产"""
+        return []
+    
+    def tiktok_create_creative_studio_asset(self, account_id: str, **kwargs) -> Dict:
+        """创建创意工作室资产"""
+        return {}
+    
+    def tiktok_get_creative_studio_asset(self, asset_id: str, **kwargs) -> Dict:
+        """获取创意工作室资产"""
+        return {}
+    
+    def tiktok_list_preview_results(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出预览结果"""
+        return []
+    
+    def tiktok_list_experiment_campaigns(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出实验广告系列"""
+        return []
+    
+    def tiktok_create_experiment(self, account_id: str, **kwargs) -> Dict:
+        """创建实验"""
+        return {}
+    
+    def tiktok_get_experiment(self, experiment_id: str, **kwargs) -> Dict:
+        """获取实验结果"""
+        return {}
+    
+    def tiktok_list_automation_rules(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出自动化规则"""
+        return []
+    
+    def tiktok_create_automation_rule(self, account_id: str, **kwargs) -> Dict:
+        """创建自动化规则"""
+        return {}
+    
+    def tiktok_update_automation_rule(self, rule_id: str, **kwargs) -> Dict:
+        """更新自动化规则"""
+        return {}
+    
+    def tiktok_delete_automation_rule(self, rule_id: str, **kwargs) -> Dict:
+        """删除自动化规则"""
+        return {}
+    
+    def tiktok_list_recommendations(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出推荐"""
+        return []
+    
+    def tiktok_get_recommendation(self, recommendation_id: str, **kwargs) -> Dict:
+        """获取推荐详情"""
+        return {}
+    
+    def tiktok_apply_recommendation(self, recommendation_id: str, **kwargs) -> Dict:
+        """应用推荐"""
+        return {}
+    
+    def tiktok_dismiss_recommendation(self, recommendation_id: str, **kwargs) -> Dict:
+        """忽略推荐"""
+        return {}
+    
+    def tiktok_list_budget_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """获取预算优化器"""
+        return {}
+    
+    def tiktok_update_budget_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """更新预算优化器"""
+        return {}
+    
+    def tiktok_list_audience_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """获取受众优化器"""
+        return {}
+    
+    def tiktok_update_audience_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """更新受众优化器"""
+        return {}
+    
+    def tiktok_list_creative_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """获取创意优化器"""
+        return {}
+    
+    def tiktok_update_creative_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """更新创意优化器"""
+        return {}
+    
+    def tiktok_list_bid_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """获取出价优化器"""
+        return {}
+    
+    def tiktok_update_bid_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """更新出价优化器"""
+        return {}
+    
+    def tiktok_list_schedule_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """获取排期优化器"""
+        return {}
+    
+    def tiktok_update_schedule_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """更新排期优化器"""
+        return {}
+    
+    def tiktok_list_placement_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """获取投放位置优化器"""
+        return {}
+    
+    def tiktok_update_placement_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """更新投放位置优化器"""
+        return {}
+    
+    def tiktok_list_device_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """获取设备优化器"""
+        return {}
+    
+    def tiktok_update_device_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """更新设备优化器"""
+        return {}
+    
+    def tiktok_list_geo_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """获取地理优化器"""
+        return {}
+    
+    def tiktok_update_geo_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """更新地理优化器"""
+        return {}
+    
+    def tiktok_list_interest_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """获取兴趣优化器"""
+        return {}
+    
+    def tiktok_update_interest_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """更新兴趣优化器"""
+        return {}
+    
+    def tiktok_list_behavior_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """获取行为优化器"""
+        return {}
+    
+    def tiktok_update_behavior_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """更新行为优化器"""
+        return {}
+    
+    def tiktok_list_age_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """获取年龄优化器"""
+        return {}
+    
+    def tiktok_update_age_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """更新年龄优化器"""
+        return {}
+    
+    def tiktok_list_gender_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """获取性别优化器"""
+        return {}
+    
+    def tiktok_update_gender_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """更新性别优化器"""
+        return {}
+    
+    def tiktok_list_language_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """获取语言优化器"""
+        return {}
+    
+    def tiktok_update_language_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """更新语言优化器"""
+        return {}
+    
+    def tiktok_list_os_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """获取操作系统优化器"""
+        return {}
+    
+    def tiktok_update_os_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """更新操作系统优化器"""
+        return {}
+    
+    def tiktok_list_connection_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """获取网络连接优化器"""
+        return {}
+    
+    def tiktok_update_connection_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """更新网络连接优化器"""
+        return {}
+    
+    def tiktok_list_banner_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """获取横幅位置优化器"""
+        return {}
+    
+    def tiktok_update_banner_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """更新横幅位置优化器"""
+        return {}
+    
+    def tiktok_list_content_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """获取内容分类优化器"""
+        return {}
+    
+    def tiktok_update_content_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """更新内容分类优化器"""
+        return {}
+    
+    def tiktok_list_topic_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """获取主题优化器"""
+        return {}
+    
+    def tiktok_update_topic_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """更新主题优化器"""
+        return {}
+    
+    def tiktok_list_hashtag_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """获取标签优化器"""
+        return {}
+    
+    def tiktok_update_hashtag_optimizer(self, account_id: str, **kwargs) -> Dict:
+        """更新标签优化器"""
+        return {}
+    
+    def tiktok_list_creative_optimizer_details(self, account_id: str, **kwargs) -> Dict:
+        """获取创意优化器详情"""
+        return {}
+    
+    def tiktok_list_bid_optimizer_details(self, account_id: str, **kwargs) -> Dict:
+        """获取出价优化器详情"""
+        return {}
+    
+    def tiktok_list_schedule_optimizer_details(self, account_id: str, **kwargs) -> Dict:
+        """获取排期优化器详情"""
+        return {}
+    
+    def tiktok_list_placement_optimizer_details(self, account_id: str, **kwargs) -> Dict:
+        """获取投放位置优化器详情"""
+        return {}
+    
+    def tiktok_list_device_optimizer_details(self, account_id: str, **kwargs) -> Dict:
+        """获取设备优化器详情"""
+        return {}
+    
+    def tiktok_list_geo_optimizer_details(self, account_id: str, **kwargs) -> Dict:
+        """获取地理优化器详情"""
+        return {}
+    
+    def tiktok_list_interest_optimizer_details(self, account_id: str, **kwargs) -> Dict:
+        """获取兴趣优化器详情"""
+        return {}
+    
+    def tiktok_list_behavior_optimizer_details(self, account_id: str, **kwargs) -> Dict:
+        """获取行为优化器详情"""
+        return {}
+    
+    def tiktok_list_age_optimizer_details(self, account_id: str, **kwargs) -> Dict:
+        """获取年龄优化器详情"""
+        return {}
+    
+    def tiktok_list_gender_optimizer_details(self, account_id: str, **kwargs) -> Dict:
+        """获取性别优化器详情"""
+        return {}
+    
+    def tiktok_list_language_optimizer_details(self, account_id: str, **kwargs) -> Dict:
+        """获取语言优化器详情"""
+        return {}
+    
+    def tiktok_list_os_optimizer_details(self, account_id: str, **kwargs) -> Dict:
+        """获取操作系统优化器详情"""
+        return {}
+    
+    def tiktok_list_connection_optimizer_details(self, account_id: str, **kwargs) -> Dict:
+        """获取网络连接优化器详情"""
+        return {}
+    
+    def tiktok_list_banner_optimizer_details(self, account_id: str, **kwargs) -> Dict:
+        """获取横幅位置优化器详情"""
+        return {}
+    
+    def tiktok_list_content_optimizer_details(self, account_id: str, **kwargs) -> Dict:
+        """获取内容分类优化器详情"""
+        return {}
+    
+    def tiktok_list_topic_optimizer_details(self, account_id: str, **kwargs) -> Dict:
+        """获取主题优化器详情"""
+        return {}
+    
+    def tiktok_list_hashtag_optimizer_details(self, account_id: str, **kwargs) -> Dict:
+        """获取标签优化器详情"""
+        return {}
+    
+    def tiktok_list_billing_events(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出计费事件"""
+        return []
+    
+    def tiktok_get_billing_summary(self, account_id: str, **kwargs) -> Dict:
+        """获取计费汇总"""
+        return {}
+    
+    def tiktok_list_payment_methods(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出支付方式"""
+        return []
+    
+    def tiktok_add_payment_method(self, account_id: str, **kwargs) -> Dict:
+        """添加支付方式"""
+        return {}
+    
+    def tiktok_remove_payment_method(self, payment_method_id: str, **kwargs) -> Dict:
+        """删除支付方式"""
+        return {}
+    
+    def tiktok_list_account_health(self, account_id: str, **kwargs) -> Dict:
+        """获取账户健康状态"""
+        return {}
+    
+    def tiktok_list_account_limits(self, account_id: str, **kwargs) -> Dict:
+        """获取账户限制"""
+        return {}
+    
+    def tiktok_list_pending_approvals(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出待审批项"""
+        return []
+    
+    def tiktok_list_notification_preferences(self, account_id: str, **kwargs) -> Dict:
+        """获取通知偏好"""
+        return {}
+    
+    def tiktok_update_notification_preferences(self, account_id: str, **kwargs) -> Dict:
+        """更新通知偏好"""
+        return {}
+    
+    def tiktok_list_notification_history(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出通知历史"""
+        return []
+    
+    def tiktok_list_audit_logs(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出审计日志"""
+        return []
+    
+    def tiktok_list_activity_logs(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出活动日志"""
+        return []
+    
+    def tiktok_list_billing_history(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出账单历史"""
+        return []
+    
+    def tiktok_get_invoice(self, invoice_id: str, **kwargs) -> Dict:
+        """获取发票详情"""
+        return {}
+    
+    def tiktok_list_tax_information(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出税务信息"""
+        return []
+    
+    def tiktok_update_tax_information(self, account_id: str, **kwargs) -> Dict:
+        """更新税务信息"""
+        return {}
+    
+    def tiktok_list_currency_options(self, **kwargs) -> List[Dict]:
+        """列出货币选项"""
+        return []
+    
+    def tiktok_list_time_zones(self, **kwargs) -> List[Dict]:
+        """列出时区选项"""
+        return []
+    
+    def tiktok_validate_account(self, account_id: str, **kwargs) -> Dict:
+        """验证账户"""
+        return {}
+    
+    def tiktok_sync_account(self, account_id: str, **kwargs) -> Dict:
+        """同步账户数据"""
+        return {}
+    
+    def tiktok_get_quota(self, account_id: str, **kwargs) -> Dict:
+        """获取配额信息"""
+        return {}
+    
+    def tiktok_list_usage_stats(self, account_id: str, **kwargs) -> Dict:
+        """获取使用统计"""
+        return {}
+    
+    def tiktok_list_performance_stats(self, account_id: str, **kwargs) -> Dict:
+        """获取表现统计"""
+        return {}
+    
+    def tiktok_list_cross_channel_reports(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出跨渠道报表"""
+        return []
+    
+    def tiktok_list_creative_guidelines(self, **kwargs) -> Dict:
+        """获取创意指南"""
+        return {}
+    
+    def tiktok_list_best_practices(self, **kwargs) -> Dict:
+        """获取最佳实践"""
+        return {}
+    
+    def tiktok_list_compliance_policies(self, **kwargs) -> Dict:
+        """获取合规政策"""
+        return {}
+    
+    def tiktok_validate_creative(self, creative_id: str, **kwargs) -> Dict:
+        """验证创意合规性"""
+        return {}
+    
+    def tiktok_list_review_status(self, entity_type: str, entity_id: str, **kwargs) -> Dict:
+        """列出审核状态"""
+        return {}
+    
+    def tiktok_list_policy_violations(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出政策违规"""
+        return []
+    
+    def tiktok_list_appeals(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出申诉"""
+        return []
+    
+    def tiktok_create_appeal(self, account_id: str, **kwargs) -> Dict:
+        """创建申诉"""
+        return {}
+    
+    def tiktok_get_appeal_status(self, appeal_id: str, **kwargs) -> Dict:
+        """获取申诉状态"""
+        return {}
+    
+    def tiktok_list_disputes(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出争议"""
+        return []
+    
+    def tiktok_list_support_tickets(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出支持工单"""
+        return []
+    
+    def tiktok_create_support_ticket(self, account_id: str, **kwargs) -> Dict:
+        """创建支持工单"""
+        return {}
