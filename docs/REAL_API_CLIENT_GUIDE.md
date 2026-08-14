@@ -508,7 +508,7 @@ print(json.dumps(result.to_dict(), indent=2, ensure_ascii=False))
 
 ## 📁 文件位置
 
-- `scripts/ad_platform_real_client.py` - 真实 API 客户端（812 行）
+- `scripts/tiktok_api.py (TikTok)、scripts/meta_api.py (Meta)、scripts/google_ads_api.py (Google Ads)、scripts/dv360_api.py (DV360)` - 真实 API 客户端（812 行）
 - `docs/REAL_API_CLIENT_GUIDE.md` - 本文档
 - `config/ad_platform_credentials.json` - 凭证配置（已排除 Git）
 
