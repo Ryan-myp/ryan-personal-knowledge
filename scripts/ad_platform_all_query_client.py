@@ -848,3 +848,248 @@ class AdPlatformAllQueryClient:
             {'code': 'TRAFFIC_SOURCE_PARTNER', 'name': '合作伙伴流量', 'value': 2},
             {'code': 'TRAFFIC_SOURCE_EXTERNAL', 'name': '外部流量', 'value': 3}
         ]
+
+    # ========================================
+    # TikTok 应用与网站定向
+    # ========================================
+    
+    def tiktok_list_apps_for_placement(self, advertiser_id: str, **kwargs) -> List[Dict]:
+        """列出可投放的应用"""
+        token = self.credentials.get('tiktok', {}).get('access_token', '')
+        headers = {'Access-Token': token}
+        params = {
+            'advertiser_id': advertiser_id,
+            'page': kwargs.get('page', 1),
+            'page_size': kwargs.get('page_size', 100)
+        }
+        url = 'https://business-api.tiktok.com/open_api/v1.3/query/app/'
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=30)
+            data = resp.json().get('data', {})
+            return data.get('list', []) if isinstance(data, dict) else []
+        except Exception as e:
+            print(f"[TikTok] apps_for_placement error: {e}")
+            return []
+    
+    def tiktok_list_sites_for_placement(self, advertiser_id: str, **kwargs) -> List[Dict]:
+        """列出可投放的网站"""
+        token = self.credentials.get('tiktok', {}).get('access_token', '')
+        headers = {'Access-Token': token}
+        params = {
+            'advertiser_id': advertiser_id,
+            'page': kwargs.get('page', 1),
+            'page_size': kwargs.get('page_size', 100)
+        }
+        url = 'https://business-api.tiktok.com/open_api/v1.3/query/site/'
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=30)
+            data = resp.json().get('data', {})
+            return data.get('list', []) if isinstance(data, dict) else []
+        except Exception as e:
+            print(f"[TikTok] sites_for_placement error: {e}")
+            return []
+    
+    def tiktok_list_category_tree(self, advertiser_id: str, **kwargs) -> List[Dict]:
+        """列出兴趣分类树"""
+        token = self.credentials.get('tiktok', {}).get('access_token', '')
+        headers = {'Access-Token': token}
+        params = {
+            'advertiser_id': advertiser_id,
+            'category_level': kwargs.get('category_level', 1)
+        }
+        url = 'https://business-api.tiktok.com/open_api/v1.3/query/interest/category/'
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=30)
+            data = resp.json().get('data', {})
+            return data.get('list', []) if isinstance(data, dict) else []
+        except Exception as e:
+            print(f"[TikTok] category_tree error: {e}")
+            return []
+    
+    # ========================================
+    # TikTok 通知与回调
+    # ========================================
+    
+    def tiktok_list_notification_types(self, **kwargs) -> List[Dict]:
+        """列出通知类型"""
+        return [
+            {'code': 'CAMPAIGN_STATUS_CHANGED', 'name': '广告系列状态变更'},
+            {'code': 'AD_GROUP_STATUS_CHANGED', 'name': '广告组状态变更'},
+            {'code': 'AD_STATUS_CHANGED', 'name': '广告状态变更'},
+            {'code': 'BUDGET_THRESHOLD_REACHED', 'name': '预算阈值达到'},
+            {'code': 'AUDIENCE_SIZE_CHANGED', 'name': '受众规模变化'},
+            {'code': 'CREATIVE_REVIEW_RESULT', 'name': '素材审核结果'},
+            {'code': 'CONVERSION_ACCUMULATED', 'name': '转化累计通知'},
+            {'code': 'PAYMENT_ISSUE', 'name': '付款问题通知'}
+        ]
+    
+    def tiktok_list_webhook_events(self, **kwargs) -> List[Dict]:
+        """列出 Webhook 事件类型"""
+        return [
+            {'code': 'AD_ACCOUNT_CREATED', 'name': '广告账户创建', 'version': 'v1.3'},
+            {'code': 'AD_ACCOUNT_DELETED', 'name': '广告账户删除', 'version': 'v1.3'},
+            {'code': 'CAMPAIGN_CREATED', 'name': '广告系列创建', 'version': 'v1.3'},
+            {'code': 'CAMPAIGN_UPDATED', 'name': '广告系列更新', 'version': 'v1.3'},
+            {'code': 'CAMPAIGN_DELETED', 'name': '广告系列删除', 'version': 'v1.3'},
+            {'code': 'AD_GROUP_CREATED', 'name': '广告组创建', 'version': 'v1.3'},
+            {'code': 'AD_GROUP_UPDATED', 'name': '广告组更新', 'version': 'v1.3'},
+            {'code': 'AD_CREATED', 'name': '广告创建', 'version': 'v1.3'},
+            {'code': 'AD_UPDATED', 'name': '广告更新', 'version': 'v1.3'},
+            {'code': 'PIXEL_REPORT_DATA', 'name': 'Pixel 数据上报', 'version': 'v1.3'}
+        ]
+    
+    # ========================================
+    # Meta 更多素材选项
+    # ========================================
+    
+    def meta_list_link_previews_options(self, **kwargs) -> List[Dict]:
+        """列出链接预览选项"""
+        return [
+            {'code': 'DEFAULT', 'name': '默认预览', 'description': '自动获取链接预览'},
+            {'code': 'CUSTOM', 'name': '自定义预览', 'description': '手动设置预览图片'},
+            {'code': 'COLLECTION', 'name': '合集预览', 'description': '使用合集封面作为预览'}
+        ]
+    
+    def meta_list_cta_types(self, **kwargs) -> List[Dict]:
+        """列出 CTA 按钮类型"""
+        return [
+            {'code': 'NONE', 'name': '无', 'type': 'NONE'},
+            {'code': 'BOOK_NOW', 'name': '立即预订', 'type': 'BOOK'},
+            {'code': 'CONTACT_US', 'name': '联系我们', 'type': 'CONTACT'},
+            {'code': 'DOWNLOAD', 'name': '下载', 'type': 'DOWNLOAD'},
+            {'code': 'ENABLE_NOTIFICATIONS', 'name': '开启通知', 'type': 'NOTIFY'},
+            {'code': 'GET_DIRECTION', 'name': '获取导航', 'type': 'DIRECTION'},
+            {'code': 'INSTALL_APP', 'name': '安装应用', 'type': 'INSTALL'},
+            {'code': 'LEARN_MORE', 'name': '了解更多', 'type': 'LEARN_MORE'},
+            {'code': 'MESSENGER', 'name': 'Messenger', 'type': 'MESSAGING'},
+            {'code': 'PLAY_GAME', 'name': '玩游戏', 'type': 'GAMING'},
+            {'code': 'SIGN_UP', 'name': '注册', 'type': 'SIGN_UP'},
+            {'code': 'SUPPORT', 'name': '支持', 'type': 'SUPPORT'},
+            {'code': 'USE_APP', 'name': '使用应用', 'type': 'USE_APP'},
+            {'code': 'WATCH_MORE', 'name': '观看更多', 'type': 'VIDEO'},
+            {'code': 'WHATSAPP', 'name': 'WhatsApp', 'type': 'MESSAGING'}
+        ]
+    
+    def meta_list_primary_texts(self, **kwargs) -> List[Dict]:
+        """列出主文本类型"""
+        return [
+            {'code': 'SALES_COPY', 'name': '销售文案', 'max_length': 125},
+            {'code': 'OFFER_COPY', 'name': '优惠文案', 'max_length': 125},
+            {'code': 'PRODUCT_DETAIL', 'name': '产品详情', 'max_length': 125},
+            {'code': 'EVENT_INFO', 'name': '活动信息', 'max_length': 125}
+        ]
+    
+    # ========================================
+    # Meta 更多报表维度
+    # ========================================
+    
+    def meta_list_insights_fields(self, **kwargs) -> List[Dict]:
+        """列出 Insights 字段"""
+        fields = [
+            {'code': 'IMPRESSIONS', 'name': '展示次数', 'category': 'PERFORMANCE'},
+            {'code': 'REACH', 'name': '触达人数', 'category': 'PERFORMANCE'},
+            {'code': 'FREQUENCY', 'name': '频率', 'category': 'PERFORMANCE'},
+            {'code': 'CLICKS', 'name': '点击次数', 'category': 'PERFORMANCE'},
+            {'code': 'CTR', 'name': '点击率', 'category': 'PERFORMANCE'},
+            {'code': 'CPC', 'name': '单次点击费用', 'category': 'PERFORMANCE'},
+            {'code': 'CPM', 'name': '千次曝光费用', 'category': 'PERFORMANCE'},
+            {'code': 'SPEND', 'name': '花费', 'category': 'FINANCIAL'},
+            {'code': 'PURCHASE_ROI', 'name': '购买 ROAS', 'category': 'FINANCIAL'},
+            {'code': 'CONVERSIONS', 'name': '转化次数', 'category': 'CONVERSION'},
+            {'code': 'CPA', 'name': '单次转化费用', 'category': 'CONVERSION'},
+            {'code': 'ADD_TO_CART', 'name': '加入购物车', 'category': 'CONVERSION'},
+            {'code': 'INITIATE_CHECKOUT', 'name': '发起结账', 'category': 'CONVERSION'},
+            {'code': 'PURCHASE', 'name': '购买', 'category': 'CONVERSION'},
+            {'code': 'CONTENT_VIEW', 'name': '内容浏览', 'category': 'ENGAGEMENT'},
+            {'code': 'LEAD', 'name': '线索', 'category': 'CONVERSION'},
+            {'code': 'QUALITY_RANKING', 'name': '质量排名', 'category': 'QUALITY'},
+            {'code': 'RELEVANCE_RANKING', 'name': '相关性排名', 'category': 'QUALITY'}
+        ]
+        return fields
+    
+    def meta_list_breakdowns(self, **kwargs) -> List[Dict]:
+        """列出细分维度"""
+        return [
+            {'code': 'PLATFORM', 'name': '平台', 'description': 'Facebook/Instagram 等'},
+            {'code': 'PLACEMENT', 'name': '投放位置', 'description': '动态消息/快拍等'},
+            {'code': 'AGE', 'name': '年龄', 'description': '年龄段细分'},
+            {'code': 'GENDER', 'name': '性别', 'description': '男/女'},
+            {'code': 'COUNTRY', 'name': '国家', 'description': '国家细分'},
+            {'code': 'REGION', 'name': '省份', 'description': '省份细分'},
+            {'code': 'CITY', 'name': '城市', 'description': '城市细分'},
+            {'code': 'DEVICE', 'name': '设备', 'description': '手机/平板/电脑'},
+            {'code': 'DEVICE_TYPE', 'name': '设备类型', 'description': '移动端/桌面端'},
+            {'code': 'CONN_TYPE', 'name': '网络类型', 'description': 'WiFi/4G/3G等'},
+            {'code': 'DAY_PART_DAY', 'name': '时段', 'description': '一天中的时间段'}
+        ]
+    
+    # ========================================
+    # Google Ads 更多报表维度
+    # ========================================
+    
+    def google_list_metrics(self, type: str = None, **kwargs) -> List[Dict]:
+        """列出指标"""
+        metrics = [
+            {'code': 'IMPRESSIONS', 'name': '展示次数', 'type': 'PERFORMANCE'},
+            {'code': 'CLICKS', 'name': '点击次数', 'type': 'PERFORMANCE'},
+            {'code': 'CTR', 'name': '点击率', 'type': 'PERFORMANCE'},
+            {'code': 'AVERAGE_CPC', 'name': '平均 CPC', 'type': 'FINANCIAL'},
+            {'code': 'COST', 'name': '花费', 'type': 'FINANCIAL'},
+            {'code': 'CONVERSIONS', 'name': '转化次数', 'type': 'CONVERSION'},
+            {'code': 'CONVERSION_RATE', 'name': '转化率', 'type': 'CONVERSION'},
+            {'code': 'COST_PER_CONVERSION', 'name': '单次转化费用', 'type': 'CONVERSION'},
+            {'code': 'ALL_CONVERSIONS', 'name': '全部转化', 'type': 'CONVERSION'},
+            {'code': 'VIEW_THROUGH_GPV', 'name': '观看后转化价值', 'type': 'CONVERSION'},
+            {'code': 'ROAS', 'name': '广告支出回报率', 'type': 'FINANCIAL'},
+            {'code': 'TOP_OF_PAGE_RATE', 'name': '首页展示率', 'type': 'RANKING'},
+            {'code': 'IMPRESSIONS_WITH_OPTIMIZER_TOP_OF_PAGE_RATE', 'name': '首页展示占比', 'type': 'RANKING'}
+        ]
+        if type:
+            return [m for m in metrics if m.get('type', '').upper() == type.upper()]
+        return metrics
+    
+    def google_list_custom_dimensions(self, **kwargs) -> List[Dict]:
+        """列出自定义维度"""
+        return [
+            {'code': 'CUSTOM_VARIABLE_1', 'name': '自定义变量 1', 'type': 'SEARCH'},
+            {'code': 'CUSTOM_VARIABLE_2', 'name': '自定义变量 2', 'type': 'SEARCH'},
+            {'code': 'CUSTOM_VARIABLE_3', 'name': '自定义变量 3', 'type': 'DISPLAY'},
+            {'code': 'CUSTOM_VARIABLE_4', 'name': '自定义变量 4', 'type': 'DISPLAY'}
+        ]
+    
+    # ========================================
+    # DV360 更多报表
+    # ========================================
+    
+    def dv360_list_report_types(self, **kwargs) -> List[Dict]:
+        """列出报表类型"""
+        return [
+            {'code': 'CAMPAIGN_REPORT', 'name': '广告系列报表', 'description': '广告系列级别报表'},
+            {'code': 'FLIGHT_REPORT', 'name': '航班报表', 'description': '航班级别报表'},
+            {'code': 'LINE_ITEM_REPORT', 'name': 'LINE ITEM 报表', 'description': 'LINE ITEM 级别报表'},
+            {'code': 'CREATIVE_REPORT', 'name': '创意报表', 'description': '创意级别报表'},
+            {'code': 'INSERTION_ORDER_REPORT', 'name': 'IO 报表', 'description': 'IO 级别报表'},
+            {'code': 'PARTNER_REPORT', 'name': '合作伙伴报表', 'description': '合作伙伴级别报表'},
+            {'code': 'ADVERTISER_REPORT', 'name': '广告主报表', 'description': '广告主级别报表'},
+            {'code': 'AGENCY_REPORT', 'name': '代理报表', 'description': '代理级别报表'}
+        ]
+    
+    def dv360_list_dimension_filters(self, **kwargs) -> List[Dict]:
+        """列出维度过滤器"""
+        return [
+            {'code': 'DATE', 'name': '日期', 'type': 'TIME'},
+            {'code': 'CAMPAIGN', 'name': '广告系列', 'type': 'STRUCTURE'},
+            {'code': 'FLIGHT', 'name': '航班', 'type': 'STRUCTURE'},
+            {'code': 'LINE_ITEM', 'name': 'LINE ITEM', 'type': 'STRUCTURE'},
+            {'code': 'CREATIVE', 'name': '创意', 'type': 'STRUCTURE'},
+            {'code': 'ADVERTISER', 'name': '广告主', 'type': 'ORGANIZATION'},
+            {'code': 'AGENCY', 'name': '代理', 'type': 'ORGANIZATION'},
+            {'code': 'PARTNER', 'name': '合作伙伴', 'type': 'ORGANIZATION'},
+            {'code': 'CREATIVE_TYPE', 'name': '创意类型', 'type': 'CREATIVE'},
+            {'code': 'DEVICE_CATEGORY', 'name': '设备类别', 'type': 'DEVICE'},
+            {'code': 'OS', 'name': '操作系统', 'type': 'DEVICE'},
+            {'code': 'Browser', 'name': '浏览器', 'type': 'DEVICE'},
+            {'code': 'COUNTRY', 'name': '国家', 'type': 'GEO'},
+            {'code': 'REGION', 'name': '省份', 'type': 'GEO'},
+            {'code': 'CITY', 'name': '城市', 'type': 'GEO'}
+        ]
