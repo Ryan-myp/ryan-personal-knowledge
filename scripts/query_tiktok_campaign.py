@@ -23,79 +23,96 @@ def load_credentials():
         return json.load(f)
 
 
+def format_status(status):
+    """格式化状态显示"""
+    status_map = {
+        'CAMPAIGN_STATUS_ENABLE': ('✅', 'RUNNING'),
+        'CAMPAIGN_STATUS_DISABLE': ('⛔', 'DISABLED'),
+        'CAMPAIGN_STATUS_PAUSE': ('⏸️', 'PAUSED'),
+        'ADGROUP_STATUS_ENABLE': ('✅', 'RUNNING'),
+        'ADGROUP_STATUS_DISABLE': ('⛔', 'DISABLED'),
+        'ADGROUP_STATUS_CAMPAIGN_DISABLE': ('⛔', 'CAMPAIGN_DISABLE'),
+        'AD_STATUS_ENABLE': ('✅', 'RUNNING'),
+        'AD_STATUS_DISABLE': ('⛔', 'DISABLED'),
+        'AD_STATUS_CAMPAIGN_DISABLE': ('⛔', 'CAMPAIGN_DISABLE'),
+    }
+    emoji, text = status_map.get(status, ('❓', status))
+    return f"{emoji} {text}"
+
+
 def format_explanation(data):
     """格式化业务解读"""
     lines = []
-    lines.append("")
-    lines.append("=" * 70)
-    lines.append("[BUSINESS VIEW]")
-    lines.append("=" * 70)
-    lines.append("")
-
+    
     campaign = data.get('campaign', {})
     ad_groups_data = data.get('ad_groups', {})
-    ad_groups = ad_groups_data.get('list', []) if isinstance(ad_groups_data, dict) else []
     ads_data = data.get('ads', {})
+    
+    ad_groups = ad_groups_data.get('list', []) if isinstance(ad_groups_data, dict) else []
     ads = ads_data.get('list', []) if isinstance(ads_data, dict) else []
-    creatives = data.get('creatives', {}).get('data', [])
-
-    lines.append("Campaign (广告系列):")
-    lines.append(f"   Name: {campaign.get('campaign_name', 'N/A')}")
-    status = campaign.get('secondary_status', campaign.get('operation_status', 'N/A'))
-    status_map = {
-        'CAMPAIGN_STATUS_ENABLE': '[RUNNING]',
-        'CAMPAIGN_STATUS_DISABLE': '[DISABLED]',
-        'ENABLE': '[RUNNING]',
-        'DISABLE': '[DISABLED]',
-        'PAUSE': '[PAUSED]'
-    }
-    status_emoji = status_map.get(status, f'[{status}]')
-    lines.append(f"   Status: {status_emoji} ({status})")
-    budget = campaign.get('budget', 0)
-    lines.append(f"   Daily Budget: ${budget}")
-    lines.append(f"   Create Time: {campaign.get('create_time', 'N/A')}")
+    
+    # 分隔线
     lines.append("")
-
-    lines.append("Ad Groups (广告组):")
-    if ad_groups:
-        lines.append(f"   Total: {len(ad_groups)}")
-        for i, ad_group in enumerate(ad_groups[:5], 1):
-            lines.append(f"   --- Ad Group {i} ---")
-            lines.append(f"   Name: {ad_group.get('adgroup_name', 'N/A')}")
-            lines.append(f"   ID: {ad_group.get('adgroup_id', 'N/A')}")
-            status = ad_group.get('secondary_status', 'N/A')
-            lines.append(f"   Status: {status}")
-            lines.append("")
-    else:
-        lines.append("   (No ad groups found)")
-        lines.append("")
-
-    lines.append("Ads (广告):")
+    lines.append("╔" + "═" * 68 + "╗")
+    lines.append("║" + " 📊 TIKTOK CAMPAIGN REPORT".ljust(68) + "║")
+    lines.append("╚" + "═" * 68 + "╝")
+    lines.append("")
+    
+    # Campaign 信息
+    lines.append("┌─ CAMPAIGN ─" + "─" * 62 + "┐")
+    lines.append(f"│ 📌 ID          │ {campaign.get('campaign_id', 'N/A')}")
+    lines.append(f"│ 📝 Name        │ {campaign.get('campaign_name', 'N/A')}")
+    status = campaign.get('secondary_status', campaign.get('operation_status', ''))
+    lines.append(f"│ 🚦 Status      │ {format_status(status)}")
+    budget = campaign.get('budget', 0)
+    lines.append(f"│ 💰 Budget      │ ${budget:,.2f}" if budget > 0 else "│ 💰 Budget      │ None")
+    lines.append(f"│ 🎯 Objective   │ {campaign.get('objective_type', 'N/A')}")
+    lines.append(f"│ 📱 Destination │ {campaign.get('sales_destination', 'N/A') or 'Web'}")
+    lines.append(f"│ 📅 Created     │ {campaign.get('create_time', 'N/A')}")
+    lines.append(f"│ 🔧 Automation  │ {campaign.get('campaign_automation_type', 'N/A')}")
+    lines.append("└" + "─" * 62 + "┘")
+    lines.append("")
+    
+    # Ad Groups 统计
+    lines.append("┌─ AD GROUPS (" + str(len(ad_groups)).rjust(2, ' ') + " total)" + "─" * 51 + "┐")
+    for i, ag in enumerate(ad_groups[:10], 1):
+        ag_status = format_status(ag.get('secondary_status', ag.get('operation_status', '')))
+        name = ag.get('adgroup_name', 'N/A')[:40]
+        lines.append(f"│ {i:2d}. {name:<40} │ {ag_status:>20}")
+        lines.append(f"│    ID: {ag.get('adgroup_id', 'N/A')}")
+        lines.append(f"│    Obj: {ag.get('optimization_goal', 'N/A')} | Bid: {ag.get('bid_type', 'N/A')} | Bill: {ag.get('billing_event', 'N/A')}")
+    if len(ad_groups) > 10:
+        lines.append(f"│ ... and {len(ad_groups) - 10} more")
+    lines.append("└" + "─" * 62 + "┘")
+    lines.append("")
+    
+    # Ads 统计
     if ads:
-        lines.append(f"   Total: {len(ads)}")
+        lines.append("┌─ ADS (First AdGroup: " + str(len(ads)).rjust(2, ' ') + " total)" + "─" * 41 + "┐")
         for i, ad in enumerate(ads[:5], 1):
-            lines.append(f"   --- Ad {i} ---")
-            lines.append(f"   Name: {ad.get('ad_name', 'N/A')[:50]}...")
-            lines.append(f"   ID: {ad.get('ad_id', 'N/A')}")
-            lines.append(f"   Creator: {ad.get('display_name', 'N/A')}")
-            status = ad.get('secondary_status', 'N/A')
-            lines.append(f"   Status: {status}")
-            lines.append("")
+            ad_status = format_status(ad.get('secondary_status', ad.get('operation_status', '')))
+            name = ad.get('ad_name', 'N/A')[:35]
+            creator = ad.get('display_name', 'N/A')
+            lines.append(f"│ {i}. {name:<35} │ {creator:<15} │ {ad_status}")
+            lines.append(f"│    ID: {ad.get('ad_id', 'N/A')} | Format: {ad.get('ad_format', 'N/A')}")
+        if len(ads) > 5:
+            lines.append(f"│ ... and {len(ads) - 5} more")
     else:
-        lines.append("   (No ads found)")
-        lines.append("")
-
-    lines.append("Creatives (素材):")
-    if creatives:
-        for i, creative in enumerate(creatives[:5], 1):
-            lines.append(f"   --- Creative {i} ---")
-            lines.append(f"   Title: {creative.get('title', 'N/A')}")
-            lines.append(f"   ID: {creative.get('creative_id', creative.get('id', 'N/A'))}")
-            lines.append("")
-    else:
-        lines.append("   (No creatives found)")
-        lines.append("")
-
+        lines.append("┌─ ADS ─" + "─" * 62 + "┐")
+        lines.append("│ No ads found in the first ad group                     │")
+    lines.append("└" + "─" * 62 + "┘")
+    lines.append("")
+    
+    # 关键指标汇总
+    lines.append("┌─ SUMMARY ─" + "─" * 62 + "┐")
+    lines.append(f"│ Campaign Status : {format_status(campaign.get('secondary_status', campaign.get('operation_status', '')))}")
+    lines.append(f"│ Total Ad Groups : {len(ad_groups)}")
+    lines.append(f"│ Total Ads       : {len(ads)}")
+    lines.append(f"│ RTA ID          : {campaign.get('rta_id', 'N/A')}")
+    lines.append(f"│ Campaign Type   : {campaign.get('campaign_type', 'N/A')}")
+    lines.append("└" + "─" * 62 + "┘")
+    lines.append("")
+    
     return "\n".join(lines)
 
 
@@ -152,7 +169,8 @@ def query_ads(access_token, advertiser_id, adgroup_id):
 
 def main():
     if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} <campaign_id>")
+        print(f"Usage: {sys.argv[0]} <campaign_id> [advertiser_id]")
+        print(f"Example: {sys.argv[0]} 1836521788460274 7397068114548195329")
         sys.exit(1)
 
     config = load_credentials()
@@ -170,12 +188,12 @@ def main():
         sys.exit(1)
 
     campaign_id = sys.argv[1]
-    # 支持传入 advertiser_id 作为第二个参数
     advertiser_id = sys.argv[2] if len(sys.argv) > 2 else bc_id
 
-    print(f"\n[TIKTOK QUERY] Campaign: {campaign_id}")
-    print(f"   BC ID: {bc_id}")
-    print("-" * 70)
+    print(f"\n🔍 Querying TikTok Campaign...")
+    print(f"   Campaign ID: {campaign_id}")
+    print(f"   Advertiser ID: {advertiser_id}")
+    print()
 
     # 查询 Campaign
     campaign_data = query_campaign(access_token, advertiser_id, campaign_id)
@@ -213,8 +231,9 @@ def main():
     }
 
     # 输出原始 JSON
-    # 输出原始 JSON
-    print("\n[RAW DATA] TIKTOK:")
+    print("=" * 70)
+    print("[RAW DATA] TIKTOK")
+    print("=" * 70)
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
     # 输出业务解读
