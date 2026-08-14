@@ -1440,8 +1440,8 @@ class AdPlatformAllQueryClient:
             {'code': 'HEADLINE_1', 'name': '标题 1', 'type': 'HEADLINE', 'max_length': 30},
             {'code': 'HEADLINE_2', 'name': '标题 2', 'type': 'HEADLINE', 'max_length': 30},
             {'code': 'HEADLINE_3', 'name': '标题 3', 'type': 'HEADLINE', 'max_length': 30},
-            {'code': 'DESCRIPTION_1', 'name': '描述 1', 'type': 'DESCRIPTION', 'max_length': 90'},
-            {'code': 'DESCRIPTION_2', 'name': '描述 2', 'type': 'DESCRIPTION', 'max_length': 90'},
+            {'code': 'DESCRIPTION_1', 'name': '描述 1', 'type': 'DESCRIPTION', 'max_length': 90},,
+            {'code': 'DESCRIPTION_2', 'name': '描述 2', 'type': 'DESCRIPTION', 'max_length': 90},,
             {'code': 'PATH_1', 'name': '路径 1', 'type': 'PATH', 'max_length': 15'},
             {'code': 'PATH_2', 'name': '路径 2', 'type': 'PATH', 'max_length': 15'},
             {'code': 'BUSINESS_NAME', 'name': '商户名称', 'type': 'BUSINESS_NAME'}
