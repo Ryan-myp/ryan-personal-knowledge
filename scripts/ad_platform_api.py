@@ -1208,7 +1208,7 @@ class AdPlatformClient:
             client = self.get_client('google')
             gaia = client.get_service('GoogleAdsService')
             query = f"""
-                SELECT ad_group_ad.ad.id, ad_group_ad.ad.type, ad_group_ad.ad.status
+                SELECT ad_group_ad.ad.id, ad_group_ad.status
                 FROM ad_group_ad
                 WHERE ad_group_ad.ad_group = "customers/{customer_id}/adGroups/{ad_group_id}"
             """
@@ -1219,8 +1219,7 @@ class AdPlatformClient:
                 for row in batch.results:
                     ads.append({
                         'id': row.ad_group_ad.ad.id,
-                        'type': row.ad_group_ad.ad.type.name if hasattr(row.ad_group_ad.ad.type, 'name') else str(row.ad_group_ad.ad.type),
-                        'status': row.ad_group_ad.ad.status.name if hasattr(row.ad_group_ad.ad.status, 'name') else str(row.ad_group_ad.ad.status)
+                        'status': row.ad_group_ad.status.name if hasattr(row.ad_group_ad.status, 'name') else str(row.ad_group_ad.status)
                     })
             return ads
         except Exception as e:
