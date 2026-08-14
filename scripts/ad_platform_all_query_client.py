@@ -1093,3 +1093,244 @@ class AdPlatformAllQueryClient:
             {'code': 'REGION', 'name': '省份', 'type': 'GEO'},
             {'code': 'CITY', 'name': '城市', 'type': 'GEO'}
         ]
+
+    # ========================================
+    # TikTok 定时任务与自动化
+    # ========================================
+    
+    def tiktok_list_schedule_options(self, **kwargs) -> List[Dict]:
+        """列出定时投放选项"""
+        return [
+            {'code': 'START_END', 'name': '开始结束时间', 'description': '设定具体开始和结束时间'},
+            {'code': 'SCHEDULE', 'name': '定时投放', 'description': '按小时段定时投放'},
+            {'code': 'CONTINUOUS', 'name': '连续投放', 'description': '24小时连续投放'}
+        ]
+    
+    def tiktok_list_schedule_time_slots(self, **kwargs) -> List[Dict]:
+        """列出时段选项"""
+        slots = []
+        for hour in range(24):
+            for minute in [0, 30]:
+                time_str = f"{hour:02d}:{minute:02d}"
+                slots.append({'code': time_str, 'name': time_str, 'label': f'{hour}时{minute or "00分"}'})
+        return slots
+    
+    def tiktok_list_automation_rules(self, advertiser_id: str, **kwargs) -> List[Dict]:
+        """列出自动化规则"""
+        token = self.credentials.get('tiktok', {}).get('access_token', '')
+        headers = {'Access-Token': token}
+        params = {'advertiser_id': advertiser_id}
+        url = 'https://business-api.tiktok.com/open_api/v1.3/automation/rule/list/'
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=30)
+            data = resp.json().get('data', {})
+            return data.get('list', []) if isinstance(data, dict) else []
+        except Exception as e:
+            print(f"[TikTok] automation_rules error: {e}")
+            return []
+    
+    # ========================================
+    # TikTok 错误码参考
+    # ========================================
+    
+    def tiktok_list_error_codes(self, **kwargs) -> List[Dict]:
+        """列出常见错误码"""
+        return [
+            {'code': 236001, 'name': 'INVALID_ACCESS_TOKEN', 'message': '无效的访问令牌', 'solution': '重新获取 access_token'},
+            {'code': 236002, 'name': 'TOKEN_EXPIRED', 'message': '访问令牌已过期', 'solution': '刷新 access_token'},
+            {'code': 236003, 'name': 'INSUFFICIENT_PERMISSION', 'message': '权限不足', 'solution': '检查账户权限设置'},
+            {'code': 236004, 'name': 'ADVERTISER_NOT_FOUND', 'message': '广告主不存在', 'solution': '检查 advertiser_id 是否正确'},
+            {'code': 236005, 'name': 'CAMPAIGN_NOT_FOUND', 'message': '广告系列不存在', 'solution': '检查 campaign_id 是否正确'},
+            {'code': 236006, 'name': 'BUDGET_TOO_LOW', 'message': '预算过低', 'solution': '提高预算至最低要求'},
+            {'code': 236007, 'name': 'CREATIVE_REJECTED', 'message': '素材审核不通过', 'solution': '查看审核拒绝原因并修改'},
+            {'code': 236008, 'name': 'TARGETING_TOO_NARROW', 'message': '定向范围过窄', 'solution': '扩大定向范围'},
+            {'code': 236009, 'name': 'DUPLICATE_CAMPAIGN', 'message': '重复的广告系列名称', 'solution': '修改广告系列名称'},
+            {'code': 236010, 'name': 'RATE_LIMITED', 'message': '请求频率超限', 'solution': '降低请求频率或等待重试'}
+        ]
+    
+    # ========================================
+    # Meta 定时任务与自动化
+    # ========================================
+    
+    def meta_list_schedule_options(self, **kwargs) -> List[Dict]:
+        """列出定时投放选项"""
+        return [
+            {'code': 'START_END', 'name': '开始结束时间', 'description': '设定具体开始和结束时间'},
+            {'code': 'SCHEDULE', 'name': '定时投放', 'description': '按小时段定时投放'},
+            {'code': 'DURING_EVENT', 'name': '活动期间投放', 'description': '仅在活动期间投放'},
+            {'code': 'ALL_DAY', 'name': '全天投放', 'description': '24小时连续投放'}
+        ]
+    
+    def meta_list_automated_rules_actions(self, target_type: str = None, **kwargs) -> List[Dict]:
+        """列出自动化规则动作"""
+        actions = [
+            {'code': 'PAUSE', 'name': '暂停', 'target_types': ['CAMPAIGN', 'AD_SET', 'AD']},
+            {'code': 'ENABLE', 'name': '启用', 'target_types': ['CAMPAIGN', 'AD_SET', 'AD']},
+            {'code': 'DELETE', 'name': '删除', 'target_types': ['CAMPAIGN', 'AD_SET', 'AD']},
+            {'code': 'BID_CHANGE', 'name': '调整出价', 'target_types': ['AD_SET']},
+            {'code': 'BUDGET_CHANGE', 'name': '调整预算', 'target_types': ['CAMPAIGN', 'AD_SET']},
+            {'code': 'AUDIENCE_CHANGE', 'name': '调整受众', 'target_types': ['AD_SET']}
+        ]
+        if target_type:
+            return [a for a in actions if target_type in a.get('target_types', [])]
+        return actions
+    
+    # ========================================
+    # Meta 错误码参考
+    # ========================================
+    
+    def meta_list_error_codes(self, **kwargs) -> List[Dict]:
+        """列出常见错误码"""
+        return [
+            {'code': 200, 'name': 'SUCCESS', 'message': '操作成功'},
+            {'code': 1, 'name': 'UNKNOWN_ERROR', 'message': '未知错误', 'solution': '联系技术支持'},
+            {'code': 100, 'name': 'TOKEN_INVALID', 'message': 'Token 无效', 'solution': '重新获取 access_token'},
+            {'code': 190, 'name': 'ACCESS_TOKEN_EXPIRED', 'message': 'Token 已过期', 'solution': '刷新 access_token'},
+            {'code': 200, 'name': 'PERMISSION_DENIED', 'message': '权限被拒绝', 'solution': '检查权限设置'},
+            {'code': 800, 'name': 'API_DEPRECATED', 'message': 'API 已弃用', 'solution': '升级到新版 API'},
+            {'code': 801, 'name': 'GRAPH_API_VERSION', 'message': '版本不支持', 'solution': '使用支持的 API 版本'},
+            {'code': 999, 'name': 'RATE_LIMIT', 'message': '请求频率受限', 'solution': '降低请求频率'}
+        ]
+    
+    # ========================================
+    # Google Ads 定时任务
+    # ========================================
+    
+    def google_list_schedule_types(self, **kwargs) -> List[Dict]:
+        """列出定时投放类型"""
+        return [
+            {'code': 'STANDARD', 'name': '标准投放', 'description': '全天 24 小时投放'},
+            {'code': 'DAY_PARTING', 'name': '分时段投放', 'description': '按小时段设置投放时间'},
+            {'code': 'ADVANCED', 'name': '高级投放', 'description': '基于地理位置和时间的高级投放'}
+        ]
+    
+    def google_list_ad_schedules(self, customer_id: str, **kwargs) -> List[Dict]:
+        """列出广告排期"""
+        print("[Google Ads] ad_schedules 需要使用 google-ads 库")
+        return []
+    
+    # ========================================
+    # Google Ads 错误码参考
+    # ========================================
+    
+    def google_list_error_codes(self, **kwargs) -> List[Dict]:
+        """列出常见错误码"""
+        return [
+            {'code': 0, 'name': 'NO_ERROR', 'message': '操作成功'},
+            {'code': 1, 'name': 'AUTHENTICATION_ERROR', 'message': '认证错误', 'solution': '检查 OAuth 配置'},
+            {'code': 2, 'name': 'AUTHORIZATION_ERROR', 'message': '授权错误', 'solution': '检查账户权限'},
+            {'code': 3, 'name': 'INTERNAL_ERROR', 'message': '内部错误', 'solution': '联系技术支持'},
+            {'code': 4, 'name': 'REQUEST_ISSUE', 'message': '请求问题', 'solution': '检查请求参数'},
+            {'code': 5, 'name': 'RESOURCE_COUNT_LIMIT_EXCEEDED', 'message': '资源数量超限', 'solution': '减少资源数量'},
+            {'code': 6, 'name': 'VALIDATION_ERROR', 'message': '验证错误', 'solution': '检查字段格式'},
+            {'code': 7, 'name': 'FIELD_VECTOR_SIZE_LIMIT_EXCEEDED', 'message': '向量大小超限', 'solution': '减少列表项数量'}
+        ]
+    
+    # ========================================
+    # DV360 错误码参考
+    # ========================================
+    
+    def dv360_list_error_codes(self, **kwargs) -> List[Dict]:
+        """列出常见错误码"""
+        return [
+            {'code': 0, 'name': 'OK', 'message': '操作成功'},
+            {'code': 1, 'name': 'CANCELLED', 'message': '操作已取消'},
+            {'code': 2, 'name': 'UNKNOWN_ERROR', 'message': '未知错误'},
+            {'code': 3, 'name': 'INVALID_ARGUMENT', 'message': '无效参数', 'solution': '检查请求参数'},
+            {'code': 4, 'name': 'DEADLINE_EXCEEDED', 'message': '请求超时'},
+            {'code': 5, 'name': 'NOT_FOUND', 'message': '资源不存在', 'solution': '检查 ID 是否正确'},
+            {'code': 6, 'name': 'ALREADY_EXISTS', 'message': '资源已存在'},
+            {'code': 7, 'name': 'PERMISSION_DENIED', 'message': '权限不足', 'solution': '检查服务账户权限'},
+            {'code': 8, 'name': 'UNAUTHENTICATED', 'message': '未认证', 'solution': '重新生成 access_token'},
+            {'code': 9, 'name': 'RESOURCE_EXHAUSTED', 'message': '资源耗尽'},
+            {'code': 10, 'name': 'FAILED_PRECONDITION', 'message': '前置条件失败'}
+        ]
+    
+    # ========================================
+    # 通用报表查询接口
+    # ========================================
+    
+    def get_performance_summary(self, platform: str, account_id: str, date_range: dict, **kwargs) -> Dict:
+        """获取性能摘要"""
+        if platform == 'tiktok':
+            report = self.tiktok_get_campaign_report(account_id, date_range)
+            metrics = report.get('report', [])
+            total_impressions = sum(m.get('impressions', 0) for m in metrics)
+            total_clicks = sum(m.get('clicks', 0) for m in metrics)
+            total_spend = sum(m.get('spend', 0) for m in metrics)
+            return {
+                'platform': platform,
+                'impressions': total_impressions,
+                'clicks': total_clicks,
+                'spend': total_spend,
+                'ctr': (total_clicks / total_impressions * 100) if total_impressions > 0 else 0,
+                'cpc': (total_spend / total_clicks) if total_clicks > 0 else 0,
+                'cpm': (total_spend / total_impressions * 1000) if total_impressions > 0 else 0
+            }
+        elif platform == 'meta':
+            report = self.meta_get_campaign_report(account_id, date_range)
+            metrics = report if isinstance(report, list) else []
+            total_impressions = sum(m.get('impressions', 0) for m in metrics)
+            total_clicks = sum(m.get('clicks', 0) for m in metrics)
+            total_spend = sum(float(m.get('spend', 0)) for m in metrics)
+            return {
+                'platform': platform,
+                'impressions': total_impressions,
+                'clicks': total_clicks,
+                'spend': total_spend,
+                'ctr': (total_clicks / total_impressions * 100) if total_impressions > 0 else 0,
+                'cpc': (total_spend / total_clicks) if total_clicks > 0 else 0,
+                'cpm': (total_spend / total_impressions * 1000) if total_impressions > 0 else 0
+            }
+        return {}
+    
+    def compare_platforms(self, accounts: dict, date_range: dict) -> Dict:
+        """跨平台对比分析"""
+        results = {}
+        for platform, account_id in accounts.items():
+            try:
+                if platform == 'tiktok':
+                    summary = self.get_performance_summary(platform, account_id, date_range)
+                elif platform == 'meta':
+                    summary = self.get_performance_summary(platform, account_id, date_range)
+                elif platform == 'google_ads':
+                    summary = self.google_get_campaign_report(account_id, date_range)
+                elif platform == 'dv360':
+                    summary = {'platform': platform, 'data': {}}
+                results[platform] = summary
+            except Exception as e:
+                results[platform] = {'error': str(e)}
+        return results
+    
+    # ========================================
+    # 数据导入相关
+    # ========================================
+    
+    def tiktok_list_import_formats(self, **kwargs) -> List[Dict]:
+        """列出自定义转化导入格式"""
+        return [
+            {'code': 'CSV', 'name': 'CSV 文件', 'extension': '.csv', 'max_rows': 10000},
+            {'code': 'JSON', 'name': 'JSON 格式', 'extension': '.json', 'max_rows': 10000},
+            {'code': 'PIXEL', 'name': 'Pixel 代码', 'type': 'CODE'},
+            {'code': 'API', 'name': 'API 上报', 'type': 'API'},
+            {'code': 'PARTNER', 'name': '合作伙伴对接', 'type': 'PARTNER'}
+        ]
+    
+    def meta_list_upload_formats(self, **kwargs) -> List[Dict]:
+        """列出数据上传格式"""
+        return [
+            {'code': 'CSV', 'name': 'CSV 文件', 'extension': '.csv'},
+            {'code': 'JSON', 'name': 'JSON 格式', 'extension': '.json'},
+            {'code': 'GOOGLE_SHEETS', 'name': 'Google Sheets', 'type': 'SHEET'},
+            {'code': 'OFFICE_365', 'name': 'Office 365 Excel', 'type': 'SHEET'},
+            {'code': 'SAML', 'name': 'SAML 元数据', 'type': 'METADATA'}
+        ]
+    
+    def google_list_upload_methods(self, **kwargs) -> List[Dict]:
+        """列出数据上传方式"""
+        return [
+            {'code': 'GDRIVE', 'name': 'Google Drive 导入'},
+            {'code': 'API', 'name': 'API 上传'},
+            {'code': 'UPLOAD_FILE', 'name': '文件上传'},
+            {'code': 'BIGQUERY', 'name': 'BigQuery 导入'}
+        ]
