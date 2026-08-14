@@ -1,0 +1,200 @@
+{
+  "TikTok": [
+    {
+      "method": "list_accounts",
+      "status": "❌",
+      "error": "Expecting value: line 1 column 1 (char 0)"
+    },
+    {
+      "method": "list_campaigns",
+      "status": "❌",
+      "error": "Expecting value: line 1 column 1 (char 0)"
+    },
+    {
+      "method": "get_campaign",
+      "status": "⚠️",
+      "note": "Empty result"
+    },
+    {
+      "method": "list_adgroups",
+      "status": "❌",
+      "error": "Expecting value: line 1 column 1 (char 0)"
+    },
+    {
+      "method": "get_adgroup",
+      "status": "⏭️",
+      "note": "Skipped - no ad groups"
+    },
+    {
+      "method": "list_ads",
+      "status": "❌",
+      "error": "Expecting value: line 1 column 1 (char 0)"
+    },
+    {
+      "method": "get_ad",
+      "status": "❌",
+      "error": "local variable 'ag_result' referenced before assignment"
+    },
+    {
+      "method": "list_audiences",
+      "status": "❌",
+      "error": "Expecting value: line 1 column 1 (char 0)"
+    },
+    {
+      "method": "list_videos",
+      "status": "❌",
+      "error": "Expecting value: line 1 column 1 (char 0)"
+    },
+    {
+      "method": "query_report",
+      "status": "❌",
+      "error": "Expecting value: line 1 column 1 (char 0)"
+    }
+  ],
+  "Meta": [
+    {
+      "method": "list_accounts",
+      "status": "❌",
+      "error": "No module named 'facebook_business.adaccounts'"
+    },
+    {
+      "method": "list_campaigns",
+      "status": "✅",
+      "count": 5
+    },
+    {
+      "method": "get_campaign",
+      "status": "✅",
+      "name": "DAP_STA-AND_D05-All_081226_MAIA_Mix{WomenClothes-OFR^ItemSelection^4238164568-3009001}"
+    },
+    {
+      "method": "list_adsets",
+      "status": "❌",
+      "error": "type object 'AdSet' has no attribute 'get_adsets'"
+    },
+    {
+      "method": "get_adset",
+      "status": "❌",
+      "error": "type object 'AdSet' has no attribute 'get_adsets'"
+    },
+    {
+      "method": "list_ads",
+      "status": "❌",
+      "error": "type object 'Ad' has no attribute 'get_ads'"
+    },
+    {
+      "method": "get_ad",
+      "status": "❌",
+      "error": "type object 'Ad' has no attribute 'get_ads'"
+    },
+    {
+      "method": "list_audiences",
+      "status": "❌",
+      "error": "No module named 'facebook_business.adaccounts'"
+    },
+    {
+      "method": "list_catalogs",
+      "status": "❌",
+      "error": "No module named 'facebook_business.adaccounts'"
+    },
+    {
+      "method": "query_insights",
+      "status": "❌",
+      "error": "No module named 'facebook_business.adaccounts'"
+    }
+  ],
+  "Google Ads": [
+    {
+      "method": "list_customers",
+      "status": "❌",
+      "error": "The client library configuration is missing the required \"use_proto_plus\" key. Please set this option to either \"True\" or \"False\". For more information about this option see the Protobuf Messages guide: https://developers.google.com/google-ads/api/docs/client-libs/python/protobuf-messages"
+    },
+    {
+      "method": "list_campaigns",
+      "status": "❌",
+      "error": "The client library configuration is missing the required \"use_proto_plus\" key. Please set this option to either \"True\" or \"False\". For more information about this option see the Protobuf Messages guide: https://developers.google.com/google-ads/api/docs/client-libs/python/protobuf-messages"
+    },
+    {
+      "method": "get_campaign",
+      "status": "❌",
+      "error": "The client library configuration is missing the required \"use_proto_plus\" key. Please set this option to either \"True\" or \"False\". For more information about this option see the Protobuf Messages guide: https://developers.google.com/google-ads/api/docs/client-libs/python/protobuf-messages"
+    },
+    {
+      "method": "list_ad_groups",
+      "status": "❌",
+      "error": "The client library configuration is missing the required \"use_proto_plus\" key. Please set this option to either \"True\" or \"False\". For more information about this option see the Protobuf Messages guide: https://developers.google.com/google-ads/api/docs/client-libs/python/protobuf-messages"
+    },
+    {
+      "method": "list_keywords",
+      "status": "❌",
+      "error": "The client library configuration is missing the required \"use_proto_plus\" key. Please set this option to either \"True\" or \"False\". For more information about this option see the Protobuf Messages guide: https://developers.google.com/google-ads/api/docs/client-libs/python/protobuf-messages"
+    },
+    {
+      "method": "list_ads",
+      "status": "❌",
+      "error": "The client library configuration is missing the required \"use_proto_plus\" key. Please set this option to either \"True\" or \"False\". For more information about this option see the Protobuf Messages guide: https://developers.google.com/google-ads/api/docs/client-libs/python/protobuf-messages"
+    },
+    {
+      "method": "download_report",
+      "status": "❌",
+      "error": "The client library configuration is missing the required \"use_proto_plus\" key. Please set this option to either \"True\" or \"False\". For more information about this option see the Protobuf Messages guide: https://developers.google.com/google-ads/api/docs/client-libs/python/protobuf-messages"
+    },
+    {
+      "method": "get_customer_info",
+      "status": "❌",
+      "error": "The client library configuration is missing the required \"use_proto_plus\" key. Please set this option to either \"True\" or \"False\". For more information about this option see the Protobuf Messages guide: https://developers.google.com/google-ads/api/docs/client-libs/python/protobuf-messages"
+    }
+  ],
+  "DV360": [
+    {
+      "method": "list_advertisers",
+      "status": "✅",
+      "count": 0
+    },
+    {
+      "method": "get_advertiser",
+      "status": "❌",
+      "error": "服务账号文件不存在: "
+    },
+    {
+      "method": "list_line_items",
+      "status": "❌",
+      "error": "服务账号文件不存在: "
+    },
+    {
+      "method": "get_line_item",
+      "status": "❌",
+      "error": "服务账号文件不存在: "
+    },
+    {
+      "method": "list_flights",
+      "status": "❌",
+      "error": "dv360_list_flights() missing 1 required positional argument: 'line_item_id'"
+    },
+    {
+      "method": "list_creatives",
+      "status": "❌",
+      "error": "dv360_list_creatives() missing 1 required positional argument: 'line_item_id'"
+    },
+    {
+      "method": "list_audiences",
+      "status": "❌",
+      "error": "服务账号文件不存在: "
+    },
+    {
+      "method": "get_report",
+      "status": "❌",
+      "error": "服务账号文件不存在: "
+    },
+    {
+      "method": "list_targetings",
+      "status": "❌",
+      "error": "服务账号文件不存在: "
+    },
+    {
+      "method": "list_bidding_strategies",
+      "status": "❌",
+      "error": "服务账号文件不存在: "
+    }
+  ]
+}

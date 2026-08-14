@@ -1,0 +1,174 @@
+/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/google/api_core/_python_version_support.py:242: FutureWarning: You are using a non-supported Python version (3.9.6). Google will not post any further updates to google.api_core supporting this Python version. Please upgrade to the latest Python version, or at least Python 3.10, and then update google.api_core.
+  warnings.warn(message, FutureWarning)
+/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/google/auth/__init__.py:54: FutureWarning: You are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.
+  warnings.warn(eol_message.format("3.9"), FutureWarning)
+/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/google/oauth2/__init__.py:40: FutureWarning: You are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.
+  warnings.warn(eol_message.format("3.9"), FutureWarning)
+
+╔════════════════════════════════════════════════════════════════════╗
+║              四平台查询 API 全面测试                                ║
+╚════════════════════════════════════════════════════════════════════╝
+
+======================================================================
+🎵 TIKTOK API 测试
+======================================================================
+
+1. list_accounts:
+   ❌ Error: Expecting value: line 1 column 1 (char 0)
+
+2. list_campaigns:
+   ❌ Error: Expecting value: line 1 column 1 (char 0)
+
+3. get_campaign:
+   ⚠️ Empty result
+
+4. list_adgroups:
+   ❌ Error: Expecting value: line 1 column 1 (char 0)
+
+5. get_adgroup:
+   ⏭️ Skip (no ad groups)
+
+6. list_ads:
+   ❌ Error: Expecting value: line 1 column 1 (char 0)
+
+7. get_ad:
+   ❌ Error: local variable 'ag_result' referenced before assignment
+
+8. list_audiences:
+   ❌ Error: Expecting value: line 1 column 1 (char 0)
+
+9. list_videos:
+   ❌ Error: Expecting value: line 1 column 1 (char 0)
+
+10. query_report:
+   ❌ Error: Expecting value: line 1 column 1 (char 0)
+
+======================================================================
+📘 META API 测试
+======================================================================
+
+1. list_accounts:
+   ❌ Error: No module named 'facebook_business.adaccounts'
+
+2. list_campaigns:
+   ✅ Success: 5 campaigns
+
+3. get_campaign:
+   ✅ Success: DAP_STA-AND_D05-All_081226_MAIA_Mix{WomenClothes-OFR^ItemSelection^4238164568-3009001}
+
+4. list_adsets:
+   ❌ Error: type object 'AdSet' has no attribute 'get_adsets'
+
+5. get_adset:
+   ❌ Error: type object 'AdSet' has no attribute 'get_adsets'
+
+6. list_ads:
+   ❌ Error: type object 'Ad' has no attribute 'get_ads'
+
+7. get_ad:
+   ❌ Error: type object 'Ad' has no attribute 'get_ads'
+
+8. list_audiences:
+   ❌ Error: No module named 'facebook_business.adaccounts'
+
+9. list_catalogs:
+   ❌ Error: No module named 'facebook_business.adaccounts'
+
+10. query_insights:
+   ❌ Error: No module named 'facebook_business.adaccounts'
+
+======================================================================
+📊 GOOGLE ADS API 测试
+======================================================================
+
+1. list_customers:
+   ❌ Error: The client library configuration is missing the required "use_proto_plus" key. Please set this option to either "True" or "False". For more information about this option see the Protobuf Messages guide: https://developers.google.com/google-ads/api/docs/client-libs/python/protobuf-messages
+
+2. list_campaigns:
+   ❌ Error: The client library configuration is missing the required "use_proto_plus" key. Please set this option to either "True" or "False". For more information about this option see the Protobuf Messages guide: https://developers.google.com/google-ads/api/docs/client-libs/python/protobuf-messages
+
+3. get_campaign:
+   ❌ Error: The client library configuration is missing the required "use_proto_plus" key. Please set this option to either "True" or "False". For more information about this option see the Protobuf Messages guide: https://developers.google.com/google-ads/api/docs/client-libs/python/protobuf-messages
+
+4. list_ad_groups:
+   ❌ Error: The client library configuration is missing the required "use_proto_plus" key. Please set this option to either "True" or "False". For more information about this option see the Protobuf Messages guide: https://developers.google.com/google-ads/api/docs/client-libs/python/protobuf-messages
+
+5. list_keywords:
+   ❌ Error: The client library configuration is missing the required "use_proto_plus" key. Please set this option to either "True" or "False". For more information about this option see the Protobuf Messages guide: https://developers.google.com/google-ads/api/docs/client-libs/python/protobuf-messages
+
+6. list_ads:
+   ❌ Error: The client library configuration is missing the required "use_proto_plus" key. Please set this option to either "True" or "False". For more information about this option see the Protobuf Messages guide: https://developers.google.com/google-ads/api/docs/client-libs/python/protobuf-messages
+
+7. download_report:
+   ❌ Error: The client library configuration is missing the required "use_proto_plus" key. Please set this option to either "True" or "False". For more information about this option see the Protobuf Messages guide: https://developers.google.com/google-ads/api/docs/client-libs/python/protobuf-messages
+
+8. get_customer_info:
+   ❌ Error: The client library configuration is missing the required "use_proto_plus" key. Please set this option to either "True" or "False". For more information about this option see the Protobuf Messages guide: https://developers.google.com/google-ads/api/docs/client-libs/python/protobuf-messages
+
+======================================================================
+📺 DV360 API 测试
+======================================================================
+
+1. list_advertisers:
+   ✅ Success: 0 advertisers
+
+2. get_advertiser:
+   ❌ Error: 服务账号文件不存在: 
+
+3. list_line_items:
+   ❌ Error: 服务账号文件不存在: 
+
+4. get_line_item:
+   ❌ Error: 服务账号文件不存在: 
+
+5. list_flights:
+   ❌ Error: dv360_list_flights() missing 1 required positional argument: 'line_item_id'
+
+6. list_creatives:
+   ❌ Error: dv360_list_creatives() missing 1 required positional argument: 'line_item_id'
+
+7. list_audiences:
+   ❌ Error: 服务账号文件不存在: 
+
+8. get_report:
+   ❌ Error: 服务账号文件不存在: 
+
+9. list_targetings:
+   ❌ Error: 服务账号文件不存在: 
+
+10. list_bidding_strategies:
+   ❌ Error: 服务账号文件不存在: 
+
+======================================================================
+📊 测试汇总
+======================================================================
+
+TikTok:
+   ✅ Success: 0/10
+   ⚠️ Warning: 1
+   ❌ Error: 8
+   ⏭️ Skipped: 1
+
+Meta:
+   ✅ Success: 2/10
+   ❌ Error: 8
+
+Google Ads:
+   ✅ Success: 0/8
+   ❌ Error: 8
+
+DV360:
+   ✅ Success: 1/10
+   ❌ Error: 9
+
+----------------------------------------------------------------------
+总计: 38 个接口
+   ✅ 成功: 3 (7.9%)
+   ⚠️ 警告: 1
+   ❌ 错误: 33
+   ⏭️ 跳过: 1
+======================================================================
+
+📄 详细结果已保存: docs/api-test-detailed-results.json
