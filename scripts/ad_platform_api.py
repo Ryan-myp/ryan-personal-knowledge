@@ -26,6 +26,10 @@ class AdPlatformClient:
     def __init__(self):
         self.credentials = self._load_credentials()
         self.platforms = ['tiktok', 'meta', 'google', 'dv360']
+        # 初始化 DV360 令牌
+        dv360_creds = self.credentials.get('dv360', {})
+        self._dv360_access_token = dv360_creds.get('access_token', '')
+        self._dv360_partner_id = dv360_creds.get('partner_id', '4659631')
     
     def _load_credentials(self) -> Dict:
         """加载凭证配置"""
@@ -87,20 +91,12 @@ class AdPlatformClient:
         )
     
     def _create_dv360_client(self):
-        """创建 DV360 客户端"""
-        from googleapiclient.discovery import build
-        from google.oauth2 import service_account
+        """创建 DV360 客户端 - 使用 REST API"""
+        # DV360 v4 API 使用 REST 调用，不需要 googleapiclient
         creds = self.credentials.get('dv360', {})
-        service_account_file = creds.get('service_account_file', '')
-        
-        if not os.path.exists(service_account_file):
-            raise FileNotFoundError(f"服务账号文件不存在: {service_account_file}")
-        
-        credentials = service_account.Credentials.from_service_account_file(
-            service_account_file,
-            scopes=['https://www.googleapis.com/auth/display-video']
-        )
-        return build('display-video', 'v1', credentials=credentials)
+        self._dv360_access_token = creds.get('access_token', '')
+        self._dv360_partner_id = creds.get('partner_id', '4659631')
+        return None
     
     def _create_client(self, platform: str):
         """创建平台客户端"""
@@ -607,36 +603,44 @@ class AdPlatformClient:
         return resp.json()
     
     def meta_create_campaign(self, account_id: str, name: str, **kwargs) -> Dict:
-        """创建广告系列"""
-        from facebook_business.adobjects.campaign import Campaign
-        from facebook_business.adaccounts import AdAccount
-        
-        account = AdAccount(account_id)
-        campaign = account.create_campaign(
-            name=name,
-            objective=kwargs.get('objective', 'SALES'),
-            status=Campaign.Status.paused
-        )
-        campaign.remote_create()
-        return {'id': campaign.id, 'name': campaign.name}
+        """创建广告系列 - 使用 REST API"""
+        import requests
+        token = self.credentials.get('meta', {}).get('access_token', '')
+        url = f"https://graph.facebook.com/v19.0/act_{account_id}/campaigns"
+        data = {
+            'access_token': token,
+            'name': name,
+            'objective': kwargs.get('objective', 'OUTCOME_SALES'),
+            'status': 'PAUSED',
+            'daily_budget': kwargs.get('daily_budget', 100000),
+            'special_ad_categories': [],
+        }
+        resp = requests.post(url, json=data, timeout=30)
+        result = resp.json()
+        if 'error' in result:
+            return {'error': result['error']['message']}
+        return {'id': result.get('id'), 'name': name, 'status': 'PAUSED'}
     
     def meta_update_campaign(self, campaign_id: str, **kwargs) -> Dict:
-        """更新广告系列"""
-        from facebook_business.adobjects.campaign import Campaign
-        campaign = Campaign(campaign_id)
-        campaign.remote_read()
-        for key, value in kwargs.items():
-            setattr(campaign, key, value)
-        campaign.save()
-        return {'id': campaign.id, 'updated': True}
+        """更新广告系列 - 使用 REST API"""
+        import requests
+        token = self.credentials.get('meta', {}).get('access_token', '')
+        url = f"https://graph.facebook.com/v19.0/{campaign_id}"
+        params = {'access_token': token}
+        params.update(kwargs)
+        resp = requests.post(url, data=params, timeout=30)
+        result = resp.json()
+        if 'success' in result and result['success']:
+            return {'id': campaign_id, 'updated': True}
+        return {'error': result.get('error', {}).get('message', 'Unknown error')}
     
     def meta_pause_campaign(self, campaign_id: str, **kwargs) -> Dict:
         """暂停广告系列"""
-        return self.meta_update_campaign(campaign_id, status=Campaign.Status.paused)
+        return self.meta_update_campaign(campaign_id, status='PAUSED')
     
     def meta_resume_campaign(self, campaign_id: str, **kwargs) -> Dict:
         """恢复广告系列"""
-        return self.meta_update_campaign(campaign_id, status=Campaign.Status.running)
+        return self.meta_update_campaign(campaign_id, status='RUNNING')
     
     def meta_list_adsets(self, campaign_id: str, **kwargs) -> List[Dict]:
         """列出广告组 - 使用 Graph API 直接调用"""
@@ -904,65 +908,62 @@ class AdPlatformClient:
     def google_list_campaigns(self, customer_id: str, **kwargs) -> List[Dict]:
         """列出广告系列"""
         client = self.get_client('google')
-        campaign_service = client.get_service('CampaignService')
+        gaia = client.get_service('GoogleAdsService')
         query = f"""
             SELECT campaign.id, campaign.name, campaign.status, 
-                   campaign.advertising_channel_type, campaign.base_campaign_id
+                   campaign.advertising_channel_type
             FROM campaign 
             WHERE customer.id = {customer_id}
         """
-        response = campaign_service.search_stream(customer_id=customer_id, query=query)
+        response = gaia.search_stream(customer_id=customer_id, query=query)
         
         campaigns = []
         for batch in response:
             for row in batch.results:
                 campaigns.append({
-                    'id': row.campaign.id,
-                    'name': row.campaign.name,
-                    'status': row.campaign.status,
-                    'type': row.campaign.advertising_channel_type
-                })
+                'id': row.campaign.id,
+                'name': row.campaign.name,
+                'status': row.campaign.status.name if hasattr(row.campaign.status, 'name') else str(row.campaign.status),
+                'type': row.campaign.advertising_channel_type.name if hasattr(row.campaign.advertising_channel_type, 'name') else str(row.campaign.advertising_channel_type)
+            })
         return campaigns
     
     def google_get_campaign(self, customer_id: str, campaign_id: str, **kwargs) -> Dict:
         """获取广告系列详情"""
         client = self.get_client('google')
-        campaign_service = client.get_service('CampaignService')
+        gaia = client.get_service('GoogleAdsService')
         query = f"""
-            SELECT campaign.id, campaign.name, campaign.status, 
-                   campaign.daily_budget, campaign.bidding_strategy
+            SELECT campaign.id, campaign.name, campaign.status
             FROM campaign 
             WHERE campaign.id = {campaign_id}
         """
-        response = campaign_service.search_stream(customer_id=customer_id, query=query)
+        response = gaia.search_stream(customer_id=customer_id, query=query)
         for batch in response:
             for row in batch.results:
                 return {'id': row.campaign.id, 'name': row.campaign.name}
         return {}
     
     def google_create_campaign(self, customer_id: str, name: str, **kwargs) -> Dict:
-        """创建广告系列"""
-        client = self.get_client('google')
-        campaign_service = client.get_service('CampaignService')
-        
-        campaign_operation = client.get_type("CampaignOperation")
-        campaign = campaign_operation.create
-        campaign.resource_name = f"customers/{customer_id}/campaigns/-"
-        campaign.name = name
-        campaign.advertising_channel_type = client.enums.AdvertisingChannelType.SEARCH
-        campaign.status = client.enums.CampaignStatus.PAUSED
-        campaign.testing_status = client.enums.CampaignTestingStatus.DUAL_A_B_TEST
-        campaign.ad_network_targets = [
-            client.enums.AdNetworkType.SEARCH,
-            client.enums.AdNetworkType.GOOGLE_SEARCH
-        ]
-        
-        response = campaign_service.mutate_campaigns(
-            customer_id=customer_id,
-            operations=[campaign_operation]
-        )
-        
-        return {'resource_name': response.results[0].resource_name}
+        """创建广告系列 - 注意: Google Ads API 需要 bidding_strategy 或 budget"""
+        try:
+            client = self.get_client('google')
+            campaign_service = client.get_service('CampaignService')
+            campaign_operation = client.get_type("CampaignOperation")
+            campaign = campaign_operation.create
+            campaign.name = name
+            campaign.status = client.enums.CampaignStatusEnum.PAUSED
+            campaign.advertising_channel_type = client.enums.AdvertisingChannelTypeEnum.SEARCH
+            response = campaign_service.mutate_campaigns(
+                customer_id=customer_id,
+                operations=[campaign_operation]
+            )
+            result = response.results[0]
+            return {'resource_name': result.resource_name}
+        except Exception as e:
+            err = str(e)
+            if 'required field' in err.lower() or 'bidding' in err.lower():
+                return {'error': '需要设置 bidding_strategy 或 campaign_budget', 'hint': '先调用 google_list_bidding_strategies 获取'}
+            return {'error': err[:100]}
     
     def google_update_campaign(self, customer_id: str, campaign_id: str, **kwargs) -> Dict:
         """更新广告系列"""
@@ -999,7 +1000,7 @@ class AdPlatformClient:
             FROM ad_group 
             WHERE ad_group.campaign = 'customers/{customer_id}/campaigns/{campaign_id}'
         """
-        response = ad_group_service.search_stream(customer_id=customer_id, query=query)
+        response = gaia.search_stream(customer_id=customer_id, query=query)
         
         ad_groups = []
         for batch in response:
@@ -1041,7 +1042,7 @@ class AdPlatformClient:
         query += f" LIMIT {kwargs.get('limit', 100)}"
         
         try:
-            response = ga_service.search_stream(customer_id=customer_id, query=query)
+            response = gaia.search_stream(customer_id=customer_id, query=query)
             keywords = []
             for batch in response:
                 for row in batch.results:
@@ -1063,12 +1064,12 @@ class AdPlatformClient:
             ON ad_group_criterion.ad_group = 'customers/{customer_id}/adGroups/{ad_group_id}'
             WHERE ad_group_criterion.type = 'KEYWORD'
         """
-        response = ad_group_criterion_service.search_stream(customer_id=customer_id, query=query)
+        response = gaia.search_stream(customer_id=customer_id, query=query)
         
         keywords = []
         for batch in response:
-            for row in batch.results:
-                keywords.append({
+                for row in batch.results:
+                    keywords.append({
                     'id': row.keyword.id,
                     'text': row.keyword.text,
                     'match_type': row.keyword.match_type,
@@ -1106,7 +1107,7 @@ class AdPlatformClient:
             ON ad.id = ad_group_ad.ad.id
             WHERE ad_group_ad.ad_group = 'customers/{customer_id}/adGroups/{ad_group_id}'
         """
-        response = ad_service.search_stream(customer_id=customer_id, query=query)
+        response = gaia.search_stream(customer_id=customer_id, query=query)
         
         ads = []
         for batch in response:
@@ -1163,10 +1164,9 @@ class AdPlatformClient:
             ORDER BY metrics.impressions DESC
         ''')
         
-        response = report_service.search_stream(customer_id=customer_id, query=query)
+        response = gaia.search_stream(customer_id=customer_id, query=query)
         results = []
-        for batch in response:
-            for row in batch.results:
+        for result in response:
                 results.append(row)
         
         output_file = kwargs.get('output_file', f'/tmp/google_report_{datetime.now().strftime("%Y%m%d")}.csv')
@@ -1184,31 +1184,45 @@ class AdPlatformClient:
     
     # ========== DV360 API (45+ tools) ==========
     def dv360_list_advertisers(self, partner_id: str = None, **kwargs) -> List[Dict]:
-        """列出广告主 - 使用 v4 API"""
-        import subprocess
-        import json as json_lib
-        
-        # 使用 dv360_client.py 脚本
-        result = subprocess.run(
-            ['python3', 'scripts/dv360_client.py', 'advertisers', partner_id or '4659631', '20'],
-            capture_output=True, text=True, timeout=30
-        )
-        
-        # 解析输出中的 JSON
-        lines = result.stdout.split('\n')
-        for line in lines:
-            if line.strip().startswith('{'):
-                try:
-                    return json_lib.loads(line)
-                except:
-                    pass
-        
-        return {'advertisers': []}
+        """列出广告主 - 使用 REST API"""
+        import requests
+        token = self._dv360_access_token
+        pid = partner_id or self._dv360_partner_id
+        url = f'https://display-video.googleapis.com/display-video/v4/partners/{pid}/advertisers'
+        headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+        resp = requests.get(url, headers=headers, timeout=30)
+        if resp.status_code != 200:
+            return {'advertisers': []}
+        return resp.json()
     
     def dv360_get_advertiser(self, advertiser_id: str, **kwargs) -> Dict:
         """获取广告主详情"""
         service = self.get_client('dv360')
         return service.users().me().advertisers().get(advertiserId=advertiser_id).execute()
+    
+    def dv360_list_campaigns(self, advertiser_id: str, **kwargs) -> List[Dict]:
+        """列出广告系列 - DV360 中广告系列对应 Insertion Orders (REST API)"""
+        import requests
+        token = self._dv360_access_token
+        partner_id = self._dv360_partner_id
+        limit = kwargs.get('limit', 10)
+        url = f'https://displayvideo.googleapis.com/v4/partners/{partner_id}/advertisers/{advertiser_id}/insertionOrders'
+        headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+        params = {'pageSize': limit}
+        resp = requests.get(url, headers=headers, params=params, timeout=30)
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+        orders = data.get('insertionOrders', [])
+        campaigns = []
+        for order in orders[:limit]:
+            campaigns.append({
+                'id': str(order.get('id', '')),
+                'name': order.get('name', ''),
+                'status': order.get('status', ''),
+                'type': 'INSERTION_ORDER'
+            })
+        return campaigns
     
     def dv360_list_line_items(self, advertiser_id: str, **kwargs) -> List[Dict]:
         """列出媒体购买"""

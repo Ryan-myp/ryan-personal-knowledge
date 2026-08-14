@@ -107,22 +107,22 @@
     {
       "method": "list_customers",
       "status": "✅",
-      "count": 0
+      "count": 13
     },
     {
       "method": "list_campaigns",
-      "status": "❌",
-      "error": "dlopen(/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so, 0x0002): tried: '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64')), '/System/Volumes/Preboot/Cryptexes/OS/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (no such file), '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64'))"
+      "status": "✅",
+      "count": 0
     },
     {
       "method": "get_campaign",
-      "status": "❌",
-      "error": "dlopen(/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so, 0x0002): tried: '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64')), '/System/Volumes/Preboot/Cryptexes/OS/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (no such file), '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64'))"
+      "status": "⏭️",
+      "note": "Skipped"
     },
     {
       "method": "list_ad_groups",
       "status": "❌",
-      "error": "dlopen(/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so, 0x0002): tried: '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64')), '/System/Volumes/Preboot/Cryptexes/OS/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (no such file), '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64'))"
+      "error": "name 'gaia' is not defined"
     },
     {
       "method": "list_keywords",
@@ -132,17 +132,17 @@
     {
       "method": "list_ads",
       "status": "❌",
-      "error": "dlopen(/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so, 0x0002): tried: '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64')), '/System/Volumes/Preboot/Cryptexes/OS/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (no such file), '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64'))"
+      "error": "name 'gaia' is not defined"
     },
     {
       "method": "download_report",
       "status": "❌",
-      "error": "dlopen(/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so, 0x0002): tried: '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64')), '/System/Volumes/Preboot/Cryptexes/OS/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (no such file), '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64'))"
+      "error": "name 'gaia' is not defined"
     },
     {
       "method": "get_customer_info",
       "status": "❌",
-      "error": "dlopen(/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so, 0x0002): tried: '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64')), '/System/Volumes/Preboot/Cryptexes/OS/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (no such file), '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64'))"
+      "error": "'CustomerServiceClient' object has no attribute 'get_customer'"
     }
   ],
   "DV360": [
@@ -154,17 +154,17 @@
     {
       "method": "get_advertiser",
       "status": "❌",
-      "error": "dlopen(/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so, 0x0002): tried: '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64')), '/System/Volumes/Preboot/Cryptexes/OS/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (no such file), '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64'))"
+      "error": "'NoneType' object has no attribute 'users'"
     },
     {
       "method": "list_line_items",
       "status": "❌",
-      "error": "dlopen(/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so, 0x0002): tried: '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64')), '/System/Volumes/Preboot/Cryptexes/OS/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (no such file), '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64'))"
+      "error": "'NoneType' object has no attribute 'users'"
     },
     {
       "method": "get_line_item",
       "status": "❌",
-      "error": "dlopen(/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so, 0x0002): tried: '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64')), '/System/Volumes/Preboot/Cryptexes/OS/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (no such file), '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64'))"
+      "error": "'NoneType' object has no attribute 'users'"
     },
     {
       "method": "list_flights",
@@ -184,17 +184,17 @@
     {
       "method": "get_report",
       "status": "❌",
-      "error": "dlopen(/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so, 0x0002): tried: '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64')), '/System/Volumes/Preboot/Cryptexes/OS/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (no such file), '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64'))"
+      "error": "'NoneType' object has no attribute 'reports'"
     },
     {
       "method": "list_targetings",
       "status": "❌",
-      "error": "dlopen(/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so, 0x0002): tried: '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64')), '/System/Volumes/Preboot/Cryptexes/OS/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (no such file), '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64'))"
+      "error": "'NoneType' object has no attribute 'users'"
     },
     {
       "method": "list_bidding_strategies",
       "status": "❌",
-      "error": "dlopen(/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so, 0x0002): tried: '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64')), '/System/Volumes/Preboot/Cryptexes/OS/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (no such file), '/Users/yanping.ma/Library/Python/3.9/lib/python/site-packages/cryptography/hazmat/bindings/_rust.abi3.so' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64'))"
+      "error": "'NoneType' object has no attribute 'users'"
     }
   ]
 }
