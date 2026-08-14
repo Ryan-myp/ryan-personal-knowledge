@@ -579,7 +579,9 @@ class GoogleAdsClient(BaseAdPlatformClient):
     
     # 报表
     def generate_report(self, customer_id: str, date_range: Dict) -> ApiResponse:
-        query = f"SELECT campaign.name, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions FROM campaign WHERE segments.date BETWEEN \'{date_range[\'start\']}\' AND \'{date_range[\'end\']}\'"
+        start_date = date_range['start']
+        end_date = date_range['end']
+        query = f"SELECT campaign.name, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions FROM campaign WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'"
         return self.search(customer_id, query)
     
     # 广告系列类型选项
