@@ -1326,6 +1326,250 @@ ASC 上线 11 步清单
 ├── 11. 依据数据小幅放量或调整素材
 ```
 
+### 3.13 Graph API 中 adv_advantage 系列字段详解
+
+Graph API 通过一组 `adv_advantage` 前缀字段控制 Advantage+ 能力。理解这些字段，能在 API 层精确开关各组件。
+
+#### 3.13.1 campaign 层的 adv_advantage 字段
+
+```bash
+curl -G "https://graph.facebook.com/v19.0/act_<AD_ACCOUNT_ID>/campaigns" \
+  -d "access_token=$ACCESS_TOKEN" \
+  -d "name=AdvTest" \
+  -d "objective=OUTCOME_SALES" \
+  -d "status=PAUSED" \
+  -d "buying_type=AUCTION" \
+  -d "special_ad_categories=[]" \
+  -d "adv_advantage_campaign_budget=true"
+```
+
+> 说明：`adv_advantage_campaign_budget=true` 表示启用 campaign 预算优化（Advantage+ Budget）。不同字段可能随版本演进，实际以账户可用字段为准。
+
+#### 3.13.2 adset 层的 adv_advantage 字段（受众/版位/优化）
+
+```bash
+curl -X POST "https://graph.facebook.com/v19.0/<CAMPAIGN_ID>/adsets" \
+  -F "access_token=$ACCESS_TOKEN" \
+  -F "name=AdvAdSet" \
+  -F "daily_budget=1000000" \
+  -F "billing_event=IMPRESSIONS" \
+  -F "optimization_goal=OFFSITE_CONVERSIONS" \
+  -F "targeting={'geo_locations':{'countries':['US']},'age_min':18,'age_max':65}" \
+  -F "promoted_object={'pixel_id':'<PIXEL_ID>','custom_event_type':'PURCHASE'}" \
+  -F "adv_advantage_audience=true" \
+  -F "status=PAUSED"
+```
+
+> `adv_advantage_audience=true` 启用 Advantage+ Audience（模型探索受众）。若想限制模型探索范围，可用 `adv_advantage_audience` + 起始受众字段加以偏置。
+
+#### 3.13.3 creative 层：Advantage+ Creative 开关
+
+在 creative 的 `object_story_spec` 或直接字段上控制：
+
+```bash
+curl -X POST "https://graph.facebook.com/v19.0/<ADSET_ID>/adcreatives" \
+  -F "access_token=$ACCESS_TOKEN" \
+  -F "name=AdvCreative" \
+  -F "object_story_spec={'page_id':'<PAGE_ID>','link_data':{'link':'https://yourstore.com','message':'Advantage+ creative 增强','headline':'测试','call_to_action':{'type':'SHOP_NOW'}}}" \
+  -F "template_url_spec={'web':{'url':'https://yourstore.com'}}" \
+  -F "adv_advantage_creative=true"
+```
+
+> `adv_advantage_creative=true` 启用创意增强；`false` 则保留你的原始素材（所见即所得）。
+
+#### 3.13.4 读取时如何确认每个 Advantage+ 开关
+
+```bash
+curl -G "https://graph.facebook.com/v19.0/<ADSET_ID>" \
+  -d "access_token=$ACCESS_TOKEN" \
+  -d "fields=id,name,adv_advantage_audience,targeting,effective_status,bid_strategy,daily_budget,optimization_goal"
+```
+
+返回中 `adv_advantage_audience` 为 true/false，可据此确认该 Ad Set 是否处于 Advantage+ 受众模式。
+
+### 3.14 用脚本批量创建多个 ASC（放量场景）
+
+当需要一次性起多个国家/多个商品池的 ASC 时，用循环批量创建，注意保留 id 映射。
+
+```python
+# 批量创建多个 ASC（按国家拆分的例子，取决于数据量是否足够）
+countries = ["US", "CA", "GB", "DE"]
+created = {}
+
+for country in countries:
+    # 每个国家一个独立 campaign，便于按国控制
+    camp = client.meta_create_campaign(
+        account_id,
+        name=f"ASC-{country}-2026-08",
+        objective="OUTCOME_SALES",
+        status="PAUSED",
+        buying_type="AUCTION",
+        special_ad_categories=[],
+    )
+    cid = camp["id"]
+
+    adset = client.meta_create_adset(
+        cid,
+        name=f"ASC-{country}-AdSet",
+        daily_budget=1000000,
+        bid_strategy="LOWEST_COST_WITHOUT_CAP",
+        optimization_goal="OFFSITE_CONVERSIONS",
+        targeting={
+            "geo_locations": {"countries": [country]},
+            "age_min": 18,
+            "age_max": 65,
+        },
+        billing_event="IMPRESSIONS",
+        status="PAUSED",
+    )
+    aid = adset["id"]
+
+    created[country] = {"campaign_id": cid, "adset_id": aid}
+    print(f"{country}: campaign={cid}, adset={aid}")
+
+# 全部启用（可选：确认无误后再启用）
+for country in created:
+    client.meta_resume_campaign(created[country]["campaign_id"])
+```
+
+> 注意：是否「按国拆 campaign」取决于你的数据量。若某国转化信号不足，拆出来反而导致该国 campaign 一直处于探索态。数据均衡时可拆，不均衡时建议单 campaign 多国。
+
+### 3.15 用脚本做素材/创意批量管理
+
+ASC 最适合「素材多跑量」，脚本循环注册多个 creative 是高频操作。
+
+```python
+# 为某个 AdSet 批量创建多个 ad（不同 creative）
+adset_id = "<ADSET_ID>"
+image_ids = ["img_1", "img_2", "img_3"]   # 已上传的图片库 ID
+messages = [
+    "首单立减优惠，点击购买",
+    "全网最低价，48 小时发货",
+    "升级你的装备，限时活动",
+    "老客复购享 9 折",
+]
+
+for idx, (img, msg) in enumerate(zip(image_ids, messages)):
+    ad = client.meta_create_ad(
+        adset_id,
+        name=f"ASC-Ad-Creative{idx+1}",
+        status="ACTIVE",
+        creative={
+            "name": f"Creative{idx+1}",
+            "object_story_spec": {
+                "page_id": PAGE_ID,
+                "link_data": {
+                    "link": "https://yourstore.com",
+                    "message": msg,
+                    "headline": f"标题{idx+1}",
+                    "call_to_action": {"type": "SHOP_NOW"},
+                    "image_hash": img,
+                }
+            },
+            "product_set_id": PRODUCT_SET_ID,
+        },
+        tracking_urls={"tracking_specs": f"utm_source=facebook&utm_campaign=asc&mt={idx+1}"},
+    )
+    print("created ad:", ad.get("id"))
+```
+
+### 3.16 ASC 监控与诊断：用 Insights 定位问题
+
+#### 3.16.1 关键指标组合
+
+单一指标会误导，建议按「成本 + 效率 + 规模」三组看：
+
+```python
+insights = client.meta_query_insights(
+    account_id,
+    date_preset="last_14d",
+    fields=(
+        "campaign_name,spend,impressions,clicks,ctr,cpc,cpm,"
+        "actions,purchases,conversions,roas,cost_per_action_type"
+    ),
+    level="campaign",
+    time_increment=1,     # 便于看趋势
+)
+```
+
+#### 3.16.2 诊断思路
+
+```
+ASC 诊断框架（7 天窗口）
+│
+├── ROI 达标吗？
+│   ├── 达标 → 放量（+20-30%），看下个窗口
+│   └── 不达标 → 进入下一步
+│
+├── 是 CPA 高，还是量不足？
+│   ├── CPA 高：查素材质量、信号密度、是否探索过多
+│   └── 量不足/花不出去：查受众是否过窄、素材相关性、预算是否够
+│
+├── 是某一国/某素材拖后腿？
+│   ├── 素材层：暂停表现最差的创意，看是否改善
+│   └── 国层：用国家维度 insights 定位
+│
+└── 数据本身准吗？
+    └── 核对 CAPI/Pixel 去重、归因窗口
+```
+
+#### 3.16.3 按维度拆分 insights
+
+```python
+# 按 "ad" 维度看哪个素材在拖后腿
+by_ad = client.meta_query_insights(
+    account_id,
+    date_preset="last_7d",
+    fields="ad_name,spend,actions,ctr,roas",
+    level="ad",
+)
+for row in by_ad.get("data", []):
+    print(row.get("ad_name"), row.get("spend"), row.get("roas"))
+
+# 按 "country" 维度看多国表现
+by_country = client.meta_query_insights(
+    account_id,
+    date_preset="last_7d",
+    fields="country,spend,actions,roas",
+    level="country",
+)
+```
+
+### 3.17 ASC 与离线/抽象转化的处理（Ultimate Conversion）
+
+当购买信号稀疏时，ASC 会难以收敛。Meta 提供「Ultimate Conversion」类优化（在部分账户可用），它把较前的转化事件当作代理信号：
+
+```
+优化目标选择决策
+│
+├── 购买信号充足（每周几十+） → 直接优化 Purchase
+├── 购买信号中等 → 可优化 Purchase + 观察
+├── 购买信号稀疏 → 用中间事件（AddToCart/InitiateCheckout）作为过渡
+└── 极稀疏且无法补足 → 考虑传统 campaign + 手动优化，而非硬用 ASC
+```
+
+在 Graph API 中，`optimization_goal` 常结合 `optimization_event` 字段来指定。若账户支持 Ultimate Conversion，可设置让模型从较前事件向 Purchase 靠拢（具体字段与可用性需按账户查询）。
+
+> ⚠️ Ultimate Conversion 需要你同时回传中间事件（AddToCart 等），否则模型没有「前置信号」可用。这也是数据质量在 ASC 冷启动的重要性体现。
+
+### 3.18 成本与预算换算实战提醒
+
+脚本与 API 中预算、出价、价值以「分/微单位」计，容易出现数量级错误：
+
+| 场景 | 常见错误 | 正确做法 |
+|------|----------|----------|
+| daily_budget | 把美元直接填进 API | API 用「分」，USD $100 = 10000 |
+| CAPI value | 值传成整数美分 | value 以「元」计，currency 必填 |
+| ROAS 计算 | 忘记 value 单位 | 用 value（元）÷ spend（换算后） |
+| 多国币种 | 所有国家同一 budget 数值 | 按汇率换算成账户币种 |
+
+```python
+# 预算换算示意：以美元为例，API 用分
+USD_DOLLAR = 100.0
+daily_budget_cents = int(USD_DOLLAR * 100)  # 10000
+print("API daily_budget（分）:", daily_budget_cents)
+```
+
 ---
 
 ## 四、常见问题与排查

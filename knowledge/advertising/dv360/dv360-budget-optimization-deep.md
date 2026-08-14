@@ -1349,3 +1349,353 @@ def budget_health_runbook(api, advertiser_id: str) -> dict:
 - 监控阈值给出可直接使用的默认值，落地即可跑。
 
 ---
+## 五、自测题
+
+下面是围绕本文知识点的自测题。请先独立作答，再展开答案核对。
+
+### 5.1 问题 1：DV360 里 IO 用 `TOTAL_BUDGET` 模式，为什么某天单日花费会超过你预期的"均摊"值，还触发了财务告警？
+
+<details>
+<summary>查看答案</summary>
+
+**核心原因**：`TOTAL_BUDGET` 只保证整段 flight 的总花费 ≤ 预算，它**不提供单日硬顶**。DV360 的 pacing 会综合"剩余预算/剩余天数"与"当日流量/竞争力"来调节，流量异常高或出价竞争力强的日子，单日可以明显超过"总预算/总天数"的算术均摊值（属正常的 overdelivery）。
+
+**延伸**：
+- 如果你需要"单日绝不超过 X"，必须显式使用 `DAILY_BUDGET` 模式（或两者并用：日预算设硬顶 + 总预算兜底）。
+- 告警阈值别用 100%：日预算 +10%（甚至有 DST 25 小时日时的 +8%）都是正常通胀，阈值至少设到 ×1.1。
+- 根治"绝对不超支"还需 Partner 级 max spend + Pacing HOLD。
+
+</details>
+
+### 5.2 问题 2：为什么"按历史 ROI 加权"的动态预算分配比"固定比例"更适合中后期投放，启动期却不合适？
+
+<details>
+<summary>查看答案</summary>
+
+**数学本质**：动态分配求解的是约束优化——在总预算 B 下让 ∑g_i(b_i) 最大，最优解要求**各单元边际收益相等**（拉格朗日乘子 λ）。历史 ROI 正是对 g_i 斜率的估计，权重 ∝ ROI^α 是这一条件的工程近似。
+
+**为什么启动期不合适**：
+- 启动期单元花费太少，ROI 估计噪声大（置信度低），直接用 ROI 加权会被"偶然的好/坏"误导；
+- 冷启动单元数据不足（<7 天），模型把它判为"无效"而砍预算，形成负反馈（越没预算越没数据、越没数据越被砍）。
+- 解决方案：权重乘置信度 c_i（花费越多越可信），并给每个单元设 `floor`（保底占比）。
+
+**结论**：启动期用固定比例积累基线数据 → 1~2 周后切 ROI 加权 → 数据成熟跨账户时进化到外部控制塔。
+
+</details>
+
+### 5.3 问题 3：`dv360_update_line_item_budget` 返回成功，但报表里预算没变化。至少列出 3 个可能的根因与排查手段。
+
+<details>
+<summary>查看答案</summary>
+
+可能根因与排查：
+
+1. **IO 弹性为 DENY**：远端接受请求但实际不生效。
+   → 用 `dv360_list_insertion_order_flexibility` 查 flexibility 是否 EDITABLE/PACING；是 DENY 就修权限。
+2. **flight 已结束**：预算无法再改。
+   → 检查 LI/IO 的 flightDateRange 当前是否还在期内；过期需先 extend。
+3. **层级不一致 / 改错了对象**：改了 IO 没同步下层 LI，或 allocation_id 写错。
+   → 用 `dv360_list_budget_allocations` 核对对象归属，再 `dv360_get_line_item_budget` 读回校验新旧值。
+4. **API 版本/字段名不匹配**：v4 字段（如 budget 字段名 micros）与脚本不符。
+   → 核对请求体字段，与官方 v4 schema 对照。
+
+**通用纪律**：写入后必须"读回校验"（写-读闭环），失败触发告警而不是静默假设成功。
+
+</details>
+
+### 5.4 问题 4：大促日预算冲刺，为什么必须在关闭跨 flight 滚动共享的前提下再设 DAILY 硬顶？类比分账逻辑。
+
+<details>
+<summary>查看答案</summary>
+
+**类比分账**：预算池像一个共享账户。开"滚动共享（flexibility 滚动）"意味着每个子单元可以透支别单元的余额——如果大促首日流量爆炸，ACCELERATED pacing 会迅速把所有 LI 的剩余预算"挤兑"到首日，导致第二天（往往是真正高转化的日子）无钱可花。
+
+**两道闸**：
+1. **关闭跨 flight 滚动共享**：让每个 LI 的预算锁定在自己的 flight，不能跨 time 挤占比。
+2. **设 DAILY 硬顶**：即使某 LI 当天想冲，也被"日预算"拦住，把余量留给后续。
+- 大促冲刺的合理形态：Accelerated 模式 + 日硬顶 + 总预算兜底，把"冲量"控制在天数内均匀释放，而不是一天打光整场。
+
+</details>
+
+### 5.5 问题 5：跨账户预算"共享"的真实落地形态是什么？为什么不能只靠 DV360 原生功能？
+
+<details>
+<summary>查看答案</summary>
+
+**真实形态：外部预算控制塔（External Budget Controller）**。
+
+原因：DV360 **原生不提供**跨 Advertiser / 跨时区 / 跨币种的"共享资金池自动互通"。所谓共享只是"几何意义上总盘固定"，但实际调度要外部系统完成：
+
+1. **汇总层**：拉取各账户预算/花费，做币种（USD 当日汇率快照）与时区（统一 UTC/总部时区）归一；
+2. **决策层**：按各账户 ROI / 预算利用率算出再分配权重（复用 allocate()，设 floor/cap）；
+3. **执行层**：通过 `dv360_update_budget_allocation` / `dv360_update_line_item_budget` 回写各账户；
+4. **排队与审计**：加锁防并发、`dv360_list_activity_logs` 留痕、写-读校验。
+
+**原则**：先削后补、阈值触发、增量（±15%）而非全量重写，避免抖动。
+
+</details>
+
+---
+
+## 附录 A：Go 预算分配引擎（完整实现）
+
+本文第 2.4 节用 Python 演示了分配器；这里给出生产级 Go 版本，附带并发安全、边界钳制与回写模拟。该引擎是"智能预算分配"的落地核心，可在外部控制塔中替代 Python 原型。
+
+```go
+package allocation
+
+import (
+	"errors"
+	"log"
+	"math"
+	"sort"
+	"sync"
+)
+
+// EngineConfig 分配引擎配置。
+type EngineConfig struct {
+	TotalBudget float64 // 总预算（USD）
+	FloorRatio  float64 // 每个单元最小占比（防饿死），通常 0.05
+	CapRatio    float64 // 每个单元最大占比（防独占），通常 0.40
+	Alpha       float64 // 分配激进系数：0=均分 1=按效率 2=更激进
+	Iterations  int     // 边界钳制的收敛迭代次数，通常 5
+}
+
+// Unit 一个投放单元（Line Item / IO）及其表现快照。
+type Unit struct {
+	ID      string  // 单元 ID
+	Spend   float64 // 已花费（USD）
+	Revenue float64 // 带回来的收入（USD），用于 ROAS
+	// Conf 置信度 0~1，由 spent 与样本量决定
+	Conf float64
+}
+
+// Result 最终的分配结果，及其"改前改后"供审计。
+type Result struct {
+	Alloc  map[string]float64 `json:"alloc"`  // unitID -> 分配预算(USD)
+	Before map[string]float64 `json:"before"` // unitID -> 原预算
+	Reason string             `json:"reason"`
+}
+
+// Engine 持锁的分配引擎。
+type Engine struct {
+	mu     sync.RWMutex
+	config EngineConfig
+}
+
+func NewEngine(c EngineConfig) *Engine {
+	if c.FloorRatio <= 0 {
+		c.FloorRatio = 0.05
+	}
+	if c.CapRatio <= 0 {
+		c.CapRatio = 0.40
+	}
+	if c.Iterations <= 0 {
+		c.Iterations = 5
+	}
+	return &Engine{config: c}
+}
+
+// Roas 计算 ROAS（安全处理除零）。
+func (u Unit) Roas() float64 {
+	if u.Spend <= 0 {
+		return 0
+	}
+	return u.Revenue / u.Spend
+}
+
+// Weights 由表现计算每个单元的分配权重。
+func (e *Engine) Weights(units []Unit) map[string]float64 {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	scores := make(map[string]float64)
+	n := 0
+	for _, u := range units {
+		eff := u.Roas()
+		conf := u.Conf
+		if conf <= 0 {
+			conf = 0.3 // 冷启动保护：未知单元给一个下限置信
+		}
+		// 效率^Alpha，乘以置信度做平滑
+		scores[u.ID] = math.Pow(eff, e.config.Alpha) * conf
+		if eff > 0 {
+			n++
+		}
+	}
+	if n == 0 {
+		// 全无数据：等权
+		w := 1.0 / float64(len(units))
+		out := make(map[string]float64, len(units))
+		for _, u := range units {
+			out[u.ID] = w
+		}
+		return out
+	}
+	// 归一
+	total := 0.0
+	for _, v := range scores {
+		total += v
+	}
+	out := make(map[string]float64, len(scores))
+	for k, v := range scores {
+		out[k] = v / total
+	}
+	return out
+}
+
+// Allocate 计算分配结果，并返回改前改后（供回写与审计）。
+func (e *Engine) Allocate(units []Unit, before map[string]float64) (Result, error) {
+	if len(units) == 0 {
+		return Result{}, errors.New("allocation: empty units")
+	}
+	weights := e.Weights(units)
+	cfg := e.config
+
+	alloc := make(map[string]float64, len(weights))
+	for id, w := range weights {
+		alloc[id] = cfg.TotalBudget * w
+	}
+
+	floor := cfg.TotalBudget * cfg.FloorRatio
+	cap := cfg.TotalBudget * cfg.CapRatio
+
+	// 边界钳制 + 余量回补，迭代收敛
+	for i := 0; i < cfg.Iterations; i++ {
+		surplus := 0.0
+		moved := false
+		// 下限：不足则补齐
+		for id := range alloc {
+			if alloc[id] < floor {
+				surplus += floor - alloc[id]
+				alloc[id] = floor
+				moved = true
+			}
+		}
+		// 上限：超出则卸下
+		for id := range alloc {
+			if alloc[id] > cap {
+				surplus += alloc[id] - cap
+				alloc[id] = cap
+				moved = true
+			}
+		}
+		if !moved {
+			break
+		}
+		// 把 surplus 按当前权重回补给未到上限的单元
+		live := make([]string, 0)
+		wsum := 0.0
+		for id := range alloc {
+			if alloc[id] < cap {
+				live = append(live, id)
+				wsum += weights[id]
+			}
+		}
+		if wsum <= 0 {
+			break
+		}
+		for _, id := range live {
+			alloc[id] += surplus * weights[id] / wsum
+		}
+	}
+
+	// 末尾再兜一遍（确保 floor 不破）
+	for id := range alloc {
+		if alloc[id] < floor {
+			alloc[id] = floor
+		}
+	}
+
+	return Result{Alloc: alloc, Before: before, Reason: "roi-weighted"}, nil
+}
+
+// Units 的自定义排序（供面板展示用）。
+func sortedIDs(m map[string]float64) []string {
+	ids := make([]string, 0, len(m))
+	for id := range m {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+// Log 打印分配详情（生产写日志/审计表）。
+func Log(r Result) {
+	total := 0.0
+	for _, id := range sortedIDs(r.Alloc) {
+		v := r.Alloc[id]
+		total += v
+		log.Printf("unit=%s before=%.0f after=%.0f", id, r.Before[id], v)
+	}
+	log.Printf("total allocated=%.0f (budget ceiling guard)", total)
+}
+```
+
+### A.1 Go 引擎与 DV360 回写的衔接
+
+```go
+// DV360BudgetWriter 通过脚本统一封装回写 DV360 预算。
+// 对应 ad_platform_api.py 的 dv360_update_line_item_budget / dv360_batch_update_line_items。
+type DV360BudgetWriter struct {
+	// 生产上会注入一个 HTTP 客户端 + OAuth token 刷新 + 重试
+	Write func(lineItemID string, micros int64) error
+}
+
+// Apply 把分配结果按 micros 单位回写。
+func (w *DV360BudgetWriter) Apply(r Result) error {
+	for id, usd := range r.Alloc {
+		micros := int64(math.Round(usd * 1_000_000))
+		if err := w.Write(id, micros); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+```
+
+> 🎯 工程纪律（Go/任何语言通用）：
+> - 单位换算集中在 `micros ⇄ USD` 边界函数，禁止在业务层散落 `*1e6`；
+> - 分配引擎要**幂等**：同样的输入应得出同样的输出，方便重放与测试；
+> - 并发安全：多 job 会合时用 `sync.RWMutex` + 乐观版本号防写冲突；
+> - 可观测：每次分配记录 before/after/reason，接 `dv360_list_activity_logs` 审计。
+
+---
+
+## 附录 B：参考脚本与调用方式
+
+本文所有代码设计为与知识库脚本协作，调用路径如下：
+
+```bash
+# 预算相关方法位于统一封装客户端
+#   ad_platform_api.py  → class AdPlatformAPI（dv360_* 方法都在此）
+#   dv360_api.py        → class DV360Client（create_insertion_order / create_line_item / list_line_items）
+#   dv360_client.py     → class DV360Client（独立 OAuth/JWT 客户端，partner/advertiser/line-items 查询）
+
+# 典型自动化链路示例（伪代码级）：
+#   1. api.dv360_list_budget_allocations(advertiser_id)      # 列预算分配
+#   2. api.dv360_list_performance_stats(advertiser_id)       # 各单元花费/表现
+#   3. allocate() / Engine.Allocate(...)                      # 计算分配
+#   4. api.dv360_list_insertion_order_flexibility(io)        # 检查可写性
+#   5. api.dv360_batch_update_line_items(updates)             # 批量回写（优先）
+#   6. api.dv360_get_line_item_budget(li)                     # 写-读校验
+#   7. api.dv360_list_activity_logs(advertiser_id)            # 审计留痕
+```
+
+---
+
+## 结语
+
+预算优化不是"设一个数"，而是**一套围绕总量/时间/层级三个维度的持续运营体系**：
+
+- 结构上，先对账（∑IO = ∑LI = 总盘）再落地；
+- 执行上，pacing 与预算协同，用水位/偏差监控驱动；
+- 分配上，按 ROI/置信度动态加权，配 floor/cap 防饿死防独占；
+- 跨账户上，外部控制塔 + 多币种/多时区归一实现"逻辑共享"；
+- 预测上，给期望打折、运行时修正，避免过度乐观；
+- 工程上，micros⇄USD 换算、写-读校验、审计留痕、并发锁，一个都不能少。
+
+把本文的 Monit 巡检、分配引擎、Runbook 组合起来，即可从"手动盯盘"升级为"预算自愈"的自动化运营。建议结合仓库内以 `ad-budget-overrun-warning-case-deep.md`（超支告警案例）与 `dv360-optimization-deep.md`（出价策略）交叉阅读，形成完整闭环。
+
+> **本文完** · Ryan 个人知识库 DV360 预算优化深度文档
+> 更新时间：2026-08-14 · 领域：广告投放 / 预算优化 · 标签：dv360, budget, pacing, budget-allocation, forecast, cross-account

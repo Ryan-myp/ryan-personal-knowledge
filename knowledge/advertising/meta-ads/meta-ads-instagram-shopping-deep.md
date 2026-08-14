@@ -1533,6 +1533,125 @@ Instagram Shopping 生产运行架构（建议）
 - 币种统一用主营结算币（如 USD），避免多币种目录在结账侧的货币错配；
 - 品类明确合规后再花成本做 N 刷审核，避免反复被拒消耗排队额度。
 
+### 3.13 Native 结账订单管理实战（Commerce / shopping_orders）
+
+若你的主体走 Native Checkout（海外主体、开放国家），订单管理是重要一环。相关端点与状态机如下。
+
+#### 3.13.1 订单读取
+
+```bash
+# 列出该 IG 商业号的结账订单
+curl -G "https://graph.facebook.com/v22.0/{ig-user-id}/shopping_orders" \
+  --data-urlencode "fields=id,created_time,last_updated,payment_details,shipping_address,cancel_reason,state" \
+  --data-urlencode "access_token=TOKEN"
+
+# 单个订单详情
+curl -G "https://graph.facebook.com/v22.0/{shopping-order-id}" \
+  --data-urlencode "fields=id,created_time,shipping_address,state,payment_details,item_count" \
+  --data-urlencode "access_token=TOKEN"
+
+# 订单履约（物流）写入
+curl -X POST "https://graph.facebook.com/v22.0/{shopping-order-id}/item_fulfillments" \
+  -H "Content-Type: application/json" \
+  -d '{"access_token":"TOKEN","shipping_carrier":"DHL","tracking_number":"1234567890"}'
+
+# 订单结算/打款
+curl -G "https://graph.facebook.com/v22.0/{ig-user-id}/commerce_payouts" \
+  --data-urlencode "fields=id,status,amount,currency,created_time" \
+  --data-urlencode "access_token=TOKEN"
+```
+
+#### 3.13.2 订单状态机（Native）
+
+```
+Native 订单状态机（示意）
+CREATED → CONFIRMED → 已支付/待发货 → SHIPPED（填物流） → DELIVERED → COMPLETED
+    └─────────── 任意阶段可 CANCELED / 部分 REFUNDED / RETURNED
+```
+
+**每级状态都影响报表口径**：只有走到结算完成的才算 GMV；退款要把 `REFUNDED`/`CANCELLED` 单剔除。与 3.8 的「口径统一」呼应，核算时明确按状态过滤。
+
+#### 3.13.3 退款 / 退货处理策略
+
+- 退货政策需在商务管理平台配置，退款流程由商家发起（符合平台规则）。
+- 退款会更新订单状态与结算（commerce_payouts），务必让财务侧接入订单状态同步，避免「退了钱但报表没减」。
+- 警戒：Native 退款一旦超过政策/频次阈值可能触发风控复核，策略要合规、克制。
+
+### 3.14 Collections 深化：精选 / 排序 / 封面
+
+#### 3.14.1 让集合出现在商店
+
+- 集合需「有合规封面 + 至少若干商品 + 名称不重复」才会上架商店 Tab 卡片。
+- 「精选」集合优先展示在商店顶部；未精选的按系统排序出现。
+
+```
+商店 Tab 排序示意
+[精选 Collection A]   ← 置顶（可手动设精选）
+[精选 Collection B]
+[其他 Collection]     ← 默认顺序
+[全部商品]            ← 兜底
+```
+
+#### 3.14.2 封面与卡片的坑
+
+- 商品主图质量影响卡片观感与点击，也影响审核；
+- 封面若不达标，该 Collection Card 可能不展示，但「全部商品」仍在——用「全部商品」兜底测试商店是否基本可用。
+
+### 3.15 Reels / 视频购物与直播购物实战
+
+#### 3.15.1 Reels 打标的最佳实践
+
+- Reels 与图片共用 product_tags，但**尽量在创作阶段（发布前）规划好商品位**，发布后窗口有限；
+- 用「内容卡点」对应商品位：同一 Reels 展示 A→B→C 三个商品位，符合信息流「卡点+标签」的沉浸感；
+- 监控：Reels 的可购物内容用 `insights` 里的 `taps`/`product clicks` 评估带货效率，淘汰低效视频。
+
+```
+Reels 带货内容模板（示意）
+[前 3s 钩子] → [商品A 卡点+标签] → [对比/痛点] → [商品B 卡点+标签] → [CTA] → [商品C 卡点+标签]
+```
+
+#### 3.15.2 Live Shopping（直播购物）要点
+
+- 需主播账号具备 live shopping 功能位 + 行为合规；
+- 直播页可一次挂多件商品的商品卡，观众边看边下单；
+- 能力与地区限制较严，先确认账号是否「直播购物」可用再排期；
+- 复用 Catalog 商品、Native/External 结账各自适用，直播通常更适合 Native（转化即时、跳出低），但要处理发货与退款 SLA。
+
+### 3.16 质量与合规自查（上线前的最后一关）
+
+上线前对照下面清单逐项自测，能显著降低审核被拒与上线后踩坑：
+
+```
+□ 目录必填字段齐全，图片 HTTPS 可达、无水印误导
+□ 价格/货币一致，sale_price < price
+□ availability 与真实库存同步（默许策略：缺货即 out of stock）
+□ link 域名已在 BM 验证（External）
+□ Pixel 已埋 ViewContent/AddToCart/InitiateCheckout/Purchase（External）
+□ 品类无受限项（成人/处方药/仿冒/虚拟货币/医疗等）
+□ 结账方式决策已确认（Native / External 二选一）
+□ 每帖标签数在平台当前上限内
+□ 批量操作走 batch + 轮询 + 幂等
+□ 每日对账任务就绪（漂移即告警）
+□ 报表口径统一（Native 看 orders / External 看 Pixel）
+```
+
+### 3.17 常见人群 / 角色与 BOM（一份「接手即懂」的运营速览）
+
+```
+角色分工（建议）
+├── 商务管理员（BM Admin）：建目录、绑 IG、过审核、管订单/退款
+├── 内容运营（IG 运营号）：发帖、手工打标、Reels 带货
+├── 工程/自动化：同步管线、批量打标、对账、报表
+└── 广告投放：引用 Catalog/Collection 做 DPA / Shopping Ads
+
+资产管理（谁持有什么）
+├── BM：目录、Pixel、广告账户、系统用户 token
+├── IG 商业号：媒体、商店、集合、可购物内容
+└── 系统侧：SKU↔retailer_id 映射、对账表、密钥保管
+```
+
+---
+
 ## 四、常见问题与排查
 
 ### 4.1 审核被拒（商店/购物开通被拒）
