@@ -160,7 +160,7 @@ class AdPlatformAllQueryClient:
             print(f"[Meta] conversion_events error: {e}")
             return []
     
-    def meta_list_pixel_events(self, pixel_id: str, **kwargs) -> List[Dict]:
+    def meta_list_pixel_events(self, account_id: str, pixel_id: str = None, **kwargs) -> List[Dict]:
         """列出 Pixel 事件"""
         token = self.credentials.get('meta', {}).get('access_token', '')
         url = f"https://graph.facebook.com/v19.0/{pixel_id}/customconversions"
