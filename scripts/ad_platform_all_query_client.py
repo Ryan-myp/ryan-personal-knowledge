@@ -1334,3 +1334,207 @@ class AdPlatformAllQueryClient:
             {'code': 'UPLOAD_FILE', 'name': '文件上传'},
             {'code': 'BIGQUERY', 'name': 'BigQuery 导入'}
         ]
+
+    # ========================================
+    # TikTok 更多创意选项
+    # ========================================
+    
+    def tiktok_list_video_templates(self, advertiser_id: str, **kwargs) -> List[Dict]:
+        """列出视频模板"""
+        templates = [
+            {'id': 'TEMPLATE_LANDSCAPE', 'name': '横版视频', 'ratio': '16:9', 'resolution': '1920x1080'},
+            {'id': 'TEMPLATE_PORTRAIT', 'name': '竖版视频', 'ratio': '9:16', 'resolution': '1080x1920'},
+            {'id': 'TEMPLATE_SQUARE', 'name': '方形视频', 'ratio': '1:1', 'resolution': '1080x1080'},
+            {'id': 'TEMPLATE_4_5', 'name': '4:5 竖版', 'ratio': '4:5', 'resolution': '1080x1350'},
+            {'id': 'TEMPLATE_1_91', 'name': '1.91:1 横版', 'ratio': '1.91:1', 'resolution': '1200x628'}
+        ]
+        return templates
+    
+    def tiktok_list_image_templates(self, advertiser_id: str, **kwargs) -> List[Dict]:
+        """列出图片模板"""
+        templates = [
+            {'id': 'IMAGE_SQUARE', 'name': '正方形图片', 'ratio': '1:1', 'resolution': '1080x1080'},
+            {'id': 'IMAGE_PORTRAIT', 'name': '竖版图片', 'ratio': '4:5', 'resolution': '1080x1350'},
+            {'id': 'IMAGE_LANDSCAPE', 'name': '横版图片', 'ratio': '1.91:1', 'resolution': '1200x628'},
+            {'id': 'IMAGE_STORY', 'name': '快拍图片', 'ratio': '9:16', 'resolution': '1080x1920'}
+        ]
+        return templates
+    
+    def tiktok_list_carousel_formats(self, advertiser_id: str, **kwargs) -> List[Dict]:
+        """列出轮播格式"""
+        return [
+            {'id': 'CAROUSEL_IMAGE', 'name': '图片轮播', 'max_cards': 10},
+            {'id': 'CAROUSEL_VIDEO', 'name': '视频轮播', 'max_cards': 6},
+            {'id': 'CAROUSEL_MIXED', 'name': '混合轮播', 'max_cards': 10}
+        ]
+    
+    def tiktok_list_text_overlay_options(self, **kwargs) -> List[Dict]:
+        """列出文字叠加选项"""
+        return [
+            {'code': 'TITLE', 'name': '标题', 'position': 'TOP_CENTER', 'max_chars': 30},
+            {'code': 'SUBTITLE', 'name': '副标题', 'position': 'TOP_CENTER', 'max_chars': 60},
+            {'code': 'DESCRIPTION', 'name': '描述', 'position': 'BOTTOM_CENTER', 'max_chars': 120},
+            {'code': 'CTA', 'name': '行动号召', 'position': 'BOTTOM_CENTER', 'max_chars': 20}
+        ]
+    
+    # ========================================
+    # Meta 更多创意选项
+    # ========================================
+    
+    def meta_list_carousel_card_types(self, **kwargs) -> List[Dict]:
+        """列出轮播卡片类型"""
+        return [
+            {'code': 'IMAGE_ONLY', 'name': '仅图片', 'media_type': 'IMAGE'},
+            {'code': 'VIDEO_ONLY', 'name': '仅视频', 'media_type': 'VIDEO'},
+            {'code': 'IMAGE_WITH_LINK', 'name': '图片+链接', 'media_type': 'IMAGE'},
+            {'code': 'VIDEO_WITH_LINK', 'name': '视频+链接', 'media_type': 'VIDEO'},
+            {'code': 'COLLECTION', 'name': '合集', 'media_type': 'COLLECTION'}
+        ]
+    
+    def meta_list_collection_layouts(self, **kwargs) -> List[Dict]:
+        """列出合集布局"""
+        return [
+            {'code': 'PRODUCT_CATALOG', 'name': '产品目录', 'layout': 'GRID'},
+            {'code': 'TOP_PRODUCT', 'name': '主推产品', 'layout': 'HORIZONTAL'},
+            {'code': 'EXPERIENCE', 'name': '体验式', 'layout': 'VERTICAL'}
+        ]
+    
+    def meta_list_story_templates(self, **kwargs) -> List[Dict]:
+        """列出快拍模板"""
+        return [
+            {'code': 'TEXT_OVERLAY', 'name': '文字叠加', 'template': 'TEXT'},
+            {'code': 'SLIDESHOW', 'name': '幻灯片', 'template': 'SLIDESHOW'},
+            {'code': 'PRODUCT_LINK', 'name': '产品链接', 'template': 'PRODUCT'},
+            {'code': 'POLL', 'name': '投票', 'template': 'POLL'},
+            {'code': 'QUESTION', 'name': '问答', 'template': 'QUESTION'},
+            {'code': 'LINK', 'name': '链接', 'template': 'LINK'}
+        ]
+    
+    def meta_list_ats_formats(self, **kwargs) -> List[Dict]:
+        """列出 ATS 格式选项"""
+        return [
+            {'code': 'SINGLE_IMAGE', 'name': '单图', 'format': 'IMAGE'},
+            {'code': 'CAROUSEL', 'name': '轮播', 'format': 'CAROUSEL'},
+            {'code': 'VIDEO', 'name': '视频', 'format': 'VIDEO'},
+            {'code': 'COLLECTION', 'name': '合集', 'format': 'COLLECTION'},
+            {'code': 'INSTA_CAROUSEL', 'name': 'Instagram 轮播', 'format': 'INSTA_CAROUSEL'}
+        ]
+    
+    def meta_list_dynamic_ad_fields(self, **kwargs) -> List[Dict]:
+        """列出动态广告字段"""
+        return [
+            {'code': 'HEADLINE', 'name': '标题', 'type': 'TEXT', 'max_length': 40},
+            {'code': 'DESCRIPTION', 'name': '描述', 'type': 'TEXT', 'max_length': 125},
+            {'code': 'CALL_TO_ACTION', 'name': '行动号召', 'type': 'STRING'},
+            {'code': 'IMAGE', 'name': '图片', 'type': 'MEDIA'},
+            {'code': 'LINK_DESCRIPTION', 'name': '链接描述', 'type': 'TEXT', 'max_length': 30}
+        ]
+    
+    # ========================================
+    # Google Ads 更多创意选项
+    # ========================================
+    
+    def google_list_responsive_ad_assets(self, **kwargs) -> List[Dict]:
+        """列出响应式广告资产"""
+        return [
+            {'code': 'HEADLINE_1', 'name': '标题 1', 'type': 'HEADLINE', 'max_length': 30},
+            {'code': 'HEADLINE_2', 'name': '标题 2', 'type': 'HEADLINE', 'max_length': 30},
+            {'code': 'HEADLINE_3', 'name': '标题 3', 'type': 'HEADLINE', 'max_length': 30},
+            {'code': 'DESCRIPTION_1', 'name': '描述 1', 'type': 'DESCRIPTION', 'max_length': 90'},
+            {'code': 'DESCRIPTION_2', 'name': '描述 2', 'type': 'DESCRIPTION', 'max_length': 90'},
+            {'code': 'PATH_1', 'name': '路径 1', 'type': 'PATH', 'max_length': 15'},
+            {'code': 'PATH_2', 'name': '路径 2', 'type': 'PATH', 'max_length': 15'},
+            {'code': 'BUSINESS_NAME', 'name': '商户名称', 'type': 'BUSINESS_NAME'}
+        ]
+    
+    def google_list_performance_max_assets(self, **kwargs) -> List[Dict]:
+        """列出全面营销广告资产"""
+        assets = [
+            {'code': 'HEADLINE', 'name': '标题', 'type': 'HEADLINE', 'max_count': 30},
+            {'code': 'DESCRIPTION', 'name': '描述', 'type': 'DESCRIPTION', 'max_count': 4},
+            {'code': 'LOGO', 'name': 'Logo', 'type': 'IMAGE', 'max_count': 5},
+            {'code': 'MARKETING_IMAGE', 'name': '营销图片', 'type': 'IMAGE', 'max_count': 20},
+            {'code': 'SQUARE_IMAGE', 'name': '方形图片', 'type': 'IMAGE', 'max_count': 5},
+            {'code': 'LANDSCAPE_IMAGE', 'name': '横版图片', 'type': 'IMAGE', 'max_count': 5},
+            {'code': 'VIDEO', 'name': '视频', 'type': 'VIDEO', 'max_count': 4},
+            {'code': 'BUSINESS_NAME', 'name': '商户名称', 'type': 'BUSINESS_NAME'},
+            {'code': 'CALL_TO_ACTION', 'name': '行动号召', 'type': 'CALL_TO_ACTION'}
+        ]
+        return assets
+    
+    # ========================================
+    # DV360 更多创意选项
+    # ========================================
+    
+    def dv360_list_video_creative_formats(self, **kwargs) -> List[Dict]:
+        """列出视频创意格式"""
+        return [
+            {'code': 'VPAID_1', 'name': 'VPAID 1.0', 'type': 'SCRIPT'},
+            {'code': 'VPAID_2', 'name': 'VPAID 2.0', 'type': 'SCRIPT'},
+            {'code': 'VAST_1', 'name': 'VAST 1.0', 'type': 'STATIC'},
+            {'code': 'VAST_2', 'name': 'VAST 2.0', 'type': 'STATIC'},
+            {'code': 'VAST_3', 'name': 'VAST 3.0', 'type': 'STATIC'},
+            {'code': 'VAST_4', 'name': 'VAST 4.0', 'type': 'STATIC'},
+            {'code': 'HTML5', 'name': 'HTML5', 'type': 'HTML'},
+            {'code': 'FLV', 'name': 'Flash Video', 'type': 'FLASH'}
+        ]
+    
+    def dv360_list_banner_creative_types(self, **kwargs) -> List[Dict]:
+        """列出横幅创意类型"""
+        return [
+            {'code': 'STATIC', 'name': '静态图片', 'extension': ['jpg', 'png', 'gif']},
+            {'code': 'ANIMATED', 'name': '动画图片', 'extension': ['gif', 'swf']},
+            {'code': 'HTML5', 'name': 'HTML5', 'extension': ['zip']},
+            {'code': 'FLASH', 'name': 'Flash', 'extension': ['swf']}
+        ]
+    
+    # ========================================
+    # 通用接口
+    # ========================================
+    
+    def list_all_bid_strategies(self) -> Dict:
+        """列出所有平台的出价策略"""
+        return {
+            'tiktok': self.tiktok_list_bid_strategies(''),
+            'meta': self.meta_list_bid_strategies(''),
+            'google_ads': self.google_list_bid_strategies(''),
+            'dv360': self.dv360_list_bid_strategies('')
+        }
+    
+    def list_all_error_codes(self) -> Dict:
+        """列出所有平台的错误码"""
+        return {
+            'tiktok': self.tiktok_list_error_codes(),
+            'meta': self.meta_list_error_codes(),
+            'google_ads': self.google_list_error_codes(),
+            'dv360': self.dv360_list_error_codes()
+        }
+    
+    def get_platform_summary(self) -> Dict:
+        """获取平台功能汇总"""
+        return {
+            'tiktok': {
+                'bid_strategies': len(self.tiktok_list_bid_strategies('')),
+                'creative_templates': len(self.tiktok_list_creative_templates('')),
+                'targeting_params': 18,
+                'error_codes': len(self.tiktok_list_error_codes())
+            },
+            'meta': {
+                'bid_strategies': len(self.meta_list_bid_strategies('')),
+                'creative_templates': len(self.meta_list_creative_templates('')),
+                'targeting_params': 20,
+                'error_codes': len(self.meta_list_error_codes())
+            },
+            'google_ads': {
+                'bid_strategies': len(self.google_list_bid_strategies('')),
+                'creative_templates': len(self.google_list_ad_templates('')),
+                'targeting_params': 10,
+                'error_codes': len(self.google_list_error_codes())
+            },
+            'dv360': {
+                'bid_strategies': len(self.dv360_list_bid_strategies('')),
+                'creative_templates': len(self.dv360_list_creative_templates('')),
+                'targeting_params': 12,
+                'error_codes': len(self.dv360_list_error_codes())
+            }
+        }
