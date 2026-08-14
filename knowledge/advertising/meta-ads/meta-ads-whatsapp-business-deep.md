@@ -1401,3 +1401,910 @@ def meta_register_whatsapp_number(self, phone_number_id, **kwargs): ...
 ---
 
 > 本文由 Ryan 个人知识库生成，覆盖 WhatsApp Business App 与 Cloud API、消息模板、QR/wa.me、商用资料、互动消息、24h/7 天会话窗口、Click-to-WhatsApp 广告与 pre-registration 落地、自动回复、批量发送、质量评级与踩坑排查全链路。实践部分请以 Meta 官方最新 API 版本与费率表为准。
+
+---
+
+## 六、消息模板全类别实战：认证 / 实用 / 营销模板逐条参数
+
+模板是整个 WhatsApp 主动触达体系的地基，本节把三类模板从「业务语义 → 创建 JSON → 发送 JSON → 参数编号」逐条拆开，避免团队在写参数时凭感觉乱编。
+
+### 6.1 认证类模板（Authentication Template）
+
+认证模板用于发送一次性密码（OTP）、登录验证码、两步验证确认等**安全凭证**，是三种模板中**优先级与计费位置**最特殊的。
+
+**认证模板的硬性约束（重要）：**
+- 类别固定为 `AUTHENTICATION`；
+- 正文必须包含一个**一次性密码占位符**，且占位符绑定类型为 `AUTHENTICATION_FLOW`（新规范）或文本占位符 + 配套按钮；
+- 必须包含**复制一次性密码按钮（type=OTP）**，供用户一键复制验证码，降低输入错误率；
+- 认证会话（Authentication conversation）的计费与窗口：Meta 对认证会话有**一次性计费上限**与更短的计费周期（不再重复按 24h 计费），费率最低；
+- 认证模板**不能被用于营销**，若在登录流程中夹带促销信息会被罚。
+
+**创建认证模板：**
+
+```bash
+curl -X POST "https://graph.facebook.com/v21.0/${WABA_ID}/message_templates" \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "otp_login_zh",
+    "language": "zh_CN",
+    "category": "AUTHENTICATION",
+    "components": [
+      {
+        "type": "HEADER",
+        "format": "TEXT",
+        "text": "您的登录验证码"
+      },
+      {
+        "type": "BODY",
+        "text": "您登录的验证码为 {{1}}，10 分钟内有效。请勿向他人泄露。",
+        "example": { "body_text": [["123456"]] }
+      },
+      {
+        "type": "BUTTONS",
+        "buttons": [
+          {
+            "type": "OTP",
+            "text": "复制验证码"
+          }
+        ]
+      }
+    ]
+  }'
+```
+
+**发送认证模板（OTP 参数携带）：**
+
+```bash
+curl -X POST "https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages" \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messaging_product": "whatsapp",
+    "recipient_type": "individual",
+    "to": "8613800000000",
+    "type": "template",
+    "template": {
+      "name": "otp_login_zh",
+      "language": { "code": "zh_CN" },
+      "components": [
+        {
+          "type": "body",
+          "parameters": [
+            { "type": "text", "text": "482913" }
+          ]
+        },
+        {
+          "type": "button",
+          "sub_type": "OTP",
+          "index": "0"
+        }
+      ]
+    }
+  }'
+```
+
+> **实战提示**：OTP 按钮在发送时不需要再传「值」，只需 `sub_type=OTP` + `index` 指向按钮位置；验证码本体在 body 参数里。若把验证码同时塞进按钮，会报参数不匹配错误。
+
+**认证模板的降级兜底：**
+- 若认证模板不可用/发送失败，可退回短信 OTP 通道；
+- 认证会话不计入一般营销配额，但同样受号码质量评级影响——频繁误发验证码（用户并未请求）会引发投诉。
+
+### 6.2 实用类模板（Utility Template）
+
+实用模板用于**交易/事务上下文**：订单状态、物流、预约提醒、账单、余额通知、航班变更、安全检查。
+
+**实用模板的合规红利：**
+- 事务上下文明确，**审核通过率高、审核快**；
+- 触发的是 **24h 服务（Service）会话窗口**，费率低于营销；
+- 允许包含少量必要的推广上下文，但不能以促销为主（否则会被判为营销而拒/降级）。
+
+**创建实用模板（带 URL 按钮 + 变量预览示例）：**
+
+```bash
+curl -X POST "https://graph.facebook.com/v21.0/${WABA_ID}/message_templates" \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "order_status_zh",
+    "language": "zh_CN",
+    "category": "UTILITY",
+    "components": [
+      {
+        "type": "HEADER",
+        "format": "TEXT",
+        "text": "订单 {{1}} 状态更新"
+      },
+      {
+        "type": "BODY",
+        "text": "您的订单 {{1}} 当前状态为「{{2}}」。如需要查看详情，请点击下方按钮。",
+        "example": { "body_text": [["SO-2026-088", "已发货"]] }
+      },
+      {
+        "type": "FOOTER",
+        "text": "如非本人操作请忽略此消息"
+      },
+      {
+        "type": "BUTTONS",
+        "buttons": [
+          {
+            "type": "URL",
+            "text": "查看订单",
+            "url": "https://example.com/orders/{{1}}"
+          }
+        ]
+      }
+    ]
+  }'
+```
+
+**发送实用模板（URL 按钮参数编址）：**
+
+```bash
+curl -X POST "https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages" \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messaging_product": "whatsapp",
+    "to": "8613800000000",
+    "type": "template",
+    "template": {
+      "name": "order_status_zh",
+      "language": { "code": "zh_CN" },
+      "components": [
+        {
+          "type": "header",
+          "parameters": [ { "type": "text", "text": "SO-2026-088" } ]
+        },
+        {
+          "type": "body",
+          "parameters": [
+            { "type": "text", "text": "SO-2026-088" },
+            { "type": "text", "text": "已发货" }
+          ]
+        },
+        {
+          "type": "button",
+          "sub_type": "url",
+          "index": "0",
+          "parameters": [ { "type": "text", "text": "SO-2026-088" } ]
+        }
+      ]
+    }
+  }'
+```
+
+**参数编号要领（重要排雷）：**
+- Header `{{1}}` 与 Body `{{1}}` **各自独立编号**，且要按「组件 → 参数」传，而不是按全局编号；
+- URL 按钮里的 `{{1}}` 指向该按钮 URL 模板中的占位符，需在 button 组件参数里单独补；
+- 发送时某组件缺少参数，报 `PARAMETER_MISMATCH`；多传参数报同样的错。**务必脚本校验。**
+
+### 6.3 营销类模板（Marketing Template）
+
+营销模板用于促销、新品、活动、订阅续费与再营销，是 Click-to-WhatsApp 私域转化最直接、也最易违规的一类。
+
+**营销模板的约束：**
+- 类别 `MARKETING`；
+- 内容不得包含误导、夸大或未授权的承诺（如"点击即得"但需条件）；
+- 触发 **7 天广义（Marketing）会话窗口**，费率最高；
+- 受质量评级约束最严，LOW 评级的营销模板几乎不可用。
+
+**创建营销模板（带快速回复按钮 + 背景）：**
+
+```bash
+curl -X POST "https://graph.facebook.com/v21.0/${WABA_ID}/message_templates" \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "summer_promo_zh",
+    "language": "zh_CN",
+    "category": "MARKETING",
+    "components": [
+      {
+        "type": "HEADER",
+        "format": "IMAGE",
+        "example": { "header_handle": ["https://cdn.example.com/promo.png"] }
+      },
+      {
+        "type": "BODY",
+        "text": "{{1}} 大促回归！全场 {{2}} 折起，会员再享 {{3}}。点击了解详情。",
+        "example": { "body_text": [["夏日", "8", "9.5"]] }
+      },
+      {
+        "type": "BUTTONS",
+        "buttons": [
+          {
+            "type": "QUICK_REPLY",
+            "text": "立即咨询"
+          },
+          {
+            "type": "URL",
+            "text": "查看优惠",
+            "url": "https://example.com/promo"
+          }
+        ]
+      }
+    ]
+  }'
+```
+
+**发送营销模板：**
+
+```bash
+curl -X POST "https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages" \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messaging_product": "whatsapp",
+    "to": "8613800000000",
+    "type": "template",
+    "template": {
+      "name": "summer_promo_zh",
+      "language": { "code": "zh_CN" },
+      "components": [
+        {
+          "type": "body",
+          "parameters": [
+            { "type": "text", "text": "夏日" },
+            { "type": "text", "text": "8" },
+            { "type": "text", "text": "9.5" }
+          ]
+        }
+      ]
+    }
+  }'
+```
+
+> **策略**：营销模板要有明确的 CTA 与预期管理。把大促与会员权益说清楚，用户在窗口内点开后的实际体验应与模板承诺一致，否则转化未达预期反而拉高投诉、拖低评级。
+
+### 6.4 三类模板对比总结表
+
+| 维度 | AUTHENTICATION | UTILITY | MARKETING |
+|------|----------------|---------|-----------|
+| 业务场景 | 验证码/登录/安全 | 订单/物流/预约/账单 | 促销/新品/再营销 |
+| 附带促销 | 禁止 | 少量可 | 主内容 |
+| 触发窗口 | 认证会话（短/一次性计费） | 服务窗口（24h） | 广义窗口（7 天） |
+| 相对费率 | 最低 | 中 | 最高 |
+| 审核速度 | 快 | 快 | 较慢/更严 |
+| 受评级约束 | 中 | 低 | 最高 |
+| 典型按钮 | OTP 复制 | URL / 电话 / 快回 | 快回 / URL |
+
+---
+
+## 七、Webhook 事件、字段解析与幂等
+
+### 7.1 Webhook 触发体系与订阅字段
+
+要让平台实时感知「用户消息 / 发送状态 / 模板审核结果」，需在 Meta App 的 Webhooks 配置里订阅相应字段：
+
+| Webhook 字段 | 触发场景 | 关键子事件 |
+|--------------|---------|-----------|
+| `messages` | 收到用户消息 / 状态更新 | `messages`, `statuses` |
+| `message_deliveries` | 消息送达回执 | `deliveries` |
+| `message_reads` | 已读回执 | `reads` |
+| `message_sent` | 商家发送成功 | `sent` |
+| `message_errors` | 消息失败 | `errors` |
+| `message_template_status_update` | 模板审核结果 | `event` = APPROVED/REJECTED |
+
+**消息事件负载结构（收到用户消息最简单形态）：**
+
+```json
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "WABA_ID",
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": { "display_phone_number": "+86...", "phone_number_id": "PNID" },
+            "contacts": [ { "profile": { "name": "用户昵称" }, "wa_id": "86138..." } ],
+            "messages": [
+              {
+                "from": "86138...",
+                "id": "wamid.XXX",
+                "timestamp": "1690000000",
+                "type": "text",
+                "text": { "body": "你好" }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+### 7.2 各种消息类型的 Webhook 字段差异
+
+**收到互动消息回调（按钮/列表）：**
+
+```json
+{
+  "messages": [
+    {
+      "from": "86138...",
+      "id": "wamid.INTERACTIVE",
+      "type": "interactive",
+      "interactive": {
+        "type": "button_reply",
+        "button_reply": { "id": "btn_sales", "title": "咨询报价" }
+      }
+    }
+  ]
+}
+```
+
+列表回复则是 `interactive.list_reply`：
+```json
+{
+  "interactive": {
+    "type": "list_reply",
+    "list_reply": { "id": "plan_c", "title": "旗舰版", "description": "适合团队" }
+  }
+}
+```
+
+> **工程要点**：路由脚本需同时处理 `button_reply` 与 `list_reply`，它们的字段名不同（见 3.8 的 `route_by_intent`）。
+
+**收到媒体消息（图片/视频/文档）：**
+```json
+{
+  "messages": [
+    {
+      "from": "86138...",
+      "type": "image",
+      "image": {
+        "mime_type": "image/jpeg",
+        "sha256": "abc...",
+        "id": "MEDIA_ID",
+        "caption": "订单截图"
+      }
+    }
+  ]
+}
+```
+需用 `GET /{media-id}` 下载，`sha256` 可用于去重。
+
+**收到状态回执：**
+```json
+{
+  "statuses": [
+    {
+      "id": "wamid.XXX",
+      "status": "delivered",
+      "timestamp": "1690000000",
+      "recipient_id": "86138..."
+    }
+  ]
+}
+```
+
+### 7.3 幂等与去重（生产必修）
+
+Meta 对 webhook 投递会做**重试**（尤其在 5xx 或超时场景），生产端必须以幂等方式消费：
+
+```
+ 去重键维（任一即可）：
+   - entry.id + change 内 message id（wamid.XXX）
+   - 或 (wa_id + message id + timestamp)
+
+ 实现要点：
+   - 用 Redis/in-memory set 记录已处理 message id
+   - 处理成功后再落库，返回 200
+   - 处理失败返回 5xx，让 Meta 稍后重推
+   - 对状态事件同样去重（避免重复记录 sent/delivered）
+```
+
+```python
+import redis
+r = redis.Redis(host="redis", decode_responses=True)
+
+def is_processed(message_id: str) -> bool:
+    return r.get(f"wa:msg:{message_id}") is not None
+
+def mark_processed(message_id: str, ttl: int = 86400):
+    r.setex(f"wa:msg:{message_id}", ttl, "1")
+```
+
+### 7.4 模板状态更新（审核结果回调）
+
+订阅 `message_template_status_update` 后，模板审核结果会推送到 webhook：
+
+```json
+{
+  "entry": [
+    {
+      "changes": [
+        {
+          "field": "message_template_status_update",
+          "value": {
+            "event": "APPROVED",
+            "message_template_id": "1234567890",
+            "message_template_name": "order_status_zh",
+            "message_template_language": "zh_CN",
+            "reason": "" 
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+**工程用途：**
+- 监听 APPROVED 后自动把模板加入「可发送池」；
+- 监听 REJECTED / DOWN / PAUSED 后告警，并读取 `reason` 触发人工修复；
+- 避免轮询 `GET /{waba-id}/message_templates` 造成不必要的 API 调用。
+
+---
+
+## 八、媒体消息、位置、联系人与其它消息类型
+
+会话窗口开启时可发送远比模板更丰富的消息类型，这些是客服与营销富媒体的基础。
+
+### 8.1 图片 / 视频 / 文档 / 音频消息
+
+**发送图片（Media ID 方式或外部链接方式）：**
+
+```bash
+# 方式 A：先用已上传的 media id
+curl -X POST "https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages" \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messaging_product": "whatsapp",
+    "to": "8613800000000",
+    "type": "image",
+    "image": { "id": "MEDIA_ID", "caption": "产品图" }
+  }'
+
+# 方式 B：直接给外部 https 链接（Meta 会下载，仅对已验证域名白名单生效）
+curl -X POST "https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages" \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messaging_product": "whatsapp",
+    "to": "8613800000000",
+    "type": "image",
+    "image": { "link": "https://cdn.example.com/img.png" }
+  }'
+```
+
+**发送文档：**
+```bash
+curl -X POST "https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages" \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messaging_product": "whatsapp",
+    "to": "8613800000000",
+    "type": "document",
+    "document": { "filename": "报价单.pdf", "link": "https://cdn.example.com/quote.pdf" }
+  }'
+```
+
+**发送音频 / 视频：**
+```bash
+# 音频（支持 voice note）
+curl -X POST ".../messages" -d '{"messaging_product":"whatsapp","to":"8613800000000","type":"audio","audio":{"link":"https://cdn.example.com/v.mp3"}}'
+
+# 视频
+curl -X POST ".../messages" -d '{"messaging_product":"whatsapp","to":"8613800000000","type":"video","video":{"link":"https://cdn.example.com/v.mp4","caption":"产品演示"}}'
+```
+
+### 8.2 位置与联系人消息
+
+**发送位置：**
+```bash
+curl -X POST "https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages" \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messaging_product": "whatsapp",
+    "to": "8613800000000",
+    "type": "location",
+    "location": {
+      "latitude": 31.2304,
+      "longitude": 121.4737,
+      "name": "上海旗舰店",
+      "address": "上海市黄浦区"
+    }
+  }'
+```
+
+**发送联系人（vCard）：**
+```bash
+curl -X POST "https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages" \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messaging_product": "whatsapp",
+    "to": "8613800000000",
+    "type": "contacts",
+    "contacts": [
+      {
+        "name": { "formatted_name": "Ryan 顾问", "first_name": "Ryan" },
+        "phones": [ { "phone": "+8613800000001", "wa_id": "8613800000001", "type": "CELL" } ]
+      }
+    ]
+  }'
+```
+
+### 8.3 媒体上传（两种方式）
+
+**方式 A：表单上传（推荐，Local Upload，本地存储短暂有效）：**
+```bash
+curl -X POST "https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/media" \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+  -F "messaging_product=whatsapp" \
+  -F "type=image/jpeg" \
+  -F "file=@/tmp/banner.jpg"
+```
+
+**方式 B：提供外部可下载 URL（需在 Meta 侧配置允许的域名/文件托管）：**
+```bash
+curl -X POST "https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/media" \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messaging_product": "whatsapp",
+    "type": "image/jpeg",
+    "source": "https://cdn.example.com/banner.jpg"
+  }'
+```
+
+响应：`{ "id": "MEDIA_ID", "h": "..." }`。下载用：
+```bash
+curl -X GET "https://graph.facebook.com/v21.0/${MEDIA_ID}?access_token=${ACCESS_TOKEN}"
+```
+
+> **排雷**：本地上传的媒体在 Meta 侧**有效期内**可用（不会长期留存），且 Cloud API 对单文件大小有上限（图片 ≤ 5MB、视频 ≤ 16MB）。传超大文件会报大小超限。
+
+---
+
+## 九、限流、吞吐等级与高并发架构
+
+### 9.1 号码吞吐等级（Throughput）
+
+每个号码有一个 `throughput.level`，决定每秒/每日可处理的消息上限：
+
+| 等级 | 相对能力 | 适用 |
+|------|---------|------|
+| `UNLIMITED` | 高吞吐 | 大型企业/已验证 |
+| `STANDARD` | 标准 | 大多企业（默认） |
+| `TIER_1K` ... | 逐级 | 按发送量/质量动态调整 |
+
+**查询吞吐等级：**
+```bash
+curl -X GET "https://graph.facebook.com/v21.0/${WABA_ID}/phone_numbers?access_token=${ACCESS_TOKEN}"
+```
+
+### 9.2 限流错误与退避策略
+
+- 触发限流返回 **429**（HTTP）或错误码 **130429 / -1**；
+- 处理原则：**指数退避 + 抖动（jitter）**，如下：
+
+```python
+import random, time
+
+def robust_post(method, url, payload, token, max_retries=5):
+    for attempt in range(max_retries):
+        resp = method(url, headers={"Authorization": f"Bearer {token}"}, json=payload, timeout=30)
+        if resp.status_code == 429:
+            backoff = (2 ** attempt) + random.uniform(0, 0.5)
+            time.sleep(backoff)
+            continue
+        return resp
+    return resp  # 最终 429
+```
+
+### 9.3 高并发发送架构示意
+
+```
+┌────────────────────────────  批量发送管道  ────────────────────────────┐
+│                                                                        │
+│  上游任务队列（订单/营销计划）                                           │
+│                │                                                        │
+│                ▼                                                        │
+│  消息整形（模板/参数/目标号 → payload）                                 │
+│                │                                                        │
+│                ▼                                                        │
+│  限速器（令牌桶，按号码 throughput 控制 QPS）                            │
+│                │                                                        │
+│                ▼                                                        │
+│  并发 worker 池（ThreadPoolExecutor / asyncio）                          │
+│                │                                                        │
+│                ▼                                                        │
+│  Cloud API  ──►  响应解析  ──►  结果回写 + CAPI 回传                    │
+│                │        │                                               │
+│                429 重试 │  失败审计（重试队列 / 告警）                    │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+**关键工程清单：**
+1. 每个号码独立限速，避免一号打满拖累全局；
+2. 消息整形统一入口，模板变量由 DB/Schema 校验；
+3. 失败消息进入死信队列人工/自动重发；
+4. 全程可观测：记录 msg id → wa_id → 状态时间线。
+
+---
+
+## 十、企业内部落地：把 Cloud API 封装进 `ad_platform_api.py`
+
+团队现有 `scripts/ad_platform_api.py` 已有通用的 `meta_*` 方法族与 CAPI 能力，建议以「Business 类方法」方式把 WhatsApp 能力对齐接入。本节给出可落地的完整封装示例（可作为新文件 `meta_whatsapp_api.py` 或并入现有类）。
+
+### 10.1 Windows 类封装：WhatsAppBusinessClient
+
+```python
+"""
+meta_whatsapp_api.py
+WhatsApp Business Cloud API 封装（Graph API v21.0）
+依赖 meta_api.py 的 credentials 结构与 CAPI 能力。
+"""
+import requests, time, random
+from typing import Dict, List, Optional
+
+
+class WhatsAppBusinessClient:
+    GRAPH = "https://graph.facebook.com/v21.0"
+
+    def __init__(self, access_token: str, phone_number_id: str, waba_id: str):
+        self.token = access_token
+        self.pnid = phone_number_id
+        self.waba = waba_id
+        self.session = requests.Session()
+        self.session.headers.update({"Authorization": f"Bearer {self.token}"})
+
+    # ---------- 基础发送 ----------
+    def send_message(self, to: str, payload: dict, retries: int = 3) -> Dict:
+        """统一发送入口，payload 含 type 与对应内容"""
+        body = {"messaging_product": "whatsapp", "recipient_type": "individual", "to": to, **payload}
+        for attempt in range(retries):
+            resp = self.session.post(f"{self.GRAPH}/{self.pnid}/messages", json=body, timeout=30)
+            if resp.status_code == 429:
+                time.sleep(2 ** attempt + random.uniform(0, 0.5))
+                continue
+            return resp.json()
+        return {"error": {"code": 429, "message": "rate limited"}}
+
+    def send_text(self, to: str, body: str, preview_url: bool = False) -> Dict:
+        return self.send_message(to, {"type": "text", "text": {"preview_url": preview_url, "body": body}})
+
+    def send_template(self, to: str, name: str, language: str, components: list) -> Dict:
+        return self.send_message(to, {
+            "type": "template",
+            "template": {"name": name, "language": {"code": language}, "components": components},
+        })
+
+    def send_interactive_button(self, to: str, body_text: str, buttons: List[Dict]) -> Dict:
+        return self.send_message(to, {
+            "type": "interactive",
+            "interactive": {
+                "type": "button",
+                "body": {"text": body_text},
+                "action": {"buttons": buttons},
+            },
+        })
+
+    def send_interactive_list(self, to: str, header: str, body: str, button: str, sections: list) -> Dict:
+        return self.send_message(to, {
+            "type": "interactive",
+            "interactive": {
+                "type": "list",
+                "header": {"type": "text", "text": header},
+                "body": {"text": body},
+                "action": {"button": button, "sections": sections},
+            },
+        })
+
+    def send_interactive_product(self, to: str, body: str, catalog_id: str, product_retailer_id: str) -> Dict:
+        return self.send_message(to, {
+            "type": "interactive",
+            "interactive": {
+                "type": "product",
+                "body": {"text": body},
+                "action": {"catalog_id": catalog_id, "product_retailer_id": product_retailer_id},
+            },
+        })
+
+    # ---------- 模板管理 ----------
+    def create_template(self, name: str, language: str, category: str, components: list) -> Dict:
+        payload = {"name": name, "language": language, "category": category, "components": components}
+        return self.session.post(f"{self.GRAPH}/{self.waba}/message_templates", json=payload, timeout=30).json()
+
+    def list_templates(self, limit: int = 100) -> List[Dict]:
+        params = {"limit": limit}
+        data = self.session.get(f"{self.GRAPH}/{self.waba}/message_templates", params=params, timeout=30).json()
+        return data.get("data", [])
+
+    def delete_template(self, name: str, language: Optional[str] = None) -> Dict:
+        url = f"{self.GRAPH}/{self.waba}/message_templates/{name}"
+        if language:
+            url = f"{url}?language={language}"
+        return self.session.delete(url, timeout=30).json()
+
+    # ---------- 商业资料 ----------
+    def get_profile(self) -> Dict:
+        return self.session.get(f"{self.GRAPH}/{self.pnid}/profile", timeout=30).json()
+
+    def update_profile(self, fields: dict) -> Dict:
+        return self.session.post(
+            f"{self.GRAPH}/{self.pnid}/profile",
+            json={"messaging_product": "whatsapp", **fields}, timeout=30).json()
+
+    # ---------- 号码管理 ----------
+    def list_phone_numbers(self) -> List[Dict]:
+        data = self.session.get(f"{self.GRAPH}/{self.waba}/phone_numbers", timeout=30).json()
+        return data.get("data", [])
+
+    # ---------- 媒体 ----------
+    def upload_media(self, media_type: str, file_or_link, is_url: bool = False) -> Dict:
+        if is_url:
+            return self.session.post(
+                f"{self.GRAPH}/{self.pnid}/media",
+                json={"messaging_product": "whatsapp", "type": media_type, "source": file_or_link},
+                timeout=60).json()
+        with open(file_or_link, "rb") as f:
+            return requests.post(
+                f"{self.GRAPH}/{self.pnid}/media",
+                headers={"Authorization": f"Bearer {self.token}"},
+                data={"messaging_product": "whatsapp", "type": media_type},
+                files={"file": f}, timeout=120).json()
+
+    def download_media(self, media_id: str) -> bytes:
+        resp = self.session.get(f"{self.GRAPH}/{media_id}", timeout=30)
+        return resp.content
+```
+
+### 10.2 与既有 `meta_*` 方法的衔接
+
+为了让文档中的示例方法命名与仓库既有约定一致，以下是可直接接入 `ad_platform_api.py` 的薄封装（复用上文类或直接调用 requests）：
+
+```python
+# 建议放入 ad_platform_api.py / 作为 helper
+
+def meta_send_whatsapp_message(self, phone_number_id, to, body, message_type="text", **kwargs):
+    return WhatsAppBusinessClient(token, phone_number_id, waba).send_text(to, body) \
+        if message_type == "text" else \
+        WhatsAppBusinessClient(token, phone_number_id, waba).send_template(to, kwargs["template_name"], kwargs.get("language", "zh_CN"), kwargs.get("components", []))
+
+def meta_create_whatsapp_template(self, waba_id, name, language, category, components, **kwargs):
+    return WhatsAppBusinessClient(token, phone, waba_id).create_template(name, language, category, components)
+
+def meta_list_whatsapp_templates(self, waba_id, **kwargs):
+    return WhatsAppBusinessClient(token, phone, waba_id).list_templates(kwargs.get("limit", 100))
+
+def meta_get_whatsapp_business_profile(self, phone_number_id, **kwargs):
+    return WhatsAppBusinessClient(token, phone_number_id, "").get_profile()
+
+def meta_send_whatsapp_interactive(self, phone_number_id, to, interactive_type="button", **kwargs):
+    return WhatsAppBusinessClient(token, phone_number_id, "").send_message(to, {
+        "type": "interactive",
+        "interactive": {"type": interactive_type, **kwargs.get("interactive", {})},
+    })
+
+def meta_generate_whatsapp_qr(self, phone_number_id, size=300, **kwargs):
+    return WhatsAppBusinessClient(token, phone_number_id, "").session.post(
+        f"{GRAPH}/{phone_number_id}/qr_code",
+        json={"image_format": "PNG", "qr_code_size": size}).content
+```
+
+> **说明**：以上为示例封装，落地时需补充：access_token 从 credentials 统一读取、异常统一处理、与既有 `meta_send_capi` 的归因联动。
+
+---
+
+## 十一、合规、隐私与数据安全
+
+### 11.1 用户同意（Opt-in）与退订
+
+- WhatsApp 商业消息要求商家在发送前获得**用户明确同意（opt-in）**；
+- 仅在用户主动发起对话、订阅或授权后发送消息；
+- 国际/当地法规（如 GDPR、各国的反垃圾法）要求提供**便捷退订**；滥用将被投诉并拉低号码评级。
+
+**同意管理建议：**
+
+```
+同意来源（记录时间戳 + 渠道 + 目的）：
+  ├─ Click-to-WhatsApp 广告点击（视为对话授权）
+  ├─ 官网表单勾选「同意接收 WhatsApp 消息」
+  ├─ 客服请求内明确授权
+  └─ 会员注册协议中的订阅授权
+
+退订处理：
+  ├─ 关键词退订："STOP"/"退订" → 标记 blacklist
+  ├─ 模板内提供退订链接（营销模板必备）
+  └─ 退订后不再触达（含模板）
+```
+
+### 11.2 数据保留与隐私
+
+- 会话数据、用户手机号均属敏感数据，需最小化采集、加密存储、按留存策略清理；
+- Cloud API webhook 中的 `wa_id` 即用户手机号（E.164），对外接口不返回，避免二次泄露；
+- CAPI 回传的 user_data 需遵循 Meta 的加密要求（可哈希手机号/邮箱后再回传）。
+
+### 11.3 计费对账
+
+| 计费项 | 说明 | 监控建议 |
+|--------|------|---------|
+| 模板消息（按类别） | Authentication/Utility/Marketing 单条价 | 分类统计 |
+| 会话窗口 | 按发起类别（Marketing/Utility/Service/User-initiated） | 五类会话分布 |
+| 渠道借贷/附加服务 | 若有第三方 BSP 则多一层 | 对账 |
+
+**对账脚本示意：**
+```python
+def reconcile(api, waba_id, start_date, end_date):
+    """拉取会话明细并按类型汇总，用于预算审计（示意）"""
+    # 通过 Insights / download 拿到会话记录
+    rows = api.query_whatsapp_insights(waba_id, start_date, end_date)
+    agg = {"MARKETING": 0, "UTILITY": 0, "AUTHENTICATION": 0,
+           "SERVICE": 0, "USER_INITIATED": 0}
+    for r in rows:
+        agg[r["conversation_type"]] += 1
+    return agg
+```
+
+---
+
+## 十二、指标体系与优化
+
+### 12.1 核心指标（从消息到成交的漏斗）
+
+```
+漏斗指标（一次 Click-to-WhatsApp 营销）：
+  ├─ 曝光 Impr → 点击 CTR → 打开会话 CR_Open → 进入聊天触达
+  ├─ 会话打开率（广告→会话）      诊：落地页/Creative 相关性
+  ├─ 消息回复率（用户回消息比例）  诊：首条消息/互动消息设计
+  ├─ 会话转化率（会话→成交）      诊：客服承接/后续跟进
+  ├─ 模板送达率 / 已读率           诊：模板质量与号码评级
+  └─ 每会话成本（CPA）             诊：费率、号码评级、触达频率
+```
+
+### 12.2 优化手段清单
+
+| 环节 | 优化动作 |
+|------|---------|
+| 模板 | 设计多版本 A/B（文案/CTA/按钮），监控打开与回复 |
+| 会话承接 | 首条互动消息即分流（报价/售后/咨询），降低人工负载 |
+| 频率 | 单用户限频，营销低频，Utility 高频 |
+| 评级 | 控制投诉/屏蔽，保持 HIGH |
+| 广告 | destination=WhatsApp + 预填文案 + CAPI 回传 |
+| 本地化 | 多国号码 + 语言模板 + 本地营业时间 |
+
+---
+
+## 附录 D：常用字段与常量速查
+
+| 字段/常量 | 说明 |
+|-----------|------|
+| `messaging_product` | 固定 `whatsapp`，Cloud API 请求必带 |
+| `recipient_type` | `individual`（个人消息） |
+| `type` | `text/template/interactive/image/video/document/audio/location/contacts/sticker` |
+| `status` | 模板状态：`PENDING/APPROVED/REJECTED/DOWN/PAUSED/DISABLED/DELETED` |
+| `category` | 模板类别：`AUTHENTICATION/UTILITY/MARKETING` |
+| `language` | 如 `zh_CN`、`en_US`、`es_ES`、`pt_BR` |
+| `quality_rating` | `HIGH/MEDIUM/LOW`（号码级） |
+| `code_verification_status` | `NOT_VERIFIED/VERIFIED` |
+| `throughput.level` | `UNLIMITED/STANDARD/TIER_x` |
+| 常见错误码 | 见 4.6 |
+
+## 附录 E：模板变量编号自查表（粘贴模板前必查）
+
+```
+1. Header 变量是否在 header 组件中单独传参？
+2. Body 变量是否在 body 组件中按序传参？
+3. URL 按钮的 {{x}} 是否在 button 组件补了参数？
+4. OTP 按钮是否只传 sub_type 与 index、不传值？
+5. 参数个数是否严格等于占位符个数（不多不少）？
+6. 模板语言是否与变量值语言一致？
+7. 类别是否与内容真实匹配（营销≠实用）？
+```
+
+> 实践中 80% 的模板发送失败来自上述七项中的一项。发送前用脚本跑一遍自查，能省下大量排查时间。
+
+---
+
+> 本文由 Ryan 个人知识库生成。覆盖 WhatsApp Business App 与 Cloud API、消息模板（认证/实用/营销）分类与审核、QR/wa.me、商用资料、互动消息（按钮/列表/商品）、24h 与 7 天会话窗口、Click-to-WhatsApp 广告与 pre-registration 落地、自动回复、批量发送、质量评级、Webhook、限流、合规与指标优化。实践部分请以 Meta 官方最新 API 版本、费率表与政策为准。

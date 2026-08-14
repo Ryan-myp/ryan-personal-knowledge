@@ -1468,6 +1468,274 @@ def backfill_orders(pixel_id: str, orders: List[dict]) -> List[Dict]:
 
 ---
 
+### 3.17 完整生产级发送流程：哈希 → 签名 → 重试 → 幂等 → 去重（串讲代码）
+
+把前面散落的环节串成一个**单一生产入口**。这是 `meta_send_capi` / `meta_send_capi_batch` 的服务端总装线：
+
+```python
+import hashlib, base64, re, time, json, logging
+from dataclasses import dataclass, field
+from typing import Optional
+import requests
+
+logger = logging.getLogger("capi.producer")
+
+# ---------------- 规范化 + 哈希 ----------------
+def _b64sha(t: str) -> str:
+    return base64.b64encode(hashlib.sha256(t.encode()).digest()).decode()
+
+def norm_email(v: str) -> str: return (v or "").strip().lower()
+def norm_phone(v: str) -> str:
+    d = re.sub(r"\D", "", v or "")
+    return d
+def norm_name(v: str) -> str:
+    return re.sub(r"[^a-z]", "", (v or "").lower())
+
+def build_user_data(u: dict) -> dict:
+    out = {}
+    for k in ("em", "ph", "fn", "ln"):
+        raw = u.get(k)
+        if raw:
+            norm = {"em": norm_email, "ph": norm_phone,
+                    "fn": norm_name, "ln": norm_name}[k](raw)
+            out[k] = [_b64sha(norm)]
+    if u.get("external_id"):
+        out["external_id"] = [_b64sha(str(u["external_id"]).strip().lower())]
+    # 明文键
+    for k in ("client_ip_address", "client_user_agent", "fbp", "fbc"):
+        if u.get(k):
+            out[k] = u[k]
+    return out
+
+# ---------------- 事件对象 + 事件 ID 生成 ----------------
+@dataclass
+class CapiEvent:
+    event_name: str
+    event_time: int
+    user: dict
+    custom: dict
+    event_source_url: str = ""
+    action_source: str = "website"
+    order_id: str = ""
+    event_id: str = field(default="")
+
+    def __post_init__(self):
+        if not self.event_id:
+            self.event_id = f"evt:{self.order_id or 'x'}:{self.event_name}:{self.event_time}"
+
+    def to_payload(self) -> dict:
+        return {
+            "event_name": self.event_name,
+            "event_time": int(self.event_time),
+            "event_id": self.event_id,
+            "action_source": self.action_source,
+            "event_source_url": self.event_source_url,
+            "user_data": build_user_data(self.user),
+            "custom_data": self.custom,
+        }
+
+# ---------------- 发送器：重试 + 幂等 + 去重 ----------------
+class CapiSender:
+    def __init__(self, pixel_id, token, dedup=None, retries=3):
+        self.pixel_id = pixel_id
+        self.token = token
+        self.dedup = dedup          # 去重表（set 语义）
+        self.retries = retries
+
+    def _send_one(self, payload, params) -> dict:
+        url = f"https://graph.facebook.com/v23.0/{self.pixel_id}/events"
+        last = None
+        for att in range(self.retries):
+            try:
+                r = requests.post(
+                    url, json={"data": [payload]}, params=params, timeout=30,
+                    headers={"Authorization": f"Bearer {self.token}"})
+                j = r.json()
+                if r.status_code == 200 and j.get("events_received", 0) > 0:
+                    return {"ok": True, "resp": j}
+                if r.status_code in (429, 500, 502, 503, 504):
+                    time.sleep(1.5 * (2 ** att)); continue
+                return {"ok": False, "http": r.status_code, "err": j}
+            except requests.RequestException as e:
+                last = e; time.sleep(1.5 * (2 ** att))
+        return {"ok": False, "err": str(last)}
+
+    def dispatch(self, evt: CapiEvent, test_event_code=None) -> dict:
+        # 幂等 + 去重：同一 event_id 只发一次（生产用 Redis/DB 实现真实原子）
+        if self.dedup is not None:
+            key = f"{self.pixel_id}:{evt.event_id}"
+            if key in self.dedup:
+                logger.info("skip dup event_id=%s", evt.event_id)
+                return {"ok": True, "skipped": "dedup"}
+            self.dedup.add(key)
+        params = {}
+        if test_event_code:
+            params["test_event_code"] = test_event_code
+        result = self._send_one(evt.to_payload(), params)
+        logger.info("capi event_id=%s result=%s", evt.event_id, result)
+        return result
+
+    def dispatch_batch(self, events, data_processing_options=None) -> dict:
+        dp = data_processing_options if data_processing_options is not None else []
+        results = []
+        for i in range(0, len(events), 500):
+            chunk = [e.to_payload() for e in events[i:i + 500]]
+            url = f"https://graph.facebook.com/v23.0/{self.pixel_id}/events"
+            r = requests.post(
+                url, json={"data": chunk},
+                params={"data_processing_options": json.dumps(dp)},
+                headers={"Authorization": f"Bearer {self.token}"}, timeout=60)
+            j = r.json()
+            results.append({"status": r.status_code, "body": j})
+        return {"batches": results}
+
+# ---------------- 调用示例 ----------------
+sender = CapiSender(pixel_id="1234567890", token=ACCESS_TOKEN,
+                    dedup=set())   # 生产换 Redis SETNX
+
+sender.dispatch(CapiEvent(
+    event_name="Purchase",
+    event_time=int(time.time()),
+    order_id="order-88231",
+    user={"em": "alice@example.com", "ph": "15551234567",
+          "client_ip_address": "203.0.113.9",
+          "client_user_agent": "Mozilla/5.0 ..."},
+    custom={"currency": "USD", "value": 89.99, "order_id": "88231"},
+    event_source_url="https://shop.example.com/checkout?s=ok",
+))
+```
+
+这段串讲可以当作你们代码库的 Reference Implementation（参考实现），把 规范化 / 哈希 / 幂等 / 去重 / 重试 / 批量 全部收口。
+
+### 3.18 并发、异步 Worker 与客户端限流
+
+```python
+# 生产 Worker（用线程池 + 有界队列），防止打爆 Meta 频率限制
+from concurrent.futures import ThreadPoolExecutor
+import threading, queue
+
+class CapiPipeline:
+    def __init__(self, sender: CapiSender, max_workers=4, queue_cap=5000):
+        self.sender = sender
+        self.q = queue.Queue(maxsize=queue_cap)
+        self.executor = ThreadPoolExecutor(max_workers=max_workers)
+        self._rate = queue.Queue()          # 简易令牌桶
+        threading.Thread(target=self._consumer, daemon=True).start()
+
+    def enqueue(self, evt: CapiEvent):
+        # 背压：队列满则丢弃并记指标（生产会告警）
+        try:
+            self.q.put_nowait(evt)
+        except queue.Full:
+            logger.warning("capi queue full, dropping %s", evt.event_id)
+
+    def _consumer(self):
+        while True:
+            evt = self.q.get()
+            self.executor.submit(self.sender.dispatch, evt)
+```
+
+| 客户端限流要点 | 说明 |
+|----------------|------|
+| 令牌桶 | 200 QPS 以内（按 Meta 文档像素级上限） |
+| 批量切片 | 500/批，避免单请求体过大 |
+| 错误背压 | 429 时减慢；5xx 时暂停 30s |
+| 降级 | 缓存 + 延后发送（不丢弃） |
+
+### 3.19 日志、Trace 与可观测性
+
+生产必须能回答三个问题：**发了没？发哪了？结果如何？**
+
+```json
+{
+  "ts": "2026-08-14T10:00:00Z",
+  "level": "info",
+  "logger": "capi",
+  "pixel_id": "1234567890",
+  "event_id": "evt:order-88231:Purchase:1784085600",
+  "event_name": "Purchase",
+  "attempt": 1,
+  "http_status": 200,
+  "events_received": 1,
+  "fbtrace_id": "DeW0t2a..."
+}
+```
+
+| 指标（Prometheus） | 说明 | 告警 |
+|---------------------|------|------|
+| `capi_sent_total` | 发送数 | — |
+| `capi_failed_total{reason="429|5xx|timeout"}` | 失败数 | >0.5% |
+| `capi_latency_seconds` | RTT | p95 &gt; 3s |
+| `capi_dropped_total` | 队列溢出丢弃 | >0（必须 0） |
+| `capi_dedup_skipped_total` | 去重跳过 | — |
+| `capi_clock_offset_seconds` | 时钟偏移 | \|offset\|>0.3 |
+
+### 3.20 GTM Server-Side 与 Adobe XDM 事件映射细节
+
+**GTM Server-Side（CAPI Tag）参数映射建议**：
+
+| GTM 数据层变量 | CAPI 字段 | 说明 |
+|----------------|-----------|------|
+| `user.email` | `user_data.em` | 需在前端登录后用 hash（或用 CAPI 标记自动 hash） |
+| `user.phone` | `user_data.ph` | 同上 |
+| `transaction_id` | `event_id` | 与后端一致以去重 |
+| `purchase.value` | `custom_data.value` | float |
+| `purchase.currency` | `custom_data.currency` | ISO 4217 |
+| `page.url` | `event_source_url` | 完整 URL |
+| — | `action_source=website` | 固定 |
+
+**注意**：GTM SS 是"前端事件经你的服务器"转发——它**没有**你数据库里的真实订单金额。若要做精准价值上报，仍需后端 CAPI（从订单库取 value）。推荐方案：
+
+```
+方案A（推荐）：前端 Pixel（含 eventID） + 后端 CAPI（真金白银）
+方案B：前端 Pixel（含 eventID） + GTM SS（承接统一 hash）——针对无后端的轻量站
+```
+
+**Adobe（AEP Web SDK + Meta 连接器）映射**：
+
+| AEP XDM | CAPI | 说明 |
+|---------|------|------|
+| `xdm:eventType`（commerce.purchases） | `event_name=Purchase` | 由连接器映射 |
+| `xdm:commerce.order.purchaseID` | `event_id` | 用 purchaseID 做幂等键！ |
+| `xdm:commerce.priceTotal` | `custom_data.value` | 单位、货币要对齐 |
+| `identityMap.email` | `user_data.em`（hash） | 连接器应 hash |
+| `xdm:web.webPageDetails.URL` | `event_source_url` | 原样 |
+
+**多源双发去重的关键**：无论走 Pixel / GTM SS / AEP / 后端 CAPI，**必须共享同一个 event_id 生成规则和同一个像素 ID**，否则每个通道的事件在 Meta 里都是"另一条"，重复计费 / 重复归因。
+
+### 3.21 多店铺 / 多币种 / 多像素生产策略
+
+大型电商（Ryan 项目常打多站点）的落地方案：
+
+```
+┌─ 北美店 pixel=111（USD） ──► CAPI-A（us1 区域 Worker）
+├─ 欧洲店 pixel=222（EUR） ──► CAPI-B（eu1 区域 Worker，含 GDPR/LDU）
+├─ 东南亚店 pixel=333（SGD）─► CAPI-C（ap1 区域 Worker）
+└─ 共享 WAF/NAT 出口
+```
+
+要点：
+
+1. **每店独立 pixel**（归因隔离、币种隔离、地区合规隔离）；
+2. 队列按 region 分区（`capi.{pixel_id}.events`），Worker 打标地域；
+3. 汇率：统一在入队前折算成**店铺结算货币**，避免报表币种混乱；
+4. token 按 pixel 分权限系统用户，最小化爆破面；
+5. 灰度：新店先 `test_event_code` → 影子像素 → 逐步放量。
+
+### 3.22 灰度上线与回滚
+
+```
+上线顺序（每步验证）：
+1. 影子 pixel + test_event_code（不落真实）
+2. 同 pixel test_event_code=true（真像素测试）
+3. 5% 流量单通道（只 CAPI 覆盖一部分订单）
+4. 双通道（Pixel + CAPI）+ event_id 去重校验
+5. 全量
+回滚：关 CAPI 开关（feature flag），Pixel 继续兜底；事件不丢不双计。
+```
+
+---
+
 ## 四、常见问题与排查
 
 ### 4.1 重复计数（最典型生产事故）

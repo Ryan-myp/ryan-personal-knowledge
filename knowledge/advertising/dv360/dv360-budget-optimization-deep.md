@@ -1179,3 +1179,173 @@ def reconcile_cross_account(all_accounts: list) -> dict:
 - 建立指标面板，形成监控 → 决策 → 执行 → 校验的闭环。
 
 ---
+## 四、常见问题与排查
+
+### 4.1 FAQ 速查表（按场景）
+
+把日常遇到的高频问题做成一张可检索的表，配合详见小节：
+
+| # | 问题 | 一句话答案 | 详见 |
+|---|------|-----------|------|
+| 1 | 预算明明设置了为什么不花？ | 8 成原因是创意未审批/状态 PAUSED/定向过窄，先 `dv360_get_account_health` 体检 | 3.6 坑2 |
+| 2 | 预算超支告警怎么破？ | 超支多为 overdelivery 通胀 + 时区 DST，用 ×1.1 阈值监控 + 设硬顶 | 3.6 坑1 / 坑3 |
+| 3 | pacing 太慢花不完怎么办？ | 转 FRONTLOADED / 加预算 / 放宽频次 / 降出价门槛抢量 | 2.2 / 2.3 |
+| 4 | pacing 太快提前打光？ | 转 EVEN / 缩预算 / 提高频次上限 / 拉长 flight | 2.2 / 2.3 |
+| 5 | 跨账户预算能共享吗？ | 原生不自动共享，需外部控制塔回写实现"逻辑共享" | 3.5 |
+| 6 | 多币种怎么算总和？ | 统一折 USD（当日汇率快照）+ 记录汇率版本 | 3.5.2 |
+| 7 | 改了预算不生效？ | flexibility=DENY 或 flight 已结束；写入后读回校验 | 3.6 坑6 |
+| 8 | 预测跟实际差太多？ | 预测通常乐观，用达成率系数打折，PG 除外 | 3.6 坑5 |
+| 9 | 报告预算和报表口径不一？ | 业务口径用"投放 flight"，不要拿账单月调度 | 3.5.2 |
+| 10 | 小 LI 分不到预算饿死？ | 分配器设 floor（保底占比） | 2.4 |
+| 11 | 某个 LI 拿了 80% 预算？ | 分配器设 cap_ratio（封顶占比） | 2.4 |
+| 12 | 大促预算被一天打光？ | 关闭跨 flight 滚动共享 + 设 DAILY 硬顶 | 3.3.2 |
+| 13 | 单位搞混 micros/美元？ | 一律在边界函数 usd_to_micros/micros_to_usd 换算，CI 覆盖 | 2.4.3 |
+| 14 | 哪些账户能自动回写？ | IO 弹性 flexibility=EDITABLE 才行 | 2.5 |
+| 15 | 并发改预算会打架吗？ | 用 Redis 锁 + 乐观版本号，禁止双 job 同写一 LI | 3.4 |
+| 16 | 用官方预算建议靠谱吗？ | 可参考但要本地评估，别黑盒全收 | 2.8 |
+
+---
+
+### 4.2 预算超支排查流程（Decision Tree）
+
+遇到"超支"告警，按下面流程走，不要凭感觉：
+
+```
+收到"预算超支"告警
+   │
+   ├─ 1) 核对口径：是"日预算超支"还是"总预算超支"？
+   │      ├─ 总预算超支 → 极异常：查 is overdelivery / 手动改预算 / 并发写冲突
+   │      └─ 日预算超支 → 正常通胀？继续
+   │
+   ├─ 2) 检查时区：今天是不是 DST 切换日（25 小时"日"）？
+   │      ├─ 是 → 超支 8% 属正常，剔除该日统计
+   │      └─ 否 → 继续
+   │
+   ├─ 3) 检查 pacing / 模式：
+   │      ├─ ACCELERATED → 有意冲刺，接受通胀
+   │      └─ EVEN/FRONTLOADED → 不应超，继续
+   │
+   ├─ 4) 检查是否多 LI 共池：
+   │      ├─ 是 → 各 LI 独立不超，但合并超（池效应）
+   │      └─ 否 → 继续
+   │
+   ├─ 5) 检查是否被外部 job 改动预算（审计 dv360_list_activity_logs）
+   │      └─ 有 → 回滚快照
+   │
+   └─ 6) 仍未定位 → 提升为 CRIT，人工介入 + dispatch 支持
+         （记录：日期/时区/模式/共池/审计/快照）
+```
+
+---
+
+### 4.3 Pacing 不达标排查矩阵
+
+| 症状 | 可能根因（按序） | 排查动作 | 修复 |
+|------|------------------|----------|------|
+| pacing < 50%（严重滞后） | 定向过窄 / 创意未批 / 出价下限被卡 | 查 `dv360_get_account_health` + 创意审批 | 放宽定向、重新提交创意、提高出价 |
+| pacing 稳步低于目标 | 竞争力不足（bid 低）或预算分配过低 | 对比同池 LI 的 win rate | 提 bid / 加预算 |
+| 前重后轻（前面很快后面枯） | FRONTLOADED + 大促余量没了 | 查看预算水位 | 转 EVEN、补充预算 |
+| 目标"稳定"但总在抖动 | bid 与环境波动 | 看小时粒度 spend | 加频次上限、平滑出价 |
+| 旺季 pacing 卡高 | 库存/预算封顶 | 看是否到 IO 硬顶 | 加 IO 预算（若批准） |
+| 改完预算仍不体现 | 弹性 DENY / flight 结束 | 读回校验 | 修 flexibility / 延 flight |
+
+---
+
+### 4.4 预算分配失败的排查
+
+当自动化分配（`dv360_update_budget_allocation`）失败：
+
+```
+┌─ 报错类型 ──────────────────────────────────────────┐
+│ 403 PERMISSION_DENIED   → 无权限/弹性 DENY            │
+│ 404 NOT_FOUND           → allocation_id / IO 拼错    │
+│ 422 UNPROCESSABLE       → 字段/格式不合法（单位错误）  │
+│ 409 CONFLICT            → 版本冲突（并发改预算）       │
+│ 429 RATE_LIMIT          → 触发配额；重试退避           │
+│ 400 INVALID_ARGUMENT    → 缺字段 / micros 为负/超限   │
+└──────────────────────────────────────────────────────┘
+   │
+   ├─ 核对 allocation_id 与 IO 归属（dv360_list_budget_allocations）
+   ├─ 核对 flexibility（dv360_list_insertion_order_flexibility）
+   ├─ 核对单位：micros ≥ 0 且 ≤ 合理上限
+   ├─ 核对引用：DV360 v4 字段名（item、budget 等）
+   └─ 核对并发：加锁，失败重试 3 次+退避
+```
+
+---
+
+### 4.5 FAQ 单个详解（Top 5）
+
+#### 4.5.1 "日预算用超"到底允许多少？
+
+DV360 的 overdelivery（超投）是正常的：**日预算 +10%（含服务器端延迟和预估系统误差）是常见且可接受的**。某些配置或高峰甚至瞬时 +20%。要"绝对不超"需要硬顶级控制（Partner max spend + Pacing HOLD）。**永远不要在告警里把 100% 当天花准线**。
+
+#### 4.5.2 "报告里花费和预算对不上"
+
+- 口径：**预算**看的是"计划值"，**花费**看的是"实际新钱"。二者天然不同步（有已竞价未结算、credit、rounding）。
+- 时区：报表按所设时区日切分，预算按 flight 日切分；对账必须用同一时区。
+- 处理：以"flight 口径"做预算对账；月度累计用"结算口径"核对财务。两个口径分开，不要混用。
+
+#### 4.5.3 "预算弹性到底是什么"
+
+flexibility 是 IO 上允许预算**跨 flight 滚动**与**被外部调整**的开关。开启（EDITABLE/PACING）后，预算剩余可滚到下个 flight，且 API 可回写；关闭（DENY）则预算锁定在指定 flight、外部改不动。自动化分配前必查。
+
+#### 4.5.4 "为什么小 Line Item 经常涨预算还是没用"
+
+小 LI（预算占比很低）常被"池效应"压制：IO 里有个大出价的 LI 抢走共享池，小 LI 永远花不满。若小 LI 本身 ROI 高，应**单独分配独立预算**（不走共池），并给足 floor。分配器里 `floor` 参数就是为此。
+
+#### 4.5.5 "预算预测可以放心用数字下单吗"
+
+预测是"期望"，不是"保证"。它基于历史库存/效率均值，**系统性乐观**。采购/排产时打折（-20%~-40%），运行时监控实时偏差并动态修正。PG（有保量合同）除外，那是合同承诺不是预测。
+
+---
+
+### 4.6 预算健康体检清单（Runbook）
+
+每周/每日例行可用脚本，检查预算健康。可直接复用 `dv360_get_account_health`：
+
+```python
+def budget_health_runbook(api, advertiser_id: str) -> dict:
+    """账户预算健康体检（Runbook 脚本）。"""
+    health = api.dv360_get_account_health(advertiser_id) or {}
+    issues = []
+    # 1. 弹性检查
+    for io in api.dv360_list_budget_allocations(advertiser_id) or []:
+        flex = api.dv360_list_insertion_order_flexibility(io.get("insertion_order_id", ""))
+        if not flex:
+            issues.append(f"{io.get('insertion_order_id')} 不可弹性调整")
+    # 2. pacing 异常
+    if health.get("status") == "CRITICAL":
+        issues.append("账户健康度 CRITICAL：建议检查 pacing/预算")
+    # 3. 汇率/时区快照校验
+    tz = api.dv360_list_time_zones()
+    cur = api.dv360_list_currency_options()
+    issues.append(f"时区数={len(tz or [])} 币种数={len(cur or [])}（确认基准归一）")
+    return {"health": health, "issues": issues, "ts": "2026-08-14"}
+```
+
+> 生产：把 runbook 接进凌晨 cron，每日产出"预算健康报告"，供早会评审。超过阈值自动建 ticket / 群通知。
+
+---
+
+### 4.7 监控阈值建议表（可直接抄）
+
+| 对象 | 指标 | 健康窗口 | 动作窗口 |
+|------|------|----------|----------|
+| LI | 花费进度 spreadPct | [timePct-0.05, timePct+0.05] | ±0.15 触发调速 |
+| LI | pacing rate | 0.8~1.2 | <0.7 或 >1.3 告警 |
+| IO | 预算利用 util | 40% ~ 95% | <30%（花不完）/ >98%（超支） |
+| 账户 | 健康度 | ACTIVE/GOOD | CRITICAL → 告警 |
+| 批量 | 更新失败率 | <1% | >3% → 触发重试/暂停 |
+| 预测 | 达成率 | 0.7~1.3 | 偏离 → 修正系数 |
+
+---
+
+### 4.8 本章小结
+
+- 15 条 FAQ 速查 + 16 条问题表，覆盖预算超支 / pacing 不达 / 分配失败 / 口径不一 / 改预算不生效。
+- 超支走"Decision Tree"逐层定位；分配失败按错误码分类处理。
+- 预算健康体检有 Runbook，可接入 cron 自动化。
+- 监控阈值给出可直接使用的默认值，落地即可跑。
+
+---

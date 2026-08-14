@@ -1800,3 +1800,263 @@ def meta_ig_healthcheck(self, ig_user_id: str) -> dict:
 > 建议接入：每日凌晨健康自检 → 有异常（token 过期、账号被移除绑定、Insights 权限丢失）时自动告警到企业微信 / Slack，尽早发现"静默失联"。
 
 ---
+
+---
+
+## 四、常见问题与排查
+
+> 本部分沉淀 Instagram Graph API 最常遇到的真实坑位，附错误码、根因与解法。排查顺序建议：**绑定（Page↔IG）→ 权限 → 账号公开性 → 容器状态 → 限流 → 数据延迟**。
+
+### 4.1 权限不足（错误码 100 / 200 / 10 系列）
+
+**典型报错：**
+```json
+{ "error": {
+    "message": "(#100) Permission "instagram_basic" is required ...",
+    "type": "OAuthException", "code": 100 } }
+```
+```json
+{ "error": {
+    "message": "(#200) Requires business permission: ig_user_content",
+    "type": "OAuthException", "code": 200 } }
+```
+```json
+{ "error": {
+    "message": "(#10) This action cannot be completed",
+    "type": "OAuthException", "code": 10,
+    "error_subcode": 33 } }
+```
+
+**排查清单：**
+
+| 检查项 | 说明 |
+|--------|------|
+| App 权限已申请且（如需要）**通过 App Review** | `instagram_basic`, `instagram_manage_comments`, `instagram_manage_insights`, `instagram_content_publish` 是否在 App 的权限列表 |
+| 你是该 Page 的 **admin** | 只有 admin 才可代表 IG 商业账号调用；analyst 等角色不够 |
+| IG 账号**已绑定**到 Page | `GET /{page-id}?fields=instagram_business_account` 是否返回 id |
+| IG 账号是 **Business/Creator**，非个人号 | 个人号无这些权限 |
+| 账号**公开** | 私有账号拒绝大多端点（见 4.3） |
+| token 类型正确 | 不接受 App Token；发布需 user/system user token |
+| 是否 `appsecret_proof` 过期/不匹配 | 开启 proof 后必须每个请求都带 |
+
+**快速定位脚本：**
+```python
+def ig_diagnose(self, page_id: str):
+    """逐层排查，输出哪一层出了问题。"""
+    out = {}
+    try:
+        p = self.request("GET", page_id,
+            params={"access_token": self.get_token(),
+                    "fields": "instagram_business_account,name"}).json()
+        ig = p.get("instagram_business_account") or {}
+        out["page"] = True
+        out["ig_bound"] = bool(ig.get("id"))
+        out["ig_user_id"] = ig.get("id")
+    except Exception as e:
+        out["page"] = False
+        out["page_error"] = str(e)
+    return out
+```
+
+### 4.2 媒体发布需公开账号（能创建、不能发布）
+
+**现象：** 容器创建成功（返回 container id），但发布 `POST /{container}` 报错，或发布后帖子不可见。
+
+**根因：**
+- IG 账号是**私有（Private）**：私密账号下，容器创建后无法正常发布成公开媒体；
+- 账号虽绑定但非 Business/Creator。
+
+**解法：**
+1. 在 IG 设置把账号切换为**公开 + 商业/创作者**；
+2. 确认 `instagram_content_publish` 权限；
+3. 发布前先查询 `status_code`，`EXPIRED` / `ERROR` 则重建容器。
+
+> **一句话：Instagram Graph API 的"发布内容"只对公开的 Business/Creator 账号开放。** 若业务一定要私有运营，IG Graph API 的发帖能力不可用，需另寻合规方案。
+
+### 4.3 图片 / 视频类型与格式限制
+
+| 限制项 | 图片 | 视频 / Reels |
+|--------|------|-------------|
+| 文件格式 | JPG / PNG | MP4 / MOV（部分） |
+| 长宽比 | 支持多比例但成图需合规 | 竖屏 Reels 建议 9:16 |
+| 大小上限 | 相对宽松 | 视频建议 ≤ 单文件多大内（官方动态） |
+| 时长 | — | Reels 通常 ≤ 90s；普通视频更宽 |
+| 公开 URL | ✅ 必须可公开抓取 | ✅ 必须可公开抓取 |
+| 版权 | 不得侵权 | `copyright_check=true` 时可能被拒 |
+
+**排查：** 若容器一直 `IN_PROGRESS` 后 `ERROR`，检查：
+- `error_message` 字段；
+- URL 可否被 IG 后台无鉴权抓取（登录墙、防盗链、CORS 会失败）；
+- 图片/视频编码是否合规（首推 H.264 MP4）；
+- 尺寸比例是否触达异常。
+
+### 4.4 容量与资源限制
+
+- **容器 24 小时有效**：未发布超时 `EXPIRED`；
+- **同一资源 URL 短时间重复创建**可能被去重/判重；
+- **批量发帖瞬时打满**：发帖与容器操作也有滚动配额；
+- **Hashtag 聚合不再对普通应用开放**（详见 4.7）——容量/权限双受限。
+
+**建议：** 给资源 URL 加版本参数（`?v=20260814`）避免去重；批量时用队列 + 节流（参考 3.5 的 `sleep(3)`）。
+
+### 4.5 Hashtag 搜索上限与收紧
+
+**现象：** `GET /{ig}/hashtags_search?q=...` 返回空 `data`，或 `top_media` / `recent_media` 返回 `(#100)` 权限错误。
+
+**根因：** 2024 年后官方将 Hashtag 端点限定为**创建者 / 社区（Creator/Community）身份**且需严格 App Review；普通业务 App 拿不到授权。
+
+**排查与替代：**
+- 确认 App 是否通过 Hashtag 相关审核；
+- `q` 需真实存在的 tag，且不含 `#`；
+- 若拿不到权限，改用**内容侧**：在自己发布内容的 `caption` 中带 tag，用 `media fields` 读取互动，而非第三方聚合。
+
+### 4.6 Insights 数据延迟与口径
+
+**现象：** 刚发布的媒体 `GET /{media-id}/insights` 返回空或 `data` 不全；账号级 `since/until` 查询与前台数字对不上。
+
+**根因与处理：**
+- Insights 为**聚合统计**，存在分钟~小时级延迟（尤其 `reach` / `impressions`）；
+- `follower_count` 只能 `period=lifetime`；
+- 媒体级 insights 为 `period=lifetime`（累计值）；
+- 历史窗口有限，旧数据可能不再可查。
+
+**最佳实践：**
+- 报表系统**端侧每日快照缓存**，不要每次实时拼历史；
+- 对"最新一天"数据标注"可能不完整（T-1 前才稳定）"；
+- 需要同比/环比时，用**稳定日期**（如截至昨日完整数据）。
+
+### 4.7 限流（Rate Limit）与重试
+
+**报错：** `(#4) Application request limit reached`，或 HTTP `429`。
+
+**处理：**
+1. 读 `X-App-Usage` 头观察配额；
+2. 指数退避重试（见 2.14 封装）；
+3. 高频查询做缓存 + 定时同步；
+4. 大数据量用分页小步拉取，避免单次大页（`limit` 过大反而被限）。
+
+### 4.8 评论互动受限 / 被判 spam
+
+**现象：** 高频自动回复后 `(#4)` 或评论不成功；被 Instagram 标记为 spam。
+
+**处理：**
+- 回复频率严格受限（建议低并带随机间隔）；
+- 避免全账号秒回、重复模板；
+- 对敏感内容转人工，不做全自动覆盖。
+
+### 4.9 Page 与 IG 绑定异常
+
+**现象：** `instagram_business_account` 一直为 `null`，或突然消失。
+
+**处理：**
+- 检查该 Page 是否真的绑定了 IG 商业账号（在 FB Page 设置 / IG App 确认）；
+- 检查 token 用户是否仍是该 Page 的 **admin**（角色变更会导致访问失效）；
+- IG 账号是否被**解除绑定**或切换为个人号；
+- 用 `GET /me/accounts?fields=id,name,instagram_business_account` 全量复核。
+
+### 4.10 排查决策树（速查）
+
+```
+IG Graph API 报错排查
+│
+├─ token 有效? ──No──► 刷新/续期 token（4.1）
+│      │Yes
+├─ 是 IG 商业账号? ──No──► 切换 Business/Creator（4.2）
+│      │Yes
+├─ 已绑定 Page 且你是 admin? ──No──► 绑定/授权（4.1/4.9）
+│      │Yes
+├─ 账号公开? ──No──► 公开化（4.2）
+│      │Yes
+├─ 权限齐? ──No──► 补权限 + App Review（4.1）
+│      │Yes
+├─ 容器状态? ──EXPIRED/ERROR──► 重建容器（2.4）
+│      │FINISHED
+├─ 限流? ──Yes──► 退避/缓存（4.7）
+│      │No
+└─ 数据延迟? ──Yes──► 稍等 / 快照缓存（4.6）
+```
+
+---
+
+## 五、自测题
+
+### 题 1：为什么要"容器 → 发布"两段式，直接 POST 为什么报错？
+
+<details><summary>答案</summary>
+
+IG Graph API 中 `POST /{ig-user-id}/media` 只创建**容器（Container）**，返回 container id，而不是已发布媒体。原因是上传到 IG 的媒体需要后台处理（转码/审核/落库/索引），耗时不定（图片数秒~数十秒，视频几十秒~数分钟）。**处理未完成就叫"发布"（`POST /{container-id}`）会得到错误或被当作空发布。** 因此正确时序是：① 创建容器 → ② 轮询 `status_code` 直到 `FINISHED` → ③ 发布容器得 media id → ④ 复核 permalink。且容器 24h 内有效，超时 `EXPIRED`，同一资源 URL 短时间重复创建可能被去重。
+
+</details>
+
+### 题 2：Instagram Graph API 的鉴权核心是什么？为什么"Marketing API 能跑通、IG 却报权限错"？
+
+<details><summary>答案</summary>
+
+IG Graph API 复用 Facebook Graph API 的 OAuth 体系，鉴权核心是**用户令牌（或系统用户令牌）+ Page 关联 + 应用权限 + Page admin 角色**四者缺一不可：
+- token：只能是 user-level 或 page-level / system user token，**不接受 App Token**；
+- 必须有一个**绑定 IG 商业账号的 Facebook Page**；
+- App 需有 `instagram_basic` / `instagram_manage_comments` / `instagram_manage_insights` / `instagram_content_publish` 等权限；
+- 调用用户必须是该 Page 的 **admin**。
+
+"Marketing API 跑通但 IG 跑不通"的最常见根因：(a) IG 账号是**个人号**而非商业/创作者账号；(b) 账号**私有**；(c) 没绑定 Page 或不是 admin；(d) IG 专项权限未申请/未过审；(e) 用了 App Token。这些都是**绑定/权限层**问题，与数据层无关。
+
+</details>
+
+### 题 3：Hashtag 搜索与聚合的实现步骤，以及 2024 年后的重要限制是什么？
+
+<details><summary>答案</summary>
+
+步骤是两段：
+1. 搜索：`GET /{ig-user-id}/hashtags_search?q={tag}&user_id={ig-user-id}`（`q` 不含 `#`）把文本 tag 转成 **hashtag id**（`data[0]` 通常为精确匹配）；
+2. 聚合：用 hashtag id 调 `GET /{ig-hashtag-id}/top_media` 与 `/recent_media`（需带 `user_id`），翻页取媒体列表（caption/media_type/permalink/like_count/comments_count 等）。
+
+**重要限制：** 2024 年起官方将 Hashtag 端点收紧为**仅创建者/社区（Creator/Community）身份**且需严格 App Review，普通业务 App 大概率拿不到该权限。若拿不到，Hashtag 只能用于**自己发布内容的 caption 打标签 + 读取自己媒体的互动**，而不能做第三方话题聚合。计划前务必先确认 App 权限，否则会持续 `(#100)`。
+
+</details>
+
+### 题 4：`reach` 与 `impressions` 的区别？账号级与媒体级 Insights 的 `period` 有什么不同？
+
+<details><summary>答案</summary>
+
+- `reach`：**触达人数**——看到内容的独立用户数（去重）；
+- `impressions`：**展示次数**——含同一用户多次曝光的累计展示，因此 `impressions ≥ reach`（比值可反映单用户平均曝光）。
+
+`period` 差异：
+- **账号级**（`GET /{ig}/insights`）：`reach`、`impressions`、`profile_views` 用 `period=day` 返回时间序列（可 `since/until` 拉区间）；而 **`follower_count` 只能用 `period=lifetime`**（返回单个最新值）；
+- **媒体级**（`GET /{media}/insights`）：`engagement`、`saved`、`video_views`、`reach`、`impressions`、`shares` 等基本都用 **`period=lifetime`**（媒体生命周期累计值）。
+
+另注意：Insights 是聚合统计，有分钟~小时级延迟，且只在 **Business/Creator + 公开账号**下可用；私密账号或时间窗口过旧时可能取不到或数据不全。
+
+</details>
+
+### 题 5：Webhooks 订阅 IG 评论与 @提及的完整接入流程，以及生产必须做对哪几点？
+
+<details><summary>答案</summary>
+
+流程：
+1. App（Meta Developer Console → Webhooks）为 **Instagram** 对象订阅字段：`comments`（可配 `include_replies=true`）与 `mentions` 等；
+2. 配置你的 **Callback URL + Verify Token**；Meta 用 `GET {callback}?hub.mode=subscribe&hub.verify_token=...&hub.challenge=...` 做订阅握手，你的服务器校验 verify token 后原样回显 `hub.challenge` 完成订阅；
+3. 事件发生时 Meta 用 **POST** 推送 JSON（`entry[].changes[]`，`field` 为 `comments` / `mentions`），你的服务器消费并处理（自动客服、@ 监控）。
+
+生产必须做对五点：
+1. **签名校验**：用 App Secret 对 body 做 HMAC-SHA1 得到 `X-Hub-Signature` 比对，防伪造；
+2. **尽快返回 200**：收到即回，异步入队，避免平台超时重试造成重复处理；
+3. **幂等**：同一 entry/time 去重（Redis/DB），防重复消费；
+4. **HTTPS + 固定域名**；
+5. **只订阅自己有权管理的账号**的事件。
+
+</details>
+
+---
+
+## 参考资源
+
+- Instagram Graph API 官方文档：https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login
+- Instagram Content Publishing API：https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/content-publishing
+- Instagram Insights API：https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/insights
+- Instagram Webhooks：https://developers.facebook.com/docs/graph-api/webhooks/getting-started/webhooks-for-instagram
+- Facebook Python Business SDK：https://github.com/facebook/facebook-python-business-sdk
+
+---
+
+*本深度文档聚焦 Instagram Graph API 专项（商业账号绑定、内容发布时序、评论互动、Hashtag 聚合、账号与媒体洞察、Webhooks），与同目录 `meta-marketing-api-deep.md`（Marketing API 通用：Campaign/AdSet/Ad/Pixel/CAPI）互补。*
