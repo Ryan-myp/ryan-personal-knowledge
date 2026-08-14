@@ -1094,24 +1094,28 @@ class AdPlatformClient:
     
     def google_list_ad_groups(self, customer_id: str, campaign_id: str, **kwargs) -> List[Dict]:
         """列出广告组"""
-        client = self.get_client('google')
-        ad_group_service = client.get_service('AdGroupService')
-        query = f"""
-            SELECT ad_group.id, ad_group.name, ad_group.status
-            FROM ad_group 
-            WHERE ad_group.campaign = 'customers/{customer_id}/campaigns/{campaign_id}'
-        """
-        response = gaia.search_stream(customer_id=customer_id, query=query)
-        
-        ad_groups = []
-        for batch in response:
-            for row in batch.results:
-                ad_groups.append({
-                    'id': row.ad_group.id,
-                    'name': row.ad_group.name,
-                    'status': row.ad_group.status
-                })
-        return ad_groups
+        try:
+            client = self.get_client('google')
+            gaia = client.get_service('GoogleAdsService')
+            query = f"""
+                SELECT ad_group.id, ad_group.name, ad_group.status
+                FROM ad_group 
+                WHERE ad_group.campaign = "customers/{customer_id}/campaigns/{campaign_id}"
+            """
+            response = gaia.search_stream(customer_id=customer_id, query=query)
+            
+            ad_groups = []
+            for batch in response:
+                for row in batch.results:
+                    ad_groups.append({
+                        'id': row.ad_group.id,
+                        'name': row.ad_group.name,
+                        'status': row.ad_group.status.name if hasattr(row.ad_group.status, 'name') else str(row.ad_group.status)
+                    })
+            return ad_groups
+        except Exception as e:
+            print(f"[Google Ads] list_ad_groups error: {e}")
+            return []
     
     def google_create_ad_group(self, customer_id: str, campaign_id: str, name: str, **kwargs) -> Dict:
         """创建广告组"""
@@ -1198,28 +1202,32 @@ class AdPlatformClient:
         
         return {'resource_name': response.results[0].resource_name}
     
-    def google_list_ads(self, customer_id: str, ad_group_id: str, **kwargs) -> List[Dict]:
-        """列出广告创意"""
-        client = self.get_client('google')
-        ad_service = client.get_service('AdService')
-        query = f"""
-            SELECT ad.id, ad.type, ad.status, ad_group_ad.final_urls
-            FROM ad_group_ad JOIN ad
-            ON ad.id = ad_group_ad.ad.id
-            WHERE ad_group_ad.ad_group = 'customers/{customer_id}/adGroups/{ad_group_id}'
-        """
-        response = gaia.search_stream(customer_id=customer_id, query=query)
-        
-        ads = []
-        for batch in response:
-            for row in batch.results:
-                ads.append({
-                    'id': row.ad.id,
-                    'type': row.ad.type,
-                    'status': row.ad.status
-                })
-        return ads
-    
+        def google_list_ads(self, customer_id: str, ad_group_id: str, **kwargs) -> List[Dict]:
+        """列出广告"""
+        try:
+            client = self.get_client('google')
+            gaia = client.get_service('GoogleAdsService')
+            query = f"""
+                SELECT ad.id, ad.type, ad.status
+                FROM ad_group_ad JOIN ad
+                ON ad.id = ad_group_ad.ad.id
+                WHERE ad_group_ad.ad_group = "customers/{customer_id}/adGroups/{ad_group_id}"
+            """
+            response = gaia.search_stream(customer_id=customer_id, query=query)
+            
+            ads = []
+            for batch in response:
+                for row in batch.results:
+                    ads.append({
+                        'id': row.ad.id,
+                        'type': row.ad.type.name if hasattr(row.ad.type, 'name') else str(row.ad.type),
+                        'status': row.ad.status.name if hasattr(row.ad.status, 'name') else str(row.ad.status)
+                    })
+            return ads
+        except Exception as e:
+            print(f"[Google Ads] list_ads error: {e}")
+            return []
+
     def google_create_responsive_search_ad(self, customer_id: str, ad_group_id: str, **kwargs) -> Dict:
         """创建响应式搜索广告"""
         client = self.get_client('google')
