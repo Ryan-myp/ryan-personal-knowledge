@@ -2098,7 +2098,7 @@ IO/交易:      dv360_list_insertion_orders / dv360_list_proposals
 
 ---
 
-## 八、结语
+## 九、结语
 
 媒体购买（Media Buying）在 DV360 里本质上是一套**"结构化花钱"**系统：用 IO 框住合同与总盘子，用 LineItem 决定买什么、怎么买、花多少钱，用 Flight 切时间与阶段，用 Creative 提供素材并过审批，用 Bid 决定单次出价，用 Pacing / Budget 决定钱的节奏与上限。真正把它们串成可靠生产系统，还需要幂等、重试、并发、监控这些工程能力。
 

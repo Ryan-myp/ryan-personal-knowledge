@@ -1821,3 +1821,166 @@ client.meta_send_capi(PIXEL_ID, event_name="Purchase",
 | `meta_query_insights` | 查完播/TTR/互动指标 |
 | `meta_track_pixel` / `meta_send_capi` | 转化追踪 |
 
+
+---
+
+## 十、互动贴纸实战：从选型到读数据
+
+### 10.1 贴纸选型决策表
+
+| 贴纸 | 数据产出 | 用户门槛 | 适合 |
+|------|---------|---------|------|
+| 投票（Poll） | A/B 选择结果、参与率 | 低（点一下） | 产品口味/偏好、测需求 |
+| 表情滑杆（Emoji Slider） | 好感度分布 | 低（滑一下） | 满意度、心动程度 |
+| 倒计时（Countdown） | 回访意愿、提醒订阅 | 中（点关注） | 上新、直播预告、限时 |
+| 问答（Questions） | 开放文本、真实痛点 | 高（要打字） | 高客单、教育、FAQ 素材源 |
+| 滑动/Link（Swipe / Link 贴纸） | 点击跳转、CTR | 中（上滑/点链接） | Stories 引流、落地页 |
+
+### 10.2 贴纸在广告中的最佳时序
+
+```text
+贴纸出现时序（以 15s Story Ads 为例）
+┌────┬──────┬───────┬────────┐
+│0-3s│3-7s  │7-11s  │11-15s  │
+├────┼──────┼───────┼────────┤
+│钩子│痛点   │方案+贴纸 │CTA+回顾 │
+│    │      │(投票/滑杆)│        │
+└────┴──────┴───────┴────────┘
+贴纸不要开场就扔——先给"为什么"再请用户参与
+```
+
+### 10.3 如何读贴纸数据（用 Insights / 人工抽检）
+
+```python
+def read_sticker_signals(account_id, adset_id):
+    """读取含贴纸广告的互动信号，对比不含贴纸的对照组。"""
+    insights = client.meta_query_insights(
+        account_id, date_preset="last_14d", level="ad",
+        fields=["ad_id", "inline_post_engagement", "post_engagements", "impressions",
+                "video_thruplay_watched_actions"],
+    )
+    out = []
+    for r in insights:
+        vals = r.get("values", {})
+        imp = vals.get("impressions", 0) or 0
+        eng = vals.get("inline_post_engagement", 0) or 0
+        out.append({
+            "ad_id": r.get("ad_id"),
+            "engagement_rate": (eng / imp if imp else 0),
+            "impressions": imp,
+        })
+    return out
+```
+
+**判定贴纸是否有效的做法：**
+- 同预算、同受众下，**含贴纸 vs 不含贴纸**两组对比：
+  - 互动率（`inline_post_engagement / impressions`）更高 → 贴纸确实拉互动；
+  - 完播率不降反升 → 贴纸提升"参与式停留"；
+  - CVR 持平或更好 → 贴纸未稀释转化。
+- 若含贴纸后互动上升但**转化明显变差**，说明用户在"玩贴纸"而非"买产品"，
+  该把贴纸换成更贴近销售目的的形态（如滑杆改为"想要扣1"+落地页）。
+
+### 10.4 贴纸与"原生感"的平衡
+
+```text
+贴纸使用分寸
+├─ 用：投票/滑杆这类"低干扰、强参与"
+├─ 慎用：密集贴纸堆叠（显得很"营销")
+└─ 忌：贴纸遮盖关键信息/安全区/CTA
+```
+
+---
+
+## 十一、竖版素材与"创意疲劳"的自动化运维（SRE 视角）
+
+> 把"换创意防止疲劳"做成半自动流程，是一个进阶运维点。
+
+### 11.1 疲劳检测→自动换新 的自动化脚本骨架
+
+```python
+import time
+from collections import defaultdict
+
+def run_creative_rotation(account_id, campaign_id, pool: list,
+                          max_freq=3.5, min_ttr=0.30, check_every_h=6):
+    """每隔几小时巡检，疲劳创意下线、从素材池补充新创意上线。"""
+    while True:
+        freq = monitor_frequency(account_id, campaign_id)          # 取当前频次
+        for ad in client.meta_list_ads(campaign_id):
+            ttr = compute_thruplay_rate(account_id, ad["id"])["thruplay_rate"]
+            if freq.get(ad["id"], 0) > max_freq or ttr < min_ttr:
+                client.meta_pause_ad(ad["id"])                     # 下线疲劳创意
+                if pool:
+                    new_creative = pool.pop()                      # 补给新素材
+                    client.meta_create_ad(campaign_id, f"换新-{time.time()}",
+                                          creative={"creative_id": new_creative})
+        time.sleep(check_every_h * 3600)
+```
+
+**注意**：全自动投放有风险，建议"半自动"——疲劳创意自动**暂停并发出告警**，
+但新创意由运营确认后再上线（避免素材质量不受控时盲目放量）。
+
+### 11.2 素材池管理（Creative Bank）
+
+```text
+素材池策略
+├─ 常备 8~12 条不同模板的竖版素材
+├─ 按模板维度打标签（痛点/教程/对比/证言/折扣）
+├─ 记录每条素材的"已验证 TTR/CPA"
+└─ 疲劳时按"高 TTR 替补优先"顺序补位
+```
+
+### 11.3 用洞察看板做"素材疲劳"预警
+
+- 字段组合：`ad_id + frequency + video_thruplay_watched_actions + impressions`；
+- 预警规则示例：
+  - `frequency > 3` 且 `thruplay_rate` 较 3 天前下降 > 15% → 预警；
+  - `impressions` 快速放大但 `thruplay_rate` 走低 → 素材质量与受众匹配问题。
+
+---
+
+## 十二、术语表（竖版广告专用）
+
+| 术语 | 全称/含义 |
+|------|-----------|
+| Reels | Instagram 竖版短视频流（公开、沉浸式） |
+| Stories | Instagram 24 小时限时动态（顶部环形进度条） |
+| 9:16 | 竖版宽高比（宽:高），Instagram 全屏标准 |
+| Safe Zone | 安全区，规避平台 UI 遮挡的核心版面 |
+| TTR | Touch/Thru-Play Rate，完播次数 ÷ 展示量 |
+| ThruPlay | 完整播放（到结尾或有意义阈值） |
+| 3 秒播放 | video_3_sec_watched 事件，浏览门槛信号 |
+| OOE | Optimized / 动态创意，多素材自动组合 |
+| Advantage+ Placements | 自动版位，系统自动分配预算到最优版位 |
+| Spark Ads | 创客广告，把已有的原生 Reel/Story 授权推广 |
+| CPM/CPC/CPA | 千次展示/每次点击/每次转化成本 |
+| Creative Fatigue | 创意疲劳，高频展示后效率和成本恶化 |
+| insta_reels / insta_stories / insta_explore | IG 竖版版位键名（Targeting） |
+| object_story_spec | Creative 里描述 Story 呈现的字段结构 |
+
+---
+
+## 十三、30 秒速览（投放决策卡）
+
+```text
+给运营的 30 秒速览卡
+├─ 比例 9:16 / 1080x1920 / 30fps / H.264 / ≤4GB
+├─ 时长 Reels ≤45s 首选 15-30s；Stories ≤15s 首选 5-15s
+├─ 首3秒 强钩子，首帧非黑场
+├─ 字幕 烧录硬字幕、UTF-8、72-84%位置、≤4词/屏
+├─ 安全区 关键信息放中央，边缘 8-18% 预留
+├─ 贴纸 原生 Sticker 才出真实互动；投票/滑杆/倒计时/问答/滑动
+├─ 版位 手动限 IG Reels+Stories+Explore（测试）→ Advantage+（放量）
+├─ 指标 盯 TTR / 3秒率 / 互动率；TTR 高 → CPM 降
+├─ 疲劳 frequency>3~4 或 TTR 连续下滑>15% → 换创意
+└─ 政策 无夸张/医疗/金融/政治，音乐授权，保留 Sponsored 标签
+
+一行心法：让用户"无声也能看懂、有声更想看完、看完愿意点"。
+```
+
+---
+
+*（全文完）*
+
+*本文档 2026-08-14 由 Ryan 知识库升级专家生成；规格随 Meta 官方更新，投放前请复核当期版本。*
+
