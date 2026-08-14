@@ -1469,3 +1469,265 @@ print(sus)
 | 18 | 广告出现在敏感内容旁 | 立即暂停→更新黑名单→GARM 分级→加白名单 |
 | 19 | 广告主身份不被卖方信任 | 启用 advertisers.json 披露 |
 | 20 | 不知道哪些卖家质量好 | dv360_list_seller_metrics 排序（IVT 低+可见率高） |
+---
+
+## 十七、GARM 品牌安全内容分级详解（内含七大类子分类表）
+
+### 17.1 GARM 四级定位（Buyer/Seller 共同遵从的行业语言）
+
+GARM（全球负责任媒体联盟）由 WFA（世界广告主联合会）发起，Google、Meta、Unilever、P&G 等共同参与。其核心产出之一是把"品牌安全"从各平台各自定义变成**行业统一的分级语言**，DV360 与第三方测量供应商（Moat/IAS/DV）都据此对齐。
+
+GARM 的分类法分**三个层级**：
+1. **顶层 7 大类（Category）**：与权威的冲突、成人/性、赌博、非法药品/毒品、受管毒品、武器、仇恨/冒犯。
+2. **中层的 43 个子分类（Sub-category）**：每个大类下的细分。
+3. **品牌定制（Brand specific）**：品牌自身额外的排除词。
+
+### 17.2 GARM 七大类 × 子分类对照表
+
+| 大类 | 子分类示例 | DV360/供应商映射 |
+|------|-----------|-----------------|
+| 1. 与权威的冲突 | 选举/政治广告、抗议/示威、未经证实的毁谤、秘密拍摄、战争/冲突 | 映射政治类排除 |
+| 2. 成人/性 | 露骨性内容、成人约会、性教育、性暗示 | ADULT_CONTENT |
+| 3. 赌博 | 线上赌博、线下赌场、博彩类 App | GAMBLING |
+| 4. 非法药品/毒品 | 大麻、非法处方药、违禁物质 | DRUGS |
+| 5. 受管毒品 | 酒精、烟草、处方药（合法但受管） | ALCOHOL / 烟草 |
+| 6. 武器 | 枪支、弹药、武器配件 | WEAPONS |
+| 7. 仇恨/冒犯行为 | 仇恨言论、种族歧视、性别歧视、不当行为炒作 | HATE_SPEECH / 冒犯内容 |
+
+### 17.3 GARM 应用于 DV360 的方法
+
+```
+第1步 明确品牌"可容忍区"：
+       - 有些品牌(如新闻/教育)对"政治/冲突"容忍度较高
+       - 有些品牌(如儿童/家庭)对任何敏感容忍度为零
+第2步 将容忍度翻译成 GARM 大类→子分类的选择：
+       - 例如"零容忍"品牌 → 屏蔽全部 7 大类
+       - "新闻友好"品牌 → 只屏蔽 2,3,4,5,6,7，保留 1 但加白名单
+第3步 映射到 DV360 Content Exclusion：
+       - dv360_create_content_exclusion(content_categories=[...])
+第4步 叠加第三方信号（Moat/IAS/DV 按 GARM 标签回传）交叉验证
+第5步 设周度复盘：检查被排除流量规模、误杀情况、事件发生数
+```
+
+### 17.4 GARM 误杀/过杀平衡实践
+
+- **过杀**：屏蔽太多导致正常媒体（尤其新闻、时政类）也进不来。
+- **误杀**：该屏蔽的漏了，品牌出现在敏感内容旁。
+- **平衡手段**：用 GARM 子分类做"灰度"（semi-blocked），核心媒体域白名单，并对高级别"可容忍"内容走品牌定制评估，而非简单全禁。
+
+---
+
+## 十八、一个完整的品牌安全 + 可见性 + IVT 三层联动案例
+
+### 18.1 需求描述
+
+某国际美妆品牌，目标市场为中国、日韩、东南亚，担心：
+- 广告出现在暴力/成人/敏感政治内容旁 → 品牌受损
+- 曝光不少但用户根本没看到 → 浪费预算
+- 东南亚某些市场 click farm 严重 → CTR 虚高、转化脏
+
+### 18.2 三层联动方案落地
+
+**第1层 品牌安全屏蔽（内容层）：**
+```python
+ex = api.dv360_create_content_exclusion(
+    ADB, name="美妆-全球硬排除",
+    content_categories=["ADULT_CONTENT", "GAMBLING", "VIOLENCE",
+                        "HATE_SPEECH", "WEAPONS", "ILLEGAL_CONTENT"],
+)
+# 敏感度较高的市场(如印尼部分地区)额外加"政治冲突"
+```
+
+**第2层 可见性目标（曝光质量层）：**
+```python
+li = api.dv360_create_line_item(ADB, name="美妆-JP-KR-SEA",
+    type="DISPLAY",
+    viewability_config={"targetingType": "VIEWABILITY_TARGETING_TYPE_AWARE",
+                        "viewabilityTarget": "VIEWABILITY_50_PERCENT_1S"},
+)
+```
+
+**第3层 IVT 反欺诈（行为层）：**
+```python
+# 部署自研 Go 融合器对高 CTR 零转化市场做二次评分
+# 结合 dv360_list_seller_metrics 把高 IVT 卖家降权
+```
+
+### 18.3 结果度量
+
+| 指标 | 上线前 | 上线后 | 变化 |
+|------|--------|--------|------|
+| 可见率 | 38% | 63% | +25pp |
+| IVT 率 | 9% | 3% | -6pp |
+| CTR 可持续性 | 虚高波动 | 稳定在合理区间 | 置信度↑ |
+| 品牌安全事件 | 偶发 | 0 | — |
+| 获客成本 | 基准 | -31% | 显著改善 |
+
+### 18.4 复盘结论
+
+三层联动(内容安全→可见性质量→行为反欺诈)比单做任何一层都有效：品牌安全解决"放哪"，可见性解决"被看到"，IVT 解决"是真人的钱"。三者叠加把每一次支出的有效密度最大化。
+
+---
+
+## 十九、进阶：多广告系列横向的品牌安全/IVT 统一治理
+
+### 19.1 统一治理层架构
+
+一个广告主（Partner/Advertiser 下多个 LI）需要**横向统一**的品牌安全与反欺诈策略，而不是逐 LI 各自配置。常见做法是**Partner 级配置 + 模板化**：
+
+```
+ Partner 级(全局默认)
+   ├── 全局内容排除(硬性敏感 7 类)
+   ├── 全局可见性基准(仅用 50%+ 库存)
+   └── 全局黑名单(历史劣质域名/App)
+        │
+ Advertiser(品牌级)
+   ├── 品牌特定排除(竞品、敏感政治)
+   └── 白名单(核心媒体)
+        │
+ Line Item(投放级)
+   ├── viewability_config(50%/1s 或视频 2s)
+   └── 细分定向(地域/设备/卖家)
+```
+
+### 19.2 用 API 批量管理与巡检
+
+```python
+# batch_governance.py
+from ad_platform_api import AdPlatformAPI
+api = AdPlatformAPI(credentials="config/credentials.json")
+ADB = "<ADV_ID>"
+
+# 1) 枚举所有 LI
+lis = api.dv360_list_line_items(ADB)
+
+# 2) 逐个拉账户健康/IVT 口径，标红异常
+for li in lis:
+    r = api.dv360_get_report_metrics(ADB, line_item_id=li["id"])
+    ivt = r.get("invalidTrafficRate", 0)
+    view = r.get("viewableRate", 0)
+    if ivt > 0.05 or view < 0.40:
+        print(f"[ALERT] {li['name']} ivt={ivt:.2%} view={view:.2%}")
+
+# 3) 批量更新：给全部未设品牌安全的 LI 补硬排除
+for li in lis:
+    if not li.get("brandSafetyConfigured"):
+        api.dv360_batch_update_line_items([{
+            "lineItemId": li["id"],
+            "brandSafetyConfig": {"contentExclusion": "ADULT_CONTENT,GAMBLING,VIOLENCE"},
+        }])
+```
+
+### 19.3 统一看板的建议维度
+
+| 维度 | 看什么 | 阈值建议 |
+|------|--------|---------|
+| 账户健康 | IVT 率/可见率/认证库存占比 | IVT<5%, 可见率>行业基准 |
+| 按市场 | 各国家/地区 IVT 与可见性 | 识别 click farm 重灾市场 |
+| 按卖家 | 供应商 IVT/可见率 | 高 IVT 卖家降权 |
+| 按域名/App | 长尾劣质流量 | 黑名单候选 |
+| 按分类 | 误杀规模与品牌事件 | 事件=0，误杀可控 |
+
+---
+
+## 二十、常见运维坑位与告警模板
+
+### 20.1 告警规则模板
+
+```
+规则1: LV1(严重) 品牌安全事件>0 且持续30分钟
+        → 立即暂停相关 LI + 人工核查
+规则2: LV2(高)   IVT 率 24h > 8%
+        → 按域名/市场拆分 + 自研融合器复核
+规则3: LV2(高)   高CTR×零转化组合消费 > $X 阈值
+        → 黑名单候选 + 暂停
+规则4: LV3(中)   第三方 vs 平台可见率差异 > 5%
+        → 口径复核/对账
+规则5: LV3(中)   填充率 < 15% 且可见目标>50%
+        → 放宽到标准口径
+```
+
+### 20.2 告警动作自动化(伪码)
+
+```python
+# alert_actions.py
+def on_alert(rule, context):
+    if rule == "LV1_brand_safety_event":
+        api.dv360_pause_line_item(ctx.adb, ctx.li)          # 立即暂停
+        update_blocklist(ctx.domain)                        # 更新黑名单
+        notify("负载群@oncall")                             # 通知
+    elif rule == "LV2_ivt_rate":
+        suspects = run_ivt_scorer(ctx)                      # 自研 Go 融合器
+        for s in suspects: add_to_blocklist(s)
+    ...
+```
+
+### 20.3 运维复盘 SOP
+
+```
+每周
+  ├─ 品牌安全事件复盘(有/无)
+  ├─ IVT 率与花费剔除金额
+  └─ 第三方-平台对账差异明细
+每月
+  ├─ GARM 分类配置复审(是否过杀/漏杀)
+  ├─ 卖家质量重新排序
+  └─ 自研融合器阈值重新校准(基于新标注)
+每季度
+  ├─ 供应链透明(Ads.txt/sellers.json)完整性审计
+  ├─ 与供应商(Moat/IAS/DV)合同 SLA 复盘
+  └─ 大促前三层联动压测
+```
+
+---
+
+## 二十一、关于"Ads.txt 缺失"的深入处理
+
+### 21.1 现象
+
+报表中出现大量来自**未部署 Ads.txt** 的库存。这类库存可能来自非授权转售、镜像站、劫持，品牌安全与 IVT 风险偏高。
+
+### 21.2 处理优先级
+
+| 库存类型 | 是否建议投放 | 原因 |
+|---------|------------|------|
+| 完整 Ads.txt 且 DIRECT | 强烈推荐 | 供应链清晰、可追责 |
+| 完整 Ads.txt 且 RESELLER | 推荐(慎选卖家) | 需核验卖家身份与 pchain |
+| 有 Ads.txt 但无该卖家 | 不建议 | 疑似未授权转售 |
+| 完全无 Ads.txt | 不建议(除非必要) | 高风险、难追责 |
+
+### 21.3 用 API 排查
+
+```python
+# ads_txt_cleanse.py
+from ad_platform_api import AdPlatformAPI
+api = AdPlatformAPI(credentials="config/credentials.json")
+sellers = api.dv360_list_sellers()
+unauth = [s for s in sellers if not s.get("adsTxtValidated")]
+print("未认证库存占比:", len(unauth)/len(sellers))
+# 对高消费未认证卖家 d 列出清单，交业务决策是否拉黑
+```
+
+---
+
+## 二十二、自测题（第三批）
+
+<details><summary>Q11：GARM 分级相比"各平台自己定义品牌安全"有什么价值？</summary>
+GARM 提供了行业统一的 7 大类 × 43 子分类语言，让买方(DSP 端广告主)、卖方(SSP/媒体)、测量商对"品牌安全"有共同口径，可跨平台对比、跨供应商对齐、规范化内容分级(如对"政治/冲突"的容忍度差异)。它减少由于各平台标准不一对齐困难而导致的过杀/漏杀。
+</details>
+
+<details><summary>Q12：品牌安全的"过杀"和"误杀"分别指什么？如何平衡？</summary>
+过杀(Over-blocking)：屏蔽过多导致正常媒体(新闻/教育/时政)无法获得曝光，填充率与覆盖下降；误杀(False negative/missed)：应屏蔽的敏感内容漏进来，品牌出现在危险内容旁。平衡手段：用 GARM 子分类做半屏蔽、核心媒体加白名单、对容忍度高的内容走品牌定制评估，配合周度复盘与灰度放量。
+</details>
+
+<details><summary>Q13：为什么三层联动(内容安全→可见性→反欺诈)优于单做一层？</summary>
+品牌安全解决"广告放在哪"、可见性解决"有没有被看到"、IVT 解决"是不是真实人类"。只做品牌安全，仍可能买到不可见或欺诈流量；只做可见性，仍可能出现在危险内容旁；只做反欺诈，仍可能浪费在不可见库存。三层叠加把每次支出的"有效+可见+安全"密度最大化，使 CTR/转化更可信、获客成本更低。
+</details>
+
+<details><summary>Q14：如何横向统一治理多个 Line Item 的品牌安全与 IVT？</summary>
+采用"Partner→Advertiser→Line Item"三级配置：Partner 级设全局硬性排除与可见性基准、Advertiser 级设品牌特定排除与白名单、LI 级设 viewability_config 与细分定向。用 API 批量管理(枚举 LI→拉健康指标→标红→batch_update 补配置)，并建统一看板(账户健康/按市场/按卖家/按域名/按分类)。这样避免逐 LI 手工配置导致的口径不一致与遗漏。
+</details>
+
+<details><summary>Q15：Ads.txt 缺失的库存就一定完全不能投吗？如何决策？</summary>
+不一定，但风险高。优先级上完整 DIRECT 认证库存最推荐，RESELLER 需验卖家，有 Ads.txt 但无该卖家或完全缺失的库存风险较高、难追责。决策时用 API(如 list_sellers / adsTxtValidated)量化未认证占比，结合预算、市场刚需、供应商背书与第三方复核，对必要但缺失的库存走灰度+permission 评估，而非一票否决或全放行。
+</details>

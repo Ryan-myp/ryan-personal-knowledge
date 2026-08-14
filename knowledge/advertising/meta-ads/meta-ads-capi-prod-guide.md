@@ -1986,3 +1986,89 @@ Meta 的规则是**保留先到的**（无论 Pixel 还是 CAPI），并且：
 
 生产含义：把 CAPI 发送尽量贴近业务事件发生时间（实时发送 <3s），或确保直接用 CAPI 作为主要通道（关闭 Pixel double-了 event）。如果 CAPI 落后太多（分钟级），Meta 会保留先到的 Pixel，导致 CAPI 的质量优势丢失。
 </details>
+---
+
+## 六、附录
+
+### 附录 A：术语对照表（CAPI 相关）
+
+| 缩写/术语 | 全称/中文 | 说明 |
+|-----------|-----------|------|
+| CAPI | Conversions API | 服务端转化事件发送接口 |
+| AEM | Aggregated Event Measurement | iOS14+ 聚合事件测量 |
+| EMQ | Event Match Quality | 事件匹配质量评分 |
+| dedup | Deduplication | 去重 |
+| event_id | 事件幂等/去重键 | 同源唯一 |
+| event_source_id | 事件源 ID | = pixel_id |
+| user_data | 用户匹配数据 | em/ph/fn/ln 等 |
+| custom_data | 自定义业务数据 | 金额、商品等 |
+| action_source | 事件来源渠道 | website/email/app… |
+| fbc/fbp | Facebook Cookie | 浏览器追踪标识 |
+| LDU | Limited Data Use | 受限数据使用（CCPA） |
+| ATT | App Tracking Transparency | iOS 应用追踪透明 |
+| ITP | Intelligent Tracking Prevention | Safari 智能防追踪 |
+| DLQ | Dead Letter Queue | 死信队列 |
+| S2S | Server-to-Server | 服务器到服务器（即 CAPI 本质） |
+
+### 附录 B：官方参考链接与文档
+
+- Conversions API 官方介绍：https://developers.facebook.com/docs/marketing-api/conversions-api
+- 事件上报格式与哈希规范（Hash Spec）：https://developers.facebook.com/docs/marketing-api/conversions-api/parameters
+- 事件匹配与 EMQ：https://www.facebook.com/business/help/321447189719770
+- 去重（Deduplication）说明：https://developers.facebook.com/docs/marketing-api/conversions-api/deduplicate-pixel-and-server-events
+- 数据源健康与测试事件（Events Manager / Test Events）：https://www.facebook.com/business/help/967854296931383
+- 服务器端事件批量与 data_processing_options：https://developers.facebook.com/docs/marketing-api/conversions-api/parameters#data-processing-options
+- 与 Shopify / GTM / Adobe 集成文档（Meta 官方收购方案）：
+  - GTM SS 标记：https://developers.facebook.com/docs/marketing-api/conversions-api/gtm-server-side
+  - Shopify：https://www.facebook.com/business/help/1415243376047650
+
+> 提示：文档撰写于 2026-08-14，Graph API 已到 v23.0 左右；接入时以 Meta 开发者文档最新版本字段为准，URL 版本号请随官方更新。
+
+### 附录 C：日常运维快速命令卡
+
+```bash
+# 1) 手测事件（带测试码，不落真实）
+curl -s -X POST \
+  "https://graph.facebook.com/v23.0/${PIXEL_ID}/events" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "{\"data\":[{\"event_name\":\"PageView\",\"event_time\":$(date +%s),\"test_event_code\":\"${TEST_CODE}\",\"user_data\":{\"client_ip_address\":\"1.2.3.4\",\"client_user_agent\":\"curl\"},\"custom_data\":{}}]}"
+
+# 2) 检查 token 是否有效
+curl -s "https://graph.facebook.com/v23.0/me?fields=id,name" \
+  -H "Authorization: Bearer ${TOKEN}"
+
+# 3) 读取像素配置
+curl -s "https://graph.facebook.com/v23.0/${PIXEL_ID}?fields=id,name,data_processing_options" \
+  -H "Authorization: Bearer ${TOKEN}"
+
+# 4) 查看像素近期事件
+curl -s "https://graph.facebook.com/v23.0/${PIXEL_ID}/events?limit=20" \
+  -H "Authorization: Bearer ${TOKEN}"
+
+# 5) 定时对账（cron 里调 reconcile）
+python3 scripts/ad_platform_api.py --reconcile --pixel $PIXEL_ID --days 1
+```
+
+### 附录 D：本文涉及的脚本方法族索引
+
+以下方法分布于 `scripts/ad_platform_api.py`（主实现）与 `scripts/meta_api.py`，供团队对照阅读与扩展：
+
+| 方法 | 用途 | 关联章节 |
+|------|------|----------|
+| `meta_send_capi` | 单事件 CAPI 发送 | 3.4 / 3.17 |
+| `meta_send_capi_batch` | 批量 CAPI 发送 | 3.7 / 3.16 |
+| `meta_track_pixel` | 浏览器像素事件（后端兜底双录） | 3.11 |
+| `meta_list_capi_events` | 列出近期 CAPI 事件 | 3.14 |
+| `meta_list_matched_fields` | 匹配键命中分布 | 3.14 / 4.2 |
+| `meta_validate_event_data` | 测试校验事件字段 | 3.13 / 4.12 |
+| `meta_get_event_quality` | EMQ 评分拉取 | 3.14 |
+| `meta_list_event_source_types` | 事件源类型枚举 | 3.12 |
+| `meta_get_conversion_api_config` | 读取像素 CAPI 配置 | 3.12 |
+| `meta_update_conversion_api_config` | 更新像素 CAPI 配置 | 3.12 |
+| `meta_list_pixel_events` | 列出像素事件 | 1.9 / 3.14 |
+| `meta_create_pixel_event` | 手动创建像素事件（调试） | 3.13 |
+
+> **收尾提醒**：CAPI 是**信号通道**不是"报表抄数"。真正的生产闭环 = 事件准确（匹配/去重/时间戳）+ 队列可靠（幂等/重试/监控）+ 长期对账（数字与业务库一致）。把这条链路做成可观测、可回滚、可补发的体系，CAPI 才会成为 ROAS 优化的坚实底座，而不是又一个数据失控点。
+
+*学习日期：2026-08-14 | 上一篇：Meta Advantage+ 全深度指南 | 下一篇：Meta 广告账户结构与权限生产指南*

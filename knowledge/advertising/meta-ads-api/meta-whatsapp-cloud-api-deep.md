@@ -341,6 +341,103 @@ APP_SECRET = "xxxx"              # 同上
 
 ---
 
+## 二、深度原理解析
+
+### 2.1 Messages API 全类型消息
+
+消息发送统一走 `POST /{phone-number-id}/messages`，通过顶层 `type` 字段区分消息内容。请求体最外层为同一包装结构：
+
+```json
+{
+  "messaging_product": "whatsapp",
+  "recipient_type": "individual",
+  "to": "8613800138000",
+  "type": "<text|image|video|audio|document|sticker|location|contacts|interactive|template>",
+  "<type>": "{ ...消息载荷... }"
+}
+```
+
+**支持的 `type` 一览：**
+
+| type | 内容 | 计费注意 | 典型场景 |
+|---|---|---|---|
+| text | 纯文本（≤4096 字符） | 仅限服务窗口内自由发送 | 客服应答、订单确认 |
+| template | 模板消息 | 任意时刻可发，按模板类别计会话 | 营销、验证码、物流通知 |
+| image | 图片（base64 或 link/媒体ID） | 窗口内自由发送 | 产品图、截图 |
+| video | 视频 | 窗口内自由发送 | 使用教程 |
+| audio | 语音（短音频用 audio，长音频用 document voice） | 窗口内自由发送 | 语音回复 |
+| document | 文档（PDF 等） | 窗口内自由发送 | 发票、合同 |
+| sticker | 贴纸 | 窗口内自由发送 | 品牌贴纸 |
+| location | 位置（经纬度） | 窗口内自由发送 | 门店导航 |
+| contacts | 联系人卡片 | 窗口内自由发送 | 交换名片 |
+| interactive | 交互消息（按钮/列表/CTA/产品） | 窗口内自由发送 | 菜单、下单、加购 |
+
+**各类型载荷 schema：**
+
+```jsonc
+// 1) text
+{ "preview_url": false, "body": "您好，感谢您的咨询！" }
+
+// 2) image：二选一（link 或 id）
+{ "link": "https://cdn.example.com/img.jpg" }
+{ "id": "589568114581024" }        // 来自媒体上传接口的 media_id
+// 可附加 caption/文件名
+{ "link": "...", "caption": "夏季新品" }
+
+// 3) video
+{ "link": "https://cdn.example.com/v.mp4", "caption": "讲解视频" }
+
+// 4) audio
+{ "link": "https://cdn.example.com/audio.aac" }
+
+// 5) document
+{ "link": "https://cdn.example.com/invoice.pdf", "filename": "invoice.pdf" }
+
+// 6) location
+{ "longitude": 116.397, "latitude": 39.908, "name": "门店A", "address": "北京市..." }
+
+// 7) sticker：必须是 webp（≤100KB）
+{ "link": "https://cdn.example.com/sticker.webp" }
+
+// 8) contacts
+{
+  "contacts": [{
+    "name": { "formatted_name": "张三", "first_name": "张" },
+    "phones": [{ "phone": "+8613800138000", "type": "CELL", "wa_id": "8613800138000" }],
+    "emails": [{ "email": "zhang@example.com", "type": "WORK" }]
+  }]
+}
+```
+
+**响应结构（发送成功时）：**
+
+```json
+{
+  "messaging_product": "whatsapp",
+  "contacts": [{ "input": "8613800138000", "wa_id": "8613800138000" }],
+  "messages": [{ "id": "wamid.HBgNODYxMzgwMDEzODAwMAo..." }]
+}
+```
+
+- `contacts[0].wa_id`：归一化后的接收方 WhatsApp 号（去国家码前导零）。
+- `messages[0].id`：即 `wamid.*`，后续状态回执用它关联。
+
+**发送失败返回 HTTP 400 + 错误 JSON：**
+
+```json
+{
+  "error": {
+    "message": "(#131026) Message Undeliverable",
+    "type": "OAuthException",
+    "code": 131026,
+    "error_data": { "details": "Message failed to send because..." },
+    "fbtrace_id": "Abc123"
+  }
+}
+```
+
+> **原理**：`type` 决定载荷解析方式；自由文本类消息（text/media）与模板消息在与会话窗口的耦合上完全不同（见 2.2）。凡是响应里出现 `error_data.details` 的，务必记录 `error_data` 而不只是 `code`，`details` 往往给出精确到客服语义的线索。
+
 ### 2.2 会话窗口机制与按会话计费
 
 #### 2.2.1 什么是会话（Conversation）

@@ -1324,3 +1324,138 @@ def run_all():
 5. **传输安全**：全 HTTPS；token 只在内存/内存缓存，不落日志（日志截断前 50 字符即可，参考 `dv360_client.py` 的 `self.access_token[:50]`）。
 
 ---
+---
+
+## 四、常见问题与排查
+
+### 4.1 高频错误速查表（先看这张表）
+
+| 错误/现象 | 状态码 | 常见根因 | 快速处置 |
+|-----------|--------|----------|----------|
+| 401 Unauthorized | 401 | token 过期 / 无效 | 刷新 token；JWT 重签；检查 `dv360_validate_credentials` |
+| 403 Permission Denied | 403 | 服务账号未被授权到该广告主/角色不足 | `dv360_list_permission_users` 检查授权；`dv360_list_partner_links` 检查关联合约 |
+| 404 Not Found | 404 | 父级 ID 错 / 资源被删 / 层次路径错 | 核对 `advertiserId/lineItemId` 路径；先 `list` 确认真实 ID |
+| 429 Too Many Requests | 429 | 日配额耗尽或分钟速率超限 | 尊重 Retry-After；本地退避；查 quota/usage_stats |
+| 400 Bad Request | 400 | 参数不合法 / `updateMask` 含只读字段 | 核对 payload 字段；用 `fields`/`updateMask` 收窄；查看错误 message |
+| 字段 not found / KeyError | 200 但解析失败 | 字段被迁移/改名（breaking change） | 用 `fields` 部分响应；解析器 get() 兜底；release 后烟测 |
+| 分页不全 | 200 但少数据 | 游标弱一致 + 并发写 | 同步窗口别并发写；完整性对账；唯一约束 |
+| batch「假成功」 | 200 | 批次部分成功，外层看不出来 | 逐条解析 `lineItems[i].error`；失败子集重放 |
+| 创建重复 | 200 | POST 不幂等 + 重试 | 先查再建 + 幂等映射表 |
+| 数据不同步 | 看场景 | webhook 丢失 / 水位未推进 / ID 映射错 | 事件后主动 GET 最新；水位失败不推进；查审计/活动日志 |
+
+### 4.2 逐步排查流程（决策树）
+
+#### 4.2.1「API 直接报错」如何定位
+
+```
+第一步：确认是认证/权限还是业务
+  resp.status_code
+   ├─ 401/403  → 凭证层（见 4.3）
+   ├─ 429      → 流量层（见 4.4）
+   ├─ 400      → 请求参数层（见 4.5）
+   └─ 5xx      → 平台侧故障（重试，退避）
+
+第二步：把原始响应完整打印出来
+   resp.text[:200]  —— dv360_client.py 已默认打印 Response
+   不要只看 status，要读 error message 里的 detail
+
+第三步：定位到代码层
+   - 是每次 /set 都能复现？→ 参数/权限问题
+   - 是偶发 / 高峰出现？→ 限流 / 弱一致问题
+```
+
+#### 4.2.2「任务层面出问题」（报错被吞）
+
+很多线上问题不是 API 报错，而是「数据层面不对劲」。用下面 6 问排查：
+
+1. **水位推了没？** → 若水位停滞，先看 3.5.2（分页丢）+ 3.8（水位语义）。
+2. **入库行数与源对得上吗？** → 跑完整性对账 SQL，比 UI count。
+3. **是单位错了吗？** → 检查 micros / 美元换算，看金额是否差 10^6。
+4. **是时区错了吗？** → 检查日期边界是否用广告主时区。
+5. **是 ID 混了吗？** → 查 id_map 主键是否 (platform, external_id, entity_type)。
+6. **是权限漂移了吗？** → 查 `dv360_list_permission_users` + 审计日志。
+
+### 4.3 认证/权限类 FAQ
+
+**Q：token 明明刚刷新，还是 401？**
+- 检查 scope 是否覆盖 `display-video`；检查 JWT 的 `exp` 别超过服务账号上限；检查请求头 `Authorization: Bearer <token>` 的 token 是否完整（别截断）。
+- 服务账号认证下 401 多为「JWT 签名/aud 错误」或「scope 不对」；`dv360_validate_credentials` 可复现。
+
+**Q：UI 能看到数据，API 却 403？**
+- 见 3.5.6：**API 用户 ≠ 登录用户**。到 DV360 UI 的 Partner/广告主用户列表，把服务账号 client_email 加进授权名单、给足角色。
+- 若是「Google Ads 关联账号」读取，检查 `dv360_list_partner_links` 是否已创建关联合约。
+
+**Q：refresh token 过期怎么办？**
+- 用户授权型：走 `dv360_auth` 重新授权（弹 OAuth 同意），并监控 `401 + invalid_grant`。
+- 更省心：改服务账号（JWT）认证，不依赖 refresh token。
+
+### 4.4 限流/配额类 FAQ
+
+**Q：为什么有配额还 429？**
+- 撞的是「分钟速率」或「单账号并发」，不是日配额（见 3.5.1）。本地滑动窗口限流 + 尊重 Retry-After。
+
+**Q：Retry-After 很长，等还是不等？**
+- 若 `Retry-After < 15s`：尊重它，等待后重试（1~2 次）。
+- 若很长（分钟级）：说明命中严重限制，**不要原地空等**，改为「登记到重试队列、稍后再放」，避免阻塞整条流水线。
+
+**Q：如何判断要不要申请提额？**
+- 连续多天日配额用 > 80%，且 `dv360_get_quota` 显示确实命中 daily limit → 提额；若只是瞬时峰值 429 → 降速即可，不提额。
+
+**Q：429 的 usage_stats 怎么看？**
+- `dv360_list_usage_stats` 给出按时间维度的被限流次数。若「被限流集中在同一广告主同一方法」，就是代码里没分桶/没 sleep / 循环拉单页。
+
+### 4.5 数据/字段/解析类 FAQ
+
+**Q：字段 not found / 解析失败怎么办？**
+- 用 `fields` 参数显式点名；解析器 `get() + 默认兜底`；每次 release 后跑「字段烟测」（拉 1 页断言类型）。字段迁移是不可控的，只能缩小爆炸半径 + 及时告警。
+
+**Q：分页拉不全怎么办？**
+- 确认是用 nextPageToken 串行续拉、没漏页；同步窗口别并发写；入库后跑完整性对账；必要时对结果按实体 ID 去重。
+
+**Q：micros 和美元的坑怎么避？**
+- 报表金额字段（美元小数）与对象预算字段（micros 整数）是两套单位；专门写 `usd_to_micros()` / `micros_to_usd()`，不在业务代码里裸传数字。
+
+**Q：入库出现数据不同步 / 对不上？**
+- 排查顺序：时区 → 单位 → ID 映射 → 完整性校验 → 审计/活动日志。多数「对不上」是这四类之一。
+
+### 4.6 写入/批次类 FAQ
+
+**Q：批次返回 200 却不全成功？**
+- 见 3.5.7：解析 `lineItems[i].error`；把成功/失败分表；失败子集进重试队列。
+
+**Q：创建重复了怎么办？**
+- POST 不幂等 + 重试导致的；`dv360_delete_line_item` 清理误建的重复项；上线后「先查再建」。
+
+**Q：updateMask 是什么？不传会不会覆盖整条？**
+- `updateMask` 精确定义要 patch 的字段，避免整对象覆盖（把预算外的字段误伤）。批量更新务必带对 `updateMask`。
+
+### 4.7 Webhook/事件类 FAQ
+
+**Q：webhook 没触发怎么办？**
+- 先 `dv360_test_webhook(webhook_id)` 测 endpoint 可达性 + 签名；再确认 `dv360_list_webhooks` 里事件类型注册对了；最终用「轮询兜底」保证不漏（webhook 是 best-effort）。
+
+**Q：webhook 事件重复 / 乱序？**
+- 回调要幂等（同一事件处理多次无副作用）；状态以「收到事件后主动 GET」为准，不靠事件 payload 里的状态。
+
+**Q：怎么防止伪造回调？**
+- 用 `dv360_test_webhook` 返回的签名密钥校验回调头签名；失败丢弃。
+
+### 4.8 排障日志示例（真实形态）
+
+一个典型的「403 → 权限 → 修复」过程的日志形态：
+
+```
+[2026-08-14 06:31:01] INFO  daily_dv360_sync started, adv=A111
+[2026-08-14 06:31:02] ERROR GET /advertisers/A111/lineItems -> 403
+  resp: {"error":{"code":403,"status":"PERMISSION_DENIED",
+         "message":"User does not have permission to access advertiser A111"}}
+[2026-08-14 06:31:03] INFO  dv360_list_permission_users(A111) -> [user_a, user_b]
+  # 发现缺 service-account@project.iam.gserviceaccount.com
+[2026-08-14 06:31:04] INFO  dv360_add_permission_user(A111, email=..., role=ADVERTISER_EDITOR)
+[2026-08-14 06:31:05] INFO  dv360_validate_credentials -> True
+[2026-08-14 06:31:06] INFO  re-run step 02_sync_objects ... OK
+```
+
+排障要诀：**每个失败都带「响应原文」+「上下文（广告主/方法/token 前 3 位）」**，可复现、可追责；绝不要只打 "ERROR call failed"。
+
+---

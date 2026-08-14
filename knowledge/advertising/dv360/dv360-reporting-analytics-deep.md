@@ -1420,3 +1420,81 @@ def anomaly_check(daily_totals):
             alerts.append(f"{k} 突变 {pct:+.1%} (最新={latest}, 7日均={base:.0f})")
     return alerts
 ```
+
+## 五、自测题
+
+通过以下问题检验你对 DV360 报表与数据分析的理解。答案用 `<details>` 折叠，建议先自答再看。
+
+### 问题 1：为什么同一天在 UI 内嵌报表看到的展示数，与当天导出的自定义报表数字不同？工程上应如何取数？
+
+<details>
+<summary>查看答案</summary>
+
+UI 内嵌报表与 pacing 监控走 **LDB（显示级/Logs Data Base）**，近实时（分钟级）但会回填修正；自定义报表 / Query / API 导出走 **RDB（上报级/Reports Data Base）**，通常 24-48h 定稿。两者数据源不同，当天看数偏低的“差异”是回填未完成，不是 bug。
+
+工程原则：
+- 需要“当天实时看数”用 LDB，但要接受波动。
+- 涉及对账、入库、汇报、结算一律取 **RDB 定稿**，并采用 **T-2**（滞后两天）作为稳定口径。
+- CTV/OTT/YouTube 与 PG/PMP 库存回填更慢（3~5 天起），稳定窗口要相应拉长，涉及结算看 invoice 口径。
+</details>
+
+### 问题 2：报表里同一个（日期、广告主、LineItem）出现多行且指标不同，可能的原因与解法是什么？
+
+<details>
+<summary>查看答案</summary>
+
+原因：
+1. **Query 被重复 run**：同一 Query 一天内被手动 + 自动各触发一次，产生两个报表文件，导入时未按主键合并就叠加出多行。
+2. **LDB 预览版与 RDB 定稿版混在表里**。
+
+解法：
+- 写入层用 **UPSERT / INSERT ... ON CONFLICT**，主键取事实键 `(report_date, advertiser_id, campaign_id, insertion_order_id, line_item_id, creative_id, device_type, country)`，存在即覆盖。
+- 表里加 `source_level`、`measured_at_utc` 列便于追溯“哪一版拉的”。
+- 调度层保证同一 task 单实例运行（分布式锁 / `max_active_runs`），API 层同一天复用已 DONE 的 Query 结果，不重复 run。
+</details>
+
+### 问题 3：可见率有两种算出不同数值，原因是什么？应该如何统一？
+
+<details>
+<summary>查看答案</summary>
+
+差在**分母**：
+- 口径 A：`可见展示 / 可测量展示`（Google/行业常用）。
+- 口径 B：`可见展示 / 总展示`（含不可测量部分）。
+
+口径 B 往往更小，因为不可测的展示在分母里拉低了比率。工程上统一用 `MEASURABLE_IMPRESSIONS` 做分母（更符合行业标准），并在报表/看板里注明“分母=可测量展示”，避免口径漂移。与第三方（Moat/IAS/DoubleVerify）对账时也先对齐分母：双方都以“可测量展示”为对齐基准，允许 ±3~5 点差异。
+</details>
+
+### 问题 4：DV360、第三方测量方、内部服务端埋点三方数据对不上，正确态度与排查顺序是什么？
+
+<details>
+<summary>查看答案</summary>
+
+**态度**：三方不可能完全相等，目标不是“相等”而是“差异可控且有解释”。
+
+**可信基准**：
+- 投递（展示/花费）：以 DV360 RDB 为权威（买方结算基准）。
+- 可见率：第三方门户 + DV360 双确认。
+- 转化/成交：以内部支付/服务端埋点为权威。
+
+**排查顺序（按性价比）**：
+1. 数据等级：是否混用 LDB/RDB。
+2. 时区与日期边界：两端是否同一天。
+3. 去重/计数方式：SESSION/UNIQUE/TRANSACTION。
+4. 单位：万/亿、货币、微单位。
+5. 口径公式：可见率分母、ROAS 归因 vs 销售价值。
+
+最后用分层（Campaign→LineItem→Creative）钻取定位差异集中在哪一层，再查该层上面的五类。
+</details>
+
+### 问题 5：单 Query 行数超上限被截断，如何规避？
+
+<details>
+<summary>查看答案</summary>
+
+- **拆**：按日拆分（`DATE` 一天一拉），或减少高基数维度组合。
+- **降**：降低颗粒度（CREATIVE → LINE_ITEM 级）。
+- **并**：多文件分别入库后用 SQL 按事实键聚合，不手工拼大 CSV。
+- **追**：记录每个 Query 的实际行数，逼近上限提前告警。
+- 组合不合法先查 `dv360_list_breakdowns()`，避免构造非法的高基数互斥组合。
+</details>
