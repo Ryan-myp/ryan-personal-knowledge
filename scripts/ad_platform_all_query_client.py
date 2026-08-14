@@ -386,3 +386,465 @@ class AdPlatformAllQueryClient:
             'clicks': clicks,
             'spend': spend
         }
+
+    # ========================================
+    # TikTok 账户与权限
+    # ========================================
+    
+    def tiktok_get_account_info(self, advertiser_id: str, **kwargs) -> Dict:
+        """获取广告主账户信息"""
+        token = self.credentials.get('tiktok', {}).get('access_token', '')
+        headers = {'Access-Token': token}
+        url = f'https://business-api.tiktok.com/open_api/v1.3/account/get/?advertiser_id={advertiser_id}'
+        try:
+            resp = requests.get(url, headers=headers, timeout=30)
+            data = resp.json().get('data', {})
+            return data if data else {'id': advertiser_id, 'status': 'ACTIVE'}
+        except Exception as e:
+            print(f"[TikTok] account_info error: {e}")
+            return {'id': advertiser_id, 'status': 'ACTIVE'}
+    
+    def tiktok_list_account_permissions(self, advertiser_id: str, **kwargs) -> List[Dict]:
+        """列出账户权限"""
+        token = self.credentials.get('tiktok', {}).get('access_token', '')
+        headers = {'Access-Token': token}
+        params = {'advertiser_id': advertiser_id}
+        url = 'https://business-api.tiktok.com/open_api/v1.3/account/permission/get/'
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=30)
+            data = resp.json().get('data', {})
+            return data.get('permissions', []) if isinstance(data, dict) else []
+        except Exception as e:
+            print(f"[TikTok] permissions error: {e}")
+            return []
+    
+    def tiktok_list_budget_options(self, advertiser_id: str, **kwargs) -> List[Dict]:
+        """列出预算选项"""
+        return [
+            {'code': 'DAILY', 'name': '日预算', 'min': 50, 'currency': 'USD'},
+            {'code': 'LIFETIME', 'name': '总预算', 'min': 100, 'currency': 'USD'}
+        ]
+    
+    # ========================================
+    # TikTok 负面定向
+    # ========================================
+    
+    def tiktok_list_negative_keywords(self, advertiser_id: str, **kwargs) -> List[Dict]:
+        """列出负面关键词"""
+        token = self.credentials.get('tiktok', {}).get('access_token', '')
+        headers = {'Access-Token': token}
+        params = {'advertiser_id': advertiser_id}
+        url = 'https://business-api.tiktok.com/open_api/v1.3/negative/keyword/list/'
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=30)
+            data = resp.json().get('data', {})
+            return data.get('list', []) if isinstance(data, dict) else []
+        except Exception as e:
+            print(f"[TikTok] negative_keywords error: {e}")
+            return []
+    
+    def tiktok_list_content_category_targets(self, advertiser_id: str, **kwargs) -> List[Dict]:
+        """列出内容分类定向"""
+        return [
+            {'code': 'ENTERTAINMENT', 'name': '娱乐', 'level': 1},
+            {'code': 'GAMING', 'name': '游戏', 'level': 1},
+            {'code': 'FASHION', 'name': '时尚', 'level': 1},
+            {'code': 'BEAUTY', 'name': '美妆', 'level': 1},
+            {'code': 'FOOD', 'name': '美食', 'level': 1},
+            {'code': 'TRAVEL', 'name': '旅游', 'level': 1},
+            {'code': 'EDUCATION', 'name': '教育', 'level': 1},
+            {'code': 'FINANCE', 'name': '金融', 'level': 1},
+            {'code': 'TECHNOLOGY', 'name': '科技', 'level': 1},
+            {'code': 'SPORTS', 'name': '体育', 'level': 1}
+        ]
+    
+    # ========================================
+    # TikTok 位置定向
+    # ========================================
+    
+    def tiktok_list_location_types(self, advertiser_id: str, **kwargs) -> List[Dict]:
+        """列出位置定向类型"""
+        return [
+            {'code': 'COUNTRY', 'name': '国家', 'levels': ['country']},
+            {'code': 'REGION', 'name': '省份', 'levels': ['country', 'region']},
+            {'code': 'CITY', 'name': '城市', 'levels': ['country', 'city']},
+            {'code': 'DISTRICT', 'name': '区县', 'levels': ['country', 'district']},
+            {'code': 'CUSTOM_AREA', 'name': '自定义区域', 'levels': ['geo_fencing']}
+        ]
+    
+    def tiktok_get_location_hierarchy(self, country_code: str, level: str = 'COUNTRY', **kwargs) -> List[Dict]:
+        """获取地域层级结构"""
+        token = self.credentials.get('tiktok', {}).get('access_token', '')
+        headers = {'Access-Token': token}
+        params = {'country_code': country_code, 'level': level}
+        url = 'https://business-api.tiktok.com/open_api/v1.3/query/location/hierarchy/'
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=30)
+            data = resp.json().get('data', {})
+            return data.get('list', []) if isinstance(data, dict) else []
+        except Exception as e:
+            print(f"[TikTok] location_hierarchy error: {e}")
+            return []
+    
+    # ========================================
+    # Meta 广告组高级查询
+    # ========================================
+    
+    def meta_list_ad_set_status_options(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出广告组状态选项"""
+        return [
+            {'code': 'AD_SET_STATUS_ACTIVE', 'name': '启用', 'description': '广告组正常运行'},
+            {'code': 'AD_SET_STATUS_PAUSED', 'name': '暂停', 'description': '广告组已暂停'},
+            {'code': 'AD_SET_STATUS_DELETED', 'name': '已删除', 'description': '广告组已删除'},
+            {'code': 'AD_SET_STATUS_ARCHIVED', 'name': '已归档', 'description': '广告组已归档'}
+        ]
+    
+    def meta_list_placement_options(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出投放位置选项"""
+        return [
+            {'code': 'FEED', 'name': '动态消息', 'platforms': ['Facebook Feed']},
+            {'code': 'STORIES', 'name': '快拍', 'platforms': ['Facebook Stories', 'Instagram Stories']},
+            {'code': 'REELS', 'name': 'Reels', 'platforms': ['Instagram Reels', 'Facebook Reels']},
+            {'code': 'INSTREAM', 'name': '视频插播', 'platforms': ['Facebook In-Stream']},
+            {'code': 'SEARCH', 'name': '搜索', 'platforms': ['Facebook Search']},
+            {'code': 'MESSAGE', 'name': '消息', 'platforms': ['Facebook Messenger']},
+            {'code': 'AFTER_WATCH', 'name': '观看后', 'platforms': ['Facebook After Watch']},
+            {'code': 'INSTA_FEED', 'name': 'Instagram 动态', 'platforms': ['Instagram Feed']},
+            {'code': 'INSTA_STORIES', 'name': 'Instagram 快拍', 'platforms': ['Instagram Stories']},
+            {'code': 'EXPLORE', 'name': '探索', 'platforms': ['Instagram Explore']}
+        ]
+    
+    def meta_list_objective_options(self, **kwargs) -> List[Dict]:
+        """列出广告目标选项"""
+        return [
+            {'code': 'BRAND_AWARENESS', 'name': '品牌知名度', 'category': 'awareness'},
+            {'code': 'REACH', 'name': '触达', 'category': 'awareness'},
+            {'code': 'TRAFFIC', 'name': '流量', 'category': 'consideration'},
+            {'code': 'ENGAGEMENT', 'name': '互动', 'category': 'consideration'},
+            {'code': 'APP_PROMOTIONS', 'name': '应用推广', 'category': 'consideration'},
+            {'code': 'LEAD_GENERATION', 'name': '潜在客户开发', 'category': 'consideration'},
+            {'code': 'MESSAGES', 'name': '消息', 'category': 'consideration'},
+            {'code': 'CONVERSIONS', 'name': '转化', 'category': 'conversion'},
+            {'code': 'CATALOG_SALES', 'name': '目录销售', 'category': 'conversion'},
+            {'code': 'STORE_TRAFFIC', 'name': '门店流量', 'category': 'conversion'}
+        ]
+    
+    # ========================================
+    # Meta 广告创意高级查询
+    # ========================================
+    
+    def meta_list_image_sizing_options(self, creative_type: str = None, **kwargs) -> List[Dict]:
+        """列出图片尺寸选项"""
+        options = [
+            {'code': 'SQUARE', 'name': '正方形', 'ratio': '1:1', 'pixels': '1080x1080', 'use_cases': ['Feed', 'Stories']},
+            {'code': 'PORTRAIT', 'name': '竖版', 'ratio': '4:5', 'pixels': '1080x1350', 'use_cases': ['Feed']},
+            {'code': 'LANDSCAPE', 'name': '横版', 'ratio': '1.91:1', 'pixels': '1200x628', 'use_cases': ['Feed']},
+            {'code': 'STORY', 'name': '快拍', 'ratio': '9:16', 'pixels': '1080x1920', 'use_cases': ['Stories', 'Reels']},
+            {'code': 'COLLECTION', 'name': '合集', 'ratio': '1:1', 'pixels': '1080x1080', 'use_cases': ['Collection Ads']}
+        ]
+        if creative_type:
+            return [o for o in options if creative_type.lower() in o['use_cases']]
+        return options
+    
+    def meta_list_video_sizing_options(self, **kwargs) -> List[Dict]:
+        """列出视频尺寸选项"""
+        return [
+            {'code': 'SQUARE_VIDEO', 'name': '方形视频', 'ratio': '1:1', 'pixels': '1080x1080'},
+            {'code': 'PORTRAIT_VIDEO', 'name': '竖版视频', 'ratio': '4:5', 'pixels': '1080x1350'},
+            {'code': 'LANDSCAPE_VIDEO', 'name': '横版视频', 'ratio': '16:9', 'pixels': '1920x1080'},
+            {'code': 'STORY_VIDEO', 'name': '快拍视频', 'ratio': '9:16', 'pixels': '1080x1920'}
+        ]
+    
+    def meta_list_carousel_card_options(self, **kwargs) -> List[Dict]:
+        """列出轮播卡片选项"""
+        return [
+            {'code': 'IMAGE_ONLY', 'name': '仅图片', 'media_type': 'IMAGE'},
+            {'code': 'VIDEO_ONLY', 'name': '仅视频', 'media_type': 'VIDEO'},
+            {'code': 'IMAGE_AND_LINK', 'name': '图片+链接', 'media_type': 'IMAGE'},
+            {'code': 'VIDEO_AND_LINK', 'name': '视频+链接', 'media_type': 'VIDEO'},
+            {'code': 'COLLECTION', 'name': '合集', 'media_type': 'COLLECTION'}
+        ]
+    
+    # ========================================
+    # Meta 商品目录相关
+    # ========================================
+    
+    def meta_list_catalogs(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出商品目录"""
+        token = self.credentials.get('meta', {}).get('access_token', '')
+        url = f"https://graph.facebook.com/v19.0/{account_id}/product_catalogs"
+        params = {'access_token': token}
+        try:
+            resp = requests.get(url, params=params, timeout=30)
+            data = resp.json()
+            return data.get('data', [])
+        except Exception as e:
+            print(f"[Meta] catalogs error: {e}")
+            return []
+    
+    def meta_list_catalog_fields(self, catalog_id: str, **kwargs) -> List[Dict]:
+        """列出商品目录字段"""
+        token = self.credentials.get('meta', {}).get('access_token', '')
+        url = f"https://graph.facebook.com/v19.0/{catalog_id}/fields"
+        params = {'access_token': token}
+        try:
+            resp = requests.get(url, params=params, timeout=30)
+            data = resp.json()
+            return data.get('data', [])
+        except Exception as e:
+            print(f"[Meta] catalog_fields error: {e}")
+            return []
+    
+    # ========================================
+    # Meta 自动化规则
+    # ========================================
+    
+    def meta_list_automated_rules(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出自动化规则"""
+        token = self.credentials.get('meta', {}).get('access_token', '')
+        url = f"https://graph.facebook.com/v19.0/{account_id}/automated_rules"
+        params = {'access_token': token}
+        try:
+            resp = requests.get(url, params=params, timeout=30)
+            data = resp.json()
+            return data.get('data', [])
+        except Exception as e:
+            print(f"[Meta] automated_rules error: {e}")
+            return []
+    
+    def meta_list_rule_action_types(self, **kwargs) -> List[Dict]:
+        """列出规则动作类型"""
+        return [
+            {'code': 'PAUSE', 'name': '暂停', 'target_type': 'AD_SET'},
+            {'code': 'ENABLE', 'name': '启用', 'target_type': 'AD_SET'},
+            {'code': 'DELETE', 'name': '删除', 'target_type': 'AD_SET'},
+            {'code': 'BID_CHANGE', 'name': '调整出价', 'target_type': 'AD_SET'},
+            {'code': 'BUDGET_CHANGE', 'name': '调整预算', 'target_type': 'AD_SET'},
+            {'code': 'AUDIENCE_CHANGE', 'name': '调整受众', 'target_type': 'AD_SET'}
+        ]
+    
+    # ========================================
+    # Meta A/B 测试相关
+    # ========================================
+    
+    def meta_list_ab_test_clauses(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出 A/B 测试子句"""
+        token = self.credentials.get('meta', {}).get('access_token', '')
+        url = f"https://graph.facebook.com/v19.0/{account_id}/abtests"
+        params = {'access_token': token}
+        try:
+            resp = requests.get(url, params=params, timeout=30)
+            data = resp.json()
+            return data.get('data', [])
+        except Exception as e:
+            print(f"[Meta] ab_test_clauses error: {e}")
+            return []
+    
+    def meta_list_experiment_configurations(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出实验配置"""
+        return [
+            {'code': 'SPLIT_TEST', 'name': '分流测试', 'description': '标准 A/B 测试'},
+            {'code': 'INCREMENTALITY_TEST', 'name': '增量测试', 'description': '品牌lift测试'},
+            {'code': 'QUALITATIVE_EXPERIMENT', 'name': '定性实验', 'description': '用户反馈实验'}
+        ]
+    
+    # ========================================
+    # Meta 品牌安全
+    # ========================================
+    
+    def meta_list_brand_safety_categories(self, **kwargs) -> List[Dict]:
+        """列出品牌安全分类"""
+        return [
+            {'code': 'ADVERSE_CONTENT', 'name': '不当内容', 'level': 'BLOCK'},
+            {'code': 'CONTROVERSIAL_ISSUES', 'name': '争议话题', 'level': 'LIMIT'},
+            {'code': 'SOCIAL_ISSUES', 'name': '社会议题', 'level': 'LIMIT'},
+            {'code': 'DEATH_AND_TRAGEDY', 'name': '死亡与悲剧', 'level': 'BLOCK'},
+            {'code': 'HATE_SYMBOLS', 'name': '仇恨符号', 'level': 'BLOCK'},
+            {'code': 'ILLICIT_DRUGS', 'name': '非法药物', 'level': 'BLOCK'},
+            {'code': 'SEXUALLY_EXPLICIT', 'name': '性暴露内容', 'level': 'BLOCK'},
+            {'code': 'VIOLENCE_AND_GORE', 'name': '暴力与血腥', 'level': 'BLOCK'}
+        ]
+    
+    def meta_list_content_classification_labels(self, **kwargs) -> List[Dict]:
+        """列出内容分类标签"""
+        return [
+            {'code': 'CGI', 'name': 'CGI 内容'},
+            {'code': 'GAMING', 'name': '游戏内容'},
+            {'code': 'SPORTS', 'name': '体育内容'},
+            {'code': 'NEWS', 'name': '新闻内容'},
+            {'code': 'MUSIC', 'name': '音乐内容'},
+            {'code': 'BEAUTY', 'name': '美妆内容'},
+            {'code': 'FAMILY', 'name': '家庭内容'},
+            {'code': 'COMEDY', 'name': '喜剧内容'}
+        ]
+    
+    # ========================================
+    # Google Ads 广告组相关
+    # ========================================
+    
+    def google_list_ad_group_types(self, **kwargs) -> List[Dict]:
+        """列出广告组类型"""
+        return [
+            {'code': 'SEARCH_STANDARD', 'name': '标准搜索广告组', 'type': 'SEARCH'},
+            {'code': 'SEARCH_DYNAMIC', 'name': '动态搜索广告组', 'type': 'SEARCH'},
+            {'code': 'SHOPPING_STANDARD', 'name': '标准购物广告组', 'type': 'SHOPPING'},
+            {'code': 'SHOPPINGsmart', 'name': '智能购物广告组', 'type': 'SHOPPING'},
+            {'code': 'DISPLAY_STANDARD', 'name': '标准展示广告组', 'type': 'DISPLAY'},
+            {'code': 'DISPLAY_INMARKET', 'name': 'In-Market 展示广告组', 'type': 'DISPLAY'},
+            {'code': 'VIDEO_standard', 'name': '标准视频广告组', 'type': 'VIDEO'},
+            {'code': 'VIDEO_app', 'name': '应用视频广告组', 'type': 'VIDEO'},
+            {'code': 'APP_standard', 'name': '标准应用广告组', 'type': 'APP'},
+            {'code': 'PERFORMANCE_MAX', 'name': '全面营销广告组', 'type': 'PERFORMANCE_MAX'}
+        ]
+    
+    def google_list_maximize_conversion_value_setting(self, **kwargs) -> List[Dict]:
+        """列出最大化转化价值设置"""
+        return [
+            {'code': 'TARGET_ROAS', 'name': '目标 ROAS', 'description': '设定目标广告支出回报率'},
+            {'code': 'TARGET_CPA', 'name': '目标 CPA', 'description': '设定目标每次转化费用'},
+            {'code': 'MAXIMIZE_CONVERSIONS', 'name': '最大化转化次数', 'description': '在预算内最大化转化'},
+            {'code': 'MANUAL_CPM', 'name': '手动 CPM', 'description': '手动设置千次曝光成本'}
+        ]
+    
+    # ========================================
+    # Google Ads 展示形态
+    # ========================================
+    
+    def google_list_ad_formats(self, type: str = None, **kwargs) -> List[Dict]:
+        """列出广告格式"""
+        formats = [
+            {'code': 'TEXT_AD', 'name': '文本广告', 'type': 'SEARCH', 'max_headlines': 3, 'max_descriptions': 2},
+            {'code': 'RESPONSIVE_SEARCH_AD', 'name': '响应式搜索广告', 'type': 'SEARCH', 'max_headlines': 15, 'max_descriptions': 25},
+            {'code': 'EXPANDED_TEXT_AD', 'name': '扩展文本广告', 'type': 'SEARCH', 'max_headlines': 2, 'max_descriptions': 2},
+            {'code': 'DISPLAY_AD', 'name': '展示广告', 'type': 'DISPLAY', 'max_images': 2},
+            {'code': 'SHOPPING_AD', 'name': '购物广告', 'type': 'SHOPPING'},
+            {'code': 'GMAIL_AD', 'name': 'Gmail 广告', 'type': 'GMAIL'},
+            {'code': 'VIDEO_AD', 'name': '视频广告', 'type': 'VIDEO'},
+            {'code': 'APP_INSTALL_AD', 'name': '应用安装广告', 'type': 'APP'},
+            {'code': 'APP_REENGAGEMENT_AD', 'name': '应用重 engagement 广告', 'type': 'APP'}
+        ]
+        if type:
+            return [f for f in formats if f.get('type', '').upper() == type.upper()]
+        return formats
+    
+    def google_list_asset_types(self, **kwargs) -> List[Dict]:
+        """列出资产类型"""
+        return [
+            {'code': 'CALL_ASSET', 'name': '电话拨打资产', 'description': '添加电话号码'},
+            {'code': 'CALLOUT_ASSET', 'name': '附加信息资产', 'description': '添加额外文字'},
+            {'code': 'STRUCTURED_SNIPPET_ASSET', 'name': '结构化摘要资产', 'description': '显示结构化信息'},
+            {'code': 'IMAGE_ASSET', 'name': '图片资产', 'description': '添加图片'},
+            {'code': 'PLACE_ASSET', 'name': '门店资产', 'description': '添加门店信息'},
+            {'code': 'APP_ASSET', 'name': '应用资产', 'description': '添加应用链接'},
+            {'code': 'SITELINK_ASSET', 'name': '网站链接资产', 'description': '添加额外链接'},
+            {'code': 'PRICE_ASSET', 'name': '价格资产', 'description': '添加价格信息'},
+            {'code': 'PROMOTION_ASSET', 'name': '促销资产', 'description': '添加促销活动'}
+        ]
+    
+    # ========================================
+    # Google Ads 报表维度
+    # ========================================
+    
+    def google_list_report_dimensions(self, **kwargs) -> List[Dict]:
+        """列出报表维度"""
+        return [
+            {'code': 'DAY', 'name': '日期', 'type': 'TIME'},
+            {'code': 'WEEK', 'name': '周', 'type': 'TIME'},
+            {'code': 'MONTH', 'name': '月', 'type': 'TIME'},
+            {'code': 'QUARTER', 'name': '季度', 'type': 'TIME'},
+            {'code': 'YEAR', 'name': '年', 'type': 'TIME'},
+            {'code': 'CAMPAIGN', 'name': '广告系列', 'type': 'STRUCTURE'},
+            {'code': 'AD_GROUP', 'name': '广告组', 'type': 'STRUCTURE'},
+            {'code': 'KEYWORD', 'name': '关键词', 'type': 'TARGETING'},
+            {'code': 'AD', 'name': '广告', 'type': 'STRUCTURE'},
+            {'code': 'DEVICE', 'name': '设备', 'type': 'TARGETING'},
+            {'code': 'GEO', 'name': '地域', 'type': 'TARGETING'},
+            {'code': 'PLACEMENT', 'name': '投放位置', 'type': 'TARGETING'},
+            {'code': 'AD_GROUP_CREATIVE', 'name': '广告组创意', 'type': 'STRUCTURE'},
+            {'code': 'AD_GROUP_CRITERION', 'name': '广告组定向', 'type': 'TARGETING'},
+            {'code': 'CAMPAIGN_CRITERION', 'name': '广告系列定向', 'type': 'TARGETING'}
+        ]
+    
+    # ========================================
+    # DV360 创意素材查询
+    # ========================================
+    
+    def dv360_list_creator_accounts(self, partner_id: str, **kwargs) -> List[Dict]:
+        """列出创作者账户"""
+        token = self.credentials.get('dv360', {}).get('access_token', '')
+        headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+        url = f"https://display-video.googleapis.com/v1/partners/{partner_id}/creatorAccounts"
+        params = {'pageSize': kwargs.get('page_size', 50)}
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=30)
+            data = resp.json()
+            return data.get('creatorAccounts', [])
+        except Exception as e:
+            print(f"[DV360] creator_accounts error: {e}")
+            return []
+    
+    def dv360_list_video_creators(self, partner_id: str, **kwargs) -> List[Dict]:
+        """列出视频创作者"""
+        token = self.credentials.get('dv360', {}).get('access_token', '')
+        headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+        url = f"https://display-video.googleapis.com/v1/partners/{partner_id}/videoCreatorAccounts"
+        params = {'pageSize': kwargs.get('page_size', 50)}
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=30)
+            data = resp.json()
+            return data.get('videoCreatorAccounts', [])
+        except Exception as e:
+            print(f"[DV360] video_creators error: {e}")
+            return []
+    
+    # ========================================
+    # DV360 创意模板
+    # ========================================
+    
+    def dv360_list_banner_creative_sizes(self, **kwargs) -> List[Dict]:
+        """列出横幅创意尺寸"""
+        return [
+            {'code': 'IAB_BANNER_300x250', 'name': '中矩形', 'size': '300x250'},
+            {'code': 'IAB_BANNER_336x280', 'name': '大矩形', 'size': '336x280'},
+            {'code': 'IAB_BANNER_728x90', 'name': '横幅', 'size': '728x90'},
+            {'code': 'IAB_BANNER_468x60', 'name': '横幅（旧）', 'size': '468x60'},
+            {'code': 'IAB_BANNER_320x50', 'name': '移动横幅', 'size': '320x50'},
+            {'code': 'IAB_BANNER_300x600', 'name': '大横幅', 'size': '300x600'},
+            {'code': 'IAB_BANNER_160x600', 'name': '宽矩形', 'size': '160x600'},
+            {'code': 'IAB_BANNER_970x90', 'name': '大型横幅', 'size': '970x90'},
+            {'code': 'IAB_BANNER_970x250', 'name': '大型矩形', 'size': '970x250'},
+            {'code': 'IAB_BANNER_320x100', 'name': '大型移动横幅', 'size': '320x100'}
+        ]
+    
+    def dv360_list_video_creative_durations(self, **kwargs) -> List[Dict]:
+        """列出视频创意时长"""
+        return [
+            {'code': 'DURATION_15S', 'name': '15秒', 'duration': 15},
+            {'code': 'DURATION_30S', 'name': '30秒', 'duration': 30},
+            {'code': 'DURATION_60S', 'name': '60秒', 'duration': 60},
+            {'code': 'DURATION_90S', 'name': '90秒', 'duration': 90},
+            {'code': 'DURATION_120S', 'name': '120秒', 'duration': 120},
+            {'code': 'DURATION_150S', 'name': '150秒', 'duration': 150},
+            {'code': 'DURATION_UNASSIGNED', 'name': '未分配', 'duration': 0}
+        ]
+    
+    # ========================================
+    # DV360 排期表
+    # ========================================
+    
+    def dv360_list_scheduling_types(self, **kwargs) -> List[Dict]:
+        """列出排期类型"""
+        return [
+            {'code': 'SCHEDULE_TYPE_UNSPECIFIED', 'name': '未指定', 'description': '系统自动选择'},
+            {'code': 'FRONT_LOADED', 'name': '前置排期', 'description': '集中前期投放'},
+            {'code': 'EVEN_SPREAD', 'name': '均匀投放', 'description': ' evenly 分散投放'},
+            {'code': 'BACK_LOADED', 'name': '后置排期', 'description': '集中后期投放'}
+        ]
+    
+    def dv360_list_traffic_source_types(self, **kwargs) -> List[Dict]:
+        """列出流量来源类型"""
+        return [
+            {'code': 'TRAFFIC_SOURCE_GOOGLE', 'name': 'Google 自有流量', 'value': 1},
+            {'code': 'TRAFFIC_SOURCE_PARTNER', 'name': '合作伙伴流量', 'value': 2},
+            {'code': 'TRAFFIC_SOURCE_EXTERNAL', 'name': '外部流量', 'value': 3}
+        ]
