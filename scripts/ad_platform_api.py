@@ -182,9 +182,12 @@ class AdPlatformClient:
             'page_size': kwargs.get('page_size', 20)
         }
         url = 'https://business-api.tiktok.com/open_api/v1.3/adgroup/get/'
-        resp = requests.get(url, headers=headers, params=params, timeout=30)
-        data = resp.json().get('data', {})
-        return data.get('list', []) if isinstance(data, dict) else []
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=30)
+            data = resp.json().get('data', {})
+            return data.get('list', []) if isinstance(data, dict) else []
+        except Exception as e:
+            return []
     
     def tiktok_create_adgroup(self, campaign_id: str, name: str, **kwargs) -> Dict:
         """创建广告组"""
@@ -580,21 +583,40 @@ class AdPlatformClient:
     # ========== Google Ads API (55+ tools) ==========
     def google_list_customers(self, **kwargs) -> List[Dict]:
         """列出 Google Ads 客户"""
-        client = self.get_client('google')
-        customer_service = client.get_service('CustomerService')
-        
-        # 使用 list_accessible_customers 方法
-        response = customer_service.list_accessible_customers()
-        
-        customers = []
-        for resource_name in response.resource_names:
-            # resource_name 格式: customers/123456789
-            customer_id = resource_name.split('/')[-1] if '/' in resource_name else resource_name
-            customers.append({
-                'id': customer_id,
-                'resource_name': resource_name
-            })
-        return customers
+        try:
+            from google.oauth2.credentials import Credentials
+            from google.ads.googleads.client import GoogleAdsClient
+            
+            creds = self.credentials.get('google', {})
+            credentials = Credentials(
+                token=None,
+                refresh_token=creds.get('refresh_token', ''),
+                client_id=creds.get('client_id', ''),
+                client_secret=creds.get('client_secret', ''),
+                token_uri="https://oauth2.googleapis.com/token"
+            )
+            
+            client = GoogleAdsClient(
+                credentials=credentials,
+                developer_token=creds.get('developer_token', ''),
+                login_customer_id=creds.get('login_customer_id', ''),
+                use_proto_plus=True
+            )
+            
+            customer_service = client.get_service('CustomerService')
+            response = customer_service.list_accessible_customers()
+            
+            customers = []
+            for resource_name in response.resource_names:
+                customer_id = resource_name.split('/')[-1] if '/' in resource_name else resource_name
+                customers.append({
+                    'id': customer_id,
+                    'resource_name': resource_name
+                })
+            return customers
+        except Exception as e:
+            print(f"[Google Ads] Error: {e}")
+            return []
     
     def google_list_campaigns(self, customer_id: str, **kwargs) -> List[Dict]:
         """列出广告系列"""
