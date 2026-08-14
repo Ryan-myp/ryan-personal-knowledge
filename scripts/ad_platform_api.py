@@ -379,10 +379,21 @@ class AdPlatformClient:
     
     # ========== Meta API (60+ tools) ==========
     def meta_list_accounts(self, **kwargs) -> List[Dict]:
-        """列出 Meta 广告账户"""
-        from facebook_business.adaccounts import AdAccount
-        accounts = AdAccount.get_accounts()
-        return [{'id': acc.id, 'name': acc.name, 'currency': acc.currency_name} for acc in accounts]
+        """列出 Meta 广告账户 - 使用 Graph API 直接调用"""
+        import requests
+        token = self.credentials.get('meta', {}).get('access_token', '')
+        # Meta Business API 需要传入 business_id 才能获取账户列表
+        # 如果未提供 business_id，返回空列表
+        business_id = kwargs.get('business_id', '')
+        if not business_id:
+            return []
+        url = f"https://graph.facebook.com/v19.0/{business_id}/adaccounts"
+        params = {'access_token': token, 'limit': kwargs.get('limit', 20), 'fields': 'id,name,currency'}
+        resp = requests.get(url, params=params, timeout=30)
+        data = resp.json()
+        if isinstance(data, dict):
+            return data.get('data', [])
+        return []
     
     def meta_list_campaigns(self, account_id: str, **kwargs) -> List[Dict]:
         """列出广告系列 - 使用 Graph API 直接调用"""
