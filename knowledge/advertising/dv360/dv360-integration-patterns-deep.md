@@ -1459,3 +1459,148 @@ def run_all():
 排障要诀：**每个失败都带「响应原文」+「上下文（广告主/方法/token 前 3 位）」**，可复现、可追责；绝不要只打 "ERROR call failed"。
 
 ---
+---
+
+## 五、自测题
+
+> 面向「DV360 系统集成工程师」的进阶自测。每题先思考，再点开答案核对。重点考察：分页/限流/幂等/单位/集成边界这些实战能力，而非背端点。
+
+### 5.1 题目
+
+**Q1（限流）**：某全量同步脚本在 `advertiser A` 上连续 500 个请求撞 429，但 `dv360_get_quota` 显示日配额只用了 30%。可能的原因是什么？分别给出根因判断与处置。
+
+**Q2（单位）**：你的看板把 DV360 报表金额字段直接当成预算预算写入 LineItem，结果预算从 $1000 变成了 $0.001。请说明发生了什么，并给出修复与预防方案。
+
+**Q3（分页）**：游标分页（pageToken）为什么不能直接用「页码」跳页？全量拉取时如何防止弱一致性导致的数据遗漏？给出至少两条工程措施。
+
+**Q4（幂等+批次）**：batchUpdate 返回 HTTP 200，但业务发现漏更新了若干 LineItem。请解释为什么，并给出正确的客户端处理方式。
+
+**Q5（集成边界 + Webhook）**：审批状态变更的 Webhook 偶尔丢失，导致系统状态滞后。请设计一个「既低延迟、又不丢最终状态」的接入方案，说明 Webhook 与轮询各承担什么角色。
+
+<details>
+<summary>查看 Q1 答案</summary>
+
+撞 429 但日配额没满，几乎可以断定命中**分钟速率（per-minute rate）或单账号并发上限**，而不是每日配额。
+
+- 根因判断路径：
+  1. 用 `dv360_list_rate_limits()` 看当前速率限制（每分钟多少次、并发多少）；
+  2. 用 `dv360_list_usage_stats(advertiser_id)` 看被限流次数的时间分布——若集中在某几分钟内，就是瞬时突发；
+  3. 若本地没有限流器、或者对同一资源「无脑循环拉单页」，就会轰爆分钟速率。
+- 处置：
+  1. 客户端加**滑动窗口限流器**（按 advertiser_id 分桶），把每分钟请求数主动压到官方限制（留 20% 余量）；
+  2. list 一次性把 `pageSize` 拉满，减少往返；
+  3. 尊重 `Retry-After`，429 用指数退避 + 抖动，不疯狂重试；
+  4. 若确实是日配额瓶颈（这里不是），才申请提额并举证 `dv360_get_quota` 曲线。
+
+> 这段话同时解释了一个工程纪律：**「有配额却 429」多半是速率/并发问题，不是配额问题，处置方式是削峰而不是提额。**
+</details>
+
+<details>
+<summary>查看 Q2 答案</summary>
+
+发生的是 **micros（微元）与「美元小数」单位混淆**：预算 = $1000 应写入 `budgetMicros = 1_000_000_000`（1000 × 10^6），但你把报表返回的字段（如 `TOTAL_MEDIA_COST` 是美元小数 1000.0）原样写进去，等于把 $1000 当成 1000 micros = $0.001，差了 10^6 倍。
+
+- 立即修复：把写错的 LineItem 预算改回正确值。
+- 预防：
+  1. 报表侧金额字段（美元小数）与对象侧预算字段（micros 整数）**彻底分开**；
+  2. 封装 `usd_to_micros()` / `micros_to_usd()`，业务代码只调函数、不含裸数字；
+  3. 入库/写入前做**范围断言**（如预算 micros 必须在合理区间，过小即报警）。
+
+> 教训：DV360 里「金额/时间的 micros」与「报表的美分美元」是两套口径，接口层、数据层必须各自统一并显式换算。
+</details>
+
+<details>
+<summary>查看 Q3 答案</summary>
+
+游标分页（pageToken）**不强依赖「偏移量」，而是由服务端生成一个代表「当前位置」的不透明 token**，因此无法直接构造「第 5 页」——必须持有上一页返回的 `nextPageToken` 才能请求下一页。页码式跳页在游标语义下不存在。
+
+防止全量拉取时弱一致性导致遗漏的工程措施：
+1. **串行消费 pageToken**，不要并发请求多个 token（并发会放大一致性问题）；
+2. 同步窗口内**避免并发写**（同一资源被边拉边改即产生漂移），只在低峰只读；
+3. 入库后跑**完整性对账**：各父级下对象计数之和 vs UI count，出入即报警；
+4. BigQuery 表建**唯一约束 / 主键**，重复写入被去重/覆盖，不产生脏数据；
+5. 周期性触发一次全量重拉自愈。
+
+> 核心：游标分页是「最终一致」的消费模型，要用「主键去重 + 完整性校验 + 周期全量」来兜底，而不是假定一次拉取一定完整。
+</details>
+
+<details>
+<summary>查看 Q4 答案</summary>
+
+batch 接口是**部分成功**语义：HTTP 200 只表示「请求被接受并执行」，不代表每一条都成功。响应体 `lineItems[]` 里**每条都带独立的 `error`**，有 error 的那条就是失败的。
+
+正确处理：
+1. **逐条解析** `resp["lineItems"][i].get("error")`，把成功与失败分开；
+2. 失败的记入「死信队列」，包含原始 payload + 错误 + 时间；
+3. 重试只重放**失败子集**，不要整批重放（否则已成功的会被重复/覆盖）；
+4. 上线初期对 batch 结果做「预期成功数 vs 实际成功数」的断言，及时发现「假成功」。
+
+> 教训：看待 batch，永远「逐条看待」，绝不要只信外层 HTTP 状态码。
+</details>
+
+<details>
+<summary>查看 Q5 答案</summary>
+
+Webhook 是 best-effort、可能丢失；轮询是可靠但延迟高。正确做法是**两者组合、角色分明**：
+
+- **Webhook 只当「唤醒信号」**：收到审批事件后，不信任事件里的状态，而是**用事件里的实体 ID 主动 GET 拉最新真实状态**（`dv360_list_creatives` / 审批查询）。这样即使事件丢、重复、乱序，最终状态都以「拉取到的为准」（最终一致）。
+- **回调端点必须幂等**：同一事件处理多次无副作用；
+- **定期轮询兜底**：对关键实体（审批、报表就绪）保留水位驱动的增量轮询，防止 Webhook 丢失导致长期滞后；
+- **签名校验 + 自检**：`dv360_test_webhook` 部署后验证 endpoint 可达与签名，防止伪造与配置错。
+
+> 核心：在「低延迟」与「最终一致」之间，用「Webhook 触发 + 主动拉取 + 轮询兜底」的策略，既快又不丢。
+</details>
+
+---
+
+## 六、动手验证（把知识变成能力）
+
+### 6.1 最小可运行验证链
+
+用现有工具脚本做一轮「读 + 写 + 观测」的自检，确认整套认知落地：
+
+```bash
+# 1) 认证自检（必须为 True）
+python3 scripts/ad_platform_api.py dv360_validate_credentials
+
+# 2) 拉一个广告主的 LineItem 列表，观察分页与字段
+python3 scripts/ad_platform_api.py dv360_list_line_items --advertiser_id A111
+
+# 3) 拉配额与用量，作为限流基线
+python3 scripts/ad_platform_api.py dv360_get_quota --advertiser_id A111
+python3 scripts/ad_platform_api.py dv360_list_usage_stats --advertiser_id A111
+
+# 4) 查看已注册的 Webhook（若空，可先 create 再 test）
+python3 scripts/ad_platform_api.py dv360_list_webhooks --advertiser_id A111
+
+# 5) 报表定义 + 落地（演练 T+1 落仓主链路）
+python3 scripts/ad_platform_api.py dv360_sync_report --advertiser_id A111 \
+  --date_range_start 2026-08-01 --date_range_end 2026-08-07 \
+  --dimensions LINE_ITEM_ID,CREATIVE_ID --metrics IMPRESSIONS,CLICKS
+
+# 6) 审计日志（排障「谁改了」）
+python3 scripts/ad_platform_api.py dv360_list_audit_logs --advertiser_id A111
+```
+
+> 注意：具体 CLI 参数名以 `ad_platform_api.py` 实际 `argparse` 定义为准（以上为示意）。
+
+### 6.2 演练建议（由易到难）
+
+1. **只读打通**：完成 6.1 的 1~3，理解认证、分页、配额。
+2. **写一条 + 回读**：用 `dv360_create_line_item` 建一条测试 LineItem，`dv360_get_line_item` 回读，核对 budgetMicros。
+3. **批次 + 部分成功演练**：给批量更新混入一条非法参数，观察「部分成功 + 逐条 error」，写一个处理失败子集的函数。
+4. **Webhook ping 通**：注册一个本地回调（可用 webhook.site），`dv360_test_webhook` 测试，验证签名校验。
+5. **模拟弱一致**：在拉取 LineItem 全量同时人工暂停一条，观察分页漏/重，跑完整性对账。
+
+### 6.3 交付物 checklist（一套合格的 DV360 集成平台）
+
+- [ ] 统一客户端封装（业务层无裸 URL）
+- [ ] 认证自检 + 凭证轮换预案（`dv360_validate_credentials` 接入监控）
+- [ ] 限流器（按广告主分桶）+ 429 退避与死信
+- [ ] 分页封装（串行消费 pageToken）+ 完整性对账
+- [ ] 批次写逐条解析 + 失败子集重放
+- [ ] micros/时区/ID 三套统一
+- [ ] 水位驱动增量同步 + 幂等重跑
+- [ ] 监控：配额 / 429 / 水位 / 凭证 / 字段烟测告警
+- [ ] Webhook（唤醒 + 主动拉取）+ 轮询兜底
+- [ ] 审计与 id_map 落地

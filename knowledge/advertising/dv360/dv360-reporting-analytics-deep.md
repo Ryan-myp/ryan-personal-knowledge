@@ -1498,3 +1498,250 @@ UI 内嵌报表与 pacing 监控走 **LDB（显示级/Logs Data Base）**，近�
 - **追**：记录每个 Query 的实际行数，逼近上限提前告警。
 - 组合不合法先查 `dv360_list_breakdowns()`，避免构造非法的高基数互斥组合。
 </details>
+
+## 六、附：DV360 报表相关 API 方法速查与进阶工程模式
+
+本附录把本文引用的真实方法整理成速查表，并给出 BigQuery/数仓集成、增量加载、回填修正、多广告主汇总等进阶工程模式，供直接落地参考。
+
+### 6.1 报表相关 API 方法速查表
+
+方法名取自 `scripts/ad_platform_api.py` 与 `scripts/dv360_api.py`（已核验存在）。可按"取数 / 元数据 / 管理 / 度量"分组查找。
+
+**取数（报表数据主体）**
+
+| 方法 | 入参要点 | 返回/用途 |
+|------|----------|-----------|
+| `dv360_get_report(advertiser_id, dimensions=[...], metrics=[...], date_range={...})` | 维度数组 + 指标数组 + 日期窗 | 报表主体数据（默认 CAMPAIGN / IMPRESSIONS/CLICKS/SPEND） |
+| `dv360_sync_report(advertiser_id, date_range={...})` | 日期窗 | 触发一次全量同步，供轮询拿结果 |
+| `get_report(advertiser_id, date_start, date_end, level='CAMPAIGN', dimensions=None)` | 显式起止 + 层级 + 维度 | `dv360_api.py` 风格客户端：POST `reports/generate` |
+| `dv360_list_dimension_values(dimension)` | 单个维度名 | 枚举某维度的合法取值（下拉/过滤校验） |
+| `dv360_get_report_metrics(advertiser_id)` | 广告主 id | 返回指标定义清单 |
+| `dv360_list_report_dimensions()` | 无 | 返回可用维度清单 |
+| `dv360_list_report_metrics()` | 无 | 返回可用指标清单 |
+| `dv360_list_breakdowns()` | 无 | 返回"维度×维度"合法组合，用于组合校验 |
+
+**管理 / 度量辅助**
+
+| 方法 | 返回/用途 |
+|------|-----------|
+| `dv360_list_floodlight_configs(advertiser_id)` | Floodlight 配置（转化口径映射） |
+| `dv360_list_seller_metrics(seller_id)` | 单卖方指标（定位个体滞后） |
+| `dv360_list_usage_stats(advertiser_id)` | 用量统计（配额审计） |
+| `dv360_list_performance_stats(advertiser_id)` | 性能统计（体量/趋势） |
+| `dv360_get_quota(advertiser_id)` | 当前配额余量（避免 429） |
+| `dv360_list_cross_channel_reports(account_id)` | 跨渠道报表（Google Ads/CM360 打通） |
+| `dv360_list_time_zones()` | 可用时区（日期边界对齐） |
+| `dv360_list_currency_options()` | 货币选项（金额口径） |
+| `dv360_list_invoice_history(advertiser_id)` | 发票/结算口径（对账权威） |
+| `dv360_list_billing_info(advertiser_id)` | 计费信息 |
+| `dv360_list_ad_verification_services()` | 第三方验证服务商 |
+| `dv360_list_brand_safety_providers()` | 品牌安全服务商 |
+| `dv360_list_viewability_providers()` | 可见率提供商 |
+
+**选项枚举（dv360_api.py）**
+
+| 方法 | 用途 |
+|------|------|
+| `get_transaction_type_options()` | 交易类型（PG/PMP/PD/Open） |
+| `get_bid_strategy_options()` | 出价策略（CPM/CPC/CPV/oCPM/CPA） |
+| `get_creative_format_options()` | 创意格式 |
+| `get_targeting_dimension_options()` | 定向维度（GEO/AGE/…） |
+
+**认证与账户**
+
+| 方法 | 用途 |
+|------|------|
+| `dv360_auth()` | OAuth 认证入口 |
+| `dv360_list_advertisers(partner_id)` | 拉广告主清单（每日任务起点） |
+| `dv360_get_customer(customer_id)` / `dv360_list_customers()` | 客户信息 |
+| `dv360_validate_credentials()` | 凭证有效性自检 |
+| `dv360_list_api_versions()` / `dv360_get_api_version(version)` | 版本检查 |
+
+### 6.2 用量与配额监控（避免拉取被限流）
+
+批量拉取前先看配额，拉取中实时监控余量，是避免生产任务大面积失败的底线：
+
+```python
+def quota_safe_run(client, advertiser_id, quota_min_pct=0.2):
+    """拉取前检查配额余量，不足则降并发/错峰。"""
+    quota = client.dv360_get_quota(advertiser_id=advertiser_id)
+    used = quota.get('used', 1)
+    limit = quota.get('limit', 1)
+    pct = 1 - used / limit if limit else 1.0
+    if pct < quota_min_pct:
+        log.warning('quota low: used=%s limit=%s', used, limit)
+        # 可在此降并发、错峰或告警
+    return pct
+```
+
+### 6.3 BigQuery / 数仓集成（BI 落地规范）
+
+DV360 报表入库后进入数仓做统一分析。这里给 BigQuery 侧的建表与加载规范，避免"能查但口径混乱"。
+
+**建表规范（BigQuery 分区 + 聚簇）**：
+
+```sql
+CREATE OR REPLACE TABLE `ad.dv360_daily_report`
+PARTITION BY report_date
+CLUSTER BY advertiser_id, line_item_id
+AS SELECT
+  DATE '1970-01-01' AS report_date,
+  CAST(NULL AS INT64) AS advertiser_id,
+  CAST(NULL AS INT64) AS campaign_id,
+  CAST(NULL AS INT64) AS insertion_order_id,
+  CAST(NULL AS INT64) AS line_item_id,
+  CAST(NULL AS STRING) AS device_type,
+  CAST(NULL AS STRING) AS country,
+  CAST(0 AS INT64) AS impressions,
+  CAST(0 AS INT64) AS clicks,
+  CAST(0 AS INT64) AS spend_micro,
+  CAST(0 AS INT64) AS completions,
+  CAST(0 AS INT64) AS floodlight_conversions,
+  CAST(0 AS INT64) AS conversion_value_micro,
+  CAST('' AS STRING) AS source_level,
+  CAST('' AS STRING) AS measured_at_utc
+WHERE FALSE;
+```
+
+**加载（增量 UPSERT，BigQuery MERGE）**：
+
+```sql
+MERGE `ad.dv360_daily_report` t
+USING `ad.dv360_daily_report_stage` s
+ON t.report_date = s.report_date
+   AND t.advertiser_id = s.advertiser_id
+   AND t.line_item_id = s.line_item_id
+WHEN MATCHED THEN
+  UPDATE SET
+    impressions = s.impressions,
+    clicks = s.clicks,
+    spend_micro = s.spend_micro,
+    source_level = s.source_level,
+    measured_at_utc = s.measured_at_utc
+WHEN NOT MATCHED THEN
+  INSERT (report_date, advertiser_id, campaign_id, insertion_order_id,
+          line_item_id, device_type, country, impressions, clicks,
+          spend_micro, completions, floodlight_conversions,
+          conversion_value_micro, source_level, measured_at_utc)
+  VALUES (s.report_date, s.advertiser_id, s.campaign_id, s.insertion_order_id,
+          s.line_item_id, s.device_type, s.country, s.impressions, s.clicks,
+          s.spend_micro, s.completions, s.floodlight_conversions,
+          s.conversion_value_micro, s.source_level, s.measured_at_utc);
+```
+
+### 6.4 增量加载、回填修正与多广告主汇总
+
+**增量加载（避免每天全量啃历史）**：
+
+```python
+def incremental_load(client, advertisers, as_of, lookback_days=3):
+    """只拉"as_of 往前 lookback_days"窗口，覆盖末端可能的回填修正。"""
+    start = as_of - timedelta(days=lookback_days)
+    for adv in advertisers:
+        for d in daterange(start, as_of):          # 逐日拉，天然"分页"
+            query_id, report_id = create_query(
+                client, adv, f"incr_{d.isoformat()}", d, d,
+                ['LINE_ITEM'], DEFAULT_METRICS)
+            wait_for_report(client, query_id, report_id)
+            upsert_rows(download_report_csv(client, query_id, report_id),
+                        adv, d.isoformat())
+```
+
+**回填修正（双版本：预览 → 定稿）**：
+
+```
+T-1 凌晨  拉取预览版（source_level=preview，T-1 数据）
+T+1 凌晨  再拉 T-1 的定稿版（source_level=final，覆盖 preview）
+最终表里  T-1 只保留 final 版本（UPSERT 已覆盖）
+```
+
+这种"预览 + 定稿"双轨，既满足"当天晨会能看到数据"，又保证"入库最终是定稿值"，是回填修正的标准工程解法。
+
+**多广告主汇总看板（中毒聚合防泄漏）**：
+
+```python
+def aggregate_all(rows):
+    """跨广告主、跨 IO 汇总，供大盘周报。"""
+    import pandas as pd
+    df = pd.DataFrame(rows)
+    return df.groupby(['report_date', 'advertiser_id']).agg(
+        impressions=('impressions', 'sum'),
+        clicks=('clicks', 'sum'),
+        spend_micro=('spend_micro', 'sum'),
+        floodlight_conversions=('floodlight_conversions', 'sum'),
+    ).reset_index()
+```
+
+**口径词典（团队协作必备）**：为每个口径写死"公式 + 分母 + 时区 + 数据等级"，避免多个看板各写一套导致结论打架：
+
+```yaml
+# metrics_glossary.yaml（口径词典示例，下游看板强制引用）
+ctr:
+  formula: clicks / impressions
+  data_level: RDB_final
+  note: 全量分母，含无点击展示
+viewability:
+  formula: viewable_impressions / measurable_impressions
+  formula_alt: viewable_impressions / impressions
+  default: measurable_impressions
+  note: 分母可测，行业标准
+roas:
+  formula: conversion_value / spend
+  data_level: RDB_final
+  note: 归因价值口径，非销售价值
+spend_basis: cost_after_IVT
+invoice_basis: invoice_total_includes_rebate
+timezone: Asia/Shanghai
+data_window: T-2_final
+```
+
+### 6.5 进阶：把报表分析接进 AI / Agent（自动化洞察）
+
+报表体系沉淀数仓后，可由 Agent 引擎每日自动产出"异常摘要 + 优化建议"：
+
+```python
+def daily_insights(con, advertisers):
+    """汇总当日异常与建议，供 Agent 生成日报。"""
+    alerts = []
+    for adv in advertisers:
+        totals = load_totals(con, adv)             # 近 8 日
+        alerts += anomaly_check(totals)            # 突变检测（见 4.9）
+        # 派生出优化信号：高花费低 ROAS 的 LineItem 降级候选等
+        candidates = low_roas_line_items(con, adv)
+        alerts.append(f"{adv}: {len(candidates)} 个低 ROAS LineItem")
+    return {
+        'date': date.today().isoformat(),
+        'alerts': alerts,
+        'prompt': build_prompt(add_accounting, alerts),
+    }
+```
+
+**落地建议**：Agent 负责"读数 → 发现偏离 → 起草建议"，人负责放行与执行（如调预算、换创意）。报表层只做"确定性计算"，优化动作保留人工确认，避免自动化误伤。
+
+### 6.6 一个 30 分钟上手的清单（从零到日报）
+
+```
+□ 1) 认证：dv360_auth() 打通服务账号，validate_credentials() 自检
+□ 2) 拉广告主清单：dv360_list_advertisers()
+□ 3) 建第一条 Query：LINE_ITEM 级 + IMPRESSIONS/CLICKS/SPEND + 昨天
+□ 4) 轮询 DONE → 下载 CSV
+□ 5) 解析 + 金额转微单位 + 建主键
+□ 6) UPSERT 入库（PostgreSQL/BigQuery）
+□ 7) BI 连数仓出第一张日报
+□ 8) 加对账脚本 + 突变告警 + 配额监控
+```
+
+### 6.7 本文档与姊妹文档的关系速查
+
+| 需要解决 | 看这份 | 出口 |
+|----------|--------|------|
+| 报表体系与数据链路、LDB/RDB、维度指标、拉取引擎 | 本文（一、二） | 理解"数从哪来" |
+| 自动化入库、对账、踩坑、FAQ | 本文（三、四、六） | 落地"数怎么用" |
+| 归因模型原理 | dv360-measurement-attribution-deep.md | 归因引擎实现 |
+| 平台架构、RTB、定向 | dv360-architecture-deep.md | 账户/定向上下文 |
+| 优化策略与 KPI 基准 | dv360-optimization-deep.md | 优化动作 |
+| API 认证骨架 | dv360-marketing-api-deep.md | 客户端封装 |
+
+## 结语
+
+DV360 报表与分析不是"拉个数"，而是一整套工程：**分清 LDB/RDB 数据等级、固化维度指标口径、打通 Floodlight 与跨渠道归因、接入第三方测量、用可重试可幂等的引擎每日入库、并对三源数据做阈值化对账**。把这套体系跑稳，投放的每一分钱花得值不值、对得上对不上，才真正可答、可查、可优化。

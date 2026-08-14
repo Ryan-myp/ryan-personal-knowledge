@@ -1731,3 +1731,197 @@ GARM 提供了行业统一的 7 大类 × 43 子分类语言，让买方(DSP 端
 <details><summary>Q15：Ads.txt 缺失的库存就一定完全不能投吗？如何决策？</summary>
 不一定，但风险高。优先级上完整 DIRECT 认证库存最推荐，RESELLER 需验卖家，有 Ads.txt 但无该卖家或完全缺失的库存风险较高、难追责。决策时用 API(如 list_sellers / adsTxtValidated)量化未认证占比，结合预算、市场刚需、供应商背书与第三方复核，对必要但缺失的库存走灰度+permission 评估，而非一票否决或全放行。
 </details>
+---
+
+## 二十三、DV360 反欺诈/品牌安全账户级健康巡检脚本（完整可运行）
+
+这里给出一个可直接在生产线重用的 Python 巡检脚本，联结 `ad_platform_api.py` 的多个方法，把"品牌安全 + 可见性 + IVT"统一成一份巡检报告。
+
+```python
+# health_review_dv360.py
+"""
+DV360 品牌安全/可见性/IVT 一体化巡检
+用法: python health_review_dv360.py --advertiser <ADV_ID> --days 7
+"""
+import argparse
+import json
+from ad_platform_api import AdPlatformAPI
+
+def review(adb_id, days):
+    api = AdPlatformAPI(credentials="config/credentials.json")
+    report = {}
+
+    # 1. 账户健康总览
+    h = api.dv360_get_account_health(adb_id)
+    report["account"] = {
+        "ivtRate": h.get("ivtRate"),
+        "viewableRate": h.get("viewableRate"),
+        "flaggedDomains": h.get("flaggedDomains"),
+        "authorizedShare": h.get("authorizedShare"),
+    }
+
+    # 2. 内容排除清单
+    report["contentExclusions"] = api.dv360_list_content_exclusions(adb_id)
+
+    # 3. 可见性目标可选值
+    report["viewabilityTargets"] = [t.get("name") for t in api.dv360_list_viewability_targets()]
+
+    # 4. 报表指标(IVT/可见性/点击/转化)
+    m = api.dv360_get_report_metrics(adb_id,
+        metrics=["IMPRESSIONS", "VIEWABLE_IMPRESSIONS", "INVALID_TRAFFIC_IMPRESSIONS",
+                 "CLICKS", "CONVERSIONS", "SPEND"],
+        date_range={"days": days})
+    report["metrics"] = m
+
+    # 5. 卖家质量 Top/Bottom
+    sellers = api.dv360_list_sellers()
+    scored = []
+    for s in sellers:
+        sm = api.dv360_list_seller_metrics(s.get("sellerId"))
+        scored.append({"name": s.get("name"), "ivt": sm.get("invalidTrafficRate"),
+                       "view": sm.get("viewableRate")})
+    scored.sort(key=lambda x: x["ivt"] or 1)
+    report["sellersTop"] = scored[:5]
+    report["sellersBottom"] = scored[-5:]
+
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--advertiser", required=True)
+    ap.add_argument("--days", type=int, default=7)
+    args = ap.parse_args()
+    review(args.advertiser, args.days)
+```
+
+---
+
+## 二十四、可见性测量方法深度对比与取舍
+
+### 24.1 几何计算 vs IntersectionObserver vs 数据级估计
+
+| 方法 | 精度 | 实时性 | 实现成本 | 合规性 | 适用 |
+|------|------|--------|---------|--------|------|
+| getBoundingClientRect 轮询 | 高 | 中(需采样) | 中 | MRC 认可 | 常规页面 |
+| IntersectionObserver | 高 | 高(回调解耦) | 低 | MRC 认可 | 现代页面/App |
+| 数据级(log) 几何反推 | 低-中 | 事后 | 高 | 一般不作为合规测量 | 服务端估算/审计 |
+| hybrid(几何+IO) | 高 | 高 | 中高 | MRC 认可 | 复杂布局 |
+
+### 24.2 采样频率与时间阈值的关系
+
+可见性时间判定依赖采样点。采样过疏会漏掉"短暂可见"，过密成本高。工程经验：
+
+```
+采样间隔    视频2s需要的最少连续点数
+  1.0s              3 (边缘)
+  0.5s              5
+  0.25s             9
+  0.1s              21
+建议：0.1~0.25s，并配"从首可见起算 + 滚动防抖"
+```
+
+### 24.3 为什么"可见但很短"的展示常被低估/高估
+
+- 首屏加载瞬间即滚走 → 可能<1s → 非可见。
+- 自动播放视频被折叠遮挡 → 像素<50% → 非可见，即便用户听到了声音。
+以上是可见率低的常见技术原因，需用位置与尺寸优化解决，而非抱怨测量不准。
+
+---
+
+## 二十五、品牌安全 + 隐私(敏感类别) 的边界澄清
+
+### 25.1 Brand Safety vs Sensitive Category 的本质差异
+
+| 维度 | 品牌安全(Content Safety) | 敏感类别(Sensitive Category) |
+|------|--------------------------|------------------------------|
+| 对象 | 内容语境(页面/App 说什么) | 受众特征(用户是谁) |
+| 目的 | 品牌不挨敏感内容 | 保护用户隐私/符合法规 |
+| 典型 | 暴力/成人/赌博/政治内容 | 健康、宗教、政治倾向、性取向相关定向 |
+| 法规 | GARM / 广告主政策 | GDPR/PIPL/CCPA、Google 政策 |
+
+### 25.2 设计中如何共存
+
+```
+品牌安全: 不让广告出现在敏感内容旁(内容分类排除)
+敏感类别: 不用受保护特征做定向(受众定向限制)
+两者独立配置，但都应在 LI 配置阶段完成，避免上线后返工。
+DV360 在创建 LI 时可通过 brand_safety_config 与 targeting 配置分别落地。
+```
+
+---
+
+## 二十六、IAB Tech Lab 与测量标准背景（扩展阅读框架）
+
+| 标准/规范 | 发布方 | 与本主题关系 |
+|-----------|--------|-------------|
+| Viewable Impression Guidelines | MRC | 可见性标准(50%/1s, 视频2s) |
+| Invalid Traffic Detection & Filtration Guidelines | MRC | GIVT/SIVT 分类与过滤 |
+| Ads.txt / app-ads.txt | IAB Tech Lab | 供应链授权 |
+| Sellers.json / advertisers.json | IAB Tech Lab | 买卖侧身份披露 |
+| OpenRTB | IAB Tech Lab | 竞价字段中的品牌安全/IVT 信号 |
+| VAST 4.x | IAB Tech Lab | 视频投放与测量扩展 |
+| GARM Taxonomy | GARM (WFA) | 品牌安全内容分级 |
+| Measurement-SDK(OMID) | IAB Tech Lab | 开放测量 SDK 统一测量 |
+
+**OMID(Open Measurement Interface Definition)** 值得一提：它允许第三方测量商通过统一接口接入(在 DV360 与 IAS/Moat/DV 间)，避免重复 SDK，提升测量一致性与隐私合规。这是理解"为什么第三方能拿到统一可见性信号"的关键。
+
+---
+
+## 二十七、把知识固化为团队 SOP（可落地的操作手册）
+
+### 27.1 每天(每投放小时级)
+- [ ] 拉取各 LI 的 IVT/可见性指标(`dv360_get_report_metrics`)
+- [ ] 高 CTR×零转化 自动告警扫描
+- [ ] 品牌安全事件 0 通报
+
+### 27.2 每周
+- [ ] 第三方 vs 平台对账(口径+imp_id+±5%)
+- [ ] 黑名单/白名单/排除列表增删复盘
+- [ ] 卖家质量 Top/Bottom 复审
+
+### 27.3 每月
+- [ ] GARM 分类配置复审(过杀/漏杀)
+- [ ] 自研 IVT 融合器权重重校准
+- [ ] 供应商 SLA 与测量数据质量复盘
+
+### 27.4 每季度
+- [ ] Ads.txt/sellers.json/供应链透明完整性审计
+- [ ] 大促三层联动压测(品牌安全/可见性/反欺诈)
+- [ ] 与法务合规同步敏感类别配置
+
+---
+
+## 二十八、自测题（第四批·综合）
+
+<details><summary>Q16：为什么 IAB/MRC 推 OMID 能同时提升测量一致性、第三方中立性与隐私合规？</summary>
+OMID(Open Measurement Interface Definition)让第三方测量商通过统一开放接口接入同一广告环境，避免每家厂商各装一套 SDK。它统一了暴露给测量方的视图/事件/几何数据，降低测量差异；保证了第三方测量的中立可比；同时通过标准化接口减少对用户数据的额外访问与侵入，提升隐私合规并简化供应链集成。
+</details>
+
+<details><summary>Q17：可见性采样的间隔为什么不能太疏？工程上建议多少？</summary>
+可见性时间判定依赖采样点，采样过疏会漏掉短暂可见、把"满足2s"误判为不满足，或无法准确累计连续时长。工程实践建议 0.1~0.25s 采样，并配合"自首次可见起算 + 滚动防抖"，使视频 2s 判定有足够点数支撑(0.1s 约需 21 个连续满足点)。过密则增加计算与网络开销，需权衡。
+</details>
+
+<details><summary>Q18：品牌安全与敏感类别(Privacy)如何区分配置？</summary>
+品牌安全针对"内容语境"(页面说什么)——用内容分类排除/Brand Safety 分流；敏感类别针对"受众特征"(用户是谁)——用定向限制保护受保护群体(健康/宗教/政治倾向等)。两者独立，但都应在创建 Line Item 阶段完成(如 brand_safety_config 与 targeting 分别配置)，避免上线后返工与合规风险。
+</details>
+
+<details><summary>Q19：DV360 账户健康巡检脚本里，为什么需要"卖家质量 Top/Bottom"和"未认证库存占比"？」</summary>
+卖家质量与认证库存占比直接反映供应链健康度与欺诈骗风险。良质卖家(IVT 低、可见率高、认证充分)是品牌安全与效果的前提；未认证库存占比高说明存在劫持/转售风险。把它们和账户级 IVT 率、可见率一起纳入巡检报告，能提前识别单一账户业绩好但整体风险高的隐患，指导库存与卖家策略调整。
+</details>
+
+<details><summary>Q20：如果只准做一件事来降 IVT 与提品牌安全，你会选哪个杠杆？为什么？</summary>
+视场景：若预算有限且风险集中于"买到不可信库存"，先做"仅认证库存 + 良质卖家"的供应链净化(Ads.txt/sellers.json + list_seller_metrics)，成本低、见效快、副作用小；若已有可信库存、问题在于内容语境，则先做品牌安全分类排除。一般建议以供应链透明为地基(它同时缓解品牌安全与 IVT)，再叠加可见性与内容安全。
+</details>
+
+---
+
+## 结语
+
+DV360 的欺诈检测与品牌安全，不是"一个开关"，而是一套**分层、可度量、可审计**的工程体系：从供应链透明(Ads.txt/sellers.json)到内容分级(GARM 分类排除)，从可见性标准(MRC 50%/1s、视频 2s、大面积 30%)到无效流量治理(GIVT 规则过滤 + SIVT 多信号融合)，再到第三方测量对账与自研评分引擎。本文用可运行的 Python API 调用与 Go 实现(可见性计算器、IVT 多信号评分器、地理瞬移检测、设备指纹稳定性)把每一层落到工程细节，并结合 8 类踩坑案例与团队 SOP，帮助读者在 DV360 上把每一分预算都花在"安全、可见、真实"的人流量上。
+
+**核心行动清单(结语速查)：**
+1. 供应链透明先行：Ads.txt/app-ads.txt/sellers.json + 仅认证库存。
+2. 品牌安全按 GARM 分级：不搞一刀切，白名单 + 灰度。
+3. 可见性按 MRC 口径：展示 50%/1s、视频 50%(大面积30%)/2s，选对进价方式。
+4. IVT 分层治理：平台自动过滤 GIVT + 自研融合器 + 第三方复核补 SIVT。
+5. 持续对账与复盘：统一口径/imp_id/±5%，周→月→季 SOP。
