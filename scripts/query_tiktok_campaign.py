@@ -90,7 +90,7 @@ def format_explanation(data):
     return "\n".join(lines)
 
 
-def query_campaign(access_token, campaign_id):
+def query_campaign(access_token, advertiser_id, campaign_id):
     """查询 Campaign 详情"""
     headers = {
         'Access-Token': access_token,
@@ -99,7 +99,7 @@ def query_campaign(access_token, campaign_id):
 
     url = f'https://business-api.tiktok.com/open_api/v1.3/campaign/get/'
     params = {
-        'advertiser_id': '7369539150103576593',
+        'advertiser_id': advertiser_id,
         'filtering': json.dumps({'campaign_ids': [campaign_id]})
     }
 
@@ -155,6 +155,8 @@ def main():
 
     access_token = tiktok_config.get('access_token', '')
     bc_id = tiktok_config.get('bc_id', '')
+    # 从 BC ID 推导 advertiser_id (TikTok BC ID 和 advertiser_id 通常是同一个值)
+    advertiser_id = bc_id
 
     if not access_token:
         print("\n[ERROR] TikTok access_token not configured")
@@ -167,7 +169,7 @@ def main():
     print("-" * 70)
 
     # 查询 Campaign
-    campaign_data = query_campaign(access_token, campaign_id)
+    campaign_data = query_campaign(access_token, advertiser_id, campaign_id)
 
     if campaign_data.get('code') != 0:
         print(f"[ERROR] API Error: {campaign_data.get('message', 'Unknown error')}")
@@ -181,14 +183,27 @@ def main():
 
     campaign = campaign_list[0]
 
+    # 查询 Ad Groups
+    ad_groups_data = query_ad_groups(access_token, advertiser_id, campaign_id)
+    ad_groups_list = ad_groups_data.get('data', {}).get('list', []) if ad_groups_data.get('code') == 0 else []
+
+    # 查询 Ads (第一个 Ad Group)
+    ads_list = []
+    first_adgroup_id = None
+    if ad_groups_list:
+        first_adgroup_id = ad_groups_list[0].get('adgroup_id')
+        ads_data = query_ads(access_token, advertiser_id, first_adgroup_id)
+        ads_list = ads_data.get('data', {}).get('list', []) if ads_data.get('code') == 0 else []
+
     # 构建完整数据
     result = {
         "campaign": campaign,
-        "ad_groups": {},
-        "ads": {},
+        "ad_groups": {"total": len(ad_groups_list), "list": ad_groups_list[:10]},
+        "ads": {"total": len(ads_list), "list": ads_list[:5]},
         "creatives": {}
     }
 
+    # 输出原始 JSON
     # 输出原始 JSON
     print("\n[RAW DATA] TIKTOK:")
     print(json.dumps(result, indent=2, ensure_ascii=False))
