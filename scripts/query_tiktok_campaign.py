@@ -238,14 +238,18 @@ def main():
         "creatives": {}
     }
 
-    # 输出原始 JSON
-    print("=" * 70)
-    print("[RAW DATA] TIKTOK")
-    print("=" * 70)
-    print(json.dumps(result, indent=2, ensure_ascii=False))
-
     # 输出业务解读
     print(format_explanation(result))
+
+    # 输出原始 JSON (折叠格式)
+    print("")
+    print("<details>")
+    print('<summary style="color: blue; font-weight: bold;">📄 点击查看原始 JSON 数据</summary>')
+    print("")
+    print("```json")
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    print("```")
+    print("</details>")
 
 
 if __name__ == "__main__":
