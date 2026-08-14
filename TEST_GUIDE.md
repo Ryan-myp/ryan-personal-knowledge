@@ -191,3 +191,34 @@ python3 scripts/ad_platform_api.py --platform tiktok --action delete_campaign --
 - `add`, `remove`, `enable`, `disable`
 - `send`, `upload`, `track`, `claim`
 - `apply`, `dismiss`, `approve`, `reject`
+
+## Meta API 测试结果
+
+### ✅ 测试通过
+
+- **用户信息**: Shopeeadsapi (ID: 956683664786094)
+- **广告账户**: 10 个
+- **广告系列**: 可查询
+- **广告组**: 可查询
+- **洞察数据**: 可查询
+
+### 📊 可用账户
+
+| ID | 名称 |
+|----|------|
+| act_34877444 | 34877444 |
+| act_25402371 | 25402371 |
+| act_43382369 | 43382369 |
+| act_46049989 | Ayunar Business |
+| act_47056167 | Amazing eCom |
+| act_48822124 | 48822124 |
+| act_35066240 | 35066240 |
+| act_59687853 | 59687853 |
+| act_67171365 | akudesign |
+| act_76458409 | Lasap Philippines |
+
+### 🔧 技术说明
+
+- Meta SDK 26.0.0 的导入路径已更新为 `facebook_business.adobjects.*`
+- 推荐使用 `requests` 直接调用 Graph API v18.0
+- 凭证文件已添加到 `.gitignore`，不会提交到 Git
