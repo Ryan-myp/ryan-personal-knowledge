@@ -146,6 +146,71 @@ Advantage+ 家族可以从「Modeled Audience」的角度分成两类：
 | Ultimate Conversion | — | 优化目标里较后的转化步骤 |
 | Broad / Hoarding | — | 模型在大量用户里「囤积」转化信号 |
 
+### 1.7 各 Advantage+ 产品的适用场景矩阵
+
+不同 Advantage+ 产品适合不同的业务阶段与投放目标。下表是决策时的速查表：
+
+| 产品 | 最佳适用场景 | 典型 KPI | 覆盖对象 |
+|------|--------------|----------|----------|
+| ASC | 电商放量、目标 CPA/ROAS 明确、素材多元 | CPA ↓、ROAS ↑ | 老客+新客 |
+| AAC | 应用拉新/促活/付费优化 | 安装成本、付费 ROAS | 拉新、再营销 |
+| Advantage+ Shopping Ads（目录增强） | 电商想用目录但没有完整 ASC 时 | CTR、加购率 | 目录曝光 |
+| Advantage+ Audience（Ad Set 层） | 传统 conversion 想拓宽触达 | CPA ↓ | 老客+新客 |
+| Advantage+ Creative | 提升点击率与素材复用率 | CTR、CPC | 创意层 |
+| Advantage+ Placements | 所有绩效 campaign 的基础版位策略 | eCPM、CPA | 所有 |
+| Advantage+ Budget（组合预算） | 多 campaign/多商品抢同一用户池 | 总 ROAS | 跨 campaign |
+| Advantage+ Optimizations | 想要自动出价/Ultimate 优化 | CPA、ROAS | 优化目标 |
+| Advantage+ for Videos | 视频素材少、想自动生成变体 | 完播率、CTR | 视频广告 |
+
+#### 1.7.1 按投放目标选产品（决策树）
+
+```
+你现在的目标是什么？
+│
+├── 电商卖货，量要上来，能接受交给模型
+│   └── ASC（首选）
+│
+├── 电商卖货，但转化信号很稀、要精确控制
+│   └── DPA / Catalog Ads + Advantage+ 组件
+│
+├── 推广 App，要安装量
+│   └── AAC（安装优化）
+│
+├── 推广 App，要付费/留存
+│   └── AAC（App Events + ROAS 目标）
+│
+├── 卖实体商品但不想换 campaign 结构
+│   └── 现有 conversion campaign + Advantage+ Audience/
+│        Placements/Budget/Creative
+│
+└── 品牌/曝光为主，几乎不追踪转化
+    └── 传统 brand campaign + Advantage+ Creative/Placements
+```
+
+### 1.8 Advantage+ 家族的时间线与版本演变（理解命名混乱）
+
+Advantage+ 命名经历了多次合并，理解演变有助于看懂旧文档与旧代码：
+
+```
+时间线（示意）
+│
+│  早期：Automatic Placements（自动版位）
+│   │      Optimization for Ad Delivery（转化优化）
+│   │      Campaign Budget Optimization (CBO) → 后并入 Advantage+ Budget
+│   │
+│  中期：Dynamic Ads（DPA）
+│   │      App Installs / App Campaigns
+│   │      Automated rules
+│   │
+│  现在：Advantage+ 统一品牌
+│   │      Advantage+ Audience / Creative / Placements / Budget
+│   │      Advantage+ Shopping Campaigns (ASC)
+│   │      Advantage+ App Campaigns (AAC)
+│   └      Adv+ Optimizations / Catalog Ads / Videos
+```
+
+理解这一点，你就不会奇怪为什么某些老代码里出现「Automatic Placements」「CBO」这样的参数——它们现在大多被 Advantage+ 统一命名取代，但在 Graph API 字段层可能仍以旧名出现（例如 `campaign_budget_optimization`）。
+
 ---
 
 ## 二、深度原理解析

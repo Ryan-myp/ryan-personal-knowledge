@@ -1108,3 +1108,219 @@ DV360 配额矩阵：**Partner 配额 / 项目配额 / 每分钟并发**。实�
 **现象**：CM360 里的 campaignId 与 DV360 的 campaignId 混存一列，join 出错的「幽灵数据」。
 **根因**：同一「营销活动」在两个系统有**两套 ID**，且时常并不同名。
 **修复**：在数据仓库建 **id_map** 表维护 `(platform, external_id, entity_type, local_id)`，**唯一主键 = (platform, external_id, entity_type)**；所有跨系统 join 走它，不留硬编码映射。
+
+### 3.6 集成模式对比总结（工程选型）
+
+不同的集成需求对应不同「集成模式」，下表帮你在动手前先做对选型。这是本文「集成模式」维度的核心结论表。
+
+| 模式 | 触发方式 | 数据方向 | 实时性 | 一致性保证 | 典型场景 | 推荐程度 |
+|------|----------|----------|--------|-----------|----------|----------|
+| 直接 API 拉取（对象 + 报表） | 调度/水位 | 读 | 准实时（T+1 为主） | 最终一致（需主键去重） | 对象全量/增量同步、报表落仓 | ⭐⭐⭐⭐⭐ |
+| Google 官方 BigQuery 导出 | 平台定时 | 读 | 日级 | 弱一致（替换/增量可配） | 稳定周期报表落仓（免自写拉取） | ⭐⭐⭐⭐ |
+| Webhook 事件通知 | 事件驱动 | 读（触发） | 秒级 | best-effort（会丢/重复） | 状态变更提醒、审批通知 | ⭐⭐⭐（需轮询兜底） |
+| 批次写（batchUpdate/batchCreate） | 编排 | 写 | 秒级 | 部分成功（逐条解析） | 批量建 LineItem、批量改预算 | ⭐⭐⭐⭐⭐ |
+| 审计/活动日志拉取 | 调度 | 读 | 分钟级 | 强一致（平台侧记录） | 合规审计、运维排障 | ⭐⭐⭐⭐ |
+| ADH 联合查询 | 手动/编排 | 读（聚合） | 批处理 | 隐私聚合（/30 掩码） | 增量归因、跨设备、排除验证 | ⭐⭐⭐ |
+| 跨平台统一客户端 | 同步 | 双向 | 取决平台 | 各自平台基准 | 多渠道投放统一管理 | ⭐⭐⭐⭐⭐ |
+
+**选型口诀**：
+- **稳定的周期性数据（报表）→ 尽量用官方导出或水位拉取**，别用实时/Webhook。
+- **需要强实时响应（如预算突然清零要立刻停投）→ Webhook 当唤醒，但要配轮询兜底**。
+- **批量写入 → 永远批次化 + 逐条解析 + 失败子集重放**。
+- **安全归因/隐私 → 用 ADH，不要自己拿用户级数据拼接**。
+
+### 3.7 增量同步 vs 全量同步（数据同步策略）
+
+DV360 对象（LineItem / Creative / IO）与报表的同步策略选择直接决定配额消耗与数据准确性：
+
+| 维度 | 全量同步 | 增量同步 |
+|------|----------|----------|
+| 数据量 | 每次拉全部 | 只拉变化/新增 |
+| 配额消耗 | 高 | 低 |
+| 复杂度 | 低（先清后全量写） | 高（要 change log / 水位） |
+| 一致性 | 天然完整 | 依赖事件/水位准确性 |
+| 适用于 | 首次初始化、低频 | 每日高频增量 |
+
+**工程建议：混合策略**：
+1. **首次**：全量拉取 + BigQuery `WRITE_TRUNCATE` 分区；
+2. **每日**：按水位增量拉（只拉 `updateTime > watermark` 的对象 + 报表按天范围）；
+3. **周期性对账**：每周/每月对全量计数与 UI 对账，发现漂移则触发一次全量重拉。
+
+`dv360_list_audit_logs` / `dv360_list_activity_logs` 在增量场景是极好的「变更信号源」：从审计日志里拿到「某实体被更新过」，再去精确拉取该实体，能大幅省配额、保证不漏。
+
+### 3.8 任务调度与重跑语义（Scheduler & Replay）
+
+集成平台的任务调度要处理「失败重跑」的语义，三条铁律：
+
+1. **幂等重跑**：同一任务的重跑必须产生一致结果。报表用「分区先 TRUNCATE 再写」，「对象」用主键 UPSERT；重跑不产生重复行。
+2. **水位只在成功后推进**：`watermark` 推前一定发生在「该天数据全部成功入库」之后；失败则水位停留，下次自动补拉。
+3. **死信 + 重试队列**：批次失败的子集、429 超限放弃的请求，统一进死信表（含原始 payload、错误、时间），次日/告警后重放。**重投放进重试队列，而不是回调点重跑主流程**。
+
+一个合理的 DAG（Airflow）设计：
+
+```
+daily_dv360_sync
+├── 01_check_credentials        # dv360_validate_credentials 自检
+├── 02_sync_objects             # 对象增量（LineItem/Creative/IO）
+├── 03_ingest_report            # 报表落 BigQuery（水位范围）
+│     └── 03a_replay_deadletter # 失败子集重放（幂等）
+├── 04_forward_watermark        # 推进水位
+├── 05_quota_and_health         # dv360_get_quota / usage_stats / 健康检查
+└── 06_alert_if_needed          # 异常告警
+```
+
+### 3.9 与 CM360 联合落仓的工程细节
+
+当 DV360（投放）与 CM360（转化测量）联动入库时，最容易出问题的就是「跨系统 join」。一个规范的落地模板：
+
+```python
+# scripts/merged_measurement_ingest.py —— DV360 + CM360 联合入库
+# 目标：生成“投放×转化”事实表 daily_adx_cm_fact
+
+# 1) DV360 侧：投放明细（impr/click，按 line_item + creative + date）
+dv = ingest_report_to_bigquery(client_dv, adv_id, start, end,
+                               project, "ads", "dv360_fact")
+
+# 2) CM360 侧：Floodlight 转化（按 placement + floodlight_activity + date）
+cm = ingest_cm360_conversions(client_cm, adv_id, start, end,
+                              project, "ads", "cm360_fact")
+
+# 3) 合并（在 BigQuery 用 SQL，而不是应用层 join 大表）
+#    SELECT ... FROM dv360_fact d
+#    LEFT JOIN cm360_fact c ON d.placement_id = c.placement_id AND d.date = c.date
+#    注意：转化与曝光不是 1:1，必须先按“归因模型”在 CM 侧聚合，再 join。
+
+# 4) 单位统一 + 主键检查
+assert_all_rows_valid(dv, cm)   # 空指针/缺主键校验
+```
+
+要点：**合并动作放数据库（BigQuery SQL）做，别在应用层内存 join 上百万行**；且转化先在 CM360 侧按「归因模型 + 窗口」聚合，再与架构层 join，否则 JOIN 爆炸。
+
+### 3.10 面向「规模化」的架构（多广告主 / Register 模式）
+
+当从「1 个广告主」扩展到「几十个广告主」，要引入 **Register 模式 + 分表分桶**：
+
+```python
+# registries.py —— 广告主注册表驱动流水线
+ADVERTISERS = [
+    {"advertiser_id": "A111", "name": "华东品牌", "timezone": "Asia/Shanghai", "enabled": True},
+    {"advertiser_id": "B222", "name": "华南品牌", "timezone": "Asia/Shanghai", "enabled": True},
+    {"advertiser_id": "C333", "name": "北美业务", "timezone": "America/Los_Angeles", "enabled": True},
+    # 启停某个广告主 = 改 enabled 字段，不需要动代码
+]
+
+def run_all():
+    for adv in [a for a in ADVERTISERS if a["enabled"]]:
+        try:
+            daily_sync(adv["advertiser_id"], tz=adv["timezone"])
+        except PermissionDenied:
+            mark_skipped(adv["advertiser_id"])   # 403 单独兜底，不崩全局
+            alert(adv["advertiser_id"], "permission_denied")
+```
+
+再叠加：
+- **分库/分表**：每个广告主独立事实表分区，或用 `advertiser_id` 作为主键第一列 + 分区键。
+- **配置驱动**：`timezone / 同步开关 / 拉取 pageSize / 限流桶` 全部进配置，不改代码就能扩新广告主。
+- **配额治理**：每个广告主独立限流桶，防止单个广告主突发打爆全局令牌桶。
+
+这一节的核心：**集成平台的生命力取决于「按配置扩展」而非「按代码硬编码」**。把「新广告主接入」从「改代码 + 发版」变成「登记一行配置」，是规模化团队最重要的杠杆。
+
+---
+### 3.11 工具方法 ↔ 集成场景映射表（来自 ad_platform_api.py 的真实封装）
+
+下表把 `ad_platform_api.py` 中真实存在的 DV360 封装方法，按「集成场景」归类并标注用途。做技术方案（PRD → 设计）时，直接从这里挑方法，避免「重新发明轮子」。
+
+#### 3.11.1 认证 / 账号 / 权限（对接 L1~L2）
+
+| 方法 | 用途 | 集成场景 |
+|------|------|----------|
+| `dv360_auth` | 发起/完成 OAuth 认证（取 token） | 首次接入 / token 失效重授权 |
+| `dv360_validate_credentials` | 校验凭证是否有效 | 每天任务开头的自检 Step |
+| `dv360_get_customer` / `dv360_list_customers` | 读当前可用账号 | 多账号权限审计 |
+| `dv360_get_quota` | 查配额使用 | 配额监控 / 提额举证 |
+| `dv360_list_usage_stats` | 查用量统计 | 峰值分析与限流调参 |
+| `dv360_list_rate_limits` | 查速率限制 | 客户端限流器参数 |
+| `dv360_list_api_versions` / `dv360_get_api_version` | 查 API 版本枚举/详情 | 升级前的版本兼容检查 |
+| `dv360_list_permission_users` / `dv360_add_permission_user` / `dv360_remove_permission_user` | 管理广告主 API 用户 | 服务账号授权与回收 |
+| `dv360_list_partner_links` / `dv360_create_partner_link` / `dv360_delete_partner_link` | 管理 Google Ads↔DV360 关联合约 | 跨产品账号打通 |
+
+#### 3.11.2 对象同步（拉全量 / 增量 / 对账）
+
+| 方法 | 用途 | 集成场景 |
+|------|------|----------|
+| `dv360_list_advertisers` / `dv360_get_advertiser` | 广告主列表/详情 | 账号注册表初始化 |
+| `dv360_sync_advertiser` | 广告主对象同步 | 全量/增量初始化广告主 |
+| `dv360_list_line_items` / `dv360_get_line_item` | LineItem 列表/详情 | 投放对象同步 |
+| `dv360_list_flights` | Flight 列表 | 投放周期同步 |
+| `dv360_list_creatives` | Creative 列表 | 素材同步 / 审批查询 |
+| `dv360_list_insertion_orders` | 订单项 IO 列表 | IO 层级同步 |
+| `dv360_list_floodlight_configs` | Floodlight 配置组 | CM360 测量联动 |
+| `dv360_list_proposals` / `dv360_accept_proposal` / `dv360_reject_proposal` | 交易/提案 | GAM/采购交易管理 |
+| `dv360_list_placements` / `dv360_list_placements_by_line_item` | 版位列表 | 版位同步 |
+
+#### 3.11.3 写入 / 批次操作（写侧）
+
+| 方法 | 用途 | 集成场景 |
+|------|------|----------|
+| `dv360_create_line_item` / `dv360_update_line_item` | 建/改 LineItem | 排期自动建单 |
+| `dv360_pause_line_item` / `dv360_resume_line_item` / `dv360_delete_line_item` | 停/启/删 | 预算改为自动停投 |
+| `dv360_batch_update_line_items` | 批量更新（部分成功需逐条解析） | 大规模调整 |
+| `dv360_batch_create_line_items` | 批量创建 | 排期批量建单（见 3.3） |
+| `dv360_create_creative` | 建素材 | 素材自动化上传 |
+| `dv360_sync_report` | 定义报表并触发落地 | 报表一体落仓 |
+
+#### 3.11.4 报表 / 数据出口（读侧 + 落仓）
+
+| 方法 | 用途 | 集成场景 |
+|------|------|----------|
+| `dv360_get_report` | 查询报表（维度+指标+日期） | 报表拉取落 BigQuery |
+| `dv360_get_report_metrics` / `dv360_list_report_metrics` | 报表可用指标 | 指标清单（写查询前先看） |
+| `dv360_list_report_dimensions` | 报表可用维度 | 维度清单 |
+| `dv360_get_breakdown_report` | 分时/细分报表 | 时段、设备、地域细分 |
+| `dv360_list_budget_allocations` / `dv360_update_budget_allocation` | 预算分配 | 预算治理 |
+| `dv360_get_account_health` | 账号健康度 | 健康监控 |
+| `dv360_list_cross_channel_reports` | 跨渠道报表 | 全渠道汇总看板 |
+
+#### 3.11.5 事件 / 运维可观测性
+
+| 方法 | 用途 | 集成场景 |
+|------|------|----------|
+| `dv360_list_webhooks` / `dv360_create_webhook` / `dv360_delete_webhook` / `dv360_test_webhook` | Webhook 全生命周期管理 | 事件驱动（见 2.5） |
+| `dv360_list_audit_logs` | 审计日志 | 合规 / 排障「谁改了」 |
+| `dv360_list_activity_logs` | 活动日志 | 平台活动追踪 |
+| `dv360_list_notification_preferences` / `dv360_update_notification_preferences` | 通知偏好 | 告警配置 |
+
+#### 3.11.6 定向 / 受众（与 Google Ads 联动）
+
+| 方法 | 用途 | 集成场景 |
+|------|------|----------|
+| `dv360_list_audiences` / `dv360_list_dynamic_audiences` | 受众列表 | 受众同步 |
+| `dv360_list_targetings` / `dv360_list_targeting_units` | 定向单元 | 定向同步 |
+| `dv360_create_targeting_unit` / `dv360_update_targeting_unit` / `dv360_delete_targeting_unit` | 定向写操作 | 定向自动化 |
+| `dv360_list_keyword_targeting` / 系列 `*_targeting` 变体 | 关键词/地域/设备等定向明细 | 定向维度全量同步 |
+| `dv360_list_dimension_values` | 维度值枚举 | 定向值下拉/校验 |
+
+#### 3.11.7 预测 / 优化（决策支持）
+
+| 方法 | 用途 | 集成场景 |
+|------|------|----------|
+| `dv360_get_pacing_rate` | 投放速率 | 预算执行监控 |
+| `dv360_get_performance_forecast` / `dv360_list_budget_forecasts` / `dv360_list_reach_forecasts` | 效果/预算/触达预测 | 排期规划 |
+| `dv360_list_bid_recommendations` / `dv360_update_bid_recommendation` | 出价建议 | 优化自动化 |
+| `dv360_list_budget_recommendations` / `dv360_update_budget_recommendation` | 预算建议 | 预算优化 |
+| `dv360_list_recommendations` / `dv360_apply_recommendation` / `dv360_dismiss_recommendation` | 平台建议管理 | 建议决策工作流 |
+| `dv360_get_auction_insights` / `dv360_list_auction_performance` / `dv360_list_bid_performance` | 竞价洞察 | 竞争分析 |
+
+> 用法提示：**方案评审时，先对照本表确认「已有封装可用」，再决定是否要「新写」**。能复用 `dv360_*` 封装就不要裸写 requests，这既是工程效率，也是代码一致性（统一重试/限流/响应封装）。
+
+### 3.12 安全与合规（集成常被忽略的一环）
+
+集成平台权限大、数据敏感，务必落实：
+
+1. **最小权限**：服务账号只给「需要的广告主 + 需要的角色」，别给超级管理员；`dv360_remove_permission_user` 及时回收离职/下线账号。
+2. **密钥托管**：Service Account 私钥进 KMS / Secret Manager，代码里零硬编码（`ad_platform_api.py` 从 `config/ad_platform_credentials.json` 读，但生产建议改从 Secret 服务注入）。
+3. **审计留存**：所有 API 写操作记录到审计表（操作者、时间、payload 摘要），与 `dv360_list_audit_logs` 双份留痕。
+4. **数据脱敏与最小化**：DV360/CM 明细含用户级（Cookie/Device ID）时，入库前做哈希或按业务只需聚合；涉及跨设备/隐私分析走 ADH。
+5. **传输安全**：全 HTTPS；token 只在内存/内存缓存，不落日志（日志截断前 50 字符即可，参考 `dv360_client.py` 的 `self.access_token[:50]`）。
+
+---

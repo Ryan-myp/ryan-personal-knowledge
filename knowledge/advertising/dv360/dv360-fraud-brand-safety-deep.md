@@ -1293,3 +1293,179 @@ def reconcile(platform_rows, third_rows, tolerance=0.05):
 <details><summary>Q10：如何判断某次流量异常是 GIVT 而非 SIVT，从而选择合适的处理手段？</summary>
 看信号是否"确定性、规则化"：若是已知数据中心 IP、已知 crawler UA、隐藏 iframe、重复展示，属 GIVT，平台已主要拦截，我方只需核对报表剔除。若需行为建模（机械点击节奏、坐标污染、设备指纹不稳、地理瞬移、跨设备团伙），属 SIVT，需自研评分器+第三方复核+黑名单治理。处理手段：GIVT 靠平台自动过滤+报表剔除；SIVT 靠多信号融合+供应链透明(Ads.txt/sellers.json)+绩效剔除。
 </details>
+---
+
+## 十一、OpenRTB / VAST 层级的品牌安全与 IVT 信号
+
+### 11.1 OpenRTB 竞价请求中的品牌安全与 IVT 字段
+
+在 RTB 链路里，品牌安全与 IVT 信号会通过 OpenRTB 规范传递。理解这些字段有助于阅读 DV360 日志、与第三方对账。
+
+| OpenRTB 字段 | 含义 | 与 DV360 关系 |
+|-------------|------|--------------|
+| `imp.instl` | 是否插屏 | 影响可见性判定 |
+| `imp.banner.w/h` | 广告位尺寸 | 可见性几何输入 |
+| `imp.video.placement` | 视频放置类型（1=in-stream,2=in-banner,...） | VIP 判定 |
+| `site.privacypolicy / content.rating` | 站点内容分级 | 品牌安全 |
+| `ext.prog_channel`（pchain） | 卖家链 | sellers.json 校验 |
+| `site.publisher.id / app.publisher` | 发布商身份 | Ads.txt 关联 |
+| `device.ip / device.ua / device.devicetype` | 设备/网络 | IVT 特征 |
+| `impmetrics / viewability` | 可见性 ext | 测量数据 |
+
+### 11.2 VAST 与测量
+
+视频广告通过 VAST 响应交付，可包含 `<Extensions>` 中的测量/品牌安全扩展，也可能用 VAST Wrapper 嵌套第三方测量标签。**MRC 对 VAST 视频的可见性测量**常依赖播放器同步的 Measurement SDK（如 IAB Tech Lab 的 VAST 事件 + 第三方 JS）。
+
+### 11.3 买家侧 + 卖家侧披露链路图
+
+```
+ 发布商(PUBLISHER)            SSP/AdX(卖方)             DSP/DV360(买方)         广告主
+     │  Ads.txt                    │ sellers.json              │ advertisers.json           │
+     │  声明谁可售卖                │ 披露卖家身份               │ 披露广告主身份             │
+     │       └──────pchain 卖家链──────────┐                       │
+     └──────────────OpenRTB 请求────────────────────────────────┘
+                                  │ 反向校验
+                                  ▼
+                        授权库存 + 高质量库存才竞价
+```
+
+---
+
+## 十二、可见性测量的数据级分析（Python + pandas）
+
+### 12.1 加载第三方 measurement log 并计算可见率
+
+```python
+# analytics_viewability.py
+import pandas as pd
+
+def load_and_report(log_path):
+    df = pd.read_csv(log_path, parse_dates=["timestamp"], dtype={
+        "imp_id": str, "domain": str, "viewable": int,
+        "bundle": str, "brand_safety_category": str,
+        "givt_sivt": str, "fraud_score": float,
+    })
+    # 全局可见率
+    view_rate = df["viewable"].mean()
+    # 分域名可见率
+    by_domain = df.groupby("domain").agg(
+        imps=("imp_id", "count"),
+        view_rate=("viewable", "mean"),
+        fraus_ct=("fraud_score", lambda s: (s > 0.6).sum()),
+        sivt=("givt_sivt", lambda s: (s == "sivt").sum()),
+    ).sort_values("imps", ascending=False)
+    return view_rate, by_domain
+
+vr, dom = load_and_report("moat_20260807.csv")
+print(f"整体可见率: {vr:.2%}")
+print(dom.head(10))
+# 找出"量很大但可见率低/欺诈高"的域名，进入黑名单候选
+```
+
+### 12.2 交易级 IVT 分析：找"高曝光×零转化×高欺诈"组合
+
+```python
+# analytics_ivt.py
+import pandas as pd
+
+def find_suspects(imp_df, conv_df, thresh_spend=100):
+    # 融合展示与转化
+    merged = imp_df.merge(conv_df, on="imp_id", how="left")
+    merged["conversions"] = merged["conversions"].fillna(0)
+    # 欺诈分聚合到 domain/app 级别
+    grp = merged.groupby(["domain", "bundle"]).agg(
+        imps=("imp_id", "count"),
+        ctr=("clicks", lambda s: s.sum() / max(len(s), 1)),
+        conv=("conversions", "sum"),
+        fraud=("fraud_score", "mean"),
+        spend=("spend", "sum"),
+    )
+    suspect = grp[(grp["fraud"] > 0.5) & (grp["conv"] == 0) & (grp["spend"] > thresh_spend)]
+    return suspect.sort_values("spend", ascending=False)
+
+sus = find_suspects(imp_df, conv_df)
+print("疑似 SIVT 高消费零转化组合:")
+print(sus)
+```
+
+---
+
+## 十三、生产环境配置清单（Checklist）
+
+### 13.1 品牌安全
+- [ ] 用 `dv360_list_brand_safety_categories` 生成全量分类表
+- [ ] 按品牌调性设定硬排除（成人/赌博/暴力/仇恨等）
+- [ ] 决定是否启用 GARM 细粒度分级
+- [ ] 维护自定义黑名单（`dv360_create_content_exclusion`）与白名单
+- [ ] 决定库存来源（是否仅认证 Ads.txt 库存）
+
+### 13.2 可见性
+- [ ] 确定展示（50%/1s）与视频（50%/2s）口径
+- [ ] 用 `dv360_list_viewability_targets` 确认目标可选值
+- [ ] 选择可见性出价 or 可见性硬目标
+- [ ] 监控每小时可见率并设定告警阈值
+
+### 13.3 IVT / 反欺诈
+- [ ] 建立平台报表 IVT 指标监控（`dv360_get_report` / `dv360_get_account_health`）
+- [ ] 搭建第三方 log 对账（Moat/IAS/DV）
+- [ ] 部署自研多信号 IVT 评分器（Go）+ 阈值校准
+- [ ] 建立"高CTR×零转化×高欺诈"自动告警
+- [ ] 定期用 `dv360_list_seller_metrics` 评估卖家质量
+- [ ] 用供应链透明（Ads.txt/sellers.json/pchain）剔除未授权库存
+
+### 13.4 数据与对账
+- [ ] 统一时区与小时窗口
+- [ ] 统一 MRC 口径
+- [ ] 用 imp_id 做日志级对齐
+- [ ] 设 ±5% 容差并保留差异明细
+
+---
+
+## 十四、术语与指标对照（进阶）
+
+| 中文 | 英文 | 公式/定义 |
+|------|------|-----------|
+| 可见展示率 | Viewable Impression Rate | 可见展示 / 可测量展示 |
+| 无效流量率 | IVT Rate | 无效流量展示 / 总展示 |
+| 填充率 | Fill Rate | 实际填充 / 请求 |
+| 曝光有效率 | Effective Impression Rate | 有效(非欺诈)展示 / 总展示 |
+| 平均可见时长 | Average Visible Time | 可见秒数 Σ / 展示数 |
+| 像素占比 | Pixel Ratio | 可见像素面积 / 广告总面积 |
+| 竞价胜率 | Win Rate | 赢得竞价 / 参与竞价 |
+| eCPM | effective CPM | 花费/展示×1000 |
+
+---
+
+## 十五、One-pager 决策速查
+
+```
+如何用 DV360 管好品牌安全 + 可见性 + 反欺诈(速查)
+────────────────────────────────────────────
+1 建分类表       dv360_list_brand_safety_categories
+2 建排除         dv360_create_content_exclusion (成人/赌博/暴力...)
+3 定可见口径     展示50%/1s，视频50%(大面积30%)/2s
+4 选进价方式     可见性出价 vs 可见性硬目标
+5 建 LI          dv360_create_line_item (brand_safety + viewability)
+6 控库存         仅认证 Ads.txt + 良质卖家(list_seller_metrics)
+7 盯 IVT         dv360_get_report + get_account_health + 自研融合器
+8 对账           第三方 vs 平台，统一口径+imp_id+±5%容差
+9 治理 SIVT      高CTR×零转化→黑名单/暂停；绩效剔除
+10 复盘          把签名写回规则库，灰度放量
+```
+
+---
+
+## 十六、常见问题与排查（FAQ 补充表）
+
+| # | 问题 | 根治建议 |
+|---|------|---------|
+| 11 | 屏蔽政治后新闻类流量崩了 | 用 GARM 子分类+白名单，别一刀切 |
+| 12 | 可见性目标 100% 导致 fill 暴跌 | 改 50%/1s 起步+可见性出价 |
+| 13 | 第三方与平台可见率差 10%+ | 统一口径/时区/去重，日志级对账 |
+| 14 | 自家 ROI 被转化欺诈污染 | Floodlight 去重+转化反欺诈+绩效剔除 |
+| 15 | 误杀用 VPN 的正常用户 | 多信号融合+行为反证+人工复核 |
+| 16 | 点击农场新形态 SIVT 拦不住 | 自研融合器+设备指纹聚类+地理瞬移检测 |
+| 17 | 未授权转售库存混在投放里 | 启用认证库存+ sellers.json + pchain 校验 |
+| 18 | 广告出现在敏感内容旁 | 立即暂停→更新黑名单→GARM 分级→加白名单 |
+| 19 | 广告主身份不被卖方信任 | 启用 advertisers.json 披露 |
+| 20 | 不知道哪些卖家质量好 | dv360_list_seller_metrics 排序（IVT 低+可见率高） |

@@ -1550,3 +1550,274 @@ def monitor_fatigue_and_pace(account_id, campaign_id, max_freq=3.5,
 
 ---
 
+
+## 四附：高频问题深挖（续）
+
+### 4.8 竖版素材在"静音"与"有声"时的最佳做法
+
+**问题**：自动播放默认静音，但有的用户会打开声音，素材该如何同时讨好两种用户？
+
+**解法"双层可懂"**：
+```text
+双层可懂
+├─ 无声层（默认，必做）
+│   └─ 字幕 + 画面叙事 = 不看声音也完整
+└─ 有声层（加分，激发时触发）
+    └─ 口播/音效/音乐 = 打开声音后更沉浸
+```
+- 不要把**任何关键信息**只放在音频里（静音用户会漏）；
+- 音频与字幕**信息一致但不重复堆字**：有声层"说重点"，无声层"显重点"；
+- 音乐选择：用 Meta 授权音乐库（创作者工具里的音乐），避免版权拒审。
+
+### 4.9 转码慢 / 视频迟迟不 Ready
+
+**现象**：上传后 `status.video_status` 长时间不 `ready`，广告无法投放。
+
+**排查：**
+```text
+□ 文件超过 4GB？→ 超限直接失败，先二次压制
+□ 分辨率/码率过高？→ 4K 高码率转码极慢，交付 1080p/8Mbps
+□ 编码不规范？→ 非 H.264/AAC、pix_fmt 非 yuv420p 会转码出错
+□ 网络中断？→ 分片上传中断需重传
+□ 轮询太早？→ 用 status.video_status 轮询，别只看 POST 立即返回
+```
+
+**轮询示例：**
+
+```bash
+# 轮询到 ready
+while true; do
+  S=$(curl -s "https://graph.facebook.com/v19.0/{VIDEO_ID}?fields=status.video_status&access_token={TOKEN}" | python -c "import sys,json;print(json.load(sys.stdin)['status']['video_status'])")
+  echo "status=$S"
+  [ "$S" = "ready" ] && break
+  sleep 5
+done
+```
+
+### 4.10 Reels 与 Stories 版位"无流量 / 分配不均"
+
+**现象**：Campaign 明明开了 Stories/Reels，却没展示或严重偏科（全跑到 Feed）。
+
+**原因与解法：**
+| 原因 | 解法 |
+|------|------|
+| 素材比例不满足竖版 | 提供 9:16 素材，竖版版位才能充分利用 |
+| 用了 Advantage+ 但素材横版为主 | Advantage+ 会倾向 Feed；竖版素材才能吃竖版流量 |
+| 定向过窄导致流量不足 | 放宽受众或加预算；竖版版位触达池本就小于 Feed |
+| 预算在 AdSet 间分配不均 | 用预算规则（campaign 分配占比/CBO）均摊；或手动限制曝光版位 |
+| 优化事件过严 | 尝试用更宽松的优化目标（如 Reach/Video Views）先起量 |
+
+### 4.11 Instagram 广告内容审核（Reels/Stories）之"伪原生"边界
+
+**问题**：BeReal 风做过头，被系统判为"误导性伪装"，影响审核或源原生内容限流。
+
+**边界判断：**
+```text
+原生感光谱
+├─ 过度精修 / 广告感强 → 原生度低，但不违规
+├─ 真实感 UGC ⇦目标区⇦
+└─ 伪装成普通用户内容、隐瞒广告 → 违规（"裸广告伪装"）
+```
+- 广告**必须有 Sponsored 标签**（平台自动加），不能试图去掉或遮盖；
+- BeReal 风可以做"真实感的表达方式"，但**不能隐瞒商业意图**（带货要明示）；
+- 若被判定"misleading advertising"，会被拒审或降权，务必保留明显的品牌身份与 CTA。
+
+### 4.12 落地页与 CTA 不匹配导致的转化极差
+
+**现象**：竖版广告很吸睛、完播也好，但转化上不去 —— 通常是"素材承诺 ≠ 落地页内容"。
+
+**排查清单：**
+```text
+□ 素材讲的卖点，落地页首屏是否直接对应？
+□ CTA（Learn More/Shop Now）是否与落地页动作一致？
+□ 竖版素材是否加载了独立落地页（非主页随缘）？
+□ 移动端落地页是否 1-2 秒内打开、无需横竖屏切换？
+□ 是否只用静态页，没有与素材同视觉风格的 H1/首图？
+```
+> **Ryan 经验**：把素材的"末帧 CTA"与落地页"首屏 H1"做成**同一句话/同一视觉**，
+> 点击到转化的心理连续性最好，转化率提升显著。
+
+### 4.13 数据口径：为什么 Insights 里"完播率"看起来很低/很高
+
+**原因**：Insights 的完播/3 秒/触达率，其**分母与分子口径需按 value 求和**，
+且"完整播放"指订阅到视频结束或广告目标阈值，不是"看完全部秒数"的直观比例。
+
+**建议**：
+- 用 `video_thruplay_watched_actions`（完整播放次数）÷ `impressions` 得 TTR；
+- 用 `video_3_sec_watched_actions`（3 秒）÷ `impressions` 得 3 秒率；
+- 若想看"看完到什么程度"，用 `video_p25_/p50_/p75_/p95_/p100_watched_actions` 分布；
+- 对比不同素材时，**统一同一日期区间与同一 level**，避免口径漂移。
+
+---
+
+## 七、实战案例拆解（Worked Example）
+
+> 用一个"虚构但完全符合真实因果"的案例，把本文全部知识点串起来。
+> 数值仅供教学，非精确承诺。
+
+### 7.1 背景
+
+- 客户：某个**家庭健身器材 D2C 品牌**，上新品"折叠哑铃 Pro"；
+- 目标：App 站内**转化（Purchase）**，同时降 CPM、提升完播与互动；
+- 阶段：新品首发，需要快速建立种子人群与早期销量。
+
+### 7.2 策略选择
+
+| 决策点 | 选择 | 依据 |
+|--------|------|------|
+| 版位 | 第一阶段手动限 IG Reels + IG Stories + IG Explore | 先测竖版素材表现，避免 Feed 稀释 |
+| 素材比例 | 全部 9:16 1080x1920 | 竖版原生，匹配全屏消费 |
+| 时长 | Reels 版 20s、Stories 版 8s（两套） | 同主题两形态，分别适配 |
+| 目标 | CONVERSIONS / OFFSITE_CONVERSIONS | 追求 Purchase |
+| 互动贴纸 | Stories 用"投票：你会买吗"；Reels 用"评论扣1" | 提升参与与停留 |
+| 创意模板 | 痛点前置 + 对比式 + 用户证言（共 5 条） | A/B 测出最强模板 |
+
+### 7.3 建系统（代码串联全流程）
+
+```python
+# 1) 上传 5 条 9:16 竖版视频
+vids = {}
+for i, path in enumerate(paths9x16, 1):
+    v = client.meta_upload_video_creative(
+        ACCOUNT_ID, path,
+        title=f"折叠哑铃Pro-竖版{i}", description="9:16 新品素材",
+    )
+    vids[i] = v["video_id"]
+
+# 2) 为每条视频建 Creative（含 CTA/封面）
+creatives = {}
+for i, vid in vids.items():
+    c = client.meta_create_ad_creative(
+        ACCOUNT_ID, f"哑铃Pro-创意{i}",
+        video_id=vid, page_id=PAGE_ID, ig_user_id=IG_USER_ID,
+        link="https://shop.example.com/dumbbell-pro",
+        message="前3秒看懂，家用健身一步到位。",
+        cta_type="SHOP_NOW",
+    )
+    creatives[i] = c["id"]
+
+# 3) 建 Campaign
+camp = client.meta_create_campaign(
+    ACCOUNT_ID, "哑铃Pro-新品-竖版转化",
+    objective="CONVERSIONS", status="PAUSED",
+)
+# 4) 建 AdSet（竖版版位 + 高意向受众）
+adset = client.meta_create_adset(
+    camp["id"], "竖版-健身高意向",
+    budget=100000,  # $1000/日
+    optimization_goal="OFFSITE_CONVERSIONS",
+    billing_event="IMPRESSIONS",
+    targeting={
+        "geo_locations": {"countries": ["US"]},
+        "age_min": 20, "age_max": 50,
+        "publisher_platforms": ["instagram"],
+        "instagram_positions": ["insta_reels", "insta_stories", "insta_explore"],
+    }, status="PAUSED",
+)
+# 5) 建 5 个 Ad 做 A/B（单一创意/Ad）
+for i, cid in creatives.items():
+    client.meta_create_ad(adset["id"], f"哑铃Pro-Ad{i}", creative={"creative_id": cid})
+# 6) 激活
+client.meta_update_campaign(camp["id"], status="ACTIVE")
+client.meta_update_adset(adset["id"], status="ACTIVE")
+for a in client.meta_list_ads(adset["id"]):
+    client.meta_update_ad(a["id"], status="ACTIVE")
+```
+
+### 7.4 一周后复盘（示意数据）
+
+| 创意 | 模板 | TTR | 3秒率 | 互动率 | CPM | CPA |
+|------|------|-----|-------|--------|-----|-----|
+| Ad1 | 痛点前置 | 52% | 78% | 3.1% | $9.2 | $28 |
+| Ad2 | 对比式 | 61% | 85% | 4.2% | $7.4 | $22 |
+| Ad3 | 用户证言 | 45% | 71% | 2.5% | $11 | $36 |
+| Ad4 | 折扣式 | 38% | 66% | 2.0% | $13 | $41 |
+| Ad5 | 教程式 | 49% | 74% | 2.8% | $10 | $30 |
+
+**动作：**
+- Ad2（对比式）TTR 61% 最高，CPA 最低 → **加预算、作为主创意放大**；
+- Ad4（折扣式）TTR 偏低 → 换成新痛点素材或直接停；
+- Ad3/Ad5 继续观察 2 天，若 TTR < 40% 则替换；
+- 同时用双素材（对比式 + 新痛点）合并进 **OOE 动态创意** 做第二阶段放量。
+
+**量化成果（示意）：** CPM 从期初 $12 降到 $7.4、完播驱动算法降本、CPA 收敛到 $22 区间。
+
+### 7.5 案例带给我们的三条铁律
+
+```text
+铁律一：竖版先测素材→再放量（先 A/B 找最强模板，别一上来 OOE）
+铁律二：TTR 是指挥棒（完播高→系统给更多便宜流量→CPM 降）
+铁律三：同主题双形态（Reels 讲完整故事、Stories 一句话+强CTA）
+```
+
+---
+
+## 八、进阶：竖版视频与"转化事件"的配合（CAPI/Pixel 视角）
+
+> 讲完创意与版位，补充"竖版 → 转化闭环"的信号配合。Deep 讲 Pixel/CAPI 见专属文档，
+> 这里只谈与竖版相关的那部分。
+
+### 8.1 竖版素材如何影响优化事件信号
+
+- 高完播素材 → 用户"多看几秒" → 更容易发生后续点击/转化 → 给优化器更强的正信号；
+- 若优化事件稀缺（如 Purchase 少），可先用**代理信号**（如 `VIDEO_VIEWS` / `LEAD`）积累，
+  或用 `Multi-Channel` 事件配置来扩充训练样本；
+- 竖版全屏的强曝光，是**品牌记忆**的有效放大器，对 Search 之后的关键词/受众池有益。
+
+### 8.2 在竖版素材上打埋点
+
+如果落地页在 App/Web，别忘在素材点击后接入 Conversion 追踪：
+
+```python
+# Pixel 追踪（脚本已有 meta_track_pixel / meta_send_capi）
+client.meta_track_pixel(PIXEL_ID, "ViewContent")
+client.meta_track_pixel(PIXEL_ID, "AddToCart")
+client.meta_send_capi(PIXEL_ID, event_name="Purchase",
+                      event_time=int(time.time()), event_id=order_id)
+```
+
+### 8.3 用事件提升"完播素材"的归因
+
+- 高完播素材点击进来的用户，行为质量通常更高；
+- 建议把 `video_thruplay_watched_actions`（完播）与转化之间建立观察：看**完播用户的 CVR**，
+  若显著高于平均，说明"内容抓到对的人"，可扩大相似受众（lookalike）。
+
+---
+
+## 九、附录 C：常用 Management API 端点速查（竖版素材相关）
+
+```text
+上传视频        POST  /{ad-account-id}/advideos
+  字段: file/title/description/thumb/unpublished_content_type
+查询视频状态    GET   /{video-id}?fields=status.video_status
+上传封面        POST  /{ad-account-id}/adimages
+查询创意        GET   /{creative-id}
+创建创意        POST  /{ad-account-id}/adcreatives
+  字段: object_story_spec.video_data.video_id / image_url(image_hash)
+        / call_to_action / link_data / instagram_actor_id
+创建广告组      POST  /{campaign-id}/adsets
+  字段: targeting.publisher_platforms / instagram_positions / insta_reels|insta_stories
+创建广告        POST  /{adset-id}/ads
+  字段: creative.creative_id
+查询洞察        GET  /{ad-account-id}/insights
+  fields: video_3_sec_watched_actions / video_thruplay_watched_actions
+          / inline_post_engagement / frequency / reach / impressions
+```
+
+**Python 侧可用脚本方法对照：**
+
+| 脚本方法（ad_platform_api.py） | 用途 |
+|--------------------------------|------|
+| `meta_upload_video_creative`（扩展） | 上传竖版视频到 advideos |
+| `meta_create_ad_creative`（扩展） | 为竖版视频建 Creative |
+| `meta_create_campaign` | 建 Campaign（objective=CONVERSIONS/VIDEO_VIEWS...） |
+| `meta_create_adset` | 建 AdSet（竖版版位 targeting） |
+| `meta_create_ad` | 建 Ad（引用 creative_id） |
+| `meta_list_ads` | 列 Ad / 校验 |
+| `meta_list_creatives` / `meta_get_creative` | 查/读创意图 |
+| `meta_list_video_sizes` | 查支持视频尺寸 |
+| `meta_list_placements` | 查支持版位 |
+| `meta_list_audiences` | 列/配受众 |
+| `meta_query_insights` | 查完播/TTR/互动指标 |
+| `meta_track_pixel` / `meta_send_capi` | 转化追踪 |
+

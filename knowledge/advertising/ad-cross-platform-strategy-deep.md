@@ -1990,3 +1990,389 @@ perfs = [
 ]
 run_cross_platform_control_cycle(perfs, 100000)
 ```
+
+### 3.6 跨平台测量与 MMM 建模
+
+#### 3.6.1 为什么单平台数据不够决定预算
+
+平台报表只能告诉你"在它自己视角下的表现"，跨平台决策必须用**第一方数据 + 统计模型**校准。
+
+```
+测量分层金字塔
+
+  最上（战略）   MMM（营销组合模型）—— 品牌+媒体宏观贡献
+                   │ 季度/月度粒度
+  中层           MTA（多触点归因）—— 用户级路径贡献
+                   │ 周/日粒度
+  最下（执行）     平台数据 + 统一事件 —— 日常优化
+                （分平台前台指标 + 统一 Daily 报表）
+```
+
+#### 3.6.2 MMM 建模原理与跨平台应用
+
+MMM（Marketing Mix Modeling）用**历史媒体花费 + 销售数据**回归估计各媒体贡献：
+
+```
+MMM 基本形式（对数/饱和模型）
+
+  Sales_t = Base
+            + β_google · f(spend_google_t, saturation)
+            + β_meta    · f(spend_meta_t, saturation)
+            + β_tiktok  · f(spend_tiktok_t, saturation)
+            + β_dv360   · f(spend_dv360_t, saturation)
+            + γ · control（季节性/价格/促销/竞品）
+            + ε
+
+  每种媒体常用饱和/衰减函数（Adstock + Diminishing Returns）：
+  f(spend) = α · spend / (1 + β · spend)         （Michaelis-Menten 型）
+  f(spend) = α · (1 - e^{-β·spend})              （指数饱和型）
+
+  Adstock(广告记忆延续)：
+  transform(t) = gamma · raw(t) + (1 - gamma) · transform(t-1)
+```
+
+```python
+# MMM 简化示例：线性 + 饱和项 拟合（示意，生产用 statsmodels/pymc）
+import numpy as np
+import statsmodels.api as sm
+
+def prepare_adstock(x, gamma=0.4):
+    """广告记忆延续（Adstock）变换"""
+    y = np.zeros_like(x, dtype=float)
+    carry = 0.0
+    for i, v in enumerate(x):
+        carry = gamma * v + (1 - gamma) * carry
+        y[i] = carry
+    return y
+
+def saturate(x, alpha=1.0, beta=1.0):
+    """饱和（Diminishing Returns）：alpha*x/(1+beta*x)"""
+    return alpha * x / (1 + beta * x)
+
+# 示意数据：四个平台的周花费 + 销售
+# spend_df 含 google_spend, meta_spend, tiktok_spend, dv360_spend, sales
+# features = np.column_stack([
+#     saturate(prepare_adstock(spend_df.google_spend)),
+#     saturate(prepare_adstock(spend_df.meta_spend)),
+#     saturate(prepare_adstock(spend_df.tiktok_spend)),
+#     saturate(prepare_adstock(spend_df.dv360_spend)),
+#     spend_df.seasonality,
+# ])
+# model = sm.OLS(spend_df.sales, sm.add_constant(features)).fit()
+# print(model.summary())
+```
+
+**MMM 对跨平台战略的价值：**
+
+```
+MMM 输出的决策价值
+├── 各平台"增量弹性"（哪个平台再多花一元最划算）
+├── 饱和拐点（在哪个预算水平边际回报归零 → 该平台封顶）
+├── 品牌与效果的结构性贡献
+├── 进行"预算重分配模拟"（What-if：把 20% 从 A 挪到 B，销售额会怎样变化）
+└── 为按季度预算分配提供科学依据
+```
+
+```
+MMM 在跨平台流程中的位置
+
+  Metrics_daily(平台数据)  → 周度
+
+  MMM 模型（季度校准） → 季度预算框架
+
+  增量实验（年度 1~2 轮）→ 校准 MMM 参数/验证
+  ─────────────────────────────────
+  三者汇合 → 形成"科学决策闭环"
+```
+
+#### 3.6.3 MTA（多触点归因）与跨平台路径
+
+MTA 用用户点击/曝光序列归属转化。这是"用户路径级"的跨平台分析。
+
+```sql
+-- MTA 输入：用户路径表（拼装自 events 表）
+-- 每行 = 一个用户的转化路径（按时间排序的触点序列）
+CREATE OR REPLACE TABLE `your_project.ads.user_paths` AS
+WITH clicks AS (
+  SELECT
+    user_id,
+    event_ts,
+    REGEXP_EXTRACT(utm_source, '[^/]+') AS source,
+    ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY event_ts) AS seq
+  FROM `your_project.ads.events_staging`
+  WHERE event_type = 'click'
+),
+paths AS (
+  SELECT
+    user_id,
+    STRING_AGG(source, ' > ' ORDER BY event_ts) AS path
+  FROM clicks
+  GROUP BY user_id
+)
+SELECT * FROM paths;
+```
+
+```sql
+-- 常见路径频次统计：哪些"跨平台路径"转化最多
+SELECT
+  path,
+  COUNT(*) AS conversions
+FROM `your_project.ads.conversions_with_path`   -- 带回转化标记的路径表
+GROUP BY path
+ORDER BY conversions DESC
+LIMIT 20;
+```
+
+**MTA 对跨平台战略的价值：** 它告诉你"真实的用户路径长什么样"。例如发现"Google 搜索 → Meta 再营销 → TikTok 种草 → 下单"是高转化路径，就可以针对性地设计漏斗（让四个平台各司其职）。
+
+#### 3.6.4 测量结论如何回流到预算决策
+
+```
+测量 → 预算 回流闭环
+
+  1. MMM 输出各平台增量弹性 e_i
+  2. 归因输出各平台在成交路径中的出现率
+  3. 增量实验验证关键分歧点
+  4. 综合 → 调整各平台"权重 w_i"（3.1.1 中的效用权重）
+  5. 权重进入 allocate_budget → 周度重分配
+  6. 季度重新校准权重
+```
+
+### 3.7 跨平台创意与素材管理
+
+#### 3.7.1 创意格式适配矩阵
+
+同一创意策略跨平台落地，必须做格式适配，否则素材会被裁剪/压字幕/低互动。
+
+| 维度 | Google | Meta | TikTok | DV360 |
+|------|--------|------|--------|-------|
+| 主素材格式 | 横版视频/图片/文字+feed | 方图+9:16 Reels | 9:16 竖版原生 | 16:9 横版视频/展示 |
+| 视频时长偏好 | 15s~2min | 15~30s Reels/更长 feed | 9~30s 原生 | 15~30s 品牌视频 |
+| 字幕 | 可不带 | 建议带 | 必带（静音观看多） | 品牌样式 |
+| 音乐 | 弱 | 中 | 强（平台音乐库） | 品牌音乐 |
+| 互动要素 | 弱 | 中（CTA） | 强（评论/特效/挑战） | 弱（品牌曝光） |
+| 落地页 | 深度链接 | 站内/落地页 | TikTok Shop/落地 | 品牌站 |
+
+```
+素材创造与分发流程
+
+  Brand Creative Brief（品牌创意简报）
+       │
+       ▼
+  基础素材库（通用概念/产品图/视频片段）＝ Master
+       │
+       ├── 适配 Google：横版 16:9 + 文字叠加 + 落地页
+       ├── 适配 Meta：方图 1:1 / 9:16 Reels + CTA
+       ├── 适配 TikTok：9:16 原生 + 音乐 + 字幕 + Spark 达人版
+       └── 适配 DV360：16:9 品牌安全合规版
+       │
+       ▼
+  各平台 Campaign 内做 A/B（大标题/素材/CTA 变体）
+```
+
+#### 3.7.2 素材疲劳的跨平台管理
+
+```
+素材疲劳生命周期管理（跨平台）
+
+  Phase 1 新鲜（0~1 周）：跑量测试，观察 CTR
+  Phase 2 上升（1~3 周）：达到了峰值 CTR，放量
+  Phase 3 衰退（3~6 周）：CTR 下降，降频/换人群
+  Phase 4 轮换（6 周+）：从疲劳平台下线，按需试新平台/压仓
+
+  跨平台复用规则：
+  ├── 同一视觉在不同平台的"新鲜期"不同（平台人群池不同）
+  ├── 但重叠用户会"串平台疲劳"→ 需要跨平台频控
+  └── 素材库记录每个素材的：平台、版本、上线日、当前阶段
+```
+
+```python
+# 素材疲劳检测（读统一创意库表现）
+def detect_creative_fatigue(creative_history, window_days=3, ctr_drop_pct=0.30):
+    """
+    输入：某个素材每日表现序列 [{date, ctr, cpm}]
+    输出：是否疲劳（CTR 较峰值下降超过阈值且持续窗口）
+    """
+    peak_ctr = max(h["ctr"] for h in creative_history)
+    recent = creative_history[-window_days:]
+    if not recent or peak_ctr == 0:
+        return False
+    avg_recent = sum(h["ctr"] for h in recent) / len(recent)
+    dropped = (peak_ctr - avg_recent) / peak_ctr
+    return {
+        "fatigued": dropped > ctr_drop_pct,
+        "ctr_drop_pct": round(dropped, 3),
+        "peak_ctr": peak_ctr,
+        "avg_recent_ctr": round(avg_recent, 5),
+    }
+
+# 示例
+creative_history = [
+    {"date": f"2026-08-{d:02d}", "ctr": ctr, "cpm": 5 + (8 - d)}
+    for d, ctr in [(1, 0.030), (2, 0.028), (3, 0.021), (4, 0.019), (5, 0.018)]
+]
+print(detect_creative_fatigue(creative_history))
+```
+
+### 3.8 合规、隐私与风险的跨平台考量
+
+#### 3.8.1 隐私与数据合规
+
+跨平台投放涉及多国多平台数据，合规是硬约束。
+
+```
+隐私合规要点（跨平台）
+
+  ├── 美国：CCPA/CPRA（加州）+ 联邦不统一 → 遵循平台政策
+  ├── 欧盟：GDPR + ePrivacy（cookie 同意）
+  ├── 中国：PIPL（个人信息保护法）+ 网信办新规
+  ├── Apple ATT（iOS 14.5+）：限制 IDFA → 影响 Meta/TikTok 定向粒度
+  ├── Google 隐私沙盒：第三方 cookie 逐步淘汰 → 影响 DV360 重定向
+  └── Meta：EU-US Data Privacy Framework
+
+  跨平台数据最小化原则：
+  ├── 只收集达成广告目的所必需的数据
+  ├── 用户画像脱敏/去标识化
+  ├── 明确同意机制（同意管理平台 CMP）
+  └── 保留期合理设置，定期清理
+```
+
+#### 3.8.2 各平台审核与素材风险
+
+| 平台 | 审核严格度 | 高敏行业 | 常见驳回原因 |
+|------|:--------:|---------|-------------|
+| Google | 高 | 金融/医疗/博彩/成人 | 落地页问题、夸张宣称、个人化宣称 |
+| Meta | 高 | 政策敏感类目 | 落地页不匹配、误导性、健康宣称 |
+| TikTok | 中高 | 金融/药品/食品 | 画面剪辑、未授权音乐、药品宣称 |
+| DV360 | 高 | 品牌安全敏感 | 品牌安全设置、内容合规 |
+
+```
+素材审核风险 Checklist
+□ 落地页与广告内容一致（政策一致性）
+□ 无夸大/虚假/绝对化宣称（"最便宜/最好"谨慎）
+□ 金融类披露牌照与利率信息
+□ 健康/医疗不在无资质宣称疗效
+□ 音乐/素材版权合法（用平台授权曲库）
+□ 未成年人/敏感人群素材合规
+□ 药品/医疗需行业资质
+```
+
+#### 3.8.3 平台依赖与风险分散
+
+```
+平台风险分散策略（"别把鸡蛋放一个篮子"）
+
+  ├── 政策风险：某平台政策突变/被禁（TikTok 部分地区被禁用风险）
+  ├── 算法风险：平台算法大改导致效果骤降
+  ├── 隐私风险：新隐私法规削弱某平台定向能力
+  ├── 账号风险：某平台账号被封/申诉无门
+  └── 归因风险：某平台报表不可信
+
+  降低策略：
+  ├── 跨平台配额：单一平台占比不超过 50%（成熟期）
+  ├── 保持第一方数据资产（不依赖单一平台数据）
+  ├── 备份渠道：即便主平台出问题，有可选替代
+  ├── 账号 AB 账户：避免单账户风险（大额预算可拆分）
+  └── 定期做"平台失效演练"：假设某平台停 2 周，预算如何重分配
+```
+
+### 3.9 跨平台实操 Checklist（投放前 / 中 / 后）
+
+#### 3.9.1 投放前
+
+```
+投放前 Checklist
+□ 明确目标（品牌/效果/混合）与核心 KPI
+□ 用定位矩阵选平台组合（并非四平台都要）
+□ 预算：按目标×行业×地区设定分配基线
+□ 预留学习预算（5%+）
+□ 统一 UTM / 事件埋点方案
+□ 建立 metrics_daily 与 events_staging 表
+□ 确认归因口径（决策用）
+□ 素材按平台格式适配
+□ 设定跨平台频控方案
+□ 各平台账户/权限/资质就绪
+□ 设定告警规则
+```
+
+#### 3.9.2 投放中（日常 + 周度）
+
+```
+日常（每日）：
+□ 看 metrics_daily 异常（ROAS/CPA/预算进度）
+□ 处理 P1/P2 告警
+□ 确认转化事件流无中断
+
+周度：
+□ 跨渠道复盘会（中/大团队）
+□ 预算重分配（若数据显著变化）
+□ 素材疲劳检测 + 上新刷新
+□ 检查频控与预算进度
+□ 记录 learnings
+
+月度：
+□ 平台表现健康度周报
+□ 深度归因复盘（MMM/增量）
+□ 素材总结 + 下月创意方向
+□ 预算框架回顾
+```
+
+#### 3.9.3 投放后 / 季度
+
+```
+季度复盘 Checklist
+□ 全渠道 ROAS / CPA 达成 vs 目标
+□ 各平台增量贡献（MMM/增量实验校准）
+□ 预算分配是否最优（再利用等边际原则）
+□ 品牌资产指标（品牌搜索量/声量份额）变化
+□ 损益（spend vs revenue）与预算效率
+□ 平台依赖风险回顾
+□ 下季度策略与重分配
+□ 技术与流程复盘（哪些 automation 有效）
+```
+
+### 3.10 跨平台 KPI 体系
+
+跨平台运营需要一套"分层 KPI 体系"，避免只看单平台或只看总盘子。
+
+```
+分层 KPI 金字塔
+
+  顶层（战略）      业务目标：营收 / 净利 / 市场份额 / 品牌健康
+  中层（跨渠道）    全渠道 ROAS、增量 ROAS、新客占比、频控达标率、归因可信度
+  底层（平台）      Google ROAS / Meta CPA / TikTok 新客CPNA / DV360 VCR+Reach
+
+  平台 KPI ↔ 跨渠道 KPI ↔ 业务 KPI 逐层对齐
+
+  关键补充指标：
+  ├── 增量 ROAS (Incremental ROAS) —— 排除自然转化的真实 ROAS
+  ├── 新客占比 (New Customer Ratio) —— 健康增长信号
+  ├── 品牌搜索量指数 —— 品牌广告投资回报证据
+  └── 归因膨胀率 —— 各平台合计 vs 实际转化（>130% 需警惕）
+```
+
+```python
+def kpi_summary(platform_rows):
+    """
+    汇总跨平台 KPI。
+    platform_rows: [{platform, spend, revenue, conversions, new_customers}]
+    """
+    total_spend = sum(r["spend"] for r in platform_rows)
+    total_revenue = sum(r["revenue"] for r in platform_rows)
+    total_conv = sum(r["conversions"] for r in platform_rows)
+    total_new = sum(r["new_customers"] for r in platform_rows)
+
+    # 归因膨胀示意：用"各平台 claim 之和"与"真实总转化(假设来自统一数据)"比较
+    platform_claims = sum(r["conversions"] for r in platform_rows)
+    true_total = total_conv  # 统一口径下的真实转化（示意相等）
+    inflation = platform_claims / true_total if true_total else 1.0
+
+    return {
+        "total_spend": total_spend,
+        "total_revenue": total_revenue,
+        "total_roas": total_revenue / total_spend if total_spend else 0,
+        "total_conversions": total_conv,
+        "new_customer_ratio": total_new / total_conv if total_conv else 0,
+        "attribution_inflation": round(inflation, 2),
+    }
+```

@@ -205,6 +205,137 @@ CAPI 既支持单事件，也支持批量：
 
 ---
 
+### 1.10 认证与权限体系详解
+
+```ascii
+Business Manager（BM）
+│
+├── 系统用户（System User）             ← 推荐生产主体
+│     ├── 角色：Pixel 管理员/分析员
+│     ├── 生成 access_token（长期）
+│     └── 90 天轮换（可选做循环令牌）
+│
+├── 员工个人账号（即用户身份）           ← 不推荐用于生产
+│     └── 离职即失效、难审计
+│
+└── Pixel（事件容器）
+      └── event_source_id（= pixel_id）
+```
+
+**在 BM 里创建并授权系统用户获取 token 的命令思路**（Graph API）：
+
+```
+# 1) 在 BM 下创建系统用户
+POST /{business_id}/system_users
+   ?name=capi-prod-bot
+   &role=ADMIN             # 建议最小权限职员：EMPLOYEE 即可
+   &access_token={admin_token}
+
+# 2) 为系统用户生成长期令牌（自行签 JWT 或调用 create_access_token 扩展）
+POST /{system_user_id}/issued_access_tokens  （或 social 权限扩展）
+
+# 3) 给像素授权
+POST /{pixel_id}/shared_accounts?account_type=SYSTEM_USER&business={bm_id}
+```
+
+**权限清单（最小可用）**：
+
+| 权限 | 用途 |
+|------|------|
+| `pixel_selected_assets` | 读/写指定像素 |
+| （BM 级别）`advertiser` | 广告主角色，编辑像素事件 |
+| （像素级别）`manage` | 发送事件、读取口径 |
+
+**token 的放置与轮换**：
+
+```python
+# 生产禁止硬编码：从 Secrets Manager / Vault 读取，支持自动轮换
+import os, boto3
+def _get_token() -> str:
+    if os.getenv("META_CAPI_TOKEN"):
+        return os.environ["META_CAPI_TOKEN"]
+    # KMS/SSM 取当前版本；可在此基础上做 2-token 轮换窗口
+    return ssm.get_parameter(Name="/meta/capi/token",
+                             WithDecryption=True)["Parameter"]["Value"]
+```
+
+### 1.11 请求/响应格式逐字段详解
+
+**请求（POST /{pixel_id}/events）**：
+
+| 顶层字段 | 类型 | 必填 | 说明 |
+|---------|------|------|------|
+| `data` | array | ✔ | 事件数组（单事件也可放数组） |
+| `access_token` | string | ✔ | 认证 |
+| `test_event_code` | string | 可选 | 测试管道 |
+| `data_processing_options` | array | 批量时必 | `[]` 或 `["LDU"]` |
+| `data_processing_options_country` | int | 配合 LDU | 1=US |
+| `data_processing_options_state` | int | 配合 LDU | 1000=CA |
+
+`data[0]`（单个事件）内字段：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `event_name` | string | ✔ | 标准/自定义事件名 |
+| `event_time` | string(unixtime) | ✔ | Unix 秒 |
+| `event_id` | string | 建议 | 幂等/去重键 |
+| `user_data` | object | ✔ | 含匹配键 |
+| `custom_data` | object | 建议 | 业务参数 |
+| `action_source` | enum | 建议 | 见 2.15 |
+| `event_source_url` | string | 建议 | 含 query 的完整 URL |
+| `event_source_id` | string | 与 Pixel 同用 | = pixel_id |
+
+**响应（成功）**：
+
+```json
+{
+  "events_received": 2,
+  "messages": [],
+  "fbtrace_id": "DeW0t2a..."
+}
+```
+
+- `events_received` 指被接收的事件数；`messages` 里往往是警告（如某事件 user_data 缺失会 drop 时给 message）。
+
+**响应（出错）**：HTTP 4xx 时 body：
+
+```json
+{
+  "error": {
+    "message": "Invalid parameter",
+    "type": "OAuthException",
+    "code": 100,
+    "error_subcode": 1810001,
+    "fbtrace_id": "Ah3f..."
+  }
+}
+```
+
+### 1.12 CAPI 数据流中的脱敏与合规总览
+
+```
+用户数据（Email/Phone）──► 你服务器 ──► SHA-256+base64 ──► Meta
+                                   │
+                                   ▼
+                         关键原则（数据最小化）：
+                         - 只传给优化所需的键
+                         - 敏感字段（身份证/银行卡/社保）绝不发送
+                         - 可区分处理的用户走 LDU
+                         - 明文只在内部短暂保留（对账）
+```
+
+合规清单（生产上线 checklist）：
+
+| # | 事项 |
+|---|------|
+| 1 | 删除权：用户请求删除时，同步删明文 + 停发该用户事件 |
+| 2 | 听取权（CCPA opt-out）：返回 LDU 而非直接不匹配 |
+| 3 | 传输：HTTPS（TLS 1.2+）、token 仅存 Secrets |
+| 4 | 用途：CAPI 事件仅用于广告优化/归因，不得用于其他用途 |
+| 5 | 文件：记录 数据流图 + 保留期限（7 天窗口内可删） |
+
+---
+
 ## 二、深度原理解析
 
 ### 2.1 事件匹配（Event Matching）与匹配质量评分（EMQ）

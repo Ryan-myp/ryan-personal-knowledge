@@ -1134,3 +1134,874 @@ curl -X POST "https://graph.facebook.com/v20.0/105118562409026/contacts" \
 > **踩坑经验**：别把"服务/营销/工具"类别用错——很多人把促销塞进 marketing 模板（合规），却把"账单提醒"误当营销发，导致**成本翻倍且质量评级下降**。类别选择先算账：信息通知 → utility，验证码 → authentication，唯一抗审核且便宜的组合。
 
 ---
+
+## 三、生产环境实战
+
+本节给出可在生产落地的完整 Python 实现，命名风格与既有工具脚本（`scripts/meta_api.py`、`scripts/ad_platform_api.py`）对齐，统一走 `meta_*` 前缀，并对 Cloud API 的能力做合理扩展。
+
+### 3.1 生产架构设计
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    生产消息系统架构（WhatsApp 通道）                   │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  广告/营销系统 ──▶ 消息编排服务 ──▶ 会话窗口管理器                        │
+│                        │                    │                       │
+│                        ▼                    ▼                       │
+│                 WhatsApp 客户端模块    会话状态存储(Redis/DB)          │
+│                 (meta_send_* / meta_   窗口计时/模板路由               │
+│                  upload/download)                                   │
+│                        │                                            │
+│                        ▼                                            │
+│                  Graph API (Cloud API)                              │
+│                        ▲                                            │
+│                        │ Webhook                                    │
+│   Webhook 服务(FastAPI)──┤                                            │
+│      ├─ 验签(app_secret HMAC)                                       │
+│      ├─ 幂等(按 wamid 去重)                                         │
+│      ├─ 入站消息 → 口语/意图路由                                     │
+│      └─ 状态/会话/质量 → 事件总线 → 监控告警                         │
+│                                                                     │
+│   配套: Redis(幂等锁/限流计数) + DB(会话/消息/模板台账)                 │
+│         + 对象存储(媒体) + 监控(错误码/送达率/评级)                   │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**模块职责划分：**
+
+| 模块 | 职责 | 关键函数 |
+|---|---|---|
+| 认证 | Token/AppSecret/Proof 管理 | `_build_headers` |
+| 客户端 | 统一 Graph 调用、错误归一化 | `_graph_request` |
+| 消息发送 | 各类型消息发送 | `meta_send_whatsapp_message` 系列 |
+| 模板 | 模板 CRUD | `meta_list_whatsapp_templates` 等 |
+| 媒体 | 上传/发送/下载 | `meta_upload_whatsapp_media` 等 |
+| WABA/号码 | WABA 与号码管理 | `meta_get_waba` / `meta_list_phone_numbers` |
+| QR | 二维码生成 | `meta_generate_whatsapp_qr` |
+| Webhook | 收包/验签/分发 | `webhook_verify` / `webhook_handler` |
+| 会话 | 窗口状态机 | `SessionWindowTracker` |
+
+**统一客户端（与 meta_api.py 对齐的请求封装）：**
+
+```python
+# scripts/meta_api.py 追加（WhatsApp 通道）──────────────────────────
+import time
+import uuid
+import hmac
+import hashlib
+import json
+import requests
+from typing import Dict, List, Optional
+
+GRAPH_BASE = "https://graph.facebook.com"
+GRAPH_VERSION = "v20.0"
+
+class MetaWhatsAppClient:
+    """WhatsApp Cloud API 统一客户端"""
+
+    def __init__(self, app_id: str, app_secret: str, token: str):
+        self.app_id = app_id
+        self.app_secret = app_secret
+        self.token = token
+        self.session = requests.Session()
+
+    def _appsecret_proof(self) -> str:
+        return hmac.new(
+            self.app_secret.encode(),
+            self.token.encode(),
+            hashlib.sha256,
+        ).hexdigest()
+
+    def _graph_request(self, method: str, path: str,
+                       json_body: Optional[dict] = None,
+                       data: Optional[dict] = None,
+                       files: Optional[dict] = None,
+                       params: Optional[dict] = None) -> Dict:
+        """统一走 Graph API，自动带认证与 appsecret_proof"""
+        url = f"{GRAPH_BASE}/{GRAPH_VERSION}/{path.lstrip('/')}"
+        headers = {"Authorization": f"Bearer {self.token}"}
+        query = params or {}
+        query["appsecret_proof"] = self._appsecret_proof()
+        resp = self.session.request(
+            method, url, headers=headers,
+            json=json_body, data=data, files=files, params=query,
+        )
+        if resp.status_code >= 400:
+            raise MetaApiError(resp.status_code, resp.json())
+        return resp.json()
+
+
+class MetaApiError(Exception):
+    """携带 Meta 错误码与 details 的异常"""
+    def __init__(self, http_code: int, body: dict):
+        err = body.get("error", {})
+        self.http_code = http_code
+        self.code = err.get("code")
+        self.subcode = err.get("error_subcode")
+        self.message = err.get("message")
+        self.details = (err.get("error_data") or {}).get("details")
+        super().__init__(f"[{http_code}] ({self.code}) {self.message} | {self.details}")
+```
+
+### 3.2 发送文本消息（含 curl 与 Python）
+
+**场景**：客服窗口内回复客户咨询文本。
+
+```bash
+curl -X POST "https://graph.facebook.com/v20.0/105118562409026/messages" \
+  -H "Authorization: Bearer EAAG..." \
+  -H "Content-Type: application/json" \
+  -d '{
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": "8613800138000",
+        "type": "text",
+        "text": { "preview_url": false, "body": "您好，我是客服小助手，请问有什么可以帮您？" }
+      }'
+```
+
+```python
+def meta_send_whatsapp_message(
+    self,
+    phone_number_id: str,
+    to: str,
+    body: str,
+    preview_url: bool = False,
+) -> Dict:
+    """发送自由文本（仅限会话窗口内）"""
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to,
+        "type": "text",
+        "text": {"preview_url": preview_url, "body": body},
+    }
+    return self._graph_request(
+        "POST", f"{phone_number_id}/messages", json_body=payload
+    )
+```
+
+**调用：**
+
+```python
+client = MetaWhatsAppClient(APP_ID, APP_SECRET, SYSTEM_USER_TOKEN)
+resp = client.meta_send_whatsapp_message(
+    PHONE_NUMBER_ID, "8613800138000",
+    "您好，已为您查询到订单状态，稍后发送明细。",
+)
+print("wamid:", resp["messages"][0]["id"])
+```
+
+> **文本注意**：`preview_url` 开启后会把 body 中的 URL 渲染成可点击卡片；关闭则纯文本。营销场景建议关闭避免被诱导性链接降低体验。
+
+### 3.3 发送模板消息与变量填充
+
+**场景**：24h 窗口关闭后，用模板给用户发订单物流通知（utility）。
+
+**curl（变量通过 components parameters 填充）：**
+
+```bash
+curl -X POST "https://graph.facebook.com/v20.0/105118562409026/messages" \
+  -H "Authorization: Bearer EAAG..." \
+  -H "Content-Type: application/json" \
+  -d '{
+        "messaging_product": "whatsapp",
+        "to": "8613800138000",
+        "type": "template",
+        "template": {
+          "name": "order_shipping_update_cn",
+          "language": { "code": "zh_CN" },
+          "components": [{
+            "type": "body",
+            "parameters": [
+              { "type": "text", "text": "张三" },
+              { "type": "text", "text": "SO20260814" },
+              { "type": "text", "text": "8 月 20 日" }
+            ]
+          }]
+        }
+      }'
+```
+
+**Python（带窗口判断，窗口外才走模板）：**
+
+```python
+def meta_send_whatsapp_template(
+    self,
+    phone_number_id: str,
+    to: str,
+    template_name: str,
+    language_code: str,
+    body_params: Optional[List[Dict]] = None,
+    header_params: Optional[List[Dict]] = None,
+    button_params: Optional[List[Dict]] = None,
+) -> Dict:
+    """发送模板消息，变量按 components 组织"""
+    components: List[Dict] = []
+    if header_params:
+        components.append({"type": "header", "parameters": header_params})
+    if body_params:
+        components.append({"type": "body", "parameters": body_params})
+    if button_params:
+        components.append({"type": "button", "sub_type": "url", "index": 0,
+                           "parameters": button_params})
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "template",
+        "template": {
+            "name": template_name,
+            "language": {"code": language_code},
+            "components": components,
+        },
+    }
+    return self._graph_request(
+        "POST", f"{phone_number_id}/messages", json_body=payload
+    )
+
+
+def notify_order_shipping(self, waba, phone_number_id, customer, order):
+    """业务封装：订单物流通知（模板变量精准填充）"""
+    # 先判断会话窗口：窗口内可自由文本，窗口外用模板
+    if self._in_service_window(phone_number_id, customer.wa_id):
+        return self.meta_send_whatsapp_message(
+            phone_number_id, customer.wa_id,
+            f"您的订单 {order['no']} 已发出，预计 {order['eta']} 送达。",
+        )
+    return self.meta_send_whatsapp_template(
+        phone_number_id, customer.wa_id,
+        template_name="order_shipping_update_cn",
+        language_code="zh_CN",
+        body_params=[
+            {"type": "text", "text": customer.name},
+            {"type": "text", "text": order["no"]},
+            {"type": "text", "text": order["eta"]},
+        ],
+    )
+```
+
+> **踩坑经验（模板变量数）**：模板定义了 3 个变量，你传 2 个或 4 个，都会报 `132000 Parameter format is invalid`。**变量顺序必须与模板占位符顺序一致**（{{1}} 对应 parameters[0]）。自动化平台常用"模板变量 schema"机制：模板创建时登记变量名，发送时按名引用，杜绝顺序错位。
+
+### 3.4 发送交互消息（按钮/列表/目录）
+
+**场景 1：售后引导（按钮）——窗口内发送：**
+
+```python
+def meta_send_whatsapp_interactive(
+    self,
+    phone_number_id: str,
+    to: str,
+    interactive: Dict,
+) -> Dict:
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "interactive",
+        "interactive": interactive,
+    }
+    return self._graph_request(
+        "POST", f"{phone_number_id}/messages", json_body=payload
+    )
+
+
+def send_after_sale_menu(self, phone_number_id, to):
+    interactive = {
+        "type": "button",
+        "body": {"text": "请问您需要办理什么业务？"},
+        "footer": {"text": "选择后我将为您转接对应服务"},
+        "action": {
+            "buttons": [
+                {"type": "reply", "reply": {"id": "btn_refund", "title": "申请退款"}},
+                {"type": "reply", "reply": {"id": "btn_track", "title": "查物流"}},
+                {"type": "reply", "reply": {"id": "btn_human", "title": "转人工"}},
+            ]
+        },
+    }
+    return self.meta_send_whatsapp_interactive(phone_number_id, to, interactive)
+```
+
+**场景 2：售后分类（列表）：**
+
+```python
+def send_service_list(self, phone_number_id, to):
+    interactive = {
+        "type": "list",
+        "header": {"type": "text", "text": "售后支持"},
+        "body": {"text": "请选择您遇到的问题类型"},
+        "action": {
+            "button": "选择问题",
+            "sections": [
+                {
+                    "title": "订单问题",
+                    "rows": [
+                        {"id": "r_delay", "title": "物流延迟", "description": "包裹超时未到"},
+                        {"id": "r_wrong", "title": "发错货", "description": "收到与订单不符商品"},
+                    ],
+                },
+                {
+                    "title": "退款",
+                    "rows": [
+                        {"id": "r_refund", "title": "申请退款", "description": "提交退款诉求"},
+                    ],
+                },
+            ],
+        },
+    }
+    return self.meta_send_whatsapp_interactive(phone_number_id, to, interactive)
+```
+
+**场景 3：单品卡（product，需已关联 Catalog）：**
+
+```python
+def send_product_card(self, phone_number_id, to, catalog_id, sku):
+    interactive = {
+        "type": "product",
+        "body": {"text": "这是我们最受欢迎的商品 👇"},
+        "action": {"catalog_id": catalog_id, "product_retailer_id": sku},
+    }
+    return self.meta_send_whatsapp_interactive(phone_number_id, to, interactive)
+```
+
+**回传处理（Webhook 里根据 type 分派）：**
+
+```python
+def route_interactive_reply(self, msg: Dict):
+    mtype = msg.get("type")
+    if mtype == "button":
+        btn = msg.get("button", {})
+        return self._handle_button(btn.get("payload") or btn.get("text"))
+    if mtype == "interactive":
+        inter = msg.get("interactive", {})
+        if "list_reply" in inter:
+            return self._handle_list(inter["list_reply"]["id"])
+        if "button_reply" in inter:
+            return self._handle_button(inter["button_reply"]["id"])
+    return None
+```
+
+### 3.5 媒体上传、发送与下载
+
+**场景**：客户发来破损商品照片，客服保存后回传处理结果图。
+
+```python
+def meta_upload_whatsapp_media(
+    self,
+    phone_number_id: str,
+    file_path: str,
+    mime_type: str,
+) -> Dict:
+    """上传媒体到 Cloud API，返回 media id"""
+    with open(file_path, "rb") as f:
+        return self._graph_request(
+            "POST", f"{phone_number_id}/media",
+            data={"messaging_product": "whatsapp", "type": mime_type},
+            files={"file": (file_path.split("/")[-1], f, mime_type)},
+        )
+
+
+def send_media_by_id(self, phone_number_id, to, media_id, media_type):
+    """用已上传的 media_id 发送媒体消息"""
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": media_type,          # image/video/audio/document
+        media_type: {"id": media_id},
+    }
+    return self._graph_request("POST", f"{phone_number_id}/messages",
+                               json_body=payload)
+
+
+def send_document(self, phone_number_id, to, link, filename):
+    """以公开 URL 发送文档（发票等）"""
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "document",
+        "document": {"link": link, "filename": filename},
+    }
+    return self._graph_request("POST", f"{phone_number_id}/messages",
+                               json_body=payload)
+
+
+def meta_get_whatsapp_media(self, media_id: str) -> Dict:
+    """获取媒体信息（含临时下载 url）"""
+    return self._graph_request("GET", f"{media_id}")
+
+
+def download_inbound_media(self, media_id: str, target_path: str) -> Dict:
+    """下载入站媒体（带 token 防 403），并落盘到对象存储"""
+    info = self.meta_get_whatsapp_media(media_id)
+    url = info["url"]
+    headers = {"Authorization": f"Bearer {self.token}"}
+    resp = self.session.get(url, headers=headers)     # 5 分钟内有效
+    resp.raise_for_status()
+    with open(target_path, "wb") as f:
+        f.write(resp.content)
+    return {"local_path": target_path, "info": info}
+```
+
+**完整链路（上传→发送→下载入站图）：**
+
+```python
+def media_full_flow(self, phone_number_id, customer_wa_id, local_img):
+    # ① 压缩后上传
+    up = self.meta_upload_whatsapp_media(
+        phone_number_id, local_img, "image/jpeg")
+    media_id = up["id"]
+    # ② 用 media_id 发给客户
+    self.send_media_by_id(phone_number_id, customer_wa_id,
+                          media_id, "image")
+    # ③ 收到客户回传图片（Webhook 已给出 image.id）
+    inbound_id = "some_inbound_media_id"
+    self.download_inbound_media(inbound_id, "/data/media/inbound_1.jpg")
+```
+
+> **踩坑经验（媒体大小/压缩）**：上传前统一走压缩管线（图片 <5MB、视频 <16MB）。写一个 `_compress_image` 工具，超过阈值自动等比压缩，避免抖动触发上传超限。
+
+### 3.6 模板生命周期管理
+
+```python
+def meta_list_whatsapp_templates(
+    self,
+    waba_id: str,
+    status: Optional[str] = None,
+    name: Optional[str] = None,
+) -> List[Dict]:
+    """列出模板，支持按状态/名称过滤"""
+    params = {}
+    if status:
+        params["status"] = status
+    if name:
+        params["name"] = name
+    resp = self._graph_request(
+        "GET", f"{waba_id}/message_templates", params=params)
+    return resp.get("data", [])
+
+
+def meta_create_whatsapp_template(
+    self,
+    waba_id: str,
+    name: str,
+    language: str,
+    category: str,
+    components: List[Dict],
+    allow_category_change: bool = True,
+) -> Dict:
+    payload = {
+        "name": name,
+        "language": language,
+        "category": category,
+        "components": components,
+        "allow_category_change": allow_category_change,
+    }
+    return self._graph_request(
+        "POST", f"{waba_id}/message_templates", json_body=payload)
+
+
+def delete_whatsapp_template(self, waba_id: str, template_id: str) -> Dict:
+    return self._graph_request("DELETE", f"{template_id}")
+
+
+def list_ready_templates(self, waba_id: str) -> List[Dict]:
+    """只取出可用的 APPROVED 模板，供发送路由使用"""
+    all_t = self.meta_list_whatsapp_templates(waba_id)
+    return [t for t in all_t if t.get("status") == "APPROVED"]
+
+
+def ensure_template_ready(self, waba_id: str, name: str, language: str) -> bool:
+    """发送前校验：模板是否存在且 APPROVED，否则抛错并告警"""
+    for t in self.meta_list_whatsapp_templates(waba_id, name=name):
+        if t.get("language") == language and t.get("status") == "APPROVED":
+            return True
+    # 未就绪 → 告警，避免把 REJECTED/PENDING 模板发出去
+    raise MetaTemplateNotReadyError(name, language)
+```
+
+**模板创建参数（BODY 三变量 + FOOTER）示例：**
+
+```python
+components = [
+    {"type": "HEADER", "format": "TEXT",
+     "text": "订单物流更新"},
+    {"type": "BODY",
+     "text": "您好 {{1}}，您的订单 {{2}} 已发出，预计 {{3}} 送达。",
+     "example": {"body_text": [["张三", "SO20260814", "8 月 20 日"]]}},
+    {"type": "FOOTER", "text": "如未收到请回复本消息"},
+]
+```
+
+**模板审计台账思路**：把模板状态变化通过 `message_template_status_update` Webhook 入库，做成"模板健康看板"（Approved/Pending/Rejected/被拒原因），供运营提前补齐上线模板。
+
+### 3.7 WABA 与电话号码管理
+
+```python
+def meta_get_waba(self, waba_id: str,
+                  fields: Optional[List[str]] = None) -> Dict:
+    """获取 WABA 详情（business_verification_status、display_name 等）"""
+    params = {}
+    if fields:
+        params["fields"] = ",".join(fields)
+    return self._graph_request("GET", f"{waba_id}", params=params)
+
+
+def meta_list_phone_numbers(self, waba_id: str) -> List[Dict]:
+    """列出 WABA 下所有业务号码（含 phone_number_id、质量评级）"""
+    resp = self._graph_request("GET", f"{waba_id}/phone_numbers")
+    return resp.get("data", [])
+
+
+def get_phone_number_detail(self, phone_number_id: str) -> Dict:
+    params = {"fields": "display_phone_number,verified_name,"
+                        "quality_rating,code_verification_status"}
+    return self._graph_request("GET", f"{phone_number_id}", params=params)
+
+
+def register_phone_number(self, phone_number_id: str) -> Dict:
+    """注册号码（生产上线唯一入口）"""
+    return self._graph_request(
+        "POST", f"{phone_number_id}/register",
+        data={"messaging_product": "whatsapp", "pin": ""})
+
+
+def request_verification_code(self, phone_number_id: str,
+                              code_method: str = "SMS") -> Dict:
+    return self._graph_request(
+        "POST", f"{phone_number_id}/request_code",
+        data={"code_method": code_method})
+
+
+def verify_code(self, phone_number_id: str, code: str) -> Dict:
+    return self._graph_request(
+        "POST", f"{phone_number_id}/verify_code", data={"code": code})
+
+
+def monitor_quality(self, waba_id: str):
+    """巡检所有号码质量，把 low 号码告警出来"""
+    low = []
+    for n in self.meta_list_phone_numbers(waba_id):
+        q = n.get("quality_rating")
+        if q == "LOW":
+            low.append(n)
+    return low
+```
+
+**获取 Business 旗下全部 WABA：**
+
+```python
+def list_owned_wabas(self, business_id: str) -> List[Dict]:
+    resp = self._graph_request(
+        "GET", f"{business_id}/owned_whatsapp_business_accounts")
+    return resp.get("data", [])
+```
+
+### 3.8 二维码生成与 wa.me 落地页
+
+```python
+def meta_generate_whatsapp_qr(
+    self,
+    phone_number_id: str,
+    prefilled_message: str = "您好，欢迎咨询",
+    format_: str = "PNG",
+) -> Dict:
+    """生成可印刷/投放的对话二维码"""
+    return self._graph_request(
+        "POST", f"{phone_number_id}/qr_codes",
+        data={
+            "prefilled_message": prefilled_message,
+            "generate_qr_code": format_,
+        })
+
+
+def build_wa_me_link(self, display_phone_number: str, text: str = "") -> str:
+    """构造 wa.me 落地短链（供广告/官网/物料使用）"""
+    import urllib.parse
+    base = f"https://wa.me/{display_phone_number}"
+    if text:
+        base += "?text=" + urllib.parse.quote(text)
+    return base
+```
+
+**生成并投放到广告物料：**
+
+```python
+qr = client.meta_generate_whatsapp_qr(
+    PHONE_NUMBER_ID, prefilled_message="您好，我想了解夏季促销")
+print("QR PNG URL:", qr["qr_code_url"])   # 交给设计团队投放
+```
+
+### 3.9 Webhook 服务实现（FastAPI 完整示例）
+
+**验签 —— 生产绝不省略：**
+
+```python
+import json
+from fastapi import FastAPI, Request, Response, HTTPException
+
+app = FastAPI()
+VERIFY_TOKEN = "my-secret-verify-token"   # 与后台配置一致
+APP_SECRET = "xxxx"
+MAX_PAYLOAD = 1_000_000                   # 防超长 body
+
+
+def verify_signature(raw_body: bytes, signature_header: str) -> bool:
+    """X-Hub-Signature-256 = sha256=<hex(HMAC-SHA256(app_secret, body))>"""
+    if not signature_header:
+        return False
+    expected = "sha256=" + hmac.new(
+        APP_SECRET.encode(), raw_body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature_header)
+
+
+@app.get("/webhooks/whatsapp")
+async def webhook_verify(
+    hub_mode: str, hub_verify_token: str, hub_challenge: str):
+    """Meta 首次配置时的订阅验证握手"""
+    if hub_mode == "subscribe" and hub_verify_token == VERIFY_TOKEN:
+        return Response(content=hub_challenge, media_type="text/plain")
+    raise HTTPException(status_code=403, detail="Verify token mismatch")
+
+
+@app.post("/webhooks/whatsapp")
+async def webhook_handler(request: Request):
+    raw = await request.body()
+    if not verify_signature(raw, request.headers.get("X-Hub-Signature-256", "")):
+        raise HTTPException(status_code=403, detail="Invalid signature")
+
+    payload = json.loads(raw)
+    for entry in payload.get("entry", []):
+        for change in entry.get("changes", []):
+            value = change.get("value", {})
+            field = change.get("field")
+            if field == "messages":
+                dispatch_messages(value)          # 入站消息 + 状态
+            elif field == "conversations":
+                dispatch_conversation(value)      # 会话/计费/窗口
+            elif field == "message_template_status_update":
+                dispatch_template_status(value)   # 模板状态
+            elif field == "phone_number_quality_updates":
+                dispatch_quality(value)           # 质量评级
+            elif field == "account_alerts":
+                dispatch_alerts(value)            # 账号告警
+    return {"status": "ok"}   # 务必 2xx，否则 Meta 会重试
+```
+
+**幂等去重（wamid 幂等锁）：**
+
+```python
+import redis
+r = redis.Redis.from_url("redis://localhost:6379")
+
+
+def is_duplicate(wamid: str, ttl: int = 3600) -> bool:
+    """同一条消息事件只处理一次；返回 True 表示已处理过"""
+    return bool(r.set(f"wa_msg:{wamid}", "1", nx=True, ex=ttl) is None)
+```
+
+**入站消息分派（含按钮回传、媒体下载）：**
+
+```python
+def dispatch_messages(value: dict):
+    # 出站状态回执
+    for st in value.get("statuses", []):
+        handle_status(st)          # sent/delivered/read/failed，失败取 errors
+        continue
+    # 入站新消息
+    for msg in value.get("messages", []):
+        if is_duplicate(msg["id"]):
+            continue
+        from_wa = msg["from"]
+        mtype = msg.get("type")
+        if mtype == "text":
+            handle_text(from_wa, msg["text"]["body"])
+        elif mtype == "image":
+            handle_image(from_wa, msg["image"]["id"])
+        elif mtype == "button":
+            route_interactive_reply(msg)
+        elif mtype == "interactive":
+            route_interactive_reply(msg)
+        elif mtype == "document":
+            handle_document(from_wa, msg["document"]["id"])
+```
+
+**状态回执处理：**
+
+```python
+def handle_status(status: dict):
+    status_type = status.get("status")     # sent/delivered/read/failed
+    msg_id = status.get("id")              # 发送时的 wamid
+    if status_type == "failed":
+        err = (status.get("errors") or [{}])[0]
+        record_failure(msg_id, err.get("code"))
+        alert_on_failure(msg_id, err.get("code"))
+    else:
+        update_delivery_status(msg_id, status_type)
+```
+
+> **踩坑经验**：Webhook 服务必须**返回 2xx 且尽快返回**。Meta 有重试机制，但若你处理逻辑超时（下载大媒体、调用外部慢接口），会阻塞回调线程、拉长返回，导致 Meta 重试风暴 → 重复投递 → 幂等锁必须兜底。**接收即回 2xx，业务处理异步化**（MQ 消费）。
+
+### 3.10 会话窗口状态机与追踪器
+
+自维护窗口是避免 131026/131051 的关键。核心状态：
+
+```
+会话窗口状态机（每号码 × 每客户）
+┌──────────┐   客户来消息/回复    ┌──────────────┐
+│  NON_OPEN │──────────────────▶│   OPEN(24h)   │─────────┐
+└──────────┘                    └──────┬───────┘         │
+      ▲                                │ 到 24h 且无新回复 │
+      │                                ▼                  │
+      │                         ┌──────────────┐          │
+      │   模板发送开启新会话       │  EXPIRED      │         │
+      └─────────────────────────│  (需模板)      │◀────────┘
+                                 └──────────────┘
+   状态: NON_OPEN → OPEN → EXPIRED → (模板) → 新会话
+```
+
+**实现：**
+
+```python
+class SessionWindowTracker:
+    """基于 Redis 维护会话窗口，防止窗口外自由文本"""
+
+    SERVICE_WINDOW = 24 * 3600      # service 窗口 24h
+
+    def __init__(self, redis, phone_number_id: str):
+        self.r = redis
+        self.pn = phone_number_id
+
+    def _key(self, wa_id: str) -> str:
+        return f"wa_window:{self.pn}:{wa_id}"
+
+    def touch_open(self, wa_id: str):
+        """客户来消息/企业窗口内回复 → 重置 24h 锚点"""
+        self.r.set(self._key(wa_id), "open", ex=self.SERVICE_WINDOW)
+
+    def is_open(self, wa_id: str) -> bool:
+        return self.r.exists(self._key(wa_id)) == 1
+
+    def send_with_fallback(self, client, to, text, template_plan):
+        """发送优先 free 文本，窗口关闭自动降级模板"""
+        if self.is_open(to):
+            client.meta_send_whatsapp_message(self.pn, to, text)
+            self.touch_open(to)
+        else:
+            # 窗口外 → 用模板（开启新会话），绝不发自由文本
+            client.meta_send_whatsapp_template(
+                self.pn, to, template_plan["name"],
+                template_plan["language"], template_plan["params"])
+```
+
+**接入 Webhook 联动：**
+
+```python
+def on_inbound_message(value: dict, tracker: SessionWindowTracker):
+    for msg in value.get("messages", []):
+        tracker.touch_open(msg["from"])     # 客户来消息 → 窗口打开/重置
+        # ... 其余业务处理
+
+
+def on_conversation(value: dict, tracker):
+    conv = value.get("conversations", {})
+    origin = conv.get("origin", {}).get("type")
+    if origin == "service":
+        # 服务会话开始（客户发起，免费入口），记录用于计费/成本
+        record_conversation(conv.get("id"), origin,
+                            expiry=conv.get("expiration_timestamp"))
+```
+
+### 3.11 限流、重试与幂等
+
+**限流处理（130429 / 80004）：**
+
+```python
+import random
+import time
+
+
+def call_with_retry(self, fn, *args, max_retries: int = 3, **kwargs):
+    """带指数退避 + 抖动 的重试封装，处理瞬时限流/网络抖动"""
+    delay = 0.5
+    for attempt in range(max_retries):
+        try:
+            return fn(*args, **kwargs)
+        except MetaApiError as e:
+            if e.code in (130429, 80004) and attempt < max_retries - 1:
+                time.sleep(delay + random.uniform(0, 0.5))
+                delay *= 2
+                continue
+            raise
+    raise  # pragma: no cover
+```
+
+**幂等 —— 发送侧防重复入账：**
+
+```python
+def send_idempotent(self, req_key: str, send_fn, *args):
+    """以业务唯一键(req_key)保证同一业务动作只发一次"""
+    if r.set(f"wa_sent:{req_key}", "1", nx=True, ex=86400) is None:
+        return {"duplicate": True}   # 已发过
+    resp = send_fn(*args)
+    return resp
+```
+
+**限流护栏（单号码 TPS 限量）：**
+
+```python
+import threading
+
+class RateLimiter:
+    """单号码漏桶，防止突发打爆 80 msg/s 级别吞吐"""
+    def __init__(self, rate: float):
+        self.rate = rate          # 每秒许可数
+        self.lock = threading.Lock()
+        self.tokens = rate
+        self.last = time.monotonic()
+
+    def acquire(self):
+        with self.lock:
+            now = time.monotonic()
+            self.tokens = min(
+                self.rate,
+                self.tokens + (now - self.last) * self.rate)
+            self.last = now
+            if self.tokens >= 1:
+                self.tokens -= 1
+                return
+        time.sleep(1.0 / self.rate)   # 节流等待
+        self.acquire()
+```
+
+### 3.12 生产踩坑清单
+
+以下为真实项目服务 WhatsApp Cloud API 时最高频的坑，按上线前后排列：
+
+**上线前（配置/认证）：**
+
+1. **用了短期 Token 上生产**：几小时就失效，导致批量发送中断。生产必须用 System User 长期令牌。
+2. **忘了 `appsecret_proof`**：开启后所有请求都要带，否则报认证错误；且 `_appsecret_proof` 每请求实时算，别缓存。
+3. **URL 里填电话号码而非 `phone_number_id`**：报 `(#100) Invalid parameter`。
+4. **测试号码当生产用**：二维码、campaign 落地都指向测试号码，真实客服收不到。上线前切换到生产号码并重新注册。
+
+**上线中（发送/模板）：**
+
+5. **窗口未维护**：按自然日而非"相对最后一条消息 24h"实现，导致窗口外自由文本大量 `131051`。
+6. **模板未提前过审就发**：发送 REJECTED/PENDING 模板报 `133010`；模板要提前 1~2 天提交。
+7. **变量与模板不匹配**：多传/少传/顺序错 → `132000`；用"模板变量 schema"登记规避。
+8. **模板名与 language 冲突**：同 name+language 重复创建失败；跨语言保持 name 一致、language 区分。
+
+**上线中（媒体）：**
+
+9. **不压缩就上传**：图片 8MB+ 直接上传超限；统一压缩到 image<5MB、video<16MB。
+10. **保存 Meta 临时下载 URL**：5 分钟失效；拿到立即下载到自建对象存储。
+11. **下载入站媒体忘带 Authorization 头**：403 空文件。
+
+**上线后（投递/质量/成本）：**
+
+12. **不看 failed 状态**：`statuses` 里 `status=failed` 携带错误码，必须监控并告警，否则投递率悄无声息下滑。
+13. **Webhook 返回慢/业务处理阻塞**：导致 Meta 重试风暴、重复投递；接收即 2xx + 异步消费 + `wamid` 幂等。
+14. **忽略质量评级**：大促无限触达 → 质量掉到 LOW → 限额骤降 + 模板被 pause；要监控 `phone_number_quality_updates`。
+15. **类别用错**：促销塞进 utility 省钱/省审核，被 Meta 定位违规 → 模板被拒/号码受限；类别要合规。
+16. **成本不按市场分层**：Tier 1~4 国家价格差异大，用单一均价核算会严重失真。
+
+---

@@ -1175,3 +1175,190 @@ def review_bid_recommendations(adv):
 - Bid Surge 是品牌冲刺利器，但需与效果单隔离、预算匹配、控制幅度。
 - 用 API（`dv360_get_pacing_rate`、`dv360_get_line_item_performance`、`dv360_list_recommendations`）做常态化监控与调优。
 
+
+---
+
+## 四、常见问题与排查
+
+### 4.1 FAQ 速查表
+
+下面汇总 DV360 竞价策略相关的**高频问题与排查要点**：
+
+| # | 问题 | 快速结论 | 排查切入 |
+|---|------|---------|---------|
+| 1 | 自动出价好像"没生效"，出价没变化 | 可能仍在学习期，或目标导致所有机会都被拒 | 检查学习期标志、floor、delivery |
+| 2 | 出价异常偏高/偏低 | 目标设错、价值回传错误、Surge 误开、floor 影响 | 核对目标、回传、Surge、pacing |
+| 3 | pacing 卡住/交付停滞 | 出价 < floor、定向过窄、预算过低、库存缺失 | `dv360_get_pacing_rate` |
+| 4 | CPA 突然飙升 | Surge 叠加、目标被改、价值回传错误、竞争加剧 | 检查 Surge、目标改动、回传与市场 |
+| 5 | 切换出价策略失败 | 参数错误、类型不兼容、无 update 权限 | 校验 API 字段、权限 |
+| 6 | Target ROAS 表现差 | 价值回传不准确或缺失 | 检查 conversion_value 回传 |
+| 7 | Bid Surge 没效果 | 幅度太小、窗口错、被 bedrock/预算限制 | 检查 Surge 幅度、窗口、预算 |
+| 8 | 交付不足但出价已很高 | 库存稀缺 / 优质流量被竞品抢 | 检查 win rate、库存、换 pmp |
+| 9 | 预算快速耗尽 | pacing ASAP 或 Surge 或出价过高 | 换 EVEN、去 Surge、降出价 |
+| 10 | 不知道选哪种出价策略 | 用 KPI 选型矩阵（见 3.2） | 明确业务 KPI + 数据成熟度 |
+
+### 4.2 问题 1：自动出价似乎没生效
+
+**现象**：设置了 Target CPA / Maximize Conversions，但表现和手动出价差不多，甚至没变化。
+
+**排查步骤**：
+1. **确认 Line Item 确实用了自动出价**（检查 `dv360_update_line_item`/`dv360_list_bidding_strategies` 所设策略）；
+2. **确认是否仍在学习期**：学习期模型在探索，可能看不出明显差异；
+3. **确认转化回传**：若 Floodlight 转化没回传或回传量极少，ML 无信号，自动出价退化为近手动的随机行为；
+4. **确认目标可实现**：目标 CPA 设得过低 → 几乎所有机会出价都低于 floor → 无量、看起来"没生效"；
+5. **看 delivery 而非只看出价**：自动出价的价值在于"把预算花在更值的机会上"，可能单次出价看似没变，但成交的价值结构变了。
+
+```python
+def check_autobid_effective(adv, li):
+    perf = client.dv360_get_line_item_performance(
+        line_item_id=li,
+        date_range={'start': '2026-08-01', 'end': '2026-08-14'}
+    )
+    conv = perf.get('conversions', 0)
+    cost = perf.get('total_cost', 0)
+    cpa = cost / conv if conv else None
+    print(f"转化={conv}, 花费=${cost:.0f}, CPA={'$%.1f'%cpa if cpa else 'N/A'}")
+    print("若转化过少(<30/周) → 模型学不动, 自动出价效果难显现")
+    print("若 Delivery/Impressions 很低 → 检查目标是否低于 floor")
+```
+
+### 4.3 问题 2：出价异常偏高或偏低
+
+**偏高可能原因**：
+- Bid Surge 误开或幅度过大；
+- 第一价格环境下手动出价过付；
+- 价值回传被放大（如重复回传、金额单位错误）；
+- Target ROAS 设得太低（导致允许成本上限虚高）。
+
+**偏低可能原因**：
+- Target CPA 太低（价值信号压缩出价）；
+- 预测模型判定该机会价值低；
+- floor 正好卡在计算出价之上，导致整体无量。
+
+**排查动作**：
+```python
+# 排查出价异常: 检查 Surge 与 pacing
+pacing = client.dv360_get_pacing_rate(adv, li)
+print("pacing:", pacing.get('pacingStatus'), pacing.get('pacingMode'))
+# Surge 应只在特定窗口, 排查是否残留开启
+```
+
+### 4.4 问题 3：pacing 卡住 / 交付停滞
+
+**常见根因与解法**：
+
+| 根因 | 判断方法 | 解法 |
+|-----|---------|------|
+| 出价 < floor | 大量请求被拒，delivery≈0 | 提高出价/调目标，确认 floor |
+| 定向过窄 | 覆盖人群太小，无合格机会 | 放宽定向、扩大受众 |
+| 预算过低 | pacing 模式 ASAP 但预算太小 | 加预算，或确认量与预算匹配 |
+| 优质库存缺失 | 特定广告位/时段无货 | 换库存、加 PMP |
+| 目标 CPA 过低 | 出价系统性低于市场 | 调高目标至合理区间 |
+
+**诊断脚本**：
+```python
+def diagnose_stalled(adv, li):
+    pacing = client.dv360_get_pacing_rate(adv, li)
+    perf = client.dv360_get_line_item_performance(
+        line_item_id=li, date_range={'start': '2026-08-07', 'end': '2026-08-14'}
+    )
+    print("pacingStatus:", pacing.get('pacingStatus'))
+    print("impressions:", perf.get('impressions'))
+    print("bid requests / matches 需看 detailed 报表")
+    if perf.get('impressions', 0) == 0:
+        print("→ 可能原因: floor 过高 / 定向过窄 / 目标过低")
+```
+
+### 4.5 问题 4：CPA 突然飙升
+
+**系统性排查清单**（按概率排序）：
+
+1. **是否叠加了 Bid Surge？** Surge 抬高出价 → 成本上升 → CPA 恶化。→ 移除或降低 Surge。
+2. **是否有人在学习期内改了目标？** 改动会重置模型、引入探索成本。→ 恢复目标并冻结。
+3. **转化价值回传是否出错？** 若 ROAS/cost 信号被破坏，模型乱出价。→ 核对 Floodlight/revenue 回传。
+4. **竞品是否加价？** 外部竞争推高成本。→ 观察 win rate 与市场，考虑加预算/换库存。
+5. **是否存在转化归因延迟/回填？** 转化延迟导致 CPA 统计失真（近期看起来高，之后回填）。→ 给予归因窗口，避免误判。
+6. **pacing 是否过早耗尽优质机会？** OVERDELIVERED 导致后半段只能低价补量。→ 平滑 pacing。
+
+**决策表**：
+
+| 症状 | 大概率根因 | 立即动作 |
+|-----|----------|---------|
+| CPA 飙升 + 曝光也升 | Surge 或出价过高 | 去 Surge / 降出价 |
+| CPA 飙升 + 曝光降 | floor/定向问题 | 调目标 / 松弛定向 |
+| CPA 飙升 + 转化也升 | 归因延迟 / 目标放宽 | 看归因窗口 |
+| CPA 飙升 + 回传没问题 | 竞争加剧 | 观察/加预算/换库存 |
+
+### 4.6 问题 5：切换出价策略失败
+
+**常见报错与处理**：
+
+| 报错/现象 | 原因 | 处理 |
+|---------|------|------|
+| 400 参数校验失败 | `bidding_strategy` 结构不对或字段名错 | 对照 API schema 校验字段名 |
+| 策略类型不兼容 | 某些 Line Item 类型（如 PG）不接受某自动策略 | 确认 PG 用固定出价 |
+| 403 权限不足 | 无 update 权限 | 检查服务账号角色 |
+| 无响应/超时 | API 限流 | 重试、退避、分批 |
+
+```python
+def safe_switch_strategy(adv, li, new_strategy):
+    """安全切换出价策略, 带错误处理"""
+    try:
+        client.dv360_update_line_item(
+            advertiser_id=adv, line_item_id=li, bidding_strategy=new_strategy
+        )
+        print("切换成功")
+        return True
+    except Exception as e:
+        print(f"切换失败: {e}")
+        # 常见: PG 类型不支持自动策略 → 需先确认 Line Item type
+        return False
+```
+
+### 4.7 问题 6：Target ROAS 表现差 / 不达标
+
+ROAS 目标的成败高度依赖**价值回传的准确性**。排查：
+- 转化是否带有动态 value（订单金额）？
+- value 货币单位是否正确？
+- 是否出现同一笔收入多次计数（去重问题）？
+- model 是否在校准中？
+
+**最佳实践**：ROAS 上线前先做 value 回传验证，用报表交叉核对"转化 count 与 value sum"是否与业务系统一致。
+
+### 4.8 问题 7：Bid Surge 没效果
+
+- **幅度太小**：+10% 在激烈竞争下几乎无感 → 加大到 +50%~+100%；
+- **窗口不对**：目标时段未覆盖为 Surge 窗口 → 核对时区与日期；
+- **预算限制**：预算已将可花额卡死，Surge 抬价但总量没变 → 扩预算；
+- **被 pace / bedrock 限制**：顶部安全预算或 pacing 压住 → 检查上层与 pacing。
+
+### 4.9 问题 8：为什么 Discovery 与命中率低（配合地板）
+
+**现象**：报表里 bid requests 不少，但 match/win 很少，impressions 低。
+**根因**：出价普遍低于 floor（或被各交易所 floor 覆盖）。
+**解法**：
+- 用 floor 意识调整目标/出价；
+- 若某交易所 floor 异常高，考虑从 Leo/库存策略规避；
+- 适当放宽定向以进入更低 floor 的库存池。
+
+### 4.10 排查方法论总结
+
+统一排查流程（适用所有出价问题）：
+```
+1. 明确现象 (出价? CPA? 交付? 曝光?)
+2. 用 API 拉数据: dv360_get_pacing_rate + dv360_get_line_item_performance
+3. 分层归因:
+   a. 策略层: 出价策略类型是否正确 / 目标是否合理
+   b. 成本层: Surge / floor / 第一价格过付 / 竞争
+   c. 交付层: pacing / 预算 / 定向宽度 / 库存
+   d. 数据层: 转化回传 / 价值回传 / 归因窗口
+4. 单变量调整 (一次只改一个), 观察 3-7 天效果
+5. 保留基线对照, 避免凭感觉
+```
+
+### 4.11 本章小结
+
+- 绝大多数出价问题可归为四类：**策略误配、成本失控（Surge/floor/第一价格）、交付受阻（pacing/定向/预算）、数据失真（回传/归因）**。
+- 排查要用数据说话：`dv360_get_pacing_rate`、`dv360_get_line_item_performance` 是核心诊断工具。
+- 一次只改一个变量，保留对照，观察学习期后再下结论。
+

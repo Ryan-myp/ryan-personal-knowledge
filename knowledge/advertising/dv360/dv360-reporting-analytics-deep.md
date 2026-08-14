@@ -789,3 +789,376 @@ class DV360ReportRow(BaseModel):
 ```
 
 **统一主键约定**：`(report_date, advertiser_id, campaign_id, insertion_order_id, line_item_id, creative_id, device_type, country)` 是该行"事实键"，入库用 UPSERT 保证幂等（见 3.2 去重）。
+
+## 三、生产环境实战
+
+### 3.1 每日自动报表拉取入库案例（Python + API → 结构化存库 → BI）
+
+以一个标准落地案例贯穿全章：**每天凌晨自动拉取 DV360 各广告主"昨天（T-1）数据"，清洗入库到 BigQuery/PostgreSQL，次日晨会由 BI（Looker/Metabase/自定义看板）出日报。**
+
+整体流水线：
+
+```
+[Cron / Airflow / Dagster] 触发每日任务
+        ↓
+[Step 1] 认证 + 拉取广告主清单
+   client.dv360_list_advertisers(partner_id=...)
+        ↓
+[Step 2] 逐广告主 创建/复用 Query（LINE_ITEM 级 + 昨日时间窗）
+   client.dv360_get_report / dv360_sync_report
+        ↓
+[Step 3] 轮询 DONE → 下载 CSV
+   wait_for_report() / download_report_csv()
+        ↓
+[Step 4] 解析 + 口径映射 + 幂等 UPSERT 入库
+   DV360ReportRow → INSERT ... ON CONFLICT UPDATE
+        ↓
+[Step 5] 对账断言 + 失败告警（钉钉/Slack/邮件）
+   dv360 数 vs 昨日已入库数 > 阈值 → 告警
+        ↓
+[BI] Looker/Metabase 连接数仓出日报
+```
+
+**每日任务主控脚本**（调度器无关，纯函数式）：
+
+```python
+import pandas as pd
+from datetime import date, timedelta
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+def run_daily_report(client, advertiser_ids, as_of: date = None) -> dict:
+    """拉取 as_of-1（默认昨天）各广告主 LINE_ITEM 级报表并入库。"""
+    as_of = as_of or date.today()
+    target_date = as_of - timedelta(days=1)          # 默认拉 T-1
+    report_date_s = target_date.isoformat()
+
+    summary = {'advertisers': 0, 'rows': 0, 'failed': []}
+    for adv_id in advertiser_ids:
+        try:
+            # 1) 定义 Query：LINE_ITEM 级 + 关键指标
+            dims = ['LINE_ITEM', 'DEVICE_TYPE', 'COUNTRY']
+            metrics = ['IMPRESSIONS', 'CLICKS', 'SPEND',
+                       'VIEWABLE_IMPRESSIONS', 'MEASURABLE_IMPRESSIONS',
+                       'FLOODLIGHT_CONVERSIONS', 'CONVERSION_VALUE']
+            query_id, report_id = create_query(
+                client, adv_id, f"daily_li_{report_date_s}",
+                report_date_s, report_date_s, dims, metrics)
+            # 2) 轮询 + 下载
+            wait_for_report(client, query_id, report_id, timeout_s=3600)
+            rows = download_report_csv(client, query_id, report_id)
+            # 3) 映射 + 入库
+            upsert_rows(rows, adv_id, report_date_s)
+            summary['rows'] += len(rows)
+            summary['advertisers'] += 1
+        except Exception as e:                         # 单广告主失败不拖垮整批
+            summary['failed'].append({'advertiser': adv_id, 'error': str(e)})
+            log.exception('advertiser %s failed', adv_id)
+    return summary
+
+def upsert_rows(rows, adv_id, report_date_s, session=None):
+    """把 CSV 行映射为标准模型并幂等 UPSERT。"""
+    records = []
+    for r in rows:
+        rec = DV360ReportRow(
+            report_date=report_date_s,
+            advertiser_id=adv_id,
+            campaign_id=_int(r.get('Campaign ID')),
+            insertion_order_id=_int(r.get('Insertion Order ID')),
+            line_item_id=_int(r.get('Line Item ID')),
+            creative_id=_int(r.get('Creative ID')),
+            device_type=r.get('Device'),
+            country=r.get('Country'),
+            impressions=_int(r.get('Impressions')),
+            clicks=_int(r.get('Clicks')),
+            spend_micro=_micro(r.get('Spend')),
+            completions=_int(r.get('Completions')),
+            floodlight_conversions=_int(r.get('Floodlight Conversions')),
+            conversion_value_micro=_micro(r.get('Conversion Value')),
+            measured_at_utc=datetime.utcnow().isoformat(),
+        )
+        records.append(rec)
+    if not records:
+        return
+    stmt = pg_insert(DV360ReportRow.__table__).values(
+        [rec.dict() for rec in records])
+    stmt = stmt.on_conflict_do_update(
+        index_elements=_PRIMARY_KEY,
+        set_={c.name: stmt.excluded[c.name] for c in DV360ReportRow.__table__.columns
+              if c.name not in _PRIMARY_KEY},
+    )
+    session.execute(stmt)
+    session.commit()
+
+def _int(v):
+    try:
+        return int(float(str(v))) if v not in (None, '') else None
+    except (ValueError, TypeError):
+        return None
+
+def _micro(v):
+    """金额字符串（可能带 $/逗号）→ 微单位整数，避免浮点误差。"""
+    import re
+    if v in (None, ''):
+        return 0
+    s = re.sub(r'[,$\s]', '', str(v))
+    try:
+        return int(round(float(s) * 1_000_000))
+    except ValueError:
+        return 0
+```
+
+**为什么金额用微单位整数**：DV360/Google API 的金额字段普遍以 micro（百万分之一货币单位）或字符串返回，浮点 `0.1+0.2` 误差会在对账时累计出"差几分钱"的现象。统一转成整数微单位，用整数运算，最后展示层再转回美元。
+
+**BI 层简易每日日报（Pandas 聚合）**：
+
+```python
+def build_daily_report(rows):
+    df = pd.DataFrame(rows)
+    # 关键派生指标（口径统一在此定义，避免各看板口径漂移）
+    df['ctr'] = df['clicks'] / df['impressions'].replace(0, pd.NA)
+    df['cpm'] = df['spend_usd'] / df['impressions'] * 1000
+    df['viewability'] = (
+        df['viewable_impressions']
+        / df['measurable_impressions'].replace(0, pd.NA))
+    df['roas'] = df['conversion_value_usd'] / df['spend_usd'].replace(0, pd.NA)
+    return df.groupby('advertiser_id').agg(
+        impressions=('impressions', 'sum'),
+        clicks=('clicks', 'sum'),
+        spend_usd=('spend_usd', 'sum'),
+        floodlight_conversions=('floodlight_conversions', 'sum'),
+    ).reset_index()
+```
+
+**生产注意事项**：
+
+- **编排而非裸 cron**：用 Airflow/Dagster/Prefect 管理任务 DAG，失败自动重试 + 依赖控制（先等 RDB 定稿窗口再拉）。
+- **并发控制**：拉多个广告主时用线程池并发，但注意 DV360 配额（`dv360_get_quota` 可查余量），并发数建议 ≤ 8，避免 429。
+- **可重跑**：任务必须可重复执行且幂等——重跑同一天数据用 UPSERT 覆盖，不产生重复行、不丢旧行（防御 RDB 回填修正）。
+
+### 3.2 调度、时区与幂等去重策略
+
+**最常被忽略的三个工程问题**：
+
+1. **T+N 口径的稳定性**：
+   - T-1 当天凌晨拉取：数据可能未完稿（CTV/跨媒体回填慢）。
+   - 建议：**T-1 暂存，T-3 再定稿覆盖**。即"凌晨拉昨日预览，3 天后拉昨日定稿"双轨，最终以定稿为准。
+2. **时区（Timezone）**：
+   - 报表的 `DATE` 维度按广告主或账户设置的时区（`dv360_list_time_zones()` 可枚举）切分。
+   - 若广告主时区非 UTC，数据库里的 `report_date` 与事件原始 UTC 时间存在偏移，跨系统对账必须统一到同一时区。
+   - 典型坑：拉取脚本用 `date.today()-1`（本地时区）去取值，但账户时区是 UTC+8 或美东，导致"日期错位的一天"。
+3. **幂等去重**：
+   - 同一 Query 重复 run 会产生同一天多条"同主键"记录；UPSERT 按主键覆盖即可。
+   - 重试导致的重复：写入侧用 `ON CONFLICT DO UPDATE` 天然去重。
+   - 回填修正：RDB 定稿值可能比 LDB 预览值高，必须允许"覆盖旧值"，而非"跳过已有"。
+
+**主键设计（防重 + 允许回填修正）**：
+
+```
+主键 = (report_date, advertiser_id, campaign_id,
+       insertion_order_id, line_item_id, creative_id,
+       device_type, country)
+写入 = UPSERT（存在则覆盖 金额/指标 为最新拉取值）
+```
+
+这样同一事实键的"预览值"会被"定稿值"覆盖，同时不会因为重复运行产生垃圾行。
+
+### 3.3 对账场景：DV360 报表 vs 第三方 vs 内部埋点
+
+对账是 DV360 报表分析里争议最大的环节。三方数据对不上几乎必然发生，核心是把它拆解成**可控的四类差异**，而不是期待数字相等。
+
+```
+三个数据源（同一时期、同一 Campaign）
+┌─────────────────────────────────────────────┐
+│ DV360 报表     第三方测量方    内部服务端埋点   │
+│ （投递/Floodlight） （验证/可见率）（转化/支付）  │
+│    |                |               |        │
+│    └────────────────┴───────────────┘        │
+│                  差异四类                     │
+│  ① 口径差：分母/去重/计数方式不同             │
+│  ② 时区差：日期边界切点不同                  │
+│  ③ 测量差：标签独立性抽样、可测性             │
+│  ④ 归因差：归因模型/窗口不同                 │
+└─────────────────────────────────────────────┘
+```
+
+**对账分析流程**：
+
+```
+Step 1  定义"权威源"：投递数→DV360 口径（RDB）；转化→内部支付系统为准
+Step 2  对齐日期窗口与时区
+Step 3  逐层聚合对比：总数差 → 按 Campaign → 按 LineItem → 按 Creative
+        利用分层（钻取）定位差异集中在哪一层
+Step 4  对每类差异归因到"四类差"之一
+Step 5  设定可接受阈值（如投递差 ±3%，转化差以内部系统为准）
+        超阈值才告警，微差记录不告警
+```
+
+**一个具体的对账脚本**：
+
+```python
+def reconciliation(dv360_df, third_party_df, internal_df, adv_id, report_date):
+    """三源对账：返回结构化差异报告。"""
+    out = {}
+
+    # ① 投递数：DV360 vs 第三方（取 MEASURABLE 对齐分母）
+    d_spend = dv360_df['spend_usd'].sum()
+    t_spend = third_party_df['spend_usd'].sum()
+    out['spend_diff_pct'] = (d_spend - t_spend) / t_spend if t_spend else None
+
+    d_imp = dv360_df['impressions'].sum()
+    t_imp = third_party_df['measurable_impressions'].sum()
+    out['impression_diff_pct'] = (d_imp - t_imp) / t_imp if t_imp else None
+
+    # ② 转化：DV360 Floodlight vs 内部支付埋点
+    dv_conv = dv360_df['floodlight_conversions'].sum()
+    in_conv = internal_df['orders'].sum()
+    out['conv_diff'] = dv_conv - in_conv
+    # 归因/窗口差异解释：DV360 转化含归因分摊与延迟转化
+    out['conv_explanation'] = (
+        "DV360 转化含跨触点归因分摊，内部埋点为服务端成交数，"
+        "差异主要由归因模型与转化窗口造成")
+
+    # ③ 可见率：DV360 vs Moat/IAS 门户
+    dv_view = dv360_df['viewable_impressions'].sum() / \
+              dv360_df['measurable_impressions'].sum()
+    out['viewability_dv360'] = round(dv_view, 4)
+    # 第三方门户单独提供，此处留占位
+    out['viewability_third_party'] = None
+
+    return out
+```
+
+**对账实战口诀**：
+
+1. **投递看 DV360，转化看内部系统**：展示/花费以 DV360（买方的结算基准）为准；真金白银的成交以内部支付/服务端埋点为准。
+2. **可见率看第三方门户 + DV360 双确认**：DV360 内置可见率与测量方门户数值本来就可能差 3~5 个点，别把它们当成"一个数对不上就是 bug"。
+3. **差值不是错误，是口径**：先确认单位（万/亿）、时区、去重、窗口，再下结论。
+4. **阈值化管理**：投递差通常 <3% 属正常（IVT 扣减、回填时序），转化差不设绝对可比（归因天生不同），核心是"偏差可控 + 有解释"。
+
+### 3.4 维度组合配置示例（Query 编排）
+
+不同分析诉求对应不同的维度/指标/过滤组合。这里给三组典型的 `dv360_get_report` 编排模板，可直接照搬：
+
+**模板 A：日常投放监控（Line Item 日粒度）**
+
+```python
+body = {
+  'advertiser_id': 123456,
+  'dimensions': ['DATE', 'LINE_ITEM', 'DEVICE_TYPE'],
+  'metrics': ['IMPRESSIONS', 'CLICKS', 'SPEND', 'VIDEO_VIEWS', 'COMPLETIONS'],
+  'date_range': {'start': '2026-08-01', 'end': '2026-08-14'},
+}
+```
+
+**模板 B：素材优化（Creative 级 + 互动）**
+
+```python
+body = {
+  'advertiser_id': 123456,
+  'dimensions': ['DATE', 'CREATIVE', 'CREATIVE_TYPE'],
+  'metrics': ['IMPRESSIONS', 'CLICKS', 'CTR', 'COMPLETIONS', 'VCR',
+              'CONVERSIONS'],
+  'date_range': {'start': '2026-08-01', 'end': '2026-08-14'},
+}
+```
+
+**模板 C：可见率与品牌安全专项（验证维度）**
+
+```python
+body = {
+  'advertiser_id': 123456,
+  'dimensions': ['DATE', 'PLACEMENT', 'SENSITIVE_CATEGORY'],
+  'metrics': ['IMPRESSIONS', 'MEASURABLE_IMPRESSIONS',
+              'VIEWABLE_IMPRESSIONS', 'INVALID_TRAFFIC_IMPRESSIONS',
+              'BRAND_SAFETY_IMPRESSIONS'],
+  'date_range': {'start': '2026-08-01', 'end': '2026-08-14'},
+}
+```
+
+**维度组合约束（务必遵守，否则报错或数据为 0）**：
+
+| 约束 | 说明 | 应对 |
+|------|------|------|
+| 高基数维度互斥 | 部分高基数维度（如 CREATIVE、PLACEMENT）与部分维度不可同时使用 | 查询前用 `dv360_list_breakdowns()` 校验可用组合 |
+| 可用组合矩阵 | 不是所有维度×维度都合法 | 建立自己的"可用组合白名单"缓存在配置里 |
+| 行数上限 | 单 Query 行数有上限（见 3.5/4.x） | 减少维度组合或按日拆分 |
+| 近实时维度 | 小时（HOUR）维仅近 30 天可用 | 长区间自动降级为天级 |
+
+```python
+# 组合校验：查询可用 Breakdown，避免构造非法组合
+def valid_breakdown(client, dim_a, dim_b):
+    breakdowns = client.dv360_list_breakdowns()
+    keys = {(b.get('dimensionA'), b.get('dimensionB')) for b in breakdowns}
+    return (dim_a, dim_b) in keys or (dim_b, dim_a) in keys
+```
+
+### 3.5 踩坑实录（生产环境反复踩过的坑）
+
+这里集结 DV360 报表工程化中最常见的坑，每个都配"现象→根因→解法"。
+
+**坑 1：报表一行都没有（空报表）**
+
+- 现象：Query 返回 DONE，但下载下来只有列名没有数据行。
+- 根因（逐个排查）：
+  1. 日期窗口超出数据存在范围（未来日期/过早日期）。
+  2. 过滤（Filter）写死了不存在的值（如写错 Campaign ID）。
+  3. 该账户该时间窗确实没有投放（预算暂停/未开始）。
+  4. 维度组合导致该行被系统过滤（如"无点击"行被某些视图剔除）。
+- 解法：先去掉 Filter 空跑一次确认有数；检查日期与账户层级 ID；确认投放状态。
+
+**坑 2：Filter 语法错误**
+
+- 现象：Query 创建或运行时报参数错误。
+- 根因：Filter 要求精确的字段名/枚举值，例如交易类型要用 `TRANSACTION_TYPE` 的合法枚举（`PROGRAMMATIC_GUARANTEED`/`PRIVATE_MARKETPLACE`/`PREFERRED_DEAL`/`OPEN_AUCTION`，对应 `get_transaction_type_options`）。
+- 解法：用 `dv360_list_dimension_values(dimension)` 拉合法值再拼 Filter，绝不手写魔法字符串；非法值时先枚举校验。
+
+```python
+# 合法交易类型（dv360_api.get_transaction_type_options 返回）
+TRANSACTION_TYPES = [
+    'PROGRAMMATIC_GUARANTEED',  # 程序化保量
+    'PRIVATE_MARKETPLACE',      # 私有市场
+    'PREFERRED_DEAL',           # 优先交易
+    'OPEN_AUCTION',             # 公开竞价
+]
+
+def assert_valid_filter(dimension, value):
+    # 伪代码：先用 dimensionValues 校验 value 在枚举内
+    if not _is_known_dimension_value(dimension, value):
+        raise ValueError(f"invalid {dimension}={value}")
+```
+
+**坑 3：Date Range 时区错位**
+
+- 现象：拉出来的"昨天"数据在账户时区里其实是"前天"或"今天"。
+- 根因：脚本时间取自本地/服务器时区，账户报表按广告主时区切天。
+- 解法：统一基准时区；确认账户时区（`dv360_list_time_zones()`）；跨时区对账时两端都转 UTC 的日期边界。
+
+**坑 4：行数超上限被截断**
+
+- 现象：报表以为全量，实际被截断，或导入数据库后总数远小于 DV360 内报表。
+- 根因：单 Query 行数超过平台上限（高基数维度 + 长区间最容易触发）。
+- 解法：按日拆分 + 减少高基数维度组合；或用 `dv360_get_breakdown_report` 类细分再合并；用 `dv360_get_quota` 监控余量，避免超限被限流。
+
+**坑 5：Metric 口径对不上（同一指标两处数值不同）**
+
+- 现象：UI 报表、Query 导出、CPI 接口三个地方"展示数/花费"都不一样。
+- 根因：
+  1. 一个取 LDB（UI 实时）一个取 RDB（导出）——首要嫌疑。
+  2. 可见率分母不同（可测 vs 总展示）。
+  3. 花费含/不含返点、扣费 vs 合同价。
+- 解法：先统一数据等级（都取 RDB 定稿），再统一口径公式，最后看是否跨媒体回填未完（CTV）。
+
+**坑 6：SQL/BI 里金额或大数变科学计数/精度丢失**
+
+- 现象：花费 1234567.89 在 CSV → Excel → DB 过程中变 1.23457e+06，或对账差几分钱。
+- 根因：字符串转 float 的精度问题；CSV 科学计数法解析错误。
+- 解法：金额用微单位整数（见 3.1 `_micro`）；CSV 解析时指定列类型，禁止自动转 float。
+
+**坑 7：配额打爆（429/QuotaExceeded）**
+
+- 现象：批量拉报表时报 quota exceeded。
+- 根因：并发拉取 + 频繁轮询超出 `display-video` 配额。
+- 解法：
+  - 用 `dv360_get_quota(advertiser_id)` 查询当前余量。
+  - 控制并发 ≤ 8、轮询间隔 ≥ 15s。
+  - 对瞬时 429 做指数退避重试（见 2.6 Go 引擎的 `withRetry`）。
