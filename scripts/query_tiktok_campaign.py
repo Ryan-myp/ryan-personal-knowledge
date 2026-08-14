@@ -155,14 +155,14 @@ def main():
 
     access_token = tiktok_config.get('access_token', '')
     bc_id = tiktok_config.get('bc_id', '')
-    # 从 BC ID 推导 advertiser_id (TikTok BC ID 和 advertiser_id 通常是同一个值)
-    advertiser_id = bc_id
 
     if not access_token:
         print("\n[ERROR] TikTok access_token not configured")
         sys.exit(1)
 
     campaign_id = sys.argv[1]
+    # 支持传入 advertiser_id 作为第二个参数
+    advertiser_id = sys.argv[2] if len(sys.argv) > 2 else bc_id
 
     print(f"\n[TIKTOK QUERY] Campaign: {campaign_id}")
     print(f"   BC ID: {bc_id}")
