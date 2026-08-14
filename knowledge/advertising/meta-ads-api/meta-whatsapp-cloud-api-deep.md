@@ -1279,6 +1279,20 @@ curl -X POST "https://graph.facebook.com/v20.0/105118562409026/contacts" \
 | Webhook | 收包/验签/分发 | `webhook_verify` / `webhook_handler` |
 | 会话 | 窗口状态机 | `SessionWindowTracker` |
 
+**与既有脚本（scripts/meta_api.py / ad_platform_api.py）的衔接：**
+
+已有脚本已沉淀一批会话侧方法，WhatsApp Cloud API 通道在其上做正交扩展，命名风格完全一致：
+
+| 既有方法（会话/广告侧） | 职责 | 本通道扩展 |
+|---|---|---|
+| `meta_list_conversation_templates` | 列出会话模板 | `meta_list_whatsapp_templates`（WABA 模板库） |
+| `meta_create_conversation_template` | 创建会话模板 | `meta_create_whatsapp_template`（组件化模板） |
+| `meta_list_standard_conversions` | 列出标准转化事件 | `meta_send_whatsapp_message`（落地消息） |
+| `meta_send_message` | 发送站内消息 | `meta_send_whatsapp_message` / `meta_send_whatsapp_template` |
+| `meta_list_webhooks` | 管理 Webhook | `webhook_verify` / `webhook_handler`（验签+分发） |
+
+> 设计约定：**会话/广告侧方法负责业务编排，WhatsApp 通道方法只做 Cloud API 的薄封装**（发消息、传模板、传媒体、查号码），两者在业务层组合，不互相侵入，便于后续把通道替换为 On-Premises 或第三方 BSP 时只改薄封装层。
+
 **统一客户端（与 meta_api.py 对齐的请求封装）：**
 
 ```python
@@ -1597,8 +1611,8 @@ def meta_upload_whatsapp_media(
         )
 
 
-def send_media_by_id(self, phone_number_id, to, media_id, media_type):
-    """用已上传的 media_id 发送媒体消息"""
+def meta_send_whatsapp_media(self, phone_number_id, to, media_id, media_type):
+    """用已上传的 media_id 发送媒体消息（image/video/audio/document/sticker）"""
     payload = {
         "messaging_product": "whatsapp",
         "to": to,
@@ -1607,6 +1621,9 @@ def send_media_by_id(self, phone_number_id, to, media_id, media_type):
     }
     return self._graph_request("POST", f"{phone_number_id}/messages",
                                json_body=payload)
+
+    # 兼容旧命名：send_media_by_id = meta_send_whatsapp_media
+    send_media_by_id = meta_send_whatsapp_media
 
 
 def send_document(self, phone_number_id, to, link, filename):
@@ -1647,8 +1664,8 @@ def media_full_flow(self, phone_number_id, customer_wa_id, local_img):
         phone_number_id, local_img, "image/jpeg")
     media_id = up["id"]
     # ② 用 media_id 发给客户
-    self.send_media_by_id(phone_number_id, customer_wa_id,
-                          media_id, "image")
+    self.meta_send_whatsapp_media(phone_number_id, customer_wa_id,
+                                  media_id, "image")
     # ③ 收到客户回传图片（Webhook 已给出 image.id）
     inbound_id = "some_inbound_media_id"
     self.download_inbound_media(inbound_id, "/data/media/inbound_1.jpg")

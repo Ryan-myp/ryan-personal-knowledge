@@ -2199,3 +2199,305 @@ jobs:
 - 渲染农场全挂 → 降级：用"直传原始高规格素材"兜底，暂停策略适配
 ```
 
+---
+
+## 四、常见问题与排查
+
+### 4.1 问题速查表
+
+| 问题 | 现象 | 可能原因 | 定位思路 |
+| --- | --- | --- | --- |
+| 上传后校验失败 | asset 卡在 VALIDATING/REJECTED | 尺寸/时长/格式不合规 | 看 lint checks 细节 |
+| 渲染产物黑屏 | 视频打开黑屏/无画面 | pix_fmt 非 yuv420p / 编码格式 | 检查编码参数 |
+| 竖屏视频被裁 | 内容被切断 | 误用 crop 而非 extend/smart | 看策略路由 |
+| 平台上传失败 | connector 报错 | 凭证/限流/账户权限 | 看对端错误码 |
+| 疲劳误判 | 低估/高估疲劳 | 基线窗口/频次口径 | 复查疲劳计算窗口 |
+| AI 素材质量差 | 商品变形/违规 | prompt 约束不足/无 QC | 看 QC 结果与负例 |
+| DCO 不收敛 | 有效组合少 | 组合过多/样本不足 | 校验组合数与预算 |
+| HTML5 白屏 | 预览/线上白屏 | 资源外链/点击跳转缺失 | 检查 ZIP 与 clickTag |
+
+### 4.2 问题 1：素材审核不通过
+
+**现象**：素材规格参数都符合，但审核拒绝。
+**排查路径**：
+
+```
+1. 查 lint checks：逐项是否 pass，定位到具体规则（尺寸/文字比例/时长）
+2. 查合规检查：违禁词/敏感图/水印/合规
+3. 查地区规则：不同 locale 有不同的合规要求
+4. 查规格版本：是否规格配置过期（平台更新了约束）
+5. 若为图片：确认文字占比 ("text_ratio") 未超限
+6. 若为视频：确认时长与音频合规、无第三方水印
+```
+
+**常见隐藏原因：**
+- 图片含不可见水印（Alpha 通道）；*检测原图 Alpha 数据*；
+- 文案含绝对化用语（"最""第一""无副作用"）；
+- 视频首帧为黑屏/过于抖动，被自动审核判定低质。
+
+### 4.3 问题 2：渲染产物与平台拒绝不符
+
+**现象**：系统渲染"成功"，但对端平台拒绝（如文件过大/尺寸不精确）。
+**排查步骤**：
+
+```bash
+# 1. 复核最终文件真实参数（渲染后必须，不要只信渲染前）
+ffprobe -v error -show_entries stream=width,height,r_frame_rate \
+        -show_entries format_format,format_size,format_duration \
+        -of json final.mp4
+
+# 2. 检查是否漏掉 faststart（部分平台要求）
+ffmpeg -v trace -i final.mp4 -f null - 2>&1 | grep -i "moov" | head
+
+# 3. 检查横竖屏/纵横比是否精确（四舍五入误差）
+python -c "import sys; w,h=1920,1080; print(f'{w/h:.6f}')"
+```
+
+**应对：** 渲染后强制 re-lint（见 3.4.2），把"最终参数"作为发布前置条件。
+
+### 4.4 问题 3：AI 生成一致性差（商品变形）
+
+**现象**：文生图/图生图结果与产品不一致，logo/形态崩坏。
+**根因**：
+- prompt 仅靠文字描述，未锚定产品特征；
+- 生成后 QC 相似度过低未拦截；
+- 负向提示词缺失（变形/多指/水印）。
+**对策**：
+
+```
+1. 用 ControlNet / IP-Adapter / LoRA 锚定产品身份
+2. QC 加"产品一致性与比"（特征嵌入余弦相似度）
+3. 充分利用负向提示词
+4. 对高危类目（服饰/食品/3C）优先人工抽检
+```
+
+### 4.5 问题 4：竖屏视频误裁 / 内容丢失
+
+**现象**：转 9:16 后人物/产品被切成两半。
+**根因**：无脑 center crop 而非 smart reframe / extend。
+**排查**：
+
+```
+1. 查看策略路由结果（strategy 字段）
+2. 检查显著性/对象检测是否开启（per-frame focus）
+3. 若已 extend：检查背景填充是否穿帮（接缝）
+4. 检查窗口平滑（EMA/oneEuro）是否造成主体出框
+```
+
+**建议**：人物/产品为主的主素材，竖屏化默认走 smart_reframe；简单图可用 saliency crop；纯氛围可 blur extend。
+
+### 4.6 问题 5：DCO 无有效组合 / 不收敛
+
+**现象**：组合全部被规则拦截，或长期无显著优化。
+**排查**：
+
+```
+1. 规则引擎：是否存在过严规则全挡（临时放开排查）
+2. 组合规模：单组是否 >10-15 个（需分批）
+3. 样本量：单组合曝光是否达到学习下限（min_impression）
+4. 奖励口径：CTR/转化是否准确回传（reward 埋点）
+5. 频控/预算兜底：是否强制走了 fallback
+```
+
+**关键教训**：DCO 不是"开箱即收敛"。组合太多、规则过死、样本不足都会让学习失效。先小步快跑再放量。
+
+### 4.7 问题 6：HTML5 白屏 / 点击无效
+
+**现象**：DV360 HTML5 创意投放白屏，或点击不跳转。
+**排查**：
+
+```
+1. 资源是否全部内联（禁外链图片/字体/CDN）
+2. index.html 是否含 meta charset / 正确入口
+3. clickTag 是否实现（window.clickTag + exit）
+4. ZIP 结构是否符合（index.html + assets/）
+5. 是否有广告拦截/iframe 跨域问题
+```
+
+```html
+<!-- 正确点击跳转最低实现 -->
+<script>
+  document.getElementById('cta').onclick = function () {
+    window.open(window.clickTag || 'https://fallback.example.com', '_blank');
+  };
+</script>
+```
+
+### 4.8 问题 7：平台限流 / 大批量上传失败
+
+**现象**：批量上传对端批量 429 / 失败。
+**应对框架**：
+
+```
+1. 令牌桶 / 账户级并发控制（每账户并发上限）
+2. 分批 + 指数退避重试（429 → 退避）
+3. 异步 job 接口优先（平台支持时）
+4. 上传前本地预处理压缩（减少体积）
+5. 失败落队列重放，避免阻塞主流程
+```
+
+```python
+def throttled_upload(pool):
+    # 账户级并发限制 + 指数退避
+    sem = threading.Semaphore(max_concurrency_per_account)
+    for task in tasks:
+        sem.acquire()
+        def do():
+            try:
+                upload(task)
+            except RateLimitError as e:
+                time.sleep(backoff(e.retry_after))
+                upload(task)
+            finally:
+                sem.release()
+        Thread(target=do).start()
+```
+
+### 4.9 排查工具集
+
+| 工具 | 用途 |
+| --- | --- |
+| ffprobe | 探测媒体参数 |
+| ffmpeg | 转码/裁剪/合成/extend |
+| HTML validation | 校验 HTML5 入口/编码 |
+| saliency/mask 工具 | 显著图调试 |
+| 平台 API 报错码查询 | 对端错误语义 |
+| 版本/diff | 对比素材前后差异 |
+
+```bash
+# 体检一个素材的完整技术参数
+ffprobe -v error -show_format -print_format json asset.mp4
+```
+
+---
+
+## 五、自测题
+
+### 5.1 知识自测
+
+**问题 1**：主流平台竖屏短视频的推荐分辨率与纵横比分别是什么？（Meta Reels 与 TikTok In-Feed）
+<details>
+<summary>查看答案</summary>
+
+Meta Reels：推荐 1080x1920（9:16），时长 10-90s，30-60fps；
+TikTok In-Feed Video：推荐 1080x1920（9:16），时长 5-60s（推荐 5-15s 或 21-34s），30/60fps。
+都是竖屏 9:16。注意各自安全区（Reels 右侧 UI、TikTok 底部信息条/右侧头像）。
+</details>
+
+**问题 2**：如何判断一个创意是否"疲劳"？给出至少两个信号和一个量化方法。
+<details>
+<summary>查看答案</summary>
+
+信号 1：CTR/CVR 随频次（Frequency）上升出现明显衰减转折；
+信号 2：近 7 天指标相对之前 7 天基线显著下降。
+量化：换算疲劳指数 Fatigue Index（CTR 衰减比、CPA 膨胀比、频次风险加权），分 HEALTHY/WATCH/REFRESH/KILL 四级，REFRESH 换素材/降频，KILL 强制下线。
+</details>
+
+**问题 3**：单素材多平台适配为什么优先考虑"重排/ extend / smart reframe"而不是"简单 center crop"？
+<details>
+<summary>查看答案</summary>
+
+无脑 center crop 会丢弃画幅两侧/上下内容，可能切断主体（人脸/产品/文字）造成语义损失与事故。
+extend 通过模糊/镜像/AI 填充补足画幅不丢内容；smart reframe 逐帧跟踪主体并动态裁剪窗口。
+选择策略：氛围/纯背景可 blur extend；人物/产品主素材默认 smart_reframe；简单图可用 saliency crop。
+所有适配都要"内容无损优先 + 语义安全 + 可回溯"。
+</details>
+
+**问题 4**：统一 DCO 与平台内建 Dynamic Creative 有什么区别？为什么有时要用自建 DCO？
+<details>
+<summary>查看答案</summary>
+
+平台内建 DC（Meta/TikTok/Google）：学习在平台闭环、数据充分，但黑盒、无法干预具体组合、无法跨平台迁移。
+统一 DCO：元素池 + 组合矩阵 + 规则引擎 + Bandit，决策在自建层，可控、可迁移、可审计。
+自建适合：需要合规硬约束、要精确控制组合、要跨平台统一、要沉淀自有点击/转化学习资产，或不信任平台黑盒优化。
+</details>
+
+**问题 5**：AI 生成流水线如何保证产出质量与品牌一致性？
+<details>
+<summary>查看答案</summary>
+
+1. 结构化 prompt + 变体枚举；2. ControlNet/IP-Adapter/LoRA 锚定产品身份；3. QC 闸门（解码、视觉相似度、安全、文字溢出、品牌一致性）；4. 术语表做本地化一致；5. 数据闭环把表现反馈给生成（反思式提示）；6. 高危类目强人工抽检。
+</details>
+
+---
+
+## 附录 A：跨平台创意综合演练案例
+
+### A.1 场景
+
+某 DTC 美妆品牌 summer-sale 活动。主素材：
+- 1 张 16:9 产品主视觉（1920x1080, JPG）
+- 1 条 16:9 产品视频（1920x1080, 30s, H.264, 8Mbps）
+需要铺开 Meta / TikTok / Google / DV360 四平台。
+
+### A.2 预期产出矩阵
+
+| 平台 | 版位 | 规格 | 来源策略 |
+| --- | --- | --- | --- |
+| Meta | Feed | 1080x1350 (4:5) 视频 | 主视频 crop/smart |
+| Meta | Reels | 1080x1920 (9:16) 视频 | smart reframe |
+| Meta | Stories | 1080x1920 图片/视频 | extend + 模板 |
+| TikTok | In-Feed | 1080x1920 视频 | smart reframe + 3s hook |
+| Google | RSA | 标题15+描述4 | LLM 文案 |
+| Google | YouTube | 1920x1080 视频 | 主视频直接 |
+| Google | Discover | 1200x628 图 | crop + 文案 |
+| DV360 | HTML5 | 300x250 / 728x90 | 模板合成 |
+| DV360 | VAST | 1280x720 视频 | 主视频转码+VAST轴 |
+
+### A.3 运行批次（简化 JSON 触发）
+
+```json
+{
+  "batch_id": "summer-sale-launch",
+  "product_id": "SKU-9910",
+  "locales": ["en-US", "es-MX", "de-DE"],
+  "platforms": ["meta", "tiktok", "google", "dv360"],
+  "stages": ["copy", "media", "localize", "render", "lint", "publish"],
+  "parallel": 16,
+  "assets": {
+    "master_image": "s3://ucms/masters/sku9910-hero-16x9.jpg",
+    "master_video": "s3://ucms/masters/sku9910-30s-16x9.mp4"
+  }
+}
+```
+
+### A.4 结果检查清单
+
+```text
+[ ] 所有规格产物已生成且 re-lint 通过
+[ ] 各平台 creative 均在 SYSTEM 后台可见（review/live）
+[ ] 竖屏视频主体未切断（人工抽查关键帧）
+[ ] 文案本地化到位、无绝对化用语
+[ ] HTML5 clickTag 可跳转
+[ ] 指标回传链路打通（能看到创意级 CTR/CPA）
+[ ] DCO 组合已就绪，看到种子曝光与学习启动
+[ ] 监控无渲染失败 / 上传失败告警
+```
+
+### A.5 复盘与指标
+
+| 指标 | 目标 |
+| --- | --- |
+| 平均 CTR | ≥ 2.0%（竖屏视频） |
+| 视频完播率 | ≥ 35% |
+| CVR | ≥ 4% |
+| ROAS | ≥ 2.5 |
+| 一次创意疲劳周期 | ≥ 7 天 |
+
+---
+
+## 附录 B：知识库交叉引用
+
+| 相关主题 | 建议阅读 |
+| --- | --- |
+| 创意自动化（AI 裁剪/组合/测试） | 创意自动化公开文档 |
+| DCO 与创意组合优化 | 动态创意优化文档 |
+| 素材审核与合规 | 创意审核流程文档 |
+| 多平台投放策略 | 跨平台策略文档 |
+| 归因与跨渠道 | 跨平台归因文档 |
+| 创意指标与疲劳 | 创意性能分析文档 |
+
+---
+
+> 本文档为《跨平台创意资产管理自动化系统》深度实战指南，覆盖规格矩阵、资产统一管理、AI 生成流水线、
+> DCO、性能分析与迭代闭环，以及生产落地与排障。数值以 2026-08 采集为准，请以平台官方最新规范与系统规格配置中心为准。

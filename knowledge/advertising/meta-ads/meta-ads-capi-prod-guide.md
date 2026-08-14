@@ -186,7 +186,7 @@ Business Manager (BM)
 
 **重要的生产认知**：即使没有任何可匹配的用户身份信息（email/phone），只要发送 `client_ip_address` + `client_user_agent` + `fbp`/`fbc`，Meta 也会尽力做**浏览器指纹级匹配**（browser fingerprint），这是 CAPI 匹配链的兜底层级。
 
-### 1.9 单事件与批量端点概览
+### 1.8 单事件与批量端点概览
 
 CAPI 既支持单事件，也支持批量：
 

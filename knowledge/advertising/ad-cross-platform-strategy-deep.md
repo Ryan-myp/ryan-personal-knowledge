@@ -2703,3 +2703,202 @@ DV360 效果异常排查
   追踪丢   → 像素/CAPI/窗口/隐私/落地页（4.9）
   组织乱   → 统筹人/统一口径/文档化/权限（4.10）
 ```
+
+---
+
+## 五、自测题
+
+> 以下 5 道题覆盖本文档的核心知识点。先独立作答，再展开 `<details>` 查看答案与解析。
+
+### 题目 1：平台定位矩阵
+
+某 DTC 3C 品牌，新品上市 3 个月，目标是**最快建立认知并起量**，团队人手有限（小团队）。请根据平台定位矩阵选择**优先级最高的两个平台组合**，并说明理由。
+
+<details>
+<summary>查看答案</summary>
+
+**推荐：TikTok + Google Search**
+
+解析：
+- 新品上市需要"认知 + 收割"双管齐下。
+- **TikTok**（短视频注意力引擎）负责快速种草、建立认知，Spark Ads 用达人放大，是新品冷启动 T0 阶段的性价比之选。
+- **Google Search**（搜索意图引擎）负责承接——当用户在 TikTok 看到后去搜索品牌/品类词，Google Search 精准收割。
+- 为什么不优先 Meta？小团队人力有限，一次上太多平台反而学不深；Meta 放在第二阶段（再营销放大）更合适。
+- 为什么 DV360 放最后？企业级品牌平台对预算/人力门槛高，小团队冷启动阶段不匹配。
+
+**决策逻辑回顾：** 预算跟随用户心智——先满足"认知(种草)"与"意图(收割)"两大缺口，再做兴趣(meta)与品牌(dv360)扩展。
+
+</details>
+
+### 题目 2：能力雷达图与平台选型
+
+有一家连锁餐饮（多门店品牌），预算充足，目标是**季度性大促期间最大化本地触达 + 品牌声量**，同时希望**企业级频控与品牌安全控制**。请基于能力雷达图（触达/数据/自动化/创意/转化）选择最合适的平台，并说明它在你评估维度里的优劣势。
+
+<details>
+<summary>查看答案</summary>
+
+**推荐：DV360（为主）+ Google（搜索/本地收割为辅）**
+
+解析（对照雷达图五维）：
+- **触达规模 9**：DV360 依托全互联网 + CTV/本地库存，本地大促触达广，符合"最大化本地触达"。
+- **数据精度 7**：需要你上传第一方客群/门店数据，精度取决于数据质量；本地定向（线下/POI）能力强。
+- **自动化 7**：非全黑盒，但可用脚本化 + pacing 控制节奏，符合"企业级控制"需求。
+- **创意灵活性 6**：品牌展示创意受品牌安全/格式限制较多，正好匹配"需要品牌安全控制"的目标。
+- **转化追踪 6**：DV360 强在媒体层归因与 view-through，直接转化追踪弱于 Search，故辅以 Google 搜索做本地收割。
+
+**关键：** 品牌大促场景下，"控制力 + 触达 + 品牌安全"比"直接转化追踪"更重要，这正是 DV360 的用武之地。
+
+</details>
+
+### 题目 3：预算分配策略
+
+某零售品牌月预算 $80K，处于成熟期，追求**均衡的全漏斗增长（品牌 + 效果兼顾）**。你手上四个平台的 7 天 ROAS 分别为：Google 4.0、Meta 2.8、TikTok 2.2、DV360 1.6。请给出分配建议，并说明为什么**不能只按当前 ROAS 线性分配**。
+
+<details>
+<summary>查看答案</summary>
+
+**建议分配（示意，需 + 学习预算）：**
+
+```
+原则：ROAS 越高给越多预算 + 预留学习预算 + 品牌考虑
+
+  Google  40%  ($32K)  效果主力，ROAS 高
+  Meta    28%  ($22.4K) 再营销+增长，ROAS 中高
+  TikTok  17%  ($13.6K) 新品种草，新客价值
+  DV360   10%  ($8K)    品牌覆盖，ROAS 低但不可用 ROAS 衡量
+  学习池   5%  ($4K)    新平台/新素材探索
+```
+
+**为什么不能纯按 ROAS 线性分配：**
+1. **边际回报递减**：ROAS 高的平台给越多预算，其边际回报会下降（投入回报没用那么多）。线性分配忽略了饱和效应。
+2. **不同平台的 KPI 属性不同**：DV360 是品牌平台，用 ROAS 衡量不公平——它的价值在 Reach/品牌提升，不能只用转化 ROAS 评估。
+3. **品牌投资有"滞后/溢出"**：品牌广告对后续搜索/转化的提升不会被"当期 ROAS"体现。
+4. **新客价值**：TikTok 当期 ROAS 低，但它带来更高新客占比，长期价值被低估。
+5. **学习预算**：不预留探索预算会错过未来的增长机会。
+
+**正确做法：** 用等边际原则 + 增量 ROAS（排除自然转化）+ 品牌价值加权的综合效用模型，而非单一 ROAS 线性分配。
+
+</details>
+
+### 题目 4：平台迁移
+
+一个已经稳定投放 Google（Search+PMax）的团队，想扩展第二个平台。请说明**选择 Meta 还是 TikTok 的理由、扩展前必须做好的基建改造、以及如何验证第二个平台是"真增量"而非"蚕食"。**
+
+<details>
+<summary>查看答案</summary>
+
+**选 Meta 还是 TikTok：**
+- 若目标是从"搜索收割型"补足"兴趣/再营销型" → 先 **Meta**（与搜索互补：搜索解决"我要买"，Meta 解决"我在刷/启发/再营销"）。
+- 若目标是**新品种草 + 年轻客群新客**，且产品适合短视频 → 先 **TikTok**（Spark Ads 达人种草，新客占比高）。
+- 通用扩展顺序（3.2.2）：从效果端(Google)出发，先补"漏斗另一端/互补端"，即 Meta(兴趣/再营销) 或抖音式种草(TikTok)，而不是再加一个同质搜索平台。
+
+**扩展前必做基建改造（Checklist，3.2.4）：**
+- 统一 UTM 规范（utm_source/medium/campaign/content/term）
+- 统一事件表（events_staging，四平台事件归一）
+- 统一归因口径（决定决策用 last click 还是 data-driven/MMM）
+- 第一方 ID 打通（至少 cookie/device 级，做跨平台去重）
+- 跨平台频控方案（CM360/ADH 或自建）
+- 统一创意库（记录素材各平台版本）
+- 统一报表看板 + 告警
+
+**如何验证"真增量"（3.2.3）：**
+- 先记录 Google 单平台 4 周基线。
+- 把人群/地域随机分 Test（开 Meta）+ Control（仅 Google）。
+- 跑 2~4 周，对比增量转化 = Test − Control（排除自然波动）。
+- 计算增量 ROAS = 增量收入 / 新平台花费。
+- 若增量 ROAS > 阈值（如 1.5x）→ 正式扩展；若 ≈0 或 <1 → 该平台只是在"抢原有漏斗"，暂停。
+- 用 t 检验判断差异显著性（见代码示例 incrementality_test）。
+
+</details>
+
+### 题目 5：组织架构适配
+
+一个 3 人小团队想同时运营 Google、Meta、TikTok 三个平台，并希望未来扩展 DV360。请给出**组织/运营策略建议**（自动化依赖、DV360 处理、数据基建、分工），并说明从中团队演进到大团队的关键触发条件。
+
+<details>
+<summary>查看答案</summary>
+
+**3 人小团队策略：**
+- **自动化扛量**：Google 用 PMax、Meta 用 Advantage+、TikTok 用 Smart+/Spark——让平台算法负责绝大部分优化，人只做策略与异常处理。
+- **分工**（3.3.2）：创始人/负责人做战略+审批；1~2 人做投放运营（三平台都管，靠自动化）；数据分析用托管工具（Supermetrics→Sheets/BigQuery）。
+- **DV360 处理**：小团队**不自营**，交给媒介代理商（PubMatic/Google Partner）负责，或用企业级账号 + 外包，避免高人力门槛。
+- **数据基建**：即便人少，也要尽早建统一 UTM + metrics 表（哪怕用 Sheet），否则后期返工成本高。
+- **预算分配**：固定比例 + 周度人工校准，不搞复杂算法（小团队没必要）。
+
+**关键触发条件（3.3.7 演进到中/大团队）：**
+- 月预算跨过门槛（如 $50K+）→ 需要专职投放。
+- 平台数量 ≥ 3 → 需要统一归因 + 跨渠道统筹人（否则各自为政）。
+- 开始做品牌/上 DV360 → 需要程序化团队或媒介人员。
+- 数据复杂度高/需要 MMM/增量实验 → 需要数据科学角色。
+- 合规/审计需求上升 → 需要合规岗位。
+
+**演进路线：** 小(一人多岗+自动化+外包DV360) → 中(渠道Owner+数据分析师+统一归因+DV360入局) → 大(平台专家专职+数据科学团队+品牌程序化团队+中台)。
+
+</details>
+
+---
+
+## 附录 A：本文关键方法论汇总
+
+```
+跨平台战略六大方法论（速览）
+
+  1. 平台定位矩阵  —— 搜索(Google)/社交(Meta)/短视频(TikTok)/程序化品牌(DV360)
+  2. 能力雷达图    —— 触达/数据/自动化/创意/转化 五维 0-10 打分
+  3. 预算分配模型  —— 目标×行业×地区 + 等边际原则 + 学习预算
+  4. 增量验证      —— Geo/人群增量测试，区分"真增量 vs 蚕食"
+  5. 统一数据底座  —— UTM + 统一事件表 + 统一归因口径
+  6. 组织适配      —— 小/中/大团队的平台运营与分工策略
+```
+
+## 附录 B：四平台产品/术语速查表
+
+| 关键词 | 所属平台 | 说明 |
+|--------|---------|------|
+| H-iMax | Google | 高意图 Performance Max |
+| PMax | Google | Performance Max 全自动广告 |
+| SA360 | Google | Search Ads 360 搜索管理 |
+| CM360 | Google | Campaign Manager 360 媒体管理/归因 |
+| ADH | Google | Ads Data Hub 数据整合 |
+| Advantage+ | Meta | 全自动投放系列 |
+| CAPI | Meta | Conversions API 服务端转化 |
+| Reels | Meta | Instagram 短视频版位 |
+| Spark Ads | TikTok | 达人原生内容推广 |
+| Smart+ | TikTok | 全自动化投放 |
+| TikTok Shop | TikTok | 站内电商闭环 |
+| DV360 | Google | Display & Video 360 DSP |
+| DSP | DV360 | Demand-Side Platform |
+| PD | DV360 | Programmatic Direct 程序化直采 |
+
+## 附录 C：公式速查表
+
+| 公式 | 含义 |
+|------|------|
+| ROAS = Revenue / Spend | 投入产出比 |
+| CPA = Spend / Conversions | 单转化成本 |
+| CTR = Clicks / Impressions | 点击率 |
+| CVR = Conversions / Clicks | 转化率 |
+| Ad Rank = 出价 × 质量分 | Google 搜索排序 |
+| 增量 ROAS = 增量收入 / 新平台花费 | 排除自然转化的真实 ROAS |
+| 饱和函数 f(spend)=α·spend/(1+β·spend) | MM 饱和/递减回报 |
+| Adstock(t)=γ·raw(t)+(1-γ)·Adstock(t-1) | 广告记忆延续 |
+| 等边际条件 MU_i/Cost_i 相等 | 预算最优分配 |
+
+## 参考与延伸阅读
+
+本文是跨平台战略顶层文档，建议结合以下平台深度文档阅读：
+
+- **Google Ads**：`google-ads/` 目录下的 Search Masterclass / PMax / Architecture 文档
+- **Meta Ads**：`meta-ads/` 目录下的 Advantage+ / Targeting / Optimization 文档
+- **TikTok Ads**：`tiktok-ads/` 目录下的 In-Feed/Spark / Shop / Optimization 文档
+- **DV360**：`dv360/` 目录下的 Architecture / Programmatic / Measurement 文档
+- **跨渠道优化**：`cross-channel-optimization/cross-channel-budget-allocation-deep.md`
+- **归因**：`ad-cross-platform-attribution-deep.md`、`ad-attribution-shapley-markov-deep.md`
+- **隐私合规**：`privacy-first-party-data.md`、`capi-deep-dive.md`
+- **API 实操**：`google-ads-api/`、`meta-ads-api/`、`tiktok-ads-api/` 下的 API 文档
+
+> 更多平台级深度文档见 `google-ads/`、`meta-ads/`、`tiktok-ads/`、`dv360/` 目录，以及 `cross-channel-optimization/` 下的跨渠道专题。
+
+---
+
+*文档结束。本文试图把"跨平台广告战略"从选型、原理、预算、迁移到组织适配全链路讲透，供实战团队直接参考落地。*
