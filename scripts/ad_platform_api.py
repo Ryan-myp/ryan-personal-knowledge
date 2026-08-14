@@ -947,14 +947,10 @@ class AdPlatformClient:
         """列出 Campaign Budget"""
         try:
             client = self.get_client('google')
-            cbs = client.get_service('CampaignBudgetService')
-            # 使用 search_stream 列出所有 budget
-            from google.ads.googleads.v25.resources.campaign_budget import CampaignBudget
-            budgets = []
-            # 直接查询所有 budget
-            query = f"SELECT campaign_budget.id, campaign_budget.name, campaign_budget.amount_micros FROM campaign_budget LIMIT {limit}"
             gaia = client.get_service('GoogleAdsService')
+            query = f"SELECT campaign_budget.id, campaign_budget.name, campaign_budget.amount_micros FROM campaign_budget LIMIT {limit}"
             response = gaia.search(customer_id=customer_id, query=query)
+            budgets = []
             for result in response:
                 budgets.append({
                     'id': result.campaign_budget.id,
@@ -1010,19 +1006,45 @@ class AdPlatformClient:
             return {'error': str(e)[:100]}
     
     def google_create_campaign(self, customer_id: str, name: str, **kwargs) -> Dict:
-        """创建广告系列 - 需要先创建 CampaignBudget"""
+        """创建广告系列 - 先创建独立 Budget，再创建 Campaign"""
         try:
-            client = self.get_client('google')
+            from google.ads.googleads.client import GoogleAdsClient
+            from google.oauth2.credentials import Credentials
+            
+            # 创建新鲜 client（避免缓存的过期 token）
+            creds = self.credentials.get('google', {})
+            credentials = Credentials(
+                token=None,
+                refresh_token=creds.get('refresh_token', ''),
+                client_id=creds.get('client_id', ''),
+                client_secret=creds.get('client_secret', ''),
+                token_uri="https://oauth2.googleapis.com/token"
+            )
+            client = GoogleAdsClient(
+                credentials=credentials,
+                developer_token=creds.get('developer_token', ''),
+                login_customer_id=creds.get('login_customer_id', ''),
+                use_proto_plus=True
+            )
+            
             campaign_service = client.get_service('CampaignService')
             
-            # 先创建 Budget
+            # 创建独立 Budget（不共享）
             budget_name = f"Budget_{name}_{int(time.time())}"
-            budget_amount = kwargs.get('daily_budget', 100) * 1000000  # 转成 micros
-            budget_result = self.google_create_campaign_budget(customer_id, budget_name, budget_amount)
-            if 'error' in budget_result:
-                return {'error': f'创建 budget 失败: {budget_result["error"]}'}
+            budget_amount = kwargs.get('daily_budget', 100) * 1000000
+            budget_op = client.get_type("CampaignBudgetOperation")
+            budget = budget_op.create
+            budget.name = budget_name
+            budget.amount_micros = budget_amount
+            budget.delivery_method = client.enums.BudgetDeliveryMethodEnum.STANDARD
+            budget_result = client.get_service('CampaignBudgetService').mutate_campaign_budgets(
+                customer_id=customer_id, operations=[budget_op]
+            )
+            budget_id = budget_result.results[0].resource_name.split('/')[-1]
             
-            budget_id = budget_result.get('id')
+            # 获取 bidding strategy
+            bs_list = self.google_list_bidding_strategies(customer_id, limit=1)
+            bidding_strategy = bs_list[0].get('resource_name', '') if bs_list else ''
             
             # 创建 Campaign
             campaign_operation = client.get_type("CampaignOperation")
@@ -1030,17 +1052,10 @@ class AdPlatformClient:
             campaign.name = name
             campaign.status = client.enums.CampaignStatusEnum.PAUSED
             campaign.advertising_channel_type = client.enums.AdvertisingChannelTypeEnum.SEARCH
-            # campaign.testing_status = 2  # DUAL_A_B_TEST (optional)
-            # campaign.ad_network_targets = [1, 2]  # SEARCH, GOOGLE_SEARCH (optional)
             campaign.campaign_budget = f"customers/{customer_id}/campaignBudgets/{budget_id}"
-            # 使用第一个可用的 bidding strategy
-            # 使用第一个可用的 bidding strategy
-            try:
-                bs_list = self.google_list_bidding_strategies(customer_id, limit=1)
-                if bs_list and len(bs_list) > 0:
-                    campaign.bidding_strategy = bs_list[0].get('resource_name', '')
-            except Exception:
-                pass
+            if bidding_strategy:
+                campaign.bidding_strategy = bidding_strategy
+            campaign.contains_eu_political_advertising = client.enums.EuPoliticalAdvertisingStatusEnum.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING
             
             response = campaign_service.mutate_campaigns(
                 customer_id=customer_id,
@@ -1049,7 +1064,7 @@ class AdPlatformClient:
             result = response.results[0]
             return {'resource_name': result.resource_name, 'campaign_id': result.campaign.id, 'budget_id': budget_id}
         except Exception as e:
-            return {'error': str(e)[:100]}
+            return {'error': str(e)[:150]}
     
     def google_update_campaign(self, customer_id: str, campaign_id: str, **kwargs) -> Dict:
         """更新广告系列"""
