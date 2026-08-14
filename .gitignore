@@ -44,3 +44,5 @@ config/*.json
 logs/*.json
 logs/*.log
 
+
+config/dv360_service_account.json
