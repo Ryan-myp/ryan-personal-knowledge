@@ -1034,7 +1034,7 @@ class AdPlatformClient:
     def google_list_keywords(self, customer_id: str, campaign_id: str = None, **kwargs) -> List[Dict]:
         """列出关键词 - 使用 Google Ads API"""
         client = self.get_client('google_ads')
-        ga_service = client.get_service("KeywordServiceApi")
+        ga_service = client.get_service("KeywordService")
         query = f"SELECT keyword.id, keyword.text, keyword.match_type, campaign.id as campaign_id FROM keyword"
         if campaign_id:
             query += f" WHERE campaign.id = {campaign_id}"
