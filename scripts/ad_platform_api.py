@@ -217,9 +217,13 @@ class AdPlatformClient:
             'page_size': kwargs.get('page_size', 20)
         }
         url = 'https://business-api.tiktok.com/open_api/v1.3/ad/get/'
-        resp = requests.get(url, headers=headers, params=params, timeout=30)
-        data = resp.json().get('data', {})
-        return data.get('list', []) if isinstance(data, dict) else []
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=30)
+            data = resp.json().get('data', {})
+            return data.get('list', []) if isinstance(data, dict) else []
+        except Exception as e:
+            print(f"[TikTok] list_ads error: {e}")
+            return []
     
     def tiktok_create_ad(self, adgroup_id: str, name: str, **kwargs) -> Dict:
         """创建广告创意"""
