@@ -395,7 +395,11 @@ class AdPlatformClient:
         resp = requests.get(url, params=params, timeout=30)
         data = resp.json()
         # 响应可能是 dict（包含 data 字段）或 list
-        return data.get('data', []) if isinstance(data, dict) else data
+        if isinstance(data, dict):
+            return data.get('data', [])
+        elif isinstance(data, list):
+            return data
+        return []
     
     def meta_get_campaign(self, campaign_id: str, **kwargs) -> Dict:
         """获取广告系列详情 - 使用 Graph API 直接调用"""
