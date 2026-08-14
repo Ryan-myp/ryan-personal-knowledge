@@ -1108,7 +1108,3 @@ DV360 配额矩阵：**Partner 配额 / 项目配额 / 每分钟并发**。实�
 **现象**：CM360 里的 campaignId 与 DV360 的 campaignId 混存一列，join 出错的「幽灵数据」。
 **根因**：同一「营销活动」在两个系统有**两套 ID**，且时常并不同名。
 **修复**：在数据仓库建 **id_map** 表维护 `(platform, external_id, entity_type, local_id)`，**唯一主键 = (platform, external_id, entity_type)**；所有跨系统 join 走它，不留硬编码映射。
-
-CHUNK_END_B_7K2M
-EOF
-wc -l '/Users/yanping.ma/ryan-personal-knowledge/knowledge/advertising/dv360/dv360-integration-patterns-deep.md'

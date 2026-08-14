@@ -1382,3 +1382,444 @@ DV360 的 create/update 对 IO 和 LineItem 是**全量提交**：你提交的 d
 </details>
 
 ---
+## 六、媒体购买工程化：幂等、重试、并发与监控
+
+媒体购买不只是"调几个 API"，把创建/暂停/调价/巡检做成**可靠的生产系统**，需要解决幂等、重试、配额、并发四个工程问题。这一章把这些机制讲透，并给出可直接复用的代码骨架。
+
+### 6.1 幂等设计（Idempotency）
+
+广告 API 最大的工程痛点是：**网络超时后你根本不知道请求到底成功了没有**。重发会重复创建，不重发会漏建。DV360 的 create 是 upsert 语义，这天然给了我们幂等机会——**用稳定的实体名做幂等键**。
+
+```
+重试策略（安全版）：
+  1) 为每个要创建的 LineItem 生成稳定名称（如 "双11-爆发-华东-20261110-v1"）
+  2) 创建前先 list 查重：若已存在同名实体 → 直接复用，不重复创建
+  3) 超时重试时也走"先查再建"，而不是盲目再 POST
+```
+
+```python
+# -*- coding: utf-8 -*-
+import hashlib
+import time
+
+
+class IdempotentCreator:
+    """基于稳定命名 + 先查再建的幂等创建器。"""
+
+    def __init__(self, platform, advertiser_id):
+        self.p = platform
+        self.advertiser_id = advertiser_id
+
+    def stable_name(self, prefix: str, params: dict) -> str:
+        """把业务参数 hash 进名称，同名即同配置，天然去重。"""
+        digest = hashlib.sha1(
+            repr(sorted(params.items())).encode("utf-8")
+        ).hexdigest()[:8]
+        return f"{prefix}-{digest}"
+
+    def create_once(self, prefix: str, params: dict) -> dict:
+        name = self.stable_name(prefix, params)
+        # 先查再建：list 现有 LineItem，找同名
+        existing = self.p.dv360_list_line_items(self.advertiser_id)
+        for li in existing:
+            if li.get("name") == name:
+                return {"created": False, "lineItem": li}
+        # 幂等重试：最多 3 次，指数退避
+        for attempt in range(3):
+            try:
+                li = self.p.dv360_create_line_item(
+                    self.advertiser_id, name, **params
+                )
+                return {"created": True, "lineItem": li}
+            except Exception as e:
+                if attempt == 2:
+                    raise
+                time.sleep(2 ** attempt)
+```
+
+> **注意幂等键的边界**：名称长度有限制（DV360 对 name 有长度上限），hash 截断要控制长度；且名称一旦改（如优化师手动改名），幂等键就失效，所以要**统一命名规范并写进 SOP**。
+
+### 6.2 重试与指数退避
+
+网络抖动、配额超限（429）、5xx 都是常态。重试策略必须**区分错误类型**：
+
+| HTTP 状态 | 含义 | 是否重试 | 退避策略 |
+|-----------|------|----------|----------|
+| 200 | 成功 | 否 | —— |
+| 400 | 参数错误 | **否**（重试无意义） | 记录并人工修 |
+| 401/403 | 认证/权限 | 否（需先换 token/授权） | 刷新 token 后重试 1 次 |
+| 404 | 不存在 | 否 | 核对 ID |
+| 409 | 冲突 | 有限重试 | 短退避 |
+| 429 | 配额超限 | 是 | 指数退避 + jitter |
+| 5xx | 服务端 | 是 | 指数退避 |
+
+Go 版带 jitter 的退避重试（生产常用，避免"惊群"式同时重试）：
+
+```go
+package mediabuying
+
+import (
+	"errors"
+	"math/rand"
+	"time"
+)
+
+// Retryable 判断错误是否可重试。
+func Retryable(err error) bool {
+	// 真实实现应解析 API 返回的 status code；
+	// 这里以错误字符串做示意。
+	msg := err.Error()
+	for _, s := range []string{"429", "500", "503", "timeout", "deadline"} {
+		if contains(msg, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// RetryWithBackoff 指数退避 + 随机 jitter 重试。
+func RetryWithBackoff(attempts int, base time.Duration, fn func() error) error {
+	var err error
+	for i := 0; i < attempts; i++ {
+		err = fn()
+		if err == nil {
+			return nil
+		}
+		if !Retryable(err) {
+			return err
+		}
+		wait := base * time.Duration(1<<uint(i))
+		wait += time.Duration(rand.Int63n(int64(wait / 4))) // jitter ±25%
+		time.Sleep(wait)
+	}
+	return err
+}
+
+func contains(s, sub string) bool {
+	return len(s) >= len(sub) && (s == sub || len(sub) == 0 || indexOf(s, sub) >= 0)
+}
+
+func indexOf(s, sub string) int {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
+}
+
+// 使用：err := RetryWithBackoff(5, 200*time.Millisecond, createFn)
+```
+
+### 6.3 并发与配额管理
+
+大促批量创建时，DV360 对 advertiser 有并发/配额限制（`dv360_get_quota`、`dv360_list_rate_limits`、`dv360_list_usage_stats` 可用于观测）。工程上两个原则：
+
+1. **有界并发**：用 worker pool 限制同时进行的写请求数（建议 8~16）。
+2. **读多写少**：查询类（list/get）可以放宽并发，写操作收紧。
+
+```go
+package mediabuying
+
+import "sync"
+
+// WorkerPool 有界并发执行器：限制同时执行的写操作数量。
+type WorkerPool struct {
+	sem chan struct{}
+	wg  sync.WaitGroup
+}
+
+func NewWorkerPool(limit int) *WorkerPool {
+	return &WorkerPool{sem: make(chan struct{}, limit)}
+}
+
+func (p *WorkerPool) Run(fn func()) {
+	p.wg.Add(1)
+	go func() {
+		defer p.wg.Done()
+		p.sem <- struct{}{}   // 获取令牌，满则阻塞
+		defer func() { <-p.sem }() // 释放令牌
+		fn()
+	}()
+}
+
+func (p *WorkerPool) Wait() { p.wg.Wait() }
+
+// 使用：
+// pool := NewWorkerPool(8)
+// for _, li := range lineItems {
+//     li := li
+//     pool.Run(func() { createWithBackoff(li) })
+// }
+// pool.Wait()
+```
+
+### 6.4 监控与告警体系
+
+把媒体购买状态暴露成指标，接进 Prometheus/Grafana。核心指标：
+
+| 指标 | 类型 | 告警规则 |
+|------|------|----------|
+| pacing_rate | gauge | <0.8 少投告警 / >1.2 超支告警 |
+| spend_micros | gauge | 相对预期偏差 >30% |
+| creative_pending_count | gauge | >0 且临近排期告警 |
+| api_429_count | counter | 突增告警（重试风暴） |
+| io_paused_count | gauge | 非预期 PAUSED 告警 |
+| flight_gap | gauge | 相邻 flight 空窗检测 |
+
+Go 的简单指标采集器（不依赖三方库的朴素实现）：
+
+```go
+package mediabuying
+
+import (
+	"log"
+	"sync/atomic"
+)
+
+type Metrics struct {
+	pacingRate  atomic.Value // float64
+	spendMicros atomic.Int64
+	api429      atomic.Int64
+	ioPaused    atomic.Int64
+}
+
+func (m *Metrics) SetPacingRate(v float64) { m.pacingRate.Store(v) }
+func (m *Metrics) Inc429()                 { m.api429.Add(1) }
+func (m *Metrics) SetIOPaused(n int64)     { m.ioPaused.Store(n) }
+
+func (m *Metrics) Snapshot() map[string]any {
+	return map[string]any{
+		"pacingRate":  m.pacingRate.Load(),
+		"spendMicros": m.spendMicros.Load(),
+		"api429":      m.api429.Load(),
+		"ioPaused":    m.ioPaused.Load(),
+	}
+}
+
+func (m *Metrics) Log(intervalLabel string) {
+	log.Printf("[metrics %s] %v", intervalLabel, m.Snapshot())
+}
+```
+
+### 6.5 媒体购买编排器的整体架构
+
+把 6.1~6.4 组合成一张生产架构图：
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│                     Media Buying Orchestrator                    │
+├────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  编排层 Orchestrator                                             │
+│  ├── 幂等创建器 (IdempotentCreator)         6.1                  │
+│  ├── 重试器 (RetryWithBackoff)              6.2                  │
+│  ├── 有界并发池 (WorkerPool)                6.3                  │
+│  └── 状态机 (IO/LineItem 生命周期)          2.1                  │
+│                                                                  │
+│  策略层 Policy                                                     │
+│  ├── BidTuner 出价调优（pacing 联动）        2.6                  │
+│  ├── 预算拆分器（IO/LineItem/flight）        3.2 / 3.3            │
+│  └── 创意审批守卫 AttachApprovedCreative     2.5                  │
+│                                                                  │
+│  数据层 Data                                                       │
+│  ├── 报表拉取 dv360_get_report / get_report                       │
+│  ├── pacing 采集 dv360_get_pacing_rate                           │
+│  └── 指标 Metrics（Prometheus 对接）         6.4                  │
+│                                                                  │
+│  接入层：ad_platform_api.py（45+ dv360_* 门面）                  │
+│           dv360_api.py（领域封装） / dv360_client.py（HTTP 底座）│
+└────────────────────────────────────────────────────────────────┘
+```
+
+> 这套分层在真实团队里就是"媒介自动化平台"的雏形：编排层管流程，策略层管调优，数据层管观测，接入层复用三份脚本。
+
+### 6.6 上线 SOP：从开发到投产
+
+| 阶段 | 动作 | 验证标准 |
+|------|------|----------|
+| 沙箱验证 | 用测试 advertiser 建 IO/LineItem/创意 | 全链路可创建、可暂停、可恢复 |
+| 幂等压测 | 同配置重复创建 10 次 | 只产生 1 个实体 |
+| 重试压测 | 注入 429/5xx 模拟 | 指数退避后成功，无重复实体 |
+| 配额评估 | 读 quota / usage stats | 批量规模 < 配额 80% |
+| 灰度上线 | 先 3 个 LineItem 真实投放 | pacing 正常、报表口径正确 |
+| 全量 | 跑双11 配置 | 监控告警就位、预算安全阀生效 |
+
+---
+## 七、附录：单位换算、字段速查与参考
+
+### 7.1 金额单位换算（micros）
+
+DV360 所有金额字段都以 **micros（微单位）** 表示。换算关系与常见速查：
+
+```
+1 元  = 1_000_000 micros
+1 千  = 1_000_000_000 micros
+1 万  = 10_000_000_000 micros
+1 100万 = 1_000_000_000_000 micros
+1 1000万 = 10_000_000_000_000 micros
+```
+
+工具函数（避免手算出错）：
+
+```python
+def to_micros(amount: float) -> int:
+    """业务金额(元) → DV360 微单位。1 元 = 1e6 micros。"""
+    return int(amount * 1_000_000)
+
+def from_micros(micros: int) -> float:
+    """DV360 微单位 → 元。"""
+    return micros / 1_000_000
+
+def cpm_local_to_micros(cpm_local: float) -> int:
+    """CPM(每千次展示 元) → fixedBid.amountMicros。
+       CPM 本身就是"每千次"，金额字段仍为 micros。"""
+    return to_micros(cpm_local)
+```
+
+快速对照表：
+
+| 业务金额 | micros |
+|----------|--------|
+| ¥1 | 1,000,000 |
+| ¥1,000 | 1,000,000,000 |
+| ¥10,000 | 10,000,000,000 |
+| ¥100,000 | 100,000,000,000 |
+| ¥1,000,000（100万） | 1,000,000,000,000 |
+| ¥2,000,000（200万） | 2,000,000,000,000 |
+
+> 大促配置里最容易犯的错：把"万元"当"元"算，或少写/多写一个零，导致预算与预期差 10 倍。**提交前一律用 `from_micros` 回读一遍。**
+
+### 7.2 时间单位换算
+
+DV360 的实体时间字段分两种：
+
+| 字段 | 类型 | 示例 | 说明 |
+|------|------|------|------|
+| `schedule.startDate/endDate` | `Date{year,month,day}` | `{2026,11,10}` | 按天 |
+| 历史/内部时间戳 | micros（微妙） | `1731175200000000` | 微秒级 epoch |
+| `targeting.frequencyCap.timeUnit` | 枚举 | `TIME_UNIT_DAY` | 频控时间单位 |
+
+某个 `Date` 结构转 ISO / 判断窗口：
+
+```python
+import datetime
+
+def date_to_iso(d: dict) -> str:
+    return f"{d['year']:04d}-{d['month']:02d}-{d['day']:02d}"
+
+def window_contains(d: dict, now: datetime.date) -> bool:
+    iso = date_to_iso(d)
+    ref = datetime.date.fromisoformat(iso)
+    return ref == now  # 示意：真实判断用 >= start 且 <= end
+```
+
+### 7.3 媒体购买关键字段速查表
+
+**IO 层**：
+
+| 字段 | 作用 | 取值范围/说明 |
+|------|------|---------------|
+| `name` | 名称（幂等键） | 建议用稳定命名规范 |
+| `advertiserId` | 归属广告主 | Decimal 字符串 |
+| `entityStatus` | 状态 | ACTIVE / PAUSED / DRAFT |
+| `budget.budgetUnit` | 预算单位 | BUDGET_UNIT_CURRENCY |
+| `budget.maxAmountMicros` | 总预算上限 | 微单位 |
+| `budget.currencyCode` | 币种 | 须与 advertiser 一致 |
+| `budget.pacingType` | pacing | EVEN / ASAP |
+| `schedule.startDate/endDate` | 排期窗口 | Date 结构 |
+| `frequencyCap` | 频控 | 跨 LineItem |
+
+**LineItem 层**：
+
+| 字段 | 作用 | 说明 |
+|------|------|------|
+| `type` | 大类 | DISPLAY / VIDEO / AUDIO |
+| `lineItemType` | 精确类型 | LINE_ITEM_TYPE_DISPLAY_DEFAULT 等 |
+| `integrationType` | 库存接入 | INVENTORY_SOURCE_OPEN_DIRECT 等 |
+| `flight.*` | 排期 | planned / effective 两组 |
+| `budget.*` | 预算 | 同 IO 结构 |
+| `bidStrategy.type` | 出价策略 | FIXED_CPM / TARGET_CPA 等 |
+| `bidStrategy.fixedBid` | 固定出价 | CPM micros |
+| `targeting.*` | 定向 | geo/audience/device/inventory |
+| `creativeIds` | 关联创意 | 审批通过后可挂 |
+| `measurement.*` | 归因 | floodlight 配置 |
+
+### 7.4 全文档方法索引（对齐项目脚本）
+
+下面是本文引用到的、来自项目脚本的方法汇总，方便检索：
+
+**`dv360_api.py`（DV360Client）**：
+
+```
+广告主管理:   list_advertisers / get_advertiser
+广告系列:     list_campaigns / get_campaign / create_campaign / update_campaign
+              pause_campaign / resume_campaign / delete_campaign
+IO:           list_insertion_orders / create_insertion_order
+LineItem:     list_line_items / create_line_item
+创意:         list_creatives / create_creative
+报表:         get_report
+官方选项:     get_transaction_type_options / get_bid_strategy_options
+              get_creative_format_options / get_targeting_dimension_options
+```
+
+**`dv360_client.py`（底层 HTTP 客户端）**：
+
+```
+认证:         refresh_access_token（JWT→AccessToken）
+查询:         get_partner / list_partners / list_advertisers / get_advertiser
+              list_campaigns / get_campaign / list_line_items
+```
+
+**`ad_platform_api.py`（45+ dv360_* 门面）**：
+
+```
+账户:         dv360_list_advertisers / dv360_get_advertiser / dv360_auth
+              dv360_get_customer / dv360_list_customers / dv360_validate_credentials
+LineItem:     dv360_create_line_item / dv360_update_line_item / dv360_get_line_item
+              dv360_list_line_items / dv360_pause_line_item / dv360_resume_line_item
+              dv360_delete_line_item / dv360_batch_update_line_items
+排期/预算:     dv360_list_flights / dv360_create / dv360_get_pacing_rate
+              dv360_list_budget_allocations / dv360_update_budget_allocation
+              dv360_list_insertion_order_flexibility
+创意:         dv360_list_creatives / dv360_create_creative / dv360_list_creative_templates
+IO/交易:      dv360_list_insertion_orders / dv360_list_proposals
+              dv360_accept_proposal / dv360_reject_proposal
+报表:         dv360_get_report / dv360_sync_report / dv360_get_report_metrics
+              dv360_list_report_dimensions / dv360_list_report_metrics
+辅助:         dv360_list_currency_options / dv360_list_time_zones / dv360_get_quota
+              dv360_list_rate_limits / dv360_list_usage_stats / dv360_list_platforms
+              dv360_list_device_types / dv360_list_ad_formats / dv360_list_geo_locations
+```
+
+### 7.5 与其它 dv360 文档的互补关系（一文读懂该读哪篇）
+
+| 场景 | 建议先读 | 再配合本文 |
+|------|----------|------------|
+| 想懂平台架构与 RTB 生态 | `dv360-architecture-deep.md` | 媒体购买层级与预算链（本文一） |
+| 想懂策略与优化 | `dv360-optimization-deep.md` | 预算分配 / pacing / flight（本文 2.3-2.4） |
+| 想懂 API 端点 | `dv360-marketing-api-deep.md` | 全量 upsert 语义与 read-modify-write（本文 2.1.3） |
+| 想懂创意与品牌安全 | `dv360-creative-brand-safety-deep.md` | 创意审批守卫与挂载（本文 2.5） |
+| 想懂归因 | `dv360-measurement-attribution-deep.md` | floodlight 挂接（本文 2.2.2） |
+| **想交付媒体购买系统** | **本文** | 工程化：幂等/重试/并发/监控（本文六） |
+
+### 7.6 参考与延伸阅读
+
+- Google Display & Video 360 API 官方文档：https://developers.google.com/display-video/api
+- InsertionOrder 资源参考：https://developers.google.com/display-video/api/reference/rest/v1/insertionOrders
+- LineItem 资源参考：https://developers.google.com/display-video/api/reference/rest/v1/lineItems
+- Creative 资源参考：https://developers.google.com/display-video/api/reference/rest/v1/creatives
+- 报告 API：https://developers.google.com/display-video/api/guides/reports
+- 本知识库其它 DV360 文档：见 `knowledge/advertising/dv360/` 目录
+
+---
+
+## 八、结语
+
+媒体购买（Media Buying）在 DV360 里本质上是一套**"结构化花钱"**系统：用 IO 框住合同与总盘子，用 LineItem 决定买什么、怎么买、花多少钱，用 Flight 切时间与阶段，用 Creative 提供素材并过审批，用 Bid 决定单次出价，用 Pacing / Budget 决定钱的节奏与上限。真正把它们串成可靠生产系统，还需要幂等、重试、并发、监控这些工程能力。
+
+希望本文能帮你从"能调几个 API"进阶到"能设计和运维一整套媒体购买自动化平台"。对照同目录其它 DV360 文档，本文专注在**媒体购买全流程**这条最具体、最容易被踩坑的链路。
+
+---
+
+*本文为 Ryan 个人知识库深度文档。所有 API 方法名均对齐项目 `scripts/dv360_api.py`、`scripts/dv360_client.py`、`scripts/ad_platform_api.py`。*

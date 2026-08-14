@@ -782,3 +782,64 @@ PMP fill 低的"第一顺位排查项"是什么？为什么 90% 的新手都栽�
 ```
 
 > 延伸阅读：本文与 `dv360-architecture-deep.md`（交易类型总览）、`dv360-dfp-deep.md`（GAM/SDC 对接）互补；本文聚焦买家侧 PMP 落地全流程，前两文聚焦架构与卖买对接。姊妹篇 `dv360-05-programmatic-guaranteed`（如已存在）覆盖 PG 保量流程，可对照阅读。
+## 附：PMP 执行 CheckList 与脚本速查
+
+### 上线前 CheckList（逐项打勾）
+
+| 项 | 动作 | 对应脚本 / 口查 |
+|----|------|-----------------|
+| 1 | 确认卖方与 Exchange 匹配 | `dv360_list_sellers()` + Exchange 配置 |
+| 2 | 收到并审查提案（deal 名、floor、位次、时间窗） | `dv360_list_proposals(ad_id)` |
+| 3 | 接受提案 | `dv360_accept_proposal(proposal_id)` |
+| 4 | 创建 IO（预算、排期） | `dv360_list_insertion_orders()` 确认/创建 |
+| 5 | 创建 LineItem 并绑定 deal_id | `dv360_create_line_item(..., deal_id=...)` |
+| 6 | 设置出价 ≥ floor（推荐 OCPM） | `dv360_update_line_item(bidding_strategy=...)` |
+| 7 | 定向只写"需求侧"维度 | `dv360_update_line_item(targeting=...)` |
+| 8 | 校验量级预估 | `dv360_list_reach_forecasts(ad_id)` |
+| 9 | 配兜底公开竞价 + 统一频控 | `dv360_update_line_item(...)` |
+| 10 | 备案 deal 到期日历 | 记录 proposal end date |
+
+### 运行中监控 CheckList（每日/每周）
+
+| 指标 | 阈值预警 | 响应 |
+|------|---------|------|
+| Fill/Delivery | < 80% 预算消耗 | 查出价 vs floor、定向、库存 |
+| AVERAGE_CPM | 高于 floor 过多或 Budget 超 | 分析竞拍价，谈判或限量 |
+| Viewability | < 60% | 换位次 / 与卖方沟通广告位质量 |
+| GIVT | 异常升高 | 品牌安全校验，反馈卖方 |
+| deal 状态 | 出现 EXPIRED/PAUSED | 续约 / fallback |
+
+### 脚本调用序列（推荐顺序）
+
+```
+1  client.dv360_list_sellers()
+2  client.dv360_list_proposals(ad_id)
+3  client.dv360_accept_proposal(pid) | dv360_reject_proposal(pid)
+4  client.dv360_create_line_item(ad_id, name, type='DISPLAY')
+5  client.dv360_update_line_item(ad_id, li, deal_id=..., bidding=..., targeting=...)
+6  client.dv360_list_reach_forecasts(ad_id)
+7  client.dv360_get_report(ad_id, dimensions=['LINE_ITEM','DEAL'],
+                           metrics=['IMPRESSIONS','SPEND','MEDIA_COST','AVERAGE_CPM'],
+                           date_range={...})
+8  client.dv360_pause_line_item(ad_id, li) | dv360_resume_line_item(ad_id, li)
+```
+
+### 字段对照：Proposal(提案) 关键字段解读
+
+| 字段 | 含义 | 审查要点 |
+|------|------|---------|
+| `proposalId` | 提案唯一 ID | 后续 accept/reject 的主键 |
+| `dealId` | 实际 deal 的 ID | 绑定 LineItem 时使用 |
+| `dealType` | `PRIVATE_MARKETPLACE` / `PREFERRED_DEAL` | 判定竞拍 vs 先到先得 |
+| `floorPrice` | 底价（微元） | 核心谈判对象 |
+| `startDate` / `endDate` | deal 生效时间窗 | 记录到期日历 |
+| `status` | 提案状态 | 判断是否可接受/是否失效 |
+| `floorCurrencyCode` | 币种 | 跨国时注意汇率 |
+
+### 思考题延伸（进阶）
+
+1. 如果媒体同时开了 3 个 PMP（同一块库存、不同 floor），你会怎么选？为什么要看"有效库存"而非"名义库存"？
+2. OCPM 出价如何在"赢量"与"不高于 LTV"之间自动平衡 deal floor？模型把 floor 当约束还是当信号？
+3. 二手价格拍卖下，为何"受邀买方越多，成交价越贴近 floor 相近值"？这对你的出价策略有什么启示？
+
+> 提示：进阶题不做标准答案，「抓住 floor ↔ 拍卖 ↔ 受邀竞争之间的三角关系」是理解 PMP 经济学的钥匙。

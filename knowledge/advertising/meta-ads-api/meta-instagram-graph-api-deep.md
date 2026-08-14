@@ -1285,3 +1285,518 @@ Instagram Graph API 能力地图
   权限底座: instagram_basic + manage_comments + manage_insights
             + content_publish + pages_*  Page 绑定 + 公开账号
 ```
+
+---
+
+## 三、生产环境实战
+
+> 本部分为全文另一重点：把第二部分的原理解析落地成可复用的 `meta_*` 工具封装、批量发帖流水线、Webhooks 接入与监控。以下方法均沿用 `scripts/ad_platform_api.py` / `scripts/meta_api.py` 已有的命名风格（`meta_list_accounts`、`meta_query_insights`、`meta_list_audiences` 等），并对 Instagram 专项做了合理扩展。
+
+### 3.1 客户端初始化与环境变量
+
+```python
+# scripts/ig_graph_api.py —— IG Graph API 客户端顶层封装
+import os, time, random, requests
+
+BASE = "https://graph.facebook.com/v19.0"
+
+
+class IGClient:
+    def __init__(self, access_token=None, app_id=None, app_secret=None):
+        self.token = access_token or os.environ.get("META_ACCESS_TOKEN")
+        self.app_id = app_id or os.environ.get("META_APP_ID")
+        self.app_secret = app_secret or os.environ.get("META_APP_SECRET")
+        self.session = requests.Session()
+
+    def get_token(self) -> str:
+        return self.token
+
+    def request(self, method, endpoint, params=None, **kw):
+        params = dict(params or {})
+        params.setdefault("access_token", self.get_token())
+        url = f"{BASE}/{endpoint.lstrip('/')}"
+        resp = self.session.request(method, url, params=params, **kw)
+        return resp
+```
+
+**环境变量组织（.env）：**
+```bash
+export META_APP_ID=123456789
+export META_APP_SECRET=supersecret
+export META_LONG_TOKEN=EAAX...x           # User 或 System User 长期 token
+export IG_USER_ID=17841400000000000
+export PAGE_ID=102290129340398
+```
+
+> 生产严禁把 token 硬编码进代码；用系统用户苏 token + 密钥管理服务（Vault/KMS），并开启 `appsecret_proof`。
+
+### 3.2 账号发现：meta_list_instagram_accounts
+
+运行时**自动发现**当前 token 下能管理的 IG 账号，避免硬编码 IGID：
+
+```python
+def meta_list_instagram_accounts(self, **kwargs) -> list:
+    """返回 [{page_id, page_name, ig_user_id, page_access_token}]"""
+    token = self.get_token()
+    page_resp = self.request(
+        "GET", "me/accounts",
+        params={"access_token": token,
+                "fields": "id,name,instagram_business_account,access_token"}).json()
+    out = []
+    for page in page_resp.get("data", []):
+        ig = page.get("instagram_business_account") or {}
+        if ig.get("id"):
+            out.append({
+                "page_id": page.get("id"),
+                "page_name": page.get("name"),
+                "ig_user_id": ig.get("id"),
+                "page_access_token": page.get("access_token"),
+            })
+    return out
+```
+
+> 用途：运营同学换了绑定 Page，程序无需改配置即可发现新 IG 账号；也可在**启动时自检**确认账号仍可访问。
+
+### 3.3 读取账号资料：meta_get_ig_user
+
+```python
+def meta_get_ig_user(self, ig_user_id: str, **kwargs) -> dict:
+    """读取 IG 商业账号资料（含粉丝数/媒体数）。"""
+    return self.request(
+        "GET", ig_user_id,
+        params={"access_token": self.get_token(),
+                "fields": "id,username,followers_count,follows_count,"
+                          "media_count,biography,name,website,ig_id",
+                **kwargs}).json()
+```
+
+### 3.4 读取媒体列表：meta_list_ig_media
+
+分页拉取某 IG 账号的全部已发布媒体：
+
+```python
+def meta_list_ig_media(self, ig_user_id: str,
+                       fields: str = "id,caption,media_type,permalink,"
+                                     "media_url,timestamp,like_count,"
+                                     "comments_count",
+                       limit: int = 50, **kwargs) -> list:
+    """分页读取账号下所有媒体。对应 GET /{ig-user-id}/media"""
+    token, result, after = self.get_token(), [], None
+    while True:
+        params = {"access_token": token, "fields": fields, "limit": limit,
+                  **kwargs}
+        if after:
+            params["after"] = after
+        body = self.request("GET", f"{ig_user_id}/media",
+                            params=params).json()
+        result.extend(body.get("data", []))
+        nxt = (body.get("paging") or {}).get("next")
+        if not nxt:
+            break
+        after = (body.get("paging") or {}).get("cursors", {}).get("after")
+    return result
+```
+
+### 3.5 自动发帖：meta_create_ig_post
+
+一个"创建 → 轮询 → 发布"的完整流水线封装。**这是 IG 专项最核心的工具**。
+
+```python
+def meta_create_ig_post(self, ig_user_id: str, image_url: str,
+                        caption: str = "", media_type: str = "IMAGE",
+                        video_url: str = None, **kwargs) -> dict:
+    """创建并发布一条 IG 帖子（图片/视频）。返回 {media_id, permalink}。"""
+    token = self.get_token()
+
+    # 1) 创建容器
+    container_params = {
+        "access_token": token,
+        "image_url": image_url,
+        "caption": caption,
+        **kwargs,
+    }
+    if media_type.upper() == "VIDEO":
+        container_params.update({"media_type": "VIDEO",
+                                 "video_url": video_url})
+    elif media_type.upper() == "REELS":
+        container_params.update({"media_type": "REELS",
+                                 "video_url": video_url})
+    container = self.request(
+        "POST", f"{ig_user_id}/media",
+        params=container_params).json()
+    container_id = container.get("id")
+    if not container_id:
+        raise RuntimeError(f"容器创建失败: {container}")
+
+    # 2) 轮询处理完成
+    self.wait_container_ready(container_id)
+
+    # 3) 发布
+    published = self.request(
+        "POST", container_id,
+        params={"access_token": token}).json()
+    media_id = published.get("id")
+
+    # 4) 取回 permalink
+    detail = self.request(
+        "GET", media_id,
+        params={"access_token": token,
+                "fields": "id,permalink,timestamp"}).json()
+    return {"media_id": media_id,
+            "permalink": detail.get("permalink"),
+            "timestamp": detail.get("timestamp")}
+```
+
+**批量内容日历发帖：**
+```python
+def meta_publish_content_calendar(self, ig_user_id: str, entries: list):
+    """entries: [{image_url, caption, publish_at}]
+    逐个创建容器；到时间发布（这里简化：立即逐条发布 + 节流）。"""
+    results = []
+    for entry in entries:
+        r = self.meta_create_ig_post(
+            ig_user_id, entry["image_url"], entry.get("caption", ""))
+        results.append(r)
+        time.sleep(3)  # 节流，避免瞬时打满容器/发布配额
+    return results
+```
+
+> **生产时序要点回顾**：容器创建后不代表发布；务必等 `FINISHED`；容器 24h 过期；同一资源 URL 避免短时间重复创建。
+
+### 3.6 评论区运营：meta_list_ig_comments / meta_reply_ig_comment / 删除隐藏
+
+**读取媒体评论（可指定 only_unseen 增量）：**
+```python
+def meta_list_ig_comments(self, media_id: str,
+                          fields: str = "id,text,username,timestamp",
+                          limit: int = 100, **kwargs) -> list:
+    token, result, after = self.get_token(), [], None
+    while True:
+        params = {"access_token": token, "fields": fields, "limit": limit,
+                  **kwargs}
+        if after:
+            params["after"] = after
+        body = self.request("GET", f"{media_id}/comments",
+                            params=params).json()
+        result.extend(body.get("data", []))
+        nxt = (body.get("paging") or {}).get("next")
+        if not nxt:
+            break
+        after = (body.get("paging") or {}).get("cursors", {}).get("after")
+    return result
+```
+
+**智能回复（含关键词路由）:**
+```python
+import re
+
+KEYWORD_REPLIES = {
+    "价格": "您好，这款统一零售价 899 元，今天下单包邮～",
+    "发货": "感谢关注！48 小时内发货，单号会发到您的私信。",
+    "折扣": "本周会员日 8 折，点我主页链接领券哦。",
+}
+
+def meta_auto_reply_comments(self, media_id: str, dry_run: bool = True) -> int:
+    """读取某条媒体评论，命中关键词则自动回复。dry_run 只打印。"""
+    replied = 0
+    comments = self.meta_list_ig_comments(media_id)
+    for c in comments:
+        text = (c.get("text") or "").lower()
+        for kw, reply in KEYWORD_REPLIES.items():
+            if kw in text:
+                if not dry_run:
+                    self.meta_reply_ig_comment(c["id"], reply)
+                print(f"[reply]{c.get('username')}:{text} -> {reply}")
+                replied += 1
+                break
+    return replied
+```
+
+> ⚠️ 自动回复需**非常克制**：评论回复有频率限制，且过于机械会被判定为 spam。生产建议：关键词回复只面向"提问类"（价格/发货），其余转人工。
+
+**删除 / 隐藏评论：**
+```python
+def meta_delete_ig_comment(self, comment_id: str, **kwargs) -> dict:
+    """删除自己发出的评论/回复。"""
+    return self.request("DELETE", comment_id,
+                        params={"access_token": self.get_token(),
+                                **kwargs}).json()
+
+def meta_hide_ig_comment(self, comment_id: str, hide: bool = True) -> dict:
+    """隐藏/取消隐藏他人评论。"""
+    return self.request(
+        "POST", comment_id,
+        params={"access_token": self.get_token(),
+                "is_hidden": "true" if hide else "false"}).json()
+```
+
+### 3.7 Hashtag 运营：meta_search_ig_hashtags + 聚合
+
+**搜索 + 聚合封装：**
+```python
+def meta_search_ig_hashtags(self, ig_user_id: str, q: str, **kwargs) -> list:
+    return self.request(
+        "GET", f"{ig_user_id}/hashtags_search",
+        params={"access_token": self.get_token(), "q": q,
+                "user_id": ig_user_id, **kwargs}).json().get("data", [])
+
+def meta_aggregate_ig_hashtag(self, hashtag_id: str, ig_user_id: str,
+                              kind: str = "top_media", **kwargs) -> list:
+    """聚合 hashtag 下 top/recent 媒体（权限受限，见 2.9）。"""
+    fields = "id,caption,media_type,permalink,like_count,comments_count," \
+             "media_url,timestamp"
+    token, result, after = self.get_token(), [], None
+    while True:
+        params = {"access_token": token, "user_id": ig_user_id,
+                  "fields": fields, **kwargs}
+        if after:
+            params["after"] = after
+        body = self.request("GET", f"{hashtag_id}/{kind}",
+                            params=params).json()
+        result.extend(body.get("data", []))
+        nxt = (body.get("paging") or {}).get("next")
+        if not nxt:
+            break
+        after = (body.get("paging") or {}).get("cursors", {}).get("after")
+    return result
+```
+
+**业务场景：品牌话题监控日报**
+```python
+def meta_build_hashtag_daily_report(self, ig_user_id: str, tag_text: str):
+    tags = self.meta_search_ig_hashtags(ig_user_id, tag_text)
+    if not tags:
+        return {"tag": tag_text, "error": "hashtag not found"}
+    tid = tags[0]["id"]
+    top = self.meta_aggregate_ig_hashtag(tid, ig_user_id, "top_media")
+    return {
+        "tag": tag_text, "hashtag_id": tid,
+        "top_media_count": len(top),
+        "total_likes": sum(m.get("like_count", 0) for m in top),
+        "total_comments": sum(m.get("comments_count", 0) for m in top),
+    }
+```
+
+### 3.8 洞察报表：meta_get_ig_insights / meta_list_ig_media_insights
+
+**账号级周报：**
+```python
+import datetime
+
+def meta_get_ig_insights(self, ig_user_id: str,
+                         metric: str = "reach,impressions,profile_views,follower_count",
+                         period: str = "day", since: str = None,
+                         until: str = None, **kwargs) -> dict:
+    return self.request(
+        "GET", f"{ig_user_id}/insights",
+        params={"access_token": self.get_token(), "metric": metric,
+                "period": period,
+                **({"since": since} if since else {}),
+                **({"until": until} if until else {}),
+                **kwargs}).json()
+
+def meta_ig_weekly_report(self, ig_user_id: str, days: int = 7) -> dict:
+    until = datetime.date.today().isoformat()
+    since = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+    raw = self.meta_get_ig_insights(ig_user_id, since=since, until=until)
+    by_metric = {}
+    for item in raw.get("data", []):
+        name = item.get("name")
+        vals = [v["value"] for v in item.get("values", []) if isinstance(v.get("value"), (int, float))]
+        by_metric[name] = {
+            "min": min(vals) if vals else None,
+            "max": max(vals) if vals else None,
+            "sum": sum(vals),
+            "avg": round(sum(vals) / len(vals), 2) if vals else None,
+        }
+    return {"ig_user_id": ig_user_id, "since": since, "until": until,
+            "metrics": by_metric}
+```
+
+**媒体级单条洞察：**
+```python
+def meta_list_ig_media_insights(self, media_id: str,
+                                metric: str = "engagement,saved,video_views,"
+                                              "reach,impressions,shares",
+                                **kwargs) -> dict:
+    return self.request(
+        "GET", f"{media_id}/insights",
+        params={"access_token": self.get_token(), "metric": metric,
+                **kwargs}).json()
+```
+
+**点赞榜/互动榜（找爆款）：**
+```python
+def meta_top_performing_media(self, ig_user_id: str, top_k: int = 10) -> list:
+    medias = self.meta_list_ig_media(ig_user_id,
+        fields="id,caption,permalink,like_count,comments_count,timestamp")
+    # 综合互动分
+    def score(m):
+        return (m.get("like_count", 0) or 0) + (m.get("comments_count", 0) or 0) * 3
+    medias.sort(key=score, reverse=True)
+    return medias[:top_k]
+```
+
+### 3.9 关注关系运营：meta_list_ig_followers 与关注工具
+
+```python
+def meta_list_ig_followers(self, ig_user_id: str,
+                           fields: str = "id,username", limit: int = 100,
+                           **kwargs) -> list:
+    token, result, after = self.get_token(), [], None
+    while True:
+        params = {"access_token": token, "fields": fields, "limit": limit,
+                  **kwargs}
+        if after:
+            params["after"] = after
+        body = self.request("GET", f"{ig_user_id}/followers",
+                            params=params).json()
+        result.extend(body.get("data", []))
+        nxt = (body.get("paging") or {}).get("next")
+        if not nxt:
+            break
+        after = (body.get("paging") or {}).get("cursors", {}).get("after")
+    return result
+
+def meta_ig_follow_user(self, ig_user_id: str, target_user_id: str,
+                        action: str = "follow", **kwargs) -> dict:
+    url = f"{ig_user_id}/follows"
+    params = {"access_token": self.get_token(), "user_id": target_user_id,
+              **kwargs}
+    if action == "unfollow":
+        return self.request("DELETE", url, params=params).json()
+    return self.request("POST", url, params=params).json()
+```
+
+> ⚠️ 关注/取关必须**严格限速** + 白名单人工审批。建议把"关注动作"做成队列 + 阈值熔断：
+```python
+FOLLOW_HOURLY_LIMIT = 5  # 示例：每小时最多关注 5 个
+
+def meta_safe_follow(self, ig_user_id, target_user_id):
+    # 伪代码：读取最近 1h 关注次数，超限则拒绝
+    recent = self._count_recent_follows(ig_user_id, hours=1)
+    if recent >= FOLLOW_HOURLY_LIMIT:
+        raise RuntimeError("follow rate limit hit, please wait")
+    return self.meta_ig_follow_user(ig_user_id, target_user_id, "follow")
+```
+
+### 3.10 Webhooks 生产接入（实际回调服务）
+
+一个可部署的 IG Webhooks 接收服务（Flask），含签名校验、去重、幂等消费：
+
+```python
+from flask import Flask, request, jsonify
+import hashlib, hmac
+
+app = Flask(__name__)
+VERIFY_TOKEN = "ig_verify_abc"
+APP_SECRET = "supersecret"
+SEEN = set()  # 内存去重；生产用 Redis
+
+@app.route("/ig/webhook", methods=["GET"])
+def verify():
+    if (request.args.get("hub.mode") == "subscribe"
+            and request.args.get("hub.verify_token") == VERIFY_TOKEN):
+        return request.args.get("hub.challenge"), 200
+    return "Forbidden", 403
+
+@app.route("/ig/webhook", methods=["POST"])
+def event():
+    expected = "sha1=" + hmac.new(
+        APP_SECRET.encode(), request.data, hashlib.sha1).hexdigest()
+    if not hmac.compare_digest(expected,
+                               request.headers.get("X-Hub-Signature", "")):
+        return "Bad signature", 400
+
+    body = request.get_json(silent=True) or {}
+    event_id = f"{body.get('entry', [{}])[0].get('id')}-{body.get('entry', [{}])[0].get('time')}"
+    if event_id in SEEN:          # 幂等
+        return "EVENT_RECEIVED", 200
+    SEEN.add(event_id)
+
+    for entry in body.get("entry", []):
+        for change in entry.get("changes", []):
+            field, value = change.get("field"), change.get("value", {})
+            if field == "comments":
+                handle_comment_event(value)
+            elif field == "mentions":
+                handle_mention_event(value)
+    return "EVENT_RECEIVED", 200
+```
+
+```python
+def handle_comment_event(value: dict):
+    """业务：把新评论写入队列，触发自动客服。"""
+    comment_id = value.get("id")
+    media_id = value.get("media_id")
+    text = value.get("text")
+    # 入队 → 路由回复 / 转人工 / 纳入风控
+    print(f"[comment] media={media_id} id={comment_id} text={text}")
+```
+
+**生产 Checklist（Webhooks）：**
+1. 校验 `X-Hub-Signature`；
+2. 回调必须在超时前返回 200（收到即回，异步入队）；
+3. **幂等**（重复推送去重）；
+4. 关键事件落库 + 重试；
+5. 用 HTTPS + 固定域名，别用 http。
+
+### 3.11 全流程编排示例（一次运营闭环）
+
+把"发现账号 → 发帖 → 监控评论 → 出洞察报表"串成一个可重复 job：
+
+```python
+def run_ig_ops_round(self):
+    # 1) 发现账号
+    accounts = self.meta_list_instagram_accounts()
+    ig_ids = [a["ig_user_id"] for a in accounts if a["ig_user_id"]]
+
+    report = {}
+    for ig_id in ig_ids:
+        # 2) 发一条新品帖
+        post = self.meta_create_ig_post(
+            ig_id,
+            image_url="https://cdn.example.com/new-product-2026.jpg",
+            caption="2026 新品首发 #newproduct #summersale")
+        # 3) 读取该帖评论并自动回复
+        comments = self.meta_list_ig_comments(post["media_id"])
+        replied = self.meta_auto_reply_comments(post["media_id"],
+                                                dry_run=False)
+        # 4) 拉取账号洞察
+        ins = self.meta_get_ig_insights(
+            ig_id, since="2026-08-01", until="2026-08-14")
+        report[ig_id] = {
+            "post_permalink": post.get("permalink"),
+            "comments": len(comments),
+            "auto_replied": replied,
+            "insights_metrics": [m.get("name") for m in
+                                 ins.get("data", [])],
+        }
+    return report
+```
+
+### 3.12 监控与告警
+
+```python
+def meta_ig_healthcheck(self, ig_user_id: str) -> dict:
+    """自检：token 有效性、账号可达、Insights 可读。"""
+    checks = {}
+    try:
+        user = self.meta_get_ig_user(ig_user_id)
+        checks["user"] = True
+        checks["username"] = user.get("username")
+    except Exception as e:
+        checks["user"] = False
+        checks["user_error"] = str(e)
+    try:
+        self.meta_get_ig_insights(ig_user_id, period="day")
+        checks["insights"] = True
+    except Exception as e:
+        checks["insights"] = False
+        checks["insights_error"] = str(e)
+    return checks
+```
+
+> 建议接入：每日凌晨健康自检 → 有异常（token 过期、账号被移除绑定、Insights 权限丢失）时自动告警到企业微信 / Slack，尽早发现"静默失联"。
+
+---

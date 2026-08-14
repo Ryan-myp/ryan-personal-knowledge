@@ -1606,3 +1606,555 @@ print(cats)
 }
 ```
 
+
+---
+
+## 四、常见问题与排查
+
+> 以下都是真实业务里反复踩坑的高发问题。每个问题按 **现象 → 根因 → 解决 → 预防** 四段给出，方便组内快速定位。
+
+### 4.1 商品 ID 不唯一（Duplicate / Conflicting ID）
+
+**现象**：同一商品价格/库存显示错乱；A 商品图片出现在 B 商品位；历史转化无法归因。
+
+**根因**：
+- `id` 在不同源里撞车（全量源和增量源用了相同但语义不同的 `id`）。
+- 不同 SKU 共用一个 `id`（没区分颜色尺码）。
+- `id` 里带了不该带的字符（空格 / `#` / 变长）导致哈希冲突。
+
+**解决**：
+- 建立**全局统一 id 生成规则**，例如 `f"{channel}-{category}-{spu}-{color}-{size}"`；
+- 上架时用 `meta_list_catalog_products` 按 `id` 去重检查；
+- 冲突时用 `meta_update_catalog_product` 修正或重建 `id`（注意重建会丢归因）。
+
+**预防**：
+```
+id 规则: [渠道]-[季节]-[SPU]-[颜色]-[尺码]
+示例:   ryan-us-k101-red-42
+入库校验: id 唯一性 → 违例直接拒绝写入
+```
+
+### 4.2 价格变动不同步（站内已降价，广告还是原价）
+
+**现象**：站内 15.99，DPA 还显示 19.99；大促后旧价残留 3 天。
+
+**根因**：
+- 只有全量 Scheduled Fetch（每日一次），变价要隔天才进。
+- 增量 API 没有覆盖价格字段，或增量被全量覆盖回去。
+- `sale_price_effective_date` 格式错误（没写 `/` 分隔的起止时间），导致 sale_price 一直无效。
+- 时区/缓存：Meta 侧处理有延迟（几分钟）。
+
+**解决**：
+- 改价走**实时增量 API**，如 3.2.5 的 `sync_price_incremental`。
+- 校验 effective date 格式：`2026-08-01T00:00:00+00:00/2026-08-31T23:59:59+00:00`。
+- 大促期间把增量频率提到 10 分钟。
+
+**预防**：
+- 站内价格变动 → 事件触发 → 3-5 分钟内同步到 Catalog（用 webhook 监听价格表更新）。
+- 上线前对比「站内 API 价格」与「Catalog 价格」的 diff 脚本（抽样 50 个 SKU 即可）。
+
+### 4.3 库存为 0 导致广告不可投（Out of stock 停投）
+
+**现象**：某商品售罄后广告组整体显示「商品不可用 / 0 可投商品」，impressions 归零。
+
+**根因**：
+- 大量商品 `availability=out of stock`，而 Product Set 规则只筛 `in stock` → 商品集瞬间缩水甚至为 0。
+- 售罄商品没改 `availability`，仍显示可投但点了落地页是缺货 → 差评/退款，广告被系统限流。
+- **删除**了售罄商品而不是置为 `out of stock`，导致历史归因丢失。
+
+**解决**：
+- 售罄 → 立刻改 `availability=out of stock`（保留 item，不下发）。
+- Product Set 里显式加 `{availability} EQUALS "in stock"` 兜底。
+- 监控 `product_count`（Product Set）与「可投商品数」，跌破阈值告警。
+
+**预防**：
+- 每 10 分钟同步库存；售罄即标 `out of stock`。
+- 广告组粒度上用「库存充足商品」的 Product Set，避免被零星缺货拖垮。
+
+### 4.4 Product Set 匹配空结果（Empty Product Set）
+
+**现象**：建好的 Product Set 商品数为 0，广告组停投；或投放后曝光 0。
+
+**根因（按概率排序）**：
+1. 规则 value 与字段值不一致（如 `in-stock` vs `in stock`）见 3.5.3。
+2. Feed 刚更新，`product_count` 还没重算（延迟）。
+3. 字段不存在（`custom_label_7` 写错成 `custom_label_7` 不存在于字段集）。
+4. 操作性：选了 `retailer_product_ids` 但对应商品不在 Catalog。
+5. 用了操作符不支持的字段（如数值比较用在字符串字段）。
+
+**解决**：
+```python
+ps = api.meta_get_dynamic_product_set(ps_id, fields=["id", "product_count"])
+if ps.get("product_count", 0) == 0:
+    print("Product Set 为空，请核对规则")
+    # 另用一个『全部商品』默认 set 对比验证：Catalog 商品数 vs 规则商品数差在哪
+```
+- 用 `meta_list_catalog_products` 抽样看真实字段值（尤其 `availability` 的实际字符串）。
+- 用「全部商品」Set 做对照，二分定位是哪条规则把商品筛没了。
+
+**预防**：Product Set 建完即读 `product_count`，为 0 就告警，不要直接建广告。
+
+### 4.5 Catalog / 商品审核失败（Review / Rejected）
+
+**现象**：商品 `DISAPPROVED`；广告显示「rejected / not yet available」；PENDING 一直不过。
+
+**根因**：
+- 图片含文字/边框/促销角标（DPA 主图必须无购物化贴片）。
+- 落地页 404、被墙、跳转到不相关页。
+- 价格与落低价明显不符（系统判定为「诱导点击」）。
+- 品牌未授权 / gtin 造假。
+- 商品类型涉及受限类目（如医疗、烟草、成人）。
+
+**解决**：
+- 按 3.4 表逐项修，修完重新上传触发复审。
+- 检查 `link` 与 `image_url` 是否公开可访问（`curl -I` 看 200）。
+- 保证 Feed 价格 = 落低价（含运费后一致）。
+
+**预防**：上架前用「图片规范 + 落地页规范」自动质检；报价保证含税含运费口径统一。
+
+### 4.6 DPA 与 ASC（Advantage+ Shopping Campaign）怎么选
+
+**现象/纠结**：团队纠结「该用 DPA 还是 ASC」，或 ASC 与 DPA 抢转化。
+
+**判断框架**：
+
+| 你的诉求 | 推荐 |
+|---------|------|
+| 精细化再营销（加购/弃购分漏斗出价） | DPA（手动受众 + 分层出价） |
+| 规模放量、素材/版位全自动 | ASC |
+| 只要商品相关文案、想要强自定义 | DPA |
+| 预算有限、想快速起量 | ASC 常表现更好 |
+| 有强品牌锚定、怕黑盒 | DPA 更可控 |
+
+**真实做法（双轨）**：
+- ASC 吃「全 Catalog + 自动受众」这块大肉；
+- DPA 保留「高意向漏斗（加购/弃购）」精耕 + 细分 Product Set（新品/高利润）；
+- 二者用**同一个 Catalog**，用**受众排除**减少互相抢量（把 DP 加购受众里已被 ASC 转化的用户数据做排除优先给 DPA）。
+
+### 4.7 Feed 更新频率 / 时序问题
+
+**现象**：明明更新了 Feed，广告还是旧商品；新增商品不出现。
+
+**根因**：
+- 全量与增量时序冲突（增量比全量旧，被全量覆盖）。
+- File Upload 上传后，catalog 处理需要时间（几分钟到 1 小时）。
+- `ID` 变化（新增商品 id 与旧的不一样）→ 事件匹配不到 → 不展示。
+
+**解决**：统一「全量低频 + 增量高频」策略；用 batches 轮询确认完成再发广告变更。
+
+### 4.8 多店铺多 Catalog 事件错配
+
+**现象**：店铺 A 转发的 Purchase 被归到店铺 B 的 Catalog，或 DPA 无法再营销 A 的访客。
+
+**根因**：一个 Pixel 同时挂了多个 Catalog，`content_ids` 的 id 空间冲突（A、B 都有 `RYAN-001`）。
+
+**解决**：多店用**各自独立的 Catalog + 各自 Pixel**（或 id 加前缀隔离）。参考 2.1.4 方案 A（一店一 Catalog）。
+
+### 4.9 事件缺失导致无法再营销（头号隐形坑）
+
+**现象**：受众显示了规模几万，但 DPA 广告 impressions = 0 / 点击 0。
+
+**根因**：
+1. `ViewContent` 没打点（SPA 站、异动埋点没加）→ 审计事件根本没到 Meta。
+2. `content_ids` 传了，但和 Catalog `id` 不一致（站点传 `sku123`，Catalog 是 `SKU-123`）。
+3. IAP / iOS ATT 限制导致事件少 → 邀请 CAPI 兜底且 `action_source=website`。
+4. 事件到了但**未与 Catalog 关联**（Pixel 没绑 Catalog），引擎不知道 content_ids 属于哪个目录。
+
+**解决（四步排查）**：
+```python
+# 1) 确认事件已到：Events Manager 实时测试
+# 2) 确认 content_ids 一致性：把站点日志 id 与 catalog 商品 id 对一下
+# 3) 确认 Pixel-Catalog 绑定：后台目录设置里能见到该 Pixel
+# 4) 确认受众实规模被 DPA 覆盖：受众规模 > 0，且广告用该受众
+```
+
+### 4.10 其他高频问题（速查表）
+
+| 问题 | 一句话原因 | 一句话解法 |
+|------|-----------|-----------|
+| 广告显示「N/A 商品」 | 商品字段缺（image/title/price） | 补全必填字段 |
+| 卡片顺序不对 | 引擎按行为/相关度排序，非手排 | 用 `retailer_product_ids` 显式指定 |
+| 图片全是第一张图 | 变体没配各自 `image_url` | 每个 variant 配独立图 |
+| 标题被截断 | 标题超长 | 控制 60-80 字符 |
+| Target ROAS 没转化 | 转化事件少/归因窗口小 | 增量积累 + 调归因设置 |
+| 预算花不出去 | Product Set 太小 / 受众太窄 | 扩 Set / 放宽受众 |
+| API 报 (#4) 限流 | 请求过密 | 分批 + 退避重试（3 次） |
+| `(#100) param product_set_id invalid` | 传错 set 或 set 不属于该目录 | 核对 set 属于目标 Catalog |
+
+### 4.11 排查方法论：固定「异常分层定位法」
+
+面对 DPA 任何异常，按这个顺序二分，能省大量时间：
+
+```
+数据层:  Catalog 商品数 / 审核状态 / in stock 占比      → 不对则查 Feed
+规则层:  Product Set product_count > 0                  → 空则查规则字段值
+事件层:  Pixel 有没有 ViewContent / content_ids 命中    → 无则查埋点/绑定
+受众层:  自定义受众规模 > 0                              → 无则查事件积累
+投放层:  Ad creative 的 product_set_id / catalog_id 对   → 错则改广告
+```
+
+---
+
+## 五、自测题
+
+下面是 5 个深入问题，用来检验自己是否真正吃透了 DPA。先独立思考，再点开答案对照。
+
+### 问题 1：为什么说「事件缺失是 DPA 的隐形杀手」？请描述在没有 `ViewContent` 事件的情况下，一款浏览再营销 DPA 会发生什么，并从数据流角度解释因果链。
+
+<details>
+<summary>查看答案</summary>
+
+因果链是：**没有事件 → 引擎没有用户的商品级行为记忆 → 即便受众规则匹配到这个人，也无商品可渲染 → 广告出现「无可投商品」→ impressions=0**。
+
+具体拆解：
+1. 浏览再营销的本质是「用户看过 SKU-X → 给他展示 SKU-X」。事件是唯一把「某个用户」和「某个商品」关联起来的证据。
+2. 如果站点是 SPA（单页应用），路由不刷新就不会触发 `fbq('track','ViewContent')`，事件根本到不了 Meta。
+3. 即使事件到了，若没传 `content_ids`（或与 Catalog `id` 不一致），引擎也无法把事件落到具体商品，只能把这个用户当「无商品兴趣」处理。
+4. 最后，即使事件都有了，Pixel 若不与 Catalog 绑定，`content_ids` 无法在目录里解析，同样匹配不到商品。
+
+排查顺序永远遵循「事件 → content_ids 一致性 → 受众规模 → Product Set 商品数」。这也是 4.9 一再强调的重点。
+
+</details>
+
+### 问题 2：Product Set 的 `filter` 与 `retailer_product_ids` 有什么区别？什么场景该用哪一个？
+
+<details>
+<summary>查看答案</summary>
+
+`filter` 是**规则驱动的动态子集**：它按字段条件（如 `availability in stock`、`brand=Ryan`）实时计算商品集合，Feed 更新后集合自动变化，适合「持续上架/下架、需要自动化的场景」。
+
+`retailer_product_ids` 是**显式指定的商品清单**：你在广告里直接列出一批商品 id，引擎只投这些，适合「活动页固定选品、人工精选、促销专场」等需要强控制的场景，且**优先级高于 Product Set**——同时设置时，显式清单优先。
+
+实践建议：
+- 日常量产商品 → 用 `filter` 建 Product Set；
+- 大促专题（如「618 精选 20 款」）→ 用 `retailer_product_ids` 精确控量，避免规则误入选品。
+
+</details>
+
+### 问题 3：请说明为什么要用「全量低频 + 增量高频」的双轨 Feed 策略，而不是只用一种？列出双轨各自解决的系统性问题。
+
+<details>
+<summary>查看答案</summary>
+
+**只用全量（每日 1 次）的问题**：
+- 价格/库存是高频变化量，隔天更新会产生「站内已降价、广告还是原价」「已售罄还在投」的投诉与退款，甚至触发政策限制。
+
+**只用增量（实时）的问题**：
+- 商品池靠增量一点点积累，新品/下架/新图若不覆盖会遗漏；且增量请求多，容易撞 API 限流 `(#4)`。
+- 全量批次还能作为**对账基准**，若增量丢了字段，全量兜底补回来。
+
+**双轨的职责划分**：
+```
+全量（低频，每日）:  建立并校准商品池，重跑所有字段，保证基础数据一致
+增量（高频，10-30min）: 只覆盖价格/库存快速变化字段，追求时效
+```
+实施要点：全量与增量用**相同 id 空间**，增量「后到覆盖」逻辑要保证增量时间戳比全量新，否则会被全量刷回去；大批量变价分布到 30 分钟窗口避免限流。
+
+</details>
+
+### 问题 4：当 `Product Set` 的 `product_count` 为 0 时，请你给出一个系统的排查清单（至少 4 步），并说明为什么「用全部商品 Set 做对照」是关键技术。
+
+<details>
+<summary>查看答案</summary>
+
+系统排查清单：
+1. **延迟确认**：Feed 刚更新时 `product_count` 会延迟重算，先等几分钟再读，避免误判。
+2. **字段值证据**：用 `meta_list_catalog_products` 抽样看商品真实字段值（尤其 `availability` 的实际字符串是不是 `in stock`、有没有连字符/空格）。
+3. **操作符适配**：确认用的操作符该字段支持（数值比较别用在 `product_type` 等字符串字段上）。
+4. **并存对照**：创建一个「全部商品」的默认 Set（不筛任何条件），读它的 `product_count`。若全量 Set > 0 而规则 Set = 0，说明**问题出在规则条件**；若全量 Set 也是 0，则问题在 Catalog 层（Feed/审核），彻底排除规则嫌疑。
+5. **逐条二分**：把规则一条条去掉，每去一条重读 `product_count`，找到是「哪条条件把商品全筛没的」。
+
+「全部商品 Set 做对照」之所以是关键，是因为它能在几秒钟内把**「数据喂错了」**与**「规则写错了」**分到两个完全不同的排查分支，减少大量无意义排障时间。
+
+</details>
+
+### 问题 5：请解释「价格变了导致 DPA 不可投」的完整链路，以及为什么推荐用 `out of stock` 标记而非直接删除商品来下架。
+
+<details>
+<summary>查看答案</summary>
+
+**价格变导致不可投的链路**：
+1. 站内价格下降（或促销结束），但 Catalog `price` 未同步；
+2. DPA 渲染出旧价 → 用户点击落地页发现价格不符 → 差评/退款/放弃；
+3. 系统检测到「落地价与广告价不符」的信号，或商品页大量差评 → **商品被系统判定为诱导点击 → DISAPPROVED / 限流**；
+4. 之后即便修复价格，也需要重新提交审核，中间窗口损失投放。
+
+所以价格同步（4.2）在 DPA 里不是「体验问题」，而是**会直接引发账号/商品审核后果**的经营问题。
+
+**为什么用 `out of stock` 而非删除**：
+- 删除商品会**抹掉历史归因**：之前为这个商品积累的浏览/加购/转化数据全部失联，再营销记忆断裂；
+- `out of stock` 则保留 item 与它的行为历史，只是**不参与下发**（DPA 不投），未来补货后改回 `in stock` 即可无缝恢复，历史学习曲线不用重来；
+- 从数据治理看，`out of stock` 是可逆操作，删除是不可逆操作。
+
+</details>
+
+---
+
+## 六、延伸阅读与速查
+
+- `meta-ads-catalog-deep.md` — Catalog / 商品 / Feeds 通用基础（本文件的上游）。
+- `meta-ads-marketing-api-deep.md` — 认证、权限、版本、限流。
+- `meta-ads-objectives-creatives-deep.md` — 目标与创意格式。
+- `meta-ads-targeting-advantage-deep.md` — 受众与 Advantage 定向。
+- `meta-ads-advantage-plus-full-deep.md` — ASC 与 DPA 的迁移与双轨。
+- 脚本参考：`scripts/ad_platform_api.py` 中的 `meta_list_catalogs`、`meta_add_products`、`meta_list_catalog_products`、`meta_update_catalog_product`、`meta_delete_catalog_product`、`meta_list_catalog_batches`、`meta_get_catalog_batch`、`meta_list_dynamic_product_sets`、`meta_create_dynamic_product_set`、`meta_update_dynamic_product_set`、`meta_delete_dynamic_product_set`、`meta_list_dynamic_ads`、`meta_list_categories`、`meta_list_collection_cards`、`meta_create_collection_card`、`meta_create_campaign`、`meta_create_adset`、`meta_create_ad` 等。
+
+> 本文档为 Ryan 个人知识库实战深度文档，聚焦 DPA 完整落地；有任何与现有文档不一致处以 Meta 官方最新文档为准。
+
+---
+
+## 七、进阶专题（DPA 的高级工程细节）
+
+### 7.1 一次性打通全链路：一个可运行的编排脚本
+
+把前面的零散步骤串成一个「一键搭建 DPA 再营销系列」的脚本，生产上可按此骨架扩展（含幂等与前置校验）：
+
+```python
+"""build_dpa_retargeting.py — 一键搭建 DPA 再营销剧本（示意）"""
+import time
+from ad_platform_api import AdPlatformAPI
+
+api = AdPlatformAPI(credentials_file="credentials.json")
+
+AD_ACCOUNT = "act_123456789"
+CATALOG    = "123456789012"
+PIXEL      = "9876543210"
+
+def step(name):
+    print(f"\n=== {name} ===")
+
+def main():
+    # 0) 健康检查
+    step("0 目录健康")
+    prods = api.meta_list_catalog_products(CATALOG, limit=5, fields=["id", "availability"])
+    if not prods:
+        print("目录为空，先修 Feed！"); return
+    print("抽样商品:", prods[:2])
+
+    # 1) 建两个 Product Set：现货 + 现货且促销
+    step("1 创建 Product Set")
+    ps_all = api.meta_create_dynamic_product_set(
+        CATALOG, name="PS-现货",
+        filter={"conditions": [{"field": "availability", "operator": "EQUALS", "value": "in stock"}]},
+    )
+    ps_sale = api.meta_create_dynamic_product_set(
+        CATALOG, name="PS-现货促销",
+        filter={"conditions": [
+            {"field": "availability", "operator": "EQUALS", "value": "in stock"},
+            {"field": "sale_price", "operator": "EXISTS"},
+        ]},
+    )
+    time.sleep(5)  # 等 product_count 重算
+    for ps in (ps_all, ps_sale):
+        print(api.meta_get_dynamic_product_set(ps["id"], fields=["id", "product_count"]))
+
+    # 2) 建 Campaign（OUTCOME_SALES）
+    step("2 创建 Campaign")
+    camp = api.meta_create_campaign(AD_ACCOUNT, "DPA-再营销-加购", objective="OUTCOME_SALES",
+                                    status="PAUSED", daily_budget=30000)
+    camp_id = camp["id"]
+
+    # 3) 建 AdSet（绑定加购受众，最好先建好受众 id）
+    step("3 创建 AdSet")
+    adset = api.meta_create_adset(
+        camp_id, "AdSet-加购14天-现货",
+        targeting={
+            "geo_locations": {"countries": ["US"]},
+            "custom_audiences": [{"id": "238470000001"}],   # 加购受众
+            "excluded_custom_audiences": [{"id": "238470000009"}],  # 已购
+        },
+        daily_budget=15000, status="PAUSED",
+    )
+    as_id = adset["id"]
+
+    # 4) 建 Ad + DPA 动态创意
+    step("4 创建 Ad + DPA 创意")
+    creative = {
+        "product_catalog_id": CATALOG, "product_set_id": ps_sale["id"],
+        "name": "DPA创意-促销现货",
+        "object_story_spec": {
+            "product_catalog_id": CATALOG,
+            "link_data": {
+                "link": "https://www.ryan.com/?product_id={product.id}",
+                "name": "{product.title}",
+                "message": "限时特惠 ${product.sale_price}",
+                "call_to_action": {"type": "SHOP_NOW"},
+            },
+        },
+        "dynamic_ad_voice": "DYNAMIC",
+    }
+    ad = api.meta_create_ad(as_id, "DPA-Ad-加购促销", creative=creative, status="PAUSED")
+    print("ad_id", ad["id"])
+
+    # 5) 前置校验通过后统一启用
+    step("5 启用")
+    api.meta_resume_campaign(camp_id)
+    api.meta_resume_adset(as_id)
+    api.meta_resume_ad(ad["id"])     # 脚本里对应 meta_resume_ad
+    print("已启用，24h 后看 impressions 是否 > 0")
+
+if __name__ == "__main__":
+    main()
+```
+
+> 说明：`api` 中部分方法（如 `meta_resume_adset`、`meta_resume_ad`、`meta_get_dynamic_product_set`）与示例的底层实现需以实际脚本为准；生产请先确认方法签名（查阅 `scripts/ad_platform_api.py` 相应 `def meta_*`），再做替换。核心链路（catalog → product set → campaign → adset → ad + creative）已在 3.7 用 Graph API 给出等价完整字段。
+
+### 7.2 DPA 创意字段：`{product.*}` 占位符能力全集
+
+在 `link_data` / `object_story_spec` 里可以用模板占位符动态注入商品字段：
+
+| 占位符 | 含义 |
+|--------|------|
+| `{product.id}` | 商品 id |
+| `{product.title}` | 标题 |
+| `{product.description}` | 描述 |
+| `{product.price}` | 价格（带货币） |
+| `{product.sale_price}` | 促销价 |
+| `{product.image_url}` | 主图 |
+| `{product.brand}` | 品牌 |
+| `{product.custom_label_0}` | 自定义标签 0 |
+| `{product.link}` | 商品落地 URL |
+
+**用法**（产品级落地页动态化，可配合 UTM 追踪）：
+
+```bash
+# 落地页带商品 id + 来源 UTM
+"link": "https://www.ryan.com/?product_id={product.id}&source=DPA&medium=cpc"
+```
+
+**踩坑**：占位符写错（如 `{product.availability}` 不在此渲染集）会渲染成字面量而不是商品值，务必用受支持集合。
+
+### 7.3 事件去重与归因窗口的工程细节
+
+#### 7.3.1 去重三快门（Decision / Dedup）
+
+- **Event ID（`event_id`）去重**：Pixel 与 CAPI 用同一个 `event_id` → 重复上报被合并，`dedup` 面板能看到合并。
+- **动作源去重（action_source）**：`website` 的 CAPI 与浏览器 Pixel 若字段完全一致，会被判重。
+- **行为归因窗口**：DefAttr 里有「点击 7 天 / 浏览 1 天」等；DPA 建议关注「点击窗口」是否覆盖你站内旅程（如偏长决策购买 → 拉到 28 天点击）。
+
+#### 7.3.2 去重对 DPA 的意义
+
+DPA 学习的每一步（加购→购买归因、ROAS 计算）都依赖**准确的转化计数**。如果 CAPI 与 Pixel 没有去重，转化被重复计算，`cpa` 虚低、ROAS 虚高，Target ROAS 会误判。所以上线前应核对 Event Manager 的去重率与 `MatchesContentCatalogSchema`。
+
+### 7.4 多币种 / 多国家的 DPA 约束
+
+| 维度 | 约束 |
+|------|------|
+| 货币 | Catalog 的 `currency` 决定商品 `price` 的单位；混币种会报错 |
+| 国家 | Catalog 的 `country` 决定投放地域归属；跨国家需另建 Catalog |
+| 聚合 | Aggregated Catalog 的子目录必须同国家同货币 |
+| 建议 | 每 (国家, 币种) 一对开一个 Catalog（或用聚合封装） |
+
+```bash
+# 需多国家投放：分别建
+POST /act_xxx/product_catalogs  {name:"Ryan-US-USD", country:"US", currency:"USD"}
+POST /act_xxx/product_catalogs  {name:"Ryan-UK-GBP", country:"GB", currency:"GBP"}
+```
+
+### 7.5 限额与限流的一线经验
+
+- API 会返回 `(#4) Application request limit reached` 或 `#613` 类限流错误：**分批 + 指数退避重试（最多 3 次）**。
+- 上传大批量商品**拆分批次**（每批次建议 ≤ 100-500 条，视源类型）。
+- 每次请求都带必要的 `fields`，减少响应体积；避免把整个 Catalog 的 field 重复拉。
+
+```python
+def upload_batches(catalog_id, items, batch_size=200):
+    for i in range(0, len(items), batch_size):
+        chunk = items[i:i+batch_size]
+        for attempt in range(3):
+            try:
+                api.meta_add_products(catalog_id, items=chunk)
+                break
+            except Exception as e:      # 限流则退避
+                if "request limit" in str(e).lower():
+                    time.sleep(2 ** attempt)
+                else:
+                    raise
+```
+
+### 7.6 数据结构校验：上架前必须跑的数据质检
+
+```python
+def feed_qa(products: list[dict], catalog_currency="USD"):
+    """上架前的基础质检，避免把坏数据灌进 Catalog。"""
+    errors = []
+    seen = set()
+    for p in products:
+        pid = p.get("id")
+        if not pid:
+            errors.append("missing id"); continue
+        if pid in seen:
+            errors.append(f"duplicate id {pid}"); continue
+        seen.add(pid)
+        if not (p.get("title") and p.get("image_url")):
+            errors.append(f"{pid}: 缺 title/image_url")
+        if not p.get("availability"):
+            errors.append(f"{pid}: 缺 availability")
+        elif p["availability"] not in {"in stock","out of stock","preorder","backordered","discontinued"}:
+            errors.append(f"{pid}: 非法 availability {p['availability']}")
+        price = p.get("price")
+        if price and (price <= 0 or p.get("currency", catalog_currency) != catalog_currency):
+            errors.append(f"{pid}: 价格/货币异常")
+    return errors
+
+bad = feed_qa(products)
+print("QA errors:", len(bad), bad[:5])
+```
+
+---
+
+## 八、DPA 最佳实践清单（可直接执行）
+
+**数据层**
+- [ ] 商品 `id` 全局唯一、稳定、字母数字 `-_`。
+- [ ] 必填字段齐全（`id/title/image_url/price/currency/availability/brand`）。
+- [ ] 图片 ≥ 500×500、白底、无文字角标。
+- [ ] 价格 = 落低价（含税含运费一致）、`sale_price` 配 `effective_date`。
+- [ ] Feed 走「全量低频 + 增量高频」双轨。
+
+**规则层**
+- [ ] Product Set 建完即查 `product_count > 0`。
+- [ ] 规则 value 与字段字符串完全一致（`in stock` ≠ `in-stock`）。
+- [ ] 用 `custom_label_0..4` 建「汇总维度」Set（新品/爆款/高利润）便于量化测试。
+
+**事件层**
+- [ ] `ViewContent/AddToCart/InitiateCheckout/Purchase` 都埋 `content_ids` + `content_type=product`。
+- [ ] CAPI 与 Pixel 用同一个 `event_id` 去重。
+- [ ] Pixel 与 Catalog 完成绑定，测试事件命中「与目录匹配」。
+- [ ] 核对 Event Manager 去重率与 `MatchesContentCatalogSchema`。
+
+**投放层**
+- [ ] 用 `PAUSED` 建全链 → 预检 → 依次 `ACTIVE`。
+- [ ] 再营销漏斗按「浏览/加购/弃购」分层出价 + 排除已购。
+- [ ] 上线 24h 查 impressions；为 0 按 4.11 分层定位法排查。
+- [ ] 定期从 `meta_query_insights` 复盘 cpc/cpa/roas，据此调 Product Set 与出价。
+
+---
+
+## 附录 A：核心 Graph 端点速查（DPA 相关）
+
+| 用途 | 端点 |
+|------|------|
+| 列出目录 | `GET /{act_id}/product_catalogs` |
+| 创建目录 | `POST /{act_id}/product_catalogs` |
+| 上传商品 | `POST /{catalog_id}/products` |
+| 列商品 | `GET /{catalog_id}/products` |
+| 更新商品 | `POST /{catalog_id}/products` 或 `POST /{product_id}` |
+| 删除商品 | `POST /{catalog_id}/products`（标记删除） |
+| 列批次 | `GET /{catalog_id}/batches` |
+| 查批次 | `GET /{catalog_id}/batches/{batch_id}` |
+| 建 Product Set | `POST /{catalog_id}/product_sets` |
+| 查 Product Set | `GET /{product_set_id}` |
+| 更新 Product Set | `POST /{product_set_id}` |
+| 删 Product Set | `DELETE /{product_set_id}` |
+| 建 Campaign | `POST /{act_id}/campaigns` |
+| 建 AdSet | `POST /{campaign_id}/adsets` |
+| 建 Ad | `POST /{adset_id}/ads` |
+| 建 Collection | `POST /{catalog_id}/collections` |
+| 建 Collection Card | `POST /{collection_id}/cards` |
+| 列类目 | `GET /{catalog_id}/categories` |
+| 发 Pixel 测试事件 | `POST /{pixel_id}/events` |
+
+---
+
+> 本文件与 `meta-ads-catalog-deep.md` 从「Catalog 基础」分工：Catalog 通用架构/字段/数据源详见后者；本文聚焦 **DPA 的动态广告落地**——Product Set 规则、再营销事件驱动、动态创意、广告系列搭建、以及踩坑经验。实践时以 Meta 官方最新文档与 `scripts/ad_platform_api.py` 实际方法签名为准。

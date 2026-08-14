@@ -573,6 +573,150 @@ def sanitize_user_data(raw: dict) -> dict:
 
 ---
 
+### 2.13 去重决策树：Meta 到底怎么判定"重复"（ASCII 全图）
+
+```
+事件进入 Meta 管线
+       │
+       ▼
+ 事件来自哪个源？
+ ├── CAPI（Server） ──► 源=API
+ └── Pixel（Browser）─► 源=Browser
+       │
+       ▼
+  能解析出 event_id 吗？
+ ├── 否 ──────────────────────────────┐
+ │                                   ▼
+ │                    ┌→ 特殊去重（仅供参考，不可靠）：
+ │                    │   比较另一通道事件的 (event_name, event_time)
+ │                    │   + user_data 高度相似（同 em/ph/hash） 
+ │                    │   + |Δt| ≤ 60s
+ │                    │   → 视为重复：保留"高置信"（CAPI 优先）
+ │                    ▼
+ └── 是 ──► 有 event_source_id、event_id
+            │
+            ▼
+ 两条事件能否归到同一 (event_id, source)？
+ ├── CAPI event_id = 前端 eventID？───── 否 → 不去重 → 双计 ⚠️
+ │
+ └── 是
+     │
+     ▼
+  到达时序（arrival time）比较
+ ├── CAPI 与 Pixel 谁先 received？
+ │    ├── 先到者 → 保留
+ │    └── 同时（或 CAPI 明显更全）→ 保留 CAPI
+ │
+ └── 确定级别：dedup 成功
+```
+
+**生产中"去重不生效"的两大必然原因**（我们在第一节 4.1 再展开）：
+
+1. 前端 `fbevents.js` 的 `eventID` 没传（或传了但格式与后端不同）；
+2. CAPI 重试时 `event_id` 每次都变（幂等键断裂）。
+
+| 你的配置 | 去重结果 |
+|----------|---------|
+| 只有 Pixel | 单通道，无重复问题，但信号丢失 |
+| Pixel + CAPI，均带一致 event_id | ✔ 去重成功 |
+| Pixel + CAPI，CAPI 无 event_id | ⚠️ 特殊去重（不可靠，可能双计） |
+| Pixel + CAPI，event_id 不一致 | ✘ 双计 |
+| 双 CAPI（两套服务）同 pixel | 必须各自 event_id 全局唯一，否则主观双计 |
+
+### 2.14 时序与归因窗口：`event_time` 到底怎么影响归因
+
+Meta 归因（attribution）依赖事件时间落在广告曝光/点击窗口内。CAPI 事件的 `event_time` 决定它在归因里"落位"：
+
+```
+广告点击 (t0)                    --- 7 天归因窗口 ---► 转化
+   │                                            │
+   │  <── 点击后 1 天归因 ──►                    │
+   │   ┌───────────────────┐                    │
+   ▼   ▼                   ▼                    ▼
+  事件落在窗口内 → 归因给这个广告、优化生效
+  事件落在窗口外 → 归因不到（只能进"未归因"）
+```
+
+| 归因窗口 | 覆盖 | event_time 与 now 的容忍 |
+|---------|------|------------------------|
+| 实时归因 | 秒级 | 建议 < 5 min（batch 保存事件很大风险） |
+| 7 天点击 / 1 天浏览 | 点击 | `now - event_time` 必须 < 7 天，否则拒绝 |
+| 28 天 | 某些 | 超窗直接 error code 2326 |
+
+**生产要点**：
+
+1. 大促补发用原始 `event_time`——放到真实发生的时间点上，`Event Manager` 才展示正确归因；
+2. 使用 `H TTL` 时处理"延迟事件"：如果消费者处理滞后，事件会晚于业务发生 30 分钟，但这不影响归因（归因用 event_time）；
+3. **禁止**把 `now()` 当作所有事件的 `event_time`（那是#1 的时间戳篡改事故）。
+
+### 2.15 `action_source` 与 `event_source_url` 的语义边界
+
+| action_source | 含义 | 典型配合 |
+|---------------|------|---------|
+| `website` | 网站上的转化（最常见） | event_source_url + fbp/fbc |
+| `email` | 邮件营销转化 | 用户点邮件链接 |
+| `app` | App 内转化 | 需 App 事件（AppEvents） |
+| `phone_call` | 电话转化 | 配合来电追踪 |
+| `physical_store` | 门店到店转化 | 配合 Offline Event Sets 或 POS |
+| `system_generated` | 系统（后台）生成 — 无页面来源 | 发货、退货 |
+| `business_messaging` | WhatsApp/Messenger | 配合 Message 转化 |
+| `other` | 其他 | 兜底 |
+
+`event_source_url` 建议保留**完整 query string**：
+
+- 归因引擎用 `fbc`（fbclid）追踪广告点击来源；
+- 前端 `fbevents.js` 会自动带 `event_source_url`；CAPI 后端如果拿到登录会话里的 URL 就原样传；
+- 不要把 URL 里 PII（如 `email=` 明文）留在 `event_source_url`，会造成数据分享隐私问题。
+
+### 2.16 浏览器 Cookie 参数 `fbc` / `fbp` 的建模含义
+
+| 参数 | 全称 | 作用 | 获取 |
+|------|------|------|------|
+| `fbp` | Facebook Pixel cookie | 标识**该浏览器第一次访问**你的站 | 前端读 `_fbp` |
+| `fbc` | Facebook Click cookie | 标识**广告点击来源**（含 fbclid） | 前端读 `_fbc` 或 URL 的 `fbclid` |
+
+- `fbc` 格式：`fb.1.<时间戳>.<base64码>`，内含 `fbclid`；
+- **哈希规则**：`fbc`/`fbp` 是明文直接传，不要 hash（它们本身就是追踪标识）。
+
+**生产落地**：CAPI 后端若拿不到 fbc（用户从 Google 进来，无 fbclid），就只传 fbp；`fbp` 能帮 Meta 找回浏览器早期浏览上下文，它是"低成本匹配"的重要来源。缺 fbc 会降低"点击-转化"的因果归因能力。
+
+### 2.17 幂等表（去重表）设计：让"至少一次"变成"最多一次"
+
+为了对抗 CAPI 的 at-least-once 语义，你**自己**也要维护一张去重表：
+
+```python
+# 本地事件幂等表（生产用 Redis SETNX 或 DB 唯一约束）
+import redis
+
+def record_and_check(event_id: str, pixel_id: str) -> bool:
+    """
+    返回 True=允许发送（首次）；False=已发过（跳过）。
+    幂等键 = (event_id, pixel_id) 联合唯一。
+    """
+    key = f"capi:dedup:{pixel_id}:{event_id}"
+    return r.set(key, "1", nx=True, ex=7 * 24 * 3600)  # 7 天过期对齐归因窗
+```
+
+生产上线前必须思考：
+
+- **用 DB 唯一约束**（`UNIQUE(event_id, pixel_id)`）兜底，Redis 仅作快速路径，因为 Redis 丢数据时 DB 还能拦；
+- 补发（backfill）场景：老订单的 event_id 已在去年；补发时这两个事件应**允许**（URL 历史）但要幂等——补发端自己要去重（同一订单同一事件只放一次进队列）。
+
+### 2.18 常见信号质量陷阱总结（Ryan 项目实测）
+
+| # | 陷阱 | 触发场景 | 规避 |
+|---|------|---------|------|
+| 1 | 把事件时间设成现在 | 回填 | 用原始 event_time |
+| 2 | 事件名大小写不一致 | CM 与后端双写 | 统一 PascalCase 映射表 |
+| 3 | `em` 用原始串未 hash | 测试态查询量小 | 验证 hash=base64(SHA256) |
+| 4 | 空字符串 hash | 用户无手机却传 `ph:[""]` | 空值剔除 |
+| 5 | 微信/注册用户没 external_id | 登录用户 | 传 `external_id=user_id` |
+| 6 | 多 pixel 混杂 | 多币种多店铺 | 每店独立 pixel，event_source_id 对齐 |
+| 7 | 测试流量真库混用 | 联调 | 单独影子 pixel / test_event_code |
+| 8 | 收款与实时只做 CAPI | 只做实时 | 回填 + 每日闭环对账 |
+
+---
+
 ## 三、生产环境实战
 
 ### 3.0 前置条件清单

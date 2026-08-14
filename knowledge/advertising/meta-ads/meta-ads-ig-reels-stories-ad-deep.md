@@ -1200,3 +1200,353 @@ Instagram Reels / Stories 广告竖版速查
 
 *本文档由 Ryan 知识库升级专家生成，聚焦 Instagram Reels & Stories 竖版视频广告垂直场景，*
 *与通用创意文档互补。数据口径与规格以 Meta 官方最新文档为准，投放前请复核当期版本。*
+
+---
+
+## 三附：竖版生产管线（Production Pipeline）深度展开
+
+> 为补足第 3 章的生产深度，本附表以"**一条竖版素材从原始素材到可投放广告**"的完整
+> 管线为主线，逐环节给出命令、代码与检查点。这是把"会投放"升级为"会高效生产"
+> 的关键能力。
+
+### 3.8 竖版素材生产管线总览
+
+```text
+竖版素材生产管线
+┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────┐
+│  原始素材    │→ │  粗剪/选条   │→ │  竖版裁切   │→ │  字幕/贴纸  │→ │  二次压制   │→ │  上传+建广告 │
+│ Raw Footage│  │ Select     │  │ 9:16 Crop │  │ Caption    │  │ FFmpeg     │  │ Upload+Ad  │
+└───────────┘  └───────────┘  └───────────┘  └───────────┘  └───────────┘  └───────────┘
+  手机/相机     选最能钩人的     居中crop     烧录硬字幕    统一H.264      meta_upload_video
+  UGC 素材       3-15 秒片段     1080x1920     +BeReal风      压制         
+```
+
+**每个环节的关键决策点：**
+
+| 环节 | 目标 | 输入 | 输出 | 产出物 |
+|------|------|------|------|--------|
+| 原始素材 | 拿到足够多可用的竖版/可裁纵版素材 | 手机竖拍 / 横拍+裁切 / AI生成 | 若干候选 clip | 素材库 |
+| 粗剪/选条 | 挑出首 3 秒最强的片段 | 候选 clip | 1 条主干 | 剪辑工程 |
+| 竖版裁切 | 保持 9:16 且主体居中 | 主干 | 9:16 无损 | crop 后 mp4 |
+| 字幕/贴纸 | 静音可懂 + 原生感 | 9:16 视频 | 烧录字幕版 | 带字 mp4 |
+| 二次压制 | 控制体积、兼容性 | 带字 mp4 | 交付 mp4 | H.264 30fps |
+| 上传+建广告 | 上线投放 | 交付 mp4 | 广告 | video_id+Ad |
+
+> **为什么管线重要**：竖版竞争的本质是"**素材产出速度**"。管线化之后，
+> 从拍摄到上线可从"几天"压缩到"几小时"，让创意疲劳时能快速换新，这是降 CPM 的核心杠杆。
+
+### 3.9 竖版裁切：crop vs pad 的工程取舍
+
+竖版容器是 1080x1920。把非竖版源塞进去有两种方式，观感天差地别：
+
+```text
+方式A：crop（居中裁切）—— 推荐
+┌─────────┐
+│ 横版源    │  中段 60% 被保留
+│ ███████  │  → 放大到 9:16
+└─────────┘
+  竖版 = 横版中段被裁高
+优点：无黑边，信息密度高
+缺点：可能裁掉左右重要内容
+
+方式B：pad（加黑边）—— 慎用
+┌─────────┐
+│  ░░源░░  │  上下补黑边
+│ ███████░│
+└─────────┘
+  竖版 = 全图缩小 + 上下黑边
+优点：不丢失任何画面
+缺点：出现信箱黑边，手机全屏明显，观感廉价
+```
+
+**ffmpeg 两种命令：**
+
+```bash
+# A. crop 居中裁切（推荐，因为竖版要满屏）
+ffmpeg -i input.mp4 \
+  -vf "crop=1080:1920:(in_w-1080)/2:(in_h-1920)/2" \
+  -c:v libx264 -crf 20 -pix_fmt yuv420p \
+  -c:a aac -b:a 192k \
+  output_9x16_crop.mp4
+
+# B. pad 加边（仅当绝不能裁掉画面时才用）
+ffmpeg -i input.mp4 \
+  -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black" \
+  -c:v libx264 -crf 20 -pix_fmt yuv420p \
+  -c:a aac -b:a 192k \
+  output_9x16_pad.mp4
+```
+
+> **Ryan 经验**：
+> - 拍摄时**手机竖拿**，直接产出 9:16 源，省去裁切环节、质量最高；
+> - 横拍素材裁剪时，注意把**主体（人脸/产品）放在画面中段收录区**，否则裁切后丢主体；
+> - 裁切会放大噪点 → 拍摄时保证足够光线与高分辨率（1080p 起，2K/4K 更稳）。
+
+### 3.10 画面语言：竖版如何"讲清楚一件事"
+
+竖版画面比横版窄，信息必须**纵向排布**。给一个"同一产品，横版 vs 竖版信息排版"对比：
+
+```text
+横版 16:9（横向叙事）
+┌────────────────────────────────────────┐
+│ [标题区]   [产品+演示]      [价格区]     │
+└────────────────────────────────────────┘
+多元素并排 → 信息密度高但单个面积小
+
+竖版 9:16（纵向递进）
+┌──────────────────┐
+│    ▒ 首屏钩子 ▒    │  ← 顶部：痛点/大问题
+│    (人脸/产品)     │
+├──────────────────┤
+│   ● 第2屏：为什么   │  ← 中部：方案一句话
+│   步骤示意         │
+├──────────────────┤
+│   ▓ 第3屏：结果    │  ← 下部偏上：成果/证言
+│   (字幕区 72-84%)  │
+├──────────────────┤
+│   ░ CTA 提示      │  ← 底部：行动指令
+└──────────────────┘
+纵轴时间 = 用户划动/进度，天然引导"推进"
+```
+
+**纵向排布三条铁律：**
+1. 每个"时间区块"只讲一个信息，别让多卖点抢屏；
+2. 主体垂直居中偏上 5%~10%，给人脸/产品留呼吸感；
+3. 字幕块放在主体下方（72%~84%），形成"上画面、下文字"的稳定视觉锚点。
+
+### 3.11 字幕自动化：ffmpeg + ASS 烧录硬字幕
+
+手动逐条打字幕耗时且易错。生产化做法是"先出文本 → 转 ASS → 烧录"：
+
+**Step 1 生成 ASS 字幕（工具化思路）：**
+
+```python
+# 伪代码：把文案块按时间轴转成 ASS 条目（真实脚本可用 pysrt/ass 库）
+def build_ass(cues: list, width=1080, height=1920, font="SourceHanSansCN-Regular"):
+    """cues: [(start_sec, end_sec, text), ...] → 返回 ASS 文本"""
+    header = f"""[Script Info]
+ScriptType: v4.00+
+PlayResX: {width}
+PlayResY: {height}
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, Bold, Outline, Shadow, Alignment, MarginV
+Style: Caption,{font},72,&H00FFFFFF,0,6,1,2,240
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+    lines = header
+    for start, end, text in cues:
+        lines += f"Dialogue: 0,{fmt_ts(start)},{fmt_ts(end)},Caption,,0,0,0,,{text}\n"
+    return lines
+
+def fmt_ts(sec: float) -> str:
+    h, m = divmod(int(sec), 3600), divmod(int(sec) % 3600, 60)[0]
+    s = sec - h*3600 - m*60
+    return f"{h:02d}:{m:02d}:{s:05.2f}"
+
+
+cues = [
+    (0.0, 2.0,  "你还在为整理资料头疼吗？"),
+    (2.0, 5.0,  "3 步就能搞定。"),
+    (5.0, 9.0,  "第一步，把所有文件拖进来。"),
+    (9.0, 13.0, "第二步，让它自动分类。"),
+    (13.0, 16.0,"第三步，一键导出，搞定。"),
+]
+ass_text = build_ass(cues, font="SourceHanSansCN-Regular")
+open("captions.ass", "w", encoding="utf-8").write(ass_text)
+```
+
+**Step 2 用 ffmpeg 把 ASS 烧录进视频：**
+
+```bash
+# 必须同时开 libass 字幕滤镜与视频编码
+ffmpeg -i vertical_9x16.mp4 \
+  -vf "ass=captions.ass" \
+  -c:v libx264 -crf 20 -pix_fmt yuv420p \
+  -c:a copy \
+  output_with_captions.mp4
+```
+
+> 注意事项：
+> - ASS 文件必须 **UTF-8 编码**，且字体名要与系统已安装字体的英文名一致，否则烧录成方框；
+> - `-c:a copy` 复制原音轨，避免二次转码掉画质；
+> - 中文文本留白/自动换行可在 ASS 里用 `\N` 手动断行，保证每屏 ≤ 4 词。
+
+**脚本侧检查字幕安全区的图形化方式（工程走查）：**
+
+```python
+def check_caption_safety(ass_text: str, bottom_zone=0.18, height=1920):
+    """粗查：字幕 MarginV 对应的像素高度是否落在安全区内（72%~84%）。"""
+    import re
+    found = []
+    for line in ass_text.splitlines():
+        m = re.search(r"MarginV=(\d+)", line)
+        if m:
+            margin = int(m.group(1))
+            # ASS MarginV 是距画面底部像素；字幕中线应在 0.72~0.84 * height
+            y_mid = height - margin
+            ratio = y_mid / height
+            found.append((y_mid, ratio))
+    return found
+```
+
+### 3.12 封面与首帧设计（Cover / First Frame）
+
+封面图影响：分享预览、暂停定格、加载期间观感；首帧影响：划入瞬间的驻足。
+
+**封面图规范：**
+| 项 | 要求 |
+|----|------|
+| 比例 | 与视频一致，9:16（1080x1920） |
+| 格式 | JPEG/PNG |
+| 大小 | ≤ 8MB |
+| 内容 | 不含关键动态信息（因为只在静止时出现），放品牌/产品/一句话钩子 |
+
+**封面上传到媒体库：**
+
+```bash
+curl -X POST "https://graph.facebook.com/v19.0/{ACCOUNT_ID}/adimages" \
+  -F "access_token={ACCESS_TOKEN}" \
+  -F "filename=@cover_9x16.jpg" \
+  -F "bytes=..." 
+# 返回 { "images": { "cover_9x16.jpg": { "hash": "..." } } }
+```
+
+**在 Creative 里用封面（image_url 或 image_hash）：**
+
+```python
+def meta_create_ad_creative_with_cover(self, account_id, name, video_id,
+                                       image_hash, page_id, ig_user_id,
+                                       link, message="", cta_type="LEARN_MORE"):
+    import requests, json
+    token = self.credentials["meta"]["access_token"]
+    spec = {
+        "page_id": page_id,
+        "instagram_actor_id": ig_user_id,
+        "video_data": {
+            "video_id": int(video_id),
+            "image_hash": image_hash,      # 封面
+            "call_to_action": {"type": cta_type, "value": {"link": link}},
+        },
+        "link_data": {"link": link, "message": message},
+    }
+    url = f"https://graph.facebook.com/v19.0/{account_id}/adcreatives"
+    r = requests.post(url, params={"access_token": token, "name": name,
+                                   "object_story_spec": json.dumps(spec)}, timeout=60)
+    r.raise_for_status()
+    return r.json()
+```
+
+**首帧设计清单：**
+```text
+□ 首帧 = 强钩子画面（不是黑场/Logo 大特写）
+□ 若首帧是产品特写：给"一句话大字"（如 "只卖 3 步"）
+□ 避免 0.5s 以上纯黑/纯色过渡
+□ 首帧与第 1 秒字幕呼应，制造"开口就懂"
+```
+
+### 3.13 无缝循环（Seamless Loop）剪辑
+
+循环播放时，若视频**尾帧与首帧能衔接**，用户看到的是连续循环，观感不中断、完播更友好。
+
+```text
+无缝循环示意图
+┌──────────────────┐
+│ 片头帧 A ──► ... ──► 片尾帧 B │
+│      ▲              │
+│      └───── 循环 ─────┘
+│   要求：A 与 B 视觉相似/动作衔接
+└──────────────────┘
+```
+
+实现技巧：
+1. **首尾同画面**：片头片尾停在同一构图（如产品居中的定格），循环时视觉无缝；
+2. **动作闭合**：让一个连续动作恰好绕回起点；
+3. **淡入淡出对冲**：尾部轻微淡出到白色/背景色，片头也从同色淡入；
+4. ffmpeg 测试拼接：`ffmpeg -stream_loop 2 -i video.mp4 -f null -` 观察是否卡顿。
+
+### 3.14 多素材 A/B 与 OOE 动态创意
+
+竖版素材便宜易产 → **用测试代替猜测**。两套组合拳：
+
+**A/B 测试框架（同一受众，仅换创意）：**
+
+```python
+def ab_test_vertical_creatives(account_id, adset_id, creatives: list, names: list):
+    """同一 AdSet 下为每个创意建一个 Ad，保证其余条件完全一致。"""
+    results = []
+    for i, cid in enumerate(creatives):
+        ad = client.meta_create_ad(adset_id, names[i], creative={"creative_id": cid})
+        ad_id = ad["id"]
+        client.meta_update_ad(ad_id, status="ACTIVE")
+        results.append({"ad_id": ad_id, "creative_id": cid, "name": names[i]})
+    return results
+
+ads = ab_test_vertical_creatives(
+    ACCOUNT_ID, ADSET_ID,
+    creatives=[C1_ID, C2_ID, C3_ID, C4_ID, C5_ID],
+    names=["痛点前置", "教程式", "对比式", "用户证言", "折扣式"],
+)
+```
+
+**OOE / 动态创意（让系统自动组合）：**
+- 1 个 Ad 里放**多个视频 + 多文案 + 多 CTA**，让 Advantage+ 自动排列组合出最佳搭配；
+- 好处：无需人工逐一 A/B，系统按优化事件自动胜出；坏处：无法精确归因哪条素材。
+- 适用：进入放量期、希望对冲创意疲劳时。
+
+**A/B vs OOE 选择矩阵：**
+
+| 阶段 | 选择 | 理由 |
+|------|------|------|
+| 起始测试（想搞清哪种模板强） | 手动 A/B（每 Ad 单一创意） | 归因清晰，便于学素材方向 |
+| 起量/放量（求效率） | OOE 动态创意 / Advantage+ | 系统自动胜出，省人力 |
+| 创意疲劳 | 多素材 A/B 轮换 | 持续供给新素材防疲劳 |
+
+### 3.15 频次控制与预算泵（Budget Pacing）
+
+竖版素材尤其容易疲劳（高频展示在同一批人面前），需要工具化控制：
+
+```python
+def monitor_fatigue_and_pace(account_id, campaign_id, max_freq=3.5,
+                             ttr_drop=0.15, interval_days=2):
+    """监控广告频次与 TTR 趋势，触发换创意/调预算。"""
+    freq = client.meta_query_insights(
+        account_id, date_preset="last_7d", level="campaign",
+        fields=["campaign_id", "frequency", "impressions", "reach"],
+    )
+    row = next((r for r in freq if r.get("campaign_id") == campaign_id), {})
+    f = row.get("values", {}).get("frequency", 0) or 0
+    if f > max_freq:
+        print(f"[警告] 频次 {f:.2f} 已超阈值 {max_freq}，建议上新鲜创意思绪")
+    # 余下：按 2.7 的 TTR 计算对比 last_7d vs 上个周期
+```
+
+**频次相关字段：**
+- `frequency` = `impressions / reach`（平均每人看到次数）；
+- 竖版建议把**单创意频次控制在 3~4 以内**，超过即触发换素材；
+- 预算泵（Pacing）：在广告组层面可设 `lifetime_budget` + `campaign_spend_cap`，
+  或用 `bid_strategy` 让系统在给定预算内最优分配，避免某条老素材吃光全部预算。
+
+### 3.16 竖版广告的"质量分"观感自查（Creative Quality Gate）
+
+上线前用清单做"自检门"，能显著减少返工与拒审：
+
+```text
+竖版创意上线前自检门
+□ 比例：确为 9:16，1080x1920，无内置黑边
+□ 首帧：强钩子，非黑场/Logo 大特写
+□ 首3秒：点名痛点/受众，字幕第一屏同步出现
+□ 字幕：烧录硬字幕、UTF-8、无乱码、位置 72%-84%、≤4词/屏
+□ 音频：内嵌 AAC，48kHz，无声状态也完整可懂
+□ 时长：Reels ≤45s、Stories ≤15s（各取建议值）
+□ 安全区：关键信息在中央核心区，边缘被遮也不影响理解
+□ 内容政策：无医疗/金融/政治/夸张用语，版权音乐合规
+□ 封面：9:16、JPEG/PNG、非动态关键信息
+□ CTA：与落地页一致，不空转
+□ 平台：页面/IG 商业号已授权（object_story_spec 的 page_id/instagram_actor_id 正确）
+```
+
+---
+

@@ -765,3 +765,417 @@ def predict_overrun(api, advertiser_id: str, line_item_id: str, budget_micros: i
 - 单位换算（micros ↔ USD）与 revision 控制（同一条 LI 并发改预算）是自动化的两类暗雷。
 
 ---
+## 三、生产环境实战
+
+本章用一个贯穿案例贯穿全部实战：**某跨境电商客户单月 $1M 预算分配到 5 个 IO、20 个 Line Item**。从方案设计 → pacing 配置 → API 自动化监控 → 人工干预 → 踩坑复盘，走完整条链路。
+
+### 3.1 案例背景与预算结构设计
+
+**客户目标**：6 月投放，总预算 $1,000,000，目标 ROAS 3.0，主打北美（US/CA）市场，涉及Google Display（GDN）+ YouTube + 私有市场（PMP）+ 程序化保证（PG）。
+
+**5 个 IO、20 个 LI 的结构**：
+
+```
+Advertiser: AcmeAds (acme_2026q2)
+├── IO-1 品牌曝光 Branding        ($250K)   [TOTAL_BUDGET, EVEN]
+│   ├── LI-1  YouTube 品牌视频  GDN 前贴片   $80K
+│   ├── LI-2  GDN 展示 品牌横幅             $70K
+│   ├── LI-3  PMP 高端门户                $60K
+│   └── LI-4  YouTube 联网电视(CTV)        $40K
+├── IO-2 效果转化 Performance      ($350K)   [TOTAL_BUDGET, EVEN]
+│   ├── LI-5  GDN 动态再营销               $90K
+│   ├── LI-6  YouTube 再营销              $80K
+│   ├── LI-7  GD 智能竞价-新客             $70K
+│   ├── LI-8  PMP 垂直媒体                $60K
+│   └── LI-9  零售媒体 CTV 转化            $50K
+├── IO-3 拉新拉活 Growth           ($200K)   [DAILY_BUDGET, FRONTLOADED]
+│   ├── LI-10  GDN 潜在客户                $50K
+│   ├── LI-11  YouTube 品牌+促             $50K
+│   ├── LI-12  原生广告 Discover          $40K
+│   ├── LI-13  App 安装(CPI)              $35K
+│   └── LI-14  PVG? 零售媒体              $25K
+├── IO-4 大促冲刺 Promo(6.18~6.20)($120K)  [TOTAL_BUDGET, ACCELERATED]
+│   ├── LI-15  GDN 大促横幅               $35K
+│   ├── LI-16  YouTube 大促视频            $35K
+│   ├── LI-17  PMP 大促包                 $30K
+│   └── LI-18  零售媒体 大促                $20K
+└── IO-5 测试验证 Testing          ($80K)    [DAILY_BUDGET, EVEN]
+    ├── LI-19  新受众/新库存测试           $40K
+    └── LI-20  新 Playbook 验证            $40K
+```
+
+> 设计要点：20 个 LI 之和 = $250+$350+$200+$120+$80 = $1,000K，与总预算完全对账。这是第三章"预算分配"的第一步——**对账（reconciliation）**，用脚本强制验证 ∑LI = IO = 总盘，防止微小的录入误差被放大到 $1M 级别。
+
+---
+
+### 3.2 预算方案落地（Python）
+
+用脚本打出完整结构并校验对账，然后批量创建/写入预算：
+
+```python
+# -*- coding: utf-8 -*-
+"""生产：预算结构设计 + 对账 + 批量写入。"""
+from __future__ import annotations
+
+STRUCTURE = {
+    "IO-1 Branding": {"budget": 250_000, "mode": "TOTAL", "li": [
+        ("LI-1", 80_000), ("LI-2", 70_000), ("LI-3", 60_000), ("LI-4", 40_000)]},
+    "IO-2 Performance": {"budget": 350_000, "mode": "TOTAL", "li": [
+        ("LI-5", 90_000), ("LI-6", 80_000), ("LI-7", 70_000), ("LI-8", 60_000), ("LI-9", 50_000)]},
+    "IO-3 Growth": {"budget": 200_000, "mode": "DAILY_25K", "li": [
+        ("LI-10", 50_000), ("LI-11", 50_000), ("LI-12", 40_000), ("LI-13", 35_000), ("LI-14", 25_000)]},
+    "IO-4 Promo": {"budget": 120_000, "mode": "TOTAL", "li": [
+        ("LI-15", 35_000), ("LI-16", 35_000), ("LI-17", 30_000), ("LI-18", 20_000)]},
+    "IO-5 Testing": {"budget": 80_000, "mode": "DAILY_10K", "li": [
+        ("LI-19", 40_000), ("LI-20", 40_000)]},
+}
+
+def reconcile(struct: dict, total_budget: float) -> bool:
+    """校验 ∑IO = ∑LI = 总预算，返回是否对账。"""
+    io_sum = sum(v["budget"] for v in struct.values())
+    li_sum = 0
+    for v in struct.values():
+        for _, b in v["li"]:
+            li_sum += b
+    ok = (abs(io_sum - total_budget) < 1.0) and (abs(li_sum - total_budget) < 1.0)
+    print(f"[reconcile] IO={{}} LI={{}} Total={{}} ok={ok}".format(io_sum, li_sum, total_budget))
+    return ok
+
+def write_budgets(api, advertiser_id: str, struct: dict) -> None:
+    """把 LI 预算批量写入（micros）。"""
+    updates = [{"line_item_id": lid,
+                "budget_micros": int(b * 1_000_000)}
+               for v in struct.values() for (lid, b) in v["li"]]
+    ok = api.dv360_batch_update_line_items(updates)
+    if not ok:
+        for u in updates:
+            api.dv360_update_line_item_budget(
+                advertiser_id=advertiser_id,
+                line_item_id=u["line_item_id"],
+                budget_micros=u["budget_micros"])
+    print(f"[write] {len(updates)} 个 LI 预算已写入")
+
+
+if __name__ == "__main__":
+    assert reconcile(STRUCTURE, 1_000_000), "预算对账失败，禁止上线"
+    # write_budgets(api, "ads_acme_2026q2", STRUCTURE)
+```
+
+> 🚦 责任声明：此处 `write_budgets` 被注释，因为真实环境中必须先通过 `dv360_list_insertion_order_flexibility` 检查弹性、再经双人审批（变更评审）才可写入。自动化写预算务必有"回滚快照"——写入前把每个 LI 的原始预算存一份，出问题一键恢复。
+
+---
+
+### 3.3 Pacing 模式选择与预算冲刺配置
+
+#### 3.3.1 各 IO pacing 选型
+
+| IO | 选型 | 理由 |
+|----|------|------|
+| IO-1 品牌 | EVEN | 品牌曝光要稳定均匀覆盖整月，避免前重后轻 |
+| IO-2 效果 | EVEN（产量型） | 转化类要平滑，配合 Target CPA/ROAS 出价 |
+| IO-3 拉新 | FRONTLOADED | 拉新要"抢首周心智"，前三天冲量再回落 |
+| IO-4 大促 | ACCELERATED | 6.18~6.20 三天冲刺，有多少预算吃多少，尽快打光拿到曝光 |
+| IO-5 测试 | EVEN + 低预算 | 测试要细水长流，防止单日大量烧钱来不及评估 |
+
+#### 3.3.2 大促日预算冲刺（IO-4）
+
+大促（6.18~6.20）是典型"预算冲刺"场景，目标是**把 3 天的 $120K 尽可能在活动中前 36 小时花掉大部分**，因为大促流量峰值很早就到：
+
+```
+大促冲刺策略（IO-4，$120K / 3 天）：
+├── 6.18 00:00 - 12:00  冲刺 $50K（占比 42%）
+│     · pacing=ACCELERATED，频次放宽到 5/人
+│     · 出价：Target ROAS 1.2（先保量，不计 ROAS 高低）
+├── 6.18 12:00 - 6.19   再花 $45K（占比 37%）
+│     · 保持 ACCELERATED
+│     · 发现 CVR 环比下滑则切回目标 CPA 控成本
+└── 6.20 收尾           花完剩余 $25K（占比 21%）
+      · 若前 2 天已花完，6.20 自动降速（无预算则停止）
+```
+
+**踩坑记录（大促预算被"撑爆"）**：某年大促 PO 设了 `TOTAL_BUDGET=$120K` 忘记关 flexibility，同时开了 ACCELERATED。结果 6.18 首日流量异常高，DV360 把 IO 下所有 LI 的预算**滚动共享**，首日直接冲到 $95K，第 2 天就花光 $120K，导致 6.20（真正的高转化日）无预算可投。教训：**大促冲刺必须同时关掉跨 flight 滚动共享 + 设 DAILY 硬顶**，把"首日冲"限制在可控范围内。
+
+---
+
+### 3.4 通过 API 自动监控 pacing 并调整预算（完整 Python 巡检器）
+
+核心：周期性调用 `dv360_get_pacing_rate` / `dv360_list_performance_stats` / `dv360_get_line_item_budget`，比对花费进度与时间进度，偏离阈值即触发调整。下面是一个可直接在生产跑的巡检脚本骨架。
+
+```python
+# -*- coding: utf-8 -*-
+"""
+DV360 Pacing 巡检与自动调预算（生产草图）
+触发节奏：每小时由 cron 执行一次（大促期可以 15 分钟一次）。
+依据：dv360_get_pacing_rate(advertiser, line_item) 返回 rate。
+动作：AHEAD → 降速；BEHIND → 加速；EXHAUSTED → 告警。
+"""
+import os, time, datetime
+from typing import List, Dict
+
+
+# 偏差阈值（小时级）
+AHEAD_THRESHOLD = 0.20   # 花费进度领先时间进度 20pct
+BEHIND_THRESHOLD = 0.20  # 落后 20pct
+ALERT_THRESHOLD = 0.30
+
+PAUSED_AFTER = datetime.time(23, 0)  # 23 点后不自动加预算（接近日终不留残余骚动）
+
+
+class PacingScanner:
+    def __init__(self, api, advertiser_id: str, notify):
+        self.api = api
+        self.advertiser_id = advertiser_id
+        self.notify = notify  # 告警回调（钉钉/邮件/IM）
+
+    def scan_line_item(self, line_item_id: str, budget_micros: int,
+                       start: datetime.date, end: datetime.date):
+        """对单个 LI 做 pacing 判定并给出动作。"""
+        today = datetime.date.today()
+        # 花费
+        stats = self.api.dv360_list_performance_stats(self.advertiser_id)
+        spent_micros = 0
+        spent_seq = []
+        for row in stats if isinstance(stats, list) else []:
+            if row.get("line_item_id") == line_item_id:
+                spent_micros = int(row.get("spend", 0))
+                spent_seq.append(float(row.get("spend", 0)))
+
+        # 时间进度（按均值天算）
+        total_days = (end - start).days or 1
+        elapsed = (today - start).days
+        elapsed = max(0, min(elapsed, total_days))
+        time_pct = elapsed / total_days if total_days else 0.0
+        spend_pct = (spent_micros / budget_micros) if budget_micros > 0 else 0.0
+        delta = spend_pct - time_pct
+
+        action = None
+        if spend_pct >= 1.0:
+            action = "EXHAUSTED"
+        elif delta >= AHEAD_THRESHOLD:
+            action = "AHEAD"
+        elif delta <= -BEHIND_THRESHOLD:
+            action = "BEHIND"
+        elif abs(delta) >= ALERT_THRESHOLD:
+            action = "ALERT"
+        else:
+            action = "OK"
+
+        return {
+            "line_item_id": line_item_id,
+            "spend_pct": round(spend_pct, 3),
+            "time_pct": round(time_pct, 3),
+            "delta": round(delta, 3),
+            "action": action,
+        }
+
+    def auto_adjust(self, line_item_id: str, result: dict) -> None:
+        """根据 action 决定是否自动改预算/节奏。"""
+        if result["action"] == "AHEAD":
+            # 方案：按剩余预算重新设低日顶（或转 EVEN）
+            new_micros = int(self._recompute(line_item_id, result, shrink=True))
+            self.api.dv360_update_line_item_budget(
+                advertiser_id=self.advertiser_id,
+                line_item_id=line_item_id,
+                budget_micros=new_micros)
+            self.notify("pacing", f"{line_item_id} 超速，预算下调至 ${new_micros/1e6:.0f}")
+        elif result["action"] == "BEHIND":
+            # 落后：加预算上限 15%
+            base = self.api.dv360_get_line_item_budget(line_item_id).get("budget_micros", 0)
+            new_micros = int(base * 1.15)
+            if datetime.datetime.now().time() < PAUSED_AFTER:
+                self.api.dv360_update_line_item_budget(
+                    advertiser_id=self.advertiser_id,
+                    line_item_id=line_item_id,
+                    budget_micros=new_micros)
+            self.notify("pacing", f"{line_item_id} 滞后，预算上限上调至 ${new_micros/1e6:.0f}")
+        elif result["action"] == "EXHAUSTED":
+            self.notify("critical", f"{line_item_id} 预算已耗尽，请人工介入")
+
+    def _recompute(self, line_item_id: str, result: dict, shrink: bool) -> float:
+        """根据剩余预算/剩余天数重算目标（EVEN 下理想日消耗×剩余天数）。"""
+        b = self.api.dv360_get_line_item_budget(line_item_id).get("budget_micros", 0)
+        spent = ...  # 实际花费
+        days_left = ...  # 剩余天数
+        ideal_daily = (b - spent) / max(days_left, 1)
+        # shrink=向上封顶；expand=加缓冲
+        return ideal_daily * days_left * (0.9 if shrink else 1.05)
+
+
+# cron 主入口
+def main(api, advertiser_id: str, io_list: List[Dict], notify):
+    scanner = PacingScanner(api, advertiser_id, notify)
+    for io in io_list:
+        for li in io["line_items"]:
+            res = scanner.scan_line_item(
+                li["id"], li["budget_micros"], li["start"], li["end"])
+            print(io["name"], li["id"], res)
+            if res["action"] in ("AHEAD", "BEHIND", "EXHAUSTED"):
+                scanner.auto_adjust(li["id"], res)
+    # 汇总到账户健康
+    health = api.dv360_get_account_health(advertiser_id)
+    print("[account health]", health)
+```
+
+> 🎯 生产要点：
+> 1. **调整幅度要小、频次要高**：每次 ±15% 以内，15~60 分钟一次，避免一次大幅改预算引发抖动；
+> 2. **加预算不减收入、减预算看 ACOS**：对大促期不要因为"花太快"而机械降预算（可能正当需求期）；
+> 3. **审计留痕**：每次调整调用 `dv360_list_activity_logs` 记录谁/何时/为何改；出问题时能回滚；
+> 4. **幂等与并发**：同一条 LI 不允许两个 job 同时改预算，用 Redis 锁 + 乐观版本号控制。
+
+---
+
+### 3.5 跨账户预算共享与外部预算控制塔
+
+当客户把预算分散在多个 Advertiser（甚至多个 Partner / 多国站点）时，需要"外部预算控制塔"统一调配。
+
+#### 3.5.1 控制塔架构
+
+```
+                  ┌───────────────────────────────┐
+                  │  Finance / Treasury（总预算审批）│
+                  └───────────────┬───────────────┘
+                                  │ 目标 ROAS / 总盘
+                                  ▼
+   ┌───────────────────────────────────────────────────┐
+   │          外部预算控制塔（自建服务）                   │
+   │  · 汇总层：拉取各账户预算/花费（USD 归一）             │
+   │  · 决策层：按 ROI 权重分配（复用 2.4 allocate()）     │
+   │  · 执行层：dv360_update_budget_allocation 回写      │
+   │  · 告警层：超支/花不完 预警                          │
+   └───────┬───────────────┬───────────────┬───────────┘
+           ▼               ▼               ▼
+   Advertiser A (US)  Advertiser B (CAD)  Advertiser C (EU/GBP)
+   └ dv360 apis ──┘  └ dv360 apis ──┘    └ dv360 apis ──┘
+```
+
+#### 3.5.2 多币种 / 多时区的归一化问题（重点踩坑区）
+
+跨账户预算最容易翻车的就是"同一个月美元、加元、欧元混在一起算总和"。制定**统一的归一规则**：
+
+| 维度 | 问题 | 归一规则 |
+|------|------|----------|
+| 币种 | USD/CAD/GBP/EUR 混加 | 统一到基准币 USD，用**当日即期汇率**快照；汇总后标注"按 2026-08-14 汇率折 USD" |
+| 时区 | EST/PST/CET 差异 | 所有"日"归一到 UTC（或广告主总部时区）；pacing 对比必须在同一时区日 |
+| 预算单位 | micros vs 元 | 一律在控制塔内转成 USD 元做存储与比较，仅在调 API 边界转 micros |
+| 结算日 | 自然月 vs 账单月 | 预算对账以**投放 flight** 口径对齐，不要拿账单月做调度 |
+
+```python
+# 多币种归一示例
+CURRENCY_RATES = {"USD": 1.0, "CAD": 0.73, "GBP": 1.27, "EUR": 1.09}
+
+def micros_to_usd(micros: int, currency: str, rates: dict = None) -> float:
+    """把 DV360 返回的 micros 折算为基准 USD。"""
+    rates = rates or CURRENCY_RATES
+    usd_units = micros / 1_000_000  * rates.get(currency, 1.0)
+    return round(usd_units, 2)
+
+def reconcile_cross_account(all_accounts: list) -> dict:
+    """汇总各账户（多币种）预算与花费成统一 USD 视图。"""
+    summary = {"total_budget_usd": 0.0, "total_spent_usd": 0.0, "accounts": []}
+    for acc in all_accounts:
+        budget_usd = micros_to_usd(acc["budget_micros"], acc["currency"])
+        spent_usd = micros_to_usd(acc["spent_micros"], acc["currency"])
+        summary["total_budget_usd"] += budget_usd
+        summary["total_spent_usd"] += spent_usd
+        summary["accounts"].append({
+            "account": acc["account_id"],
+            "currency": acc["currency"],
+            "budget_usd": budget_usd,
+            "spent_usd": spent_usd,
+            "util": spent_usd / budget_usd if budget_usd else 0.0,
+        })
+    return summary
+```
+
+> ⚠️ 汇率踩坑：财报希望用**期末汇率**，而日常调度希望用**实时汇率**。控制塔必须记录"每笔换算用的汇率快照 + 日期"，否则不同人对账会得出不同总和，引发信任危机。
+
+#### 3.5.3 跨账户再分配的"最小改动"原则
+
+跨账户动预算前，遵循三原则减少扰动：
+
+1. **先削后补（robin-hood）**：从 `util > 90%`（快花完）并且 ROI 低于账户平均的账户**削**；补给 `util < 60%` 且 ROI 高的账户**补**；
+2. **阈值触发**：只有偏离超过阈值（如 util 差 > 25%）才动，避免每 15 分钟来回改造成抖动；
+3. **增量而非全量**：每次改预算用增量（+/-15%），而非推倒重写，保留可追踪的变更历史。
+
+---
+
+### 3.6 踩坑案例集（真实复盘）
+
+#### 坑 1：预算超支告警（Overrun Alert）
+
+**现象**：IO 是 `DAILY_BUDGET` 但 PV/流量异常，某天真实花费超过日预算 200%，财务告警。
+**根因**：`DAILY_BUDGET` 是"目标"而非"硬限"；DV360 允许多花（overdelivery），尤其 ACCELERATED 或 high-confidence 库存下。另：时区切换（夏令时 DST）会让"一天"多 1 小时，PST↔EST 切换更易超支。
+**对策**：
+- 关键 IO 加设 `flyour` 硬顶（或 Partner 级 max spend）；
+- 监控告警用 `spent / (daily_budget × 1.1)` 阈值，不直接用 100%；
+- 大促/换季前核查时区设置：`dv360_list_time_zones` + `dv360_get_customer` 对时区做快照。
+
+#### 坑 2：Pacing 卡在 0（完全花不出去）
+
+**现象**：新建的 LI 一周了 pacing 还是 0，预算一分没动。
+**根因**（按概率排序）：
+1. 创意未审批（`dv360_get_creative_approval` 是 PENDING/DENIED）；
+2. 定向过窄或 budget 太低（不满足出价下限）；
+3. IO/LI status 在 PAUSED（忘了开启）；
+4. Bid strategy 设了 target CPA 但无转化数据，模型不敢竞价；
+5. Inventory 定向排除了实际库存。
+**对策**：用 `dv360_get_account_health` 一次性体检，再逐项排查创意审批→定向→预算→出价→库存。
+
+#### 坑 3：日预算用超（Daily Overspend）
+
+**现象**：设定日预算 $1,000，某天实花 $1,300。
+**根因**：① overdelivery 机制允许 +10% 左右；② 若同时有几个 LI 共池共抢，合并超支；③ 时区 DST 导致 25 小时"日"。
+**对策**：需要"绝对不超支"的账户，用 Partner 级 max spend + 人工 Pacing HOLD；并接受一定 overdelivery 通胀（大部分平台如此，RV360 超支通常瞬时 10~20%）。
+
+#### 坑 4：跨账户预算无法共享
+
+**现象**：客户问"为什么我的 Partner 预算 $2M 但 US 账户花不完、EU 账户却超支，不能自动互通？"
+**根因**：DV360 **原生**不提供跨 Advertiser 的自动共享资金池（除非 Partner 级 profile 配置且仍不保证自动调拨）。所谓共享必须走外部控制塔回写。
+**对策**：明确客户预期，通过控制塔实现"逻辑共享"；财务口径上把各账户的独立预算加起来 = 总盘，避免"共享 = 一锅粥"的误解。
+
+#### 坑 5：预测过于乐观
+
+**现象**：DV360 reach/预算预测显示 $500K 能买 3000 万 reach；上线后只能买到 1900 万。
+**根因**：预测基于历史库存均值 + 模型假设，会**高估新定向/旺季的可得量**；大促、竞品加价、可寻址受众缩水会让实际量大幅低于预测。
+**对策**：
+- 用"达成率系数"（如保守 ×0.6、中性 ×0.8、乐观 ×1.0）对预测打折；
+- 监控实际 spend 与预测的偏差，动态修正系数；
+- 预测只用于"定档/排产"，不用于"保证交付"；PG 例外（有保量合同）。
+
+#### 坑 6：修改预算不生效
+
+**现象**：`dv360_update_line_item_budget` 返回成功，但报表里预算没变。
+**根因**：① flexibility 为 DENY，远端静默接受但不生效；② flight 已结束，无法改预算；③ 改了 IO 但没同步下层 LI（层级不一致）；④ API 版本（v4 字段名）与脚本不匹配。
+**对策**：写入后**读回验证**（`dv360_get_line_item_budget` 对比新旧值），失败则触发告警而非静默假设成功。建立"写-读-校验"闭环。
+
+---
+
+### 3.7 生产监控面板指标体系
+
+一套预算健康监控的核心指标：
+
+| 指标 | 计算 | 健康阈值 | 告警级别 |
+|------|------|----------|----------|
+| 花费进度 spreadPct | spent/budget | 随 timePct 漂移 | WARN/CRIT |
+| Pacing Rate | dv360_get_pacing_rate | 0.8~1.2 | WARN |
+| 预算利用率 Util | spent/budget | 40~95% | WARN（过低=花不完，过高=快超支） |
+| 日超支率 | max((spent-daily)/daily) | <15% | CRIT（>30%） |
+| 预测达成率 | 实际/预测 | >0.7 且 <1.3 | WARN |
+| 单位换算一致性 | 快照汇率校验 | 一致 | 告警（汇率漂移） |
+| 弹性可操作性 | flexibility=EDITABLE | 目标 IO 全可编辑 | WARN |
+
+> 把这些指标面板化（Grafana/自建 Dashboard），配合 cron 巡检器，就形成"预算健康运营"的闭环。
+
+---
+
+### 3.8 本章小结
+
+- $1M / 5 IO / 20 LI 案例：先对账（∑=总盘）再写入，是预算分配的第一步。
+- pacing 选型按 IO 目标：品牌 EVEN、效果 EVEN、拉新 FRONTLOADED、大促 ACCELERATED、测试 EVEN。
+- 大促冲刺要**关跨 flight 滚动 + 设日硬顶**，否则会被"撑爆"。
+- 自动化巡检：每小时读 pacing/花费，偏差超阈值则 ±15% 增量调整，并留审计。
+- 跨账户共享 = 外部控制塔 + 多币种/多时区归一 + 最小改动再分配。
+- 六大坑：超支告警、pacing 卡 0、日预算超、无法共享、预测过乐观、改预算不生效，各有明确排障脚本。
+- 建立指标面板，形成监控 → 决策 → 执行 → 校验的闭环。
+
+---

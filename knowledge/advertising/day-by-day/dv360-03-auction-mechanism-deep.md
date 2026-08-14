@@ -683,3 +683,137 @@ func ShadeBid(v float64, n int) float64 {
 - DV360 出价 = 配置出价 × 价值系数 × pacing 系数 × bid modifier，最后对拍 floor。`dv360_get_pacing_rate` 观测消耗节奏。
 - Python / Go 均实现了"过滤 floor → 排序 → 结算"引擎，验证了机制。
 
+---
+
+## 三、生产环境实战
+
+这一章把前面的理论放到真实投放场景：理解拍卖行为、调整出价策略、搞清 PG / PMP 的竞价语义，以及**踩过的坑**。
+
+### 3.1 案例：读懂拍卖行为，动态调整出价策略
+
+**场景**：某品牌号在 DV360 投重定向 + 兴趣定向的展示广告，用了 `Maximize conversions`（自动出价）跑了一周，漏斗正常但 eCPM 偏高、量一直压在预算内。运营想"省成本手动出 CPM"。
+
+**正确的排查与调整路径：**
+
+```
+Step 1  观测读拍卖: 
+        dv360_list_auction_insights(advertiser_id) → 看竞价参与率、胜出率(win rate)
+        dv360_list_bid_performance(advertiser_id)  → 看出价分布 / 成交价 vs 出价差距
+Step 2  定位问题: 
+        · 胜出率低(如 <10%) → 出价偏低 或 竞争激烈,排除定向过窄
+        · 胜出率高但eCPM高 → 出价过高 overpay, 需要 shade
+        · 成交价集中贴在floor附近 → 说明你是"场内唯一买家", 但被floor托底
+Step 3  调整策略: 
+        · 若成交价是 floor 兜底 → 手动压低出价, 试探更低 floor 成交, 而非盲目
+        · 若 win rate 低 → 用 dv360_update_line_item 提高出价上限 / 放宽定向
+        · 用 dv360_list_bid_recommendations + dv360_update_bid_recommendation 让系统给建议
+Step 4  预估后再改: 
+        dv360_get_performance_forecast / dv360_list_reach_forecasts 观察改后可达量与成本
+```
+
+**真实结论（经验）**：在**第一价格**下，手动填"一个偏高 CPM 保量"是典型的 overpay 陷阱：只要竞争不强，你每次成交都真付你的出价，成本被系统性抬到接近你的出价而不是接近市场价。**正确做法**是依赖自动出价让引擎做逐机会 shade，或手动手动压到"比预估市场均衡价略高一点"、并用 win rate 做反馈闭环。
+
+```python
+# 生产脚本示例: 观测并警惕 delta=clear-bid
+report = client.dv360_list_bid_performance(advertiser_id)
+for row in report:
+    bid = row.get('bid_cpm')
+    clear = row.get('clearing_price_cpm')
+    delta = (clear - bid) / bid if bid else 0
+    # 第一价格下, 若 delta 长期接近 0 → 出价≈成交价, 说明你常是独赢家, 可压低出价
+    # 若 clear 常在 bid 附近 → 属正常第一价格行为, 别误以为被坑
+```
+
+---
+
+### 3.2 PG 保量与 PMP 的"竞价语义"差异（重点澄清）
+
+很多同学把 PG 和 PMP 混为一谈，这是投放里最贵的误解之一。我们系统对比：
+
+| 维度 | PG（程序化保量） | PMP（私有市场） |
+|------|----------------|---------------|
+| **定价方式** | 协商固定 CPM（合同价） | 邀请制竞价 + 高 floor |
+| **是否进拍卖** | **否**（按合同直接成交） | **是**（受邀的 DSP 出价竞争） |
+| **量保证** | **保量**，未达标按协议赔付 | 不保量，出价低于 floor 就 0 成交 |
+| **库存访问** | 已锁定 | 有优先访问权但不独占 |
+| **价格上限** | 单价固定，无竞价弹性 | 出价变化影响成交/丢单 |
+| **预算可控性** | 高（锁定） | 中（取决于出价与 floor 竞争） |
+| **典型误用** | 拿 PG 当"竞价优化"，无效 | 拿 PMP 当"保量"，错 |
+
+**PG 的正确理解**：
+- PG 的价格是**事先谈好的固定 CPM**，不存在"出价越高量越多"的博弈。你调"出价"对 PG 的成交价**无效**（没有拍卖）。你要调的应是**预算分配**与**保量达成率**。
+- PG 的价值在**确定性**与**品牌安全/独占**：锁定某个媒体包（package）的确定性展示。代价是贵和死板。
+- 生产上，PG 由 **Proposal（提案）** 管理。用 `dv360_list_proposals(advertiser_id)` 查看 PG 提案状态，`dv360_accept_proposal` / `dv360_reject_proposal` 处理接受/拒绝。这些 API 不涉及出价策略，因为 PG 无竞价。
+
+**PMP 的正确理解**：
+- PMP 仍是**第一/第二价格拍卖**，只是参与者受限、floor 高。所以**出价必须 ≥ PMP 的 floor，否则一条都不给**。
+- PMP 的"量"取决于你的出价在受邀者里能不能赢、以及是否高于 floor。**想从 PMP 多拿量，靠提价/扩大排除项，而不是把它当保量**。
+
+> **实战红线**：把 PMP 当成"保量"去配预算，会出现"预算设了 10 万、实际只花 1 万，其余因为出价低于 floor 全丢"的现象。**不是没流量，是出价没越过 floor**。
+
+---
+
+### 3.3 生产最佳实践清单
+
+1. **明确交易的"竞价语义"再谈出价**：先判定是 Open/PMP（有拍卖）还是 PG（无拍卖）。PG 别调出价，PMP 先确认 floor。
+2. **第一价格下优先使用自动出价**：让引擎做逐机会 shade，避免手动 CPM overpay。手动出价只用于对成本极敏感的成熟中段库存。
+3. **Always 用 win rate + auction insights 反馈**：`dv360_list_auction_insights` + `dv360_list_bid_performance` 组成闭环。别单看"花了多少"，要看"胜出率 × 结算价与出价差距"。
+4. **floor 意识**：当成交价集中贴于 floor，说明你常是场内唯一/最高买家，压低出价可省预算；反之如果 win rate 已经低，别再压。
+5. **pacing 与出价协同**：`dv360_get_pacing_rate` 偏低(花不完)不只调出价，更多要**放宽定向 / 扩大覆盖面 / 加预算**；调整出价只是手段之一。
+6. **预估先行**：改出价/定向前用 `dv360_get_performance_forecast` / `dv360_list_reach_forecasts` 评估可达量与成本影响，避免拍脑袋。
+7. **用系统建议**：`dv360_list_bid_recommendations` 结合 `dv360_update_bid_recommendation`，让 DV360 的模型告诉我们"该提价还是压价"。
+8. **盯 no-fill / unfilled**：如果大量机会因低于 floor 而未成交，优先查「floor 偏高」还是「出价偏低」，对症。
+
+---
+
+### 3.4 踩坑实录（真实经验）
+
+下面几条都是实战中反复出现的坑，每条都"烧过钱"：
+
+**坑 1：出价误区——手动出价"报高保险"，在第一价格下系统性过付。**
+- 现象：把 CPM 出价从 $4 提到 $6 想"保量"，结果 eCPM 也悄悄爬到 ~$6，成本 +50% 而量只涨一点点。
+- 原因：第一价格下结算价=你的出价。竞争不强的长尾里，你提价 = 直接多付，不是"更可能赢"而是"以更高价赢"。
+- 解法：降回并依赖自动 shade；或只在 win rate 确实太低时小幅提价，用 auction insights 确认竞争是真的激烈。
+
+**坑 2：底价导致丢单（floor 过高 / 出价低于 floor）。**
+- 现象：PMP 预算大但花不出去，查询后才发现**成交价为 0**，不是没量而是出价一直低于 PMP floor。
+- 原因：PMP floor 常设 $8+，而你按公开市场经验出 $3~4。
+- 解法：用 `dv360_list_bid_recommendations` 或直接看该 deal 的 floor；把 PMP 出价提到 floor 之上；同时检查是否有更便宜的同类 PMP/Open 库存替代。
+
+**坑 3：CPM 理解错误——把"报表 eCPM/展示成本"当"出价"，从而误判。**
+- 现象：报表 eCPM 显示 $2.5，出价 $5，运营以为"系统偷了钱"或"出价没生效"。
+- 原因：第一价格下成交价=出价，但报表 eCPM 是**加权平均成交成本**（只有部分展示成交、部分折扣、部分 CPV/Viewable 折算），且包含不成交机会的分母摊薄。二者根本不是同一个数。
+- 解法：不要用"报表 eCPM < 出价"来判断机制问题；要看 `dv360_list_bid_performance` 里的**逐个 bid/clearing** 明细。
+
+**坑 4：把 PMP 当保量、把 PG 当可优化竞价。**
+- 现象 a：PMP 设了大预算，指望"稳拿量"，结果量严重不足（低于 floor 全丢）。
+- 现象 b：PG 上来就调出价想省成本，毫无效果还浪费时间。
+- 解法：先分清交易类型（`get_transaction_type_options()` / `dv360_list_proposals`），PMP 看 floor+出价、PG 看保量+Budget 分配，别用错工具。
+
+**坑 5：pacing 与出价"只调一个"导致的失衡。**
+- 现象：预算花不完，于是猛提出价想抢量，结果半天就把当日预算烧光，后半程 0 展示。
+- 原因：出价与 pacing 是两个独立杠杆，只动出价会破坏"匀速消耗"。提价后 pacing 会放大，导致前半天爆量后半天断流。
+- 解法：用 `dv360_get_pacing_rate` 观察曲线，调整出价的同时检查预算上限与 flight 排期；必要时扩大定向而非只提价。
+
+**坑 6：忽略"底价临界"的悬崖效应。**
+- 现象：把出价从 floor 上方往下调 10%，流量从"正常"直接掉到"接近 0"。
+- 原因：低于 floor 即整体无资格（no-fill），不是线性减少而是**断崖**。
+- 解法：调出价时参考 floor 位置做**粒度试探**（±5% 步进），别一次砍太多；优先用自动出价引擎去兜底。
+
+---
+
+### 3.5 生产监控：把拍卖信号接进日报
+
+良好的生产实践是把拍卖健康度做成**每日可观测指标**，下面给出一套建议的监控维度与来源 API：
+
+| 监控指标 | 理想范围 | 含义/警戒 | 数据来源 |
+|---------|---------|----------|---------|
+| Win Rate（胜出率） | 20%~50% | <10% 出价偏低/竞争过激；>80% 可能 overpay | `dv360_list_auction_insights` |
+| Clearing−Bid 差值 | 第一价格≈0 | 长期≈0 且 win rate 高 → 独立买家,可压价 | `dv360_list_bid_performance` |
+| 成交价≤floor 成交占比 | 占比越低越好 | 高 → 你是底部买家, pay-to-floor | `dv360_list_bid_performance` |
+| Pacing Rate | 匀速 ~100% | <70% 花不完; >120% 前紧后松 | `dv360_get_pacing_rate` |
+| Unfilled / No-fill | 越低越好 | 高 → floor 过高或出价过低 | `dv360_get_performance_forecast` |
+| 建议采纳 | — | 定期看推荐并决定采纳 | `dv360_list_bid_recommendations` |
+
+> 把这些合成一张"竞价健康日报"，每天看 win rate 与 pay-to-floor 两个信号，基本能提前发现 90% 的出价/底价问题，而不是等预算烧完才后知后觉。
+

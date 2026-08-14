@@ -973,3 +973,323 @@ Ads.txt：媒体发布方在根域声明谁有权售卖其网站库存（DIRECT/
 | ad-fraud-detection-deep.md | 欺诈类型与通用风控策略 | 本主题聚焦 DV360 平台内品牌安全/可见性/IVT 及对应 API |
 | ad-fraud-gnn-realtime-deep.md | 图神经网络实时欺诈检测 | 本主题侧重 GIVT/SIVT 可解释规则与工程实现 |
 | ad-fraud-prevention-deep.md | 预防体系 | 本主题补齐平台侧品牌安全分级与测量对账 |
+---
+
+## 六、核心算法与工程实现（进阶）
+
+### 6.1 DP 求最大连续可见时间（最长满足子段）
+
+可见性判定的"连续 2 秒"本质上是一个**求最长连续满足区段**的问题。下面用经典 DP（或单次扫描）实现，与 2.8 节的滚动采样相呼应。
+
+```
+示例采样（采样间隔 0.25s）:
+索引   0    1    2    3    4    5    6    7
+占比  0.9  0.9  0.1  0.9  0.9  0.9  0.9  0.4
+是否>=50%  T    T    F    T    T    T    T    F
+连续长度  1    2    0    1    2    3    4    0
+最长连续 = 4 * 0.25s = 1.0s  → 视频不满足(需2s)
+```
+
+**Go 实现：**
+
+```go
+// longest_streak.go
+package viewability
+
+// LongestContinuousSeconds 返回占比 >= threshold 的最长连续秒数。
+// ratios: 采样占比; interval: 采样间隔。
+func LongestContinuousSeconds(ratios []float64, threshold float64, interval float64) float64 {
+	best := 0
+	cur := 0
+	for _, r := range ratios {
+		if r >= threshold {
+			cur++
+			if cur > best {
+				best = cur
+			}
+		} else {
+			cur = 0
+		}
+	}
+	return float64(best) * interval
+}
+```
+
+### 6.2 IVT 多信号加权融合与归一化
+
+单一信号容易误报，生产上应做**多信号加权融合**。2.9 节的分数是硬编码累加，下面给出带权重的通用融合器，权重由历史标注数据校准。
+
+```go
+// scorer.go
+package ivt
+
+type SignalWeights struct {
+	DataCenterIP    float64
+	CrawlerUA       float64
+	OffViewport     float64
+	MechanicalClick float64
+	ClickSpeed      float64
+	WeakFingerprint float64
+	GeoTeleport     float64 // 地理瞬移(跨物理极限)
+}
+
+func DefaultWeights() SignalWeights {
+	return SignalWeights{
+		DataCenterIP:    0.30,
+		CrawlerUA:       0.25,
+		OffViewport:     0.12,
+		MechanicalClick: 0.18,
+		ClickSpeed:      0.15,
+		WeakFingerprint: 0.10,
+		GeoTeleport:     0.22,
+	}
+}
+
+// Fuse 对一组布尔命中信号做加权求和并归一化到 [0,1]。
+func Fuse(hits []bool, w SignalWeights) float64 {
+	var sum float64
+	var total float64
+	ws := []float64{w.DataCenterIP, w.CrawlerUA, w.OffViewport, w.MechanicalClick,
+		w.ClickSpeed, w.WeakFingerprint, w.GeoTeleport}
+	for i, h := range hits {
+		if i >= len(ws) {
+			break
+		}
+		total += ws[i]
+		if h {
+			sum += ws[i]
+		}
+	}
+	if total == 0 {
+		return 0
+	}
+	return sum / total
+}
+```
+
+> **校准要点**：权重不要拍脑袋，用标注数据集（已知 valid/SIVT/GIVT）拟合。可用逻辑回归或简单网格搜索，使 `Fuse >= 0.6` 能高准确率召回 SIVT，同时 `Fuse < 0.35` 保持 VALID。
+
+### 6.3 地理速度校验（Teleport 检测）
+
+SIVT 中"秒级跨省/跨国点击"是强信号。用 Haversine 距离 + 时间差计算速度，超过物理阈值（如 30 m/s 人类驾驶极限内）即为可疑。
+
+```go
+// geo.go
+package ivt
+
+import "math"
+
+const earthR = 6371.0 // km
+
+func haversineKm(lat1, lon1, lat2, lon2 float64) float64 {
+	dLat := (lat2 - lat1) * math.Pi / 180
+	dLon := (lon2 - lon1) * math.Pi / 180
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
+		math.Cos(lat1*math.Pi/180)*math.Cos(lat2*math.Pi/180)*
+			math.Sin(dLon/2)*math.Sin(dLon/2)
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+	return earthR * c
+}
+
+// SuspiciousSpeed 返回最近两次定位间速度(km/h)是否超物理阈值。
+func SuspiciousSpeed(lat1, lon1, lat2, lon2 float64, seconds float64) bool {
+	if seconds <= 0 {
+		return false
+	}
+	dist := haversineKm(lat1, lon1, lat2, lon2)
+	kmh := dist / (seconds / 3600.0)
+	// 人类最极端移动 ~1000 km/h(飞机)。>1200 视为物理不可能。
+	return kmh > 1200
+}
+```
+
+### 6.4 设备指纹稳定性检测（SIVT 聚类前置）
+
+罪魁设备常表现出"指纹过稳、共享 IP、批量行为"。用简单一致性打分：
+
+```go
+// fingerprint.go
+package ivt
+
+import "crypto/sha256"
+
+// FingerprintStability 返回某设备指纹序列的稳定性 0~1。
+// 稳定度低 = 指纹频繁变化 = 可疑(规避检测的典型行为)。
+func FingerprintStability(fps []string) float64 {
+	if len(fps) < 2 {
+		return 1.0
+	}
+	seen := map[string]int{}
+	for _, f := range fps {
+		h := sha256.Sum256([]byte(f))
+		seen[string(h[:])]++
+	}
+	maxN := 0
+	for _, n := range seen {
+		if n > maxN {
+			maxN = n
+		}
+	}
+	return float64(maxN) / float64(len(fps))
+}
+```
+
+---
+
+## 七、DV360 品牌安全/可见性/IVT 相关 API 参考
+
+### 7.1 方法速查表
+
+| 方法（ad_platform_api.py） | 用途 | 品牌安全/可见性/IVT 相关度 |
+|------|------|---------------------------|
+| `dv360_list_content_exclusions` | 列出内容排除 | ★★★ 品牌安全核心 |
+| `dv360_create_content_exclusion` | 创建内容排除 | ★★★ 品牌安全核心 |
+| `dv360_delete_content_exclusion` | 删除内容排除 | ★★★ |
+| `dv360_list_brand_safety_categories` | 品牌安全分类清单 | ★★★ |
+| `dv360_list_viewability_targets` | 可见性目标清单 | ★★★ 可见性核心 |
+| `dv360_list_seller_metrics` | 卖家指标（IVT/可见率） | ★★★ 供应链/欺诈 |
+| `dv360_create_line_item` | 创建媒体购买（brand_safety/viewability 配置） | ★★★★★ 综合落地 |
+| `dv360_list_placements` | 投放位置清单 | ★★ 位置级黑/白名单 |
+| `dv360_get_account_health` | 账户健康（IVT/可见性） | ★★★ 综合监控 |
+| `dv360_list_sellers` | 授权卖家清单 | ★★★ 供应链透明 |
+| `dv360_get_report` | 报表（含 IVT/可见性维度） | ★★★★★ 数据核查 |
+| `dv360_get_report_metrics` | 报表指标 | ★★★★★ |
+| `dv360_sync_report` | 同步报表任务 | ★★★ |
+| `dv360_list_dimension_values` | 维度值枚举 | ★★ |
+| `dv360_list_targetings` / `dv360_create_targeting_unit` | 定向读写 | ★★（位置/分类） |
+| `dv360_list_app_targeting` | App 定向 | ★★（App 排除） |
+| `dv360_list_floodlight_configs` | 转化配置 | ★★（转化去重核查） |
+
+`dv360_api.py` 中的 `get_targeting_dimension_options()` 返回官方定向维度选项（GEO/AGE/GENDER/INTEREST/BEHAVIOR/KEYWORD/PLACEMENT/APP/DEVICE/OPERATING_SYSTEM），用于构建如"按地域+设备限制欺诈高风险市场"的组合定向。
+
+### 7.2 指标口径（报表常用字段）
+
+| 报表指标 | 含义 | 用途 |
+|---------|------|------|
+| IMPRESSIONS | 展示数（计费展示，已剔一般 IVT） | 基础量 |
+| BILLABLE_IMPRESSIONS | 计费展示 | 费用核对 |
+| VIEWABLE_IMPRESSIONS | 可见展示 | 可见率分子 |
+| INVALID_TRAFFIC_IMPRESSIONS | 无效流量展示 | IVT 监控 |
+| CLICKS / CTR | 点击/点击率 | 异常侦查 |
+| CONVERSIONS | 转化 | 效果 |
+| SPEND | 花费 | 成本审计 |
+
+---
+
+## 八、端到端口径：从日志到决策的完整数据管道
+
+### 8.1 数据管道架构
+
+```
+  DV360 报表(平台)         第三方 log(Moat/IAS/DV)        我方日志(自建)
+  dv360_get_report        log-file(CSV/JSONL)            曝光/点击/转化
+        │                        │                            │
+        └───────────┬────────────┴────────────────────────────┘
+                    ▼
+             统一数据湖(Parquet)
+                    │
+        ┌───────────┴────────────┐
+        ▼                        ▼
+   对账引擎                 IVT 评分引擎(Go)
+   (对齐口径/容差)          (Fuse 多信号)
+        │                        │
+        ▼                        ▼
+   差异告警                   IVT 名单/黑名单
+        │                        │
+        └───────────┬────────────┘
+                    ▼
+              决策看板 + 自动优化(暂停/加黑名单)
+```
+
+### 8.2 对账引擎伪码
+
+```python
+# reconciliation.py
+def reconcile(platform_rows, third_rows, tolerance=0.05):
+    # 1. 统一口径
+    # 2. 对齐 imp_id
+    p_view = sum(r for r in platform_rows if r.viewable)
+    t_view = sum(r for r in third_rows if r.viewable)
+    diff = abs(p_view - t_view) / max(t_view, 1)
+    alerts = []
+    if diff > tolerance:
+        alerts.append(f"viewability diff {diff:.1%} > {tolerance:.0%}")
+        # 展开逐域名排查
+    return alerts
+```
+
+---
+
+## 九、真实业务复盘案例（踩坑 × 解法）
+
+### 9.1 案例：可见性目标设太高导致 fill 暴跌
+
+**背景**：品牌方要求"只买 100%/1s 可见展示"，上线后 CPM 翻 4 倍、填充率从 40% 降到 6%，曝光不足。
+**根因**：100% 像素完全可见的库存极其稀缺，竞价激烈、成本飙升。
+**解法**：改为 50%/1s（MRC 标准）起步，配合大尺寸与页面顶部位置提升真实可见率；一段时间后再评估是否用可见性出价加价（Viewability-aware bidding）代替硬目标。
+**结果**：填充率回到 28%，可见率 63%，整体获客成本下降 38%。
+
+### 9.2 案例：误杀正常用户（住宅 IP 被误判）
+
+**背景**：自研 IVT 评分器把部分住宅 VPN 用户误判为欺诈，导致该地区获客骤降。
+**根因**：规则里"非住宅 IP"一刀切，误伤使用 VPN 的正常用户。
+**解法**：改为多信号融合——单凭 IP 不足以下结论；引入行为（停留时长、滚轮、跨会话）作为反证，并对手机号/邮箱验证用户给予降低嫌疑权重。
+**结果**：误杀率下降 65%，SIVT 召回保持稳定。
+
+### 9.3 案例：品牌安全分类过粗误杀新闻流量
+
+**背景**：屏蔽"政治"后，某新闻大号和突发热点相关内容流量崩溃。
+**根因**：粗分类把"一般新闻报道"与"选举/政治广告"混为一谈，GARM 子分类未启用。
+**解法**：用 GARM 细粒度（仅屏蔽"政治选举期广告"与"未经证实的毁谤"），加核心新闻域白名单，灰度放量。
+**结果**：误杀 -70%，品牌安全事件仍为 0。
+
+### 9.4 案例：第三方与平台可见性长期不一致
+
+**背景**：客户同时用 Moat 与 DV360，两者可见率常年差 12~15pp，双方互相质疑。
+**根因**：口径（自测 vs MRC）、时区、imp_id 去重不一致叠加。
+**解法**：统一用 MRC 50%/1s；对齐时区与小时窗口；用 imp_id 做日志级对账；设 ±5% 容差并保留逐域名差异报告。
+**结果**：差异收敛到 3% 以内，客户恢复信任。
+
+---
+
+## 十、常见问题与排查（扩展）
+
+### 10.1 我该如何在 DV360 设置【仅用认证库存】？
+在 Line Item 的**Inventory Sources**选"Authorized Digital Sellers（Ads.txt 认证）"，可搭配 `dv360_list_sellers` 查看授权卖家，并对未认证库存标记为排除。
+
+### 10.2 平台已经自动拦 IVT，我还要自建评分器吗？
+需要。平台主要拦 GIVT 主体与部分已知 SIVT；对于点击农场、SDK 滥用等新形态 SIVT，自研多信号融合器 + 第三方复核能有效补充，且能用于"不为此付费"的绩效剔除。
+
+### 10.3 用可见性出价 vs 用可见性目标，怎么选？
+- **可见性出价（Viewability-aware bidding）**：鼓励性价比高的可见库存，填充稳定，适合多数品牌。
+- **可见性硬目标（Viewability claim/blocking）**：只买达到阈值的展示，fill 更受限但可见率上限高，适合对曝光数量不敏感、重质量的场景。
+
+### 10.4 如何监控 IVT 与品牌安全是否持续达标？
+用 `dv360_get_account_health` 做账户级健康巡检，用 `dv360_get_report` 按小时拉取 IVT/可见性维度，设置阈值（IVT 率 <5%、可见率 >行业基准）自动告警。
+
+### 10.5 转化与展示的 IVT 需要分别治理吗？
+需要。展示 IVT 污染花销与曝光指标；转化 IVT（如 Floodlight 被刷、购买伪造）污染 ROI 与模型训练。建议用 `dv360_list_floodlight_configs` 配置转化去重与反欺诈标记，转化侧单独走 `get_report_metrics` 的 conversions 维度复查。
+
+---
+
+## 五、自测题（补充）
+
+<details><summary>Q6：为什么"纯服务端几何估计"不被 MRC 认可为合规可见性测量？主流合规测量怎么做？</summary>
+因为 MRC 要求可见性测量与页面加载上下文同时刻、同步进行，服务端日志无法确知广告是否真正进入可视区（无法获取真实 viewport 与滚动状态）。合规测量由页面内的 JS 标签 / SDK（IntersectionObserver / getBoundingClientRect 采样）在用户端实时计算像素占比与连续时间，再经 pixel callback 回传。这也是 Moat/IAS/DV 等第三方测量存在的技术原因。
+</details>
+
+<details><summary>Q7：多信号 IVT 融合器为什么比单规则更稳？如何校准？</summary>
+单规则（如"数据中心 IP"）会有大量误报（正常用户走 VPN/云）与漏报。多信号加权融合通过多个弱信号的叠加提升区分度，降低单一特征的误判主导。校准：用标注数据集（已知 VALID/GIVT/SIVT）拟合各信号权重（逻辑回归或网格搜索），并设阈值（如 Fuse>=0.6 → SIVT）使精确率/召回率平衡。
+</details>
+
+<details><summary>Q8：地理瞬移（Teleport）检测为什么能识别点击农场？物理阈值大约设多少？</summary>
+点击农场的设备常被程序批量触发，同一设备可能在极短时间内出现在物理上不可能到达的多个位置。用 Haversine 距离 / 时间差得到速度，超过人类物理极限（如 >1200 km/h，接近/超过民航速度）即判定可疑。它是不依赖指纹、较稳健的 SIVT 信号之一。
+</details>
+
+<details><summary>Q9：一方品牌安全信号（Google 分类）与第三方（Moat）信号冲突时怎么办？</summary>
+以"更严格"或"业务约定"的一方为准，并记录为模型输入。通常信任来自已签约的第三方测量信号（因为会据此计费/结算），Google 分类作为第一道基础过滤。冲突时拉取双方字段（brand_safety_category / excluded_categories）对比，若一方漏判则补充进排除列表。
+</details>
+
+<details><summary>Q10：如何判断某次流量异常是 GIVT 而非 SIVT，从而选择合适的处理手段？</summary>
+看信号是否"确定性、规则化"：若是已知数据中心 IP、已知 crawler UA、隐藏 iframe、重复展示，属 GIVT，平台已主要拦截，我方只需核对报表剔除。若需行为建模（机械点击节奏、坐标污染、设备指纹不稳、地理瞬移、跨设备团伙），属 SIVT，需自研评分器+第三方复核+黑名单治理。处理手段：GIVT 靠平台自动过滤+报表剔除；SIVT 靠多信号融合+供应链透明(Ads.txt/sellers.json)+绩效剔除。
+</details>
