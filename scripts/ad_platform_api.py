@@ -115,21 +115,34 @@ class AdPlatformClient:
         return resp.json().get('data', [])
     
     def tiktok_list_campaigns(self, account_id: str, **kwargs) -> List[Dict]:
-        """列出广告系列"""
-        client = self.get_client('tiktok')
+        """列出广告系列 - 使用 open_api/v1.3 端点"""
         import requests
-        headers = {'Authorization': f'Bearer {client["access_token"]}'}
-        params = {'account_id': account_id, 'page': kwargs.get('page', 1)}
-        resp = requests.get(f'{client["base_url"]}/ads/campaign/', headers=headers, params=params)
+        token = self.credentials.get('tiktok', {}).get('access_token', '')
+        headers = {'Access-Token': token}
+        params = {
+            'advertiser_id': account_id,
+            'page': kwargs.get('page', 1),
+            'page_size': kwargs.get('page_size', 20)
+        }
+        url = 'https://business-api.tiktok.com/open_api/v1.3/campaign/get/'
+        resp = requests.get(url, headers=headers, params=params, timeout=30)
         return resp.json().get('data', [])
     
     def tiktok_get_campaign(self, campaign_id: str, **kwargs) -> Dict:
-        """获取广告系列详情"""
-        client = self.get_client('tiktok')
+        """获取广告系列详情 - 使用 open_api/v1.3 端点"""
         import requests
-        headers = {'Authorization': f'Bearer {client["access_token"]}'}
-        resp = requests.get(f'{client["base_url"]}/ads/campaign/{campaign_id}/', headers=headers)
-        return resp.json().get('data', {})
+        import json
+        token = self.credentials.get('tiktok', {}).get('access_token', '')
+        account_id = kwargs.get('account_id', '')
+        headers = {'Access-Token': token, 'Content-Type': 'application/json'}
+        params = {
+            'advertiser_id': account_id,
+            'filtering': json.dumps({'campaign_ids': [campaign_id]})
+        }
+        url = 'https://business-api.tiktok.com/open_api/v1.3/campaign/get/'
+        resp = requests.get(url, headers=headers, params=params, timeout=30)
+        data = resp.json().get('data', [])
+        return data[0] if data else {}
     
     def tiktok_create_campaign(self, account_id: str, name: str, **kwargs) -> Dict:
         """创建广告系列"""
@@ -341,20 +354,32 @@ class AdPlatformClient:
         return [{'id': acc.id, 'name': acc.name, 'currency': acc.currency_name} for acc in accounts]
     
     def meta_list_campaigns(self, account_id: str, **kwargs) -> List[Dict]:
-        """列出广告系列"""
-        from facebook_business.adobjects.campaign import Campaign
-        from facebook_business.adaccounts import AdAccount
-        
-        account = AdAccount(account_id)
-        campaigns = account.get_campaigns(fields=['id', 'name', 'status', 'daily_budget'])
-        return [{'id': c.id, 'name': c.name, 'status': c.status} for c in campaigns]
+        """列出广告系列 - 使用 Graph API 直接调用"""
+        import requests
+        token = self.credentials.get('meta', {}).get('access_token', '')
+        # Meta 需要使用 act_ 前缀
+        account_param = f"act_{account_id}"
+        url = f"https://graph.facebook.com/v19.0/{account_param}/campaigns"
+        params = {
+            'access_token': token,
+            'limit': kwargs.get('limit', 20),
+            'fields': 'id,name,status,daily_budget,lifetime_budget'
+        }
+        resp = requests.get(url, params=params, timeout=30)
+        data = resp.json()
+        return data.get('data', [])
     
     def meta_get_campaign(self, campaign_id: str, **kwargs) -> Dict:
-        """获取广告系列详情"""
-        from facebook_business.adobjects.campaign import Campaign
-        campaign = Campaign(campaign_id)
-        campaign.remote_read()
-        return {'id': campaign.id, 'name': campaign.name, 'status': campaign.status}
+        """获取广告系列详情 - 使用 Graph API 直接调用"""
+        import requests
+        token = self.credentials.get('meta', {}).get('access_token', '')
+        url = f"https://graph.facebook.com/v19.0/{campaign_id}"
+        params = {
+            'access_token': token,
+            'fields': 'id,name,status,daily_budget,lifetime_budget'
+        }
+        resp = requests.get(url, params=params, timeout=30)
+        return resp.json()
     
     def meta_create_campaign(self, account_id: str, name: str, **kwargs) -> Dict:
         """创建广告系列"""
