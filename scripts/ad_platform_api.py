@@ -943,27 +943,61 @@ class AdPlatformClient:
                 return {'id': row.campaign.id, 'name': row.campaign.name}
         return {}
     
+    def google_create_campaign_budget(self, customer_id: str, name: str, amount_micros: int, **kwargs) -> Dict:
+        """创建 Campaign Budget"""
+        try:
+            client = self.get_client('google')
+            budget_service = client.get_service('CampaignBudgetService')
+            budget_operation = client.get_type("CampaignBudgetOperation")
+            budget = budget_operation.create
+            budget.name = name
+            budget.amount_micros = amount_micros
+            budget.delivery_method = client.enums.BudgetDeliveryMethodEnum.STANDARD
+            response = budget_service.mutate_campaign_budgets(
+                customer_id=customer_id,
+                operations=[budget_operation]
+            )
+            result = response.results[0]
+            return {'resource_name': result.resource_name, 'id': result.budget.id}
+        except Exception as e:
+            return {'error': str(e)[:100]}
+    
     def google_create_campaign(self, customer_id: str, name: str, **kwargs) -> Dict:
-        """创建广告系列 - 注意: Google Ads API 需要 bidding_strategy 或 budget"""
+        """创建广告系列 - 需要先创建 CampaignBudget"""
         try:
             client = self.get_client('google')
             campaign_service = client.get_service('CampaignService')
+            
+            # 先创建 Budget
+            budget_name = f"Budget_{name}_{int(time.time())}"
+            budget_amount = kwargs.get('daily_budget', 100) * 1000000  # 转成 micros
+            budget_result = self.google_create_campaign_budget(customer_id, budget_name, budget_amount)
+            if 'error' in budget_result:
+                return {'error': f'创建 budget 失败: {budget_result["error"]}'}
+            
+            budget_id = budget_result.get('id')
+            
+            # 创建 Campaign
             campaign_operation = client.get_type("CampaignOperation")
             campaign = campaign_operation.create
             campaign.name = name
             campaign.status = client.enums.CampaignStatusEnum.PAUSED
             campaign.advertising_channel_type = client.enums.AdvertisingChannelTypeEnum.SEARCH
+            campaign.testing_status = client.enums.CampaignTestingStatusEnum.DUAL_A_B_TEST
+            campaign.ad_network_targets = [
+                client.enums.AdNetworkType.SEARCH,
+                client.enums.AdNetworkType.GOOGLE_SEARCH
+            ]
+            campaign.campaign_budget = f"customers/{customer_id}/campaignBudgets/{budget_id}"
+            
             response = campaign_service.mutate_campaigns(
                 customer_id=customer_id,
                 operations=[campaign_operation]
             )
             result = response.results[0]
-            return {'resource_name': result.resource_name}
+            return {'resource_name': result.resource_name, 'campaign_id': result.campaign.id, 'budget_id': budget_id}
         except Exception as e:
-            err = str(e)
-            if 'required field' in err.lower() or 'bidding' in err.lower():
-                return {'error': '需要设置 bidding_strategy 或 campaign_budget', 'hint': '先调用 google_list_bidding_strategies 获取'}
-            return {'error': err[:100]}
+            return {'error': str(e)[:100]}
     
     def google_update_campaign(self, customer_id: str, campaign_id: str, **kwargs) -> Dict:
         """更新广告系列"""
