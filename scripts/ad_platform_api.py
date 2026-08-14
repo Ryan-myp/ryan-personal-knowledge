@@ -943,6 +943,50 @@ class AdPlatformClient:
                 return {'id': row.campaign.id, 'name': row.campaign.name}
         return {}
     
+    def google_list_campaign_budgets(self, customer_id: str, limit: int = 10, **kwargs) -> List[Dict]:
+        """列出 Campaign Budget"""
+        try:
+            client = self.get_client('google')
+            cbs = client.get_service('CampaignBudgetService')
+            # 使用 search_stream 列出所有 budget
+            from google.ads.googleads.v25.resources.campaign_budget import CampaignBudget
+            budgets = []
+            # 直接查询所有 budget
+            query = f"SELECT campaign_budget.id, campaign_budget.name, campaign_budget.amount_micros FROM campaign_budget LIMIT {limit}"
+            gaia = client.get_service('GoogleAdsService')
+            response = gaia.search(customer_id=customer_id, query=query)
+            for result in response:
+                budgets.append({
+                    'id': result.campaign_budget.id,
+                    'name': result.campaign_budget.name,
+                    'amount_micros': result.campaign_budget.amount_micros,
+                    'resource_name': result.campaign_budget.resource_name
+                })
+            return budgets
+        except Exception as e:
+            print(f"[Google Ads] list_campaign_budgets error: {e}")
+            return []
+    
+    def google_list_bidding_strategies(self, customer_id: str, limit: int = 10, **kwargs) -> List[Dict]:
+        """列出出价策略"""
+        try:
+            client = self.get_client('google')
+            gaia = client.get_service('GoogleAdsService')
+            query = f"SELECT bidding_strategy.id, bidding_strategy.name, bidding_strategy.type FROM bidding_strategy LIMIT {limit}"
+            response = gaia.search(customer_id=customer_id, query=query)
+            strategies = []
+            for result in response:
+                strategies.append({
+                    'id': result.bidding_strategy.id,
+                    'name': result.bidding_strategy.name,
+                    'type': result.bidding_strategy.type.name if hasattr(result.bidding_strategy.type, 'name') else str(result.bidding_strategy.type),
+                    'resource_name': result.bidding_strategy.resource_name
+                })
+            return strategies
+        except Exception as e:
+            print(f"[Google Ads] list_bidding_strategies error: {e}")
+            return []
+    
     def google_create_campaign_budget(self, customer_id: str, name: str, amount_micros: int, **kwargs) -> Dict:
         """创建 Campaign Budget"""
         try:
@@ -958,7 +1002,10 @@ class AdPlatformClient:
                 operations=[budget_operation]
             )
             result = response.results[0]
-            return {'resource_name': result.resource_name, 'id': result.budget.id}
+            # 从 resource_name 中提取 budget id
+            resource_name = result.resource_name
+            budget_id = resource_name.split('/')[-1] if '/' in resource_name else resource_name
+            return {'resource_name': resource_name, 'id': budget_id}
         except Exception as e:
             return {'error': str(e)[:100]}
     
@@ -983,12 +1030,17 @@ class AdPlatformClient:
             campaign.name = name
             campaign.status = client.enums.CampaignStatusEnum.PAUSED
             campaign.advertising_channel_type = client.enums.AdvertisingChannelTypeEnum.SEARCH
-            campaign.testing_status = client.enums.CampaignTestingStatusEnum.DUAL_A_B_TEST
-            campaign.ad_network_targets = [
-                client.enums.AdNetworkType.SEARCH,
-                client.enums.AdNetworkType.GOOGLE_SEARCH
-            ]
+            # campaign.testing_status = 2  # DUAL_A_B_TEST (optional)
+            # campaign.ad_network_targets = [1, 2]  # SEARCH, GOOGLE_SEARCH (optional)
             campaign.campaign_budget = f"customers/{customer_id}/campaignBudgets/{budget_id}"
+            # 使用第一个可用的 bidding strategy
+            # 使用第一个可用的 bidding strategy
+            try:
+                bs_list = self.google_list_bidding_strategies(customer_id, limit=1)
+                if bs_list and len(bs_list) > 0:
+                    campaign.bidding_strategy = bs_list[0].get('resource_name', '')
+            except Exception:
+                pass
             
             response = campaign_service.mutate_campaigns(
                 customer_id=customer_id,
