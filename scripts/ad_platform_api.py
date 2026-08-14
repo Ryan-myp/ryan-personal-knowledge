@@ -173,12 +173,11 @@ class AdPlatformClient:
     def tiktok_list_adgroups(self, advertiser_id: str, campaign_id: str, **kwargs) -> List[Dict]:
         """列出广告组 - 使用 open_api/v1.3 端点"""
         import requests
-        import json as json_lib
         token = self.credentials.get('tiktok', {}).get('access_token', '')
         headers = {'Access-Token': token}
         params = {
             'advertiser_id': advertiser_id,
-            'filtering': json_lib.dumps([{'field': 'campaign_id', 'operator': 'eq', 'values': [campaign_id]}]),
+            'campaign_id': campaign_id,
             'page': kwargs.get('page', 1),
             'page_size': kwargs.get('page_size', 20)
         }
@@ -203,20 +202,14 @@ class AdPlatformClient:
         resp = requests.post(f'{client["base_url"]}/ads/adgroup/', headers=headers, json=data)
         return resp.json().get('data', {})
     
-    def tiktok_list_ads(self, advertiser_id: str, adgroup_id: str = None, **kwargs) -> List[Dict]:
+    def tiktok_list_ads(self, advertiser_id: str, campaign_id: str = None, **kwargs) -> List[Dict]:
         """列出广告创意 - 使用 open_api/v1.3 端点"""
         import requests
-        import json as json_lib
         token = self.credentials.get('tiktok', {}).get('access_token', '')
         headers = {'Access-Token': token}
-        
-        filtering = []
-        if adgroup_id:
-            filtering.append({'field': 'adgroup_id', 'operator': 'eq', 'values': [adgroup_id]})
-        
         params = {
             'advertiser_id': advertiser_id,
-            'filtering': json_lib.dumps(filtering) if filtering else '{}',
+            'campaign_id': campaign_id,
             'page': kwargs.get('page', 1),
             'page_size': kwargs.get('page_size', 20)
         }
@@ -589,18 +582,19 @@ class AdPlatformClient:
         """列出 Google Ads 客户"""
         client = self.get_client('google')
         customer_service = client.get_service('CustomerService')
-        query = "SELECT customer.id, customer.descriptive_name FROM customer"
-        response = customer_service.search_stream(customer_id='0', query=query)
+        query = "SELECT customer.id, customer.descriptive_name, customer.currency_code, customer.time_zone FROM customer ORDER BY customer.id LIMIT 10"
+        
+        # 使用 search 方法（Google Ads API v14+）
+        response = customer_service.search(customer_id='0', query=query)
         
         customers = []
-        for batch in response:
-            for customer in batch.results:
-                customers.append({
-                    'id': customer.id,
-                    'name': customer.descriptive_name,
-                    'currency_code': customer.currency_code,
-                    'time_zone': customer.time_zone
-                })
+        for row in response:
+            customers.append({
+                'id': row.resource_name.split('/')[-1] if '/' in row.resource_name else row.customer_id,
+                'name': row.descriptive_name,
+                'currency_code': row.currency_code,
+                'time_zone': row.time_zone
+            })
         return customers
     
     def google_list_campaigns(self, customer_id: str, **kwargs) -> List[Dict]:
