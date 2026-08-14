@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+#!/usr/bin/env python3
 """
 TikTok Campaign 完整查询工具 - 双格式输出
 支持原始数据(JSON) + 业务解读版(中文)
