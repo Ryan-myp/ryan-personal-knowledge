@@ -716,3 +716,626 @@ App 广告的机器学习本质上是对“信号 → 出价”的学习。
 优化师要在“学习速度”与“信号质量”之间做平衡，通常用**多层级系列的预算结构**来解决。
 
 今明两章会把这些设计原则落成可执行的生产配置。
+
+---
+
+## 三、生产环境实战
+
+第三章把前面讲的机制落成**真实业务场景 + 量化指标 + 可运行代码**。
+
+我们用一个贯穿性的案例主线：**一家出海手游公司的 UAC 月预算 $100K 优化事件组合**。
+
+并穿插电商、APP 增长、代理商、品牌、直播带货等场景，
+让不同业务的读者都能找到可直接套用的操作模板。
+
+### 3.1 贯穿案例：游戏公司 UAC 月预算 $100K
+
+#### 3.1.1 背景与目标
+
+假设我们是一家做中重度 RPG 出海的手游公司，产品叫《Rift Saga》。
+
+现状要素：
+
+| 维度 | 数值 |
+| ---- | ---- |
+| UAC 月预算 | $100,000 |
+| 目标市场 | 北美 / 欧洲 / 东南亚 |
+| 变现模式 | IAP（内购）+ 少量广告变现 |
+| 核心事件 | install → tutorial_done → purchase |
+| 主出价目标 | 付费留存与 IAP 收入 |
+| 当前 CPI | ~$3.2 |
+| 目标 tCPA（首购） | ~$28 |
+| 目标 30 日 ROAS | ≥ 120% |
+| 关键漏斗 | 安装 → 注册 → 教程 → 首购 |
+
+我们的任务是把这 $100K 的月预算，从“只买安装”升级为
+“事件漏斗驱动的分层买量”，并让 ROAS 稳定在 120% 以上。
+
+#### 3.1.2 分层预算与系列结构设计
+
+单靠一个 UAC 系列很难同时满足“冲量”与“保 ROAS”。
+
+行业通用做法是**按目标分层建系列**，让不同信号目标各司其职。
+
+下面是一个针对 $100K 月预算的推荐结构：
+
+| 系列 | 目标 | 预算占比 | 月预算 | 主出价 | 作用 |
+| ---- | ---- | -------- | ------ | ------ | ---- |
+| UAC-Installs（安装冲量） | App installs | 30% | $30K | tCPI | 建立量级与学习 |
+| UAC-Engage-Purchase（首购优化） | App engagement | 50% | $50K | tCPA | 主 ROAS 引擎 |
+| UAC-Pmax-ROAS（价值优化） | App engagement(价值) | 20% | $20K | tROAS | 守住高价值用户 |
+
+分层逻辑：
+
+- **安装系列**负责在有限预算内快速拉新，喂给上层漏斗；
+- **首购 tCPA 系列**是主力，直接对着 `purchase` 事件优化，稳定 ROAS；
+- **tROAS 系列**守高价值，防止量级扩张时质量滑坡。
+
+三层配合，既能起量，又能兜底商业价值。
+
+#### 3.1.3 事件组合与出价目标的量化设计
+
+事件组合不是越多越好，而是“主事件 + 辅助观测事件”的组合。
+
+对《Rift Saga》，我们推荐如下事件策略：
+
+| 事件 | 角色 | 出价口径 | 目标值 |
+| ---- | ---- | -------- | ------ |
+| install | 观测/冲量 | tCPI | $3.2 |
+| tutorial_done | 参考事件 | 不参与出价 | 教程完成率 ≥ 55% |
+| first_purchase | 主转化 | tCPA | $28 |
+| 首日付费 | 主转化（带价值） | tROAS | 120% |
+
+量化诊断口径（PPI = 付费安装渗透率）常被用来判断买量质量：
+
+```text
+PPI 渗透率 = 统计期内付费安装数 / 总安装数
+示例: 100 安装中 22 个在 D7 内付费 → PPI = 22%
+```
+
+如果 PPI < 15%，说明买量质量偏浅，需要把更多预算倾向 tCPA 系列。
+
+#### 3.1.4 用代码创建分层 UAC 系列
+
+下面用 `google_ads_api.py` 的 `create_campaign` 创建三个分层系列。
+App 广告系列的创建在 API 侧体现为 `advertising_channel_sub_type = APP_CAMPAIGN`，
+并携带目标（advertising_channel_type = MULTI_CHANNEL + app campaign 设置）。
+
+```python
+# -*- coding: utf-8 -*-
+"""
+创建分层 UAC 系列：安装冲量 / 首购 tCPA / tROAS 价值。
+对应 scripts/google_ads_api.py 的 create_campaign。
+"""
+from google_ads_api import GoogleAdsClient
+
+client = GoogleAdsClient({...})
+customer_id = '1234567890'
+
+def make_app_install_campaign(name, daily_budget_micros, target_cpi_micros):
+    """安装目标 tCPI 系列。"""
+    return {
+        'name': name,
+        'advertising_channel_type': 'MULTI_CHANNEL',
+        'advertising_channel_sub_type': 'APP_CAMPAIGN',
+        'status': 'PAUSED',   # 先穿建为暂停，配好素材再启用
+        'campaign_budget': {'amount_micros': daily_budget_micros},
+        'app_campaign_setting': {
+            'app_id': 'com.rift.saga',
+            'app_vendor': 'GOOGLE_APP_STORE',
+            'bidding_strategy_goal_type': 'OPTIMIZE_INSTALLS_TARGET_INSTALL_COST',
+        },
+        'target_cpa': {'target_cpa_micros': target_cpi_micros},
+        'optimization_goal_type': ['OPTIMIZE_INSTALLS'],
+    }
+
+def make_app_engagement_campaign(name, daily_budget_micros, target_cpa_micros):
+    """应用内事件 tCPA 系列（主 ROAS 引擎）。"""
+    return {
+        'name': name,
+        'advertising_channel_type': 'MULTI_CHANNEL',
+        'advertising_channel_sub_type': 'APP_CAMPAIGN',
+        'status': 'PAUSED',
+        'campaign_budget': {'amount_micros': daily_budget_micros},
+        'app_campaign_setting': {
+            'app_id': 'com.rift.saga',
+            'app_vendor': 'GOOGLE_APP_STORE',
+            'bidding_strategy_goal_type': 'OPTIMIZE_IN_APP_CONVERSIONS_TARGET_CPA',
+        },
+        'target_cpa': {'target_cpa_micros': target_cpa_micros},
+    }
+
+def make_app_roas_campaign(name, daily_budget_micros, target_roas_decimal):
+    """价值优化 tROAS 系列（守高价值）。"""
+    return {
+        'name': name,
+        'advertising_channel_type': 'MULTI_CHANNEL',
+        'advertising_channel_sub_type': 'APP_CAMPAIGN',
+        'status': 'PAUSED',
+        'campaign_budget': {'amount_micros': daily_budget_micros},
+        'app_campaign_setting': {
+            'app_id': 'com.rift.saga',
+            'app_vendor': 'GOOGLE_APP_STORE',
+            'bidding_strategy_goal_type': 'OPTIMIZE_IN_APP_CONVERSIONS_TARGET_ROAS',
+        },
+        'target_roas': {'target_roas': target_roas_decimal},
+    }
+
+# $100K 月预算 → 约 $3,333/天，分三系列
+series = [
+    make_app_install_campaign('UA-Installs-tCPI', 1_000_000, 3_200_000),      # $30K/月 ≈ $1000/天
+    make_app_engagement_campaign('UA-Engage-Purchase-tCPA', 1_666_000, 28_000_000),  # $50K/月
+    make_app_roas_campaign('UA-ROAS-tROAS', 666_000, 1.2),                    # $20K/月
+]
+
+for c in series:
+    resp = client.create_campaign(customer_id, c)
+    if resp.success:
+        print('created:', c['name'])
+    else:
+        print('failed:', c['name'], resp.error)
+```
+
+> 说明：这里为了演示 `create_campaign`，把 App 专属设置合并进 campaign 载荷。
+> 真实 API 中 App 目标/出价会挂在 campaign 的 `app_campaign_setting` 与出价策略对象里，
+> 具体字段以你封装的 DTO 为准。核心目的是展示**结构化的分层创建思路**。
+
+#### 3.1.5 校验创建结果与拉取报表
+
+创建后用 `list_campaigns` 确认系列状态与类型，
+再用 `generate_report` 拉取 7 日关键指标做基线。
+
+```python
+# -*- coding: utf-8 -*-
+"""
+读取创建好的 App 系列，并拉取 7 日指标。
+对应 list_campaigns 与 generate_report。
+"""
+from google_ads_api import GoogleAdsClient
+
+client = GoogleAdsClient({...})
+customer_id = '1234567890'
+
+# 1) 列出 App 系列
+campaigns = client.list_campaigns(
+    customer_id,
+    filter="campaign.advertising_channel_sub_type = 'APP_CAMPAIGN'"
+)
+for row in campaigns.data.get('results', []):
+    c = row.get('campaign', {})
+    print('campaign:', c.get('name'), '| status:', c.get('status'),
+          '| id:', c.get('id'))
+
+# 2) 7 日报表基线
+rep = client.generate_report(
+    customer_id,
+    {'start': '2026-08-01', 'end': '2026-08-07'}
+)
+print('\n7日报表:')
+for row in rep.data.get('results', []):
+    print(row)
+```
+
+这就是一个完整的“建系列 → 拉数据 → 评估”闭环。
+
+#### 3.1.6 出价调优循环（tCPA 松紧）
+
+tCPA 不是设了就不动。它有清晰的调优节奏：
+
+| 信号 | 判定 | 动作 |
+| ---- | ---- | ---- |
+| 预算花不完 | 学习到位但量不够 | 小幅上调 tCPA 5-10% |
+| 量达但 ROAS 低于目标 | 事件价值不足 | 下调 tCPA 或转 tROAS |
+| 学习期不收敛 | 信号太浅/冲突 | 收敛事件、统一数据源 |
+| 波动大 | 频控/SSA 没跟上 | 加频控、检查资产组 |
+
+每次调整幅度建议 ≤ 20%，且间隔 ≥ 1 个完整学习周期（约 3-7 天）再评判，
+避免抖动干扰模型。
+
+用代码更新 tCPA（对应 `update_campaign` 的实现思路）：
+
+```python
+# -*- coding: utf-8 -*-
+"""
+迭代调优出价：按 ±10% 步进更新 tCPA。
+对应 google_ads_api.py 的 update_campaign。
+"""
+from google_ads_api import GoogleAdsClient
+
+client = GoogleAdsClient({...})
+customer_id = '1234567890'
+campaign_id = '123456789'
+
+def adjust_target_cpa(mult: float):
+    # 读取当前 tCPA（此处示意：先拉会话外存的当前值）
+    current_cpa_micros = 28_000_000
+    new_cpa = int(current_cpa_micros * mult)
+    resp = client.update_campaign(
+        customer_id, campaign_id,
+        {'target_cpa': {'target_cpa_micros': new_cpa}}
+    )
+    print('updated to', new_cpa / 1_000_000, 'USD →', resp.success)
+
+adjust_target_cpa(1.10)   # 上浮 10%
+```
+
+### 3.2 电商 App 场景：UA + 事件价值对齐
+
+#### 3.2.1 场景
+
+一家跨境电商 App，主营家居用品，变现依托 GMV。
+
+与游戏不同，电商的核心痛点是**价值回传与 ROAS 精确性**。
+
+电商 UAC 的关键事件链：
+
+```text
+install → add_to_cart → purchase(带 value+currency) → re-order
+```
+
+#### 3.2.2 价值回传配置
+
+tROAS 依赖“带价值的 purchase”。
+
+关键是把每笔订单金额作为 conversion value 回传。
+
+下表给电商推荐口径：
+
+| 指标 | 数值 |
+| ---- | ---- |
+| D7 ROAS | ≥ 150% |
+| CPA（首单） | ≤ $12 |
+| 客单价 | ~$48 |
+| 频控 | 同用户广告展示 ≤ 每日10次 |
+| 转化窗 | 7 天点击 / 1 天浏览 |
+
+#### 3.2.3 用代码拉取价值型指标
+
+```python
+# -*- coding: utf-8 -*-
+"""
+电商 App：核对 ROAS 与价值指标。
+"""
+from google_ads_api import GoogleAdsClient
+
+client = GoogleAdsClient({...})
+customer_id = '1234567890'
+date_range = {'start': '2026-07-01', 'end': '2026-07-31'}
+
+query = f"""
+SELECT
+  campaign.name,
+  metrics.cost_micros,
+  metrics.conversions,
+  metrics.conversions_value,
+  metrics.all_conversions_value,
+  metrics.view_through_conversions,
+  campaign.optimization_score
+FROM campaign
+WHERE segments.date BETWEEN '{date_range['start']}' AND '{date_range['end']}'
+  AND campaign.advertising_channel_sub_type IN ('APP_CAMPAIGN',
+       'PERFORMANCE_MAX_FOR_ANDROID_APPS')
+"""
+
+resp = client.search(customer_id, query)
+for row in resp.data.get('results', []):
+    c = row.get('campaign', {})
+    m = row.get('metrics', {})
+    cost = m.get('cost_micros', 0) / 1e6
+    val = m.get('conversions_value', 0) / 1e6
+    roas = (val / cost) if cost else 0
+    print(
+        f"{c.get('name'):<24} cost=${cost:7.2f} "
+        f"roas={roas*100:5.1f}% conv={m.get('conversions'):5.1f} "
+        f"opt_score={c.get('optimization_score')}"
+    )
+```
+
+### 3.3 APP 增长 / 工具类场景：留存与信号深度
+
+#### 3.3.1 场景
+
+一家专注增长的工具类 App（如清理/记步/效率工具），变现以订阅为主。
+
+工具类特点：
+
+- 安装量大但付费周期长；
+- 核心事件是 `subscription_start` 与 `active_7d`；
+- 需要把“长期留存”转化思想注入 UAC。
+
+#### 3.3.2 长周期转化与订阅优化
+
+工具类更适合用**带价值的长周期事件**，例如按 LTV 估算订阅价值回传。
+
+| 事件 | 角色 | 说明 |
+| ---- | ---- | ---- |
+| install | 冲量 | 低质但量大 |
+| registration | 参考 | 验证注册链路 |
+| subscription_start | 主转化 | 试订/订阅 |
+| active_7d | 观测留存 | 判断留存健康 |
+
+工具类不要只跑 install，否则留存与订阅质量难保证。
+
+建议在 tCPA（订阅）与 tROAS（LTV 价值）之间按阶段切换。
+
+### 3.4 代理商场景：多客户批量管理与报告
+
+#### 3.4.1 场景
+
+代理商（Agency）同时管理多个广告主账户，需要批量拉数、批量建系列、批量出报告。
+
+这里展示用 `search` + `generate_report` 做多账户聚合的思路，
+并强调 **login-customer-id（MCC）** 在跨账户查询中的作用。
+
+```text
+代理账号 (MCC / Manager)  login-customer-id
+   └── 子账号 A (客户)
+   └── 子账号 B (客户)
+   └── 子账号 C (客户)
+```
+
+用 API 的客户维度可以批量遍历子账号。
+
+#### 3.4.2 批量报告聚合
+
+```python
+# -*- coding: utf-8 -*-
+"""
+代理商批量拉取多个子账号的 UAC 汇总指标。
+"""
+from google_ads_api import GoogleAdsClient
+
+client = GoogleAdsClient({
+    'google_ads': {
+        'developer_token': 'DEV',
+        'login_customer_id': 'MANAGER_ID',  # MCC id
+        'access_token': 'TOKEN',
+    }
+})
+
+customer_ids = ['111', '222', '333']  # 子账号列表
+date_range = {'start': '2026-08-01', 'end': '2026-08-14'}
+
+grand = {'cost': 0.0, 'value': 0.0, 'conv': 0.0}
+for cid in customer_ids:
+    rep = client.generate_report(cid, date_range)
+    for row in rep.data.get('results', []):
+        c = row.get('campaign', {})
+        m = row.get('metrics', {})
+        # 只看 App 系列
+        if c.get('advertising_channel_sub_type') not in (
+            'APP_CAMPAIGN', 'PERFORMANCE_MAX_FOR_ANDROID_APPS'):
+            continue
+        cost = m.get('cost_micros', 0) / 1e6
+        val = m.get('conversions_value', 0) / 1e6
+        conv = m.get('conversions', 0)
+        grand['cost'] += cost
+        grand['value'] += val
+        grand['conv'] += conv
+        print(f"account={cid} camp={c.get('name')[:16]} "
+              f"cost=${cost:.2f} conv={conv:.1f} roas={val/cost if cost else 0:.2f}")
+
+print('TOTAL:', {k: round(v, 2) for k, v in grand.items()})
+```
+
+代理商的额外要点：
+
+- 统一各账号的事件口径与出价策略选项（用 `get_bid_strategy_options` 校准）；
+- 用 `list_conversion_actions` 对比各账号转化配置一致性；
+- 输出统一的周报模板。
+
+### 3.5 品牌营销场景：预注册与品牌搜索
+
+#### 3.5.1 场景
+
+大品牌新产品上线前，用 **App pre-registration** 蓄水，制造预约热度。
+
+品牌往往还关心品牌词保护与通知用户。
+
+#### 3.5.2 预注册系列
+
+对于尚未上架的 App，创建 `App pre-registration` 目标系列。
+
+它可以：
+
+- 在未上线时锁定核心用户；
+- 为 Play 商店预约人数/榜单造势；
+- 上架后自动转化。
+
+用 `create_campaign` 创建预注册系列（示意）：
+
+```python
+# -*- coding: utf-8 -*-
+"""
+创建 App pre-registration 系列。
+"""
+from google_ads_api import GoogleAdsClient
+
+client = GoogleAdsClient({...})
+customer_id = '1234567890'
+
+campaign = {
+    'name': 'Brand-PreReg',
+    'advertising_channel_type': 'MULTI_CHANNEL',
+    'advertising_channel_sub_type': 'APP_CAMPAIGN',
+    'status': 'PAUSED',
+    'campaign_budget': {'amount_micros': 500_000},  # 每天 $50K微? = $500/天
+    'app_campaign_setting': {
+        'app_id': 'com.brand.app',
+        'app_vendor': 'GOOGLE_APP_STORE',
+        'bidding_strategy_goal_type': 'OPTIMIZE_PRE_REGISTRATION_CONVERSION_VOLUME',
+    },
+}
+
+resp = client.create_campaign(customer_id, campaign)
+print('pre-reg created:', resp.success)
+```
+
+#### 3.5.3 品牌搜索联动
+
+品牌 App 还常用**品牌搜索保护**：把品牌词放在搜索广告里，
+承接用户在 Google 搜索品牌/下载 App 的需求，提升下载转化率。
+
+虽然这属于搜索广告，但对 UA 有“收割自然流量”的补充作用。
+
+### 3.6 直播带货/本地场景（信息流形态的 App 营销）
+
+#### 3.6.1 场景
+
+直播带货或本地生活类 App（如本地优惠、团购、点餐）做推广。
+
+这类 App 以**安装 → 首单/预约/到店**为核心事件。
+
+关键区别是转化事件不在 App 内闭环（如到店），需要**回传离线/到店价值**，
+或依赖 deep link 与优惠码。
+
+#### 3.6.2 事件与归因示意
+
+| 事件 | 角色 |
+| ---- | ---- |
+| install | 冲量 |
+| app_open / click_deep_link | 链路验证 |
+| purchase(本地) / coupon_redeem | 主转化（可能离线） |
+
+对离线转化，要依赖 **离线转化上传（Offline Conversion Import）**，
+把线下履约数据回传 Google，让出价能优化到线下价值。
+
+### 3.7 素材与资产组（Asset Group）实战
+
+#### 3.7.1 素材是 UAC 另一大半
+
+很多优化师只盯出价，忽略素材。但 UAC 的“素材进、结果出”决定了
+**素材质量直接决定可展示机会与质量分**。
+
+一个完整的 App UAC 需要以下资产（对应 `get_asset_type_options`）：
+
+| 资产类型 | 建议数量 | 作用 |
+| -------- | -------- | ---- |
+| TEXT | 5 | 大标题/描述 |
+| HEADLINE | 5+ | 标题变体供组合 |
+| IMAGE | 若干 | 横版/竖版/方形 |
+| YOUTUBE_VIDEO | 3+ | 15-30秒核心视频 |
+| APP_EXTENSION | 应用链接 | 直接的下载按钮 |
+| LEAD_FORM | 可选 | 表单收集（较少用） |
+
+#### 3.7.2 资产组与 Asset Strength
+
+素材以 **asset_group** 为组织单位。
+
+系统会评估资产组的 **asset strength（素材强度）**，从 Poor/Okay/Good/Excellent。
+
+素材强度直接影响可展示性与学习速度。
+
+```text
+Asset Strength 分级
+--------------------------------------------------------------------
+Poor        <65 分    素材种类过少/重复，展示受限
+Okay        65-90     基本可用
+Good        >90       展示充分
+Excellent   上限       覆盖全部资产种类且多样
+--------------------------------------------------------------------
+```
+
+高素材强度的要点：
+
+- 覆盖全部推荐资产类型；
+- 每种资产提供多个不重复的变体；
+- 视频至少 3 支、长短剪辑齐备；
+- 图片覆盖多尺寸（横/方/竖）。
+
+#### 3.7.3 下拉资产组列表
+
+用 `list_ad_groups` 与 asset 相关查询读取资产（此处以 ad_group 代示 asset_group 层级，
+因为 App/PMax 系列中 asset_group 承载素材，ad_group 概念在 PMax 中被 asset_group 替代）。
+
+```python
+# -*- coding: utf-8 -*-
+"""
+读取 App 系列的资产组与素材概览（示意 GAQL）。
+"""
+from google_ads_api import GoogleAdsClient
+
+client = GoogleAdsClient({...})
+customer_id = '1234567890'
+campaign_id = '123456789'
+
+# App/PMax 系列以 asset_group 组织素材（该字段来自 asset_group / asset_group_asset）
+query = f"""
+SELECT
+  asset_group.id,
+  asset_group.name,
+  asset_group.status,
+  asset_group.path1
+FROM asset_group
+WHERE asset_group.campaign = 'customers/{customer_id}/campaigns/{campaign_id}'
+"""
+
+resp = client.search(customer_id, query)
+for row in resp.data.get('results', []):
+    ag = row.get('asset_group', {})
+    print('asset_group:', ag.get('name'), '| id:', ag.get('id'),
+          '| status:', ag.get('status'))
+```
+
+#### 3.7.4 素材 A/B 与迭代节奏
+
+素材不是一次性上传就完事。推荐节奏：
+
+- 每 3-4 周做一轮素材迭代；
+- 用 asset strength + 视频时长 + CTR/CVR 作为离屏候选；
+- 保留表现好的资产组合，淘汰弱资产；
+- 视频是 UAC 主抓手，务必投入最好创意。
+
+常用量化基准：
+
+| 指标 | 健康区间 |
+| ---- | -------- |
+| 视频 3 秒观看率 | ≥ 45% |
+| 视频完成率 | ≥ 15% |
+| CTR | ≥ 1.5% |
+| CVR(安装率) | ≥ 2% |
+| eCPM | 视市场而定 |
+
+### 3.8 预算与频控实战
+
+#### 3.8.1 预算分配与学习门槛
+
+UAC 进入稳定学习需要足够的转化量与预算。
+
+经验学习门槛参考：
+
+| 出价目标 | 每周建议转化 | 日预算参考 |
+| -------- | ----------- | ---------- |
+| tCPI(安装) | ≥ 30 安装/周 | ≥ 每日 10-15 CPI 转化 |
+| tCPA(事件) | ≥ 30 转化/周 | ≥ 每日 10-15 转化 |
+| tROAS | 依价值密度 | ≥ 每日 ~10-20 价值事件 |
+
+低于门槛，模型长期“学习不饱和”，出价会抖。
+
+#### 3.8.2 频控与 SSA（Smart Bidding - 频次优化）
+
+UAC 默认有频控能力，但优化师可以进一步约束展示频率，防止同一用户被过度打扰。
+
+在自动化产品里，频控通过 **smart bidding 的频次目标** 或素材组的展示约束实现。
+
+实操要点：
+
+- 高频次用户 CTR/CVR 会衰减，控制频次可提升素材效率；
+- 但 UAC 不开放传统频控设置，主要靠出价与素材组合让系统自发优化；
+- 若观察到重复展示高但转化低，可收缩素材组合，减少与同一用户多次匹配。
+
+### 3.9 最佳实践清单（小结）
+
+把第三章的关键操作汇成可直接执行的最佳实践清单：
+
+1. **分层建系列**：冲量/主ROAS/价值守层，预算按 30/50/20 起步；
+2. **事件少而精**：主转化 1-3 个，其余做观测；
+3. **价值必须回传**：tROAS 依赖带金额的 purchase；
+4. **数据源统一**：Google 内以 GAFB/GA4 为主，外以 MMP 校准；
+5. **iOS/Android 分开**：SKAN 噪声大，分开更稳；
+6. **素材持续迭代**：asset strength 拉到 Good 以上，视频做主；
+7. **tCPA 小幅调优**：±10% 步进，间隔完整学习期；
+8. **长窗观察**：iOS 至少 7 日、Android 3-5 日再看结论；
+9. **频控兜底**：控制展示频率防饱和；
+10. **留学习门槛**：预算不足时收敛事件而非摊薄预算。
+
