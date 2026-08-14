@@ -1045,59 +1045,6 @@ class AdPlatformClient:
         return result
 
 
-def main():
-    """主函数"""
-    parser = argparse.ArgumentParser(description="广告平台统一 API 调用")
-    parser.add_argument("--platform", type=str, choices=['tiktok', 'meta', 'google', 'dv360'],
-                        help="平台名称")
-    parser.add_argument("--action", type=str, required=True,
-                        help="操作类型")
-    parser.add_argument("--test", action="store_true", help="测试连接")
-    parser.add_argument("--all", action="store_true", help="测试所有平台")
-    parser.add_argument("--args", type=str, default='{}', help="额外参数 JSON")
-    
-    args = parser.parse_args()
-    extra_args = json.loads(args.args) if args.args else {}
-    
-    client = AdPlatformClient()
-    
-    if args.test or args.all:
-        if args.all:
-            results = {}
-            for platform in client.platforms:
-                try:
-                    results[platform] = client.test_connection(platform)
-                    status_str = "✅ 成功" if results[platform] else "❌ 失败"
-                    print(f"  {platform}: {status_str}")
-                except Exception as e:
-                    results[platform] = False
-                    print(f"  {platform}: ❌ {e}")
-        elif args.platform:
-            status = client.test_connection(args.platform)
-            print(f"{args.platform}: {'✅ 成功' if status else '❌ 失败'}")
-        return
-    
-    if args.platform:
-        method_name = f"{args.platform}_{args.action}"
-        if hasattr(client, method_name):
-            method = getattr(client, method_name)
-            result = method(**extra_args)
-            print(json.dumps(result, indent=2, ensure_ascii=False, default=str))
-        else:
-            print(f"❌ 不支持的操作: {method_name}")
-            print("\n可用操作:")
-            for attr in dir(client):
-                if attr.startswith(f"{args.platform}_") and not attr.startswith('_'):
-                    print(f"  • {attr}")
-    else:
-        print("❌ 请指定 --platform 参数")
-        print("\n可用平台: tiktok, meta, google, dv360")
-
-
-if __name__ == "__main__":
-    main()
-
-# ========== DV360 补充 API ==========
     def dv360_auth(self, **kwargs) -> Dict:
         """DV360 OAuth 认证"""
         return {'access_token': self.credentials.get('dv360', {}).get('access_token', '')}
@@ -1694,7 +1641,6 @@ if __name__ == "__main__":
         """更新投放位置推荐"""
         return {}
 
-# ========== Meta 补充 API ==========
     def meta_auth(self, **kwargs) -> Dict:
         """Meta OAuth 认证"""
         return {'access_token': self.credentials.get('meta', {}).get('access_token', '')}
@@ -2295,7 +2241,6 @@ if __name__ == "__main__":
         """列出时区选项"""
         return []
 
-# ========== Google Ads 补充 API ==========
     def google_auth(self, **kwargs) -> Dict:
         """Google Ads OAuth 认证"""
         return {'access_token': self.credentials.get('google', {}).get('access_token', '')}
@@ -3856,7 +3801,6 @@ if __name__ == "__main__":
         """删除负面广告组条件"""
         return {}
 
-# ========== TikTok 补充 API (v2) ==========
     def tiktok_list_accounts(self, **kwargs) -> List[Dict]:
         """列出 TikTok 广告账户"""
         client = self.get_client('tiktok')
@@ -5089,7 +5033,6 @@ if __name__ == "__main__":
         """创建支持工单"""
         return {}
 
-# ========== Meta 补充 API (v2) ==========
     def meta_list_instagram_accounts(self, account_id: str, **kwargs) -> List[Dict]:
         """列出 Instagram 商业账户"""
         return []
@@ -6266,7 +6209,6 @@ if __name__ == "__main__":
         """列出转化行为"""
         return []
     
-    # ========== Meta 补充 API (v3) - Instagram Shopping ==========
     def meta_list_shop_accounts(self, account_id: str, **kwargs) -> List[Dict]:
         """列出商店账户"""
         return []
@@ -6519,7 +6461,6 @@ if __name__ == "__main__":
         """应用商店推荐"""
         return {}
     
-    # ========== Meta 补充 API (v4) - Advanced Targeting ==========
     def meta_list_advanced_targeting(self, account_id: str, **kwargs) -> List[Dict]:
         """列出高级定向"""
         return []
@@ -6580,7 +6521,6 @@ if __name__ == "__main__":
         """应用受众推荐"""
         return {}
     
-    # ========== Meta 补充 API (v5) - Advanced Analytics ==========
     def meta_list_advanced_reports(self, account_id: str, **kwargs) -> List[Dict]:
         """列出高级报表"""
         return []
@@ -6733,7 +6673,6 @@ if __name__ == "__main__":
         """应用渠道推荐"""
         return {}
     
-    # ========== Meta 补充 API (v6) - Automation ==========
     def meta_list_automation_rules(self, account_id: str, **kwargs) -> List[Dict]:
         """列出自动化规则"""
         return []
@@ -6906,7 +6845,6 @@ if __name__ == "__main__":
         """应用规则推荐"""
         return {}
     
-    # ========== Meta 补充 API (v7) - Creative Studio ==========
     def meta_list_creative_studio(self, account_id: str, **kwargs) -> List[Dict]:
         """列出创意工作室"""
         return []
@@ -7011,7 +6949,6 @@ if __name__ == "__main__":
         """移除动态创意规则"""
         return {}
     
-    # ========== Meta 补充 API (v8) - Bidding & Budget ==========
     def meta_list_bidding_strategies(self, account_id: str, **kwargs) -> List[Dict]:
         """列出出价策略"""
         return []
@@ -7116,7 +7053,6 @@ if __name__ == "__main__":
         """更新投放位置优化器"""
         return {}
     
-    # ========== Meta 补充 API (v9) - Content & Category ==========
     def meta_list_content_types(self, **kwargs) -> List[Dict]:
         """列出内容类型"""
         return []
@@ -7201,7 +7137,6 @@ if __name__ == "__main__":
         """列出 Pixel 分类"""
         return []
     
-    # ========== Meta 补充 API (v10) - Reporting & Insights ==========
     def meta_list_advanced_insights(self, account_id: str, **kwargs) -> Dict:
         """列出高级洞察"""
         return {}
@@ -7321,3 +7256,86 @@ if __name__ == "__main__":
     def meta_get_insight_download_url(self, url_id: str, **kwargs) -> Dict:
         """获取洞察下载 URL"""
         return {}
+
+
+
+
+def main():
+    """主函数"""
+    parser = argparse.ArgumentParser(description="广告平台统一 API 调用")
+    parser.add_argument("--platform", type=str, choices=['tiktok', 'meta', 'google', 'dv360'],
+                        help="平台名称")
+    parser.add_argument("--action", type=str, required=True,
+                        help="操作类型")
+    parser.add_argument("--test", action="store_true", help="测试连接")
+    parser.add_argument("--all", action="store_true", help="测试所有平台")
+    parser.add_argument("--args", type=str, default='{}', help="额外参数 JSON")
+    parser.add_argument("--yes", "-y", action="store_true", help="跳过确认（危险操作）")
+    
+    args = parser.parse_args()
+    extra_args = json.loads(args.args) if args.args else {}
+    
+    client = AdPlatformClient()
+    
+    if args.test or args.all:
+        if args.all:
+            results = {}
+            for platform in client.platforms:
+                try:
+                    results[platform] = client.test_connection(platform)
+                    status_str = "✅ 成功" if results[platform] else "❌ 失败"
+                    print(f"  {platform}: {status_str}")
+                except Exception as e:
+                    results[platform] = False
+                    print(f"  {platform}: ❌ {e}")
+        elif args.platform:
+            status = client.test_connection(args.platform)
+            print(f"{args.platform}: {'✅ 成功' if status else '❌ 失败'}")
+        return
+    
+    # 安全检查：写入操作需要确认
+    action_name = args.action
+    write_keywords = ['create', 'update', 'delete', 'pause', 'resume', 'add', 'remove', 
+                      'apply', 'dismiss', 'approve', 'reject', 'send', 'upload', 
+                      'track', 'claim', 'enable', 'disable', 'start', 'stop',
+                      'pause_campaign', 'resume_campaign', 'delete_campaign',
+                      'pause_ad', 'resume_ad', 'delete_ad',
+                      'pause_adgroup', 'resume_adgroup', 'delete_adgroup']
+    
+    is_write_operation = any(kw in action_name for kw in write_keywords)
+    
+    if is_write_operation and not getattr(args, 'yes', False):
+        print(f"⚠️  警告: 检测到写入操作: {action_name}")
+        print(f"   此操作将修改 {args.platform} 的广告数据!")
+        print(f"   执行的操作类型: ", end='')
+        for kw in write_keywords:
+            if kw in action_name:
+                print(f"[{kw}]", end=' ')
+        print()
+        
+        confirm = input("是否继续? 输入 'yes' 确认: ")
+        if confirm.lower() != 'yes':
+            print("❌ 操作已取消")
+            sys.exit(0)
+        else:
+            print("✅ 已确认，正在执行...")
+    
+    if args.platform:
+        method_name = f"{args.platform}_{args.action}"
+        if hasattr(client, method_name):
+            method = getattr(client, method_name)
+            result = method(**extra_args)
+            print(json.dumps(result, indent=2, ensure_ascii=False, default=str))
+        else:
+            print(f"❌ 不支持的操作: {method_name}")
+            print("\n可用操作:")
+            for attr in dir(client):
+                if attr.startswith(f"{args.platform}_") and not attr.startswith('_'):
+                    print(f"  • {attr}")
+    else:
+        print("❌ 请指定 --platform 参数")
+        print("\n可用平台: tiktok, meta, google, dv360")
+
+
+if __name__ == "__main__":
+    main()
