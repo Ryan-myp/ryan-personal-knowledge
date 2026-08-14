@@ -512,13 +512,14 @@ class AdPlatformClient:
         return [{'id': i.id, 'values': i.values} for i in insights]
     
     def meta_list_audiences(self, account_id: str, **kwargs) -> List[Dict]:
-        """列出自定义受众"""
-        from facebook_business.adaccounts import AdAccount
-        from facebook_business.adobjects.customaudience import CustomAudience
-        
-        account = AdAccount(account_id)
-        audiences = CustomAudience.get_my_audiences(params={'account_id': account_id})
-        return [{'id': a.id, 'name': a.name, 'type': a.type} for a in audiences]
+        """列出自定义受众 - 使用 Graph API 直接调用"""
+        import requests
+        token = self.credentials.get('meta', {}).get('access_token', '')
+        url = f"https://graph.facebook.com/v19.0/act_{account_id}/customaudiences"
+        params = {'access_token': token, 'limit': kwargs.get('limit', 20), 'fields': 'id,name,type'}
+        resp = requests.get(url, params=params, timeout=30)
+        data = resp.json()
+        return data.get('data', []) if isinstance(data, dict) else []
     
     def meta_create_audience(self, account_id: str, name: str, **kwargs) -> Dict:
         """创建自定义受众"""
