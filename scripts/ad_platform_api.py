@@ -1202,7 +1202,7 @@ class AdPlatformClient:
         
         return {'resource_name': response.results[0].resource_name}
     
-        def google_list_ads(self, customer_id: str, ad_group_id: str, **kwargs) -> List[Dict]:
+    def google_list_ads(self, customer_id: str, ad_group_id: str, **kwargs) -> List[Dict]:
         """列出广告"""
         try:
             client = self.get_client('google')
