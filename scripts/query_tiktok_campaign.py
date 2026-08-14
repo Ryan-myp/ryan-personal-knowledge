@@ -251,6 +251,14 @@ def main():
     print("```")
     print("</details>")
 
+    # 可选：保存 JSON 到文件
+    if len(sys.argv) > 3 and sys.argv[3] in ['--output', '-o']:
+        output_file = sys.argv[4] if len(sys.argv) > 4 else f"/tmp/tiktok_campaign_{campaign_id}.json"
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(result, f, indent=2, ensure_ascii=False)
+        print(f"")
+        print(f"✅ JSON 已保存到: {output_file}")
+
 
 if __name__ == "__main__":
     main()
