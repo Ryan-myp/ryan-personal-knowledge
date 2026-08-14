@@ -582,18 +582,17 @@ class AdPlatformClient:
         """列出 Google Ads 客户"""
         client = self.get_client('google')
         customer_service = client.get_service('CustomerService')
-        query = "SELECT customer.id, customer.descriptive_name, customer.currency_code, customer.time_zone FROM customer ORDER BY customer.id LIMIT 10"
         
-        # 使用 search 方法（Google Ads API v14+）
-        response = customer_service.search(customer_id='0', query=query)
+        # 使用 list_accessible_customers 方法
+        response = customer_service.list_accessible_customers()
         
         customers = []
-        for row in response:
+        for resource_name in response.resource_names:
+            # resource_name 格式: customers/123456789
+            customer_id = resource_name.split('/')[-1] if '/' in resource_name else resource_name
             customers.append({
-                'id': row.resource_name.split('/')[-1] if '/' in row.resource_name else row.customer_id,
-                'name': row.descriptive_name,
-                'currency_code': row.currency_code,
-                'time_zone': row.time_zone
+                'id': customer_id,
+                'resource_name': resource_name
             })
         return customers
     
