@@ -1515,6 +1515,96 @@ def _budget_usage(client, customer_id):
 **数据回路：** 每周五出榜 → 周一迁移标签 + 调 tROAS → 周四复查学习状态。
 这样的节奏让"优化"变成一个可重复的闭环，而不是一次性动作。
 
+### 3.20 全量运维脚本：把本库 google_ads_api.py 的所有方法跑通
+
+下面的脚本演示对项目里 `scripts/google_ads_api.py` 各方法的真实调用，
+覆盖 系列 / 广告组 / 关键词 / 广告 / 转化 / 出价 / 报表 / 选项 全层级，
+方便你把它作为"运维控制台"的骨架（这与管理者用 UI 点按钮等价，
+但在 API 侧可脚本化、可定时、可审计）。
+
+```python
+# -*- coding: utf-8 -*-
+"""
+PMax-S 运维控制台（演示 google_ads_api.py 全量方法调用）
+端点: https://googleads.googleapis.com/v24 ; headers: developer-token / login-customer-id
+"""
+from google_ads_api import GoogleAdsClient
+
+CREDENTIALS = {"google_ads": {
+    "access_token": "...", "developer_token": "...", "login_customer_id": "...",
+}}
+CID = "1234567890"
+
+def ops_console(client: GoogleAdsClient, campaign_id: str, ad_group_id: str):
+    print("== 1) 选项与元数据 ==")
+    for opt in client.get_campaign_type_options():
+        print("  campaign type:", opt["code"], opt["name"])
+    for b in client.get_bid_strategy_options():
+        print("  bid strategy:", b["code"], b["name"])
+    for a in client.get_asset_type_options():
+        # APP_EXTENSION 也在其中(应用链接)
+        print("  asset type:", a["code"], a["name"])
+
+    print("== 2) 系列管理 ==")
+    print(client.list_campaigns(CID))
+    print(client.create_campaign(CID, {"name": "PMax-demo", "status": "PAUSED",
+        "advertisingChannelType": "SHOPPING",
+        "advertisingChannelSubType": "PERFORMANCE_MAX_FOR_GOALS"}))
+    print(client.update_campaign(CID, campaign_id, {"status": "PAUSED"}))
+    print(client.get_campaign(CID, campaign_id))
+    print(client.pause_campaign(CID, campaign_id))
+    print(client.resume_campaign(CID, campaign_id))
+    # delete_campaign 慎用: 会删除系列(连同花账/学习), 生产用 PAUSED 更安全
+    # print(client.delete_campaign(CID, campaign_id))
+
+    print("== 3) 广告组 ==")
+    print(client.list_ad_groups(CID, campaign_id))
+    print(client.create_ad_group(CID, {"name": "AG-demo", "campaign": f"customers/{CID}/campaigns/{campaign_id}", "status": "ENABLED"}))
+    print(client.update_ad_group(CID, ad_group_id, {"status": "PAUSED"}))
+    print(client.pause_ad_group(CID, ad_group_id))
+    print(client.resume_ad_group(CID, ad_group_id))
+    # delete_ad_group 生产慎用(连带清理), 这里仅演示
+    # print(client.delete_ad_group(CID, ad_group_id))
+
+    print("== 4) 关键词(标准搜索场景) ==")
+    print(client.list_keywords(CID, ad_group_id))
+    print(client.create_keywords(CID, ad_group_id,
+          [{"text": "iphone 15 pro case", "match_type": "BROAD"}]))
+    # delete_keywords(client, CID, [kw_id])
+
+    print("== 5) 广告 ==")
+    print(client.list_ads(CID, ad_group_id))
+    print(client.create_ad(CID, {"name": "RSA-test", "status": "ENABLED"}))
+    print(client.update_ad(CID, "ad-1", {"status": "PAUSED"}))
+    print(client.pause_ad(CID, "ad-1"))
+    print(client.resume_ad(CID, "ad-1"))
+    # delete_ad 生产慎用, 这里仅演示
+    # print(client.delete_ad(CID, "ad-1"))
+
+    print("== 6) 转化行为 ==")
+    print(client.list_conversion_actions(CID))
+    print(client.create_conversion_action(CID, {"name": "Purchase-v3", "type": "WEBPAGE"}))
+
+    print("== 7) 出价策略 & 建议 ==")
+    print(client.list_bid_strategies(CID))
+    print(client.get_bid_suggestion(CID, campaign_id))
+
+    print("== 8) 报表 ==")
+    print(client.generate_report(CID, {"start": "2026-07-15", "end": "2026-08-13"}))
+```
+
+**几点生产纪律（对照脚本注释）：**
+- `delete_campaign` 会连带删除学习与历史，**生产环境用 `pause_campaign` 代替**。
+- `delete_keywords` 只在清理违规/冗余关键词时用。
+- `create_conversion_action` 建完后要在账户/系列配置"使用此转化"才算生效。
+- `get_bid_suggestion` 返回的是估算的 ranked CPC，间接辅助判断出价水位。
+
+**Asset Group 资产清单再强调一遍（含 APP_EXTENSION）：**
+`SITELINK`, `CALLOUT`, `CALL`, `STRUCTURED_SNIPPET`, `PRICE`, `IMAGE`,
+`YOUTUBE_VIDEO`, `TEXT`, `HEADLINE`, `BUSINESS_NAME`, `APP_EXTENSION`, `LEAD_FORM`。
+对**电商 App 增长**场景，`APP_EXTENSION`（应用链接）能引导到应用内落地
+以提高次留与 LTV 回传质量。
+
 ---
 
 ## 四、常见问题与排查（24 个实战 Q&A）
