@@ -1482,3 +1482,325 @@ ROAS 目标的成败高度依赖**价值回传的准确性**。排查：
 2. **学习期内冻结一切**：自动出价的成败取决于给模型一个稳定的学习窗口；
 3. **Surge 与效果目标隔离**：Bid Surge 是品牌冲刺的利器，也是效果预算与 CPA 的隐形杀手，务必隔离使用。
 
+
+---
+
+## 附录 A：完整 Python 出价策略运维脚本
+
+本节提供一个可直接上手的 Python 脚本框架，封装了出价策略从查询、创建、切换、监控到诊断的完整生命周期。方法名均与 `scripts/ad_platform_api.py` 保持一致，字段按 DV360 API 常见 schema 编写（实际字段名以所连 API 版本为准）。
+
+```python
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+dv360_bidding_ops.py
+DV360 出价策略运维工具箱 (基于 ad_platform_api.py 封装)
+功能: 查询/创建/切换/监控/诊断出价策略
+"""
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
+
+from ad_platform_api import AdPlatformAPI
+
+
+@dataclass
+class BidStrategy:
+    """出价策略数据模型"""
+    name: str
+    strategy_type: str          # MANUAL_CPM / TARGET_CPA / TARGET_ROAS / MAXIMIZE_CONVERSIONS ...
+    target_cpa_micros: Optional[int] = None   # 目标 CPA (微单位)
+    target_roas: Optional[float] = None       # 目标 ROAS (如 4.0)
+    bid_ceiling_micros: Optional[int] = None  # 出价上限
+    surge_percent: float = 0.0                # Bid Surge 百分比 (0.5 = +50%)
+    pacing_mode: str = 'PACING_MODE_EVEN'     # EVEN / ASAP
+
+    def to_api_body(self) -> Dict:
+        """转换为 DV360 update/create 所需的 bidding strategy body"""
+        body = {'type': self.strategy_type}
+        if self.target_cpa_micros is not None:
+            body['targetCpaMicros'] = self.target_cpa_micros
+        if self.target_roas is not None:
+            body['targetRoas'] = self.target_roas
+        if self.bid_ceiling_micros is not None:
+            body['bidCeilingMicros'] = self.bid_ceiling_micros
+        return body
+
+
+class DV360BiddingOps:
+    """出价策略运维入口"""
+
+    def __init__(self, advertiser_id: str):
+        self.client = AdPlatformAPI()
+        self.adv = advertiser_id
+
+    # ---------- 查询 ----------
+    def list_strategies(self) -> List[Dict]:
+        """列出账户下所有出价策略 (dv360_list_bidding_strategies)"""
+        return self.client.dv360_list_bidding_strategies(self.adv)
+
+    def get_pacing(self, line_item_id: str) -> Dict:
+        """获取 Line Item pacing 状态 (dv360_get_pacing_rate)"""
+        return self.client.dv360_get_pacing_rate(self.adv, line_item_id)
+
+    def get_performance(self, line_item_id: str, days: int = 14) -> Dict:
+        """获取 Line Item 近 N 天表现 (dv360_get_line_item_performance)"""
+        end = time.strftime('%Y-%m-%d')
+        start = time.strftime('%Y-%m-%d', time.localtime(time.time() - days * 86400))
+        return self.client.dv360_get_line_item_performance(
+            line_item_id=line_item_id,
+            date_range={'start': start, 'end': end}
+        )
+
+    # ---------- 变更 ----------
+    def create_line_item_with_strategy(
+        self, name: str, strategy: BidStrategy, budget_micros: int, **kwargs
+    ) -> Dict:
+        """创建带出价策略的 Line Item (dv360_create_line_item)"""
+        return self.client.dv360_create_line_item(
+            advertiser_id=self.adv,
+            name=name,
+            bidding_strategy=strategy.to_api_body(),
+            budget_micros=budget_micros,
+            **kwargs
+        )
+
+    def switch_strategy(self, line_item_id: str, strategy: BidStrategy) -> Dict:
+        """原地切换出价策略 (dv360_update_line_item)"""
+        return self.client.dv360_update_line_item(
+            advertiser_id=self.adv,
+            line_item_id=line_item_id,
+            bidding_strategy=strategy.to_api_body()
+        )
+
+    def update_budget(self, line_item_id: str, budget_micros: int) -> Dict:
+        """更新预算 (dv360_update_line_item_budget)"""
+        return self.client.dv360_update_line_item_budget(
+            line_item_id=line_item_id, budget_micros=budget_micros
+        )
+
+    # ---------- 诊断 ----------
+    def diagnose(self, line_item_id: str) -> None:
+        """一站式诊断: pacing + 表现 + 建议"""
+        print(f"=== 诊断 Line Item {line_item_id} ===")
+        pacing = self.get_pacing(line_item_id)
+        perf = self.get_performance(line_item_id, days=7)
+        print(f"pacingStatus={pacing.get('pacingStatus')} "
+              f"mode={pacing.get('pacingMode')}")
+        print(f"impressions={perf.get('impressions', 0)} "
+              f"clicks={perf.get('clicks', 0)} "
+              f"conversions={perf.get('conversions', 0)} "
+              f"cost=${perf.get('total_cost', 0):.0f}")
+        recs = self.client.dv360_list_recommendations(self.adv)
+        bid_recs = [r for r in recs if 'BID' in r.get('type', '').upper()]
+        print(f"相关优化建议 {len(bid_recs)} 条 (谨慎应用)")
+
+
+if __name__ == '__main__':
+    adv = '123456'
+    ops = DV360BiddingOps(adv)
+
+    # 示例 1: 创建效果 Line Item (Target CPA $100)
+    li = ops.create_line_item_with_strategy(
+        name='Effect - Target CPA $100',
+        strategy=BidStrategy(
+            strategy_type='BIDDING_STRATEGY_TYPE_TARGET_CPA',
+            target_cpa_micros=100_000_000,
+            pacing_mode='PACING_MODE_EVEN',
+        ),
+        budget_micros=2_000_000_000,  # $2000
+        type='DISPLAY',
+    )
+    print("created:", li.get('lineItemId'))
+
+    # 示例 2: 切换到 Target ROAS 5.0
+    # ops.switch_strategy(li_id, BidStrategy(
+    #     strategy_type='BIDDING_STRATEGY_TYPE_TARGET_ROAS',
+    #     target_roas=5.0,
+    # ))
+
+    # 示例 3: 诊断
+    # ops.diagnose(li_id)
+```
+
+**脚本使用注意**：
+1. 字段名（如 `targetCpaMicros`、`bidCeilingMicros`）以所连 DV360 API 版本的 schema 为准，上线前先 `dv360_list_bidding_strategies` 观察真实返回结构；
+2. 生产环境建议包一层重试与限流处理；
+3. 切换策略、应用 recommendation 属于高风险操作，建议先在小流量 Line Item 上验证。
+
+## 附录 B：Go 实现 pacing 与 Bid Surge 监控引擎
+
+生产环境的出价策略运维往往需要一个**旁路监控引擎**：轮询 DV360 的 pacing 与表现数据，检测异常（OVERDELIVERED / UNDELIVERED / CPA 越界 / Surge 窗口残留），并触发告警。下面给出 Go 实现骨架。
+
+```go
+package monitor
+
+import (
+	"fmt"
+	"log"
+	"time"
+)
+
+// PacingSnapshot pacing 快照 (对应 dv360_get_pacing_rate 返回)
+type PacingSnapshot struct {
+	LineItemID   string    `json:"lineItemId"`
+	PacingStatus string    `json:"pacingStatus"` // PACED/UNDELIVERED/OVERDELIVERED
+	PacingMode   string    `json:"pacingMode"`
+	CurrentRate  float64   `json:"currentRate"`
+	FetchedAt    time.Time `json:"fetchedAt"`
+}
+
+// PerfSnapshot 表现快照 (对应 dv360_get_line_item_performance)
+type PerfSnapshot struct {
+	LineItemID  string  `json:"lineItemId"`
+	Impressions int64   `json:"impressions"`
+	Conversions int64   `json:"conversions"`
+	CostUSD     float64 `json:"costUsd"`
+	CPAUSD      float64 `json:"cpaUsd"`
+}
+
+// AlertRule 告警规则
+type AlertRule struct {
+	ID             string
+	LineItemID     string
+	Metric         string   // pacing_status / cpa / delivery
+	Threshold      float64
+	Operator       string   // gt / lt / eq
+	SurgeWindowEnd time.Time // Bid Surge 结束时间, 用于残留检测
+}
+
+// MonitorEngine 监控引擎
+type MonitorEngine struct {
+	Rules       []AlertRule
+	FetchPacing func(lineItemID string) (*PacingSnapshot, error)
+	FetchPerf   func(lineItemID string, days int) (*PerfSnapshot, error)
+	Alert       func(rule AlertRule, msg string)
+}
+
+// NewMonitorEngine 构造监控引擎 (注入数据源与告警回调)
+func NewMonitorEngine(
+	fetchPacing func(string) (*PacingSnapshot, error),
+	fetchPerf func(string, int) (*PerfSnapshot, error),
+	alert func(AlertRule, string),
+) *MonitorEngine {
+	return &MonitorEngine{FetchPacing: fetchPacing, FetchPerf: fetchPerf, Alert: alert}
+}
+
+// checkPacing 检查 pacing 状态
+func (m *MonitorEngine) checkPacing(rule AlertRule) {
+	snap, err := m.FetchPacing(rule.LineItemID)
+	if err != nil {
+		log.Printf("fetch pacing error: %v", err)
+		return
+	}
+	switch {
+	case snap.PacingStatus == "OVERDELIVERED":
+		m.Alert(rule, fmt.Sprintf("LineItem %s 交付过快 (OVERDELIVERED), 预算可能提前耗尽", rule.LineItemID))
+	case snap.PacingStatus == "UNDELIVERED":
+		m.Alert(rule, fmt.Sprintf("LineItem %s 交付不足 (UNDELIVERED), 检查 floor/定向/预算", rule.LineItemID))
+	}
+}
+
+// checkSurgeResidue 检查 Bid Surge 是否已过期但仍在配置中 (残留检测)
+func (m *MonitorEngine) checkSurgeResidue(rule AlertRule) {
+	if rule.SurgeWindowEnd.IsZero() {
+		return
+	}
+	if time.Now().After(rule.SurgeWindowEnd) {
+		m.Alert(rule, fmt.Sprintf("LineItem %s 的 Bid Surge 窗口已结束, 请确认已移除 Surge 配置", rule.LineItemID))
+	}
+}
+
+// checkCPA 检查 CPA 是否越界
+func (m *MonitorEngine) checkCPA(rule AlertRule) {
+	perf, err := m.FetchPerf(rule.LineItemID, 7)
+	if err != nil {
+		log.Printf("fetch perf error: %v", err)
+		return
+	}
+	cpa := perf.CPAUSD
+	triggered := false
+	switch rule.Operator {
+	case "gt":
+		triggered = cpa > rule.Threshold
+	case "lt":
+		triggered = cpa < rule.Threshold
+	}
+	if triggered {
+		m.Alert(rule, fmt.Sprintf("LineItem %s CPA=$%.1f 越界 (%s %.1f)",
+			rule.LineItemID, cpa, rule.Operator, rule.Threshold))
+	}
+}
+
+// Run 启动监控循环 (示例: 每小时检查一次)
+func (m *MonitorEngine) Run(interval time.Duration, stop <-chan struct{}) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			for _, rule := range m.Rules {
+				switch rule.Metric {
+				case "pacing_status":
+					m.checkPacing(rule)
+				case "surge_residue":
+					m.checkSurgeResidue(rule)
+				case "cpa":
+					m.checkCPA(rule)
+				}
+			}
+		}
+	}
+}
+```
+
+**引擎用法**：把 `dv360_get_pacing_rate` 与 `dv360_get_line_item_performance` 的调用封装为 `FetchPacing` / `FetchPerf` 闭包，注册告警回调（如钉钉/Slack/邮件），按小时调度即可。配合"Surge 窗口残留检测"规则，可以自动发现"大促过了但 Surge 还开着"的典型事故。
+
+## 附录 C：竞价策略与周边概念对照表
+
+| 概念 | 中文 | 一句话说明 | 与出价策略的关系 |
+|-----|------|-----------|-----------------|
+| CPM | 千次展示成本 | 每千次展示的费用 | 手动出价的基本单位 |
+| CPC | 每次点击成本 | 每次点击的费用 | 点击型手动出价单位 |
+| CPV | 每次观看成本 | 每次视频观看的费用 | 视频手动出价单位 |
+| oCPM | 优化千次展示 | 按 CPM 计费但自动优化目标 | 自动出价的一种表现 |
+| tCPA | 目标每次转化费用 | 引擎在目标 CPA 内最大化转化 | 自动出价策略 |
+| tROAS | 目标广告支出回报率 | 引擎在目标 ROAS 下最大化收入 | 自动出价策略 |
+| pCVR | 预测转化率 | 模型预测的转化概率 | 自动出价的核心输入 |
+| pCTR | 预测点击率 | 模型预测的点击概率 | 自动出价的核心输入 |
+| Bid Surge | 出价激增 | 临时按比例抬高出价 | 叠加增强器 |
+| Bid Floor | 出价底价 | 卖方设定的最低出价 | 外部硬约束 |
+| Bid Shading | 出价遮罩 | 第一价格下压低出价避免过付 | 自动出价内置能力 |
+| Pacing | 投放节奏 | 预算在排期内平滑分配 | 与出价协同的第二控制器 |
+| PG | 程序化保量 | 固定价格+保量的直接交易 | 固定出价模式 |
+| PMP | 私有市场 | 邀请制优质库存 | 可配任意出价策略 |
+| Learning Period | 学习期 | 模型积累信号的窗口(3-7天) | 自动出价生效前提 |
+| Win Rate | 中标率 | 赢得拍卖的比例 | 出价竞争力的直接体现 |
+| Delivery | 交付 | 实际产生的展示量 | 出价策略效果的可见结果 |
+| Frequency Cap | 频次上限 | 单用户展示次数上限 | 与 Surge 配合控制体验 |
+
+## 附录 D：推荐学习与验证路径
+
+**如果要用真实数据验证本文档内容**：
+1. 用 `dv360_list_bidding_strategies` 查看现有账户的出价策略清单，对照 1.2 节分类；
+2. 找一个活跃 Line Item，用 `dv360_get_pacing_rate` 查看 pacingStatus，对照 2.8 节诊断表；
+3. 用 `dv360_get_line_item_performance` 计算实际 CPA/ROAS，对照你设置的目标，验证 2.3 节公式方向；
+4. 若账户有 Recommendations，用 `dv360_list_recommendations` 拉取并人工评估（见 3.6）；
+5. 小流量 Line Item 上验证"手动 → 自动"迁移流程（3.1），保留对照组观察学习期。
+
+**如果是在自研 DSP/广告系统中应用**：
+- 参考 2.7 节 Go 引擎的分层（预测→出价→约束），把 pCVR/pCTR 预测、出价计算、pacing、floor/ceiling 拆成独立模块；
+- 参考附录 B 做旁路监控，尽早发现 pacing 与 Surge 异常；
+- 牢记第一价格下的 bid shading 与第二价格下的真实报价策略差异（1.4 / 2.6）。
+
+---
+
+> **文档信息**
+> 本文档由 Ryan 个人知识库整理，聚焦 DV360 竞价策略深度解析（Bid Surge / Auto-bidding / Target CPA / Target ROAS / 程序化保量）。
+> 领域：广告投放 / 竞价策略 | 类型：深度文档 | 更新：2026-08-14
+> 相关文档：《DV360 平台架构与程序化购买深度解析》(dv360-architecture-deep.md)、《DV360 投放策略与优化深度实战》(dv360-optimization-deep.md)、《DV360/DFP 竞价与投放架构深度》(dv360-dfp-deep.md)
+

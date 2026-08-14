@@ -1817,6 +1817,102 @@ class CapiPipeline:
 
 ---
 
+### 4.9 一张图排查事件没到 / 报错
+
+```
+CAPI 事件没到 / 报错？
+      │
+      ├─ 4xx 参数错误 ──► ① event_time 是否为秒（非毫秒）？
+      │                       ② em/ph 是否 hash？（明文会 100 错）
+      │                       ③ event_name 是否合法？
+      │                       ④ 空字段剔除了吗？
+      │                          ├─ 凭 fbtrace_id 在 Graph 报错明细定位
+      │                          └─ 用手工 curl + test_event_code 复现
+      │
+      ├─ 4xx 权限 ────► ① token 是系统用户/员工？是否过期？
+      │                   ② 系统用户对该 pixel 有无 manage 权限？
+      │                   ③ App（facebook 的 app）是否绑定像素？→ 授权
+      │
+      ├─ 429 ────────► 降批量、退避、看 Retry-After
+      │
+      ├─ 5xx ────────► 退避重试 + 幂等键（同一 event_id）重发
+      │
+      └─ 200 但有 events_received=0
+                          │
+                          ▼
+                  test_event_code 是否传了？（测试流量不进生产）
+                  data 数组是否非空？JSON 是否可解析？
+```
+
+### 4.10 CAPI 与 Pixel 对账：怎么知道数据对不对
+
+对账（reconciliation）是生产团队每天/每周的必备动作：
+
+```python
+def reconcile(db_orders, meta_events):
+    """对比业务订单数与 Meta 报表事件数，定位缺口"""
+    db_total = sum(o["purchase"] for o in db_orders)   # 业务真实下单数
+    meta_total = sum(1 for e in meta_events
+                     if e["event_name"] == "Purchase")
+    ratio = meta_total / db_total if db_total else 0
+    # 期望 ~= 1.0（双通道去重后），小于 0.9 说明有丢失
+    if ratio < 0.9:
+        logger.error("purchase reconciliation low: %s%%", round(ratio * 100))
+    return {"db": db_total, "meta": meta_total, "coverage": ratio}
+```
+
+| 对账情况 | 含义 | 动作 |
+|----------|------|------|
+| ratio ≈ 1.0 | 完美 | 无 |
+| ratio < 0.9 | 有事件丢失（队列 / hash 错 / 晚了 >7d） | 按订单时间窗口排查 |
+| ratio > 1.1 | 双计（去重键断裂） | 查 event_id（见 4.1） |
+| ratio 波动大 | 有噪声 / 测试流量 | 看 test_event_code 是否误开 |
+
+### 4.11 常见 Graph API 错误码深表（CAPI 专属）
+
+| code / subcode | 消息特征 | 根因 | 处理 |
+|----------------|----------|------|------|
+| 100 / 1805001 | `event_name` invalid | 空/非法名 | 检查映射表 |
+| 100 / 1810001 | invalid parameter | 字段类型错（event_time 字符串 vs int） | 强类型化 |
+| 100 / 2301001 | `Invalid hash` | em/ph 未正确 hash / hash 形式错 | 用规范 hash（base64 而非 hex） |
+| 190 | Session has expired | token 过期 | 轮换 token |
+| 200 | Permissions error | 系统用户权限不足 | 赋 pixel manage |
+| 429 | App/Page rate limit | 频率超限 | 降批量、退避 |
+| 2326 | 事件时间太旧 | `now - event_time > 7天` | 检查 event_time 单位/时区 |
+| 431 | 请求过大 | batch 超 8MB | 缩小批量件数 |
+
+### 4.12 从"信号质量差"反向定位到数据链路
+
+用反向排查表逐节定位 EMQ 低：
+
+```
+信号质量低 ──► 查 user_data 是否够
+                 ├─ 登录率低？→ 传 external_id + ip/ua + fbp
+                 ├─ hash 规范化错？→ meta_validate_event_data 校验
+                 ├─ 只发浏览事件？→ 关键转化没传 user_data
+                 └─ Pixel 与 CAPI 里 user_data 冲突 → 去重后保留哪条？
+                     （同时发不同 user_data，Meta 会取舍）
+```
+
+**专坑**：Pixel 和 CAPI 给**同一事件发了不同的 user_data**（比如前端有 em 但后端没传 em，只有 ip）——去重后 Meta 可能保留先到/质量更高的，导致后端精心准备的字段没被用上。规范：**双通道的 user_data 应同源同构**（前端尽量从后端下发的字段取）。
+
+### 4.13 上线 Checklist（给即将投产的团队）
+
+| # | 检查项 | 状态 |
+|---|--------|------|
+| 1 | 系统用户 token 已授权目标 pixel | ☐ |
+| 2 | 时钟已 NTP 同步（offset < 100ms） | ☐ |
+| 3 | event_id 规范统一（前端=后端） | ☐ |
+| 4 | 关键转化带完整 user_data + external_id | ☐ |
+| 5 | 敏感字段已剥离、LDU 逻辑已接入 | ☐ |
+| 6 | 批量 URL 带 `data_processing_options=[]` | ☐ |
+| 7 | 429/5xx 退避 + 幂等重发已测 | ☐ |
+| 8 | 队列 / 去重表 / DLQ 已部署 | ☐ |
+| 9 | 指标与告警（capi_*）已上线 | ☐ |
+| 10 | 灰度计划（影子 pixel→5%→全量）已就绪 | ☐ |
+
+---
+
 ## 五、自测题
 
 ### 5.1 去重键不生效

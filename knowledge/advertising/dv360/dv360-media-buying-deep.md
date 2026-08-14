@@ -1932,7 +1932,7 @@ func TestEngineSmoke(t *testing.T) {
 
 ## 八、附录：单位换算、字段速查与参考
 
-### 7.1 金额单位换算（micros）
+### 8.1 金额单位换算（micros）
 
 DV360 所有金额字段都以 **micros（微单位）** 表示。换算关系与常见速查：
 
@@ -1974,7 +1974,7 @@ def cpm_local_to_micros(cpm_local: float) -> int:
 
 > 大促配置里最容易犯的错：把"万元"当"元"算，或少写/多写一个零，导致预算与预期差 10 倍。**提交前一律用 `from_micros` 回读一遍。**
 
-### 7.2 时间单位换算
+### 8.2 时间单位换算
 
 DV360 的实体时间字段分两种：
 
@@ -1998,7 +1998,7 @@ def window_contains(d: dict, now: datetime.date) -> bool:
     return ref == now  # 示意：真实判断用 >= start 且 <= end
 ```
 
-### 7.3 媒体购买关键字段速查表
+### 8.3 媒体购买关键字段速查表
 
 **IO 层**：
 
@@ -2029,7 +2029,7 @@ def window_contains(d: dict, now: datetime.date) -> bool:
 | `creativeIds` | 关联创意 | 审批通过后可挂 |
 | `measurement.*` | 归因 | floodlight 配置 |
 
-### 7.4 全文档方法索引（对齐项目脚本）
+### 8.4 全文档方法索引（对齐项目脚本）
 
 下面是本文引用到的、来自项目脚本的方法汇总，方便检索：
 
@@ -2076,7 +2076,7 @@ IO/交易:      dv360_list_insertion_orders / dv360_list_proposals
               dv360_list_device_types / dv360_list_ad_formats / dv360_list_geo_locations
 ```
 
-### 7.5 与其它 dv360 文档的互补关系（一文读懂该读哪篇）
+### 8.5 与其它 dv360 文档的互补关系（一文读懂该读哪篇）
 
 | 场景 | 建议先读 | 再配合本文 |
 |------|----------|------------|
@@ -2087,7 +2087,7 @@ IO/交易:      dv360_list_insertion_orders / dv360_list_proposals
 | 想懂归因 | `dv360-measurement-attribution-deep.md` | floodlight 挂接（本文 2.2.2） |
 | **想交付媒体购买系统** | **本文** | 工程化：幂等/重试/并发/监控（本文六） |
 
-### 7.6 参考与延伸阅读
+### 8.6 参考与延伸阅读
 
 - Google Display & Video 360 API 官方文档：https://developers.google.com/display-video/api
 - InsertionOrder 资源参考：https://developers.google.com/display-video/api/reference/rest/v1/insertionOrders

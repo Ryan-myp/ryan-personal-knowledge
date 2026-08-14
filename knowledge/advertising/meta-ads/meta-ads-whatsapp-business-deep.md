@@ -1400,10 +1400,6 @@ def meta_register_whatsapp_number(self, phone_number_id, **kwargs): ...
 
 ---
 
-> 本文由 Ryan 个人知识库生成，覆盖 WhatsApp Business App 与 Cloud API、消息模板、QR/wa.me、商用资料、互动消息、24h/7 天会话窗口、Click-to-WhatsApp 广告与 pre-registration 落地、自动回复、批量发送、质量评级与踩坑排查全链路。实践部分请以 Meta 官方最新 API 版本与费率表为准。
-
----
-
 ## 六、消息模板全类别实战：认证 / 实用 / 营销模板逐条参数
 
 模板是整个 WhatsApp 主动触达体系的地基，本节把三类模板从「业务语义 → 创建 JSON → 发送 JSON → 参数编号」逐条拆开，避免团队在写参数时凭感觉乱编。

@@ -1162,3 +1162,261 @@ def assert_valid_filter(dimension, value):
   - 用 `dv360_get_quota(advertiser_id)` 查询当前余量。
   - 控制并发 ≤ 8、轮询间隔 ≥ 15s。
   - 对瞬时 429 做指数退避重试（见 2.6 Go 引擎的 `withRetry`）。
+
+## 四、常见问题与排查
+
+### 4.1 FAQ 总览表（速查）
+
+按"数据延迟 / 数据一致性 / 维度 / 指标 / 对账 / 导出"六大类整理高频问题，详情见后续小节。
+
+| 分类 | 问题 | 一句话结论 |
+|------|------|------------|
+| 数据延迟 | 为什么今天报表数和昨天 UI 不同？ | LDB 显示级 vs RDB 定稿级，等 24-48h 稳定 |
+| 数据延迟 | CTV/YouTube 数据为什么老不出来？ | 跨媒体回填慢，3~5 天起 |
+| 数据一致性 | 报表出现同一天多条同维度记录 | Query 重复 run，建主键 UPSERT 去重 |
+| 数据一致性 | 重跑后数值变小/变大 | RDB 回填修正，允许覆盖而非跳过 |
+| 维度 | 为什么这个维度组合报错/返回空 | 高基数维度互斥/组合不合法，用 breakdowns 校验 |
+| 维度 | 小时维度只能看近 30 天 | 平台限制，长区间降级天级 |
+| 指标 | 显示/花费/转化各自对不上 | 取数据等级与口径公式不一致 |
+| 指标 | 可见率两个数字差很多 | 分母（可测 vs 总）不同，统一口径 |
+| 对账 | DV360 vs 第三方 vs 内部三方对不上 | 四类差异（口径/时区/测量/归因），阈值化管理 |
+| 对账 | 金额差几分钱 | 金额用微单位整数，避免浮点误差 |
+| 导出 | CSV 大数变科学计数/截断 | 指定列类型，转微单位整数 |
+| 导出 | 报表被截断/行数超限 | 按日拆分、减少高基数组合 |
+| 配额 | 429 QuotaExceeded | 查 quota、控并发、指数退避重试 |
+
+### 4.2 数据延迟类 FAQ
+
+**Q1：为什么"今天白天 UI 看到的展示数"和"次日报表导出的展示数"不一样？**
+
+这是 LDB（显示级，近实时）与 RDB（上报级，定稿）的差异。UI 内置报表与 pacing 监控走 LDB，分钟级刷新但会回填修正；导出/自定义报表/API 报表走 RDB，通常 24-48h 定稿。当天下班前看到的数偏低是正常的，第二天会补记。
+
+**处理建议**：需要"当天看、当天降级用"看 LDB；需要"对账/入库/汇报"必须等 RDB 定稿，统一用 T-2 口径。
+
+**Q2：为什么 CTV / OTT / YouTube 的数据好久才稳定？**
+
+CTV/OTT 及部分 YouTube 库存的回填跨越多个中介与卖方系统，RDB 定稿周期比 Web/App 展示长，常见 3~5 天甚至更久。若报表里这类库存占比高，'着急等数'是常态，要接受"稳定窗口拉长"并调整 T+N 策略。
+
+**Q3：程序化保量（PG）/私有市场（PMP）的对账数据为什么不及时？**
+
+PG/PMP 涉及买卖双方合同对账，需要卖方（Seller）回填确认，延迟取决于各 SSP/发布商的回填节奏。`dv360_list_seller_metrics(seller_id)` 可单独查看某个卖方的指标，`dv360_list_invoice_history` 提供结算口径（invoice 级）用于最终对账。
+
+```python
+# 按卖方查看指标：定位"个别卖家数据滞后"
+def seller_delay_check(client, seller_ids):
+    lagged = []
+    for sid in seller_ids:
+        m = client.dv360_list_seller_metrics(seller_id=sid)
+        if m.get('metrics', {}).get('impressions', 0) == 0:
+            lagged.append({'seller': sid, 'likely_lag': True})
+    return lagged
+```
+
+**Q4：有没有办法判断"当前拉的这版数据是不是定稿"？**
+
+没有直接标"定稿"的字段，工程上靠两条推断：
+1. **时间冗余**：只认"数据日期至少落后当前日期 2~3 天"的行。
+2. **趋势稳定**：连续两天对 T-D 拉取，数值不再变化即认为稳定（可在入库侧加"修订标记：`revision=1|2`，最后以 revision 最大且已稳定为准"）。
+
+### 4.3 数据一致性 / 重复数据类 FAQ
+
+**Q5：为啥表里出现"同一天、同维度，但多行指标不同"的记录？**
+
+成因有二：
+1. **Query 被重复 run**：同一 Query 一天内手动 + 自动各 run 一次，会产生两次报表文件，导入时若没按主键 UPSERT，就叠加出多行。
+2. **不同数据等级混入**：LDB 预览与 RDB 定稿混在同一张表（未统一）。
+
+**解法**：入库一律 UPSERT（主键见 3.2），重复 run 直接覆盖；表里加 `source_level` 与 `measured_at_utc` 列，方便追溯"这行是哪一版拉的"。
+
+```sql
+-- PostgreSQL UPSERT 去重模板（同天同维度只保留最新版本）
+INSERT INTO dv360_report AS t
+  (report_date, advertiser_id, line_item_id, impressions, clicks, spend_micro,
+   source_level, measured_at_utc)
+VALUES (:report_date, :adv, :li, :imp, :clk, :spend, :level, :ts)
+ON CONFLICT (report_date, advertiser_id, line_item_id)
+DO UPDATE SET
+  impressions     = EXCLUDED.impressions,
+  clicks          = EXCLUDED.clicks,
+  spend_micro     = EXCLUDED.spend_micro,
+  source_level    = EXCLUDED.source_level,
+  measured_at_utc = EXCLUDED.measured_at_utc
+WHERE EXCLUDED.measured_at_utc >= t.measured_at_utc;
+```
+
+**Q6：重跑某天任务，为什么某些行指标"变小"了？**
+
+不是 bug。RDB 在回填滞后时会把 "错报的当日值"修正为"定稿值"（例如先把所有展示计入，后续扣减 IVT/重复后变小）。因此重跑必须**允许覆盖旧值**，而不是 `INSERT IGNORE` 跳过已有行——否则你会永远卡在"预览值"上。
+
+**Q7：怎么防止"重复 run"本身？**
+
+- 调度器层保证同一个 task（date+advertiser）只在一个实例运行（Airflow `max_active_runs`、分布式锁）。
+- API 层用"Query 复用 + run-id 幂等"：同一天触发同一 Query 前先查 `reports.list`，已有 DONE 的当天报表则直接复用，不重复 run。
+- 写入层用 UPSERT 兜底（最终防线）。
+
+### 4.4 维度类 FAQ
+
+**Q8：为什么有些维度拼在一起就报错？**
+
+DV360 的高基数维度（CREATIVE、PLACEMENT 等）之间存在组合互斥或数量限制，不是所有"维度×维度"都合法。报错信息通常是"dimensions not compatible"之类。
+
+**解法**：查询前用 `dv360_list_breakdowns()` 拉取当前账户 "允许组合"清单做白名单校验，避免运行时才炸。自建一张"可用组合缓存表"让前端下拉只展示合法组合。
+
+**Q9：为什么"小时"维度拉不到长区间？**
+
+HOUR 维通常只覆盖近 30 天（数据保留策略决定）。拉取长历史改成天级 `DATE`。
+
+**Q10：为什么按这个维度切后总行数和按另一个维度切对不上？**
+
+不同维度的行数天然不等——两个维度的"事实粒度"不同：按 CREATIVE 切每行一个素材，按 DATE 切每行一天，交叉后行数是笛卡尔积，不是同一个事实键。对比时必须"固定事实键"（例如都用 `(DATE, LINE_ITEM)` 作为基准）再展开，否则会误以为漏行。
+
+### 4.5 指标类 FAQ
+
+**Q11：展示数、点击数"对不上"是普遍现象吗？**
+
+是，且正常。展示以 DV360 投递口径（RDB）为准；点击存在"点击去重"（同一次点击跨多次展示只计 1），不同计数方式数值不同。对账时先定义"以哪个口径为基准"，不要指望三方完全相等。
+
+**Q12：可见率为什么有两个不同的数？**
+
+因为分母定义不同：
+- 口径 A：可见展示 / 可测量展示（Google/行业常用）
+- 口径 B：可见展示 / 总展示（含不可测）
+
+口径 B 永远 ≤ 口径 A。分析可见率时统一注明分母，不要在报告里混用。工程上用 `MEASURABLE_IMPRESSIONS` 作分母更符合行业标准。
+
+**Q13：Floodlight 转化为什么和"后台支付单数"差很多？**
+
+转化天然含：
+- **归因分摊**：一笔交易可能被分摊到多个触点（跨渠道），报表里"转化数"大于"唯一成交数"。
+- **转化窗口**：点击后 30/60/90 天内才转化也算，延迟转化会把"未来转化"也算进当期。
+- **计数方式**：SESSION/UNIQUE/TRANSACTION 三选一不同，数值不同。
+
+对转化以"内部支付/服务端埋点"为真金白银的权威，DV360 转化用于"优化与归因"，两者各司其职（见 3.3）。
+
+**Q14：花费（SPEND）为什么和财务/发票对不上？**
+
+`SPEND` 是展现级扣费成本，不含返点（rebate）、返利，可能与合同价/发票（invoice）存在差异。财务对账用 `dv360_list_invoice_history` 与 `dv360_get_payment_methods`/`dv360_list_billing_info` 的结算口径。
+
+```python
+# 区分"花费口径"与"结算口径"
+def cost_story(client, advertiser_id):
+    spend = client.dv360_get_report(advertiser_id)['spend']  # 扣费口径
+    invoices = client.dv360_list_invoice_history(advertiser_id)
+    return {
+        'spend_cost_basis': spend,          # 展示计费
+        'invoice_total': sum(i['amount'] for i in invoices),  # 发票口径
+        'note': '两者差异来自返点/返利/扣减，需财务确认',
+    }
+```
+
+### 4.6 对账类 FAQ
+
+**Q15：DV360、第三方、内部埋点三方"必须相等"吗？**
+
+不必，也不可能完全相等。真正的对账目标是：**差异在可控阈值内，且每一类差异都能解释清楚**。常见可靠对账基准：
+- 投递（展示/花费）：以 DV360 RDB 为权威（买方结算基准）。
+- 可见率：以第三方门户 + DV360 双确认，允许 ±3~5 点。
+- 转化/成交：以内部支付为权威。
+
+**Q16：对账差太多，第一步该查什么？**
+
+按性价比排序：
+1. **数据等级**：是否混用了 LDB/RDB。
+2. **时区与日期边界**：两端是否同一天。
+3. **去重/计数方式**：SESSION/UNIQUE/TRANSACTION 是否一致。
+4. **单位**：万/亿、货币、微单位换算。
+5. **口径公式**：可见率分母、ROAS 用归因价值还是销售价值。
+
+先用分层（Campaign→LineItem→Creative）钻取定位差异集中在哪一层，再针对该层查上面五类，避免大海捞针。
+
+### 4.7 导出 / 配额类 FAQ
+
+**Q17：CSV 里大数变成科学计数法/精度丢失怎么办？**
+
+DV360 导出金额字段常带 `$`、逗号，或由平台格式化；导入 Excel/CSV 引擎时被自动转成科学计数，导致精度丢失。解法：
+- 金额字段统一 `_micro` 转微单位整数（见 3.1），入库前不保留"展示格式"。
+- 解析时对列显式声明类型（`dtype`），禁止 pandas/Excel 自动推断 float。
+- 用 `utf-8-sig` 解码处理 BOM，避免首列字段名带 `\ufeff`。
+
+```python
+def safe_parse(csv_path, numeric_cols):
+    import pandas as pd
+    df = pd.read_csv(csv_path, encoding='utf-8-sig',
+                     dtype={c: str for c in numeric_cols})  # 先全部读为文本
+    for c in numeric_cols:
+        df[c] = df[c].str.replace(r'[,$\s]', '', regex=True)
+        df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+    return df
+```
+
+**Q18：单次报表行数超上限被截断怎么办？**
+
+触发上限时有的版本直接截断（静默），有的报错。应对：
+- **拆**：按日拆分（`DATE` 一列一天一拉），或减少高基数维度组合。
+- **降**：降低颗粒度（CREATIVE 级 → LINE_ITEM 级）。
+- **并**：多文件分别入库后用 SQL 按事实键聚合，不手工拼大 CSV。
+- **追**：记录"每个 Query 实际行数"，逼近上限时提前告警。
+
+**Q19：批量拉报表经常 429 / QuotaExceeded？**
+
+DV360 API 有配额（`dv360_get_quota(advertiser_id)` 可查余量）。缓解：
+- 并发 ≤ 8，轮询间隔 ≥ 15s。
+- 对 429 做指数退避重试（见 2.6 `withRetry`）。
+- 非关键任务错峰运行，避免与上游其他任务抢配额。
+
+### 4.8 排查决策树（一图流）
+
+```
+报表数据出问题，从哪查起？
+│
+├─ 1) 数值"变/少/多"？
+│    ├─ 是 → 查数据等级 LDB/RDB？回填时序？
+│    └─ 否 → 下一步
+│
+├─ 2) 有重复行？
+│    ├─ 是 → 检查 Query 重复 run + 主键 UPSERT
+│    └─ 否 → 下一步
+│
+├─ 3) 某种定向上"没数"？
+│    ├─ 是 → 维度组合合法性（breakdowns）/过滤值 / 投放状态
+│    └─ 否 → 下一步
+│
+├─ 4) 与第三方/内部对不上？
+│    ├─ 是 → 三源对账四类差（口径/时区/测量/归因）+ 分层钻取
+│    └─ 否 → 下一步
+│
+└─ 5) 拉取失败/超时/限流？
+     ├─ 429/quota → 控并发 + 退避重试 + 查 quota
+     ├─ 超时 → 看 Query 体积，拆日期/降颗粒度
+     └─ FAILED → 先重试一次 run；连续失败告警
+```
+
+### 4.9 运维与监控清单
+
+生产跑报表流水线，建议把下面这几项做成自动化监控（Proactive 而非火急火燎）：
+
+| 监控项 | 指标 | 触发告警 | 频率 |
+|--------|------|----------|------|
+| 拉取成功率 | 每广告主日任务成功与否 | 任一失败即告警 | 每任务 |
+| 行数突变 | 某天总行数较 7 日均值 ±30% | 突增突减告警 | 每日 |
+| 数值突变 | 总展示/花费较前日 ±20% | 异常告警 | 每日 |
+| 数据等级混用 | source_level 列非预期 | 检测到 LDB+RDB 混入 | 每日 |
+| 配额余量 | dv360_get_quota 余量 < 20% | 预警告警 | 每小时 |
+| 对账偏差 | 三源差值超阈值 | 超阈告警 | 每日 |
+| 查询体积 | 单 Query 行数逼近上限 | 提前拆分告警 | 每周 |
+
+```python
+def anomaly_check(daily_totals):
+    """简单的突变检测：与 7 日均值对比，超 ±20% 告警。"""
+    from statistics import mean
+    alerts = []
+    keys = ['impressions', 'spend_usd', 'clicks']
+    for k in keys:
+        hist = [d[k] for d in daily_totals[-8:-1]]
+        base = mean(hist) or 1.0
+        latest = daily_totals[-1][k]
+        pct = (latest - base) / base
+        if abs(pct) > 0.2:
+            alerts.append(f"{k} 突变 {pct:+.1%} (最新={latest}, 7日均={base:.0f})")
+    return alerts
+```
