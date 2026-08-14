@@ -157,3 +157,37 @@ A:
 2. 添加异步支持
 3. 实现错误重试机制
 4. 添加监控告警功能
+
+## 安全确认机制
+
+### 自动检测规则
+脚本会自动检测操作类型，对写入操作进行二次确认：
+
+| 操作类型 | 示例 | 行为 |
+|---------|------|------|
+| **读取** | `list_accounts`, `get_campaign`, `query_report` | ✅ 直接执行 |
+| **写入** | `create_campaign`, `update_ad`, `delete_adgroup` | ⚠️ 需要确认 |
+| **状态变更** | `pause_campaign`, `resume_ad`, `delete_campaign` | ⚠️ 需要确认 |
+
+### 确认提示示例
+```bash
+$ python3 scripts/ad_platform_api.py --platform tiktok --action create_campaign --args '{"account_id": "act_123", "name": "Test"}'
+⚠️  警告: 检测到写入操作: create_campaign
+   此操作将修改 tiktok 的广告数据!
+   执行的操作类型: [create] 
+是否继续? 输入 'yes' 确认: 
+```
+
+### 跳过确认（危险操作）
+如果确定要执行危险操作，可以添加 `--yes` 参数：
+```bash
+python3 scripts/ad_platform_api.py --platform tiktok --action delete_campaign --yes --args '{"campaign_id": "xxx"}'
+```
+
+### 安全检测关键词
+脚本会检测以下关键词来判断是否为写入操作：
+- `create`, `update`, `delete`
+- `pause`, `resume`, `start`, `stop`
+- `add`, `remove`, `enable`, `disable`
+- `send`, `upload`, `track`, `claim`
+- `apply`, `dismiss`, `approve`, `reject`
