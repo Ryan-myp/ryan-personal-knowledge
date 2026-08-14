@@ -690,9 +690,105 @@ ERROR_HANDLING_MAP = {
 ## 参考资源
 
 - [TikTok Business API 官方文档](https://business-api.tiktok.com/developer/docs)
-- [Python SDK GitHub](https://github.com/TikTokAPI/TikTok-Business-API)
+- [Python SDK GitHub](https://github.com/tiktok/tiktok-business-api-sdk)
 - [转换追踪指南](https://business-api.tiktok.com/developer/docs/en/business-growth/conversion-tracking)
 - [受众定位指南](https://business-api.tiktok.com/developer/docs/en/business-growth/targeting)
+
+---
+
+## 八、官方 API 端点速查表
+
+基于 TikTok Business API SDK 官方文档：
+
+| 功能 | HTTP Method | Endpoint |
+|------|-------------|----------|
+| 创建 Ad | POST | `/open_api/v1.3/ad/create/` |
+| 查询 Ad | GET | `/open_api/v1.3/ad/get/` |
+| 更新 Ad 状态 | POST | `/open_api/v1.3/ad/status/update/` |
+| 更新 Ad | POST | `/open_api/v1.3/ad/update/` |
+| Smart Plus Ad 创建 | POST | `/open_api/v1.3/smart_plus/ad/create/` |
+| Smart Plus Ad 查询 | GET | `/open_api/v1.3/smart_plus/ad/get/` |
+| Smart Plus Ad 审核 | GET | `/open_api/v1.3/smart_plus/ad/review_info/` |
+| Smart Plus Ad 申诉 | POST | `/open_api/v1.3/smart_plus/ad/appeal/` |
+| 素材审核查询 | GET | `/open_api/v1.3/smart_plus/material/review_info/` |
+
+### 8.1 Ad Get 查询参数
+
+```python
+# 查询 Ad 的完整参数
+filtering = {
+    'adgroup_ids': ['adgroup_id_1', 'adgroup_id_2'],
+    'campaign_ids': ['campaign_id_1'],
+    'statuses': ['ACTIVE', 'PAUSED', 'DELETED']
+}
+
+page = 1
+page_size = 10
+
+fields = [
+    'ad_id', 'name', 'status', 'creative_type',
+    'spend', 'impressions', 'clicks', 'ctr',
+    'conversions', 'cost_per_conversion'
+]
+```
+
+### 8.2 Smart Plus Ad (智能创意)
+
+Smart Plus 是 TikTok 的 AI 自动创意功能：
+
+```python
+def create_smart_plus_ad(self, adgroup_id: str, name: str, 
+                          auto_generate: bool = True) -> dict:
+    """
+    创建 Smart Plus Ad (智能创意)
+    平台会自动组合素材生成多个创意变体
+    """
+    url = f"{self.api_base}/smart_plus/ad/create/"
+    
+    payload = {
+        'access_token': self.token,
+        'adgroup_id': adgroup_id,
+        'name': name,
+        'status': 'PAUSED',
+        'auto_generate': auto_generate,  # 启用自动生成
+        'creative_configs': [
+            {
+                'media_type': 'VIDEO',
+                'media_url': 'https://example.com/video.mp4'
+            }
+        ]
+    }
+    
+    r = requests.post(url, json=payload, headers=self.headers)
+    return r.json()
+
+
+def get_smart_plus_review(self, ad_id: str) -> dict:
+    """查询 Smart Plus Ad 审核状态"""
+    url = f"{self.api_base}/smart_plus/ad/review_info/"
+    
+    params = {
+        'access_token': self.token,
+        'ad_id': ad_id
+    }
+    
+    r = requests.get(url, params=params, headers=self.headers)
+    return r.json()
+
+
+def submit_smart_plus_appeal(self, ad_id: str, reason: str) -> dict:
+    """对被拒绝的 Smart Plus Ad 提交申诉"""
+    url = f"{self.api_base}/smart_plus/ad/appeal/"
+    
+    payload = {
+        'access_token': self.token,
+        'ad_id': ad_id,
+        'reason': reason
+    }
+    
+    r = requests.post(url, json=payload, headers=self.headers)
+    return r.json()
+```
 
 ---
 

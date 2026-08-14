@@ -861,6 +861,236 @@ ERROR_HANDLING_MAP = {
 
 ---
 
+## 九、Batch Job 批量处理（官方示例）
+
+### 9.1 为什么使用 Batch Job
+
+对于大规模操作（如批量创建成百上千个 Campaign），推荐使用 **BatchJobService**：
+- 异步执行，不阻塞主线程
+- 支持大量操作（单次最多 10,000 条）
+- 失败不影响其他操作
+- 可查询执行结果和错误详情
+
+### 9.2 Batch Job 完整流程
+
+```python
+import asyncio
+from uuid import uuid4
+from google.ads.googleads.client import GoogleAdsClient
+from google.ads.googleads.errors import GoogleAdsException
+
+# ==================== 临时 ID 管理 ====================
+_temporary_id = -1
+
+def get_next_temporary_id():
+    """返回下一个临时 ID，用于 Batch Job 引用"""
+    global _temporary_id
+    _temporary_id -= 1
+    return _temporary_id
+
+
+# ==================== Step 1: 创建 Batch Job ====================
+def create_batch_job(client, customer_id: str) -> str:
+    """创建 Batch Job 并返回 Resource Name"""
+    batch_job_service = client.get_service('BatchJobService')
+    
+    batch_job_op = client.get_type('BatchJobOperation')
+    batch_job = batch_job_op.create
+    # 不需要设置任何属性，只需创建空对象
+    
+    response = batch_job_service.mutate_batch_job(
+        customer_id=customer_id,
+        operation=batch_job_op
+    )
+    resource_name = response.result.resource_name
+    print(f"✅ Batch Job created: {resource_name}")
+    return resource_name
+
+
+# ==================== Step 2: 构建操作列表 ====================
+def build_campaign_operations(client, customer_id: str, campaigns_config: list):
+    """构建完整的 Campaign 操作列表"""
+    operations = []
+    
+    for config in campaigns_config:
+        # 2.1 Campaign Budget Operation
+        budget_op = client.get_type('CampaignBudgetOperation')
+        budget = budget_op.create
+        budget.name = f"{config['name']}_Budget"
+        budget.amount_micros = int(config['budget'] * 1_000_000)
+        budget.delivery_method = client.enums.BudgetDeliveryMethodEnum.STANDARD
+        budget.explicitly_shared = False
+        
+        operations.append(budget_op)
+        
+        # 2.2 Campaign Operation
+        campaign_op = client.get_type('CampaignOperation')
+        campaign = campaign_op.create
+        campaign.name = config['name']
+        campaign.status = client.enums.CampaignStatusEnum.PAUSED
+        campaign.advertising_channel_type = client.enums.AdvertisingChannelTypeEnum.SEARCH
+        campaign.contains_eu_political_advertising = (
+            client.enums.EuPoliticalAdvertisingStatusEnum.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING
+        )
+        
+        operations.append(campaign_op)
+        
+        # 2.3 Ad Group Operations
+        for i in range(config.get('ad_groups', 2)):
+            ad_group_op = client.get_type('AdGroupOperation')
+            ad_group = ad_group_op.create
+            ad_group.name = f"{config['name']}_AG_{i}"
+            ad_group.status = client.enums.AdGroupStatusEnum.PAUSED
+            ad_group.type = client.enums.AdGroupTypeEnum.SEARCH_DYNAMIC_ADS
+            
+            if config.get('cpc_bid'):
+                ad_group.manual_cpc.bid_micros = int(config['cpc_bid'] * 1_000_000)
+            
+            operations.append(ad_group_op)
+        
+        # 2.4 Keyword Operations
+        keywords = config.get('keywords', ['shoes', 'sneakers'])
+        for kw in keywords:
+            kw_op = client.get_type('AdGroupCriterionOperation')
+            keyword = kw_op.create
+            keyword.keyword.text = kw
+            keyword.keyword.match_type = client.enums.KeywordMatchType.PHRASE
+            operations.append(kw_op)
+    
+    return operations
+
+
+# ==================== Step 3: 添加操作到 Batch Job ====================
+def add_batch_job_operations(batch_job_service, operations, resource_name: str):
+    """将操作添加到 Batch Job"""
+    for i, op in enumerate(operations):
+        batch_job_op = client.get_type('BatchJobOperation')
+        batch_job_op.add_mutate_operation.operation_index = i
+        batch_job_op.add_mutate_operations.mutate_operation = op
+        
+        batch_job_service.add_batch_job_operations(
+            resource_name=resource_name,
+            operation=batch_job_op
+        )
+    print(f"✅ Added {len(operations)} operations to Batch Job")
+
+
+# ==================== Step 4: 运行 Batch Job ====================
+def run_batch_job(batch_job_service, resource_name: str):
+    """运行 Batch Job（异步）"""
+    operation = batch_job_service.run_batch_job(resource_name=resource_name)
+    print(f"🚀 Batch Job executed: {resource_name}")
+    return operation
+
+
+# ==================== Step 5: 轮询并获取结果 ====================
+def fetch_and_print_results(batch_job_service, resource_name: str, page_size: int = 1000):
+    """获取 Batch Job 执行结果"""
+    request = client.get_type('ListBatchJobResultsRequest')
+    request.resource_name = resource_name
+    request.page_size = page_size
+    
+    results = batch_job_service.list_batch_job_results(request=request)
+    
+    for result in results:
+        status = result.status.message or "N/A"
+        op_index = result.operation_index
+        print(f"  Operation #{op_index}: status={status}")
+
+
+# ==================== 完整异步流程 ====================
+async def main(client: GoogleAdsClient, customer_id: str, campaigns_config: list):
+    """完整的 Batch Job 执行流程"""
+    batch_job_service = client.get_service('BatchJobService')
+    
+    # Step 1: 创建 Batch Job
+    resource_name = create_batch_job(client, customer_id)
+    
+    # Step 2: 构建操作
+    operations = build_campaign_operations(client, customer_id, campaigns_config)
+    
+    # Step 3: 添加操作
+    add_batch_job_operations(batch_job_service, operations, resource_name)
+    
+    # Step 4: 运行
+    operation = run_batch_job(batch_job_service, resource_name)
+    
+    # Step 5: 轮询并等待完成
+    print("⏳ Waiting for batch job to complete...")
+    operation.result()  # 阻塞直到完成
+    
+    # Step 6: 获取结果
+    fetch_and_print_results(batch_job_service, resource_name)
+
+
+# 使用示例
+if __name__ == "__main__":
+    client = GoogleAdsClient.load_from_storage('google-ads.yaml')
+    
+    campaigns = [
+        {'name': 'Campaign_001', 'budget': 100, 'cpc_bid': 2.0, 
+         'keywords': ['running shoes', 'sports shoes']},
+        {'name': 'Campaign_002', 'budget': 150, 'cpc_bid': 2.5,
+         'keywords': ['formal shoes', 'leather shoes']}
+    ]
+    
+    asyncio.run(main(client, 'YOUR_CUSTOMER_ID', campaigns))
+```
+
+### 9.3 Batch Job vs 直接 Mutate 对比
+
+| 特性 | 直接 Mutate | Batch Job |
+|------|-------------|-----------|
+| 单次操作数 | ≤1000 | ≤10,000 |
+| 执行方式 | 同步 | 异步 |
+| 错误隔离 | 失败即停止 | 失败不影响其他 |
+| 结果查询 | 即时返回 | 需轮询 |
+| 适用场景 | 少量操作 | 批量操作 |
+
+---
+
+## 十、Field Mask 更新技巧
+
+### 10.1 部分字段更新
+
+```python
+def update_campaign_field_mask(client, campaign_id: str, updates: dict):
+    """
+    使用 Field Mask 只更新指定字段
+    避免覆盖其他字段
+    """
+    campaign_op = client.get_type('CampaignOperation')
+    campaign = campaign_op.update
+    campaign.resource_name = f"customers/{customer_id}/campaigns/{campaign_id}"
+    
+    # 设置要更新的字段
+    for key, value in updates.items():
+        if hasattr(campaign, key):
+            setattr(campaign, key, value)
+    
+    # 关键：设置 update_mask 指定要更新的字段
+    campaign_op.update_mask = ','.join(updates.keys())
+    
+    response = client.get_service('CampaignService').mutate_campaigns(
+        customer_id=customer_id,
+        operations=[campaign_op]
+    )
+    return response
+
+
+# 使用示例：只更新预算，不影响其他字段
+update_campaign_field_mask(
+    client, 
+    campaign_id='123456',
+    updates={
+        'campaign_budget': 'customers/123/campaignBudgets/789',
+        'status': client.enums.CampaignStatusEnum.ENABLED
+    }
+)
+```
+
+---
+
 ## 参考资源
 
 - [Google Ads API 官方文档](https://developers.google.com/google-ads/api/docs/start)
@@ -868,3 +1098,16 @@ ERROR_HANDLING_MAP = {
 - [GAQL Query Cookbook](https://developers.google.com/google-ads/api/docs/query/cookbook)
 - [API 配额与限流指南](https://developers.google.com/google-ads/api/docs/rate-limits)
 - [v25 版本变更说明](https://ads-developers.googleblog.com/2026/07/announcing-v25-of-google-ads-api.html)
+- [Batch Job 官方示例](https://developers.google.com/google-ads/api/samples/add-complete-campaigns-using-batch-job)
+
+---
+
+## 总结
+
+Google Ads API 成功的三个支柱：
+
+1. **正确的认证与限流** - 新鲜 client + 指数退避
+2. **高效的 GAQL 查询** - 最小字段 + 分页 + 流式
+3. **可靠的批量处理** - Batch Job + Field Mask
+
+记住：**API 是工具，理解广告架构才是核心**。

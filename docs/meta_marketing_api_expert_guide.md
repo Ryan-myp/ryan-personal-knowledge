@@ -736,3 +736,242 @@ def refresh_access_token():
 - [API 版本说明](https://developers.facebook.com/docs/graph-api/changelog/version-history)
 - [限流指南](https://developers.facebook.com/docs/graph-api/overview/rate-limiting)
 - [Ads Management API 文档](https://developers.facebook.com/docs/ads-apis)
+
+---
+
+## 附录：v25 API 新特性
+
+### A.0 Meta GQL API (GraphQL)
+
+Meta 正在逐步推出基于 GraphQL 的 API，支持更灵活的查询：
+
+```python
+import requests
+
+class MetaGQLClient:
+    """Meta GQL API 客户端 - 使用 GraphQL 查询"""
+    
+    def __init__(self, access_token: str):
+        self.token = access_token
+        self.base_url = "https://graph.facebook.com/v25.0"
+    
+    def query_with_gql(self, account_id: str, query: str) -> dict:
+        """
+        使用 GQL 查询（替代传统 REST）
+        query: GraphQL 查询语句
+        """
+        url = f"{self.base_url}/{account_id}"
+        
+        # GraphQL 查询示例
+        gql_query = """
+        {
+            campaign {
+                id
+                name
+                status
+                objective
+                daily_budget {
+                    amount
+                    currency
+                }
+                adsets(limit: 10) {
+                    data {
+                        id
+                        name
+                        status
+                        targeting {
+                            geo_locations {
+                                countries
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        """
+        
+        params = {
+            'access_token': self.token,
+            'fields': gql_query
+        }
+        
+        r = requests.get(url, params=params, headers=self.headers)
+        return r.json()
+    
+    def batch_gql_query(self, queries: list) -> dict:
+        """
+        批量 GQL 查询（推荐方式）
+        减少 API 调用次数
+        """
+        url = f"{self.base_url}/{account_id}"
+        
+        # 批量查询
+        batch_queries = {str(i): q for i, q in enumerate(queries)}
+        
+        params = {
+            'access_token': self.token,
+            'batch': json.dumps(list(batch_queries.values()))
+        }
+        
+        r = requests.post(url, data=params, headers=self.headers)
+        return r.json()
+
+
+# 使用示例
+gql_client = MetaGQLClient(access_token='YOUR_TOKEN')
+
+# 复杂的多层级查询
+result = gql_client.query_with_gql(
+    account_id='act_123456',
+    query="""
+    {
+        campaigns {
+            data {
+                id
+                name
+                insight {
+                    actions
+                    spend
+                    ctr
+                }
+            }
+        }
+    }
+    """
+)
+```
+
+**GQL vs REST 对比**:
+
+| 特性 | REST API | GQL API |
+|------|----------|---------|
+| 查询灵活性 | 固定字段 | 自定义查询 |
+| 嵌套数据 | 多次请求 | 单次请求 |
+| 性能 | 较慢 | 更快 |
+| 适用场景 | 简单 CRUD | 复杂报表分析 |
+
+### A.1 2025 年关键变更
+
+| 特性 | 说明 | 影响 |
+|------|------|------|
+| Campaign 字段扩展 | 新增 `campaign_type`、`dynamic_audience_id` | 支持更精细的投放控制 |
+| Ad Set 优化门控 | `optimization_gate` 支持多目标 | 提升转化效率 |
+| Creative 批量操作 | 支持 100+ Creative 批量上传 | 提高素材管理效率 |
+| 报表精度提升 | 归因窗口扩展到 90 天 | 更准确的 ROI 分析 |
+| 动态创意增强 | `dynamic_creative` 支持 20+ 变量 | 自动化 A/B 测试 |
+
+### A.2 版本迁移检查清单
+
+```python
+# v25 迁移注意事项
+V25_CHANGES = {
+    # 已弃用的端点
+    'deprecated_endpoints': [
+        '/v24/adaccounts/{aid}/insights',  # 改用 /v25/adaccounts/{aid}/insights
+    ],
+    
+    # 必填字段变更
+    'required_fields_v25': {
+        'campaign': ['name', 'objective', 'status', 'daily_budget'],
+        'adset': ['name', 'campaign_id', 'optimization_gate'],
+        'ad': ['name', 'creative', 'status']
+    },
+    
+    # 新增的筛选条件
+    'new_filters': [
+        'adset.effective_status',
+        'adset.optimization_goal',
+        'campaign.spend_cap'
+    ]
+}
+
+
+def migrate_from_v24_to_v25(client):
+    """从 v24 迁移到 v25 的辅助函数"""
+    # 1. 更新所有端点版本
+    client.api_version = 'v25'
+    
+    # 2. 添加必填字段
+    def ensure_required_fields(campaign_data):
+        required = ['name', 'objective', 'status', 'daily_budget']
+        missing = [f for f in required if f not in campaign_data]
+        if missing:
+            print(f"⚠️ Campaign 缺少必填字段: {missing}")
+        return campaign_data
+    
+    # 3. 检查废弃功能
+    def check_deprecated_usage(data):
+        deprecated_fields = ['date_preset', 'time_increment']
+        for field in deprecated_fields:
+            if field in data:
+                print(f"⚠️ 字段 '{field}' 在 v25 中已废弃")
+        return data
+    
+    return client
+```
+
+### A.3 v25 新增报表字段
+
+```python
+# v25 Insights API 新增字段
+V25_NEW_FIELDS = {
+    # 转化相关
+    'purchase_roas_7d_click': '7天点击归因购买 ROAS',
+    'purchase_roas_1d_view': '1天浏览归因购买 ROAS',
+    'qualifying_message_conversations': '高质量消息对话数',
+    'qualifying_call_starts': '高质量通话开始数',
+    
+    # 创意表现
+    'creative_ctr': '创意 CTR',
+    'creative_video_play_30s': '30秒视频播放数',
+    'creative_video_view_complete': '完整视频观看数',
+    
+    # 受众
+    'audience_size_estimate': '受众规模估算',
+    'reach_by_age_gender': '分年龄性别的触达'
+}
+```
+
+### A.4 Batch Upload Creative (批量上传)
+
+```python
+def batch_upload_creatives(self, account_id: str, creatives: list) -> dict:
+    """
+    批量上传创意 (v25 新功能)
+    最多支持 100 个创意同时上传
+    """
+    url = f"https://graph.facebook.com/v25.0/{account_id}/creatives"
+    
+    # 构建 multipart form data
+    files = {}
+    data = {'input': json.dumps([{
+        'name': c['name'],
+        'object_story_spec': c.get('object_story_spec')
+    } for c in creatives])}
+    
+    for i, c in enumerate(creatives):
+        if 'image' in c:
+            files[f'creative_{i}'] = ('image.jpg', c['image'], 'image/jpeg')
+    
+    r = requests.post(url, data=data, files=files, headers=self.headers)
+    return r.json()
+
+
+def get_batch_upload_status(self, batch_id: str) -> dict:
+    """查询批量上传状态"""
+    url = f"https://graph.facebook.com/v25.0/{batch_id}"
+    params = {'fields': 'status,created_creative_ids'}
+    r = requests.get(url, params=params, headers=self.headers)
+    return r.json()
+```
+
+---
+
+## 总结
+
+Meta Marketing API 的核心要点：
+
+1. **版本管理** - 始终指定 API 版本，关注 Breaking Changes
+2. **权限最小化** - 只申请必要的权限范围
+3. **批量操作** - 使用 Batch API 提高效率
+4. **归因分析** - 利用多窗口归因优化预算分配
