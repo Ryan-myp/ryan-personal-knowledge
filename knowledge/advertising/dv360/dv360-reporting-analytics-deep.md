@@ -1745,3 +1745,317 @@ def daily_insights(con, advertisers):
 ## 结语
 
 DV360 报表与分析不是"拉个数"，而是一整套工程：**分清 LDB/RDB 数据等级、固化维度指标口径、打通 Floodlight 与跨渠道归因、接入第三方测量、用可重试可幂等的引擎每日入库、并对三源数据做阈值化对账**。把这套体系跑稳，投放的每一分钱花得值不值、对得上对不上，才真正可答、可查、可优化。
+
+## 七、附录：端到端生产示例与速查
+
+### 7.1 生产级 Python 拉取模块（可直接套用骨架）
+
+把前面的散点代码收拢成一个可维护模块，给出文件结构与关键函数职责，方便直接在新项目里起底。
+
+```
+dv360_reporting/
+├── __init__.py
+├── client.py          # dv360 client 封装（build + 认证 + 通用 request）
+├── queries.py         # create_query / run / wait / download（二步曲逻辑）
+├── parser.py          # CSV → DV360ReportRow 解析与口径映射
+├── store.py           # 数据库 UPSERT（PostgreSQL / BigQuery 两套适配）
+├── sched.py           # 每日任务编排（并发 + 重试 + 幂等）
+├── reconcile.py       # 三源对账
+├── monitor.py         # 突变/配额/行数告警
+└── glossary.yaml      # 口径词典
+```
+
+**queries.py（Query 生命周期封装）**：
+
+```python
+"""
+Query 生命周期：create → run → wait → download。
+Query 一旦创建长存，run 只触发一次报告生成（幂等复用）。
+"""
+class QueryClient:
+    def __init__(self, service):
+        self.service = service
+
+    def get_or_create(self, advertiser_id, title, body, reuse=True):
+        """复用同名已存在 Query，否则新建。避免每天生成一堆孤儿 Query。"""
+        if reuse:
+            for q in self.list(advertiser_id):
+                if q.get('query', {}).get('metadata', {}).get('title') == title \
+                   and q.get('query', {}).get('timeRange') == body.get('timeRange'):
+                    return q['queryId']
+        resp = self.service.queries().create(
+            body={'advertiserId': advertiser_id,
+                  'query': body, 'runNow': True}).execute()
+        return resp['queryId']
+
+    def list(self, advertiser_id, page_size=100):
+        results = []
+        token, = None,  # placeholder
+        page_token = None
+        while True:
+            resp = self.service.queries().list(
+                advertiserId=advertiser_id, pageSize=page_size,
+                pageToken=page_token).execute()
+            results.extend(resp.get('queries', []))
+            page_token = resp.get('nextPageToken')
+            if not page_token:
+                break
+        return results
+
+    def run(self, query_id):
+        return self.service.queries().run(queryId=query_id).execute()
+```
+
+**parser.py（CSV → 标准行，含口径映射）**：
+
+```python
+def to_report_rows(csv_rows, adv_id, report_date, source_level='final'):
+    """把 DV360 导出的行列映射为 DV360ReportRow 标准模型。"""
+    out = []
+    for r in csv_rows:
+        out.append(DV360ReportRow(
+            report_date=report_date,
+            advertiser_id=adv_id,
+            campaign_id=_int(r.get('Campaign ID')),
+            insertion_order_id=_int(r.get('Insertion Order ID')),
+            line_item_id=_int(r.get('Line Item ID')),
+            creative_id=_int(r.get('Creative ID')),
+            device_type=r.get('Device Type') or r.get('Device'),
+            country=r.get('Country'),
+            impressions=_int(r.get('Impressions')),
+            clicks=_int(r.get('Clicks')),
+            spend_micro=_micro(r.get('Spend')),
+            completions=_int(r.get('Completions')),
+            floodlight_conversions=_int(r.get('Floodlight Conversions')),
+            conversion_value_micro=_micro(r.get('Conversion Value')),
+            measured_at_utc=datetime.utcnow().isoformat(),
+        ))
+    return out
+```
+
+**sched.py（每日任务：并发 + 失败隔离 + 可重跑）**：
+
+```python
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+def daily_job(client, advertisers, as_of=None, max_workers=8):
+    as_of = as_of or date.today()
+    target = as_of - timedelta(days=2)      # T-2 定稿口径
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futs = {ex.submit(run_one_advertiser, client, adv, target): adv
+                for adv in advertisers}
+        results = {}
+        for fut in as_completed(futs):
+            adv = futs[fut]
+            try:
+                results[adv] = {'status': 'ok', **fut.result()}
+            except Exception as e:          # 单广告主失败不拖垮整批
+                results[adv] = {'status': 'failed', 'error': str(e)}
+    return results
+```
+
+### 7.2 Go 与 Python 的兼容层（跨语言复用）
+
+团队常"Python 摆应用、Go 摆大吞吐"。报表拉取可在 Go 侧做高吞吐解析入库，Python 侧做业务编排。二者以统一的"列名→微单位金额"约定解耦：
+
+```go
+// 统一金额约定：外部一律微单位（1e6 = 1 货币单位）
+func toMicro(s string) int64 {
+	// 去掉 $ 逗号空格后转 int64(round(x*1e6))
+	cleaned := strings.Map(func(r rune) rune {
+		if r == '$' || r == ',' || r == ' ' || r == '\t' {
+			return -1
+		}
+		return r
+	}, s)
+	f, err := strconv.ParseFloat(cleaned, 64)
+	if err != nil {
+		return 0
+	}
+	return int64(math.Round(f * 1_000_000))
+}
+
+// Schema 对齐：列名必须与 Python 端 glossary.yaml 一致
+const ColImp = "Impressions"
+const ColClick = "Clicks"
+const ColSpend = "Spend"
+
+func rowToStruct(r []string, header map[string]int) (DV360Line, error) {
+	li := DV360Line{
+		Impressions: atoi(r[header["Line Item ID"]]),
+		Clicks:      atoi(r[header["Line Item ID"]]),
+		SpendMicro:  toMicro(r[header["Spend"]]),
+	}
+	return li, nil
+}
+```
+
+**跨语言对账一致性**：规定所有派生指标（CTR/CPM/ROAS/可见率）的公式只能在"口径词典"（glossary.yaml）定义一次，Go 与 Python 各自引用同一公式，避免两端算出不同结果。
+
+### 7.3 常见维度 × 指标 合法组合速查（样例）
+
+以下为高频合法组合参考（以 `dv360_list_breakdowns()` 实际返回为准，此处为示意）：
+
+| 维度组合 | 典型指标集合 | 用途 |
+|----------|--------------|------|
+| DATE + LINE_ITEM | IMPRESSIONS, CLICKS, SPEND, VCR | 日常监控 |
+| DATE + CREATIVE | IMPRESSIONS, CLICKS, CTR, COMPLETIONS | 素材优化 |
+| COUNTRY + LINE_ITEM | IMPRESSIONS, SPEND, VIEWABLE | 地域投放 |
+| DEVICE_TYPE + LINE_ITEM | IMPRESSIONS, CLICKS, VCR | 设备策略 |
+| AUDIENCE_SEGMENT + LINE_ITEM | IMPRESSIONS, CONVERSIONS, ROAS | 受众效果 |
+| PLACEMENT + SENSITIVE_CATEGORY | BRAND_SAFETY_IMPRESSIONS, IVT | 品牌安全 |
+| SELLER + LINE_ITEM | IMPRESSIONS, SPEND, SPEND_VS_AVG_CPM | 库存结构 |
+
+**注意**：高基数维度（CREATIVE、PLACEMENT 等）与部分维度互斥，正式使用前务必用 `dv360_list_breakdowns()` 在白名单里校验。
+
+### 7.4 周 / 月聚合与趋势模式
+
+日报之外的周报/月报用列表合并 + 环比/同比：
+
+```python
+def weekly_trend(rows, window='W'):
+    """周粒度的花费/转化趋势；W=周，M=月。"""
+    df = pd.DataFrame(rows)
+    df['period'] = pd.to_datetime(df['report_date']).dt.to_period(window)
+    return df.groupby(['period', 'advertiser_id']).agg(
+        impressions=('impressions', 'sum'),
+        spend_micro=('spend_micro', 'sum'),
+        floodlight_conversions=('floodlight_conversions', 'sum'),
+    ).reset_index()
+```
+
+**留存 / 触达分析提示**：跨渠道触达（Reach & Frequency）通常不在普通日报规模内跑，需结合 Google Ads Data Hub 或 CM360 的触达报表（对应 `dv360_list_cross_channel_reports`）。这类分析以聚合去重后的 UV/频率为主，与展示级指标口径不同，单独成看板，不与展示数混用。
+
+### 7.5 术语表（避免团队对口径各说各话）
+
+| 术语 | 含义 |
+|------|------|
+| LDB / 显示级 | 近实时展示级日志库，分钟级刷新、会回填修正 |
+| RDB / 上报级 | 报表级定稿库，通常 24-48h 稳定，权威口径 |
+| T-N 口径 | 数据日期落后当前 N 天（T-2 即昨日之前两天） |
+| 维度（Dimension） | 数据切片键（日期/实体/设备/地域/受众） |
+| 指标（Metric） | 每片上的计数与度量（展示/点击/花费/转化） |
+| 事实键 | 一行报表的维度组合主键，用于幂等去重 |
+| Floodlight | Google 统一转化计数体系（源自 CM360） |
+| 计数方式 | SESSION / UNIQUE / TRANSACTION 三种转化去重粒度 |
+| 归因分摊 | 一笔转化按模型把功劳分给多个触点 |
+| IVT | Invalid Traffic，无效流量 |
+| 可见率 | 可见展示 / 可测量展示（默认分母可测） |
+| micro / 微单位 | 1e6 微单位 = 1 货币单位，避免浮点误差 |
+| UPSERT | 存在即覆盖的写入（幂等，支持回填修正） |
+
+### 7.6 速查：三源对账"权威基准"一页纸
+
+| 数据 | 权威源 | 允许差异 | 备注 |
+|------|--------|----------|------|
+| 展示 | DV360 RDB | ±3% 内（IVT 扣减/回填时序） | 以买方结算基准 |
+| 点击 | DV360 RDB | ±3% 内 | 注意点击去重 |
+| 花费 | DV360 RDB | 结算以 invoice 为准 | 扣费 vs 返点口径 |
+| 可见率 | 第三方门户 + DV360 双确认 | ±3~5 点 | 分母统一可测 |
+| 转化/成交 | 内部支付/服务端埋点 | 以内部为准 | 归因天生不同 |
+| 触达（UV/频次） | 跨渠道报表（CM360/ADH） | 独立口径 | 与展示级分离 |
+
+这套"权威基准"定下来并写进团队共识，绝大多数"对不上账"吵的都是"你拿什么当基准"的问题，先对齐基准再谈差异。
+
+## 八、附录补充：字段映射参考与对账数值示例
+
+### 8.1 DV360 导出 CSV → 标准模型字段映射表
+
+对接多套系统（BI/内部数仓/第三方）时，先固定"DV360 导出列名 → 标准字段名"的映射字典，避免各系统各写一套导致对不上。以下为常用映射（列名以实际导出为准，此处为典型值）：
+
+| DV360 导出列（典型） | 标准字段 | 类型 | 用途 |
+|----------------------|----------|------|------|
+| Date | report_date | DATE | 数据日期 |
+| Advertiser ID | advertiser_id | INT64 | 广告主 |
+| Campaign | campaign_name | STRING | 展示层 |
+| Campaign ID | campaign_id | INT64 | 汇总键 |
+| Insertion Order | io_name | STRING | 展示层 |
+| Insertion Order ID | insertion_order_id | INT64 | 对账键 |
+| Line Item | line_item_name | STRING | 展示层 |
+| Line Item ID | line_item_id | INT64 | 优化主键 |
+| Creative | creative_name | STRING | 展示层 |
+| Creative ID | creative_id | INT64 | 素材键 |
+| Device | device_type | STRING | 设备切片 |
+| Country | country | STRING | 地域切片 |
+| Impressions | impressions | INT64 | 投递 |
+| Clicks | clicks | INT64 | 投递 |
+| Spend | spend_micro | INT64(微) | 花费 |
+| Measurable Impressions | measurable_impressions | INT64 | 验证 |
+| Viewable Impressions | viewable_impressions | INT64 | 验证 |
+| Invalid Traffic Impressions | ivt_impressions | INT64 | 验证 |
+| Floodlight Conversions | floodlight_conversions | INT64 | 转化 |
+| Conversion Value | conversion_value_micro | INT64(微) | 转化 |
+
+**映射实现（一处定义，多处引用）**：
+
+```python
+COLUMN_MAP = {
+    'Date': 'report_date', 'Advertiser ID': 'advertiser_id',
+    'Campaign ID': 'campaign_id', 'Insertion Order ID': 'insertion_order_id',
+    'Line Item ID': 'line_item_id', 'Creative ID': 'creative_id',
+    'Device': 'device_type', 'Country': 'country',
+    'Impressions': 'impressions', 'Clicks': 'clicks', 'Spend': 'spend_micro',
+    'Measurable Impressions': 'measurable_impressions',
+    'Viewable Impressions': 'viewable_impressions',
+    'Invalid Traffic Impressions': 'ivt_impressions',
+    'Floodlight Conversions': 'floodlight_conversions',
+    'Conversion Value': 'conversion_value_micro',
+}
+```
+
+### 8.2 一个对账数值示例（把"为什么差"算清楚）
+
+假设某 Campaign 于 2026-08-01~08-07 投放，四源数据如下（示例数值）：
+
+| 数据源 | 展示 | 花费(USD) | 转化 | 可见率 |
+|--------|------|-----------|------|--------|
+| DV360 RDB 报表 | 1,000,000 | 5,000.00 | 1,200 | 62.0% |
+| 第三方测量方门户 | 985,000（可测）| — | — | 58.5% |
+| 内部服务端埋点 | — | — | 900 | — |
+
+**差异解释逐项拆解**：
+
+1. **展示 1000k vs 985k（差 -1.5%）**：
+   - 975k 可测（MEASURABLE），拆分：985k*62%/?? 先给结论：
+   - 实际差异 = IVT 扣减 + 测量方可测性。DV360 以投递日志计 1000k，第三方只测到 985k 可测（约 1.5% 不可测/采样），在 ±3% 可接受阈值内。
+2. **可见率 62.0% vs 58.5%（差 3.5 点）**：
+   - DV360 可见率 = 可见/可测；第三方门户另有一套标签计数与采样，差 3.5 点在 ±5 点容忍区间内，属正常。若分母不同（DV360 用可测，门户用总展示），数值差会更大，先对齐分母。
+3. **转化 1200 vs 900（内部为准）**：
+   - DV360 1200 = 归因分摊后的转化计数（含跨触点分摊 + 延迟转化 + SESSION/UNIQUE 计数口径）；内部 900 = 服务端唯一成交。转化以内部 900 为权威，DV360 1200 用于归因与优化，二者各司其职，不视为对账错误。
+
+```python
+def explain_example_diff():
+    d = {'imp_dv360': 1_000_000, 'imp_3p_meas': 985_000,
+         'view_dv360': 0.62, 'view_3p': 0.585,
+         'conv_dv360': 1200, 'conv_internal': 900}
+    imp_diff = (d['imp_3p_meas'] - d['imp_dv360']) / d['imp_dv360']
+    return {
+        'impression_diff_pct': round(imp_diff, 4),       # -0.015
+        'viewability_gap_pts': round((d['view_dv360']-d['view_3p'])*100, 1),  # 3.5
+        'conv_explained': "归因分摊+延迟转化+计数口径 → 以内部900为权威",
+        'conclusion': "四源差异均在可接受阈值内且有解释，非数据错误",
+    }
+```
+
+**结论**：对账不是"四个数相等"，而是"每个差值都有可控且有解释的原因，且建立了权威基准"。把这一页纸讲清楚，能省掉 80% 的"是不是 bug"争论。
+
+### 8.3 收尾清单（上线前逐项勾选）
+
+```
+□ LDB/RDB 口径已统一（入库用 RDB final + T-2）
+□ 时区与日期边界已对齐（账户时区 / dv360_list_time_zones）
+□ 金额走微单位整数（_micro）
+□ 事实键主键 + UPSERT 幂等写入
+□ Query 复用 + 重复 run 防呆
+□ 维度组合已过 breakdowns 白名单校验
+□ 三源对账权威基准已定义 + 阈值告警
+□ 配额监控（dv360_get_quota）已接入
+□ 口径词典（glossary.yaml）已建立并被看板引用
+□ 回填修正双版本（预览→定稿）已实现
+□ 行数上限已按日拆分规避
+□ 失败告警（钉钉/Slack/邮件）已接入
+```
+
+---
+
+**附：写作说明** 本文档面向"Rachel/DV360 报表工程化"场景，所有 API 方法名均已对照 `ryan-personal-knowledge/scripts` 下 `ad_platform_api.py`（`dv360_*` 系列）与 `dv360_api.py`（`get_report` / `get_*_options` 系列）核验；业务场景、踩坑与排查经验为一线投放/工程实践沉淀。文档与 `dv360-architecture-deep.md`、`dv360-measurement-attribution-deep.md`、`dv360-optimization-deep.md` 互补，读者可交叉阅读构建完整能力。

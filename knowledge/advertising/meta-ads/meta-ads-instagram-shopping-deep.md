@@ -1831,6 +1831,103 @@ def sync_instagram_shop(ig_user_id: str, catalog_id: str, access_token: str,
 > **工程要点**：生产代码请加入幂等（retailer_id 唯一键、重复创建检测）、指数退避限流、以及「失败 SKU 落日志并可重放」。批次里失败项按 `retailer_id` 对账重发，不要整体重跑。
 
 ---
+### 4.8 真实业务案例复盘（把前面原理用到场景里）
+
+#### 案例 1：Magento 大促库存漂移导致标签闪躲
+
+**现象**：大促期间大量商品在 IG 商店「时有时无」，转化骤降。
+**根因**：Magento 侧库存实时扣减，但同步是每日全量 Feed 覆盖；当天内某 SKU 缺货时 Feed 仍是旧值（in stock），次日覆盖后变 out of stock，标签随之隐藏/恢复。
+**解法**：
+1. 改为「增量 API/batch 同步」，缺货即时推 `availability=out of stock`；
+2. 建每日对账任务：比对 Magento 库存与 IG 侧 availability，漂移即告警；
+3. 大促前提前「预下架」预计缺货 SKU，避免临门掉链。
+
+```
+教训提炼
+[单一数据源 Catalog] ⚠️ 不是「自动实时」的
+  → 必须有「主动推送 + 回读对账」双保险
+  → 库存/价格变更必须用 batch + 轮询 + 回读，别当同步的
+```
+
+#### 案例 2：审核被拒后反复改域名导致连环拒审
+
+**现象**：商家被拒后立刻换落地域名重提，连续 4 次被拒。
+**根因**：第一次其实卡在「品类受限」，但商家误以为是域名问题，每次换新域名反而引发「域名与 BM 验证不一致/信任度不足」的二次拒审。
+**解法**：先把拒审分类（品类 vs 域名 vs 图片 vs 账号），逐类修复；域名验证在 BM 里先完成再提交；不要用「换域名重提」来试探。
+```
+被拒根因四象限（判断用）
+├── 品类受限 → 移除受限品 / 换子类目
+├── 域名/落地页 → BM 验证 + 落地页可购买
+├── 素材/图 → 换图、去水印、保真实
+└── 账号/历史 → 清理违规、冷启动合规资产
+```
+
+#### 案例 3：脚本打标权限不足「时灵时不灵」
+
+**现象**：同一脚本某些账号能打标、某些不能；肉眼排查 token 没过期。
+**根因**：能打的账号 token 带有 `commerce_account_manage` + 目录权限；不能打的账号 token 是运营普通号授权，缺商务权限，调用 `POST /{media-id}/product_tags` 命中 `#200`。
+**解法**：统一用「BM 系统用户」token 作为打标凭证，并在创建系统用户时授予对应 IG 账号与目录的权限；收口到 `scripts/meta_api.py` 统一获取，避免散落写死。
+
+### 4.9 运维监控与告警清单
+
+```
+建议监控项
+├─ Purchase/产品点击（IG Insights + Pixel）下降 → 检查是否标签消失/缺货
+├─ 标签总数/失效标签数（每日对账）→ 异常波动告警
+├─ 批次失败率（catalog batches）→ 按 retailer_id 追踪
+├─ token 到期日 → 提前 7 天告警续期
+├─ Catalog↔IG 绑定关系（shopping_product_catalogs）→ 丢失即告警
+└─ Native 订单退款率/拒单率 → 超阈值介入
+```
+
+### 4.10 常见 FAQ（一句话速答）
+
+| 问题 | 一句话回答 |
+| --- | --- |
+| IG 商店为什么是空的？ | 目录未绑定 / 商品全下架 / 审核未过 / 传播未完成 |
+| 为什么「在 Instagram 上结账」选项消失？ | 地区/品类/主体不满足 Native 准入，或结账被重置 |
+| 打标签报「no commerce permission」？ | 账号非商业或 token 缺商务权限，换 BM 系统用户 token |
+| 我改了目录价格为什么 IG 不变？ | 最终一致延迟 + 需回读确认；必要时跑对账 |
+| 标签数量上限是多少？ | 平台当前上限（历史 5、部分 20），以官方最新为准 |
+| Shopify 能直接同步吗？ | 装 IG Shopping 销售渠道即可，但字段受 Shopify 映射约束 |
+| Magento 怎么同步？ | 走 Commerce API / 数据 Feed + 增量 batch + 对账 |
+| Native 和 External 能共存吗？ | 不能，同一账号同一时间只能一种结账方式生效 |
+
+### 4.11 附：Instagram 商业功能 Graph API 端点速查表
+
+开发期最常用端点集中列在一处，方便对照参数排查（`BASE=https://graph.facebook.com/v22.0`）：
+
+| 动作 | 方法与路径 | 关键参数 | 用途 |
+| --- | --- | --- | --- |
+| 绑定目录 | `GET /{ig-user-id}/shopping_product_catalogs` | `fields` | 验证 IG↔目录绑定 |
+| 列出目录商品 | `GET /{catalog_id}/products` | `fields`,`limit`,`after` | 商品盘点/分页 |
+| 单条新增商品 | `POST /{catalog_id}/products` | 商品字段 | 新增/更新单商品 |
+| 批量新增商品 | `POST /{catalog_id}/products/batch` | `items` | 规模化上架（异步） |
+| 查批次状态 | `GET /{batch_id}` | `fields=status,handles` | 轮询至终态/看逐条错误 |
+| 更新商品 | `POST /{product_id}` | `price`,`availability` 等 | 改价/改库存/下架 |
+| 删除商品 | `DELETE /{product_id}` | `retailer_id` | 彻底移除 |
+| 商品集 | `GET /{catalog_id}/product_sets` | `fields` | 分组/广告复用 |
+| 目录分类 | `GET /{catalog_id}/categories` | — | 分类核对 |
+| 给媒体打标 | `POST /{ig-media-id}/product_tags` | `product_id` | 打商品标签 |
+| 移除标签 | `DELETE /{ig-media-id}/product_tags` | `product_id` | 删标签 |
+| 列媒体标签 | `GET /{ig-media-id}/product_tags` | `fields` | 回读标签落库 |
+| 反查商品被哪些帖打标 | `GET /{ig-user-id}/product_tags` | `product_id`,`fields=media_id,permalink` | 素材审计 |
+| 列集合 | `GET /{ig-user-id}/collections` | — | 商店集合盘点 |
+| 创建集合 | `POST /{ig-user-id}/collections` | `name`,`product_id` | 建橱窗卡 |
+| 集合详情 | `GET /{collection-id}` | `fields` | 信息查询 |
+| 集合内商品 | `GET /{collection-id}/products` | `fields` | 成员商品 |
+| 集合加商品 | `PUT /{collection-id}/products` | `product_id` | 增加成员 |
+| 集合删商品 | `DELETE /{collection-id}/products` | `product_id` | 移除成员 |
+| 列表订单(Native) | `GET /{ig-user-id}/shopping_orders` | `fields` | 结账订单 |
+| 单订单详情 | `GET /{shopping-order-id}` | `fields` | 订单状态/地址 |
+| 履约写入 | `POST /{shopping-order-id}/item_fulfillments` | `shipping_carrier`,`tracking_number` | 发货填物流 |
+| 结算打款 | `GET /{ig-user-id}/commerce_payouts` | `fields` | 账单/打款 |
+| 内容洞察 | `GET /{ig-media-id}/insights` | `metric` | 互动/点击指标 |
+
+**上表使用原则**：先确认权限 scope 与目录绑定（§2.8）与地区/品类可用性（§3.12），再调用；写入类操作一律「回读验证 + 异步批次 + 幂等」，与全文口径一致。
+
+---
+---
 
 ## 五、自测题
 
@@ -1900,3 +1997,7 @@ Product Set 是 Catalog 内的服务端逻辑分组，主要服务 API/广告（
 
 > 本文档所有端点、权限、国家/地区与上限等信息会随 Meta 政策更新变化，落地系统前务必以官方最新文档与商务管理平台实际状态为准。
 
+
+---
+
+> **文档维护**：本文件由 Ryan 知识库升级专家维护（2026-08-14 更新）。确认行数硬性要求 ≥ 2000 行。任何针对 Meta/Instagram 政策、国家与地区、标签上限、结账支持的变更，请复核后更新「更新时间」并标注变更点，保持与官方最新文档一致。

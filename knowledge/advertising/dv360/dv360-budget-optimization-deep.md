@@ -1699,3 +1699,370 @@ func (w *DV360BudgetWriter) Apply(r Result) error {
 
 > **本文完** · Ryan 个人知识库 DV360 预算优化深度文档
 > 更新时间：2026-08-14 · 领域：广告投放 / 预算优化 · 标签：dv360, budget, pacing, budget-allocation, forecast, cross-account
+## 六、进阶专题与工程实践
+
+这一章是"可直接升级到生产"的进阶内容：Partner 级预算、基于 spend 的 pacing、官方预算推荐 API 深度用法、分配器回测（backtest）、以及一座最小可行控制塔的完整搭建。适合已经跑通前五章的读者。
+
+### 6.1 Partner 级预算（多 Advertiser 的父级天花板）
+
+当多个 Advertiser 属于同一 Partner 时，可以在 **Partner 级** 设预算天花板：
+
+```
+Partner 预算天花板 = $2,000,000（整年或整季）
+├── Advertiser A  预算上限 $1,000,000
+├── Advertiser B  预算上限 $ 600,000
+└── Advertiser C  预算上限 $ 400,000
+        （Partner 天花板是"聚合保护"，非自动再分配）
+```
+
+**作用与局限**：
+
+| 作用 | 局限 |
+|------|------|
+| 防止全集团单月总花费失控（聚合硬顶） | 不自动在 Advertiser 间再分配 |
+| 财务/合规层的一级护栏 | 不解决"谁多谁少"的分配决策 |
+| 可在 Partner 层查看汇总预算视图 | 多币种仍需外部归一 |
+
+> 生产建议：把 Partner 顶层天花板当作**最后一道财务护栏**，日常的"自动再分配"仍交给外部控制塔。二者职责分离，避免业务调度逻辑和财务硬约束耦合在一起。
+
+---
+
+### 6.2 基于 Spend 的 Pacing 与"剩余天数"联合控制
+
+第 2.2 节给出了 EVEN 的理想日消耗公式。进阶版本要考虑**非线性**：剩余预算/剩余天数会随进度变化，因此要把"当前瞬时速率"与"目标速率"做反馈控制（类似 PID）：
+
+```
+PID 风格的控制：
+  error(t) = 目标累计消耗比例(t) - 实际累计消耗比例(t)
+
+  出价/预算调整 = Kp·error(t) + Ki·∫error dt + Kd·d(error)/dt
+
+其中：
+  Kp（比例）→ 立即纠偏，防止瞬间偏差过大
+  Ki（积分）→ 消除长期系统性偏差（如固定少花 5%）
+  Kd（微分）→ 抑制抖动，防止超调来回甩
+```
+
+用 Go 实现一个轻量 PID pacing 控制器：
+
+```go
+package pacing
+
+// PID 轻量控制器：把目标与实际花费比例的偏差收敛到 0。
+type PID struct {
+	KP, KI, KD float64
+	lastErr    float64
+	integral   float64
+}
+
+// Step 给定本时刻的目标比例与实际比例，输出该时刻的调速信号。
+func (p *PID) Step(targetPct, actualPct float64) float64 {
+	err := targetPct - actualPct
+	p.integral += err
+	deriv := err - p.lastErr
+	out := p.KP*err + p.KI*p.integral + p.KD*deriv
+	p.lastErr = err
+	return out // >0 需要加速（多花），<0 需要减速（少花）
+}
+```
+
+**把 PID 输出映射到 DV360 动作**：
+
+| PID 输出 | 映射动作 |
+|----------|----------|
+| out > 阈值 | 加预算 / 转 FRONTLOADED / 放宽频次 |
+| out ≈ 0 | 保持不变（ON PACE） |
+| out < -阈值 | 减预算 / 转 EVEN / 提高频次上限 |
+
+> ⚠️ 时延注意：DV360 数据有最长 1 小时左右的报表/统计延迟，PID 的 Kd 项很容易放大噪声。生产上建议**先做平滑（如 EMA 预处理 spend 序列）再进 PID**，并给输出加 deadband（小偏差不动作），避免抖动。
+
+---
+
+### 6.3 官方预算推荐 API 的深度用法
+
+知识库脚本把预算建议封装为 `dv360_list_budget_recommendations` / `dv360_update_budget_recommendation`（以及通用推荐 `dv360_list_recommendations` / `dv360_apply_recommendation`）。它们返回 Google 自动生成的预算调整建议。生产用法：
+
+```python
+def review_and_apply_budget_recommendations(api, advertiser_id: str,
+                                            auto_apply: bool = False) -> list:
+    """拉取预算推荐，打印评估，可选自动应用。"""
+    recs = api.dv360_list_budget_recommendations(advertiser_id) or []
+    applied = []
+    for rec in recs:
+        rid = rec.get("recommendation_id")
+        action = rec.get("action", {})           # 例如新增/调高/调低预算
+        line_item = rec.get("target", {}).get("line_item_id")
+        delta_usd = (rec.get("amount_micros") or 0) / 1e6
+        reason = rec.get("reason", "")
+        print(f"[rec] {rid} li={line_item} delta=${delta_usd:.0f} reason={reason}")
+
+        # 评估规则：只在非大促期、且 delta 在 ±30% 内时自动应用
+        if auto_apply and -0.30 <= delta_usd / 100_000 <= 0.30:
+            res = api.dv360_apply_recommendation(rid)
+            applied.append({"id": rid, "applied": bool(res)})
+    return applied
+```
+
+**是否采用官方推荐？评估维度**：
+
+| 维度 | 说明 | 影响 |
+|------|------|------|
+| 数据来源 | Google 全局 + 你单位历史 | 覆盖广但黑盒 |
+| 可审计性 | 返回 reason/action | 可读但难深度验证 |
+| 时机 | 通常是"定期的快照式建议" | 不及实时控制塔及时 |
+| 风险 | 一次性应用可能动作过大 | 建议只在"评审窗口"采纳 |
+
+> 🎯 综合策略：把官方推荐当作**交叉验证信号**（与自建分配器结果比对，差异大时人工复核），而不是直接无脑应用。对预算这种"钱"相关的改动，保留人工审批闸是财务纪律的要求。
+
+---
+
+### 6.4 分配器回测（Backtest）
+
+在把新分配算法上线前，**必须用历史数据回测**：用过去的 spend/ROI，模拟"如果当时用新算法分配会怎样"，与"当时实际表现"对比，验证提升幅度与稳定性。
+
+```python
+# -*- coding: utf-8 -*-
+"""分配器回测：用历史时间窗验证分配算法优于/接近基准。"""
+import random
+
+def backtest(hist: list, allocator, key="roas", guard=1.0) -> dict:
+    """hist: [{date, line_item, spend, revenue, conversions}] 按天展开的序列。
+    allocator: allocate(total_budget, weights) 可调用对象。
+    guard: 预算封顶系数（模拟真实超支保护）。
+    """
+    by_day = {}
+    for row in hist:
+        by_day.setdefault(row["date"], []).append(row)
+
+    total_budget = sum(r["spend"] for r in hist)  # 用实际总花费当"可用预算"
+    sim_revenue = 0.0
+    baseline_revenue = sum(r.get("revenue", 0) for r in hist)
+    for day, rows in sorted(by_day.items()):
+        # 用前 7 天数据算权重（成长窗口，模拟冷启动）
+        pass  # 真实实现：向前滚动 7 天 window 计算 weights
+    # 简化：全量权重
+    units = [{
+        "id": r["line_item"],
+        "spend": r["spend"] * 3,       # 近 3 天累计（示意）
+        "revenue": r.get("revenue", 0) * 3,
+        "conf": 0.9,
+    } for r in hist[:20]]
+    weights = allocator(total_budget, {u["id"]: 1.0 for u in units})  # 占位
+    # 完整回测应逐日：alloc → 当日 spend → revenue 累加
+    # 此处为演示骨架，真实生产用全量逐日模拟
+    lift = (sim_revenue - baseline_revenue) / baseline_revenue if baseline_revenue else 0
+    return {"baseline_revenue": baseline_revenue,
+            "sim_revenue": sim_revenue, "lift": round(lift, 3)}
+```
+
+> 回测的坑：
+> - **过拟合窗口**：用固定 7 天窗口权重而忽略季节，会高估改进。要加"季节对齐"（对比去年同期窗口）。
+> - **回填偏差（look-ahead bias）**：用"未来数据"优化的权重会虚高 lift。决策权重必须只用"决策时刻之前"的数据。
+> - **边际递减**：回测若把超预算的单元仍照发，会高估；必须套用真实 cap/floor 与超支保护。
+> - 建议：回测跑 3 个月历史、多个市场，取 lift 中位数与分布，而不是单点。
+
+---
+
+### 6.5 最小可行预算控制塔（完整配置示例）
+
+把本章内容集成成一座可落地的控制塔。下面是一份最小可行（MVP）的配置文件与调度模板。
+
+```yaml
+# budget-controller.yaml —— 控制塔最小配置
+# 关键点：币种/时区归一、弹性白名单、分配参数、告警阈值、回写开关
+
+base_currency: USD
+fx_snapshot: "2026-08-14"          # 汇率快照日期（对账基准）
+
+accounts:
+  - id: ads_acme_us
+    currency: USD
+    timezone: America/New_York     # ET
+    budget_micros: 250000000000    # $250k
+    io_ids: [IO-1, IO-2]
+  - id: ads_acme_ca
+    currency: CAD
+    timezone: America/Toronto
+    budget_micros: 182600000000    # CAD250k ≈ USD182.6k
+    io_ids: [IO-3]
+
+allocation:
+  alpha: 1.0                       # ROI 加权激进系数
+  floor_ratio: 0.05                # 单单元保底 5%
+  cap_ratio: 0.40                  # 单单元封顶 40%
+  iterations: 5
+  min_confidence: 0.3
+
+rebalance:
+  strategy: robin_hood             # 先削后补
+  trigger_util_gap: 0.25           # util 差 >25% 才触发再分配
+  step_pct: 0.15                   # 每次增量 ±15%
+
+alerting:
+  spend_pct_window: [0.3, 1.0]     # 利用率告警窗
+  pacing_rate: [0.7, 1.3]
+  overrun_tolerance: 0.10          # 日超支容忍 10%
+  webhook: "https://example.com/dv360-alert"
+
+safe:
+  max_auto_adjust_per_day: 6       # 每天自动调整次数上限
+  require_io_flex: true            # 弹性 DENY 跳过
+  write_read_verify: true          # 写-读校验闭环
+  dry_run_first: true              # 先 dry-run 再真正写
+```
+
+**运行节奏（cron 示例）**：
+
+```cron
+# 每小时：pacing 巡检 + 小调（±15% 内）
+0 * * * *  python3 scripts/budget_monitor.py --mode pacing --dry-run >> /var/log/dv360_pacing.log
+# 每天 02:00：预算健康 Runbook + 顺差/缺口报告
+0 2 * * *   python3 scripts/budget_health_runbook.py
+# 每天 06:00：基于前一日数据的再分配决策（先 dry-run，人工确认后执行）
+0 6 * * *   python3 scripts/allocate_daily.py --dry-run
+0 7 * * *   python3 scripts/allocate_daily.py            # 确认后执行
+# 每周六：回测 + 校准预测系数
+30 3 * * 6   python3 scripts/backtest_allocator.py
+```
+
+> 上线策略：**先 dry-run 一周**（只出报表不落库），再小流量灰度（仅触达自动调整额度内），最后全量。这能把"算法 bug 直接改坏预算"的风险压到最低。
+
+---
+
+### 6.6 进阶自测
+
+1. Partner 级预算与外部控制塔的职责边界是什么？为什么不能让控制塔承担"财务硬顶"的职能？
+2. PID pacing 控制器为何要先平滑 spend 序列、并加 deadband？给出两个会出问题的边界场景。
+3. 官方预算推荐 API 的价值与风险分别是什么？在什么时机采纳最稳妥？
+4. 回测分配器时，"look-ahead bias"和"边际递减"各指什么，如何规避？
+
+<details>
+<summary>查看答案（要点）</summary>
+
+1. **职责边界**：Partner 级顶层预算=**财务/合规硬约束**（防总控失守），应保持"只读护栏、不接受业务自动改写"；外部控制塔=**业务调度决策**（谁多了给谁、谁缺了补谁）。把二者分开：财务护栏稳定、调度逻辑可迭代。若让控制塔兼任财务硬顶，调度 bug 可能直接冲垮财务约束。
+
+2. **为何平滑+deadband**：DV360 报表/统计延迟最长约 1 小时，原始 spend 序列噪声大。若不先 EMA 平滑，PID 的微分项(KD)会放大噪声导致抖动；加 deadband（小误差不动作）避免"来回微调"造成的预算振荡和 API 配额浪费。边界场景：①大促当天瞬时爆量噪声被 PID 当成趋势→过度降速；②深夜低频时段数据稀疏→微分项剧烈跳动。
+
+3. **价值/风险**：价值=Google 全局数据+定期快照建议；风险=黑盒难审计、一次性应用可能动作过大、不够实时。稳妥时机：**评审窗口**（早会）作为交叉验证信号，与自建分配器比对；对"钱"的改动保留人工审批闸。不无脑自动应用。
+
+4. **回测陷阱**：look-ahead bias=用决策时刻之后的数据优化权重→虚高 lift，规避=权重只用决策前数据；边际递减=把超预算单元仍照发→高估，规避=真实套用 cap/floor 与超支保护。另要季节对齐、跑多市场取分布而非单点。
+
+</details>
+
+---
+
+### 6.7 本章小结
+
+- Partner 级预算 = 财务硬顶护栏，与控制塔的业务调度解耦。
+- 基于 spend 的 pacing 可用 PID 反馈控制，但需先平滑、加 deadband。
+- 官方预算推荐 API 当"交叉验证信号"，配合人工审批闸使用。
+- 分配器上线前必须回测：规避 look-ahead bias、模拟真实 cap/floor。
+- 最小可行控制塔：配置化 + dry-run 灰度 + cron 调度，逐步放量。
+- 第 6.6 节提供 4 道进阶自测巩固理解。
+
+---
+## 附录 C：对比总表与术语表
+
+### C.1 预算模型对比总表（预算分配常用模型汇总）
+
+| 模型 | 分配依据 | 实时性 | 冷启动 | 计算成本 | 可审计性 | 典型角色 |
+|------|----------|--------|--------|----------|----------|----------|
+| 静态等分 | 无（1/n） | 静态 | 优 | 极低 | 高 | 冷启动默认 |
+| 固定比例 | 预设 % | 静态 | 优 | 低 | 高 | 政策驱动结构 |
+| EVEN 按天均摊 | 剩余/剩余天数 | 日级 | 良 | 低 | 高 | Emotion 类日投放 |
+| ROI 加权（2.4） | ROI^α×conf | 日/小时级 | 中（7天） | 中 | 高 | 多 LI 效果投放 |
+| 系统智能分（官方建议） | Google 模型 | 快照级 | 良 | 低（托管） | 中 | 单账户优化 |
+| 外部控制塔+MVP 回写 | 全局汇总决策 | 近实时 | 中 | 高 | 极高 | 跨账户/多币种 |
+
+### C.2 Pacing 模式详细对比表
+
+| 维度 | EVEN 均匀 | FRONTLOADED 前端加载 | ACCELERATED 加速 |
+|------|-----------|----------------------|------------------|
+| 数学形态 | 线性（贴对角线） | 凹形（前期陡） | 无节奏（吃满硬顶） |
+| 单日目标 | 剩余/剩余天数 | 前 1/3 冲 50~60% | 无刻意日目标 |
+| 预算耗尽风险 | 低（可控） | 中（前期快） | 高（可能提前打光） |
+| 花不完风险 | 中（流量不足时） | 低 | 低 |
+| 适用场景 | 稳定品牌/效果 | 首发/热点借势 | 大促/保量(PG) |
+| 自动化可调性 | 高（可用 PID） | 中 | 低（主要靠预算硬顶） |
+| 超支敏感性 | 中 | 中高 | 高 |
+| 常见坑 | 流量不足花不完 | 后段花不完或前段超 | 一天打光、后续无钱 |
+
+### C.3 模拟监控报表数据集（巡检器输出示例）
+
+下面是一份"月度排期第 12 天"的模拟巡检报表，展示各 LI 的水位/偏差/动作，帮助你理解"读哪些字段、怎么判读"：
+
+```
+账户：ads_acme_2026q2  时区：ET  基准：USD   报表日：2026-06-12（flight 共 30 天，时间进度 40%）
+
+IO-1 Branding (TOTAL $250K)
+│ LI      预算($)   花费($)  花%   时间%  偏差   状态         动作
+├ LI-1    80,000   34,000  42.5  40.0  +2.5   ON_PACE     观察
+├ LI-2    70,000   29,500  42.1  40.0  +2.1   ON_PACE     观察
+├ LI-3    60,000   22,000  36.7  40.0  -3.3   UNDER_PACE  观察
+└ LI-4    40,000   20,500  51.2  40.0  +11.2  AHEAD       降速/提频次上限
+IO-2 Performance (TOTAL $350K)
+│ LI-5    90,000   41,000  45.6  40.0  +5.6   OVER_PACE   观察
+│ LI-6    80,000   30,000  37.5  40.0  -2.5   ON_PACE     观察
+│ LI-7    70,000   24,000  34.3  40.0  -5.7   UNDER_PACE  观察
+│ LI-8    60,000   26,000  43.3  40.0  +3.3   ON_PACE     观察
+└ LI-9    50,000   27,000  54.0  40.0  +14.0  AHEAD       降速/检查是否该时段应冲
+IO-3 Growth (DAILY $6.7K) 累计目标 $80K
+└ LI-10~14 ...（快照省略，规则同上）
+IO-4 Promo (ACCELERATED $120K)  flight 6.18~6.20
+└ LI-15~18   —— 尚未开始，预算保留
+IO-5 Testing (DAILY $2.7K)
+└ LI-19~20   —— 测试池，低预算细水长流
+```
+
+**判读要点**：
+- 偏差 = 花费% − 时间%；正值 = 花得快。
+- 只有超过阈值（±15）才触发动作；上面 LI-4（+11.2）、LI-9（+14.0）接近阈值，进入"观察/待触发"。
+- IO-4 大促尚未开始，其 LI **不应**在非 flight 期消费，验证"flight 隔离"是否生效。
+- 报表必须与设置的目标 ROAS / 出价策略对照，避免"误调速"。
+
+### C.4 DV360 预算常用中英术语表
+
+| 中文 | 英文 | 说明 |
+|------|------|------|
+| 订单项预算 | Insertion Order Budget | IO 层预算容器 |
+| 线条项目预算 | Line Item Budget | 执行单元预算 |
+| 总预算 | Flight Budget / TOTAL_BUDGET | 整段 flight 上限 |
+| 日预算 | Daily Budget / DAILY_BUDGET | 单日硬顶 |
+| 弹性/灵活性 | Flexibility | 预算跨 flight 流动/可外部调整 |
+| 投放速率 | Pacing Rate | 实际 vs 理想消耗速率 |
+| 均匀投放 | EVEN | 均摊式 pacing |
+| 前端加载 | FRONTLOADED | 前期多花 pacing |
+| 加速投放 | ACCELERATED | 无节奏冲刺 pacing |
+| 预算分配 | Budget Allocation | 把总盘切到下层级 |
+| 预算预测 | Budget Forecast | 预期花费/可行性 |
+| 触达预测 | Reach Forecast | 预算→触达模型 |
+| 频次预测 | Frequency Forecast | 频次对预算消耗影响 |
+| 超投/超量交付 | Overdelivery | 实际花费超出预算目标 |
+| 预投错位 | Underdelivery | 花不完 |
+| 微元 | Micros | DV360 金额单位（$1=1e6 micros） |
+| 预算水位 | Budget Watermark | 已花/预算 的实时状态 |
+| 预算控制塔 | Budget Controller | 外部跨账户调度系统 |
+| 预算对账 | Reconciliation | ∑子单元 = 总盘的校验 |
+| 冷启动 | Cold Start | 无历史数据的初始化期 |
+
+### C.5 朗读式总结（三大关键洞察）
+
+1. **预算是被 "执行" 的**：DV360 真正花钱的是 Line Item，IO 是调度容器，Partner 级只是护栏。所有优化动作最终都要落到 LI 的预算与 pacing 上。
+2. **优化 = 约束优化 + 运维纪律**：智能分配的本质是在总量约束下让边际收益均等；但落地成功更依赖工程纪律——对账、micros 换算、写-读校验、审计、dry-run 灰度。
+3. **跨账户共享靠的是外部系统**：DV360 原生不自动共享，多账户/多币种/多时区的"逻辑共享"靠外部控制塔 + 归一化 + API 回写实现。
+
+---
+
+*本附录汇总了预算模型、pacing 模式、模拟报表、术语表与核心洞察，作为正文的速查与补充。*
+
+## 附录 D：文档更新记录
+
+| 版本 | 日期 | 变更 |
+|------|------|------|
+| v1.0 | 2026-08-14 | 初版：预算体系、pacing 原理、分配算法、$1M 案例、FAQ、自测题、Go 引擎、控制塔 |
+
+---
+
+**本文完** · Ryan 个人知识库 DV360 预算优化深度文档
+领域：广告投放 / 预算优化 · 标签：dv360, budget, pacing, budget-allocation, forecast, cross-account
+类型：深度文档 · 更新时间：2026-08-14

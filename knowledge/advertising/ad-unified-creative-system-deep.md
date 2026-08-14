@@ -2501,3 +2501,225 @@ extend 通过模糊/镜像/AI 填充补足画幅不丢内容；smart reframe 逐
 
 > 本文档为《跨平台创意资产管理自动化系统》深度实战指南，覆盖规格矩阵、资产统一管理、AI 生成流水线、
 > DCO、性能分析与迭代闭环，以及生产落地与排障。数值以 2026-08 采集为准，请以平台官方最新规范与系统规格配置中心为准。
+---
+
+## 附录 C：图像技术参数与视觉规范深度补充
+
+### C.1 DPI / PPI 与分辨率的关系
+
+很多设计稿会遇到"300 DPI"与"1080px"混淆。背景知识：
+
+```
+DPI (Dots Per Inch)  物理打印/输出分辨率：描述物理尺寸与像素的映射
+PPI (Pixels Per Inch) 屏幕像素密度：描述屏幕物理大小与像素的映射
+分辨率 (Resolution)   实际像素数：width x height（决定清晰度上限）
+```
+
+**广告素材核心结论**：DTP 是**相对单位**，最终由"目标像素数 + 输出设备物理尺寸"决定。网页/信息流投放按像素交付，无需纠结 72/150/300 DPI，**只关心目标像素数与文件大小**。
+
+| 场景 | 关注点 | 建议 |
+| --- | --- | --- |
+| 信息流/视频投放 | 目标像素 + 文件大小 + 码率 | 按规格矩阵交付（如 1080x1920） |
+| 印刷/线下物料 | DPI（≥150-300） | 需高分辨率源图 |
+| 大屏 DOOH | 物理尺寸 + PPI | 用实际面板尺寸换算像素 |
+
+**换算示例（若确需）**：
+
+```
+一个 10 英寸 x 14 英寸的竖版海报，要求 300 DPI：
+像素宽 = 10 英寸 × 300 = 3000 px
+像素高 = 14 英寸 × 300 = 4200 px
+分辨率 = 3000 × 4200
+```
+
+### C.2 视频码率参考（Bitrate）与质量等级
+
+| 分辨率 | 建议平均码率（H.264） | 帧率 | 优劣 |
+| --- | --- | --- | --- |
+| 1080p (1920x1080) | 4000-8000 kbps | 30 | 高保真平台主推 |
+| 720p (1280x720) | 2000-4000 kbps | 30 | 平衡 |
+| 480p | 800-1500 kbps | 30 | 低带宽兜底 |
+| 竖屏 1080x1920 | 4000-8000 kbps（高动态可更高） | 30/60 | 移动端主力 |
+
+**参数选择经验**：
+- 静态/文案图可用低频（静态内容码率低）；动态/特效内容需高码率；
+- `-crf`（质量系数）与码率权衡：CRF 18 ≈ 高质量，20 平衡，23 一般；
+- 平台普遍有"文件大小上限"而非"硬性码率"，但超高码率会增加加载压力、影响播放体验与成本。
+
+### C.3 安全区与文字限制实战
+
+各平台对"文字覆盖画面"与"安全区"有明确指导。系统应在渲染后自动校验：
+
+```yaml
+# 文字占比校验配置示例
+text_ratio_rules:
+  meta_feed_image:   0.20   # 文字占画面 ≤ 20%
+  meta_reels_video:  0.20
+  tiktok_feed:       0.20   # 视版位而定
+  google_display:    0.20
+  dv360_banner:      0.25   # 部分 banner 更宽松（以官方为准）
+```
+
+```python
+def detect_text_ratio(img):
+    """近似检测文字像素占比（边缘/OCR，示意）"""
+    import cv2
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    # 文字区域通常高边缘密度，或用 OCR 文本框
+    edges = cv2.Canny(gray, 50, 150)
+    ratio = edges.astype(bool).mean()
+    return round(float(ratio), 4)   # 0-1
+```
+
+### C.4 现代前端/游戏广告对创意的要求
+
+跨平台创意后端越来越多涉及插屏、激励视频、可玩（Playable）广告：
+
+| 类型 | 平台 | 关键技术约束 |
+| --- | --- | --- |
+| 激励视频 Rewarded | 游戏/App | 需"奖励提示"+ 竖屏 9:16 + 音频 |
+| 可玩广告 Playable | 游戏 | HTML5/JS 引擎，首屏即玩，包体 ≤ 10MB 级 |
+| 插屏 Interstitial | App | 全屏，需适配机型安全区（刘海） |
+| 原生 Native | 展示平台 | 标题+正文+图+图标，多组件组合 |
+
+**可玩广告（Playable）要点：**
+
+```
+1. 包体需要控制在平台限额内（如 10MB 内），资源需压缩
+2. 需支持点击跳转下载/落地页（entry/exit）
+3. 首屏 3-5 秒内呈现"可玩"动作，提升参与度
+4. 需兼容 iOS/安卓不同屏幕安全区
+5. 一般用 Cocos/Unity/Laya 打包为 HTML5 或特定格式
+```
+
+```
+可玩广告 zip 结构（示意）：
+playable.zip
+├── index.html          # 入口
+├── game.js             # 游戏逻辑（打包后的 JS）
+├── assets/             # 纹理/音效/字体（压缩）
+└── config.json         # 广告跳转/分析配置
+```
+
+### C.5 字幕与无障碍（Accessibility）
+
+| 平台 | 字幕/无障碍要求 | 实现 |
+| --- | --- | --- |
+| Meta Reels | 建议加字幕（很多人静音观看） | 烧录字幕 burn-in 或 SRV/SRT |
+| TikTok | 首 3 秒信息体现在字幕 | 烧录大字幕 |
+| YouTube | 鼓励 CC 字幕 | SRT/WebVTT 上传 |
+| 通用 | 闪烁频率 ≤ 3Hz、对比度足够 | 避免高反差闪烁 |
+
+**烧录字幕（FFmpeg）：**
+
+```bash
+ffmpeg -i video.mp4 -vf "subtitles=sub.srt:force_style='FontName=Arial,FontSize=14,PrimaryColour=&H00FFFFFF&'" \
+  -c:v libx264 -crf 18 -preset slow -c:a copy subbed.mp4
+```
+
+---
+
+## 附录 D：数据模型扩展与字段字典
+
+### D.1 Asset 表
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| asset_id | UUID | 主键，对外不可变 |
+| master_id | UUID | 主素材 ID 引用 |
+| kind | enum | image/video/html5/native/audio |
+| content_hash | text | SHA-256 |
+| spec_origin | jsonb | 主规格引用 |
+| status | enum | DRAFT…ARCHIVED |
+| head_version | int | 当前 head 版本号 |
+| created_by | text | 创建者 |
+| created_at / updated_at | timestamptz | 时间戳 |
+| meta | jsonb | 自定义业务元数据 |
+
+### D.2 Render 表
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| render_id | UUID | 主键 |
+| asset_id | UUID | 关联资产 |
+| platform / placement | text | 目标平台/版位 |
+| spec_key | text | 规格键 |
+| strategy | text | crop/extend/smart/template |
+| status | enum | queued/rendering/done/failed |
+| checksum / size | text/int | 产物校验与大小 |
+| output_url | text | CDN 地址 |
+| error | text | 失败原因 |
+
+### D.3 Release 表
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| release_id | UUID | 主键 |
+| render_id / asset_id | UUID | 源 |
+| account_id | text | 对端账户 |
+| platform_status | enum | uploaded/in_review/.../live |
+| platform_creative_id | text | 对端 creative id |
+| released_by / at | text / ts | 操作者与时间 |
+
+---
+
+## 附录 E：动态创意优化工作台示例（前端/看板）
+
+创意负责人需要在工作台看到一站式状态：
+
+```
+┌───────────────────────── DCO 创意工作台 ──────────────────────────┐
+│ 顶层卡：当前活动 / 批次 / 组合总数 / 学习状态                      │
+│                                                                    │
+│ 组合列表                                                        │
+│  ┌──────┬─────────┬────────┬──────┬─────────┬─────────┐
+│  │combo │ 元素组合 │ 曝光    │ CTR  │ 转化    │ 状态     │
+│  ├──────┼─────────┼────────┼──────┼─────────┼─────────┤
+│  │ c1   │ img1+c2  │ 124k   │ 3.1% │ 4200    │ active  │
+│  │ c2   │ img2+c1  │ 98k    │ 2.4% │ 3050    │ active  │
+│  │ c3   │ img3+c3  │ 21k    │ 0.8% │ 180     │ frozen  │
+│  │ c4   │ img1+c4  │ 5k     │ 1.2% │ 60      │ explore │
+│  └──────┴─────────┴────────┴──────┴─────────┴─────────┘
+│  操作：冻结/加大预算/换取新元素/一键生成新一轮批量                  │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 附录 F：从零搭建的最小可用闭环（Checklist）
+
+如果从零搭建一个 MVP 跨平台创意系统，建议按以下顺序落地：
+
+```
+阶段一（第 1 周）核心链路
+  [ ] 规格矩阵配置（YAML）
+  [ ] 资产记录 + 探针 + 规格校验
+  [ ] 基础渲染（crop / extend / template）
+  [ ] 平台对接（至少 1 个平台上传）
+
+阶段二（第 2-3 周）AI 与批量
+  [ ] LLM 文案生成（结构化 prompt）
+  [ ] 图生图/文生图接入（带 QC）
+  [ ] 本地化（术语表 + TTS）
+  [ ] 批次编排 + 断点续跑
+
+阶段三（第 4 周）DCO 与闭环
+  [ ] 元素池 + 组合矩阵 + 规则引擎
+  [ ] Bandit 在线分配 + 指标回传
+  [ ] 疲劳诊断定时任务
+  [ ] 迭代信号回流生成侧
+
+阶段四（持续）运维与放量
+  [ ] 监控告警 / 可观测性
+  [ ] CI/CD / 灰度 / 回滚
+  [ ] 全平台覆盖与规模化
+```
+
+---
+
+**结语**
+
+跨平台创意资产管理与自动化系统，本质上是一座把"创意"从"一次性物料"升级为"可治理、可复用、可学习的数据资产"的中台。
+它由规格矩阵（Spec）、资产库（Asset）、渲染适配（Adaptive）、AI 生成（Pipeline）、DCO（动态优化）与
+分析迭代（Analytics）六大能力贯通而成。掌握规格驱动的设计哲学、以"资产即事实"为事实源、以数据闭环驱动迭代，
+是团队在多平台时代持续产出高效创意的关键。

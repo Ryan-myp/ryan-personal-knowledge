@@ -1604,3 +1604,410 @@ python3 scripts/ad_platform_api.py dv360_list_audit_logs --advertiser_id A111
 - [ ] 监控：配额 / 429 / 水位 / 凭证 / 字段烟测告警
 - [ ] Webhook（唤醒 + 主动拉取）+ 轮询兜底
 - [ ] 审计与 id_map 落地
+---
+
+## 附录 A：Go 端到端完整实现（DailySync 服务）
+
+把 2.7 的通用客户端 × 3.1 的同步流程，组合成一个**可直接扩展**的 Go DailySync 服务骨架。只依赖标准库 + 极少的仓库客户端，突出「重试/限流/分页/认证/落仓」五大件如何协同。
+
+```go
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	"os"
+	"time"
+)
+
+// ---------- 1. 统一错误 ----------
+type APIError struct {
+	Code       int
+	Message    string
+	Retryable  bool
+	RetryAfter time.Duration
+}
+
+func (e *APIError) Error() string {
+	return fmt.Sprintf("gmp err: %d %s", e.Code, e.Message)
+}
+
+// ---------- 2. TokenProvider：JWT → access_token（服务账号） ----------
+// 生产环境用 google.golang.org/api/option 或自实现 JWT；这里给流程骨架。
+type TokenProvider struct {
+	clientEmail string
+	privateKey  string
+	scope       string
+	cache       string   // 缓存的 access_token
+	expiry      time.Time
+}
+
+func (t *TokenProvider) Valid() bool { return t.cache != "" && time.Now().Before(t.expiry.Add(-60*time.Second)) }
+
+// Refresh 每次在接近过期时由 do() 调用
+func (t *TokenProvider) Refresh() (string, error) {
+	// 1. 构造 JWT header{pyp:JWT,alg:RS256,kid} + payload{iss,sub,aud,iat,exp,scope}
+	// 2. RS256 私钥签名
+	// 3. POST https://oauth2.googleapis.com/token  grant_type=jwt-bearer
+	// 4. 返回 access_token，缓存 expiry
+	return "", nil // 占位：接入真实签名库
+}
+
+func (t *TokenProvider) Get() (string, error) {
+	if t.Valid() {
+		return t.cache, nil
+	}
+	tok, err := t.Refresh()
+	if err != nil {
+		return "", err
+	}
+	t.cache = tok
+	return tok, nil
+}
+
+// ---------- 3. 限流器（按广告主分桶的滑动窗口） ----------
+type limiter struct {
+	ch chan struct{} // 简单令牌桶：capacity 个并行槽
+}
+
+func newLimiter(concurrency int, period time.Duration) *limiter {
+	return &limiter{ch: make(chan struct{}, concurrency)}
+}
+func (l *limiter) acquire() { l.ch <- struct{}{} }
+func (l *limiter) release() { <-l.ch }
+
+// ---------- 4. 游标分页 ----------
+type paginateFunc func(token string) (next string, items []json.RawMessage, err error)
+
+func paginateAll(fn paginateFunc) ([]json.RawMessage, error) {
+	var all []json.RawMessage
+	token := ""
+	for {
+		next, items, err := fn(token)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, items...)
+		if next == "" {
+			break
+		}
+		token = next
+	}
+	return all, nil
+}
+
+// ---------- 5. DV360Client：把 限流→认证→重试→分页 组合 ----------
+type DV360Client struct {
+	base   string
+	tokens *TokenProvider
+	lim    *limiter
+	httpDo func(ctx context.Context, method, url string, body any, hdr map[string]string) ([]byte, int, error)
+}
+
+const baseURL = "https://displayvideo.googleapis.com/v4"
+
+// doRequest 单次请求（带动认证 + 简单重试）
+func (c *DV360Client) do(ctx context.Context, method, path string, body any) (json.RawMessage, error) {
+	c.lim.acquire()
+	defer c.lim.release()
+
+	tok, err := c.tokens.Get()
+	if err != nil {
+		return nil, err
+	}
+	url := c.base + path
+	var lastErr error
+	for attempt := 1; attempt <= 5; attempt++ {
+		data, status, herr := c.httpDo(ctx, method, url, body,
+			map[string]string{"Authorization": "Bearer " + tok, "Content-Type": "application/json"})
+		if herr != nil {
+			return nil, herr
+		}
+		if status >= 200 && status < 300 {
+			return data, nil
+		}
+		retryable := status == 429 || status >= 500
+		lastErr = &APIError{Code: status, Retryable: retryable}
+		if !retryable {
+			return nil, lastErr
+		}
+		wait := time.Duration(1<<(attempt-1))*300*time.Millisecond + 100*time.Millisecond*time.Duration(attempt)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(wait):
+		}
+	}
+	return nil, lastErr
+}
+
+// ListLineItemsAll 业务方法：分页拉全量 ACTIVE LineItem
+func (c *DV360Client) ListLineItemsAll(ctx context.Context, adv string) ([]json.RawMessage, error) {
+	return paginateAll(func(token string) (string, []json.RawMessage, error) {
+		path := fmt.Sprintf("/advertisers/%s/lineItems?pageSize=200&filter=entityStatus%%3D'ENTITY_STATUS_ACTIVE'", adv)
+		if token != "" {
+			path += "&pageToken=" + token
+		}
+		raw, err := c.do(ctx, "GET", path, nil)
+		if err != nil {
+			return "", nil, err
+		}
+		var page struct {
+			LineItems      []json.RawMessage `json:"lineItems"`
+			NextPageToken  string            `json:"nextPageToken"`
+		}
+		if err := json.Unmarshal(raw, &page); err != nil {
+			return "", nil, err
+		}
+		return page.NextPageToken, page.LineItems, nil
+	})
+}
+
+// ---------- 6. 落 BigQuery（示意） ----------
+func upsertToBigQuery(ctx context.Context, rows []json.RawMessage) error {
+	// 生产用 cloud.google.com/go/bigquery：
+	//   - 分区表按 date 分区
+	//   - 每行含主键(advertiser_id,date,line_item_id,...)
+	//   - WriteDisposition=WRITE_TRUNCATE(当天分区) 或 Merge 去重
+	log.Printf("ingesting %d rows", len(rows))
+	return nil
+}
+
+// ---------- 7. 编排 DailySync ----------
+func runDailySync(ctx context.Context) error {
+	client := &DV360Client{
+		base:   baseURL,
+		tokens: &TokenProvider{},
+		lim:    newLimiter(5, time.Minute), // 并发≤5
+		// httpDo: realHTTP, // 生产注入 net/http.Do
+	}
+	advertisers := []string{"A111", "B222"}
+	for _, adv := range advertisers {
+		items, err := client.ListLineItemsAll(ctx, adv)
+		if err != nil {
+			// 403 单独兜底：跳过该广告主并告警，不崩全局
+			if ae, ok := err.(*APIError); ok && ae.Code == 403 {
+				log.Printf("SKIP adv=%s permission_denied", adv)
+				continue
+			}
+			return err
+		}
+		if err := upsertToBigQuery(ctx, items); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func main() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	if err := runDailySync(ctx); err != nil {
+		fmt.Fprintln(os.Stderr, "daily sync failed:", err)
+		os.Exit(1)
+	}
+	log.Println("daily sync done")
+}
+```
+
+这个骨架把 2.7 的通用件与 3.1 的业务流程串成一条可运行的腿：**限流 → 认证 → 重试 → 分页 → 落仓**，且 403 单独兜底不崩全局。接入真实 `httpDo`、真实 JWT 签名、真实 bigquery 写入即可上生产骨架，后续扩展 `CreateLineItem` / `BatchUpdate` 走同一条 `do()` 通道即可保持行为一致。
+
+---
+
+## 附录 B：DV360 REST 端点 ↔ 封装方法速查表
+
+把「真实 API 路径」与 `ad_platform_api.py` 的封装对应起来，写文档/排障时不必翻官方文档也能定位。
+
+| 资源语义 | REST 路径（v4） | 封装方法（示例） |
+|----------|------------------|------------------|
+| 列出广告主 | `GET /advertisers` | `dv360_list_advertisers(partner_id)` |
+| 广告主详情 | `GET /advertisers/{id}` | `dv360_get_advertiser(advertiser_id)` |
+| 列出 LineItem | `GET /advertisers/{id}/lineItems` | `dv360_list_line_items(advertiser_id)` |
+| 单 LineItem | `GET /advertisers/{id}/lineItems/{li}` | `dv360_get_line_item(advertiser_id, line_item_id)` |
+| 建 LineItem | `POST /advertisers/{id}/lineItems` | `dv360_create_line_item(...)` |
+| 批量更新 | `POST /advertisers/{id}/lineItems:batchUpdate` | `dv360_batch_update_line_items(updates)` |
+| Flight 列表 | `GET /advertisers/{id}/flights?lineItemId=` | `dv360_list_flights(advertiser_id, line_item_id)` |
+| Creative 列表 | `GET /advertisers/{id}/creatives` | `dv360_list_creatives(advertiser_id, line_item_id)` |
+| 报表查询 | `GET/POST .../queries` / `queries/{id}:run` | `dv360_get_report` / `dv360_sync_report` |
+| Floodlight 配置 | `GET /advertisers/{id}/floodlightGroups` 等 | `dv360_list_floodlight_configs(advertiser_id)` |
+| 提案/交易 | `GET /proposals` | `dv360_list_proposals` / `dv360_accept_proposal` |
+| 审计日志 | `GET .../auditLogs` | `dv360_list_audit_logs(advertiser_id)` |
+| 活动日志 | `GET .../activityLogs` | `dv360_list_activity_logs(advertiser_id)` |
+| 配额 | `GET /advertisers/{id}/quota` | `dv360_get_quota(advertiser_id)` |
+| 用量统计 | `GET /advertisers/{id}/usageStats` | `dv360_list_usage_stats(advertiser_id)` |
+| Webhook 管理 | `GET/POST/DELETE .../webhooks` | `dv360_list_webhooks` / `dv360_create_webhook` / `dv360_test_webhook` |
+| 审计用户/权限 | `.../permissionUsers` | `dv360_list_permission_users` / `dv360_add_permission_user` |
+| Partner 关联 | `.../partnerLinks` | `dv360_list_partner_links` / `dv360_create_partner_link` |
+
+> 说明：以上路径为语义示意，`ad_platform_api.py` 各自封装对应实现，具体字段与 v4/v3 版本以官方文档为准。升级 API 前用 `dv360_list_api_versions` / `dv360_get_api_version` 核对兼容性。
+
+---
+
+## 附：更新记录与相关文档
+
+| 日期 | 变更 |
+|------|------|
+| 2026-08-14 | 首次成文：GMP 集成定位、REST/认证/限流/重试/幂等/Webhook 原理、Python/Go 客户端工程、生产踩坑、FAQ、自测题、Go 端到端骨架 |
+
+**参考与关联文档**（形成互补的知识网络）：
+- `/knowledge/advertising/dv360/dv360-marketing-api-deep.md` —— API 端点实战与认证授权的端点级细节
+- `/knowledge/advertising/dv360/dv360-architecture-deep.md` —— 账户层级与程序化购买架构
+- `/knowledge/advertising/dv360/dv360-creative-brand-safety-deep.md` —— 创意与品牌安全
+- `/knowledge/advertising/dv360/dv360-measurement-attribution-deep.md` —— 测量与归因
+- `/knowledge/advertising/dv360/dv360-optimization-deep.md` —— 投放优化
+- 脚本：`scripts/ad_platform_api.py`（dv360_* 统一封装）、`scripts/dv360_client.py`（JWT 客户端）、`scripts/api_common.py`（ApiResponse / BaseAdPlatformClient）、`scripts/google_ads_api.py`、`scripts/meta_api.py`（跨平台统一客户端模式）
+
+> **一句话总结**：DV360 集成的本质是「在 GMP 的投放-测量-数据协作网络里，用一个强一致、可观测、幂等的客户端平台，把投放对象与报表安全地搬到你的数仓」。吃透分页/限流/重试/幂等/单位/认证这套「集成设计模式」，再差的网络与字段变更也拖不垮你的流水线。
+---
+
+## 附录 C：跨平台 API 设计模式对比（DV360 / Google Ads / Meta）
+
+既然平台里有 `google_ads_api.py` 与 `meta_api.py`，把它们与 DV360 放在一起对照，能更清楚地看见「集成模式」的共性骨架与平台差异。这张表是「统一客户端」（3.2）之所以可行的底层依据。
+
+| 维度 | DV360（display-video） | Google Ads（googleads v15+） | Meta Marketing API | TikTok Business API |
+|------|------------------------|------------------------------|--------------------|---------------------|
+| API 形态 | REST/JSON | gRPC + proto（也提供 REST 桥） | Graph API（REST style） | REST/JSON |
+| 认证 | Service Account JWT / OAuth2 | OAuth2（refresh token + developer token） | 长期 token + app secret | access_token |
+| 查询语言 | filter（AIP-160）+ fields | GAQL（`google_ads_query_language`） | GraphQL-like `fields` 选择 | params + filtering |
+| 分页 | `pageToken`（游标） | 默认限额，靠 `LIMIT/OFFSET` 或批量 | `cursor`（Base64） | `page` + `page_size` |
+| 限流 | 配额 + 速率 + 429 | 每分钟配额 + 429（含 per-customer） | rate limits + 429 | 频控 + 429 |
+| 批次写 | `:batchUpdate`（部分成功） | `Mutate` 批量（逐条结果） | Batch API | 部分支持 |
+| 字段选择 | `fields` 参数 | GAQL 显式 SELECT 字段 | `fields` 参数 | 无/少 |
+| 部分成功 | 逐条 error | mutateResults 逐条 | 逐条 op result | 逐条 |
+
+结论（对集成平台的启发）：
+
+1. **四家本质都是「REST 或类 REST + token 认证 + 游标/偏移分页 + 5xx/429 可重试」**——所以 2.7 的 Go 客户端（限流→认证→重试→分页）四家都能套，只是参数形状不同。
+2. **最需要适配的差异是「认证刷新」**：DV360 是 JWT 无状态刷新，Google Ads 是 refresh_token 刷新（易过期，见 2.2.3），Meta 是长 token + 校验。统一客户端里把 `GetToken()` 抽象出来，四家各实现刷新逻辑即可。
+3. **字段选择能力差异大**：Google Ads 强约束（GAQL 必须显式列字段）；DV360 愿意支持 `fields`；Meta 也支持。解析器层面统一「get + 默认兜底」，可同时防四家的字段漂移。
+4. **批次部分成功是公共特性**：四家都有「逐条结果」，客户端统一返回 `{success:[], failed:[{id,error}]}` 就能通吃。
+
+### C.1 统一客户端要收敛的「三件套」接口
+
+无论接入几家，统一客户端只需收敛三个抽象，即可获得极高复用率：
+
+```go
+// ① token：接入层只认这个接口
+type TokenProvider interface {
+	Get() (string, error)      // 自动刷新、缓存
+}
+
+// ② 请求：所有读/写都过这里（含限流/重试/认证/字段选择）
+type Requester interface {
+	Do(ctx context.Context, method, resource string, body any, fields []string) (json.RawMessage, error)
+}
+
+// ③ 分页：把“游标/偏移/页面”统一成迭代器
+type Pager interface {
+	Next() ([]json.RawMessage, bool, error)   // items, hasMore, err
+}
+```
+
+只要这三件套稳定，业务层（同步、落仓、对账）就是「一份代码跑四家平台」。
+
+### C.2 事件溯源（Event Sourcing）作为集成进阶
+
+对「预算被谁改、为什么改、何时回滚」这类审计要求，可以在集成平台里引入**事件溯源**：
+
+```
+写操作(create/update/pause)
+   → 记录 Event(实体内核，旧值，新值，操作者，时间，requestId)
+   → 更新聚合(Aggregate: LineItem 当前状态 = 按序重放事件)
+   → 对外读只读聚合
+```
+
+好处：
+- 天然可审计（每个变更都有事件）（呼应 `dv360_list_audit_logs`）
+- 天然可回放 / 可重建（平台侧丢了状态，从事件流重放即可）
+- 天然满足「幂等」：按 `requestId` 去重事件，重复投递不产生重复变更
+
+与 DV360 官方事件（Webhook 事件、审计日志）结合：**官方审计日志是「远端事件源」，平台自己的事件流是「本地事件源」**，二者按 requestId/实体 ID 对账，可发现「我方已发但平台未生效」或「平台侧有人手工改」的差异——这是高级集成团队区分「真实投放变更」与「我方预期变更」的手段。
+
+---
+
+（全文完）
+---
+
+## 附录 D：DV360 集成运维手册（Runbook 速查）与术语表
+
+### D.1 日常运维 RACI 与值班清单
+
+| 时段 | 动作 | 负责人 | 工具/数据源 |
+|------|------|--------|-------------|
+| 每天 09:00 | 查看昨日同步净水位、告警邮箱 | SRE | 调度面板 + 邮件 |
+| 每天 09:05 | 核对关键广告主「对象数 + 报表行数」完整性 | 数据工程师 | BigQuery 对账 SQL |
+| 每周一 | 检查 `dv360_list_usage_stats` 峰值与 429 汇总 | 集成工程师 | usage_stats |
+| 每周五 | 检查 `dv360_validate_credentials` + 订阅到期 | 集成工程师 | 凭证监控 |
+| 每月 | 复核用户权限清单与离职账号（`dv360_list_permission_users`） | 安全 | 权限清单 |
+| 每季度 | API 版本升级评估（`dv360_list_api_versions`）+ 字段烟测 | 集成工程师 | 沙箱 + 烟测脚本 |
+
+### D.2 常见告警的处理 Runbook
+
+| 告警 | 第一反应 | 升级路径 |
+|------|----------|----------|
+| QUOTA_AT_80PCT | 查当日用量曲线，判断是峰值型还是日均值型 | 峰值型→本地削峰；日均型→申请提额 |
+| SYNC_FAILED | 看 DAG 失败节点与错误原文 | 认证？→修凭证；字段？→烟测改解析；平台 5xx？→重试即可 |
+| WATERMARK_STALE | 连 2 天未推进 | 查 3.5.2 分页丢/弱一致；必要时全量重拉一次自愈 |
+| BATCH_PARTIAL_FAIL | 看死信表原因分布 | 参数问题→修生成器；平台问题→重放失败子集 |
+| WEBHOOK_LOST | 视同「事件缺失」处理 | 回归轮询兜底，核对实体最新状态 |
+| 403_NEW_ADV | 新广告主未授权 | 走权限流程：add_permission_user + partner link |
+
+### D.3 DV360 集成术语表（中英对照）
+
+| 术语 | 全称/说明 | 集成含义 |
+|------|-----------|----------|
+| Partner | 合作伙伴（DV360 账户最上层） | API 权限的归属单元 |
+| Advertiser | 广告主 | 资源层级第二层；多数 API 路径的父级 |
+| Insertion Order | 订单项 | 预算/排期的管理层级 |
+| Line Item | 线条项目 / 媒体购买 | 实际投放单元；定向+预算+创意 |
+| Flight | 投放周期 | LineItem 的起止时间窗口 |
+| Creative | 创意素材 | 展示素材；审批对象 |
+| Floodlight | CM360 转化测量技术 | 转化信号来源 |
+| Page Token | 分页令牌 | 游标分页的续页凭据 |
+| pageSize | 页大小 | 单页返回上限 |
+| fields | 字段选择 | 部分响应，最小化传输 |
+| updateMask | 更新掩码 | PATCH 的精确定位字段 |
+| batch | 批量接口 | 一次 RPC 处理多条 |
+| Retry-After | 重试等待头 | 429 时服务端建议的等待时间 |
+| Quota | 配额 | 天/分钟级请求预算 |
+| Rate Limit | 速率限制 | 单位时间内的频控 |
+| Webhook | 事件回调 | best-effort 事件通知 |
+| Watermark | 水位 | 数据同步进度档案 |
+| 死信队列 | Dead Letter Queue | 失败子集的暂存队列 |
+| SDC | Supply Chain Transparency | 供应链透明度（sellers.json） |
+| ADH | Ads Data Hub | 隐私安全联合分析 |
+
+---
+
+## 七、参考资源链接
+
+- Google 官方：Display & Video 360 API（`display-video.googleapis.com`）
+- Google 官方：Campaign Manager 360 API（`dfareporting` 系列）
+- Google 官方：Google Ads API（gRPC / GAQL）
+- Google 官方：Google Ad Manager API
+- Google 官方：BigQuery API / Ads Data Hub API
+- 知识库内配套脚本：`scripts/ad_platform_api.py`、`scripts/dv360_client.py`、`scripts/api_common.py`、`scripts/google_ads_api.py`、`scripts/meta_api.py`
+
+> 提示：本文的代码示例均为「集成模式演示」，接入生产前请按各平台的当前版本与真实凭证环境做适配与安全评审；尤其注意凭证、密钥与用户级数据的安全处置。
+
+（全文完）
+---
+
+## 全文要点回顾（十句话带走）
+
+1. **定位**：DV360 是 GMP 的媒体购买中枢，买媒体用它、测转化靠 CM360、出数靠 BigQuery、隐私归因走 ADH。
+2. **资源**：Partner ⊃ Advertiser ⊃ Campaign ⊃ Insertion Order ⊃ Line Item ⊃ Creative，写操作必须带完整父级路径。
+3. **分页**：pageToken 游标串行续拉，到 nextPageToken 为空为止；弱一致性靠主键去重 + 完整性对账兜底。
+4. **认证**：后端首选服务账号 JWT（无状态刷新），能避开 refresh token 过期；用户授权型要监控 invalid_grant。
+5. **限流**：「日配额」与「分钟速率」是两回事；429 是流量问题不是程序问题——削峰 + 尊重 Retry-After，而不是盲目提额。
+6. **重试**：只重试 429/5xx，指数退避 + 抖动，尊重 Retry-After，超过上限进死信队列。
+7. **批次**：batchUpdate 是部分成功语义，外层 200 不等于全成功；必须逐条解析、失败子集重放。
+8. **单位**：报表美元小数 vs 对象 budgetMicros（×10^6）、时间 micros、广告主时区——三套统一，宁封装函数不裸传数字。
+9. **Webhook**：best-effort 会丢；「事件只当唤醒，状态以主动 GET 为准，轮询兜底」。
+10. **架构**：统一客户端（TokenProvider / Requester / Pager 三件套）+ 水位驱动增量 + 死信重放 + 监控告警，是四家平台通吃的集成平台骨架。
+
+> 记住这十条，你的 DV360 集成平台就从「能跑」进化到「稳跑」。
+
+（全文完）

@@ -1925,3 +1925,113 @@ DV360 的欺诈检测与品牌安全，不是"一个开关"，而是一套**分�
 3. 可见性按 MRC 口径：展示 50%/1s、视频 50%(大面积30%)/2s，选对进价方式。
 4. IVT 分层治理：平台自动过滤 GIVT + 自研融合器 + 第三方复核补 SIVT。
 5. 持续对账与复盘：统一口径/imp_id/±5%，周→月→季 SOP。
+---
+
+## 二十九、附：买卖侧协作(Seller-side) 与第三方测量集成核对表
+
+### 29.1 买卖侧(Seller-side)透明核对表
+
+| 检查项 | 买方(DV360/广告主) | 卖方(SSP/媒体/Publisher) |
+|--------|-------------------|-------------------------|
+| Ads.txt 部署 | 核对库存是否授权 | 确保根域 ads.txt 完整 |
+| app-ads.txt 部署 | 核对 App 库存授权 | 确保开发者域 app-ads.txt 完整 |
+| sellers.json 发布 | 校验 pchain 卖家身份 | 披露卖方身份与类型 |
+| advertisers.json 发布 | 向卖方披露广告主身份 | 校验买方身份 |
+| OpenRTB pchain | 过滤未授权卖家链 | 提供准确卖家链 |
+| OAR/原生广告 | 处理服务器侧转换 | 支持 OAR 广播与转换 |
+
+### 29.2 第三方测量(Measurement)集成核对表
+
+| 工具 | 集成方式 | 可见性 | 品牌安全 | IVT | 备注 |
+|------|---------|--------|---------|-----|------|
+| Moat | JS/SDK/VAST | ✅ | ✅ | ✅ | 视频重点，多用于 YouTube |
+| Integral Ad Science(IAS) | JS/SDK | ✅ | ✅ | ✅ | 展示+视频，分类全 |
+| DoubleVerify(DV) | JS/SDK | ✅ | ✅ | ✅ | 高阶反欺诈，广告主常用 |
+| Brand Safety 供应商(如 Zefr) | 内容分级 | 部分 | ✅ | 部分 | 专注语境 |
+| comScore | SDK | 部分 | 部分 | — | 受众/去重测量 |
+
+### 29.3 选择第三方供应商的评估维度
+
+| 维度 | 考量 |
+|------|------|
+| 覆盖媒体 | 是否覆盖你 Target 的媒体/App(尤其长尾) |
+| 标准对齐 | 是否严格按 MRC Viewability & IVT 标准 |
+| 分类粒度 | GARM 子分类支持度是否满足品牌需求 |
+| 实时/事后 | 能否实时回流(用于出价) vs 仅事后 log |
+| 数据格式 | 是否提供可对账的 imp_id 级日志(CSV/JSONL) |
+| 成本 | CPM 测量费对 ROI 的影响 |
+| SLA | 数据延迟/采样/容差承诺 |
+
+---
+
+## 三十、附：常见格式模板（可直接用于产线）
+
+### 30.1 品牌安全配置 JSON（attach 到 LI）
+
+```json
+{
+  "brandSafetyConfig": {
+    "contentExclusion": "ADULT_CONTENT,GAMBLING,VIOLENCE,HATE_SPEECH",
+    "useGoogleApprovedList": true,
+    "customExclusionListIds": ["EXCL_01", "EXCL_02"]
+  },
+  "inventorySources": ["INVENTORY_SOURCE_AUTOMATED", "INVENTORY_SOURCE_PUBLISHER"],
+  "authorizedSellersOnly": true
+}
+```
+
+### 30.2 可见性配置 JSON
+
+```json
+{
+  "viewabilityConfig": {
+    "targetingType": "VIEWABILITY_TARGETING_TYPE_AWARE",
+    "viewabilityTarget": "VIEWABILITY_50_PERCENT_1S"
+  }
+}
+```
+
+> 视频投放建议 `VIEWABILITY_50_PERCENT_2S`；若需大面积伴播视频特例，参考 MRC 30% 规则并在第三方测量侧启用对应配置。
+
+### 30.3 IVT 评分结果 JSON（自研引擎输出）
+
+```json
+{
+  "imp_id": "0af9e2...",
+  "fraud_score": 0.83,
+  "tier": "SIVT",
+  "reasons": ["datacenter-ip", "mechanical-click-interval", "off-viewport-report", "geo-teleport"],
+  "rule_hits": ["GIVT:IP", "SIVT:rhythm", "SIVT:coord", "SIVT:geo"],
+  "decided_action": "blocklist-blacklist"
+}
+```
+
+### 30.4 对账差异报告模板
+
+```csv
+date,domain,platform_view,third_view,diff_pp,status
+2026-08-07,news-a.com,0.72,0.68,4.0,ok
+2026-08-07,games-b.com,0.65,0.49,16.0,alert
+2026-08-07,app-c.bundle,0.58,0.60,-2.0,ok
+```
+
+---
+
+## 三十一、最终自测/自检清单
+
+在交付/复盘时，快速自检以下问题是否都能回答：
+
+1. MRC 对展示/视频/大面积视频的可见性标准分别是什么？
+2. GIVT 与 SIVT 的本质区别，各 3 个典型检测信号？
+3. 第三方与 DV360 可见率为何会不一致，如何对账？
+4. Ads.txt / app-ads.txt / sellers.json 各自的职责？
+5. 如何用 dv360_list_brand_safety_categories / dv360_create_content_exclusion / dv360_list_viewability_targets / dv360_create_line_item 配置品牌安全与可见性？
+6. 自研 IVT 多信号融合器如何设计、如何校准？
+7. GARM 七大类是什么，如何应用于 DV360 并避免误杀？
+8. 遇到"高CTR×零转化"如何按流程排查处置？
+9. 供应链透明如何做(认证库存/卖家质量/进程对齐)？
+10. 团队 SOP 如何把品牌安全+可见性+IVT 固化为日/周/月/季巡检？
+
+---
+
+> 本文档由 Ryan 个人知识库撰写，聚焦 DV360 平台内品牌安全、可见性(MRC/IAB 标准)、无效流量(GIVT/SIVT)及第三方测量对账，可与《DV360 创意管理与品牌安全深度实战》及通用反欺诈文档互补阅读。所有 API 调用基于 `scripts/ad_platform_api.py` 与 `scripts/dv360_api.py` 中真实方法名；代码示例可用于生产参考与二次开发。

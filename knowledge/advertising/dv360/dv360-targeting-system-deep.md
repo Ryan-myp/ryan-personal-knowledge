@@ -806,6 +806,109 @@ for bc in brand_cats:
 
 **人口统计（Demographics）注意点**：DV360 的人口统计定向基于**推断或可得出数据**，在隐私受限环境/无 Cookie 情况下覆盖率会下降。把它当"倾向性信号"而非"硬条件"，否则会进一步压缩可投人群。
 
+### 2.8 API 全链路实战：从建 Line Item 到完成一套定向
+
+下面用一个完整的 Python 示例串起"建 Line Item → 建/查定向单位 → 挂关键词/受众/地域/排除 → 设频控 → 验证"的整条链路。这是把前面所有原理落到代码的最佳示范。
+
+```python
+# -*- coding: utf-8 -*-
+"""
+DV360 定向全链路脚本（教学示范）
+场景：为"智能门铃出海美国"配置一个精准 Line Item 的整套定向。
+"""
+from ad_platform_api import AdPlatformAPI
+
+api = AdPlatformAPI(credentials)
+advertiser_id = "1234567890"
+
+# ========== Step 0: 前置检查 ==========
+# 确认能访问、拉取维度选项骨架
+dims = api.dv360_list_targeting_units(advertiser_id)  # 也可用 get_targeting_dimension_options()
+print("当前定向单位数:", len(dims or []))
+
+# ========== Step 1: 查可用受众（选第一方/动态/Google 自有） ==========
+audiences = api.dv360_list_audiences(advertiser_id)
+aud_by_name = {a.get('displayName'): a for a in (audiences or [])}
+overall_retarget = None
+in_market_car = None
+for name, a in aud_by_name.items():
+    print(f"  受众: {name} type={a.get('audienceType')} size={a.get('estimatedAudienceSize')} st={a.get('status')}")
+    if '网站访客' in name or 'visitor' in name.lower():
+        overall_retarget = a
+    if 'IN_MARKET' in name.upper() and 'CAR' in name.upper():
+        in_market_car = a
+
+# ========== Step 2: 建 Line Item（空定向，后续挂单位） ==========
+li = api.dv360_create_line_item(
+    advertiser_id,
+    name="US 智能门铃 - 精准 Retargeting",
+    flight={"dateRange": {"startDate": "2026-08-15", "endDate": "2026-09-15"}},
+    lineItemType="LINE_ITEM_TYPE_DISPLAY",
+    pacing={"pacingMode": "PACING_MODE_DISTRIBUTE_EVENLY"},
+    budget={"budgetUnit": "BUDGET_UNIT_CURRENCY", "maxAmount": {"amountMicros": int(5000 * 1e6)}},
+)
+line_item_id = li.get('lineItemId')
+print("新建 Line Item:", line_item_id)
+
+# ========== Step 3: 创建定向单位并挂 assigned targeting options ==========
+unit = api.dv360_create_targeting_unit(advertiser_id, name="US 门铃定向单位")
+unit_id = unit.get('targetingUnitId')
+print("新建定向单位:", unit_id)
+
+# 用 update_targeting_unit 往单位里加定向选项（示意）
+api.dv360_update_targeting_unit(
+    unit_id,
+    targets={
+        # 受众: 重定向访客（正定向）
+        "audience": {"included": [overall_retarget['audienceId']] if overall_retarget else []},
+        # 地域: 全美（正定向）
+        "geo": {"included": ["country:US"]},
+        # 关键词: 智能/家居/安防（正定向）
+        "keyword": {"included": ["智能门铃", "smart doorbell", "home security"]},
+        # 排除: 已下单用户 + 赌博内容
+        "audienceExcluded": [],
+        "contentExcluded": ["GAMBLING", "ADULT"],
+    },
+)
+
+# ========== Step 4: 把定向单位挂到 Line Item ==========
+api.dv360_update_line_item(advertiser_id, line_item_id, targetingUnitIds=[unit_id])
+
+# ========== Step 5: 便捷封装（关键词定向的细化写库） ==========
+resp = api.dv360_create_keyword_targeting(advertiser_id, keywords=["smart home", "doorbell"], target_type="included")
+print("keyword targeting created:", resp)
+
+# ========== Step 6: 验证 - 拉全量定向核对 ==========
+targetings = api.dv360_list_targetings(advertiser_id)
+for t in targetings or []:
+    print(f"  [{t.get('targetingType')}] {t.get('displayName')} "
+          f"targetType={t.get('targetType')} status={t.get('status')}")
+```
+
+**要点：**
+1. **先建后挂**：DV360 里"创建定向单位 → 再 update 加入 targeting options → 再挂到 Line Item"是三步走，不能一步到位（与 Google Ads 的 AdGroup 结构不同）。
+2. **audience 需要 id 映射**：受众必须先 `dv360_list_audiences` 拿到 `audienceId` 再引用，不能直接用名字。
+3. **便捷方法与完整单位的区别**：像 `dv360_create_keyword_targeting` 这类"便捷封装"直接写单类型定向；`dv360_create_targeting_unit` + `dv360_update_targeting_unit` 是"一次配全套"的完整单位方式。两者可混用但要防止重复覆盖。
+
+### 2.9 定向对象模型与数据粒度（进阶）
+
+把 DV360 的定向对象模型与常见的数据字段梳理清楚，便于排查时对齐字段名：
+
+| 对象 | 关键字段 | 说明 |
+|------|---------|------|
+| TargetingType | `targetingType` | 维度枚举（GEO/AUDIENCE/KEYWORD/...） |
+| AssignedTargetingOption | `targetingOptionId` / `targetType`(included/excluded) / `status` | 一个已分配的定向选项 |
+| TargetingUnit | `targetingUnitId` / `targetingOptions` | 定向单位，装载多个 option |
+| Audience | `audienceId` / `audienceType` / `estimatedAudienceSize` / `status` | 受众 |
+| LineItem | `lineItemId` / `targetingUnitIds` / `pacing` / `budget` | 线项 |
+
+**为什么"单位"与"选项"双层结构重要？** 它让同一套定向可以**复用**：一个定向单位可以挂到多个 Line Item，避免重复配置。批量修改时只改单位即可横向下发。
+
+**数据粒度建议：**
+- 报表拆维度时用 `dv360_list_report_dimensions()` / `dv360_list_report_metrics()` 对齐官方维度/指标。
+- 定向明细用 `dv360_list_*_targeting_detail(targeting_id)` 系列拿具体值。
+- 复杂决策用 `dv360_get_performance_forecast` / `dv360_list_reach_forecasts` 做预测。
+
 ---
 
 ## 三、生产环境实战
@@ -976,6 +1079,577 @@ Day0        Day7        Day30       Day60
 | 9 | 层级继承 | 意外不出量 | 上级定了地域/受众 | 排查向上看三层 |
 | 10 | 排除没生效 | 仍投到不想要的 | 排除在错误层级/未保存 | 检查层级与 included/excluded |
 
+### 3.6 定向配置自动化与审计（规模运维）
+
+当账户有大量 Advertiser/IO/Line Item 时，人工在 UI 上逐个配置定向并不可靠。生产实践通常把定向配置**代码化并纳入版控**，配合**定时审计**保证"配置即事实"。
+
+**自动化思路：**
+1. **配置即代码（IaC）**：把每个 Line Item 的定向定义写成结构化配置（YAML/JSON），通过封装方法批量下发。
+2. **幂等**：同样的配置反复执行结果一致，避免重复创建单位/选项。
+3. **审计比对**：定时拉取线上定向，与期望配置做 diff，漂移则告警或自动回滚。
+
+```python
+# 幂等：先查再建，避免重复
+def ensure_keyword_targeting(api, advertiser_id, line_item_id, keywords, target_type="included"):
+    existing = api.dv360_list_targetings(advertiser_id)
+    need = set(keywords)
+    have = set()
+    for t in existing or []:
+        if t.get('targetingType') == 'TARGETING_TYPE_KEYWORD':
+            have.add(t.get('displayName'))
+    # 只创建缺失的
+    missing = need - have
+    for kw in missing:
+        api.dv360_create_keyword_targeting(advertiser_id, keywords=[kw], target_type=target_type)
+    # 移除多余的（可选）
+    extra = have - need
+    for kw in extra:
+        for t in existing or []:
+            if t.get('targetingType') == 'TARGETING_TYPE_KEYWORD' and t.get('displayName') == kw:
+                api.dv360_delete_keyword_targeting(t.get('assignedTargetingOptionId'))
+    return {"added": list(missing), "removed": list(extra)}
+```
+
+**自动审计脚本骨架：**
+
+```python
+import json, hashlib
+
+# 把线上定向做成"规范快照"便于 diff
+def snapshot(api, advertiser_id):
+    out = []
+    for t in api.dv360_list_targetings(advertiser_id) or []:
+        out.append({
+            "type": t.get("targetingType"),
+            "name": t.get("displayName"),
+            "targetType": t.get("targetType"),
+            "status": t.get("status"),
+        })
+    out.sort(key=lambda x: (x["type"], x["name"]))
+    return hashlib.sha256(json.dumps(out, ensure_ascii=False).encode()).hexdigest()
+
+def audit(api, advertiser_id, expected_hash, notify):
+    cur = snapshot(api, advertiser_id)
+    if cur != expected_hash:
+        notify("定向配置漂移! 期望Hash=%s 实际=%s" % (expected_hash[:12], cur[:12]))
+        return False
+    return True
+```
+
+**审计指标建议（写进每日巡检）：**
+
+| 指标 | 说明 | 告警阈值 |
+|------|------|---------|
+| 配置 Hash 漂移 | 线上与期望不一致 | 任何差异 |
+| 受众过期数 | EXPIRED/EXPIRING 受众数量 | > 0 即查 |
+| 低 fill 线项数 | fill < 阈值 | > 20% 线项 |
+| 频控异常 | 平均频次 > 目标 1.5x | 触发 |
+| 排除缺失 | 关键排除项被删 | 任何缺失 |
+
+### 3.7 定向数据质量治理（第一方数据）
+
+定向效果的前提是"数据干净"。第一方受众数据质量直接决定 Retargeting 与 Lookalike 的成败。
+
+**数据清洗清单：**
+
+```
+第一方数据治理 Checklist
+├── 上传前
+│   ├── 去重: 合并重复邮箱/手机号
+│   ├── 规范化: 邮箱小写、去掉首尾空格
+│   ├── 有效性: 过滤明显无效/伪造记录
+│   └── 权限: 确认有合法使用这些数据做广告的权限
+├── 上传时
+│   ├── 使用稳定标识符（邮箱优先）
+│   ├── 按 DV360 要求做 SHA-256 哈希
+│   └── 检查匹配率（< 60% 需警惕格式问题）
+└── 上传后
+    ├── 定期刷新（540 天到期前）
+    ├── 按价值分层（高/中/低转化种子）
+    └── 记录匹配率趋势，异常即排查
+```
+
+**匹配率低的主因排序（按影响）：**
+1. **标识符类型**：邮箱匹配率通常最高，手机号次之，设备 ID 最低。
+2. **格式错误**：空格、大小写、分隔符不一致 → 规范化可救。
+3. **未哈希或哈希方式不对**：必须与 DV360 一致（SHA-256，hex 小写）。
+4. **受众陈旧**：用户很少登录或改变了标识 → 刷新。
+5. **数据量太小**：统计波动大，匹配率不稳。
+
+**把种子分层的价值：**
+- 高价值种子（已下单）→ Lookalike 蓝本、精准重定向。
+- 中价值种子（注册/加购）→ 中继拓量。
+- 避免把低中高混作一桶当种子，会稀释 Lookalike 质量。
+
+**治理频率建议：**
+- 每周：重定向受众刷新 + 匹配率监控。
+- 每月：Lookalike 种子更新、过期受众清理。
+- 每季：全量数据权限合规审查。
+
 ---
 
 ## 四、常见问题与排查
+### 4.1 常见 FAQ 总表
+
+| # | 问题 | 一句话答案 | 详见 |
+|---|------|-----------|------|
+| 1 | 定向不出量 / fill 太低 | 定向叠太多 AND 层或圈得太窄，先大后小并看 reach forecast | 4.2 |
+| 2 | Audience 不同步 / 匹配率低 | CSV 列表匹配率依赖数据质量与类别，检查上传格式、有效期与加密 | 4.3 |
+| 3 | 关键字中文乱码 | 确保 UTF-8 编码、合法 keyword 长度与格式，用 API 校验 | 4.4 |
+| 4 | 排除定向没生效 | 排除可能设在错误层级或未保存，检查 included/excluded 与层级 | 4.5 |
+| 5 | 频控不生效 | 检查频控层级、窗口、是否跨 IO 去重、计量事件配置 | 4.6 |
+| 6 | 用了 Lookalike 反而变差 | 种子不纯/太小，Lookalike 继承了噪声 | 4.7 |
+| 7 | 想投某地区却完全不出量 | 上级 Advertiser/IO 定向继承把你卡住了，向上看三层 | 4.8 |
+| 8 | 品牌安全太严影响出量 | 分级防线 + 平衡，别一刀切 | 2.6.3 |
+
+### 4.2 定向不出量 / Fill 过低的排查（Tree）
+
+```
+定向不出量 / fill 过低
+│
+├─ ① 检查 Line Item 状态
+│       └─ 是否 PAUSED / ACTIVE? 阶段是否已过? 预算是否 0?
+│
+├─ ② 检查受众
+│       ├─ audience 是否 EXPIRED / EXPIRING ?
+│       ├─ estimatedAudienceSize 是否过小 (< 千级)?
+│       └─ 是否用动态受众但 Lookback window/事件配置错误?
+│
+├─ ③ 检查定向组合
+│       ├─ 正定向 AND 是否叠太多层?
+│       ├─ 地域是否过细(邮编/半径)?
+│       ├─ 设备/OS 是否过于限制?
+│       └─ 是否继承到上级 Advertiser/IO 的更严格定向?
+│
+├─ ④ 检查排除
+│       ├─ 排除项是否误伤目标(如把品牌相关内容也排了)?
+│       ├─ 竞品排除是否过广?
+│       └─ 品牌安全分类是否全排?
+│
+└─ ⑤ 用报表/forecast 验证
+        ├─ 看 forecast/reach 预估
+        ├─ 看投放日志里"未参与竞价的原因"
+        └─ 逐步放宽(每次只放宽一个维度)观察出量
+```
+
+**实操排障手法：** 一次"只动一个变量"。若出量低，首先不要同时放宽五个维度——否则你不知道是哪个起了作用。典型顺序：先确认状态与受众未过期 → 再逐步放宽地域粒度 → 再减定向 AND 层 → 最后检查排除/品牌安全。
+
+### 4.3 Audience 不同步 / 匹配率低
+
+**现象**：上传第一方受众后，系统显示的匹配用户数与期望相差很远，或投放很久后受众规模不动。
+
+**根因与对策：**
+
+| 根因 | 现象 | 对策 |
+|------|------|------|
+| 数据格式错误 | 匹配数几乎为 0 | 检查 CSV 表头/邮箱/手机号格式，用正确分隔符，勿含空格 |
+| 类别选择不当 | 匹配率偏低 | 邮箱匹配率高、手机号次之、设备 ID 取决于平台 |
+| 未加密/哈希方式不符 | 匹配失败 | 按 DV360 要求做 SHA-256 加密并去掉 PII |
+| 上传了太多无效记录 | 匹配率低 | 清掉重复/过期记录再传 |
+| 有效期到了 | 规模不涨/失效 | 定期刷新 (通常 540 天) |
+| 数据量太小 | 匹配波动大 | 累积更多种子再上传 |
+
+**黄金实践：**
+- 使用**稳定标识符**（邮箱优先）做种子。
+- 上传前做**去重与清洗**。
+- 上传后 24-48 小时观察匹配规模，尽早发现格式问题。
+- 定期（每周/月）刷新 CSV 保持新鲜度。
+
+### 4.4 关键字中文乱码 / 非法关键字
+
+**现象**：通过 API 或 UI 输入中文关键词后，投放报错或显示乱码、无法保存。
+
+**根因与对策：**
+
+| 根因 | 对策 |
+|------|------|
+| 请求体编码非 UTF-8 | 统一用 UTF-8 编码请求，requests 的 json 会自动处理 |
+| 包含非法字符（引号/换行/通配符） | 清洗关键词，仅保留合法字符 |
+| 关键词过长 | 截断到 DV360 允许的最大长度（如 80 字符） |
+| 使用了随机/无意义词 | 用 `dv360_list_keyword_targeting` 验证可用的 keyword |
+| 用了敏感/受限词 | 换成合规同义表达 |
+
+```python
+# 清洗关键词再创建，避免乱码与非法字符
+import re
+
+def clean_keywords(raw: list) -> list:
+    cleaned = []
+    for kw in raw:
+        kw = str(kw).strip()
+        # 只保留中文、英文、数字、空格与常规符号
+        kw = re.sub(r'[^\w\s\u4e00-\u9fff]', '', kw, flags=re.UNICODE)
+        kw = kw[:80]  # 截断
+        if kw:
+            cleaned.append(kw)
+    return cleaned
+
+kws = clean_keywords(["智能门铃", '"car" review', "NFT**", ""])
+resp = api.dv360_create_keyword_targeting(advertiser_id, keywords=kws, target_type="included")
+print(resp)
+```
+
+### 4.5 排除定向没生效
+
+**现象**：线上仍出现你明确加入排除的站点/分类/App。
+
+**排查步骤：**
+1. **确认"排除放在哪个层级"**：排除设在 Advertiser 级只对该 Advertiser 生效；若你想在某个 Line Item 排除，需在对应 Line Item 角度配。
+2. **确认 target_type**：确保该 assigned targeting option 的 `targetType == "excluded"`，不是 "included"。
+3. **层级被覆盖**：有时下级主动 included 了一个上级 excluded 的选项 → 检查规则覆盖。
+4. **时序**：修改后是否生效（DV360 配置变更可能需几分钟到几十分钟）。
+5. **验证**：用报表按维度（site/category/app）回看是否仍投到，逐条核对。
+
+```python
+# 验证排除配置是否正确写入
+targetings = api.dv360_list_targetings(advertiser_id)
+for t in targetings:
+    if t.get('targetingType') == 'TARGETING_TYPE_CONTENT_EXCLUSION':
+        print(f"  排除项: {t.get('displayName')} "
+              f"targetType={t.get('targetType')} "
+              f"status={t.get('status')}")
+```
+
+### 4.6 频控不生效
+
+**现象**：用户被展示次数远超设置的上限。
+
+**排查维度：**
+- **层级**：是否在正确的对象层级设了频控（per IO vs per Line Item vs per creative）。
+- **窗口**：窗口单位是否与预期一致（小时/天/周/总战役）。
+- **跨 IO**：多个 line item 各自计数，未做 IO 级去重 → 需要把频控放进 IO 级 + deduplicate。
+- **计量事件**：是否只对 impression 计量（view-through 不算），导致把 seen 但未计量的展示漏数。
+- **创意轮换**：如果是按 creative 频控，同一 Line Item 多个 creative 各计各的。
+
+**黄金实践：** 需要"每个用户每个 IO 每天 X 次"就把频控设在 **Insertion Order 级**，勾选 deduplicate within insertion order；需要"每个创意"就设 per creative。
+
+### 4.7 Lookalike 效果变差
+
+| 症状 | 根因 | 对策 |
+|------|------|------|
+| CTR/CVR 低于投放前预期 | 种子不纯（混入低价值流量） | 只用高转化种子重建 Lookalike |
+| 覆盖人群过小 | 种子太小或相似度设得太高（如 1%） | 提高比例（3-5%）或扩大种子 |
+| 波动大 | 种子太小不稳定 | 累积 ≥ 1000 活跃种子 |
+| 与 Retargeting 重叠高 | Lookalike 与重定向人群重合 | 用负定向排除已重定向人群 |
+
+### 4.8 上级定向继承导致的"意外不出量"
+
+**排查口诀"向上看三层"：**
+- Advertiser 级 → IO 级 → Line Item 级 → 全都要看。
+- 若上级设了地域/受众/排除，下级会自动继承并叠加。
+- 用 `dv360_list_targetings(advertiser_id)` 按层级拉取，逐层核对 inherited conditions。
+
+```
+排查流程
+┌→ Advertiser 级别定向
+│     地域? 受众? 排除?
+├→ Insertion Order 级别
+│     地域? 受众? 频控?
+├→ Line Item 级别
+│     定向 AND 层数? 排除? 频控窗口?
+└→ 结论: 逐层放开"不该继承"的定向
+```
+
+---
+
+## 五、自测题
+
+### 5.1 选择题
+
+<details><summary>查看答案</summary>
+1. C 2. B 3. A 4. B 5. A
+</details>
+
+**第 1 题：DV360 中，同一个 Line Item 上所有 `included`（正向）定向维度之间是什么关系？**
+
+- A. OR（并集）
+- B. NOT（排除）
+- C. AND（交集）
+- D. 无固定关系
+
+**第 2 题：下面哪种情况最容易导致 DV360 定向 fill 过低？**
+
+- A. 只设一个宽 In-Market 受众
+- B. 把 In-Market + Affinity + 年龄段 + 单一邮票邮编 全叠加为正定向
+- C. 只设地域=美国
+- D. 只在 IO 级设频控
+
+**第 3 题：CSV 上传的第一方受众通常的有效期约为多少天？**
+
+- A. 540 天
+- B. 30 天
+- C. 90 天
+- D. 无限期
+
+**第 4 题：想实现"每个用户在每个 Insertion Order 内每天最多 3 次"，最合适的做法是？**
+
+- A. 在每个 Line Item 上分别设 per Line Item 3 次/天
+- B. 在 Insertion Order 级别设频控并勾选 deduplicate within insertion order
+- C. 在 Advertiser 级别设 per creative 3 次/天
+- D. 在创意级别设 3 次/天
+
+**第 5 题：负定向（excluded）的优先级在所有定向规则中属于？**
+
+- A. 最高（命中即剔除）
+- B. 最低
+- C. 与正定向相同层级
+- D. 仅对展示型有效
+
+### 5.2 实操题
+
+**第 6 题（场景排查）**：你的新视频 Line Item 已启动 48 小时，但出量极低。你会按什么顺序排查？请写出你的排查步骤与原因。
+
+<details><summary>查看答案</summary>
+按"一次只动一个变量"原则：
+1. 确认 Line Item 状态 AE ACTIVE、flight 未结束、预算 > 0。
+2. 确认所用受众未 EXPIRED、规模不小。
+3. 检查定向 AND 是否叠太多层、地域是否过细。
+4. 检查上级 Advertiser/IO 是否有继承的更严定向。
+5. 检查品牌安全/排除是否误伤。
+6. 用 forecast/report 验证并每次放宽一个维度观察出量。
+</details>
+
+**第 7 题（设计题）**：某品牌想"America 全美投放智能门铃"，既要出量充足又要精准，请设计分层定向策略（拓量层/精准层/品牌层）。
+
+<details><summary>查看答案</summary>
+- 拓量层（大预算）：地域=美国全国、单一宽受众（In-Market 家居安防）、全设备、排除高风险分类。
+- 精准层（中预算）：地域=Top DMA、第一方高价值访客重定向、排除已转化、适度频控。
+- 品牌层（小预算）：地域=美国、Lookalike（以高转化种子）、第三方品牌安全校验。
+三层用不同创意/频控，观察出量与转化后动态调整预算与比例。
+</details>
+
+**第 8 题（计算题）**：某品牌曝光 Line Item 用"per Line Item 3 次/天"，另一个转化 Line Item 也用"per Line Item 3 次/天"，两者都投同一人群。请指出这样配置的问题并给出正确方案。
+
+<details><summary>查看答案</summary>
+问题：两个 Line Item 各自独立计数，同一个用户可能被每个线项各看 3 次，合计 6 次/天，超出"每天 3 次"的品牌预期，造成过度曝光与用户厌烦。
+正确方案：把频控提升到 Insertion Order 级别，设为"每个用户每天 3 次"，并勾选 deduplicate within insertion order，让两个线项共享同一频控上限。
+</details>
+
+### 5.3 论述题
+
+**第 9 题**：为什么在第三方 Cookie 退场背景下，上下文定向与第一方数据的组合会比单纯依赖第三方受众更稳健？请结合 DV360 机制论述。
+
+<details><summary>查看答案</summary>
+- 上下文定向不依赖用户标识，只看页面内容（关键词/分类/URL），因此在无 Cookie 环境依然可用，天然对抗隐私变化。
+- 第一方数据（CSV/Floodlight）是广告主自有资产，匹配 Google 登录用户，不依赖第三方 Cookie，可控且可持续刷新。
+- 第三方受众依赖跨站追踪与 Cookie，在隐私沙盒与浏览器限制下覆盖率会显著下降、匹配率变差。
+- 组合策略：用上下文+第一方做"确定性触达与重定向"，用 Google 自有的 In-Market/Affinity 模型做拓量，减少对脆弱第三方数据的依赖。这是 DV360 官方推荐的隐私时代定向路径。
+</details>
+
+---
+
+## 六、术语表与速查
+
+### 6.1 定向体系术语速查
+
+| 术语 | 英文 | 解释 |
+|------|------|------|
+| 定向 | Targeting | 决定广告投给谁/投在哪/投在什么环境 |
+| 正定向 | Included Targeting | 明确"只要这些"的定向 |
+| 负定向 | Excluded Targeting | 明确"不要这些"的定向 |
+| 定向单位 | Targeting Unit | 一组定向选项的容器，可复用到多个 Line Item |
+| 已分配定向选项 | Assigned Targeting Option | 挂载在实体上的具体定向条件 |
+| 上下文定向 | Contextual Targeting | 按页面内容（关键词/分类/URL）定向 |
+| 关键词定向 | Keyword Targeting | 匹配页面自然语言关键词 |
+| 位置定向 | Placement Targeting | 精确指定站点/URL/App |
+| 站点分类定向 | Site Category Targeting | 按站点类别定向 |
+| 受众定向 | Audience Targeting | 按人群数据定向 |
+| 第一方数据 | 1st-Party Data | 广告主自有数据 |
+| 第二方数据 | 2nd-Party Data | 发布商/合作伙伴数据 |
+| 第三方数据 | 3rd-Party Data | 数据商数据 |
+| 客户匹配 | Customer Match | 用加密邮箱/手机号匹配 Google 用户 |
+| 动态受众 | Dynamic Audience | Floodlight 实时滚动维护的受众 |
+| 兴趣受众 | Affinity Audience | 长期兴趣（宽泛） |
+| 意向受众 | In-Market Audience | 近期购买意图 |
+| 人生大事 | Life Events | 新婚/搬家/毕业等人生变化 |
+| 类似受众 | Lookalike / Similar Audience | 以种子人群找相似新用户 |
+| 人口统计 | Demographics | 年龄/性别/收入/家长状态 |
+| 频控 | Frequency Capping | 限制每个用户看到广告的次数 |
+| 频控层级 | Frequency Cap Level | per LI / per IO / per creative |
+| 频控窗口 | Frequency Cap Window | hourly/daily/weekly/lifetime |
+| 跨 IO 去重 | Deduplicate within IO | 同一 IO 下多个 Line Item 共享频控 |
+| 品牌安全 | Brand Safety | 确保内容环境安全 |
+| 内容排除 | Content Exclusion | 排除不安全内容类型 |
+| 品牌安全分类 | Brand Safety Category | DV360 内置敏感分类 |
+| 第三方校验 | Third-Party Verification | IAS / DoubleVerify 等 |
+| 填充率 | Fill Rate | 实际投放量/可投量 |
+| 受众规模 | Estimated Audience Size | 受众可投人数估计 |
+| 有效期 | Expiration | 受众的有效期限 |
+| 冷启动 | Cold Start | 无历史数据下的初始投放 |
+| 白名单 | Whitelist | 只投指定站点 |
+| 私市 | Private Marketplace | 邀请制优质库存交易 |
+| 程序化保量 | Programmatic Guaranteed | 保证展示量的程序化购买 |
+
+### 6.2 API 方法速查（本主题相关）
+
+**受众与定向单位：**
+
+| 方法 | 用途 |
+|------|------|
+| `dv360_list_targetings(advertiser_id)` | 列出定向项 |
+| `dv360_list_targeting_units(advertiser_id)` | 列出定向单位 |
+| `dv360_create_targeting_unit(advertiser_id)` | 创建定向单位 |
+| `dv360_update_targeting_unit(targeting_unit_id)` | 更新定向单位 |
+| `dv360_delete_targeting_unit(targeting_unit_id)` | 删除定向单位 |
+| `dv360_list_audiences(advertiser_id)` | 列出受众 |
+| `dv360_list_dynamic_audiences(advertiser_id)` | 列出动态受众 |
+| `dv360_list_audience_segments(advertiser_id)` | 列出受众段（Google 自有等） |
+| `dv360_list_interests(advertiser_id)` | 列出兴趣 |
+| `dv360_list_interests_detail(interest_id)` | 兴趣详情 |
+
+**上下文/关键词/位置：**
+
+| 方法 | 用途 |
+|------|------|
+| `dv360_list_keyword_targeting(advertiser_id)` | 列出关键词定向 |
+| `dv360_create_keyword_targeting(advertiser_id)` | 创建关键词定向 |
+| `dv360_delete_keyword_targeting(targeting_id)` | 删除关键词定向 |
+| `dv360_list_contextual_targeting(advertiser_id)` | 列出上下文定向 |
+| `dv360_create_contextual_targeting(advertiser_id)` | 创建上下文定向 |
+| `dv360_delete_contextual_targeting(targeting_id)` | 删除上下文定向 |
+| `dv360_list_placement_targeting(advertiser_id)` | 列出位置定向 |
+| `dv360_create_placement_targeting(advertiser_id)` | 创建位置定向 |
+| `dv360_delete_placement_targeting(targeting_id)` | 删除位置定向 |
+| `dv360_list_site_category_targeting(advertiser_id)` | 列出站点分类定向 |
+| `dv360_create_site_category_targeting(advertiser_id)` | 创建站点分类定向 |
+| `dv360_list_placements(advertiser_id)` | 列出投放位 |
+
+**维度详情：**
+
+| 方法 | 用途 |
+|------|------|
+| `dv360_list_geo_targeting_detail(targeting_id)` | 地理定向详情 |
+| `dv360_list_device_targeting_detail(targeting_id)` | 设备定向详情 |
+| `dv360_list_os_targeting_detail(targeting_id)` | 操作系统定向详情 |
+| `dv360_list_app_targeting(advertiser_id)` | 列出 App 定向 |
+| `dv360_list_video_targeting(advertiser_id)` | 列出视频定向 |
+| `dv360_list_operating_systems()` | 操作系统选项 |
+| `dv360_list_device_types()` | 设备类型选项 |
+| `dv360_list_connection_types()` | 连接类型选项 |
+| `dv360_list_banner_positions()` | 横幅位置选项 |
+
+**品牌安全：**
+
+| 方法 | 用途 |
+|------|------|
+| `dv360_list_content_exclusions(advertiser_id)` | 列出内容排除 |
+| `dv360_create_content_exclusion(advertiser_id)` | 创建内容排除 |
+| `dv360_delete_content_exclusion(exclusion_id)` | 删除内容排除 |
+| `dv360_list_brand_safety_categories()` | 列出品牌安全分类 |
+| `dv360_list_ad_verification_services()` | 列出广告验证服务 |
+| `dv360_list_brand_safety_providers()` | 列出品牌安全供应商 |
+| `dv360_list_viewability_providers()` | 列出可见性供应商 |
+| `dv360_list_viewability_targets()` | 可见性目标 |
+
+**预测/报表：**
+
+| 方法 | 用途 |
+|------|------|
+| `dv360_list_reach_forecasts(advertiser_id)` | 触达预测 |
+| `dv360_list_frequency_forecasts(advertiser_id)` | 频次预测 |
+| `dv360_get_performance_forecast(advertiser_id)` | 效果预测 |
+| `dv360_list_report_dimensions()` | 报表维度 |
+| `dv360_list_report_metrics()` | 报表指标 |
+| `dv360_get_report(advertiser_id)` | 拉报表 |
+| `dv360_get_targeting_dimension_options()` | 维度选项骨架（dv360_api.py） |
+
+**Line Item 侧：**
+
+| 方法 | 用途 |
+|------|------|
+| `dv360_list_line_items(advertiser_id)` | 列出线项 |
+| `dv360_create_line_item(advertiser_id)` | 创建线项 |
+| `dv360_update_line_item(advertiser_id, line_item_id)` | 更新线项（挂定向单位等） |
+| `dv360_get_line_item(advertiser_id, line_item_id)` | 获取线项详情 |
+| `dv360_pause_line_item` / `dv360_resume_line_item` | 暂停/恢复 |
+| `dv360_list_insertion_orders(advertiser_id)` | 列出 IO |
+| `dv360_list_flights(advertiser_id, line_item_id)` | 列出排期 |
+
+### 6.3 常见定向配置模板（速查卡）
+
+**品牌曝光模板：**
+
+```
+地域: 目标市场(国家/州)
+受众: Affinity(宽) 或 In-Market(中)
+设备: 全设备
+频控: 3-5 次/周 (per IO + dedup)
+品牌安全: 成人/赌博/暴力排除 + (可选)第三方校验
+```
+
+**效果转化模板：**
+
+```
+地域: 目标市场 Top DMA
+受众: 第一方重定向(高价值) + Lookalike
+设备: 手机+桌面
+频控: 2-3 次/天 + 冷却
+品牌安全: 严格内容排除
+出价: CPA/tCPA 或 ocpm
+```
+
+**新品上市模板：**
+
+```
+地域: 全国
+受众: 上下文+分类 + In-Market
+设备: 全设备
+频控: 4-6 次/周
+创意: 多版式 AB 测试
+```
+
+---
+
+## 七、附录：进阶主题（隐私合规、算法细节、跨平台对比）
+
+### 7.1 隐私合规与定向（Privacy Sandbox / TCF）
+
+- DV360 支持 Google 的 Privacy Sandbox 相关信号（Topics、Protected Audience 等），上下文定向与第一方数据的价值因此上升。
+- 欧洲区投放需处理 GDPR / TCF 2.x 同意信号：`dv360_get_compliance_status` / `dv360_list_policy_violations` 可用于检查合规状态。
+- 上传第一方数据必须确认数据使用权限（含用户同意），否则面临政策处罚。
+
+### 7.2 DV360 定向 vs Google Ads / Meta 的差异
+
+| 维度 | DV360 | Google Ads | Meta |
+|------|-------|-----------|------|
+| 定向重心 | 程序化库存+品牌环境控制 | 搜索+GDN 关键词 | 社交兴趣/行为 |
+| 受众来源 | 第一方/第三方/Google 自有最全 | Google 受众 | Meta 自有+像素 |
+| 频控 | 多层级+跨 IO 去重 | 相对简单 | 频次控制 |
+| 品牌安全 | 最完整（排除+分类+第三方） | 中等 | 较弱 |
+| 库存类型 | 开放+私市+保量 | GDN/搜索 | 站内 feed |
+
+### 7.3 DV360 定向的算法细节（公开信息整理）
+
+- **In-Market 受众**基于近 30 天内用户的搜索/浏览/购买信号，按品类分层。
+- **Affinity 受众**基于长期兴趣曲线，覆盖广但意图弱。
+- **Lookalike** 在 DV360 内基于"种子人群特征向量"做相似度检索，比例越接近种子越像。
+- **频控**由 DV360 广告服务端按 cookie/device ID 计数；隐私环境下覆盖率会下降。
+- **可见性/品牌安全分类**由 DV360 与第三方（IAS/DV）的扫描系统对页面实时分类。
+
+### 7.4 投放效果分析维度建议（用报表验证定向）
+
+| 分析维度 | 报表维度/指标 | 用途 |
+|---------|--------------|------|
+| 频次分布 | Impressions / Unique Users | 判断是否过曝 |
+| 地域效果 | Geo dimension | 发现高/低效地区 |
+| 设备效果 | Device dimension | 调整设备定向 |
+| 内容环境 | Site / Category dimension | 验证上下文定向相关性 |
+| 受众效果 | Audience dimension | 验证 Retargeting/Lookalike |
+| 时段 | Hour of day | 调整 Dayparting |
+
+### 7.5 面向未来的定向趋势（Ryan 知识库视角）
+
+1. **第三方 Cookie 退场** → 上下文+第一方+Google 模型组合成为主流。
+2. **信号弱化** → 频控、归因、优化都受影响，需要更多"确定性信号"（登录态、第一方）。
+3. **AI 自动定向** → DV360 的 Smart Bidding/自动受众扩展会接管更多人工定向决策。
+4. **跨平台整合** → 广告主需要像本文这样的统一定向方法论，把 DV360/Google Ads/Meta/TikTok 的定向语言对齐。
+
+---
+
+## 八、总结
+
+DV360 定向系统是全市场最完整的程序化定向体系之一。掌握它需要同时理解**平台的对象模型**（Targeting Unit / Assigned Targeting Option / 层级继承）、**五大类定向**（上下文 / 受众 / 人口设备 / 频控 / 品牌安全）、**AND/OR/正负组合逻辑**，以及**生产环境中的踩坑**（fill、受众过期、频控单位、品牌安全过严、Geo 过细等）。
+
+核心心法可以浓缩为一句话：**"先宽后窄、正负结合、频控分层、数据养熟、环境守底"**——先大后小保证出量，正负结合保证相关性，频控分层保证触达质量，第一方数据持续养熟保证 Lookalike 质量，品牌安全兜底保证品牌资产。
+
+配合本文的 Go 定向匹配引擎、Python 全链路脚本与自动化审计代码，你可以把 DV360 定向从"手点 UI"升级为"可代码化、可审计、可预测"的工程化能力。
