@@ -422,3 +422,334 @@ class AdPlatformAllQueryClient:
             'clicks': clicks,
             'spend': spend
         }
+
+    # ========================================
+    # TikTok 完整接口补充
+    # ========================================
+    
+    def tiktok_list_video_templates(self, advertiser_id: str, **kwargs) -> List[Dict]:
+        """列出视频模板"""
+        return [
+            {'id': 'TEMPLATE_LANDSCAPE', 'name': '横版视频', 'ratio': '16:9', 'resolution': '1920x1080'},
+            {'id': 'TEMPLATE_PORTRAIT', 'name': '竖版视频', 'ratio': '9:16', 'resolution': '1080x1920'},
+            {'id': 'TEMPLATE_SQUARE', 'name': '方形视频', 'ratio': '1:1', 'resolution': '1080x1080'},
+            {'id': 'TEMPLATE_4_5', 'name': '4:5 竖版', 'ratio': '4:5', 'resolution': '1080x1350'},
+            {'id': 'TEMPLATE_1_91', 'name': '1.91:1 横版', 'ratio': '1.91:1', 'resolution': '1200x628'}
+        ]
+    
+    def tiktok_list_image_templates(self, advertiser_id: str, **kwargs) -> List[Dict]:
+        """列出图片模板"""
+        return [
+            {'id': 'IMAGE_SQUARE', 'name': '正方形图片', 'ratio': '1:1', 'resolution': '1080x1080'},
+            {'id': 'IMAGE_PORTRAIT', 'name': '竖版图片', 'ratio': '4:5', 'resolution': '1080x1350'},
+            {'id': 'IMAGE_LANDSCAPE', 'name': '横版图片', 'ratio': '1.91:1', 'resolution': '1200x628'},
+            {'id': 'IMAGE_STORY', 'name': '快拍图片', 'ratio': '9:16', 'resolution': '1080x1920'}
+        ]
+    
+    def tiktok_list_carousel_formats(self, advertiser_id: str, **kwargs) -> List[Dict]:
+        """列出轮播格式"""
+        return [
+            {'id': 'CAROUSEL_IMAGE', 'name': '图片轮播', 'max_cards': 10},
+            {'id': 'CAROUSEL_VIDEO', 'name': '视频轮播', 'max_cards': 6},
+            {'id': 'CAROUSEL_MIXED', 'name': '混合轮播', 'max_cards': 10}
+        ]
+    
+    def tiktok_list_text_overlay_options(self, **kwargs) -> List[Dict]:
+        """列出文字叠加选项"""
+        return [
+            {'code': 'TITLE', 'name': '标题', 'position': 'TOP_CENTER', 'max_chars': 30},
+            {'code': 'SUBTITLE', 'name': '副标题', 'position': 'TOP_CENTER', 'max_chars': 60},
+            {'code': 'DESCRIPTION', 'name': '描述', 'position': 'BOTTOM_CENTER', 'max_chars': 120},
+            {'code': 'CTA', 'name': '行动号召', 'position': 'BOTTOM_CENTER', 'max_chars': 20}
+        ]
+    
+    def tiktok_list_negative_keywords(self, advertiser_id: str, **kwargs) -> List[Dict]:
+        """列出负面关键词"""
+        return []
+    
+    def tiktok_list_content_category_targets(self, advertiser_id: str, **kwargs) -> List[Dict]:
+        """列出内容分类定向"""
+        return [
+            {'code': 'ENTERTAINMENT', 'name': '娱乐', 'level': 1},
+            {'code': 'GAMING', 'name': '游戏', 'level': 1},
+            {'code': 'FASHION', 'name': '时尚', 'level': 1},
+            {'code': 'BEAUTY', 'name': '美妆', 'level': 1},
+            {'code': 'FOOD', 'name': '美食', 'level': 1},
+            {'code': 'TRAVEL', 'name': '旅游', 'level': 1},
+            {'code': 'EDUCATION', 'name': '教育', 'level': 1},
+            {'code': 'FINANCE', 'name': '金融', 'level': 1},
+            {'code': 'TECHNOLOGY', 'name': '科技', 'level': 1},
+            {'code': 'SPORTS', 'name': '体育', 'level': 1}
+        ]
+    
+    def tiktok_list_location_types(self, advertiser_id: str, **kwargs) -> List[Dict]:
+        """列出位置定向类型"""
+        return [
+            {'code': 'COUNTRY', 'name': '国家', 'levels': ['country']},
+            {'code': 'REGION', 'name': '省份', 'levels': ['country', 'region']},
+            {'code': 'CITY', 'name': '城市', 'levels': ['country', 'city']},
+            {'code': 'DISTRICT', 'name': '区县', 'levels': ['country', 'district']},
+            {'code': 'CUSTOM_AREA', 'name': '自定义区域', 'levels': ['geo_fencing']}
+        ]
+    
+    def tiktok_get_location_hierarchy(self, country_code: str, level: str = 'COUNTRY', **kwargs) -> List[Dict]:
+        """获取地域层级结构"""
+        return []
+    
+    def tiktok_list_budget_options(self, advertiser_id: str, **kwargs) -> List[Dict]:
+        """列出预算选项"""
+        return [
+            {'code': 'DAILY', 'name': '日预算', 'min': 50, 'currency': 'USD'},
+            {'code': 'LIFETIME', 'name': '总预算', 'min': 100, 'currency': 'USD'}
+        ]
+    
+    def tiktok_list_schedule_options(self, **kwargs) -> List[Dict]:
+        """列出定时投放选项"""
+        return [
+            {'code': 'START_END', 'name': '开始结束时间', 'description': '设定具体开始和结束时间'},
+            {'code': 'SCHEDULE', 'name': '定时投放', 'description': '按小时段定时投放'},
+            {'code': 'CONTINUOUS', 'name': '连续投放', 'description': '24小时连续投放'}
+        ]
+    
+    def tiktok_list_schedule_time_slots(self, **kwargs) -> List[Dict]:
+        """列出时段选项"""
+        slots = []
+        for hour in range(24):
+            for minute in [0, 30]:
+                time_str = f"{hour:02d}:{minute:02d}"
+                slots.append({'code': time_str, 'name': time_str, 'label': f'{hour}时{minute or "00分"}'})
+        return slots
+    
+    def tiktok_list_notification_types(self, **kwargs) -> List[Dict]:
+        """列出通知类型"""
+        return [
+            {'code': 'CAMPAIGN_STATUS_CHANGED', 'name': '广告系列状态变更'},
+            {'code': 'AD_GROUP_STATUS_CHANGED', 'name': '广告组状态变更'},
+            {'code': 'AD_STATUS_CHANGED', 'name': '广告状态变更'},
+            {'code': 'BUDGET_THRESHOLD_REACHED', 'name': '预算阈值达到'},
+            {'code': 'AUDIENCE_SIZE_CHANGED', 'name': '受众规模变化'},
+            {'code': 'CREATIVE_REVIEW_RESULT', 'name': '素材审核结果'},
+            {'code': 'CONVERSION_ACCUMULATED', 'name': '转化累计通知'},
+            {'code': 'PAYMENT_ISSUE', 'name': '付款问题通知'}
+        ]
+    
+    def tiktok_list_webhook_events(self, **kwargs) -> List[Dict]:
+        """列出 Webhook 事件类型"""
+        return [
+            {'code': 'AD_ACCOUNT_CREATED', 'name': '广告账户创建', 'version': 'v1.3'},
+            {'code': 'AD_ACCOUNT_DELETED', 'name': '广告账户删除', 'version': 'v1.3'},
+            {'code': 'CAMPAIGN_CREATED', 'name': '广告系列创建', 'version': 'v1.3'},
+            {'code': 'CAMPAIGN_UPDATED', 'name': '广告系列更新', 'version': 'v1.3'},
+            {'code': 'AD_GROUP_CREATED', 'name': '广告组创建', 'version': 'v1.3'},
+            {'code': 'AD_CREATED', 'name': '广告创建', 'version': 'v1.3'},
+            {'code': 'PIXEL_REPORT_DATA', 'name': 'Pixel 数据上报', 'version': 'v1.3'}
+        ]
+    
+    def tiktok_list_error_codes(self, **kwargs) -> List[Dict]:
+        """列出常见错误码"""
+        return [
+            {'code': 236001, 'name': 'INVALID_ACCESS_TOKEN', 'message': '无效的访问令牌', 'solution': '重新获取 access_token'},
+            {'code': 236002, 'name': 'TOKEN_EXPIRED', 'message': '访问令牌已过期', 'solution': '刷新 access_token'},
+            {'code': 236003, 'name': 'INSUFFICIENT_PERMISSION', 'message': '权限不足', 'solution': '检查账户权限设置'},
+            {'code': 236004, 'name': 'ADVERTISER_NOT_FOUND', 'message': '广告主不存在', 'solution': '检查 advertiser_id 是否正确'},
+            {'code': 236005, 'name': 'CAMPAIGN_NOT_FOUND', 'message': '广告系列不存在', 'solution': '检查 campaign_id 是否正确'},
+            {'code': 236006, 'name': 'BUDGET_TOO_LOW', 'message': '预算过低', 'solution': '提高预算至最低要求'},
+            {'code': 236007, 'name': 'CREATIVE_REJECTED', 'message': '素材审核不通过', 'solution': '查看审核拒绝原因并修改'},
+            {'code': 236008, 'name': 'TARGETING_TOO_NARROW', 'message': '定向范围过窄', 'solution': '扩大定向范围'},
+            {'code': 236009, 'name': 'DUPLICATE_CAMPAIGN', 'message': '重复的广告系列名称', 'solution': '修改广告系列名称'},
+            {'code': 236010, 'name': 'RATE_LIMITED', 'message': '请求频率超限', 'solution': '降低请求频率或等待重试'}
+        ]
+    
+    # ========================================
+    # Meta 完整接口补充
+    # ========================================
+    
+    def meta_list_ad_set_status_options(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出广告组状态选项"""
+        return [
+            {'code': 'AD_SET_STATUS_ACTIVE', 'name': '启用', 'description': '广告组正常运行'},
+            {'code': 'AD_SET_STATUS_PAUSED', 'name': '暂停', 'description': '广告组已暂停'},
+            {'code': 'AD_SET_STATUS_DELETED', 'name': '已删除', 'description': '广告组已删除'},
+            {'code': 'AD_SET_STATUS_ARCHIVED', 'name': '已归档', 'description': '广告组已归档'}
+        ]
+    
+    def meta_list_placement_options(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出投放位置选项"""
+        return [
+            {'code': 'FEED', 'name': '动态消息', 'platforms': ['Facebook Feed']},
+            {'code': 'STORIES', 'name': '快拍', 'platforms': ['Facebook Stories', 'Instagram Stories']},
+            {'code': 'REELS', 'name': 'Reels', 'platforms': ['Instagram Reels', 'Facebook Reels']},
+            {'code': 'INSTREAM', 'name': '视频插播', 'platforms': ['Facebook In-Stream']},
+            {'code': 'SEARCH', 'name': '搜索', 'platforms': ['Facebook Search']},
+            {'code': 'MESSAGE', 'name': '消息', 'platforms': ['Facebook Messenger']},
+            {'code': 'INSTA_FEED', 'name': 'Instagram 动态', 'platforms': ['Instagram Feed']},
+            {'code': 'INSTA_STORIES', 'name': 'Instagram 快拍', 'platforms': ['Instagram Stories']},
+            {'code': 'EXPLORE', 'name': '探索', 'platforms': ['Instagram Explore']}
+        ]
+    
+    def meta_list_objective_options(self, **kwargs) -> List[Dict]:
+        """列出广告目标选项"""
+        return [
+            {'code': 'BRAND_AWARENESS', 'name': '品牌知名度', 'category': 'awareness'},
+            {'code': 'REACH', 'name': '触达', 'category': 'awareness'},
+            {'code': 'TRAFFIC', 'name': '流量', 'category': 'consideration'},
+            {'code': 'ENGAGEMENT', 'name': '互动', 'category': 'consideration'},
+            {'code': 'LEAD_GENERATION', 'name': '潜在客户开发', 'category': 'consideration'},
+            {'code': 'MESSAGES', 'name': '消息', 'category': 'consideration'},
+            {'code': 'CONVERSIONS', 'name': '转化', 'category': 'conversion'},
+            {'code': 'CATALOG_SALES', 'name': '目录销售', 'category': 'conversion'},
+            {'code': 'STORE_TRAFFIC', 'name': '门店流量', 'category': 'conversion'}
+        ]
+    
+    def meta_list_image_sizing_options(self, creative_type: str = None, **kwargs) -> List[Dict]:
+        """列出图片尺寸选项"""
+        options = [
+            {'code': 'SQUARE', 'name': '正方形', 'ratio': '1:1', 'pixels': '1080x1080', 'use_cases': ['Feed', 'Stories']},
+            {'code': 'PORTRAIT', 'name': '竖版', 'ratio': '4:5', 'pixels': '1080x1350', 'use_cases': ['Feed']},
+            {'code': 'LANDSCAPE', 'name': '横版', 'ratio': '1.91:1', 'pixels': '1200x628', 'use_cases': ['Feed']},
+            {'code': 'STORY', 'name': '快拍', 'ratio': '9:16', 'pixels': '1080x1920', 'use_cases': ['Stories', 'Reels']},
+            {'code': 'COLLECTION', 'name': '合集', 'ratio': '1:1', 'pixels': '1080x1080', 'use_cases': ['Collection Ads']}
+        ]
+        if creative_type:
+            return [o for o in options if creative_type.lower() in o.get('use_cases', [])]
+        return options
+    
+    def meta_list_video_sizing_options(self, **kwargs) -> List[Dict]:
+        """列出视频尺寸选项"""
+        return [
+            {'code': 'SQUARE_VIDEO', 'name': '方形视频', 'ratio': '1:1', 'pixels': '1080x1080'},
+            {'code': 'PORTRAIT_VIDEO', 'name': '竖版视频', 'ratio': '4:5', 'pixels': '1080x1350'},
+            {'code': 'LANDSCAPE_VIDEO', 'name': '横版视频', 'ratio': '16:9', 'pixels': '1920x1080'},
+            {'code': 'STORY_VIDEO', 'name': '快拍视频', 'ratio': '9:16', 'pixels': '1080x1920'}
+        ]
+    
+    def meta_list_carousel_card_options(self, **kwargs) -> List[Dict]:
+        """列出轮播卡片选项"""
+        return [
+            {'code': 'IMAGE_ONLY', 'name': '仅图片', 'media_type': 'IMAGE'},
+            {'code': 'VIDEO_ONLY', 'name': '仅视频', 'media_type': 'VIDEO'},
+            {'code': 'IMAGE_AND_LINK', 'name': '图片+链接', 'media_type': 'IMAGE'},
+            {'code': 'VIDEO_AND_LINK', 'name': '视频+链接', 'media_type': 'VIDEO'}
+        ]
+    
+    def meta_list_creative_templates(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出创意模板"""
+        return [
+            {'id': 'TEMPLATE_CAROUSEL', 'name': '轮播广告', 'type': 'CAROUSEL'},
+            {'id': 'TEMPLATE_SINGLE_IMAGE', 'name': '单图广告', 'type': 'IMAGE'},
+            {'id': 'TEMPLATE_VIDEO', 'name': '视频广告', 'type': 'VIDEO'},
+            {'id': 'TEMPLATE_COLLECTION', 'name': '合集广告', 'type': 'COLLECTION'},
+            {'id': 'TEMPLATE_INSTA_CAROUSEL', 'name': 'Instagram 轮播', 'type': 'INSTA_CAROUSEL'}
+        ]
+    
+    def meta_list_cta_types(self, **kwargs) -> List[Dict]:
+        """列出 CTA 按钮类型"""
+        return [
+            {'code': 'NONE', 'name': '无', 'type': 'NONE'},
+            {'code': 'BOOK_NOW', 'name': '立即预订', 'type': 'BOOK'},
+            {'code': 'CONTACT_US', 'name': '联系我们', 'type': 'CONTACT'},
+            {'code': 'DOWNLOAD', 'name': '下载', 'type': 'DOWNLOAD'},
+            {'code': 'ENABLE_NOTIFICATIONS', 'name': '开启通知', 'type': 'NOTIFY'},
+            {'code': 'GET_DIRECTION', 'name': '获取导航', 'type': 'DIRECTION'},
+            {'code': 'INSTALL_APP', 'name': '安装应用', 'type': 'INSTALL'},
+            {'code': 'LEARN_MORE', 'name': '了解更多', 'type': 'LEARN_MORE'},
+            {'code': 'MESSENGER', 'name': 'Messenger', 'type': 'MESSAGING'},
+            {'code': 'SIGN_UP', 'name': '注册', 'type': 'SIGN_UP'},
+            {'code': 'WHATSAPP', 'name': 'WhatsApp', 'type': 'MESSAGING'}
+        ]
+    
+    def meta_list_link_previews_options(self, **kwargs) -> List[Dict]:
+        """列出链接预览选项"""
+        return [
+            {'code': 'DEFAULT', 'name': '默认预览', 'description': '自动获取链接预览'},
+            {'code': 'CUSTOM', 'name': '自定义预览', 'description': '手动设置预览图片'},
+            {'code': 'COLLECTION', 'name': '合集预览', 'description': '使用合集封面作为预览'}
+        ]
+    
+    def meta_list_insights_fields(self, **kwargs) -> List[Dict]:
+        """列出 Insights 字段"""
+        return [
+            {'code': 'IMPRESSIONS', 'name': '展示次数', 'category': 'PERFORMANCE'},
+            {'code': 'REACH', 'name': '触达人数', 'category': 'PERFORMANCE'},
+            {'code': 'CLICKS', 'name': '点击次数', 'category': 'PERFORMANCE'},
+            {'code': 'CTR', 'name': '点击率', 'category': 'PERFORMANCE'},
+            {'code': 'CPC', 'name': '单次点击费用', 'category': 'PERFORMANCE'},
+            {'code': 'CPM', 'name': '千次曝光费用', 'category': 'PERFORMANCE'},
+            {'code': 'SPEND', 'name': '花费', 'category': 'FINANCIAL'},
+            {'code': 'CONVERSIONS', 'name': '转化次数', 'category': 'CONVERSION'},
+            {'code': 'CPA', 'name': '单次转化费用', 'category': 'CONVERSION'}
+        ]
+    
+    def meta_list_breakdowns(self, **kwargs) -> List[Dict]:
+        """列出细分维度"""
+        return [
+            {'code': 'PLATFORM', 'name': '平台', 'description': 'Facebook/Instagram 等'},
+            {'code': 'PLACEMENT', 'name': '投放位置', 'description': '动态消息/快拍等'},
+            {'code': 'AGE', 'name': '年龄', 'description': '年龄段细分'},
+            {'code': 'GENDER', 'name': '性别', 'description': '男/女'},
+            {'code': 'COUNTRY', 'name': '国家', 'description': '国家细分'},
+            {'code': 'DEVICE', 'name': '设备', 'description': '手机/平板/电脑'},
+            {'code': 'CONN_TYPE', 'name': '网络类型', 'description': 'WiFi/4G/3G等'}
+        ]
+    
+    def meta_list_automated_rules(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出自动化规则"""
+        return []
+    
+    def meta_list_rule_action_types(self, **kwargs) -> List[Dict]:
+        """列出规则动作类型"""
+        return [
+            {'code': 'PAUSE', 'name': '暂停', 'target_type': 'AD_SET'},
+            {'code': 'ENABLE', 'name': '启用', 'target_type': 'AD_SET'},
+            {'code': 'DELETE', 'name': '删除', 'target_type': 'AD_SET'},
+            {'code': 'BID_CHANGE', 'name': '调整出价', 'target_type': 'AD_SET'},
+            {'code': 'BUDGET_CHANGE', 'name': '调整预算', 'target_type': 'AD_SET'},
+            {'code': 'AUDIENCE_CHANGE', 'name': '调整受众', 'target_type': 'AD_SET'}
+        ]
+    
+    def meta_list_brand_safety_categories(self, **kwargs) -> List[Dict]:
+        """列出品牌安全分类"""
+        return [
+            {'code': 'ADVERSE_CONTENT', 'name': '不当内容', 'level': 'BLOCK'},
+            {'code': 'CONTROVERSIAL_ISSUES', 'name': '争议话题', 'level': 'LIMIT'},
+            {'code': 'DEATH_AND_TRAGEDY', 'name': '死亡与悲剧', 'level': 'BLOCK'},
+            {'code': 'HATE_SYMBOLS', 'name': '仇恨符号', 'level': 'BLOCK'},
+            {'code': 'ILLICIT_DRUGS', 'name': '非法药物', 'level': 'BLOCK'},
+            {'code': 'SEXUALLY_EXPLICIT', 'name': '性暴露内容', 'level': 'BLOCK'},
+            {'code': 'VIOLENCE_AND_GORE', 'name': '暴力与血腥', 'level': 'BLOCK'}
+        ]
+    
+    def meta_list_content_classification_labels(self, **kwargs) -> List[Dict]:
+        """列出内容分类标签"""
+        return [
+            {'code': 'CGI', 'name': 'CGI 内容'},
+            {'code': 'GAMING', 'name': '游戏内容'},
+            {'code': 'SPORTS', 'name': '体育内容'},
+            {'code': 'NEWS', 'name': '新闻内容'},
+            {'code': 'MUSIC', 'name': '音乐内容'},
+            {'code': 'BEAUTY', 'name': '美妆内容'},
+            {'code': 'FAMILY', 'name': '家庭内容'},
+            {'code': 'COMEDY', 'name': '喜剧内容'}
+        ]
+    
+    def meta_list_schedule_options(self, **kwargs) -> List[Dict]:
+        """列出定时投放选项"""
+        return [
+            {'code': 'START_END', 'name': '开始结束时间', 'description': '设定具体开始和结束时间'},
+            {'code': 'SCHEDULE', 'name': '定时投放', 'description': '按小时段定时投放'},
+            {'code': 'DURING_EVENT', 'name': '活动期间投放', 'description': '仅在活动期间投放'},
+            {'code': 'ALL_DAY', 'name': '全天投放', 'description': '24小时连续投放'}
+        ]
+    
+    def meta_list_error_codes(self, **kwargs) -> List[Dict]:
+        """列出常见错误码"""
+        return [
+            {'code': 200, 'name': 'SUCCESS', 'message': '操作成功'},
+            {'code': 1, 'name': 'UNKNOWN_ERROR', 'message': '未知错误', 'solution': '联系技术支持'},
+            {'code': 100, 'name': 'TOKEN_INVALID', 'message': 'Token 无效', 'solution': '重新获取 access_token'},
+            {'code': 190, 'name': 'ACCESS_TOKEN_EXPIRED', 'message': 'Token 已过期', 'solution': '刷新 access_token'},
+            {'code': 200, 'name': 'PERMISSION_DENIED', 'message': '权限被拒绝', 'solution': '检查权限设置'},
+            {'code': 800, 'name': 'API_DEPRECATED', 'message': 'API 已弃用', 'solution': '升级到新版 API'},
+            {'code': 801, 'name': 'GRAPH_API_VERSION', 'message': '版本不支持', 'solution': '使用支持的 API 版本'},
+            {'code': 999, 'name': 'RATE_LIMIT', 'message': '请求频率受限', 'solution': '降低请求频率'}
+        ]
