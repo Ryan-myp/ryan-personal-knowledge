@@ -1362,3 +1362,123 @@ ROAS 目标的成败高度依赖**价值回传的准确性**。排查：
 - 排查要用数据说话：`dv360_get_pacing_rate`、`dv360_get_line_item_performance` 是核心诊断工具。
 - 一次只改一个变量，保留对照，观察学习期后再下结论。
 
+
+---
+
+## 五、自测题
+
+以下自测题用于检验对 DV360 竞价策略的理解。建议先不看答案独立作答，再展开 `<details>` 对照。
+
+### 题目 1：出价策略选型
+
+某电商团队有一个 DP 效果 Line Item，历史 CPA 约 $120，历史 ROAS 约 2.5x，转化回传（含订单金额）准确。他们希望**在控制成本的同时最大化转化量**，且不想频繁手动调价。请给出最优的出价策略选择，并说明理由（一句话）。同时指出：如果改为主打 ROAS，关键前提是什么？
+
+<details>
+<summary>查看答案</summary>
+
+**推荐**：`Target CPA`（目标 CPA 设为历史 $120 的略紧值，如 $100-$110）。
+
+**理由**：团队希望"控制成本 + 最大化转化量"，且已有足够的转化数据与准确回传，Target CPA 是最直接的"成本上限 + 量最大化"组合：引擎在不超过目标 CPA 的前提下优先竞得高 pCVR 机会。
+
+**若改打 ROAS**：关键前提是**转化价值（订单金额）回传准确**。ROAS 目标（如 3.0）依赖 `expected_revenue = pCVR × conversion_value`，若 value 回传缺失或货币单位错误，模型会基于失真价值出价，导致 ROAS 目标失真。建议先验证 value 回传与业务系统一致后再切入 tROAS。
+
+</details>
+
+### 题目 2：oCPM 公式计算
+
+某广告主设置目标 CPA = $40，DV360 对某展示机会预测 pCVR = 2%（0.02）。请用 oCPM 公式计算该机会的最优出价 CPM。若该机会的 bid floor = $1500 CPM，会发生什么？该如何处理？
+
+<details>
+<summary>查看答案</summary>
+
+**计算**：
+`CPM = eCPA × pCVR × 1000 = $40 × 0.02 × 1000 = $800`
+
+所以对该机会的理论出价是 **$800 CPM**。
+
+**若 floor = $1500**：计算出价 $800 低于 floor $1500，该机会无法参与竞拍（被拒）。若大量机会的 floor 都高于 $40 目标对应的计算出价，整个 Line Item 会无量（delivery≈0）。
+
+**处理**，二选一或组合：
+1. 调高目标 CPA（如 $75 → 计算出价 $1500），使其达到 floor 水平——但同时每转化成本变高；
+2. 接受放弃这类高 floor 库存，转向 floor 更低的库存池或放宽定向；
+3. 检查是否值得为该昂贵库存出这么高价格（结合该机会的实际转化价值）。
+
+</details>
+
+### 题目 3：Bid Surge 的适用性判断
+
+你的团队有两条 Line Item：A 是品牌曝光（手动 CPM $10），B 是效果转化（Target CPA $80）。今明两天是年度大促，你想用 Bid Surge 提升投放表现。请问：
+1. 对 A、B 各自叠加 Bid Surge 是否合适？为什么？
+2. 若对 A 叠加 +100% Surge，需要注意哪些风险与控制手段？
+
+<details>
+<summary>查看答案</summary>
+
+**1. 适用性**：
+- **A（品牌曝光）Bid Surge 相对合适**：大促期间品牌可见度冲刺正是 Bid Surge 的典型场景。可在大促当天给 A 叠加 Surge，提升 win rate 与可见度，并配合频率上限。
+- **B（效果转化）不适合叠加 Bid Surge**：Surge 会无差别抬高出价，效果 Line Item 的 CPA 会立刻恶化；且 Surge 会污染自动出价模型的成本信号、重置学习节奏。**黄金法则：效果目标 ≠ Surge 场景。**
+
+**2. 对 A 叠加 +100% 的风险与控制**：
+- 成本翻倍（第一价格下更明显）；
+- 预算可能提前耗尽（OVERDELIVERED）导致后半段无投放；
+- 同用户被高强度触达影响体验。
+
+**控制手段**：
+- 为 Surge 日单独预留/扩充预算；
+- 限制 Surge 窗口（只覆盖大促核心时段，不 24h 无差别）；
+- 配合 frequency cap；
+- 设置出价上限（bid ceiling）防单次出价失控；
+- Surge 结束后留 1-2 天观察回落，避免污染长期数据。
+
+</details>
+
+### 题目 4：pacing / 交付诊断
+
+你发现某自动出价 Line Item 连续 5 天 impressions 为 0（完全没量），但预算充足、定向也不算窄。请列出至少 4 个可能的根因，并说明你会用哪些 API 或数据来逐一排查。
+
+<details>
+<summary>查看答案</summary>
+
+**可能的根因**：
+1. **出价普遍低于 floor**：Target 设得过低，导致所有机会计算出价均低于各库存 floor，全部被拒。
+2. **仍处于学习期早期且探索不足**：模型还没找到可中标的机会组合。
+3. **定向 + 库存组合无合格机会**：特定受众 × 特定广告位同时期内无库存。
+4. **上层预算/budget allocation 卡死**：IO 或账户层预算分配为 0，Line Item 无钱可花。
+5. **pacing 模式异常 / 状态 stuck**：pacingStatus 异常（如被暂停、under-delivery 告警）。
+6. **转化回传异常导致模型认为所有机会价值过低**：pCVR 被系统性低估。
+
+**排查工具**：
+- `dv360_get_pacing_rate(advertiser_id, line_item_id)`：查看 pacingStatus、pacingMode、currentRate；
+- `dv360_get_line_item_performance`：看 impressions、bid requests、matches、delivery；
+- 查看 bid floor / 竞拍日志：确认请求被拒原因（是否 floor）；
+- 检查 IO/账户层 `dv360_list_budget_allocations`：确认预算分配非 0；
+- 核对转化回传是否正常（模型价值信号是否被扭曲）。
+
+</details>
+
+### 题目 5：Target ROAS 的价值回传陷阱
+
+某团队把出价策略从 Target CPA 切到 Target ROAS（目标 5.0），但两周后 ROAS 报表显示只有 1.5x，远低于目标，且成本异常偏低、量骤减。请分析最可能的根因，并给出排查与修复步骤。
+
+<details>
+<summary>查看答案</summary>
+
+**最可能根因**：**转化价值（conversion value）回传缺失或严重偏低**。Target ROAS 出价公式 `allowedCost = (pCVR × conversion_value) / ROAS`，若 `conversion_value` 未正确回传（为 0 或很小），模型计算出的允许成本被系统性压低 → 出价大幅偏低 → 量骤减、成本偏低、ROAS 统计失真（看起来"很省"但其实是没做对比）。
+
+**排查步骤**：
+1. 核对 Floodlight/转化回传是否携带动态订单金额（value）；
+2. 交叉验证 DV360 报表中的 `revenue / conversion_value` 总和与业务系统订单总额是否一致；
+3. 检查 value 货币单位、是否重复计数、归因定义是否变化；
+4. 若 value 确实缺失，先修复回传，验证后再继续 ROAS；必要时临时切回 Target CPA 作为过渡。
+
+</details>
+
+### 结束语
+
+竞价策略是 DV360 投放的核心杠杆。掌握了本文档的手动/自动出价取舍、自动出价内部机制（预测→出价→pacing）、tCPA/tROAS/oCPM 数学、Bid Surge 的使用边界与风险、PG 保量算法以及 floor/拍卖机制的影响，再配合真实的 API（`dv360_get_pacing_rate`、`dv360_update_line_item`、`dv360_get_line_item_performance`、`dv360_list_recommendations` 等）做常态化监控与调优，你就能把出价从"经验试错"提升为"数据驱动的确定性工程"。
+
+记住三条最重要的实战原则：
+1. **用数据驱动，而非直觉**：每次调整都要用 API 报表验证，保留对照组；
+2. **学习期内冻结一切**：自动出价的成败取决于给模型一个稳定的学习窗口；
+3. **Surge 与效果目标隔离**：Bid Surge 是品牌冲刺的利器，也是效果预算与 CPA 的隐形杀手，务必隔离使用。
+

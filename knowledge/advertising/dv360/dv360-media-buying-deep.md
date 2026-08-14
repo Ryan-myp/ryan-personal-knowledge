@@ -1646,7 +1646,291 @@ func (m *Metrics) Log(intervalLabel string) {
 | 全量 | 跑双11 配置 | 监控告警就位、预算安全阀生效 |
 
 ---
-## 七、附录：单位换算、字段速查与参考
+## 七、Go 生产级实现：媒体购买执行引擎
+
+前几章给出了 Python 业务封装与 Go 组件片段，本章把它们**组装成一个可运行的媒体购买执行引擎**。引擎输入是"媒介采购计划"，输出是"IO/LineItem/创意已就绪 + pacing 监控运行"。设计目标：**幂等、可重试、可观测、预算安全**。
+
+### 7.1 引擎整体结构
+
+```
+mediabuying/
+├── engine.go          # 编排入口：执行采购计划
+├── io.go              # IO 生命周期（read-modify-write 状态切换）
+├── lineitem.go        # LineItem 创建/批量/更新
+├── pacing.go          # pacing 采集与调价（BidTuner）
+├── creative.go        # 创意审批守卫与挂载
+├── idempotency.go     # 幂等创建器
+├── retry.go           # 指数退避重试
+├── metrics.go         # 指标采集
+└── types.go           # 领域类型定义
+```
+
+### 7.2 领域类型（types.go）
+
+```go
+package mediabuying
+
+import "time"
+
+// BuyPlan 一份媒体采购计划：对应"双11"这样的业务需求。
+type BuyPlan struct {
+	AdvertiserID string
+	Currency     string
+	TotalMicros  int64            // IO 总预算（micros）
+	Start        time.Time
+	End          time.Time
+	Segments     []Segment        // 每个 Segment 生成一个 LineItem
+}
+
+// Segment 一个投放段（≈一个 flight）。
+type Segment struct {
+	Name        string
+	Type        string // "display" / "video"
+	Start       time.Time
+	End         time.Time
+	BudgetMicros int64
+	Pacing      string // PACING_MODE_EVEN / PACING_MODE_ASAP
+	CPMMicros   int64
+	Targeting   map[string]any
+	CreativeIDs []string
+}
+
+// LineItemSnapshot 用于幂等比对与监控。
+type LineItemSnapshot struct {
+	ID     string
+	Name   string
+	Status string
+}
+```
+
+### 7.3 幂等创建器（idempotency.go）
+
+```go
+package mediabuying
+
+import (
+	"crypto/sha1"
+	"fmt"
+	"log"
+)
+
+// IdempotentCreator 基于稳定命名 + 先查再建的幂等创建器。
+type IdempotentCreator struct {
+	ListExisting func(advertiserID string) ([]LineItemSnapshot, error)
+	Create       func(advertiserID, name string, cfg map[string]any) (LineItemSnapshot, error)
+}
+
+// StableName 用配置 hash 生成稳定名称：同名即同配置。
+func (c *IdempotentCreator) StableName(prefix string, cfg map[string]any) string {
+	sum := sha1.Sum([]byte(fmt.Sprintf("%v", cfg)))
+	return fmt.Sprintf("%s-%x", prefix, sum[:4])
+}
+
+// CreateOnce 先查再建，幂等创建。
+func (c *IdempotentCreator) CreateOnce(advertiserID, prefix string, cfg map[string]any) (LineItemSnapshot, bool, error) {
+	name := c.StableName(prefix, cfg)
+	existing, err := c.ListExisting(advertiserID)
+	if err != nil {
+		return LineItemSnapshot{}, false, err
+	}
+	for _, li := range existing {
+		if li.Name == name {
+			log.Printf("[idem] reuse %s (%s)", li.Name, li.ID)
+			return li, false, nil
+		}
+	}
+	created, err := c.Create(advertiserID, name, cfg)
+	if err != nil {
+		return LineItemSnapshot{}, false, err
+	}
+	log.Printf("[idem] created %s (%s)", created.Name, created.ID)
+	return created, true, nil
+}
+```
+
+### 7.4 引擎编排入口（engine.go）
+
+```go
+package mediabuying
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"sync"
+	"time"
+)
+
+// Engine 媒体购买执行引擎。
+type Engine struct {
+	AdvertiserID string
+	Creator      *IdempotentCreator
+	BidTuner     *BidTuner
+	Metrics      *Metrics
+	FetchPacing  func(advertiserID, lineItemID string) (*PacingSnapshot, error)
+	UpdateBid    func(advertiserID, lineItemID string, cpmMicros int64) error
+}
+
+// Execute 执行采购计划：为每个 Segment 幂等创建 LineItem。
+func (e *Engine) Execute(ctx context.Context, plan *BuyPlan, pool *WorkerPool) error {
+	var wg sync.WaitGroup
+	errCh := make(chan error, len(plan.Segments))
+
+	for _, seg := range plan.Segments {
+		seg := seg
+		pool.Run(func() {
+			defer wg.Done()
+			cfg := map[string]any{
+				"type":        seg.Type,
+				"flightStart": seg.Start.Format("2006-01-02"),
+				"flightEnd":   seg.End.Format("2006-01-02"),
+				"budgetMicros": seg.BudgetMicros,
+				"pacing":      seg.Pacing,
+				"cpmMicros":   seg.CPMMicros,
+				"creativeIds": seg.CreativeIDs,
+			}
+			li, reused, err := e.Creator.CreateOnce(e.AdvertiserID, seg.Name, cfg)
+			if err != nil {
+				errCh <- fmt.Errorf("create %s: %w", seg.Name, err)
+				return
+			}
+			if !reused {
+				log.Printf("created line item %s", li.ID)
+			}
+			select {
+			case <-ctx.Done():
+			default:
+			}
+		})
+	}
+	pool.Wait()
+	close(errCh)
+	for err := range errCh {
+		return err
+	}
+	return nil
+}
+
+// StartPacingLoop 启动 pacing 监控/调价循环（后台 goroutine）。
+func (e *Engine) StartPacingLoop(ctx context.Context, lineItemIDs []string, interval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				log.Println("pacing loop stopped")
+				return
+			case <-ticker.C:
+				for _, id := range lineItemIDs {
+					snap, err := e.FetchPacing(e.AdvertiserID, id)
+					if err != nil {
+						log.Printf("fetch pacing %s: %v", id, err)
+						continue
+					}
+					e.Metrics.SetPacingRate(snap.PacingRate)
+					if snap.PacingRate < 0.8 {
+						next := e.BidTuner.NextBid(snap.PacingRate, snap.CurrentCPMMicros)
+						if next != snap.CurrentCPMMicros {
+							log.Printf("少投 %s: cpm %d -> %d", id, snap.CurrentCPMMicros, next)
+							_ = e.UpdateBid(e.AdvertiserID, id, next)
+						}
+					}
+				}
+			}
+		}
+	}()
+}
+```
+
+### 7.5 Pacing 快照与出价微调（pacing.go）
+
+```go
+package mediabuying
+
+// PacingSnapshot 扩展：加入当前 CPM，供 BidTuner 使用。
+type PacingSnapshot struct {
+	LineItemID       string
+	PacingRate       float64
+	CurrentCPMMicros int64
+}
+```
+
+### 7.6 引擎自测（engine_test.go 骨架）
+
+```go
+package mediabuying
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+)
+
+// 用 fake 依赖验证幂等：同样配置创建两次，只产生一个实体。
+func TestIdempotentCreate(t *testing.T) {
+	var created []LineItemSnapshot
+	creator := &IdempotentCreator{
+		ListExisting: func(advertiserID string) ([]LineItemSnapshot, error) {
+			return created, nil
+		},
+		Create: func(advertiserID, name string, cfg map[string]any) (LineItemSnapshot, error) {
+			li := LineItemSnapshot{ID: fmt.Sprintf("li_%d", len(created)+1), Name: name, Status: "ACTIVE"}
+			created = append(created, li)
+			return li, nil
+		},
+	}
+	cfg := map[string]any{"budgetMicros": int64(1000)}
+	_, reused1, err := creator.CreateOnce("adv1", "seg", cfg)
+	if err != nil || reused1 {
+		t.Fatalf("first create should create: reused=%v err=%v", reused1, err)
+	}
+	_, reused2, err := creator.CreateOnce("adv1", "seg", cfg)
+	if err != nil || !reused2 {
+		t.Fatalf("second create should reuse: reused=%v err=%v", reused2, err)
+	}
+	if len(created) != 1 {
+		t.Fatalf("expected 1 entity, got %d", len(created))
+	}
+}
+
+// 验证 BidTuner 安全护栏：少投提价不会超过 MaxCPMMicros。
+func TestBidTunerClamp(t *testing.T) {
+	tuner := &BidTuner{MaxCPMMicros: 20000000, MinCPMMicros: 5000000}
+	got := tuner.NextBid(0.5, 19000000)
+	if got > tuner.MaxCPMMicros {
+		t.Fatalf("bid %d exceeds max %d", got, tuner.MaxCPMMicros)
+	}
+}
+
+func TestEngineSmoke(t *testing.T) {
+	// 最小冒烟：空计划执行不报错
+	engine := &Engine{AdvertiserID: "adv1"}
+	err := engine.Execute(context.Background(), &BuyPlan{}, NewWorkerPool(2))
+	if err != nil {
+		t.Fatalf("execute empty plan: %v", err)
+	}
+	_ = time.Now
+}
+```
+
+> 引擎在生产中的用法：`go run ./cmd/engine -plan plan.json`，加载计划 → 幂等创建 → 启动 pacing 循环 → 接 Prometheus 暴露指标。所有对外写操作都走 `RetryWithBackoff` 包裹（6.2），大促并发用 `WorkerPool`（6.3）限制在 8 路以内。
+
+### 7.7 引擎与项目脚本的对应关系
+
+| 引擎组件 | 对接的项目方法 | 说明 |
+|----------|----------------|------|
+| `IdempotentCreator.Create` | `dv360_create_line_item` | 幂等创建 LineItem |
+| `IdempotentCreator.ListExisting` | `dv360_list_line_items` | 先查再建 |
+| `FetchPacing` | `dv360_get_pacing_rate` | pacing 采集 |
+| `UpdateBid` | `dv360_update_line_item` | 调价（读-改-写） |
+| 创意守卫 | `dv360_list_creatives` / `dv360_get_creative` | 审批通过再挂载 |
+| 报表 | `dv360_get_report` | 效果回读 |
+
+---
+
+## 八、附录：单位换算、字段速查与参考
 
 ### 7.1 金额单位换算（micros）
 

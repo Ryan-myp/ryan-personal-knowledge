@@ -1392,3 +1392,810 @@ print(min_sample(0.015, 0.20))   # 单组每指标约需样本（展示/点击�
 3. 保持高 CTR 风格（{CTA C} 强度）。
 ```
 
+---
+
+## 三、生产环境实战
+
+### 3.1 运行环境与目录规范
+
+#### 3.1.1 服务拓扑
+
+生产环境建议如下部署单元：
+
+| 服务 | 语言/运行时 | 说明 | 并发单元 |
+| --- | --- | --- | --- |
+| API Gateway | Go / Kratos | 对外 API、鉴权、限流 | 多副本无状态 |
+| Asset Service | Go | 资产 CRUD、元数据、版本 | 依赖 PG |
+| Render Service | Python + FFmpeg | 渲染农场面 | 可横向扩展 worker |
+| AI Pipeline Service | Python | LLM / 图像 / 视频生成 | 异步 worker |
+| DCO Service | Go | 组合、规则、Bandit | 内存 + Redis |
+| Analytics Service | Python / Go | 指标计算、疲劳诊断 | 定时任务 |
+| Platform Connector | Go | Meta/TikTok/Google/DV360 API | 各平台 worker |
+
+#### 3.1.2 仓库目录规范（Monorepo 建议）
+
+```
+ucms/
+├── api/                     # 对外 API 定义（OpenAPI/proto）
+│   ├── asset/               # 资产生命周期
+│   ├── render/              # 渲染任务
+│   ├── release/             # 发布
+│   └── analytics/           # 指标
+├── spec/                    # 规格配置（YAML/JSON，单一事实源）
+│   ├── platforms/
+│   │   ├── meta.yaml
+│   │   ├── tiktok.yaml
+│   │   ├── google.yaml
+│   │   └── dv360.yaml
+│   └── rules/               # 合规/审核规则
+├── renderers/               # 渲染引擎适配器
+│   ├── ffmpeg/              # 视频/图片
+│   ├── template/            # HTML5/图片模板合成
+│   └── saliency/            # 显著图裁剪
+├── ai/                      # AI 生成
+│   ├── copy/                # 文案
+│   ├── vision/              # 文生图/图生图
+│   ├── video/               # 视频生成
+│   ├── tts/                 # 配音/字幕
+│   └── pipeline/            # 批次编排
+├── dco/                     # 动态创意
+│   ├── combos/
+│   ├── rules/
+│   └── bandit/
+├── connectors/              # 平台对接
+│   ├── meta/
+│   ├── tiktok/
+│   ├── google/
+│   └── dv360/
+└── internal/pkg/            # 通用库
+```
+
+#### 3.1.3 依赖与运行环境版本
+
+| 组件 | 版本建议 | 说明 |
+| --- | --- | --- |
+| FFmpeg | ≥ 6.0（含 libx264, libx265, aom） | 视频处理主力 |
+| Python | 3.11+ | AI 与渲染 |
+| Go | 1.22+ | 控制面 |
+| PostgreSQL | 14+ | 元数据、审核、发布、DCO 状态 |
+| Redis | 6.2+ | 缓存、分布式锁、Bandit 计数 |
+| Kafka | 3.x | 事件流（渲染完成、指标回传） |
+| Object Storage | S3/GCS/OSS | 原片与产物 |
+| Nginx/CDN | — | 素材分发、签名 URL |
+
+### 3.2 规格引擎实现（Spec Engine）
+
+#### 3.2.1 规格定义示例（YAML，以 Meta 为例）
+
+```yaml
+platform: meta
+version: "2026-08"
+placements:
+  - name: feed
+    category: feed
+    media:
+      - type: image
+        allowed_formats: [jpg, png]
+        size_ranges: [{max_w: 2048, max_h: 2048, aspect_ranges: [[1.0, 2.0]]}]
+        max_bytes: 8388608
+        text_ratio_max: 0.2
+      - type: video
+        allowed_formats: [mp4, mov]
+        size_required: {w: 1280, h: 720}     # 最小
+        size_recommended: {w: 1920, h: 1080}
+        duration_ms: {min: 5000, max: 241000}
+        fps: {min: 24, max: 60}
+        max_bytes: 4294967296
+        max_bitrate_kbps: 12000
+        audio: {required: true}
+  - name: reels
+    category: short_video
+    media:
+      - type: video
+        allowed_formats: [mp4]
+        size_recommended: {w: 1080, h: 1920}
+        aspect: "9:16"
+        duration_ms: {min: 10000, max: 90000}
+        fps: {min: 29, max: 60}
+        max_bytes: 4294967296
+        safe_area:
+          top_fraction: 0.05
+          bottom_fraction: 0.18
+          right_fraction: 0.20
+  - name: stories
+    category: stories
+    media:
+      - type: image
+        size_required: {w: 1080, h: 1920}
+      - type: video
+        size_required: {w: 1080, h: 1920}
+        duration_ms: {max: 60000}
+```
+
+#### 3.2.2 规格校验器（Spec Linter）
+
+规格校验把"探针探测到的素材实际参数"与"规格要求"比对，产出通过/失败：
+
+```python
+def lint_asset(probe: dict, spec: dict) -> dict:
+    """probe 由 ffprobe 探测得到，spec 来自规格配置"""
+    checks = []
+
+    def check(name, ok, detail):
+        checks.append({"name": name, "pass": bool(ok), "detail": detail})
+
+    w, h = probe.get("width"), probe.get("height")
+    aspect = w / h if w and h else None
+
+    # 尺寸/比例
+    for media_rule in spec["media"]:
+        if media_rule["type"] != "video":
+            continue
+        ar = media_rule.get("aspect")
+        if ar and aspect:
+            target = float(ar.split(":")[0]) / float(ar.split(":")[1])
+            check("aspect", abs(aspect - target) < 0.02,
+                  f"aspect {aspect:.3f} vs {ar}")
+        dur = probe.get("duration_ms")
+        d = media_rule.get("duration_ms", {})
+        if dur is not None:
+            ok = (dur >= d.get("min", 0)) and (dur <= d.get("max", 1e12))
+            check("duration", ok, f"{dur}ms")
+        fps = probe.get("fps")
+        f = media_rule.get("fps", {})
+        if fps is not None:
+            ok = (fps >= f.get("min", 0)) and (fps <= f.get("max", 1e5))
+            check("fps", ok, f"{fps}fps")
+
+    # 大小 / 码率
+    size = probe.get("size_bytes")
+    mb = spec.get("max_bytes")
+    if size is not None and mb:
+        check("size", size <= mb, f"{size} <= {mb}")
+
+    passed = all(c["pass"] for c in checks)
+    return {"passed": passed, "checks": checks}
+```
+
+#### 3.2.3 规格解析与生效策略
+
+```
+SpecResolver 职责：
+1. 加载所有平台规格 → 内存缓存（60s 过期）
+2. 给定 (platform, placement, format, orientation) → 返回对应 spec
+3. 支持"推荐值"与"硬性约束"分离：推荐值只提示，硬约束必检
+4. 规格变更走发布通道：改 YAML → CI 校验 → 热更新，不重启
+```
+
+```yaml
+# 生效策略示例
+resolution_policy: "recommended"     # recommended | required
+duration_policy: "required"
+text_ratio_policy: "required"
+```
+
+### 3.3 素材上传与处理流水线（Python）
+
+#### 3.3.1 上传 API 设计
+
+```
+POST /v1/assets            # 创建资产记录并接收文件（分片/直传 S3 预签名）
+POST /v1/assets/{id}/files # 关联文件
+GET  /v1/assets/{id}       # 查询
+PATCH /v1/assets/{id}      # 更新元数据
+POST /v1/assets/{id}/render# 触发渲染
+```
+
+**上传创建（含去重与探针）：**
+
+```python
+import hashlib, uuid
+from fastapi import FastAPI, UploadFile
+
+app = FastAPI()
+
+@app.post("/v1/assets")
+async def create_asset(file: UploadFile, meta: str):
+    data = await file.read()
+    digest = hashlib.sha256(data).hexdigest()
+    # 去重：同 hash 且同规格直接复用
+    existing = find_by_hash(digest)
+    if existing:
+        return {"asset_id": existing["asset_id"], "dedup": True}
+
+    asset_id = str(uuid.uuid4())
+    url = upload_to_storage(asset_id, data, file.filename)   # S3 预签名/直传
+    probe = probe_media(url)                                  # ffprobe + 采样
+    record = insert_asset(
+        asset_id=asset_id, sha256=digest, url=url,
+        meta=json.loads(meta), probe=probe, status="UPLOADED")
+    enqueue_validation(asset_id)                              # 触发异步校验
+    return {"asset_id": asset_id, "probe": probe, "status": "UPLOADED"}
+```
+
+**探针（Probe）示例：**
+
+```python
+import json, subprocess
+
+def probe_media(url) -> dict:
+    """ffprobe 提取媒体技术参数"""
+    cmd = ["ffprobe", "-v", "quiet", "-print_format", "json",
+           "-show_format", "-show_streams", url]
+    out = subprocess.check_output(cmd)
+    info = json.loads(out)
+    video = next((s for s in info["streams"] if s["codec_type"] == "video"), {})
+    audio = next((s for s in info["streams"] if s["codec_type"] == "audio"), {})
+    return {
+        "codec": video.get("codec_name"),
+        "width": int(video.get("width", 0)),
+        "height": int(video.get("height", 0)),
+        "fps": eval_rational(video.get("avg_frame_rate", "0/1")),
+        "duration_ms": int(float(info.get("format", {}).get("duration", 0)) * 1000),
+        "size_bytes": int(info.get("format", {}).get("size", 0)),
+        "bitrate_kbps": int(info.get("format", {}).get("bit_rate", 0)) // 1000,
+        "audio_codec": audio.get("codec_name"),
+        "audio_sample_rate": int(audio.get("sample_rate", 0) or 0),
+    }
+
+def eval_rational(expr):
+    try:
+        a, b = expr.split("/")
+        return round(float(a) / float(b), 3) if float(b) else 0.0
+    except Exception:
+        return 0.0
+```
+
+#### 3.3.2 异步校验队列
+
+上传后发现是异步进行，状态机见 2.3.4。采用 Redis 队列或 Kafka 触发：
+
+```bash
+# 简单队列实现（Redis List + 消费者）
+redis-cli LPUSH ucms:validate <asset_id>
+# worker 弹出处理
+redis-cli BRPOP ucms:validate 5
+```
+
+```python
+def validation_worker():
+    while True:
+        asset_id = brpop("ucms:validate")
+        asset = load_asset(asset_id)
+        lint = lint_asset(asset.probe, resolve_spec(asset.spec))
+        compliance = run_compliance_checks(asset)   # 违禁词/水印/合规
+        approve = lint.passed and compliance.passed
+        update_status(asset_id, "APPROVED" if approve else "REJECTED",
+                      reason=collect_failures(lint, compliance))
+```
+
+### 3.4 渲染适配实现（Render Farm）
+
+#### 3.4.1 渲染任务模型
+
+```json
+{
+  "render_id": "r-20260814-0001",
+  "asset_id": "a1...01",
+  "target_spec": "meta_feed_video_landscape",
+  "strategy": "crop_center",          // crop | extend | smart_reframe | template
+  "status": "queued",
+  "retries": 0,
+  "worker": "ffmpeg-w2",
+  "created_at": "...",
+  "output": "s3://ucms/renders/r-20260814-0001.mp4"
+}
+```
+
+#### 3.4.2 渲染作业编排（Python Worker）
+
+```python
+def render_worker(task: dict):
+    spec = resolve_spec(task["target_spec"])
+    src = get_master_url(task["asset_id"], task.get("version"))
+    strategy = task["strategy"]
+
+    if spec["format"] == "html5":
+        out = render_html5(task, spec)
+    elif strategy == "crop_center":
+        out = ffmpeg_crop_center(src, spec, dst_size(task))
+    elif strategy == "smart_reframe":
+        out = run_smart_reframe(src, spec)
+    elif strategy == "extend":
+        out = ffmpeg_extend_blur(src, spec)
+    else:
+        out = ffmpeg_transcode_default(src, spec)
+
+    # 渲染后强制再校验（re-lint）
+    ok = lint_after_render(out, spec)
+    if not ok:
+        task["status"] = "failed"; record_error(task); return
+    upload_render(out, task["render_id"], spec)
+    mark_render_done(task["render_id"], out)
+```
+
+**FFmpeg 裁剪（crop_center）示例：**
+
+```python
+def ffmpeg_crop_center(src, spec, size):
+    # 以目标纵横比居中裁剪并缩放到目标尺寸
+    w, h = size
+    inratio = spec_width(src) / spec_height(src)
+    target = w / h
+    if inratio > target:
+        # 原图更宽 → 裁剪左右
+        filter = f"crop=ih*{target}:ih,scale={w}:{h}"
+    else:
+        # 原图更高 → 裁剪上下
+        filter = f"crop=iw:iw/{target},scale={w}:{h}"
+    cmd = ["ffmpeg", "-i", src, "-vf", filter,
+           "-c:v", "libx264", "-crf", "18", "-preset", "slow",
+           "-pix_fmt", "yuv420p", "-movflags", "+faststart", out]
+    subprocess.run(cmd, check=True)
+    return out
+```
+
+#### 3.4.3 FFmpeg 生产参数建议
+
+| 用途 | 视频编码 | 建议参数 |
+| --- | --- | --- |
+| 平台上传（通用） | H.264 | `libx264 -crf 18 -preset slow -pix_fmt yuv420p` |
+| 竖屏清晰度优先 | H.264 | `-crf 16 -preset medium -profile:v high -level 4.2 -g 48 -sc_threshold 0` |
+| 高压缩比（低流量） | H.264 | `libx264 -b:v 2500k -maxrate 3500k -bufsize 7000k` |
+| 高保真归档 | H.265/HEVC | `libx265 -crf 20` (浏览器兼容性注意) |
+| 音频 | AAC | `-c:a aac -b:a 192k -ar 48000 -ac 2` |
+| 播放兼容 | 阴极 | `-movflags +faststart -profile:v High -pix_fmt yuv420p` |
+
+**关键注意事项：**
+- `-pix_fmt yuv420p` 必须，否则部分播放器/系统黑屏；
+- `-movflags +faststart` 把 moov 前移，提升播放启动速度；
+- GOP 与 I 帧：直播/秒开建议 `-g 48 -sc_threshold 0`；
+- 转码必带音频统一 `-ar 48000 -ac 2`，避免声道不兼容。
+
+#### 3.4.4 HTML5 渲染（模板合成）
+
+HTML5 渲染 = 模板 + 变量 → 生成 zip。常用 headless 浏览器截图预览但不影响最终 zip：
+
+```python
+import jinja2, zipfile
+
+def render_html5(template_path, variables, out_zip):
+    env = jinja2.Environment(loader=jinja2.FileSystemLoader(template_path))
+    html = env.get_template("index.html").render(**variables)
+    # 收集资源文件
+    with zipfile.ZipFile(out_zip, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("index.html", html)
+        for asset in template_assets(template_path):
+            z.write(asset, f"assets/{basename(asset)}")
+    return out_zip
+```
+
+### 3.5 AI 生成流水线实现
+
+#### 3.5.1 编排（Orchestration）完整示例
+
+用 JSON 描述批次 + Python worker 消费，支持断点续跑：
+
+```python
+import json, time
+from dataclasses import dataclass
+
+@dataclass
+class Batch:
+    id: str
+    stages: list          # 有序阶段
+    tasks: list           # 本批次所有 brief 任务
+    state: dict           # 各任务进度 {task_id: {stage: status}}
+
+def run_batch(config: dict):
+    batch = Batch(**config)
+    for stage in batch.stages:
+        for task in batch.tasks:
+            if batch.state.get(task["id"], {}).get(stage) == "done":
+                continue
+            try:
+                result = STAGE_ROUTER[stage](task)     # 各阶段处理函数
+                persist_task_result(batch.id, task, stage, result)
+                batch.state.setdefault(task["id"], {})[stage] = "done"
+            except Exception as e:
+                if config.get("on_fail") == "stop_all":
+                    raise
+                batch.state.setdefault(task["id"], {})[stage] = f"failed:{e}"
+        # 可选：持久化 batch.state，支持断点
+        save_batch_progress(batch)
+    return summarize(batch)
+
+STAGE_ROUTER = {
+    "copy":     gen_copies,
+    "media":    gen_media_variant,
+    "localize": localize_task,
+    "render":   render_all,
+    "lint":     lint_all,
+    "publish":  publish_all,
+}
+```
+
+#### 3.5.2 与外部模型服务解耦
+
+生产环境建议把"模型调用"封装成独立接口，方便换供应商/灰度：
+
+```python
+class ModelGateway:
+    """统一模型网关：LLM / 图像 / 视频 / TTS 均可切换供应商"""
+    def __init__(self, config):
+        self.llm = provider_from(config["llm"])       # 如 OpenAI/Claude/DeepSeek/自部署
+        self.text2img = provider_from(config["text2img"])
+        self.i2v = provider_from(config["i2v"])
+        self.tts = provider_from(config["tts"])
+
+    def chat(self, prompt, **kw):
+        return self.llm.chat(prompt, **kw)
+
+    def generate_image(self, prompt, negative, size, **kw):
+        return self.text2img.generate(prompt, negative_prompt=negative, size=size, **kw)
+
+    def image_to_video(self, image, prompt, duration, **kw):
+        return self.i2v.generate(image=image, prompt=prompt, duration=duration, **kw)
+```
+
+#### 3.5.3 生成质控（QC）
+
+AI 生成必须过质控闸门，防止劣质/违规内容入库：
+
+| 质控项 | 检查方式 | 拦截策略 |
+| --- | --- | --- |
+| 技术完整 | 文件能否解码、时长是否达标 | 失败重试 1 次后标记 FAILED |
+| 视觉相似 | 与输入一致性（product 特征比对） | 相似度 < 0.8 拒绝 |
+| 违规内容 | 图片/文本安全模型 | 命中即拒绝并记录 |
+| 文本溢出 | 动态模板中文字是否溢出边界 | 自动缩短/换行或拒绝 |
+| 品牌一致性 | logo/配色是否符合 brand kit | 不一致降级为人工审核 |
+
+```json
+{
+  "qc_result": {
+    "decode": "ok",
+    "similarity": 0.93,
+    "safety": "clean",
+    "text_overflow": false,
+    "brand_match": true,
+    "verdict": "PASS"
+  }
+}
+```
+
+### 3.6 DCO 生产实现
+
+#### 3.6.1 组合生成与存储
+
+```sql
+-- 组合表（剪枝后写入，带特征 JSON）
+CREATE TABLE dco_combos (
+  combo_id      UUID PRIMARY KEY,
+  batch_id      UUID,
+  image_id      UUID,
+  copy_id       UUID,
+  cta_id        UUID,
+  template_id   UUID,
+  features      JSONB,          -- 标签并集/特征向量
+  status        TEXT,           -- pending|active|frozen|killed
+  impressions   BIGINT DEFAULT 0,
+  clicks        BIGINT DEFAULT 0,
+  conversions   BIGINT DEFAULT 0,
+  created_at    TIMESTAMPTZ DEFAULT now()
+);
+
+-- 曝光/奖励流水（用于离线重放与学习）
+CREATE TABLE dco_events (
+  event_id     BIGSERIAL PRIMARY KEY,
+  combo_id     UUID,
+  ts           TIMESTAMPTZ,
+  reward       INT,             -- 0 或 1
+  context      JSONB            -- 地域/设备/时段等
+);
+CREATE INDEX ON dco_events (combo_id, ts);
+```
+
+#### 3.6.2 在线服务端决策（Bandit + 规则）
+
+```python
+def dco_select(context) -> str:
+    """给定上下文，返回本次曝光的 combo_id"""
+    # 1. 规则引擎硬性过滤
+    eligible = [c for c in active_combos() if rule_engine.allowed(c, context)]
+    if not eligible:
+        return fallback_combo(context)          # 兜底：人工指定默认
+    # 2. 预算/频控兜底
+    if budget_hour(context) < min_budget:
+        return budget_fallback(eligible)
+    # 3. 学习器选择（Thompson / UCB）
+    return bandit.select(eligible)
+```
+
+```python
+# 服务端 + Redis 计数（近似原子）
+import redis
+r = redis.Redis()
+def record_reward(combo_id, reward):
+    key = f"dco:{combo_id}"
+    r.hincrby(key, "imp", 1)
+    if reward:
+        r.hincrby(key, "click", 1)
+    # 定期把 Redis 计数固化到 PG（离线学习）
+```
+
+#### 3.6.3 预计算 vs 实时渲染
+
+DCO 有两种执行形态，需根据延迟与灵活性权衡：
+
+| 形态 | 延迟 | 灵活性 | 适用 |
+| --- | --- | --- | --- |
+| 预渲染组合（Pre-rendered） | 低（直接出图） | 组合数受限（需先渲染好） | 大量图片/横幅组合 |
+| 实时模板渲染（Server-side） | 中（请求时合成） | 高（可实时换文案/价格） | HTML5 / 动态价格落地 |
+
+> 生产建议：高并发小图用"预渲染 + 命中缓存"；需要个性化（实时价格/库存/用户昵称）用"服务端模板渲染"。
+
+### 3.7 数据分析层实现
+
+#### 3.7.1 指标回传与聚合
+
+平台数据（Meta/TikTok/Google）通过各自报告 API 拉取，落地到数仓后按创意维度聚合：
+
+```sql
+-- 创意级指标聚合（示例，示意口径）
+SELECT
+  asset_id,
+  platform,
+  SUM(impressions)   AS impressions,
+  SUM(clicks)        AS clicks,
+  SUM(conversions)   AS conversions,
+  SUM(clicks) * 1.0 / NULLIF(SUM(impressions),0) AS ctr,
+  SUM(conversions) * 1.0 / NULLIF(SUM(clicks),0)  AS cvr,
+  -- 疲劳相关：近 7 天 vs 之前 7 天
+  SUM(CASE WHEN ts >= now()-interval '7 day' THEN clicks END)
+      / NULLIF(SUM(CASE WHEN ts >= now()-interval '7 day' THEN impressions END),0) AS ctr_recent
+FROM fact_creative_metrics
+WHERE ts >= now() - interval '14 day'
+GROUP BY asset_id, platform
+```
+
+#### 3.7.2 疲劳诊断任务（定时）
+
+```python
+def daily_fatigue_scan():
+    rows = query_creative_metrics_last14d()
+    for r in rows:
+        ctrl_r7  = compute_window(r, 7)     # 近 7 天指标
+        ctrl_r14 = compute_window(r, 14-7)  # 之前 7 天
+        fi = fatigue_index(ctrl_r7.ctr, ctrl_r14.ctr,
+                           ctrl_r7.cpa, ctrl_r14.cpa,
+                           f"avg frequency {r['freq_rec']}")
+        level = classify(fi)
+        if level in ("REFRESH", "KILL"):
+            enqueue_creative_action(r["asset_id"], level)
+        log_fatigue(r["asset_id"], fi, level)
+```
+
+#### 3.7.3 迭代信号输出
+
+分析层产出结构化的"下一轮创意建议"，供 AI 生成侧消费（见 2.6.4）。
+
+```json
+{
+  "iteration_signal": {
+    "batch": "bat-20260814-003",
+    "top_themes": ["hook-assertive", "cta-limited"],
+    "worst_themes": ["hook-question-long"],
+    "recommend_action": "generate_next_batch",
+    "params": {"new_copy_variants": 8, "refresh_asset_pool": true}
+  }
+}
+```
+
+### 3.8 平台对接（Platform Connector）
+
+#### 3.8.1 统一连接器接口
+
+各平台 API 差异大，连接器提供一个统一接口，隐藏差异：
+
+```python
+class PlatformConnector(ABC):
+    @abstractmethod
+    def create_creative(self, asset: dict, spec: dict) -> dict:
+        """返回对端 creative id"""
+
+    @abstractmethod
+    def upload_media(self, file_url, destination) -> str:
+        """上传媒体，返回对端 URL/hash"""
+
+    @abstractmethod
+    def get_status(self, creative_id) -> str:
+        """查询投放/审核状态"""
+
+    @abstractmethod
+    def list_reports(self, since, until) -> list[dict]:
+        """拉取创意级报表"""
+```
+
+#### 3.8.2 Meta 对接要点（Marketing API）
+
+```python
+# 上传到 Meta 的摘要逻辑（真实实现依赖 meta-python SDK）
+def meta_upload(ad_account_id, creative, access_token):
+    # 1. 先上传媒体资产（图片或视频）
+    #    图片：POST /{ad_account_id}/adimages（binary）
+    #    视频：POST /{ad_account_id}/advideos（binary, file_size, file_name）
+    image_hash = post_adimage(ad_account_id, creative["image_bytes"], access_token)
+    # 2. 创建 creative 对象
+    creative_spec = {
+        "name": creative["name"],
+        "object_story_spec": {
+            "page_id": creative["page_id"],
+            "link_data": {
+                "image_hash": image_hash,
+                "link": creative["landing_url"],
+                "message": creative["primary_text"],
+                "call_to_action": {"type": creative["cta_type"]},
+            }
+        },
+    }
+    creative_id = post_creative(ad_account_id, creative_spec, access_token)
+    return creative_id
+```
+
+**Meta 注意事项：**
+- 每个素材需满足平台规范（图片 ≤8MB，视频 ≤4GB，时长为资产对应版位）；
+- 大量上传需走**异步（job）接口**与**轮询**，注意限流（按广告账户分摊、并发 < 平台限额）；
+- 动态创意（DC）通过 `dynamic_creativ` 组合元素，需把元素（图片/文案/CTA）分别上传后创建 `dynamicAdCreative`。
+
+#### 3.8.3 TikTok 对接要点
+
+```python
+def tiktok_upload(advertiser_id, creative, access_token):
+    # 1. 上传媒体到自定义视频源
+    video_id = post_video_upload(advertiser_id, creative["video_bytes"],
+                                 fname=creative["file_name"], auth=token)
+    # 2. 创建 video_creative
+    creative_obj = {
+        "advertiser_id": advertiser_id,
+        "video_id": video_id,
+        "creative_name": creative["name"],
+        "identity_id": creative["identity_id"],     # 认证品牌
+        "landing_page_url": creative["landing_url"],
+        "call_to_action": creative["cta"],
+        "music_info": creative.get("music"),        # TikTok 可配音乐
+    }
+    return post_creative(creative_obj, access_token)
+```
+
+**TikTok 注意事项：**
+- Spark Ads 需授权创作者视频（`identity_id` 属于认证品牌）；
+- 视频 9:16 优先，时长 5-60s（最长 10min，但推荐短时长）；
+- 上传有配额，需管理频繁/批量上传的批次与重试。
+
+#### 3.8.4 Google 对接要点（RSA / YouTube）
+
+```python
+def google_create_responsive_search(account, headline_list, description_list, urls, token):
+    ad_group_criterion = {
+        "type": "RESPONSIVE_SEARCH_AD",
+        "status": "PAUSED",                      # 先建后启用
+        "finalUrls": [urls["final_url"]],
+        "headlines": [{"text": h} for h in headline_list],        # ≤15
+        "descriptions": [{"text": d} for d in description_list],  # ≤4
+    }
+    return google_ads_mutation(account, ad_group_criterion, token)
+
+def google_upload_youtube(asset, token):
+    # 用 YouTube Data API 或 Google Ads MediaFile 上传视频
+    video = upload_to_youtube(asset["file_url"], title=asset["name"],
+                              token=token)  # 返回 video_id
+    return video["id"]
+```
+
+**Google 注意事项：**
+- RSA 的标题/描述可 `pinned`（固定位置），但固定太多会降低灵活性——建议仅固定品牌词；
+- YouTube 视频上传用 Google Ads `MediaFile` 或 YouTube Data API，需规划配额；
+- 展示广告素材尺寸多（300x250, 728x90…），建议用 DCA/自动化素材组合。
+
+#### 3.8.5 DV360 对接要点
+
+```python
+def dv360_upload_html5(advertiser_id, zip_bytes, click_tag, token):
+    # 1. 上传 HTML5 ZIP 作为 CreativeAsset
+    asset = upload_creative_asset(advertiser_id, zip_bytes, "ad.zip")
+    asset_id = asset["asset_id"]
+    # 2. 创建 Creative 并指定 HTML5 上传文件 + 关联站点/广告位
+    creative = {
+        "creativeId": None,
+        "advertiserId": advertiser_id,
+        "type": "DISPLAY",
+        "size": {"width": 300, "height": 250},
+        "backupImageClickThroughUrl": click_tag,
+        "name": "HTML5_Banner_300x250",
+        "mimeType": "application/octet-stream",
+        "creativeAssetJoiners": [
+            {"assetId": asset_id, "role": "PRIMARY"}
+        ],
+    }
+    return create_creative(creative, token)
+```
+
+**DV360 注意事项：**
+- HTML5 ZIP 需含 `index.html` 入口与点击跳转机制；视频用 VAST 或直接 mp4；
+- 富媒体 / 扩展创意需在 DV360 后台配置特定容器与交互组件；
+- 需注意广告位尺寸与 Creative 尺寸严格匹配，否则可能投放失败。
+
+### 3.9 监控、告警与 CI/CD
+
+#### 3.9.1 关键监控指标
+
+| 指标 | 告警阈值 | 含义 |
+| --- | --- | --- |
+| 渲染失败率 | > 2% | 渲染农场异常/素材问题 |
+| 渲染队列积压 | > 1000 | 消费跟不上 |
+| 规格解析错误 | > 0 | 规格配置损坏 |
+| 上传校验通过率 | < 85% | 素材质量问题或规格误配 |
+| AI 生成失败率 | > 10% | 模型服务故障/欠费 |
+| 平台上传失败 | > 1% | 账户/凭证/限流问题 |
+| DCO 组合有效率 | 持续下降 | 元素池老化 |
+
+#### 3.9.2 可观测性埋点
+
+```python
+# 结构化日志 + 埋点示例
+import structlog
+log = structlog.get_logger()
+
+def render_done(render_id, spec, duration_ms, ok):
+    log.info("render_completed",
+             render_id=render_id, spec=spec,
+             duration_ms=duration_ms, ok=ok)
+    metrics.incr(f"render.{'ok' if ok else 'fail'}")
+    metrics.observe("render.duration_ms", duration_ms)
+```
+
+#### 3.9.3 CI/CD 流水线（GitHub Actions 片段）
+
+```yaml
+name: ucms-spec-and-render
+
+on:
+  push:
+    paths: ["spec/**", "renderers/**"]
+
+jobs:
+  spec-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -r requirements.txt
+      - run: poetry run pytest tests/spec -q
+      - run: poetry run python -m ucms.spec.cli validate spec/platforms/*.yaml
+
+  render-smoke:
+    runs-on: ubuntu-latest
+    needs: spec-test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+      - run: pip install -r requirements.txt
+      - run: pytest tests/render -q
+      - run: bash scripts/run_ffmpeg_smoke.sh
+```
+
+#### 3.9.4 回滚与灰度
+
+```
+发布策略：
+1. 新素材/新规格：先小范围灰度（1 个广告组 / 20% 流量）
+2. 渲染/规格变更：改代码需 CI + 冒烟，生成容器镜像滚动更新
+3. 素材回滚：版本树一键切回历史 version + 重新渲染
+4. 平台发布回滚：调用对端 API 暂停/删除 creative
+
+事故预案：
+- 平台封禁某素材 → 自动 Pull：标记 REJECTED，替换备用素材
+- 渲染农场全挂 → 降级：用"直传原始高规格素材"兜底，暂停策略适配
+```
+

@@ -2005,3 +2005,238 @@ class RateLimiter:
 16. **成本不按市场分层**：Tier 1~4 国家价格差异大，用单一均价核算会严重失真。
 
 ---
+
+## 四、常见问题与排查
+
+### 4.1 错误码速查表
+
+| 错误码 | 一句话含义 | 快速处置 |
+|---|---|---|
+| 131026 | 消息无法投递（不可达） | 看 `details`：无效号码/被拉黑/未装 WhatsApp/窗口外；按病因处置 |
+| 131051 | 超过 24h 窗口 | 改发模板消息（自由文本在窗口外不可用） |
+| 131047 | 再触达被拒（窗口外自由文本） | 同上，改模板 |
+| 131030 | 号码未映射到 WhatsApp 账户 | 用 `/contacts` 预检查，标记无效号 |
+| 131045 | 接收方不在允许列表 | 测试号码下添加测试接收人 |
+| 132000 | 模板变量参数格式无效 | 核对变量个数与顺序（同步模板 schema） |
+| 133010 | 模板未批准/被拒 | 等审核或改用 APPROVED 模板 |
+| 131056 | 模板被暂停/受限 | 修复质量后重新提交 |
+| 130429 | 请求限流 | 指数退避 + 提升限额 |
+| 80004 | 端点调用限流 | 同上，控制并发 TPS |
+| 190 | 令牌失效 | 换长期令牌/重新授权 |
+| 200 | 权限不足 | 扩系统用户权限范围 |
+| 100 | 参数无效 | 检查 ID/字段名/格式 |
+| 10 | 运营限制 | 满足前置条件 |
+
+### 4.2 模板审核问题排查
+
+```
+客户: "我的模板 3 天还没通过，怎么办？"
+排查路径:
+  1. 确认状态是 PENDING 还是 PENDING_IN_REVIEW（后者是人工复核，慢但正常）
+  2. 检查是否因示例变量填了占位符/重复 name 被挂起
+  3. 查看 Webhook message_template_status_update 里被拒原因
+  4. 若 REJECTED：
+     a. 按原因修改（退订说明/示例值/文案/类别）
+     b. 重新提交
+     c. 或发起申诉 IN_APPEAL（附业务说明截图）
+  5. 上线依赖该模板时：至少提前 1~2 天提交，并准备同等语义的备用模板
+```
+
+**模板状态变更事件样例：**
+
+```json
+{
+  "value": {
+    "event": "UPDATE",
+    "message_template_id": "1234567890",
+    "message_template_name": "order_shipping_update_cn",
+    "message_template_language": "zh_CN",
+    "message_template_category": "UTILITY",
+    "event": "REJECTED",
+    "reason": {
+      "code": "INVALID_EXAMPLE",
+      "description": "示例变量使用了占位符，请提供真实示例"
+    }
+  }
+}
+```
+
+### 4.3 24 小时窗口问题排查
+
+```
+症状: 发送 text 总是 131026/131051
+排查:
+  ① 用 SessionWindowTracker 查该客户窗口是否 OPEN
+  ② 窗口关闭 → 必须模板：确认已 APPROVED 模板存在且变量匹配
+  ③ 仍在窗口却失败 → 检查 details：
+     - "not on WhatsApp" / "undeliverable" → 号码无效/被拉黑
+     - 试试 /contacts 预检查 wa_id
+  ④ 多号码场景 → 确认用的是发送方 phone_number_id（客户可能回复的是另一个号）
+```
+
+**常见误判：** 客户用 WhatsApp 网页/桌面回复，时间戳比移动端晚 → 锚点一律以**入站消息 timestamp**为准，不要用本地时间估窗口。
+
+### 4.4 媒体问题排查
+
+| 症状 | 可能根因 | 处置 |
+|---|---|---|
+| 上传报 400 file too large | 超 5MB/16MB/100MB | 压缩后再传 |
+| 上传报 400 unsupported media type | mime_type 不符 | 规范 jpeg/png/mp4/aac/pdf |
+| 发送 link 失效 | 自建 CDN URL 过期 | 上传到 Meta 用 media_id 发 |
+| 下载 403 空文件 | 没带 Authorization 头 | 下载要带 Bearer token |
+| 下载 URL 失效 | Meta 临时 URL 5min 过期 | 拿到即下，落自建存储 |
+| sticker 发送失败 | webp 超 100KB | 压缩 sticker |
+
+### 4.5 认证与权限问题排查
+
+```
+症状: 所有调用报 (#190) 或 (#200)
+排查:
+  ① 区分 190（token) vs 200（权限）
+  ② 190 → token 是否 System User 长期令牌？是否被撤销？appsecret_proof 是否与服务端一致？
+  ③ 200 → 系统用户是否勾选 whatsapp_business_messaging?
+            是否被授予该 WABA 的访问权限？
+  ④ 多 WABA → 系统用户权限需逐一覆盖每个 WABA
+```
+
+### 4.6 Webhook 问题排查
+
+```
+症状 A: 收不到任何入站消息
+  ① App 后台 Webhook 回调 URL 是否可达（HTTPS + 公网）
+  ② Verify Token 是否一致（配置与否决都是 403）
+  ③ 是否订阅了 messages 字段
+  ④ 是否把 App 订阅到 WABA（subscribed_apps）
+症状 B: 收到但验签失败
+  ① app_secret 与请求体是否字对字（body 需原始字节，不能重新 json 序列化）
+  ② 确认用 raw body 而非经框架解码的 dict
+症状 C: 重复收到同一条
+  ① 正常（Meta 至少一次投递）
+  ② 必须用 wamid 幂等去重兜底
+```
+
+**验签最容易踩的坑**：框架自动把 body 解析成 dict 后，再 `json.dumps` 出来的字节序可能与原文不同 → HMAC 对不上。**必须用原始 request.body() 字节**参与 HMAC（见 3.9）。
+
+### 4.7 典型问题定位决策树
+
+```
+一条"发不出去"的消息
+│
+├─ 是否 HTTP 4xx? ──是──▶ 看 error.code 走 4.1 速查表
+│                        │
+│                        └── 132000 → 变量不匹配
+│                        └── 133010 → 模板未过审
+│                        └── 130429 → 限流 → 退避重试
+│
+└─ 200 已受理但未送达?
+   │
+   ├─ 查 statuses Webhook：status=sent? delivered? failed?
+   │     failed → 取 errors.code → 131026/131051/... → 按病因处置
+   │
+   ├─ 完全没状态回调?
+   │     ├─ Webhook 未订阅 status？（见 4.6）
+   │     └─ 幂等锁把事件吞了？
+   │
+   └─ 送达但客户没收到?
+         └─ 号码有效性 / 用户已卸载 WhatsApp / 被拉黑
+```
+
+---
+
+## 五、自测题
+
+**Q1.** 客户在 8 月 1 日 09:00 主动发来一条消息，企业未回复；8 月 2 日 10:00 企业想补发一条纯文本客服信息。会发生什么？为什么？正确的做法是什么？
+
+<details><summary>答案</summary>
+
+会收到 `131026` / `131051`（window 关闭，自由文本不可用）。
+
+- service 会话窗口是"相对最后一条客户消息 + 24h"。客户 08-01 09:00 来消息，窗口于 08-02 09:00 关闭。
+- 08-02 10:00 已超出窗口，Cloud API 不允许发送自由文本/媒体类消息。
+- 正确做法：改用**已 APPROVED 的模板消息**（utility 类），模板不受窗口限制，会开启一个新的对应类别会话并计费；或等客户再次主动来消息重新打开 service 窗口（免费入口）。
+
+补充：绝不能仅凭"自然日"判断窗口，必须按"最后一条客户消息 + 24h"实现自维护追踪器。
+</details>
+
+**Q2.** 模板 `order_auth_code`（authentication 类）创建时 body 写了 `您的验证码是 {{1}}，{{2}} 分钟内有效`。发送时只传了 1 个参数，报什么错？如何从设计上避免？
+
+<details><summary>答案</summary>
+
+报 `132000 Parameter format is invalid`（变量个数与模板占位符不匹配；顺序错同样触发）。
+
+避免手段：
+
+1. 创建模板时登记"模板变量 schema"（变量名列表、顺序、示例值），并作为发布物管理。
+2. 发送侧发送前用 schema 校验参数个数与顺序，不匹配直接阻断并告警。
+3. 模板 BODY 占位符最多 10 个，示例变量必须填真实示例（不能填 `{{1}}` 本身）。
+4. 用统一的 `meta_send_whatsapp_template` 封装，内部强制按 schema 组装 components[type=body].parameters。
+</details>
+
+**Q3.** 大促当天营销模板发送大量出现 `131056` + 速率类错误，但消息确实在发。请分析根因，并给出可持续的方案。
+
+<details><summary>答案</summary>
+
+根因通常是**消息限额（Messaging Limits）封顶 + 单号码 TPS 限流**。
+
+- 每个业务号码每天 business-initiated 会话有阶梯上限（默认 250 → 1K → 10K → 100K），且 Cloud API 单号码吞吐约 80 msg/s 量级。
+- 超出即出现 `131056`（模板受限）与 `130429`/`80004`（限流）。
+
+可持续方案：
+
+1. **提前升级限额**：大促前把号码质量维持 high 并向 Meta 申请更高阶梯（250→1K→10K）。
+2. **多号码横向扩容**：一个 WABA 下多个业务号码分摊量，按号码路由。
+3. **削峰限流**：服务端 RateLimiter 控制单号码 TPS，配合指数退避重试。
+4. **监控**：`phone_number_quality_updates` 与 failed 状态实时告警，避免质量掉低后限额骤降。
+5. **成本/会话**：营销会话 72h，多轮互动不叠计，把流量引导进 service 免费入口减少营销会话量。
+</details>
+
+**Q4.** 你的 Webhook 经常收不到入站消息，偶尔又收到重复的同一条。分别说明最可能的原因与修复。
+
+<details><summary>答案</summary>
+
+**收不到：**
+
+1. Webhook 回调 URL 不可达（http 而非 https / 公网不通 / 防火墙）。
+2. Verify Token 与后台配置不一致 → 订阅验证失败（403）。
+3. 未在 App 后台订阅 `messages` 字段，或未把 App 订阅到 WABA（`subscribed_apps`）。
+
+**重复收到：**
+
+- Webhook 是"至少一次"投递语义，Meta 可能在超时/不确定时重试，重复属正常。
+- 修复：以 `wamid` 做幂等去重（Redis `set nx`），入站处理前判重，避免重复入账/重复触发下游。
+
+另外：接收处理必须**尽快返回 2xx 且业务异步化**，否则处理过慢会引来重试风暴，放大重复投递。
+</details>
+
+**Q5.** 运营把一个"账单提醒"模板设成了 MARKETING 类别发送，有哪些风险？正确的类别应是什么，为什么？
+
+<details><summary>答案</summary>
+
+风险：
+
+1. **成本上升**：marketing 类别按 marketing 费率计费（较贵），账单提醒按 utility 费率更低。
+2. **质量评级下滑**：把高价值但非营销的信息伪装成营销，用户负反馈率升高 → 号码质量掉到 low → 限额骤降、模板被 pause。
+3. **违规被处置**：类别与实际内容不符，Meta 可能拒绝模板或限号。
+
+正确做法：
+
+- 账单/物流/行程/退款等**事务性通知**应归 **UTILITY**（utility 审核通过率高、费率低）。
+- 验证码应为 **AUTHENTICATION**（享折扣）。
+- 促销、新品、活动才用 **MARKETING**。
+</details>
+
+---
+
+## 参考资源
+
+- Meta WhatsApp Cloud API 官方文档: https://developers.facebook.com/docs/whatsapp/cloud-api
+- Message Templates 概览: https://developers.facebook.com/docs/whatsapp/business-management-api/message-templates
+- Conversation-Based Pricing: https://developers.facebook.com/docs/whatsapp/pricing
+- Webhooks 配置: https://developers.facebook.com/docs/graph-api/webhooks/getting-started
+- WhatsApp 错误码参考: https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes
+- facebook-python-business-sdk: https://github.com/facebook/facebook-python-business-sdk
+- scripts/meta_api.py 既有扩展: https://github.com/facebook/facebook-python-business-sdk
+
+---
+
+*说明：本文为 WhatsApp Cloud API 专项深度指南，聚焦 Messages / Templates / Media / Interactive / QR / Webhooks / 会话计费与质量评级，未重复通用 Meta Marketing API 内容。文中版本 `v20.0` 为示例性稳定版本，实际生产请固定到当时最新稳定版本并随 2 年弃用周期迁移；错误码语义基于 Meta 官方文档与生产复盘整理，个别错误码的具体 `details` 以线上返回为准。*
