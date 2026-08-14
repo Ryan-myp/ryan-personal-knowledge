@@ -240,24 +240,16 @@ def main():
 
     # 输出业务解读
     print(format_explanation(result))
-
+    
     # 输出原始 JSON (折叠格式)
     print("")
     print("<details>")
-    print('<summary style="color: blue; font-weight: bold;">📄 点击查看原始 JSON 数据</summary>')
+    print('<summary style="color: blue; font-weight: bold;">📄 点击查看原始 JSON 数据 (1315 行)</summary>')
     print("")
     print("```json")
     print(json.dumps(result, indent=2, ensure_ascii=False))
     print("```")
     print("</details>")
-
-    # 可选：保存 JSON 到文件
-    if len(sys.argv) > 3 and sys.argv[3] in ['--output', '-o']:
-        output_file = sys.argv[4] if len(sys.argv) > 4 else f"/tmp/tiktok_campaign_{campaign_id}.json"
-        with open(output_file, 'w', encoding='utf-8') as f:
-            json.dump(result, f, indent=2, ensure_ascii=False)
-        print(f"")
-        print(f"✅ JSON 已保存到: {output_file}")
 
 
 if __name__ == "__main__":
