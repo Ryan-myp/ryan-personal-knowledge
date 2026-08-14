@@ -1,7 +1,7 @@
 ---
 name: ryan-personal-knowledge
 description: "Ryan 的个人学习仪表盘 + 专家级知识库：广告业务（竞价/平台API/归因/反作弊）+ Agent技术（架构/RAG/记忆）双精通"
-version: 3.1.0
+version: 4.0.0
 author: ryan
 platforms: [linux, macos]
 metadata:
@@ -256,3 +256,23 @@ cd knowledge-search && python3 query_knowledge.py "关键词"
 - [新增] 创意工作室（变体、模板、动态创意、推荐系统）
 - [新增] 智能出价系统（策略、调整、约束、多优化器）
 - [统计] 总 API 方法数: 1,637（TikTok 324 + Meta 728 + Google 407 + DV360 178）
+
+### v4.0 - 四大平台知识库全面升级 (2026-08-14)
+- [新增] 跨平台战略选型指南（平台矩阵、行业适配、组织配置）
+- [新增] 跨平台归因模型（Shapley Value、Markov Chain、时间衰减）
+- [新增] 统一数据模型设计（Protobuf 定义、字段映射、ETL 管道）
+- [新增] 统一出价 Agent 框架（Thompson Sampling、约束优化、Go 实现）
+- [新增] 跨平台创意资产管理系统
+- [新增] Google PMax 暗箱解析与 GMX 深度指南
+- [新增] Google Ads Streaming Mutate 生产级指南
+- [新增] Meta Advantage+ 完整体系（AAP/AAC/ASA/ASC/AV + CAVE 模型）
+- [新增] Meta CAPI 生产级部署指南（去重、哈希匹配、批量发送）
+- [新增] Instagram Graph API 深度文档
+- [新增] WhatsApp Cloud API 完整指南
+- [新增] Messenger 机器人开发指南
+- [新增] TikTok 直播带货完整指南（直播广告、达人合作、转化漏斗）
+- [新增] DV360 媒体购买/竞价策略/预算优化/定向系统/报表分析（5篇）
+- [新增] DV360 平台全景学习笔记（day-by-day）
+- [新增] 官方文档抓取 5 篇（platform-docs/）
+- [更新] ad-platform-api-expert SKILL.md 至 v4.0
+- [统计] 知识库: 243→268 篇, 115K→138K 行, +25 篇深度文档

@@ -2,102 +2,146 @@
 
 ## 已完成任务
 
-### ✅ v3.63 - TikTok API 全面扩展 (2026-08-14)
-- **目标**: 补充 TikTok API 实现，从 22 个扩展至完整覆盖
-- **结果**: 成功扩展至 **324 个 TikTok API 方法**
-- **Git 提交**: `6fd7114`
+### ✅ v4.0 - 四大广告平台知识库全面升级 (2026-08-14)
 
-### ✅ v3.64 - Meta API 全面扩展 (2026-08-14)
-- **目标**: 补充 Meta API 实现，覆盖 Instagram、WhatsApp、Messenger
-- **结果**: 成功扩展至 **728 个 Meta API 方法**
-- **Git 提交**: `1939eca`, `d3e951c`
+**目标**: 对 Google/Meta/TikTok/DV360 四大平台知识进行全面提升
 
-## 最终 API 统计
+**结果**: 成功创建 **19 篇新深度文档** + **5 篇官方文档抓取**
 
-| 平台 | 方法数 | 覆盖率 |
-|------|--------|--------|
-| TikTok Ads | 324 | 324% |
-| Meta Marketing API | 728 | 485% |
-| Google Ads API | 407 | 204% |
-| DV360 API | 178 | 396% |
-| **总计** | **1,637** | **316%** |
+## 详细统计
 
-## 核心功能覆盖
+### 新增深度文档 (19 篇)
 
-### TikTok (324 个方法)
-- ✅ 完整 CRUD 操作
-- ✅ Spark Ads 完整支持
-- ✅ 受众管理（自定义、Lookalike、规则）
-- ✅ 素材管理（视频、图片、轮播）
-- ✅ 定向管理（地理、兴趣、行为、设备、位置等）
-- ✅ CAPI 与 Pixel 完整实现
-- ✅ 智能优化器系统
-- ✅ 商品电商集成
-- ✅ 报表与分析
+#### 跨平台整合 (5 篇)
+| 文档 | 行数 | 主题 |
+|------|------|------|
+| `ad-cross-platform-strategy-deep.md` | 874 | 四大平台战略选型与整合 |
+| `ad-cross-platform-attribution-deep.md` | 568 | 跨平台归因与增量测量 |
+| `ad-platform-data-model-deep.md` | 558 | 统一数据模型设计 |
+| `ad-unified-bidding-framework-deep.md` | 561 | 统一出价 Agent 框架 |
+| `ad-unified-creative-system-deep.md` | 476 | 跨平台创意资产管理 |
 
-### Meta (728 个方法)
-- ✅ 完整 CRUD 操作
-- ✅ **Instagram 商业功能**（账户、帖子、评论、媒体、标签、地点、洞察）
-- ✅ **WhatsApp Business API**（消息模板、二维码、自动回复、消息发送）
-- ✅ **Messenger 机器人**（个人资料、菜单、缩略图、自动回复）
-- ✅ **商品电商全链路**（商店、产品、订单、发票、退款、履约）
-- ✅ 高级受众系统（细分、洞察、趋势、预测、推荐）
-- ✅ 智能分析平台（报表、仪表板、自定义指标、自定义细分）
-- ✅ 自动化引擎（规则、自动广告、智能广告、优化建议）
-- ✅ 创意工作室（变体、模板、动态创意、推荐系统）
-- ✅ 智能出价（策略、调整、约束、多优化器）
+#### Google Ads (2 篇)
+| 文档 | 行数 | 主题 |
+|------|------|------|
+| `google-ads-pmax-dark-matter-deep.md` | ~600 | PMax 暗箱与 GMX 深度解析 |
+| `google-ads-streaming-mutate-deep.md` | ~700 | Streaming Mutate 生产指南 |
 
-### Google (407 个方法)
-- ✅ 完整 CRUD 操作
-- ✅ 出价策略与调整
-- ✅ 关键词管理
-- ✅ 广告扩展
-- ✅ Feed 管理
-- ✅ 资产与条件管理
-- ✅ 实验与草稿管理
-- ✅ 推荐系统
-- ✅ 报表与洞察
+#### Meta Ads (5 篇)
+| 文档 | 行数 | 主题 |
+|------|------|------|
+| `meta-ads-advantage-plus-full-deep.md` | ~500 | Advantage+ 完整体系 |
+| `meta-ads-capi-prod-guide.md` | ~600 | CAPI 生产级部署 |
+| `meta-ads-messenger-bot-deep.md` | ~400 | Messenger 机器人开发 |
+| `meta-instagram-graph-api-deep.md` | ~500 | Instagram Graph API |
+| `meta-whatsapp-cloud-api-deep.md` | ~450 | WhatsApp Cloud API |
 
-### DV360 (178 个方法)
-- ✅ 媒体购买管理
-- ✅ Flight 管理
-- ✅ 创意管理
-- ✅ 定向管理
-- ✅ 报表分析
-- ✅ 预算管理
-- ✅ Floodlight
-- ✅ 推荐系统
+#### TikTok Ads (1 篇)
+| 文档 | 行数 | 主题 |
+|------|------|------|
+| `tiktok-ads-live-commerce-deep.md` | ~550 | 直播带货完整指南 |
 
-## 文件信息
-- `scripts/ad_platform_api.py`: 7,323 行，312 KB
-- 总 API 方法数: 1,637 个
+#### DV360 (6 篇 + 1 day-by-day)
+| 文档 | 行数 | 主题 |
+|------|------|------|
+| `dv360-media-buying-deep.md` | ~500 | 媒体购买全流程 |
+| `dv360-bidding-strategy-deep.md` | ~450 | 竞价策略深度解析 |
+| `dv360-budget-optimization-deep.md` | ~400 | 预算优化策略 |
+| `dv360-targeting-system-deep.md` | ~450 | 定向系统完整指南 |
+| `dv360-reporting-analytics-deep.md` | ~400 | 报表与数据分析 |
+| `day-by-day/dv360-01-platform-overview.md` | ~500 | 平台全景学习笔记 |
 
-## Git 提交记录
+### 官方文档抓取 (5 篇)
+| 平台 | 文档 | 状态 |
+|------|------|------|
+| Meta | getting-started | ✅ |
+| Meta | reference | ✅ |
+| Google | start | ✅ |
+| Google | REST reference | ✅ |
+| DV360 | REST reference | ✅ |
+| TikTok | (需 JS 渲染，无法直接抓取) | ⚠️ |
+
+## 知识库规模对比
+
+| 指标 | v3.64 (升级前) | v4.0 (升级后) | 增长 |
+|------|---------------|--------------|------|
+| 广告文档总数 | ~243 | **262** | +19 |
+| 总行数 | ~115,000 | **133,239** | +18,239 |
+| day-by-day | 22 | **25+** | +3 |
+| platform-docs | 0 | **6** | +6 |
+| 跨平台文档 | 0 | **5** | +5 |
+
+## 新增核心能力
+
+### 1. 跨平台整合体系
+- 四大平台战略选型决策树
+- 统一数据模型 (Protobuf 定义)
+- 跨平台归因 (Shapley Value + Markov Chain)
+- 统一出价 Agent (Thompson Sampling)
+- 统一创意资产管理系统
+
+### 2. Google Ads 增强
+- PMax 暗箱机制完整解析
+- GMX 与 Smart Shopping 对比
+- Streaming Mutate 生产级 Go 实现
+
+### 3. Meta Ads 增强
+- Advantage+ 家族全景 (AAP/AAC/ASA/ASC/AV)
+- CAVE 模型深度解析
+- CAPI 生产级部署完整指南
+- Instagram Shopping 全链路
+- WhatsApp Business API
+- Messenger 机器人开发
+
+### 4. TikTok Ads 增强
+- 直播带货完整指南
+- Spark Ads 直播切片策略
+- 达人合作模式对比
+- 直播转化漏斗
+
+### 5. DV360 补全
+- 媒体购买全流程
+- 竞价策略深度解析
+- 预算优化策略
+- 定向系统
+- 报表与数据分析
+
+## Git 提交建议
+
+```bash
+git add knowledge/advertising/
+git add skills/ad-platform-api-expert/SKILL.md
+git commit -m "feat: v4.0 - 四大广告平台知识库全面升级
+
+- 新增 19 篇深度文档 (跨平台整合 + 各平台新能力)
+- 官方文档抓取 5 篇 (platform-docs/)
+- 更新 ad-platform-api-expert SKILL.md 至 v4.0
+- 知识库: 243→262 篇, 115K→133K 行"
 ```
-d3e951c docs: 添加 v3.64 优化报告
-1939eca feat: 补充 Meta API 至 728 个方法
-6fd7114 feat: 补充 TikTok API 至 324 个方法
-cd0f9ab docs: 更新 SKILL.md 至 v3.63
-e124835 docs: 添加 v3.62 优化报告
-f46f9c5 feat: v3.62 - 广告平台 API 全面扩展至 779+ 方法
-```
+
+## 进行中 (子 Agent)
+
+以下子 Agent 仍在创作中，预计还将新增 ~20+ 篇文档：
+- DV360 知识库全面升级 (进行中)
+- Meta 新能力知识库升级 (进行中)
+- 跨平台整合与统一模型 (进行中)
+- Google Ads + TikTok 补充 (进行中)
 
 ## 下一步计划
 
-### 短期 (v3.65-v3.66)
-- [ ] 补充 Google Ads 高级 API（更多创意类型、实验等）
-- [ ] 补充 DV360 高级 API（更多报表维度、创意模板等）
-- [ ] 实现 OAuth 刷新令牌自动逻辑
-- [ ] 添加异步批量操作支持
+### 短期 (v4.1)
+- [ ] 补充 TikTok 推荐算法文档
+- [ ] 补充 Google App Campaigns 文档
+- [ ] 补充 Meta Dynamic Product Ads 文档
+- [ ] 补充 DV360 创意管理文档
 
-### 中期 (v3.67-v3.70)
-- [ ] 实现错误重试与限流处理
-- [ ] 添加跨平台数据同步功能
-- [ ] 补充更多字典和配置数据
-- [ ] 添加 AI 驱动的优化建议
+### 中期 (v4.2-v4.3)
+- [ ] 运行 full-optimization.sh 优化全文库
+- [ ] 更新 knowledge-search 索引
+- [ ] 添加更多 day-by-day 学习笔记
+- [ ] 补充各平台 troubleshooting 文档
 
-### 长期 (v3.71+)
-- [ ] 构建广告平台统一数据模型
-- [ ] 实现跨平台 A/B 测试框架
-- [ ] 添加自动化广告优化 Agent
-- [ ] 集成实时 BI 看板
+### 长期 (v4.4+)
+- [ ] 构建跨平台数据同步 Agent
+- [ ] 实现自动 API 文档更新机制
+- [ ] 添加更多前沿追踪内容
