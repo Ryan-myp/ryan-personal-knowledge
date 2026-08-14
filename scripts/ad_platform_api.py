@@ -154,6 +154,187 @@ class AdPlatformClient:
         campaigns = data.get('list', []) if isinstance(data, dict) else data
         return campaigns[0] if campaigns else {}
     
+    def tiktok_list_keywords(self, advertiser_id: str, **kwargs) -> List[Dict]:
+        """列出关键词 - 使用 query keyword 端点"""
+        import requests
+        token = self.credentials.get('tiktok', {}).get('access_token', '')
+        headers = {'Access-Token': token}
+        params = {
+            'advertiser_id': advertiser_id,
+            'page': kwargs.get('page', 1),
+            'page_size': kwargs.get('page_size', 20)
+        }
+        url = 'https://business-api.tiktok.com/open_api/v1.3/query/keyword/'
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=30)
+            data = resp.json().get('data', {})
+            return data.get('list', []) if isinstance(data, dict) else []
+        except Exception as e:
+            print(f"[TikTok] list_keywords error: {e}")
+            return []
+    
+    def tiktok_get_keyword(self, advertiser_id: str, keyword_id: str = None, keyword: str = None, **kwargs) -> Dict:
+        """获取关键词详情"""
+        import requests
+        token = self.credentials.get('tiktok', {}).get('access_token', '')
+        headers = {'Access-Token': token}
+        params = {
+            'advertiser_id': advertiser_id,
+            'keyword': keyword,
+            'page': kwargs.get('page', 1),
+            'page_size': kwargs.get('page_size', 10)
+        }
+        url = 'https://business-api.tiktok.com/open_api/v1.3/query/keyword/'
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=30)
+            data = resp.json().get('data', {})
+            keywords = data.get('list', [])
+            if keyword_id:
+                return next((k for k in keywords if k.get('keyword_id') == keyword_id), {})
+            return keywords[0] if keywords else {}
+        except Exception as e:
+            print(f"[TikTok] get_keyword error: {e}")
+            return {}
+    
+    def tiktok_list_audiences(self, advertiser_id: str, **kwargs) -> List[Dict]:
+        """列出受众 - 使用 audience 相关端点"""
+        import requests
+        token = self.credentials.get('tiktok', {}).get('access_token', '')
+        headers = {'Access-Token': token}
+        params = {
+            'advertiser_id': advertiser_id,
+            'page': kwargs.get('page', 1),
+            'page_size': kwargs.get('page_size', 20)
+        }
+        url = 'https://business-api.tiktok.com/open_api/v1.3/audience/get/'
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=30)
+            data = resp.json().get('data', {})
+            return data.get('list', []) if isinstance(data, dict) else []
+        except Exception as e:
+            print(f"[TikTok] list_audiences error: {e}")
+            return []
+    
+    def tiktok_get_audience(self, advertiser_id: str, audience_id: str, **kwargs) -> Dict:
+        """获取受众详情"""
+        import requests
+        token = self.credentials.get('tiktok', {}).get('access_token', '')
+        headers = {'Access-Token': token}
+        params = {
+            'advertiser_id': advertiser_id,
+            'audience_ids': [audience_id]
+        }
+        url = 'https://business-api.tiktok.com/open_api/v1.3/audience/get/'
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=30)
+            data = resp.json().get('data', {})
+            audiences = data.get('list', [])
+            return next((a for a in audiences if a.get('audience_id') == audience_id), {})
+        except Exception as e:
+            print(f"[TikTok] get_audience error: {e}")
+            return {}
+    
+    def tiktok_list_locations(self, advertiser_id: str, **kwargs) -> List[Dict]:
+        """列出地域 - 使用 query location 端点"""
+        import requests
+        token = self.credentials.get('tiktok', {}).get('access_token', '')
+        headers = {'Access-Token': token}
+        params = {
+            'advertiser_id': advertiser_id,
+            'location_type': kwargs.get('location_type', 'COUNTRY'),
+            'page': kwargs.get('page', 1),
+            'page_size': kwargs.get('page_size', 50)
+        }
+        url = 'https://business-api.tiktok.com/open_api/v1.3/query/location/'
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=30)
+            data = resp.json().get('data', {})
+            return data.get('list', []) if isinstance(data, dict) else []
+        except Exception as e:
+            print(f"[TikTok] list_locations error: {e}")
+            return []
+
+    def tiktok_get_keyword(self, advertiser_id: str, keyword: str = None, **kwargs) -> Dict:
+        """获取关键词详情"""
+        import requests
+        token = self.credentials.get('tiktok', {}).get('access_token', '')
+        headers = {'Access-Token': token}
+        params = {
+            'advertiser_id': advertiser_id,
+            'keyword': keyword,
+            'page': kwargs.get('page', 1),
+            'page_size': kwargs.get('page_size', 10)
+        }
+        url = 'https://business-api.tiktok.com/open_api/v1.3/query/keyword/'
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=30)
+            data = resp.json().get('data', {})
+            keywords = data.get('list', [])
+            return keywords[0] if keywords else {}
+        except Exception as e:
+            print(f"[TikTok] get_keyword error: {e}")
+            return {}
+    
+    def tiktok_get_audience(self, advertiser_id: str, audience_id: str = None, **kwargs) -> Dict:
+        """获取受众详情"""
+        import requests
+        token = self.credentials.get('tiktok', {}).get('access_token', '')
+        headers = {'Access-Token': token}
+        params = {
+            'advertiser_id': advertiser_id,
+            'page': kwargs.get('page', 1),
+            'page_size': kwargs.get('page_size', 20)
+        }
+        url = 'https://business-api.tiktok.com/open_api/v1.3/audience/get/'
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=30)
+            data = resp.json().get('data', {})
+            audiences = data.get('list', [])
+            if audience_id:
+                return next((a for a in audiences if str(a.get('audience_id')) == str(audience_id)), {})
+            return audiences[0] if audiences else {}
+        except Exception as e:
+            print(f"[TikTok] get_audience error: {e}")
+            return {}
+    
+    def tiktok_get_location(self, advertiser_id: str, location_type: str = 'COUNTRY', **kwargs) -> List[Dict]:
+        """获取地域列表"""
+        import requests
+        token = self.credentials.get('tiktok', {}).get('access_token', '')
+        headers = {'Access-Token': token}
+        params = {
+            'advertiser_id': advertiser_id,
+            'location_type': location_type,
+            'page': kwargs.get('page', 1),
+            'page_size': kwargs.get('page_size', 50)
+        }
+        url = 'https://business-api.tiktok.com/open_api/v1.3/query/location/'
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=30)
+            data = resp.json().get('data', {})
+            return data.get('list', []) if isinstance(data, dict) else []
+        except Exception as e:
+            print(f"[TikTok] get_location error: {e}")
+            return []
+    
+    def tiktok_get_creative(self, creative_id: str, **kwargs) -> Dict:
+        """获取创意素材详情"""
+        import requests
+        token = self.credentials.get('tiktok', {}).get('access_token', '')
+        headers = {'Access-Token': token}
+        params = {
+            'creative_ids': [creative_id]
+        }
+        url = 'https://business-api.tiktok.com/open_api/v1.3/creative/get/'
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=30)
+            data = resp.json().get('data', {})
+            creatives = data.get('list', [])
+            return creatives[0] if creatives else {}
+        except Exception as e:
+            print(f"[TikTok] get_creative error: {e}")
+            return {}
+
     def tiktok_create_campaign(self, account_id: str, name: str, **kwargs) -> Dict:
         """创建广告系列"""
         client = self.get_client('tiktok')
@@ -598,6 +779,91 @@ class AdPlatformClient:
         return {}
     
     # ========== Google Ads API (55+ tools) ==========
+    def meta_list_keywords(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出关键词 - 使用 Keywords API"""
+        import requests
+        token = self.credentials.get('meta', {}).get('access_token', '')
+        # Meta 使用 AdKeywords 实体
+        url = f"https://graph.facebook.com/v19.0/{account_id}/keywords"
+        params = {'access_token': token, 'limit': kwargs.get('limit', 50)}
+        try:
+            resp = requests.get(url, params=params, timeout=30)
+            data = resp.json()
+            return data.get('data', [])
+        except Exception as e:
+            print(f"[Meta] list_keywords error: {e}")
+            return []
+    
+    def meta_get_keyword(self, account_id: str, keyword_id: str, **kwargs) -> Dict:
+        """获取关键词详情"""
+        import requests
+        token = self.credentials.get('meta', {}).get('access_token', '')
+        url = f"https://graph.facebook.com/v19.0/{keyword_id}"
+        params = {'access_token': token, 'fields': 'id,name,match_type'}
+        try:
+            resp = requests.get(url, params=params, timeout=30)
+            return resp.json()
+        except Exception as e:
+            print(f"[Meta] get_keyword error: {e}")
+            return {}
+    
+    def meta_list_locations(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出地域 - 使用 TargetingSpecs 接口"""
+        import requests
+        token = self.credentials.get('meta', {}).get('access_token', '')
+        # Meta 地域查询端点
+        url = f"https://graph.facebook.com/v19.0/{account_id}/targetingspecs"
+        params = {'access_token': token}
+        try:
+            resp = requests.get(url, params=params, timeout=30)
+            data = resp.json()
+            # 返回国家列表
+            locations = data.get('data', [])
+            return [{'id': loc.get('id'), 'name': loc.get('name'), 'type': loc.get('type')} for loc in locations]
+        except Exception as e:
+            print(f"[Meta] list_locations error: {e}")
+            return []
+    
+    def meta_get_location(self, account_id: str, location_id: str, **kwargs) -> Dict:
+        """获取地域详情"""
+        import requests
+        token = self.credentials.get('meta', {}).get('access_token', '')
+        url = f"https://graph.facebook.com/v19.0/{location_id}"
+        params = {'access_token': token}
+        try:
+            resp = requests.get(url, params=params, timeout=30)
+            return resp.json()
+        except Exception as e:
+            print(f"[Meta] get_location error: {e}")
+            return {}
+    
+    def meta_list_creatives(self, account_id: str, **kwargs) -> List[Dict]:
+        """列出创意素材 - 使用 Creative API"""
+        import requests
+        token = self.credentials.get('meta', {}).get('access_token', '')
+        url = f"https://graph.facebook.com/v19.0/{account_id}/creatives"
+        params = {'access_token': token, 'limit': kwargs.get('limit', 50)}
+        try:
+            resp = requests.get(url, params=params, timeout=30)
+            data = resp.json()
+            return data.get('data', [])
+        except Exception as e:
+            print(f"[Meta] list_creatives error: {e}")
+            return []
+    
+    def meta_get_creative(self, creative_id: str, **kwargs) -> Dict:
+        """获取创意素材详情"""
+        import requests
+        token = self.credentials.get('meta', {}).get('access_token', '')
+        url = f"https://graph.facebook.com/v19.0/{creative_id}"
+        params = {'access_token': token, 'fields': 'id,name,object_story_spec'}
+        try:
+            resp = requests.get(url, params=params, timeout=30)
+            return resp.json()
+        except Exception as e:
+            print(f"[Meta] get_creative error: {e}")
+            return {}
+
     def google_list_customers(self, **kwargs) -> List[Dict]:
         """列出 Google Ads 客户"""
         try:
@@ -765,8 +1031,30 @@ class AdPlatformClient:
         
         return {'resource_name': response.results[0].resource_name}
     
-    def google_list_keywords(self, customer_id: str, ad_group_id: str, **kwargs) -> List[Dict]:
-        """列出关键词"""
+    def google_list_keywords(self, customer_id: str, campaign_id: str = None, **kwargs) -> List[Dict]:
+        """列出关键词 - 使用 Google Ads API"""
+        client = self.get_client('google_ads')
+        ga_service = client.get_service("KeywordServiceApi")
+        query = f"SELECT keyword.id, keyword.text, keyword.match_type, campaign.id as campaign_id FROM keyword"
+        if campaign_id:
+            query += f" WHERE campaign.id = {campaign_id}"
+        query += f" LIMIT {kwargs.get('limit', 100)}"
+        
+        try:
+            response = ga_service.search_stream(customer_id=customer_id, query=query)
+            keywords = []
+            for batch in response:
+                for row in batch.results:
+                    keywords.append({
+                        'id': row.keyword.id,
+                        'text': row.keyword.text,
+                        'match_type': row.keyword.match_type,
+                        'campaign_id': campaign_id
+                    })
+            return keywords
+        except Exception as e:
+            print(f"[Google Ads] list_keywords error: {e}")
+            return []
         client = self.get_client('google')
         ad_group_criterion_service = client.get_service('AdGroupCriterionService')
         query = f"""
@@ -1753,6 +2041,118 @@ class AdPlatformClient:
     def dv360_update_placement_recommendation(self, recommendation_id: str, **kwargs) -> Dict:
         """更新投放位置推荐"""
         return {}
+
+    def dv360_list_keywords(self, partner_id: str, **kwargs) -> List[Dict]:
+        """列出关键词 - 使用 Keyword Targeting Service"""
+        import requests
+        token = self.credentials.get('dv360', {}).get('access_token', '')
+        headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+        url = f"https://display-video.googleapis.com/v1/partners/{partner_id}/keywordTargets"
+        params = {'pageSize': kwargs.get('page_size', 50)}
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=30)
+            data = resp.json()
+            return data.get('keywordTargets', [])
+        except Exception as e:
+            print(f"[DV360] list_keywords error: {e}")
+            return []
+    
+    def dv360_get_keyword(self, partner_id: str, keyword_target_id: str, **kwargs) -> Dict:
+        """获取关键词详情"""
+        import requests
+        token = self.credentials.get('dv360', {}).get('access_token', '')
+        headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+        url = f"https://display-video.googleapis.com/v1/partners/{partner_id}/keywordTargets/{keyword_target_id}"
+        try:
+            resp = requests.get(url, headers=headers, timeout=30)
+            return resp.json()
+        except Exception as e:
+            print(f"[DV360] get_keyword error: {e}")
+            return {}
+    
+    def dv360_list_audiences(self, partner_id: str, **kwargs) -> List[Dict]:
+        """列出受众 - 使用 Audience Targeting Service"""
+        import requests
+        token = self.credentials.get('dv360', {}).get('access_token', '')
+        headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+        url = f"https://display-video.googleapis.com/v1/partners/{partner_id}/audienceTargets"
+        params = {'pageSize': kwargs.get('page_size', 50)}
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=30)
+            data = resp.json()
+            return data.get('audienceTargets', [])
+        except Exception as e:
+            print(f"[DV360] list_audiences error: {e}")
+            return []
+    
+    def dv360_get_audience(self, partner_id: str, audience_target_id: str, **kwargs) -> Dict:
+        """获取受众详情"""
+        import requests
+        token = self.credentials.get('dv360', {}).get('access_token', '')
+        headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+        url = f"https://display-video.googleapis.com/v1/partners/{partner_id}/audienceTargets/{audience_target_id}"
+        try:
+            resp = requests.get(url, headers=headers, timeout=30)
+            return resp.json()
+        except Exception as e:
+            print(f"[DV360] get_audience error: {e}")
+            return {}
+    
+    def dv360_list_locations(self, partner_id: str, **kwargs) -> List[Dict]:
+        """列出地域 - 使用 Location Targeting Service"""
+        import requests
+        token = self.credentials.get('dv360', {}).get('access_token', '')
+        headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+        url = f"https://display-video.googleapis.com/v1/partners/{partner_id}/locationTargets"
+        params = {'pageSize': kwargs.get('page_size', 50)}
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=30)
+            data = resp.json()
+            return data.get('locationTargets', [])
+        except Exception as e:
+            print(f"[DV360] list_locations error: {e}")
+            return []
+    
+    def dv360_get_location(self, partner_id: str, location_target_id: str, **kwargs) -> Dict:
+        """获取地域详情"""
+        import requests
+        token = self.credentials.get('dv360', {}).get('access_token', '')
+        headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+        url = f"https://display-video.googleapis.com/v1/partners/{partner_id}/locationTargets/{location_target_id}"
+        try:
+            resp = requests.get(url, headers=headers, timeout=30)
+            return resp.json()
+        except Exception as e:
+            print(f"[DV360] get_location error: {e}")
+            return {}
+    
+    def dv360_list_creatives(self, partner_id: str, **kwargs) -> List[Dict]:
+        """列出创意素材 - 使用 Creative Targeting Service"""
+        import requests
+        token = self.credentials.get('dv360', {}).get('access_token', '')
+        headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+        url = f"https://display-video.googleapis.com/v1/partners/{partner_id}/creativeTargets"
+        params = {'pageSize': kwargs.get('page_size', 50)}
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=30)
+            data = resp.json()
+            return data.get('creativeTargets', [])
+        except Exception as e:
+            print(f"[DV360] list_creatives error: {e}")
+            return []
+    
+    def dv360_get_creative(self, partner_id: str, creative_target_id: str, **kwargs) -> Dict:
+        """获取创意素材详情"""
+        import requests
+        token = self.credentials.get('dv360', {}).get('access_token', '')
+        headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+        url = f"https://display-video.googleapis.com/v1/partners/{partner_id}/creativeTargets/{creative_target_id}"
+        try:
+            resp = requests.get(url, headers=headers, timeout=30)
+            return resp.json()
+        except Exception as e:
+            print(f"[DV360] get_creative error: {e}")
+            return {}
 
     def meta_auth(self, **kwargs) -> Dict:
         """Meta OAuth 认证"""
