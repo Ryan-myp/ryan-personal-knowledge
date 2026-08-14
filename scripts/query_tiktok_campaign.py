@@ -74,33 +74,41 @@ def format_explanation(data):
     lines.append("")
     
     # Ad Groups 统计
-    lines.append("┌─ AD GROUPS (" + str(len(ad_groups)).rjust(2, ' ') + " total)" + "─" * 51 + "┐")
+    lines.append("")
+    lines.append("╔" + "═" * 68 + "╗")
+    lines.append("║" + f" AD GROUPS ({len(ad_groups):>2} total)".ljust(68) + "║")
+    lines.append("╚" + "═" * 68 + "╝")
     for i, ag in enumerate(ad_groups[:10], 1):
         ag_status = format_status(ag.get('secondary_status', ag.get('operation_status', '')))
-        name = ag.get('adgroup_name', 'N/A')[:40]
-        lines.append(f"│ {i:2d}. {name:<40} │ {ag_status:>20}")
-        lines.append(f"│    ID: {ag.get('adgroup_id', 'N/A')}")
-        lines.append(f"│    Obj: {ag.get('optimization_goal', 'N/A')} | Bid: {ag.get('bid_type', 'N/A')} | Bill: {ag.get('billing_event', 'N/A')}")
+        name = ag.get('adgroup_name', 'N/A')
+        lines.append(f"")
+        lines.append(f"  [{i:2d}] {name}")
+        lines.append(f"       ID    : {ag.get('adgroup_id', 'N/A')}")
+        lines.append(f"       Status: {ag_status}")
+        lines.append(f"       Goal  : {ag.get('optimization_goal', 'N/A')} | Bid: {ag.get('bid_type', 'N/A')} | Bill: {ag.get('billing_event', 'N/A')}")
     if len(ad_groups) > 10:
-        lines.append(f"│ ... and {len(ad_groups) - 10} more")
-    lines.append("└" + "─" * 62 + "┘")
+        lines.append(f"")
+        lines.append(f"  ... and {len(ad_groups) - 10} more ad groups")
     lines.append("")
     
     # Ads 统计
-    if ads:
-        lines.append("┌─ ADS (First AdGroup: " + str(len(ads)).rjust(2, ' ') + " total)" + "─" * 41 + "┐")
-        for i, ad in enumerate(ads[:5], 1):
-            ad_status = format_status(ad.get('secondary_status', ad.get('operation_status', '')))
-            name = ad.get('ad_name', 'N/A')[:35]
-            creator = ad.get('display_name', 'N/A')
-            lines.append(f"│ {i}. {name:<35} │ {creator:<15} │ {ad_status}")
-            lines.append(f"│    ID: {ad.get('ad_id', 'N/A')} | Format: {ad.get('ad_format', 'N/A')}")
-        if len(ads) > 5:
-            lines.append(f"│ ... and {len(ads) - 5} more")
-    else:
-        lines.append("┌─ ADS ─" + "─" * 62 + "┐")
-        lines.append("│ No ads found in the first ad group                     │")
-    lines.append("└" + "─" * 62 + "┘")
+    lines.append("╔" + "═" * 68 + "╗")
+    lines.append("║" + f" ADS (First AdGroup: {len(ads):>2} total)".ljust(68) + "║")
+    lines.append("╚" + "═" * 68 + "╝")
+    for i, ad in enumerate(ads[:5], 1):
+        ad_status = format_status(ad.get('secondary_status', ad.get('operation_status', '')))
+        name = ad.get('ad_name', 'N/A')[:50]
+        creator = ad.get('display_name', 'N/A') or 'N/A'
+        lines.append(f"")
+        lines.append(f"  [{i}] {name}")
+        lines.append(f"      ID      : {ad.get('ad_id', 'N/A')}")
+        lines.append(f"      Creator : {creator}")
+        lines.append(f"      Status  : {ad_status}")
+        lines.append(f"      Format  : {ad.get('ad_format', 'N/A')}")
+    if len(ads) > 5:
+        lines.append(f"")
+        lines.append(f"  ... and {len(ads) - 5} more ads")
+    lines.append("")
     lines.append("")
     
     # 关键指标汇总
