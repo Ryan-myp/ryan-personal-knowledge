@@ -33,8 +33,10 @@ def format_explanation(data):
     lines.append("")
 
     campaign = data.get('campaign', {})
-    ad_groups = data.get('ad_groups', {}).get('data', [])
-    ads = data.get('ads', {}).get('data', [])
+    ad_groups_data = data.get('ad_groups', {})
+    ad_groups = ad_groups_data.get('list', []) if isinstance(ad_groups_data, dict) else []
+    ads_data = data.get('ads', {})
+    ads = ads_data.get('list', []) if isinstance(ads_data, dict) else []
     creatives = data.get('creatives', {}).get('data', [])
 
     lines.append("Campaign (广告系列):")
@@ -56,10 +58,13 @@ def format_explanation(data):
 
     lines.append("Ad Groups (广告组):")
     if ad_groups:
+        lines.append(f"   Total: {len(ad_groups)}")
         for i, ad_group in enumerate(ad_groups[:5], 1):
             lines.append(f"   --- Ad Group {i} ---")
-            lines.append(f"   Name: {ad_group.get('adgroup_name', ad_group.get('name', 'N/A'))}")
-            lines.append(f"   ID: {ad_group.get('adgroup_id', ad_group.get('id', 'N/A'))}")
+            lines.append(f"   Name: {ad_group.get('adgroup_name', 'N/A')}")
+            lines.append(f"   ID: {ad_group.get('adgroup_id', 'N/A')}")
+            status = ad_group.get('secondary_status', 'N/A')
+            lines.append(f"   Status: {status}")
             lines.append("")
     else:
         lines.append("   (No ad groups found)")
@@ -67,10 +72,14 @@ def format_explanation(data):
 
     lines.append("Ads (广告):")
     if ads:
+        lines.append(f"   Total: {len(ads)}")
         for i, ad in enumerate(ads[:5], 1):
             lines.append(f"   --- Ad {i} ---")
-            lines.append(f"   Name: {ad.get('ad_name', ad.get('name', 'N/A'))}")
-            lines.append(f"   ID: {ad.get('ad_id', ad.get('id', 'N/A'))}")
+            lines.append(f"   Name: {ad.get('ad_name', 'N/A')[:50]}...")
+            lines.append(f"   ID: {ad.get('ad_id', 'N/A')}")
+            lines.append(f"   Creator: {ad.get('display_name', 'N/A')}")
+            status = ad.get('secondary_status', 'N/A')
+            lines.append(f"   Status: {status}")
             lines.append("")
     else:
         lines.append("   (No ads found)")
