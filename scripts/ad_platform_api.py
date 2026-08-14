@@ -71,13 +71,20 @@ class AdPlatformClient:
         """创建 Google Ads 客户端"""
         from google.ads.googleads.client import GoogleAdsClient
         creds = self.credentials.get('google', {})
-        return GoogleAdsClient.load_from_dict({
-            'developer_token': creds.get('developer_token', ''),
-            'oauth2_mode': 'offline',
-            'oauth2_client_id': creds.get('client_id', ''),
-            'oauth2_client_secret': creds.get('client_secret', ''),
-            'oauth2_refresh_token': creds.get('refresh_token', '')
-        })
+        from google.oauth2.credentials import Credentials
+        credentials = Credentials(
+            token=None,
+            refresh_token=creds.get('refresh_token', ''),
+            client_id=creds.get('client_id', ''),
+            client_secret=creds.get('client_secret', ''),
+            token_uri="https://oauth2.googleapis.com/token"
+        )
+        return GoogleAdsClient(
+            credentials=credentials,
+            developer_token=creds.get('developer_token', ''),
+            login_customer_id=creds.get('login_customer_id', ''),
+            use_proto_plus=True
+        )
     
     def _create_dv360_client(self):
         """创建 DV360 客户端"""
@@ -391,7 +398,8 @@ class AdPlatformClient:
         }
         resp = requests.get(url, params=params, timeout=30)
         data = resp.json()
-        return data.get('data', [])
+        # 响应可能是 dict（包含 data 字段）或 list
+        return data.get('data', []) if isinstance(data, dict) else data
     
     def meta_get_campaign(self, campaign_id: str, **kwargs) -> Dict:
         """获取广告系列详情 - 使用 Graph API 直接调用"""
