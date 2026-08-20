@@ -69,25 +69,25 @@
 
 ```
 Customer
-    │
-    └── Campaign (广告系列)
-            │
-            ├── Budgets (预算)
-            ├── Dates (投放时间)
-            ├── Campaign criteria (广告系列定向)
-            │
-            └── Ad Group (广告组)
-                    │
-                    ├── Campaign criteria (广告组级别定向)
-                    │
-                    ├── Ad (广告)
-                    │       ├── Headlines (标题)
-                    │       ├── Descriptions (描述)
-                    │       ├── URLs (落地页)
-                    │       └── Assets (附加信息)
-                    │
-                    └── Ad Group Criteria (关键词)
-                            └── Keywords (关键词列表)
+    |
+    +-- Campaign (广告系列)
+            |
+            |--- Budgets (预算)
+            |--- Dates (投放时间)
+            |--- Campaign criteria (广告系列定向)
+            |
+            +-- Ad Group (广告组)
+                    |
+                    |--- Campaign criteria (广告组级别定向)
+                    |
+                    |--- Ad (广告)
+                    |       |--- Headlines (标题)
+                    |       |--- Descriptions (描述)
+                    |       |--- URLs (落地页)
+                    |       +-- Assets (附加信息)
+                    |
+                    +-- Ad Group Criteria (关键词)
+                            +-- Keywords (关键词列表)
 ```
 
 ### 各层级字段说明
@@ -193,33 +193,33 @@ Search Ads 支持全部 10 种 Extensions：
 
 ```
 Customer
-    │
-    └── Campaign (广告系列)
-            │
-            ├── Budgets (预算)
-            ├── Dates (投放时间)
-            ├── Campaign goal settings (广告目标设置)
-            │       ├── sales_campaign_goal_setting (销售目标)
-            │       └── lead_campaign_goal_setting (线索目标)
-            │
-            ├── Audience signals (受众信号)
-            │       ├── custom_segments (自定义细分)
-            │       └── customer_match_user_lists (客户匹配列表)
-            │
-            └── Asset groups (资产组) × N个
-                    │
-                    ├── Product selection (产品选择 - 电商类型)
-                    │       └── Product group (产品分组)
-                    │
-                    ├── Assets (资产素材)
-                    │       ├── Headlines (标题)
-                    │       ├── Descriptions (描述)
-                    │       ├── Images (图片)
-                    │       ├── Logos (Logo)
-                    │       ├── Videos (视频)
-                    │       └── CTAs (行动号召)
-                    │
-                    └── Final URL suffix (最终URL后缀)
+    |
+    +-- Campaign (广告系列)
+            |
+            |--- Budgets (预算)
+            |--- Dates (投放时间)
+            |--- Campaign goal settings (广告目标设置)
+            |       |--- sales_campaign_goal_setting (销售目标)
+            |       +-- lead_campaign_goal_setting (线索目标)
+            |
+            |--- Audience signals (受众信号)
+            |       |--- custom_segments (自定义细分)
+            |       +-- customer_match_user_lists (客户匹配列表)
+            |
+            +-- Asset groups (资产组) × N个
+                    |
+                    |--- Product selection (产品选择 - 电商类型)
+                    |       +-- Product group (产品分组)
+                    |
+                    |--- Assets (资产素材)
+                    |       |--- Headlines (标题)
+                    |       |--- Descriptions (描述)
+                    |       |--- Images (图片)
+                    |       |--- Logos (Logo)
+                    |       |--- Videos (视频)
+                    |       +-- CTAs (行动号召)
+                    |
+                    +-- Final URL suffix (最终URL后缀)
 ```
 
 ### 各层级字段说明
@@ -467,26 +467,26 @@ asset_group = {
 
 ```
 Customer
-    │
-    └── Campaign (广告系列)
-            │
-            ├── Budgets (预算)
-            ├── Dates (投放时间)
-            │
-            └── Shopping Setting (购物设置)
-                    ├── merchant_id (商家 ID)
-                    ├── sales_country (销售国家)
-                    ├── priority (优先级 0-100)
-                    └── exclude_offline_store_locations (排除门店)
-            │
-            └── Ad Group (广告组)
-                    │
-                    └── Product Group / Listing Group (产品分组) × N个
-                            ├── all_products (根节点)
-                            ├── product_type_1~5 (产品子类细分)
-                            ├── custom_label_0~4 (自定义标签细分)
-                            ├── brand / category / condition (其他细分)
-                            └── cpc_bid_micros (叶节点出价)
+    |
+    +-- Campaign (广告系列)
+            |
+            |--- Budgets (预算)
+            |--- Dates (投放时间)
+            |
+            +-- Shopping Setting (购物设置)
+                    |--- merchant_id (商家 ID)
+                    |--- sales_country (销售国家)
+                    |--- priority (优先级 0-100)
+                    +-- exclude_offline_store_locations (排除门店)
+            |
+            +-- Ad Group (广告组)
+                    |
+                    +-- Product Group / Listing Group (产品分组) × N个
+                            |--- all_products (根节点)
+                            |--- product_type_1~5 (产品子类细分)
+                            |--- custom_label_0~4 (自定义标签细分)
+                            |--- brand / category / condition (其他细分)
+                            +-- cpc_bid_micros (叶节点出价)
 ```
 
 ### 各层级字段说明
@@ -557,27 +557,27 @@ Shopping Ads 支持的 Extensions：
 
 ```
 Customer
-    │
-    └── Campaign (广告系列)
-            │
-            ├── Budgets (预算)
-            ├── Dates (投放时间)
-            │
-            └── Ad Group (广告组)
-                    │
-                    ├── Targeting (定向)
-                    │       ├── placement_ids (网站/APP 投放位)
-                    │       └── audience_signals (受众信号)
-                    │
-                    └── Ad (广告)
-                            ├── Video (视频)
-                            │       ├── video_id (YouTube 视频 ID)
-                            │       └── tracking_urls (追踪链接)
-                            ├── Final URL (落地页)
-                            └── Assets (附加信息)
-                                    ├── Headlines
-                                    ├── Descriptions
-                                    └── Call To Action
+    |
+    +-- Campaign (广告系列)
+            |
+            |--- Budgets (预算)
+            |--- Dates (投放时间)
+            |
+            +-- Ad Group (广告组)
+                    |
+                    |--- Targeting (定向)
+                    |       |--- placement_ids (网站/APP 投放位)
+                    |       +-- audience_signals (受众信号)
+                    |
+                    +-- Ad (广告)
+                            |--- Video (视频)
+                            |       |--- video_id (YouTube 视频 ID)
+                            |       +-- tracking_urls (追踪链接)
+                            |--- Final URL (落地页)
+                            +-- Assets (附加信息)
+                                    |--- Headlines
+                                    |--- Descriptions
+                                    +-- Call To Action
 ```
 
 ### 各层级字段说明
@@ -645,32 +645,32 @@ Video Ads 支持的 Extensions（非常有限）：
 
 ```
 Customer
-    │
-    └── Campaign (广告系列)
-            │
-            ├── Budgets (预算)
-            ├── Dates (投放时间)
-            │
-            └── Ad Group (广告组)
-                    │
-                    ├── Targeting (定向)
-                    │       ├── placements (投放位)
-                    │       ├── topics (主题)
-                    │       ├── keywords (关键词)
-                    │       └── audience_signals (受众信号)
-                    │
-                    └── Ad (广告)
-                            ├── Responsive Display Ad (响应式展示广告)
-                            │       ├── headlines (标题)
-                            │       ├── descriptions (描述)
-                            │       ├── images (图片)
-                            │       ├── logos (Logo)
-                            │       └── business_name (商家名称)
-                            │
-                            └── Standard Display Ad (标准展示广告)
-                                    ├── final_url (落地页)
-                                    ├── advertisement_images (广告图片)
-                                    └── path1 / path2 (路径增强)
+    |
+    +-- Campaign (广告系列)
+            |
+            |--- Budgets (预算)
+            |--- Dates (投放时间)
+            |
+            +-- Ad Group (广告组)
+                    |
+                    |--- Targeting (定向)
+                    |       |--- placements (投放位)
+                    |       |--- topics (主题)
+                    |       |--- keywords (关键词)
+                    |       +-- audience_signals (受众信号)
+                    |
+                    +-- Ad (广告)
+                            |--- Responsive Display Ad (响应式展示广告)
+                            |       |--- headlines (标题)
+                            |       |--- descriptions (描述)
+                            |       |--- images (图片)
+                            |       |--- logos (Logo)
+                            |       +-- business_name (商家名称)
+                            |
+                            +-- Standard Display Ad (标准展示广告)
+                                    |--- final_url (落地页)
+                                    |--- advertisement_images (广告图片)
+                                    +-- path1 / path2 (路径增强)
 ```
 
 ### 各层级字段说明
@@ -730,29 +730,29 @@ Display Ads 支持的 Extensions：
 
 ```
 Customer
-    │
-    └── Campaign (广告系列)
-            │
-            ├── Budgets (预算)
-            ├── Dates (投放时间)
-            │
-            └── Ad Group (广告组)
-                    │
-                    ├── Targeting (定向)
-                    │       └── audience_signals (受众信号)
-                    │
-                    └── Ad (广告)
-                            ├── App Campaign Assets (应用广告素材)
-                            │       ├── headlines (标题)
-                            │       ├── descriptions (描述)
-                            │       ├── images (图片)
-                            │       ├── videos (视频)
-                            │       └── logos (Logo)
-                            │
-                            └── App Settings (应用设置)
-                                    ├── app_id (应用 ID)
-                                    ├── app_store (应用商店)
-                                    └── deep_link (深度链接)
+    |
+    +-- Campaign (广告系列)
+            |
+            |--- Budgets (预算)
+            |--- Dates (投放时间)
+            |
+            +-- Ad Group (广告组)
+                    |
+                    |--- Targeting (定向)
+                    |       +-- audience_signals (受众信号)
+                    |
+                    +-- Ad (广告)
+                            |--- App Campaign Assets (应用广告素材)
+                            |       |--- headlines (标题)
+                            |       |--- descriptions (描述)
+                            |       |--- images (图片)
+                            |       |--- videos (视频)
+                            |       +-- logos (Logo)
+                            |
+                            +-- App Settings (应用设置)
+                                    |--- app_id (应用 ID)
+                                    |--- app_store (应用商店)
+                                    +-- deep_link (深度链接)
 ```
 
 ### 各层级字段说明
@@ -833,36 +833,36 @@ App Ads 支持的 Extensions：
 
 ```
 Business Manager
-    │
-    └── Ad Account (广告账户)
-            │
-            └── Campaign (广告系列)
-                    │
-                    ├── objective (目标: TRAFFIC)
-                    ├── special_ad_categories (特殊广告类别)
-                    ├── daily_budget / lifetime_budget (预算)
-                    │
-                    └── Ad Set (广告组)
-                            │
-                            ├── optimization_guide (优化指南)
-                            ├── billing_event (计费事件)
-                            ├── target_cost (目标成本)
-                            │
-                            ├── targeting (受众定向)
-                            │       ├── geo_locations (地理位置)
-                            │       ├── age (年龄)
-                            │       ├── genders (性别)
-                            │       ├── interests (兴趣)
-                            │       └── behaviors (行为)
-                            │
-                            └── Ad (广告)
-                                    │
-                                    ├── creative (创意)
-                                    │       ├── image_url (图片)
-                                    │       ├── video_url (视频)
-                                    │       └── link_data (链接数据)
-                                    │
-                                    └── tracking_urls (追踪链接)
+    |
+    +-- Ad Account (广告账户)
+            |
+            +-- Campaign (广告系列)
+                    |
+                    |--- objective (目标: TRAFFIC)
+                    |--- special_ad_categories (特殊广告类别)
+                    |--- daily_budget / lifetime_budget (预算)
+                    |
+                    +-- Ad Set (广告组)
+                            |
+                            |--- optimization_guide (优化指南)
+                            |--- billing_event (计费事件)
+                            |--- target_cost (目标成本)
+                            |
+                            |--- targeting (受众定向)
+                            |       |--- geo_locations (地理位置)
+                            |       |--- age (年龄)
+                            |       |--- genders (性别)
+                            |       |--- interests (兴趣)
+                            |       +-- behaviors (行为)
+                            |
+                            +-- Ad (广告)
+                                    |
+                                    |--- creative (创意)
+                                    |       |--- image_url (图片)
+                                    |       |--- video_url (视频)
+                                    |       +-- link_data (链接数据)
+                                    |
+                                    +-- tracking_urls (追踪链接)
 ```
 
 ### 各层级字段说明
@@ -934,29 +934,29 @@ Business Manager
 
 ```
 Business Manager
-    │
-    └── Ad Account (广告账户)
-            │
-            └── Campaign (广告系列)
-                    │
-                    ├── objective (目标: CONVERSIONS / SALES)
-                    ├── pixel_id / capi_config (转化追踪配置)
-                    │
-                    └── Ad Set (广告组)
-                            │
-                            ├── optimization_guide (优化: CONVERSIONS)
-                            ├── conversion_spec_id (转化事件 ID)
-                            ├── daily_budget (预算)
-                            │
-                            ├── targeting (受众定向)
-                            │
-                            └── Ad (广告)
-                                    │
-                                    ├── creative (创意)
-                                    │       ├── primary_image / primary_video
-                                    │       └── call_to_action (CTA)
-                                    │
-                                    └── tracking_url (转化追踪)
+    |
+    +-- Ad Account (广告账户)
+            |
+            +-- Campaign (广告系列)
+                    |
+                    |--- objective (目标: CONVERSIONS / SALES)
+                    |--- pixel_id / capi_config (转化追踪配置)
+                    |
+                    +-- Ad Set (广告组)
+                            |
+                            |--- optimization_guide (优化: CONVERSIONS)
+                            |--- conversion_spec_id (转化事件 ID)
+                            |--- daily_budget (预算)
+                            |
+                            |--- targeting (受众定向)
+                            |
+                            +-- Ad (广告)
+                                    |
+                                    |--- creative (创意)
+                                    |       |--- primary_image / primary_video
+                                    |       +-- call_to_action (CTA)
+                                    |
+                                    +-- tracking_url (转化追踪)
 ```
 
 ### 关键配置差异（vs Traffic Ads）
@@ -986,25 +986,25 @@ Business Manager
 
 ```
 Business Manager
-    │
-    └── Ad Account
-            │
-            └── Campaign
-                    │
-                    └── Ad Set
-                            │
-                            ├── objective: LEAD_GENERATION
-                            │
-                            └── Instant Form (即时表单)
-                                    ├── title (表单标题)
-                                    ├── description (表单描述)
-                                    ├── privacy_policy_url (隐私政策)
-                                    │
-                                    └── Fields (表单字段)
-                                            ├── full_name (全名)
-                                            ├── email_address (邮箱)
-                                            ├── phone_number (电话)
-                                            └── custom_question (自定义问题)
+    |
+    +-- Ad Account
+            |
+            +-- Campaign
+                    |
+                    +-- Ad Set
+                            |
+                            |--- objective: LEAD_GENERATION
+                            |
+                            +-- Instant Form (即时表单)
+                                    |--- title (表单标题)
+                                    |--- description (表单描述)
+                                    |--- privacy_policy_url (隐私政策)
+                                    |
+                                    +-- Fields (表单字段)
+                                            |--- full_name (全名)
+                                            |--- email_address (邮箱)
+                                            |--- phone_number (电话)
+                                            +-- custom_question (自定义问题)
 ```
 
 ### 各层级字段说明
@@ -1050,21 +1050,21 @@ Business Manager
 
 ```
 Business Manager
-    │
-    └── Ad Account
-            │
-            └── Campaign
-                    │
-                    └── Ad Set
-                            │
-                            ├── objective: ENGAGEMENT
-                            ├── engagement_type: POST_ENGAGEMENT / PAGE_LIKES 等
-                            │
-                            └── Ad
-                                    │
-                                    └── Creative
-                                            ├── media_url (媒体 URL)
-                                            └── call_to_action (CTA)
+    |
+    +-- Ad Account
+            |
+            +-- Campaign
+                    |
+                    +-- Ad Set
+                            |
+                            |--- objective: ENGAGEMENT
+                            |--- engagement_type: POST_ENGAGEMENT / PAGE_LIKES 等
+                            |
+                            +-- Ad
+                                    |
+                                    +-- Creative
+                                            |--- media_url (媒体 URL)
+                                            +-- call_to_action (CTA)
 ```
 
 ### 常用 Engagement Type
@@ -1096,29 +1096,29 @@ Business Manager
 
 ```
 Business Manager
-    │
-    └── Ad Account
-            │
-            └── Campaign
-                    │
-                    ├── objective: SALES / CONVERSIONS
-                    ├── catalog_id (商品目录 ID)
-                    │
-                    └── Ad Set
-                            │
-                            ├── optimization_guide: CONVERSIONS
-                            ├── catalog_ad_type: DYNAMIC_PRODUCT_ADS / COLLECTION 等
-                            │
-                            ├── Product Set (商品集)
-                            │       ├── filter.conditions (过滤条件)
-                            │       └── default_filter (默认过滤)
-                            │
-                            └── Ad
-                                    │
-                                    └── Dynamic Creative (动态创意)
-                                            ├── carousel_ad_type (轮播类型)
-                                            ├── card_style (卡片样式)
-                                            └── product_ids (产品 ID 列表)
+    |
+    +-- Ad Account
+            |
+            +-- Campaign
+                    |
+                    |--- objective: SALES / CONVERSIONS
+                    |--- catalog_id (商品目录 ID)
+                    |
+                    +-- Ad Set
+                            |
+                            |--- optimization_guide: CONVERSIONS
+                            |--- catalog_ad_type: DYNAMIC_PRODUCT_ADS / COLLECTION 等
+                            |
+                            |--- Product Set (商品集)
+                            |       |--- filter.conditions (过滤条件)
+                            |       +-- default_filter (默认过滤)
+                            |
+                            +-- Ad
+                                    |
+                                    +-- Dynamic Creative (动态创意)
+                                            |--- carousel_ad_type (轮播类型)
+                                            |--- card_style (卡片样式)
+                                            +-- product_ids (产品 ID 列表)
 ```
 
 ### 各层级字段说明
@@ -1164,20 +1164,20 @@ Business Manager
 
 ```
 Business Manager
-    │
-    └── Ad Account
-            │
-            └── Campaign
-                    │
-                    └── Ad Set
-                            │
-                            ├── messaging_app_setting (消息应用设置)
-                            │       ├── whatsapp_number (WhatsApp 号码)
-                            │       ├── instagram_direct_message_setting (IG DM 设置)
-                            │       └── messenger_setting (Messenger 设置)
-                            │
-                            └── Ad
-                                    └── Welcome Message (欢迎消息)
+    |
+    +-- Ad Account
+            |
+            +-- Campaign
+                    |
+                    +-- Ad Set
+                            |
+                            |--- messaging_app_setting (消息应用设置)
+                            |       |--- whatsapp_number (WhatsApp 号码)
+                            |       |--- instagram_direct_message_setting (IG DM 设置)
+                            |       +-- messenger_setting (Messenger 设置)
+                            |
+                            +-- Ad
+                                    +-- Welcome Message (欢迎消息)
 ```
 
 ### 各层级字段说明
@@ -1225,40 +1225,40 @@ Business Manager
 
 ```
 Business Center
-    │
-    └── Advertiser (广告主)
-            │
-            └── Campaign (广告系列)
-                    │
-                    ├── objective_type (广告目标: PRODUCT_SALES)
-                    ├── daily_budget / campaign_budget (预算)
-                    ├── budget_mode (预算模式: DAY / LIFETIME)
-                    ├── promotion_type (推广类型: STANDARD / SPARK)
-                    │
-                    └── Ad Group (广告组)
-                            │
-                            ├── bid_type (出价类型: AUTO / MANUAL)
-                            ├── bid_amount (出价金额)
-                            │
-                            ├── promoted_object (推广对象配置)
-                            │       ├── objective_type: PRODUCT_SALES
-                            │       ├── website_url: "https://example.com"
-                            │       ├── catalog_id: "catalog_123"  # 商品目录 ID
-                            │       └── product_set_id: "product_set_123"  # 商品集 ID
-                            │
-                            ├── targeting (定向)
-                            │       ├── age_min / age_max (年龄)
-                            │       ├── genders (性别: 1=MALE, 2=FEMALE)
-                            │       ├── geo_locations.country_codes (国家)
-                            │       ├── interest_ids (兴趣)
-                            │       └── language_ids (语言)
-                            │
-                            └── Ad (广告)
-                                    │
-                                    ├── promoted_type (类型: VIDEO / IMAGE)
-                                    ├── video_id / image_url (素材)
-                                    ├── tracking_url (追踪链接)
-                                    └── title / description (文案)
+    |
+    +-- Advertiser (广告主)
+            |
+            +-- Campaign (广告系列)
+                    |
+                    |--- objective_type (广告目标: PRODUCT_SALES)
+                    |--- daily_budget / campaign_budget (预算)
+                    |--- budget_mode (预算模式: DAY / LIFETIME)
+                    |--- promotion_type (推广类型: STANDARD / SPARK)
+                    |
+                    +-- Ad Group (广告组)
+                            |
+                            |--- bid_type (出价类型: AUTO / MANUAL)
+                            |--- bid_amount (出价金额)
+                            |
+                            |--- promoted_object (推广对象配置)
+                            |       |--- objective_type: PRODUCT_SALES
+                            |       |--- website_url: "https://example.com"
+                            |       |--- catalog_id: "catalog_123"  # 商品目录 ID
+                            |       +-- product_set_id: "product_set_123"  # 商品集 ID
+                            |
+                            |--- targeting (定向)
+                            |       |--- age_min / age_max (年龄)
+                            |       |--- genders (性别: 1=MALE, 2=FEMALE)
+                            |       |--- geo_locations.country_codes (国家)
+                            |       |--- interest_ids (兴趣)
+                            |       +-- language_ids (语言)
+                            |
+                            +-- Ad (广告)
+                                    |
+                                    |--- promoted_type (类型: VIDEO / IMAGE)
+                                    |--- video_id / image_url (素材)
+                                    |--- tracking_url (追踪链接)
+                                    +-- title / description (文案)
 ```
 
 ### 各层级字段说明
@@ -1350,20 +1350,20 @@ Business Center
 
 ```
 Business Center
-    │
-    └── Advertiser
-            │
-            └── Campaign
-                    │
-                    └── Ad Group
-                            │
-                            └── Spark Ad (Spark 广告)
-                                    │
-                                    └── spark_info (Spark 配置)
-                                            ├── video_id (视频 ID)
-                                            ├── creator_id (达人 ID)
-                                            ├── authorization_id (授权 ID)
-                                            └── authorization_status (授权状态)
+    |
+    +-- Advertiser
+            |
+            +-- Campaign
+                    |
+                    +-- Ad Group
+                            |
+                            +-- Spark Ad (Spark 广告)
+                                    |
+                                    +-- spark_info (Spark 配置)
+                                            |--- video_id (视频 ID)
+                                            |--- creator_id (达人 ID)
+                                            |--- authorization_id (授权 ID)
+                                            +-- authorization_status (授权状态)
 ```
 
 ### 特殊要求
@@ -1392,18 +1392,18 @@ Business Center
 
 ```
 Business Center
-    │
-    └── Advertiser
-            │
-            └── Campaign
-                    │
-                    └── Ad Group
-                            │
-                            └── Lead Form (线索表单)
-                                    ├── title (表单标题)
-                                    ├── description (表单描述)
-                                    └── questions (问题列表)
-                                            └── name / type / required (字段配置)
+    |
+    +-- Advertiser
+            |
+            +-- Campaign
+                    |
+                    +-- Ad Group
+                            |
+                            +-- Lead Form (线索表单)
+                                    |--- title (表单标题)
+                                    |--- description (表单描述)
+                                    +-- questions (问题列表)
+                                            +-- name / type / required (字段配置)
 ```
 
 ### 表单字段类型
@@ -1433,17 +1433,17 @@ Business Center
 
 ```
 Business Center
-    │
-    └── Advertiser
-            │
-            └── Campaign
-                    │
-                    └── Ad Group
-                            │
-                            └── App Settings (应用设置)
-                                    ├── app_id (应用 ID)
-                                    ├── app_store (应用商店: TIKTOK / APP_STORE / GOOGLE_PLAY)
-                                    └── deep_link (深度链接)
+    |
+    +-- Advertiser
+            |
+            +-- Campaign
+                    |
+                    +-- Ad Group
+                            |
+                            +-- App Settings (应用设置)
+                                    |--- app_id (应用 ID)
+                                    |--- app_store (应用商店: TIKTOK / APP_STORE / GOOGLE_PLAY)
+                                    +-- deep_link (深度链接)
 ```
 
 ---
@@ -1463,15 +1463,15 @@ Business Center
 
 ```
 Business Center
-    │
-    └── Advertiser
-            │
-            └── Campaign
-                    │
-                    └── Ad Group
-                            │
-                            └── Brand Video Ad (品牌视频广告)
-                                    ├─箱 |
+    |
+    +-- Advertiser
+            |
+            +-- Campaign
+                    |
+                    +-- Ad Group
+                            |
+                            +-- Brand Video Ad (品牌视频广告)
+                                    |--箱 |
 | `PHONE_NUMBER` | 电话号码 |
 | `DROPDOWN` | 下拉选择 |
 | `CHECKBOX` | 多选 |
@@ -1493,17 +1493,17 @@ Business Center
 
 ```
 Business Center
-    │
-    └── Advertiser
-            │
-            └── Campaign
-                    │
-                    └── Ad Group
-                            │
-                            └── App Settings (应用设置)
-                                    ├── app_id (应用 ID)
-                                    ├── app_store (应用商店: TIKTOK / APP_STORE / GOOGLE_PLAY)
-                                    └── deep_link (深度链接)
+    |
+    +-- Advertiser
+            |
+            +-- Campaign
+                    |
+                    +-- Ad Group
+                            |
+                            +-- App Settings (应用设置)
+                                    |--- app_id (应用 ID)
+                                    |--- app_store (应用商店: TIKTOK / APP_STORE / GOOGLE_PLAY)
+                                    +-- deep_link (深度链接)
 ```
 
 ---
@@ -1523,16 +1523,16 @@ Business Center
 
 ```
 Business Center
-    │
-    └── Advertiser
-            │
-            └── Campaign
-                    │
-                    └── Ad Group
-                            │
-                            └── Brand Video Ad (品牌视频广告)
-                                    ├── duration (视频时长: 秒)
-                                    └── title (标题)
+    |
+    +-- Advertiser
+            |
+            +-- Campaign
+                    |
+                    +-- Ad Group
+                            |
+                            +-- Brand Video Ad (品牌视频广告)
+                                    |--- duration (视频时长: 秒)
+                                    +-- title (标题)
 ```
 
 ---
@@ -1584,58 +1584,58 @@ DV360 的广告位来自其连接的媒体供应商和 SSP（Supply Side Platfor
 
 ```
 Google Marketing Platform (GMP)
-    │
-    └── Partner (合作伙伴 / 媒体方)
-            │
-            └── Buyer (广告买家 / DSP 代理商)
-                    │
-                    ├── buyer_id (买家 ID)
-                    ├── status (状态: PENDING / ACTIVE / REJECTED)
-                    │
-                    ├── Campaign (广告系列)
-                    │       ├── campaign_id (系列 ID)
-                    │       ├── name (名称)
-                    │       ├── status (状态)
-                    │       ├── start_date / end_date (投放时间)
-                    │       └── budget (预算)
-                    │
-                    └── Insertion Order (IO / 广告订购单)
-                            │
-                            ├── io_id (IO ID)
-                            ├── name (名称)
-                            ├── status (状态: DRAFT / APPROVING / ACTIVE / PAUSED / ENDED)
-                            ├── start_date / end_date (投放时间)
-                            ├── budget (预算 / CPM 或 CPD)
-                            ├── bid_strategy (出价策略)
-                            ├── creative_set_id (关联创意集)
-                            │
-                            └── Line Item (LI / 行项目)
-                                    │
-                                    ├── li_id (行项目 ID)
-                                    ├── name (名称)
-                                    ├── status (状态)
-                                    ├── type (类型: PROGRAMMATIC_AGENCY / PROGRAMMATIC_DIRECT / REMARKETING / HOSTED)  
-                                    ├── budget (预算 / flight 级别或累计)
-                                    ├── billing_event (计费方式: CPM / CPC / CPD / CPV)
-                                    ├── targeting (定向配置)
-                                    │       ├── audience_segment (受众细分)
-                                    │       ├── placement (投放位)
-                                    │       ├── device_type (设备类型)
-                                    │       ├── creative_type (创意类型)
-                                    │       └── geo_location (地理位置)
-                                    │
-                                    ├── Creative Set (创意集)
-                                    │       └── Creative (创意)
-                                    │               ├── creative_id (创意 ID)
-                                    │               ├── type (类型: BANNER / VIDEO / NATIVE / HTML5)
-                                    │               ├── file (创意文件)
-                                    │               ├── dimensions (尺寸)
-                                    │               └── tracking_urls (追踪链接)
-                                    │
-                                    └── Reporting (报表)
-                                            ├── impression_tracking (展示追踪)
-                                            ├── click_tracking (点击追踪)
-                                            └── conversion_tracking (转化追踪)
+    |
+    +-- Partner (合作伙伴 / 媒体方)
+            |
+            +-- Buyer (广告买家 / DSP 代理商)
+                    |
+                    |--- buyer_id (买家 ID)
+                    |--- status (状态: PENDING / ACTIVE / REJECTED)
+                    |
+                    |--- Campaign (广告系列)
+                    |       |--- campaign_id (系列 ID)
+                    |       |--- name (名称)
+                    |       |--- status (状态)
+                    |       |--- start_date / end_date (投放时间)
+                    |       +-- budget (预算)
+                    |
+                    +-- Insertion Order (IO / 广告订购单)
+                            |
+                            |--- io_id (IO ID)
+                            |--- name (名称)
+                            |--- status (状态: DRAFT / APPROVING / ACTIVE / PAUSED / ENDED)
+                            |--- start_date / end_date (投放时间)
+                            |--- budget (预算 / CPM 或 CPD)
+                            |--- bid_strategy (出价策略)
+                            |--- creative_set_id (关联创意集)
+                            |
+                            +-- Line Item (LI / 行项目)
+                                    |
+                                    |--- li_id (行项目 ID)
+                                    |--- name (名称)
+                                    |--- status (状态)
+                                    |--- type (类型: PROGRAMMATIC_AGENCY / PROGRAMMATIC_DIRECT / REMARKETING / HOSTED)  
+                                    |--- budget (预算 / flight 级别或累计)
+                                    |--- billing_event (计费方式: CPM / CPC / CPD / CPV)
+                                    |--- targeting (定向配置)
+                                    |       |--- audience_segment (受众细分)
+                                    |       |--- placement (投放位)
+                                    |       |--- device_type (设备类型)
+                                    |       |--- creative_type (创意类型)
+                                    |       +-- geo_location (地理位置)
+                                    |
+                                    |--- Creative Set (创意集)
+                                    |       +-- Creative (创意)
+                                    |               |--- creative_id (创意 ID)
+                                    |               |--- type (类型: BANNER / VIDEO / NATIVE / HTML5)
+                                    |               |--- file (创意文件)
+                                    |               |--- dimensions (尺寸)
+                                    |               +-- tracking_urls (追踪链接)
+                                    |
+                                    +-- Reporting (报表)
+                                            |--- impression_tracking (展示追踪)
+                                            |--- click_tracking (点击追踪)
+                                            +-- conversion_tracking (转化追踪)
 ```
 
 ---
@@ -1645,34 +1645,34 @@ Google Marketing Platform (GMP)
 ### 层级关系图解
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│  Campaign (广告系列) — 战略层                                        │
-│  • 定义整体广告目标、预算、时间范围                                  │
-│  • 可包含多个 IO / Line Item                                         │
-└─────────────────────────────────────────────────────────────────────┘
-                              │
++---------------------------------------------------------------------+
+|  Campaign (广告系列) — 战略层                                        |
+|  • 定义整体广告目标、预算、时间范围                                  |
+|  • 可包含多个 IO / Line Item                                         |
++---------------------------------------------------------------------+
+                              |
                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  Insertion Order (IO / 广告订购单) — 合同层                          │
-│  • 与媒体方签订的广告投放合同                                        │
-│  • 包含审批流程 (APPROVING → ACTIVE)                                │
-│  • 设置总预算和计费方式                                              │
-└─────────────────────────────────────────────────────────────────────┘
-                              │
++---------------------------------------------------------------------+
+|  Insertion Order (IO / 广告订购单) — 合同层                          |
+|  • 与媒体方签订的广告投放合同                                        |
+|  • 包含审批流程 (APPROVING → ACTIVE)                                |
+|  • 设置总预算和计费方式                                              |
++---------------------------------------------------------------------+
+                              |
                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  Line Item (LI / 行项目) — 执行层                                    │
-│  • 具体的广告投放指令                                                │
-│  • 定义定向、出价、预算分配                                          │
-│  • 支持多种类型: 程序化Agency / 程序化直采 / ремаркетинг / 托管      │
-└─────────────────────────────────────────────────────────────────────┘
-                              │
++---------------------------------------------------------------------+
+|  Line Item (LI / 行项目) — 执行层                                    |
+|  • 具体的广告投放指令                                                |
+|  • 定义定向、出价、预算分配                                          |
+|  • 支持多种类型: 程序化Agency / 程序化直采 / ремаркетинг / 托管      |
++---------------------------------------------------------------------+
+                              |
                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  Creative Set → Creative (创意) — 素材层                             │
-│  • 实际投放的广告素材                                                │
-│  • 支持多种格式: 横幅/视频/原生/HTML5                               │
-└─────────────────────────────────────────────────────────────────────┘
++---------------------------------------------------------------------+
+|  Creative Set → Creative (创意) — 素材层                             |
+|  • 实际投放的广告素材                                                |
+|  • 支持多种格式: 横幅/视频/原生/HTML5                               |
++---------------------------------------------------------------------+
 ```
 
 ---
@@ -1763,25 +1763,25 @@ Google Marketing Platform (GMP)
 ## 4.4 IO 与 Line Item 的关系
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│  一个 Campaign 可包含多个 IO                                         │
-│  一个 IO 可包含多个 Line Item                                        │
-│  一个 Line Item 关联一个 Creative Set                                │
-└─────────────────────────────────────────────────────────────────────┘
++---------------------------------------------------------------------+
+|  一个 Campaign 可包含多个 IO                                         |
+|  一个 IO 可包含多个 Line Item                                        |
+|  一个 Line Item 关联一个 Creative Set                                |
++---------------------------------------------------------------------+
 
 示例结构:
 Campaign: "Summer 2026 Brand Campaign"
-  ├── IO-001: "Programmatic Agency - Display"
-  │     ├── LI-001: "Banner Ads - US - Desktop"
-  │     ├── LI-002: "Banner Ads - US - Mobile"
-  │     └── LI-003: "Video Ads - Global"
-  │
-  ├── IO-002: "Programmatic Direct - Premium Publishers"
-  │     ├── LI-004: "Sponsored Content - Forbes"
-  │     └── LI-005: "Native Ads - Bloomberg"
-  │
-  └── IO-003: "Remarketing - Engaged Users"
-        └── LI-006: "Remarket - Site Visitors 7d"
+  |--- IO-001: "Programmatic Agency - Display"
+  |     |--- LI-001: "Banner Ads - US - Desktop"
+  |     |--- LI-002: "Banner Ads - US - Mobile"
+  |     +-- LI-003: "Video Ads - Global"
+  |
+  |--- IO-002: "Programmatic Direct - Premium Publishers"
+  |     |--- LI-004: "Sponsored Content - Forbes"
+  |     +-- LI-005: "Native Ads - Bloomberg"
+  |
+  +-- IO-003: "Remarketing - Engaged Users"
+        +-- LI-006: "Remarket - Site Visitors 7d"
 ```
 
 ---
