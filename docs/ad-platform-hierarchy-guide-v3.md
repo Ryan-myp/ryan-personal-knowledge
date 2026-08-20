@@ -237,29 +237,78 @@ Customer
 | `product_selection.product_group` | 产品分组配置 |
 | `product_selection.excluded_product_ids` | 排除的产品 ID |
 
-#### Assets（资产素材）
-| 字段 | 说明 |
-|------|------|
-| `headline` | 标题数组，建议 10-15 个，最多 30 字符 |
-| `description` | 描述数组，建议 5-10 个，最多 90 字符 |
-| `image.media_file.url` | 图片 URL |
-| `logo.media_file.url` | Logo URL |
-| `video.media_file.url` | 视频 URL |
-| `cta_text` | 行动号召文本，如 "Learn More", "Shop Now" |
+#### Assets（资产素材）- PMax 9 种 Asset 类型
+
+| Asset 类型 | 字段名 | 说明 | 建议数量 | 字符限制 |
+|-----------|--------|------|----------|----------|
+| **Headline** | `headline` | 主标题，用于搜索/展示广告 | 10-15 个 | 30 字符 |
+| **Description** | `description` | 描述文本 | 5-10 个 | 90 字符 |
+| **Image** | `image.media_file.url` | 营销图片（1.91:1 或 4:1） | 5-10 个 | 5MB |
+| **Logo** | `logo.media_file.url` | 品牌 Logo（1:1 方形） | 3-5 个 | 5MB |
+| **Video** | `video.media_file.url` | YouTube 视频（16:9 或 1:1） | 1-5 个 | - |
+| **CTA Text** | `cta_text` | 行动号召文本 | 1-2 个 | 25 字符 |
+| **Call Out** | `call_out` | 卖点突出（如"Free Shipping"） | 5-10 个 | 25 字符 |
+| **Sitelink** | `sitelink` | 附加链接（带标题+描述） | 4-8 个 | 标题25字/描述25字 |
+| **Product Feed Link** | `product_feed_link` | 直接链接到商品目录 | 1 个 | - |
+
+**Asset 创建示例**:
+```python
+# PMax Asset Group 配置（完整 9 种 Asset）
+asset_group = {
+    "asset_group.name": "Summer Collection",
+    "asset_group.status": "ENABLED",
+    "asset_group.headlines": [
+        {"text": "Summer Sale"},
+        {"text": "Up to 50% Off"},
+        {"text": "Shop Now"}
+    ],
+    "asset_group.descriptions": [
+        {"text": "Discover our latest collection"},
+        {"text": "Free shipping on orders over $50"}
+    ],
+    "asset_group.images": [
+        {"media_file": {"url": "https://example.com/image1.jpg"}},
+        {"media_file": {"url": "https://example.com/image2.jpg"}}
+    ],
+    "asset_group.logos": [
+        {"media_file": {"url": "https://example.com/logo.jpg"}}
+    ],
+    "asset_group.videos": [
+        {"media_file": {"url": "https://youtube.com/watch?v=xxx"}}
+    ],
+    "asset_group.cta_text": "Shop Now",
+    "asset_group.call_outs": [
+        {"text": "Free Shipping"},
+        {"text": "Easy Returns"},
+        {"text": "24/7 Support"}
+    ],
+    "asset_group.sitelinks": [
+        {
+            "sitelink_text": {"text": "New Arrivals"},
+            "sitelink_description": {"text": "Shop the latest styles"}
+        },
+        {
+            "sitelink_text": {"text": "Sale Items"},
+            "sitelink_description": {"text": "Up to 50% off"}
+        }
+    ],
+    "asset_group.product_feed_link": {
+        "product_feed_id": "product_feed_123"
+    }
+}
+```
 
 #### Product Group（产品分组）
 | 字段 | 说明 |
 |------|------|
 | `all_products` | 根节点配置 |
-| `product_type_1~5.values` | 产品子类（最多 5 层） |
-| `custom_label_0~4.values` | 自定义标签 |
+| `product_type_1~5.values` | 产品子类（最多 5 层，来自 Merchant Center） |
+| `custom_label_0~4.values` | 自定义标签（来自 Merchant Center） |
 | `brand.values` | 品牌列表 |
 | `category.values` | Google 品类 ID |
 | `condition.condition_type` | NEW / USED / REFURBISHED |
-| `gender.values` | MALE / FEMALE / UNISEX |
-| `age_group.values` | ADULT / CHILD / TEEN / BABY |
-| `color.values` | 颜色列表 |
-| `size.values` | 尺寸列表 |
+| `condition.condition_values` | 条件值列表 |
+| `cpc_bid_micros` | CPC 出价（仅叶节点可设置） |
 
 ---
 
@@ -330,10 +379,6 @@ Customer
 | `product_group.category.values` | Google 品类 ID |
 | `product_group.condition.condition_type` | NEW / USED / REFURBISHED |
 | `product_group.condition.condition_values` | 条件值列表 |
-| `product_group.gender.values` | 性别 |
-| `product_group.age_group.values` | 年龄组 |
-| `product_group.color.values` | 颜色 |
-| `product_group.size.values` | 尺寸 |
 | `cpc_bid_micros` | CPC 出价（仅叶节点可设置） |
 
 ---
