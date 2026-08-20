@@ -53,33 +53,6 @@
 
 ---
 
-### 广告附加信息（Extensions）
-
-> **重要提示**：Extensions 是 Google Ads 的通用功能，可被多种广告类型使用（Search、Shopping、PMax、Display、Video 等），但不同广告类型支持的 Extensions 类型不同。
-
-| 附加信息类型 | 英文 | 是否可点击 | 展示数量限制 | 适用广告类型 | 配置层级 |
-|-------------|------|-----------|-------------|-------------|----------|
-| 附加链接 | Sitelink extensions | ✅ 可点击 | 2-6个 | Search, Shopping, PMax, Display | 账户/广告系列/广告组 |
-| 卖点 | Callout extensions | ❌ 不可点击 | 2-6个 | Search, Shopping, PMax, Display | 账户/广告系列/广告组 |
-| 结构化代码段 | Structured snippet extension | ❌ 不可点击 | - | Search, Shopping, PMax | 账户/广告系列/广告组 |
-| 致电 | Call extension | ✅ 可点击 | - | Search, Shopping, PMax, Display, App | 账户/广告系列/广告组 |
-| 发送信息 | Message extension | ✅ 可点击 | - | Search, Shopping | 广告系列/广告组 |
-| 位置 | Location extension | ✅ 可点击 | - | Search, Shopping, PMax, Display | 账户 |
-| 联盟商家 | Affiliate location extension | ✅ 可点击 | - | Search, Shopping | 账户 |
-| 价格 | Price extension | ✅ 可点击 | 最多8个 | Search, Shopping, PMax | 广告系列/广告组 |
-| 应用程序 | App extension | ✅ 可点击 | - | Search, Shopping, PMax, App | 账户/广告系列 |
-| 促销 | Promotion extension | ✅ 可点击 | - | Search, Shopping, PMax | 广告系列/广告组 |
-
-**各广告类型支持的 Extensions 汇总**：
-- **Search Ads**：支持全部 10 种 Extensions
-- **Shopping Ads**：支持 Sitelink / Callout / Structured Snippet / Call / Price / Location / Promotion
-- **Performance Max**：支持大部分 Extensions（部分已废弃）
-- **Display Ads**：支持 Sitelink / Callout / Call / Location（较有限）
-- **Video Ads**：支持 Call / Location（非常有限）
-
-
----
-
 ## 1.1 搜索广告（Search Ads）
 
 ### 使用场景
@@ -1423,6 +1396,66 @@ Business Center
 |------|------|
 | `TEXT` | 文本输入 |
 | `EMAIL` | 邮箱 |
+| `PHONE_NUMBER` | 电话号码 |
+| `DROPDOWN` | 下拉选择 |
+| `CHECKBOX` | 多选 |
+
+---
+
+## 3.4 应用推广广告（App Promotion）
+
+### 使用场景
+
+| 场景 | 适用条件 | 预期效果 |
+|------|----------|----------|
+| **App 安装推广** | 新 App 上线或推广期 | 快速获取大量安装用户 |
+| **App 激活优化** | 已有安装但激活率低 | 引导用户完成核心功能使用 |
+| **再营销唤醒** | 已安装但未活跃的用户 | 重新激活，提升留存率 |
+| **竞品用户转化** | 目标用户在竞品 App 中活跃 | 通过兴趣定向触达竞品用户 |
+
+### 层级结构图
+
+```
+Business Center
+    │
+    └── Advertiser
+            │
+            └── Campaign
+                    │
+                    └── Ad Group
+                            │
+                            └── App Settings (应用设置)
+                                    ├── app_id (应用 ID)
+                                    ├── app_store (应用商店: TIKTOK / APP_STORE / GOOGLE_PLAY)
+                                    └── deep_link (深度链接)
+```
+
+---
+
+## 3.5 品牌广告（Brand Ads）
+
+### 使用场景
+
+| 场景 | 适用条件 | 预期效果 |
+|------|----------|----------|
+| **品牌曝光** | 品牌知名度建设 | 大规模视频曝光，建立品牌认知 |
+| **TopView 开屏** | 品牌大事件/新品发布 | 独占性高曝光，强品牌冲击 |
+| **品牌挑战赛** | 品牌营销活动 | 用户参与创作，病毒式传播 |
+| **品牌故事讲述** | 有高质量品牌视频素材 | 情感连接，提升品牌好感度 |
+
+### 层级结构图
+
+```
+Business Center
+    │
+    └── Advertiser
+            │
+            └── Campaign
+                    │
+                    └── Ad Group
+                            │
+                            └── Brand Video Ad (品牌视频广告)
+                                    ├─�箱 |
 | `PHONE_NUMBER` | 电话号码 |
 | `DROPDOWN` | 下拉选择 |
 | `CHECKBOX` | 多选 |
