@@ -1241,6 +1241,33 @@ Business Center
 | **第三方数据接入** | 使用 CDP/DMP 等外部数据源 | 精准定向，提升投放效果 |
 | **复杂审批流程** | 大型企业多层级审批需求 | IO 审批工作流，确保合规性 |
 
+### 广告位（Ad Placements）
+
+DV360 的广告位来自其连接的媒体供应商和 SSP（Supply Side Platform），主要包括：
+
+| 广告位类型 | 展示位置 | 说明 |
+|-----------|----------|------|
+| **Programmatic Direct (PMP)** | 优质媒体预购库存 | 与媒体方直接谈判的优质展示位 |
+| **Private Marketplace (PI)** | 私有市场拍卖库存 | 邀请制程序化直采 |
+| **Open Auction** | 公开拍卖市场 | RTB 实时竞价，所有买家参与 |
+| **Reseller Inventory** | 第三方代理库存 | 通过中介购买的媒体库存 |
+| **First-Party Inventory** | 自有媒体库存 | 广告主自己的网站/App |
+| **Video Pre-roll** | 视频前贴片 | YouTube/OTT/CTV 视频广告 |
+| **Video Mid-roll** | 视频中插广告 | 长视频内容中的广告 |
+| **Video Post-roll** | 视频后贴片 | 视频结束后的广告 |
+| **Banner Display** | 网页横幅广告 | 各种尺寸的展示广告 |
+| **Native Ads** | 原生广告 | 与信息流内容融合的广告 |
+| **Connected TV (CTV)** | 智能电视广告 | Hulu/Peacock/Roku 等流媒体平台 |
+| **OTT/TV** | 在线流媒体电视 | 跨屏视频广告体验 |
+| **Mobile In-App** | 移动应用内广告 | App 内横幅/插屏/激励视频 |
+| **Audio Ads** | 音频广告 | Spotify/Pandora 等音乐平台 |
+| **Digital Out-of-Home (DOOH)** | 数字户外广告 | 地铁站/商场/便利店数字屏幕 |
+
+> **注意**: DV360 本身不拥有媒体库存，所有广告位均来自连接的 SSP 和媒体供应商。具体可用广告位取决于：
+> 1. 已配置的 SSP 连接（如 Google Ad Manager, Xandr, PubMatic 等）
+> 2. 媒体的品牌安全和内容分类设置
+> 3. 广告主的投放策略和预算分配
+
 ---
 
 ## 4.1 完整层级结构图
