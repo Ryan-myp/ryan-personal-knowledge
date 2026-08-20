@@ -1121,3 +1121,492 @@ leaf_product_group = {
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
+
+---
+
+## 3. TikTok Ads 层级结构
+
+### 3.1 通用层级架构
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Business Center (商务中心)                        │
+│  • Partner ID: 合作伙伴 ID                                           │
+│  • 包含多个 Advertiser                                              │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Advertiser (广告主)                               │
+│  • Advertiser ID                                                    │
+│  • Budget (预算)                                                    │
+│  • Status: ACTIVE / SUSPENDED / PENDING                             │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Campaign (广告系列)                               │
+│  • name: 名称                                                       │
+│  • status: ENABLED / PAUSED / DISABLED / ARCHIVED                  │
+│  • objective_type: 广告目标类型                                     │
+│  • daily_budget / campaign_budget: 预算                              │
+│  • budget_mode: BUDGET_MODE_DAY / BUDGET_MODE_LIFETIME             │
+│  • promotion_type: 推广类型                                         │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Ad Group (广告组)                                 │
+│  • name: 名称                                                       │
+│  • status: ENABLED / PAUSED / DISABLED                             │
+│  • bid_type: AUTO_BID / MANUAL_BID                                 │
+│  • bid_amount: 出价金额                                             │
+│  • promoted_object: 推广对象配置                                    │
+│  • targeting: 受众定向配置                                          │
+│  • daily_budget: 日预算 (可选)                                       │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Ad (广告创意)                                     │
+│  • name: 名称                                                       │
+│  • status: ENABLED / PAUSED / DISABLED                             │
+│  • promoted_type: PROMOTED_TYPE_VIDEO / PROMOTED_TYPE_IMAGE        │
+│  • video_id / image_url: 创意素材                                    │
+│  • spark_info: Spark Ads 配置 (可选)                                │
+│  • tracking_url: 追踪链接                                           │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 3.1 产品销售广告（Product Sales）层级详解
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Campaign: Product Sales Campaign                                  │
+│  ├── campaign_name: "Product Sales - Summer"                       │
+│  ├── status: ENABLED / PAUSED / DISABLED                           │
+│  ├── objective_type: PRODUCT_SALES                                 │
+│  ├── daily_budget: 5000  # $50 (单位: 分)                          │
+│  ├── budget_mode: BUDGET_MODE_DAY / BUDGET_MODE_LIFETIME          │
+│  ├── promotion_type: PROMOTION_TYPE_STANDARD                       │
+│  ├── start_time: "2026-08-20T08:00:00Z"                            │
+│  ├── end_time: "2026-09-20T08:00:00Z"                              │
+│  └── campaign_id: 1873502452886529                                 │
+├─────────────────────────────────────────────────────────────────────┤
+│  Ad Group: Product Sales Group                                     │
+│  ├── adgroup_name: "Electronics - Phones"                          │
+│  ├── status: ENABLED / PAUSED / DISABLED                           │
+│  ├── bid_type: AUTO_BID / MANUAL_BID                               │
+│  ├── bid_amount: 100  # $1.00 CPC                                  │
+│  ├── promotion_type: PROMOTION_TYPE_STANDARD / PROMOTION_TYPE_SPARK│
+│  ├── promoted_object:                                               │
+│  │   ├── objective_type: PRODUCT_SALES                             │
+│  │   ├── website_url: "https://example.com"                       │
+│  │   └── product_set_id: "product_set_123"                         │
+│  ├── daily_budget: 2000  # $20                                     │
+│  ├── start_time: "2026-08-20T08:00:00Z"                            │
+│  ├── end_time: "2026-09-20T08:00:00Z"                              │
+│  ├── targeting:                                                     │
+│  │   ├── age_min: 18                                               │
+│  │   ├── age_max: 45                                               │
+│  │   ├── genders: [1, 2]  # 1=MALE, 2=FEMALE                      │
+│  │   ├── geo_locations:                                            │
+│  │   │   ├── country_codes: ["US", "CA"]                          │
+│  │   │   └── exclude_country_codes: []                            │
+│  │   ├── language_ids: ["1001"]  # 英语                            │
+│  │   └── interest_ids: ["interest_electronics"]                    │
+│  └── adgroup_id: 1873502452886530                                  │
+├─────────────────────────────────────────────────────────────────────┤
+│  Ad: Video Ad                                                      │
+│  ├── name: "Product Video Ad"                                      │
+│  ├── status: ENABLED / PAUSED / DISABLED                           │
+│  ├── promoted_type: PROMOTED_TYPE_VIDEO                            │
+│  ├── video_id: "video_123456"  # 视频ID                            │
+│  ├── image_url: "https://..."  # 图片URL (图片广告时)               │
+│  ├── tracking_url: "https://example.com/tracking"                  │
+│  ├── title: "Summer Sale - Up to 50% Off"                         │
+│  ├── description: "Shop now and save!"                             │
+│  ├── cta_type: "SHOP_NOW" / "LEARN_MORE" / "SIGN_UP"              │
+│  └── ad_id: 1873502452886531                                       │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 3.2 Spark Ads（达人原生广告）层级详解
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Campaign: Spark Ads Campaign                                      │
+│  ├── campaign_name: "Spark Ads - Influencer"                       │
+│  ├── status: ENABLED                                               │
+│  ├── objective_type: PRODUCT_SALES / BRAND_AWARENESS               │
+│  ├── promotion_type: PROMOTION_TYPE_SPARK                          │
+│  └── campaign_id: 1873502452886532                                 │
+├─────────────────────────────────────────────────────────────────────┤
+│  Ad Group: Spark Ads Group                                         │
+│  ├── adgroup_name: "Influencer Video - Electronics"                │
+│  ├── status: ENABLED                                               │
+│  ├── bid_type: AUTO_BID                                            │
+│  ├── bid_amount: 50  # $0.50                                       │
+│  ├── promotion_type: PROMOTION_TYPE_SPARK                          │
+│  └── adgroup_id: 1873502452886533                                  │
+├─────────────────────────────────────────────────────────────────────┤
+│  Ad: Spark Ad                                                      │
+│  ├── name: "Spark Ad - @influencer123"                            │
+│  ├── status: ENABLED                                               │
+│  ├── promoted_type: PROMOTED_TYPE_VIDEO                            │
+│  ├── spark_info:                                                   │
+│  │   ├── video_id: "7123456789012345678"  # 达人视频ID             │
+│  │   ├── creator_id: "creator_123"                                 │
+│  │   ├── authorization_id: "auth_123"                              │
+│  │   └── authorization_status: AUTHORIZED / PENDING               │
+│  ├── tracking_url: "https://example.com/spark-track"               │
+│  ├── title: "Check out this amazing product!"                      │
+│  ├── description: "Link in bio!"                                   │
+│  ├── cta_type: "SHOP_NOW"                                          │
+│  └── ad_id: 1873502452886534                                       │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Spark Ads 特殊要求**:
+| 字段 | 说明 |
+|------|------|
+| `promotion_type` | 必须设置为 `PROMOTION_TYPE_SPARK` |
+| `spark_info.video_id` | 达人原创视频的 ID |
+| `spark_info.authorization_id` | 视频授权 ID (需达人授权) |
+| `spark_info.authorization_status` | 授权状态: AUTHORIZED / PENDING |
+
+---
+
+### 3.3 线索收集广告（Lead Generation）层级详解
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Campaign: Lead Generation Campaign                                │
+│  ├── campaign_name: "Lead Gen - Consultation"                      │
+│  ├── status: ENABLED                                               │
+│  ├── objective_type: LEAD_GENERATION                               │
+│  ├── daily_budget: 3000  # $30                                     │
+│  └── campaign_id: 1873502452886535                                 │
+├─────────────────────────────────────────────────────────────────────┤
+│  Ad Group: Lead Form                                               │
+│  ├── adgroup_name: "Consultation Form"                             │
+│  ├── status: ENABLED                                               │
+│  ├── bid_type: AUTO_BID                                            │
+│  ├── bid_amount: 200  # $2 per lead                                │
+│  ├── promoted_object:                                               │
+│  │   ├── objective_type: LEAD_GENERATION                           │
+│  │   └── lead_form:                                                 │
+│  │       ├── title: "Get Free Consultation"                        │
+│  │       ├── description: "Fill out the form below"                │
+│  │       └── questions: [                                          │
+│  │           { "name": "name", "type": "TEXT", "required": true }, │
+│  │           { "name": "email", "type": "EMAIL", "required": true },│
+│  │           { "name": "phone", "type": "PHONE_NUMBER", "required": false } │
+│  │       ]                                                         │
+│  └── adgroup_id: 1873502452886536                                  │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 3.4 应用推广广告（App Promotion）层级详解
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Campaign: App Promotion Campaign                                  │
+│  ├── campaign_name: "App Install - New Users"                      │
+│  ├── status: ENABLED                                               │
+│  ├── objective_type: APP_PROMOTION                                 │
+│  ├── daily_budget: 5000  # $50                                     │
+│  └── campaign_id: 1873502452886537                                 │
+├─────────────────────────────────────────────────────────────────────┤
+│  Ad Group: App Install                                             │
+│  ├── adgroup_name: "App Install - US"                              │
+│  ├── status: ENABLED                                               │
+│  ├── bid_type: AUTO_BID / COST_CAP                                 │
+│  ├── bid_amount: 500  # $5 CPI                                     │
+│  ├── promoted_object:                                               │
+│  │   ├── objective_type: APP_PROMOTION                             │
+│  │   ├── app_id: "com.example.app"                                │
+│  │   ├── app_store: TIKTOK / APP_STORE / GOOGLE_PLAY              │
+│  │   └── deep_link: "https://example.com/app"                     │
+│  └── adgroup_id: 1873502452886538                                  │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 3.5 品牌广告（Brand Ads）层级详解
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Campaign: Brand Awareness Campaign                                │
+│  ├── campaign_name: "Brand Awareness - Video"                      │
+│  ├── status: ENABLED                                               │
+│  ├── objective_type: BRAND_AWARENESS                               │
+│  ├── daily_budget: 10000  # $100                                   │
+│  └── campaign_id: 1873502452886539                                 │
+├─────────────────────────────────────────────────────────────────────┤
+│  Ad Group: Brand Video                                             │
+│  ├── adgroup_name: "Brand Video - Product Launch"                  │
+│  ├── status: ENABLED                                               │
+│  ├── bid_type: AUTO_BID                                            │
+│  ├── bid_amount: 20  # $0.20 CPM                                   │
+│  └── adgroup_id: 1873502452886540                                  │
+├─────────────────────────────────────────────────────────────────────┤
+│  Ad: Brand Video Ad                                                │
+│  ├── name: "Brand Launch Video"                                    │
+│  ├── status: ENABLED                                               │
+│  ├── promoted_type: PROMOTED_TYPE_VIDEO                            │
+│  ├── video_id: "7123456789012345679"                               │
+│  ├── duration: 30  # 秒                                            │
+│  ├── title: "Introducing Our New Product"                          │
+│  └── ad_id: 1873502452886541                                       │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 3.6 TikTok Ads 字段速查
+
+| 层级 | 字段 | 说明 |
+|------|------|------|
+| Campaign | `campaign_id` | 广告系列 ID |
+| Campaign | `campaign_name` | 名称 |
+| Campaign | `status` | ENABLED / PAUSED / DISABLED / ARCHIVED |
+| Campaign | `objective_type` | PRODUCT_SALES / LEAD_GENERATION / APP_PROMOTION / BRAND_AWARENESS / VIDEO_VIEWS / CONVERSIONS |
+| Campaign | `daily_budget` | 日预算（分） |
+| Campaign | `budget_mode` | BUDGET_MODE_DAY / BUDGET_MODE_LIFETIME |
+| Campaign | `promotion_type` | PROMOTION_TYPE_STANDARD / PROMOTION_TYPE_SPARK |
+| Ad Group | `adgroup_id` | 广告组 ID |
+| Ad Group | `adgroup_name` | 名称 |
+| Ad Group | `status` | ENABLED / PAUSED / DISABLED |
+| Ad Group | `bid_type` | AUTO_BID / MANUAL_BID |
+| Ad Group | `bid_amount` | 出价金额 |
+| Ad Group | `targeting` | 受众定向配置 |
+| Ad | `ad_id` | 广告 ID |
+| Ad | `name` | 名称 |
+| Ad | `status` | ENABLED / PAUSED / DISABLED |
+| Ad | `promoted_type` | PROMOTED_TYPE_VIDEO / PROMOTED_TYPE_IMAGE |
+| Ad | `spark_info` | Spark Ads 配置 |
+| Ad | `spark_info.video_id` | 视频 ID |
+| Ad | `spark_info.authorization_id` | 授权 ID |
+| Ad | `spark_info.authorization_status` | 授权状态 |
+
+
+---
+
+## 4. DV360 层级结构
+
+### 4.1 通用层级架构
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    DSP (DoubleClick for Publishers)                 │
+│                    或 Google Marketing Platform                     │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Partner (合作伙伴)                                 │
+│  • Partner ID: 4659631                                               │
+│  • 管理多个 Buyer Account                                           │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Buyer (广告买家)                                   │
+│  • Buyer ID: 5110831                                                 │
+│  • 预算设置                                                          │
+│  • 审批状态: PENDING / ACTIVE / REJECTED                            │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Creative Set (创意集)                              │
+│  • 创意素材组                                                        │
+│  • 包含多个 Creative                                                │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Flight (飞行广告 / 广告系列)                        │
+│  • name: 名称                                                       │
+│  • status: ACTIVE / PAUSED / ENDED                                 │
+│  • start_date / end_date: 投放时间                                  │
+│  • bid_strategy: 出价策略                                            │
+│  • budget: 预算                                                      │
+│  • targeting: 定向配置                                               │
+│  • creative_set: 关联的创意集                                        │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Creative (创意)                                    │
+│  • name: 名称                                                       │
+│  • type: BANNER / VIDEO / NATIVE / HTML5                            │
+│  • file: 创意文件                                                    │
+│  • dimensions: 尺寸                                                  │
+│  • tracking_urls: 追踪链接                                           │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 4.2 DV360 字段速查
+
+| 层级 | 字段 | 说明 |
+|------|------|------|
+| Partner | `partner_id` | 合作伙伴 ID |
+| Buyer | `buyer_id` | 广告买家 ID |
+| Buyer | `status` | PENDING / ACTIVE / REJECTED |
+| Flight | `flight_id` | 广告系列 ID |
+| Flight | `name` | 名称 |
+| Flight | `status` | ACTIVE / PAUSED / ENDED |
+| Flight | `start_date` | 开始日期 |
+| Flight | `end_date` | 结束日期 |
+| Flight | `bid_strategy` | 出价策略 |
+| Flight | `budget` | 预算 |
+| Creative | `creative_id` | 创意 ID |
+| Creative | `type` | BANNER / VIDEO / NATIVE / HTML5 |
+| Creative | `dimensions` | 创意尺寸 |
+
+---
+
+## 5. 平台对比速查表
+
+### 5.1 层级结构对比
+
+| 层级 | Google Ads | Meta | TikTok | DV360 |
+|------|------------|------|--------|-------|
+| **顶级** | MCC Account | Business Manager | Business Center | Partner |
+| **第二层** | Campaign Budget | Ad Account | Advertiser | Buyer |
+| **第三层** | Campaign | Campaign | Campaign | Creative Set / Flight |
+| **第四层** | Ad Group | Ad Set | Ad Group | Creative |
+| **第五层** | Ad + Keywords | Ad + Creative | Ad | - |
+| **特殊** | Product Group | Pixel/CAPI | Spark Info | - |
+
+### 5.2 广告类型对比
+
+| 广告类型 | Google Ads | Meta | TikTok |
+|---------|------------|------|--------|
+| 搜索广告 | ✅ Search | ❌ | ❌ |
+| 购物广告 | ✅ Shopping | ✅ Catalog | ✅ Shop |
+| PMax 全渠道 | ✅ Performance Max | ❌ | ❌ |
+| 视频广告 | ✅ YouTube | ✅ Video | ✅ In-Feed |
+| 展示广告 | ✅ Display | ✅ Display | ❌ |
+| Spark Ads | ❌ | ❌ | ✅ 达人原生 |
+| 应用安装 | ✅ App | ✅ App | ✅ App |
+| 消息广告 | ❌ | ✅ WhatsApp/Messenger | ❌ |
+| 开屏广告 | ❌ | ❌ | ✅ TopView |
+| 线索表单 | ✅ Lead Form | ✅ Instant Form | ✅ Lead Form |
+
+### 5.3 核心差异总结
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Google Ads                                                          │
+│  ├── 优势: 搜索意图驱动、PMax 自动化、Shopping 独立管理              │
+│  ├── 特点: Keywords 为核心、Bidding Strategy 丰富                   │
+│  └── 适用: 意图明确、转化导向的广告活动                              │
+├─────────────────────────────────────────────────────────────────────┤
+│  Meta Marketing API                                                  │
+│  ├── 优势: 受众定向最灵活、Pixel+CAPI 双轨追踪                      │
+│  ├── 特点: 兴趣/行为驱动、消息广告独占性                              │
+│  └── 适用: 品牌认知、社交互动、精准人群触达                          │
+├─────────────────────────────────────────────────────────────────────┤
+│  TikTok Ads                                                          │
+│  ├── 优势: Spark Ads 原生感强、年轻用户群体                          │
+│  ├── 特点: 视频原生、内容驱动                                        │
+│  └── 适用: 品牌曝光、年轻人群、电商带货                              │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 附录：快速创建 API 示例
+
+### Google Ads (Python)
+
+```python
+from google.ads.googleads.client import GoogleAdsClient
+from google.ads.googleads.enums import AdvertisingChannelType
+
+# 创建 Campaign Budget
+budget_operation = client.get_type("CampaignBudgetOperation")
+budget_operation.create.name = "Summer Sale Budget"
+budget_operation.create.amount_micros = 10000000  # $100
+
+# 创建 Campaign
+campaign_operation = client.get_type("CampaignOperation")
+campaign = campaign_operation.create
+campaign.name = "Summer Sale 2026"
+campaign.advertising_channel_type = AdvertisingChannelType.SHOPPING
+campaign.status = client.enums.CampaignStatusEnum.PAUSED
+campaign.budget = budget_resource_name
+campaign.bidding_strategy = bidding_strategy_resource_name
+campaign.settings.shopping_setting.merchant_id = 12345678
+campaign.settings.shopping_setting.sales_country = "US"
+```
+
+### Meta (Python)
+
+```python
+from facebook_business.adobjects.campaign import Campaign
+
+# 创建 Campaign
+campaign = AdAccount(act_acct_id).create_campaign(
+    name='Summer Sale 2026',
+    objective='SALES',
+    special_ad_categories=['NONE'],
+    status=Campaign.Status.paused
+)
+
+# 创建 Ad Set
+ad_set = campaign.create_adset(
+    name='Ad Set - Electronics',
+    optimization_guide='CONVERSIONS',
+    targeting={
+        'locations': {'key': 'US'},
+        'age_min': 18,
+        'age_max': 65,
+    },
+    daily_budget=1000,  # $10
+    status=AdSet.Status.paused
+)
+```
+
+### TikTok (Python)
+
+```python
+import requests
+
+headers = {
+    'Access-Token': access_token,
+    'Content-Type': 'application/json'
+}
+
+# 创建 Campaign
+campaign_data = {
+    'campaign_name': 'Summer Sale 2026',
+    'objective_type': 'PRODUCT_SALES',
+    'daily_budget': 5000,  # $50
+    'budget_mode': 'BUDGET_MODE_DAY',
+    'promotion_type': 'PROMOTION_TYPE_STANDARD',
+    'status': 'PAUSED'
+}
+response = requests.post(
+    'https://business-api.tiktok.com/open_api/v1.3/campaign/create/',
+    headers=headers,
+    json=campaign_data
+)
+```
+
+---
+
+**文档版本**: v2.0  
+**创建日期**: 2026-08-20  
+**作者**: Ryan
+
