@@ -169,16 +169,16 @@
 
 **搜索广告关键配置**:
 
- 配置项 | 字段名 | 可选值 | 说明 |
-   -----│   -----│   -----│   ---|
- 渠道类型 | `advertising_channel_type` | SEARCH | 搜索广告 |
- 出价策略 | `bidding_strategy.type` | MANUAL_CPC/TARGET_CPA/MAXIMIZE_CONVERSIONS/TARGET_ROAS | 智能出价 |
- 预算 | `campaign_budget.amount_micros` | Integer | 微单位，1,000,000 = $1 |
- 关键词匹配 | `keyword.match_type` | BROAD/PHRASE/EXACT | 匹配方式 |
- 广告类型 | `ad.type` | RESPONSIVE_SEARCH_AD/TEXT_AD | 响应式搜索广告 |
- 最终URL | `ad.final_urls` | String[] | 落地页链接 |
- 标题数量 | `ad.info.headlines[]` | 15个 | 建议10-15个 |
- 描述数量 | `ad.info.descriptions[]` | 5个 | 建议4-5个 |
+| 配置项 | 字段名 | 可选值 | 说明 |
+|--------|--------|--------|------|
+| 渠道类型 | `advertising_channel_type` | SEARCH | 搜索广告 |
+| 出价策略 | `bidding_strategy.type` | MANUAL_CPC/TARGET_CPA/MAXIMIZE_CONVERSIONS/TARGET_ROAS | 智能出价 |
+| 预算 | `campaign_budget.amount_micros` | Integer | 微单位，1,000,000 = $1 |
+| 关键词匹配 | `keyword.match_type` | BROAD/PHRASE/EXACT | 匹配方式 |
+| 广告类型 | `ad.type` | RESPONSIVE_SEARCH_AD/TEXT_AD | 响应式搜索广告 |
+| 最终URL | `ad.final_urls` | String[] | 落地页链接 |
+| 标题数量 | `ad.info.headlines[]` | 15个 | 建议10-15个 |
+| 描述数量 | `ad.info.descriptions[]` | 5个 | 建议4-5个 |
 
 ---
 
