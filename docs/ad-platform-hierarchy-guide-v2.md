@@ -232,6 +232,104 @@
 | Logo | `assets.logo` | 建议3-5个 |
 | 最终URL后缀 | `final_url_suffix` | UTM参数追加 |
 
+#### 1.2.1 PMax 中的 Product Group / Listing Group 配置
+
+PMax 电商销售目标（SALES_GOAL_TYPE_ECOMMERCE）同样支持 Product Group 细分，用于控制不同产品组的出价策略：
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Campaign: Performance Max (电商销售)                               │
+│  ├── advertising_channel_type: MAX                                 │
+│  ├── campaign_goal_setting.sales_campaign_goal_setting:             │
+│  │   ├── goal_type: "SALES_GOAL_TYPE_ECOMMERCE"                    │
+│  │   └── ecommerce_checkout_progress: 0.5                          │
+│  ├── bidding_strategy:                                              │
+│  │   ├── type: TARGET_ROAS                                        │
+│  │   └── target_roas_percentage: 500 (=5x ROAS)                   │
+│  ├── asset_group (资产组):                                          │
+│  │   ├── name: "Product A - Electronics"                           │
+│  │   ├── status: ENABLED                                          │
+│  │   ├── audience_signals:                                        │
+│  │   │   └── custom_segments: ["In-Market - Electronics"]          │
+│  │   ├── product_selection:                                        │
+│  │   │   ├── product_group:                                         │
+│  │   │   │   ├── all_products: {}                                  │
+│  │   │   │   ├── product_type_1: { "values": ["Electronics"] }     │
+│  │   │   │   ├── product_type_2: { "values": ["Phones"] }          │
+│  │   │   │   ├── brand: { "values": ["Apple", "Samsung"] }         │
+│  │   │   │   └── custom_label_0: { "values": ["bestseller"] }      │
+│  │   │   └── listing_group_type: PRODUCT_SELECTION                  │
+│  │   ├── assets:                                                   │
+│  │   │   ├── headlines: ["Buy Now", "Best Deals"]                  │
+│  │   │   ├── images: [{"media_file": "image_1.jpg"}]               │
+│  │   │   └── videos: [{"media_file": "video_1.mp4"}]               │
+│  │   └── final_url_suffix: "?source=pmax"                          │
+│  │                                                                   │
+│  │   └── asset_group (第二组):                                       │
+│  │       ├── name: "Product B - Clearance"                          │
+│  │       ├── product_selection:                                     │
+│  │       │   └── product_group:                                     │
+│  │       │       └── custom_label_1: { "values": ["clearance"] }    │
+│  │       └── assets: [...]                                          │
+│  └── resource_name: customers/xxx/campaigns/yyy                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**PMax Product Selection 配置**:
+
+| 字段 | 说明 |
+|------|------|
+| `product_selection.listing_group_type` | 产品选择类型：PRODUCT_SELECTION |
+| `product_selection.product_group` | 产品分组配置（与 Shopping 相同结构） |
+| `product_selection.excluded_product_ids` | 排除的产品 ID 列表 |
+
+**Product Group 细分维度（PMax 与 Shopping 相同）**:
+- `all_products`: 根节点
+- `product_type_1` ~ `product_type_5`: 产品子类（最多 5 层）
+- `custom_label_0` ~ `custom_label_4`: 自定义标签
+- `brand`: 品牌
+- `category`: Google 品类
+- `condition`: 商品条件 (NEW/USED)
+- `gender`: 性别
+- `age_group`: 年龄组
+- `color`: 颜色
+- `size`: 尺寸
+
+**PMax vs Shopping Product Group 差异**:
+
+| 特性 | Shopping Campaign | PMax Campaign |
+|------|-------------------|---------------|
+| Product Group 粒度 | Ad Group 级别 | Asset Group 级别 |
+| 细分深度 | 最多 10 层 | 建议 3-5 层 |
+| 出价控制 | 每个叶节点独立 CPC | 由 Campaign 出价策略统一控制 |
+| 多 Asset Group | 不支持 | 支持多个 Asset Group 对应不同产品群 |
+| 自动化程度 | 低（手动管理） | 高（自动优化） |
+
+**Python 示例**:
+```python
+# PMax Product Group 配置
+asset_group = {
+    "asset_group.name": "Electronics Products",
+    "asset_group.status": "ENABLED",
+    "asset_group.product_selection": {
+        "listing_group_type": "PRODUCT_SELECTION",
+        "product_group": {
+            "all_products": {},
+            "product_type_1": {"values": ["Electronics"]},
+            "product_type_2": {"values": ["Phones"]},
+            "brand": {"values": ["Apple", "Samsung"]},
+            "custom_label_0": {"values": ["bestseller"]},
+        },
+        "excluded_product_ids": ["product_123", "product_456"]
+    },
+    "asset_group.assets": {
+        "headlines": [{"text": "Buy Now"}, {"text": "Best Deals"}],
+        "images": [{"media_file": "image_url"}],
+        "videos": [{"media_file": "video_url"}]
+    }
+}
+```
+
 ---
 
 ### 1.3 购物广告（Shopping Ads）层级详解
