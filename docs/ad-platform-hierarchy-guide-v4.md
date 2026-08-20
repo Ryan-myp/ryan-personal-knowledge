@@ -9,12 +9,12 @@
 ## 📋 目录
 
 1. [Google Ads 层级结构](#1-google-ads-层级结构)
-   - 1.1 搜索广告
+   - 1.1 搜索广告 (Search Ads)
    - 1.2 性能最大化广告 (PMax)
-   - 1.3 购物广告
-   - 1.4 视频广告
-   - 1.5 展示广告
-   - 1.6 应用安装广告
+   - 1.3 购物广告 (Shopping Ads)
+   - 1.4 视频广告 (Video Ads)
+   - 1.5 展示广告 (Display Ads)
+   - 1.6 应用安装广告 (App Ads)
 2. [Meta Marketing API 层级结构](#2-meta-marketing-api-层级结构)
    - 2.1 流量广告
    - 2.2 转化广告
@@ -97,7 +97,7 @@ Customer (客户)
 | `keyword.match_type` | BROAD / PHRASE / EXACT |
 | `cpc_bid_micros` | 关键词出价 |
 
-#### 广告附加信息 (Extensions)
+#### 支持的广告附加信息 (Extensions)
 
 | 类型 | 字段 | 说明 | 可点击 | 数量限制 |
 |------|------|------|--------|----------|
@@ -112,18 +112,12 @@ Customer (客户)
 | App | `app_id`, `description` | 应用下载 | ✅ | 最多 1 个 |
 | Promotion | `promotion_text`, `offer_code` | 促销活动 | ✅ | 最多 8 个 |
 
-#### 广告位 (Ad Placements)
+#### 展示位置 (Placements)
 
 | 类型 | 说明 | 位置 |
 |------|------|------|
 | Google Search | 搜索结果页 | 主要位置 |
 | Google Search Partners | 合作伙伴网站 | 搜索扩展 |
-| Google Display Network | 展示广告网络 | 网站/App/YouTube |
-| YouTube | 视频广告 | YouTube 平台 |
-| Gmail | 邮件广告 | Gmail 收件箱 |
-| Google Maps | 地图广告 | Google Maps |
-| Shopping Tabs | 购物标签页 | 购物搜索 |
-| Performance Max | 全渠道自动投放 | 所有渠道 |
 
 ---
 
@@ -173,6 +167,17 @@ Campaign (Performance Max)
 | Sitelink | 附加链接 | 最多 8 个 |
 | Product Feed Link | 产品 feed 链接 | 1 个 |
 
+#### 展示位置 (Placements)
+
+| 类型 | 说明 |
+|------|------|
+| Google Search | 搜索结果页 |
+| Google Display Network | 展示广告网络 |
+| YouTube | 视频广告 |
+| Gmail | 邮件广告 |
+| Google Maps | 地图广告 |
+| Shopping Tabs | 购物标签页 |
+
 ---
 
 ### 1.3 购物广告 (Shopping Ads)
@@ -195,7 +200,7 @@ Campaign (Shopping)
 │       ├── product_type_2: {"values": ["Phones"]}
 │       ├── brand: {"values": ["Apple"]}
 │       └── condition: {"values": ["NEW"]}
-└──Ads (Responsive Shopping Ad)
+└── Ads (Responsive Shopping Ad)
     └── product_group 可多层嵌套细分
 ```
 
@@ -216,6 +221,23 @@ Campaign (Shopping)
 | `custom_label_2` | 自定义标签 2 | seasonal |
 | `custom_label_3` | 自定义标签 3 | premium |
 | `custom_label_4` | 自定义标签 4 | new_arrival |
+
+#### 支持的广告附加信息 (Extensions)
+
+| 类型 | 说明 | 数量限制 |
+|------|------|----------|
+| Sitelink | 附加链接文本 | 最多 15 个 |
+| Callout | 补充说明文本 | 最多 10 个 |
+| Structured Snippet | 结构化摘要 | 最多 5 个 |
+| Price | 价格信息 | 最多 8 个 |
+
+#### 展示位置 (Placements)
+
+| 类型 | 说明 |
+|------|------|
+| Google Shopping | 购物标签页 |
+| Google Search | 搜索结果中的购物结果 |
+| Google Shopping Tab | 专属购物频道 |
 
 ---
 
@@ -242,6 +264,22 @@ Campaign (Video)
     └── placement: YouTube 频道/视频
 ```
 
+#### 支持的广告附加信息 (Extensions)
+
+| 类型 | 说明 |
+|------|------|
+| Call | 拨打电话 |
+| Location | 商家位置 |
+
+#### 展示位置 (Placements)
+
+| 类型 | 说明 |
+|------|------|
+| YouTube | 视频播放前/中/后 |
+| YouTube Search | 搜索结果视频 |
+| YouTube Channels | 指定频道 |
+| YouTube Videos | 指定视频 |
+
 ---
 
 ### 1.5 展示广告 (Display Ads)
@@ -266,6 +304,24 @@ Campaign (Display)
     └── similar_audience: 相似受众
 ```
 
+#### 支持的广告附加信息 (Extensions)
+
+| 类型 | 说明 |
+|------|------|
+| Sitelink | 附加链接 |
+| Callout | 推广亮点 |
+| Structured Snippet | 结构化摘要 |
+| Image | 图片扩展 |
+
+#### 展示位置 (Placements)
+
+| 类型 | 说明 |
+|------|------|
+| Google Display Network | 展示广告网络 |
+| YouTube | 视频展示 |
+| Gmail | 邮件广告 |
+| Google Search | 搜索扩展位 |
+
 ---
 
 ### 1.6 应用安装广告 (App Ads)
@@ -287,6 +343,23 @@ Campaign (App)
 └── Bidding:
     └── strategy: TARGET_CPA / MAXIMIZE_CONVERSIONS
 ```
+
+#### 支持的广告附加信息 (Extensions)
+
+| 类型 | 说明 |
+|------|------|
+| App | 应用下载 |
+| Call | 拨打电话 |
+| Location | 商家位置 |
+
+#### 展示位置 (Placements)
+
+| 类型 | 说明 |
+|------|------|
+| Google Play Store | 应用商店 |
+| App Search | 应用搜索 |
+| YouTube | 视频展示 |
+| Display Network | 展示网络 |
 
 ---
 
@@ -325,6 +398,23 @@ Business Manager (企业号)
                 └── preview: 预览链接
 ```
 
+#### 广告位 (Placements)
+
+| 类型 | 说明 |
+|------|------|
+| Facebook Feed | Facebook 信息流 |
+| Instagram Feed | Instagram 信息流 |
+| Facebook Search | Facebook 搜索 |
+| Instagram Search | Instagram 搜索 |
+| Facebook Right Column | Facebook 右侧栏 |
+| Instagram Explore | Instagram 探索页 |
+| Facebook Stories | Facebook 动态 |
+| Instagram Stories | Instagram 动态 |
+| Facebook Reels | Facebook Reels |
+| Instagram Reels | Instagram Reels |
+| Messenger Story | Messenger 动态 |
+| Audience Network | 受众网络 |
+
 ---
 
 ### 2.2 转化广告 (Conversion Ads)
@@ -344,6 +434,10 @@ Campaign (转化广告)
         ├── previews[]: 预览列表
         └── suggested_variables: 建议变量
 ```
+
+#### 广告位 (Placements)
+
+同 2.1 流量广告
 
 ---
 
@@ -368,6 +462,15 @@ Campaign (线索收集)
         └── phone: 电话
 ```
 
+#### 广告位 (Placements)
+
+| 类型 | 说明 |
+|------|------|
+| Facebook Feed | Facebook 信息流 |
+| Instagram Feed | Instagram 信息流 |
+| Facebook Stories | Facebook 动态 |
+| Instagram Stories | Instagram 动态 |
+
 ---
 
 ### 2.4 互动广告 (Engagement Ads)
@@ -385,6 +488,10 @@ Campaign (互动广告)
         ├── WHATSAPP: WhatsApp 消息
         └── CALL: 拨打电话
 ```
+
+#### 广告位 (Placements)
+
+同 2.1 流量广告
 
 ---
 
@@ -411,6 +518,16 @@ Campaign (商品广告)
             └── image_url: 商品图片
 ```
 
+#### 广告位 (Placements)
+
+| 类型 | 说明 |
+|------|------|
+| Facebook Shop | Facebook 商店 |
+| Instagram Shop | Instagram 商店 |
+| Marketplace | 市场 |
+| Facebook Feed | Facebook 信息流 |
+| Instagram Feed | Instagram 信息流 |
+
 ---
 
 ### 2.6 消息广告 (Messaging Ads)
@@ -426,6 +543,15 @@ Campaign (消息广告)
         ├── whatsapp_number: WhatsApp 号码
         └── messenger_page_id: Messenger 页面 ID
 ```
+
+#### 广告位 (Placements)
+
+| 类型 | 说明 |
+|------|------|
+| Messenger Inbox | Messenger 收件箱 |
+| Messenger Chat | Messenger 聊天 |
+| WhatsApp | WhatsApp |
+| Instagram Direct | Instagram 私信 |
 
 ---
 
@@ -465,6 +591,17 @@ Advertiser (广告主)
                 └── authorization_status: 授权状态
 ```
 
+#### 广告位 (Placements)
+
+| 类型 | 说明 |
+|------|------|
+| TikTok Feed | TikTok 信息流 |
+| TikTok Search | TikTok 搜索 |
+| TikTok Hadith | TikTok 话题页 |
+| TikTok Live | TikTok 直播 |
+| TikTok Post | TikTok 帖子页 |
+| TikTok Profile | TikTok 个人主页 |
+
 ---
 
 ### 3.2 Spark Ads (达人原生广告)
@@ -473,13 +610,21 @@ Advertiser (广告主)
 
 ```
 Campaign
-└── promotion_type: PROMOTION_TYPE_SPARK
-    └── spark_info:
-        ├── source_type: POST / PROFILE / HASHTAG
-        ├── author_id: 达人 ID
-        ├── post_id: 帖子 ID
-        └── video_id: 视频 ID
+├── promotion_type: PROMOTION_TYPE_SPARK
+└── spark_info:
+    ├── source_type: POST / PROFILE / HASHTAG
+    ├── author_id: 达人 ID
+    ├── post_id: 帖子 ID
+    └── video_id: 视频 ID
 ```
+
+#### 广告位 (Placements)
+
+| 类型 | 说明 |
+|------|------|
+| TikTok Feed | 原生信息流 |
+| TikTok Search | 搜索结果 |
+| TikTok Profile | 达人主页 |
 
 ---
 
@@ -499,6 +644,10 @@ Campaign
     └── privacy_policy: 隐私政策 URL
 ```
 
+#### 广告位 (Placements)
+
+同 3.1 产品销售广告
+
 ---
 
 ### 3.4 应用推广广告 (App Promotion)
@@ -514,6 +663,15 @@ Campaign
     └── deep_link: 深度链接
 ```
 
+#### 广告位 (Placements)
+
+| 类型 | 说明 |
+|------|------|
+| TikTok Feed | 信息流 |
+| TikTok Search | 搜索 |
+| App Store | 应用商店跳转 |
+| Google Play | 应用商店跳转 |
+
 ---
 
 ### 3.5 品牌广告 (Brand Ads)
@@ -527,6 +685,15 @@ Campaign
     ├── brand_lift_study: 品牌提升研究
     └── reach_frequency: 触达频次
 ```
+
+#### 广告位 (Placements)
+
+| 类型 | 说明 |
+|------|------|
+| TopView | 开屏广告 |
+| Brand Takeover | 品牌 takeover |
+| Branded Effects | 品牌滤镜 |
+| Branded Hashtag | 品牌话题挑战 |
 
 ---
 
@@ -580,8 +747,6 @@ Partner (合作伙伴)
                     └── click_through_url: 点击跳转 URL
 ```
 
----
-
 ### 4.2 核心概念说明
 
 #### 层级关系
@@ -595,8 +760,6 @@ Partner (合作伙伴)
 | Creative Set | 创意集 |
 | Creative | 创意素材 |
 
----
-
 ### 4.3 Line Item 类型说明
 
 | 类型 | 说明 | 适用场景 |
@@ -605,8 +768,6 @@ Partner (合作伙伴)
 | PROGRAMMATIC_DIRECT | 程序化直采（PMP/PI） | 优先购买优质媒体库存 |
 | REMARKETING | ремаркетинг投放 | 针对已访问过网站的用户再触达 |
 | HOSTED | 托管广告（非程序化） | 直接购买固定位置、固定时间段广告 |
-
----
 
 ### 4.4 广告位类型
 
@@ -636,8 +797,6 @@ Partner (合作伙伴)
 | **第五层** | Ad + Keywords/Product Group | Ad + Creative | Ad + Spark Info | Creative |
 | **特殊** | Campaign Criteria | Pixel/CAPI | targeting | bid_strategy |
 
----
-
 ### 5.2 广告类型对比
 
 | 广告类型 | Google Ads | Meta | TikTok | DV360 |
@@ -651,8 +810,6 @@ Partner (合作伙伴)
 | 消息广告 | ❌ | ✅ 独家 | ❌ | ❌ |
 | 线索收集 | ✅ Lead Form | ✅ Instant Form | ✅ Lead Form | ✅ |
 | TopView | ❌ | ❌ | ✅ 独家 | ❌ |
-
----
 
 ### 5.3 核心差异总结
 
