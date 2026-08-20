@@ -237,21 +237,141 @@ Customer
 | `product_selection.product_group` | 产品分组配置 |
 | `product_selection.excluded_product_ids` | 排除的产品 ID |
 
-#### Assets（资产素材）- PMax 9 种 Asset 类型
+#### Assets（资产素材）- PMax 9 种 Asset 类型详解
 
-| Asset 类型 | 字段名 | 说明 | 建议数量 | 字符限制 |
-|-----------|--------|------|----------|----------|
-| **Headline** | `headline` | 主标题，用于搜索/展示广告 | 10-15 个 | 30 字符 |
-| **Description** | `description` | 描述文本 | 5-10 个 | 90 字符 |
-| **Image** | `image.media_file.url` | 营销图片（1.91:1 或 4:1） | 5-10 个 | 5MB |
-| **Logo** | `logo.media_file.url` | 品牌 Logo（1:1 方形） | 3-5 个 | 5MB |
-| **Video** | `video.media_file.url` | YouTube 视频（16:9 或 1:1） | 1-5 个 | - |
-| **CTA Text** | `cta_text` | 行动号召文本 | 1-2 个 | 25 字符 |
-| **Call Out** | `call_out` | 卖点突出（如"Free Shipping"） | 5-10 个 | 25 字符 |
-| **Sitelink** | `sitelink` | 附加链接（带标题+描述） | 4-8 个 | 标题25字/描述25字 |
-| **Product Feed Link** | `product_feed_link` | 直接链接到商品目录 | 1 个 | - |
+PMax 的 Asset Group 必须包含以下 9 种 Asset 类型中的至少一种（建议全部配置以获得最佳效果）：
 
-**Asset 创建示例**:
+| Asset 类型 | 字段名 | 说明 | 建议数量 | 字符/尺寸限制 | 用途示例 |
+|-----------|--------|------|----------|---------------|----------|
+| **Headline** | `headline` | 主标题，出现在搜索/展示广告中 | 10-15 个 | 30 字符 | "Summer Sale", "Up to 50% Off" |
+| **Description** | `description` | 描述文本，补充标题信息 | 5-10 个 | 90 字符 | "Discover our latest collection", "Free shipping on orders over $50" |
+| **Image** | `image.media_file.url` | 营销图片，用于展示广告 | 5-10 个 | 1280x800 (1.6:1), 1200x628 (Facebook), 最大 5MB | 产品展示图、生活方式图 |
+| **Logo** | `logo.media_file.url` | 品牌 Logo，1:1 方形 | 3-5 个 | 1200x1200 (1:1), 最大 5MB | 品牌 Logo |
+| **Video** | `video.media_file.url` | YouTube 视频，用于视频广告 | 1-5 个 | 16:9 或 1:1, 至少 15 秒 | 品牌故事、产品演示 |
+| **CTA Text** | `cta_text` | 行动号召文本按钮 | 1-2 个 | 25 字符 | "Shop Now", "Learn More", "Sign Up" |
+| **Call Out** | `call_out` | 卖点突出文本，用于展示广告 | 5-10 个 | 25 字符 | "Free Shipping", "Easy Returns", "24/7 Support" |
+| **Sitelink** | `sitelink` | 附加链接，带标题和描述 | 4-8 个 | 标题 25 字符 / 描述 25 字符 | "New Arrivals" + "Shop the latest styles" |
+| **Product Feed Link** | `product_feed_link` | 直接链接到商品目录，自动展示商品 | 1 个 | - | 连接 Merchant Center 商品数据 |
+
+---
+
+### 各 Asset 类型详细说明
+
+#### 1. Headline（标题）
+**用途**: 搜索广告和展示广告的主要文本
+**最佳实践**:
+- 包含品牌名或核心卖点
+- 使用行动导向语言（"Shop", "Buy", "Get"）
+- 针对不同受众创建差异化标题
+- 建议准备 10-15 个以便算法自动组合
+
+**示例**:
+```
+- "Summer Collection - Up to 50% Off"
+- "Free Shipping on Orders $50+"
+- "Shop New Arrivals Today"
+```
+
+#### 2. Description（描述）
+**用途**: 补充标题，提供更详细信息
+**最佳实践**:
+- 描述产品特色或优惠
+- 包含行动号召
+- 突出独特卖点（USP）
+
+**示例**:
+```
+- "Discover our latest summer styles with up to 50% off"
+- "Free returns and easy exchanges"
+- "Join millions of satisfied customers"
+```
+
+#### 3. Image（图片）
+**用途**: 展示广告的视觉吸引
+**尺寸要求**:
+| 类型 | 尺寸 | 比例 |
+|------|------|------|
+| 标准图片 | 1200 x 628 px | 1.91:1 |
+| 正方形图片 | 1200 x 1200 px | 1:1 |
+| 竖版图片 | 1080 x 1920 px | 9:16 |
+
+**最佳实践**:
+- 使用高质量、高分辨率图片
+- 展示产品使用场景
+- 包含品牌元素
+- 避免文字覆盖图片主体
+
+#### 4. Logo（Logo）
+**用途**: 品牌识别
+**尺寸要求**: 1200 x 1200 px (1:1 正方形)
+**最佳实践**:
+- 使用透明背景的 PNG
+- 确保 Logo 清晰可辨
+- 保持简洁设计
+
+#### 5. Video（视频）
+**用途**: YouTube 和视频展示广告
+**尺寸要求**:
+- 横版: 1920 x 1080 px (16:9)
+- 正方形: 1200 x 1200 px (1:1)
+- 竖版: 1080 x 1920 px (9:16)
+
+**最佳实践**:
+- 前 5 秒抓住注意力
+- 添加字幕（70% 用户静音观看）
+- 时长 15-60 秒
+- 明确行动号召
+
+#### 6. CTA Text（行动号召）
+**用途**: 广告中的按钮文本
+**可用选项**:
+| CTA 文本 | 适用场景 |
+|----------|----------|
+| Shop Now | 电商销售 |
+| Learn More | 信息获取 |
+| Sign Up | 注册转化 |
+| Download | 应用下载 |
+| Book Now | 预约服务 |
+| Contact Us | 客户咨询 |
+
+#### 7. Call Out（卖点突出）
+**用途**: 展示广告的额外卖点文本
+**常见示例**:
+```
+- Free Shipping
+- Easy Returns
+- 24/7 Support
+- Secure Checkout
+- Money Back Guarantee
+- Fast Delivery
+- Exclusive Deals
+```
+
+#### 8. Sitelink（附加链接）
+**用途**: 引导用户到特定落地页
+**结构**:
+- 链接标题 (25 字符)
+- 链接描述 (25 字符)
+
+**常见示例**:
+```
+【New Arrivals】Shop the latest styles
+【Sale Items】Up to 50% off today
+【Best Sellers】Most popular products
+【Gift Guide】Find the perfect gift
+```
+
+#### 9. Product Feed Link（商品目录链接）
+**用途**: 连接 Merchant Center 商品数据
+**配置**:
+- 选择已验证的 Product Feed ID
+- 自动从商品数据提取标题、图片、价格
+- 用于 Shopping 和 PMax 电商广告
+
+**前置条件**:
+- 已设置 Merchant Center 账户
+- 商品数据已验证通过
+- 关联到 Google Ads 账户
 ```python
 # PMax Asset Group 配置（完整 9 种 Asset）
 asset_group = {
