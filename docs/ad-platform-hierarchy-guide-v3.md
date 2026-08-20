@@ -37,6 +37,20 @@
 
 > Google Ads 账号可以视为一个对象层次结构，从 Customer 到 Campaign 到 Ad Group 再到 Ad。
 
+### 广告位（Ad Placements）
+
+| 广告位 | 展示位置 | 适用广告类型 |
+|--------|----------|-------------|
+| **Google Search** | 搜索引擎结果页（SERP）顶部/底部 | Search Ads, Shopping Ads |
+| **Google Search Network** | Partner 网站搜索结果页 | Search Ads, Shopping Ads |
+| **YouTube** | 视频前贴片/中插/贴片 | Video Ads |
+| **Gmail** | Gmail 顶部推广标签 | Display Ads |
+| **Google Display Network** | 数百万合作网站/App | Display Ads, PMax |
+| **YouTube Discovery** | YouTube 搜索结果/推荐 | Video Ads, PMax |
+| **Google Shopping Tab** | 购物标签页 | Shopping Ads |
+| **Google Play** | 应用商店推广位 | App Ads |
+| **Maps** | Google Maps 搜索结果 | Local Ads |
+
 ---
 
 ## 1.1 搜索广告（Search Ads）
@@ -535,6 +549,23 @@ Customer
 
 > Meta 广告架构：Business Manager → Ad Account → Campaign → Ad Set → Ad
 
+### 广告位（Ad Placements）
+
+| 广告位 | 展示位置 | 适用广告类型 |
+|--------|----------|-------------|
+| **Facebook Feed** | 用户动态信息流 | 所有类型 |
+| **Facebook Right Column** | 桌面端右侧栏 | 展示广告 |
+| **Facebook Stories** | Facebook 故事 | 视频/图片广告 |
+| **Facebook In-Stream** | 视频流中插广告 | 视频广告 |
+| **Facebook Search** | Facebook 搜索结果 | 搜索广告 |
+| **Instagram Feed** | Instagram 信息流 | 所有类型 |
+| **Instagram Stories** | Instagram 故事 | 视频/图片广告 |
+| **Instagram Reels** | Instagram 短视频 | 视频广告 |
+| **Instagram Explore** | Instagram 探索页 | 图片/视频广告 |
+| **Messenger Story** | Messenger 故事 | 视频/图片广告 |
+| **Audience Network** | 第三方 App/网站 | 展示/视频广告 |
+| **WhatsApp Status** | WhatsApp 状态（部分地区） | 视频/图片广告 |
+
 ---
 
 ## 2.1 流量广告（Traffic Ads）
@@ -914,6 +945,19 @@ Business Manager
 
 > TikTok Ads 架构：Business Center → Advertiser → Campaign → Ad Group → Ad
 
+### 广告位（Ad Placements）
+
+| 广告位 | 展示位置 | 适用广告类型 |
+|--------|----------|-------------|
+| **In-Feed Ads** | For You 页面信息流 | 产品销售/Spark Ads |
+| **TopView** | App 开屏独占展示 | 品牌广告 |
+| **Brand Takeover** | App 开屏/首页横幅 | 品牌广告 |
+| **Hashtag Challenge** | 话题挑战赛入口 | 品牌/互动广告 |
+| **Spark Ads** | 达人原生内容流 | Spark Ads |
+| **Pinned Comment** | 视频评论区置顶 | 互动广告 |
+| **Collection Ads** | 沉浸式商品展示页 | 商品广告 |
+| **Instant Experience** | 全屏落地页体验 | 所有类型 |
+
 ---
 
 ## 3.1 产品销售广告（Product Sales）
@@ -945,6 +989,12 @@ Business Center
                             │
                             ├── bid_type (出价类型: AUTO / MANUAL)
                             ├── bid_amount (出价金额)
+                            │
+                            ├── promoted_object (推广对象配置)
+                            │       ├── objective_type: PRODUCT_SALES
+                            │       ├── website_url: "https://example.com"
+                            │       ├── catalog_id: "catalog_123"  # 商品目录 ID
+                            │       └── product_set_id: "product_set_123"  # 商品集 ID
                             │
                             ├── targeting (定向)
                             │       ├── age_min / age_max (年龄)
@@ -984,7 +1034,31 @@ Business Center
 | `bid_type` | AUTO_BID / MANUAL_BID |
 | `bid_amount` | 出价金额（分） |
 | `promoted_object` | 推广对象配置 |
+| `promoted_object.catalog_id` | 商品目录 ID（关联到 TikTok Shop 商品目录） |
+| `promoted_object.product_set_id` | 商品集 ID（定义展示哪些商品） |
+| `promoted_object.website_url` | 落地页 URL |
 | `daily_budget` | 日预算（可选） |
+
+#### Catalog（商品目录）
+| 字段 | 说明 |
+|------|------|
+| `catalog_id` | 商品目录 ID |
+| `name` | 目录名称 |
+| `country` | 销售国家 |
+| `language` | 语言设置 |
+| `currency` | 货币代码 |
+| `products_count` | 商品数量 |
+
+#### Product Set（商品集）
+| 字段 | 说明 |
+|------|------|
+| `product_set_id` | 商品集 ID |
+| `name` | 商品集名称 |
+| `filter.conditions[]` | 过滤条件数组 |
+| `filter.conditions[].field` | 过滤字段: product_type / category / availability 等 |
+| `filter.conditions[].operator` | 操作符: EQUAL / NOT_EQUAL / CONTAINS |
+| `filter.conditions[].value` | 过滤值 |
+| `default_filter.all_products` | 是否包含所有商品 |
 
 #### targeting（定向）
 | 字段 | 说明 |
