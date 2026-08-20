@@ -53,6 +53,33 @@
 
 ---
 
+### 广告附加信息（Extensions）
+
+> **重要提示**：Extensions 是 Google Ads 的通用功能，可被多种广告类型使用（Search、Shopping、PMax、Display、Video 等），但不同广告类型支持的 Extensions 类型不同。
+
+| 附加信息类型 | 英文 | 是否可点击 | 展示数量限制 | 适用广告类型 | 配置层级 |
+|-------------|------|-----------|-------------|-------------|----------|
+| 附加链接 | Sitelink extensions | ✅ 可点击 | 2-6个 | Search, Shopping, PMax, Display | 账户/广告系列/广告组 |
+| 卖点 | Callout extensions | ❌ 不可点击 | 2-6个 | Search, Shopping, PMax, Display | 账户/广告系列/广告组 |
+| 结构化代码段 | Structured snippet extension | ❌ 不可点击 | - | Search, Shopping, PMax | 账户/广告系列/广告组 |
+| 致电 | Call extension | ✅ 可点击 | - | Search, Shopping, PMax, Display, App | 账户/广告系列/广告组 |
+| 发送信息 | Message extension | ✅ 可点击 | - | Search, Shopping | 广告系列/广告组 |
+| 位置 | Location extension | ✅ 可点击 | - | Search, Shopping, PMax, Display | 账户 |
+| 联盟商家 | Affiliate location extension | ✅ 可点击 | - | Search, Shopping | 账户 |
+| 价格 | Price extension | ✅ 可点击 | 最多8个 | Search, Shopping, PMax | 广告系列/广告组 |
+| 应用程序 | App extension | ✅ 可点击 | - | Search, Shopping, PMax, App | 账户/广告系列 |
+| 促销 | Promotion extension | ✅ 可点击 | - | Search, Shopping, PMax | 广告系列/广告组 |
+
+**各广告类型支持的 Extensions 汇总**：
+- **Search Ads**：支持全部 10 种 Extensions
+- **Shopping Ads**：支持 Sitelink / Callout / Structured Snippet / Call / Price / Location / Promotion
+- **Performance Max**：支持大部分 Extensions（部分已废弃）
+- **Display Ads**：支持 Sitelink / Callout / Call / Location（较有限）
+- **Video Ads**：支持 Call / Location（非常有限）
+
+
+---
+
 ## 1.1 搜索广告（Search Ads）
 
 ### 使用场景
@@ -158,79 +185,23 @@ Customer
 
 ---
 
-### 广告附加信息（Extensions）
 
-> **重要提示**：广告附加信息可根据上下文（如设备和位置）以及预测的组合动态提供，以提高点击率。**即使设置了，也不一定每次都会显示**，谷歌会根据广告质量、排名、出价等因素动态调用。
->
-> 位于第一位置的广告 - 排名靠前的广告 - 将有资格获得展示的更多广告附加信息。
->
-> 如果未在广告系列中设置，Google 会动态生成一些附加信息，例如附加链接。
+#### 广告附加信息（Extensions）
 
-| 附加信息类型 | 英文 | 是否可点击 | 展示数量限制 | 适用场景 |
-|-------------|------|-----------|-------------|----------|
-| 附加链接 | Sitelink extensions | ✅ 可点击 | 2-6个（移动端最多8个） | 链接到网站其他页面 |
-| 卖点 | Callout extensions | ❌ 不可点击 | 2-6个 | 突出优惠和利益点 |
-| 结构化代码段 | Structured snippet extension | ❌ 不可点击 | - | 展示产品/服务类别 |
-| 致电 | Call extension | ✅ 可点击 | - | 添加电话号码 |
-| 发送信息 | Message extension | ✅ 可点击 | - | 短信联系 |
-| 位置 | Location extension | ✅ 可点击 | - | 显示实体店地址 |
-| 联盟商家 | Affiliate location extension | ✅ 可点击 | - | 零售连锁店产品定位 |
-| 价格 | Price extension | ✅ 可点击 | 最多8个 | 展示产品价格 |
-| 应用程序 | App extension | ✅ 可点击 | - | 引导下载App |
-| 促销 | Promotion extension | ✅ 可点击 | - | 展示促销活动 |
+Search Ads 支持全部 10 种 Extensions：
 
-#### 1. 附加链接 Sitelink extensions
-- **用途**：链接到网站上的其他网页
-- **展示数量**：广告可能显示的附加链接数量在两到六个不等，在移动设备的轮播中最多可以显示八个
-- **配置层级**：账户、广告系列或广告组级别
-
-#### 2. 卖点 Callout extensions
-- **用途**：不可点击，旨在突出用户的优惠和利益
-- **示例**："免费送货"、"免费退货"、"退款保证"等
-- **展示数量**：可在移动设备或桌面设备上随机显示两到六个标注
-- **配置层级**：账户、广告系列或广告组一级
-
-#### 3. 结构化代码段 Structured snippet extension
-- **用途**：不可点击，突出提供的产品或服务的各个方面
-- **格式**：使用标题格式，如"课程 Courses"和"样式 Styles"等
-- **示例**：服装零售商可设置为：`Styles: Skinny, Straight, Flare, Jeggings`
-
-#### 4. 致电 Call extension
-- **用途**：在广告中附加电话号码
-- **功能**：在移动设备上，用户可以点按直接从分机拨打电话
-- **注意**：如果没有设置附加电话信息，Google 可能会使用网站上的电话号码显示
-
-#### 5. 发送信息 Message extension
-- **用途**：仅在能够发送和接收文本消息的移动设备上显示
-- **要求**：商家号码必须能够发送和接收短信
-- **消息示例**："请用更多信息给我发短信 Please text me with more information"
-- **计费方式**：当有人点击广告中的邮件信息图标时收费，而不是等到发送完信息后才收费
-
-#### 6. 位置 Location extension
-- **用途**：如果你有真实的位置，需要使用附加地址信息
-- **前置条件**：需要将"Google My Business"账户与 Google Ads 账户相关联
-- **展示位置**：搜索、Google 地图以及展示广告和视频广告中均可展示
-
-#### 7. 联盟商家 Affiliate location extension
-- **用途**：在零售连锁店销售产品的品牌和制造商可以启用联盟附加地址信息
-- **功能**：帮助用户在附近的地点找到他们的产品
-- **覆盖范围**：在美国，目前有超过 80 个连锁店可用于联盟会员附加地址
-
-#### 8. 价格 Price extension
-- **用途**：可点击的扩展程序，突出显示服务或产品的价格
-- **展示数量**：最多可以在移动设备上显示八个
-- **配置要求**：每个价格扩展包括一个可自定义的标题和描述，每个最多 25 个字符。Google 建议至少设置五个价格扩展项
-
-#### 9. 应用程序 App extension
-- **用途**：可点击的链接，让用户通过文字广告访问 Google Play 或 Apple App Store 中的移动应用程序
-- **注意**：此附加信息不会替换 App 应用程序广告
-- **自动检测**：Google 会自动检测用户的设备类型，并仅在相应的设备上显示应用程序附加信息
-
-#### 10. 促销 Promotion extension
-- **用途**：展示促销活动或优惠
-- **特点**：可点击的，带有价格标签图标，最多可包含两行文本
-- **节日选择**：可以从下拉列表中选择一个特定节日，例如母亲节或黑色星期五
-- **日期设置**：可以设置促销日期，如黑色星期五促销活动仅在 11 月 15 日至 12 月 15 日期间展示
+| Extensions 类型 | 是否可点击 | 配置层级 | 说明 |
+|----------------|-----------|----------|------|
+| Sitelink extensions | ✅ | 账户/广告系列/广告组 | 链接到网站其他页面 |
+| Callout extensions | ❌ | 账户/广告系列/广告组 | 突出优惠利益点 |
+| Structured snippet extension | ❌ | 账户/广告系列/广告组 | 展示产品/服务类别 |
+| Call extension | ✅ | 账户/广告系列/广告组 | 附加电话号码 |
+| Message extension | ✅ | 广告系列/广告组 | 短信联系 |
+| Location extension | ✅ | 账户 | 显示实体店地址 |
+| Affiliate location extension | ✅ | 账户 | 零售连锁店定位 |
+| Price extension | ✅ | 广告系列/广告组 | 展示产品价格 |
+| App extension | ✅ | 账户/广告系列 | 引导下载 App |
+| Promotion extension | ✅ | 广告系列/广告组 | 展示促销活动 |
 
 ---
 
@@ -325,9 +296,9 @@ PMax 的 Asset Group 必须包含以下 9 种 Asset 类型中的至少一种（�
 | **Logo** | `logo.media_file.url` | 品牌 Logo，1:1 方形 | 3-5 个 | 1200x1200 (1:1), 最大 5MB | 品牌 Logo |
 | **Video** | `video.media_file.url` | YouTube 视频，用于视频广告 | 1-5 个 | 16:9 或 1:1, 至少 15 秒 | 品牌故事、产品演示 |
 | **CTA Text** | `cta_text` | 行动号召文本按钮 | 1-2 个 | 25 字符 | "Shop Now", "Learn More", "Sign Up" |
-| **Call Out** | `call_out` | 卖点突出文本，用于展示广告 | 5-10 个 | 25 字符 | "Free Shipping", "Easy Returns", "24/7 Support" |
-| **Sitelink** | `sitelink` | 附加链接，带标题和描述 | 4-8 个 | 标题 25 字符 / 描述 25 字符 | "New Arrivals" + "Shop the latest styles" |
-| **Product Feed Link** | `product_feed_link` | 直接链接到商品目录，自动展示商品 | 1 个 | - | 连接 Merchant Center 商品数据 |
+| **Call Out** ⚠️ *已废弃* | - | 新版 API 中已移除 | - | - | - |
+| **Sitelink** ⚠️ *已废弃* | - | 新版 API 中已移除 | - | - | - |
+| **Product Feed Link** ⚠️ *已废弃* | - | 新版 API 中已移除 | - | - | - |
 
 ---
 
@@ -579,6 +550,25 @@ Customer
 
 ---
 
+
+#### 广告附加信息（Extensions）
+
+Shopping Ads 支持的 Extensions：
+
+| Extensions 类型 | 是否可点击 | 配置层级 | 说明 |
+|----------------|-----------|----------|------|
+| Sitelink extensions | ✅ | 广告系列/广告组 | 链接到网站其他页面 |
+| Callout extensions | ❌ | 广告系列/广告组 | 突出优惠利益点 |
+| Structured snippet extension | ❌ | 广告系列/广告组 | 展示产品/服务类别 |
+| Call extension | ✅ | 广告系列/广告组 | 附加电话号码 |
+| Location extension | ✅ | 账户 | 显示实体店地址 |
+| Price extension | ✅ | 广告系列/广告组 | 展示产品价格 |
+| Promotion extension | ✅ | 广告系列/广告组 | 展示促销活动 |
+
+> **注意**：Shopping Ads 本身已包含产品信息（标题、图片、价格），部分 Extensions 与产品信息重复。
+
+---
+
 ## 1.4 视频广告（Video Ads）
 
 ### 使用场景
@@ -719,6 +709,22 @@ Customer
 | `square_marketing_image.media_file.url` | 方形营销图片 |
 | `business_name` | 商家名称 |
 | `ultimate_url` | 最终 URL |
+
+---
+
+
+#### 广告附加信息（Extensions）
+
+Display Ads 支持的 Extensions：
+
+| Extensions 类型 | 是否可点击 | 配置层级 | 说明 |
+|----------------|-----------|----------|------|
+| Sitelink extensions | ✅ | 广告系列 | 链接到网站其他页面 |
+| Callout extensions | ❌ | 广告系列 | 突出优惠利益点 |
+| Call extension | ✅ | 广告系列 | 附加电话号码 |
+| Location extension | ✅ | 账户 | 显示实体店地址 |
+
+> **注意**：展示广告的 Extensions 支持较有限，主要依赖广告素材本身传达信息。
 
 ---
 
@@ -1784,5 +1790,8 @@ Campaign: "Summer 2026 Brand Campaign"
 ---
 
 **文档版本**: v3.0  
+**创建日期**: 2026-08-20  
+**作者**: Ryan
+3.0  
 **创建日期**: 2026-08-20  
 **作者**: Ryan
