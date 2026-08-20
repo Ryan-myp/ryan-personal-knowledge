@@ -185,7 +185,7 @@
 
 #### 广告附加信息（Extensions）
 
-|| 类型 | 字段 | 说明 | 可点击 | 数量限制 |
+| 类型 | 字段 | 说明 | 可点击 | 数量限制 |
 |------|------|------|--------|----------|
 | **Sitelink** | `sitelink_callout_text` | 附加链接文本（最多4个） | ❌ | 最多 15 个 |
 | **Callout** | `callout_text` | 补充说明文本（最多10个） | ❌ | 最多 10 个 |
@@ -197,6 +197,7 @@
 | **Price** | `title`, `price`, `currency_code` | 价格信息 | ✅ | 最多 8 个 |
 | **App** | `app_id`, `description` | 应用下载 | ✅ | 最多 1 个 |
 | **Promotion** | `promotion_text`, `offer_code` | 促销活动 | ✅ | 最多 8 个 |
+
 ### 1.2 性能最大化广告（Performance Max）层级详解
 
 ```
@@ -1732,7 +1733,7 @@ response = requests.post(
 
 #### 广告位（Ad Placements）
 
- 类型 | 说明 | 位置 |
+| 类型 | 说明 | 位置 |
    ---│   ---│   ---|
  **Google Search** | 搜索结果页 | 主要位置 |
  **Google Search Partners** | 合作伙伴网站 | 搜索扩展 |
