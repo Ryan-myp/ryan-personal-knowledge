@@ -643,6 +643,20 @@ Customer
 
 ---
 
+
+#### 广告附加信息（Extensions）
+
+Video Ads 支持的 Extensions（非常有限）：
+
+| Extensions 类型 | 是否可点击 | 配置层级 | 说明 |
+|----------------|-----------|----------|------|
+| Call extension | ✅ | 广告系列 | 附加电话号码 |
+| Location extension | ✅ | 账户 | 显示实体店地址 |
+
+> **注意**：视频广告格式特殊，Extensions 支持非常有限。主要依靠视频内容本身传达信息。
+
+---
+
 ## 1.5 展示广告（Display Ads）
 
 ### 使用场景
