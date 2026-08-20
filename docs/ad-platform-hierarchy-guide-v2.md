@@ -11,7 +11,13 @@
 1. [Google Ads 层级结构](#1-google-ads-层级结构)
    - 1.1 搜索广告（Search Ads）
    - 1.2 性能最大化广告（Performance Max）
+     - 1.2.1 PMax 中的 Product Group / Listing Group
    - 1.3 购物广告（Shopping Ads）
+     - 1.3.1 完整层级架构
+     - 1.3.2 Product Group 层级规则
+     - 1.3.3 Product Group 细分维度详解
+     - 1.3.4 购物广告 API 字段速查
+     - 1.3.5 Listing Group vs Product Group
    - 1.4 视频广告（Video Ads）
    - 1.5 展示广告（Display Ads）
    - 1.6 应用安装广告（App Ads）
