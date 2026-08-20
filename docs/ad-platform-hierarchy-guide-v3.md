@@ -169,34 +169,34 @@
 
 **搜索广告关键配置**:
 
-| 配置项 | 字段名 | 可选值 | 说明 |
-|--------|--------|--------|------|
-| 渠道类型 | `advertising_channel_type` | SEARCH | 搜索广告 |
-| 出价策略 | `bidding_strategy.type` | MANUAL_CPC/TARGET_CPA/MAXIMIZE_CONVERSIONS/TARGET_ROAS | 智能出价 |
-| 预算 | `campaign_budget.amount_micros` | Integer | 微单位，1,000,000 = $1 |
-| 关键词匹配 | `keyword.match_type` | BROAD/PHRASE/EXACT | 匹配方式 |
-| 广告类型 | `ad.type` | RESPONSIVE_SEARCH_AD/TEXT_AD | 响应式搜索广告 |
-| 最终URL | `ad.final_urls` | String[] | 落地页链接 |
-| 标题数量 | `ad.info.headlines[]` | 15个 | 建议10-15个 |
-| 描述数量 | `ad.info.descriptions[]` | 5个 | 建议4-5个 |
+│ 配置项 | 字段名 | 可选值 | 说明 |
+│   -----│   -----│   -----│   ---|
+│ 渠道类型 | `advertising_channel_type` | SEARCH | 搜索广告 |
+│ 出价策略 | `bidding_strategy.type` | MANUAL_CPC/TARGET_CPA/MAXIMIZE_CONVERSIONS/TARGET_ROAS | 智能出价 |
+│ 预算 | `campaign_budget.amount_micros` | Integer | 微单位，1,000,000 = $1 |
+│ 关键词匹配 | `keyword.match_type` | BROAD/PHRASE/EXACT | 匹配方式 |
+│ 广告类型 | `ad.type` | RESPONSIVE_SEARCH_AD/TEXT_AD | 响应式搜索广告 |
+│ 最终URL | `ad.final_urls` | String[] | 落地页链接 |
+│ 标题数量 | `ad.info.headlines[]` | 15个 | 建议10-15个 |
+│ 描述数量 | `ad.info.descriptions[]` | 5个 | 建议4-5个 |
 
 ---
 
 
 #### 广告附加信息（Extensions）
 
-| 类型 | 字段 | 说明 | 可点击 | 数量限制 |
-|------|------|------|--------|----------|
-| **Sitelink** | `sitelink_callout_text` | 附加链接文本（最多4个） | ❌ | 最多 15 个 |
-| **Callout** | `callout_text` | 补充说明文本（最多10个） | ❌ | 最多 10 个 |
-| **Structured Snippet** | `values` | 结构化摘要（标题+值列表） | ❌ | 最多 5 个 |
-| **Call** | `phone_number` | 拨打电话 | ✅ | 最多 5 个 |
-| **Message** | `phone_number`, `message_text` | 发送短信 | ✅ | 最多 5 个 |
-| **Location** | `business_name`, `place_id` | 商家位置 | ✅ | 最多 10 个 |
-| **Affiliate Location** | `seller_member_id`, `place_ids` | 经销商定位 | ✅ | 最多 20 个 |
-| **Price** | `title`, `price`, `currency_code` | 价格信息 | ✅ | 最多 8 个 |
-| **App** | `app_id`, `description` | 应用下载 | ✅ | 最多 1 个 |
-| **Promotion** | `promotion_text`, `offer_code` | 促销活动 | ✅ | 最多 8 个 |
+│ 类型 | 字段 | 说明 | 可点击 | 数量限制 |
+│   ---│   ---│   ---│   -----│   -------|
+│ **Sitelink** | `sitelink_callout_text` | 附加链接文本（最多4个） | ❌ | 最多 15 个 |
+│ **Callout** | `callout_text` | 补充说明文本（最多10个） | ❌ | 最多 10 个 |
+│ **Structured Snippet** | `values` | 结构化摘要（标题+值列表） | ❌ | 最多 5 个 |
+│ **Call** | `phone_number` | 拨打电话 | ✅ | 最多 5 个 |
+│ **Message** | `phone_number`, `message_text` | 发送短信 | ✅ | 最多 5 个 |
+│ **Location** | `business_name`, `place_id` | 商家位置 | ✅ | 最多 10 个 |
+│ **Affiliate Location** | `seller_member_id`, `place_ids` | 经销商定位 | ✅ | 最多 20 个 |
+│ **Price** | `title`, `price`, `currency_code` | 价格信息 | ✅ | 最多 8 个 |
+│ **App** | `app_id`, `description` | 应用下载 | ✅ | 最多 1 个 |
+│ **Promotion** | `promotion_text`, `offer_code` | 促销活动 | ✅ | 最多 8 个 |
 
 ### 1.2 性能最大化广告（Performance Max）层级详解
 
@@ -243,16 +243,16 @@
 
 **PMax 关键配置**:
 
-| 配置项 | 字段名 | 说明 |
-|--------|--------|------|
-| 渠道类型 | `advertising_channel_type: MAX` | 性能最大化 |
-| 资产组 | `asset_group` | 至少1个，建议2-5个 |
-| 受众信号 | `audience_signals` | 建议信号，非强制 |
-| 标题 | `assets.headline` | 建议10-15个 |
-| 图片 | `assets.image` | 建议5-10个 |
-| 视频 | `assets.video` | 建议1-5个 |
-| Logo | `assets.logo` | 建议3-5个 |
-| 最终URL后缀 | `final_url_suffix` | UTM参数追加 |
+│ 配置项 | 字段名 | 说明 |
+│   -----│   -----│   ---|
+│ 渠道类型 | `advertising_channel_type: MAX` | 性能最大化 |
+│ 资产组 | `asset_group` | 至少1个，建议2-5个 |
+│ 受众信号 | `audience_signals` | 建议信号，非强制 |
+│ 标题 | `assets.headline` | 建议10-15个 |
+│ 图片 | `assets.image` | 建议5-10个 |
+│ 视频 | `assets.video` | 建议1-5个 |
+│ Logo | `assets.logo` | 建议3-5个 |
+│ 最终URL后缀 | `final_url_suffix` | UTM参数追加 |
 
 #### 1.2.1 PMax 中的 Product Group / Listing Group 配置
 
@@ -299,11 +299,11 @@ PMax 电商销售目标（SALES_GOAL_TYPE_ECOMMERCE）同样支持 Product Group
 
 **PMax Product Selection 配置**:
 
-| 字段 | 说明 |
-|------|------|
-| `product_selection.listing_group_type` | 产品选择类型：PRODUCT_SELECTION |
-| `product_selection.product_group` | 产品分组配置（与 Shopping 相同结构） |
-| `product_selection.excluded_product_ids` | 排除的产品 ID 列表 |
+│ 字段 | 说明 |
+│   ---│   ---|
+│ `product_selection.listing_group_type` | 产品选择类型：PRODUCT_SELECTION |
+│ `product_selection.product_group` | 产品分组配置（与 Shopping 相同结构） |
+│ `product_selection.excluded_product_ids` | 排除的产品 ID 列表 |
 
 **Product Group 细分维度（PMax 与 Shopping 相同）**:
 - `all_products`: 根节点
@@ -319,13 +319,13 @@ PMax 电商销售目标（SALES_GOAL_TYPE_ECOMMERCE）同样支持 Product Group
 
 **PMax vs Shopping Product Group 差异**:
 
-| 特性 | Shopping Campaign | PMax Campaign |
-|------|-------------------|---------------|
-| Product Group 粒度 | Ad Group 级别 | Asset Group 级别 |
-| 细分深度 | 最多 10 层 | 建议 3-5 层 |
-| 出价控制 | 每个叶节点独立 CPC | 由 Campaign 出价策略统一控制 |
-| 多 Asset Group | 不支持 | 支持多个 Asset Group 对应不同产品群 |
-| 自动化程度 | 低（手动管理） | 高（自动优化） |
+│ 特性 | Shopping Campaign | PMax Campaign |
+│   ---│   ----------------│   ------------|
+│ Product Group 粒度 | Ad Group 级别 | Asset Group 级别 |
+│ 细分深度 | 最多 10 层 | 建议 3-5 层 |
+│ 出价控制 | 每个叶节点独立 CPC | 由 Campaign 出价策略统一控制 |
+│ 多 Asset Group | 不支持 | 支持多个 Asset Group 对应不同产品群 |
+│ 自动化程度 | 低（手动管理） | 高（自动优化） |
 
 **Python 示例**:
 ```python
@@ -453,13 +453,13 @@ asset_group = {
 
 #### 1.3.2 Product Group 层级规则
 
-| 规则 | 说明 |
-|------|------|
-| **根节点** | `ALL_PRODUCTS` 必须存在，是产品分组的根节点 |
-| **叶节点出价** | 只有叶节点可以设置 `cpc_bid_micros` |
-| **非叶节点** | 仅用于细分，不能设置出价 |
-| **嵌套深度** | 最多支持 10 层嵌套细分 |
-| **互斥性** | 每个细分维度只能使用一次 |
+│ 规则 | 说明 |
+│   ---│   ---|
+│ **根节点** | `ALL_PRODUCTS` 必须存在，是产品分组的根节点 |
+│ **叶节点出价** | 只有叶节点可以设置 `cpc_bid_micros` |
+│ **非叶节点** | 仅用于细分，不能设置出价 |
+│ **嵌套深度** | 最多支持 10 层嵌套细分 |
+│ **互斥性** | 每个细分维度只能使用一次 |
 
 #### 1.3.3 Product Group 细分维度详解
 
@@ -524,35 +524,35 @@ product_group = {
 
 #### 1.3.4 购物广告 API 字段速查
 
-| 层级 | 字段名 | 说明 |
-|------|--------|------|
-| Campaign | `advertising_channel_type` | SHOPPING |
-| Campaign | `settings.shopping_setting.merchant_id` | Merchant Center ID |
-| Campaign | `settings.shopping_setting.sales_country` | 销售国家 (ISO 代码) |
-| Campaign | `settings.shopping_setting.priority` | 优先级 (0-100) |
-| Campaign | `settings.shopping_setting.store_sales_mode` | 本地库存广告模式 |
-| Ad Group | `name` | 广告组名称 |
-| Ad Group Criterion | `type` | PRODUCT_GROUP |
-| Ad Group Criterion | `all_products` | 根节点配置 |
-| Ad Group Criterion | `product_type_1~5` | 产品子类细分 |
-| Ad Group Criterion | `condition` | 商品条件 (NEW/USED) |
-| Ad Group Criterion | `custom_label_0~4` | 自定义标签细分 |
-| Ad Group Criterion | `category` | Google 品类细分 |
-| Ad Group Criterion | `gender` | 性别细分 |
-| Ad Group Criterion | `age_group` | 年龄细分 |
-| Ad Group Criterion | `color` | 颜色细分 |
-| Ad Group Criterion | `size` | 尺寸细分 |
-| Ad Group Criterion | `brand` | 品牌细分 |
-| Ad Group Criterion | `cpc_bid_micros` | CPC 出价 (微单位) |
-| Ad Group Criterion | `bid_modifier` | 出价调整系数 |
+│ 层级 | 字段名 | 说明 |
+│   ---│   -----│   ---|
+│ Campaign | `advertising_channel_type` | SHOPPING |
+│ Campaign | `settings.shopping_setting.merchant_id` | Merchant Center ID |
+│ Campaign | `settings.shopping_setting.sales_country` | 销售国家 (ISO 代码) |
+│ Campaign | `settings.shopping_setting.priority` | 优先级 (0-100) |
+│ Campaign | `settings.shopping_setting.store_sales_mode` | 本地库存广告模式 |
+│ Ad Group | `name` | 广告组名称 |
+│ Ad Group Criterion | `type` | PRODUCT_GROUP |
+│ Ad Group Criterion | `all_products` | 根节点配置 |
+│ Ad Group Criterion | `product_type_1~5` | 产品子类细分 |
+│ Ad Group Criterion | `condition` | 商品条件 (NEW/USED) |
+│ Ad Group Criterion | `custom_label_0~4` | 自定义标签细分 |
+│ Ad Group Criterion | `category` | Google 品类细分 |
+│ Ad Group Criterion | `gender` | 性别细分 |
+│ Ad Group Criterion | `age_group` | 年龄细分 |
+│ Ad Group Criterion | `color` | 颜色细分 |
+│ Ad Group Criterion | `size` | 尺寸细分 |
+│ Ad Group Criterion | `brand` | 品牌细分 |
+│ Ad Group Criterion | `cpc_bid_micros` | CPC 出价 (微单位) |
+│ Ad Group Criterion | `bid_modifier` | 出价调整系数 |
 
 #### 1.3.5 Listing Group vs Product Group
 
-| 术语 | 说明 |
-|------|------|
-| **Product Group** | API 中使用的术语，指产品分组 |
-| **Listing Group** | 控制台 UI 中的术语，与 Product Group 同义 |
-| **Ad Group Criterion** | API 中层级，包含 Product Group 配置 |
+│ 术语 | 说明 |
+│   ---│   ---|
+│ **Product Group** | API 中使用的术语，指产品分组 |
+│ **Listing Group** | 控制台 UI 中的术语，与 Product Group 同义 |
+│ **Ad Group Criterion** | API 中层级，包含 Product Group 配置 |
 
 ```
 Google Ads API 结构:
@@ -663,13 +663,13 @@ leaf_product_group = {
 
 **视频广告关键配置**:
 
-| 配置项 | 字段名 | 可选值 |
-|--------|--------|--------|
-| 渠道类型 | `advertising_channel_type: VIDEO` | 视频广告 |
-| 出价策略 | `bidding_strategy.type` | MAXIMIZE_VIDEO_QUERIES/TARGET_CPA |
-| 广告类型 | `ad.type` | TRUEVIEW_IN_STREAM/BUMPER_AD/OUTSTREAM |
-| 视频ID | `ad.video.video_id` | YouTube视频ID |
-| 创意声音 | `creative_sound_setting` | ALLOWED/DISALLOWED |
+│ 配置项 | 字段名 | 可选值 |
+│   -----│   -----│   -----|
+│ 渠道类型 | `advertising_channel_type: VIDEO` | 视频广告 |
+│ 出价策略 | `bidding_strategy.type` | MAXIMIZE_VIDEO_QUERIES/TARGET_CPA |
+│ 广告类型 | `ad.type` | TRUEVIEW_IN_STREAM/BUMPER_AD/OUTSTREAM |
+│ 视频ID | `ad.video.video_id` | YouTube视频ID |
+│ 创意声音 | `creative_sound_setting` | ALLOWED/DISALLOWED |
 
 ---
 
@@ -725,14 +725,14 @@ leaf_product_group = {
 
 **展示广告关键配置**:
 
-| 配置项 | 字段名 | 可选值 |
-|--------|--------|--------|
-| 渠道类型 | `advertising_channel_type: DISPLAY` | 展示广告 |
-| 出价策略 | `bidding_strategy.type` | MAXIMIZE_CLICKS/TARGET_CPM/ECPM_BIDDING |
-| 广告类型 | `ad.type` | RESPONSIVE_DISPLAY_AD |
-| 图片 | `ad.images[].media_file` | PNG/JPG，建议1200x628 |
-| Logo | `ad.logo_images[].media_file` | 建议120x120 |
-| 长标题 | `ad.info.long_headline` | 最多30字符 |
+│ 配置项 | 字段名 | 可选值 |
+│   -----│   -----│   -----|
+│ 渠道类型 | `advertising_channel_type: DISPLAY` | 展示广告 |
+│ 出价策略 | `bidding_strategy.type` | MAXIMIZE_CLICKS/TARGET_CPM/ECPM_BIDDING |
+│ 广告类型 | `ad.type` | RESPONSIVE_DISPLAY_AD |
+│ 图片 | `ad.images[].media_file` | PNG/JPG，建议1200x628 |
+│ Logo | `ad.logo_images[].media_file` | 建议120x120 |
+│ 长标题 | `ad.info.long_headline` | 最多30字符 |
 
 ---
 
@@ -796,13 +796,13 @@ leaf_product_group = {
 
 **应用广告关键配置**:
 
-| 配置项 | 字段名 | 可选值 |
-|--------|--------|--------|
-| 渠道类型 | `advertising_channel_type: APP` | 应用广告 |
-| App ID | `app_setting.app_id` | com.example.app |
-| App Store | `app_setting.app_store` | GOOGLE_PLAY / APP_STORE |
-| 出价策略 | `bidding_strategy.type` | MAXIMIZE_INSTALLS / TARGET_CPI |
-| 广告类型 | `ad.type` | APP_PREVIEW_VIDEO / RESPONSIVE_APP_AD / APP_TEXT_AD |
+│ 配置项 | 字段名 | 可选值 |
+│   -----│   -----│   -----|
+│ 渠道类型 | `advertising_channel_type: APP` | 应用广告 |
+│ App ID | `app_setting.app_id` | com.example.app |
+│ App Store | `app_setting.app_store` | GOOGLE_PLAY / APP_STORE |
+│ 出价策略 | `bidding_strategy.type` | MAXIMIZE_INSTALLS / TARGET_CPI |
+│ 广告类型 | `ad.type` | APP_PREVIEW_VIDEO / RESPONSIVE_APP_AD / APP_TEXT_AD |
 
 
 ---
@@ -1392,12 +1392,12 @@ leaf_product_group = {
 ```
 
 **Spark Ads 特殊要求**:
-| 字段 | 说明 |
-|------|------|
-| `promotion_type` | 必须设置为 `PROMOTION_TYPE_SPARK` |
-| `spark_info.video_id` | 达人原创视频的 ID |
-| `spark_info.authorization_id` | 视频授权 ID (需达人授权) |
-| `spark_info.authorization_status` | 授权状态: AUTHORIZED / PENDING |
+│ 字段 | 说明 |
+│   ---│   ---|
+│ `promotion_type` | 必须设置为 `PROMOTION_TYPE_SPARK` |
+│ `spark_info.video_id` | 达人原创视频的 ID |
+│ `spark_info.authorization_id` | 视频授权 ID (需达人授权) |
+│ `spark_info.authorization_status` | 授权状态: AUTHORIZED / PENDING |
 
 ---
 
@@ -1493,29 +1493,29 @@ leaf_product_group = {
 
 ### 3.6 TikTok Ads 字段速查
 
-| 层级 | 字段 | 说明 |
-|------|------|------|
-| Campaign | `campaign_id` | 广告系列 ID |
-| Campaign | `campaign_name` | 名称 |
-| Campaign | `status` | ENABLED / PAUSED / DISABLED / ARCHIVED |
-| Campaign | `objective_type` | PRODUCT_SALES / LEAD_GENERATION / APP_PROMOTION / BRAND_AWARENESS / VIDEO_VIEWS / CONVERSIONS |
-| Campaign | `daily_budget` | 日预算（分） |
-| Campaign | `budget_mode` | BUDGET_MODE_DAY / BUDGET_MODE_LIFETIME |
-| Campaign | `promotion_type` | PROMOTION_TYPE_STANDARD / PROMOTION_TYPE_SPARK |
-| Ad Group | `adgroup_id` | 广告组 ID |
-| Ad Group | `adgroup_name` | 名称 |
-| Ad Group | `status` | ENABLED / PAUSED / DISABLED |
-| Ad Group | `bid_type` | AUTO_BID / MANUAL_BID |
-| Ad Group | `bid_amount` | 出价金额 |
-| Ad Group | `targeting` | 受众定向配置 |
-| Ad | `ad_id` | 广告 ID |
-| Ad | `name` | 名称 |
-| Ad | `status` | ENABLED / PAUSED / DISABLED |
-| Ad | `promoted_type` | PROMOTED_TYPE_VIDEO / PROMOTED_TYPE_IMAGE |
-| Ad | `spark_info` | Spark Ads 配置 |
-| Ad | `spark_info.video_id` | 视频 ID |
-| Ad | `spark_info.authorization_id` | 授权 ID |
-| Ad | `spark_info.authorization_status` | 授权状态 |
+│ 层级 | 字段 | 说明 |
+│   ---│   ---│   ---|
+│ Campaign | `campaign_id` | 广告系列 ID |
+│ Campaign | `campaign_name` | 名称 |
+│ Campaign | `status` | ENABLED / PAUSED / DISABLED / ARCHIVED |
+│ Campaign | `objective_type` | PRODUCT_SALES / LEAD_GENERATION / APP_PROMOTION / BRAND_AWARENESS / VIDEO_VIEWS / CONVERSIONS |
+│ Campaign | `daily_budget` | 日预算（分） |
+│ Campaign | `budget_mode` | BUDGET_MODE_DAY / BUDGET_MODE_LIFETIME |
+│ Campaign | `promotion_type` | PROMOTION_TYPE_STANDARD / PROMOTION_TYPE_SPARK |
+│ Ad Group | `adgroup_id` | 广告组 ID |
+│ Ad Group | `adgroup_name` | 名称 |
+│ Ad Group | `status` | ENABLED / PAUSED / DISABLED |
+│ Ad Group | `bid_type` | AUTO_BID / MANUAL_BID |
+│ Ad Group | `bid_amount` | 出价金额 |
+│ Ad Group | `targeting` | 受众定向配置 |
+│ Ad | `ad_id` | 广告 ID |
+│ Ad | `name` | 名称 |
+│ Ad | `status` | ENABLED / PAUSED / DISABLED |
+│ Ad | `promoted_type` | PROMOTED_TYPE_VIDEO / PROMOTED_TYPE_IMAGE |
+│ Ad | `spark_info` | Spark Ads 配置 |
+│ Ad | `spark_info.video_id` | 视频 ID |
+│ Ad | `spark_info.authorization_id` | 授权 ID |
+│ Ad | `spark_info.authorization_status` | 授权状态 |
 
 
 ---
@@ -1577,21 +1577,21 @@ leaf_product_group = {
 
 ### 4.2 DV360 字段速查
 
-| 层级 | 字段 | 说明 |
-|------|------|------|
-| Partner | `partner_id` | 合作伙伴 ID |
-| Buyer | `buyer_id` | 广告买家 ID |
-| Buyer | `status` | PENDING / ACTIVE / REJECTED |
-| Flight | `flight_id` | 广告系列 ID |
-| Flight | `name` | 名称 |
-| Flight | `status` | ACTIVE / PAUSED / ENDED |
-| Flight | `start_date` | 开始日期 |
-| Flight | `end_date` | 结束日期 |
-| Flight | `bid_strategy` | 出价策略 |
-| Flight | `budget` | 预算 |
-| Creative | `creative_id` | 创意 ID |
-| Creative | `type` | BANNER / VIDEO / NATIVE / HTML5 |
-| Creative | `dimensions` | 创意尺寸 |
+│ 层级 | 字段 | 说明 |
+│   ---│   ---│   ---|
+│ Partner | `partner_id` | 合作伙伴 ID |
+│ Buyer | `buyer_id` | 广告买家 ID |
+│ Buyer | `status` | PENDING / ACTIVE / REJECTED |
+│ Flight | `flight_id` | 广告系列 ID |
+│ Flight | `name` | 名称 |
+│ Flight | `status` | ACTIVE / PAUSED / ENDED |
+│ Flight | `start_date` | 开始日期 |
+│ Flight | `end_date` | 结束日期 |
+│ Flight | `bid_strategy` | 出价策略 |
+│ Flight | `budget` | 预算 |
+│ Creative | `creative_id` | 创意 ID |
+│ Creative | `type` | BANNER / VIDEO / NATIVE / HTML5 |
+│ Creative | `dimensions` | 创意尺寸 |
 
 ---
 
@@ -1599,29 +1599,29 @@ leaf_product_group = {
 
 ### 5.1 层级结构对比
 
-| 层级 | Google Ads | Meta | TikTok | DV360 |
-|------|------------|------|--------|-------|
-| **顶级** | MCC Account | Business Manager | Business Center | Partner |
-| **第二层** | Campaign Budget | Ad Account | Advertiser | Buyer |
-| **第三层** | Campaign | Campaign | Campaign | Creative Set / Flight |
-| **第四层** | Ad Group | Ad Set | Ad Group | Creative |
-| **第五层** | Ad + Keywords | Ad + Creative | Ad | - |
-| **特殊** | Product Group | Pixel/CAPI | Spark Info | - |
+│ 层级 | Google Ads | Meta | TikTok | DV360 |
+│   ---│   ---------│   ---│   -----│   ----|
+│ **顶级** | MCC Account | Business Manager | Business Center | Partner |
+│ **第二层** | Campaign Budget | Ad Account | Advertiser | Buyer |
+│ **第三层** | Campaign | Campaign | Campaign | Creative Set / Flight |
+│ **第四层** | Ad Group | Ad Set | Ad Group | Creative |
+│ **第五层** | Ad + Keywords | Ad + Creative | Ad | - |
+│ **特殊** | Product Group | Pixel/CAPI | Spark Info | - |
 
 ### 5.2 广告类型对比
 
-| 广告类型 | Google Ads | Meta | TikTok |
-|---------|------------|------|--------|
-| 搜索广告 | ✅ Search | ❌ | ❌ |
-| 购物广告 | ✅ Shopping | ✅ Catalog | ✅ Shop |
-| PMax 全渠道 | ✅ Performance Max | ❌ | ❌ |
-| 视频广告 | ✅ YouTube | ✅ Video | ✅ In-Feed |
-| 展示广告 | ✅ Display | ✅ Display | ❌ |
-| Spark Ads | ❌ | ❌ | ✅ 达人原生 |
-| 应用安装 | ✅ App | ✅ App | ✅ App |
-| 消息广告 | ❌ | ✅ WhatsApp/Messenger | ❌ |
-| 开屏广告 | ❌ | ❌ | ✅ TopView |
-| 线索表单 | ✅ Lead Form | ✅ Instant Form | ✅ Lead Form |
+│ 广告类型 | Google Ads | Meta | TikTok |
+│   ------│   ---------│   ---│   -----|
+│ 搜索广告 | ✅ Search | ❌ | ❌ |
+│ 购物广告 | ✅ Shopping | ✅ Catalog | ✅ Shop |
+│ PMax 全渠道 | ✅ Performance Max | ❌ | ❌ |
+│ 视频广告 | ✅ YouTube | ✅ Video | ✅ In-Feed |
+│ 展示广告 | ✅ Display | ✅ Display | ❌ |
+│ Spark Ads | ❌ | ❌ | ✅ 达人原生 |
+│ 应用安装 | ✅ App | ✅ App | ✅ App |
+│ 消息广告 | ❌ | ✅ WhatsApp/Messenger | ❌ |
+│ 开屏广告 | ❌ | ❌ | ✅ TopView |
+│ 线索表单 | ✅ Lead Form | ✅ Instant Form | ✅ Lead Form |
 
 ### 5.3 核心差异总结
 
@@ -1733,13 +1733,13 @@ response = requests.post(
 
 #### 广告位（Ad Placements）
 
-| 类型 | 说明 | 位置 |
-|------|------|------|
-| **Google Search** | 搜索结果页 | 主要位置 |
-| **Google Search Partners** | 合作伙伴网站 | 搜索扩展 |
-| **Google Display Network** | 展示广告网络 | 网站/App/YouTube |
-| **YouTube** | 视频广告 | YouTube 平台 |
-| **Gmail** | 邮件广告 | Gmail 收件箱 |
-| **Google Maps** | 地图广告 | Google Maps |
-| **Shopping Tabs** | 购物标签页 | 购物搜索 |
-| **Performance Max** | 全渠道自动投放 | 所有渠道 |
+│ 类型 | 说明 | 位置 |
+│   ---│   ---│   ---|
+│ **Google Search** | 搜索结果页 | 主要位置 |
+│ **Google Search Partners** | 合作伙伴网站 | 搜索扩展 |
+│ **Google Display Network** | 展示广告网络 | 网站/App/YouTube |
+│ **YouTube** | 视频广告 | YouTube 平台 |
+│ **Gmail** | 邮件广告 | Gmail 收件箱 |
+│ **Google Maps** | 地图广告 | Google Maps |
+│ **Shopping Tabs** | 购物标签页 | 购物搜索 |
+│ **Performance Max** | 全渠道自动投放 | 所有渠道 |
