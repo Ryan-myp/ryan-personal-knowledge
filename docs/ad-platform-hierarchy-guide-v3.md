@@ -802,6 +802,22 @@ Customer
 
 ---
 
+
+#### 广告附加信息（Extensions）
+
+App Ads 支持的 Extensions：
+
+| Extensions 类型 | 是否可点击 | 配置层级 | 说明 |
+|----------------|-----------|----------|------|
+| App extension | ✅ | 广告系列 | 引导下载 App（主要方式） |
+| Call extension | ✅ | 广告系列 | 附加电话号码 |
+| Location extension | ✅ | 账户 | 显示实体店地址 |
+
+> **注意**：App Ads 主要通过 App extension 引导下载，其他 Extensions 支持有限。
+
+---
+
+
 ## 2.1 流量广告（Traffic Ads）
 
 ### 使用场景
@@ -1455,7 +1471,7 @@ Business Center
                     └── Ad Group
                             │
                             └── Brand Video Ad (品牌视频广告)
-                                    ├─�箱 |
+                                    ├─箱 |
 | `PHONE_NUMBER` | 电话号码 |
 | `DROPDOWN` | 下拉选择 |
 | `CHECKBOX` | 多选 |
