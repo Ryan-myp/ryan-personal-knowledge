@@ -187,16 +187,16 @@
 
  类型 | 字段 | 说明 | 可点击 | 数量限制 |
 |---|---|---|-----|-------|
- **Sitelink** | `sitelink_callout_text` | 附加链接文本（最多4个） | ❌ | 最多 15 个 |
- **Callout** | `callout_text` | 补充说明文本（最多10个） | ❌ | 最多 10 个 |
- **Structured Snippet** | `values` | 结构化摘要（标题+值列表） | ❌ | 最多 5 个 |
- **Call** | `phone_number` | 拨打电话 | ✅ | 最多 5 个 |
- **Message** | `phone_number`, `message_text` | 发送短信 | ✅ | 最多 5 个 |
- **Location** | `business_name`, `place_id` | 商家位置 | ✅ | 最多 10 个 |
- **Affiliate Location** | `seller_member_id`, `place_ids` | 经销商定位 | ✅ | 最多 20 个 |
- **Price** | `title`, `price`, `currency_code` | 价格信息 | ✅ | 最多 8 个 |
- **App** | `app_id`, `description` | 应用下载 | ✅ | 最多 1 个 |
- **Promotion** | `promotion_text`, `offer_code` | 促销活动 | ✅ | 最多 8 个 |
+| **Sitelink** | `sitelink_callout_text` | 附加链接文本（最多4个） | ❌ | 最多 15 个 |
+| **Callout** | `callout_text` | 补充说明文本（最多10个） | ❌ | 最多 10 个 |
+| **Structured Snippet** | `values` | 结构化摘要（标题+值列表） | ❌ | 最多 5 个 |
+| **Call** | `phone_number` | 拨打电话 | ✅ | 最多 5 个 |
+| **Message** | `phone_number`, `message_text` | 发送短信 | ✅ | 最多 5 个 |
+| **Location** | `business_name`, `place_id` | 商家位置 | ✅ | 最多 10 个 |
+| **Affiliate Location** | `seller_member_id`, `place_ids` | 经销商定位 | ✅ | 最多 20 个 |
+| **Price** | `title`, `price`, `currency_code` | 价格信息 | ✅ | 最多 8 个 |
+| **App** | `app_id`, `description` | 应用下载 | ✅ | 最多 1 个 |
+| **Promotion** | `promotion_text`, `offer_code` | 促销活动 | ✅ | 最多 8 个 |
 
 ### 1.2 性能最大化广告（Performance Max）层级详解
 
