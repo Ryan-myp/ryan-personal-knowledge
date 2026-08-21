@@ -35,6 +35,24 @@
 4. [DV360 层级结构](#4-dv360-层级结构)
 5. [平台对比速查表](#5-平台对比速查表)
 6. [字段解释汇总表](#6-字段解释汇总表)
+7. [关键字段详解](#7-关键字段详解)
+   - 7.1 Google Ads 关键字段详解
+     - 7.1.1 出价策略 (Bidding Strategies)
+     - 7.1.2 优化目标 (Optimization Goals)
+     - 7.1.3 定向方式 (Targeting)
+   - 7.2 Meta 关键字段详解
+     - 7.2.1 出价策略 (Bidding Strategies)
+     - 7.2.2 优化目标 (Optimization Goals)
+     - 7.2.3 定向方式 (Targeting)
+   - 7.3 TikTok Ads 关键字段详解
+     - 7.3.1 出价策略 (Bidding Strategies)
+     - 7.3.2 优化目标 (Optimization Goals)
+     - 7.3.3 定向方式 (Targeting)
+   - 7.4 DV360 关键字段详解
+     - 7.4.1 出价策略 (Bidding Strategies)
+     - 7.4.2 目标类型 (Goal Types)
+     - 7.4.3 库存来源 (Inventory Sources)
+     - 7.4.4 广告位类型 (Ad Formats)
 
 ---
 
@@ -1362,7 +1380,364 @@ Line Item (Audio)
 
 ---
 
+## 7. 关键字段详解
+
+本章详细解释各平台的**出价策略**、**优化目标**、**定向方式**等核心概念。
+
+---
+
+### 7.1 Google Ads 关键字段详解
+
+#### 7.1.1 出价策略 (Bidding Strategies)
+
+| 出价策略 | API 字段值 | 说明 | 适用场景 | 官方文档 |
+|----------|-----------|------|----------|----------|
+| **手动CPC** | `MANUAL_CPC` | 广告主手动设置每次点击最高出价，系统不会自动调整 | 对流量成本有严格控制时 | [Manual CPC](https://developers.google.com/google-ads/api/docs/campaigns/bidding-strategies/manual-cpc) |
+| **目标CPA** | `TARGET_CPA` | 系统自动调整出价，力求在长期内达到广告主设定的每次转化成本目标 | 以转化为目标，希望控制单次转化成本 | [Target CPA](https://developers.google.com/google-ads/api/docs/campaigns/bidding-strategies/target-cpa) |
+| **最大化转化** | `MAXIMIZE_CONVERSIONS` | 系统在给定预算下自动寻找尽可能多的转化，不限制单次转化成本 | 预算有限，希望获得最大转化量 | [Maximize Conversions](https://developers.google.com/google-ads/api/docs/campaigns/bidding-strategies/maximize-conversions) |
+| **目标ROAS** | `TARGET_ROAS` | 系统自动调整出价，力求在长期内达到广告主设定的广告支出回报率目标 | 电商销售，关注ROI | [Target ROAS](https://developers.google.com/google-ads/api/docs/campaigns/bidding-strategies/target-roas) |
+| **最大化转化价值** | `MAXIMIZE_CONVERSION_VALUE` | 系统在给定预算下自动寻找最大转化价值，不限制ROI | 预算有限，希望获得最大转化价值 | [Max Conv. Value](https://developers.google.com/google-ads/api/docs/campaigns/bidding-strategies/maximize-conversion-value) |
+| **目标展示份额** | `TARGET_IMPRESSION_SHARE` | 系统自动调整出价，力求达到设定的搜索展示份额目标 | 品牌曝光，追求高展示份额 | [Target Impression Share](https://developers.google.com/google-ads/api/docs/campaigns/bidding-strategies/target-impression-share) |
+| **目标CPC（增强）** | `ENHANCED_CPC` | 基于手动CPC，系统对高转化概率的点击自动提高出价 | 保留手动控制的同时提升转化 | [eCPC](https://developers.google.com/google-ads/api/docs/campaigns/bidding-strategies/enhanced-cpc) |
+| **目标CPM** | `TARGET_CPM` | 按千次展示出价，系统自动调整以达到目标千次展示成本 | 品牌曝光型广告 | [Target CPM](https://developers.google.com/google-ads/api/docs/campaigns/bidding-strategies/target-cpm) |
+| **目标CPV** | `TARGET_CPV` | 按观看出价，系统自动调整以达到目标每次观看成本 | 视频广告 | [Target CPV](https://developers.google.com/google-ads/api/docs/campaigns/bidding-strategies/target-cpv) |
+
+**出价策略选择建议**:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    出价策略选择决策树                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  你的目标是？                                                    │
+│  ├── 转化（销售/线索）→ 看预算和转化数据                          │
+│  │   ├── 预算充足，追求转化量 → MAXIMIZE_CONVERSIONS             │
+│  │   ├── 控制单次转化成本 → TARGET_CPA                          │
+│  │   └── 追求ROI → TARGET_ROAS / MAXIMIZE_CONVERSION_VALUE      │
+│  │                                                               │
+│  ├── 点击流量 → MANUAL_CPC / ENHANCED_CPC                       │
+│  │                                                               │
+│  ├── 品牌曝光 → TARGET_IMPRESSION_SHARE / TARGET_CPM            │
+│  │                                                               │
+│  └── 视频观看 → TARGET_CPV                                      │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**官方文档来源**:
+- [Bidding Strategies Overview](https://developers.google.com/google-ads/api/docs/campaigns/bidding-strategies/overview)
+- [BiddingStrategyType Enum](https://developers.google.com/google-ads/api/reference/rest/v18/enums/BiddingStrategyType)
+
+---
+
+#### 7.1.2 优化目标 (Optimization Goals)
+
+Google Ads 的优化目标与出价策略紧密相关，不同的广告类型支持不同的优化目标：
+
+| 广告类型 | 支持的优化目标 | 说明 |
+|----------|---------------|------|
+| **搜索广告** | 转化、点击量、展示份额 | 主要优化关键词匹配后的转化或点击 |
+| **Shopping/PMax** | 转化价值、转化率 | 主要优化商品销售额和转化率 |
+| **视频广告** | 视频观看、展示、点击 | 主要优化视频观看次数或展示量 |
+| **展示广告** | 展示、点击、转化 | 主要优化展示量和点击率 |
+| **应用广告** | 安装、应用内转化 | 主要优化应用安装量和后续转化 |
+
+**关键词匹配类型详解**:
+
+| 匹配类型 | API 字段值 | 说明 | 示例 |
+|----------|-----------|------|------|
+| **广泛匹配** | `BROAD` | 广告可匹配与关键词含义相关的搜索词，包括同义词、相关搜索 | `running shoes` → 可能匹配 "jogging sneakers", "best running footwear" |
+| **词组匹配** | `PHRASE` | 广告匹配包含关键词短语的搜索，词序不变，中间可插入其他词 | `"running shoes"` → 匹配 "buy running shoes online"，不匹配 "shoes for running" |
+| **精确匹配** | `EXACT` | 广告仅匹配与关键词完全相同或非常接近的搜索词 | `[running shoes]` → 只匹配 "running shoes", "buy running shoes" |
+
+**官方文档来源**: [Keyword Match Types](https://developers.google.com/google-ads/api/docs/campaigns/targeting/keywords)
+
+---
+
+#### 7.1.3 定向方式 (Targeting)
+
+Google Ads 提供多种定向方式，帮助广告主精准触达目标受众：
+
+##### 地理位置定向 (Geo Targeting)
+
+| 字段 | 类型 | 说明 | 可选值 |
+|------|------|------|--------|
+| `targeting_setting.target_restrictions` | enum list | 地理位置定向类型 | `[GEOGRAPHIC]` |
+| `geo_target_type` | enum | 地理 targeting 类型 | `LOCAL_OR_PRESENT` (当地或当前位置) / `PRESENCE` (仅当前位置) |
+
+**官方文档来源**: [Geo Targeting](https://developers.google.com/google-ads/api/docs/campaigns/targeting/geo-targeting)
+
+##### 关键词定向 (Keyword Targeting)
+
+| 字段 | 类型 | 说明 | 可选值 |
+|------|------|------|--------|
+| `criterion.text` | string | 关键词文本 | `"running shoes"` |
+| `criterion.match_type` | enum | 匹配类型 | `BROAD` / `PHRASE` / `EXACT` |
+
+**官方文档来源**: [Keywords](https://developers.google.com/google-ads/api/docs/campaigns/targeting/keywords)
+
+##### 受众定向 (Audience Targeting)
+
+| 受众类型 | 说明 | 数据来源 |
+|----------|------|----------|
+| ** remarketing** | 针对网站/App 访问者的再营销 | Google Analytics / Google Ads 转化数据 |
+| **In-Market Audiences** | 对特定产品类别有购买意向的用户 | Google 搜索行为和转化数据 |
+| **Affinity Audiences** | 基于用户长期兴趣和习惯的受众 | Google 用户数据和行为分析 |
+| **Detailed Demographics** | 详细的 demographics 特征 | 用户人口统计数据和生活方式 |
+| **Custom Segments** | 自定义受众段 | 广告主上传的受众列表或自定义规则 |
+
+**官方文档来源**: [Audiences](https://developers.google.com/google-ads/api/docs/campaigns/targeting/audiences)
+
+##### 商品定向 (Product Targeting - Shopping/PMax)
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `product_type_1~5` | object | 产品子类定向（Merchant Center 定义的5层产品类别） |
+| `brand` | object | 品牌定向 |
+| `category` | object | Google 品类定向 |
+| `condition` | object | 商品条件（NEW/USED） |
+| `custom_label_0~4` | object | 自定义标签定向（广告主自定义的5个标签） |
+
+**官方文档来源**: [Product Group](https://developers.google.com/google-ads/api/docs/campaigns/shopping#product_groups)
+
+---
+
+### 7.2 Meta 关键字段详解
+
+#### 7.2.1 出价策略 (Bidding Strategies)
+
+| 出价策略 | API 字段值 | 说明 | 适用场景 |
+|----------|-----------|------|----------|
+| **自动出价** | `AUTO` | Facebook 自动优化出价以获取最佳结果 | 新手或希望 Facebook 自动管理出价 |
+| **手动 CPC** | `CPC` | 广告主设置每次点击最高出价 | 控制单次点击成本 |
+| **目标 CPA** | `CPA` | 系统自动调整出价以达到目标转化成本 | 追求稳定转化成本 |
+| **目标 CPM** | `CPM` | 按千次展示出价 | 品牌曝光 |
+| **OCPM** | `OCPM` | 优化千次展示，按转化出价 | 平衡展示和转化 |
+
+**官方文档来源**: [Bidding](https://developers.facebook.com/docs/marketing-apis/bidding)
+
+---
+
+#### 7.2.2 优化目标 (Optimization Goals)
+
+| 优化目标 | API 字段值 | 说明 | 适用场景 |
+|----------|-----------|------|----------|
+| **链接点击** | `LINK_CLICKS` | 优化用户点击广告链接 | 流量广告、内容推广 |
+| **转化** | `CONVERSIONS` | 优化用户完成转化动作 | 销售、注册、下载 |
+| **页面浏览** | `PAGE_VIEW` | 优化用户查看页面内容 | 品牌曝光、内容营销 |
+| **消息发送** | `MESSAGES` | 优化用户发送消息 | Messenger/WhatsApp 营销 |
+| **视频观看** | `THRU_PLAY` / `VIDEO_VIEWS` | 优化视频观看次数 | 视频广告、品牌宣传 |
+| **互动** | `POST_ENGAGEMENT` | 优化帖子互动（点赞、评论、分享） | 内容互动 |
+| **应用安装** | `APP_INSTALLS` | 优化应用安装 | 移动应用推广 |
+| **潜在客户开发** | `LEADS` | 优化线索表单提交 | 销售线索收集 |
+
+**官方文档来源**: [Optimization Goals](https://developers.facebook.com/docs/marketing-apis/optimization-goals)
+
+---
+
+#### 7.2.3 定向方式 (Targeting)
+
+##### 地理位置定向
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `geo_locations.countries` | list | 国家代码列表，如 `["US", "CA"]` |
+| `geo_locations.radius` | object | 半径定向，包含城市和距离 |
+
+**官方文档来源**: [Geo Targeting](https://developers.facebook.com/docs/marketing-apis/targeting#geolocations)
+
+##### 兴趣定向 (Interests)
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `interests` | list | 兴趣列表，如 `[{name: "Marketing"}]` |
+| `interest_id` | int | 兴趣 ID |
+
+**常见兴趣类别**:
+- **购物行为**: Online Shopping, Fashion Accessories
+- **兴趣爱好**: Photography, Travel, Fitness
+- **行业相关**: Digital Marketing, E-commerce
+
+**官方文档来源**: [Interest Targeting](https://developers.facebook.com/docs/marketing-apis/targeting#interests)
+
+##### 行为定向 (Behaviors)
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `behaviors` | list | 行为列表，如 `[{name: "Digital activity"}]` |
+| `behavior_id` | int | 行为 ID |
+
+**常见行为类别**:
+- **数字行为**: Digital Actives, Facebook Access
+- **购买行为**: Engaged Shoppers, Frequent Travelers
+- **设备行为**: Android Device Users, iOS Device Users
+
+**官方文档来源**: [Behavior Targeting](https://developers.facebook.com/docs/marketing-apis/targeting#behaviors)
+
+##### 自定义受众 (Custom Audiences)
+
+| 受众类型 | 说明 |
+|----------|------|
+| **Customer List** | 广告主上传的客户邮箱列表 |
+| **Website Visitors** | 网站访问者（通过 Pixel 追踪） |
+| **App Activity** | 应用活动用户 |
+| **Engagement** | 与广告/内容互动过的用户 |
+| **Instagram Followers** | Instagram 关注者 |
+
+**官方文档来源**: [Custom Audiences](https://developers.facebook.com/docs/marketing-apis/audiences/custom-audiences)
+
+##### 类似受众 (Lookalike Audiences)
+
+| 字段 | 说明 |
+|------|------|
+| `lookalike_audiences` | 基于种子受众创建的相似人群 |
+| `lookalike_spec` | 类似受众规格，包含种子受众 ID 和目标地区 |
+
+**官方文档来源**: [Lookalike Audiences](https://developers.facebook.com/docs/marketing-apis/audiences/lookalike-audiences)
+
+---
+
+### 7.3 TikTok Ads 关键字段详解
+
+#### 7.3.1 出价策略 (Bidding Strategies)
+
+| 出价策略 | API 字段值 | 说明 | 适用场景 |
+|----------|-----------|------|----------|
+| **自动出价** | `AUTO_BID` | TikTok 自动优化出价以获取最佳效果 | 新手或希望系统自动管理 |
+| **手动出价** | `MANUAL_BID` | 广告主手动设置最高出价 | 需要控制单次点击/转化成本 |
+| **OCPM** | `OCPM` | 优化千次展示，按转化出价 | 追求转化效果 |
+| **CPM** | `CPM` | 按千次展示出价 | 品牌曝光 |
+| **CPV** | `CPV` | 按视频观看出价 | 视频广告 |
+
+**官方文档来源**: [Bidding](https://developers.tiktok.com/doc/ads-api-bidding)
+
+---
+
+#### 7.3.2 优化目标 (Optimization Goals)
+
+| 优化目标 | API 字段值 | 说明 | 适用场景 |
+|----------|-----------|------|----------|
+| **产品销售** | `PRODUCT_SALES` | 优化商品销售转化 | e-commerce 电商 |
+| **线索收集** | `LEAD_GENERATION` | 优化表单提交 | 销售线索收集 |
+| **应用安装** | `APP_INSTALLS` | 优化应用下载 | 移动应用推广 |
+| **品牌认知** | `BRAND_AWARENESS` | 优化品牌曝光 | 品牌建设 |
+| **流量引导** | `WEBSITE_TRAFFIC` | 优化网站点击 | 网站引流 |
+
+**官方文档来源**: [Objectives](https://developers.tiktok.com/doc/ads-api-objective)
+
+---
+
+#### 7.3.3 定向方式 (Targeting)
+
+##### 基础定向
+
+| 字段 | 类型 | 说明 | 可选值 |
+|------|------|------|--------|
+| `age_min` | int | 最小年龄 | 13-65 |
+| `age_max` | int | 最大年龄 | 13-65 |
+| `genders` | list | 性别 | `[1]` = 女，`[2]` = 男，`[1,2]` = 全部 |
+
+##### 兴趣定向
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `interests` | list | 兴趣标签列表 |
+| `interest_ids` | list | 兴趣 ID 列表 |
+
+**常见兴趣类别**:
+- **时尚美妆**: Fashion, Beauty, Cosmetics
+- **科技数码**: Technology, Gadgets, Gaming
+- **生活方式**: Food, Travel, Fitness
+
+##### 行为定向
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `behaviors` | list | 行为标签列表 |
+| `behavior_ids` | list | 行为 ID 列表 |
+
+**常见行为类别**:
+- **购物行为**: Online Shoppers, Price Sensitive
+- **内容消费**: Video Lovers, Music Fans
+
+##### 自定义定向
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `custom_audiences` | list | 自定义受众列表 |
+| `exclusion_audiences` | list | 排除受众列表 |
+
+**官方文档来源**: [Targeting](https://developers.tiktok.com/doc/ads-api-targeting)
+
+---
+
+### 7.4 DV360 关键字段详解
+
+#### 7.4.1 出价策略 (Bidding Strategies)
+
+| 出价策略 | API 字段值 | 说明 | 适用场景 |
+|----------|-----------|------|----------|
+| **CPM** | `CPM` | 按千次展示出价 | 品牌曝光、展示广告 |
+| **vCPM** | `vCPM` | 按可见展示千次出价 | 强调可见性的品牌广告 |
+| **CPV** | `CPV` | 按视频观看出价 | 视频广告 |
+| **oCPM** | `oCPM` | 优化千次展示，按转化出价 | 平衡曝光和转化 |
+
+**官方文档来源**: [Bidding](https://developers.google.com/display-video/api/guides/bidding)
+
+---
+
+#### 7.4.2 目标类型 (Goal Types)
+
+| 目标类型 | API 字段值 | 说明 | 适用场景 |
+|----------|-----------|------|----------|
+| **展示** | `IMPRESSIONS` | 优化展示次数 | 品牌曝光 |
+| **转化** | `CONVERSIONS` | 优化转化次数 | 效果广告 |
+| **可见性** | `VIEWABILITY` | 优化可见展示比例 | 品牌安全 |
+| **点击** | `CLICKS` | 优化点击次数 | 流量获取 |
+
+**官方文档来源**: [Goals](https://developers.google.com/display-video/api/guides/goals)
+
+---
+
+#### 7.4.3 库存来源 (Inventory Sources)
+
+| 库存来源 | API 字段值 | 说明 | 适用场景 |
+|----------|-----------|------|----------|
+| **YouTube** | `YOUTUBE` | YouTube 视频广告库存 | 视频品牌广告 |
+| **GMA** | `GMA` | Google Marketing Ads（原 GAM） | 展示广告 |
+| **External** | `EXTERNAL` | 外部需求方平台库存 | 跨平台投放 |
+
+**官方文档来源**: [Inventory Sources](https://developers.google.com/display-video/api/reference/rest/v4/advertisers/inventorysources)
+
+---
+
+#### 7.4.4 广告位类型 (Ad Formats)
+
+| 广告位类型 | 说明 | 适用场景 |
+|------------|------|----------|
+| **PMP (Private Marketplace)** | 私人 marketplace，邀请制拍卖 | 品牌安全、优质库存 |
+| **PI (Programmatic Guaranteed)** | 程序化保量，固定价格购买 | 大品牌、高保量需求 |
+| **Open Auction** | 公开竞价 | 追求最大覆盖范围 |
+| **Video** | 视频广告位 | YouTube、CTV |
+| **CTV** | 连接电视广告位 | 家庭大屏曝光 |
+| **Mobile** | 移动广告位 | 移动端触达 |
+| **Audio** | 音频广告位 | Spotify、Pandora |
+| **DOOH** | 数字户外广告位 | 线下场景触达 |
+
+**官方文档来源**: [Ad Formats](https://developers.google.com/display-video/api/guides/ad-formats)
+
+---
+
 ## 版本历史
+
+| 版本 | 日期 | 变更 |  |
+|------|------|------|------|
+| v5.1 | 2025-07-25 | 新增第7章：关键字段详解（出价策略、优化目标、定向方式） | ⭐ NEW |
+| v5.0 | 2025-07-25 | 基于v4.0添加详细字段解释表 |  |
+| v4.0 | 2025-07-25 | 基于官方API文档重写，移除虚构字段 |  |
+| v3.0 | 2025-08-15 | 按广告类型组织，添加Extensions/Placements |  |
+| v2.0 | 2026-08-20 | 详细层级拆解 |  |
+| v1.0 | 2025-08-10 | 初始版本 |  |
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
