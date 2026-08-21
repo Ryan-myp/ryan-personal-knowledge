@@ -1317,12 +1317,13 @@ Line Item (Audio)
 | 功能 | Google Ads | Meta | TikTok | DV360 |
 |------|-----------|------|--------|-------|
 | **账户层级** | Customer | Business Manager | Business Center | Partner |
-| **预算层级** | Campaign Budget | Campaign | Campaign | IO |
-| **广告系列** | Campaign | Campaign | Campaign | Line Item |
-| **广告组** | Ad Group | Ad Set | Ad Group | Creative |
+| **预算层级** | Campaign Budget | Campaign | Campaign | Campaign |
+| **广告系列** | Campaign | Campaign | Campaign | Campaign |
+| **订单/插单** | - | - | - | Insertion Order (IO) |
+| **行项目** | Ad Group | Ad Set | Ad Group | Line Item |
 | **广告** | Ad | Ad | Ad | Creative |
 | **出价策略** | MANUAL_CPC/TARGET_CPA/MAXIMIZE_CONVERSIONS/TARGET_ROAS | CPM/CPC/CPV/OCPM | AUTO_BID/MANUAL_BID | CPM/CPV |
-| **目标类型** | SEARCH/SHOPPING/VIDEO/DISPLAY/APP/MAX | OUTCOME_LEADS/CONVERSIONS/SALES/AWARENESS | PRODUCT_SALES/LEAD_GENERATION/APP_INSTALLS/BRAND_AWARENESS | VIDEO/DISPLAY/AUDIO |
+| **目标类型** | SEARCH/SHOPPING/VIDEO/DISPLAY/MULTI_CHANNEL/MAX | OUTCOME_LEADS/CONVERSIONS/SALES/AWARENESS | PRODUCT_SALES/LEAD_GENERATION/APP_INSTALLS/BRAND_AWARENESS | VIDEO/DISPLAY/AUDIO |
 | **创意素材** | Responsive Search Ad | Link/Video/Image | Video/Image | Video/Image/HTML |
 | **定向方式** | Keywords/Audience/Location | Interests/Behaviors/Lookalike | Interests/Behaviors/Placement | Interests/Placement/Geo |
 
