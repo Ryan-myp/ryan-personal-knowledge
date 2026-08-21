@@ -823,31 +823,36 @@ Campaign (Catalog Sales)
 ├── objective: OUTCOME_SALES (销售)
 ├── status: ACTIVE
 ├── daily_budget: 15000 (= $150)
-└── special_ad_categories: []
-    │
-    └── Ad Set
-        ├── name: "Catalog Campaign"
-        ├── optimization_goal: CONVERSIONS (转化)
-        ├── catalog_id: "123456789" (商品目录 ID)
-        ├── targeting:
-        │   └── geo_locations: {countries: ["US"]}
-        └── placements: [FEED，INSTAGRAM_FEED]
-            │
-            └── Ad
-                ├── name: "Catalog Ad"
-                ├── creative:
-                │   ├── catalog_product_set_id: "123"
-                │   └── ad_style: CAROUSEL (轮播)
-                └── run_status: ACTIVE
+├── special_ad_categories: []
+├── catalog_id: "123456789" (商品目录 ID)
+│
+└── Ad Set
+    ├── name: "Catalog Campaign"
+    ├── optimization_goal: CONVERSIONS (转化)
+    ├── product_set_id: "123" (商品集合 ID)
+    ├── targeting:
+    │   └── geo_locations: {countries: ["US"]}
+    └── placements: [FEED，INSTAGRAM_FEED]
+        │
+        └── Ad
+            ├── name: "Catalog Ad"
+            ├── creative:
+            │   └── ad_style: CAROUSEL (轮播)
+            └── run_status: ACTIVE
 ```
+
+**官方说明**：
+- `catalog_id` 在 **Campaign** 层级，关联到商品目录
+- `product_set_id` 在 **Ad Set** 层级，指定要投放的商品集合
 
 #### 字段解释表
 
-| 字段 | 类型 | 说明 | 可选值/示例 |
-|------|------|------|-------------|
-| `objective` | enum | 广告系列目标 | `OUTCOME_SALES` |
-| `catalog_id` | string | 商品目录ID | `"123456789"` |
-| `catalog_product_set_id` | string | 商品集合ID | `"123"` |
+| 字段 | 所属层级 | 类型 | 说明 | 可选值/示例 |
+|------|----------|------|------|-------------|
+| `objective` | Campaign | enum | 广告系列目标 | `OUTCOME_SALES` |
+| `catalog_id` | Campaign | string | 商品目录ID | `"123456789"` |
+| `product_set_id` | Ad Set | string | 商品集合ID | `"123"` |
+| `ad_style` | Ad | enum | 广告样式 | `CAROUSEL` / `COLLAGE` / `PRODUCT_SET` |
 | `ad_style` | enum | 广告样式 | `CAROUSEL` / `COLLAGE` / `PRODUCT_SET` |
 
 #### 展示位置 (Placements)
