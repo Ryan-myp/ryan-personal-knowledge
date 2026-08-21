@@ -293,8 +293,6 @@ Campaign (Shopping)
 │       ├── marketing_language: "EN"
 │       ├── priority: 0 (0-100)
 │       └── exclude_offline_store_locations: false
-├── product_promotion_link:
-│   └── promotion_id: 促销 ID
 └── resource_name: customers/{customer_id}/campaigns/{campaign_id}
     │
     └── Ad Group
