@@ -217,24 +217,28 @@ Campaign (Performance Max)
 │   └── lead_campaign_goal_setting:
 │       └── generate_leads_campaign_goal_setting: { ... }
 ├── bidding_strategy: MAXIMIZE_CONVERSIONS / TARGET_ROAS
-├── audience_signals:
-│   └── custom_segments: ["In-Market - Apparel"]
-├── asset_group:
-│   ├── name: "Summer Collection"
-│   ├── status: ENABLED
-│   ├── products:
-│   │   └── listing_group:
-│   │       ├── all_products: {}
-│   │       └── product_type_1: {values: ["Electronics"]}
-│   ├── assets:
-│   │   ├── headlines: ["Buy Now", "Summer Sale"]
-│   │   ├── descriptions: ["Best prices", "Limited time"]
-│   │   ├── images: [{media_file: "image_url"}]
-│   │   ├── logos: [{media_file: "logo_url"}]
-│   │   └── videos: [{media_file: "video_url"}]
-│   └── final_url_suffix: "?source=pmax"
+├── campaign_budget: resource_name
 └── resource_name: customers/{customer_id}/campaigns/{campaign_id}
+    │
+    └── Asset Group (资产组)
+        ├── name: "Summer Collection"
+        ├── status: ENABLED
+        ├── audience_signals:  # 受众信号在 Asset Group 层级
+        │   ├── custom_segments: ["In-Market - Apparel"]
+        │   └── audience_segment: ["Your Data Segments"]
+        ├── products:
+        │   └── listing_group:
+        │       ├── all_products: {}
+        │       └── product_type_1: {values: ["Electronics"]}
+        └── assets:
+            ├── headlines: ["Buy Now", "Summer Sale"]
+            ├── descriptions: ["Best prices", "Limited time"]
+            ├── images: [{media_file: "image_url"}]
+            ├── logos: [{media_file: "logo_url"}]
+            └── videos: [{media_file: "video_url"}]
 ```
+
+**注意**: `audience_signals` 位于 Asset Group 层级，不是 Campaign 层级。
 
 #### 字段解释表
 
