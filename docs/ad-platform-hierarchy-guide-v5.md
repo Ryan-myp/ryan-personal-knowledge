@@ -14,7 +14,7 @@
 
 1. [Google Ads 层级结构](#1-google-ads-层级结构)
    - 1.1 搜索广告（Search Ads）
-   - 1.2 性能最大化广告（Performance Max）
+   - 1.2 效果最大化广告（Performance Max）
    - 1.3 购物广告（Shopping Ads）
    - 1.4 视频广告（Video Ads）
    - 1.5 展示广告（Display Ads）
@@ -200,7 +200,7 @@ Campaign (Search)
 
 ---
 
-### 1.2 性能最大化广告（Performance Max）
+### 1.2 效果最大化广告（Performance Max）
 
 #### 层级结构
 
