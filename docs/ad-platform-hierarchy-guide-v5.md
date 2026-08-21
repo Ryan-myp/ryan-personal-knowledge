@@ -112,6 +112,14 @@ Customer (账户)
 
 ### 1.1 搜索广告（Search Ads）
 
+#### 官方定义
+
+> **Search Ads** 是 Google Ads 中基于关键字的文本广告形式，当用户在 Google 搜索中输入与广告主购买的关键字相关的查询词时，广告会显示在搜索结果页面的顶部或底部。
+>
+> 搜索广告支持多种出价策略（如 Manual CPC、Target CPA、Maximize Conversions 等），并可通过广告组管理多个广告创意和关键字。
+>
+> **官方文档**: [Search Campaigns](https://developers.google.com/google-ads/api/docs/campaigns/search-campaigns)
+
 #### 层级结构
 
 ```
@@ -204,6 +212,14 @@ Campaign (Search)
 
 ### 1.2 效果最大化广告（Performance Max）
 
+#### 官方定义
+
+> **Performance Max** 是 Google Ads 中基于 AI 的效果最大化广告类型，通过整合搜索、展示、购物、YouTube 和地图等多个渠道，自动优化广告系列以达成指定目标（如销售额、线索生成或应用安装）。
+>
+> PMax 使用 Asset Group 管理素材组合，并通过 Audience Signals 提供受众信号辅助模型学习，最终由 Google AI 自动选择最佳素材组合和投放位置。
+>
+> **官方文档**: [Performance Max Campaigns](https://developers.google.com/google-ads/api/docs/campaigns/performance-max)
+
 #### 层级结构
 
 ```
@@ -281,6 +297,14 @@ Campaign (Performance Max)
 ---
 
 ### 1.3 购物广告（Shopping Ads）
+
+#### 官方定义
+
+> **Shopping Ads** 是 Google Ads 中基于产品数据的展示形式，通过 Merchant Center 的产品 Feed 自动生成。当用户搜索相关产品时，广告会以包含产品图片、价格、商家名称等信息的卡片形式展示在搜索结果页面。
+>
+> Shopping 广告支持手动 CPC 和智能出价策略，可通过 Product Groups 进行精细化定向和出价控制。
+>
+> **官方文档**: [Shopping Campaigns](https://developers.google.com/google-ads/api/docs/campaigns/shopping)
 
 #### 层级结构
 
@@ -376,6 +400,14 @@ Campaign (Shopping)
 
 ### 1.4 视频广告（Video Ads）
 
+#### 官方定义
+
+> **Video Ads** 是 Google Ads 中在 YouTube 和其他视频合作伙伴网站投放的视频广告形式，支持多种广告格式（如 Skippable In-Stream、Non-Skippable In-Stream、Bumper Ads、Outstream 等）。
+>
+> 视频广告可通过 YouTube 的受众定向、主题定向和位置定向触达目标用户，支持 CPM、CPV 等多种出价方式。
+>
+> **官方文档**: [Video Campaigns](https://developers.google.com/google-ads/api/docs/campaigns/video-campaigns)
+
 #### 层级结构
 
 ```
@@ -437,6 +469,14 @@ Campaign (Video)
 ---
 
 ### 1.5 展示广告（Display Ads）
+
+#### 官方定义
+
+> **Display Ads** 是 Google Ads 中在 Google 展示网络（Google Display Network）投放的图片、富媒体和视频广告，覆盖数百万个网站、应用和 Google 属性（如 Gmail、YouTube）。
+>
+> 展示广告支持多种格式（图片、HTML5、响应式展示广告）和定向方式（关键词、兴趣、再营销、话题定向），可通过 Responsive Display Ads 自动优化素材组合。
+>
+> **官方文档**: [Display Campaigns](https://developers.google.com/google-ads/api/docs/campaigns/display-campaigns)
 
 #### 层级结构
 
@@ -507,6 +547,14 @@ Campaign (Display)
 ---
 
 ### 1.6 应用广告（App Ads）
+
+#### 官方定义
+
+> **App Ads**（原 App Campaigns）是 Google Ads 中用于推广移动应用的广告类型，支持多种目标：应用安装（App Installs）、应用内转化（App Engagement）、应用重定向（App Retargeting）。
+>
+> `advertising_channel_type` 为 `MULTI_CHANNEL`（不是 `APP`），因为广告会出现在多个渠道（Google Search、YouTube、Google Play、Gmail 等）。App 广告使用 `app_campaign_setting` 配置应用设置。
+>
+> **官方文档**: [App Campaigns](https://developers.google.com/google-ads/api/docs/campaigns/app-campaigns)
 
 **重要说明**：App Campaign 的 `advertising_channel_type` 是 `MULTI_CHANNEL`（不是 `APP`），因为广告会出现在多个渠道（Google Search、YouTube、Google Play 等）。
 
@@ -618,6 +666,14 @@ Business Manager (业务管理器)
 
 ### 2.1 流量广告（Traffic Ads）
 
+#### 官方定义
+
+> **Traffic Ads** 是 Meta Marketing API 中专注于驱动网站流量的广告类型，优化目标为链接点击（Link Clicks）。广告主通过推广网站链接获取用户点击，适用于品牌宣传、落地页引流等场景。
+>
+> Traffic 广告系列属于`OUTCOME_TRAFFIC`目标类型，支持 Facebook Feed、Stories、Instagram、Audience Network 等位置投放。
+>
+> **官方文档**: [Campaign Object - Traffic](https://developers.facebook.com/docs/marketing-apis/campaign-object)
+
 #### 层级结构
 
 ```
@@ -673,6 +729,14 @@ Campaign (Traffic)
 
 ### 2.2 转化广告（Conversion Ads）
 
+#### 官方定义
+
+> **Conversion Ads** 是 Meta Marketing API 中专注于驱动转化行为的广告类型，优化目标为转化（Conversions）。广告主通过推广网站转化、应用转化或站内互动来衡量广告效果。
+>
+> Conversion 广告系列属于`OUTCOME_CONVERSIONS`目标类型，支持Facebook Pixel、Conversion API等多种转化追踪方式，适用于电商转化、表单提交、应用下载等场景。
+>
+> **官方文档**: [Conversion Campaigns](https://developers.facebook.com/docs/marketing-apis/campaign-objective-overview)
+
 #### 层级结构
 
 ```
@@ -721,6 +785,14 @@ Campaign (Conversion)
 ---
 
 ### 2.3 线索广告（Lead Ads）
+
+#### 官方定义
+
+> **Lead Ads** 是 Meta Marketing API 中专为线索收集设计的广告类型，用户可在Facebook或Instagram内直接填写表单，无需跳转到落地页。优化目标为`OUTCOME_LEADS`，支持Instant Form（即时表单）功能。
+>
+> Lead Ads 适用于B2B线索收集、销售线索获取、活动注册等场景，可通过`lead_gen_config`配置表单字段和隐私政策。
+>
+> **官方文档**: [Lead Ads](https://developers.facebook.com/docs/marketing-apis/lead-ads)
 
 #### 层级结构
 
@@ -774,6 +846,14 @@ Campaign (Lead Generation)
 
 ### 2.4 互动广告（Engagement Ads）
 
+#### 官方定义
+
+> **Engagement Ads** 是 Meta Marketing API 中专注于提升帖子互动的广告类型，优化目标为Post Engagement（帖子互动）、Page Likes（页面点赞）、Video Views（视频播放）或Messenger Messages（Messenger消息）。
+>
+> Engagement 广告系列属于`OUTCOME_ENGAGEMENT`目标类型，适用于提升品牌知名度、增加互动率、推广内容等场景。
+>
+> **官方文档**: [Engagement Campaigns](https://developers.facebook.com/docs/marketing-apis/campaign-objective-overview)
+
 #### 层级结构
 
 ```
@@ -819,6 +899,14 @@ Campaign (Engagement)
 ---
 
 ### 2.5 商品广告（Catalog Ads）
+
+#### 官方定义
+
+> **Catalog Ads**（商品目录广告）是 Meta Marketing API 中基于商品目录（Catalog）的动态广告类型。广告主需先在Commerce Manager中创建商品目录，然后通过Dynamic Product Ads（DPA）自动向用户展示其感兴趣的商品。
+>
+> Catalog Ads 需要关联`catalog_id`（商品目录ID）和`product_set_id`（商品集ID），适用于电商-retargeting、商品推广等场景。
+>
+> **官方文档**: [Catalog Sales Campaigns](https://developers.facebook.com/docs/marketing-apis/catalog-sales)
 
 #### 层级结构
 
@@ -873,6 +961,14 @@ Campaign (Catalog Sales)
 ---
 
 ### 2.6 消息广告（Messaging Ads）
+
+#### 官方定义
+
+> **Messaging Ads** 是 Meta Marketing API 中专门用于驱动Messenger、WhatsApp或Instagram Direct消息的广告类型。优化目标为`OUTCOME_MESSAGES`，支持多种消息平台配置。
+>
+> Messaging Ads 可用于客户咨询、售前支持、销售对话等场景，通过`messaging_apps`参数配置支持的消息平台。
+>
+> **官方文档**: [Messaging Campaigns](https://developers.facebook.com/docs/marketing-apis/messaging)
 
 #### 层级结构
 
@@ -956,6 +1052,14 @@ Business Center (业务中心)
 
 ### 3.1 产品销售广告（Product Sales）
 
+#### 官方定义
+
+> **Product Sales Ads** 是 TikTok Ads 中专注于电商转化的广告类型，优化目标为`PRODUCT_SALES`。广告主可通过TikTok Shop或外部电商平台链接实现商品销售转化。
+>
+> Product Sales 广告支持自动出价（AUTO_BID）和手动出价（MANUAL_BID），可配置每日预算和总预算，适用于电商带货、商品推广等场景。
+>
+> **官方文档**: [Campaign Object](https://developers.tiktok.com/doc/ads-api-campaign)
+
 #### 层级结构
 
 ```
@@ -1012,6 +1116,14 @@ Campaign (Product Sales)
 
 ### 3.2 Spark Ads（达人原生广告）
 
+#### 官方定义
+
+> **Spark Ads** 是 TikTok Ads 中基于达人原生内容的原生广告形式，允许广告主使用达人的已有视频（通过`spark_post_id`引用）进行广告投放，而非创建新的广告素材。
+>
+> Spark Ads 具有更高的用户信任度和转化率，因为内容源自真实的达人创作。广告主需获得达人授权后方可使用其视频进行投放。
+>
+> **官方文档**: [Spark Ads](https://developers.tiktok.com/doc/ads-api-spark)
+
 #### 层级结构
 
 ```
@@ -1048,6 +1160,14 @@ Campaign (Spark Ads)
 ---
 
 ### 3.3 线索收集广告（Lead Generation）
+
+#### 官方定义
+
+> **Lead Generation Ads** 是 TikTok Ads 中专为线索收集设计的广告类型，优化目标为`LEAD_GENERATION`。用户可在TikTok内直接填写表单，无需跳转至外部落地页。
+>
+> Lead Gen 广告支持Instant Form（即时表单）功能，可通过`form_id`引用已创建的表单模板，适用于销售线索收集、活动注册等场景。
+>
+> **官方文档**: [Lead Generation Ads](https://developers.tiktok.com/doc/ads-api-lead-generation)
 
 #### 层级结构
 
@@ -1090,6 +1210,14 @@ Campaign (Lead Generation)
 
 ### 3.4 应用推广广告（App Promotion）
 
+#### 官方定义
+
+> **App Promotion Ads** 是 TikTok Ads 中用于推广移动应用的广告类型，支持应用安装（App Installs）和应用内转化（In-App Conversions）两种优化目标。
+>
+> App 广告可在TikTok、TikTok Lite和其他合作伙伴App中投放，支持深度链接（Deep Linking）直接跳转至应用内特定页面。
+>
+> **官方文档**: [App Campaigns](https://developers.tiktok.com/doc/ads-api-app-campaign)
+
 #### 层级结构
 
 ```
@@ -1129,6 +1257,14 @@ Campaign (App Promotion)
 ---
 
 ### 3.5 品牌广告（Brand Ads）
+
+#### 官方定义
+
+> **Brand Awareness Ads** 是 TikTok Ads 中专注于品牌曝光的广告类型，优化目标为`BRAND_AWARENESS`。此类广告旨在提升品牌知名度、触达更多潜在消费者。
+>
+> Brand Ads 支持多种出价方式（CPM、CPV），可通过OCT（Optimized Cost Per Thousand Impressions）或vCPM（Virtual CPM）进行竞价。
+>
+> **官方文档**: [Brand Awareness Campaigns](https://developers.tiktok.com/doc/ads-api-brand-awareness)
 
 #### 层级结构
 
@@ -1224,6 +1360,14 @@ Partner (MCN/代理商)
 
 ### 4.1 视频广告（Video Ads）
 
+#### 官方定义
+
+> **Video Ads** 在 DV360 中是通过 Line Item 层级创建的视频广告投放单元，支持YouTube、OTT/CTV等视频库存来源。视频广告可用于品牌认知、考虑和转化等不同营销目标。
+>
+> DV360 视频广告支持多种格式（Skippable In-Stream、Non-Skippable In-Stream、Bumper Ads、Outstream），并通过 `inventory_source` 参数指定视频库存来源。
+>
+> **官方文档**: [DV360 Video Campaigns](https://developers.google.com/display-video/api/guides/video)
+
 #### 层级结构
 
 ```
@@ -1251,6 +1395,14 @@ Line Item (Video)
 
 ### 4.2 展示广告（Display Ads）
 
+#### 官方定义
+
+> **Display Ads** 在 DV360 中是通过 Line Item 层级的展示广告投放单元，支持GAM（Google Ad Manager）、外部DMP等库存来源。展示广告可用于品牌曝光、效果转化等多种场景。
+>
+> DV360 展示广告支持图片、HTML5、富媒体等多种创意格式，可通过 `creative_type_filtering` 参数指定允许的创意类型。
+>
+> **官方文档**: [DV360 Display Campaigns](https://developers.google.com/display-video/api/guides/display)
+
 #### 层级结构
 
 ```
@@ -1277,6 +1429,14 @@ Line Item (Display)
 ---
 
 ### 4.3 音频广告（Audio Ads）
+
+#### 官方定义
+
+> **Audio Ads** 是 DV360 中在音频平台（如YouTube Music、Spotify等）投放的音频广告形式。音频广告可通过Line Item配置，支持品牌和效果两种广告目标。
+>
+> DV360 音频广告支持多种格式（30秒、60秒音频广告），可通过 `inventory_source` 参数指定音频库存来源。
+>
+> **官方文档**: [DV360 Audio Campaigns](https://developers.google.com/display-video/api/guides/audio)
 
 #### 层级结构
 
