@@ -1352,10 +1352,13 @@ Line Item (Audio)
 | `status` | Campaign | enum | 广告系列状态 | ✅ |
 | `daily_budget` | Campaign | int | 每日预算（单位: 分） | ✅ |
 | `special_ad_categories` | Campaign | list | 特殊广告分类 | ✅ |
+| `catalog_id` | Campaign | string | 商品目录ID（Catalog Ads） | ❌ |
 | `optimization_goal` | Ad Set | enum | 优化目标 | ✅ |
+| `product_set_id` | Ad Set | string | 商品集合ID（Catalog Ads） | ❌ |
 | `targeting.geo_locations` | Ad Set | object | 地理位置定向 | ✅ |
 | `placements` | Ad Set | list | 展示位置 | ✅ |
 | `creative.object_story_spec` | Ad | object | 创意故事规范 | ✅ |
+| `creative.ad_style` | Ad | enum | 广告样式（Catalog Ads） | ❌ |
 | `call_to_action.type` | Ad | enum | 行动号召类型 | ✅ |
 
 ### TikTok 字段
