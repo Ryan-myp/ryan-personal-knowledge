@@ -1,225 +1,283 @@
 # 广告平台层级结构完整指南 v4.0
 
-> 更新时间: 2026-08-20  
-> 覆盖平台: Google Ads / Meta Marketing API / TikTok Ads / DV360  
-> 版本: v4.0（简洁清晰版）
+> 更新时间: 2025-07-25  
+> 版本: v4.0（基于官方 API 文档整理）
+> 数据来源: 
+> - [Google Ads API](https://developers.google.com/google-ads/api/docs/start)
+> - [Meta Marketing API](https://developers.facebook.com/docs/marketing-apis/)
+> - [TikTok Business API](https://developers.tiktok.com/doc/ads-api-overview)
+> - [DV360 API](https://developers.google.com/display-video/api/guides)
 
 ---
 
-## 📋 目录
+## 目录
 
 1. [Google Ads 层级结构](#1-google-ads-层级结构)
-   - 1.1 搜索广告 (Search Ads)
-   - 1.2 性能最大化广告 (PMax)
-   - 1.3 购物广告 (Shopping Ads)
-   - 1.4 视频广告 (Video Ads)
-   - 1.5 展示广告 (Display Ads)
-   - 1.6 应用安装广告 (App Ads)
+   - 1.1 搜索广告（Search Ads）
+   - 1.2 性能最大化广告（Performance Max）
+   - 1.3 购物广告（Shopping Ads）
+   - 1.4 视频广告（Video Ads）
+   - 1.5 展示广告（Display Ads）
+   - 1.6 应用广告（App Ads）
 2. [Meta Marketing API 层级结构](#2-meta-marketing-api-层级结构)
-   - 2.1 流量广告
-   - 2.2 转化广告
-   - 2.3 潜在客户广告
-   - 2.4 互动广告
-   - 2.5 商品广告
-   - 2.6 消息广告
+   - 2.1 流量广告（Traffic Ads）
+   - 2.2 转化广告（Conversion Ads）
+   - 2.3 线索广告（Lead Ads）
+   - 2.4 互动广告（Engagement Ads）
+   - 2.5 商品广告（Catalog Ads）
+   - 2.6 消息广告（Messaging Ads）
 3. [TikTok Ads 层级结构](#3-tiktok-ads-层级结构)
-   - 3.1 产品销售广告
-   - 3.2 Spark Ads
-   - 3.3 线索收集广告
-   - 3.4 应用推广广告
-   - 3.5 品牌广告
+   - 3.1 产品销售广告（Product Sales）
+   - 3.2 Spark Ads（达人原生广告）
+   - 3.3 线索收集广告（Lead Generation）
+   - 3.4 应用推广广告（App Promotion）
+   - 3.5 品牌广告（Brand Ads）
 4. [DV360 层级结构](#4-dv360-层级结构)
 5. [平台对比速查表](#5-平台对比速查表)
-6. [附录：快速创建 API 示例](#附录快速创建-api-示例)
 
 ---
 
 ## 1. Google Ads 层级结构
 
-### 1.1 搜索广告 (Search Ads)
-
-#### 层级结构
+### 通用层级架构
 
 ```
-Customer (客户)
-└── Campaign (广告系列)
-    ├── Budgets (预算)
-    ├── Dates (投放时间)
-    ├── Campaign Criteria (定向)
-    └── Ad Group (广告组)
-        ├── Keywords (关键词)
-        ├── Ads (广告)
-        │   ├── Headlines (标题)
-        │   ├── Descriptions (描述)
-        │   ├── URLs (落地页)
-        │   └── Assets (附加信息)
-        └── Negative Keywords (否定关键词)
+Customer (账户)
+├── Campaign Budget (预算)
+│   ├── amount_micros: 10000000 (=$100)
+│   └── delivery_method: STANDARD / DAILY
+├── Campaign (广告系列)
+│   ├── advertising_channel_type: SEARCH/SHOPPING/VIDEO/DISPLAY/APP/MAX
+│   ├── status: ENABLED / PAUSED / REMOVED
+│   ├── bidding_strategy: resource_name
+│   ├── campaign_budget: resource_name
+│   └── settings:
+│       ├── targeting_setting
+│       ├── network_setting
+│       └── shopping_setting (仅 Shopping)
+├── Ad Group (广告组)
+│   ├── name
+│   ├── status
+│   ├── cpc_bid_micros
+│   └── bidding_strategy_override (可选)
+├── Ad Group Criterion (广告组限定条件)
+│   ├── Keywords (关键词)
+│   ├── Product Groups (产品分组，仅 Shopping/PMax)
+│   └── Negative Criteria (否定限定)
+└── Ads (广告创意)
+    ├── Responsive Search Ad
+    ├── Expanded Text Ad
+    └── Asset Group (PMax 专用)
 ```
 
-#### 各层级字段说明
-
-**Customer（客户）**
-
-| 字段 | 说明 |
-|------|------|
-| `customer_id` | 客户 ID，如 1234567890 |
-| `descriptive_name` | 账户描述名称 |
-| `currency_code` | 货币代码 (USD/CNY等) |
-
-**Campaign（广告系列）**
-
-| 字段 | 说明 |
-|------|------|
-| `campaign_id` | 广告系列 ID |
-| `name` | 名称 |
-| `status` | ENABLED / PAUSED / REMOVED |
-| `advertising_channel_type` | SEARCH / SHOPPING / VIDEO / DISPLAY |
-| `bidding_strategy` | 出价策略资源名 |
-| `campaign_budget` | 预算资源名 |
-| `start_date` | 开始日期 |
-| `end_date` | 结束日期 |
-
-**Ad Group（广告组）**
-
-| 字段 | 说明 |
-|------|------|
-| `ad_group_id` | 广告组 ID |
-| `name` | 名称 |
-| `status` | ENABLED / PAUSED / REMOVED |
-| `cpc_bid_micros` | CPC 出价（微单位） |
-| `bidding_strategy_override` | 出价策略覆盖 |
-
-**Keywords（关键词）**
-
-| 字段 | 说明 |
-|------|------|
-| `keyword.text` | 关键词文本 |
-| `keyword.match_type` | BROAD / PHRASE / EXACT |
-| `cpc_bid_micros` | 关键词出价 |
-
-#### 支持的广告附加信息 (Extensions)
-
-| 类型 | 字段 | 说明 | 可点击 | 数量限制 |
-|------|------|------|--------|----------|
-| Sitelink | `sitelink_callout_text` | 附加链接文本（最多4个） | ❌ | 最多 15 个 |
-| Callout | `callout_text` | 补充说明文本（最多10个） | ❌ | 最多 10 个 |
-| Structured Snippet | `values` | 结构化摘要（标题+值列表） | ❌ | 最多 5 个 |
-| Call | `phone_number` | 拨打电话 | ✅ | 最多 5 个 |
-| Message | `phone_number`, `message_text` | 发送短信 | ✅ | 最多 5 个 |
-| Location | `business_name`, `place_id` | 商家位置 | ✅ | 最多 10 个 |
-| Affiliate Location | `seller_member_id`, `place_ids` | 经销商定位 | ✅ | 最多 20 个 |
-| Price | `title`, `price`, `currency_code` | 价格信息 | ✅ | 最多 8 个 |
-| App | `app_id`, `description` | 应用下载 | ✅ | 最多 1 个 |
-| Promotion | `promotion_text`, `offer_code` | 促销活动 | ✅ | 最多 8 个 |
-
-#### 展示位置 (Placements)
-
-| 类型 | 说明 | 位置 |
-|------|------|------|
-| Google Search | 搜索结果页 | 主要位置 |
-| Google Search Partners | 合作伙伴网站 | 搜索扩展 |
+**官方文档来源**: 
+- [Campaign Service](https://developers.google.com/google-ads/api/docs/campaigns/overview)
+- [AdvertisingChannelTypeEnum](https://developers.google.com/google-ads/api/reference/rest/v18/enums/AdvertisingChannelType)
 
 ---
 
-### 1.2 性能最大化广告 (PMax)
+### 1.1 搜索广告（Search Ads）
 
 #### 层级结构
 
 ```
-Campaign (Performance Max)
-├── advertising_channel_type: MAX
-├── campaign_goal_setting:
-│   ├── sales_campaign_goal_setting
-│   └── lead_campaign_goal_setting
-├── bidding_strategy:
-│   ├── type: TARGET_ROAS / MAXIMIZE_CONVERSIONS
-│   └── target_roas_percentage: 500 (=5x ROAS)
-├── asset_group (资产组):
-│   ├── name: "Product A - Electronics"
-│   ├── status: ENABLED
-│   ├── audience_signals:
-│   │   └── custom_segments: ["In-Market - Electronics"]
-│   ├── product_selection:
-│   │   └── product_group:
-│   │       ├── product_type_1: {"values": ["Electronics"]}
-│   │       ├── product_type_2: {"values": ["Phones"]}
-│   │       ├── brand: {"values": ["Apple", "Samsung"]}
-│   │       └── custom_label_0: {"values": ["bestseller"]}
-│   ├── assets:
-│   │   ├── headlines: ["Buy Now", "Best Deals"]
-│   │   ├── images: [{"media_file": "image_1.jpg"}]
-│   │   └── videos: [{"media_file": "video_1.mp4"}]
-│   └── final_url_suffix: "?source=pmax"
-└── resource_name: customers/xxx/campaigns/yyy
+Campaign (Search)
+├── advertising_channel_type: SEARCH
+├── status: ENABLED
+├── campaign_budget: resource_name
+├── bidding_strategy: MANUAL_CPC / TARGET_CPA / MAXIMIZE_CONVERSIONS
+├── settings:
+│   ├── targeting_setting:
+│   │   └── target_restrictions: [GEOGRAPHIC]
+│   └── network_setting:
+│       ├── target_google_search: true
+│       ├── target_search_partners: false
+│       └── target_network: false
+└── resource_name: customers/{customer_id}/campaigns/{campaign_id}
+    │
+    ├── Ad Group
+    │   ├── name: "Electronics Products"
+    │   ├── status: ENABLED
+    │   ├── cpc_bid_micros: 250000 (=$0.25)
+    │   └── resource_name: customers/{customer_id}/adGroups/{ad_group_id}
+    │       │
+    │       ├── Keywords (Ad Group Criteria)
+    │       │   ├── criterion.text: "running shoes"
+    │       │   ├── criterion.match_type: PHRASE
+    │       │   └── cpc_bid_micros: 300000
+    │       │
+    │       └── Negative Keywords
+    │           └── criterion.text: "free"
+    │
+    └── Ads (Responsive Search Ad)
+        ├── ad_group: resource_name
+        ├── name: "Running Shoes - Summer Sale"
+        ├── status: ENABLED
+        ├── type: RESPONSIVE_SEARCH_AD
+        ├── info:
+        │   ├── headlines: [
+        │   │   {text: "Buy Running Shoes", prominence: 0},
+        │   │   {text: "Summer Sale 50% Off", prominence: 0}
+        │   │ ]
+        │   └── descriptions: [
+        │       {text: "Best running shoes for summer"},
+        │       {text: "Free shipping on orders over $50"}
+        │     ]
+        └── final_urls: ["https://example.com/shoes"]
 ```
 
-#### Asset 类型说明
+#### 支持的广告附加信息 (Extensions)
 
-| Asset 类型 | 说明 | 数量限制 |
-|-----------|------|----------|
-| Headline | 标题（必填） | 最多 30 个 |
-| Description | 描述 | 最多 30 个 |
-| Image | 图片 | 最多 20 个 |
-| Logo | Logo | 最多 5 个 |
-| Video | 视频 | 最多 20 个 |
-| CTA Text | 行动号召文本 | 最多 5 个 |
-| Call Out | 推广亮点 | 最多 8 个 |
-| Sitelink | 附加链接 | 最多 8 个 |
-| Product Feed Link | 产品 feed 链接 | 1 个 |
+| 类型 | 字段 | 数量限制 | 官方文档 |
+|------|------|----------|----------|
+| Sitelink | `SitelinkExtensionSetting` | 最多 15 个 | [Sitelink](https://developers.google.com/google-ads/api/docs/campaigns/sitelink-extensions) |
+| Callout | `CalloutExtensionSetting` | 最多 10 个 | [Callout](https://developers.google.com/google-ads/api/docs/campaigns/callout-extensions) |
+| Structured Snippet | `StructuredSnippetExtensionSetting` | 最多 5 个 | [Snippet](https://developers.google.com/google-ads/api/docs/campaigns/structured-snippet-extensions) |
+| Call | `CallExtensionSetting` | 1 个 | [Call](https://developers.google.com/google-ads/api/docs/campaigns/call-extensions) |
+| Message | `MessageExtensionSetting` | 1 个 | [Message](https://developers.google.com/google-ads/api/docs/campaigns/message-extensions) |
+| Location | `LocationExtensionSetting` | 1 个 | [Location](https://developers.google.com/google-ads/api/docs/campaigns/location-extensions) |
+| Price | `PriceExtensionSetting` | 最多 8 个 | [Price](https://developers.google.com/google-ads/api/docs/campaigns/price-extensions) |
+| Promotion | `PromotionExtensionSetting` | 2 个 | [Promotion](https://developers.google.com/google-ads/api/docs/campaigns/promotion-extensions) |
+| App | `AppExtensionSetting` | 1 个 | [App](https://developers.google.com/google-ads/api/docs/campaigns/app-extensions) |
+| Affiliate Location | `AffiliateLocationExtensionSetting` | 最多 8 个 | [Affiliate](https://developers.google.com/google-ads/api/docs/campaigns/affiliate-location-extensions) |
 
 #### 展示位置 (Placements)
 
 | 类型 | 说明 |
 |------|------|
 | Google Search | 搜索结果页 |
-| Google Display Network | 展示广告网络 |
-| YouTube | 视频广告 |
-| Gmail | 邮件广告 |
-| Google Maps | 地图广告 |
-| Shopping Tabs | 购物标签页 |
+| Google Search Partners | 搜索合作伙伴网站 |
+| Google Shopping | 购物标签页 |
+| Google Play | 应用商店 |
+
+**官方文档来源**: [Search Campaigns](https://developers.google.com/google-ads/api/docs/campaigns/search-campaigns)
 
 ---
 
-### 1.3 购物广告 (Shopping Ads)
+### 1.2 性能最大化广告（Performance Max）
+
+#### 层级结构
+
+```
+Campaign (Performance Max)
+├── advertising_channel_type: MAX
+├── status: ENABLED
+├── campaign_goal_setting:
+│   ├── sales_campaign_goal_setting:
+│   │   ├── goal_type: SALES_GOAL_TYPE_ECOMMERCE
+│   │   └── ecommerce_checkout_progress: 0.5
+│   └── lead_campaign_goal_setting:
+│       └── generate_leads_campaign_goal_setting: { ... }
+├── bidding_strategy: MAXIMIZE_CONVERSIONS / TARGET_ROAS
+├── audience_signals:
+│   └── custom_segments: ["In-Market - Apparel"]
+├── asset_group:
+│   ├── name: "Summer Collection"
+│   ├── status: ENABLED
+│   ├── products:
+│   │   └── listing_group:
+│   │       ├── all_products: {}
+│   │       └── product_type_1: {values: ["Electronics"]}
+│   ├── assets:
+│   │   ├── headlines: ["Buy Now", "Summer Sale"]
+│   │   ├── descriptions: ["Best prices", "Limited time"]
+│   │   ├── images: [{media_file: "image_url"}]
+│   │   ├── logos: [{media_file: "logo_url"}]
+│   │   └── videos: [{media_file: "video_url"}]
+│   └── final_url_suffix: "?source=pmax"
+└── resource_name: customers/{customer_id}/campaigns/{campaign_id}
+```
+
+#### Asset 类型（PMax 专用）
+
+| 类型 | 说明 | 建议数量 | 官方文档 |
+|------|------|----------|----------|
+| Headline | 标题 | 10-15 个 | [Assets](https://developers.google.com/google-ads/api/docs/campaigns/performance-max#assets) |
+| Description | 描述 | 4-5 个 | [Assets](https://developers.google.com/google-ads/api/docs/campaigns/performance-max#assets) |
+| Image | 图片 | 5-10 个 | [Assets](https://developers.google.com/google-ads/api/docs/campaigns/performance-max#assets) |
+| Logo | Logo | 3-5 个 | [Assets](https://developers.google.com/google-ads/api/docs/campaigns/performance-max#assets) |
+| Video | 视频 | 1-5 个 | [Assets](https://developers.google.com/google-ads/api/docs/campaigns/performance-max#assets) |
+| CTA Text | 行动号召文本 | 1 个 | [CTA](https://developers.google.com/google-ads/api/docs/campaigns/performance-max#assets) |
+| Call Out | 补充说明 | 10 个 | [Callouts](https://developers.google.com/google-ads/api/docs/campaigns/performance-max#assets) |
+| Sitelink | 附加链接 | 15 个 | [Sitelinks](https://developers.google.com/google-ads/api/docs/campaigns/performance-max#assets) |
+| Product Feed Link | 产品Feed链接 | 1 个 | [Product Feed](https://developers.google.com/google-ads/api/docs/campaigns/performance-max#product-feed) |
+
+#### 展示位置 (Placements)
+
+| 类型 | 说明 |
+|------|------|
+| Google Search | 搜索广告 |
+| Google Shopping | 购物广告 |
+| YouTube | 视频广告 |
+| Gmail | 邮件广告 |
+| Google Display Network | 展示广告 |
+| Google Maps | 地图广告 |
+
+**官方文档来源**: [Performance Max Campaigns](https://developers.google.com/google-ads/api/docs/campaigns/performance-max)
+
+---
+
+### 1.3 购物广告（Shopping Ads）
 
 #### 层级结构
 
 ```
 Campaign (Shopping)
 ├── advertising_channel_type: SHOPPING
-├── shopping_setting:
-│   ├── merchant_id: 商家 ID
-│   ├── sales_country: 销售国家
-│   └── marketing_language: 营销语言
+├── status: ENABLED
+├── campaign_budget: resource_name
+├── bidding_strategy: MANUAL_CPC / MAXIMIZE_CONVERSIONS_VALUE
+├── settings:
+│   └── shopping_setting:
+│       ├── merchant_id: 12345678
+│       ├── sales_country: "US"
+│       ├── marketing_language: "EN"
+│       ├── priority: 0 (0-100)
+│       └── exclude_offline_store_locations: false
 ├── product_promotion_link:
 │   └── promotion_id: 促销 ID
-├── Ad Group (广告组)
-│   └── product_group: 产品分组
-│       ├── all_products: {}  (全部产品)
-│       ├── product_type_1: {"values": ["Electronics"]}
-│       ├── product_type_2: {"values": ["Phones"]}
-│       ├── brand: {"values": ["Apple"]}
-│       └── condition: {"values": ["NEW"]}
-│   (product_group 可多层嵌套细分)
+└── resource_name: customers/{customer_id}/campaigns/{campaign_id}
+    │
+    └── Ad Group
+        ├── name: "Electronics Products"
+        ├── status: ENABLED
+        └── resource_name: customers/{customer_id}/adGroups/{ad_group_id}
+            │
+            └── Product Group (Listing Group)
+                ├── all_products: {}  (全部产品)
+                ├── product_type_1: {values: ["Electronics"]}
+                ├── product_type_2: {values: ["Phones"]}
+                ├── brand: {values: ["Apple"]}
+                └── condition: {values: ["NEW"]}
+                (product_group 可多层嵌套细分)
 ```
 
 #### Product Group 真实字段
 
-| 字段 | 说明 | 示例值 |
-|------|------|--------|
-| `product_type_1` | 产品类型层级 1 | Electronics |
-| `product_type_2` | 产品类型层级 2 | Phones |
-| `product_type_3` | 产品类型层级 3 | Smartphones |
-| `product_type_4` | 产品类型层级 4 | iPhone |
-| `product_type_5` | 产品类型层级 5 | iPhone 15 |
-| `brand` | 品牌 | Apple |
-| `category` | Google 分类 | Phones & Accessories |
-| `condition` | 新旧程度 | NEW / USED |
-| `custom_label_0` | 自定义标签 0 | bestseller |
-| `custom_label_1` | 自定义标签 1 | clearance |
-| `custom_label_2` | 自定义标签 2 | seasonal |
-| `custom_label_3` | 自定义标签 3 | premium |
-| `custom_label_4` | 自定义标签 4 | new_arrival |
+| 字段 | 说明 | 示例值 | 官方文档 |
+|------|------|--------|----------|
+| `all_products` | 根节点，包含所有产品 | `{}` | [Product Group](https://developers.google.com/google-ads/api/docs/campaigns/shopping#product_groups) |
+| `product_type_1` | 产品子类 1 | `{"values": ["Electronics"]}` | [Product Group](https://developers.google.com/google-ads/api/docs/campaigns/shopping#product_groups) |
+| `product_type_2` | 产品子类 2 | `{"values": ["Phones"]}` | [Product Group](https://developers.google.com/google-ads/api/docs/campaigns/shopping#product_groups) |
+| `product_type_3` | 产品子类 3 | `{"values": ["Smartphones"]}` | [Product Group](https://developers.google.com/google-ads/api/docs/campaigns/shopping#product_groups) |
+| `product_type_4` | 产品子类 4 | - | [Product Group](https://developers.google.com/google-ads/api/docs/campaigns/shopping#product_groups) |
+| `product_type_5` | 产品子类 5 | - | [Product Group](https://developers.google.com/google-ads/api/docs/campaigns/shopping#product_groups) |
+| `custom_label_0` | 自定义标签 0 | `{"values": ["bestseller"]}` | [Product Group](https://developers.google.com/google-ads/api/docs/campaigns/shopping#product_groups) |
+| `custom_label_1` | 自定义标签 1 | `{"values": ["clearance"]}` | [Product Group](https://developers.google.com/google-ads/api/docs/campaigns/shopping#product_groups) |
+| `custom_label_2` | 自定义标签 2 | `{"values": ["seasonal"]}` | [Product Group](https://developers.google.com/google-ads/api/docs/campaigns/shopping#product_groups) |
+| `custom_label_3` | 自定义标签 3 | `{"values": ["premium"]}` | [Product Group](https://developers.google.com/google-ads/api/docs/campaigns/shopping#product_groups) |
+| `custom_label_4` | 自定义标签 4 | `{"values": ["new_arrival"]}` | [Product Group](https://developers.google.com/google-ads/api/docs/campaigns/shopping#product_groups) |
+| `brand` | 品牌 | `{"values": ["Apple", "Samsung"]}` | [Product Group](https://developers.google.com/google-ads/api/docs/campaigns/shopping#product_groups) |
+| `category` | Google 品类 | `{"values": ["4167", "4168"]}` | [Product Group](https://developers.google.com/google-ads/api/docs/campaigns/shopping#product_groups) |
+| `condition` | 商品条件 | `{"values": ["NEW", "USED"]}` | [Product Group](https://developers.google.com/google-ads/api/docs/campaigns/shopping#product_groups) |
+
+**注意**: 以下字段**不存在**于 Google Ads API Product Group：
+- ~~`gender.values`~~
+- ~~`age_group.values`~~
+- ~~`color.values`~~
+- ~~`size.values`~~
+
+这些是 Merchant Center 产品数据中的字段，不是 Product Group 的筛选条件。
 
 #### 支持的广告附加信息 (Extensions)
 
@@ -237,720 +295,840 @@ Campaign (Shopping)
 | Google Shopping | 购物标签页 |
 | Google Search | 搜索结果中的购物结果 |
 | Google Shopping Tab | 专属购物频道 |
+| Google Partner Sites | 合作伙伴网站 |
+
+**官方文档来源**: [Shopping Campaigns](https://developers.google.com/google-ads/api/docs/campaigns/shopping)
 
 ---
 
-### 1.4 视频广告 (Video Ads)
+### 1.4 视频广告（Video Ads）
 
 #### 层级结构
 
 ```
 Campaign (Video)
 ├── advertising_channel_type: VIDEO
-├── video_campaign_setting:
-│   └── video_brand_safety_subject: 品牌安全主题
-├── Ad Group
-│   ├── video_ad:
-│   │   ├── headline: 标题
-│   │   ├── description: 描述
-│   │   ├── advertising_image: 广告图片
-│   │   └── final_urls: 落地页 URL
-│   └── video:
-│       ├── video_id: YouTube 视频 ID
-│       └── tracking_url: 追踪 URL
-└── Targeting:
-    ├── audience_segment: 受众细分
-    └── placement: YouTube 频道/视频
+├── status: ENABLED
+├── campaign_budget: resource_name
+├── bidding_strategy: MAXIMIZE_CONVERSIONS / TARGET_CPM
+├── settings:
+│   └── video_setting:
+│       ├── smart_performance: false
+│       └── video_ad_format_preference: [TRUE_VIEW_IN_STREAM, NON_TRUE_VIEW_IN_STREAM]
+└── resource_name: customers/{customer_id}/campaigns/{campaign_id}
+    │
+    └── Ad Group
+        ├── name: "YouTube Campaign"
+        ├── status: ENABLED
+        ├── cpc_bid_micros: 500000 (=$0.50)
+        │
+        ├── Ad (Video Ad)
+        │   ├── type: VIDEO
+        │   ├── video:
+        │   │   └── video_id: "dQw4w9WgXcQ" (YouTube 视频 ID)
+        │   └── final_urls: ["https://example.com"]
+        │
+        └── Customer SEO (可选)
+            └── audience_expansion: true
 ```
 
 #### 支持的广告附加信息 (Extensions)
 
-| 类型 | 说明 |
-|------|------|
-| Call | 拨打电话 |
-| Location | 商家位置 |
+| 类型 | 说明 | 数量限制 |
+|------|------|----------|
+| Call | 电话扩展 | 1 个 |
+| Location | 位置扩展 | 1 个 |
+| Callout | 补充说明 | 10 个 |
 
 #### 展示位置 (Placements)
 
 | 类型 | 说明 |
 |------|------|
-| YouTube | 视频播放前/中/后 |
-| YouTube Search | 搜索结果视频 |
-| YouTube Channels | 指定频道 |
-| YouTube Videos | 指定视频 |
+| YouTube | 视频播放页 |
+| YouTube Search | YouTube 搜索 |
+| YouTube Homepage | YouTube 首页 |
+| YouTube Mobile | 移动端 |
+| Google Video Partners | 视频合作伙伴网络 |
+
+**官方文档来源**: [Video Campaigns](https://developers.google.com/google-ads/api/docs/campaigns/video-campaigns)
 
 ---
 
-### 1.5 展示广告 (Display Ads)
+### 1.5 展示广告（Display Ads）
 
 #### 层级结构
 
 ```
 Campaign (Display)
 ├── advertising_channel_type: DISPLAY
+├── status: ENABLED
+├── campaign_budget: resource_name
+├── bidding_strategy: TARGET_CPM / MAXIMIZE_CONVERSIONS
 ├── settings:
-│   └── target_cpm_bid_micros: 目标 CPM 出价
-├── Ad Group
-│   └── Responsive Display Ad:
-│       ├── headlines: 标题列表
-│       ├── descriptions: 描述列表
-│       ├── logos: Logo 图片
-│       ├── marketing_images: 营销图片
-│       ├── videos: 视频
-│       └── final_urls: 落地页 URL
-└── Audience:
-    ├── custom_audience: 自定义受众
-    └── similar_audience: 相似受众
+│   ├── targeting_setting:
+│   │   └── geo_target_type: LOCAL_OR_PRESENT
+│   └── network_setting:
+│       └── target_content_network: false
+└── resource_name: customers/{customer_id}/campaigns/{campaign_id}
+    │
+    └── Ad Group
+        ├── name: "Retargeting"
+        ├── status: ENABLED
+        ├── cpm_bid_micros: 200000 (=$0.20)
+        │
+        ├── Audience (受众)
+        │   └── inference_label: {label: "Lifestyle & Fashion"}
+        │
+        └── Ad (Responsive Display Ad)
+            ├── type: RESPONSIVE_DISPLAY_AD
+            ├── name: "Summer Sale"
+            ├── status: ENABLED
+            ├── info:
+            │   ├── headlines: ["Summer Sale", "Up to 50% Off"]
+            │   ├── descriptions: ["Shop now", "Limited time"]
+            │   ├── logos: [{media_file: "logo.png"}]
+            │   ├── marketing_images: [{media_file: "image.jpg"}]
+            │   └── business_name: "My Store"
+            └── final_urls: ["https://example.com"]
 ```
 
 #### 支持的广告附加信息 (Extensions)
 
-| 类型 | 说明 |
-|------|------|
-| Sitelink | 附加链接 |
-| Callout | 推广亮点 |
-| Structured Snippet | 结构化摘要 |
-| Image | 图片扩展 |
+| 类型 | 说明 | 数量限制 |
+|------|------|----------|
+| Callout | 补充说明 | 10 个 |
+| Structured Snippet | 结构化摘要 | 5 个 |
 
 #### 展示位置 (Placements)
 
 | 类型 | 说明 |
 |------|------|
 | Google Display Network | 展示广告网络 |
-| YouTube | 视频展示 |
-| Gmail | 邮件广告 |
-| Google Search | 搜索扩展位 |
+| Contextual Placements | 上下文定位 |
+| Placements | 指定网站/应用 |
+| Topics | 主题定位 |
+| Affinity Audiences | 亲和受众 |
+| In-Market Audiences | 购买意向受众 |
+
+**官方文档来源**: [Display Campaigns](https://developers.google.com/google-ads/api/docs/campaigns/display-campaigns)
 
 ---
 
-### 1.6 应用安装广告 (App Ads)
+### 1.6 应用广告（App Ads）
 
 #### 层级结构
 
 ```
 Campaign (App)
 ├── advertising_channel_type: APP
-├── app_settings:
-│   └── app_id: 应用 ID (iOS/Android)
-├── Ad Group
-│   └── App Campaign:
-│       ├── app_title: 应用标题
-│       ├── app_url: 应用链接
-│       ├── headlines: 标题
-│       ├── descriptions: 描述
-│       └── images: 图片
-└── Bidding:
-    └── strategy: TARGET_CPA / MAXIMIZE_CONVERSIONS
+├── status: ENABLED
+├── campaign_budget: resource_name
+├── bidding_strategy: TARGET_CPA / MAXIMIZE_CONVERSIONS
+├── settings:
+│   └── app_setting:
+│       └── app_id: "com.example.app" (Google Play 包名)
+└── resource_name: customers/{customer_id}/campaigns/{campaign_id}
+    │
+    └── Ad Group
+        ├── name: "App Install"
+        ├── status: ENABLED
+        │
+        ├── Ad (App Ad)
+        │   ├── type: APP_AD
+        │   ├── app_ad:
+        │   │   ├── app_id: "com.example.app"
+        │   │   ├── tracking_url: "https://example.com/tracking"
+        │   │   └── url_custom_parameters: {ua: "app"}
+        │   └── info:
+        │       ├── headlines: ["Install Our App"]
+        │       ├── descriptions: ["Download now"]
+        │       └── marketing_images: [{media_file: "image.jpg"}]
+        │
+        └── Assets (资产组)
+            ├── headlines: ["Install Now", "Get the App"]
+            ├── descriptions: ["Best app for..."]
+            ├── images: [{media_file: "image.jpg"}]
+            └── videos: [{media_file: "video.mp4"}]
 ```
 
 #### 支持的广告附加信息 (Extensions)
 
-| 类型 | 说明 |
-|------|------|
-| App | 应用下载 |
-| Call | 拨打电话 |
-| Location | 商家位置 |
+| 类型 | 说明 | 数量限制 |
+|------|------|----------|
+| App | 应用安装 | 1 个 |
 
 #### 展示位置 (Placements)
 
 | 类型 | 说明 |
 |------|------|
 | Google Play Store | 应用商店 |
-| App Search | 应用搜索 |
-| YouTube | 视频展示 |
-| Display Network | 展示网络 |
+| YouTube | 视频广告 |
+| Google Search | 搜索广告 |
+| Google Network of Partners | 合作伙伴网络 |
+| Other Apps | 其他应用 |
+| Other Websites | 其他网站 |
+
+**官方文档来源**: [App Campaigns](https://developers.google.com/google-ads/api/docs/campaigns/app-campaigns)
 
 ---
 
 ## 2. Meta Marketing API 层级结构
 
-### 2.1 流量广告 (Traffic Ads)
+### 通用层级架构
+
+```
+Business Manager (业务管理器)
+└── Ad Account (广告账户) act_{account_id}
+    ├── Campaign (广告系列)
+    │   ├── objective: OUTCOME_LEADS / OUTCOME_CONVERSIONS / OUTCOME_SALES / OUTCOME_AWARENESS
+    │   ├── status: ACTIVE / PAUSED / DELETED
+    │   ├── daily_budget: 10000 (单位: 分)
+    │   └── special_ad_categories: [] (必需，无特殊分类设为空数组)
+    ├── Ad Set (广告组)
+    │   ├── name
+    │   ├── status
+    │   ├── budget_remaining
+    │   ├── targetting:
+    │   │   ├── geo_locations: {countries: ["US"]}
+    │   │   ├── age_min: 18
+    │   │   ├── age_max: 65
+    │   │   ├── interests: [{name: "Marketing"}]
+    │   │   └── behaviors: [{name: "Digital activity"}]
+    │   └── placement: FEED / STORIES / RIGHT_COLUMN / INSTAGRAM_FEED
+    └── Ad (广告)
+        ├── name
+        ├── status
+        ├── creative:
+        │   ├── object_story_spec:
+        │   │   ├── page_id: 页面 ID
+        │   │   └── link_data:
+        │   │       ├── call_to_action: {type: "LEARN_MORE"}
+        │   │       └── message: "Learn more about..."
+        │   └── image_hash: 图片哈希
+        └── run_status: ACTIVE
+```
+
+**官方文档来源**: [Campaign Objectives](https://developers.facebook.com/docs/marketing-apis/campaign-objective-overview)
+
+---
+
+### 2.1 流量广告（Traffic Ads）
 
 #### 层级结构
 
 ```
-Business Manager (企业号)
-└── Ad Account (广告账户)
-    └── Campaign (广告系列)
-        ├── objective: TRAFFIC / CONVERSIONS / BRAND_AWARENESS
-        ├── special_ad_categories: 特殊广告类别
-        ├── daily_budget / lifetime_budget: 预算
-        ├── start_time / end_time: 投放时间
-        └── Ad Set (广告组)
-            ├── optimization_goal: 优化目标
-            ├── bid_amount: 出价
-            ├── targeting: 定向配置
-            │   ├── geo_locations: 地理位置
-            │   ├── age: 年龄
-            │   ├── genders: 性别
-            │   └── interests: 兴趣
-            ├── placements: 广告位
-            │   ├── facebook.feed: Facebook 信息流
-            │   ├── instagram.feed: Instagram 信息流
-            │   ├── facebook.search: Facebook 搜索
-            │   └── instagram.search: Instagram 搜索
-            └── Ads (广告)
-                ├── creative: 创意
-                │   ├── image_hash: 图片哈希
-                │   ├── call_to_action: 行动号召
-                │   └── object_store_url: 商品目录 URL
-                └── preview: 预览链接
+Campaign (Traffic)
+├── objective: OUTCOME_TRAFFIC (流量)
+├── status: ACTIVE
+├── daily_budget: 5000 (=$50)
+└── special_ad_categories: []
+    │
+    └── Ad Set
+        ├── name: "Traffic Campaign"
+        ├── optimization_goal: LINK_CLICKS (链接点击)
+        ├── targeting:
+        │   ├── geo_locations: {countries: ["US"]}
+        │   └── interests: [{name: "Technology"}]
+        └── placements: [FEED, STORIES]
+            │
+            └── Ad
+                ├── name: "Traffic Ad"
+                ├── creative:
+                │   ├── link_data:
+                │   │   ├── message: "Check out our latest article"
+                │   │   └── call_to_action: {type: "LEARN_MORE"}
+                │   └── image_hash: "abc123"
+                └── run_status: ACTIVE
 ```
 
-#### 广告位 (Placements)
+#### 展示位置 (Placements)
 
 | 类型 | 说明 |
 |------|------|
-| Facebook Feed | Facebook 信息流 |
-| Instagram Feed | Instagram 信息流 |
-| Facebook Search | Facebook 搜索 |
-| Instagram Search | Instagram 搜索 |
-| Facebook Right Column | Facebook 右侧栏 |
-| Instagram Explore | Instagram 探索页 |
-| Facebook Stories | Facebook 动态 |
-| Instagram Stories | Instagram 动态 |
-| Facebook Reels | Facebook Reels |
-| Instagram Reels | Instagram Reels |
-| Messenger Story | Messenger 动态 |
-| Audience Network | 受众网络 |
-
----
-
-### 2.2 转化广告 (Conversion Ads)
-
-#### 层级结构
-
-```
-Campaign (转化广告)
-├── objective: CONVERSIONS
-├── conversion_set_id: 转化集 ID
-├── Ad Set
-│   ├── optimization_goal: LINK_CLICKS / OFFSITE_CONVERSIONS
-│   ├── pixel: Pixel ID
-│   └── CAPI: Conversion API 配置
-└── Ads
-    └── Dynamic Creative: 动态创意
-        ├── previews[]: 预览列表
-        └── suggested_variables: 建议变量
-```
-
-#### 广告位 (Placements)
-
-同 2.1 流量广告
-
----
-
-### 2.3 潜在客户广告 (Lead Ads)
-
-#### 层级结构
-
-```
-Campaign (线索收集)
-├── objective: LEAD_GENERATION
-├── Ad Set
-│   └── lead_ads_config:
-│       ├── client_form: 客户端表单
-│       │   ├── account_mode: BUSINESS_MANAGEMENT / ADVANCED
-│       │   ├── is_personalized: 是否个性化
-│       │   └── form_content: 表单内容
-│       └── privacy_disclosure: 隐私披露
-└── Lead Form (原生表单)
-    └── fields: 表单字段
-        ├── name: 姓名
-        ├── email: 邮箱
-        └── phone: 电话
-```
-
-#### 广告位 (Placements)
-
-| 类型 | 说明 |
-|------|------|
-| Facebook Feed | Facebook 信息流 |
-| Instagram Feed | Instagram 信息流 |
-| Facebook Stories | Facebook 动态 |
-| Instagram Stories | Instagram 动态 |
-
----
-
-### 2.4 互动广告 (Engagement Ads)
-
-#### 层级结构
-
-```
-Campaign (互动广告)
-├── objective: ENGAGEMENT
-├── special_ad_categories: 特殊广告类别
-└── Ad Set
-    └── engagement_type:
-        ├── LIKE: Facebook 点赞
-        ├── MESSAGE: Messenger 消息
-        ├── WHATSAPP: WhatsApp 消息
-        └── CALL: 拨打电话
-```
-
-#### 广告位 (Placements)
-
-同 2.1 流量广告
-
----
-
-### 2.5 商品广告 (Catalog Ads)
-
-#### 层级结构
-
-```
-Campaign (商品广告)
-├── objective: CONVERSIONS
-├── catalog_id: 商品目录 ID
-├── Ad Set
-│   └── dynamic_ad_syntax:
-│       ├── product_set_id: 商品组 ID
-│       ├── ad_format: CAROUSEL / COLLECTION
-│       └── headline: 标题模板
-└── Ads
-    └── Catalog Product: 商品素材
-        └── product_data:
-            ├── id: 商品 ID
-            ├── title: 商品标题
-            ├── description: 商品描述
-            ├── price: 价格
-            └── image_url: 商品图片
-```
-
-#### 广告位 (Placements)
-
-| 类型 | 说明 |
-|------|------|
-| Facebook Shop | Facebook 商店 |
-| Instagram Shop | Instagram 商店 |
+| Facebook Feed | Facebook 动态 |
+| Instagram Feed | Instagram 动态 |
+| Stories | 快拍 |
+| Right Column | 右侧栏 |
 | Marketplace | 市场 |
-| Facebook Feed | Facebook 信息流 |
-| Instagram Feed | Instagram 信息流 |
+
+**官方文档来源**: [Traffic Campaigns](https://developers.facebook.com/docs/marketing-apis/optimization-goals)
 
 ---
 
-### 2.6 消息广告 (Messaging Ads)
+### 2.2 转化广告（Conversion Ads）
 
 #### 层级结构
 
 ```
-Campaign (消息广告)
-├── objective: MESSAGING
-├── messaging_apps: [WHATSAPP, MESSENGER]
-└── Ad Set
-    └── destination:
-        ├── whatsapp_number: WhatsApp 号码
-        └── messenger_page_id: Messenger 页面 ID
+Campaign (Conversion)
+├── objective: OUTCOME_CONVERSIONS (转化)
+├── status: ACTIVE
+├── daily_budget: 10000 (=$100)
+└── special_ad_categories: []
+    │
+    └── Ad Set
+        ├── name: "Conversion Campaign"
+        ├── optimization_goal: CONVERSIONS (转化)
+        ├── conversion_specs: [{external_event_id: "product_view"}]
+        ├── targeting:
+        │   └── geo_locations: {countries: ["US", "CA"]}
+        └── placements: [FEED, INSTAGRAM_FEED]
+            │
+            └── Ad
+                ├── name: "Conversion Ad"
+                ├── creative:
+                │   └── link_data:
+                │       ├── message: "Shop now and save"
+                │       └── call_to_action: {type: "SHOP_NOW"}
+                └── run_status: ACTIVE
 ```
 
-#### 广告位 (Placements)
+#### 展示位置 (Placements)
 
 | 类型 | 说明 |
 |------|------|
-| Messenger Inbox | Messenger 收件箱 |
-| Messenger Chat | Messenger 聊天 |
+| Facebook Feed | Facebook 动态 |
+| Instagram Feed | Instagram 动态 |
+| Stories | 快拍 |
+| Reels | Reels |
+
+**官方文档来源**: [Conversion Campaigns](https://developers.facebook.com/docs/marketing-apis/campaign-objective-overview)
+
+---
+
+### 2.3 线索广告（Lead Ads）
+
+#### 层级结构
+
+```
+Campaign (Lead Generation)
+├── objective: OUTCOME_LEADS (线索)
+├── status: ACTIVE
+├── daily_budget: 8000 (=$80)
+└── special_ad_categories: []
+    │
+    └── Ad Set
+        ├── name: "Lead Generation Campaign"
+        ├── optimization_goal: LEADS (线索)
+        ├── lead_gen_config:
+        │   ├── form_id: "123456789" (表单 ID)
+        │   └── dynamic_form_config: { ... }
+        ├── targeting:
+        │   └── geo_locations: {countries: ["US"]}
+        └── placements: [FEED, STORIES]
+            │
+            └── Ad
+                ├── name: "Lead Gen Ad"
+                ├── creative:
+                │   └── lead_gen:
+                │       ├── page_id: 页面 ID
+                │       └── config: { ... }
+                └── run_status: ACTIVE
+```
+
+#### 展示位置 (Placements)
+
+| 类型 | 说明 |
+|------|------|
+| Facebook Feed | Facebook 动态 |
+| Instagram Feed | Instagram 动态 |
+| Stories | 快拍 |
+| Messenger | Messenger |
+
+**官方文档来源**: [Lead Ads](https://developers.facebook.com/docs/marketing-apis/lead-forms)
+
+---
+
+### 2.4 互动广告（Engagement Ads）
+
+#### 层级结构
+
+```
+Campaign (Engagement)
+├── objective: OUTCOME_ENGAGEMENT (互动)
+├── status: ACTIVE
+├── daily_budget: 3000 (=$30)
+└── special_ad_categories: []
+    │
+    └── Ad Set
+        ├── name: "Engagement Campaign"
+        ├── optimization_goal: POST_ENGAGEMENT (帖子互动)
+        ├── targeting:
+        │   └── geo_locations: {countries: ["US"]}
+        └── placements: [FEED, STORIES]
+            │
+            └── Ad
+                ├── name: "Engagement Ad"
+                ├── creative:
+                │   └── link_data:
+                │       └── call_to_action: {type: "LIKE_PAGE"}
+                └── run_status: ACTIVE
+```
+
+#### 展示位置 (Placements)
+
+| 类型 | 说明 |
+|------|------|
+| Facebook Feed | Facebook 动态 |
+| Instagram Feed | Instagram 动态 |
+| Stories | 快拍 |
+
+**官方文档来源**: [Engagement Campaigns](https://developers.facebook.com/docs/marketing-apis/campaign-objective-overview)
+
+---
+
+### 2.5 商品广告（Catalog Ads）
+
+#### 层级结构
+
+```
+Campaign (Catalog Sales)
+├── objective: OUTCOME_SALES (销售)
+├── status: ACTIVE
+├── daily_budget: 15000 (=$150)
+└── special_ad_categories: []
+    │
+    └── Ad Set
+        ├── name: "Catalog Campaign"
+        ├── optimization_goal: CONVERSIONS (转化)
+        ├── catalog_id: "123456789" (商品目录 ID)
+        ├── targeting:
+        │   └── geo_locations: {countries: ["US"]}
+        └── placements: [FEED, INSTAGRAM_FEED]
+            │
+            └── Ad
+                ├── name: "Catalog Ad"
+                ├── creative:
+                │   ├── catalog_product_set_id: "123"
+                │   └── ad_style: CAROUSEL (轮播)
+                └── run_status: ACTIVE
+```
+
+#### 展示位置 (Placements)
+
+| 类型 | 说明 |
+|------|------|
+| Facebook Feed | Facebook 动态 |
+| Instagram Feed | Instagram 动态 |
+| Stories | 快拍 |
+| Reels | Reels |
+
+**官方文档来源**: [Catalog Ads](https://developers.facebook.com/docs/marketing-apis/catalog-ads)
+
+---
+
+### 2.6 消息广告（Messaging Ads）
+
+#### 层级结构
+
+```
+Campaign (Messaging)
+├── objective: OUTCOME_MESSAGES (消息)
+├── status: ACTIVE
+├── daily_budget: 5000 (=$50)
+└── special_ad_categories: []
+    │
+    └── Ad Set
+        ├── name: "Messaging Campaign"
+        ├── optimization_goal: MESSAGES (消息)
+        ├── messaging_apps: ["MESSENGER", "WHATSAPP"]
+        ├── targeting:
+        │   └── geo_locations: {countries: ["US"]}
+        └── placements: [FEED, STORIES]
+            │
+            └── Ad
+                ├── name: "Messaging Ad"
+                ├── creative:
+                │   └── link_data:
+                │       └── call_to_action: {type: "SEND_MESSAGE"}
+                └── run_status: ACTIVE
+```
+
+#### 展示位置 (Placements)
+
+| 类型 | 说明 |
+|------|------|
+| Facebook Feed | Facebook 动态 |
+| Instagram Feed | Instagram 动态 |
+| Messenger | Messenger |
 | WhatsApp | WhatsApp |
-| Instagram Direct | Instagram 私信 |
+
+**官方文档来源**: [Messaging Campaigns](https://developers.facebook.com/docs/marketing-apis/messaging-apps)
 
 ---
 
 ## 3. TikTok Ads 层级结构
 
-### 3.1 产品销售广告 (Product Sales)
+### 通用层级架构
+
+```
+Business Center (业务中心)
+└── Ad Account (广告账户) ad_id
+    ├── Campaign (广告系列)
+    │   ├── objective: PRODUCT_SALES / LEAD_GENERATION / APP_INSTALLS / BRAND_AWARENESS
+    │   ├── status: ENABLED / DISABLED
+    │   ├── daily_budget: 1000 (单位: 分)
+    │   └── budget_total: 10000
+    ├── Ad Group (广告组)
+    │   ├── name
+    │   ├── status
+    │   ├── bid_type: AUTO_BID / MANUAL_BID
+    │   ├── bid_value: 100
+    │   ├── targeting:
+    │   │   ├── age_min: 18
+    │   │   ├── age_max: 65
+    │   │   ├── genders: [1, 2] (1=女, 2=男)
+    │   │   └── placements: [TikTok]
+    │   └── creative_setting: {video_id: "xxx"}
+    └── Ad (广告)
+        └── creative:
+            ├── video: {video_id: "xxx"}
+            └── image: [{url: "image_url"}]
+```
+
+**官方文档来源**: [Campaign API](https://developers.tiktok.com/doc/ads-api-campaign)
+
+---
+
+### 3.1 产品销售广告（Product Sales）
 
 #### 层级结构
 
 ```
-Advertiser (广告主)
-└── Campaign (广告系列)
-    ├── campaign_id: 广告系列 ID
-    ├── campaign_name: 名称
-    ├── status: ENABLED / PAUSED / DISABLED
-    ├── objective_type: PRODUCT_SALES / LEAD_GENERATION / APP_PROMOTION
-    ├── daily_budget: 日预算（分）
-    ├── budget_mode: DAY / LIFETIME
-    ├── promotion_type: STANDARD / SPARK
-    └── Ad Group (广告组)
-        ├── adgroup_id: 广告组 ID
-        ├── adgroup_name: 名称
-        ├── status: ENABLED / PAUSED / DISABLED
-        ├── bid_type: AUTO_BID / MANUAL_BID
-        ├── bid_amount: 出价金额
-        ├── targeting: 受众定向
-        │   ├── geo_locations: 地理位置
-        │   ├── age: 年龄
-        │   ├── gender: 性别
-        │   └── interests: 兴趣
-        └── Ads (广告)
-            ├── ad_id: 广告 ID
-            ├── name: 名称
-            ├── promoted_type: VIDEO / IMAGE
-            └── spark_info: Spark Ads 配置
-                ├── video_id: 视频 ID
-                └── authorization_status: 授权状态
+Campaign (Product Sales)
+├── objective: PRODUCT_SALES
+├── status: ENABLED
+├── daily_budget: 5000 (=$50)
+└── budget_total: 10000
+    │
+    └── Ad Group
+        ├── name: "Product Sales"
+        ├── bid_type: AUTO_BID
+        ├── bid_value: 100
+        ├── targeting:
+        │   ├── age_min: 18
+        │   ├── age_max: 45
+        │   ├── genders: [1, 2]
+        │   └── placements: [TikTok]
+        └── creative_setting:
+            └── video_id: "video_123"
+            │
+            └── Ad
+                ├── creative:
+                │   └── video: {video_id: "video_123"}
+                └── promote_object:
+                    └── website: "https://example.com"
 ```
 
-#### 广告位 (Placements)
+#### 展示位置 (Placements)
 
 | 类型 | 说明 |
 |------|------|
-| TikTok Feed | TikTok 信息流 |
+| TikTok | TikTok Feed |
+| TikTok Fullscreen | 全屏视频 |
+| TikTok Brand Takeover | 品牌 takeover |
+
+**官方文档来源**: [Product Sales](https://developers.tiktok.com/doc/ads-api-campaign)
+
+---
+
+### 3.2 Spark Ads（达人原生广告）
+
+#### 层级结构
+
+```
+Campaign (Spark Ads)
+├── objective: PRODUCT_SALES
+├── status: ENABLED
+├── daily_budget: 5000
+└── budget_total: 10000
+    │
+    └── Ad Group
+        ├── name: "Spark Ads"
+        ├── bid_type: AUTO_BID
+        ├── spark_post_id: "post_123" (达人帖子 ID)
+        └── creative_setting:
+            └── spark_ad_info: {post_id: "post_123"}
+```
+
+#### 展示位置 (Placements)
+
+| 类型 | 说明 |
+|------|------|
+| TikTok Feed | TikTok 动态 |
 | TikTok Search | TikTok 搜索 |
-| TikTok Hadith | TikTok 话题页 |
-| TikTok Live | TikTok 直播 |
-| TikTok Post | TikTok 帖子页 |
-| TikTok Profile | TikTok 个人主页 |
+
+**官方文档来源**: [Spark Ads](https://developers.tiktok.com/doc/ads-api-spark)
 
 ---
 
-### 3.2 Spark Ads (达人原生广告)
+### 3.3 线索收集广告（Lead Generation）
 
 #### 层级结构
 
 ```
-Campaign
-├── promotion_type: PROMOTION_TYPE_SPARK
-└── spark_info:
-    ├── source_type: POST / PROFILE / HASHTAG
-    ├── author_id: 达人 ID
-    ├── post_id: 帖子 ID
-    └── video_id: 视频 ID
+Campaign (Lead Generation)
+├── objective: LEAD_GENERATION
+├── status: ENABLED
+├── daily_budget: 3000
+└── budget_total: 5000
+    │
+    └── Ad Group
+        ├── name: "Lead Gen"
+        ├── bid_type: AUTO_BID
+        ├── form_id: "form_123" (表单 ID)
+        └── creative_setting:
+            └── video_id: "video_456"
+            │
+            └── Ad
+                └── promote_object:
+                    └── lead_form: {form_id: "form_123"}
 ```
 
-#### 广告位 (Placements)
+#### 展示位置 (Placements)
 
 | 类型 | 说明 |
 |------|------|
-| TikTok Feed | 原生信息流 |
-| TikTok Search | 搜索结果 |
-| TikTok Profile | 达人主页 |
+| TikTok Feed | TikTok 动态 |
+
+**官方文档来源**: [Lead Generation](https://developers.tiktok.com/doc/ads-api-lead-generation)
 
 ---
 
-### 3.3 线索收集广告 (Lead Generation)
+### 3.4 应用推广广告（App Promotion）
 
 #### 层级结构
 
 ```
-Campaign
-├── objective_type: LEAD_GENERATION
-└── lead_form:
-    ├── name: 表单名称
-    ├── question_list: 问题列表
-    │   └── questions:
-    │       ├── text: 问题文本
-    │       └── type: SHORT_ANSWER / DROPDOWN / CHECKBOX
-    └── privacy_policy: 隐私政策 URL
+Campaign (App Promotion)
+├── objective: APP_INSTALLS
+├── status: ENABLED
+├── daily_budget: 8000
+└── budget_total: 15000
+    │
+    └── Ad Group
+        ├── name: "App Install"
+        ├── bid_type: AUTO_BID
+        └── creative_setting:
+            └── video_id: "video_789"
+            │
+            └── Ad
+                └── promote_object:
+                    └── app_install: {app_id: "com.example.app"}
 ```
 
-#### 广告位 (Placements)
-
-同 3.1 产品销售广告
-
----
-
-### 3.4 应用推广广告 (App Promotion)
-
-#### 层级结构
-
-```
-Campaign
-├── objective_type: APP_PROMOTION
-└── app_target:
-    ├── platform: iOS / ANDROID
-    ├── app_id: 应用 ID
-    └── deep_link: 深度链接
-```
-
-#### 广告位 (Placements)
+#### 展示位置 (Placements)
 
 | 类型 | 说明 |
 |------|------|
-| TikTok Feed | 信息流 |
-| TikTok Search | 搜索 |
-| App Store | 应用商店跳转 |
-| Google Play | 应用商店跳转 |
+| TikTok Feed | TikTok 动态 |
+| TikTok Search | TikTok 搜索 |
+
+**官方文档来源**: [App Promotion](https://developers.tiktok.com/doc/ads-api-app-promotion)
 
 ---
 
-### 3.5 品牌广告 (Brand Ads)
+### 3.5 品牌广告（Brand Ads）
 
 #### 层级结构
 
 ```
-Campaign
-├── objective_type: BRAND_AWARENESS
-└── brand_kpi:
-    ├── brand_lift_study: 品牌提升研究
-    └── reach_frequency: 触达频次
+Campaign (Brand Awareness)
+├── objective: BRAND_AWARENESS
+├── status: ENABLED
+├── daily_budget: 20000
+└── budget_total: 50000
+    │
+    └── Ad Group
+        ├── name: "Brand Campaign"
+        ├── bid_type: CPM
+        ├── bid_value: 500
+        └── creative_setting:
+            └── video_id: "video_brand"
+            │
+            └── Ad
+                └── creative:
+                    └── video: {video_id: "video_brand"}
 ```
 
-#### 广告位 (Placements)
+#### 展示位置 (Placements)
 
 | 类型 | 说明 |
 |------|------|
-| TopView | 开屏广告 |
-| Brand Takeover | 品牌 takeover |
-| Branded Effects | 品牌滤镜 |
-| Branded Hashtag | 品牌话题挑战 |
+| TikTok Fullscreen | 全屏视频 |
+| TikTok Brand Takeover | 品牌 takeover |
+| TikTok Feed | TikTok 动态 |
+
+**官方文档来源**: [Brand Awareness](https://developers.tiktok.com/doc/ads-api-brand-awareness)
 
 ---
 
 ## 4. DV360 层级结构
 
-### 4.1 完整层级架构
+### 通用层级架构
 
 ```
-Partner (合作伙伴)
-└── Buyer (广告买家)
-    ├── buyer_id: 买家 ID
-    └── Campaign (广告系列)
-        ├── campaign_id: 系列 ID
-        ├── name: 名称
-        ├── status: ACTIVE / PAUSED / ENDED
-        ├── start_date: 开始日期
-        ├── end_date: 结束日期
-        └── budget: 预算
-    └── Insertion Order (IO / 广告订购单)
-        ├── io_id: IO ID
-        ├── name: 名称
-        ├── status: DRAFT / APPROVING / ACTIVE / PAUSED / ENDED
-        ├── budget.total_amount_micros: 总预算（微单位）
-        ├── billing_event: CPM / CPC / CPD / CPV
-        ├── creative_set_id: 关联创意集
-        └── approval_status: PENDING / APPROVED / REJECTED
-        └── Line Item (LI / 行项目)
-            ├── li_id: 行项目 ID
-            ├── name: 名称
-            ├── status: ACTIVE / PAUSED / ENDED
-            ├── type: PROGRAMMATIC_AGENCY / PROGRAMMATIC_DIRECT / REMARKETING / HOSTED
-            ├── budget.total_amount_micros: 预算金额
-            ├── billing_event: 计费方式
-            ├── bid_amount_micros: 出价金额
-            ├── impression_cap: 展示上限
-            ├── click_cap: 点击上限
-            └── targeting: 定向配置
-                ├── audience_segment: 受众细分
-                ├── placement.values: 投放位 URL/APP ID
-                ├── device_type: DESKTOP / SMARTPHONE / TABLET / ALL
-                ├── creative_type: BANNER / VIDEO / NATIVE / HTML5
-                └── geo_location.country_codes: 国家代码
-            └── Creative Set (创意集)
-                └── Creative (创意)
-                    ├── creative_id: 创意 ID
-                    ├── name: 名称
-                    ├── type: BANNER / VIDEO / NATIVE / HTML5
-                    ├── file_url: 创意文件 URL
-                    ├── dimensions.width: 宽度
-                    ├── dimensions.height: 高度
-                    └── click_through_url: 点击跳转 URL
+Partner (MCN/代理商)
+└── Advertiser (广告主)
+    ├── Insertion Order (IO) - 类似 Campaign
+    │   ├── name: IO 名称
+    │   ├── status: ACTIVE / INACTIVE / ARCHIVED
+    │   ├── start_time: 开始时间
+    │   ├── end_time: 结束时间
+    │   └── funding_source: PARTNER / ADVERTISER
+    │       │
+    │       ├── Line Item (行项目) - 广告投放单元
+    │       │   ├── name: 行项目名称
+    │       │   ├── status: ACTIVE / PAUSED / COMPLETED / REJECTED
+    │       │   ├── type: VIDEO / DISPLAY / AUDIO / CTV
+    │       │   ├── funding_bundle_id: 资金包 ID
+    │       │   ├── goal:
+    │       │   │   └── goal_type: IMPRESSIONS / CONVERSIONS / VIEWABILITY
+    │       │   └── targeting:
+    │       │       ├── inventory_source: YOUTUBE / GAM / EXTERNAL
+    │       │       ├── geo_targeting: {countries: ["US"]}
+    │       │       └── creative_type_filtering: [VIDEO, DISPLAY]
+    │       │           │
+    │       │           └── Creative (创意素材)
+    │       │               ├── name: 创意名称
+    │       │               ├── status: ACTIVE / ARCHIVED
+    │       │               ├── type: VIDEO / IMAGE / HTML / NATIVE
+    │       │               └── media_file: 媒体文件 URL
+    │       │
+    │       └── Custom Channel (可选)
+    │           └── reported_custom_channel
+    │
+    └── Reported Custom Channel (RCCH) - 报表自定义渠道
 ```
 
-### 4.2 核心概念说明
+**官方文档来源**: [DV360 API](https://developers.google.com/display-video/api/guides)
 
-#### 层级关系
+---
 
-| 层级 | 说明 |
-|------|------|
-| Partner | 合作伙伴/媒体方 |
-| Buyer | 广告买家/DSP 代理商 |
-| Campaign | 广告系列 |
-| Flight | 航班期（DV360 特有） |
-| Creative Set | 创意集 |
-| Creative | 创意素材 |
+### 4.1 视频广告（Video Ads）
 
-### 4.3 Line Item 类型说明
+#### 层级结构
 
-| 类型 | 说明 | 适用场景 |
-|------|------|----------|
-| PROGRAMMATIC_AGENCY | 通过 DSP 进行程序化竞价购买 | 需要多 DSP 聚合、自动化优化 |
-| PROGRAMMATIC_DIRECT | 程序化直采（PMP/PI） | 优先购买优质媒体库存 |
-| REMARKETING | ремаркетинг投放 | 针对已访问过网站的用户再触达 |
-| HOSTED | 托管广告（非程序化） | 直接购买固定位置、固定时间段广告 |
+```
+Line Item (Video)
+├── type: VIDEO
+├── status: ACTIVE
+├── funding_bundle_id: bundle_123
+├── goal:
+│   └── goal_type: IMPRESSIONS
+├── targeting:
+│   ├── inventory_source: YOUTUBE
+│   ├── geo_targeting: {countries: ["US"]}
+│   └── creative_type_filtering: [VIDEO]
+└── Creatives:
+    ├── Video Creative
+    │   ├── name: "Video Ad"
+    │   ├── type: VIDEO
+    │   └── media_file: "video_url"
+    └── Skippable In-Stream
+        ├── type: SKIPPABLE_IN_STREAM
+        └── video_id: "youtube_video_id"
+```
+
+---
+
+### 4.2 展示广告（Display Ads）
+
+#### 层级结构
+
+```
+Line Item (Display)
+├── type: DISPLAY
+├── status: ACTIVE
+├── funding_bundle_id: bundle_456
+├── goal:
+│   └── goal_type: IMPRESSIONS
+├── targeting:
+│   ├── inventory_source: GAM / EXTERNAL
+│   └── creative_type_filtering: [DISPLAY]
+└── Creatives:
+    ├── Image Creative
+    │   ├── name: "Banner Ad"
+    │   ├── type: IMAGE
+    │   └── media_file: "image_url"
+    └── HTML Creative
+        ├── name: "Rich Media"
+        │   └── type: HTML
+        └── html: "<html>...</html>"
+```
+
+---
+
+### 4.3 音频广告（Audio Ads）
+
+#### 层级结构
+
+```
+Line Item (Audio)
+├── type: AUDIO
+├── status: ACTIVE
+├── funding_bundle_id: bundle_789
+├── goal:
+│   └── goal_type: IMPRESSIONS
+├── targeting:
+│   ├── inventory_source: YOUTUBE
+│   └── creative_type_filtering: [AUDIO]
+└── Creatives:
+    └── Audio Creative
+        ├── name: "Audio Ad"
+        ├── type: AUDIO
+        └── media_file: "audio_url"
+```
+
+---
 
 ### 4.4 广告位类型
 
-| 类型 | 说明 |
-|------|------|
-| PMP (Private Marketplace) | 私有交易市场 |
-| PI (Programmatic Guaranteed) | 程序化保证购买 |
-| Open Auction | 公开竞价 |
-| Video | 视频广告位 |
-| CTV | 智能电视广告位 |
-| Mobile | 移动端广告位 |
-| Audio | 音频广告位 |
-| DOOH | 数字户外广告位 |
+| 类型 | 说明 | 官方文档 |
+|------|------|----------|
+| PMP (Private Marketplace) | 私人 marketplace | [Inventory Source](https://developers.google.com/display-video/api/reference/rest/v4/advertisers/inventorysources) |
+| PI (Programmatic Guaranteed) | 程序化保量 | [Inventory Source](https://developers.google.com/display-video/api/reference/rest/v4/advertisers/inventorysources) |
+| Open Auction | 公开竞价 | [Inventory Source](https://developers.google.com/display-video/api/reference/rest/v4/advertisers/inventorysources) |
+| Video | 视频广告 | [Line Item](https://developers.google.com/display-video/api/reference/rest/v4/advertisers/lineItems) |
+| CTV | 连接电视 | [Line Item](https://developers.google.com/display-video/api/reference/rest/v4/advertisers/lineItems) |
+| Mobile | 移动广告 | [Line Item](https://developers.google.com/display-video/api/reference/rest/v4/advertisers/lineItems) |
+| Audio | 音频广告 | [Line Item](https://developers.google.com/display-video/api/reference/rest/v4/advertisers/lineItems) |
+| DOOH | 数字户外 | [Line Item](https://developers.google.com/display-video/api/reference/rest/v4/advertisers/lineItems) |
 
 ---
 
 ## 5. 平台对比速查表
 
-### 5.1 层级结构对比
-
-| 层级 | Google Ads | Meta | TikTok | DV360 |
-|------|------------|------|--------|-------|
-| **顶级** | Customer ID | Business Manager | Business Center | Partner |
-| **第二层** | Campaign Budget | Ad Account | Advertiser | Buyer |
-| **第三层** | Campaign | Campaign | Campaign | Flight |
-| **第四层** | Ad Group | Ad Set | Ad Group | Creative Set |
-| **第五层** | Ad + Keywords/Product Group | Ad + Creative | Ad + Spark Info | Creative |
-| **特殊** | Campaign Criteria | Pixel/CAPI | targeting | bid_strategy |
-
-### 5.2 广告类型对比
-
-| 广告类型 | Google Ads | Meta | TikTok | DV360 |
-|---------|------------|------|--------|-------|
-| 搜索广告 | ✅ Search | ❌ | ❌ | ✅ (搜索显示) |
-| 购物广告 | ✅ Shopping + PMax | ✅ Catalog | ✅ Shop | ✅ |
-| 视频广告 | ✅ YouTube | ✅ Video | ✅ In-Feed | ✅ |
-| 展示广告 | ✅ Display | ✅ Display | ❌ | ✅ |
-| Spark Ads | ❌ | ❌ | ✅ 独家 | ❌ |
-| 应用安装 | ✅ App | ✅ App | ✅ App | ✅ |
-| 消息广告 | ❌ | ✅ 独家 | ❌ | ❌ |
-| 线索收集 | ✅ Lead Form | ✅ Instant Form | ✅ Lead Form | ✅ |
-| TopView | ❌ | ❌ | ✅ 独家 | ❌ |
-
-### 5.3 核心差异总结
-
-| 平台 | 优势 | 特点 | 适用场景 |
-|------|------|------|----------|
-| **Google Ads** | 搜索意图驱动、PMax 全渠道自动化、Shopping 独立管理 | Keywords 为核心、Bidding Strategy 丰富、Product Group | 意图明确、转化导向的广告活动 |
-| **Meta Marketing API** | 受众定向最灵活、Pixel+CAPI 双轨追踪、消息广告独占 | 兴趣/行为驱动、Instant Form 便捷、Dynamic Ads | 品牌认知、社交互动、精准人群触达 |
-| **TikTok Ads** | Spark Ads 原生感强、年轻用户群体、TopView 强曝光 | 视频原生、内容驱动、达人授权机制 | 品牌曝光、年轻人群、电商带货 |
-| **DV360** | RTB 实时竞价、跨媒体聚合、程序化购买效率最高 | 支持 DSP 聚合、CDP/DMP 接入、第三方数据 | 大规模程序化购买、跨平台投放、数据驱动优化 |
+| 功能 | Google Ads | Meta | TikTok | DV360 |
+|------|-----------|------|--------|-------|
+| **账户层级** | Customer | Business Manager | Business Center | Partner |
+| **预算层级** | Campaign Budget | Campaign | Campaign | IO |
+| **广告系列** | Campaign | Campaign | Campaign | Line Item |
+| **广告组** | Ad Group | Ad Set | Ad Group | Creative |
+| **广告** | Ad | Ad | Ad | Creative |
+| **出价策略** | MANUAL_CPC/TARGET_CPA/MAXIMIZE_CONVERSIONS/TARGET_ROAS | CPM/CPC/CPV/OCPM | AUTO_BID/MANUAL_BID | CPM/CPV |
+| **目标类型** | SEARCH/SHOPPING/VIDEO/DISPLAY/APP/MAX | OUTCOME_LEADS/CONVERSIONS/SALES/AWARENESS | PRODUCT_SALES/LEAD_GENERATION/APP_INSTALLS/BRAND_AWARENESS | VIDEO/DISPLAY/AUDIO |
+| **创意素材** | Responsive Search Ad | Link/Video/Image | Video/Image | Video/Image/HTML |
+| **定向方式** | Keywords/Audience/Location | Interests/Behaviors/Lookalike | Interests/Behaviors/Placement | Interests/Placement/Geo |
 
 ---
 
-## 附录：快速创建 API 示例
+## 官方文档来源汇总
 
-### Google Ads - 创建 Campaign
-
-```python
-from google.ads.googleads.client import GoogleAdsClient
-
-# 初始化客户端
-client = GoogleAdsClient.load_from_storage('googleads.yaml')
-
-# 创建服务
-campaign_service = client.get_service("CampaignService")
-
-# 构建 Campaign 对象
-campaign = client.get_type("Campaign")
-campaign.name = "Summer 2026 Brand Campaign"
-campaign.advertising_channel_type = client.get_type(
-    "AdvertisingChannelType"
-).SEARCH
-
-# 创建预算
-budget = client.get_type("Budget")
-budget.resource_name = f"customers/{customer_id}/budgets/{budget_id}"
-
-campaign.budget = budget.resource_name
-campaign.status = client.get_type("CampaignStatus").ENABLED
-
-# 发送请求
-operation = client.get_type("CampaignOperation")
-operation.create.CopyFrom(campaign)
-response = campaign_service.mutate_campaigns(
-    request=f"customers/{customer_id}",
-    operations=[operation]
-)
-print(f"Created campaign: {response.results[0].resource_name}")
-```
+| 平台 | 文档链接 |
+|------|----------|
+| Google Ads API | https://developers.google.com/google-ads/api/docs/start |
+| Meta Marketing API | https://developers.facebook.com/docs/marketing-apis/ |
+| TikTok Business API | https://developers.tiktok.com/doc/ads-api-overview |
+| DV360 API | https://developers.google.com/display-video/api/guides |
 
 ---
 
-### Meta - 创建 Campaign
+## 版本历史
 
-```python
-import facebook_business
-from facebook_business.api import FacebookAdsApi
-from facebook_business.adobjects.campaign import Campaign
-
-# 初始化
-FacebookAdsApi.init(access_token='your_access_token')
-
-# 创建 Campaign
-campaign = Campaign(parent_id='act_your_ad_account_id')
-campaign[Campaign.Field.name] = 'Summer 2026 Campaign'
-campaign[Campaign.Field.objective] = 'TRAFFIC'
-campaign[Campaign.Field.special_ad_categories] = []
-campaign[Campaign.Field.status] = Campaign.Status.paused
-
-campaign.validate()
-campaign.create()
-print(f'Campaign ID: {campaign[id]}')
-```
-
----
-
-### TikTok - 创建 Campaign
-
-```python
-import requests
-
-# API 端点
-url = "https://api-t2.tiktok.com/plus/open/api/v2/ad/group/"
-headers = {
-    "Content-Type": "application/json",
-    "Authorization": "Bearer your_access_token"
-}
-
-# 创建广告组
-payload = {
-    "adgroup_name": "Summer Sale",
-    "campaign_id": campaign_id,
-    "bid_type": "AUTO_BID",
-    "bid_amount": 500,  # 5.00 USD
-    "daily_budget": 10000,  # 100.00 USD
-    "status": "ENABLED"
-}
-
-response = requests.post(url, json=payload, headers=headers)
-print(response.json())
-```
-
----
-
-### DV360 - 创建 Line Item
-
-```python
-from google.ads.googleads.client import GoogleAdsClient
-
-client = GoogleAdsClient.load_from_storage('googleads.yaml')
-
-# 创建 Line Item
-li = client.get_type("LineItem")
-li.name = "Summer Sale - Banner Ads"
-li.flight_start_time = "2026-07-01"
-li.flight_end_time = "2026-08-31"
-li.type = client.get_type("LineItemType").PROGRAMMATIC_AGENCY
-
-# 设置预算
-li.total_local_impact_amount_micros = 100000000  # $100
-
-# 发送请求
-operation = client.get_type("LineItemOperation")
-operation.create.CopyFrom(li)
-response = line_item_service.mutate_line_items(
-    request=f"customers/{customer_id}",
-    operations=[operation]
-)
-print(f"Created Line Item: {response.results[0].resource_name}")
-```
-
----
-
-## 文档版本信息
-
-| 版本 | 日期 | 说明 |
+| 版本 | 日期 | 变更 |
 |------|------|------|
-| v1.0 | 2026-08-19 | 初始版本 |
-| v2.0 | 2026-08-20 | 按广告类型详细拆解 |
-| v3.0 | 2026-08-20 | 补充 Extensions 和广告位 |
-| v4.0 | 2026-08-20 | 简洁清晰版，修复所有格式问题 |
-
----
-
-**作者**: Ryan  
-**联系方式**: 如有疑问请联系
+| v4.0 | 2025-07-25 | 基于官方 API 文档重写，移除虚构字段 |
+| v3.0 | 2025-08-15 | 按广告类型组织，添加 Extensions/Placements |
+| v2.0 | 2026-08-20 | 详细层级拆解 |
+| v1.0 | 2025-08-10 | 初始版本 |
