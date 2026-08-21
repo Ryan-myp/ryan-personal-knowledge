@@ -194,15 +194,13 @@ Campaign (Shopping)
 ├── product_promotion_link:
 │   └── promotion_id: 促销 ID
 ├── Ad Group (广告组)
-│   └── (广告组配置：出价、定向等)
-└── Responsive Shopping Ad (响应式购物广告)
-    └── product_group: 产品分组
-        ├── all_products: {}  (全部产品)
-        ├── product_type_1: {"values": ["Electronics"]}
-        ├── product_type_2: {"values": ["Phones"]}
-        ├── brand: {"values": ["Apple"]}
-        └── condition: {"values": ["NEW"]}
-    (product_group 可多层嵌套细分)
+│   └── product_group: 产品分组
+│       ├── all_products: {}  (全部产品)
+│       ├── product_type_1: {"values": ["Electronics"]}
+│       ├── product_type_2: {"values": ["Phones"]}
+│       ├── brand: {"values": ["Apple"]}
+│       └── condition: {"values": ["NEW"]}
+│   (product_group 可多层嵌套细分)
 ```
 
 #### Product Group 真实字段
