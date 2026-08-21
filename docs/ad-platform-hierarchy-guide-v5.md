@@ -66,7 +66,8 @@ Customer (账户)
 │   ├── amount_micros: 10000000 (=$100)
 │   └── delivery_method: STANDARD / DAILY
 ├── Campaign (广告系列)
-│   ├── advertising_channel_type: SEARCH/SHOPPING/VIDEO/DISPLAY/APP/MAX
+│   ├── advertising_channel_type: SEARCH/SHOPPING/VIDEO/DISPLAY/MULTI_CHANNEL/MAX
+│   └── advertising_channel_sub_type: APP_CAMPAIGN / APP_CAMPAIGN_FOR_ENGAGEMENT (仅 App Campaign)
 │   ├── status: ENABLED / PAUSED / REMOVED
 │   ├── bidding_strategy: resource_name
 │   ├── campaign_budget: resource_name
@@ -93,7 +94,8 @@ Customer (账户)
 
 | 字段 | 类型 | 说明 | 示例值 |
 |------|------|------|--------|
-| `advertising_channel_type` | enum | 广告渠道类型，决定广告形态 | `SEARCH` / `SHOPPING` / `VIDEO` / `DISPLAY` / `APP` / `MAX` |
+| `advertising_channel_type` | enum | 广告渠道类型，决定广告形态 | `SEARCH` / `SHOPPING` / `VIDEO` / `DISPLAY` / `MULTI_CHANNEL` / `MAX` |
+| `advertising_channel_sub_type` | enum | 子类型（App/PMax 使用） | `APP_CAMPAIGN` / `APP_CAMPAIGN_FOR_ENGAGEMENT` / `PERFORMANCE_MAX` |
 | `status` | enum | 广告系列状态 | `ENABLED` / `PAUSED` / `REMOVED` |
 | `bidding_strategy` | string | 出价策略资源名 | `customers/123/biddingStrategies/456` |
 | `campaign_budget` | string | 预算资源名 | `customers/123/campaignBudgets/789` |
@@ -504,33 +506,31 @@ Campaign (Display)
 
 ### 1.6 应用广告（App Ads）
 
+**重要说明**：App Campaign 的 `advertising_channel_type` 是 `MULTI_CHANNEL`（不是 `APP`），因为广告会出现在多个渠道（Google Search、YouTube、Google Play 等）。
+
 #### 层级结构
 
 ```
 Campaign (App)
-├── advertising_channel_type: APP
+├── advertising_channel_type: MULTI_CHANNEL (注意：不是 APP)
+├── advertising_channel_sub_type: APP_CAMPAIGN / APP_CAMPAIGN_FOR_ENGAGEMENT
 ├── status: ENABLED
 ├── campaign_budget: resource_name
 ├── bidding_strategy: TARGET_CPA / MAXIMIZE_CONVERSIONS
 ├── settings:
-│   └── app_setting:
-│       └── app_id: "com.example.app" (Google Play 包名)
+│   └── app_campaign_setting:
+│       ├── app_id: "com.example.app" (Google Play 包名)
+│       ├── app_store: GOOGLE_PLAY / APP_STORE
+│       └── bidding_strategy_goal_type: OPTIMIZE_INSTALLS_TARGET_INSTALL_COST / OPTIMIZE_IN_APP_CONVERSIONS_TARGET_INSTALL_COST
 └── resource_name: customers/{customer_id}/campaigns/{campaign_id}
     │
     └── Ad Group
         ├── name: "App Install"
         ├── status: ENABLED
         │
-        ├── Ad (App Ad)
-        │   ├── type: APP_AD
-        │   ├── app_ad:
-        │   │   ├── app_id: "com.example.app"
-        │   │   ├── tracking_url: "https://example.com/tracking"
-        │   │   └── url_custom_parameters: {ua: "app"}
-        │   └── info:
-        │       ├── headlines: ["Install Our App"]
-        │       ├── descriptions: ["Download now"]
-        │       └── marketing_images: [{media_file: "image.jpg"}]
+        ├── AdGroupAd (广告组广告)
+        │   ├── ad: resource_name
+        │   └── assets: [参考 Asset Group]
         │
         └── Assets (资产组)
             ├── headlines: ["Install Now", "Get the App"]
@@ -543,11 +543,15 @@ Campaign (App)
 
 | 字段 | 类型 | 说明 | 可选值/示例 |
 |------|------|------|-------------|
-| `advertising_channel_type` | enum | 广告渠道类型 | `APP` |
-| `app_id` | string | 应用包名（Google Play） | `"com.example.app"` |
-| `tracking_url` | string | 追踪URL | `"https://example.com/tracking"` |
-| `url_custom_parameters` | map | URL自定义参数 | `{ua: "app"}` |
-| `type` | enum | 广告类型 | `APP_AD` |
+| `advertising_channel_type` | enum | 广告渠道类型 | `MULTI_CHANNEL` (App Campaign 使用) |
+| `advertising_channel_sub_type` | enum | 子类型 | `APP_CAMPAIGN` / `APP_CAMPAIGN_FOR_ENGAGEMENT` |
+| `app_campaign_setting.app_id` | string | 应用包名（Google Play/App Store） | `"com.example.app"` |
+| `app_campaign_setting.app_store` | enum | 应用商店 | `GOOGLE_PLAY` / `APP_STORE` |
+| `app_campaign_setting.bidding_strategy_goal_type` | enum | 出价策略目标类型 | `OPTIMIZE_INSTALLS_TARGET_INSTALL_COST` / `OPTIMIZE_IN_APP_CONVERSIONS_TARGET_INSTALL_COST` |
+
+**注意**：
+- App Campaign 不能使用共享预算或组合出价策略
+- `APP_CAMPAIGN_FOR_ENGAGEMENT` 需要设置 `selective_optimization` 来指定优化的转化类型
 
 #### 支持的广告附加信息 (Extensions)
 
