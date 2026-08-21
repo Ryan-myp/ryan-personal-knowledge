@@ -1174,38 +1174,47 @@ Campaign (Brand Awareness)
 ```
 Partner (MCN/代理商)
 └── Advertiser (广告主)
-    ├── Insertion Order (IO) - 类似 Campaign
-    │   ├── name: IO 名称
-    │   ├── status: ACTIVE / INACTIVE / ARCHIVED
-    │   ├── start_time: 开始时间
-    │   ├── end_time: 结束时间
-    │   └── funding_source: PARTNER / ADVERTISER
+    ├── Campaign (广告系列)
+    │   ├── display_name: 广告系列名称
+    │   ├── entity_status: ACTIVE / ENTITY_STATUS_PAUSED / ENTITY_STATUS_DELETED
+    │   ├── campaign_budget: 预算资源名
+    │   ├── campaign_flight:
+    │   │   ├── start_date: 开始时间
+    │   │   └── end_date: 结束时间
+    │   ├── campaign_goal:
+    │   │   └── campaign_goal_type: BRAND_AWARENESS / SALES / LEADS
+    │   └── frequency_cap: 频次上限
     │       │
-    │       ├── Line Item (行项目) - 广告投放单元
-    │       │   ├── name: 行项目名称
-    │       │   ├── status: ACTIVE / PAUSED / COMPLETED / REJECTED
-    │       │   ├── type: VIDEO / DISPLAY / AUDIO / CTV
-    │       │   ├── funding_bundle_id: 资金包 ID
-    │       │   ├── goal:
-    │       │   │   └── goal_type: IMPRESSIONS / CONVERSIONS / VIEWABILITY
-    │       │   └── targeting:
-    │       │       ├── inventory_source: YOUTUBE / GAM / EXTERNAL
-    │       │       ├── geo_targeting: {countries: ["US"]}
-    │       │       └── creative_type_filtering: [VIDEO，DISPLAY]
-    │       │           │
-    │       │           └── Creative (创意素材)
-    │       │               ├── name: 创意名称
-    │       │               ├── status: ACTIVE / ARCHIVED
-    │       │               ├── type: VIDEO / IMAGE / HTML / NATIVE
-    │       │               └── media_file: 媒体文件 URL
-    │       │
-    │       └── Custom Channel (可选)
-    │           └── reported_custom_channel
+    │       └── Insertion Order (IO) - 插入订单
+    │           ├── name: IO 名称
+    │           ├── status: ACTIVE / INACTIVE / ARCHIVED
+    │           ├── funding_source: PARTNER / ADVERTISER
+    │           ├── funding_bundle_id: 资金包 ID
+    │           └── start_time: 开始时间
+    │               │
+    │               └── Line Item (行项目) - 广告投放单元
+    │                   ├── name: 行项目名称
+    │                   ├── status: ACTIVE / PAUSED / COMPLETED / REJECTED
+    │                   ├── type: VIDEO / DISPLAY / AUDIO / CTV
+    │                   ├── goal:
+    │                   │   └── goal_type: IMPRESSIONS / CONVERSIONS / VIEWABILITY
+    │                   └── targeting:
+    │                       ├── inventory_source: YOUTUBE / GAM / EXTERNAL
+    │                       ├── geo_targeting: {countries: ["US"]}
+    │                       └── creative_type_filtering: [VIDEO, DISPLAY]
+    │                           │
+    │                           └── Creative (创意素材)
+    │                               ├── name: 创意名称
+    │                               ├── status: ACTIVE / ARCHIVED
+    │                               ├── type: VIDEO / IMAGE / HTML / NATIVE
+    │                               └── media_file: 媒体文件 URL
     │
     └── Reported Custom Channel (RCCH) - 报表自定义渠道
 ```
 
-**官方文档来源**: [DV360 API](https://developers.google.com/display-video/api/guides)
+**官方文档来源**:
+- [Campaigns Overview](https://developers.google.com/display-video/api/guides/tasks/run-ad-campaign/create-campaign)
+- [Insertion Orders](https://developers.google.com/display-video/api/guides/tasks/run-ad-campaign/create-insertion-order)
 
 ---
 
