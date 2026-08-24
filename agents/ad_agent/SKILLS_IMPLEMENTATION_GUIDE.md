@@ -1,0 +1,198 @@
+# Skills 实现指南
+
+## 架构分层
+
+```
+skills/
+├── SKILL.md              # 工具定义（配置层）- 已完成 ✅
+├── loader.py             # Skill 加载器 - 已完成 ✅
+├── registry.py           # 工具注册器 - 已完成 ✅
+├── meta/
+│   ├── SKILL.md          # Meta 工具定义 (17 tools) ✅
+│   ├── tools/            # Meta 工具实现 ⏳
+│   │   ├── campaign.py   # meta_create_campaign 等
+│   │   ├── adset.py      # meta_create_adset 等
+│   │   └── report.py     # meta_get_campaign_report 等
+│   └── expert/           # Meta 专家知识
+├── tiktok/
+│   ├── SKILL.md          # TikTok 工具定义 (18 tools) ✅
+│   ├── tools/            # TikTok 工具实现 ⏳
+│   └── expert/
+├── google-ads/
+│   ├── SKILL.md          # Google Ads 工具定义 (20 tools) ✅
+│   ├── tools/            # Google Ads 工具实现 ⏳
+│   └── expert/
+├── dv360/
+│   ├── SKILL.md          # DV360 工具定义 (20 tools) ✅
+│   ├── tools/            # DV360 工具实现 ⏳
+│   └── expert/
+└── cross-channel/
+    ├── SKILL.md          # 跨渠道工具定义 (12 tools) ✅
+    ├── tools/            # 跨渠道工具实现 ⏳
+    └── expert/
+```
+
+## 当前状态
+
+| 层级 | 状态 | 说明 |
+|------|------|------|
+| SKILL.md (定义层) | ✅ 完成 | 87 个工具定义 + 专家知识 |
+| loader.py (加载层) | ✅ 完成 | 自动解析 SKILL.md |
+| registry.py (注册层) | ✅ 完成 | 自动注册到 ToolRegistry |
+| tool_selector.py (选择层) | ✅ 完成 | 动态选择相关工具 |
+| context_optimizer.py (优化层) | ✅ 完成 | 构建精简 LLM 上下文 |
+| tools/ (实现层) | ⏳ 待实现 | 需要编写实际 API 调用代码 |
+
+## 如何补充实现
+
+### 示例：实现 meta_create_campaign
+
+创建 `skills/meta/tools/campaign.py`：
+
+```python
+"""
+skills/meta/tools/campaign.py - Meta Campaign 工具实现
+"""
+
+import logging
+from typing import Any, Dict
+
+logger = logging.getLogger(__name__)
+
+
+class MetaCampaignTools:
+    """Meta Campaign 相关工具实现"""
+    
+    def __init__(self, api_client):
+        self.client = api_client
+    
+    def create_campaign(self, account_id: str, campaign: Dict[str, Any]) -> str:
+        """
+        创建 Meta Campaign
+        
+        Args:
+            account_id: 广告账户 ID
+            campaign: campaign 参数
+            
+        Returns:
+            campaign_id: 创建的广告系列 ID
+        """
+        # 调用已有的 Meta API 客户端
+        campaign_id = self.client.create_campaign(account_id, campaign)
+        logger.info(f"Created Meta campaign: {campaign_id}")
+        return campaign_id
+    
+    def update_campaign(self, account_id: str, campaign_id: str, updates: Dict[str, Any]) -> bool:
+        """更新 Meta Campaign"""
+        # 实现...
+        pass
+    
+    def pause_campaign(self, account_id: str, campaign_id: str) -> bool:
+        """暂停 Meta Campaign"""
+        # 实现...
+        pass
+```
+
+### 注册工具
+
+在 `skills/meta/SKILL.md` 中已经定义了工具，只需：
+1. 实现工具逻辑
+2. 在 `capabilities/meta_capability.py` 中调用
+
+## 动态工具选择原理
+
+### 工作流程
+
+```
+用户输入: "查询 Google Campaign 报表"
+    │
+    ▼
+IntentParser 解析
+    │
+    ├─ intent_type: "get_report"
+    ├─ platforms: ["google"]
+    └─ objective: None
+    │
+    ▼
+DynamicToolSelector 筛选
+    │
+    ├─ 获取 Google 平台所有工具 (20 个)
+    ├─ 根据 intent_type="get_report" 筛选
+    │   ├─ 关键词: ["report", "get_", "list_", "query"]
+    │   └─ 匹配工具:
+    │       ├─ google_get_campaign_report ✅
+    │       ├─ google_get_keyword_report ✅
+    │       └─ ... (共 7 个)
+    │
+    ├─ 获取专家知识
+    │   └─ bidding_strategies.md, report_metrics.md
+    │
+    ▼
+ContextOptimizer 构建 Prompt
+    │
+    ├─ system prompt 只包含 7 个工具
+    ├─ 注入专家知识摘要
+    └─ 控制总长度 < 2000 tokens
+    │
+    ▼
+LLM 收到精简上下文
+    │
+    └─ 调用相关工具执行
+```
+
+### 效果对比
+
+| 方案 | 工具数 | Token 消耗 | 响应速度 |
+|------|--------|-----------|----------|
+| 原始方案（全部工具） | 87 | ~8000 tokens | 慢 |
+| 优化方案（动态选择） | 5-12 | ~1000 tokens | 快 5x |
+
+## 扩展新渠道（3 步）
+
+### 步骤 1：创建 SKILL.md
+
+```yaml
+# skills/new-platform/SKILL.md
+---
+skill:
+  name: new-platform-api
+  version: "1.0"
+  description: "新平台 API 专家 Skill"
+  platform: new-platform
+---
+
+# 新平台 API 专家 Skill
+
+## 工具列表
+
+#### new_platform_create_campaign
+- **描述**: 创建广告系列
+- **参数**: campaign_name, budget
+
+#### new_platform_get_report
+- **描述**: 获取报表
+- **参数**: campaign_id, date_range
+```
+
+### 步骤 2：实现工具代码
+
+```python
+# skills/new-platform/tools/campaign.py
+class NewPlatformCampaignTools:
+    def create_campaign(self, ...):
+        # 调用新平台 API
+        pass
+```
+
+### 步骤 3：自动生效
+
+```bash
+# 无需修改其他代码，自动加载
+python agents/ad_agent/api_server.py
+```
+
+服务启动时会自动：
+1. 扫描 `skills/` 目录下所有 SKILL.md
+2. 解析工具定义
+3. 注册到 ToolRegistry
+4. 参与动态工具选择
