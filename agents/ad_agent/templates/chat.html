@@ -143,16 +143,57 @@
             gap: 10px;
             flex-wrap: wrap;
         }
-        .quick-btn {
-            padding: 8px 16px;
-            background: #f0f0f0;
-            border: none;
-            border-radius: 20px;
+        .skill-section {
+            padding: 15px 20px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        .skill-section h3 {
             font-size: 14px;
+            color: #666;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .skill-tabs {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .skill-tab {
+            padding: 8px 16px;
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 20px;
+            font-size: 13px;
             cursor: pointer;
             transition: all 0.2s;
         }
-        .quick-btn:hover {
+        .skill-tab:hover {
+            border-color: #667eea;
+            color: #667eea;
+        }
+        .skill-tab.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+        .skill-tools {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+        .tool-btn {
+            padding: 6px 12px;
+            background: #f0f0f0;
+            border: none;
+            border-radius: 16px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .tool-btn:hover {
             background: #667eea;
             color: white;
         }
@@ -181,8 +222,22 @@
     </div>
     
     <div class="chat-container" id="chatContainer">
-        <div class="message system">欢迎使用 ad-agent！我可以帮你投放 Meta、TikTok、Google Ads、DV360 广告。</div>
-        <div class="message agent">请选择下面的快捷操作，或直接输入您的需求：</div>
+        <div class="message system">欢迎使用 ad-agent 专家系统！我可以帮你投放 Meta、TikTok、Google Ads、DV360 广告，并提供跨渠道统一管理。</div>
+        <div class="message agent">请选择下面的 Skill 和工具，或直接输入您的需求：</div>
+    </div>
+    
+    <div class="skill-section">
+        <h3>📚 专家 Skills</h3>
+        <div class="skill-tabs" id="skillTabs">
+            <button class="skill-tab active" onclick="showSkill('meta')">📱 Meta Marketing</button>
+            <button class="skill-tab" onclick="showSkill('tiktok')">🎵 TikTok Ads</button>
+            <button class="skill-tab" onclick="showSkill('google')">🔍 Google Ads</button>
+            <button class="skill-tab" onclick="showSkill('dv360')">📺 DV360</button>
+            <button class="skill-tab" onclick="showSkill('cross')">🌐 跨渠道管理</button>
+        </div>
+        <div class="skill-tools" id="skillTools">
+            <!-- 动态加载 -->
+        </div>
     </div>
     
     <div class="quick-actions">
@@ -192,6 +247,8 @@
         <button class="quick-btn" onclick="sendQuick('查询我的账户列表')">📋 账户列表</button>
         <button class="quick-btn" onclick="sendQuick('查看报表数据')">📊 查看报表</button>
         <button class="quick-btn" onclick="sendQuick('创建 Campaign')">➕ 创建 Campaign</button>
+        <button class="quick-btn" onclick="sendQuick('跨渠道预算优化')">💰 预算优化</button>
+        <button class="quick-btn" onclick="sendQuick('获取投放建议')">💡 智能建议</button>
     </div>
     
     <div class="input-area">
@@ -307,8 +364,51 @@
             }
         }
         
+        // 加载 Skills 信息
+        async function loadSkills() {
+            try {
+                const response = await fetch('/skills');
+                const data = await response.json();
+                window.skillsData = data.skills || [];
+                showSkill('meta');
+            } catch (e) {
+                console.error('加载 Skills 失败:', e);
+            }
+        }
+        
+        // 显示指定 Skill 的工具
+        function showSkill(skillName) {
+            // 更新标签样式
+            document.querySelectorAll('.skill-tab').forEach(tab => tab.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            // 获取对应 Skill 的工具
+            const skill = window.skillsData?.find(s => s.platform === skillName);
+            const toolsContainer = document.getElementById('skillTools');
+            
+            if (!skill) {
+                toolsContainer.innerHTML = '<span style="color:#888;font-size:12px;">暂无工具信息</span>';
+                return;
+            }
+            
+            // 工具列表（模拟，实际从后端获取）
+            const toolMap = {
+                meta: ['创建 Campaign', '创建 Ad Set', '创建 Ad', '智能出价', '获取报表', '受众洞察'],
+                tiktok: ['创建 Campaign', '创建 Ad Group', '创建 Spark Ad', 'Pixel 追踪', '获取报表'],
+                google: ['创建 Campaign', '创建 Ad Group', '创建搜索广告', '创建 PMax', '关键词建议', '获取报表'],
+                dv360: ['创建 Flight', '创建 Line Item', '上传创意', '设置定向', '获取报表'],
+                cross: ['Campaign 总览', '预算优化', '批量操作', '统一报表', '性能诊断', '渠道推荐'],
+            };
+            
+            const tools = toolMap[skillName] || [];
+            toolsContainer.innerHTML = tools.map(t => 
+                `<button class="tool-btn" onclick="sendQuick('${t}')">${t}</button>`
+            ).join('');
+        }
+        
         setInterval(checkHealth, 5000);
         checkHealth();
+        loadSkills();
         
         userInput.focus();
     </script>

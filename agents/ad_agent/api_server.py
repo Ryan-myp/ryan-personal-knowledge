@@ -31,6 +31,8 @@ from agents.ad_agent.capabilities.meta_capability import MetaCapability
 from agents.ad_agent.capabilities.platform_capabilities import (
     GoogleCapability, TikTokCapability, DV360Capability
 )
+from agents.ad_agent.skills.registry import load_all_skills, get_skill_registry
+from agents.ad_agent.skills.loader import get_skill_loader
 
 # 配置路径
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
@@ -47,6 +49,46 @@ def _init_on_import():
         from agents.ad_agent.persistence.store import AdAgentStore
         store = AdAgentStore("ad_agent.db")
         runtime = AgentRuntime(persistence_store=store)
+        
+        # 加载 Skills
+        skills_root = Path(__file__).parent / "skills"
+        skill_loader = get_skill_loader()
+        skills = skill_loader.load_all()
+        print(f"✅ 已加载 {len(skills)} 个 Skills")
+        
+        # 注册 Skill 工具
+        skill_registry = get_skill_registry()
+        loaded_tools = load_all_skills(skills_root)
+        print(f"✅ 已注册 {sum(len(t) for t in loaded_tools.values())} 个工具")
+        
+        # 注册各平台 Capability
+        credentials = {}
+        config_path = Path(__file__).parent / "config.yaml"
+        if config_path.exists():
+            import yaml
+            with open(config_path) as f:
+                credentials = yaml.safe_load(f).get('credentials', {})
+        
+        # Meta
+        if 'meta' in credentials:
+            meta_client = MetaAPIClient(credentials)
+            runtime.register_capability(MetaCapability(meta_client))
+        
+        # TikTok
+        if 'tiktok' in credentials:
+            tiktok_client = TikTokAPIClient(credentials)
+            runtime.register_capability(TikTokCapability(tiktok_client))
+        
+        # Google Ads
+        if 'google' in credentials:
+            google_client = GoogleAdsAPIClient(credentials)
+            runtime.register_capability(GoogleCapability(google_client))
+        
+        # DV360
+        if 'dv360' in credentials:
+            dv360_client = DV360APIClient(credentials)
+            runtime.register_capability(DV360Capability(dv360_client))
+        
         print(f"✅ 已注册平台: {', '.join(runtime.registry.list_all_platforms())}")
         print(f"✅ 已注册工具: {len(runtime.registry.list_all())}")
     except Exception as e:
@@ -142,21 +184,54 @@ async def get_platforms():
     }
 
 
+@app.get("/skills", tags=["info"])
+async def get_skills():
+    """列出所有 Skills"""
+    from agents.ad_agent.skills.loader import get_skill_loader
+    loader = get_skill_loader()
+    skills = loader.load_all()
+    return {
+        "skills": [
+            {
+                "name": s.name,
+                "version": s.version,
+                "description": s.description,
+                "platform": s.platform,
+                "tool_count": len(s.tools),
+                "expert_files": list(s.expert_knowledge.keys()),
+            }
+            for s in skills.values()
+        ]
+    }
+
+
 @app.get("/tools", tags=["info"])
 async def get_tools():
     """列出工具"""
-    if not runtime:
-        return {"tools": []}
-    tools = runtime.registry.list_all()
+    from agents.ad_agent.skills.loader import get_skill_loader
+    loader = get_skill_loader()
+    tools = loader.get_all_tools()
+    
+    # 同时获取已注册的工具
+    registered_tools = runtime.registry.list_all() if runtime else []
+    
     return {
-        "tools": [
+        "skill_tools": [
+            {
+                "name": t.name,
+                "platform": t.platform,
+                "description": t.description,
+            }
+            for t in tools
+        ],
+        "registered_tools": [
             {
                 "name": t.name,
                 "platform": t.platform,
                 "risk": t.risk_level.value,
                 "description": t.description[:100] + "..." if len(t.description) > 100 else t.description,
             }
-            for t in tools
+            for t in registered_tools
         ]
     }
 
