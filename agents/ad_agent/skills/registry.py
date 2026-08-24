@@ -152,6 +152,17 @@ class SkillRegistry:
         """获取指定 Skill 的工具"""
         return self._skill_tools.get(skill_name, [])
     
+    def get_all_tools(self) -> List[SkillTool]:
+        """获取所有 Skill 的所有工具"""
+        all_tools = []
+        for tools in self._skill_tools.values():
+            all_tools.extend(tools)
+        return all_tools
+    
+    def get_all_registered_tools(self) -> List[Any]:
+        """获取所有已注册到 ToolRegistry 的工具定义"""
+        return self.registry.list_all()
+    
     def get_all_skills(self) -> Dict[str, List[SkillTool]]:
         """获取所有 Skill 的工具"""
         return self._skill_tools
