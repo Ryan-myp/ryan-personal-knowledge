@@ -272,6 +272,42 @@
       "description": "SMART+ Campaign 正确创建参数",
       "created_at": "2026-08-24T18:55:00Z",
       "updated_at": "2026-08-24T18:55:00Z"
+    },
+    {
+      "entry_id": "tiktok_ad_create_response_structure",
+      "platform": "tiktok",
+      "knowledge_type": "WORKFLOW",
+      "content": {
+        "type": "api_reference",
+        "description": "TikTok Ad 创建响应结构",
+        "response": {
+          "code": 0,
+          "message": "OK",
+          "data": {
+            "ad_ids": [
+              "ad_id_value"
+            ],
+            "need_audit": false,
+            "creatives": [
+              {
+                "ad_id": "ad_id_value"
+              }
+            ]
+          }
+        },
+        "extraction": {
+          "correct": [
+            "ad_id = result.get('data', {}).get('ad_ids', [])[0]",
+            "ad_id = result.get('data', {}).get('creatives', [{}])[0].get('ad_id')"
+          ],
+          "incorrect": [
+            "ad_id = result.get('data', {}).get('ad_id')  # 错误：字段不存在"
+          ]
+        }
+      },
+      "description": "TikTok Ad 创建响应中 ad_id 在 ad_ids 数组里",
+      "created_at": "2026-08-24T18:57:00Z",
+      "updated_at": "2026-08-24T18:57:00Z"
     }
   ]
 }
