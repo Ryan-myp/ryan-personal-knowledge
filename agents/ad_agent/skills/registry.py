@@ -213,10 +213,9 @@ def register_skill(skill_dir: Path, skill_name: str = None):
 
 
 def load_all_skills(skills_root: Path) -> Dict[str, List[SkillTool]]:
-    """加载所有 Skills（递归扫描子目录）"""
-    global _skill_registry
-    if _skill_registry is None:
-        _skill_registry = SkillRegistry(SimpleToolRegistry())
+    """加载所有 Skills（递归扫描子目录，只解析不注册到全局 registry）"""
+    # 创建临时 registry 用于解析
+    temp_registry = SkillRegistry(SimpleToolRegistry())
     
     all_tools = {}
     if not skills_root.exists():
@@ -226,6 +225,28 @@ def load_all_skills(skills_root: Path) -> Dict[str, List[SkillTool]]:
     for skill_dir in sorted(skills_root.rglob('*')):
         if skill_dir.is_dir() and (skill_dir / "SKILL.md").exists():
             # 生成 skill_name: 使用相对路径
+            rel_path = skill_dir.relative_to(skills_root)
+            skill_name = "/".join(rel_path.parts)
+            
+            tools = temp_registry.register_skill_tools(skill_dir, skill_name)
+            if tools:
+                all_tools[skill_name] = tools
+    
+    return all_tools
+
+
+def load_all_skills_and_register(skills_root: Path) -> Dict[str, List[SkillTool]]:
+    """加载所有 Skills 并注册到全局 registry（向后兼容）"""
+    global _skill_registry
+    if _skill_registry is None:
+        _skill_registry = SkillRegistry(SimpleToolRegistry())
+    
+    all_tools = {}
+    if not skills_root.exists():
+        return all_tools
+    
+    for skill_dir in sorted(skills_root.rglob('*')):
+        if skill_dir.is_dir() and (skill_dir / "SKILL.md").exists():
             rel_path = skill_dir.relative_to(skills_root)
             skill_name = "/".join(rel_path.parts)
             

@@ -65,6 +65,10 @@ class SimpleToolRegistry(ToolRegistry):
         """列出所有工具"""
         return [defn for defn, _ in self._tools.values()]
     
+    def list_all_platforms(self) -> list[str]:
+        """列出所有已注册的平台"""
+        return list(self._by_platform.keys())
+    
     def execute(
         self,
         ctx: ToolContext,

@@ -56,10 +56,11 @@ def _init_on_import():
         skills = skill_loader.load_all()
         print(f"✅ 已加载 {len(skills)} 个 Skills")
         
-        # 注册 Skill 工具
+        # 加载 Skill 定义（只加载，不自动注册）
+        # 实际注册由 register_capability() 完成
         skill_registry = get_skill_registry()
         loaded_tools = load_all_skills(skills_root)
-        print(f"✅ 已注册 {sum(len(t) for t in loaded_tools.values())} 个工具")
+        print(f"✅ 已加载 {len(loaded_tools)} 个 Skills, {sum(len(t) for t in loaded_tools.values())} 个工具定义")
         
         # 注册各平台 Capability
         credentials = {}
@@ -87,7 +88,7 @@ def _init_on_import():
         # DV360
         if 'dv360' in credentials:
             dv360_client = DV360APIClient(credentials)
-            runtime.register_capability(DV360Capability(dv360_client))
+            runtime.register_capability(DV360Capability())
         
         print(f"✅ 已注册平台: {', '.join(runtime.registry.list_all_platforms())}")
         print(f"✅ 已注册工具: {len(runtime.registry.list_all())}")
