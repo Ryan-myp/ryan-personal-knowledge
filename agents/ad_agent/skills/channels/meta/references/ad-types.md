@@ -1,4 +1,4 @@
-# Meta 广告类型专家知识
+# Meta 广告类型详解
 
 ## 1. 销售转化广告 (Sales/Conversions)
 

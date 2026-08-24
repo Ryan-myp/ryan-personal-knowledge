@@ -1,4 +1,4 @@
-# Meta 定向专家知识
+# Meta 定向策略详解
 
 ## 1. 基础定向 (Core Targeting)
 
@@ -112,26 +112,7 @@ exclusions:
 
 ---
 
-## 6. 动态创意 (Dynamic Creative)
-
-### 配置方法
-```yaml
-dynamic_creative:
-  components:
-    images: ["img1.jpg", "img2.jpg", "img3.jpg"]
-    headlines: ["标题1", "标题2", "标题3"]
-    descriptions: ["描述1", "描述2"]
-    ctas: ["立即购买", "了解更多"]
-```
-
-### 专家提示
-- 建议准备 3-5 个创意组合
-- 系统自动测试最优组合
-- 观察 3-7 天后再做优化决策
-
----
-
-## 7. 频次控制 (Frequency Capping)
+## 6. 频次控制 (Frequency Capping)
 
 ### 配置示例
 ```yaml
