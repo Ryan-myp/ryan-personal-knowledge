@@ -1,0 +1,74 @@
+{
+  "name": "meta_workflows",
+  "version": "1.0",
+  "last_updated": "2026-08-24T16:57:54.369325",
+  "entries": [
+    {
+      "entry_id": "meta_create_campaign_adset_ad",
+      "knowledge_type": "workflow",
+      "platform": "meta",
+      "content": {
+        "type": "create_campaign_adset_ad",
+        "description": "Meta 完整创建流程",
+        "steps": [
+          {
+            "step": 1,
+            "action": "create_campaign",
+            "level": "campaign",
+            "required_params": [
+              "account_id",
+              "name",
+              "objective"
+            ],
+            "api_endpoint": "/v18.0/{account-id}/campaigns",
+            "method": "POST"
+          },
+          {
+            "step": 2,
+            "action": "create_adset",
+            "level": "adset",
+            "required_params": [
+              "campaign_id",
+              "name",
+              "optimization_goal",
+              "billing_event"
+            ],
+            "api_endpoint": "/v18.0/{account-id}/adsets",
+            "method": "POST"
+          },
+          {
+            "step": 3,
+            "action": "create_ad",
+            "level": "ad",
+            "required_params": [
+              "adgroup_id",
+              "name",
+              "status",
+              "creative"
+            ],
+            "api_endpoint": "/v18.0/{account-id}/ads",
+            "method": "POST"
+          }
+        ],
+        "error_handling": {
+          "invalid_objective": "检查 objective 是否支持",
+          "missing_targeting": "广告组需要 targeting 参数"
+        }
+      },
+      "source": "official_docs",
+      "source_ref": "",
+      "created_at": "2026-08-24T16:57:54.369169",
+      "updated_at": "2026-08-24T16:57:54.369174",
+      "tags": [
+        "meta",
+        "workflow",
+        "creation"
+      ],
+      "metadata": {
+        "verified": true
+      },
+      "confidence": 1.0,
+      "usage_count": 0
+    }
+  ]
+}

@@ -1,0 +1,121 @@
+{
+  "name": "targeting_strategy",
+  "version": "1.0",
+  "last_updated": "2026-08-24T16:54:23.665519",
+  "entries": [
+    {
+      "entry_id": "targeting_interest_based",
+      "knowledge_type": "targeting_strategy",
+      "platform": "all",
+      "content": {
+        "strategy_name": "兴趣定向",
+        "description": "基于用户兴趣标签的定向",
+        "适用平台": [
+          "meta",
+          "tiktok",
+          "google"
+        ],
+        "recommendations": {
+          "meta": {
+            "interests": [
+              "Shopping",
+              "Fashion",
+              "Electronics"
+            ],
+            "layers": "Combine 2-3 interest layers"
+          },
+          "tiktok": {
+            "interests": [
+              "Shopping",
+              "Fashion",
+              "Beauty"
+            ],
+            "dmp": "Custom audience recommended"
+          },
+          "google": {
+            "audiences": [
+              "In-market",
+              "Affinity"
+            ],
+            "keywords": "Shopping-related keywords"
+          }
+        }
+      },
+      "source": "manual_expert",
+      "source_ref": "",
+      "created_at": "2026-08-24T16:54:23.665072",
+      "updated_at": "2026-08-24T16:54:23.665077",
+      "tags": [
+        "targeting",
+        "interest"
+      ],
+      "metadata": {},
+      "confidence": 0.85,
+      "usage_count": 0
+    },
+    {
+      "entry_id": "targeting_lookalike",
+      "knowledge_type": "targeting_strategy",
+      "platform": "all",
+      "content": {
+        "strategy_name": "相似受众",
+        "description": "基于种子受众的相似人群扩展",
+        "适用平台": [
+          "meta",
+          "tiktok",
+          "google"
+        ],
+        "recommendations": {
+          "seed_source": [
+            "Customer list",
+            "Website visitors",
+            "App users"
+          ],
+          "similarity_range": "1-5%",
+          "optimization": "Larger seed = better performance"
+        }
+      },
+      "source": "manual_expert",
+      "source_ref": "",
+      "created_at": "2026-08-24T16:54:23.665074",
+      "updated_at": "2026-08-24T16:54:23.665271",
+      "tags": [
+        "targeting",
+        "lookalike"
+      ],
+      "metadata": {},
+      "confidence": 0.9,
+      "usage_count": 0
+    },
+    {
+      "entry_id": "targeting_retargeting",
+      "knowledge_type": "targeting_strategy",
+      "platform": "all",
+      "content": {
+        "strategy_name": "再营销",
+        "description": "针对已有互动的用户进行再营销",
+        "适用平台": [
+          "meta",
+          "tiktok",
+          "google"
+        ],
+        "recommendations": {
+          "cart_abandoners": "High priority, short window (7-30 days)",
+          "product_viewers": "Medium priority, longer window (30-90 days)",
+          "past_customers": "Highest priority, longest window (90+ days)"
+        }
+      },
+      "source": "manual_expert",
+      "source_ref": "",
+      "created_at": "2026-08-24T16:54:23.665075",
+      "updated_at": "2026-08-24T16:54:23.665450",
+      "tags": [
+        "targeting",
+        "retargeting"
+      ],
+      "metadata": {},
+      "confidence": 0.95,
+      "usage_count": 0
+    }
+  ]
+}

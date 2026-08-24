@@ -1,0 +1,686 @@
+{
+  "name": "tiktok_hierarchy",
+  "entries": [
+    {
+      "entry_id": "tiktok_campaign_hierarchy",
+      "knowledge_type": "hierarchy",
+      "platform": "tiktok",
+      "content": {
+        "level": "campaign",
+        "description": "TikTok 广告系列层级，是广告投放的顶层结构",
+        "parameters": {
+          "advertiser_id": {
+            "name": "advertiser_id",
+            "type": "string",
+            "required": true,
+            "description": "广告主ID",
+            "valid_values": [],
+            "constraints": [],
+            "depends_on": {}
+          },
+          "campaign_name": {
+            "name": "campaign_name",
+            "type": "string",
+            "required": true,
+            "description": "广告系列名称",
+            "valid_values": [],
+            "constraints": [
+              {
+                "condition": {
+                  "max_length": 60
+                },
+                "effect": {
+                  "error": "名称长度不能超过60个字符"
+                },
+                "description": "名称长度限制"
+              }
+            ],
+            "depends_on": {}
+          },
+          "campaign_status": {
+            "name": "campaign_status",
+            "type": "integer",
+            "required": true,
+            "description": "广告系列状态: 1=启用, 0=禁用",
+            "valid_values": [
+              "1",
+              "0"
+            ],
+            "constraints": [],
+            "depends_on": {}
+          },
+          "objective_type": {
+            "name": "objective_type",
+            "type": "string",
+            "required": true,
+            "description": "广告目标类型，决定广告组可用的 promotion_type",
+            "valid_values": [
+              "PRODUCT_SALES",
+              "TRAFFIC",
+              "APP_INSTALL",
+              "VIDEO_VIEWS",
+              "CONVERSIONS",
+              "REACH",
+              "LEAD_GENERATION",
+              "ENGAGEMENT",
+              "CATALOG_SALES",
+              "SHOP_PURCHASES",
+              "WEB_CONVERSIONS",
+              "APP_PROMOTION"
+            ],
+            "constraints": [
+              {
+                "condition": {
+                  "field": "objective_type"
+                },
+                "effect": {
+                  "allowed_promotion_types": "根据目标类型限制"
+                },
+                "description": "目标类型限制 promotion_type"
+              }
+            ],
+            "depends_on": {}
+          },
+          "budget_mode": {
+            "name": "budget_mode",
+            "type": "string",
+            "required": true,
+            "description": "预算模式",
+            "valid_values": [
+              "BUDGET_MODE_DAY",
+              "BUDGET_MODE_INFINITE",
+              "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
+              "BUDGET_MODE_TOTAL"
+            ],
+            "constraints": [
+              {
+                "condition": {
+                  "budget_mode": "BUDGET_MODE_DAY"
+                },
+                "effect": {
+                  "required_fields": [
+                    "daily_budget"
+                  ]
+                },
+                "description": "日预算模式需要 daily_budget"
+              },
+              {
+                "condition": {
+                  "budget_mode": "BUDGET_MODE_INFINITE"
+                },
+                "effect": {
+                  "required_fields": []
+                },
+                "description": "无限预算模式不需要预算字段"
+              }
+            ],
+            "depends_on": {}
+          },
+          "campaign_type": {
+            "name": "campaign_type",
+            "type": "string",
+            "required": true,
+            "description": "广告系列类型",
+            "valid_values": [
+              "REGULAR_CAMPAIGN",
+              "IOS14_CAMPAIGN"
+            ],
+            "constraints": [
+              {
+                "condition": {
+                  "campaign_type": "REGULAR_CAMPAIGN"
+                },
+                "effect": {
+                  "supported": true
+                },
+                "description": "常规广告系列"
+              }
+            ],
+            "depends_on": {}
+          },
+          "campaign_automation_type": {
+            "name": "campaign_automation_type",
+            "type": "string",
+            "required": true,
+            "description": "自动化类型，影响 API 支持功能",
+            "valid_values": [
+              "MANUAL",
+              "UPGRADED_SMART_PLUS"
+            ],
+            "constraints": [
+              {
+                "condition": {
+                  "automation_type": "UPGRADED_SMART_PLUS"
+                },
+                "effect": {
+                  "api_limitation": "API v1.3 不支持创建 Ad Group"
+                },
+                "description": "智能广告系列限制 API 功能"
+              }
+            ],
+            "depends_on": {}
+          },
+          "promote_object_type": {
+            "name": "promote_object_type",
+            "type": "integer",
+            "required": true,
+            "description": "推广对象类型: 0=APP, 1=WEBSITE",
+            "valid_values": [
+              "0",
+              "1"
+            ],
+            "constraints": [],
+            "depends_on": {}
+          },
+          "app_id": {
+            "name": "app_id",
+            "type": "string",
+            "required": false,
+            "description": "App ID（APP 类型需要）",
+            "valid_values": [],
+            "constraints": [],
+            "depends_on": {
+              "promote_object_type": "0"
+            }
+          },
+          "landing_url": {
+            "name": "landing_url",
+            "type": "string",
+            "required": false,
+            "description": "落地页URL（WEBSITE 类型需要）",
+            "valid_values": [],
+            "constraints": [],
+            "depends_on": {
+              "promote_object_type": "1"
+            }
+          },
+          "daily_budget": {
+            "name": "daily_budget",
+            "type": "integer",
+            "required": false,
+            "description": "日预算（单位：分），BUDGET_MODE_DAY 时需要",
+            "valid_values": [],
+            "constraints": [
+              {
+                "condition": {
+                  "budget_mode": "BUDGET_MODE_DAY"
+                },
+                "effect": {
+                  "min_value": 5000
+                },
+                "description": "最小预算 $50（5000分）"
+              }
+            ],
+            "depends_on": {
+              "budget_mode": "BUDGET_MODE_DAY"
+            }
+          }
+        },
+        "valid_combinations": [
+          {
+            "objective_type": "TRAFFIC",
+            "promotion_type": "WEBSITE",
+            "billing_event": "OCPM",
+            "bid_type": "BID_TYPE_NO_BID"
+          },
+          {
+            "objective_type": "APP_PROMOTION",
+            "promotion_type": "APP_ANDROID",
+            "billing_event": "OCPM",
+            "bid_type": "BID_TYPE_NO_BID",
+            "deep_bid_type": "AEO"
+          }
+        ],
+        "api_limitations": [
+          {
+            "api_version": "v1.3",
+            "limitation": "不支持 UPGRADED_SMART_PLUS Campaign 的 Ad Group 创建",
+            "workaround": "使用 MANUAL 类型 Campaign"
+          }
+        ]
+      },
+      "source": "official_docs+tiktok_api",
+      "created_at": "2026-08-24T16:44:10.324429",
+      "updated_at": "2026-08-24T16:44:10.324439",
+      "tags": [
+        "tiktok",
+        "campaign",
+        "hierarchy",
+        "api_v1.3"
+      ],
+      "metadata": {
+        "verified": true,
+        "test_count": 50
+      }
+    },
+    {
+      "entry_id": "tiktok_adgroup_hierarchy",
+      "knowledge_type": "hierarchy",
+      "platform": "tiktok",
+      "content": {
+        "level": "ad_group",
+        "description": "TikTok 广告组层级，包含定向、出价、素材等信息",
+        "parameters": {
+          "adgroup_name": {
+            "name": "adgroup_name",
+            "type": "string",
+            "required": true,
+            "description": "广告组名称",
+            "valid_values": [],
+            "constraints": [
+              {
+                "condition": {
+                  "max_length": 60
+                },
+                "effect": {
+                  "error": "名称长度不能超过60个字符"
+                }
+              }
+            ],
+            "depends_on": {}
+          },
+          "ad_group_status": {
+            "name": "ad_group_status",
+            "type": "integer",
+            "required": true,
+            "description": "广告组状态: 1=启用, 0=禁用",
+            "valid_values": [
+              "1",
+              "0"
+            ],
+            "constraints": {},
+            "depends_on": {}
+          },
+          "schedule_type": {
+            "name": "schedule_type",
+            "type": "string",
+            "required": true,
+            "description": "投放时间类型",
+            "valid_values": [
+              "SCHEDULE_FROM_NOW",
+              "SCHEDULE_SPECIFIC_TIME"
+            ],
+            "constraints": {},
+            "depends_on": {}
+          },
+          "schedule_start_time": {
+            "name": "schedule_start_time",
+            "type": "datetime",
+            "required": true,
+            "description": "开始时间，格式: YYYY-MM-DD HH:MM:SS",
+            "valid_values": [],
+            "constraints": [
+              {
+                "condition": {
+                  "format": "datetime"
+                },
+                "effect": {
+                  "error": "时间格式错误"
+                }
+              }
+            ],
+            "depends_on": {}
+          },
+          "bid_type": {
+            "name": "bid_type",
+            "type": "string",
+            "required": true,
+            "description": "出价类型",
+            "valid_values": [
+              "BID_TYPE_NO_BID",
+              "BID_TYPE_CUSTOM",
+              "BID_TYPE_MAX_CONVERSION"
+            ],
+            "constraints": [],
+            "depends_on": {}
+          },
+          "billing_event": {
+            "name": "billing_event",
+            "type": "string",
+            "required": true,
+            "description": "计费事件类型",
+            "valid_values": [
+              "CPM",
+              "GD",
+              "CPV",
+              "CPA",
+              "OCPC",
+              "OCPM",
+              "CPC"
+            ],
+            "constraints": [
+              {
+                "condition": {
+                  "promotion_type": "APP_ANDROID"
+                },
+                "effect": {
+                  "allowed_events": [
+                    "OCPM"
+                  ]
+                },
+                "description": "APP 推广只支持 OCPM"
+              }
+            ],
+            "depends_on": {}
+          },
+          "placement_type": {
+            "name": "placement_type",
+            "type": "string",
+            "required": true,
+            "description": "投放位置类型",
+            "valid_values": [
+              "PLACEMENT_TYPE_NORMAL",
+              "PLACEMENT_TYPE_AUTOMATIC"
+            ],
+            "constraints": [],
+            "depends_on": {}
+          },
+          "budget_mode": {
+            "name": "budget_mode",
+            "type": "string",
+            "required": true,
+            "description": "预算模式",
+            "valid_values": [
+              "BUDGET_MODE_DAY",
+              "BUDGET_MODE_INFINITE",
+              "BUDGET_MODE_TOTAL"
+            ],
+            "constraints": {},
+            "depends_on": {}
+          },
+          "budget": {
+            "name": "budget",
+            "type": "integer",
+            "required": true,
+            "description": "预算（单位：分）",
+            "valid_values": [],
+            "constraints": [
+              {
+                "condition": {
+                  "min_value": 5000
+                },
+                "effect": {
+                  "error": "预算不能低于$50"
+                }
+              }
+            ],
+            "depends_on": {}
+          },
+          "promotion_type": {
+            "name": "promotion_type",
+            "type": "string",
+            "required": true,
+            "description": "推广类型，必须与 Campaign objective_type 匹配",
+            "valid_values": [
+              "APP_ANDROID",
+              "APP_IOS",
+              "WEBSITE",
+              "LEAD_FORM",
+              "CONTENT"
+            ],
+            "constraints": [
+              {
+                "condition": {
+                  "objective_type": "APP_PROMOTION"
+                },
+                "effect": {
+                  "allowed_types": [
+                    "APP_ANDROID",
+                    "APP_IOS"
+                  ]
+                },
+                "description": "APP_PROMOTION 只能使用 APP 类型"
+              },
+              {
+                "condition": {
+                  "objective_type": "TRAFFIC"
+                },
+                "effect": {
+                  "allowed_types": [
+                    "WEBSITE"
+                  ]
+                },
+                "description": "TRAFFIC 只能使用 WEBSITE 类型"
+              }
+            ],
+            "depends_on": {}
+          },
+          "app_id": {
+            "name": "app_id",
+            "type": "string",
+            "required": false,
+            "description": "App ID（APP 类型需要）",
+            "valid_values": [],
+            "constraints": [],
+            "depends_on": {
+              "promotion_type": "APP_ANDROID"
+            }
+          },
+          "landing_url": {
+            "name": "landing_url",
+            "type": "string",
+            "required": false,
+            "description": "落地页URL（WEBSITE 类型需要）",
+            "valid_values": [],
+            "constraints": [],
+            "depends_on": {
+              "promotion_type": "WEBSITE"
+            }
+          },
+          "location_ids": {
+            "name": "location_ids",
+            "type": "array",
+            "required": true,
+            "description": "国家/地区ID列表",
+            "valid_values": [],
+            "constraints": [],
+            "depends_on": {}
+          },
+          "age_groups": {
+            "name": "age_groups",
+            "type": "array",
+            "required": false,
+            "description": "年龄分组",
+            "valid_values": [
+              "AGE_13_17",
+              "AGE_18_24",
+              "AGE_25_34",
+              "AGE_35_44",
+              "AGE_45_54",
+              "AGE_55_64",
+              "AGE_65+"
+            ],
+            "constraints": {},
+            "depends_on": {}
+          },
+          "gender": {
+            "name": "gender",
+            "type": "string",
+            "required": false,
+            "description": "性别定向",
+            "valid_values": [
+              "GENDER_UNLIMITED",
+              "GENDER_MALE",
+              "GENDER_FEMALE"
+            ],
+            "constraints": {},
+            "depends_on": {}
+          },
+          "auto_targeting_enabled": {
+            "name": "auto_targeting_enabled",
+            "type": "boolean",
+            "required": false,
+            "description": "是否启用自动定向",
+            "valid_values": [
+              "true",
+              "false"
+            ],
+            "constraints": {},
+            "depends_on": {}
+          },
+          "deep_bid_type": {
+            "name": "deep_bid_type",
+            "type": "string",
+            "required": false,
+            "description": "深度优化目标（APP 类型需要）",
+            "valid_values": [
+              "AEO",
+              "OCC",
+              "ROAS"
+            ],
+            "constraints": [
+              {
+                "condition": {
+                  "promotion_type": "APP_ANDROID"
+                },
+                "effect": {
+                  "required": true
+                },
+                "description": "APP 推广需要设置 deep_bid_type"
+              }
+            ],
+            "depends_on": {
+              "promotion_type": "APP_ANDROID"
+            }
+          },
+          "operating_systems": {
+            "name": "operating_systems",
+            "type": "array",
+            "required": false,
+            "description": "操作系统类型",
+            "valid_values": [
+              "ANDROID",
+              "IOS"
+            ],
+            "constraints": [
+              {
+                "condition": {
+                  "promotion_type": "APP_ANDROID"
+                },
+                "effect": {
+                  "required": [
+                    "ANDROID"
+                  ]
+                },
+                "description": "Android App 需要 ANDROID"
+              }
+            ],
+            "depends_on": {}
+          }
+        },
+        "parent_dependencies": {
+          "campaign": {
+            "objective_type": "决定 promotion_type 可选值",
+            "automation_type": "决定 API 功能限制",
+            "budget_mode": "决定 Ad Group 预算模式"
+          }
+        },
+        "valid_combinations": [
+          {
+            "campaign_objective": "TRAFFIC",
+            "promotion_type": "WEBSITE",
+            "billing_event": "OCPM",
+            "bid_type": "BID_TYPE_NO_BID",
+            "requirements": [
+              "landing_url",
+              "location_ids"
+            ]
+          },
+          {
+            "campaign_objective": "APP_PROMOTION",
+            "promotion_type": "APP_ANDROID",
+            "billing_event": "OCPM",
+            "bid_type": "BID_TYPE_NO_BID",
+            "deep_bid_type": "AEO",
+            "requirements": [
+              "app_id",
+              "location_ids",
+              "operating_systems"
+            ]
+          }
+        ]
+      },
+      "source": "official_docs+tiktok_api",
+      "created_at": "2026-08-24T16:44:10.324456",
+      "updated_at": "2026-08-24T16:44:10.324457",
+      "tags": [
+        "tiktok",
+        "ad_group",
+        "hierarchy",
+        "api_v1.3"
+      ],
+      "metadata": {
+        "verified": true,
+        "test_count": 30
+      }
+    },
+    {
+      "entry_id": "tiktok_ad_hierarchy",
+      "knowledge_type": "hierarchy",
+      "platform": "tiktok",
+      "content": {
+        "level": "ad",
+        "description": "TikTok 广告创意层级",
+        "parameters": {
+          "ad_name": {
+            "name": "ad_name",
+            "type": "string",
+            "required": true,
+            "description": "广告名称",
+            "valid_values": [],
+            "constraints": {},
+            "depends_on": {}
+          },
+          "ad_status": {
+            "name": "ad_status",
+            "type": "integer",
+            "required": true,
+            "description": "广告状态: 1=启用, 0=禁用",
+            "valid_values": [
+              "1",
+              "0"
+            ],
+            "constraints": {},
+            "depends_on": {}
+          },
+          "creatives": {
+            "name": "creatives",
+            "type": "array",
+            "required": true,
+            "description": "素材列表",
+            "valid_values": [],
+            "constraints": {},
+            "depends_on": {}
+          },
+          "text": {
+            "name": "text",
+            "type": "object",
+            "required": true,
+            "description": "广告文案",
+            "valid_values": [],
+            "constraints": {},
+            "depends_on": {}
+          }
+        },
+        "parent_dependencies": {
+          "ad_group": {
+            "promotion_type": "决定素材类型",
+            "billing_event": "决定出价方式"
+          }
+        }
+      },
+      "source": "official_docs+tiktok_api",
+      "created_at": "2026-08-24T16:44:10.324462",
+      "updated_at": "2026-08-24T16:44:10.324462",
+      "tags": [
+        "tiktok",
+        "ad",
+        "hierarchy"
+      ],
+      "metadata": {
+        "verified": true,
+        "test_count": 10
+      }
+    }
+  ]
+}

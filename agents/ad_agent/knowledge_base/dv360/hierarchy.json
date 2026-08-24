@@ -1,0 +1,77 @@
+{
+  "name": "dv360_hierarchy",
+  "version": "1.0",
+  "last_updated": "2026-08-24T16:58:46.437782",
+  "entries": [
+    {
+      "entry_id": "dv360_campaign_hierarchy",
+      "knowledge_type": "hierarchy",
+      "platform": "dv360",
+      "content": {
+        "level": "campaign",
+        "description": "DV360 广告系列层级",
+        "parameters": {
+          "buyer_id": {
+            "name": "buyer_id",
+            "type": "integer",
+            "required": true,
+            "description": "买家ID（SSP侧）",
+            "valid_values": [],
+            "constraints": [],
+            "depends_on": {}
+          },
+          "name": {
+            "name": "name",
+            "type": "string",
+            "required": true,
+            "description": "广告系列名称",
+            "valid_values": [],
+            "constraints": [
+              {
+                "condition": {
+                  "max_length": 100
+                },
+                "effect": {
+                  "error": "名称长度不能超过100个字符"
+                }
+              }
+            ],
+            "depends_on": {}
+          },
+          "start_date": {
+            "name": "start_date",
+            "type": "date",
+            "required": true,
+            "description": "开始日期",
+            "valid_values": [],
+            "constraints": [],
+            "depends_on": {}
+          },
+          "end_date": {
+            "name": "end_date",
+            "type": "date",
+            "required": false,
+            "description": "结束日期",
+            "valid_values": [],
+            "constraints": [],
+            "depends_on": {}
+          }
+        }
+      },
+      "source": "official_docs",
+      "source_ref": "https://developers.google.com/display-video",
+      "created_at": "2026-08-24T16:58:46.437647",
+      "updated_at": "2026-08-24T16:58:46.437650",
+      "tags": [
+        "dv360",
+        "campaign",
+        "hierarchy"
+      ],
+      "metadata": {
+        "verified": false
+      },
+      "confidence": 1.0,
+      "usage_count": 0
+    }
+  ]
+}

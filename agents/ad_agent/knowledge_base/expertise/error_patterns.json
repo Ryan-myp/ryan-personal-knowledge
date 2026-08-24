@@ -1,0 +1,100 @@
+{
+  "name": "error_pattern",
+  "version": "1.0",
+  "last_updated": "2026-08-24T16:58:30.005747",
+  "entries": [
+    {
+      "entry_id": "ep_invalid_objective",
+      "knowledge_type": "error_pattern",
+      "platform": "meta",
+      "content": {
+        "error_code": "INVALID_PARAMETER",
+        "error_message": "Objective is invalid for this ad account",
+        "cause": "使用了不支持的 objective 类型",
+        "solutions": [
+          "检查账户支持的 objective 列表",
+          "使用 campaign/get 查询可用目标",
+          "联系 Meta 支持确认账户权限"
+        ],
+        "常见场景": [
+          "新账户首次投放",
+          "跨账户复制"
+        ]
+      },
+      "source": "api_test",
+      "source_ref": "",
+      "created_at": "2026-08-24T16:58:30.005255",
+      "updated_at": "2026-08-24T16:58:30.005262",
+      "tags": [
+        "error",
+        "objective",
+        "validation"
+      ],
+      "metadata": {},
+      "confidence": 0.95,
+      "usage_count": 0
+    },
+    {
+      "entry_id": "ep_budget_too_low",
+      "knowledge_type": "error_pattern",
+      "platform": "tiktok",
+      "content": {
+        "error_code": "BUDGET_TOO_LOW",
+        "error_message": "Your budget setting must not be less than $50",
+        "cause": "预算低于平台最低限制",
+        "solutions": [
+          "提高日预算至 $50 以上",
+          "检查预算单位（分 vs 美元）",
+          "确认平台最低预算要求"
+        ],
+        "常见场景": [
+          "新 Campaign 创建",
+          "预算调整"
+        ]
+      },
+      "source": "api_test",
+      "source_ref": "",
+      "created_at": "2026-08-24T16:58:30.005258",
+      "updated_at": "2026-08-24T16:58:30.005469",
+      "tags": [
+        "error",
+        "budget",
+        "tiktok"
+      ],
+      "metadata": {},
+      "confidence": 0.95,
+      "usage_count": 0
+    },
+    {
+      "entry_id": "ep_tiktok_adgroup_limitation",
+      "knowledge_type": "error_pattern",
+      "platform": "tiktok",
+      "content": {
+        "error_code": "API_NOT_SUPPORTED",
+        "error_message": "This API does not support Upgraded Smart Plus ads",
+        "cause": "API v1.3 不支持智能广告系列",
+        "solutions": [
+          "使用 MANUAL 类型 Campaign",
+          "升级至 API v2.0（需申请权限）",
+          "通过广告后台手动创建"
+        ],
+        "常见场景": [
+          "创建 Ad Group",
+          "API 版本限制"
+        ]
+      },
+      "source": "api_test",
+      "source_ref": "",
+      "created_at": "2026-08-24T16:58:30.005259",
+      "updated_at": "2026-08-24T16:58:30.005665",
+      "tags": [
+        "error",
+        "api-limitation",
+        "tiktok"
+      ],
+      "metadata": {},
+      "confidence": 0.98,
+      "usage_count": 0
+    }
+  ]
+}

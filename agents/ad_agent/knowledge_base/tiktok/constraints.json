@@ -1,0 +1,110 @@
+{
+  "name": "tiktok_constraints",
+  "entries": [
+    {
+      "entry_id": "tiktok_constraints",
+      "knowledge_type": "constraint",
+      "platform": "tiktok",
+      "content": {
+        "rules": [
+          {
+            "rule_id": "campaign_objective_to_promotion_type",
+            "source_level": "campaign",
+            "target_level": "ad_group",
+            "source_value": "objective_type",
+            "condition": {
+              "objective_type": "TRAFFIC",
+              "promotion_type": "WEBSITE"
+            },
+            "effect": {
+              "allowed": true,
+              "required_params": [
+                "landing_url"
+              ]
+            },
+            "description": "TRAFFIC 目标只能使用 WEBSITE 推广类型"
+          },
+          {
+            "rule_id": "campaign_objective_to_promotion_type_app",
+            "source_level": "campaign",
+            "target_level": "ad_group",
+            "source_value": "objective_type",
+            "condition": {
+              "objective_type": "APP_PROMOTION",
+              "promotion_type": "APP_ANDROID"
+            },
+            "effect": {
+              "allowed": true,
+              "required_params": [
+                "app_id",
+                "deep_bid_type",
+                "operating_systems"
+              ]
+            },
+            "description": "APP_PROMOTION 目标只能使用 APP 推广类型"
+          },
+          {
+            "rule_id": "automation_type_api_limitation",
+            "source_level": "campaign",
+            "target_level": "ad_group",
+            "source_value": "automation_type",
+            "condition": {
+              "automation_type": "UPGRADED_SMART_PLUS"
+            },
+            "effect": {
+              "allowed": false,
+              "error": "This API does not support Upgraded Smart Plus ads",
+              "workaround": "使用 MANUAL 类型 Campaign"
+            },
+            "description": "API v1.3 不支持 UPGRADED_SMART_PLUS Campaign 的 Ad Group 创建"
+          },
+          {
+            "rule_id": "budget_mode_requirement",
+            "source_level": "campaign",
+            "target_level": "ad_group",
+            "source_value": "budget_mode",
+            "condition": {
+              "budget_mode": "BUDGET_MODE_DAY"
+            },
+            "effect": {
+              "required_params": [
+                "daily_budget",
+                "budget"
+              ],
+              "min_budget": 5000
+            },
+            "description": "日预算模式需要设置 daily_budget 和 budget，最小 $50"
+          },
+          {
+            "rule_id": "billing_event_promotion_type",
+            "source_level": "ad_group",
+            "target_level": "ad_group",
+            "source_value": "promotion_type",
+            "condition": {
+              "promotion_type": "APP_ANDROID"
+            },
+            "effect": {
+              "allowed_billing_events": [
+                "OCPM"
+              ],
+              "required_deep_bid_type": "AEO"
+            },
+            "description": "APP 推广只支持 OCPM 计费，需要设置 AEO 深度优化"
+          }
+        ]
+      },
+      "source": "official_docs+tiktok_api_test",
+      "created_at": "2026-08-24T16:44:10.324465",
+      "updated_at": "2026-08-24T16:44:10.324466",
+      "tags": [
+        "tiktok",
+        "constraints",
+        "dependencies"
+      ],
+      "metadata": {
+        "verified": true,
+        "test_count": 100
+      }
+    }
+  ]
+}

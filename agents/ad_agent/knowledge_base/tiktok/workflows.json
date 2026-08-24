@@ -1,0 +1,103 @@
+{
+  "name": "tiktok_workflows",
+  "entries": [
+    {
+      "entry_id": "tiktok_create_workflow",
+      "knowledge_type": "workflow",
+      "platform": "tiktok",
+      "content": {
+        "type": "create_campaign_adgroup_ad",
+        "description": "TikTok 完整创建流程",
+        "steps": [
+          {
+            "step": 1,
+            "action": "create_campaign",
+            "level": "campaign",
+            "required_params": [
+              "advertiser_id",
+              "campaign_name",
+              "objective_type",
+              "budget_mode",
+              "campaign_type",
+              "campaign_automation_type"
+            ],
+            "validation": "检查 objective_type 和 budget_mode 的组合",
+            "api_endpoint": "open_api/v1.3/campaign/create/"
+          },
+          {
+            "step": 2,
+            "action": "query_campaigns",
+            "level": "campaign",
+            "required_params": [
+              "advertiser_id"
+            ],
+            "validation": "确认 Campaign 创建成功",
+            "api_endpoint": "open_api/v1.3/campaign/get/"
+          },
+          {
+            "step": 3,
+            "action": "create_adgroup",
+            "level": "ad_group",
+            "required_params": [
+              "advertiser_id",
+              "campaign_id",
+              "adgroup_name",
+              "bid_type",
+              "billing_event",
+              "budget_mode",
+              "budget",
+              "promotion_type",
+              "location_ids"
+            ],
+            "validation": "检查 promotion_type 是否与 Campaign objective_type 匹配",
+            "api_endpoint": "open_api/v1.3/adgroup/create/"
+          },
+          {
+            "step": 4,
+            "action": "query_adgroups",
+            "level": "ad_group",
+            "required_params": [
+              "advertiser_id",
+              "campaign_id"
+            ],
+            "validation": "确认 Ad Group 创建成功",
+            "api_endpoint": "open_api/v1.3/adgroup/get/"
+          },
+          {
+            "step": 5,
+            "action": "create_ad",
+            "level": "ad",
+            "required_params": [
+              "advertiser_id",
+              "campaign_id",
+              "adgroup_id",
+              "ad_name",
+              "ad_status",
+              "creatives",
+              "text"
+            ],
+            "validation": "检查素材类型是否与 promotion_type 匹配",
+            "api_endpoint": "open_api/v1.3/ad/create/"
+          }
+        ],
+        "error_handling": {
+          "40002": "参数错误，检查知识库约束规则",
+          "40003": "权限不足，检查 Account Permission",
+          "40004": "配额超限，检查 Budget 设置"
+        }
+      },
+      "source": "tiktok_api_experience",
+      "created_at": "2026-08-24T16:44:10.324470",
+      "updated_at": "2026-08-24T16:44:10.324471",
+      "tags": [
+        "tiktok",
+        "workflow",
+        "creation"
+      ],
+      "metadata": {
+        "verified": true,
+        "test_count": 20
+      }
+    }
+  ]
+}

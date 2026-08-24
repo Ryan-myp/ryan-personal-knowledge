@@ -1,0 +1,143 @@
+{
+  "name": "creative_guide",
+  "version": "1.0",
+  "last_updated": "2026-08-24T16:54:23.666040",
+  "entries": [
+    {
+      "entry_id": "creative_video_spec",
+      "knowledge_type": "creative_guide",
+      "platform": "all",
+      "content": {
+        "guide_type": "video_specifications",
+        "description": "视频素材规格要求",
+        "platforms": {
+          "meta": {
+            "supported_formats": [
+              "MP4",
+              "MOV"
+            ],
+            "recommended_size": "1080x1080 (1:1)",
+            "min_duration": 4,
+            "max_duration": 240,
+            "file_size_limit": "4GB"
+          },
+          "tiktok": {
+            "supported_formats": [
+              "MP4",
+              "MOV"
+            ],
+            "recommended_size": "1080x1920 (9:16)",
+            "min_duration": 0.5,
+            "max_duration": 60,
+            "file_size_limit": "72MB"
+          },
+          "google": {
+            "supported_formats": [
+              "MP4",
+              "MOV",
+              "WebM"
+            ],
+            "recommended_size": "1920x1080 (16:9)",
+            "min_duration": 4,
+            "max_duration": 300,
+            "file_size_limit": "1GB"
+          }
+        }
+      },
+      "source": "official_docs",
+      "source_ref": "",
+      "created_at": "2026-08-24T16:54:23.665615",
+      "updated_at": "2026-08-24T16:54:23.665620",
+      "tags": [
+        "creative",
+        "video",
+        "spec"
+      ],
+      "metadata": {},
+      "confidence": 1.0,
+      "usage_count": 0
+    },
+    {
+      "entry_id": "creative_image_spec",
+      "knowledge_type": "creative_guide",
+      "platform": "all",
+      "content": {
+        "guide_type": "image_specifications",
+        "description": "图片素材规格要求",
+        "platforms": {
+          "meta": {
+            "supported_formats": [
+              "JPG",
+              "PNG",
+              "GIF"
+            ],
+            "recommended_size": "1200x628 (1.91:1)",
+            "min_size": "600x600",
+            "file_size_limit": "30MB"
+          },
+          "tiktok": {
+            "supported_formats": [
+              "JPG",
+              "PNG"
+            ],
+            "recommended_size": "1080x1080 (1:1)",
+            "file_size_limit": "5MB"
+          },
+          "google": {
+            "supported_formats": [
+              "JPG",
+              "PNG",
+              "GIF"
+            ],
+            "recommended_size": "1200x628 (1.91:1)",
+            "file_size_limit": "5MB"
+          }
+        }
+      },
+      "source": "official_docs",
+      "source_ref": "",
+      "created_at": "2026-08-24T16:54:23.665617",
+      "updated_at": "2026-08-24T16:54:23.665792",
+      "tags": [
+        "creative",
+        "image",
+        "spec"
+      ],
+      "metadata": {},
+      "confidence": 1.0,
+      "usage_count": 0
+    },
+    {
+      "entry_id": "creative_best_practices",
+      "knowledge_type": "creative_guide",
+      "platform": "all",
+      "content": {
+        "guide_type": "best_practices",
+        "description": "素材创作最佳实践",
+        "tips": [
+          "Hook viewers in first 3 seconds",
+          "Use text overlay for sound-off viewing",
+          "Show product in use",
+          "Include clear CTA",
+          "Test multiple creative variations"
+        ],
+        "a_b_testing": {
+          "recommended": true,
+          "min_variants": 3,
+          "test_duration": "7 days"
+        }
+      },
+      "source": "manual_expert",
+      "source_ref": "",
+      "created_at": "2026-08-24T16:54:23.665618",
+      "updated_at": "2026-08-24T16:54:23.665970",
+      "tags": [
+        "creative",
+        "best_practices"
+      ],
+      "metadata": {},
+      "confidence": 0.85,
+      "usage_count": 0
+    }
+  ]
+}
