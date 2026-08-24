@@ -299,32 +299,52 @@
       "updated_at": "2026-08-24T19:00:00Z"
     },
     {
-      "entry_id": "google_ads_network_limitation",
+      "entry_id": "google_campaign_creation_correct",
       "platform": "google",
-      "knowledge_type": "CONSTRAINT",
+      "knowledge_type": "WORKFLOW",
       "content": {
-        "type": "api_limitation",
-        "description": "Google Ads API 网络访问限制",
-        "limitations": [
-          "中国大陆 IP 可能无法直接访问 Google Ads API",
-          "需要 VPN 或代理才能调用 API",
-          "错误表现：HTTP 404 或连接超时"
+        "type": "create_campaign_corrected",
+        "description": "Google Ads Campaign 创建正确示例（修复 contains_eu_political_advertising 问题）",
+        "key_finding": "contains_eu_political_advertising 字段需要使用 EuPoliticalAdvertisingStatus 枚举，不能使用整数 0 或布尔值 False",
+        "correct_enum_values": {
+          "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING": 3,
+          "CONTAINS_EU_POLITICAL_ADVERTISING": 2
+        },
+        "code_example": """
+from google.ads.googleads.v25.enums.types.eu_political_advertising_status import EuPoliticalAdvertisingStatusEnum
+
+campaign_operation.create.contains_eu_political_advertising = \n    EuPoliticalAdvertisingStatusEnum.EuPoliticalAdvertisingStatus.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING
+""",
+        "common_errors": [
+          {
+            "error": "Expected an int, got a boolean",
+            "cause": "错误使用 boolean False 代替整数",
+            "solution": "使用 EuPoliticalAdvertisingStatus 枚举"
+          },
+          {
+            "error": "The required field was not present",
+            "cause": "proto3 零值省略机制导致字段未序列化",
+            "solution": "必须显式设置非零枚举值"
+          }
         ],
-        "diagnostic_steps": [
-          "1. 检查 IP 地址（是否为国内 IP）",
-          "2. 测试 Google OAuth 连通性（https://www.googleapis.com/oauth2/v1/certs）",
-          "3. 测试 Google Ads API 端点（https://googleads.googleapis.com/v24/customers/{id}:search）"
-        ],
-        "workaround": [
-          "方案 A: 使用 VPN 连接到海外节点",
-          "方案 B: 使用代理服务器",
-          "方案 C: 在境外服务器上运行 API 调用"
-        ],
-        "test_account": "9055507554"
+        "api_reference": "https://developers.google.com/google-ads/api/docs/campaigns/create-search"
       },
-      "description": "Google Ads API 在中国大陆的网络访问限制",
-      "created_at": "2026-08-24T19:06:00Z",
-      "updated_at": "2026-08-24T19:06:00Z"
-    }
+      "source": "official_docs",
+      "source_ref": "https://developers.google.com/google-ads/api/docs/campaigns",
+      "created_at": "2026-08-24T19:27:00Z",
+      "updated_at": "2026-08-24T19:27:00Z",
+      "tags": [
+        "google",
+        "workflow",
+        "campaign",
+        "fix",
+        "enum"
+      ],
+      "metadata": {
+        "verified": true
+      },
+      "confidence": 1.0,
+      "usage_count": 0
+    },
   ]
 }
