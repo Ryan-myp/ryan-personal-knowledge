@@ -1,7 +1,7 @@
 {
   "name": "google_workflows",
   "version": "1.0",
-  "last_updated": "2026-08-24T19:00:00Z",
+  "last_updated": "2026-08-24T19:29:00Z",
   "entries": [
     {
       "entry_id": "google_search_campaign_workflow",
@@ -18,14 +18,16 @@
             "required_params": [
               "customer_id",
               "name",
-              "type",
-              "network_settings",
-              "shopping_setting"
+              "advertising_channel_type",
+              "status",
+              "campaign_budget",
+              "bidding_strategy",
+              "contains_eu_political_advertising"
             ],
             "api_reference": "https://developers.google.com/google-ads/api/docs/campaigns/search",
             "notes": [
-              "Shopping 类型需要 shopping_setting",
-              "Search 类型需要 advertising_channel_type"
+              "必须设置 contains_eu_political_advertising（必需字段）",
+              "使用 client.enums 获取枚举值"
             ]
           },
           {
@@ -35,7 +37,7 @@
             "required_params": [
               "campaign",
               "name",
-              "cpc_bid_ceiling_micros"
+              "status"
             ],
             "api_reference": "https://developers.google.com/google-ads/api/docs/campaigns/ad-groups"
           },
@@ -64,15 +66,14 @@
           }
         ],
         "error_handling": {
-          "5": "API 版本或认证问题",
-          "77": "广告系列类型不支持",
-          "180": "预算冲突"
+          "REQUIRED": "缺少必需字段，通常是 contains_eu_political_advertising",
+          "INVALID_ENUM_VALUE": "枚举值不正确，使用 client.enums 获取"
         }
       },
       "source": "official_docs",
-      "source_ref": "https://developers.google.com/google-ads/api/docs/campaigns",
+      "source_ref": "https://developers.google.cn/google-ads/api/samples/add-dynamic-search-ads",
       "created_at": "2026-08-24T19:00:00Z",
-      "updated_at": "2026-08-24T19:00:00Z",
+      "updated_at": "2026-08-24T19:29:00Z",
       "tags": [
         "google",
         "workflow",
@@ -80,9 +81,125 @@
         "campaign"
       ],
       "metadata": {
-        "verified": false
+        "verified": true
       },
-      "confidence": 0.8,
+      "confidence": 1.0,
+      "usage_count": 0
+    },
+    {
+      "entry_id": "google_campaign_creation_official",
+      "platform": "google",
+      "knowledge_type": "WORKFLOW",
+      "content": {
+        "type": "create_campaign_official_example",
+        "description": "Google Ads Campaign 创建官方示例代码（来自 developers.google.cn）",
+        "official_source": "https://developers.google.cn/google-ads/api/samples/add-dynamic-search-ads",
+        "key_finding": "必须使用 client.enums 获取枚举值，不能直接导入枚举类",
+        "correct_pattern": """
+# ✅ 正确方式：使用 client.enums 获取枚举值
+from google.ads.googleads.client import GoogleAdsClient
+
+client = GoogleAdsClient.load_from_storage('config.yaml')
+
+campaign.contains_eu_political_advertising = \
+    client.enums.EuPoliticalAdvertisingStatusEnum.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING
+
+campaign.advertising_channel_type = \
+    client.enums.AdvertisingChannelTypeEnum.SEARCH
+
+campaign.status = client.enums.CampaignStatusEnum.PAUSED
+""",
+        "wrong_patterns": [
+          {
+            "error": "ImportError: cannot import name 'AdvertisingChannelType'",
+            "cause": "错误导入方式",
+            "example": "from google.ads.googleads.v25.enums.types.advertising_channel_type import AdvertisingChannelType"
+          },
+          {
+            "error": "TypeError: Expected an int, got a boolean",
+            "cause": "使用布尔值代替枚举",
+            "example": "campaign.contains_eu_political_advertising = False"
+          },
+          {
+            "error": "INVALID_ARGUMENT: The required field was not present",
+            "cause": "proto3 零值省略，枚举值 0 不会被序列化",
+            "example": "campaign.contains_eu_political_advertising = 0"
+          }
+        ],
+        "code_example_search_campaign": """
+def create_search_campaign(client, customer_id, budget_resource_name):
+    campaign_service = client.get_service('CampaignService')
+    campaign_operation = client.get_type('CampaignOperation')
+    campaign = campaign_operation.create
+    
+    campaign.name = f'Interplanetary Cruise #{uuid4()}'
+    campaign.advertising_channel_type = client.enums.AdvertisingChannelTypeEnum.SEARCH
+    campaign.status = client.enums.CampaignStatusEnum.PAUSED
+    campaign.campaign_budget = budget_resource_name
+    
+    # Required: EU political advertising declaration
+    campaign.contains_eu_political_advertising = \
+        client.enums.EuPoliticalAdvertisingStatusEnum.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING
+    
+    # Enable DSAs
+    campaign.dynamic_search_ads_setting.domain_name = 'example.com'
+    campaign.dynamic_search_ads_setting.language_code = 'en'
+    
+    response = campaign_service.mutate_campaigns(
+        customer_id=customer_id,
+        operations=[campaign_operation]
+    )
+    return response.results[0].resource_name
+""",
+        "code_example_app_campaign": """
+def create_app_campaign(client, customer_id, budget_resource_name):
+    campaign_operation = client.get_type('CampaignOperation')
+    campaign = campaign_operation.create
+    
+    campaign.name = f'Interplanetary Cruise App #{uuid4()}'
+    campaign.campaign_budget = budget_resource_name
+    campaign.status = client.enums.CampaignStatusEnum.PAUSED
+    campaign.advertising_channel_type = client.enums.AdvertisingChannelTypeEnum.MULTI_CHANNEL
+    campaign.advertising_channel_sub_type = client.enums.AdvertisingChannelSubTypeEnum.APP_CAMPAIGN
+    
+    # Target CPA $1 per install
+    campaign.target_cpa.target_cpa_micros = 1000000
+    
+    # App settings
+    campaign.app_campaign_setting.app_id = 'com.google.android.apps.adwords'
+    campaign.app_campaign_setting.app_store = \
+        client.enums.AppCampaignAppStoreEnum.GOOGLE_APP_STORE
+    campaign.app_campaign_setting.bidding_strategy_goal_type = \
+        client.enums.AppCampaignBiddingStrategyGoalTypeEnum.OPTIMIZE_INSTALLS_TARGET_INSTALL_COST
+    
+    # Required: EU political advertising declaration
+    campaign.contains_eu_political_advertising = \
+        client.enums.EuPoliticalAdvertisingStatusEnum.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING
+    
+    response = campaign_service.mutate_campaigns(
+        customer_id=customer_id,
+        operations=[campaign_operation]
+    )
+    return response.results[0].resource_name
+""",
+        "api_reference": "https://developers.google.cn/google-ads/api/samples?hl=zh-cn"
+      },
+      "source": "official_docs",
+      "source_ref": "https://developers.google.cn/google-ads/api/samples/add-dynamic-search-ads",
+      "created_at": "2026-08-24T19:29:00Z",
+      "updated_at": "2026-08-24T19:29:00Z",
+      "tags": [
+        "google",
+        "workflow",
+        "campaign",
+        "official_sample",
+        "python",
+        "enum"
+      ],
+      "metadata": {
+        "verified": true
+      },
+      "confidence": 1.0,
       "usage_count": 0
     },
     {
@@ -95,52 +212,34 @@
         "valid_values": {
           "SEARCH": {
             "description": "搜索广告",
-            "sub_types": [
-              "SEARCH_STANDARD",
-              "SEARCH_DYNAMIC_ADS"
-            ]
+            "sub_types": ["SEARCH_STANDARD", "SEARCH_DYNAMIC_ADS"]
           },
           "SHOPPING": {
             "description": "购物广告",
-            "sub_types": [
-              "SHOPPING_SALES",
-              "SHOPPING_PRODUCT_ADS",
-              "SHOPPING_REVIEW_ADS"
-            ]
+            "sub_types": ["SHOPPING_SALES", "SHOPPING_PRODUCT_ADS"]
           },
           "DISPLAY": {
             "description": "展示广告",
-            "sub_types": [
-              "DISPLAY_STANDARD",
-              "DISPLAY_PERFORMANCE"
-            ]
+            "sub_types": ["DISPLAY_STANDARD", "DISPLAY_PERFORMANCE"]
           },
           "VIDEO": {
             "description": "视频广告",
-            "sub_types": [
-              "VIDEO_VIEW",
-              "VIDEO_ENGAGEMENT"
-            ]
+            "sub_types": ["VIDEO_VIEW", "VIDEO_ENGAGEMENT"]
           },
-          "APP": {
-            "description": "应用广告",
-            "sub_types": [
-              "APP_INSTALLS",
-              "APP_engagement"
-            ]
+          "MULTI_CHANNEL": {
+            "description": "全渠道广告（App 广告）",
+            "sub_types": ["APP_CAMPAIGN"]
           },
-          "MAXIMIZE": {
-            "description": "智能广告系列",
-            "sub_types": [
-              "PERFORMANCE_MAX"
-            ]
+          "PERFORMANCE_MAX": {
+            "description": "效果最大化广告",
+            "sub_types": []
           }
         },
-        "api_reference": "https://developers.google.com/google-ads/api/reference/rpc/v18/Campaign.Type"
+        "api_reference": "https://developers.google.com/google-ads/api/reference/rpc/v25/AdvertisingChannelTypeEnum"
       },
       "description": "Google Ads 广告系列类型定义",
       "created_at": "2026-08-24T19:00:00Z",
-      "updated_at": "2026-08-24T19:00:00Z"
+      "updated_at": "2026-08-24T19:29:00Z"
     },
     {
       "entry_id": "google_bidding_strategies",
@@ -154,18 +253,11 @@
           "TARGET_ROAS",
           "MAXIMIZE_CONVERSIONS",
           "MAXIMIZE_CONVERSION_VALUE",
-          "TARGET_OUTCOME_ROAS",
-          "TARGET_SPEND",
           "MANUAL_CPC",
-          "MANUAL_CPM",
-          "TARGET_CPV",
-          "TARGET_OCPM",
-          "TARGET_CPM",
-          "NO_BIDDING"
+          "MANUAL_CPM"
         ],
         "notes": [
           "智能出价策略（如 TARGET_CPA）需要转化数据",
-          "MANUAL_CPC 需要设置 bid_crest_micros",
           "不同广告系列类型支持不同的出价策略"
         ],
         "api_reference": "https://developers.google.com/google-ads/api/docs/bidding/target-cpa"
@@ -250,12 +342,15 @@
             "level": "campaign",
             "required_fields": [
               "name",
-              "type",
               "advertising_channel_type",
-              "status"
+              "status",
+              "campaign_budget",
+              "bidding_strategy",
+              "contains_eu_political_advertising"
             ],
             "notes": [
-              "type=SEARCH, advertising_channel_type=SEARCH_STANDARD"
+              "必须设置 contains_eu_political_advertising",
+              "使用 client.enums 获取枚举值"
             ]
           },
           {
@@ -296,55 +391,7 @@
       },
       "description": "Google Ads 搜索广告层级结构",
       "created_at": "2026-08-24T19:00:00Z",
-      "updated_at": "2026-08-24T19:00:00Z"
-    },
-    {
-      "entry_id": "google_campaign_creation_correct",
-      "platform": "google",
-      "knowledge_type": "WORKFLOW",
-      "content": {
-        "type": "create_campaign_corrected",
-        "description": "Google Ads Campaign 创建正确示例（修复 contains_eu_political_advertising 问题）",
-        "key_finding": "contains_eu_political_advertising 字段需要使用 EuPoliticalAdvertisingStatus 枚举，不能使用整数 0 或布尔值 False",
-        "correct_enum_values": {
-          "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING": 3,
-          "CONTAINS_EU_POLITICAL_ADVERTISING": 2
-        },
-        "code_example": """
-from google.ads.googleads.v25.enums.types.eu_political_advertising_status import EuPoliticalAdvertisingStatusEnum
-
-campaign_operation.create.contains_eu_political_advertising = \n    EuPoliticalAdvertisingStatusEnum.EuPoliticalAdvertisingStatus.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING
-""",
-        "common_errors": [
-          {
-            "error": "Expected an int, got a boolean",
-            "cause": "错误使用 boolean False 代替整数",
-            "solution": "使用 EuPoliticalAdvertisingStatus 枚举"
-          },
-          {
-            "error": "The required field was not present",
-            "cause": "proto3 零值省略机制导致字段未序列化",
-            "solution": "必须显式设置非零枚举值"
-          }
-        ],
-        "api_reference": "https://developers.google.com/google-ads/api/docs/campaigns/create-search"
-      },
-      "source": "official_docs",
-      "source_ref": "https://developers.google.com/google-ads/api/docs/campaigns",
-      "created_at": "2026-08-24T19:27:00Z",
-      "updated_at": "2026-08-24T19:27:00Z",
-      "tags": [
-        "google",
-        "workflow",
-        "campaign",
-        "fix",
-        "enum"
-      ],
-      "metadata": {
-        "verified": true
-      },
-      "confidence": 1.0,
-      "usage_count": 0
-    },
+      "updated_at": "2026-08-24T19:29:00Z"
+    }
   ]
 }
