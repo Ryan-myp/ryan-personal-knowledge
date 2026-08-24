@@ -202,29 +202,6 @@
       "updated_at": "2026-08-24T18:26:00Z"
     },
     {
-      "entry_id": "tiktok_smart_plus_campaign_api_limitation",
-      "platform": "tiktok",
-      "knowledge_type": "WORKFLOW",
-      "content": {
-        "type": "api_limitation",
-        "api_version": "v1.3",
-        "limitation": "API v1.3 无法创建 SMART+ Campaign",
-        "details": [
-          "campaign_automation_type=UPGRADED_SMART_PLUS 时，所有 objective_type 都返回 'Enter a valid Campaign Type'",
-          "SMART+ Campaign 只能通过 TikTok 广告后台手动创建",
-          "API v1.3 只支持 MANUAL Campaign 创建"
-        ],
-        "workaround": [
-          "方案 A: 使用 TikTok 广告后台手动创建 SMART+ Campaign",
-          "方案 B: 使用 MANUAL Campaign + WEBSITE promotion_type 替代"
-        ],
-        "recommendation": "对于 SMART+ Campaign，建议通过 TikTok 广告后台创建；对于 API 自动化，使用 MANUAL Campaign + WEBSITE promotion_type"
-      },
-      "description": "TikTok API v1.3 SMART+ Campaign 创建限制",
-      "created_at": "2026-08-24T18:35:00Z",
-      "updated_at": "2026-08-24T18:35:00Z"
-    },
-    {
       "entry_id": "tiktok_website_adgroup_correct_params",
       "platform": "tiktok",
       "knowledge_type": "WORKFLOW",
@@ -253,6 +230,48 @@
       "description": "WEBSITE AdGroup 正确参数",
       "created_at": "2026-08-24T18:35:00Z",
       "updated_at": "2026-08-24T18:35:00Z"
+    },
+    {
+      "entry_id": "tiktok_smart_plus_campaign_correct_params",
+      "platform": "tiktok",
+      "knowledge_type": "WORKFLOW",
+      "content": {
+        "type": "api_workflow",
+        "description": "SMART+ Campaign 正确创建参数",
+        "parameters": {
+          "campaign": {
+            "objective_type": "APP_PROMOTION",
+            "app_promotion_type": "APP_RETARGETING",
+            "campaign_type": "REGULAR_CAMPAIGN",
+            "budget_optimize_on": true,
+            "budget_mode": "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
+            "budget": 50
+          },
+          "adgroup": {
+            "promotion_type": "APP_ANDROID",
+            "optimization_goal": "IN_APP_EVENT",
+            "optimization_event": "ACTIVE_PAY",
+            "bid_type": "BID_TYPE_NO_BID",
+            "deep_bid_type": "AEO",
+            "billing_event": "OCPM",
+            "audience_type": "NEW_CUSTOM_AUDIENCE"
+          },
+          "ad": {
+            "identity_type": "BC_AUTH_TT",
+            "ad_format": "SINGLE_VIDEO",
+            "tiktok_item_id": "Spark视频ID"
+          }
+        },
+        "notes": [
+          "使用标准 campaign/create 端点",
+          "app_promotion_type 是必需字段",
+          "budget_optimize_on=true 启用 CBO",
+          "audience_type=NEW_CUSTOM_AUDIENCE 用于 App Retargeting"
+        ]
+      },
+      "description": "SMART+ Campaign 正确创建参数",
+      "created_at": "2026-08-24T18:55:00Z",
+      "updated_at": "2026-08-24T18:55:00Z"
     }
   ]
 }
