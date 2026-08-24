@@ -72,22 +72,22 @@ def _init_on_import():
         
         # Meta
         if 'meta' in credentials:
-            meta_client = MetaAPIClient(credentials)
+            meta_client = MetaAPIClient(credentials['meta'])
             runtime.register_capability(MetaCapability(meta_client))
         
         # TikTok
         if 'tiktok' in credentials:
-            tiktok_client = TikTokAPIClient(credentials)
+            tiktok_client = TikTokAPIClient(credentials['tiktok'])
             runtime.register_capability(TikTokCapability(tiktok_client))
         
         # Google Ads
         if 'google' in credentials:
-            google_client = GoogleAdsAPIClient(credentials)
+            google_client = GoogleAdsAPIClient(credentials['google'])
             runtime.register_capability(GoogleCapability(google_client))
         
         # DV360
         if 'dv360' in credentials:
-            dv360_client = DV360APIClient(credentials)
+            dv360_client = DV360APIClient(credentials['dv360'])
             runtime.register_capability(DV360Capability())
         
         print(f"✅ 已注册平台: {', '.join(runtime.registry.list_all_platforms())}")

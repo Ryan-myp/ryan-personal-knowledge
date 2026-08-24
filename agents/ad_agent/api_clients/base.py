@@ -9,6 +9,7 @@ api_clients/base.py - 生产级 API 客户端基类
 """
 
 import time
+import requests
 import logging
 import hashlib
 from abc import ABC, abstractmethod
