@@ -1,5 +1,7 @@
 {
   "name": "tiktok_workflows",
+  "version": "1.0",
+  "last_updated": "2026-08-24T17:25:00.086120",
   "entries": [
     {
       "entry_id": "tiktok_create_workflow",
@@ -87,6 +89,7 @@
         }
       },
       "source": "tiktok_api_experience",
+      "source_ref": "",
       "created_at": "2026-08-24T16:44:10.324470",
       "updated_at": "2026-08-24T16:44:10.324471",
       "tags": [
@@ -97,7 +100,81 @@
       "metadata": {
         "verified": true,
         "test_count": 20
-      }
+      },
+      "confidence": 1.0,
+      "usage_count": 0
+    },
+    {
+      "entry_id": "tiktok_create_adgroup_workflow",
+      "knowledge_type": "workflow",
+      "platform": "tiktok",
+      "content": {
+        "type": "create_adgroup",
+        "description": "TikTok AdGroup 创建工作流",
+        "prerequisites": [
+          "campaign_id",
+          "campaign_automation_type=MANUAL"
+        ],
+        "steps": [
+          {
+            "step": 1,
+            "action": "validate_campaign",
+            "description": "验证 Campaign 状态和类型",
+            "check": [
+              "campaign_status=1",
+              "campaign_automation_type=MANUAL"
+            ]
+          },
+          {
+            "step": 2,
+            "action": "prepare_adgroup_params",
+            "description": "准备 AdGroup 参数",
+            "required": [
+              "adgroup_name",
+              "bid_type",
+              "billing_event",
+              "budget_mode",
+              "promotion_type",
+              "location_ids"
+            ]
+          },
+          {
+            "step": 3,
+            "action": "create_adgroup",
+            "description": "调用 API 创建 AdGroup",
+            "endpoint": "open_api/v1.3/adgroup/create/",
+            "method": "POST"
+          },
+          {
+            "step": 4,
+            "action": "verify_creation",
+            "description": "验证 AdGroup 创建结果",
+            "check": [
+              "adgroup_id exists",
+              "adgroup_status=1"
+            ]
+          }
+        ],
+        "error_handling": {
+          "BUDGET_TOO_LOW": "提高预算至 $50 以上",
+          "API_NOT_SUPPORTED": "使用 MANUAL 类型 Campaign",
+          "INVALID_PROMOTION_TYPE": "检查 Campaign objective_type"
+        }
+      },
+      "source": "api_test",
+      "source_ref": "",
+      "created_at": "2026-08-24T17:25:00.086042",
+      "updated_at": "2026-08-24T17:25:00.086046",
+      "tags": [
+        "tiktok",
+        "workflow",
+        "adgroup"
+      ],
+      "metadata": {
+        "verified": true
+      },
+      "confidence": 1.0,
+      "usage_count": 0
     }
   ]
 }

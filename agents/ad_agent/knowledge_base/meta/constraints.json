@@ -1,7 +1,7 @@
 {
   "name": "meta_constraints",
   "version": "1.0",
-  "last_updated": "2026-08-24T16:57:54.369023",
+  "last_updated": "2026-08-24T17:25:00.138096",
   "entries": [
     {
       "entry_id": "meta_campaign_to_adset_constraint",
@@ -57,6 +57,139 @@
         "meta",
         "constraint",
         "campaign-adset"
+      ],
+      "metadata": {
+        "verified": true
+      },
+      "confidence": 1.0,
+      "usage_count": 0
+    },
+    {
+      "entry_id": "meta_adset_to_ad_creative_constraint",
+      "knowledge_type": "constraint",
+      "platform": "meta",
+      "content": {
+        "source_level": "adset",
+        "target_level": "ad",
+        "description": "AdSet 设置限制 Ad 素材类型",
+        "rules": [
+          {
+            "condition": {
+              "optimization_goal": "APP_INSTALLS"
+            },
+            "effect": {
+              "required_fields": [
+                "page_id",
+                "call_to_action_type"
+              ]
+            },
+            "description": "应用安装需要 Page ID 和 CTA"
+          },
+          {
+            "condition": {
+              "optimization_goal": "CONVERSIONS"
+            },
+            "effect": {
+              "required_fields": [
+                "landing_url",
+                "pixel_id"
+              ]
+            },
+            "description": "转化需要落地页和 Pixel"
+          },
+          {
+            "condition": {
+              "optimization_goal": "REACH"
+            },
+            "effect": {
+              "allowed_formats": [
+                "IMAGE",
+                "VIDEO"
+              ]
+            },
+            "description": "触达目标支持图片和视频"
+          }
+        ]
+      },
+      "source": "api_test",
+      "source_ref": "Meta Marketing API v18.0",
+      "created_at": "2026-08-24T17:25:00.137751",
+      "updated_at": "2026-08-24T17:25:00.137753",
+      "tags": [
+        "meta",
+        "constraint",
+        "adset-ad"
+      ],
+      "metadata": {
+        "verified": true
+      },
+      "confidence": 1.0,
+      "usage_count": 0
+    },
+    {
+      "entry_id": "meta_special_ad_categories_constraint",
+      "knowledge_type": "constraint",
+      "platform": "meta",
+      "content": {
+        "source_level": "campaign",
+        "target_level": "adset",
+        "description": "特殊广告类别限制",
+        "rules": [
+          {
+            "condition": {
+              "special_ad_categories": [
+                "EMPLOYMENT"
+              ]
+            },
+            "effect": {
+              "restricted_locations": [
+                "US",
+                "CA"
+              ],
+              "no_age_gender_targeting": true
+            },
+            "description": "就业广告不能定向年龄和性别"
+          },
+          {
+            "condition": {
+              "special_ad_categories": [
+                "HOUSING"
+              ]
+            },
+            "effect": {
+              "restricted_locations": [
+                "US",
+                "CA"
+              ],
+              "no_age_gender_targeting": true
+            },
+            "description": "住房广告不能定向年龄和性别"
+          },
+          {
+            "condition": {
+              "special_ad_categories": [
+                "CREDIT"
+              ]
+            },
+            "effect": {
+              "restricted_locations": [
+                "US",
+                "CA"
+              ],
+              "no_age_gender_targeting": true
+            },
+            "description": "信贷广告不能定向年龄和性别"
+          }
+        ]
+      },
+      "source": "official_docs",
+      "source_ref": "Meta Advertising Policies",
+      "created_at": "2026-08-24T17:25:00.138031",
+      "updated_at": "2026-08-24T17:25:00.138033",
+      "tags": [
+        "meta",
+        "constraint",
+        "special-ad-categories"
       ],
       "metadata": {
         "verified": true

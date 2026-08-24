@@ -1,0 +1,128 @@
+{
+  "name": "case_study",
+  "version": "1.0",
+  "last_updated": "2026-08-24T17:26:05.843643",
+  "entries": [
+    {
+      "entry_id": "case_ecommerce_roas_optimization",
+      "knowledge_type": "case_study",
+      "platform": "meta",
+      "content": {
+        "title": "电商客户 ROAS 优化案例",
+        "description": "通过精细化定向和素材优化，将 ROAS 从 2.5 提升至 4.8",
+        "business_type": "ecommerce",
+        "challenge": "初期 ROAS 仅 2.5，远低于目标 4.0",
+        "solution": [
+          "拆分 AdGroup 按产品类别",
+          "为高价值产品设置独立 Campaign",
+          "使用动态商品广告（DPA）",
+          "优化素材展示产品卖点"
+        ],
+        "results": {
+          "roas_before": 2.5,
+          "roas_after": 4.8,
+          "improvement": "92%"
+        },
+        "key_learnings": [
+          "细分受众比泛定向效果更好",
+          "动态素材能显著提升 CTR",
+          "持续 A/B 测试是优化的关键"
+        ]
+      },
+      "source": "manual_expert",
+      "source_ref": "",
+      "created_at": "2026-08-24T17:26:05.843282",
+      "updated_at": "2026-08-24T17:26:05.843289",
+      "tags": [
+        "case-study",
+        "ecommerce",
+        "roas",
+        "optimization"
+      ],
+      "metadata": {},
+      "confidence": 0.85,
+      "usage_count": 0
+    },
+    {
+      "entry_id": "case_app_install_scaling",
+      "knowledge_type": "case_study",
+      "platform": "tiktok",
+      "content": {
+        "title": "游戏 App 安装量规模化案例",
+        "description": "通过 UGC 素材和 KOL 合作，将 CPI 降低 40%",
+        "business_type": "gaming",
+        "challenge": "新游戏上线，需要快速获得大量安装",
+        "solution": [
+          "制作 10+ 种 UGC 风格素材",
+          "与 TikTok 游戏 KOL 合作",
+          "使用 APP_INSTALLS 目标优化",
+          "设置 CBO 自动预算分配"
+        ],
+        "results": {
+          "installs_before": "500/day",
+          "installs_after": "2000/day",
+          "cpi_reduction": "40%"
+        },
+        "key_learnings": [
+          "UGC 素材在 TikTok 表现最佳",
+          "KOL 合作能快速提升品牌认知",
+          "CBO 适合放量阶段"
+        ]
+      },
+      "source": "manual_expert",
+      "source_ref": "",
+      "created_at": "2026-08-24T17:26:05.843285",
+      "updated_at": "2026-08-24T17:26:05.843467",
+      "tags": [
+        "case-study",
+        "gaming",
+        "app-install",
+        "scaling"
+      ],
+      "metadata": {},
+      "confidence": 0.88,
+      "usage_count": 0
+    },
+    {
+      "entry_id": "case_google_search_leads",
+      "knowledge_type": "case_study",
+      "platform": "google",
+      "content": {
+        "title": "B2B 线索收集案例",
+        "description": "通过搜索广告和落地页优化，将线索成本降低 35%",
+        "business_type": "b2b",
+        "challenge": "线索成本高（$50/条），转化率仅 2%",
+        "solution": [
+          "优化关键词匹配类型",
+          "添加否定关键词排除无关流量",
+          "改进落地页加载速度",
+          "使用智能出价（Target CPA）"
+        ],
+        "results": {
+          "cpl_before": 50,
+          "cpl_after": 32.5,
+          "conversion_rate_before": "2%",
+          "conversion_rate_after": "4.5%"
+        },
+        "key_learnings": [
+          "否定关键词能显著降低成本",
+          "落地页体验直接影响转化",
+          "智能出价需要足够转化数据"
+        ]
+      },
+      "source": "manual_expert",
+      "source_ref": "",
+      "created_at": "2026-08-24T17:26:05.843286",
+      "updated_at": "2026-08-24T17:26:05.843602",
+      "tags": [
+        "case-study",
+        "b2b",
+        "leads",
+        "google-search"
+      ],
+      "metadata": {},
+      "confidence": 0.82,
+      "usage_count": 0
+    }
+  ]
+}

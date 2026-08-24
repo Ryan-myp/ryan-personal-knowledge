@@ -1,7 +1,7 @@
 {
   "name": "error_pattern",
   "version": "1.0",
-  "last_updated": "2026-08-24T16:58:30.005747",
+  "last_updated": "2026-08-24T17:26:05.843069",
   "entries": [
     {
       "entry_id": "ep_invalid_objective",
@@ -94,6 +94,161 @@
       ],
       "metadata": {},
       "confidence": 0.98,
+      "usage_count": 0
+    },
+    {
+      "entry_id": "ep_invalid_targeting",
+      "knowledge_type": "error_pattern",
+      "platform": "meta",
+      "content": {
+        "error_code": "INVALID_TARGETING",
+        "error_message": "Invalid targeting specification",
+        "cause": "定向参数格式错误或地区不支持",
+        "solutions": [
+          "检查 location_ids 是否在支持列表中",
+          "使用 audiences/search 验证定向参数",
+          "确认目标地区广告政策合规"
+        ],
+        "常见场景": [
+          "创建 AdSet",
+          "修改定向"
+        ]
+      },
+      "source": "api_test",
+      "source_ref": "",
+      "created_at": "2026-08-24T17:26:05.842084",
+      "updated_at": "2026-08-24T17:26:05.842093",
+      "tags": [
+        "error",
+        "targeting",
+        "meta"
+      ],
+      "metadata": {},
+      "confidence": 0.92,
+      "usage_count": 0
+    },
+    {
+      "entry_id": "ep_insufficient_budget",
+      "knowledge_type": "error_pattern",
+      "platform": "all",
+      "content": {
+        "error_code": "INSUFFICIENT_BALANCE",
+        "error_message": "Insufficient account balance",
+        "cause": "账户余额不足或付款方案未设置",
+        "solutions": [
+          "检查账户余额",
+          "添加付款方案",
+          "联系平台客服解锁额度"
+        ],
+        "常见场景": [
+          "Campaign 创建",
+          "预算调整"
+        ]
+      },
+      "source": "api_test",
+      "source_ref": "",
+      "created_at": "2026-08-24T17:26:05.842086",
+      "updated_at": "2026-08-24T17:26:05.842412",
+      "tags": [
+        "error",
+        "budget",
+        "payment"
+      ],
+      "metadata": {},
+      "confidence": 0.95,
+      "usage_count": 0
+    },
+    {
+      "entry_id": "ep_pixel_not_found",
+      "knowledge_type": "error_pattern",
+      "platform": "meta",
+      "content": {
+        "error_code": "PIXEL_NOT_FOUND",
+        "error_message": "Pixel ID is invalid or not accessible",
+        "cause": "Pixel ID 错误或无权访问",
+        "solutions": [
+          "检查 Pixel ID 是否正确",
+          "确认 Pixel 所有权",
+          "使用 Business Manager 授权"
+        ],
+        "常见场景": [
+          "转化追踪设置",
+          "Ad 创建"
+        ]
+      },
+      "source": "api_test",
+      "source_ref": "",
+      "created_at": "2026-08-24T17:26:05.842087",
+      "updated_at": "2026-08-24T17:26:05.842618",
+      "tags": [
+        "error",
+        "pixel",
+        "meta"
+      ],
+      "metadata": {},
+      "confidence": 0.9,
+      "usage_count": 0
+    },
+    {
+      "entry_id": "ep_creative_rejected",
+      "knowledge_type": "error_pattern",
+      "platform": "all",
+      "content": {
+        "error_code": "CREATIVE_REJECTED",
+        "error_message": "Ad creative was rejected due to policy violation",
+        "cause": "素材违反平台广告政策",
+        "solutions": [
+          "查看拒绝原因详情",
+          "修改素材后重新提交",
+          "联系平台审核团队申诉"
+        ],
+        "常见场景": [
+          "素材审核",
+          "广告上线"
+        ]
+      },
+      "source": "api_test",
+      "source_ref": "",
+      "created_at": "2026-08-24T17:26:05.842089",
+      "updated_at": "2026-08-24T17:26:05.842811",
+      "tags": [
+        "error",
+        "creative",
+        "policy"
+      ],
+      "metadata": {},
+      "confidence": 0.93,
+      "usage_count": 0
+    },
+    {
+      "entry_id": "ep_google_ads_404",
+      "knowledge_type": "error_pattern",
+      "platform": "google",
+      "content": {
+        "error_code": "NOT_FOUND",
+        "error_message": "Customer ID not found or access denied",
+        "cause": "客户ID错误或权限不足",
+        "solutions": [
+          "检查 Customer ID 格式（需去掉连字符）",
+          "确认开发者令牌权限",
+          "联系 Google Ads 支持"
+        ],
+        "常见场景": [
+          "API 调用",
+          "账户查询"
+        ]
+      },
+      "source": "api_test",
+      "source_ref": "",
+      "created_at": "2026-08-24T17:26:05.842090",
+      "updated_at": "2026-08-24T17:26:05.843010",
+      "tags": [
+        "error",
+        "google",
+        "api"
+      ],
+      "metadata": {},
+      "confidence": 0.88,
       "usage_count": 0
     }
   ]
