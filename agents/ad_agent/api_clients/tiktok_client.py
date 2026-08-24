@@ -38,7 +38,7 @@ class TikTokAPIClient(BasePlatformClient):
         retry_config: Optional[RetryConfig] = None,
     ):
         super().__init__(credentials, "tiktok", retry_config)
-        self.access_token = credentials.get('tiktok', {}).get('access_token', '')
+        self.access_token = credentials.get('access_token', '')
         # 速率限制: 100次/分钟
         self._rate_limiter = RateLimiter(max_requests=100, period=60)
     
@@ -122,14 +122,20 @@ class TikTokAPIClient(BasePlatformClient):
         """获取 Campaign 列表"""
         self._rate_limiter.acquire()
         data = {
-            'advertiser_id': int(advertiser_id),
+            'advertiser_id': str(advertiser_id),
             'page_size': page_size,
         }
         if filtering:
             data['filtering'] = filtering
-        result = self.request('POST', 'campaign/get/', data=data)
-        campaigns = result.get('campaign_group_list', []) if isinstance(result, dict) else []
-        return campaigns
+        # 使用 _do_request 获取原始响应
+        url = self._build_url('campaign/get/')
+        resp = self._do_request('GET', url, params=data)
+        # 解析 TikTok 响应结构: data.data.list
+        if resp.get('status_code') == 200:
+            outer = resp.get('data', {})
+            inner = outer.get('data', {})
+            return inner.get('list', [])
+        return []
     
     def get_campaign(self, advertiser_id: str, campaign_id: str) -> dict:
         """获取 Campaign 详情"""
@@ -141,7 +147,7 @@ class TikTokAPIClient(BasePlatformClient):
         """创建 Campaign"""
         self._rate_limiter.acquire()
         data = {
-            'advertiser_id': int(advertiser_id),
+            'advertiser_id': str(advertiser_id),
             'campaign': {
                 'campaign_group_name': campaign['name'],
                 'campaign_group_status': campaign.get('status', 1),  # 1=ACTIVE, 0=PAUSED
@@ -156,7 +162,7 @@ class TikTokAPIClient(BasePlatformClient):
         """更新 Campaign"""
         self._rate_limiter.acquire()
         data = {
-            'advertiser_id': int(advertiser_id),
+            'advertiser_id': str(advertiser_id),
             'campaign_id': int(campaign_id),
             'campaign': updates,
         }
@@ -174,7 +180,7 @@ class TikTokAPIClient(BasePlatformClient):
         """删除 Campaign"""
         self._rate_limiter.acquire()
         data = {
-            'advertiser_id': int(advertiser_id),
+            'advertiser_id': str(advertiser_id),
             'campaign_ids': [int(campaign_id)],
         }
         return self.request('POST', 'campaign/delete/', data=data)
@@ -185,7 +191,7 @@ class TikTokAPIClient(BasePlatformClient):
         """获取 Ad Group 列表"""
         self._rate_limiter.acquire()
         data = {
-            'advertiser_id': int(advertiser_id),
+            'advertiser_id': str(advertiser_id),
             'campaign_id': int(campaign_id),
             'page_size': page_size,
         }
@@ -205,7 +211,7 @@ class TikTokAPIClient(BasePlatformClient):
         """创建 Ad Group"""
         self._rate_limiter.acquire()
         data = {
-            'advertiser_id': int(advertiser_id),
+            'advertiser_id': str(advertiser_id),
             'campaign_id': int(campaign_id),
             'ad_group': {
                 'ad_group_name': adgroup['name'],
@@ -229,7 +235,7 @@ class TikTokAPIClient(BasePlatformClient):
         """更新 Ad Group"""
         self._rate_limiter.acquire()
         data = {
-            'advertiser_id': int(advertiser_id),
+            'advertiser_id': str(advertiser_id),
             'campaign_id': int(campaign_id),
             'ad_group_id': int(adgroup_id),
             'ad_group': updates,
@@ -246,7 +252,7 @@ class TikTokAPIClient(BasePlatformClient):
         """获取 Ad 列表"""
         self._rate_limiter.acquire()
         data = {
-            'advertiser_id': int(advertiser_id),
+            'advertiser_id': str(advertiser_id),
             'campaign_id': int(campaign_id),
             'ad_group_id': int(adgroup_id),
             'page_size': page_size,
@@ -259,7 +265,7 @@ class TikTokAPIClient(BasePlatformClient):
         """创建 Ad"""
         self._rate_limiter.acquire()
         data = {
-            'advertiser_id': int(advertiser_id),
+            'advertiser_id': str(advertiser_id),
             'campaign_id': int(campaign_id),
             'ad_group_id': int(adgroup_id),
             'ad': {
@@ -294,7 +300,7 @@ class TikTokAPIClient(BasePlatformClient):
         """
         self._rate_limiter.acquire()
         data = {
-            'advertiser_id': int(advertiser_id),
+            'advertiser_id': str(advertiser_id),
             'campaign_id': int(campaign_id),
             'ad_group_id': int(adgroup_id),
             'ad': {
@@ -323,7 +329,7 @@ class TikTokAPIClient(BasePlatformClient):
         self._rate_limiter.acquire()
         
         data = {
-            'advertiser_id': int(advertiser_id),
+            'advertiser_id': str(advertiser_id),
             'report_name': f"report_{int(time.time())}",
             'report_type': report_type,
             'data_content': {
@@ -352,7 +358,7 @@ class TikTokAPIClient(BasePlatformClient):
         """轮询报表任务结果"""
         for i in range(max_wait):
             time.sleep(1)
-            data = {'advertiser_id': int(advertiser_id), 'task_id': task_id}
+            data = {'advertiser_id': str(advertiser_id), 'task_id': task_id}
             result = self.request('POST', 'report/task/info/get/', data=data)
             
             if isinstance(result, dict) and result.get('status') in (2, 3):  # COMPLETED/FAILED
@@ -375,7 +381,7 @@ class TikTokAPIClient(BasePlatformClient):
             filtering.append({'field': 'ADGROUP_IDS', 'operator': 'IN', 'values': [int(x) for x in adgroup_ids]})
         
         data = {
-            'advertiser_id': int(advertiser_id),
+            'advertiser_id': str(advertiser_id),
             'campaign_id': int(campaign_id),
             'report_name': f"adgroup_report_{int(time.time())}",
             'report_type': "ADGROUP",

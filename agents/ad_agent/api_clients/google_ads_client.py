@@ -39,13 +39,13 @@ class GoogleAdsAPIClient(BasePlatformClient):
         retry_config: Optional[RetryConfig] = None,
     ):
         super().__init__(credentials, "google", retry_config)
-        self.customer_id = customer_id or credentials.get('google', {}).get('customer_id', '')
-        self.developer_token = credentials.get('google', {}).get('developer_token', '')
-        self.login_customer_id = credentials.get('google', {}).get('login_customer_id', self.customer_id)
+        self.customer_id = customer_id or credentials.get('customer_id', '')
+        self.developer_token = credentials.get('developer_token', '')
+        self.login_customer_id = credentials.get('login_customer_id', self.customer_id)
         self._rate_limiter = RateLimiter(max_requests=1000, period=60)  # 保守限流
     
     def _build_headers(self) -> dict:
-        token = self.credentials.get('google', {}).get('access_token', '')
+        token = self.credentials.get('access_token', '')
         return {
             'Authorization': f'Bearer {token}',
             'Content-Type': 'application/json',

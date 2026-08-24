@@ -36,7 +36,7 @@ class MetaAPIClient(BasePlatformClient):
         retry_config: Optional[RetryConfig] = None,
     ):
         super().__init__(credentials, "meta", retry_config)
-        self.access_token = credentials.get('meta', {}).get('access_token', '')
+        self.access_token = credentials.get('access_token', '')
         # App 级限流器: 2000次/小时
         self._app_rate_limiter = RateLimiter(max_requests=2000, period=3600)
         # 账户级限流器: 50次/10秒

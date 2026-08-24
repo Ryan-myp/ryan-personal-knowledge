@@ -51,9 +51,9 @@ class DV360APIClient(BasePlatformClient):
         retry_config: Optional[RetryConfig] = None,
     ):
         super().__init__(credentials, "dv360", retry_config)
-        self.sa_email = credentials.get('dv360', {}).get('service_account_email', '')
-        self.private_key = credentials.get('dv360', {}).get('private_key', '')
-        self.partner_id = credentials.get('dv360', {}).get('partner_id', '')
+        self.sa_email = credentials.get('service_account_email', '')
+        self.private_key = credentials.get('private_key', '')
+        self.partner_id = credentials.get('partner_id', '')
         self._access_token: Optional[str] = None
         self._token_expiry: float = 0
         self._rate_limiter = RateLimiter(max_requests=100, period=60)
