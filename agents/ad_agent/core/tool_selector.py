@@ -21,6 +21,33 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class BusinessContext:
+    """业务上下文 - 定义业务可用的渠道和规则"""
+    business_name: str = ""
+    allowed_channels: List[str] = field(default_factory=list)
+    disallowed_channels: List[str] = field(default_factory=list)
+    allowed_campaign_types: List[str] = field(default_factory=list)
+    business_rules: Dict = field(default_factory=dict)
+    focus_metrics: List[str] = field(default_factory=list)
+
+    def is_channel_allowed(self, channel: str) -> bool:
+        """检查渠道是否被允许"""
+        if channel in self.disallowed_channels:
+            return False
+        if self.allowed_channels and channel not in self.allowed_channels:
+            return False
+        return True
+
+    def to_dict(self) -> dict:
+        return {
+            "business": self.business_name,
+            "allowed_channels": self.allowed_channels,
+            "disallowed_channels": self.disallowed_channels,
+            "focus_metrics": self.focus_metrics,
+        }
+
+
+@dataclass
 class ToolSelection:
     """工具选择结果"""
     selected_tools: List[ToolDefinition] = field(default_factory=list)
@@ -66,6 +93,12 @@ class DynamicToolSelector:
     def __init__(self):
         self.skill_loader = get_skill_loader()
         self.skill_registry = get_skill_registry()
+        self.business_context: Optional[BusinessContext] = None
+    
+    def set_business_context(self, business_name: str, context: BusinessContext):
+        """设置业务上下文"""
+        self.business_context = context
+        logger.info(f"Business context set: {business_name}, allowed_channels: {context.allowed_channels}")
     
     def select_tools(
         self,
@@ -87,7 +120,13 @@ class DynamicToolSelector:
         # 1. 确定目标平台
         platforms = intent.platforms or self._detect_platforms(user_input)
         
-        # 2. 根据意图类型筛选工具
+        # 2. 根据业务上下文过滤平台
+        if self.business_context:
+            platforms = [p for p in platforms if self.business_context.is_channel_allowed(p)]
+            if not platforms:
+                platforms = self.business_context.allowed_channels[:2]  # 回退到默认
+        
+        # 3. 根据意图类型筛选工具
         intent_type = intent.intent_type
         selected_tools = []
         
@@ -98,7 +137,7 @@ class DynamicToolSelector:
             # 根据意图类型筛选
             filtered_tools = self._filter_by_intent(platform_tools, intent_type)
             
-            # 3. 获取专家知识
+            # 4. 获取专家知识
             expert_knowledge = self._get_expert_knowledge(platform, intent_type)
             
             if filtered_tools:
@@ -109,6 +148,7 @@ class DynamicToolSelector:
                         "intent_type": intent_type,
                         "objective": intent.objective,
                         "budget": intent.budget,
+                        "business": self.business_context.business_name if self.business_context else None,
                     },
                     expert_knowledge=expert_knowledge,
                 )
@@ -118,6 +158,9 @@ class DynamicToolSelector:
             selected_tools=selected_tools,
             platform=",".join(platforms),
             expert_knowledge=self._merge_expert_knowledge(selected_tools),
+            context={
+                "business_context": self.business_context.to_dict() if self.business_context else None,
+            },
         )
     
     def _detect_platforms(self, user_input: str) -> List[str]:

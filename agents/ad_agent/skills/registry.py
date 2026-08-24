@@ -58,7 +58,17 @@ class SkillRegistry:
         # 从文件路径推断平台
         platform = skill_file.parent.name
         
+        # 尝试从 YAML 头部读取 platform 字段（规范化平台名称）
         content = skill_file.read_text(encoding='utf-8')
+        if content.startswith('---'):
+            try:
+                import yaml
+                yaml_content = content.split('---')[1]
+                metadata = yaml.safe_load(yaml_content)
+                if metadata and 'skill' in metadata and 'platform' in metadata['skill']:
+                    platform = metadata['skill']['platform']
+            except:
+                pass
         tools = []
         
         # 提取 YAML 头部中的工具列表
@@ -203,17 +213,24 @@ def register_skill(skill_dir: Path, skill_name: str = None):
 
 
 def load_all_skills(skills_root: Path) -> Dict[str, List[SkillTool]]:
-    """加载所有 Skills"""
+    """加载所有 Skills（递归扫描子目录）"""
     global _skill_registry
     if _skill_registry is None:
         _skill_registry = SkillRegistry(SimpleToolRegistry())
     
     all_tools = {}
-    if skills_root.exists():
-        for skill_dir in skills_root.iterdir():
-            if skill_dir.is_dir() and (skill_dir / "SKILL.md").exists():
-                tools = _skill_registry.register_skill_tools(skill_dir, skill_dir.name)
-                if tools:
-                    all_tools[skill_dir.name] = tools
+    if not skills_root.exists():
+        return all_tools
+    
+    # 递归扫描所有子目录
+    for skill_dir in sorted(skills_root.rglob('*')):
+        if skill_dir.is_dir() and (skill_dir / "SKILL.md").exists():
+            # 生成 skill_name: 使用相对路径
+            rel_path = skill_dir.relative_to(skills_root)
+            skill_name = "/".join(rel_path.parts)
+            
+            tools = _skill_registry.register_skill_tools(skill_dir, skill_name)
+            if tools:
+                all_tools[skill_name] = tools
     
     return all_tools
