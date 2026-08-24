@@ -15,29 +15,51 @@
             "step": 1,
             "action": "create_campaign",
             "level": "campaign",
-            "required_params": ["customer_id", "name", "type", "network_settings", "shopping_setting"],
+            "required_params": [
+              "customer_id",
+              "name",
+              "type",
+              "network_settings",
+              "shopping_setting"
+            ],
             "api_reference": "https://developers.google.com/google-ads/api/docs/campaigns/search",
-            "notes": ["Shopping 类型需要 shopping_setting", "Search 类型需要 advertising_channel_type"]
+            "notes": [
+              "Shopping 类型需要 shopping_setting",
+              "Search 类型需要 advertising_channel_type"
+            ]
           },
           {
             "step": 2,
             "action": "create_ad_group",
             "level": "ad_group",
-            "required_params": ["campaign", "name", "cpc_bid_ceiling_micros"],
+            "required_params": [
+              "campaign",
+              "name",
+              "cpc_bid_ceiling_micros"
+            ],
             "api_reference": "https://developers.google.com/google-ads/api/docs/campaigns/ad-groups"
           },
           {
             "step": 3,
             "action": "create_keyword",
             "level": "ad_group_criterion",
-            "required_params": ["ad_group", "keyword", "cpc_bid_micros"],
+            "required_params": [
+              "ad_group",
+              "keyword",
+              "cpc_bid_micros"
+            ],
             "api_reference": "https://developers.google.com/google-ads/api/docs/campaigns/keywords"
           },
           {
             "step": 4,
             "action": "create_ad",
             "level": "ad",
-            "required_params": ["ad_group", "final_urls", "headlines", "descriptions"],
+            "required_params": [
+              "ad_group",
+              "final_urls",
+              "headlines",
+              "descriptions"
+            ],
             "api_reference": "https://developers.google.com/google-ads/api/docs/campaigns/responsive-search-ads"
           }
         ],
@@ -51,8 +73,15 @@
       "source_ref": "https://developers.google.com/google-ads/api/docs/campaigns",
       "created_at": "2026-08-24T19:00:00Z",
       "updated_at": "2026-08-24T19:00:00Z",
-      "tags": ["google", "workflow", "search", "campaign"],
-      "metadata": {"verified": false},
+      "tags": [
+        "google",
+        "workflow",
+        "search",
+        "campaign"
+      ],
+      "metadata": {
+        "verified": false
+      },
       "confidence": 0.8,
       "usage_count": 0
     },
@@ -66,27 +95,45 @@
         "valid_values": {
           "SEARCH": {
             "description": "搜索广告",
-            "sub_types": ["SEARCH_STANDARD", "SEARCH_DYNAMIC_ADS"]
+            "sub_types": [
+              "SEARCH_STANDARD",
+              "SEARCH_DYNAMIC_ADS"
+            ]
           },
           "SHOPPING": {
             "description": "购物广告",
-            "sub_types": ["SHOPPING_SALES", "SHOPPING_PRODUCT_ADS", "SHOPPING_REVIEW_ADS"]
+            "sub_types": [
+              "SHOPPING_SALES",
+              "SHOPPING_PRODUCT_ADS",
+              "SHOPPING_REVIEW_ADS"
+            ]
           },
           "DISPLAY": {
             "description": "展示广告",
-            "sub_types": ["DISPLAY_STANDARD", "DISPLAY_PERFORMANCE"]
+            "sub_types": [
+              "DISPLAY_STANDARD",
+              "DISPLAY_PERFORMANCE"
+            ]
           },
           "VIDEO": {
             "description": "视频广告",
-            "sub_types": ["VIDEO_VIEW", "VIDEO_ENGAGEMENT"]
+            "sub_types": [
+              "VIDEO_VIEW",
+              "VIDEO_ENGAGEMENT"
+            ]
           },
           "APP": {
             "description": "应用广告",
-            "sub_types": ["APP_INSTALLS", "APP_engagement"]
+            "sub_types": [
+              "APP_INSTALLS",
+              "APP_engagement"
+            ]
           },
           "MAXIMIZE": {
             "description": "智能广告系列",
-            "sub_types": ["PERFORMANCE_MAX"]
+            "sub_types": [
+              "PERFORMANCE_MAX"
+            ]
           }
         },
         "api_reference": "https://developers.google.com/google-ads/api/reference/rpc/v18/Campaign.Type"
@@ -201,23 +248,48 @@
         "hierarchy": [
           {
             "level": "campaign",
-            "required_fields": ["name", "type", "advertising_channel_type", "status"],
-            "notes": ["type=SEARCH, advertising_channel_type=SEARCH_STANDARD"]
+            "required_fields": [
+              "name",
+              "type",
+              "advertising_channel_type",
+              "status"
+            ],
+            "notes": [
+              "type=SEARCH, advertising_channel_type=SEARCH_STANDARD"
+            ]
           },
           {
             "level": "ad_group",
-            "required_fields": ["campaign", "name", "status"],
-            "notes": ["需要设置 cpc_bid_ceiling_micros 或 bidding_strategy"]
+            "required_fields": [
+              "campaign",
+              "name",
+              "status"
+            ],
+            "notes": [
+              "需要设置 cpc_bid_ceiling_micros 或 bidding_strategy"
+            ]
           },
           {
             "level": "ad_group_criterion",
-            "required_fields": ["ad_group", "keyword"],
-            "notes": ["需要设置 bid_micros 和 match_type"]
+            "required_fields": [
+              "ad_group",
+              "keyword"
+            ],
+            "notes": [
+              "需要设置 bid_micros 和 match_type"
+            ]
           },
           {
             "level": "ad",
-            "required_fields": ["ad_group", "final_urls", "headlines", "descriptions"],
-            "notes": ["Responsive Search Ad 至少需要 3 headlines + 2 descriptions"]
+            "required_fields": [
+              "ad_group",
+              "final_urls",
+              "headlines",
+              "descriptions"
+            ],
+            "notes": [
+              "Responsive Search Ad 至少需要 3 headlines + 2 descriptions"
+            ]
           }
         ],
         "api_reference": "https://developers.google.com/google-ads/api/docs/campaigns/create-search-ads"
@@ -225,6 +297,34 @@
       "description": "Google Ads 搜索广告层级结构",
       "created_at": "2026-08-24T19:00:00Z",
       "updated_at": "2026-08-24T19:00:00Z"
+    },
+    {
+      "entry_id": "google_ads_network_limitation",
+      "platform": "google",
+      "knowledge_type": "CONSTRAINT",
+      "content": {
+        "type": "api_limitation",
+        "description": "Google Ads API 网络访问限制",
+        "limitations": [
+          "中国大陆 IP 可能无法直接访问 Google Ads API",
+          "需要 VPN 或代理才能调用 API",
+          "错误表现：HTTP 404 或连接超时"
+        ],
+        "diagnostic_steps": [
+          "1. 检查 IP 地址（是否为国内 IP）",
+          "2. 测试 Google OAuth 连通性（https://www.googleapis.com/oauth2/v1/certs）",
+          "3. 测试 Google Ads API 端点（https://googleads.googleapis.com/v24/customers/{id}:search）"
+        ],
+        "workaround": [
+          "方案 A: 使用 VPN 连接到海外节点",
+          "方案 B: 使用代理服务器",
+          "方案 C: 在境外服务器上运行 API 调用"
+        ],
+        "test_account": "9055507554"
+      },
+      "description": "Google Ads API 在中国大陆的网络访问限制",
+      "created_at": "2026-08-24T19:06:00Z",
+      "updated_at": "2026-08-24T19:06:00Z"
     }
   ]
 }
