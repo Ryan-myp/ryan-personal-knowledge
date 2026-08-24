@@ -130,11 +130,10 @@ class TikTokAPIClient(BasePlatformClient):
         # 使用 _do_request 获取原始响应
         url = self._build_url('campaign/get/')
         resp = self._do_request('GET', url, params=data)
-        # 解析 TikTok 响应结构: data.data.list
+        # 解析 TikTok 响应结构: data.list
         if resp.get('status_code') == 200:
             outer = resp.get('data', {})
-            inner = outer.get('data', {})
-            return inner.get('list', [])
+            return outer.get('list', [])
         return []
     
     def get_campaign(self, advertiser_id: str, campaign_id: str) -> dict:
