@@ -168,11 +168,33 @@ class MetaAPIClient(BasePlatformClient):
         return self.request('GET', f"/{campaign_id}", extra_params=params)
     
     def create_campaign(self, account_id: str, campaign: dict) -> dict:
-        """创建 Campaign"""
+        """创建 Campaign
+        
+        根据 ad_delivery_platform 项目的实践，有效的 objective 值为：
+        - APP_INSTALLS
+        - PRODUCT_CATALOG_SALES  
+        - CONVERSIONS
+        - TRAFFIC
+        - LINK_CLICKS
+        - OUTCOME_SALES
+        - OUTCOME_APP_PROMOTION
+        - OUTCOME_TRAFFIC
+        """
         self._get_account_limiter(account_id).acquire()
+        
+        # 验证 objective
+        valid_objectives = [
+            'APP_INSTALLS', 'PRODUCT_CATALOG_SALES', 'CONVERSIONS', 
+            'TRAFFIC', 'LINK_CLICKS', 'OUTCOME_SALES', 
+            'OUTCOME_APP_PROMOTION', 'OUTCOME_TRAFFIC'
+        ]
+        objective = campaign.get('objective', 'CONVERSIONS')
+        if objective not in valid_objectives:
+            raise ValueError(f"Invalid objective '{objective}'. Valid values: {valid_objectives}")
+        
         data = {
             'name': campaign['name'],
-            'objective': campaign['objective'],
+            'objective': objective,
             'special_ad_categories': campaign.get('special_ad_categories', []),
         }
         if 'daily_budget' in campaign:
