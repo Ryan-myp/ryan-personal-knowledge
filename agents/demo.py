@@ -20,7 +20,7 @@ from agents.ad_agent import (
     create_google_capability,
     create_tiktok_capability,
     create_dv360_capability,
-    create_orchestrator_skill,
+    AdCampaignOrchestratorSkill,
 )
 
 
@@ -54,7 +54,8 @@ def demo_basic_flow():
     
     # Step 3: 注册编排 Skill
     print("\n🔧 注册编排 Skill...")
-    orchestrator_defn, orchestrator_handler = create_orchestrator_skill()
+    skill = AdCampaignOrchestratorSkill()
+    orchestrator_defn, orchestrator_handler = skill.get_tool_definition(), skill.get_handler()
     runtime.registry.register(orchestrator_defn, orchestrator_handler)
     print("  ✅ ad_campaign_orchestrator 已注册")
     
