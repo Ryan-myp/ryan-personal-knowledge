@@ -128,15 +128,25 @@ class MetaAPIClient(BasePlatformClient):
     
     # ==================== 账户管理 ====================
     
-    def list_accounts(self, business_id: str = None) -> dict:
+    def list_accounts(self, business_id: str = None) -> list:
         """获取广告账户列表"""
         if business_id:
             endpoint = f"{business_id}/accounts"
         else:
             endpoint = "me/accounts"
         
-        result = self.request('GET', endpoint)
-        return result.get('data', []) if isinstance(result, dict) else result
+        try:
+            result = self.request('GET', endpoint)
+            if isinstance(result, dict):
+                data = result.get('data', [])
+                # 确保返回的是列表而不是生成器/迭代器
+                if hasattr(data, '__iter__') and not isinstance(data, (list, dict, str)):
+                    return list(data)
+                return data
+            return result if isinstance(result, list) else []
+        except Exception as e:
+            logger.error(f"Failed to list accounts: {e}")
+            return []
     
     def get_account(self, account_id: str, fields: list = None) -> dict:
         """获取账户详情"""

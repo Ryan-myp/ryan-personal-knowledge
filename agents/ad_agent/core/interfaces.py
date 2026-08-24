@@ -68,26 +68,43 @@ class ToolDefinition:
 
 # ─── 执行结果 ───────────────────────────────────────────────────
 
-@dataclass
 class ToolResult:
-    """工具执行结果"""
-    success: bool
-    data: dict[str, Any] = field(default_factory=dict)
-    error: Optional[str] = None
-    requires_confirmation: bool = False
-    card_payload: Optional[dict] = None  # UI 卡片数据
-
+    """工具执行结果 - 使用普通类避免 dataclass 字段/方法名冲突"""
+    
+    def __init__(
+        self,
+        success: bool,
+        data: dict[str, Any] = None,
+        error: Optional[str] = None,
+        requires_confirmation: bool = False,
+        card_payload: Optional[dict] = None,
+    ):
+        self.success = success
+        self.data = data or {}
+        self.error = error
+        self.requires_confirmation = requires_confirmation
+        self.card_payload = card_payload
+    
     @classmethod
     def ok(cls, data: dict[str, Any]) -> "ToolResult":
         return cls(success=True, data=data)
-
+    
     @classmethod
     def error(cls, message: str) -> "ToolResult":
         return cls(success=False, error=message)
-
+    
     @classmethod
     def needs_confirmation(cls, card_payload: dict) -> "ToolResult":
         return cls(success=True, requires_confirmation=True, card_payload=card_payload)
+    
+    def to_dict(self) -> dict:
+        return {
+            "success": self.success,
+            "data": self.data,
+            "error": self.error,
+            "requires_confirmation": self.requires_confirmation,
+            "card_payload": self.card_payload,
+        }
 
 
 # ─── 上下文 ─────────────────────────────────────────────────────
