@@ -1,134 +1,204 @@
 {
   "name": "meta_workflows",
   "version": "1.0",
-  "last_updated": "2026-08-24T17:25:00.138390",
+  "last_updated": "2026-08-24T19:00:00Z",
   "entries": [
     {
       "entry_id": "meta_create_campaign_adset_ad",
-      "knowledge_type": "workflow",
+      "knowledge_type": "WORKFLOW",
       "platform": "meta",
       "content": {
         "type": "create_campaign_adset_ad",
-        "description": "Meta 完整创建流程",
+        "description": "Meta 完整创建流程（Campaign → AdSet → Ad）",
         "steps": [
           {
             "step": 1,
             "action": "create_campaign",
             "level": "campaign",
-            "required_params": [
-              "account_id",
-              "name",
-              "objective"
-            ],
+            "required_params": ["account_id", "name", "objective"],
+            "optional_params": ["special_ad_categories", "daily_budget"],
             "api_endpoint": "/v18.0/{account-id}/campaigns",
-            "method": "POST"
+            "method": "POST",
+            "validation": "objective 必须是有效枚举值",
+            "api_endpoint": "https://graph.facebook.com/v18.0/{account-id}/campaigns"
           },
           {
             "step": 2,
             "action": "create_adset",
             "level": "adset",
-            "required_params": [
-              "campaign_id",
-              "name",
-              "optimization_goal",
-              "billing_event"
-            ],
-            "api_endpoint": "/v18.0/{account-id}/adsets",
-            "method": "POST"
+            "required_params": ["campaign_id", "name", "optimization_goal", "billing_event", "targeting"],
+            "api_endpoint": "https://graph.facebook.com/v18.0/{account-id}/adsets",
+            "method": "POST",
+            "validation": "optimization_goal 必须与 Campaign objective 匹配",
+            "notes": ["targeting 必须是 JSON 字符串", "daily_budget 单位为分"]
           },
           {
             "step": 3,
             "action": "create_ad",
             "level": "ad",
-            "required_params": [
-              "adgroup_id",
-              "name",
-              "status",
-              "creative"
-            ],
-            "api_endpoint": "/v18.0/{account-id}/ads",
-            "method": "POST"
+            "required_params": ["adgroup_id", "name", "status", "creative"],
+            "api_endpoint": "https://graph.facebook.com/v18.0/{account-id}/ads",
+            "method": "POST",
+            "validation": "creative 需要有效的 object_story_spec"
           }
         ],
         "error_handling": {
-          "invalid_objective": "检查 objective 是否支持",
-          "missing_targeting": "广告组需要 targeting 参数"
+          "613": "AdSet 参数错误，检查 targeting 格式",
+          "2200": "Campaign objective 不支持此优化目标",
+          "800": "权限不足，检查 Account Permission"
         }
       },
-      "source": "official_docs",
-      "source_ref": "",
-      "created_at": "2026-08-24T16:57:54.369169",
-      "updated_at": "2026-08-24T16:57:54.369174",
-      "tags": [
-        "meta",
-        "workflow",
-        "creation"
-      ],
+      "source": "api_test",
+      "source_ref": "Meta Marketing API v18.0",
+      "created_at": "2026-08-24T19:00:00Z",
+      "updated_at": "2026-08-24T19:00:00Z",
+      "tags": ["meta", "workflow", "creation", "campaign-adset-ad"],
       "metadata": {
-        "verified": true
+        "verified": true,
+        "test_count": 30
       },
       "confidence": 1.0,
       "usage_count": 0
     },
     {
-      "entry_id": "meta_create_ad_workflow",
-      "knowledge_type": "workflow",
+      "entry_id": "meta_campaign_objective_enum",
       "platform": "meta",
+      "knowledge_type": "PARAMETER",
       "content": {
-        "type": "create_ad",
-        "description": "Meta Ad 创建工作流",
-        "prerequisites": [
-          "adgroup_id",
-          "campaign_id",
-          "page_id"
+        "type": "enum_reference",
+        "description": "Meta Campaign 有效 Objective 枚举值",
+        "valid_values": [
+          "APP_INSTALLS",
+          "TRAFFIC",
+          "ENGAGEMENT",
+          "VIDEO_VIEWS",
+          "PAGE_LIKES",
+          "LEAD_GENERATION",
+          "CONVERSIONS",
+          "CATALOG_SALES",
+          "PRODUCT_CATALOG_SALES",
+          "REACH",
+          "BRAND_AWARENESS",
+          "OUTCOME_SALES",
+          "OUTCOME_AWARENESS",
+          "OUTCOME_CONVERSIONS"
         ],
-        "steps": [
+        "api_reference": "https://developers.facebook.com/docs/marketing-api/reference/adaccount/campaigns",
+        "notes": [
+          "不同 objective 对应不同的 optimization_goal 选项",
+          "部分 objective 需要特殊权限（如 LEAD_GENERATION）",
+          "OBJECTIVE_SALES 是较新的统一转化目标"
+        ]
+      },
+      "description": "Meta Campaign Objective 有效枚举值",
+      "created_at": "2026-08-24T19:00:00Z",
+      "updated_at": "2026-08-24T19:00:00Z"
+    },
+    {
+      "entry_id": "meta_optimization_goal_mapping",
+      "platform": "meta",
+      "knowledge_type": "CONSTRAINT",
+      "content": {
+        "type": "mapping_rule",
+        "description": "Campaign Objective → AdSet Optimization Goal 映射关系",
+        "mappings": [
           {
-            "step": 1,
-            "action": "prepare_creative",
-            "description": "准备创意素材",
-            "required": [
-              "profile_id",
-              "name",
-              "object_story_spec"
-            ]
+            "objective": "APP_INSTALLS",
+            "allowed_optimization_goals": ["APP_INSTALLS", "APP_EVENTS"]
           },
           {
-            "step": 2,
-            "action": "create_ad",
-            "description": "调用 API 创建广告",
-            "endpoint": "/v18.0/{adgroup-id}/ads",
-            "method": "POST"
+            "objective": "TRAFFIC",
+            "allowed_optimization_goals": ["LINK_CLICKS", "REACH"]
           },
           {
-            "step": 3,
-            "action": "verify_creation",
-            "description": "验证广告创建结果",
-            "check": [
-              "ad_id exists",
-              "run_status=ACTIVE"
-            ]
+            "objective": "ENGAGEMENT",
+            "allowed_optimization_goals": ["POST_ENGAGEMENT", "MESSAGES", "IMPRESSIONS"]
+          },
+          {
+            "objective": "CONVERSIONS",
+            "allowed_optimization_goals": ["OFFSITE_CONVERSIONS"]
+          },
+          {
+            "objective": "LEAD_GENERATION",
+            "allowed_optimization_goals": ["LEAD_INTENT", "SIGN_UP"]
+          },
+          {
+            "objective": "PRODUCT_CATALOG_SALES",
+            "allowed_optimization_goals": ["CATALOG_SALES"]
           }
         ],
-        "error_handling": {
-          "INVALID_PAGE": "检查 Page ID 权限",
-          "CREATIVE_REJECTED": "检查素材政策合规性"
-        }
+        "validation_error": "CAMPAIGN_OPTIMIZATION_GOAL_UNSUPPORTED_BY_OFFSITE_CONVERSIONS_QUALITY_RANK"
       },
-      "source": "api_test",
-      "source_ref": "",
-      "created_at": "2026-08-24T17:25:00.138327",
-      "updated_at": "2026-08-24T17:25:00.138330",
-      "tags": [
-        "meta",
-        "workflow",
-        "ad"
-      ],
-      "metadata": {
-        "verified": true
+      "description": "Campaign Objective 与 AdSet Optimization Goal 的映射约束",
+      "created_at": "2026-08-24T19:00:00Z",
+      "updated_at": "2026-08-24T19:00:00Z"
+    },
+    {
+      "entry_id": "meta_targeting_structure",
+      "platform": "meta",
+      "knowledge_type": "PARAMETER",
+      "content": {
+        "type": "parameter_definition",
+        "description": "Meta Targeting 参数结构",
+        "structure": {
+          "geo_locations": {
+            "countries": ["ISO 3166-1 alpha-2 国家代码"],
+            "locations": [
+              {
+                "country": "US",
+                "regions": [{"id": "region_id", "name": "Region Name"}]
+              }
+            ]
+          },
+          "targeting": {
+            "geo_locations": {...},
+            "age_min": 18,
+            "age_max": 65,
+            "genders": [1, 2],
+            "interests": [{"id": "interest_id", "name": "Interest Name"}],
+            "behaviors": [{"id": "behavior_id", "name": "Behavior Name"}]
+          }
+        },
+        "format_note": "targeting 参数必须是 JSON 字符串，使用 urllib.parse.quote()",
+        "api_reference": "https://developers.facebook.com/docs/marketing-api/targeting"
       },
-      "confidence": 1.0,
-      "usage_count": 0
+      "description": "Meta Targeting 参数结构和格式要求",
+      "created_at": "2026-08-24T19:00:00Z",
+      "updated_at": "2026-08-24T19:00:00Z"
+    },
+    {
+      "entry_id": "meta_special_ad_categories",
+      "platform": "meta",
+      "knowledge_type": "CONSTRAINT",
+      "content": {
+        "type": "constraint_rule",
+        "description": "特殊广告类别限制",
+        "valid_values": ["NONE", "EMPLOYMENT", "HOUSING", "CREDIT", "ISSUES_ELECTIONS_POLITICS"],
+        "restrictions": {
+          "EMPLOYMENT": {
+            "no_age_targeting": true,
+            "no_gender_targeting": true,
+            "applicable_regions": ["US", "CA", "EU"]
+          },
+          "HOUSING": {
+            "no_age_targeting": true,
+            "no_gender_targeting": true,
+            "applicable_regions": ["US", "CA", "EU"]
+          },
+          "CREDIT": {
+            "no_age_targeting": true,
+            "no_gender_targeting": true,
+            "applicable_regions": ["US", "CA", "EU"]
+          }
+        },
+        "notes": [
+          "设置特殊广告类别后，不能使用年龄和性别定向",
+          "仅适用于美国、加拿大、欧盟等地区"
+        ]
+      },
+      "description": "Meta 特殊广告类别及其限制",
+      "created_at": "2026-08-24T19:00:00Z",
+      "updated_at": "2026-08-24T19:00:00Z"
     }
   ]
 }
