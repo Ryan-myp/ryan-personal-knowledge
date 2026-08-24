@@ -144,19 +144,40 @@ class TikTokAPIClient(BasePlatformClient):
         return result[0] if result else {}
     
     def create_campaign(self, advertiser_id: str, campaign: dict) -> str:
-        """创建 Campaign"""
+        """创建 Campaign
+        
+        必需字段:
+        - campaign_name: 广告系列名称
+        - objective_type: 优化目标 (APP_PROMOTION, PRODUCT_SALES, TRAFFIC, VIDEO_VIEWS, CONVERSIONS, REACH, LEAD_GENERATION, ENGAGEMENT, CATALOG_SALES, SHOP_PURCHASES, WEB_CONVERSIONS)
+        - budget_mode: 预算模式 (BUDGET_MODE_DAY, BUDGET_MODE_INFINITE, BUDGET_MODE_DYNAMIC_DAILY_BUDGET, BUDGET_MODE_TOTAL)
+        - campaign_type: 广告系列类型 (REGULAR_CAMPAIGN, SMART_CAMPAIGN, etc.)
+        
+        可选字段:
+        - campaign_automation_type: 自动化类型 (MANUAL, SMART_PLUS, etc.)
+        - campaign_group_status: 状态 (0=PAUSED, 1=ACTIVE)
+        - budget_restriction: 预算限制 (NO_LIMITATION, DAILY_BUDGET, LIFETIME_BUDGET)
+        - daily_budget: 每日预算（单位：分）
+        - app_promotion_type: APP 推广类型 (APP_RETARGETING, APP_ACQUISITION)
+        """
         self._rate_limiter.acquire()
         data = {
             'advertiser_id': str(advertiser_id),
-            'campaign': {
-                'campaign_group_name': campaign['name'],
-                'campaign_group_status': campaign.get('status', 1),  # 1=ACTIVE, 0=PAUSED
-                'daily_budget': int(campaign.get('daily_budget', 50) * 100),  # 转为分
-                'campaign_group_promotion_type': campaign.get('promotion_type', 2),  # 2=APP_PROMOTION
-            }
+            'campaign_name': campaign.get('name', 'Untitled Campaign'),
+            'objective_type': campaign.get('objective_type', 'TRAFFIC'),
+            'campaign_automation_type': campaign.get('campaign_automation_type', 'MANUAL'),
+            'campaign_group_status': campaign.get('status', 1),
+            'budget_restriction': campaign.get('budget_restriction', 'NO_LIMITATION'),
+            'budget_mode': campaign.get('budget_mode', 'BUDGET_MODE_INFINITE'),
+            'campaign_type': campaign.get('campaign_type', 'REGULAR_CAMPAIGN'),
         }
+        # 可选字段
+        if campaign.get('daily_budget'):
+            data['daily_budget'] = int(campaign['daily_budget'] * 100)  # 转为分
+        if campaign.get('app_promotion_type'):
+            data['app_promotion_type'] = campaign['app_promotion_type']
+        
         result = self.request('POST', 'campaign/create/', data=data)
-        return str(result.get('campaign_group_id', '')) if isinstance(result, dict) else ''
+        return str(result.get('campaign_id', '')) if isinstance(result, dict) else ''
     
     def update_campaign(self, advertiser_id: str, campaign_id: str, updates: dict) -> dict:
         """更新 Campaign"""
