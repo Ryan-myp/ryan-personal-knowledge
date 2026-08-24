@@ -26,6 +26,8 @@ from ..core.interfaces import (
 from ..core.tool_registry import SimpleToolRegistry
 from ..core.intent import LLMIntentParser, SimpleIntentRouter
 from .skill import Skill, SkillLoader
+from ..persistence.session_manager import SessionManager
+from ..persistence.store import AdAgentStore
 
 
 # ─── Agent Runtime ─────────────────────────────────────────────
@@ -58,6 +60,7 @@ class AgentRuntime:
         write_guard: WriteGuard = None,
         skill_roots: list[str] = None,
         llm_client=None,  # 可选：自定义 LLM 客户端
+        persistence_store: AdAgentStore = None,
     ):
         self.registry = registry or SimpleToolRegistry()
         self.intent_parser = intent_parser or LLMIntentParser(llm_client)
@@ -70,6 +73,11 @@ class AgentRuntime:
         
         # 预留：多 Agent 桥接
         self._multi_agent_bridge: Optional["MultiAgentBridge"] = None
+        
+        # 持久化层（可选）
+        self._session_manager: Optional[SessionManager] = None
+        if persistence_store:
+            self._session_manager = SessionManager(persistence_store)
     
     def inject_llm(self, llm_client) -> None:
         """注入 LLM 客户端"""
@@ -294,7 +302,14 @@ class AgentRuntime:
                 account_id=account_id,
                 credentials=credentials or {},
             )
-            self._sessions[session_id] = SessionContext(session_id, ctx)
+            session = SessionContext(session_id, ctx)
+            self._sessions[session_id] = session
+            
+            # Save to persistence if available
+            if self._session_manager:
+                self._session_manager.create_session(
+                    session_id, user_id, account_id, {"credentials": credentials or {}}
+                )
         return self._sessions[session_id]
     
     # ─── 多 Agent 桥接（预留） ─────────────────────────────────

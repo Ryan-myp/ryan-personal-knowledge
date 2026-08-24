@@ -1,0 +1,390 @@
+"""
+api_clients/tiktok_client.py - TikTok Ads API 生产级客户端
+
+接入已有 scripts/tiktok_api.py，补全重试、限流、错误分类。
+"""
+
+import logging
+import time
+import json
+from typing import Any, Optional
+import requests
+
+from .base import BasePlatformClient, APIError, AuthError, RateLimitError, TemporaryError, RetryConfig, RateLimiter
+
+logger = logging.getLogger(__name__)
+
+
+class TikTokAPIClient(BasePlatformClient):
+    """
+    TikTok Marketing API 客户端 (open_api/v1.3)
+    
+    官方文档: https://business-api.tiktok.com/portal/docs
+    认证: Access-Token Header
+    速率限制: 100次/分钟 per advertiser
+    
+    关键差异 vs Meta:
+    - 所有写操作都需要 advertiser_id
+    - 响应结构: {"code": 0, "message": "", "data": {...}}
+    - campaign_group_status: 0=暂停, 1=启用
+    """
+    
+    BASE_URL = "https://business-api.tiktok.com"
+    API_VERSION = "open_api/v1.3"
+    
+    def __init__(
+        self,
+        credentials: dict,
+        retry_config: Optional[RetryConfig] = None,
+    ):
+        super().__init__(credentials, "tiktok", retry_config)
+        self.access_token = credentials.get('tiktok', {}).get('access_token', '')
+        # 速率限制: 100次/分钟
+        self._rate_limiter = RateLimiter(max_requests=100, period=60)
+    
+    def _build_url(self, endpoint: str) -> str:
+        if endpoint.startswith('http'):
+            return endpoint
+        return f"{self.BASE_URL}/{self.API_VERSION}/{endpoint.lstrip('/')}"
+    
+    def _do_request(self, method: str, url: str, **kwargs) -> dict:
+        headers = {
+            'Access-Token': self.access_token,
+            'Content-Type': 'application/json',
+            **kwargs.get('headers', {}),
+        }
+        
+        try:
+            if method == 'GET':
+                resp = requests.get(url, headers=headers, params=kwargs.get('params'), timeout=30)
+            elif method == 'POST':
+                resp = requests.post(url, headers=headers, json=kwargs.get('data'), timeout=30)
+            elif method == 'DELETE':
+                resp = requests.delete(url, headers=headers, timeout=30)
+            else:
+                raise ValueError(f"Unsupported HTTP method: {method}")
+            
+            return {
+                'status_code': resp.status_code,
+                'data': resp.json() if resp.content else {},
+                'headers': dict(resp.headers),
+            }
+        except requests.exceptions.Timeout:
+            return {'status_code': 504, 'data': {}, 'headers': {}}
+        except requests.exceptions.ConnectionError:
+            return {'status_code': 502, 'data': {}, 'headers': {}}
+    
+    def _extract_data(self, response: dict) -> Any:
+        """TikTok 响应结构: {code, message, data}"""
+        data = response.get('data', {})
+        return data
+    
+    def _handle_error(self, response: dict, status_code: int) -> Optional[APIError]:
+        data = response.get('data', {})
+        
+        # HTTP 错误
+        if status_code != 200:
+            return TemporaryError(f"TikTok HTTP {status_code}")
+        
+        # API 错误
+        code = data.get('code', 0) if isinstance(data, dict) else 0
+        message = data.get('message', '') if isinstance(data, dict) else ''
+        
+        if code == 0:
+            return None
+        
+        # 认证错误
+        if code in (1000, 1001, 1002, 1003, 1004):
+            return AuthError(f"TikTok auth error {code}: {message}")
+        
+        # 限流错误
+        if code == 2200003:
+            return RateLimitError(f"TikTok rate limit: {message}", retry_after=60)
+        
+        # 可重试的临时错误
+        if code in (2000, 2001, 2200001, 2200002, 2200004):
+            return TemporaryError(f"TikTok temp error {code}: {message}")
+        
+        return APIError(f"TikTok error {code}: {message}", status_code=status_code, response=data)
+    
+    # ==================== 账户管理 ====================
+    
+    def list_accounts(self, advertiser_ids: list[str]) -> list:
+        """获取广告账户信息"""
+        self._rate_limiter.acquire()
+        data = {'advertiser_ids': advertiser_ids}
+        result = self.request('POST', 'account/get/', data=data)
+        return result.get('advertisers', []) if isinstance(result, dict) else result
+    
+    # ==================== Campaign 管理 ====================
+    
+    def list_campaigns(self, advertiser_id: str, filtering: list = None, page_size: int = 20) -> list:
+        """获取 Campaign 列表"""
+        self._rate_limiter.acquire()
+        data = {
+            'advertiser_id': int(advertiser_id),
+            'page_size': page_size,
+        }
+        if filtering:
+            data['filtering'] = filtering
+        result = self.request('POST', 'campaign/get/', data=data)
+        campaigns = result.get('campaign_group_list', []) if isinstance(result, dict) else []
+        return campaigns
+    
+    def get_campaign(self, advertiser_id: str, campaign_id: str) -> dict:
+        """获取 Campaign 详情"""
+        filtering = [{'field': 'CAMPAIGN_IDS', 'operator': 'IN', 'values': [int(campaign_id)]}]
+        result = self.list_campaigns(advertiser_id, filtering=filtering)
+        return result[0] if result else {}
+    
+    def create_campaign(self, advertiser_id: str, campaign: dict) -> str:
+        """创建 Campaign"""
+        self._rate_limiter.acquire()
+        data = {
+            'advertiser_id': int(advertiser_id),
+            'campaign': {
+                'campaign_group_name': campaign['name'],
+                'campaign_group_status': campaign.get('status', 1),  # 1=ACTIVE, 0=PAUSED
+                'daily_budget': int(campaign.get('daily_budget', 50) * 100),  # 转为分
+                'campaign_group_promotion_type': campaign.get('promotion_type', 2),  # 2=APP_PROMOTION
+            }
+        }
+        result = self.request('POST', 'campaign/create/', data=data)
+        return str(result.get('campaign_group_id', '')) if isinstance(result, dict) else ''
+    
+    def update_campaign(self, advertiser_id: str, campaign_id: str, updates: dict) -> dict:
+        """更新 Campaign"""
+        self._rate_limiter.acquire()
+        data = {
+            'advertiser_id': int(advertiser_id),
+            'campaign_id': int(campaign_id),
+            'campaign': updates,
+        }
+        return self.request('POST', 'campaign/update/', data=data)
+    
+    def pause_campaign(self, advertiser_id: str, campaign_id: str) -> dict:
+        """暂停 Campaign"""
+        return self.update_campaign(advertiser_id, campaign_id, {'campaign_group_status': 0})
+    
+    def resume_campaign(self, advertiser_id: str, campaign_id: str) -> dict:
+        """恢复 Campaign"""
+        return self.update_campaign(advertiser_id, campaign_id, {'campaign_group_status': 1})
+    
+    def delete_campaign(self, advertiser_id: str, campaign_id: str) -> dict:
+        """删除 Campaign"""
+        self._rate_limiter.acquire()
+        data = {
+            'advertiser_id': int(advertiser_id),
+            'campaign_ids': [int(campaign_id)],
+        }
+        return self.request('POST', 'campaign/delete/', data=data)
+    
+    # ==================== Ad Group 管理 ====================
+    
+    def list_adgroups(self, advertiser_id: str, campaign_id: str, filtering: list = None, page_size: int = 20) -> list:
+        """获取 Ad Group 列表"""
+        self._rate_limiter.acquire()
+        data = {
+            'advertiser_id': int(advertiser_id),
+            'campaign_id': int(campaign_id),
+            'page_size': page_size,
+        }
+        if filtering:
+            data['filtering'] = filtering
+        result = self.request('POST', 'adgroup/get/', data=data)
+        adgroups = result.get('ad_group_list', []) if isinstance(result, dict) else []
+        return adgroups
+    
+    def get_adgroup(self, advertiser_id: str, campaign_id: str, adgroup_id: str) -> dict:
+        """获取 Ad Group 详情"""
+        filtering = [{'field': 'ADGROUP_IDS', 'operator': 'IN', 'values': [int(adgroup_id)]}]
+        result = self.list_adgroups(advertiser_id, campaign_id, filtering=filtering)
+        return result[0] if result else {}
+    
+    def create_adgroup(self, advertiser_id: str, campaign_id: str, adgroup: dict) -> str:
+        """创建 Ad Group"""
+        self._rate_limiter.acquire()
+        data = {
+            'advertiser_id': int(advertiser_id),
+            'campaign_id': int(campaign_id),
+            'ad_group': {
+                'ad_group_name': adgroup['name'],
+                'ad_group_status': adgroup.get('status', 1),
+                'promote_object_type': adgroup.get('promote_object_type', 0),  # 0=APP, 1=LandingPage
+                'tracking_url': adgroup.get('tracking_url', ''),
+                'bid_type': adgroup.get('bid_type', 0),  # 0=AUTO, 1=MANUAL
+                'bid_amount': int(adgroup.get('bid_amount', 500)),  # 单位为分
+                'daily_budget': int(adgroup.get('daily_budget', 50) * 100),
+                'placement_type': adgroup.get('placement_type', -1),  # -1=AUTO
+            }
+        }
+        # 定向
+        if adgroup.get('targeting'):
+            data['ad_group']['targeting'] = adgroup['targeting']
+        
+        result = self.request('POST', 'adgroup/create/', data=data)
+        return str(result.get('ad_group_id', '')) if isinstance(result, dict) else ''
+    
+    def update_adgroup(self, advertiser_id: str, campaign_id: str, adgroup_id: str, updates: dict) -> dict:
+        """更新 Ad Group"""
+        self._rate_limiter.acquire()
+        data = {
+            'advertiser_id': int(advertiser_id),
+            'campaign_id': int(campaign_id),
+            'ad_group_id': int(adgroup_id),
+            'ad_group': updates,
+        }
+        return self.request('POST', 'adgroup/update/', data=data)
+    
+    def pause_adgroup(self, advertiser_id: str, campaign_id: str, adgroup_id: str) -> dict:
+        """暂停 Ad Group"""
+        return self.update_adgroup(advertiser_id, campaign_id, adgroup_id, {'ad_group_status': 0})
+    
+    # ==================== Ad 管理 ====================
+    
+    def list_ads(self, advertiser_id: str, campaign_id: str, adgroup_id: str, page_size: int = 20) -> list:
+        """获取 Ad 列表"""
+        self._rate_limiter.acquire()
+        data = {
+            'advertiser_id': int(advertiser_id),
+            'campaign_id': int(campaign_id),
+            'ad_group_id': int(adgroup_id),
+            'page_size': page_size,
+        }
+        result = self.request('POST', 'ad/get/', data=data)
+        ads = result.get('ad_list', []) if isinstance(result, dict) else []
+        return ads
+    
+    def create_ad(self, advertiser_id: str, campaign_id: str, adgroup_id: str, ad: dict) -> str:
+        """创建 Ad"""
+        self._rate_limiter.acquire()
+        data = {
+            'advertiser_id': int(advertiser_id),
+            'campaign_id': int(campaign_id),
+            'ad_group_id': int(adgroup_id),
+            'ad': {
+                'ad_name': ad.get('name', 'Untitled Ad'),
+                'ad_status': ad.get('status', 1),
+                'landing_page_url': ad.get('landing_page_url', ''),
+                'conversion_id': ad.get('conversion_id', 0),
+            }
+        }
+        # 素材
+        if ad.get('media'):
+            data['ad']['media'] = ad['media']
+        if ad.get('text'):
+            data['ad']['text'] = ad['text']
+        
+        result = self.request('POST', 'ad/create/', data=data)
+        return str(result.get('ad_id', '')) if isinstance(result, dict) else ''
+    
+    # ==================== Spark Ads（达人原生广告）====================
+    
+    def create_spark_ad(
+        self,
+        advertiser_id: str,
+        campaign_id: str,
+        adgroup_id: str,
+        spark_post_id: str,
+    ) -> str:
+        """
+        创建 Spark Ads（使用达人已有帖子进行投放）
+        
+        spark_post_id: 达人帖子 ID（格式：{post_id}@{user_id}）
+        """
+        self._rate_limiter.acquire()
+        data = {
+            'advertiser_id': int(advertiser_id),
+            'campaign_id': int(campaign_id),
+            'ad_group_id': int(adgroup_id),
+            'ad': {
+                'ad_name': f"Spark Ad - {spark_post_id}",
+                'spark_post_id': spark_post_id,
+                'ad_status': 1,
+            }
+        }
+        result = self.request('POST', 'ad/create/', data=data)
+        return str(result.get('ad_id', '')) if isinstance(result, dict) else ''
+    
+    # ==================== 报表查询 ====================
+    
+    def get_campaign_report(
+        self,
+        advertiser_id: str,
+        campaign_ids: list[str],
+        time_range: dict = None,
+        report_type: str = "CAMPAIGN",
+    ) -> list:
+        """
+        查询 Campaign 级别报表
+        
+        report_type: "CAMPAIGN" | "ADGROUP" | "AD"
+        """
+        self._rate_limiter.acquire()
+        
+        data = {
+            'advertiser_id': int(advertiser_id),
+            'report_name': f"report_{int(time.time())}",
+            'report_type': report_type,
+            'data_content': {
+                'columns': [
+                    'campaign_group_id', 'campaign_group_name',
+                    'impressions', 'clicks', 'ctr', 'cpc', 'spend',
+                    'conversions', 'conversion_rate', 'cost_per_conversion',
+                ],
+                'time_range': time_range or {'start_date': 'LAST_7_DAYS', 'end_date': 'TODAY'},
+                'filtering': [
+                    {'field': 'CAMPAIGN_IDS', 'operator': 'IN', 'values': [int(x) for x in campaign_ids]}
+                ],
+            }
+        }
+        # 先创建报表任务
+        create_result = self.request('POST', 'report/task/create/', data=data)
+        task_id = create_result.get('task_id', '') if isinstance(create_result, dict) else ''
+        
+        if not task_id:
+            return []
+        
+        # 轮询获取结果
+        return self._poll_report_result(advertiser_id, task_id)
+    
+    def _poll_report_result(self, advertiser_id: str, task_id: str, max_wait: int = 30) -> list:
+        """轮询报表任务结果"""
+        for i in range(max_wait):
+            time.sleep(1)
+            data = {'advertiser_id': int(advertiser_id), 'task_id': task_id}
+            result = self.request('POST', 'report/task/info/get/', data=data)
+            
+            if isinstance(result, dict) and result.get('status') in (2, 3):  # COMPLETED/FAILED
+                if result.get('status') == 2:
+                    return result.get('content', {}).get('data', [])
+                return []
+        
+        return []
+    
+    def get_adgroup_report(
+        self,
+        advertiser_id: str,
+        campaign_id: str,
+        adgroup_ids: list[str] = None,
+        time_range: dict = None,
+    ) -> list:
+        """查询 Ad Group 级别报表"""
+        filtering = []
+        if adgroup_ids:
+            filtering.append({'field': 'ADGROUP_IDS', 'operator': 'IN', 'values': [int(x) for x in adgroup_ids]})
+        
+        data = {
+            'advertiser_id': int(advertiser_id),
+            'campaign_id': int(campaign_id),
+            'report_name': f"adgroup_report_{int(time.time())}",
+            'report_type': "ADGROUP",
+            'data_content': {
+                'columns': ['ad_group_id', 'ad_group_name', 'impressions', 'clicks', 'spend', 'conversions'],
+                'time_range': time_range or {'start_date': 'LAST_7_DAYS', 'end_date': 'TODAY'},
+                'filtering': filtering,
+            }
+        }
+        result = self.request('POST', 'report/task/create/', data=data)
+        task_id = result.get('task_id', '') if isinstance(result, dict) else ''
+        return self._poll_report_result(advertiser_id, task_id) if task_id else []
