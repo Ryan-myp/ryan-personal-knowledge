@@ -175,6 +175,31 @@
       },
       "confidence": 1.0,
       "usage_count": 0
+    },
+    {
+      "entry_id": "tiktok_api_v1_3_app_adgroup_limitation",
+      "platform": "tiktok",
+      "knowledge_type": "WORKFLOW",
+      "content": {
+        "type": "api_limitation",
+        "api_version": "v1.3",
+        "limitation": "API v1.3 无法创建 APP_ANDROID AdGroup",
+        "details": [
+          "MANUAL Campaign 不支持 APP_ANDROID promotion_type",
+          "UPGRADED_SMART_PLUS Campaign 不支持通过 API 创建 AdGroup",
+          "所有 MANUAL objective_type 都无法创建 APP_ANDROID AdGroup",
+          "错误信息包括：'Invalid optimization goal', 'Bid Mode value is invalid', 'Accelerated delivery under No-Bid strategy is not supported'"
+        ],
+        "workaround": [
+          "方案 A: 使用 TikTok 广告后台手动创建 App Campaign",
+          "方案 B: 联系 TikTok 申请 API v2.0 权限",
+          "方案 C: 使用 WEBSITE promotion_type 代替（通过 API）"
+        ],
+        "recommendation": "对于 APP 推广，建议使用 TikTok 广告后台手动创建 Campaign 和 AdGroup，或通过 TikTok 销售团队申请 API 权限升级"
+      },
+      "description": "TikTok API v1.3 限制：无法通过 API 创建 APP_ANDROID AdGroup",
+      "created_at": "2026-08-24T18:26:00Z",
+      "updated_at": "2026-08-24T18:26:00Z"
     }
   ]
 }
