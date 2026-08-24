@@ -172,6 +172,22 @@ targeting:
     age_range: "25-54"
 ```
 
+## 专家知识 (Expert Knowledge)
+
+### 广告类型指南
+详见 [expert/ad_types.md](expert/ad_types.md)
+
+### 定向优化指南
+详见 [expert/targeting.md](expert/targeting.md)
+
+## 专家知识 (Expert Knowledge)
+
+### 广告类型指南
+详见 [expert/ad_types.md](expert/ad_types.md)
+
+### 定向优化指南
+详见 [expert/targeting.md](expert/targeting.md)
+
 ## 工具列表
 
 | 工具名 | 描述 | 风险等级 |

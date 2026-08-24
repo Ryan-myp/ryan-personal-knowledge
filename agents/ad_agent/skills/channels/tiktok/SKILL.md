@@ -180,6 +180,16 @@ targeting:
   interests: ["Finance", "Insurance"]
 ```
 
+## 专家知识 (Expert Knowledge)
+
+### 广告类型指南
+详见 [expert/ad_types.md](expert/ad_types.md)
+
+## 专家知识 (Expert Knowledge)
+
+### 广告类型指南
+详见 [expert/ad_types.md](expert/ad_types.md)
+
 ## 工具列表
 
 | 工具名 | 描述 | 风险等级 |
