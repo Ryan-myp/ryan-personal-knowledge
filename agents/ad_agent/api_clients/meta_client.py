@@ -170,15 +170,10 @@ class MetaAPIClient(BasePlatformClient):
     def create_campaign(self, account_id: str, campaign: dict) -> dict:
         """创建 Campaign
         
-        根据 ad_delivery_platform 项目的实践，有效的 objective 值为：
-        - APP_INSTALLS
-        - PRODUCT_CATALOG_SALES  
-        - CONVERSIONS
-        - TRAFFIC
-        - LINK_CLICKS
-        - OUTCOME_SALES
-        - OUTCOME_APP_PROMOTION
-        - OUTCOME_TRAFFIC
+        Meta Graph API 要求：
+        - objective: 必须使用有效值（OUTCOME_SALES, OUTCOME_AWARENESS 等）
+        - special_ad_categories: 必须指定（NONE 表示不限制）
+        - is_adset_budget_sharing_enabled: 不使用 campaign budget 时必须指定
         """
         self._get_account_limiter(account_id).acquire()
         
@@ -186,17 +181,21 @@ class MetaAPIClient(BasePlatformClient):
         valid_objectives = [
             'APP_INSTALLS', 'PRODUCT_CATALOG_SALES', 'CONVERSIONS', 
             'TRAFFIC', 'LINK_CLICKS', 'OUTCOME_SALES', 
-            'OUTCOME_APP_PROMOTION', 'OUTCOME_TRAFFIC'
+            'OUTCOME_APP_PROMOTION', 'OUTCOME_TRAFFIC',
+            'OUTCOME_AWARENESS', 'OUTCOME_LEADS', 'OUTCOME_ENGAGEMENT'
         ]
-        objective = campaign.get('objective', 'CONVERSIONS')
+        objective = campaign.get('objective', 'OUTCOME_SALES')
         if objective not in valid_objectives:
             raise ValueError(f"Invalid objective '{objective}'. Valid values: {valid_objectives}")
         
         data = {
             'name': campaign['name'],
             'objective': objective,
-            'special_ad_categories': campaign.get('special_ad_categories', []),
+            'special_ad_categories': campaign.get('special_ad_categories', 'NONE'),
+            'is_adset_budget_sharing_enabled': 'False',  # 不使用 campaign budget 时必须指定
         }
+        if 'status' in campaign:
+            data['status'] = campaign['status']
         if 'daily_budget' in campaign:
             data['daily_budget'] = str(int(campaign['daily_budget'] * 100))  # 转为分
         if 'start_time' in campaign:
@@ -240,17 +239,31 @@ class MetaAPIClient(BasePlatformClient):
         return self.request('GET', f"/{adset_id}", extra_params=params)
     
     def create_adset(self, account_id: str, campaign_id: str, adset: dict) -> str:
-        """创建 Ad Set"""
+        """创建 Ad Set
+        
+        Meta Graph API 要求：
+        - optimization_goal: 必须使用有效值
+        - billing_event: 必须指定
+        - targeting: 必须指定（即使是空对象）
+        - bid_amount: 必须指定
+        """
         self._get_account_limiter(account_id).acquire()
+        
+        # 确保 targeting 是 JSON 字符串
+        targeting = adset.get('targeting', {'geo_locations': {'countries': ['US']}})
+        if isinstance(targeting, dict):
+            targeting = json.dumps(targeting)
+        
         data = {
             'name': adset['name'],
             'campaign_id': campaign_id,
-            'optimization_goal': adset.get('optimization_goal', 'LINK_CLICKS'),
+            'optimization_goal': adset.get('optimization_goal', 'REACH'),
             'billing_event': adset.get('billing_event', 'IMPRESSIONS'),
+            'bidding_strategy': adset.get('bidding_strategy', 'LOWEST_COST_WITHOUT_CAP'),
             'bid_amount': str(adset.get('bid_amount', 100)),
             'daily_budget': str(int(adset.get('daily_budget', 100) * 100)),
-            'targeting': adset.get('targeting', {}),
-            'status': adset.get('status', 'ACTIVE'),
+            'targeting': targeting,
+            'status': adset.get('status', 'PAUSED'),
         }
         result = self.request('POST', f"/{account_id}/adsets", data=data)
         return result.get('id', '') if isinstance(result, dict) else ''
@@ -281,17 +294,41 @@ class MetaAPIClient(BasePlatformClient):
         return result.get('data', []) if isinstance(result, dict) else result
     
     def create_ad(self, account_id: str, adset_id: str, ad: dict) -> str:
-        """创建 Ad"""
+        """创建 Ad
+        
+        Meta Graph API 要求：
+        - creative: 必须是有效的 JSON 对象（包含 page_id 和 link_data）
+        - 需要使用有效的 Facebook Page ID
+        """
         self._get_account_limiter(account_id).acquire()
+        
+        # 构建 creative 参数
+        creative = {}
+        if ad.get('creative_id'):
+            creative['creative_id'] = ad['creative_id']
+        elif ad.get('object_story_spec'):
+            creative['object_story_spec'] = ad['object_story_spec']
+        else:
+            # 默认使用 Shopee Page
+            creative['object_story_spec'] = {
+                'page_id': '1000419343151470',  # Shopee 官方 Page
+                'link_data': {
+                    'message': ad.get('body', 'Check out this offer!'),
+                    'name': ad.get('title', 'Special Offer'),
+                    'description': ad.get('description', ''),
+                    'link': ad.get('link', 'https://www.shopee.com'),
+                }
+            }
+        
         data = {
             'name': ad.get('name', 'Untitled Ad'),
             'adset_id': adset_id,
-            'creative': {'creative_id': ad.get('creative_id', '')} if ad.get('creative_id') else {},
+            'creative': json.dumps(creative),  # 必须是 JSON 字符串
             'body': ad.get('body', ''),
             'title': ad.get('title', ''),
             'description': ad.get('description', ''),
             'url_tags': ad.get('url_tags', ''),
-            'status': ad.get('status', 'ACTIVE'),
+            'status': ad.get('status', 'PAUSED'),
         }
         # 素材
         if ad.get('media') or ad.get('image_url'):
