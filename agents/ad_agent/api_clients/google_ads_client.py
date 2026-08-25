@@ -341,20 +341,6 @@ class GoogleAdsAPIClient(BasePlatformClient):
         """恢复 Campaign"""
         return self.update_campaign(campaign_id, {'status': 'ENABLED'})
     
-    # ==================== Ad Group 管理 ====================
-    
-    def list_ad_groups(self, campaign_id: str, page_size: int = 100) -> list:
-        """获取 Ad Group 列表"""
-        query = f"""
-            SELECT ad_group.id, ad_group.name, ad_group.status,
-                   ad_group.cpc_bid_micros, ad_group.type
-            FROM ad_group
-            WHERE ad_group.campaign = 'customers/{self.customer_id}/campaigns/{campaign_id}'
-            LIMIT {page_size}
-        """
-        result = self._search(query)
-        return result.get('results', [])
-    
     def create_ad_group(
         self,
         campaign_id: str,
