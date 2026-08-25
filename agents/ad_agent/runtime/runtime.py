@@ -240,6 +240,24 @@ class AgentRuntime:
         confirmation_payload = None
         
         for platform, tools in tool_plan.items():
+            # 检查账户是否有效（所有操作都需要）
+            if not account_id:
+                results.append({
+                    "tool": tools[0].name if tools else "unknown",
+                    "platform": platform,
+                    "success": False,
+                    "error": "缺少账户ID",
+                    "needs_confirmation": True,
+                    "confirmation_payload": {
+                        "type": "ask_account",
+                        "platform": platform,
+                        "question": f"请问您要操作哪个 {platform} 账户？请提供账户ID",
+                    },
+                })
+                needs_confirmation = True
+                confirmation_payload = results[-1]["confirmation_payload"]
+                continue
+            
             for tool_def in tools:
                 # 白名单验证（写操作）
                 if tool_def.is_write_tool and account_id:
