@@ -218,9 +218,13 @@ class TikTokAPIClient(BasePlatformClient):
         }
         if filtering:
             data['filtering'] = filtering
-        result = self.request('POST', 'adgroup/get/', data=data)
-        adgroups = result.get('ad_group_list', []) if isinstance(result, dict) else []
-        return adgroups
+        # TikTok API 要求 GET 请求
+        url = self._build_url('adgroup/get/')
+        resp = self._do_request('GET', url, params=data)
+        if resp.get('status_code') == 200:
+            inner = resp.get('data', {})
+            return inner.get('data', {}).get('list', [])
+        return []
     
     def get_adgroup(self, advertiser_id: str, campaign_id: str, adgroup_id: str) -> dict:
         """获取 Ad Group 详情"""
@@ -269,18 +273,21 @@ class TikTokAPIClient(BasePlatformClient):
     
     # ==================== Ad 管理 ====================
     
-    def list_ads(self, advertiser_id: str, campaign_id: str, adgroup_id: str, page_size: int = 20) -> list:
+    def list_ads(self, advertiser_id: str, adgroup_id: str, page_size: int = 20) -> list:
         """获取 Ad 列表"""
         self._rate_limiter.acquire()
         data = {
             'advertiser_id': str(advertiser_id),
-            'campaign_id': int(campaign_id),
             'ad_group_id': int(adgroup_id),
             'page_size': page_size,
         }
-        result = self.request('POST', 'ad/get/', data=data)
-        ads = result.get('ad_list', []) if isinstance(result, dict) else []
-        return ads
+        # TikTok API 要求 GET 请求
+        url = self._build_url('ad/get/')
+        resp = self._do_request('GET', url, params=data)
+        if resp.get('status_code') == 200:
+            inner = resp.get('data', {})
+            return inner.get('data', {}).get('list', [])
+        return []
     
     def create_ad(self, advertiser_id: str, campaign_id: str, adgroup_id: str, ad: dict) -> str:
         """创建 Ad"""

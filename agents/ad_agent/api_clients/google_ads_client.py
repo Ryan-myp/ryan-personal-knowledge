@@ -71,7 +71,11 @@ class GoogleAdsAPIClient(BasePlatformClient):
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
             
-            data = resp.json() if resp.content else {}
+            try:
+                data = resp.json() if resp.content else {}
+            except Exception:
+                # 响应体为空或非 JSON（如 HTML 错误页）
+                data = {}
             
             return {
                 'status_code': resp.status_code,

@@ -178,7 +178,10 @@ class DV360APIClient(BasePlatformClient):
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
             
-            data = resp.json() if resp.content else {}
+            try:
+                data = resp.json() if resp.content else {}
+            except Exception:
+                data = {}
             return {
                 'status_code': resp.status_code,
                 'data': data,
