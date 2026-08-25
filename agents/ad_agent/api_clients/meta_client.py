@@ -229,7 +229,10 @@ class MetaAPIClient(BasePlatformClient):
         """获取 Ad Set 列表"""
         self._get_account_limiter(account_id).acquire()
         endpoint = f"/{account_id}/adsets"
-        params = {'limit': limit}
+        params = {
+            'limit': limit,
+            'fields': 'id,name,status,budget_remaining,daily_budget,campaign{id,name}'
+        }
         if campaign_id:
             params['campaign_id'] = campaign_id
         result = self.request('GET', endpoint, extra_params=params)
