@@ -200,14 +200,14 @@ class GoogleAdsAPIClient(BasePlatformClient):
         """获取 Ad Group 详情"""
         query = f"""
             SELECT ad_group.id, ad_group.name, ad_group.status,
-                   ad_group.campaign, ad_group.type, ad_group.ad_group_type
+                   ad_group.type
             FROM ad_group
             WHERE ad_group.id = {ad_group_id}
         """
         results = self._search(query)
         items = results.get('data', {}).get('results', [])
         if items:
-            ag = items[0].get('adGroup', items[0].get('ad_group', {}))
+            ag = items[0].get('adGroup', {})
             return {
                 'id': ag.get('id'),
                 'resource_name': ag.get('resourceName'),
@@ -219,10 +219,11 @@ class GoogleAdsAPIClient(BasePlatformClient):
     
     def list_ads(self, ad_group_id: str, page_size: int = 100) -> list:
         """获取 Ad 列表"""
+        # Google Ads GAQL 需要使用 ad.ad_group 资源名
         query = f"""
-            SELECT ad.id, ad.name, ad.status, ad.type
+            SELECT ad.id, ad.name, ad.status
             FROM ad
-            WHERE ad_group.id = {ad_group_id}
+            WHERE ad.ad_group = 'customers/{self.customer_id}/adGroups/{ad_group_id}'
             LIMIT {page_size}
         """
         result = self._search(query)
@@ -236,14 +237,13 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 'resource_name': ad.get('resourceName'),
                 'name': ad.get('name'),
                 'status': ad.get('status'),
-                'type': ad.get('type'),
             })
         return ads
     
     def get_ad(self, ad_id: str) -> dict:
         """获取 Ad 详情"""
         query = f"""
-            SELECT ad.id, ad.name, ad.status, ad.type
+            SELECT ad.id, ad.name, ad.status
             FROM ad
             WHERE ad.id = {ad_id}
         """
@@ -256,7 +256,6 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 'resource_name': ad.get('resourceName'),
                 'name': ad.get('name'),
                 'status': ad.get('status'),
-                'type': ad.get('type'),
             }
         return {}
     
