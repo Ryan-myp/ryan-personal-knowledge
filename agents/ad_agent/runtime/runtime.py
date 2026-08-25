@@ -381,13 +381,36 @@ class AgentRuntime:
         
         # 问候语
         if any(kw in text for kw in ["你好", "hello", "hi", "在吗"]):
-            return "👋 你好！我是 ad-agent，您的广告投放专家助手。\n\n我可以帮您：\n• 创建 Meta/TikTok/Google Ads/DV360 广告系列\n• 查询投放报表和性能数据\n• 优化跨渠道预算分配\n\n请告诉我您的需求，例如：\n- \"帮我创建一个 Meta 广告系列\"\n- ""查看 TikTok Campaign 列表""
+            return (
+                "👋 你好！我是 ad-agent，您的广告投放专家助手。\n\n"
+                "我可以帮您：\n"
+                "• 创建 Meta/TikTok/Google Ads/DV360 广告系列\n"
+                "• 查询投放报表和性能数据\n"
+                "• 优化跨渠道预算分配\n\n"
+                "请告诉我您的需求，例如：\n"
+                "- \"帮我创建一个 Meta 广告系列\"\n"
+                "- \"查看 TikTok Campaign 列表\""
+            )
         
         # 帮助请求
         if any(kw in text for kw in ["帮助", "help", "你能做什么", "怎么使用"]):
-            return "🤖 我是广告投放专家助手，支持以下功能：\n\n"
-            return "🤖 我是广告投放专家助手，支持以下功能：\n\n"
-            return "🤖 我是广告投放专家助手，支持以下功能：\n\n"
+            return (
+                "🤖 我是广告投放专家助手，支持以下功能：\n\n"
+                "📊 **查询功能**\n"
+                "• 列出各平台 Campaign 列表\n"
+                "• 查看投放报表和性能数据\n\n"
+                "✏️ **创建功能**\n"
+                "• Meta: 创建 Campaign/Ad Set/Ad\n"
+                "• TikTok: 创建 Campaign/Ad Group/Ad\n"
+                "• Google Ads: 创建 Campaign（搜索/购物/PMax）\n"
+                "• DV360: 创建 Campaign/IO/Line Item\n\n"
+                "⚡ **优化功能**\n"
+                "• 跨渠道预算分配建议\n"
+                "• 出价策略优化\n\n"
+                "💡 **提示**：请明确指定平台和操作，例如：\n"
+                "- \"帮我创建一个 Meta 广告系列\"\n"
+                "- \"列出 TikTok Campaign 列表\""
+            )
         <arg_key>return</arg_key>
         <arg_value>"🤖 我是广告投放专家助手，支持以下功能：\n\n"
             "📊 **查询功能**\n"
