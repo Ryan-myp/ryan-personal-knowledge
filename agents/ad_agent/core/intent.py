@@ -154,6 +154,8 @@ class LLMIntentParser(IntentParser):
             return "list_audiences"
         if any(kw in text for kw in ["广告组", "ad group", "adgroup"]):
             return "list_adgroups"
+        if any(kw in text for kw in ["广告组", "adset", "ad set", "广告集"]):
+            return "list_adsets"
         # Campaign 列表查询 — 只在明确表达"查询/列出"意图时匹配
         if any(kw in text for kw in ["列出", "列表", "查询", "查看", "list", "query", "search", "获取"]):
             if any(kw in text for kw in ["Campaign", "campaign", "广告系列"]):
@@ -363,6 +365,10 @@ class SimpleIntentRouter(IntentRouter):
             "dv360": [],
         },
         "list_adgroups": {
+            "meta": ["meta_list_ad_sets"],
+            "tiktok": ["tiktok_list_adgroups"],
+        },
+        "list_adsets": {
             "meta": ["meta_list_ad_sets"],
             "tiktok": ["tiktok_list_adgroups"],
         },

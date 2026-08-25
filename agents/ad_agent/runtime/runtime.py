@@ -242,21 +242,30 @@ class AgentRuntime:
         for platform, tools in tool_plan.items():
             # 检查账户是否有效（所有操作都需要）
             if not account_id:
-                results.append({
-                    "tool": tools[0].name if tools else "unknown",
-                    "platform": platform,
-                    "success": False,
-                    "error": "缺少账户ID",
-                    "needs_confirmation": True,
-                    "confirmation_payload": {
-                        "type": "ask_account",
+                # 尝试从配置中获取测试账户
+                test_accounts = self.whitelist_validator.get_allowed_accounts(platform)
+                if test_accounts:
+                    # 自动使用第一个测试账户
+                    account_id = test_accounts[0]
+                    # 同时更新 session context
+                    session.ctx.account_id = account_id
+                else:
+                    # 没有配置测试账户，询问用户
+                    results.append({
+                        "tool": tools[0].name if tools else "unknown",
                         "platform": platform,
-                        "question": f"请问您要操作哪个 {platform} 账户？请提供账户ID",
-                    },
-                })
-                needs_confirmation = True
-                confirmation_payload = results[-1]["confirmation_payload"]
-                continue
+                        "success": False,
+                        "error": "缺少账户ID",
+                        "needs_confirmation": True,
+                        "confirmation_payload": {
+                            "type": "ask_account",
+                            "platform": platform,
+                            "question": f"请问您要操作哪个 {platform} 账户？请提供账户ID",
+                        },
+                    })
+                    needs_confirmation = True
+                    confirmation_payload = results[-1]["confirmation_payload"]
+                    continue
             
             for tool_def in tools:
                 # 白名单验证（写操作）
