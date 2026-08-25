@@ -13,10 +13,12 @@ runtime/runtime.py - Agent Runtime 主循环
 import uuid
 import time
 import json
+import os
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
+import yaml
 
 from ..core.interfaces import (
     ToolContext, ToolResult, ChatMessage, CapabilityModule,
@@ -28,6 +30,64 @@ from ..core.intent import LLMIntentParser, SimpleIntentRouter
 from .skill import Skill, SkillLoader
 from ..persistence.session_manager import SessionManager
 from ..persistence.store import AdAgentStore
+
+
+# ─── 账户白名单验证器 ───────────────────────────────────────────
+
+class AccountWhitelistValidator:
+    """
+    账户白名单验证器
+    
+    只允许操作配置文件中指定的测试账户，防止误操作生产账户
+    """
+    
+    def __init__(self, config_path: Optional[str] = None):
+        self.config_path = config_path or os.path.join(os.path.dirname(__file__), "..", "config.yaml")
+        self.allowed_accounts: dict[str, list[str]] = {}
+        self._load_config()
+    
+    def _load_config(self):
+        """加载配置文件"""
+        try:
+            if os.path.exists(self.config_path):
+                with open(self.config_path, 'r', encoding='utf-8') as f:
+                    config = yaml.safe_load(f)
+                    self.allowed_accounts = config.get('allowed_accounts', {})
+        except Exception as e:
+            print(f"⚠️ 加载账户白名单配置失败: {e}")
+    
+    def reload(self):
+        """重新加载配置"""
+        self._load_config()
+    
+    def validate_account(self, platform: str, account_id: str) -> tuple[bool, str]:
+        """
+        验证账户是否在白名单中
+        
+        Returns:
+            (is_allowed, error_message)
+        """
+        allowed = self.allowed_accounts.get(platform, [])
+        
+        # 如果白名单为空，允许所有账户（兼容模式）
+        if not allowed:
+            return True, ""
+        
+        # 检查账户是否匹配
+        normalized_account = account_id.replace("act_", "")
+        is_allowed = any(
+            acc.replace("act_", "") == normalized_account 
+            for acc in allowed
+        )
+        
+        if not is_allowed:
+            return False, f"账户 {account_id} 不在 {platform} 白名单中。允许操作的账户: {', '.join(allowed)}"
+        
+        return True, ""
+    
+    def get_allowed_accounts(self, platform: str) -> list[str]:
+        """获取平台允许操作的账户列表"""
+        return self.allowed_accounts.get(platform, [])
 
 
 # ─── Agent Runtime ─────────────────────────────────────────────
@@ -61,6 +121,7 @@ class AgentRuntime:
         skill_roots: list[str] = None,
         llm_client=None,  # 可选：自定义 LLM 客户端
         persistence_store: AdAgentStore = None,
+        whitelist_validator: AccountWhitelistValidator = None,
     ):
         self.registry = registry or SimpleToolRegistry()
         self.intent_parser = intent_parser or LLMIntentParser(llm_client)
@@ -70,6 +131,9 @@ class AgentRuntime:
         self._llm = llm_client
         self._sessions: dict[str, "SessionContext"] = {}
         self._background_tasks: list[dict] = []
+        
+        # 账户白名单验证器
+        self.whitelist_validator = whitelist_validator or AccountWhitelistValidator()
         
         # 预留：多 Agent 桥接
         self._multi_agent_bridge: Optional["MultiAgentBridge"] = None
@@ -156,6 +220,20 @@ class AgentRuntime:
         # Step 3: 路由到平台工具
         tool_plan = self.intent_router.route(intent, self.registry)
         
+        # 检查是否需要执行任何工具
+        if not tool_plan:
+            return {
+                "session_id": session_id,
+                "turn_id": turn_id,
+                "timestamp": datetime.now().isoformat(),
+                "intent": intent.to_dict(),
+                "tool_plan": {},
+                "results": [],
+                "reply": self._generate_chat_reply(user_input),
+                "needs_confirmation": False,
+                "confirmation_payload": None,
+            }
+        
         # Step 4: 执行工具（按平台顺序）
         results = []
         needs_confirmation = False
@@ -163,6 +241,17 @@ class AgentRuntime:
         
         for platform, tools in tool_plan.items():
             for tool_def in tools:
+                # 白名单验证（写操作）
+                if tool_def.is_write_tool and account_id:
+                    allowed, error_msg = self.whitelist_validator.validate_account(platform, account_id)
+                    if not allowed:
+                        results.append({
+                            "tool": tool_def.name,
+                            "platform": platform,
+                            "success": False,
+                            "error": f"账户验证失败: {error_msg}",
+                        })
+                        continue
                 # 检查是否需要写入保护
                 if tool_def.is_write_tool and self.write_guard:
                     allowed, reason = self.write_guard.reserve_write(
@@ -285,6 +374,36 @@ class AgentRuntime:
                 + "\n".join(f"  - [{r.get('platform', '?')}] {r['tool']}"
                           for r in results)
             )
+    
+    def _generate_chat_reply(self, user_input: str) -> str:
+        """生成闲聊回复"""
+        text = user_input.lower()
+        
+        # 问候语
+        if any(kw in text for kw in ["你好", "hello", "hi", "在吗"]):
+            return "👋 你好！我是 ad-agent，您的广告投放专家助手。\n\n我可以帮您：\n• 创建 Meta/TikTok/Google Ads/DV360 广告系列\n• 查询投放报表和性能数据\n• 优化跨渠道预算分配\n\n请告诉我您的需求，例如：\n- \"帮我创建一个 Meta 广告系列\"\n- ""查看 TikTok Campaign 列表""
+        
+        # 帮助请求
+        if any(kw in text for kw in ["帮助", "help", "你能做什么", "怎么使用"]):
+            return "🤖 我是广告投放专家助手，支持以下功能：\n\n"
+            return "🤖 我是广告投放专家助手，支持以下功能：\n\n"
+            return "🤖 我是广告投放专家助手，支持以下功能：\n\n"
+        <arg_key>return</arg_key>
+        <arg_value>"🤖 我是广告投放专家助手，支持以下功能：\n\n"
+            "📊 **查询功能**\n"
+            "• 列出各平台 Campaign 列表\n"
+            "• 查看投放报表和性能数据\n\n"
+            "✏️ **创建功能**\n"
+            "• Meta: 创建 Campaign/Ad Set/Ad\n"
+            "• TikTok: 创建 Campaign/Ad Group/Ad\n"
+            "• Google Ads: 创建 Campaign（搜索/购物/PMax）\n"
+            "• DV360: 创建 Campaign/IO/Line Item\n\n"
+            "⚡ **优化功能**\n"
+            "• 跨渠道预算分配建议\n"
+            "• 出价策略优化\n\n"
+            "💡 **提示**：请明确指定平台和操作，例如：\n"
+            "- \"帮我创建一个 Meta 广告系列\"\n"
+            "- \"列出 TikTok Campaign 列表""
     
     # ─── Session 管理 ──────────────────────────────────────────
     
