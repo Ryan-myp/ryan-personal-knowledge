@@ -126,8 +126,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         """获取 Campaign 列表"""
         query = (
             "SELECT campaign.id, campaign.name, campaign.status, "
-            "campaign.advertising_channel_type, campaign.bidding_strategy,"
-            "campaign.optimization_goal, campaign.campaign_budget "
+            "campaign.advertising_channel_type, campaign.bidding_strategy "
             "FROM campaign"
         )
         if filter_query:
@@ -135,31 +134,67 @@ class GoogleAdsAPIClient(BasePlatformClient):
         query += f" LIMIT {page_size}"
         
         result = self._search(query)
-        return result.get('results', [])
+        # 解析嵌套结构：results[i]['campaign']
+        results = result.get('results', [])
+        campaigns = []
+        for r in results:
+            camp = r.get('campaign', {})
+            # 标准化字段名
+            campaigns.append({
+                'id': camp.get('id'),
+                'resource_name': camp.get('resourceName'),
+                'name': camp.get('name'),
+                'status': camp.get('status'),
+                'advertising_channel_type': camp.get('advertisingChannelType'),
+                'bidding_strategy': camp.get('biddingStrategy'),
+            })
+        return campaigns
     
     def get_campaign(self, campaign_id: str) -> dict:
         """获取 Campaign 详情"""
         query = f"""
             SELECT campaign.id, campaign.name, campaign.status,
-                   campaign.advertising_channel_type, campaign.bidding_strategy,
-                   campaign.optimization_goal
+                   campaign.advertising_channel_type, campaign.bidding_strategy
             FROM campaign
             WHERE campaign.id = {campaign_id}
         """
         results = self._search(query)
-        return results.get('results', [{}])[0] if results.get('results') else {}
+        items = results.get('results', [])
+        if items:
+            camp = items[0].get('campaign', {})
+            return {
+                'id': camp.get('id'),
+                'resource_name': camp.get('resourceName'),
+                'name': camp.get('name'),
+                'status': camp.get('status'),
+                'advertising_channel_type': camp.get('advertisingChannelType'),
+                'bidding_strategy': camp.get('biddingStrategy'),
+            }
+        return {}
     
     def list_ad_groups(self, campaign_id: str, page_size: int = 100) -> list:
         """获取 Ad Group 列表"""
         query = f"""
             SELECT ad_group.id, ad_group.name, ad_group.status,
-                   ad_group.campaign, ad_group.type
+                   ad_group.type
             FROM ad_group
-            WHERE ad_group_campaign = '{campaign_id}'
+            WHERE campaign.id = {campaign_id}
             LIMIT {page_size}
         """
         result = self._search(query)
-        return result.get('results', [])
+        # 解析嵌套结构：results[i]['adGroup']
+        results = result.get('results', [])
+        ad_groups = []
+        for r in results:
+            ag = r.get('adGroup', r.get('ad_group', {}))
+            ad_groups.append({
+                'id': ag.get('id'),
+                'resource_name': ag.get('resourceName'),
+                'name': ag.get('name'),
+                'status': ag.get('status'),
+                'type': ag.get('type'),
+            })
+        return ad_groups
     
     def get_ad_group(self, ad_group_id: str) -> dict:
         """获取 Ad Group 详情"""
@@ -175,10 +210,9 @@ class GoogleAdsAPIClient(BasePlatformClient):
     def list_ads(self, ad_group_id: str, page_size: int = 100) -> list:
         """获取 Ad 列表"""
         query = f"""
-            SELECT ad.id, ad.name, ad.status, ad.type,
-                   ad.ad_group
+            SELECT ad.id, ad.name, ad.status, ad.type
             FROM ad
-            WHERE ad.ad_group = '{ad_group_id}'
+            WHERE ad_group.id = {ad_group_id}
             LIMIT {page_size}
         """
         result = self._search(query)
@@ -434,7 +468,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
     
     def _search(self, query: str) -> dict:
         """执行 GAQL 查询"""
-        url = f"{self.BASE_URL}/customers/{self.customer_id}:search"
+        url = f"{self.BASE_URL}/customers/{self.customer_id}/googleAds:search"
         data = {'query': query}
         return self._do_request('POST', url, data=data)
     
