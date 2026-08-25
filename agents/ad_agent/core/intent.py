@@ -134,9 +134,12 @@ class LLMIntentParser(IntentParser):
     
     def _detect_intent_type(self, text: str) -> str:
         """检测意图类型（注意顺序：更具体的规则放在前面）"""
-        # 先检查报表查询（避免 "投放报表" 被误判为 create_campaign）
+        # 先检查报表查询
         if any(kw in text for kw in ["报表", "report", "下载", "查看数据", "performance", "统计"]):
             return "download_report"
+        # 检查列表查询
+        if any(kw in text for kw in ["列出", "列表", "查询", "查看", "list", "query", "search", "获取"]):
+            return "list_campaigns"
         # 再检查其他意图 - 使用更宽松的匹配
         if any(kw in text for kw in ["投放", "创建广告", "创建", "promote", "launch ad", "run ad", "新建广告", "创建 campaign"]):
             return "create_campaign"
@@ -145,7 +148,7 @@ class LLMIntentParser(IntentParser):
         elif any(kw in text for kw in ["再营销", "remarketing", "retargeting", "重定向"]):
             return "run_remarketing"
         # 检查问候和闲聊
-        if any(kw in text for kw in ["你好", "hello", "hi", "在吗", "帮助", "help", "你是谁"]):
+        if any(kw in text for kw in ["你好", "hello", "hi", "在吗", "帮助", "help", "你是谁", "支持"]):
             return "chat"
         # 默认返回 chat，不要默认创建
         return "chat"

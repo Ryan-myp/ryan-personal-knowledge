@@ -91,6 +91,32 @@ class MetaListAccountsMockHandler(ToolHandler):
         })
 
 
+class MetaListCampaignsMockHandler(ToolHandler):
+    def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
+        return ToolResult.ok({
+            "campaigns": [
+                {"id": "act_2806375919473667_101", "name": "Test Campaign 1", "status": "ACTIVE", "objective": "OUTCOME_SALES"},
+                {"id": "act_2806375919473667_102", "name": "Test Campaign 2", "status": "PAUSED", "objective": "OUTCOME_TRAFFIC"},
+            ],
+        })
+
+
+class MetaListCampaignsRealHandler(ToolHandler):
+    def __init__(self, api_client: MetaAPIClient):
+        self.client = api_client
+    
+    def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
+        account_id = ctx.account_id
+        if not account_id:
+            return ToolResult.error("Missing account_id in context")
+        
+        try:
+            campaigns = self.client.list_campaigns(account_id)
+            return ToolResult.ok({"campaigns": campaigns})
+        except Exception as e:
+            return ToolResult.error(f"Failed to list Meta campaigns: {e}")
+
+
 # ─── Real Handler（调用真实 API）────────────────────────────────
 
 class MetaCreateCampaignRealHandler(ToolHandler):
@@ -246,12 +272,14 @@ class MetaCapability(BaseCapability):
             create_ad_h = MetaCreateAdRealHandler(self._api_client)
             get_report_h = MetaGetReportRealHandler(self._api_client)
             list_accounts_h = MetaListAccountsRealHandler(self._api_client)
+            list_campaigns_h = MetaListCampaignsRealHandler(self._api_client)
         else:
             create_campaign_h = MetaCreateCampaignMockHandler()
             create_adset_h = MetaCreateAdSetMockHandler()
             create_ad_h = MetaCreateAdMockHandler()
             get_report_h = MetaGetReportMockHandler()
             list_accounts_h = MetaListAccountsMockHandler()
+            list_campaigns_h = MetaListCampaignsMockHandler()
         
         # Campaign
         tools.append((
@@ -373,6 +401,27 @@ class MetaCapability(BaseCapability):
                 traits=["read", "report"],
             ),
             get_report_h,
+        ))
+        
+        # List Campaigns
+        tools.append((
+            ToolDefinition(
+                name="meta_list_campaigns",
+                skill="meta-marketing-api-expert",
+                platform="meta",
+                description="查询 Meta Campaign 列表，支持按状态筛选。",
+                input_schema=ToolSchema(
+                    properties={
+                        "status": {"type": "string", "enum": ["ACTIVE", "PAUSED", "DELETED"]},
+                        "limit": {"type": "integer"},
+                    }
+                ),
+                risk_level=RiskLevel.LOW,
+                effect_class=ToolEffect.READ,
+                replay_policy=ReplayPolicy.SAFE,
+                traits=["read", "campaign"],
+            ),
+            list_campaigns_h,
         ))
         
         # List Accounts
