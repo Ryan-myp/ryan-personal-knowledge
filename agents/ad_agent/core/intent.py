@@ -281,6 +281,12 @@ class SimpleIntentRouter(IntentRouter):
             "meta": ["meta_boost_post"],
             "tiktok": ["tiktok_spark_ads_create"],
         },
+        "list_campaigns": {
+            "meta": ["meta_list_campaigns"],
+            "google": ["google_list_campaigns"],
+            "tiktok": ["tiktok_list_campaigns"],
+            "dv360": ["dv360_list_campaigns"],
+        },
         "download_report": {
             "meta": ["meta_get_campaign_report"],
             "google": ["google_get_campaign_report"],
