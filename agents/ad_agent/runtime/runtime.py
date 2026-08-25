@@ -511,9 +511,9 @@ class AgentRuntime:
         # 根据 platform 选择模块和 prefix
         platform_map = {
             'meta': ('meta_capability', 'Meta'),
-            'google-ads': ('platform_capabilities', 'Google'),
-            'tiktok': ('platform_capabilities', 'TikTok'),
-            'dv360': ('platform_capabilities', 'DV360'),
+            'google-ads': ('google_capability', 'Google'),
+            'tiktok': ('tiktok_capability', 'TikTok'),
+            'dv360': ('dv360_capability', 'DV360'),
         }
         
         module_name, prefix = platform_map.get(platform, (None, None))

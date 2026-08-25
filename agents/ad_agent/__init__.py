@@ -13,10 +13,9 @@ ad_agent - 多渠道广告投放 Agent
 
 from .runtime.runtime import AgentRuntime, SessionContext
 from .capabilities.meta_capability import MetaCapability, create_meta_capability
-from .capabilities.platform_capabilities import (
-    GoogleCapability, TikTokCapability, DV360Capability,
-    create_google_capability, create_tiktok_capability, create_dv360_capability,
-)
+from .capabilities.google_capability import GoogleCapability, create_google_capability
+from .capabilities.tiktok_capability import TikTokCapability, create_tiktok_capability
+from .capabilities.dv360_capability import DV360Capability, create_dv360_capability
 from .persistence.store import AdAgentStore
 from .persistence.session_manager import SessionManager
 from .user_skills.orchestrator import AdCampaignOrchestratorSkill

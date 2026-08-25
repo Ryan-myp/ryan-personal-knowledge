@@ -126,14 +126,14 @@ class SkillRegistry:
         1. 优先查找 platform_capability 模块中的工厂函数
         2. 回退到默认工厂（Mock 模式）
         """
-        from ..capabilities import meta_capability, platform_capabilities
+        from ..capabilities import meta_capability, google_capability, tiktok_capability, dv360_capability
         
         # 根据平台名称选择对应的 capability 模块
         platform_map = {
             'meta': ('meta', meta_capability),
-            'google-ads': ('google', platform_capabilities),
-            'tiktok': ('tiktok', platform_capabilities),
-            'dv360': ('dv360', platform_capabilities),
+            'google-ads': ('google', google_capability),
+            'tiktok': ('tiktok', tiktok_capability),
+            'dv360': ('dv360', dv360_capability),
         }
         
         module_key = platform_map.get(platform)
