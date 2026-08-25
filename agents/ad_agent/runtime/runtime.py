@@ -411,11 +411,61 @@ class AgentRuntime:
                           for r in results if not r.get("success"))
             )
         else:
-            return (
-                f"✅ 成功创建 {success_count} 个广告操作：\n"
-                + "\n".join(f"  - [{r.get('platform', '?')}] {r['tool']}"
-                          for r in results)
-            )
+            # 根据工具名判断操作类型
+            is_list_op = any('list' in r.get('tool', '').lower() for r in results)
+            is_get_op = any('get_' in r.get('tool', '').lower() or 'report' in r.get('tool', '').lower() for r in results)
+            
+            if is_list_op or is_get_op:
+                # 查询类操作
+                lines = []
+                for r in results:
+                    tool = r.get('tool', '')
+                    platform = r.get('platform', '')
+                    data = r.get('data', {})
+                    
+                    # 提取并格式化结果数据
+                    if 'campaigns' in data:
+                        campaigns = data['campaigns']
+                        if campaigns:
+                            lines.append(f"📊 [{platform}] 找到 {len(campaigns)} 个 Campaign:\n")
+                            for c in campaigns[:5]:  # 最多显示 5 个
+                                cid = c.get('id', 'N/A')
+                                cname = c.get('name', 'N/A')
+                                cstatus = c.get('status', 'N/A')
+                                lines.append(f"  • {cname} (ID: {cid}, 状态: {cstatus})")
+                            if len(campaigns) > 5:
+                                lines.append(f"  ... 还有 {len(campaigns) - 5} 个")
+                        else:
+                            lines.append(f"📊 [{platform}] 没有找到 Campaign")
+                    elif 'accounts' in data:
+                        accounts = data['accounts']
+                        if accounts:
+                            lines.append(f"📊 [{platform}] 找到 {len(accounts)} 个账户:\n")
+                            for a in accounts[:5]:
+                                aid = a.get('id', 'N/A')
+                                aname = a.get('name', 'N/A')
+                                lines.append(f"  • {aname} (ID: {aid})")
+                        else:
+                            lines.append(f"📊 [{platform}] 没有找到账户")
+                    elif 'metrics' in data:
+                        metrics = data['metrics']
+                        lines.append(f"📊 [{platform}] 报表数据:\n")
+                        for k, v in metrics.items():
+                            if isinstance(v, float):
+                                lines.append(f"  • {k}: {v:.2f}")
+                            else:
+                                lines.append(f"  • {k}: {v}")
+                    else:
+                        lines.append(f"✅ [{platform}] {tool}")
+                
+                return "\n".join(lines) if lines else f"✅ 成功执行 {success_count} 个查询操作"
+            else:
+                # 创建类操作
+                return (
+                    f"✅ 成功创建 {success_count} 个广告操作：\n"
+                    + "\n".join(f"  - [{r.get('platform', '?')}] {r['tool']}"
+                              for r in results)
+                )
     
     def _generate_chat_reply(self, user_input: str) -> str:
         """生成闲聊回复"""

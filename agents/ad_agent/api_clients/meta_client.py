@@ -159,7 +159,7 @@ class MetaAPIClient(BasePlatformClient):
         """获取 Campaign 列表"""
         self._get_account_limiter(account_id).acquire()
         params = {'fields': ','.join(fields) if fields else 'id,name,status,daily_budget,budget_remaining,objective'}
-        result = self.request('GET', f"/{account_id}/campaigns", extra_params={**params, 'limit': limit})
+        result = self.request('GET', f"/act_{account_id}/campaigns", extra_params={**params, 'limit': limit})
         return result.get('data', []) if isinstance(result, dict) else result
     
     def get_campaign(self, campaign_id: str, fields: list = None) -> dict:
