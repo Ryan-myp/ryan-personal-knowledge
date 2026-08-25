@@ -50,11 +50,16 @@ def _init_on_import():
         store = AdAgentStore("ad_agent.db")
         runtime = AgentRuntime(persistence_store=store)
         
-        # 加载 Skills
+        # 加载 Skills - 使用 runtime/skill.py 的 SkillLoader
         skills_root = Path(__file__).parent / "skills"
-        skill_loader = get_skill_loader()
-        skills = skill_loader.load_all()
-        print(f"✅ 已加载 {len(skills)} 个 Skills")
+        from agents.ad_agent.runtime.skill import SkillLoader as RuntimeSkillLoader
+        
+        runtime_skill_loader = RuntimeSkillLoader()
+        runtime_skill_loader.add_root(str(skills_root / "channels"))
+        runtime_skill_loader.add_root(str(skills_root / "businesses"))
+        runtime_skill_loader.add_root(str(skills_root / "cross-channel"))
+        runtime_skills = runtime_skill_loader.load_all()
+        print(f"✅ 已加载 {len(runtime_skills)} 个 Skills: {list(runtime_skills.keys())}")
         
         # 加载 Skill 定义（只加载，不自动注册）
         # 实际注册由 register_capability() 完成

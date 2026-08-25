@@ -79,13 +79,24 @@ class SkillContract:
         
         self.raw_md = content
         
-        # 解析 frontmatter（YAML 块）
+        # 解析 frontmatter（YAML 块）- 支持两种格式：
+        # 1. 直接格式: name: xxx, description: xxx
+        # 2. 嵌套格式: skill: {name: xxx, description: xxx}
         fm_match = re.match(r'^---\n(.*?)\n---\n', content, re.DOTALL)
         if fm_match:
             fm_yaml = yaml.safe_load(fm_match.group(1))
-            self.name = fm_yaml.get('name', '')
-            self.description = fm_yaml.get('description', '')
-            self.platform = fm_yaml.get('platform', '')
+            
+            # 尝试嵌套格式 skill: {...}
+            if 'skill' in fm_yaml:
+                self.name = fm_yaml['skill'].get('name', '')
+                self.description = fm_yaml['skill'].get('description', '')
+                self.platform = fm_yaml['skill'].get('platform', '')
+            # 尝试直接格式 {name: ..., description: ...}
+            else:
+                self.name = fm_yaml.get('name', '')
+                self.description = fm_yaml.get('description', '')
+                # 使用目录名作为默认平台
+                self.platform = fm_yaml.get('platform', os.path.basename(os.path.dirname(path)))
             
             # 解析 triggers
             triggers = fm_yaml.get('triggers', [])
