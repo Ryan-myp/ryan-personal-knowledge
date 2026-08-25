@@ -145,43 +145,52 @@
           "name": "广告系列名称",
           "advertising_channel_type": "PERFORMANCE_MAX (固定值)",
           "status": "PAUSED",
-          "campaign_budget": "CampaignBudget 资源名",
-          "bidding_strategy": "MAXIMIZE_CONVERSIONS 或 TARGET_ROAS",
+          "campaign_budget": "CampaignBudget 资源名（使用 Temporary ID）",
+          "maximize_conversion_value": "Bidding 策略（不使用 bidding_strategy 字段）",
+          "brand_guidelines_enabled": "品牌指南开关（可设为 False 避免需要 Brand Assets）",
+          "shopping_setting.merchant_id": "Merchant Center 账户 ID",
           "contains_eu_political_advertising": "EuPoliticalAdvertisingStatus 枚举"
         },
         "special_requirements": [
-          "PMax 不需要 AdGroup",
-          "PMax 需要 Asset Group（通过 AssetService 创建）",
-          "需要配置转化事件 (conversion_action)"
+          "PMax 不需要 AdGroup，需要 Asset Group（通过 AssetGroupService 创建）",
+          "不需要 Bidding Strategy，直接使用 maximize_conversion_value 或 maximize_conversions 字段",
+          "Brand Guidelines 启用时需要 BUSINESS_NAME 和 LOGO asset",
+          "需要 Merchant Center 账户",
+          "必须使用 Temporary IDs 在同一 Mutate 请求中创建所有实体"
         ],
-        "code_example": "def create_pmax_campaign(client, customer_id, budget_resource_name):\n    campaign_operation = client.get_type('CampaignOperation')\n    campaign = campaign_operation.create\n    \n    campaign.name = f'PMax Campaign #{uuid4()}'\n    campaign.advertising_channel_type = client.enums.AdvertisingChannelTypeEnum.MULTI_CHANNEL\n    campaign.advertising_channel_sub_type = client.enums.AdvertisingChannelSubTypeEnum.PERFORMANCE_MAX\n    campaign.status = client.enums.CampaignStatusEnum.PAUSED\n    campaign.campaign_budget = budget_resource_name\n    campaign.bidding_strategy = client.get_service('BiddingStrategyService').bidding_strategy_path(\n        customer_id, 'MAXIMIZE_CONVERSIONS'\n    )\n    \n    # Required: EU political advertising declaration\n    campaign.contains_eu_political_advertising =         client.enums.EuPoliticalAdvertisingStatusEnum.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING\n    \n    # Conversion tracking\n    campaign.optimization_goal_setting.optimize_goal_configuration = [\n        client.enums.OptimizationGoalConversionSourceEnum.FIRST-party_event,\n    ]\n    \n    response = campaign_service.mutate_campaigns(\n        customer_id=customer_id,\n        operations=[campaign_operation]\n    )\n    return response.results[0].resource_name",
+        "code_example": "# 关键：不使用 bidding_strategy 字段\n# 使用 maximize_conversion_value 或 maximize_conversions\n\ndef create_pmax_campaign(client, customer_id, merchant_center_id, brand_guidelines_enabled=False):\n    # Temporary IDs\n    _BUDGET_TEMPORARY_ID = '-1'\n    _CAMPAIGN_TEMPORARY_ID = '-2'\n    _ASSET_GROUP_TEMPORARY_ID = '-3'\n    \n    # Step 1: Create Budget\n    budget_operation = client.get_type('MutateOperation')\n    budget = budget_operation.campaign_budget_operation.create\n    budget.name = 'PMax Budget'\n    budget.amount_micros = 50000000\n    budget.explicitly_shared = False\n    budget.resource_name = client.get_service('CampaignBudgetService').campaign_budget_path(\n        customer_id, _BUDGET_TEMPORARY_ID\n    )\n    \n    # Step 2: Create Campaign\n    campaign_operation = client.get_type('MutateOperation')\n    campaign = campaign_operation.campaign_operation.create\n    campaign.name = f'PMax Campaign #{uuid4()}'\n    campaign.status = client.enums.CampaignStatusEnum.PAUSED\n    campaign.advertising_channel_type = client.enums.AdvertisingChannelTypeEnum.PERFORMANCE_MAX\n    \n    # ✅ 关键：设置 Bidding（不使用 bidding_strategy）\n    campaign.maximize_conversion_value.target_roas = None  # 不设 ROAS\n    # 或\n    # campaign.maximize_conversions.target_cpa_micros = None\n    \n    # Brand Guidelines\n    campaign.brand_guidelines_enabled = brand_guidelines_enabled\n    \n    # Shopping Setting\n    campaign.shopping_setting.merchant_id = merchant_center_id\n    \n    # Resource Name\n    campaign.resource_name = client.get_service('CampaignService').campaign_path(\n        customer_id, _CAMPAIGN_TEMPORARY_ID\n    )\n    campaign.campaign_budget = budget.resource_name\n    \n    # EU Political Advertising\n    campaign.contains_eu_political_advertising = \n        client.enums.EuPoliticalAdvertisingStatusEnum.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING\n    \n    # Execute Mutate\n    response = client.get_service('GoogleAdsService').mutate(\n        customer_id=customer_id,\n        mutate_operations=[budget_operation, campaign_operation]\n    )\n    return response.results[-1].resource_name",
         "api_reference": "https://developers.google.com/google-ads/api/docs/campaigns/performance-max",
-        "test_status": "failed",
+        "test_status": "pending_network_fix",
         "test_date": "2026-08-25T10:19:29.291448",
         "error_analysis": {
-          "root_cause": "SDK v25 缺少 BiddingStrategySchemeEnum 枚举类，无法创建 MAXIMIZE_CONVERSIONS 类型 Bidding Strategy",
-          "clarification": "Bidding Strategy 与账户无关，是动态创建的资源。问题是 SDK 版本限制，不是账户配置问题。",
+          "root_cause": "原代码错误使用 bidding_strategy 字段（不支持 Portfolio Bidding）和 MULTI_CHANNEL channel type",
+          "clarification": "PMax Campaign 不需要 Bidding Strategy 资源，直接使用 maximize_conversion_value/maximize_conversions 字段",
           "sdk_issue": {
-            "problem": "创建 Bidding Strategy 需要 scheme 字段，但 SDK v25 缺少 BiddingStrategySchemeEnum",
+            "problem": "旧代码尝试创建 Bidding Strategy 资源，但 PMax 不支持 Portfolio Bidding",
             "evidence": "错误信息：The required field was not present (scheme)",
-            "solution": "升级 SDK 到 v26+ 或使用 DAP 系统"
+            "solution": "删除 bidding_strategy 字段，改用 maximize_conversion_value.target_roas = None"
           },
-          "network_issue": "中国大陆 IP 无法直接访问 Google Ads API（HTTP API 返回 404）"
+          "code_issues": [
+            "campaign.advertising_channel_type 应为 PERFORMANCE_MAX（非 MULTI_CHANNEL）",
+            "campaign.advertising_channel_sub_type 不应设置（PMax 固定）",
+            "campaign.bidding_strategy 字段不应使用（PMax 使用 maximize_conversion_value）"
+          ],
+          "network_issue": "中国大陆 IP 无法直接访问 Google Ads API（HTTP API 返回 404），需 VPN/境外服务器"
         },
         "solution": [
-          "方案 1: 使用 DAP 系统创建 PMax Campaign（推荐）",
+          "✅ 已修正：不使用 bidding_strategy 字段，改用 maximize_conversion_value.target_roas = None",
+          "✅ 已修正：advertising_channel_type 改为 PERFORMANCE_MAX",
+          "方案 1: 使用 VPN/代理测试（推荐本地）",
+          "  - 连接到境外服务器",
+          "  - 重新执行创建流程",
+          "",
+          "方案 2: 使用 DAP 系统创建 PMax Campaign",
           "  - 参考: mkt-admin.test.shopee.sg/mkt/dap/ad-account/google-om/edit",
           "  - Bidding Strategy 选择: Maximize conversions",
           "",
-          "方案 2: 手动在 Google Ads 界面创建 Bidding Strategy",
-          "  - 登录账户 9055507554",
-          "  - 创建 MAXIMIZE_CONVERSIONS 类型 Bidding Strategy",
-          "  - 获取 Resource Name 后再通过 API 创建 Campaign",
-          "",
-          "方案 3: 升级 SDK",
-          "  - 当前: google-ads v25",
-          "  - 推荐: google-ads v26+（可能修复枚举缺失问题）",
-          "  - 最新: google-ads v31.4.0"
+          "方案 3: 设置 Brand Guidelines = False（快速启动）",
+          "  - 避免需要 Brand Assets（BUSINESS_NAME + LOGO）",
+          "  - 后续可通过 UI 添加 Brand Assets"
         ],
         "existing_bidding_strategies": [
           {
