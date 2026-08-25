@@ -689,54 +689,26 @@
             background: var(--accent-hover);
         }
         
-        /* 确认卡片样式 - 嵌入到聊天流中 */
+        /* 确认卡片容器 - 位于输入框上方 */
+        .confirm-card-container {
+            padding: 0 24px 16px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        /* 确认卡片样式 */
         .confirm-card {
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border-light);
-            border-radius: 12px;
-            margin: 12px 0;
-            overflow: hidden;
-            animation: slideIn 0.3s ease;
-        }
-        
-        /* 嵌入聊天流的确认消息 */
-        .confirm-message {
-            margin: 8px 0;
-            animation: slideIn 0.3s ease;
-        }
-        
-        .confirm-message .message-content {
             background: var(--bg-tertiary);
             border: 1px solid rgba(245, 158, 11, 0.3);
             border-radius: 12px;
-            padding: 0;
             overflow: hidden;
+            animation: slideIn 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
         }
         
-        .confirm-message .message-header {
-            padding: 12px 16px;
-            background: rgba(245, 158, 11, 0.1);
-            border-bottom: 1px solid var(--border);
-        }
-        
-        .confirm-message .confirm-card-body {
-            padding: 16px;
-        }
-        
-        .confirm-message .confirm-title {
-            font-size: 14px;
-            font-weight: 500;
-            color: var(--text-primary);
-            margin-bottom: 12px;
-        }
-        
-        .confirm-message .confirm-card-footer {
-            padding: 12px 16px;
-            border-top: 1px solid var(--border);
-            display: flex;
-            gap: 10px;
-            justify-content: flex-end;
-            background: var(--bg-secondary);
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
         
         @keyframes slideIn {
@@ -929,6 +901,8 @@
             </div>
         </div>
         
+        <div class="confirm-card-container" id="confirmCardContainer"></div>
+        
         <div class="input-area">
             <div class="input-container">
                 <textarea 
@@ -1112,10 +1086,10 @@
                 originalRequest: originalRequest  // 保存原始请求数据
             };
             
-            // 创建确认卡片 - 作为聊天消息插入
+            // 创建确认卡片
             const card = document.createElement('div');
             card.id = 'confirmCard';
-            card.className = 'message agent confirm-message';
+            card.className = 'confirm-card';
             
             let inputHtml = '';
             if (payload.type === 'ask_account') {
@@ -1135,37 +1109,27 @@
             }
             
             card.innerHTML = `
-                <div class="message-avatar">⚠️</div>
-                <div class="message-content">
-                    <div class="message-header">
-                        <span class="message-sender">ad-agent</span>
-                        <span class="message-time">${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
-                    </div>
-                    <div class="confirm-card-body">
-                        <div class="confirm-title">${payload.question || '需要确认'}</div>
-                        ${inputHtml}
-                    </div>
-                    <div class="confirm-card-footer">
-                        <button class="confirm-btn cancel" onclick="cancelConfirm()">取消</button>
-                        <button class="confirm-btn confirm" onclick="executeConfirm()">确认执行</button>
-                    </div>
+                <div class="confirm-card-header">
+                    <span class="confirm-icon">⚠️</span>
+                    <span class="confirm-title">${payload.question || '需要确认'}</span>
+                </div>
+                <div class="confirm-card-body">
+                    ${inputHtml}
+                </div>
+                <div class="confirm-card-footer">
+                    <button class="confirm-btn cancel" onclick="cancelConfirm()">取消</button>
+                    <button class="confirm-btn confirm" onclick="executeConfirm()">确认执行</button>
                 </div>
             `;
             
-            // 插入到聊天容器末尾（在欢迎页之后）
-            const container = document.getElementById('chatContainer');
-            const welcomePage = document.getElementById('welcomePage');
-            if (welcomePage) {
-                welcomePage.after(card);
-            } else {
-                container.appendChild(card);
-            }
+            // 插入到输入框上方的容器中
+            document.getElementById('confirmCardContainer').appendChild(card);
             
             // 自动聚焦输入框并滚动到卡片
             setTimeout(() => {
                 const input = document.getElementById('confirmAccountInput') || document.getElementById('confirmParamInput');
                 if (input) input.focus();
-                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }, 100);
         }
         
