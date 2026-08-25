@@ -75,9 +75,12 @@ class LLMIntentParser(IntentParser):
     def parse(self, user_input: str, context: ToolContext) -> ParsedIntent:
         """解析用户输入为结构化意图"""
         if self._llm:
-            return self._parse_with_llm(user_input, context)
-        else:
-            return self._parse_with_rules(user_input)
+            try:
+                return self._parse_with_llm(user_input, context)
+            except Exception as e:
+                print(f"[LLM 解析失败，使用规则解析] {e}")
+                return self._parse_with_rules(user_input)
+        return self._parse_with_rules(user_input)
     
     def _parse_with_llm(self, user_input: str, context: ToolContext) -> ParsedIntent:
         """使用 LLM 解析意图"""
@@ -407,8 +410,9 @@ class SimpleIntentRouter(IntentRouter):
         "list_campaigns": {
             "meta": ["meta_list_campaigns"],
             "google": ["google_list_campaigns"],
+            "google-ads": ["google_list_campaigns"],
             "tiktok": ["tiktok_list_campaigns"],
-            "dv360": [],
+            "dv360": ["dv360_list_campaigns"],
         },
         "list_adgroups": {
             "meta": ["meta_list_ad_sets"],
