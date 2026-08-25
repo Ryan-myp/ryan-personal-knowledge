@@ -501,10 +501,12 @@ class AgentRuntime:
         策略：
         1. 根据 tool_name 推断 Handler 类名
         2. 从对应的 Capability 模块动态导入
-        3. 根据 api_client 选择 Real 或 Mock Handler
+        3. 支持多种命名约定：
+           - {Prefix}{Action}RealHandler
+           - {Prefix}{Action}Handler
+           - {Prefix}{Action}MockHandler
         """
         import importlib
-        import re
         
         # 根据 platform 选择模块和 prefix
         platform_map = {
@@ -535,26 +537,28 @@ class AgentRuntime:
                 words = action_part.split('_')
                 title_case = ''.join(w.capitalize() for w in words)
                 
-                # 生成 Handler 类名
-                real_handler_name = f"{prefix}{title_case}RealHandler"
-                mock_handler_name = f"{prefix}{title_case}MockHandler"
+                # 生成多种可能的 Handler 类名
+                possible_names = [
+                    f"{prefix}{title_case}RealHandler",     # MetaListCampaignsRealHandler
+                    f"{prefix}{title_case}Handler",         # TikTokListCampaignsHandler
+                    f"{prefix}{title_case}MockHandler",     # MetaListCampaignsMockHandler
+                ]
                 
-                # 尝试创建 Real Handler
-                if hasattr(module, real_handler_name):
-                    handler_class = getattr(module, real_handler_name)
-                    # 检查是否需要 api_client 参数
-                    import inspect
-                    sig = inspect.signature(handler_class.__init__)
-                    params = list(sig.parameters.keys())
-                    if 'api_client' in params or 'client' in params:
-                        return handler_class(api_client)
-                    return handler_class()
-                
-                # 回退到 Mock Handler
-                if hasattr(module, mock_handler_name):
-                    handler_class = getattr(module, mock_handler_name)
-                    # Mock Handler 通常不需要参数
-                    return handler_class()
+                # 尝试找到对应的 Handler 类
+                for handler_name in possible_names:
+                    if hasattr(module, handler_name):
+                        handler_class = getattr(module, handler_name)
+                        
+                        # 检查构造函数签名
+                        import inspect
+                        sig = inspect.signature(handler_class.__init__)
+                        params = list(sig.parameters.keys())
+                        
+                        # 根据参数决定如何实例化
+                        if 'api_client' in params or 'client' in params:
+                            return handler_class(api_client)
+                        else:
+                            return handler_class()
                 
                 return None
             
