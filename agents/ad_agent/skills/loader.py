@@ -44,21 +44,37 @@ class SkillLoader:
     """Skill 加载器"""
     
     def __init__(self, skills_root: str = None):
-        self.skills_root = Path(skills_root) if skills_root else self._default_skills_root()
+        self._roots: list = []
+        if skills_root:
+            self._roots = [Path(skills_root)]
+        else:
+            self._roots = [self._default_skills_root()]
         self._skills: Dict[str, SkillDefinition] = {}
         
     def _default_skills_root(self) -> Path:
         """默认 skills 目录"""
         return Path(__file__).parent.parent / "skills"
     
+    def add_root(self, root: str) -> None:
+        """添加 Skill 根目录"""
+        self._roots.append(Path(root))
+    
     def load_all(self) -> Dict[str, SkillDefinition]:
         """加载所有 Skill"""
-        if not self.skills_root.exists():
-            return self._skills
-        
-        for skill_dir in self.skills_root.iterdir():
-            if skill_dir.is_dir() and (skill_dir / "SKILL.md").exists():
-                skill = self._load_skill(skill_dir)
+        for root in self._roots:
+            if not root.exists():
+                continue
+            
+            # 直接遍历目录下的子目录
+            for skill_dir in root.iterdir():
+                if skill_dir.is_dir() and (skill_dir / "SKILL.md").exists():
+                    skill = self._load_skill(skill_dir)
+                    if skill:
+                        self._skills[skill.name] = skill
+                        
+            # 也支持直接从根目录加载（兼容旧格式）
+            if (root / "SKILL.md").exists():
+                skill = self._load_skill(root)
                 if skill:
                     self._skills[skill.name] = skill
         
@@ -72,36 +88,36 @@ class SkillLoader:
             with open(skill_file, 'r', encoding='utf-8') as f:
                 content = f.read()
             
-            # 解析 YAML 头部
-            if content.startswith('```yaml'):
-                match = re.search(r'```yaml\s*\n(.*?)\n\s*```', content, re.DOTALL)
+            # 解析 YAML frontmatter (---...---)
+            metadata = {}
+            if content.startswith('---'):
+                # 提取 frontmatter
+                match = re.match(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
                 if match:
-                    metadata = yaml.safe_load(match.group(1))
-                else:
-                    metadata = {}
-            else:
-                metadata = yaml.safe_load(content.split('\n\n')[0]) if '\n\n' in content else {}
+                    yaml_content = match.group(1)
+                    try:
+                        # 使用 safe_load 解析单个 YAML 文档
+                        metadata = yaml.safe_load(yaml_content)
+                    except yaml.YAMLError as e:
+                        print(f"❌ 解析 {skill_dir.name}/SKILL.md 失败: {e}")
+                        return None
+            
+            # 提取 skill 名称和平台
+            skill_name = metadata.get('name', skill_dir.name)
+            skill_platform = metadata.get('platform', skill_dir.name)
             
             skill = SkillDefinition(
-                name=metadata.get('skill', {}).get('name', skill_dir.name),
-                version=metadata.get('skill', {}).get('version', '1.0'),
-                description=metadata.get('skill', {}).get('description', ''),
-                platform=metadata.get('skill', {}).get('platform', ''),
+                name=skill_name,
+                version=metadata.get('version', '1.0'),
+                description=metadata.get('description', ''),
+                platform=skill_platform,
                 skill_file=skill_file,
             )
             
-            # 加载 tools
-            tools_dir = skill_dir / "tools"
-            if tools_dir.exists():
-                for tool_file in tools_dir.glob("*.py"):
-                    tool_name = tool_file.stem
-                    skill.tools.append(ToolDefinition(
-                        name=f"{skill.platform}_{tool_name}",
-                        description=f"{skill.platform} {tool_name} tool",
-                        platform=skill.platform,
-                    ))
+            # 加载 tools (从 Markdown 表格解析)
+            skill.tools = self._parse_tools_from_markdown(content, skill_platform)
             
-            # 加载 expert knowledge
+            # 加载 expert knowledge (如果存在)
             expert_dir = skill_dir / "expert"
             if expert_dir.exists():
                 for md_file in expert_dir.glob("*.md"):
@@ -113,6 +129,65 @@ class SkillLoader:
         except Exception as e:
             print(f"❌ 加载 Skill {skill_dir.name} 失败: {e}")
             return None
+    
+    def _parse_tools_from_markdown(self, content: str, platform: str) -> List['ToolDefinition']:
+        """
+        从 Markdown 表格解析工具定义
+        
+        支持两种格式：
+        1. 表格格式: \n| Tool | 功能 | 参数 |\n|------|------|------|\n| meta_xxx | ... | ... |\n        2. 标题格式: ### meta_create_campaign\n
+        """
+        tools = []
+        lines = content.split('\n')
+        
+        # 尝试从表格中提取
+        in_table = False
+        table_headers = []
+        tool_data = []
+        
+        for line in lines:
+            # 检测表格开始
+            if '| Tool |' in line or '| 工具 |' in line or '| tool |' in line:
+                in_table = True
+                table_headers = [h.strip() for h in line.split('|')]
+                continue
+            
+            # 跳过分隔行
+            if re.match(r'^\|[-:|\s]+\|$', line):
+                continue
+            
+            # 解析表格数据行
+            if in_table and line.startswith('|'):
+                cells = [c.strip() for c in line.split('|')]
+                cells = [c for c in cells if c]  # 过滤空单元格
+                
+                if len(cells) >= 2:
+                    tool_name = cells[0].replace('`', '')  # 去掉 markdown 代码标记
+                    tool_desc = cells[1] if len(cells) > 1 else ''
+                    tool_params = cells[2] if len(cells) > 2 else ''
+                    
+                    # 跳过非工具行（如平台说明）
+                    if not tool_name.startswith('Tool') and not tool_name.startswith('工具'):
+                        tools.append(self._create_tool_def(tool_name, tool_desc, platform))
+                continue
+            
+            # 表格结束（空行或新章节）
+            if in_table and (not line.startswith('|') or line.strip() == ''):
+                in_table = False
+                continue
+        
+        return tools
+    
+    def _create_tool_def(self, name: str, description: str, platform: str) -> 'ToolDefinition':
+        """创建 ToolDefinition"""
+        from dataclasses import field
+        return ToolDefinition(
+            name=name,
+            description=description,
+            platform=platform,
+            risk_level="medium",
+            params={},
+        )
     
     def get_skill(self, name: str) -> Optional[SkillDefinition]:
         """获取指定 Skill"""

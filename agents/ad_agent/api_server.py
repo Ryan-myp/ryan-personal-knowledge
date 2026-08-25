@@ -61,13 +61,13 @@ def _init_on_import():
         # ─── 第一步：加载所有 Skills（元信息）───
         skills_root = Path(__file__).parent / "skills"
         
-        # 使用 runtime/skill.py 的 SkillLoader 加载
-        from agents.ad_agent.runtime.skill import SkillLoader as RuntimeSkillLoader
-        runtime_skill_loader = RuntimeSkillLoader()
-        runtime_skill_loader.add_root(str(skills_root / "channels"))
-        runtime_skill_loader.add_root(str(skills_root / "businesses"))
-        runtime_skill_loader.add_root(str(skills_root / "cross-channel"))
-        all_skills = runtime_skill_loader.load_all()
+        # 使用 skills/loader.py 的 SkillLoader 加载（支持多根路径）
+        from agents.ad_agent.skills.loader import SkillLoader
+        skill_loader = SkillLoader()
+        skill_loader.add_root(str(skills_root / "channels"))
+        skill_loader.add_root(str(skills_root / "businesses"))
+        skill_loader.add_root(str(skills_root / "cross-channel"))
+        all_skills = skill_loader.load_all()
         print(f"✅ 已加载 {len(all_skills)} 个 Skills: {list(all_skills.keys())}")
         
         # ─── 第二步：动态注册 Skill → Tool Handlers ───
