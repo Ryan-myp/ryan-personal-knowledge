@@ -139,18 +139,11 @@ class TikTokAPIClient(BasePlatformClient):
     
     def get_campaign(self, advertiser_id: str, campaign_id: str) -> dict:
         """获取 Campaign 详情"""
-        # 直接调用 campaign/get 端点，使用 filtering
-        self._rate_limiter.acquire()
-        data = {
-            'advertiser_id': str(advertiser_id),
-            'filtering': [{'field': 'CAMPAIGN_IDS', 'operator': 'IN', 'values': [int(campaign_id)]}],
-        }
-        url = self._build_url('campaign/get/')
-        resp = self._do_request('GET', url, params=data)
-        if resp.get('status_code') == 200:
-            inner = resp.get('data', {})
-            campaigns = inner.get('data', {}).get('list', [])
-            return campaigns[0] if campaigns else {}
+        # TikTok API 不支持 filtering，直接查询所有 campaign 并过滤
+        result = self.list_campaigns(advertiser_id)
+        for camp in result:
+            if str(camp.get('campaign_id')) == str(campaign_id):
+                return camp
         return {}
     
     def create_campaign(self, advertiser_id: str, campaign: dict) -> str:
