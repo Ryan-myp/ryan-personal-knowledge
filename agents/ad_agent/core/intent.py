@@ -144,7 +144,11 @@ class LLMIntentParser(IntentParser):
             return "boost_post"
         elif any(kw in text for kw in ["再营销", "remarketing", "retargeting", "重定向"]):
             return "run_remarketing"
-        return "create_campaign"  # 默认
+        # 检查问候和闲聊
+        if any(kw in text for kw in ["你好", "hello", "hi", "在吗", "帮助", "help", "你是谁"]):
+            return "chat"
+        # 默认返回 chat，不要默认创建
+        return "chat"
     
     def _detect_platforms(self, text: str) -> list[str]:
         """检测目标平台"""
@@ -157,8 +161,8 @@ class LLMIntentParser(IntentParser):
             platforms.append("tiktok")
         if any(kw in text for kw in ["dv360", "display video", "dio"]):
             platforms.append("dv360")
-        # 默认全选
-        return platforms if platforms else ["meta", "google", "tiktok", "dv360"]
+        # 如果没有指定平台，返回空列表（需要用户明确指定）
+        return platforms
     
     def _detect_objective(self, text: str) -> Optional[str]:
         """检测投放目标"""
