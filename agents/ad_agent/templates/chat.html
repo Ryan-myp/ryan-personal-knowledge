@@ -1065,12 +1065,15 @@
         }
         
         // Show confirmation as inline card in chat
-        function showConfirm(payload) {
+        function showConfirm(payload, originalRequest = null) {
             // 移除旧的确认卡片
             const oldCard = document.getElementById('confirmCard');
             if (oldCard) oldCard.remove();
             
-            pendingRequest = { payload };
+            pendingRequest = { 
+                payload,
+                originalRequest: originalRequest  // 保存原始请求数据
+            };
             
             // 创建确认卡片
             const card = document.createElement('div');
@@ -1130,7 +1133,7 @@
         async function executeConfirm() {
             if (!pendingRequest) return;
             
-            const payload = pendingRequest.payload;
+            const { payload, originalRequest } = pendingRequest;
             pendingRequest = null;
             
             // 移除卡片
@@ -1142,7 +1145,6 @@
             const paramInput = document.getElementById('confirmParamInput');
             
             let account_id = null;
-            let extra_params = {};
             
             if (accountInput && accountInput.value.trim()) {
                 account_id = accountInput.value.trim();
@@ -1151,13 +1153,14 @@
             // 添加确认消息到聊天
             addMessage('✅ 已确认，正在执行...', 'agent');
             
-            // 发送带参数的请求
+            // 发送带参数的请求 - 使用原始 user_input
+            const userInput = originalRequest ? originalRequest.user_input : '';
             try {
                 const response = await fetch('/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        user_input: '',
+                        user_input: userInput,
                         user_id: 'web_user',
                         session_id: sessionId,
                         account_id: account_id,
@@ -1177,7 +1180,10 @@
                 
                 // 递归处理嵌套确认
                 if (data.needs_confirmation && data.confirmation_payload) {
-                    showConfirm(data.confirmation_payload);
+                    showConfirm(data.confirmation_payload, {
+                        user_input: text,
+                        account_id: null  // 当前请求没有 account_id
+                    });
                     return;
                 }
                 
@@ -1229,7 +1235,10 @@
                 
                 // Check if confirmation is needed
                 if (data.needs_confirmation && data.confirmation_payload) {
-                    showConfirm(data.confirmation_payload);
+                    showConfirm(data.confirmation_payload, {
+                        user_input: text,
+                        account_id: null  // 当前请求没有 account_id
+                    });
                     return;
                 }
                 
