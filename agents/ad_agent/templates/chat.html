@@ -279,6 +279,19 @@
             gap: 12px;
         }
         
+        /* 用户消息靠右 */
+        .message.user {
+            flex-direction: row-reverse;
+            align-self: flex-end;
+            max-width: 80%;
+        }
+        
+        /* 助手消息靠左 */
+        .message.agent {
+            align-self: flex-start;
+            max-width: 80%;
+        }
+        
         .message-avatar {
             width: 32px;
             height: 32px;
