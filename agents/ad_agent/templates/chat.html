@@ -1136,11 +1136,7 @@
             const { payload, originalRequest } = pendingRequest;
             pendingRequest = null;
             
-            // 移除卡片
-            const card = document.getElementById('confirmCard');
-            if (card) card.remove();
-            
-            // 获取用户输入
+            // 先获取用户输入（在移除卡片之前）
             const accountInput = document.getElementById('confirmAccountInput');
             const paramInput = document.getElementById('confirmParamInput');
             
@@ -1149,6 +1145,10 @@
             if (accountInput && accountInput.value.trim()) {
                 account_id = accountInput.value.trim();
             }
+            
+            // 移除卡片
+            const card = document.getElementById('confirmCard');
+            if (card) card.remove();
             
             // 添加确认消息到聊天
             addMessage('✅ 已确认，正在执行...', 'agent');
