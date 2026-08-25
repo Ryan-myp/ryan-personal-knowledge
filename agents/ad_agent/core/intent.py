@@ -140,11 +140,10 @@ class LLMIntentParser(IntentParser):
         # 先检查报表查询
         if any(kw in text for kw in ["报表", "report", "下载", "查看数据", "performance", "统计"]):
             return "download_report"
-        # 检查特定列表查询 - 按优先级排序（更具体的规则在前）
-        # 检查 Campaign 列表查询 — 只在明确表达"查询/列出"意图时匹配
-        if any(kw in text for kw in ["列出", "列表", "查询", "查看", "list", "query", "search", "获取"]):
-            if any(kw in text for kw in ["Campaign", "campaign", "广告系列"]):
-                return "list_campaigns"
+        # 先检查创建意图（优先级高于列表，避免"创建广告系列"误匹配）
+        if any(kw in text for kw in ["投放", "创建广告", "创建", "promote", "launch ad", "run ad", "新建广告", "创建 campaign"]):
+            return "create_campaign"
+        # 特定列表查询 - 按优先级排序
         if any(kw in text for kw in ["兴趣类别", "interest", "兴趣"]):
             return "list_interests"
         if any(kw in text for kw in ["地域", "location", "地区"]):
@@ -155,9 +154,14 @@ class LLMIntentParser(IntentParser):
             return "list_audiences"
         if any(kw in text for kw in ["广告组", "ad group", "adgroup"]):
             return "list_adgroups"
+        # Campaign 列表查询 — 只在明确表达"查询/列出"意图时匹配
+        if any(kw in text for kw in ["列出", "列表", "查询", "查看", "list", "query", "search", "获取"]):
+            if any(kw in text for kw in ["Campaign", "campaign", "广告系列"]):
+                return "list_campaigns"
         if any(kw in text for kw in ["创意", "creative", "素材"]):
             return "list_creatives"
-        if any(kw in text for kw in ["转化", "conversion"]):
+        # "转化广告系列" 是 campaign 类型，不是 conversion 查询
+        if any(kw in text for kw in ["转化", "conversion"]) and "广告系列" not in text and "campaign" not in text:
             return "list_conversions"
         if any(kw in text for kw in ["商品目录", "catalog"]):
             return "list_catalogs"
@@ -167,12 +171,9 @@ class LLMIntentParser(IntentParser):
             return "list_apps"
         if any(kw in text for kw in ["品牌安全", "brand safety"]):
             return "list_brand_safety"
-        # Ad 级别查询（在创建意图之前）
-        if any(kw in text for kw in ["广告", "ad "]):
+        # Ad 级别查询 — 排除"广告系列"（campaign）和"广告主"（advertiser）
+        if ("广告" in text or " ad" in text or "ad " in text) and "广告系列" not in text and "广告主" not in text and "adgroup" not in text and "ad_group" not in text:
             return "list_ads"
-        # 再检查其他意图 - 使用更宽松的匹配（"广告系列" 在创建语境下也触发）
-        if any(kw in text for kw in ["投放", "创建广告", "创建", "promote", "launch ad", "run ad", "新建广告", "创建 campaign", "广告系列"]):
-            return "create_campaign"
         elif any(kw in text for kw in ["boost", "助推", "加热", "推广帖子", "boost post"]):
             return "boost_post"
         elif any(kw in text for kw in ["再营销", "remarketing", "retargeting", "重定向"]):
