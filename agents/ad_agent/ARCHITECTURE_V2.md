@@ -380,3 +380,82 @@ business_rules = {
 # 2. 注入到 ToolSelector
 selector.set_business_context("ecommerce", business_rules)
 ```
+
+## 九、Skills 系统
+
+### 1. Skills 目录结构
+
+```
+skills/
+├── channels/                 # 渠道层 Skill（核心能力）
+│   ├── meta/SKILL.md        # Meta Marketing API (10 tools)
+│   ├── google-ads/SKILL.md  # Google Ads API (10 tools)
+│   ├── tiktok/SKILL.md      # TikTok Ads API (9 tools)
+│   └── dv360/SKILL.md       # DV360 API (9 tools)
+├── businesses/               # 业务层 Skill（业务规则）
+│   ├── ecommerce/SKILL.md   # 电商业务
+│   ├── app/SKILL.md         # App 推广业务
+│   └── social/SKILL.md      # 社交媒体业务
+└── cross-channel/            # 跨渠道 Skill
+    └── SKILL.md              # 跨渠道管理工具
+```
+
+### 2. Skill 加载流程
+
+```python
+# api_server.py 初始化
+runtime_skill_loader = RuntimeSkillLoader()
+runtime_skill_loader.add_root(str(skills_root / "channels"))
+runtime_skill_loader.add_root(str(skills_root / "businesses"))
+runtime_skill_loader.add_root(str(skills_root / "cross-channel"))
+runtime_skills = runtime_skill_loader.load_all()
+
+# 输出: ✅ 已加载 4 个 Skills: ['google-ads-api', 'meta-marketing-api', 'dv360-api', 'tiktok-ads-api']
+```
+
+### 3. Skill 解析逻辑
+
+`SkillContract` 类支持多种 SKILL.md 格式：
+
+1. **Frontmatter 解析**：
+   - 嵌套格式: `skill: {name: ..., description: ..., platform: ...}`
+   - 直接格式: `name: ..., description: ...`
+
+2. **工具定义提取**：
+   - `### Tool: tool_name` 格式
+   - Markdown 表格格式: `| Tool | 功能 | 参数 |`
+
+### 4. Skills vs Capabilities
+
+| 概念 | 说明 | 数量 |
+|------|------|------|
+| **Skills** | SKILL.md 定义的能力集合 | 4 个 Channel Skills |
+| **Capabilities** | Python 实现的渠道能力模块 | 4 个 (Meta/Google/TikTok/DV360) |
+| **Tools** | 具体可执行的工具函数 | 42 个 |
+
+**关系**：
+- Skills 是声明式定义（SKILL.md）
+- Capabilities 是命令式实现（Python 类）
+- Tools 是实际执行的函数
+
+### 5. 扩展新 Skill
+
+```bash
+# 1. 创建 Skill 目录
+mkdir -p agents/ad_agent/skills/channels/new-platform
+
+# 2. 编写 SKILL.md
+cat > agents/ad_agent/skills/channels/new-platform/SKILL.md << 'EOF'
+---
+name: new-platform-api
+description: New Platform API 专家技能
+---
+
+# New Platform API
+
+## 可用 Tools
+
+| Tool | 功能 | 参数 |
+|------|------|------|
+| `new_list_campaigns` | 列出广告系列 | account_id, limit |
+| `new_create_campaign` | 创建广告系列 | account_id, name, budget |
