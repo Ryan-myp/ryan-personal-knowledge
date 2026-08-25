@@ -166,6 +166,8 @@ class SkillContract:
                 continue
             
             parts = [p.strip() for p in line.split('|')]
+            # 过滤空元素
+            parts = [p for p in parts if p]
             if len(parts) < 3:
                 continue
             
@@ -173,6 +175,8 @@ class SkillContract:
             if 'Tool' in parts[0] or '------' in parts[0] or '功能' in parts[1]:
                 continue
             
+            # Markdown 表格结构: ['', tool_name, description, params, '']
+            # 过滤后: [tool_name, description, params]
             tool_name = parts[0].replace('`', '').strip()
             description = parts[1].strip()
             params_str = parts[2].strip() if len(parts) > 2 else ''
