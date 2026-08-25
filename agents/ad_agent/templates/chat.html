@@ -875,22 +875,8 @@
         </div>
     </aside>
     
-    <!-- 确认弹窗 -->
-    <div class="modal-overlay" id="confirmModal">
-        <div class="modal">
-            <div class="modal-header">
-                <div class="modal-icon">⚠️</div>
-                <div class="modal-title">确认执行写入操作</div>
-            </div>
-            <div class="modal-body" id="confirmBody">
-                这将创建广告系列，是否继续？
-            </div>
-            <div class="modal-actions">
-                <button class="btn btn-cancel" onclick="cancelConfirm()">取消</button>
-                <button class="btn btn-confirm" id="confirmBtn" onclick="confirmAction()">确认执行</button>
-            </div>
-        </div>
-    </div>
+    <!-- 确认卡片容器（动态插入到聊天中） -->
+    <div id="confirmCardContainer"></div>
     
     <script>
         let pendingRequest = null;
@@ -981,57 +967,127 @@
             if (loading) loading.remove();
         }
         
-        // Show confirmation modal
-        function showConfirm(payload, callback) {
-            pendingRequest = { payload, callback };
-            const body = document.getElementById('confirmBody');
+        // Show confirmation as inline card in chat
+        function showConfirm(payload) {
+            // 移除旧的确认卡片
+            const oldCard = document.getElementById('confirmCard');
+            if (oldCard) oldCard.remove();
             
-            // 根据类型显示不同的内容
+            pendingRequest = { payload };
+            
+            // 创建确认卡片
+            const card = document.createElement('div');
+            card.id = 'confirmCard';
+            card.className = 'confirm-card';
+            
+            let inputHtml = '';
             if (payload.type === 'ask_account') {
-                body.innerHTML = `
-                    <div class="confirm-input-group">
-                        <label>请输入 ${payload.platform || '平台'} 账户ID:</label>
-                        <input type="text" id="confirmInput" placeholder="例如: 7397068114548195329" class="confirm-input">
+                inputHtml = `
+                    <div class="confirm-field">
+                        <label>📱 ${payload.platform || '平台'} 账户ID</label>
+                        <input type="text" id="confirmAccountInput" placeholder="请输入账户ID..." autofocus>
                     </div>
                 `;
-                setTimeout(() => document.getElementById('confirmInput')?.focus(), 100);
             } else if (payload.type === 'ask_params') {
-                body.innerHTML = `
-                    <div class="confirm-input-group">
-                        <label>请提供缺失参数: ${payload.missing.join(', ')}</label>
-                        <input type="text" id="confirmInput" placeholder="例如: campaign_id=12345" class="confirm-input">
+                inputHtml = `
+                    <div class="confirm-field">
+                        <label>📝 缺失参数: ${payload.missing.join(', ')}</label>
+                        <input type="text" id="confirmParamInput" placeholder="例如: campaign_id=12345" autofocus>
                     </div>
                 `;
-                setTimeout(() => document.getElementById('confirmInput')?.focus(), 100);
-            } else {
-                body.textContent = payload.description || payload.question || '确认执行此操作？';
             }
             
-            document.getElementById('confirmModal').classList.add('active');
+            card.innerHTML = `
+                <div class="confirm-card-header">
+                    <span class="confirm-icon">⚠️</span>
+                    <span class="confirm-title">${payload.question || '需要确认'}</span>
+                </div>
+                <div class="confirm-card-body">
+                    ${inputHtml}
+                </div>
+                <div class="confirm-card-footer">
+                    <button class="confirm-btn cancel" onclick="cancelConfirm()">取消</button>
+                    <button class="confirm-btn confirm" onclick="executeConfirm()">确认执行</button>
+                </div>
+            `;
+            
+            document.getElementById('confirmCardContainer').appendChild(card);
+            
+            // 自动聚焦输入框并滚动到卡片
+            setTimeout(() => {
+                const input = document.getElementById('confirmAccountInput') || document.getElementById('confirmParamInput');
+                if (input) input.focus();
+                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 100);
         }
         
         // Cancel confirmation
         function cancelConfirm() {
-            document.getElementById('confirmModal').classList.remove('active');
             pendingRequest = null;
+            const card = document.getElementById('confirmCard');
+            if (card) card.remove();
             addMessage('❌ 操作已取消', 'agent');
         }
         
-        // Confirm action
-        async function confirmAction() {
-            document.getElementById('confirmModal').classList.remove('active');
-            if (pendingRequest) {
-                const { payload, callback } = pendingRequest;
-                pendingRequest = null;
+        // Execute confirmation
+        async function executeConfirm() {
+            if (!pendingRequest) return;
+            
+            const payload = pendingRequest.payload;
+            pendingRequest = null;
+            
+            // 移除卡片
+            const card = document.getElementById('confirmCard');
+            if (card) card.remove();
+            
+            // 获取用户输入
+            const accountInput = document.getElementById('confirmAccountInput');
+            const paramInput = document.getElementById('confirmParamInput');
+            
+            let account_id = null;
+            let extra_params = {};
+            
+            if (accountInput && accountInput.value.trim()) {
+                account_id = accountInput.value.trim();
+            }
+            
+            // 添加确认消息到聊天
+            addMessage('✅ 已确认，正在执行...', 'agent');
+            
+            // 发送带参数的请求
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_input: '',
+                        user_id: 'web_user',
+                        session_id: sessionId,
+                        account_id: account_id,
+                        confirmed: true,
+                        confirmation_payload: payload
+                    })
+                });
                 
-                // 获取用户输入的参数
-                const input = document.getElementById('confirmInput');
-                let extra_params = {};
-                if (input && input.value.trim()) {
-                    extra_params = { user_input_value: input.value.trim() };
+                const data = await response.json();
+                
+                if (data.error) {
+                    addMessage('❌ ' + data.error, 'agent', null, true);
+                    return;
                 }
                 
-                if (callback) callback(extra_params);
+                sessionId = data.session_id;
+                
+                // 递归处理嵌套确认
+                if (data.needs_confirmation && data.confirmation_payload) {
+                    showConfirm(data.confirmation_payload);
+                    return;
+                }
+                
+                renderResponse(data);
+                
+            } catch (error) {
+                addMessage('❌ 网络错误: ' + error.message, 'agent', null, true);
             }
         }
         
@@ -1076,41 +1132,13 @@
                 
                 // Check if confirmation is needed
                 if (data.needs_confirmation && data.confirmation_payload) {
-                    showConfirm(data.confirmation_payload, async () => {
-                        await executePendingRequest(data);
-                    });
+                    showConfirm(data.confirmation_payload);
                     return;
                 }
                 
                 // Render response
                 renderResponse(data);
                 
-            } catch (error) {
-                removeLoading();
-                addMessage('网络错误: ' + error.message, 'agent', null, true);
-            }
-        }
-        
-        // Execute pending request after confirmation
-        async function executePendingRequest(originalData) {
-            addLoading();
-            
-            try {
-                const response = await fetch('/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        user_input: originalData.user_input || '',
-                        user_id: 'web_user',
-                        session_id: sessionId,
-                        confirmed: true,
-                        confirmation_payload: originalData.confirmation_payload
-                    })
-                });
-                
-                const data = await response.json();
-                removeLoading();
-                renderResponse(data);
             } catch (error) {
                 removeLoading();
                 addMessage('网络错误: ' + error.message, 'agent', null, true);
