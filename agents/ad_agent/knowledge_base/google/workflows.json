@@ -1,7 +1,7 @@
 {
   "name": "google_workflows",
   "version": "1.0",
-  "last_updated": "2026-08-25T10:02:31.708389",
+  "last_updated": "2026-08-25T10:12:15.008701",
   "entries": [
     {
       "entry_id": "google_search_campaign_workflow",
@@ -157,17 +157,16 @@
         "code_example": "def create_pmax_campaign(client, customer_id, budget_resource_name):\n    campaign_operation = client.get_type('CampaignOperation')\n    campaign = campaign_operation.create\n    \n    campaign.name = f'PMax Campaign #{uuid4()}'\n    campaign.advertising_channel_type = client.enums.AdvertisingChannelTypeEnum.MULTI_CHANNEL\n    campaign.advertising_channel_sub_type = client.enums.AdvertisingChannelSubTypeEnum.PERFORMANCE_MAX\n    campaign.status = client.enums.CampaignStatusEnum.PAUSED\n    campaign.campaign_budget = budget_resource_name\n    campaign.bidding_strategy = client.get_service('BiddingStrategyService').bidding_strategy_path(\n        customer_id, 'MAXIMIZE_CONVERSIONS'\n    )\n    \n    # Required: EU political advertising declaration\n    campaign.contains_eu_political_advertising =         client.enums.EuPoliticalAdvertisingStatusEnum.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING\n    \n    # Conversion tracking\n    campaign.optimization_goal_setting.optimize_goal_configuration = [\n        client.enums.OptimizationGoalConversionSourceEnum.FIRST-party_event,\n    ]\n    \n    response = campaign_service.mutate_campaigns(\n        customer_id=customer_id,\n        operations=[campaign_operation]\n    )\n    return response.results[0].resource_name",
         "api_reference": "https://developers.google.com/google-ads/api/docs/campaigns/performance-max",
         "test_status": "failed",
-        "test_date": "2026-08-25T10:02:31.708373",
+        "test_date": "2026-08-25T10:12:15.008689",
         "error_analysis": {
-          "sdk_issue": "SDK v25 中缺少 BiddingStrategySchemeEnum 枚举",
-          "api_contradiction": "HTTP API 返回矛盾错误：说 scheme 必需但字段不存在",
-          "root_cause": "Google Ads API v25 的 BiddingStrategy 创建问题",
-          "workaround": "需要在 Google Ads 界面手动创建 MAXIMIZE_CONVERSIONS 类型的 Bidding Strategy"
+          "root_cause": "现有 Bidding Strategy 类型是 TARGET_SPEND (9)，PMax 需要 MAXIMIZE_CONVERSIONS (10)",
+          "sdk_limitation": "SDK v25 缺少 BiddingStrategySchemeEnum，无法创建新 Bidding Strategy",
+          "api_issue": "HTTP API 返回矛盾错误：说 scheme 必需但字段不存在"
         },
         "solution": [
-          "方案 1: 在 Google Ads 界面手动创建 MAXIMIZE_CONVERSIONS 类型的 Bidding Strategy",
-          "方案 2: 升级 SDK 到更高版本（v26+）",
-          "方案 3: 使用 DAP 系统创建 PMax Campaign"
+          "方案 1: 在 Google Ads 界面手动创建 MAXIMIZE_CONVERSIONS 类型 Bidding Strategy",
+          "方案 2: 使用 DAP 系统创建 PMax Campaign (推荐)",
+          "方案 3: 升级 SDK 到 v26+"
         ],
         "existing_bidding_strategies": [
           {
@@ -180,7 +179,12 @@
             "name": "portfolio-s1",
             "type": "UNKNOWN (9)"
           }
-        ]
+        ],
+        "dap_reference": {
+          "url": "mkt-admin.test.shopee.sg/mkt/dap/ad-account/google-om/edit",
+          "bidding_strategy_option": "Maximize conversions",
+          "screenshot_provided": true
+        }
       },
       "source": "official_docs",
       "source_ref": "https://developers.google.com/google-ads/api/docs/campaigns/performance-max",
@@ -195,7 +199,7 @@
       "metadata": {
         "verified": true
       },
-      "confidence": 0.9,
+      "confidence": 0.95,
       "usage_count": 0
     },
     {
@@ -244,9 +248,6 @@
         ],
         "test_result": {
           "campaign_id": "24170606373",
-          "campaign_name": "Test Shopping Campaign - 6a43bd84-986c-432d-a7b3-e22df9748b87",
-          "status": "PAUSED",
-          "type": "SHOPPING",
           "merchant_id": 115791065,
           "campaign_priority": 0
         },
