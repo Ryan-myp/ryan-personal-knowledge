@@ -140,11 +140,38 @@ class LLMIntentParser(IntentParser):
         # 先检查报表查询
         if any(kw in text for kw in ["报表", "report", "下载", "查看数据", "performance", "统计"]):
             return "download_report"
-        # 检查列表查询
+        # 检查特定列表查询 - 按优先级排序（更具体的规则在前）
+        # 检查 Campaign 列表查询 — 只在明确表达"查询/列出"意图时匹配
         if any(kw in text for kw in ["列出", "列表", "查询", "查看", "list", "query", "search", "获取"]):
-            return "list_campaigns"
-        # 再检查其他意图 - 使用更宽松的匹配
-        if any(kw in text for kw in ["投放", "创建广告", "创建", "promote", "launch ad", "run ad", "新建广告", "创建 campaign"]):
+            if any(kw in text for kw in ["Campaign", "campaign", "广告系列"]):
+                return "list_campaigns"
+        if any(kw in text for kw in ["兴趣类别", "interest", "兴趣"]):
+            return "list_interests"
+        if any(kw in text for kw in ["地域", "location", "地区"]):
+            return "list_locations"
+        if any(kw in text for kw in ["设备", "device"]):
+            return "list_devices"
+        if any(kw in text for kw in ["人群包", "audience", "受众"]):
+            return "list_audiences"
+        if any(kw in text for kw in ["广告组", "ad group", "adgroup"]):
+            return "list_adgroups"
+        if any(kw in text for kw in ["创意", "creative", "素材"]):
+            return "list_creatives"
+        if any(kw in text for kw in ["转化", "conversion"]):
+            return "list_conversions"
+        if any(kw in text for kw in ["商品目录", "catalog"]):
+            return "list_catalogs"
+        if any(kw in text for kw in ["商品集", "product set"]):
+            return "list_product_sets"
+        if any(kw in text for kw in ["应用", "app "]):
+            return "list_apps"
+        if any(kw in text for kw in ["品牌安全", "brand safety"]):
+            return "list_brand_safety"
+        # Ad 级别查询（在创建意图之前）
+        if any(kw in text for kw in ["广告", "ad "]):
+            return "list_ads"
+        # 再检查其他意图 - 使用更宽松的匹配（"广告系列" 在创建语境下也触发）
+        if any(kw in text for kw in ["投放", "创建广告", "创建", "promote", "launch ad", "run ad", "新建广告", "创建 campaign", "广告系列"]):
             return "create_campaign"
         elif any(kw in text for kw in ["boost", "助推", "加热", "推广帖子", "boost post"]):
             return "boost_post"
@@ -332,7 +359,19 @@ class SimpleIntentRouter(IntentRouter):
             "meta": ["meta_list_campaigns"],
             "google": ["google_list_campaigns"],
             "tiktok": ["tiktok_list_campaigns"],
-            "dv360": ["dv360_list_campaigns"],
+            "dv360": [],
+        },
+        "list_adgroups": {
+            "meta": ["meta_list_ad_sets"],
+            "tiktok": ["tiktok_list_adgroups"],
+        },
+        "list_ads": {
+            "meta": ["meta_list_ads"],
+            "tiktok": ["tiktok_list_ads"],
+        },
+        "list_audiences": {
+            "meta": ["meta_list_audiences"],
+            "tiktok": ["tiktok_list_audiences"],
         },
         "download_report": {
             "meta": ["meta_get_campaign_report"],

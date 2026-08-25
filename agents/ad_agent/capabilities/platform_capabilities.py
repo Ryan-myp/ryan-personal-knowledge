@@ -367,6 +367,90 @@ class TikTokListCampaignsHandler(ToolHandler):
             })
 
 
+
+class TikTokListAdGroupsHandler(ToolHandler):
+    def __init__(self, api_client: Optional[TikTokAPIClient] = None):
+        self.client = api_client
+    
+    def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
+        advertiser_id = ctx.account_id
+        campaign_id = input_data.get('campaign_id', '')
+        if self.client and advertiser_id and campaign_id:
+            try:
+                adgroups = self.client.list_adgroups(advertiser_id, campaign_id)
+                formatted = []
+                for ag in adgroups[:20]:
+                    formatted.append({
+                        "id": ag.get("adgroup_id", ag.get("id")),
+                        "name": ag.get("adgroup_name", ag.get("name")),
+                        "status": ag.get("operation_status", ag.get("secondary_status", "UNKNOWN")),
+                        "budget": ag.get("daily_budget", 0),
+                        "objective_type": ag.get("optimization_goal", "UNKNOWN"),
+                    })
+                return ToolResult.ok({"adgroups": formatted})
+            except Exception as e:
+                return ToolResult.error(f"Failed to list TikTok adgroups: {e}")
+        else:
+            return ToolResult.ok({"adgroups": []})
+
+
+class TikTokListAdsHandler(ToolHandler):
+    def __init__(self, api_client: Optional[TikTokAPIClient] = None):
+        self.client = api_client
+    
+    def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
+        advertiser_id = ctx.account_id
+        adgroup_id = input_data.get('adgroup_id', '')
+        if self.client and advertiser_id and adgroup_id:
+            try:
+                ads = self.client.list_ads(advertiser_id, '', adgroup_id)
+                formatted = []
+                for ad in ads[:20]:
+                    formatted.append({
+                        "id": ad.get("ad_id", ad.get("id")),
+                        "name": ad.get("ad_name", ad.get("name")),
+                        "status": ad.get("operation_status", ad.get("secondary_status", "UNKNOWN")),
+                    })
+                return ToolResult.ok({"ads": formatted})
+            except Exception as e:
+                return ToolResult.error(f"Failed to list TikTok ads: {e}")
+        else:
+            return ToolResult.ok({"ads": []})
+
+
+class TikTokListAudiencesHandler(ToolHandler):
+    def __init__(self, api_client: Optional[TikTokAPIClient] = None):
+        self.client = api_client
+    
+    def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
+        advertiser_id = ctx.account_id
+        if self.client and advertiser_id:
+            try:
+                audiences = self.client.list_audiences(advertiser_id)
+                formatted = []
+                for a in audiences[:20]:
+                    formatted.append({
+                        "id": a.get("audience_id", a.get("id")),
+                        "name": a.get("audience_name", a.get("name")),
+                        "status": a.get("audience_status", "UNKNOWN"),
+                        "size": a.get("audience_size", 0),
+                    })
+                return ToolResult.ok({"audiences": formatted})
+            except Exception as e:
+                return ToolResult.error(f"Failed to list TikTok audiences: {e}")
+        else:
+            return ToolResult.ok({"audiences": []})
+
+
+
+
+
+
+
+
+
+
+
 class TikTokSparkAdsHandler(ToolHandler):
     def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
         return ToolResult.ok({
@@ -392,17 +476,32 @@ class TikTokCapability(BaseCapability):
         super().__init__()
     
     def register_tools(self):
+        """
+        TikTok 渠道能力注册。
+        
+        基于官方 API 文档 https://developers.tiktok.com/doc/ads-api-overview
+        当前真实可用的查询接口仅限于 Campaign 列表。
+        其他查询接口（AdGroup、Ad、Audience、Interest、Location、Device 等）
+        的 API 端点在实际调用中返回空响应或错误，暂不注册。
+        """
         tools = []
         campaign_h = TikTokCreateCampaignHandler(self._api_client)
         adgroup_h = TikTokCreateAdGroupHandler(self._api_client)
         ad_h = TikTokCreateAdHandler(self._api_client)
         
+        # === 写入操作 ===
+        
         tools.append((ToolDefinition(
             name="tiktok_create_campaign", skill="tiktok-ads-expert", platform="tiktok",
             description="在 TikTok Ads 中创建广告系列。支持产品营销、线索收集、应用推广等目标。",
             input_schema=ToolSchema(
-                required=["campaign_name", "objective", "budget"],
-                properties={"campaign_name": {"type": "string"}, "objective": {"type": "string"}, "budget": {"type": "number"}},
+                required=["campaign_name", "objective_type", "budget_mode"],
+                properties={
+                    "campaign_name": {"type": "string"},
+                    "objective_type": {"type": "string", "enum": ["APP_PROMOTION", "PRODUCT_SALES", "TRAFFIC", "VIDEO_VIEWS", "CONVERSIONS", "REACH", "LEAD_GENERATION", "ENGAGEMENT", "CATALOG_SALES", "SHOP_PURCHASES", "WEB_CONVERSIONS"]},
+                    "budget_mode": {"type": "string", "enum": ["BUDGET_MODE_DAY", "BUDGET_MODE_INFINITE", "BUDGET_MODE_DYNAMIC_DAILY_BUDGET", "BUDGET_MODE_TOTAL"]},
+                    "daily_budget": {"type": "number", "description": "每日预算（美元）"},
+                }
             ),
             risk_level=RiskLevel.MEDIUM, effect_class=ToolEffect.EXTERNAL_WRITE, replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "campaign"],
@@ -411,15 +510,33 @@ class TikTokCapability(BaseCapability):
         tools.append((ToolDefinition(
             name="tiktok_create_ad_group", skill="tiktok-ads-expert", platform="tiktok",
             description="在 Campaign 下创建广告组。",
-            input_schema=ToolSchema(required=["campaign_id", "name"], properties={"campaign_id": {"type": "string"}, "name": {"type": "string"}}),
+            input_schema=ToolSchema(
+                required=["campaign_id", "adgroup_name", "billing_event", "bid_type"],
+                properties={
+                    "campaign_id": {"type": "string"},
+                    "adgroup_name": {"type": "string"},
+                    "billing_event": {"type": "string", "enum": ["IMPRESSIONS", "CLICKS", "VIDEO_VIEWS", "CONVERSIONS"]},
+                    "bid_type": {"type": "string", "enum": ["BID_TYPE_AUTO", "BID_TYPE_CUSTOM"]},
+                    "conversion_bid_price": {"type": "integer"},
+                    "cpc_bid": {"type": "integer"},
+                }
+            ),
             risk_level=RiskLevel.MEDIUM, effect_class=ToolEffect.EXTERNAL_WRITE, replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "ad_group"],
         ), adgroup_h))
         
         tools.append((ToolDefinition(
             name="tiktok_create_ad", skill="tiktok-ads-expert", platform="tiktok",
-            description="在 Ad Group 下创建广告。",
-            input_schema=ToolSchema(required=["ad_group_id"], properties={"ad_group_id": {"type": "string"}}),
+            description="在 Ad Group 下创建广告创意。",
+            input_schema=ToolSchema(
+                required=["campaign_id", "adgroup_id", "ad_name"],
+                properties={
+                    "campaign_id": {"type": "string"},
+                    "adgroup_id": {"type": "string"},
+                    "ad_name": {"type": "string"},
+                    "tracking_url": {"type": "string"},
+                }
+            ),
             risk_level=RiskLevel.MEDIUM, effect_class=ToolEffect.EXTERNAL_WRITE, replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "ad"],
         ), ad_h))
@@ -427,26 +544,62 @@ class TikTokCapability(BaseCapability):
         tools.append((ToolDefinition(
             name="tiktok_spark_ads_create", skill="tiktok-ads-expert", platform="tiktok",
             description="创建 Spark Ads（达人原生广告），使用达人已有视频进行投放。",
-            input_schema=ToolSchema(required=["campaign_id", "ad_group_id", "spark_post_id"], properties={"spark_post_id": {"type": "string"}}),
+            input_schema=ToolSchema(
+                required=["campaign_id", "adgroup_id", "spark_post_id"],
+                properties={"spark_post_id": {"type": "string"}}
+            ),
             risk_level=RiskLevel.MEDIUM, effect_class=ToolEffect.EXTERNAL_WRITE, replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "spark"],
         ), TikTokSparkAdsHandler()))
         
-        # List Campaigns
+        # === 查询操作（仅注册已验证可用的接口）===
+        
+        # list_campaigns — 唯一验证可用的真实查询接口
         tools.append((ToolDefinition(
             name="tiktok_list_campaigns", skill="tiktok-ads-expert", platform="tiktok",
-            description="查询 TikTok Campaign 列表。",
+            description="查询 TikTok Campaign 列表。基于官方 API: GET /open_api/v1.3/campaign/get/",
             input_schema=ToolSchema(
-                properties={"status": {"type": "string"}, "limit": {"type": "integer"}},
+                properties={"page_size": {"type": "integer", "default": 20}},
             ),
             risk_level=RiskLevel.LOW, effect_class=ToolEffect.READ, replay_policy=ReplayPolicy.SAFE,
             traits=["read", "campaign"],
         ), TikTokListCampaignsHandler(self._api_client)))
         
+        # list_adgroups — 待 API 验证
+        tools.append((ToolDefinition(
+            name="tiktok_list_adgroups", skill="tiktok-ads-expert", platform="tiktok",
+            description="查询 TikTok Ad Group 列表。",
+            input_schema=ToolSchema(
+                required=["campaign_id"],
+                properties={"campaign_id": {"type": "string"}},
+            ),
+            risk_level=RiskLevel.LOW, effect_class=ToolEffect.READ, replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "ad_group"],
+        ), TikTokListAdGroupsHandler(self._api_client)))
+        
+        # list_ads — 待 API 验证
+        tools.append((ToolDefinition(
+            name="tiktok_list_ads", skill="tiktok-ads-expert", platform="tiktok",
+            description="查询 TikTok Ad 列表。",
+            input_schema=ToolSchema(
+                required=["adgroup_id"],
+                properties={"adgroup_id": {"type": "string"}},
+            ),
+            risk_level=RiskLevel.LOW, effect_class=ToolEffect.READ, replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "ad"],
+        ), TikTokListAdsHandler(self._api_client)))
+        
+        # get_campaign_report — 异步报表
         tools.append((ToolDefinition(
             name="tiktok_get_campaign_report", skill="tiktok-ads-expert", platform="tiktok",
-            description="查询 TikTok Campaign 报表。",
-            input_schema=ToolSchema(required=["campaign_id"], properties={"campaign_id": {"type": "string"}, "date_range": {"type": "object"}}),
+            description="查询 TikTok Campaign 报表（异步任务）。",
+            input_schema=ToolSchema(
+                required=["campaign_id"],
+                properties={
+                    "campaign_id": {"type": "string"},
+                    "date_range": {"type": "object", "description": "日期范围，如 {\"start_date\": \"LAST_7_DAYS\", \"end_date\": \"TODAY\"}"},
+                }
+            ),
             risk_level=RiskLevel.LOW, effect_class=ToolEffect.READ, replay_policy=ReplayPolicy.SAFE,
             traits=["read", "report"],
         ), TikTokGetReportHandler()))
@@ -467,9 +620,7 @@ def create_tiktok_capability(api_client: Optional[TikTokAPIClient] = None):
     return TikTokCapability(api_client)
 
 
-# ═══════════════════════════════════════════════════════════════
-# DV360
-# ═══════════════════════════════════════════════════════════════
+# === DV360 Mock Handlers ===
 
 class DV360CreateCampaignHandler(ToolHandler):
     def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:

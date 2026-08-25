@@ -415,3 +415,206 @@ class TikTokAPIClient(BasePlatformClient):
         result = self.request('POST', 'report/task/create/', data=data)
         task_id = result.get('task_id', '') if isinstance(result, dict) else ''
         return self._poll_report_result(advertiser_id, task_id) if task_id else []
+
+    
+    # ==================== 人群定向查询 ====================
+    
+    def list_audiences(self, advertiser_id: str, filtering: list = None, page_size: int = 20) -> list:
+        """获取人群包列表"""
+        self._rate_limiter.acquire()
+        data = {
+            'advertiser_id': str(advertiser_id),
+            'page_size': page_size,
+        }
+        if filtering:
+            data['filtering'] = filtering
+        result = self.request('GET', 'audience/get/', params=data)
+        audiences = result.get('audience_list', []) if isinstance(result, dict) else []
+        return audiences
+    
+    def get_audience(self, advertiser_id: str, audience_id: str) -> dict:
+        """获取人群包详情"""
+        filtering = [{'field': 'AUDIENCE_IDS', 'operator': 'IN', 'values': [int(audience_id)]}]
+        result = self.list_audiences(advertiser_id, filtering=filtering)
+        return result[0] if result else {}
+    
+    def list_interest_categories(self, parent_ids: list = None) -> list:
+        """获取兴趣类别列表"""
+        self._rate_limiter.acquire()
+        data = {}
+        if parent_ids:
+            data['parent_ids'] = parent_ids
+        result = self.request('GET', 'interest_category/list/', params=data)
+        return result.get('list', []) if isinstance(result, dict) else []
+    
+    def get_interest_category(self, category_id: str) -> dict:
+        """获取兴趣类别详情"""
+        data = {'category_id': category_id}
+        result = self.request('GET', 'interest_category/get/', params=data)
+        return result.get('data', {}) if isinstance(result, dict) else {}
+    
+    # ==================== 地域定向查询 ====================
+    
+    def list_locations(self, location_type: str = None) -> list:
+        """获取地域列表"""
+        self._rate_limiter.acquire()
+        data = {}
+        if location_type:
+            data['location_type'] = location_type
+        result = self.request('GET', 'location/get/', params=data)
+        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+    
+    def search_locations(self, keyword: str, location_type: str = None) -> list:
+        """搜索地域"""
+        self._rate_limiter.acquire()
+        data = {'keyword': keyword}
+        if location_type:
+            data['location_type'] = location_type
+        result = self.request('GET', 'location/search/', params=data)
+        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+    
+    # ==================== 设备定向查询 ====================
+    
+    def list_devices(self) -> list:
+        """获取设备列表"""
+        self._rate_limiter.acquire()
+        result = self.request('GET', 'device/get/')
+        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+    
+    def list_operating_systems(self) -> list:
+        """获取操作系统列表"""
+        self._rate_limiter.acquire()
+        result = self.request('GET', 'os/get/')
+        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+    
+    def list_carriers(self) -> list:
+        """获取运营商列表"""
+        self._rate_limiter.acquire()
+        result = self.request('GET', 'carrier/get/')
+        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+    
+    def list_browsers(self) -> list:
+        """获取浏览器列表"""
+        self._rate_limiter.acquire()
+        result = self.request('GET', 'browser/get/')
+        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+    
+    # ==================== 创意素材查询 ====================
+    
+    def list_creatives(self, advertiser_id: str, filtering: list = None, page_size: int = 20) -> list:
+        """获取创意列表"""
+        self._rate_limiter.acquire()
+        data = {
+            'advertiser_id': str(advertiser_id),
+            'page_size': page_size,
+        }
+        if filtering:
+            data['filtering'] = filtering
+        result = self.request('GET', 'creative/get/', params=data)
+        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+    
+    def list_videos(self, advertiser_id: str, filtering: list = None, page_size: int = 20) -> list:
+        """获取视频列表"""
+        self._rate_limiter.acquire()
+        data = {
+            'advertiser_id': str(advertiser_id),
+            'page_size': page_size,
+        }
+        if filtering:
+            data['filtering'] = filtering
+        result = self.request('GET', 'video/get/', params=data)
+        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+    
+    def list_images(self, advertiser_id: str, filtering: list = None, page_size: int = 20) -> list:
+        """获取图片列表"""
+        self._rate_limiter.acquire()
+        data = {
+            'advertiser_id': str(advertiser_id),
+            'page_size': page_size,
+        }
+        if filtering:
+            data['filtering'] = filtering
+        result = self.request('GET', 'image/get/', params=data)
+        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+    
+    # ==================== 转化追踪查询 ====================
+    
+    def list_conversions(self, advertiser_id: str, filtering: list = None, page_size: int = 20) -> list:
+        """获取转化事件列表"""
+        self._rate_limiter.acquire()
+        data = {
+            'advertiser_id': str(advertiser_id),
+            'page_size': page_size,
+        }
+        if filtering:
+            data['filtering'] = filtering
+        result = self.request('GET', 'conversion/get/', params=data)
+        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+    
+    def get_conversion(self, advertiser_id: str, conversion_id: str) -> dict:
+        """获取转化事件详情"""
+        filtering = [{'field': 'CONVERSION_IDS', 'operator': 'IN', 'values': [int(conversion_id)]}]
+        result = self.list_conversions(advertiser_id, filtering=filtering)
+        return result[0] if result else {}
+    
+    # ==================== 商品目录查询 ====================
+    
+    def list_catalogs(self, advertiser_id: str, filtering: list = None, page_size: int = 20) -> list:
+        """获取商品目录列表"""
+        self._rate_limiter.acquire()
+        data = {
+            'advertiser_id': str(advertiser_id),
+            'page_size': page_size,
+        }
+        if filtering:
+            data['filtering'] = filtering
+        result = self.request('GET', 'catalog/get/', params=data)
+        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+    
+    def list_product_sets(self, advertiser_id: str, catalog_id: str = None, filtering: list = None, page_size: int = 20) -> list:
+        """获取商品集列表"""
+        self._rate_limiter.acquire()
+        data = {
+            'advertiser_id': str(advertiser_id),
+            'page_size': page_size,
+        }
+        if catalog_id:
+            data['catalog_id'] = str(catalog_id)
+        if filtering:
+            data['filtering'] = filtering
+        result = self.request('GET', 'product_set/get/', params=data)
+        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+    
+    # ==================== 应用信息查询 ====================
+    
+    def list_apps(self, filtering: list = None, page_size: int = 20) -> list:
+        """获取应用列表"""
+        self._rate_limiter.acquire()
+        data = {'page_size': page_size}
+        if filtering:
+            data['filtering'] = filtering
+        result = self.request('GET', 'app/get/', params=data)
+        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+    
+    # ==================== 品牌安全查询 ====================
+    
+    def list_brand_safety(self) -> list:
+        """获取品牌安全类别列表"""
+        self._rate_limiter.acquire()
+        result = self.request('GET', 'brand_safety/get/')
+        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+    
+    # ==================== 统计报告查询 ====================
+    
+    def get_report(self, advertiser_id: str, report_type: str = 'CAMPAIGN', date_preset: str = 'LAST_7_DAYS', time_range: dict = None) -> dict:
+        """获取统计报告"""
+        self._rate_limiter.acquire()
+        data = {
+            'advertiser_id': str(advertiser_id),
+            'report_type': report_type,
+            'date_preset': date_preset,
+        }
+        if time_range:
+            data['time_range'] = time_range
+        result = self.request('POST', 'statistics/get/', json=data)
+        return result.get('data', {}) if isinstance(result, dict) else {}
