@@ -298,6 +298,13 @@ class MetaAPIClient(BasePlatformClient):
         result = self.request('GET', endpoint, extra_params=params)
         return result.get('data', []) if isinstance(result, dict) else result
     
+    def get_ad(self, ad_id: str, fields: list = None) -> dict:
+        """获取 Ad 详情"""
+        params = {
+            'fields': ','.join(fields) if fields else 'id,name,status,adset_id,schedule'
+        }
+        return self.request('GET', f"/{ad_id}", extra_params=params)
+    
     def create_ad(self, account_id: str, adset_id: str, ad: dict) -> str:
         """创建 Ad
         

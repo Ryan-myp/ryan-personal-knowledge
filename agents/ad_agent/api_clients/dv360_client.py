@@ -239,6 +239,20 @@ class DV360APIClient(BasePlatformClient):
         result = self._do_request('GET', f"{self.BASE_URL}/advertisers/{advertiser_id}")
         return result.get('data', {})
     
+    def list_campaigns(self, advertiser_id: str, page_size: int = 20) -> list:
+        """获取 Campaign 列表"""
+        self._rate_limiter.acquire()
+        result = self._do_request('GET', 
+                                   f"{self.BASE_URL}/advertisers/{advertiser_id}/campaigns",
+                                   params={'pageSize': page_size})
+        return result.get('data', {}).get('campaigns', [])
+    
+    def get_campaign(self, advertiser_id: str, campaign_id: str) -> dict:
+        """获取 Campaign 详情"""
+        result = self._do_request('GET', 
+                                   f"{self.BASE_URL}/advertisers/{advertiser_id}/campaigns/{campaign_id}")
+        return result.get('data', {})
+    
     # ==================== IO (Insertion Order) 管理 ====================
     
     def list_ios(self, advertiser_id: str, page_size: int = 20) -> list:

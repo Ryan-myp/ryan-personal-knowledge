@@ -289,6 +289,15 @@ class TikTokAPIClient(BasePlatformClient):
             return inner.get('data', {}).get('list', [])
         return []
     
+    def get_ad(self, advertiser_id: str, adgroup_id: str, ad_id: str) -> dict:
+        """获取 Ad 详情"""
+        # TikTok API 不支持 filtering，直接查询所有 ad 并过滤
+        result = self.list_ads(advertiser_id, adgroup_id)
+        for ad in result:
+            if str(ad.get('id')) == str(ad_id):
+                return ad
+        return {}
+    
     def create_ad(self, advertiser_id: str, campaign_id: str, adgroup_id: str, ad: dict) -> str:
         """创建 Ad"""
         self._rate_limiter.acquire()

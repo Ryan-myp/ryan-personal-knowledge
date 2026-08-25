@@ -149,6 +149,52 @@ class GoogleAdsAPIClient(BasePlatformClient):
         results = self._search(query)
         return results.get('results', [{}])[0] if results.get('results') else {}
     
+    def list_ad_groups(self, campaign_id: str, page_size: int = 100) -> list:
+        """获取 Ad Group 列表"""
+        query = f"""
+            SELECT ad_group.id, ad_group.name, ad_group.status,
+                   ad_group.campaign, ad_group.type
+            FROM ad_group
+            WHERE ad_group_campaign = '{campaign_id}'
+            LIMIT {page_size}
+        """
+        result = self._search(query)
+        return result.get('results', [])
+    
+    def get_ad_group(self, ad_group_id: str) -> dict:
+        """获取 Ad Group 详情"""
+        query = f"""
+            SELECT ad_group.id, ad_group.name, ad_group.status,
+                   ad_group.campaign, ad_group.type, ad_group.ad_group_type
+            FROM ad_group
+            WHERE ad_group.id = {ad_group_id}
+        """
+        results = self._search(query)
+        return results.get('results', [{}])[0] if results.get('results') else {}
+    
+    def list_ads(self, ad_group_id: str, page_size: int = 100) -> list:
+        """获取 Ad 列表"""
+        query = f"""
+            SELECT ad.id, ad.name, ad.status, ad.type,
+                   ad.ad_group
+            FROM ad
+            WHERE ad.ad_group = '{ad_group_id}'
+            LIMIT {page_size}
+        """
+        result = self._search(query)
+        return result.get('results', [])
+    
+    def get_ad(self, ad_id: str) -> dict:
+        """获取 Ad 详情"""
+        query = f"""
+            SELECT ad.id, ad.name, ad.status, ad.type,
+                   ad.ad_group, ad.response_search_ad
+            FROM ad
+            WHERE ad.id = {ad_id}
+        """
+        results = self._search(query)
+        return results.get('results', [{}])[0] if results.get('results') else {}
+    
     def create_campaign(
         self,
         name: str,
