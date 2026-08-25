@@ -988,20 +988,20 @@
             
             // 根据类型显示不同的内容
             if (payload.type === 'ask_account') {
-                body.innerHTML = \`
+                body.innerHTML = `
                     <div class="confirm-input-group">
-                        <label>请输入 \${payload.platform} 账户ID:</label>
+                        <label>请输入 ${payload.platform} 账户ID:</label>
                         <input type="text" id="confirmInput" placeholder="例如: 7397068114548195329" class="confirm-input">
                     </div>
-                \`;
+                `;
                 setTimeout(() => document.getElementById('confirmInput')?.focus(), 100);
             } else if (payload.type === 'ask_params') {
-                body.innerHTML = \`
+                body.innerHTML = `
                     <div class="confirm-input-group">
-                        <label>请提供缺失参数: \${payload.missing.join(', ')}</label>
+                        <label>请提供缺失参数: ${payload.missing.join(', ')}</label>
                         <input type="text" id="confirmInput" placeholder="例如: campaign_id=12345" class="confirm-input">
                     </div>
-                \`;
+                `;
                 setTimeout(() => document.getElementById('confirmInput')?.focus(), 100);
             } else {
                 body.textContent = payload.description || payload.question || '确认执行此操作？';
