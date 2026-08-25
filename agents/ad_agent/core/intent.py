@@ -366,6 +366,7 @@ class SimpleIntentRouter(IntentRouter):
         },
         "list_adgroups": {
             "meta": ["meta_list_ad_sets"],
+            "google": ["google_list_ad_groups"],
             "tiktok": ["tiktok_list_adgroups"],
         },
         "list_adsets": {
