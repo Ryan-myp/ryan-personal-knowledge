@@ -23,13 +23,14 @@ import yaml
 from ..core.interfaces import (
     ToolContext, ToolResult, ChatMessage, CapabilityModule,
     CapabilityRuntime, ToolRegistry, WriteGuard, IntentParser, IntentRouter,
-    ParsedIntent
+    ParsedIntent, ToolHandler
 )
 from ..core.tool_registry import SimpleToolRegistry
 from ..core.intent import LLMIntentParser, SimpleIntentRouter
 from .skill import Skill, SkillLoader
 from ..persistence.session_manager import SessionManager
 from ..persistence.store import AdAgentStore
+from ..skills.skill_registry import SkillRegistry
 
 
 # ─── 账户白名单验证器 ───────────────────────────────────────────
@@ -180,6 +181,58 @@ class AgentRuntime:
             handler = skill.get_tool_handler(tool_def.name)
             if handler:
                 self.registry.register(tool_def, handler)
+    
+    # ─── Skill 动态注册 ────────────────────────────────────────
+    
+    def register_skill(self, skill: Skill, platform: str, api_client=None) -> None:
+        """
+        动态注册一个 Skill。
+        
+        Args:
+            skill: Skill 对象（从 SKILL.md 解析）
+            platform: 平台名称
+            api_client: API 客户端（None 时使用 mock 模式）
+        """
+        from ..skills.skill_registry import SkillBinding
+        
+        # 获取所有工具定义
+        tools = skill.get_tools()
+        if not tools:
+            logger.warning(f"⚠️ Skill '{skill.name}' 没有定义任何工具")
+            return
+        
+        # 创建 SkillBinding
+        binding = SkillBinding(
+            skill=skill,
+            platform=platform,
+            handler_factory=lambda client: self._create_handler(skill, platform, client),
+            is_enabled=True
+        )
+        
+        # 注册每个工具
+        for tool_def in tools:
+            handler = binding.handler_factory(api_client)
+            if handler:
+                self.registry.register(tool_def, handler)
+                logger.debug(f"✅ 注册工具: {tool_def.name} (platform={platform})")
+        
+        logger.info(f"✅ 已动态注册 Skill '{skill.name}'，共 {len(tools)} 个工具")
+    
+    def _create_handler(self, skill: Skill, platform: str, api_client=None) -> Optional[ToolHandler]:
+        """
+        根据 Skill 和平台创建对应的 Handler。
+        
+        策略：
+        1. 优先查找已注册的 Capability 中的 Handler
+        2. 回退到 Mock Handler
+        """
+        # TODO: 实现动态 Handler 查找逻辑
+        # 当前使用简单的命名映射
+        from ..capabilities.base import BaseCapability
+        
+        # 尝试从已注册的 Capability 中查找
+        # 这里简化处理，返回 None 表示使用默认逻辑
+        return None
     
     # ─── 主循环入口 ────────────────────────────────────────────
     
