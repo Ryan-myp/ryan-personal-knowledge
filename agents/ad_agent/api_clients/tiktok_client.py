@@ -231,9 +231,12 @@ class TikTokAPIClient(BasePlatformClient):
     
     def get_adgroup(self, advertiser_id: str, campaign_id: str, adgroup_id: str) -> dict:
         """获取 Ad Group 详情"""
-        filtering = [{'field': 'ADGROUP_IDS', 'operator': 'IN', 'values': [int(adgroup_id)]}]
-        result = self.list_adgroups(advertiser_id, campaign_id, filtering=filtering)
-        return result[0] if result else {}
+        # TikTok API 不支持 filtering，直接查询所有 adgroup 并过滤
+        result = self.list_adgroups(advertiser_id, campaign_id)
+        for ag in result:
+            if str(ag.get('adgroup_id')) == str(adgroup_id):
+                return ag
+        return {}
     
     def create_adgroup(self, advertiser_id: str, campaign_id: str, adgroup: dict) -> str:
         """创建 Ad Group"""
@@ -297,7 +300,7 @@ class TikTokAPIClient(BasePlatformClient):
         # TikTok API 不支持 filtering，直接查询所有 ad 并过滤
         result = self.list_ads(advertiser_id, adgroup_id)
         for ad in result:
-            if str(ad.get('id')) == str(ad_id):
+            if str(ad.get('ad_id')) == str(ad_id):
                 return ad
         return {}
     
