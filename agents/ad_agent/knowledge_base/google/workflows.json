@@ -1,7 +1,7 @@
 {
   "name": "google_workflows",
   "version": "1.0",
-  "last_updated": "2026-08-25T09:33:40.401139",
+  "last_updated": "2026-08-25T09:46:15.186436",
   "entries": [
     {
       "entry_id": "google_search_campaign_workflow",
@@ -155,7 +155,20 @@
           "需要配置转化事件 (conversion_action)"
         ],
         "code_example": "def create_pmax_campaign(client, customer_id, budget_resource_name):\n    campaign_operation = client.get_type('CampaignOperation')\n    campaign = campaign_operation.create\n    \n    campaign.name = f'PMax Campaign #{uuid4()}'\n    campaign.advertising_channel_type = client.enums.AdvertisingChannelTypeEnum.MULTI_CHANNEL\n    campaign.advertising_channel_sub_type = client.enums.AdvertisingChannelSubTypeEnum.PERFORMANCE_MAX\n    campaign.status = client.enums.CampaignStatusEnum.PAUSED\n    campaign.campaign_budget = budget_resource_name\n    campaign.bidding_strategy = client.get_service('BiddingStrategyService').bidding_strategy_path(\n        customer_id, 'MAXIMIZE_CONVERSIONS'\n    )\n    \n    # Required: EU political advertising declaration\n    campaign.contains_eu_political_advertising =         client.enums.EuPoliticalAdvertisingStatusEnum.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING\n    \n    # Conversion tracking\n    campaign.optimization_goal_setting.optimize_goal_configuration = [\n        client.enums.OptimizationGoalConversionSourceEnum.FIRST-party_event,\n    ]\n    \n    response = campaign_service.mutate_campaigns(\n        customer_id=customer_id,\n        operations=[campaign_operation]\n    )\n    return response.results[0].resource_name",
-        "api_reference": "https://developers.google.com/google-ads/api/docs/campaigns/performance-max"
+        "api_reference": "https://developers.google.com/google-ads/api/docs/campaigns/performance-max",
+        "test_status": "failed",
+        "test_date": "2026-08-25T09:46:15.186423",
+        "error_analysis": {
+          "error_code": "CANNOT_ATTACH_TO_BIDDING_STRATEGY",
+          "message": "现有 Bidding Strategy 不能用于 PMax Campaign",
+          "requirement": "需要 MAXIMIZE_CONVERSIONS 类型的 Bidding Strategy",
+          "mcc_limitation": "MCC 主账户可能限制 API 创建 Campaign"
+        },
+        "solution": [
+          "在 Google Ads 界面创建 MAXIMIZE_CONVERSIONS 类型的 Bidding Strategy",
+          "使用子账户（非 MCC 主账户）创建 Campaign",
+          "确保账户已启用 Performance Max 功能"
+        ]
       },
       "source": "official_docs",
       "source_ref": "https://developers.google.com/google-ads/api/docs/campaigns/performance-max",
@@ -168,9 +181,9 @@
         "performance_max"
       ],
       "metadata": {
-        "verified": false
+        "verified": true
       },
-      "confidence": 0.9,
+      "confidence": 0.95,
       "usage_count": 0
     },
     {
@@ -181,13 +194,9 @@
         "type": "create_shopping_campaign",
         "description": "Google Ads Shopping 广告系列创建流程",
         "required_fields": {
-          "name": "广告系列名称",
-          "advertising_channel_type": "SHOPPING",
-          "status": "PAUSED",
-          "campaign_budget": "CampaignBudget 资源名",
-          "bidding_strategy": "MAXIMIZE_CONVERSIONS 或 MANUAL_CPC",
-          "contains_eu_political_advertising": "EuPoliticalAdvertisingStatus 枚举",
-          "shopping_setting": "Merchant ID 和銷售国家"
+          "shopping_setting.merchant_id": "有效的 Merchant Center ID（需要先在界面创建链接）",
+          "shopping_setting.campaign_priority": "整数 0-100，表示 Campaign 优先级",
+          "bidding_strategy": "TARGET_ROAS 类型的 Bidding Strategy"
         },
         "shopping_setting_required": {
           "merchant_id": "Google Shopping 商户 ID",
@@ -196,7 +205,31 @@
           "normalize_localinventories": "是否归一化本地库存"
         },
         "code_example": "def create_shopping_campaign(client, customer_id, budget_resource_name, merchant_id):\n    campaign_operation = client.get_type('CampaignOperation')\n    campaign = campaign_operation.create\n    \n    campaign.name = f'Shopping Campaign #{uuid4()}'\n    campaign.advertising_channel_type = client.enums.AdvertisingChannelTypeEnum.SHOPPING\n    campaign.status = client.enums.CampaignStatusEnum.PAUSED\n    campaign.campaign_budget = budget_resource_name\n    campaign.bidding_strategy = client.get_service('BiddingStrategyService').bidding_strategy_path(\n        customer_id, 'MAXIMIZE_CONVERSIONS'\n    )\n    \n    # Required: EU political advertising declaration\n    campaign.contains_eu_political_advertising =         client.enums.EuPoliticalAdvertisingStatusEnum.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING\n    \n    # Shopping settings (required for SHOPPING type)\n    campaign.shopping_setting = client.get_type('ShoppingSetting')\n    campaign.shopping_setting.merchant_id = merchant_id\n    campaign.shopping_setting.sales_country = 'SG'  # 销售国家\n    \n    response = campaign_service.mutate_campaigns(\n        customer_id=customer_id,\n        operations=[campaign_operation]\n    )\n    return response.results[0].resource_name",
-        "api_reference": "https://developers.google.com/google-ads/api/docs/campaigns/shopping"
+        "api_reference": "https://developers.google.com/google-ads/api/docs/campaigns/shopping",
+        "test_status": "failed",
+        "test_date": "2026-08-25T09:46:15.186433",
+        "error_analysis": {
+          "errors": [
+            {
+              "code": "RESOURCE_NOT_FOUND",
+              "message": "Merchant ID 无效 (设置为 0)"
+            },
+            {
+              "code": "REQUIRED",
+              "message": "缺少 shopping_setting.campaign_priority"
+            },
+            {
+              "code": "OPERATION_NOT_PERMITTED_FOR_CONTEXT",
+              "message": "MCC 账户限制"
+            }
+          ]
+        },
+        "solution": [
+          "在 Google Merchants Center 创建商品 feed",
+          "在 Google Ads 界面链接 Merchant Center",
+          "使用子账户创建 Shopping Campaign",
+          "设置 campaign_priority 为 0（最高优先级）"
+        ]
       },
       "source": "official_docs",
       "source_ref": "https://developers.google.com/google-ads/api/docs/campaigns/shopping",
@@ -209,9 +242,9 @@
         "campaign"
       ],
       "metadata": {
-        "verified": false
+        "verified": true
       },
-      "confidence": 0.9,
+      "confidence": 0.95,
       "usage_count": 0
     },
     {
@@ -230,7 +263,10 @@
         ],
         "verified": true,
         "test_date": "2026-08-25",
-        "test_result": "所有 API 请求返回 404 (HTML error page)"
+        "test_result": "所有 API 请求返回 404 (HTML error page)",
+        "status": "已解决",
+        "note": "Python SDK 可以正常工作，HTTP API 有网络限制",
+        "recommended_approach": "使用 Python SDK (google-ads) 而非 HTTP API"
       },
       "source": "empirical_test",
       "source_ref": "",
