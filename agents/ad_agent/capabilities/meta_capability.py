@@ -222,27 +222,38 @@ class MetaGetReportRealHandler(ToolHandler):
         
         account_id = ctx.account_id
         try:
-            # 处理 date_range 参数：转换为 Meta API 格式
+            # 处理 date_range 参数：转换为 Meta date_preset 格式
             date_range = input_data.get("date_range")
-            time_range = None
+            date_preset = None
             if date_range:
                 if isinstance(date_range, str):
-                    time_range = date_range
+                    # 直接传递字符串格式的 date_preset
+                    date_preset = date_range
                 elif isinstance(date_range, dict):
-                    # 将 {start_date: "LAST_7_DAYS", end_date: "TODAY"} 转换为 "last_7_days"
+                    # 将 {start_date: "LAST_7_DAYS", end_date: "TODAY"} 转换为 "last_7d"
                     start = date_range.get("start_date", "")
-                    if start.startswith("LAST_") and start.endswith("_DAYS"):
-                        days = start.replace("LAST_", "").replace("_DAYS", "")
-                        time_range = f"last_{days}_days"
+                    if start == "LAST_7_DAYS":
+                        date_preset = "last_7d"
+                    elif start == "LAST_30_DAYS":
+                        date_preset = "last_30d"
+                    elif start == "LAST_14_DAYS":
+                        date_preset = "last_14d"
+                    elif start == "LAST_7DAYS":
+                        date_preset = "last_7d"
+                    elif start == "LAST_30DAYS":
+                        date_preset = "last_30d"
                     elif start == "YESTERDAY":
-                        time_range = "yesterday"
+                        date_preset = "yesterday"
                     elif start == "TODAY":
-                        time_range = "today"
+                        date_preset = "today"
+                    elif start.startswith("LAST_") and start.endswith("_DAYS"):
+                        days = start.replace("LAST_", "").replace("_DAYS", "")
+                        date_preset = f"last_{days}d"
             
             report = self.client.get_campaign_report(
                 account_id=account_id,
                 campaign_ids=[campaign_id],
-                time_range=time_range,
+                time_range=date_preset,
             )
             return ToolResult.ok({"campaign_id": campaign_id, "report": report})
         except Exception as e:
