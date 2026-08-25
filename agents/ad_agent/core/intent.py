@@ -137,8 +137,8 @@ class LLMIntentParser(IntentParser):
         # 先检查报表查询（避免 "投放报表" 被误判为 create_campaign）
         if any(kw in text for kw in ["报表", "report", "下载", "查看数据", "performance", "统计"]):
             return "download_report"
-        # 再检查其他意图
-        if any(kw in text for kw in ["投放", "创建广告", "promote", "launch ad", "run ad", "创建 campaign", "新建广告"]):
+        # 再检查其他意图 - 使用更宽松的匹配
+        if any(kw in text for kw in ["投放", "创建广告", "创建", "promote", "launch ad", "run ad", "新建广告", "创建 campaign"]):
             return "create_campaign"
         elif any(kw in text for kw in ["boost", "助推", "加热", "推广帖子", "boost post"]):
             return "boost_post"
