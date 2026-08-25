@@ -251,6 +251,38 @@ class GoogleGetAdHandler(ToolHandler):
             return ToolResult.ok({"ad": {}})
 
 
+class GoogleListAssetGroupsHandler(ToolHandler):
+    def __init__(self, api_client: Optional[GoogleAdsAPIClient] = None):
+        self.client = api_client
+    
+    def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
+        campaign_id = input_data.get('campaign_id', '')
+        if self.client and campaign_id:
+            try:
+                asset_groups = self.client.list_asset_groups(campaign_id)
+                return ToolResult.ok({"asset_groups": asset_groups})
+            except Exception as e:
+                return ToolResult.error(f"Failed to list Google asset groups: {e}")
+        else:
+            return ToolResult.ok({"asset_groups": []})
+
+
+class GoogleGetAssetGroupHandler(ToolHandler):
+    def __init__(self, api_client: Optional[GoogleAdsAPIClient] = None):
+        self.client = api_client
+    
+    def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
+        asset_group_id = input_data.get('asset_group_id', '')
+        if self.client and asset_group_id:
+            try:
+                asset_group = self.client.get_asset_group(asset_group_id)
+                return ToolResult.ok({"asset_group": asset_group})
+            except Exception as e:
+                return ToolResult.error(f"Failed to get Google asset group: {e}")
+        else:
+            return ToolResult.ok({"asset_group": {}})
+
+
 class GoogleCapability(BaseCapability):
     platform_name = "google"
     
@@ -408,6 +440,38 @@ class GoogleCapability(BaseCapability):
             replay_policy=ReplayPolicy.SAFE,
             traits=["read", "ad"],
         ), GoogleGetAdHandler(self._api_client)))
+        
+        # List Asset Groups (PMax)
+        tools.append((ToolDefinition(
+            name="google_list_asset_groups",
+            skill="google-ads-api-expert",
+            platform="google",
+            description="查询 PMax Campaign 的 Asset Group 列表。",
+            input_schema=ToolSchema(
+                required=["campaign_id"],
+                properties={"campaign_id": {"type": "string"}},
+            ),
+            risk_level=RiskLevel.LOW,
+            effect_class=ToolEffect.READ,
+            replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "pmax"],
+        ), GoogleListAssetGroupsHandler(self._api_client)))
+        
+        # Get Asset Group (PMax)
+        tools.append((ToolDefinition(
+            name="google_get_asset_group",
+            skill="google-ads-api-expert",
+            platform="google",
+            description="查询 PMax Asset Group 详情。",
+            input_schema=ToolSchema(
+                required=["asset_group_id"],
+                properties={"asset_group_id": {"type": "string"}},
+            ),
+            risk_level=RiskLevel.LOW,
+            effect_class=ToolEffect.READ,
+            replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "pmax"],
+        ), GoogleGetAssetGroupHandler(self._api_client)))
         
         return tools
     
