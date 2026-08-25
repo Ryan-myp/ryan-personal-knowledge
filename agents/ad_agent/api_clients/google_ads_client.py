@@ -134,8 +134,8 @@ class GoogleAdsAPIClient(BasePlatformClient):
         query += f" LIMIT {page_size}"
         
         result = self._search(query)
-        # 解析嵌套结构：results[i]['campaign']
-        results = result.get('results', [])
+        # 解析嵌套结构：result['data']['results'][i]['campaign']
+        results = result.get('data', {}).get('results', [])
         campaigns = []
         for r in results:
             camp = r.get('campaign', {})
@@ -159,7 +159,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
             WHERE campaign.id = {campaign_id}
         """
         results = self._search(query)
-        items = results.get('results', [])
+        items = results.get('data', {}).get('results', [])
         if items:
             camp = items[0].get('campaign', {})
             return {
@@ -182,8 +182,8 @@ class GoogleAdsAPIClient(BasePlatformClient):
             LIMIT {page_size}
         """
         result = self._search(query)
-        # 解析嵌套结构：results[i]['adGroup']
-        results = result.get('results', [])
+        # 解析嵌套结构：result['data']['results'][i]['adGroup']
+        results = result.get('data', {}).get('results', [])
         ad_groups = []
         for r in results:
             ag = r.get('adGroup', r.get('ad_group', {}))
@@ -205,7 +205,17 @@ class GoogleAdsAPIClient(BasePlatformClient):
             WHERE ad_group.id = {ad_group_id}
         """
         results = self._search(query)
-        return results.get('results', [{}])[0] if results.get('results') else {}
+        items = results.get('data', {}).get('results', [])
+        if items:
+            ag = items[0].get('adGroup', items[0].get('ad_group', {}))
+            return {
+                'id': ag.get('id'),
+                'resource_name': ag.get('resourceName'),
+                'name': ag.get('name'),
+                'status': ag.get('status'),
+                'type': ag.get('type'),
+            }
+        return {}
     
     def list_ads(self, ad_group_id: str, page_size: int = 100) -> list:
         """获取 Ad 列表"""
@@ -216,18 +226,39 @@ class GoogleAdsAPIClient(BasePlatformClient):
             LIMIT {page_size}
         """
         result = self._search(query)
-        return result.get('results', [])
+        # 解析嵌套结构：result['data']['results'][i]['ad']
+        results = result.get('data', {}).get('results', [])
+        ads = []
+        for r in results:
+            ad = r.get('ad', {})
+            ads.append({
+                'id': ad.get('id'),
+                'resource_name': ad.get('resourceName'),
+                'name': ad.get('name'),
+                'status': ad.get('status'),
+                'type': ad.get('type'),
+            })
+        return ads
     
     def get_ad(self, ad_id: str) -> dict:
         """获取 Ad 详情"""
         query = f"""
-            SELECT ad.id, ad.name, ad.status, ad.type,
-                   ad.ad_group, ad.response_search_ad
+            SELECT ad.id, ad.name, ad.status, ad.type
             FROM ad
             WHERE ad.id = {ad_id}
         """
         results = self._search(query)
-        return results.get('results', [{}])[0] if results.get('results') else {}
+        items = results.get('data', {}).get('results', [])
+        if items:
+            ad = items[0].get('ad', {})
+            return {
+                'id': ad.get('id'),
+                'resource_name': ad.get('resourceName'),
+                'name': ad.get('name'),
+                'status': ad.get('status'),
+                'type': ad.get('type'),
+            }
+        return {}
     
     def create_campaign(
         self,
