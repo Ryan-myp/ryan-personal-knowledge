@@ -271,6 +271,26 @@ class AgentRuntime:
                     tool_def, intent, platform
                 )
                 
+                # 检查必需参数是否齐全，不齐全则询问用户
+                missing_params = tool_input.pop("_missing_params", None)
+                if missing_params:
+                    results.append({
+                        "tool": tool_def.name,
+                        "platform": platform,
+                        "success": False,
+                        "error": f"缺少必需参数: {', '.join(missing_params)}",
+                        "needs_confirmation": True,
+                        "confirmation_payload": {
+                            "type": "ask_params",
+                            "tool": tool_def.name,
+                            "missing": missing_params,
+                            "question": f"⚠️ 执行 {tool_def.name} 需要以下参数：{', '.join(missing_params)}，请提供这些参数",
+                        },
+                    })
+                    needs_confirmation = True
+                    confirmation_payload = results[-1]["confirmation_payload"]
+                    continue
+                
                 # 执行工具
                 result = self.registry.execute(session.ctx, tool_def.name, tool_input)
                 
@@ -344,6 +364,16 @@ class AgentRuntime:
         if intent.creative_materials and "creative_materials" not in tool_input:
             tool_input["creative_materials"] = intent.creative_materials
         
+        # 检查必需参数是否齐全
+        missing = []
+        for req in tool_def.input_schema.required or []:
+            if req not in tool_input:
+                missing.append(req)
+        
+        if missing:
+            # 参数不全，标记为需要确认
+            tool_input["_missing_params"] = missing
+        
         return tool_input
     
     def _generate_reply(
@@ -355,6 +385,18 @@ class AgentRuntime:
         """根据执行结果生成用户友好的回复"""
         success_count = sum(1 for r in results if r.get("success"))
         fail_count = len(results) - success_count
+        
+        # 检查是否有需要确认的情况
+        ask_params_results = [r for r in results if r.get("needs_confirmation") and r.get("confirmation_payload")]
+        if ask_params_results:
+            # 需要用户提供参数
+            questions = []
+            for r in ask_params_results:
+                payload = r.get("confirmation_payload", {})
+                if payload.get("type") == "ask_params":
+                    questions.append(payload.get("question", "请提供必要参数"))
+            if questions:
+                return "\n\n".join(questions)
         
         if needs_confirmation:
             return "⚠️ 需要确认：部分操作需要您的确认才能继续。"

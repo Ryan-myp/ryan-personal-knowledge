@@ -23,6 +23,26 @@ logger = logging.getLogger(__name__)
 # Google Ads
 # ═══════════════════════════════════════════════════════════════
 
+class GoogleListCampaignsHandler(ToolHandler):
+    def __init__(self, api_client: Optional[GoogleAdsAPIClient] = None):
+        self.client = api_client
+    
+    def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
+        if self.client:
+            try:
+                campaigns = self.client.list_campaigns()
+                return ToolResult.ok({"campaigns": campaigns})
+            except Exception as e:
+                return ToolResult.error(f"Failed to list Google campaigns: {e}")
+        else:
+            return ToolResult.ok({
+                "campaigns": [
+                    {"id": "test_campaign_1", "name": "Test Campaign 1", "status": "ENABLED", "budget": 100},
+                    {"id": "test_campaign_2", "name": "Test Campaign 2", "status": "PAUSED", "budget": 50},
+                ],
+            })
+
+
 class GoogleCreateCampaignHandler(ToolHandler):
     def __init__(self, api_client: Optional[GoogleAdsAPIClient] = None):
         self.client = api_client
@@ -202,6 +222,17 @@ class GoogleCapability(BaseCapability):
             traits=["write", "ad"],
         ), ad_h))
         
+        # List Campaigns
+        tools.append((ToolDefinition(
+            name="google_list_campaigns", skill="google-ads-api-expert", platform="google",
+            description="查询 Google Ads Campaign 列表。",
+            input_schema=ToolSchema(
+                properties={"status": {"type": "string", "enum": ["ENABLED", "PAUSED", "DELETED"]}, "limit": {"type": "integer"}},
+            ),
+            risk_level=RiskLevel.LOW, effect_class=ToolEffect.READ, replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "campaign"],
+        ), GoogleListCampaignsHandler(self._api_client)))
+        
         tools.append((ToolDefinition(
             name="google_get_campaign_report", skill="google-ads-api-expert", platform="google",
             description="查询 Google Ads Campaign 报表。",
@@ -306,6 +337,27 @@ class TikTokCreateAdHandler(ToolHandler):
         })
 
 
+class TikTokListCampaignsHandler(ToolHandler):
+    def __init__(self, api_client: Optional[TikTokAPIClient] = None):
+        self.client = api_client
+    
+    def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
+        advertiser_id = ctx.account_id
+        if self.client and advertiser_id:
+            try:
+                campaigns = self.client.list_campaigns(advertiser_id)
+                return ToolResult.ok({"campaigns": campaigns})
+            except Exception as e:
+                return ToolResult.error(f"Failed to list TikTok campaigns: {e}")
+        else:
+            return ToolResult.ok({
+                "campaigns": [
+                    {"id": "1874401777748561", "name": "Test Campaign 1", "status": "ENABLED"},
+                    {"id": "1874401777748562", "name": "Test Campaign 2", "status": "PAUSED"},
+                ],
+            })
+
+
 class TikTokSparkAdsHandler(ToolHandler):
     def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
         return ToolResult.ok({
@@ -370,6 +422,17 @@ class TikTokCapability(BaseCapability):
             risk_level=RiskLevel.MEDIUM, effect_class=ToolEffect.EXTERNAL_WRITE, replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "spark"],
         ), TikTokSparkAdsHandler()))
+        
+        # List Campaigns
+        tools.append((ToolDefinition(
+            name="tiktok_list_campaigns", skill="tiktok-ads-expert", platform="tiktok",
+            description="查询 TikTok Campaign 列表。",
+            input_schema=ToolSchema(
+                properties={"status": {"type": "string"}, "limit": {"type": "integer"}},
+            ),
+            risk_level=RiskLevel.LOW, effect_class=ToolEffect.READ, replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "campaign"],
+        ), TikTokListCampaignsHandler(self._api_client)))
         
         tools.append((ToolDefinition(
             name="tiktok_get_campaign_report", skill="tiktok-ads-expert", platform="tiktok",
