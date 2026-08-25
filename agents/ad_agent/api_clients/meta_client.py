@@ -391,7 +391,7 @@ class MetaAPIClient(BasePlatformClient):
         self,
         account_id: str,
         campaign_ids: list[str],
-        time_range: dict = None,
+        time_range: str = None,
         fields: list = None,
         level: str = "campaign"
     ) -> dict:
@@ -401,7 +401,7 @@ class MetaAPIClient(BasePlatformClient):
         Args:
             account_id: 广告账户 ID
             campaign_ids: Campaign ID 列表
-            time_range: {"time_min": "2024-01-01", "time_max": "2024-01-31"}
+            time_range: date_preset 值，如 "today", "yesterday", "last_7d", "last_30d" 等
             fields: 指标字段列表
             level: 报表层级 ("campaign" | "adset" | "ad")
         """
@@ -409,18 +409,16 @@ class MetaAPIClient(BasePlatformClient):
         
         default_fields = [
             "campaign_id", "impressions", "clicks", "ctr", "cpc",
-            "spend", "purchase_roas", "cost_per_registration",
-            "actions", "action_values"
+            "spend", "purchase_roas", "cost_per_result", "actions", "action_values"
         ]
         
-        # 如果没有提供 time_range，使用默认值（最近30天）
-        if not time_range:
-            time_range = "last_30_days"
+        # 如果没有提供 time_range，使用默认值（最近7天）
+        date_preset = time_range or "last_7d"
         
         params = {
             'level': level,
             'fields': ','.join(fields or default_fields),
-            'time_range': time_range if isinstance(time_range, str) else json.dumps(time_range),
+            'date_preset': date_preset,
             'filtering': json.dumps([
                 {'field': 'campaign.id', 'operator': 'IN', 'value': campaign_ids}
             ]),
