@@ -83,6 +83,7 @@ class DynamicToolSelector:
         "update_campaign": ["update", "modify", "edit"],
         "pause_campaign": ["pause", "stop", "disable"],
         "resume_campaign": ["resume", "start", "enable"],
+        "list_campaigns": ["list", "query", "search", "get_", "campaign"],
         "get_report": ["report", "get_", "list_", "query", "search"],
         "optimize_bidding": ["optimize", "bid", "pricing"],
         "get_audience": ["audience", "target", "demographic"],
