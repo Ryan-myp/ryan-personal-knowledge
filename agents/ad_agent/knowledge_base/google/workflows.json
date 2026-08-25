@@ -95,7 +95,7 @@
         "description": "Google Ads Campaign 创建官方示例代码（来自 developers.google.cn）",
         "official_source": "https://developers.google.cn/google-ads/api/samples/add-dynamic-search-ads",
         "key_finding": "必须使用 client.enums 获取枚举值，不能直接导入枚举类",
-        "correct_pattern": """
+        "correct_pattern": \"\"\"
 # ✅ 正确方式：使用 client.enums 获取枚举值
 from google.ads.googleads.client import GoogleAdsClient
 
@@ -108,7 +108,7 @@ campaign.advertising_channel_type = \
     client.enums.AdvertisingChannelTypeEnum.SEARCH
 
 campaign.status = client.enums.CampaignStatusEnum.PAUSED
-""",
+\"\"\",
         "wrong_patterns": [
           {
             "error": "ImportError: cannot import name 'AdvertisingChannelType'",
@@ -126,7 +126,7 @@ campaign.status = client.enums.CampaignStatusEnum.PAUSED
             "example": "campaign.contains_eu_political_advertising = 0"
           }
         ],
-        "code_example_search_campaign": """
+        "code_example_search_campaign": \"\"\"
 def create_search_campaign(client, customer_id, budget_resource_name):
     campaign_service = client.get_service('CampaignService')
     campaign_operation = client.get_type('CampaignOperation')
@@ -150,8 +150,8 @@ def create_search_campaign(client, customer_id, budget_resource_name):
         operations=[campaign_operation]
     )
     return response.results[0].resource_name
-""",
-        "code_example_app_campaign": """
+\"\"\",
+        "code_example_app_campaign": \"\"\"
 def create_app_campaign(client, customer_id, budget_resource_name):
     campaign_operation = client.get_type('CampaignOperation')
     campaign = campaign_operation.create
@@ -181,7 +181,7 @@ def create_app_campaign(client, customer_id, budget_resource_name):
         operations=[campaign_operation]
     )
     return response.results[0].resource_name
-""",
+\"\"\",
         "api_reference": "https://developers.google.cn/google-ads/api/samples?hl=zh-cn"
       },
       "source": "official_docs",
