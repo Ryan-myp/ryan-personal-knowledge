@@ -145,6 +145,53 @@ class SkillContract:
                 required_params=required,
                 optional_params=optional,
             )
+        
+        # 如果没有找到工具定义，尝试从表格中提取
+        if not self.capabilities:
+            self._extract_capabilities_from_table(content)
+    
+    def _extract_capabilities_from_table(self, content: str) -> None:
+        """从 Markdown 表格中提取工具定义"""
+        # 查找表格模式: | Tool | 功能 | 参数 |
+        table_pattern = r'\|\s*Tool\s*\|[^|]*\|[^|]*\|\n((?:\|.+\|\n)*)'
+        match = re.search(table_pattern, content)
+        
+        if not match:
+            return
+        
+        table_content = match.group(1)
+        
+        for line in table_content.split('\n'):
+            if not line.strip().startswith('|'):
+                continue
+            
+            parts = [p.strip() for p in line.split('|')]
+            if len(parts) < 3:
+                continue
+            
+            # 跳过表头行
+            if 'Tool' in parts[0] or '功能' in parts[1]:
+                continue
+            
+            tool_name = parts[0].replace('`', '').strip()
+            description = parts[1].strip()
+            params_str = parts[2].strip() if len(parts) > 2 else ''
+            
+            # 解析参数
+            required = []
+            optional = []
+            if params_str:
+                for param in params_str.split(','):
+                    param = param.strip().replace('`', '')
+                    if param:
+                        required.append(param)
+            
+            self.capabilities[tool_name] = SkillCapability(
+                name=tool_name,
+                description=description,
+                required_params=required,
+                optional_params=optional,
+            )
     
     def _load_contract_yaml(self, path: str) -> None:
         """加载 contract.yaml"""
