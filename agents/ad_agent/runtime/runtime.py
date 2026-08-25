@@ -475,7 +475,7 @@ class AgentRuntime:
                                     module_name, class_name = client_map[platform]
                                     try:
                                         import importlib
-                                        module = importlib.import_module(f'..{module_name}', __package__)
+                                        module = importlib.import_module(f'..capabilities.{module_name}', __package__)
                                         client_class = getattr(module, class_name)
                                         api_client = client_class(credentials[platform])
                                     except Exception as e:
@@ -510,10 +510,10 @@ class AgentRuntime:
         
         # 根据 platform 选择模块和 prefix
         platform_map = {
-            'meta': ('meta_capability', 'Meta'),
-            'google-ads': ('google_capability', 'Google'),
-            'tiktok': ('tiktok_capability', 'TikTok'),
-            'dv360': ('dv360_capability', 'DV360'),
+            'meta': ('meta', 'Meta'),
+            'google-ads': ('google', 'Google'),
+            'tiktok': ('tiktok', 'TikTok'),
+            'dv360': ('dv360', 'DV360'),
         }
         
         module_name, prefix = platform_map.get(platform, (None, None))

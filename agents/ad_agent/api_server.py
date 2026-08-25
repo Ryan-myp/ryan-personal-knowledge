@@ -27,10 +27,10 @@ from agents.ad_agent.api_clients.meta_client import MetaAPIClient
 from agents.ad_agent.api_clients.tiktok_client import TikTokAPIClient
 from agents.ad_agent.api_clients.google_ads_client import GoogleAdsAPIClient
 from agents.ad_agent.api_clients.dv360_client import DV360APIClient
-from agents.ad_agent.capabilities.meta_capability import MetaCapability
-from agents.ad_agent.capabilities.google_capability import GoogleCapability
-from agents.ad_agent.capabilities.tiktok_capability import TikTokCapability
-from agents.ad_agent.capabilities.dv360_capability import DV360Capability
+from agents.ad_agent.capabilities.meta import MetaCapability
+from agents.ad_agent.capabilities.google import GoogleCapability
+from agents.ad_agent.capabilities.tiktok import TikTokCapability
+from agents.ad_agent.capabilities.dv360 import DV360Capability
 from agents.ad_agent.skills.registry import load_all_skills, get_skill_registry
 from agents.ad_agent.skills.loader import get_skill_loader
 
