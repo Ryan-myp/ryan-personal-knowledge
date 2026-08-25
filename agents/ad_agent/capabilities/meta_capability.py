@@ -8,6 +8,7 @@ capabilities/meta_capability.py - Meta Marketing API Capability（真实 API 版
 切换方式：创建时传入 api_client 参数
 """
 
+import json
 import logging
 from typing import Optional
 
@@ -221,10 +222,27 @@ class MetaGetReportRealHandler(ToolHandler):
         
         account_id = ctx.account_id
         try:
+            # 处理 date_range 参数：转换为 Meta API 格式
+            date_range = input_data.get("date_range")
+            time_range = None
+            if date_range:
+                if isinstance(date_range, str):
+                    time_range = date_range
+                elif isinstance(date_range, dict):
+                    # 将 {start_date: "LAST_7_DAYS", end_date: "TODAY"} 转换为 "last_7_days"
+                    start = date_range.get("start_date", "")
+                    if start.startswith("LAST_") and start.endswith("_DAYS"):
+                        days = start.replace("LAST_", "").replace("_DAYS", "")
+                        time_range = f"last_{days}_days"
+                    elif start == "YESTERDAY":
+                        time_range = "yesterday"
+                    elif start == "TODAY":
+                        time_range = "today"
+            
             report = self.client.get_campaign_report(
                 account_id=account_id,
                 campaign_ids=[campaign_id],
-                time_range=input_data.get("date_range"),
+                time_range=time_range,
             )
             return ToolResult.ok({"campaign_id": campaign_id, "report": report})
         except Exception as e:

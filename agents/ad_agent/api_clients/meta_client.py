@@ -7,6 +7,7 @@ api_clients/meta_client.py - Meta Marketing API 生产级客户端
 - 统一错误分类
 """
 
+import json
 import logging
 from typing import Any, Optional
 import requests
@@ -412,12 +413,16 @@ class MetaAPIClient(BasePlatformClient):
             "actions", "action_values"
         ]
         
+        # 如果没有提供 time_range，使用默认值（最近30天）
+        if not time_range:
+            time_range = "last_30_days"
+        
         params = {
             'level': level,
             'fields': ','.join(fields or default_fields),
-            'time_range': json.dumps(time_range or {}),
+            'time_range': time_range if isinstance(time_range, str) else json.dumps(time_range),
             'filtering': json.dumps([
-                {'field': f'campaign_id', 'operator': 'IN', 'value': campaign_ids}
+                {'field': 'campaign.id', 'operator': 'IN', 'value': campaign_ids}
             ]),
         }
         

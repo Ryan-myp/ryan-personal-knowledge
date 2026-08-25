@@ -193,25 +193,56 @@ class LLMIntentParser(IntentParser):
         - "campaign_id=12345"
         - "名称=test"
         - "budget 50"
+        - "campaign 12345"
+        - "ID: 12345"
         """
         params = {p: {} for p in platforms}
         text = user_input.lower()
         
-        # campaign_id 提取
+        # campaign_id 提取 - 支持多种格式
         import re
-        campaign_match = re.search(r'campaign[_-]?id[=:]\s*(\d+)', text)
+        # 格式1: campaign_id=12345 或 campaign_id: 12345
+        campaign_match = re.search(r'campaign[_-]?id[=:\s]+(\d+)', text)
         if campaign_match:
             for p in platforms:
                 params[p]["campaign_id"] = campaign_match.group(1)
+        else:
+            # 格式2: campaign 12345 或 campaign ID 12345
+            campaign_match = re.search(r'campaign(?:\s+id)?\s+(\d+)', text)
+            if campaign_match:
+                for p in platforms:
+                    params[p]["campaign_id"] = campaign_match.group(1)
+            else:
+                # 格式3: ID: 12345 (大数字，可能是 campaign ID)
+                id_match = re.search(r'\bid[:\s]+(\d{10,})', text)
+                if id_match:
+                    for p in platforms:
+                        params[p]["campaign_id"] = id_match.group(1)
         
-        # ad_group_id 提取
-        adgroup_match = re.search(r'ad[_-]?group[_-]?id[=:]\s*(\d+)', text)
+        # ad_group_id / adgroup_id 提取
+        adgroup_match = re.search(r'ad[_-]?group[_-]?id[=:\s]+(\d+)', text)
         if adgroup_match:
             for p in platforms:
                 params[p]["ad_group_id"] = adgroup_match.group(1)
+        else:
+            adgroup_match = re.search(r'adgroup(?:\s+id)?\s+(\d+)', text)
+            if adgroup_match:
+                for p in platforms:
+                    params[p]["ad_group_id"] = adgroup_match.group(1)
+        
+        # ad_id 提取
+        ad_match = re.search(r'ad[_-]?id[=:\s]+(\d+)', text)
+        if ad_match:
+            for p in platforms:
+                params[p]["ad_id"] = ad_match.group(1)
+        else:
+            ad_match = re.search(r'\bad\s+(?:ID\s+)?(\d{10,})', text)
+            if ad_match:
+                for p in platforms:
+                    params[p]["ad_id"] = ad_match.group(1)
         
         # campaign_name 提取
-        name_match = re.search(r'(?:名称|name)[=:]\s*([^\s,，;；]+(?:\s+[^\s,，;；]+)*)', text)
+        name_match = re.search(r'(?:名称|name)[=:\s]+([^\s,，;；]+(?:\s+[^\s,，;；]+)*)', text)
         if name_match:
             for p in platforms:
                 params[p]["campaign_name"] = name_match.group(1).strip()
@@ -227,6 +258,21 @@ class LLMIntentParser(IntentParser):
         if objective_match:
             for p in platforms:
                 params[p]["objective"] = objective_match.group(1)
+        
+        # date_range 提取 - 支持 "最近7天"、"last_7_days" 等
+        date_patterns = [
+            (r'最近(\d+)天', lambda m: {"start_date": f"LAST_{m.group(1)}_DAYS", "end_date": "TODAY"}),
+            (r'last\s*(\d+)\s*days?', lambda m: {"start_date": f"LAST_{m.group(1)}_DAYS", "end_date": "TODAY"}),
+            (r'(\d{4})-(\d{2})-(\d{2})\s*至\s*(\d{4})-(\d{2})-(\d{2})', lambda m: {"start_date": f"{m.group(1)}-{m.group(2)}-{m.group(3)}", "end_date": f"{m.group(4)}-{m.group(5)}-{m.group(6)}"}),
+        ]
+        for pattern, handler in date_patterns:
+            match = re.search(pattern, text)
+            if match:
+                date_range = handler(match)
+                if date_range:
+                    for p in platforms:
+                        params[p]["date_range"] = date_range
+                break
         
         return params
     
