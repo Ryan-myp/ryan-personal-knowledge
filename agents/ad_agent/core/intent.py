@@ -122,6 +122,9 @@ class LLMIntentParser(IntentParser):
         # 检测素材
         materials = self._extract_materials(user_input)
         
+        # 从用户输入中提取参数（支持中文和英文）
+        platform_params = self._extract_params_from_input(user_input, platforms)
+        
         return ParsedIntent(
             intent_type=intent_type,
             raw_input=user_input,
@@ -129,7 +132,7 @@ class LLMIntentParser(IntentParser):
             objective=objective,
             budget=budget,
             creative_materials=materials,
-            platform_params={p: {} for p in platforms},
+            platform_params=platform_params,
         )
     
     def _detect_intent_type(self, text: str) -> str:
@@ -152,6 +155,50 @@ class LLMIntentParser(IntentParser):
             return "chat"
         # 默认返回 chat，不要默认创建
         return "chat"
+    
+    def _extract_params_from_input(self, user_input: str, platforms: list[str]) -> dict:
+        """
+        从用户输入中提取参数。
+        支持格式：
+        - "campaign_id=12345"
+        - "名称=test"
+        - "budget 50"
+        """
+        params = {p: {} for p in platforms}
+        text = user_input.lower()
+        
+        # campaign_id 提取
+        import re
+        campaign_match = re.search(r'campaign[_-]?id[=:]\s*(\d+)', text)
+        if campaign_match:
+            for p in platforms:
+                params[p]["campaign_id"] = campaign_match.group(1)
+        
+        # ad_group_id 提取
+        adgroup_match = re.search(r'ad[_-]?group[_-]?id[=:]\s*(\d+)', text)
+        if adgroup_match:
+            for p in platforms:
+                params[p]["ad_group_id"] = adgroup_match.group(1)
+        
+        # campaign_name 提取
+        name_match = re.search(r'(?:名称|name)[=:]\s*([^\s,，;；]+(?:\s+[^\s,，;；]+)*)', text)
+        if name_match:
+            for p in platforms:
+                params[p]["campaign_name"] = name_match.group(1).strip()
+        
+        # budget 提取
+        budget_match = re.search(r'(?:预算|budget)[=:\s]*(\d+(?:\.\d+)?)', text)
+        if budget_match:
+            for p in platforms:
+                params[p]["budget"] = float(budget_match.group(1))
+        
+        # objective 提取
+        objective_match = re.search(r'(?:目标|objective)[=:\s]+([A-Z_]+)', text)
+        if objective_match:
+            for p in platforms:
+                params[p]["objective"] = objective_match.group(1)
+        
+        return params
     
     def _detect_platforms(self, text: str) -> list[str]:
         """检测目标平台"""
