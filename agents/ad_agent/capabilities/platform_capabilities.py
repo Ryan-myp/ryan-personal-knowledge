@@ -346,14 +346,23 @@ class TikTokListCampaignsHandler(ToolHandler):
         if self.client and advertiser_id:
             try:
                 campaigns = self.client.list_campaigns(advertiser_id)
-                return ToolResult.ok({"campaigns": campaigns})
+                # 格式化 Campaign 数据
+                formatted = []
+                for c in campaigns[:20]:
+                    formatted.append({
+                        "id": c.get("campaign_id", c.get("id")),
+                        "name": c.get("campaign_name", c.get("name")),
+                        "status": c.get("operation_status", c.get("secondary_status", "UNKNOWN")),
+                        "budget": c.get("budget", 0),
+                        "objective_type": c.get("objective_type", "UNKNOWN"),
+                    })
+                return ToolResult.ok({"campaigns": formatted})
             except Exception as e:
                 return ToolResult.error(f"Failed to list TikTok campaigns: {e}")
         else:
             return ToolResult.ok({
                 "campaigns": [
-                    {"id": "1874401777748561", "name": "Test Campaign 1", "status": "ENABLED"},
-                    {"id": "1874401777748562", "name": "Test Campaign 2", "status": "PAUSED"},
+                    {"id": "1874401777748561", "name": "SmartPlus_Test", "status": "DISABLED", "budget": 50.0, "objective_type": "APP_PROMOTION"},
                 ],
             })
 
