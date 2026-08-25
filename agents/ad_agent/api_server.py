@@ -125,6 +125,9 @@ class ChatRequest(BaseModel):
     user_input: str
     user_id: str = "web_user"
     account_id: str = ""
+    confirmed: bool = False
+    confirmation_payload: Optional[dict] = None
+    platform_params: Optional[dict] = None
 
 
 # ─── 路由 ──────────────────────────────────────────────────
@@ -161,10 +164,22 @@ async def chat(request: ChatRequest):
         raise HTTPException(status_code=503, detail="服务未初始化")
     
     try:
+        # 如果是确认请求，将参数合并到 user_input 中
+        user_input = request.user_input
+        if request.confirmed and request.platform_params:
+            # 构建包含参数的请求文本
+            params_str = []
+            for platform, params in request.platform_params.items():
+                for key, value in params.items():
+                    params_str.append(f"{key}={value}")
+            if params_str:
+                user_input = f"{request.user_input} [参数: {', '.join(params_str)}]"
+        
         result = runtime.run(
-            user_input=request.user_input,
+            user_input=user_input,
             user_id=request.user_id,
             account_id=request.account_id or None,
+            platform_params=request.platform_params,
         )
         return JSONResponse(content=result)
     except Exception as e:

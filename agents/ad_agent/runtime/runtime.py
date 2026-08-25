@@ -190,6 +190,7 @@ class AgentRuntime:
         user_id: str = "anonymous",
         account_id: str = None,
         credentials: dict = None,
+        platform_params: dict = None,
     ) -> dict:
         """
         执行一次完整的对话回合。
@@ -216,6 +217,10 @@ class AgentRuntime:
         
         # Step 2: 解析用户意图
         intent = self.intent_parser.parse(user_input, session.ctx)
+        
+        # 如果提供了 platform_params（来自确认请求），合并到意图中
+        if platform_params:
+            intent.platform_params = platform_params
         
         # Step 3: 路由到平台工具
         tool_plan = self.intent_router.route(intent, self.registry)

@@ -1288,7 +1288,9 @@
                 if (data.needs_confirmation && data.confirmation_payload) {
                     showConfirm(data.confirmation_payload, {
                         user_input: text,
-                        account_id: null  // 当前请求没有 account_id
+                        account_id: null,  // 当前请求没有 account_id
+                        platforms: data.intent?.platforms || [],
+                        platform_params: data.intent?.platform_params || {}
                     });
                     return;
                 }
