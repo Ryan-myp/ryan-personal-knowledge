@@ -29,6 +29,7 @@ class SimpleToolRegistry(ToolRegistry):
         self._tools: dict[str, tuple[ToolDefinition, ToolHandler]] = {}
         self._by_skill: dict[str, list[str]] = {}  # skill_name -> [tool_names]
         self._by_platform: dict[str, list[str]] = {}  # platform -> [tool_names]
+        self._skill_tool_defs: dict[str, list[ToolDefinition]] = {}  # skill_name -> [tool_defs]
     
     def register(self, definition: ToolDefinition, handler: ToolHandler) -> None:
         """注册一个工具"""
@@ -38,8 +39,15 @@ class SimpleToolRegistry(ToolRegistry):
         self._tools[definition.name] = (definition, handler)
         
         # 更新索引
-        self._by_skill.setdefault(definition.skill, []).append(definition.name)
+        skill = definition.skill or definition.platform
+        self._by_skill.setdefault(skill, []).append(definition.name)
         self._by_platform.setdefault(definition.platform, []).append(definition.name)
+        
+        # 记录 Skill 的工具定义（用于动态加载/卸载）
+        if skill not in self._skill_tool_defs:
+            self._skill_tool_defs[skill] = []
+        if definition not in self._skill_tool_defs[skill]:
+            self._skill_tool_defs[skill].append(definition)
     
     def get(self, name: str) -> tuple[ToolDefinition, ToolHandler]:
         """获取工具定义和处理器"""
@@ -60,6 +68,56 @@ class SimpleToolRegistry(ToolRegistry):
             self._tools[name][0]
             for name in self._by_skill.get(skill_name, [])
         ]
+    
+    def load_skill_tools(self, skill_name: str, tool_defs: list[ToolDefinition], 
+                         handler_factory: callable) -> None:
+        """
+        动态加载某个 Skill 的所有工具
+        
+        Args:
+            skill_name: Skill 名称
+            tool_defs: 工具定义列表
+            handler_factory: 工厂函数，根据 tool_def 创建 handler
+        """
+        for tool_def in tool_defs:
+            try:
+                handler = handler_factory(tool_def)
+                if handler:
+                    self.register(tool_def, handler)
+            except Exception as e:
+                print(f"⚠️ 加载工具 {tool_def.name} 失败: {e}")
+        
+        print(f"✅ 已动态加载 Skill '{skill_name}'，共 {len(tool_defs)} 个工具")
+    
+    def unload_skill_tools(self, skill_name: str) -> None:
+        """
+        卸载某个 Skill 的所有工具
+        
+        Args:
+            skill_name: Skill 名称
+        """
+        tool_names = self._by_skill.get(skill_name, [])
+        for name in tool_names:
+            if name in self._tools:
+                del self._tools[name]
+                # 从 platform 索引中移除
+                defn, _ = self._tools.get(name, (None, None))
+                if defn:
+                    platform_tools = self._by_platform.get(defn.platform, [])
+                    if name in platform_tools:
+                        platform_tools.remove(name)
+        
+        # 清理索引
+        if skill_name in self._by_skill:
+            del self._by_skill[skill_name]
+        if skill_name in self._skill_tool_defs:
+            del self._skill_tool_defs[skill_name]
+        
+        print(f"✅ 已卸载 Skill '{skill_name}'，移除 {len(tool_names)} 个工具")
+    
+    def get_skill_tool_defs(self, skill_name: str) -> list[ToolDefinition]:
+        """获取 Skill 的工具定义（未注册前）"""
+        return self._skill_tool_defs.get(skill_name, [])
     
     def list_all(self) -> list[ToolDefinition]:
         """列出所有工具"""

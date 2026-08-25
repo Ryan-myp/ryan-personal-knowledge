@@ -81,7 +81,7 @@ def _init_on_import():
             meta_client = MetaAPIClient(credentials['meta'])
             meta_capability = MetaCapability(api_client=meta_client)
             runtime.register_capability(meta_capability)
-            print(f"✅ 已注册 Meta Capability ({len(meta_skill.get_tools())} tools)")
+            print(f"✅ 已注册 Meta Capability ({len(meta_skill.tools)} tools)")
         
         # Google Ads Skill → Google Capability
         google_skill = all_skills.get('google-ads-api')
@@ -91,7 +91,7 @@ def _init_on_import():
             google_client = GoogleAdsAPIClient(credentials['google'])
             google_capability = GoogleCapability(api_client=google_client)
             runtime.register_capability(google_capability)
-            print(f"✅ 已注册 Google Capability ({len(google_skill.get_tools())} tools)")
+            print(f"✅ 已注册 Google Capability ({len(google_skill.tools)} tools)")
         
         # TikTok Skill → TikTok Capability
         tiktok_skill = all_skills.get('tiktok-ads-api')
@@ -101,7 +101,7 @@ def _init_on_import():
             tiktok_client = TikTokAPIClient(credentials['tiktok'])
             tiktok_capability = TikTokCapability(api_client=tiktok_client)
             runtime.register_capability(tiktok_capability)
-            print(f"✅ 已注册 TikTok Capability ({len(tiktok_skill.get_tools())} tools)")
+            print(f"✅ 已注册 TikTok Capability ({len(tiktok_skill.tools)} tools)")
         
         # DV360 Skill → DV360 Capability
         dv360_skill = all_skills.get('dv360-api')
@@ -109,13 +109,13 @@ def _init_on_import():
             from agents.ad_agent.capabilities.platform_capabilities import DV360Capability
             dv360_capability = DV360Capability()
             runtime.register_capability(dv360_capability)
-            print(f"✅ 已注册 DV360 Capability ({len(dv360_skill.get_tools())} tools)")
+            print(f"✅ 已注册 DV360 Capability ({len(dv360_skill.tools)} tools)")
         
         # ─── 第三步：构建系统提示词（注入 Skill 信息）───
         skill_summaries = []
         for skill_name, skill in all_skills.items():
-            if skill.platform and skill.get_tools():
-                tools_preview = [t.name for t in skill.get_tools()[:3]]
+            if skill.platform and skill.tools:
+                tools_preview = [t.name for t in skill.tools[:3]]
                 summary = f"- {skill_name} ({skill.platform}): {skill.description[:60]}... [tools: {', '.join(tools_preview)}]"
                 skill_summaries.append(summary)
         

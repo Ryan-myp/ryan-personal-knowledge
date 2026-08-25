@@ -14,6 +14,7 @@ import uuid
 import time
 import json
 import os
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 from dataclasses import dataclass, field
@@ -31,6 +32,8 @@ from .skill import Skill, SkillLoader
 from ..persistence.session_manager import SessionManager
 from ..persistence.store import AdAgentStore
 from ..skills.skill_registry import SkillRegistry
+
+logger = logging.getLogger(__name__)
 
 
 # ─── 账户白名单验证器 ───────────────────────────────────────────
@@ -132,6 +135,8 @@ class AgentRuntime:
         self._llm = llm_client
         self._sessions: dict[str, "SessionContext"] = {}
         self._background_tasks: list[dict] = []
+        self._loaded_skills: dict[str, Skill] = {}  # platform -> Skill
+        self._skill_factories: dict[str, callable] = {}  # platform -> Capability factory
         
         # 账户白名单验证器
         self.whitelist_validator = whitelist_validator or AccountWhitelistValidator()
@@ -194,9 +199,10 @@ class AgentRuntime:
             api_client: API 客户端（None 时使用 mock 模式）
         """
         from ..skills.skill_registry import SkillBinding
+        from ..core.interfaces import ToolDefinition as InterfaceToolDef, ToolSchema, RiskLevel, ToolEffect, ReplayPolicy
         
         # 获取所有工具定义
-        tools = skill.get_tools()
+        tools = skill.tools
         if not tools:
             logger.warning(f"⚠️ Skill '{skill.name}' 没有定义任何工具")
             return
@@ -209,30 +215,249 @@ class AgentRuntime:
             is_enabled=True
         )
         
-        # 注册每个工具
-        for tool_def in tools:
-            handler = binding.handler_factory(api_client)
+        # 转换工具定义并注册
+        for loader_tool in tools:
+            # 将 loader.py 的 ToolDefinition 转换为 interfaces.py 的 ToolDefinition
+            interface_tool = InterfaceToolDef(
+                name=loader_tool.name,
+                skill=skill.name,
+                platform=platform,
+                description=loader_tool.description,
+                input_schema=ToolSchema(),
+                risk_level=RiskLevel.MEDIUM,
+                effect_class=ToolEffect.READ,
+                replay_policy=ReplayPolicy.SAFE,
+            )
+            
+            # 创建 Handler（使用工具名作为参数）
+            handler_factory = binding.handler_factory(api_client)
+            handler = handler_factory(loader_tool.name) if handler_factory else None
+            
             if handler:
-                self.registry.register(tool_def, handler)
-                logger.debug(f"✅ 注册工具: {tool_def.name} (platform={platform})")
+                self.registry.register(interface_tool, handler)
+                logger.debug(f"✅ 注册工具: {interface_tool.name} (platform={platform})")
+            else:
+                logger.warning(f"⚠️ 未找到工具 '{loader_tool.name}' 的 Handler")
         
+        # 保存 Skill 和平台映射
+        self._loaded_skills[platform] = skill
         logger.info(f"✅ 已动态注册 Skill '{skill.name}'，共 {len(tools)} 个工具")
+    
+    def load_skill(self, platform: str, skill: Skill, api_client=None) -> bool:
+        """
+        根据平台名称加载对应的 Skill。
+        
+        Args:
+            platform: 平台名称 (meta/google/tiktok/dv360)
+            skill: Skill 对象
+            api_client: API 客户端
+            
+        Returns:
+            是否加载成功
+        """
+        if platform in self._loaded_skills:
+            logger.info(f"ⓘ Skill '{platform}' 已加载，跳过")
+            return True
+        
+        try:
+            self.register_skill(skill, platform, api_client)
+            return True
+        except Exception as e:
+            logger.error(f"❌ 加载 Skill '{platform}' 失败: {e}")
+            return False
+    
+    def unload_skill(self, platform: str) -> bool:
+        """
+        卸载指定平台的 Skill 工具。
+        
+        Args:
+            platform: 平台名称
+            
+        Returns:
+            是否卸载成功
+        """
+        if platform not in self._loaded_skills:
+            return True
+        
+        try:
+            skill = self._loaded_skills[platform]
+            tool_names = [t.name for t in skill.tools]
+            
+            # 从 registry 中移除
+            for name in tool_names:
+                if name in self.registry._tools:
+                    del self.registry._tools[name]
+                    # 清理索引
+                    for index in [self.registry._by_skill, self.registry._by_platform]:
+                        for key in list(index.keys()):
+                            if name in index[key]:
+                                index[key].remove(name)
+            
+            # 清理工具定义缓存
+            for skill_name in list(self.registry._skill_tool_defs.keys()):
+                self.registry._skill_tool_defs[skill_name] = [
+                    t for t in self.registry._skill_tool_defs[skill_name]
+                    if t.name not in tool_names
+                ]
+            
+            del self._loaded_skills[platform]
+            logger.info(f"✅ 已卸载 Skill '{platform}'，移除 {len(tool_names)} 个工具")
+            return True
+        except Exception as e:
+            logger.error(f"❌ 卸载 Skill '{platform}' 失败: {e}")
+            return False
+    
+    def get_loaded_skills(self) -> dict[str, Skill]:
+        """获取所有已加载的 Skills"""
+        return self._loaded_skills.copy()
+    
+    def get_available_skills(self) -> dict[str, Skill]:
+        """获取所有可用的 Skills（包括未加载的）"""
+        all_skills = {}
+        for root in self.skill_loader._roots:
+            if root.exists():
+                for skill_dir in root.iterdir():
+                    if skill_dir.is_dir() and (skill_dir / "SKILL.md").exists():
+                        # 尝试加载但只获取元信息
+                        pass
+        return all_skills
+    
+    def _load_required_skills(self, platforms: list[str]) -> None:
+        """
+        根据平台列表动态加载对应的 Skill 工具。
+        
+        Args:
+            platforms: 需要加载的平台列表
+        """
+        if not platforms:
+            return
+        
+        for platform in platforms:
+            if platform in self._loaded_skills:
+                continue  # 已加载，跳过
+            
+            # 查找对应的 Skill
+            skill = self._find_skill_by_platform(platform)
+            if not skill:
+                logger.warning(f"⚠️ 未找到平台 '{platform}' 的 Skill 定义")
+                continue
+            
+            # 获取 API 客户端
+            api_client = self._get_api_client(platform)
+            
+            # 加载 Skill
+            self.load_skill(platform, skill, api_client)
+    
+    def _find_skill_by_platform(self, platform: str) -> 'Skill':
+        """
+        根据平台名称查找对应的 Skill。
+        
+        策略：
+        1. 从已加载的 Skill 中查找
+        2. 从 SkillLoader 缓存中查找
+        """
+        # 先从 skill_loader 中查找
+        for root in self.skill_loader._roots:
+            if root.exists():
+                for skill_dir in root.iterdir():
+                    if skill_dir.is_dir() and (skill_dir / "SKILL.md").exists():
+                        # 尝试解析 frontmatter 检查 platform
+                        try:
+                            import re
+                            with open(skill_dir / "SKILL.md", 'r', encoding='utf-8') as f:
+                                content = f.read()
+                            if content.startswith('---'):
+                                match = re.match(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
+                                if match:
+                                    import yaml
+                                    metadata = yaml.safe_load(match.group(1))
+                                    if metadata.get('platform') == platform or skill_dir.name == platform:
+                                        # 加载 Skill
+                                        from ..runtime.skill import Skill
+                                        from ..skills.loader import SkillDefinition
+                                        # 这里简化处理，实际应该返回 SkillDefinition
+                                        # 暂时返回 None，让调用方处理
+                                        return None
+                        except Exception as e:
+                            logger.debug(f"解析 Skill 文件失败 {skill_dir.name}: {e}")
+        return None
+    
+    def _get_api_client(self, platform: str):
+        """获取指定平台的 API 客户端"""
+        # TODO: 从 credentials 中获取对应的 API 客户端
+        # 当前返回 None，使用 mock 模式
+        return None
     
     def _create_handler(self, skill: Skill, platform: str, api_client=None) -> Optional[ToolHandler]:
         """
-        根据 Skill 和平台创建对应的 Handler。
+        根据 Skill 和平台动态创建 Handler。
         
         策略：
-        1. 优先查找已注册的 Capability 中的 Handler
-        2. 回退到 Mock Handler
+        1. 根据 tool_name 推断 Handler 类名
+        2. 从对应的 Capability 模块动态导入
+        3. 根据 api_client 选择 Real 或 Mock Handler
         """
-        # TODO: 实现动态 Handler 查找逻辑
-        # 当前使用简单的命名映射
-        from ..capabilities.base import BaseCapability
+        import importlib
+        import re
         
-        # 尝试从已注册的 Capability 中查找
-        # 这里简化处理，返回 None 表示使用默认逻辑
-        return None
+        # 根据 platform 选择模块和 prefix
+        platform_map = {
+            'meta': ('meta_capability', 'Meta'),
+            'google-ads': ('platform_capabilities', 'Google'),
+            'tiktok': ('platform_capabilities', 'TikTok'),
+            'dv360': ('platform_capabilities', 'DV360'),
+        }
+        
+        module_name, prefix = platform_map.get(platform, (None, None))
+        if not module_name:
+            return None
+        
+        try:
+            # 导入模块
+            module = importlib.import_module(f'..capabilities.{module_name}', __package__)
+            
+            # 返回工厂函数
+            def handler_factory(tool_name):
+                # 移除 platform 前缀
+                parts = tool_name.split('_', 1)
+                if len(parts) < 2:
+                    return None
+                
+                action_part = parts[1]  # 'auth', 'create_campaign', 'list_campaigns'
+                
+                # 转换为 TitleCase
+                words = action_part.split('_')
+                title_case = ''.join(w.capitalize() for w in words)
+                
+                # 生成 Handler 类名
+                real_handler_name = f"{prefix}{title_case}RealHandler"
+                mock_handler_name = f"{prefix}{title_case}MockHandler"
+                
+                # 尝试创建 Real Handler
+                if hasattr(module, real_handler_name):
+                    handler_class = getattr(module, real_handler_name)
+                    # 检查是否需要 api_client 参数
+                    import inspect
+                    sig = inspect.signature(handler_class.__init__)
+                    params = list(sig.parameters.keys())
+                    if 'api_client' in params or 'client' in params:
+                        return handler_class(api_client)
+                    return handler_class()
+                
+                # 回退到 Mock Handler
+                if hasattr(module, mock_handler_name):
+                    handler_class = getattr(module, mock_handler_name)
+                    # Mock Handler 通常不需要参数
+                    return handler_class()
+                
+                return None
+            
+            # 绑定当前 tool_name
+            return lambda tool_name: handler_factory(tool_name)
+            
+        except Exception as e:
+            logger.debug(f"创建 Handler 失败 {platform}: {e}")
+            return None
     
     # ─── 主循环入口 ────────────────────────────────────────────
     
@@ -274,6 +499,9 @@ class AgentRuntime:
         # 如果提供了 platform_params（来自确认请求），合并到意图中
         if platform_params:
             intent.platform_params = platform_params
+        
+        # Step 2.5: 动态加载相关平台的 Skill 工具
+        self._load_required_skills(intent.platforms)
         
         # Step 3: 路由到平台工具
         tool_plan = self.intent_router.route(intent, self.registry)
