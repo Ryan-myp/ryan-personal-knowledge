@@ -70,7 +70,7 @@ class DV360Capability(BaseCapability):
             ),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
-            replay_policy=ReplayPolicy.IDEMPOTENT,
+            replay_policy=ReplayPolicy.SAFE,
             traits=["write", "campaign"],
         ), DV360CreateCampaignHandler(api_client)))
 
@@ -102,7 +102,7 @@ class DV360Capability(BaseCapability):
             ),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
-            replay_policy=ReplayPolicy.IDEMPOTENT,
+            replay_policy=ReplayPolicy.SAFE,
             traits=["write", "io"],
         ), DV360CreateIOHandler(api_client)))
 
@@ -118,7 +118,7 @@ class DV360Capability(BaseCapability):
             ),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
-            replay_policy=ReplayPolicy.IDEMPOTENT,
+            replay_policy=ReplayPolicy.SAFE,
             traits=["write", "line_item"],
         ), DV360CreateLineItemHandler(api_client)))
 

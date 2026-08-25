@@ -193,18 +193,40 @@ class AgentRuntime:
         """
         动态注册一个 Skill。
         
+        策略：直接使用 Capability 的工具定义，而不是动态创建 Handler。
+        
         Args:
             skill: Skill 对象（从 SKILL.md 解析）
             platform: 平台名称
             api_client: API 客户端（None 时使用 mock 模式）
         """
         from ..skills.skill_registry import SkillBinding
-        from ..core.interfaces import ToolDefinition as InterfaceToolDef, ToolSchema, RiskLevel, ToolEffect, ReplayPolicy
         
-        # 获取所有工具定义
-        tools = skill.tools
+        # 查找对应的 Capability 模块
+        from ..capabilities import meta, google, tiktok, dv360
+        platform_map = {
+            'meta': (meta, 'Meta'),
+            'google-ads': (google, 'Google'),
+            'tiktok': (tiktok, 'TikTok'),
+            'dv360': (dv360, 'DV360'),
+        }
+        
+        module_info = platform_map.get(platform)
+        if not module_info:
+            logger.warning(f"⚠️ 未找到平台 '{platform}' 的 Capability 模块")
+            return
+        
+        module, prefix = module_info
+        
+        # 创建 Capability 实例并设置 api_client
+        capability_class = getattr(module, f'{prefix}Capability')
+        capability = capability_class()
+        capability._api_client = api_client
+        
+        # 获取所有工具定义（直接从 Capability 获取）
+        tools = capability.register_tools()
         if not tools:
-            logger.warning(f"⚠️ Skill '{skill.name}' 没有定义任何工具")
+            logger.warning(f"⚠️ Capability '{platform}' 没有定义任何工具")
             return
         
         # 创建 SkillBinding
@@ -215,33 +237,19 @@ class AgentRuntime:
             is_enabled=True
         )
         
-        # 转换工具定义并注册
-        for loader_tool in tools:
-            # 将 loader.py 的 ToolDefinition 转换为 interfaces.py 的 ToolDefinition
-            interface_tool = InterfaceToolDef(
-                name=loader_tool.name,
-                skill=skill.name,
-                platform=platform,
-                description=loader_tool.description,
-                input_schema=ToolSchema(),
-                risk_level=RiskLevel.MEDIUM,
-                effect_class=ToolEffect.READ,
-                replay_policy=ReplayPolicy.SAFE,
-            )
-            
-            # 创建 Handler（使用工具名作为参数）
-            handler_factory = binding.handler_factory(api_client)
-            handler = handler_factory(loader_tool.name) if handler_factory else None
-            
-            if handler:
-                self.registry.register(interface_tool, handler)
-                logger.debug(f"✅ 注册工具: {interface_tool.name} (platform={platform})")
-            else:
-                logger.warning(f"⚠️ 未找到工具 '{loader_tool.name}' 的 Handler")
+        # 注册工具
+        registered_count = 0
+        for tool_def, handler in tools:
+            try:
+                self.registry.register(tool_def, handler)
+                registered_count += 1
+                logger.debug(f"✅ 注册工具: {tool_def.name} (platform={platform})")
+            except Exception as e:
+                logger.warning(f"⚠️ 注册工具失败 '{tool_def.name}': {e}")
         
         # 保存 Skill 和平台映射
         self._loaded_skills[platform] = skill
-        logger.info(f"✅ 已动态注册 Skill '{skill.name}'，共 {len(tools)} 个工具")
+        logger.info(f"✅ 已动态注册 Skill '{skill.name}'，共 {registered_count} 个工具")
     
     def load_skill(self, platform: str, skill: Skill, api_client=None) -> bool:
         """
@@ -475,7 +483,7 @@ class AgentRuntime:
                                     module_name, class_name = client_map[platform]
                                     try:
                                         import importlib
-                                        module = importlib.import_module(f'..capabilities.{module_name}', __package__)
+                                        module = importlib.import_module(f'..{module_name}', __package__)
                                         client_class = getattr(module, class_name)
                                         api_client = client_class(credentials[platform])
                                     except Exception as e:
@@ -691,7 +699,7 @@ class AgentRuntime:
                 
                 # 构建执行输入
                 tool_input = self._build_tool_input(
-                    tool_def, intent, platform
+                    tool_def, intent, platform, session.ctx
                 )
                 
                 # 检查必需参数是否齐全，不齐全则询问用户
@@ -760,6 +768,7 @@ class AgentRuntime:
         tool_def: Any,
         intent: ParsedIntent,
         platform: str,
+        ctx: Any = None,
     ) -> dict:
         """
         根据意图和工具定义，构建执行输入。
@@ -767,8 +776,9 @@ class AgentRuntime:
         优先级：
         1. intent.platform_params[platform][tool_name]  ← 最具体
         2. intent.platform_params[platform].get(...)     ← 平台级参数
-        3. intent 通用字段（budget, objective 等）
-        4. 工具定义的默认值
+        3. ctx.account_id                              ← 账户ID
+        4. intent 通用字段（budget, objective 等）
+        5. 工具定义的默认值
         """
         platform_params = intent.platform_params.get(platform, {})
         tool_input = {}
@@ -778,6 +788,15 @@ class AgentRuntime:
         for param_name, param_value in platform_params.items():
             if param_name in tool_def.input_schema.properties:
                 tool_input[param_name] = param_value
+        
+        # 填充账户 ID（从上下文）
+        if ctx and ctx.account_id:
+            # 尝试多种账户 ID 字段名
+            for account_field in ["account_id", "advertiser_id", "customer_id"]:
+                if account_field in tool_def.input_schema.properties:
+                    if account_field not in tool_input:
+                        tool_input[account_field] = ctx.account_id
+                        break
         
         # 填充通用字段
         if intent.budget and "budget" not in tool_input:

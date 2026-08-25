@@ -58,6 +58,15 @@ def _init_on_import():
             with open(config_path) as f:
                 credentials = yaml.safe_load(f).get('credentials', {})
         
+        # ─── 注入 LLM 客户端 ───
+        models_config = yaml.safe_load(open(config_path)).get('models', {})
+        llm_model = models_config.get('default', 'gpt-4o-mini')
+        
+        from agents.ad_agent.core.llm_client import create_llm_client
+        llm = create_llm_client(model=llm_model)
+        runtime.inject_llm(llm)
+        logger.info(f"✅ LLM 已注入: {llm_model}")
+        
         # ─── 自动加载所有 Skills ───
         # Runtime 会自动扫描 skills 目录并注册能力
         skills_root = Path(__file__).parent / "skills"

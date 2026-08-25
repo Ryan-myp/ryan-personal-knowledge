@@ -77,7 +77,7 @@ class TikTokCapability(BaseCapability):
             ),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
-            replay_policy=ReplayPolicy.IDEMPOTENT,
+            replay_policy=ReplayPolicy.SAFE,
             traits=["write", "campaign"],
         ), TikTokCreateCampaignHandler(api_client)))
 
@@ -125,7 +125,7 @@ class TikTokCapability(BaseCapability):
             ),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
-            replay_policy=ReplayPolicy.IDEMPOTENT,
+            replay_policy=ReplayPolicy.SAFE,
             traits=["write", "adgroup"],
         ), TikTokCreateAdGroupHandler(api_client)))
 
@@ -173,7 +173,7 @@ class TikTokCapability(BaseCapability):
             ),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
-            replay_policy=ReplayPolicy.IDEMPOTENT,
+            replay_policy=ReplayPolicy.SAFE,
             traits=["write", "ad"],
         ), TikTokCreateAdHandler(api_client)))
 

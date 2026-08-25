@@ -80,7 +80,7 @@ class GoogleCapability(BaseCapability):
             ),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
-            replay_policy=ReplayPolicy.IDEMPOTENT,
+            replay_policy=ReplayPolicy.SAFE,
             traits=["write", "campaign"],
         ), GoogleCreateCampaignHandler(api_client)))
 
@@ -128,7 +128,7 @@ class GoogleCapability(BaseCapability):
             ),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
-            replay_policy=ReplayPolicy.IDEMPOTENT,
+            replay_policy=ReplayPolicy.SAFE,
             traits=["write", "ad_group"],
         ), GoogleCreateAdGroupHandler(api_client)))
 
@@ -176,7 +176,7 @@ class GoogleCapability(BaseCapability):
             ),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
-            replay_policy=ReplayPolicy.IDEMPOTENT,
+            replay_policy=ReplayPolicy.SAFE,
             traits=["write", "ad"],
         ), GoogleCreateAdHandler(api_client)))
 

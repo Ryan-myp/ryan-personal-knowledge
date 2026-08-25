@@ -69,7 +69,7 @@ class MetaCapability(BaseCapability):
             ),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
-            replay_policy=ReplayPolicy.IDEMPOTENT,
+            replay_policy=ReplayPolicy.SAFE,
             traits=["write", "campaign"],
         ), MetaCreateCampaignHandler(api_client)))
 
@@ -121,7 +121,7 @@ class MetaCapability(BaseCapability):
             ),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
-            replay_policy=ReplayPolicy.IDEMPOTENT,
+            replay_policy=ReplayPolicy.SAFE,
             traits=["write", "ad_set"],
         ), MetaCreateAdSetHandler(api_client)))
 
@@ -173,7 +173,7 @@ class MetaCapability(BaseCapability):
             ),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
-            replay_policy=ReplayPolicy.IDEMPOTENT,
+            replay_policy=ReplayPolicy.SAFE,
             traits=["write", "ad"],
         ), MetaCreateAdHandler(api_client)))
 
