@@ -1,7 +1,7 @@
 {
   "name": "google_workflows",
   "version": "1.0",
-  "last_updated": "2026-08-25T09:46:15.186436",
+  "last_updated": "2026-08-25T09:53:02.730415",
   "entries": [
     {
       "entry_id": "google_search_campaign_workflow",
@@ -157,12 +157,22 @@
         "code_example": "def create_pmax_campaign(client, customer_id, budget_resource_name):\n    campaign_operation = client.get_type('CampaignOperation')\n    campaign = campaign_operation.create\n    \n    campaign.name = f'PMax Campaign #{uuid4()}'\n    campaign.advertising_channel_type = client.enums.AdvertisingChannelTypeEnum.MULTI_CHANNEL\n    campaign.advertising_channel_sub_type = client.enums.AdvertisingChannelSubTypeEnum.PERFORMANCE_MAX\n    campaign.status = client.enums.CampaignStatusEnum.PAUSED\n    campaign.campaign_budget = budget_resource_name\n    campaign.bidding_strategy = client.get_service('BiddingStrategyService').bidding_strategy_path(\n        customer_id, 'MAXIMIZE_CONVERSIONS'\n    )\n    \n    # Required: EU political advertising declaration\n    campaign.contains_eu_political_advertising =         client.enums.EuPoliticalAdvertisingStatusEnum.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING\n    \n    # Conversion tracking\n    campaign.optimization_goal_setting.optimize_goal_configuration = [\n        client.enums.OptimizationGoalConversionSourceEnum.FIRST-party_event,\n    ]\n    \n    response = campaign_service.mutate_campaigns(\n        customer_id=customer_id,\n        operations=[campaign_operation]\n    )\n    return response.results[0].resource_name",
         "api_reference": "https://developers.google.com/google-ads/api/docs/campaigns/performance-max",
         "test_status": "failed",
-        "test_date": "2026-08-25T09:46:15.186423",
+        "test_date": "2026-08-25T09:53:02.730413",
         "error_analysis": {
           "error_code": "CANNOT_ATTACH_TO_BIDDING_STRATEGY",
-          "message": "现有 Bidding Strategy 不能用于 PMax Campaign",
-          "requirement": "需要 MAXIMIZE_CONVERSIONS 类型的 Bidding Strategy",
-          "mcc_limitation": "MCC 主账户可能限制 API 创建 Campaign"
+          "message": "子账户中没有 MAXIMIZE_CONVERSIONS 类型的 Bidding Strategy",
+          "existing_bidding_strategies": [
+            {
+              "name": "1",
+              "id": "12085500030",
+              "type": "UNKNOWN"
+            },
+            {
+              "name": "portfolio-s1",
+              "id": "12089370311",
+              "type": "UNKNOWN"
+            }
+          ]
         },
         "solution": [
           "在 Google Ads 界面创建 MAXIMIZE_CONVERSIONS 类型的 Bidding Strategy",
@@ -206,8 +216,8 @@
         },
         "code_example": "def create_shopping_campaign(client, customer_id, budget_resource_name, merchant_id):\n    campaign_operation = client.get_type('CampaignOperation')\n    campaign = campaign_operation.create\n    \n    campaign.name = f'Shopping Campaign #{uuid4()}'\n    campaign.advertising_channel_type = client.enums.AdvertisingChannelTypeEnum.SHOPPING\n    campaign.status = client.enums.CampaignStatusEnum.PAUSED\n    campaign.campaign_budget = budget_resource_name\n    campaign.bidding_strategy = client.get_service('BiddingStrategyService').bidding_strategy_path(\n        customer_id, 'MAXIMIZE_CONVERSIONS'\n    )\n    \n    # Required: EU political advertising declaration\n    campaign.contains_eu_political_advertising =         client.enums.EuPoliticalAdvertisingStatusEnum.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING\n    \n    # Shopping settings (required for SHOPPING type)\n    campaign.shopping_setting = client.get_type('ShoppingSetting')\n    campaign.shopping_setting.merchant_id = merchant_id\n    campaign.shopping_setting.sales_country = 'SG'  # 销售国家\n    \n    response = campaign_service.mutate_campaigns(\n        customer_id=customer_id,\n        operations=[campaign_operation]\n    )\n    return response.results[0].resource_name",
         "api_reference": "https://developers.google.com/google-ads/api/docs/campaigns/shopping",
-        "test_status": "failed",
-        "test_date": "2026-08-25T09:46:15.186433",
+        "test_status": "success",
+        "test_date": "2026-08-25T09:53:02.730405",
         "error_analysis": {
           "errors": [
             {
@@ -229,7 +239,24 @@
           "在 Google Ads 界面链接 Merchant Center",
           "使用子账户创建 Shopping Campaign",
           "设置 campaign_priority 为 0（最高优先级）"
-        ]
+        ],
+        "test_result": {
+          "campaign_id": "24170606373",
+          "campaign_name": "Test Shopping Campaign - 6a43bd84-986c-432d-a7b3-e22df9748b87",
+          "status": "PAUSED",
+          "type": "SHOPPING",
+          "merchant_id": 115791065,
+          "campaign_priority": 0
+        },
+        "working_parameters": {
+          "customer_id": "9055507554",
+          "merchant_id": 115791065,
+          "campaign_priority": 0,
+          "shopping_setting": {
+            "merchant_id": "有效的 Merchant Center ID",
+            "campaign_priority": "整数 0-100，表示优先级"
+          }
+        }
       },
       "source": "official_docs",
       "source_ref": "https://developers.google.com/google-ads/api/docs/campaigns/shopping",
@@ -244,7 +271,7 @@
       "metadata": {
         "verified": true
       },
-      "confidence": 0.95,
+      "confidence": 1.0,
       "usage_count": 0
     },
     {
