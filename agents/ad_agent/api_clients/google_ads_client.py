@@ -259,6 +259,48 @@ class GoogleAdsAPIClient(BasePlatformClient):
             }
         return {}
     
+    # ==================== PMax Asset Group 管理 ====================
+    
+    def list_asset_groups(self, campaign_id: str, page_size: int = 100) -> list:
+        """获取 PMax Campaign 的 Asset Group 列表"""
+        query = f"""
+            SELECT asset_group.id, asset_group.name, asset_group.status
+            FROM asset_group
+            WHERE campaign.id = {campaign_id}
+            LIMIT {page_size}
+        """
+        result = self._search(query)
+        results = result.get('data', {}).get('results', [])
+        asset_groups = []
+        for r in results:
+            ag = r.get('assetGroup', {})
+            asset_groups.append({
+                'id': ag.get('id'),
+                'resource_name': ag.get('resourceName'),
+                'name': ag.get('name'),
+                'status': ag.get('status'),
+            })
+        return asset_groups
+    
+    def get_asset_group(self, asset_group_id: str) -> dict:
+        """获取 PMax Asset Group 详情"""
+        query = f"""
+            SELECT asset_group.id, asset_group.name, asset_group.status
+            FROM asset_group
+            WHERE asset_group.id = {asset_group_id}
+        """
+        results = self._search(query)
+        items = results.get('data', {}).get('results', [])
+        if items:
+            ag = items[0].get('assetGroup', {})
+            return {
+                'id': ag.get('id'),
+                'resource_name': ag.get('resourceName'),
+                'name': ag.get('name'),
+                'status': ag.get('status'),
+            }
+        return {}
+    
     def create_campaign(
         self,
         name: str,
