@@ -170,6 +170,87 @@ class GoogleGetReportHandler(ToolHandler):
         })
 
 
+class GoogleGetCampaignHandler(ToolHandler):
+    def __init__(self, api_client: Optional[GoogleAdsAPIClient] = None):
+        self.client = api_client
+    
+    def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
+        campaign_id = input_data.get('campaign_id', '')
+        if self.client and campaign_id:
+            try:
+                campaign = self.client.get_campaign(campaign_id)
+                return ToolResult.ok({"campaign": campaign})
+            except Exception as e:
+                return ToolResult.error(f"Failed to get Google campaign: {e}")
+        else:
+            return ToolResult.ok({"campaign": {}})
+
+
+class GoogleListAdGroupsHandler(ToolHandler):
+    def __init__(self, api_client: Optional[GoogleAdsAPIClient] = None):
+        self.client = api_client
+    
+    def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
+        campaign_id = input_data.get('campaign_id', '')
+        if self.client and campaign_id:
+            try:
+                ad_groups = self.client.list_ad_groups(campaign_id)
+                return ToolResult.ok({"ad_groups": ad_groups})
+            except Exception as e:
+                return ToolResult.error(f"Failed to list Google ad groups: {e}")
+        else:
+            return ToolResult.ok({"ad_groups": []})
+
+
+class GoogleGetAdGroupHandler(ToolHandler):
+    def __init__(self, api_client: Optional[GoogleAdsAPIClient] = None):
+        self.client = api_client
+    
+    def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
+        campaign_id = input_data.get('campaign_id', '')
+        ad_group_id = input_data.get('ad_group_id', '')
+        if self.client and campaign_id and ad_group_id:
+            try:
+                ad_group = self.client.get_ad_group(campaign_id, ad_group_id)
+                return ToolResult.ok({"ad_group": ad_group})
+            except Exception as e:
+                return ToolResult.error(f"Failed to get Google ad group: {e}")
+        else:
+            return ToolResult.ok({"ad_group": {}})
+
+
+class GoogleListAdsHandler(ToolHandler):
+    def __init__(self, api_client: Optional[GoogleAdsAPIClient] = None):
+        self.client = api_client
+    
+    def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
+        ad_group_id = input_data.get('ad_group_id', '')
+        if self.client and ad_group_id:
+            try:
+                ads = self.client.list_ads(ad_group_id)
+                return ToolResult.ok({"ads": ads})
+            except Exception as e:
+                return ToolResult.error(f"Failed to list Google ads: {e}")
+        else:
+            return ToolResult.ok({"ads": []})
+
+
+class GoogleGetAdHandler(ToolHandler):
+    def __init__(self, api_client: Optional[GoogleAdsAPIClient] = None):
+        self.client = api_client
+    
+    def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
+        ad_id = input_data.get('ad_id', '')
+        if self.client and ad_id:
+            try:
+                ad = self.client.get_ad(ad_id)
+                return ToolResult.ok({"ad": ad})
+            except Exception as e:
+                return ToolResult.error(f"Failed to get Google ad: {e}")
+        else:
+            return ToolResult.ok({"ad": {}})
+
+
 class GoogleCapability(BaseCapability):
     platform_name = "google"
     
@@ -234,15 +315,99 @@ class GoogleCapability(BaseCapability):
         ), GoogleListCampaignsHandler(self._api_client)))
         
         tools.append((ToolDefinition(
-            name="google_get_campaign_report", skill="google-ads-api-expert", platform="google",
+            name="google_get_campaign_report",
+            skill="google-ads-api-expert",
+            platform="google",
             description="查询 Google Ads Campaign 报表。",
             input_schema=ToolSchema(
                 required=["campaign_id"],
                 properties={"campaign_id": {"type": "string"}, "date_range": {"type": "object"}},
             ),
-            risk_level=RiskLevel.LOW, effect_class=ToolEffect.READ, replay_policy=ReplayPolicy.SAFE,
+            risk_level=RiskLevel.LOW,
+            effect_class=ToolEffect.READ,
+            replay_policy=ReplayPolicy.SAFE,
             traits=["read", "report"],
         ), report_h))
+        
+        # Get Campaign
+        tools.append((ToolDefinition(
+            name="google_get_campaign",
+            skill="google-ads-api-expert",
+            platform="google",
+            description="查询 Google Ads Campaign 详情。",
+            input_schema=ToolSchema(
+                required=["campaign_id"],
+                properties={"campaign_id": {"type": "string"}},
+            ),
+            risk_level=RiskLevel.LOW,
+            effect_class=ToolEffect.READ,
+            replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "campaign"],
+        ), GoogleGetCampaignHandler(self._api_client)))
+        
+        # List Ad Groups
+        tools.append((ToolDefinition(
+            name="google_list_ad_groups",
+            skill="google-ads-api-expert",
+            platform="google",
+            description="查询 Google Ads Ad Group 列表。",
+            input_schema=ToolSchema(
+                required=["campaign_id"],
+                properties={"campaign_id": {"type": "string"}},
+            ),
+            risk_level=RiskLevel.LOW,
+            effect_class=ToolEffect.READ,
+            replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "ad_group"],
+        ), GoogleListAdGroupsHandler(self._api_client)))
+        
+        # Get Ad Group
+        tools.append((ToolDefinition(
+            name="google_get_ad_group",
+            skill="google-ads-api-expert",
+            platform="google",
+            description="查询 Google Ads Ad Group 详情。",
+            input_schema=ToolSchema(
+                required=["campaign_id", "ad_group_id"],
+                properties={"campaign_id": {"type": "string"}, "ad_group_id": {"type": "string"}},
+            ),
+            risk_level=RiskLevel.LOW,
+            effect_class=ToolEffect.READ,
+            replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "ad_group"],
+        ), GoogleGetAdGroupHandler(self._api_client)))
+        
+        # List Ads
+        tools.append((ToolDefinition(
+            name="google_list_ads",
+            skill="google-ads-api-expert",
+            platform="google",
+            description="查询 Google Ads Ad 列表。",
+            input_schema=ToolSchema(
+                required=["ad_group_id"],
+                properties={"ad_group_id": {"type": "string"}},
+            ),
+            risk_level=RiskLevel.LOW,
+            effect_class=ToolEffect.READ,
+            replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "ad"],
+        ), GoogleListAdsHandler(self._api_client)))
+        
+        # Get Ad
+        tools.append((ToolDefinition(
+            name="google_get_ad",
+            skill="google-ads-api-expert",
+            platform="google",
+            description="查询 Google Ads Ad 详情。",
+            input_schema=ToolSchema(
+                required=["ad_id"],
+                properties={"ad_id": {"type": "string"}},
+            ),
+            risk_level=RiskLevel.LOW,
+            effect_class=ToolEffect.READ,
+            replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "ad"],
+        ), GoogleGetAdHandler(self._api_client)))
         
         return tools
     
@@ -403,7 +568,7 @@ class TikTokListAdsHandler(ToolHandler):
         adgroup_id = input_data.get('adgroup_id', '')
         if self.client and advertiser_id and adgroup_id:
             try:
-                ads = self.client.list_ads(advertiser_id, '', adgroup_id)
+                ads = self.client.list_ads(advertiser_id, adgroup_id)
                 formatted = []
                 for ad in ads[:20]:
                     formatted.append({
@@ -416,6 +581,59 @@ class TikTokListAdsHandler(ToolHandler):
                 return ToolResult.error(f"Failed to list TikTok ads: {e}")
         else:
             return ToolResult.ok({"ads": []})
+
+
+class TikTokGetCampaignHandler(ToolHandler):
+    def __init__(self, api_client: Optional[TikTokAPIClient] = None):
+        self.client = api_client
+    
+    def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
+        advertiser_id = ctx.account_id
+        campaign_id = input_data.get('campaign_id', '')
+        if self.client and advertiser_id and campaign_id:
+            try:
+                campaign = self.client.get_campaign(advertiser_id, campaign_id)
+                return ToolResult.ok({"campaign": campaign})
+            except Exception as e:
+                return ToolResult.error(f"Failed to get TikTok campaign: {e}")
+        else:
+            return ToolResult.ok({"campaign": {}})
+
+
+class TikTokGetAdGroupHandler(ToolHandler):
+    def __init__(self, api_client: Optional[TikTokAPIClient] = None):
+        self.client = api_client
+    
+    def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
+        advertiser_id = ctx.account_id
+        campaign_id = input_data.get('campaign_id', '')
+        adgroup_id = input_data.get('adgroup_id', '')
+        if self.client and advertiser_id and campaign_id and adgroup_id:
+            try:
+                adgroup = self.client.get_adgroup(advertiser_id, campaign_id, adgroup_id)
+                return ToolResult.ok({"adgroup": adgroup})
+            except Exception as e:
+                return ToolResult.error(f"Failed to get TikTok adgroup: {e}")
+        else:
+            return ToolResult.ok({"adgroup": {}})
+
+
+class TikTokGetAdHandler(ToolHandler):
+    def __init__(self, api_client: Optional[TikTokAPIClient] = None):
+        self.client = api_client
+    
+    def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
+        advertiser_id = ctx.account_id
+        adgroup_id = input_data.get('adgroup_id', '')
+        ad_id = input_data.get('ad_id', '')
+        if self.client and advertiser_id and adgroup_id and ad_id:
+            try:
+                ad = self.client.get_ad(advertiser_id, adgroup_id, ad_id)
+                return ToolResult.ok({"ad": ad})
+            except Exception as e:
+                return ToolResult.error(f"Failed to get TikTok ad: {e}")
+        else:
+            return ToolResult.ok({"ad": {}})
 
 
 class TikTokListAudiencesHandler(ToolHandler):
@@ -604,6 +822,60 @@ class TikTokCapability(BaseCapability):
             traits=["read", "report"],
         ), TikTokGetReportHandler()))
         
+        # get_campaign — 详情查询
+        tools.append((ToolDefinition(
+            name="tiktok_get_campaign",
+            skill="tiktok-ads-expert",
+            platform="tiktok",
+            description="查询 TikTok Campaign 详情。",
+            input_schema=ToolSchema(
+                required=["campaign_id"],
+                properties={"campaign_id": {"type": "string"}},
+            ),
+            risk_level=RiskLevel.LOW,
+            effect_class=ToolEffect.READ,
+            replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "campaign"],
+        ), TikTokGetCampaignHandler(self._api_client)))
+        
+        # get_adgroup — 详情查询
+        tools.append((ToolDefinition(
+            name="tiktok_get_adgroup",
+            skill="tiktok-ads-expert",
+            platform="tiktok",
+            description="查询 TikTok Ad Group 详情。",
+            input_schema=ToolSchema(
+                required=["campaign_id", "adgroup_id"],
+                properties={
+                    "campaign_id": {"type": "string"},
+                    "adgroup_id": {"type": "string"},
+                },
+            ),
+            risk_level=RiskLevel.LOW,
+            effect_class=ToolEffect.READ,
+            replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "adgroup"],
+        ), TikTokGetAdGroupHandler(self._api_client)))
+        
+        # get_ad — 详情查询
+        tools.append((ToolDefinition(
+            name="tiktok_get_ad",
+            skill="tiktok-ads-expert",
+            platform="tiktok",
+            description="查询 TikTok Ad 详情。",
+            input_schema=ToolSchema(
+                required=["adgroup_id", "ad_id"],
+                properties={
+                    "adgroup_id": {"type": "string"},
+                    "ad_id": {"type": "string"},
+                },
+            ),
+            risk_level=RiskLevel.LOW,
+            effect_class=ToolEffect.READ,
+            replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "ad"],
+        ), TikTokGetAdHandler(self._api_client)))
+        
         return tools
     
     def _get_campaign_tool_sequence(self):
@@ -662,6 +934,43 @@ class DV360GetReportHandler(ToolHandler):
         })
 
 
+class DV360ListAdvertisersHandler(ToolHandler):
+    def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
+        return ToolResult.ok({"advertisers": []})
+
+
+class DV360ListCampaignsHandler(ToolHandler):
+    def __init__(self, api_client=None):
+        self.client = api_client
+    
+    def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
+        advertiser_id = input_data.get('advertiser_id', '')
+        if self.client and advertiser_id:
+            try:
+                campaigns = self.client.list_campaigns(advertiser_id)
+                return ToolResult.ok({"campaigns": campaigns})
+            except Exception as e:
+                return ToolResult.error(f"Failed to list DV360 campaigns: {e}")
+        else:
+            return ToolResult.ok({"campaigns": []})
+
+
+class DV360GetCampaignHandler(ToolHandler):
+    def __init__(self, api_client=None):
+        self.client = api_client
+    
+    def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
+        campaign_id = input_data.get('campaign_id', '')
+        if self.client and campaign_id:
+            try:
+                campaign = self.client.get_campaign(campaign_id)
+                return ToolResult.ok({"campaign": campaign})
+            except Exception as e:
+                return ToolResult.error(f"Failed to get DV360 campaign: {e}")
+        else:
+            return ToolResult.ok({"campaign": {}})
+
+
 class DV360Capability(BaseCapability):
     platform_name = "dv360"
     
@@ -693,12 +1002,55 @@ class DV360Capability(BaseCapability):
         ), DV360CreateLineItemHandler()))
         
         tools.append((ToolDefinition(
-            name="dv360_get_line_item_report", skill="dv360-expert", platform="dv360",
+            name="dv360_get_line_item_report",
+            skill="dv360-expert",
+            platform="dv360",
             description="查询 DV360 Line Item 报表。",
             input_schema=ToolSchema(required=["line_item_id"], properties={"line_item_id": {"type": "string"}, "date_range": {"type": "object"}}),
-            risk_level=RiskLevel.LOW, effect_class=ToolEffect.READ, replay_policy=ReplayPolicy.SAFE,
+            risk_level=RiskLevel.LOW,
+            effect_class=ToolEffect.READ,
+            replay_policy=ReplayPolicy.SAFE,
             traits=["read", "report"],
         ), DV360GetReportHandler()))
+        
+        # List Advertisers
+        tools.append((ToolDefinition(
+            name="dv360_list_advertisers",
+            skill="dv360-expert",
+            platform="dv360",
+            description="查询 DV360 广告主列表。",
+            input_schema=ToolSchema(properties={"page_size": {"type": "integer"}}),
+            risk_level=RiskLevel.LOW,
+            effect_class=ToolEffect.READ,
+            replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "advertiser"],
+        ), DV360ListAdvertisersHandler()))
+        
+        # List Campaigns
+        tools.append((ToolDefinition(
+            name="dv360_list_campaigns",
+            skill="dv360-expert",
+            platform="dv360",
+            description="查询 DV360 Campaign 列表。",
+            input_schema=ToolSchema(required=["advertiser_id"], properties={"advertiser_id": {"type": "string"}, "page_size": {"type": "integer"}}),
+            risk_level=RiskLevel.LOW,
+            effect_class=ToolEffect.READ,
+            replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "campaign"],
+        ), DV360ListCampaignsHandler()))
+        
+        # Get Campaign
+        tools.append((ToolDefinition(
+            name="dv360_get_campaign",
+            skill="dv360-expert",
+            platform="dv360",
+            description="查询 DV360 Campaign 详情。",
+            input_schema=ToolSchema(required=["campaign_id"], properties={"campaign_id": {"type": "string"}}),
+            risk_level=RiskLevel.LOW,
+            effect_class=ToolEffect.READ,
+            replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "campaign"],
+        ), DV360GetCampaignHandler()))
         
         return tools
     

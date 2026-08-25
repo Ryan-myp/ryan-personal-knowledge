@@ -243,6 +243,51 @@ class MetaListAccountsRealHandler(ToolHandler):
             return ToolResult.error(f"Failed to list Meta accounts: {e}")
 
 
+class MetaGetCampaignRealHandler(ToolHandler):
+    def __init__(self, api_client: MetaAPIClient):
+        self.client = api_client
+    
+    def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
+        campaign_id = input_data.get('campaign_id', '')
+        if not campaign_id:
+            return ToolResult.error("campaign_id is required")
+        try:
+            campaign = self.client.get_campaign(campaign_id)
+            return ToolResult.ok({"campaign": campaign})
+        except Exception as e:
+            return ToolResult.error(f"Failed to get Meta campaign: {e}")
+
+
+class MetaGetAdSetRealHandler(ToolHandler):
+    def __init__(self, api_client: MetaAPIClient):
+        self.client = api_client
+    
+    def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
+        adset_id = input_data.get('adset_id', '')
+        if not adset_id:
+            return ToolResult.error("adset_id is required")
+        try:
+            adset = self.client.get_adset(adset_id)
+            return ToolResult.ok({"adset": adset})
+        except Exception as e:
+            return ToolResult.error(f"Failed to get Meta adset: {e}")
+
+
+class MetaGetAdRealHandler(ToolHandler):
+    def __init__(self, api_client: MetaAPIClient):
+        self.client = api_client
+    
+    def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
+        ad_id = input_data.get('ad_id', '')
+        if not ad_id:
+            return ToolResult.error("ad_id is required")
+        try:
+            ad = self.client.get_ad(ad_id)
+            return ToolResult.ok({"ad": ad})
+        except Exception as e:
+            return ToolResult.error(f"Failed to get Meta ad: {e}")
+
+
 # ─── Capability ────────────────────────────────────────────────
 
 class MetaCapability(BaseCapability):
@@ -273,6 +318,9 @@ class MetaCapability(BaseCapability):
             get_report_h = MetaGetReportRealHandler(self._api_client)
             list_accounts_h = MetaListAccountsRealHandler(self._api_client)
             list_campaigns_h = MetaListCampaignsRealHandler(self._api_client)
+            get_campaign_h = MetaGetCampaignRealHandler(self._api_client)
+            get_adset_h = MetaGetAdSetRealHandler(self._api_client)
+            get_ad_h = MetaGetAdRealHandler(self._api_client)
         else:
             create_campaign_h = MetaCreateCampaignMockHandler()
             create_adset_h = MetaCreateAdSetMockHandler()
@@ -440,6 +488,63 @@ class MetaCapability(BaseCapability):
                 traits=["read", "account"],
             ),
             list_accounts_h,
+        ))
+        
+        # Get Campaign
+        tools.append((
+            ToolDefinition(
+                name="meta_get_campaign",
+                skill="meta-marketing-api-expert",
+                platform="meta",
+                description="查询 Meta Campaign 详情。",
+                input_schema=ToolSchema(
+                    required=["campaign_id"],
+                    properties={"campaign_id": {"type": "string"}}
+                ),
+                risk_level=RiskLevel.LOW,
+                effect_class=ToolEffect.READ,
+                replay_policy=ReplayPolicy.SAFE,
+                traits=["read", "campaign"],
+            ),
+            get_campaign_h,
+        ))
+        
+        # Get Ad Set
+        tools.append((
+            ToolDefinition(
+                name="meta_get_adset",
+                skill="meta-marketing-api-expert",
+                platform="meta",
+                description="查询 Meta Ad Set 详情。",
+                input_schema=ToolSchema(
+                    required=["adset_id"],
+                    properties={"adset_id": {"type": "string"}}
+                ),
+                risk_level=RiskLevel.LOW,
+                effect_class=ToolEffect.READ,
+                replay_policy=ReplayPolicy.SAFE,
+                traits=["read", "adset"],
+            ),
+            get_adset_h,
+        ))
+        
+        # Get Ad
+        tools.append((
+            ToolDefinition(
+                name="meta_get_ad",
+                skill="meta-marketing-api-expert",
+                platform="meta",
+                description="查询 Meta Ad 详情。",
+                input_schema=ToolSchema(
+                    required=["ad_id"],
+                    properties={"ad_id": {"type": "string"}}
+                ),
+                risk_level=RiskLevel.LOW,
+                effect_class=ToolEffect.READ,
+                replay_policy=ReplayPolicy.SAFE,
+                traits=["read", "ad"],
+            ),
+            get_ad_h,
         ))
         
         return tools

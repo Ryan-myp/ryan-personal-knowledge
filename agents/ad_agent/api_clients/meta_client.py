@@ -301,7 +301,7 @@ class MetaAPIClient(BasePlatformClient):
     def get_ad(self, ad_id: str, fields: list = None) -> dict:
         """获取 Ad 详情"""
         params = {
-            'fields': ','.join(fields) if fields else 'id,name,status,adset_id,schedule'
+            'fields': ','.join(fields) if fields else 'id,name,status,adset_id'
         }
         return self.request('GET', f"/{ad_id}", extra_params=params)
     
