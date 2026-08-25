@@ -990,7 +990,7 @@
             if (payload.type === 'ask_account') {
                 body.innerHTML = `
                     <div class="confirm-input-group">
-                        <label>请输入 ${payload.platform} 账户ID:</label>
+                        <label>请输入 ${payload.platform || '平台'} 账户ID:</label>
                         <input type="text" id="confirmInput" placeholder="例如: 7397068114548195329" class="confirm-input">
                     </div>
                 `;
@@ -1057,8 +1057,7 @@
                     body: JSON.stringify({
                         user_input: text,
                         user_id: 'web_user',
-                        session_id: sessionId,
-                        account_id: '2806375919473667'
+                        session_id: sessionId
                     })
                 });
                 
@@ -1104,7 +1103,6 @@
                         user_input: originalData.user_input || '',
                         user_id: 'web_user',
                         session_id: sessionId,
-                        account_id: '2806375919473667',
                         confirmed: true,
                         confirmation_payload: originalData.confirmation_payload
                     })
