@@ -1,7 +1,7 @@
 {
   "name": "google_workflows",
   "version": "1.0",
-  "last_updated": "2026-08-24T19:29:00Z",
+  "last_updated": "2026-08-25T09:30:00Z",
   "entries": [
     {
       "entry_id": "google_search_campaign_workflow",
@@ -73,7 +73,7 @@
       "source": "official_docs",
       "source_ref": "https://developers.google.cn/google-ads/api/samples/add-dynamic-search-ads",
       "created_at": "2026-08-24T19:00:00Z",
-      "updated_at": "2026-08-24T19:29:00Z",
+      "updated_at": "2026-08-25T09:30:00Z",
       "tags": [
         "google",
         "workflow",
@@ -92,26 +92,13 @@
       "knowledge_type": "WORKFLOW",
       "content": {
         "type": "create_campaign_official_example",
-        "description": "Google Ads Campaign 创建官方示例代码（来自 developers.google.cn）",
+        "description": "Google Ads Campaign 创建官方示例代码",
         "official_source": "https://developers.google.cn/google-ads/api/samples/add-dynamic-search-ads",
         "key_finding": "必须使用 client.enums 获取枚举值，不能直接导入枚举类",
-        "correct_pattern": \"\"\"
-# ✅ 正确方式：使用 client.enums 获取枚举值
-from google.ads.googleads.client import GoogleAdsClient
-
-client = GoogleAdsClient.load_from_storage('config.yaml')
-
-campaign.contains_eu_political_advertising = \
-    client.enums.EuPoliticalAdvertisingStatusEnum.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING
-
-campaign.advertising_channel_type = \
-    client.enums.AdvertisingChannelTypeEnum.SEARCH
-
-campaign.status = client.enums.CampaignStatusEnum.PAUSED
-\"\"\",
+        "correct_pattern": "# 正确方式：使用 client.enums 获取枚举值\ncampaign.contains_eu_political_advertising = client.enums.EuPoliticalAdvertisingStatusEnum.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
         "wrong_patterns": [
           {
-            "error": "ImportError: cannot import name 'AdvertisingChannelType'",
+            "error": "ImportError",
             "cause": "错误导入方式",
             "example": "from google.ads.googleads.v25.enums.types.advertising_channel_type import AdvertisingChannelType"
           },
@@ -121,277 +108,31 @@ campaign.status = client.enums.CampaignStatusEnum.PAUSED
             "example": "campaign.contains_eu_political_advertising = False"
           },
           {
-            "error": "INVALID_ARGUMENT: The required field was not present",
-            "cause": "proto3 零值省略，枚举值 0 不会被序列化",
+            "error": "INVALID_ARGUMENT",
+            "cause": "proto3 零值省略",
             "example": "campaign.contains_eu_political_advertising = 0"
           }
         ],
-        "code_example_search_campaign": \"\"\"
-def create_search_campaign(client, customer_id, budget_resource_name):
-    campaign_service = client.get_service('CampaignService')
-    campaign_operation = client.get_type('CampaignOperation')
-    campaign = campaign_operation.create
-    
-    campaign.name = f'Interplanetary Cruise #{uuid4()}'
-    campaign.advertising_channel_type = client.enums.AdvertisingChannelTypeEnum.SEARCH
-    campaign.status = client.enums.CampaignStatusEnum.PAUSED
-    campaign.campaign_budget = budget_resource_name
-    
-    # Required: EU political advertising declaration
-    campaign.contains_eu_political_advertising = \
-        client.enums.EuPoliticalAdvertisingStatusEnum.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING
-    
-    # Enable DSAs
-    campaign.dynamic_search_ads_setting.domain_name = 'example.com'
-    campaign.dynamic_search_ads_setting.language_code = 'en'
-    
-    response = campaign_service.mutate_campaigns(
-        customer_id=customer_id,
-        operations=[campaign_operation]
-    )
-    return response.results[0].resource_name
-\"\"\",
-        "code_example_app_campaign": \"\"\"
-def create_app_campaign(client, customer_id, budget_resource_name):
-    campaign_operation = client.get_type('CampaignOperation')
-    campaign = campaign_operation.create
-    
-    campaign.name = f'Interplanetary Cruise App #{uuid4()}'
-    campaign.campaign_budget = budget_resource_name
-    campaign.status = client.enums.CampaignStatusEnum.PAUSED
-    campaign.advertising_channel_type = client.enums.AdvertisingChannelTypeEnum.MULTI_CHANNEL
-    campaign.advertising_channel_sub_type = client.enums.AdvertisingChannelSubTypeEnum.APP_CAMPAIGN
-    
-    # Target CPA $1 per install
-    campaign.target_cpa.target_cpa_micros = 1000000
-    
-    # App settings
-    campaign.app_campaign_setting.app_id = 'com.google.android.apps.adwords'
-    campaign.app_campaign_setting.app_store = \
-        client.enums.AppCampaignAppStoreEnum.GOOGLE_APP_STORE
-    campaign.app_campaign_setting.bidding_strategy_goal_type = \
-        client.enums.AppCampaignBiddingStrategyGoalTypeEnum.OPTIMIZE_INSTALLS_TARGET_INSTALL_COST
-    
-    # Required: EU political advertising declaration
-    campaign.contains_eu_political_advertising = \
-        client.enums.EuPoliticalAdvertisingStatusEnum.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING
-    
-    response = campaign_service.mutate_campaigns(
-        customer_id=customer_id,
-        operations=[campaign_operation]
-    )
-    return response.results[0].resource_name
-\"\"\",
+        "code_example_search_campaign": "def create_search_campaign(client, customer_id, budget_resource_name):\n    campaign_operation = client.get_type('CampaignOperation')\n    campaign = campaign_operation.create\n    campaign.name = f'Campaign #{uuid4()}'\n    campaign.advertising_channel_type = client.enums.AdvertisingChannelTypeEnum.SEARCH\n    campaign.status = client.enums.CampaignStatusEnum.PAUSED\n    campaign.campaign_budget = budget_resource_name\n    campaign.contains_eu_political_advertising = client.enums.EuPoliticalAdvertisingStatusEnum.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING\n    response = campaign_service.mutate_campaigns(customer_id=customer_id, operations=[campaign_operation])\n    return response.results[0].resource_name",
+        "code_example_app_campaign": "def create_app_campaign(client, customer_id, budget_resource_name):\n    campaign_operation = client.get_type('CampaignOperation')\n    campaign = campaign_operation.create\n    campaign.advertising_channel_type = client.enums.AdvertisingChannelTypeEnum.MULTI_CHANNEL\n    campaign.advertising_channel_sub_type = client.enums.AdvertisingChannelSubTypeEnum.APP_CAMPAIGN\n    campaign.contains_eu_political_advertising = client.enums.EuPoliticalAdvertisingStatusEnum.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING\n    response = campaign_service.mutate_campaigns(customer_id=customer_id, operations=[campaign_operation])\n    return response.results[0].resource_name",
         "api_reference": "https://developers.google.cn/google-ads/api/samples?hl=zh-cn"
       },
       "source": "official_docs",
       "source_ref": "https://developers.google.cn/google-ads/api/samples/add-dynamic-search-ads",
-      "created_at": "2026-08-24T19:29:00Z",
-      "updated_at": "2026-08-24T19:29:00Z",
+      "created_at": "2026-08-25T09:30:00Z",
+      "updated_at": "2026-08-25T09:30:00Z",
       "tags": [
         "google",
         "workflow",
         "campaign",
         "official_sample",
-        "python",
-        "enum"
+        "python"
       ],
       "metadata": {
         "verified": true
       },
       "confidence": 1.0,
       "usage_count": 0
-    },
-    {
-      "entry_id": "google_campaign_types",
-      "platform": "google",
-      "knowledge_type": "PARAMETER",
-      "content": {
-        "type": "enum_reference",
-        "description": "Google Ads 广告系列类型枚举",
-        "valid_values": {
-          "SEARCH": {
-            "description": "搜索广告",
-            "sub_types": ["SEARCH_STANDARD", "SEARCH_DYNAMIC_ADS"]
-          },
-          "SHOPPING": {
-            "description": "购物广告",
-            "sub_types": ["SHOPPING_SALES", "SHOPPING_PRODUCT_ADS"]
-          },
-          "DISPLAY": {
-            "description": "展示广告",
-            "sub_types": ["DISPLAY_STANDARD", "DISPLAY_PERFORMANCE"]
-          },
-          "VIDEO": {
-            "description": "视频广告",
-            "sub_types": ["VIDEO_VIEW", "VIDEO_ENGAGEMENT"]
-          },
-          "MULTI_CHANNEL": {
-            "description": "全渠道广告（App 广告）",
-            "sub_types": ["APP_CAMPAIGN"]
-          },
-          "PERFORMANCE_MAX": {
-            "description": "效果最大化广告",
-            "sub_types": []
-          }
-        },
-        "api_reference": "https://developers.google.com/google-ads/api/reference/rpc/v25/AdvertisingChannelTypeEnum"
-      },
-      "description": "Google Ads 广告系列类型定义",
-      "created_at": "2026-08-24T19:00:00Z",
-      "updated_at": "2026-08-24T19:29:00Z"
-    },
-    {
-      "entry_id": "google_bidding_strategies",
-      "platform": "google",
-      "knowledge_type": "PARAMETER",
-      "content": {
-        "type": "enum_reference",
-        "description": "Google Ads 出价策略枚举",
-        "valid_values": [
-          "TARGET_CPA",
-          "TARGET_ROAS",
-          "MAXIMIZE_CONVERSIONS",
-          "MAXIMIZE_CONVERSION_VALUE",
-          "MANUAL_CPC",
-          "MANUAL_CPM"
-        ],
-        "notes": [
-          "智能出价策略（如 TARGET_CPA）需要转化数据",
-          "不同广告系列类型支持不同的出价策略"
-        ],
-        "api_reference": "https://developers.google.com/google-ads/api/docs/bidding/target-cpa"
-      },
-      "description": "Google Ads 出价策略定义",
-      "created_at": "2026-08-24T19:00:00Z",
-      "updated_at": "2026-08-24T19:00:00Z"
-    },
-    {
-      "entry_id": "google_budget_units",
-      "platform": "google",
-      "knowledge_type": "PARAMETER",
-      "content": {
-        "type": "unit_reference",
-        "description": "Google Ads 预算单位说明",
-        "unit": "micros（百万分之一）",
-        "examples": {
-          "daily_budget_100_usd": 100000000,
-          "daily_budget_50_usd": 50000000,
-          "cpc_bid_1_usd": 1000000,
-          "cpc_bid_0.50_usd": 500000
-        },
-        "formula": "美元金额 × 1,000,000 = micros",
-        "api_reference": "https://developers.google.com/google-ads/api/docs/concepts/budget"
-      },
-      "description": "Google Ads 金额字段单位为 micros",
-      "created_at": "2026-08-24T19:00:00Z",
-      "updated_at": "2026-08-24T19:00:00Z"
-    },
-    {
-      "entry_id": "google_api_authentication",
-      "platform": "google",
-      "knowledge_type": "WORKFLOW",
-      "content": {
-        "type": "authentication_flow",
-        "description": "Google Ads API 认证流程",
-        "steps": [
-          {
-            "step": 1,
-            "action": "get_refresh_token",
-            "description": "通过 OAuth2 获取 refresh_token"
-          },
-          {
-            "step": 2,
-            "action": "load_developer_token",
-            "description": "加载 Developer Token（需要申请）"
-          },
-          {
-            "step": 3,
-            "action": "initialize_client",
-            "description": "使用 google-ads.yaml 配置客户端"
-          },
-          {
-            "step": 4,
-            "action": "execute_query",
-            "description": "使用 GAQL 查询数据"
-          }
-        ],
-        "config_file": "~/.google/ads/google_ads.yaml",
-        "config_format": {
-          "developer_token": "your_developer_token",
-          "client_id": "your_client_id",
-          "client_secret": "your_client_secret",
-          "refresh_token": "your_refresh_token",
-          "login_customer_id": "your_customer_id"
-        },
-        "api_reference": "https://developers.google.com/google-ads/api/docs/start"
-      },
-      "description": "Google Ads API 认证配置流程",
-      "created_at": "2026-08-24T19:00:00Z",
-      "updated_at": "2026-08-24T19:00:00Z"
-    },
-    {
-      "entry_id": "google_paid_search_hierarchy",
-      "platform": "google",
-      "knowledge_type": "WORKFLOW",
-      "content": {
-        "type": "create_paid_search_campaign",
-        "description": "付费搜索广告层级创建流程",
-        "hierarchy": [
-          {
-            "level": "campaign",
-            "required_fields": [
-              "name",
-              "advertising_channel_type",
-              "status",
-              "campaign_budget",
-              "bidding_strategy",
-              "contains_eu_political_advertising"
-            ],
-            "notes": [
-              "必须设置 contains_eu_political_advertising",
-              "使用 client.enums 获取枚举值"
-            ]
-          },
-          {
-            "level": "ad_group",
-            "required_fields": [
-              "campaign",
-              "name",
-              "status"
-            ],
-            "notes": [
-              "需要设置 cpc_bid_ceiling_micros 或 bidding_strategy"
-            ]
-          },
-          {
-            "level": "ad_group_criterion",
-            "required_fields": [
-              "ad_group",
-              "keyword"
-            ],
-            "notes": [
-              "需要设置 bid_micros 和 match_type"
-            ]
-          },
-          {
-            "level": "ad",
-            "required_fields": [
-              "ad_group",
-              "final_urls",
-              "headlines",
-              "descriptions"
-            ],
-            "notes": [
-              "Responsive Search Ad 至少需要 3 headlines + 2 descriptions"
-            ]
-          }
-        ],
-        "api_reference": "https://developers.google.com/google-ads/api/docs/campaigns/create-search-ads"
-      },
-      "description": "Google Ads 搜索广告层级结构",
-      "created_at": "2026-08-24T19:00:00Z",
-      "updated_at": "2026-08-24T19:29:00Z"
     }
   ]
 }
