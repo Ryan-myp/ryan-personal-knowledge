@@ -388,6 +388,112 @@ class AgentRuntime:
         # 当前返回 None，使用 mock 模式
         return None
     
+    def auto_load_skills(self, skills_root: str, credentials: dict = None) -> int:
+        """
+        自动加载 skills 目录下的所有 Skills。
+        
+        策略：
+        1. 扫描 channels/ 子目录（渠道层 Skills）
+        2. 扫描 businesses/ 子目录（业务层 Skills）
+        3. 扫描 cross-channel/ 子目录（跨渠道 Skills）
+        4. 只加载有工具定义的 Skill
+        
+        Args:
+            skills_root: Skills 根目录路径
+            credentials: API 凭证配置
+            
+        Returns:
+            成功加载的 Skill 数量
+        """
+        import yaml
+        from pathlib import Path
+        
+        loaded_count = 0
+        skill_roots = [
+            Path(skills_root) / "channels",
+            Path(skills_root) / "businesses",
+            Path(skills_root) / "cross-channel",
+        ]
+        
+        for root in skill_roots:
+            if not root.exists():
+                continue
+            
+            for skill_dir in root.iterdir():
+                if not skill_dir.is_dir():
+                    continue
+                
+                skill_file = skill_dir / "SKILL.md"
+                if not skill_file.exists():
+                    continue
+                
+                try:
+                    # 解析 SKILL.md frontmatter
+                    with open(skill_file, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    
+                    metadata = {}
+                    if content.startswith('---'):
+                        import re
+                        match = re.match(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
+                        if match:
+                            metadata = yaml.safe_load(match.group(1))
+                    
+                    platform = metadata.get('platform', skill_dir.name)
+                    
+                    # 检查是否有工具定义（从表格解析）
+                    has_tools = '| Tool |' in content or 'name:' in content
+                    
+                    if has_tools:
+                        # 加载 Skill
+                        from ..skills.loader import SkillLoader
+                        loader = SkillLoader()
+                        loader.add_root(str(root))
+                        skills = loader.load_all()
+                        
+                        skill = skills.get(skill_dir.name)
+                        if not skill:
+                            # 尝试从 name 字段获取
+                            for s_name, s in skills.items():
+                                if s.platform == platform:
+                                    skill = s
+                                    break
+                        
+                        if skill and skill.tools:
+                            # 获取 API 客户端
+                            api_client = None
+                            if credentials and platform in credentials:
+                                # 根据平台导入对应的 API Client
+                                client_map = {
+                                    'meta': ('api_clients.meta_client', 'MetaAPIClient'),
+                                    'google-ads': ('api_clients.google_ads_client', 'GoogleAdsAPIClient'),
+                                    'tiktok': ('api_clients.tiktok_client', 'TikTokAPIClient'),
+                                    'dv360': ('api_clients.dv360_client', 'DV360APIClient'),
+                                }
+                                
+                                if platform in client_map:
+                                    module_name, class_name = client_map[platform]
+                                    try:
+                                        import importlib
+                                        module = importlib.import_module(f'..{module_name}', __package__)
+                                        client_class = getattr(module, class_name)
+                                        api_client = client_class(credentials[platform])
+                                    except Exception as e:
+                                        logger.debug(f"创建 {platform} API Client 失败: {e}")
+                            
+                            # 加载 Skill
+                            if self.load_skill(platform, skill, api_client):
+                                loaded_count += 1
+                                logger.info(f"✅ 自动加载 Skill: {skill.name} ({platform}, {len(skill.tools)} tools)")
+                            else:
+                                logger.warning(f"⚠️ 加载 Skill 失败: {skill.name}")
+                
+                except Exception as e:
+                    logger.warning(f"⚠️ 解析 Skill {skill_dir.name}/SKILL.md 失败: {e}")
+        
+        logger.info(f"✅ 自动加载完成，共加载 {loaded_count} 个 Skills")
+        return loaded_count
+    
     def _create_handler(self, skill: Skill, platform: str, api_client=None) -> Optional[ToolHandler]:
         """
         根据 Skill 和平台动态创建 Handler。

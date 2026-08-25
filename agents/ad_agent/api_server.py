@@ -58,75 +58,14 @@ def _init_on_import():
             with open(config_path) as f:
                 credentials = yaml.safe_load(f).get('credentials', {})
         
-        # ─── 第一步：加载所有 Skills（元信息）───
+        # ─── 自动加载所有 Skills ───
+        # Runtime 会自动扫描 skills 目录并注册能力
         skills_root = Path(__file__).parent / "skills"
-        
-        # 使用 skills/loader.py 的 SkillLoader 加载（支持多根路径）
-        from agents.ad_agent.skills.loader import SkillLoader
-        skill_loader = SkillLoader()
-        skill_loader.add_root(str(skills_root / "channels"))
-        skill_loader.add_root(str(skills_root / "businesses"))
-        skill_loader.add_root(str(skills_root / "cross-channel"))
-        all_skills = skill_loader.load_all()
-        print(f"✅ 已加载 {len(all_skills)} 个 Skills: {list(all_skills.keys())}")
-        
-        # ─── 第二步：动态注册 Skill → Tool Handlers ───
-        # 根据 Skill 定义，创建对应的 Capability 并注册
-        
-        # Meta Skill → Meta Capability
-        meta_skill = all_skills.get('meta-marketing-api')
-        if meta_skill and 'meta' in credentials:
-            from agents.ad_agent.api_clients.meta_client import MetaAPIClient
-            from agents.ad_agent.capabilities.meta_capability import MetaCapability
-            meta_client = MetaAPIClient(credentials['meta'])
-            meta_capability = MetaCapability(api_client=meta_client)
-            runtime.register_capability(meta_capability)
-            print(f"✅ 已注册 Meta Capability ({len(meta_skill.tools)} tools)")
-        
-        # Google Ads Skill → Google Capability
-        google_skill = all_skills.get('google-ads-api')
-        if google_skill and 'google' in credentials:
-            from agents.ad_agent.api_clients.google_ads_client import GoogleAdsAPIClient
-            from agents.ad_agent.capabilities.platform_capabilities import GoogleCapability
-            google_client = GoogleAdsAPIClient(credentials['google'])
-            google_capability = GoogleCapability(api_client=google_client)
-            runtime.register_capability(google_capability)
-            print(f"✅ 已注册 Google Capability ({len(google_skill.tools)} tools)")
-        
-        # TikTok Skill → TikTok Capability
-        tiktok_skill = all_skills.get('tiktok-ads-api')
-        if tiktok_skill and 'tiktok' in credentials:
-            from agents.ad_agent.api_clients.tiktok_client import TikTokAPIClient
-            from agents.ad_agent.capabilities.platform_capabilities import TikTokCapability
-            tiktok_client = TikTokAPIClient(credentials['tiktok'])
-            tiktok_capability = TikTokCapability(api_client=tiktok_client)
-            runtime.register_capability(tiktok_capability)
-            print(f"✅ 已注册 TikTok Capability ({len(tiktok_skill.tools)} tools)")
-        
-        # DV360 Skill → DV360 Capability
-        dv360_skill = all_skills.get('dv360-api')
-        if dv360_skill:
-            from agents.ad_agent.capabilities.platform_capabilities import DV360Capability
-            dv360_capability = DV360Capability()
-            runtime.register_capability(dv360_capability)
-            print(f"✅ 已注册 DV360 Capability ({len(dv360_skill.tools)} tools)")
-        
-        # ─── 第三步：构建系统提示词（注入 Skill 信息）───
-        skill_summaries = []
-        for skill_name, skill in all_skills.items():
-            if skill.platform and skill.tools:
-                tools_preview = [t.name for t in skill.tools[:3]]
-                summary = f"- {skill_name} ({skill.platform}): {skill.description[:60]}... [tools: {', '.join(tools_preview)}]"
-                skill_summaries.append(summary)
-        
-        if skill_summaries:
-            print(f"\n📚 渠道能力摘要:")
-            for s in skill_summaries:
-                print(f"   {s}")
+        runtime.auto_load_skills(str(skills_root), credentials)
         
         print(f"\n📊 服务状态:")
-        print(f"- ✅ {len(runtime.registry.list_all_platforms())} 平台 42 工具")
-        print(f"- ✅ Skills 系统已修复")
+        print(f"- ✅ {len(runtime.registry.list_all_platforms())} 平台 {len(runtime.registry.list_all())} 工具")
+        print(f"- ✅ Skills 系统已就绪（自动加载）")
         
     except Exception as e:
         print(f"❌ 初始化失败: {e}")
