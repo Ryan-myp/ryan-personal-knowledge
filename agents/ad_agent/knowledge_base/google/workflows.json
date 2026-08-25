@@ -1,7 +1,7 @@
 {
   "name": "google_workflows",
   "version": "1.0",
-  "last_updated": "2026-08-25T09:30:00Z",
+  "last_updated": "2026-08-25T09:33:40.401139",
   "entries": [
     {
       "entry_id": "google_search_campaign_workflow",
@@ -127,6 +127,120 @@
         "campaign",
         "official_sample",
         "python"
+      ],
+      "metadata": {
+        "verified": true
+      },
+      "confidence": 1.0,
+      "usage_count": 0
+    },
+    {
+      "entry_id": "google_pmax_campaign_workflow",
+      "platform": "google",
+      "knowledge_type": "WORKFLOW",
+      "content": {
+        "type": "create_performance_max_campaign",
+        "description": "Google Ads Performance Max (PMax) 广告系列创建流程",
+        "required_fields": {
+          "name": "广告系列名称",
+          "advertising_channel_type": "PERFORMANCE_MAX (固定值)",
+          "status": "PAUSED",
+          "campaign_budget": "CampaignBudget 资源名",
+          "bidding_strategy": "MAXIMIZE_CONVERSIONS 或 TARGET_ROAS",
+          "contains_eu_political_advertising": "EuPoliticalAdvertisingStatus 枚举"
+        },
+        "special_requirements": [
+          "PMax 不需要 AdGroup",
+          "PMax 需要 Asset Group（通过 AssetService 创建）",
+          "需要配置转化事件 (conversion_action)"
+        ],
+        "code_example": "def create_pmax_campaign(client, customer_id, budget_resource_name):\n    campaign_operation = client.get_type('CampaignOperation')\n    campaign = campaign_operation.create\n    \n    campaign.name = f'PMax Campaign #{uuid4()}'\n    campaign.advertising_channel_type = client.enums.AdvertisingChannelTypeEnum.MULTI_CHANNEL\n    campaign.advertising_channel_sub_type = client.enums.AdvertisingChannelSubTypeEnum.PERFORMANCE_MAX\n    campaign.status = client.enums.CampaignStatusEnum.PAUSED\n    campaign.campaign_budget = budget_resource_name\n    campaign.bidding_strategy = client.get_service('BiddingStrategyService').bidding_strategy_path(\n        customer_id, 'MAXIMIZE_CONVERSIONS'\n    )\n    \n    # Required: EU political advertising declaration\n    campaign.contains_eu_political_advertising =         client.enums.EuPoliticalAdvertisingStatusEnum.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING\n    \n    # Conversion tracking\n    campaign.optimization_goal_setting.optimize_goal_configuration = [\n        client.enums.OptimizationGoalConversionSourceEnum.FIRST-party_event,\n    ]\n    \n    response = campaign_service.mutate_campaigns(\n        customer_id=customer_id,\n        operations=[campaign_operation]\n    )\n    return response.results[0].resource_name",
+        "api_reference": "https://developers.google.com/google-ads/api/docs/campaigns/performance-max"
+      },
+      "source": "official_docs",
+      "source_ref": "https://developers.google.com/google-ads/api/docs/campaigns/performance-max",
+      "created_at": "2026-08-25T09:33:40.401125",
+      "updated_at": "2026-08-25T09:33:40.401133",
+      "tags": [
+        "google",
+        "workflow",
+        "pmax",
+        "performance_max"
+      ],
+      "metadata": {
+        "verified": false
+      },
+      "confidence": 0.9,
+      "usage_count": 0
+    },
+    {
+      "entry_id": "google_shopping_campaign_workflow",
+      "platform": "google",
+      "knowledge_type": "WORKFLOW",
+      "content": {
+        "type": "create_shopping_campaign",
+        "description": "Google Ads Shopping 广告系列创建流程",
+        "required_fields": {
+          "name": "广告系列名称",
+          "advertising_channel_type": "SHOPPING",
+          "status": "PAUSED",
+          "campaign_budget": "CampaignBudget 资源名",
+          "bidding_strategy": "MAXIMIZE_CONVERSIONS 或 MANUAL_CPC",
+          "contains_eu_political_advertising": "EuPoliticalAdvertisingStatus 枚举",
+          "shopping_setting": "Merchant ID 和銷售国家"
+        },
+        "shopping_setting_required": {
+          "merchant_id": "Google Shopping 商户 ID",
+          "sales_country": "销售国家代码，如 SG, US, CN",
+          "campaign_priority": "优先级 (0-100)",
+          "normalize_localinventories": "是否归一化本地库存"
+        },
+        "code_example": "def create_shopping_campaign(client, customer_id, budget_resource_name, merchant_id):\n    campaign_operation = client.get_type('CampaignOperation')\n    campaign = campaign_operation.create\n    \n    campaign.name = f'Shopping Campaign #{uuid4()}'\n    campaign.advertising_channel_type = client.enums.AdvertisingChannelTypeEnum.SHOPPING\n    campaign.status = client.enums.CampaignStatusEnum.PAUSED\n    campaign.campaign_budget = budget_resource_name\n    campaign.bidding_strategy = client.get_service('BiddingStrategyService').bidding_strategy_path(\n        customer_id, 'MAXIMIZE_CONVERSIONS'\n    )\n    \n    # Required: EU political advertising declaration\n    campaign.contains_eu_political_advertising =         client.enums.EuPoliticalAdvertisingStatusEnum.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING\n    \n    # Shopping settings (required for SHOPPING type)\n    campaign.shopping_setting = client.get_type('ShoppingSetting')\n    campaign.shopping_setting.merchant_id = merchant_id\n    campaign.shopping_setting.sales_country = 'SG'  # 销售国家\n    \n    response = campaign_service.mutate_campaigns(\n        customer_id=customer_id,\n        operations=[campaign_operation]\n    )\n    return response.results[0].resource_name",
+        "api_reference": "https://developers.google.com/google-ads/api/docs/campaigns/shopping"
+      },
+      "source": "official_docs",
+      "source_ref": "https://developers.google.com/google-ads/api/docs/campaigns/shopping",
+      "created_at": "2026-08-25T09:33:40.401135",
+      "updated_at": "2026-08-25T09:33:40.401136",
+      "tags": [
+        "google",
+        "workflow",
+        "shopping",
+        "campaign"
+      ],
+      "metadata": {
+        "verified": false
+      },
+      "confidence": 0.9,
+      "usage_count": 0
+    },
+    {
+      "entry_id": "google_network_restriction",
+      "platform": "google",
+      "knowledge_type": "CONSTRAINT",
+      "content": {
+        "type": "network_restriction",
+        "description": "Google Ads API 网络访问限制",
+        "issue": "中国大陆 IP 无法直接访问 Google Ads API",
+        "error_manifestation": "API 返回 HTTP 404 (Google HTML error page)",
+        "workarounds": [
+          "使用 VPN/代理访问境外服务器",
+          "部署在境外云服务器上运行 API 调用",
+          "使用 Google Cloud Functions 等云服务中转"
+        ],
+        "verified": true,
+        "test_date": "2026-08-25",
+        "test_result": "所有 API 请求返回 404 (HTML error page)"
+      },
+      "source": "empirical_test",
+      "source_ref": "",
+      "created_at": "2026-08-25T09:33:40.401137",
+      "updated_at": "2026-08-25T09:33:40.401137",
+      "tags": [
+        "google",
+        "constraint",
+        "network",
+        "restriction"
       ],
       "metadata": {
         "verified": true
