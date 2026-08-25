@@ -1153,9 +1153,26 @@
             const paramInput = document.getElementById('confirmParamInput');
             
             let account_id = null;
+            let extra_params = {};
             
+            // 获取账户 ID
             if (accountInput && accountInput.value.trim()) {
                 account_id = accountInput.value.trim();
+            }
+            
+            // 获取缺失参数值（支持多种格式）
+            if (paramInput && paramInput.value.trim()) {
+                const paramValue = paramInput.value.trim();
+                // 支持 "campaign_id=12345" 或 "12345" 格式
+                if (paramValue.includes('=')) {
+                    const parts = paramValue.split('=');
+                    extra_params[parts[0].trim()] = parts[1].trim();
+                } else {
+                    // 如果只输入了值，使用 payload.missing[0] 作为参数名
+                    if (payload.missing && payload.missing.length > 0) {
+                        extra_params[payload.missing[0]] = paramValue;
+                    }
+                }
             }
             
             // 移除卡片
@@ -1168,17 +1185,37 @@
             // 发送带参数的请求 - 使用原始 user_input
             const userInput = originalRequest ? originalRequest.user_input : '';
             try {
+                // 构建 platform_params，合并原始参数和用户提供的新参数
+                const originalParams = originalRequest?.platform_params || {};
+                const platforms = originalRequest?.platforms || [];
+                
+                const requestParams = {
+                    user_input: userInput,
+                    user_id: 'web_user',
+                    session_id: sessionId,
+                    confirmed: true,
+                    confirmation_payload: payload
+                };
+                
+                // 如果有额外参数，添加到对应平台的 params 中
+                if (Object.keys(extra_params).length > 0 && platforms.length > 0) {
+                    const firstPlatform = platforms[0];
+                    requestParams.platform_params = {
+                        [firstPlatform]: {
+                            ...(originalParams[firstPlatform] || {}),
+                            ...extra_params
+                        }
+                    };
+                }
+                
+                if (account_id) {
+                    requestParams.account_id = account_id;
+                }
+                
                 const response = await fetch('/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        user_input: userInput,
-                        user_id: 'web_user',
-                        session_id: sessionId,
-                        account_id: account_id,
-                        confirmed: true,
-                        confirmation_payload: payload
-                    })
+                    body: JSON.stringify(requestParams)
                 });
                 
                 const data = await response.json();
@@ -1193,8 +1230,10 @@
                 // 递归处理嵌套确认
                 if (data.needs_confirmation && data.confirmation_payload) {
                     showConfirm(data.confirmation_payload, {
-                        user_input: text,
-                        account_id: null  // 当前请求没有 account_id
+                        user_input: userInput,
+                        account_id: account_id,
+                        platforms: platforms,
+                        platform_params: requestParams.platform_params
                     });
                     return;
                 }
