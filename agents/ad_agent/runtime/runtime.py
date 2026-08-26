@@ -137,6 +137,7 @@ class AgentRuntime:
         self._background_tasks: list[dict] = []
         self._loaded_skills: dict[str, Skill] = {}  # platform -> Skill
         self._skill_factories: dict[str, callable] = {}  # platform -> Capability factory
+        self._credentials: dict = {}  # API 凭证配置
         
         # 账户白名单验证器
         self.whitelist_validator = whitelist_validator or AccountWhitelistValidator()
@@ -364,36 +365,79 @@ class AgentRuntime:
         1. 从已加载的 Skill 中查找
         2. 从 SkillLoader 缓存中查找
         """
-        # 先从 skill_loader 中查找
+        # 先从已加载的 Skill 中查找
+        if platform in self._loaded_skills:
+            return self._loaded_skills[platform]
+        
+        # 从 skill_loader 中查找
         for root in self.skill_loader._roots:
-            if root.exists():
-                for skill_dir in root.iterdir():
-                    if skill_dir.is_dir() and (skill_dir / "SKILL.md").exists():
-                        # 尝试解析 frontmatter 检查 platform
-                        try:
-                            import re
-                            with open(skill_dir / "SKILL.md", 'r', encoding='utf-8') as f:
-                                content = f.read()
-                            if content.startswith('---'):
-                                match = re.match(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
-                                if match:
-                                    import yaml
-                                    metadata = yaml.safe_load(match.group(1))
-                                    if metadata.get('platform') == platform or skill_dir.name == platform:
-                                        # 加载 Skill
-                                        from ..runtime.skill import Skill
-                                        from ..skills.loader import SkillDefinition
-                                        # 这里简化处理，实际应该返回 SkillDefinition
-                                        # 暂时返回 None，让调用方处理
-                                        return None
-                        except Exception as e:
-                            logger.debug(f"解析 Skill 文件失败 {skill_dir.name}: {e}")
+            if not root.exists():
+                continue
+            for skill_dir in root.iterdir():
+                if not skill_dir.is_dir():
+                    continue
+                skill_file = skill_dir / "SKILL.md"
+                if not skill_file.exists():
+                    continue
+                try:
+                    import re
+                    with open(skill_file, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    if content.startswith('---'):
+                        match = re.match(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
+                        if match:
+                            import yaml
+                            metadata = yaml.safe_load(match.group(1))
+                            skill_name = metadata.get('name', skill_dir.name)
+                            # 检查平台匹配（支持 google/google-ads 映射）
+                            skill_platform = metadata.get('platform', skill_dir.name)
+                            if skill_platform == platform or skill_dir.name == platform:
+                                # 直接加载这个 skill
+                                from ..skills.loader import SkillLoader as Loader
+                                loader = Loader()
+                                loader.add_root(str(root))
+                                skills = loader.load_all()
+                                if skill_name in skills:
+                                    return skills[skill_name]
+                except Exception as e:
+                    logger.debug(f"解析 Skill 文件失败 {skill_dir.name}: {e}")
         return None
+    
+    def set_credentials(self, credentials: dict) -> None:
+        """设置 API 凭证配置"""
+        self._credentials = credentials
     
     def _get_api_client(self, platform: str):
         """获取指定平台的 API 客户端"""
-        # TODO: 从 credentials 中获取对应的 API 客户端
-        # 当前返回 None，使用 mock 模式
+        if not self._credentials:
+            return None
+        
+        credentials = self._credentials.get(platform, {})
+        if not credentials:
+            # 尝试 google-ads 别名
+            credentials = self._credentials.get('google-ads', {})
+        
+        if not credentials:
+            return None
+        
+        try:
+            client_map = {
+                'meta': ('api_clients.meta_client', 'MetaAPIClient'),
+                'google-ads': ('api_clients.google_ads_client', 'GoogleAdsAPIClient'),
+                'google': ('api_clients.google_ads_client', 'GoogleAdsAPIClient'),
+                'tiktok': ('api_clients.tiktok_client', 'TikTokAPIClient'),
+                'dv360': ('api_clients.dv360_client', 'DV360APIClient'),
+            }
+            
+            if platform in client_map:
+                module_name, class_name = client_map[platform]
+                import importlib
+                module = importlib.import_module(f'..{module_name}', __package__)
+                client_class = getattr(module, class_name)
+                return client_class(credentials)
+        except Exception as e:
+            logger.debug(f"创建 {platform} API Client 失败: {e}")
+        
         return None
     
     def auto_load_skills(self, skills_root: str, credentials: dict = None) -> int:
@@ -417,6 +461,10 @@ class AgentRuntime:
         from pathlib import Path
         
         loaded_count = 0
+        # 保存凭证配置
+        if credentials:
+            self._credentials = credentials
+        
         skill_roots = [
             Path(skills_root) / "channels",
             Path(skills_root) / "businesses",
@@ -469,8 +517,14 @@ class AgentRuntime:
                         
                         if skill and skill.tools:
                             # 获取 API 客户端
+                            # 支持平台别名映射（google-ads -> google）
+                            cred_key = platform
+                            if platform not in credentials:
+                                alias_map = {'google-ads': 'google'}
+                                cred_key = alias_map.get(platform, platform)
+                            
                             api_client = None
-                            if credentials and platform in credentials:
+                            if credentials and cred_key in credentials:
                                 # 根据平台导入对应的 API Client
                                 client_map = {
                                     'meta': ('api_clients.meta_client', 'MetaAPIClient'),
@@ -485,7 +539,7 @@ class AgentRuntime:
                                         import importlib
                                         module = importlib.import_module(f'..{module_name}', __package__)
                                         client_class = getattr(module, class_name)
-                                        api_client = client_class(credentials[platform])
+                                        api_client = client_class(credentials[cred_key])
                                     except Exception as e:
                                         logger.debug(f"创建 {platform} API Client 失败: {e}")
                             
