@@ -188,3 +188,27 @@ runtime.register_capability(NewPlatformCapability(api_client))
 3. **更多平台**: YouTube Ads、LinkedIn Ads
 4. **异步支持**: 使用 asyncio 提高并发性能
 5. **Web UI**: 提供 Web 界面管理 Campaign
+
+## 2026-08-26 Google Ads 工具修复
+
+### 问题
+- Google Ads 工具执行时报错 "client not configured or customer_id missing"
+- 根因：`_get_api_client` 和 `auto_load_skills` 未正确处理平台别名映射（`google-ads` vs `google`）
+
+### 修复
+1. **添加 `_credentials` 属性**：在 `AgentRuntime.__init__` 中添加
+2. **实现 `set_credentials` 方法**：支持外部设置凭证
+3. **修复 `_get_api_client`**：支持平台别名映射（`google-ads` → `google`）
+4. **修复 `auto_load_skills`**：使用正确的 credentials key
+5. **修复 `_find_skill_by_platform`**：正确查找和加载 Skill
+
+### 测试结果
+- ✅ Meta: 25 campaigns 正常返回
+- ✅ TikTok: 20 campaigns 正常返回  
+- ✅ Google Ads: 工具执行成功（账户无 campaign 返回空）
+- ⚠️ DV360: JWT PEM 密钥格式错误（待修复）
+
+### 安全
+- 使用 `git filter-branch` 清除历史提交中的敏感凭证
+- config.yaml 改为环境变量模板
+- 添加 .env.example 说明所需环境变量
