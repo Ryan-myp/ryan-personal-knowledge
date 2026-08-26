@@ -344,3 +344,16 @@ curl -X POST http://localhost:8765/chat \
 # ✅ Success: true, Campaigns: 100
 # ✅ 包含 UI 中的 campaign: App promotion-App-2 (ID: 22078331406)
 ```
+
+### 6. 渠道技能文件升级
+- **问题**: `agents/ad_agent/skills/channels/` 下的技能文件过于简陋（38-78 行）
+- **修复**: 将 `knowledge/skills/` 下的专家级内容整合到渠道技能中
+- **新增**: 每个渠道创建 `expert/best_practices.md`，包含完整代码示例和最佳实践
+- **结果**: 专家知识正确加载到 LLM 上下文
+
+| 渠道 | 原行数 | 新行数 | 工具数 | 专家知识 |
+|------|--------|--------|--------|----------|
+| google-ads | 42 | 215 | 15 | ✅ 3750 chars |
+| meta | 39 | 197 | 14 | ✅ 2630 chars |
+| tiktok | 38 | 196 | 14 | ✅ 1830 chars |
+| dv360 | 78 | 248 | 52 | ✅ 2229 chars |
