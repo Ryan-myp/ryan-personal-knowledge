@@ -164,3 +164,68 @@ async def get_tools():
         return {"tools": []}
     tools = runtime.registry.list_all()
     return {"tools": [{"name": t.name, "platform": t.platform, "skill": t.skill, "description": t.description} for t in tools]}
+
+
+class ChatStreamRequest(BaseModel):
+    user_input: str
+    user_id: str = "web_user"
+    account_id: str = ""
+    confirmed: bool = False
+    confirmation_payload: Optional[dict] = None
+    platform_params: Optional[dict] = None
+
+
+@app.post("/chat/stream", tags=["chat"])
+async def chat_stream(request: ChatStreamRequest):
+    """流式对话接口，返回 SSE 格式的思考过程"""
+    from fastapi.responses import StreamingResponse
+    
+    if not runtime:
+        return JSONResponse(content={"success": False, "error": "服务未初始化"}, status_code=503)
+    
+    try:
+        user_input = request.user_input
+        if request.confirmed and request.platform_params:
+            params_str = [f"{k}={v}" for p in request.platform_params.values() for k, v in p.items()]
+            if params_str:
+                user_input = f"{user_input} [参数: {', '.join(params_str)}]"
+        
+        async def generate():
+            # 发送开始信号
+            yield "data: {\"type\": \"start\", \"content\": \"🤔 正在分析您的需求...\"}\n\n"
+            
+            # 执行对话
+            result = runtime.run(
+                user_input=user_input,
+                user_id=request.user_id,
+                account_id=request.account_id or None,
+                platform_params=request.platform_params,
+            )
+            
+            # 发送思考过程
+            yield f"data: {{\"type\": \"thinking\", \"content\": \"✅ 已完成分析，准备执行工具...\"}}\n\n"
+            
+            # 发送工具执行状态
+            for r in result.get("results", []):
+                tool = r.get("tool", "")
+                success = r.get("success", False)
+                status = "✅" if success else "❌"
+                yield f"data: {{\"type\": \"tool_status\", \"tool\": \"{tool}\", \"success\": {str(success).lower()}, \"status\": \"{status} {tool}\"}}\n\n"
+            
+            # 发送最终回复
+            reply = result.get("reply", "")
+            yield f"data: {{\"type\": \"reply\", \"content\": \"{reply}\"}}\n\n"
+            
+            # 发送完成信号
+            yield "data: {\"type\": \"done\"}\n\n"
+        
+        return StreamingResponse(
+            generate(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            }
+        )
+    except Exception as e:
+        return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)

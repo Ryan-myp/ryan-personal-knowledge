@@ -928,13 +928,17 @@ class AgentRuntime:
                         campaigns = data['campaigns']
                         if campaigns:
                             lines.append(f"📊 [{platform}] 找到 {len(campaigns)} 个 Campaign:\n")
-                            for i, c in enumerate(campaigns[:5], 1):  # 最多显示 5 个
-                                lines.append(f"  📌 Campaign #{i}:")
-                                for k, v in c.items():
-                                    if v is not None and v != '' and v != 0:
-                                        lines.append(f"    • {k}: {v}")
-                            if len(campaigns) > 5:
-                                lines.append(f"  ... 还有 {len(campaigns) - 5} 个")
+                            # 显示为表格格式
+                            lines.append("| # | 名称 | 状态 | 预算 | 目标 |")
+                            lines.append("|---|------|------|------|------|")
+                            for i, c in enumerate(campaigns[:10], 1):  # 最多显示 10 个
+                                name = str(c.get('campaign_name') or c.get('name') or 'N/A')[:30]
+                                status = str(c.get('operation_status') or c.get('status') or 'N/A')
+                                budget = c.get('budget') or c.get('daily_budget') or 0
+                                objective = str(c.get('objective') or c.get('objective_type') or 'N/A')
+                                lines.append(f"| {i} | {name} | {status} | ¥{budget} | {objective} |")
+                            if len(campaigns) > 10:
+                                lines.append(f"\n... 还有 {len(campaigns) - 10} 个 Campaign")
                         else:
                             lines.append(f"📊 [{platform}] 没有找到 Campaign")
                     elif 'accounts' in data:
@@ -956,6 +960,30 @@ class AgentRuntime:
                                 lines.append(f"  • {k}: {v:.2f}")
                             else:
                                 lines.append(f"  • {k}: {v}")
+                    elif 'report' in data:
+                        report = data['report']
+                        summary = data.get('summary', {})
+                        if report:
+                            lines.append(f"📊 [{platform}] 报表数据（共 {len(report)} 条记录）:")
+                            lines.append("")
+                            # 显示汇总
+                            if summary:
+                                lines.append(f"**汇总**: 展示 {summary.get('total_impressions', 0):,} | 点击 {summary.get('total_clicks', 0):,} | 花费 ¥{summary.get('total_spend', 0):.2f}")
+                                lines.append("")
+                            # 显示每条记录的详细信息
+                            for i, r in enumerate(report[:5], 1):  # 最多显示5条
+                                campaign = r.get('campaign', {})
+                                lines.append(f"**Campaign #{i}**: {campaign.get('name', 'N/A')}")
+                                lines.append(f"  • 状态: {campaign.get('status', 'N/A')}")
+                                metrics = campaign.get('metrics', {})
+                                if metrics:
+                                    lines.append(f"  • 展示: {metrics.get('impressions', 0):,} | 点击: {metrics.get('clicks', 0):,} | CTR: {metrics.get('ctr', 0):.2%}")
+                                    lines.append(f"  • 花费: ¥{metrics.get('cost_micros', 0) / 1_000_000:.2f} | 转化: {metrics.get('conversions', 0):,}")
+                                lines.append("")
+                            if len(report) > 5:
+                                lines.append(f"... 还有 {len(report) - 5} 条记录")
+                        else:
+                            lines.append(f"📊 [{platform}] 没有找到报表数据，请确认账户和日期范围")
                     else:
                         lines.append(f"✅ [{platform}] {tool}")
                 

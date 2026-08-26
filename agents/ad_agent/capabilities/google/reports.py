@@ -33,7 +33,11 @@ class GoogleGetReportHandler(ToolHandler):
                     date_from=date_range,
                     date_to="TODAY",
                 )
-                return ToolResult.ok({"report": report})
+                # 返回结构化的报表数据
+                return ToolResult.ok({
+                    "report": report,
+                    "summary": self._summarize_report(report),
+                })
             except Exception as e:
                 return ToolResult.error(f"Failed to get Google report: {e}")
         else:
@@ -44,5 +48,22 @@ class GoogleGetReportHandler(ToolHandler):
                     "spend": 480.50,
                     "ctr": 0.0256,
                     "conversions": 48,
-                }
+                },
+                "summary": "Mock data for testing"
             })
+    
+    def _summarize_report(self, report: list) -> dict:
+        """汇总报表数据"""
+        if not report:
+            return {"total_impressions": 0, "total_clicks": 0, "total_spend": 0}
+        
+        total_impressions = sum(r.get('campaign', {}).get('metrics', {}).get('impressions', 0) or 0 for r in report)
+        total_clicks = sum(r.get('campaign', {}).get('metrics', {}).get('clicks', 0) or 0 for r in report)
+        total_spend = sum(r.get('campaign', {}).get('metrics', {}).get('cost_micros', 0) or 0 for r in report) / 1_000_000
+        
+        return {
+            "total_impressions": total_impressions,
+            "total_clicks": total_clicks,
+            "total_spend": round(total_spend, 2),
+            "campaign_count": len(report)
+        }
