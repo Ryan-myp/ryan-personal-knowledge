@@ -701,11 +701,20 @@ class AgentRuntime:
         needs_confirmation = False
         confirmation_payload = None
         
+        # 平台名称映射（intent 使用短名，工具使用完整名）
+        platform_name_map = {
+            'google': 'google-ads',
+            'google-ads': 'google-ads',
+        }
+        
         for platform, tools in tool_plan.items():
+            # 转换平台名称
+            actual_platform = platform_name_map.get(platform, platform)
+            
             # 检查账户是否有效（所有操作都需要）
             if not account_id:
                 # 尝试从配置中获取测试账户
-                test_accounts = self.whitelist_validator.get_allowed_accounts(platform)
+                test_accounts = self.whitelist_validator.get_allowed_accounts(actual_platform)
                 if test_accounts:
                     # 自动使用第一个测试账户
                     account_id = test_accounts[0]
@@ -715,14 +724,14 @@ class AgentRuntime:
                     # 没有配置测试账户，询问用户
                     results.append({
                         "tool": tools[0].name if tools else "unknown",
-                        "platform": platform,
+                        "platform": actual_platform,
                         "success": False,
                         "error": "缺少账户ID",
                         "needs_confirmation": True,
                         "confirmation_payload": {
                             "type": "ask_account",
-                            "platform": platform,
-                            "question": f"请问您要操作哪个 {platform} 账户？请提供账户ID",
+                            "platform": actual_platform,
+                            "question": f"请问您要操作哪个 {actual_platform} 账户？请提供账户ID",
                         },
                     })
                     needs_confirmation = True
@@ -732,11 +741,11 @@ class AgentRuntime:
             for tool_def in tools:
                 # 白名单验证（写操作）
                 if tool_def.is_write_tool and account_id:
-                    allowed, error_msg = self.whitelist_validator.validate_account(platform, account_id)
+                    allowed, error_msg = self.whitelist_validator.validate_account(actual_platform, account_id)
                     if not allowed:
                         results.append({
                             "tool": tool_def.name,
-                            "platform": platform,
+                            "platform": actual_platform,
                             "success": False,
                             "error": f"账户验证失败: {error_msg}",
                         })
@@ -744,7 +753,7 @@ class AgentRuntime:
                 # 检查是否需要写入保护
                 if tool_def.is_write_tool and self.write_guard:
                     allowed, reason = self.write_guard.reserve_write(
-                        session.ctx, tool_def, intent.platform_params.get(platform, {})
+                        session.ctx, tool_def, intent.platform_params.get(actual_platform, {})
                     )
                     if not allowed:
                         results.append({
