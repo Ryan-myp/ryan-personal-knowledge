@@ -20,6 +20,8 @@ class GoogleListCampaignsHandler(ToolHandler):
         customer_id = ctx.account_id
         if self.client and customer_id:
             try:
+                # 使用请求中的 customer_id 查询
+                self.client.customer_id = customer_id
                 campaigns = self.client.list_campaigns()
                 return ToolResult.ok({"campaigns": campaigns})
             except Exception as e:

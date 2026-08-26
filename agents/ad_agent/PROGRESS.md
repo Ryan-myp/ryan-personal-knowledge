@@ -307,3 +307,40 @@ runtime.register_capability(NewPlatformCapability(api_client))
 2. **Credentials 路径** - 修复 `api_server.py` 中的路径计算
 3. **平台别名映射** - 添加 `google-ads` → `google` 映射
 4. **DV360 私钥** - 将私钥从 `dv360_service_account.json` 合并到 `ad_platform_credentials.json`
+
+## 2026-08-26 Google Ads Campaign 查询修复
+
+### 问题
+- Google Ads API 返回 0 campaigns，但 UI 显示有 campaign 数据
+- 根因：URL 中使用了 login_customer_id (MCC) 而非 customer_id
+
+### 修复
+1. **google_ads_client.py:530**
+   - 从 `/customers/{login_customer_id}/googleAds:search`
+   - 改为 `/customers/{customer_id}/googleAds:search`
+
+2. **capabilities/google/campaigns.py:GoogleListCampaignsHandler**
+   - 在执行时使用 `ctx.account_id` 更新 client 的 customer_id
+
+### 测试结果
+- ✅ 查询成功返回 100 campaigns
+- ✅ 包含用户截图中的 campaign: App promotion-App-2 (ID: 22078331406)
+
+
+### 5. Google Ads Campaign 查询修复
+- **文件**: agents/ad_agent/api_clients/google_ads_client.py
+- **修改 1**: `_search` 方法使用 `customer_id` 而非 `login_customer_id`
+  - 错误: `/customers/{login_customer_id}/googleAds:search`
+  - 正确: `/customers/{customer_id}/googleAds:search`
+- **修改 2**: 添加 `_ensure_valid_token` 方法，自动刷新过期的 access_token
+- **文件**: agents/ad_agent/capabilities/google/campaigns.py
+- **修改**: `GoogleListCampaignsHandler.execute` 使用 `ctx.account_id` 更新 client 的 customer_id
+
+### 测试结果
+```bash
+# Google Ads 测试账户: 9055507554
+curl -X POST http://localhost:8765/chat \
+  -d '{"user_input": "列出 Google Ads campaigns", "account_id": "9055507554"}'
+# ✅ Success: true, Campaigns: 100
+# ✅ 包含 UI 中的 campaign: App promotion-App-2 (ID: 22078331406)
+```

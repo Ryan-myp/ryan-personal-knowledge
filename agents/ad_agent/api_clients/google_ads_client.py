@@ -43,9 +43,45 @@ class GoogleAdsAPIClient(BasePlatformClient):
         self.developer_token = credentials.get('developer_token', '')
         self.login_customer_id = credentials.get('login_customer_id', self.customer_id)
         self._rate_limiter = RateLimiter(max_requests=1000, period=60)  # 保守限流
+        self._token_expiry = 0
+    
+    def _ensure_valid_token(self) -> str:
+        """确保 access_token 有效，过期则自动刷新"""
+        import time
+        now = time.time()
+        
+        # 如果 token 未过期，直接返回
+        if self._token_expiry > now + 60:  # 提前 60 秒刷新
+            return self.credentials.get('access_token', '')
+        
+        # 检查是否有 refresh_token
+        refresh_token = self.credentials.get('refresh_token', '')
+        if not refresh_token:
+            raise AuthError("No refresh_token available")
+        
+        # 刷新 token
+        client_id = self.credentials.get('client_id', '')
+        client_secret = self.credentials.get('client_secret', '')
+        
+        token_url = "https://oauth2.googleapis.com/token"
+        resp = requests.post(token_url, data={
+            'client_id': client_id,
+            'client_secret': client_secret,
+            'refresh_token': refresh_token,
+            'grant_type': 'refresh_token'
+        })
+        
+        if resp.status_code != 200:
+            raise AuthError(f"Failed to refresh token: {resp.text}")
+        
+        token_info = resp.json()
+        self.credentials['access_token'] = token_info['access_token']
+        self._token_expiry = now + token_info.get('expires_in', 3600)
+        
+        return self.credentials['access_token']
     
     def _build_headers(self) -> dict:
-        token = self.credentials.get('access_token', '')
+        token = self._ensure_valid_token()
         return {
             'Authorization': f'Bearer {token}',
             'Content-Type': 'application/json',
@@ -526,9 +562,10 @@ class GoogleAdsAPIClient(BasePlatformClient):
     
     def _search(self, query: str) -> dict:
         """执行 GAQL 查询"""
-        # 使用 login_customer_id 进行搜索
+        # 使用 customer_id 进行搜索（不是 login_customer_id）
+        # login_customer_id 仅用于 header 中的权限验证
         # 注意: 端点格式是 /customers/{id}/googleAds:search (斜线不是冒号)
-        url = f"{self.BASE_URL}/customers/{self.login_customer_id}/googleAds:search"
+        url = f"{self.BASE_URL}/customers/{self.customer_id}/googleAds:search"
         data = {'query': query}
         return self._do_request('POST', url, data=data)
     
