@@ -870,12 +870,11 @@ class AgentRuntime:
                         campaigns = data['campaigns']
                         if campaigns:
                             lines.append(f"📊 [{platform}] 找到 {len(campaigns)} 个 Campaign:\n")
-                            for c in campaigns[:5]:  # 最多显示 5 个
-                                # 兼容不同平台的字段名
-                                cid = c.get('campaign_id') or c.get('id', 'N/A')
-                                cname = c.get('campaign_name') or c.get('name', 'N/A')
-                                cstatus = c.get('operation_status') or c.get('secondary_status') or c.get('status', 'N/A')
-                                lines.append(f"  • {cname} (ID: {cid}, 状态: {cstatus})")
+                            for i, c in enumerate(campaigns[:5], 1):  # 最多显示 5 个
+                                lines.append(f"  📌 Campaign #{i}:")
+                                for k, v in c.items():
+                                    if v is not None and v != '' and v != 0:
+                                        lines.append(f"    • {k}: {v}")
                             if len(campaigns) > 5:
                                 lines.append(f"  ... 还有 {len(campaigns) - 5} 个")
                         else:
@@ -884,10 +883,11 @@ class AgentRuntime:
                         accounts = data['accounts']
                         if accounts:
                             lines.append(f"📊 [{platform}] 找到 {len(accounts)} 个账户:\n")
-                            for a in accounts[:5]:
-                                aid = a.get('id', 'N/A')
-                                aname = a.get('name', 'N/A')
-                                lines.append(f"  • {aname} (ID: {aid})")
+                            for i, a in enumerate(accounts[:5], 1):
+                                lines.append(f"  📌 Account #{i}:")
+                                for k, v in a.items():
+                                    if v is not None and v != '':
+                                        lines.append(f"    • {k}: {v}")
                         else:
                             lines.append(f"📊 [{platform}] 没有找到账户")
                     elif 'metrics' in data:
