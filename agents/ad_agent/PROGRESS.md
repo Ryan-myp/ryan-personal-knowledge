@@ -376,3 +376,12 @@ curl -X POST http://localhost:8765/chat \
   - Handler 现在传递正确的参数: `campaign_ids`, `date_from`, `date_to`
   - Tool 定义更新: `campaign_ids` 改为可选，默认查前5个campaign
 - **结果**: 报表查询功能恢复正常
+
+### 10. 输出格式优化和流式思考
+- **TikTok/Google Ads 列表美化**: Campaign 列表改为表格格式，显示关键字段
+- **Google Ads 报表修复**: 添加 summary 汇总，改进展示格式
+- **流式思考过程**: 
+  - 新增 `/chat/stream` SSE 端点
+  - 前端实时显示 💭 思考步骤
+  - 工具执行状态实时反馈
+  - 支持 Markdown 表格渲染
