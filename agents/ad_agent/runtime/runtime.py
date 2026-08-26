@@ -871,9 +871,10 @@ class AgentRuntime:
                         if campaigns:
                             lines.append(f"📊 [{platform}] 找到 {len(campaigns)} 个 Campaign:\n")
                             for c in campaigns[:5]:  # 最多显示 5 个
-                                cid = c.get('id', 'N/A')
-                                cname = c.get('name', 'N/A')
-                                cstatus = c.get('status', 'N/A')
+                                # 兼容不同平台的字段名
+                                cid = c.get('campaign_id') or c.get('id', 'N/A')
+                                cname = c.get('campaign_name') or c.get('name', 'N/A')
+                                cstatus = c.get('operation_status') or c.get('secondary_status') or c.get('status', 'N/A')
                                 lines.append(f"  • {cname} (ID: {cid}, 状态: {cstatus})")
                             if len(campaigns) > 5:
                                 lines.append(f"  ... 还有 {len(campaigns) - 5} 个")
