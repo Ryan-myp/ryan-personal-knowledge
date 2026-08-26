@@ -357,3 +357,14 @@ curl -X POST http://localhost:8765/chat \
 | meta | 39 | 197 | 14 | ✅ 2630 chars |
 | tiktok | 38 | 196 | 14 | ✅ 1830 chars |
 | dv360 | 78 | 248 | 52 | ✅ 2229 chars |
+
+### 8. Agent Skills 标准规范对齐
+- **参考**: https://agentskills.io/home
+- **核心要求**:
+  - SKILL.md 必须包含 YAML frontmatter（必需字段：name, description, version, author, created, tags）
+  - frontmatter 必须在文件最顶部，用 `---` 包裹
+  - 内容结构建议：角色定位 + 核心能力 + 可用 Tools + 参考文档 + 最佳实践 + FAQ
+- **当前状态**:
+  - ✅ 4 个 Channel Skills 已符合标准格式
+  - ✅ Service 正常运行，加载 39 个工具
+  - ✅ 已修复 meta Skill tags 拼写错误
