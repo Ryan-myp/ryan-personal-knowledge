@@ -368,3 +368,11 @@ curl -X POST http://localhost:8765/chat \
   - ✅ 4 个 Channel Skills 已符合标准格式
   - ✅ Service 正常运行，加载 39 个工具
   - ✅ 已修复 meta Skill tags 拼写错误
+
+### 9. 修复 Google Ads 报表查询 bug
+- **问题**: `get_campaign_report() got an unexpected keyword argument 'customer_id'`
+- **原因**: Handler 调用签名与 Client 方法签名不匹配
+- **修复**:
+  - Handler 现在传递正确的参数: `campaign_ids`, `date_from`, `date_to`
+  - Tool 定义更新: `campaign_ids` 改为可选，默认查前5个campaign
+- **结果**: 报表查询功能恢复正常
