@@ -20,9 +20,18 @@ class GoogleGetReportHandler(ToolHandler):
         customer_id = ctx.account_id
         if self.client and customer_id:
             try:
+                # 获取 campaign_ids（从 input_data 或默认）
+                campaign_ids = input_data.get("campaign_ids", [])
+                if not campaign_ids:
+                    # 如果没指定，先列出所有 campaigns
+                    campaigns = self.client.list_campaigns()
+                    campaign_ids = [str(c["id"]) for c in campaigns[:5]]  # 默认前5个
+                
+                date_range = input_data.get("date_range", "LAST_30_DAYS")
                 report = self.client.get_campaign_report(
-                    customer_id=customer_id,
-                    date_range=input_data.get("date_range"),
+                    campaign_ids=campaign_ids,
+                    date_from=date_range,
+                    date_to="TODAY",
                 )
                 return ToolResult.ok({"report": report})
             except Exception as e:

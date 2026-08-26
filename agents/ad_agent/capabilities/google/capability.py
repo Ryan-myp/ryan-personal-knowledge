@@ -217,10 +217,14 @@ class GoogleCapability(BaseCapability):
             name="google_get_campaign_report",
             skill="google-ads-api-expert",
             platform="google-ads",
-            description="查询 Google Ads Campaign 报表。",
+            description="查询 Google Ads Campaign 报表。支持按 campaign_ids 过滤，默认查询最近30天数据。",
             input_schema=ToolSchema(
-                required=["customer_id"],
-                properties={"customer_id": {"type": "string"}, "date_range": {"type": "string"}},
+                required=[],
+                properties={
+                    "customer_id": {"type": "string", "description": "Google Ads 账户 ID（从上下文自动获取）"},
+                    "campaign_ids": {"type": "array", "items": {"type": "string"}, "description": "要查询的 Campaign ID 列表，不填则默认查前5个"},
+                    "date_range": {"type": "string", "description": "日期范围，如 LAST_30_DAYS, YESTERDAY, THIS_MONTH"},
+                },
             ),
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
