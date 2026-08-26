@@ -341,14 +341,22 @@ class AgentRuntime:
         if not platforms:
             return
         
+        # 平台名称映射（intent 使用短名，Skill 使用完整名）
+        platform_name_map = {
+            'google': 'google-ads',
+            'google-ads': 'google-ads',
+        }
+        
         for platform in platforms:
-            if platform in self._loaded_skills:
+            actual_platform = platform_name_map.get(platform, platform)
+            
+            if actual_platform in self._loaded_skills:
                 continue  # 已加载，跳过
             
             # 查找对应的 Skill
-            skill = self._find_skill_by_platform(platform)
+            skill = self._find_skill_by_platform(actual_platform)
             if not skill:
-                logger.warning(f"⚠️ 未找到平台 '{platform}' 的 Skill 定义")
+                logger.warning(f"⚠️ 未找到平台 '{actual_platform}' 的 Skill 定义")
                 continue
             
             # 获取 API 客户端
@@ -406,6 +414,24 @@ class AgentRuntime:
     def set_credentials(self, credentials: dict) -> None:
         """设置 API 凭证配置"""
         self._credentials = credentials
+        
+        # 从凭证中提取测试账户，添加到白名单
+        platform_account_map = {
+            'google-ads': 'customer_id',
+            'meta': 'ad_account_id',
+            'tiktok': 'advertiser_id',
+            'dv360': 'advertiser_id',
+        }
+        
+        for platform, account_key in platform_account_map.items():
+            cred = credentials.get(platform, {}) or credentials.get(platform.replace('-ads', ''), {})
+            if cred and account_key in cred:
+                account_id = str(cred[account_key])
+                if platform not in self.whitelist_validator.allowed_accounts:
+                    self.whitelist_validator.allowed_accounts[platform] = []
+                if account_id not in self.whitelist_validator.allowed_accounts[platform]:
+                    self.whitelist_validator.allowed_accounts[platform].append(account_id)
+                    logger.info(f"✅ 已添加 {platform} 测试账户: {account_id}")
     
     def _get_api_client(self, platform: str):
         """获取指定平台的 API 客户端"""
