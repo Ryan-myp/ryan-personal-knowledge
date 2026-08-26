@@ -46,3 +46,4 @@ logs/*.log
 
 
 config/dv360_service_account.json
+\n# API Config with secrets\nagents/ad_agent/config.yaml\nconfig/*.yaml\nconfig/*.yml
