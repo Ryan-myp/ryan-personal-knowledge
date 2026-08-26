@@ -527,7 +527,8 @@ class GoogleAdsAPIClient(BasePlatformClient):
     def _search(self, query: str) -> dict:
         """执行 GAQL 查询"""
         # 使用 login_customer_id 进行搜索
-        url = f"{self.BASE_URL}/customers/{self.login_customer_id}:searchGoogle"
+        # 注意: 端点格式是 /customers/{id}/googleAds:search (斜线不是冒号)
+        url = f"{self.BASE_URL}/customers/{self.login_customer_id}/googleAds:search"
         data = {'query': query}
         return self._do_request('POST', url, data=data)
     

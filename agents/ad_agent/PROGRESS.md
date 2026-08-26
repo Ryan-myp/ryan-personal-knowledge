@@ -212,3 +212,98 @@ runtime.register_capability(NewPlatformCapability(api_client))
 - 使用 `git filter-branch` 清除历史提交中的敏感凭证
 - config.yaml 改为环境变量模板
 - 添加 .env.example 说明所需环境变量
+
+## 修复记录 - 2026-08-26
+
+### Google Ads API 端点修复
+- **问题**: 所有 Google Ads API 请求返回 404
+- **原因**: URL 端点格式错误，使用了  而不是 
+- **修复**: 
+  -  第 530 行
+  - 从  改为 
+
+### Credentials 路径修复
+- **问题**: API 服务启动时无法加载凭证
+- **原因**:  中 credentials 路径计算错误
+- **修复**: 
+  -  第 50 行
+  - 从  改为 
+
+### 平台别名映射修复
+- **问题**:  返回 None
+- **原因**: credentials 中 key 是 ，不是 
+- **修复**: 
+  -  第 148-153 行
+  - 添加平台别名映射逻辑
+
+### 测试结果
+- ✅ Google Ads: API 正常工作（账户无 campaign 返回空）
+- ✅ Meta: 正常
+- ✅ TikTok: 正常
+- ⚠️ DV360: JWT PEM 密钥格式错误（待修复）
+
+
+## 2026-08-26 Google Ads API 端点修复
+
+### 问题
+- Google Ads API 所有请求返回 404
+- 原因：URL 端点格式错误，使用了 `:search` 而不是 `/googleAds:search`
+
+### 修复
+1. **`agents/ad_agent/api_clients/google_ads_client.py`**
+   - 第 530 行：从 `/customers/{id}:search` 改为 `/customers/{id}/googleAds:search`
+
+2. **`agents/ad_agent/api_server.py`**
+   - 第 50 行：修复 credentials 路径，从 `parent.parent` 改为 `parent.parent.parent`
+   - 添加 JSON 凭证文件加载逻辑
+
+3. **`agents/ad_agent/runtime/runtime.py`**
+   - 第 148-153 行：添加平台别名映射（`google-ads` → `google`）
+
+### 测试结果
+- ✅ Google Ads: API 正常工作
+- ✅ Meta: 正常
+- ✅ TikTok: 正常
+- ⚠️ DV360: JWT PEM 密钥格式错误（待修复）
+
+## 2026-08-26 测试账户更新
+
+### 正确的测试账户 ID
+- **Meta**: `2806375919473667`
+- **Google Ads**: `9055507554`
+- **TikTok**: `7397068114548195329`
+- **DV360**: `5110831`
+
+### 测试结果
+| 平台 | 状态 | Campaigns |
+|------|------|-----------|
+| Google Ads | ✅ | 0 |
+| Meta | ✅ | 25 |
+| TikTok | ✅ | 20 |
+| DV360 | ⚠️ | JWT PEM 密钥格式错误 |
+
+### DV360 JWT 问题
+- 原因：`config/dv360_service_account.json` 中的 `private_key` 字段包含转义的 `\n` 而不是实际换行符
+- 状态：已修复私钥格式，需要重新测试
+
+## 2026-08-26 最终测试结果
+
+### 测试账户
+- **Meta**: `2806375919473667`
+- **Google Ads**: `9055507554`
+- **TikTok**: `7397068114548195329`
+- **DV360**: `5110831`
+
+### 测试结果
+| 平台 | 状态 | Campaigns | 说明 |
+|------|------|-----------|------|
+| Google Ads | ✅ | 0 | 账户无 campaign |
+| Meta | ✅ | 25 | 正常返回 |
+| TikTok | ✅ | 20 | 正常返回 |
+| DV360 | ✅ | 0 | 账户无 campaign |
+
+### 修复内容
+1. **Google Ads API 端点** - 从 `:search` 改为 `/googleAds:search`
+2. **Credentials 路径** - 修复 `api_server.py` 中的路径计算
+3. **平台别名映射** - 添加 `google-ads` → `google` 映射
+4. **DV360 私钥** - 将私钥从 `dv360_service_account.json` 合并到 `ad_platform_credentials.json`

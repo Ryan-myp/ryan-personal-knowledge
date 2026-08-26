@@ -43,15 +43,33 @@ def _init_on_import():
         runtime = AgentRuntime(persistence_store=store)
         
         # 加载配置
+        import yaml
         config_path = Path(__file__).parent / "config.yaml"
         credentials = {}
-        if config_path.exists():
-            import yaml
-            with open(config_path) as f:
-                credentials = yaml.safe_load(f).get('credentials', {})
+        models_config = {}
         
-        # 注入 LLM 客户端
-        models_config = yaml.safe_load(open(config_path)).get('models', {})
+        # 优先从 JSON 凭证文件加载
+        # __file__ = agents/ad_agent/api_server.py
+        # parent.parent.parent = ryan-personal-knowledge
+        creds_path = Path(__file__).parent.parent.parent / "config" / "ad_platform_credentials.json"
+        if creds_path.exists():
+            import json
+            with open(creds_path) as f:
+                creds_config = json.load(f)
+                # 提取各平台凭证
+                for platform in ['meta', 'google', 'tiktok', 'dv360']:
+                    if platform in creds_config:
+                        credentials[platform] = creds_config[platform]
+        
+        # 如果 JSON 文件不存在，回退到 YAML
+        if not credentials and config_path.exists():
+            with open(config_path) as f:
+                config = yaml.safe_load(f)
+                credentials = config.get('credentials', {})
+                models_config = config.get('models', {})
+        
+        # 设置凭证到 runtime
+        runtime.set_credentials(credentials)
         llm_model = models_config.get('default', 'agnes-2.5-flash')
         api_key = os.environ.get('OPENAI_API_KEY', '')
         

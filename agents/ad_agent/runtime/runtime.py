@@ -412,10 +412,14 @@ class AgentRuntime:
         if not self._credentials:
             return None
         
-        credentials = self._credentials.get(platform, {})
+        # 支持平台别名映射（google-ads -> google）
+        alias_map = {'google-ads': 'google'}
+        cred_key = alias_map.get(platform, platform)
+        
+        credentials = self._credentials.get(cred_key, {})
         if not credentials:
-            # 尝试 google-ads 别名
-            credentials = self._credentials.get('google-ads', {})
+            # 尝试原始平台名
+            credentials = self._credentials.get(platform, {})
         
         if not credentials:
             return None
