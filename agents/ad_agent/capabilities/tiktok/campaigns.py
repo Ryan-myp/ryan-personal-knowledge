@@ -24,13 +24,7 @@ class TikTokListCampaignsHandler(ToolHandler):
                 return ToolResult.ok({"campaigns": campaigns})
             except Exception as e:
                 return ToolResult.error(f"Failed to list TikTok campaigns: {e}")
-        else:
-            return ToolResult.ok({
-                "campaigns": [
-                    {"id": "test_campaign_1", "name": "Test Campaign 1", "status": "ENABLED"},
-                    {"id": "test_campaign_2", "name": "Test Campaign 2", "status": "DISABLED"},
-                ],
-            })
+        return ToolResult.error("TikTok client not configured or account_id missing")
 
 
 class TikTokGetCampaignHandler(ToolHandler):
@@ -41,16 +35,11 @@ class TikTokGetCampaignHandler(ToolHandler):
         campaign_id = input_data.get("campaign_id")
         if self.client:
             try:
-                campaign = self.client.get_campaign(campaign_id)
+                campaign = self.client.get_campaign(ctx.account_id, campaign_id)
                 return ToolResult.ok({"campaign": campaign})
             except Exception as e:
                 return ToolResult.error(f"Failed to get TikTok campaign: {e}")
-        else:
-            return ToolResult.ok({
-                "id": campaign_id,
-                "name": "Test Campaign",
-                "status": "ENABLED",
-            })
+        return ToolResult.error("TikTok client not configured")
 
 
 class TikTokCreateCampaignHandler(ToolHandler):
@@ -62,9 +51,8 @@ class TikTokCreateCampaignHandler(ToolHandler):
         if self.client and advertiser_id:
             try:
                 campaign_id = self.client.create_campaign(
-                    account_id=advertiser_id,
-                    name=input_data.get("name"),
-                    budget=input_data.get("budget"),
+                    advertiser_id=advertiser_id,
+                    campaign=input_data,
                 )
                 return ToolResult.ok({
                     "campaign_id": campaign_id,
@@ -73,9 +61,4 @@ class TikTokCreateCampaignHandler(ToolHandler):
                 })
             except Exception as e:
                 return ToolResult.error(f"Failed to create TikTok campaign: {e}")
-        else:
-            return ToolResult.ok({
-                "campaign_id": f"tiktok_{input_data.get('name', 'unknown')}",
-                "name": input_data.get("name"),
-                "status": "DISABLED",
-            })
+        return ToolResult.error("TikTok client not configured or account_id missing")

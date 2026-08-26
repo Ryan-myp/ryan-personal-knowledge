@@ -24,13 +24,7 @@ class GoogleListCampaignsHandler(ToolHandler):
                 return ToolResult.ok({"campaigns": campaigns})
             except Exception as e:
                 return ToolResult.error(f"Failed to list Google campaigns: {e}")
-        else:
-            return ToolResult.ok({
-                "campaigns": [
-                    {"id": "test_campaign_1", "name": "Test Campaign 1", "status": "ENABLED", "budget": 100},
-                    {"id": "test_campaign_2", "name": "Test Campaign 2", "status": "PAUSED", "budget": 50},
-                ],
-            })
+        return ToolResult.error("Google Ads client not configured or customer_id missing")
 
 
 class GoogleGetCampaignHandler(ToolHandler):
@@ -45,12 +39,7 @@ class GoogleGetCampaignHandler(ToolHandler):
                 return ToolResult.ok({"campaign": campaign})
             except Exception as e:
                 return ToolResult.error(f"Failed to get Google campaign: {e}")
-        else:
-            return ToolResult.ok({
-                "id": campaign_id,
-                "name": "Test Campaign",
-                "status": "ENABLED",
-            })
+        return ToolResult.error("Google Ads client not configured")
 
 
 class GoogleCreateCampaignHandler(ToolHandler):
@@ -63,10 +52,7 @@ class GoogleCreateCampaignHandler(ToolHandler):
             try:
                 campaign_id = self.client.create_campaign(
                     customer_id=customer_id,
-                    name=input_data.get("campaign_name", "Untitled"),
-                    advertising_channel_type=input_data.get("advertising_channel_type", "SEARCH"),
-                    bidding_strategy=input_data.get("bidding_strategy", "MAXIMIZE_CONVERSIONS"),
-                    daily_budget=input_data.get("budget", 100),
+                    campaign=input_data,
                 )
                 return ToolResult.ok({
                     "campaign_id": campaign_id,
@@ -75,9 +61,4 @@ class GoogleCreateCampaignHandler(ToolHandler):
                 })
             except Exception as e:
                 return ToolResult.error(f"Failed to create Google campaign: {e}")
-        else:
-            return ToolResult.ok({
-                "campaign_id": "test_campaign_new",
-                "name": input_data.get("campaign_name"),
-                "status": "ENABLED",
-            })
+        return ToolResult.error("Google Ads client not configured or customer_id missing")

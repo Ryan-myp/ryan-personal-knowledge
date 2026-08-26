@@ -24,13 +24,7 @@ class MetaListCampaignsHandler(ToolHandler):
                 return ToolResult.ok({"campaigns": campaigns})
             except Exception as e:
                 return ToolResult.error(f"Failed to list Meta campaigns: {e}")
-        else:
-            return ToolResult.ok({
-                "campaigns": [
-                    {"id": "act_2806375919473667_101", "name": "Test Campaign 1", "status": "ACTIVE", "objective": "OUTCOME_SALES"},
-                    {"id": "act_2806375919473667_102", "name": "Test Campaign 2", "status": "PAUSED", "objective": "OUTCOME_TRAFFIC"},
-                ],
-            })
+        return ToolResult.error("Meta client not configured or account_id missing")
 
 
 class MetaGetCampaignHandler(ToolHandler):
@@ -45,12 +39,7 @@ class MetaGetCampaignHandler(ToolHandler):
                 return ToolResult.ok({"campaign": campaign})
             except Exception as e:
                 return ToolResult.error(f"Failed to get Meta campaign: {e}")
-        else:
-            return ToolResult.ok({
-                "id": campaign_id,
-                "name": "Test Campaign",
-                "status": "ACTIVE",
-            })
+        return ToolResult.error("Meta client not configured")
 
 
 class MetaCreateCampaignHandler(ToolHandler):
@@ -63,8 +52,7 @@ class MetaCreateCampaignHandler(ToolHandler):
             try:
                 campaign_id = self.client.create_campaign(
                     account_id=account_id,
-                    name=input_data.get("name"),
-                    objective=input_data.get("objective", "OUTCOME_SALES"),
+                    campaign=input_data,
                 )
                 return ToolResult.ok({
                     "campaign_id": campaign_id,
@@ -73,9 +61,4 @@ class MetaCreateCampaignHandler(ToolHandler):
                 })
             except Exception as e:
                 return ToolResult.error(f"Failed to create Meta campaign: {e}")
-        else:
-            return ToolResult.ok({
-                "campaign_id": f"meta_{input_data.get('name', 'unknown')}",
-                "name": input_data.get("name"),
-                "status": "ACTIVE",
-            })
+        return ToolResult.error("Meta client not configured or account_id missing")
