@@ -52,6 +52,18 @@ class PersistenceBackend(Protocol):
     def update_workflow(
         self, workflow_id: str, status: str, metadata: Optional[dict] = None,
     ) -> bool: ...
+    def heartbeat_workflow(
+        self, workflow_id: str, lease_owner: str, lease_seconds: float = 300.0,
+    ) -> bool: ...
+    def recover_stale_workflow(
+        self, workflow_id: str, stale_after_seconds: float = 300.0,
+        metadata: Optional[dict] = None,
+    ) -> bool: ...
+    def claim_workflow_recovery(
+        self, workflow_id: str, lease_owner: str,
+        stale_after_seconds: float = 300.0, lease_seconds: float = 300.0,
+    ) -> bool: ...
+    def release_workflow_lease(self, workflow_id: str, lease_owner: str) -> bool: ...
     def upsert_workflow_item(
         self, item_id: str, workflow_id: str, sequence: int, platform: str,
         tool_name: str, status: str, input_data: dict,

@@ -111,6 +111,12 @@ class MinimalMetaClient:
         return {"campaign_id": campaign_id}
 
 
+class TemporaryFailureMetaClient(MinimalMetaClient):
+    def update_campaign(self, campaign_id, updates):
+        self.calls.append((campaign_id, updates))
+        raise TemporaryError("provider timeout")
+
+
 def test_confirmation_payload_is_bound_to_the_exact_plan():
     client = MinimalMetaClient()
     runtime = AgentRuntime(
@@ -243,6 +249,38 @@ def test_tiktok_website_contract_requires_landing_url():
     assert any("landing_url" in error for error in errors)
 
 
+def test_tiktok_campaign_and_app_ios_contracts_are_explicit():
+    definitions = {
+        definition.name: definition
+        for definition, _ in create_tiktok_capability().register_tools()
+    }
+    campaign = definitions["tiktok_create_campaign"].input_schema
+    adgroup = definitions["tiktok_create_adgroup"].input_schema
+
+    assert "APP_ACQUISITION" in campaign.properties["app_promotion_type"]["enum"]
+    assert any(
+        rule.get("id") == "app_campaign_requires_app_mode"
+        for rule in campaign.conditional_rules
+    )
+    assert any(
+        rule.get("id") == "app_ios_dependencies"
+        for rule in adgroup.conditional_rules
+    )
+
+    valid_ios = {
+        "campaign_id": "c1", "name": "iOS acquisition",
+        "promotion_type": "APP_IOS", "billing_event": "OCPM",
+        "bid_type": "BID_TYPE_NO_BID", "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
+        "budget_mode": "BUDGET_MODE_DAY", "budget": 50,
+        "daily_budget": 50, "location_ids": ["US"], "app_id": "app-1",
+        "deep_bid_type": "AEO", "operating_systems": ["IOS"],
+    }
+    assert validate_tool_input(adgroup, valid_ios) == []
+
+    missing_bid = dict(valid_ios, bid_type="BID_TYPE_CUSTOM")
+    assert any("bid_amount" in error for error in validate_tool_input(adgroup, missing_bid))
+
+
 def test_update_contract_rejects_unknown_nested_provider_fields():
     definitions = {
         definition.name: definition
@@ -290,6 +328,7 @@ def test_conditional_missing_parameter_exposes_lookup_tool():
             "tiktok": {
                 "campaign_name": "Android acquisition",
                 "objective_type": "APP_PROMOTION",
+                "app_promotion_type": "APP_ACQUISITION",
                 "campaign_type": "REGULAR_CAMPAIGN",
                 "budget_mode": "BUDGET_MODE_DAY",
                 "daily_budget": 50,
@@ -538,4 +577,63 @@ def test_write_reservation_survives_runtime_restart():
         "approval has already been consumed" in duplicate["results"][0]["error"]
         or "Duplicate write detected" in duplicate["results"][0]["error"]
     )
+    assert second_client.calls == []
+
+
+def test_uncertain_live_write_keeps_reservation_for_recovery():
+    store = AdAgentStore(":memory:")
+    first_client = TemporaryFailureMetaClient()
+    first_runtime = AgentRuntime(
+        persistence_store=store,
+        whitelist_validator=whitelist(meta=["m1"]),
+        execution_mode=ExecutionMode.LIVE.value,
+        live_approved_tools={"meta_update_campaign"},
+        granted_permissions={"ads.read", "ads.plan", "ads.write"},
+    )
+    first_runtime.register_capability(create_meta_capability(first_client))
+
+    planned = first_runtime.run(
+        "更新 Meta campaign campaign_id=123 status=PAUSED",
+        session_id="uncertain-write",
+        user_id="u1",
+        account_id="m1",
+    )
+    payload = planned["results"][0]["confirmation_payload"]
+    uncertain = first_runtime.run(
+        "更新 Meta campaign campaign_id=123 status=PAUSED",
+        session_id="uncertain-write",
+        user_id="u1",
+        account_id="m1",
+        confirmed=True,
+        confirmation_payload=payload,
+    )
+
+    assert uncertain["results"][0]["success"] is False
+    assert uncertain["results"][0]["data"]["execution_status"] == "unknown"
+    assert store.get_workflow(uncertain["workflow_id"])["status"] == "recovery_required"
+    reservation = store._get_conn().execute(
+        "SELECT status FROM write_reservations"
+    ).fetchone()
+    assert reservation["status"] == "pending"
+
+    second_client = TemporaryFailureMetaClient()
+    second_runtime = AgentRuntime(
+        persistence_store=store,
+        whitelist_validator=whitelist(meta=["m1"]),
+        execution_mode=ExecutionMode.LIVE.value,
+        live_approved_tools={"meta_update_campaign"},
+        granted_permissions={"ads.read", "ads.plan", "ads.write"},
+    )
+    second_runtime.register_capability(create_meta_capability(second_client))
+    retry = second_runtime.run(
+        "更新 Meta campaign campaign_id=123 status=PAUSED",
+        session_id="uncertain-write",
+        user_id="u1",
+        account_id="m1",
+        confirmed=True,
+        confirmation_payload=payload,
+    )
+
+    assert retry["results"][0]["success"] is False
+    assert "Duplicate write detected" in retry["results"][0]["error"]
     assert second_client.calls == []

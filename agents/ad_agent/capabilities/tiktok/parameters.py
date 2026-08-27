@@ -27,6 +27,7 @@ TIKTOK_BID_TYPES = ["BID_TYPE_NO_BID", "BID_TYPE_CUSTOM", "BID_TYPE_MAX_CONVERSI
 TIKTOK_BILLING_EVENTS = ["CPM", "GD", "CPV", "CPA", "OCPC", "OCPM", "CPC"]
 TIKTOK_PLACEMENT_TYPES = ["PLACEMENT_TYPE_NORMAL", "PLACEMENT_TYPE_AUTOMATIC"]
 TIKTOK_DEEP_BID_TYPES = ["AEO", "OCC", "ROAS"]
+TIKTOK_APP_PROMOTION_TYPES = ["APP_ACQUISITION", "APP_RETARGETING"]
 TIKTOK_AGE_GROUPS = [
     "AGE_13_17", "AGE_18_24", "AGE_25_34", "AGE_35_44",
     "AGE_45_54", "AGE_55_64", "AGE_65+",
@@ -77,7 +78,10 @@ def tiktok_campaign_schema() -> dict[str, Any]:
             "budget_mode": _field("string", "Budget mode", enum=TIKTOK_BUDGET_MODES),
             "budget": _field("number", "Daily/lifetime budget in user currency", minimum=0),
             "daily_budget": _field("number", "Daily budget in user currency", minimum=0),
-            "app_promotion_type": _field("string", "App promotion mode; only for app campaigns"),
+            "app_promotion_type": _field(
+                "string", "App promotion mode; only for app campaigns",
+                enum=TIKTOK_APP_PROMOTION_TYPES,
+            ),
             "status": _field("integer", "Campaign status: 1 active, 0 paused", enum=[0, 1]),
         },
         "conditional_rules": [
@@ -86,6 +90,18 @@ def tiktok_campaign_schema() -> dict[str, Any]:
                 "if": {"budget_mode": "BUDGET_MODE_DAY"},
                 "required": ["daily_budget"],
                 "message": "budget_mode=BUDGET_MODE_DAY requires daily_budget",
+            },
+            {
+                "id": "total_budget_required",
+                "if": {"budget_mode": "BUDGET_MODE_TOTAL"},
+                "required": ["budget"],
+                "message": "budget_mode=BUDGET_MODE_TOTAL requires budget",
+            },
+            {
+                "id": "app_campaign_requires_app_mode",
+                "if": {"objective_type": "APP_PROMOTION"},
+                "required": ["app_promotion_type"],
+                "message": "objective_type=APP_PROMOTION requires app_promotion_type",
             },
         ],
     }
@@ -146,10 +162,23 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
                 "message": "APP_ANDROID requires app_id, deep_bid_type, operating_systems and billing_event=OCPM",
             },
             {
+                "id": "app_ios_dependencies",
+                "if": {"promotion_type": "APP_IOS"},
+                "required": ["app_id", "deep_bid_type", "operating_systems"],
+                "allowed": {"billing_event": ["OCPM"]},
+                "message": "APP_IOS requires app_id, deep_bid_type, operating_systems and billing_event=OCPM",
+            },
+            {
                 "id": "website_dependencies",
                 "if": {"promotion_type": "WEBSITE"},
                 "required": ["landing_url"],
                 "message": "WEBSITE requires landing_url",
+            },
+            {
+                "id": "custom_bid_requires_amount",
+                "if": {"bid_type": "BID_TYPE_CUSTOM"},
+                "required": ["bid_amount"],
+                "message": "bid_type=BID_TYPE_CUSTOM requires bid_amount",
             },
         ],
     }

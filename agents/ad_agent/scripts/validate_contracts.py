@@ -26,7 +26,10 @@ from agents.ad_agent.core.interfaces import ReplayPolicy, ToolEffect  # noqa: E4
 from agents.ad_agent.persistence.store import AdAgentStore  # noqa: E402
 
 
-EXPECTED_COUNTS = {"meta": 16, "google-ads": 18, "tiktok": 24, "dv360": 14}
+# Built-in capabilities are a regression baseline, not a closed-world count.
+# Additional Skill-owned tools must be allowed without editing this release
+# gate; every discovered tool is still checked below for its contract.
+MINIMUM_COUNTS = {"meta": 16, "google-ads": 18, "tiktok": 24, "dv360": 14}
 PROTECTED_FIELDS = {
     "token", "accesstoken", "refreshtoken", "developertoken", "clientid",
     "clientsecret", "privatekey", "bcid", "partnerid", "mcc",
@@ -63,10 +66,10 @@ def main() -> int:
     names = [tool.name for tool in tools]
     if len(names) != len(set(names)):
         errors.append("tool names must be globally unique")
-    for platform, expected in EXPECTED_COUNTS.items():
+    for platform, minimum in MINIMUM_COUNTS.items():
         actual = len(runtime.registry.list_by_platform(platform))
-        if actual != expected:
-            errors.append(f"{platform}: expected {expected} tools, got {actual}")
+        if actual < minimum:
+            errors.append(f"{platform}: expected at least {minimum} built-in tools, got {actual}")
 
     for tool in tools:
         try:
@@ -90,7 +93,7 @@ def main() -> int:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
-    print(f"validated {len(tools)} tools across {len(EXPECTED_COUNTS)} platforms")
+    print(f"validated {len(tools)} tools across {len(runtime.registry.list_all_platforms())} platforms")
     return 0
 
 

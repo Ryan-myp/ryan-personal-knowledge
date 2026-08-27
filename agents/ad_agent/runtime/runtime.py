@@ -265,6 +265,9 @@ class AgentRuntime:
         if workflow_stale_after_seconds <= 0:
             raise ValueError("workflow_stale_after_seconds must be positive")
         self.workflow_stale_after_seconds = float(workflow_stale_after_seconds)
+        self._workflow_lease_owner = (
+            f"runtime:{os.getpid()}:{id(self)}"
+        )
         # Reconciliation is provider-owned. Built-in adapters use only
         # registered read tools; custom providers can replace/extend them
         # without adding provider branches to the Runtime.
@@ -479,6 +482,30 @@ class AgentRuntime:
         return ToolResult.error(
             f"{tool_def.name} 返回结果超过大小限制（最多 {limit} 字节）"
         )
+
+    @staticmethod
+    def _is_uncertain_provider_failure(tool_def: Any, result: ToolResult) -> bool:
+        """Identify write failures where the provider may have committed.
+
+        Handlers normalize provider exceptions into ``ToolResult.error``.  A
+        transport-aware Result field is not required from every custom Skill,
+        so the Runtime also recognizes the stable error vocabulary emitted by
+        BasePlatformClient.  These outcomes must remain recoverable rather
+        than releasing the idempotency reservation for an unsafe blind retry.
+        """
+        if not tool_def.is_write_tool or not result or result.success:
+            return False
+        data = result.data if isinstance(result.data, dict) else {}
+        if str(data.get("execution_status") or "").lower() in {
+            "unknown", "timed_out", "timeout", "transport_unknown",
+        }:
+            return True
+        message = str(result.error or "").lower()
+        return any(marker in message for marker in (
+            "timeout", "timed out", "deadline", "connection error",
+            "rate limit", "rate limited", "server error", "http 5",
+            "temporarily unavailable", "temporary error",
+        ))
     
     def inject_llm(self, llm_client) -> None:
         """注入 LLM 客户端"""
@@ -1359,14 +1386,13 @@ class AgentRuntime:
                 # the API/server path always supplies a persistent store.
                 expected = {**expected, "approval_persistence": "in_memory"}
             return expected
-        store = self._session_manager.store
-        existing = store.get_approval(expected["plan_fingerprint"])
+        existing = self._session_manager.get_approval(expected["plan_fingerprint"])
         if existing:
             expected = {**expected, "expires_at": str(existing.get("expires_at", ""))}
             return expected
         if create:
             expires_at = (datetime.now() + timedelta(seconds=ttl_seconds)).isoformat()
-            store.create_approval(
+            self._session_manager.create_approval(
                 expected["plan_fingerprint"], expected["confirmation_token"],
                 expected["session_id"], expected.get("user_id", ""),
                 expected["account_id"], expected["tool"], expires_at,
@@ -1379,7 +1405,7 @@ class AgentRuntime:
     ) -> tuple[bool, str]:
         if not self._session_manager:
             return True, ""
-        return self._session_manager.store.validate_approval(
+        return self._session_manager.validate_approval(
             expected["plan_fingerprint"], expected["confirmation_token"],
             expected["session_id"], expected.get("user_id", ""),
             expected["account_id"], expected["tool"],
@@ -1875,6 +1901,11 @@ class AgentRuntime:
                 "raw_input": self._redact_for_persistence(intent.raw_input),
             },
         )
+        self._session_manager.heartbeat_workflow(
+            workflow_id,
+            self._workflow_lease_owner,
+            self.workflow_stale_after_seconds,
+        )
         # Register every write item before the first handler can run. If the
         # process dies mid-turn, recovery still sees the complete intended
         # chain instead of an empty workflow with no actionable checkpoints.
@@ -1896,6 +1927,16 @@ class AgentRuntime:
                         input_data={},
                     )
         return workflow_id
+
+    def _heartbeat_workflow(self, workflow_id: Optional[str]) -> bool:
+        """Refresh the active workflow lease before another side effect."""
+        if not workflow_id or not self._session_manager:
+            return True
+        return self._session_manager.heartbeat_workflow(
+            workflow_id,
+            self._workflow_lease_owner,
+            self.workflow_stale_after_seconds,
+        )
 
     def _finish_workflow(
         self,
@@ -1922,6 +1963,7 @@ class AgentRuntime:
         successful_sequences = []
         failed_sequences = []
         unsupported_sequences = []
+        unknown_sequences = []
         result_occurrences: dict[str, int] = {}
         for item in results:
             name = str(item.get("tool") or "")
@@ -1947,6 +1989,11 @@ class AgentRuntime:
             elif isinstance(item.get("data"), dict) and item["data"].get("execution_status") == "unsupported":
                 status = "unsupported"
                 unsupported_sequences.append(item_sequence)
+            elif isinstance(item.get("data"), dict) and item["data"].get("execution_status") in {
+                "unknown", "timed_out", "transport_unknown",
+            }:
+                status = "unknown"
+                unknown_sequences.append(item_sequence)
             elif item.get("needs_confirmation"):
                 status = "awaiting_confirmation"
             elif item.get("success"):
@@ -1976,6 +2023,9 @@ class AgentRuntime:
         # contains no explicit failure; leave it recoverable instead.
         if pending_items:
             status = "recovery_required" if self.execution_mode == ExecutionMode.LIVE.value else "blocked"
+            compensation_required = False
+        elif unknown_sequences:
+            status = "recovery_required"
             compensation_required = False
         elif failed_sequences and successful_sequences and self.execution_mode == ExecutionMode.LIVE.value:
             self._session_manager.mark_workflow_items_for_compensation(
@@ -2079,6 +2129,7 @@ class AgentRuntime:
             })
 
         for operation in operations:
+            self._heartbeat_workflow(workflow_id)
             tool_name = tool_name_by_platform.get(operation.platform)
             if not tool_name:
                 results.append({
@@ -2692,6 +2743,7 @@ class AgentRuntime:
             chain_blocked = False
             chain_blocker = None
             for tool_def in tools:
+                self._heartbeat_workflow(workflow_id)
                 if workflow_id and tool_def.is_write_tool:
                     workflow_sequence += 1
                     self._session_manager.record_workflow_item(
@@ -3062,6 +3114,16 @@ class AgentRuntime:
                     result = ToolResult.error(f"工具执行失败: {exc}")
 
                 result = self._enforce_result_limit(result, tool_def)
+                if self._is_uncertain_provider_failure(tool_def, result):
+                    # A transport/temporary error does not prove that the
+                    # provider rejected the write. Persist an explicit
+                    # unknown outcome so workflow recovery and reconciliation
+                    # do not depend on parsing the human-readable error.
+                    result.data = {
+                        **(result.data if isinstance(result.data, dict) else {}),
+                        "execution_status": "unknown",
+                    }
+                self._heartbeat_workflow(workflow_id)
                 
                 result_index = len(results)
                 safe_result_data = self._redact_for_persistence(result.data)
@@ -3108,7 +3170,7 @@ class AgentRuntime:
                     self.write_guard.mark_executed(tool_def.name, tool_input, session.ctx.user_id)
                     if expected_confirmation and incoming_confirmation_payload:
                         if self._session_manager:
-                            self._session_manager.store.consume_approval(
+                            self._session_manager.consume_approval(
                                 expected_confirmation["plan_fingerprint"],
                                 expected_confirmation["confirmation_token"],
                             )
@@ -3118,6 +3180,7 @@ class AgentRuntime:
                     and tool_def.is_write_tool
                     and self.write_guard
                     and hasattr(self.write_guard, "release_write")
+                    and not self._is_uncertain_provider_failure(tool_def, result)
                 ):
                     self.write_guard.release_write(
                         tool_def.name, tool_input, session.ctx.user_id
@@ -3960,9 +4023,9 @@ class AgentRuntime:
         if not workflow:
             raise KeyError("workflow not found")
         if workflow.get("status") == "running" and self._is_stale_workflow(workflow):
-            self._session_manager.update_workflow(
+            self._session_manager.recover_stale_workflow(
                 workflow_id,
-                "recovery_required",
+                self.workflow_stale_after_seconds,
                 {
                     "recovery_reason": "stale_running_workflow",
                     "recovery_detected_at": datetime.now().isoformat(),
@@ -4184,6 +4247,18 @@ class AgentRuntime:
         )
         if not workflow:
             raise KeyError("workflow not found")
+        if not self._session_manager.claim_workflow_recovery(
+            workflow_id,
+            self._workflow_lease_owner,
+            self.workflow_stale_after_seconds,
+            self.workflow_stale_after_seconds,
+        ):
+            raise RuntimeError("workflow is already being recovered or is still active")
+        workflow = self.get_workflow(
+            workflow_id,
+            user_id=effective_user_id,
+            tenant_id=effective_tenant_id,
+        ) or workflow
         session_record = self._session_manager.get_session(workflow.get("session_id")) or {}
         request_clients = self._build_request_clients(credentials)
         account_scope = principal.account_scope if principal is not None else None
@@ -4272,13 +4347,20 @@ class AgentRuntime:
             })
 
         if not observations:
+            self._session_manager.release_workflow_lease(
+                workflow_id, self._workflow_lease_owner
+            )
             raise ValueError("workflow has no pending items eligible for provider reconciliation")
-        return self.reconcile_workflow(
+        reconciled = self.reconcile_workflow(
             workflow_id,
             observations,
             user_id=effective_user_id,
             tenant_id=effective_tenant_id,
         )
+        self._session_manager.release_workflow_lease(
+            workflow_id, self._workflow_lease_owner
+        )
+        return reconciled
 
     def cancel_workflow(
         self, workflow_id: str, user_id: str, tenant_id: Optional[str] = None

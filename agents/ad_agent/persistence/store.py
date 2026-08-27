@@ -14,7 +14,7 @@ import hashlib
 import threading
 import time
 from dataclasses import dataclass, field, asdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Optional, List
 
 logger = logging.getLogger(__name__)
@@ -183,6 +183,8 @@ class AdAgentStore:
         metadata TEXT DEFAULT '{}',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
+        lease_owner TEXT,
+        lease_expires_at TEXT,
         FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
     );
 
@@ -254,6 +256,13 @@ class AdAgentStore:
             }
             if "account_id" not in columns:
                 conn.execute("ALTER TABLE campaign_state ADD COLUMN account_id TEXT")
+            workflow_columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(workflows)")
+            }
+            if "lease_owner" not in workflow_columns:
+                conn.execute("ALTER TABLE workflows ADD COLUMN lease_owner TEXT")
+            if "lease_expires_at" not in workflow_columns:
+                conn.execute("ALTER TABLE workflows ADD COLUMN lease_expires_at TEXT")
             conn.commit()
     
     def close(self):
@@ -600,9 +609,14 @@ class AdAgentStore:
                     current_status, status, workflow_id,
                 )
                 return False
+            # Only an actively running workflow owns an execution lease.
+            # Awaiting confirmation and recovery-required are waiting states;
+            # a recovery worker must acquire a fresh lease through the atomic
+            # claim method instead of inheriting the old Runtime lease.
+            lease_sql = ", lease_owner = NULL, lease_expires_at = NULL" if status != "running" else ""
             if metadata is None:
                 cursor = conn.execute(
-                    "UPDATE workflows SET status = ?, updated_at = ? WHERE workflow_id = ?",
+                    f"UPDATE workflows SET status = ?, updated_at = ?{lease_sql} WHERE workflow_id = ?",
                     (status, datetime.now().isoformat(), workflow_id),
                 )
             else:
@@ -618,10 +632,108 @@ class AdAgentStore:
                         merged_metadata = {}
                 merged_metadata.update(metadata)
                 cursor = conn.execute(
-                    """UPDATE workflows SET status = ?, metadata = ?, updated_at = ?
+                    f"""UPDATE workflows SET status = ?, metadata = ?, updated_at = ?{lease_sql}
                        WHERE workflow_id = ?""",
                     (status, json.dumps(merged_metadata), datetime.now().isoformat(), workflow_id),
                 )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def heartbeat_workflow(
+        self, workflow_id: str, lease_owner: str, lease_seconds: float = 300.0,
+    ) -> bool:
+        """Refresh an active workflow lease without changing its state."""
+        if not lease_owner or float(lease_seconds) <= 0:
+            return False
+        now = datetime.now()
+        now_iso = now.isoformat()
+        expires_iso = (now + timedelta(seconds=float(lease_seconds))).isoformat()
+        with self._lock:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                """UPDATE workflows
+                   SET updated_at = ?, lease_owner = ?, lease_expires_at = ?
+                   WHERE workflow_id = ? AND status = 'running'
+                     AND (lease_owner IS NULL OR lease_owner = ?)""",
+                (now_iso, str(lease_owner), expires_iso, workflow_id, str(lease_owner)),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def recover_stale_workflow(
+        self, workflow_id: str, stale_after_seconds: float = 300.0,
+        metadata: dict = None,
+    ) -> bool:
+        """Atomically move an expired running workflow into recovery."""
+        if float(stale_after_seconds) <= 0:
+            return False
+        now = datetime.now()
+        cutoff_iso = (now - timedelta(seconds=float(stale_after_seconds))).isoformat()
+        now_iso = now.isoformat()
+        merged_metadata = dict(metadata or {})
+        merged_metadata.setdefault("recovery_reason", "stale_running_workflow")
+        merged_metadata.setdefault("recovery_detected_at", now_iso)
+        with self._lock:
+            conn = self._get_conn()
+            current = conn.execute(
+                "SELECT metadata FROM workflows WHERE workflow_id = ? AND status = 'running' "
+                "AND updated_at <= ?",
+                (workflow_id, cutoff_iso),
+            ).fetchone()
+            if not current:
+                return False
+            try:
+                existing = json.loads(current[0] or "{}") or {}
+            except (TypeError, ValueError):
+                existing = {}
+            existing.update(merged_metadata)
+            cursor = conn.execute(
+                """UPDATE workflows SET status = 'recovery_required', metadata = ?,
+                   updated_at = ?, lease_owner = NULL, lease_expires_at = NULL
+                   WHERE workflow_id = ? AND status = 'running' AND updated_at <= ?""",
+                (json.dumps(existing), now_iso, workflow_id, cutoff_iso),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def claim_workflow_recovery(
+        self, workflow_id: str, lease_owner: str,
+        stale_after_seconds: float = 300.0, lease_seconds: float = 300.0,
+    ) -> bool:
+        """Atomically claim a stale/runnable workflow for one recovery worker."""
+        if not lease_owner or float(lease_seconds) <= 0:
+            return False
+        now = datetime.now()
+        now_iso = now.isoformat()
+        expires_iso = (now + timedelta(seconds=float(lease_seconds))).isoformat()
+        cutoff_iso = (now - timedelta(seconds=float(stale_after_seconds))).isoformat()
+        with self._lock:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                """UPDATE workflows SET status = 'recovery_required',
+                   updated_at = ?, lease_owner = ?, lease_expires_at = ?
+                   WHERE workflow_id = ?
+                     AND ((status = 'running' AND updated_at <= ?)
+                       OR status IN ('failed', 'partially_failed', 'blocked', 'recovery_required'))
+                     AND (lease_owner IS NULL OR lease_owner = ?
+                       OR lease_expires_at IS NULL OR lease_expires_at <= ?)""",
+                (
+                    now_iso, str(lease_owner), expires_iso, workflow_id,
+                    cutoff_iso, str(lease_owner), now_iso,
+                ),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def release_workflow_lease(self, workflow_id: str, lease_owner: str) -> bool:
+        """Release only the lease owned by the calling recovery worker."""
+        with self._lock:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                """UPDATE workflows SET lease_owner = NULL, lease_expires_at = NULL
+                   WHERE workflow_id = ? AND lease_owner = ?""",
+                (workflow_id, str(lease_owner)),
+            )
             conn.commit()
             return cursor.rowcount > 0
 

@@ -232,6 +232,26 @@ def test_fresh_running_workflow_is_not_resumable_or_claimed():
     assert runtime.list_resumable_workflows(user_id="u1") == []
 
 
+def test_workflow_heartbeat_refreshes_lease_and_preserves_running_state():
+    store = AdAgentStore(":memory:")
+    store.create_session("heartbeat-session", "u1", "m1")
+    store.create_workflow(
+        "heartbeat-workflow", "heartbeat-session", "create_campaign", "live",
+        status="running",
+    )
+    runtime = AgentRuntime(
+        persistence_store=store,
+        workflow_stale_after_seconds=300,
+    )
+
+    assert runtime._heartbeat_workflow("heartbeat-workflow") is True
+    workflow = store.get_workflow("heartbeat-workflow")
+    assert workflow["status"] == "running"
+    assert workflow["lease_owner"] == runtime._workflow_lease_owner
+    assert workflow["lease_expires_at"]
+    assert runtime.get_workflow_resume_plan("heartbeat-workflow", user_id="u1")["resumable"] is False
+
+
 def test_stale_running_workflow_enters_recovery_required():
     store = AdAgentStore(":memory:")
     store.create_session("stale-session", "u1", "m1")
@@ -263,6 +283,23 @@ def test_stale_running_workflow_enters_recovery_required():
     assert plan["status"] == "recovery_required"
     assert plan["resumable"] is True
     assert store.get_workflow("stale-workflow")["status"] == "recovery_required"
+
+
+def test_workflow_recovery_claim_is_atomic_and_exclusive():
+    store = AdAgentStore(":memory:")
+    store.create_session("claim-session", "u1", "m1")
+    store.create_workflow(
+        "claim-workflow", "claim-session", "create_campaign", "live",
+        status="failed",
+    )
+
+    assert store.claim_workflow_recovery("claim-workflow", "worker-a") is True
+    assert store.claim_workflow_recovery("claim-workflow", "worker-b") is False
+    claimed = store.get_workflow("claim-workflow")
+    assert claimed["status"] == "recovery_required"
+    assert claimed["lease_owner"] == "worker-a"
+    assert store.release_workflow_lease("claim-workflow", "worker-b") is False
+    assert store.release_workflow_lease("claim-workflow", "worker-a") is True
 
 
 def test_resumable_workflows_keep_user_and_tenant_boundaries():

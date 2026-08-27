@@ -191,6 +191,55 @@ class SessionManager:
     ) -> bool:
         return self.store.update_workflow(workflow_id, status, metadata)
 
+    def heartbeat_workflow(
+        self, workflow_id: str, lease_owner: str, lease_seconds: float = 300.0,
+    ) -> bool:
+        return self.store.heartbeat_workflow(workflow_id, lease_owner, lease_seconds)
+
+    def recover_stale_workflow(
+        self, workflow_id: str, stale_after_seconds: float = 300.0,
+        metadata: dict = None,
+    ) -> bool:
+        return self.store.recover_stale_workflow(
+            workflow_id, stale_after_seconds, metadata
+        )
+
+    def claim_workflow_recovery(
+        self, workflow_id: str, lease_owner: str,
+        stale_after_seconds: float = 300.0, lease_seconds: float = 300.0,
+    ) -> bool:
+        return self.store.claim_workflow_recovery(
+            workflow_id, lease_owner, stale_after_seconds, lease_seconds
+        )
+
+    def release_workflow_lease(self, workflow_id: str, lease_owner: str) -> bool:
+        return self.store.release_workflow_lease(workflow_id, lease_owner)
+
+    # -- Approval records -----------------------------------------------
+
+    def get_approval(self, plan_fingerprint: str) -> Optional[dict]:
+        return self.store.get_approval(plan_fingerprint)
+
+    def create_approval(
+        self, plan_fingerprint: str, token: str, session_id: str,
+        user_id: str, account_id: str, tool_name: str, expires_at: str,
+    ) -> None:
+        self.store.create_approval(
+            plan_fingerprint, token, session_id, user_id, account_id,
+            tool_name, expires_at,
+        )
+
+    def validate_approval(
+        self, plan_fingerprint: str, token: str, session_id: str,
+        user_id: str, account_id: str, tool_name: str,
+    ) -> tuple[bool, str]:
+        return self.store.validate_approval(
+            plan_fingerprint, token, session_id, user_id, account_id, tool_name,
+        )
+
+    def consume_approval(self, plan_fingerprint: str, token: str) -> bool:
+        return self.store.consume_approval(plan_fingerprint, token)
+
     def record_workflow_item(
         self, workflow_id: str, sequence: int, platform: str, tool_name: str,
         status: str, input_data: dict, output_data: dict = None,

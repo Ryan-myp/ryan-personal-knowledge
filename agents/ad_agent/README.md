@@ -86,14 +86,16 @@ Runtime 会将身份账户范围与 `config.yaml` 的测试账户白名单取交
 Workflow 的 `/workflows/{id}/resume-plan` 只返回待恢复 item，不会自动重放；
 `/workflows/{id}/reconcile` 只接受带 `verified=true` 的 Provider 观测。
 `/workflows/{id}/reconcile/provider` 会通过渠道注册的只读回查 Tool 解析 pending/unknown item，仍不会重放写操作。
-未确认的外部结果保持 `recovery_required`，避免恢复流程绕过原有审批和幂等门禁。HTTP
+Provider timeout、连接错误、限流和 5xx 等无法确认最终结果的写入会标记为 `unknown`，保留
+幂等 reservation 并进入 `recovery_required`，避免恢复流程绕过原有审批和幂等门禁。HTTP
 reconcile 还需要显式 `ads.reconcile`（或 `ads.write`）权限；`verified` 不是权限，
 而是恢复 worker 对观测来源完成校验后的声明。
 
 Workflow 在执行前预登记 write item，并通过 upsert checkpoint 更新状态；当前 SQLite
 实现由 `PersistenceBackend` 接口隔离，后续可替换 MySQL/PostgreSQL backend，不需要改 Runtime。
 当前 SQLite 连接由进程内锁保护，部署边界按单进程处理；多进程/多实例共享状态应在接入
-MySQL 等后端并补齐租约/并发控制后开启。
+MySQL 等后端并补齐租约/并发控制后开启。运行中的 workflow 会 heartbeat，恢复 worker
+通过持久化 lease 原子 claim，避免把新鲜任务误判为可恢复或被多个 worker 同时接管。
 
 动态 Skill 可以提供 `skill.manifest.json`，其中包含插件文件 SHA-256；生产环境可
 通过 `AD_AGENT_REQUIRE_SKILL_MANIFEST=1` 和 `AD_AGENT_SKILL_MANIFEST_KEY` 要求签名。

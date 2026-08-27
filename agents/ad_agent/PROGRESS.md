@@ -11,6 +11,12 @@
 - 创建工具已支持参数目录：固定枚举/数组元素/条件依赖进入 ToolSchema，TikTok App 与地域等动态字段关联现有 lookup 工具，`/tools` 返回完整 Schema。
 - `access_token`、`refresh_token`、`developer_token`、`client_id`、`client_secret`、`private_key`、`bc_id`、`partner_id`、`mcc` 等字段禁止出现在工具 payload/updates 中；凭证不写入 SQLite。
 - 无 Provider Client 的读取默认 fail-closed；离线 fixture 仅在显式 `offline_mode=True` 下可用。
+- Workflow 有持久化 heartbeat/lease：活跃任务刷新 lease，恢复 worker 只能原子 claim
+  过期或非终态任务；当前 SQLite 仍按单进程部署，多实例需换共享 backend。
+- Provider timeout、连接错误、限流或 5xx 等不确定写结果会进入 `unknown` /
+  `recovery_required`，并保留 pending 幂等 reservation，等待只读回查后再决定状态。
+- Contract validator 将内置工具数量作为 minimum baseline；新增 Skill/Tool 不需要修改
+  中央计数，但仍必须通过统一 schema、权限、重放策略和红线字段校验。
 
 ## 项目概述
 
@@ -136,7 +142,7 @@ python -m pytest agents/ad_agent/tests/ -v
 ```
 
 测试结果：
-- 当前 `agents/ad_agent/tests/test_ad_agent.py`：97 passed
+- 当前 `agents/ad_agent/tests/`：166 passed
 - 覆盖：工具注册、Schema 校验、白名单、dry-run 不调用 Client、跨平台账户、层级 ID 传递、live 确认、持久化和 Runtime 集成
 
 ## 扩展新平台
@@ -175,8 +181,8 @@ runtime.register_capability(NewPlatformCapability(api_client))
 | 持久化 | ✅ | SQLite，跨会话恢复 |
 | 结构化日志 | ✅ | JSON 格式 |
 | Dry-run 模式 | ✅ | 无需调用线上写 API 即可测试 |
-| WriteGuard | ⚠️ | 幂等保护和 live 显式确认已接入，仍需更完整的并发/恢复测试 |
-| 单元测试 | ✅ | 全量 119 个用例 |
+| WriteGuard | ✅ | 持久化幂等、显式确认、unknown 结果保留 reservation、workflow lease/claim 已接入 |
+| 单元测试 | ✅ | 全量 166 个用例 |
 | 多平台支持 | ✅ | Meta/Google/TikTok/DV360 |
 | 可扩展性 | ✅ | 新增平台只需 Capability |
 
