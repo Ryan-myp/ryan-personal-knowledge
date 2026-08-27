@@ -140,3 +140,33 @@ def test_tools_endpoint_exposes_parameter_schema_and_enum_catalog(monkeypatch):
     assert "APP_ANDROID" in adgroup_schema["properties"]["promotion_type"]["enum"]
     assert adgroup_schema["properties"]["app_id"]["lookup_tool"] == "tiktok_list_apps"
     assert adgroup_schema["conditional_rules"]
+
+
+def test_parameter_options_endpoint_can_scope_same_field_to_tool(monkeypatch):
+    from agents.ad_agent import AgentRuntime
+    from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
+
+    runtime = AgentRuntime(offline_mode=True)
+    runtime.register_capability(create_tiktok_capability())
+    monkeypatch.setattr(api_server, "runtime", runtime)
+    monkeypatch.setattr(api_server, "API_KEY", "test-key")
+    monkeypatch.setattr(api_server, "ALLOW_UNAUTHENTICATED", False)
+
+    with TestClient(api_server.app) as client:
+        response = client.get(
+            "/parameter-options",
+            headers={"X-API-Key": "test-key"},
+            params={
+                "platform": "tiktok",
+                "field": "budget_mode",
+                "tool_name": "tiktok_create_adgroup",
+            },
+        )
+
+    assert response.status_code == 200
+    options = response.json()["options"]
+    assert len(options) == 1
+    assert options[0]["tool_name"] == "tiktok_create_adgroup"
+    assert "BUDGET_MODE_TOTAL" not in {
+        item["value"] for item in options[0]["options"]
+    }

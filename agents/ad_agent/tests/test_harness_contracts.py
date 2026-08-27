@@ -5,7 +5,7 @@ from pathlib import Path
 
 from agents.ad_agent.capabilities.meta import create_meta_capability
 from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
-from agents.ad_agent.core.interfaces import ToolContext, ToolSchema
+from agents.ad_agent.core.interfaces import ToolContext, ToolSchema, ToolDefinition, ToolEffect
 from agents.ad_agent.core.intent import LLMIntentParser
 from agents.ad_agent.core.tool_registry import SimpleToolRegistry, validate_tool_input
 from agents.ad_agent.persistence.store import AdAgentStore
@@ -89,12 +89,21 @@ def test_parameter_catalogs_expose_static_and_dynamic_options():
     objective = runtime.list_parameter_options("tiktok", "objective_type")[0]
     app = runtime.list_parameter_options("tiktok", "app_id")[0]
     operating_systems = runtime.list_parameter_options("tiktok", "operating_systems")[0]
+    budget_modes = runtime.list_parameter_options("tiktok", "budget_mode")
 
     assert objective["source"] == "tool_schema"
     assert "APP_PROMOTION" in {item["value"] for item in objective["options"]}
     assert app["source"] == "lookup"
     assert app["lookup_tool"] == "tiktok_list_apps"
     assert {item["value"] for item in operating_systems["options"]} == {"ANDROID", "IOS"}
+    campaign_budget = next(
+        item for item in budget_modes if item.get("tool_name") == "tiktok_create_campaign"
+    )
+    adgroup_budget = next(
+        item for item in budget_modes if item.get("tool_name") == "tiktok_create_adgroup"
+    )
+    assert "BUDGET_MODE_TOTAL" in {item["value"] for item in campaign_budget["options"]}
+    assert "BUDGET_MODE_TOTAL" not in {item["value"] for item in adgroup_budget["options"]}
 
 
 def test_workflow_state_machine_and_cancel_are_durable():
@@ -128,6 +137,50 @@ def test_turn_tool_budget_stops_long_create_chain():
     assert result["results"][0]["success"] is True
     assert any(item.get("data", {}).get("execution_status") == "budget_exceeded"
                for item in result["results"])
+
+
+def test_missing_tool_permission_fails_closed_before_handler_execution():
+    calls = []
+
+    class Handler:
+        def execute(self, _ctx, _input):
+            calls.append(True)
+            return type("Result", (), {"success": True, "data": {}})()
+
+    from agents.ad_agent.core.interfaces import ParsedIntent
+
+    class Parser:
+        def parse(self, _text, _ctx):
+            return ParsedIntent(
+                intent_type="permission_test", raw_input="test", platforms=["meta"]
+            )
+
+    class Router:
+        def route(self, _intent, registry):
+            definition, _ = registry.get("permissioned_read")
+            return {"meta": [definition]}
+
+    runtime = AgentRuntime(
+        intent_parser=Parser(),
+        intent_router=Router(),
+        whitelist_validator=_whitelist(meta=["m1"]),
+    )
+    runtime.registry.register(
+        ToolDefinition(
+            name="permissioned_read",
+            skill="test",
+            platform="meta",
+            description="permission test",
+            input_schema=ToolSchema(properties={"account_id": {"type": "string"}}),
+            effect_class=ToolEffect.READ,
+            required_permissions=["ads.read"],
+        ),
+        Handler(),
+    )
+    result = runtime.run("test", account_id="m1")
+    assert result["results"][0]["success"] is False
+    assert "ads.read" in result["results"][0]["error"]
+    assert calls == []
 
 
 def test_golden_intent_cases_remain_deterministic():

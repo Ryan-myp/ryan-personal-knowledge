@@ -167,6 +167,7 @@ class AgentRuntime:
         business_context: Optional[BusinessContext] = None,
         tool_selector: Optional[DynamicToolSelector] = None,
         offline_mode: bool = False,
+        granted_permissions: Optional[set[str]] = None,
         max_tool_calls: int = 32,
         turn_timeout_seconds: float = 120.0,
         max_user_input_chars: int = 12_000,
@@ -231,6 +232,12 @@ class AgentRuntime:
         # results.  Write planning remains available without a client because
         # dry-run writes are intercepted before handlers execute.
         self.offline_mode = bool(offline_mode)
+        # Permissions are injected by the trusted embedding/auth layer, never
+        # inferred from user text or provider credentials. Missing permissions
+        # fail closed for both read and write tools.
+        self._granted_permissions = frozenset(
+            str(permission) for permission in (granted_permissions or set())
+        )
         if max_tool_calls <= 0:
             raise ValueError("max_tool_calls must be positive")
         if turn_timeout_seconds <= 0:
@@ -406,6 +413,15 @@ class AgentRuntime:
             return "本回合执行超时，已停止后续工具调用"
         return None
 
+    def _check_tool_permissions(self, tool_def: Any) -> Optional[str]:
+        required = {
+            str(permission) for permission in (getattr(tool_def, "required_permissions", []) or [])
+        }
+        missing = sorted(required - self._granted_permissions)
+        if missing:
+            return "缺少工具所需权限：" + ", ".join(missing)
+        return None
+
     def _enforce_result_limit(self, result: ToolResult, tool_def: Any) -> ToolResult:
         """Bound provider/LLM output before it reaches history or HTTP JSON."""
         limit = int(getattr(tool_def, "max_output_bytes", 1_000_000) or 1_000_000)
@@ -474,6 +490,7 @@ class AgentRuntime:
                 definition.platform,
                 getattr(definition.input_schema, "properties", {})
                 if definition.input_schema else {},
+                tool_name=definition.name,
             )
         self.parameter_catalogs.register_many(
             getattr(runtime, "parameter_catalogs", []) or []
@@ -515,12 +532,15 @@ class AgentRuntime:
 
     def list_parameter_options(
         self, platform: Optional[str] = None, field: Optional[str] = None,
+        tool_name: Optional[str] = None,
     ) -> list[dict[str, Any]]:
         """Return JSON-safe static or dynamic provider parameter metadata."""
-        if field:
-            catalog = self.parameter_catalogs.get(platform or "", field)
-            return [catalog.to_dict()] if catalog else []
-        return self.parameter_catalogs.to_dict(platform)
+        return [
+            catalog.to_dict()
+            for catalog in self.parameter_catalogs.list(
+                platform=platform, field=field, tool_name=tool_name
+            )
+        ]
     
     def _register_skill(self, skill: Skill) -> None:
         """将 Skill 的工具注册到 Registry"""
@@ -665,6 +685,7 @@ class AgentRuntime:
                     tool_def.platform,
                     getattr(tool_def.input_schema, "properties", {})
                     if tool_def.input_schema else {},
+                    tool_name=tool_def.name,
                 )
                 registered_count += 1
                 logger.debug(f"✅ 注册工具: {tool_def.name} (platform={platform})")
@@ -1913,6 +1934,16 @@ class AgentRuntime:
                 intent, platform, [report_def], session.ctx.account_id
             )
             actual_platform = self.PLATFORM_NAME_MAP.get(platform, platform)
+            permission_error = self._check_tool_permissions(report_def)
+            if permission_error:
+                results.append({
+                    "tool": report_name,
+                    "platform": platform,
+                    "success": False,
+                    "error": permission_error,
+                    "needs_confirmation": False,
+                })
+                continue
             allowed, account_error = self._validate_account_for_tool(
                 actual_platform, per_platform_account, False
             )
@@ -2332,6 +2363,19 @@ class AgentRuntime:
                         "error": f"前置工具 {chain_blocker} 未成功，已停止后续依赖步骤",
                         "skipped": True,
                     })
+                    continue
+                permission_error = self._check_tool_permissions(tool_def)
+                if permission_error:
+                    results.append({
+                        "tool": tool_def.name,
+                        "platform": platform,
+                        "success": False,
+                        "data": {},
+                        "error": permission_error,
+                        "needs_confirmation": False,
+                    })
+                    chain_blocked = True
+                    chain_blocker = tool_def.name
                     continue
                 if not self._read_only_mode:
                     if tool_def.is_write_tool and per_platform_account:

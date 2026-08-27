@@ -44,6 +44,7 @@ class ParameterCatalog:
     version: str = "1"
     lookup_tool: Optional[str] = None
     description: str = ""
+    tool_name: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         result = {
@@ -54,6 +55,8 @@ class ParameterCatalog:
             "dynamic": self.source == "lookup",
             "options": [option.to_dict() for option in self.options],
         }
+        if self.tool_name:
+            result["tool_name"] = self.tool_name
         if self.lookup_tool:
             result["lookup_tool"] = self.lookup_tool
         if self.description:
@@ -65,12 +68,13 @@ class ParameterCatalogRegistry:
     """Thread-safe-by-construction registry owned by one Runtime.
 
     Registration is deterministic: later Skill registrations replace a
-    catalog with the same ``(platform, field)`` key, which allows a provider
-    Skill version to explicitly supersede an older declaration.
+    catalog with the same ``(platform, tool, field)`` key, which keeps
+    same-named fields at different resource levels from overwriting one
+    another.
     """
 
     def __init__(self) -> None:
-        self._catalogs: dict[tuple[str, str], ParameterCatalog] = {}
+        self._catalogs: dict[tuple[str, str, Optional[str]], ParameterCatalog] = {}
         self._lock = threading.RLock()
 
     @staticmethod
@@ -87,7 +91,8 @@ class ParameterCatalogRegistry:
         if catalog.source == "lookup" and not catalog.lookup_tool:
             raise ValueError("lookup catalog requires lookup_tool")
         with self._lock:
-            self._catalogs[(platform, str(catalog.field))] = ParameterCatalog(
+            tool_name = str(catalog.tool_name) if catalog.tool_name else None
+            self._catalogs[(platform, str(catalog.field), tool_name)] = ParameterCatalog(
                 platform=platform,
                 field=str(catalog.field),
                 options=tuple(catalog.options),
@@ -95,13 +100,17 @@ class ParameterCatalogRegistry:
                 version=str(catalog.version),
                 lookup_tool=catalog.lookup_tool,
                 description=catalog.description,
+                tool_name=tool_name,
             )
 
     def register_many(self, catalogs: list[ParameterCatalog] | tuple[ParameterCatalog, ...]) -> None:
         for catalog in catalogs or ():
             self.register(catalog)
 
-    def register_tool_schema(self, platform: str, properties: dict[str, Any]) -> None:
+    def register_tool_schema(
+        self, platform: str, properties: dict[str, Any],
+        tool_name: Optional[str] = None,
+    ) -> None:
         """Derive static catalogs from a ToolSchema enum.
 
         This makes existing provider Capabilities discoverable immediately;
@@ -129,6 +138,7 @@ class ParameterCatalogRegistry:
                         source="tool_schema",
                         version=str(spec.get("version", "schema")),
                         description=str(spec.get("description", "")),
+                        tool_name=tool_name,
                     )
                 )
             lookup_tool = spec.get("lookup_tool")
@@ -143,6 +153,7 @@ class ParameterCatalogRegistry:
                         version=str(spec.get("version", "provider")),
                         lookup_tool=str(lookup_tool),
                         description=str(spec.get("description", "")),
+                        tool_name=tool_name,
                     )
                 )
             for child, child_spec in (spec.get("properties") or {}).items():
@@ -151,20 +162,35 @@ class ParameterCatalogRegistry:
         for field, spec in (properties or {}).items():
             register_spec(str(field), spec)
 
-    def get(self, platform: str, field: str) -> Optional[ParameterCatalog]:
+    def get(
+        self, platform: str, field: str, tool_name: Optional[str] = None,
+    ) -> Optional[ParameterCatalog]:
         with self._lock:
-            return self._catalogs.get((self._normalize_platform(platform), str(field)))
-
-    def list(self, platform: Optional[str] = None) -> list[ParameterCatalog]:
-        with self._lock:
-            if platform is None:
-                return list(self._catalogs.values())
             normalized = self._normalize_platform(platform)
-            return [catalog for (item_platform, _), catalog in self._catalogs.items()
-                    if item_platform == normalized]
+            if tool_name is not None:
+                return self._catalogs.get((normalized, str(field), str(tool_name)))
+            matches = [catalog for (item_platform, item_field, _), catalog in self._catalogs.items()
+                       if item_platform == normalized and item_field == str(field)]
+            return matches[0] if len(matches) == 1 else None
 
-    def to_dict(self, platform: Optional[str] = None) -> list[dict[str, Any]]:
-        return [catalog.to_dict() for catalog in self.list(platform)]
+    def list(
+        self, platform: Optional[str] = None, field: Optional[str] = None,
+        tool_name: Optional[str] = None,
+    ) -> list[ParameterCatalog]:
+        with self._lock:
+            normalized = self._normalize_platform(platform) if platform is not None else None
+            return [
+                catalog for (item_platform, item_field, item_tool), catalog
+                in self._catalogs.items()
+                if (normalized is None or item_platform == normalized)
+                and (field is None or item_field == str(field))
+                and (tool_name is None or item_tool == str(tool_name))
+            ]
+
+    def to_dict(
+        self, platform: Optional[str] = None, field: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
+        return [catalog.to_dict() for catalog in self.list(platform, field)]
 
 
 def now_utc_iso() -> str:

@@ -39,6 +39,7 @@ class SkillCapability:
     # parameter names, silently dropping enums and provider conditions.
     input_schema: dict[str, Any] = field(default_factory=dict)
     live_support: bool = True
+    required_permissions: list[str] = field(default_factory=list)
 
 
 class SkillContract:
@@ -224,6 +225,7 @@ class SkillContract:
                 effect=spec.get('effect', 'read'),
                 input_schema=spec.get('input_schema', {}) or {},
                 live_support=bool(spec.get('live_support', True)),
+                required_permissions=list(spec.get('required_permissions', []) or []),
             )
     
     def _load_tools_from_directory(self, tools_dir: str) -> None:
@@ -257,6 +259,7 @@ class SkillContract:
                     effect=spec.get('effect_class', 'read'),
                     input_schema=schema,
                     live_support=bool(spec.get('live_support', True)),
+                    required_permissions=list(spec.get('required_permissions', []) or []),
                 )
 
 
@@ -322,6 +325,7 @@ class BaseSkill(Skill):
                 risk_level=self._parse_risk(cap.risk_level),
                 effect_class=self._parse_effect(cap.effect),
                 live_support=cap.live_support,
+                required_permissions=list(cap.required_permissions),
             ))
         return tools
     

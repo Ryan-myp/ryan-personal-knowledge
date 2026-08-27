@@ -114,6 +114,7 @@ def _init_runtime():
             read_only_mode=read_only_mode,
             execution_mode=execution_mode,
             live_approved_tools=set(config.get("live_approved_tools", []) or []),
+            granted_permissions=set(config.get("granted_permissions", []) or []),
             offline_mode=False,
         )
 
@@ -399,6 +400,7 @@ async def get_parameter_options(
     x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
     platform: Optional[str] = Query(None, max_length=50),
     field: Optional[str] = Query(None, max_length=100),
+    tool_name: Optional[str] = Query(None, max_length=150),
 ):
     """Expose Skill-owned static enums and dynamic lookup descriptors."""
     _authorize_request(x_api_key, http_request)
@@ -407,7 +409,8 @@ async def get_parameter_options(
     return {
         "platform": platform,
         "field": field,
-        "options": runtime.list_parameter_options(platform, field),
+        "tool_name": tool_name,
+        "options": runtime.list_parameter_options(platform, field, tool_name),
     }
 
 
