@@ -9,7 +9,8 @@ import logging
 from typing import Any, Optional
 from datetime import datetime
 
-from .store import AdAgentStore, ToolCallRecord, CampaignRecord
+from .interfaces import PersistenceBackend
+from .store import ToolCallRecord, CampaignRecord
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ class SessionManager:
     4. 提供会话恢复能力
     """
     
-    def __init__(self, store: AdAgentStore):
+    def __init__(self, store: PersistenceBackend):
         self.store = store
     
     # ─── Session 管理 ──────────────────────────────────────────
@@ -195,7 +196,7 @@ class SessionManager:
         status: str, input_data: dict, output_data: dict = None,
         error: str = None, compensation_required: bool = False,
     ) -> None:
-        self.store.add_workflow_item(
+        self.store.upsert_workflow_item(
             item_id=f"{workflow_id}:{sequence}", workflow_id=workflow_id,
             sequence=sequence, platform=platform, tool_name=tool_name,
             status=status, input_data=input_data, output_data=output_data,
@@ -221,6 +222,9 @@ class SessionManager:
         )
 
     def list_resumable_workflows(
-        self, user_id: Optional[str] = None, limit: int = 50
+        self, user_id: Optional[str] = None, limit: int = 50,
+        include_stale_running: bool = False, stale_after_seconds: float = 300.0,
     ) -> list[dict]:
-        return self.store.list_resumable_workflows(user_id, limit)
+        return self.store.list_resumable_workflows(
+            user_id, limit, include_stale_running, stale_after_seconds
+        )

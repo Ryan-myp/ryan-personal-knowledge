@@ -32,7 +32,8 @@ import yaml
 from ..core.interfaces import (
     ToolContext, ToolResult, ChatMessage, CapabilityModule,
     CapabilityRuntime, ToolRegistry, WriteGuard, IntentParser, IntentRouter,
-    ParsedIntent, ToolHandler, ToolEffect, ExecutionMode
+    ParsedIntent, ToolHandler, ToolEffect, ExecutionMode, ProviderReconciler,
+    ReconciliationContext, ReconciliationObservation
 )
 from ..core.tool_registry import GuardedToolRegistry, SimpleToolRegistry, validate_tool_input
 from ..core.intent import LLMIntentParser, SimpleIntentRouter
@@ -42,7 +43,9 @@ from ..core.parameter_catalog import ParameterCatalogRegistry
 from ..core.auth import RequestPrincipal, normalize_account_id
 from .skill import Skill, SkillLoader
 from ..persistence.session_manager import SessionManager
-from ..persistence.store import AdAgentStore, ToolCallRecord
+from ..persistence.interfaces import PersistenceBackend
+from ..persistence.store import ToolCallRecord
+from .reconciliation import ToolReadbackReconciler
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +164,7 @@ class AgentRuntime:
         write_guard: WriteGuard = None,
         skill_roots: list[str] = None,
         llm_client=None,  # 可选：自定义 LLM 客户端
-        persistence_store: AdAgentStore = None,
+        persistence_store: PersistenceBackend = None,
         whitelist_validator: AccountWhitelistValidator = None,
         read_only_mode: bool = False,
         execution_mode: str = ExecutionMode.DRY_RUN.value,
@@ -175,6 +178,8 @@ class AgentRuntime:
         turn_timeout_seconds: float = 120.0,
         max_user_input_chars: int = 12_000,
         max_platform_params_bytes: int = 256_000,
+        provider_reconcilers: Optional[Mapping[str, ProviderReconciler]] = None,
+        workflow_stale_after_seconds: float = 300.0,
     ):
         base_registry = registry or SimpleToolRegistry()
         self.registry = (
@@ -257,6 +262,23 @@ class AgentRuntime:
         self.turn_timeout_seconds = float(turn_timeout_seconds)
         self.max_user_input_chars = int(max_user_input_chars)
         self.max_platform_params_bytes = int(max_platform_params_bytes)
+        if workflow_stale_after_seconds <= 0:
+            raise ValueError("workflow_stale_after_seconds must be positive")
+        self.workflow_stale_after_seconds = float(workflow_stale_after_seconds)
+        # Reconciliation is provider-owned. Built-in adapters use only
+        # registered read tools; custom providers can replace/extend them
+        # without adding provider branches to the Runtime.
+        self._provider_reconcilers: dict[str, ProviderReconciler] = {
+            "meta": ToolReadbackReconciler("meta"),
+            "google-ads": ToolReadbackReconciler("google-ads"),
+            "tiktok": ToolReadbackReconciler("tiktok"),
+            "dv360": ToolReadbackReconciler("dv360"),
+        }
+        for platform, reconciler in (provider_reconcilers or {}).items():
+            if not isinstance(reconciler, ProviderReconciler):
+                raise TypeError("provider reconciler must implement ProviderReconciler")
+            canonical = self.PLATFORM_NAME_MAP.get(str(platform), str(platform))
+            self._provider_reconcilers[canonical] = reconciler
         
         # 账户白名单验证器
         self.whitelist_validator = whitelist_validator or AccountWhitelistValidator()
@@ -1853,6 +1875,26 @@ class AgentRuntime:
                 "raw_input": self._redact_for_persistence(intent.raw_input),
             },
         )
+        # Register every write item before the first handler can run. If the
+        # process dies mid-turn, recovery still sees the complete intended
+        # chain instead of an empty workflow with no actionable checkpoints.
+        # Batch operations expand one tool into multiple resource items and
+        # create their checkpoints in _run_batch_plan instead.
+        if not intent.intent_type.startswith("cross_channel_batch_"):
+            sequence = 0
+            for platform, tools in tool_plan.items():
+                for tool in tools:
+                    if not tool.is_write_tool:
+                        continue
+                    sequence += 1
+                    self._session_manager.record_workflow_item(
+                        workflow_id=workflow_id,
+                        sequence=sequence,
+                        platform=self.PLATFORM_NAME_MAP.get(platform, platform),
+                        tool_name=tool.name,
+                        status="planned",
+                        input_data={},
+                    )
         return workflow_id
 
     def _finish_workflow(
@@ -1869,32 +1911,53 @@ class AgentRuntime:
             tool.name for tools in tool_plan.values() for tool in tools
             if tool.is_write_tool
         }
+        sequence_by_tool: dict[str, int] = {}
+        sequence = 0
+        for platform, tools in tool_plan.items():
+            for tool in tools:
+                if tool.is_write_tool:
+                    sequence += 1
+                    sequence_by_tool[tool.name] = sequence
         item_sequences = []
         successful_sequences = []
         failed_sequences = []
         unsupported_sequences = []
+        result_occurrences: dict[str, int] = {}
+        for item in results:
+            name = str(item.get("tool") or "")
+            if name in write_tools:
+                result_occurrences[name] = result_occurrences.get(name, 0) + 1
+        seen_occurrences: dict[str, int] = {}
         for index, item in enumerate(results):
             if item.get("tool") not in write_tools:
                 continue
-            sequence = len(item_sequences) + 1
-            item_sequences.append(sequence)
+            tool_name = str(item.get("tool") or "")
+            seen_occurrences[tool_name] = seen_occurrences.get(tool_name, 0) + 1
+            item_sequence = (
+                seen_occurrences[tool_name]
+                if result_occurrences.get(tool_name, 0) > 1
+                else sequence_by_tool.get(tool_name)
+            )
+            if item_sequence is None:
+                continue
+            item_sequences.append(item_sequence)
             skipped = bool(item.get("skipped"))
             if skipped:
                 status = "skipped"
             elif isinstance(item.get("data"), dict) and item["data"].get("execution_status") == "unsupported":
                 status = "unsupported"
-                unsupported_sequences.append(sequence)
+                unsupported_sequences.append(item_sequence)
             elif item.get("needs_confirmation"):
                 status = "awaiting_confirmation"
             elif item.get("success"):
                 status = "succeeded"
-                successful_sequences.append(sequence)
+                successful_sequences.append(item_sequence)
             else:
                 status = "failed"
-                failed_sequences.append(sequence)
+                failed_sequences.append(item_sequence)
             self._session_manager.record_workflow_item(
                 workflow_id=workflow_id,
-                sequence=sequence,
+                sequence=item_sequence,
                 platform=str(item.get("platform") or ""),
                 tool_name=str(item.get("tool") or ""),
                 status=status,
@@ -1903,7 +1966,18 @@ class AgentRuntime:
                 error=item.get("error"),
             )
 
-        if failed_sequences and successful_sequences and self.execution_mode == ExecutionMode.LIVE.value:
+        persisted = self._session_manager.get_workflow(workflow_id) or {}
+        pending_items = [
+            item for item in persisted.get("items", [])
+            if item.get("status") in {"planned", "running"}
+        ]
+        # A process can exit before a later tool produces a result. Never
+        # close such a workflow as succeeded merely because the results list
+        # contains no explicit failure; leave it recoverable instead.
+        if pending_items:
+            status = "recovery_required" if self.execution_mode == ExecutionMode.LIVE.value else "blocked"
+            compensation_required = False
+        elif failed_sequences and successful_sequences and self.execution_mode == ExecutionMode.LIVE.value:
             self._session_manager.mark_workflow_items_for_compensation(
                 workflow_id, successful_sequences
             )
@@ -2027,6 +2101,18 @@ class AgentRuntime:
                     tool_def, operation.updates
                 ),
             }
+            operation_sequence = sum(
+                1 for item in results if item.get("tool") == tool_name
+            ) + 1
+            if workflow_id and self._session_manager:
+                self._session_manager.record_workflow_item(
+                    workflow_id=workflow_id,
+                    sequence=operation_sequence,
+                    platform=self.PLATFORM_NAME_MAP.get(operation.platform, operation.platform),
+                    tool_name=tool_name,
+                    status="running",
+                    input_data=self._redact_for_persistence(tool_input),
+                )
             schema_errors = validate_tool_input(tool_def.input_schema, tool_input)
             if schema_errors:
                 results.append({
@@ -2545,7 +2631,8 @@ class AgentRuntime:
         # the redaction path when a workflow is persisted and are never added
         # to the public result payload.
         workflow_inputs: dict[int, dict] = {}
-        
+        workflow_sequence = 0
+
         tool_call_count = 0
         for platform, tools in tool_plan.items():
             # 转换平台名称
@@ -2605,6 +2692,16 @@ class AgentRuntime:
             chain_blocked = False
             chain_blocker = None
             for tool_def in tools:
+                if workflow_id and tool_def.is_write_tool:
+                    workflow_sequence += 1
+                    self._session_manager.record_workflow_item(
+                        workflow_id=workflow_id,
+                        sequence=workflow_sequence,
+                        platform=actual_platform,
+                        tool_name=tool_def.name,
+                        status="running",
+                        input_data={},
+                    )
                 tool_call_count += 1
                 budget_error = self._check_turn_budget(
                     turn_deadline, tool_call_count, self.max_tool_calls
@@ -2665,6 +2762,15 @@ class AgentRuntime:
                 tool_input = self._build_tool_input(
                     tool_def, intent, platform, session.ctx
                 )
+                if workflow_id and tool_def.is_write_tool:
+                    self._session_manager.record_workflow_item(
+                        workflow_id=workflow_id,
+                        sequence=workflow_sequence,
+                        platform=actual_platform,
+                        tool_name=tool_def.name,
+                        status="running",
+                        input_data=self._redact_for_persistence(tool_input),
+                    )
 
                 protected_paths = self._validate_protected_input(tool_input)
                 if protected_paths:
@@ -3822,9 +3928,9 @@ class AgentRuntime:
         workflow = self._session_manager.get_workflow(workflow_id)
         if not workflow:
             return None
-        if user_id is not None:
+        if user_id is not None or tenant_id is not None:
             session = self._session_manager.get_session(workflow.get("session_id")) or {}
-            if str(session.get("user_id")) != str(user_id):
+            if user_id is not None and str(session.get("user_id")) != str(user_id):
                 raise PermissionError("workflow belongs to a different user")
             if tenant_id is not None:
                 try:
@@ -3853,6 +3959,18 @@ class AgentRuntime:
         )
         if not workflow:
             raise KeyError("workflow not found")
+        if workflow.get("status") == "running" and self._is_stale_workflow(workflow):
+            self._session_manager.update_workflow(
+                workflow_id,
+                "recovery_required",
+                {
+                    "recovery_reason": "stale_running_workflow",
+                    "recovery_detected_at": datetime.now().isoformat(),
+                },
+            )
+            workflow = self.get_workflow(
+                workflow_id, user_id=user_id, tenant_id=tenant_id
+            ) or workflow
         resumable = {"failed", "partially_failed", "recovery_required", "blocked"}
         if workflow.get("status") not in resumable:
             return {
@@ -3884,6 +4002,41 @@ class AgentRuntime:
                 for item in pending
             ],
         }
+
+    def _is_stale_workflow(self, workflow: Mapping[str, Any]) -> bool:
+        """Treat a running workflow as recoverable only after its lease age."""
+        try:
+            updated_at = datetime.fromisoformat(str(workflow.get("updated_at")))
+            age = (datetime.now() - updated_at).total_seconds()
+        except (TypeError, ValueError, OverflowError):
+            return False
+        return age >= self.workflow_stale_after_seconds
+
+    def list_resumable_workflows(
+        self, user_id: Optional[str] = None, tenant_id: Optional[str] = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        """List failed or stale-running workflows within an optional tenant."""
+        if not self._session_manager:
+            return []
+        workflows = self._session_manager.list_resumable_workflows(
+            user_id=user_id,
+            limit=limit,
+            include_stale_running=True,
+            stale_after_seconds=self.workflow_stale_after_seconds,
+        )
+        if tenant_id is None:
+            return workflows
+        filtered = []
+        for workflow in workflows:
+            session = self._session_manager.get_session(workflow.get("session_id")) or {}
+            try:
+                metadata = json.loads(session.get("metadata") or "{}")
+            except (TypeError, ValueError):
+                metadata = {}
+            if str(metadata.get("tenant_id", "default")) == str(tenant_id):
+                filtered.append(workflow)
+        return filtered
 
     def reconcile_workflow(
         self,
@@ -3995,6 +4148,137 @@ class AgentRuntime:
         return self.get_workflow(
             workflow_id, user_id=user_id, tenant_id=tenant_id
         ) or {}
+
+    def reconcile_workflow_from_provider(
+        self,
+        workflow_id: str,
+        user_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+        credentials: Optional[dict] = None,
+        principal: Optional[RequestPrincipal] = None,
+    ) -> dict:
+        """Resolve pending items through provider-owned read-back adapters.
+
+        This method never replays a write. A reconciler can only invoke a
+        registered read tool through the Runtime, and its observation is
+        applied by the same verified state-transition path as externally
+        supplied observations.
+        """
+        if not self._session_manager:
+            raise RuntimeError("provider reconciliation requires persistence")
+        effective_user_id = principal.user_id if principal is not None else user_id
+        effective_tenant_id = principal.tenant_id if principal is not None else tenant_id
+        permissions = (
+            principal.permissions if principal is not None else self._granted_permissions
+        )
+        permissions = frozenset(permissions or ())
+        if "ads.reconcile" not in permissions and "ads.write" not in permissions:
+            raise PermissionError("provider reconciliation requires ads.reconcile or ads.write")
+        if "ads.read" not in permissions and "ads.write" not in permissions:
+            raise PermissionError("provider reconciliation requires ads.read")
+
+        workflow = self.get_workflow(
+            workflow_id,
+            user_id=effective_user_id,
+            tenant_id=effective_tenant_id,
+        )
+        if not workflow:
+            raise KeyError("workflow not found")
+        session_record = self._session_manager.get_session(workflow.get("session_id")) or {}
+        request_clients = self._build_request_clients(credentials)
+        account_scope = principal.account_scope if principal is not None else None
+        observations: list[dict[str, Any]] = []
+        pending_statuses = {
+            "planned", "running", "awaiting_confirmation", "failed", "unknown",
+        }
+
+        for item in workflow.get("items", []):
+            if str(item.get("status")) not in pending_statuses:
+                continue
+            platform = self.PLATFORM_NAME_MAP.get(
+                str(item.get("platform") or ""), str(item.get("platform") or "")
+            )
+            input_data = item.get("input_data") if isinstance(item.get("input_data"), dict) else {}
+            account_id = None
+            for account_key in ("account_id", "advertiser_id", "customer_id"):
+                if input_data.get(account_key):
+                    account_id = str(input_data[account_key])
+                    break
+            account_id = account_id or str(session_record.get("account_id") or "")
+            allowed, account_error = self._validate_account_with_principal(
+                platform, account_id, False, account_scope
+            )
+            if not allowed:
+                observations.append({
+                    "sequence": item.get("sequence"),
+                    "status": "unknown",
+                    "verified": True,
+                    "error": f"read-back account boundary rejected: {account_error}",
+                    "source": "runtime_account_boundary",
+                })
+                continue
+
+            reconciler = self._provider_reconcilers.get(platform)
+            if reconciler is None:
+                raise ValueError(f"no ProviderReconciler registered for platform {platform}")
+
+            ctx = ToolContext(
+                session_id=str(workflow.get("session_id") or ""),
+                user_id=str(effective_user_id or session_record.get("user_id") or ""),
+                account_id=account_id,
+                credentials=self._freeze_credentials(credentials or {}),
+                metadata={
+                    "tenant_id": str(effective_tenant_id or "default"),
+                    "reconciliation": True,
+                },
+            )
+
+            def execute_read(read_tool: str, read_input: dict[str, Any]) -> ToolResult:
+                definition, _handler = self._get_registered_tool(read_tool)
+                if not definition.is_read_tool:
+                    return ToolResult.error("reconciliation callback only permits read tools")
+                permission_error = self._check_tool_permissions(definition, permissions)
+                if permission_error:
+                    return ToolResult.error(permission_error)
+                return self._execute_tool(ctx, read_tool, read_input, request_clients)
+
+            observation = reconciler.reconcile(
+                ReconciliationContext(
+                    workflow=workflow,
+                    item=item,
+                    tool_context=ctx,
+                    execute_read=execute_read,
+                )
+            )
+            if not isinstance(observation, ReconciliationObservation):
+                raise TypeError("ProviderReconciler must return ReconciliationObservation")
+            if int(observation.sequence) != int(item.get("sequence")):
+                raise ValueError("ProviderReconciler returned a mismatched workflow sequence")
+            if not observation.verified:
+                raise ValueError("ProviderReconciler must return verified observations")
+            payload = dict(observation.output_data or {})
+            payload["_reconciliation"] = {
+                "source": observation.source,
+                "observed_at": observation.observed_at,
+                "provider_resource_id": observation.provider_resource_id,
+            }
+            observations.append({
+                "sequence": observation.sequence,
+                "status": observation.status,
+                "verified": True,
+                "output_data": payload,
+                "error": observation.error,
+                "source": observation.source,
+            })
+
+        if not observations:
+            raise ValueError("workflow has no pending items eligible for provider reconciliation")
+        return self.reconcile_workflow(
+            workflow_id,
+            observations,
+            user_id=effective_user_id,
+            tenant_id=effective_tenant_id,
+        )
 
     def cancel_workflow(
         self, workflow_id: str, user_id: str, tenant_id: Optional[str] = None

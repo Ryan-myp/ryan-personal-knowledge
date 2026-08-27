@@ -1,0 +1,86 @@
+"""Persistence backend contract used by the ad-agent runtime.
+
+The current implementation is SQLite, but the orchestration layer should not
+depend on SQLite connections or SQL semantics.  A future MySQL/PostgreSQL
+backend only needs to implement this protocol; workflow, approval and
+idempotency policy remains in the Runtime/SessionManager layer.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Optional, Protocol
+
+
+class PersistenceBackend(Protocol):
+    """Structural contract for the durable ad-agent state backend."""
+
+    def create_session(
+        self, session_id: str, user_id: str,
+        account_id: Optional[str] = None, metadata: Optional[dict] = None,
+    ) -> None: ...
+
+    def get_session(self, session_id: str) -> Optional[dict]: ...
+    def update_session(self, session_id: str, metadata: Optional[dict] = None) -> None: ...
+    def list_sessions(self, user_id: Optional[str] = None, limit: int = 50) -> list[dict]: ...
+
+    def record_tool_call(self, record: Any) -> None: ...
+    def list_tool_calls(
+        self, session_id: str, turn_id: Optional[str] = None, limit: int = 100,
+    ) -> list[Any]: ...
+
+    def save_campaign(self, record: Any) -> None: ...
+    def get_campaign(
+        self, platform: str, campaign_id: str, account_id: Optional[str] = None,
+    ) -> Optional[Any]: ...
+    def list_campaigns(
+        self, platform: Optional[str] = None, status: Optional[str] = None,
+        limit: int = 100, account_id: Optional[str] = None,
+    ) -> list[Any]: ...
+    def delete_campaign(
+        self, platform: str, campaign_id: str, account_id: Optional[str] = None,
+    ) -> bool: ...
+
+    def reserve_write(self, idempotency_key: str, ttl_seconds: int = 300) -> bool: ...
+    def mark_write_executed(self, idempotency_key: str) -> None: ...
+    def release_write(self, idempotency_key: str) -> None: ...
+
+    def create_workflow(
+        self, workflow_id: str, session_id: str, intent_type: str,
+        execution_mode: str, status: str = "planned",
+        metadata: Optional[dict] = None,
+    ) -> None: ...
+    def update_workflow(
+        self, workflow_id: str, status: str, metadata: Optional[dict] = None,
+    ) -> bool: ...
+    def upsert_workflow_item(
+        self, item_id: str, workflow_id: str, sequence: int, platform: str,
+        tool_name: str, status: str, input_data: dict,
+        output_data: Optional[dict] = None, error: Optional[str] = None,
+        compensation_required: bool = False,
+    ) -> None: ...
+    def get_workflow(self, workflow_id: str) -> Optional[dict]: ...
+    def update_workflow_item(
+        self, workflow_id: str, sequence: int, status: str,
+        output_data: Optional[dict] = None, error: Optional[str] = None,
+        compensation_required: Optional[bool] = None,
+    ) -> bool: ...
+    def mark_workflow_items_for_compensation(
+        self, workflow_id: str, sequences: list[int],
+    ) -> None: ...
+    def list_resumable_workflows(
+        self, user_id: Optional[str] = None, limit: int = 50,
+        include_stale_running: bool = False, stale_after_seconds: float = 300.0,
+    ) -> list[dict]: ...
+
+    def validate_approval(
+        self, plan_fingerprint: str, token: str, session_id: str,
+        user_id: str, account_id: str, tool_name: str,
+    ) -> tuple[bool, str]: ...
+    def create_approval(
+        self, plan_fingerprint: str, token: str, session_id: str,
+        user_id: str, account_id: str, tool_name: str, expires_at: str,
+    ) -> None: ...
+    def get_approval(self, plan_fingerprint: str) -> Optional[dict]: ...
+    def consume_approval(self, plan_fingerprint: str, token: str) -> bool: ...
+
+    def close(self) -> None: ...

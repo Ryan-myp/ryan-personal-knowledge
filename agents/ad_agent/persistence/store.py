@@ -12,6 +12,7 @@ import sqlite3
 import logging
 import hashlib
 import threading
+import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import Any, Optional, List
@@ -32,8 +33,8 @@ WORKFLOW_TRANSITIONS = {
 }
 
 WORKFLOW_ITEM_TRANSITIONS = {
-    "planned": {"planned", "awaiting_confirmation", "running", "succeeded", "failed", "unknown"},
-    "running": {"running", "succeeded", "failed", "unknown"},
+    "planned": {"planned", "awaiting_confirmation", "running", "succeeded", "failed", "unknown", "skipped"},
+    "running": {"running", "awaiting_confirmation", "succeeded", "failed", "unknown", "skipped"},
     "awaiting_confirmation": {"awaiting_confirmation", "succeeded", "failed", "unknown"},
     "failed": {"failed", "succeeded", "unknown"},
     "unknown": {"unknown", "succeeded", "failed"},
@@ -648,6 +649,63 @@ class AdAgentStore:
             )
             conn.commit()
 
+    def upsert_workflow_item(
+        self, item_id: str, workflow_id: str, sequence: int, platform: str,
+        tool_name: str, status: str, input_data: dict,
+        output_data: dict = None, error: str = None,
+        compensation_required: bool = False,
+    ) -> None:
+        """Create or advance an item checkpoint without duplicating rows.
+
+        Workflow items are registered before execution and advanced after the
+        handler returns.  ``INSERT OR REPLACE`` would reset creation metadata
+        and could overwrite a newer state, so the update path validates the
+        state transition and only changes the mutable checkpoint fields.
+        """
+        with self._lock:
+            conn = self._get_conn()
+            current = conn.execute(
+                "SELECT status FROM workflow_items WHERE workflow_id = ? AND sequence = ?",
+                (workflow_id, int(sequence)),
+            ).fetchone()
+            if not current:
+                now = datetime.now().isoformat()
+                conn.execute(
+                    """INSERT INTO workflow_items
+                       (item_id, workflow_id, sequence, platform, tool_name, status,
+                        input_data, output_data, error, compensation_required,
+                        created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        item_id, workflow_id, int(sequence), platform, tool_name,
+                        status, json.dumps(input_data or {}),
+                        json.dumps(output_data) if output_data is not None else None,
+                        error, int(compensation_required), now, now,
+                    ),
+                )
+            else:
+                current_status = str(current[0])
+                if status not in WORKFLOW_ITEM_TRANSITIONS.get(current_status, set()):
+                    raise ValueError(
+                        f"cannot advance workflow item {sequence} from "
+                        f"{current_status} to {status}"
+                    )
+                assignments = [
+                    "status = ?", "input_data = ?", "output_data = ?",
+                    "error = ?", "compensation_required = ?", "updated_at = ?",
+                ]
+                conn.execute(
+                    f"UPDATE workflow_items SET {', '.join(assignments)} "
+                    "WHERE workflow_id = ? AND sequence = ?",
+                    (
+                        status, json.dumps(input_data or {}),
+                        json.dumps(output_data) if output_data is not None else None,
+                        error, int(compensation_required), datetime.now().isoformat(),
+                        workflow_id, int(sequence),
+                    ),
+                )
+            conn.commit()
+
     def get_workflow(self, workflow_id: str) -> Optional[dict]:
         with self._lock:
             conn = self._get_conn()
@@ -727,10 +785,13 @@ class AdAgentStore:
             return cursor.rowcount > 0
 
     def list_resumable_workflows(
-        self, user_id: Optional[str] = None, limit: int = 50
+        self, user_id: Optional[str] = None, limit: int = 50,
+        include_stale_running: bool = False, stale_after_seconds: float = 300.0,
     ) -> list[dict]:
         """List non-terminal workflows for an operator/recovery worker."""
-        statuses = ("failed", "partially_failed", "recovery_required", "blocked")
+        statuses = ["failed", "partially_failed", "recovery_required", "blocked"]
+        if include_stale_running:
+            statuses.append("running")
         placeholders = ",".join("?" for _ in statuses)
         params: list[Any] = list(statuses)
         query = (
@@ -747,6 +808,15 @@ class AdAgentStore:
             result = []
             for row in rows:
                 item = dict(row)
+                if item.get("status") == "running" and include_stale_running:
+                    try:
+                        age = time.time() - datetime.fromisoformat(
+                            str(item.get("updated_at"))
+                        ).timestamp()
+                    except (TypeError, ValueError, OverflowError):
+                        age = 0
+                    if age < float(stale_after_seconds):
+                        continue
                 try:
                     item["metadata"] = json.loads(item.get("metadata") or "{}")
                 except (TypeError, ValueError):

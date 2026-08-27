@@ -3,11 +3,15 @@
 import json
 from pathlib import Path
 import time
+from datetime import datetime, timedelta
 import pytest
 
 from agents.ad_agent.capabilities.meta import create_meta_capability
 from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
-from agents.ad_agent.core.interfaces import ToolContext, ToolSchema, ToolDefinition, ToolEffect
+from agents.ad_agent.core.interfaces import (
+    ToolContext, ToolSchema, ToolDefinition, ToolEffect,
+    ProviderReconciler, ReconciliationObservation,
+)
 from agents.ad_agent.core.intent import LLMIntentParser
 from agents.ad_agent.core.tool_registry import SimpleToolRegistry, validate_tool_input
 from agents.ad_agent.core.auth import RequestPrincipal
@@ -190,6 +194,169 @@ def test_workflow_state_machine_and_cancel_are_durable():
     store.update_workflow("w1", "running")
     assert runtime.cancel_workflow("w1", "u1") is True
     assert runtime.get_workflow("w1", "u1")["status"] == "cancelled"
+
+
+def test_workflow_write_items_are_checkpointed_before_execution():
+    store = AdAgentStore(":memory:")
+    runtime = AgentRuntime(
+        persistence_store=store,
+        whitelist_validator=_whitelist(meta=["m1"]),
+    )
+    runtime.register_capability(create_meta_capability())
+    result = runtime.run(
+        "创建 Meta campaign 名称=checkpointed",
+        session_id="checkpoint-session", user_id="u1", account_id="m1",
+    )
+
+    workflow = store.get_workflow(result["workflow_id"])
+    assert workflow["items"]
+    assert all(item["status"] == "succeeded" for item in workflow["items"])
+    assert len(workflow["items"]) == 3
+
+
+def test_fresh_running_workflow_is_not_resumable_or_claimed():
+    store = AdAgentStore(":memory:")
+    store.create_session("fresh-session", "u1", "m1")
+    store.create_workflow(
+        "fresh-workflow", "fresh-session", "create_campaign", "live",
+        status="running",
+    )
+    runtime = AgentRuntime(
+        persistence_store=store,
+        workflow_stale_after_seconds=300,
+    )
+
+    plan = runtime.get_workflow_resume_plan("fresh-workflow", user_id="u1")
+    assert plan["status"] == "running"
+    assert plan["resumable"] is False
+    assert runtime.list_resumable_workflows(user_id="u1") == []
+
+
+def test_stale_running_workflow_enters_recovery_required():
+    store = AdAgentStore(":memory:")
+    store.create_session("stale-session", "u1", "m1")
+    store.create_workflow(
+        "stale-workflow", "stale-session", "create_campaign", "live",
+        status="running",
+    )
+    store.add_workflow_item(
+        "stale-workflow:1", "stale-workflow", 1, "meta",
+        "meta_create_campaign", "running", {"account_id": "m1", "campaign_id": "c1"},
+    )
+    old_timestamp = (datetime.now() - timedelta(seconds=600)).isoformat()
+    with store._lock:
+        store._get_conn().execute(
+            "UPDATE workflows SET updated_at = ? WHERE workflow_id = ?",
+            (old_timestamp, "stale-workflow"),
+        )
+        store._get_conn().commit()
+
+    runtime = AgentRuntime(
+        persistence_store=store,
+        workflow_stale_after_seconds=300,
+    )
+    listed = runtime.list_resumable_workflows(user_id="u1")
+    assert [item["workflow_id"] for item in listed] == ["stale-workflow"]
+    assert listed[0]["status"] == "running"
+
+    plan = runtime.get_workflow_resume_plan("stale-workflow", user_id="u1")
+    assert plan["status"] == "recovery_required"
+    assert plan["resumable"] is True
+    assert store.get_workflow("stale-workflow")["status"] == "recovery_required"
+
+
+def test_resumable_workflows_keep_user_and_tenant_boundaries():
+    store = AdAgentStore(":memory:")
+    old_timestamp = (datetime.now() - timedelta(seconds=600)).isoformat()
+    for workflow_id, session_id, user_id, tenant_id in (
+        ("tenant-a-workflow", "tenant-a-session", "same-user", "tenant-a"),
+        ("tenant-b-workflow", "tenant-b-session", "same-user", "tenant-b"),
+        ("other-user-workflow", "other-user-session", "other-user", "tenant-a"),
+    ):
+        store.create_session(
+            session_id, user_id, "m1", metadata={"tenant_id": tenant_id}
+        )
+        store.create_workflow(
+            workflow_id, session_id, "create_campaign", "live", status="running"
+        )
+        with store._lock:
+            store._get_conn().execute(
+                "UPDATE workflows SET updated_at = ? WHERE workflow_id = ?",
+                (old_timestamp, workflow_id),
+            )
+            store._get_conn().commit()
+
+    runtime = AgentRuntime(
+        persistence_store=store,
+        workflow_stale_after_seconds=300,
+    )
+    same_user = runtime.list_resumable_workflows(user_id="same-user")
+    assert {item["workflow_id"] for item in same_user} == {
+        "tenant-a-workflow", "tenant-b-workflow"
+    }
+    tenant_a = runtime.list_resumable_workflows(
+        user_id="same-user", tenant_id="tenant-a"
+    )
+    assert [item["workflow_id"] for item in tenant_a] == ["tenant-a-workflow"]
+
+    with pytest.raises(PermissionError, match="different tenant"):
+        runtime.get_workflow("tenant-b-workflow", tenant_id="tenant-a")
+
+    with pytest.raises(PermissionError, match="different user"):
+        runtime.get_workflow("other-user-workflow", user_id="same-user")
+
+
+def test_provider_reconciler_uses_only_runtime_read_callback():
+    class Client:
+        platform = "meta"
+
+        def get_campaign(self, campaign_id):
+            return {"id": campaign_id, "name": "provider-campaign", "status": "ACTIVE"}
+
+    class Reconciler(ProviderReconciler):
+        def reconcile(self, context):
+            result = context.execute_read(
+                "meta_get_campaign", {"campaign_id": "c1"}
+            )
+            assert result.success is True
+            return ReconciliationObservation(
+                sequence=int(context.item["sequence"]),
+                status="succeeded",
+                verified=True,
+                source="test-provider-readback",
+                observed_at="2026-01-01T00:00:00+00:00",
+                output_data=result.data,
+                provider_resource_id="c1",
+            )
+
+    store = AdAgentStore(":memory:")
+    store.create_session("reconcile-session", "u1", "m1")
+    store.create_workflow(
+        "reconcile-workflow", "reconcile-session", "create_campaign", "live",
+        status="failed",
+    )
+    store.add_workflow_item(
+        "reconcile-workflow:1", "reconcile-workflow", 1, "meta",
+        "meta_create_campaign", "failed", {"account_id": "m1", "campaign_id": "c1"},
+        error="provider timeout",
+    )
+    runtime = AgentRuntime(
+        persistence_store=store,
+        whitelist_validator=_whitelist(meta=["m1"]),
+        provider_reconcilers={"meta": Reconciler()},
+    )
+    runtime.register_capability(create_meta_capability(Client()))
+    principal = RequestPrincipal(
+        user_id="u1", tenant_id="default",
+        permissions=frozenset({"ads.read", "ads.reconcile"}),
+        account_scope={"meta": {"m1"}},
+    )
+
+    workflow = runtime.reconcile_workflow_from_provider(
+        "reconcile-workflow", principal=principal
+    )
+    assert workflow["status"] == "succeeded"
+    assert workflow["items"][0]["output_data"]["_reconciliation"]["source"] == "test-provider-readback"
 
 
 def test_turn_tool_budget_stops_long_create_chain():

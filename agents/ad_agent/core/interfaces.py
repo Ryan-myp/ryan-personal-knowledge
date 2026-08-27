@@ -8,7 +8,7 @@ core/interfaces.py - 核心接口定义
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Mapping, Optional
 
 
 # ─── 核心数据类型 ───────────────────────────────────────────────
@@ -191,6 +191,57 @@ class ToolContext:
     def set_protected(self, key: str, value: Any) -> None:
         """设置跨 Tool 共享的状态"""
         self.protected_state[key] = value
+
+
+@dataclass(frozen=True)
+class ReconciliationObservation:
+    """A provider read-back result for one durable workflow item."""
+
+    sequence: int
+    status: str
+    verified: bool
+    source: str
+    observed_at: str
+    output_data: Optional[dict[str, Any]] = None
+    error: Optional[str] = None
+    provider_resource_id: Optional[str] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        result = {
+            "sequence": int(self.sequence),
+            "status": self.status,
+            "verified": bool(self.verified),
+            "source": self.source,
+            "observed_at": self.observed_at,
+            "output_data": self.output_data,
+            "error": self.error,
+        }
+        if self.provider_resource_id:
+            result["provider_resource_id"] = self.provider_resource_id
+        return result
+
+
+@dataclass
+class ReconciliationContext:
+    """Safe callback surface exposed to a ProviderReconciler.
+
+    A reconciler may perform only a read-tool call through Runtime. It does
+    not receive a registry handler or a write-capable callback.
+    """
+
+    workflow: Mapping[str, Any]
+    item: Mapping[str, Any]
+    tool_context: ToolContext
+    execute_read: Callable[[str, dict[str, Any]], ToolResult]
+
+
+class ProviderReconciler(ABC):
+    """Provider-owned adapter for resolving an uncertain write outcome."""
+
+    @abstractmethod
+    def reconcile(self, context: ReconciliationContext) -> ReconciliationObservation:
+        """Read the provider and return a verified item observation."""
+        pass
 
 
 @dataclass

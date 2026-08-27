@@ -596,3 +596,28 @@ async def reconcile_workflow(
         raise HTTPException(status_code=404, detail="workflow not found")
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+
+
+@app.post("/workflows/{workflow_id}/reconcile/provider", tags=["workflows"])
+async def reconcile_workflow_from_provider(
+    workflow_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Resolve pending items with registered provider read-back adapters."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.reconcile")
+    if not runtime:
+        raise HTTPException(status_code=503, detail="服务未初始化")
+    try:
+        return await run_in_threadpool(
+            runtime.reconcile_workflow_from_provider,
+            workflow_id=workflow_id,
+            principal=principal,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except KeyError:
+        raise HTTPException(status_code=404, detail="workflow not found")
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
