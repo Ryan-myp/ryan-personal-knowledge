@@ -62,7 +62,15 @@ def tiktok_campaign_schema() -> dict[str, Any]:
         "properties": {
             "account_id": _field("string", "TikTok advertiser ID"),
             "name": _field("string", "Campaign name; max 60 characters"),
-            "objective_type": _field("string", "Campaign optimization objective", enum=TIKTOK_OBJECTIVE_TYPES),
+            "objective_type": _field(
+                "string", "Campaign optimization objective", enum=TIKTOK_OBJECTIVE_TYPES,
+                intent_field="objective", intent_map={
+                    "sales": "PRODUCT_SALES",
+                    "leads": "LEAD_GENERATION",
+                    "traffic": "TRAFFIC",
+                    "brand": "REACH",
+                },
+            ),
             "campaign_type": _field("string", "Campaign type", enum=TIKTOK_CAMPAIGN_TYPES),
             "campaign_automation_type": _field("string", "Automation mode", enum=TIKTOK_AUTOMATION_TYPES),
             "budget_restriction": _field("string", "Budget restriction", enum=TIKTOK_BUDGET_RESTRICTIONS),

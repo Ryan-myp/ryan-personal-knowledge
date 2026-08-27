@@ -581,7 +581,11 @@ class LLMIntentParser(IntentParser):
                 updates["daily_budget"] = float(budget_match.group(1))
             if updates:
                 for p in platforms:
-                    params[p]["updates"] = updates
+                    # Keep independent payloads per provider.  A later
+                    # Capability-specific normalization (for example
+                    # TikTok campaign_group_status vs Meta status) must never
+                    # mutate the object that another channel receives.
+                    params[p]["updates"] = dict(updates)
         
         return params
     

@@ -1296,11 +1296,21 @@ class AgentRuntime:
         data = {
             "mode": ExecutionMode.DRY_RUN.value,
             "simulated": True,
+            "live_support": bool(getattr(tool_def, "live_support", False)),
             "operation": "update" if is_update else "create",
             resource_key: resource_id,
             "name": name,
             "status": "SIMULATED_UPDATED" if is_update else "SIMULATED_DRAFT",
             "input": {k: v for k, v in input_data.items() if k != "credentials"},
+        }
+        provider_errors = validate_tool_input(
+            tool_def.input_schema,
+            input_data,
+            include_provider_contract=True,
+        ) if tool_def.input_schema else []
+        data["provider_validation"] = {
+            "ready": not provider_errors,
+            "errors": provider_errors,
         }
         return ToolResult.dry_run(data)
 
@@ -2135,10 +2145,32 @@ class AgentRuntime:
                     chain_blocker = tool_def.name
                     session.ctx.account_id = original_account
                     continue
+
+                unknown_params = tool_input.pop("_unknown_params", None)
+                if unknown_params:
+                    results.append({
+                        "tool": tool_def.name,
+                        "platform": platform,
+                        "success": False,
+                        "data": {},
+                        "error": (
+                            "工具参数契约不支持以下字段："
+                            + ", ".join(unknown_params)
+                            + "；请使用该工具 Schema 中声明的参数"
+                        ),
+                        "needs_confirmation": False,
+                    })
+                    chain_blocked = True
+                    chain_blocker = tool_def.name
+                    session.ctx.account_id = original_account
+                    continue
                 
                 # 检查必需参数是否齐全，不齐全则询问用户
                 missing_params = tool_input.pop("_missing_params", None)
                 if missing_params:
+                    lookup_tools = self._lookup_tools_for_fields(
+                        tool_def, missing_params
+                    )
                     results.append({
                         "tool": tool_def.name,
                         "platform": platform,
@@ -2149,6 +2181,7 @@ class AgentRuntime:
                             "type": "ask_params",
                             "tool": tool_def.name,
                             "missing": missing_params,
+                            "lookup_tools": lookup_tools,
                             "question": f"⚠️ 执行 {tool_def.name} 需要以下参数：{', '.join(missing_params)}，请提供这些参数",
                         },
                     })
@@ -2486,6 +2519,7 @@ class AgentRuntime:
 
         # 支持平台级参数和 tool_name 级参数两种输入形式。
         specific_params = platform_params.get(tool_def.name, {}) if isinstance(platform_params, dict) else {}
+        unknown_specific_params: list[str] = []
         if isinstance(specific_params, dict):
             platform_params = {**platform_params, **specific_params}
 
@@ -2501,6 +2535,14 @@ class AgentRuntime:
             "ad_group_id": ["ad_group_id", "adgroup_id"],
             "adgroup_id": ["adgroup_id", "ad_group_id"],
         }
+        if isinstance(specific_params, dict):
+            accepted_specific = set(tool_def.input_schema.properties)
+            for param_name in tool_def.input_schema.properties:
+                accepted_specific.update(aliases.get(param_name, [param_name]))
+            unknown_specific_params = sorted(
+                key for key in specific_params
+                if key not in accepted_specific
+            )
         for param_name in tool_def.input_schema.properties:
             candidates = aliases.get(param_name, [param_name])
             for candidate in candidates:
@@ -2558,8 +2600,21 @@ class AgentRuntime:
         # produce an incomplete future live payload.
         if intent.budget is not None and "daily_budget" in tool_def.input_schema.properties:
             tool_input.setdefault("daily_budget", intent.budget)
-        if intent.objective and "objective" not in tool_input:
-            tool_input["objective"] = intent.objective
+        # Map the common business objective through provider-owned metadata.
+        # The shared Runtime does not maintain a provider enum table; a Skill
+        # can add/replace this mapping in its own field schema.
+        if intent.objective:
+            for param_name, field_schema in tool_def.input_schema.properties.items():
+                if param_name in tool_input or not isinstance(field_schema, dict):
+                    continue
+                if field_schema.get("intent_field") != "objective":
+                    continue
+                mapped = (field_schema.get("intent_map") or {}).get(
+                    str(intent.objective).lower(), intent.objective
+                )
+                tool_input[param_name] = mapped
+            if "objective" in tool_def.input_schema.properties:
+                tool_input.setdefault("objective", intent.objective)
         if getattr(intent, "campaign_type", None) and "campaign_type" in tool_def.input_schema.properties:
             tool_input.setdefault("campaign_type", intent.campaign_type)
         if getattr(intent, "date_range", None):
@@ -2598,18 +2653,72 @@ class AgentRuntime:
                     tool_input["updates"] = {"status": "PAUSED" if paused else "ENABLED"}
             elif "updates" not in tool_input:
                 pass
+
+        # Normalize generic status wording into the provider field used by
+        # update adapters.  The parser can safely understand "暂停/恢复" once,
+        # while each Capability owns the final wire-level representation.
+        updates = tool_input.get("updates")
+        if isinstance(updates, dict) and "status" in updates:
+            status = str(updates.get("status", "")).upper()
+            if actual_platform == "tiktok":
+                status_key = "ad_group_status" if "adgroup" in tool_def.name else "campaign_group_status"
+                if status in {"ACTIVE", "ENABLED", "RUNNING"}:
+                    updates[status_key] = 1
+                    updates.pop("status", None)
+                elif status in {"PAUSED", "DISABLED", "STOPPED"}:
+                    updates[status_key] = 0
+                    updates.pop("status", None)
+            elif actual_platform == "google-ads" and status == "ACTIVE":
+                updates["status"] = "ENABLED"
+            elif actual_platform == "dv360" and status == "ENABLED":
+                updates["status"] = "ACTIVE"
         
         # 检查必需参数是否齐全
         missing = []
         for req in tool_def.input_schema.required or []:
             if req not in tool_input:
                 missing.append(req)
+
+        # Conditional requirements are part of the same parameter contract as
+        # flat ``required`` fields. Surface them as missing parameters so a
+        # caller can immediately follow the field's lookup_tool metadata
+        # instead of receiving a late, opaque validation error.
+        for rule in tool_def.input_schema.conditional_rules or []:
+            if not isinstance(rule, dict):
+                continue
+            conditions = rule.get("if", rule.get("when", {}))
+            if not isinstance(conditions, dict) or any(
+                tool_input.get(key) != expected
+                for key, expected in conditions.items()
+            ):
+                continue
+            for req in rule.get("required", rule.get("required_fields", [])) or []:
+                if req not in tool_input and req not in missing:
+                    missing.append(req)
         
         if missing:
             # 参数不全，标记为需要确认
             tool_input["_missing_params"] = missing
-        
+        if unknown_specific_params:
+            tool_input["_unknown_params"] = unknown_specific_params
+
         return tool_input
+
+    @staticmethod
+    def _lookup_tools_for_fields(tool_def: Any, fields: list[str]) -> dict[str, str]:
+        """Expose the lookup tool associated with missing dynamic fields."""
+        properties = getattr(tool_def.input_schema, "properties", {}) or {}
+        lookups: dict[str, str] = {}
+        for field in fields or []:
+            spec = properties.get(field, {})
+            if not isinstance(spec, dict):
+                continue
+            lookup_tool = spec.get("lookup_tool")
+            if not lookup_tool and isinstance(spec.get("lookup"), dict):
+                lookup_tool = spec["lookup"].get("tool")
+            if lookup_tool:
+                lookups[field] = str(lookup_tool)
+        return lookups
 
     def _resolve_platform_account(
         self,

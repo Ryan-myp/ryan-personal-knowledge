@@ -13,6 +13,7 @@ from .audiences import MetaListAudiencesHandler
 from .boost import MetaBoostPostHandler
 from .creatives import MetaCreateCreativeHandler
 from ...api_clients.meta_client import MetaAPIClient
+from ..update_contracts import meta_updates
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,8 @@ class MetaCapability(BaseCapability):
             description="创建 Meta Campaign。",
             input_schema=ToolSchema(
                 required=["account_id", "name"],
+                provider_required=["objective", "special_ad_categories"],
+                provider_any_of=[["budget", "daily_budget"]],
                 properties={
                     "account_id": {"type": "string"},
                     "name": {"type": "string"},
@@ -74,11 +77,21 @@ class MetaCapability(BaseCapability):
                         "TRAFFIC", "LINK_CLICKS", "OUTCOME_SALES",
                         "OUTCOME_APP_PROMOTION", "OUTCOME_TRAFFIC",
                         "OUTCOME_AWARENESS", "OUTCOME_LEADS", "OUTCOME_ENGAGEMENT",
-                    ]},
+                    ], "intent_field": "objective", "intent_map": {
+                        "sales": "OUTCOME_SALES",
+                        "leads": "OUTCOME_LEADS",
+                        "traffic": "OUTCOME_TRAFFIC",
+                        "brand": "OUTCOME_AWARENESS",
+                    }},
                     "budget": {"type": "number"},
                     "daily_budget": {"type": "number"},
                     "status": {"type": "string", "enum": ["ACTIVE", "PAUSED"]},
-                    "special_ad_categories": {"type": ["array", "string"], "items": {"type": "string"}},
+                    "special_ad_categories": {
+                        "type": ["array", "string"],
+                        "items": {"type": "string", "enum": [
+                            "NONE", "EMPLOYMENT", "HOUSING", "CREDIT",
+                        ]},
+                    },
                     "start_time": {"type": "string"},
                     "end_time": {"type": "string"},
                 },
@@ -129,10 +142,29 @@ class MetaCapability(BaseCapability):
             description="创建 Meta Ad Set。",
             input_schema=ToolSchema(
                 required=["campaign_id", "name"],
+                provider_required=["optimization_goal", "billing_event", "targeting"],
+                provider_any_of=[["budget", "daily_budget"]],
                 properties={
                     "campaign_id": {"type": "string"},
                     "name": {"type": "string"},
-                    "targeting": {"type": "object"},
+                    "targeting": {
+                        "type": "object",
+                        "description": "Meta targeting object; dynamic IDs must be selected from provider reference data",
+                        "properties": {
+                            "geo_locations": {"type": "object"},
+                            "age_min": {"type": "integer", "minimum": 13},
+                            "age_max": {"type": "integer", "minimum": 13},
+                            "genders": {"type": "array", "items": {"type": "integer"}},
+                            "locales": {"type": "array", "items": {"type": "integer"}},
+                            "device_platforms": {"type": "array", "items": {"type": "string"}},
+                            "publisher_platforms": {"type": "array", "items": {"type": "string"}},
+                            "facebook_positions": {"type": "array", "items": {"type": "string"}},
+                            "instagram_positions": {"type": "array", "items": {"type": "string"}},
+                            "custom_audiences": {"type": "array", "items": {"type": "object"}},
+                            "excluded_custom_audiences": {"type": "array", "items": {"type": "object"}},
+                            "flexible_spec": {"type": "array", "items": {"type": "object"}},
+                        },
+                    },
                     "optimization_goal": {"type": "string", "enum": [
                         "APP_INSTALLS", "OFFSITE_CONVERSIONS", "VALUE", "LINK_CLICKS",
                         "LANDING_PAGE_VIEWS", "LEAD_GENERATION", "IMPRESSIONS",
@@ -305,7 +337,10 @@ class MetaCapability(BaseCapability):
                 description=f"更新 Meta {resource_type}，默认仅生成 dry-run 计划。",
                 input_schema=ToolSchema(
                     required=[resource_id, "updates"],
-                    properties={resource_id: {"type": "string"}, "updates": {"type": "object"}},
+                    properties={
+                        resource_id: {"type": "string"},
+                        "updates": meta_updates(resource_type),
+                    },
                 ),
                 risk_level=RiskLevel.MEDIUM,
                 effect_class=ToolEffect.WRITE,

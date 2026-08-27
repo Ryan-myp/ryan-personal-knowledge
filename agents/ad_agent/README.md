@@ -80,6 +80,10 @@ runtime.register_capability(capability)
 
 `SimpleToolRegistry` 在执行前统一校验类型、固定枚举、数组元素和条件依赖；`/tools` 返回完整 `input_schema`，因此前端或 LLM 可以据此渲染参数选择器。动态 Provider 选项不会被伪造为静态枚举：dry-run 使用已知契约，live 再由 Provider contract 和真实查询结果收口。
 
+更新操作同样使用渠道拥有的嵌套 Schema：Meta、Google Ads、TikTok、DV360 的 `updates` 只允许当前适配器声明的字段，未知字段会在计划阶段报错，不会静默丢弃或带入 live 请求。缺少带 `lookup_tool` 的动态字段时，返回结果中的 `confirmation_payload.lookup_tools` 会告诉调用方应先调用哪个查询工具。通用目标（sales/leads/traffic/brand）由各 Skill 的字段元数据映射为 Provider 枚举，不由 Runtime 维护一张不可扩展的渠道表。
+
+dry-run 结果中的 `provider_validation` 会单独标记 Provider 必填字段是否齐全：计划可以先生成，但 `ready: false` 时不能视为可直接 live 执行。
+
 凭证文件格式：
 ```json
 {

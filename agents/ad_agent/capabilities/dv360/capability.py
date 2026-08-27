@@ -19,6 +19,7 @@ from .line_items import (
 from .reports import DV360GetLineItemReportHandler
 from .advertisers import DV360ListAdvertisersHandler
 from ...api_clients.dv360_client import DV360APIClient
+from ..update_contracts import dv360_updates
 
 logger = logging.getLogger(__name__)
 
@@ -256,6 +257,7 @@ class DV360Capability(BaseCapability):
             }
             if resource_type == "line_item":
                 properties["io_id"] = {"type": "string"}
+            properties["updates"] = dv360_updates(resource_type)
             tools.append((ToolDefinition(
                 name=f"dv360_update_{resource_type}",
                 skill="dv360-expert",

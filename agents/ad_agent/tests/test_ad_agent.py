@@ -734,6 +734,13 @@ class TestSafeWriteExecution:
         result = rt.run(
             "创建 Meta 广告系列 名称=StopAfterFailure",
             account_id="m1", confirmed=True,
+            platform_params={
+                "meta": {
+                    "objective": "OUTCOME_SALES",
+                    "special_ad_categories": "NONE",
+                    "budget": 100,
+                }
+            },
         )
         assert result["results"][0]["success"] is False
         assert result["results"][1]["skipped"] is True

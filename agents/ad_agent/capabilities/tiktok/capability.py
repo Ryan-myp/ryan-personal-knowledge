@@ -38,6 +38,7 @@ from .parameters import (
     tiktok_adgroup_schema,
     tiktok_ad_schema,
 )
+from ..update_contracts import tiktok_updates
 
 logger = logging.getLogger(__name__)
 
@@ -298,6 +299,7 @@ class TikTokCapability(BaseCapability):
             properties = {resource_id: {"type": "string"}, "updates": {"type": "object"}}
             if resource_type in ("adgroup", "ad"):
                 properties["campaign_id"] = {"type": "string"}
+            properties["updates"] = tiktok_updates(resource_type)
             tools.append((ToolDefinition(
                 name=f"tiktok_update_{resource_type}",
                 skill="tiktok-ads-api-expert",

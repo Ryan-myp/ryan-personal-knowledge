@@ -24,6 +24,7 @@ from .assets import (
 from .reports import GoogleGetReportHandler
 from .keywords import GoogleListKeywordsHandler
 from ...api_clients.google_ads_client import GoogleAdsAPIClient
+from ..update_contracts import google_updates
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,20 @@ class GoogleCapability(BaseCapability):
             description="创建 Google Ads Campaign。",
             input_schema=ToolSchema(
                 required=["customer_id", "campaign_name"],
+                provider_required=["advertising_channel_type", "bidding_strategy"],
+                provider_any_of=[["budget", "daily_budget"]],
+                conditional_rules=[
+                    {
+                        "if": {"bidding_strategy": "TARGET_CPA"},
+                        "required": ["target_cpa_micros"],
+                        "message": "TARGET_CPA requires target_cpa_micros",
+                    },
+                    {
+                        "if": {"bidding_strategy": "TARGET_ROAS"},
+                        "required": ["target_roas"],
+                        "message": "TARGET_ROAS requires target_roas",
+                    },
+                ],
                 properties={
                     "customer_id": {"type": "string"},
                     "campaign_name": {"type": "string"},
@@ -325,7 +340,10 @@ class GoogleCapability(BaseCapability):
                 description=f"更新 Google Ads {resource_type}，默认仅生成 dry-run 计划。",
                 input_schema=ToolSchema(
                     required=[resource_id, "updates"],
-                    properties={resource_id: {"type": "string"}, "updates": {"type": "object"}},
+                    properties={
+                        resource_id: {"type": "string"},
+                        "updates": google_updates(resource_type),
+                    },
                 ),
                 risk_level=RiskLevel.MEDIUM,
                 effect_class=ToolEffect.WRITE,

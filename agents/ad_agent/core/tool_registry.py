@@ -269,13 +269,16 @@ def validate_tool_input(
                     or f"Field '{field_name}' is not allowed when {conditions}"
                 )
     
-    # 检查字段类型
-    for field_name, field_schema in schema.properties.items():
-        if field_name not in data:
-            continue
-        value = data[field_name]
+    def validate_value(path: str, value: Any, field_schema: dict[str, Any]) -> None:
+        """Validate the small JSON-Schema subset used by ToolSchema.
+
+        Nested validation is important for ``updates``: accepting only an
+        outer object previously allowed arbitrary provider fields to bypass
+        the contract and fail much later in a live adapter.
+        """
+        if not isinstance(field_schema, dict):
+            return
         expected_type = field_schema.get("type", "string")
-        
         type_map = {
             "string": str,
             "number": (int, float),
@@ -284,10 +287,6 @@ def validate_tool_input(
             "array": list,
             "object": dict,
         }
-        
-        # A small subset of JSON Schema used by provider contracts needs to
-        # accept more than one JSON type (for example DV360 date_range may be
-        # a preset string or an explicit {start_date, end_date} object).
         if isinstance(expected_type, (list, tuple, set)):
             python_types = tuple(
                 type_map[item] for item in expected_type if item in type_map
@@ -295,53 +294,57 @@ def validate_tool_input(
             python_type = python_types or None
         else:
             python_type = type_map.get(expected_type)
-        # bool is a subclass of int in Python, but it is never a valid
-        # monetary/integer API field for an advertising payload.
-        numeric_types = set(expected_type) if isinstance(expected_type, (list, tuple, set)) else {expected_type}
+        numeric_types = (
+            set(expected_type)
+            if isinstance(expected_type, (list, tuple, set))
+            else {expected_type}
+        )
         invalid_bool = bool(numeric_types & {"number", "integer"}) and isinstance(value, bool)
         if python_type and (invalid_bool or not isinstance(value, python_type)):
             errors.append(
-                f"Field '{field_name}' expected {expected_type}, "
-                f"got {type(value).__name__}"
+                f"Field '{path}' expected {expected_type}, got {type(value).__name__}"
             )
+            return
 
         enum = field_schema.get("enum")
         if enum is not None and value not in enum:
-            errors.append(
-                f"Field '{field_name}' must be one of {list(enum)}, got {value!r}"
-            )
-
-        # Validate the common array-item contract used by targeting fields
-        # such as operating_systems and location_ids.
-        item_schema = field_schema.get("items")
-        if isinstance(value, list) and isinstance(item_schema, dict):
-            item_type = item_schema.get("type")
-            item_type_map = {
-                "string": str,
-                "number": (int, float),
-                "integer": int,
-                "boolean": bool,
-                "object": dict,
-            }
-            expected_item_type = item_type_map.get(item_type)
-            for index, item in enumerate(value):
-                if expected_item_type and not isinstance(item, expected_item_type):
-                    errors.append(
-                        f"Field '{field_name}[{index}]' expected {item_type}, "
-                        f"got {type(item).__name__}"
-                    )
-                item_enum = item_schema.get("enum")
-                if item_enum is not None and item not in item_enum:
-                    errors.append(
-                        f"Field '{field_name}[{index}]' must be one of {list(item_enum)}, got {item!r}"
-                    )
+            errors.append(f"Field '{path}' must be one of {list(enum)}, got {value!r}")
 
         minimum = field_schema.get("minimum")
         if minimum is not None and not isinstance(value, bool):
             try:
                 if value < minimum:
-                    errors.append(f"Field '{field_name}' must be >= {minimum}")
+                    errors.append(f"Field '{path}' must be >= {minimum}")
             except TypeError:
                 pass
+
+        if isinstance(value, list):
+            item_schema = field_schema.get("items")
+            if isinstance(item_schema, dict):
+                for index, item in enumerate(value):
+                    validate_value(f"{path}[{index}]", item, item_schema)
+
+        if isinstance(value, dict):
+            nested_properties = field_schema.get("properties", {})
+            if not isinstance(nested_properties, dict):
+                nested_properties = {}
+            for required_name in field_schema.get("required", []) or []:
+                if required_name not in value:
+                    errors.append(f"Missing required field: {path}.{required_name}")
+            if (
+                field_schema.get("additional_properties") is False
+                or field_schema.get("additionalProperties") is False
+            ):
+                unknown = sorted(set(value) - set(nested_properties))
+                for key in unknown:
+                    errors.append(f"Field '{path}.{key}' is not allowed")
+            for key, child_schema in nested_properties.items():
+                if key in value:
+                    validate_value(f"{path}.{key}", value[key], child_schema)
+
+    # Check field types and nested provider contracts.
+    for field_name, field_schema in schema.properties.items():
+        if field_name in data:
+            validate_value(field_name, data[field_name], field_schema)
     
     return errors

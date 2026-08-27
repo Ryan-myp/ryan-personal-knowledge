@@ -352,8 +352,30 @@ class DynamicToolSelector:
                 }
                 if enum_fields:
                     lines.append(f"   固定选项: {enum_fields}")
+                lookup_fields = {
+                    name: (
+                        spec.get("lookup_tool")
+                        or (
+                            spec.get("lookup", {}).get("tool")
+                            if isinstance(spec.get("lookup"), dict)
+                            else None
+                        )
+                    )
+                    for name, spec in tool.input_schema.properties.items()
+                    if isinstance(spec, dict)
+                    and (spec.get("lookup_tool") or isinstance(spec.get("lookup"), dict))
+                }
+                lookup_fields = {
+                    name: tool_name for name, tool_name in lookup_fields.items() if tool_name
+                }
+                if lookup_fields:
+                    lines.append(f"   动态选项查询工具: {lookup_fields}")
             if tool.input_schema.required:
                 lines.append(f"   必填: {tool.input_schema.required}")
+            if tool.input_schema.provider_required:
+                lines.append(f"   Provider 必填: {tool.input_schema.provider_required}")
+            if tool.input_schema.provider_any_of:
+                lines.append(f"   Provider 至少选择一项: {tool.input_schema.provider_any_of}")
             if tool.input_schema.conditional_rules:
                 lines.append(f"   条件依赖: {tool.input_schema.conditional_rules}")
             lines.append("")

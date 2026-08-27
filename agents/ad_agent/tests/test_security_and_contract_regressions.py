@@ -241,6 +241,154 @@ def test_tiktok_website_contract_requires_landing_url():
     assert any("landing_url" in error for error in errors)
 
 
+def test_update_contract_rejects_unknown_nested_provider_fields():
+    definitions = {
+        definition.name: definition
+        for definition, _ in create_meta_capability().register_tools()
+    }
+    schema = definitions["meta_update_adset"].input_schema
+    errors = validate_tool_input(schema, {
+        "adset_id": "as-1",
+        "updates": {"status": "PAUSED", "not_a_provider_field": "x"},
+    })
+    assert any("not_a_provider_field" in error for error in errors)
+
+
+def test_tool_specific_unknown_creation_parameter_is_not_silently_dropped():
+    validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+    validator.allowed_accounts = {"meta": ["m1"]}
+    runtime = AgentRuntime(whitelist_validator=validator)
+    runtime.register_capability(create_meta_capability())
+    result = runtime.run(
+        "创建 Meta campaign",
+        account_id="m1",
+        platform_params={
+            "meta": {
+                "meta_create_campaign": {
+                    "name": "Contract test",
+                    "objective": "OUTCOME_SALES",
+                    "unsupported_future_field": "must-be-declared",
+                }
+            }
+        },
+    )
+    assert result["results"][0]["success"] is False
+    assert "unsupported_future_field" in result["results"][0]["error"]
+
+
+def test_conditional_missing_parameter_exposes_lookup_tool():
+    validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+    validator.allowed_accounts = {"tiktok": ["t1"]}
+    runtime = AgentRuntime(whitelist_validator=validator)
+    runtime.register_capability(create_tiktok_capability())
+    result = runtime.run(
+        "创建 TikTok campaign",
+        account_id="t1",
+        platform_params={
+            "tiktok": {
+                "campaign_name": "Android acquisition",
+                "objective_type": "APP_PROMOTION",
+                "campaign_type": "REGULAR_CAMPAIGN",
+                "budget_mode": "BUDGET_MODE_DAY",
+                "daily_budget": 50,
+                "tiktok_create_adgroup": {
+                    "name": "Android ad group",
+                    "promotion_type": "APP_ANDROID",
+                    "billing_event": "OCPM",
+                    "bid_type": "BID_TYPE_NO_BID",
+                    "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
+                    "budget_mode": "BUDGET_MODE_DAY",
+                    "budget": 50,
+                    "daily_budget": 50,
+                    "location_ids": ["US"],
+                },
+            }
+        },
+    )
+    ask = next(
+        item["confirmation_payload"]
+        for item in result["results"]
+        if item.get("confirmation_payload", {}).get("type") == "ask_params"
+    )
+    assert "app_id" in ask["missing"]
+    assert ask["lookup_tools"]["app_id"] == "tiktok_list_apps"
+
+
+def test_provider_status_is_normalized_before_dry_run_update_plan():
+    validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+    validator.allowed_accounts = {"tiktok": ["t1"], "google-ads": ["g1"]}
+    runtime = AgentRuntime(whitelist_validator=validator)
+    runtime.register_capability(create_tiktok_capability())
+    runtime.register_capability(create_google_capability())
+
+    tiktok = runtime.run(
+        "更新 TikTok campaign campaign_id=123 status=PAUSED",
+        account_id="t1",
+    )
+    tiktok_updates = tiktok["results"][0]["data"]["input"]["updates"]
+    assert tiktok_updates == {"campaign_group_status": 0}
+
+    google = runtime.run(
+        "更新 Google campaign campaign_id=456 status=ACTIVE",
+        account_id="g1",
+    )
+    google_updates = google["results"][0]["data"]["input"]["updates"]
+    assert google_updates == {"status": "ENABLED"}
+
+
+def test_common_business_objective_uses_skill_owned_provider_mapping():
+    validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+    validator.allowed_accounts = {"meta": ["m1"], "tiktok": ["t1"]}
+    runtime = AgentRuntime(whitelist_validator=validator)
+    runtime.register_capability(create_meta_capability())
+    runtime.register_capability(create_tiktok_capability())
+
+    meta = runtime.run("创建 Meta 销售 campaign 名称=Sales", account_id="m1")
+    meta_input = meta["results"][0]["data"]["input"]
+    assert meta_input["objective"] == "OUTCOME_SALES"
+
+    tiktok = runtime.run(
+        "创建 TikTok 销售 campaign 名称=Sales",
+        account_id="t1",
+        platform_params={
+            "tiktok": {
+                "campaign_name": "Sales",
+                "campaign_type": "REGULAR_CAMPAIGN",
+                "budget_mode": "BUDGET_MODE_DAY",
+                "daily_budget": 50,
+            }
+        },
+    )
+    tiktok_input = tiktok["results"][0]["data"]["input"]
+    assert tiktok_input["objective_type"] == "PRODUCT_SALES"
+
+
+def test_dry_run_reports_provider_fields_still_pending_without_calling_api():
+    validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+    validator.allowed_accounts = {"meta": ["m1"]}
+    runtime = AgentRuntime(whitelist_validator=validator)
+    runtime.register_capability(create_meta_capability())
+    result = runtime.run(
+        "创建 Meta campaign 名称=Pending provider fields",
+        account_id="m1",
+        platform_params={
+            "meta": {
+                "objective": "OUTCOME_SALES",
+                "special_ad_categories": "NONE",
+                "budget": 100,
+            }
+        },
+    )
+    campaign = result["results"][0]["data"]
+    assert campaign["simulated"] is True
+    assert campaign["provider_validation"]["ready"] is True
+
+    adset = next(item for item in result["results"] if item["tool"] == "meta_create_adset")
+    validation = adset["data"]["provider_validation"]
+    assert validation["ready"] is False
+    assert any("optimization_goal" in error for error in validation["errors"])
+
+
 class RetryProbeClient(BasePlatformClient):
     def __init__(self, responses, refreshable=False):
         super().__init__({}, "probe", RetryConfig(max_retries=0, jitter=False))
