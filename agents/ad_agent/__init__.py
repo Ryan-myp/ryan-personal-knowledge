@@ -19,6 +19,7 @@ from .capabilities.dv360 import DV360Capability, create_dv360_capability
 from .persistence.store import AdAgentStore
 from .persistence.session_manager import SessionManager
 from .user_skills.orchestrator import AdCampaignOrchestratorSkill
+from .core.auth import RequestPrincipal
 
 __version__ = "1.0.0"
 __all__ = [
@@ -35,4 +36,5 @@ __all__ = [
     "AdAgentStore",
     "SessionManager",
     "AdCampaignOrchestratorSkill",
+    "RequestPrincipal",
 ]

@@ -19,6 +19,16 @@ execution_mode: dry_run
 read_only_mode: false
 live_approved_tools: []
 
+# Runtime permission baseline.  ads.write must be added explicitly together
+# with AD_AGENT_ENABLE_LIVE=1 and live_approved_tools before any live write.
+granted_permissions:
+  - ads.read
+  - ads.plan
+
+# For multi-user HTTP deployments prefer AD_AGENT_API_KEY_PRINCIPALS, whose
+# values contain trusted user_id/tenant_id/permissions/account_scope claims.
+# The request body's user_id is never an authorization source.
+
 # LLM 配置（可选，不配置则使用规则解析）
 models:
   default: "agnes-2.5-flash"

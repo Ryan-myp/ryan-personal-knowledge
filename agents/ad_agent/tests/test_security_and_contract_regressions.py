@@ -117,6 +117,7 @@ def test_confirmation_payload_is_bound_to_the_exact_plan():
         whitelist_validator=whitelist(meta=["m1"]),
         execution_mode=ExecutionMode.LIVE.value,
         live_approved_tools={"meta_update_campaign"},
+        granted_permissions={"ads.read", "ads.plan", "ads.write"},
     )
     runtime.register_capability(create_meta_capability(client))
     planned = runtime.run(
@@ -154,6 +155,7 @@ def test_live_cross_channel_batch_is_explicitly_unsupported():
     runtime = AgentRuntime(
         whitelist_validator=whitelist(meta=["m1"]),
         execution_mode=ExecutionMode.LIVE.value,
+        granted_permissions={"ads.read", "ads.plan", "ads.write"},
     )
     runtime.register_capability(create_meta_capability())
     result = runtime.run(
@@ -494,6 +496,7 @@ def test_write_reservation_survives_runtime_restart():
         whitelist_validator=whitelist(meta=["m1"]),
         execution_mode=ExecutionMode.LIVE.value,
         live_approved_tools={"meta_update_campaign"},
+        granted_permissions={"ads.read", "ads.plan", "ads.write"},
     )
     first_runtime.register_capability(create_meta_capability(first_client))
     planned = first_runtime.run(
@@ -519,6 +522,7 @@ def test_write_reservation_survives_runtime_restart():
         whitelist_validator=whitelist(meta=["m1"]),
         execution_mode=ExecutionMode.LIVE.value,
         live_approved_tools={"meta_update_campaign"},
+        granted_permissions={"ads.read", "ads.plan", "ads.write"},
     )
     second_runtime.register_capability(create_meta_capability(second_client))
     duplicate = second_runtime.run(

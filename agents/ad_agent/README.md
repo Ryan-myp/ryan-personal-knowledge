@@ -74,6 +74,24 @@ runtime.register_capability(capability)
 
 当前所有 Campaign/下级资源创建默认只生成 dry-run 计划；DV360 Campaign/IO/Line Item 更新、Google PMax Asset Group 以及部分下级资源更新没有经过验证的 live adapter，live 会明确返回不支持。读取请求在没有 Provider Client 时默认 fail-closed，只有显式 `offline_mode=True` 才会返回离线 fixture。
 
+### 身份、权限和恢复边界
+
+HTTP 请求不会信任 JSON/query 中的 `user_id`。服务端应通过已认证的 API Gateway
+配置 `AD_AGENT_API_KEY_PRINCIPALS`，把 API key 映射为 `user_id`、`tenant_id`、
+`permissions` 和 `account_scope`；单 API key 部署则使用配置的 service principal。
+Runtime 会将身份账户范围与 `config.yaml` 的测试账户白名单取交集。默认权限只有
+`ads.read`、`ads.plan`，live 写入还必须显式授予 `ads.write`，并同时满足 live 开关、
+工具白名单和 confirmation payload。
+
+Workflow 的 `/workflows/{id}/resume-plan` 只返回待恢复 item，不会自动重放；
+`/workflows/{id}/reconcile` 只接受带 `verified=true` 的 Provider 观测。未确认的
+外部结果保持 `recovery_required`，避免恢复流程绕过原有审批和幂等门禁。HTTP
+reconcile 还需要显式 `ads.reconcile`（或 `ads.write`）权限；`verified` 不是权限，
+而是恢复 worker 对观测来源完成校验后的声明。
+
+动态 Skill 可以提供 `skill.manifest.json`，其中包含插件文件 SHA-256；生产环境可
+通过 `AD_AGENT_REQUIRE_SKILL_MANIFEST=1` 和 `AD_AGENT_SKILL_MANIFEST_KEY` 要求签名。
+
 ### 创建参数与枚举
 
 创建工具的输入契约由 `ToolSchema` 暴露：固定枚举放在字段的 `enum`，例如 TikTok 的 `objective_type`、`promotion_type`、`billing_event`、`bid_type`、`placement_type` 和 `deep_bid_type`；App、地域等动态值则通过字段上的 `lookup_tool` 指向 `tiktok_list_apps` / `tiktok_list_locations` 等查询工具。字段之间的依赖放在 `conditional_rules`，例如 `APP_ANDROID` 必须同时提供 `app_id`、`operating_systems`、`deep_bid_type`，且计费事件为 `OCPM`。

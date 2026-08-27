@@ -168,13 +168,11 @@ def build_batch_operations(
             continue
 
         if action == "pause":
-            updates = {"campaign_group_status": 0} if platform == "tiktok" else {
-                "status": "PAUSED"
-            }
+            # Keep the cross-channel model provider-neutral.  The selected
+            # Capability's update contract owns the wire field/value mapping.
+            updates = {"status": "PAUSED"}
         elif action == "resume":
-            updates = {"campaign_group_status": 1} if platform == "tiktok" else {
-                "status": "ENABLED" if platform != "meta" else "ACTIVE"
-            }
+            updates = {"status": "ACTIVE"}
         else:
             supplied = params.get("updates")
             supplied = dict(supplied) if isinstance(supplied, dict) else {}

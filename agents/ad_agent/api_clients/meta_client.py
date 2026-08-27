@@ -68,11 +68,11 @@ class MetaAPIClient(BasePlatformClient):
         
         try:
             if method == 'GET':
-                resp = requests.get(url, params=final_params, headers=headers, timeout=30)
+                resp = requests.get(url, params=final_params, headers=headers, timeout=self.http_timeout())
             elif method == 'POST':
-                resp = requests.post(url, params=final_params, json=kwargs.get('data'), headers=headers, timeout=30)
+                resp = requests.post(url, params=final_params, json=kwargs.get('data'), headers=headers, timeout=self.http_timeout())
             elif method == 'DELETE':
-                resp = requests.delete(url, params=final_params, headers=headers, timeout=30)
+                resp = requests.delete(url, params=final_params, headers=headers, timeout=self.http_timeout())
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
             try:

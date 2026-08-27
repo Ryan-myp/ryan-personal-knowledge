@@ -639,6 +639,8 @@ class TestSafeWriteExecution:
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
             execution_mode=mode,
+            granted_permissions={"ads.read", "ads.plan", "ads.write"}
+            if mode == ExecutionMode.LIVE.value else None,
         )
         factory = {
             "meta": lambda: create_meta_capability(client),
@@ -1623,6 +1625,7 @@ class TestIterationContracts:
             whitelist_validator=validator,
             execution_mode=ExecutionMode.LIVE.value,
             live_approved_tools={"google_update_campaign"},
+            granted_permissions={"ads.read", "ads.plan", "ads.write"},
         )
         from agents.ad_agent.capabilities.google import create_google_capability
         rt.register_capability(create_google_capability(client))
@@ -1649,6 +1652,7 @@ class TestIterationContracts:
             whitelist_validator=validator,
             execution_mode=ExecutionMode.LIVE.value,
             live_approved_tools={"google_update_campaign"},
+            granted_permissions={"ads.read", "ads.plan", "ads.write"},
         )
         from agents.ad_agent.capabilities.google import create_google_capability
         rt.register_capability(create_google_capability(GoogleClient()))

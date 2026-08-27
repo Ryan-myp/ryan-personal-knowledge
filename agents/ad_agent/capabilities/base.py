@@ -117,6 +117,15 @@ class BaseCapability(CapabilityModule, ABC):
         """子类实现：将平台工具注册到 Registry"""
         tools = self.register_tools()
         for defn, handler in tools:
+            # Built-in capabilities must participate in the same authorization
+            # contract as dynamically loaded Skills.  ``ads.plan`` is the
+            # baseline grant for dry-run writes; Runtime adds ``ads.write``
+            # only when a live write is attempted.  A capability may provide a
+            # more specific permission list and is never overwritten here.
+            if not defn.required_permissions:
+                defn.required_permissions = [
+                    "ads.plan" if defn.is_write_tool else "ads.read"
+                ]
             registry.register(defn, handler)
     
     @abstractmethod

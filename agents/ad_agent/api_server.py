@@ -27,6 +27,7 @@ from starlette.concurrency import run_in_threadpool
 
 # 导入 Agent 核心模块
 from agents.ad_agent import AgentRuntime
+from agents.ad_agent.core.auth import RequestPrincipal
 
 # 配置路径
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
@@ -61,20 +62,85 @@ CORS_ORIGINS = [
 ]
 
 
-def _authorize_request(api_key: Optional[str], request: Optional[Request] = None) -> None:
+def _configured_service_principal() -> RequestPrincipal:
+    """Build the service identity from trusted process configuration.
+
+    A single shared API key has no end-user identity.  In that deployment
+    shape, all requests intentionally run as one configured service principal;
+    the JSON request body's ``user_id`` is never treated as authentication.
+    Multi-user deployments should configure ``AD_AGENT_API_KEY_PRINCIPALS``
+    instead.
+    """
+    if runtime is not None:
+        permissions = set(getattr(runtime, "_granted_permissions", set()))
+        validator = getattr(runtime, "whitelist_validator", None)
+        account_scope = {
+            platform: set(validator.get_allowed_accounts(platform))
+            for platform in ("meta", "google-ads", "tiktok", "dv360")
+        } if validator is not None else {}
+    else:
+        permissions = set()
+        account_scope = {}
+    configured_permissions = os.environ.get("AD_AGENT_SERVICE_PERMISSIONS")
+    if configured_permissions is not None:
+        permissions = {
+            item.strip() for item in configured_permissions.split(",") if item.strip()
+        }
+    return RequestPrincipal(
+        user_id=os.environ.get("AD_AGENT_SERVICE_PRINCIPAL", "ad-agent-service"),
+        tenant_id=os.environ.get("AD_AGENT_SERVICE_TENANT", "default"),
+        permissions=frozenset(permissions),
+        account_scope=account_scope,
+        source="api-key-service",
+    )
+
+
+def _api_key_principals() -> dict[str, dict]:
+    """Load API-key-to-principal claims without logging the key material."""
+    raw = os.environ.get("AD_AGENT_API_KEY_PRINCIPALS", "")
+    if not raw:
+        return {}
+    try:
+        value = json.loads(raw)
+    except (TypeError, ValueError):
+        logger.error("AD_AGENT_API_KEY_PRINCIPALS 不是合法 JSON；拒绝映射登录")
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _safe_exception_text(error: Exception) -> str:
+    """Keep provider/client exception text from becoming a secret sink."""
+    return AgentRuntime._redact_for_persistence(str(error))
+
+
+def _authorize_request(
+    api_key: Optional[str], request: Optional[Request] = None
+) -> RequestPrincipal:
     """Authorize data-bearing endpoints without logging secrets.
 
     The explicit unauthenticated escape hatch is intentionally localhost-only;
     CORS is not an authentication boundary and cannot enforce that property.
+    The returned principal is the only identity passed into Runtime; request
+    body/query user IDs are intentionally ignored.
     """
     if ALLOW_UNAUTHENTICATED:
         client_host = request.client.host if request and request.client else None
         if client_host in {"127.0.0.1", "::1", "localhost"}:
-            return
+            return _configured_service_principal()
         raise HTTPException(
             status_code=403,
             detail="Unauthenticated mode is restricted to localhost",
         )
+    principals = _api_key_principals()
+    if principals:
+        claims = principals.get(api_key or "")
+        if not isinstance(claims, dict):
+            raise HTTPException(status_code=401, detail="Invalid API key")
+        try:
+            return RequestPrincipal.from_claims(claims)
+        except (TypeError, ValueError) as exc:
+            logger.error("API key principal 配置无效: %s", exc)
+            raise HTTPException(status_code=503, detail="API principal configuration is invalid")
     if not API_KEY:
         raise HTTPException(
             status_code=503,
@@ -82,6 +148,13 @@ def _authorize_request(api_key: Optional[str], request: Optional[Request] = None
         )
     if not api_key or not hmac.compare_digest(api_key, API_KEY):
         raise HTTPException(status_code=401, detail="Invalid API key")
+    return _configured_service_principal()
+
+
+def _require_principal_permission(principal: RequestPrincipal, permission: str) -> None:
+    """Keep durable recovery actions behind an explicit gateway grant."""
+    if permission not in principal.permissions and "ads.write" not in principal.permissions:
+        raise HTTPException(status_code=403, detail=f"缺少操作所需权限：{permission}")
 
 
 def _init_runtime():
@@ -114,7 +187,9 @@ def _init_runtime():
             read_only_mode=read_only_mode,
             execution_mode=execution_mode,
             live_approved_tools=set(config.get("live_approved_tools", []) or []),
-            granted_permissions=set(config.get("granted_permissions", []) or []),
+            granted_permissions=set(
+                config.get("granted_permissions", ["ads.read", "ads.plan"]) or []
+            ),
             offline_mode=False,
         )
 
@@ -246,7 +321,7 @@ async def chat(
     if not runtime:
         raise HTTPException(status_code=503, detail="服务未初始化")
     try:
-        _authorize_request(x_api_key, http_request)
+        principal = _authorize_request(x_api_key, http_request)
         if request.confirmed and not request.confirmation_payload:
             raise HTTPException(
                 status_code=400,
@@ -258,17 +333,20 @@ async def chat(
             runtime.run,
             user_input=user_input,
             session_id=request.session_id,
-            user_id=request.user_id,
             account_id=request.account_id or None,
             platform_params=request.platform_params,
             confirmed=request.confirmed,
             confirmation_payload=request.confirmation_payload,
+            principal=principal,
         )
         return JSONResponse(content=result)
     except HTTPException:
         raise
     except Exception as e:
-        return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)
+        return JSONResponse(
+            content={"success": False, "error": _safe_exception_text(e)},
+            status_code=500,
+        )
 
 
 @app.get("/platforms", tags=["info"])
@@ -323,6 +401,12 @@ class ChatStreamRequest(BaseModel):
     platform_params: Optional[dict] = None
 
 
+class WorkflowReconcileRequest(BaseModel):
+    """Provider-verified observations supplied by a recovery worker."""
+
+    observations: object
+
+
 @app.post("/chat/stream", tags=["chat"])
 async def chat_stream(
     request: ChatStreamRequest,
@@ -336,7 +420,7 @@ async def chat_stream(
         return JSONResponse(content={"success": False, "error": "服务未初始化"}, status_code=503)
     
     try:
-        _authorize_request(x_api_key, http_request)
+        principal = _authorize_request(x_api_key, http_request)
         if request.confirmed and not request.confirmation_payload:
             raise HTTPException(
                 status_code=400,
@@ -356,11 +440,11 @@ async def chat_stream(
                 runtime.run,
                 user_input=user_input,
                 session_id=request.session_id,
-                user_id=request.user_id,
                 account_id=request.account_id or None,
                 platform_params=request.platform_params,
                 confirmed=request.confirmed,
                 confirmation_payload=request.confirmation_payload,
+                principal=principal,
             )
             
             # 发送思考过程
@@ -391,7 +475,10 @@ async def chat_stream(
     except HTTPException:
         raise
     except Exception as e:
-        return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)
+        return JSONResponse(
+            content={"success": False, "error": _safe_exception_text(e)},
+            status_code=500,
+        )
 
 
 @app.get("/parameter-options", tags=["info"])
@@ -419,14 +506,17 @@ async def get_workflow(
     workflow_id: str,
     http_request: Request,
     x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
-    user_id: str = Query("web_user", min_length=1, max_length=200),
 ):
     """Read an auditable workflow without exposing credentials."""
-    _authorize_request(x_api_key, http_request)
+    principal = _authorize_request(x_api_key, http_request)
     if not runtime:
         raise HTTPException(status_code=503, detail="服务未初始化")
     try:
-        workflow = runtime.get_workflow(workflow_id, user_id=user_id)
+        workflow = runtime.get_workflow(
+            workflow_id,
+            user_id=principal.user_id,
+            tenant_id=principal.tenant_id,
+        )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
     if not workflow:
@@ -439,16 +529,70 @@ async def cancel_workflow(
     workflow_id: str,
     http_request: Request,
     x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
-    user_id: str = Query("web_user", min_length=1, max_length=200),
 ):
     """Cancel a local workflow; this never calls a provider API."""
-    _authorize_request(x_api_key, http_request)
+    principal = _authorize_request(x_api_key, http_request)
     if not runtime:
         raise HTTPException(status_code=503, detail="服务未初始化")
     try:
-        cancelled = runtime.cancel_workflow(workflow_id, user_id=user_id)
+        cancelled = runtime.cancel_workflow(
+            workflow_id,
+            user_id=principal.user_id,
+            tenant_id=principal.tenant_id,
+        )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
     if not cancelled:
         raise HTTPException(status_code=404, detail="workflow not found or not cancellable")
     return {"workflow_id": workflow_id, "status": "cancelled"}
+
+
+@app.get("/workflows/{workflow_id}/resume-plan", tags=["workflows"])
+async def get_workflow_resume_plan(
+    workflow_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Return recovery items without replaying any provider write."""
+    principal = _authorize_request(x_api_key, http_request)
+    if not runtime:
+        raise HTTPException(status_code=503, detail="服务未初始化")
+    try:
+        return runtime.get_workflow_resume_plan(
+            workflow_id,
+            user_id=principal.user_id,
+            tenant_id=principal.tenant_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except KeyError:
+        raise HTTPException(status_code=404, detail="workflow not found")
+
+
+@app.post("/workflows/{workflow_id}/reconcile", tags=["workflows"])
+async def reconcile_workflow(
+    workflow_id: str,
+    body: WorkflowReconcileRequest,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Apply verified recovery observations; never contacts a provider."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.reconcile")
+    if not runtime:
+        raise HTTPException(status_code=503, detail="服务未初始化")
+    if not isinstance(body.observations, (list, dict)):
+        raise HTTPException(status_code=422, detail="observations must be an array or object")
+    try:
+        return runtime.reconcile_workflow(
+            workflow_id,
+            body.observations,
+            user_id=principal.user_id,
+            tenant_id=principal.tenant_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except KeyError:
+        raise HTTPException(status_code=404, detail="workflow not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))

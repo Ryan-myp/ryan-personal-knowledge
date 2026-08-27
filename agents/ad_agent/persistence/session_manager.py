@@ -209,3 +209,18 @@ class SessionManager:
         self, workflow_id: str, sequences: list[int]
     ) -> None:
         self.store.mark_workflow_items_for_compensation(workflow_id, sequences)
+
+    def update_workflow_item(
+        self, workflow_id: str, sequence: int, status: str,
+        output_data: Optional[dict] = None, error: Optional[str] = None,
+        compensation_required: Optional[bool] = None,
+    ) -> bool:
+        return self.store.update_workflow_item(
+            workflow_id, sequence, status, output_data, error,
+            compensation_required,
+        )
+
+    def list_resumable_workflows(
+        self, user_id: Optional[str] = None, limit: int = 50
+    ) -> list[dict]:
+        return self.store.list_resumable_workflows(user_id, limit)

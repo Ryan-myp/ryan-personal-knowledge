@@ -29,7 +29,11 @@ def _object(properties: dict[str, Any], description: str) -> dict[str, Any]:
 def meta_updates(resource_type: str) -> dict[str, Any]:
     common = {
         "name": _field("string", "Resource name"),
-        "status": _field("string", "Delivery status", enum=["ACTIVE", "PAUSED"]),
+        "status": _field(
+            "string", "Delivery status", enum=["ACTIVE", "PAUSED"],
+            intent_status_field="status",
+            intent_status_map={"ACTIVE": "ACTIVE", "PAUSED": "PAUSED"},
+        ),
     }
     if resource_type == "campaign":
         common.update({
@@ -66,7 +70,11 @@ def meta_updates(resource_type: str) -> dict[str, Any]:
 def google_updates(resource_type: str) -> dict[str, Any]:
     common = {
         "name": _field("string", "Resource name"),
-        "status": _field("string", "Resource status", enum=["ENABLED", "PAUSED", "REMOVED"]),
+        "status": _field(
+            "string", "Resource status", enum=["ENABLED", "PAUSED", "REMOVED"],
+            intent_status_field="status",
+            intent_status_map={"ACTIVE": "ENABLED", "PAUSED": "PAUSED"},
+        ),
     }
     if resource_type == "campaign":
         common.update({
@@ -99,9 +107,18 @@ def google_updates(resource_type: str) -> dict[str, Any]:
 
 
 def tiktok_updates(resource_type: str) -> dict[str, Any]:
+    status_field = {
+        "campaign": "campaign_group_status",
+        "adgroup": "ad_group_status",
+        "ad": "status",
+    }.get(resource_type, "status")
     common = {
         "name": _field("string", "Resource name"),
-        "status": _field("integer", "Compatibility status", enum=[0, 1]),
+        "status": _field(
+            "integer", "Compatibility status", enum=[0, 1],
+            intent_status_field=status_field,
+            intent_status_map={"ACTIVE": 1, "PAUSED": 0},
+        ),
     }
     if resource_type == "campaign":
         common.update({
@@ -165,7 +182,11 @@ def dv360_updates(resource_type: str) -> dict[str, Any]:
     # objects where the current client has no verified field-level contract.
     common = {
         "name": _field("string", "Resource name"),
-        "status": _field("string", "Resource status", enum=["DRAFT", "ACTIVE", "PAUSED"]),
+        "status": _field(
+            "string", "Resource status", enum=["DRAFT", "ACTIVE", "PAUSED"],
+            intent_status_field="status",
+            intent_status_map={"ACTIVE": "ACTIVE", "PAUSED": "PAUSED", "ENABLED": "ACTIVE"},
+        ),
         "start_date": _field("string", "Start date"),
         "end_date": _field("string", "End date"),
     }

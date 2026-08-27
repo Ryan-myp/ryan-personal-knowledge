@@ -160,7 +160,7 @@ class DV360APIClient(BasePlatformClient):
                 'grant_type': 'urn:ietf:params:oauth:grant-type:jwt-bearer',
                 'assertion': jwt_assertion,
             },
-            timeout=30,
+            timeout=self.http_timeout(),
         )
         
         if resp.status_code != 200:
@@ -189,20 +189,20 @@ class DV360APIClient(BasePlatformClient):
         
         try:
             if method == 'GET':
-                resp = _requests.get(url, headers=headers, params=kwargs.get('params'), timeout=30)
+                resp = _requests.get(url, headers=headers, params=kwargs.get('params'), timeout=self.http_timeout())
             elif method == 'POST':
-                resp = _requests.post(url, headers=headers, json=kwargs.get('data'), timeout=30)
+                resp = _requests.post(url, headers=headers, json=kwargs.get('data'), timeout=self.http_timeout())
             elif method == 'PUT':
-                resp = _requests.put(url, headers=headers, json=kwargs.get('data'), timeout=30)
+                resp = _requests.put(url, headers=headers, json=kwargs.get('data'), timeout=self.http_timeout())
             elif method == 'PATCH':
                 resp = _requests.patch(
                     url,
                     headers=headers,
                     json=kwargs.get('data'),
-                    timeout=30,
+                    timeout=self.http_timeout(),
                 )
             elif method == 'DELETE':
-                resp = _requests.delete(url, headers=headers, timeout=30)
+                resp = _requests.delete(url, headers=headers, timeout=self.http_timeout())
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
             

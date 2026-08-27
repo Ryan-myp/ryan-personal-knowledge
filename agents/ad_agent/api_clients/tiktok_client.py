@@ -85,11 +85,11 @@ class TikTokAPIClient(BasePlatformClient):
         
         try:
             if method == 'GET':
-                resp = requests.get(url, headers=headers, params=kwargs.get('params'), timeout=30)
+                resp = requests.get(url, headers=headers, params=kwargs.get('params'), timeout=self.http_timeout())
             elif method == 'POST':
-                resp = requests.post(url, headers=headers, json=kwargs.get('data'), timeout=30)
+                resp = requests.post(url, headers=headers, json=kwargs.get('data'), timeout=self.http_timeout())
             elif method == 'DELETE':
-                resp = requests.delete(url, headers=headers, timeout=30)
+                resp = requests.delete(url, headers=headers, timeout=self.http_timeout())
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
             try:

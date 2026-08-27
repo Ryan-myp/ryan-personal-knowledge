@@ -25,10 +25,21 @@ WORKFLOW_TRANSITIONS = {
     "awaiting_confirmation": {"awaiting_confirmation", "running", "blocked", "failed", "cancelled"},
     "partially_failed": {"partially_failed", "recovery_required", "succeeded", "failed", "cancelled"},
     "recovery_required": {"recovery_required", "running", "succeeded", "failed", "cancelled"},
-    "blocked": {"blocked", "running", "cancelled"},
-    "failed": {"failed", "running", "cancelled"},
+    "blocked": {"blocked", "running", "failed", "recovery_required", "succeeded", "cancelled"},
+    "failed": {"failed", "running", "recovery_required", "succeeded", "cancelled"},
     "succeeded": {"succeeded"},
     "cancelled": {"cancelled"},
+}
+
+WORKFLOW_ITEM_TRANSITIONS = {
+    "planned": {"planned", "awaiting_confirmation", "running", "succeeded", "failed", "unknown"},
+    "running": {"running", "succeeded", "failed", "unknown"},
+    "awaiting_confirmation": {"awaiting_confirmation", "succeeded", "failed", "unknown"},
+    "failed": {"failed", "succeeded", "unknown"},
+    "unknown": {"unknown", "succeeded", "failed"},
+    "succeeded": {"succeeded"},
+    "unsupported": {"unsupported"},
+    "skipped": {"skipped"},
 }
 
 
@@ -671,7 +682,77 @@ class AdAgentStore:
                             item[key] = {}
                 item["compensation_required"] = bool(item.get("compensation_required"))
                 items.append(item)
-            return items
+        return items
+
+    def update_workflow_item(
+        self,
+        workflow_id: str,
+        sequence: int,
+        status: str,
+        output_data: Optional[dict] = None,
+        error: Optional[str] = None,
+        compensation_required: Optional[bool] = None,
+    ) -> bool:
+        """Update one item during an explicitly verified reconciliation."""
+        assignments = ["status = ?", "error = ?", "updated_at = ?"]
+        values: list[Any] = [status, error, datetime.now().isoformat()]
+        if output_data is not None:
+            assignments.append("output_data = ?")
+            values.append(json.dumps(output_data))
+        if compensation_required is not None:
+            assignments.append("compensation_required = ?")
+            values.append(int(compensation_required))
+        values.extend([workflow_id, int(sequence)])
+        with self._lock:
+            conn = self._get_conn()
+            current = conn.execute(
+                "SELECT status FROM workflow_items WHERE workflow_id = ? AND sequence = ?",
+                (workflow_id, int(sequence)),
+            ).fetchone()
+            if not current:
+                return False
+            current_status = str(current[0])
+            if status not in WORKFLOW_ITEM_TRANSITIONS.get(current_status, set()):
+                logger.warning(
+                    "Rejected invalid workflow item transition %s -> %s for %s/%s",
+                    current_status, status, workflow_id, sequence,
+                )
+                return False
+            cursor = conn.execute(
+                f"UPDATE workflow_items SET {', '.join(assignments)} "
+                "WHERE workflow_id = ? AND sequence = ?",
+                values,
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def list_resumable_workflows(
+        self, user_id: Optional[str] = None, limit: int = 50
+    ) -> list[dict]:
+        """List non-terminal workflows for an operator/recovery worker."""
+        statuses = ("failed", "partially_failed", "recovery_required", "blocked")
+        placeholders = ",".join("?" for _ in statuses)
+        params: list[Any] = list(statuses)
+        query = (
+            "SELECT w.* FROM workflows w JOIN sessions s "
+            f"ON s.session_id = w.session_id WHERE w.status IN ({placeholders})"
+        )
+        if user_id is not None:
+            query += " AND s.user_id = ?"
+            params.append(str(user_id))
+        query += " ORDER BY w.updated_at ASC LIMIT ?"
+        params.append(max(1, int(limit)))
+        with self._lock:
+            rows = self._get_conn().execute(query, params).fetchall()
+            result = []
+            for row in rows:
+                item = dict(row)
+                try:
+                    item["metadata"] = json.loads(item.get("metadata") or "{}")
+                except (TypeError, ValueError):
+                    item["metadata"] = {}
+                result.append(item)
+            return result
 
     def mark_workflow_items_for_compensation(
         self, workflow_id: str, sequences: list[int]

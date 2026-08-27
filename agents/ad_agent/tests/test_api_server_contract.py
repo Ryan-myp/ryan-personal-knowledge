@@ -4,6 +4,8 @@ These tests replace the Runtime with a local fake and never create Provider
 clients or call an external advertising API.
 """
 
+import json
+
 import pytest
 
 from fastapi.testclient import TestClient
@@ -73,6 +75,59 @@ def test_chat_forwards_request_to_runtime(fake_server):
     assert response.json()["reply"] == "local fake response"
     assert fake_server.calls[0]["user_input"] == "查询 Meta campaign"
     assert fake_server.calls[0]["account_id"] == "m1"
+    assert fake_server.calls[0]["principal"].user_id == "ad-agent-service"
+    assert "user_id" not in fake_server.calls[0]
+
+
+def test_api_key_principal_replaces_request_user_id(monkeypatch, fake_server):
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "scoped-key": {
+                "user_id": "gateway-user",
+                "tenant_id": "tenant-a",
+                "permissions": ["ads.read"],
+                "account_scope": {"meta": ["m1"]},
+            }
+        }),
+    )
+    with TestClient(api_server.app) as client:
+        response = client.post(
+            "/chat",
+            headers={"X-API-Key": "scoped-key"},
+            json={
+                "user_input": "查询 Meta campaign",
+                "user_id": "forged-user",
+                "account_id": "m1",
+            },
+        )
+    assert response.status_code == 200
+    principal = fake_server.calls[0]["principal"]
+    assert principal.user_id == "gateway-user"
+    assert principal.tenant_id == "tenant-a"
+    assert principal.allows_account("meta", "m1") is True
+
+
+def test_reconcile_endpoint_requires_recovery_permission(monkeypatch, fake_server):
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "read-only-key": {
+                "user_id": "gateway-user",
+                "tenant_id": "tenant-a",
+                "permissions": ["ads.read"],
+                "account_scope": {"meta": ["m1"]},
+            }
+        }),
+    )
+    with TestClient(api_server.app) as client:
+        response = client.post(
+            "/workflows/w1/reconcile",
+            headers={"X-API-Key": "read-only-key"},
+            json={"observations": [{"sequence": 1, "status": "unknown", "verified": True}]},
+        )
+    assert response.status_code == 403
+    assert fake_server.calls == []
 
 
 def test_confirmed_chat_requires_confirmation_payload(fake_server):

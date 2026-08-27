@@ -2,12 +2,16 @@
 
 import json
 from pathlib import Path
+import time
+import pytest
 
 from agents.ad_agent.capabilities.meta import create_meta_capability
 from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
 from agents.ad_agent.core.interfaces import ToolContext, ToolSchema, ToolDefinition, ToolEffect
 from agents.ad_agent.core.intent import LLMIntentParser
 from agents.ad_agent.core.tool_registry import SimpleToolRegistry, validate_tool_input
+from agents.ad_agent.core.auth import RequestPrincipal
+from agents.ad_agent.api_clients.base import RateLimiter, TemporaryError
 from agents.ad_agent.persistence.store import AdAgentStore
 from agents.ad_agent.runtime.runtime import AccountWhitelistValidator, AgentRuntime
 
@@ -46,6 +50,18 @@ def test_runtime_registry_cannot_bypass_execution_boundary():
     ).success is False
 
 
+def test_direct_runtime_rejects_non_object_platform_params():
+    result = AgentRuntime().run("查询 Meta campaign", platform_params=[])
+    assert result["policy_errors"] == ["platform_params 必须是对象"]
+
+
+def test_rate_limit_wait_is_bounded_by_provider_deadline():
+    limiter = RateLimiter(max_requests=1, period=60)
+    limiter.acquire()
+    with pytest.raises(TemporaryError, match="deadline"):
+        limiter.acquire(max_wait=0.001)
+
+
 def test_closed_tool_schema_rejects_unknown_top_level_fields():
     schema = ToolSchema(
         required=["name"],
@@ -70,6 +86,7 @@ def test_live_confirmation_requires_payload_even_for_direct_runtime_call():
         whitelist_validator=_whitelist(meta=["m1"]),
         execution_mode="live",
         live_approved_tools={"meta_update_campaign"},
+        granted_permissions={"ads.read", "ads.plan", "ads.write"},
     )
     runtime.register_capability(create_meta_capability(Client()))
     result = runtime.run(
@@ -79,6 +96,34 @@ def test_live_confirmation_requires_payload_even_for_direct_runtime_call():
 
     assert result["results"][0]["success"] is False
     assert "confirmation_payload" in result["results"][0]["error"]
+    assert calls == []
+
+
+def test_live_write_without_write_guard_fails_closed():
+    calls = []
+
+    class Client:
+        platform = "meta"
+
+        def update_campaign(self, campaign_id, updates):
+            calls.append((campaign_id, updates))
+            return {"campaign_id": campaign_id}
+
+    runtime = AgentRuntime(
+        whitelist_validator=_whitelist(meta=["m1"]),
+        execution_mode="live",
+        live_approved_tools={"meta_update_campaign"},
+        granted_permissions={"ads.read", "ads.plan", "ads.write"},
+    )
+    runtime.register_capability(create_meta_capability(Client()))
+    runtime.write_guard = None
+    result = runtime.run(
+        "更新 Meta campaign campaign_id=123 status=PAUSED",
+        session_id="s-no-guard", user_id="u1", account_id="m1",
+    )
+
+    assert result["results"][0]["success"] is False
+    assert "WriteGuard" in result["results"][0]["error"]
     assert calls == []
 
 
@@ -164,6 +209,7 @@ def test_missing_tool_permission_fails_closed_before_handler_execution():
         intent_parser=Parser(),
         intent_router=Router(),
         whitelist_validator=_whitelist(meta=["m1"]),
+        granted_permissions=set(),
     )
     runtime.registry.register(
         ToolDefinition(
@@ -181,6 +227,163 @@ def test_missing_tool_permission_fails_closed_before_handler_execution():
     assert result["results"][0]["success"] is False
     assert "ads.read" in result["results"][0]["error"]
     assert calls == []
+
+
+def test_builtin_tools_declare_read_or_plan_permissions():
+    runtime = AgentRuntime(whitelist_validator=_whitelist(meta=["m1"]))
+    runtime.register_capability(create_meta_capability())
+    tools = runtime.registry.list_all()
+
+    assert tools
+    assert all(tool.required_permissions for tool in tools)
+    assert all(
+        set(tool.required_permissions)
+        == ({"ads.plan"} if tool.is_write_tool else {"ads.read"})
+        for tool in tools
+    )
+
+
+def test_trusted_principal_overrides_user_id_and_restricts_accounts():
+    store = AdAgentStore(":memory:")
+    runtime = AgentRuntime(
+        persistence_store=store,
+        whitelist_validator=_whitelist(meta=["m1", "m2"]),
+    )
+    runtime.register_capability(create_meta_capability())
+    principal = RequestPrincipal(
+        user_id="trusted-user",
+        tenant_id="tenant-a",
+        permissions=frozenset({"ads.read", "ads.plan"}),
+        account_scope={"meta": {"m1"}},
+    )
+
+    denied = runtime.run(
+        "创建 Meta campaign 名称=Denied",
+        user_id="forged-user",
+        account_id="m2",
+        principal=principal,
+    )
+    assert denied["results"]
+    assert "授权范围" in denied["results"][0]["error"]
+
+    allowed = runtime.run(
+        "创建 Meta campaign 名称=Allowed",
+        user_id="forged-user",
+        account_id="m1",
+        principal=principal,
+    )
+    assert allowed["results"]
+    assert store.get_session(allowed["session_id"])["user_id"] == "trusted-user"
+
+
+def test_workflow_recovery_requires_verified_observations():
+    store = AdAgentStore(":memory:")
+    store.create_session("recovery-session", "u1", "m1")
+    store.create_workflow(
+        "recovery-workflow", "recovery-session", "create_campaign", "live",
+        status="failed", metadata={"replay_policy": "explicit_operator_confirmation"},
+    )
+    store.add_workflow_item(
+        "recovery-workflow:1", "recovery-workflow", 1, "meta",
+        "meta_create_campaign", "failed", {"campaign_id": "c1"},
+        error="provider timeout",
+    )
+    runtime = AgentRuntime(persistence_store=store)
+
+    plan = runtime.get_workflow_resume_plan("recovery-workflow", user_id="u1")
+    assert plan["resumable"] is True
+    assert plan["requires_fresh_confirmation"] is True
+    assert plan["items"][0]["sequence"] == 1
+
+    with pytest.raises(ValueError, match="verified=true"):
+        runtime.reconcile_workflow(
+            "recovery-workflow", [{"sequence": 1, "status": "succeeded"}], user_id="u1"
+        )
+
+    unknown = runtime.reconcile_workflow(
+        "recovery-workflow",
+        [{"sequence": 1, "status": "unknown", "verified": True}],
+        user_id="u1",
+    )
+    assert unknown["status"] == "recovery_required"
+
+    succeeded = runtime.reconcile_workflow(
+        "recovery-workflow",
+        [{"sequence": 1, "status": "succeeded", "verified": True}],
+        user_id="u1",
+    )
+    assert succeeded["status"] == "succeeded"
+
+    with pytest.raises(ValueError, match="does not belong"):
+        runtime.reconcile_workflow(
+            "recovery-workflow",
+            [{"sequence": 99, "status": "succeeded", "verified": True}],
+            user_id="u1",
+        )
+    with pytest.raises(ValueError, match="cannot reconcile"):
+        runtime.reconcile_workflow(
+            "recovery-workflow",
+            [{"sequence": 1, "status": "failed", "verified": True}],
+            user_id="u1",
+        )
+
+
+def test_workflow_access_isolated_by_tenant_even_when_user_id_matches():
+    store = AdAgentStore(":memory:")
+    store.create_session("tenant-session", "same-user", metadata={"tenant_id": "tenant-a"})
+    store.create_workflow(
+        "tenant-workflow", "tenant-session", "create_campaign", "dry_run", status="failed"
+    )
+    runtime = AgentRuntime(persistence_store=store)
+
+    with pytest.raises(PermissionError, match="different tenant"):
+        runtime.get_workflow(
+            "tenant-workflow", user_id="same-user", tenant_id="tenant-b"
+        )
+
+
+def test_skill_plugin_manifest_mismatch_is_rejected(tmp_path):
+    skill_dir = tmp_path / "trusted-skill"
+    skill_dir.mkdir()
+    plugin = skill_dir / "tools.py"
+    plugin.write_text("# local plugin\n", encoding="utf-8")
+    (skill_dir / "skill.manifest.json").write_text(
+        json.dumps({"skill": "trusted-skill", "files": {"tools.py": "0"}}),
+        encoding="utf-8",
+    )
+
+    verified, reason = AgentRuntime._verify_skill_plugin(skill_dir, plugin)
+    assert verified is False
+    assert "hash mismatch" in reason
+
+
+def test_tool_timeout_returns_explicit_timed_out_result_and_signals_handler():
+    observed = {}
+
+    class SlowHandler:
+        def execute(self, ctx, _input):
+            observed["event"] = ctx.metadata["cancel_event"]
+            time.sleep(0.01)
+            return type("Result", (), {"success": True, "data": {}})()
+
+    runtime = AgentRuntime()
+    definition = ToolDefinition(
+        name="slow_read",
+        skill="test",
+        platform="meta",
+        description="timeout test",
+        input_schema=ToolSchema(),
+        effect_class=ToolEffect.READ,
+        timeout_seconds=0.001,
+    )
+    runtime.registry.register(definition, SlowHandler())
+    result = runtime._execute_tool(
+        ToolContext("timeout-session", "u1"), "slow_read", {}
+    )
+
+    assert result.success is False
+    assert result.data["execution_status"] == "timed_out"
+    assert observed["event"].is_set() is True
 
 
 def test_golden_intent_cases_remain_deterministic():

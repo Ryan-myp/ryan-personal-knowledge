@@ -84,7 +84,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 'client_secret': client_secret,
                 'refresh_token': refresh_token,
                 'grant_type': 'refresh_token'
-            })
+            }, timeout=self.http_timeout())
 
             if resp.status_code != 200:
                 raise AuthError(f"Failed to refresh token: {resp.text}")
@@ -134,13 +134,13 @@ class GoogleAdsAPIClient(BasePlatformClient):
         
         try:
             if method == 'GET':
-                resp = requests.get(url, headers=headers, params=kwargs.get('params'), timeout=30)
+                resp = requests.get(url, headers=headers, params=kwargs.get('params'), timeout=self.http_timeout())
             elif method == 'POST':
-                resp = requests.post(url, headers=headers, json=kwargs.get('data'), timeout=30)
+                resp = requests.post(url, headers=headers, json=kwargs.get('data'), timeout=self.http_timeout())
             elif method == 'PUT':
-                resp = requests.put(url, headers=headers, json=kwargs.get('data'), timeout=30)
+                resp = requests.put(url, headers=headers, json=kwargs.get('data'), timeout=self.http_timeout())
             elif method == 'DELETE':
-                resp = requests.delete(url, headers=headers, timeout=30)
+                resp = requests.delete(url, headers=headers, timeout=self.http_timeout())
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
             

@@ -17,12 +17,14 @@ import os
 import copy
 import re
 import hashlib
+import hmac
 import threading
 import logging
 import importlib.util
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from types import MappingProxyType
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import yaml
@@ -37,6 +39,7 @@ from ..core.intent import LLMIntentParser, SimpleIntentRouter
 from ..core.cross_channel import CrossChannelAggregator, CrossChannelAnalyzer, build_batch_operations
 from ..core.tool_selector import BusinessContext, DynamicToolSelector
 from ..core.parameter_catalog import ParameterCatalogRegistry
+from ..core.auth import RequestPrincipal, normalize_account_id
 from .skill import Skill, SkillLoader
 from ..persistence.session_manager import SessionManager
 from ..persistence.store import AdAgentStore, ToolCallRecord
@@ -235,8 +238,16 @@ class AgentRuntime:
         # Permissions are injected by the trusted embedding/auth layer, never
         # inferred from user text or provider credentials. Missing permissions
         # fail closed for both read and write tools.
+        # A direct/local embedding gets the safe baseline needed to inspect
+        # data and build dry-run plans.  Passing an explicit empty set is
+        # different: it intentionally denies every permissioned tool.  The
+        # HTTP server always passes its configured principal permissions.
+        default_permissions = {"ads.read", "ads.plan"}
         self._granted_permissions = frozenset(
-            str(permission) for permission in (granted_permissions or set())
+            str(permission)
+            for permission in (
+                default_permissions if granted_permissions is None else granted_permissions
+            )
         )
         if max_tool_calls <= 0:
             raise ValueError("max_tool_calls must be positive")
@@ -394,6 +405,8 @@ class AgentRuntime:
         if len(user_input) > self.max_user_input_chars:
             return f"user_input 超过长度限制（最多 {self.max_user_input_chars} 个字符）"
         if platform_params is not None:
+            if not isinstance(platform_params, dict):
+                return "platform_params 必须是对象"
             try:
                 size = len(json.dumps(platform_params, ensure_ascii=False, default=str).encode("utf-8"))
             except (TypeError, ValueError):
@@ -413,11 +426,21 @@ class AgentRuntime:
             return "本回合执行超时，已停止后续工具调用"
         return None
 
-    def _check_tool_permissions(self, tool_def: Any) -> Optional[str]:
+    def _check_tool_permissions(
+        self,
+        tool_def: Any,
+        granted_permissions: Optional[set[str] | frozenset[str]] = None,
+    ) -> Optional[str]:
         required = {
             str(permission) for permission in (getattr(tool_def, "required_permissions", []) or [])
         }
-        missing = sorted(required - self._granted_permissions)
+        # Planning and live execution are distinct grants.  A write tool may
+        # be used to produce a dry-run plan with ads.plan, but executing it
+        # against a provider additionally requires ads.write.
+        if tool_def.is_write_tool and self.execution_mode == ExecutionMode.LIVE.value:
+            required.add("ads.write")
+        granted = self._granted_permissions if granted_permissions is None else frozenset(granted_permissions)
+        missing = sorted(required - granted)
         if missing:
             return "缺少工具所需权限：" + ", ".join(missing)
         return None
@@ -679,6 +702,10 @@ class AgentRuntime:
                 )
             if self._read_only_mode and tool_def.is_write_tool:
                 continue
+            if not tool_def.required_permissions:
+                tool_def.required_permissions = [
+                    "ads.plan" if tool_def.is_write_tool else "ads.read"
+                ]
             try:
                 self.registry.register(tool_def, handler)
                 self.parameter_catalogs.register_tool_schema(
@@ -720,6 +747,63 @@ class AgentRuntime:
         return True
 
     @staticmethod
+    def _verify_skill_plugin(skill_dir: Any, plugin_path: Any) -> tuple[bool, str]:
+        """Verify an optional Skill manifest before importing executable code."""
+        skill_dir = os.fspath(skill_dir)
+        plugin_path = os.fspath(plugin_path)
+        manifest_path = os.path.join(skill_dir, "skill.manifest.json")
+        require_manifest = os.environ.get("AD_AGENT_REQUIRE_SKILL_MANIFEST") == "1"
+        if not os.path.exists(manifest_path):
+            if require_manifest:
+                return False, "skill.manifest.json is required"
+            return True, "manifest not configured"
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as file:
+                manifest = json.load(file)
+        except (OSError, TypeError, ValueError) as exc:
+            return False, f"invalid skill manifest: {exc}"
+        files = manifest.get("files") if isinstance(manifest, dict) else None
+        if not isinstance(files, dict):
+            return False, "skill manifest files must be an object"
+        relative_name = os.path.basename(plugin_path)
+        expected = files.get(relative_name) or files.get(os.path.relpath(plugin_path, skill_dir))
+        if not isinstance(expected, str):
+            return False, f"skill manifest does not cover {relative_name}"
+        digest = hashlib.sha256()
+        try:
+            with open(plugin_path, "rb") as file:
+                for chunk in iter(lambda: file.read(1024 * 1024), b""):
+                    digest.update(chunk)
+        except OSError as exc:
+            return False, f"cannot hash Skill plugin: {exc}"
+        if not hmac.compare_digest(digest.hexdigest(), expected.lower()):
+            return False, f"hash mismatch for {relative_name}"
+
+        signing_key = os.environ.get("AD_AGENT_SKILL_MANIFEST_KEY")
+        signature = manifest.get("signature") if isinstance(manifest, dict) else None
+        if require_manifest and not signing_key:
+            return False, "AD_AGENT_SKILL_MANIFEST_KEY is required with manifest enforcement"
+        if signing_key:
+            if not isinstance(signature, str) or not signature:
+                return False, "signed Skill manifest is required"
+            signed_payload = json.dumps(
+                {
+                    "skill": manifest.get("skill", os.path.basename(skill_dir)),
+                    "version": manifest.get("version", "1"),
+                    "files": files,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            expected_signature = hmac.new(
+                signing_key.encode("utf-8"), signed_payload, hashlib.sha256
+            ).hexdigest()
+            if not hmac.compare_digest(signature, expected_signature):
+                return False, "skill manifest signature mismatch"
+        return True, "verified"
+
+    @staticmethod
     def _load_skill_plugin(skill_dir: Any, api_client=None) -> Optional[Skill]:
         """Load an optional executable Skill plugin from a Skill directory.
 
@@ -739,6 +823,11 @@ class AgentRuntime:
         candidates = [skill_dir / "tools.py", skill_dir / "tools" / "__init__.py"]
         plugin_path = next((path for path in candidates if path.exists()), None)
         if plugin_path is None:
+            return None
+
+        verified, reason = AgentRuntime._verify_skill_plugin(skill_dir, plugin_path)
+        if not verified:
+            logger.error("拒绝加载 Skill plugin %s: %s", plugin_path, reason)
             return None
 
         module_name = "ad_agent_skill_" + hashlib.sha256(
@@ -1036,6 +1125,64 @@ class AgentRuntime:
         """Execute a tool with an optional request-scoped provider client."""
         definition, handler = self._get_registered_tool(tool_name)
 
+        turn_deadline = ctx.metadata.get("turn_deadline") if ctx else None
+        now = time.monotonic()
+        tool_deadline = now + float(getattr(definition, "timeout_seconds", 30.0))
+        if turn_deadline is not None:
+            tool_deadline = min(tool_deadline, float(turn_deadline))
+        if tool_deadline <= now:
+            return ToolResult(
+                success=False,
+                data={"execution_status": "timed_out"},
+                error=f"工具 {tool_name} 在执行前已超过 timeout_seconds",
+            )
+
+        previous_deadline = ctx.metadata.get("tool_deadline") if ctx else None
+        cancel_event = threading.Event()
+        if ctx:
+            ctx.metadata["tool_deadline"] = tool_deadline
+            ctx.metadata["cancel_event"] = cancel_event
+
+        def timeout_result() -> ToolResult:
+            cancel_event.set()
+            return ToolResult(
+                success=False,
+                data={"execution_status": "timed_out"},
+                error=(
+                    f"工具 {tool_name} 执行超过限制（最多 "
+                    f"{float(getattr(definition, 'timeout_seconds', 30.0)):.3g} 秒）"
+                ),
+            )
+
+        def prepare_handler(source_handler: Any, source_client: Any = None) -> Any:
+            """Isolate request-scoped client state and propagate the deadline."""
+            if source_client is None:
+                return source_handler
+            client_type = type(source_client)
+            timeout_setter = getattr(client_type, "set_request_timeout", None)
+            timeout_attribute = "request_timeout" in getattr(source_client, "__dict__", {})
+            # Test doubles and third-party clients sometimes implement a
+            # permissive __getattr__.  Do not shallow-copy those objects just
+            # because an arbitrary attribute lookup appeared to succeed.
+            if not callable(timeout_setter) and not timeout_attribute:
+                return source_handler
+            isolated_handler = copy.copy(source_handler)
+            isolated_client = copy.copy(source_client)
+            remaining = max(tool_deadline - time.monotonic(), 0.001)
+            budget_setter = getattr(isolated_client, "set_request_budget", None)
+            if callable(budget_setter):
+                budget_setter(remaining)
+                return_value = isolated_handler
+                return_value.client = isolated_client
+                return return_value
+            setter = getattr(isolated_client, "set_request_timeout", None)
+            if callable(setter):
+                setter(remaining)
+            elif hasattr(isolated_client, "request_timeout"):
+                isolated_client.request_timeout = remaining
+            isolated_handler.client = isolated_client
+            return isolated_handler
+
         # A handler's fixture fallback is useful for explicit offline unit
         # tests, but it must not look like live provider data in the normal
         # Runtime path.  Guard before invoking the handler so detail reads
@@ -1051,32 +1198,60 @@ class AgentRuntime:
                 "不会返回模拟查询数据"
             )
 
-        if not request_clients:
-            result = self._execute_registered_tool(ctx, tool_name, input_data)
-            return self._apply_read_data_boundary(tool_name, result)
+        try:
+            if not request_clients:
+                # A registered handler may own a provider client. Copy it for
+                # this invocation so request timeout state cannot race with a
+                # different session using the same handler.
+                source_client = getattr(handler, "client", None)
+                invocation_handler = prepare_handler(handler, source_client)
+            else:
+                client = request_clients.get(
+                    self.PLATFORM_NAME_MAP.get(definition.platform, definition.platform)
+                )
+                if client is None or not hasattr(handler, "client"):
+                    invocation_handler = handler
+                else:
+                    invocation_handler = prepare_handler(handler, client)
 
-        client = request_clients.get(
-            self.PLATFORM_NAME_MAP.get(definition.platform, definition.platform)
-        )
-        if client is None or not hasattr(handler, "client"):
-            result = self._execute_registered_tool(ctx, tool_name, input_data)
-            return self._apply_read_data_boundary(tool_name, result)
+            if definition.input_schema:
+                errors = validate_tool_input(definition.input_schema, input_data)
+                if errors:
+                    return ToolResult.error(f"Input validation failed: {errors}")
+            def invoke_handler() -> ToolResult:
+                if hasattr(invocation_handler, "execute"):
+                    return invocation_handler.execute(ctx, input_data)
+                if callable(invocation_handler):
+                    return invocation_handler(ctx, input_data)
+                return ToolResult.error(f"Tool '{tool_name}' has no executable handler")
 
-        # Registered handlers are global. Copy only the handler for this call
-        # so request-level credentials cannot race with another session.
-        isolated_handler = copy.copy(handler)
-        isolated_handler.client = client
-        if definition.input_schema:
-            errors = validate_tool_input(definition.input_schema, input_data)
-            if errors:
-                return ToolResult.error(f"Input validation failed: {errors}")
-        if hasattr(isolated_handler, "execute"):
-            result = isolated_handler.execute(ctx, input_data)
+            # Read handlers can be isolated in a worker and returned when the
+            # deadline expires.  A live write is kept synchronous: returning
+            # while an unkillable Python thread may still mutate a provider is
+            # unsafe.  Provider clients receive the same deadline and must
+            # abort their HTTP attempt; custom live handlers need equivalent
+            # cooperative cancellation before being approved.
+            if definition.is_read_tool:
+                executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ad-agent-tool")
+                future = executor.submit(invoke_handler)
+                try:
+                    result = future.result(timeout=max(tool_deadline - time.monotonic(), 0.001))
+                except FutureTimeoutError:
+                    return timeout_result()
+                finally:
+                    executor.shutdown(wait=False, cancel_futures=True)
+            else:
+                result = invoke_handler()
+            if time.monotonic() > tool_deadline:
+                return timeout_result()
             return self._apply_read_data_boundary(tool_name, result)
-        if callable(isolated_handler):
-            result = isolated_handler(ctx, input_data)
-            return self._apply_read_data_boundary(tool_name, result)
-        return ToolResult.error(f"Tool '{tool_name}' has no executable handler")
+        finally:
+            if ctx:
+                if previous_deadline is None:
+                    ctx.metadata.pop("tool_deadline", None)
+                else:
+                    ctx.metadata["tool_deadline"] = previous_deadline
+                ctx.metadata.pop("cancel_event", None)
 
     def _execute_registered_tool(
         self, ctx: ToolContext, tool_name: str, input_data: dict,
@@ -1442,6 +1617,52 @@ class AgentRuntime:
             return False, f"{platform} 未配置受控账户白名单，当前请求被拒绝"
         return self.whitelist_validator.validate_account(platform, account_id)
 
+    @staticmethod
+    def _principal_accounts(
+        platform: str,
+        account_scope: Optional[Mapping[str, Any]],
+    ) -> Optional[set[str]]:
+        """Return the trusted principal's account scope, or ``None`` if absent."""
+        if account_scope is None:
+            return None
+        normalized = AgentRuntime.PLATFORM_NAME_MAP.get(platform, platform)
+        aliases = {normalized, platform}
+        accounts: set[str] = set()
+        for key in aliases:
+            values = account_scope.get(key, ()) if hasattr(account_scope, "get") else ()
+            if isinstance(values, (str, bytes)):
+                values = (values,)
+            accounts.update(normalize_account_id(value) for value in (values or ()))
+        return {value for value in accounts if value}
+
+    def _validate_account_with_principal(
+        self,
+        platform: str,
+        account_id: str,
+        is_write: bool,
+        account_scope: Optional[Mapping[str, Any]],
+    ) -> tuple[bool, str]:
+        """Apply both configured test-account and trusted principal scopes."""
+        if account_scope is not None:
+            principal_accounts = self._principal_accounts(platform, account_scope)
+            if not principal_accounts or normalize_account_id(account_id) not in principal_accounts:
+                return False, f"账户 {account_id or '<empty>'} 不在当前身份的授权范围内"
+        return self._validate_account_for_tool(platform, account_id, is_write)
+
+    def _available_accounts_for_request(
+        self,
+        platform: str,
+        account_scope: Optional[Mapping[str, Any]],
+    ) -> list[str]:
+        configured = self.whitelist_validator.get_allowed_accounts(platform)
+        principal_accounts = self._principal_accounts(platform, account_scope)
+        if principal_accounts is None:
+            return list(configured)
+        return [
+            account for account in configured
+            if normalize_account_id(account) in principal_accounts
+        ]
+
     def _simulate_write(self, tool_def: Any, input_data: dict, platform: str) -> ToolResult:
         """生成本地模拟结果，保证 dry-run 不触发任何平台 API。"""
         key = self.registry.generate_idempotency_key(tool_def.name, input_data, "dry-run") \
@@ -1628,6 +1849,8 @@ class AgentRuntime:
                 "platforms": list(intent.platforms),
                 "dry_run": self.is_dry_run,
                 "compensation_policy": "manual_review_required",
+                "replay_policy": "explicit_operator_confirmation",
+                "raw_input": self._redact_for_persistence(intent.raw_input),
             },
         )
         return workflow_id
@@ -1722,6 +1945,8 @@ class AgentRuntime:
         tool_plan: dict[str, list[Any]],
         account_id: Optional[str],
         workflow_id: Optional[str],
+        account_scope: Optional[Mapping[str, Any]] = None,
+        granted_permissions: Optional[set[str] | frozenset[str]] = None,
     ) -> dict:
         """Expand a cross-channel batch request into safe local plan items.
 
@@ -1737,13 +1962,22 @@ class AgentRuntime:
             resolved = self._resolve_platform_account(
                 intent, platform, tools, account_id
             )
-            allowed, error = self._validate_account_for_tool(
-                actual_platform, resolved, True
+            allowed, error = self._validate_account_with_principal(
+                actual_platform, resolved, True, account_scope
             )
             if not allowed:
                 errors.append(f"{platform}: {error}")
             else:
                 accounts[platform] = resolved
+
+            for tool_def in tools:
+                permission_error = self._check_tool_permissions(
+                    tool_def, granted_permissions
+                )
+                if permission_error:
+                    errors.append(f"{platform}: {permission_error}")
+                    accounts.pop(platform, None)
+                    break
 
         operations, planning_errors = build_batch_operations(intent, accounts)
         errors.extend(planning_errors)
@@ -1789,7 +2023,9 @@ class AgentRuntime:
                 continue
             tool_input = {
                 "campaign_id": operation.campaign_id,
-                "updates": operation.updates,
+                "updates": self._normalize_provider_updates(
+                    tool_def, operation.updates
+                ),
             }
             schema_errors = validate_tool_input(tool_def.input_schema, tool_input)
             if schema_errors:
@@ -1870,6 +2106,8 @@ class AgentRuntime:
         session: "SessionContext",
         turn_id: str,
         request_clients: Optional[dict[str, Any]] = None,
+        account_scope: Optional[Mapping[str, Any]] = None,
+        granted_permissions: Optional[set[str] | frozenset[str]] = None,
     ) -> None:
         """Collect campaign-scoped metrics for a cross-channel comparison.
 
@@ -1934,7 +2172,9 @@ class AgentRuntime:
                 intent, platform, [report_def], session.ctx.account_id
             )
             actual_platform = self.PLATFORM_NAME_MAP.get(platform, platform)
-            permission_error = self._check_tool_permissions(report_def)
+            permission_error = self._check_tool_permissions(
+                report_def, granted_permissions
+            )
             if permission_error:
                 results.append({
                     "tool": report_name,
@@ -1944,8 +2184,8 @@ class AgentRuntime:
                     "needs_confirmation": False,
                 })
                 continue
-            allowed, account_error = self._validate_account_for_tool(
-                actual_platform, per_platform_account, False
+            allowed, account_error = self._validate_account_with_principal(
+                actual_platform, per_platform_account, False, account_scope
             )
             if not allowed:
                 results.append({
@@ -2043,6 +2283,7 @@ class AgentRuntime:
         platform_params: dict = None,
         confirmed: bool = False,
         confirmation_payload: Optional[dict] = None,
+        principal: Optional[RequestPrincipal] = None,
     ) -> dict:
         """Execute one turn while serializing turns for the same session.
 
@@ -2051,16 +2292,26 @@ class AgentRuntime:
         account context, tool outputs and confirmation state.
         """
         lock = self._get_session_lock(session_id or "__new_session__")
+        effective_user_id = principal.user_id if principal is not None else user_id
+        effective_permissions = (
+            principal.permissions if principal is not None else self._granted_permissions
+        )
+        effective_account_scope = (
+            principal.account_scope if principal is not None else None
+        )
         with lock:
             return self._run_unlocked(
                 user_input=user_input,
                 session_id=session_id,
-                user_id=user_id,
+                user_id=effective_user_id,
                 account_id=account_id,
                 credentials=credentials,
                 platform_params=platform_params,
                 confirmed=confirmed,
                 confirmation_payload=confirmation_payload,
+                granted_permissions=effective_permissions,
+                account_scope=effective_account_scope,
+                tenant_id=principal.tenant_id if principal is not None else "default",
             )
 
     def _run_unlocked(
@@ -2073,6 +2324,9 @@ class AgentRuntime:
         platform_params: dict = None,
         confirmed: bool = False,
         confirmation_payload: Optional[dict] = None,
+        granted_permissions: Optional[set[str] | frozenset[str]] = None,
+        account_scope: Optional[Mapping[str, Any]] = None,
+        tenant_id: str = "default",
     ) -> dict:
         """
         执行一次完整的对话回合。
@@ -2114,9 +2368,17 @@ class AgentRuntime:
         
         # Step 1: 确保 Session 存在
         request_clients = self._build_request_clients(credentials)
-        session = self._ensure_session(session_id, user_id, account_id, credentials)
+        session = self._ensure_session(
+            session_id, user_id, account_id, credentials, tenant_id=tenant_id
+        )
         turn_deadline = time.monotonic() + self.turn_timeout_seconds
         session.ctx.metadata["turn_deadline"] = turn_deadline
+        session.ctx.metadata["tenant_id"] = str(tenant_id or "default")
+        effective_permissions = (
+            self._granted_permissions
+            if granted_permissions is None
+            else frozenset(granted_permissions)
+        )
         
         # Step 2: 解析用户意图
         # Give an injected LLM the bounded Skill/tool context before it emits
@@ -2265,6 +2527,8 @@ class AgentRuntime:
             return self._run_batch_plan(
                 safe_user_input, session, turn_id, intent, tool_plan,
                 account_id, workflow_id,
+                account_scope=account_scope,
+                granted_permissions=effective_permissions,
             )
         
         # Keep the caller's approval separate from the response payload that
@@ -2293,7 +2557,9 @@ class AgentRuntime:
                 intent, platform, tools, account_id
             )
             if not per_platform_account:
-                test_accounts = self.whitelist_validator.get_allowed_accounts(actual_platform)
+                test_accounts = self._available_accounts_for_request(
+                    actual_platform, account_scope
+                )
                 # A single configured test account is a safe compatibility
                 # fallback.  Once an operator configures multiple accounts,
                 # silently picking the first one could target the wrong
@@ -2322,8 +2588,9 @@ class AgentRuntime:
             # 命中显式测试账户白名单。
             platform_has_write = any(tool.is_write_tool for tool in tools)
             if self._read_only_mode or platform_has_write or self.enforce_account_scope:
-                allowed, error_msg = self._validate_account_for_tool(
-                    actual_platform, per_platform_account, platform_has_write
+                allowed, error_msg = self._validate_account_with_principal(
+                    actual_platform, per_platform_account, platform_has_write,
+                    account_scope,
                 )
                 if not allowed:
                     results.append({
@@ -2364,7 +2631,9 @@ class AgentRuntime:
                         "skipped": True,
                     })
                     continue
-                permission_error = self._check_tool_permissions(tool_def)
+                permission_error = self._check_tool_permissions(
+                    tool_def, effective_permissions
+                )
                 if permission_error:
                     results.append({
                         "tool": tool_def.name,
@@ -2508,6 +2777,23 @@ class AgentRuntime:
                         "platform": platform,
                         "success": False,
                         "error": f"{tool_def.name} 当前未获 live 执行批准；仅支持 dry-run",
+                        "needs_confirmation": False,
+                    })
+                    chain_blocked = True
+                    chain_blocker = tool_def.name
+                    session.ctx.account_id = original_account
+                    continue
+
+                if (
+                    tool_def.is_write_tool
+                    and self.execution_mode == ExecutionMode.LIVE.value
+                    and self.write_guard is None
+                ):
+                    results.append({
+                        "tool": tool_def.name,
+                        "platform": platform,
+                        "success": False,
+                        "error": "live 写操作必须配置 WriteGuard；已拒绝执行",
                         "needs_confirmation": False,
                     })
                     chain_blocked = True
@@ -2743,7 +3029,9 @@ class AgentRuntime:
         # Cross-channel comparison is a two-phase read workflow: first list
         # campaigns, then collect campaign-scoped report rows.
         self._collect_cross_channel_metrics(
-            intent, tool_plan, results, session, turn_id, request_clients
+            intent, tool_plan, results, session, turn_id, request_clients,
+            account_scope=account_scope,
+            granted_permissions=effective_permissions,
         )
         self._finish_workflow(workflow_id, tool_plan, results, workflow_inputs)
 
@@ -2829,6 +3117,23 @@ class AgentRuntime:
         if platform == "google":
             return date_range.upper()
         return date_range
+
+    @staticmethod
+    def _normalize_provider_updates(tool_def: Any, updates: dict[str, Any]) -> dict[str, Any]:
+        """Apply only mappings declared by the selected Tool Schema."""
+        normalized = dict(updates)
+        if "status" not in normalized:
+            return normalized
+        update_schema = (tool_def.input_schema.properties.get("updates") or {})
+        status_schema = (update_schema.get("properties") or {}).get("status", {})
+        status = str(normalized.get("status", "")).upper()
+        status_map = status_schema.get("intent_status_map") or {}
+        status_field = status_schema.get("intent_status_field", "status")
+        if status in status_map:
+            if status_field != "status":
+                normalized.pop("status", None)
+            normalized[status_field] = status_map[status]
+        return normalized
 
     def _build_tool_input(
         self,
@@ -2979,12 +3284,10 @@ class AgentRuntime:
         if "updates" in tool_def.input_schema.required:
             if intent.intent_type in ("pause_campaign", "resume_campaign"):
                 paused = intent.intent_type == "pause_campaign"
-                if actual_platform == "tiktok":
-                    tool_input["updates"] = {"campaign_group_status": 0 if paused else 1}
-                elif actual_platform == "meta":
-                    tool_input["updates"] = {"status": "PAUSED" if paused else "ACTIVE"}
-                else:
-                    tool_input["updates"] = {"status": "PAUSED" if paused else "ENABLED"}
+                # The generic intent uses ACTIVE/PAUSED.  The provider-owned
+                # update schema below declares the wire field/value mapping;
+                # Runtime should not branch on provider names here.
+                tool_input["updates"] = {"status": "PAUSED" if paused else "ACTIVE"}
             elif "updates" not in tool_input:
                 pass
 
@@ -2993,19 +3296,9 @@ class AgentRuntime:
         # while each Capability owns the final wire-level representation.
         updates = tool_input.get("updates")
         if isinstance(updates, dict) and "status" in updates:
-            status = str(updates.get("status", "")).upper()
-            if actual_platform == "tiktok":
-                status_key = "ad_group_status" if "adgroup" in tool_def.name else "campaign_group_status"
-                if status in {"ACTIVE", "ENABLED", "RUNNING"}:
-                    updates[status_key] = 1
-                    updates.pop("status", None)
-                elif status in {"PAUSED", "DISABLED", "STOPPED"}:
-                    updates[status_key] = 0
-                    updates.pop("status", None)
-            elif actual_platform == "google-ads" and status == "ACTIVE":
-                updates["status"] = "ENABLED"
-            elif actual_platform == "dv360" and status == "ENABLED":
-                updates["status"] = "ACTIVE"
+            tool_input["updates"] = self._normalize_provider_updates(
+                tool_def, updates
+            )
         
         # 检查必需参数是否齐全
         missing = []
@@ -3427,6 +3720,7 @@ class AgentRuntime:
         user_id: str,
         account_id: str,
         credentials: dict,
+        tenant_id: str = "default",
     ) -> "SessionContext":
         if session_id not in self._sessions:
             persisted = self._session_manager.get_session(session_id) if self._session_manager else None
@@ -3443,6 +3737,9 @@ class AgentRuntime:
                     persisted_metadata = json.loads(persisted["metadata"])
                 except (TypeError, ValueError):
                     persisted_metadata = {}
+            persisted_tenant = str(persisted_metadata.get("tenant_id", "default"))
+            if persisted and persisted_tenant != str(tenant_id or "default"):
+                raise PermissionError("session belongs to a different tenant")
             ctx = ToolContext(
                 session_id=session_id,
                 user_id=user_id,
@@ -3450,6 +3747,7 @@ class AgentRuntime:
                 credentials=self._freeze_credentials(copy.deepcopy(credentials or {})),
             )
             session = SessionContext(session_id, ctx)
+            ctx.metadata["tenant_id"] = str(tenant_id or "default")
             session.messages = persisted_metadata.get("messages", [])[-20:]
             ctx.messages = list(session.messages)
             if self._session_manager and persisted:
@@ -3476,11 +3774,14 @@ class AgentRuntime:
                     {
                         "execution_mode": self.execution_mode,
                         "read_only_mode": self._read_only_mode,
+                        "tenant_id": str(tenant_id or "default"),
                     },
                 )
         session = self._sessions[session_id]
         if session.ctx.user_id != user_id:
             raise PermissionError("session belongs to a different user")
+        if str(session.ctx.metadata.get("tenant_id", "default")) != str(tenant_id or "default"):
+            raise PermissionError("session belongs to a different tenant")
         if account_id and session.ctx.account_id and str(account_id) != str(session.ctx.account_id):
             raise PermissionError("session belongs to a different account")
         if credentials:
@@ -3509,7 +3810,12 @@ class AgentRuntime:
             return self._multi_agent_bridge.dispatch(user_input, **kwargs)
         return self.run(user_input, **kwargs)
 
-    def get_workflow(self, workflow_id: str, user_id: Optional[str] = None) -> Optional[dict]:
+    def get_workflow(
+        self,
+        workflow_id: str,
+        user_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+    ) -> Optional[dict]:
         """Read a durable workflow while enforcing its owning user boundary."""
         if not self._session_manager:
             return None
@@ -3520,11 +3826,183 @@ class AgentRuntime:
             session = self._session_manager.get_session(workflow.get("session_id")) or {}
             if str(session.get("user_id")) != str(user_id):
                 raise PermissionError("workflow belongs to a different user")
+            if tenant_id is not None:
+                try:
+                    metadata = json.loads(session.get("metadata") or "{}")
+                except (TypeError, ValueError):
+                    metadata = {}
+                if str(metadata.get("tenant_id", "default")) != str(tenant_id or "default"):
+                    raise PermissionError("workflow belongs to a different tenant")
         return workflow
 
-    def cancel_workflow(self, workflow_id: str, user_id: str) -> bool:
+    def get_workflow_resume_plan(
+        self,
+        workflow_id: str,
+        user_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+    ) -> dict:
+        """Return a safe replay plan without executing any provider operation.
+
+        Recovery is deliberately an explicit two-step protocol.  This method
+        only exposes the durable items that still need action; a future worker
+        must call the normal Runtime path with a fresh approval and current
+        principal instead of replaying handlers directly from SQLite.
+        """
+        workflow = self.get_workflow(
+            workflow_id, user_id=user_id, tenant_id=tenant_id
+        )
+        if not workflow:
+            raise KeyError("workflow not found")
+        resumable = {"failed", "partially_failed", "recovery_required", "blocked"}
+        if workflow.get("status") not in resumable:
+            return {
+                "workflow_id": workflow_id,
+                "status": workflow.get("status"),
+                "resumable": False,
+                "requires_fresh_confirmation": False,
+                "items": [],
+            }
+        pending = [
+            item for item in workflow.get("items", [])
+            if item.get("status") not in {"succeeded", "unsupported"}
+        ]
+        return {
+            "workflow_id": workflow_id,
+            "status": workflow.get("status"),
+            "resumable": bool(pending),
+            "requires_fresh_confirmation": workflow.get("execution_mode") == ExecutionMode.LIVE.value,
+            "replay_policy": "explicit_operator_confirmation",
+            "items": [
+                {
+                    "sequence": item.get("sequence"),
+                    "platform": item.get("platform"),
+                    "tool_name": item.get("tool_name"),
+                    "status": item.get("status"),
+                    "input_data": self._redact_for_persistence(item.get("input_data") or {}),
+                    "error": self._redact_for_persistence(item.get("error")),
+                }
+                for item in pending
+            ],
+        }
+
+    def reconcile_workflow(
+        self,
+        workflow_id: str,
+        observations: list[dict] | dict[int, dict],
+        user_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+    ) -> dict:
+        """Apply provider-verified observations to a durable workflow.
+
+        No provider is contacted here.  Every observation must explicitly set
+        ``verified=true`` so an untrusted status guess cannot mark a failed
+        live write as successful.  Unknown outcomes remain recovery-required.
+        """
+        workflow = self.get_workflow(
+            workflow_id, user_id=user_id, tenant_id=tenant_id
+        )
+        if not workflow:
+            raise KeyError("workflow not found")
+        if isinstance(observations, dict):
+            entries = [dict(value, sequence=key) for key, value in observations.items()]
+        else:
+            entries = list(observations or [])
+        if not entries:
+            raise ValueError("reconciliation requires at least one observation")
+        known_sequences = {
+            int(item.get("sequence"))
+            for item in workflow.get("items", [])
+            if item.get("sequence") is not None
+        }
+        current_statuses = {
+            int(item.get("sequence")): str(item.get("status"))
+            for item in workflow.get("items", [])
+            if item.get("sequence") is not None
+        }
+        allowed_item_transitions = {
+            "failed": {"failed", "succeeded", "unknown"},
+            "unknown": {"unknown", "succeeded", "failed"},
+            "awaiting_confirmation": {"awaiting_confirmation", "succeeded", "failed", "unknown"},
+            "running": {"running", "succeeded", "failed", "unknown"},
+            "planned": {"planned", "awaiting_confirmation", "running", "succeeded", "failed", "unknown"},
+            "succeeded": {"succeeded"},
+            "unsupported": {"unsupported"},
+            "skipped": {"skipped"},
+        }
+        seen_sequences: set[int] = set()
+        for observation in entries:
+            if not isinstance(observation, dict) or observation.get("verified") is not True:
+                raise ValueError("each reconciliation observation must set verified=true")
+            status = str(observation.get("status", "unknown"))
+            if status not in {"succeeded", "failed", "unknown"}:
+                raise ValueError("reconciliation status must be succeeded, failed or unknown")
+            if observation.get("sequence") is None:
+                raise ValueError("reconciliation observation requires sequence")
+            try:
+                sequence = int(observation["sequence"])
+            except (TypeError, ValueError):
+                raise ValueError("reconciliation sequence must be an integer")
+            if sequence not in known_sequences:
+                raise ValueError("reconciliation sequence does not belong to workflow")
+            if sequence in seen_sequences:
+                raise ValueError("reconciliation sequence must be unique")
+            current_status = current_statuses[sequence]
+            if status not in allowed_item_transitions.get(current_status, set()):
+                raise ValueError(
+                    f"cannot reconcile workflow item {sequence} from {current_status} to {status}"
+                )
+            seen_sequences.add(sequence)
+        for observation in entries:
+            sequence = int(observation["sequence"])
+            status = str(observation.get("status", "unknown"))
+            updated_item = self._session_manager.update_workflow_item(
+                workflow_id,
+                sequence,
+                status,
+                output_data=self._redact_for_persistence(observation.get("output_data")),
+                error=self._redact_for_persistence(observation.get("error")),
+            )
+            if not updated_item:
+                raise ValueError(f"workflow item {sequence} could not be updated")
+
+        updated = self._session_manager.get_workflow(workflow_id)
+        items = updated.get("items", []) if updated else []
+        statuses = [str(item.get("status")) for item in items]
+        succeeded = [item for item in items if item.get("status") == "succeeded"]
+        failed = [item for item in items if item.get("status") == "failed"]
+        if any(status == "unknown" for status in statuses):
+            workflow_status = "recovery_required"
+        elif failed and succeeded:
+            self._session_manager.mark_workflow_items_for_compensation(
+                workflow_id,
+                [int(item["sequence"]) for item in succeeded],
+            )
+            workflow_status = "partially_failed"
+        elif failed:
+            workflow_status = "failed"
+        elif statuses and all(status in {"succeeded", "unsupported"} for status in statuses):
+            workflow_status = "succeeded"
+        else:
+            workflow_status = "recovery_required"
+        self._session_manager.update_workflow(
+            workflow_id,
+            workflow_status,
+            {
+                "last_reconciled_by": str(user_id or "operator"),
+                "reconciliation_verified": True,
+            },
+        )
+        return self.get_workflow(
+            workflow_id, user_id=user_id, tenant_id=tenant_id
+        ) or {}
+
+    def cancel_workflow(
+        self, workflow_id: str, user_id: str, tenant_id: Optional[str] = None
+    ) -> bool:
         """Cancel a non-terminal workflow without contacting a provider."""
-        workflow = self.get_workflow(workflow_id, user_id=user_id)
+        workflow = self.get_workflow(
+            workflow_id, user_id=user_id, tenant_id=tenant_id
+        )
         if not workflow:
             return False
         return self._session_manager.update_workflow(

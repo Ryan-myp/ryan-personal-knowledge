@@ -95,8 +95,13 @@ class RateLimiter:
         self._timestamps: list[float] = []
         self._lock = threading.RLock()
     
-    def acquire(self) -> None:
-        """获取令牌，如果超出限制则阻塞等待"""
+    def acquire(self, max_wait: Optional[float] = None) -> None:
+        """获取令牌，如果超出限制则阻塞等待。
+
+        ``max_wait`` lets a Runtime request deadline bound the limiter wait;
+        otherwise a saturated limiter could outlive the tool timeout before
+        the HTTP request even started.
+        """
         # A client is shared by multiple Runtime sessions.  Protect the
         # timestamp window so concurrent requests cannot oversubscribe it.
         with self._lock:
@@ -106,6 +111,8 @@ class RateLimiter:
             if len(self._timestamps) >= self.max_requests:
                 wait_time = self.period - (now - self._timestamps[0])
                 if wait_time > 0:
+                    if max_wait is not None and wait_time > max_wait:
+                        raise TemporaryError("Provider request deadline exceeded while rate limited")
                     logger.debug(f"Rate limiter: waiting {wait_time:.2f}s")
                     time.sleep(wait_time)
                     now = time.time()
@@ -149,6 +156,34 @@ class BasePlatformClient(ABC):
         self.retry_config = retry_config or RetryConfig()
         self.rate_limiter = rate_limiter
         self._session_cache: dict[str, Any] = {}  # 请求级缓存
+        self.request_timeout = 30.0
+        self.request_deadline: Optional[float] = None
+
+    def set_request_timeout(self, timeout_seconds: float) -> None:
+        """Set the upper bound used by provider HTTP calls for one tool turn."""
+        timeout = float(timeout_seconds)
+        if timeout <= 0:
+            raise ValueError("request timeout must be positive")
+        self.request_timeout = timeout
+
+    def set_request_budget(self, timeout_seconds: float) -> None:
+        """Bound both each HTTP attempt and the complete retry sequence."""
+        self.set_request_timeout(timeout_seconds)
+        self.request_deadline = time.monotonic() + float(timeout_seconds)
+
+    def http_timeout(self, requested: Optional[float] = None) -> float:
+        """Return a bounded connect/read timeout for adapter implementations."""
+        timeout = self.request_timeout
+        if requested is not None:
+            timeout = min(timeout, float(requested))
+        if self.request_deadline is not None:
+            timeout = min(timeout, self.request_deadline - time.monotonic())
+        return max(float(timeout), 0.001)
+
+    def remaining_request_budget(self) -> Optional[float]:
+        if self.request_deadline is None:
+            return None
+        return self.request_deadline - time.monotonic()
         
     @abstractmethod
     def _do_request(self, method: str, url: str, **kwargs) -> dict:
@@ -209,9 +244,14 @@ class BasePlatformClient(ABC):
         instead of calling ``_do_request`` directly.
         """
         if self.rate_limiter:
-            self.rate_limiter.acquire()
+            remaining = self.remaining_request_budget()
+            if remaining is not None and remaining <= 0:
+                raise TemporaryError("Provider request deadline exceeded")
+            self.rate_limiter.acquire(max_wait=remaining)
 
         try:
+            if self.request_deadline is not None and self.request_deadline <= time.monotonic():
+                raise TemporaryError("Provider request deadline exceeded")
             url = self._build_url(endpoint)
             logger.debug(f"[{self.platform}] {method} {endpoint}")
             response = self._do_request(method, url, **kwargs)
@@ -334,6 +374,11 @@ class BasePlatformClient(ABC):
         if should_retry:
             delay = error.retry_after if isinstance(error, RateLimitError) else self.retry_config.get_delay(retry_count)
             delay = min(max(float(delay), 0.0), self.retry_config.max_delay)
+            remaining = self.remaining_request_budget()
+            if remaining is not None:
+                if remaining <= 0:
+                    raise TemporaryError("Provider request deadline exceeded")
+                delay = min(delay, remaining)
             logger.info(f"[{self.platform}] Retrying in {delay:.2f}s...")
             time.sleep(delay)
             return self.request_raw(
