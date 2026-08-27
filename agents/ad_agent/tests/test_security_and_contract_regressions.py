@@ -72,6 +72,23 @@ def test_structured_red_line_fields_are_rejected_without_mutating_credentials():
     assert credentials == {"meta": {"access_token": "caller-secret"}}
 
 
+def test_generic_token_is_a_red_line_in_structured_inputs():
+    runtime = AgentRuntime(whitelist_validator=whitelist(meta=["m1"]))
+    runtime.register_capability(create_meta_capability())
+    result = runtime.run(
+        "更新 Meta campaign campaign_id=123",
+        account_id="m1",
+        platform_params={
+            "meta": {
+                "account_id": "m1",
+                "updates": {"status": "PAUSED", "token": "must-not-pass"},
+            }
+        },
+    )
+    assert result["results"] == []
+    assert "token" in result["policy_errors"][0]
+
+
 def test_redaction_handles_json_and_python_dict_strings():
     redact = AgentRuntime._redact_for_persistence
     value = redact(

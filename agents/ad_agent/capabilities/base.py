@@ -22,7 +22,7 @@ from ..core.tool_registry import SimpleToolRegistry
 
 
 PROTECTED_UPDATE_FIELDS = frozenset({
-    "accesstoken", "refreshtoken", "developertoken", "clientid",
+    "token", "accesstoken", "refreshtoken", "developertoken", "clientid",
     "clientsecret", "privatekey", "bcid", "partnerid", "mcc",
     "authorization", "credential", "credentials", "perterid",
 })

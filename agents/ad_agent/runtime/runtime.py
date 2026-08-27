@@ -144,7 +144,7 @@ class AgentRuntime:
     # separate, in-memory transport input and is intentionally not scanned by
     # this validator.
     PROTECTED_INPUT_FIELDS = frozenset({
-        "accesstoken", "refreshtoken", "developertoken", "clientid",
+        "token", "accesstoken", "refreshtoken", "developertoken", "clientid",
         "clientsecret", "privatekey", "bcid", "partnerid", "mcc",
         "authorization", "credential", "credentials", "perterid",
     })

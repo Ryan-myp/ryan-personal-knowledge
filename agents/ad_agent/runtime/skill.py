@@ -34,6 +34,11 @@ class SkillCapability:
     optional_params: list[str] = field(default_factory=list)
     risk_level: str = "low"
     effect: str = "read"  # read | write | external_write
+    # Preserve the declarative schema when a Skill is loaded from
+    # contract.yaml/tools/*.yaml.  Older versions only retained required
+    # parameter names, silently dropping enums and provider conditions.
+    input_schema: dict[str, Any] = field(default_factory=dict)
+    live_support: bool = True
 
 
 class SkillContract:
@@ -217,6 +222,8 @@ class SkillContract:
                 optional_params=spec.get('optional', []),
                 risk_level=spec.get('risk', 'low'),
                 effect=spec.get('effect', 'read'),
+                input_schema=spec.get('input_schema', {}) or {},
+                live_support=bool(spec.get('live_support', True)),
             )
     
     def _load_tools_from_directory(self, tools_dir: str) -> None:
@@ -242,8 +249,14 @@ class SkillContract:
                     name=tool_name,
                     description=spec.get('description', ''),
                     required_params=schema.get('required', []),
+                    optional_params=[
+                        name for name in schema.get('properties', {})
+                        if name not in schema.get('required', [])
+                    ],
                     risk_level=spec.get('risk_level', 'low'),
                     effect=spec.get('effect_class', 'read'),
+                    input_schema=schema,
+                    live_support=bool(spec.get('live_support', True)),
                 )
 
 
@@ -280,9 +293,19 @@ class BaseSkill(Skill):
         """返回此 Skill 的所有工具定义"""
         tools = []
         for name, cap in self._contract.capabilities.items():
+            declared_schema = cap.input_schema if isinstance(cap.input_schema, dict) else {}
             schema = ToolSchema(
-                required=cap.required_params,
-                properties=self._build_properties(name),
+                type=declared_schema.get("type", "object"),
+                required=list(declared_schema.get("required", cap.required_params) or []),
+                properties=(
+                    declared_schema.get("properties")
+                    or self._build_properties(name)
+                ),
+                provider_required=list(declared_schema.get("provider_required", []) or []),
+                provider_any_of=[
+                    list(group) for group in (declared_schema.get("provider_any_of", []) or [])
+                ],
+                conditional_rules=list(declared_schema.get("conditional_rules", []) or []),
             )
             tools.append(ToolDefinition(
                 name=name,
@@ -292,6 +315,7 @@ class BaseSkill(Skill):
                 input_schema=schema,
                 risk_level=self._parse_risk(cap.risk_level),
                 effect_class=self._parse_effect(cap.effect),
+                live_support=cap.live_support,
             ))
         return tools
     

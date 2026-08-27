@@ -351,6 +351,28 @@ class TestIntentParser:
         assert intent.intent_type == "cross_channel_compare"
         assert intent.platforms == ["meta", "google"]
 
+    def test_cross_channel_create_routes_to_create_workflow(self):
+        from agents.ad_agent.core.intent import LLMIntentParser
+
+        intent = LLMIntentParser().parse("跨渠道创建 Meta 和 TikTok campaign", None)
+
+        assert intent.intent_type == "create_campaign"
+        assert intent.platforms == ["meta", "tiktok"]
+
+    def test_rule_parser_extracts_tiktok_creation_parameters(self):
+        from agents.ad_agent.core.intent import LLMIntentParser
+
+        intent = LLMIntentParser().parse(
+            "创建 TikTok campaign name=AndroidTest "
+            "objective_type=APP_PROMOTION campaign_type=REGULAR_CAMPAIGN "
+            "budget_mode=BUDGET_MODE_DAY",
+            None,
+        )
+
+        assert intent.platform_params["tiktok"]["objective_type"] == "APP_PROMOTION"
+        assert intent.platform_params["tiktok"]["campaign_type"] == "REGULAR_CAMPAIGN"
+        assert intent.platform_params["tiktok"]["budget_mode"] == "BUDGET_MODE_DAY"
+
     def test_bare_campaign_phrase_is_not_copied_between_channels(self):
         parser = LLMIntentParser()
         intent = parser.parse("跨渠道暂停 Meta 和 Google campaign 12345", None)
@@ -1256,6 +1278,39 @@ class TestIterationContracts:
         assert skills["nested-insights"].platform == "meta"
         assert skills["nested-insights"].description == "Nested metadata extension"
         assert skills["nested-insights"].version == "2.0"
+
+    def test_declarative_skill_contract_preserves_full_input_schema(self, tmp_path):
+        from agents.ad_agent.runtime.skill import BaseSkill, SkillContract
+
+        skill_dir = tmp_path / "channels" / "schema-insights"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: schema-insights\nplatform: meta\n---\n",
+            encoding="utf-8",
+        )
+        (skill_dir / "contract.yaml").write_text(
+            "tools:\n"
+            "  schema_insight:\n"
+            "    description: Schema-aware extension\n"
+            "    risk: low\n"
+            "    effect: read\n"
+            "    input_schema:\n"
+            "      required: [mode]\n"
+            "      properties:\n"
+            "        mode:\n"
+            "          type: string\n"
+            "          enum: [FAST, SAFE]\n"
+            "      conditional_rules:\n"
+            "        - if: {mode: SAFE}\n"
+            "          required: [audit_id]\n",
+            encoding="utf-8",
+        )
+
+        contract = SkillContract(str(skill_dir)).load()
+        definition = BaseSkill(contract).get_tools()[0]
+
+        assert definition.input_schema.properties["mode"]["enum"] == ["FAST", "SAFE"]
+        assert definition.input_schema.conditional_rules[0]["required"] == ["audit_id"]
 
     def test_provider_list_pagination_is_consumed(self):
         meta = MetaAPIClient({"access_token": "caller-token"})

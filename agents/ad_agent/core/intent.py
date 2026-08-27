@@ -187,6 +187,14 @@ class LLMIntentParser(IntentParser):
         # generic report/create rules so the Runtime can run the two-phase
         # campaign-list + campaign-report workflow.
         is_cross_request = any(marker in text for marker in cross_markers)
+        # Creation is a first-class cross-channel workflow.  It must be
+        # resolved before the generic cross-channel overview fallback below;
+        # otherwise "跨渠道创建 campaign" gets routed to list_campaigns and
+        # never reaches the per-platform create chain.
+        if is_cross_request and any(kw in text for kw in [
+            "创建", "新建", "create", "launch", "投放",
+        ]):
+            return "create_campaign"
         if is_cross_request and any(kw in text for kw in [
             "预算优化", "优化预算", "预算分配", "分配预算", "allocate budget", "budget optimization",
         ]):
@@ -450,6 +458,66 @@ class LLMIntentParser(IntentParser):
         )
         if asset_group_match and "google" in platforms:
             params["google"]["asset_group_id"] = asset_group_match.group(1)
+
+        # Parse provider fields that are commonly supplied as explicit
+        # key/value pairs.  The LLM path can emit the full structured object,
+        # but the rule fallback must be useful too.  Provider-specific values
+        # are only assigned to their channel; never copy a TikTok enum into
+        # Meta/Google when the request spans multiple platforms.
+        provider_param_keys = {
+            "tiktok": [
+                "objective_type", "promotion_type", "billing_event", "bid_type",
+                "placement_type", "deep_bid_type", "budget_mode", "campaign_type",
+                "campaign_automation_type", "budget_restriction", "app_id",
+                "location_ids", "operating_systems", "age_groups", "gender",
+                "landing_url",
+            ],
+            "meta": ["objective", "optimization_goal", "billing_event", "bidding_strategy"],
+            "google": [
+                "advertising_channel_type", "bidding_strategy", "target_cpa_micros",
+                "target_roas",
+            ],
+            "dv360": ["campaign_type", "goal_type"],
+        }
+        array_params = {"location_ids", "operating_systems", "age_groups"}
+        numeric_params = {"target_cpa_micros", "target_roas"}
+
+        def parse_parameter_value(key: str, raw_value: str):
+            value = raw_value.strip().strip("[](){}").strip().strip("'\"")
+            if key in array_params:
+                return [
+                    item.strip().strip("'\"")
+                    for item in re.split(r"[,，]", value)
+                    if item.strip()
+                ]
+            if key in numeric_params:
+                try:
+                    return float(value) if "." in value else int(value)
+                except ValueError:
+                    return value
+            return value.upper() if key not in {"app_id", "landing_url"} else value
+
+        for platform, keys in provider_param_keys.items():
+            if platform not in params:
+                continue
+            aliases_for_platform = platform_aliases.get(platform, [platform])
+            alias_pattern = "|".join(re.escape(alias) for alias in aliases_for_platform)
+            for key in keys:
+                qualified = re.search(
+                    rf"(?:{alias_pattern})\s+{re.escape(key)}\s*[=:：]\s*([^\s;；]+)",
+                    user_input,
+                    re.IGNORECASE,
+                )
+                unqualified = None
+                if len(platforms) == 1:
+                    unqualified = re.search(
+                        rf"(?<![\w]){re.escape(key)}\s*[=:：]\s*([^\s;；]+)",
+                        user_input,
+                        re.IGNORECASE,
+                    )
+                match = qualified or unqualified
+                if match:
+                    params[platform][key] = parse_parameter_value(key, match.group(1))
         
         # campaign_name 提取 - 支持 "名称=xxx"、"name: xxx"、"：xxx"、"详情: xxx" 等格式
         name_patterns = [
