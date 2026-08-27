@@ -1,0 +1,43 @@
+name: ad-agent-harness
+
+on:
+  push:
+    paths:
+      - "agents/ad_agent/**"
+      - "pyproject.toml"
+      - ".github/workflows/ad-agent-harness.yml"
+  pull_request:
+    paths:
+      - "agents/ad_agent/**"
+      - "pyproject.toml"
+      - ".github/workflows/ad-agent-harness.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  contract-and-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Harness tests must never turn into provider writes because of a
+      # repository/environment configuration change.
+      AD_AGENT_ENABLE_LIVE: "0"
+      AD_AGENT_ALLOW_UNAUTHENTICATED: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: agents/ad_agent/requirements.txt
+      - name: Install dependencies
+        run: python -m pip install -r agents/ad_agent/requirements.txt
+      - name: Compile Python sources
+        run: python -m compileall -q agents/ad_agent
+      - name: Run contract and golden tests
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+        run: python -m pytest agents/ad_agent/tests -q
+      - name: Check patch whitespace
+        run: git diff --check

@@ -200,6 +200,89 @@ class SimpleToolRegistry(ToolRegistry):
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
+class GuardedToolRegistry(ToolRegistry):
+    """Runtime-facing registry that removes the unsafe direct execute path.
+
+    ``SimpleToolRegistry`` remains useful as a low-level unit-test registry.
+    Production Runtime instances wrap it so callers cannot reach a provider
+    Handler by invoking ``runtime.registry.execute`` and bypassing Runtime's
+    account, mode, approval and idempotency gates.
+    """
+
+    def __init__(self, inner: ToolRegistry):
+        self._inner = inner
+        # The token is held by AgentRuntime and is required for every internal
+        # execution seam. Public callers can inspect definitions, but cannot
+        # obtain a live Handler or invoke the authorized path by accident.
+        self._execution_token = object()
+
+    def register(self, definition: ToolDefinition, handler: ToolHandler) -> None:
+        self._inner.register(definition, handler)
+
+    def get(self, name: str) -> tuple[ToolDefinition, ToolHandler]:
+        definition, _handler = self._inner.get(name)
+        return definition, _BlockedToolHandler()
+
+    def get_authorized(
+        self, name: str, _execution_token: object = None,
+    ) -> tuple[ToolDefinition, ToolHandler]:
+        """Return the raw Handler only to the owning Runtime seam."""
+        if _execution_token is not self._execution_token:
+            raise PermissionError("Raw tool handlers are only available to AgentRuntime")
+        return self._inner.get(name)
+
+    def list_by_platform(self, platform: str) -> list[ToolDefinition]:
+        return self._inner.list_by_platform(platform)
+
+    def list_by_skill(self, skill_name: str) -> list[ToolDefinition]:
+        return self._inner.list_by_skill(skill_name)
+
+    def unregister(self, tool_name: str) -> None:
+        self._inner.unregister(tool_name)
+
+    def execute(self, ctx: ToolContext, tool_name: str, input_data: dict[str, Any]) -> ToolResult:
+        return ToolResult.error(
+            "Direct registry execution is disabled; execute tools through AgentRuntime"
+        )
+
+    def execute_authorized(
+        self, ctx: ToolContext, tool_name: str, input_data: dict[str, Any],
+        _execution_token: object = None,
+    ) -> ToolResult:
+        """Internal Runtime seam after all policy gates have passed."""
+        if _execution_token is not self._execution_token:
+            return ToolResult.error(
+                "Authorized registry execution is only available to AgentRuntime"
+            )
+        return self._inner.execute(ctx, tool_name, input_data)
+
+    def list_all(self) -> list[ToolDefinition]:
+        return self._inner.list_all()
+
+    def list_all_platforms(self) -> list[str]:
+        return self._inner.list_all_platforms()
+
+    def generate_idempotency_key(
+        self, tool_name: str, input_data: dict[str, Any], user_id: str
+    ) -> str:
+        generator = getattr(self._inner, "generate_idempotency_key", None)
+        if callable(generator):
+            return generator(tool_name, input_data, user_id)
+        input_str = json.dumps(input_data, sort_keys=True, default=str)
+        return hashlib.sha256(
+            f"{user_id}:{tool_name}:{input_str}".encode()
+        ).hexdigest()[:16]
+
+
+class _BlockedToolHandler:
+    """Non-executable public view returned by GuardedToolRegistry.get()."""
+
+    def execute(self, _ctx: ToolContext, _input_data: dict[str, Any]) -> ToolResult:
+        return ToolResult.error(
+            "Direct handler execution is disabled; execute tools through AgentRuntime"
+        )
+
+
 # ─── Schema 校验工具 ────────────────────────────────────────────
 
 def validate_tool_input(
@@ -232,6 +315,19 @@ def validate_tool_input(
                     "Provider contract requires one of: "
                     + ", ".join(alternatives)
                 )
+
+    # Closed-world tool contracts prevent a caller from believing an
+    # unsupported parameter was applied when a Handler simply ignored it.
+    # Open-ended provider objects remain possible by setting
+    # ``additional_properties=True`` on the top-level schema, or by using a
+    # field-level object schema with its own explicit policy.
+    if (
+        schema.additional_properties is False
+        and isinstance(schema.properties, dict)
+    ):
+        unknown = sorted(set(data) - set(schema.properties))
+        for field_name in unknown:
+            errors.append(f"Field '{field_name}' is not allowed")
 
     # Conditional rules model provider relationships such as
     # objective_type=APP_PROMOTION -> promotion_type must be APP_ANDROID and

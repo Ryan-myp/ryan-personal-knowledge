@@ -706,17 +706,27 @@ class TestSafeWriteExecution:
     def test_live_write_idempotency_uses_normalized_input(self):
         client = self.FakeClient("meta")
         rt = self._runtime("meta", client, mode=ExecutionMode.LIVE.value)
+        planned = rt.run(
+            "更新 Meta campaign campaign_id=123 status=PAUSED",
+            session_id="idempotency-session", user_id="same-user", account_id="m1",
+        )
+        payload = planned["results"][0]["confirmation_payload"]
         first = rt.run(
             "更新 Meta campaign campaign_id=123 status=PAUSED",
-            user_id="same-user", account_id="m1", confirmed=True,
+            session_id="idempotency-session", user_id="same-user", account_id="m1", confirmed=True,
+            confirmation_payload=payload,
         )
         second = rt.run(
             "更新 Meta campaign campaign_id=123 status=PAUSED",
-            user_id="same-user", account_id="m1", confirmed=True,
+            session_id="idempotency-session", user_id="same-user", account_id="m1", confirmed=True,
+            confirmation_payload=payload,
         )
         assert first["results"][0]["success"] is True
         assert second["results"][0]["success"] is False
-        assert "Duplicate write detected" in second["results"][0]["error"]
+        assert (
+            "approval has already been consumed" in second["results"][0]["error"]
+            or "Duplicate write detected" in second["results"][0]["error"]
+        )
         assert len(client.calls) == 1
 
     def test_live_create_chain_stops_after_parent_failure(self):
@@ -731,9 +741,21 @@ class TestSafeWriteExecution:
 
         client = FailingParentClient("meta")
         rt = self._runtime("meta", client, mode=ExecutionMode.LIVE.value)
+        planned = rt.run(
+            "创建 Meta 广告系列 名称=StopAfterFailure",
+            session_id="create-failure-session", account_id="m1",
+            platform_params={
+                "meta": {
+                    "objective": "OUTCOME_SALES",
+                    "special_ad_categories": "NONE",
+                    "budget": 100,
+                }
+            },
+        )
         result = rt.run(
             "创建 Meta 广告系列 名称=StopAfterFailure",
-            account_id="m1", confirmed=True,
+            session_id="create-failure-session", account_id="m1", confirmed=True,
+            confirmation_payload=planned["results"][0]["confirmation_payload"],
             platform_params={
                 "meta": {
                     "objective": "OUTCOME_SALES",
@@ -1209,7 +1231,7 @@ class TestIterationContracts:
         skill = CustomSkill()
         rt.register_skill(skill, "meta")
         assert [tool.name for tool in rt.registry.list_all()] == ["custom_meta_insight"]
-        assert rt.registry.execute(ToolContext("s1", "u1"), "custom_meta_insight", {}).data == {
+        assert rt._execute_tool(ToolContext("s1", "u1"), "custom_meta_insight", {}).data == {
             "source": "custom"
         }
         from agents.ad_agent.core.interfaces import ParsedIntent
@@ -1257,7 +1279,7 @@ class TestIterationContracts:
         rt = AgentRuntime(enforce_account_scope=False)
         assert rt.auto_load_skills(str(skill_root)) == 1
         assert [tool.name for tool in rt.registry.list_all()] == ["custom_insight"]
-        result = rt.registry.execute(
+        result = rt._execute_tool(
             ToolContext("s1", "u1"), "custom_insight", {}
         )
         assert result.success is True
@@ -1630,9 +1652,14 @@ class TestIterationContracts:
         )
         from agents.ad_agent.capabilities.google import create_google_capability
         rt.register_capability(create_google_capability(GoogleClient()))
+        planned = rt.run(
+            "更新 Google campaign campaign_id=123 status=PAUSED",
+            session_id="google-alias-session", user_id="u1", account_id="g1",
+        )
         result = rt.run(
             "更新 Google campaign campaign_id=123 status=PAUSED",
-            user_id="u1", account_id="g1", confirmed=True,
+            session_id="google-alias-session", user_id="u1", account_id="g1", confirmed=True,
+            confirmation_payload=planned["results"][0]["confirmation_payload"],
         )
         assert result["results"][0]["success"] is True
 

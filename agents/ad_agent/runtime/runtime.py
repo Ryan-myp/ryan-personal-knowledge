@@ -24,7 +24,7 @@ from types import MappingProxyType
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 import yaml
 
 from ..core.interfaces import (
@@ -32,10 +32,11 @@ from ..core.interfaces import (
     CapabilityRuntime, ToolRegistry, WriteGuard, IntentParser, IntentRouter,
     ParsedIntent, ToolHandler, ToolEffect, ExecutionMode
 )
-from ..core.tool_registry import SimpleToolRegistry, validate_tool_input
+from ..core.tool_registry import GuardedToolRegistry, SimpleToolRegistry, validate_tool_input
 from ..core.intent import LLMIntentParser, SimpleIntentRouter
 from ..core.cross_channel import CrossChannelAggregator, CrossChannelAnalyzer, build_batch_operations
 from ..core.tool_selector import BusinessContext, DynamicToolSelector
+from ..core.parameter_catalog import ParameterCatalogRegistry
 from .skill import Skill, SkillLoader
 from ..persistence.session_manager import SessionManager
 from ..persistence.store import AdAgentStore, ToolCallRecord
@@ -166,8 +167,23 @@ class AgentRuntime:
         business_context: Optional[BusinessContext] = None,
         tool_selector: Optional[DynamicToolSelector] = None,
         offline_mode: bool = False,
+        max_tool_calls: int = 32,
+        turn_timeout_seconds: float = 120.0,
+        max_user_input_chars: int = 12_000,
+        max_platform_params_bytes: int = 256_000,
     ):
-        self.registry = registry or SimpleToolRegistry()
+        base_registry = registry or SimpleToolRegistry()
+        self.registry = (
+            base_registry
+            if isinstance(base_registry, GuardedToolRegistry)
+            else GuardedToolRegistry(base_registry)
+        )
+        # GuardedToolRegistry exposes only non-executable Handler views to
+        # callers. Runtime keeps the opaque capability needed for its
+        # post-policy execution path.
+        self._registry_execution_token = getattr(
+            self.registry, "_execution_token", None
+        )
         self.intent_parser = intent_parser or LLMIntentParser(llm_client)
         self.intent_router = intent_router or SimpleIntentRouter()
         self.write_guard = write_guard
@@ -190,6 +206,7 @@ class AgentRuntime:
         self._skill_factories: dict[str, callable] = {}  # platform -> Capability factory
         self._credentials: dict = {}  # API 凭证配置
         self.tool_selector = tool_selector or DynamicToolSelector()
+        self.parameter_catalogs = ParameterCatalogRegistry()
         self.business_context = business_context
         if business_context:
             self.tool_selector.set_business_context(
@@ -214,6 +231,14 @@ class AgentRuntime:
         # results.  Write planning remains available without a client because
         # dry-run writes are intercepted before handlers execute.
         self.offline_mode = bool(offline_mode)
+        if max_tool_calls <= 0:
+            raise ValueError("max_tool_calls must be positive")
+        if turn_timeout_seconds <= 0:
+            raise ValueError("turn_timeout_seconds must be positive")
+        self.max_tool_calls = int(max_tool_calls)
+        self.turn_timeout_seconds = float(turn_timeout_seconds)
+        self.max_user_input_chars = int(max_user_input_chars)
+        self.max_platform_params_bytes = int(max_platform_params_bytes)
         
         # 账户白名单验证器
         self.whitelist_validator = whitelist_validator or AccountWhitelistValidator()
@@ -352,6 +377,47 @@ class AgentRuntime:
     @property
     def is_dry_run(self) -> bool:
         return self.execution_mode == ExecutionMode.DRY_RUN.value
+
+    def _validate_request_limits(
+        self, user_input: str, platform_params: Optional[dict],
+    ) -> Optional[str]:
+        """Fail closed on oversized request envelopes before parsing/LLM use."""
+        if not isinstance(user_input, str) or not user_input.strip():
+            return "user_input 不能为空"
+        if len(user_input) > self.max_user_input_chars:
+            return f"user_input 超过长度限制（最多 {self.max_user_input_chars} 个字符）"
+        if platform_params is not None:
+            try:
+                size = len(json.dumps(platform_params, ensure_ascii=False, default=str).encode("utf-8"))
+            except (TypeError, ValueError):
+                return "platform_params 不是可序列化的对象"
+            if size > self.max_platform_params_bytes:
+                return (
+                    "platform_params 超过大小限制（最多 "
+                    f"{self.max_platform_params_bytes} 字节）"
+                )
+        return None
+
+    @staticmethod
+    def _check_turn_budget(deadline: float, tool_call_count: int, max_tool_calls: int = 32) -> Optional[str]:
+        if tool_call_count > max_tool_calls:
+            return f"工具调用次数超过本回合上限（最多 {max_tool_calls} 次）"
+        if time.monotonic() > deadline:
+            return "本回合执行超时，已停止后续工具调用"
+        return None
+
+    def _enforce_result_limit(self, result: ToolResult, tool_def: Any) -> ToolResult:
+        """Bound provider/LLM output before it reaches history or HTTP JSON."""
+        limit = int(getattr(tool_def, "max_output_bytes", 1_000_000) or 1_000_000)
+        try:
+            size = len(json.dumps(result.data, ensure_ascii=False, default=str).encode("utf-8"))
+        except (TypeError, ValueError):
+            return ToolResult.error(f"{tool_def.name} 返回了不可序列化的结果")
+        if size <= limit:
+            return result
+        return ToolResult.error(
+            f"{tool_def.name} 返回结果超过大小限制（最多 {limit} 字节）"
+        )
     
     def inject_llm(self, llm_client) -> None:
         """注入 LLM 客户端"""
@@ -399,6 +465,20 @@ class AgentRuntime:
         context = CapabilityContextWrapper(self.registry)
         runtime = module.configure(context)
 
+        # Publish provider parameter options as data owned by the Capability.
+        # Existing tools get enum/lookup discovery automatically; a future
+        # Skill can additionally provide richer versioned catalogs through the
+        # CapabilityRuntime extension field.
+        for definition in self.registry.list_all():
+            self.parameter_catalogs.register_tool_schema(
+                definition.platform,
+                getattr(definition.input_schema, "properties", {})
+                if definition.input_schema else {},
+            )
+        self.parameter_catalogs.register_many(
+            getattr(runtime, "parameter_catalogs", []) or []
+        )
+
         # Capability.configure() registers platform tools before returning.
         # Apply the read-only boundary immediately so callers cannot forget a
         # second, manually-invoked enable_read_only_mode() call.
@@ -432,6 +512,15 @@ class AgentRuntime:
         self._refresh_unbound_clients()
         
         return runtime
+
+    def list_parameter_options(
+        self, platform: Optional[str] = None, field: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
+        """Return JSON-safe static or dynamic provider parameter metadata."""
+        if field:
+            catalog = self.parameter_catalogs.get(platform or "", field)
+            return [catalog.to_dict()] if catalog else []
+        return self.parameter_catalogs.to_dict(platform)
     
     def _register_skill(self, skill: Skill) -> None:
         """将 Skill 的工具注册到 Registry"""
@@ -572,6 +661,11 @@ class AgentRuntime:
                 continue
             try:
                 self.registry.register(tool_def, handler)
+                self.parameter_catalogs.register_tool_schema(
+                    tool_def.platform,
+                    getattr(tool_def.input_schema, "properties", {})
+                    if tool_def.input_schema else {},
+                )
                 registered_count += 1
                 logger.debug(f"✅ 注册工具: {tool_def.name} (platform={platform})")
             except Exception as e:
@@ -852,7 +946,7 @@ class AgentRuntime:
         clients: dict[str, Any] = {}
         for tool_def in self.registry.list_all():
             try:
-                _, handler = self.registry.get(tool_def.name)
+                _, handler = self._get_registered_tool(tool_def.name)
             except KeyError:
                 continue
             if not hasattr(handler, "client") or getattr(handler, "client") is not None:
@@ -919,7 +1013,7 @@ class AgentRuntime:
         request_clients: Optional[dict[str, Any]] = None,
     ) -> ToolResult:
         """Execute a tool with an optional request-scoped provider client."""
-        definition, handler = self.registry.get(tool_name)
+        definition, handler = self._get_registered_tool(tool_name)
 
         # A handler's fixture fallback is useful for explicit offline unit
         # tests, but it must not look like live provider data in the normal
@@ -937,14 +1031,14 @@ class AgentRuntime:
             )
 
         if not request_clients:
-            result = self.registry.execute(ctx, tool_name, input_data)
+            result = self._execute_registered_tool(ctx, tool_name, input_data)
             return self._apply_read_data_boundary(tool_name, result)
 
         client = request_clients.get(
             self.PLATFORM_NAME_MAP.get(definition.platform, definition.platform)
         )
         if client is None or not hasattr(handler, "client"):
-            result = self.registry.execute(ctx, tool_name, input_data)
+            result = self._execute_registered_tool(ctx, tool_name, input_data)
             return self._apply_read_data_boundary(tool_name, result)
 
         # Registered handlers are global. Copy only the handler for this call
@@ -962,6 +1056,25 @@ class AgentRuntime:
             result = isolated_handler(ctx, input_data)
             return self._apply_read_data_boundary(tool_name, result)
         return ToolResult.error(f"Tool '{tool_name}' has no executable handler")
+
+    def _execute_registered_tool(
+        self, ctx: ToolContext, tool_name: str, input_data: dict,
+    ) -> ToolResult:
+        """Execute through the registry's Runtime-only authorized seam."""
+        execute = getattr(self.registry, "execute_authorized", None)
+        if callable(execute):
+            return execute(
+                ctx, tool_name, input_data,
+                _execution_token=self._registry_execution_token,
+            )
+        return self.registry.execute(ctx, tool_name, input_data)
+
+    def _get_registered_tool(self, tool_name: str):
+        """Get a raw tool tuple only through Runtime's guarded seam."""
+        getter = getattr(self.registry, "get_authorized", None)
+        if callable(getter):
+            return getter(tool_name, self._registry_execution_token)
+        return self.registry.get(tool_name)
 
     @classmethod
     def _protected_field_paths(cls, value: Any, path: str = "") -> list[str]:
@@ -1009,12 +1122,50 @@ class AgentRuntime:
         ).hexdigest()
         return {
             "session_id": str(session_id),
+            "user_id": str(user_id),
             "account_id": str(account_id or ""),
             "tool": tool_def.name,
             "plan_fingerprint": fingerprint,
             "confirmation_token": token,
             "idempotency_key": idempotency_key,
         }
+
+    def _prepare_confirmation(
+        self, expected: dict[str, str], create: bool = False,
+        ttl_seconds: int = 600,
+    ) -> dict[str, str]:
+        """Attach durable expiry metadata to a live write approval plan."""
+        if not self._session_manager:
+            if create:
+                # A non-persistent Runtime can still be used by local tests;
+                # the API/server path always supplies a persistent store.
+                expected = {**expected, "approval_persistence": "in_memory"}
+            return expected
+        store = self._session_manager.store
+        existing = store.get_approval(expected["plan_fingerprint"])
+        if existing:
+            expected = {**expected, "expires_at": str(existing.get("expires_at", ""))}
+            return expected
+        if create:
+            expires_at = (datetime.now() + timedelta(seconds=ttl_seconds)).isoformat()
+            store.create_approval(
+                expected["plan_fingerprint"], expected["confirmation_token"],
+                expected["session_id"], expected.get("user_id", ""),
+                expected["account_id"], expected["tool"], expires_at,
+            )
+            expected = {**expected, "expires_at": expires_at}
+        return expected
+
+    def _validate_confirmation_record(
+        self, expected: dict[str, str], payload: dict,
+    ) -> tuple[bool, str]:
+        if not self._session_manager:
+            return True, ""
+        return self._session_manager.store.validate_approval(
+            expected["plan_fingerprint"], expected["confirmation_token"],
+            expected["session_id"], expected.get("user_id", ""),
+            expected["account_id"], expected["tool"],
+        )
 
     @classmethod
     def _confirmation_matches(
@@ -1024,7 +1175,7 @@ class AgentRuntime:
     ) -> bool:
         if not isinstance(payload, dict) or payload.get("type") != "confirm_write":
             return False
-        for key in ("session_id", "account_id", "tool", "plan_fingerprint", "confirmation_token", "idempotency_key"):
+        for key in ("session_id", "user_id", "account_id", "tool", "plan_fingerprint", "confirmation_token", "idempotency_key"):
             if str(payload.get(key, "")) != str(expected.get(key, "")):
                 return False
         return True
@@ -1040,7 +1191,7 @@ class AgentRuntime:
         if self.offline_mode or not result or not result.success:
             return result
         try:
-            definition, _ = self.registry.get(tool_name)
+            definition, _ = self._get_registered_tool(tool_name)
         except KeyError:
             return result
         if not definition.is_read_tool:
@@ -1577,6 +1728,12 @@ class AgentRuntime:
         errors.extend(planning_errors)
         results: list[dict] = []
         workflow_inputs: dict[int, dict] = {}
+        if len(operations) > self.max_tool_calls:
+            errors.append(
+                "批量操作数量超过本回合上限："
+                f"最多允许 {self.max_tool_calls} 项"
+            )
+            operations = []
         tool_name_by_platform = {
             platform: tools[0].name
             for platform, tools in tool_plan.items()
@@ -1730,7 +1887,7 @@ class AgentRuntime:
             if not report_name or report_name in already_collected:
                 continue
             try:
-                report_def, _ = self.registry.get(report_name)
+                report_def, _ = self._get_registered_tool(report_name)
             except KeyError:
                 continue
 
@@ -1905,6 +2062,21 @@ class AgentRuntime:
         """
         session_id = session_id or str(uuid.uuid4())
         turn_id = str(uuid.uuid4())[:8]
+        input_error = self._validate_request_limits(user_input, platform_params)
+        if input_error:
+            return {
+                "session_id": session_id,
+                "turn_id": turn_id,
+                "timestamp": datetime.now().isoformat(),
+                "intent": None,
+                "tool_plan": {},
+                "tool_selection": None,
+                "results": [],
+                "reply": f"❌ {input_error}",
+                "needs_confirmation": False,
+                "confirmation_payload": None,
+                "policy_errors": [input_error],
+            }
         # Secrets must not be sent to the LLM or retained in session history,
         # even when a caller accidentally pastes them into the chat text.
         safe_user_input = self._redact_for_persistence(user_input)
@@ -1912,6 +2084,8 @@ class AgentRuntime:
         # Step 1: 确保 Session 存在
         request_clients = self._build_request_clients(credentials)
         session = self._ensure_session(session_id, user_id, account_id, credentials)
+        turn_deadline = time.monotonic() + self.turn_timeout_seconds
+        session.ctx.metadata["turn_deadline"] = turn_deadline
         
         # Step 2: 解析用户意图
         # Give an injected LLM the bounded Skill/tool context before it emits
@@ -1993,6 +2167,38 @@ class AgentRuntime:
                 for platform, tools in tool_plan.items()
             }
             tool_plan = {platform: tools for platform, tools in tool_plan.items() if tools}
+
+        parameter_errors = self._validate_platform_parameter_contract(
+            intent, tool_plan
+        )
+        if parameter_errors:
+            reply = "❌ 参数契约阻止本次请求：" + "；".join(parameter_errors)
+            session.add_message({"role": "user", "content": safe_user_input})
+            session.add_message({"role": "assistant", "content": reply})
+            first_tool = next(
+                (tool for tools in tool_plan.values() for tool in tools), None
+            )
+            parameter_result = {
+                "tool": first_tool.name if first_tool else "parameter_contract",
+                "platform": first_tool.platform if first_tool else "",
+                "success": False,
+                "data": {},
+                "error": "; ".join(parameter_errors),
+                "needs_confirmation": False,
+            }
+            return {
+                "session_id": session_id,
+                "turn_id": turn_id,
+                "timestamp": datetime.now().isoformat(),
+                "intent": intent.to_dict(),
+                "tool_plan": {k: [t.name for t in v] for k, v in tool_plan.items()},
+                "tool_selection": None,
+                "results": [parameter_result],
+                "reply": reply,
+                "needs_confirmation": False,
+                "confirmation_payload": None,
+                "policy_errors": parameter_errors,
+            }
         
         # 检查是否需要执行任何工具
         if not tool_plan:
@@ -2045,6 +2251,7 @@ class AgentRuntime:
         # to the public result payload.
         workflow_inputs: dict[int, dict] = {}
         
+        tool_call_count = 0
         for platform, tools in tool_plan.items():
             # 转换平台名称
             actual_platform = self.PLATFORM_NAME_MAP.get(platform, platform)
@@ -2100,6 +2307,22 @@ class AgentRuntime:
             chain_blocked = False
             chain_blocker = None
             for tool_def in tools:
+                tool_call_count += 1
+                budget_error = self._check_turn_budget(
+                    turn_deadline, tool_call_count, self.max_tool_calls
+                )
+                if budget_error:
+                    results.append({
+                        "tool": tool_def.name,
+                        "platform": platform,
+                        "success": False,
+                        "data": {"execution_status": "budget_exceeded"},
+                        "error": budget_error,
+                        "needs_confirmation": False,
+                    })
+                    chain_blocked = True
+                    chain_blocker = tool_def.name
+                    continue
                 if chain_blocked:
                     results.append({
                         "tool": tool_def.name,
@@ -2252,10 +2475,39 @@ class AgentRuntime:
                 # 触发外部写 API。确认状态只来自受信任的请求字段，不从自然语言推断。
                 expected_confirmation = None
                 if tool_def.is_write_tool and self.execution_mode == ExecutionMode.LIVE.value:
-                    expected_confirmation = self._confirmation_plan(
-                        session_id, session.ctx.user_id, session.ctx.account_id,
-                        tool_def, tool_input,
+                    expected_confirmation = self._prepare_confirmation(
+                        self._confirmation_plan(
+                            session_id, session.ctx.user_id, session.ctx.account_id,
+                            tool_def, tool_input,
+                        ),
+                        create=not confirmed,
                     )
+
+                if (
+                    tool_def.is_write_tool
+                    and self.execution_mode == ExecutionMode.LIVE.value
+                    and confirmed
+                    and incoming_confirmation_payload is None
+                ):
+                    results.append({
+                        "tool": tool_def.name,
+                        "platform": platform,
+                        "success": False,
+                        "error": "confirmed=true 必须携带当前写入计划的 confirmation_payload",
+                        "needs_confirmation": True,
+                        "confirmation_payload": {
+                            "type": "confirm_write",
+                            **(expected_confirmation or {}),
+                            "input": self._redact_for_persistence(tool_input),
+                            "question": "请使用当前计划返回的 confirmation_payload 确认。",
+                        },
+                    })
+                    needs_confirmation = True
+                    confirmation_payload = results[-1]["confirmation_payload"]
+                    chain_blocked = True
+                    chain_blocker = tool_def.name
+                    session.ctx.account_id = original_account
+                    continue
 
                 if tool_def.is_write_tool and self.execution_mode == ExecutionMode.LIVE.value and confirmed and incoming_confirmation_payload is not None and not self._confirmation_matches(
                     incoming_confirmation_payload, expected_confirmation or {}
@@ -2279,6 +2531,36 @@ class AgentRuntime:
                     chain_blocker = tool_def.name
                     session.ctx.account_id = original_account
                     continue
+
+                if (
+                    tool_def.is_write_tool
+                    and self.execution_mode == ExecutionMode.LIVE.value
+                    and confirmed
+                    and incoming_confirmation_payload is not None
+                ):
+                    approval_ok, approval_error = self._validate_confirmation_record(
+                        expected_confirmation or {}, incoming_confirmation_payload
+                    )
+                    if not approval_ok:
+                        results.append({
+                            "tool": tool_def.name,
+                            "platform": platform,
+                            "success": False,
+                            "error": f"确认记录无效：{approval_error}",
+                            "needs_confirmation": True,
+                            "confirmation_payload": {
+                                "type": "confirm_write",
+                                **(expected_confirmation or {}),
+                                "input": self._redact_for_persistence(tool_input),
+                                "question": "确认记录已过期或已使用，请重新生成计划并确认。",
+                            },
+                        })
+                        needs_confirmation = True
+                        confirmation_payload = results[-1]["confirmation_payload"]
+                        chain_blocked = True
+                        chain_blocker = tool_def.name
+                        session.ctx.account_id = original_account
+                        continue
 
                 if tool_def.is_write_tool and self.execution_mode == ExecutionMode.LIVE.value and not confirmed:
                     results.append({
@@ -2342,6 +2624,8 @@ class AgentRuntime:
                 except Exception as exc:
                     logger.exception("工具执行失败: %s", tool_def.name)
                     result = ToolResult.error(f"工具执行失败: {exc}")
+
+                result = self._enforce_result_limit(result, tool_def)
                 
                 result_index = len(results)
                 safe_result_data = self._redact_for_persistence(result.data)
@@ -2386,6 +2670,12 @@ class AgentRuntime:
                     and self.write_guard and hasattr(self.write_guard, "mark_executed")
                 ):
                     self.write_guard.mark_executed(tool_def.name, tool_input, session.ctx.user_id)
+                    if expected_confirmation and incoming_confirmation_payload:
+                        if self._session_manager:
+                            self._session_manager.store.consume_approval(
+                                expected_confirmation["plan_fingerprint"],
+                                expected_confirmation["confirmation_token"],
+                            )
                 elif (
                     (not result.success or result.requires_confirmation)
                     and self.execution_mode == ExecutionMode.LIVE.value
@@ -2703,6 +2993,54 @@ class AgentRuntime:
             tool_input["_unknown_params"] = unknown_specific_params
 
         return tool_input
+
+    @staticmethod
+    def _validate_platform_parameter_contract(
+        intent: ParsedIntent, tool_plan: dict[str, list[Any]],
+    ) -> list[str]:
+        """Reject platform parameters that no planned tool can consume.
+
+        ``platform_params`` is an aggregate payload for a multi-step create
+        chain, so a field may belong to a later child tool.  Validate against
+        the union of all planned tool schemas instead of rejecting those
+        legitimate sibling fields at the first parent step.
+        """
+        errors: list[str] = []
+        aliases = {
+            "name", "campaign_name", "adset_name", "ad_set_name",
+            "adgroup_name", "line_item_name", "account_id", "advertiser_id",
+            "customer_id", "ad_account_id", "ad_set_id", "adset_id",
+            "ad_group_id", "adgroup_id",
+        }
+        common = {
+            "budget", "daily_budget", "objective", "campaign_type",
+            "date_range", "date_preset", "creative_materials", "campaign_id",
+            "campaign_ids", "line_item_id", "asset_group_id",
+        }
+        for platform, values in (intent.platform_params or {}).items():
+            if platform.startswith("_") or not isinstance(values, dict):
+                continue
+            tools = tool_plan.get(platform, [])
+            allowed = set(common) | aliases | {tool.name for tool in tools}
+            for tool in tools:
+                allowed.update(getattr(tool.input_schema, "properties", {}) or {})
+            for key, value in values.items():
+                if key.startswith("_") or key in allowed:
+                    continue
+                errors.append(f"{platform}.{key} 未被当前工具链声明")
+
+            # Tool-scoped payloads are unambiguous and can be checked against
+            # that exact schema, including its alias-compatible identifiers.
+            for tool in tools:
+                scoped = values.get(tool.name)
+                if not isinstance(scoped, dict):
+                    continue
+                properties = set(getattr(tool.input_schema, "properties", {}) or {})
+                scoped_allowed = properties | aliases
+                for key in scoped:
+                    if key not in scoped_allowed:
+                        errors.append(f"{platform}.{tool.name}.{key} 未被工具 Schema 声明")
+        return errors[:20]
 
     @staticmethod
     def _lookup_tools_for_fields(tool_def: Any, fields: list[str]) -> dict[str, str]:
@@ -3126,6 +3464,28 @@ class AgentRuntime:
         if self._multi_agent_bridge:
             return self._multi_agent_bridge.dispatch(user_input, **kwargs)
         return self.run(user_input, **kwargs)
+
+    def get_workflow(self, workflow_id: str, user_id: Optional[str] = None) -> Optional[dict]:
+        """Read a durable workflow while enforcing its owning user boundary."""
+        if not self._session_manager:
+            return None
+        workflow = self._session_manager.get_workflow(workflow_id)
+        if not workflow:
+            return None
+        if user_id is not None:
+            session = self._session_manager.get_session(workflow.get("session_id")) or {}
+            if str(session.get("user_id")) != str(user_id):
+                raise PermissionError("workflow belongs to a different user")
+        return workflow
+
+    def cancel_workflow(self, workflow_id: str, user_id: str) -> bool:
+        """Cancel a non-terminal workflow without contacting a provider."""
+        workflow = self.get_workflow(workflow_id, user_id=user_id)
+        if not workflow:
+            return False
+        return self._session_manager.update_workflow(
+            workflow_id, "cancelled", {"cancelled_by": str(user_id)}
+        )
 
 
 # ─── Session Context ────────────────────────────────────────────

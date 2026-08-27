@@ -25,6 +25,7 @@ class LLMClient:
         model: str = None,
         api_key: str = None,
         base_url: str = None,
+        timeout_seconds: float = 30.0,
     ):
         """
         Args:
@@ -35,6 +36,9 @@ class LLMClient:
         self.model = model or os.environ.get("LLM_MODEL", "gpt-4o-mini")
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
         self.base_url = base_url or os.environ.get("OPENAI_BASE_URL")
+        if timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be positive")
+        self.timeout_seconds = float(timeout_seconds)
         
         # 懒加载 OpenAI 客户端
         self._client = None
@@ -49,6 +53,7 @@ class LLMClient:
                     kwargs["api_key"] = self.api_key
                 if self.base_url:
                     kwargs["base_url"] = self.base_url
+                kwargs["timeout"] = self.timeout_seconds
                 self._client = OpenAI(**kwargs)
             except ImportError:
                 logger.error("❌ 未安装 openai 包，请运行: pip install openai")
@@ -128,6 +133,12 @@ class LLMClient:
         return None
 
 
-def create_llm_client(model: str = None, api_key: str = None, base_url: str = None) -> LLMClient:
+def create_llm_client(
+    model: str = None, api_key: str = None, base_url: str = None,
+    timeout_seconds: float = 30.0,
+) -> LLMClient:
     """工厂函数，创建 LLM 客户端"""
-    return LLMClient(model=model, api_key=api_key, base_url=base_url)
+    return LLMClient(
+        model=model, api_key=api_key, base_url=base_url,
+        timeout_seconds=timeout_seconds,
+    )

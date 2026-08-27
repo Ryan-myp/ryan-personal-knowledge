@@ -1,0 +1,32 @@
+[
+  {
+    "id": "tiktok_app_campaign",
+    "input": "创建 TikTok campaign，目标=APP_PROMOTION，类型=REGULAR_CAMPAIGN",
+    "intent_type": "create_campaign",
+    "platforms": ["tiktok"]
+  },
+  {
+    "id": "cross_channel_compare",
+    "input": "比较 Meta 和 Google 的 campaign 报表",
+    "intent_type": "cross_channel_compare",
+    "platforms": ["meta", "google"]
+  },
+  {
+    "id": "cross_channel_pause",
+    "input": "批量暂停 Meta campaign_ids=101,102 和 Google campaign_ids=201",
+    "intent_type": "cross_channel_batch_pause",
+    "platforms": ["meta", "google"]
+  },
+  {
+    "id": "tiktok_reference_lookup",
+    "input": "查询 TikTok 可用应用列表",
+    "intent_type": "list_apps",
+    "platforms": ["tiktok"]
+  },
+  {
+    "id": "dv360_line_item_detail",
+    "input": "查询 DV360 line item 详情 line_item_id=li-1",
+    "intent_type": "get_line_item",
+    "platforms": ["dv360"]
+  }
+]

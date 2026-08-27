@@ -1,0 +1,4 @@
+[tool.pytest.ini_options]
+testpaths = ["agents/ad_agent/tests"]
+python_files = ["test_*.py"]
+addopts = "-ra"

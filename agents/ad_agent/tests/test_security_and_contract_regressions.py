@@ -530,5 +530,8 @@ def test_write_reservation_survives_runtime_restart():
         confirmation_payload=payload,
     )
     assert duplicate["results"][0]["success"] is False
-    assert "Duplicate write detected" in duplicate["results"][0]["error"]
+    assert (
+        "approval has already been consumed" in duplicate["results"][0]["error"]
+        or "Duplicate write detected" in duplicate["results"][0]["error"]
+    )
     assert second_client.calls == []

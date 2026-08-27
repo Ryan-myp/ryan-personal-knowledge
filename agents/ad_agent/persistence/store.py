@@ -10,12 +10,26 @@ Tables:
 import json
 import sqlite3
 import logging
+import hashlib
 import threading
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import Any, Optional, List
 
 logger = logging.getLogger(__name__)
+
+
+WORKFLOW_TRANSITIONS = {
+    "planned": {"planned", "running", "awaiting_confirmation", "blocked", "failed", "cancelled"},
+    "running": {"running", "planned", "awaiting_confirmation", "blocked", "failed", "succeeded", "partially_failed", "recovery_required", "cancelled"},
+    "awaiting_confirmation": {"awaiting_confirmation", "running", "blocked", "failed", "cancelled"},
+    "partially_failed": {"partially_failed", "recovery_required", "succeeded", "failed", "cancelled"},
+    "recovery_required": {"recovery_required", "running", "succeeded", "failed", "cancelled"},
+    "blocked": {"blocked", "running", "cancelled"},
+    "failed": {"failed", "running", "cancelled"},
+    "succeeded": {"succeeded"},
+    "cancelled": {"cancelled"},
+}
 
 
 @dataclass
@@ -184,6 +198,20 @@ class AdAgentStore:
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS approvals (
+        plan_fingerprint TEXT PRIMARY KEY,
+        token_hash TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        account_id TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TEXT NOT NULL,
+        consumed_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_approvals_session ON approvals(session_id, status);
     """
     
     def __init__(self, db_path: str = ":memory:"):
@@ -272,6 +300,77 @@ class AdAgentStore:
                 (idempotency_key, "pending"),
             )
             conn.commit()
+
+    # -- Approval records --------------------------------------------------
+
+    @staticmethod
+    def _token_hash(token: str) -> str:
+        return hashlib.sha256(str(token).encode("utf-8")).hexdigest()
+
+    def create_approval(
+        self, plan_fingerprint: str, token: str, session_id: str,
+        user_id: str, account_id: str, tool_name: str, expires_at: str,
+    ) -> None:
+        now = datetime.now().isoformat()
+        with self._lock:
+            conn = self._get_conn()
+            conn.execute(
+                """INSERT OR IGNORE INTO approvals
+                   (plan_fingerprint, token_hash, session_id, user_id, account_id,
+                    tool_name, expires_at, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)""",
+                (
+                    plan_fingerprint, self._token_hash(token), str(session_id),
+                    str(user_id), str(account_id or ""), str(tool_name),
+                    str(expires_at), now,
+                ),
+            )
+            conn.commit()
+
+    def get_approval(self, plan_fingerprint: str) -> Optional[dict]:
+        with self._lock:
+            row = self._get_conn().execute(
+                "SELECT * FROM approvals WHERE plan_fingerprint = ?",
+                (plan_fingerprint,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def validate_approval(
+        self, plan_fingerprint: str, token: str, session_id: str,
+        user_id: str, account_id: str, tool_name: str,
+    ) -> tuple[bool, str]:
+        row = self.get_approval(plan_fingerprint)
+        if not row:
+            return False, "approval record not found"
+        if row.get("status") != "pending":
+            return False, "approval has already been consumed"
+        if row.get("token_hash") != self._token_hash(token):
+            return False, "approval token mismatch"
+        if str(row.get("session_id")) != str(session_id):
+            return False, "approval session mismatch"
+        if str(row.get("user_id")) != str(user_id):
+            return False, "approval user mismatch"
+        if str(row.get("account_id")) != str(account_id or ""):
+            return False, "approval account mismatch"
+        if str(row.get("tool_name")) != str(tool_name):
+            return False, "approval tool mismatch"
+        try:
+            if datetime.fromisoformat(str(row.get("expires_at"))) <= datetime.now():
+                return False, "approval expired"
+        except (TypeError, ValueError):
+            return False, "approval expiry is invalid"
+        return True, ""
+
+    def consume_approval(self, plan_fingerprint: str, token: str) -> bool:
+        with self._lock:
+            now = datetime.now().isoformat()
+            cursor = self._get_conn().execute(
+                """UPDATE approvals SET status = 'consumed', consumed_at = ?
+                   WHERE plan_fingerprint = ? AND token_hash = ? AND status = 'pending'""",
+                (now, plan_fingerprint, self._token_hash(token)),
+            )
+            self._get_conn().commit()
+            return cursor.rowcount > 0
     
     # -- Session --
     
@@ -476,6 +575,19 @@ class AdAgentStore:
     ) -> bool:
         with self._lock:
             conn = self._get_conn()
+            current = conn.execute(
+                "SELECT status FROM workflows WHERE workflow_id = ?",
+                (workflow_id,),
+            ).fetchone()
+            if not current:
+                return False
+            current_status = str(current[0])
+            if status not in WORKFLOW_TRANSITIONS.get(current_status, set()):
+                logger.warning(
+                    "Rejected invalid workflow transition %s -> %s for %s",
+                    current_status, status, workflow_id,
+                )
+                return False
             if metadata is None:
                 cursor = conn.execute(
                     "UPDATE workflows SET status = ?, updated_at = ? WHERE workflow_id = ?",

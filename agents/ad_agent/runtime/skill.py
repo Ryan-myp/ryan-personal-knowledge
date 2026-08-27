@@ -306,6 +306,12 @@ class BaseSkill(Skill):
                     list(group) for group in (declared_schema.get("provider_any_of", []) or [])
                 ],
                 conditional_rules=list(declared_schema.get("conditional_rules", []) or []),
+                additional_properties=bool(
+                    declared_schema.get(
+                        "additional_properties",
+                        declared_schema.get("additionalProperties", False),
+                    )
+                ),
             )
             tools.append(ToolDefinition(
                 name=name,

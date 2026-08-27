@@ -58,6 +58,11 @@ class ToolSchema:
     # The shape intentionally stays JSON-serializable because it is also
     # exposed to UI/LLM callers through /tools.
     conditional_rules: list[dict[str, Any]] = field(default_factory=list)
+    # Tool inputs are closed by default.  A provider payload can explicitly
+    # opt into open-ended fields at the field level (for example a targeting
+    # object), but an undeclared top-level argument must never disappear
+    # silently before execution.
+    additional_properties: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         """Return the public, JSON-compatible tool contract."""
@@ -68,6 +73,7 @@ class ToolSchema:
             "provider_required": list(self.provider_required),
             "provider_any_of": [list(group) for group in self.provider_any_of],
             "conditional_rules": self.conditional_rules,
+            "additional_properties": self.additional_properties,
         }
 
 @dataclass
@@ -90,6 +96,18 @@ class ToolDefinition:
     # false value still permits dry-run planning, but prevents a misleading
     # live confirmation/execution path.
     live_support: bool = True
+    # Operational contract used by the Runtime before a handler is invoked.
+    # These defaults keep existing Skills source-compatible while making the
+    # limits visible to /tools and future policy implementations.
+    timeout_seconds: float = 30.0
+    max_output_bytes: int = 1_000_000
+    required_permissions: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if self.timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be positive")
+        if self.max_output_bytes <= 0:
+            raise ValueError("max_output_bytes must be positive")
 
     @property
     def is_write_tool(self) -> bool:
@@ -323,6 +341,11 @@ class CapabilityRuntime:
     
     # 后台任务（可选）
     background_tasks: list[dict] = field(default_factory=list)
+
+    # Skill-owned parameter catalogs.  A catalog may expose static enums or
+    # a dynamic lookup descriptor without making the shared Runtime know a
+    # provider's field names.
+    parameter_catalogs: list[Any] = field(default_factory=list)
 
 
 class WriteGuard(ABC):

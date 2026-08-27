@@ -18,10 +18,10 @@ logger = logging.getLogger(__name__)
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from fastapi import FastAPI, HTTPException, Header, Request
+from fastapi import FastAPI, HTTPException, Header, Request, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from starlette.concurrency import run_in_threadpool
 
@@ -194,16 +194,16 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_credentials=False,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["Content-Type", "X-API-Key"],
 )
 
 
 class ChatRequest(BaseModel):
-    user_input: str
+    user_input: str = Field(min_length=1, max_length=12_000)
     session_id: Optional[str] = None
-    user_id: str = "web_user"
-    account_id: str = ""
+    user_id: str = Field(default="web_user", min_length=1, max_length=200)
+    account_id: str = Field(default="", max_length=200)
     confirmed: bool = False
     confirmation_payload: Optional[dict] = None
     platform_params: Optional[dict] = None
@@ -299,7 +299,12 @@ async def get_tools(
                 "description": t.description,
                 "risk_level": t.risk_level.value,
                 "effect_class": t.effect_class.value,
+                "replay_policy": t.replay_policy.value,
+                "traits": list(t.traits),
                 "live_support": t.live_support,
+                "timeout_seconds": t.timeout_seconds,
+                "max_output_bytes": t.max_output_bytes,
+                "required_permissions": list(t.required_permissions),
                 "input_schema": t.input_schema.to_dict() if t.input_schema else None,
             }
             for t in tools
@@ -308,10 +313,10 @@ async def get_tools(
 
 
 class ChatStreamRequest(BaseModel):
-    user_input: str
+    user_input: str = Field(min_length=1, max_length=12_000)
     session_id: Optional[str] = None
-    user_id: str = "web_user"
-    account_id: str = ""
+    user_id: str = Field(default="web_user", min_length=1, max_length=200)
+    account_id: str = Field(default="", max_length=200)
     confirmed: bool = False
     confirmation_payload: Optional[dict] = None
     platform_params: Optional[dict] = None
@@ -386,3 +391,61 @@ async def chat_stream(
         raise
     except Exception as e:
         return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)
+
+
+@app.get("/parameter-options", tags=["info"])
+async def get_parameter_options(
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    platform: Optional[str] = Query(None, max_length=50),
+    field: Optional[str] = Query(None, max_length=100),
+):
+    """Expose Skill-owned static enums and dynamic lookup descriptors."""
+    _authorize_request(x_api_key, http_request)
+    if not runtime:
+        return {"options": []}
+    return {
+        "platform": platform,
+        "field": field,
+        "options": runtime.list_parameter_options(platform, field),
+    }
+
+
+@app.get("/workflows/{workflow_id}", tags=["workflows"])
+async def get_workflow(
+    workflow_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    user_id: str = Query("web_user", min_length=1, max_length=200),
+):
+    """Read an auditable workflow without exposing credentials."""
+    _authorize_request(x_api_key, http_request)
+    if not runtime:
+        raise HTTPException(status_code=503, detail="服务未初始化")
+    try:
+        workflow = runtime.get_workflow(workflow_id, user_id=user_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    if not workflow:
+        raise HTTPException(status_code=404, detail="workflow not found")
+    return workflow
+
+
+@app.delete("/workflows/{workflow_id}", tags=["workflows"])
+async def cancel_workflow(
+    workflow_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    user_id: str = Query("web_user", min_length=1, max_length=200),
+):
+    """Cancel a local workflow; this never calls a provider API."""
+    _authorize_request(x_api_key, http_request)
+    if not runtime:
+        raise HTTPException(status_code=503, detail="服务未初始化")
+    try:
+        cancelled = runtime.cancel_workflow(workflow_id, user_id=user_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    if not cancelled:
+        raise HTTPException(status_code=404, detail="workflow not found or not cancellable")
+    return {"workflow_id": workflow_id, "status": "cancelled"}
