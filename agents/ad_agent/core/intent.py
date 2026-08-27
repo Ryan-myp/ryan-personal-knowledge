@@ -969,6 +969,7 @@ class SimpleIntentRouter(IntentRouter):
             for intent_type, platforms in self.DEFAULT_INTENT_TOOLS.items()
         }
         self._capability_mappings: dict[str, dict[str, list[str]]] = {}
+        self._skill_mappings: dict[str, dict[str, list[str]]] = {}
         if custom_mappings:
             for intent_type, platforms in custom_mappings.items():
                 self._mappings.setdefault(intent_type, {}).update(platforms)
@@ -983,6 +984,20 @@ class SimpleIntentRouter(IntentRouter):
                 self._capability_mappings.setdefault(intent_type, {})[platform] = names
                 if platform == "google-ads":
                     self._capability_mappings.setdefault(intent_type, {})["google"] = names
+
+    def register_skill_mappings(self, mappings: dict) -> None:
+        """Register Skill-owned workflow plans with highest precedence."""
+        for intent_type, platforms in (mappings or {}).items():
+            for platform, names in (platforms or {}).items():
+                if not names:
+                    continue
+                self._skill_mappings.setdefault(str(intent_type), {})[
+                    str(platform)
+                ] = list(names)
+                if platform == "google-ads":
+                    self._skill_mappings.setdefault(str(intent_type), {})[
+                        "google"
+                    ] = list(names)
     
     def route(
         self,
@@ -996,10 +1011,12 @@ class SimpleIntentRouter(IntentRouter):
             {platform: [ToolDefinition, ...]}
         """
         result = {}
-        mapping = self._capability_mappings.get(
-            intent.intent_type,
-            self._mappings.get(intent.intent_type, {}),
-        )
+        mapping = self._skill_mappings.get(intent.intent_type)
+        if mapping is None:
+            mapping = self._capability_mappings.get(
+                intent.intent_type,
+                self._mappings.get(intent.intent_type, {}),
+            )
         
         for platform in intent.platforms:
             tool_names = mapping.get(platform, [])

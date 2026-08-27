@@ -350,13 +350,6 @@ class MetaCapability(BaseCapability):
 
         return tools
 
-    def _get_campaign_tool_sequence(self):
-        return ["meta_create_campaign", "meta_create_adset", "meta_create_ad"]
-
-    def _get_report_tool_sequence(self):
-        return ["meta_get_campaign_report"]
-
-
 def create_meta_capability(api_client: Optional[MetaAPIClient] = None) -> MetaCapability:
     cap = MetaCapability()
     cap._api_client = api_client

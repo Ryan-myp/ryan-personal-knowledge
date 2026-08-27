@@ -354,13 +354,6 @@ class GoogleCapability(BaseCapability):
 
         return tools
 
-    def _get_campaign_tool_sequence(self):
-        return ["google_create_campaign", "google_create_ad_group", "google_create_ad"]
-
-    def _get_report_tool_sequence(self):
-        return ["google_get_campaign_report"]
-
-
 def create_google_capability(api_client: Optional[GoogleAdsAPIClient] = None) -> GoogleCapability:
     cap = GoogleCapability()
     cap._api_client = api_client

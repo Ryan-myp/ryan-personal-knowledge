@@ -334,6 +334,15 @@ class Skill(ABC):
         """返回指定工具的执行器"""
         raise NotImplementedError("Subclasses must implement 'get_tool_handler'")
 
+    def get_workflow_mappings(self) -> dict[str, dict[str, list[str]]]:
+        """Return Skill-owned workflow plans as intent -> platform -> tools.
+
+        A Skill owns orchestration policy, but the returned names are still
+        resolved through the Runtime registry before execution.  The default
+        keeps custom Skills focused on tools when they do not define a flow.
+        """
+        return {}
+
 
 class CapabilityModule(ABC):
     """

@@ -317,13 +317,6 @@ class TikTokCapability(BaseCapability):
 
         return tools
 
-    def _get_campaign_tool_sequence(self):
-        return ["tiktok_create_campaign", "tiktok_create_adgroup", "tiktok_create_ad"]
-
-    def _get_report_tool_sequence(self):
-        return ["tiktok_get_campaign_report"]
-
-
 def create_tiktok_capability(api_client: Optional[TikTokAPIClient] = None) -> TikTokCapability:
     cap = TikTokCapability()
     cap._api_client = api_client

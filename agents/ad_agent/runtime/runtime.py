@@ -599,17 +599,27 @@ class AgentRuntime:
         if self._read_only_mode:
             self._filter_write_tools()
 
-        # Capability-provided mappings are the preferred routing source.  The
-        # router retains its static map as a fallback for custom modules
-        # that do not publish CapabilityRuntime mappings.
-        if runtime.intent_to_tools and hasattr(self.intent_router, "register_capability_mappings"):
-            self.intent_router.register_capability_mappings(runtime.intent_to_tools)
-        
-        # 注册编排 Skill
+        # Register the executable tools supplied by the Capability.  Workflow
+        # policy is published separately by the Skill contract below.
         for skill in runtime.orchestrator_skills:
             self._register_skill(skill)
             if skill.platform and skill.platform != "multi_platform":
                 self._loaded_skills.setdefault(skill.platform, skill)
+
+        capability_platform = getattr(module, "platform_name", None)
+        # Publish all loaded Skill workflows, including the cross-channel
+        # orchestrator. Routing will naturally retain only registered tools.
+        self._publish_loaded_skill_workflows()
+        # A Capability registration already activated the platform's tools.
+        # Keep the declarative Skill as the platform lifecycle marker so the
+        # next turn does not try to register the same tools again.
+        if capability_platform:
+            canonical_platform = self.PLATFORM_NAME_MAP.get(
+                str(capability_platform), str(capability_platform)
+            )
+            skill_candidates = self.skill_loader.get_by_platform(canonical_platform)
+            if skill_candidates:
+                self._loaded_skills.setdefault(canonical_platform, skill_candidates[0])
         
         # 注册后台任务
         self._background_tasks.extend(runtime.background_tasks)
@@ -626,6 +636,26 @@ class AgentRuntime:
         self._refresh_unbound_clients()
         
         return runtime
+
+    def _publish_loaded_skill_workflows(self, platform: Optional[str] = None) -> None:
+        """Publish declarative Skill workflows without registering handlers."""
+        skills = (
+            self.skill_loader.get_by_platform(platform)
+            if platform
+            else self.skill_loader._skills.values()
+        )
+        for skill in skills:
+            self._publish_skill_workflows(skill)
+
+    def _publish_skill_workflows(self, skill: Any) -> None:
+        """Publish one Skill's workflow policy to the intent router."""
+        if not hasattr(self.intent_router, "register_skill_mappings"):
+            return
+        mappings = getattr(skill, "get_workflow_mappings", lambda: {})()
+        if mappings:
+            self.intent_router.register_skill_mappings(mappings)
+            if hasattr(self.intent_parser, "register_intents"):
+                self.intent_parser.register_intents(set(mappings))
 
     def list_parameter_options(
         self, platform: Optional[str] = None, field: Optional[str] = None,
@@ -852,9 +882,14 @@ class AgentRuntime:
         if callable(intent_mappings):
             intent_mappings = intent_mappings()
         if intent_mappings and hasattr(self.intent_router, "register_capability_mappings"):
-            self.intent_router.register_capability_mappings(intent_mappings)
+            self.intent_router.register_skill_mappings(intent_mappings)
             if hasattr(self.intent_parser, "register_intents"):
                 self.intent_parser.register_intents(set(intent_mappings))
+        workflow_mappings = getattr(skill, "get_workflow_mappings", lambda: {})()
+        if workflow_mappings and hasattr(self.intent_router, "register_skill_mappings"):
+            self.intent_router.register_skill_mappings(workflow_mappings)
+            if hasattr(self.intent_parser, "register_intents"):
+                self.intent_parser.register_intents(set(workflow_mappings))
         logger.info(f"✅ 已动态注册 Skill '{skill.name}'，共 {registered_count} 个工具")
         return True
 
@@ -1139,7 +1174,7 @@ class AgentRuntime:
                         # 直接加载这个 skill，避免再次使用浅层 loader。
                         self.skill_loader._load_single_skill(str(skill_dir))
                         for loaded in self.skill_loader._skills.values():
-                            if loaded.platform == platform or skill_dir.name == platform:
+                            if loaded.platform == platform:
                                 return loaded
                 except Exception as e:
                     logger.debug(f"解析 Skill 文件失败 {skill_dir.name}: {e}")
@@ -1599,6 +1634,14 @@ class AgentRuntime:
                         or skill_metadata.get('platform')
                         or skill_dir.name
                     )
+
+                    # Workflow policy is always read from the declarative
+                    # Skill. It is never inferred from Capability code.
+                    from .skill import BaseSkill, SkillContract
+                    declarative_skill = BaseSkill(
+                        SkillContract(str(skill_dir)).load()
+                    )
+                    self._publish_skill_workflows(declarative_skill)
 
                     # Executable extensions take precedence over declarative
                     # Skill metadata.  A plugin is still
@@ -2676,9 +2719,9 @@ class AgentRuntime:
                 "policy_errors": policy_errors,
             }
 
-        # Step 3: 路由到平台工具.  Capability mappings are the executable
-        # contract.  The selector only builds bounded model context and must
-        # never rewrite this authoritative execution plan.
+        # Step 3: 路由到平台工具. Skill workflow declarations are the
+        # authoritative orchestration plan. The selector only builds bounded
+        # model context and must never rewrite that plan.
         tool_plan = self.intent_router.route(intent, self.registry)
         routed_tools = [tool for tools in tool_plan.values() for tool in tools]
         tool_selection = self.tool_selector.optimize_for_llm(

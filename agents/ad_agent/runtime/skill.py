@@ -42,6 +42,21 @@ class SkillCapability:
     required_permissions: list[str] = field(default_factory=list)
 
 
+@dataclass
+class SkillWorkflow:
+    """Declarative orchestration owned by a Skill.
+
+    ``tools`` is used by a channel Skill.  ``platforms`` is used by a
+    cross-channel Skill.  Both forms remain data-only; Runtime still applies
+    authorization, approval, idempotency and persistence before execution.
+    """
+
+    name: str
+    tools: list[str] = field(default_factory=list)
+    platforms: dict[str, list[str]] = field(default_factory=dict)
+    description: str = ""
+
+
 class SkillContract:
     """
     Skill 合约定义 - 对应 Go 的 skill.Contract
@@ -57,6 +72,7 @@ class SkillContract:
         self.platform: str = ""
         self.triggers: list[SkillTrigger] = []
         self.capabilities: dict[str, SkillCapability] = {}
+        self.workflows: dict[str, SkillWorkflow] = {}
         self.references: dict[str, str] = {}  # ref_name -> file_path
         self.expert_knowledge: dict[str, str] = {}
         self.raw_md: str = ""
@@ -105,6 +121,7 @@ class SkillContract:
         fm_match = re.match(r'^---\n(.*?)\n---\n', content, re.DOTALL)
         if fm_match:
             fm_yaml = yaml.safe_load(fm_match.group(1))
+            fm_yaml = fm_yaml if isinstance(fm_yaml, dict) else {}
             
             # 尝试嵌套格式 skill: {...}
             if 'skill' in fm_yaml:
@@ -133,9 +150,49 @@ class SkillContract:
                         keywords=val if isinstance(val, list) else [val],
                         patterns=[key]
                     ))
+
+            self._load_workflows(fm_yaml.get("workflows", {}))
         
         # 从 markdown 正文提取能力声明
         self._extract_capabilities_from_md(content)
+
+    def _load_workflows(self, workflows: Any) -> None:
+        """Load workflow declarations from SKILL.md frontmatter."""
+        if not isinstance(workflows, dict):
+            return
+        for name, raw in workflows.items():
+            if isinstance(raw, list):
+                raw = {"tools": raw}
+            if not isinstance(raw, dict):
+                continue
+            tools = raw.get("tools", raw.get("steps", []))
+            if not isinstance(tools, list):
+                tools = []
+            normalized_tools: list[str] = []
+            for item in tools:
+                if isinstance(item, str):
+                    normalized_tools.append(item)
+                elif isinstance(item, dict) and item.get("tool"):
+                    normalized_tools.append(str(item["tool"]))
+            platforms: dict[str, list[str]] = {}
+            raw_platforms = raw.get("platforms", {})
+            if isinstance(raw_platforms, dict):
+                for platform, names in raw_platforms.items():
+                    if isinstance(names, str):
+                        names = [names]
+                    if isinstance(names, list):
+                        platforms[str(platform)] = [
+                            str(item.get("tool")) if isinstance(item, dict) and item.get("tool")
+                            else str(item)
+                            for item in names
+                            if isinstance(item, (str, dict)) and (not isinstance(item, dict) or item.get("tool"))
+                        ]
+            self.workflows[str(name)] = SkillWorkflow(
+                name=str(name),
+                tools=normalized_tools,
+                platforms=platforms,
+                description=str(raw.get("description", "")),
+            )
     
     def _extract_capabilities_from_md(self, content: str) -> None:
         """从 Markdown 正文提取 tool 能力声明"""
@@ -361,6 +418,20 @@ class BaseSkill(Skill):
     def get_tool_handler(self, tool_name: str) -> Optional[ToolHandler]:
         """返回指定工具的执行器"""
         return self._handlers.get(tool_name)
+
+    def get_workflow_mappings(self) -> dict[str, dict[str, list[str]]]:
+        """Expose only the Skill's declarative orchestration plan."""
+        result: dict[str, dict[str, list[str]]] = {}
+        for name, workflow in self._contract.workflows.items():
+            if workflow.platforms:
+                result[name] = {
+                    platform: list(tool_names)
+                    for platform, tool_names in workflow.platforms.items()
+                    if tool_names
+                }
+            elif workflow.tools and self.platform:
+                result[name] = {self.platform: list(workflow.tools)}
+        return result
     
     def _build_properties(self, tool_name: str) -> dict[str, Any]:
         """构建工具输入参数的 JSON Schema properties"""

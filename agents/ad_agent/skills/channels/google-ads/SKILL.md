@@ -5,6 +5,23 @@ version: 1.0.0
 author: Ryan
 created: 2026-08-14
 tags: [google, ads, api, google-ads, bidding, reporting, advertising]
+workflows:
+  create_campaign:
+    tools: [google_create_campaign, google_create_ad_group, google_create_ad]
+  list_campaigns: {tools: [google_list_campaigns]}
+  get_campaign: {tools: [google_get_campaign]}
+  update_campaign: {tools: [google_update_campaign]}
+  pause_campaign: {tools: [google_update_campaign]}
+  resume_campaign: {tools: [google_update_campaign]}
+  download_report: {tools: [google_get_campaign_report]}
+  create_asset_group: {tools: [google_create_asset_group]}
+  list_adgroups: {tools: [google_list_ad_groups]}
+  update_adgroup: {tools: [google_update_ad_group]}
+  update_adset: {tools: [google_update_ad_group]}
+  list_ads: {tools: [google_list_ads]}
+  update_ad: {tools: [google_update_ad]}
+  list_keywords: {tools: [google_list_keywords]}
+  update_asset_group: {tools: [google_update_asset_group]}
 ---
 
 # Google Ads API 专家技能

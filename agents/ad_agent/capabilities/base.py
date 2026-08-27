@@ -97,21 +97,10 @@ class BaseCapability(CapabilityModule, ABC):
         # Step 1: 注册平台工具
         self._register_platform_tools(context.registry)
         
-        # Step 2: 创建编排 Skill
-        orchestrator_skill = self._build_orchestrator_skill(context.registry)
-        
-        # Step 3: 构建意图映射
-        intent_mappings = self._build_intent_mappings(context.registry)
-        
-        # Step 4: 构建写入保护（子类可覆盖）
+        # Workflow policy belongs to the Skill contract. Capability only
+        # registers executable tools and its provider-independent write guard.
         write_guard = self._build_write_guard()
-        
-        # Step 5: 返回运行时声明
-        return CapabilityRuntime(
-            orchestrator_skills=[orchestrator_skill],
-            intent_to_tools=intent_mappings,
-            write_guard=write_guard,
-        )
+        return CapabilityRuntime(write_guard=write_guard)
     
     def _register_platform_tools(self, registry: SimpleToolRegistry) -> None:
         """子类实现：将平台工具注册到 Registry"""
@@ -137,140 +126,6 @@ class BaseCapability(CapabilityModule, ABC):
             [(ToolDefinition, ToolHandler), ...]
         """
         pass
-    
-    def _build_orchestrator_skill(self, registry: SimpleToolRegistry):
-        """
-        构建编排 Skill（用于跨平台协调）。
-        
-        这是单 Agent 架构的核心：一个 Skill 可以协调多个平台。
-        """
-        from ..runtime.skill import BaseSkill, SkillContract
-        
-        tool_names = [
-            t.name for t in registry.list_by_platform(self.platform_name)
-        ]
-        tool_list_str = "\n".join(f"- `{t}`" for t in tool_names)
-        
-        description = self.SKILL_DESCRIPTION_TEMPLATE.format(
-            platform=self.platform_name.capitalize(),
-            tool_list=tool_list_str,
-        )
-        
-        contract = SkillContract.__new__(SkillContract)
-        contract.name = f"{self.platform_name}-ads"
-        contract.platform = self.platform_name
-        contract.description = description
-        contract.capabilities = {}
-        contract.triggers = [
-            type('T', (), {'keywords': [self.platform_name, f'{self.platform_name} ads']})()
-        ]
-        
-        skill = BaseSkill(contract)
-        
-        # 将已注册的工具处理器绑定到 Skill
-        for tool_def in registry.list_by_platform(self.platform_name):
-            _, handler = registry.get(tool_def.name)
-            if handler:
-                skill.register_handler(tool_def.name, handler)
-        
-        return skill
-    
-    def _build_intent_mappings(self, registry: Optional[SimpleToolRegistry] = None) -> dict[str, dict[str, list[str]]]:
-        """
-        构建意图 → 平台工具映射。
-        
-        默认实现：为常见意图类型提供标准工具序列。
-        子类可覆盖以提供平台特定映射。
-        """
-        available = {
-            tool.name for tool in registry.list_by_platform(self.platform_name)
-        } if registry else set()
-
-        def existing(names: list[str]) -> list[str]:
-            # Only publish routes for tools that this Capability actually
-            # registered.  This turns capability configuration into an
-            # executable contract instead of a documentation-only hint.
-            return [name for name in names if not available or name in available]
-
-        prefix = self.platform_name
-        if prefix == "google-ads":
-            prefix = "google"
-
-        mappings: dict[str, dict[str, list[str]]] = {}
-
-        def add(intent_type: str, names: list[str]) -> None:
-            names = existing(names)
-            if names:
-                mappings.setdefault(intent_type, {})[self.platform_name] = names
-
-        add("create_campaign", self._get_campaign_tool_sequence())
-        add("create_asset_group", [f"{prefix}_create_asset_group"])
-        add("boost_post", self._get_boost_tool_sequence() or [
-            f"{prefix}_boost_post" if self.platform_name == "meta"
-            else "tiktok_spark_ads_create" if self.platform_name == "tiktok"
-            else "",
-        ])
-        add("download_report", self._get_report_tool_sequence())
-        add("list_campaigns", [f"{prefix}_list_campaigns"])
-        add("get_campaign", [f"{prefix}_get_campaign"])
-        add("update_campaign", [f"{prefix}_update_campaign"])
-        add("pause_campaign", [f"{prefix}_update_campaign"])
-        add("resume_campaign", [f"{prefix}_update_campaign"])
-
-        child_tools = {
-            "meta": ("list_adgroups", "meta_list_ad_sets"),
-            "google-ads": ("list_adgroups", "google_list_ad_groups"),
-            "tiktok": ("list_adgroups", "tiktok_list_adgroups"),
-        }
-        if self.platform_name in child_tools:
-            add(child_tools[self.platform_name][0], [child_tools[self.platform_name][1]])
-        if self.platform_name == "meta":
-            add("list_adsets", ["meta_list_ad_sets"])
-            add("update_adset", ["meta_update_adset"])
-        elif self.platform_name == "google-ads":
-            add("update_adgroup", ["google_update_ad_group"])
-            add("update_adset", ["google_update_ad_group"])
-        elif self.platform_name == "tiktok":
-            add("update_adgroup", ["tiktok_update_adgroup"])
-            add("update_adset", ["tiktok_update_adgroup"])
-
-        add("list_ads", [f"{prefix}_list_ads"])
-        add("update_ad", [f"{prefix}_update_ad"])
-        add("list_audiences", [f"{prefix}_list_audiences"])
-        if self.platform_name == "google-ads":
-            add("list_keywords", ["google_list_keywords"])
-        if self.platform_name == "tiktok":
-            add("list_creatives", ["tiktok_list_creatives"])
-            add("list_videos", ["tiktok_list_videos"])
-            add("list_images", ["tiktok_list_images"])
-            add("list_conversions", ["tiktok_list_conversions"])
-            add("list_locations", ["tiktok_list_locations"])
-            add("list_devices", ["tiktok_list_devices"])
-            add("list_catalogs", ["tiktok_list_catalogs"])
-            add("list_apps", ["tiktok_list_apps"])
-            add("list_brand_safety", ["tiktok_list_brand_safety"])
-        if self.platform_name == "meta":
-            add("create_creative", ["meta_create_creative"])
-        if self.platform_name == "dv360":
-            add("list_ios", ["dv360_list_ios"])
-            add("get_io", ["dv360_get_io"])
-            add("list_line_items", ["dv360_list_line_items"])
-            add("get_line_item", ["dv360_get_line_item"])
-            add("update_io", ["dv360_update_io"])
-            add("update_line_item", ["dv360_update_line_item"])
-        if self.platform_name == "google-ads":
-            add("update_asset_group", ["google_update_asset_group"])
-        return mappings
-    
-    def _get_campaign_tool_sequence(self) -> list[str]:
-        """子类覆盖：返回创建 Campaign 的工具序列"""
-        return []
-    
-    def _get_boost_tool_sequence(self) -> list[str]:
-        return []
-    
-    def _get_report_tool_sequence(self) -> list[str]:
-        return []
     
     def _build_write_guard(self) -> Optional[WriteGuard]:
         """

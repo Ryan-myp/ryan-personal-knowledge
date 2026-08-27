@@ -275,13 +275,6 @@ class DV360Capability(BaseCapability):
 
         return tools
 
-    def _get_campaign_tool_sequence(self):
-        return ["dv360_create_campaign", "dv360_create_io", "dv360_create_line_item"]
-
-    def _get_report_tool_sequence(self):
-        return ["dv360_get_line_item_report"]
-
-
 def create_dv360_capability(api_client: Optional[DV360APIClient] = None) -> DV360Capability:
     cap = DV360Capability()
     cap._api_client = api_client
