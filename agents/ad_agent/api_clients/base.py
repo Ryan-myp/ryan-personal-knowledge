@@ -184,6 +184,36 @@ class BasePlatformClient(ABC):
         if self.request_deadline is None:
             return None
         return self.request_deadline - time.monotonic()
+
+    def acquire_rate_limit(self, limiter: Optional[RateLimiter] = None) -> None:
+        """Acquire a provider limiter without exceeding the request budget.
+
+        Some providers have account-scoped limiters in addition to the base
+        client limiter. Keeping this helper on the base client makes both
+        kinds of limiter obey the same Runtime deadline contract.
+        """
+        limiter = limiter or self.rate_limiter
+        if limiter is None:
+            return
+        remaining = self.remaining_request_budget()
+        if remaining is not None and remaining <= 0:
+            raise TemporaryError("Provider request deadline exceeded while rate limited")
+        limiter.acquire(max_wait=remaining)
+        remaining = self.remaining_request_budget()
+        if remaining is not None and remaining <= 0:
+            raise TemporaryError("Provider request deadline exceeded while rate limited")
+
+    def sleep_with_budget(self, seconds: float) -> None:
+        """Sleep for polling/backoff only while the request budget remains."""
+        duration = max(float(seconds), 0.0)
+        remaining = self.remaining_request_budget()
+        if remaining is not None:
+            if remaining <= 0:
+                raise TemporaryError("Provider request deadline exceeded while waiting")
+            if duration > remaining:
+                time.sleep(remaining)
+                raise TemporaryError("Provider request deadline exceeded while waiting")
+        time.sleep(duration)
         
     @abstractmethod
     def _do_request(self, method: str, url: str, **kwargs) -> dict:

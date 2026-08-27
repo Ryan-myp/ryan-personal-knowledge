@@ -12,6 +12,8 @@ from agents.ad_agent.core.intent import LLMIntentParser
 from agents.ad_agent.core.tool_registry import SimpleToolRegistry, validate_tool_input
 from agents.ad_agent.core.auth import RequestPrincipal
 from agents.ad_agent.api_clients.base import RateLimiter, TemporaryError
+from agents.ad_agent.api_clients.tiktok_client import TikTokAPIClient
+from agents.ad_agent.api_clients.dv360_client import DV360APIClient
 from agents.ad_agent.persistence.store import AdAgentStore
 from agents.ad_agent.runtime.runtime import AccountWhitelistValidator, AgentRuntime
 
@@ -60,6 +62,28 @@ def test_rate_limit_wait_is_bounded_by_provider_deadline():
     limiter.acquire()
     with pytest.raises(TemporaryError, match="deadline"):
         limiter.acquire(max_wait=0.001)
+
+
+def test_provider_specific_rate_limiters_use_request_deadline():
+    for client in (TikTokAPIClient({}), DV360APIClient({})):
+        client._rate_limiter = RateLimiter(max_requests=1, period=60)
+        client.acquire_rate_limit(client._rate_limiter)
+        client.set_request_budget(0.001)
+        with pytest.raises(TemporaryError, match="deadline"):
+            client.acquire_rate_limit(client._rate_limiter)
+
+
+def test_async_report_polling_does_not_outlive_request_deadline():
+    client = TikTokAPIClient({})
+    client.set_request_budget(0.001)
+    with pytest.raises(TemporaryError, match="deadline"):
+        client._poll_report_result("advertiser", "task", max_wait=30)
+
+    client = DV360APIClient({})
+    client.set_request_budget(0.001)
+    client.create_report = lambda _advertiser_id, _report: "report"
+    with pytest.raises(TemporaryError, match="deadline"):
+        client.get_line_item_report("advertiser", "line-item")
 
 
 def test_closed_tool_schema_rejects_unknown_top_level_fields():

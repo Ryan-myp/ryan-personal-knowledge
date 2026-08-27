@@ -206,7 +206,7 @@ class MetaAPIClient(BasePlatformClient):
             page_params = dict(params)
             if after:
                 page_params["after"] = after
-            self._get_account_limiter(account_id).acquire()
+            self.acquire_rate_limit(self._get_account_limiter(account_id))
             result = self.request("GET", endpoint, extra_params=page_params)
             if isinstance(result, dict) and isinstance(result.get(item_key), list):
                 page_items = result[item_key]
@@ -297,7 +297,7 @@ class MetaAPIClient(BasePlatformClient):
         - special_ad_categories: 必须指定（NONE 表示不限制）
         - is_adset_budget_sharing_enabled: 不使用 campaign budget 时必须指定
         """
-        self._get_account_limiter(account_id).acquire()
+        self.acquire_rate_limit(self._get_account_limiter(account_id))
         
         # 验证 objective
         valid_objectives = [
@@ -370,7 +370,7 @@ class MetaAPIClient(BasePlatformClient):
         - targeting: 必须指定（即使是空对象）
         - bid_amount: 必须指定
         """
-        self._get_account_limiter(account_id).acquire()
+        self.acquire_rate_limit(self._get_account_limiter(account_id))
         
         # 确保 targeting 是 JSON 字符串
         targeting = adset.get('targeting', {'geo_locations': {'countries': ['US']}})
@@ -431,7 +431,7 @@ class MetaAPIClient(BasePlatformClient):
         - creative: 必须是有效的 JSON 对象（包含 page_id 和 link_data）
         - 需要使用有效的 Facebook Page ID
         """
-        self._get_account_limiter(account_id).acquire()
+        self.acquire_rate_limit(self._get_account_limiter(account_id))
         
         # 构建 creative 参数
         creative = {}
@@ -484,7 +484,7 @@ class MetaAPIClient(BasePlatformClient):
     
     def create_creative(self, account_id: str, creative: dict) -> str:
         """创建 Creative"""
-        self._get_account_limiter(account_id).acquire()
+        self.acquire_rate_limit(self._get_account_limiter(account_id))
         data = {
             'name': creative.get('name', 'Creative'),
             'object_story_spec': {
@@ -522,7 +522,7 @@ class MetaAPIClient(BasePlatformClient):
             fields: 指标字段列表
             level: 报表层级 ("campaign" | "adset" | "ad")
         """
-        self._get_account_limiter(account_id).acquire()
+        self.acquire_rate_limit(self._get_account_limiter(account_id))
         
         default_fields = [
             "campaign_id", "impressions", "clicks", "ctr", "cpc",
@@ -572,7 +572,7 @@ class MetaAPIClient(BasePlatformClient):
         
         注意：Boost Post 是 Meta 特有的功能，将已有帖子变成广告
         """
-        self._get_account_limiter(account_id).acquire()
+        self.acquire_rate_limit(self._get_account_limiter(account_id))
         
         # Boost 需要通过 PromotedObject 创建
         data = {

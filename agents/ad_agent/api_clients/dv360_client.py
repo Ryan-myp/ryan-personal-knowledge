@@ -176,7 +176,7 @@ class DV360APIClient(BasePlatformClient):
     
     def _do_request(self, method: str, url: str, **kwargs) -> dict:
         """发送 HTTP 请求"""
-        self._rate_limiter.acquire()
+        self.acquire_rate_limit(self._rate_limiter)
         
         token = self._get_access_token()
         headers = {
@@ -455,7 +455,7 @@ class DV360APIClient(BasePlatformClient):
         # 轮询等待结果（最多 30 秒）
         last_error = None
         for _ in range(30):
-            time.sleep(1)
+            self.sleep_with_budget(1)
             try:
                 result = self.get_report_result(advertiser_id, report_id)
                 if not isinstance(result, dict):

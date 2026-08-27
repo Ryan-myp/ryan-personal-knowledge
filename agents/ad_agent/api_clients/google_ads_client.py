@@ -128,7 +128,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
     
     def _do_request(self, method: str, url: str, **kwargs) -> dict:
         """发送 HTTP 请求"""
-        self._rate_limiter.acquire()
+        self.acquire_rate_limit(self._rate_limiter)
         
         headers = {**self._build_headers(), **kwargs.pop('headers', {})}
         
