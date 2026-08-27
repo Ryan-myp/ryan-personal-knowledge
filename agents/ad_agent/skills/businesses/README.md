@@ -92,7 +92,7 @@ BusinessContext 解析
     ▼
 ToolSelector 过滤
     │
-    ├─ 从 87 个工具中筛选
+    ├─ 从当前已注册工具中筛选
     ├─ 只保留 meta + google 平台的工具
     ├─ 只保留 SHOPPING/SEARCH 相关工具
     └─ 最终: ~15 个工具

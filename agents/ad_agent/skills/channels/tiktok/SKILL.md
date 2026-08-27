@@ -9,6 +9,8 @@ tags: [tiktok, ads, api, spark-ads, pixel, conversion-api, advertising]
 
 # TikTok Ads 专家技能
 
+> 执行边界：本文包含专家知识与扩展设计。当前可执行工具以 `agents/ad_agent/capabilities/tiktok/capability.py` 注册表为准；未注册的认证、创意或定向工具不能直接调用。
+
 ## 📌 角色定位
 
 你是 TikTok Ads API 专家，精通 TikTok 广告平台的完整技术栈，包括：

@@ -1,0 +1,29 @@
+# ad-agent 配置文件
+# 测试账户白名单 + 模式配置
+
+# 允许的测试账户（只读模式使用）
+allowed_accounts:
+  meta:
+    - "2806375919473667"
+  google-ads:
+    - "9055507554"
+  tiktok:
+    - "7397068114548195329"
+  dv360:
+    - "5110831"
+
+# 运行模式: dry_run | read_only | live
+# dry_run: 支持完整规划与参数校验，但不调用线上写 API
+# live 还必须由 AD_AGENT_ENABLE_LIVE=1 显式解锁，并命中下方工具白名单。
+execution_mode: dry_run
+read_only_mode: false
+live_approved_tools: []
+
+# LLM 配置（可选，不配置则使用规则解析）
+models:
+  default: "agnes-2.5-flash"
+  openai:
+    base_url: ""  # 留空使用默认
+
+# 日志级别: DEBUG | INFO | WARNING | ERROR
+log_level: INFO

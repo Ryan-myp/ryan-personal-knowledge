@@ -113,8 +113,12 @@ class SkillRegistry:
         # 注册所有工具
         for tool_def in skill.get_tools():
             api_client = self._api_clients.get(platform)
-            handler = factory(api_client) if api_client else factory(None)
-            self._handler_factories[tool_def.name] = lambda _, h=handler: h
+            if getattr(factory, "_ad_agent_tool_aware", False):
+                handler = factory(api_client, tool_def.name)
+            else:
+                handler = factory(api_client) if api_client else factory(None)
+            if handler:
+                self._handler_factories[tool_def.name] = lambda _, h=handler: h
         
         logger.info(f"✅ 已注册 Skill '{skill.name}' 的 {len(skill.get_tools())} 个工具")
     
@@ -126,33 +130,29 @@ class SkillRegistry:
         1. 优先查找 platform_capability 模块中的工厂函数
         2. 回退到默认工厂（Mock 模式）
         """
-        from ..capabilities import meta, google, tiktok, dv360
-        
-        # 根据平台名称选择对应的 capability 模块
-        platform_map = {
-            'meta': ('meta', meta),
-            'google-ads': ('google', google_capability),
-            'tiktok': ('tiktok', tiktok),
-            'dv360': ('dv360', dv360),
-        }
-        
-        module_key = platform_map.get(platform)
-        if not module_key:
+        # Keep this compatibility registry on the same construction seam as
+        # Runtime.  It returns a handler factory, not a Capability object.
+        # The old implementation returned ``create_*_capability`` directly,
+        # which made callers accidentally store a Capability where a Handler
+        # was expected.
+        from ..capabilities.factory import create_capability, normalize_platform
+
+        canonical_platform = normalize_platform(platform)
+        try:
+            capability = create_capability(canonical_platform)
+        except ValueError:
             return None
-        
-        module_name, module = module_key
-        
-        # 尝试查找工厂函数
-        factory_names = [
-            f'create_{module_name}_capability',
-            f'create_{platform}_capability',
-        ]
-        
-        for name in factory_names:
-            if hasattr(module, name):
-                return getattr(module, name)
-        
-        return None
+        # ``register_skill_handlers`` needs one handler per tool.  Attach an
+        # explicit tool-aware helper for the compatibility caller below.
+        def tool_handler_factory(api_client=None, tool_name=None):
+            bound = create_capability(canonical_platform, api_client)
+            return {
+                tool_def.name: handler
+                for tool_def, handler in bound.register_tools()
+            }.get(tool_name)
+
+        tool_handler_factory._ad_agent_tool_aware = True
+        return tool_handler_factory
     
     def _reload_skill_handlers(self, platform: str) -> None:
         """重新加载指定平台的 Skill Handlers"""

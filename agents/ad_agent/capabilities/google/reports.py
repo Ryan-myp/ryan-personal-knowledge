@@ -8,6 +8,7 @@ from ...core.interfaces import (
     ToolContext, RiskLevel, ToolEffect, ReplayPolicy
 )
 from ...api_clients.google_ads_client import GoogleAdsAPIClient
+from ._utils import for_customer
 
 logger = logging.getLogger(__name__)
 
@@ -20,15 +21,16 @@ class GoogleGetReportHandler(ToolHandler):
         customer_id = ctx.account_id
         if self.client and customer_id:
             try:
+                client = for_customer(self.client, customer_id)
                 # 获取 campaign_ids（从 input_data 或默认）
                 campaign_ids = input_data.get("campaign_ids", [])
                 if not campaign_ids:
                     # 如果没指定，先列出所有 campaigns
-                    campaigns = self.client.list_campaigns()
+                    campaigns = client.list_campaigns()
                     campaign_ids = [str(c["id"]) for c in campaigns[:5]]  # 默认前5个
                 
                 date_range = input_data.get("date_range", "LAST_30_DAYS")
-                report = self.client.get_campaign_report(
+                report = client.get_campaign_report(
                     campaign_ids=campaign_ids,
                     date_from=date_range,
                     date_to="TODAY",
@@ -37,6 +39,7 @@ class GoogleGetReportHandler(ToolHandler):
                 return ToolResult.ok({
                     "report": report,
                     "summary": self._summarize_report(report),
+                    "data_status": "live",
                 })
             except Exception as e:
                 return ToolResult.error(f"Failed to get Google report: {e}")
@@ -49,7 +52,9 @@ class GoogleGetReportHandler(ToolHandler):
                     "ctr": 0.0256,
                     "conversions": 48,
                 },
-                "summary": "Mock data for testing"
+                "summary": "Mock data for testing",
+                "data_status": "offline_mock",
+                "simulated": True,
             })
     
     def _summarize_report(self, report: list) -> dict:
@@ -57,13 +62,18 @@ class GoogleGetReportHandler(ToolHandler):
         if not report:
             return {"total_impressions": 0, "total_clicks": 0, "total_spend": 0}
         
-        total_impressions = sum(r.get('campaign', {}).get('metrics', {}).get('impressions', 0) or 0 for r in report)
-        total_clicks = sum(r.get('campaign', {}).get('metrics', {}).get('clicks', 0) or 0 for r in report)
-        total_spend = sum(r.get('campaign', {}).get('metrics', {}).get('cost_micros', 0) or 0 for r in report) / 1_000_000
+        def metrics(row):
+            return row.get('metrics', {}) or row.get('campaign', {}).get('metrics', {})
+
+        total_impressions = sum(metrics(r).get('impressions', 0) or 0 for r in report)
+        total_clicks = sum(metrics(r).get('clicks', 0) or 0 for r in report)
+        total_spend = sum(metrics(r).get('cost_micros', 0) or 0 for r in report) / 1_000_000
+        total_conversions = sum(metrics(r).get('conversions', 0) or 0 for r in report)
         
         return {
             "total_impressions": total_impressions,
             "total_clicks": total_clicks,
             "total_spend": round(total_spend, 2),
+            "total_conversions": total_conversions,
             "campaign_count": len(report)
         }

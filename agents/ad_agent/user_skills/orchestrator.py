@@ -84,7 +84,7 @@ class AdCampaignOrchestratorHandler(ToolHandler):
         
         platform_configs = {
             "meta": {
-                "tool_sequence": ["meta_create_campaign", "meta_create_ad_set", "meta_create_ad"],
+                "tool_sequence": ["meta_create_campaign", "meta_create_adset", "meta_create_ad"],
                 "params_template": {
                     "campaign_name": f"{intent.objective or 'sales'}_campaign",
                     "objective": self._map_objective_to_meta(intent.objective),
@@ -101,7 +101,7 @@ class AdCampaignOrchestratorHandler(ToolHandler):
                 }
             },
             "tiktok": {
-                "tool_sequence": ["tiktok_create_campaign", "tiktok_create_ad_group", "tiktok_create_ad"],
+                "tool_sequence": ["tiktok_create_campaign", "tiktok_create_adgroup", "tiktok_create_ad"],
                 "params_template": {
                     "campaign_name": f"{intent.objective or 'sales'}_campaign",
                     "objective": self._map_objective_to_tiktok(intent.objective),

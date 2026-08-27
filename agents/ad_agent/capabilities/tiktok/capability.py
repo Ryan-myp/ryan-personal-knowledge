@@ -4,7 +4,7 @@ capabilities/tiktok/capability.py - TikTok Capability 定义
 import logging
 from typing import Optional
 from ...core.interfaces import ToolDefinition, ToolSchema, RiskLevel, ToolEffect, ReplayPolicy, ToolHandler
-from ..base import BaseCapability
+from ..base import BaseCapability, CampaignUpdateHandler
 from .campaigns import (
     TikTokListCampaignsHandler,
     TikTokGetCampaignHandler,
@@ -17,6 +17,21 @@ from .ad_groups import (
 )
 from .ads import TikTokListAdsHandler, TikTokGetAdHandler, TikTokCreateAdHandler
 from .reports import TikTokGetReportHandler
+from .audiences import TikTokListAudiencesHandler
+from .spark import TikTokSparkAdsCreateHandler
+from .creatives import (
+    TikTokListCreativesHandler,
+    TikTokListVideosHandler,
+    TikTokListImagesHandler,
+)
+from .reference import (
+    TikTokListConversionsHandler,
+    TikTokListLocationsHandler,
+    TikTokListDevicesHandler,
+    TikTokListCatalogsHandler,
+    TikTokListAppsHandler,
+    TikTokListBrandSafetyHandler,
+)
 from ...api_clients.tiktok_client import TikTokAPIClient
 
 logger = logging.getLogger(__name__)
@@ -50,10 +65,12 @@ class TikTokCapability(BaseCapability):
             name="tiktok_get_campaign",
             skill="tiktok-ads-api-expert",
             platform="tiktok",
-            description="查询 TikTok Ads Campaign 详情。",
+            description="查询 TikTok Ads Campaign 详情（支持 campaign_id 或 campaign_name）。",
             input_schema=ToolSchema(
-                required=["campaign_id"],
-                properties={"campaign_id": {"type": "string"}},
+                properties={
+                    "campaign_id": {"type": "string"},
+                    "campaign_name": {"type": "string", "description": "Campaign 名称（可通过名称查找 ID）"},
+                },
             ),
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
@@ -73,11 +90,19 @@ class TikTokCapability(BaseCapability):
                     "account_id": {"type": "string"},
                     "name": {"type": "string"},
                     "budget": {"type": "number"},
+                    "daily_budget": {"type": "number"},
+                    "objective_type": {"type": "string"},
+                    "campaign_type": {"type": "string"},
+                    "campaign_automation_type": {"type": "string"},
+                    "budget_restriction": {"type": "string"},
+                    "budget_mode": {"type": "string"},
+                    "app_promotion_type": {"type": "string"},
+                    "status": {"type": "integer"},
                 },
             ),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
-            replay_policy=ReplayPolicy.SAFE,
+            replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "campaign"],
         ), TikTokCreateCampaignHandler(api_client)))
 
@@ -121,11 +146,22 @@ class TikTokCapability(BaseCapability):
             description="创建 TikTok Ads Ad Group。",
             input_schema=ToolSchema(
                 required=["campaign_id", "name"],
-                properties={"campaign_id": {"type": "string"}, "name": {"type": "string"}},
+                properties={
+                    "campaign_id": {"type": "string"},
+                    "name": {"type": "string"},
+                    "targeting": {"type": "object"},
+                    "promote_object_type": {"type": "integer"},
+                    "tracking_url": {"type": "string"},
+                    "bid_type": {"type": "integer"},
+                    "bid_amount": {"type": "number"},
+                    "daily_budget": {"type": "number"},
+                    "placement_type": {"type": "integer"},
+                    "status": {"type": "integer"},
+                },
             ),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
-            replay_policy=ReplayPolicy.SAFE,
+            replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "adgroup"],
         ), TikTokCreateAdGroupHandler(api_client)))
 
@@ -169,11 +205,20 @@ class TikTokCapability(BaseCapability):
             description="创建 TikTok Ads Ad。",
             input_schema=ToolSchema(
                 required=["adgroup_id", "name"],
-                properties={"adgroup_id": {"type": "string"}, "name": {"type": "string"}},
+                properties={
+                    "adgroup_id": {"type": "string"},
+                    "name": {"type": "string"},
+                    "campaign_id": {"type": "string"},
+                    "landing_page_url": {"type": "string"},
+                    "conversion_id": {"type": "integer"},
+                    "media": {"type": "object"},
+                    "text": {"type": "object"},
+                    "status": {"type": "integer"},
+                },
             ),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
-            replay_policy=ReplayPolicy.SAFE,
+            replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "ad"],
         ), TikTokCreateAdHandler(api_client)))
 
@@ -185,13 +230,124 @@ class TikTokCapability(BaseCapability):
             description="查询 TikTok Ads Campaign 报表。",
             input_schema=ToolSchema(
                 required=["account_id"],
-                properties={"account_id": {"type": "string"}, "date_range": {"type": "string"}},
+                properties={
+                    "account_id": {"type": "string"},
+                    "campaign_ids": {"type": "array", "items": {"type": "string"}},
+                    "date_range": {"type": "string"},
+                },
             ),
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
             replay_policy=ReplayPolicy.SAFE,
             traits=["read", "report"],
         ), TikTokGetReportHandler(api_client)))
+
+        tools.append((ToolDefinition(
+            name="tiktok_list_audiences",
+            skill="tiktok-ads-api-expert",
+            platform="tiktok",
+            description="查询 TikTok Audience 列表。",
+            input_schema=ToolSchema(
+                properties={"account_id": {"type": "string"}, "limit": {"type": "integer"}},
+            ),
+            risk_level=RiskLevel.LOW,
+            effect_class=ToolEffect.READ,
+            replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "audience"],
+        ), TikTokListAudiencesHandler(api_client)))
+
+        tools.append((ToolDefinition(
+            name="tiktok_spark_ads_create",
+            skill="tiktok-ads-api-expert",
+            platform="tiktok",
+            description="使用达人已有帖子创建 TikTok Spark Ad。",
+            input_schema=ToolSchema(
+                required=["account_id", "campaign_id", "adgroup_id", "spark_post_id"],
+                properties={
+                    "account_id": {"type": "string"},
+                    "campaign_id": {"type": "string"},
+                    "adgroup_id": {"type": "string"},
+                    "spark_post_id": {"type": "string"},
+                },
+            ),
+            risk_level=RiskLevel.MEDIUM,
+            effect_class=ToolEffect.WRITE,
+            replay_policy=ReplayPolicy.UNSAFE,
+            traits=["write", "spark", "ad"],
+        ), TikTokSparkAdsCreateHandler(api_client)))
+
+        for resource_name, result_key, handler in [
+            ("creatives", "creatives", TikTokListCreativesHandler(api_client)),
+            ("videos", "videos", TikTokListVideosHandler(api_client)),
+            ("images", "images", TikTokListImagesHandler(api_client)),
+        ]:
+            tools.append((ToolDefinition(
+                name=f"tiktok_list_{resource_name}",
+                skill="tiktok-ads-api-expert",
+                platform="tiktok",
+                description=f"查询 TikTok {resource_name} 素材库。",
+                input_schema=ToolSchema(
+                    required=["account_id"],
+                    properties={
+                        "account_id": {"type": "string"},
+                        "filtering": {"type": "array"},
+                        "limit": {"type": "integer"},
+                    },
+                ),
+                risk_level=RiskLevel.LOW,
+                effect_class=ToolEffect.READ,
+                replay_policy=ReplayPolicy.SAFE,
+                traits=["read", "creative", resource_name],
+            ), handler))
+
+        reference_tools = [
+            ("conversions", "account", TikTokListConversionsHandler(api_client)),
+            ("locations", None, TikTokListLocationsHandler(api_client)),
+            ("devices", None, TikTokListDevicesHandler(api_client)),
+            ("catalogs", "account", TikTokListCatalogsHandler(api_client)),
+            ("apps", None, TikTokListAppsHandler(api_client)),
+            ("brand_safety", None, TikTokListBrandSafetyHandler(api_client)),
+        ]
+        for resource_name, account_scope, handler in reference_tools:
+            properties = {
+                "location_type": {"type": "string"},
+                "filtering": {"type": "array"},
+                "limit": {"type": "integer"},
+            }
+            required = []
+            if account_scope == "account":
+                properties["account_id"] = {"type": "string"}
+                required = ["account_id"]
+            tools.append((ToolDefinition(
+                name=f"tiktok_list_{resource_name}",
+                skill="tiktok-ads-api-expert",
+                platform="tiktok",
+                description=f"查询 TikTok {resource_name} 参考数据。",
+                input_schema=ToolSchema(required=required, properties=properties),
+                risk_level=RiskLevel.LOW,
+                effect_class=ToolEffect.READ,
+                replay_policy=ReplayPolicy.SAFE,
+                traits=["read", resource_name],
+            ), handler))
+
+        for resource_type, resource_id in [("campaign", "campaign_id"), ("adgroup", "adgroup_id"), ("ad", "ad_id")]:
+            properties = {resource_id: {"type": "string"}, "updates": {"type": "object"}}
+            if resource_type in ("adgroup", "ad"):
+                properties["campaign_id"] = {"type": "string"}
+            tools.append((ToolDefinition(
+                name=f"tiktok_update_{resource_type}",
+                skill="tiktok-ads-api-expert",
+                platform="tiktok",
+                description=f"更新 TikTok Ads {resource_type}，默认仅生成 dry-run 计划。",
+                input_schema=ToolSchema(
+                    required=[resource_id, "updates"], properties=properties,
+                ),
+                risk_level=RiskLevel.MEDIUM,
+                effect_class=ToolEffect.WRITE,
+                replay_policy=ReplayPolicy.UNSAFE,
+                traits=["write", resource_type],
+                live_support=(resource_type in ("campaign", "adgroup")),
+            ), CampaignUpdateHandler(api_client, resource_type)))
 
         return tools
 

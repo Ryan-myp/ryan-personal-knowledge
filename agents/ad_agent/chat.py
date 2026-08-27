@@ -29,16 +29,18 @@ from agents.ad_agent import (
     AdAgentStore,
 )
 from agents.ad_agent.user_skills.orchestrator import AdCampaignOrchestratorSkill
+from agents.ad_agent.api_clients.factory import create_platform_client
+from agents.ad_agent.capabilities.factory import create_capability, SUPPORTED_PLATFORMS
 
 
 def print_banner():
     """打印欢迎界面"""
     print("""
 ╔══════════════════════════════════════════════════════════════╗
-║                   🚀 ad-agent 对话入口                        ║
+    ║               🚀 ad-agent 广告专家助手（安全 dry-run）          ║
 ║                                                              ║
 ║  支持平台: Meta / Google Ads / TikTok / DV360                ║
-║  模式: Mock (无需 API 凭证)                                  ║
+    ║  模式: 🧪 dry-run（创建/更新只生成计划，不调用线上写 API）      ║
 ║                                                              ║
 ║  命令:                                                       ║
 ║    /clear    - 清除会话历史                                   ║
@@ -113,35 +115,47 @@ def print_status(runtime: AgentRuntime, session_id: str):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="ad-agent 对话入口")
-    parser.add_argument("--credentials", help="API 凭证文件路径")
-    parser.add_argument("--user", default="anonymous", help="用户 ID")
-    parser.add_argument("--account", help="广告账户 ID")
+    parser = argparse.ArgumentParser(description="ad-agent 对话入口（安全 dry-run 模式）")
+    parser.add_argument("--credentials", help="API 凭证文件路径 (JSON)")
+    parser.add_argument("--user", default="web_user", help="用户 ID")
+    parser.add_argument("--account", help="广告账户 ID（不指定则自动使用白名单第一个测试账户）")
     args = parser.parse_args()
-    
-    # 初始化 Runtime
+
+    # 初始化 Runtime（只读模式）
     store = AdAgentStore("ad_agent.db")
-    runtime = AgentRuntime(persistence_store=store)
-    
-    # 加载凭证（如果提供）
+    runtime = AgentRuntime(
+        persistence_store=store,
+        read_only_mode=False,
+        execution_mode="dry_run",
+        offline_mode=False,
+    )
+
+    # 加载凭证
     credentials = {}
     if args.credentials and os.path.exists(args.credentials):
         with open(args.credentials) as f:
             credentials = json.load(f)
-    
-    # 注册所有平台 Capability
-    runtime.register_capability(create_meta_capability(credentials.get("meta")))
-    runtime.register_capability(create_google_capability(credentials.get("google")))
-    runtime.register_capability(create_tiktok_capability(credentials.get("tiktok")))
-    runtime.register_capability(create_dv360_capability())
-    
-    # 注册编排 Skill
-    orchestrator = AdCampaignOrchestratorSkill()
-    runtime.registry.register(orchestrator.get_tool_definition(), orchestrator.get_handler())
-    
+
+    # 注册所有平台 Capability。工厂接收的是 API Client，而不是凭证字典；
+    # Client 的构造本身不发起网络请求，且 Runtime 仍固定为 dry-run。
+    for platform in SUPPORTED_PLATFORMS:
+        credential_key = "google" if platform == "google-ads" else platform
+        runtime.register_capability(
+            create_capability(
+                platform,
+                create_platform_client(platform, credentials.get(credential_key)),
+            )
+        )
+
+    # 设置凭证（自动填充白名单）
+    if credentials:
+        runtime.set_credentials(credentials)
+
     print_banner()
-    print(f"✅ 已注册 {len(runtime.registry.list_all())} 个工具")
-    print(f"📦 平台: meta, google, tiktok, dv360")
+    platforms = runtime.registry.list_all_platforms()
+    tools = runtime.registry.list_all()
+    print(f"✅ 已注册 {len(tools)} 个工具（dry-run，写操作只生成本地计划）")
+    print(f"📦 平台: {', '.join(platforms)}")
     print(f"💾 持久化: ad_agent.db")
     print()
     
@@ -175,11 +189,11 @@ def main():
   /help   - 显示帮助
   /quit   - 退出程序
 
-示例输入:
-  - 帮我投放Meta广告，预算100元/天
-  - 在TikTok上创建产品销售广告
-  - 查询Meta和Google过去7天的报表
-  - 用这张海报图，投放Meta和Google，预算200元/天
+示例输入（dry-run 模式）:
+  - 列出 Meta Campaign 列表
+  - 查询 Google Ads 过去7天报表
+  - 查看 TikTok 广告组列表
+  - 获取 DV360 Campaign 详情
 """)
                 continue
             

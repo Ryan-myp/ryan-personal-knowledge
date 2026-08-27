@@ -12,6 +12,9 @@ import time
 import requests
 import logging
 import hashlib
+import copy
+import random
+import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Optional, Callable
@@ -68,7 +71,7 @@ class RetryConfig:
         )
         if self.jitter:
             # 添加 0~50% 随机抖动，避免雪崩
-            delay = delay * (0.5 + 0.5 * hash((time.time(), attempt)) % 100 / 100)
+            delay = delay * random.uniform(0.5, 1.0)
         return delay
 
 
@@ -90,21 +93,26 @@ class RateLimiter:
         self.max_requests = max_requests
         self.period = period
         self._timestamps: list[float] = []
+        self._lock = threading.RLock()
     
     def acquire(self) -> None:
         """获取令牌，如果超出限制则阻塞等待"""
-        now = time.time()
-        # 移除过期的时间戳
-        self._timestamps = [t for t in self._timestamps if now - t < self.period]
-        
-        if len(self._timestamps) >= self.max_requests:
-            # 计算需要等待的时间
-            wait_time = self.period - (now - self._timestamps[0])
-            if wait_time > 0:
-                logger.debug(f"Rate limiter: waiting {wait_time:.2f}s")
-                time.sleep(wait_time)
-        
-        self._timestamps.append(time.time())
+        # A client is shared by multiple Runtime sessions.  Protect the
+        # timestamp window so concurrent requests cannot oversubscribe it.
+        with self._lock:
+            now = time.time()
+            self._timestamps = [t for t in self._timestamps if now - t < self.period]
+
+            if len(self._timestamps) >= self.max_requests:
+                wait_time = self.period - (now - self._timestamps[0])
+                if wait_time > 0:
+                    logger.debug(f"Rate limiter: waiting {wait_time:.2f}s")
+                    time.sleep(wait_time)
+                    now = time.time()
+                    self._timestamps = [
+                        t for t in self._timestamps if now - t < self.period
+                    ]
+            self._timestamps.append(time.time())
 
 
 # ─── 基类 ────────────────────────────────────────────────────────
@@ -132,7 +140,11 @@ class BasePlatformClient(ABC):
         retry_config: Optional[RetryConfig] = None,
         rate_limiter: Optional[RateLimiter] = None,
     ):
-        self.credentials = credentials
+        # Keep an internal snapshot.  Client-side token refresh and endpoint
+        # normalization must never mutate the caller-owned credential object.
+        # This is especially important when one runtime shares a credential
+        # configuration across multiple platform clients.
+        self.credentials = copy.deepcopy(credentials or {})
         self.platform = platform
         self.retry_config = retry_config or RetryConfig()
         self.rate_limiter = rate_limiter
@@ -158,6 +170,7 @@ class BasePlatformClient(ABC):
         method: str,
         endpoint: str,
         retry_count: int = 0,
+        retry_non_idempotent: bool = False,
         **kwargs
     ) -> Any:
         """
@@ -169,28 +182,90 @@ class BasePlatformClient(ABC):
         3. 检查错误（认证/限流/临时）
         4. 根据错误类型决定是否重试
         """
-        # 限流检查
+        response = self.request_raw(
+            method,
+            endpoint,
+            retry_count=retry_count,
+            retry_non_idempotent=retry_non_idempotent,
+            **kwargs,
+        )
+        return self._extract_data(response)
+
+    def request_raw(
+        self,
+        method: str,
+        endpoint: str,
+        retry_count: int = 0,
+        retry_non_idempotent: bool = False,
+        **kwargs,
+    ) -> dict:
+        """Execute a request and return the transport envelope.
+
+        Some provider APIs expose response-specific envelopes (for example
+        TikTok's ``code/message/data`` or Google REST's ``results``).  Those
+        adapters need the raw HTTP status and body to normalize the response,
+        but they must still receive the same retry and error handling as the
+        high-level ``request`` method.  Provider code should use this method
+        instead of calling ``_do_request`` directly.
+        """
         if self.rate_limiter:
             self.rate_limiter.acquire()
-        
+
         try:
             url = self._build_url(endpoint)
             logger.debug(f"[{self.platform}] {method} {endpoint}")
-            
             response = self._do_request(method, url, **kwargs)
-            status_code = response.get('status_code', 200)
-            
-            # 解析错误
+            status_code = response.get("status_code", 200)
             error = self._handle_error(response, status_code)
             if error:
-                return self._on_error(error, method, endpoint, retry_count, kwargs)
-            
-            return self._extract_data(response)
-            
+                # A provider 401 is recoverable only when this client has a
+                # caller-supplied refresh path.  Retry GET-like requests once
+                # after clearing the cached token; never replay a POST/PUT/
+                # PATCH/DELETE merely because authentication failed.
+                if (
+                    status_code == 401
+                    and retry_count == 0
+                    and method.upper() in {"GET", "HEAD", "OPTIONS"}
+                    and self._reset_auth()
+                ):
+                    return self.request_raw(
+                        method,
+                        endpoint,
+                        retry_count=retry_count + 1,
+                        retry_non_idempotent=retry_non_idempotent,
+                        **kwargs,
+                    )
+                return self._on_error_raw(
+                    error,
+                    method,
+                    endpoint,
+                    retry_count,
+                    kwargs,
+                    retry_non_idempotent=retry_non_idempotent,
+                )
+            return response
         except requests.exceptions.Timeout as e:
-            return self._on_error(TemporaryError(f"Timeout: {e}"), method, endpoint, retry_count, kwargs)
+            return self._on_error_raw(
+                TemporaryError(f"Timeout: {e}"),
+                method,
+                endpoint,
+                retry_count,
+                kwargs,
+                retry_non_idempotent=retry_non_idempotent,
+            )
         except requests.exceptions.ConnectionError as e:
-            return self._on_error(TemporaryError(f"Connection error: {e}"), method, endpoint, retry_count, kwargs)
+            return self._on_error_raw(
+                TemporaryError(f"Connection error: {e}"),
+                method,
+                endpoint,
+                retry_count,
+                kwargs,
+                retry_non_idempotent=retry_non_idempotent,
+            )
+
+    def _reset_auth(self) -> bool:
+        """Clear auth state and report whether a refresh retry is possible."""
+        return False
     
     def _on_error(
         self,
@@ -229,6 +304,45 @@ class BasePlatformClient(ABC):
             time.sleep(delay)
             return self.request(method, endpoint, retry_count + 1, **kwargs)
         
+        raise error
+
+    def _on_error_raw(
+        self,
+        error: APIError,
+        method: str,
+        endpoint: str,
+        retry_count: int,
+        kwargs: dict,
+        retry_non_idempotent: bool = False,
+    ) -> dict:
+        """Raw-envelope counterpart of :meth:`_on_error`."""
+        logger.warning(
+            f"[{self.platform}] Error on {method} {endpoint}: {error} "
+            f"(retry={retry_count}/{self.retry_config.max_retries})"
+        )
+        if isinstance(error, AuthError):
+            raise error
+
+        should_retry = (
+            retry_count < self.retry_config.max_retries
+            and isinstance(error, self.retry_config.retryable_errors)
+            and (
+                method.upper() in {"GET", "HEAD", "OPTIONS"}
+                or retry_non_idempotent
+            )
+        )
+        if should_retry:
+            delay = error.retry_after if isinstance(error, RateLimitError) else self.retry_config.get_delay(retry_count)
+            delay = min(max(float(delay), 0.0), self.retry_config.max_delay)
+            logger.info(f"[{self.platform}] Retrying in {delay:.2f}s...")
+            time.sleep(delay)
+            return self.request_raw(
+                method,
+                endpoint,
+                retry_count + 1,
+                retry_non_idempotent=retry_non_idempotent,
+                **kwargs,
+            )
         raise error
     
     def _build_url(self, endpoint: str) -> str:

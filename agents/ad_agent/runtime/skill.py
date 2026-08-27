@@ -10,6 +10,7 @@ import re
 import yaml
 from dataclasses import dataclass, field
 from typing import Any, Optional
+from pathlib import Path
 from ..core.interfaces import (
     ToolDefinition, ToolHandler, ToolSchema, Skill, ToolContext
 )
@@ -349,13 +350,15 @@ class SkillLoader:
     """
     
     def __init__(self, skill_roots: list[str] = None):
-        self._roots = skill_roots or []
+        default_root = Path(__file__).resolve().parent.parent / "skills"
+        self._roots = [Path(root) for root in (skill_roots or [default_root])]
         self._skills: dict[str, Skill] = {}
     
     def add_root(self, root: str) -> None:
         """添加 Skill 根目录"""
-        if root not in self._roots:
-            self._roots.append(root)
+        root_path = Path(root)
+        if root_path not in self._roots:
+            self._roots.append(root_path)
     
     def load_all(self) -> dict[str, Skill]:
         """加载所有根目录下的 Skills"""
@@ -365,13 +368,12 @@ class SkillLoader:
     
     def _load_from_root(self, root: str) -> None:
         """从根目录递归加载 Skills"""
-        if not os.path.isdir(root):
+        root_path = Path(root)
+        if not root_path.is_dir():
             return
-        
-        for entry in os.listdir(root):
-            skill_dir = os.path.join(root, entry)
-            if os.path.isdir(skill_dir) and self._is_skill_dir(skill_dir):
-                self._load_single_skill(skill_dir)
+
+        for skill_file in root_path.rglob("SKILL.md"):
+            self._load_single_skill(str(skill_file.parent))
     
     def _is_skill_dir(self, path: str) -> bool:
         """判断是否为 Skill 目录（必须有 SKILL.md）"""

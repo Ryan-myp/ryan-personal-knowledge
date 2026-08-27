@@ -20,11 +20,28 @@ class TikTokGetReportHandler(ToolHandler):
         account_id = ctx.account_id
         if self.client and account_id:
             try:
-                report = self.client.get_report(
-                    account_id=account_id,
-                    date_range=input_data.get("date_range"),
-                )
-                return ToolResult.ok({"report": report})
+                campaign_ids = input_data.get("campaign_ids") or []
+                # get_report() is account-level. Use the campaign report API
+                # whenever a comparison supplies campaign IDs.
+                if campaign_ids and hasattr(self.client, "get_campaign_report"):
+                    date_range = input_data.get("date_range")
+                    report = self.client.get_campaign_report(
+                        advertiser_id=account_id,
+                        campaign_ids=campaign_ids,
+                        time_range=date_range,
+                    )
+                else:
+                    date_range = input_data.get("date_range")
+                    report = self.client.get_report(
+                        advertiser_id=account_id,
+                        date_preset=(
+                            date_range
+                            if isinstance(date_range, str) and date_range
+                            else "LAST_7_DAYS"
+                        ),
+                        time_range=date_range if isinstance(date_range, dict) else None,
+                    )
+                return ToolResult.ok({"report": report, "data_status": "live"})
             except Exception as e:
                 return ToolResult.error(f"Failed to get TikTok report: {e}")
         else:
@@ -35,5 +52,7 @@ class TikTokGetReportHandler(ToolHandler):
                     "spend": 480.50,
                     "ctr": 0.0256,
                     "conversions": 48,
-                }
+                },
+                "data_status": "offline_mock",
+                "simulated": True,
             })

@@ -18,9 +18,16 @@ class MetaListAdSetsHandler(ToolHandler):
 
     def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
         campaign_id = input_data.get("campaign_id")
-        if self.client and campaign_id:
+        account_id = ctx.account_id
+        if self.client and account_id and campaign_id:
             try:
-                ad_sets = self.client.list_ad_sets(campaign_id)
+                if isinstance(self.client, MetaAPIClient) and not self.client.resource_belongs_to_account(
+                    account_id, "campaign", campaign_id
+                ):
+                    return ToolResult.error(
+                        f"Campaign {campaign_id} does not belong to account {account_id}"
+                    )
+                ad_sets = self.client.list_adsets(account_id, campaign_id)
                 return ToolResult.ok({"ad_sets": ad_sets})
             except Exception as e:
                 return ToolResult.error(f"Failed to list Meta ad sets: {e}")
@@ -36,6 +43,12 @@ class MetaGetAdSetHandler(ToolHandler):
         adset_id = input_data.get("adset_id")
         if self.client:
             try:
+                if isinstance(self.client, MetaAPIClient) and not self.client.resource_belongs_to_account(
+                    ctx.account_id, "adset", adset_id
+                ):
+                    return ToolResult.error(
+                        f"Ad Set {adset_id} does not belong to account {ctx.account_id}"
+                    )
                 adset = self.client.get_adset(adset_id)
                 return ToolResult.ok({"adset": adset})
             except Exception as e:
@@ -56,10 +69,16 @@ class MetaCreateAdSetHandler(ToolHandler):
         campaign_id = input_data.get("campaign_id")
         if self.client and campaign_id:
             try:
+                if isinstance(self.client, MetaAPIClient) and not self.client.resource_belongs_to_account(
+                    ctx.account_id, "campaign", campaign_id
+                ):
+                    return ToolResult.error(
+                        f"Campaign {campaign_id} does not belong to account {ctx.account_id}"
+                    )
                 adset_id = self.client.create_adset(
+                    account_id=ctx.account_id,
                     campaign_id=campaign_id,
-                    name=input_data.get("name"),
-                    targeting=input_data.get("targeting", {}),
+                    adset=input_data,
                 )
                 return ToolResult.ok({
                     "adset_id": adset_id,

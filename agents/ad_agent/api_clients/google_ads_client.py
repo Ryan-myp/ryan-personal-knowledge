@@ -11,6 +11,9 @@ Customer → Campaign → AdGroup → Ad
 import logging
 import time
 import json
+import copy
+import re
+import threading
 from typing import Any, Optional
 from datetime import datetime
 import requests
@@ -31,6 +34,11 @@ class GoogleAdsAPIClient(BasePlatformClient):
     """
     
     BASE_URL = "https://googleads.googleapis.com/v24"
+    DATE_LITERALS = {
+        "TODAY", "YESTERDAY", "LAST_7_DAYS", "LAST_14_DAYS", "LAST_30_DAYS",
+        "THIS_MONTH", "LAST_MONTH", "THIS_WEEK_SUN_TODAY", "THIS_WEEK_MON_TODAY",
+    }
+    CAMPAIGN_UPDATE_FIELDS = {"name", "status", "daily_budget", "budget"}
     
     def __init__(
         self,
@@ -39,46 +47,75 @@ class GoogleAdsAPIClient(BasePlatformClient):
         retry_config: Optional[RetryConfig] = None,
     ):
         super().__init__(credentials, "google", retry_config)
-        self.customer_id = customer_id or credentials.get('customer_id', '')
-        self.developer_token = credentials.get('developer_token', '')
-        self.login_customer_id = credentials.get('login_customer_id', self.customer_id)
+        self.customer_id = customer_id or self.credentials.get('customer_id', '')
+        self.developer_token = self.credentials.get('developer_token', '')
+        self.login_customer_id = self.credentials.get('login_customer_id', self.customer_id)
         self._rate_limiter = RateLimiter(max_requests=1000, period=60)  # 保守限流
-        self._token_expiry = 0
+        # Token state is deliberately kept outside credentials.  A supplied
+        # access token without an expiry is treated as caller-managed and is
+        # usable until the API rejects it; refresh is only attempted when an
+        # explicit expiry says it is stale or no access token exists.
+        self._access_token = self.credentials.get('access_token', '')
+        self._token_expiry = self.credentials.get('access_token_expires_at', 0) or 0
+        self._token_lock = threading.RLock()
     
     def _ensure_valid_token(self) -> str:
         """确保 access_token 有效，过期则自动刷新"""
-        import time
-        now = time.time()
-        
-        # 如果 token 未过期，直接返回
-        if self._token_expiry > now + 60:  # 提前 60 秒刷新
-            return self.credentials.get('access_token', '')
-        
-        # 检查是否有 refresh_token
-        refresh_token = self.credentials.get('refresh_token', '')
-        if not refresh_token:
-            raise AuthError("No refresh_token available")
-        
-        # 刷新 token
-        client_id = self.credentials.get('client_id', '')
-        client_secret = self.credentials.get('client_secret', '')
-        
-        token_url = "https://oauth2.googleapis.com/token"
-        resp = requests.post(token_url, data={
-            'client_id': client_id,
-            'client_secret': client_secret,
-            'refresh_token': refresh_token,
-            'grant_type': 'refresh_token'
-        })
-        
-        if resp.status_code != 200:
-            raise AuthError(f"Failed to refresh token: {resp.text}")
-        
-        token_info = resp.json()
-        self.credentials['access_token'] = token_info['access_token']
-        self._token_expiry = now + token_info.get('expires_in', 3600)
-        
-        return self.credentials['access_token']
+        with self._token_lock:
+            now = time.time()
+
+            # 如果调用方提供了未过期 token，直接使用。没有 expiry 的 token
+            # 由调用方管理，避免错误地要求 refresh_token。
+            if self._access_token and (
+                not self._token_expiry or self._token_expiry > now + 60
+            ):
+                return self._access_token
+
+            refresh_token = self.credentials.get('refresh_token', '')
+            if not refresh_token:
+                raise AuthError("No refresh_token available")
+
+            client_id = self.credentials.get('client_id', '')
+            client_secret = self.credentials.get('client_secret', '')
+
+            token_url = "https://oauth2.googleapis.com/token"
+            resp = requests.post(token_url, data={
+                'client_id': client_id,
+                'client_secret': client_secret,
+                'refresh_token': refresh_token,
+                'grant_type': 'refresh_token'
+            })
+
+            if resp.status_code != 200:
+                raise AuthError(f"Failed to refresh token: {resp.text}")
+
+            token_info = resp.json()
+            self._access_token = token_info['access_token']
+            self._token_expiry = now + token_info.get('expires_in', 3600)
+
+            return self._access_token
+
+    def _reset_auth(self) -> bool:
+        """Allow one safe read retry only when refresh credentials exist."""
+        if not self.credentials.get('refresh_token'):
+            return False
+        with self._token_lock:
+            self._access_token = ''
+            self._token_expiry = 0
+        return True
+
+    def for_customer(self, customer_id: str) -> "GoogleAdsAPIClient":
+        """Return an account-scoped view without mutating this client.
+
+        A Runtime can serve multiple Google customers concurrently.  The old
+        handlers changed ``self.customer_id`` for every request, so one
+        request could silently run against the account selected by another
+        request.  The shallow copy keeps the credential/token and rate-limit
+        state shared while isolating the mutable customer selector.
+        """
+        scoped = copy.copy(self)
+        scoped.customer_id = str(customer_id)
+        return scoped
     
     def _build_headers(self) -> dict:
         token = self._ensure_valid_token()
@@ -146,6 +183,18 @@ class GoogleAdsAPIClient(BasePlatformClient):
         # 临时错误
         if status_code >= 500:
             return TemporaryError(f"Google Ads server error {status_code}")
+
+        # Preserve an HTTP failure even when a proxy returns an empty or
+        # non-JSON body. Only 5xx/explicitly retryable errors may be retried.
+        if status_code >= 400:
+            error_msg = "Bad request"
+            if isinstance(data, dict):
+                error_msg = data.get('error', {}).get('message', error_msg)
+            return APIError(
+                f"Google Ads HTTP {status_code}: {error_msg}",
+                status_code=status_code,
+                response=data if isinstance(data, dict) else None,
+            )
         
         # API 业务错误
         if isinstance(data, dict) and 'error' in data:
@@ -167,11 +216,8 @@ class GoogleAdsAPIClient(BasePlatformClient):
         )
         if filter_query:
             query += f" WHERE {filter_query}"
-        query += f" LIMIT {page_size}"
-        
-        result = self._search(query)
+        results = self._search_all(query, page_size=page_size)
         # 解析嵌套结构：result['data']['results'][i]['campaign']
-        results = result.get('data', {}).get('results', [])
         campaigns = []
         for r in results:
             camp = r.get('campaign', {})
@@ -188,6 +234,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
     
     def get_campaign(self, campaign_id: str) -> dict:
         """获取 Campaign 详情"""
+        campaign_id = self._numeric_id(campaign_id, "campaign_id")
         query = f"""
             SELECT campaign.id, campaign.name, campaign.status,
                    campaign.advertising_channel_type, campaign.bidding_strategy
@@ -210,16 +257,15 @@ class GoogleAdsAPIClient(BasePlatformClient):
     
     def list_ad_groups(self, campaign_id: str, page_size: int = 100) -> list:
         """获取 Ad Group 列表"""
+        campaign_id = self._numeric_id(campaign_id, "campaign_id")
         query = f"""
             SELECT ad_group.id, ad_group.name, ad_group.status,
                    ad_group.type
             FROM ad_group
             WHERE campaign.id = {campaign_id}
-            LIMIT {page_size}
         """
-        result = self._search(query)
+        results = self._search_all(query, page_size=page_size)
         # 解析嵌套结构：result['data']['results'][i]['adGroup']
-        results = result.get('data', {}).get('results', [])
         ad_groups = []
         for r in results:
             ag = r.get('adGroup', r.get('ad_group', {}))
@@ -234,6 +280,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
     
     def get_ad_group(self, ad_group_id: str) -> dict:
         """获取 Ad Group 详情"""
+        ad_group_id = self._numeric_id(ad_group_id, "ad_group_id")
         query = f"""
             SELECT ad_group.id, ad_group.name, ad_group.status,
                    ad_group.type
@@ -255,16 +302,15 @@ class GoogleAdsAPIClient(BasePlatformClient):
     
     def list_ads(self, ad_group_id: str, page_size: int = 100) -> list:
         """获取 Ad 列表"""
+        ad_group_id = self._numeric_id(ad_group_id, "ad_group_id")
         # Google Ads GAQL 需要使用 ad.ad_group 资源名
         query = f"""
             SELECT ad.id, ad.name, ad.status
             FROM ad
             WHERE ad.ad_group = 'customers/{self.customer_id}/adGroups/{ad_group_id}'
-            LIMIT {page_size}
         """
-        result = self._search(query)
+        results = self._search_all(query, page_size=page_size)
         # 解析嵌套结构：result['data']['results'][i]['ad']
-        results = result.get('data', {}).get('results', [])
         ads = []
         for r in results:
             ad = r.get('ad', {})
@@ -275,9 +321,46 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 'status': ad.get('status'),
             })
         return ads
+
+    def list_keywords(
+        self,
+        campaign_id: str = None,
+        ad_group_id: str = None,
+        page_size: int = 100,
+    ) -> list:
+        """List keyword criteria with optional Campaign/Ad Group filters."""
+        query = (
+            "SELECT campaign.id, ad_group.id, ad_group_criterion.criterion_id, "
+            "ad_group_criterion.status, ad_group_criterion.keyword.text, "
+            "ad_group_criterion.keyword.match_type "
+            "FROM ad_group_criterion "
+            "WHERE ad_group_criterion.type = KEYWORD"
+        )
+        if campaign_id is not None:
+            query += f" AND campaign.id = {self._numeric_id(campaign_id, 'campaign_id')}"
+        if ad_group_id is not None:
+            query += f" AND ad_group.id = {self._numeric_id(ad_group_id, 'ad_group_id')}"
+
+        rows = self._search_all(query, page_size=page_size)
+        keywords = []
+        for row in rows:
+            criterion = row.get("adGroupCriterion", row.get("ad_group_criterion", {})) or {}
+            keyword = criterion.get("keyword", {}) or {}
+            campaign = row.get("campaign", {}) or {}
+            ad_group = row.get("adGroup", row.get("ad_group", {})) or {}
+            keywords.append({
+                "id": criterion.get("criterionId", criterion.get("criterion_id")),
+                "campaign_id": campaign.get("id"),
+                "ad_group_id": ad_group.get("id"),
+                "text": keyword.get("text"),
+                "match_type": keyword.get("matchType", keyword.get("match_type")),
+                "status": criterion.get("status"),
+            })
+        return keywords
     
     def get_ad(self, ad_id: str) -> dict:
         """获取 Ad 详情"""
+        ad_id = self._numeric_id(ad_id, "ad_id")
         query = f"""
             SELECT ad.id, ad.name, ad.status
             FROM ad
@@ -299,14 +382,13 @@ class GoogleAdsAPIClient(BasePlatformClient):
     
     def list_asset_groups(self, campaign_id: str, page_size: int = 100) -> list:
         """获取 PMax Campaign 的 Asset Group 列表"""
+        campaign_id = self._numeric_id(campaign_id, "campaign_id")
         query = f"""
             SELECT asset_group.id, asset_group.name, asset_group.status
             FROM asset_group
             WHERE campaign.id = {campaign_id}
-            LIMIT {page_size}
         """
-        result = self._search(query)
-        results = result.get('data', {}).get('results', [])
+        results = self._search_all(query, page_size=page_size)
         asset_groups = []
         for r in results:
             ag = r.get('assetGroup', {})
@@ -320,6 +402,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
     
     def get_asset_group(self, asset_group_id: str) -> dict:
         """获取 PMax Asset Group 详情"""
+        asset_group_id = self._numeric_id(asset_group_id, "asset_group_id")
         query = f"""
             SELECT asset_group.id, asset_group.name, asset_group.status
             FROM asset_group
@@ -352,62 +435,100 @@ class GoogleAdsAPIClient(BasePlatformClient):
         advertising_channel_type: SEARCH | SHOPPING | PERFORMANCE_MAX | VIDEO | DISPLAY | APP
         bidding_strategy: MANUAL_CPC | TARGET_CPA | MAXIMIZE_CONVERSIONS | TARGET_ROAS
         """
+        # Google Ads REST writes go through the customer-level mutate
+        # endpoints.  Resource-level POST/PUT endpoints look plausible but
+        # are not Google Ads API contracts.
         # Step 1: 创建预算
         budget_name = f"Budget for {name}"
         budget_amount_micros = int(daily_budget * 1_000_000)
-        
-        budget_url = f"{self.BASE_URL}/customers/{self.customer_id}/campaignBudgets"
         budget_data = {
-            'resourceName': f'customers/{self.customer_id}/campaignBudgets/-',
             'name': budget_name,
             'amountMicros': budget_amount_micros,
             'deliveryMethod': 'STANDARD',
             'explicitlyShared': True,
         }
-        
-        budget_resp = self._do_request('POST', budget_url, data=budget_data)
-        budget_resource_name = budget_resp.get('data', {}).get('resourceName', '')
-        
-        if not budget_resource_name:
-            raise APIError(f"Failed to create campaign budget: {budget_resp}")
-        
+        budget_resp = self._mutate('campaignBudgets', {'create': budget_data})
+        budget_resource_name = self._mutation_resource_name(budget_resp)
+
         # Step 2: 创建 Campaign（初始状态 PAUSED）
         campaign_data = {
-            'resourceName': f'customers/{self.customer_id}/campaigns/-',
             'name': name,
             'advertisingChannelType': advertising_channel_type,
             'status': 'PAUSED',
             'campaignBudget': budget_resource_name,
-            'biddingStrategy': bidding_strategy,
-            'finalUrlsAllowed': True,
         }
         
         # 出价策略附加参数
-        if bidding_strategy == 'TARGET_CPA':
-            campaign_data['targetCpaMicros'] = target_cpa_micros or 50000000
-        elif bidding_strategy == 'TARGET_ROAS':
-            campaign_data['targetRoas'] = target_roas or 4.0
-        elif bidding_strategy == 'MAXIMIZE_CONVERSIONS':
-            campaign_data['maximizeConversionValue'] = False
-        
-        campaign_url = f"{self.BASE_URL}/customers/{self.customer_id}/campaigns"
-        campaign_resp = self._do_request('POST', campaign_url, data=campaign_data)
-        
-        campaign_resource_name = campaign_resp.get('data', {}).get('resourceName', '')
-        campaign_id = campaign_resource_name.split('/')[-1] if campaign_resource_name else ''
-        
-        return str(campaign_id)
+        strategy = (bidding_strategy or 'MAXIMIZE_CONVERSIONS').upper()
+        if strategy == 'MANUAL_CPC':
+            campaign_data['manualCpc'] = {}
+        elif strategy == 'TARGET_CPA':
+            campaign_data['targetCpa'] = {
+                'targetCpaMicros': target_cpa_micros or 50000000,
+            }
+        elif strategy == 'TARGET_ROAS':
+            campaign_data['targetRoas'] = {'targetRoas': target_roas or 4.0}
+        else:
+            campaign_data['maximizeConversions'] = {}
+
+        try:
+            campaign_resp = self._mutate('campaigns', {'create': campaign_data})
+        except Exception:
+            # Budget creation and campaign creation are separate mutate calls.
+            # Best-effort cleanup avoids leaving an unreferenced budget behind.
+            try:
+                self._mutate('campaignBudgets', {'remove': budget_resource_name})
+            except Exception:
+                logger.exception("Failed to compensate orphaned campaign budget")
+            raise
+
+        campaign_resource_name = self._mutation_resource_name(campaign_resp)
+        if not campaign_resource_name:
+            raise APIError(f"Campaign mutate returned no resource name: {campaign_resp}")
+        return str(campaign_resource_name.split('/')[-1])
     
     def update_campaign(self, campaign_id: str, updates: dict) -> dict:
         """更新 Campaign"""
+        campaign_id = self._numeric_id(campaign_id, "campaign_id")
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("updates must be a non-empty object")
+        unknown = set(updates) - self.CAMPAIGN_UPDATE_FIELDS
+        if unknown:
+            raise ValueError(f"Unsupported Google Campaign update fields: {sorted(unknown)}")
+
         resource_name = f"customers/{self.customer_id}/campaigns/{campaign_id}"
-        patch_data = {
-            'resourceName': resource_name,
+        campaign_updates = {
+            key: value for key, value in updates.items()
+            if key not in {"daily_budget", "budget"}
         }
-        patch_data.update(updates)
-        
-        url = f"{self.BASE_URL}/{resource_name}"
-        resp = self._do_request('PUT', url, data=patch_data)
+        if campaign_updates:
+            patch_data = {'resourceName': resource_name, **campaign_updates}
+            operation = {
+                'update': self._camel_case_keys(patch_data),
+                'updateMask': {
+                    'paths': [self._camel_case(key) for key in campaign_updates],
+                },
+            }
+            self._mutate('campaigns', operation)
+
+        if "daily_budget" in updates or "budget" in updates:
+            budget = updates.get("daily_budget", updates.get("budget"))
+            try:
+                amount_micros = int(float(budget) * 1_000_000)
+            except (TypeError, ValueError):
+                raise ValueError("daily_budget must be a positive number")
+            if amount_micros <= 0:
+                raise ValueError("daily_budget must be greater than 0")
+            budget_resource = self._get_campaign_budget_resource(campaign_id)
+            if not budget_resource:
+                raise APIError("Campaign budget resource could not be resolved")
+            self._mutate("campaignBudgets", {
+                "update": {
+                    "resourceName": budget_resource,
+                    "amountMicros": amount_micros,
+                },
+                "updateMask": {"paths": ["amountMicros"]},
+            })
         return {'success': True, 'campaign_id': campaign_id}
     
     def pause_campaign(self, campaign_id: str) -> dict:
@@ -427,7 +548,6 @@ class GoogleAdsAPIClient(BasePlatformClient):
     ) -> str:
         """创建 Ad Group"""
         ad_group_data = {
-            'resourceName': f'customers/{self.customer_id}/adGroups/-',
             'name': name,
             'status': 'PAUSED',
             'campaign': f'customers/{self.customer_id}/campaigns/{campaign_id}',
@@ -435,12 +555,11 @@ class GoogleAdsAPIClient(BasePlatformClient):
             'cpcBidMicros': cpc_bid_micros,
         }
         
-        url = f"{self.BASE_URL}/customers/{self.customer_id}/adGroups"
-        resp = self._do_request('POST', url, data=ad_group_data)
-        
-        resource_name = resp.get('data', {}).get('resourceName', '')
-        ad_group_id = resource_name.split('/')[-1] if resource_name else ''
-        return str(ad_group_id)
+        resp = self._mutate('adGroups', {'create': ad_group_data})
+        resource_name = self._mutation_resource_name(resp)
+        if not resource_name:
+            raise APIError(f"Ad group mutate returned no resource name: {resp}")
+        return str(resource_name.split('/')[-1])
     
     # ==================== Ad 管理 ====================
     
@@ -453,22 +572,21 @@ class GoogleAdsAPIClient(BasePlatformClient):
     ) -> str:
         """创建响应式搜索广告"""
         ad_data = {
-            'resourceName': f'customers/{self.customer_id}/ads/-',
-            'type': 'RESPONSIVE_SEARCH_AD',
+            'adGroup': f'customers/{self.customer_id}/adGroups/{ad_group_id}',
             'status': 'PAUSED',
-            'finalUrls': [final_url],
-            'responseSearchAd': {
-                'headlineParts': [{'partText': h} for h in headlines[:15]],
-                'descriptionParts': [{'partText': d} for d in descriptions[:4]],
+            'ad': {
+                'finalUrls': [final_url],
+                'responsiveSearchAd': {
+                    'headlines': [{'text': h} for h in headlines[:15]],
+                    'descriptions': [{'text': d} for d in descriptions[:4]],
+                },
             },
         }
-        
-        url = f"{self.BASE_URL}/customers/{self.customer_id}/ads"
-        resp = self._do_request('POST', url, data=ad_data)
-        
-        resource_name = resp.get('data', {}).get('resourceName', '')
-        ad_id = resource_name.split('/')[-1] if resource_name else ''
-        return str(ad_id)
+        resp = self._mutate('adGroupAds', {'create': ad_data})
+        resource_name = self._mutation_resource_name(resp)
+        if not resource_name:
+            raise APIError(f"Ad mutate returned no resource name: {resp}")
+        return str(resource_name.split('/')[-1])
     
     # ==================== PMax Asset 管理 ====================
     
@@ -516,7 +634,11 @@ class GoogleAdsAPIClient(BasePlatformClient):
             'metrics.cost_per_conversion',
         ]
         
+        campaign_ids = [self._numeric_id(cid, "campaign_id") for cid in (campaign_ids or [])]
+        if not campaign_ids:
+            return []
         where_clause = " OR ".join([f"campaign.id = {cid}" for cid in campaign_ids])
+        date_clause = self._date_clause(date_from, date_to)
         
         query = f"""
             SELECT 
@@ -525,11 +647,14 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 {', '.join(metrics or default_metrics)}
             FROM campaign
             WHERE {where_clause}
-              AND segments.date BETWEEN '{date_from}' AND '{date_to}'
+              AND {date_clause}
         """
         
         result = self._search(query)
-        return result.get('results', [])
+        # _search returns the raw transport envelope, while some test/fake
+        # clients return the extracted payload.  Accept both shapes.
+        payload = result.get('data', result) if isinstance(result, dict) else {}
+        return payload.get('results', []) if isinstance(payload, dict) else []
     
     def get_adgroup_report(
         self,
@@ -539,9 +664,12 @@ class GoogleAdsAPIClient(BasePlatformClient):
         date_to: str = "TODAY",
     ) -> list:
         """查询 Ad Group 级别报表"""
+        campaign_id = self._numeric_id(campaign_id, "campaign_id")
+        date_clause = self._date_clause(date_from, date_to)
         where_clause = f"campaign.id = {campaign_id}"
         if adgroup_ids:
-            where_clause += f" AND ad_group.id IN ({', '.join(adgroup_ids)})"
+            safe_adgroup_ids = [self._numeric_id(value, "ad_group_id") for value in adgroup_ids]
+            where_clause += f" AND ad_group.id IN ({', '.join(safe_adgroup_ids)})"
         
         query = f"""
             SELECT 
@@ -552,22 +680,138 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 metrics.conversions, metrics.cost_per_conversion
             FROM ad_group
             WHERE {where_clause}
-              AND segments.date BETWEEN '{date_from}' AND '{date_to}'
+              AND {date_clause}
         """
         
         result = self._search(query)
-        return result.get('results', [])
+        payload = result.get('data', result) if isinstance(result, dict) else {}
+        return payload.get('results', []) if isinstance(payload, dict) else []
     
     # ==================== 辅助方法 ====================
-    
-    def _search(self, query: str) -> dict:
+
+    @staticmethod
+    def _numeric_id(value: Any, field_name: str) -> str:
+        """Validate IDs before interpolating them into GAQL."""
+        value = str(value or "").strip()
+        if not re.fullmatch(r"\d+", value):
+            raise ValueError(f"{field_name} must contain digits only")
+        return value
+
+    @staticmethod
+    def _safe_limit(value: Any) -> int:
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            value = 100
+        return min(max(value, 1), 10_000)
+
+    @classmethod
+    def _date_clause(cls, date_from: str, date_to: str) -> str:
+        """Build valid GAQL date syntax for literals or ISO dates."""
+        start = str(date_from or "LAST_30_DAYS").upper()
+        end = str(date_to or "TODAY").upper()
+        if start in cls.DATE_LITERALS and end in {"TODAY", start}:
+            return f"segments.date DURING {start}"
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", start) and re.fullmatch(
+            r"\d{4}-\d{2}-\d{2}", end
+        ):
+            return f"segments.date BETWEEN '{start}' AND '{end}'"
+        if start in cls.DATE_LITERALS and end == "TODAY":
+            return f"segments.date DURING {start}"
+        raise ValueError(
+            "Google date range must be a supported DURING literal or two ISO dates"
+        )
+
+    def _get_campaign_budget_resource(self, campaign_id: str) -> str:
+        """Resolve the budget resource required by Campaign budget updates."""
+        campaign_id = self._numeric_id(campaign_id, "campaign_id")
+        result = self._search(
+            "SELECT campaign.campaign_budget "
+            f"FROM campaign WHERE campaign.id = {campaign_id} LIMIT 1"
+        )
+        payload = result.get("data", result) if isinstance(result, dict) else {}
+        rows = payload.get("results", []) if isinstance(payload, dict) else []
+        if not rows or not isinstance(rows[0], dict):
+            return ""
+        campaign = rows[0].get("campaign", {}) or {}
+        budget = campaign.get("campaignBudget", campaign.get("campaign_budget", {}))
+        if isinstance(budget, dict):
+            return str(budget.get("resourceName") or budget.get("resource_name") or "")
+        return str(budget or "")
+
+    def _search(
+        self, query: str, page_token: str = None, page_size: int = None,
+    ) -> dict:
         """执行 GAQL 查询"""
         # 使用 customer_id 进行搜索（不是 login_customer_id）
         # login_customer_id 仅用于 header 中的权限验证
         # 注意: 端点格式是 /customers/{id}/googleAds:search (斜线不是冒号)
         url = f"{self.BASE_URL}/customers/{self.customer_id}/googleAds:search"
         data = {'query': query}
-        return self._do_request('POST', url, data=data)
+        if page_token:
+            data['pageToken'] = page_token
+        if page_size is not None:
+            data['pageSize'] = self._safe_limit(page_size)
+        # GAQL search is read-only despite using POST, so it is safe to retry
+        # when the provider returns a transient failure.
+        return self.request_raw('POST', url, data=data, retry_non_idempotent=True)
+
+    def _search_all(
+        self, query: str, page_size: int = 100, max_pages: int = 100,
+    ) -> list[dict]:
+        """Fetch all GAQL pages while bounding malformed-token loops."""
+        rows: list[dict] = []
+        page_token = None
+        seen_tokens: set[str] = set()
+        for _ in range(max_pages):
+            response = self._search(
+                query, page_token=page_token, page_size=page_size
+            )
+            payload = response.get('data', {}) if isinstance(response, dict) else {}
+            page_rows = payload.get('results', []) if isinstance(payload, dict) else []
+            if isinstance(page_rows, list):
+                rows.extend(row for row in page_rows if isinstance(row, dict))
+            next_token = payload.get('nextPageToken') if isinstance(payload, dict) else None
+            if not next_token or next_token in seen_tokens:
+                break
+            seen_tokens.add(next_token)
+            page_token = next_token
+        return rows
+
+    def _mutate(self, resource: str, operation: dict) -> dict:
+        """Execute one Google Ads customer-level mutate operation."""
+        url = f"{self.BASE_URL}/customers/{self.customer_id}/{resource}:mutate"
+        response = self.request_raw('POST', url, data={'operations': [operation]})
+        status = response.get('status_code', 200)
+        if status not in (200, 201, 202):
+            raise APIError(
+                f"Google Ads {resource} mutate returned HTTP {status}",
+                status_code=status, response=response,
+            )
+        return response
+
+    @staticmethod
+    def _mutation_resource_name(response: dict) -> str:
+        data = response.get('data', {}) if isinstance(response, dict) else {}
+        results = data.get('results', []) if isinstance(data, dict) else []
+        if results and isinstance(results[0], dict):
+            return results[0].get('resourceName', '')
+        # Accept a small legacy/fake envelope while keeping production parsing
+        # aligned with the Google Ads mutate response.
+        return data.get('resourceName', '') if isinstance(data, dict) else ''
+
+    @staticmethod
+    def _camel_case(value: str) -> str:
+        parts = value.split('_')
+        return parts[0] + ''.join(part[:1].upper() + part[1:] for part in parts[1:])
+
+    @classmethod
+    def _camel_case_keys(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            return {cls._camel_case(str(key)): cls._camel_case_keys(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [cls._camel_case_keys(item) for item in value]
+        return value
     
     def _format_value(self, value) -> Any:
         """格式化 API 返回值"""

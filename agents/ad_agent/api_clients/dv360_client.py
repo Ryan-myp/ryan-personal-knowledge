@@ -19,6 +19,7 @@ import logging
 import subprocess
 import tempfile
 import os
+import threading
 from typing import Any, Optional
 from datetime import datetime
 
@@ -51,39 +52,59 @@ class DV360APIClient(BasePlatformClient):
         retry_config: Optional[RetryConfig] = None,
     ):
         super().__init__(credentials, "dv360", retry_config)
-        self.sa_email = credentials.get('service_account_email', '')
-        self.private_key = credentials.get('private_key', '')
-        self.partner_id = credentials.get('partner_id', '')
-        self._access_token: Optional[str] = None
-        self._token_expiry: float = 0
+        self.sa_email = self.credentials.get('service_account_email', '')
+        self.private_key = self.credentials.get('private_key', '')
+        self.partner_id = self.credentials.get('partner_id', '')
+        self.private_key_id = self.credentials.get('private_key_id', '')
+        # Use a caller-provided token as a caller-managed token when no
+        # explicit expiry is supplied.  Refreshed state stays in this client
+        # and is never written back to the credential dictionary.
+        self._access_token: Optional[str] = self.credentials.get('access_token') or None
+        raw_expiry = self.credentials.get(
+            'access_token_expires_at', self.credentials.get('token_expiry', 0)
+        ) or 0
+        try:
+            self._token_expiry = float(raw_expiry)
+        except (TypeError, ValueError):
+            self._token_expiry = 0
+        self._token_lock = threading.RLock()
         self._rate_limiter = RateLimiter(max_requests=100, period=60)
     
     def _get_access_token(self) -> str:
         """获取或刷新 Access Token"""
-        now = time.time()
-        if self._access_token and now < self._token_expiry - 60:
+        with self._token_lock:
+            now = time.time()
+            if self._access_token and (
+                not self._token_expiry or now < self._token_expiry - 60
+            ):
+                return self._access_token
+
+            jwt_assertion = self._generate_jwt_assertion()
+            resp_data = self._exchange_token(jwt_assertion)
+
+            self._access_token = resp_data['access_token']
+            self._token_expiry = now + resp_data.get('expires_in', 3600)
+
             return self._access_token
-        
-        # 生成 JWT Assertion
-        jwt_assertion = self._generate_jwt_assertion()
-        
-        # 交换 Access Token
-        resp_data = self._exchange_token(jwt_assertion)
-        
-        self._access_token = resp_data['access_token']
-        self._token_expiry = now + resp_data.get('expires_in', 3600)
-        
-        return self._access_token
+
+    def _reset_auth(self) -> bool:
+        """Clear a stale service-account token before one safe read retry."""
+        if not (self.sa_email and self.private_key):
+            return False
+        with self._token_lock:
+            self._access_token = None
+            self._token_expiry = 0
+        return True
     
     def _generate_jwt_assertion(self) -> str:
         """
         生成 JWT Assertion（使用 openssl 命令行，避免 cryptography 依赖）
         """
-        header = {
-            "typ": "JWT",
-            "alg": "RS256",
-            "kid": "cafa5c37c7a8267111c8a32b1b4fa359792a297a"
-        }
+        header = {"typ": "JWT", "alg": "RS256"}
+        # Key IDs are credential-specific. Never substitute a hard-coded
+        # production key ID; include it only when the caller supplied one.
+        if self.private_key_id:
+            header["kid"] = self.private_key_id
         
         now = int(time.time())
         payload = {
@@ -173,6 +194,13 @@ class DV360APIClient(BasePlatformClient):
                 resp = _requests.post(url, headers=headers, json=kwargs.get('data'), timeout=30)
             elif method == 'PUT':
                 resp = _requests.put(url, headers=headers, json=kwargs.get('data'), timeout=30)
+            elif method == 'PATCH':
+                resp = _requests.patch(
+                    url,
+                    headers=headers,
+                    json=kwargs.get('data'),
+                    timeout=30,
+                )
             elif method == 'DELETE':
                 resp = _requests.delete(url, headers=headers, timeout=30)
             else:
@@ -213,6 +241,18 @@ class DV360APIClient(BasePlatformClient):
         
         if status_code >= 500:
             return TemporaryError(f"DV360 server error {status_code}")
+
+        # Do not treat an empty/non-JSON 4xx response as a successful API
+        # call.  Only transient server/rate-limit failures are retryable.
+        if status_code >= 400:
+            error_msg = "Bad request"
+            if isinstance(data, dict):
+                error_msg = data.get('error', {}).get('message', error_msg)
+            return APIError(
+                f"DV360 HTTP {status_code}: {error_msg}",
+                status_code=status_code,
+                response=data if isinstance(data, dict) else None,
+            )
         
         if isinstance(data, dict) and 'error' in data:
             err = data['error']
@@ -221,35 +261,57 @@ class DV360APIClient(BasePlatformClient):
             return APIError(f"DV360 {code}: {message}", status_code=status_code, response=data)
         
         return None
+
+    def _list_pages(
+        self, endpoint: str, collection_key: str, params: dict,
+        max_pages: int = 100,
+    ) -> list:
+        """Consume DV360 ``nextPageToken`` pages into one flat list."""
+        items: list = []
+        page_token = None
+        seen_tokens: set[str] = set()
+        for _ in range(max_pages):
+            page_params = dict(params)
+            if page_token:
+                page_params["pageToken"] = page_token
+            response = self.request_raw("GET", endpoint, params=page_params)
+            data = response.get("data", {})
+            page_items = data.get(collection_key, []) if isinstance(data, dict) else []
+            if isinstance(page_items, list):
+                items.extend(page_items)
+            next_token = data.get("nextPageToken") if isinstance(data, dict) else None
+            if not next_token or next_token in seen_tokens:
+                break
+            seen_tokens.add(next_token)
+            page_token = next_token
+        return items
     
     # ==================== 账户管理 ====================
     
     def list_advertisers(self, filter: str = None, page_size: int = 20) -> list:
         """获取广告主列表"""
-        self._rate_limiter.acquire()
         params = {'pageSize': page_size}
         if filter:
             params['filter'] = filter
-        
-        result = self._do_request('GET', f"{self.BASE_URL}/advertisers", params=params)
-        return result.get('data', {}).get('advertisers', [])
+        return self._list_pages(
+            f"{self.BASE_URL}/advertisers", "advertisers", params
+        )
     
     def get_advertiser(self, advertiser_id: str) -> dict:
         """获取广告主详情"""
-        result = self._do_request('GET', f"{self.BASE_URL}/advertisers/{advertiser_id}")
+        result = self.request_raw('GET', f"{self.BASE_URL}/advertisers/{advertiser_id}")
         return result.get('data', {})
     
     def list_campaigns(self, advertiser_id: str, page_size: int = 20) -> list:
         """获取 Campaign 列表"""
-        self._rate_limiter.acquire()
-        result = self._do_request('GET', 
-                                   f"{self.BASE_URL}/advertisers/{advertiser_id}/campaigns",
-                                   params={'pageSize': page_size})
-        return result.get('data', {}).get('campaigns', [])
+        return self._list_pages(
+            f"{self.BASE_URL}/advertisers/{advertiser_id}/campaigns",
+            "campaigns", {"pageSize": page_size},
+        )
     
     def get_campaign(self, advertiser_id: str, campaign_id: str) -> dict:
         """获取 Campaign 详情"""
-        result = self._do_request('GET', 
+        result = self.request_raw('GET',
                                    f"{self.BASE_URL}/advertisers/{advertiser_id}/campaigns/{campaign_id}")
         return result.get('data', {})
     
@@ -257,13 +319,14 @@ class DV360APIClient(BasePlatformClient):
     
     def list_ios(self, advertiser_id: str, page_size: int = 20) -> list:
         """获取 IO 列表"""
-        result = self._do_request('GET', f"{self.BASE_URL}/advertisers/{advertiser_id}/insertionOrders", 
-                                   params={'pageSize': page_size})
-        return result.get('data', {}).get('insertionOrders', [])
+        return self._list_pages(
+            f"{self.BASE_URL}/advertisers/{advertiser_id}/insertionOrders",
+            "insertionOrders", {"pageSize": page_size},
+        )
     
     def get_io(self, advertiser_id: str, io_id: str) -> dict:
         """获取 IO 详情"""
-        result = self._do_request('GET', f"{self.BASE_URL}/advertisers/{advertiser_id}/insertionOrders/{io_id}")
+        result = self.request_raw('GET', f"{self.BASE_URL}/advertisers/{advertiser_id}/insertionOrders/{io_id}")
         return result.get('data', {})
     
     def create_io(self, advertiser_id: str, io: dict) -> str:
@@ -277,7 +340,7 @@ class DV360APIClient(BasePlatformClient):
             'status': 'DRAFT',
         }
         
-        result = self._do_request('POST', f"{self.BASE_URL}/advertisers/{advertiser_id}/insertionOrders", data=body)
+        result = self.request_raw('POST', f"{self.BASE_URL}/advertisers/{advertiser_id}/insertionOrders", data=body)
         name = result.get('data', {}).get('name', '')
         return name.split('/')[-1] if name else ''
     
@@ -286,7 +349,7 @@ class DV360APIClient(BasePlatformClient):
         io = self.get_io(advertiser_id, io_id)
         io['status'] = 'ACTIVE'
         name = f"advertisers/{advertiser_id}/insertionOrders/{io_id}"
-        self._do_request('PATCH', f"{self.BASE_URL}/{name}", data=io)
+        self.request_raw('PATCH', f"{self.BASE_URL}/{name}", data=io)
         return {'success': True, 'io_id': io_id}
     
     def pause_io(self, advertiser_id: str, io_id: str) -> dict:
@@ -294,7 +357,7 @@ class DV360APIClient(BasePlatformClient):
         io = self.get_io(advertiser_id, io_id)
         io['status'] = 'PAUSED'
         name = f"advertisers/{advertiser_id}/insertionOrders/{io_id}"
-        self._do_request('PATCH', f"{self.BASE_URL}/{name}", data=io)
+        self.request_raw('PATCH', f"{self.BASE_URL}/{name}", data=io)
         return {'success': True, 'io_id': io_id}
     
     # ==================== Line Item 管理 ====================
@@ -305,9 +368,10 @@ class DV360APIClient(BasePlatformClient):
         if io_id:
             parent += f"/insertionOrders/{io_id}"
         
-        result = self._do_request('GET', f"{self.BASE_URL}/{parent}/lineItems", 
-                                   params={'pageSize': page_size})
-        return result.get('data', {}).get('lineItems', [])
+        return self._list_pages(
+            f"{self.BASE_URL}/{parent}/lineItems",
+            "lineItems", {"pageSize": page_size},
+        )
     
     def create_line_item(self, advertiser_id: str, io_id: str, line_item: dict) -> str:
         """创建 Line Item"""
@@ -319,7 +383,7 @@ class DV360APIClient(BasePlatformClient):
             'status': 'DRAFT',
         }
         
-        result = self._do_request('POST', 
+        result = self.request_raw('POST',
                                    f"{self.BASE_URL}/advertisers/{advertiser_id}/insertionOrders/{io_id}/lineItems",
                                    data=body)
         name = result.get('data', {}).get('name', '')
@@ -330,20 +394,24 @@ class DV360APIClient(BasePlatformClient):
         li = self._get_line_item(advertiser_id, io_id, li_id)
         li['status'] = 'ACTIVE'
         name = f"advertisers/{advertiser_id}/insertionOrders/{io_id}/lineItems/{li_id}"
-        self._do_request('PATCH', f"{self.BASE_URL}/{name}", data=li)
+        self.request_raw('PATCH', f"{self.BASE_URL}/{name}", data=li)
         return {'success': True, 'line_item_id': li_id}
     
     def _get_line_item(self, advertiser_id: str, io_id: str, li_id: str) -> dict:
         """获取 Line Item 详情（内部方法）"""
-        result = self._do_request('GET', 
+        result = self.request_raw('GET',
                                    f"{self.BASE_URL}/advertisers/{advertiser_id}/insertionOrders/{io_id}/lineItems/{li_id}")
         return result.get('data', {})
+
+    def get_line_item(self, advertiser_id: str, io_id: str, line_item_id: str) -> dict:
+        """获取 Line Item 详情。"""
+        return self._get_line_item(advertiser_id, io_id, line_item_id)
     
     # ==================== 报表 ====================
     
     def create_report(self, advertiser_id: str, report: dict) -> str:
         """创建报表任务（异步）"""
-        result = self._do_request('POST', 
+        result = self.request_raw('POST',
                                    f"{self.BASE_URL}/advertisers/{advertiser_id}/reports",
                                    data=report)
         name = result.get('data', {}).get('name', '')
@@ -351,7 +419,7 @@ class DV360APIClient(BasePlatformClient):
     
     def get_report_result(self, advertiser_id: str, report_id: str, limit: int = 1000) -> dict:
         """获取报表结果"""
-        result = self._do_request('GET',
+        result = self.request_raw('GET',
                                    f"{self.BASE_URL}/advertisers/{advertiser_id}/reports/{report_id}/rows",
                                    params={'limit': limit})
         return result.get('data', {})
@@ -381,16 +449,32 @@ class DV360APIClient(BasePlatformClient):
         }
         
         report_id = self.create_report(advertiser_id, report)
+        if not report_id:
+            raise APIError("DV360 report creation returned no report_id")
         
         # 轮询等待结果（最多 30 秒）
+        last_error = None
         for _ in range(30):
             time.sleep(1)
             try:
                 result = self.get_report_result(advertiser_id, report_id)
-                rows = result.get('rows', [])
-                if rows:
-                    return rows
-            except Exception:
-                pass
-        
-        return []
+                if not isinstance(result, dict):
+                    last_error = APIError("DV360 report result has an invalid response envelope")
+                    continue
+                # An explicit rows field means the asynchronous report is
+                # complete, including the valid no-data case.  An envelope
+                # without rows is still processing and should be polled.
+                if "rows" in result:
+                    return result.get("rows") or []
+            except AuthError:
+                raise
+            except APIError as exc:
+                last_error = exc
+            except Exception as exc:
+                last_error = APIError(f"DV360 report polling failed: {exc}")
+
+        if last_error:
+            raise APIError(
+                f"DV360 report polling timed out or failed: {last_error}"
+            )
+        raise APIError("DV360 report polling timed out before a result was available")

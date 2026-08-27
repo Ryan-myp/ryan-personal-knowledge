@@ -15,7 +15,6 @@ from dataclasses import dataclass, field
 
 from .interfaces import ToolDefinition, ParsedIntent, ToolContext
 from ..skills.loader import get_skill_loader
-from ..skills.registry import get_skill_registry
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +31,13 @@ class BusinessContext:
 
     def is_channel_allowed(self, channel: str) -> bool:
         """检查渠道是否被允许"""
-        if channel in self.disallowed_channels:
+        aliases = {"google-ads": "google", "google_ads": "google"}
+        normalized = aliases.get(str(channel).lower(), str(channel).lower())
+        disallowed = {aliases.get(str(item).lower(), str(item).lower()) for item in self.disallowed_channels}
+        allowed = {aliases.get(str(item).lower(), str(item).lower()) for item in self.allowed_channels}
+        if normalized in disallowed:
             return False
-        if self.allowed_channels and channel not in self.allowed_channels:
+        if allowed and normalized not in allowed:
             return False
         return True
 
@@ -43,6 +46,8 @@ class BusinessContext:
             "business": self.business_name,
             "allowed_channels": self.allowed_channels,
             "disallowed_channels": self.disallowed_channels,
+            "allowed_campaign_types": self.allowed_campaign_types,
+            "business_rules": self.business_rules,
             "focus_metrics": self.focus_metrics,
         }
 
@@ -80,6 +85,7 @@ class DynamicToolSelector:
     # 意图类型 → 工具关键词映射（用于筛选）
     INTENT_TOOL_MAP = {
         "create_campaign": ["create", "add", "new"],
+        "create_asset_group": ["create", "add", "new", "asset", "pmax"],
         "update_campaign": ["update", "modify", "edit"],
         "pause_campaign": ["pause", "stop", "disable"],
         "resume_campaign": ["resume", "start", "enable"],
@@ -93,7 +99,6 @@ class DynamicToolSelector:
     
     def __init__(self):
         self.skill_loader = get_skill_loader()
-        self.skill_registry = get_skill_registry()
         self.business_context: Optional[BusinessContext] = None
     
     def set_business_context(self, business_name: str, context: BusinessContext):
@@ -163,6 +168,33 @@ class DynamicToolSelector:
                 "business_context": self.business_context.to_dict() if self.business_context else None,
             },
         )
+
+    def build_context_for_input(
+        self,
+        user_input: str,
+        available_tools: List[ToolDefinition],
+    ) -> dict:
+        """Build bounded Skill context before intent parsing.
+
+        Intent parsing used to happen before the selector was consulted, which
+        meant the LLM never saw the channel tool contracts or expert guidance
+        that the selector had already prepared.  Use an intentionally neutral
+        intent here: it only narrows by detected platform and keeps the first
+        few registered tools, while the authoritative post-parse route still
+        comes from ``IntentRouter``.
+        """
+        platforms = self._detect_platforms(user_input)
+        probe_intent = ParsedIntent(
+            intent_type="",
+            raw_input=user_input,
+            platforms=platforms,
+        )
+        selection = self.select_tools(user_input, probe_intent, available_tools)
+        return {
+            "tool_prompt": self.build_tool_prompt(selection),
+            "expert_knowledge": selection.expert_knowledge,
+            "platforms": selection.platform,
+        }
     
     def _detect_platforms(self, user_input: str) -> List[str]:
         """从用户输入中检测平台"""
@@ -188,7 +220,12 @@ class DynamicToolSelector:
         available_tools: List[ToolDefinition]
     ) -> List[ToolDefinition]:
         """获取指定平台的所有工具"""
-        return [t for t in available_tools if t.platform == platform]
+        aliases = {"google": "google-ads", "google_ads": "google-ads"}
+        normalized = aliases.get(platform, platform)
+        return [
+            t for t in available_tools
+            if aliases.get(t.platform, t.platform) == normalized
+        ]
     
     def _filter_by_intent(
         self,
@@ -232,7 +269,7 @@ class DynamicToolSelector:
         intent_type: str
     ) -> str:
         """获取平台专家知识"""
-        skill = self.skill_loader.get_skill(platform)
+        skill = self._get_skill_by_platform(platform)
         if not skill:
             return ""
         
@@ -259,15 +296,42 @@ class DynamicToolSelector:
         knowledge = []
         
         for platform in platforms:
-            skill = self.skill_loader.get_skill(platform)
+            skill = self._get_skill_by_platform(platform)
             if skill and skill.expert_knowledge:
                 # 提取关键专家知识摘要
                 for key, content in list(skill.expert_knowledge.items())[:2]:
                     # 截取前 500 字符
                     summary = content[:500] + "..." if len(content) > 500 else content
                     knowledge.append(f"[{platform}] {key}: {summary}")
+            elif skill and getattr(skill, "description", None):
+                # Channel SKILL.md files currently carry their expert scope in
+                # frontmatter rather than separate expert/*.md files.  Keep a
+                # compact description available to the LLM instead of silently
+                # dropping all Skill context.
+                knowledge.append(f"[{platform}] skill_scope: {skill.description[:500]}")
         
         return "\n\n".join(knowledge)
+
+    def _get_skill_by_platform(self, platform: str):
+        """Resolve a skill by either its name or its declared platform.
+
+        Channel skills live below ``skills/channels`` and their registry key
+        is normally ``meta-marketing-api-expert`` rather than ``meta``.  The
+        old direct lookup therefore silently disabled expert knowledge.
+        """
+        aliases = {"google": "google-ads", "google_ads": "google-ads"}
+        normalized = aliases.get(str(platform).lower(), str(platform).lower())
+        skill = self.skill_loader.get_skill(platform)
+        if skill:
+            return skill
+        for candidate in getattr(self.skill_loader, "_skills", {}).values():
+            candidate_platform = aliases.get(
+                str(getattr(candidate, "platform", "")).lower(),
+                str(getattr(candidate, "platform", "")).lower(),
+            )
+            if candidate_platform == normalized:
+                return candidate
+        return None
     
     def build_tool_prompt(self, selection: ToolSelection) -> str:
         """构建工具列表 prompt（给 LLM 使用）"""

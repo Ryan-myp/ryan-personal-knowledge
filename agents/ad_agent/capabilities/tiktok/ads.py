@@ -18,9 +18,9 @@ class TikTokListAdsHandler(ToolHandler):
 
     def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
         adgroup_id = input_data.get("adgroup_id")
-        if self.client and adgroup_id:
+        if self.client and ctx.account_id and adgroup_id:
             try:
-                ads = self.client.list_ads(adgroup_id)
+                ads = self.client.list_ads(ctx.account_id, adgroup_id)
                 return ToolResult.ok({"ads": ads})
             except Exception as e:
                 return ToolResult.error(f"Failed to list TikTok ads: {e}")
@@ -34,9 +34,9 @@ class TikTokGetAdHandler(ToolHandler):
 
     def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
         ad_id = input_data.get("ad_id")
-        if self.client:
+        if self.client and ctx.account_id and input_data.get("adgroup_id"):
             try:
-                ad = self.client.get_ad(ad_id)
+                ad = self.client.get_ad(ctx.account_id, input_data.get("adgroup_id"), ad_id)
                 return ToolResult.ok({"ad": ad})
             except Exception as e:
                 return ToolResult.error(f"Failed to get TikTok ad: {e}")
@@ -57,8 +57,10 @@ class TikTokCreateAdHandler(ToolHandler):
         if self.client and adgroup_id:
             try:
                 ad_id = self.client.create_ad(
+                    advertiser_id=ctx.account_id,
+                    campaign_id=input_data.get("campaign_id"),
                     adgroup_id=adgroup_id,
-                    name=input_data.get("name"),
+                    ad=input_data,
                 )
                 return ToolResult.ok({
                     "ad_id": ad_id,

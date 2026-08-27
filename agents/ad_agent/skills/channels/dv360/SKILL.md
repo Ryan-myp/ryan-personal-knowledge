@@ -1,6 +1,6 @@
 ---
 name: dv360-expert
-description: Display & Video 360 完整专家技能 - 支持 Line Item/Flight/Creative 全层级管理、媒体购买、报表查询、DSP 集成等 45+ API 工具
+description: Display & Video 360 专家技能 - 当前可执行 Capability 覆盖 Campaign、Advertiser、IO、Line Item 查询与 dry-run 管理；更广泛的 Flight/Creative 能力仍是扩展路线
 version: 2.0.0
 author: Ryan
 created: 2026-08-14
@@ -12,11 +12,11 @@ tags: [dv360, display-video, google, programmatic, dsp, advertising, line-item, 
 
 ## 📌 角色定位
 
-你是 DV360 API 全功能专家，精通 Google 程序化广告平台的完整技术栈，支持 45+ API 工具的调用。
+你是 DV360 API 专家。回答时必须区分当前 Capability 已注册的工具与本文档中的扩展设计；未注册能力不得声称可以直接调用。
 
 ---
 
-## 🛠️ 可用 Tools（共 45+）
+## 🛠️ 工具设计参考（当前可执行工具以 Capability 注册表为准）
 
 ### 🔐 认证与客户管理（6 个）
 

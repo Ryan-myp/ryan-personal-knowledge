@@ -17,6 +17,17 @@ from .ads import (
     TikTokCreateAdHandler,
 )
 from .reports import TikTokGetReportHandler
+from .audiences import TikTokListAudiencesHandler
+from .spark import TikTokSparkAdsCreateHandler
+from .creatives import TikTokListCreativesHandler, TikTokListVideosHandler, TikTokListImagesHandler
+from .reference import (
+    TikTokListConversionsHandler,
+    TikTokListLocationsHandler,
+    TikTokListDevicesHandler,
+    TikTokListCatalogsHandler,
+    TikTokListAppsHandler,
+    TikTokListBrandSafetyHandler,
+)
 from .capability import TikTokCapability, create_tiktok_capability
 
 __all__ = [
@@ -31,4 +42,15 @@ __all__ = [
     "TikTokGetAdHandler",
     "TikTokCreateAdHandler",
     "TikTokGetReportHandler",
+    "TikTokListAudiencesHandler",
+    "TikTokSparkAdsCreateHandler",
+    "TikTokListCreativesHandler",
+    "TikTokListVideosHandler",
+    "TikTokListImagesHandler",
+    "TikTokListConversionsHandler",
+    "TikTokListLocationsHandler",
+    "TikTokListDevicesHandler",
+    "TikTokListCatalogsHandler",
+    "TikTokListAppsHandler",
+    "TikTokListBrandSafetyHandler",
 ]

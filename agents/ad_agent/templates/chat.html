@@ -1089,16 +1089,27 @@
         }
         
         // Add message to chat
-        function addMessage(content, type = 'agent', tools = null, isError = false) {
+        function addMessage(content, type = 'agent', tools = null, isError = false, toolSummaryHtml = '') {
             const container = document.getElementById('chatContainer');
             const welcome = document.getElementById('welcomePage');
             if (welcome) welcome.style.display = 'none';
-            
+
             const msg = document.createElement('div');
             msg.className = `message ${type}${isError ? ' error' : ''}`;
-            
+
             const time = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-            
+
+            let bodyHtml = `<div class="message-content-text">${formatContent(content)}</div>`;
+            if (toolSummaryHtml) {
+                bodyHtml += toolSummaryHtml;
+            } else if (tools && tools.length > 0) {
+                bodyHtml += `<div class="tool-results">${tools.map(t => `
+                    <span class="tool-tag ${t.success ? 'success' : 'error'}">
+                        ${t.success ? '✓' : '✗'} ${t.tool}
+                    </span>
+                `).join('')}</div>`;
+            }
+
             msg.innerHTML = `
                 <div class="message-avatar">${type === 'user' ? '👤' : '🤖'}</div>
                 <div class="message-content">
@@ -1106,18 +1117,13 @@
                         <span class="message-sender">${type === 'user' ? '您' : 'ad-agent'}</span>
                         <span class="message-time">${time}</span>
                     </div>
-                    <div class="message-body">${content}</div>
-                    ${tools ? `<div class="tool-results">${tools.map(t => `
-                        <span class="tool-tag ${t.success ? 'success' : 'error'}">
-                            ${t.success ? '✓' : '✗'} ${t.tool}
-                        </span>
-                    `).join('')}</div>` : ''}
+                    <div class="message-body">${bodyHtml}</div>
                 </div>
             `;
-            
+
             container.appendChild(msg);
             document.getElementById('chatArea').scrollTop = document.getElementById('chatArea').scrollHeight;
-            
+
             return msg;
         }
         
@@ -1325,18 +1331,18 @@
             const input = document.getElementById('userInput');
             const text = input.value.trim();
             if (!text) return;
-            
+
             input.value = '';
             input.style.height = 'auto';
-            
+
             addMessage(text, 'user');
             addLoading();
-            
+
             conversationCount++;
             document.getElementById('statToday').textContent = conversationCount;
-            
+
             try {
-                const response = await fetch('/chat/stream', {
+                const response = await fetch('/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -1345,79 +1351,31 @@
                         session_id: sessionId
                     })
                 });
-                
+
                 apiCallCount++;
                 document.getElementById('statAPICalls').textContent = apiCallCount;
-                
+
+                const data = await response.json();
                 removeLoading();
-                
-                // 创建流式消息容器
-                const streamMsg = document.createElement('div');
-                streamMsg.className = 'message agent';
-                streamMsg.innerHTML = `
-                    <div class="message-avatar">🤖</div>
-                    <div class="message-content">
-                        <div class="message-header">
-                            <span class="message-sender">ad-agent</span>
-                            <span class="message-time">${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
-                        </div>
-                        <div class="message-body" id="streamBody"></div>
-                        <div class="tool-results" id="streamTools"></div>
-                    </div>
-                `;
-                document.getElementById('chatArea').appendChild(streamMsg);
-                document.getElementById('chatArea').scrollTop = document.getElementById('chatArea').scrollHeight;
-                
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let buffer = '';
-                let thinkingContent = '';
-                let replyContent = '';
-                const toolResults = [];
-                
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    
-                    buffer += decoder.decode(value, { stream: true });
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop() || '';
-                    
-                    for (const line of lines) {
-                        if (line.startsWith('data: ')) {
-                            try {
-                                const data = JSON.parse(line.slice(6));
-                                
-                                if (data.type === 'thinking') {
-                                    thinkingContent += data.content + '\n';
-                                    document.getElementById('streamBody').innerHTML = formatThinking(thinkingContent);
-                                } else if (data.type === 'tool_status') {
-                                    toolResults.push({ tool: data.tool, success: data.success });
-                                    document.getElementById('streamTools').innerHTML = toolResults.map(t => `
-                                        <span class="tool-tag ${t.success ? 'success' : 'error'}">
-                                            ${t.success ? '✓' : '✗'} ${t.tool}
-                                        </span>
-                                    `).join('');
-                                } else if (data.type === 'reply') {
-                                    replyContent = data.content;
-                                    document.getElementById('streamBody').innerHTML = formatThinking(thinkingContent) + formatReply(replyContent);
-                                } else if (data.type === 'start') {
-                                    document.getElementById('streamBody').innerHTML = `<div class="thinking-process">${data.content}</div>`;
-                                }
-                                
-                                // 自动滚动
-                                document.getElementById('chatArea').scrollTop = document.getElementById('chatArea').scrollHeight;
-                            } catch (e) {
-                                console.error('Parse error:', e);
-                            }
-                        }
-                    }
+
+                // 单一完整回复，不复用 SSE 分段渲染
+                sessionId = data.session_id || sessionId;
+
+                const results = data.results || [];
+                const successCount = results.filter(r => r.success).length;
+                const failCount = results.length - successCount;
+
+                // 工具执行摘要
+                let toolSummary = '';
+                if (results.length > 0) {
+                    const tags = results.map(r =>
+                        `<span class="tool-tag ${r.success ? 'success' : 'error'}">${r.success ? '✓' : '✗'} ${r.tool}</span>`
+                    ).join('');
+                    toolSummary = `<div class="tool-results" style="margin-top:8px;flex-wrap:wrap;">${tags}</div>`;
                 }
-                
-                if (!replyContent) {
-                    addMessage('操作完成', 'agent', toolResults.length ? toolResults : null);
-                }
-                
+
+                addMessage(data.reply || (failCount > 0 ? '部分操作失败，请查看上方提示。' : '操作完成'), 'agent', null, false, toolSummary);
+
             } catch (error) {
                 removeLoading();
                 addMessage('网络错误: ' + error.message, 'agent', null, true);
@@ -1434,40 +1392,81 @@
             addMessage(data.reply || '操作完成', 'agent', tools);
         }
         
+        // Escape HTML special characters
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Format markdown-like content: bold, tables, code, line breaks
+        function formatContent(content) {
+            if (!content) return '';
+            let html = escapeHtml(content);
+
+            // Bold
+            html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+            // Inline code
+            html = html.replace(/`(.+?)`/g, '<code>$1</code>');
+
+            // Markdown tables: detect table blocks and convert
+            const lines = html.split('\n');
+            let inTable = false;
+            let tableLines = [];
+            let result = [];
+
+            function flushTable() {
+                if (tableLines.length > 0) {
+                    try {
+                        const rows = tableLines.map(row => row.split('|').map(c => c.trim()).filter(Boolean));
+                        if (rows.length >= 2) {
+                            const headerRow = rows[0];
+                            const dataRows = rows.slice(1).filter(r => !r.every(c => /^[-:]+$/.test(c)));
+                            let thHtml = '<tr>' + headerRow.map(c => `<th>${c}</th>`).join('') + '</tr>';
+                            let tdHtml = dataRows.map(r => '<tr>' + r.map(c => `<td>${c}</td>`).join('') + '</tr>').join('');
+                            result.push(`<table class="data-table"><thead>${thHtml}</thead><tbody>${tdHtml}</tbody></table>`);
+                        } else {
+                            result.push(tableLines.join('<br>'));
+                        }
+                    } catch (e) {
+                        result.push(tableLines.join('<br>'));
+                    }
+                    tableLines = [];
+                    inTable = false;
+                }
+            }
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                // Detect table rows (starts and ends with |)
+                if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+                    inTable = true;
+                    tableLines.push(trimmed);
+                } else {
+                    flushTable();
+                    if (trimmed) {
+                        result.push(trimmed);
+                    }
+                }
+            }
+            flushTable();
+
+            return result.join('<br>');
+        }
+
         // Format thinking content
         function formatThinking(content) {
             if (!content) return '';
             const lines = content.split('\n').filter(l => l.trim());
-            return `<div class="thinking-process">` + 
-                   lines.map(l => `<div class="thinking-step">💭 ${l}</div>`).join('') + 
+            return `<div class="thinking-process">` +
+                   lines.map(l => `<div class="thinking-step">💭 ${l}</div>`).join('') +
                    `</div>`;
         }
-        
-        // Format reply content with markdown-like support
+
+        // Format reply content (legacy, kept for compatibility)
         function formatReply(content) {
-            if (!content) return '';
-            // 转换表格标记
-            let html = content
-                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')  // 粗体
-                .replace(/\|(.+?)\|/g, (match, p1) => {
-                    // 检查是否是表格行
-                    const cells = p1.split('|').map(c => c.trim());
-                    if (cells.length > 2 && !cells.some(c => c.includes('-'))) {
-                        return '<td>' + cells.map(c => c.replace(/<[^>]+>/g, '')).join('</td><td>') + '</td>';
-                    }
-                    return match;
-                })
-                .replace(/^\|[-: ]+\|$/gm, '')  // 移除分隔行
-                .replace(/\n/g, '<br>')
-                .replace(/```([\s\S]+?)```/g, '<pre><code>$1</code></pre>')  // 代码块
-                .replace(/`(.+?)`/g, '<code>$1</code>');  // 行内代码
-            
-            // 如果是表格，包装在 table 标签中
-            if (html.includes('<td>')) {
-                html = '<table class="data-table">' + html + '</table>';
-            }
-            
-            return `<div class="reply-content">${html}</div>`;
+            return formatContent(content);
         }
         
         // New chat

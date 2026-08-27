@@ -7,6 +7,8 @@ api_clients/tiktok_client.py - TikTok Ads API 生产级客户端
 import logging
 import time
 import json
+import re
+from datetime import date, timedelta
 from typing import Any, Optional
 import requests
 
@@ -38,7 +40,7 @@ class TikTokAPIClient(BasePlatformClient):
         retry_config: Optional[RetryConfig] = None,
     ):
         super().__init__(credentials, "tiktok", retry_config)
-        self.access_token = credentials.get('access_token', '')
+        self.access_token = self.credentials.get('access_token', '')
         # 速率限制: 100次/分钟
         self._rate_limiter = RateLimiter(max_requests=100, period=60)
     
@@ -46,6 +48,33 @@ class TikTokAPIClient(BasePlatformClient):
         if endpoint.startswith('http'):
             return endpoint
         return f"{self.BASE_URL}/{self.API_VERSION}/{endpoint.lstrip('/')}"
+
+    def _list_pages(self, endpoint: str, params: dict, max_pages: int = 100) -> list:
+        """Consume TikTok ``page_info`` pages into one deterministic list."""
+        items: list = []
+        for page in range(1, max_pages + 1):
+            page_params = {**params, "page": page}
+            self._rate_limiter.acquire()
+            response = self.request_raw(
+                "GET", self._build_url(endpoint), params=page_params
+            )
+            if response.get("status_code") != 200:
+                break
+            envelope = response.get("data", {})
+            payload = envelope.get("data", {}) if isinstance(envelope, dict) else {}
+            page_items = payload.get("list", []) if isinstance(payload, dict) else []
+            if isinstance(page_items, list):
+                items.extend(page_items)
+            page_info = payload.get("page_info", {}) if isinstance(payload, dict) else {}
+            if not isinstance(page_info, dict):
+                break
+            try:
+                total_page = int(page_info.get("total_page", page))
+            except (TypeError, ValueError):
+                total_page = page
+            if page >= total_page or not page_items:
+                break
+        return items
     
     def _do_request(self, method: str, url: str, **kwargs) -> dict:
         headers = {
@@ -63,10 +92,13 @@ class TikTokAPIClient(BasePlatformClient):
                 resp = requests.delete(url, headers=headers, timeout=30)
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
-            
+            try:
+                data = resp.json() if resp.content else {}
+            except ValueError:
+                data = {}
             return {
                 'status_code': resp.status_code,
-                'data': resp.json() if resp.content else {},
+                'data': data,
                 'headers': dict(resp.headers),
             }
         except requests.exceptions.Timeout:
@@ -82,9 +114,26 @@ class TikTokAPIClient(BasePlatformClient):
     def _handle_error(self, response: dict, status_code: int) -> Optional[APIError]:
         data = response.get('data', {})
         
-        # HTTP 错误
-        if status_code != 200:
+        # HTTP status must retain its meaning.  Treating 400/401/403 as a
+        # temporary error causes needless GET retries and obscures whether the
+        # caller has a malformed request, an expired token, or no permission.
+        if status_code == 401:
+            return AuthError("TikTok: Invalid or expired access token")
+        if status_code == 403:
+            message = data.get('message', 'Permission denied') if isinstance(data, dict) else 'Permission denied'
+            return AuthError(f"TikTok: {message}")
+        if status_code == 429:
+            raw_retry_after = response.get('headers', {}).get('Retry-After', 60)
+            try:
+                retry_after = float(raw_retry_after)
+            except (TypeError, ValueError):
+                retry_after = 60.0
+            return RateLimitError("TikTok HTTP 429: rate limited", retry_after=retry_after)
+        if status_code >= 500:
             return TemporaryError(f"TikTok HTTP {status_code}")
+        if status_code >= 400:
+            message = data.get('message', 'Bad request') if isinstance(data, dict) else 'Bad request'
+            return APIError(f"TikTok HTTP {status_code}: {message}", status_code=status_code, response=data)
         
         # API 错误
         code = data.get('code', 0) if isinstance(data, dict) else 0
@@ -120,22 +169,13 @@ class TikTokAPIClient(BasePlatformClient):
     
     def list_campaigns(self, advertiser_id: str, filtering: list = None, page_size: int = 20) -> list:
         """获取 Campaign 列表"""
-        self._rate_limiter.acquire()
         data = {
             'advertiser_id': str(advertiser_id),
             'page_size': page_size,
         }
         if filtering:
             data['filtering'] = filtering
-        # 使用 _do_request 获取原始响应
-        url = self._build_url('campaign/get/')
-        resp = self._do_request('GET', url, params=data)
-        # 解析 TikTok 响应结构: data.data.list
-        if resp.get('status_code') == 200:
-            inner = resp.get('data', {})
-            # TikTok API 返回结构: {code, message, data: {list: [...]}}
-            return inner.get('data', {}).get('list', [])
-        return []
+        return self._list_pages('campaign/get/', data)
     
     def get_campaign(self, advertiser_id: str, campaign_id: str) -> dict:
         """获取 Campaign 详情"""
@@ -213,7 +253,6 @@ class TikTokAPIClient(BasePlatformClient):
     
     def list_adgroups(self, advertiser_id: str, campaign_id: str, filtering: list = None, page_size: int = 20) -> list:
         """获取 Ad Group 列表"""
-        self._rate_limiter.acquire()
         data = {
             'advertiser_id': str(advertiser_id),
             'campaign_id': int(campaign_id),
@@ -221,13 +260,7 @@ class TikTokAPIClient(BasePlatformClient):
         }
         if filtering:
             data['filtering'] = filtering
-        # TikTok API 要求 GET 请求
-        url = self._build_url('adgroup/get/')
-        resp = self._do_request('GET', url, params=data)
-        if resp.get('status_code') == 200:
-            inner = resp.get('data', {})
-            return inner.get('data', {}).get('list', [])
-        return []
+        return self._list_pages('adgroup/get/', data)
     
     def get_adgroup(self, advertiser_id: str, campaign_id: str, adgroup_id: str) -> dict:
         """获取 Ad Group 详情"""
@@ -281,19 +314,12 @@ class TikTokAPIClient(BasePlatformClient):
     
     def list_ads(self, advertiser_id: str, adgroup_id: str, page_size: int = 20) -> list:
         """获取 Ad 列表"""
-        self._rate_limiter.acquire()
         data = {
             'advertiser_id': str(advertiser_id),
             'ad_group_id': int(adgroup_id),
             'page_size': page_size,
         }
-        # TikTok API 要求 GET 请求
-        url = self._build_url('ad/get/')
-        resp = self._do_request('GET', url, params=data)
-        if resp.get('status_code') == 200:
-            inner = resp.get('data', {})
-            return inner.get('data', {}).get('list', [])
-        return []
+        return self._list_pages('ad/get/', data)
     
     def get_ad(self, advertiser_id: str, adgroup_id: str, ad_id: str) -> dict:
         """获取 Ad 详情"""
@@ -361,7 +387,7 @@ class TikTokAPIClient(BasePlatformClient):
         self,
         advertiser_id: str,
         campaign_ids: list[str],
-        time_range: dict = None,
+        time_range: Any = None,
         report_type: str = "CAMPAIGN",
     ) -> list:
         """
@@ -381,7 +407,7 @@ class TikTokAPIClient(BasePlatformClient):
                     'impressions', 'clicks', 'ctr', 'cpc', 'spend',
                     'conversions', 'conversion_rate', 'cost_per_conversion',
                 ],
-                'time_range': time_range or {'start_date': 'LAST_7_DAYS', 'end_date': 'TODAY'},
+                'time_range': self._normalize_time_range(time_range),
                 'filtering': [
                     {'field': 'CAMPAIGN_IDS', 'operator': 'IN', 'values': [int(x) for x in campaign_ids]}
                 ],
@@ -637,6 +663,57 @@ class TikTokAPIClient(BasePlatformClient):
             'date_preset': date_preset,
         }
         if time_range:
-            data['time_range'] = time_range
-        result = self.request('POST', 'statistics/get/', json=data)
+            data['time_range'] = self._normalize_time_range(time_range)
+        # BasePlatformClient transports JSON request bodies through ``data``.
+        # Passing ``json=`` here silently produced an empty body in the
+        # provider adapter.
+        result = self.request('POST', 'statistics/get/', data=data)
         return result.get('data', {}) if isinstance(result, dict) else {}
+
+    @staticmethod
+    def _normalize_time_range(time_range: Any) -> dict:
+        """Convert supported report presets into TikTok's ISO date shape."""
+        if isinstance(time_range, dict):
+            start_value = time_range.get("start_date")
+            end_value = time_range.get("end_date")
+            preset_values = {"TODAY", "YESTERDAY", "THIS_MONTH"}
+            if isinstance(start_value, str):
+                start_upper = start_value.upper()
+                if start_upper in preset_values or re.fullmatch(
+                    r"LAST_(\d+)_DAYS", start_upper
+                ):
+                    normalized = TikTokAPIClient._normalize_time_range(start_upper)
+                    if isinstance(end_value, str) and re.fullmatch(
+                        r"\d{4}-\d{2}-\d{2}", end_value
+                    ):
+                        normalized["end_date"] = end_value
+                    return normalized
+            if isinstance(end_value, str) and end_value.upper() in preset_values:
+                normalized_end = date.today()
+                if end_value.upper() == "YESTERDAY":
+                    normalized_end -= timedelta(days=1)
+                elif end_value.upper() == "THIS_MONTH":
+                    normalized_end = normalized_end.replace(day=1)
+                result = dict(time_range)
+                result["end_date"] = normalized_end.isoformat()
+                return result
+            return dict(time_range)
+        if time_range in (None, ""):
+            time_range = "LAST_7_DAYS"
+        preset = str(time_range).upper()
+        end = date.today()
+        if preset == "TODAY":
+            start = end
+        elif preset == "YESTERDAY":
+            start = end = end - timedelta(days=1)
+        elif preset == "THIS_MONTH":
+            start = end.replace(day=1)
+        else:
+            match = re.fullmatch(r"LAST_(\d+)_DAYS", preset)
+            if not match:
+                raise ValueError(
+                    "TikTok report time_range must be an object or a supported date preset"
+                )
+            days = max(int(match.group(1)), 1)
+            start = end - timedelta(days=days - 1)
+        return {"start_date": start.isoformat(), "end_date": end.isoformat()}

@@ -9,6 +9,7 @@ api_clients/meta_client.py - Meta Marketing API 生产级客户端
 
 import json
 import logging
+import threading
 from typing import Any, Optional
 import requests
 
@@ -37,16 +38,18 @@ class MetaAPIClient(BasePlatformClient):
         retry_config: Optional[RetryConfig] = None,
     ):
         super().__init__(credentials, "meta", retry_config)
-        self.access_token = credentials.get('access_token', '')
+        self.access_token = self.credentials.get('access_token', '')
         # App 级限流器: 2000次/小时
         self._app_rate_limiter = RateLimiter(max_requests=2000, period=3600)
         # 账户级限流器: 50次/10秒
         self._account_rate_limiters: dict[str, RateLimiter] = {}
+        self._account_rate_limiters_lock = threading.RLock()
     
     def _get_account_limiter(self, account_id: str) -> RateLimiter:
-        if account_id not in self._account_rate_limiters:
-            self._account_rate_limiters[account_id] = RateLimiter(max_requests=50, period=10)
-        return self._account_rate_limiters[account_id]
+        with self._account_rate_limiters_lock:
+            if account_id not in self._account_rate_limiters:
+                self._account_rate_limiters[account_id] = RateLimiter(max_requests=50, period=10)
+            return self._account_rate_limiters[account_id]
     
     def _build_url(self, endpoint: str) -> str:
         if endpoint.startswith('http'):
@@ -72,10 +75,16 @@ class MetaAPIClient(BasePlatformClient):
                 resp = requests.delete(url, params=final_params, headers=headers, timeout=30)
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
-            
+            try:
+                data = resp.json() if resp.content else {}
+            except ValueError:
+                # Proxies and upstream gateways sometimes return HTML/plain text.
+                # Preserve the HTTP status so the common error classifier can
+                # still surface a useful failure instead of leaking JSON errors.
+                data = {}
             return {
                 'status_code': resp.status_code,
-                'data': resp.json() if resp.content else {},
+                'data': data,
                 'headers': dict(resp.headers),
             }
         except requests.exceptions.Timeout:
@@ -102,11 +111,42 @@ class MetaAPIClient(BasePlatformClient):
         # 认证错误
         if status_code == 401:
             return AuthError("Meta API: Invalid or expired access token")
+
+        if status_code == 403:
+            message = "Permission denied"
+            if isinstance(data, dict):
+                error = data.get("error")
+                if isinstance(error, dict):
+                    message = error.get("message", message)
+            return AuthError(f"Meta API: {message}")
         
         # 速率限制
         if status_code == 429:
-            retry_after = float(response.get('headers', {}).get('X-Marketing-Api-Req-Id', 60))
+            raw_retry_after = response.get('headers', {}).get('Retry-After', 60)
+            try:
+                retry_after = float(raw_retry_after)
+            except (TypeError, ValueError):
+                # Request IDs are not durations; never let a malformed header
+                # turn a rate-limit response into an uncaught ValueError.
+                retry_after = 60.0
             return RateLimitError("Meta API: Rate limit exceeded", retry_after=retry_after)
+
+        if status_code >= 500:
+            return TemporaryError(f"Meta API server error {status_code}")
+
+        # A gateway or provider may return an empty/non-JSON 4xx body. It is
+        # still a failed request and must never fall through as success.
+        if status_code >= 400:
+            message = "Bad request"
+            if isinstance(data, dict):
+                error = data.get("error")
+                if isinstance(error, dict):
+                    message = error.get("message", message)
+            return APIError(
+                f"Meta API HTTP {status_code}: {message}",
+                status_code=status_code,
+                response=data if isinstance(data, dict) else None,
+            )
         
         # 业务错误（data 中有 error 字段）
         if isinstance(data, dict) and 'error' in data:
@@ -152,7 +192,50 @@ class MetaAPIClient(BasePlatformClient):
     def get_account(self, account_id: str, fields: list = None) -> dict:
         """获取账户详情"""
         params = {'fields': ','.join(fields) if fields else 'id,name,account_id,status'}
-        return self.request('GET', f"/{account_id}", extra_params={'fields': params})
+        return self.request('GET', f"/{account_id}", extra_params=params)
+
+    def _list_graph_pages(
+        self, account_id: str, endpoint: str, params: dict,
+        item_key: str = "data", max_pages: int = 100,
+    ) -> list:
+        """Consume Graph API cursor pages without leaking paging envelopes."""
+        items: list = []
+        after = None
+        seen_cursors: set[str] = set()
+        for _ in range(max_pages):
+            page_params = dict(params)
+            if after:
+                page_params["after"] = after
+            self._get_account_limiter(account_id).acquire()
+            result = self.request("GET", endpoint, extra_params=page_params)
+            if isinstance(result, dict) and isinstance(result.get(item_key), list):
+                page_items = result[item_key]
+            elif isinstance(result, list):
+                page_items = result
+            else:
+                page_items = []
+            items.extend(page_items)
+
+            paging = result.get("paging", {}) if isinstance(result, dict) else {}
+            cursors = paging.get("cursors", {}) if isinstance(paging, dict) else {}
+            next_after = cursors.get("after") if isinstance(cursors, dict) else None
+            if not next_after or next_after in seen_cursors:
+                break
+            seen_cursors.add(next_after)
+            after = next_after
+        return items
+
+    def list_audiences(self, account_id: str, limit: int = 25) -> list:
+        """获取广告账户下的 Custom Audience 列表。"""
+        clean_id = account_id.replace('act_', '')
+        return self._list_graph_pages(
+            clean_id,
+            f"/act_{clean_id}/customaudiences",
+            {
+                'limit': limit,
+                'fields': 'id,name,subtype,approximate_count,delivery_status',
+            },
+        )
     
     # ==================== Campaign 管理 ====================
     
@@ -160,15 +243,51 @@ class MetaAPIClient(BasePlatformClient):
         """获取 Campaign 列表"""
         # 去除可能的 act_ 前缀
         clean_id = account_id.replace('act_', '')
-        self._get_account_limiter(clean_id).acquire()
         params = {'fields': ','.join(fields) if fields else 'id,name,status,daily_budget,budget_remaining,objective'}
-        result = self.request('GET', f"/act_{clean_id}/campaigns", extra_params={**params, 'limit': limit})
-        return result.get('data', []) if isinstance(result, dict) else result
+        return self._list_graph_pages(
+            clean_id,
+            f"/act_{clean_id}/campaigns",
+            {**params, 'limit': limit},
+        )
     
     def get_campaign(self, campaign_id: str, fields: list = None) -> dict:
         """获取 Campaign 详情"""
         params = {'fields': ','.join(fields) if fields else 'id,name,status,daily_budget,budget_remaining,objective,adsets,ads'}
         return self.request('GET', f"/{campaign_id}", extra_params=params)
+
+    def resource_belongs_to_account(
+        self, account_id: str, resource_type: str, resource_id: str
+    ) -> bool:
+        """Verify a Graph object is visible under the selected ad account.
+
+        Graph object IDs are globally addressable for a token.  Runtime
+        account allowlisting alone therefore does not prove that an object ID
+        belongs to the selected account.  This explicit lookup is used before
+        direct object reads/updates for live-capable handlers.
+        """
+        if not account_id or not resource_id:
+            return False
+        resource_id = str(resource_id)
+        if resource_type == "campaign":
+            items = self.list_campaigns(account_id)
+        elif resource_type == "adset":
+            items = self.list_adsets(account_id)
+        elif resource_type == "ad":
+            items = self.list_ads(account_id)
+        else:
+            return False
+        if not isinstance(items, list):
+            return False
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            identifiers = {
+                item.get("id"), item.get("campaign_id"), item.get("adset_id"),
+                item.get("ad_id"),
+            }
+            if resource_id in {str(value) for value in identifiers if value is not None}:
+                return True
+        return False
     
     def create_campaign(self, account_id: str, campaign: dict) -> dict:
         """创建 Campaign
@@ -228,7 +347,6 @@ class MetaAPIClient(BasePlatformClient):
     
     def list_adsets(self, account_id: str, campaign_id: str = None, limit: int = 25) -> list:
         """获取 Ad Set 列表"""
-        self._get_account_limiter(account_id).acquire()
         endpoint = f"/{account_id}/adsets"
         params = {
             'limit': limit,
@@ -236,8 +354,7 @@ class MetaAPIClient(BasePlatformClient):
         }
         if campaign_id:
             params['campaign_id'] = campaign_id
-        result = self.request('GET', endpoint, extra_params=params)
-        return result.get('data', []) if isinstance(result, dict) else result
+        return self._list_graph_pages(account_id, endpoint, params)
     
     def get_adset(self, adset_id: str, fields: list = None) -> dict:
         """获取 Ad Set 详情"""
@@ -291,7 +408,6 @@ class MetaAPIClient(BasePlatformClient):
     
     def list_ads(self, account_id: str, adset_id: str = None, limit: int = 25) -> list:
         """获取 Ad 列表"""
-        self._get_account_limiter(account_id).acquire()
         endpoint = f"/{account_id}/ads"
         params = {
             'limit': limit,
@@ -299,8 +415,7 @@ class MetaAPIClient(BasePlatformClient):
         }
         if adset_id:
             params['adset_id'] = adset_id
-        result = self.request('GET', endpoint, extra_params=params)
-        return result.get('data', []) if isinstance(result, dict) else result
+        return self._list_graph_pages(account_id, endpoint, params)
     
     def get_ad(self, ad_id: str, fields: list = None) -> dict:
         """获取 Ad 详情"""
@@ -325,16 +440,13 @@ class MetaAPIClient(BasePlatformClient):
         elif ad.get('object_story_spec'):
             creative['object_story_spec'] = ad['object_story_spec']
         else:
-            # 默认使用 Shopee Page
-            creative['object_story_spec'] = {
-                'page_id': '1000419343151470',  # Shopee 官方 Page
-                'link_data': {
-                    'message': ad.get('body', 'Check out this offer!'),
-                    'name': ad.get('title', 'Special Offer'),
-                    'description': ad.get('description', ''),
-                    'link': ad.get('link', 'https://www.shopee.com'),
-                }
-            }
+            # Never invent a Page, destination URL, or advertising message.
+            # A live create must be explicit about its creative ownership and
+            # destination; dry-run planning does not need a provider payload.
+            raise ValueError(
+                "Meta Ad creative is required: provide creative_id or "
+                "object_story_spec"
+            )
         
         data = {
             'name': ad.get('name', 'Untitled Ad'),
@@ -349,7 +461,12 @@ class MetaAPIClient(BasePlatformClient):
         # 素材
         if ad.get('media') or ad.get('image_url'):
             media = ad.get('media', [{'type': 'image', 'url': ad.get('image_url')}])
-            data['creative'] = {'attachment_link': media[0].get('url', '')}
+            if not isinstance(media, list) or not media or not isinstance(media[0], dict):
+                raise ValueError("Meta Ad media must contain at least one object")
+            media_url = media[0].get('url')
+            if not media_url:
+                raise ValueError("Meta Ad media requires a non-empty url")
+            data['creative'] = json.dumps({'attachment_link': media_url})
         
         result = self.request('POST', f"/{account_id}/ads", data=data)
         return result.get('id', '') if isinstance(result, dict) else ''
@@ -372,11 +489,11 @@ class MetaAPIClient(BasePlatformClient):
             'name': creative.get('name', 'Creative'),
             'object_story_spec': {
                 'page_id': creative.get('page_id', ''),
-                'link_data': json.dumps({
+                'link_data': {
                     'message': creative.get('message', ''),
                     'link': creative.get('link', ''),
                     'image_hash': creative.get('image_hash', ''),
-                }),
+                },
             },
         }
         if creative.get('image_url'):

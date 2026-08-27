@@ -12,6 +12,9 @@ setup(
     install_requires=[
         "requests>=2.28.0",
         "pyjwt>=2.6.0",
+        "PyYAML>=6.0",
+        "fastapi>=0.100.0",
+        "uvicorn>=0.22.0",
     ],
     extras_require={
         "dev": [

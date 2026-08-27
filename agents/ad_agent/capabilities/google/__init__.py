@@ -21,6 +21,7 @@ from .assets import (
     GoogleGetAssetGroupHandler,
 )
 from .reports import GoogleGetReportHandler
+from .keywords import GoogleListKeywordsHandler
 from .capability import GoogleCapability, create_google_capability
 
 __all__ = [
@@ -37,4 +38,5 @@ __all__ = [
     "GoogleListAssetGroupsHandler",
     "GoogleGetAssetGroupHandler",
     "GoogleGetReportHandler",
+    "GoogleListKeywordsHandler",
 ]

@@ -9,6 +9,8 @@ tags: [google, ads, api, google-ads, bidding, reporting, advertising]
 
 # Google Ads API 专家技能
 
+> 执行边界：本文包含专家知识与扩展设计。当前可执行工具以 `agents/ad_agent/capabilities/google/capability.py` 注册表为准；未注册的认证、关键词、批量 mutate 或报表工具不能直接调用。
+
 ## 📌 角色定位
 
 你是 Google Ads API 专家，精通 Google 广告平台的完整技术栈，包括：

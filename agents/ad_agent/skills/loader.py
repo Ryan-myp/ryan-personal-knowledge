@@ -65,19 +65,15 @@ class SkillLoader:
             if not root.exists():
                 continue
             
-            # 直接遍历目录下的子目录
-            for skill_dir in root.iterdir():
-                if skill_dir.is_dir() and (skill_dir / "SKILL.md").exists():
-                    skill = self._load_skill(skill_dir)
-                    if skill:
-                        self._skills[skill.name] = skill
-                        
-            # 也支持直接从根目录加载（兼容旧格式）
-            if (root / "SKILL.md").exists():
-                skill = self._load_skill(root)
+            # Skills are commonly grouped below channels/ and businesses/.
+            # Walk recursively so the selector can actually resolve the
+            # platform expert material instead of loading only a top-level
+            # cross-channel file.
+            for skill_file in root.rglob("SKILL.md"):
+                skill = self._load_skill(skill_file.parent)
                 if skill:
                     self._skills[skill.name] = skill
-        
+
         return self._skills
     
     def _load_skill(self, skill_dir: Path) -> Optional[SkillDefinition]:

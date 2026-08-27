@@ -18,9 +18,15 @@ class MetaListAdsHandler(ToolHandler):
 
     def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
         adset_id = input_data.get("adset_id")
-        if self.client and adset_id:
+        if self.client and ctx.account_id and adset_id:
             try:
-                ads = self.client.list_ads(adset_id)
+                if isinstance(self.client, MetaAPIClient) and not self.client.resource_belongs_to_account(
+                    ctx.account_id, "adset", adset_id
+                ):
+                    return ToolResult.error(
+                        f"Ad Set {adset_id} does not belong to account {ctx.account_id}"
+                    )
+                ads = self.client.list_ads(ctx.account_id, adset_id)
                 return ToolResult.ok({"ads": ads})
             except Exception as e:
                 return ToolResult.error(f"Failed to list Meta ads: {e}")
@@ -36,6 +42,12 @@ class MetaGetAdHandler(ToolHandler):
         ad_id = input_data.get("ad_id")
         if self.client:
             try:
+                if isinstance(self.client, MetaAPIClient) and not self.client.resource_belongs_to_account(
+                    ctx.account_id, "ad", ad_id
+                ):
+                    return ToolResult.error(
+                        f"Ad {ad_id} does not belong to account {ctx.account_id}"
+                    )
                 ad = self.client.get_ad(ad_id)
                 return ToolResult.ok({"ad": ad})
             except Exception as e:
@@ -56,10 +68,16 @@ class MetaCreateAdHandler(ToolHandler):
         adset_id = input_data.get("adset_id")
         if self.client and adset_id:
             try:
+                if isinstance(self.client, MetaAPIClient) and not self.client.resource_belongs_to_account(
+                    ctx.account_id, "adset", adset_id
+                ):
+                    return ToolResult.error(
+                        f"Ad Set {adset_id} does not belong to account {ctx.account_id}"
+                    )
                 ad_id = self.client.create_ad(
+                    account_id=ctx.account_id,
                     adset_id=adset_id,
-                    name=input_data.get("name"),
-                    creative=input_data.get("creative", {}),
+                    ad=input_data,
                 )
                 return ToolResult.ok({
                     "ad_id": ad_id,

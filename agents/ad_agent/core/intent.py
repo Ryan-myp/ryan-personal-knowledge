@@ -9,6 +9,8 @@ core/intent.py - 意图解析与路由实现
 2. SimpleIntentRouter：根据意图类型 + 平台列表，查找对应工具
 """
 
+from __future__ import annotations
+
 import json
 import re
 from typing import Any, Optional
@@ -33,11 +35,13 @@ class LLMIntentParser(IntentParser):
 
 请输出 JSON 格式（不要输出其他内容）：
 {{
-  "intent_type": "create_campaign | boost_post | run_remarketing | download_report",
+  "intent_type": "create_campaign | create_asset_group | create_creative | update_campaign | update_adset | update_adgroup | update_ad | pause_campaign | resume_campaign | cross_channel_overview | cross_channel_compare | cross_channel_performance_insights | cross_channel_optimize_budget | cross_channel_export_report | cross_channel_batch_pause | cross_channel_batch_resume | cross_channel_batch_update_budget | boost_post | run_remarketing | download_report",
   "platforms": ["meta", "google", "tiktok", "dv360"],
   "objective": "sales | leads | traffic | brand",
+  "campaign_type": "平台 Campaign 类型，如 SEARCH / SHOPPING / APP_INSTALL",
   "budget_daily": 100,
   "duration_days": 7,
+  "date_range": "LAST_7_DAYS",
   "creative_materials": [
     {{"type": "image", "description": "海报图"}}
   ],
@@ -67,6 +71,11 @@ class LLMIntentParser(IntentParser):
                         如果为 None，则使用内置的简易规则解析器
         """
         self._llm = llm_client
+        self._custom_intents: set[str] = set()
+
+    def register_intents(self, intents: set[str] | list[str]) -> None:
+        """Allow registered Skills to extend the intent contract safely."""
+        self._custom_intents.update(str(intent) for intent in (intents or []))
     
     def inject_llm(self, llm_client) -> None:
         """注入自定义 LLM 客户端"""
@@ -86,10 +95,29 @@ class LLMIntentParser(IntentParser):
         """使用 LLM 解析意图"""
         prompt = self.PARSE_PROMPT_TEMPLATE.format(user_input=user_input)
         
-        messages = [
-            {"role": "system", "content": "你是一个广告投放意图分析助手，只输出 JSON。"},
-            {"role": "user", "content": prompt},
-        ]
+        messages = [{"role": "system", "content": "你是一个广告投放意图分析助手，只输出 JSON。"}]
+        skill_context = (
+            context.metadata.get("skill_context")
+            if context and isinstance(getattr(context, "metadata", None), dict)
+            else None
+        )
+        if isinstance(skill_context, dict):
+            tool_prompt = str(skill_context.get("tool_prompt") or "")
+            expert_knowledge = str(skill_context.get("expert_knowledge") or "")
+            bounded_context = "\n\n".join(
+                part for part in (tool_prompt, expert_knowledge) if part
+            )[:6000]
+            if bounded_context:
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        "以下是当前已注册 Skills 提供的受限工具契约和专家范围。"
+                        "只能据此识别意图，不要虚构未注册能力：\n" + bounded_context
+                    ),
+                })
+        if context and getattr(context, "messages", None):
+            messages.extend(context.messages[-10:])
+        messages.append({"role": "user", "content": prompt})
         
         response = self._llm.call(messages)
         
@@ -97,6 +125,7 @@ class LLMIntentParser(IntentParser):
         json_str = self._extract_json(response)
         if json_str:
             data = json.loads(json_str)
+            data.setdefault("raw_input", user_input)
             return ParsedIntent(**self._normalize_intent(data))
         
         # LLM 失败时 fallback 到规则解析
@@ -115,12 +144,21 @@ class LLMIntentParser(IntentParser):
         
         # 检测平台
         platforms = self._detect_platforms(text)
+        if intent_type.startswith("cross_channel") and not platforms:
+            platforms = ["meta", "google", "tiktok", "dv360"]
         
         # 检测投放目标
         objective = self._detect_objective(text)
+
+        # Campaign 类型是业务策略校验和平台 payload 选择的独立字段，不能
+        # 只依赖 objective 推断。
+        campaign_type = self._extract_campaign_type(user_input)
         
         # 检测预算
         budget = self._extract_budget(text)
+
+        # 检测报表日期范围
+        date_range = self._extract_date_range(text)
         
         # 检测素材
         materials = self._extract_materials(user_input)
@@ -133,17 +171,100 @@ class LLMIntentParser(IntentParser):
             raw_input=user_input,
             platforms=platforms,
             objective=objective,
+            campaign_type=campaign_type,
             budget=budget,
+            date_range=date_range,
             creative_materials=materials,
             platform_params=platform_params,
         )
     
     def _detect_intent_type(self, text: str) -> str:
         """检测意图类型（注意顺序：更具体的规则放在前面）"""
+        cross_markers = ["跨渠道", "跨平台", "全渠道", "各平台对比", "渠道对比"]
+        compare_words = ["对比", "比较", "compare"]
+        batch_markers = ["批量", "多个", "多条", "bulk", "batch"]
+        # These are read-only cross-channel analyses. Resolve them before the
+        # generic report/create rules so the Runtime can run the two-phase
+        # campaign-list + campaign-report workflow.
+        is_cross_request = any(marker in text for marker in cross_markers)
+        if is_cross_request and any(kw in text for kw in [
+            "预算优化", "优化预算", "预算分配", "分配预算", "allocate budget", "budget optimization",
+        ]):
+            return "cross_channel_optimize_budget"
+        if is_cross_request and any(kw in text for kw in [
+            "导出", "export", "下载 csv", "下载csv",
+        ]) and any(kw in text for kw in ["报表", "报告", "report", "数据"]):
+            return "cross_channel_export_report"
+        if is_cross_request and any(kw in text for kw in [
+            "洞察", "分析", "优化建议", "performance insight", "insights",
+        ]):
+            return "cross_channel_performance_insights"
+        # Resolve explicit multi-platform comparisons before the generic
+        # report rule, so “比较 Meta 和 Google 的报表” remains a comparison.
+        if (
+            len(self._detect_platforms(text)) >= 2
+            and any(kw in text for kw in compare_words)
+        ):
+            return "cross_channel_compare"
+        if any(marker in text for marker in batch_markers):
+            if any(kw in text for kw in ["暂停", "停用", "pause", "disable"]):
+                return "cross_channel_batch_pause"
+            if any(kw in text for kw in ["恢复", "启用", "resume", "enable"]):
+                return "cross_channel_batch_resume"
+            if any(kw in text for kw in ["预算", "budget"]):
+                return "cross_channel_batch_update_budget"
         # 先检查报表查询
         if any(kw in text for kw in ["报表", "report", "下载", "查看数据", "performance", "统计"]):
             return "download_report"
+        if any(kw in text for kw in ["line item", "line_item", "行项目"]):
+            if any(kw in text for kw in ["详情", "detail", "get "]):
+                return "get_line_item"
+            if any(kw in text for kw in ["列出", "列表", "查询", "查看", "list", "query"]):
+                return "list_line_items"
+        if (
+            any(kw in text for kw in ["insertion order", "insertion_order", "订单"])
+            or re.search(r"(?<![a-z])io(?![a-z])", text)
+        ):
+            if any(kw in text for kw in ["详情", "detail", "get "]):
+                return "get_io"
+            if any(kw in text for kw in ["列出", "列表", "查询", "查看", "list", "query"]):
+                return "list_ios"
+        # 更新/暂停/恢复必须优先于创建，避免“更新广告系列”被识别为 create。
+        if any(kw in text for kw in cross_markers):
+            if any(kw in text for kw in ["更新", "修改", "编辑", "update", "modify", "edit"]):
+                return "update_campaign"
+            if any(kw in text for kw in ["暂停", "停用", "pause", "disable"]):
+                return "pause_campaign"
+            if any(kw in text for kw in ["恢复", "启用", "resume", "enable"]):
+                return "resume_campaign"
+            return "cross_channel_overview"
+        if any(kw in text for kw in ["更新", "修改", "编辑", "update", "modify", "edit"]):
+            if any(kw in text for kw in ["line item", "line_item", "行项目"]):
+                return "update_line_item"
+            if any(kw in text for kw in ["insertion order", "insertion_order", "订单"]):
+                return "update_io"
+            if any(kw in text for kw in ["asset group", "asset_group", "素材组", "资产组"]):
+                return "update_asset_group"
+            if any(kw in text for kw in ["广告组", "adset", "ad set"]):
+                return "update_adset"
+            if any(kw in text for kw in ["ad group", "adgroup"]):
+                return "update_adgroup"
+            if any(kw in text for kw in ["广告", " ad", "ad "]) and "广告系列" not in text and "campaign" not in text:
+                return "update_ad"
+            if any(kw in text for kw in ["广告系列", "campaign"]):
+                return "update_campaign"
+        if any(kw in text for kw in ["暂停", "停用", "pause", "disable"]):
+            return "pause_campaign"
+        if any(kw in text for kw in ["恢复", "启用", "resume", "enable"]):
+            return "resume_campaign"
         # 先检查创建意图（优先级高于列表，避免"创建广告系列"误匹配）
+        if any(kw in text for kw in ["asset group", "asset_group", "素材组", "资产组"]):
+            if any(kw in text for kw in ["创建", "新建", "create", "add"]):
+                return "create_asset_group"
+        if any(kw in text for kw in ["创意", "creative", "素材"]) and any(
+            kw in text for kw in ["创建", "新建", "create", "add"]
+        ):
+            return "create_creative"
         if any(kw in text for kw in ["投放", "创建广告", "创建", "promote", "launch ad", "run ad", "新建广告", "创建 campaign"]):
             return "create_campaign"
         # 特定列表查询 - 按优先级排序
@@ -153,16 +274,26 @@ class LLMIntentParser(IntentParser):
             return "list_locations"
         if any(kw in text for kw in ["设备", "device"]):
             return "list_devices"
+        if any(kw in text for kw in ["关键词", "keyword", "keywords"]):
+            return "list_keywords"
         if any(kw in text for kw in ["人群包", "audience", "受众"]):
             return "list_audiences"
         if any(kw in text for kw in ["广告组", "ad group", "adgroup"]):
             return "list_adgroups"
         if any(kw in text for kw in ["广告组", "adset", "ad set", "广告集"]):
             return "list_adsets"
+        # Campaign 详情查询 — 优先于列表（带 ID 或"详情"关键词）
+        if any(kw in text for kw in ["详情", "detail", "information", "信息", "get ", " 的 详情", "的详情", "看看这个"]):
+            if any(kw in text for kw in ["Campaign", "campaign", "广告系列"]):
+                return "get_campaign"
         # Campaign 列表查询 — 只在明确表达"查询/列出"意图时匹配
         if any(kw in text for kw in ["列出", "列表", "查询", "查看", "list", "query", "search", "获取"]):
             if any(kw in text for kw in ["Campaign", "campaign", "广告系列"]):
                 return "list_campaigns"
+        if any(kw in text for kw in ["视频", "video"]):
+            return "list_videos"
+        if any(kw in text for kw in ["图片", "image"]):
+            return "list_images"
         if any(kw in text for kw in ["创意", "creative", "素材"]):
             return "list_creatives"
         # "转化广告系列" 是 campaign 类型，不是 conversion 查询
@@ -201,54 +332,145 @@ class LLMIntentParser(IntentParser):
         """
         params = {p: {} for p in platforms}
         text = user_input.lower()
+
+        platform_aliases = {
+            "meta": ["meta", "facebook", "instagram"],
+            "google": ["google", "google ads", "google-ads", "gads", "谷歌"],
+            "tiktok": ["tiktok", "抖音"],
+            "dv360": ["dv360", "display video"],
+        }
+
+        # Prefer platform-qualified IDs. A single generic campaign_id is only
+        # a fallback; copying it to every channel is unsafe for cross-channel
+        # management because platform IDs are not globally interchangeable.
+        for platform in platforms:
+            aliases_for_platform = platform_aliases.get(platform, [platform])
+            alias_pattern = "|".join(re.escape(alias) for alias in aliases_for_platform)
+            campaign_match = re.search(
+                rf"(?:{alias_pattern})\s*(?:campaign|广告系列)[_-]?id\s*[=:]\s*([\w-]+)",
+                text,
+                re.IGNORECASE,
+            )
+            if campaign_match:
+                params[platform]["campaign_id"] = campaign_match.group(1)
+            account_key = {
+                "meta": "account_id",
+                "google": "customer_id",
+                "tiktok": "advertiser_id",
+                "dv360": "advertiser_id",
+            }.get(platform, "account_id")
+            account_match = re.search(
+                rf"(?:{alias_pattern})\s*(?:account|ad[_-]?account|customer|advertiser)(?:[_-]?id)?\s*[=:]\s*([\w-]+)",
+                text,
+                re.IGNORECASE,
+            )
+            if account_match:
+                params[platform][account_key] = account_match.group(1)
         
         # campaign_id 提取 - 支持多种格式
-        import re
         # 格式1: campaign_id=12345 或 campaign_id: 12345
         campaign_match = re.search(r'campaign[_-]?id[=:\s]+(\d+)', text)
         if campaign_match:
-            for p in platforms:
-                params[p]["campaign_id"] = campaign_match.group(1)
+            # A bare ID is only unambiguous for a single platform.  Campaign
+            # IDs are provider/account scoped and must never be copied across
+            # channels by the parser.
+            if len(platforms) == 1:
+                params[platforms[0]].setdefault("campaign_id", campaign_match.group(1))
         else:
             # 格式2: campaign 12345 或 campaign ID 12345
             campaign_match = re.search(r'campaign(?:\s+id)?\s+(\d+)', text)
             if campaign_match:
-                for p in platforms:
-                    params[p]["campaign_id"] = campaign_match.group(1)
+                if len(platforms) == 1:
+                    params[platforms[0]].setdefault("campaign_id", campaign_match.group(1))
             else:
                 # 格式3: ID: 12345 (大数字，可能是 campaign ID)
                 id_match = re.search(r'\bid[:\s]+(\d{10,})', text)
                 if id_match:
-                    for p in platforms:
-                        params[p]["campaign_id"] = id_match.group(1)
+                    if len(platforms) == 1:
+                        params[platforms[0]].setdefault("campaign_id", id_match.group(1))
+
+        # 批量 ID：只有显式平台限定或单平台请求才会写入，避免把一个渠道
+        # 的 Campaign ID 误复制到其他渠道。
+        # A platform-qualified batch may contain one or many IDs. The old
+        # pattern required a comma, so a valid single Google/TikTok/DV360 ID
+        # was silently dropped in a multi-platform request.
+        batch_id_pattern = r'[\w-]+(?:\s*[,，]\s*[\w-]+)*'
+        for platform in platforms:
+            aliases_for_platform = platform_aliases.get(platform, [platform])
+            alias_pattern = "|".join(re.escape(alias) for alias in aliases_for_platform)
+            batch_match = re.search(
+                rf"(?:{alias_pattern})\s*(?:campaign|广告系列)[_-]?ids\s*[=:]\s*({batch_id_pattern})",
+                text,
+                re.IGNORECASE,
+            )
+            if batch_match:
+                ids = [x.strip() for x in re.split(r"[,，]", batch_match.group(1)) if x.strip()]
+                params[platform]["campaign_ids"] = list(dict.fromkeys(ids))
+                params[platform].setdefault("campaign_id", ids[0])
+        if len(platforms) == 1 and "campaign_ids" not in params[platforms[0]]:
+            generic_batch_match = re.search(
+                rf"campaign[_-]?ids?\s*[=:]\s*({batch_id_pattern})", text, re.IGNORECASE
+            )
+            if generic_batch_match:
+                ids = [x.strip() for x in re.split(r"[,，]", generic_batch_match.group(1)) if x.strip()]
+                params[platforms[0]]["campaign_ids"] = list(dict.fromkeys(ids))
+                params[platforms[0]].setdefault("campaign_id", ids[0])
         
         # ad_group_id / adgroup_id 提取
         adgroup_match = re.search(r'ad[_-]?group[_-]?id[=:\s]+(\d+)', text)
         if adgroup_match:
-            for p in platforms:
-                params[p]["ad_group_id"] = adgroup_match.group(1)
+            if len(platforms) == 1:
+                params[platforms[0]]["ad_group_id"] = adgroup_match.group(1)
         else:
             adgroup_match = re.search(r'adgroup(?:\s+id)?\s+(\d+)', text)
             if adgroup_match:
-                for p in platforms:
-                    params[p]["ad_group_id"] = adgroup_match.group(1)
+                if len(platforms) == 1:
+                    params[platforms[0]]["ad_group_id"] = adgroup_match.group(1)
         
         # ad_id 提取
         ad_match = re.search(r'ad[_-]?id[=:\s]+(\d+)', text)
         if ad_match:
-            for p in platforms:
-                params[p]["ad_id"] = ad_match.group(1)
+            if len(platforms) == 1:
+                params[platforms[0]]["ad_id"] = ad_match.group(1)
         else:
             ad_match = re.search(r'\bad\s+(?:ID\s+)?(\d{10,})', text)
             if ad_match:
-                for p in platforms:
-                    params[p]["ad_id"] = ad_match.group(1)
+                if len(platforms) == 1:
+                    params[platforms[0]]["ad_id"] = ad_match.group(1)
+
+        # DV360 Line Item ID 提取。Campaign ID 不能替代 Line Item ID：两者
+        # 属于不同资源层级，混用会把合法查询路由到错误的报表契约。
+        line_item_match = re.search(r'line[_ -]?item[_ -]?id[=:\s]+([\w-]+)', text, re.IGNORECASE)
+        if line_item_match:
+            if "dv360" in platforms:
+                params["dv360"]["line_item_id"] = line_item_match.group(1)
+
+        asset_group_match = re.search(
+            r'asset[_ -]?group[_ -]?id[=:\s]+([\w-]+)', text, re.IGNORECASE
+        )
+        if asset_group_match and "google" in platforms:
+            params["google"]["asset_group_id"] = asset_group_match.group(1)
         
-        # campaign_name 提取
-        name_match = re.search(r'(?:名称|name)[=:\s]+([^\s,，;；]+(?:\s+[^\s,，;；]+)*)', text)
-        if name_match:
-            for p in platforms:
-                params[p]["campaign_name"] = name_match.group(1).strip()
+        # campaign_name 提取 - 支持 "名称=xxx"、"name: xxx"、"：xxx"、"详情: xxx" 等格式
+        name_patterns = [
+            r'(?:名称|name)[=:\s]+([^\s,，;；：:]+(?:\s+[^\s,，;；：:]+)*)',
+            r'详情[：:\s]+([^\s,，;；]+(?:\s+[^\s,，;；]+)*)',
+            r'(?:这个|该|特定)\s*campaign[：:\s]*([A-Za-z0-9_\-]+(?:\s+[A-Za-z0-9_\-]+)*)',
+        ]
+        for pattern in name_patterns:
+            name_match = re.search(pattern, text, re.IGNORECASE)
+            if name_match:
+                extracted = name_match.group(1).strip().rstrip('。,.，')
+                extracted = re.split(
+                    r'\s+(?:预算|budget|目标|objective|跑|持续|duration|天数)\b',
+                    extracted,
+                    maxsplit=1,
+                    flags=re.IGNORECASE,
+                )[0].strip()
+                if extracted:
+                    for p in platforms:
+                        params[p]["campaign_name"] = extracted
+                    break
         
         # budget 提取
         budget_match = re.search(r'(?:预算|budget)[=:\s]*(\d+(?:\.\d+)?)', text)
@@ -276,6 +498,22 @@ class LLMIntentParser(IntentParser):
                     for p in platforms:
                         params[p]["date_range"] = date_range
                 break
+
+        # 更新请求的最小结构化参数，避免把自然语言原样交给 Handler。
+        if any(kw in text for kw in ["更新", "修改", "编辑", "update", "modify", "edit", "暂停", "恢复", "启用"]):
+            updates = {}
+            status_match = re.search(r'(?:状态|status)[=：:\s]+([\w-]+)', text, re.IGNORECASE)
+            if status_match:
+                updates["status"] = status_match.group(1).upper()
+            if any(kw in text for kw in ["暂停", "pause", "停用", "disable"]):
+                updates["status"] = "PAUSED"
+            elif any(kw in text for kw in ["恢复", "resume", "启用", "enable"]):
+                updates["status"] = "ENABLED"
+            if budget_match and any(kw in text for kw in ["更新", "修改", "预算", "budget"]):
+                updates["daily_budget"] = float(budget_match.group(1))
+            if updates:
+                for p in platforms:
+                    params[p]["updates"] = updates
         
         return params
     
@@ -318,6 +556,37 @@ class LLMIntentParser(IntentParser):
             if match:
                 return float(match.group(1))
         return None
+
+    def _extract_date_range(self, text: str) -> Optional[str]:
+        """Extract a conservative normalized date range for reporting."""
+        if any(kw in text for kw in ["昨天", "yesterday"]):
+            return "YESTERDAY"
+        if any(kw in text for kw in ["今天", "today"]):
+            return "TODAY"
+        if any(kw in text for kw in ["本月", "this month"]):
+            return "THIS_MONTH"
+        match = re.search(
+            r"(?:最近|过去|近|last|past)\s*(\d+)\s*天",
+            text,
+            re.IGNORECASE,
+        )
+        if match:
+            return f"LAST_{match.group(1)}_DAYS"
+        return None
+
+    def _extract_campaign_type(self, text: str) -> Optional[str]:
+        """Extract an explicitly supplied campaign type conservatively.
+
+        Do not guess a provider-specific type from a vague business objective;
+        an explicit value is needed before business-policy validation can make
+        a safe decision.
+        """
+        match = re.search(
+            r"(?:campaign[_ -]?type|广告系列类型|广告类型|类型)\s*[=:：\s]+([A-Za-z][A-Za-z0-9_-]*)",
+            text,
+            re.IGNORECASE,
+        )
+        return match.group(1).upper() if match else None
     
     def _extract_materials(self, text: str) -> list[dict]:
         """提取素材信息"""
@@ -351,18 +620,75 @@ class LLMIntentParser(IntentParser):
     
     def _normalize_intent(self, data: dict) -> dict:
         """规范化解析结果"""
-        # 确保 platforms 是列表
+        data = dict(data or {})
+        # The prompt uses budget_daily for readability while ParsedIntent uses
+        # the common ``budget`` field. Normalize aliases before construction.
+        if data.get("budget") is None and data.get("budget_daily") is not None:
+            data["budget"] = data.get("budget_daily")
+        if data.get("date_range") is None and data.get("time_range") is not None:
+            data["date_range"] = data.get("time_range")
+        valid_intents = {
+            "create_campaign", "create_asset_group", "update_campaign", "update_adset",
+            "update_adgroup", "update_ad", "pause_campaign", "resume_campaign",
+            "cross_channel_overview", "cross_channel_compare",
+            "cross_channel_performance_insights", "cross_channel_optimize_budget",
+            "cross_channel_export_report", "cross_channel_batch_pause", "cross_channel_batch_resume",
+            "cross_channel_batch_update_budget", "boost_post", "run_remarketing",
+            "download_report", "list_campaigns", "get_campaign", "list_adgroups",
+            "list_adsets", "list_ads", "list_audiences", "list_ios", "get_io",
+            "list_line_items", "get_line_item", "chat",
+            "update_io", "update_line_item", "update_asset_group",
+            "create_creative", "list_creatives", "list_videos", "list_images", "list_keywords",
+            "list_conversions", "list_locations", "list_devices", "list_catalogs", "list_apps",
+            "list_brand_safety",
+        }
+        valid_intents.update(self._custom_intents)
+        if data.get("intent_type") not in valid_intents:
+            data["intent_type"] = "chat"
+
+        # 确保 platforms 是列表，并限制为实际注册体系支持的平台。
         platforms = data.get("platforms", [])
         if isinstance(platforms, str):
             platforms = [platforms]
-        data["platforms"] = platforms
+        platform_aliases = {
+            "google-ads": "google",
+            "google_ads": "google",
+            "facebook": "meta",
+            "instagram": "meta",
+            "抖音": "tiktok",
+            "谷歌": "google",
+        }
+        normalized_platforms = []
+        for platform in platforms if isinstance(platforms, list) else []:
+            normalized = platform_aliases.get(str(platform).lower(), str(platform).lower())
+            if normalized in {"meta", "google", "tiktok", "dv360"} and normalized not in normalized_platforms:
+                normalized_platforms.append(normalized)
+        data["platforms"] = normalized_platforms
+
+        if data.get("objective") not in {None, "sales", "leads", "traffic", "brand"}:
+            data["objective"] = None
+        if data.get("campaign_type") is not None:
+            data["campaign_type"] = str(data["campaign_type"]).upper()
+        if not isinstance(data.get("creative_materials"), list):
+            data["creative_materials"] = []
         
         # 确保 platform_params 有所有平台
         params = data.get("platform_params", {})
-        for p in platforms:
-            if p not in params:
-                params[p] = {}
-        data["platform_params"] = params
+        params = params if isinstance(params, dict) else {}
+        normalized_params = {}
+        for key, value in params.items():
+            normalized = platform_aliases.get(str(key).lower(), str(key).lower())
+            if normalized in {"meta", "google", "tiktok", "dv360"}:
+                normalized_params[normalized] = value if isinstance(value, dict) else {}
+        for p in normalized_platforms:
+            normalized_params.setdefault(p, {})
+        data["platform_params"] = normalized_params
+
+        allowed = {
+            "intent_type", "raw_input", "platforms", "objective", "campaign_type", "budget",
+            "duration_days", "date_range", "creative_materials", "platform_params",
+        }
+        return {key: value for key, value in data.items() if key in allowed}
         
         return data
 
@@ -384,7 +710,7 @@ class SimpleIntentRouter(IntentRouter):
         "create_campaign": {
             "meta": [
                 "meta_create_campaign",
-                "meta_create_ad_set",
+                "meta_create_adset",
                 "meta_create_ad",
             ],
             "google": [
@@ -394,7 +720,7 @@ class SimpleIntentRouter(IntentRouter):
             ],
             "tiktok": [
                 "tiktok_create_campaign",
-                "tiktok_create_ad_group",
+                "tiktok_create_adgroup",
                 "tiktok_create_ad",
             ],
             "dv360": [
@@ -402,6 +728,13 @@ class SimpleIntentRouter(IntentRouter):
                 "dv360_create_io",
                 "dv360_create_line_item",
             ],
+        },
+        "create_asset_group": {
+            "google": ["google_create_asset_group"],
+            "google-ads": ["google_create_asset_group"],
+        },
+        "create_creative": {
+            "meta": ["meta_create_creative"],
         },
         "boost_post": {
             "meta": ["meta_boost_post"],
@@ -413,6 +746,106 @@ class SimpleIntentRouter(IntentRouter):
             "google-ads": ["google_list_campaigns"],
             "tiktok": ["tiktok_list_campaigns"],
             "dv360": ["dv360_list_campaigns"],
+        },
+        "get_campaign": {
+            "meta": ["meta_get_campaign"],
+            "google": ["google_get_campaign"],
+            "google-ads": ["google_get_campaign"],
+            "tiktok": ["tiktok_get_campaign"],
+            "dv360": ["dv360_get_campaign"],
+        },
+        "cross_channel_overview": {
+            "meta": ["meta_list_campaigns"],
+            "google": ["google_list_campaigns"],
+            "tiktok": ["tiktok_list_campaigns"],
+            "dv360": ["dv360_list_campaigns"],
+        },
+        "cross_channel_compare": {
+            "meta": ["meta_list_campaigns"],
+            "google": ["google_list_campaigns"],
+            "tiktok": ["tiktok_list_campaigns"],
+            "dv360": ["dv360_list_campaigns"],
+        },
+        "cross_channel_performance_insights": {
+            "meta": ["meta_list_campaigns"],
+            "google": ["google_list_campaigns"],
+            "tiktok": ["tiktok_list_campaigns"],
+            "dv360": ["dv360_list_campaigns"],
+        },
+        "cross_channel_optimize_budget": {
+            "meta": ["meta_list_campaigns"],
+            "google": ["google_list_campaigns"],
+            "tiktok": ["tiktok_list_campaigns"],
+            "dv360": ["dv360_list_campaigns"],
+        },
+        "cross_channel_export_report": {
+            "meta": ["meta_list_campaigns"],
+            "google": ["google_list_campaigns"],
+            "tiktok": ["tiktok_list_campaigns"],
+            "dv360": ["dv360_list_campaigns"],
+        },
+        "update_campaign": {
+            "meta": ["meta_update_campaign"],
+            "google": ["google_update_campaign"],
+            "google-ads": ["google_update_campaign"],
+            "tiktok": ["tiktok_update_campaign"],
+            "dv360": ["dv360_update_campaign"],
+        },
+        "update_adset": {
+            "meta": ["meta_update_adset"],
+            "google": ["google_update_ad_group"],
+            "google-ads": ["google_update_ad_group"],
+            "tiktok": ["tiktok_update_adgroup"],
+        },
+        "update_adgroup": {
+            "google": ["google_update_ad_group"],
+            "google-ads": ["google_update_ad_group"],
+            "tiktok": ["tiktok_update_adgroup"],
+        },
+        "update_ad": {
+            "meta": ["meta_update_ad"],
+            "google": ["google_update_ad"],
+            "google-ads": ["google_update_ad"],
+            "tiktok": ["tiktok_update_ad"],
+        },
+        "pause_campaign": {
+            "meta": ["meta_update_campaign"],
+            "google": ["google_update_campaign"],
+            "google-ads": ["google_update_campaign"],
+            "tiktok": ["tiktok_update_campaign"],
+            "dv360": ["dv360_update_campaign"],
+        },
+        "resume_campaign": {
+            "meta": ["meta_update_campaign"],
+            "google": ["google_update_campaign"],
+            "google-ads": ["google_update_campaign"],
+            "tiktok": ["tiktok_update_campaign"],
+            "dv360": ["dv360_update_campaign"],
+        },
+        # Batch intents are routed to the platform update definitions only so
+        # the Runtime can validate platform support and account scope.  The
+        # batch planner expands campaign_ids into independent preview items;
+        # it never calls a provider in dry-run mode.
+        "cross_channel_batch_pause": {
+            "meta": ["meta_update_campaign"],
+            "google": ["google_update_campaign"],
+            "google-ads": ["google_update_campaign"],
+            "tiktok": ["tiktok_update_campaign"],
+            "dv360": ["dv360_update_campaign"],
+        },
+        "cross_channel_batch_resume": {
+            "meta": ["meta_update_campaign"],
+            "google": ["google_update_campaign"],
+            "google-ads": ["google_update_campaign"],
+            "tiktok": ["tiktok_update_campaign"],
+            "dv360": ["dv360_update_campaign"],
+        },
+        "cross_channel_batch_update_budget": {
+            "meta": ["meta_update_campaign"],
+            "google": ["google_update_campaign"],
+            "google-ads": ["google_update_campaign"],
+            "tiktok": ["tiktok_update_campaign"],
+            "dv360": ["dv360_update_campaign"],
         },
         "list_adgroups": {
             "meta": ["meta_list_ad_sets"],
@@ -431,6 +864,18 @@ class SimpleIntentRouter(IntentRouter):
             "meta": ["meta_list_audiences"],
             "tiktok": ["tiktok_list_audiences"],
         },
+        "list_ios": {"dv360": ["dv360_list_ios"]},
+        "get_io": {"dv360": ["dv360_get_io"]},
+        "list_line_items": {"dv360": ["dv360_list_line_items"]},
+        "get_line_item": {"dv360": ["dv360_get_line_item"]},
+        "update_io": {"dv360": ["dv360_update_io"]},
+        "update_line_item": {
+            "dv360": ["dv360_update_line_item"],
+        },
+        "update_asset_group": {
+            "google": ["google_update_asset_group"],
+            "google-ads": ["google_update_asset_group"],
+        },
         "download_report": {
             "meta": ["meta_get_campaign_report"],
             "google": ["google_get_campaign_report"],
@@ -445,10 +890,27 @@ class SimpleIntentRouter(IntentRouter):
             custom_mappings: 自定义映射，格式同 DEFAULT_INTENT_TOOLS
                            会与默认映射合并（自定义优先）
         """
-        self._mappings = dict(self.DEFAULT_INTENT_TOOLS)
+        # Copy nested maps so custom routing cannot mutate the class-level
+        # defaults or leak into future Runtime instances.
+        self._mappings = {
+            intent_type: {platform: list(names) for platform, names in platforms.items()}
+            for intent_type, platforms in self.DEFAULT_INTENT_TOOLS.items()
+        }
+        self._capability_mappings: dict[str, dict[str, list[str]]] = {}
         if custom_mappings:
             for intent_type, platforms in custom_mappings.items():
                 self._mappings.setdefault(intent_type, {}).update(platforms)
+
+    def register_capability_mappings(self, mappings: dict) -> None:
+        """Register executable mappings emitted by a CapabilityModule."""
+        for intent_type, platforms in (mappings or {}).items():
+            for platform, names in (platforms or {}).items():
+                if not names:
+                    continue
+                names = list(names)
+                self._capability_mappings.setdefault(intent_type, {})[platform] = names
+                if platform == "google-ads":
+                    self._capability_mappings.setdefault(intent_type, {})["google"] = names
     
     def route(
         self,
@@ -462,10 +924,15 @@ class SimpleIntentRouter(IntentRouter):
             {platform: [ToolDefinition, ...]}
         """
         result = {}
-        mapping = self._mappings.get(intent.intent_type, {})
+        mapping = self._capability_mappings.get(
+            intent.intent_type,
+            self._mappings.get(intent.intent_type, {}),
+        )
         
         for platform in intent.platforms:
             tool_names = mapping.get(platform, [])
+            if not tool_names and platform == "google":
+                tool_names = mapping.get("google-ads", [])
             tools = []
             for name in tool_names:
                 try:

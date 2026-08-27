@@ -31,6 +31,16 @@ class ReplayPolicy(Enum):
     SAFE = "safe"           # 可安全重放
     UNSAFE = "unsafe"       # 不可重放
 
+
+class ExecutionMode(Enum):
+    """Runtime 执行模式。
+
+    dry_run 是默认模式：可以生成并校验写入计划，但绝不调用外部写 API。
+    live 仅供后续人工指定测试账户时使用。
+    """
+    DRY_RUN = "dry_run"
+    LIVE = "live"
+
 # ─── Tool 定义 ──────────────────────────────────────────────────
 
 @dataclass
@@ -39,6 +49,11 @@ class ToolSchema:
     type: str = "object"
     required: list[str] = field(default_factory=list)
     properties: dict[str, Any] = field(default_factory=dict)
+    # Provider contracts can be stricter than the fields needed to build a
+    # dry-run plan.  Keep these requirements separate so dry-run remains useful
+    # while live execution can fail before reaching a provider.
+    provider_required: list[str] = field(default_factory=list)
+    provider_any_of: list[list[str]] = field(default_factory=list)
 
 @dataclass
 class ToolDefinition:
@@ -56,6 +71,10 @@ class ToolDefinition:
     effect_class: ToolEffect = ToolEffect.READ  # 效果分类
     replay_policy: ReplayPolicy = ReplayPolicy.SAFE  # 重放策略
     traits: list[str] = field(default_factory=list)  # 额外特性标记
+    # Whether a live adapter is implemented and approved for this tool.  A
+    # false value still permits dry-run planning, but prevents a misleading
+    # live confirmation/execution path.
+    live_support: bool = True
 
     @property
     def is_write_tool(self) -> bool:
@@ -78,12 +97,14 @@ class ToolResult:
         error: Optional[str] = None,
         requires_confirmation: bool = False,
         card_payload: Optional[dict] = None,
+        simulated: bool = False,
     ):
         self.success = success
         self.data = data or {}
         self.error = error
         self.requires_confirmation = requires_confirmation
         self.card_payload = card_payload
+        self.simulated = simulated
     
     @classmethod
     def ok(cls, data: dict[str, Any]) -> "ToolResult":
@@ -96,6 +117,11 @@ class ToolResult:
     @classmethod
     def needs_confirmation(cls, card_payload: dict) -> "ToolResult":
         return cls(success=True, requires_confirmation=True, card_payload=card_payload)
+
+    @classmethod
+    def dry_run(cls, data: dict[str, Any]) -> "ToolResult":
+        """返回未触发外部 API 的模拟执行结果。"""
+        return cls(success=True, data=data, simulated=True)
     
     def to_dict(self) -> dict:
         return {
@@ -104,6 +130,7 @@ class ToolResult:
             "error": self.error,
             "requires_confirmation": self.requires_confirmation,
             "card_payload": self.card_payload,
+            "simulated": self.simulated,
         }
 
 
@@ -181,6 +208,11 @@ class ToolRegistry(ABC):
     @abstractmethod
     def list_by_skill(self, skill_name: str) -> list[ToolDefinition]:
         """列出某 Skill 所有工具"""
+        pass
+
+    @abstractmethod
+    def unregister(self, tool_name: str) -> None:
+        """从注册表中移除工具"""
         pass
 
     @abstractmethod
@@ -311,8 +343,10 @@ class ParsedIntent:
     raw_input: str                    # 原始用户输入
     platforms: list[str]              # 目标平台列表
     objective: Optional[str] = None   # 投放目标
+    campaign_type: Optional[str] = None  # 平台/业务 Campaign 类型
     budget: Optional[float] = None    # 预算
     duration_days: Optional[int] = None
+    date_range: Optional[Any] = None  # 报表查询日期范围
     creative_materials: list[dict] = field(default_factory=list)
     # 各平台需要的参数
     platform_params: dict[str, dict] = field(default_factory=dict)
@@ -323,8 +357,10 @@ class ParsedIntent:
             "intent_type": self.intent_type,
             "platforms": self.platforms,
             "objective": self.objective,
+            "campaign_type": self.campaign_type,
             "budget": self.budget,
             "duration_days": self.duration_days,
+            "date_range": self.date_range,
             "creative_materials": self.creative_materials,
             "platform_params": self.platform_params,
         }

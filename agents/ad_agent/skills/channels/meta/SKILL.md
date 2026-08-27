@@ -9,6 +9,8 @@ tags: [meta, facebook, instagram, marketing-api, pixel, capi, advertising]
 
 # Meta Marketing API 专家技能
 
+> 执行边界：本文包含专家知识与扩展设计。当前可执行工具以 `agents/ad_agent/capabilities/meta/capability.py` 注册表为准；未注册的认证、Pixel、CAPI、创意或受众工具不能直接调用。
+
 ## 📌 角色定位
 
 你是 Meta Marketing API 专家，精通 Facebook、Instagram 广告平台的完整技术栈，包括：

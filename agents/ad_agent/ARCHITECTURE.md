@@ -38,7 +38,7 @@
                               ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        LLM 调用                                      │
-│  • 精简的工具列表 (~5-12 tools vs 87)                                │
+│  • 精简的工具列表（按意图筛选，当前 Capability 共 72 个）              │
 │  • 平台专家知识摘要                                                  │
 │  • 业务规则上下文                                                    │
 └─────────────────────────────────────────────────────────────────────┘
@@ -50,19 +50,19 @@
 skills/
 ├── channels/               # 渠道层（通用 API 能力）
 │   ├── meta/              # Meta Marketing API
-│   │   ├── SKILL.md       # 17 个工具定义
+│   │   ├── SKILL.md       # 以 Capability 注册表为准（当前 16 个）
 │   │   ├── tools/         # 工具实现
 │   │   └── expert/        # 专家知识
 │   ├── google-ads/        # Google Ads API
-│   │   ├── SKILL.md       # 20 个工具定义
+│   │   ├── SKILL.md       # 以 Capability 注册表为准（当前 18 个）
 │   │   ├── tools/
 │   │   └── expert/
 │   ├── tiktok/            # TikTok Business API
-│   │   ├── SKILL.md       # 18 个工具定义
+│   │   ├── SKILL.md       # 以 Capability 注册表为准（当前 24 个）
 │   │   ├── tools/
 │   │   └── expert/
 │   └── dv360/             # DV360 API
-│       ├── SKILL.md       # 20 个工具定义
+│       ├── SKILL.md       # 以 Capability 注册表为准（当前 14 个）
 │       ├── tools/
 │       └── expert/
 │
@@ -75,8 +75,8 @@ skills/
 │   └── social/            # 社交媒体业务
 │       └── SKILL.md       # Meta + Google + TikTok, 预算 ¥200-¥200,000
 │
-└── cross-channel/          # 跨渠道管理
-    └── SKILL.md            # 12 个跨渠道工具
+└── cross-channel/          # 跨渠道设计说明；当前由 Runtime 聚合器提供可执行摘要
+    └── SKILL.md
 ```
 
 ## 核心设计原则
@@ -136,17 +136,17 @@ BusinessContext 检查
     ▼
 ToolSelector 筛选
     │
-    ├─ 从 87 个工具中筛选
-    ├─ 只保留 google 平台工具 (20 个)
+    ├─ 从当前已注册工具中筛选
+    ├─ 只保留 google 平台工具
     ├─ 根据 intent_type="create_campaign" 筛选
     │   ├─ 关键词: ["create", "add", "new"]
     │   └─ 匹配工具:
     │       ├─ google_create_campaign ✅
     │       ├─ google_create_ad_group ✅
-    │       └─ ... (共 7 个)
+    │       └─ ...（按 Capability 实际注册工具决定）
     │
     ▼
-最终结果: 7 个工具 + 专家知识
+最终结果: 匹配工具 + 专家知识
 ```
 
 ## 扩展指南

@@ -1,4 +1,14 @@
-# ad-agent 生产级完成报告
+# ad-agent 当前实现状态
+
+> 本文件记录当前源码状态，不代表所有平台 live API 能力已达到生产可用。默认执行模式为 `dry_run`；真实测试只允许使用 `config.yaml` 中的测试账户白名单，且不能修改线上凭证或账户元数据。下方历史记录仅供追溯，不能作为当前 live 成功证据。
+
+## 当前契约（2026-08-27）
+
+- 单 Agent + 多 Skills + Tools；平台 Capability 是可执行注册表的来源，当前共 72 个工具：Meta 16、Google Ads 18、TikTok 24、DV360 14。
+- 所有 Campaign 及下级资源创建/更新默认 dry-run；当前不会因工具已注册就调用真实写 API。
+- live 仅允许配置白名单账户，且 API 确认必须携带与当前 `session_id + account_id + tool + normalized input + idempotency key` 绑定的 `confirmation_payload`。
+- `access_token`、`refresh_token`、`developer_token`、`client_id`、`client_secret`、`private_key`、`bc_id`、`partner_id`、`mcc` 等字段禁止出现在工具 payload/updates 中；凭证不写入 SQLite。
+- 无 Provider Client 的读取默认 fail-closed；离线 fixture 仅在显式 `offline_mode=True` 下可用。
 
 ## 项目概述
 
@@ -11,11 +21,11 @@
 - 每个平台是一个独立的 CapabilityModule，可独立扩展
 - 新增平台只需添加新 Capability，无需修改 Core 层
 
-### 2. 生产级 API 客户端
+### 2. API 客户端封装
 - **重试机制**: 指数退避重试（可配置最大重试次数和延迟）
 - **限流器**: 令牌桶算法，防止超出 API 配额
 - **错误分类**: AuthError, RateLimitError, TemporaryError, APIError
-- **真实 API 集成**: 基于官方文档实现，非模拟数据
+- **真实 API 集成**: 已提供平台客户端和 Handler，但 live 能力需逐工具验证
 
 ### 3. 持久化层
 - SQLite 存储会话、工具调用历史、Campaign 状态
@@ -27,9 +37,9 @@
 - 支持文件输出和 stdout
 - 上下文感知（工具名、平台、耗时）
 
-### 5. Mock 模式
-- 无需 API 凭证即可测试和演示
-- 一键切换到真实 API 模式
+### 5. Dry-run 模式
+- 无需调用线上写 API 即可测试参数、路由和层级编排
+- live 只允许显式指定测试账号并确认
 
 ## 目录结构
 
@@ -73,7 +83,7 @@ ad_agent/
 │   └── orchestrator.py      # 跨平台编排 Skill
 │
 └── tests/                   # 测试
-    └── test_ad_agent.py     # 单元测试（26 个用例全通过）
+    └── test_ad_agent.py     # 核心单元测试（当前 97 个用例通过）
 ```
 
 ## 快速开始
@@ -124,8 +134,8 @@ python -m pytest agents/ad_agent/tests/ -v
 ```
 
 测试结果：
-- 26 passed in 0.06s
-- 覆盖：持久化层、API 客户端初始化、Capability 注册、Runtime 集成
+- 当前 `agents/ad_agent/tests/test_ad_agent.py`：97 passed
+- 覆盖：工具注册、Schema 校验、白名单、dry-run 不调用 Client、跨平台账户、层级 ID 传递、live 确认、持久化和 Runtime 集成
 
 ## 扩展新平台
 
@@ -162,9 +172,9 @@ runtime.register_capability(NewPlatformCapability(api_client))
 | 错误分类 | ✅ | Auth/RateLimit/Temporary/API |
 | 持久化 | ✅ | SQLite，跨会话恢复 |
 | 结构化日志 | ✅ | JSON 格式 |
-| Mock 模式 | ✅ | 无需凭证测试 |
-| WriteGuard | ✅ | 写操作需确认 |
-| 单元测试 | ✅ | 26 个用例 |
+| Dry-run 模式 | ✅ | 无需调用线上写 API 即可测试 |
+| WriteGuard | ⚠️ | 幂等保护和 live 显式确认已接入，仍需更完整的并发/恢复测试 |
+| 单元测试 | ✅ | 全量 119 个用例 |
 | 多平台支持 | ✅ | Meta/Google/TikTok/DV360 |
 | 可扩展性 | ✅ | 新增平台只需 Capability |
 
@@ -385,3 +395,8 @@ curl -X POST http://localhost:8765/chat \
   - 前端实时显示 💭 思考步骤
   - 工具执行状态实时反馈
   - 支持 Markdown 表格渲染
+
+### 11. 修复 Google Ads 平台名称映射
+- **问题**: 查询报表时报"需要确认账户ID"
+- **原因**: Intent 使用 `google`，但工具注册为 `google-ads`，导致账户验证失败
+- **修复**: 添加 `platform_name_map` 映射 `google` → `google-ads`

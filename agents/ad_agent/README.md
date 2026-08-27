@@ -1,25 +1,26 @@
 # ad-agent - 多渠道广告投放 Agent
 
-基于单 Agent + 多 Skills 架构的通用广告投放自动化工具，支持 Meta、Google Ads、TikTok Ads、DV360 四大广告平台。
+基于单 Agent + 多 Skills 架构的广告投放助手，支持 Meta、Google Ads、TikTok Ads、DV360 四大广告平台。当前默认是安全 `dry_run`：写操作可解析、校验和编排，但不会调用线上写 API。
 
 ## 架构特点
 
 - **单 Agent + 多 Skills**：通过意图路由自动分发到对应平台的 Capability
-- **生产级 API 客户端**：真实 API 集成 + 指数退避重试 + 限流器
+- **API 客户端**：封装真实 API 请求、重试、限流和错误分类；live 能力须逐平台验证
 - **持久化层**：SQLite 存储会话、工具调用、Campaign 状态
 - **结构化日志**：JSON 格式，便于 log aggregation
-- **Mock 模式**：无需凭证即可测试/演示
-- **WriteGuard**：写操作需人工确认
+- **离线演示**：无凭证时部分查询 Handler 返回 mock 数据；这些数据不代表线上结果
+- **安全边界**：写操作必须命中配置的测试账户白名单；live 还必须显式确认
 - **可扩展**：新增平台只需添加新 Capability
 
 ## 支持的广告平台
 
 | 平台 | Skill | API 客户端 | 工具数量 |
 |------|-------|-----------|---------|
-| Meta | meta-marketing-api-expert | meta_client.py | 6 |
-| Google Ads | google-ads-api-expert | google_ads_client.py | 4 |
-| TikTok | tiktok-ads-expert | tiktok_client.py | 5 |
-| DV360 | dv360-expert | dv360_client.py | 4 |
+| Meta | meta-marketing-api-expert | meta_client.py | 16（含 Creative dry-run） |
+| Google Ads | google-ads-api-expert | google_ads_client.py | 18（含关键词与 PMax Asset Group dry-run/update plan） |
+| TikTok | tiktok-ads-expert | tiktok_client.py | 24（含 Creative/视频/图片素材及参考数据查询） |
+| DV360 | dv360-expert | dv360_client.py | 14（含 IO/Line Item 查询；Campaign-level report 未支持） |
+| **合计** |  |  | **72** |
 
 ## 安装
 
@@ -33,7 +34,7 @@ pip install -r requirements.txt
 from ad_agent import AgentRuntime, create_meta_capability, create_google_capability
 from ad_agent.persistence.store import AdAgentStore
 
-# 初始化（带持久化）
+# 初始化（默认 dry-run，带持久化）
 store = AdAgentStore("ad_agent.db")
 runtime = AgentRuntime(persistence_store=store)
 
@@ -50,7 +51,7 @@ result = runtime.run(
 print(result["reply"])
 ```
 
-## 使用真实 API
+## 使用真实 API（仅测试账号）
 
 ```python
 import json
@@ -59,15 +60,19 @@ import json
 with open("credentials.json") as f:
     credentials = json.load(f)
 
-# 创建真实 API 客户端
-from ad_agent.api_clients.meta_client import MetaAPIClient
-from ad_agent.capabilities.meta_capability import MetaCapability
+# 传入真实客户端；Runtime 仍默认为 dry-run
+from agents.ad_agent.api_clients.meta_client import MetaAPIClient
+from agents.ad_agent.capabilities.meta import create_meta_capability
 
-api_client = MetaAPIClient(credentials)
-capability = MetaCapability(api_client=api_client)  # 传入真实客户端
+api_client = MetaAPIClient(credentials["meta"])
+capability = create_meta_capability(api_client)
 
 runtime.register_capability(capability)
 ```
+
+切换到 `execution_mode="live"` 前，必须确认 `agents/ad_agent/config.yaml` 中已配置目标测试账号白名单，并先取得当前写入计划返回的 `confirmation_payload`，随后以同一 payload 调用 `runtime.run(..., confirmed=True, confirmation_payload=payload)`。HTTP API 会拒绝缺少该 payload 的确认请求。不要通过凭证内容自动扩大白名单；凭证只保存在进程内，不写入 SQLite。
+
+当前所有 Campaign/下级资源创建默认只生成 dry-run 计划；DV360 Campaign/IO/Line Item 更新、Google PMax Asset Group 以及部分下级资源更新没有经过验证的 live adapter，live 会明确返回不支持。读取请求在没有 Provider Client 时默认 fail-closed，只有显式 `offline_mode=True` 才会返回离线 fixture。
 
 凭证文件格式：
 ```json
@@ -187,6 +192,24 @@ class NewPlatformCapability(BaseCapability):
 # 3. 注册到 Runtime
 runtime.register_capability(NewPlatformCapability(api_client))
 ```
+
+## 扩展 Skill + Tools
+
+新增能力优先放在独立 Skill 目录，不需要修改 Runtime 的核心路由。目录至少包含
+`SKILL.md`，并在 `tools.py` 或 `tools/__init__.py` 中导出：
+
+```python
+def create_skill(api_client=None):
+    return MySkill(api_client)
+```
+
+返回的 Skill 需要实现 `get_tools()`、`get_tool_handler(tool_name)`，并可通过
+`intent_to_tools` 声明自定义意图到工具的映射。Runtime 会自动发现该目录，注册声明的
+工具；没有可执行 Handler 的声明不会被注册，也不会因为 Skill 文档存在而伪造执行能力。
+所有扩展工具继续经过 schema 校验、账户白名单、dry-run/live gate、红线字段检查和审计。
+
+内置四渠道的 Provider 实现仍位于 `capabilities/` 和 `api_clients/`，Skill plugin
+只负责扩展工具编排和 Handler；默认模式不会触发线上写 API。
 
 ## 许可证
 

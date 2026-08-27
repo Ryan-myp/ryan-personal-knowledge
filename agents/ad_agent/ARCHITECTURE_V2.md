@@ -26,7 +26,7 @@
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐    │
 │  │ IntentParser    │  │ IntentRouter    │  │ ToolRegistry             │    │
 │  │ 意图解析         │→│ 路由分发         │→ │ 工具注册/执行            │    │
-│  │ - LLM/P规则      │  │ - 多平台支持    │  │ - 42 tools               │    │
+│  │ - LLM/P规则      │  │ - 多平台支持    │  │ - 72 tools               │    │
 │  └─────────────────┘  └─────────────────┘  └─────────────────────────┘    │
 │                                                                             │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐    │
@@ -43,7 +43,7 @@
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌──────────────────┐  │
 │  │ Meta        │  │ Google Ads  │  │ TikTok      │  │ DV360            │  │
 │  │ Capability  │  │ Capability  │  │ Capability  │  │ Capability       │  │
-│  │ 12 tools    │  │ 12 tools    │  │ 11 tools    │  │ 7 tools          │  │
+│  │ 16 tools    │  │ 18 tools    │  │ 24 tools    │  │ 14 tools         │  │
 │  └─────────────┘  └─────────────┘  └─────────────┘  └──────────────────┘  │
 └─────────────────────────────────────────────────────────────────────────────┘
                                    │
@@ -69,7 +69,7 @@ class LLMIntentParser:
     """基于 LLM 的意图解析"""
     PARSE_PROMPT_TEMPLATE = """
     你是广告投放专家助手。请分析用户的投放需求：
-    - intent_type: create_campaign | boost_post | download_report
+    - intent_type: create/update/pause/resume/cross-channel | boost_post | download_report
     - platforms: ["meta", "google", "tiktok", "dv360"]
     - objective: sales | leads | traffic | brand
     - platform_params: 各平台具体参数
@@ -147,7 +147,7 @@ class MetaCapability(BaseCapability):
             tool_definitions=[
                 ToolDefinition(name="meta_list_campaigns", ...),
                 ToolDefinition(name="meta_get_campaign_report", ...),
-                # ... 12 tools total
+                # ... 16 tools total
             ]
         )
     
@@ -161,15 +161,15 @@ class MetaCapability(BaseCapability):
 
 class GoogleAdsCapability(BaseCapability):
     """Google Ads API 能力"""
-    # 12 tools: list/get campaign/adgroup/ad + report
+    # 18 tools: list/get/create campaign/adgroup/ad + keywords/report/update
 
 class TikTokCapability(BaseCapability):
     """TikTok Business API 能力"""
-    # 11 tools: list/get campaign/adgroup/ad + report
+    # 18 tools: list/get/create campaign/adgroup/ad + media/report/update
 
 class DV360Capability(BaseCapability):
     """DV360 API 能力 (Mock)"""
-    # 7 tools: list/get campaign/io/line_item + report
+    # 14 tools: list/get campaign/advertiser/io/line_item + report/update
 ```
 
 ### 5. API Clients (客户端实现)
@@ -233,14 +233,14 @@ class TikTokAPIClient(BaseAPIClient):
         return resp.get('data', {}).get('list', [])
 ```
 
-## 三、工具清单 (42 Tools)
+## 三、工具清单（当前 Capability 共 72 个工具）
 
 | 平台 | 工具数量 | 工具列表 |
 |------|---------|---------|
-| **Meta** | 12 | meta_list_campaigns, meta_list_accounts, meta_boost_post,<br>meta_get_campaign, meta_get_adset, meta_get_ad,<br>meta_list_ad_sets, meta_list_ads,<br>meta_create_campaign, meta_create_ad_set, meta_create_ad,<br>meta_get_campaign_report |
-| **Google Ads** | 12 | google_list_campaigns,<br>google_get_campaign, google_list_ad_groups, google_get_ad_group,<br>google_list_ads, google_get_ad,<br>google_list_asset_groups, google_get_asset_group,<br>google_create_campaign, google_create_ad_group, google_create_ad,<br>google_get_campaign_report |
-| **TikTok** | 11 | tiktok_list_campaigns, tiktok_list_adgroups, tiktok_list_ads,<br>tiktok_get_campaign, tiktok_get_adgroup, tiktok_get_ad,<br>tiktok_spark_ads_create,<br>tiktok_create_campaign, tiktok_create_ad_group, tiktok_create_ad,<br>tiktok_get_campaign_report |
-| **DV360** | 7 | dv360_list_advertisers, dv360_list_campaigns, dv360_get_campaign,<br>dv360_create_campaign, dv360_create_io, dv360_create_line_item,<br>dv360_get_line_item_report |
+| **Meta** | 16 | 查询/创建 Campaign、Ad Set、Ad、Creative；受众；Boost；更新 Campaign/Ad Set/Ad；报表 |
+| **Google Ads** | 18 | 查询/创建 Campaign、Ad Group、Ad、关键词、PMax Asset Group；报表；更新工具 |
+| **TikTok** | 24 | 查询/创建 Campaign、Ad Group、Ad；Creative/视频/图片素材；转化、地域、设备、目录、应用、品牌安全查询；Spark Ads；受众；报表；更新工具 |
+| **DV360** | 14 | 查询 Advertiser/Campaign/IO/Line Item；创建 IO/Line Item；报表；更新工具（live 部分未适配） |
 
 ## 四、核心数据流
 
@@ -266,7 +266,9 @@ class TikTokAPIClient(BaseAPIClient):
                                          返回给用户 (JSON/HTML)
 ```
 
-## 五、安全机制
+## 五、安全机制与执行模式
+
+默认 `execution_mode=dry_run`。所有写工具在 dry-run 中只由 Runtime 生成本地模拟 ID，不进入 Handler/API Client；live 写入必须同时满足测试账户白名单和 `confirmed=True`。读操作可按平台账户查询，但生产环境仍应由调用方限制账户范围。
 
 ### 1. 账户白名单
 ```python
@@ -280,8 +282,8 @@ allowed_accounts:
 
 ### 2. WriteGuard (写操作保护)
 ```python
-# 所有写操作都需要二次确认
-if tool_def.is_write_tool and not request.confirmed:
+# live 写操作需要显式确认；dry-run 不触发线上写 API
+if execution_mode == "live" and tool_def.is_write_tool and not request.confirmed:
     return {
         "needs_confirmation": True,
         "confirmation_payload": {
@@ -334,7 +336,7 @@ class AdAgentStore:
 
 | 文件 | 行数 | 职责 |
 |------|------|------|
-| `runtime/runtime.py` | 680 | Agent 主循环、Session 管理、工具执行 |
+| `runtime/runtime.py` | 当前源码 | Agent 主循环、Session 管理、执行模式与安全边界 |
 | `core/intent.py` | 533 | 意图解析、路由逻辑 |
 | `core/tool_registry.py` | 150 | 工具注册与执行 |
 | `capabilities/base.py` | 227 | 能力模块基类 |
@@ -388,10 +390,10 @@ selector.set_business_context("ecommerce", business_rules)
 ```
 skills/
 ├── channels/                 # 渠道层 Skill（核心能力）
-│   ├── meta/SKILL.md        # Meta Marketing API (10 tools)
-│   ├── google-ads/SKILL.md  # Google Ads API (10 tools)
-│   ├── tiktok/SKILL.md      # TikTok Ads API (9 tools)
-│   └── dv360/SKILL.md       # DV360 API (9 tools)
+│   ├── meta/SKILL.md        # Meta Marketing API (16 tools)
+│   ├── google-ads/SKILL.md  # Google Ads API (18 tools)
+│   ├── tiktok/SKILL.md      # TikTok Ads API (24 tools)
+│   └── dv360/SKILL.md       # DV360 API (14 tools)
 ├── businesses/               # 业务层 Skill（业务规则）
 │   ├── ecommerce/SKILL.md   # 电商业务
 │   ├── app/SKILL.md         # App 推广业务

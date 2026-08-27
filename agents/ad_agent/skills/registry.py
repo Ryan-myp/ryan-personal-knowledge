@@ -136,16 +136,19 @@ class SkillRegistry:
         self.registry.register(definition, handler)
     
     def _create_handler(self, tool: SkillTool) -> ToolHandler:
-        """创建工具处理器"""
+        """创建声明性兼容处理器。
+
+        This legacy registry parses Skill markdown for backwards-compatible
+        discovery only.  It must never claim that a provider operation was
+        executed; executable handlers come from ``capabilities/`` and are
+        dispatched by ``AgentRuntime``.
+        """
         class GenericHandler(ToolHandler):
             def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
-                # TODO: 实际调用对应的 API
-                return ToolResult.ok({
-                    "tool": tool.name,
-                    "platform": tool.platform,
-                    "status": "ready",
-                    "expert_tip": tool.expert_tips,
-                })
+                return ToolResult.error(
+                    f"Skill declaration '{tool.name}' has no executable Capability handler; "
+                    "register a provider-backed Capability before execution"
+                )
         
         return GenericHandler()
     

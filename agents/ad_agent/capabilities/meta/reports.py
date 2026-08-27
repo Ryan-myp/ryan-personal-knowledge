@@ -18,15 +18,22 @@ class MetaGetReportHandler(ToolHandler):
 
     def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
         campaign_id = input_data.get("campaign_id")
-        if self.client and campaign_id:
+        campaign_ids = input_data.get("campaign_ids") or ([campaign_id] if campaign_id else [])
+        date_preset = input_data.get("date_preset") or input_data.get("date_range")
+        if self.client and ctx.account_id and campaign_ids:
             try:
-                report = self.client.get_report(campaign_id)
-                return ToolResult.ok({"report": report})
+                report = self.client.get_campaign_report(
+                    ctx.account_id,
+                    campaign_ids,
+                    time_range=date_preset,
+                )
+                return ToolResult.ok({"report": report, "data_status": "live"})
             except Exception as e:
                 return ToolResult.error(f"Failed to get Meta report: {e}")
         else:
             return ToolResult.ok({
                 "campaign_id": campaign_id,
+                "campaign_ids": campaign_ids,
                 "metrics": {
                     "impressions": 125000,
                     "clicks": 3200,
@@ -35,5 +42,7 @@ class MetaGetReportHandler(ToolHandler):
                     "cpc": 0.15,
                     "conversions": 48,
                     "cost_per_conversion": 10.01,
-                }
+                },
+                "data_status": "offline_mock",
+                "simulated": True,
             })

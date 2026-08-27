@@ -4,11 +4,14 @@ capabilities/meta/capability.py - Meta Capability 定义
 import logging
 from typing import Optional
 from ...core.interfaces import ToolDefinition, ToolSchema, RiskLevel, ToolEffect, ReplayPolicy, ToolHandler
-from ..base import BaseCapability
+from ..base import BaseCapability, CampaignUpdateHandler
 from .campaigns import MetaListCampaignsHandler, MetaGetCampaignHandler, MetaCreateCampaignHandler
 from .ad_sets import MetaListAdSetsHandler, MetaGetAdSetHandler, MetaCreateAdSetHandler
 from .ads import MetaListAdsHandler, MetaGetAdHandler, MetaCreateAdHandler
 from .reports import MetaGetReportHandler
+from .audiences import MetaListAudiencesHandler
+from .boost import MetaBoostPostHandler
+from .creatives import MetaCreateCreativeHandler
 from ...api_clients.meta_client import MetaAPIClient
 
 logger = logging.getLogger(__name__)
@@ -44,8 +47,10 @@ class MetaCapability(BaseCapability):
             platform="meta",
             description="获取 Meta Campaign 详情。",
             input_schema=ToolSchema(
-                required=["campaign_id"],
-                properties={"campaign_id": {"type": "string"}},
+                properties={
+                    "campaign_id": {"type": "string"},
+                    "campaign_name": {"type": "string", "description": "Campaign 名称（可通过名称查找 ID）"},
+                },
             ),
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
@@ -65,11 +70,17 @@ class MetaCapability(BaseCapability):
                     "account_id": {"type": "string"},
                     "name": {"type": "string"},
                     "objective": {"type": "string"},
+                    "budget": {"type": "number"},
+                    "daily_budget": {"type": "number"},
+                    "status": {"type": "string"},
+                    "special_ad_categories": {"type": "string"},
+                    "start_time": {"type": "string"},
+                    "end_time": {"type": "string"},
                 },
             ),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
-            replay_policy=ReplayPolicy.SAFE,
+            replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "campaign"],
         ), MetaCreateCampaignHandler(api_client)))
 
@@ -117,11 +128,20 @@ class MetaCapability(BaseCapability):
                     "campaign_id": {"type": "string"},
                     "name": {"type": "string"},
                     "targeting": {"type": "object"},
+                    "optimization_goal": {"type": "string"},
+                    "billing_event": {"type": "string"},
+                    "bidding_strategy": {"type": "string"},
+                    "budget": {"type": "number"},
+                    "bid_amount": {"type": "number"},
+                    "daily_budget": {"type": "number"},
+                    "status": {"type": "string"},
+                    "start_time": {"type": "string"},
+                    "end_time": {"type": "string"},
                 },
             ),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
-            replay_policy=ReplayPolicy.SAFE,
+            replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "ad_set"],
         ), MetaCreateAdSetHandler(api_client)))
 
@@ -165,15 +185,23 @@ class MetaCapability(BaseCapability):
             description="创建 Meta Ad。",
             input_schema=ToolSchema(
                 required=["adset_id", "name"],
+                provider_any_of=[["creative_id", "object_story_spec"]],
                 properties={
                     "adset_id": {"type": "string"},
                     "name": {"type": "string"},
                     "creative": {"type": "object"},
+                    "creative_id": {"type": "string"},
+                    "object_story_spec": {"type": "object"},
+                    "body": {"type": "string"},
+                    "title": {"type": "string"},
+                    "description": {"type": "string"},
+                    "url_tags": {"type": "string"},
+                    "status": {"type": "string"},
                 },
             ),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
-            replay_policy=ReplayPolicy.SAFE,
+            replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "ad"],
         ), MetaCreateAdHandler(api_client)))
 
@@ -184,14 +212,93 @@ class MetaCapability(BaseCapability):
             platform="meta",
             description="查询 Meta Campaign 报表。",
             input_schema=ToolSchema(
-                required=["campaign_id"],
-                properties={"campaign_id": {"type": "string"}, "date_preset": {"type": "string"}},
+                properties={
+                    "campaign_id": {"type": "string"},
+                    "campaign_ids": {"type": "array", "items": {"type": "string"}},
+                    "date_preset": {"type": "string"},
+                },
             ),
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
             replay_policy=ReplayPolicy.SAFE,
             traits=["read", "report"],
         ), MetaGetReportHandler(api_client)))
+
+        tools.append((ToolDefinition(
+            name="meta_list_audiences",
+            skill="meta-marketing-api",
+            platform="meta",
+            description="查询 Meta Custom Audience 列表。",
+            input_schema=ToolSchema(
+                properties={"account_id": {"type": "string"}, "limit": {"type": "integer"}},
+            ),
+            risk_level=RiskLevel.LOW,
+            effect_class=ToolEffect.READ,
+            replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "audience"],
+        ), MetaListAudiencesHandler(api_client)))
+
+        tools.append((ToolDefinition(
+            name="meta_boost_post",
+            skill="meta-marketing-api",
+            platform="meta",
+            description="将已有 Meta Page 帖子创建为推广广告。",
+            input_schema=ToolSchema(
+                required=["account_id", "page_id", "post_id", "budget", "duration_days"],
+                properties={
+                    "account_id": {"type": "string"},
+                    "page_id": {"type": "string"},
+                    "post_id": {"type": "string"},
+                    "budget": {"type": "number"},
+                    "duration_days": {"type": "integer"},
+                },
+            ),
+            risk_level=RiskLevel.MEDIUM,
+            effect_class=ToolEffect.WRITE,
+            replay_policy=ReplayPolicy.UNSAFE,
+            traits=["write", "boost", "ad"],
+        ), MetaBoostPostHandler(api_client)))
+
+        tools.append((ToolDefinition(
+            name="meta_create_creative",
+            skill="meta-marketing-api-expert",
+            platform="meta",
+            description="创建 Meta Creative；当前仅支持 dry-run 计划。",
+            input_schema=ToolSchema(
+                required=["account_id", "name", "page_id", "link"],
+                properties={
+                    "account_id": {"type": "string"},
+                    "name": {"type": "string"},
+                    "page_id": {"type": "string"},
+                    "link": {"type": "string"},
+                    "message": {"type": "string"},
+                    "image_hash": {"type": "string"},
+                    "image_url": {"type": "string"},
+                },
+            ),
+            risk_level=RiskLevel.MEDIUM,
+            effect_class=ToolEffect.WRITE,
+            replay_policy=ReplayPolicy.UNSAFE,
+            traits=["write", "creative"],
+            live_support=False,
+        ), MetaCreateCreativeHandler(api_client)))
+
+        # Update tools: dry-run 可完整生成计划；live 仅调用已存在的 Client 方法。
+        for resource_type, resource_id in [("campaign", "campaign_id"), ("adset", "adset_id"), ("ad", "ad_id")]:
+            tools.append((ToolDefinition(
+                name=f"meta_update_{resource_type}",
+                skill="meta-marketing-api",
+                platform="meta",
+                description=f"更新 Meta {resource_type}，默认仅生成 dry-run 计划。",
+                input_schema=ToolSchema(
+                    required=[resource_id, "updates"],
+                    properties={resource_id: {"type": "string"}, "updates": {"type": "object"}},
+                ),
+                risk_level=RiskLevel.MEDIUM,
+                effect_class=ToolEffect.WRITE,
+                replay_policy=ReplayPolicy.UNSAFE,
+                traits=["write", resource_type],
+            ), CampaignUpdateHandler(api_client, resource_type)))
 
         return tools
 

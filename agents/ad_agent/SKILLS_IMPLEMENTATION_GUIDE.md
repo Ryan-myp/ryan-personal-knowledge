@@ -1,5 +1,7 @@
 # Skills 实现指南
 
+> 状态说明：本文保留为设计参考。当前可执行实现以 `capabilities/`、`core/` 和 `runtime/` 源码为准；`SKILL.md` 中的工具说明以及本文的旧目录/数量不等于已注册的可执行工具。当前四个平台 Capability 共 72 个工具，跨渠道编排由 Runtime + `core/cross_channel.py` 提供。
+
 ## 架构分层
 
 ```
@@ -8,26 +10,26 @@ skills/
 ├── loader.py             # Skill 加载器 - 已完成 ✅
 ├── registry.py           # 工具注册器 - 已完成 ✅
 ├── meta/
-│   ├── SKILL.md          # Meta 工具定义 (17 tools) ✅
+│   ├── SKILL.md          # Meta 工具定义（专家说明）
 │   ├── tools/            # Meta 工具实现 ⏳
 │   │   ├── campaign.py   # meta_create_campaign 等
 │   │   ├── adset.py      # meta_create_adset 等
 │   │   └── report.py     # meta_get_campaign_report 等
 │   └── expert/           # Meta 专家知识
 ├── tiktok/
-│   ├── SKILL.md          # TikTok 工具定义 (18 tools) ✅
+│   ├── SKILL.md          # TikTok 工具定义（专家说明）
 │   ├── tools/            # TikTok 工具实现 ⏳
 │   └── expert/
 ├── google-ads/
-│   ├── SKILL.md          # Google Ads 工具定义 (20 tools) ✅
+│   ├── SKILL.md          # Google Ads 工具定义（专家说明）
 │   ├── tools/            # Google Ads 工具实现 ⏳
 │   └── expert/
 ├── dv360/
-│   ├── SKILL.md          # DV360 工具定义 (20 tools) ✅
+│   ├── SKILL.md          # DV360 工具定义（专家说明）
 │   ├── tools/            # DV360 工具实现 ⏳
 │   └── expert/
 └── cross-channel/
-    ├── SKILL.md          # 跨渠道工具定义 (12 tools) ✅
+    ├── SKILL.md          # 跨渠道设计契约（未注册为独立工具）
     ├── tools/            # 跨渠道工具实现 ⏳
     └── expert/
 ```
@@ -36,12 +38,12 @@ skills/
 
 | 层级 | 状态 | 说明 |
 |------|------|------|
-| SKILL.md (定义层) | ✅ 完成 | 87 个工具定义 + 专家知识 |
+| SKILL.md (定义层) | ✅ | 专家知识和设计契约；不作为 Runtime 工具注册源 |
 | loader.py (加载层) | ✅ 完成 | 自动解析 SKILL.md |
 | registry.py (注册层) | ✅ 完成 | 自动注册到 ToolRegistry |
 | tool_selector.py (选择层) | ✅ 完成 | 动态选择相关工具 |
 | context_optimizer.py (优化层) | ✅ 完成 | 构建精简 LLM 上下文 |
-| tools/ (实现层) | ⏳ 待实现 | 需要编写实际 API 调用代码 |
+| capabilities/ (实现层) | ✅ | 当前 Runtime 的实际 Handler/API Client 入口 |
 
 ## 如何补充实现
 
@@ -190,6 +192,37 @@ class NewPlatformCampaignTools:
 # 无需修改其他代码，自动加载
 python agents/ad_agent/api_server.py
 ```
+
+## 当前推荐的可执行扩展契约
+
+对于不需要修改内置 Capability 的新增功能，使用以下目录结构：
+
+```text
+skills/channels/<skill-name>/
+├── SKILL.md
+└── tools.py                 # 或 tools/__init__.py
+```
+
+`tools.py` 导出 `create_skill(api_client=None)`，返回实现 Core `Skill` 接口的对象：
+
+```python
+class MySkill(Skill):
+    name = "my-skill"
+    platform = "meta"  # 也可以是新的、受控配置的平台名
+    intent_to_tools = {"my_intent": {"meta": ["my_tool"]}}
+
+    def get_tools(self):
+        return [my_tool_definition]
+
+    def get_tool_handler(self, tool_name):
+        return my_handler if tool_name == "my_tool" else None
+
+def create_skill(api_client=None):
+    return MySkill()
+```
+
+Runtime 自动加载 plugin 后，工具仍由统一 Registry 执行；不能因为在 `SKILL.md`
+中列出工具，就绕过 Handler、schema、白名单或 dry-run/live 安全门禁。
 
 服务启动时会自动：
 1. 扫描 `skills/` 目录下所有 SKILL.md
