@@ -93,19 +93,42 @@ class SkillLoader:
                     yaml_content = match.group(1)
                     try:
                         # 使用 safe_load 解析单个 YAML 文档
-                        metadata = yaml.safe_load(yaml_content)
+                        metadata = yaml.safe_load(yaml_content) or {}
                     except yaml.YAMLError as e:
                         print(f"❌ 解析 {skill_dir.name}/SKILL.md 失败: {e}")
                         return None
             
-            # 提取 skill 名称和平台
-            skill_name = metadata.get('name', skill_dir.name)
-            skill_platform = metadata.get('platform', skill_dir.name)
+            # 提取 skill 名称和平台。兼容当前渠道 Skill 使用的扁平
+            # frontmatter，以及 cross-channel/扩展 Skill 常用的
+            # ``skill: {...}`` 嵌套格式。
+            metadata = metadata if isinstance(metadata, dict) else {}
+            skill_metadata = metadata.get('skill', {})
+            skill_metadata = skill_metadata if isinstance(skill_metadata, dict) else {}
+            skill_name = (
+                metadata.get('name')
+                or skill_metadata.get('name')
+                or skill_dir.name
+            )
+            skill_platform = (
+                metadata.get('platform')
+                or skill_metadata.get('platform')
+                or skill_dir.name
+            )
+            skill_description = (
+                metadata.get('description')
+                or skill_metadata.get('description')
+                or ''
+            )
+            skill_version = (
+                metadata.get('version')
+                or skill_metadata.get('version')
+                or '1.0'
+            )
             
             skill = SkillDefinition(
                 name=skill_name,
-                version=metadata.get('version', '1.0'),
-                description=metadata.get('description', ''),
+                version=skill_version,
+                description=skill_description,
                 platform=skill_platform,
                 skill_file=skill_file,
             )

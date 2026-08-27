@@ -232,6 +232,42 @@ def validate_tool_input(
                     "Provider contract requires one of: "
                     + ", ".join(alternatives)
                 )
+
+    # Conditional rules model provider relationships such as
+    # objective_type=APP_PROMOTION -> promotion_type must be APP_ANDROID and
+    # app_id/deep_bid_type are required. Keep equality-only matching here so
+    # the contract remains deterministic and safe to expose as JSON.
+    for rule in schema.conditional_rules:
+        if not isinstance(rule, dict):
+            continue
+        conditions = rule.get("if", rule.get("when", {}))
+        if not isinstance(conditions, dict):
+            continue
+        if any(data.get(key) != expected for key, expected in conditions.items()):
+            continue
+
+        for field_name in rule.get("required", rule.get("required_fields", [])) or []:
+            if data.get(field_name) in (None, "", {}, []):
+                errors.append(
+                    rule.get("message")
+                    or f"Field '{field_name}' is required when {conditions}"
+                )
+
+        allowed = rule.get("allowed", rule.get("enum", {}))
+        if isinstance(allowed, dict):
+            for field_name, values in allowed.items():
+                if field_name in data and data[field_name] not in values:
+                    errors.append(
+                        rule.get("message")
+                        or f"Field '{field_name}' must be one of {list(values)} when {conditions}"
+                    )
+
+        for field_name in rule.get("forbidden", rule.get("forbidden_fields", [])) or []:
+            if data.get(field_name) not in (None, "", {}, []):
+                errors.append(
+                    rule.get("message")
+                    or f"Field '{field_name}' is not allowed when {conditions}"
+                )
     
     # 检查字段类型
     for field_name, field_schema in schema.properties.items():
@@ -274,6 +310,31 @@ def validate_tool_input(
             errors.append(
                 f"Field '{field_name}' must be one of {list(enum)}, got {value!r}"
             )
+
+        # Validate the common array-item contract used by targeting fields
+        # such as operating_systems and location_ids.
+        item_schema = field_schema.get("items")
+        if isinstance(value, list) and isinstance(item_schema, dict):
+            item_type = item_schema.get("type")
+            item_type_map = {
+                "string": str,
+                "number": (int, float),
+                "integer": int,
+                "boolean": bool,
+                "object": dict,
+            }
+            expected_item_type = item_type_map.get(item_type)
+            for index, item in enumerate(value):
+                if expected_item_type and not isinstance(item, expected_item_type):
+                    errors.append(
+                        f"Field '{field_name}[{index}]' expected {item_type}, "
+                        f"got {type(item).__name__}"
+                    )
+                item_enum = item_schema.get("enum")
+                if item_enum is not None and item not in item_enum:
+                    errors.append(
+                        f"Field '{field_name}[{index}]' must be one of {list(item_enum)}, got {item!r}"
+                    )
 
         minimum = field_schema.get("minimum")
         if minimum is not None and not isinstance(value, bool):

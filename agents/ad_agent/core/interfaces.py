@@ -54,6 +54,21 @@ class ToolSchema:
     # while live execution can fail before reaching a provider.
     provider_required: list[str] = field(default_factory=list)
     provider_any_of: list[list[str]] = field(default_factory=list)
+    # Rules that cannot be represented by a flat ``required``/``enum`` pair.
+    # The shape intentionally stays JSON-serializable because it is also
+    # exposed to UI/LLM callers through /tools.
+    conditional_rules: list[dict[str, Any]] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return the public, JSON-compatible tool contract."""
+        return {
+            "type": self.type,
+            "required": list(self.required),
+            "properties": self.properties,
+            "provider_required": list(self.provider_required),
+            "provider_any_of": [list(group) for group in self.provider_any_of],
+            "conditional_rules": self.conditional_rules,
+        }
 
 @dataclass
 class ToolDefinition:

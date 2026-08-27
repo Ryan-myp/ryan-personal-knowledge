@@ -218,6 +218,13 @@ class TikTokAPIClient(BasePlatformClient):
             data['daily_budget'] = int(campaign['daily_budget'] * 100)  # 转为分
         if campaign.get('app_promotion_type'):
             data['app_promotion_type'] = campaign['app_promotion_type']
+        # Preserve the explicit creation contract.  Previously these fields
+        # were accepted by the tool schema but silently discarded here, which
+        # made a dry-run plan differ from the eventual provider request.
+        for key in ('budget', 'budget_restriction', 'budget_mode', 'campaign_type',
+                    'campaign_automation_type', 'objective_type'):
+            if key in campaign and campaign[key] not in (None, ''):
+                data[key] = campaign[key]
         
         result = self.request('POST', 'campaign/create/', data=data)
         return str(result.get('campaign_id', '')) if isinstance(result, dict) else ''
@@ -280,14 +287,21 @@ class TikTokAPIClient(BasePlatformClient):
             'ad_group': {
                 'ad_group_name': adgroup['name'],
                 'ad_group_status': adgroup.get('status', 1),
-                'promote_object_type': adgroup.get('promote_object_type', 0),  # 0=APP, 1=LandingPage
                 'tracking_url': adgroup.get('tracking_url', ''),
-                'bid_type': adgroup.get('bid_type', 0),  # 0=AUTO, 1=MANUAL
                 'bid_amount': int(adgroup.get('bid_amount', 500)),  # 单位为分
                 'daily_budget': int(adgroup.get('daily_budget', 50) * 100),
-                'placement_type': adgroup.get('placement_type', -1),  # -1=AUTO
             }
         }
+        # New callers use the symbolic values from the parameter catalog;
+        # keep the old numeric promote_object_type field for compatibility.
+        for key in (
+            'promotion_type', 'promote_object_type', 'bid_type', 'placement_type',
+            'billing_event', 'deep_bid_type', 'budget_mode', 'budget',
+            'app_id', 'landing_url', 'location_ids', 'operating_systems',
+            'age_groups', 'gender', 'auto_targeting_enabled', 'optimization_goal',
+        ):
+            if key in adgroup and adgroup[key] not in (None, ''):
+                data['ad_group'][key] = adgroup[key]
         # 定向
         if adgroup.get('targeting'):
             data['ad_group']['targeting'] = adgroup['targeting']

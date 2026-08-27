@@ -345,6 +345,17 @@ class DynamicToolSelector:
             lines.append(f"   描述: {tool.description[:100]}...")
             if tool.input_schema.properties:
                 lines.append(f"   参数: {list(tool.input_schema.properties.keys())}")
+                enum_fields = {
+                    name: spec.get("enum")
+                    for name, spec in tool.input_schema.properties.items()
+                    if isinstance(spec, dict) and spec.get("enum") is not None
+                }
+                if enum_fields:
+                    lines.append(f"   固定选项: {enum_fields}")
+            if tool.input_schema.required:
+                lines.append(f"   必填: {tool.input_schema.required}")
+            if tool.input_schema.conditional_rules:
+                lines.append(f"   条件依赖: {tool.input_schema.conditional_rules}")
             lines.append("")
         
         if selection.expert_knowledge:

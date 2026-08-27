@@ -149,7 +149,7 @@ class DV360Capability(BaseCapability):
                     "spend_cap_micros": {"type": "integer"},
                     "start_date": {"type": "string"},
                     "end_date": {"type": "string"},
-                    "status": {"type": "string"},
+                    "status": {"type": "string", "enum": ["DRAFT", "ACTIVE", "PAUSED"]},
                 },
             ),
             risk_level=RiskLevel.MEDIUM,

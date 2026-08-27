@@ -33,6 +33,11 @@ from .reference import (
     TikTokListBrandSafetyHandler,
 )
 from ...api_clients.tiktok_client import TikTokAPIClient
+from .parameters import (
+    tiktok_campaign_schema,
+    tiktok_adgroup_schema,
+    tiktok_ad_schema,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -84,22 +89,7 @@ class TikTokCapability(BaseCapability):
             skill="tiktok-ads-api-expert",
             platform="tiktok",
             description="创建 TikTok Ads Campaign。",
-            input_schema=ToolSchema(
-                required=["account_id", "name"],
-                properties={
-                    "account_id": {"type": "string"},
-                    "name": {"type": "string"},
-                    "budget": {"type": "number"},
-                    "daily_budget": {"type": "number"},
-                    "objective_type": {"type": "string"},
-                    "campaign_type": {"type": "string"},
-                    "campaign_automation_type": {"type": "string"},
-                    "budget_restriction": {"type": "string"},
-                    "budget_mode": {"type": "string"},
-                    "app_promotion_type": {"type": "string"},
-                    "status": {"type": "integer"},
-                },
-            ),
+            input_schema=ToolSchema(**tiktok_campaign_schema()),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
@@ -144,21 +134,7 @@ class TikTokCapability(BaseCapability):
             skill="tiktok-ads-api-expert",
             platform="tiktok",
             description="创建 TikTok Ads Ad Group。",
-            input_schema=ToolSchema(
-                required=["campaign_id", "name"],
-                properties={
-                    "campaign_id": {"type": "string"},
-                    "name": {"type": "string"},
-                    "targeting": {"type": "object"},
-                    "promote_object_type": {"type": "integer"},
-                    "tracking_url": {"type": "string"},
-                    "bid_type": {"type": "integer"},
-                    "bid_amount": {"type": "number"},
-                    "daily_budget": {"type": "number"},
-                    "placement_type": {"type": "integer"},
-                    "status": {"type": "integer"},
-                },
-            ),
+            input_schema=ToolSchema(**tiktok_adgroup_schema()),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
@@ -203,19 +179,7 @@ class TikTokCapability(BaseCapability):
             skill="tiktok-ads-api-expert",
             platform="tiktok",
             description="创建 TikTok Ads Ad。",
-            input_schema=ToolSchema(
-                required=["adgroup_id", "name"],
-                properties={
-                    "adgroup_id": {"type": "string"},
-                    "name": {"type": "string"},
-                    "campaign_id": {"type": "string"},
-                    "landing_page_url": {"type": "string"},
-                    "conversion_id": {"type": "integer"},
-                    "media": {"type": "object"},
-                    "text": {"type": "object"},
-                    "status": {"type": "integer"},
-                },
-            ),
+            input_schema=ToolSchema(**tiktok_ad_schema()),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,

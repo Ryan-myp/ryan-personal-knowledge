@@ -290,7 +290,21 @@ async def get_tools(
     if not runtime:
         return {"tools": []}
     tools = runtime.registry.list_all()
-    return {"tools": [{"name": t.name, "platform": t.platform, "skill": t.skill, "description": t.description} for t in tools]}
+    return {
+        "tools": [
+            {
+                "name": t.name,
+                "platform": t.platform,
+                "skill": t.skill,
+                "description": t.description,
+                "risk_level": t.risk_level.value,
+                "effect_class": t.effect_class.value,
+                "live_support": t.live_support,
+                "input_schema": t.input_schema.to_dict() if t.input_schema else None,
+            }
+            for t in tools
+        ]
+    }
 
 
 class ChatStreamRequest(BaseModel):

@@ -1110,7 +1110,14 @@ class AgentRuntime:
                         if match:
                             metadata = yaml.safe_load(match.group(1))
                     
-                    platform = metadata.get('platform', skill_dir.name)
+                    metadata = metadata if isinstance(metadata, dict) else {}
+                    skill_metadata = metadata.get('skill', {})
+                    skill_metadata = skill_metadata if isinstance(skill_metadata, dict) else {}
+                    platform = (
+                        metadata.get('platform')
+                        or skill_metadata.get('platform')
+                        or skill_dir.name
+                    )
 
                     # Executable extensions take precedence over the legacy
                     # Markdown-only compatibility loader.  A plugin is still
@@ -2039,13 +2046,18 @@ class AgentRuntime:
             )
             if not per_platform_account:
                 test_accounts = self.whitelist_validator.get_allowed_accounts(actual_platform)
-                if test_accounts:
+                # A single configured test account is a safe compatibility
+                # fallback.  Once an operator configures multiple accounts,
+                # silently picking the first one could target the wrong
+                # advertiser; require the caller to select it explicitly.
+                if len(test_accounts) == 1:
                     per_platform_account = test_accounts[0]
                 else:
                     results.append({
                         "tool": tools[0].name if tools else "unknown",
                         "platform": actual_platform,
                         "success": False,
+                        "data": {},
                         "error": "缺少账户ID",
                         "needs_confirmation": True,
                         "confirmation_payload": {
@@ -2629,7 +2641,10 @@ class AgentRuntime:
         if fallback_account:
             return str(fallback_account)
         allowed = self.whitelist_validator.get_allowed_accounts(actual_platform)
-        return str(allowed[0]) if allowed else None
+        # Do not infer an account when the whitelist contains more than one
+        # candidate.  The caller must provide the exact test account in that
+        # case; a one-account fallback keeps the existing local UX intact.
+        return str(allowed[0]) if len(allowed) == 1 else None
     
     def _generate_reply(
         self,

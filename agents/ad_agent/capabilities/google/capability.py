@@ -80,11 +80,18 @@ class GoogleCapability(BaseCapability):
                 properties={
                     "customer_id": {"type": "string"},
                     "campaign_name": {"type": "string"},
-                    "advertising_channel_type": {"type": "string"},
-                    "campaign_type": {"type": "string"},
-                    "bidding_strategy": {"type": "string"},
+                    "advertising_channel_type": {"type": "string", "enum": [
+                        "SEARCH", "DISPLAY", "SHOPPING", "VIDEO", "APP",
+                        "PERFORMANCE_MAX",
+                    ]},
+                    "campaign_type": {"type": "string", "enum": [
+                        "SEARCH", "DISPLAY", "SHOPPING", "VIDEO", "APP", "PERFORMANCE_MAX",
+                    ]},
+                    "bidding_strategy": {"type": "string", "enum": [
+                        "MANUAL_CPC", "TARGET_CPA", "MAXIMIZE_CONVERSIONS", "TARGET_ROAS",
+                    ]},
                     "budget": {"type": "number"},
-                    "status": {"type": "string"},
+                    "status": {"type": "string", "enum": ["ENABLED", "PAUSED", "REMOVED"]},
                     "target_cpa_micros": {"type": "integer"},
                     "target_roas": {"type": "number"},
                     "start_date": {"type": "string"},
@@ -141,8 +148,10 @@ class GoogleCapability(BaseCapability):
                     "campaign_id": {"type": "string"},
                     "name": {"type": "string"},
                     "cpc_bid": {"type": "number"},
-                    "status": {"type": "string"},
-                    "type": {"type": "string"},
+                    "status": {"type": "string", "enum": ["ENABLED", "PAUSED", "REMOVED"]},
+                    "type": {"type": "string", "enum": [
+                        "SEARCH_STANDARD", "SEARCH_DYNAMIC_ADS", "DISPLAY_STANDARD",
+                    ]},
                 },
             ),
             risk_level=RiskLevel.MEDIUM,

@@ -21,6 +21,7 @@ from agents.ad_agent.runtime.runtime import AccountWhitelistValidator, AgentRunt
 from agents.ad_agent.persistence.store import AdAgentStore
 from agents.ad_agent.skills.registry import SkillRegistry, SkillTool
 from agents.ad_agent.core.tool_registry import SimpleToolRegistry
+from agents.ad_agent.core.tool_registry import validate_tool_input
 
 
 def whitelist(**accounts):
@@ -163,6 +164,64 @@ def test_legacy_skill_declarations_never_claim_provider_execution():
     result = handler.execute(None, {})
     assert result.success is False
     assert "no executable Capability handler" in result.error
+
+
+def test_tiktok_creation_contract_exposes_enums_and_conditional_dependencies():
+    definitions = {
+        definition.name: definition
+        for definition, _ in create_tiktok_capability().register_tools()
+    }
+    campaign = definitions["tiktok_create_campaign"].input_schema
+    adgroup = definitions["tiktok_create_adgroup"].input_schema
+
+    assert "APP_PROMOTION" in campaign.properties["objective_type"]["enum"]
+    assert "APP_ANDROID" in adgroup.properties["promotion_type"]["enum"]
+    assert adgroup.properties["app_id"]["lookup_tool"] == "tiktok_list_apps"
+    assert adgroup.properties["location_ids"]["lookup_tool"] == "tiktok_list_locations"
+    assert adgroup.conditional_rules
+
+    valid = {
+        "campaign_id": "c1",
+        "name": "Android acquisition",
+        "promotion_type": "APP_ANDROID",
+        "billing_event": "OCPM",
+        "bid_type": "BID_TYPE_NO_BID",
+        "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
+        "budget_mode": "BUDGET_MODE_DAY",
+        "budget": 50,
+        "location_ids": ["US"],
+        "app_id": "app-1",
+        "deep_bid_type": "AEO",
+        "operating_systems": ["ANDROID"],
+    }
+    assert validate_tool_input(adgroup, valid) == []
+
+    invalid_objective = dict(valid, promotion_type="NOT_A_REAL_DESTINATION")
+    assert any("promotion_type" in error and "must be one of" in error
+               for error in validate_tool_input(adgroup, invalid_objective))
+
+    missing_app = {key: value for key, value in valid.items() if key != "app_id"}
+    assert any("app_id" in error for error in validate_tool_input(adgroup, missing_app))
+
+    invalid_os = dict(valid, operating_systems=["WINDOWS"])
+    assert any("operating_systems[0]" in error
+               for error in validate_tool_input(adgroup, invalid_os))
+
+
+def test_tiktok_website_contract_requires_landing_url():
+    definition = next(
+        definition for definition, _ in create_tiktok_capability().register_tools()
+        if definition.name == "tiktok_create_adgroup"
+    )
+    data = {
+        "campaign_id": "c1", "name": "Website traffic",
+        "promotion_type": "WEBSITE", "billing_event": "OCPM",
+        "bid_type": "BID_TYPE_NO_BID", "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
+        "budget_mode": "BUDGET_MODE_DAY", "budget": 50,
+        "daily_budget": 50, "location_ids": ["US"],
+    }
+    errors = validate_tool_input(definition.input_schema, data)
+    assert any("landing_url" in error for error in errors)
 
 
 class RetryProbeClient(BasePlatformClient):

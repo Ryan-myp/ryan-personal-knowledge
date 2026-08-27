@@ -99,3 +99,44 @@ def test_chat_stream_returns_sse_lifecycle_events(fake_server):
     assert '"type": "start"' in body
     assert '"type": "reply"' in body
     assert '"type": "done"' in body
+
+
+def test_runtime_initialization_registers_all_builtin_capabilities(monkeypatch, tmp_path):
+    monkeypatch.setenv("AD_AGENT_DB_PATH", str(tmp_path / "runtime.db"))
+    monkeypatch.setattr(api_server, "runtime", None)
+    monkeypatch.setattr(
+        api_server,
+        "runtime_status",
+        {"state": "not_initialized", "error": None},
+    )
+
+    runtime = api_server._init_runtime()
+
+    assert runtime is not None
+    assert api_server.runtime_status["state"] == "ready"
+    assert set(runtime.registry.list_all_platforms()) == {
+        "meta", "google-ads", "tiktok", "dv360"
+    }
+    assert len(runtime.registry.list_all()) == 72
+    runtime._session_manager.store.close()
+
+
+def test_tools_endpoint_exposes_parameter_schema_and_enum_catalog(monkeypatch):
+    from agents.ad_agent import AgentRuntime
+    from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
+
+    runtime = AgentRuntime(offline_mode=True)
+    runtime.register_capability(create_tiktok_capability())
+    monkeypatch.setattr(api_server, "runtime", runtime)
+    monkeypatch.setattr(api_server, "API_KEY", "test-key")
+    monkeypatch.setattr(api_server, "ALLOW_UNAUTHENTICATED", False)
+
+    with TestClient(api_server.app) as client:
+        response = client.get("/tools", headers={"X-API-Key": "test-key"})
+
+    assert response.status_code == 200
+    tools = {item["name"]: item for item in response.json()["tools"]}
+    adgroup_schema = tools["tiktok_create_adgroup"]["input_schema"]
+    assert "APP_ANDROID" in adgroup_schema["properties"]["promotion_type"]["enum"]
+    assert adgroup_schema["properties"]["app_id"]["lookup_tool"] == "tiktok_list_apps"
+    assert adgroup_schema["conditional_rules"]

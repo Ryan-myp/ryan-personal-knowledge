@@ -509,6 +509,19 @@ class TestRuntimeQuery:
         # 应该成功执行（mock handler 不需要真实账户）
         assert result["session_id"] is not None
 
+    def test_multiple_whitelisted_accounts_require_explicit_selection(self):
+        from agents.ad_agent.capabilities.meta import create_meta_capability
+        validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+        validator.allowed_accounts = {"meta": ["m1", "m2"]}
+        rt = AgentRuntime(whitelist_validator=validator, offline_mode=True)
+        rt.register_capability(create_meta_capability())
+
+        result = rt.run("列出 Meta campaign", user_id="multi-account-user")
+
+        assert result["needs_confirmation"] is True
+        assert result["results"][0]["confirmation_payload"]["type"] == "ask_account"
+        assert result["results"][0]["data"] == {}
+
     def test_runtime_rejects_offline_read_fixtures_by_default(self):
         from agents.ad_agent.capabilities.meta import create_meta_capability
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
@@ -1220,6 +1233,29 @@ class TestIterationContracts:
         )
         assert result.success is True
         assert result.data == {"source": "plugin"}
+
+    def test_skill_loader_supports_nested_frontmatter_metadata(self, tmp_path):
+        from agents.ad_agent.skills.loader import SkillLoader
+
+        skill_dir = tmp_path / "channels" / "nested-insights"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\n"
+            "skill:\n"
+            "  name: nested-insights\n"
+            "  platform: meta\n"
+            "  description: Nested metadata extension\n"
+            "  version: '2.0'\n"
+            "---\n"
+            "# Nested Skill\n",
+            encoding="utf-8",
+        )
+
+        skills = SkillLoader(str(tmp_path)).load_all()
+
+        assert skills["nested-insights"].platform == "meta"
+        assert skills["nested-insights"].description == "Nested metadata extension"
+        assert skills["nested-insights"].version == "2.0"
 
     def test_provider_list_pagination_is_consumed(self):
         meta = MetaAPIClient({"access_token": "caller-token"})

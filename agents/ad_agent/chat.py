@@ -14,6 +14,7 @@ import os
 import argparse
 import json
 from datetime import datetime
+from pathlib import Path
 
 # 添加项目根目录到路径
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -118,11 +119,17 @@ def main():
     parser = argparse.ArgumentParser(description="ad-agent 对话入口（安全 dry-run 模式）")
     parser.add_argument("--credentials", help="API 凭证文件路径 (JSON)")
     parser.add_argument("--user", default="web_user", help="用户 ID")
-    parser.add_argument("--account", help="广告账户 ID（不指定则自动使用白名单第一个测试账户）")
+    parser.add_argument(
+        "--account",
+        help="广告账户 ID；仅在白名单恰有一个账户时允许自动选择，多个账户必须显式指定",
+    )
     args = parser.parse_args()
 
     # 初始化 Runtime（只读模式）
-    store = AdAgentStore("ad_agent.db")
+    database_path = Path(
+        os.environ.get("AD_AGENT_DB_PATH", Path(__file__).parent / "ad_agent.db")
+    ).expanduser().resolve()
+    store = AdAgentStore(str(database_path))
     runtime = AgentRuntime(
         persistence_store=store,
         read_only_mode=False,
@@ -156,7 +163,7 @@ def main():
     tools = runtime.registry.list_all()
     print(f"✅ 已注册 {len(tools)} 个工具（dry-run，写操作只生成本地计划）")
     print(f"📦 平台: {', '.join(platforms)}")
-    print(f"💾 持久化: ad_agent.db")
+    print(f"💾 持久化: {database_path}")
     print()
     
     # 对话循环

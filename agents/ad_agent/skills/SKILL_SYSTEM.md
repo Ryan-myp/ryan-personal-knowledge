@@ -83,6 +83,6 @@ skills:
 
 只需三步：
 
-1. 创建 `skills/{channel}/SKILL.md`
-2. 实现 tools/ 目录下的工具
-3. 在 `skill_loader.py` 注册 Skill
+1. 创建 `skills/channels/{channel}/SKILL.md`
+2. 实现同目录下的 `tools.py`（导出 `create_skill(api_client=None)`）
+3. 让 Runtime 自动发现；无需修改核心路由，工具仍需通过统一 Registry 和安全门禁
