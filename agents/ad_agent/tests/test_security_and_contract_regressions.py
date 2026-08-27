@@ -4,7 +4,7 @@ from agents.ad_agent.capabilities.meta import create_meta_capability
 from agents.ad_agent.capabilities.google import create_google_capability
 from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
 from agents.ad_agent.capabilities.dv360 import create_dv360_capability
-from agents.ad_agent.core.interfaces import ExecutionMode, ReplayPolicy
+from agents.ad_agent.core.interfaces import ExecutionMode, ReplayPolicy, ToolContext
 from agents.ad_agent.api_clients.base import (
     APIError,
     AuthError,
@@ -353,6 +353,92 @@ def test_conditional_missing_parameter_exposes_lookup_tool():
     )
     assert "app_id" in ask["missing"]
     assert ask["lookup_tools"]["app_id"] == "tiktok_list_apps"
+
+
+def test_live_lookup_mints_context_bound_selection_token_for_dry_run_create():
+    class LookupClient:
+        platform = "tiktok"
+
+        def list_apps(self, filtering=None, page_size=20):
+            return [{"app_id": "app-1", "app_name": "Demo App"}]
+
+    validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+    validator.allowed_accounts = {"tiktok": ["t1"]}
+    runtime = AgentRuntime(
+        whitelist_validator=validator,
+        selection_token_secret="selection-secret-1234",
+    )
+    runtime.register_capability(create_tiktok_capability(LookupClient()))
+
+    lookup = runtime.run(
+        "查询 TikTok apps",
+        session_id="selection-session",
+        user_id="u1",
+        account_id="t1",
+    )
+    selection = lookup["results"][0]["data"]["parameter_selections"][0]
+    option = selection["options"][0]
+    assert option["value"] == "app-1"
+    assert option["selection_token"] != "<redacted>"
+
+    planned = runtime.run(
+        "创建 TikTok campaign",
+        session_id="selection-session",
+        user_id="u1",
+        account_id="t1",
+        platform_params={
+            "tiktok": {
+                "campaign_name": "App acquisition",
+                "objective_type": "APP_PROMOTION",
+                "app_promotion_type": "APP_ACQUISITION",
+                "campaign_type": "REGULAR_CAMPAIGN",
+                "budget_mode": "BUDGET_MODE_DAY",
+                "daily_budget": 50,
+                "tiktok_create_adgroup": {
+                    "name": "Android group",
+                    "promotion_type": "APP_ANDROID",
+                    "billing_event": "OCPM",
+                    "bid_type": "BID_TYPE_NO_BID",
+                    "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
+                    "budget_mode": "BUDGET_MODE_DAY",
+                    "budget": 50,
+                    "daily_budget": 50,
+                    "location_ids": ["US"],
+                    "deep_bid_type": "AEO",
+                    "operating_systems": ["ANDROID"],
+                    "selection_tokens": {"app_id": option["selection_token"]},
+                },
+            }
+        },
+    )
+    adgroup = next(
+        item for item in planned["results"]
+        if item.get("tool") == "tiktok_create_adgroup"
+    )
+    assert adgroup["success"] is True
+    assert adgroup["data"]["input"]["app_id"] == "app-1"
+
+
+def test_live_dynamic_parameter_rejects_unattested_raw_value():
+    validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+    validator.allowed_accounts = {"tiktok": ["t1"]}
+    runtime = AgentRuntime(
+        whitelist_validator=validator,
+        execution_mode=ExecutionMode.LIVE.value,
+        selection_token_secret="selection-secret-1234",
+    )
+    runtime.register_capability(create_tiktok_capability())
+    definition = next(
+        definition for definition, _ in create_tiktok_capability().register_tools()
+        if definition.name == "tiktok_create_adgroup"
+    )
+    errors = runtime._apply_selection_tokens(
+        definition,
+        {"app_id": "app-1"},
+        {"app_id": "app-1"},
+        ToolContext(session_id="s1", user_id="u1", account_id="t1"),
+    )
+    assert any("selection_token" in error for error in errors)
 
 
 def test_provider_status_is_normalized_before_dry_run_update_plan():

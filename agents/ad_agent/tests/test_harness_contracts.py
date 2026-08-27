@@ -10,11 +10,15 @@ from agents.ad_agent.capabilities.meta import create_meta_capability
 from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
 from agents.ad_agent.core.interfaces import (
     ToolContext, ToolSchema, ToolDefinition, ToolEffect,
-    ProviderReconciler, ReconciliationObservation,
+    ProviderReconciler, ReconciliationObservation, CapabilityRuntime,
 )
 from agents.ad_agent.core.intent import LLMIntentParser
 from agents.ad_agent.core.tool_registry import SimpleToolRegistry, validate_tool_input
 from agents.ad_agent.core.auth import RequestPrincipal
+from agents.ad_agent.core.parameter_selection import (
+    ParameterSelectionError,
+    ParameterSelectionSigner,
+)
 from agents.ad_agent.api_clients.base import RateLimiter, TemporaryError
 from agents.ad_agent.api_clients.tiktok_client import TikTokAPIClient
 from agents.ad_agent.api_clients.dv360_client import DV360APIClient
@@ -66,6 +70,80 @@ def test_rate_limit_wait_is_bounded_by_provider_deadline():
     limiter.acquire()
     with pytest.raises(TemporaryError, match="deadline"):
         limiter.acquire(max_wait=0.001)
+
+
+def test_parameter_selection_tokens_are_signed_and_context_bound():
+    signer = ParameterSelectionSigner("selection-secret-1234", ttl_seconds=10)
+    token, expires_at = signer.issue(
+        session_id="s1", user_id="u1", account_id="t1", platform="tiktok",
+        tool_name="tiktok_create_adgroup", field="app_id",
+        source_tool="tiktok_list_apps", value="app-1", now=100,
+    )
+    assert expires_at == 110
+    assert signer.verify(
+        token,
+        session_id="s1", user_id="u1", account_id="t1", platform="tiktok",
+        tool_name="tiktok_create_adgroup", field="app_id",
+        source_tool="tiktok_list_apps", now=109,
+    ) == "app-1"
+    with pytest.raises(ParameterSelectionError, match="not bound to user_id"):
+        signer.verify(
+            token,
+            session_id="s1", user_id="other", account_id="t1", platform="tiktok",
+            tool_name="tiktok_create_adgroup", field="app_id",
+            source_tool="tiktok_list_apps", now=109,
+        )
+    with pytest.raises(ParameterSelectionError, match="expired"):
+        signer.verify(
+            token,
+            session_id="s1", user_id="u1", account_id="t1", platform="tiktok",
+            tool_name="tiktok_create_adgroup", field="app_id",
+            source_tool="tiktok_list_apps", now=110,
+        )
+
+
+def test_live_write_without_provider_client_fails_closed():
+    runtime = AgentRuntime(
+        whitelist_validator=_whitelist(tiktok=["t1"]),
+        execution_mode="live",
+        live_approved_tools={"tiktok_create_adgroup"},
+    )
+    runtime.register_capability(create_tiktok_capability())
+    definition, _handler = runtime._get_registered_tool("tiktok_create_adgroup")
+
+    result = runtime._execute_tool(
+        ToolContext(session_id="s1", user_id="u1", account_id="t1"),
+        definition.name,
+        {},
+    )
+
+    assert result.success is False
+    assert result.data["execution_status"] == "provider_unavailable"
+    assert "不会返回本地模拟结果" in result.error
+
+
+def test_lookup_contract_must_reference_same_provider_read_tool():
+    class BadLookupCapability:
+        def configure(self, context):
+            context.registry.register(
+                ToolDefinition(
+                    name="bad_dynamic_tool",
+                    skill="bad-skill",
+                    platform="tiktok",
+                    description="invalid dynamic field",
+                    input_schema=ToolSchema(properties={
+                        "app_id": {
+                            "type": "string",
+                            "lookup_tool": "missing_lookup_tool",
+                        },
+                    }),
+                ),
+                lambda _ctx, _input: None,
+            )
+            return CapabilityRuntime()
+
+    with pytest.raises(ValueError, match="unknown lookup tool"):
+        AgentRuntime().register_capability(BadLookupCapability())
 
 
 def test_provider_specific_rate_limiters_use_request_deadline():

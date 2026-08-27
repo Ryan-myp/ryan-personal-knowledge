@@ -120,7 +120,12 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
             "campaign_id": _field("string", "Parent campaign ID"),
             "name": _field("string", "Ad group name; max 60 characters"),
             "promotion_type": _field("string", "Promotion destination", enum=TIKTOK_PROMOTION_TYPES),
-            "app_id": _field("string", "App ID returned by TikTok app lookup", lookup_tool="tiktok_list_apps"),
+            "app_id": _field(
+                "string", "App ID returned by TikTok app lookup",
+                lookup_tool="tiktok_list_apps", lookup_result_key="apps",
+                selection_value_fields=["app_id", "id"],
+                selection_label_fields=["app_name", "name", "display_name"],
+            ),
             "landing_url": _field("string", "Website landing URL"),
             "billing_event": _field("string", "Billing event", enum=TIKTOK_BILLING_EVENTS),
             "bid_type": _field("string", "Bid mode", enum=TIKTOK_BID_TYPES),
@@ -132,7 +137,9 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
             "daily_budget": _field("number", "Daily budget in user currency", minimum=50),
             "location_ids": _field(
                 "array", "Country/region IDs", items={"type": "string"},
-                lookup_tool="tiktok_list_locations",
+                lookup_tool="tiktok_list_locations", lookup_result_key="locations",
+                selection_value_fields=["location_id", "id", "country_code", "code"],
+                selection_label_fields=["location_name", "name", "country_name", "country_code"],
             ),
             "operating_systems": _field(
                 "array", "Operating systems", enum=None,
@@ -145,7 +152,6 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
             "auto_targeting_enabled": _field("boolean", "Enable automatic targeting"),
             "targeting": _field(
                 "object", "Provider targeting object; use structured fields above for known dimensions",
-                lookup_tool="tiktok_list_locations",
             ),
             # Kept for compatibility with the current client; symbolic fields
             # above are the preferred contract for new callers.

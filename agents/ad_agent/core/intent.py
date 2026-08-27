@@ -311,7 +311,7 @@ class LLMIntentParser(IntentParser):
             return "list_catalogs"
         if any(kw in text for kw in ["商品集", "product set"]):
             return "list_product_sets"
-        if any(kw in text for kw in ["应用", "app "]):
+        if any(kw in text for kw in ["应用", "app ", "apps"]):
             return "list_apps"
         if any(kw in text for kw in ["品牌安全", "brand safety"]):
             return "list_brand_safety"

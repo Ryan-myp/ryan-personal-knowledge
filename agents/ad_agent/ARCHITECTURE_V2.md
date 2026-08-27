@@ -1,5 +1,7 @@
 # ad-agent 架构设计 v2.0
 
+> 实现状态以同目录 `README.md` 与 `PROGRESS.md` 为准。本文件描述分层边界；当前已补充统一 Tool/Skill 契约、动态参数选择凭证、workflow checkpoint/lease/recovery 和 `PersistenceBackend` 抽象。Harness Engineering 的完成度与剩余缺口见 `README.md` 的“Harness Engineering 评估”。
+
 ## 一、整体架构概览
 
 ```

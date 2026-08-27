@@ -26,7 +26,7 @@ from types import MappingProxyType
 from abc import ABC, abstractmethod
 from typing import Any, Mapping, Optional
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import yaml
 
 from ..core.interfaces import (
@@ -40,6 +40,10 @@ from ..core.intent import LLMIntentParser, SimpleIntentRouter
 from ..core.cross_channel import CrossChannelAggregator, CrossChannelAnalyzer, build_batch_operations
 from ..core.tool_selector import BusinessContext, DynamicToolSelector
 from ..core.parameter_catalog import ParameterCatalogRegistry
+from ..core.parameter_selection import (
+    ParameterSelectionError,
+    ParameterSelectionSigner,
+)
 from ..core.auth import RequestPrincipal, normalize_account_id
 from .skill import Skill, SkillLoader
 from ..persistence.session_manager import SessionManager
@@ -180,6 +184,8 @@ class AgentRuntime:
         max_platform_params_bytes: int = 256_000,
         provider_reconcilers: Optional[Mapping[str, ProviderReconciler]] = None,
         workflow_stale_after_seconds: float = 300.0,
+        selection_token_secret: Optional[str] = None,
+        parameter_selection_ttl_seconds: int = 600,
     ):
         base_registry = registry or SimpleToolRegistry()
         self.registry = (
@@ -216,6 +222,12 @@ class AgentRuntime:
         self._credentials: dict = {}  # API 凭证配置
         self.tool_selector = tool_selector or DynamicToolSelector()
         self.parameter_catalogs = ParameterCatalogRegistry()
+        selection_secret = selection_token_secret or os.environ.get(
+            "AD_AGENT_SELECTION_TOKEN_KEY"
+        )
+        self._parameter_selection_signer = ParameterSelectionSigner(
+            selection_secret, parameter_selection_ttl_seconds
+        )
         self.business_context = business_context
         if business_context:
             self.tool_selector.set_business_context(
@@ -567,6 +579,7 @@ class AgentRuntime:
         self.parameter_catalogs.register_many(
             getattr(runtime, "parameter_catalogs", []) or []
         )
+        self._validate_parameter_lookup_contract()
 
         # Capability.configure() registers platform tools before returning.
         # Apply the read-only boundary immediately so callers cannot forget a
@@ -613,7 +626,43 @@ class AgentRuntime:
                 platform=platform, field=field, tool_name=tool_name
             )
         ]
-    
+
+    def _validate_parameter_lookup_contract(self) -> None:
+        """Ensure dynamic fields point to executable same-provider read tools.
+
+        A lookup descriptor is part of the Skill contract, not a free-form
+        hint. Failing at registration keeps a typo or a write-tool reference
+        from reaching the UI as a selectable option that Runtime cannot
+        safely attest later.
+        """
+        definitions = {tool.name: tool for tool in self.registry.list_all()}
+        errors: list[str] = []
+        for tool in definitions.values():
+            properties = getattr(tool.input_schema, "properties", {}) or {}
+            for field_name, field_schema in properties.items():
+                lookup_tool = self._lookup_tool_for_schema_field(field_schema)
+                if not lookup_tool:
+                    continue
+                source = definitions.get(lookup_tool)
+                if source is None:
+                    errors.append(
+                        f"{tool.name}.{field_name} references unknown lookup tool {lookup_tool}"
+                    )
+                    continue
+                tool_platform = self.PLATFORM_NAME_MAP.get(tool.platform, tool.platform)
+                source_platform = self.PLATFORM_NAME_MAP.get(source.platform, source.platform)
+                if tool_platform != source_platform:
+                    errors.append(
+                        f"{tool.name}.{field_name} lookup tool {lookup_tool} "
+                        f"belongs to {source_platform}, not {tool_platform}"
+                    )
+                if not source.is_read_tool:
+                    errors.append(
+                        f"{tool.name}.{field_name} lookup tool {lookup_tool} must be read-only"
+                    )
+        if errors:
+            raise ValueError("Invalid parameter lookup contract: " + "; ".join(errors[:20]))
+
     def _register_skill(self, skill: Skill) -> None:
         """将 Skill 的工具注册到 Registry"""
         registered_names: list[str] = []
@@ -771,6 +820,8 @@ class AgentRuntime:
         if registered_count == 0:
             logger.warning("⚠️ Skill '%s' 没有实际注册任何工具", skill_key)
             return False
+
+        self._validate_parameter_lookup_contract()
 
         # 保存 Skill 和平台映射
         self._loaded_skills.setdefault(canonical_platform, skill)
@@ -1173,6 +1224,29 @@ class AgentRuntime:
     ) -> ToolResult:
         """Execute a tool with an optional request-scoped provider client."""
         definition, handler = self._get_registered_tool(tool_name)
+
+        # Some legacy handlers retain an offline fixture fallback when their
+        # ``client`` is None. That is useful for explicit dry-run/unit tests,
+        # but it must never be reachable from an approved live write: a
+        # locally generated ID would otherwise be reported as a provider
+        # mutation. Keep this check in the shared execution seam so every
+        # built-in and dynamically registered handler gets the same boundary.
+        if definition.is_write_tool and self.execution_mode == ExecutionMode.LIVE.value:
+            if hasattr(handler, "client"):
+                platform = self.PLATFORM_NAME_MAP.get(
+                    definition.platform, definition.platform
+                )
+                request_client = (request_clients or {}).get(platform)
+                handler_client = getattr(handler, "client", None)
+                if request_client is None and handler_client is None:
+                    return ToolResult(
+                        success=False,
+                        data={"execution_status": "provider_unavailable"},
+                        error=(
+                            f"{tool_name} 未配置 Provider Client；live 写入已拒绝，"
+                            "不会返回本地模拟结果"
+                        ),
+                    )
 
         turn_deadline = ctx.metadata.get("turn_deadline") if ctx else None
         now = time.monotonic()
@@ -1808,8 +1882,13 @@ class AgentRuntime:
         )
         if isinstance(value, dict):
             return {
-                k: "<redacted>" if any(part in str(k).lower() for part in sensitive)
-                else AgentRuntime._redact_for_persistence(v)
+                k: (
+                    AgentRuntime._redact_for_persistence(v)
+                    if str(k).lower() in {"selection_token", "selection_tokens"}
+                    else "<redacted>"
+                    if any(part in str(k).lower() for part in sensitive)
+                    else AgentRuntime._redact_for_persistence(v)
+                )
                 for k, v in value.items()
             }
         if isinstance(value, list):
@@ -2858,6 +2937,21 @@ class AgentRuntime:
                     chain_blocker = tool_def.name
                     session.ctx.account_id = original_account
                     continue
+
+                selection_errors = tool_input.pop("_selection_errors", None)
+                if selection_errors:
+                    results.append({
+                        "tool": tool_def.name,
+                        "platform": platform,
+                        "success": False,
+                        "data": {"execution_status": "invalid_parameter_selection"},
+                        "error": "参数选择凭证无效：" + "; ".join(selection_errors),
+                        "needs_confirmation": False,
+                    })
+                    chain_blocked = True
+                    chain_blocker = tool_def.name
+                    session.ctx.account_id = original_account
+                    continue
                 
                 # 检查必需参数是否齐全，不齐全则询问用户
                 missing_params = tool_input.pop("_missing_params", None)
@@ -3113,6 +3207,9 @@ class AgentRuntime:
                     logger.exception("工具执行失败: %s", tool_def.name)
                     result = ToolResult.error(f"工具执行失败: {exc}")
 
+                result = self._decorate_lookup_result(
+                    tool_def, result, session.ctx, actual_platform
+                )
                 result = self._enforce_result_limit(result, tool_def)
                 if self._is_uncertain_provider_failure(tool_def, result):
                     # A transport/temporary error does not prove that the
@@ -3345,6 +3442,7 @@ class AgentRuntime:
         }
         if isinstance(specific_params, dict):
             accepted_specific = set(tool_def.input_schema.properties)
+            accepted_specific.add("selection_tokens")
             for param_name in tool_def.input_schema.properties:
                 accepted_specific.update(aliases.get(param_name, [param_name]))
             unknown_specific_params = sorted(
@@ -3468,7 +3566,11 @@ class AgentRuntime:
             tool_input["updates"] = self._normalize_provider_updates(
                 tool_def, updates
             )
-        
+
+        selection_errors = self._apply_selection_tokens(
+            tool_def, tool_input, platform_params, ctx
+        )
+
         # 检查必需参数是否齐全
         missing = []
         for req in tool_def.input_schema.required or []:
@@ -3497,6 +3599,8 @@ class AgentRuntime:
             tool_input["_missing_params"] = missing
         if unknown_specific_params:
             tool_input["_unknown_params"] = unknown_specific_params
+        if selection_errors:
+            tool_input["_selection_errors"] = selection_errors
 
         return tool_input
 
@@ -3527,7 +3631,7 @@ class AgentRuntime:
             if platform.startswith("_") or not isinstance(values, dict):
                 continue
             tools = tool_plan.get(platform, [])
-            allowed = set(common) | aliases | {tool.name for tool in tools}
+            allowed = set(common) | aliases | {"selection_tokens"} | {tool.name for tool in tools}
             for tool in tools:
                 allowed.update(getattr(tool.input_schema, "properties", {}) or {})
             for key, value in values.items():
@@ -3542,7 +3646,7 @@ class AgentRuntime:
                 if not isinstance(scoped, dict):
                     continue
                 properties = set(getattr(tool.input_schema, "properties", {}) or {})
-                scoped_allowed = properties | aliases
+                scoped_allowed = properties | aliases | {"selection_tokens"}
                 for key in scoped:
                     if key not in scoped_allowed:
                         errors.append(f"{platform}.{tool.name}.{key} 未被工具 Schema 声明")
@@ -3563,6 +3667,206 @@ class AgentRuntime:
             if lookup_tool:
                 lookups[field] = str(lookup_tool)
         return lookups
+
+    @staticmethod
+    def _lookup_tool_for_schema_field(field_schema: Any) -> Optional[str]:
+        if not isinstance(field_schema, dict):
+            return None
+        lookup_tool = field_schema.get("lookup_tool")
+        if not lookup_tool and isinstance(field_schema.get("lookup"), dict):
+            lookup_tool = field_schema["lookup"].get("tool")
+        return str(lookup_tool) if lookup_tool else None
+
+    def _lookup_targets_for_tool(self, source_tool_name: str) -> list[tuple[Any, str, dict]]:
+        """Find Skill-owned fields whose values come from one lookup tool."""
+        targets: list[tuple[Any, str, dict]] = []
+        for candidate in self.registry.list_all():
+            schema = getattr(candidate, "input_schema", None)
+            for field_name, field_schema in (getattr(schema, "properties", {}) or {}).items():
+                if "." in str(field_name):
+                    # Nested selection binding needs a provider-specific path
+                    # contract; do not issue a token that cannot be consumed.
+                    continue
+                if self._lookup_tool_for_schema_field(field_schema) == source_tool_name:
+                    targets.append((candidate, str(field_name), field_schema))
+        return targets
+
+    @staticmethod
+    def _lookup_result_key(source_tool_name: str, field_schema: dict[str, Any]) -> str:
+        configured = field_schema.get("lookup_result_key")
+        if configured:
+            return str(configured)
+        marker = "_list_"
+        return source_tool_name.split(marker, 1)[1] if marker in source_tool_name else source_tool_name
+
+    @staticmethod
+    def _selection_value_fields(field_name: str, field_schema: dict[str, Any]) -> list[str]:
+        configured = field_schema.get("selection_value_fields")
+        if isinstance(configured, (list, tuple)):
+            return [str(value) for value in configured]
+        singular = field_name[:-1] if field_name.endswith("_ids") else field_name
+        return [singular, "id", "value", "code"]
+
+    @staticmethod
+    def _selection_label_fields(field_schema: dict[str, Any]) -> list[str]:
+        configured = field_schema.get("selection_label_fields")
+        if isinstance(configured, (list, tuple)):
+            return [str(value) for value in configured]
+        return ["name", "label", "display_name", "app_name", "location_name", "country_name"]
+
+    @classmethod
+    def _extract_selection_option(
+        cls, item: Any, field_name: str, field_schema: dict[str, Any],
+    ) -> tuple[Any, str] | None:
+        if isinstance(item, dict):
+            value = None
+            for key in cls._selection_value_fields(field_name, field_schema):
+                if item.get(key) not in (None, ""):
+                    value = item[key]
+                    break
+            if value in (None, ""):
+                return None
+            label = value
+            for key in cls._selection_label_fields(field_schema):
+                if item.get(key) not in (None, ""):
+                    label = item[key]
+                    break
+            return value, str(label)
+        if item not in (None, "") and isinstance(item, (str, int, float)):
+            return item, str(item)
+        return None
+
+    def _decorate_lookup_result(
+        self, tool_def: Any, result: ToolResult, ctx: ToolContext,
+        platform: str,
+    ) -> ToolResult:
+        """Attach bounded selection tokens to live provider lookup results."""
+        if not result.success or not isinstance(result.data, dict):
+            return result
+        # Offline fixtures are not provider evidence and must never mint a
+        # token that could authorize a later live write.
+        if str(result.data.get("data_status", "")).lower() != "live":
+            return result
+        selections: list[dict[str, Any]] = []
+        for target_tool, field_name, field_schema in self._lookup_targets_for_tool(tool_def.name):
+            field_type = field_schema.get("type")
+            item_schema = field_schema.get("items") if field_type == "array" else None
+            if field_type not in {"string", "number", "integer", "array"}:
+                continue
+            if field_type == "array" and item_schema and item_schema.get("type") not in {"string", "number", "integer"}:
+                continue
+            result_key = self._lookup_result_key(tool_def.name, field_schema)
+            values = result.data.get(result_key)
+            if not isinstance(values, list):
+                continue
+            options: list[dict[str, Any]] = []
+            seen: set[str] = set()
+            for item in values:
+                extracted = self._extract_selection_option(item, field_name, field_schema)
+                if extracted is None:
+                    continue
+                value, label = extracted
+                identity = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                token, expires_at = self._parameter_selection_signer.issue(
+                    session_id=ctx.session_id,
+                    user_id=ctx.user_id,
+                    account_id=str(ctx.account_id or ""),
+                    platform=platform,
+                    tool_name=target_tool.name,
+                    field=field_name,
+                    source_tool=tool_def.name,
+                    value=value,
+                )
+                options.append({
+                    "value": value,
+                    "label": label,
+                    "selection_token": token,
+                })
+            if options:
+                selections.append({
+                    "tool_name": target_tool.name,
+                    "platform": target_tool.platform,
+                    "field": field_name,
+                    "source_tool": tool_def.name,
+                    "expires_at": datetime.fromtimestamp(
+                        expires_at, tz=timezone.utc
+                    ).isoformat(),
+                    "options": options,
+                })
+        if selections:
+            result.data = {**result.data, "parameter_selections": selections}
+        return result
+
+    def _apply_selection_tokens(
+        self, tool_def: Any, tool_input: dict[str, Any],
+        platform_params: dict[str, Any], ctx: Any,
+    ) -> list[str]:
+        """Resolve selection tokens and reject values from another context."""
+        raw_tokens = platform_params.get("selection_tokens")
+        if raw_tokens is None:
+            raw_tokens = {}
+        if not isinstance(raw_tokens, dict):
+            return ["selection_tokens must be an object"]
+
+        errors: list[str] = []
+        properties = getattr(tool_def.input_schema, "properties", {}) or {}
+        for field_name, token_input in raw_tokens.items():
+            field_name = str(field_name)
+            field_schema = properties.get(field_name)
+            source_tool = self._lookup_tool_for_schema_field(field_schema)
+            if not source_tool:
+                errors.append(f"{field_name} does not accept a provider selection token")
+                continue
+            field_type = field_schema.get("type") if isinstance(field_schema, dict) else None
+            if field_type not in {"string", "number", "integer", "array"}:
+                errors.append(f"selection_tokens.{field_name} must target a scalar or array field")
+                continue
+            is_array = field_type == "array"
+            tokens = token_input if is_array else [token_input]
+            if not isinstance(tokens, list) or not tokens or any(not isinstance(token, str) for token in tokens):
+                errors.append(f"selection_tokens.{field_name} must match the field shape")
+                continue
+            resolved: list[Any] = []
+            for token in tokens:
+                try:
+                    resolved.append(self._parameter_selection_signer.verify(
+                        token,
+                        session_id=ctx.session_id,
+                        user_id=ctx.user_id,
+                        account_id=str(ctx.account_id or ""),
+                        platform=self.PLATFORM_NAME_MAP.get(
+                            tool_def.platform, tool_def.platform
+                        ),
+                        tool_name=tool_def.name,
+                        field=field_name,
+                        source_tool=source_tool,
+                    ))
+                except ParameterSelectionError as exc:
+                    errors.append(f"selection_tokens.{field_name}: {exc}")
+            if len(resolved) != len(tokens):
+                continue
+            value = resolved if is_array else resolved[0]
+            if field_name in tool_input and tool_input[field_name] != value:
+                errors.append(f"{field_name} does not match its selection token")
+                continue
+            tool_input[field_name] = value
+
+        if self.execution_mode == ExecutionMode.LIVE.value and tool_def.is_write_tool:
+            for field_name, field_schema in properties.items():
+                if not self._lookup_tool_for_schema_field(field_schema):
+                    continue
+                if field_schema.get("type") not in {"string", "number", "integer", "array"}:
+                    continue
+                if field_name not in tool_input:
+                    continue
+                if field_name not in raw_tokens:
+                    errors.append(
+                        f"live 写入字段 {field_name} 必须使用 provider lookup 返回的 selection_token"
+                    )
+        return errors
 
     def _resolve_platform_account(
         self,

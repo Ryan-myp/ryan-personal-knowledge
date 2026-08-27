@@ -106,6 +106,26 @@ MySQL 等后端并补齐租约/并发控制后开启。运行中的 workflow 会
 
 `SimpleToolRegistry` 在执行前统一校验类型、固定枚举、数组元素和条件依赖；`/tools` 返回完整 `input_schema`，因此前端或 LLM 可以据此渲染参数选择器。动态 Provider 选项不会被伪造为静态枚举：dry-run 使用已知契约，live 再由 Provider contract 和真实查询结果收口。
 
+Provider live lookup 返回的动态选项会附带短时 `selection_token`。创建请求在对应工具的
+`selection_tokens[field]` 中提交它，Runtime 会校验 token 的签名、有效期、用户、会话、账户、字段、目标工具和来源查询工具；因此 live 不能直接伪造 App/地域 ID。多实例部署时应通过
+`AD_AGENT_SELECTION_TOKEN_KEY` 配置所有实例共享的签名密钥。
+
+动态字段的 `lookup_tool` 在 Skill 注册时还会被检查：来源工具必须已注册、属于同一渠道且是只读工具。没有 Provider Client 时，live 写入会 fail-closed，不会把 Handler 的离线 fixture 当成线上成功。
+
+### Harness Engineering 评估
+
+当前核心 Harness 已具备：受限 Tool/Skill 契约、统一 Runtime 执行入口、权限/账户白名单、dry-run、显式确认、持久化幂等、workflow checkpoint/lease/recovery、Provider 回查入口，以及 LLM 输出后的二次 schema 校验。结论是“核心骨架符合，尚未达到生产闭环”，不能把当前 72 个工具数或单元测试通过当成 Provider live 已验证。
+
+暂留的工程缺口：
+
+- 观察性只保留接入入口，尚未接入 trace、指标、告警和审计检索。
+- SQLite 当前按单进程使用；未来 MySQL/PostgreSQL backend 需要实现同一接口的共享事务、幂等 reservation 和 lease 原子语义，并补多实例并发测试。
+- Provider schema 目前是代码契约，尚未接入版本化 API schema 拉取、漂移检测和真实测试账户 E2E；动态组合约束仍需按渠道逐项补齐。
+- 部分 workflow 只标记 `compensation_required` 并转人工复核，尚无经过 Provider 验证的自动补偿执行器；这属于刻意的安全降级，不是已完成能力。
+- live 还需要凭证轮换/授权中心、合作方级配额策略，以及可中断的异步执行 worker。
+
+因此下一阶段应优先做“Provider contract fixture + schema drift check + 测试账户 E2E”，再逐个把工具加入 `live_approved_tools`，而不是一次性开放全部渠道写入。
+
 更新操作同样使用渠道拥有的嵌套 Schema：Meta、Google Ads、TikTok、DV360 的 `updates` 只允许当前适配器声明的字段，未知字段会在计划阶段报错，不会静默丢弃或带入 live 请求。缺少带 `lookup_tool` 的动态字段时，返回结果中的 `confirmation_payload.lookup_tools` 会告诉调用方应先调用哪个查询工具。通用目标（sales/leads/traffic/brand）由各 Skill 的字段元数据映射为 Provider 枚举，不由 Runtime 维护一张不可扩展的渠道表。
 
 dry-run 结果中的 `provider_validation` 会单独标记 Provider 必填字段是否齐全：计划可以先生成，但 `ready: false` 时不能视为可直接 live 执行。

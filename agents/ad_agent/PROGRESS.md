@@ -15,6 +15,8 @@
   过期或非终态任务；当前 SQLite 仍按单进程部署，多实例需换共享 backend。
 - Provider timeout、连接错误、限流或 5xx 等不确定写结果会进入 `unknown` /
   `recovery_required`，并保留 pending 幂等 reservation，等待只读回查后再决定状态。
+- Provider live lookup 可为动态字段签发短时 selection token；创建请求提交
+  `selection_tokens` 后会校验 user/session/account/tool/field/source 绑定，live 不接受未经 lookup 证明的裸动态 ID。
 - Contract validator 将内置工具数量作为 minimum baseline；新增 Skill/Tool 不需要修改
   中央计数，但仍必须通过统一 schema、权限、重放策略和红线字段校验。
 
@@ -142,7 +144,7 @@ python -m pytest agents/ad_agent/tests/ -v
 ```
 
 测试结果：
-- 当前 `agents/ad_agent/tests/`：166 passed
+- 当前 `agents/ad_agent/tests/`：171 passed
 - 覆盖：工具注册、Schema 校验、白名单、dry-run 不调用 Client、跨平台账户、层级 ID 传递、live 确认、持久化和 Runtime 集成
 
 ## 扩展新平台
@@ -182,7 +184,7 @@ runtime.register_capability(NewPlatformCapability(api_client))
 | 结构化日志 | ✅ | JSON 格式 |
 | Dry-run 模式 | ✅ | 无需调用线上写 API 即可测试 |
 | WriteGuard | ✅ | 持久化幂等、显式确认、unknown 结果保留 reservation、workflow lease/claim 已接入 |
-| 单元测试 | ✅ | 全量 166 个用例 |
+| 单元测试 | ✅ | 全量 171 个用例 |
 | 多平台支持 | ✅ | Meta/Google/TikTok/DV360 |
 | 可扩展性 | ✅ | 新增平台只需 Capability |
 
