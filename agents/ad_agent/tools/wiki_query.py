@@ -210,7 +210,9 @@ class WikiQueryTool:
         results = self.loader.get_by_type('best_practice', platform)
         return [r.content for r in results[:limit]]
     
-    def get_error_solutions(self, error_code: str, platform: str = None) -> List[str]:
+    def get_error_solutions(
+        self, error_code: str, platform: str = None, limit: int = 10,
+    ) -> List[str]:
         """获取错误解决方案"""
         results = self.loader.search(error_code, platforms=[platform] if platform else None, knowledge_types=['error_pattern'])
         solutions = []
@@ -250,9 +252,11 @@ def wiki_get_best_practices(platform: str = None,
     return WikiQueryTool().get_best_practices(platform, business_type, limit)
 
 
-def wiki_get_errors(error_code: str, platform: str = None) -> List[str]:
+def wiki_get_errors(
+    error_code: str, platform: str = None, limit: int = 10,
+) -> List[str]:
     """便捷函数：获取错误解决方案"""
-    return WikiQueryTool().get_error_solutions(error_code, platform)
+    return WikiQueryTool().get_error_solutions(error_code, platform, limit)
 
 
 def wiki_get_workflow(platform: str, workflow_type: str = None) -> Dict:

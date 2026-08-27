@@ -10,6 +10,8 @@ runtime/runtime.py - Agent Runtime 主循环
 5. 预留 MultiAgentBridge 接口（用于后续切换到多 Agent）
 """
 
+from __future__ import annotations
+
 import uuid
 import time
 import json

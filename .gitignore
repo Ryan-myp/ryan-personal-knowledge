@@ -28,6 +28,8 @@ config.local.json
 *.tmp
 *.swp
 *~
+__pycache__/
+*.py[cod]
 .DS_Store
 
 # IDE
@@ -46,4 +48,13 @@ logs/*.log
 
 
 config/dv360_service_account.json
-\n# API Config with secrets\nagents/ad_agent/config.yaml\nconfig/*.yaml\nconfig/*.yml
+
+# API config with secrets
+agents/ad_agent/config.yaml
+config/*.yaml
+config/*.yml
+
+# Local ad-agent runtime state
+agents/ad_agent/ad_agent.db
+agents/ad_agent/ad_agent.db-wal
+agents/ad_agent/ad_agent.db-shm

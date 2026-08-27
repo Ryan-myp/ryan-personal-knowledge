@@ -14,6 +14,7 @@ from agents.ad_agent.core.interfaces import (
 )
 from agents.ad_agent.core.intent import LLMIntentParser
 from agents.ad_agent.core.tool_registry import SimpleToolRegistry, validate_tool_input
+from agents.ad_agent.tools.wiki_query import WikiQueryTool, wiki_get_errors
 from agents.ad_agent.core.auth import RequestPrincipal
 from agents.ad_agent.core.parameter_selection import (
     ParameterSelectionError,
@@ -703,3 +704,14 @@ def test_golden_intent_cases_remain_deterministic():
         intent = parser.parse(case["input"], ToolContext("golden", "eval"))
         assert intent.intent_type == case["intent_type"], case["id"]
         assert intent.platforms == case["platforms"], case["id"]
+
+
+def test_wiki_error_lookup_honors_limit_without_runtime_name_error():
+    tool = WikiQueryTool()
+    solutions = tool.get_error_solutions(
+        "RESOURCE_EXHAUSTED", platform="google", limit=1
+    )
+
+    assert len(solutions) == 1
+    assert "重试" in solutions[0]
+    assert len(wiki_get_errors("RESOURCE_EXHAUSTED", platform="google", limit=1)) == 1
