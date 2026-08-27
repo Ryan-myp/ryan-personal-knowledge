@@ -19,8 +19,7 @@ from agents.ad_agent.api_clients.tiktok_client import TikTokAPIClient
 from agents.ad_agent.api_clients.dv360_client import DV360APIClient
 from agents.ad_agent.runtime.runtime import AccountWhitelistValidator, AgentRuntime
 from agents.ad_agent.persistence.store import AdAgentStore
-from agents.ad_agent.skills.registry import SkillRegistry, SkillTool
-from agents.ad_agent.core.tool_registry import SimpleToolRegistry
+from agents.ad_agent.runtime.skill import BaseSkill, SkillContract
 from agents.ad_agent.core.tool_registry import validate_tool_input
 
 
@@ -181,14 +180,17 @@ def test_create_tools_are_not_marked_safe_to_replay():
         assert all(definition.replay_policy == ReplayPolicy.UNSAFE for definition in create_definitions)
 
 
-def test_legacy_skill_declarations_never_claim_provider_execution():
-    registry = SkillRegistry(SimpleToolRegistry())
-    handler = registry._create_handler(
-        SkillTool(name="undeclared_tool", description="", platform="meta")
+def test_canonical_declarative_skill_has_no_handler_without_binding(tmp_path):
+    skill_dir = tmp_path / "channels" / "unbound"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: unbound\nplatform: meta\n---\n"
+        "### Tool: unbound_read\n\ndescription: read\n",
+        encoding="utf-8",
     )
-    result = handler.execute(None, {})
-    assert result.success is False
-    assert "no executable Capability handler" in result.error
+    skill = BaseSkill(SkillContract(str(skill_dir)).load())
+    assert [tool.name for tool in skill.get_tools()] == ["unbound_read"]
+    assert skill.get_tool_handler("unbound_read") is None
 
 
 def test_tiktok_creation_contract_exposes_enums_and_conditional_dependencies():

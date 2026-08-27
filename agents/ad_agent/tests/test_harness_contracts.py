@@ -11,7 +11,9 @@ from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
 from agents.ad_agent.core.interfaces import (
     ToolContext, ToolSchema, ToolDefinition, ToolEffect,
     ProviderReconciler, ReconciliationObservation, CapabilityRuntime,
+    ParsedIntent, ToolResult,
 )
+from agents.ad_agent.core.knowledge import KnowledgeDocument
 from agents.ad_agent.core.intent import LLMIntentParser
 from agents.ad_agent.core.tool_registry import SimpleToolRegistry, validate_tool_input
 from agents.ad_agent.tools.wiki_query import WikiQueryTool, wiki_get_errors
@@ -59,6 +61,78 @@ def test_runtime_registry_cannot_bypass_execution_boundary():
         definition.name,
         {"account_id": "m1", "name": "direct"},
     ).success is False
+
+
+def test_selector_only_builds_context_and_cannot_shrink_authoritative_plan():
+    class Parser:
+        def parse(self, _text, _ctx):
+            return ParsedIntent("route_test", "route test", ["meta"])
+
+    class Router:
+        def route(self, _intent, registry):
+            return {
+                "meta": [registry.get("route_first")[0], registry.get("route_second")[0]]
+            }
+
+    class NarrowSelector:
+        def build_context_for_input(self, *_args):
+            return {}
+
+        def optimize_for_llm(self, _text, _intent, all_tools):
+            return {
+                "selected_tools": list(all_tools[:1]), "tool_count": 1,
+                "tool_prompt": "one tool for model context", "expert_knowledge": "",
+                "context": {}, "platforms": "meta", "knowledge": [],
+            }
+
+    class Handler:
+        def execute(self, _ctx, _input_data):
+            return ToolResult.ok({"executed": True})
+
+    runtime = AgentRuntime(
+        intent_parser=Parser(), intent_router=Router(),
+        tool_selector=NarrowSelector(),
+        whitelist_validator=_whitelist(meta=["m1"]),
+    )
+    for name in ("route_first", "route_second"):
+        runtime.registry.register(
+            ToolDefinition(
+                name=name, skill="route-test", platform="meta", description=name,
+                input_schema=ToolSchema(properties={
+                    "account_id": {"type": "string"},
+                    "name": {"type": "string"},
+                }),
+                effect_class=ToolEffect.READ,
+                required_permissions=["ads.read"],
+            ), Handler()
+        )
+
+    result = runtime.run("route test", account_id="m1")
+    assert result["tool_plan"] == {"meta": ["route_first", "route_second"]}
+    assert [item["success"] for item in result["results"]] == [True, True]
+
+
+def test_knowledge_context_is_read_only_bounded_and_source_addressable():
+    class Provider:
+        def __init__(self):
+            self.calls = []
+
+        def query(self, query, **kwargs):
+            self.calls.append((query, kwargs))
+            return [KnowledgeDocument(
+                document_id="meta:campaigns.md", platform="meta", topic="campaigns",
+                excerpt="Use the registered campaign schema.", source="fixture",
+                version="v1", confidence=0.9, updated_at="2026-08-27",
+            )]
+
+    provider = Provider()
+    runtime = AgentRuntime(knowledge_provider=provider)
+    result = runtime.run("查询 Meta campaign", account_id=None)
+
+    assert provider.calls
+    assert result["tool_selection"]["knowledge"][0]["source"] == "fixture"
+    assert result["tool_selection"]["knowledge"][0]["confidence"] == 0.9
+    assert not hasattr(provider, "add")
 
 
 def test_direct_runtime_rejects_non_object_platform_params():

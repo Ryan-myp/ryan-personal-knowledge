@@ -9,12 +9,11 @@ core/tool_selector.py - 动态工具选择器
 
 import re
 import logging
-from pathlib import Path
 from typing import List, Dict, Optional, Set
 from dataclasses import dataclass, field
 
 from .interfaces import ToolDefinition, ParsedIntent, ToolContext
-from ..skills.loader import get_skill_loader
+from .knowledge import KnowledgeProvider
 
 logger = logging.getLogger(__name__)
 
@@ -97,8 +96,16 @@ class DynamicToolSelector:
         "cross_channel": ["overview", "compare", "budget", "cross"],
     }
     
-    def __init__(self):
-        self.skill_loader = get_skill_loader()
+    def __init__(self, skill_loader=None, knowledge_provider: Optional[KnowledgeProvider] = None):
+        # Runtime injects its canonical SkillLoader.  The lazy fallback keeps
+        # the standalone selector usable without importing the Runtime package
+        # during module initialization.
+        if skill_loader is None:
+            from ..runtime.skill import SkillLoader
+            skill_loader = SkillLoader()
+            skill_loader.load_all()
+        self.skill_loader = skill_loader
+        self.knowledge_provider = knowledge_provider
         self.business_context: Optional[BusinessContext] = None
     
     def set_business_context(self, business_name: str, context: BusinessContext):
@@ -173,6 +180,7 @@ class DynamicToolSelector:
         self,
         user_input: str,
         available_tools: List[ToolDefinition],
+        intent_type: Optional[str] = None,
     ) -> dict:
         """Build bounded Skill context before intent parsing.
 
@@ -185,16 +193,54 @@ class DynamicToolSelector:
         """
         platforms = self._detect_platforms(user_input)
         probe_intent = ParsedIntent(
-            intent_type="",
+            intent_type=intent_type or "",
             raw_input=user_input,
             platforms=platforms,
         )
         selection = self.select_tools(user_input, probe_intent, available_tools)
+        knowledge = self._query_knowledge(
+            user_input, platforms, intent_type=intent_type
+        )
+        if knowledge:
+            selection.expert_knowledge = self._format_knowledge(knowledge)
         return {
             "tool_prompt": self.build_tool_prompt(selection),
             "expert_knowledge": selection.expert_knowledge,
             "platforms": selection.platform,
+            "knowledge": knowledge,
         }
+
+    def _query_knowledge(
+        self,
+        user_input: str,
+        platforms: List[str],
+        *,
+        intent_type: Optional[str] = None,
+    ) -> list[dict]:
+        """Query advisory knowledge without changing executable routing."""
+        if self.knowledge_provider is None:
+            return []
+        try:
+            documents = self.knowledge_provider.query(
+                user_input,
+                platforms=platforms,
+                intent_type=intent_type,
+                limit=4,
+                max_excerpt_chars=1000,
+            )
+            return [document.to_dict() for document in documents]
+        except Exception as exc:
+            logger.debug("知识库查询失败，继续无知识上下文: %s", exc)
+            return []
+
+    @staticmethod
+    def _format_knowledge(knowledge: list[dict], max_chars: int = 4000) -> str:
+        return "\n\n".join(
+            f"[{item['platform']}] {item['topic']} (source={item['source']}, "
+            f"version={item['version']}, confidence={item['confidence']}):\n"
+            f"{item['excerpt']}"
+            for item in knowledge
+        )[:max_chars]
     
     def _detect_platforms(self, user_input: str) -> List[str]:
         """从用户输入中检测平台"""
@@ -404,7 +450,18 @@ class DynamicToolSelector:
             }
         """
         selection = self.select_tools(user_input, intent, all_tools)
-        
+        platforms = intent.platforms or self._detect_platforms(user_input)
+        knowledge = self._query_knowledge(
+            user_input, platforms, intent_type=intent.intent_type
+        )
+        if knowledge:
+            selection.expert_knowledge = "\n\n".join(
+                part for part in (
+                    selection.expert_knowledge,
+                    self._format_knowledge(knowledge),
+                ) if part
+            )[:4000]
+
         return {
             "selected_tools": selection.selected_tools,
             "tool_count": len(selection.selected_tools),
@@ -412,6 +469,7 @@ class DynamicToolSelector:
             "expert_knowledge": selection.expert_knowledge,
             "context": selection.context,
             "platforms": selection.platform,
+            "knowledge": knowledge,
         }
 
 

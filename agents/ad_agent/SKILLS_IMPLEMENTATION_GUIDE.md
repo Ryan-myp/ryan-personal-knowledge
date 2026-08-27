@@ -1,6 +1,6 @@
 # Skills 实现指南
 
-> 状态说明：本文保留为设计参考。当前可执行实现以 `capabilities/`、`core/` 和 `runtime/` 源码为准；`SKILL.md` 中的工具说明以及本文的旧目录/数量不等于已注册的可执行工具。当前四个平台 Capability 共 72 个工具，跨渠道编排由 Runtime + `core/cross_channel.py` 提供。
+> 状态说明：本文保留为设计参考。当前唯一的 Skill contract/loader 位于 `runtime/skill.py`；可执行实现以 `capabilities/`、`core/` 和 `runtime/` 源码为准。`SKILL.md` 中的工具说明不等于已注册的可执行工具。当前四个平台 Capability 共 72 个工具，跨渠道编排由 Runtime + `core/cross_channel.py` 提供。
 
 ## 架构分层
 

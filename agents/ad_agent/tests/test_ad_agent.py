@@ -1288,7 +1288,7 @@ class TestIterationContracts:
         assert result.data == {"source": "plugin"}
 
     def test_skill_loader_supports_nested_frontmatter_metadata(self, tmp_path):
-        from agents.ad_agent.skills.loader import SkillLoader
+        from agents.ad_agent.runtime.skill import SkillLoader
 
         skill_dir = tmp_path / "channels" / "nested-insights"
         skill_dir.mkdir(parents=True)

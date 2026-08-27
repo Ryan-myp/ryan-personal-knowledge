@@ -23,6 +23,7 @@ import hmac
 import threading
 import logging
 import importlib.util
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from types import MappingProxyType
 from abc import ABC, abstractmethod
@@ -41,6 +42,7 @@ from ..core.tool_registry import GuardedToolRegistry, SimpleToolRegistry, valida
 from ..core.intent import LLMIntentParser, SimpleIntentRouter
 from ..core.cross_channel import CrossChannelAggregator, CrossChannelAnalyzer, build_batch_operations
 from ..core.tool_selector import BusinessContext, DynamicToolSelector
+from ..core.knowledge import KnowledgeProvider, LocalMarkdownKnowledgeProvider
 from ..core.parameter_catalog import ParameterCatalogRegistry
 from ..core.parameter_selection import (
     ParameterSelectionError,
@@ -178,6 +180,7 @@ class AgentRuntime:
         live_approved_tools: Optional[set[str]] = None,
         business_context: Optional[BusinessContext] = None,
         tool_selector: Optional[DynamicToolSelector] = None,
+        knowledge_provider: Optional[KnowledgeProvider] = None,
         offline_mode: bool = False,
         granted_permissions: Optional[set[str]] = None,
         max_tool_calls: int = 32,
@@ -205,6 +208,7 @@ class AgentRuntime:
         self.intent_router = intent_router or SimpleIntentRouter()
         self.write_guard = write_guard
         self.skill_loader = SkillLoader(skill_roots)
+        self.skill_loader.load_all()
         self._llm = llm_client
         self._sessions: dict[str, "SessionContext"] = {}
         self._session_locks: dict[str, threading.RLock] = {}
@@ -222,7 +226,13 @@ class AgentRuntime:
         self._skill_platforms: dict[str, str] = {}
         self._skill_factories: dict[str, callable] = {}  # platform -> Capability factory
         self._credentials: dict = {}  # API 凭证配置
-        self.tool_selector = tool_selector or DynamicToolSelector()
+        self.knowledge_provider = knowledge_provider or LocalMarkdownKnowledgeProvider(
+            Path(__file__).resolve().parent.parent / "knowledge_base"
+        )
+        self.tool_selector = tool_selector or DynamicToolSelector(
+            skill_loader=self.skill_loader,
+            knowledge_provider=self.knowledge_provider,
+        )
         self.parameter_catalogs = ParameterCatalogRegistry()
         selection_secret = selection_token_secret or os.environ.get(
             "AD_AGENT_SELECTION_TOKEN_KEY"
@@ -590,8 +600,8 @@ class AgentRuntime:
             self._filter_write_tools()
 
         # Capability-provided mappings are the preferred routing source.  The
-        # router retains its static map only as a compatibility fallback for
-        # legacy/custom modules that predate CapabilityRuntime mappings.
+        # router retains its static map as a fallback for custom modules
+        # that do not publish CapabilityRuntime mappings.
         if runtime.intent_to_tools and hasattr(self.intent_router, "register_capability_mappings"):
             self.intent_router.register_capability_mappings(runtime.intent_to_tools)
         
@@ -783,8 +793,8 @@ class AgentRuntime:
                 )
                 return False
         else:
-            # Legacy ``skills.loader.SkillDefinition`` does not implement the
-            # core Skill interface; retain its platform-capability fallback.
+            # A declarative Skill with no executable declarations uses the
+            # provider Capability for its platform's verified handlers.
             tools = list(capability_tools.values())
 
         if not tools:
@@ -1107,8 +1117,8 @@ class AgentRuntime:
             if skill is not None:
                 return skill
 
-        # 从 skill_loader 中递归查找。旧实现只扫描 root 的直接子目录，
-        # 会漏掉 skills/channels/* 等真实 Skill 目录。
+        # 从 canonical SkillLoader 中递归查找，覆盖 skills/channels/* 等
+        # 分组目录。
         for root in self.skill_loader._roots:
             if not root.exists():
                 continue
@@ -1590,8 +1600,8 @@ class AgentRuntime:
                         or skill_dir.name
                     )
 
-                    # Executable extensions take precedence over the legacy
-                    # Markdown-only compatibility loader.  A plugin is still
+                    # Executable extensions take precedence over declarative
+                    # Skill metadata.  A plugin is still
                     # subject to the same registry, schema, account and write
                     # gates as built-in capabilities.
                     cred_key = platform
@@ -1619,33 +1629,27 @@ class AgentRuntime:
                     has_tools = '| Tool |' in content or 'name:' in content
                     
                     if has_tools:
-                        # 加载 Skill
-                        from ..skills.loader import SkillLoader
-                        loader = SkillLoader()
-                        loader.add_root(str(root))
-                        skills = loader.load_all()
-                        
-                        skill = skills.get(skill_dir.name)
-                        if not skill:
-                            # 尝试从 name 字段获取
-                            for s_name, s in skills.items():
-                                if s.platform == platform:
-                                    skill = s
-                                    break
-                        
-                        if skill and skill.tools:
-                            # 加载 Skill；以实际注册到 Registry 的定义计数，
-                            # 不要把 SKILL.md 中的设计工具数量误报为可执行工具。
+                        # SKILL.md is declarative scope/context.  Executable
+                        # tools come only from the verified provider
+                        # Capability, so documentation cannot drift into a
+                        # false executable contract.
+                        try:
+                            from ..capabilities.factory import create_capability
+                            capability = create_capability(
+                                self.PLATFORM_NAME_MAP.get(platform, platform),
+                                api_client,
+                            )
                             before_tool_count = len(self.registry.list_all())
-                            if self.load_skill(self.PLATFORM_NAME_MAP.get(platform, platform), skill, api_client):
-                                loaded_count += 1
-                                actual_tool_count = len(self.registry.list_all()) - before_tool_count
-                                logger.info(
-                                    f"✅ 自动加载 Skill: {skill.name} ({platform}, "
-                                    f"{actual_tool_count} executable tools)"
-                                )
-                            else:
-                                logger.warning(f"⚠️ 加载 Skill 失败: {skill.name}")
+                            self.register_capability(capability)
+                            loaded_count += 1
+                            logger.info(
+                                "✅ 自动加载 Capability: %s (%s, %s executable tools)",
+                                platform,
+                                platform,
+                                len(self.registry.list_all()) - before_tool_count,
+                            )
+                        except ValueError:
+                            logger.warning("⚠️ 未找到平台 Capability: %s", platform)
                 
                 except Exception as e:
                     logger.warning(f"⚠️ 解析 Skill {skill_dir.name}/SKILL.md 失败: {e}")
@@ -2609,6 +2613,15 @@ class AgentRuntime:
         except Exception as exc:
             logger.debug("构建 Skill 解析上下文失败: %s", exc)
         intent = self.intent_parser.parse(safe_user_input, session.ctx)
+        # Refresh advisory context with the parsed intent.  This changes only
+        # the model-facing explanation/context; IntentRouter remains the sole
+        # authority for the executable plan below.
+        try:
+            session.ctx.metadata["skill_context"] = self.tool_selector.build_context_for_input(
+                safe_user_input, self.registry.list_all(), intent.intent_type
+            )
+        except Exception as exc:
+            logger.debug("构建意图级 Skill/知识上下文失败: %s", exc)
         
         # 如果提供了 platform_params（来自确认请求），合并到意图中
         if platform_params:
@@ -2664,20 +2677,13 @@ class AgentRuntime:
             }
 
         # Step 3: 路由到平台工具.  Capability mappings are the executable
-        # contract; the selector is then applied to that bounded candidate
-        # set, so it can never expose or select an unrelated registered tool.
+        # contract.  The selector only builds bounded model context and must
+        # never rewrite this authoritative execution plan.
         tool_plan = self.intent_router.route(intent, self.registry)
         routed_tools = [tool for tools in tool_plan.values() for tool in tools]
         tool_selection = self.tool_selector.optimize_for_llm(
             safe_user_input, intent, routed_tools
         )
-        selected_names = {tool.name for tool in tool_selection["selected_tools"]}
-        if selected_names:
-            tool_plan = {
-                platform: [tool for tool in tools if tool.name in selected_names]
-                for platform, tools in tool_plan.items()
-            }
-            tool_plan = {platform: tools for platform, tools in tool_plan.items() if tools}
 
         parameter_errors = self._validate_platform_parameter_contract(
             intent, tool_plan
@@ -2726,6 +2732,7 @@ class AgentRuntime:
                     "context": tool_selection["context"],
                     "tool_prompt": tool_selection["tool_prompt"],
                     "expert_knowledge": tool_selection["expert_knowledge"],
+                    "knowledge": tool_selection.get("knowledge", []),
                 },
                 "results": [],
                 "reply": self._generate_chat_reply(safe_user_input),
@@ -3363,6 +3370,7 @@ class AgentRuntime:
                 "context": tool_selection["context"],
                 "tool_prompt": tool_selection["tool_prompt"],
                 "expert_knowledge": tool_selection["expert_knowledge"],
+                "knowledge": tool_selection.get("knowledge", []),
             },
             "results": results,
             "workflow_id": workflow_id,

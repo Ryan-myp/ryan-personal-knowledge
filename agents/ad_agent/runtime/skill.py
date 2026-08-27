@@ -52,11 +52,13 @@ class SkillContract:
     def __init__(self, skill_dir: str):
         self.skill_dir = skill_dir
         self.name: str = ""
+        self.version: str = "1.0"
         self.description: str = ""
         self.platform: str = ""
         self.triggers: list[SkillTrigger] = []
         self.capabilities: dict[str, SkillCapability] = {}
         self.references: dict[str, str] = {}  # ref_name -> file_path
+        self.expert_knowledge: dict[str, str] = {}
         self.raw_md: str = ""
         self.raw_yaml: dict = {}
     
@@ -76,7 +78,18 @@ class SkillContract:
         tools_dir = os.path.join(self.skill_dir, "tools")
         if os.path.isdir(tools_dir):
             self._load_tools_from_directory(tools_dir)
-        
+
+        expert_dir = os.path.join(self.skill_dir, "expert")
+        if os.path.isdir(expert_dir):
+            for filename in sorted(os.listdir(expert_dir)):
+                if not filename.endswith(".md"):
+                    continue
+                try:
+                    with open(os.path.join(expert_dir, filename), "r", encoding="utf-8") as file:
+                        self.expert_knowledge[Path(filename).stem] = file.read()
+                except OSError:
+                    continue
+
         return self
     
     def _load_skill_md(self, path: str) -> None:
@@ -96,11 +109,13 @@ class SkillContract:
             # 尝试嵌套格式 skill: {...}
             if 'skill' in fm_yaml:
                 self.name = fm_yaml['skill'].get('name', '')
+                self.version = str(fm_yaml['skill'].get('version', '1.0'))
                 self.description = fm_yaml['skill'].get('description', '')
                 self.platform = fm_yaml['skill'].get('platform', '')
             # 尝试直接格式 {name: ..., description: ...}
             else:
                 self.name = fm_yaml.get('name', '')
+                self.version = str(fm_yaml.get('version', '1.0'))
                 self.description = fm_yaml.get('description', '')
                 # 使用目录名作为默认平台
                 self.platform = fm_yaml.get('platform', os.path.basename(os.path.dirname(path)))
@@ -212,6 +227,7 @@ class SkillContract:
         """加载 contract.yaml"""
         with open(path, 'r', encoding='utf-8') as f:
             self.raw_yaml = yaml.safe_load(f) or {}
+        self.version = str(self.raw_yaml.get('version', self.version))
         
         # 合并到 capabilities
         tools = self.raw_yaml.get('tools', {})
@@ -287,6 +303,19 @@ class BaseSkill(Skill):
     @property
     def description(self) -> str:
         return self._contract.description
+
+    @property
+    def version(self) -> str:
+        return self._contract.version
+
+    @property
+    def expert_knowledge(self) -> dict[str, str]:
+        return self._contract.expert_knowledge
+
+    @property
+    def tools(self) -> list[ToolDefinition]:
+        """Declarative view used by the canonical loader and selector."""
+        return self.get_tools()
     
     def register_handler(self, tool_name: str, handler: ToolHandler) -> None:
         """注册工具处理器"""
@@ -385,6 +414,8 @@ class SkillLoader:
     
     def __init__(self, skill_roots: list[str] = None):
         default_root = Path(__file__).resolve().parent.parent / "skills"
+        if isinstance(skill_roots, (str, Path)):
+            skill_roots = [skill_roots]
         self._roots = [Path(root) for root in (skill_roots or [default_root])]
         self._skills: dict[str, Skill] = {}
     
@@ -425,7 +456,15 @@ class SkillLoader:
     def get(self, name: str) -> Optional[Skill]:
         """获取已加载的 Skill"""
         return self._skills.get(name)
+
+    def get_skill(self, name: str) -> Optional[Skill]:
+        """获取已加载的 Skill（显式命名入口）"""
+        return self.get(name)
     
     def get_by_platform(self, platform: str) -> list[Skill]:
         """获取某平台的所有 Skills"""
         return [s for s in self._skills.values() if s.platform == platform]
+
+    def get_tools_by_platform(self, platform: str) -> list[ToolDefinition]:
+        """获取某平台的所有工具"""
+        return [tool for skill in self.get_by_platform(platform) for tool in skill.get_tools()]
