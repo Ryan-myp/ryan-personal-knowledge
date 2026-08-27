@@ -121,7 +121,6 @@ def tiktok_updates(resource_type: str) -> dict[str, Any]:
     elif resource_type == "adgroup":
         common.update({
             "ad_group_status": _field("integer", "Ad group status", enum=[0, 1]),
-            "campaign_id": _field("string", "Parent campaign ID"),
             "promotion_type": _field("string", "Promotion destination", enum=[
                 "APP_ANDROID", "APP_IOS", "WEBSITE", "LEAD_FORM", "CONTENT",
             ]),
