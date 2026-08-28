@@ -8,6 +8,7 @@ from ...core.interfaces import (
     ToolContext, RiskLevel, ToolEffect, ReplayPolicy
 )
 from ...api_clients.dv360_client import DV360APIClient
+from ..base import call_with_optional_page_size
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,12 @@ class DV360ListCampaignsHandler(ToolHandler):
         advertiser_id = ctx.account_id
         if self.client and advertiser_id:
             try:
-                campaigns = self.client.list_campaigns(advertiser_id)
+                campaigns = call_with_optional_page_size(
+                    self.client.list_campaigns,
+                    advertiser_id,
+                    limit=input_data.get("limit", 20),
+                    parameter_names=("page_size", "limit"),
+                )
                 return ToolResult.ok({
                     "campaigns": campaigns,
                     "account_id": advertiser_id,

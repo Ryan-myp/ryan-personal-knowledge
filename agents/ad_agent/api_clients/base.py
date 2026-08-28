@@ -440,6 +440,25 @@ class BasePlatformClient(ABC):
         else:
             self._session_cache.clear()
 
+    @staticmethod
+    def require_resource_id(value: Any, operation: str) -> str:
+        """Require a provider response to contain the created resource ID.
+
+        A 2xx response without an identifier is not a successful create from
+        the caller's point of view. Returning ``""`` used to make handlers
+        persist a success that could not be reconciled later.
+        """
+        if value in (None, ""):
+            raise APIError(f"{operation} response did not contain a resource ID")
+        return str(value)
+
+    @staticmethod
+    def require_resource_object(value: Any, operation: str) -> dict:
+        """Require a provider detail response to contain an object."""
+        if not isinstance(value, dict) or not value:
+            raise APIError(f"{operation} response did not contain a resource")
+        return value
+
 
 # ─── 装饰器工具 ──────────────────────────────────────────────────
 

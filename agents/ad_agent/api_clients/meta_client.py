@@ -254,7 +254,10 @@ class MetaAPIClient(BasePlatformClient):
     def get_campaign(self, campaign_id: str, fields: list = None) -> dict:
         """获取 Campaign 详情"""
         params = {'fields': ','.join(fields) if fields else 'id,name,status,daily_budget,budget_remaining,objective,adsets,ads'}
-        return self.request('GET', f"/{campaign_id}", extra_params=params)
+        return self.require_resource_object(
+            self.request('GET', f"/{campaign_id}", extra_params=params),
+            "Meta campaign get",
+        )
 
     def resource_belongs_to_account(
         self, account_id: str, resource_type: str, resource_id: str
@@ -342,7 +345,8 @@ class MetaAPIClient(BasePlatformClient):
             data['end_time'] = campaign['end_time']
         
         result = self.request('POST', f"/{account_id}/campaigns", data=data)
-        return result.get('id', '') if isinstance(result, dict) else ''
+        resource_id = result.get('id') if isinstance(result, dict) else None
+        return self.require_resource_id(resource_id, "Meta campaign create")
     
     def update_campaign(self, campaign_id: str, updates: dict) -> dict:
         """更新 Campaign"""
@@ -376,7 +380,10 @@ class MetaAPIClient(BasePlatformClient):
     def get_adset(self, adset_id: str, fields: list = None) -> dict:
         """获取 Ad Set 详情"""
         params = {'fields': ','.join(fields) if fields else 'id,name,campaign_id,status,daily_budget,bid_amount,targeting'}
-        return self.request('GET', f"/{adset_id}", extra_params=params)
+        return self.require_resource_object(
+            self.request('GET', f"/{adset_id}", extra_params=params),
+            "Meta ad set get",
+        )
     
     def create_adset(self, account_id: str, campaign_id: str, adset: dict) -> str:
         """创建 Ad Set
@@ -424,7 +431,8 @@ class MetaAPIClient(BasePlatformClient):
         if 'end_time' in adset:
             data['end_time'] = adset['end_time']
         result = self.request('POST', f"/{account_id}/adsets", data=data)
-        return result.get('id', '') if isinstance(result, dict) else ''
+        resource_id = result.get('id') if isinstance(result, dict) else None
+        return self.require_resource_id(resource_id, "Meta ad set create")
     
     def update_adset(self, adset_id: str, updates: dict) -> dict:
         """更新 Ad Set"""
@@ -459,7 +467,10 @@ class MetaAPIClient(BasePlatformClient):
         params = {
             'fields': ','.join(fields) if fields else 'id,name,status,adset_id'
         }
-        return self.request('GET', f"/{ad_id}", extra_params=params)
+        return self.require_resource_object(
+            self.request('GET', f"/{ad_id}", extra_params=params),
+            "Meta ad get",
+        )
     
     def create_ad(self, account_id: str, adset_id: str, ad: dict) -> str:
         """创建 Ad
@@ -508,7 +519,8 @@ class MetaAPIClient(BasePlatformClient):
             data['creative'] = json.dumps({'attachment_link': media_url})
         
         result = self.request('POST', f"/{account_id}/ads", data=data)
-        return result.get('id', '') if isinstance(result, dict) else ''
+        resource_id = result.get('id') if isinstance(result, dict) else None
+        return self.require_resource_id(resource_id, "Meta ad create")
     
     def update_ad(self, ad_id: str, updates: dict) -> dict:
         """更新 Ad"""
@@ -539,7 +551,8 @@ class MetaAPIClient(BasePlatformClient):
             data['object_story_spec']['link_data']['image_url'] = creative['image_url']
         
         result = self.request('POST', f"/{account_id}/creatives", data=data)
-        return result.get('id', '') if isinstance(result, dict) else ''
+        resource_id = result.get('id') if isinstance(result, dict) else None
+        return self.require_resource_id(resource_id, "Meta creative create")
     
     # ==================== 报表查询 ====================
     
@@ -622,4 +635,5 @@ class MetaAPIClient(BasePlatformClient):
         }
         
         result = self.request('POST', f"/{account_id}/promoted_objects", data=data)
-        return result.get('id', '') if isinstance(result, dict) else ''
+        resource_id = result.get('id') if isinstance(result, dict) else None
+        return self.require_resource_id(resource_id, "Meta boost post")

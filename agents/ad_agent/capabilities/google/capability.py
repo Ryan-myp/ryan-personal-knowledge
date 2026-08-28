@@ -34,18 +34,22 @@ logger = logging.getLogger(__name__)
 
 
 def _google_update_adapter(client, ctx, resource_type, resource_id, _parent_id, updates):
-    """Adapt Google Ads' customer-scoped campaign update method."""
-    if resource_type != "campaign":
-        raise AttributeError(
-            f"Google {resource_type} update adapter is unavailable"
-        )
+    """Adapt Google Ads' customer-scoped resource update methods."""
+    method_name = {
+        "campaign": "update_campaign",
+        "ad_group": "update_ad_group",
+        "ad": "update_ad",
+        "asset_group": "update_asset_group",
+    }.get(resource_type)
+    if not method_name:
+        raise AttributeError(f"Google {resource_type} update adapter is unavailable")
     factory = getattr(type(client), "for_customer", None)
     scoped_client = factory(client, ctx.account_id) if factory and ctx.account_id else client
     if scoped_client is client and ctx.account_id and hasattr(client, "customer_id"):
         client.customer_id = ctx.account_id
-    method = getattr(scoped_client, "update_campaign", None)
+    method = getattr(scoped_client, method_name, None)
     if not callable(method):
-        raise AttributeError("Google campaign update adapter is unavailable")
+        raise AttributeError(f"Google {resource_type} update adapter is unavailable")
     return method(resource_id, updates)
 
 

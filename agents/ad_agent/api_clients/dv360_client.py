@@ -308,7 +308,9 @@ class DV360APIClient(BasePlatformClient):
     def get_advertiser(self, advertiser_id: str) -> dict:
         """获取广告主详情"""
         result = self.request_raw('GET', f"{self.BASE_URL}/advertisers/{advertiser_id}")
-        return self._response_payload(result)
+        return self.require_resource_object(
+            self._response_payload(result), "DV360 advertiser get"
+        )
     
     def list_campaigns(self, advertiser_id: str, page_size: int = 20) -> list:
         """获取 Campaign 列表"""
@@ -321,7 +323,9 @@ class DV360APIClient(BasePlatformClient):
         """获取 Campaign 详情"""
         result = self.request_raw('GET',
                                    f"{self.BASE_URL}/advertisers/{advertiser_id}/campaigns/{campaign_id}")
-        return self._response_payload(result)
+        return self.require_resource_object(
+            self._response_payload(result), "DV360 campaign get"
+        )
     
     # ==================== IO (Insertion Order) 管理 ====================
     
@@ -335,7 +339,9 @@ class DV360APIClient(BasePlatformClient):
     def get_io(self, advertiser_id: str, io_id: str) -> dict:
         """获取 IO 详情"""
         result = self.request_raw('GET', f"{self.BASE_URL}/advertisers/{advertiser_id}/insertionOrders/{io_id}")
-        return self._response_payload(result)
+        return self.require_resource_object(
+            self._response_payload(result), "DV360 insertion order get"
+        )
     
     def create_io(self, advertiser_id: str, io: dict) -> str:
         """创建 IO"""
@@ -369,7 +375,8 @@ class DV360APIClient(BasePlatformClient):
         
         result = self.request_raw('POST', f"{self.BASE_URL}/advertisers/{advertiser_id}/insertionOrders", data=body)
         name = self._response_payload(result).get('name', '')
-        return name.split('/')[-1] if name else ''
+        resource_id = name.split('/')[-1] if name else None
+        return self.require_resource_id(resource_id, "DV360 insertion order create")
     
     def activate_io(self, advertiser_id: str, io_id: str) -> dict:
         """激活 IO"""
@@ -439,7 +446,8 @@ class DV360APIClient(BasePlatformClient):
                                    f"{self.BASE_URL}/advertisers/{advertiser_id}/insertionOrders/{io_id}/lineItems",
                                    data=body)
         name = self._response_payload(result).get('name', '')
-        return name.split('/')[-1] if name else ''
+        resource_id = name.split('/')[-1] if name else None
+        return self.require_resource_id(resource_id, "DV360 line item create")
     
     def activate_line_item(self, advertiser_id: str, io_id: str, li_id: str) -> dict:
         """激活 Line Item"""
@@ -453,11 +461,86 @@ class DV360APIClient(BasePlatformClient):
         """获取 Line Item 详情（内部方法）"""
         result = self.request_raw('GET',
                                    f"{self.BASE_URL}/advertisers/{advertiser_id}/insertionOrders/{io_id}/lineItems/{li_id}")
-        return self._response_payload(result)
+        return self.require_resource_object(
+            self._response_payload(result), "DV360 line item get"
+        )
 
     def get_line_item(self, advertiser_id: str, io_id: str, line_item_id: str) -> dict:
         """获取 Line Item 详情。"""
         return self._get_line_item(advertiser_id, io_id, line_item_id)
+
+    def update_resource(
+        self,
+        resource_type: str,
+        advertiser_id: str,
+        resource_id: str,
+        parent_id: Optional[str],
+        updates: dict,
+    ) -> dict:
+        """Update a DV360 hierarchy resource through its PATCH endpoint.
+
+        ``CampaignUpdateHandler`` uses this provider-owned seam so the
+        Runtime does not need a DV360-specific branch.  The field map is
+        intentionally kept here with the API client; unsupported fields fail
+        before any request is sent.
+        """
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("updates must be a non-empty object")
+        field_maps = {
+            "campaign": {
+                "name": "name", "status": "status",
+                "start_date": "startDate", "end_date": "endDate",
+            },
+            "io": {
+                "name": "name", "status": "status",
+                "start_date": "startDate", "end_date": "endDate",
+                "budget": "spendCapMicros", "spend_cap_micros": "spendCapMicros",
+            },
+            "line_item": {
+                "name": "name", "status": "status",
+                "start_date": "startDate", "end_date": "endDate",
+                "type": "lineItemType", "goal": "goal", "targeting": "targeting",
+                "budget": "budget", "bid_strategy": "bidStrategy",
+                "bid_amount": "bidAmount",
+            },
+        }
+        fields = field_maps.get(resource_type)
+        if fields is None:
+            raise ValueError(f"DV360 {resource_type} update is unsupported")
+        unknown = set(updates) - set(fields)
+        if unknown:
+            raise ValueError(
+                f"Unsupported DV360 {resource_type} update fields: {sorted(unknown)}"
+            )
+        body: dict[str, Any] = {}
+        mask: list[str] = []
+        for key, value in updates.items():
+            if value is None:
+                continue
+            wire_key = fields[key]
+            if key == "budget" and resource_type == "io":
+                value = int(float(value) * 1_000_000)
+            body[wire_key] = value
+            mask.append(wire_key)
+        if not body:
+            raise ValueError("updates must contain at least one non-null field")
+
+        if resource_type == "campaign":
+            endpoint = f"{self.BASE_URL}/advertisers/{advertiser_id}/campaigns/{resource_id}"
+        elif resource_type == "io":
+            endpoint = f"{self.BASE_URL}/advertisers/{advertiser_id}/insertionOrders/{resource_id}"
+        else:
+            if not parent_id:
+                raise ValueError("DV360 line item update requires io_id")
+            endpoint = (
+                f"{self.BASE_URL}/advertisers/{advertiser_id}/"
+                f"insertionOrders/{parent_id}/lineItems/{resource_id}"
+            )
+        self.request_raw(
+            "PATCH", endpoint,
+            params={"updateMask": ",".join(mask)}, data=body,
+        )
+        return {"success": True, "resource_id": str(resource_id)}
     
     # ==================== 报表 ====================
     

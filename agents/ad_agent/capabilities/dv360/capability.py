@@ -245,6 +245,9 @@ class DV360Capability(BaseCapability):
                 traits=["write", resource_type],
                 live_support=False,
                 resource_id_field=resource_id,
+                parent_resource_id_field=(
+                    "io_id" if resource_type == "line_item" else None
+                ),
             ), CampaignUpdateHandler(api_client, resource_type)))
 
         return tools

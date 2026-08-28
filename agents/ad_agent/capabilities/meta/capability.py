@@ -23,7 +23,7 @@ def _meta_update_adapter(client, ctx, resource_type, resource_id, _parent_id, up
     """Adapt Meta's object-specific Graph update methods for one Tool."""
     method_name = {
         "campaign": "update_campaign",
-        "adset": "update_adset",
+        "ad_set": "update_adset",
         "ad": "update_ad",
     }.get(resource_type)
     method = getattr(client, method_name, None) if method_name else None
@@ -282,9 +282,13 @@ class MetaCapability(BaseCapability):
         ), MetaCreateCreativeHandler(api_client)))
 
         # Update tools: dry-run 可完整生成计划；live 仅调用已存在的 Client 方法。
-        for resource_type, resource_id in [("campaign", "campaign_id"), ("adset", "adset_id"), ("ad", "ad_id")]:
+        for resource_type, resource_id, tool_suffix in [
+            ("campaign", "campaign_id", "campaign"),
+            ("ad_set", "adset_id", "adset"),
+            ("ad", "ad_id", "ad"),
+        ]:
             tools.append((ToolDefinition(
-                name=f"meta_update_{resource_type}",
+                name=f"meta_update_{tool_suffix}",
                 skill="meta-marketing-api",
                 platform="meta",
                 description=f"更新 Meta {resource_type}，默认仅生成 dry-run 计划。",
@@ -292,7 +296,7 @@ class MetaCapability(BaseCapability):
                     required=[resource_id, "updates"],
                     properties={
                         resource_id: {"type": "string"},
-                        "updates": meta_updates(resource_type),
+                        "updates": meta_updates(tool_suffix),
                     },
                 ),
                 risk_level=RiskLevel.MEDIUM,
@@ -305,7 +309,7 @@ class MetaCapability(BaseCapability):
                 api_client, resource_type, _meta_update_adapter,
                 resource_id_field=resource_id,
                 parent_resource_id_field={
-                    "adset": "campaign_id", "ad": "adset_id",
+                    "ad_set": "campaign_id", "ad": "adset_id",
                 }.get(resource_type),
             )))
 

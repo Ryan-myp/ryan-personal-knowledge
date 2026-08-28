@@ -205,7 +205,7 @@ class TikTokAPIClient(BasePlatformClient):
         for camp in result:
             if str(camp.get('campaign_id')) == str(campaign_id):
                 return camp
-        return {}
+        raise APIError(f"TikTok campaign {campaign_id} was not found")
     
     def create_campaign(self, advertiser_id: str, campaign: dict) -> str:
         """创建 Campaign
@@ -253,7 +253,8 @@ class TikTokAPIClient(BasePlatformClient):
         
         result = self.request('POST', 'campaign/create/', data=data)
         payload = self._data_section(result)
-        return str(payload.get('campaign_id', '')) if isinstance(payload, dict) else ''
+        resource_id = payload.get('campaign_id') if isinstance(payload, dict) else None
+        return self.require_resource_id(resource_id, "TikTok campaign create")
     
     def update_campaign(self, advertiser_id: str, campaign_id: str, updates: dict) -> dict:
         """更新 Campaign"""
@@ -309,7 +310,7 @@ class TikTokAPIClient(BasePlatformClient):
         for ag in result:
             if str(ag.get('adgroup_id')) == str(adgroup_id):
                 return ag
-        return {}
+        raise APIError(f"TikTok ad group {adgroup_id} was not found")
     
     def create_adgroup(self, advertiser_id: str, campaign_id: str, adgroup: dict) -> str:
         """创建 Ad Group"""
@@ -348,7 +349,8 @@ class TikTokAPIClient(BasePlatformClient):
         
         result = self.request('POST', 'adgroup/create/', data=data)
         payload = self._data_section(result)
-        return str(payload.get('ad_group_id', '')) if isinstance(payload, dict) else ''
+        resource_id = payload.get('ad_group_id') if isinstance(payload, dict) else None
+        return self.require_resource_id(resource_id, "TikTok ad group create")
     
     def update_adgroup(self, advertiser_id: str, campaign_id: str, adgroup_id: str, updates: dict) -> dict:
         """更新 Ad Group"""
@@ -367,6 +369,22 @@ class TikTokAPIClient(BasePlatformClient):
             'ad_group': normalized_updates,
         }
         return self.request('POST', 'adgroup/update/', data=data)
+
+    def update_ad(self, advertiser_id: str, adgroup_id: str, ad_id: str, updates: dict) -> dict:
+        """Update an Ad using TikTok's advertiser/ad-group scoped endpoint."""
+        self.acquire_rate_limit(self._rate_limiter)
+        normalized_updates = {
+            key: value for key, value in updates.items() if value is not None
+        }
+        if "status" in normalized_updates and "ad_status" not in normalized_updates:
+            normalized_updates["ad_status"] = normalized_updates.pop("status")
+        data = {
+            "advertiser_id": str(advertiser_id),
+            "ad_group_id": int(adgroup_id),
+            "ad_id": int(ad_id),
+            "ad": normalized_updates,
+        }
+        return self.request("POST", "ad/update/", data=data)
     
     def pause_adgroup(self, advertiser_id: str, campaign_id: str, adgroup_id: str) -> dict:
         """暂停 Ad Group"""
@@ -390,7 +408,7 @@ class TikTokAPIClient(BasePlatformClient):
         for ad in result:
             if str(ad.get('ad_id')) == str(ad_id):
                 return ad
-        return {}
+        raise APIError(f"TikTok ad {ad_id} was not found")
     
     def create_ad(self, advertiser_id: str, campaign_id: str, adgroup_id: str, ad: dict) -> str:
         """创建 Ad"""
@@ -419,7 +437,8 @@ class TikTokAPIClient(BasePlatformClient):
         
         result = self.request('POST', 'ad/create/', data=data)
         payload = self._data_section(result)
-        return str(payload.get('ad_id', '')) if isinstance(payload, dict) else ''
+        resource_id = payload.get('ad_id') if isinstance(payload, dict) else None
+        return self.require_resource_id(resource_id, "TikTok ad create")
     
     # ==================== Spark Ads（达人原生广告）====================
     
@@ -448,7 +467,8 @@ class TikTokAPIClient(BasePlatformClient):
         }
         result = self.request('POST', 'ad/create/', data=data)
         payload = self._data_section(result)
-        return str(payload.get('ad_id', '')) if isinstance(payload, dict) else ''
+        resource_id = payload.get('ad_id') if isinstance(payload, dict) else None
+        return self.require_resource_id(resource_id, "TikTok Spark Ad create")
     
     # ==================== 报表查询 ====================
     

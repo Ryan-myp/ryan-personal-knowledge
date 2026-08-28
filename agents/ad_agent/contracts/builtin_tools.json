@@ -1,9 +1,9 @@
 {
-  "digest": "26f3700dc84926a2570a38717d921cd3a0508d32ed1d3b1e3ae5acd6d79afb40",
+  "digest": "19d00310fade138c8bd36814f985e4aa66817d268798f9a4efe62bb0ffccc76e",
   "format_version": 1,
   "platforms": {
     "dv360": {
-      "digest": "4003e66860a96dc4b334470e84009b07a0d834b47f83d3167a71743999a249dc",
+      "digest": "7003f8add77b3f44490b1fc7008181520ba2ba3ca230314df104ae00ed6335c6",
       "tool_count": 14,
       "tools": [
         {
@@ -1015,7 +1015,7 @@
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "dv360_update_line_item",
-          "parent_resource_id_field": null,
+          "parent_resource_id_field": "io_id",
           "parent_resource_type": "io",
           "platform": "dv360",
           "replay_policy": "unsafe",
@@ -2429,7 +2429,7 @@
       ]
     },
     "meta": {
-      "digest": "a4ed029856fc77b1d6f09704532ea5a2c908c1a2cd0dba75751434258ab4aad9",
+      "digest": "dabbb07a9852d83d40de295e5e7350e5f83216d8c56b25505860a44e109de0c5",
       "tool_count": 16,
       "tools": [
         {
@@ -3710,7 +3710,7 @@
         },
         {
           "action": "update",
-          "description": "更新 Meta adset，默认仅生成 dry-run 计划。",
+          "description": "更新 Meta ad_set，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
             "additionalProperties": false,
@@ -3821,7 +3821,7 @@
           "timeout_seconds": 30.0,
           "traits": [
             "write",
-            "adset"
+            "ad_set"
           ]
         },
         {
@@ -3910,7 +3910,7 @@
       ]
     },
     "tiktok": {
-      "digest": "d63746fac5d3a5746e6dd63b88e0a54ebde02daa2d06055e11e52ef92d5e8302",
+      "digest": "93cc0e538bc5c8d804ddea96566214615b688cf23af3b6133f6f64d336d35d90",
       "tool_count": 24,
       "tools": [
         {
@@ -5406,7 +5406,7 @@
               "ad_id": {
                 "type": "string"
               },
-              "campaign_id": {
+              "adgroup_id": {
                 "type": "string"
               },
               "updates": {
@@ -5451,7 +5451,7 @@
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "tiktok_update_ad",
-          "parent_resource_id_field": null,
+          "parent_resource_id_field": "adgroup_id",
           "parent_resource_type": "ad_group",
           "platform": "tiktok",
           "replay_policy": "unsafe",
@@ -5470,7 +5470,7 @@
         },
         {
           "action": "update",
-          "description": "更新 TikTok Ads adgroup，默认仅生成 dry-run 计划。",
+          "description": "更新 TikTok Ads ad_group，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
             "additionalProperties": false,
@@ -5668,7 +5668,7 @@
           "timeout_seconds": 30.0,
           "traits": [
             "write",
-            "adgroup"
+            "ad_group"
           ]
         },
         {

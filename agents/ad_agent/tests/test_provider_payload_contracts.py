@@ -15,6 +15,10 @@ from agents.ad_agent.api_clients.meta_client import MetaAPIClient
 from agents.ad_agent.api_clients.tiktok_client import TikTokAPIClient
 from agents.ad_agent.api_clients.base import APIError
 from agents.ad_agent.capabilities.tiktok.campaigns import TikTokGetCampaignHandler
+from agents.ad_agent.capabilities.meta.capability import _meta_update_adapter
+from agents.ad_agent.capabilities.tiktok.capability import _tiktok_update_adapter
+from agents.ad_agent.capabilities.google.capability import _google_update_adapter
+from agents.ad_agent.capabilities.base import CampaignUpdateHandler
 
 
 def test_generic_campaign_type_maps_to_google_wire_field():
@@ -112,7 +116,7 @@ def test_meta_graph_payload_normalizes_categories_and_nested_updates():
     client = MetaAPIClient({"access_token": "test"})
     payloads = []
     client.request = lambda method, endpoint, data=None, **kwargs: (
-        payloads.append(data) or {"success": True}
+        payloads.append(data) or {"id": "resource-1"}
     )
 
     client.create_campaign("m1", {"name": "Reach", "objective": "OUTCOME_AWARENESS"})
@@ -152,6 +156,9 @@ def test_tiktok_ad_creation_preserves_existing_schema_fields():
     assert ad["creatives"] == [{"video_id": "video-1"}]
     assert ad["status"] == 0
     assert ad["landing_page_url"] == "https://example.test"
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        payloads.append(data) or {"ad_group_id": "ag-1"}
+    )
     client.create_adgroup("t1", "101", {
         "name": "App Group",
         "promotion_type": "APP_ANDROID",
@@ -413,3 +420,109 @@ def test_dv360_io_and_line_item_options_are_not_replaced_by_defaults():
     assert line_item["status"] == "PAUSED"
     assert line_item["bidStrategy"] == "TARGET_CPA"
     assert line_item["bidAmount"] == 2.5
+
+
+def test_existing_update_tools_dispatch_to_normalized_resource_adapters():
+    class MetaClient:
+        def update_adset(self, resource_id, updates):
+            return {"resource_id": resource_id, "updates": updates}
+
+    meta_result = _meta_update_adapter(
+        MetaClient(), ToolContext(session_id="s1", user_id="u1", account_id="m1"),
+        "ad_set", "as1", "c1", {"status": "PAUSED"},
+    )
+    assert meta_result["resource_id"] == "as1"
+
+    class TikTokClient:
+        def update_adgroup(self, advertiser_id, campaign_id, adgroup_id, updates):
+            return (advertiser_id, campaign_id, adgroup_id, updates)
+
+        def update_ad(self, advertiser_id, adgroup_id, ad_id, updates):
+            return (advertiser_id, adgroup_id, ad_id, updates)
+
+    context = ToolContext(session_id="s1", user_id="u1", account_id="t1")
+    client = TikTokClient()
+    assert _tiktok_update_adapter(
+        client, context, "ad_group", "ag1", "c1", {"ad_group_status": 0}
+    )[1:3] == ("c1", "ag1")
+    assert _tiktok_update_adapter(
+        client, context, "ad", "ad1", "ag1", {"status": 0}
+    )[1:3] == ("ag1", "ad1")
+
+    class GoogleClient:
+        def update_ad_group(self, resource_id, updates):
+            return (resource_id, updates)
+
+        def update_ad(self, resource_id, updates):
+            return (resource_id, updates)
+
+        def update_asset_group(self, resource_id, updates):
+            return (resource_id, updates)
+
+    google = GoogleClient()
+    for resource_type, method_result in (
+        ("ad_group", google.update_ad_group("ag1", {"status": "PAUSED"})),
+        ("ad", google.update_ad("ad1", {"status": "PAUSED"})),
+        ("asset_group", google.update_asset_group("asset1", {"status": "PAUSED"})),
+    ):
+        assert _google_update_adapter(
+            google, context, resource_type, method_result[0], None, method_result[1]
+        ) == method_result
+
+
+def test_provider_create_and_detail_contracts_reject_empty_success_payloads():
+    clients = [
+        (MetaAPIClient({"access_token": "test"}), "create_campaign", ("m1", {"name": "x"})),
+        (TikTokAPIClient({"access_token": "test"}), "create_campaign", ("t1", {"name": "x"})),
+    ]
+    for client, method_name, args in clients:
+        client.request = lambda *args, **kwargs: {}
+        with pytest.raises(APIError, match="resource ID"):
+            getattr(client, method_name)(*args)
+
+    meta = MetaAPIClient({"access_token": "test"})
+    meta.request = lambda *args, **kwargs: {}
+    with pytest.raises(APIError, match="resource"):
+        meta.get_campaign("c1")
+
+    google = GoogleAdsAPIClient({"access_token": "test", "customer_id": "g1"})
+    google._search = lambda query: {"results": []}
+    with pytest.raises(APIError, match="(resource|not found)"):
+        google.get_campaign("1")
+
+
+def test_google_and_dv360_existing_update_adapters_build_provider_mutations():
+    google = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
+    operations = []
+    google._mutate = lambda resource, operation: (
+        operations.append((resource, operation)) or {"results": [{}]}
+    )
+    assert google.update_ad_group("42", {"cpc_bid": 1.25})["success"] is True
+    resource, operation = operations[-1]
+    assert resource == "adGroups"
+    assert operation["update"]["resourceName"] == "customers/123/adGroups/42"
+    assert operation["update"]["cpcBidMicros"] == 1_250_000
+    assert operation["updateMask"] == {"paths": ["cpcBidMicros"]}
+
+    assert google.update_ad("43", {"status": "PAUSED"})["success"] is True
+    assert operations[-1][0] == "adGroupAds"
+    assert google.update_asset_group("44", {"name": "Assets"})["success"] is True
+    assert operations[-1][0] == "assetGroups"
+
+    dv = DV360APIClient({"access_token": "test"})
+    requests = []
+    dv.request_raw = lambda method, endpoint, **kwargs: (
+        requests.append((method, endpoint, kwargs)) or {"data": {}}
+    )
+    result = dv.update_resource(
+        "line_item", "adv1", "li1", "io1",
+        {"budget": 20, "status": "PAUSED", "targeting": {"country": "US"}},
+    )
+    assert result == {"success": True, "resource_id": "li1"}
+    method, endpoint, kwargs = requests[-1]
+    assert method == "PATCH"
+    assert endpoint.endswith("/advertisers/adv1/insertionOrders/io1/lineItems/li1")
+    assert kwargs["data"] == {
+        "budget": 20, "status": "PAUSED", "targeting": {"country": "US"}
+    }
+    assert kwargs["params"]["updateMask"] == "budget,status,targeting"

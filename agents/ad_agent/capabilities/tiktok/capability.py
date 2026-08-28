@@ -48,8 +48,11 @@ def _tiktok_update_adapter(client, ctx, resource_type, resource_id, parent_id, u
     if resource_type == "campaign":
         method = getattr(client, "update_campaign", None)
         args = (ctx.account_id, resource_id, updates)
-    elif resource_type == "adgroup":
+    elif resource_type == "ad_group":
         method = getattr(client, "update_adgroup", None)
+        args = (ctx.account_id, parent_id, resource_id, updates)
+    elif resource_type == "ad":
+        method = getattr(client, "update_ad", None)
         args = (ctx.account_id, parent_id, resource_id, updates)
     else:
         raise AttributeError(
@@ -59,8 +62,10 @@ def _tiktok_update_adapter(client, ctx, resource_type, resource_id, parent_id, u
         raise AttributeError(
             f"TikTok {resource_type} update adapter is unavailable"
         )
-    if resource_type == "adgroup" and not parent_id:
-        raise ValueError("TikTok adgroup update requires campaign_id")
+    if resource_type == "ad_group" and not parent_id:
+        raise ValueError("TikTok ad group update requires campaign_id")
+    if resource_type == "ad" and not parent_id:
+        raise ValueError("TikTok ad update requires adgroup_id")
     return method(*args)
 
 
@@ -333,13 +338,20 @@ class TikTokCapability(BaseCapability):
                 traits=["read", resource_name],
             ), handler))
 
-        for resource_type, resource_id in [("campaign", "campaign_id"), ("adgroup", "adgroup_id"), ("ad", "ad_id")]:
+        for resource_type, resource_id, tool_suffix in [
+            ("campaign", "campaign_id", "campaign"),
+            ("ad_group", "adgroup_id", "adgroup"),
+            ("ad", "ad_id", "ad"),
+        ]:
             properties = {resource_id: {"type": "string"}, "updates": {"type": "object"}}
-            if resource_type in ("adgroup", "ad"):
-                properties["campaign_id"] = {"type": "string"}
-            properties["updates"] = tiktok_updates(resource_type)
+            parent_field = {
+                "ad_group": "campaign_id", "ad": "adgroup_id",
+            }.get(resource_type)
+            if parent_field:
+                properties[parent_field] = {"type": "string"}
+            properties["updates"] = tiktok_updates(tool_suffix)
             tools.append((ToolDefinition(
-                name=f"tiktok_update_{resource_type}",
+                name=f"tiktok_update_{tool_suffix}",
                 skill="tiktok-ads-api-expert",
                 platform="tiktok",
                 description=f"更新 TikTok Ads {resource_type}，默认仅生成 dry-run 计划。",
@@ -352,15 +364,11 @@ class TikTokCapability(BaseCapability):
                 traits=["write", resource_type],
                 live_support=False,
                 resource_id_field=resource_id,
-                parent_resource_id_field=(
-                    "campaign_id" if resource_type == "adgroup" else None
-                ),
+                parent_resource_id_field=parent_field,
             ), CampaignUpdateHandler(
                 api_client, resource_type, _tiktok_update_adapter,
                 resource_id_field=resource_id,
-                parent_resource_id_field=(
-                    "campaign_id" if resource_type == "adgroup" else None
-                ),
+                parent_resource_id_field=parent_field,
             )))
 
         return tools

@@ -39,6 +39,15 @@ class GoogleAdsAPIClient(BasePlatformClient):
         "THIS_MONTH", "LAST_MONTH", "THIS_WEEK_SUN_TODAY", "THIS_WEEK_MON_TODAY",
     }
     CAMPAIGN_UPDATE_FIELDS = {"name", "status", "daily_budget", "budget"}
+    AD_GROUP_UPDATE_FIELDS = {
+        "name", "status", "type", "cpc_bid", "cpc_bid_micros",
+    }
+    # Google Ads treats most ad payload fields as immutable after creation.
+    # Keep the live adapter deliberately narrow; the ToolSchema can still
+    # preview richer creative changes until a dedicated asset mutation is
+    # verified.
+    AD_UPDATE_FIELDS = {"status"}
+    ASSET_GROUP_UPDATE_FIELDS = {"name", "status"}
     
     def __init__(
         self,
@@ -253,7 +262,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 'advertising_channel_type': camp.get('advertisingChannelType'),
                 'bidding_strategy': camp.get('biddingStrategy'),
             }
-        return {}
+        raise APIError(f"Google campaign {campaign_id} was not found")
     
     def list_ad_groups(self, campaign_id: str, page_size: int = 100) -> list:
         """获取 Ad Group 列表"""
@@ -298,7 +307,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 'status': ag.get('status'),
                 'type': ag.get('type'),
             }
-        return {}
+        raise APIError(f"Google ad group {ad_group_id} was not found")
     
     def list_ads(self, ad_group_id: str, page_size: int = 100) -> list:
         """获取 Ad 列表"""
@@ -376,7 +385,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 'name': ad.get('name'),
                 'status': ad.get('status'),
             }
-        return {}
+        raise APIError(f"Google ad {ad_id} was not found")
     
     # ==================== PMax Asset Group 管理 ====================
     
@@ -418,7 +427,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 'name': ag.get('name'),
                 'status': ag.get('status'),
             }
-        return {}
+        raise APIError(f"Google asset group {asset_group_id} was not found")
     
     def create_campaign(
         self,
@@ -582,6 +591,67 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 "updateMask": {"paths": ["amountMicros"]},
             })
         return {'success': True, 'campaign_id': campaign_id}
+
+    def _update_resource(
+        self,
+        resource: str,
+        resource_id: str,
+        updates: dict,
+        allowed_fields: set[str],
+        result_key: str,
+    ) -> dict:
+        """Run one validated customer-level Google Ads update mutation."""
+        resource_id = self._numeric_id(resource_id, result_key)
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("updates must be a non-empty object")
+        unknown = set(updates) - allowed_fields
+        if unknown:
+            raise ValueError(
+                f"Unsupported Google {result_key} update fields: {sorted(unknown)}"
+            )
+
+        normalized = {
+            key: value for key, value in updates.items() if value is not None
+        }
+        if "cpc_bid" in normalized:
+            try:
+                normalized["cpc_bid_micros"] = int(
+                    float(normalized.pop("cpc_bid")) * 1_000_000
+                )
+            except (TypeError, ValueError) as exc:
+                raise ValueError("cpc_bid must be a positive number") from exc
+        patch = {
+            "resourceName": f"customers/{self.customer_id}/{resource}/{resource_id}",
+            **normalized,
+        }
+        self._mutate(resource, {
+            "update": self._camel_case_keys(patch),
+            "updateMask": {
+                "paths": [self._camel_case(key) for key in normalized],
+            },
+        })
+        return {"success": True, result_key: resource_id}
+
+    def update_ad_group(self, ad_group_id: str, updates: dict) -> dict:
+        """Update mutable Google Ads Ad Group fields."""
+        return self._update_resource(
+            "adGroups", ad_group_id, updates,
+            self.AD_GROUP_UPDATE_FIELDS, "ad_group_id",
+        )
+
+    def update_ad(self, ad_id: str, updates: dict) -> dict:
+        """Update mutable Google Ads AdGroupAd fields."""
+        return self._update_resource(
+            "adGroupAds", ad_id, updates,
+            self.AD_UPDATE_FIELDS, "ad_id",
+        )
+
+    def update_asset_group(self, asset_group_id: str, updates: dict) -> dict:
+        """Update mutable Performance Max Asset Group fields."""
+        return self._update_resource(
+            "assetGroups", asset_group_id, updates,
+            self.ASSET_GROUP_UPDATE_FIELDS, "asset_group_id",
+        )
     
     def pause_campaign(self, campaign_id: str) -> dict:
         """暂停 Campaign"""
