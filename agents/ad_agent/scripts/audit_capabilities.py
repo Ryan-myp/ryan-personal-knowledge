@@ -100,9 +100,18 @@ def audit_capabilities() -> dict[str, Any]:
             action = str(getattr(definition, "action", ""))
             resource = str(getattr(definition, "resource_type", ""))
             actions[f"{action}:{resource}"] += 1
+            intent_types = [
+                str(intent).strip()
+                for intent in (getattr(definition, "intent_types", []) or [])
+                if str(intent).strip()
+            ]
             properties = _schema_properties(definition)
             parent_field = getattr(definition, "parent_resource_id_field", None)
 
+            if not intent_types:
+                platform_issues.append(
+                    f"{name}: intent_types is empty; Tool cannot be discovered by Router"
+                )
             if not definition.required_permissions:
                 platform_issues.append(f"{name}: required_permissions is empty")
             if definition.is_write_tool and definition.replay_policy != ReplayPolicy.UNSAFE:
@@ -132,6 +141,7 @@ def audit_capabilities() -> dict[str, Any]:
                     "parent_resource_type": getattr(definition, "parent_resource_type", None),
                     "resource_id_field": getattr(definition, "resource_id_field", None),
                     "parent_resource_id_field": parent_field,
+                    "intent_types": intent_types,
                     "required": list(getattr(schema, "required", []) or []),
                     "provider_required": list(getattr(schema, "provider_required", []) or []),
                     "conditional_rules": len(getattr(schema, "conditional_rules", []) or []),

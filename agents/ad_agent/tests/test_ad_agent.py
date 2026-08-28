@@ -1136,7 +1136,7 @@ class TestIterationContracts:
         assert all(tool.intent_types for tool in registry.list_all())
         # DV360 IO/Line Item reads and Google PMax Asset Group planning are
         # now part of the executable capability contract.
-        assert len(registry.list_all()) == 120
+        assert len(registry.list_all()) == 121
 
     def test_google_access_token_is_local_and_caller_credentials_unchanged(self):
         credentials = {"access_token": "caller-token", "customer_id": "g1"}

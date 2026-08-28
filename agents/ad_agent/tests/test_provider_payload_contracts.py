@@ -391,6 +391,52 @@ def test_google_keyword_creation_batches_criterion_operations():
     assert calls[0][1][1]["create"]["negative"] is True
 
 
+def test_google_product_group_creation_builds_listing_group_criterion():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "g1"})
+    calls = []
+    client._mutate_operations = lambda resource, operations: (
+        calls.append((resource, operations)) or {
+            "data": {"results": [{"resourceName": "customers/g1/adGroupCriteria/123~456"}]}
+        }
+    )
+
+    assert client.create_product_group(
+        "123", "product_type_1", "Shoes", partition_type="SUBDIVISION",
+        parent_criterion_id="123~111", cpc_bid_micros=250000,
+    ) == "123~456"
+    resource, operations = calls[-1]
+    assert resource == "adGroupCriteria"
+    criterion = operations[0]["create"]
+    assert criterion["adGroup"] == "customers/g1/adGroups/123"
+    assert criterion["cpcBidMicros"] == 250000
+    assert criterion["listingGroup"] == {
+        "type": "SUBDIVISION",
+        "parentAdGroupCriterion": "customers/g1/adGroupCriteria/123~111",
+        "caseValue": {"productType": {"level": "LEVEL1", "value": "Shoes"}},
+    }
+
+    client.create_product_group("123", "all_products")
+    assert calls[-1][1][0]["create"]["listingGroup"] == {"type": "UNIT"}
+
+    client.create_product_group(
+        "123", "brand", "Acme",
+        parent_criterion_id="customers/g1/adGroupCriteria/123~111",
+    )
+    assert calls[-1][1][0]["create"]["listingGroup"]["parentAdGroupCriterion"] == (
+        "customers/g1/adGroupCriteria/123~111"
+    )
+
+    client.create_product_group(
+        "123", "bidding_category", "1234", bidding_category_level="LEVEL3"
+    )
+    assert calls[-1][1][0]["create"]["listingGroup"]["caseValue"] == {
+        "productBiddingCategory": {"level": "LEVEL3", "id": 1234}
+    }
+
+    with pytest.raises(ValueError, match="another customer|belong"):
+        client.create_product_group("123", "brand", "Acme", parent_criterion_id="999~1")
+
+
 def test_google_reads_accept_raw_and_extracted_search_payloads():
     client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "g1"})
     row = {"campaign": {"id": "42", "name": "Sales", "status": "PAUSED"}}

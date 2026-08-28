@@ -27,6 +27,7 @@ from .keywords import GoogleListKeywordsHandler
 from .parameters import (
     google_campaign_schema, google_ad_group_schema, google_ad_schema,
     google_asset_group_schema, google_ad_format_catalog, google_keyword_schema,
+    google_product_group_schema,
 )
 from ...api_clients.google_ads_client import GoogleAdsAPIClient
 from ..update_contracts import google_updates
@@ -72,6 +73,7 @@ class GoogleCapability(BaseCapability):
         "pause_campaign": ["google_pause_campaign"], "resume_campaign": ["google_resume_campaign"],
         "create_ad_group": ["google_create_ad_group"], "create_search_ad": ["google_create_search_ad", "google_create_ad"],
         "create_pmax_asset_group": ["google_create_pmax_asset_group", "google_create_asset_group"],
+        "create_product_group": ["google_create_product_group"],
         "get_campaign_report": ["google_get_campaign_report"], "get_adgroup_report": ["google_get_adgroup_report"],
     }
 
@@ -128,6 +130,26 @@ class GoogleCapability(BaseCapability):
                 intent_types=["create_pmax_asset_group"], traits=["write", "asset_group"], write=True,
                 argument_builder=lambda _ctx, data: ((data["campaign_id"], data["name"], data["headlines"]), {
                     "descriptions": data.get("descriptions"), "images": data.get("images"), "videos": data.get("videos"),
+                }),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_create_product_group",
+                description="创建 Google Shopping Product Group/Listing Group；默认仅生成 dry-run 计划。",
+                method_name="create_product_group", result_key="product_group_id",
+                properties=google_product_group_schema()["properties"],
+                required=google_product_group_schema()["required"],
+                provider_required=google_product_group_schema()["provider_required"],
+                conditional_rules=google_product_group_schema()["conditional_rules"],
+                action="create", resource_type="product_group", parent_resource_type="ad_group",
+                resource_id_field="product_group_id", parent_resource_id_field="ad_group_id",
+                intent_types=["create_product_group"], traits=["write", "product_group", "shopping"], write=True,
+                argument_builder=lambda _ctx, data: ((data["ad_group_id"], data["product_group_type"]), {
+                    "value": data.get("value"),
+                    "partition_type": data.get("partition_type", "UNIT"),
+                    "parent_criterion_id": data.get("parent_criterion_id"),
+                    "cpc_bid_micros": data.get("cpc_bid_micros"),
+                    "bidding_category_level": data.get("bidding_category_level", "LEVEL1"),
                 }),
             ),
             method_tool(

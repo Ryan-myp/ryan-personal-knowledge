@@ -26,6 +26,17 @@ GOOGLE_APP_BIDDING_TYPES = [
     "MAXIMIZE_CONVERSION_VALUE",
 ]
 GOOGLE_KEYWORD_MATCH_TYPES = ["BROAD", "PHRASE", "EXACT"]
+GOOGLE_PRODUCT_GROUP_TYPES = [
+    "all_products",
+    "product_type_1", "product_type_2", "product_type_3", "product_type_4", "product_type_5",
+    "brand", "condition",
+    "custom_label_0", "custom_label_1", "custom_label_2", "custom_label_3", "custom_label_4",
+    "channel", "item_id", "bidding_category",
+]
+GOOGLE_PRODUCT_PARTITION_TYPES = ["UNIT", "SUBDIVISION"]
+GOOGLE_PRODUCT_CONDITIONS = ["NEW", "USED", "REFURBISHED"]
+GOOGLE_PRODUCT_CHANNELS = ["ONLINE", "LOCAL"]
+GOOGLE_PRODUCT_LEVELS = ["LEVEL1", "LEVEL2", "LEVEL3", "LEVEL4", "LEVEL5"]
 
 
 def _field(field_type: Any, description: str = "", **kwargs: Any) -> dict[str, Any]:
@@ -159,6 +170,70 @@ def google_keyword_schema() -> dict[str, Any]:
     }
 
 
+def google_product_group_schema() -> dict[str, Any]:
+    """Create contract for a Google Shopping listing-group criterion.
+
+    Google models a product partition as ``AdGroupCriterion.listingGroup``.
+    The root ``all_products`` node has no case value; every other dimension
+    maps to one explicit case-value object in the provider adapter.
+    """
+    properties = {
+        "ad_group_id": _field("string", "Parent Shopping ad group ID", minLength=1),
+        "product_group_type": _field(
+            "string", "Product partition dimension", enum=GOOGLE_PRODUCT_GROUP_TYPES,
+        ),
+        "partition_type": _field(
+            "string", "UNIT creates a leaf; SUBDIVISION creates a partition node",
+            enum=GOOGLE_PRODUCT_PARTITION_TYPES, default="UNIT",
+        ),
+        "value": _field(
+            ["string", "integer"],
+            "Dimension value; bidding_category accepts a numeric category ID",
+            minLength=1,
+        ),
+        "bidding_category_level": _field(
+            "string", "Google product bidding category level", enum=GOOGLE_PRODUCT_LEVELS,
+            default="LEVEL1",
+        ),
+        "parent_criterion_id": _field(
+            "string", "Optional parent criterion ID or full resource name", minLength=1,
+        ),
+        "cpc_bid_micros": _field(
+            "integer", "Optional product partition CPC bid in micros", minimum=0,
+        ),
+    }
+    conditional_rules = [
+        {
+            "id": f"{product_type}_requires_value",
+            "if": {"product_group_type": product_type},
+            "required": ["value"],
+            "message": f"{product_type} requires value",
+        }
+        for product_type in GOOGLE_PRODUCT_GROUP_TYPES
+        if product_type != "all_products"
+    ]
+    conditional_rules.extend([
+        {
+            "id": "condition_values",
+            "if": {"product_group_type": "condition"},
+            "allowed": {"value": GOOGLE_PRODUCT_CONDITIONS},
+            "message": "condition value must be NEW, USED or REFURBISHED",
+        },
+        {
+            "id": "channel_values",
+            "if": {"product_group_type": "channel"},
+            "allowed": {"value": GOOGLE_PRODUCT_CHANNELS},
+            "message": "channel value must be ONLINE or LOCAL",
+        },
+    ])
+    return {
+        "required": ["ad_group_id", "product_group_type"],
+        "provider_required": ["product_group_type"],
+        "properties": properties,
+        "conditional_rules": conditional_rules,
+    }
+
+
 def google_ad_schema() -> dict[str, Any]:
     return {
         "required": ["ad_group_id", "name"],
@@ -264,11 +339,12 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
             "format_id": "shopping.product_group",
             "category": "shopping",
             "resource_type": "product_group",
-            "coverage": "declared_only",
-            "tool_names": [],
+            "coverage": "supported_dry_run",
+            "tool_names": ["google_create_product_group"],
+            "payload_adapter": "GoogleAdsAPIClient.create_product_group",
             "dependencies": ["ad_group", "listing_group", "merchant_center"],
-            "supported_fields": ["all_products", "product_type_1..5", "custom_label_0..4", "brand", "category", "condition"],
-            "gaps": ["dedicated product group create/update Tool"],
+            "supported_fields": ["all_products", "product_type_1..5", "custom_label_0..4", "brand", "condition", "channel", "item_id", "bidding_category"],
+            "gaps": ["Merchant Center validation", "live mutation approval"],
             "source_document": source_document,
         },
         {

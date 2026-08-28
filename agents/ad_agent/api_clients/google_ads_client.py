@@ -451,6 +451,124 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 f"{len(operations)} operations: {response}"
             )
         return resource_ids
+
+    def create_product_group(
+        self,
+        ad_group_id: str,
+        product_group_type: str,
+        value: Any = None,
+        partition_type: str = "UNIT",
+        parent_criterion_id: str = None,
+        cpc_bid_micros: int = None,
+        bidding_category_level: str = "LEVEL1",
+    ) -> str:
+        """Create one Shopping product partition criterion.
+
+        Google Shopping product groups are not a standalone resource.  They
+        are ``AdGroupCriterion`` mutations whose ``listingGroup`` contains a
+        root or dimension-specific case value.  Keep this translation here so
+        the Capability/Tool contract remains provider-neutral.
+        """
+        ad_group_id = self._numeric_id(ad_group_id, "ad_group_id")
+        group_type = str(product_group_type or "").strip().lower()
+        partition = str(partition_type or "UNIT").strip().upper()
+        if partition not in {"UNIT", "SUBDIVISION"}:
+            raise ValueError("partition_type must be UNIT or SUBDIVISION")
+
+        supported_types = {
+            "all_products",
+            *(f"product_type_{level}" for level in range(1, 6)),
+            "brand", "condition",
+            *(f"custom_label_{index}" for index in range(5)),
+            "channel", "item_id", "bidding_category",
+        }
+        if group_type not in supported_types:
+            raise ValueError(f"Unsupported product_group_type: {product_group_type}")
+
+        listing_group: dict[str, Any] = {"type": partition}
+        if parent_criterion_id:
+            listing_group["parentAdGroupCriterion"] = self._criterion_resource_name(
+                ad_group_id, parent_criterion_id
+            )
+        if group_type != "all_products":
+            if value in (None, ""):
+                raise ValueError(f"{group_type} requires value")
+            listing_group["caseValue"] = self._product_case_value(
+                group_type, value, bidding_category_level
+            )
+
+        criterion: dict[str, Any] = {
+            "adGroup": f"customers/{self.customer_id}/adGroups/{ad_group_id}",
+            "listingGroup": listing_group,
+        }
+        if cpc_bid_micros is not None:
+            cpc_bid_micros = int(cpc_bid_micros)
+            if cpc_bid_micros < 0:
+                raise ValueError("cpc_bid_micros must be non-negative")
+            criterion["cpcBidMicros"] = cpc_bid_micros
+
+        response = self._mutate_operations(
+            "adGroupCriteria", [{"create": criterion}]
+        )
+        resource_name = self._mutation_resource_name(response)
+        if not resource_name:
+            raise APIError(f"Product group mutate returned no resource name: {response}")
+        return str(resource_name).rsplit("/", 1)[-1]
+
+    def _criterion_resource_name(self, ad_group_id: str, criterion_id: Any) -> str:
+        """Normalize a parent criterion ID without allowing path injection."""
+        value = str(criterion_id or "").strip()
+        full_prefix = re.fullmatch(
+            r"customers/([A-Za-z0-9_-]+)/adGroupCriteria/(\d+~\d+)", value
+        )
+        if full_prefix:
+            if full_prefix.group(1) != str(self.customer_id):
+                raise ValueError("parent_criterion_id belongs to another customer")
+            if not full_prefix.group(2).startswith(f"{ad_group_id}~"):
+                raise ValueError("parent_criterion_id must belong to the supplied ad_group_id")
+            return value
+        if not re.fullmatch(r"\d+~\d+", value):
+            raise ValueError(
+                "parent_criterion_id must be '<ad_group_id>~<criterion_id>' "
+                "or a full AdGroupCriterion resource name"
+            )
+        if not value.startswith(f"{ad_group_id}~"):
+            raise ValueError("parent_criterion_id must belong to the supplied ad_group_id")
+        return f"customers/{self.customer_id}/adGroupCriteria/{value}"
+
+    @classmethod
+    def _product_case_value(
+        cls, group_type: str, value: Any, bidding_category_level: str
+    ) -> dict[str, Any]:
+        if group_type.startswith("product_type_"):
+            level = group_type.rsplit("_", 1)[-1]
+            return {"productType": {"level": f"LEVEL{level}", "value": str(value)}}
+        if group_type == "brand":
+            return {"productBrand": {"value": str(value)}}
+        if group_type == "condition":
+            condition = str(value).upper()
+            if condition not in {"NEW", "USED", "REFURBISHED"}:
+                raise ValueError("condition must be NEW, USED or REFURBISHED")
+            return {"productCondition": {"condition": condition}}
+        if group_type.startswith("custom_label_"):
+            index = group_type.rsplit("_", 1)[-1]
+            return {"productCustomLabel": {"index": f"INDEX{index}", "value": str(value)}}
+        if group_type == "channel":
+            channel = str(value).upper()
+            if channel not in {"ONLINE", "LOCAL"}:
+                raise ValueError("channel must be ONLINE or LOCAL")
+            return {"productChannel": {"channel": channel}}
+        if group_type == "item_id":
+            return {"productItemId": {"value": str(value)}}
+        if group_type == "bidding_category":
+            category_id = str(value).strip()
+            if not re.fullmatch(r"-?\d+", category_id):
+                raise ValueError("bidding_category value must be a numeric category ID")
+            level = str(bidding_category_level or "LEVEL1").upper()
+            if level not in {f"LEVEL{item}" for item in range(1, 6)}:
+                raise ValueError("bidding_category_level must be LEVEL1 through LEVEL5")
+            return {"productBiddingCategory": {"level": level, "id": int(category_id)}}
+        raise ValueError(f"Unsupported product_group_type: {group_type}")
     
     def get_ad(self, ad_id: str) -> dict:
         """获取 Ad 详情"""

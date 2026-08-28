@@ -1,5 +1,5 @@
 {
-  "digest": "b3e3851aab9b5a4fd8fdc5a43a50b6d118d16172a6c9d8818a468f1f866d8315",
+  "digest": "e7f3e12c503bd1f6eaba870ebfe01c94a99f359f9b1c2175ce5f6a4d7dae5c5a",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -1983,8 +1983,8 @@
       ]
     },
     "google-ads": {
-      "digest": "20e5167fbdb343dedcaabf9c2cea3e370941ead9c0fbba0034d9c04a6b6c3936",
-      "tool_count": 24,
+      "digest": "5c67e88a9d8432afd0ce9cd23d7792b9f59d490ba8c912fc275d416f2ab1f2dc",
+      "tool_count": 25,
       "tools": [
         {
           "action": "create",
@@ -2830,6 +2830,296 @@
           "traits": [
             "write",
             "asset_group"
+          ]
+        },
+        {
+          "action": "create",
+          "contract_version": "1.1.0",
+          "description": "创建 Google Shopping Product Group/Listing Group；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [
+              {
+                "id": "product_type_1_requires_value",
+                "if": {
+                  "product_group_type": "product_type_1"
+                },
+                "message": "product_type_1 requires value",
+                "required": [
+                  "value"
+                ]
+              },
+              {
+                "id": "product_type_2_requires_value",
+                "if": {
+                  "product_group_type": "product_type_2"
+                },
+                "message": "product_type_2 requires value",
+                "required": [
+                  "value"
+                ]
+              },
+              {
+                "id": "product_type_3_requires_value",
+                "if": {
+                  "product_group_type": "product_type_3"
+                },
+                "message": "product_type_3 requires value",
+                "required": [
+                  "value"
+                ]
+              },
+              {
+                "id": "product_type_4_requires_value",
+                "if": {
+                  "product_group_type": "product_type_4"
+                },
+                "message": "product_type_4 requires value",
+                "required": [
+                  "value"
+                ]
+              },
+              {
+                "id": "product_type_5_requires_value",
+                "if": {
+                  "product_group_type": "product_type_5"
+                },
+                "message": "product_type_5 requires value",
+                "required": [
+                  "value"
+                ]
+              },
+              {
+                "id": "brand_requires_value",
+                "if": {
+                  "product_group_type": "brand"
+                },
+                "message": "brand requires value",
+                "required": [
+                  "value"
+                ]
+              },
+              {
+                "id": "condition_requires_value",
+                "if": {
+                  "product_group_type": "condition"
+                },
+                "message": "condition requires value",
+                "required": [
+                  "value"
+                ]
+              },
+              {
+                "id": "custom_label_0_requires_value",
+                "if": {
+                  "product_group_type": "custom_label_0"
+                },
+                "message": "custom_label_0 requires value",
+                "required": [
+                  "value"
+                ]
+              },
+              {
+                "id": "custom_label_1_requires_value",
+                "if": {
+                  "product_group_type": "custom_label_1"
+                },
+                "message": "custom_label_1 requires value",
+                "required": [
+                  "value"
+                ]
+              },
+              {
+                "id": "custom_label_2_requires_value",
+                "if": {
+                  "product_group_type": "custom_label_2"
+                },
+                "message": "custom_label_2 requires value",
+                "required": [
+                  "value"
+                ]
+              },
+              {
+                "id": "custom_label_3_requires_value",
+                "if": {
+                  "product_group_type": "custom_label_3"
+                },
+                "message": "custom_label_3 requires value",
+                "required": [
+                  "value"
+                ]
+              },
+              {
+                "id": "custom_label_4_requires_value",
+                "if": {
+                  "product_group_type": "custom_label_4"
+                },
+                "message": "custom_label_4 requires value",
+                "required": [
+                  "value"
+                ]
+              },
+              {
+                "id": "channel_requires_value",
+                "if": {
+                  "product_group_type": "channel"
+                },
+                "message": "channel requires value",
+                "required": [
+                  "value"
+                ]
+              },
+              {
+                "id": "item_id_requires_value",
+                "if": {
+                  "product_group_type": "item_id"
+                },
+                "message": "item_id requires value",
+                "required": [
+                  "value"
+                ]
+              },
+              {
+                "id": "bidding_category_requires_value",
+                "if": {
+                  "product_group_type": "bidding_category"
+                },
+                "message": "bidding_category requires value",
+                "required": [
+                  "value"
+                ]
+              },
+              {
+                "allowed": {
+                  "value": [
+                    "NEW",
+                    "USED",
+                    "REFURBISHED"
+                  ]
+                },
+                "id": "condition_values",
+                "if": {
+                  "product_group_type": "condition"
+                },
+                "message": "condition value must be NEW, USED or REFURBISHED"
+              },
+              {
+                "allowed": {
+                  "value": [
+                    "ONLINE",
+                    "LOCAL"
+                  ]
+                },
+                "id": "channel_values",
+                "if": {
+                  "product_group_type": "channel"
+                },
+                "message": "channel value must be ONLINE or LOCAL"
+              }
+            ],
+            "properties": {
+              "ad_group_id": {
+                "description": "Parent Shopping ad group ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "bidding_category_level": {
+                "default": "LEVEL1",
+                "description": "Google product bidding category level",
+                "enum": [
+                  "LEVEL1",
+                  "LEVEL2",
+                  "LEVEL3",
+                  "LEVEL4",
+                  "LEVEL5"
+                ],
+                "type": "string"
+              },
+              "cpc_bid_micros": {
+                "description": "Optional product partition CPC bid in micros",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "parent_criterion_id": {
+                "description": "Optional parent criterion ID or full resource name",
+                "minLength": 1,
+                "type": "string"
+              },
+              "partition_type": {
+                "default": "UNIT",
+                "description": "UNIT creates a leaf; SUBDIVISION creates a partition node",
+                "enum": [
+                  "UNIT",
+                  "SUBDIVISION"
+                ],
+                "type": "string"
+              },
+              "product_group_type": {
+                "description": "Product partition dimension",
+                "enum": [
+                  "all_products",
+                  "product_type_1",
+                  "product_type_2",
+                  "product_type_3",
+                  "product_type_4",
+                  "product_type_5",
+                  "brand",
+                  "condition",
+                  "custom_label_0",
+                  "custom_label_1",
+                  "custom_label_2",
+                  "custom_label_3",
+                  "custom_label_4",
+                  "channel",
+                  "item_id",
+                  "bidding_category"
+                ],
+                "type": "string"
+              },
+              "value": {
+                "description": "Dimension value; bidding_category accepts a numeric category ID",
+                "minLength": 1,
+                "type": [
+                  "string",
+                  "integer"
+                ]
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "product_group_type"
+            ],
+            "required": [
+              "ad_group_id",
+              "product_group_type"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_product_group"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_product_group",
+          "parent_resource_id_field": "ad_group_id",
+          "parent_resource_type": "ad_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "product_group_id",
+          "resource_type": "product_group",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "product_group",
+            "shopping"
           ]
         },
         {
@@ -8674,5 +8964,5 @@
       ]
     }
   },
-  "tool_count": 120
+  "tool_count": 121
 }

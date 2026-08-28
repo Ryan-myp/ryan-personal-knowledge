@@ -389,6 +389,22 @@ def test_hierarchy_guide_formats_keep_provider_enum_and_execution_boundaries():
     assert by_id["performance_max"]["source_document"] == "docs/ad-platform-hierarchy-guide-v5.md"
     assert by_id["video.skippable_in_stream"]["tool_names"] == []
     assert by_id["display.responsive_display_ad"]["coverage"] == "declared_only"
+    product_group = next(
+        definition for definition in runtime.registry.list_all()
+        if definition.name == "google_create_product_group"
+    )
+    assert product_group.parent_resource_type == "ad_group"
+    assert "product_type_1" in product_group.input_schema.properties["product_group_type"]["enum"]
+    assert validate_tool_input(
+        product_group.input_schema,
+        {"ad_group_id": "123", "product_group_type": "brand", "value": "Acme"},
+        include_provider_contract=True,
+    ) == []
+    assert validate_tool_input(
+        product_group.input_schema,
+        {"ad_group_id": "123", "product_group_type": "brand"},
+        include_provider_contract=True,
+    )
 
 
 def test_workflow_state_machine_and_cancel_are_durable():
