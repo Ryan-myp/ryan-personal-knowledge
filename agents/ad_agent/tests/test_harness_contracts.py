@@ -372,6 +372,25 @@ def test_provider_owned_ad_format_catalog_reports_real_coverage():
     assert runtime.list_ad_formats("dv360") == []
 
 
+def test_hierarchy_guide_formats_keep_provider_enum_and_execution_boundaries():
+    runtime = AgentRuntime(offline_mode=True)
+    runtime.register_capability(create_google_capability())
+
+    campaign_tool, _handler = runtime.registry.get("google_create_campaign")
+    channel_types = campaign_tool.input_schema.properties["advertising_channel_type"]["enum"]
+    app_stores = campaign_tool.input_schema.properties["app_campaign_setting"]["properties"]["app_store"]["enum"]
+
+    assert "PERFORMANCE_MAX" in channel_types
+    assert "MAX" not in channel_types
+    assert app_stores == ["GOOGLE_APP_STORE", "APPLE_APP_STORE"]
+
+    formats = runtime.list_ad_formats("google-ads")
+    by_id = {item["format_id"]: item for item in formats}
+    assert by_id["performance_max"]["source_document"] == "docs/ad-platform-hierarchy-guide-v5.md"
+    assert by_id["video.skippable_in_stream"]["tool_names"] == []
+    assert by_id["display.responsive_display_ad"]["coverage"] == "declared_only"
+
+
 def test_workflow_state_machine_and_cancel_are_durable():
     store = AdAgentStore(":memory:")
     store.create_session("s1", "u1", "m1")

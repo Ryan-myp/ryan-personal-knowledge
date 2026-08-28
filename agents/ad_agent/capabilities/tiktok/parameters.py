@@ -241,6 +241,7 @@ def tiktok_ad_schema() -> dict[str, Any]:
 
 def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
     """Advertised TikTok formats and their current contract depth."""
+    source_document = "docs/ad-platform-hierarchy-guide-v5.md"
     return [
         {
             "format_id": "product_sales",
@@ -251,6 +252,18 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
             "dependencies": ["PRODUCT_SALES", "ad_group", "product_or_landing_destination"],
             "supported_fields": ["objective_type", "budget_mode", "promotion_type", "targeting", "media"],
             "gaps": ["Shop/product-specific resource builders", "product feed validation"],
+            "source_document": source_document,
+        },
+        {
+            "format_id": "product_sales.shop",
+            "category": "product_sales",
+            "resource_type": "ad_group",
+            "coverage": "partial_dry_run",
+            "tool_names": ["tiktok_create_campaign", "tiktok_create_adgroup"],
+            "dependencies": ["PRODUCT_SALES", "catalog_id", "product_set_id"],
+            "supported_fields": ["catalog_id", "product_set_id", "promotion_type"],
+            "gaps": ["Shop/product-specific resource builders", "product feed validation"],
+            "source_document": source_document,
         },
         {
             "format_id": "spark",
@@ -262,6 +275,7 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
             "dependencies": ["campaign", "ad_group", "spark_post_id", "creator authorization"],
             "supported_fields": ["spark_post_id"],
             "gaps": ["live mutation approval", "authorization lookup"],
+            "source_document": source_document,
         },
         {
             "format_id": "single_video",
@@ -272,6 +286,7 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
             "dependencies": ["ad_group", "video_id_or_media", "text"],
             "supported_fields": ["ad_format", "video_id", "media", "text"],
             "gaps": ["dedicated video payload validation"],
+            "source_document": source_document,
         },
         {
             "format_id": "single_image",
@@ -282,6 +297,7 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
             "dependencies": ["ad_group", "image_ids_or_media", "text"],
             "supported_fields": ["ad_format", "image_ids", "media", "text"],
             "gaps": ["dedicated image payload validation"],
+            "source_document": source_document,
         },
         {
             "format_id": "carousel",
@@ -292,6 +308,7 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
             "dependencies": ["ad_group", "image_ids_or_media", "carousel card rules"],
             "supported_fields": ["ad_format", "image_ids", "media", "text"],
             "gaps": ["carousel card schema and validation"],
+            "source_document": source_document,
         },
         {
             "format_id": "lead",
@@ -302,6 +319,18 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
             "dependencies": ["LEAD_GENERATION", "LEAD_FORM", "form_id"],
             "supported_fields": ["objective_type", "promotion_type", "form_id", "media"],
             "gaps": ["Instant Form lookup/validation", "lead-specific creative builder"],
+            "source_document": source_document,
+        },
+        {
+            "format_id": "lead.instant_form",
+            "category": "lead",
+            "resource_type": "ad_group",
+            "coverage": "partial_dry_run",
+            "tool_names": ["tiktok_create_campaign", "tiktok_create_adgroup"],
+            "dependencies": ["LEAD_GENERATION", "LEAD_FORM", "form_id"],
+            "supported_fields": ["promotion_type", "form_id"],
+            "gaps": ["Instant Form lookup/validation", "lead-specific creative builder"],
+            "source_document": source_document,
         },
         {
             "format_id": "app",
@@ -312,6 +341,18 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
             "dependencies": ["APP_PROMOTION", "app_id", "operating_systems", "deep_bid_type"],
             "supported_fields": ["objective_type", "app_promotion_type", "app_id", "operating_systems"],
             "gaps": ["app event/deep link validation", "dedicated app creative builder"],
+            "source_document": source_document,
+        },
+        {
+            "format_id": "app.install",
+            "category": "app",
+            "resource_type": "ad_group",
+            "coverage": "partial_dry_run",
+            "tool_names": ["tiktok_create_campaign", "tiktok_create_adgroup"],
+            "dependencies": ["APP_PROMOTION", "APP_ANDROID_or_APP_IOS", "app_id"],
+            "supported_fields": ["promotion_type", "app_id", "operating_systems"],
+            "gaps": ["app event/deep link validation", "dedicated app creative builder"],
+            "source_document": source_document,
         },
         {
             "format_id": "brand",
@@ -322,5 +363,26 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
             "dependencies": ["REACH_or_VIDEO_VIEWS", "brand creative", "placement"],
             "supported_fields": ["objective_type", "budget_mode", "media", "targeting"],
             "gaps": ["brand takeover/TopView-specific contract", "CPM/CPV compatibility validation"],
+            "source_document": source_document,
+        },
+        {
+            "format_id": "brand.topview",
+            "category": "brand",
+            "resource_type": "ad_group",
+            "coverage": "declared_only",
+            "tool_names": [],
+            "dependencies": ["BRAND_AWARENESS", "TOPVIEW", "video"],
+            "gaps": ["TopView-specific Tool and provider contract"],
+            "source_document": source_document,
+        },
+        {
+            "format_id": "brand.takeover",
+            "category": "brand",
+            "resource_type": "ad_group",
+            "coverage": "declared_only",
+            "tool_names": [],
+            "dependencies": ["BRAND_AWARENESS", "BRAND_TAKEOVER", "video_or_image"],
+            "gaps": ["Brand Takeover-specific Tool and provider contract"],
+            "source_document": source_document,
         },
     ]

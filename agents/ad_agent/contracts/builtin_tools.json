@@ -1,5 +1,5 @@
 {
-  "digest": "52e6ec06b0f4eec08924a0845f791e83375e5648eaa174fb4e26bf35cec31d79",
+  "digest": "325ab32f8d2283a0a792d15ea49cba0c7f1f580d1d3bd7a0c892584658f86ca7",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -1983,7 +1983,7 @@
       ]
     },
     "google-ads": {
-      "digest": "e41b6458fc512268740ebc34b5666dd44988fc03edbcd79fc171379aa50c22dc",
+      "digest": "ceced5bbaca65203148e7d260182de58b4196c5cb25c5feb56f01b81f83d3ac6",
       "tool_count": 23,
       "tools": [
         {
@@ -2389,10 +2389,35 @@
                 "if": {
                   "advertising_channel_type": "MULTI_CHANNEL"
                 },
-                "message": "advertising_channel_type=MULTI_CHANNEL requires app_campaign_setting for App campaigns",
+                "message": "MULTI_CHANNEL App campaigns require advertising_channel_sub_type and app_campaign_setting",
                 "required": [
+                  "advertising_channel_sub_type",
                   "app_campaign_setting"
                 ]
+              },
+              {
+                "allowed": {
+                  "advertising_channel_type": [
+                    "MULTI_CHANNEL"
+                  ]
+                },
+                "id": "app_campaign_channel_dependency",
+                "if": {
+                  "advertising_channel_sub_type": "APP_CAMPAIGN"
+                },
+                "message": "APP_CAMPAIGN requires advertising_channel_type=MULTI_CHANNEL"
+              },
+              {
+                "allowed": {
+                  "advertising_channel_type": [
+                    "MULTI_CHANNEL"
+                  ]
+                },
+                "id": "app_engagement_channel_dependency",
+                "if": {
+                  "advertising_channel_sub_type": "APP_CAMPAIGN_FOR_ENGAGEMENT"
+                },
+                "message": "APP_CAMPAIGN_FOR_ENGAGEMENT requires advertising_channel_type=MULTI_CHANNEL"
               }
             ],
             "properties": {
@@ -2400,8 +2425,7 @@
                 "description": "Channel subtype (App campaigns and Performance Max)",
                 "enum": [
                   "APP_CAMPAIGN",
-                  "APP_CAMPAIGN_FOR_ENGAGEMENT",
-                  "PERFORMANCE_MAX"
+                  "APP_CAMPAIGN_FOR_ENGAGEMENT"
                 ],
                 "type": "string"
               },
@@ -2414,7 +2438,7 @@
                   "SHOPPING",
                   "VIDEO",
                   "MULTI_CHANNEL",
-                  "MAX"
+                  "PERFORMANCE_MAX"
                 ],
                 "input_aliases": [
                   "campaign_type"
@@ -2434,7 +2458,7 @@
                   "app_store": {
                     "description": "App store",
                     "enum": [
-                      "GOOGLE_PLAY",
+                      "GOOGLE_APP_STORE",
                       "APPLE_APP_STORE"
                     ],
                     "type": "string"
@@ -2497,7 +2521,7 @@
                   "SHOPPING",
                   "VIDEO",
                   "MULTI_CHANNEL",
-                  "MAX"
+                  "PERFORMANCE_MAX"
                 ],
                 "type": "string"
               },

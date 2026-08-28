@@ -65,15 +65,12 @@ channels:
   - google
 ```
 
-## 工具列表
+## 工具发现
 
-App 业务可用的工具（从渠道层过滤）：
-
-### Google App Campaign
-- google_create_campaign (APP)
-- google_create_ad_group
-- google_optimize_bidding
-- google_get_campaign_report
+本业务 Skill 不维护固定 Tool 名称。运行时会根据已注册 Capability 发布的
+App 广告类型目录和 Tool Schema 动态选择 Campaign、素材、出价与报表能力；
+Google App Campaign 当前使用文档规定的 `MULTI_CHANNEL` + App subtype 契约，
+缺失的下级能力必须在计划中明确提示。
 
 ## 注意
 

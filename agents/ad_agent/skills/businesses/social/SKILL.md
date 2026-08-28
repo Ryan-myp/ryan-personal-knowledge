@@ -77,25 +77,12 @@ channels:
   - meta
 ```
 
-## 工具列表
+## 工具发现
 
-社交业务可用的工具（从渠道层过滤）：
-
-### Meta 社交广告
-- meta_create_campaign (BRAND_AWARENESS/ENGAGEMENT)
-- meta_create_adset
-- meta_create_carousel_ad
-- meta_get_reach_report
-
-### Google 品牌广告
-- google_create_campaign (DISPLAY/VIDEO)
-- google_create_video_ad
-- google_get_campaign_report
-
-### TikTok Spark Ads
-- tiktok_create_spark_ad
-- tiktok_create_video_ad
-- tiktok_get_campaign_report
+本业务 Skill 不维护固定 Tool 名称。运行时会根据当前已注册的渠道
+Capability、广告类型目录和 Tool Schema 动态选择可用的 Campaign、下级资源、
+报表和素材能力；若某个广告类型只有 `declared_only` 或 `partial_dry_run`，
+必须在计划中明确提示缺口。
 
 ## 注意
 

@@ -5,8 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 
-GOOGLE_CHANNEL_TYPES = ["SEARCH", "DISPLAY", "SHOPPING", "VIDEO", "MULTI_CHANNEL", "MAX"]
-GOOGLE_CHANNEL_SUB_TYPES = ["APP_CAMPAIGN", "APP_CAMPAIGN_FOR_ENGAGEMENT", "PERFORMANCE_MAX"]
+GOOGLE_CHANNEL_TYPES = [
+    "SEARCH", "DISPLAY", "SHOPPING", "VIDEO", "MULTI_CHANNEL", "PERFORMANCE_MAX",
+]
+GOOGLE_CHANNEL_SUB_TYPES = ["APP_CAMPAIGN", "APP_CAMPAIGN_FOR_ENGAGEMENT"]
 GOOGLE_BIDDING_STRATEGIES = [
     "MANUAL_CPC", "MAXIMIZE_CLICKS", "MAXIMIZE_CONVERSIONS", "TARGET_CPA",
     "TARGET_ROAS", "MAXIMIZE_CONVERSION_VALUE", "TARGET_IMPRESSION_SHARE",
@@ -18,7 +20,7 @@ GOOGLE_AD_GROUP_TYPES = [
 ]
 GOOGLE_ASSET_GROUP_TYPES = ["PERFORMANCE_MAX"]
 GOOGLE_TARGETING_NETWORKS = ["GOOGLE_SEARCH", "SEARCH_PARTNERS", "DISPLAY_NETWORK"]
-GOOGLE_APP_STORES = ["GOOGLE_PLAY", "APPLE_APP_STORE"]
+GOOGLE_APP_STORES = ["GOOGLE_APP_STORE", "APPLE_APP_STORE"]
 GOOGLE_APP_BIDDING_TYPES = [
     "TARGET_CPA", "TARGET_ROAS", "MAXIMIZE_CONVERSIONS",
     "MAXIMIZE_CONVERSION_VALUE",
@@ -107,8 +109,14 @@ def google_campaign_schema() -> dict[str, Any]:
             {"id": "target_value_dependency", "if": {"bidding_strategy": "MAXIMIZE_CONVERSION_VALUE"},
              "required": ["target_roas"], "message": "MAXIMIZE_CONVERSION_VALUE requires target_roas"},
             {"id": "app_campaign_dependency", "if": {"advertising_channel_type": "MULTI_CHANNEL"},
-             "required": ["app_campaign_setting"],
-             "message": "advertising_channel_type=MULTI_CHANNEL requires app_campaign_setting for App campaigns"},
+             "required": ["advertising_channel_sub_type", "app_campaign_setting"],
+             "message": "MULTI_CHANNEL App campaigns require advertising_channel_sub_type and app_campaign_setting"},
+            {"id": "app_campaign_channel_dependency", "if": {"advertising_channel_sub_type": "APP_CAMPAIGN"},
+             "allowed": {"advertising_channel_type": ["MULTI_CHANNEL"]},
+             "message": "APP_CAMPAIGN requires advertising_channel_type=MULTI_CHANNEL"},
+            {"id": "app_engagement_channel_dependency", "if": {"advertising_channel_sub_type": "APP_CAMPAIGN_FOR_ENGAGEMENT"},
+             "allowed": {"advertising_channel_type": ["MULTI_CHANNEL"]},
+             "message": "APP_CAMPAIGN_FOR_ENGAGEMENT requires advertising_channel_type=MULTI_CHANNEL"},
         ],
     }
 
@@ -162,6 +170,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
     builder.  The remaining entries deliberately expose the gap instead of
     treating a broad campaign enum or an open object as full support.
     """
+    source_document = "docs/ad-platform-hierarchy-guide-v5.md"
     return [
         {
             "format_id": "search",
@@ -172,6 +181,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
             "dependencies": ["keywords", "network_setting", "ad_group"],
             "supported_fields": ["advertising_channel_type", "bidding_strategy", "networks"],
             "gaps": ["keyword create tool", "negative keyword tool", "extensions"],
+            "source_document": source_document,
         },
         {
             "format_id": "search.responsive_search_ad",
@@ -183,15 +193,17 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
             "dependencies": ["ad_group", "headlines", "descriptions", "final_url"],
             "supported_fields": ["headlines", "descriptions", "path1", "path2", "final_url"],
             "gaps": ["live mutation approval", "ad extensions"],
+            "source_document": source_document,
         },
         {
             "format_id": "search.expanded_text_ad",
             "category": "search",
             "resource_type": "ad",
             "coverage": "declared_only",
-            "tool_names": ["google_create_ad"],
+            "tool_names": [],
             "dependencies": ["ad_group", "final_url"],
-            "gaps": ["dedicated Expanded Text Ad payload builder"],
+            "gaps": ["dedicated Expanded Text Ad payload Tool and payload builder"],
+            "source_document": source_document,
         },
         {
             "format_id": "performance_max",
@@ -202,6 +214,18 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
             "dependencies": ["asset_group", "assets", "audience_signals", "product_feed"],
             "supported_fields": ["campaign_goal_setting", "headlines", "descriptions", "images", "videos", "logos"],
             "gaps": ["verified AssetService adapter", "audience signals", "listing groups/product targets"],
+            "source_document": source_document,
+        },
+        {
+            "format_id": "performance_max.asset_group",
+            "category": "performance_max",
+            "resource_type": "asset_group",
+            "coverage": "partial_dry_run",
+            "tool_names": ["google_create_pmax_asset_group"],
+            "dependencies": ["asset_group", "assets", "audience_signals", "listing_group"],
+            "supported_fields": ["headlines", "descriptions", "images", "videos"],
+            "gaps": ["verified AssetService adapter", "audience signal and listing group Tools"],
+            "source_document": source_document,
         },
         {
             "format_id": "shopping",
@@ -212,24 +236,78 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
             "dependencies": ["shopping_setting", "merchant_center", "product_groups"],
             "supported_fields": ["shopping_setting", "bidding_strategy"],
             "gaps": ["product group create/update tool", "Merchant Center validation"],
+            "source_document": source_document,
+        },
+        {
+            "format_id": "shopping.product_group",
+            "category": "shopping",
+            "resource_type": "product_group",
+            "coverage": "declared_only",
+            "tool_names": [],
+            "dependencies": ["ad_group", "listing_group", "merchant_center"],
+            "supported_fields": ["all_products", "product_type_1..5", "custom_label_0..4", "brand", "category", "condition"],
+            "gaps": ["dedicated product group create/update Tool"],
+            "source_document": source_document,
         },
         {
             "format_id": "video",
             "category": "video",
             "resource_type": "campaign",
             "coverage": "declared_only",
-            "tool_names": ["google_create_campaign", "google_create_ad_group", "google_create_ad"],
+            "tool_names": ["google_create_campaign", "google_create_ad_group"],
             "dependencies": ["YouTube video", "video_setting", "audiences"],
             "gaps": ["dedicated Video Ad payload builder", "video format validation"],
+            "source_document": source_document,
+        },
+        {
+            "format_id": "video.skippable_in_stream",
+            "category": "video",
+            "resource_type": "ad",
+            "coverage": "declared_only",
+            "tool_names": [],
+            "dependencies": ["YouTube video", "final_url", "video_setting"],
+            "gaps": ["dedicated Video Ad Tool and format-specific validation"],
+            "source_document": source_document,
+        },
+        {
+            "format_id": "video.non_skippable_in_stream",
+            "category": "video",
+            "resource_type": "ad",
+            "coverage": "declared_only",
+            "tool_names": [],
+            "dependencies": ["YouTube video", "final_url", "video_setting"],
+            "gaps": ["dedicated Video Ad Tool and format-specific validation"],
+            "source_document": source_document,
+        },
+        {
+            "format_id": "video.bumper",
+            "category": "video",
+            "resource_type": "ad",
+            "coverage": "declared_only",
+            "tool_names": [],
+            "dependencies": ["YouTube video", "final_url", "video_setting"],
+            "gaps": ["dedicated Video Ad Tool and format-specific validation"],
+            "source_document": source_document,
         },
         {
             "format_id": "display",
             "category": "display",
             "resource_type": "campaign",
             "coverage": "declared_only",
-            "tool_names": ["google_create_campaign", "google_create_ad_group", "google_create_ad"],
+            "tool_names": ["google_create_campaign", "google_create_ad_group"],
             "dependencies": ["responsive_display_assets", "audiences", "placements"],
             "gaps": ["dedicated Responsive Display Ad payload builder", "display targeting tools"],
+            "source_document": source_document,
+        },
+        {
+            "format_id": "display.responsive_display_ad",
+            "category": "display",
+            "resource_type": "ad",
+            "coverage": "declared_only",
+            "tool_names": [],
+            "dependencies": ["headlines", "long_headlines", "descriptions", "images", "logos"],
+            "gaps": ["dedicated Responsive Display Ad Tool and asset validation"],
+            "source_document": source_document,
         },
         {
             "format_id": "app",
@@ -240,6 +318,29 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
             "dependencies": ["MULTI_CHANNEL", "advertising_channel_sub_type", "app_campaign_setting", "app assets"],
             "supported_fields": ["app_campaign_setting", "bidding_strategy"],
             "gaps": ["App campaign asset/ad tool", "engagement selective optimization"],
+            "source_document": source_document,
+        },
+        {
+            "format_id": "app.install",
+            "category": "app",
+            "resource_type": "campaign",
+            "coverage": "partial_dry_run",
+            "tool_names": ["google_create_campaign"],
+            "dependencies": ["MULTI_CHANNEL", "APP_CAMPAIGN", "app_campaign_setting", "app assets"],
+            "supported_fields": ["app_id", "app_store", "bidding_strategy_type", "OPTIMIZE_INSTALLS_TARGET_INSTALL_COST"],
+            "gaps": ["App campaign asset/ad Tool", "live provider verification"],
+            "source_document": source_document,
+        },
+        {
+            "format_id": "app.engagement",
+            "category": "app",
+            "resource_type": "campaign",
+            "coverage": "partial_dry_run",
+            "tool_names": ["google_create_campaign"],
+            "dependencies": ["MULTI_CHANNEL", "APP_CAMPAIGN_FOR_ENGAGEMENT", "app_campaign_setting", "app assets"],
+            "supported_fields": ["app_id", "app_store", "bidding_strategy_type", "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_INSTALL_COST"],
+            "gaps": ["App campaign asset/ad Tool", "live provider verification"],
+            "source_document": source_document,
         },
     ]
 

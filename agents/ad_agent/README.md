@@ -26,6 +26,19 @@
 
 > 119 是当前四个 Capability 已实现的 Client 方法/业务 Tool 数量，不是 Meta、Google Ads、TikTok 或 DV360 官方 API 的完整接口总量。新增官方接口时，应在对应渠道 Client 增加固定方法，在 Capability 增加 Tool Schema/adapter，再由覆盖率审计和契约快照阻止漏注册或漂移。
 
+### 广告类型覆盖边界
+
+广告系列层级、下级资源和具体素材格式按
+[`docs/ad-platform-hierarchy-guide-v5.md`](/Users/yanping.ma/ryan-personal-knowledge/docs/ad-platform-hierarchy-guide-v5.md)
+建立渠道自有目录，并通过 `GET /ad-formats` 对外提供。当前目录覆盖：
+
+- Google Ads：Search、Performance Max、Shopping、Video、Display、App，以及 RSA、PMax Asset Group、Product Group、Video/Display 子格式。
+- Meta：Traffic、Conversion、Lead、Engagement、Catalog、Messaging，以及图文、视频、Instant Form、Dynamic Product、Click-to-Message 子格式。
+- TikTok：Product Sales、Spark、Lead Generation、App Promotion、Brand，以及 Shop、Instant Form、TopView、Brand Takeover 子格式。
+- DV360：暂保留已有基础 Capability，详细广告类型目录和专用 payload 暂缓建设。
+
+目录中的 `supported_dry_run` 表示已有专用 payload contract，`partial_dry_run` 表示层级或部分字段可规划，`declared_only` 只表示已纳入能力地图，不能当作可执行或已验证的 live 能力。所有写操作当前仍为 dry-run。
+
 ## 安装
 
 ```bash

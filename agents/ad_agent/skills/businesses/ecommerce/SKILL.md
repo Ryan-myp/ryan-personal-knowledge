@@ -74,21 +74,11 @@ channels:
   - google
 ```
 
-## 工具列表
+## 工具发现
 
-电商业务可用的工具（从渠道层过滤）：
-
-### Google Shopping
-- google_create_campaign (SHOPPING)
-- google_create_ad_group
-- google_add_keywords
-- google_get_campaign_report
-
-### Meta 商品推广
-- meta_create_campaign (SALES)
-- meta_create_adset
-- meta_create_ad
-- meta_get_campaign_report
+本业务 Skill 不维护固定 Tool 名称。运行时会根据当前已注册的渠道
+Capability、广告类型目录和 Tool Schema 动态选择 Shopping、PMax、Catalog、
+Campaign 下级资源及报表能力；未达到完整 dry-run 的类型必须在计划中标明缺口。
 
 ## 注意
 

@@ -25,6 +25,11 @@ skill:
 
 ## 能力意图与流程契约（不是 Tool 注册）
 
+本 Skill 只定义跨渠道业务流程和统一口径。可执行能力由当前已注册
+Capability 发布的 ToolDefinition 动态决定；编排时必须先读取实际 Tool Schema
+和广告类型目录，不得假设某个渠道存在某个固定 Tool 名称。新增渠道或 Tool
+不需要修改本 Skill 的 Tool 清单。
+
 ### 1. Campaign 总览
 
 #### cross_channel_get_campaign_overview

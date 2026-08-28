@@ -223,6 +223,7 @@ def meta_ad_schema() -> dict[str, Any]:
 
 def meta_ad_format_catalog() -> list[dict[str, Any]]:
     """Advertised Meta objectives/formats and their current contract depth."""
+    source_document = "docs/ad-platform-hierarchy-guide-v5.md"
     return [
         {
             "format_id": "traffic",
@@ -233,6 +234,7 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
             "dependencies": ["targeting", "optimization_goal", "link_data"],
             "supported_fields": ["OUTCOME_TRAFFIC", "LINK_CLICKS", "targeting", "object_story_spec.link_data"],
             "gaps": ["objective-specific CTA validation", "placement compatibility validation"],
+            "source_document": source_document,
         },
         {
             "format_id": "conversion",
@@ -243,6 +245,7 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
             "dependencies": ["promoted_object", "conversion_specs", "pixel_or_capi"],
             "supported_fields": ["OUTCOME_CONVERSIONS", "OFFSITE_CONVERSIONS", "CONVERSIONS", "promoted_object"],
             "gaps": ["conversion event lookup/validation", "objective-specific creative contract"],
+            "source_document": source_document,
         },
         {
             "format_id": "lead",
@@ -253,6 +256,18 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
             "dependencies": ["lead_gen_config", "form_id", "page_id"],
             "supported_fields": ["OUTCOME_LEADS", "LEADS", "lead_gen_config", "lead_gen"],
             "gaps": ["Instant Form lookup/validation", "dedicated lead creative builder"],
+            "source_document": source_document,
+        },
+        {
+            "format_id": "lead.instant_form",
+            "category": "lead",
+            "resource_type": "ad_set",
+            "coverage": "partial_dry_run",
+            "tool_names": ["meta_create_campaign", "meta_create_adset"],
+            "dependencies": ["OUTCOME_LEADS", "LEADS", "page_id", "form_id"],
+            "supported_fields": ["lead_gen_config", "promoted_object.page_id"],
+            "gaps": ["Instant Form lookup/validation", "dedicated lead creative builder"],
+            "source_document": source_document,
         },
         {
             "format_id": "engagement",
@@ -263,6 +278,7 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
             "dependencies": ["post_id_or_story", "targeting", "optimization_goal"],
             "supported_fields": ["OUTCOME_ENGAGEMENT", "POST_ENGAGEMENT", "VIDEO_VIEWS"],
             "gaps": ["Page Likes/Video Views specialized creative validation"],
+            "source_document": source_document,
         },
         {
             "format_id": "link_image",
@@ -274,6 +290,7 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
             "dependencies": ["adset", "page_id", "link_data"],
             "supported_fields": ["link", "message", "name", "description", "image_hash", "call_to_action"],
             "gaps": ["live mutation approval"],
+            "source_document": source_document,
         },
         {
             "format_id": "link_video",
@@ -285,6 +302,7 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
             "dependencies": ["adset", "page_id", "video_data"],
             "supported_fields": ["video_id", "message", "title", "call_to_action"],
             "gaps": ["live mutation approval"],
+            "source_document": source_document,
         },
         {
             "format_id": "catalog",
@@ -294,6 +312,17 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
             "tool_names": ["meta_create_campaign", "meta_create_adset", "meta_create_ad"],
             "dependencies": ["catalog_id", "product_set_id", "catalog creative"],
             "gaps": ["catalog/product set lookup", "dedicated catalog creative builder", "dynamic product rules"],
+            "source_document": source_document,
+        },
+        {
+            "format_id": "catalog.dynamic_product",
+            "category": "catalog",
+            "resource_type": "ad_set",
+            "coverage": "declared_only",
+            "tool_names": [],
+            "dependencies": ["catalog_id", "product_set_id", "dynamic product rules"],
+            "gaps": ["catalog/product set lookup", "dedicated catalog creative Tool"],
+            "source_document": source_document,
         },
         {
             "format_id": "messaging",
@@ -304,5 +333,17 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
             "dependencies": ["messaging_apps", "SEND_MESSAGE CTA", "page_or_business_messaging_identity"],
             "supported_fields": ["OUTCOME_MESSAGES", "MESSAGES", "messaging_apps", "call_to_action"],
             "gaps": ["messaging destination validation", "dedicated messaging creative builder"],
+            "source_document": source_document,
+        },
+        {
+            "format_id": "messaging.click_to_message",
+            "category": "messaging",
+            "resource_type": "ad",
+            "coverage": "partial_dry_run",
+            "tool_names": ["meta_create_ad"],
+            "dependencies": ["page_id", "messaging_apps", "SEND_MESSAGE CTA"],
+            "supported_fields": ["object_story_spec.link_data", "messaging_apps"],
+            "gaps": ["messaging destination validation", "dedicated messaging creative builder"],
+            "source_document": source_document,
         },
     ]

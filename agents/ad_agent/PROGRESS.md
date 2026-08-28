@@ -19,6 +19,11 @@
   `selection_tokens` 后会校验 user/session/account/tool/field/source 绑定，live 不接受未经 lookup 证明的裸动态 ID。
 - Contract validator 将内置工具数量作为 minimum baseline；新增 Skill/Tool 不需要修改
   中央计数，但仍必须通过统一 schema、权限、重放策略和红线字段校验。
+- 广告类型目录已按 `docs/ad-platform-hierarchy-guide-v5.md` 拆分为广告系列家族和具体
+  子格式：Google Search/PMax/Shopping/Video/Display/App，Meta Traffic/Conversion/
+  Lead/Engagement/Catalog/Messaging，TikTok Product Sales/Spark/Lead/App/Brand。
+  `supported_dry_run`、`partial_dry_run`、`declared_only` 分别表达专用契约、部分契约和
+  仅纳入能力地图；DV360 详细广告类型建设暂缓。
 - `scripts/validate_contracts.py` 支持生成和校验版本化契约快照：
   `contracts/builtin_tools.json`；它用于审查已有 Tool 的 Schema/元数据漂移，
   不参与 Runtime 路由或渠道配置。
