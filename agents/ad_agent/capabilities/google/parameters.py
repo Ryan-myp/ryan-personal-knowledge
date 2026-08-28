@@ -37,6 +37,9 @@ GOOGLE_PRODUCT_PARTITION_TYPES = ["UNIT", "SUBDIVISION"]
 GOOGLE_PRODUCT_CONDITIONS = ["NEW", "USED", "REFURBISHED"]
 GOOGLE_PRODUCT_CHANNELS = ["ONLINE", "LOCAL"]
 GOOGLE_PRODUCT_LEVELS = ["LEVEL1", "LEVEL2", "LEVEL3", "LEVEL4", "LEVEL5"]
+GOOGLE_VIDEO_AD_FORMATS = [
+    "SKIPPABLE_IN_STREAM", "NON_SKIPPABLE_IN_STREAM", "BUMPER", "OUTSTREAM",
+]
 
 
 def _field(field_type: Any, description: str = "", **kwargs: Any) -> dict[str, Any]:
@@ -299,6 +302,29 @@ def google_responsive_display_ad_schema() -> dict[str, Any]:
     }
 
 
+def google_video_ad_schema() -> dict[str, Any]:
+    """Create contract for the core Google Video Ad formats."""
+    return {
+        "required": ["ad_group_id", "name", "video_ad_format", "video_id", "final_url"],
+        "provider_required": ["video_ad_format", "video_id", "final_url"],
+        "properties": {
+            "ad_group_id": _field("string", "Parent Video ad group ID", minLength=1),
+            "name": _field("string", "Ad name", maxLength=255),
+            "ad_type": _field("string", "Ad format family", enum=["VIDEO"], default="VIDEO"),
+            "video_ad_format": _field(
+                "string", "Video format", enum=GOOGLE_VIDEO_AD_FORMATS,
+            ),
+            "video_id": _field("string", "YouTube video ID", minLength=1),
+            "final_url": _field("string", "Final URL", minLength=1),
+            "display_url": _field("string", "Optional display URL"),
+            "action_button_label": _field("string", "Optional CTA button label"),
+            "action_headline": _field("string", "Optional CTA headline"),
+            "companion_banner": _field("object", "Optional companion banner", additionalProperties=True),
+            "status": _field("string", "Ad status", enum=GOOGLE_STATUSES),
+        },
+    }
+
+
 def google_ad_format_catalog() -> list[dict[str, Any]]:
     """Advertised Google formats, grounded in the hierarchy guide.
 
@@ -390,40 +416,59 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
             "format_id": "video",
             "category": "video",
             "resource_type": "campaign",
-            "coverage": "declared_only",
-            "tool_names": ["google_create_campaign", "google_create_ad_group"],
+            "coverage": "partial_dry_run",
+            "tool_names": ["google_create_campaign", "google_create_ad_group", "google_create_video_ad"],
             "dependencies": ["YouTube video", "video_setting", "audiences"],
-            "gaps": ["dedicated Video Ad payload builder", "video format validation"],
+            "supported_fields": ["video_setting", "video_ad_format", "video_id", "final_url"],
+            "gaps": ["verified live Video Ad mutation", "video audience/placement Tools"],
             "source_document": source_document,
         },
         {
             "format_id": "video.skippable_in_stream",
             "category": "video",
             "resource_type": "ad",
-            "coverage": "declared_only",
-            "tool_names": [],
+            "coverage": "supported_dry_run",
+            "tool_names": ["google_create_video_ad"],
+            "payload_adapter": "GoogleAdsAPIClient.create_video_ad",
             "dependencies": ["YouTube video", "final_url", "video_setting"],
-            "gaps": ["dedicated Video Ad Tool and format-specific validation"],
+            "supported_fields": ["video_ad_format", "video_id", "final_url", "action_button_label", "action_headline"],
+            "gaps": ["verified live Video Ad mutation"],
             "source_document": source_document,
         },
         {
             "format_id": "video.non_skippable_in_stream",
             "category": "video",
             "resource_type": "ad",
-            "coverage": "declared_only",
-            "tool_names": [],
+            "coverage": "supported_dry_run",
+            "tool_names": ["google_create_video_ad"],
+            "payload_adapter": "GoogleAdsAPIClient.create_video_ad",
             "dependencies": ["YouTube video", "final_url", "video_setting"],
-            "gaps": ["dedicated Video Ad Tool and format-specific validation"],
+            "supported_fields": ["video_ad_format", "video_id", "final_url"],
+            "gaps": ["verified live Video Ad mutation"],
             "source_document": source_document,
         },
         {
             "format_id": "video.bumper",
             "category": "video",
             "resource_type": "ad",
-            "coverage": "declared_only",
-            "tool_names": [],
+            "coverage": "supported_dry_run",
+            "tool_names": ["google_create_video_ad"],
+            "payload_adapter": "GoogleAdsAPIClient.create_video_ad",
             "dependencies": ["YouTube video", "final_url", "video_setting"],
-            "gaps": ["dedicated Video Ad Tool and format-specific validation"],
+            "supported_fields": ["video_ad_format", "video_id", "final_url"],
+            "gaps": ["verified live Video Ad mutation"],
+            "source_document": source_document,
+        },
+        {
+            "format_id": "video.outstream",
+            "category": "video",
+            "resource_type": "ad",
+            "coverage": "supported_dry_run",
+            "tool_names": ["google_create_video_ad"],
+            "payload_adapter": "GoogleAdsAPIClient.create_video_ad",
+            "dependencies": ["YouTube video", "final_url", "video_setting"],
+            "supported_fields": ["video_ad_format", "video_id", "final_url"],
+            "gaps": ["verified live Video Ad mutation"],
             "source_document": source_document,
         },
         {

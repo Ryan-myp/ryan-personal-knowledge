@@ -1033,6 +1033,74 @@ class GoogleAdsAPIClient(BasePlatformClient):
             raise APIError(f"Responsive Display Ad mutate returned no resource name: {response}")
         return str(resource_name).rsplit("/", 1)[-1]
 
+    def create_video_ad(
+        self,
+        ad_group_id: str,
+        name: str,
+        video_ad_format: str,
+        video_id: str,
+        final_url: str,
+        display_url: str = None,
+        action_button_label: str = None,
+        action_headline: str = None,
+        companion_banner: dict = None,
+        ad_type: str = None,
+        status: str = None,
+    ) -> str:
+        """Build a Google Video Ad mutation for the selected video format.
+
+        The Runtime exposes this as a dry-run-only Tool for now.  Keeping the
+        provider payload in this adapter lets a future Google API revision be
+        upgraded here without changing the Skill or central Runtime.
+        """
+        ad_group_id = self._numeric_id(ad_group_id, "ad_group_id")
+        video_ad_format = str(video_ad_format or "").upper()
+        format_fields = {
+            "SKIPPABLE_IN_STREAM": "inStream",
+            "NON_SKIPPABLE_IN_STREAM": "nonSkippable",
+            "BUMPER": "bumper",
+            "OUTSTREAM": "outStream",
+        }
+        if video_ad_format not in format_fields:
+            raise ValueError(
+                "video_ad_format must be SKIPPABLE_IN_STREAM, NON_SKIPPABLE_IN_STREAM, "
+                "BUMPER or OUTSTREAM"
+            )
+        if not str(name or "").strip() or not str(video_id or "").strip():
+            raise ValueError("name and video_id are required")
+        if not str(final_url or "").strip():
+            raise ValueError("final_url is required")
+
+        video_ad: dict[str, Any] = {
+            "videoId": video_id,
+            format_fields[video_ad_format]: {},
+        }
+        for field_name, value in (
+            ("displayUrl", display_url),
+            ("actionButtonLabel", action_button_label),
+            ("actionHeadline", action_headline),
+            ("companionBanner", companion_banner),
+        ):
+            if value is not None:
+                video_ad[field_name] = (
+                    self._camel_case_keys(value) if isinstance(value, dict) else value
+                )
+
+        ad_data = {
+            "adGroup": f"customers/{self.customer_id}/adGroups/{ad_group_id}",
+            "status": status or "PAUSED",
+            "ad": {
+                "name": name,
+                "finalUrls": [final_url],
+                "videoAd": video_ad,
+            },
+        }
+        response = self._mutate("adGroupAds", {"create": ad_data})
+        resource_name = self._mutation_resource_name(response)
+        if not resource_name:
+            raise APIError(f"Video Ad mutate returned no resource name: {response}")
+        return str(resource_name).rsplit("/", 1)[-1]
+
     @classmethod
     def _text_asset(cls, value: Any) -> dict[str, Any]:
         if isinstance(value, str):

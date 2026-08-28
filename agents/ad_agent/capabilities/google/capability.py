@@ -28,6 +28,7 @@ from .parameters import (
     google_campaign_schema, google_ad_group_schema, google_ad_schema,
     google_asset_group_schema, google_ad_format_catalog, google_keyword_schema,
     google_product_group_schema, google_responsive_display_ad_schema,
+    google_video_ad_schema,
 )
 from ...api_clients.google_ads_client import GoogleAdsAPIClient
 from ..update_contracts import google_updates
@@ -75,6 +76,7 @@ class GoogleCapability(BaseCapability):
         "create_pmax_asset_group": ["google_create_pmax_asset_group", "google_create_asset_group"],
         "create_product_group": ["google_create_product_group"],
         "create_responsive_display_ad": ["google_create_responsive_display_ad"],
+        "create_video_ad": ["google_create_video_ad"],
         "get_campaign_report": ["google_get_campaign_report"], "get_adgroup_report": ["google_get_adgroup_report"],
     }
 
@@ -173,6 +175,28 @@ class GoogleCapability(BaseCapability):
                     "videos": data.get("videos"), "call_to_action_text": data.get("call_to_action_text"),
                     "main_color": data.get("main_color"), "accent_color": data.get("accent_color"),
                     "allow_flexible_color": data.get("allow_flexible_color"),
+                    "ad_type": data.get("ad_type"), "status": data.get("status"),
+                }),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_create_video_ad",
+                description="创建 Google Video Ad（可跳过、不可跳过、Bumper 或 Outstream）；默认仅生成 dry-run 计划。",
+                method_name="create_video_ad", result_key="ad_id",
+                properties=google_video_ad_schema()["properties"],
+                required=google_video_ad_schema()["required"],
+                provider_required=google_video_ad_schema()["provider_required"],
+                action="create", resource_type="ad", parent_resource_type="ad_group",
+                resource_id_field="ad_id", parent_resource_id_field="ad_group_id",
+                intent_types=["create_video_ad"], traits=["write", "ad", "video"], write=True,
+                argument_builder=lambda _ctx, data: ((
+                    data["ad_group_id"], data["name"], data["video_ad_format"],
+                    data["video_id"], data["final_url"],
+                ), {
+                    "display_url": data.get("display_url"),
+                    "action_button_label": data.get("action_button_label"),
+                    "action_headline": data.get("action_headline"),
+                    "companion_banner": data.get("companion_banner"),
                     "ad_type": data.get("ad_type"), "status": data.get("status"),
                 }),
             ),

@@ -511,6 +511,36 @@ def test_google_responsive_display_ad_builds_dedicated_ad_payload():
     assert ad["responsiveDisplayAd"]["allowFlexibleColor"] is False
 
 
+def test_google_video_ad_builds_format_specific_payload():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "g1"})
+    operations = []
+    client._mutate = lambda resource, operation: (
+        operations.append((resource, operation)) or {
+            "data": {"results": [{"resourceName": "customers/g1/adGroupAds/123~789"}]}
+        }
+    )
+
+    result = client.create_video_ad(
+        "123", "YouTube bumper", "BUMPER", "dQw4w9WgXcQ",
+        "https://example.test", action_button_label="SHOP_NOW",
+        action_headline="Summer sale",
+    )
+
+    assert result == "123~789"
+    resource, operation = operations[-1]
+    assert resource == "adGroupAds"
+    video_ad = operation["create"]["ad"]["videoAd"]
+    assert video_ad["videoId"] == "dQw4w9WgXcQ"
+    assert video_ad["bumper"] == {}
+    assert video_ad["actionButtonLabel"] == "SHOP_NOW"
+    assert video_ad["actionHeadline"] == "Summer sale"
+
+    with pytest.raises(ValueError, match="video_ad_format"):
+        client.create_video_ad(
+            "123", "Invalid", "UNKNOWN", "video", "https://example.test"
+        )
+
+
 def test_google_reads_accept_raw_and_extracted_search_payloads():
     client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "g1"})
     row = {"campaign": {"id": "42", "name": "Sales", "status": "PAUSED"}}

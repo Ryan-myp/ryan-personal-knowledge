@@ -129,7 +129,8 @@ def _load_tool_context(prompt: str, max_chars: int) -> str:
     selected = [name for name in platforms if name.lower() in prompt_lower]
     if not selected:
         selected = list(platforms)
-    lines: List[str] = []
+    entries: List[tuple[int, str, str]] = []
+    prompt_terms = set(re.findall(r"[a-z0-9_]+", prompt.lower()))
     for platform in selected:
         tools = platforms.get(platform, {}).get("tools", [])
         if not isinstance(tools, list):
@@ -151,10 +152,17 @@ def _load_tool_context(prompt: str, max_chars: int) -> str:
                     enum = field_schema.get("enum")
                     enum_text = f" enum={list(enum)[:8]}" if isinstance(enum, list) else ""
                     field_parts.append(f"{field_name}:{field_type}{enum_text}")
-            lines.append(
+            line = (
                 f"- {name}: {description}; required={list(required) if isinstance(required, list) else []}; "
                 f"fields={'; '.join(field_parts)}"
             )
+            # Rank before applying the context budget. A growing provider
+            # catalog must not hide the relevant App/Video/etc. contract
+            # behind an alphabetically earlier platform.
+            searchable = f"{platform} {name} {description} {' '.join(field_parts)}".lower()
+            score = sum(1 for term in prompt_terms if term and term in searchable)
+            entries.append((score, name, line))
+    lines = [line for _score, _name, line in sorted(entries, key=lambda item: (-item[0], item[1]))]
     catalog = "\n".join(lines)
     if not catalog:
         return "No Tool catalog was provided."

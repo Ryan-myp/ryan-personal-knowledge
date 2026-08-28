@@ -1,5 +1,5 @@
 {
-  "digest": "ecfd3c0bfec95df6ece34b980b2402b4e3f032ba61b44bcdb1e6eb89ff294388",
+  "digest": "b9d0e9205db9f79b47f3465a677f37e88a901d93e650f14c67d428ef48d97d21",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -1983,8 +1983,8 @@
       ]
     },
     "google-ads": {
-      "digest": "42227fec56f693eb8b8a868e77d090e6e3d81cda8a6f82bd6effba70314a9076",
-      "tool_count": 26,
+      "digest": "4196d501ab1d82b522cad636fb9bbde2cdd19e3514c51fbd588783e027181a72",
+      "tool_count": 27,
       "tools": [
         {
           "action": "create",
@@ -3388,6 +3388,121 @@
           "traits": [
             "write",
             "ad"
+          ]
+        },
+        {
+          "action": "create",
+          "contract_version": "1.1.0",
+          "description": "创建 Google Video Ad（可跳过、不可跳过、Bumper 或 Outstream）；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "action_button_label": {
+                "description": "Optional CTA button label",
+                "type": "string"
+              },
+              "action_headline": {
+                "description": "Optional CTA headline",
+                "type": "string"
+              },
+              "ad_group_id": {
+                "description": "Parent Video ad group ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "ad_type": {
+                "default": "VIDEO",
+                "description": "Ad format family",
+                "enum": [
+                  "VIDEO"
+                ],
+                "type": "string"
+              },
+              "companion_banner": {
+                "additionalProperties": true,
+                "description": "Optional companion banner",
+                "type": "object"
+              },
+              "display_url": {
+                "description": "Optional display URL",
+                "type": "string"
+              },
+              "final_url": {
+                "description": "Final URL",
+                "minLength": 1,
+                "type": "string"
+              },
+              "name": {
+                "description": "Ad name",
+                "maxLength": 255,
+                "type": "string"
+              },
+              "status": {
+                "description": "Ad status",
+                "enum": [
+                  "ENABLED",
+                  "PAUSED",
+                  "REMOVED"
+                ],
+                "type": "string"
+              },
+              "video_ad_format": {
+                "description": "Video format",
+                "enum": [
+                  "SKIPPABLE_IN_STREAM",
+                  "NON_SKIPPABLE_IN_STREAM",
+                  "BUMPER",
+                  "OUTSTREAM"
+                ],
+                "type": "string"
+              },
+              "video_id": {
+                "description": "YouTube video ID",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "video_ad_format",
+              "video_id",
+              "final_url"
+            ],
+            "required": [
+              "ad_group_id",
+              "name",
+              "video_ad_format",
+              "video_id",
+              "final_url"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_video_ad"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_video_ad",
+          "parent_resource_id_field": "ad_group_id",
+          "parent_resource_type": "ad_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad",
+            "video"
           ]
         },
         {
@@ -9257,5 +9372,5 @@
       ]
     }
   },
-  "tool_count": 123
+  "tool_count": 124
 }
