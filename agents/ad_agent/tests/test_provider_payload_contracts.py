@@ -437,6 +437,46 @@ def test_google_product_group_creation_builds_listing_group_criterion():
         client.create_product_group("123", "brand", "Acme", parent_criterion_id="999~1")
 
 
+def test_google_responsive_display_ad_builds_dedicated_ad_payload():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "g1"})
+    operations = []
+    client._mutate = lambda resource, operation: (
+        operations.append((resource, operation)) or {
+            "data": {"results": [{"resourceName": "customers/g1/adGroupAds/123~456"}]}
+        }
+    )
+
+    result = client.create_responsive_display_ad(
+        "123", "Summer Display", "https://example.test",
+        ["Sale", "Shop now", "Free shipping"],
+        "Summer sale up to 50% off",
+        ["Limited time", "Order today"],
+        "Example Store",
+        marketing_images=["customers/g1/assets/11"],
+        logos=[{"asset": "customers/g1/assets/12"}],
+        call_to_action_text="SHOP_NOW",
+        allow_flexible_color=False,
+    )
+
+    assert result == "123~456"
+    resource, operation = operations[-1]
+    assert resource == "adGroupAds"
+    ad = operation["create"]["ad"]
+    assert ad["responsiveDisplayAd"]["headlines"] == [
+        {"text": "Sale"}, {"text": "Shop now"}, {"text": "Free shipping"}
+    ]
+    assert ad["responsiveDisplayAd"]["longHeadline"] == {
+        "text": "Summer sale up to 50% off"
+    }
+    assert ad["responsiveDisplayAd"]["marketingImages"] == [
+        {"asset": "customers/g1/assets/11"}
+    ]
+    assert ad["responsiveDisplayAd"]["logoImages"] == [
+        {"asset": "customers/g1/assets/12"}
+    ]
+    assert ad["responsiveDisplayAd"]["allowFlexibleColor"] is False
+
+
 def test_google_reads_accept_raw_and_extracted_search_payloads():
     client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "g1"})
     row = {"campaign": {"id": "42", "name": "Sales", "status": "PAUSED"}}

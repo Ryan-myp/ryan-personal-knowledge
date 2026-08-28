@@ -260,6 +260,45 @@ def google_ad_schema() -> dict[str, Any]:
     }
 
 
+def google_responsive_display_ad_schema() -> dict[str, Any]:
+    """Create contract for a Google Responsive Display Ad payload."""
+    text_asset = {
+        "type": ["string", "object"],
+        "description": "Text or provider asset object",
+        "additionalProperties": True,
+    }
+    image_asset = _field(
+        "array", "Provider image asset references", minItems=1,
+        items={"type": "object", "additionalProperties": True},
+    )
+    return {
+        "required": ["ad_group_id", "name", "final_url", "headlines", "long_headline", "descriptions", "business_name"],
+        "provider_required": ["headlines", "long_headline", "descriptions", "business_name"],
+        "properties": {
+            "ad_group_id": _field("string", "Parent Display ad group ID"),
+            "name": _field("string", "Ad name", maxLength=255),
+            "ad_type": _field("string", "Ad format", enum=["RESPONSIVE_DISPLAY_AD"], default="RESPONSIVE_DISPLAY_AD"),
+            "headlines": _field("array", "Short headline assets", minItems=3, maxItems=5, items=text_asset),
+            "long_headline": text_asset,
+            "descriptions": _field("array", "Description assets", minItems=1, maxItems=5, items=text_asset),
+            "business_name": _field("string", "Advertiser business name", minLength=1, maxLength=25),
+            "marketing_images": image_asset,
+            "square_marketing_images": image_asset,
+            "logos": image_asset,
+            "landscape_logos": image_asset,
+            "videos": _field(
+                "array", "YouTube video asset references", items={"type": ["string", "object"], "additionalProperties": True},
+            ),
+            "call_to_action_text": _field("string", "Optional call to action"),
+            "main_color": _field("string", "Optional main color"),
+            "accent_color": _field("string", "Optional accent color"),
+            "allow_flexible_color": _field("boolean", "Whether Google may adjust colors"),
+            "final_url": _field("string", "Final URL", minLength=1),
+            "status": _field("string", "Ad status", enum=GOOGLE_STATUSES),
+        },
+    }
+
+
 def google_ad_format_catalog() -> list[dict[str, Any]]:
     """Advertised Google formats, grounded in the hierarchy guide.
 
@@ -391,20 +430,23 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
             "format_id": "display",
             "category": "display",
             "resource_type": "campaign",
-            "coverage": "declared_only",
+            "coverage": "partial_dry_run",
             "tool_names": ["google_create_campaign", "google_create_ad_group"],
             "dependencies": ["responsive_display_assets", "audiences", "placements"],
-            "gaps": ["dedicated Responsive Display Ad payload builder", "display targeting tools"],
+            "supported_fields": ["advertising_channel_type", "bidding_strategy", "targeting_setting", "network_setting"],
+            "gaps": ["display targeting tools", "live mutation approval"],
             "source_document": source_document,
         },
         {
             "format_id": "display.responsive_display_ad",
             "category": "display",
             "resource_type": "ad",
-            "coverage": "declared_only",
-            "tool_names": [],
+            "coverage": "supported_dry_run",
+            "tool_names": ["google_create_responsive_display_ad"],
+            "payload_adapter": "GoogleAdsAPIClient.create_responsive_display_ad",
             "dependencies": ["headlines", "long_headlines", "descriptions", "images", "logos"],
-            "gaps": ["dedicated Responsive Display Ad Tool and asset validation"],
+            "supported_fields": ["headlines", "long_headline", "descriptions", "business_name", "marketing_images", "square_marketing_images", "logos", "videos", "final_url"],
+            "gaps": ["asset upload/resource-name validation", "live mutation approval"],
             "source_document": source_document,
         },
         {

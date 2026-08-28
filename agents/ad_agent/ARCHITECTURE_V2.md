@@ -28,7 +28,7 @@
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐    │
 │  │ IntentParser    │  │ IntentRouter    │  │ ToolRegistry             │    │
 │  │ 意图解析         │→│ 路由分发         │→ │ 工具注册/执行            │    │
-│  │ - LLM 结构化解析    │ │ - 发现式路由   │  │ - 121 tools              │    │
+│  │ - LLM 结构化解析    │ │ - 发现式路由   │  │ - 122 tools              │    │
 │  └─────────────────┘  └─────────────────┘  └─────────────────────────┘    │
 │                                                                             │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐    │
@@ -226,12 +226,12 @@ class TikTokAPIClient(BaseAPIClient):
         return resp.get('data', {}).get('list', [])
 ```
 
-## 三、工具清单（当前 Capability 共 121 个工具）
+## 三、工具清单（当前 Capability 共 122 个工具）
 
 | 平台 | 工具数量 | 工具列表 |
 |------|---------|---------|
 | **Meta** | 24 | 账户、查询/创建 Campaign、Ad Set、Ad、Creative；受众；Boost；生命周期；报表 |
-| **Google Ads** | 25 | 查询/创建 Campaign、Ad Group、Ad、关键词、Search Ad、Product Group、PMax Asset Group；生命周期；报表 |
+| **Google Ads** | 26 | 查询/创建 Campaign、Ad Group、Ad、关键词、Search Ad、Responsive Display Ad、Product Group、PMax Asset Group；生命周期；报表 |
 | **TikTok** | 40 | 账户、查询/创建 Campaign、Ad Group、Ad；素材；转化、地域、设备、目录、应用、品牌安全查询；Spark Ads；受众；生命周期；报表 |
 | **DV360** | 32 | 查询 Advertiser/Campaign/IO/Line Item/Creative；创建/更新/删除 Creative；定向目录与 Line Item 定向绑定；删除/激活/暂停 IO/Line Item；异步报表；更新工具 |
 
@@ -261,7 +261,7 @@ class TikTokAPIClient(BaseAPIClient):
 
 ### Provider 接口与版本演进
 
-当前 121 个 Tool 是四个 Capability 对其已实现 Client 方法的覆盖基线，不等于四个
+当前 122 个 Tool 是四个 Capability 对其已实现 Client 方法的覆盖基线，不等于四个
 官方 Marketing API 的全量接口。新增接口由渠道包自己完成 Client 方法、Tool Schema、
 参数目录/lookup 和 payload adapter，再通过 `audit_capabilities.py` 与契约快照进入
 发布门禁。
@@ -443,7 +443,7 @@ runtime.auto_load_skills(str(skills_root), credentials)
 |------|------|------|
 | **Skills** | SKILL.md 提供的上下文、SOP 和安全边界 | 按已加载 Skill 动态发现（当前内置 4 个） |
 | **Capabilities** | Python 实现的渠道能力模块 | 按包约定动态发现（当前内置 4 个） |
-| **Tools** | Capability/plugin 提供的具体可执行工具 | 按注册结果动态统计（当前基线 121 个） |
+| **Tools** | Capability/plugin 提供的具体可执行工具 | 按注册结果动态统计（当前基线 122 个） |
 
 **关系**：
 - Skills 是自然语言上下文（SKILL.md）

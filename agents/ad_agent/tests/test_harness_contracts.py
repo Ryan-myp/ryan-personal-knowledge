@@ -388,7 +388,7 @@ def test_hierarchy_guide_formats_keep_provider_enum_and_execution_boundaries():
     by_id = {item["format_id"]: item for item in formats}
     assert by_id["performance_max"]["source_document"] == "docs/ad-platform-hierarchy-guide-v5.md"
     assert by_id["video.skippable_in_stream"]["tool_names"] == []
-    assert by_id["display.responsive_display_ad"]["coverage"] == "declared_only"
+    assert by_id["display.responsive_display_ad"]["coverage"] == "supported_dry_run"
     product_group = next(
         definition for definition in runtime.registry.list_all()
         if definition.name == "google_create_product_group"

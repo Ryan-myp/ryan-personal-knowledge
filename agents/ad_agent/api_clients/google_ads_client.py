@@ -957,6 +957,101 @@ class GoogleAdsAPIClient(BasePlatformClient):
         if not resource_name:
             raise APIError(f"Ad mutate returned no resource name: {resp}")
         return str(resource_name.split('/')[-1])
+
+    def create_responsive_display_ad(
+        self,
+        ad_group_id: str,
+        name: str,
+        final_url: str,
+        headlines: list[Any],
+        long_headline: Any,
+        descriptions: list[Any],
+        business_name: str,
+        marketing_images: list[dict] = None,
+        square_marketing_images: list[dict] = None,
+        logos: list[dict] = None,
+        landscape_logos: list[dict] = None,
+        videos: list[Any] = None,
+        call_to_action_text: str = None,
+        main_color: str = None,
+        accent_color: str = None,
+        allow_flexible_color: bool = None,
+        ad_type: str = None,
+        status: str = None,
+    ) -> str:
+        """Create a Google Responsive Display AdGroupAd mutation."""
+        ad_group_id = self._numeric_id(ad_group_id, "ad_group_id")
+        if ad_type and str(ad_type).upper() != "RESPONSIVE_DISPLAY_AD":
+            raise ValueError(
+                "Google create_responsive_display_ad supports only RESPONSIVE_DISPLAY_AD"
+            )
+        if not str(name or "").strip() or not str(final_url or "").strip():
+            raise ValueError("name and final_url are required")
+        if not isinstance(headlines, list) or not 3 <= len(headlines) <= 5:
+            raise ValueError("Responsive Display Ad requires 3 to 5 headlines")
+        if not isinstance(descriptions, list) or not 1 <= len(descriptions) <= 5:
+            raise ValueError("Responsive Display Ad requires 1 to 5 descriptions")
+        if not str(business_name or "").strip():
+            raise ValueError("business_name is required")
+
+        display_info: dict[str, Any] = {
+            "headlines": [self._text_asset(item) for item in headlines],
+            "longHeadline": self._text_asset(long_headline),
+            "descriptions": [self._text_asset(item) for item in descriptions],
+            "businessName": business_name,
+        }
+        for field_name, values in (
+            ("marketingImages", marketing_images),
+            ("squareMarketingImages", square_marketing_images),
+            ("logoImages", logos),
+            ("landscapeLogoImages", landscape_logos),
+            ("youtubeVideos", videos),
+        ):
+            if values:
+                display_info[field_name] = [self._asset_reference(item) for item in values]
+        for field_name, value in (
+            ("callToActionText", call_to_action_text),
+            ("mainColor", main_color),
+            ("accentColor", accent_color),
+            ("allowFlexibleColor", allow_flexible_color),
+        ):
+            if value is not None:
+                display_info[field_name] = value
+
+        ad_data = {
+            "adGroup": f"customers/{self.customer_id}/adGroups/{ad_group_id}",
+            "status": status or "PAUSED",
+            "ad": {
+                "name": name,
+                "finalUrls": [final_url],
+                "responsiveDisplayAd": display_info,
+            },
+        }
+        response = self._mutate("adGroupAds", {"create": ad_data})
+        resource_name = self._mutation_resource_name(response)
+        if not resource_name:
+            raise APIError(f"Responsive Display Ad mutate returned no resource name: {response}")
+        return str(resource_name).rsplit("/", 1)[-1]
+
+    @classmethod
+    def _text_asset(cls, value: Any) -> dict[str, Any]:
+        if isinstance(value, str):
+            if not value.strip():
+                raise ValueError("text asset cannot be empty")
+            return {"text": value}
+        if isinstance(value, dict) and value:
+            return cls._camel_case_keys(value)
+        raise ValueError("text asset must be a non-empty string or object")
+
+    @classmethod
+    def _asset_reference(cls, value: Any) -> dict[str, Any]:
+        if isinstance(value, str):
+            if not value.strip():
+                raise ValueError("asset reference cannot be empty")
+            return {"asset": value}
+        if isinstance(value, dict) and value:
+            return cls._camel_case_keys(value)
+        raise ValueError("asset reference must be a non-empty string or object")
     
     # ==================== PMax Asset 管理 ====================
     

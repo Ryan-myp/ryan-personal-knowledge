@@ -13,7 +13,7 @@ def test_capability_audit_discovers_all_installed_channels_without_issues():
     report = audit_capabilities()
 
     assert report["issues"] == []
-    assert report["tool_count"] == 121
+    assert report["tool_count"] == 122
     assert set(report["platforms"]) == {"meta", "google-ads", "tiktok", "dv360"}
     assert report["platforms"]["tiktok"]["actions"]["create:ad_group"] == 1
     assert report["platforms"]["dv360"]["actions"]["create:line_item"] == 1
@@ -30,7 +30,7 @@ def test_contract_snapshot_is_deterministic_and_partitioned_by_platform():
     second = build_contract_snapshot(runtime)
 
     assert first == second
-    assert first["tool_count"] == 121
+    assert first["tool_count"] == 122
     assert set(first["platforms"]) == {"meta", "google-ads", "tiktok", "dv360"}
     assert all(details["digest"] for details in first["platforms"].values())
 

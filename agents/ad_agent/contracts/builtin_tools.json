@@ -1,5 +1,5 @@
 {
-  "digest": "e7f3e12c503bd1f6eaba870ebfe01c94a99f359f9b1c2175ce5f6a4d7dae5c5a",
+  "digest": "98400706fff94ee82afa2b0775eb88ff4fbcef5b5caef30b391e23463f1ead6e",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -1983,8 +1983,8 @@
       ]
     },
     "google-ads": {
-      "digest": "5c67e88a9d8432afd0ce9cd23d7792b9f59d490ba8c912fc275d416f2ab1f2dc",
-      "tool_count": 25,
+      "digest": "42227fec56f693eb8b8a868e77d090e6e3d81cda8a6f82bd6effba70314a9076",
+      "tool_count": 26,
       "tools": [
         {
           "action": "create",
@@ -3120,6 +3120,196 @@
             "write",
             "product_group",
             "shopping"
+          ]
+        },
+        {
+          "action": "create",
+          "contract_version": "1.1.0",
+          "description": "创建 Google Responsive Display Ad；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "accent_color": {
+                "description": "Optional accent color",
+                "type": "string"
+              },
+              "ad_group_id": {
+                "description": "Parent Display ad group ID",
+                "type": "string"
+              },
+              "ad_type": {
+                "default": "RESPONSIVE_DISPLAY_AD",
+                "description": "Ad format",
+                "enum": [
+                  "RESPONSIVE_DISPLAY_AD"
+                ],
+                "type": "string"
+              },
+              "allow_flexible_color": {
+                "description": "Whether Google may adjust colors",
+                "type": "boolean"
+              },
+              "business_name": {
+                "description": "Advertiser business name",
+                "maxLength": 25,
+                "minLength": 1,
+                "type": "string"
+              },
+              "call_to_action_text": {
+                "description": "Optional call to action",
+                "type": "string"
+              },
+              "descriptions": {
+                "description": "Description assets",
+                "items": {
+                  "additionalProperties": true,
+                  "description": "Text or provider asset object",
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "maxItems": 5,
+                "minItems": 1,
+                "type": "array"
+              },
+              "final_url": {
+                "description": "Final URL",
+                "minLength": 1,
+                "type": "string"
+              },
+              "headlines": {
+                "description": "Short headline assets",
+                "items": {
+                  "additionalProperties": true,
+                  "description": "Text or provider asset object",
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "maxItems": 5,
+                "minItems": 3,
+                "type": "array"
+              },
+              "landscape_logos": {
+                "description": "Provider image asset references",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "logos": {
+                "description": "Provider image asset references",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "long_headline": {
+                "additionalProperties": true,
+                "description": "Text or provider asset object",
+                "type": [
+                  "string",
+                  "object"
+                ]
+              },
+              "main_color": {
+                "description": "Optional main color",
+                "type": "string"
+              },
+              "marketing_images": {
+                "description": "Provider image asset references",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "name": {
+                "description": "Ad name",
+                "maxLength": 255,
+                "type": "string"
+              },
+              "square_marketing_images": {
+                "description": "Provider image asset references",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "status": {
+                "description": "Ad status",
+                "enum": [
+                  "ENABLED",
+                  "PAUSED",
+                  "REMOVED"
+                ],
+                "type": "string"
+              },
+              "videos": {
+                "description": "YouTube video asset references",
+                "items": {
+                  "additionalProperties": true,
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "type": "array"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "headlines",
+              "long_headline",
+              "descriptions",
+              "business_name"
+            ],
+            "required": [
+              "ad_group_id",
+              "name",
+              "final_url",
+              "headlines",
+              "long_headline",
+              "descriptions",
+              "business_name"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_responsive_display_ad"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_responsive_display_ad",
+          "parent_resource_id_field": "ad_group_id",
+          "parent_resource_type": "ad_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad",
+            "display"
           ]
         },
         {
@@ -8964,5 +9154,5 @@
       ]
     }
   },
-  "tool_count": 121
+  "tool_count": 122
 }
