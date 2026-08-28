@@ -1,6 +1,7 @@
 """Ensure existing provider creation schemas reach their API adapters."""
 
 import json
+import pytest
 
 from agents.ad_agent.capabilities.meta import create_meta_capability
 from agents.ad_agent.capabilities.google import create_google_capability
@@ -12,6 +13,7 @@ from agents.ad_agent.api_clients.dv360_client import DV360APIClient
 from agents.ad_agent.api_clients.google_ads_client import GoogleAdsAPIClient
 from agents.ad_agent.api_clients.meta_client import MetaAPIClient
 from agents.ad_agent.api_clients.tiktok_client import TikTokAPIClient
+from agents.ad_agent.api_clients.base import APIError
 from agents.ad_agent.capabilities.tiktok.campaigns import TikTokGetCampaignHandler
 
 
@@ -106,6 +108,27 @@ def test_meta_creation_options_are_forwarded_to_provider_payloads():
     assert json.loads(payloads[-1]["creative"]) == {"creative_id": "cr1"}
 
 
+def test_meta_graph_payload_normalizes_categories_and_nested_updates():
+    client = MetaAPIClient({"access_token": "test"})
+    payloads = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        payloads.append(data) or {"success": True}
+    )
+
+    client.create_campaign("m1", {"name": "Reach", "objective": "OUTCOME_AWARENESS"})
+    assert payloads[-1]["special_ad_categories"] == ["NONE"]
+    assert payloads[-1]["is_adset_budget_sharing_enabled"] is False
+
+    client.update_adset("as1", {
+        "targeting": {"geo_locations": {"countries": ["US"]}},
+        "daily_budget": 12,
+    })
+    assert json.loads(payloads[-1]["targeting"]) == {
+        "geo_locations": {"countries": ["US"]}
+    }
+    assert payloads[-1]["daily_budget"] == "1200"
+
+
 def test_tiktok_ad_creation_preserves_existing_schema_fields():
     client = TikTokAPIClient({"access_token": "test"})
     payloads = []
@@ -174,6 +197,21 @@ def test_tiktok_provider_envelope_is_decoded_for_ids_and_lookup_lists():
         "headers": {},
     }
     assert client.list_locations() == [{"location_id": "US"}]
+
+
+def test_tiktok_report_failure_and_missing_task_are_not_silent_successes():
+    client = TikTokAPIClient({"access_token": "test"})
+    client.request = lambda method, endpoint, data=None, **kwargs: {
+        "task_id": "task-1"
+    } if endpoint == "report/task/create/" else {
+        "status": 3, "message": "invalid report"
+    }
+    with pytest.raises(APIError, match="report task failed"):
+        client.get_campaign_report("t1", ["1"])
+
+    client.request = lambda *args, **kwargs: {}
+    with pytest.raises(APIError, match="no task_id"):
+        client.get_campaign_report("t1", ["1"])
 
 
 def test_meta_client_does_not_mutate_caller_query_params(monkeypatch):
@@ -293,6 +331,16 @@ def test_google_creation_options_are_mapped_to_rest_resources():
     ad = operations[-1][1]["create"]["ad"]
     assert ad["responsiveSearchAd"]["path1"] == "buy"
     assert ad["responsiveSearchAd"]["path2"] == "now"
+
+
+def test_google_reads_accept_raw_and_extracted_search_payloads():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "g1"})
+    row = {"campaign": {"id": "42", "name": "Sales", "status": "PAUSED"}}
+    client._search = lambda query: {"results": [row]}
+    assert client.get_campaign("42")["name"] == "Sales"
+
+    client._search = lambda query: {"data": {"results": [row]}}
+    assert client.get_campaign("42")["id"] == "42"
 
 
 def test_dv360_io_and_line_item_options_are_not_replaced_by_defaults():

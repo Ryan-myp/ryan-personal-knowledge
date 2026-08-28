@@ -76,7 +76,11 @@ class TikTokAPIClient(BasePlatformClient):
             if response.get("status_code") != 200:
                 break
             envelope = response.get("data", {})
-            payload = envelope.get("data", {}) if isinstance(envelope, dict) else {}
+            payload = self._data_section(envelope)
+            if not isinstance(payload, dict):
+                raise APIError(
+                    f"TikTok {endpoint} returned an invalid list envelope"
+                )
             page_items = payload.get("list", []) if isinstance(payload, dict) else []
             if isinstance(page_items, list):
                 items.extend(page_items)
@@ -484,7 +488,7 @@ class TikTokAPIClient(BasePlatformClient):
         task_id = create_payload.get('task_id', '') if isinstance(create_payload, dict) else ''
         
         if not task_id:
-            return []
+            raise APIError("TikTok report task creation returned no task_id")
         
         # 轮询获取结果
         return self._poll_report_result(advertiser_id, task_id)
@@ -497,14 +501,23 @@ class TikTokAPIClient(BasePlatformClient):
             result = self.request('POST', 'report/task/info/get/', data=data)
             
             payload = self._data_section(result)
-            if isinstance(payload, dict) and payload.get('status') in (2, 3):  # COMPLETED/FAILED
-                if payload.get('status') == 2:
-                    content = payload.get('content', {})
-                    if isinstance(content, dict):
-                        return content.get('data', [])
+            if not isinstance(payload, dict):
+                raise APIError("TikTok report task returned an invalid response envelope")
+            status = payload.get("status")
+            if status in (2, "2", "COMPLETED", "SUCCESS"):
+                content = payload.get('content', {})
+                if isinstance(content, list):
+                    return content
+                if isinstance(content, dict):
+                    rows = content.get('data', content.get('list', []))
+                    if isinstance(rows, list):
+                        return rows
                 return []
+            if status in (3, "3", "FAILED", "ERROR"):
+                message = payload.get("message") or payload.get("error_message") or "unknown error"
+                raise APIError(f"TikTok report task failed: {message}")
         
-        return []
+        raise APIError("TikTok report task polling timed out")
     
     def get_adgroup_report(
         self,
@@ -525,14 +538,18 @@ class TikTokAPIClient(BasePlatformClient):
             'report_type': "ADGROUP",
             'data_content': {
                 'columns': ['ad_group_id', 'ad_group_name', 'impressions', 'clicks', 'spend', 'conversions'],
-                'time_range': time_range or {'start_date': 'LAST_7_DAYS', 'end_date': 'TODAY'},
+                'time_range': self._normalize_time_range(
+                    time_range or 'LAST_7_DAYS'
+                ),
                 'filtering': filtering,
             }
         }
         result = self.request('POST', 'report/task/create/', data=data)
         payload = self._data_section(result)
         task_id = payload.get('task_id', '') if isinstance(payload, dict) else ''
-        return self._poll_report_result(advertiser_id, task_id) if task_id else []
+        if not task_id:
+            raise APIError("TikTok ad group report task creation returned no task_id")
+        return self._poll_report_result(advertiser_id, task_id)
 
     
     # ==================== 人群定向查询 ====================

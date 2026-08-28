@@ -242,7 +242,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
             WHERE campaign.id = {campaign_id}
         """
         results = self._search(query)
-        items = results.get('data', {}).get('results', [])
+        items = self._response_payload(results).get('results', [])
         if items:
             camp = items[0].get('campaign', {})
             return {
@@ -288,7 +288,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
             WHERE ad_group.id = {ad_group_id}
         """
         results = self._search(query)
-        items = results.get('data', {}).get('results', [])
+        items = self._response_payload(results).get('results', [])
         if items:
             ag = items[0].get('adGroup', {})
             return {
@@ -367,7 +367,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
             WHERE ad.id = {ad_id}
         """
         results = self._search(query)
-        items = results.get('data', {}).get('results', [])
+        items = self._response_payload(results).get('results', [])
         if items:
             ad = items[0].get('ad', {})
             return {
@@ -409,7 +409,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
             WHERE asset_group.id = {asset_group_id}
         """
         results = self._search(query)
-        items = results.get('data', {}).get('results', [])
+        items = self._response_payload(results).get('results', [])
         if items:
             ag = items[0].get('assetGroup', {})
             return {
@@ -440,6 +440,12 @@ class GoogleAdsAPIClient(BasePlatformClient):
         advertising_channel_type: SEARCH | SHOPPING | PERFORMANCE_MAX | VIDEO | DISPLAY | APP
         bidding_strategy: MANUAL_CPC | TARGET_CPA | MAXIMIZE_CONVERSIONS | TARGET_ROAS
         """
+        try:
+            daily_budget = float(daily_budget)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("daily_budget must be a positive number") from exc
+        if daily_budget <= 0:
+            raise ValueError("daily_budget must be greater than 0")
         # Google Ads REST writes go through the customer-level mutate
         # endpoints.  Resource-level POST/PUT endpoints look plausible but
         # are not Google Ads API contracts.
@@ -481,10 +487,14 @@ class GoogleAdsAPIClient(BasePlatformClient):
             campaign_data['manualCpc'] = {}
         elif strategy == 'TARGET_CPA':
             campaign_data['targetCpa'] = {
-                'targetCpaMicros': target_cpa_micros or 50000000,
+                'targetCpaMicros': (
+                    50000000 if target_cpa_micros is None else target_cpa_micros
+                ),
             }
         elif strategy == 'TARGET_ROAS':
-            campaign_data['targetRoas'] = {'targetRoas': target_roas or 4.0}
+            campaign_data['targetRoas'] = {
+                'targetRoas': 4.0 if target_roas is None else target_roas
+            }
         elif strategy == 'MAXIMIZE_CLICKS':
             campaign_data['maximizeClicks'] = {}
         elif strategy == 'MAXIMIZE_CONVERSION_VALUE':
@@ -492,7 +502,9 @@ class GoogleAdsAPIClient(BasePlatformClient):
         elif strategy == 'TARGET_IMPRESSION_SHARE':
             campaign_data['targetImpressionShare'] = {
                 'location': 'ANYWHERE_ON_PAGE',
-                'locationFractionMicros': int(float(target_impression_share or 0.5) * 1_000_000),
+                'locationFractionMicros': int(float(
+                    0.5 if target_impression_share is None else target_impression_share
+                ) * 1_000_000),
             }
         else:
             campaign_data['maximizeConversions'] = {}
@@ -701,7 +713,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         result = self._search(query)
         # _search returns the raw transport envelope, while some test/fake
         # clients return the extracted payload.  Accept both shapes.
-        payload = result.get('data', result) if isinstance(result, dict) else {}
+        payload = self._response_payload(result)
         return payload.get('results', []) if isinstance(payload, dict) else []
     
     def get_adgroup_report(
@@ -732,7 +744,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         """
         
         result = self._search(query)
-        payload = result.get('data', result) if isinstance(result, dict) else {}
+        payload = self._response_payload(result)
         return payload.get('results', []) if isinstance(payload, dict) else []
     
     # ==================== 辅助方法 ====================
@@ -744,6 +756,20 @@ class GoogleAdsAPIClient(BasePlatformClient):
         if not re.fullmatch(r"\d+", value):
             raise ValueError(f"{field_name} must contain digits only")
         return value
+
+    @staticmethod
+    def _response_payload(response: Any) -> dict[str, Any]:
+        """Return the Google Ads JSON payload from raw or extracted data.
+
+        The production transport returns ``{status_code, data, headers}``,
+        while lightweight adapters often return the already-extracted
+        ``{"results": [...]}`` object.  Keep that tolerance at the client
+        boundary instead of making each read method guess the envelope.
+        """
+        if not isinstance(response, dict):
+            return {}
+        payload = response.get("data", response)
+        return payload if isinstance(payload, dict) else {}
 
     @staticmethod
     def _safe_limit(value: Any) -> int:
@@ -777,7 +803,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
             "SELECT campaign.campaign_budget "
             f"FROM campaign WHERE campaign.id = {campaign_id} LIMIT 1"
         )
-        payload = result.get("data", result) if isinstance(result, dict) else {}
+        payload = self._response_payload(result)
         rows = payload.get("results", []) if isinstance(payload, dict) else []
         if not rows or not isinstance(rows[0], dict):
             return ""
@@ -815,7 +841,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
             response = self._search(
                 query, page_token=page_token, page_size=page_size
             )
-            payload = response.get('data', {}) if isinstance(response, dict) else {}
+            payload = self._response_payload(response)
             page_rows = payload.get('results', []) if isinstance(payload, dict) else []
             if isinstance(page_rows, list):
                 rows.extend(row for row in page_rows if isinstance(row, dict))
@@ -840,7 +866,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
 
     @staticmethod
     def _mutation_resource_name(response: dict) -> str:
-        data = response.get('data', {}) if isinstance(response, dict) else {}
+        data = GoogleAdsAPIClient._response_payload(response)
         results = data.get('results', []) if isinstance(data, dict) else []
         if results and isinstance(results[0], dict):
             return results[0].get('resourceName', '')

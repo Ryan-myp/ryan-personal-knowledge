@@ -21,7 +21,7 @@ import tempfile
 import os
 import threading
 from typing import Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .base import BasePlatformClient, APIError, AuthError, RateLimitError, TemporaryError, RetryConfig, RateLimiter
 
@@ -275,7 +275,7 @@ class DV360APIClient(BasePlatformClient):
             if page_token:
                 page_params["pageToken"] = page_token
             response = self.request_raw("GET", endpoint, params=page_params)
-            data = response.get("data", {})
+            data = self._response_payload(response)
             page_items = data.get(collection_key, []) if isinstance(data, dict) else []
             if isinstance(page_items, list):
                 items.extend(page_items)
@@ -285,6 +285,14 @@ class DV360APIClient(BasePlatformClient):
             seen_tokens.add(next_token)
             page_token = next_token
         return items
+
+    @staticmethod
+    def _response_payload(response: Any) -> dict[str, Any]:
+        """Return DV360 data from either a raw transport or test envelope."""
+        if not isinstance(response, dict):
+            return {}
+        payload = response.get("data", response)
+        return payload if isinstance(payload, dict) else {}
     
     # ==================== 账户管理 ====================
     
@@ -300,7 +308,7 @@ class DV360APIClient(BasePlatformClient):
     def get_advertiser(self, advertiser_id: str) -> dict:
         """获取广告主详情"""
         result = self.request_raw('GET', f"{self.BASE_URL}/advertisers/{advertiser_id}")
-        return result.get('data', {})
+        return self._response_payload(result)
     
     def list_campaigns(self, advertiser_id: str, page_size: int = 20) -> list:
         """获取 Campaign 列表"""
@@ -313,7 +321,7 @@ class DV360APIClient(BasePlatformClient):
         """获取 Campaign 详情"""
         result = self.request_raw('GET',
                                    f"{self.BASE_URL}/advertisers/{advertiser_id}/campaigns/{campaign_id}")
-        return result.get('data', {})
+        return self._response_payload(result)
     
     # ==================== IO (Insertion Order) 管理 ====================
     
@@ -327,7 +335,7 @@ class DV360APIClient(BasePlatformClient):
     def get_io(self, advertiser_id: str, io_id: str) -> dict:
         """获取 IO 详情"""
         result = self.request_raw('GET', f"{self.BASE_URL}/advertisers/{advertiser_id}/insertionOrders/{io_id}")
-        return result.get('data', {})
+        return self._response_payload(result)
     
     def create_io(self, advertiser_id: str, io: dict) -> str:
         """创建 IO"""
@@ -335,8 +343,16 @@ class DV360APIClient(BasePlatformClient):
         start_date = io.get('start_date')
         end_date = io.get('end_date')
         try:
-            start_seconds = int(datetime.strptime(start_date, '%Y-%m-%d').timestamp()) if start_date else int(now.timestamp())
-            end_seconds = int(datetime.strptime(end_date, '%Y-%m-%d').timestamp()) if end_date else int(now.replace(year=now.year + 1).timestamp())
+            start_seconds = int(
+                datetime.strptime(start_date, '%Y-%m-%d')
+                .replace(tzinfo=timezone.utc).timestamp()
+            ) if start_date else int(now.replace(tzinfo=timezone.utc).timestamp())
+            end_seconds = int(
+                datetime.strptime(end_date, '%Y-%m-%d')
+                .replace(tzinfo=timezone.utc).timestamp()
+            ) if end_date else int(
+                now.replace(year=now.year + 1, tzinfo=timezone.utc).timestamp()
+            )
         except (TypeError, ValueError):
             raise ValueError('start_date/end_date must use YYYY-MM-DD')
         body = {
@@ -352,7 +368,7 @@ class DV360APIClient(BasePlatformClient):
             body['frequencyCap'] = io['frequency_cap']
         
         result = self.request_raw('POST', f"{self.BASE_URL}/advertisers/{advertiser_id}/insertionOrders", data=body)
-        name = result.get('data', {}).get('name', '')
+        name = self._response_payload(result).get('name', '')
         return name.split('/')[-1] if name else ''
     
     def activate_io(self, advertiser_id: str, io_id: str) -> dict:
@@ -422,7 +438,7 @@ class DV360APIClient(BasePlatformClient):
         result = self.request_raw('POST',
                                    f"{self.BASE_URL}/advertisers/{advertiser_id}/insertionOrders/{io_id}/lineItems",
                                    data=body)
-        name = result.get('data', {}).get('name', '')
+        name = self._response_payload(result).get('name', '')
         return name.split('/')[-1] if name else ''
     
     def activate_line_item(self, advertiser_id: str, io_id: str, li_id: str) -> dict:
@@ -437,7 +453,7 @@ class DV360APIClient(BasePlatformClient):
         """获取 Line Item 详情（内部方法）"""
         result = self.request_raw('GET',
                                    f"{self.BASE_URL}/advertisers/{advertiser_id}/insertionOrders/{io_id}/lineItems/{li_id}")
-        return result.get('data', {})
+        return self._response_payload(result)
 
     def get_line_item(self, advertiser_id: str, io_id: str, line_item_id: str) -> dict:
         """获取 Line Item 详情。"""
@@ -450,7 +466,7 @@ class DV360APIClient(BasePlatformClient):
         result = self.request_raw('POST',
                                    f"{self.BASE_URL}/advertisers/{advertiser_id}/reports",
                                    data=report)
-        name = result.get('data', {}).get('name', '')
+        name = self._response_payload(result).get('name', '')
         return name.split('/')[-1] if name else ''
     
     def get_report_result(self, advertiser_id: str, report_id: str, limit: int = 1000) -> dict:
@@ -458,7 +474,7 @@ class DV360APIClient(BasePlatformClient):
         result = self.request_raw('GET',
                                    f"{self.BASE_URL}/advertisers/{advertiser_id}/reports/{report_id}/rows",
                                    params={'limit': limit})
-        return result.get('data', {})
+        return self._response_payload(result)
     
     def get_line_item_report(
         self,

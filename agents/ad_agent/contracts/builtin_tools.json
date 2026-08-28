@@ -1,5 +1,5 @@
 {
-  "digest": "04a9b1a315865f144b071f1ac10d6266fc4765c2d727eeaae0f8750b672b0237",
+  "digest": "ac03173d98e99478930e7cb4331a304c48ee2c898e579b188e1d6180408fe4a7",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -3822,7 +3822,7 @@
       ]
     },
     "tiktok": {
-      "digest": "73a84533942e8db7e962cc6e405223ed2a8624945e4e0333ef0e94b6a61787df",
+      "digest": "aa6bb9a19f1d354babcfe2a0ab98faa99ac1b4628b94e995d31c59e22b35cd7b",
       "tool_count": 24,
       "tools": [
         {
@@ -3853,7 +3853,18 @@
               },
               "conversion_id": {
                 "description": "Conversion event ID",
+                "lookup_result_key": "conversions",
+                "lookup_tool": "tiktok_list_conversions",
                 "minimum": 0,
+                "selection_label_fields": [
+                  "conversion_name",
+                  "name",
+                  "event_name"
+                ],
+                "selection_value_fields": [
+                  "conversion_id",
+                  "id"
+                ],
                 "type": "integer"
               },
               "creatives": {
@@ -3869,7 +3880,13 @@
               },
               "media": {
                 "description": "TikTok media asset payload",
-                "type": "object"
+                "items": {
+                  "type": "object"
+                },
+                "type": [
+                  "array",
+                  "object"
+                ]
               },
               "name": {
                 "description": "Ad name",
@@ -3884,6 +3901,7 @@
                 "type": "integer"
               },
               "text": {
+                "additionalProperties": true,
                 "description": "Ad copy payload",
                 "type": "object"
               }
@@ -4147,6 +4165,15 @@
                   "type": "string"
                 },
                 "type": "array"
+              },
+              "optimization_goal": {
+                "description": "Ad group optimization goal",
+                "enum": [
+                  "AEO",
+                  "OCC",
+                  "ROAS"
+                ],
+                "type": "string"
               },
               "placement_type": {
                 "description": "Placement mode",

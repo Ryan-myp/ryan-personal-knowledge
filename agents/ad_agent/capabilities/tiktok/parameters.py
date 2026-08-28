@@ -132,6 +132,9 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
             "bid_type": _field("string", "Bid mode", enum=TIKTOK_BID_TYPES),
             "bid_amount": _field("number", "Manual bid amount", minimum=0),
             "deep_bid_type": _field("string", "Deep optimization goal", enum=TIKTOK_DEEP_BID_TYPES),
+            "optimization_goal": _field(
+                "string", "Ad group optimization goal", enum=TIKTOK_DEEP_BID_TYPES,
+            ),
             "conversion_id": _field(
                 "integer", "Conversion event ID returned by TikTok lookup",
                 minimum=0, lookup_tool="tiktok_list_conversions",
@@ -205,11 +208,19 @@ def tiktok_ad_schema() -> dict[str, Any]:
             "campaign_id": _field("string", "Parent campaign ID"),
             "name": _field("string", "Ad name"),
             "landing_page_url": _field("string", "Landing page URL"),
-            "conversion_id": _field("integer", "Conversion event ID", minimum=0),
+            "conversion_id": _field(
+                "integer", "Conversion event ID", minimum=0,
+                lookup_tool="tiktok_list_conversions", lookup_result_key="conversions",
+                selection_value_fields=["conversion_id", "id"],
+                selection_label_fields=["conversion_name", "name", "event_name"],
+            ),
             "ad_format": _field("string", "Ad format", enum=TIKTOK_AD_FORMATS),
-            "media": _field("object", "TikTok media asset payload"),
+            # TikTok accepts a single media object in some versions and a
+            # list of assets in others; keep both shapes explicit so a
+            # provider field is not silently discarded by closed validation.
+            "media": _field(["array", "object"], "TikTok media asset payload", items={"type": "object"}),
             "creatives": _field("array", "Creative list", items={"type": "object"}),
-            "text": _field("object", "Ad copy payload"),
+            "text": _field("object", "Ad copy payload", additionalProperties=True),
             "status": _field("integer", "Ad status: 1 active, 0 paused", enum=[0, 1]),
         },
     }

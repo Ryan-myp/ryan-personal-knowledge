@@ -311,11 +311,19 @@ class MetaAPIClient(BasePlatformClient):
         if objective not in valid_objectives:
             raise ValueError(f"Invalid objective '{objective}'. Valid values: {valid_objectives}")
         
+        special_ad_categories = campaign.get('special_ad_categories', 'NONE')
+        if isinstance(special_ad_categories, str):
+            special_ad_categories = [special_ad_categories]
+        if not isinstance(special_ad_categories, list):
+            raise ValueError("Meta special_ad_categories must be a string or list")
+
         data = {
             'name': campaign['name'],
             'objective': objective,
-            'special_ad_categories': campaign.get('special_ad_categories', 'NONE'),
-            'is_adset_budget_sharing_enabled': 'False',  # 不使用 campaign budget 时必须指定
+            # Graph API models this as an array even when the caller selects
+            # the single ``NONE`` category.
+            'special_ad_categories': special_ad_categories,
+            'is_adset_budget_sharing_enabled': False,
         }
         if campaign.get('buying_type') is not None:
             data['buying_type'] = campaign['buying_type']
@@ -425,6 +433,8 @@ class MetaAPIClient(BasePlatformClient):
             data['bid_amount'] = str(data['bid_amount'])
         if 'daily_budget' in data:
             data['daily_budget'] = str(int(float(data['daily_budget']) * 100))
+        if isinstance(data.get('targeting'), dict):
+            data['targeting'] = json.dumps(data['targeting'])
         return self.request('POST', f"/{adset_id}", data=data)
     
     def pause_adset(self, adset_id: str) -> dict:

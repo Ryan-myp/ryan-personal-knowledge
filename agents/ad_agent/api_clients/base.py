@@ -371,7 +371,10 @@ class BasePlatformClient(ABC):
         if should_retry:
             delay = self.retry_config.get_delay(retry_count)
             logger.info(f"[{self.platform}] Retrying in {delay:.2f}s...")
-            time.sleep(delay)
+            # Retry backoff is part of the provider request budget.  Sleeping
+            # directly here used to let a saturated client outlive the
+            # Runtime timeout before the next attempt even started.
+            self.sleep_with_budget(delay)
             return self.request(method, endpoint, retry_count + 1, **kwargs)
         
         raise error
@@ -410,7 +413,10 @@ class BasePlatformClient(ABC):
                     raise TemporaryError("Provider request deadline exceeded")
                 delay = min(delay, remaining)
             logger.info(f"[{self.platform}] Retrying in {delay:.2f}s...")
-            time.sleep(delay)
+            # Keep rate-limit and transient retries subject to the same
+            # deadline as the HTTP attempt.  A 429 Retry-After value can be
+            # much larger than the remaining tool budget.
+            self.sleep_with_budget(delay)
             return self.request_raw(
                 method,
                 endpoint,
