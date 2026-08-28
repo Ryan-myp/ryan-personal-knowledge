@@ -92,8 +92,6 @@ def build_contract_snapshot(runtime: AgentRuntime) -> dict:
     definitions_by_platform: dict[str, list[dict]] = {}
     for definition in runtime.registry.list_all():
         contract = definition.to_dict()
-        contract["timeout_seconds"] = definition.timeout_seconds
-        contract["max_output_bytes"] = definition.max_output_bytes
         definitions_by_platform.setdefault(str(definition.platform), []).append(contract)
 
     platforms: dict[str, dict] = {}

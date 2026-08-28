@@ -263,6 +263,27 @@ class TestIntentParser:
         intent = parser.parse("创建 Meta 广告系列", None)
         assert intent.intent_type == "create_campaign"
 
+    def test_cross_channel_create_selects_all_registered_platforms(self):
+        parser = LLMIntentParser()
+        intent = parser.parse("跨渠道创建 campaign", None)
+
+        assert intent.intent_type == "create_campaign"
+        assert intent.platforms == ["dv360", "google", "meta", "tiktok"]
+
+    def test_cross_channel_update_selects_all_registered_platforms(self):
+        parser = LLMIntentParser()
+        intent = parser.parse("跨平台更新 campaign", None)
+
+        assert intent.intent_type == "update_campaign"
+        assert intent.platforms == ["dv360", "google", "meta", "tiktok"]
+
+    def test_single_channel_create_does_not_expand_to_all_platforms(self):
+        parser = LLMIntentParser()
+        intent = parser.parse("创建 campaign", None)
+
+        assert intent.intent_type == "create_campaign"
+        assert intent.platforms == []
+
     def test_chat_intent(self):
         from agents.ad_agent.core.intent import LLMIntentParser
         parser = LLMIntentParser()

@@ -1,9 +1,9 @@
 {
-  "digest": "ac03173d98e99478930e7cb4331a304c48ee2c898e579b188e1d6180408fe4a7",
+  "digest": "3604a5d7508732365a58b61fb7c12c9c5abf5845ef190b43ec16c473c46f876e",
   "format_version": 1,
   "platforms": {
     "dv360": {
-      "digest": "30a84c3474e13b3798017f25ef7b939d1bcdf2b5c3dffb1e5ed8b5e758cf86b8",
+      "digest": "4003e66860a96dc4b334470e84009b07a0d834b47f83d3167a71743999a249dc",
       "tool_count": 14,
       "tools": [
         {
@@ -11,6 +11,7 @@
           "description": "创建 DV360 Campaign。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -107,6 +108,7 @@
           "description": "创建 DV360 IO（Order & Invoice）。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -225,6 +227,7 @@
           "description": "创建 DV360 Line Item。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [
               {
@@ -388,6 +391,7 @@
           "description": "查询 DV360 Campaign 详情（支持 campaign_id 或 campaign_name）。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -432,6 +436,7 @@
           "description": "查询 DV360 Insertion Order 详情。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -474,6 +479,7 @@
           "description": "查询 DV360 Line Item 详情。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -520,6 +526,7 @@
           "description": "查询 DV360 Line Item 报表；当前不提供 Campaign-level report。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -578,6 +585,7 @@
           "description": "查询 DV360 Advertiser 列表。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {},
@@ -614,6 +622,7 @@
           "description": "查询 DV360 Campaign 列表。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -664,6 +673,7 @@
           "description": "查询 DV360 Insertion Order 列表。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -709,6 +719,7 @@
           "description": "查询 DV360 Line Item 列表，可按 IO 过滤。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -757,6 +768,7 @@
           "description": "更新 DV360 campaign，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -839,6 +851,7 @@
           "description": "更新 DV360 io，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -926,6 +939,7 @@
           "description": "更新 DV360 line_item，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -1021,7 +1035,7 @@
       ]
     },
     "google-ads": {
-      "digest": "2413a78d8869d76ffd463b3359b72f825e23ebc1c9a4d2ba7160460e0f2307a9",
+      "digest": "ae0ccffcb840d96e9c14b35942bb7f696fe5a6c4468cb1b215e58c6fbd41aa61",
       "tool_count": 18,
       "tools": [
         {
@@ -1029,6 +1043,7 @@
           "description": "创建 Google Ads Ad。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [
               {
@@ -1157,6 +1172,7 @@
           "description": "创建 Google Ads Ad Group。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -1244,6 +1260,7 @@
           "description": "创建 Google PMax Asset Group；当前仅支持 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -1368,6 +1385,7 @@
           "description": "创建 Google Ads Campaign。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [
               {
@@ -1554,6 +1572,7 @@
           "description": "查询 Google Ads Ad 详情。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -1596,6 +1615,7 @@
           "description": "查询 Google Ads Ad Group 详情。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -1638,6 +1658,7 @@
           "description": "查询 PMax Asset Group 详情。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -1680,6 +1701,7 @@
           "description": "查询 Google Ads Campaign 详情（支持 campaign_id 或 campaign_name）。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -1724,6 +1746,7 @@
           "description": "查询 Google Ads Campaign 报表。支持按 campaign_ids 过滤，默认查询最近30天数据。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -1776,6 +1799,7 @@
           "description": "查询 Google Ads Ad Group 列表。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -1821,6 +1845,7 @@
           "description": "查询 Google Ads Ad 列表。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -1866,6 +1891,7 @@
           "description": "查询 PMax Campaign 的 Asset Group 列表。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -1911,6 +1937,7 @@
           "description": "查询 Google Ads Campaign 列表。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -1961,6 +1988,7 @@
           "description": "查询 Google Ads 关键词，可按 Campaign 或 Ad Group 过滤。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -2010,6 +2038,7 @@
           "description": "更新 Google Ads ad，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -2104,6 +2133,7 @@
           "description": "更新 Google Ads ad_group，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -2186,6 +2216,7 @@
           "description": "更新 Google Ads asset_group，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -2276,6 +2307,7 @@
           "description": "更新 Google Ads campaign，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -2357,7 +2389,7 @@
       ]
     },
     "meta": {
-      "digest": "79f70802ebe63e3cf17535d320a0adb2507a72068fd13bf43f833f82f2dcbdb2",
+      "digest": "a4ed029856fc77b1d6f09704532ea5a2c908c1a2cd0dba75751434258ab4aad9",
       "tool_count": 16,
       "tools": [
         {
@@ -2365,6 +2397,7 @@
           "description": "将已有 Meta Page 帖子创建为推广广告。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -2424,6 +2457,7 @@
           "description": "创建 Meta Ad。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -2570,6 +2604,7 @@
           "description": "创建 Meta Ad Set。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [
               {
@@ -2965,6 +3000,7 @@
           "description": "创建 Meta Campaign。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [
               {
@@ -3118,6 +3154,7 @@
           "description": "创建 Meta Creative；当前仅支持 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -3181,6 +3218,7 @@
           "description": "获取 Meta Ad 详情。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -3223,6 +3261,7 @@
           "description": "获取 Meta Ad Set 详情。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -3265,6 +3304,7 @@
           "description": "获取 Meta Campaign 详情。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -3309,6 +3349,7 @@
           "description": "查询 Meta Campaign 报表。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -3364,6 +3405,7 @@
           "description": "列出 Meta Ad Set 列表。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -3410,6 +3452,7 @@
           "description": "列出 Meta Ad 列表。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -3455,6 +3498,7 @@
           "description": "查询 Meta Custom Audience 列表。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -3498,6 +3542,7 @@
           "description": "列出 Meta Campaign 列表。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -3548,6 +3593,7 @@
           "description": "更新 Meta ad，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -3627,6 +3673,7 @@
           "description": "更新 Meta adset，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -3742,6 +3789,7 @@
           "description": "更新 Meta campaign，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -3822,7 +3870,7 @@
       ]
     },
     "tiktok": {
-      "digest": "aa6bb9a19f1d354babcfe2a0ab98faa99ac1b4628b94e995d31c59e22b35cd7b",
+      "digest": "d63746fac5d3a5746e6dd63b88e0a54ebde02daa2d06055e11e52ef92d5e8302",
       "tool_count": 24,
       "tools": [
         {
@@ -3830,6 +3878,7 @@
           "description": "创建 TikTok Ads Ad。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -3949,6 +3998,7 @@
           "description": "创建 TikTok Ads Ad Group。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [
               {
@@ -4260,6 +4310,7 @@
           "description": "创建 TikTok Ads Campaign。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [
               {
@@ -4432,6 +4483,7 @@
           "description": "查询 TikTok Ads Ad 详情。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -4478,6 +4530,7 @@
           "description": "查询 TikTok Ads Ad Group 详情。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -4524,6 +4577,7 @@
           "description": "查询 TikTok Ads Campaign 详情（支持 campaign_id 或 campaign_name）。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -4568,6 +4622,7 @@
           "description": "查询 TikTok Ads Campaign 报表。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -4619,6 +4674,7 @@
           "description": "查询 TikTok Ads Ad Group 列表。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -4664,6 +4720,7 @@
           "description": "查询 TikTok Ads Ad 列表。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -4709,6 +4766,7 @@
           "description": "查询 TikTok apps 参考数据。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -4755,6 +4813,7 @@
           "description": "查询 TikTok Audience 列表。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -4798,6 +4857,7 @@
           "description": "查询 TikTok brand_safety 参考数据。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -4844,6 +4904,7 @@
           "description": "查询 TikTok Ads Campaign 列表。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -4894,6 +4955,7 @@
           "description": "查询 TikTok catalogs 参考数据。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -4945,6 +5007,7 @@
           "description": "查询 TikTok conversions 参考数据。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -4996,6 +5059,7 @@
           "description": "查询 TikTok creatives 素材库。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -5045,6 +5109,7 @@
           "description": "查询 TikTok devices 参考数据。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -5091,6 +5156,7 @@
           "description": "查询 TikTok images 素材库。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -5140,6 +5206,7 @@
           "description": "查询 TikTok locations 参考数据。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -5186,6 +5253,7 @@
           "description": "查询 TikTok videos 素材库。",
           "effect_class": "read",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -5235,6 +5303,7 @@
           "description": "使用达人已有帖子创建 TikTok Spark Ad。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -5290,6 +5359,7 @@
           "description": "更新 TikTok Ads ad，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -5363,6 +5433,7 @@
           "description": "更新 TikTok Ads adgroup，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
@@ -5565,6 +5636,7 @@
           "description": "更新 TikTok Ads campaign，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
+            "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {

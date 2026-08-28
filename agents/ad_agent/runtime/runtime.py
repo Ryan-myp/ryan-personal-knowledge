@@ -47,7 +47,7 @@ from ..core.parameter_selection import (
     ParameterSelectionError,
     ParameterSelectionSigner,
 )
-from ..core.auth import RequestPrincipal, normalize_account_id
+from ..core.auth import RequestPrincipal, normalize_account_id, normalize_platform
 from .skill import Skill, SkillLoader
 from ..persistence.session_manager import SessionManager
 from ..persistence.interfaces import PersistenceBackend
@@ -77,7 +77,10 @@ class AccountWhitelistValidator:
             if os.path.exists(self.config_path):
                 with open(self.config_path, 'r', encoding='utf-8') as f:
                     config = yaml.safe_load(f)
-                    self.allowed_accounts = config.get('allowed_accounts', {})
+                    allowed_accounts = config.get('allowed_accounts', {}) if isinstance(config, dict) else {}
+                    self.allowed_accounts = (
+                        allowed_accounts if isinstance(allowed_accounts, dict) else {}
+                    )
         except Exception as e:
             logger.warning(f"加载账户白名单配置失败: {e}")
     
@@ -92,28 +95,59 @@ class AccountWhitelistValidator:
         Returns:
             (is_allowed, error_message)
         """
-        allowed = self.allowed_accounts.get(platform, [])
+        canonical_platform = normalize_platform(platform)
+        allowed = self._accounts_for_platform(canonical_platform)
         
         # 空白名单必须 fail closed：凭证中出现的账户 ID 不能自动成为
         # 可操作账户。测试/本地开发应显式提供受控白名单。
         if not allowed:
-            return False, f"{platform} 未配置受控账户白名单"
+            return False, f"{canonical_platform} 未配置受控账户白名单"
         
         # 检查账户是否匹配
-        normalized_account = account_id.replace("act_", "")
-        is_allowed = any(
-            acc.replace("act_", "") == normalized_account 
-            for acc in allowed
-        )
+        normalized_account = normalize_account_id(account_id)
+        is_allowed = bool(normalized_account) and normalized_account in {
+            normalize_account_id(acc) for acc in allowed
+        }
         
         if not is_allowed:
-            return False, f"账户 {account_id} 不在 {platform} 白名单中。允许操作的账户: {', '.join(allowed)}"
+            return False, (
+                f"账户 {account_id} 不在 {canonical_platform} 白名单中。"
+                f"允许操作的账户: {', '.join(str(acc) for acc in allowed)}"
+            )
         
         return True, ""
     
     def get_allowed_accounts(self, platform: str) -> list[str]:
         """获取平台允许操作的账户列表"""
-        return self.allowed_accounts.get(platform, [])
+        return list(self._accounts_for_platform(normalize_platform(platform)))
+
+    def _accounts_for_platform(self, platform: str) -> list[Any]:
+        """Return only well-formed configured accounts for a canonical platform.
+
+        Configuration is untrusted input at process startup.  A malformed
+        platform entry (for example a scalar string) must never be iterated as
+        account IDs, and an alias must not create a second authorization map.
+        Invalid entries fail closed while valid entries for other platforms
+        remain usable.
+        """
+        configured = self.allowed_accounts
+        if not platform or not isinstance(configured, dict):
+            return []
+        values = []
+        for raw_platform, raw_accounts in configured.items():
+            if normalize_platform(raw_platform) != platform:
+                continue
+            if isinstance(raw_accounts, (str, bytes)) or not isinstance(
+                raw_accounts, (list, tuple, set, frozenset)
+            ):
+                return []
+            for account in raw_accounts:
+                if not isinstance(account, (str, int)) or isinstance(account, bool):
+                    return []
+                normalized = normalize_account_id(account)
+                if normalized:
+                    values.append(account)
+        return values
 
 
 # ─── Agent Runtime ─────────────────────────────────────────────

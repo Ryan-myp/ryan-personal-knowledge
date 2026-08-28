@@ -195,7 +195,18 @@ class LLMIntentParser(IntentParser):
         
         # 检测平台
         platforms = self._detect_platforms(text)
-        if intent_type.startswith("cross_channel") and not platforms:
+        # Cross-channel create/update are intentionally represented by the
+        # same per-platform intent as their single-channel counterparts.  Do
+        # not use the normalized intent name as the only signal here, or a
+        # request such as "跨渠道创建 campaign" would end up with no
+        # platforms and therefore no executable plan.
+        cross_markers = [
+            "跨渠道", "跨平台", "全渠道", "各平台对比", "渠道对比",
+            "cross-channel", "cross channel", "cross-platform", "cross platform",
+            "all channels",
+        ]
+        is_cross_request = any(marker in text for marker in cross_markers)
+        if is_cross_request and not platforms:
             # Use the channels currently registered with Runtime. This keeps
             # a generic "cross-channel" request extensible without editing
             # the parser when a new provider is installed.
@@ -234,7 +245,11 @@ class LLMIntentParser(IntentParser):
     
     def _detect_intent_type(self, text: str) -> str:
         """检测意图类型（注意顺序：更具体的规则放在前面）"""
-        cross_markers = ["跨渠道", "跨平台", "全渠道", "各平台对比", "渠道对比"]
+        cross_markers = [
+            "跨渠道", "跨平台", "全渠道", "各平台对比", "渠道对比",
+            "cross-channel", "cross channel", "cross-platform", "cross platform",
+            "all channels",
+        ]
         compare_words = ["对比", "比较", "compare"]
         batch_markers = ["批量", "多个", "多条", "bulk", "batch"]
         # These are read-only cross-channel analyses. Resolve them before the

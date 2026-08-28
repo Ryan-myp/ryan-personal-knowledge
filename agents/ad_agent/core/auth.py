@@ -16,14 +16,23 @@ from typing import Any, Mapping, Optional
 
 def normalize_platform(platform: str) -> str:
     """Normalize the platform aliases used by the Runtime authorization map."""
-    aliases = {"google": "google-ads", "google_ads": "google-ads"}
+    aliases = {
+        "google": "google-ads",
+        "google_ads": "google-ads",
+        "google ads": "google-ads",
+    }
     value = str(platform or "").strip().lower()
     return aliases.get(value, value)
 
 
 def normalize_account_id(account_id: Any) -> str:
     """Normalize account IDs only for comparison, never for provider payloads."""
-    return str(account_id or "").strip().replace("act_", "")
+    if account_id is None or isinstance(account_id, bool):
+        return ""
+    if not isinstance(account_id, (str, int)):
+        return ""
+    value = str(account_id or "").strip()
+    return value[4:] if value.lower().startswith("act_") else value
 
 
 @dataclass(frozen=True)

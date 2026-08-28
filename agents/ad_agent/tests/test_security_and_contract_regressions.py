@@ -26,6 +26,7 @@ from agents.ad_agent.persistence.store import AdAgentStore
 from agents.ad_agent.runtime.skill import BaseSkill, SkillContract
 from agents.ad_agent.core.tool_registry import validate_tool_input
 from agents.ad_agent.core.cross_channel import CampaignRef, BatchOperation
+from agents.ad_agent.core.auth import normalize_account_id, normalize_platform
 from agents.ad_agent.core.intent import LLMIntentParser
 from agents.ad_agent.core.tool_selector import DynamicToolSelector
 from agents.ad_agent.user_skills.orchestrator import AdCampaignOrchestratorHandler
@@ -118,6 +119,103 @@ def test_intent_parser_accepts_new_registered_platform_without_core_edit():
 
     assert intent.platforms == ["snapchat-ads"]
     assert intent.platform_params["snapchat-ads"]["optimization_goal"] == "CONVERSIONS"
+
+
+def test_account_whitelist_normalizes_platform_and_account_ids_fail_closed():
+    validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+    validator.allowed_accounts = {"google": ["act_123"], "meta": "not-an-array"}
+
+    assert validator.validate_account("google-ads", 123) == (True, "")
+    assert validator.get_allowed_accounts("google ads") == ["act_123"]
+    assert validator.validate_account("meta", "m1")[0] is False
+
+    validator.allowed_accounts = {"meta": ["act_123"]}
+    assert validator.validate_account("meta", "xact_123")[0] is False
+    validator.allowed_accounts = {"meta": [["nested-id"]]}
+    assert validator.validate_account("meta", "nested-id")[0] is False
+    assert normalize_account_id("ACT_123") == "123"
+    assert normalize_account_id("xact_123") == "xact_123"
+    assert normalize_account_id(["123"]) == ""
+    assert normalize_platform("google ads") == "google-ads"
+
+
+def test_public_tool_contract_includes_operational_and_json_schema_fields():
+    definition = ToolDefinition(
+        name="contract_test",
+        skill="test",
+        platform="meta",
+        description="contract test",
+        input_schema=ToolSchema(additional_properties=True),
+        timeout_seconds=7,
+        max_output_bytes=1234,
+    )
+
+    contract = definition.to_dict()
+    assert contract["timeout_seconds"] == 7
+    assert contract["max_output_bytes"] == 1234
+    assert contract["input_schema"]["additional_properties"] is True
+    assert contract["input_schema"]["additionalProperties"] is True
+
+
+@pytest.mark.parametrize(
+    "platform, account_id, factory, platform_params, expected_tools",
+    [
+        (
+            "meta", "m1", create_meta_capability,
+            {"account_id": "m1", "name": "smoke", "objective": "OUTCOME_SALES",
+             "special_ad_categories": "NONE", "budget": 100,
+             "optimization_goal": "OFFSITE_CONVERSIONS", "billing_event": "IMPRESSIONS",
+             "targeting": {"geo_locations": {"countries": ["US"]}},
+             "promoted_object": {"pixel_id": "px1"}, "creative": {"id": "cr1"}},
+            ["meta_create_campaign", "meta_create_adset", "meta_create_ad"],
+        ),
+        (
+            "google-ads", "g1", create_google_capability,
+            {"customer_id": "g1", "campaign_name": "smoke",
+             "advertising_channel_type": "SEARCH", "bidding_strategy": "MAXIMIZE_CONVERSIONS",
+             "budget": 100, "type": "SEARCH_STANDARD", "final_url": "https://example.com",
+             "headlines": ["a", "b", "c"], "descriptions": ["a", "b"]},
+            ["google_create_campaign", "google_create_ad_group", "google_create_ad"],
+        ),
+        (
+            "tiktok", "t1", create_tiktok_capability,
+            {"account_id": "t1", "name": "smoke", "objective_type": "PRODUCT_SALES",
+             "budget_mode": "BUDGET_MODE_DAY", "campaign_type": "REGULAR_CAMPAIGN",
+             "promotion_type": "WEBSITE", "billing_event": "OCPM", "budget": 100,
+             "location_ids": ["US"], "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
+             "bid_type": "BID_TYPE_NO_BID", "landing_url": "https://example.com",
+             "media": {"video_id": "v1"}},
+            ["tiktok_create_campaign", "tiktok_create_adgroup", "tiktok_create_ad"],
+        ),
+        (
+            "dv360", "d1", create_dv360_capability,
+            {"advertiser_id": "d1", "name": "smoke", "campaign_type": "DISPLAY",
+             "objective": "CLICKS", "start_date": "2026-08-28", "end_date": "2026-09-04",
+             "budget": 100, "type": "DISPLAY_DEFAULT", "goal": {"goal_type": "CLICKS"},
+             "targeting": {"geo": {"country": ["US"]}}},
+            ["dv360_create_campaign", "dv360_create_io", "dv360_create_line_item"],
+        ),
+    ],
+)
+def test_four_channel_create_chains_are_dry_run_only(
+    platform, account_id, factory, platform_params, expected_tools,
+):
+    validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+    validator.allowed_accounts = {platform: [account_id]}
+    runtime = AgentRuntime(whitelist_validator=validator)
+    runtime.register_capability(factory())
+
+    result = runtime.run(
+        f"创建 {platform} campaign 名称=smoke",
+        user_id="smoke-test",
+        account_id=account_id,
+        platform_params={platform: platform_params},
+    )
+
+    assert [item["tool"] for item in result["results"]] == expected_tools
+    assert all(item["success"] for item in result["results"])
+    assert all(item["data"]["simulated"] is True for item in result["results"])
+    assert all(item["data"]["provider_validation"]["ready"] is True for item in result["results"])
 
 
 def test_structured_google_platform_alias_params_reach_provider_tool():

@@ -77,6 +77,9 @@ class ToolSchema:
             "provider_any_of": [list(group) for group in self.provider_any_of],
             "conditional_rules": self.conditional_rules,
             "additional_properties": self.additional_properties,
+            # Keep the Python-facing name above for compatibility while also
+            # exposing the JSON Schema spelling to external consumers.
+            "additionalProperties": self.additional_properties,
         }
 
 @dataclass
@@ -289,6 +292,8 @@ class ToolDefinition:
             "intent_types": list(self.intent_types), "risk_level": self.risk_level.value,
             "effect_class": self.effect_class.value, "replay_policy": self.replay_policy.value,
             "traits": list(self.traits), "live_support": self.live_support,
+            "timeout_seconds": self.timeout_seconds,
+            "max_output_bytes": self.max_output_bytes,
             "required_permissions": list(self.required_permissions),
             "resource_id_field": self.resource_id_field,
             "parent_resource_id_field": self.parent_resource_id_field,
