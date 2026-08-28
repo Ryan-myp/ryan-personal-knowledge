@@ -1,5 +1,5 @@
 {
-  "digest": "3604a5d7508732365a58b61fb7c12c9c5abf5845ef190b43ec16c473c46f876e",
+  "digest": "26f3700dc84926a2570a38717d921cd3a0508d32ed1d3b1e3ae5acd6d79afb40",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -1035,7 +1035,7 @@
       ]
     },
     "google-ads": {
-      "digest": "ae0ccffcb840d96e9c14b35942bb7f696fe5a6c4468cb1b215e58c6fbd41aa61",
+      "digest": "92aa56f8a01c7c1bda3593567373d1e3db055d9eeae03d5648a1fafd0d886b80",
       "tool_count": 18,
       "tools": [
         {
@@ -1417,6 +1417,16 @@
                 "required": [
                   "target_roas"
                 ]
+              },
+              {
+                "id": "app_campaign_dependency",
+                "if": {
+                  "advertising_channel_type": "APP"
+                },
+                "message": "advertising_channel_type=APP requires app_campaign_setting",
+                "required": [
+                  "app_campaign_setting"
+                ]
               }
             ],
             "properties": {
@@ -1436,6 +1446,36 @@
                 ],
                 "intent_field": "campaign_type",
                 "type": "string"
+              },
+              "app_campaign_setting": {
+                "additionalProperties": false,
+                "description": "Google App Campaign settings",
+                "properties": {
+                  "app_id": {
+                    "description": "Google Play package name or iOS App Store ID",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "app_store": {
+                    "description": "App store",
+                    "enum": [
+                      "GOOGLE_APP_STORE",
+                      "APPLE_APP_STORE"
+                    ],
+                    "type": "string"
+                  },
+                  "bidding_strategy_type": {
+                    "description": "App campaign bidding strategy",
+                    "enum": [
+                      "TARGET_CPA",
+                      "TARGET_ROAS",
+                      "MAXIMIZE_CONVERSIONS",
+                      "MAXIMIZE_CONVERSION_VALUE"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "type": "object"
               },
               "bidding_strategy": {
                 "default": "MAXIMIZE_CONVERSIONS",

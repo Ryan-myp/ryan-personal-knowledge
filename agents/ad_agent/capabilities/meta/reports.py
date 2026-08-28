@@ -43,6 +43,6 @@ class MetaGetReportHandler(ToolHandler):
                     "conversions": 48,
                     "cost_per_conversion": 10.01,
                 },
-                "data_status": "offline_mock",
+                "data_status": "offline_no_client",
                 "simulated": True,
             })

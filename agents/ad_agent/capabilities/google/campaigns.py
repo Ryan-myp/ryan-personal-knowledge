@@ -35,13 +35,15 @@ class GoogleListCampaignsHandler(ToolHandler):
                 })
             except Exception as e:
                 return ToolResult.error(f"Failed to list Google campaigns: {e}")
-        # Mock data for testing / offline mode
+        # Runtime decides whether this explicitly simulated fixture may be
+        # exposed; the Handler itself reports that no Provider Client exists.
         return ToolResult.ok({
             "campaigns": [
                 {"id": "20001", "campaign_name": "Test Google Campaign", "status": "ENABLED",
                  "daily_budget": 200.0, "objective": "SALES"},
             ],
-            "data_status": "offline_mock",
+            "account_id": customer_id,
+            "data_status": "offline_no_client",
             "simulated": True,
         })
 
@@ -93,7 +95,10 @@ class GoogleGetCampaignHandler(ToolHandler):
                 "status": "ENABLED",
                 "daily_budget": 200.0,
                 "objective": "SALES",
-            }
+            },
+            "account_id": customer_id,
+            "data_status": "offline_no_client",
+            "simulated": True,
         })
 
 
@@ -120,6 +125,7 @@ class GoogleCreateCampaignHandler(ToolHandler):
                     target_impression_share=input_data.get("target_impression_share"),
                     status=input_data.get("status"),
                     networks=input_data.get("networks"),
+                    app_campaign_setting=input_data.get("app_campaign_setting"),
                     start_date=input_data.get("start_date"),
                     end_date=input_data.get("end_date"),
                 )

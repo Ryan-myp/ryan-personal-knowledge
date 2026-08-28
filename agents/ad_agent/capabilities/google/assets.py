@@ -33,7 +33,12 @@ class GoogleListAssetGroupsHandler(ToolHandler):
             except Exception as e:
                 return ToolResult.error(f"Failed to list Google asset groups: {e}")
         else:
-            return ToolResult.ok({"asset_groups": []})
+            return ToolResult.ok({
+                "asset_groups": [],
+                "account_id": ctx.account_id,
+                "data_status": "offline_no_client",
+                "simulated": True,
+            })
 
 
 class GoogleGetAssetGroupHandler(ToolHandler):
@@ -51,11 +56,8 @@ class GoogleGetAssetGroupHandler(ToolHandler):
                 return ToolResult.error(f"Failed to get Google asset group: {e}")
         else:
             return ToolResult.ok({
-                "asset_group": {
-                    "id": asset_group_id,
-                    "name": "Test Asset Group",
-                    "status": "PAUSED",
-                },
+                "asset_group": {"id": asset_group_id},
+                "account_id": ctx.account_id,
                 "data_status": "offline_no_client",
                 "simulated": True,
             })
@@ -74,8 +76,8 @@ class GoogleCreateAssetGroupHandler(ToolHandler):
         self.client = api_client
 
     def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
-        if not self.client:
-            return ToolResult.error("Google Ads client not configured")
+        if not self.client or not ctx.account_id:
+            return ToolResult.error("Google Ads client not configured or customer_id missing")
         creator = getattr(self.client, "create_pmax_asset_group", None)
         if not creator:
             return ToolResult.error("Google PMax Asset Group adapter is unavailable")

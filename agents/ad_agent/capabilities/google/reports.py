@@ -53,7 +53,7 @@ class GoogleGetReportHandler(ToolHandler):
                     "conversions": 48,
                 },
                 "summary": "Mock data for testing",
-                "data_status": "offline_mock",
+                "data_status": "offline_no_client",
                 "simulated": True,
             })
     

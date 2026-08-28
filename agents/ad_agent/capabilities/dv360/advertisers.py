@@ -20,8 +20,15 @@ class DV360ListAdvertisersHandler(ToolHandler):
         if self.client:
             try:
                 advertisers = self.client.list_advertisers()
-                return ToolResult.ok({"advertisers": advertisers})
+                return ToolResult.ok({
+                    "advertisers": advertisers,
+                    "data_status": "live",
+                })
             except Exception as e:
                 return ToolResult.error(f"Failed to list DV360 advertisers: {e}")
         else:
-            return ToolResult.ok({"advertisers": []})
+            return ToolResult.ok({
+                "advertisers": [],
+                "data_status": "offline_no_client",
+                "simulated": True,
+            })

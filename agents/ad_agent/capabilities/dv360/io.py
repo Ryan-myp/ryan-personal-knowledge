@@ -71,8 +71,4 @@ class DV360CreateIOHandler(ToolHandler):
             except Exception as e:
                 return ToolResult.error(f"Failed to create DV360 IO: {e}")
         else:
-            return ToolResult.ok({
-                "io_id": "dv360_io_1",
-                "name": input_data.get("name"),
-                "status": input_data.get("status", "DRAFT"),
-            })
+            return ToolResult.error("DV360 client not configured or advertiser_id missing")

@@ -31,6 +31,7 @@ class DV360ListCampaignsHandler(ToolHandler):
         else:
             return ToolResult.ok({
                 "campaigns": [],
+                "account_id": advertiser_id,
                 "data_status": "offline_no_client",
                 "simulated": True,
             })
@@ -56,7 +57,9 @@ class DV360GetCampaignHandler(ToolHandler):
                             campaign_id = str(c.get("id", ""))
                             break
                 if not campaign_id:
-                    return ToolResult.ok({"campaign": {"id": campaign_id, "name": campaign_name, "status": "UNKNOWN", "message": f"未找到名为 '{campaign_name}' 的 Campaign"}})
+                    return ToolResult.error(
+                        f"未找到名为 '{campaign_name}' 的 Campaign"
+                    )
             except Exception:
                 pass
 
@@ -72,6 +75,7 @@ class DV360GetCampaignHandler(ToolHandler):
                 "name": campaign_name or "Mock Campaign",
                 "status": "ACTIVE",
             },
+            "account_id": advertiser_id,
             "data_status": "offline_no_client",
             "simulated": True,
         })
@@ -87,9 +91,4 @@ class DV360CreateCampaignHandler(ToolHandler):
             # DV360 API Client 当前未提供 Campaign create 适配器；在 live 模式
             # 下明确拒绝，避免把不存在的方法当成已支持能力。
             return ToolResult.error("DV360 Campaign live create adapter is not enabled")
-        else:
-            return ToolResult.ok({
-                "campaign_id": "dv360_campaign_1",
-                "name": input_data.get("name"),
-                "status": "DRAFT",
-            })
+        return ToolResult.error("DV360 Campaign live create adapter is not enabled")

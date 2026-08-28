@@ -37,7 +37,12 @@ class MetaListAdsHandler(ToolHandler):
             except Exception as e:
                 return ToolResult.error(f"Failed to list Meta ads: {e}")
         else:
-            return ToolResult.ok({"ads": []})
+            return ToolResult.ok({
+                "ads": [],
+                "account_id": ctx.account_id,
+                "data_status": "offline_no_client",
+                "simulated": True,
+            })
 
 
 class MetaGetAdHandler(ToolHandler):
@@ -76,7 +81,7 @@ class MetaCreateAdHandler(ToolHandler):
 
     def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
         adset_id = input_data.get("adset_id")
-        if self.client and adset_id:
+        if self.client and ctx.account_id and adset_id:
             try:
                 if isinstance(self.client, MetaAPIClient) and not self.client.resource_belongs_to_account(
                     ctx.account_id, "adset", adset_id
@@ -97,8 +102,4 @@ class MetaCreateAdHandler(ToolHandler):
             except Exception as e:
                 return ToolResult.error(f"Failed to create Meta ad: {e}")
         else:
-            return ToolResult.ok({
-                "ad_id": f"act_{adset_id}_ad",
-                "name": input_data.get("name"),
-                "status": "ACTIVE",
-            })
+            return ToolResult.error("Meta client not configured or account_id/adset_id missing")

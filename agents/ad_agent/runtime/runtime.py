@@ -1970,6 +1970,13 @@ class AgentRuntime:
         # 保存凭证配置
         if credentials:
             self._credentials = copy.deepcopy(credentials)
+
+        # Keep automatic discovery on the same canonical SkillLoader used by
+        # normal Runtime initialization. This publishes aliases and expert
+        # context from the user's root as well; the executable plugin or
+        # Capability is still the only source of Tools below.
+        self.skill_loader.add_root(skills_root)
+        self.skill_loader.load_all()
         
         skill_roots = [
             Path(skills_root) / "channels",

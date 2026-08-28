@@ -29,16 +29,19 @@ class DV360GetReportHandler(ToolHandler):
                     date_from=input_data.get("date_from"),
                     date_to=input_data.get("date_to"),
                 )
-                return ToolResult.ok({"report": report})
+                return ToolResult.ok({
+                    "report": report,
+                    "account_id": ctx.account_id,
+                    "data_status": "live",
+                })
             except Exception as e:
                 return ToolResult.error(f"Failed to get DV360 report: {e}")
         elif not self.client:
             return ToolResult.ok({
-                "metrics": {
-                    "impressions": 125000,
-                    "clicks": 3200,
-                    "spend": 480.50,
-                }
+                "report": [],
+                "account_id": ctx.account_id,
+                "data_status": "offline_no_client",
+                "simulated": True,
             })
         return ToolResult.error("DV360 report requires line_item_id; campaign-level adapter is not enabled")
 

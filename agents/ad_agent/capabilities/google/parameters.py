@@ -17,12 +17,28 @@ GOOGLE_AD_GROUP_TYPES = [
 ]
 GOOGLE_ASSET_GROUP_TYPES = ["PERFORMANCE_MAX"]
 GOOGLE_TARGETING_NETWORKS = ["GOOGLE_SEARCH", "SEARCH_PARTNERS", "DISPLAY_NETWORK"]
+GOOGLE_APP_STORES = ["GOOGLE_APP_STORE", "APPLE_APP_STORE"]
+GOOGLE_APP_BIDDING_TYPES = [
+    "TARGET_CPA", "TARGET_ROAS", "MAXIMIZE_CONVERSIONS",
+    "MAXIMIZE_CONVERSION_VALUE",
+]
 
 
 def _field(field_type: Any, description: str = "", **kwargs: Any) -> dict[str, Any]:
     value = {"type": field_type, "description": description}
     value.update(kwargs)
     return value
+
+
+def _object(
+    properties: dict[str, Any], description: str, *, additional_properties: bool = False
+) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "description": description,
+        "properties": properties,
+        "additionalProperties": additional_properties,
+    }
 
 
 def google_campaign_schema() -> dict[str, Any]:
@@ -50,6 +66,13 @@ def google_campaign_schema() -> dict[str, Any]:
             "target_roas": _field("number", "Target ROAS", minimum=0.01),
             "target_impression_share": _field("number", "Target impression share", minimum=0, maximum=1),
             "networks": _field("array", "Serving networks", items={"type": "string", "enum": GOOGLE_TARGETING_NETWORKS}),
+            "app_campaign_setting": _object({
+                "app_id": _field("string", "Google Play package name or iOS App Store ID", minLength=1),
+                "app_store": _field("string", "App store", enum=GOOGLE_APP_STORES),
+                "bidding_strategy_type": _field(
+                    "string", "App campaign bidding strategy", enum=GOOGLE_APP_BIDDING_TYPES,
+                ),
+            }, "Google App Campaign settings"),
             "start_date": _field("string", "YYYY-MM-DD start date"),
             "end_date": _field("string", "YYYY-MM-DD end date"),
         },
@@ -60,6 +83,9 @@ def google_campaign_schema() -> dict[str, Any]:
              "required": ["target_roas"], "message": "TARGET_ROAS requires target_roas"},
             {"id": "target_value_dependency", "if": {"bidding_strategy": "MAXIMIZE_CONVERSION_VALUE"},
              "required": ["target_roas"], "message": "MAXIMIZE_CONVERSION_VALUE requires target_roas"},
+            {"id": "app_campaign_dependency", "if": {"advertising_channel_type": "APP"},
+             "required": ["app_campaign_setting"],
+             "message": "advertising_channel_type=APP requires app_campaign_setting"},
         ],
     }
 

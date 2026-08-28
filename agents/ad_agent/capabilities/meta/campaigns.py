@@ -33,13 +33,15 @@ class MetaListCampaignsHandler(ToolHandler):
                 })
             except Exception as e:
                 return ToolResult.error(f"Failed to list Meta campaigns: {e}")
-        # Mock data for testing / offline mode
+        # The Handler has no authority to decide that a query is simulated.
+        # Runtime may expose this fixture only when offline_mode=True.
         return ToolResult.ok({
             "campaigns": [
                 {"id": "10001", "campaign_name": "Test Campaign", "status": "ACTIVE",
                  "daily_budget": 100.0, "objective": "OUTCOME_SALES"},
             ],
-            "data_status": "offline_mock",
+            "account_id": account_id,
+            "data_status": "offline_no_client",
             "simulated": True,
         })
 
@@ -104,7 +106,10 @@ class MetaGetCampaignHandler(ToolHandler):
                 "status": "ACTIVE",
                 "daily_budget": 100.0,
                 "objective": "OUTCOME_SALES",
-            }
+            },
+            "account_id": account_id,
+            "data_status": "offline_no_client",
+            "simulated": True,
         })
 
 

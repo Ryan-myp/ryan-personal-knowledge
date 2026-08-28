@@ -53,6 +53,6 @@ class TikTokGetReportHandler(ToolHandler):
                     "ctr": 0.0256,
                     "conversions": 48,
                 },
-                "data_status": "offline_mock",
+                "data_status": "offline_no_client",
                 "simulated": True,
             })

@@ -23,7 +23,7 @@ from agents.ad_agent.api_clients.tiktok_client import TikTokAPIClient
 from agents.ad_agent.api_clients.dv360_client import DV360APIClient
 from agents.ad_agent.runtime.runtime import AccountWhitelistValidator, AgentRuntime
 from agents.ad_agent.persistence.store import AdAgentStore
-from agents.ad_agent.runtime.skill import BaseSkill, SkillContract
+from agents.ad_agent.runtime.skill import BaseSkill, SkillContract, SkillLoader
 from agents.ad_agent.core.tool_registry import validate_tool_input
 from agents.ad_agent.core.cross_channel import CampaignRef, BatchOperation
 from agents.ad_agent.core.auth import normalize_account_id, normalize_platform
@@ -49,6 +49,49 @@ def test_live_write_support_is_opt_in_for_new_tools():
     )
 
     assert definition.live_support is False
+    assert definition.replay_policy is ReplayPolicy.UNSAFE
+
+    with pytest.raises(ValueError, match="ReplayPolicy.UNSAFE"):
+        ToolDefinition(
+            name="unsafe_contract_test",
+            skill="new-provider",
+            platform="new-provider",
+            description="invalid replay policy",
+            input_schema=ToolSchema(),
+            effect_class=ToolEffect.WRITE,
+            replay_policy=ReplayPolicy.SAFE,
+        )
+
+
+def test_builtin_write_handlers_never_report_success_without_a_provider_client():
+    context = ToolContext(session_id="s1", user_id="u1", account_id="account-1")
+    for capability_factory in (
+        create_meta_capability,
+        create_google_capability,
+        create_tiktok_capability,
+        create_dv360_capability,
+    ):
+        for definition, handler in capability_factory().register_tools():
+            if not definition.is_write_tool:
+                continue
+            result = handler.execute(context, {})
+            assert result.success is False, definition.name
+
+
+def test_builtin_no_client_reads_are_explicitly_marked_offline():
+    context = ToolContext(session_id="s1", user_id="u1", account_id="account-1")
+    for capability_factory in (
+        create_meta_capability,
+        create_google_capability,
+        create_tiktok_capability,
+        create_dv360_capability,
+    ):
+        for definition, handler in capability_factory().register_tools():
+            if not definition.is_read_tool:
+                continue
+            result = handler.execute(context, {})
+            if result.success:
+                assert result.data.get("data_status") == "offline_no_client", definition.name
 
 
 def test_skill_contract_write_tool_defaults_to_dry_run(tmp_path):
@@ -69,6 +112,116 @@ def test_skill_contract_write_tool_defaults_to_dry_run(tmp_path):
     skill = BaseSkill(SkillContract(str(skill_dir)).load())
 
     assert skill.get_tools()[0].live_support is False
+    assert skill.get_tools()[0].replay_policy.value == "unsafe"
+
+
+def test_skill_loader_ignores_business_context_files_without_malformed_errors(tmp_path):
+    business_dir = tmp_path / "businesses" / "app"
+    business_dir.mkdir(parents=True)
+    (business_dir / "SKILL.md").write_text(
+        "---\n"
+        "business:\n"
+        "  name: app\n"
+        "  allowed_channels: [google]\n"
+        "---\n\n# App policy\n",
+        encoding="utf-8",
+    )
+
+    loader = SkillLoader([str(tmp_path)])
+    assert loader.load_all() == {}
+    assert loader.errors == {}
+
+
+def test_skill_contract_preserves_harness_operational_metadata(tmp_path):
+    skill_dir = tmp_path / "channels" / "metadata-provider"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: metadata-provider\nplatform: metadata-provider\n---\n",
+        encoding="utf-8",
+    )
+    (skill_dir / "contract.yaml").write_text(
+        "tools:\n"
+        "  metadata_provider_read:\n"
+        "    effect: read\n"
+        "    timeout_seconds: 3\n"
+        "    max_output_bytes: 2048\n"
+        "    replay_policy: safe\n"
+        "    traits: [read, metadata]\n"
+        "    input_schema: {type: object}\n",
+        encoding="utf-8",
+    )
+
+    definition = BaseSkill(SkillContract(str(skill_dir)).load()).get_tools()[0]
+
+    assert definition.timeout_seconds == 3
+    assert definition.max_output_bytes == 2048
+    assert definition.replay_policy.value == "safe"
+    assert definition.traits == ["read", "metadata"]
+
+
+def test_nested_skill_frontmatter_preserves_aliases_and_triggers(tmp_path):
+    skill_dir = tmp_path / "channels" / "nested-provider"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "skill:\n"
+        "  name: nested-provider\n"
+        "  platform: new-network\n"
+        "  aliases: [network, 网络]\n"
+        "  triggers:\n"
+        "    - keywords: [创建网络广告]\n"
+        "      patterns: [network.*create]\n"
+        "---\n",
+        encoding="utf-8",
+    )
+
+    contract = SkillContract(str(skill_dir)).load()
+
+    assert contract.platform_aliases == ["network", "网络"]
+    assert contract.triggers[0].keywords == ["创建网络广告"]
+    assert contract.triggers[0].patterns == ["network.*create"]
+
+
+def test_malformed_skill_isolated_from_other_skills(tmp_path):
+    good_dir = tmp_path / "channels" / "good"
+    bad_dir = tmp_path / "channels" / "bad"
+    good_dir.mkdir(parents=True)
+    bad_dir.mkdir(parents=True)
+    (good_dir / "SKILL.md").write_text(
+        "---\nname: good\nplatform: good-network\n---\n", encoding="utf-8"
+    )
+    (bad_dir / "SKILL.md").write_text(
+        "---\nname: bad\nplatform: bad-network\ntriggers: {broken: [1]}\n---\n",
+        encoding="utf-8",
+    )
+
+    skill_loader = SkillLoader(str(tmp_path))
+    loader = skill_loader.load_all()
+
+    assert set(loader) == {"good"}
+    assert str(bad_dir) in skill_loader.errors
+
+
+def test_skill_contract_rejects_coercible_malformed_declarations(tmp_path):
+    skill_dir = tmp_path / "channels" / "strict-provider"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: strict-provider\nplatform: strict-provider\n---\n",
+        encoding="utf-8",
+    )
+    (skill_dir / "contract.yaml").write_text(
+        "tools:\n"
+        "  strict_read:\n"
+        "    effect: read\n"
+        "    live_support: 'false'\n"
+        "    input_schema:\n"
+        "      type: object\n"
+        "      properties: []\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="(properties must be an object|live_support must be boolean)"):
+        SkillContract(str(skill_dir)).load()
 
 
 def test_schema_rejects_non_object_and_non_finite_numbers():

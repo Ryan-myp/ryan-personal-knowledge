@@ -255,6 +255,44 @@ def test_new_channel_client_is_discovered_by_package_convention(monkeypatch):
     assert create_platform_client("new-network", {"access_token": "secret"}) is sentinel
 
 
+def test_plugin_only_channel_auto_discovers_without_capability_or_central_config(tmp_path):
+    skill_root = tmp_path / "skills"
+    skill_dir = skill_root / "channels" / "new-network"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "skill:\n"
+        "  name: new-network-skill\n"
+        "  platform: new-network\n"
+        "  aliases: [新网络]\n"
+        "---\n",
+        encoding="utf-8",
+    )
+    (skill_dir / "tools.py").write_text(
+        "from agents.ad_agent.core.interfaces import Skill, ToolDefinition, ToolSchema, ToolResult\n"
+        "class NewNetworkSkill(Skill):\n"
+        "    name = 'new-network-skill'\n"
+        "    platform = 'new-network'\n"
+        "    description = 'new network'\n"
+        "    platform_aliases = ['新网络']\n"
+        "    def get_tools(self):\n"
+        "        return [ToolDefinition(name='new_network_list_campaigns', skill=self.name, platform=self.platform, description='list', input_schema=ToolSchema(), action='list', resource_type='campaign', intent_types=['list_campaigns'])]\n"
+        "    def get_tool_handler(self, name):\n"
+        "        return lambda _ctx, _input: ToolResult.ok({'source': 'plugin'})\n"
+        "def create_skill(api_client=None):\n"
+        "    return NewNetworkSkill()\n",
+        encoding="utf-8",
+    )
+
+    runtime = AgentRuntime(enforce_account_scope=False)
+
+    assert runtime.auto_load_skills(str(skill_root)) == 1
+    assert [tool.name for tool in runtime.registry.list_all()] == [
+        "new_network_list_campaigns"
+    ]
+    assert runtime.skill_loader.get("new-network-skill").platform_aliases == ["新网络"]
+
+
 def test_skill_can_own_optional_workflow_without_becoming_tool_registry(tmp_path):
     from agents.ad_agent.runtime.skill import BaseSkill, SkillContract
 

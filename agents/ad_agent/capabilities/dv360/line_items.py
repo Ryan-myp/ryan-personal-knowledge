@@ -54,7 +54,7 @@ class DV360CreateLineItemHandler(ToolHandler):
 
     def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
         io_id = input_data.get("io_id")
-        if self.client and io_id:
+        if self.client and ctx.account_id and io_id:
             try:
                 line_item_id = self.client.create_line_item(
                     advertiser_id=ctx.account_id,
@@ -69,8 +69,4 @@ class DV360CreateLineItemHandler(ToolHandler):
             except Exception as e:
                 return ToolResult.error(f"Failed to create DV360 line item: {e}")
         else:
-            return ToolResult.ok({
-                "line_item_id": "dv360_li_1",
-                "name": input_data.get("name"),
-                "status": input_data.get("status", "DRAFT"),
-            })
+            return ToolResult.error("DV360 client not configured or advertiser_id/io_id missing")

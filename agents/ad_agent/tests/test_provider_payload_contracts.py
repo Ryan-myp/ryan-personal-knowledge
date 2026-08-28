@@ -315,6 +315,28 @@ def test_google_creation_options_are_mapped_to_rest_resources():
         "locationFractionMicros": 700000,
     }
 
+    client.create_campaign(
+        "App installs", "APP", "MAXIMIZE_CONVERSIONS", 10,
+        app_campaign_setting={
+            "app_id": "com.example.app",
+            "app_store": "GOOGLE_APP_STORE",
+            "bidding_strategy_type": "TARGET_CPA",
+        },
+    )
+    app_campaign = operations[-1][1]["create"]
+    assert app_campaign["appCampaignSetting"] == {
+        "appId": "com.example.app",
+        "appStore": "GOOGLE_APP_STORE",
+        "biddingStrategyType": "TARGET_CPA",
+    }
+
+    client.create_campaign(
+        "Value", "SEARCH", "MAXIMIZE_CONVERSION_VALUE", 10,
+        target_roas=2.5,
+    )
+    value_campaign = operations[-1][1]["create"]
+    assert value_campaign["maximizeConversionValue"] == {"targetRoas": 2.5}
+
     client.create_ad_group(
         "c1", "Group", cpc_bid_micros=123456,
         type="SEARCH_STANDARD", targeting={"target_restrictions": []},

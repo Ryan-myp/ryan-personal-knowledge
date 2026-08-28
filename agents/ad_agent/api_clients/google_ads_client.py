@@ -431,6 +431,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         target_impression_share: float = None,
         status: str = None,
         networks: list[str] = None,
+        app_campaign_setting: dict = None,
         start_date: str = None,
         end_date: str = None,
     ) -> str:
@@ -480,6 +481,17 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 'targetSearchNetwork': 'SEARCH_PARTNERS' in selected,
                 'targetContentNetwork': 'DISPLAY_NETWORK' in selected,
             }
+
+        if app_campaign_setting is not None:
+            if not isinstance(app_campaign_setting, dict):
+                raise ValueError("app_campaign_setting must be an object")
+            app_id = app_campaign_setting.get("app_id")
+            app_store = app_campaign_setting.get("app_store")
+            if not app_id or not app_store:
+                raise ValueError("app_campaign_setting requires app_id and app_store")
+            campaign_data['appCampaignSetting'] = self._camel_case_keys(
+                app_campaign_setting
+            )
         
         # 出价策略附加参数
         strategy = (bidding_strategy or 'MAXIMIZE_CONVERSIONS').upper()
@@ -499,6 +511,8 @@ class GoogleAdsAPIClient(BasePlatformClient):
             campaign_data['maximizeClicks'] = {}
         elif strategy == 'MAXIMIZE_CONVERSION_VALUE':
             campaign_data['maximizeConversionValue'] = {}
+            if target_roas is not None:
+                campaign_data['maximizeConversionValue']['targetRoas'] = target_roas
         elif strategy == 'TARGET_IMPRESSION_SHARE':
             campaign_data['targetImpressionShare'] = {
                 'location': 'ANYWHERE_ON_PAGE',
@@ -664,10 +678,13 @@ class GoogleAdsAPIClient(BasePlatformClient):
         
         headlines: [{"text": "...", "pin_field": "HEADLINE"}, ...]
         """
-        # PMax Asset Group 需要通过 AssetService 创建
-        # 这里返回占位符，实际需要调用 Google Ads API 的 AssetService
-        logger.warning("PMax Asset Group requires AssetService - placeholder returned")
-        return f"pmax_ag_{campaign_id}_{int(time.time())}"
+        # A resource-shaped placeholder is dangerous here: callers could
+        # persist it as if Google had accepted the multi-step mutation.  The
+        # Capability is dry-run-only until a real AssetService implementation
+        # is available, so fail explicitly if this adapter is called directly.
+        raise NotImplementedError(
+            "Google PMax Asset Group creation requires a verified AssetService adapter"
+        )
     
     # ==================== 报表查询 ====================
     

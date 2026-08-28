@@ -20,7 +20,7 @@ class GoogleListAdGroupsHandler(ToolHandler):
 
     def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
         campaign_id = input_data.get("campaign_id")
-        if self.client and campaign_id:
+        if self.client and ctx.account_id and campaign_id:
             try:
                 client = for_customer(self.client, ctx.account_id)
                 ad_groups = call_with_optional_page_size(
@@ -33,7 +33,12 @@ class GoogleListAdGroupsHandler(ToolHandler):
             except Exception as e:
                 return ToolResult.error(f"Failed to list Google ad groups: {e}")
         else:
-            return ToolResult.ok({"ad_groups": []})
+            return ToolResult.ok({
+                "ad_groups": [],
+                "account_id": ctx.account_id,
+                "data_status": "offline_no_client",
+                "simulated": True,
+            })
 
 
 class GoogleGetAdGroupHandler(ToolHandler):
@@ -88,8 +93,4 @@ class GoogleCreateAdGroupHandler(ToolHandler):
             except Exception as e:
                 return ToolResult.error(f"Failed to create Google ad group: {e}")
         else:
-            return ToolResult.ok({
-                "ad_group_id": f"adgroup_{campaign_id}",
-                "name": input_data.get("name"),
-                "status": "ENABLED",
-            })
+            return ToolResult.error("Google Ads client not configured or customer_id/campaign_id missing")

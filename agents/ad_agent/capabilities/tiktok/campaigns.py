@@ -34,13 +34,15 @@ class TikTokListCampaignsHandler(ToolHandler):
                 })
             except Exception as e:
                 return ToolResult.error(f"Failed to list TikTok campaigns: {e}")
-        # Mock data for testing / offline mode
+        # Runtime decides whether this explicitly simulated fixture may be
+        # exposed; the Handler itself reports that no Provider Client exists.
         return ToolResult.ok({
             "campaigns": [
                 {"id": "30001", "campaign_name": "Test TikTok Campaign", "status": "ACTIVE",
                  "daily_budget": 150.0, "objective": "PRODUCT_SALES"},
             ],
-            "data_status": "offline_mock",
+            "account_id": advertiser_id,
+            "data_status": "offline_no_client",
             "simulated": True,
         })
 
@@ -97,7 +99,10 @@ class TikTokGetCampaignHandler(ToolHandler):
                 "status": "ACTIVE",
                 "daily_budget": 150.0,
                 "objective": "PRODUCT_SALES",
-            }
+            },
+            "account_id": advertiser_id,
+            "data_status": "offline_no_client",
+            "simulated": True,
         })
 
 

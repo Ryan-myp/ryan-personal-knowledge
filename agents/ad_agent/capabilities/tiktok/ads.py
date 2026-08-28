@@ -32,7 +32,12 @@ class TikTokListAdsHandler(ToolHandler):
             except Exception as e:
                 return ToolResult.error(f"Failed to list TikTok ads: {e}")
         else:
-            return ToolResult.ok({"ads": []})
+            return ToolResult.ok({
+                "ads": [],
+                "account_id": ctx.account_id,
+                "data_status": "offline_no_client",
+                "simulated": True,
+            })
 
 
 class TikTokGetAdHandler(ToolHandler):
@@ -66,7 +71,7 @@ class TikTokCreateAdHandler(ToolHandler):
 
     def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
         adgroup_id = input_data.get("adgroup_id")
-        if self.client and adgroup_id:
+        if self.client and ctx.account_id and adgroup_id and input_data.get("campaign_id"):
             try:
                 ad_id = self.client.create_ad(
                     advertiser_id=ctx.account_id,
@@ -82,8 +87,4 @@ class TikTokCreateAdHandler(ToolHandler):
             except Exception as e:
                 return ToolResult.error(f"Failed to create TikTok ad: {e}")
         else:
-            return ToolResult.ok({
-                "ad_id": f"ad_{adgroup_id}",
-                "name": input_data.get("name"),
-                "status": input_data.get("status", 1),
-            })
+            return ToolResult.error("TikTok client not configured or advertiser_id/campaign_id/adgroup_id missing")

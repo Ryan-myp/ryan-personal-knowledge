@@ -105,7 +105,10 @@ class ToolDefinition:
     intent_types: list[str] = field(default_factory=list)
     risk_level: RiskLevel = RiskLevel.LOW  # 风险等级
     effect_class: ToolEffect = ToolEffect.READ  # 效果分类
-    replay_policy: ReplayPolicy = ReplayPolicy.SAFE  # 重放策略
+    # Unsafe is the default for writes.  A ToolDefinition constructed by a
+    # newly added Capability/Skill must not accidentally become replayable
+    # just because its author omitted this field.
+    replay_policy: Optional[ReplayPolicy] = None  # 重放策略
     traits: list[str] = field(default_factory=list)  # 额外特性标记
     # Whether a live adapter is implemented and approved for this tool.  A
     # false value still permits dry-run planning, but prevents a misleading
@@ -138,6 +141,19 @@ class ToolDefinition:
             raise ValueError("max_output_bytes must be positive")
         if self.live_support is None:
             self.live_support = not self.is_write_tool
+        if self.replay_policy is None:
+            self.replay_policy = (
+                ReplayPolicy.UNSAFE if self.is_write_tool else ReplayPolicy.SAFE
+            )
+        elif isinstance(self.replay_policy, str):
+            try:
+                self.replay_policy = ReplayPolicy(self.replay_policy.lower())
+            except ValueError as exc:
+                raise ValueError(
+                    f"Unsupported replay_policy: {self.replay_policy}"
+                ) from exc
+        if self.is_write_tool and self.replay_policy != ReplayPolicy.UNSAFE:
+            raise ValueError("write tools must use ReplayPolicy.UNSAFE")
         self.action, self.resource_type = self._derive_resource_metadata(
             self.action, self.resource_type
         )
