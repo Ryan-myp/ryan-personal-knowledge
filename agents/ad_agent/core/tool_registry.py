@@ -8,6 +8,7 @@ core/tool_registry.py - 工具注册表实现
 import hashlib
 import json
 import logging
+import math
 import threading
 from typing import Any, Optional
 from .interfaces import (
@@ -296,9 +297,31 @@ def validate_tool_input(
     返回错误列表，空列表表示通过。
     """
     errors = []
+
+    if not isinstance(data, dict):
+        return [f"Input must be an object, got {type(data).__name__}"]
     
     def is_missing(value: Any) -> bool:
         return value in (None, "", {}, [])
+
+    def validate_finite_numbers(value: Any, path: str = "") -> None:
+        """Reject non-JSON numeric values even inside open provider objects."""
+        if isinstance(value, bool):
+            return
+        if isinstance(value, (int, float)) and not math.isfinite(value):
+            errors.append(
+                f"Field '{path or '<input>'}' must be a finite number"
+            )
+            return
+        if isinstance(value, dict):
+            for key, item in value.items():
+                child_path = f"{path}.{key}" if path else str(key)
+                validate_finite_numbers(item, child_path)
+        elif isinstance(value, (list, tuple)):
+            for index, item in enumerate(value):
+                validate_finite_numbers(item, f"{path}[{index}]")
+
+    validate_finite_numbers(data)
 
     # 检查必填字段
     for field_name in schema.required:

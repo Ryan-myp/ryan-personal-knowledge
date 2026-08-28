@@ -12,7 +12,7 @@ skill:
 
 # 跨渠道 Campaign 管理 Skill
 
-> 实现边界：本文件中的 12 个工具仍是跨渠道能力的设计契约，没有对应的独立 Capability/ToolDefinition，不能直接作为可执行工具调用。当前 Runtime 通过意图路由提供 `cross_channel_overview` / `cross_channel_compare` / `cross_channel_performance_insights` / `cross_channel_optimize_budget` / `cross_channel_export_report`，并调用已注册的平台 Campaign 查询工具；在 comparison、洞察、预算建议和导出流程中，再对 Meta、Google Ads、TikTok 补调 Campaign 级报表，DV360 暂无已验证的 Campaign 级报表适配器。`core/cross_channel.py` 负责统一聚合、洞察、只读预算建议和 CSV 文本导出；缺失指标、多币种及离线数据会明确标记，不会用 mock 数据冒充线上数据。
+> 实现边界：本文件描述跨渠道业务流程、统一口径和安全 SOP，不是可执行 Tool 注册表。当前 Runtime 通过已注册的平台 Tool 完成查询，并在统一聚合器中处理 comparison、洞察、预算建议和 CSV 导出；缺失指标、多币种及离线数据会明确标记，不会用 mock 数据冒充线上数据。需要稳定多步顺序时，使用同目录的 `workflow.yaml` 声明依赖和映射；普通自然语言流程不需要结构化 workflow。
 
 ## 概述
 
@@ -23,7 +23,7 @@ skill:
 - 批量操作管理
 - 统一报表汇总
 
-## 专家工具设计契约（未注册为可执行工具）
+## 能力意图与流程契约（不是 Tool 注册）
 
 ### 1. Campaign 总览
 
@@ -197,9 +197,9 @@ constraints:
   google: {"min": 10000, "max": 20000}
 ```
 
-## 工具列表
+## 流程能力清单
 
-| 工具名 | 描述 | 风险等级 |
+| 能力意图 | 描述 | 风险等级 |
 |--------|------|----------|
 | cross_channel_get_campaign_overview | 获取 Campaign 总览 | LOW |
 | cross_channel_get_platform_comparison | 平台性能对比 | LOW |

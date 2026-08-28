@@ -40,7 +40,9 @@ class SkillCapability:
     # contract.yaml/tools/*.yaml.  Older versions only retained required
     # parameter names, silently dropping enums and provider conditions.
     input_schema: dict[str, Any] = field(default_factory=dict)
-    live_support: bool = True
+    # Declarative Skill contracts must opt in explicitly before a Tool can
+    # participate in a future live-write approval.
+    live_support: bool = False
     required_permissions: list[str] = field(default_factory=list)
     action: str = ""
     resource_type: str = ""
@@ -270,7 +272,7 @@ class SkillContract:
                 risk_level=spec.get('risk', 'low'),
                 effect=spec.get('effect', 'read'),
                 input_schema=spec.get('input_schema', {}) or {},
-                live_support=bool(spec.get('live_support', True)),
+                live_support=bool(spec.get('live_support', False)),
                 required_permissions=list(spec.get('required_permissions', []) or []),
                 action=str(spec.get('action', '') or ''),
                 resource_type=str(spec.get('resource_type', '') or ''),
@@ -310,7 +312,7 @@ class SkillContract:
                     risk_level=spec.get('risk_level', 'low'),
                     effect=spec.get('effect_class', 'read'),
                     input_schema=schema,
-                    live_support=bool(spec.get('live_support', True)),
+                    live_support=bool(spec.get('live_support', False)),
                     required_permissions=list(spec.get('required_permissions', []) or []),
                     action=str(spec.get('action', '') or ''),
                     resource_type=str(spec.get('resource_type', '') or ''),

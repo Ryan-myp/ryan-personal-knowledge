@@ -2767,6 +2767,9 @@ class AgentRuntime:
                 "planned": True,
                 "action": operation.action,
                 "account_id": operation.account_id,
+                # A bare campaign_id is not a safe cross-channel identity;
+                # keep the provider and account scope beside it.
+                "campaign_ref": operation.campaign_ref.to_dict(),
                 "campaign_id": operation.campaign_id,
             })
             live_batch = self.execution_mode == ExecutionMode.LIVE.value

@@ -19,6 +19,32 @@ def _number(value: Any) -> Optional[float]:
         return None
 
 
+@dataclass(frozen=True)
+class CampaignRef:
+    """Unambiguous Campaign identity across provider boundaries."""
+
+    platform: str
+    account_id: str
+    campaign_id: str
+
+    def __post_init__(self) -> None:
+        platform = str(self.platform or "").strip().lower()
+        account_id = str(self.account_id or "").strip()
+        campaign_id = str(self.campaign_id or "").strip()
+        if not platform or not account_id or not campaign_id:
+            raise ValueError("CampaignRef requires platform, account_id and campaign_id")
+        object.__setattr__(self, "platform", platform)
+        object.__setattr__(self, "account_id", account_id)
+        object.__setattr__(self, "campaign_id", campaign_id)
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "platform": self.platform,
+            "account_id": self.account_id,
+            "campaign_id": self.campaign_id,
+        }
+
+
 @dataclass
 class MetricSnapshot:
     impressions: Optional[float] = None
@@ -114,11 +140,23 @@ class BatchOperation:
     action: str
     updates: dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        # Validate the complete scope at construction time. The operation
+        # remains a provider-neutral plan and contains no client or secret.
+        CampaignRef(self.platform, self.account_id, self.campaign_id)
+        if not str(self.action or "").strip():
+            raise ValueError("BatchOperation requires action")
+
+    @property
+    def campaign_ref(self) -> CampaignRef:
+        return CampaignRef(self.platform, self.account_id, self.campaign_id)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "platform": self.platform,
             "account_id": self.account_id,
             "campaign_id": self.campaign_id,
+            "campaign_ref": self.campaign_ref.to_dict(),
             "action": self.action,
             "updates": dict(self.updates),
         }

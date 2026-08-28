@@ -6,6 +6,7 @@ from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
 from agents.ad_agent.capabilities.dv360 import create_dv360_capability
 from agents.ad_agent.core.interfaces import (
     ExecutionMode, ParsedIntent, ReplayPolicy, ToolContext, ToolDefinition,
+    ToolEffect,
     ToolSchema,
 )
 from agents.ad_agent.api_clients.base import (
@@ -24,6 +25,7 @@ from agents.ad_agent.runtime.runtime import AccountWhitelistValidator, AgentRunt
 from agents.ad_agent.persistence.store import AdAgentStore
 from agents.ad_agent.runtime.skill import BaseSkill, SkillContract
 from agents.ad_agent.core.tool_registry import validate_tool_input
+from agents.ad_agent.core.cross_channel import CampaignRef, BatchOperation
 from agents.ad_agent.core.intent import LLMIntentParser
 from agents.ad_agent.core.tool_selector import DynamicToolSelector
 from agents.ad_agent.user_skills.orchestrator import AdCampaignOrchestratorHandler
@@ -33,6 +35,73 @@ def whitelist(**accounts):
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = accounts
     return validator
+
+
+def test_live_write_support_is_opt_in_for_new_tools():
+    definition = ToolDefinition(
+        name="new_provider_update_campaign",
+        skill="new-provider",
+        platform="new-provider",
+        description="Update a campaign",
+        input_schema=ToolSchema(),
+        effect_class=ToolEffect.WRITE,
+    )
+
+    assert definition.live_support is False
+
+
+def test_skill_contract_write_tool_defaults_to_dry_run(tmp_path):
+    skill_dir = tmp_path / "channels" / "new-provider"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: new-provider\nplatform: new-provider\n---\n",
+        encoding="utf-8",
+    )
+    (skill_dir / "contract.yaml").write_text(
+        "tools:\n"
+        "  new_provider_update_campaign:\n"
+        "    effect: write\n"
+        "    input_schema: {type: object}\n",
+        encoding="utf-8",
+    )
+
+    skill = BaseSkill(SkillContract(str(skill_dir)).load())
+
+    assert skill.get_tools()[0].live_support is False
+
+
+def test_schema_rejects_non_object_and_non_finite_numbers():
+    schema = ToolSchema(properties={
+        "budget": {"type": "number"},
+        "nested": {
+            "type": "object",
+            "properties": {"amount": {"type": "number"}},
+            "additionalProperties": False,
+        },
+    })
+
+    assert validate_tool_input(schema, []) == ["Input must be an object, got list"]
+    assert any("budget" in error for error in validate_tool_input(
+        schema, {"budget": float("nan")}
+    ))
+    assert any("amount" in error for error in validate_tool_input(
+        schema, {"nested": {"amount": float("inf")}}
+    ))
+    open_schema = ToolSchema(properties={
+        "targeting": {"type": "object", "additionalProperties": True},
+    })
+    assert any("targeting.bid" in error for error in validate_tool_input(
+        open_schema, {"targeting": {"bid": float("-inf")}}
+    ))
+
+
+def test_cross_channel_batch_operation_exposes_scoped_campaign_ref():
+    operation = BatchOperation("meta", "m1", "c1", "pause")
+
+    assert operation.campaign_ref == CampaignRef("meta", "m1", "c1")
+    assert operation.to_dict()["campaign_ref"] == {
+        "platform": "meta", "account_id": "m1", "campaign_id": "c1"
+    }
 
 
 def test_intent_parser_accepts_new_registered_platform_without_core_edit():

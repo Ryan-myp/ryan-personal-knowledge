@@ -107,7 +107,12 @@ class ToolDefinition:
     # Whether a live adapter is implemented and approved for this tool.  A
     # false value still permits dry-run planning, but prevents a misleading
     # live confirmation/execution path.
-    live_support: bool = True
+    # Live writes are opt-in. A newly added Tool that forgets to declare a
+    # verified provider adapter remains dry-run-only by default.
+    # ``None`` preserves the safe historical default for read tools while
+    # making live support opt-in for writes.  Explicit True remains possible
+    # only for a provider path that has been separately verified.
+    live_support: Optional[bool] = None
     # Operational contract used by the Runtime before a handler is invoked.
     # These defaults keep existing Skills source-compatible while making the
     # limits visible to /tools and future policy implementations.
@@ -128,6 +133,8 @@ class ToolDefinition:
             raise ValueError("timeout_seconds must be positive")
         if self.max_output_bytes <= 0:
             raise ValueError("max_output_bytes must be positive")
+        if self.live_support is None:
+            self.live_support = not self.is_write_tool
         self.action, self.resource_type = self._derive_resource_metadata(
             self.action, self.resource_type
         )
