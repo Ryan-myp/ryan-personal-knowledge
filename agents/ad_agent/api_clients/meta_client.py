@@ -59,7 +59,7 @@ class MetaAPIClient(BasePlatformClient):
     
     def _do_request(self, method: str, url: str, **kwargs) -> dict:
         """发送 HTTP 请求"""
-        params = kwargs.get('params', {})
+        params = dict(kwargs.get('params') or {})
         params['access_token'] = self.access_token
         
         headers = kwargs.get('headers', {})

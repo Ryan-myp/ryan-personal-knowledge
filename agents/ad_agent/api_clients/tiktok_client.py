@@ -49,6 +49,21 @@ class TikTokAPIClient(BasePlatformClient):
             return endpoint
         return f"{self.BASE_URL}/{self.API_VERSION}/{endpoint.lstrip('/')}"
 
+    @staticmethod
+    def _payload(result: Any) -> Any:
+        """Unwrap a TikTok API envelope while keeping test doubles compatible."""
+        if isinstance(result, dict) and "code" in result and "data" in result:
+            return result.get("data") or {}
+        return result
+
+    @classmethod
+    def _data_section(cls, result: Any) -> Any:
+        """Return the business payload for both envelope shapes in the wild."""
+        payload = cls._payload(result)
+        if isinstance(payload, dict) and isinstance(payload.get("data"), dict):
+            return payload["data"]
+        return payload
+
     def _list_pages(self, endpoint: str, params: dict, max_pages: int = 100) -> list:
         """Consume TikTok ``page_info`` pages into one deterministic list."""
         items: list = []
@@ -108,8 +123,7 @@ class TikTokAPIClient(BasePlatformClient):
     
     def _extract_data(self, response: dict) -> Any:
         """TikTok 响应结构: {code, message, data}"""
-        data = response.get('data', {})
-        return data
+        return self._data_section(response.get('data', {}))
     
     def _handle_error(self, response: dict, status_code: int) -> Optional[APIError]:
         data = response.get('data', {})
@@ -163,7 +177,10 @@ class TikTokAPIClient(BasePlatformClient):
         self.acquire_rate_limit(self._rate_limiter)
         data = {'advertiser_ids': advertiser_ids}
         result = self.request('POST', 'account/get/', data=data)
-        return result.get('advertisers', []) if isinstance(result, dict) else result
+        payload = self._data_section(result)
+        if isinstance(payload, dict):
+            return payload.get('advertisers', payload.get('list', []))
+        return payload
     
     # ==================== Campaign 管理 ====================
     
@@ -231,7 +248,8 @@ class TikTokAPIClient(BasePlatformClient):
                 data[key] = campaign[key]
         
         result = self.request('POST', 'campaign/create/', data=data)
-        return str(result.get('campaign_id', '')) if isinstance(result, dict) else ''
+        payload = self._data_section(result)
+        return str(payload.get('campaign_id', '')) if isinstance(payload, dict) else ''
     
     def update_campaign(self, advertiser_id: str, campaign_id: str, updates: dict) -> dict:
         """更新 Campaign"""
@@ -325,7 +343,8 @@ class TikTokAPIClient(BasePlatformClient):
             data['ad_group']['targeting'] = adgroup['targeting']
         
         result = self.request('POST', 'adgroup/create/', data=data)
-        return str(result.get('ad_group_id', '')) if isinstance(result, dict) else ''
+        payload = self._data_section(result)
+        return str(payload.get('ad_group_id', '')) if isinstance(payload, dict) else ''
     
     def update_adgroup(self, advertiser_id: str, campaign_id: str, adgroup_id: str, updates: dict) -> dict:
         """更新 Ad Group"""
@@ -395,7 +414,8 @@ class TikTokAPIClient(BasePlatformClient):
                 data['ad'][key] = ad[key]
         
         result = self.request('POST', 'ad/create/', data=data)
-        return str(result.get('ad_id', '')) if isinstance(result, dict) else ''
+        payload = self._data_section(result)
+        return str(payload.get('ad_id', '')) if isinstance(payload, dict) else ''
     
     # ==================== Spark Ads（达人原生广告）====================
     
@@ -423,7 +443,8 @@ class TikTokAPIClient(BasePlatformClient):
             }
         }
         result = self.request('POST', 'ad/create/', data=data)
-        return str(result.get('ad_id', '')) if isinstance(result, dict) else ''
+        payload = self._data_section(result)
+        return str(payload.get('ad_id', '')) if isinstance(payload, dict) else ''
     
     # ==================== 报表查询 ====================
     
@@ -459,7 +480,8 @@ class TikTokAPIClient(BasePlatformClient):
         }
         # 先创建报表任务
         create_result = self.request('POST', 'report/task/create/', data=data)
-        task_id = create_result.get('task_id', '') if isinstance(create_result, dict) else ''
+        create_payload = self._data_section(create_result)
+        task_id = create_payload.get('task_id', '') if isinstance(create_payload, dict) else ''
         
         if not task_id:
             return []
@@ -474,9 +496,12 @@ class TikTokAPIClient(BasePlatformClient):
             data = {'advertiser_id': str(advertiser_id), 'task_id': task_id}
             result = self.request('POST', 'report/task/info/get/', data=data)
             
-            if isinstance(result, dict) and result.get('status') in (2, 3):  # COMPLETED/FAILED
-                if result.get('status') == 2:
-                    return result.get('content', {}).get('data', [])
+            payload = self._data_section(result)
+            if isinstance(payload, dict) and payload.get('status') in (2, 3):  # COMPLETED/FAILED
+                if payload.get('status') == 2:
+                    content = payload.get('content', {})
+                    if isinstance(content, dict):
+                        return content.get('data', [])
                 return []
         
         return []
@@ -505,7 +530,8 @@ class TikTokAPIClient(BasePlatformClient):
             }
         }
         result = self.request('POST', 'report/task/create/', data=data)
-        task_id = result.get('task_id', '') if isinstance(result, dict) else ''
+        payload = self._data_section(result)
+        task_id = payload.get('task_id', '') if isinstance(payload, dict) else ''
         return self._poll_report_result(advertiser_id, task_id) if task_id else []
 
     
@@ -521,7 +547,10 @@ class TikTokAPIClient(BasePlatformClient):
         if filtering:
             data['filtering'] = filtering
         result = self.request('GET', 'audience/get/', params=data)
-        audiences = result.get('audience_list', []) if isinstance(result, dict) else []
+        payload = self._data_section(result)
+        audiences = []
+        if isinstance(payload, dict):
+            audiences = payload.get('audience_list', payload.get('list', []))
         return audiences
     
     def get_audience(self, advertiser_id: str, audience_id: str) -> dict:
@@ -537,13 +566,15 @@ class TikTokAPIClient(BasePlatformClient):
         if parent_ids:
             data['parent_ids'] = parent_ids
         result = self.request('GET', 'interest_category/list/', params=data)
-        return result.get('list', []) if isinstance(result, dict) else []
+        payload = self._data_section(result)
+        return payload.get('list', []) if isinstance(payload, dict) else []
     
     def get_interest_category(self, category_id: str) -> dict:
         """获取兴趣类别详情"""
         data = {'category_id': category_id}
         result = self.request('GET', 'interest_category/get/', params=data)
-        return result.get('data', {}) if isinstance(result, dict) else {}
+        payload = self._data_section(result)
+        return payload if isinstance(payload, dict) else {}
     
     # ==================== 地域定向查询 ====================
     
@@ -554,7 +585,8 @@ class TikTokAPIClient(BasePlatformClient):
         if location_type:
             data['location_type'] = location_type
         result = self.request('GET', 'location/get/', params=data)
-        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+        payload = self._data_section(result)
+        return payload.get('list', []) if isinstance(payload, dict) else []
     
     def search_locations(self, keyword: str, location_type: str = None) -> list:
         """搜索地域"""
@@ -563,7 +595,8 @@ class TikTokAPIClient(BasePlatformClient):
         if location_type:
             data['location_type'] = location_type
         result = self.request('GET', 'location/search/', params=data)
-        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+        payload = self._data_section(result)
+        return payload.get('list', []) if isinstance(payload, dict) else []
     
     # ==================== 设备定向查询 ====================
     
@@ -571,25 +604,29 @@ class TikTokAPIClient(BasePlatformClient):
         """获取设备列表"""
         self.acquire_rate_limit(self._rate_limiter)
         result = self.request('GET', 'device/get/')
-        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+        payload = self._data_section(result)
+        return payload.get('list', []) if isinstance(payload, dict) else []
     
     def list_operating_systems(self) -> list:
         """获取操作系统列表"""
         self.acquire_rate_limit(self._rate_limiter)
         result = self.request('GET', 'os/get/')
-        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+        payload = self._data_section(result)
+        return payload.get('list', []) if isinstance(payload, dict) else []
     
     def list_carriers(self) -> list:
         """获取运营商列表"""
         self.acquire_rate_limit(self._rate_limiter)
         result = self.request('GET', 'carrier/get/')
-        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+        payload = self._data_section(result)
+        return payload.get('list', []) if isinstance(payload, dict) else []
     
     def list_browsers(self) -> list:
         """获取浏览器列表"""
         self.acquire_rate_limit(self._rate_limiter)
         result = self.request('GET', 'browser/get/')
-        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+        payload = self._data_section(result)
+        return payload.get('list', []) if isinstance(payload, dict) else []
     
     # ==================== 创意素材查询 ====================
     
@@ -603,7 +640,8 @@ class TikTokAPIClient(BasePlatformClient):
         if filtering:
             data['filtering'] = filtering
         result = self.request('GET', 'creative/get/', params=data)
-        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+        payload = self._data_section(result)
+        return payload.get('list', []) if isinstance(payload, dict) else []
     
     def list_videos(self, advertiser_id: str, filtering: list = None, page_size: int = 20) -> list:
         """获取视频列表"""
@@ -615,7 +653,8 @@ class TikTokAPIClient(BasePlatformClient):
         if filtering:
             data['filtering'] = filtering
         result = self.request('GET', 'video/get/', params=data)
-        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+        payload = self._data_section(result)
+        return payload.get('list', []) if isinstance(payload, dict) else []
     
     def list_images(self, advertiser_id: str, filtering: list = None, page_size: int = 20) -> list:
         """获取图片列表"""
@@ -627,7 +666,8 @@ class TikTokAPIClient(BasePlatformClient):
         if filtering:
             data['filtering'] = filtering
         result = self.request('GET', 'image/get/', params=data)
-        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+        payload = self._data_section(result)
+        return payload.get('list', []) if isinstance(payload, dict) else []
     
     # ==================== 转化追踪查询 ====================
     
@@ -641,7 +681,8 @@ class TikTokAPIClient(BasePlatformClient):
         if filtering:
             data['filtering'] = filtering
         result = self.request('GET', 'conversion/get/', params=data)
-        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+        payload = self._data_section(result)
+        return payload.get('list', []) if isinstance(payload, dict) else []
     
     def get_conversion(self, advertiser_id: str, conversion_id: str) -> dict:
         """获取转化事件详情"""
@@ -661,7 +702,8 @@ class TikTokAPIClient(BasePlatformClient):
         if filtering:
             data['filtering'] = filtering
         result = self.request('GET', 'catalog/get/', params=data)
-        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+        payload = self._data_section(result)
+        return payload.get('list', []) if isinstance(payload, dict) else []
     
     def list_product_sets(self, advertiser_id: str, catalog_id: str = None, filtering: list = None, page_size: int = 20) -> list:
         """获取商品集列表"""
@@ -675,7 +717,8 @@ class TikTokAPIClient(BasePlatformClient):
         if filtering:
             data['filtering'] = filtering
         result = self.request('GET', 'product_set/get/', params=data)
-        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+        payload = self._data_section(result)
+        return payload.get('list', []) if isinstance(payload, dict) else []
     
     # ==================== 应用信息查询 ====================
     
@@ -686,7 +729,8 @@ class TikTokAPIClient(BasePlatformClient):
         if filtering:
             data['filtering'] = filtering
         result = self.request('GET', 'app/get/', params=data)
-        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+        payload = self._data_section(result)
+        return payload.get('list', []) if isinstance(payload, dict) else []
     
     # ==================== 品牌安全查询 ====================
     
@@ -694,7 +738,8 @@ class TikTokAPIClient(BasePlatformClient):
         """获取品牌安全类别列表"""
         self.acquire_rate_limit(self._rate_limiter)
         result = self.request('GET', 'brand_safety/get/')
-        return result.get('data', {}).get('list', []) if isinstance(result, dict) else []
+        payload = self._data_section(result)
+        return payload.get('list', []) if isinstance(payload, dict) else []
     
     # ==================== 统计报告查询 ====================
     
@@ -712,7 +757,8 @@ class TikTokAPIClient(BasePlatformClient):
         # Passing ``json=`` here silently produced an empty body in the
         # provider adapter.
         result = self.request('POST', 'statistics/get/', data=data)
-        return result.get('data', {}) if isinstance(result, dict) else {}
+        payload = self._data_section(result)
+        return payload if isinstance(payload, dict) else {}
 
     @staticmethod
     def _normalize_time_range(time_range: Any) -> dict:

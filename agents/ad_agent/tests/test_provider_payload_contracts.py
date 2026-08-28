@@ -140,6 +140,67 @@ def test_tiktok_ad_creation_preserves_existing_schema_fields():
     assert payloads[-1]["ad_group"]["conversion_id"] == 42
 
 
+def test_tiktok_provider_envelope_is_decoded_for_ids_and_lookup_lists():
+    client = TikTokAPIClient({"access_token": "test"})
+    client._do_request = lambda method, url, **kwargs: {
+        "status_code": 200,
+        "data": {
+            "code": 0,
+            "message": "OK",
+            "data": {"campaign_id": "campaign-42"},
+        },
+        "headers": {},
+    }
+
+    campaign_id = client.create_campaign(
+        "t1",
+        {
+            "name": "Envelope campaign",
+            "objective_type": "TRAFFIC",
+            "campaign_type": "REGULAR_CAMPAIGN",
+            "budget_mode": "BUDGET_MODE_INFINITE",
+        },
+    )
+
+    assert campaign_id == "campaign-42"
+
+    client._do_request = lambda method, url, **kwargs: {
+        "status_code": 200,
+        "data": {
+            "code": 0,
+            "message": "OK",
+            "data": {"list": [{"location_id": "US"}]},
+        },
+        "headers": {},
+    }
+    assert client.list_locations() == [{"location_id": "US"}]
+
+
+def test_meta_client_does_not_mutate_caller_query_params(monkeypatch):
+    client = MetaAPIClient({"access_token": "test"})
+    captured = {}
+
+    class Response:
+        status_code = 200
+        content = b"{}"
+        headers = {}
+
+        @staticmethod
+        def json():
+            return {}
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        captured["params"] = dict(params or {})
+        return Response()
+
+    monkeypatch.setattr("agents.ad_agent.api_clients.meta_client.requests.get", fake_get)
+    params = {"fields": "id,name"}
+    client._do_request("GET", "https://example.test", params=params)
+
+    assert params == {"fields": "id,name"}
+    assert captured["params"]["access_token"] == "test"
+
+
 def test_tiktok_campaign_lookup_by_name_uses_list_result():
     class Client:
         def list_campaigns(self, advertiser_id, page_size=20):
