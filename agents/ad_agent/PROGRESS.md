@@ -129,15 +129,15 @@ print(result["reply"])
 import json
 from ad_agent import AgentRuntime
 from ad_agent.api_clients.meta_client import MetaAPIClient
-from ad_agent.capabilities.meta_capability import MetaCapability
+from ad_agent.capabilities.meta import create_meta_capability
 
 # 加载凭证
 with open("credentials.json") as f:
     credentials = json.load(f)
 
-# 创建真实 API 客户端
-api_client = MetaAPIClient(credentials)
-capability = MetaCapability(api_client=api_client)  # 传入真实客户端
+# 创建真实 API 客户端；Runtime 仍默认为 dry-run
+api_client = MetaAPIClient(credentials["meta"])
+capability = create_meta_capability(api_client)
 
 runtime = AgentRuntime()
 runtime.register_capability(capability)
