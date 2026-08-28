@@ -17,11 +17,11 @@
 
 | 平台 | Skill | API 客户端 | 工具数量 |
 |------|-------|-----------|---------|
-| Meta | meta-marketing-api-expert | meta_client.py | 16（含 Creative dry-run） |
-| Google Ads | google-ads-api-expert | google_ads_client.py | 18（含关键词与 PMax Asset Group dry-run/update plan） |
-| TikTok | tiktok-ads-expert | tiktok_client.py | 24（含 Creative/视频/图片素材及参考数据查询） |
-| DV360 | dv360-expert | dv360_client.py | 14（含 IO/Line Item 查询；Campaign-level report 未支持） |
-| **合计** |  |  | **72** |
+| Meta | meta-marketing-api-expert | meta_client.py | 24（账户、层级资源、报表与生命周期接口） |
+| Google Ads | google-ads-api-expert | google_ads_client.py | 23（层级资源、Search Ad、PMax、报表与生命周期接口） |
+| TikTok | tiktok-ads-expert | tiktok_client.py | 40（账户、层级资源、素材、定向参考数据、报表与生命周期接口） |
+| DV360 | dv360-expert | dv360_client.py | 20（Advertiser、Campaign、IO、Line Item 与异步报表接口） |
+| **合计** |  |  | **107** |
 
 ## 安装
 
@@ -120,7 +120,7 @@ Provider live lookup 返回的动态选项会附带短时 `selection_token`。�
 
 ### Harness Engineering 评估
 
-当前核心 Harness 已具备：受限 Tool/Skill 契约、统一 Runtime 执行入口、权限/账户白名单、dry-run、显式确认、持久化幂等、workflow checkpoint/lease/recovery、Provider 回查入口，以及 LLM 输出后的二次 schema 校验。另有 `scripts/validate_contracts.py` 和 `contracts/builtin_tools.json` 提供版本化契约快照与 drift gate。结论是“核心骨架符合，尚未达到生产闭环”，不能把当前 72 个工具数或单元测试通过当成 Provider live 已验证。
+当前核心 Harness 已具备：受限 Tool/Skill 契约、统一 Runtime 执行入口、权限/账户白名单、dry-run、显式确认、持久化幂等、workflow checkpoint/lease/recovery、Provider 回查入口，以及 LLM 输出后的二次 schema 校验。另有 `scripts/validate_contracts.py` 和 `contracts/builtin_tools.json` 提供版本化契约快照、Provider 方法覆盖率和 drift gate。结论是“核心骨架符合，尚未达到生产闭环”，不能把当前 107 个工具数或单元测试通过当成 Provider live 已验证。
 
 可用 `python3 agents/ad_agent/scripts/audit_capabilities.py` 做无网络能力审计；它按
 Capability 包约定自动发现渠道，输出 action/resource 矩阵和创建链，不是 Runtime 的第二套

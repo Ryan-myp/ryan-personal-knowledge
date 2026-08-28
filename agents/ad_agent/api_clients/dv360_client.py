@@ -39,7 +39,9 @@ class DV360APIClient(BasePlatformClient):
     不使用 google-auth SDK，自行实现 JWT 签名和 Token 交换。
     """
     
-    BASE_URL = "https://display-video.googleapis.com/v4"
+    API_VERSION = "v4"
+    SUPPORTED_API_VERSIONS = (API_VERSION,)
+    BASE_URL = f"https://display-video.googleapis.com/{API_VERSION}"
     TOKEN_URL = "https://oauth2.googleapis.com/token"
     SCOPES = [
         "https://www.googleapis.com/auth/display-video",
@@ -52,6 +54,13 @@ class DV360APIClient(BasePlatformClient):
         retry_config: Optional[RetryConfig] = None,
     ):
         super().__init__(credentials, "dv360", retry_config)
+        self.api_version = self._resolve_api_version(
+            self.credentials.get("api_version")
+        )
+        self.base_url = f"https://display-video.googleapis.com/{self.api_version}"
+        # Existing endpoint methods use BASE_URL; bind it per client so an
+        # explicitly selected supported version reaches every endpoint.
+        self.BASE_URL = self.base_url
         self.sa_email = self.credentials.get('service_account_email', '')
         self.private_key = self.credentials.get('private_key', '')
         self.partner_id = self.credentials.get('partner_id', '')
@@ -69,6 +78,16 @@ class DV360APIClient(BasePlatformClient):
             self._token_expiry = 0
         self._token_lock = threading.RLock()
         self._rate_limiter = RateLimiter(max_requests=100, period=60)
+
+    @classmethod
+    def _resolve_api_version(cls, requested: Any = None) -> str:
+        version = str(requested or cls.API_VERSION).strip()
+        if version not in cls.SUPPORTED_API_VERSIONS:
+            raise ValueError(
+                f"Unsupported DV360 API version {version!r}; "
+                f"supported versions: {list(cls.SUPPORTED_API_VERSIONS)}"
+            )
+        return version
     
     def _get_access_token(self) -> str:
         """获取或刷新 Access Token"""
@@ -219,6 +238,11 @@ class DV360APIClient(BasePlatformClient):
             return {'status_code': 504, 'data': {}, 'headers': {}}
         except _requests.exceptions.ConnectionError:
             return {'status_code': 502, 'data': {}, 'headers': {}}
+
+    def _build_url(self, endpoint: str) -> str:
+        if endpoint.startswith("http"):
+            return endpoint
+        return f"{self.base_url}/{endpoint.lstrip('/')}"
     
     def _extract_data(self, response: dict) -> Any:
         return response.get('data', {})

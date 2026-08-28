@@ -5,6 +5,7 @@ import logging
 from typing import Optional
 from ...core.interfaces import ToolDefinition, ToolSchema, RiskLevel, ToolEffect, ReplayPolicy, ToolHandler
 from ..base import BaseCapability, CampaignUpdateHandler
+from ..provider_tools import account_from, bind_provider_method, method_tool
 from .campaigns import MetaListCampaignsHandler, MetaGetCampaignHandler, MetaCreateCampaignHandler
 from .ad_sets import MetaListAdSetsHandler, MetaGetAdSetHandler, MetaCreateAdSetHandler
 from .ads import MetaListAdsHandler, MetaGetAdHandler, MetaCreateAdHandler
@@ -42,6 +43,99 @@ def _meta_update_adapter(client, ctx, resource_type, resource_id, _parent_id, up
 
 class MetaCapability(BaseCapability):
     platform_name = "meta"
+    provider_client_class = MetaAPIClient
+    provider_method_exclusions = {"resource_belongs_to_account"}
+    capability_version = "1.1.0"
+    provider_api_version = "v19.0"
+    # Provider endpoint -> executable Tool(s).  This lives with the provider
+    # package and is consumed only by the release audit, never by Runtime
+    # routing.
+    provider_method_coverage = {
+        "list_accounts": ["meta_list_accounts"], "get_account": ["meta_get_account"],
+        "list_audiences": ["meta_list_audiences"], "list_campaigns": ["meta_list_campaigns"],
+        "get_campaign": ["meta_get_campaign"], "create_campaign": ["meta_create_campaign"],
+        "update_campaign": ["meta_update_campaign"], "pause_campaign": ["meta_pause_campaign"],
+        "resume_campaign": ["meta_resume_campaign"], "list_adsets": ["meta_list_ad_sets"],
+        "get_adset": ["meta_get_adset"], "create_adset": ["meta_create_adset"],
+        "update_adset": ["meta_update_adset"], "pause_adset": ["meta_pause_adset"],
+        "list_ads": ["meta_list_ads"], "get_ad": ["meta_get_ad"],
+        "create_ad": ["meta_create_ad"], "update_ad": ["meta_update_ad"],
+        "pause_ad": ["meta_pause_ad"], "create_creative": ["meta_create_creative"],
+        "get_campaign_report": ["meta_get_campaign_report"],
+        "get_adset_report": ["meta_get_adset_report"], "get_ad_report": ["meta_get_ad_report"],
+        "boost_post": ["meta_boost_post"],
+    }
+
+    def _extended_provider_tools(self, client):
+        """Expose Meta client endpoints not represented by hierarchy handlers."""
+        account = lambda ctx, data: account_from(ctx, data, "account_id")
+        tools = [
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_list_accounts",
+                description="列出 Meta 可访问的广告账户。", method_name="list_accounts",
+                result_key="accounts", properties={"business_id": {"type": "string"}},
+                argument_builder=lambda _ctx, data: ((data.get("business_id"),), {}),
+                action="list", resource_type="account", intent_types=["list_accounts"],
+                traits=["read", "account"],
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_get_account",
+                description="获取 Meta 广告账户详情。", method_name="get_account",
+                result_key="account", properties={
+                    "account_id": {"type": "string"},
+                    "fields": {"type": "array", "items": {"type": "string"}},
+                }, required=["account_id"], action="get", resource_type="account",
+                intent_types=["get_account"], traits=["read", "account"],
+                argument_builder=lambda ctx, data: ((account_from(ctx, data, "account_id"),), {
+                    "fields": data.get("fields")
+                }),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_get_adset_report",
+                description="查询 Meta Ad Set 级报表。", method_name="get_adset_report",
+                result_key="report", properties={
+                    "account_id": {"type": "string"},
+                    "adset_ids": {"type": "array", "items": {"type": "string"}},
+                    "date_range": {"type": "object"},
+                    "fields": {"type": "array", "items": {"type": "string"}},
+                }, required=["account_id", "adset_ids"], action="report",
+                resource_type="ad_set", intent_types=["download_report"], traits=["read", "report", "ad_set"],
+                argument_builder=lambda ctx, data: ((account_from(ctx, data, "account_id"), data["adset_ids"]), {
+                    "time_range": data.get("date_range"), "fields": data.get("fields")
+                }),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_get_ad_report",
+                description="查询 Meta Ad 级报表。", method_name="get_ad_report",
+                result_key="report", properties={
+                    "account_id": {"type": "string"},
+                    "ad_ids": {"type": "array", "items": {"type": "string"}},
+                    "date_range": {"type": "object"},
+                    "fields": {"type": "array", "items": {"type": "string"}},
+                }, required=["account_id", "ad_ids"], action="report",
+                resource_type="ad", intent_types=["download_report"], traits=["read", "report", "ad"],
+                argument_builder=lambda ctx, data: ((account_from(ctx, data, "account_id"), data["ad_ids"]), {
+                    "time_range": data.get("date_range"), "fields": data.get("fields")
+                }),
+            ),
+        ]
+        for method_name, resource_type, resource_id, intent in (
+            ("pause_campaign", "campaign", "campaign_id", "pause_campaign"),
+            ("resume_campaign", "campaign", "campaign_id", "resume_campaign"),
+            ("pause_adset", "ad_set", "adset_id", "pause_adset"),
+            ("pause_ad", "ad", "ad_id", "pause_ad"),
+        ):
+            tools.append(method_tool(
+                platform="meta", skill="meta-marketing-api", name=f"meta_{method_name}",
+                description=f"调用 Meta {method_name} 管理接口；默认仅生成 dry-run 计划。",
+                method_name=method_name, result_key=f"{resource_type}_result",
+                properties={resource_id: {"type": "string"}}, required=[resource_id],
+                action=method_name.split("_", 1)[0], resource_type=resource_type,
+                resource_id_field=resource_id, intent_types=[f"provider_{intent}"],
+                traits=["write", resource_type], write=True,
+                argument_builder=lambda _ctx, data, field=resource_id: ((data[field],), {}),
+            ))
+        return [bind_provider_method(tool, client) for tool in tools]
 
     def register_tools(self) -> list[tuple[ToolDefinition, ToolHandler]]:
         tools = []
@@ -158,6 +252,8 @@ class MetaCapability(BaseCapability):
             effect_class=ToolEffect.READ,
             replay_policy=ReplayPolicy.SAFE,
             traits=["read", "ad"],
+            parent_resource_type="ad_set",
+            parent_resource_id_field="adset_id",
         ), MetaListAdsHandler(api_client)))
 
         # Get Ad
@@ -174,6 +270,7 @@ class MetaCapability(BaseCapability):
             effect_class=ToolEffect.READ,
             replay_policy=ReplayPolicy.SAFE,
             traits=["read", "ad"],
+            parent_resource_type="ad_set",
         ), MetaGetAdHandler(api_client)))
 
         # Create Ad
@@ -312,6 +409,8 @@ class MetaCapability(BaseCapability):
                     "ad_set": "campaign_id", "ad": "adset_id",
                 }.get(resource_type),
             )))
+
+        tools.extend(self._extended_provider_tools(api_client))
 
         return tools
 

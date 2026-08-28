@@ -28,7 +28,7 @@
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐    │
 │  │ IntentParser    │  │ IntentRouter    │  │ ToolRegistry             │    │
 │  │ 意图解析         │→│ 路由分发         │→ │ 工具注册/执行            │    │
-│  │ - LLM/P规则      │  │ - 多平台支持    │  │ - 72 tools               │    │
+│  │ - LLM/P规则      │  │ - 多平台支持    │  │ - 107 tools              │    │
 │  └─────────────────┘  └─────────────────┘  └─────────────────────────┘    │
 │                                                                             │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐    │
@@ -45,7 +45,7 @@
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌──────────────────┐  │
 │  │ Meta        │  │ Google Ads  │  │ TikTok      │  │ DV360            │  │
 │  │ Capability  │  │ Capability  │  │ Capability  │  │ Capability       │  │
-│  │ 16 tools    │  │ 18 tools    │  │ 24 tools    │  │ 14 tools         │  │
+│  │ 24 tools    │  │ 23 tools    │  │ 40 tools    │  │ 20 tools         │  │
 │  └─────────────┘  └─────────────┘  └─────────────┘  └──────────────────┘  │
 └─────────────────────────────────────────────────────────────────────────────┘
                                    │
@@ -234,14 +234,14 @@ class TikTokAPIClient(BaseAPIClient):
         return resp.get('data', {}).get('list', [])
 ```
 
-## 三、工具清单（当前 Capability 共 72 个工具）
+## 三、工具清单（当前 Capability 共 107 个工具）
 
 | 平台 | 工具数量 | 工具列表 |
 |------|---------|---------|
-| **Meta** | 16 | 查询/创建 Campaign、Ad Set、Ad、Creative；受众；Boost；更新 Campaign/Ad Set/Ad；报表 |
-| **Google Ads** | 18 | 查询/创建 Campaign、Ad Group、Ad、关键词、PMax Asset Group；报表；更新工具 |
-| **TikTok** | 24 | 查询/创建 Campaign、Ad Group、Ad；Creative/视频/图片素材；转化、地域、设备、目录、应用、品牌安全查询；Spark Ads；受众；报表；更新工具 |
-| **DV360** | 14 | 查询 Advertiser/Campaign/IO/Line Item；创建 IO/Line Item；报表；更新工具（live 部分未适配） |
+| **Meta** | 24 | 账户、查询/创建 Campaign、Ad Set、Ad、Creative；受众；Boost；生命周期；报表 |
+| **Google Ads** | 23 | 查询/创建 Campaign、Ad Group、Ad、关键词、Search Ad、PMax Asset Group；生命周期；报表 |
+| **TikTok** | 40 | 账户、查询/创建 Campaign、Ad Group、Ad；素材；转化、地域、设备、目录、应用、品牌安全查询；Spark Ads；受众；生命周期；报表 |
+| **DV360** | 20 | 查询 Advertiser/Campaign/IO/Line Item；创建/激活/暂停 IO/Line Item；异步报表；更新工具 |
 
 ## 四、核心数据流
 
@@ -438,7 +438,7 @@ runtime.auto_load_skills(str(skills_root), credentials)
 |------|------|------|
 | **Skills** | SKILL.md 提供的上下文、SOP 和安全边界 | 按已加载 Skill 动态发现（当前内置 4 个） |
 | **Capabilities** | Python 实现的渠道能力模块 | 按包约定动态发现（当前内置 4 个） |
-| **Tools** | Capability/plugin 提供的具体可执行工具 | 按注册结果动态统计（当前基线 72 个） |
+| **Tools** | Capability/plugin 提供的具体可执行工具 | 按注册结果动态统计（当前基线 107 个） |
 
 **关系**：
 - Skills 是自然语言上下文（SKILL.md）

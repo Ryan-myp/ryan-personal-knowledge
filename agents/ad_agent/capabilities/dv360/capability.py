@@ -5,6 +5,7 @@ import logging
 from typing import Optional
 from ...core.interfaces import ToolDefinition, ToolSchema, RiskLevel, ToolEffect, ReplayPolicy, ToolHandler
 from ..base import BaseCapability, CampaignUpdateHandler
+from ..provider_tools import account_from, bind_provider_method, method_tool
 from .campaigns import (
     DV360ListCampaignsHandler,
     DV360GetCampaignHandler,
@@ -27,6 +28,82 @@ logger = logging.getLogger(__name__)
 
 class DV360Capability(BaseCapability):
     platform_name = "dv360"
+    provider_client_class = DV360APIClient
+    provider_method_exclusions = {"update_resource"}
+    capability_version = "1.1.0"
+    provider_api_version = "v4"
+    provider_method_coverage = {
+        "list_advertisers": ["dv360_list_advertisers"], "get_advertiser": ["dv360_get_advertiser"],
+        "list_campaigns": ["dv360_list_campaigns"], "get_campaign": ["dv360_get_campaign"],
+        "list_ios": ["dv360_list_ios"], "get_io": ["dv360_get_io"], "create_io": ["dv360_create_io"],
+        "activate_io": ["dv360_activate_io"], "pause_io": ["dv360_pause_io"],
+        "list_line_items": ["dv360_list_line_items"], "create_line_item": ["dv360_create_line_item"],
+        "activate_line_item": ["dv360_activate_line_item"], "get_line_item": ["dv360_get_line_item"],
+        "create_report": ["dv360_create_report", "dv360_get_line_item_report"],
+        "get_report_result": ["dv360_get_report_result", "dv360_get_line_item_report"],
+        "get_line_item_report": ["dv360_get_line_item_report"],
+    }
+
+    def _extended_provider_tools(self, client):
+        """Expose DV360 advertiser, lifecycle and asynchronous report APIs."""
+        account = lambda ctx, data: account_from(ctx, data, "advertiser_id", "account_id")
+        tools = [
+            method_tool(
+                platform="dv360", skill="dv360-api", name="dv360_get_advertiser",
+                description="获取 DV360 Advertiser 详情。", method_name="get_advertiser",
+                result_key="advertiser", properties={"advertiser_id": {"type": "string"}},
+                required=["advertiser_id"], action="get", resource_type="advertiser",
+                intent_types=["get_advertiser"], traits=["read", "advertiser"],
+                argument_builder=lambda ctx, data: ((account(ctx, data),), {}),
+            ),
+            method_tool(
+                platform="dv360", skill="dv360-api", name="dv360_create_report",
+                description="创建 DV360 异步报表任务；默认仅生成 dry-run 计划。",
+                method_name="create_report", result_key="report_id",
+                properties={"advertiser_id": {"type": "string"}, "report": {"type": "object"}},
+                required=["advertiser_id", "report"], action="create", resource_type="report",
+                intent_types=["create_report"], traits=["write", "report"], write=True,
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["report"]), {}),
+            ),
+            method_tool(
+                platform="dv360", skill="dv360-api", name="dv360_get_report_result",
+                description="获取 DV360 异步报表结果。", method_name="get_report_result", result_key="report",
+                properties={"advertiser_id": {"type": "string"}, "report_id": {"type": "string"},
+                            "limit": {"type": "integer"}},
+                required=["advertiser_id", "report_id"], action="get", resource_type="report",
+                intent_types=["get_report_result"], traits=["read", "report"],
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["report_id"]), {
+                    "limit": data.get("limit", 1000)
+                }),
+            ),
+        ]
+        for method_name, resource_type, resource_id, intent in (
+            ("activate_io", "io", "io_id", "activate_io"),
+            ("pause_io", "io", "io_id", "pause_io"),
+        ):
+            tools.append(method_tool(
+                platform="dv360", skill="dv360-api", name=f"dv360_{method_name}",
+                description=f"调用 DV360 {method_name} 管理接口；默认仅生成 dry-run 计划。",
+                method_name=method_name, result_key="io_result",
+                properties={"advertiser_id": {"type": "string"}, resource_id: {"type": "string"}},
+                required=["advertiser_id", resource_id], action=method_name.split("_", 1)[0],
+                resource_type=resource_type, resource_id_field=resource_id, intent_types=[intent],
+                traits=["write", resource_type], write=True,
+                argument_builder=lambda ctx, data, field=resource_id: ((account(ctx, data), data[field]), {}),
+            ))
+        tools.append(method_tool(
+            platform="dv360", skill="dv360-api", name="dv360_activate_line_item",
+            description="激活 DV360 Line Item；默认仅生成 dry-run 计划。",
+            method_name="activate_line_item", result_key="line_item_result",
+            properties={"advertiser_id": {"type": "string"}, "io_id": {"type": "string"},
+                        "line_item_id": {"type": "string"}},
+            required=["advertiser_id", "io_id", "line_item_id"], action="activate",
+            resource_type="line_item", parent_resource_type="io", resource_id_field="line_item_id",
+            parent_resource_id_field="io_id", intent_types=["activate_line_item"],
+            traits=["write", "line_item"], write=True,
+            argument_builder=lambda ctx, data: ((account(ctx, data), data["io_id"], data["line_item_id"]), {}),
+        ))
+        return [bind_provider_method(tool, client) for tool in tools]
 
     def register_tools(self) -> list[tuple[ToolDefinition, ToolHandler]]:
         tools = []
@@ -249,6 +326,8 @@ class DV360Capability(BaseCapability):
                     "io_id" if resource_type == "line_item" else None
                 ),
             ), CampaignUpdateHandler(api_client, resource_type)))
+
+        tools.extend(self._extended_provider_tools(api_client))
 
         return tools
 

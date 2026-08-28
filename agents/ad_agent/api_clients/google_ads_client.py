@@ -33,7 +33,9 @@ class GoogleAdsAPIClient(BasePlatformClient):
     速率限制: 10,000 CUPM（Customer Units Per Minute）
     """
     
-    BASE_URL = "https://googleads.googleapis.com/v24"
+    API_VERSION = "v24"
+    SUPPORTED_API_VERSIONS = (API_VERSION,)
+    BASE_URL = f"https://googleads.googleapis.com/{API_VERSION}"
     DATE_LITERALS = {
         "TODAY", "YESTERDAY", "LAST_7_DAYS", "LAST_14_DAYS", "LAST_30_DAYS",
         "THIS_MONTH", "LAST_MONTH", "THIS_WEEK_SUN_TODAY", "THIS_WEEK_MON_TODAY",
@@ -56,6 +58,13 @@ class GoogleAdsAPIClient(BasePlatformClient):
         retry_config: Optional[RetryConfig] = None,
     ):
         super().__init__(credentials, "google", retry_config)
+        self.api_version = self._resolve_api_version(
+            self.credentials.get("api_version")
+        )
+        self.base_url = f"https://googleads.googleapis.com/{self.api_version}"
+        # Keep the existing endpoint builders version-aware while preserving
+        # the public class constant used by older integrations.
+        self.BASE_URL = self.base_url
         self.customer_id = customer_id or self.credentials.get('customer_id', '')
         self.developer_token = self.credentials.get('developer_token', '')
         self.login_customer_id = self.credentials.get('login_customer_id', self.customer_id)
@@ -67,6 +76,16 @@ class GoogleAdsAPIClient(BasePlatformClient):
         self._access_token = self.credentials.get('access_token', '')
         self._token_expiry = self.credentials.get('access_token_expires_at', 0) or 0
         self._token_lock = threading.RLock()
+
+    @classmethod
+    def _resolve_api_version(cls, requested: Any = None) -> str:
+        version = str(requested or cls.API_VERSION).strip()
+        if version not in cls.SUPPORTED_API_VERSIONS:
+            raise ValueError(
+                f"Unsupported Google Ads API version {version!r}; "
+                f"supported versions: {list(cls.SUPPORTED_API_VERSIONS)}"
+            )
+        return version
     
     def _ensure_valid_token(self) -> str:
         """确保 access_token 有效，过期则自动刷新"""
@@ -134,6 +153,11 @@ class GoogleAdsAPIClient(BasePlatformClient):
             'developer-token': self.developer_token,
             'login-customer-id': self.login_customer_id,
         }
+
+    def _build_url(self, endpoint: str) -> str:
+        if endpoint.startswith("http"):
+            return endpoint
+        return f"{self.base_url}/{endpoint.lstrip('/')}"
     
     def _do_request(self, method: str, url: str, **kwargs) -> dict:
         """发送 HTTP 请求"""

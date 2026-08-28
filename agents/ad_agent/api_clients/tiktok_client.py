@@ -32,7 +32,8 @@ class TikTokAPIClient(BasePlatformClient):
     """
     
     BASE_URL = "https://business-api.tiktok.com"
-    API_VERSION = "open_api/v1.3"
+    API_VERSION = "v1.3"
+    SUPPORTED_API_VERSIONS = (API_VERSION,)
     
     def __init__(
         self,
@@ -40,14 +41,30 @@ class TikTokAPIClient(BasePlatformClient):
         retry_config: Optional[RetryConfig] = None,
     ):
         super().__init__(credentials, "tiktok", retry_config)
+        self.api_version = self._resolve_api_version(
+            self.credentials.get("api_version")
+        )
+        self.api_prefix = f"open_api/{self.api_version}"
         self.access_token = self.credentials.get('access_token', '')
         # 速率限制: 100次/分钟
         self._rate_limiter = RateLimiter(max_requests=100, period=60)
+
+    @classmethod
+    def _resolve_api_version(cls, requested: Any = None) -> str:
+        version = str(requested or cls.API_VERSION).strip()
+        if version.startswith("open_api/"):
+            version = version.split("/", 1)[1]
+        if version not in cls.SUPPORTED_API_VERSIONS:
+            raise ValueError(
+                f"Unsupported TikTok API version {version!r}; "
+                f"supported versions: {list(cls.SUPPORTED_API_VERSIONS)}"
+            )
+        return version
     
     def _build_url(self, endpoint: str) -> str:
         if endpoint.startswith('http'):
             return endpoint
-        return f"{self.BASE_URL}/{self.API_VERSION}/{endpoint.lstrip('/')}"
+        return f"{self.BASE_URL}/{self.api_prefix}/{endpoint.lstrip('/')}"
 
     @staticmethod
     def _payload(result: Any) -> Any:

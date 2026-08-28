@@ -55,7 +55,31 @@ def audit_capabilities() -> dict[str, Any]:
             if not callable(factory):
                 report["issues"].append(f"{slug}: capability factory not found")
                 continue
-            runtime.register_capability(factory())
+            capability = factory()
+            runtime.register_capability(capability)
+            client_class = getattr(capability, "provider_client_class", None)
+            coverage = getattr(capability, "provider_method_coverage", {}) or {}
+            exclusions = set(getattr(capability, "provider_method_exclusions", set()) or set())
+            if client_class is not None:
+                public_methods = {
+                    name for name, member in vars(client_class).items()
+                    if callable(member) and not name.startswith("_") and name not in exclusions
+                }
+                uncovered = sorted(public_methods - set(coverage))
+                if uncovered:
+                    report["issues"].append(
+                        f"{slug}: provider methods without Tool coverage: {', '.join(uncovered)}"
+                    )
+                missing_tools = sorted(
+                    tool_name
+                    for tool_names in coverage.values()
+                    for tool_name in (tool_names if isinstance(tool_names, (list, tuple, set)) else [tool_names])
+                    if tool_name not in {definition.name for definition in runtime.registry.list_all()}
+                )
+                if missing_tools:
+                    report["issues"].append(
+                        f"{slug}: coverage references unregistered Tools: {', '.join(dict.fromkeys(missing_tools))}"
+                    )
         except Exception as exc:  # pragma: no cover - surfaced by release gate
             report["issues"].append(f"{slug}: failed to load capability: {exc}")
     all_names: list[str] = []

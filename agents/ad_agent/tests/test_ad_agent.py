@@ -406,7 +406,7 @@ class TestIntentParser:
         from agents.ad_agent.core.intent import LLMIntentParser
         parser = LLMIntentParser()
         intent = parser.parse("跨渠道暂停 Meta 和 TikTok campaign campaign_id=123", None)
-        assert intent.intent_type == "pause_campaign"
+        assert intent.intent_type == "cross_channel_batch_pause"
         assert intent.platforms == ["meta", "tiktok"]
 
     def test_cross_platform_pause_routes_update_tools(self):
@@ -427,7 +427,7 @@ class TestIntentParser:
             user_id="u1",
             platform_params={"meta": {"account_id": "m1"}, "tiktok": {"account_id": "t1"}},
         )
-        assert result["intent"]["intent_type"] == "pause_campaign"
+        assert result["intent"]["intent_type"] == "cross_channel_batch_pause"
         assert {item["tool"] for item in result["results"]} == {
             "meta_update_campaign", "tiktok_update_campaign",
         }
@@ -1148,7 +1148,7 @@ class TestIterationContracts:
         assert missing == []
         # DV360 IO/Line Item reads and Google PMax Asset Group planning are
         # now part of the executable capability contract.
-        assert len(registry.list_all()) == 72
+        assert len(registry.list_all()) == 107
 
     def test_google_access_token_is_local_and_caller_credentials_unchanged(self):
         credentials = {"access_token": "caller-token", "customer_id": "g1"}

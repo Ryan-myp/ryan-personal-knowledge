@@ -1,6 +1,6 @@
 # Skills 实现指南
 
-> 状态说明：本文保留为设计参考。`SKILL.md` 只负责自然语言专家知识、SOP 和安全边界；它不是 Tool 注册表，也不提供可执行代码。可执行实现以 `capabilities/`、`api_clients/`、`core/` 和 `runtime/` 源码为准。当前四个平台 Capability 共 72 个工具，跨渠道编排由 Runtime + `core/cross_channel.py` 提供。
+> 状态说明：本文保留为设计参考。`SKILL.md` 只负责自然语言专家知识、SOP 和安全边界；它不是 Tool 注册表，也不提供可执行代码。可执行实现以 `capabilities/`、`api_clients/`、`core/` 和 `runtime/` 源码为准。当前四个平台 Capability 共 107 个工具，跨渠道编排由 Runtime + `core/cross_channel.py` 提供。
 
 ## 架构分层
 
@@ -54,7 +54,7 @@ IntentParser 解析
     ▼
 DynamicToolSelector 筛选
     │
-    ├─ 获取 Google 平台所有工具 (20 个)
+    ├─ 按意图从 Google 平台工具契约中动态筛选
     ├─ 根据 intent_type="get_report" 筛选
     │   ├─ 关键词: ["report", "get_", "list_", "query"]
     │   └─ 匹配工具:

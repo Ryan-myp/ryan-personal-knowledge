@@ -181,7 +181,7 @@ def test_runtime_initialization_registers_all_builtin_capabilities(monkeypatch, 
     assert set(runtime.registry.list_all_platforms()) == {
         "meta", "google-ads", "tiktok", "dv360"
     }
-    assert len(runtime.registry.list_all()) == 72
+    assert len(runtime.registry.list_all()) == 107
     runtime._session_manager.store.close()
 
 

@@ -5,6 +5,7 @@ import logging
 from typing import Optional
 from ...core.interfaces import ToolDefinition, ToolSchema, RiskLevel, ToolEffect, ReplayPolicy, ToolHandler
 from ..base import BaseCapability, CampaignUpdateHandler
+from ..provider_tools import bind_provider_method, method_tool
 from .campaigns import (
     GoogleListCampaignsHandler,
     GoogleGetCampaignHandler,
@@ -55,6 +56,91 @@ def _google_update_adapter(client, ctx, resource_type, resource_id, _parent_id, 
 
 class GoogleCapability(BaseCapability):
     platform_name = "google-ads"
+    provider_client_class = GoogleAdsAPIClient
+    provider_method_exclusions = {"for_customer"}
+    capability_version = "1.1.0"
+    provider_api_version = "v24"
+    provider_method_coverage = {
+        "list_campaigns": ["google_list_campaigns"], "get_campaign": ["google_get_campaign"],
+        "list_ad_groups": ["google_list_ad_groups"], "get_ad_group": ["google_get_ad_group"],
+        "list_ads": ["google_list_ads"], "get_ad": ["google_get_ad"],
+        "list_keywords": ["google_list_keywords"], "list_asset_groups": ["google_list_asset_groups"],
+        "get_asset_group": ["google_get_asset_group"], "create_campaign": ["google_create_campaign"],
+        "update_campaign": ["google_update_campaign"], "update_ad_group": ["google_update_ad_group"],
+        "update_ad": ["google_update_ad"], "update_asset_group": ["google_update_asset_group"],
+        "pause_campaign": ["google_pause_campaign"], "resume_campaign": ["google_resume_campaign"],
+        "create_ad_group": ["google_create_ad_group"], "create_search_ad": ["google_create_search_ad", "google_create_ad"],
+        "create_pmax_asset_group": ["google_create_pmax_asset_group", "google_create_asset_group"],
+        "get_campaign_report": ["google_get_campaign_report"], "get_adgroup_report": ["google_get_adgroup_report"],
+    }
+
+    def _extended_provider_tools(self, client):
+        """Expose Google Ads client endpoints with dedicated contracts."""
+        tools = [
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_create_search_ad", description="创建 Google Responsive Search Ad；默认仅生成 dry-run 计划。",
+                method_name="create_search_ad", result_key="ad_id",
+                properties={
+                    "ad_group_id": {"type": "string"},
+                    "headlines": {"type": "array", "items": {"type": "string"}},
+                    "descriptions": {"type": "array", "items": {"type": "string"}},
+                    "final_url": {"type": "string"}, "ad_type": {"type": "string"},
+                    "path1": {"type": "string"}, "path2": {"type": "string"},
+                    "responsive_search_ad": {"type": "object"}, "status": {"type": "string"},
+                }, required=["ad_group_id", "headlines", "descriptions", "final_url"],
+                action="create", resource_type="ad", parent_resource_type="ad_group",
+                resource_id_field="ad_id", parent_resource_id_field="ad_group_id",
+                intent_types=["create_search_ad"], traits=["write", "ad"], write=True,
+                argument_builder=lambda _ctx, data: ((data["ad_group_id"], data["headlines"], data["descriptions"], data["final_url"]), {
+                    "ad_type": data.get("ad_type"), "path1": data.get("path1"), "path2": data.get("path2"),
+                    "responsive_search_ad": data.get("responsive_search_ad"), "status": data.get("status"),
+                }),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_create_pmax_asset_group", description="创建 Google PMax Asset Group；默认仅生成 dry-run 计划。",
+                method_name="create_pmax_asset_group", result_key="asset_group_id",
+                properties={
+                    "campaign_id": {"type": "string"}, "name": {"type": "string"},
+                    "headlines": {"type": "array", "items": {"type": "string"}},
+                    "descriptions": {"type": "array", "items": {"type": "string"}},
+                    "images": {"type": "array"}, "videos": {"type": "array"},
+                }, required=["campaign_id", "name", "headlines"], action="create",
+                resource_type="asset_group", parent_resource_type="campaign",
+                resource_id_field="asset_group_id", parent_resource_id_field="campaign_id",
+                intent_types=["create_pmax_asset_group"], traits=["write", "asset_group"], write=True,
+                argument_builder=lambda _ctx, data: ((data["campaign_id"], data["name"], data["headlines"]), {
+                    "descriptions": data.get("descriptions"), "images": data.get("images"), "videos": data.get("videos"),
+                }),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_get_adgroup_report", description="查询 Google Ads Ad Group 级报表。",
+                method_name="get_adgroup_report", result_key="report",
+                properties={
+                    "campaign_id": {"type": "string"},
+                    "adgroup_ids": {"type": "array", "items": {"type": "string"}},
+                    "date_from": {"type": "string"}, "date_to": {"type": "string"},
+                }, required=["campaign_id"], action="report", resource_type="ad_group",
+                intent_types=["download_report"], traits=["read", "report", "ad_group"],
+                argument_builder=lambda _ctx, data: ((data["campaign_id"],), {
+                    "adgroup_ids": data.get("adgroup_ids"), "date_from": data.get("date_from", "LAST_30_DAYS"),
+                    "date_to": data.get("date_to", "TODAY"),
+                }),
+            ),
+        ]
+        for method_name, intent in (("pause_campaign", "pause_campaign"), ("resume_campaign", "resume_campaign")):
+            tools.append(method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name=f"google_{method_name}", description=f"调用 Google Ads {method_name} 管理接口；默认仅生成 dry-run 计划。",
+                method_name=method_name, result_key="campaign_result",
+                properties={"campaign_id": {"type": "string"}}, required=["campaign_id"],
+                action=method_name.split("_", 1)[0], resource_type="campaign",
+                resource_id_field="campaign_id", intent_types=[f"provider_{intent}"], traits=["write", "campaign"], write=True,
+                argument_builder=lambda _ctx, data: ((data["campaign_id"],), {}),
+            ))
+        return [bind_provider_method(tool, client) for tool in tools]
 
     def register_tools(self) -> list[tuple[ToolDefinition, ToolHandler]]:
         tools = []
@@ -319,6 +405,8 @@ class GoogleCapability(BaseCapability):
                 api_client, resource_type, _google_update_adapter,
                 resource_id_field=resource_id,
             )))
+
+        tools.extend(self._extended_provider_tools(api_client))
 
         return tools
 

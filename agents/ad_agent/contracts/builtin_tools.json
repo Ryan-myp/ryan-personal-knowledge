@@ -1,13 +1,116 @@
 {
-  "digest": "19d00310fade138c8bd36814f985e4aa66817d268798f9a4efe62bb0ffccc76e",
+  "digest": "579cb489647b57d0749c6e84eb0c55d57bdc45c4576554abf5816ffea3f04cba",
   "format_version": 1,
   "platforms": {
     "dv360": {
-      "digest": "7003f8add77b3f44490b1fc7008181520ba2ba3ca230314df104ae00ed6335c6",
-      "tool_count": 14,
+      "digest": "b546b4633ce76b15fa4585e78b6ce710e12e501a3980e67ca9a4c45b23d416d7",
+      "tool_count": 20,
       "tools": [
         {
+          "action": "activate",
+          "contract_version": "1.1.0",
+          "description": "调用 DV360 activate_io 管理接口；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "advertiser_id": {
+                "type": "string"
+              },
+              "io_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "advertiser_id",
+              "io_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "activate_io"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "dv360_activate_io",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "campaign",
+          "platform": "dv360",
+          "provider_api_version": "v4",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "io_id",
+          "resource_type": "io",
+          "risk_level": "medium",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "io"
+          ]
+        },
+        {
+          "action": "activate",
+          "contract_version": "1.1.0",
+          "description": "激活 DV360 Line Item；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "advertiser_id": {
+                "type": "string"
+              },
+              "io_id": {
+                "type": "string"
+              },
+              "line_item_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "advertiser_id",
+              "io_id",
+              "line_item_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "activate_line_item"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "dv360_activate_line_item",
+          "parent_resource_id_field": "io_id",
+          "parent_resource_type": "io",
+          "platform": "dv360",
+          "provider_api_version": "v4",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "line_item_id",
+          "resource_type": "line_item",
+          "risk_level": "medium",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "line_item"
+          ]
+        },
+        {
           "action": "create",
+          "contract_version": "1.1.0",
           "description": "创建 DV360 Campaign。",
           "effect_class": "write",
           "input_schema": {
@@ -89,6 +192,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "dv360",
+          "provider_api_version": "v4",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -105,6 +209,7 @@
         },
         {
           "action": "create",
+          "contract_version": "1.1.0",
           "description": "创建 DV360 IO（Order & Invoice）。",
           "effect_class": "write",
           "input_schema": {
@@ -208,6 +313,7 @@
           "parent_resource_id_field": "campaign_id",
           "parent_resource_type": "campaign",
           "platform": "dv360",
+          "provider_api_version": "v4",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -224,6 +330,7 @@
         },
         {
           "action": "create",
+          "contract_version": "1.1.0",
           "description": "创建 DV360 Line Item。",
           "effect_class": "write",
           "input_schema": {
@@ -372,6 +479,7 @@
           "parent_resource_id_field": "io_id",
           "parent_resource_type": "io",
           "platform": "dv360",
+          "provider_api_version": "v4",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -387,7 +495,102 @@
           ]
         },
         {
+          "action": "create",
+          "contract_version": "1.1.0",
+          "description": "创建 DV360 异步报表任务；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "advertiser_id": {
+                "type": "string"
+              },
+              "report": {
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "advertiser_id",
+              "report"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_report"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "dv360_create_report",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "dv360",
+          "provider_api_version": "v4",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": null,
+          "resource_type": "report",
+          "risk_level": "medium",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "report"
+          ]
+        },
+        {
           "action": "get",
+          "contract_version": "1.1.0",
+          "description": "获取 DV360 Advertiser 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "advertiser_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "advertiser_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_advertiser"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "dv360_get_advertiser",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "dv360",
+          "provider_api_version": "v4",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "advertiser",
+          "risk_level": "low",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "advertiser"
+          ]
+        },
+        {
+          "action": "get",
+          "contract_version": "1.1.0",
           "description": "查询 DV360 Campaign 详情（支持 campaign_id 或 campaign_name）。",
           "effect_class": "read",
           "input_schema": {
@@ -417,6 +620,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "dv360",
+          "provider_api_version": "v4",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -433,6 +637,7 @@
         },
         {
           "action": "get",
+          "contract_version": "1.1.0",
           "description": "查询 DV360 Insertion Order 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -460,6 +665,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": "campaign",
           "platform": "dv360",
+          "provider_api_version": "v4",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -476,6 +682,7 @@
         },
         {
           "action": "get",
+          "contract_version": "1.1.0",
           "description": "查询 DV360 Line Item 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -507,6 +714,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": "io",
           "platform": "dv360",
+          "provider_api_version": "v4",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -523,6 +731,7 @@
         },
         {
           "action": "report",
+          "contract_version": "1.1.0",
           "description": "查询 DV360 Line Item 报表；当前不提供 Campaign-level report。",
           "effect_class": "read",
           "input_schema": {
@@ -566,6 +775,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": "io",
           "platform": "dv360",
+          "provider_api_version": "v4",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -581,7 +791,60 @@
           ]
         },
         {
+          "action": "get",
+          "contract_version": "1.1.0",
+          "description": "获取 DV360 异步报表结果。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "advertiser_id": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "report_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "advertiser_id",
+              "report_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_report_result"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "dv360_get_report_result",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "dv360",
+          "provider_api_version": "v4",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "report",
+          "risk_level": "low",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "report"
+          ]
+        },
+        {
           "action": "list",
+          "contract_version": "1.1.0",
           "description": "查询 DV360 Advertiser 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -603,6 +866,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "dv360",
+          "provider_api_version": "v4",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -619,6 +883,7 @@
         },
         {
           "action": "list",
+          "contract_version": "1.1.0",
           "description": "查询 DV360 Campaign 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -654,6 +919,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "dv360",
+          "provider_api_version": "v4",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -670,6 +936,7 @@
         },
         {
           "action": "list",
+          "contract_version": "1.1.0",
           "description": "查询 DV360 Insertion Order 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -700,6 +967,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": "campaign",
           "platform": "dv360",
+          "provider_api_version": "v4",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -716,6 +984,7 @@
         },
         {
           "action": "list",
+          "contract_version": "1.1.0",
           "description": "查询 DV360 Line Item 列表，可按 IO 过滤。",
           "effect_class": "read",
           "input_schema": {
@@ -749,6 +1018,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": "io",
           "platform": "dv360",
+          "provider_api_version": "v4",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -764,7 +1034,57 @@
           ]
         },
         {
+          "action": "pause",
+          "contract_version": "1.1.0",
+          "description": "调用 DV360 pause_io 管理接口；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "advertiser_id": {
+                "type": "string"
+              },
+              "io_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "advertiser_id",
+              "io_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "pause_io"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "dv360_pause_io",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "campaign",
+          "platform": "dv360",
+          "provider_api_version": "v4",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "io_id",
+          "resource_type": "io",
+          "risk_level": "medium",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "io"
+          ]
+        },
+        {
           "action": "update",
+          "contract_version": "1.1.0",
           "description": "更新 DV360 campaign，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -832,6 +1152,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "dv360",
+          "provider_api_version": "v4",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -848,6 +1169,7 @@
         },
         {
           "action": "update",
+          "contract_version": "1.1.0",
           "description": "更新 DV360 io，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -920,6 +1242,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": "campaign",
           "platform": "dv360",
+          "provider_api_version": "v4",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -936,6 +1259,7 @@
         },
         {
           "action": "update",
+          "contract_version": "1.1.0",
           "description": "更新 DV360 line_item，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -1018,6 +1342,7 @@
           "parent_resource_id_field": "io_id",
           "parent_resource_type": "io",
           "platform": "dv360",
+          "provider_api_version": "v4",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -1035,11 +1360,12 @@
       ]
     },
     "google-ads": {
-      "digest": "92aa56f8a01c7c1bda3593567373d1e3db055d9eeae03d5648a1fafd0d886b80",
-      "tool_count": 18,
+      "digest": "d089c2d9ba71c08c36b018239be8e2fa22208b092a6c3c0426f09e0d0bac1f92",
+      "tool_count": 23,
       "tools": [
         {
           "action": "create",
+          "contract_version": "1.1.0",
           "description": "创建 Google Ads Ad。",
           "effect_class": "write",
           "input_schema": {
@@ -1153,6 +1479,7 @@
           "parent_resource_id_field": "ad_group_id",
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
+          "provider_api_version": "v24",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -1169,6 +1496,7 @@
         },
         {
           "action": "create",
+          "contract_version": "1.1.0",
           "description": "创建 Google Ads Ad Group。",
           "effect_class": "write",
           "input_schema": {
@@ -1241,6 +1569,7 @@
           "parent_resource_id_field": "campaign_id",
           "parent_resource_type": "campaign",
           "platform": "google-ads",
+          "provider_api_version": "v24",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -1257,6 +1586,7 @@
         },
         {
           "action": "create",
+          "contract_version": "1.1.0",
           "description": "创建 Google PMax Asset Group；当前仅支持 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -1365,6 +1695,7 @@
           "parent_resource_id_field": "campaign_id",
           "parent_resource_type": "campaign",
           "platform": "google-ads",
+          "provider_api_version": "v24",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -1382,6 +1713,7 @@
         },
         {
           "action": "create",
+          "contract_version": "1.1.0",
           "description": "创建 Google Ads Campaign。",
           "effect_class": "write",
           "input_schema": {
@@ -1593,6 +1925,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "google-ads",
+          "provider_api_version": "v24",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -1608,7 +1941,154 @@
           ]
         },
         {
+          "action": "create",
+          "contract_version": "1.1.0",
+          "description": "创建 Google PMax Asset Group；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "type": "string"
+              },
+              "descriptions": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "headlines": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "images": {
+                "type": "array"
+              },
+              "name": {
+                "type": "string"
+              },
+              "videos": {
+                "type": "array"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "campaign_id",
+              "name",
+              "headlines"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_pmax_asset_group"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_pmax_asset_group",
+          "parent_resource_id_field": "campaign_id",
+          "parent_resource_type": "campaign",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "asset_group_id",
+          "resource_type": "asset_group",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "asset_group"
+          ]
+        },
+        {
+          "action": "create",
+          "contract_version": "1.1.0",
+          "description": "创建 Google Responsive Search Ad；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_group_id": {
+                "type": "string"
+              },
+              "ad_type": {
+                "type": "string"
+              },
+              "descriptions": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "final_url": {
+                "type": "string"
+              },
+              "headlines": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "path1": {
+                "type": "string"
+              },
+              "path2": {
+                "type": "string"
+              },
+              "responsive_search_ad": {
+                "type": "object"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "ad_group_id",
+              "headlines",
+              "descriptions",
+              "final_url"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_search_ad"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_search_ad",
+          "parent_resource_id_field": "ad_group_id",
+          "parent_resource_type": "ad_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad"
+          ]
+        },
+        {
           "action": "get",
+          "contract_version": "1.1.0",
           "description": "查询 Google Ads Ad 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -1636,6 +2116,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
+          "provider_api_version": "v24",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -1652,6 +2133,7 @@
         },
         {
           "action": "get",
+          "contract_version": "1.1.0",
           "description": "查询 Google Ads Ad Group 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -1679,6 +2161,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": "campaign",
           "platform": "google-ads",
+          "provider_api_version": "v24",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -1694,7 +2177,66 @@
           ]
         },
         {
+          "action": "report",
+          "contract_version": "1.1.0",
+          "description": "查询 Google Ads Ad Group 级报表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "adgroup_ids": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "campaign_id": {
+                "type": "string"
+              },
+              "date_from": {
+                "type": "string"
+              },
+              "date_to": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "campaign_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "download_report"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_get_adgroup_report",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "campaign",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "ad_group",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "report",
+            "ad_group"
+          ]
+        },
+        {
           "action": "get",
+          "contract_version": "1.1.0",
           "description": "查询 PMax Asset Group 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -1722,6 +2264,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": "campaign",
           "platform": "google-ads",
+          "provider_api_version": "v24",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -1738,6 +2281,7 @@
         },
         {
           "action": "get",
+          "contract_version": "1.1.0",
           "description": "查询 Google Ads Campaign 详情（支持 campaign_id 或 campaign_name）。",
           "effect_class": "read",
           "input_schema": {
@@ -1767,6 +2311,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "google-ads",
+          "provider_api_version": "v24",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -1783,6 +2328,7 @@
         },
         {
           "action": "report",
+          "contract_version": "1.1.0",
           "description": "查询 Google Ads Campaign 报表。支持按 campaign_ids 过滤，默认查询最近30天数据。",
           "effect_class": "read",
           "input_schema": {
@@ -1820,6 +2366,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "google-ads",
+          "provider_api_version": "v24",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -1836,6 +2383,7 @@
         },
         {
           "action": "list",
+          "contract_version": "1.1.0",
           "description": "查询 Google Ads Ad Group 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -1866,6 +2414,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": "campaign",
           "platform": "google-ads",
+          "provider_api_version": "v24",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -1882,6 +2431,7 @@
         },
         {
           "action": "list",
+          "contract_version": "1.1.0",
           "description": "查询 Google Ads Ad 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -1912,6 +2462,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
+          "provider_api_version": "v24",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -1928,6 +2479,7 @@
         },
         {
           "action": "list",
+          "contract_version": "1.1.0",
           "description": "查询 PMax Campaign 的 Asset Group 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -1958,6 +2510,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": "campaign",
           "platform": "google-ads",
+          "provider_api_version": "v24",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -1974,6 +2527,7 @@
         },
         {
           "action": "list",
+          "contract_version": "1.1.0",
           "description": "查询 Google Ads Campaign 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -2009,6 +2563,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "google-ads",
+          "provider_api_version": "v24",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -2025,6 +2580,7 @@
         },
         {
           "action": "list",
+          "contract_version": "1.1.0",
           "description": "查询 Google Ads 关键词，可按 Campaign 或 Ad Group 过滤。",
           "effect_class": "read",
           "input_schema": {
@@ -2059,6 +2615,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "google-ads",
+          "provider_api_version": "v24",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -2074,7 +2631,98 @@
           ]
         },
         {
+          "action": "pause",
+          "contract_version": "1.1.0",
+          "description": "调用 Google Ads pause_campaign 管理接口；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "campaign_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "provider_pause_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_pause_campaign",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "campaign_id",
+          "resource_type": "campaign",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "campaign"
+          ]
+        },
+        {
+          "action": "resume",
+          "contract_version": "1.1.0",
+          "description": "调用 Google Ads resume_campaign 管理接口；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "campaign_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "provider_resume_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_resume_campaign",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "campaign_id",
+          "resource_type": "campaign",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "campaign"
+          ]
+        },
+        {
           "action": "update",
+          "contract_version": "1.1.0",
           "description": "更新 Google Ads ad，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -2154,6 +2802,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
+          "provider_api_version": "v24",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -2170,6 +2819,7 @@
         },
         {
           "action": "update",
+          "contract_version": "1.1.0",
           "description": "更新 Google Ads ad_group，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -2237,6 +2887,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": "campaign",
           "platform": "google-ads",
+          "provider_api_version": "v24",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -2253,6 +2904,7 @@
         },
         {
           "action": "update",
+          "contract_version": "1.1.0",
           "description": "更新 Google Ads asset_group，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -2328,6 +2980,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": "campaign",
           "platform": "google-ads",
+          "provider_api_version": "v24",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -2344,6 +2997,7 @@
         },
         {
           "action": "update",
+          "contract_version": "1.1.0",
           "description": "更新 Google Ads campaign，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -2412,6 +3066,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "google-ads",
+          "provider_api_version": "v24",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -2429,11 +3084,12 @@
       ]
     },
     "meta": {
-      "digest": "dabbb07a9852d83d40de295e5e7350e5f83216d8c56b25505860a44e109de0c5",
-      "tool_count": 16,
+      "digest": "2374ce445cea7f008e6184662f01bbc8e7c5e230ea9ee2ec5089f38eed0370be",
+      "tool_count": 24,
       "tools": [
         {
           "action": "boost",
+          "contract_version": "1.1.0",
           "description": "将已有 Meta Page 帖子创建为推广广告。",
           "effect_class": "write",
           "input_schema": {
@@ -2477,6 +3133,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "meta",
+          "provider_api_version": "v19.0",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -2494,6 +3151,7 @@
         },
         {
           "action": "create",
+          "contract_version": "1.1.0",
           "description": "创建 Meta Ad。",
           "effect_class": "write",
           "input_schema": {
@@ -2625,6 +3283,7 @@
           "parent_resource_id_field": "adset_id",
           "parent_resource_type": "ad_set",
           "platform": "meta",
+          "provider_api_version": "v19.0",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -2641,6 +3300,7 @@
         },
         {
           "action": "create",
+          "contract_version": "1.1.0",
           "description": "创建 Meta Ad Set。",
           "effect_class": "write",
           "input_schema": {
@@ -3021,6 +3681,7 @@
           "parent_resource_id_field": "campaign_id",
           "parent_resource_type": "campaign",
           "platform": "meta",
+          "provider_api_version": "v19.0",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -3037,6 +3698,7 @@
         },
         {
           "action": "create",
+          "contract_version": "1.1.0",
           "description": "创建 Meta Campaign。",
           "effect_class": "write",
           "input_schema": {
@@ -3175,6 +3837,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "meta",
+          "provider_api_version": "v19.0",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -3191,6 +3854,7 @@
         },
         {
           "action": "create",
+          "contract_version": "1.1.0",
           "description": "创建 Meta Creative；当前仅支持 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -3239,6 +3903,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "meta",
+          "provider_api_version": "v19.0",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -3255,6 +3920,58 @@
         },
         {
           "action": "get",
+          "contract_version": "1.1.0",
+          "description": "获取 Meta 广告账户详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "fields": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_account"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_get_account",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "account",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "account"
+          ]
+        },
+        {
+          "action": "get",
+          "contract_version": "1.1.0",
           "description": "获取 Meta Ad 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -3280,8 +3997,9 @@
           "max_output_bytes": 1000000,
           "name": "meta_get_ad",
           "parent_resource_id_field": null,
-          "parent_resource_type": "ad_group",
+          "parent_resource_type": "ad_set",
           "platform": "meta",
+          "provider_api_version": "v19.0",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -3297,7 +4015,70 @@
           ]
         },
         {
+          "action": "report",
+          "contract_version": "1.1.0",
+          "description": "查询 Meta Ad 级报表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "ad_ids": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "date_range": {
+                "type": "object"
+              },
+              "fields": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "ad_ids"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "download_report"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_get_ad_report",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "ad_group",
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "ad",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "report",
+            "ad"
+          ]
+        },
+        {
           "action": "get",
+          "contract_version": "1.1.0",
           "description": "获取 Meta Ad Set 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -3325,6 +4106,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": "campaign",
           "platform": "meta",
+          "provider_api_version": "v19.0",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -3340,7 +4122,70 @@
           ]
         },
         {
+          "action": "report",
+          "contract_version": "1.1.0",
+          "description": "查询 Meta Ad Set 级报表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "adset_ids": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "date_range": {
+                "type": "object"
+              },
+              "fields": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "adset_ids"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "download_report"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_get_adset_report",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "campaign",
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "ad_set",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "report",
+            "ad_set"
+          ]
+        },
+        {
           "action": "get",
+          "contract_version": "1.1.0",
           "description": "获取 Meta Campaign 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -3370,6 +4215,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "meta",
+          "provider_api_version": "v19.0",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -3386,6 +4232,7 @@
         },
         {
           "action": "report",
+          "contract_version": "1.1.0",
           "description": "查询 Meta Campaign 报表。",
           "effect_class": "read",
           "input_schema": {
@@ -3426,6 +4273,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "meta",
+          "provider_api_version": "v19.0",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -3442,6 +4290,50 @@
         },
         {
           "action": "list",
+          "contract_version": "1.1.0",
+          "description": "列出 Meta 可访问的广告账户。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "business_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_accounts"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_list_accounts",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "account",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "account"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.1.0",
           "description": "列出 Meta Ad Set 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -3473,6 +4365,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": "campaign",
           "platform": "meta",
+          "provider_api_version": "v19.0",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -3489,6 +4382,7 @@
         },
         {
           "action": "list",
+          "contract_version": "1.1.0",
           "description": "列出 Meta Ad 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -3516,9 +4410,10 @@
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_list_ads",
-          "parent_resource_id_field": null,
-          "parent_resource_type": "ad_group",
+          "parent_resource_id_field": "adset_id",
+          "parent_resource_type": "ad_set",
           "platform": "meta",
+          "provider_api_version": "v19.0",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -3535,6 +4430,7 @@
         },
         {
           "action": "list",
+          "contract_version": "1.1.0",
           "description": "查询 Meta Custom Audience 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -3563,6 +4459,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "meta",
+          "provider_api_version": "v19.0",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -3579,6 +4476,7 @@
         },
         {
           "action": "list",
+          "contract_version": "1.1.0",
           "description": "列出 Meta Campaign 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -3614,6 +4512,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "meta",
+          "provider_api_version": "v19.0",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -3629,7 +4528,188 @@
           ]
         },
         {
+          "action": "pause",
+          "contract_version": "1.1.0",
+          "description": "调用 Meta pause_ad 管理接口；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "ad_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "provider_pause_ad"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_pause_ad",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "ad_group",
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad"
+          ]
+        },
+        {
+          "action": "pause",
+          "contract_version": "1.1.0",
+          "description": "调用 Meta pause_adset 管理接口；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "adset_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "adset_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "provider_pause_adset"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_pause_adset",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "campaign",
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "adset_id",
+          "resource_type": "ad_set",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad_set"
+          ]
+        },
+        {
+          "action": "pause",
+          "contract_version": "1.1.0",
+          "description": "调用 Meta pause_campaign 管理接口；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "campaign_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "provider_pause_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_pause_campaign",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "campaign_id",
+          "resource_type": "campaign",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "campaign"
+          ]
+        },
+        {
+          "action": "resume",
+          "contract_version": "1.1.0",
+          "description": "调用 Meta resume_campaign 管理接口；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "campaign_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "provider_resume_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_resume_campaign",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "campaign_id",
+          "resource_type": "campaign",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "campaign"
+          ]
+        },
+        {
           "action": "update",
+          "contract_version": "1.1.0",
           "description": "更新 Meta ad，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -3694,6 +4774,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": "ad_group",
           "platform": "meta",
+          "provider_api_version": "v19.0",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -3710,6 +4791,7 @@
         },
         {
           "action": "update",
+          "contract_version": "1.1.0",
           "description": "更新 Meta ad_set，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -3810,6 +4892,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": "campaign",
           "platform": "meta",
+          "provider_api_version": "v19.0",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -3826,6 +4909,7 @@
         },
         {
           "action": "update",
+          "contract_version": "1.1.0",
           "description": "更新 Meta campaign，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -3893,6 +4977,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "meta",
+          "provider_api_version": "v19.0",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -3910,11 +4995,12 @@
       ]
     },
     "tiktok": {
-      "digest": "93cc0e538bc5c8d804ddea96566214615b688cf23af3b6133f6f64d336d35d90",
-      "tool_count": 24,
+      "digest": "b71703354905b72895cca81477c51eaada2ceb68dc9480977b38c61c6230de70",
+      "tool_count": 40,
       "tools": [
         {
           "action": "create",
+          "contract_version": "1.1.0",
           "description": "创建 TikTok Ads Ad。",
           "effect_class": "write",
           "input_schema": {
@@ -4019,6 +5105,7 @@
           "parent_resource_id_field": "adgroup_id",
           "parent_resource_type": "ad_group",
           "platform": "tiktok",
+          "provider_api_version": "v1.3",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -4035,6 +5122,7 @@
         },
         {
           "action": "create",
+          "contract_version": "1.1.0",
           "description": "创建 TikTok Ads Ad Group。",
           "effect_class": "write",
           "input_schema": {
@@ -4331,6 +5419,7 @@
           "parent_resource_id_field": "campaign_id",
           "parent_resource_type": "campaign",
           "platform": "tiktok",
+          "provider_api_version": "v1.3",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -4347,6 +5436,7 @@
         },
         {
           "action": "create",
+          "contract_version": "1.1.0",
           "description": "创建 TikTok Ads Campaign。",
           "effect_class": "write",
           "input_schema": {
@@ -4504,6 +5594,56 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "campaign_id",
+          "resource_type": "campaign",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "campaign"
+          ]
+        },
+        {
+          "action": "delete",
+          "contract_version": "1.1.0",
+          "description": "调用 TikTok delete_campaign 管理接口；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "campaign_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "campaign_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "provider_delete_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_delete_campaign",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -4520,6 +5660,7 @@
         },
         {
           "action": "get",
+          "contract_version": "1.1.0",
           "description": "查询 TikTok Ads Ad 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -4551,6 +5692,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": "ad_group",
           "platform": "tiktok",
+          "provider_api_version": "v1.3",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -4567,6 +5709,7 @@
         },
         {
           "action": "get",
+          "contract_version": "1.1.0",
           "description": "查询 TikTok Ads Ad Group 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -4598,6 +5741,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": "campaign",
           "platform": "tiktok",
+          "provider_api_version": "v1.3",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -4613,7 +5757,116 @@
           ]
         },
         {
+          "action": "report",
+          "contract_version": "1.1.0",
+          "description": "查询 TikTok Ad Group 级报表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "adgroup_ids": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "campaign_id": {
+                "type": "string"
+              },
+              "date_range": {
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "campaign_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "download_report"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_get_adgroup_report",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "campaign",
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "ad_group",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "report",
+            "ad_group"
+          ]
+        },
+        {
           "action": "get",
+          "contract_version": "1.1.0",
+          "description": "获取 TikTok Audience 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "audience_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "audience_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_audience"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_get_audience",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "audience",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "audience"
+          ]
+        },
+        {
+          "action": "get",
+          "contract_version": "1.1.0",
           "description": "查询 TikTok Ads Campaign 详情（支持 campaign_id 或 campaign_name）。",
           "effect_class": "read",
           "input_schema": {
@@ -4643,6 +5896,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "tiktok",
+          "provider_api_version": "v1.3",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -4659,6 +5913,7 @@
         },
         {
           "action": "report",
+          "contract_version": "1.1.0",
           "description": "查询 TikTok Ads Campaign 报表。",
           "effect_class": "read",
           "input_schema": {
@@ -4695,6 +5950,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "tiktok",
+          "provider_api_version": "v1.3",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -4710,7 +5966,204 @@
           ]
         },
         {
+          "action": "get",
+          "contract_version": "1.1.0",
+          "description": "获取 TikTok 转化事件详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "conversion_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "conversion_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_conversion"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_get_conversion",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "conversion",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "conversion"
+          ]
+        },
+        {
+          "action": "get",
+          "contract_version": "1.1.0",
+          "description": "获取 TikTok 兴趣类别详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "category_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "category_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_interest_category"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_get_interest_category",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "interest_category",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "targeting"
+          ]
+        },
+        {
+          "action": "report",
+          "contract_version": "1.1.0",
+          "description": "查询 TikTok 广告报表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "date_preset": {
+                "type": "string"
+              },
+              "date_range": {
+                "type": "object"
+              },
+              "report_type": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "download_report"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_get_report",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "report",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "report"
+          ]
+        },
+        {
           "action": "list",
+          "contract_version": "1.1.0",
+          "description": "列出 TikTok 广告主账户。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "advertiser_ids": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "advertiser_ids"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_accounts"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_list_accounts",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "account",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "account"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.1.0",
           "description": "查询 TikTok Ads Ad Group 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -4741,6 +6194,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": "campaign",
           "platform": "tiktok",
+          "provider_api_version": "v1.3",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -4757,6 +6211,7 @@
         },
         {
           "action": "list",
+          "contract_version": "1.1.0",
           "description": "查询 TikTok Ads Ad 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -4787,6 +6242,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": "ad_group",
           "platform": "tiktok",
+          "provider_api_version": "v1.3",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -4803,6 +6259,7 @@
         },
         {
           "action": "list",
+          "contract_version": "1.1.0",
           "description": "查询 TikTok apps 参考数据。",
           "effect_class": "read",
           "input_schema": {
@@ -4834,6 +6291,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "tiktok",
+          "provider_api_version": "v1.3",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -4850,6 +6308,7 @@
         },
         {
           "action": "list",
+          "contract_version": "1.1.0",
           "description": "查询 TikTok Audience 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -4878,6 +6337,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "tiktok",
+          "provider_api_version": "v1.3",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -4894,6 +6354,7 @@
         },
         {
           "action": "list",
+          "contract_version": "1.1.0",
           "description": "查询 TikTok brand_safety 参考数据。",
           "effect_class": "read",
           "input_schema": {
@@ -4925,6 +6386,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "tiktok",
+          "provider_api_version": "v1.3",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -4941,6 +6403,46 @@
         },
         {
           "action": "list",
+          "contract_version": "1.1.0",
+          "description": "查询 TikTok browser 定向选项。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {},
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_browsers"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_list_browsers",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "browser",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "targeting"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.1.0",
           "description": "查询 TikTok Ads Campaign 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -4976,6 +6478,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "tiktok",
+          "provider_api_version": "v1.3",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -4992,6 +6495,46 @@
         },
         {
           "action": "list",
+          "contract_version": "1.1.0",
+          "description": "查询 TikTok carrier 定向选项。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {},
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_carriers"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_list_carriers",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "carrier",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "targeting"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.1.0",
           "description": "查询 TikTok catalogs 参考数据。",
           "effect_class": "read",
           "input_schema": {
@@ -5028,6 +6571,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "tiktok",
+          "provider_api_version": "v1.3",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -5044,6 +6588,7 @@
         },
         {
           "action": "list",
+          "contract_version": "1.1.0",
           "description": "查询 TikTok conversions 参考数据。",
           "effect_class": "read",
           "input_schema": {
@@ -5080,6 +6625,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "tiktok",
+          "provider_api_version": "v1.3",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -5096,6 +6642,7 @@
         },
         {
           "action": "list",
+          "contract_version": "1.1.0",
           "description": "查询 TikTok creatives 素材库。",
           "effect_class": "read",
           "input_schema": {
@@ -5129,6 +6676,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "tiktok",
+          "provider_api_version": "v1.3",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -5146,6 +6694,7 @@
         },
         {
           "action": "list",
+          "contract_version": "1.1.0",
           "description": "查询 TikTok devices 参考数据。",
           "effect_class": "read",
           "input_schema": {
@@ -5177,6 +6726,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "tiktok",
+          "provider_api_version": "v1.3",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -5193,6 +6743,7 @@
         },
         {
           "action": "list",
+          "contract_version": "1.1.0",
           "description": "查询 TikTok images 素材库。",
           "effect_class": "read",
           "input_schema": {
@@ -5226,6 +6777,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "tiktok",
+          "provider_api_version": "v1.3",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -5243,6 +6795,53 @@
         },
         {
           "action": "list",
+          "contract_version": "1.1.0",
+          "description": "查询 TikTok 兴趣类别。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "parent_ids": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_interests"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_list_interest_categories",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "interest_category",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "targeting"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.1.0",
           "description": "查询 TikTok locations 参考数据。",
           "effect_class": "read",
           "input_schema": {
@@ -5274,6 +6873,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "tiktok",
+          "provider_api_version": "v1.3",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -5290,6 +6890,100 @@
         },
         {
           "action": "list",
+          "contract_version": "1.1.0",
+          "description": "查询 TikTok operating_system 定向选项。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {},
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_operating_systems"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_list_operating_systems",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "operating_system",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "targeting"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.1.0",
+          "description": "查询 TikTok 商品集。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "catalog_id": {
+                "type": "string"
+              },
+              "filtering": {
+                "type": "array"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_product_sets"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_list_product_sets",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "product_set",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "catalog"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.1.0",
           "description": "查询 TikTok videos 素材库。",
           "effect_class": "read",
           "input_schema": {
@@ -5323,6 +7017,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "tiktok",
+          "provider_api_version": "v1.3",
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -5339,7 +7034,207 @@
           ]
         },
         {
+          "action": "pause",
+          "contract_version": "1.1.0",
+          "description": "调用 TikTok pause_adgroup 管理接口；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "adgroup_id": {
+                "type": "string"
+              },
+              "campaign_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "adgroup_id",
+              "campaign_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "provider_pause_adgroup"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_pause_adgroup",
+          "parent_resource_id_field": "campaign_id",
+          "parent_resource_type": "campaign",
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "adgroup_id",
+          "resource_type": "ad_group",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad_group"
+          ]
+        },
+        {
+          "action": "pause",
+          "contract_version": "1.1.0",
+          "description": "调用 TikTok pause_campaign 管理接口；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "campaign_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "campaign_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "provider_pause_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_pause_campaign",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "campaign_id",
+          "resource_type": "campaign",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "campaign"
+          ]
+        },
+        {
+          "action": "resume",
+          "contract_version": "1.1.0",
+          "description": "调用 TikTok resume_campaign 管理接口；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "campaign_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "campaign_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "provider_resume_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_resume_campaign",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "campaign_id",
+          "resource_type": "campaign",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "campaign"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.1.0",
+          "description": "按关键词搜索 TikTok 投放地域。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "keyword": {
+                "type": "string"
+              },
+              "location_type": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "keyword"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "search_locations"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_search_locations",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "location",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "targeting"
+          ]
+        },
+        {
           "action": "boost",
+          "contract_version": "1.1.0",
           "description": "使用达人已有帖子创建 TikTok Spark Ad。",
           "effect_class": "write",
           "input_schema": {
@@ -5379,6 +7274,7 @@
           "parent_resource_id_field": "adgroup_id",
           "parent_resource_type": "ad_group",
           "platform": "tiktok",
+          "provider_api_version": "v1.3",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -5396,6 +7292,7 @@
         },
         {
           "action": "update",
+          "contract_version": "1.1.0",
           "description": "更新 TikTok Ads ad，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -5454,6 +7351,7 @@
           "parent_resource_id_field": "adgroup_id",
           "parent_resource_type": "ad_group",
           "platform": "tiktok",
+          "provider_api_version": "v1.3",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -5470,6 +7368,7 @@
         },
         {
           "action": "update",
+          "contract_version": "1.1.0",
           "description": "更新 TikTok Ads ad_group，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -5657,6 +7556,7 @@
           "parent_resource_id_field": "campaign_id",
           "parent_resource_type": "campaign",
           "platform": "tiktok",
+          "provider_api_version": "v1.3",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -5673,6 +7573,7 @@
         },
         {
           "action": "update",
+          "contract_version": "1.1.0",
           "description": "更新 TikTok Ads campaign，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -5776,6 +7677,7 @@
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "tiktok",
+          "provider_api_version": "v1.3",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -5793,5 +7695,5 @@
       ]
     }
   },
-  "tool_count": 72
+  "tool_count": 107
 }

@@ -59,6 +59,8 @@ class SkillCapability:
     traits: list[str] = field(default_factory=list)
     timeout_seconds: float = 30.0
     max_output_bytes: int = 1_000_000
+    contract_version: str = "1"
+    provider_api_version: Optional[str] = None
 
 
 class SkillContract:
@@ -206,6 +208,15 @@ class SkillContract:
             raise ValueError(f"Skill tool {name}.max_output_bytes must be an integer")
         if max_output_bytes <= 0:
             raise ValueError(f"Skill tool {name}.max_output_bytes must be positive")
+        contract_version = spec.get("contract_version", "1")
+        if not isinstance(contract_version, (str, int, float)) or isinstance(contract_version, bool):
+            raise ValueError(f"Skill tool {name}.contract_version must be scalar")
+        provider_api_version = spec.get("provider_api_version")
+        if provider_api_version is not None and (
+            not isinstance(provider_api_version, (str, int, float))
+            or isinstance(provider_api_version, bool)
+        ):
+            raise ValueError(f"Skill tool {name}.provider_api_version must be scalar")
 
         def optional_string(field_name: str) -> Optional[str]:
             value = spec.get(field_name)
@@ -230,6 +241,10 @@ class SkillContract:
             ),
             replay_policy=replay_policy, traits=traits,
             timeout_seconds=float(timeout_seconds), max_output_bytes=max_output_bytes,
+            contract_version=str(contract_version),
+            provider_api_version=(
+                str(provider_api_version) if provider_api_version is not None else None
+            ),
         )
     
     def load(self) -> "SkillContract":
@@ -610,6 +625,8 @@ class BaseSkill(Skill):
                 traits=list(cap.traits),
                 timeout_seconds=cap.timeout_seconds,
                 max_output_bytes=cap.max_output_bytes,
+                contract_version=cap.contract_version,
+                provider_api_version=cap.provider_api_version,
             ))
         return tools
     

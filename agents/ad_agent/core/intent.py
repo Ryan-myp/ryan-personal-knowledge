@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 from typing import Any, Optional
+import yaml
 from .interfaces import (
     ToolContext, ParsedIntent, IntentParser, IntentRouter,
     ToolDefinition, ToolRegistry
@@ -67,18 +69,47 @@ class LLMIntentParser(IntentParser):
         """
         self._llm = llm_client
         self._custom_intents: set[str] = set()
-        # Built-ins provide useful natural-language aliases. Additional
-        # platforms are published by Runtime when their Capability/Skill is
-        # registered; the parser must not need a central channel edit.
-        self._platform_aliases: dict[str, str] = {
-            "meta": "meta", "facebook": "meta", "instagram": "meta", "ins": "meta",
-            "google": "google", "google ads": "google", "google-ads": "google",
-            "google_ads": "google", "gads": "google", "谷歌": "google",
-            "tiktok": "tiktok", "抖音": "tiktok",
-            "dv360": "dv360", "display video": "dv360", "dio": "dv360",
-        }
-        self._known_platforms: set[str] = {"meta", "google", "tiktok", "dv360"}
+        # Platform identity and natural-language aliases are published by
+        # Skills.  Discover the installed channel metadata for standalone
+        # parser use; Runtime registration remains the authoritative update
+        # path when plugins are added or removed at runtime.
+        self._platform_aliases: dict[str, str] = {}
+        self._known_platforms: set[str] = set()
         self._platform_field_specs: dict[str, dict[str, dict]] = {}
+        self._load_installed_channel_metadata()
+
+    def _load_installed_channel_metadata(self) -> None:
+        """Load aliases from channel Skill frontmatter without a channel table."""
+        channels_root = Path(__file__).resolve().parent.parent / "skills" / "channels"
+        if not channels_root.is_dir():
+            return
+        for skill_file in sorted(channels_root.rglob("SKILL.md")):
+            try:
+                text = skill_file.read_text(encoding="utf-8")
+                if not text.startswith("---"):
+                    continue
+                _, frontmatter, _ = text.split("---", 2)
+                metadata = yaml.safe_load(frontmatter) or {}
+                if not isinstance(metadata, dict):
+                    continue
+                identity = metadata.get("skill", metadata)
+                if not isinstance(identity, dict):
+                    continue
+                platform = str(identity.get("platform") or skill_file.parent.name).strip()
+                if not platform:
+                    continue
+                aliases = identity.get("aliases", [])
+                if isinstance(aliases, str):
+                    aliases = [aliases]
+                aliases = list(aliases) if isinstance(aliases, list) else []
+                skill_name = identity.get("name")
+                if skill_name:
+                    aliases.append(str(skill_name))
+                self.register_platform_aliases(platform, aliases)
+            except (OSError, ValueError, yaml.YAMLError):
+                # SkillLoader owns strict validation. Parser metadata is only
+                # an optional discovery hint and must never block startup.
+                continue
 
     def register_intents(self, intents: set[str] | list[str]) -> None:
         """Allow registered Skills to extend the intent contract safely."""
@@ -92,6 +123,7 @@ class LLMIntentParser(IntentParser):
                 continue
             canonical = {"google-ads": "google", "google_ads": "google"}.get(value, value)
             self._known_platforms.add(canonical)
+            self._platform_aliases.setdefault(canonical, canonical)
             self._platform_aliases.setdefault(value, canonical)
             self._platform_aliases.setdefault(value.replace("-", " "), canonical)
             self._platform_aliases.setdefault(value.replace("_", " "), canonical)
@@ -276,6 +308,21 @@ class LLMIntentParser(IntentParser):
             "洞察", "分析", "优化建议", "performance insight", "insights",
         ]):
             return "cross_channel_performance_insights"
+        # Cross-channel lifecycle actions are batch operations even when the
+        # user names only one ID per platform.  Do not route them to a
+        # provider's single-resource update tool.
+        if is_cross_request and any(kw in text for kw in [
+            "暂停", "停用", "pause", "disable",
+        ]):
+            return "cross_channel_batch_pause"
+        if is_cross_request and any(kw in text for kw in [
+            "恢复", "启用", "resume", "enable",
+        ]):
+            return "cross_channel_batch_resume"
+        if is_cross_request and any(kw in text for kw in [
+            "预算", "budget",
+        ]):
+            return "cross_channel_batch_update_budget"
         # Resolve explicit multi-platform comparisons before the generic
         # report rule, so “比较 Meta 和 Google 的报表” remains a comparison.
         if (

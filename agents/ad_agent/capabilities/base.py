@@ -93,6 +93,8 @@ class BaseCapability(CapabilityModule, ABC):
     
     # 平台名称（子类必须覆盖）
     platform_name: str = ""
+    capability_version: str = "1.0.0"
+    provider_api_version: str = ""
     
     # Skill 描述模板
     SKILL_DESCRIPTION_TEMPLATE = """
@@ -139,6 +141,17 @@ class BaseCapability(CapabilityModule, ABC):
         """子类实现：将平台工具注册到 Registry"""
         tools = self.register_tools()
         for defn, handler in tools:
+            if not defn.provider_api_version:
+                defn.provider_api_version = str(
+                    getattr(getattr(self, "_api_client", None), "api_version", "")
+                    or getattr(self, "provider_api_version", "")
+                    or "unknown"
+                )
+            # Capability version is deliberately attached at registration
+            # time, so a provider can publish a new Tool contract without a
+            # Runtime/Router change.
+            if defn.contract_version == "1" and self.capability_version:
+                defn.contract_version = str(self.capability_version)
             # Built-in capabilities must participate in the same authorization
             # contract as dynamically loaded Skills.  ``ads.plan`` is the
             # baseline grant for dry-run writes; Runtime adds ``ads.write``
@@ -306,3 +319,60 @@ class CampaignUpdateHandler(ToolHandler):
             return ToolResult.ok({"resource_id": resource_id, "result": value})
         except Exception as exc:
             return ToolResult.error(f"Failed to update {self.resource_type}: {exc}")
+
+
+class ProviderMethodHandler(ToolHandler):
+    """Expose one fixed provider-client method as a safe Tool handler.
+
+    The method name and argument builder are owned by the Capability, never by
+    user input.  This keeps the extension surface small when a provider adds a
+    read/reference/management endpoint, while preserving the Runtime's
+    standard ``client`` isolation, timeout and live-write gates.
+    """
+
+    def __init__(
+        self,
+        api_client: Any,
+        method_name: str,
+        result_key: str,
+        argument_builder: Callable[[ToolContext, dict[str, Any]], tuple[tuple, dict]],
+        *,
+        write: bool = False,
+        offline_value: Any = None,
+    ):
+        self.client = api_client
+        self.method_name = str(method_name)
+        self.result_key = str(result_key)
+        self.argument_builder = argument_builder
+        self.write = bool(write)
+        self.offline_value = offline_value
+
+    def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
+        if self.client is None:
+            if self.write:
+                return ToolResult.error("API client not configured")
+            return ToolResult.ok({
+                self.result_key: self.offline_value if self.offline_value is not None else [],
+                "account_id": getattr(ctx, "account_id", None),
+                "data_status": "offline_no_client",
+                "simulated": True,
+            })
+        try:
+            method = getattr(self.client, self.method_name, None)
+            if not callable(method):
+                return ToolResult.error(
+                    f"Provider method {self.method_name} is unavailable"
+                )
+            args, kwargs = self.argument_builder(ctx, input_data)
+            value = method(*args, **kwargs)
+            data = {
+                self.result_key: value,
+                "data_status": "live",
+            }
+            if getattr(ctx, "account_id", None):
+                data["account_id"] = ctx.account_id
+            return ToolResult.ok(data)
+        except Exception as exc:
+            return ToolResult.error(
+                f"Failed to call provider method {self.method_name}: {exc}"
+            )

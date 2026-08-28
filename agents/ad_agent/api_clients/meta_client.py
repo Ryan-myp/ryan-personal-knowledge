@@ -31,7 +31,9 @@ class MetaAPIClient(BasePlatformClient):
     - 广告账户级: 50 次/10秒
     """
     
-    BASE_URL = "https://graph.facebook.com/v19.0"
+    API_VERSION = "v19.0"
+    SUPPORTED_API_VERSIONS = (API_VERSION,)
+    BASE_URL = f"https://graph.facebook.com/{API_VERSION}"
     
     def __init__(
         self,
@@ -39,12 +41,27 @@ class MetaAPIClient(BasePlatformClient):
         retry_config: Optional[RetryConfig] = None,
     ):
         super().__init__(credentials, "meta", retry_config)
+        self.api_version = self._resolve_api_version(
+            self.credentials.get("api_version")
+        )
+        self.base_url = f"https://graph.facebook.com/{self.api_version}"
         self.access_token = self.credentials.get('access_token', '')
         # App 级限流器: 2000次/小时
         self._app_rate_limiter = RateLimiter(max_requests=2000, period=3600)
         # 账户级限流器: 50次/10秒
         self._account_rate_limiters: dict[str, RateLimiter] = {}
         self._account_rate_limiters_lock = threading.RLock()
+
+    @classmethod
+    def _resolve_api_version(cls, requested: Any = None) -> str:
+        """Resolve a version against the Capability's explicit support list."""
+        version = str(requested or cls.API_VERSION).strip()
+        if version not in cls.SUPPORTED_API_VERSIONS:
+            raise ValueError(
+                f"Unsupported Meta API version {version!r}; "
+                f"supported versions: {list(cls.SUPPORTED_API_VERSIONS)}"
+            )
+        return version
     
     def _get_account_limiter(self, account_id: str) -> RateLimiter:
         with self._account_rate_limiters_lock:
@@ -55,7 +72,7 @@ class MetaAPIClient(BasePlatformClient):
     def _build_url(self, endpoint: str) -> str:
         if endpoint.startswith('http'):
             return endpoint
-        return f"{self.BASE_URL}/{endpoint.lstrip('/')}"
+        return f"{self.base_url}/{endpoint.lstrip('/')}"
     
     def _do_request(self, method: str, url: str, **kwargs) -> dict:
         """发送 HTTP 请求"""

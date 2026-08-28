@@ -133,12 +133,21 @@ class ToolDefinition:
     # fields whenever the schema is ambiguous.
     resource_id_field: Optional[str] = None
     parent_resource_id_field: Optional[str] = None
+    # Version metadata is descriptive contract data, not routing logic.  A
+    # provider can publish a new client/Capability contract while keeping the
+    # stable Tool name; Runtime and Router do not need a provider-specific
+    # edit for that upgrade.
+    contract_version: str = "1"
+    provider_api_version: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
         if self.max_output_bytes <= 0:
             raise ValueError("max_output_bytes must be positive")
+        self.contract_version = str(self.contract_version or "1")
+        if self.provider_api_version is not None:
+            self.provider_api_version = str(self.provider_api_version)
         if self.live_support is None:
             self.live_support = not self.is_write_tool
         if self.replay_policy is None:
@@ -313,6 +322,8 @@ class ToolDefinition:
             "required_permissions": list(self.required_permissions),
             "resource_id_field": self.resource_id_field,
             "parent_resource_id_field": self.parent_resource_id_field,
+            "contract_version": self.contract_version,
+            "provider_api_version": self.provider_api_version,
             "input_schema": self.input_schema.to_dict() if self.input_schema else None,
         }
 

@@ -399,6 +399,8 @@ async def get_tools(
                 "timeout_seconds": t.timeout_seconds,
                 "max_output_bytes": t.max_output_bytes,
                 "required_permissions": list(t.required_permissions),
+                "contract_version": t.contract_version,
+                "provider_api_version": t.provider_api_version,
                 "input_schema": t.input_schema.to_dict() if t.input_schema else None,
             }
             for t in tools
