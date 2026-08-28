@@ -1,5 +1,5 @@
 {
-  "digest": "6e07dff6d7b785902b8e8bf8fea3472df19559ff5c00fb7003c6a3e636462f10",
+  "digest": "302b51b9b44695816cc97b1f2a23fe11420cc011d9a00858bd5d049f947c1450",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -6854,8 +6854,8 @@
       ]
     },
     "tiktok": {
-      "digest": "1174aaae3dd4161fcbe1454ef92d3babcb7396426cbfd7d1cd2b07cc5c8a6ebd",
-      "tool_count": 40,
+      "digest": "2909b1b861829223c72f57c55a0e6eb63faa2aaaad18e87d608f31e9a230bdcf",
+      "tool_count": 42,
       "tools": [
         {
           "action": "create",
@@ -7357,6 +7357,182 @@
         {
           "action": "create",
           "contract_version": "1.1.0",
+          "description": "创建 TikTok App Promotion 广告；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "adgroup_id": {
+                "description": "Parent ad group ID",
+                "type": "string"
+              },
+              "app_id": {
+                "description": "App ID returned by TikTok app lookup",
+                "lookup_result_key": "apps",
+                "lookup_tool": "tiktok_list_apps",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "app_name",
+                  "name",
+                  "display_name"
+                ],
+                "selection_value_fields": [
+                  "app_id",
+                  "id"
+                ],
+                "type": "string"
+              },
+              "app_promotion_type": {
+                "description": "App acquisition or retargeting mode",
+                "enum": [
+                  "APP_ACQUISITION",
+                  "APP_RETARGETING"
+                ],
+                "type": "string"
+              },
+              "call_to_action": {
+                "description": "App ad call to action",
+                "type": "string"
+              },
+              "campaign_id": {
+                "description": "Parent campaign ID",
+                "type": "string"
+              },
+              "conversion_id": {
+                "description": "In-app conversion event ID",
+                "lookup_result_key": "conversions",
+                "lookup_tool": "tiktok_list_conversions",
+                "minimum": 0,
+                "selection_label_fields": [
+                  "conversion_name",
+                  "name",
+                  "event_name"
+                ],
+                "selection_value_fields": [
+                  "conversion_id",
+                  "id"
+                ],
+                "type": "integer"
+              },
+              "creatives": {
+                "description": "App ad creative list",
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "deep_link": {
+                "description": "Optional in-app deep link",
+                "type": "string"
+              },
+              "identity_id": {
+                "description": "TikTok identity ID",
+                "type": "string"
+              },
+              "landing_page_url": {
+                "description": "Optional app store fallback URL",
+                "type": "string"
+              },
+              "media": {
+                "description": "App ad media assets",
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "name": {
+                "description": "Ad name",
+                "type": "string"
+              },
+              "operating_systems": {
+                "description": "Target operating systems",
+                "items": {
+                  "enum": [
+                    "ANDROID",
+                    "IOS"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "promotion_type": {
+                "description": "App platform promotion type",
+                "enum": [
+                  "APP_ANDROID",
+                  "APP_IOS"
+                ],
+                "type": "string"
+              },
+              "status": {
+                "description": "Ad status: 1 active, 0 paused",
+                "enum": [
+                  0,
+                  1
+                ],
+                "type": "integer"
+              },
+              "text": {
+                "additionalProperties": true,
+                "description": "Ad copy payload",
+                "type": "object"
+              },
+              "tracking_url": {
+                "description": "Tracking URL",
+                "type": "string"
+              }
+            },
+            "provider_any_of": [
+              [
+                "media",
+                "creatives"
+              ]
+            ],
+            "provider_required": [
+              "campaign_id",
+              "app_id",
+              "promotion_type"
+            ],
+            "required": [
+              "campaign_id",
+              "adgroup_id",
+              "name",
+              "app_id",
+              "promotion_type",
+              "operating_systems"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_app_ad"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_create_app_ad",
+          "parent_resource_id_field": "adgroup_id",
+          "parent_resource_type": "ad_group",
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad",
+            "app",
+            "app_promotion"
+          ]
+        },
+        {
+          "action": "create",
+          "contract_version": "1.1.0",
           "description": "创建 TikTok Ads Campaign。",
           "effect_class": "write",
           "input_schema": {
@@ -7527,6 +7703,141 @@
           "traits": [
             "write",
             "campaign"
+          ]
+        },
+        {
+          "action": "create",
+          "contract_version": "1.1.0",
+          "description": "创建 TikTok Lead Generation Instant Form 广告；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "adgroup_id": {
+                "description": "Parent ad group ID",
+                "type": "string"
+              },
+              "call_to_action": {
+                "description": "Lead form call to action",
+                "type": "string"
+              },
+              "campaign_id": {
+                "description": "Parent campaign ID",
+                "type": "string"
+              },
+              "conversion_id": {
+                "description": "Conversion event ID",
+                "lookup_result_key": "conversions",
+                "lookup_tool": "tiktok_list_conversions",
+                "minimum": 0,
+                "selection_label_fields": [
+                  "conversion_name",
+                  "name",
+                  "event_name"
+                ],
+                "selection_value_fields": [
+                  "conversion_id",
+                  "id"
+                ],
+                "type": "integer"
+              },
+              "creatives": {
+                "description": "Lead ad creative list",
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "form_id": {
+                "description": "TikTok Instant Form ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "landing_page_url": {
+                "description": "Optional fallback landing URL",
+                "type": "string"
+              },
+              "media": {
+                "description": "Lead ad media assets",
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "name": {
+                "description": "Ad name",
+                "type": "string"
+              },
+              "promotion_type": {
+                "default": "LEAD_FORM",
+                "description": "Fixed lead promotion destination",
+                "enum": [
+                  "LEAD_FORM"
+                ],
+                "type": "string"
+              },
+              "status": {
+                "description": "Ad status: 1 active, 0 paused",
+                "enum": [
+                  0,
+                  1
+                ],
+                "type": "integer"
+              },
+              "text": {
+                "additionalProperties": true,
+                "description": "Ad copy payload",
+                "type": "object"
+              },
+              "tracking_url": {
+                "description": "Tracking URL",
+                "type": "string"
+              }
+            },
+            "provider_any_of": [
+              [
+                "media",
+                "creatives"
+              ]
+            ],
+            "provider_required": [
+              "campaign_id",
+              "form_id"
+            ],
+            "required": [
+              "campaign_id",
+              "adgroup_id",
+              "name",
+              "form_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_lead_ad"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_create_lead_ad",
+          "parent_resource_id_field": "adgroup_id",
+          "parent_resource_type": "ad_group",
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad",
+            "lead",
+            "instant_form"
           ]
         },
         {
@@ -9615,5 +9926,5 @@
       ]
     }
   },
-  "tool_count": 127
+  "tool_count": 129
 }

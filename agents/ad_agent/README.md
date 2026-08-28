@@ -20,11 +20,11 @@
 |------|-------|-----------|---------|
 | Meta | meta-marketing-api-expert | meta_client.py | 28（账户、层级资源、Lead Ads、Catalog Ads、报表与生命周期接口） |
 | Google Ads | google-ads-api-expert | google_ads_client.py | 27（层级资源、Search Ad、Responsive Display Ad、Video Ad、关键词、Product Group、PMax、报表与生命周期接口） |
-| TikTok | tiktok-ads-expert | tiktok_client.py | 40（账户、层级资源、素材、定向参考数据、报表与生命周期接口） |
+| TikTok | tiktok-ads-expert | tiktok_client.py | 42（账户、层级资源、Lead/App 广告、素材、定向参考数据、报表与生命周期接口） |
 | DV360 | dv360-expert | dv360_client.py | 32（Advertiser、Campaign、IO、Line Item、Creative、定向与异步报表接口） |
-| **合计** |  |  | **127** |
+| **合计** |  |  | **129** |
 
-> 127 是当前四个 Capability 已实现的 Client 方法/业务 Tool 数量，不是 Meta、Google Ads、TikTok 或 DV360 官方 API 的完整接口总量。新增官方接口时，应在对应渠道 Client 增加固定方法，在 Capability 增加 Tool Schema/adapter，再由覆盖率审计和契约快照阻止漏注册或漂移。
+> 129 是当前四个 Capability 已实现的 Client 方法/业务 Tool 数量，不是 Meta、Google Ads、TikTok 或 DV360 官方 API 的完整接口总量。新增官方接口时，应在对应渠道 Client 增加固定方法，在 Capability 增加 Tool Schema/adapter，再由覆盖率审计和契约快照阻止漏注册或漂移。
 
 ### 广告类型覆盖边界
 
@@ -34,7 +34,7 @@
 
 - Google Ads：Search、Performance Max、Shopping、Video、Display、App，以及 RSA、PMax Asset Group、Product Group、Video/Display 子格式。
 - Meta：Traffic、Conversion、Lead、Engagement、Catalog、Messaging，以及图文、视频、Instant Form、Dynamic Product、Click-to-Message 子格式。
-- TikTok：Product Sales、Spark、Lead Generation、App Promotion、Brand，以及 Shop、Instant Form、TopView、Brand Takeover 子格式。
+- TikTok：Product Sales、Spark、Lead Generation、App Promotion、Brand，以及 Shop、Instant Form、TopView、Brand Takeover 子格式；Lead Instant Form 与 App Install 已有专用 dry-run contract。
 - DV360：暂保留已有基础 Capability，详细广告类型目录和专用 payload 暂缓建设。
 
 目录中的 `supported_dry_run` 表示已有专用 payload contract，`partial_dry_run` 表示层级或部分字段可规划，`declared_only` 只表示已纳入能力地图，不能当作可执行或已验证的 live 能力。所有写操作当前仍为 dry-run。

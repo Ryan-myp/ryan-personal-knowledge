@@ -38,6 +38,8 @@ from .parameters import (
     tiktok_campaign_schema,
     tiktok_adgroup_schema,
     tiktok_ad_schema,
+    tiktok_lead_ad_schema,
+    tiktok_app_ad_schema,
     tiktok_ad_format_catalog,
 )
 from ..update_contracts import tiktok_updates
@@ -85,7 +87,8 @@ class TikTokCapability(BaseCapability):
         "create_adgroup": ["tiktok_create_adgroup"], "update_adgroup": ["tiktok_update_adgroup"],
         "update_ad": ["tiktok_update_ad"], "pause_adgroup": ["tiktok_pause_adgroup"],
         "list_ads": ["tiktok_list_ads"], "get_ad": ["tiktok_get_ad"],
-        "create_ad": ["tiktok_create_ad"], "create_spark_ad": ["tiktok_spark_ads_create"],
+        "create_ad": ["tiktok_create_ad"], "create_lead_ad": ["tiktok_create_lead_ad"],
+        "create_app_ad": ["tiktok_create_app_ad"], "create_spark_ad": ["tiktok_spark_ads_create"],
         "get_campaign_report": ["tiktok_get_campaign_report"], "get_adgroup_report": ["tiktok_get_adgroup_report"],
         "list_audiences": ["tiktok_list_audiences"], "get_audience": ["tiktok_get_audience"],
         "list_interest_categories": ["tiktok_list_interest_categories"],
@@ -167,6 +170,38 @@ class TikTokCapability(BaseCapability):
                 required=["account_id", "conversion_id"], action="get", resource_type="conversion",
                 intent_types=["get_conversion"], traits=["read", "conversion"],
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["conversion_id"]), {}),
+            ),
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_create_lead_ad",
+                description="创建 TikTok Lead Generation Instant Form 广告；默认仅生成 dry-run 计划。",
+                method_name="create_lead_ad", result_key="ad_id",
+                properties=tiktok_lead_ad_schema()["properties"],
+                required=tiktok_lead_ad_schema()["required"],
+                provider_required=tiktok_lead_ad_schema()["provider_required"],
+                provider_any_of=tiktok_lead_ad_schema()["provider_any_of"],
+                action="create", resource_type="ad", parent_resource_type="ad_group",
+                resource_id_field="ad_id", parent_resource_id_field="adgroup_id",
+                intent_types=["create_lead_ad"],
+                traits=["write", "ad", "lead", "instant_form"], write=True,
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["campaign_id"], data["adgroup_id"], {
+                    key: data[key] for key in tiktok_lead_ad_schema()["properties"] if key in data
+                }), {}),
+            ),
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_create_app_ad",
+                description="创建 TikTok App Promotion 广告；默认仅生成 dry-run 计划。",
+                method_name="create_app_ad", result_key="ad_id",
+                properties=tiktok_app_ad_schema()["properties"],
+                required=tiktok_app_ad_schema()["required"],
+                provider_required=tiktok_app_ad_schema()["provider_required"],
+                provider_any_of=tiktok_app_ad_schema()["provider_any_of"],
+                action="create", resource_type="ad", parent_resource_type="ad_group",
+                resource_id_field="ad_id", parent_resource_id_field="adgroup_id",
+                intent_types=["create_app_ad"],
+                traits=["write", "ad", "app", "app_promotion"], write=True,
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["campaign_id"], data["adgroup_id"], {
+                    key: data[key] for key in tiktok_app_ad_schema()["properties"] if key in data
+                }), {}),
             ),
             method_tool(
                 platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_product_sets",

@@ -239,6 +239,87 @@ def tiktok_ad_schema() -> dict[str, Any]:
     }
 
 
+def tiktok_lead_ad_schema() -> dict[str, Any]:
+    """Create contract for a TikTok Lead Generation Instant Form ad."""
+    return {
+        "required": ["campaign_id", "adgroup_id", "name", "form_id"],
+        "provider_required": ["campaign_id", "form_id"],
+        "provider_any_of": [["media", "creatives"]],
+        "properties": {
+            "campaign_id": _field("string", "Parent campaign ID"),
+            "adgroup_id": _field("string", "Parent ad group ID"),
+            "name": _field("string", "Ad name"),
+            "form_id": _field("string", "TikTok Instant Form ID", minLength=1),
+            "promotion_type": _field(
+                "string", "Fixed lead promotion destination", enum=["LEAD_FORM"],
+                default="LEAD_FORM",
+            ),
+            "landing_page_url": _field("string", "Optional fallback landing URL"),
+            "tracking_url": _field("string", "Tracking URL"),
+            "conversion_id": _field(
+                "integer", "Conversion event ID", minimum=0,
+                lookup_tool="tiktok_list_conversions", lookup_result_key="conversions",
+                selection_value_fields=["conversion_id", "id"],
+                selection_label_fields=["conversion_name", "name", "event_name"],
+            ),
+            "media": _field("array", "Lead ad media assets", items={"type": "object"}),
+            "creatives": _field("array", "Lead ad creative list", items={"type": "object"}),
+            "text": _field("object", "Ad copy payload", additionalProperties=True),
+            "call_to_action": _field("string", "Lead form call to action"),
+            "status": _field("integer", "Ad status: 1 active, 0 paused", enum=[0, 1]),
+        },
+    }
+
+
+def tiktok_app_ad_schema() -> dict[str, Any]:
+    """Create contract for a TikTok App Promotion install/event ad."""
+    return {
+        "required": [
+            "campaign_id", "adgroup_id", "name", "app_id", "promotion_type",
+            "operating_systems",
+        ],
+        "provider_required": ["campaign_id", "app_id", "promotion_type"],
+        "provider_any_of": [["media", "creatives"]],
+        "properties": {
+            "campaign_id": _field("string", "Parent campaign ID"),
+            "adgroup_id": _field("string", "Parent ad group ID"),
+            "name": _field("string", "Ad name"),
+            "app_id": _field(
+                "string", "App ID returned by TikTok app lookup", minLength=1,
+                lookup_tool="tiktok_list_apps", lookup_result_key="apps",
+                selection_value_fields=["app_id", "id"],
+                selection_label_fields=["app_name", "name", "display_name"],
+            ),
+            "promotion_type": _field(
+                "string", "App platform promotion type", enum=["APP_ANDROID", "APP_IOS"],
+            ),
+            "operating_systems": _field(
+                "array", "Target operating systems",
+                items={"type": "string", "enum": TIKTOK_OPERATING_SYSTEMS},
+            ),
+            "app_promotion_type": _field(
+                "string", "App acquisition or retargeting mode",
+                enum=TIKTOK_APP_PROMOTION_TYPES,
+            ),
+            "deep_link": _field("string", "Optional in-app deep link"),
+            "landing_page_url": _field("string", "Optional app store fallback URL"),
+            "tracking_url": _field("string", "Tracking URL"),
+            "conversion_id": _field(
+                "integer", "In-app conversion event ID", minimum=0,
+                lookup_tool="tiktok_list_conversions", lookup_result_key="conversions",
+                selection_value_fields=["conversion_id", "id"],
+                selection_label_fields=["conversion_name", "name", "event_name"],
+            ),
+            "media": _field("array", "App ad media assets", items={"type": "object"}),
+            "creatives": _field("array", "App ad creative list", items={"type": "object"}),
+            "text": _field("object", "Ad copy payload", additionalProperties=True),
+            "call_to_action": _field("string", "App ad call to action"),
+            "identity_id": _field("string", "TikTok identity ID"),
+            "status": _field("integer", "Ad status: 1 active, 0 paused", enum=[0, 1]),
+        },
+    }
+
+
 def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
     """Advertised TikTok formats and their current contract depth."""
     source_document = "docs/ad-platform-hierarchy-guide-v5.md"
@@ -315,21 +396,23 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
             "category": "lead",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
-            "tool_names": ["tiktok_create_campaign", "tiktok_create_adgroup", "tiktok_create_ad"],
+            "tool_names": ["tiktok_create_campaign", "tiktok_create_adgroup", "tiktok_create_lead_ad"],
+            "payload_adapter": "TikTokAPIClient.create_lead_ad",
             "dependencies": ["LEAD_GENERATION", "LEAD_FORM", "form_id"],
             "supported_fields": ["objective_type", "promotion_type", "form_id", "media"],
-            "gaps": ["Instant Form lookup/validation", "lead-specific creative builder"],
+            "gaps": ["Instant Form lookup/validation", "live mutation approval"],
             "source_document": source_document,
         },
         {
             "format_id": "lead.instant_form",
             "category": "lead",
-            "resource_type": "ad_group",
-            "coverage": "partial_dry_run",
-            "tool_names": ["tiktok_create_campaign", "tiktok_create_adgroup"],
+            "resource_type": "ad",
+            "coverage": "supported_dry_run",
+            "tool_names": ["tiktok_create_adgroup", "tiktok_create_lead_ad"],
+            "payload_adapter": "TikTokAPIClient.create_lead_ad",
             "dependencies": ["LEAD_GENERATION", "LEAD_FORM", "form_id"],
             "supported_fields": ["promotion_type", "form_id"],
-            "gaps": ["Instant Form lookup/validation", "lead-specific creative builder"],
+            "gaps": ["Instant Form lookup/validation", "live mutation approval"],
             "source_document": source_document,
         },
         {
@@ -337,21 +420,23 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
             "category": "app",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
-            "tool_names": ["tiktok_create_campaign", "tiktok_create_adgroup", "tiktok_create_ad"],
+            "tool_names": ["tiktok_create_campaign", "tiktok_create_adgroup", "tiktok_create_app_ad"],
+            "payload_adapter": "TikTokAPIClient.create_app_ad",
             "dependencies": ["APP_PROMOTION", "app_id", "operating_systems", "deep_bid_type"],
             "supported_fields": ["objective_type", "app_promotion_type", "app_id", "operating_systems"],
-            "gaps": ["app event/deep link validation", "dedicated app creative builder"],
+            "gaps": ["app event/deep link validation", "live mutation approval"],
             "source_document": source_document,
         },
         {
             "format_id": "app.install",
             "category": "app",
-            "resource_type": "ad_group",
-            "coverage": "partial_dry_run",
-            "tool_names": ["tiktok_create_campaign", "tiktok_create_adgroup"],
+            "resource_type": "ad",
+            "coverage": "supported_dry_run",
+            "tool_names": ["tiktok_create_adgroup", "tiktok_create_app_ad"],
+            "payload_adapter": "TikTokAPIClient.create_app_ad",
             "dependencies": ["APP_PROMOTION", "APP_ANDROID_or_APP_IOS", "app_id"],
             "supported_fields": ["promotion_type", "app_id", "operating_systems"],
-            "gaps": ["app event/deep link validation", "dedicated app creative builder"],
+            "gaps": ["app event/deep link validation", "live mutation approval"],
             "source_document": source_document,
         },
         {

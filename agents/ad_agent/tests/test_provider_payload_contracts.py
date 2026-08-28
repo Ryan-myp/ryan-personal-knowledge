@@ -170,6 +170,78 @@ def test_tiktok_ad_creation_preserves_existing_schema_fields():
     assert payloads[-1]["ad_group"]["conversion_id"] == 42
 
 
+def test_tiktok_lead_ad_builds_instant_form_promote_object():
+    client = TikTokAPIClient({"access_token": "test"})
+    payloads = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        payloads.append((method, endpoint, data)) or {"ad_id": "lead-ad-1"}
+    )
+
+    assert client.create_lead_ad("t1", "101", "202", {
+        "name": "Lead ad", "form_id": "form-1",
+        "media": [{"video_id": "video-1"}],
+        "text": {"primary_text": "Get the guide"},
+        "tracking_url": "https://example.test/track",
+    }) == "lead-ad-1"
+    method, endpoint, data = payloads[-1]
+    assert (method, endpoint) == ("POST", "ad/create/")
+    ad = data["ad"]
+    assert ad["promotion_type"] == "LEAD_FORM"
+    assert ad["form_id"] == "form-1"
+    assert ad["promote_object"] == {"lead_form": {"form_id": "form-1"}}
+    assert ad["media"] == [{"video_id": "video-1"}]
+    assert ad["tracking_url"] == "https://example.test/track"
+
+    with pytest.raises(ValueError, match="form_id is required"):
+        client.create_lead_ad("t1", "101", "202", {"name": "Missing"})
+
+
+def test_tiktok_app_ad_builds_app_install_promote_object_and_checks_os():
+    client = TikTokAPIClient({"access_token": "test"})
+    payloads = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        payloads.append((method, endpoint, data)) or {"ad_id": "app-ad-1"}
+    )
+
+    assert client.create_app_ad("t1", "101", "202", {
+        "name": "App install", "app_id": "app-1", "promotion_type": "APP_ANDROID",
+        "operating_systems": ["ANDROID"],
+        "media": [{"video_id": "video-1"}],
+        "deep_link": "myapp://home",
+    }) == "app-ad-1"
+    ad = payloads[-1][2]["ad"]
+    assert ad["app_id"] == "app-1"
+    assert ad["promotion_type"] == "APP_ANDROID"
+    assert ad["operating_systems"] == ["ANDROID"]
+    assert ad["promote_object"] == {"app_install": {"app_id": "app-1"}}
+    assert ad["deep_link"] == "myapp://home"
+
+    with pytest.raises(ValueError, match="requires operating_systems"):
+        client.create_app_ad("t1", "101", "202", {
+            "name": "Wrong OS", "app_id": "app-1", "promotion_type": "APP_ANDROID",
+            "operating_systems": ["IOS"], "media": [{"video_id": "video-1"}],
+        })
+
+
+def test_tiktok_lead_and_app_tools_publish_provider_contracts():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_tiktok_capability().register_tools()
+    }
+    lead = definitions["tiktok_create_lead_ad"]
+    assert lead.input_schema.properties["form_id"]["minLength"] == 1
+    assert lead.input_schema.properties["conversion_id"]["lookup_tool"] == (
+        "tiktok_list_conversions"
+    )
+    assert lead.parent_resource_type == "ad_group"
+    app = definitions["tiktok_create_app_ad"]
+    assert app.input_schema.properties["app_id"]["lookup_tool"] == "tiktok_list_apps"
+    assert app.input_schema.properties["promotion_type"]["enum"] == [
+        "APP_ANDROID", "APP_IOS"
+    ]
+    assert app.parent_resource_id_field == "adgroup_id"
+
+
 def test_tiktok_provider_envelope_is_decoded_for_ids_and_lookup_lists():
     client = TikTokAPIClient({"access_token": "test"})
     client._do_request = lambda method, url, **kwargs: {

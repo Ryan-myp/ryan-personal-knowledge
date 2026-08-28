@@ -448,7 +448,16 @@ class TikTokAPIClient(BasePlatformClient):
             data['ad']['creatives'] = ad['creatives']
         if ad.get('text'):
             data['ad']['text'] = ad['text']
-        for key in ('ad_format', 'status'):
+        # Keep every field declared by the provider-owned ad contracts.  The
+        # generic adapter remains useful for formats without a dedicated
+        # builder, but it must not silently discard a valid provider field.
+        for key in (
+            'ad_format', 'status', 'video_id', 'image_ids', 'spark_post_id',
+            'form_id', 'catalog_id', 'product_set_id', 'call_to_action',
+            'identity_id', 'promotion_type', 'app_id', 'app_promotion_type',
+            'operating_systems', 'deep_link', 'tracking_url', 'promote_object', 'ad_text_settings',
+            'brand_safety', 'run_time_settings',
+        ):
             if key in ad and ad[key] not in (None, ''):
                 data['ad'][key] = ad[key]
         
@@ -456,6 +465,56 @@ class TikTokAPIClient(BasePlatformClient):
         payload = self._data_section(result)
         resource_id = payload.get('ad_id') if isinstance(payload, dict) else None
         return self.require_resource_id(resource_id, "TikTok ad create")
+
+    def create_lead_ad(
+        self,
+        advertiser_id: str,
+        campaign_id: str,
+        adgroup_id: str,
+        ad: dict,
+    ) -> str:
+        """Create a TikTok Lead Generation ad bound to an Instant Form."""
+        if not isinstance(ad, dict):
+            raise ValueError("lead ad must be an object")
+        form_id = str(ad.get("form_id") or "").strip()
+        if not form_id:
+            raise ValueError("form_id is required")
+        normalized = dict(ad)
+        normalized["promotion_type"] = "LEAD_FORM"
+        normalized["form_id"] = form_id
+        normalized["promote_object"] = {
+            "lead_form": {"form_id": form_id},
+        }
+        return self.create_ad(advertiser_id, campaign_id, adgroup_id, normalized)
+
+    def create_app_ad(
+        self,
+        advertiser_id: str,
+        campaign_id: str,
+        adgroup_id: str,
+        ad: dict,
+    ) -> str:
+        """Create a TikTok App Promotion install/event ad."""
+        if not isinstance(ad, dict):
+            raise ValueError("app ad must be an object")
+        app_id = str(ad.get("app_id") or "").strip()
+        promotion_type = str(ad.get("promotion_type") or "").upper()
+        operating_systems = ad.get("operating_systems")
+        if not app_id or promotion_type not in {"APP_ANDROID", "APP_IOS"}:
+            raise ValueError("app_id and a valid promotion_type are required")
+        if not isinstance(operating_systems, list) or not operating_systems:
+            raise ValueError("operating_systems is required")
+        expected_os = "ANDROID" if promotion_type == "APP_ANDROID" else "IOS"
+        if expected_os not in {str(value).upper() for value in operating_systems}:
+            raise ValueError(f"{promotion_type} requires operating_systems to include {expected_os}")
+
+        normalized = dict(ad)
+        normalized["app_id"] = app_id
+        normalized["promotion_type"] = promotion_type
+        normalized["promote_object"] = {
+            "app_install": {"app_id": app_id},
+        }
+        return self.create_ad(advertiser_id, campaign_id, adgroup_id, normalized)
     
     # ==================== Spark Ads（达人原生广告）====================
     
