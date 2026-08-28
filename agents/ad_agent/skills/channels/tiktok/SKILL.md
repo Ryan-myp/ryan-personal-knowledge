@@ -51,23 +51,16 @@ client = Client(
 - 转化数据
 - 受众分析
 
-## 🛠️ 能力与参数参考（非执行清单）
+## 🛠️ 能力与参数参考
 
-以下内容用于解释业务对象和参数语义，不代表当前已注册 Tool；实际执行能力以
-Capability/plugin 发布的 ToolDefinition 为准。
+本 Skill 只描述 TikTok 的 Campaign、Ad Group、Ad、Spark Ads、素材、定向、转化
+和报表 SOP，不维护固定 Tool 清单。运行时先读取当前 Capability 发布的
+ToolDefinition、`/tools` Schema 和 `/ad-formats` 目录，再选择实际可用能力。
 
-| Tool | 功能 | 参数 |
-|------|------|------|
-| `tiktok_auth` | OAuth 认证 | client_id, client_secret, redirect_uri |
-| `tiktok_create_campaign` | 创建广告系列 | account_id, name, budget, bid_type |
-| `tiktok_create_adgroup` | 创建广告组 | campaign_id, name, targeting, bid |
-| `tiktok_create_ad` | 创建广告创意 | adgroup_id, name, tracking_url |
-| `tiktok_create_spark_ad` | 创建 Spark Ads | adgroup_id, video_id, creator_id |
-| `tiktok_track_pixel` | 追踪 Pixel 事件 | pixel_id, event_name, event_data |
-| `tiktok_send_capi` | 发送 Conversion API 事件 | pixel_id, user_data, custom_data |
-| `tiktok_query_report` | 查询报表数据 | account_id, date_range, fields |
-| `tiktok_get_account` | 获取账户信息 | account_id |
-| `tiktok_list_campaigns` | 列出广告系列 | account_id, limit, page_token |
+创建前必须校验 objective、campaign/ad group budget、promotion type、billing event、
+bid/deep bid、地域/设备/App/Form/Catalog 依赖和素材格式。新增 TikTok API 接口或版本
+适配只在 TikTok Client/Capability 内完成，不应修改业务 Skill 来“接线”；未标记为
+`supported_dry_run` 的广告格式不得声称已有完整支持。
 
 ## 📚 参考文档
 
@@ -126,14 +119,10 @@ A: 优先使用 Conversion API，启用聚合事件测量，设置事件优先�
 **Q: 如何优化 Spark Ads 的投放效果？**
 A: 选择高互动创作者，使用原生视频内容，设置合理的转化目标。
 
-## 🛠️ Campaign 查询工具
+## 🛠️ Campaign 查询建议
 
-使用 `query_tiktok_campaign.py` 查询完整 Campaign 信息，支持双格式输出：
-
-```bash
-# 原始数据 + 业务解读版
-python3 scripts/query_tiktok_campaign.py <CAMPAIGN_ID>
-```
+通过自然语言提供 advertiser、Campaign ID 或名称以及查询范围；Runtime 会从当前已注册
+的只读 Tool 选择查询路径，并同时返回 Provider 原始字段和统一后的业务字段。
 
 ### 输出格式说明
 

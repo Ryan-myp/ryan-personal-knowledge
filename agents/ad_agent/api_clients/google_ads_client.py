@@ -390,6 +390,67 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 "status": criterion.get("status"),
             })
         return keywords
+
+    def create_keywords(
+        self,
+        ad_group_id: str,
+        keywords: list[dict],
+        status: str = "PAUSED",
+    ) -> list[str]:
+        """Create keyword criteria in one customer-level mutate request.
+
+        Each item is provider-shaped only at the Capability boundary; this
+        method owns the Google Ads ``AdGroupCriterion`` wire payload. Writes
+        are currently intercepted by Runtime in dry-run mode.
+        """
+        ad_group_id = self._numeric_id(ad_group_id, "ad_group_id")
+        if not isinstance(keywords, list) or not keywords:
+            raise ValueError("keywords must be a non-empty list")
+        criterion_status = str(status or "PAUSED").upper()
+        if criterion_status not in {"ENABLED", "PAUSED"}:
+            raise ValueError("keyword status must be ENABLED or PAUSED")
+
+        operations = []
+        for index, keyword in enumerate(keywords):
+            if not isinstance(keyword, dict):
+                raise ValueError(f"keywords[{index}] must be an object")
+            text = str(keyword.get("text") or "").strip()
+            if not text:
+                raise ValueError(f"keywords[{index}].text is required")
+            match_type = str(keyword.get("match_type") or "BROAD").upper()
+            if match_type not in {"BROAD", "PHRASE", "EXACT"}:
+                raise ValueError(
+                    f"keywords[{index}].match_type must be BROAD, PHRASE or EXACT"
+                )
+            criterion = {
+                "adGroup": f"customers/{self.customer_id}/adGroups/{ad_group_id}",
+                "status": str(keyword.get("status") or criterion_status).upper(),
+                "keyword": {"text": text, "matchType": match_type},
+            }
+            if criterion["status"] not in {"ENABLED", "PAUSED"}:
+                raise ValueError(f"keywords[{index}].status must be ENABLED or PAUSED")
+            if keyword.get("negative"):
+                criterion["negative"] = True
+            if keyword.get("cpc_bid_micros") is not None:
+                bid = int(keyword["cpc_bid_micros"])
+                if bid < 0:
+                    raise ValueError(f"keywords[{index}].cpc_bid_micros must be non-negative")
+                criterion["cpcBidMicros"] = bid
+            operations.append({"create": criterion})
+
+        response = self._mutate_operations("adGroupCriteria", operations)
+        data = self._response_payload(response)
+        results = data.get("results", []) if isinstance(data, dict) else []
+        resource_ids = []
+        for result in results:
+            if isinstance(result, dict) and result.get("resourceName"):
+                resource_ids.append(str(result["resourceName"]).rsplit("/", 1)[-1])
+        if len(resource_ids) != len(operations):
+            raise APIError(
+                f"Google keyword mutate returned {len(resource_ids)} resources for "
+                f"{len(operations)} operations: {response}"
+            )
+        return resource_ids
     
     def get_ad(self, ad_id: str) -> dict:
         """获取 Ad 详情"""
@@ -988,8 +1049,14 @@ class GoogleAdsAPIClient(BasePlatformClient):
 
     def _mutate(self, resource: str, operation: dict) -> dict:
         """Execute one Google Ads customer-level mutate operation."""
+        return self._mutate_operations(resource, [operation])
+
+    def _mutate_operations(self, resource: str, operations: list[dict]) -> dict:
+        """Execute a bounded batch of Google Ads mutate operations."""
+        if not isinstance(operations, list) or not operations:
+            raise ValueError("mutate operations must be a non-empty list")
         url = f"{self.BASE_URL}/customers/{self.customer_id}/{resource}:mutate"
-        response = self.request_raw('POST', url, data={'operations': [operation]})
+        response = self.request_raw('POST', url, data={'operations': operations})
         status = response.get('status_code', 200)
         if status not in (200, 201, 202):
             raise APIError(

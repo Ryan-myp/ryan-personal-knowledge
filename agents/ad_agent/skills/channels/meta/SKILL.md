@@ -52,23 +52,16 @@ FacebookAdsApi.init(
 - Lookalike 受众
 - 动态受众
 
-## 🛠️ 能力与参数参考（非执行清单）
+## 🛠️ 能力与参数参考
 
-以下内容用于解释业务对象和参数语义，不代表当前已注册 Tool；实际执行能力以
-Capability/plugin 发布的 ToolDefinition 为准。
+本 Skill 只描述 Meta 的 Campaign、Ad Set、Ad、Creative、受众、Pixel/CAPI、
+Insights 和安全 SOP，不维护固定 Tool 清单。运行时先读取当前 Capability 发布的
+ToolDefinition、`/tools` Schema 和 `/ad-formats` 目录，再选择实际可用能力。
 
-| Tool | 功能 | 参数 |
-|------|------|------|
-| `meta_auth` | OAuth 认证 | app_id, app_secret, redirect_uri |
-| `meta_create_campaign` | 创建广告系列 | account_id, name, objective, status |
-| `meta_create_adset` | 创建广告组 | campaign_id, name, targeting, budget |
-| `meta_create_ad` | 创建广告创意 | adset_id, name, creative, status |
-| `meta_track_pixel` | 追踪 Pixel 事件 | pixel_id, event_name, event_data |
-| `meta_send_capi` | 发送 Conversion API 事件 | pixel_id, user_data, custom_data |
-| `meta_create_audience` | 创建自定义受众 | account_id, name, rules |
-| `meta_create_lookalike` | 创建 Lookalike 受众 | source_audience_id, location, percent |
-| `meta_query_insights` | 查询广告洞察 | account_id, date_preset, fields |
-| `meta_list_campaigns` | 列出广告系列 | account_id, limit |
+创建前必须校验 objective、special ad category、预算层级、optimization goal、
+targeting、promoted object、Page/Pixel/Catalog/Form/Messaging 依赖。新增 Graph API
+接口或版本适配只在 Meta Client/Capability 内完成，不应修改业务 Skill 来“接线”；
+未标记为 `supported_dry_run` 的广告格式不得声称已有完整支持。
 
 ## 📚 参考文档
 

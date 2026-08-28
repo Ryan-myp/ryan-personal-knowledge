@@ -25,6 +25,7 @@ GOOGLE_APP_BIDDING_TYPES = [
     "TARGET_CPA", "TARGET_ROAS", "MAXIMIZE_CONVERSIONS",
     "MAXIMIZE_CONVERSION_VALUE",
 ]
+GOOGLE_KEYWORD_MATCH_TYPES = ["BROAD", "PHRASE", "EXACT"]
 
 
 def _field(field_type: Any, description: str = "", **kwargs: Any) -> dict[str, Any]:
@@ -137,6 +138,27 @@ def google_ad_group_schema() -> dict[str, Any]:
     }
 
 
+def google_keyword_schema() -> dict[str, Any]:
+    """Create contract for Ad Group Criterion keyword mutations."""
+    return {
+        "required": ["ad_group_id", "keywords"],
+        "provider_required": ["keywords"],
+        "properties": {
+            "ad_group_id": _field("string", "Parent Ad Group ID", minLength=1),
+            "keywords": _field(
+                "array", "Keyword criteria to create", minItems=1,
+                items=_object({
+                    "text": _field("string", "Keyword text", minLength=1),
+                    "match_type": _field("string", "Keyword match type", enum=GOOGLE_KEYWORD_MATCH_TYPES),
+                    "negative": _field("boolean", "Create as a negative keyword"),
+                    "status": _field("string", "Criterion status", enum=GOOGLE_STATUSES[:2]),
+                    "cpc_bid_micros": _field("integer", "Optional criterion CPC bid in micros", minimum=0),
+                }, "Keyword criterion"),
+            ),
+        },
+    }
+
+
 def google_ad_schema() -> dict[str, Any]:
     return {
         "required": ["ad_group_id", "name"],
@@ -177,10 +199,10 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
             "category": "search",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
-            "tool_names": ["google_create_campaign", "google_create_ad_group", "google_create_search_ad"],
+            "tool_names": ["google_create_campaign", "google_create_ad_group", "google_create_keywords", "google_create_search_ad"],
             "dependencies": ["keywords", "network_setting", "ad_group"],
             "supported_fields": ["advertising_channel_type", "bidding_strategy", "networks"],
-            "gaps": ["keyword create tool", "negative keyword tool", "extensions"],
+            "gaps": ["negative keyword-specific validation", "extensions"],
             "source_document": source_document,
         },
         {

@@ -26,7 +26,7 @@ from .reports import GoogleGetReportHandler
 from .keywords import GoogleListKeywordsHandler
 from .parameters import (
     google_campaign_schema, google_ad_group_schema, google_ad_schema,
-    google_asset_group_schema, google_ad_format_catalog,
+    google_asset_group_schema, google_ad_format_catalog, google_keyword_schema,
 )
 from ...api_clients.google_ads_client import GoogleAdsAPIClient
 from ..update_contracts import google_updates
@@ -65,6 +65,7 @@ class GoogleCapability(BaseCapability):
         "list_ad_groups": ["google_list_ad_groups"], "get_ad_group": ["google_get_ad_group"],
         "list_ads": ["google_list_ads"], "get_ad": ["google_get_ad"],
         "list_keywords": ["google_list_keywords"], "list_asset_groups": ["google_list_asset_groups"],
+        "create_keywords": ["google_create_keywords"],
         "get_asset_group": ["google_get_asset_group"], "create_campaign": ["google_create_campaign"],
         "update_campaign": ["google_update_campaign"], "update_ad_group": ["google_update_ad_group"],
         "update_ad": ["google_update_ad"], "update_asset_group": ["google_update_asset_group"],
@@ -99,6 +100,18 @@ class GoogleCapability(BaseCapability):
                     "ad_type": data.get("ad_type"), "path1": data.get("path1"), "path2": data.get("path2"),
                     "responsive_search_ad": data.get("responsive_search_ad"), "status": data.get("status"),
                 }),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_create_keywords", description="批量创建 Google Ad Group 关键词/否定关键词；默认仅生成 dry-run 计划。",
+                method_name="create_keywords", result_key="keyword_ids",
+                properties=google_keyword_schema()["properties"],
+                required=google_keyword_schema()["required"],
+                provider_required=google_keyword_schema()["provider_required"],
+                action="create", resource_type="keyword", parent_resource_type="ad_group",
+                resource_id_field="keyword_ids", parent_resource_id_field="ad_group_id",
+                intent_types=["create_keywords"], traits=["write", "keyword"], write=True,
+                argument_builder=lambda _ctx, data: ((data["ad_group_id"], data["keywords"]), {}),
             ),
             method_tool(
                 platform="google-ads", skill="google-ads-api-expert",

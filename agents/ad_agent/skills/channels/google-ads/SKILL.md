@@ -52,24 +52,17 @@ campaign_service = client.get_service('CampaignService')
 - 指数退避
 - 配额监控
 
-## 🛠️ 能力与参数参考（非执行清单）
+## 🛠️ 能力与参数参考
 
-以下内容用于解释业务对象和参数语义，不代表当前已注册 Tool；实际执行能力以
-Capability/plugin 发布的 ToolDefinition 为准。
+本 Skill 只描述 Google Ads 的对象、字段语义和操作 SOP，不维护固定 Tool 清单。
+运行时先读取当前 Capability 发布的 ToolDefinition、`/tools` Schema 和
+`/ad-formats` 目录，再选择可用能力。新增 Google API Tool 或升级 Provider 版本时，
+只需在 Google Capability/Client 中注册和验证，不应修改业务 Skill 来“接线”。
 
-| Tool | 功能 | 参数 |
-|------|------|------|
-| `google_auth` | OAuth 认证 | developer_token, refresh_token, customer_id |
-| `google_create_campaign` | 创建广告系列 | customer_id, name, budget, bidding_strategy |
-| `google_create_ad_group` | 创建广告组 | campaign_id, name, cpc_bid |
-| `google_add_keywords` | 添加关键词 | ad_group_id, keywords, match_type |
-| `google_create_ads` | 创建广告创意 | ad_group_id, ads_config |
-| `google_set_bidding` | 设置出价策略 | campaign_id, strategy_type, target_cpa |
-| `google_download_report` | 下载报表 | customer_id, query, date_range |
-| `google_streaming_mutate` | 批量操作 | customer_id, operations |
-| `google_get_metrics` | 查询指标 | customer_id, date_range, metrics |
-| `google_pause_campaign` | 暂停广告系列 | campaign_resource_name |
-| `google_enable_campaign` | 启用广告系列 | campaign_resource_name |
+能力范围包括：账户与 Campaign 查询、Campaign/Ad Group/Ad/Asset Group 的 dry-run
+创建与更新、Search 关键词与否定关键词、PMax 资产、出价策略、定向和 GAQL 报表。
+每次创建前必须按当前广告类型 Schema 校验预算、目标、网络、App/Shopping 设置和
+素材依赖；未标记为 `supported_dry_run` 的格式不得声称已有完整支持。
 
 ## 📚 参考文档
 
@@ -164,14 +157,10 @@ A: 使用指数退避重试，实现请求队列，监控配额使用情况。
 **Q: Streaming Mutate 和普通 Mutate 有什么区别？**
 A: Streaming Mutate 可以批量处理大量操作，每个操作独立提交，失败不影响其他操作。
 
-## 🛠️ Campaign 查询工具
+## 🛠️ Campaign 查询建议
 
-使用 `query_google_campaign.py` 查询完整 Campaign 信息，支持双格式输出：
-
-```bash
-# 原始数据 + 业务解读版
-python3 scripts/query_google_campaign.py <CAMPAIGN_RESOURCE_NAME>
-```
+通过自然语言提供 customer、Campaign ID 或名称以及查询范围；Runtime 会从当前已注册
+的只读 Tool 选择查询路径，并同时返回 Provider 原始字段和统一后的业务字段。
 
 ### Campaign Resource Name 格式
 

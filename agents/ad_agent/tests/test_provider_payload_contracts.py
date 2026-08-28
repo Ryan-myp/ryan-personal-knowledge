@@ -362,6 +362,35 @@ def test_google_creation_options_are_mapped_to_rest_resources():
     assert ad["responsiveSearchAd"]["path2"] == "now"
 
 
+def test_google_keyword_creation_batches_criterion_operations():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "g1"})
+    calls = []
+    client._mutate_operations = lambda resource, operations: (
+        calls.append((resource, operations)) or {
+            "data": {
+                "results": [
+                    {"resourceName": "customers/g1/adGroupCriteria/123~1"},
+                    {"resourceName": "customers/g1/adGroupCriteria/123~2"},
+                ]
+            }
+        }
+    )
+
+    result = client.create_keywords("123", [
+        {"text": "running shoes", "match_type": "PHRASE"},
+        {"text": "free", "match_type": "EXACT", "negative": True},
+    ])
+
+    assert result == ["123~1", "123~2"]
+    assert calls[0][0] == "adGroupCriteria"
+    assert len(calls[0][1]) == 2
+    assert calls[0][1][0]["create"]["adGroup"] == "customers/g1/adGroups/123"
+    assert calls[0][1][0]["create"]["keyword"] == {
+        "text": "running shoes", "matchType": "PHRASE"
+    }
+    assert calls[0][1][1]["create"]["negative"] is True
+
+
 def test_google_reads_accept_raw_and_extracted_search_payloads():
     client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "g1"})
     row = {"campaign": {"id": "42", "name": "Sales", "status": "PAUSED"}}

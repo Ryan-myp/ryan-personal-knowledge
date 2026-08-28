@@ -1,4 +1,4 @@
-"""Google Ads keyword read handlers."""
+"""Google Ads keyword handlers."""
 
 from typing import Optional
 

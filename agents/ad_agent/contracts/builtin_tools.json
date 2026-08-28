@@ -1,5 +1,5 @@
 {
-  "digest": "325ab32f8d2283a0a792d15ea49cba0c7f1f580d1d3bd7a0c892584658f86ca7",
+  "digest": "b3e3851aab9b5a4fd8fdc5a43a50b6d118d16172a6c9d8818a468f1f866d8315",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -1983,8 +1983,8 @@
       ]
     },
     "google-ads": {
-      "digest": "ceced5bbaca65203148e7d260182de58b4196c5cb25c5feb56f01b81f83d3ac6",
-      "tool_count": 23,
+      "digest": "20e5167fbdb343dedcaabf9c2cea3e370941ead9c0fbba0034d9c04a6b6c3936",
+      "tool_count": 24,
       "tools": [
         {
           "action": "create",
@@ -2669,6 +2669,99 @@
           "traits": [
             "write",
             "campaign"
+          ]
+        },
+        {
+          "action": "create",
+          "contract_version": "1.1.0",
+          "description": "批量创建 Google Ad Group 关键词/否定关键词；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_group_id": {
+                "description": "Parent Ad Group ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "keywords": {
+                "description": "Keyword criteria to create",
+                "items": {
+                  "additionalProperties": false,
+                  "description": "Keyword criterion",
+                  "properties": {
+                    "cpc_bid_micros": {
+                      "description": "Optional criterion CPC bid in micros",
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "match_type": {
+                      "description": "Keyword match type",
+                      "enum": [
+                        "BROAD",
+                        "PHRASE",
+                        "EXACT"
+                      ],
+                      "type": "string"
+                    },
+                    "negative": {
+                      "description": "Create as a negative keyword",
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "description": "Criterion status",
+                      "enum": [
+                        "ENABLED",
+                        "PAUSED"
+                      ],
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Keyword text",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "keywords"
+            ],
+            "required": [
+              "ad_group_id",
+              "keywords"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_keywords"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_keywords",
+          "parent_resource_id_field": "ad_group_id",
+          "parent_resource_type": "ad_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "keyword_ids",
+          "resource_type": "keyword",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "keyword"
           ]
         },
         {
@@ -8581,5 +8674,5 @@
       ]
     }
   },
-  "tool_count": 119
+  "tool_count": 120
 }
