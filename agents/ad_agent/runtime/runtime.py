@@ -726,6 +726,12 @@ class AgentRuntime:
         if self._read_only_mode:
             self._filter_write_tools()
 
+        # Keep the Parser's language catalog derived from the actual Registry
+        # rather than from a central intent table.  Custom parsers may ignore
+        # this optional extension seam.
+        if hasattr(self.intent_parser, "register_tool_definitions"):
+            self.intent_parser.register_tool_definitions(self.registry.list_all())
+
         # Register executable tools supplied by the Capability.  Tool metadata
         # is the routing contract; no workflow file is consulted here.
         capability_platform = getattr(module, "platform_name", None)
@@ -1080,6 +1086,10 @@ class AgentRuntime:
             keys = self._skill_keys_by_platform.setdefault(platform_key, [])
             if skill_key not in keys:
                 keys.append(skill_key)
+            if hasattr(self.intent_parser, "register_tool_definitions"):
+                self.intent_parser.register_tool_definitions(
+                    [self.registry.get(name)[0] for name in registered_names]
+                )
     
     # ─── Skill 动态注册 ────────────────────────────────────────
     
@@ -1248,6 +1258,8 @@ class AgentRuntime:
 
         self._validate_parameter_lookup_contract()
         self._publish_skill_workflows(skill)
+        if hasattr(self.intent_parser, "register_tool_definitions"):
+            self.intent_parser.register_tool_definitions(self.registry.list_all())
 
         # 保存 Skill 和平台映射
         self._loaded_skills.setdefault(canonical_platform, skill)

@@ -12,7 +12,7 @@ from agents.ad_agent.core.interfaces import (
     ToolResult,
     ToolSchema,
 )
-from agents.ad_agent.core.intent import SimpleIntentRouter
+from agents.ad_agent.core.intent import LLMIntentParser, SimpleIntentRouter
 from agents.ad_agent.core.tool_registry import SimpleToolRegistry
 from agents.ad_agent.capabilities.meta import create_meta_capability
 from agents.ad_agent.capabilities.google import create_google_capability
@@ -219,6 +219,53 @@ def test_new_custom_intent_is_declared_on_tool_not_router():
     assert [definition.name for definition in routed["new-network"]] == [
         "new_network_estimate_reach"
     ]
+
+
+def test_new_tool_publishes_dynamic_intent_context_without_parser_edit():
+    definition = ToolDefinition(
+        name="new_network_estimate_reach",
+        skill="new-network-skill",
+        platform="new-network",
+        description="Estimate audience reach",
+        input_schema=ToolSchema(),
+        action="estimate",
+        resource_type="audience",
+        intent_types=["estimate_reach"],
+    )
+    parser = LLMIntentParser()
+    parser.register_platform_aliases("new-network", ["新网络"])
+    parser.register_tool_definitions([definition])
+    assert "estimate_reach" in parser._intent_candidates_prompt()
+    assert "Estimate audience reach" in parser._intent_candidates_prompt()
+
+
+def test_llm_prompt_uses_registered_intent_catalog():
+    class FakeLLM:
+        def __init__(self):
+            self.calls = []
+
+        def call(self, messages):
+            self.calls.append(messages)
+            return '{"intent_type":"estimate_reach","platforms":["new-network"]}'
+
+    definition = ToolDefinition(
+        name="new_network_estimate_reach",
+        skill="new-network-skill",
+        platform="new-network",
+        description="Estimate audience reach",
+        input_schema=ToolSchema(),
+        action="estimate",
+        resource_type="audience",
+        intent_types=["estimate_reach"],
+    )
+    llm = FakeLLM()
+    parser = LLMIntentParser(llm)
+    parser.register_tool_definitions([definition])
+    parser.parse("estimate reach", ToolContext("s1", "u1"))
+
+    prompt_text = "\n".join(message["content"] for message in llm.calls[0])
+    assert "estimate_reach" in prompt_text
+    assert "Estimate audience reach" in prompt_text
 
 
 def test_new_channel_capability_is_discovered_by_package_convention(monkeypatch):

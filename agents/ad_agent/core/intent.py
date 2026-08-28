@@ -38,7 +38,7 @@ class LLMIntentParser(IntentParser):
 
 请输出 JSON 格式（不要输出其他内容）：
 {{
-  "intent_type": "create_campaign | create_asset_group | create_creative | update_campaign | update_adset | update_adgroup | update_ad | pause_campaign | resume_campaign | cross_channel_overview | cross_channel_compare | cross_channel_performance_insights | cross_channel_optimize_budget | cross_channel_export_report | cross_channel_batch_pause | cross_channel_batch_resume | cross_channel_batch_update_budget | boost_post | run_remarketing | download_report",
+  "intent_type": "{intent_candidates}",
   "platforms": ["当前 Runtime 已注册的平台标识"],
   "objective": "sales | leads | traffic | brand",
   "campaign_type": "平台 Campaign 类型，如 SEARCH / SHOPPING / APP_INSTALL",
@@ -77,7 +77,58 @@ class LLMIntentParser(IntentParser):
         self._platform_aliases: dict[str, str] = {}
         self._known_platforms: set[str] = set()
         self._platform_field_specs: dict[str, dict[str, dict]] = {}
+        # The parser learns custom intent names and Tool descriptions from
+        # registered ToolDefinitions. This is the extension seam for new
+        # Skills/Tools; the core parser does not need a new intent branch.
+        self._intent_catalog: dict[str, dict[str, dict[str, Any]]] = {}
         self._load_installed_channel_metadata()
+
+    def register_tool_definitions(self, definitions: list[ToolDefinition] | tuple[ToolDefinition, ...]) -> None:
+        """Publish Tool-owned intent metadata to the LLM parser.
+
+        ``intent_types`` is the routing contract. Descriptions and resource
+        metadata are retained as bounded context so a newly registered Tool
+        is discoverable without editing this parser. A non-LLM fallback is not
+        part of the Agent extension contract.
+        """
+        for definition in definitions or []:
+            name = str(getattr(definition, "name", "") or "").strip()
+            if not name:
+                continue
+            intents = [str(item).strip() for item in (getattr(definition, "intent_types", []) or []) if str(item).strip()]
+            for intent in intents:
+                self._intent_catalog.setdefault(intent, {})[name] = {
+                    "name": name,
+                    "platform": str(getattr(definition, "platform", "") or ""),
+                    "description": str(getattr(definition, "description", "") or ""),
+                    "action": str(getattr(definition, "action", "") or ""),
+                    "resource_type": str(getattr(definition, "resource_type", "") or ""),
+                    "traits": [str(item) for item in (getattr(definition, "traits", []) or [])],
+                }
+            self.register_intents(intents)
+
+    def _intent_candidates_prompt(self) -> str:
+        """Return a bounded, deterministic intent catalog for the LLM."""
+        if not self._intent_catalog:
+            return "chat"
+        rows: list[str] = []
+        for intent in sorted(self._intent_catalog):
+            tools = list(self._intent_catalog[intent].values())
+            descriptions = sorted({item["description"] for item in tools if item["description"]})
+            tool_names = sorted({item["name"] for item in tools})
+            resources = sorted({
+                f"{item['action']}:{item['resource_type']}"
+                for item in tools
+                if item["action"] or item["resource_type"]
+            })
+            detail = "; ".join(part for part in (
+                "tools=" + ", ".join(tool_names[:4]),
+                ", ".join(descriptions[:2]),
+                "resources=" + ", ".join(resources[:4]) if resources else "",
+            ) if part)
+            rows.append(f"{intent}: {detail}" if detail else intent)
+        rows.append("chat: 无匹配的已注册工具")
+        return " | ".join(rows)[:8000]
 
     def _load_installed_channel_metadata(self) -> None:
         """Load aliases from channel Skill frontmatter without a channel table."""
@@ -173,7 +224,10 @@ class LLMIntentParser(IntentParser):
     
     def _parse_with_llm(self, user_input: str, context: ToolContext) -> ParsedIntent:
         """使用 LLM 解析意图"""
-        prompt = self.PARSE_PROMPT_TEMPLATE.format(user_input=user_input)
+        prompt = self.PARSE_PROMPT_TEMPLATE.format(
+            user_input=user_input,
+            intent_candidates=self._intent_candidates_prompt(),
+        )
         prompt += (
             "\n\n当前 Runtime 已注册的平台（只能从这里选择）: "
             + ", ".join(sorted(self._known_platforms))
@@ -223,7 +277,6 @@ class LLMIntentParser(IntentParser):
         """
         text = user_input.lower()
         
-        # 检测意图类型
         intent_type = self._detect_intent_type(text)
         
         # 检测平台
@@ -275,7 +328,7 @@ class LLMIntentParser(IntentParser):
             creative_materials=materials,
             platform_params=platform_params,
         )
-    
+
     def _detect_intent_type(self, text: str) -> str:
         """检测意图类型（注意顺序：更具体的规则放在前面）"""
         cross_markers = [
@@ -827,6 +880,7 @@ class LLMIntentParser(IntentParser):
             "get_adset", "get_adgroup", "get_ad", "get_asset_group",
         }
         valid_intents.update(self._custom_intents)
+        valid_intents.update(self._intent_catalog)
         if data.get("intent_type") not in valid_intents:
             data["intent_type"] = "chat"
 

@@ -219,7 +219,6 @@ class SkillContract:
             or isinstance(provider_api_version, bool)
         ):
             raise ValueError(f"Skill tool {name}.provider_api_version must be scalar")
-
         def optional_string(field_name: str) -> Optional[str]:
             value = spec.get(field_name)
             if value is None or value == "":

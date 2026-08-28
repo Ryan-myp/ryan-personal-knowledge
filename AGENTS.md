@@ -15,6 +15,7 @@
 - 广告 API 的唯一执行底座是已注册的 Capability/Tool。任何 Skill、LLM 或管理上传包都不能直接调用 Provider client。
 - 新功能优先通过新增或扩展 Skill、Tool、Capability 完成；不要在中心 Router 中增加渠道名、业务流程或参数大分支。
 - 渠道差异放在 Provider Capability、Tool schema 和 API client 边界；上层业务依赖 Tool 的 intent、resource、schema 和 traits，不硬编码渠道实现。
+- LLM 意图候选由当前 Registry 的 `ToolDefinition.intent_types`、description 和资源元数据自动生成；新增自定义意图只需在 Tool 上声明，不得修改中心 Parser/Router。
 - 观察性当前只保留接口和结构化字段，不在本阶段阻塞功能交付。
 
 ## Skill 约束

@@ -314,7 +314,8 @@ class ToolDefinition:
             "description": self.description, "action": self.action,
             "resource_type": self.resource_type,
             "parent_resource_type": self.parent_resource_type,
-            "intent_types": list(self.intent_types), "risk_level": self.risk_level.value,
+            "intent_types": list(self.intent_types),
+            "risk_level": self.risk_level.value,
             "effect_class": self.effect_class.value, "replay_policy": self.replay_policy.value,
             "traits": list(self.traits), "live_support": self.live_support,
             "timeout_seconds": self.timeout_seconds,
@@ -935,6 +936,17 @@ class IntentParser(ABC):
     @abstractmethod
     def parse(self, user_input: str, context: ToolContext) -> ParsedIntent:
         pass
+
+    def register_tool_definitions(
+        self, definitions: list[ToolDefinition] | tuple[ToolDefinition, ...]
+    ) -> None:
+        """Receive the current Tool catalog for model-backed intent parsing.
+
+        This is an optional lifecycle hook rather than a required parser
+        implementation detail.  Custom parsers that do not use a model may
+        safely keep the default no-op implementation.
+        """
+        return None
 
 
 class IntentRouter(ABC):
