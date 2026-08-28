@@ -115,6 +115,7 @@ class AdAgentStore:
         workflow_id TEXT NOT NULL,
         sequence INTEGER NOT NULL,
         platform TEXT NOT NULL,
+        account_id TEXT,
         tool_name TEXT NOT NULL,
         status TEXT NOT NULL,
         input_data TEXT NOT NULL,
@@ -194,6 +195,7 @@ class AdAgentStore:
                 row[1] for row in conn.execute("PRAGMA table_info(workflow_items)")
             }
             for column, definition in {
+                "account_id": "TEXT",
                 "resource_type": "TEXT",
                 "parent_sequence": "INTEGER",
                 "parent_resource_id": "TEXT",
@@ -688,20 +690,21 @@ class AdAgentStore:
         parent_resource_id: Optional[str] = None,
         provider_resource_id: Optional[str] = None,
         logical_resource_id: Optional[str] = None,
+        account_id: Optional[str] = None,
     ) -> None:
         now = datetime.now().isoformat()
         with self._lock:
             conn = self._get_conn()
             conn.execute(
                 """INSERT INTO workflow_items
-                   (item_id, workflow_id, sequence, platform, tool_name, status,
+                   (item_id, workflow_id, sequence, platform, account_id, tool_name, status,
                    input_data, output_data, error, compensation_required,
                    resource_type, parent_sequence, parent_resource_id,
                    provider_resource_id, logical_resource_id,
                    created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    item_id, workflow_id, sequence, platform, tool_name, status,
+                    item_id, workflow_id, sequence, platform, account_id, tool_name, status,
                     json.dumps(input_data or {}),
                     json.dumps(output_data) if output_data is not None else None,
                     error, int(compensation_required), resource_type,
@@ -721,6 +724,7 @@ class AdAgentStore:
         parent_resource_id: Optional[str] = None,
         provider_resource_id: Optional[str] = None,
         logical_resource_id: Optional[str] = None,
+        account_id: Optional[str] = None,
     ) -> None:
         """Create or advance an item checkpoint without duplicating rows.
 
@@ -739,15 +743,15 @@ class AdAgentStore:
                 now = datetime.now().isoformat()
                 conn.execute(
                     """INSERT INTO workflow_items
-                       (item_id, workflow_id, sequence, platform, tool_name, status,
+                       (item_id, workflow_id, sequence, platform, account_id, tool_name, status,
                        input_data, output_data, error, compensation_required,
                        resource_type, parent_sequence, parent_resource_id,
                        provider_resource_id, logical_resource_id,
                        created_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
-                        item_id, workflow_id, int(sequence), platform, tool_name,
-                        status, json.dumps(input_data or {}),
+                        item_id, workflow_id, int(sequence), platform, account_id,
+                        tool_name, status, json.dumps(input_data or {}),
                         json.dumps(output_data) if output_data is not None else None,
                         error, int(compensation_required), resource_type,
                         parent_sequence, parent_resource_id, provider_resource_id,
@@ -764,6 +768,7 @@ class AdAgentStore:
                 assignments = [
                     "status = ?", "input_data = ?", "output_data = ?",
                     "error = ?", "compensation_required = ?",
+                    "account_id = ?",
                     "resource_type = ?", "parent_sequence = ?",
                     "parent_resource_id = ?", "provider_resource_id = ?",
                     "logical_resource_id = ?", "updated_at = ?",
@@ -774,7 +779,7 @@ class AdAgentStore:
                     (
                         status, json.dumps(input_data or {}),
                         json.dumps(output_data) if output_data is not None else None,
-                        error, int(compensation_required), resource_type,
+                        error, int(compensation_required), account_id, resource_type,
                         parent_sequence, parent_resource_id, provider_resource_id,
                         logical_resource_id, datetime.now().isoformat(),
                         workflow_id, int(sequence),
@@ -831,6 +836,7 @@ class AdAgentStore:
         parent_resource_id: Optional[str] = None,
         provider_resource_id: Optional[str] = None,
         logical_resource_id: Optional[str] = None,
+        account_id: Optional[str] = None,
     ) -> bool:
         """Update one item during an explicitly verified reconciliation."""
         assignments = ["status = ?", "error = ?", "updated_at = ?"]
@@ -842,6 +848,7 @@ class AdAgentStore:
             assignments.append("compensation_required = ?")
             values.append(int(compensation_required))
         for column, value in (
+            ("account_id", account_id),
             ("resource_type", resource_type),
             ("parent_sequence", parent_sequence),
             ("parent_resource_id", parent_resource_id),

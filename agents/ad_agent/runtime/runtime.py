@@ -2243,9 +2243,10 @@ class AgentRuntime:
                 parent_field = item.get("parent_resource_id_field")
                 parent_id = input_data.get(parent_field) if parent_field else None
             parent_id = str(parent_id) if parent_id not in (None, "") else None
+            normalized_platform = cls._canonical_platform(str(item.get("platform") or ""))
             parent_sequence = None
             if parent_id:
-                parent_sequence = id_index.get((str(item.get("platform") or ""), parent_id))
+                parent_sequence = id_index.get((normalized_platform, parent_id))
             local_id = raw_id if simulated else None
             provider_id = raw_id if raw_id and not simulated else None
             logical_id = str(
@@ -2254,7 +2255,7 @@ class AgentRuntime:
             ) or None
             normalized = ResourceResult(
                 sequence=sequence,
-                platform=str(item.get("platform") or ""),
+                platform=normalized_platform,
                 resource_type=resource_type,
                 tool_name=tool_name,
                 status=status,
@@ -2270,7 +2271,7 @@ class AgentRuntime:
             )
             resource_items.append(normalized)
             if raw_id:
-                id_index[(str(item.get("platform") or ""), raw_id)] = sequence
+                id_index[(normalized_platform, raw_id)] = sequence
         return [item.to_dict() for item in resource_items]
 
     @staticmethod
@@ -2450,6 +2451,12 @@ class AgentRuntime:
                         parent_sequence = sequence_by_resource.get(
                             (actual_platform, parent_type)
                         )
+                    planned_account = self._resolve_platform_account(
+                        intent,
+                        platform,
+                        [tool],
+                        session.ctx.account_id if len(intent.platforms) == 1 else None,
+                    )
                     self._session_manager.record_workflow_item(
                         workflow_id=workflow_id,
                         sequence=sequence,
@@ -2457,6 +2464,7 @@ class AgentRuntime:
                         tool_name=tool.name,
                         status="planned",
                         input_data={},
+                        account_id=planned_account,
                         resource_type=getattr(tool, "resource_type", None),
                         parent_sequence=parent_sequence,
                     )
@@ -2568,7 +2576,13 @@ class AgentRuntime:
                 or output_object.get("parent_resource_id")
                 or (input_data.get(parent_field) if parent_field else None)
             )
-            actual_platform = str(item.get("platform") or "")
+            actual_platform = self._canonical_platform(str(item.get("platform") or ""))
+            account_id = item.get("account_id") or output_object.get("account_id")
+            if account_id in (None, ""):
+                for account_key in ("account_id", "advertiser_id", "customer_id"):
+                    if input_data.get(account_key) not in (None, ""):
+                        account_id = input_data[account_key]
+                        break
             parent_sequence = sequence_by_resource_id.get(
                 (actual_platform, str(parent_resource_id))
             ) if parent_resource_id not in (None, "") else None
@@ -2593,6 +2607,7 @@ class AgentRuntime:
                 parent_resource_id=(str(parent_resource_id) if parent_resource_id not in (None, "") else None),
                 provider_resource_id=provider_resource_id,
                 logical_resource_id=local_resource_id or provider_resource_id,
+                account_id=(str(account_id) if account_id not in (None, "") else None),
             )
             if raw_resource_id not in (None, ""):
                 sequence_by_resource_id[(actual_platform, str(raw_resource_id))] = item_sequence
@@ -2747,6 +2762,7 @@ class AgentRuntime:
                     tool_name=tool_name,
                     status="running",
                     input_data=self._redact_for_persistence(tool_input),
+                    account_id=operation.account_id,
                 )
             schema_errors = validate_tool_input(tool_def.input_schema, tool_input)
             if schema_errors:
@@ -3479,6 +3495,7 @@ class AgentRuntime:
                         tool_name=tool_def.name,
                         status="running",
                         input_data={},
+                        account_id=per_platform_account,
                     )
                 tool_call_count += 1
                 budget_error = self._check_turn_budget(
@@ -3555,6 +3572,7 @@ class AgentRuntime:
                         tool_name=tool_def.name,
                         status="running",
                         input_data=self._redact_for_persistence(tool_input),
+                        account_id=per_platform_account,
                     )
 
                 protected_paths = self._validate_protected_input(tool_input)
@@ -5124,6 +5142,24 @@ class AgentRuntime:
             item for item in workflow.get("items", [])
             if item.get("status") not in {"succeeded", "unsupported"}
         ]
+        session_record = (
+            self._session_manager.get_session(workflow.get("session_id"))
+            if self._session_manager else None
+        ) or {}
+        session_account_id = str(session_record.get("account_id") or "")
+
+        def item_account_id(item: Mapping[str, Any]) -> Optional[str]:
+            account_id = item.get("account_id")
+            if account_id not in (None, ""):
+                return str(account_id)
+            input_data = item.get("input_data")
+            if isinstance(input_data, Mapping):
+                for key in ("account_id", "advertiser_id", "customer_id"):
+                    value = input_data.get(key)
+                    if value not in (None, ""):
+                        return str(value)
+            return session_account_id or None
+
         return {
             "workflow_id": workflow_id,
             "status": workflow.get("status"),
@@ -5133,7 +5169,8 @@ class AgentRuntime:
             "items": [
                 {
                     "sequence": item.get("sequence"),
-                    "platform": item.get("platform"),
+                    "platform": self._canonical_platform(str(item.get("platform") or "")),
+                    "account_id": item_account_id(item),
                     "tool_name": item.get("tool_name"),
                     "status": item.get("status"),
                     "input_data": self._redact_for_persistence(item.get("input_data") or {}),

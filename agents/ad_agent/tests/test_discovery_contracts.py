@@ -79,6 +79,7 @@ def test_resource_results_follow_declared_parent_fields_across_channels():
             {
                 "tool": parent.name,
                 "platform": platform,
+                "account_id": f"{platform}-account",
                 "resource_type": parent.resource_type,
                 "resource_id_field": parent.resource_id_field or parent_id_field,
                 "success": True,
@@ -91,6 +92,7 @@ def test_resource_results_follow_declared_parent_fields_across_channels():
             {
                 "tool": child.name,
                 "platform": platform,
+                "account_id": f"{platform}-account",
                 "resource_type": child.resource_type,
                 "resource_id_field": child.resource_id_field or child_id_field,
                 "parent_resource_type": child.parent_resource_type,
@@ -110,6 +112,8 @@ def test_resource_results_follow_declared_parent_fields_across_channels():
     for index in (1, 3, 5, 7):
         assert results[index]["parent_sequence"] == results[index - 1]["sequence"]
         assert results[index]["parent_resource_id"] == results[index - 1]["logical_resource_id"]
+        assert results[index]["resource_ref"]["platform"] == results[index]["platform"]
+        assert results[index]["parent_ref"]["resource_id"] == results[index]["parent_resource_id"]
 
 
 def test_new_standard_tool_is_discovered_without_router_configuration():

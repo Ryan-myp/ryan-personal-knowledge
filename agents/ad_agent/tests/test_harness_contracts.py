@@ -1,6 +1,7 @@
 """Harness-level invariants for the single-Agent execution boundary."""
 
 import json
+import sqlite3
 from pathlib import Path
 import time
 from datetime import datetime, timedelta
@@ -369,7 +370,80 @@ def test_workflow_write_items_are_checkpointed_before_execution():
     workflow = store.get_workflow(result["workflow_id"])
     assert workflow["items"]
     assert all(item["status"] == "succeeded" for item in workflow["items"])
+    assert all(item["account_id"] == "m1" for item in workflow["items"])
     assert len(workflow["items"]) == 3
+
+
+def test_workflow_resume_plan_preserves_account_scope():
+    store = AdAgentStore(":memory:")
+    store.create_session("resume-account-session", "u1", "m1")
+    store.create_workflow(
+        "resume-account-workflow", "resume-account-session", "create_campaign", "live",
+        status="failed",
+    )
+    store.add_workflow_item(
+        "resume-account-workflow:1", "resume-account-workflow", 1, "meta",
+        "meta_create_campaign", "failed", {"campaign_id": "c1"},
+        account_id="m1",
+    )
+    runtime = AgentRuntime(persistence_store=store)
+
+    plan = runtime.get_workflow_resume_plan("resume-account-workflow", user_id="u1")
+
+    assert plan["items"][0]["account_id"] == "m1"
+
+
+def test_legacy_workflow_resume_plan_recovers_account_from_session():
+    store = AdAgentStore(":memory:")
+    store.create_session("legacy-resume-session", "u1", "m1")
+    store.create_workflow(
+        "legacy-resume-workflow", "legacy-resume-session", "create_campaign", "live",
+        status="failed",
+    )
+    store.add_workflow_item(
+        "legacy-resume-workflow:1", "legacy-resume-workflow", 1, "meta",
+        "meta_create_campaign", "failed", {"campaign_id": "c1"},
+    )
+    runtime = AgentRuntime(persistence_store=store)
+
+    plan = runtime.get_workflow_resume_plan("legacy-resume-workflow", user_id="u1")
+
+    assert plan["items"][0]["account_id"] == "m1"
+
+
+def test_old_workflow_items_schema_is_migrated_with_account_scope(tmp_path):
+    db_path = tmp_path / "legacy.sqlite"
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript("""
+        CREATE TABLE workflow_items (
+            item_id TEXT PRIMARY KEY,
+            workflow_id TEXT NOT NULL,
+            sequence INTEGER NOT NULL,
+            platform TEXT NOT NULL,
+            tool_name TEXT NOT NULL,
+            status TEXT NOT NULL,
+            input_data TEXT NOT NULL,
+            output_data TEXT,
+            error TEXT,
+            compensation_required INTEGER NOT NULL DEFAULT 0,
+            resource_type TEXT,
+            parent_sequence INTEGER,
+            parent_resource_id TEXT,
+            provider_resource_id TEXT,
+            logical_resource_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+    """)
+    conn.commit()
+    conn.close()
+
+    store = AdAgentStore(str(db_path))
+
+    columns = {
+        row[1] for row in store._get_conn().execute("PRAGMA table_info(workflow_items)")
+    }
+    assert "account_id" in columns
 
 
 def test_fresh_running_workflow_is_not_resumable_or_claimed():

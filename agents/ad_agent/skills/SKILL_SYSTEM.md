@@ -12,30 +12,20 @@
 ```
 skills/
 ├── SKILL_SYSTEM.md        # 本文件：系统架构说明
-├── meta/                  # Meta Marketing API Skill
-│   ├── SKILL.md           # 自然语言知识、SOP、安全边界
-│   ├── tools/             # Tool 实现
-│   │   ├── campaign.py
-│   │   ├── adset.py
-│   │   ├── creative.py
-│   │   └── report.py
-│   └── expert/            # 可选的补充专家知识
-│       ├── bidding_strategies.md
-│       └── targeting_guide.md
-├── tiktok/                # TikTok Ads Skill
-│   ├── SKILL.md
-│   ├── tools/
-│   └── expert/
-├── google-ads/            # Google Ads Skill
-│   ├── SKILL.md
-│   ├── tools/
-│   └── expert/
-├── dv360/                 # DV360 Skill
-│   ├── SKILL.md
-│   ├── tools/
-│   └── expert/
-└── cross-channel/         # 跨渠道 Skill：业务 SOP 与统一模型说明
+├── channels/              # 渠道 Skill：只放专家上下文与 SOP
+│   ├── meta/SKILL.md
+│   ├── tiktok/SKILL.md
+│   ├── google-ads/SKILL.md
+│   └── dv360/SKILL.md
+├── businesses/             # 业务 Skill：业务规则与适用渠道
+│   └── <business>/SKILL.md
+└── cross-channel/          # 跨渠道 Skill：业务 SOP 与统一模型说明
     └── SKILL.md
+
+# 可执行能力不放在上面的 Markdown 目录中：
+capabilities/<platform>/capability.py  # 渠道 Capability + ToolDefinition
+api_clients/<platform>_client.py        # 可选 Provider Client
+skills/<name>/tools.py                  # 可选 Skill plugin
 ```
 
 ## Skill 定义格式
