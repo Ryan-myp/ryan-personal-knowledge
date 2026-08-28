@@ -1,10 +1,10 @@
 {
-  "digest": "579cb489647b57d0749c6e84eb0c55d57bdc45c4576554abf5816ffea3f04cba",
+  "digest": "4094621de00a1559f1ce504b9eb8fa0c612545c41c6f15845d78090b2d4eeee9",
   "format_version": 1,
   "platforms": {
     "dv360": {
-      "digest": "b546b4633ce76b15fa4585e78b6ce710e12e501a3980e67ca9a4c45b23d416d7",
-      "tool_count": 20,
+      "digest": "036e1673714fdb47d5205d263158730420d875532fbaa4d3042a9bde33f34050",
+      "tool_count": 32,
       "tools": [
         {
           "action": "activate",
@@ -205,6 +205,55 @@
           "traits": [
             "write",
             "campaign"
+          ]
+        },
+        {
+          "action": "create",
+          "contract_version": "1.1.0",
+          "description": "创建 DV360 Creative；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "advertiser_id": {
+                "type": "string"
+              },
+              "creative": {
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "advertiser_id",
+              "creative"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_creative"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "dv360_create_creative",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "dv360",
+          "provider_api_version": "v4",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "creative_id",
+          "resource_type": "creative",
+          "risk_level": "medium",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "creative"
           ]
         },
         {
@@ -497,6 +546,63 @@
         {
           "action": "create",
           "contract_version": "1.1.0",
+          "description": "为 DV360 Line Item 绑定定向选项；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "advertiser_id": {
+                "type": "string"
+              },
+              "assigned_targeting_option": {
+                "type": "object"
+              },
+              "line_item_id": {
+                "type": "string"
+              },
+              "targeting_type": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "advertiser_id",
+              "line_item_id",
+              "targeting_type",
+              "assigned_targeting_option"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_targeting_assignment"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "dv360_create_line_item_assigned_targeting_option",
+          "parent_resource_id_field": "line_item_id",
+          "parent_resource_type": "line_item",
+          "platform": "dv360",
+          "provider_api_version": "v4",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "assigned_targeting_option_id",
+          "resource_type": "targeting_assignment",
+          "risk_level": "medium",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "targeting"
+          ]
+        },
+        {
+          "action": "create",
+          "contract_version": "1.1.0",
           "description": "创建 DV360 异步报表任务；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -541,6 +647,263 @@
           "traits": [
             "write",
             "report"
+          ]
+        },
+        {
+          "action": "delete",
+          "contract_version": "1.1.0",
+          "description": "删除 DV360 Campaign；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "advertiser_id": {
+                "type": "string"
+              },
+              "campaign_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "advertiser_id",
+              "campaign_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "dv360_delete_campaign",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "dv360",
+          "provider_api_version": "v4",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "campaign_id",
+          "resource_type": "campaign",
+          "risk_level": "medium",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "campaign"
+          ]
+        },
+        {
+          "action": "delete",
+          "contract_version": "1.1.0",
+          "description": "删除 DV360 Creative；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "advertiser_id": {
+                "type": "string"
+              },
+              "creative_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "advertiser_id",
+              "creative_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_creative"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "dv360_delete_creative",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "dv360",
+          "provider_api_version": "v4",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "creative_id",
+          "resource_type": "creative",
+          "risk_level": "medium",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "creative"
+          ]
+        },
+        {
+          "action": "delete",
+          "contract_version": "1.1.0",
+          "description": "删除 DV360 Insertion Order；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "advertiser_id": {
+                "type": "string"
+              },
+              "io_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "advertiser_id",
+              "io_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_io"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "dv360_delete_io",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "campaign",
+          "platform": "dv360",
+          "provider_api_version": "v4",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "io_id",
+          "resource_type": "io",
+          "risk_level": "medium",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "io"
+          ]
+        },
+        {
+          "action": "delete",
+          "contract_version": "1.1.0",
+          "description": "删除 DV360 Line Item；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "advertiser_id": {
+                "type": "string"
+              },
+              "io_id": {
+                "type": "string"
+              },
+              "line_item_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "advertiser_id",
+              "io_id",
+              "line_item_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_line_item"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "dv360_delete_line_item",
+          "parent_resource_id_field": "io_id",
+          "parent_resource_type": "io",
+          "platform": "dv360",
+          "provider_api_version": "v4",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "line_item_id",
+          "resource_type": "line_item",
+          "risk_level": "medium",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "line_item"
+          ]
+        },
+        {
+          "action": "delete",
+          "contract_version": "1.1.0",
+          "description": "解除 DV360 Line Item 的定向绑定；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "advertiser_id": {
+                "type": "string"
+              },
+              "assigned_targeting_option_id": {
+                "type": "string"
+              },
+              "line_item_id": {
+                "type": "string"
+              },
+              "targeting_type": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "advertiser_id",
+              "line_item_id",
+              "targeting_type",
+              "assigned_targeting_option_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_targeting_assignment"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "dv360_delete_line_item_assigned_targeting_option",
+          "parent_resource_id_field": "line_item_id",
+          "parent_resource_type": "line_item",
+          "platform": "dv360",
+          "provider_api_version": "v4",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "assigned_targeting_option_id",
+          "resource_type": "targeting_assignment",
+          "risk_level": "medium",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "targeting"
           ]
         },
         {
@@ -633,6 +996,55 @@
           "traits": [
             "read",
             "campaign"
+          ]
+        },
+        {
+          "action": "get",
+          "contract_version": "1.1.0",
+          "description": "查询 DV360 Creative 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "advertiser_id": {
+                "type": "string"
+              },
+              "creative_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "advertiser_id",
+              "creative_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_creative"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "dv360_get_creative",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "dv360",
+          "provider_api_version": "v4",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "creative_id",
+          "resource_type": "creative",
+          "risk_level": "low",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "creative"
           ]
         },
         {
@@ -937,6 +1349,57 @@
         {
           "action": "list",
           "contract_version": "1.1.0",
+          "description": "查询 DV360 Advertiser 下的 Creative 列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "advertiser_id": {
+                "type": "string"
+              },
+              "filter": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "advertiser_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_creatives"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "dv360_list_creatives",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "dv360",
+          "provider_api_version": "v4",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "creative",
+          "risk_level": "low",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "creative"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.1.0",
           "description": "查询 DV360 Insertion Order 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -980,6 +1443,62 @@
           "traits": [
             "read",
             "io"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.1.0",
+          "description": "查询 DV360 Line Item 已绑定的定向选项。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "advertiser_id": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "line_item_id": {
+                "type": "string"
+              },
+              "targeting_type": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "advertiser_id",
+              "line_item_id",
+              "targeting_type"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_targeting_assignments"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "dv360_list_line_item_assigned_targeting_options",
+          "parent_resource_id_field": "line_item_id",
+          "parent_resource_type": "line_item",
+          "platform": "dv360",
+          "provider_api_version": "v4",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "targeting_assignment",
+          "risk_level": "low",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "targeting"
           ]
         },
         {
@@ -1031,6 +1550,57 @@
           "traits": [
             "read",
             "line_item"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.1.0",
+          "description": "查询 DV360 Targeting Option 目录（枚举/参考数据）。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "filter": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "targeting_type": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "targeting_type"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_targeting_options"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "dv360_list_targeting_options",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "dv360",
+          "provider_api_version": "v4",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "targeting_option",
+          "risk_level": "low",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "targeting"
           ]
         },
         {
@@ -1165,6 +1735,59 @@
           "traits": [
             "write",
             "campaign"
+          ]
+        },
+        {
+          "action": "update",
+          "contract_version": "1.1.0",
+          "description": "更新 DV360 Creative；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "advertiser_id": {
+                "type": "string"
+              },
+              "creative_id": {
+                "type": "string"
+              },
+              "updates": {
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "advertiser_id",
+              "creative_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_creative"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "dv360_update_creative",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "dv360",
+          "provider_api_version": "v4",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "creative_id",
+          "resource_type": "creative",
+          "risk_level": "medium",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "creative"
           ]
         },
         {
@@ -7695,5 +8318,5 @@
       ]
     }
   },
-  "tool_count": 107
+  "tool_count": 119
 }

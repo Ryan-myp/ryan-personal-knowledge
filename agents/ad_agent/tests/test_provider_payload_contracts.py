@@ -422,6 +422,67 @@ def test_dv360_io_and_line_item_options_are_not_replaced_by_defaults():
     assert line_item["bidAmount"] == 2.5
 
 
+def test_dv360_creative_targeting_and_delete_methods_use_verified_endpoints():
+    client = DV360APIClient({"access_token": "test", "partner_id": "p1"})
+    calls = []
+
+    def request_raw(method, endpoint, data=None, **kwargs):
+        calls.append((method, endpoint, data, kwargs))
+        if method == "POST" and endpoint.endswith("/creatives"):
+            return {"data": {"name": "advertisers/a/creatives/cr1"}}
+        if method == "POST" and endpoint.endswith("/assignedTargetingOptions"):
+            return {"data": {"name": "advertisers/a/lineItems/li1/targetingTypes/4/assignedTargetingOptions/to1"}}
+        if method == "GET" and endpoint.endswith("/creatives"):
+            return {"data": {"creatives": [{"creativeId": "cr1"}]}}
+        if method == "GET" and "/creatives/" in endpoint:
+            return {"data": {"creativeId": "cr1", "displayName": "Creative"}}
+        if method == "GET" and "targetingOptions" in endpoint:
+            return {"data": {"targetingOptions": [{"targetingOptionId": "to1"}]}}
+        if method == "GET" and "assignedTargetingOptions" in endpoint:
+            return {"data": {"assignedTargetingOptions": [{"assignedTargetingOptionId": "to1"}]}}
+        return {"data": {}}
+
+    client.request_raw = request_raw
+
+    assert client.list_creatives("a1", filter="active", page_size=10)[0]["creativeId"] == "cr1"
+    assert client.get_creative("a1", "cr1")["creativeId"] == "cr1"
+    assert client.create_creative("a1", {"name": "Creative"}) == "cr1"
+    assert client.update_creative("a1", "cr1", {"displayName": "Updated"})["success"] is True
+    assert client.delete_creative("a1", "cr1")["creative_id"] == "cr1"
+    assert client.list_targeting_options("4")[0]["targetingOptionId"] == "to1"
+    assert client.list_line_item_assigned_targeting_options("a1", "li1", "4")[0]["assignedTargetingOptionId"] == "to1"
+    assert client.create_line_item_assigned_targeting_option("a1", "li1", "4", {"targetingOptionId": "to1"}) == "to1"
+    assert client.delete_line_item_assigned_targeting_option("a1", "li1", "4", "to1")["success"] is True
+    assert client.delete_campaign("a1", "c1")["campaign_id"] == "c1"
+    assert client.delete_io("a1", "io1")["io_id"] == "io1"
+    assert client.delete_line_item("a1", "io1", "li1")["line_item_id"] == "li1"
+
+    assert ("DELETE", "/campaigns/c1") in [
+        (method, endpoint[endpoint.find("/campaigns"):])
+        for method, endpoint, _data, _kwargs in calls
+        if "/campaigns/" in endpoint
+    ]
+
+
+def test_dv360_extended_methods_are_published_as_tools():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_dv360_capability().register_tools()
+    }
+    expected = {
+        "dv360_delete_campaign", "dv360_delete_io", "dv360_delete_line_item",
+        "dv360_list_creatives", "dv360_get_creative", "dv360_create_creative",
+        "dv360_update_creative", "dv360_delete_creative", "dv360_list_targeting_options",
+        "dv360_list_line_item_assigned_targeting_options",
+        "dv360_create_line_item_assigned_targeting_option",
+        "dv360_delete_line_item_assigned_targeting_option",
+    }
+    assert expected <= definitions.keys()
+    assert all(definitions[name].is_write_tool and not definitions[name].live_support
+               for name in expected if "delete" in name or "create" in name or "update" in name)
+    assert definitions["dv360_create_line_item_assigned_targeting_option"].parent_resource_id_field == "line_item_id"
+
+
 def test_existing_update_tools_dispatch_to_normalized_resource_adapters():
     class MetaClient:
         def update_adset(self, resource_id, updates):

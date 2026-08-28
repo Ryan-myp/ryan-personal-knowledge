@@ -350,6 +350,14 @@ class DV360APIClient(BasePlatformClient):
         return self.require_resource_object(
             self._response_payload(result), "DV360 campaign get"
         )
+
+    def delete_campaign(self, advertiser_id: str, campaign_id: str) -> dict:
+        """删除 DV360 Campaign。"""
+        self.request_raw(
+            "DELETE",
+            f"{self.BASE_URL}/advertisers/{advertiser_id}/campaigns/{campaign_id}",
+        )
+        return {"success": True, "campaign_id": str(campaign_id)}
     
     # ==================== IO (Insertion Order) 管理 ====================
     
@@ -366,6 +374,14 @@ class DV360APIClient(BasePlatformClient):
         return self.require_resource_object(
             self._response_payload(result), "DV360 insertion order get"
         )
+
+    def delete_io(self, advertiser_id: str, io_id: str) -> dict:
+        """删除 DV360 Insertion Order。"""
+        self.request_raw(
+            "DELETE",
+            f"{self.BASE_URL}/advertisers/{advertiser_id}/insertionOrders/{io_id}",
+        )
+        return {"success": True, "io_id": str(io_id)}
     
     def create_io(self, advertiser_id: str, io: dict) -> str:
         """创建 IO"""
@@ -489,9 +505,137 @@ class DV360APIClient(BasePlatformClient):
             self._response_payload(result), "DV360 line item get"
         )
 
+    def delete_line_item(self, advertiser_id: str, io_id: str, line_item_id: str) -> dict:
+        """删除 DV360 Line Item。"""
+        self.request_raw(
+            "DELETE",
+            f"{self.BASE_URL}/advertisers/{advertiser_id}/"
+            f"insertionOrders/{io_id}/lineItems/{line_item_id}",
+        )
+        return {"success": True, "line_item_id": str(line_item_id)}
+
     def get_line_item(self, advertiser_id: str, io_id: str, line_item_id: str) -> dict:
         """获取 Line Item 详情。"""
         return self._get_line_item(advertiser_id, io_id, line_item_id)
+
+    # ==================== Creative 管理 ====================
+
+    def list_creatives(
+        self, advertiser_id: str, filter: str = None, page_size: int = 20
+    ) -> list:
+        """获取 Advertiser 下的 Creative 列表。"""
+        params = {"pageSize": page_size}
+        if filter:
+            params["filter"] = filter
+        return self._list_pages(
+            f"{self.BASE_URL}/advertisers/{advertiser_id}/creatives",
+            "creatives", params,
+        )
+
+    def get_creative(self, advertiser_id: str, creative_id: str) -> dict:
+        """获取 Creative 详情。"""
+        result = self.request_raw(
+            "GET",
+            f"{self.BASE_URL}/advertisers/{advertiser_id}/creatives/{creative_id}",
+        )
+        return self.require_resource_object(
+            self._response_payload(result), "DV360 creative get"
+        )
+
+    def create_creative(self, advertiser_id: str, creative: dict) -> str:
+        """创建 Creative，返回资源 ID。"""
+        if not isinstance(creative, dict) or not creative:
+            raise ValueError("creative must be a non-empty object")
+        result = self.request_raw(
+            "POST", f"{self.BASE_URL}/advertisers/{advertiser_id}/creatives",
+            data=creative,
+        )
+        name = self._response_payload(result).get("name", "")
+        resource_id = name.split("/")[-1] if name else None
+        return self.require_resource_id(resource_id, "DV360 creative create")
+
+    def update_creative(
+        self, advertiser_id: str, creative_id: str, updates: dict
+    ) -> dict:
+        """部分更新 Creative；更新字段由调用方的 Tool Schema 约束。"""
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("updates must be a non-empty object")
+        body = {key: value for key, value in updates.items() if value is not None}
+        if not body:
+            raise ValueError("updates must contain at least one non-null field")
+        self.request_raw(
+            "PATCH",
+            f"{self.BASE_URL}/advertisers/{advertiser_id}/creatives/{creative_id}",
+            params={"updateMask": ",".join(body)}, data=body,
+        )
+        return {"success": True, "creative_id": str(creative_id)}
+
+    def delete_creative(self, advertiser_id: str, creative_id: str) -> dict:
+        """删除 Creative。"""
+        self.request_raw(
+            "DELETE",
+            f"{self.BASE_URL}/advertisers/{advertiser_id}/creatives/{creative_id}",
+        )
+        return {"success": True, "creative_id": str(creative_id)}
+
+    # ==================== Targeting 参考与绑定 ====================
+
+    def list_targeting_options(
+        self, targeting_type: str, filter: str = None, page_size: int = 100
+    ) -> list:
+        """查询 DV360 全局 Targeting Option 目录。"""
+        params = {"pageSize": page_size}
+        if filter:
+            params["filter"] = filter
+        return self._list_pages(
+            f"{self.BASE_URL}/targetingTypes/{targeting_type}/targetingOptions",
+            "targetingOptions", params,
+        )
+
+    def list_line_item_assigned_targeting_options(
+        self, advertiser_id: str, line_item_id: str, targeting_type: str,
+        page_size: int = 100,
+    ) -> list:
+        """查询 Line Item 已绑定的 Targeting Options。"""
+        endpoint = (
+            f"{self.BASE_URL}/advertisers/{advertiser_id}/lineItems/{line_item_id}/"
+            f"targetingTypes/{targeting_type}/assignedTargetingOptions"
+        )
+        return self._list_pages(endpoint, "assignedTargetingOptions", {"pageSize": page_size})
+
+    def create_line_item_assigned_targeting_option(
+        self, advertiser_id: str, line_item_id: str, targeting_type: str,
+        assigned_targeting_option: dict,
+    ) -> str:
+        """为 Line Item 绑定 Targeting Option，返回绑定资源 ID。"""
+        if not isinstance(assigned_targeting_option, dict) or not assigned_targeting_option:
+            raise ValueError("assigned_targeting_option must be a non-empty object")
+        endpoint = (
+            f"{self.BASE_URL}/advertisers/{advertiser_id}/lineItems/{line_item_id}/"
+            f"targetingTypes/{targeting_type}/assignedTargetingOptions"
+        )
+        result = self.request_raw("POST", endpoint, data=assigned_targeting_option)
+        name = self._response_payload(result).get("name", "")
+        resource_id = name.split("/")[-1] if name else None
+        return self.require_resource_id(
+            resource_id, "DV360 assigned targeting option create"
+        )
+
+    def delete_line_item_assigned_targeting_option(
+        self, advertiser_id: str, line_item_id: str, targeting_type: str,
+        assigned_targeting_option_id: str,
+    ) -> dict:
+        """解除 Line Item 上的 Targeting Option 绑定。"""
+        endpoint = (
+            f"{self.BASE_URL}/advertisers/{advertiser_id}/lineItems/{line_item_id}/"
+            f"targetingTypes/{targeting_type}/assignedTargetingOptions/"
+            f"{assigned_targeting_option_id}"
+        )
+        self.request_raw("DELETE", endpoint)
+        return {
+            "success": True,
+            "assigned_targeting_option_id": str(assigned_targeting_option_id),
+        }
 
     def update_resource(
         self,
