@@ -23,6 +23,7 @@ import hmac
 import threading
 import logging
 import importlib.util
+import inspect
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from types import MappingProxyType
@@ -1261,9 +1262,19 @@ class AgentRuntime:
                 logger.warning("Skill plugin %s 缺少 create_skill(api_client=None)", plugin_path)
                 return None
             try:
+                signature = inspect.signature(factory)
+            except (TypeError, ValueError):
                 skill = factory(api_client)
-            except TypeError:
-                skill = factory()
+            else:
+                try:
+                    signature.bind(api_client)
+                except TypeError:
+                    skill = factory()
+                else:
+                    # Do not catch TypeError from inside the factory: that is
+                    # an implementation failure, not evidence of a zero-arg
+                    # compatibility signature.
+                    skill = factory(api_client)
             if not (
                 skill is not None
                 and callable(getattr(skill, "get_tools", None))
@@ -1997,12 +2008,19 @@ class AgentRuntime:
                                 capability = create_capability(canonical, api_client)
                             before_tool_count = len(self.registry.list_all())
                             self.register_capability(capability)
+                            registered_count = len(self.registry.list_all()) - before_tool_count
+                            if registered_count <= 0:
+                                logger.warning(
+                                    "⚠️ Capability '%s' 未注册任何可执行工具",
+                                    canonical,
+                                )
+                                continue
                             loaded_count += 1
                             logger.info(
                                 "✅ 自动加载 Capability: %s (%s, %s executable tools)",
                                 platform,
                                 platform,
-                                len(self.registry.list_all()) - before_tool_count,
+                                registered_count,
                             )
                         except ValueError:
                             logger.warning("⚠️ 未找到平台 Capability: %s", platform)
@@ -3012,9 +3030,7 @@ class AgentRuntime:
                 })
                 continue
 
-            platform_params = intent.platform_params.get(platform, {}) or {}
-            if not isinstance(platform_params, dict):
-                platform_params = {}
+            platform_params = self._platform_params_for_intent(intent, platform)
             report_input = {
                 key: value
                 for key, value in platform_params.items()
@@ -4188,7 +4204,7 @@ class AgentRuntime:
         4. intent 通用字段（budget, objective 等）
         5. 工具定义的默认值
         """
-        platform_params = intent.platform_params.get(platform, {}) or {}
+        platform_params = self._platform_params_for_intent(intent, platform)
         actual_platform = self._canonical_platform(platform)
         tool_input = {}
 
@@ -4420,9 +4436,8 @@ class AgentRuntime:
 
         return tool_input
 
-    @staticmethod
     def _validate_platform_parameter_contract(
-        intent: ParsedIntent, tool_plan: dict[str, list[Any]],
+        self, intent: ParsedIntent, tool_plan: dict[str, list[Any]],
     ) -> list[str]:
         """Reject platform parameters that no planned tool can consume.
 
@@ -4446,7 +4461,13 @@ class AgentRuntime:
         for platform, values in (intent.platform_params or {}).items():
             if platform.startswith("_") or not isinstance(values, dict):
                 continue
-            tools = tool_plan.get(platform, [])
+            canonical = self._canonical_platform(platform)
+            tools = [
+                tool
+                for routed_platform, routed_tools in tool_plan.items()
+                if self._canonical_platform(routed_platform) == canonical
+                for tool in routed_tools
+            ]
             allowed = set(common) | aliases | {"selection_tokens"} | {tool.name for tool in tools}
             for tool in tools:
                 allowed.update(getattr(tool.input_schema, "properties", {}) or {})
@@ -4690,9 +4711,7 @@ class AgentRuntime:
         fallback_account: Optional[str],
     ) -> Optional[str]:
         """解析单个平台账户，优先使用平台/工具级参数，再回退到公共账户。"""
-        params = intent.platform_params.get(platform, {}) or {}
-        if not isinstance(params, dict):
-            params = {}
+        params = self._platform_params_for_intent(intent, platform)
         actual_platform = self._canonical_platform(platform)
         # Prefer the account-like field declared by the selected Tool. This
         # keeps account identity provider-owned instead of growing a Runtime
@@ -4724,6 +4743,30 @@ class AgentRuntime:
         # candidate.  The caller must provide the exact test account in that
         # case; a one-account fallback keeps the existing local UX intact.
         return str(allowed[0]) if len(allowed) == 1 else None
+
+    def _platform_params_for_intent(
+        self, intent: ParsedIntent, platform: str,
+    ) -> dict[str, Any]:
+        """Merge structured params whose platform aliases resolve identically.
+
+        Natural-language parsing uses the public alias ``google`` while API
+        callers commonly send ``google-ads``. Keeping alias normalization at
+        this boundary prevents provider-specific fields from silently
+        disappearing during the parser/request merge.
+        """
+        requested = self._canonical_platform(platform)
+        merged: dict[str, Any] = {}
+        for raw_platform, values in (intent.platform_params or {}).items():
+            if self._canonical_platform(str(raw_platform)) != requested:
+                continue
+            if not isinstance(values, dict):
+                continue
+            for key, value in values.items():
+                if isinstance(value, dict) and isinstance(merged.get(key), dict):
+                    merged[key] = {**merged[key], **copy.deepcopy(value)}
+                else:
+                    merged[key] = copy.deepcopy(value)
+        return merged
     
     def _generate_reply(
         self,

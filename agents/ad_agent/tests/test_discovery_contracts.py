@@ -145,6 +145,53 @@ def test_new_standard_tool_is_discovered_without_router_configuration():
     ]
 
 
+def test_router_orders_custom_resource_hierarchy_without_core_resource_table():
+    registry = SimpleToolRegistry()
+
+    class Handler:
+        def execute(self, _ctx, _input):
+            return ToolResult.ok({})
+
+    # Register the child first and use resource names unknown to the built-in
+    # channels. The parent metadata, not a central order map, must determine
+    # the route order.
+    registry.register(
+        ToolDefinition(
+            name="new_create_leaf",
+            skill="new-network",
+            platform="new-network",
+            description="Create a leaf",
+            input_schema=ToolSchema(),
+            action="create",
+            resource_type="leaf",
+            parent_resource_type="container",
+            intent_types=["create_campaign"],
+        ),
+        Handler(),
+    )
+    registry.register(
+        ToolDefinition(
+            name="new_create_container",
+            skill="new-network",
+            platform="new-network",
+            description="Create a container",
+            input_schema=ToolSchema(),
+            action="create",
+            resource_type="container",
+            intent_types=["create_campaign"],
+        ),
+        Handler(),
+    )
+
+    routed = SimpleIntentRouter().route(
+        ParsedIntent("create_campaign", "create", ["new-network"]), registry
+    )
+
+    assert [definition.name for definition in routed["new-network"]] == [
+        "new_create_container", "new_create_leaf"
+    ]
+
+
 def test_new_custom_intent_is_declared_on_tool_not_router():
     registry = SimpleToolRegistry()
 

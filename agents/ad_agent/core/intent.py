@@ -887,7 +887,7 @@ class SimpleIntentRouter(IntentRouter):
                     definition for definition in registry.list_by_platform(canonical)
                     if self._matches_intent(definition, intent.intent_type)
                 ]
-                tools.sort(key=self._sort_key)
+            tools = self._order_by_resource_dependencies(tools)
             if tools:
                 result[platform] = tools
         
@@ -898,14 +898,49 @@ class SimpleIntentRouter(IntentRouter):
         return str(intent_type) in set(getattr(definition, "intent_types", []) or [])
 
     @staticmethod
-    def _sort_key(definition: ToolDefinition) -> tuple[int, str]:
-        # Parent resources are planned before children. The order remains a
-        # generic hierarchy rule, not a provider-specific workflow.
-        order = {
-            "campaign": 10, "io": 20, "ad_set": 20, "ad_group": 20,
-            "line_item": 30, "asset_group": 30, "ad": 40, "creative": 40,
+    def _order_by_resource_dependencies(
+        tools: list[ToolDefinition],
+    ) -> list[ToolDefinition]:
+        """Order Tools by declared parent resources with a stable fallback.
+
+        Resource names are provider-owned metadata. The router must not keep a
+        closed-world ordering table such as campaign -> ad group -> ad,
+        otherwise a new channel or custom resource hierarchy would require a
+        core edit. A parent absent from this route is treated as an existing
+        context resource, so creating only a child remains valid.
+        """
+        remaining: list[ToolDefinition] = []
+        seen_names: set[str] = set()
+        for tool in tools:
+            if tool.name in seen_names:
+                continue
+            seen_names.add(tool.name)
+            remaining.append(tool)
+        emitted_resources: set[str] = set()
+        declared_resources = {
+            str(getattr(tool, "resource_type", "") or "")
+            for tool in remaining
         }
-        return order.get(getattr(definition, "resource_type", ""), 100), definition.name
+        ordered: list[ToolDefinition] = []
+        while remaining:
+            ready = [
+                tool for tool in remaining
+                if not getattr(tool, "parent_resource_type", None)
+                or str(getattr(tool, "parent_resource_type", "")) in emitted_resources
+                or str(getattr(tool, "parent_resource_type", "")) not in declared_resources
+            ]
+            if not ready:
+                # Malformed/cyclic metadata remains visible and deterministic;
+                # the capability audit can report the bad graph separately.
+                ready = [min(remaining, key=lambda tool: tool.name)]
+            ready.sort(key=lambda tool: tool.name)
+            for tool in ready:
+                ordered.append(tool)
+                remaining.remove(tool)
+                resource_type = str(getattr(tool, "resource_type", "") or "")
+                if resource_type:
+                    emitted_resources.add(resource_type)
+        return ordered
     
     def get_tool_sequence(self, intent: ParsedIntent, registry: ToolRegistry) -> list[tuple[str, ToolDefinition]]:
         """

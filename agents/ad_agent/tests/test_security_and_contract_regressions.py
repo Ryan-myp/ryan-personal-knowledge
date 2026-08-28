@@ -120,6 +120,30 @@ def test_intent_parser_accepts_new_registered_platform_without_core_edit():
     assert intent.platform_params["snapchat-ads"]["optimization_goal"] == "CONVERSIONS"
 
 
+def test_structured_google_platform_alias_params_reach_provider_tool():
+    validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+    validator.allowed_accounts = {"google-ads": ["g1"]}
+    runtime = AgentRuntime(whitelist_validator=validator)
+    runtime.register_capability(create_google_capability())
+
+    result = runtime.run(
+        "更新 Google Ads campaign campaign_id=123",
+        user_id="alias-user",
+        account_id="g1",
+        platform_params={
+            "google-ads": {
+                "customer_id": "g1",
+                "updates": {"status": "PAUSED"},
+            }
+        },
+    )
+
+    assert result["results"][0]["success"] is True
+    assert result["results"][0]["data"]["input"]["updates"] == {
+        "status": "PAUSED"
+    }
+
+
 def test_tool_selector_discovers_platform_from_registered_tools():
     definition = ToolDefinition(
         name="snapchat_create_campaign",
