@@ -547,6 +547,44 @@ class MetaAPIClient(BasePlatformClient):
         result = self.request('POST', f"/{account_id}/ads", data=data)
         resource_id = result.get('id') if isinstance(result, dict) else None
         return self.require_resource_id(resource_id, "Meta ad create")
+
+    def create_lead_ad(self, account_id: str, adset_id: str, ad: dict) -> str:
+        """Create a Lead Ads ad wired to an existing Instant Form.
+
+        The form is selected by its account/page-scoped ID; form discovery and
+        publication validation remain separate read capabilities.  This method
+        only owns the provider-specific ``object_story_spec`` translation.
+        """
+        if not isinstance(ad, dict):
+            raise ValueError("lead ad must be an object")
+        page_id = str(ad.get("page_id") or "").strip()
+        form_id = str(ad.get("form_id") or "").strip()
+        if not page_id or not form_id:
+            raise ValueError("page_id and form_id are required")
+        cta_type = str(ad.get("call_to_action_type") or "SIGN_UP").upper()
+        if cta_type not in {"SIGN_UP", "LEARN_MORE", "CONTACT_US"}:
+            raise ValueError("Unsupported Lead Ads CTA type")
+
+        link_data: dict[str, Any] = {
+            "message": ad.get("message", ""),
+            "name": ad.get("headline", ""),
+            "description": ad.get("description", ""),
+            "call_to_action": {
+                "type": cta_type,
+                "value": {"lead_gen_form_id": form_id},
+            },
+        }
+        if ad.get("link"):
+            link_data["link"] = ad["link"]
+        return self.create_ad(
+            account_id,
+            adset_id,
+            {
+                "name": ad.get("name", "Untitled Lead Ad"),
+                "status": ad.get("status", "PAUSED"),
+                "object_story_spec": {"page_id": page_id, "link_data": link_data},
+            },
+        )
     
     def update_ad(self, ad_id: str, updates: dict) -> dict:
         """更新 Ad"""

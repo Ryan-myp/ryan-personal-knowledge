@@ -405,6 +405,10 @@ def test_hierarchy_guide_formats_keep_provider_enum_and_execution_boundaries():
         {"ad_group_id": "123", "product_group_type": "brand"},
         include_provider_contract=True,
     )
+    runtime.register_capability(create_meta_capability())
+    meta_formats = {item["format_id"]: item for item in runtime.list_ad_formats("meta")}
+    assert meta_formats["lead.instant_form"]["coverage"] == "supported_dry_run"
+    assert meta_formats["lead.instant_form"]["tool_names"] == ["meta_create_lead_ad"]
 
 
 def test_workflow_state_machine_and_cancel_are_durable():

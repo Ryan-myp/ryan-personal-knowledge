@@ -283,6 +283,40 @@ def test_meta_boost_client_builds_timestamped_request():
     assert payloads[-1][2]["scheduled_publish_time"] > 0
 
 
+def test_meta_lead_ad_builds_instant_form_story_spec():
+    client = MetaAPIClient({"access_token": "test"})
+    payloads = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        payloads.append((method, endpoint, data)) or {"id": "ad-lead-1"}
+    )
+
+    assert client.create_lead_ad("act_1", "as_1", {
+        "name": "Lead Ad", "page_id": "page-1", "form_id": "form-1",
+        "message": "Get the guide", "headline": "Download now",
+        "call_to_action_type": "SIGN_UP", "status": "PAUSED",
+    }) == "ad-lead-1"
+    method, endpoint, data = payloads[-1]
+    assert (method, endpoint) == ("POST", "/act_1/ads")
+    creative = json.loads(data["creative"])
+    assert creative == {
+        "object_story_spec": {
+            "page_id": "page-1",
+            "link_data": {
+                "message": "Get the guide",
+                "name": "Download now",
+                "description": "",
+                "call_to_action": {
+                    "type": "SIGN_UP",
+                    "value": {"lead_gen_form_id": "form-1"},
+                },
+            },
+        }
+    }
+
+    with pytest.raises(ValueError, match="page_id and form_id"):
+        client.create_lead_ad("act_1", "as_1", {"name": "Missing"})
+
+
 def test_google_creation_options_are_mapped_to_rest_resources():
     client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "g1"})
     operations = []

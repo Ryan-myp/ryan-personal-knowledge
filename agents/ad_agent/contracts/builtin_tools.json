@@ -1,5 +1,5 @@
 {
-  "digest": "98400706fff94ee82afa2b0775eb88ff4fbcef5b5caef30b391e23463f1ead6e",
+  "digest": "ecfd3c0bfec95df6ece34b980b2402b4e3f032ba61b44bcdb1e6eb89ff294388",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -4388,8 +4388,8 @@
       ]
     },
     "meta": {
-      "digest": "9321567519ed89c40a90b99b686282cab71bc3271e5d4055e474aa4c8e3a63f9",
-      "tool_count": 24,
+      "digest": "5ef17967ed00dd53786c995ffdc8d38c4e421b27cdfe69d272f6b24f0928e10d",
+      "tool_count": 25,
       "tools": [
         {
           "action": "boost",
@@ -5314,6 +5314,109 @@
           "traits": [
             "write",
             "creative"
+          ]
+        },
+        {
+          "action": "create",
+          "contract_version": "1.1.0",
+          "description": "创建 Meta Lead Ads Instant Form 广告；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "adset_id": {
+                "description": "Parent Meta Ad Set ID",
+                "type": "string"
+              },
+              "call_to_action_type": {
+                "default": "SIGN_UP",
+                "description": "Lead form CTA",
+                "enum": [
+                  "SIGN_UP",
+                  "LEARN_MORE",
+                  "CONTACT_US"
+                ],
+                "type": "string"
+              },
+              "description": {
+                "description": "Description",
+                "type": "string"
+              },
+              "form_id": {
+                "description": "Published Instant Form ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "headline": {
+                "description": "Headline",
+                "type": "string"
+              },
+              "link": {
+                "description": "Optional destination URL",
+                "type": "string"
+              },
+              "message": {
+                "description": "Primary text",
+                "type": "string"
+              },
+              "name": {
+                "description": "Ad name",
+                "maxLength": 400,
+                "type": "string"
+              },
+              "page_id": {
+                "description": "Facebook Page ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "status": {
+                "description": "Initial delivery status",
+                "enum": [
+                  "ACTIVE",
+                  "PAUSED"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "page_id",
+              "form_id"
+            ],
+            "required": [
+              "adset_id",
+              "name",
+              "page_id",
+              "form_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_lead_ad"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_create_lead_ad",
+          "parent_resource_id_field": "adset_id",
+          "parent_resource_type": "ad_set",
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad",
+            "lead",
+            "instant_form"
           ]
         },
         {
@@ -9154,5 +9257,5 @@
       ]
     }
   },
-  "tool_count": 122
+  "tool_count": 123
 }

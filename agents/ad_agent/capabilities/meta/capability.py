@@ -15,7 +15,7 @@ from .boost import MetaBoostPostHandler
 from .creatives import MetaCreateCreativeHandler
 from .parameters import (
     meta_campaign_schema, meta_adset_schema, meta_ad_schema,
-    meta_ad_format_catalog,
+    meta_ad_format_catalog, meta_lead_ad_schema,
 )
 from ...api_clients.meta_client import MetaAPIClient
 from ..update_contracts import meta_updates
@@ -62,7 +62,8 @@ class MetaCapability(BaseCapability):
         "get_adset": ["meta_get_adset"], "create_adset": ["meta_create_adset"],
         "update_adset": ["meta_update_adset"], "pause_adset": ["meta_pause_adset"],
         "list_ads": ["meta_list_ads"], "get_ad": ["meta_get_ad"],
-        "create_ad": ["meta_create_ad"], "update_ad": ["meta_update_ad"],
+        "create_ad": ["meta_create_ad"], "create_lead_ad": ["meta_create_lead_ad"],
+        "update_ad": ["meta_update_ad"],
         "pause_ad": ["meta_pause_ad"], "create_creative": ["meta_create_creative"],
         "get_campaign_report": ["meta_get_campaign_report"],
         "get_adset_report": ["meta_get_adset_report"], "get_ad_report": ["meta_get_ad_report"],
@@ -123,6 +124,23 @@ class MetaCapability(BaseCapability):
                 argument_builder=lambda ctx, data: ((account_from(ctx, data, "account_id"), data["ad_ids"]), {
                     "time_range": data.get("date_range"), "fields": data.get("fields")
                 }),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_create_lead_ad",
+                description="创建 Meta Lead Ads Instant Form 广告；默认仅生成 dry-run 计划。",
+                method_name="create_lead_ad", result_key="ad_id",
+                properties=meta_lead_ad_schema()["properties"],
+                required=meta_lead_ad_schema()["required"],
+                provider_required=meta_lead_ad_schema()["provider_required"],
+                action="create", resource_type="ad", parent_resource_type="ad_set",
+                resource_id_field="ad_id", parent_resource_id_field="adset_id",
+                intent_types=["create_lead_ad"], traits=["write", "ad", "lead", "instant_form"], write=True,
+                argument_builder=lambda ctx, data: ((account_from(ctx, data, "account_id"), data["adset_id"], {
+                    key: data[key] for key in (
+                        "name", "page_id", "form_id", "link", "message", "headline",
+                        "description", "call_to_action_type", "status",
+                    ) if key in data
+                }), {}),
             ),
         ]
         for method_name, resource_type, resource_id, intent in (

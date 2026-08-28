@@ -221,6 +221,29 @@ def meta_ad_schema() -> dict[str, Any]:
     }
 
 
+def meta_lead_ad_schema() -> dict[str, Any]:
+    """Create contract for a Meta Lead Ads Instant Form creative."""
+    return {
+        "required": ["adset_id", "name", "page_id", "form_id"],
+        "provider_required": ["page_id", "form_id"],
+        "properties": {
+            "adset_id": _field("string", "Parent Meta Ad Set ID"),
+            "name": _field("string", "Ad name", maxLength=400),
+            "page_id": _field("string", "Facebook Page ID", minLength=1),
+            "form_id": _field("string", "Published Instant Form ID", minLength=1),
+            "link": _field("string", "Optional destination URL"),
+            "message": _field("string", "Primary text"),
+            "headline": _field("string", "Headline"),
+            "description": _field("string", "Description"),
+            "call_to_action_type": _field(
+                "string", "Lead form CTA", enum=["SIGN_UP", "LEARN_MORE", "CONTACT_US"],
+                default="SIGN_UP",
+            ),
+            "status": _field("string", "Initial delivery status", enum=META_STATUS),
+        },
+    }
+
+
 def meta_ad_format_catalog() -> list[dict[str, Any]]:
     """Advertised Meta objectives/formats and their current contract depth."""
     source_document = "docs/ad-platform-hierarchy-guide-v5.md"
@@ -255,18 +278,19 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
             "tool_names": ["meta_create_campaign", "meta_create_adset", "meta_create_ad"],
             "dependencies": ["lead_gen_config", "form_id", "page_id"],
             "supported_fields": ["OUTCOME_LEADS", "LEADS", "lead_gen_config", "lead_gen"],
-            "gaps": ["Instant Form lookup/validation", "dedicated lead creative builder"],
+            "gaps": ["Instant Form lookup/validation"],
             "source_document": source_document,
         },
         {
             "format_id": "lead.instant_form",
             "category": "lead",
-            "resource_type": "ad_set",
-            "coverage": "partial_dry_run",
-            "tool_names": ["meta_create_campaign", "meta_create_adset"],
-            "dependencies": ["OUTCOME_LEADS", "LEADS", "page_id", "form_id"],
-            "supported_fields": ["lead_gen_config", "promoted_object.page_id"],
-            "gaps": ["Instant Form lookup/validation", "dedicated lead creative builder"],
+            "resource_type": "ad",
+            "coverage": "supported_dry_run",
+            "tool_names": ["meta_create_lead_ad"],
+            "payload_adapter": "MetaAPIClient.create_lead_ad",
+            "dependencies": ["ad_set", "page_id", "form_id"],
+            "supported_fields": ["page_id", "form_id", "link", "message", "headline", "description", "call_to_action_type"],
+            "gaps": ["Instant Form lookup/validation", "live mutation approval"],
             "source_document": source_document,
         },
         {
