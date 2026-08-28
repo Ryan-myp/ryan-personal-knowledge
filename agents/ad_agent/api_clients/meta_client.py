@@ -254,6 +254,32 @@ class MetaAPIClient(BasePlatformClient):
                 'fields': 'id,name,subtype,approximate_count,delivery_status',
             },
         )
+
+    def list_catalogs(self, account_id: str, limit: int = 25) -> list:
+        """获取广告账户可用的商品目录。"""
+        clean_id = account_id.replace('act_', '')
+        return self._list_graph_pages(
+            clean_id,
+            f"/act_{clean_id}/owned_product_catalogs",
+            {
+                'limit': limit,
+                'fields': 'id,name,vertical,product_count,feed_count',
+            },
+        )
+
+    def list_product_sets(self, catalog_id: str, limit: int = 25) -> list:
+        """获取商品目录下的商品集。"""
+        clean_id = str(catalog_id).strip()
+        if not clean_id:
+            raise ValueError("catalog_id is required")
+        return self._list_graph_pages(
+            clean_id,
+            f"/{clean_id}/product_sets",
+            {
+                'limit': limit,
+                'fields': 'id,name,filter,product_count',
+            },
+        )
     
     # ==================== Campaign 管理 ====================
     
@@ -583,6 +609,48 @@ class MetaAPIClient(BasePlatformClient):
                 "name": ad.get("name", "Untitled Lead Ad"),
                 "status": ad.get("status", "PAUSED"),
                 "object_story_spec": {"page_id": page_id, "link_data": link_data},
+            },
+        )
+
+    def create_catalog_ad(self, account_id: str, adset_id: str, ad: dict) -> str:
+        """Create a Catalog/Dynamic Product Ad provider payload."""
+        if not isinstance(ad, dict):
+            raise ValueError("catalog ad must be an object")
+        page_id = str(ad.get("page_id") or "").strip()
+        product_set_id = str(ad.get("product_set_id") or "").strip()
+        link = str(ad.get("link") or "").strip()
+        if not page_id or not product_set_id or not link:
+            raise ValueError("page_id, product_set_id and link are required")
+
+        ad_style = str(ad.get("ad_style") or "CAROUSEL").upper()
+        if ad_style not in {"CAROUSEL", "COLLAGE", "PRODUCT_SET"}:
+            raise ValueError("Unsupported Catalog Ad style")
+        cta_type = str(ad.get("call_to_action_type") or "SHOP_NOW").upper()
+        if cta_type not in {"SHOP_NOW", "LEARN_MORE", "BUY_NOW"}:
+            raise ValueError("Unsupported Catalog Ad CTA type")
+
+        template_data: dict[str, Any] = {
+            "product_set_id": product_set_id,
+            "link": link,
+            "message": ad.get("message", ""),
+            "name": ad.get("headline", ""),
+            "description": ad.get("description", ""),
+            "call_to_action": {"type": cta_type},
+            # Keep the selected format explicit in the dry-run payload.  Live
+            # mutation remains disabled until this mapping is verified against
+            # the target Meta account/API version.
+            "format_option": ad_style,
+        }
+        return self.create_ad(
+            account_id,
+            adset_id,
+            {
+                "name": ad.get("name", "Untitled Catalog Ad"),
+                "status": ad.get("status", "PAUSED"),
+                "object_story_spec": {
+                    "page_id": page_id,
+                    "template_data": template_data,
+                },
             },
         )
     

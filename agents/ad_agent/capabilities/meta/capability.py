@@ -15,7 +15,7 @@ from .boost import MetaBoostPostHandler
 from .creatives import MetaCreateCreativeHandler
 from .parameters import (
     meta_campaign_schema, meta_adset_schema, meta_ad_schema,
-    meta_ad_format_catalog, meta_lead_ad_schema,
+    meta_ad_format_catalog, meta_lead_ad_schema, meta_catalog_ad_schema,
 )
 from ...api_clients.meta_client import MetaAPIClient
 from ..update_contracts import meta_updates
@@ -55,7 +55,8 @@ class MetaCapability(BaseCapability):
     # routing.
     provider_method_coverage = {
         "list_accounts": ["meta_list_accounts"], "get_account": ["meta_get_account"],
-        "list_audiences": ["meta_list_audiences"], "list_campaigns": ["meta_list_campaigns"],
+        "list_audiences": ["meta_list_audiences"], "list_catalogs": ["meta_list_catalogs"],
+        "list_product_sets": ["meta_list_product_sets"], "list_campaigns": ["meta_list_campaigns"],
         "get_campaign": ["meta_get_campaign"], "create_campaign": ["meta_create_campaign"],
         "update_campaign": ["meta_update_campaign"], "pause_campaign": ["meta_pause_campaign"],
         "resume_campaign": ["meta_resume_campaign"], "list_adsets": ["meta_list_ad_sets"],
@@ -63,6 +64,7 @@ class MetaCapability(BaseCapability):
         "update_adset": ["meta_update_adset"], "pause_adset": ["meta_pause_adset"],
         "list_ads": ["meta_list_ads"], "get_ad": ["meta_get_ad"],
         "create_ad": ["meta_create_ad"], "create_lead_ad": ["meta_create_lead_ad"],
+        "create_catalog_ad": ["meta_create_catalog_ad"],
         "update_ad": ["meta_update_ad"],
         "pause_ad": ["meta_pause_ad"], "create_creative": ["meta_create_creative"],
         "get_campaign_report": ["meta_get_campaign_report"],
@@ -95,6 +97,30 @@ class MetaCapability(BaseCapability):
                 intent_types=["get_account"], traits=["read", "account"],
                 argument_builder=lambda ctx, data: ((account_from(ctx, data, "account_id"),), {
                     "fields": data.get("fields")
+                }),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_list_catalogs",
+                description="查询 Meta 商品目录。", method_name="list_catalogs",
+                result_key="catalogs", properties={
+                    "account_id": {"type": "string"},
+                    "limit": {"type": "integer"},
+                }, required=["account_id"], action="list", resource_type="catalog",
+                intent_types=["list_catalogs"], traits=["read", "catalog"],
+                argument_builder=lambda ctx, data: ((account_from(ctx, data, "account_id"),), {
+                    "limit": data.get("limit", 25),
+                }),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_list_product_sets",
+                description="查询 Meta 商品目录下的商品集。", method_name="list_product_sets",
+                result_key="product_sets", properties={
+                    "catalog_id": {"type": "string"},
+                    "limit": {"type": "integer"},
+                }, required=["catalog_id"], action="list", resource_type="product_set",
+                intent_types=["list_product_sets"], traits=["read", "catalog", "product_set"],
+                argument_builder=lambda _ctx, data: ((data["catalog_id"],), {
+                    "limit": data.get("limit", 25),
                 }),
             ),
             method_tool(
@@ -139,6 +165,24 @@ class MetaCapability(BaseCapability):
                     key: data[key] for key in (
                         "name", "page_id", "form_id", "link", "message", "headline",
                         "description", "call_to_action_type", "status",
+                    ) if key in data
+                }), {}),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_create_catalog_ad",
+                description="创建 Meta Catalog/Dynamic Product Ad；默认仅生成 dry-run 计划。",
+                method_name="create_catalog_ad", result_key="ad_id",
+                properties=meta_catalog_ad_schema()["properties"],
+                required=meta_catalog_ad_schema()["required"],
+                provider_required=meta_catalog_ad_schema()["provider_required"],
+                action="create", resource_type="ad", parent_resource_type="ad_set",
+                resource_id_field="ad_id", parent_resource_id_field="adset_id",
+                intent_types=["create_catalog_ad"],
+                traits=["write", "ad", "catalog", "dynamic_product"], write=True,
+                argument_builder=lambda ctx, data: ((account_from(ctx, data, "account_id"), data["adset_id"], {
+                    key: data[key] for key in (
+                        "name", "page_id", "product_set_id", "link", "message",
+                        "headline", "description", "ad_style", "call_to_action_type", "status",
                     ) if key in data
                 }), {}),
             ),

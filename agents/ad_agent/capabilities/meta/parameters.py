@@ -111,7 +111,12 @@ def meta_campaign_schema() -> dict[str, Any]:
             "spend_cap": _field("number", "Campaign spend cap", minimum=0),
             "start_time": _field("string", "ISO-8601 start time"),
             "end_time": _field("string", "ISO-8601 end time"),
-            "catalog_id": _field("string", "Meta product catalog ID"),
+            "catalog_id": _field(
+                "string", "Meta product catalog ID",
+                lookup_tool="meta_list_catalogs", lookup_result_key="catalogs",
+                selection_value_fields=["id", "catalog_id"],
+                selection_label_fields=["name", "id"],
+            ),
             "conversion_specs": _field("array", "Conversion event specifications", items={"type": "object", "additionalProperties": True}),
             "messaging_apps": _field(
                 "array", "Messaging destinations", items={"type": "string", "enum": ["MESSENGER", "WHATSAPP", "INSTAGRAM_DIRECT"]}
@@ -150,7 +155,12 @@ def meta_adset_schema() -> dict[str, Any]:
             "start_time": _field("string", "ISO-8601 start time"),
             "end_time": _field("string", "ISO-8601 end time"),
             "lead_gen_config": _field("object", "Instant Form configuration", additionalProperties=True),
-            "product_set_id": _field("string", "Catalog product set ID"),
+            "product_set_id": _field(
+                "string", "Catalog product set ID",
+                lookup_tool="meta_list_product_sets", lookup_result_key="product_sets",
+                selection_value_fields=["id", "product_set_id"],
+                selection_label_fields=["name", "id"],
+            ),
             "messaging_apps": _field(
                 "array", "Messaging destinations", items={"type": "string", "enum": ["MESSENGER", "WHATSAPP", "INSTAGRAM_DIRECT"]}
             ),
@@ -238,6 +248,40 @@ def meta_lead_ad_schema() -> dict[str, Any]:
             "call_to_action_type": _field(
                 "string", "Lead form CTA", enum=["SIGN_UP", "LEARN_MORE", "CONTACT_US"],
                 default="SIGN_UP",
+            ),
+            "status": _field("string", "Initial delivery status", enum=META_STATUS),
+        },
+    }
+
+
+def meta_catalog_ad_schema() -> dict[str, Any]:
+    """Create contract for a Meta Catalog/Dynamic Product Ad."""
+    return {
+        "required": ["adset_id", "name", "page_id", "product_set_id", "link", "ad_style"],
+        "provider_required": ["page_id", "product_set_id", "link"],
+        "properties": {
+            "adset_id": _field("string", "Parent Meta Ad Set ID"),
+            "name": _field("string", "Ad name", maxLength=400),
+            "page_id": _field("string", "Facebook Page ID", minLength=1),
+            "product_set_id": _field(
+                "string", "Meta product set ID", minLength=1,
+                lookup_tool="meta_list_product_sets",
+                lookup_result_key="product_sets",
+                selection_value_fields=["id", "product_set_id"],
+                selection_label_fields=["name", "id"],
+            ),
+            "link": _field("string", "Catalog landing URL", minLength=1),
+            "message": _field("string", "Primary text"),
+            "headline": _field("string", "Headline"),
+            "description": _field("string", "Description"),
+            "ad_style": _field(
+                "string", "Catalog ad style",
+                enum=["CAROUSEL", "COLLAGE", "PRODUCT_SET"],
+            ),
+            "call_to_action_type": _field(
+                "string", "Catalog ad CTA",
+                enum=["SHOP_NOW", "LEARN_MORE", "BUY_NOW"],
+                default="SHOP_NOW",
             ),
             "status": _field("string", "Initial delivery status", enum=META_STATUS),
         },
@@ -332,20 +376,22 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
             "format_id": "catalog",
             "category": "catalog",
             "resource_type": "campaign",
-            "coverage": "declared_only",
-            "tool_names": ["meta_create_campaign", "meta_create_adset", "meta_create_ad"],
+            "coverage": "supported_dry_run",
+            "tool_names": ["meta_create_campaign", "meta_create_adset", "meta_create_catalog_ad"],
+            "payload_adapter": "MetaAPIClient.create_catalog_ad",
             "dependencies": ["catalog_id", "product_set_id", "catalog creative"],
-            "gaps": ["catalog/product set lookup", "dedicated catalog creative builder", "dynamic product rules"],
+            "gaps": ["dynamic product rules", "live mutation approval"],
             "source_document": source_document,
         },
         {
             "format_id": "catalog.dynamic_product",
             "category": "catalog",
-            "resource_type": "ad_set",
-            "coverage": "declared_only",
-            "tool_names": [],
+            "resource_type": "ad",
+            "coverage": "supported_dry_run",
+            "tool_names": ["meta_create_adset", "meta_create_catalog_ad"],
+            "payload_adapter": "MetaAPIClient.create_catalog_ad",
             "dependencies": ["catalog_id", "product_set_id", "dynamic product rules"],
-            "gaps": ["catalog/product set lookup", "dedicated catalog creative Tool"],
+            "gaps": ["dynamic product rules", "live mutation approval"],
             "source_document": source_document,
         },
         {

@@ -1,5 +1,5 @@
 {
-  "digest": "b9d0e9205db9f79b47f3465a677f37e88a901d93e650f14c67d428ef48d97d21",
+  "digest": "6e07dff6d7b785902b8e8bf8fea3472df19559ff5c00fb7003c6a3e636462f10",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -4503,8 +4503,8 @@
       ]
     },
     "meta": {
-      "digest": "5ef17967ed00dd53786c995ffdc8d38c4e421b27cdfe69d272f6b24f0928e10d",
-      "tool_count": 25,
+      "digest": "b21c794e9a8003417d117c3ccd9bf8ea61c0f57f01ae8b9394be917a3fdd59ae",
+      "tool_count": 28,
       "tools": [
         {
           "action": "boost",
@@ -4904,6 +4904,16 @@
               },
               "product_set_id": {
                 "description": "Catalog product set ID",
+                "lookup_result_key": "product_sets",
+                "lookup_tool": "meta_list_product_sets",
+                "selection_label_fields": [
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "product_set_id"
+                ],
                 "type": "string"
               },
               "promoted_object": {
@@ -5223,6 +5233,16 @@
               },
               "catalog_id": {
                 "description": "Meta product catalog ID",
+                "lookup_result_key": "catalogs",
+                "lookup_tool": "meta_list_catalogs",
+                "selection_label_fields": [
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "catalog_id"
+                ],
                 "type": "string"
               },
               "conversion_specs": {
@@ -5363,6 +5383,132 @@
           "traits": [
             "write",
             "campaign"
+          ]
+        },
+        {
+          "action": "create",
+          "contract_version": "1.1.0",
+          "description": "创建 Meta Catalog/Dynamic Product Ad；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_style": {
+                "description": "Catalog ad style",
+                "enum": [
+                  "CAROUSEL",
+                  "COLLAGE",
+                  "PRODUCT_SET"
+                ],
+                "type": "string"
+              },
+              "adset_id": {
+                "description": "Parent Meta Ad Set ID",
+                "type": "string"
+              },
+              "call_to_action_type": {
+                "default": "SHOP_NOW",
+                "description": "Catalog ad CTA",
+                "enum": [
+                  "SHOP_NOW",
+                  "LEARN_MORE",
+                  "BUY_NOW"
+                ],
+                "type": "string"
+              },
+              "description": {
+                "description": "Description",
+                "type": "string"
+              },
+              "headline": {
+                "description": "Headline",
+                "type": "string"
+              },
+              "link": {
+                "description": "Catalog landing URL",
+                "minLength": 1,
+                "type": "string"
+              },
+              "message": {
+                "description": "Primary text",
+                "type": "string"
+              },
+              "name": {
+                "description": "Ad name",
+                "maxLength": 400,
+                "type": "string"
+              },
+              "page_id": {
+                "description": "Facebook Page ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "product_set_id": {
+                "description": "Meta product set ID",
+                "lookup_result_key": "product_sets",
+                "lookup_tool": "meta_list_product_sets",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "product_set_id"
+                ],
+                "type": "string"
+              },
+              "status": {
+                "description": "Initial delivery status",
+                "enum": [
+                  "ACTIVE",
+                  "PAUSED"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "page_id",
+              "product_set_id",
+              "link"
+            ],
+            "required": [
+              "adset_id",
+              "name",
+              "page_id",
+              "product_set_id",
+              "link",
+              "ad_style"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_catalog_ad"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_create_catalog_ad",
+          "parent_resource_id_field": "adset_id",
+          "parent_resource_type": "ad_set",
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad",
+            "catalog",
+            "dynamic_product"
           ]
         },
         {
@@ -6141,6 +6287,103 @@
           "traits": [
             "read",
             "campaign"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.1.0",
+          "description": "查询 Meta 商品目录。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_catalogs"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_list_catalogs",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "catalog",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "catalog"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.1.0",
+          "description": "查询 Meta 商品目录下的商品集。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "catalog_id": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "catalog_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_product_sets"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_list_product_sets",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "product_set",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "catalog",
+            "product_set"
           ]
         },
         {
@@ -9372,5 +9615,5 @@
       ]
     }
   },
-  "tool_count": 124
+  "tool_count": 127
 }

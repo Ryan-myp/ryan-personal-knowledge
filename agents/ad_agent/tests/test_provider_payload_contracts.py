@@ -317,6 +317,63 @@ def test_meta_lead_ad_builds_instant_form_story_spec():
         client.create_lead_ad("act_1", "as_1", {"name": "Missing"})
 
 
+def test_meta_catalog_ad_builds_template_story_spec():
+    client = MetaAPIClient({"access_token": "test"})
+    payloads = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        payloads.append((method, endpoint, data)) or {"id": "ad-catalog-1"}
+    )
+
+    assert client.create_catalog_ad("act_1", "as_1", {
+        "name": "Catalog Ad", "page_id": "page-1", "product_set_id": "set-1",
+        "link": "https://example.test/shop", "message": "Shop now",
+        "headline": "Summer collection", "ad_style": "CAROUSEL",
+        "call_to_action_type": "SHOP_NOW", "status": "PAUSED",
+    }) == "ad-catalog-1"
+    method, endpoint, data = payloads[-1]
+    assert (method, endpoint) == ("POST", "/act_1/ads")
+    creative = json.loads(data["creative"])
+    assert creative["object_story_spec"]["page_id"] == "page-1"
+    assert creative["object_story_spec"]["template_data"] == {
+        "product_set_id": "set-1",
+        "link": "https://example.test/shop",
+        "message": "Shop now",
+        "name": "Summer collection",
+        "description": "",
+        "call_to_action": {"type": "SHOP_NOW"},
+        "format_option": "CAROUSEL",
+    }
+
+    with pytest.raises(ValueError, match="page_id, product_set_id and link"):
+        client.create_catalog_ad("act_1", "as_1", {"name": "Missing"})
+
+
+def test_meta_catalog_tools_expose_lookup_and_format_contract():
+    capability = create_meta_capability()
+    definitions = {
+        definition.name: definition
+        for definition, _handler in capability.register_tools()
+    }
+    assert "meta_list_catalogs" in definitions
+    assert "meta_list_product_sets" in definitions
+    catalog_ad = definitions["meta_create_catalog_ad"]
+    assert catalog_ad.input_schema.properties["product_set_id"]["lookup_tool"] == (
+        "meta_list_product_sets"
+    )
+    campaign = definitions["meta_create_campaign"]
+    assert campaign.input_schema.properties["catalog_id"]["lookup_tool"] == (
+        "meta_list_catalogs"
+    )
+    adset = definitions["meta_create_adset"]
+    assert adset.input_schema.properties["product_set_id"]["lookup_tool"] == (
+        "meta_list_product_sets"
+    )
+    assert catalog_ad.input_schema.properties["ad_style"]["enum"] == [
+        "CAROUSEL", "COLLAGE", "PRODUCT_SET"
+    ]
+    assert catalog_ad.live_support is False
+
+
 def test_google_creation_options_are_mapped_to_rest_resources():
     client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "g1"})
     operations = []
