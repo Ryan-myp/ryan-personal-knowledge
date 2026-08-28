@@ -128,7 +128,21 @@ def main():
         read_only_mode=False,
         execution_mode="dry_run",
         offline_mode=False,
+        require_llm=True,
     )
+
+    llm_api_key = os.environ.get("OPENAI_API_KEY", "")
+    if not llm_api_key:
+        raise RuntimeError(
+            "OPENAI_API_KEY 未设置；ad-agent CLI 必须配置 LLM，禁止降级为规则解析"
+        )
+    from agents.ad_agent.core.llm_client import create_llm_client
+    runtime.inject_llm(create_llm_client(
+        model=os.environ.get("LLM_MODEL", "gpt-4o-mini"),
+        api_key=llm_api_key,
+        base_url=os.environ.get("OPENAI_BASE_URL"),
+    ))
+    runtime.assert_llm_ready()
 
     # 加载凭证
     credentials = {}

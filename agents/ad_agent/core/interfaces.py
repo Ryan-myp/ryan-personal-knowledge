@@ -788,7 +788,7 @@ class IntentParser(ABC):
     意图解析器接口
     
     将自然语言输入转换为标准化的 ParsedIntent。
-    默认实现使用 LLM，也可以注入自定义规则解析器。
+    生产 Runtime 使用 LLM；测试或显式嵌入场景可以注入自定义解析器。
     """
     @abstractmethod
     def parse(self, user_input: str, context: ToolContext) -> ParsedIntent:

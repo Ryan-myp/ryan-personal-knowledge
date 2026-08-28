@@ -192,6 +192,7 @@ class AgentRuntime:
         write_guard: WriteGuard = None,
         skill_roots: list[str] = None,
         llm_client=None,  # 可选：自定义 LLM 客户端
+        require_llm: bool = False,
         persistence_store: PersistenceBackend = None,
         whitelist_validator: AccountWhitelistValidator = None,
         read_only_mode: bool = False,
@@ -225,7 +226,14 @@ class AgentRuntime:
         self._registry_execution_token = getattr(
             self.registry, "_execution_token", None
         )
-        self.intent_parser = intent_parser or LLMIntentParser(llm_client)
+        self.require_llm = bool(require_llm)
+        self.intent_parser = intent_parser or LLMIntentParser(
+            llm_client, allow_rule_fallback=not self.require_llm
+        )
+        if self.require_llm and isinstance(self.intent_parser, LLMIntentParser):
+            # An explicitly supplied LLMIntentParser must obey the Runtime's
+            # production boundary too; it cannot silently fall back to rules.
+            self.intent_parser.allow_rule_fallback = False
         self.intent_router = intent_router or SimpleIntentRouter()
         self.write_guard = write_guard
         self.skill_loader = SkillLoader(skill_roots)
@@ -640,6 +648,17 @@ class AgentRuntime:
         self._llm = llm_client
         if isinstance(self.intent_parser, LLMIntentParser):
             self.intent_parser.inject_llm(llm_client)
+
+    def assert_llm_ready(self) -> None:
+        """Fail fast when a production Runtime has no model-backed parser."""
+        if (
+            self.require_llm
+            and isinstance(self.intent_parser, LLMIntentParser)
+            and self._llm is None
+        ):
+            raise RuntimeError(
+                "LLM client is required; configure the model before starting the Agent"
+            )
 
     def enable_read_only_mode(self) -> None:
         """
@@ -3188,6 +3207,7 @@ class AgentRuntime:
         this boundary two concurrent requests for one session can interleave
         account context, tool outputs and confirmation state.
         """
+        self.assert_llm_ready()
         lock = self._get_session_lock(session_id or "__new_session__")
         effective_user_id = principal.user_id if principal is not None else user_id
         effective_permissions = (

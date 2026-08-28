@@ -1,5 +1,7 @@
 """Regression tests for metadata-driven Tool discovery."""
 
+import pytest
+
 from agents.ad_agent.core.interfaces import (
     IntentParser,
     ParsedIntent,
@@ -295,6 +297,20 @@ def test_llm_prompt_uses_registered_intent_catalog():
     prompt_text = "\n".join(message["content"] for message in llm.calls[0])
     assert "estimate_reach" in prompt_text
     assert "Estimate audience reach" in prompt_text
+
+
+def test_production_llm_parser_does_not_fallback_when_model_is_unavailable():
+    parser = LLMIntentParser(allow_rule_fallback=False)
+
+    with pytest.raises(RuntimeError, match="LLM client is required"):
+        parser.parse("查询 Meta campaign", None)
+
+
+def test_runtime_can_require_model_backed_intent_parsing():
+    runtime = AgentRuntime(require_llm=True)
+
+    with pytest.raises(RuntimeError, match="LLM client is required"):
+        runtime.run("查询 Meta campaign")
 
 
 def test_new_channel_capability_is_discovered_by_package_convention(monkeypatch):

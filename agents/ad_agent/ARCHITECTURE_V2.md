@@ -28,7 +28,7 @@
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐    │
 │  │ IntentParser    │  │ IntentRouter    │  │ ToolRegistry             │    │
 │  │ 意图解析         │→│ 路由分发         │→ │ 工具注册/执行            │    │
-│  │ - LLM/规则 fallback│ │ - 发现式路由   │  │ - 107 tools              │    │
+│  │ - LLM 结构化解析    │ │ - 发现式路由   │  │ - 107 tools              │    │
 │  └─────────────────┘  └─────────────────┘  └─────────────────────────┘    │
 │                                                                             │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐    │
@@ -68,7 +68,7 @@
 ```python
 # 位置: core/intent.py
 class LLMIntentParser:
-    """LLM 解析，失败时使用同一类中的规则 fallback。"""
+    """LLM 解析；生产 Runtime 不降级为规则解析。"""
     PARSE_PROMPT_TEMPLATE = """
     你是广告投放专家助手。请分析用户的投放需求：
     - intent_type: create/update/pause/resume/cross-channel | boost_post | download_report
@@ -96,8 +96,8 @@ class SimpleIntentRouter:
 及可选 `intent_types`。涉及层级创建的 Tool 还应声明
 `resource_id_field` 与 `parent_resource_id_field`，把各平台的 ID 拼写差异
 留在渠道 Capability 内。Runtime 根据父子资源层级排序创建链，并统一执行
-权限、账户、dry-run、审批、幂等与恢复。严格 DAG 只作为特殊扩展点，不是
-每个 Skill 的必填配置。
+权限、账户、dry-run、审批、幂等与恢复。执行顺序属于 LLM 规划和 Runtime/Harness
+的受控执行记录，不由用户 Skill 文件中的 DSL 决定。
 
 参数选择也遵循同一边界：固定 Provider 枚举由 Tool Schema 的 `enum` 自动生成
 catalog；账户相关的 App、地域、转化事件等由字段上的 `lookup_tool` 声明，

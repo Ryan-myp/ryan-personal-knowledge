@@ -32,7 +32,7 @@ granted_permissions:
 # values contain trusted user_id/tenant_id/permissions/account_scope claims.
 # The request body's user_id is never an authorization source.
 
-# LLM 配置（可选，不配置则使用规则解析）
+# LLM 配置（必需；Agent 不提供无 LLM 的规则解析运行模式）
 models:
   default: "agnes-2.5-flash"
   openai:

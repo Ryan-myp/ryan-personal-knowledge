@@ -167,6 +167,7 @@ def test_chat_stream_returns_sse_lifecycle_events(fake_server):
 
 def test_runtime_initialization_registers_all_builtin_capabilities(monkeypatch, tmp_path):
     monkeypatch.setenv("AD_AGENT_DB_PATH", str(tmp_path / "runtime.db"))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-llm-key")
     monkeypatch.setattr(api_server, "runtime", None)
     monkeypatch.setattr(
         api_server,
@@ -183,6 +184,21 @@ def test_runtime_initialization_registers_all_builtin_capabilities(monkeypatch, 
     }
     assert len(runtime.registry.list_all()) == 107
     runtime._session_manager.store.close()
+
+
+def test_runtime_initialization_fails_without_llm(monkeypatch, tmp_path):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("AD_AGENT_DB_PATH", str(tmp_path / "runtime.db"))
+    monkeypatch.setattr(api_server, "runtime", None)
+    monkeypatch.setattr(
+        api_server,
+        "runtime_status",
+        {"state": "not_initialized", "error": None},
+    )
+
+    assert api_server._init_runtime() is None
+    assert api_server.runtime_status["state"] == "failed"
+    assert "必须配置 LLM" in api_server.runtime_status["error"]
 
 
 def test_tools_endpoint_exposes_parameter_schema_and_enum_catalog(monkeypatch):

@@ -8,7 +8,7 @@
 - **API 客户端**：封装真实 API 请求、重试、限流和错误分类；live 能力须逐平台验证
 - **持久化层**：SQLite 存储会话、工具调用、Campaign 状态
 - **结构化日志**：JSON 格式，便于 log aggregation
-- **离线演示**：无凭证时部分查询 Handler 返回 mock 数据；这些数据不代表线上结果
+- **模型驱动**：生产入口必须配置 LLM；离线 fixture 仅用于显式测试和评测，不是产品降级路径
 - **安全边界**：写操作必须命中配置的测试账户白名单；live 还必须显式确认
 - **可扩展**：渠道包按约定自动发现；新增平台不需要修改 Runtime、Router 或中心渠道表
 - **动态平台识别**：解析器从已注册 Capability/Skill 发布平台标识；内置渠道只保留自然语言别名，不维护固定四渠道路由表
@@ -35,14 +35,25 @@ pip install -r requirements.txt
 ## 快速开始
 
 ```python
+import os
+
 from ad_agent import AgentRuntime, create_meta_capability, create_google_capability
+from ad_agent.core.llm_client import create_llm_client
 from ad_agent.persistence.store import AdAgentStore
 
-# 初始化（默认 dry-run，带持久化）
+# 初始化（LLM 驱动、默认 dry-run，带持久化）
 store = AdAgentStore("ad_agent.db")
-runtime = AgentRuntime(persistence_store=store)
+runtime = AgentRuntime(
+    persistence_store=store,
+    require_llm=True,
+    llm_client=create_llm_client(
+        model=os.environ.get("LLM_MODEL", "gpt-4o-mini"),
+        api_key=os.environ["OPENAI_API_KEY"],
+        base_url=os.environ.get("OPENAI_BASE_URL"),
+    ),
+)
 
-# 注册 Capability（Mock 模式，无需 API 凭证）
+# 注册 Capability（写操作仍只生成 dry-run 计划）
 runtime.register_capability(create_meta_capability())
 runtime.register_capability(create_google_capability())
 
@@ -192,7 +203,7 @@ Provider API 升级时，保持稳定的 Tool 名称和业务输入契约，在�
 │                        AgentRuntime                         │
 │   ┌─────────────┐  ┌─────────────┐  ┌───────────────────┐   │
 │   │ IntentParser │  │IntentRouter │  │   ToolRegistry     │   │
-│   │ (LLM/规则)   │  │ (多平台)    │  │   (工具注册表)      │   │
+│   │ (LLM)        │  │ (多平台)    │  │   (工具注册表)      │   │
 │   └─────────────┘  └─────────────┘  └───────────────────┘   │
 │                             │                                │
 │   ┌─────────────────────────┼─────────────────────────────┐  │
@@ -289,7 +300,7 @@ Capability 并注入按渠道创建的 Client；没有 Client 时仍可安全生
 受注册和审计的 Capability/Tool 扩展，用户上传 Skill 中的 `tools.py`、`scripts/`、
 MCP 或其他代码文件不会被 Runtime 导入或执行。
 
-规则解析和 LLM 结果规范化都会读取当前已注册的平台集合。新增渠道的自然语言别名
+LLM 结果规范化会读取当前已注册的平台集合。新增渠道的自然语言别名
 可以由其平台标识自动获得（例如 `snapchat-ads` / `snapchat ads`）；若需要中文或
 品牌别名，由渠道 Skill 在自己的边界提供解析前置层即可，不需要修改中心 Router。
 Skill 包遵循标准目录约定：至少包含 `SKILL.md`，可包含 `references/`、`scripts/`、

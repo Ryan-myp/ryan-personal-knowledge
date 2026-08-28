@@ -200,6 +200,7 @@ def _init_runtime():
                 config.get("granted_permissions", ["ads.read", "ads.plan"]) or []
             ),
             offline_mode=False,
+            require_llm=True,
         )
 
         credentials = {}
@@ -238,7 +239,11 @@ def _init_runtime():
             runtime.inject_llm(llm)
             logger.info(f"✅ LLM 已注入: {llm_model}")
         else:
-            logger.warning("⚠️ OPENAI_API_KEY 未设置，使用规则解析")
+            raise RuntimeError(
+                "OPENAI_API_KEY 未设置；ad-agent 服务必须配置 LLM，禁止降级为规则解析"
+            )
+
+        runtime.assert_llm_ready()
         
         # 自动加载 Skills
         skills_root = Path(__file__).parent / "skills"

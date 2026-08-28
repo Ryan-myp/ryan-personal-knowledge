@@ -12,6 +12,7 @@ core/intent.py - 意图解析与路由实现
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Any, Optional
@@ -21,6 +22,9 @@ from .interfaces import (
     ToolDefinition, ToolRegistry
 )
 from .platform import normalize_platform, parser_platform
+
+
+logger = logging.getLogger(__name__)
 
 
 class LLMIntentParser(IntentParser):
@@ -62,13 +66,15 @@ class LLMIntentParser(IntentParser):
 平台说明：只能从当前 Runtime 已注册的平台中选择；平台 Skill 会提供自然语言别名和参数语义。
 """.strip()
 
-    def __init__(self, llm_client=None):
+    def __init__(self, llm_client=None, *, allow_rule_fallback: bool = True):
         """
         Args:
             llm_client: LLM 客户端，需实现 call(messages) -> str 方法
-                        如果为 None，则使用内置的简易规则解析器
+            allow_rule_fallback: 仅供本地单元测试或显式嵌入场景使用。生产
+                                 AgentRuntime 会关闭该选项，LLM 不可用时直接失败。
         """
         self._llm = llm_client
+        self.allow_rule_fallback = bool(allow_rule_fallback)
         self._custom_intents: set[str] = set()
         # Platform identity and natural-language aliases are published by
         # Skills.  Discover the installed channel metadata for standalone
@@ -214,13 +220,21 @@ class LLMIntentParser(IntentParser):
     
     def parse(self, user_input: str, context: ToolContext) -> ParsedIntent:
         """解析用户输入为结构化意图"""
-        if self._llm:
-            try:
-                return self._parse_with_llm(user_input, context)
-            except Exception as e:
-                print(f"[LLM 解析失败，使用规则解析] {e}")
+        if not self._llm:
+            if self.allow_rule_fallback:
                 return self._parse_with_rules(user_input)
-        return self._parse_with_rules(user_input)
+            raise RuntimeError(
+                "LLM client is required for Agent intent parsing; inject an LLM client"
+            )
+        try:
+            return self._parse_with_llm(user_input, context)
+        except Exception as exc:
+            if self.allow_rule_fallback:
+                logger.warning(
+                    "LLM intent parsing failed; using explicit rule fallback: %s", exc
+                )
+                return self._parse_with_rules(user_input)
+            raise
     
     def _parse_with_llm(self, user_input: str, context: ToolContext) -> ParsedIntent:
         """使用 LLM 解析意图"""
@@ -266,8 +280,7 @@ class LLMIntentParser(IntentParser):
             data.setdefault("raw_input", user_input)
             return ParsedIntent(**self._normalize_intent(data))
         
-        # LLM 失败时 fallback 到规则解析
-        return self._parse_with_rules(user_input)
+        raise ValueError("LLM response did not contain a valid intent JSON object")
     
     def _parse_with_rules(self, user_input: str) -> ParsedIntent:
         """
