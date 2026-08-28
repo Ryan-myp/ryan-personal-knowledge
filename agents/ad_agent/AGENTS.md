@@ -1,0 +1,67 @@
+# ad-agent 专属开发约束
+
+## 不可改变的模型
+
+本模块采用“单 Agent + 多 Skills + Tools”：
+
+```text
+用户请求
+  -> AgentRuntime / IntentParser
+  -> Skill 上下文与 Tool metadata
+  -> ToolSelector / policy gates
+  -> 注册的 Provider Capability Tool
+  -> API client
+```
+
+Skill 描述如何理解和编排业务；Tool 描述一个可校验、可授权、可审计的动作；Capability 负责渠道 API 实现。三者不能互相越权。
+
+- 业务 Skill 不得直接 import `api_clients/`、持有渠道凭证或自己发 HTTP 请求。
+- `runtime/` 不得为单个业务流程硬编码 Google、Meta、TikTok 或 DV360 的分支。
+- `core/` 只依赖统一的 Tool/Capability 契约；渠道特有字段、枚举和条件规则放在对应 Provider Tool schema。
+- `user_skills/` 和管理上传的 Skill 只能提供上下文；不能借助 `tools.py`、`scripts/` 或 `workflow.yaml` 绕过 registry。
+
+## 新增能力的落点
+
+新增渠道接口时，按以下顺序落点：
+
+1. 在对应 `capabilities/<provider>/` 增加 Provider-owned Tool 定义和固定 handler；方法名不能由用户输入决定。
+2. 补齐输入 schema、枚举/条件依赖、权限、effect、风险、重放策略、超时、输出上限、契约版本和 Provider API 版本。
+3. 在必要时扩展 `api_clients/<provider>/` 的版本化适配器；升级 API 时保留兼容 contract 或明确升级 contract version。
+4. 通过 Capability factory/discovery 注册，不在上层 Skill 或 Router 新增渠道硬编码引用。
+5. 补充 provider payload、权限/账户范围、dry-run、幂等、失败恢复和审计测试，并运行 `scripts/audit_capabilities.py`。
+
+新增业务流程时，优先写标准 Skill 目录：根 `SKILL.md` 使用自然语言描述 SOP，复杂知识放 `references/`，资源放 `assets/`，辅助脚本仅作为包内容保存。只有确实需要新的可执行动作时才新增 Tool/Capability。
+
+## Tool 与参数规则
+
+- Tool schema 是参数目录的事实来源；不能在业务代码中复制一份渠道枚举。
+- 动态参数通过受控 lookup Tool/parameter catalog 提供；静态枚举直接写入 Provider Tool schema，并保留来源和版本信息。
+- Tool 执行必须经过 Runtime 的 schema、principal、权限、账户白名单、执行模式、live gate、确认、幂等和审计检查。
+- 任何 write Tool 默认只能生成 dry-run 计划；没有测试账号白名单和显式授权不得 live。
+- 永远不把 token、`bc_id`、`partner_id`/`perter_id`、`mcc`、client secret 等放进 Tool input、Skill 内容、模型上下文或错误信息。
+
+## 用户 Skill 管理与评测
+
+- 管理 API 接受完整标准 Skill 目录快照，保留 `SKILL.md`、`references/`、`scripts/`、`assets/`、`evals/` 等文件并做路径、大小、编码和 digest 校验。
+- 版本发布只激活不可变快照；Runtime 加载的是 advisory context，不会将用户包转换成 Tool。
+- Skill-up 的 `ad-agent-runtime` Engine 测试真实 Runtime/Capability dry-run 路由。
+- `claude_sdk` Engine 使用 Anthropic Python SDK 测试自然语言 Skill 效果。它可以读取 Skill 文本、受控只读文件和可信 Tool 描述，但不执行 Tool、不连接 MCP、不接收广告凭证。
+- Skill-up adapter 由平台生成，用户只能选择受控 Engine 和参数；不得把任意命令、judge script 或环境变量变成管理 API 能力。
+
+## 持久化、并发和后续模块
+
+- SQLite 当前按单进程部署；新模块只依赖 `persistence/interfaces.py` 和 store service，不把 SQL 类型泄露到 Runtime/HTTP/Skill 层。
+- 进程内 registry、Skill metadata、Provider client 应复用；请求中避免重复初始化和无界 Prompt 拼接。
+- 对批量操作设置明确上限、超时和并发策略；外部 Provider 限流必须在 client/capability 边界处理。
+- 观察性先沿用已有结构化审计/结果字段并预留 trace/metrics 接口，后续接入时不能改变 Tool 契约和安全 gate。
+
+## 修改完成前检查
+
+```bash
+python3.13 -m compileall -q agents/ad_agent
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=. python3.13 -m pytest agents/ad_agent/tests -q
+python3 agents/ad_agent/scripts/audit_capabilities.py
+git diff --check
+```
+
+涉及 Skill-up 时再运行 `agents/ad_agent/evals/skill-up/run.sh`；涉及 API/存储时必须覆盖租户隔离、版本不可变性和失败恢复测试。

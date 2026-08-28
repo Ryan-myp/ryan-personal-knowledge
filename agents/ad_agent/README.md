@@ -326,8 +326,18 @@ agents/ad_agent/evals/skill-up/run.sh
 
 详细说明、case 范围和直接调用方式见
 `agents/ad_agent/evals/skill-up/README.md`。新增 Runtime 场景只需在该目录
-增加 `cases/*.yaml`；新增自然语言 Skill 评测则应使用 skill-up 的内置
-Engine，不能把 Custom Engine 结果误当作通用模型能力评测。
+增加 `cases/*.yaml`；新增自然语言 Skill 评测可以使用 skill-up 的内置 Engine
+或平台托管的 `claude_sdk`。后者使用 Anthropic Python SDK，读取标准 Skill
+目录、受控只读文件和可信 Tool 描述，但不执行广告 Tool、不连接 MCP，也不接收
+渠道凭证；不能把 Runtime Custom Engine 结果误当作通用模型能力评测。
+
+## 用户 Skill 管理
+
+业务 Skill 可以按标准 Agent Skills 目录上传和版本化，目录不只包含
+`SKILL.md`，也可以包含 `scripts/`、`references/`、`assets/` 和 `evals/`。
+管理、发布和评测接口及安全边界见
+[`SKILLS_MANAGEMENT.md`](SKILLS_MANAGEMENT.md)。用户 Skill 只提供自然语言
+上下文；广告执行仍只能通过已注册的 Capability/Tool。
 
 ## 许可证
 

@@ -17,6 +17,9 @@ setup(
         "uvicorn>=0.22.0",
     ],
     extras_require={
+        "claude": [
+            "anthropic>=0.40.0",
+        ],
         "dev": [
             "pytest>=7.0.0",
             "pytest-cov>=4.0.0",

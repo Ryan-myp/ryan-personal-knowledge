@@ -37,6 +37,26 @@ AD_AGENT_REPO_ROOT="$PWD" skill-up run \
 skill-up 的内置 `codex`/`claude_code` Engine；那条路径不能替代本套
 Runtime 集成评测。
 
+用户管理的标准 Skill 版本可以在自身目录放置 `evals/eval.yaml` 和
+`evals/cases/*.yaml`，管理 API 会用内置 Engine 评估文本效果，或用平台托管的
+`ad-agent-runtime` 适配器评估与 Google/Meta/TikTok/DV360 Capability 的
+dry-run 路由。用户不能通过评测配置提交任意 Custom Engine、MCP Server 或
+Judge Script。
+
+如需使用 Anthropic Claude SDK 评估自然语言 Skill，可在 `evals/eval.yaml`
+中选择 `engine.name: claude_sdk`，并安装可选依赖：
+
+```bash
+pip install -e 'agents/ad_agent[claude]'
+export ANTHROPIC_API_KEY='...'
+```
+
+管理 API 会为该 Engine 生成平台自有 adapter。`engine.kwargs` 仅支持
+`max_tokens`、`file_paths` 和上下文长度上限等非敏感参数；`file_paths` 必须
+是评测 workspace 内的相对路径。SDK adapter 返回标准 `SessionResult`，复用
+skill-up 的 cases、judge 和报告流程；它只提供 Tool 元数据上下文，不提供
+可执行 Tool。
+
 CI 在 `.github/workflows/ad-agent-harness.yml` 中固定了 skill-up commit，
 升级时只需更新 `SKILL_UP_REF`，再执行本套 `validate` 和 `run`；适配器不
 依赖 skill-up 的 Go 内部包，因此不会被内部重构绑定。

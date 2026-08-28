@@ -245,6 +245,14 @@ class AgentRuntime:
         self._skill_keys_by_platform: dict[str, list[str]] = {}
         self._skill_tool_names: dict[str, list[str]] = {}
         self._skill_platforms: dict[str, str] = {}
+        # User-managed Skills are context packages.  They are deliberately
+        # tracked separately from executable provider Skills so an uploaded
+        # directory cannot become a Tool merely by containing a contract or a
+        # Python file.  A process-local Runtime serves one managed-skill
+        # tenant at a time; a multi-tenant deployment should provision one
+        # Runtime context per tenant.
+        self._managed_context_skills: dict[str, Skill] = {}
+        self._managed_skill_tenant_id: Optional[str] = None
         # Optional deterministic workflows are indexed by their declared
         # intent name.  Normal routing never depends on this map; it is only
         # consulted when a Skill explicitly publishes a workflow contract.
@@ -368,6 +376,75 @@ class AgentRuntime:
         from ..capabilities.factory import normalize_platform
 
         return normalize_platform(platform)
+
+    @property
+    def persistence_store(self):
+        """Expose the persistence abstraction to management services."""
+        return self._session_manager.store if self._session_manager else None
+
+    def load_managed_skill(self, skill_dir: str, tenant_id: str = "default") -> bool:
+        """Load a published standard Skill directory as advisory context.
+
+        This path intentionally does not call ``register_skill`` and never
+        imports ``tools.py``.  Provider Tools must continue to come from
+        built-in/verified Capabilities; a managed Skill can guide the Agent
+        but cannot create a new side-effect path.
+        """
+        from pathlib import Path
+        from .skill import SkillContract
+
+        tenant_id = str(tenant_id or "default")
+        if (
+            self._managed_skill_tenant_id is not None
+            and self._managed_skill_tenant_id != tenant_id
+        ):
+            raise PermissionError(
+                "this Runtime already has managed Skills for another tenant"
+            )
+        directory = Path(skill_dir).resolve()
+        if not directory.is_dir() or not (directory / "SKILL.md").is_file():
+            raise ValueError("managed Skill directory must contain SKILL.md")
+        contract = SkillContract(str(directory)).load()
+        if contract.context_only or not contract.name:
+            raise ValueError("managed Skill must be a standalone Skill with a name")
+        if contract.name in self._skill_objects and contract.name not in self._managed_context_skills:
+            raise ValueError(f"managed Skill name conflicts with executable Skill: {contract.name}")
+
+        # Replace only a previous managed version.  A built-in Skill with the
+        # same name is protected by the conflict check above.
+        self._managed_context_skills.pop(contract.name, None)
+        self.skill_loader._skills.pop(contract.name, None)
+        self.skill_loader._load_single_skill(str(directory))
+        skill = self.skill_loader.get(contract.name)
+        if skill is None:
+            raise ValueError(f"failed to load managed Skill: {contract.name}")
+        self._managed_context_skills[contract.name] = skill
+        self._managed_skill_tenant_id = tenant_id
+        if hasattr(self.intent_parser, "register_platform_aliases"):
+            self.intent_parser.register_platform_aliases(
+                getattr(skill, "platform", ""),
+                getattr(skill, "platform_aliases", []) or [],
+            )
+        if hasattr(self.tool_selector, "register_context_skill"):
+            self.tool_selector.register_context_skill(skill)
+        return True
+
+    def unload_managed_skill(self, skill_name: str) -> bool:
+        """Remove advisory context without touching executable provider Tools."""
+        key = str(skill_name or "")
+        skill = self._managed_context_skills.pop(key, None)
+        if skill is None:
+            return False
+        self.skill_loader._skills.pop(key, None)
+        if hasattr(self.tool_selector, "unregister_context_skill"):
+            self.tool_selector.unregister_context_skill(key)
+        if not self._managed_context_skills:
+            self._managed_skill_tenant_id = None
+        return True
+
+    def get_managed_skills(self) -> dict[str, Skill]:
+        """Return a shallow copy for diagnostics/UI; no credentials included."""
+        return dict(self._managed_context_skills)
 
     def load_business_context(
         self, business_name: str, skills_root: Optional[str] = None,

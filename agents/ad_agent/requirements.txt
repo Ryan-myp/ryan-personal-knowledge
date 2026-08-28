@@ -10,6 +10,7 @@ uvicorn>=0.22.0
 # 可选依赖（启用时使用）
 # google-ads>=25.0.0  # Google Ads SDK（可选，默认使用 HTTP）
 # google-auth>=2.0.0  # Google OAuth（DV360 使用 openssl 绕过）
+# anthropic>=0.40.0  # Claude SDK（可选，skill-up claude_sdk Engine）
 
 # 测试依赖
 pytest>=7.0.0

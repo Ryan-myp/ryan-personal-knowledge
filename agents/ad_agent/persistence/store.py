@@ -135,6 +135,48 @@ class AdAgentStore:
 
     CREATE INDEX IF NOT EXISTS idx_workflow_items_workflow ON workflow_items(workflow_id, sequence);
 
+    CREATE TABLE IF NOT EXISTS skill_versions (
+        version_id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        skill_name TEXT NOT NULL,
+        version TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'draft',
+        files TEXT NOT NULL,
+        sha256 TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        published_at TEXT,
+        evaluation_status TEXT NOT NULL DEFAULT 'not_run',
+        evaluation_run_id TEXT,
+        evaluation_report TEXT DEFAULT '{}',
+        UNIQUE (tenant_id, skill_name, version)
+    );
+
+    CREATE TABLE IF NOT EXISTS skill_releases (
+        tenant_id TEXT NOT NULL,
+        skill_name TEXT NOT NULL,
+        version_id TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, skill_name),
+        FOREIGN KEY (version_id) REFERENCES skill_versions(version_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_skill_versions_name
+        ON skill_versions(tenant_id, skill_name, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS skill_evaluation_runs (
+        run_id TEXT PRIMARY KEY,
+        version_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'queued',
+        report TEXT DEFAULT '{}',
+        error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (version_id) REFERENCES skill_versions(version_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_skill_evaluation_runs_tenant
+        ON skill_evaluation_runs(tenant_id, created_at DESC);
+
     CREATE TABLE IF NOT EXISTS write_reservations (
         idempotency_key TEXT PRIMARY KEY,
         status TEXT NOT NULL,
@@ -336,6 +378,193 @@ class AdAgentStore:
                 (now, plan_fingerprint, self._token_hash(token)),
             )
             self._get_conn().commit()
+            return cursor.rowcount > 0
+
+    # -- Managed Agent Skills -------------------------------------------
+
+    @staticmethod
+    def _skill_row(row: Any) -> Optional[dict]:
+        if not row:
+            return None
+        value = dict(row)
+        for key in ("files", "evaluation_report", "report"):
+            raw = value.get(key)
+            if isinstance(raw, str):
+                try:
+                    value[key] = json.loads(raw or "{}")
+                except (TypeError, ValueError):
+                    value[key] = {}
+        return value
+
+    def create_skill_version(
+        self, version_id: str, tenant_id: str, skill_name: str,
+        version: str, files: dict[str, dict[str, Any]], sha256: str,
+        created_by: str, status: str = "draft",
+    ) -> dict:
+        now = datetime.now().isoformat()
+        with self._lock:
+            conn = self._get_conn()
+            conn.execute(
+                """INSERT INTO skill_versions
+                   (version_id, tenant_id, skill_name, version, status, files,
+                    sha256, created_by, created_at, evaluation_status)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'not_run')""",
+                (
+                    str(version_id), str(tenant_id), str(skill_name), str(version),
+                    str(status), json.dumps(files, ensure_ascii=False, sort_keys=True),
+                    str(sha256), str(created_by), now,
+                ),
+            )
+            conn.commit()
+            row = conn.execute(
+                "SELECT * FROM skill_versions WHERE version_id = ?",
+                (str(version_id),),
+            ).fetchone()
+            return self._skill_row(row) or {}
+
+    def get_skill_version(
+        self, tenant_id: str, skill_name: str, version: Optional[str] = None,
+    ) -> Optional[dict]:
+        with self._lock:
+            conn = self._get_conn()
+            if version:
+                row = conn.execute(
+                    "SELECT * FROM skill_versions WHERE tenant_id = ? "
+                    "AND skill_name = ? AND version = ?",
+                    (str(tenant_id), str(skill_name), str(version)),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    """SELECT v.* FROM skill_versions v
+                       JOIN skill_releases r ON r.version_id = v.version_id
+                       WHERE r.tenant_id = ? AND r.skill_name = ?""",
+                    (str(tenant_id), str(skill_name)),
+                ).fetchone()
+            return self._skill_row(row)
+
+    def list_skill_versions(
+        self, tenant_id: str, skill_name: Optional[str] = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        limit = max(1, min(int(limit), 200))
+        with self._lock:
+            conn = self._get_conn()
+            if skill_name:
+                rows = conn.execute(
+                    "SELECT * FROM skill_versions WHERE tenant_id = ? "
+                    "AND skill_name = ? ORDER BY created_at DESC LIMIT ?",
+                    (str(tenant_id), str(skill_name), limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM skill_versions WHERE tenant_id = ? "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (str(tenant_id), limit),
+                ).fetchall()
+            return [self._skill_row(row) for row in rows]
+
+    def publish_skill_version(
+        self, tenant_id: str, skill_name: str, version: str,
+    ) -> Optional[dict]:
+        now = datetime.now().isoformat()
+        with self._lock:
+            conn = self._get_conn()
+            row = conn.execute(
+                "SELECT * FROM skill_versions WHERE tenant_id = ? "
+                "AND skill_name = ? AND version = ?",
+                (str(tenant_id), str(skill_name), str(version)),
+            ).fetchone()
+            if not row or str(row["status"]) == "archived":
+                return None
+            conn.execute(
+                "UPDATE skill_versions SET status = 'archived' WHERE tenant_id = ? "
+                "AND skill_name = ? AND status = 'published'",
+                (str(tenant_id), str(skill_name)),
+            )
+            conn.execute(
+                "UPDATE skill_versions SET status = 'published', published_at = ? "
+                "WHERE version_id = ?",
+                (now, str(row["version_id"])),
+            )
+            conn.execute(
+                "INSERT INTO skill_releases (tenant_id, skill_name, version_id, updated_at) "
+                "VALUES (?, ?, ?, ?) ON CONFLICT(tenant_id, skill_name) DO UPDATE SET "
+                "version_id = excluded.version_id, updated_at = excluded.updated_at",
+                (str(tenant_id), str(skill_name), str(row["version_id"]), now),
+            )
+            conn.commit()
+            published = conn.execute(
+                "SELECT * FROM skill_versions WHERE version_id = ?",
+                (str(row["version_id"]),),
+            ).fetchone()
+            return self._skill_row(published)
+
+    def set_skill_evaluation(
+        self, version_id: str, status: str, run_id: Optional[str] = None,
+        report: Optional[dict] = None,
+    ) -> bool:
+        with self._lock:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                "UPDATE skill_versions SET evaluation_status = ?, "
+                "evaluation_run_id = ?, evaluation_report = ? WHERE version_id = ?",
+                (
+                    str(status), str(run_id) if run_id else None,
+                    json.dumps(report or {}, ensure_ascii=False, sort_keys=True),
+                    str(version_id),
+                ),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def create_skill_evaluation(
+        self, run_id: str, version_id: str, tenant_id: str,
+        status: str = "queued",
+    ) -> dict:
+        now = datetime.now().isoformat()
+        with self._lock:
+            conn = self._get_conn()
+            conn.execute(
+                """INSERT INTO skill_evaluation_runs
+                   (run_id, version_id, tenant_id, status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (str(run_id), str(version_id), str(tenant_id), str(status), now, now),
+            )
+            conn.commit()
+            row = conn.execute(
+                "SELECT * FROM skill_evaluation_runs WHERE run_id = ? "
+                "AND tenant_id = ?",
+                (str(run_id), str(tenant_id)),
+            ).fetchone()
+            return self._skill_row(row) or {}
+
+    def get_skill_evaluation(self, run_id: str, tenant_id: str) -> Optional[dict]:
+        with self._lock:
+            row = self._get_conn().execute(
+                "SELECT * FROM skill_evaluation_runs WHERE run_id = ? "
+                "AND tenant_id = ?",
+                (str(run_id), str(tenant_id)),
+            ).fetchone()
+            return self._skill_row(row)
+
+    def update_skill_evaluation_run(
+        self, run_id: str, status: str, report: Optional[dict] = None,
+        error: Optional[str] = None,
+    ) -> bool:
+        with self._lock:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                "UPDATE skill_evaluation_runs SET status = ?, report = ?, error = ?, "
+                "updated_at = ? WHERE run_id = ?",
+                (
+                    str(status),
+                    json.dumps(report or {}, ensure_ascii=False, sort_keys=True),
+                    str(error) if error else None,
+                    datetime.now().isoformat(),
+                    str(run_id),
+                ),
+            )
+            conn.commit()
             return cursor.rowcount > 0
     
     # -- Session --

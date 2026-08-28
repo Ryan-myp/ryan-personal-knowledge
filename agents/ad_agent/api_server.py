@@ -28,6 +28,7 @@ from starlette.concurrency import run_in_threadpool
 # 导入 Agent 核心模块
 from agents.ad_agent import AgentRuntime
 from agents.ad_agent.core.auth import RequestPrincipal
+from agents.ad_agent.skill_management import ManagedSkillManager, SkillPackageError
 
 # 配置路径
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
@@ -243,6 +244,14 @@ def _init_runtime():
         skills_root = Path(__file__).parent / "skills"
         runtime.auto_load_skills(str(skills_root), credentials)
 
+        # Published user Skills are standard directory snapshots loaded as
+        # advisory context only. They never replace or add provider Tools.
+        # This process is intentionally bound to its configured service
+        # tenant; multi-tenant deployments should isolate Runtime contexts.
+        ManagedSkillManager(store).activate_published(
+            os.environ.get("AD_AGENT_SERVICE_TENANT", "default"), runtime
+        )
+
         print(f"\n📊 服务状态:")
         print(f"- ✅ {len(runtime.registry.list_all_platforms())} 平台 {len(runtime.registry.list_all())} 工具")
         print(f"- ✅ Skills 系统已就绪")
@@ -406,6 +415,186 @@ async def get_tools(
             for t in tools
         ]
     }
+
+
+class SkillVersionRequest(BaseModel):
+    """Complete standard Agent Skill directory snapshot.
+
+    ``files`` values may be UTF-8 strings or
+    ``{"encoding": "base64", "content": "..."}`` for binary assets.
+    """
+
+    version: str = Field(min_length=5, max_length=80)
+    files: dict[str, object]
+
+
+def _skill_manager_or_503() -> ManagedSkillManager:
+    if not runtime or not getattr(runtime, "persistence_store", None):
+        raise HTTPException(status_code=503, detail="Skill 管理存储未初始化")
+    return ManagedSkillManager(runtime.persistence_store)
+
+
+def _require_skill_permission(principal: RequestPrincipal, permission: str) -> None:
+    if permission not in principal.permissions and "admin" not in principal.permissions:
+        raise HTTPException(status_code=403, detail=f"缺少 Skill 管理权限：{permission}")
+
+
+@app.get("/skills", tags=["skills"])
+async def list_managed_skills(
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    skill_name: Optional[str] = Query(None, max_length=64),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """List versions visible to the authenticated tenant."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_skill_permission(principal, "skills.read")
+    manager = _skill_manager_or_503()
+    return {
+        "tenant_id": principal.tenant_id,
+        "skills": manager.list_versions(principal.tenant_id, skill_name, limit),
+    }
+
+
+@app.post("/skills/{skill_name}/versions", tags=["skills"])
+async def create_managed_skill_version(
+    skill_name: str,
+    body: SkillVersionRequest,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Validate and store a draft standard Skill directory snapshot."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_skill_permission(principal, "skills.write")
+    manager = _skill_manager_or_503()
+    try:
+        result = manager.create_version(
+            tenant_id=principal.tenant_id,
+            skill_name=skill_name,
+            version=body.version,
+            raw_files=body.files,
+            created_by=principal.user_id,
+        )
+    except SkillPackageError as exc:
+        status = 409 if "already exists" in str(exc) else 422
+        raise HTTPException(status_code=status, detail=str(exc))
+    return JSONResponse(status_code=201, content=result)
+
+
+@app.post("/skills/{skill_name}/versions/archive", tags=["skills"])
+async def upload_managed_skill_archive(
+    skill_name: str,
+    request: Request,
+    version: str = Query(..., min_length=5, max_length=80),
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Upload a complete standard Skill directory as a ZIP archive."""
+    principal = _authorize_request(x_api_key, request)
+    _require_skill_permission(principal, "skills.write")
+    manager = _skill_manager_or_503()
+    try:
+        result = manager.create_version_archive(
+            principal.tenant_id, skill_name, version,
+            await request.body(), principal.user_id,
+        )
+    except SkillPackageError as exc:
+        status = 409 if "already exists" in str(exc) else 422
+        raise HTTPException(status_code=status, detail=str(exc))
+    return JSONResponse(status_code=201, content=result)
+
+
+@app.get("/skills/{skill_name}/versions", tags=["skills"])
+async def list_managed_skill_versions(
+    skill_name: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    limit: int = Query(50, ge=1, le=200),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_skill_permission(principal, "skills.read")
+    manager = _skill_manager_or_503()
+    return {
+        "tenant_id": principal.tenant_id,
+        "skill_name": skill_name,
+        "versions": manager.list_versions(principal.tenant_id, skill_name, limit),
+    }
+
+
+@app.get("/skills/{skill_name}/versions/{version}", tags=["skills"])
+async def get_managed_skill_version(
+    skill_name: str,
+    version: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_skill_permission(principal, "skills.read")
+    manager = _skill_manager_or_503()
+    result = manager.get_version(
+        principal.tenant_id, skill_name, version, include_files=True
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Skill version not found")
+    return result
+
+
+@app.post("/skills/{skill_name}/versions/{version}/publish", tags=["skills"])
+async def publish_managed_skill_version(
+    skill_name: str,
+    version: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Publish one immutable version and activate it as advisory context."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_skill_permission(principal, "skills.write")
+    manager = _skill_manager_or_503()
+    try:
+        result = manager.publish(
+            principal.tenant_id, skill_name, version, runtime=runtime
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except SkillPackageError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    if not result:
+        raise HTTPException(status_code=404, detail="Skill version not found or archived")
+    return result
+
+
+@app.post("/skills/{skill_name}/versions/{version}/evaluate", tags=["skills"])
+async def evaluate_managed_skill_version(
+    skill_name: str,
+    version: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Queue a skill-up run for the immutable Skill version."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_skill_permission(principal, "skills.evaluate")
+    manager = _skill_manager_or_503()
+    try:
+        run = manager.start_evaluation(principal.tenant_id, skill_name, version)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Skill version not found")
+    except SkillPackageError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return JSONResponse(status_code=202, content=run)
+
+
+@app.get("/skills/evaluations/{run_id}", tags=["skills"])
+async def get_managed_skill_evaluation(
+    run_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_skill_permission(principal, "skills.read")
+    manager = _skill_manager_or_503()
+    result = manager.get_evaluation(principal.tenant_id, run_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Skill evaluation not found")
+    return result
 
 
 class ChatStreamRequest(BaseModel):

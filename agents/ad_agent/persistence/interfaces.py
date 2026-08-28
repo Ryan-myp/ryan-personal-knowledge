@@ -109,4 +109,37 @@ class PersistenceBackend(Protocol):
     def get_approval(self, plan_fingerprint: str) -> Optional[dict]: ...
     def consume_approval(self, plan_fingerprint: str, token: str) -> bool: ...
 
+    # -- Managed Agent Skills -------------------------------------------
+    # A Skill version is a complete directory snapshot.  The Runtime only
+    # consumes the published snapshot; editing and publication stay in the
+    # management layer so a failed draft can never affect live sessions.
+    def create_skill_version(
+        self, version_id: str, tenant_id: str, skill_name: str,
+        version: str, files: dict[str, dict[str, Any]], sha256: str,
+        created_by: str, status: str = "draft",
+    ) -> dict: ...
+    def get_skill_version(
+        self, tenant_id: str, skill_name: str, version: Optional[str] = None,
+    ) -> Optional[dict]: ...
+    def list_skill_versions(
+        self, tenant_id: str, skill_name: Optional[str] = None,
+        limit: int = 50,
+    ) -> list[dict]: ...
+    def publish_skill_version(
+        self, tenant_id: str, skill_name: str, version: str,
+    ) -> Optional[dict]: ...
+    def set_skill_evaluation(
+        self, version_id: str, status: str, run_id: Optional[str] = None,
+        report: Optional[dict] = None,
+    ) -> bool: ...
+    def create_skill_evaluation(
+        self, run_id: str, version_id: str, tenant_id: str,
+        status: str = "queued",
+    ) -> dict: ...
+    def get_skill_evaluation(self, run_id: str, tenant_id: str) -> Optional[dict]: ...
+    def update_skill_evaluation_run(
+        self, run_id: str, status: str, report: Optional[dict] = None,
+        error: Optional[str] = None,
+    ) -> bool: ...
+
     def close(self) -> None: ...

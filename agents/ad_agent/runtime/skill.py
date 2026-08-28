@@ -82,6 +82,7 @@ class SkillContract:
         self.capabilities: dict[str, SkillCapability] = {}
         self.workflows: dict[str, SkillWorkflow] = {}
         self.references: dict[str, str] = {}  # ref_name -> file_path
+        self.reference_documents: dict[str, str] = {}
         self.expert_knowledge: dict[str, str] = {}
         self.raw_md: str = ""
         self.raw_yaml: dict = {}
@@ -281,6 +282,23 @@ class SkillContract:
                         self.expert_knowledge[Path(filename).stem] = file.read()
                 except OSError:
                     continue
+
+        # Standard Agent Skills commonly keep detailed guidance under
+        # references/. Preserve text references as advisory data; scripts and
+        # assets remain package files and are never imported by the Runtime.
+        references_dir = Path(self.skill_dir) / "references"
+        if references_dir.is_dir():
+            for reference_path in sorted(references_dir.rglob("*")):
+                if not reference_path.is_file() or reference_path.suffix.lower() not in {
+                    ".md", ".markdown", ".txt", ".yaml", ".yml", ".json",
+                }:
+                    continue
+                try:
+                    content = reference_path.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    continue
+                relative = str(reference_path.relative_to(self.skill_dir))
+                self.reference_documents[relative] = content[:100_000]
 
         return self
     
@@ -560,6 +578,16 @@ class BaseSkill(Skill):
     @property
     def description(self) -> str:
         return self._contract.description
+
+    @property
+    def raw_markdown(self) -> str:
+        """Return the natural-language body for bounded Agent context."""
+        return self._contract.raw_md
+
+    @property
+    def reference_documents(self) -> dict[str, str]:
+        """Return text references; package scripts/assets stay non-executable."""
+        return dict(self._contract.reference_documents)
 
     @property
     def version(self) -> str:

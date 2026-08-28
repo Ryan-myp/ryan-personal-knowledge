@@ -283,3 +283,60 @@ def test_parameter_options_resolve_requires_account_id(fake_server):
         )
     assert response.status_code == 422
     assert fake_server.parameter_option_calls == []
+
+
+def test_managed_skill_api_versions_and_publishing_are_tenant_scoped(monkeypatch, tmp_path):
+    from agents.ad_agent import AgentRuntime
+    from agents.ad_agent.persistence.store import AdAgentStore
+
+    store = AdAgentStore(str(tmp_path / "skills.db"))
+    managed_runtime = AgentRuntime(persistence_store=store, offline_mode=True)
+    monkeypatch.setattr(api_server, "runtime", managed_runtime)
+    monkeypatch.setattr(api_server, "API_KEY", "")
+    monkeypatch.setattr(api_server, "ALLOW_UNAUTHENTICATED", False)
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "skill-key": {
+                "user_id": "editor",
+                "tenant_id": "tenant-a",
+                "permissions": ["skills.read", "skills.write"],
+            }
+        }),
+    )
+    files = {
+        "SKILL.md": (
+            "---\nname: growth-skill\ndescription: Growth guidance\n"
+            "platform: multi_platform\n---\n\nUse safe planning.\n"
+        ),
+        "scripts/check.py": "print('package file')\n",
+        "assets/logo.bin": {"encoding": "base64", "content": "AAEC"},
+    }
+    headers = {"X-API-Key": "skill-key"}
+
+    with TestClient(api_server.app) as client:
+        response = client.post(
+            "/skills/growth-skill/versions",
+            headers=headers,
+            json={"version": "1.0.0", "files": files},
+        )
+        assert response.status_code == 201
+        assert response.json()["files"] == sorted(files)
+
+        response = client.get("/skills/growth-skill/versions/1.0.0", headers=headers)
+        assert response.status_code == 200
+        assert response.json()["files"]["assets/logo.bin"]["encoding"] == "base64"
+
+        response = client.post(
+            "/skills/growth-skill/versions/1.0.0/publish", headers=headers
+        )
+        assert response.status_code == 200
+        assert response.json()["status"] == "published"
+
+        response = client.get("/skills", headers=headers)
+        assert response.status_code == 200
+        assert response.json()["skills"][0]["status"] == "published"
+
+    assert "growth-skill" in managed_runtime.get_managed_skills()
+    assert managed_runtime.registry.list_all() == []
+    store.close()
