@@ -157,6 +157,16 @@ def test_skill_with_evaluation_suite_cannot_publish_before_passing(tmp_path):
         manager.publish("tenant-a", "gated-skill", "1.0.0")
 
 
+def test_skill_package_rejects_credential_assignments_in_context_files():
+    manager = ManagedSkillManager(AdAgentStore(":memory:"))
+    files = {
+        **_files("credential-skill"),
+        "references/auth.md": "Runtime-owned config only\naccess_token: YOUR_TOKEN\n",
+    }
+    with pytest.raises(SkillPackageError, match="forbidden credential field assignment"):
+        manager.create_version("tenant-a", "credential-skill", "1.0.0", files, "u1")
+
+
 def test_skill_up_config_allows_platform_managed_claude_sdk_with_safe_kwargs():
     store = AdAgentStore(":memory:")
     manager = ManagedSkillManager(store)

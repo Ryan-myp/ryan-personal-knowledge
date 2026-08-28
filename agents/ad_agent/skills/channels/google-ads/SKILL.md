@@ -205,11 +205,6 @@ customers/1234567890/campaigns/9876543210
 ### 前置要求
 
 1. 安装 SDK: `pip install google-ads`
-2. 创建配置文件 `google-ads.yaml`:
-```yaml
-developer_token: YOUR_TOKEN
-refresh_token: YOUR_REFRESH_TOKEN
-client_id: YOUR_CLIENT_ID
-client_secret: YOUR_CLIENT_SECRET
-login_customer_id: YOUR_CUSTOMER_ID
-```
+2. 在受信任的部署配置中提供认证材料；这些材料只由 Runtime 注入 API
+   Client，不进入 Skill、Tool 输入或模型上下文。`login_customer_id` 等账户/管理器
+   配置也不允许通过广告业务 Tool 修改。

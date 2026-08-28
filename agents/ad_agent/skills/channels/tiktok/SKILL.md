@@ -25,15 +25,8 @@ aliases: [douyin, 抖音]
 ## 🎯 核心能力
 
 ### 1. 认证管理
-```python
-from tiktokads.business.sdk import Client
-
-client = Client(
-    access_token='YOUR_ACCESS_TOKEN',
-    app_key='YOUR_APP_KEY',
-    app_secret='YOUR_APP_SECRET'
-)
-```
+认证材料由受信任的 Runtime 从部署配置注入，Skill 不保存、展示或传递
+access token、应用密钥或其他凭证。Tool 输入只允许账户选择和业务参数。
 
 ### 2. 广告管理
 - 创建广告系列（Campaign）

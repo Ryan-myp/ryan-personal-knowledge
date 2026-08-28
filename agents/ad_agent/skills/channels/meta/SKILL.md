@@ -25,16 +25,8 @@ aliases: [facebook, instagram, fb]
 ## 🎯 核心能力
 
 ### 1. 认证管理
-```python
-from facebook_business.api import FacebookAdsApi
-from facebook_business.adobjects.adaccount import AdAccount
-
-FacebookAdsApi.init(
-    app_id='YOUR_APP_ID',
-    app_secret='YOUR_APP_SECRET',
-    access_token='YOUR_ACCESS_TOKEN'
-)
-```
+认证材料由受信任的 Runtime 从部署配置注入，Skill 不保存、展示或传递
+access token、应用密钥或其他凭证。Tool 输入只允许账户选择和业务参数。
 
 ### 2. 广告层级管理
 - Campaign（广告系列）

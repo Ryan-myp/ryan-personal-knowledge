@@ -41,6 +41,13 @@ _SEMVER_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-
 _MAX_FILES = 512
 _MAX_FILE_BYTES = 2 * 1024 * 1024
 _MAX_PACKAGE_BYTES = 16 * 1024 * 1024
+_TEXT_SUFFIXES = {".md", ".markdown", ".txt", ".yaml", ".yml", ".json", ".csv"}
+_CREDENTIAL_ASSIGNMENT_RE = re.compile(
+    r"(?im)(?P<field>access[_-]?token|refresh[_-]?token|developer[_-]?token|"
+    r"client[_-]?secret|private[_-]?key|app[_-]?secret|api[_-]?key|"
+    r"bc[_-]?id|partner[_-]?id|perter[_-]?id|mcc|login[_-]?customer[_-]?id|"
+    r"manager[_-]?customer[_-]?id)\s*[:=]"
+)
 
 
 def _safe_component(value: str, field: str) -> str:
@@ -138,6 +145,30 @@ def decode_skill_files(value: Mapping[str, Any]) -> dict[str, bytes]:
     return normalize_skill_files(value)
 
 
+def _validate_no_credential_assignments(files: Mapping[str, bytes]) -> None:
+    """Keep credentials out of Skill context and persisted Skill snapshots.
+
+    Natural-language guidance may explain that credentials are Runtime-owned,
+    but a Skill package must not contain credential-shaped assignments. Eval
+    case fixtures are excluded because they deliberately test this boundary
+    and are never loaded as model context.
+    """
+    for raw_path, data in files.items():
+        path = str(raw_path)
+        if path.lower().startswith("evals/") or Path(path).suffix.lower() not in _TEXT_SUFFIXES:
+            continue
+        try:
+            text = bytes(data).decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        match = _CREDENTIAL_ASSIGNMENT_RE.search(text)
+        if match:
+            raise SkillPackageError(
+                f"Skill file {path} contains forbidden credential field assignment: "
+                f"{match.group('field')}"
+            )
+
+
 def skill_package_digest(files: Mapping[str, bytes]) -> str:
     digest = hashlib.sha256()
     for path, data in sorted(files.items()):
@@ -195,6 +226,7 @@ class ManagedSkillManager:
         if not _SEMVER_RE.fullmatch(version):
             raise SkillPackageError("version must be semantic versioning, for example 1.0.0")
         files = normalize_skill_files(raw_files)
+        _validate_no_credential_assignments(files)
         self._validate_skill_document(skill_name, files)
         return files, skill_package_digest(files)
 
