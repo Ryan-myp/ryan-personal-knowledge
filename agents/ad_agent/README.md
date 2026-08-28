@@ -242,8 +242,8 @@ class NewPlatformCapability(BaseCapability):
             ...
         ]
     
-    def _get_campaign_tool_sequence(self):
-        return ["new_create_campaign", "new_create_ad_group", ...]
+    # ToolDefinition 自描述 action/resource_type/parent_resource_type，
+    # 不需要修改中心 Router
 
 # 3. 注册到 Runtime
 runtime.register_capability(NewPlatformCapability(api_client))
@@ -259,8 +259,9 @@ def create_skill(api_client=None):
     return MySkill(api_client)
 ```
 
-返回的 Skill 需要实现 `get_tools()`、`get_tool_handler(tool_name)`，并可通过
-`intent_to_tools` 声明自定义意图到工具的映射。Runtime 会自动发现该目录，注册声明的
+返回的 Skill 需要实现 `get_tools()`、`get_tool_handler(tool_name)`。每个 Tool
+应在自己的 `ToolDefinition` 中声明元数据；标准意图无需额外映射，自定义意图
+可使用 `intent_types=["my_intent"]`。Runtime 会自动发现该目录，注册声明的
 工具；没有可执行 Handler 的声明不会被注册，也不会因为 Skill 文档存在而伪造执行能力。
 所有扩展工具继续经过 schema 校验、账户白名单、dry-run/live gate、红线字段检查和审计。
 

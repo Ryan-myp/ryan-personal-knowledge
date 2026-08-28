@@ -6,21 +6,6 @@ author: Ryan
 created: 2026-08-14
 updated: 2026-08-14
 tags: [dv360, display-video, google, programmatic, dsp, advertising, line-item, creative]
-workflows:
-  create_campaign:
-    tools: [dv360_create_campaign, dv360_create_io, dv360_create_line_item]
-  list_campaigns: {tools: [dv360_list_campaigns]}
-  get_campaign: {tools: [dv360_get_campaign]}
-  update_campaign: {tools: [dv360_update_campaign]}
-  pause_campaign: {tools: [dv360_update_campaign]}
-  resume_campaign: {tools: [dv360_update_campaign]}
-  download_report: {tools: [dv360_get_line_item_report]}
-  list_ios: {tools: [dv360_list_ios]}
-  list_line_items: {tools: [dv360_list_line_items]}
-  get_io: {tools: [dv360_get_io]}
-  get_line_item: {tools: [dv360_get_line_item]}
-  update_io: {tools: [dv360_update_io]}
-  update_line_item: {tools: [dv360_update_line_item]}
 ---
 
 # Display & Video 360 完整专家技能 v2.0

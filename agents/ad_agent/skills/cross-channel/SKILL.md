@@ -7,49 +7,6 @@ skill:
   author: "Ryan"
   expertise_level: "expert"
   last_updated: "2026-08-24"
-workflows:
-  cross_channel_compare:
-    platforms:
-      meta: [meta_list_campaigns]
-      google: [google_list_campaigns]
-      tiktok: [tiktok_list_campaigns]
-      dv360: [dv360_list_campaigns]
-  cross_channel_performance_insights:
-    platforms:
-      meta: [meta_list_campaigns]
-      google: [google_list_campaigns]
-      tiktok: [tiktok_list_campaigns]
-      dv360: [dv360_list_campaigns]
-  cross_channel_optimize_budget:
-    platforms:
-      meta: [meta_list_campaigns]
-      google: [google_list_campaigns]
-      tiktok: [tiktok_list_campaigns]
-      dv360: [dv360_list_campaigns]
-  cross_channel_export_report:
-    platforms:
-      meta: [meta_list_campaigns]
-      google: [google_list_campaigns]
-      tiktok: [tiktok_list_campaigns]
-      dv360: [dv360_list_campaigns]
-  cross_channel_batch_pause:
-    platforms:
-      meta: [meta_update_campaign]
-      google: [google_update_campaign]
-      tiktok: [tiktok_update_campaign]
-      dv360: [dv360_update_campaign]
-  cross_channel_batch_resume:
-    platforms:
-      meta: [meta_update_campaign]
-      google: [google_update_campaign]
-      tiktok: [tiktok_update_campaign]
-      dv360: [dv360_update_campaign]
-  cross_channel_batch_update_budget:
-    platforms:
-      meta: [meta_update_campaign]
-      google: [google_update_campaign]
-      tiktok: [tiktok_update_campaign]
-      dv360: [dv360_update_campaign]
 
 ---
 

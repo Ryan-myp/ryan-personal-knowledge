@@ -712,7 +712,8 @@ class LLMIntentParser(IntentParser):
             "update_io", "update_line_item", "update_asset_group",
             "create_creative", "list_creatives", "list_videos", "list_images", "list_keywords",
             "list_conversions", "list_locations", "list_devices", "list_catalogs", "list_apps",
-            "list_brand_safety",
+            "list_brand_safety", "list_asset_groups", "list_advertisers",
+            "get_adset", "get_adgroup", "get_ad", "get_asset_group",
         }
         valid_intents.update(self._custom_intents)
         if data.get("intent_type") not in valid_intents:
@@ -767,226 +768,35 @@ class LLMIntentParser(IntentParser):
 
 class SimpleIntentRouter(IntentRouter):
     """
-    简单的意图路由器。
-    
-    工作原理：
-    1. 根据 intent_type 查找预定义的 intent_to_tools 映射
-    2. 对于每个目标平台，找到对应的工具列表
-    3. 返回各平台的工具定义
-    
-    映射表由 CapabilityModule.configure() 时注入到 Runtime。
+    根据 Tool 自描述元数据进行发现式路由。
+
+    Tool 的 action/resource_type/intent_types 来自 Capability 或 Skill
+    plugin 自己的定义。这里不维护平台工具名称表，因此新增渠道只需要
+    注册 Capability + Skill；新增同类 Tool 也不需要修改 Router。
+
+    ``custom_mappings`` 和 ``register_skill_mappings`` 仅保留为外部扩展
+    兼容入口，不参与内置渠道路由，也不是新增能力的必填配置。
     """
-    
-    # 默认映射：intent_type → {platform: [tool_name, ...]}
-    DEFAULT_INTENT_TOOLS = {
-        "create_campaign": {
-            "meta": [
-                "meta_create_campaign",
-                "meta_create_adset",
-                "meta_create_ad",
-            ],
-            "google": [
-                "google_create_campaign",
-                "google_create_ad_group",
-                "google_create_ad",
-            ],
-            "tiktok": [
-                "tiktok_create_campaign",
-                "tiktok_create_adgroup",
-                "tiktok_create_ad",
-            ],
-            "dv360": [
-                "dv360_create_campaign",
-                "dv360_create_io",
-                "dv360_create_line_item",
-            ],
-        },
-        "create_asset_group": {
-            "google": ["google_create_asset_group"],
-            "google-ads": ["google_create_asset_group"],
-        },
-        "create_creative": {
-            "meta": ["meta_create_creative"],
-        },
-        "boost_post": {
-            "meta": ["meta_boost_post"],
-            "tiktok": ["tiktok_spark_ads_create"],
-        },
-        "list_campaigns": {
-            "meta": ["meta_list_campaigns"],
-            "google": ["google_list_campaigns"],
-            "google-ads": ["google_list_campaigns"],
-            "tiktok": ["tiktok_list_campaigns"],
-            "dv360": ["dv360_list_campaigns"],
-        },
-        "get_campaign": {
-            "meta": ["meta_get_campaign"],
-            "google": ["google_get_campaign"],
-            "google-ads": ["google_get_campaign"],
-            "tiktok": ["tiktok_get_campaign"],
-            "dv360": ["dv360_get_campaign"],
-        },
-        "cross_channel_overview": {
-            "meta": ["meta_list_campaigns"],
-            "google": ["google_list_campaigns"],
-            "tiktok": ["tiktok_list_campaigns"],
-            "dv360": ["dv360_list_campaigns"],
-        },
-        "cross_channel_compare": {
-            "meta": ["meta_list_campaigns"],
-            "google": ["google_list_campaigns"],
-            "tiktok": ["tiktok_list_campaigns"],
-            "dv360": ["dv360_list_campaigns"],
-        },
-        "cross_channel_performance_insights": {
-            "meta": ["meta_list_campaigns"],
-            "google": ["google_list_campaigns"],
-            "tiktok": ["tiktok_list_campaigns"],
-            "dv360": ["dv360_list_campaigns"],
-        },
-        "cross_channel_optimize_budget": {
-            "meta": ["meta_list_campaigns"],
-            "google": ["google_list_campaigns"],
-            "tiktok": ["tiktok_list_campaigns"],
-            "dv360": ["dv360_list_campaigns"],
-        },
-        "cross_channel_export_report": {
-            "meta": ["meta_list_campaigns"],
-            "google": ["google_list_campaigns"],
-            "tiktok": ["tiktok_list_campaigns"],
-            "dv360": ["dv360_list_campaigns"],
-        },
-        "update_campaign": {
-            "meta": ["meta_update_campaign"],
-            "google": ["google_update_campaign"],
-            "google-ads": ["google_update_campaign"],
-            "tiktok": ["tiktok_update_campaign"],
-            "dv360": ["dv360_update_campaign"],
-        },
-        "update_adset": {
-            "meta": ["meta_update_adset"],
-            "google": ["google_update_ad_group"],
-            "google-ads": ["google_update_ad_group"],
-            "tiktok": ["tiktok_update_adgroup"],
-        },
-        "update_adgroup": {
-            "google": ["google_update_ad_group"],
-            "google-ads": ["google_update_ad_group"],
-            "tiktok": ["tiktok_update_adgroup"],
-        },
-        "update_ad": {
-            "meta": ["meta_update_ad"],
-            "google": ["google_update_ad"],
-            "google-ads": ["google_update_ad"],
-            "tiktok": ["tiktok_update_ad"],
-        },
-        "pause_campaign": {
-            "meta": ["meta_update_campaign"],
-            "google": ["google_update_campaign"],
-            "google-ads": ["google_update_campaign"],
-            "tiktok": ["tiktok_update_campaign"],
-            "dv360": ["dv360_update_campaign"],
-        },
-        "resume_campaign": {
-            "meta": ["meta_update_campaign"],
-            "google": ["google_update_campaign"],
-            "google-ads": ["google_update_campaign"],
-            "tiktok": ["tiktok_update_campaign"],
-            "dv360": ["dv360_update_campaign"],
-        },
-        # Batch intents are routed to the platform update definitions only so
-        # the Runtime can validate platform support and account scope.  The
-        # batch planner expands campaign_ids into independent preview items;
-        # it never calls a provider in dry-run mode.
-        "cross_channel_batch_pause": {
-            "meta": ["meta_update_campaign"],
-            "google": ["google_update_campaign"],
-            "google-ads": ["google_update_campaign"],
-            "tiktok": ["tiktok_update_campaign"],
-            "dv360": ["dv360_update_campaign"],
-        },
-        "cross_channel_batch_resume": {
-            "meta": ["meta_update_campaign"],
-            "google": ["google_update_campaign"],
-            "google-ads": ["google_update_campaign"],
-            "tiktok": ["tiktok_update_campaign"],
-            "dv360": ["dv360_update_campaign"],
-        },
-        "cross_channel_batch_update_budget": {
-            "meta": ["meta_update_campaign"],
-            "google": ["google_update_campaign"],
-            "google-ads": ["google_update_campaign"],
-            "tiktok": ["tiktok_update_campaign"],
-            "dv360": ["dv360_update_campaign"],
-        },
-        "list_adgroups": {
-            "meta": ["meta_list_ad_sets"],
-            "google": ["google_list_ad_groups"],
-            "tiktok": ["tiktok_list_adgroups"],
-        },
-        "list_adsets": {
-            "meta": ["meta_list_ad_sets"],
-            "tiktok": ["tiktok_list_adgroups"],
-        },
-        "list_ads": {
-            "meta": ["meta_list_ads"],
-            "tiktok": ["tiktok_list_ads"],
-        },
-        "list_audiences": {
-            "meta": ["meta_list_audiences"],
-            "tiktok": ["tiktok_list_audiences"],
-        },
-        "list_ios": {"dv360": ["dv360_list_ios"]},
-        "get_io": {"dv360": ["dv360_get_io"]},
-        "list_line_items": {"dv360": ["dv360_list_line_items"]},
-        "get_line_item": {"dv360": ["dv360_get_line_item"]},
-        "update_io": {"dv360": ["dv360_update_io"]},
-        "update_line_item": {
-            "dv360": ["dv360_update_line_item"],
-        },
-        "update_asset_group": {
-            "google": ["google_update_asset_group"],
-            "google-ads": ["google_update_asset_group"],
-        },
-        "download_report": {
-            "meta": ["meta_get_campaign_report"],
-            "google": ["google_get_campaign_report"],
-            "tiktok": ["tiktok_get_campaign_report"],
-            "dv360": ["dv360_get_line_item_report"],
-        },
-    }
-    
+
     def __init__(self, custom_mappings: dict = None):
-        """
-        Args:
-            custom_mappings: 自定义映射，格式同 DEFAULT_INTENT_TOOLS
-                           会与默认映射合并（自定义优先）
-        """
-        # Copy nested maps so custom routing cannot mutate the class-level
-        # defaults or leak into future Runtime instances.
         self._mappings = {
-            intent_type: {platform: list(names) for platform, names in platforms.items()}
-            for intent_type, platforms in self.DEFAULT_INTENT_TOOLS.items()
+            str(intent): {str(platform): list(names) for platform, names in platforms.items()}
+            for intent, platforms in (custom_mappings or {}).items()
         }
-        self._capability_mappings: dict[str, dict[str, list[str]]] = {}
+        # Kept as a read-only-era compatibility name for integrations that
+        # inspect the router. Built-in routing never writes this map.
+        self._capability_mappings = self._mappings
         self._skill_mappings: dict[str, dict[str, list[str]]] = {}
-        if custom_mappings:
-            for intent_type, platforms in custom_mappings.items():
-                self._mappings.setdefault(intent_type, {}).update(platforms)
 
     def register_capability_mappings(self, mappings: dict) -> None:
-        """Register executable mappings emitted by a CapabilityModule."""
-        for intent_type, platforms in (mappings or {}).items():
-            for platform, names in (platforms or {}).items():
-                if not names:
-                    continue
-                names = list(names)
-                self._capability_mappings.setdefault(intent_type, {})[platform] = names
-                if platform == "google-ads":
-                    self._capability_mappings.setdefault(intent_type, {})["google"] = names
+        """Deprecated extension alias; prefer ToolDefinition metadata."""
+        for intent, platforms in (mappings or {}).items():
+            self._mappings.setdefault(str(intent), {}).update(
+                {str(platform): list(names) for platform, names in (platforms or {}).items()}
+            )
 
     def register_skill_mappings(self, mappings: dict) -> None:
-        """Register Skill-owned workflow plans with highest precedence."""
+        """Register an explicit plugin extension without a built-in table."""
         for intent_type, platforms in (mappings or {}).items():
             for platform, names in (platforms or {}).items():
                 if not names:
@@ -998,6 +808,13 @@ class SimpleIntentRouter(IntentRouter):
                     self._skill_mappings.setdefault(str(intent_type), {})[
                         "google"
                     ] = list(names)
+
+    def get_skill_mapping(self, intent_type: str) -> dict[str, list[str]] | None:
+        """Return the authoritative Skill route, if one was registered."""
+        mapping = self._skill_mappings.get(str(intent_type))
+        if mapping is None:
+            return None
+        return {platform: list(names) for platform, names in mapping.items()}
     
     def route(
         self,
@@ -1010,30 +827,44 @@ class SimpleIntentRouter(IntentRouter):
         Returns:
             {platform: [ToolDefinition, ...]}
         """
-        result = {}
-        mapping = self._skill_mappings.get(intent.intent_type)
-        if mapping is None:
-            mapping = self._capability_mappings.get(
-                intent.intent_type,
-                self._mappings.get(intent.intent_type, {}),
-            )
-        
+        result: dict[str, list[ToolDefinition]] = {}
+        explicit = self._skill_mappings.get(intent.intent_type) or self._mappings.get(intent.intent_type)
         for platform in intent.platforms:
-            tool_names = mapping.get(platform, [])
-            if not tool_names and platform == "google":
-                tool_names = mapping.get("google-ads", [])
-            tools = []
-            for name in tool_names:
-                try:
-                    defn, _ = registry.get(name)
-                    tools.append(defn)
-                except KeyError:
-                    # 工具未注册，跳过（允许部分平台不支持）
-                    pass
+            canonical = {"google": "google-ads", "google_ads": "google-ads"}.get(
+                str(platform).lower(), str(platform).lower()
+            )
+            if explicit is not None:
+                names = explicit.get(platform, explicit.get(canonical, []))
+                tools = []
+                for name in names:
+                    try:
+                        tools.append(registry.get(name)[0])
+                    except KeyError:
+                        continue
+            else:
+                tools = [
+                    definition for definition in registry.list_by_platform(canonical)
+                    if self._matches_intent(definition, intent.intent_type)
+                ]
+                tools.sort(key=self._sort_key)
             if tools:
                 result[platform] = tools
         
         return result
+
+    @staticmethod
+    def _matches_intent(definition: ToolDefinition, intent_type: str) -> bool:
+        return str(intent_type) in set(getattr(definition, "intent_types", []) or [])
+
+    @staticmethod
+    def _sort_key(definition: ToolDefinition) -> tuple[int, str]:
+        # Parent resources are planned before children. The order remains a
+        # generic hierarchy rule, not a provider-specific workflow.
+        order = {
+            "campaign": 10, "io": 20, "ad_set": 20, "ad_group": 20,
+            "line_item": 30, "asset_group": 30, "ad": 40, "creative": 40,
+        }
+        return order.get(getattr(definition, "resource_type", ""), 100), definition.name
     
     def get_tool_sequence(self, intent: ParsedIntent, registry: ToolRegistry) -> list[tuple[str, ToolDefinition]]:
         """

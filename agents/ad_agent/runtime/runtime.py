@@ -36,7 +36,7 @@ from ..core.interfaces import (
     ToolContext, ToolResult, ChatMessage, CapabilityModule,
     CapabilityRuntime, ToolRegistry, WriteGuard, IntentParser, IntentRouter,
     ParsedIntent, ToolHandler, ToolEffect, ExecutionMode, ProviderReconciler,
-    ReconciliationContext, ReconciliationObservation
+    ReconciliationContext, ReconciliationObservation, ResourceResult
 )
 from ..core.tool_registry import GuardedToolRegistry, SimpleToolRegistry, validate_tool_input
 from ..core.intent import LLMIntentParser, SimpleIntentRouter
@@ -52,7 +52,7 @@ from ..core.auth import RequestPrincipal, normalize_account_id
 from .skill import Skill, SkillLoader
 from ..persistence.session_manager import SessionManager
 from ..persistence.interfaces import PersistenceBackend
-from ..persistence.store import ToolCallRecord
+from ..persistence.models import ToolCallRecord
 from .reconciliation import ToolReadbackReconciler
 
 logger = logging.getLogger(__name__)
@@ -178,6 +178,7 @@ class AgentRuntime:
         execution_mode: str = ExecutionMode.DRY_RUN.value,
         enforce_account_scope: bool = True,
         live_approved_tools: Optional[set[str]] = None,
+        allow_live_writes: bool = False,
         business_context: Optional[BusinessContext] = None,
         tool_selector: Optional[DynamicToolSelector] = None,
         knowledge_provider: Optional[KnowledgeProvider] = None,
@@ -256,6 +257,11 @@ class AgentRuntime:
         # True.  This set is deliberately not populated from user input or
         # provider credentials.
         self._live_approved_tools = set(live_approved_tools or set())
+        # This is a second, deployment-level fuse.  A configured execution
+        # mode or tool allowlist must never be sufficient to turn on provider
+        # mutations.  The embedding/application must opt in explicitly after
+        # the operator has selected and verified the test accounts.
+        self.allow_live_writes = bool(allow_live_writes)
         # 读请求也默认受受控账户边界约束，避免带凭证的服务被用来查询
         # 任意账户。需要本地离线探索时应显式提供测试 validator。
         self.enforce_account_scope = enforce_account_scope
@@ -592,6 +598,12 @@ class AgentRuntime:
             getattr(runtime, "parameter_catalogs", []) or []
         )
         self._validate_parameter_lookup_contract()
+        if hasattr(self.intent_parser, "register_intents"):
+            self.intent_parser.register_intents(
+                intent
+                for definition in self.registry.list_all()
+                for intent in (getattr(definition, "intent_types", []) or [])
+            )
 
         # Capability.configure() registers platform tools before returning.
         # Apply the read-only boundary immediately so callers cannot forget a
@@ -599,17 +611,9 @@ class AgentRuntime:
         if self._read_only_mode:
             self._filter_write_tools()
 
-        # Register the executable tools supplied by the Capability.  Workflow
-        # policy is published separately by the Skill contract below.
-        for skill in runtime.orchestrator_skills:
-            self._register_skill(skill)
-            if skill.platform and skill.platform != "multi_platform":
-                self._loaded_skills.setdefault(skill.platform, skill)
-
+        # Register executable tools supplied by the Capability.  Tool metadata
+        # is the routing contract; no workflow file is consulted here.
         capability_platform = getattr(module, "platform_name", None)
-        # Publish all loaded Skill workflows, including the cross-channel
-        # orchestrator. Routing will naturally retain only registered tools.
-        self._publish_loaded_skill_workflows()
         # A Capability registration already activated the platform's tools.
         # Keep the declarative Skill as the platform lifecycle marker so the
         # next turn does not try to register the same tools again.
@@ -637,25 +641,11 @@ class AgentRuntime:
         
         return runtime
 
-    def _publish_loaded_skill_workflows(self, platform: Optional[str] = None) -> None:
-        """Publish declarative Skill workflows without registering handlers."""
-        skills = (
-            self.skill_loader.get_by_platform(platform)
-            if platform
-            else self.skill_loader._skills.values()
-        )
-        for skill in skills:
-            self._publish_skill_workflows(skill)
-
-    def _publish_skill_workflows(self, skill: Any) -> None:
-        """Publish one Skill's workflow policy to the intent router."""
-        if not hasattr(self.intent_router, "register_skill_mappings"):
-            return
-        mappings = getattr(skill, "get_workflow_mappings", lambda: {})()
-        if mappings:
-            self.intent_router.register_skill_mappings(mappings)
-            if hasattr(self.intent_parser, "register_intents"):
-                self.intent_parser.register_intents(set(mappings))
+    def _validate_routed_skill_workflow(
+        self, intent: ParsedIntent, tool_plan: dict[str, list[Any]]
+    ) -> list[str]:
+        """Compatibility hook; discovery already filters unregistered Tools."""
+        return []
 
     def list_parameter_options(
         self, platform: Optional[str] = None, field: Optional[str] = None,
@@ -785,13 +775,14 @@ class AgentRuntime:
         # A custom Skill can target a new platform and provide all of its own
         # handlers.  Only built-in fallback Skills require a known Capability;
         # this keeps the extension seam genuinely Skill + Tools based.
-        capability = None
-        try:
-            capability = create_capability(canonical_platform, api_client)
-        except ValueError:
-            if not declared_tools:
-                logger.warning("⚠️ 未找到平台 '%s' 的 Capability，且 Skill 没有声明可执行工具", platform)
-                return
+        capability = self._discover_capability(canonical_platform, api_client)
+        if capability is None:
+            try:
+                capability = create_capability(canonical_platform, api_client)
+            except ValueError:
+                if not declared_tools:
+                    logger.warning("⚠️ 未找到平台 '%s' 的 Capability，且 Skill 没有声明可执行工具", platform)
+                    return
 
         capability_tools = {
             definition.name: (definition, handler)
@@ -830,6 +821,29 @@ class AgentRuntime:
         if not tools:
             logger.warning(f"⚠️ Capability '{platform}' 没有定义任何工具")
             return False
+
+        # A plugin may optionally publish a named intent for its own Tool.
+        # Convert that declaration onto the Tool itself at registration time;
+        # the Router still discovers by metadata and never stores a platform
+        # routing table. New plugins should prefer ``intent_types`` directly
+        # on ToolDefinition.
+        plugin_intents = getattr(skill, "intent_to_tools", {}) or {}
+        if isinstance(plugin_intents, dict):
+            for intent_name, platform_tools in plugin_intents.items():
+                names = platform_tools.get(canonical_platform, []) if isinstance(platform_tools, dict) else []
+                if isinstance(names, str):
+                    names = [names]
+                for definition, _handler in tools:
+                    if definition.name in names and hasattr(definition, "add_intents"):
+                        definition.add_intents([str(intent_name)])
+                if hasattr(self.intent_parser, "register_intents"):
+                    self.intent_parser.register_intents([str(intent_name)])
+        if hasattr(self.intent_parser, "register_intents"):
+            self.intent_parser.register_intents(
+                intent
+                for definition, _handler in tools
+                for intent in (getattr(definition, "intent_types", []) or [])
+            )
         
         # 注册工具
         registered_count = 0
@@ -874,22 +888,6 @@ class AgentRuntime:
         if skill_key not in keys:
             keys.append(skill_key)
 
-        # Optional Skill-level routing lets an extension introduce a new
-        # intent without changing the built-in platform router.  The router
-        # still resolves names through the registry, so a mapping can never
-        # expose an unregistered tool.
-        intent_mappings = getattr(skill, "intent_to_tools", None)
-        if callable(intent_mappings):
-            intent_mappings = intent_mappings()
-        if intent_mappings and hasattr(self.intent_router, "register_capability_mappings"):
-            self.intent_router.register_skill_mappings(intent_mappings)
-            if hasattr(self.intent_parser, "register_intents"):
-                self.intent_parser.register_intents(set(intent_mappings))
-        workflow_mappings = getattr(skill, "get_workflow_mappings", lambda: {})()
-        if workflow_mappings and hasattr(self.intent_router, "register_skill_mappings"):
-            self.intent_router.register_skill_mappings(workflow_mappings)
-            if hasattr(self.intent_parser, "register_intents"):
-                self.intent_parser.register_intents(set(workflow_mappings))
         logger.info(f"✅ 已动态注册 Skill '{skill.name}'，共 {registered_count} 个工具")
         return True
 
@@ -1238,6 +1236,40 @@ class AgentRuntime:
             logger.debug(f"创建 {platform} API Client 失败: {e}")
 
         return None
+
+    @staticmethod
+    def _discover_capability(platform: str, api_client: Any = None) -> Any:
+        """Discover a built-in Capability by package convention.
+
+        This keeps adding a provider out of the central Router and factory
+        table. A channel package only needs
+        ``capabilities/<platform>/capability.py`` and a
+        ``create_<platform>_capability`` factory. Custom channels can instead
+        expose executable Tools from their Skill plugin.
+        """
+        canonical = str(platform or "").strip().lower().replace("-", "_")
+        module_name = f"agents.ad_agent.capabilities.{canonical}.capability"
+        try:
+            module = __import__(module_name, fromlist=["*"])
+        except (ImportError, ModuleNotFoundError):
+            return None
+        preferred = f"create_{canonical}_capability"
+        factory = getattr(module, preferred, None)
+        if not callable(factory):
+            factory = next(
+                (
+                    value for name, value in vars(module).items()
+                    if name.startswith("create_") and name.endswith("_capability")
+                    and callable(value)
+                ),
+                None,
+            )
+        if not callable(factory):
+            return None
+        try:
+            return factory(api_client)
+        except TypeError:
+            return factory()
 
     def _build_request_clients(self, credentials: Optional[dict]) -> dict[str, Any]:
         """Build per-request clients without replacing shared handlers.
@@ -1635,13 +1667,8 @@ class AgentRuntime:
                         or skill_dir.name
                     )
 
-                    # Workflow policy is always read from the declarative
-                    # Skill. It is never inferred from Capability code.
-                    from .skill import BaseSkill, SkillContract
-                    declarative_skill = BaseSkill(
-                        SkillContract(str(skill_dir)).load()
-                    )
-                    self._publish_skill_workflows(declarative_skill)
+                    # Loading SKILL.md supplies bounded expert context. It
+                    # does not register routes or executable workflow steps.
 
                     # Executable extensions take precedence over declarative
                     # Skill metadata.  A plugin is still
@@ -1668,20 +1695,21 @@ class AgentRuntime:
                         )
                         continue
                     
-                    # 检查是否有工具定义（从表格解析）
-                    has_tools = '| Tool |' in content or 'name:' in content
-                    
-                    if has_tools:
+                    # Channel capability discovery is based on package
+                    # convention, not on whether SKILL.md happens to contain
+                    # a Markdown tool table. Business/cross-channel Skills
+                    # remain context-only unless they expose a plugin.
+                    if root.name == "channels":
                         # SKILL.md is declarative scope/context.  Executable
                         # tools come only from the verified provider
                         # Capability, so documentation cannot drift into a
                         # false executable contract.
                         try:
                             from ..capabilities.factory import create_capability
-                            capability = create_capability(
-                                self.PLATFORM_NAME_MAP.get(platform, platform),
-                                api_client,
-                            )
+                            canonical = self.PLATFORM_NAME_MAP.get(platform, platform)
+                            capability = self._discover_capability(canonical, api_client)
+                            if capability is None:
+                                capability = create_capability(canonical, api_client)
                             before_tool_count = len(self.registry.list_all())
                             self.register_capability(capability)
                             loaded_count += 1
@@ -1840,22 +1868,28 @@ class AgentRuntime:
             if hasattr(self.registry, "generate_idempotency_key") else uuid.uuid4().hex[:16]
         name = input_data.get("name") or input_data.get("campaign_name") or f"dry_run_{key}"
         tool_name = tool_def.name.lower()
-        if "line_item" in tool_name:
+        resource_type = getattr(tool_def, "resource_type", None) or self._resource_type_for_tool(tool_name)
+        if resource_type == "line_item":
             resource_key = "line_item_id"
-        elif "ad_group" in tool_name or "adgroup" in tool_name:
+        elif resource_type == "ad_group":
             resource_key = "ad_group_id" if "ad_group" in tool_name else "adgroup_id"
-        elif "ad_set" in tool_name or "adset" in tool_name:
+        elif resource_type == "ad_set":
             resource_key = "ad_set_id" if "ad_set" in tool_name else "adset_id"
-        elif "campaign" in tool_name:
+        elif resource_type == "campaign":
             resource_key = "campaign_id"
-        elif "creative" in tool_name:
+        elif resource_type == "creative":
             resource_key = "creative_id"
-        elif "io" in tool_name:
+        elif resource_type == "io":
             resource_key = "io_id"
+        elif resource_type == "asset_group":
+            resource_key = "asset_group_id"
         else:
             resource_key = "ad_id"
 
-        is_update = any(word in tool_name for word in ("update", "pause", "resume", "enable", "disable"))
+        action = str(getattr(tool_def, "action", "") or "").lower()
+        is_update = action in {"update", "pause", "resume", "enable", "disable"} or any(
+            word in tool_name for word in ("update", "pause", "resume", "enable", "disable")
+        )
         resource_id = input_data.get(resource_key) or f"dry_{platform}_{key}"
         data = {
             "mode": ExecutionMode.DRY_RUN.value,
@@ -1877,6 +1911,121 @@ class AgentRuntime:
             "errors": provider_errors,
         }
         return ToolResult.dry_run(data)
+
+    @staticmethod
+    def _resource_type_for_tool(tool_name: str) -> str:
+        """Map provider tool naming to the shared resource vocabulary."""
+        name = str(tool_name or "").lower()
+        if "asset_group" in name:
+            return "asset_group"
+        if "line_item" in name:
+            return "line_item"
+        if "ad_group" in name or "adgroup" in name:
+            return "ad_group"
+        if "ad_set" in name or "adset" in name:
+            return "ad_set"
+        if "creative" in name:
+            return "creative"
+        if "campaign" in name:
+            return "campaign"
+        if "_io" in name or name.endswith("io"):
+            return "io"
+        return "ad"
+
+    @staticmethod
+    def _resource_id_field(resource_type: str) -> str:
+        return {
+            "campaign": "campaign_id",
+            "ad_set": "adset_id",
+            "ad_group": "ad_group_id",
+            "ad": "ad_id",
+            "creative": "creative_id",
+            "io": "io_id",
+            "line_item": "line_item_id",
+            "asset_group": "asset_group_id",
+        }.get(resource_type, "resource_id")
+
+    @classmethod
+    def _build_resource_results(cls, results: list[dict]) -> list[dict]:
+        """Normalize write results without exposing provider credentials."""
+        resource_items: list[ResourceResult] = []
+        id_index: dict[tuple[str, str], int] = {}
+        sequence = 0
+        for item in results or []:
+            tool_name = str(item.get("tool") or "")
+            if not tool_name or not item.get("resource_type") and not any(
+                marker in tool_name.lower()
+                for marker in ("create", "update", "pause", "resume", "enable", "disable", "boost")
+            ):
+                continue
+            # Only resource-mutating results belong in this model.  A future
+            # custom Tool may use a different name, so the result metadata is
+            # also accepted as an explicit signal.
+            data = item.get("data") if isinstance(item.get("data"), dict) else {}
+            if not item.get("account_id") and not data and not item.get("error"):
+                continue
+            sequence += 1
+            resource_type = str(
+                item.get("resource_type") or cls._resource_type_for_tool(tool_name)
+            )
+            id_field = cls._resource_id_field(resource_type)
+            input_data = data.get("input") if isinstance(data.get("input"), dict) else {}
+            raw_id = data.get(id_field) or input_data.get(id_field) or item.get(id_field)
+            if raw_id in (None, ""):
+                raw_id = input_data.get("resource_id") or data.get("resource_id")
+            raw_id = str(raw_id) if raw_id not in (None, "") else None
+            simulated = bool(data.get("simulated") or item.get("simulated"))
+            execution_status = str(data.get("execution_status") or "").lower()
+            if item.get("skipped") or data.get("skipped"):
+                status = "skipped"
+            elif execution_status == "unsupported":
+                status = "unsupported"
+            elif execution_status in {"unknown", "timed_out", "transport_unknown"}:
+                status = "unknown"
+            elif item.get("needs_confirmation"):
+                status = "awaiting_confirmation"
+            elif item.get("success") and simulated:
+                status = "planned"
+            elif item.get("success"):
+                status = "succeeded"
+            else:
+                status = "failed"
+
+            parent_field = {
+                "ad_set": "campaign_id", "ad_group": "campaign_id",
+                "ad": "adset_id", "io": "campaign_id",
+                "line_item": "io_id", "asset_group": "campaign_id",
+            }.get(resource_type)
+            parent_id = input_data.get(parent_field) if parent_field else None
+            parent_id = str(parent_id) if parent_id not in (None, "") else None
+            parent_sequence = None
+            if parent_id:
+                parent_sequence = id_index.get((str(item.get("platform") or ""), parent_id))
+            local_id = raw_id if simulated else None
+            provider_id = raw_id if raw_id and not simulated else None
+            logical_id = str(
+                data.get("logical_resource_id") or local_id or provider_id
+                or input_data.get(id_field) or ""
+            ) or None
+            normalized = ResourceResult(
+                sequence=sequence,
+                platform=str(item.get("platform") or ""),
+                resource_type=resource_type,
+                tool_name=tool_name,
+                status=status,
+                account_id=(str(item.get("account_id")) if item.get("account_id") is not None else None),
+                parent_sequence=parent_sequence,
+                parent_resource_id=parent_id,
+                provider_resource_id=provider_id,
+                logical_resource_id=logical_id,
+                local_resource_id=local_id,
+                error=item.get("error"),
+                simulated=simulated,
+            )
+            resource_items.append(normalized)
+            if raw_id:
+                id_index[(str(item.get("platform") or ""), raw_id)] = sequence
+        return [item.to_dict() for item in resource_items]
 
     @staticmethod
     def _validate_semantic_write_input(tool_def: Any, input_data: dict) -> list[str]:
@@ -2041,19 +2190,30 @@ class AgentRuntime:
         # create their checkpoints in _run_batch_plan instead.
         if not intent.intent_type.startswith("cross_channel_batch_"):
             sequence = 0
+            sequence_by_resource: dict[tuple[str, str], int] = {}
             for platform, tools in tool_plan.items():
                 for tool in tools:
                     if not tool.is_write_tool:
                         continue
                     sequence += 1
+                    actual_platform = self.PLATFORM_NAME_MAP.get(platform, platform)
+                    parent_sequence = None
+                    parent_type = getattr(tool, "parent_resource_type", None)
+                    if parent_type:
+                        parent_sequence = sequence_by_resource.get(
+                            (actual_platform, parent_type)
+                        )
                     self._session_manager.record_workflow_item(
                         workflow_id=workflow_id,
                         sequence=sequence,
-                        platform=self.PLATFORM_NAME_MAP.get(platform, platform),
+                        platform=actual_platform,
                         tool_name=tool.name,
                         status="planned",
                         input_data={},
+                        resource_type=getattr(tool, "resource_type", None),
+                        parent_sequence=parent_sequence,
                     )
+                    sequence_by_resource[(actual_platform, tool.resource_type)] = sequence
         return workflow_id
 
     def _heartbeat_workflow(self, workflow_id: Optional[str]) -> bool:
@@ -2081,12 +2241,14 @@ class AgentRuntime:
             if tool.is_write_tool
         }
         sequence_by_tool: dict[str, int] = {}
+        definition_by_tool: dict[str, Any] = {}
         sequence = 0
         for platform, tools in tool_plan.items():
             for tool in tools:
                 if tool.is_write_tool:
                     sequence += 1
                     sequence_by_tool[tool.name] = sequence
+                    definition_by_tool[tool.name] = tool
         item_sequences = []
         successful_sequences = []
         failed_sequences = []
@@ -2098,6 +2260,7 @@ class AgentRuntime:
             if name in write_tools:
                 result_occurrences[name] = result_occurrences.get(name, 0) + 1
         seen_occurrences: dict[str, int] = {}
+        sequence_by_resource_id: dict[tuple[str, str], int] = {}
         for index, item in enumerate(results):
             if item.get("tool") not in write_tools:
                 continue
@@ -2130,16 +2293,49 @@ class AgentRuntime:
             else:
                 status = "failed"
                 failed_sequences.append(item_sequence)
+            definition = definition_by_tool.get(tool_name)
+            output_data = self._redact_for_persistence(item.get("data"))
+            input_data = self._redact_for_persistence(workflow_inputs.get(index, {}))
+            resource_type = getattr(definition, "resource_type", None) or self._resource_type_for_tool(tool_name)
+            resource_id_field = self._resource_id_field(resource_type)
+            output_object = item.get("data") if isinstance(item.get("data"), dict) else {}
+            raw_resource_id = output_object.get(resource_id_field)
+            if raw_resource_id in (None, ""):
+                raw_resource_id = input_data.get(resource_id_field)
+            parent_type = getattr(definition, "parent_resource_type", None)
+            parent_field = {
+                "campaign": "campaign_id", "ad_set": "adset_id", "ad_group": "ad_group_id",
+                "io": "io_id", "line_item": "line_item_id",
+            }.get(parent_type or "")
+            parent_resource_id = input_data.get(parent_field) if parent_field else None
+            actual_platform = str(item.get("platform") or "")
+            parent_sequence = sequence_by_resource_id.get(
+                (actual_platform, str(parent_resource_id))
+            ) if parent_resource_id not in (None, "") else None
+            simulated = bool(output_object.get("simulated") or item.get("simulated"))
+            provider_resource_id = (
+                str(raw_resource_id) if raw_resource_id not in (None, "") and not simulated else None
+            )
+            local_resource_id = (
+                str(raw_resource_id) if raw_resource_id not in (None, "") and simulated else None
+            )
             self._session_manager.record_workflow_item(
                 workflow_id=workflow_id,
                 sequence=item_sequence,
-                platform=str(item.get("platform") or ""),
+                platform=actual_platform,
                 tool_name=str(item.get("tool") or ""),
                 status=status,
-                input_data=self._redact_for_persistence(workflow_inputs.get(index, {})),
-                output_data=self._redact_for_persistence(item.get("data")),
+                input_data=input_data,
+                output_data=output_data,
                 error=item.get("error"),
+                resource_type=resource_type,
+                parent_sequence=parent_sequence,
+                parent_resource_id=(str(parent_resource_id) if parent_resource_id not in (None, "") else None),
+                provider_resource_id=provider_resource_id,
+                logical_resource_id=local_resource_id or provider_resource_id,
             )
+            if raw_resource_id not in (None, ""):
+                sequence_by_resource_id[(actual_platform, str(raw_resource_id))] = item_sequence
 
         persisted = self._session_manager.get_workflow(workflow_id) or {}
         pending_items = [
@@ -2340,6 +2536,7 @@ class AgentRuntime:
         reply = self._generate_reply(intent, results, bool(errors and not operations))
         session.add_message({"role": "assistant", "content": reply})
         self._finish_workflow(workflow_id, tool_plan, results, workflow_inputs)
+        resource_results = self._build_resource_results(results)
         if self._session_manager:
             self._session_manager.update_session(
                 session.session_id,
@@ -2357,6 +2554,7 @@ class AgentRuntime:
             "intent": intent.to_dict(),
             "tool_plan": {k: [t.name for t in v] for k, v in tool_plan.items()},
             "results": results,
+            "resource_results": resource_results,
             "workflow_id": workflow_id,
             "reply": reply,
             "needs_confirmation": False,
@@ -2719,10 +2917,32 @@ class AgentRuntime:
                 "policy_errors": policy_errors,
             }
 
-        # Step 3: 路由到平台工具. Skill workflow declarations are the
-        # authoritative orchestration plan. The selector only builds bounded
-        # model context and must never rewrite that plan.
+        # Step 3: discover Tools from their self-described action/resource
+        # metadata. Skills provide expert context and SOP; they do not need a
+        # second central workflow file for every channel/tool combination.
         tool_plan = self.intent_router.route(intent, self.registry)
+        workflow_contract_errors = self._validate_routed_skill_workflow(
+            intent, tool_plan
+        )
+        if workflow_contract_errors:
+            reply = "❌ Skill workflow contract 阻止本次请求：" + "；".join(
+                workflow_contract_errors
+            )
+            session.add_message({"role": "user", "content": safe_user_input})
+            session.add_message({"role": "assistant", "content": reply})
+            return {
+                "session_id": session_id,
+                "turn_id": turn_id,
+                "timestamp": datetime.now().isoformat(),
+                "intent": intent.to_dict(),
+                "tool_plan": {},
+                "tool_selection": None,
+                "results": [],
+                "reply": reply,
+                "needs_confirmation": False,
+                "confirmation_payload": None,
+                "policy_errors": workflow_contract_errors,
+            }
         routed_tools = [tool for tools in tool_plan.values() for tool in tools]
         tool_selection = self.tool_selector.optimize_for_llm(
             safe_user_input, intent, routed_tools
@@ -3073,14 +3293,21 @@ class AgentRuntime:
                         continue
 
                 if tool_def.is_write_tool and self.execution_mode == ExecutionMode.LIVE.value and (
-                    not tool_def.live_support
+                    not self.allow_live_writes
+                    or not tool_def.live_support
                     or tool_def.name not in self._live_approved_tools
                 ):
+                    if not self.allow_live_writes:
+                        reason = "Runtime 全局 allow_live_writes 未开启"
+                    elif not tool_def.live_support:
+                        reason = "该 Tool 当前仅支持 dry-run"
+                    else:
+                        reason = "该 Tool 未加入 live 执行批准清单"
                     results.append({
                         "tool": tool_def.name,
                         "platform": platform,
                         "success": False,
-                        "error": f"{tool_def.name} 当前未获 live 执行批准；仅支持 dry-run",
+                        "error": f"{tool_def.name} 当前禁止 live 执行：{reason}",
                         "needs_confirmation": False,
                     })
                     chain_blocked = True
@@ -3280,6 +3507,7 @@ class AgentRuntime:
                 results.append({
                     "tool": tool_def.name,
                     "platform": platform,
+                    "resource_type": getattr(tool_def, "resource_type", None),
                     "account_id": per_platform_account,
                     "success": result.success,
                     "data": safe_result_data,
@@ -3352,6 +3580,7 @@ class AgentRuntime:
             granted_permissions=effective_permissions,
         )
         self._finish_workflow(workflow_id, tool_plan, results, workflow_inputs)
+        resource_results = self._build_resource_results(results)
 
         # Step 5: 生成回复
         cross_channel_summary = None
@@ -3416,6 +3645,7 @@ class AgentRuntime:
                 "knowledge": tool_selection.get("knowledge", []),
             },
             "results": results,
+            "resource_results": resource_results,
             "workflow_id": workflow_id,
             "cross_channel_summary": cross_channel_summary,
             "cross_channel_insights": cross_channel_insights,
@@ -3559,6 +3789,15 @@ class AgentRuntime:
         # produce an incomplete future live payload.
         if intent.budget is not None and "daily_budget" in tool_def.input_schema.properties:
             tool_input.setdefault("daily_budget", intent.budget)
+        # ``budget`` is the common user-facing alias.  Keep it in the public
+        # plan for readability, but also materialize the provider field when
+        # the selected Tool declares one.  This makes dry-run provider
+        # readiness reflect the payload that a future adapter will receive.
+        if (
+            tool_input.get("budget") not in (None, "")
+            and "daily_budget" in tool_def.input_schema.properties
+        ):
+            tool_input.setdefault("daily_budget", tool_input["budget"])
         # Map the common business objective through provider-owned metadata.
         # The shared Runtime does not maintain a provider enum table; a Skill
         # can add/replace this mapping in its own field schema.
@@ -3594,11 +3833,12 @@ class AgentRuntime:
 
         # dry-run 创建下级资源时提供确定性的本地默认名称，不生成任何线上对象。
         if "name" in tool_def.input_schema.required and "name" not in tool_input:
-            if self.is_dry_run and ("adset" in tool_def.name or "ad_set" in tool_def.name):
+            resource_type = getattr(tool_def, "resource_type", "")
+            if self.is_dry_run and resource_type == "ad_set":
                 tool_input["name"] = f"{platform}_dry_run_adset"
-            elif self.is_dry_run and ("adgroup" in tool_def.name or "ad_group" in tool_def.name):
+            elif self.is_dry_run and resource_type == "ad_group":
                 tool_input["name"] = f"{platform}_dry_run_adgroup"
-            elif self.is_dry_run and "line_item" in tool_def.name:
+            elif self.is_dry_run and resource_type == "line_item":
                 tool_input["name"] = f"{platform}_dry_run_line_item"
 
         if "updates" in tool_def.input_schema.required:

@@ -5,23 +5,6 @@ version: 1.0.0
 author: Ryan
 created: 2026-08-14
 tags: [meta, facebook, instagram, marketing-api, pixel, capi, advertising]
-workflows:
-  create_campaign:
-    tools: [meta_create_campaign, meta_create_adset, meta_create_ad]
-  list_campaigns: {tools: [meta_list_campaigns]}
-  get_campaign: {tools: [meta_get_campaign]}
-  update_campaign: {tools: [meta_update_campaign]}
-  pause_campaign: {tools: [meta_update_campaign]}
-  resume_campaign: {tools: [meta_update_campaign]}
-  download_report: {tools: [meta_get_campaign_report]}
-  create_creative: {tools: [meta_create_creative]}
-  list_adgroups: {tools: [meta_list_ad_sets]}
-  list_adsets: {tools: [meta_list_ad_sets]}
-  update_adset: {tools: [meta_update_adset]}
-  list_ads: {tools: [meta_list_ads]}
-  update_ad: {tools: [meta_update_ad]}
-  list_audiences: {tools: [meta_list_audiences]}
-  boost_post: {tools: [meta_boost_post]}
 ---
 
 # Meta Marketing API 专家技能

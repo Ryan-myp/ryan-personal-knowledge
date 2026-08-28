@@ -10,7 +10,7 @@ from typing import Any, Optional
 from datetime import datetime
 
 from .interfaces import PersistenceBackend
-from .store import ToolCallRecord, CampaignRecord
+from .models import ToolCallRecord, CampaignRecord
 
 logger = logging.getLogger(__name__)
 
@@ -244,12 +244,21 @@ class SessionManager:
         self, workflow_id: str, sequence: int, platform: str, tool_name: str,
         status: str, input_data: dict, output_data: dict = None,
         error: str = None, compensation_required: bool = False,
+        resource_type: Optional[str] = None,
+        parent_sequence: Optional[int] = None,
+        parent_resource_id: Optional[str] = None,
+        provider_resource_id: Optional[str] = None,
+        logical_resource_id: Optional[str] = None,
     ) -> None:
         self.store.upsert_workflow_item(
             item_id=f"{workflow_id}:{sequence}", workflow_id=workflow_id,
             sequence=sequence, platform=platform, tool_name=tool_name,
             status=status, input_data=input_data, output_data=output_data,
             error=error, compensation_required=compensation_required,
+            resource_type=resource_type, parent_sequence=parent_sequence,
+            parent_resource_id=parent_resource_id,
+            provider_resource_id=provider_resource_id,
+            logical_resource_id=logical_resource_id,
         )
 
     def get_workflow(self, workflow_id: str) -> Optional[dict]:
@@ -264,10 +273,16 @@ class SessionManager:
         self, workflow_id: str, sequence: int, status: str,
         output_data: Optional[dict] = None, error: Optional[str] = None,
         compensation_required: Optional[bool] = None,
+        resource_type: Optional[str] = None,
+        parent_sequence: Optional[int] = None,
+        parent_resource_id: Optional[str] = None,
+        provider_resource_id: Optional[str] = None,
+        logical_resource_id: Optional[str] = None,
     ) -> bool:
         return self.store.update_workflow_item(
             workflow_id, sequence, status, output_data, error,
-            compensation_required,
+            compensation_required, resource_type, parent_sequence,
+            parent_resource_id, provider_resource_id, logical_resource_id,
         )
 
     def list_resumable_workflows(

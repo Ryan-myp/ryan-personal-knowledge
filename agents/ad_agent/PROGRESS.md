@@ -166,8 +166,8 @@ class NewPlatformCapability(BaseCapability):
             ...
         ]
     
-    def _get_campaign_tool_sequence(self):
-        return ["new_create_campaign", "new_create_ad_group", ...]
+    # ToolDefinition 自描述 action/resource_type/parent_resource_type，
+    # 不需要修改中心 Router
 
 # 3. 注册到 Runtime
 runtime.register_capability(NewPlatformCapability(api_client))

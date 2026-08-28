@@ -181,6 +181,7 @@ def test_live_write_without_provider_client_fails_closed():
     runtime = AgentRuntime(
         whitelist_validator=_whitelist(tiktok=["t1"]),
         execution_mode="live",
+        allow_live_writes=True,
         live_approved_tools={"tiktok_create_adgroup"},
     )
     runtime.register_capability(create_tiktok_capability())
@@ -266,10 +267,12 @@ def test_live_confirmation_requires_payload_even_for_direct_runtime_call():
         persistence_store=AdAgentStore(":memory:"),
         whitelist_validator=_whitelist(meta=["m1"]),
         execution_mode="live",
+        allow_live_writes=True,
         live_approved_tools={"meta_update_campaign"},
         granted_permissions={"ads.read", "ads.plan", "ads.write"},
     )
     runtime.register_capability(create_meta_capability(Client()))
+    runtime.registry.get("meta_update_campaign")[0].live_support = True
     result = runtime.run(
         "更新 Meta campaign campaign_id=123 status=PAUSED",
         session_id="s1", user_id="u1", account_id="m1", confirmed=True,
@@ -293,10 +296,12 @@ def test_live_write_without_write_guard_fails_closed():
     runtime = AgentRuntime(
         whitelist_validator=_whitelist(meta=["m1"]),
         execution_mode="live",
+        allow_live_writes=True,
         live_approved_tools={"meta_update_campaign"},
         granted_permissions={"ads.read", "ads.plan", "ads.write"},
     )
     runtime.register_capability(create_meta_capability(Client()))
+    runtime.registry.get("meta_update_campaign")[0].live_support = True
     runtime.write_guard = None
     result = runtime.run(
         "更新 Meta campaign campaign_id=123 status=PAUSED",

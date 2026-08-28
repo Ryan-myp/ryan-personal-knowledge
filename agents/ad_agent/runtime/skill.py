@@ -2,7 +2,8 @@
 runtime/skill.py - Skill 加载与执行
 
 借鉴 DAP Agent internal/skill/loader.go
-每个平台 Skill 是一个独立的工具集合，从 SKILL.md + YAML 合约加载。
+每个平台 Skill 是一个独立的工具集合。SKILL.md 提供自然语言专家上下文；
+可执行 Tool 由 Capability/plugin 自注册并携带自己的结构化元数据。
 """
 
 import os
@@ -12,7 +13,8 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 from pathlib import Path
 from ..core.interfaces import (
-    ToolDefinition, ToolHandler, ToolSchema, Skill, ToolContext
+    ToolDefinition, ToolHandler, ToolSchema, Skill, ToolContext,
+    SkillWorkflow, SkillWorkflowStep,
 )
 
 
@@ -40,21 +42,10 @@ class SkillCapability:
     input_schema: dict[str, Any] = field(default_factory=dict)
     live_support: bool = True
     required_permissions: list[str] = field(default_factory=list)
-
-
-@dataclass
-class SkillWorkflow:
-    """Declarative orchestration owned by a Skill.
-
-    ``tools`` is used by a channel Skill.  ``platforms`` is used by a
-    cross-channel Skill.  Both forms remain data-only; Runtime still applies
-    authorization, approval, idempotency and persistence before execution.
-    """
-
-    name: str
-    tools: list[str] = field(default_factory=list)
-    platforms: dict[str, list[str]] = field(default_factory=dict)
-    description: str = ""
+    action: str = ""
+    resource_type: str = ""
+    parent_resource_type: Optional[str] = None
+    intent_types: list[str] = field(default_factory=list)
 
 
 class SkillContract:
@@ -151,13 +142,14 @@ class SkillContract:
                         patterns=[key]
                     ))
 
-            self._load_workflows(fm_yaml.get("workflows", {}))
-        
+            # SKILL.md is intentionally natural-language guidance plus
+            # identity metadata. It is not an executable routing DSL.
+
         # 从 markdown 正文提取能力声明
         self._extract_capabilities_from_md(content)
 
     def _load_workflows(self, workflows: Any) -> None:
-        """Load workflow declarations from SKILL.md frontmatter."""
+        """Load workflow declarations from a dedicated workflow contract."""
         if not isinstance(workflows, dict):
             return
         for name, raw in workflows.items():
@@ -165,34 +157,88 @@ class SkillContract:
                 raw = {"tools": raw}
             if not isinstance(raw, dict):
                 continue
-            tools = raw.get("tools", raw.get("steps", []))
-            if not isinstance(tools, list):
-                tools = []
-            normalized_tools: list[str] = []
-            for item in tools:
-                if isinstance(item, str):
-                    normalized_tools.append(item)
-                elif isinstance(item, dict) and item.get("tool"):
-                    normalized_tools.append(str(item["tool"]))
-            platforms: dict[str, list[str]] = {}
+            raw_steps = raw.get("steps")
+            if raw_steps is None:
+                raw_steps = raw.get("tools", [])
+            if not isinstance(raw_steps, list):
+                raw_steps = []
+            steps = self._parse_workflow_steps(raw_steps, self.platform or None)
             raw_platforms = raw.get("platforms", {})
             if isinstance(raw_platforms, dict):
                 for platform, names in raw_platforms.items():
                     if isinstance(names, str):
                         names = [names]
                     if isinstance(names, list):
-                        platforms[str(platform)] = [
-                            str(item.get("tool")) if isinstance(item, dict) and item.get("tool")
-                            else str(item)
-                            for item in names
-                            if isinstance(item, (str, dict)) and (not isinstance(item, dict) or item.get("tool"))
-                        ]
+                        steps.extend(self._parse_workflow_steps(names, str(platform)))
             self.workflows[str(name)] = SkillWorkflow(
                 name=str(name),
-                tools=normalized_tools,
-                platforms=platforms,
+                steps=tuple(steps),
                 description=str(raw.get("description", "")),
             )
+
+    def _load_workflow_file(self, skill_md_path: str) -> None:
+        """Load an optional special-case DAG beside ``SKILL.md``.
+
+        This is not part of normal Tool discovery. A Skill without this file
+        is the normal case and is driven by its natural-language SOP and
+        registered self-described Tools.
+        """
+        skill_dir = Path(skill_md_path).parent
+        for filename in ("workflow.yaml", "workflows.yaml"):
+            workflow_path = skill_dir / filename
+            if not workflow_path.exists():
+                continue
+            try:
+                with workflow_path.open("r", encoding="utf-8") as file:
+                    raw = yaml.safe_load(file) or {}
+            except (OSError, yaml.YAMLError) as exc:
+                raise ValueError(f"Invalid Skill workflow contract {workflow_path}: {exc}") from exc
+            if isinstance(raw, dict) and isinstance(raw.get("workflows"), dict):
+                raw = raw["workflows"]
+            self.workflows = {}
+            self._load_workflows(raw)
+            return
+
+    @staticmethod
+    def _parse_workflow_steps(raw_steps: list[Any], platform: Optional[str]) -> list[SkillWorkflowStep]:
+        parsed: list[SkillWorkflowStep] = []
+        for index, item in enumerate(raw_steps):
+            if isinstance(item, str):
+                tool_name = item
+                spec: dict[str, Any] = {}
+            elif isinstance(item, dict) and item.get("tool"):
+                tool_name = str(item["tool"])
+                spec = item
+            else:
+                continue
+            default_prefix = platform or "step"
+            step_id = str(
+                spec.get("id") or f"{default_prefix}_step_{len(parsed) + 1}"
+            )
+            depends_on = spec.get("depends_on", spec.get("after", [])) or []
+            if isinstance(depends_on, str):
+                depends_on = [depends_on]
+            required_inputs = spec.get("required_inputs", spec.get("requires", [])) or []
+            if isinstance(required_inputs, str):
+                required_inputs = [required_inputs]
+            when = spec.get("when", {}) or {}
+            input_mapping = spec.get("input_mapping", spec.get("input_map", {})) or {}
+            output_mapping = spec.get("output_mapping", spec.get("output_map", {})) or {}
+            parsed.append(SkillWorkflowStep(
+                id=step_id,
+                tool=tool_name,
+                platform=str(spec.get("platform") or platform or "") or None,
+                depends_on=tuple(str(value) for value in depends_on),
+                when=dict(when) if isinstance(when, dict) else {},
+                required_inputs=tuple(str(value) for value in required_inputs),
+                input_mapping={str(key): str(value) for key, value in input_mapping.items()}
+                if isinstance(input_mapping, dict) else {},
+                output_mapping={str(key): str(value) for key, value in output_mapping.items()}
+                if isinstance(output_mapping, dict) else {},
+                on_error=str(spec.get("on_error", "stop")),
+                requires_confirmation=bool(spec.get("requires_confirmation", spec.get("confirmation", False))),
+            ))
+        return parsed
     
     def _extract_capabilities_from_md(self, content: str) -> None:
         """从 Markdown 正文提取 tool 能力声明"""
@@ -299,6 +345,10 @@ class SkillContract:
                 input_schema=spec.get('input_schema', {}) or {},
                 live_support=bool(spec.get('live_support', True)),
                 required_permissions=list(spec.get('required_permissions', []) or []),
+                action=str(spec.get('action', '') or ''),
+                resource_type=str(spec.get('resource_type', '') or ''),
+                parent_resource_type=spec.get('parent_resource_type'),
+                intent_types=list(spec.get('intent_types', []) or []),
             )
     
     def _load_tools_from_directory(self, tools_dir: str) -> None:
@@ -333,6 +383,10 @@ class SkillContract:
                     input_schema=schema,
                     live_support=bool(spec.get('live_support', True)),
                     required_permissions=list(spec.get('required_permissions', []) or []),
+                    action=str(spec.get('action', '') or ''),
+                    resource_type=str(spec.get('resource_type', '') or ''),
+                    parent_resource_type=spec.get('parent_resource_type'),
+                    intent_types=list(spec.get('intent_types', []) or []),
                 )
 
 
@@ -412,6 +466,10 @@ class BaseSkill(Skill):
                 effect_class=self._parse_effect(cap.effect),
                 live_support=cap.live_support,
                 required_permissions=list(cap.required_permissions),
+                action=cap.action,
+                resource_type=cap.resource_type,
+                parent_resource_type=cap.parent_resource_type,
+                intent_types=list(cap.intent_types),
             ))
         return tools
     
@@ -419,18 +477,18 @@ class BaseSkill(Skill):
         """返回指定工具的执行器"""
         return self._handlers.get(tool_name)
 
+    def get_workflows(self) -> dict[str, SkillWorkflow]:
+        return dict(self._contract.workflows)
+
     def get_workflow_mappings(self) -> dict[str, dict[str, list[str]]]:
         """Expose only the Skill's declarative orchestration plan."""
         result: dict[str, dict[str, list[str]]] = {}
         for name, workflow in self._contract.workflows.items():
-            if workflow.platforms:
-                result[name] = {
-                    platform: list(tool_names)
-                    for platform, tool_names in workflow.platforms.items()
-                    if tool_names
-                }
-            elif workflow.tools and self.platform:
-                result[name] = {self.platform: list(workflow.tools)}
+            mapping = workflow.tool_mapping()
+            if "" in mapping and self.platform:
+                mapping = {self.platform: list(mapping[""])}
+            if mapping:
+                result[name] = mapping
         return result
     
     def _build_properties(self, tool_name: str) -> dict[str, Any]:

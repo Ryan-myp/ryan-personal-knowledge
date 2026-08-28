@@ -69,12 +69,22 @@ class PersistenceBackend(Protocol):
         tool_name: str, status: str, input_data: dict,
         output_data: Optional[dict] = None, error: Optional[str] = None,
         compensation_required: bool = False,
+        resource_type: Optional[str] = None,
+        parent_sequence: Optional[int] = None,
+        parent_resource_id: Optional[str] = None,
+        provider_resource_id: Optional[str] = None,
+        logical_resource_id: Optional[str] = None,
     ) -> None: ...
     def get_workflow(self, workflow_id: str) -> Optional[dict]: ...
     def update_workflow_item(
         self, workflow_id: str, sequence: int, status: str,
         output_data: Optional[dict] = None, error: Optional[str] = None,
         compensation_required: Optional[bool] = None,
+        resource_type: Optional[str] = None,
+        parent_sequence: Optional[int] = None,
+        parent_resource_id: Optional[str] = None,
+        provider_resource_id: Optional[str] = None,
+        logical_resource_id: Optional[str] = None,
     ) -> bool: ...
     def mark_workflow_items_for_compensation(
         self, workflow_id: str, sequences: list[int],

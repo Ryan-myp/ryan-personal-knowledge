@@ -121,10 +121,12 @@ def test_confirmation_payload_is_bound_to_the_exact_plan():
     runtime = AgentRuntime(
         whitelist_validator=whitelist(meta=["m1"]),
         execution_mode=ExecutionMode.LIVE.value,
+        allow_live_writes=True,
         live_approved_tools={"meta_update_campaign"},
         granted_permissions={"ads.read", "ads.plan", "ads.write"},
     )
     runtime.register_capability(create_meta_capability(client))
+    runtime.registry.get("meta_update_campaign")[0].live_support = True
     planned = runtime.run(
         "更新 Meta campaign campaign_id=123 status=PAUSED",
         session_id="confirm-session",
@@ -160,6 +162,7 @@ def test_live_cross_channel_batch_is_explicitly_unsupported():
     runtime = AgentRuntime(
         whitelist_validator=whitelist(meta=["m1"]),
         execution_mode=ExecutionMode.LIVE.value,
+        allow_live_writes=True,
         granted_permissions={"ads.read", "ads.plan", "ads.write"},
     )
     runtime.register_capability(create_meta_capability())
@@ -427,6 +430,7 @@ def test_live_dynamic_parameter_rejects_unattested_raw_value():
     runtime = AgentRuntime(
         whitelist_validator=validator,
         execution_mode=ExecutionMode.LIVE.value,
+        allow_live_writes=True,
         selection_token_secret="selection-secret-1234",
     )
     runtime.register_capability(create_tiktok_capability())
@@ -622,10 +626,12 @@ def test_write_reservation_survives_runtime_restart():
         persistence_store=store,
         whitelist_validator=whitelist(meta=["m1"]),
         execution_mode=ExecutionMode.LIVE.value,
+        allow_live_writes=True,
         live_approved_tools={"meta_update_campaign"},
         granted_permissions={"ads.read", "ads.plan", "ads.write"},
     )
     first_runtime.register_capability(create_meta_capability(first_client))
+    first_runtime.registry.get("meta_update_campaign")[0].live_support = True
     planned = first_runtime.run(
         "更新 Meta campaign campaign_id=123 status=PAUSED",
         session_id="persistent-confirm",
@@ -648,10 +654,12 @@ def test_write_reservation_survives_runtime_restart():
         persistence_store=store,
         whitelist_validator=whitelist(meta=["m1"]),
         execution_mode=ExecutionMode.LIVE.value,
+        allow_live_writes=True,
         live_approved_tools={"meta_update_campaign"},
         granted_permissions={"ads.read", "ads.plan", "ads.write"},
     )
     second_runtime.register_capability(create_meta_capability(second_client))
+    second_runtime.registry.get("meta_update_campaign")[0].live_support = True
     duplicate = second_runtime.run(
         "更新 Meta campaign campaign_id=123 status=PAUSED",
         session_id="persistent-confirm",
@@ -675,10 +683,12 @@ def test_uncertain_live_write_keeps_reservation_for_recovery():
         persistence_store=store,
         whitelist_validator=whitelist(meta=["m1"]),
         execution_mode=ExecutionMode.LIVE.value,
+        allow_live_writes=True,
         live_approved_tools={"meta_update_campaign"},
         granted_permissions={"ads.read", "ads.plan", "ads.write"},
     )
     first_runtime.register_capability(create_meta_capability(first_client))
+    first_runtime.registry.get("meta_update_campaign")[0].live_support = True
 
     planned = first_runtime.run(
         "更新 Meta campaign campaign_id=123 status=PAUSED",
@@ -709,10 +719,12 @@ def test_uncertain_live_write_keeps_reservation_for_recovery():
         persistence_store=store,
         whitelist_validator=whitelist(meta=["m1"]),
         execution_mode=ExecutionMode.LIVE.value,
+        allow_live_writes=True,
         live_approved_tools={"meta_update_campaign"},
         granted_permissions={"ads.read", "ads.plan", "ads.write"},
     )
     second_runtime.register_capability(create_meta_capability(second_client))
+    second_runtime.registry.get("meta_update_campaign")[0].live_support = True
     retry = second_runtime.run(
         "更新 Meta campaign campaign_id=123 status=PAUSED",
         session_id="uncertain-write",

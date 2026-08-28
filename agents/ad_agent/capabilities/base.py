@@ -52,8 +52,11 @@ class BaseCapability(CapabilityModule, ABC):
     
     子类只需实现：
     1. platform_name: 平台名称（meta/google/tiktok/dv360）
-    2. register_tools(): 注册该平台的工具
-    3. get_intent_mappings(): 返回 intent_type → [tool_names] 映射
+    2. register_tools(): 注册该平台的原子工具
+
+    Skill 以自然语言提供业务流程和跨渠道 SOP；Capability 只注册原子 Tool
+    及其参数/Provider 适配。标准编排由 Runtime 根据 Tool 元数据发现，
+    Capability 不维护中心意图路由或 workflow 配置。
     
     不实现的部分由基类提供默认行为。
     """

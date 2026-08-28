@@ -209,7 +209,6 @@ skills/channels/<skill-name>/
 class MySkill(Skill):
     name = "my-skill"
     platform = "meta"  # 也可以是新的、受控配置的平台名
-    intent_to_tools = {"my_intent": {"meta": ["my_tool"]}}
 
     def get_tools(self):
         return [my_tool_definition]
@@ -220,6 +219,11 @@ class MySkill(Skill):
 def create_skill(api_client=None):
     return MySkill()
 ```
+
+`SKILL.md` 保持自然语言，用于专家知识、SOP 和安全边界。标准操作由
+ToolDefinition 的 `action`、`resource_type`、`parent_resource_type` 自动发现；
+非标准操作在 ToolDefinition 上声明 `intent_types=["my_intent"]`。新增 Tool
+或渠道不需要编辑中心 Router/workflow 配置文件。
 
 Runtime 自动加载 plugin 后，工具仍由统一 Registry 执行；不能因为在 `SKILL.md`
 中列出工具，就绕过 Handler、schema、白名单或 dry-run/live 安全门禁。

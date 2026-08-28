@@ -639,6 +639,7 @@ class TestSafeWriteExecution:
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
             execution_mode=mode,
+            allow_live_writes=(mode == ExecutionMode.LIVE.value),
             granted_permissions={"ads.read", "ads.plan", "ads.write"}
             if mode == ExecutionMode.LIVE.value else None,
         )
@@ -650,6 +651,11 @@ class TestSafeWriteExecution:
         }[platform]
         rt.register_capability(factory())
         if mode == ExecutionMode.LIVE.value:
+            # Explicit test fixture: production write adapters stay disabled
+            # until each provider path is separately verified.
+            for tool in rt.registry.list_all():
+                if tool.is_write_tool:
+                    tool.live_support = True
             # Live execution is an explicit code-side approval.  The fixture
             # opts in only to adapters declared as live-capable.
             rt._live_approved_tools = {
@@ -1625,6 +1631,7 @@ class TestIterationContracts:
             whitelist_validator=validator,
             execution_mode=ExecutionMode.LIVE.value,
             live_approved_tools={"google_update_campaign"},
+            allow_live_writes=True,
             granted_permissions={"ads.read", "ads.plan", "ads.write"},
         )
         from agents.ad_agent.capabilities.google import create_google_capability
@@ -1652,10 +1659,12 @@ class TestIterationContracts:
             whitelist_validator=validator,
             execution_mode=ExecutionMode.LIVE.value,
             live_approved_tools={"google_update_campaign"},
+            allow_live_writes=True,
             granted_permissions={"ads.read", "ads.plan", "ads.write"},
         )
         from agents.ad_agent.capabilities.google import create_google_capability
         rt.register_capability(create_google_capability(GoogleClient()))
+        rt.registry.get("google_update_campaign")[0].live_support = True
         planned = rt.run(
             "更新 Google campaign campaign_id=123 status=PAUSED",
             session_id="google-alias-session", user_id="u1", account_id="g1",

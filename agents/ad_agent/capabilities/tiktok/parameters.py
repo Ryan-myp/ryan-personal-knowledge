@@ -34,6 +34,7 @@ TIKTOK_AGE_GROUPS = [
 ]
 TIKTOK_GENDERS = ["GENDER_UNLIMITED", "GENDER_MALE", "GENDER_FEMALE"]
 TIKTOK_OPERATING_SYSTEMS = ["ANDROID", "IOS"]
+TIKTOK_AD_FORMATS = ["SINGLE_VIDEO", "SINGLE_IMAGE", "CAROUSEL", "SPARK_AD"]
 
 
 def _field(
@@ -131,6 +132,13 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
             "bid_type": _field("string", "Bid mode", enum=TIKTOK_BID_TYPES),
             "bid_amount": _field("number", "Manual bid amount", minimum=0),
             "deep_bid_type": _field("string", "Deep optimization goal", enum=TIKTOK_DEEP_BID_TYPES),
+            "conversion_id": _field(
+                "integer", "Conversion event ID returned by TikTok lookup",
+                minimum=0, lookup_tool="tiktok_list_conversions",
+                lookup_result_key="conversions",
+                selection_value_fields=["conversion_id", "id"],
+                selection_label_fields=["conversion_name", "name", "event_name"],
+            ),
             "placement_type": _field("string", "Placement mode", enum=TIKTOK_PLACEMENT_TYPES),
             "budget_mode": _field("string", "Ad group budget mode", enum=TIKTOK_BUDGET_MODES[:3]),
             "budget": _field("number", "Budget in user currency; current knowledge base minimum is 50 USD", minimum=50),
@@ -153,9 +161,6 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
             "targeting": _field(
                 "object", "Provider targeting object; use structured fields above for known dimensions",
             ),
-            # Kept for compatibility with the current client; symbolic fields
-            # above are the preferred contract for new callers.
-            "promote_object_type": _field("integer", "Legacy promotion type: 0 app, 1 website", enum=[0, 1]),
             "tracking_url": _field("string", "Tracking URL"),
             "status": _field("integer", "Ad group status: 1 active, 0 paused", enum=[0, 1]),
         },
@@ -200,6 +205,7 @@ def tiktok_ad_schema() -> dict[str, Any]:
             "name": _field("string", "Ad name"),
             "landing_page_url": _field("string", "Landing page URL"),
             "conversion_id": _field("integer", "Conversion event ID", minimum=0),
+            "ad_format": _field("string", "Ad format", enum=TIKTOK_AD_FORMATS),
             "media": _field("object", "TikTok media asset payload"),
             "creatives": _field("array", "Creative list", items={"type": "object"}),
             "text": _field("object", "Ad copy payload"),

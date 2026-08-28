@@ -17,6 +17,9 @@ allowed_accounts:
 # live 还必须由 AD_AGENT_ENABLE_LIVE=1 显式解锁，并命中下方工具白名单。
 execution_mode: dry_run
 read_only_mode: false
+# Second, deployment-level fuse for provider mutations. Keep false until a
+# manually selected test-account run is approved.
+allow_live_writes: false
 live_approved_tools: []
 
 # Runtime permission baseline.  ads.write must be added explicitly together

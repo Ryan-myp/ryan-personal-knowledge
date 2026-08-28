@@ -95,6 +95,7 @@ class TikTokCapability(BaseCapability):
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "campaign"],
+            live_support=False,
         ), TikTokCreateCampaignHandler(api_client)))
 
         # List Ad Groups
@@ -140,6 +141,7 @@ class TikTokCapability(BaseCapability):
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "adgroup"],
+            live_support=False,
         ), TikTokCreateAdGroupHandler(api_client)))
 
         # List Ads
@@ -185,6 +187,7 @@ class TikTokCapability(BaseCapability):
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "ad"],
+            live_support=False,
         ), TikTokCreateAdHandler(api_client)))
 
         # Get Report
@@ -239,6 +242,7 @@ class TikTokCapability(BaseCapability):
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "spark", "ad"],
+            live_support=False,
         ), TikTokSparkAdsCreateHandler(api_client)))
 
         for resource_name, result_key, handler in [
@@ -312,7 +316,7 @@ class TikTokCapability(BaseCapability):
                 effect_class=ToolEffect.WRITE,
                 replay_policy=ReplayPolicy.UNSAFE,
                 traits=["write", resource_type],
-                live_support=(resource_type in ("campaign", "adgroup")),
+                live_support=False,
             ), CampaignUpdateHandler(api_client, resource_type)))
 
         return tools

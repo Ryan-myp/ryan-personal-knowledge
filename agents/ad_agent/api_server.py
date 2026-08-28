@@ -187,6 +187,14 @@ def _init_runtime():
             read_only_mode=read_only_mode,
             execution_mode=execution_mode,
             live_approved_tools=set(config.get("live_approved_tools", []) or []),
+            # A config allowlist is not enough to enable mutations.  Both the
+            # checked-in switch and the deployment environment must opt in;
+            # this remains false until an operator explicitly selects the
+            # approved test account workflow.
+            allow_live_writes=(
+                bool(config.get("allow_live_writes", False))
+                and os.environ.get("AD_AGENT_ENABLE_LIVE") == "1"
+            ),
             granted_permissions=set(
                 config.get("granted_permissions", ["ads.read", "ads.plan"]) or []
             ),
@@ -376,6 +384,10 @@ async def get_tools(
                 "platform": t.platform,
                 "skill": t.skill,
                 "description": t.description,
+                "action": t.action,
+                "resource_type": t.resource_type,
+                "parent_resource_type": t.parent_resource_type,
+                "intent_types": list(t.intent_types),
                 "risk_level": t.risk_level.value,
                 "effect_class": t.effect_class.value,
                 "replay_policy": t.replay_policy.value,

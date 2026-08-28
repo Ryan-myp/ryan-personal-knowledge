@@ -20,6 +20,7 @@ from .reports import DV360GetLineItemReportHandler
 from .advertisers import DV360ListAdvertisersHandler
 from ...api_clients.dv360_client import DV360APIClient
 from ..update_contracts import dv360_updates
+from .parameters import dv360_campaign_schema, dv360_io_schema, dv360_line_item_schema
 
 logger = logging.getLogger(__name__)
 
@@ -71,17 +72,7 @@ class DV360Capability(BaseCapability):
             skill="dv360-api",
             platform="dv360",
             description="创建 DV360 Campaign。",
-            input_schema=ToolSchema(
-                required=["advertiser_id", "name"],
-                properties={
-                    "advertiser_id": {"type": "string"},
-                    "name": {"type": "string"},
-                    "campaign_type": {"type": "string"},
-                    "objective": {"type": "string"},
-                    "start_date": {"type": "string"},
-                    "end_date": {"type": "string"},
-                },
-            ),
+            input_schema=ToolSchema(**dv360_campaign_schema()),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
@@ -141,22 +132,12 @@ class DV360Capability(BaseCapability):
             skill="dv360-api",
             platform="dv360",
             description="创建 DV360 IO（Order & Invoice）。",
-            input_schema=ToolSchema(
-                required=["advertiser_id", "name"],
-                properties={
-                    "advertiser_id": {"type": "string"},
-                    "name": {"type": "string"},
-                    "budget": {"type": "number"},
-                    "spend_cap_micros": {"type": "integer"},
-                    "start_date": {"type": "string"},
-                    "end_date": {"type": "string"},
-                    "status": {"type": "string", "enum": ["DRAFT", "ACTIVE", "PAUSED"]},
-                },
-            ),
+            input_schema=ToolSchema(**dv360_io_schema()),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "io"],
+            live_support=False,
         ), DV360CreateIOHandler(api_client)))
 
         # Create Line Item
@@ -165,24 +146,12 @@ class DV360Capability(BaseCapability):
             skill="dv360-api",
             platform="dv360",
             description="创建 DV360 Line Item。",
-            input_schema=ToolSchema(
-                required=["io_id", "name"],
-                properties={
-                    "io_id": {"type": "string"},
-                    "name": {"type": "string"},
-                    "type": {"type": "string"},
-                    "goal": {"type": "object"},
-                    "targeting": {"type": "object"},
-                    "budget": {"type": "number"},
-                    "start_date": {"type": "string"},
-                    "end_date": {"type": "string"},
-                    "status": {"type": "string"},
-                },
-            ),
+            input_schema=ToolSchema(**dv360_line_item_schema()),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "line_item"],
+            live_support=False,
         ), DV360CreateLineItemHandler(api_client)))
 
         tools.append((ToolDefinition(

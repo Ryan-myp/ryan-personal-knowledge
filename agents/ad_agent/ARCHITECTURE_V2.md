@@ -91,32 +91,19 @@ class SimpleIntentParser:
             return "list_campaigns"
 ```
 
-### 2. IntentRouter (意图路由器)
+### 2. IntentRouter (发现式意图路由器)
 ```python
 # 位置: core/intent.py
 class SimpleIntentRouter:
-    """根据意图类型路由到对应工具"""
-    
-    DEFAULT_INTENT_TOOLS = {
-        "create_campaign": {
-            "meta": ["meta_create_campaign", "meta_create_ad_set", "meta_create_ad"],
-            "google": ["google_create_campaign", "google_create_ad_group", "google_create_ad"],
-            "tiktok": ["tiktok_create_campaign", "tiktok_create_ad_group", "tiktok_create_ad"],
-            "dv360": ["dv360_create_campaign", "dv360_create_io", "dv360_create_line_item"],
-        },
-        "download_report": {
-            "meta": ["meta_get_campaign_report"],
-            "google": ["google_get_campaign_report"],
-            "tiktok": ["tiktok_get_campaign_report"],
-            "dv360": ["dv360_get_line_item_report"],
-        },
-        "list_campaigns": {
-            "meta": ["meta_list_campaigns"],
-            "google": ["google_list_campaigns"],
-            "tiktok": ["tiktok_list_campaigns"],
-        }
-    }
+    """按 ToolDefinition 的 action/resource_type/intent_types 发现工具"""
 ```
+
+`SKILL.md` 只提供自然语言专家知识、SOP、适用边界和安全注意事项，
+不承担可执行 DSL。Capability/plugin 注册可执行 Tool，并在
+`ToolDefinition` 中声明 `action`、`resource_type`、`parent_resource_type`
+及可选 `intent_types`。Runtime 根据父子资源层级排序创建链，并统一执行
+权限、账户、dry-run、审批、幂等与恢复。严格 DAG 只作为特殊扩展点，不是
+每个 Skill 的必填配置。
 
 ### 3. ToolRegistry (工具注册中心)
 ```python

@@ -23,6 +23,10 @@ from .assets import (
 )
 from .reports import GoogleGetReportHandler
 from .keywords import GoogleListKeywordsHandler
+from .parameters import (
+    google_campaign_schema, google_ad_group_schema, google_ad_schema,
+    google_asset_group_schema,
+)
 from ...api_clients.google_ads_client import GoogleAdsAPIClient
 from ..update_contracts import google_updates
 
@@ -76,47 +80,12 @@ class GoogleCapability(BaseCapability):
             skill="google-ads-api-expert",
             platform="google-ads",
             description="创建 Google Ads Campaign。",
-            input_schema=ToolSchema(
-                required=["customer_id", "campaign_name"],
-                provider_required=["advertising_channel_type", "bidding_strategy"],
-                provider_any_of=[["budget", "daily_budget"]],
-                conditional_rules=[
-                    {
-                        "if": {"bidding_strategy": "TARGET_CPA"},
-                        "required": ["target_cpa_micros"],
-                        "message": "TARGET_CPA requires target_cpa_micros",
-                    },
-                    {
-                        "if": {"bidding_strategy": "TARGET_ROAS"},
-                        "required": ["target_roas"],
-                        "message": "TARGET_ROAS requires target_roas",
-                    },
-                ],
-                properties={
-                    "customer_id": {"type": "string"},
-                    "campaign_name": {"type": "string"},
-                    "advertising_channel_type": {"type": "string", "enum": [
-                        "SEARCH", "DISPLAY", "SHOPPING", "VIDEO", "APP",
-                        "PERFORMANCE_MAX",
-                    ]},
-                    "campaign_type": {"type": "string", "enum": [
-                        "SEARCH", "DISPLAY", "SHOPPING", "VIDEO", "APP", "PERFORMANCE_MAX",
-                    ]},
-                    "bidding_strategy": {"type": "string", "enum": [
-                        "MANUAL_CPC", "TARGET_CPA", "MAXIMIZE_CONVERSIONS", "TARGET_ROAS",
-                    ]},
-                    "budget": {"type": "number"},
-                    "status": {"type": "string", "enum": ["ENABLED", "PAUSED", "REMOVED"]},
-                    "target_cpa_micros": {"type": "integer"},
-                    "target_roas": {"type": "number"},
-                    "start_date": {"type": "string"},
-                    "end_date": {"type": "string"},
-                },
-            ),
+            input_schema=ToolSchema(**google_campaign_schema()),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "campaign"],
+            live_support=False,
         ), GoogleCreateCampaignHandler(api_client)))
 
         # List Ad Groups
@@ -157,22 +126,12 @@ class GoogleCapability(BaseCapability):
             skill="google-ads-api-expert",
             platform="google-ads",
             description="创建 Google Ads Ad Group。",
-            input_schema=ToolSchema(
-                required=["campaign_id", "name"],
-                properties={
-                    "campaign_id": {"type": "string"},
-                    "name": {"type": "string"},
-                    "cpc_bid": {"type": "number"},
-                    "status": {"type": "string", "enum": ["ENABLED", "PAUSED", "REMOVED"]},
-                    "type": {"type": "string", "enum": [
-                        "SEARCH_STANDARD", "SEARCH_DYNAMIC_ADS", "DISPLAY_STANDARD",
-                    ]},
-                },
-            ),
+            input_schema=ToolSchema(**google_ad_group_schema()),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "ad_group"],
+            live_support=False,
         ), GoogleCreateAdGroupHandler(api_client)))
 
         # List Ads
@@ -213,24 +172,12 @@ class GoogleCapability(BaseCapability):
             skill="google-ads-api-expert",
             platform="google-ads",
             description="创建 Google Ads Ad。",
-            input_schema=ToolSchema(
-                required=["ad_group_id", "name"],
-                provider_required=["final_url"],
-                properties={
-                    "ad_group_id": {"type": "string"},
-                    "name": {"type": "string"},
-                    "headlines": {"type": "array", "items": {"type": "string"}},
-                    "descriptions": {"type": "array", "items": {"type": "string"}},
-                    "final_url": {"type": "string"},
-                    "path1": {"type": "string"},
-                    "path2": {"type": "string"},
-                    "status": {"type": "string"},
-                },
-            ),
+            input_schema=ToolSchema(**google_ad_schema()),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "ad"],
+            live_support=False,
         ), GoogleCreateAdHandler(api_client)))
 
         # List Asset Groups (PMax)
@@ -270,17 +217,7 @@ class GoogleCapability(BaseCapability):
             skill="google-ads-api-expert",
             platform="google-ads",
             description="创建 Google PMax Asset Group；当前仅支持 dry-run 计划。",
-            input_schema=ToolSchema(
-                required=["campaign_id", "name"],
-                properties={
-                    "campaign_id": {"type": "string"},
-                    "name": {"type": "string"},
-                    "headlines": {"type": "array"},
-                    "descriptions": {"type": "array"},
-                    "images": {"type": "array"},
-                    "videos": {"type": "array"},
-                },
-            ),
+            input_schema=ToolSchema(**google_asset_group_schema()),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
@@ -349,7 +286,7 @@ class GoogleCapability(BaseCapability):
                 effect_class=ToolEffect.WRITE,
                 replay_policy=ReplayPolicy.UNSAFE,
                 traits=["write", resource_type],
-                live_support=(resource_type == "campaign"),
+                live_support=False,
             ), CampaignUpdateHandler(api_client, resource_type)))
 
         return tools

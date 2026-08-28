@@ -8,6 +8,7 @@ core/interfaces.py - 核心接口定义
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
+import re
 from typing import Any, Callable, Mapping, Optional
 
 
@@ -88,6 +89,15 @@ class ToolDefinition:
     platform: str                          # 所属平台（meta/google/tiktok/dv360）
     description: str                       # 工具描述（给 LLM 使用）
     input_schema: ToolSchema               # 输入参数 Schema
+    # Self-description used by the planner.  A Tool declares what it acts on;
+    # the Runtime can then discover the right Tool without a central
+    # intent->tool table.  The defaults intentionally support existing Tools:
+    # ``__post_init__`` derives metadata from the conventional tool name and
+    # traits when a provider has not filled it explicitly.
+    action: str = ""
+    resource_type: str = ""
+    parent_resource_type: Optional[str] = None
+    intent_types: list[str] = field(default_factory=list)
     risk_level: RiskLevel = RiskLevel.LOW  # 风险等级
     effect_class: ToolEffect = ToolEffect.READ  # 效果分类
     replay_policy: ReplayPolicy = ReplayPolicy.SAFE  # 重放策略
@@ -108,6 +118,138 @@ class ToolDefinition:
             raise ValueError("timeout_seconds must be positive")
         if self.max_output_bytes <= 0:
             raise ValueError("max_output_bytes must be positive")
+        self.action, self.resource_type = self._derive_resource_metadata(
+            self.action, self.resource_type
+        )
+        if not self.parent_resource_type:
+            self.parent_resource_type = {
+                "ad_set": "campaign", "ad_group": "campaign", "io": "campaign",
+                "line_item": "io", "asset_group": "campaign",
+                "ad": "ad_set" if self.platform == "meta" else "ad_group",
+            }.get(self.resource_type)
+        if self.parent_resource_type:
+            self.parent_resource_type = self._normalize_resource(
+                self.parent_resource_type
+            )
+        self.intent_types = list(dict.fromkeys(str(item) for item in self.intent_types))
+        if not self.intent_types:
+            self.intent_types = self._derive_intents()
+
+    @staticmethod
+    def _normalize_resource(value: str) -> str:
+        normalized = re.sub(r"[^a-z0-9]+", "_", str(value or "").lower()).strip("_")
+        aliases = {
+            "adset": "ad_set", "ad_group": "ad_group", "adgroup": "ad_group",
+            "lineitem": "line_item", "assetgroup": "asset_group",
+            "audiences": "audience", "creatives": "creative",
+            "videos": "video", "images": "image", "locations": "location",
+            "devices": "device", "catalogs": "catalog",
+        }
+        return aliases.get(normalized, normalized)
+
+    def _derive_resource_metadata(self, action: str, resource: str) -> tuple[str, str]:
+        name = self.name.lower().replace("-", "_")
+        tokens = name.split("_")
+        known_actions = (
+            "create", "list", "get", "update", "delete", "pause", "resume",
+            "enable", "disable", "boost", "report", "export", "download",
+            "estimate", "validate", "auth", "track", "send", "run",
+        )
+        derived_action = str(action or "").lower()
+        if not derived_action and "spark" in tokens:
+            derived_action = "boost"
+        if not derived_action:
+            if "report" in tokens or name.endswith("_export_report") or name.endswith("_download_report"):
+                derived_action = "report"
+            elif name.endswith("_create"):
+                derived_action = "create"
+        if not derived_action:
+            for token in tokens:
+                if token in known_actions:
+                    derived_action = token
+                    break
+            if not derived_action and "spark" in tokens:
+                derived_action = "boost"
+        normalized_resource = self._normalize_resource(resource)
+        if not normalized_resource:
+            patterns = (
+                ("line_item", "line_item"), ("asset_group", "asset_group"),
+                ("ad_set", "ad_set"), ("adset", "ad_set"),
+                ("ad_group", "ad_group"), ("adgroup", "ad_group"),
+                ("campaign", "campaign"), ("creative", "creative"),
+                ("audience", "audience"), ("conversion", "conversion"),
+                ("keywords", "keyword"), ("keyword", "keyword"),
+                ("location", "location"), ("device", "device"),
+                ("catalog", "catalog"), ("app", "app"), ("video", "video"),
+                ("image", "image"), ("brand_safety", "brand_safety"),
+                ("post", "post"), ("flight", "flight"), ("io", "io"),
+                ("advertiser", "advertiser"), ("report", "report"),
+                ("ads", "ad"),
+            )
+            for marker, value in patterns:
+                if marker in name:
+                    normalized_resource = value
+                    break
+            if not normalized_resource:
+                for token in reversed(tokens):
+                    if token not in known_actions and token not in {"meta", "google", "ads", "tiktok", "dv360", "spark"}:
+                        normalized_resource = self._normalize_resource(token)
+                        break
+        return derived_action or "custom", normalized_resource or "resource"
+
+    def _derive_intents(self) -> list[str]:
+        action = self.action
+        resource = self.resource_type
+        if resource == "post" or action == "boost":
+            return ["boost_post"]
+        if action in {"report", "export", "download"} or resource == "report":
+            return ["download_report"]
+        if action == "create":
+            return {
+                "campaign": ["create_campaign"],
+                "ad_set": ["create_campaign"], "ad_group": ["create_campaign"],
+                "ad": ["create_campaign"], "io": ["create_campaign"],
+                "line_item": ["create_campaign"],
+                "asset_group": ["create_asset_group"],
+                "creative": ["create_creative"],
+            }.get(resource, [])
+        if action in {"pause", "disable"} and resource == "campaign":
+            return ["pause_campaign", "cross_channel_batch_pause"]
+        if action in {"resume", "enable"} and resource == "campaign":
+            return ["resume_campaign", "cross_channel_batch_resume"]
+        if action == "update":
+            return {
+                "campaign": ["update_campaign", "pause_campaign", "resume_campaign", "cross_channel_batch_pause", "cross_channel_batch_resume", "cross_channel_batch_update_budget"],
+                "ad_set": ["update_adset"], "ad_group": ["update_adgroup"],
+                "ad": ["update_ad"], "io": ["update_io"],
+                "line_item": ["update_line_item"],
+                "asset_group": ["update_asset_group"],
+            }.get(resource, [])
+        if action == "list":
+            return {
+                "campaign": ["list_campaigns", "cross_channel_overview", "cross_channel_compare", "cross_channel_performance_insights", "cross_channel_optimize_budget", "cross_channel_export_report"],
+                "ad_set": ["list_adsets", "list_adgroups"],
+                "ad_group": ["list_adgroups"], "ad": ["list_ads"],
+                "audience": ["list_audiences"], "io": ["list_ios"],
+                "line_item": ["list_line_items"], "asset_group": ["list_asset_groups"],
+                "creative": ["list_creatives"],
+                "video": ["list_videos"], "image": ["list_images"],
+                "keyword": ["list_keywords"], "conversion": ["list_conversions"],
+                "location": ["list_locations"], "device": ["list_devices"],
+                "catalog": ["list_catalogs"], "app": ["list_apps"],
+                "brand_safety": ["list_brand_safety"], "advertiser": ["list_advertisers"],
+            }.get(resource, [])
+        if action == "get":
+            return {
+                "campaign": ["get_campaign"], "io": ["get_io"],
+                "line_item": ["get_line_item"], "asset_group": ["get_asset_group"],
+                "ad_set": ["get_adset"], "ad_group": ["get_adgroup"],
+                "ad": ["get_ad"],
+            }.get(resource, [])
+        return []
+
+    def add_intents(self, intents: list[str] | tuple[str, ...] | set[str]) -> None:
+        self.intent_types = list(dict.fromkeys(self.intent_types + [str(item) for item in intents]))
 
     @property
     def is_write_tool(self) -> bool:
@@ -116,6 +258,19 @@ class ToolDefinition:
     @property
     def is_read_tool(self) -> bool:
         return self.effect_class == ToolEffect.READ
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name, "skill": self.skill, "platform": self.platform,
+            "description": self.description, "action": self.action,
+            "resource_type": self.resource_type,
+            "parent_resource_type": self.parent_resource_type,
+            "intent_types": list(self.intent_types), "risk_level": self.risk_level.value,
+            "effect_class": self.effect_class.value, "replay_policy": self.replay_policy.value,
+            "traits": list(self.traits), "live_support": self.live_support,
+            "required_permissions": list(self.required_permissions),
+            "input_schema": self.input_schema.to_dict() if self.input_schema else None,
+        }
 
 
 # ─── 执行结果 ───────────────────────────────────────────────────
@@ -163,6 +318,59 @@ class ToolResult:
             "error": self.error,
             "requires_confirmation": self.requires_confirmation,
             "card_payload": self.card_payload,
+            "simulated": self.simulated,
+        }
+
+
+RESOURCE_RESULT_STATUSES = frozenset({
+    "planned", "running", "succeeded", "failed", "skipped", "unknown",
+    "unsupported", "awaiting_confirmation",
+})
+
+
+@dataclass
+class ResourceResult:
+    """Uniform item-level result for campaign hierarchy operations.
+
+    Provider adapters may return different identifier shapes, but callers
+    should be able to consume one stable model for Campaign, Ad Set/Ad Group,
+    Ad, IO, Line Item, Creative and Asset Group operations.  ``logical`` and
+    ``local`` identifiers are safe planning identifiers; only
+    ``provider_resource_id`` represents a confirmed provider object.
+    """
+
+    sequence: int
+    platform: str
+    resource_type: str
+    tool_name: str
+    status: str
+    account_id: Optional[str] = None
+    parent_sequence: Optional[int] = None
+    parent_resource_id: Optional[str] = None
+    provider_resource_id: Optional[str] = None
+    logical_resource_id: Optional[str] = None
+    local_resource_id: Optional[str] = None
+    error: Optional[str] = None
+    simulated: bool = False
+
+    def __post_init__(self) -> None:
+        if self.status not in RESOURCE_RESULT_STATUSES:
+            raise ValueError(f"Unsupported resource result status: {self.status}")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "sequence": self.sequence,
+            "platform": self.platform,
+            "resource_type": self.resource_type,
+            "tool": self.tool_name,
+            "status": self.status,
+            "account_id": self.account_id,
+            "parent_sequence": self.parent_sequence,
+            "parent_resource_id": self.parent_resource_id,
+            "provider_resource_id": self.provider_resource_id,
+            "logical_resource_id": self.logical_resource_id,
+            "local_resource_id": self.local_resource_id,
+            "error": self.error,
             "simulated": self.simulated,
         }
 
@@ -334,14 +542,120 @@ class Skill(ABC):
         """返回指定工具的执行器"""
         raise NotImplementedError("Subclasses must implement 'get_tool_handler'")
 
-    def get_workflow_mappings(self) -> dict[str, dict[str, list[str]]]:
-        """Return Skill-owned workflow plans as intent -> platform -> tools.
-
-        A Skill owns orchestration policy, but the returned names are still
-        resolved through the Runtime registry before execution.  The default
-        keeps custom Skills focused on tools when they do not define a flow.
-        """
+    def get_workflows(self) -> dict[str, "SkillWorkflow"]:
+        """Optional special-case DAGs; normal routing does not require them."""
         return {}
+
+    def get_workflow_mappings(self) -> dict[str, dict[str, list[str]]]:
+        """Deprecated compatibility projection for external special cases."""
+        return {
+            name: workflow.tool_mapping()
+            for name, workflow in self.get_workflows().items()
+        }
+
+
+@dataclass(frozen=True)
+class SkillWorkflowStep:
+    """One declarative step in a Skill workflow.
+
+    A step names a Tool but never contains executable code.  ``when`` and
+    ``depends_on`` are deterministic data used by Runtime/Router to build a
+    bounded plan; authorization and side-effect policy remain Runtime-owned.
+    """
+
+    id: str
+    tool: str
+    platform: Optional[str] = None
+    depends_on: tuple[str, ...] = ()
+    when: Mapping[str, Any] = field(default_factory=dict)
+    required_inputs: tuple[str, ...] = ()
+    input_mapping: Mapping[str, str] = field(default_factory=dict)
+    output_mapping: Mapping[str, str] = field(default_factory=dict)
+    on_error: str = "stop"
+    requires_confirmation: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "tool": self.tool,
+            "platform": self.platform,
+            "depends_on": list(self.depends_on),
+            "when": dict(self.when),
+            "required_inputs": list(self.required_inputs),
+            "input_mapping": dict(self.input_mapping),
+            "output_mapping": dict(self.output_mapping),
+            "on_error": self.on_error,
+            "requires_confirmation": self.requires_confirmation,
+        }
+
+
+@dataclass(frozen=True)
+class SkillWorkflow:
+    """A Skill-owned, data-only orchestration contract."""
+
+    name: str
+    steps: tuple[SkillWorkflowStep, ...] = ()
+    description: str = ""
+
+    @property
+    def tools(self) -> list[str]:
+        """Compatibility-free convenience projection for UI/context code."""
+        return [step.tool for step in self.steps]
+
+    @property
+    def platforms(self) -> dict[str, list[str]]:
+        result: dict[str, list[str]] = {}
+        for step in self.steps:
+            if step.platform:
+                result.setdefault(step.platform, []).append(step.tool)
+        return result
+
+    def tool_mapping(self) -> dict[str, list[str]]:
+        if self.platforms:
+            return self.platforms
+        return {"": self.tools} if self.tools else {}
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "description": self.description,
+            "steps": [step.to_dict() for step in self.steps],
+        }
+
+    def validation_errors(self) -> list[str]:
+        """Validate deterministic workflow structure at Skill load time."""
+        errors: list[str] = []
+        step_ids = [step.id for step in self.steps]
+        seen: set[str] = set()
+        for step in self.steps:
+            if not step.tool:
+                errors.append(f"workflow {self.name}: step {step.id} has no tool")
+            if step.id in seen:
+                errors.append(f"workflow {self.name}: duplicate step id {step.id}")
+            seen.add(step.id)
+            if step.on_error not in {"stop", "continue", "skip_dependents"}:
+                errors.append(
+                    f"workflow {self.name}: step {step.id} has invalid on_error={step.on_error}"
+                )
+            for dependency in step.depends_on:
+                if dependency not in step_ids:
+                    errors.append(
+                        f"workflow {self.name}: step {step.id} depends on unknown step {dependency}"
+                    )
+
+        # A workflow must be a DAG; otherwise a recovery worker could never
+        # derive a deterministic next step.
+        remaining = {step.id: set(step.depends_on) for step in self.steps}
+        while remaining:
+            ready = {step_id for step_id, deps in remaining.items() if not deps}
+            if not ready:
+                errors.append(f"workflow {self.name}: step dependencies contain a cycle")
+                break
+            for step_id in ready:
+                remaining.pop(step_id, None)
+            for deps in remaining.values():
+                deps.difference_update(ready)
+        return errors
 
 
 class CapabilityModule(ABC):
@@ -360,8 +674,7 @@ class CapabilityModule(ABC):
         1. 读取业务依赖（如凭证、配置）
         2. 创建工具处理器
         3. 向注册表注册工具
-        4. 声明跨 Skill 路由规则
-        5. 返回 CapabilityRuntime
+        4. 返回 CapabilityRuntime 生命周期声明
         """
         pass
 
@@ -380,25 +693,14 @@ class CapabilityRuntime:
     """
     能力运行时声明 - 对应 Go 的 CapabilityRuntime
     
-    业务模块向 Runtime 提交的能力清单，包含：
-    - 自定义 Skill（跨平台编排能力）
-    - 意图路由规则
-    - 写入保护钩子
-    - 后台任务
+    业务模块向 Runtime 提交的能力生命周期声明。
+
+    流程和路由归 Skill 所有；Capability 只提供原子 Tool、Provider
+    schema/lookup 以及必要的运行时扩展点。
     """
-    # 跨平台编排 Skill（如 ad-campaign-orchestrator）
-    orchestrator_skills: list[Skill] = field(default_factory=list)
-    
-    # 意图 → 平台工具映射（供 IntentRouter 使用）
-    intent_to_tools: dict[str, dict[str, list[str]]] = field(default_factory=dict)
-    # 格式：{"create_campaign": {"meta": ["meta_create_campaign", ...], "google": [...]}}
-    
     # 写入前保护钩子（可选）
     write_guard: Optional["WriteGuard"] = None
-    
-    # 意图解析规则（可选，覆盖默认 LLM 解析）
-    intent_rules: Optional[dict] = None
-    
+
     # 后台任务（可选）
     background_tasks: list[dict] = field(default_factory=list)
 
@@ -406,6 +708,11 @@ class CapabilityRuntime:
     # a dynamic lookup descriptor without making the shared Runtime know a
     # provider's field names.
     parameter_catalogs: list[Any] = field(default_factory=list)
+
+    @property
+    def intent_to_tools(self) -> dict[str, dict[str, list[str]]]:
+        """Deprecated compatibility view; routing is Tool metadata based."""
+        return {}
 
 
 class WriteGuard(ABC):

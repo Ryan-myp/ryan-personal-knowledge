@@ -12,6 +12,7 @@ from .reports import MetaGetReportHandler
 from .audiences import MetaListAudiencesHandler
 from .boost import MetaBoostPostHandler
 from .creatives import MetaCreateCreativeHandler
+from .parameters import meta_campaign_schema, meta_adset_schema, meta_ad_schema
 from ...api_clients.meta_client import MetaAPIClient
 from ..update_contracts import meta_updates
 
@@ -65,41 +66,12 @@ class MetaCapability(BaseCapability):
             skill="meta-marketing-api",
             platform="meta",
             description="创建 Meta Campaign。",
-            input_schema=ToolSchema(
-                required=["account_id", "name"],
-                provider_required=["objective", "special_ad_categories"],
-                provider_any_of=[["budget", "daily_budget"]],
-                properties={
-                    "account_id": {"type": "string"},
-                    "name": {"type": "string"},
-                    "objective": {"type": "string", "enum": [
-                        "APP_INSTALLS", "PRODUCT_CATALOG_SALES", "CONVERSIONS",
-                        "TRAFFIC", "LINK_CLICKS", "OUTCOME_SALES",
-                        "OUTCOME_APP_PROMOTION", "OUTCOME_TRAFFIC",
-                        "OUTCOME_AWARENESS", "OUTCOME_LEADS", "OUTCOME_ENGAGEMENT",
-                    ], "intent_field": "objective", "intent_map": {
-                        "sales": "OUTCOME_SALES",
-                        "leads": "OUTCOME_LEADS",
-                        "traffic": "OUTCOME_TRAFFIC",
-                        "brand": "OUTCOME_AWARENESS",
-                    }},
-                    "budget": {"type": "number"},
-                    "daily_budget": {"type": "number"},
-                    "status": {"type": "string", "enum": ["ACTIVE", "PAUSED"]},
-                    "special_ad_categories": {
-                        "type": ["array", "string"],
-                        "items": {"type": "string", "enum": [
-                            "NONE", "EMPLOYMENT", "HOUSING", "CREDIT",
-                        ]},
-                    },
-                    "start_time": {"type": "string"},
-                    "end_time": {"type": "string"},
-                },
-            ),
+            input_schema=ToolSchema(**meta_campaign_schema()),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "campaign"],
+            live_support=False,
         ), MetaCreateCampaignHandler(api_client)))
 
         # List Ad Sets
@@ -140,54 +112,12 @@ class MetaCapability(BaseCapability):
             skill="meta-marketing-api",
             platform="meta",
             description="创建 Meta Ad Set。",
-            input_schema=ToolSchema(
-                required=["campaign_id", "name"],
-                provider_required=["optimization_goal", "billing_event", "targeting"],
-                provider_any_of=[["budget", "daily_budget"]],
-                properties={
-                    "campaign_id": {"type": "string"},
-                    "name": {"type": "string"},
-                    "targeting": {
-                        "type": "object",
-                        "description": "Meta targeting object; dynamic IDs must be selected from provider reference data",
-                        "properties": {
-                            "geo_locations": {"type": "object"},
-                            "age_min": {"type": "integer", "minimum": 13},
-                            "age_max": {"type": "integer", "minimum": 13},
-                            "genders": {"type": "array", "items": {"type": "integer"}},
-                            "locales": {"type": "array", "items": {"type": "integer"}},
-                            "device_platforms": {"type": "array", "items": {"type": "string"}},
-                            "publisher_platforms": {"type": "array", "items": {"type": "string"}},
-                            "facebook_positions": {"type": "array", "items": {"type": "string"}},
-                            "instagram_positions": {"type": "array", "items": {"type": "string"}},
-                            "custom_audiences": {"type": "array", "items": {"type": "object"}},
-                            "excluded_custom_audiences": {"type": "array", "items": {"type": "object"}},
-                            "flexible_spec": {"type": "array", "items": {"type": "object"}},
-                        },
-                    },
-                    "optimization_goal": {"type": "string", "enum": [
-                        "APP_INSTALLS", "OFFSITE_CONVERSIONS", "VALUE", "LINK_CLICKS",
-                        "LANDING_PAGE_VIEWS", "LEAD_GENERATION", "IMPRESSIONS",
-                        "REACH", "THRUPLAY",
-                    ]},
-                    "billing_event": {"type": "string", "enum": ["IMPRESSIONS", "LINK_CLICKS", "THRUPLAY"]},
-                    "bidding_strategy": {"type": "string", "enum": [
-                        "LOWEST_COST_WITHOUT_CAP", "LOWEST_COST_WITH_BID_CAP",
-                        "COST_CAP", "LOWEST_COST_WITH_MIN_ROAS",
-                    ]},
-                    "promoted_object": {"type": "object"},
-                    "budget": {"type": "number"},
-                    "bid_amount": {"type": "number"},
-                    "daily_budget": {"type": "number"},
-                    "status": {"type": "string"},
-                    "start_time": {"type": "string"},
-                    "end_time": {"type": "string"},
-                },
-            ),
+            input_schema=ToolSchema(**meta_adset_schema()),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "ad_set"],
+            live_support=False,
         ), MetaCreateAdSetHandler(api_client)))
 
         # List Ads
@@ -228,26 +158,12 @@ class MetaCapability(BaseCapability):
             skill="meta-marketing-api",
             platform="meta",
             description="创建 Meta Ad。",
-            input_schema=ToolSchema(
-                required=["adset_id", "name"],
-                provider_any_of=[["creative_id", "object_story_spec"]],
-                properties={
-                    "adset_id": {"type": "string"},
-                    "name": {"type": "string"},
-                    "creative": {"type": "object"},
-                    "creative_id": {"type": "string"},
-                    "object_story_spec": {"type": "object"},
-                    "body": {"type": "string"},
-                    "title": {"type": "string"},
-                    "description": {"type": "string"},
-                    "url_tags": {"type": "string"},
-                    "status": {"type": "string"},
-                },
-            ),
+            input_schema=ToolSchema(**meta_ad_schema()),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "ad"],
+            live_support=False,
         ), MetaCreateAdHandler(api_client)))
 
         # Get Report
@@ -302,6 +218,7 @@ class MetaCapability(BaseCapability):
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "boost", "ad"],
+            live_support=False,
         ), MetaBoostPostHandler(api_client)))
 
         tools.append((ToolDefinition(
@@ -346,6 +263,7 @@ class MetaCapability(BaseCapability):
                 effect_class=ToolEffect.WRITE,
                 replay_policy=ReplayPolicy.UNSAFE,
                 traits=["write", resource_type],
+                live_support=False,
             ), CampaignUpdateHandler(api_client, resource_type)))
 
         return tools

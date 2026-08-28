@@ -5,31 +5,6 @@ version: 1.0.0
 author: Ryan
 created: 2026-08-14
 tags: [tiktok, ads, api, spark-ads, pixel, conversion-api, advertising]
-workflows:
-  create_campaign:
-    tools: [tiktok_create_campaign, tiktok_create_adgroup, tiktok_create_ad]
-  list_campaigns: {tools: [tiktok_list_campaigns]}
-  get_campaign: {tools: [tiktok_get_campaign]}
-  update_campaign: {tools: [tiktok_update_campaign]}
-  pause_campaign: {tools: [tiktok_update_campaign]}
-  resume_campaign: {tools: [tiktok_update_campaign]}
-  download_report: {tools: [tiktok_get_campaign_report]}
-  boost_post: {tools: [tiktok_spark_ads_create]}
-  list_adgroups: {tools: [tiktok_list_adgroups]}
-  update_adgroup: {tools: [tiktok_update_adgroup]}
-  update_adset: {tools: [tiktok_update_adgroup]}
-  list_ads: {tools: [tiktok_list_ads]}
-  update_ad: {tools: [tiktok_update_ad]}
-  list_audiences: {tools: [tiktok_list_audiences]}
-  list_creatives: {tools: [tiktok_list_creatives]}
-  list_videos: {tools: [tiktok_list_videos]}
-  list_images: {tools: [tiktok_list_images]}
-  list_conversions: {tools: [tiktok_list_conversions]}
-  list_locations: {tools: [tiktok_list_locations]}
-  list_devices: {tools: [tiktok_list_devices]}
-  list_catalogs: {tools: [tiktok_list_catalogs]}
-  list_apps: {tools: [tiktok_list_apps]}
-  list_brand_safety: {tools: [tiktok_list_brand_safety]}
 ---
 
 # TikTok Ads 专家技能

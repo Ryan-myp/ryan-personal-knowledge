@@ -297,9 +297,12 @@ def validate_tool_input(
     """
     errors = []
     
+    def is_missing(value: Any) -> bool:
+        return value in (None, "", {}, [])
+
     # 检查必填字段
     for field_name in schema.required:
-        if field_name not in data:
+        if field_name not in data or is_missing(data.get(field_name)):
             errors.append(f"Missing required field: {field_name}")
 
     if include_provider_contract:
@@ -343,7 +346,7 @@ def validate_tool_input(
             continue
 
         for field_name in rule.get("required", rule.get("required_fields", [])) or []:
-            if data.get(field_name) in (None, "", {}, []):
+            if is_missing(data.get(field_name)):
                 errors.append(
                     rule.get("message")
                     or f"Field '{field_name}' is required when {conditions}"
@@ -359,7 +362,7 @@ def validate_tool_input(
                     )
 
         for field_name in rule.get("forbidden", rule.get("forbidden_fields", [])) or []:
-            if data.get(field_name) not in (None, "", {}, []):
+            if not is_missing(data.get(field_name)):
                 errors.append(
                     rule.get("message")
                     or f"Field '{field_name}' is not allowed when {conditions}"
@@ -406,11 +409,31 @@ def validate_tool_input(
         if enum is not None and value not in enum:
             errors.append(f"Field '{path}' must be one of {list(enum)}, got {value!r}")
 
+        if isinstance(value, (str, list, dict)):
+            min_length = field_schema.get("minLength", field_schema.get("minItems"))
+            max_length = field_schema.get("maxLength", field_schema.get("maxItems"))
+            if min_length is not None and len(value) < min_length:
+                errors.append(
+                    f"Field '{path}' must contain at least {min_length} items/characters"
+                )
+            if max_length is not None and len(value) > max_length:
+                errors.append(
+                    f"Field '{path}' must contain at most {max_length} items/characters"
+                )
+
         minimum = field_schema.get("minimum")
         if minimum is not None and not isinstance(value, bool):
             try:
                 if value < minimum:
                     errors.append(f"Field '{path}' must be >= {minimum}")
+            except TypeError:
+                pass
+
+        maximum = field_schema.get("maximum")
+        if maximum is not None and not isinstance(value, bool):
+            try:
+                if value > maximum:
+                    errors.append(f"Field '{path}' must be <= {maximum}")
             except TypeError:
                 pass
 
@@ -425,7 +448,7 @@ def validate_tool_input(
             if not isinstance(nested_properties, dict):
                 nested_properties = {}
             for required_name in field_schema.get("required", []) or []:
-                if required_name not in value:
+                if required_name not in value or is_missing(value.get(required_name)):
                     errors.append(f"Missing required field: {path}.{required_name}")
             if (
                 field_schema.get("additional_properties") is False

@@ -13,9 +13,10 @@ import logging
 import hashlib
 import threading
 import time
-from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta
 from typing import Any, Optional, List
+
+from .models import CampaignRecord, ToolCallRecord
 
 logger = logging.getLogger(__name__)
 
@@ -42,85 +43,6 @@ WORKFLOW_ITEM_TRANSITIONS = {
     "unsupported": {"unsupported"},
     "skipped": {"skipped"},
 }
-
-
-@dataclass
-class CampaignRecord:
-    """Campaign resource record"""
-    id: str
-    platform: str                    # meta/google/tiktok/dv360
-    campaign_id: str                 # platform-side ID
-    name: str
-    status: str                      # ACTIVE/PAUSED/DRAFT
-    objective: Optional[str] = None
-    budget_daily: Optional[float] = None
-    created_at: str = ""
-    updated_at: str = ""
-    metadata: dict = field(default_factory=dict)
-    # Account/advertiser/customer scope is part of the identity.  Campaign IDs
-    # are not safe to treat as globally unique across customers.
-    account_id: Optional[str] = None
-    
-    def to_dict(self) -> dict:
-        d = asdict(self)
-        d['metadata'] = json.dumps(d['metadata']) if d['metadata'] else '{}'
-        return d
-    
-    @classmethod
-    def from_row(cls, row) -> "CampaignRecord":
-        # Handle both tuple (from DB cursor) and dict inputs
-        if isinstance(row, dict):
-            d = row
-        else:
-            columns = ['id', 'platform', 'campaign_id', 'name', 'status',
-                       'objective', 'budget_daily', 'created_at', 'updated_at',
-                       'metadata', 'account_id']
-            d = dict(zip(columns, row))
-        if d.get('metadata'):
-            try:
-                d['metadata'] = json.loads(d['metadata'])
-            except:
-                d['metadata'] = {}
-        return cls(**d)
-
-
-@dataclass
-class ToolCallRecord:
-    """Tool invocation record"""
-    id: str
-    session_id: str
-    turn_id: str
-    tool_name: str
-    platform: str
-    input_data: dict
-    output_data: Optional[dict] = None
-    success: bool = True
-    error: Optional[str] = None
-    started_at: str = ""
-    ended_at: str = ""
-    
-    def to_dict(self) -> dict:
-        d = asdict(self)
-        d['input_data'] = json.dumps(d['input_data']) if d['input_data'] else '{}'
-        d['output_data'] = json.dumps(d['output_data']) if d['output_data'] else None
-        return d
-    
-    @classmethod
-    def from_row(cls, row) -> "ToolCallRecord":
-        # Handle both tuple (from DB cursor) and dict inputs
-        if isinstance(row, dict):
-            d = row
-        else:
-            columns = ['id', 'session_id', 'turn_id', 'tool_name', 'platform',
-                       'input_data', 'output_data', 'success', 'error', 'started_at', 'ended_at']
-            d = dict(zip(columns, row))
-        for key in ['input_data', 'output_data']:
-            if d.get(key):
-                try:
-                    d[key] = json.loads(d[key])
-                except:
-                    d[key] = {}
-        return cls(**d)
 
 
 class AdAgentStore:
@@ -199,6 +121,11 @@ class AdAgentStore:
         output_data TEXT,
         error TEXT,
         compensation_required INTEGER NOT NULL DEFAULT 0,
+        resource_type TEXT,
+        parent_sequence INTEGER,
+        parent_resource_id TEXT,
+        provider_resource_id TEXT,
+        logical_resource_id TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         FOREIGN KEY (workflow_id) REFERENCES workflows(workflow_id) ON DELETE CASCADE
@@ -263,6 +190,20 @@ class AdAgentStore:
                 conn.execute("ALTER TABLE workflows ADD COLUMN lease_owner TEXT")
             if "lease_expires_at" not in workflow_columns:
                 conn.execute("ALTER TABLE workflows ADD COLUMN lease_expires_at TEXT")
+            item_columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(workflow_items)")
+            }
+            for column, definition in {
+                "resource_type": "TEXT",
+                "parent_sequence": "INTEGER",
+                "parent_resource_id": "TEXT",
+                "provider_resource_id": "TEXT",
+                "logical_resource_id": "TEXT",
+            }.items():
+                if column not in item_columns:
+                    conn.execute(
+                        f"ALTER TABLE workflow_items ADD COLUMN {column} {definition}"
+                    )
             conn.commit()
     
     def close(self):
@@ -742,6 +683,11 @@ class AdAgentStore:
         tool_name: str, status: str, input_data: dict,
         output_data: dict = None, error: str = None,
         compensation_required: bool = False,
+        resource_type: Optional[str] = None,
+        parent_sequence: Optional[int] = None,
+        parent_resource_id: Optional[str] = None,
+        provider_resource_id: Optional[str] = None,
+        logical_resource_id: Optional[str] = None,
     ) -> None:
         now = datetime.now().isoformat()
         with self._lock:
@@ -749,14 +695,18 @@ class AdAgentStore:
             conn.execute(
                 """INSERT INTO workflow_items
                    (item_id, workflow_id, sequence, platform, tool_name, status,
-                    input_data, output_data, error, compensation_required,
-                    created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   input_data, output_data, error, compensation_required,
+                   resource_type, parent_sequence, parent_resource_id,
+                   provider_resource_id, logical_resource_id,
+                   created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     item_id, workflow_id, sequence, platform, tool_name, status,
                     json.dumps(input_data or {}),
                     json.dumps(output_data) if output_data is not None else None,
-                    error, int(compensation_required), now, now,
+                    error, int(compensation_required), resource_type,
+                    parent_sequence, parent_resource_id, provider_resource_id,
+                    logical_resource_id, now, now,
                 ),
             )
             conn.commit()
@@ -766,6 +716,11 @@ class AdAgentStore:
         tool_name: str, status: str, input_data: dict,
         output_data: dict = None, error: str = None,
         compensation_required: bool = False,
+        resource_type: Optional[str] = None,
+        parent_sequence: Optional[int] = None,
+        parent_resource_id: Optional[str] = None,
+        provider_resource_id: Optional[str] = None,
+        logical_resource_id: Optional[str] = None,
     ) -> None:
         """Create or advance an item checkpoint without duplicating rows.
 
@@ -785,14 +740,18 @@ class AdAgentStore:
                 conn.execute(
                     """INSERT INTO workflow_items
                        (item_id, workflow_id, sequence, platform, tool_name, status,
-                        input_data, output_data, error, compensation_required,
-                        created_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       input_data, output_data, error, compensation_required,
+                       resource_type, parent_sequence, parent_resource_id,
+                       provider_resource_id, logical_resource_id,
+                       created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         item_id, workflow_id, int(sequence), platform, tool_name,
                         status, json.dumps(input_data or {}),
                         json.dumps(output_data) if output_data is not None else None,
-                        error, int(compensation_required), now, now,
+                        error, int(compensation_required), resource_type,
+                        parent_sequence, parent_resource_id, provider_resource_id,
+                        logical_resource_id, now, now,
                     ),
                 )
             else:
@@ -804,7 +763,10 @@ class AdAgentStore:
                     )
                 assignments = [
                     "status = ?", "input_data = ?", "output_data = ?",
-                    "error = ?", "compensation_required = ?", "updated_at = ?",
+                    "error = ?", "compensation_required = ?",
+                    "resource_type = ?", "parent_sequence = ?",
+                    "parent_resource_id = ?", "provider_resource_id = ?",
+                    "logical_resource_id = ?", "updated_at = ?",
                 ]
                 conn.execute(
                     f"UPDATE workflow_items SET {', '.join(assignments)} "
@@ -812,7 +774,9 @@ class AdAgentStore:
                     (
                         status, json.dumps(input_data or {}),
                         json.dumps(output_data) if output_data is not None else None,
-                        error, int(compensation_required), datetime.now().isoformat(),
+                        error, int(compensation_required), resource_type,
+                        parent_sequence, parent_resource_id, provider_resource_id,
+                        logical_resource_id, datetime.now().isoformat(),
                         workflow_id, int(sequence),
                     ),
                 )
@@ -862,6 +826,11 @@ class AdAgentStore:
         output_data: Optional[dict] = None,
         error: Optional[str] = None,
         compensation_required: Optional[bool] = None,
+        resource_type: Optional[str] = None,
+        parent_sequence: Optional[int] = None,
+        parent_resource_id: Optional[str] = None,
+        provider_resource_id: Optional[str] = None,
+        logical_resource_id: Optional[str] = None,
     ) -> bool:
         """Update one item during an explicitly verified reconciliation."""
         assignments = ["status = ?", "error = ?", "updated_at = ?"]
@@ -872,6 +841,16 @@ class AdAgentStore:
         if compensation_required is not None:
             assignments.append("compensation_required = ?")
             values.append(int(compensation_required))
+        for column, value in (
+            ("resource_type", resource_type),
+            ("parent_sequence", parent_sequence),
+            ("parent_resource_id", parent_resource_id),
+            ("provider_resource_id", provider_resource_id),
+            ("logical_resource_id", logical_resource_id),
+        ):
+            if value is not None:
+                assignments.append(f"{column} = ?")
+                values.append(value)
         values.extend([workflow_id, int(sequence)])
         with self._lock:
             conn = self._get_conn()
