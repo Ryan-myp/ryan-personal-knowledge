@@ -313,6 +313,22 @@ def create_skill(api_client=None):
 内置四渠道的 Provider 实现仍位于 `capabilities/` 和 `api_clients/`，Skill plugin
 只负责扩展工具编排和 Handler；默认模式不会触发线上写 API。
 
+## 使用 skill-up 评测
+
+仓库提供了一个 `skill-up` Custom Engine 适配器，直接调用生产
+`AgentRuntime`，并将 Runtime 的结构化结果转换为 `SessionResult`。评测默认
+使用内存 SQLite、dry-run、offline fixtures 和测试账户白名单，不会调用真实
+Provider 写接口。
+
+```bash
+agents/ad_agent/evals/skill-up/run.sh
+```
+
+详细说明、case 范围和直接调用方式见
+`agents/ad_agent/evals/skill-up/README.md`。新增 Runtime 场景只需在该目录
+增加 `cases/*.yaml`；新增自然语言 Skill 评测则应使用 skill-up 的内置
+Engine，不能把 Custom Engine 结果误当作通用模型能力评测。
+
 ## 许可证
 
 MIT

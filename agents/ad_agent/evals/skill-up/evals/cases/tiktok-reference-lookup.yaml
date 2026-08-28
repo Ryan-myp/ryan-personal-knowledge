@@ -1,0 +1,19 @@
+id: tiktok-reference-lookup
+title: TikTok reference parameters are exposed as offline evidence
+tag: functional_test
+input:
+  prompt: 查询 TikTok 可用应用列表
+expect:
+  exit_code: 0
+  must_contain:
+    - "tiktok_list_apps"
+    - '"data_status": "offline_mock"'
+    - '"success": true'
+judge:
+  type: rule_based
+  success:
+    - output_contains:
+        all: ["tiktok_list_apps", "offline_mock"]
+  failure:
+    - output_contains:
+        any: ["access_token", "client_secret"]

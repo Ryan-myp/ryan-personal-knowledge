@@ -1,0 +1,19 @@
+id: cross-channel-routing
+title: Cross-channel request reaches both provider capabilities
+tag: functional_test
+input:
+  prompt: 比较 Meta 和 Google 的 campaign 报表
+expect:
+  exit_code: 0
+  must_contain:
+    - "meta_list_campaigns"
+    - "google_list_campaigns"
+    - "cross_channel_compare"
+  must_not_contain:
+    - "Meta client not configured"
+    - "Google client not configured"
+judge:
+  type: rule_based
+  success:
+    - output_contains:
+        all: ["meta_list_campaigns", "google_list_campaigns", "cross_channel_compare"]

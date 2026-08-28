@@ -1,0 +1,54 @@
+schema_version: v1alpha1
+
+environment:
+  type: none
+
+mcp:
+  servers: []
+
+# The adapter imports the production channel Skills from the repository. This
+# ref keeps the suite self-describing for skill-up and is intentionally limited
+# to the harness Skill; it does not copy provider credentials or executable
+# code into a case workspace.
+skills:
+  - source: local_path
+    path: .
+    include:
+      - SKILL.md
+
+engine:
+  name: ad-agent-runtime
+  custom:
+    transport: local
+    response_format: session_result
+    timeout_seconds: 60
+    local:
+      # Set AD_AGENT_REPO_ROOT when invoking skill-up. Keeping this as an
+      # environment reference makes the suite portable across checkouts.
+      command: python3
+      args:
+        - ${AD_AGENT_REPO_ROOT}/agents/ad_agent/evals/skill_up_engine.py
+        - --input
+        - ${input_file}
+        - --output
+        - ${output_file}
+      cwd: ${workspace}
+      input_file: inputs/ad-agent-session.json
+      output_file: outputs/ad-agent-session-result.json
+
+cases:
+  files:
+    - evals/cases/tiktok-campaign-dry-run.yaml
+    - evals/cases/tiktok-reference-lookup.yaml
+    - evals/cases/cross-channel-routing.yaml
+    - evals/cases/redline-protection.yaml
+  defaults:
+    timeout_seconds: 60
+    max_turns: 2
+    collect_artifacts:
+      - outputs/ad-agent-runtime-result.json
+  parallelism: 1
+
+report:
+  formats: [json, junit, html]
+  artifacts: [transcript]

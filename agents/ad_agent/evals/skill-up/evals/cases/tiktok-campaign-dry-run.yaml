@@ -1,0 +1,22 @@
+id: tiktok-campaign-dry-run
+title: TikTok campaign uses the registered Tool and dry-run boundary
+tag: functional_test
+input:
+  prompt: "创建 TikTok campaign; name=skill-up-app; objective_type=APP_PROMOTION; campaign_type=REGULAR_CAMPAIGN; budget_mode=BUDGET_MODE_DAY; daily_budget=100; app_promotion_type=APP_ACQUISITION"
+expect:
+  exit_code: 0
+  must_contain:
+    - "tiktok_create_campaign"
+    - "SIMULATED_DRAFT"
+    - '"mode": "dry_run"'
+    - '"simulated": true'
+  must_not_contain:
+    - "provider_unavailable"
+judge:
+  type: rule_based
+  success:
+    - output_contains:
+        all: ["tiktok_create_campaign", "SIMULATED_DRAFT", "dry_run"]
+  failure:
+    - output_contains:
+        any: ["access_token", "client_secret", "Authorization:"]

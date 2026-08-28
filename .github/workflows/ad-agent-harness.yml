@@ -43,3 +43,42 @@ jobs:
         run: python -m pytest agents/ad_agent/tests -q
       - name: Check patch whitespace
         run: git diff --check
+
+  skill-up-runtime-eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # The adapter itself is fail-closed: these values are documentation-level
+      # defense in depth for any future embedding changes.
+      AD_AGENT_ENABLE_LIVE: "0"
+      AD_AGENT_ALLOW_UNAUTHENTICATED: "0"
+      SKILL_UP_REF: "a5dfe7f3cfb1357263099424066de72720c1a7c3"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: agents/ad_agent/requirements.txt
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+      - name: Install ad-agent dependencies
+        run: python -m pip install -r agents/ad_agent/requirements.txt
+      - name: Build pinned skill-up CLI
+        run: |
+          git clone --filter=blob:none --no-checkout https://github.com/alibaba/skill-up.git /tmp/skill-up
+          git -C /tmp/skill-up fetch --depth=1 origin "$SKILL_UP_REF"
+          git -C /tmp/skill-up checkout "$SKILL_UP_REF"
+          go build -o /tmp/skill-up-bin ./cmd/skill-up
+      - name: Validate skill-up evaluation config
+        env:
+          AD_AGENT_REPO_ROOT: ${{ github.workspace }}
+        run: /tmp/skill-up-bin validate agents/ad_agent/evals/skill-up/evals/eval.yaml
+      - name: Run skill-up Runtime evaluation
+        env:
+          AD_AGENT_REPO_ROOT: ${{ github.workspace }}
+        run: |
+          SKILL_UP_BIN=/tmp/skill-up-bin \
+            agents/ad_agent/evals/skill-up/run.sh \
+            --output-dir /tmp/ad-agent-skill-up-report --no-delete
