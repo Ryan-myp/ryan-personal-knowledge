@@ -41,7 +41,8 @@ Runtime 集成评测。
 `evals/cases/*.yaml`，管理 API 会用内置 Engine 评估文本效果，或用平台托管的
 `ad-agent-runtime` 适配器评估与 Google/Meta/TikTok/DV360 Capability 的
 dry-run 路由。用户不能通过评测配置提交任意 Custom Engine、MCP Server 或
-Judge Script。
+Judge Script。配置了 `evals/eval.yaml` 的版本只有在评测状态为 `passed` 后才可
+发布；没有评测配置的上下文 Skill 不受此门禁影响。
 
 如需使用 Anthropic Claude SDK 评估自然语言 Skill，可在 `evals/eval.yaml`
 中选择 `engine.name: claude_sdk`，并安装可选依赖：

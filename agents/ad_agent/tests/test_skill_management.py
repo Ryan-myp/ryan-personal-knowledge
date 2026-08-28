@@ -137,6 +137,26 @@ def test_skill_up_config_is_data_only_and_uses_standard_package_files():
     assert record["evaluation_status"] == "not_run"
 
 
+def test_skill_with_evaluation_suite_cannot_publish_before_passing(tmp_path):
+    store = AdAgentStore(":memory:")
+    manager = ManagedSkillManager(store, root=str(tmp_path / "managed"))
+    files = {
+        **_files("gated-skill"),
+        "evals/eval.yaml": (
+            "schema_version: v1alpha1\n"
+            "environment:\n  type: none\n"
+            "mcp:\n  servers: []\n"
+            "skills:\n  - source: local_path\n    path: .\n"
+            "engine:\n  name: codex\n"
+            "cases:\n  files: [evals/cases/basic.yaml]\n"
+        ),
+        "evals/cases/basic.yaml": "id: basic\ninput:\n  prompt: test\n",
+    }
+    manager.create_version("tenant-a", "gated-skill", "1.0.0", files, "u1")
+    with pytest.raises(SkillPackageError, match="must pass skill-up"):
+        manager.publish("tenant-a", "gated-skill", "1.0.0")
+
+
 def test_skill_up_config_allows_platform_managed_claude_sdk_with_safe_kwargs():
     store = AdAgentStore(":memory:")
     manager = ManagedSkillManager(store)

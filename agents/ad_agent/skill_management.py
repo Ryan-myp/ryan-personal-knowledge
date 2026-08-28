@@ -335,6 +335,14 @@ class ManagedSkillManager:
         files, digest = self.validate(skill_name, version, record.get("files") or {})
         if digest != record.get("sha256"):
             raise SkillPackageError("Skill package digest mismatch")
+        # A package that declares an evaluation suite has an explicit release
+        # gate.  Keep evaluation optional for simple context-only Skills, but
+        # never publish a version while its declared acceptance suite is
+        # missing, queued, running, failed, or errored.
+        if "evals/eval.yaml" in files and record.get("evaluation_status") != "passed":
+            raise SkillPackageError(
+                "Skill version with evals/eval.yaml must pass skill-up before publication"
+            )
         materialized = self._materialize(record)
         published = self.store.publish_skill_version(tenant_id, skill_name, version)
         if not published:

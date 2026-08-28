@@ -43,7 +43,9 @@ skill-up 评测（可选，但发布前建议通过）
 Runtime 加载为 advisory context
 ```
 
-发布新版本会把旧版本标记为 `archived`，历史版本仍可查看和复测。Runtime
+发布新版本会把旧版本标记为 `archived`，历史版本仍可查看和复测。带有
+`evals/eval.yaml` 的版本必须先通过 skill-up；未配置评测文件的纯上下文 Skill
+仍可直接发布。Runtime
 进程只加载当前服务租户的已发布版本，避免把一个租户的业务规则带到另一个
 租户的会话中；多租户部署应为每个租户隔离 Runtime context。
 
