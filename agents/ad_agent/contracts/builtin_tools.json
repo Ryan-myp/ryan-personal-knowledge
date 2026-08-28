@@ -1,0 +1,5658 @@
+{
+  "digest": "04a9b1a315865f144b071f1ac10d6266fc4765c2d727eeaae0f8750b672b0237",
+  "format_version": 1,
+  "platforms": {
+    "dv360": {
+      "digest": "30a84c3474e13b3798017f25ef7b939d1bcdf2b5c3dffb1e5ed8b5e758cf86b8",
+      "tool_count": 14,
+      "tools": [
+        {
+          "action": "create",
+          "description": "创建 DV360 Campaign。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "advertiser_id": {
+                "description": "DV360 advertiser ID",
+                "type": "string"
+              },
+              "campaign_type": {
+                "description": "Campaign channel type",
+                "enum": [
+                  "DISPLAY",
+                  "VIDEO",
+                  "AUDIO",
+                  "CONNECTED_TV",
+                  "DOOH"
+                ],
+                "type": "string"
+              },
+              "end_date": {
+                "description": "ISO date YYYY-MM-DD",
+                "type": "string"
+              },
+              "name": {
+                "description": "Campaign display name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "objective": {
+                "description": "Campaign objective",
+                "enum": [
+                  "IMPRESSIONS",
+                  "CLICKS",
+                  "CONVERSIONS",
+                  "REVENUE",
+                  "VIEWABLE_IMPRESSIONS",
+                  "VIDEO_COMPLETIONS"
+                ],
+                "type": "string"
+              },
+              "start_date": {
+                "description": "ISO date YYYY-MM-DD",
+                "type": "string"
+              },
+              "status": {
+                "description": "Initial status",
+                "enum": [
+                  "DRAFT",
+                  "ACTIVE",
+                  "PAUSED",
+                  "ARCHIVED"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "campaign_type",
+              "objective",
+              "start_date",
+              "end_date"
+            ],
+            "required": [
+              "advertiser_id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "dv360_create_campaign",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "dv360",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "campaign_id",
+          "resource_type": "campaign",
+          "risk_level": "medium",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "campaign"
+          ]
+        },
+        {
+          "action": "create",
+          "description": "创建 DV360 IO（Order & Invoice）。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "advertiser_id": {
+                "description": "DV360 advertiser ID",
+                "type": "string"
+              },
+              "budget": {
+                "description": "Spend cap in account currency",
+                "minimum": 0,
+                "type": "number"
+              },
+              "campaign_id": {
+                "description": "Parent Campaign ID",
+                "type": "string"
+              },
+              "end_date": {
+                "description": "ISO date YYYY-MM-DD",
+                "type": "string"
+              },
+              "frequency_cap": {
+                "additionalProperties": false,
+                "description": "Frequency cap",
+                "properties": {
+                  "max_impressions": {
+                    "description": "Maximum impressions",
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "time_unit": {
+                    "description": "Frequency cap unit",
+                    "enum": [
+                      "MINUTE",
+                      "HOUR",
+                      "DAY",
+                      "WEEK",
+                      "MONTH"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "name": {
+                "description": "Insertion Order name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "pacing_type": {
+                "description": "Budget pacing",
+                "enum": [
+                  "ASAP",
+                  "EVEN"
+                ],
+                "type": "string"
+              },
+              "spend_cap_micros": {
+                "description": "Spend cap in micros",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "start_date": {
+                "description": "ISO date YYYY-MM-DD",
+                "type": "string"
+              },
+              "status": {
+                "description": "Entity status",
+                "enum": [
+                  "DRAFT",
+                  "ACTIVE",
+                  "PAUSED",
+                  "ARCHIVED"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "budget",
+              "start_date",
+              "end_date"
+            ],
+            "required": [
+              "advertiser_id",
+              "campaign_id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "dv360_create_io",
+          "parent_resource_id_field": "campaign_id",
+          "parent_resource_type": "campaign",
+          "platform": "dv360",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "io_id",
+          "resource_type": "io",
+          "risk_level": "medium",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "io"
+          ]
+        },
+        {
+          "action": "create",
+          "description": "创建 DV360 Line Item。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [
+              {
+                "id": "target_cpa_requires_goal",
+                "if": {
+                  "bid_strategy": "TARGET_CPA"
+                },
+                "message": "TARGET_CPA requires a goal object",
+                "required": [
+                  "goal"
+                ]
+              },
+              {
+                "id": "target_roas_requires_goal",
+                "if": {
+                  "bid_strategy": "TARGET_ROAS"
+                },
+                "message": "TARGET_ROAS requires a goal object",
+                "required": [
+                  "goal"
+                ]
+              }
+            ],
+            "properties": {
+              "bid_amount": {
+                "description": "Manual bid amount",
+                "minimum": 0,
+                "type": "number"
+              },
+              "bid_strategy": {
+                "description": "Bid strategy",
+                "enum": [
+                  "MANUAL_CPM",
+                  "MANUAL_CPC",
+                  "MAXIMIZE_CONVERSIONS",
+                  "TARGET_CPA",
+                  "TARGET_ROAS"
+                ],
+                "type": "string"
+              },
+              "budget": {
+                "description": "Line item budget",
+                "minimum": 0,
+                "type": "number"
+              },
+              "end_date": {
+                "description": "ISO date YYYY-MM-DD",
+                "type": "string"
+              },
+              "goal": {
+                "additionalProperties": true,
+                "description": "Line item performance goal",
+                "properties": {
+                  "goal_type": {
+                    "description": "Goal type",
+                    "enum": [
+                      "IMPRESSIONS",
+                      "CLICKS",
+                      "CONVERSIONS",
+                      "REVENUE",
+                      "VIEWABLE_IMPRESSIONS",
+                      "VIDEO_COMPLETIONS"
+                    ],
+                    "type": "string"
+                  },
+                  "target_cpa": {
+                    "description": "Target CPA",
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "target_roas": {
+                    "description": "Target ROAS",
+                    "minimum": 0.01,
+                    "type": "number"
+                  }
+                },
+                "type": "object"
+              },
+              "io_id": {
+                "description": "Parent insertion order ID",
+                "type": "string"
+              },
+              "name": {
+                "description": "Line item name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "start_date": {
+                "description": "ISO date YYYY-MM-DD",
+                "type": "string"
+              },
+              "status": {
+                "description": "Entity status",
+                "enum": [
+                  "DRAFT",
+                  "ACTIVE",
+                  "PAUSED",
+                  "ARCHIVED"
+                ],
+                "type": "string"
+              },
+              "targeting": {
+                "additionalProperties": true,
+                "description": "Targeting expression",
+                "properties": {},
+                "type": "object"
+              },
+              "type": {
+                "description": "Line item type",
+                "enum": [
+                  "DISPLAY_DEFAULT",
+                  "VIDEO_DEFAULT",
+                  "AUDIO_DEFAULT",
+                  "CONNECTED_TV_DEFAULT",
+                  "YOUTUBE_AND_PARTNERS_VIDEO"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "type",
+              "goal",
+              "targeting",
+              "budget",
+              "start_date",
+              "end_date"
+            ],
+            "required": [
+              "io_id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "dv360_create_line_item",
+          "parent_resource_id_field": "io_id",
+          "parent_resource_type": "io",
+          "platform": "dv360",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "line_item_id",
+          "resource_type": "line_item",
+          "risk_level": "medium",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "line_item"
+          ]
+        },
+        {
+          "action": "get",
+          "description": "查询 DV360 Campaign 详情（支持 campaign_id 或 campaign_name）。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "type": "string"
+              },
+              "campaign_name": {
+                "description": "Campaign 名称（可通过名称查找 ID）",
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_campaign"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "dv360_get_campaign",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "dv360",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "campaign",
+          "risk_level": "low",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "campaign"
+          ]
+        },
+        {
+          "action": "get",
+          "description": "查询 DV360 Insertion Order 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "io_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "io_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_io"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "dv360_get_io",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "campaign",
+          "platform": "dv360",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "io",
+          "risk_level": "low",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "io"
+          ]
+        },
+        {
+          "action": "get",
+          "description": "查询 DV360 Line Item 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "io_id": {
+                "type": "string"
+              },
+              "line_item_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "io_id",
+              "line_item_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_line_item"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "dv360_get_line_item",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "io",
+          "platform": "dv360",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "line_item",
+          "risk_level": "low",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "line_item"
+          ]
+        },
+        {
+          "action": "report",
+          "description": "查询 DV360 Line Item 报表；当前不提供 Campaign-level report。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "advertiser_id": {
+                "type": "string"
+              },
+              "date_from": {
+                "type": "string"
+              },
+              "date_range": {
+                "type": [
+                  "object",
+                  "string"
+                ]
+              },
+              "date_to": {
+                "type": "string"
+              },
+              "line_item_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "advertiser_id",
+              "line_item_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "download_report"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "dv360_get_line_item_report",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "io",
+          "platform": "dv360",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "line_item",
+          "risk_level": "low",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "report"
+          ]
+        },
+        {
+          "action": "list",
+          "description": "查询 DV360 Advertiser 列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {},
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_advertisers"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "dv360_list_advertisers",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "dv360",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "advertiser",
+          "risk_level": "low",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "advertiser"
+          ]
+        },
+        {
+          "action": "list",
+          "description": "查询 DV360 Campaign 列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "advertiser_id": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "advertiser_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_campaigns",
+            "cross_channel_overview",
+            "cross_channel_compare",
+            "cross_channel_performance_insights",
+            "cross_channel_optimize_budget",
+            "cross_channel_export_report"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "dv360_list_campaigns",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "dv360",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "campaign",
+          "risk_level": "low",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "campaign"
+          ]
+        },
+        {
+          "action": "list",
+          "description": "查询 DV360 Insertion Order 列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "advertiser_id": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "advertiser_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_ios"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "dv360_list_ios",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "campaign",
+          "platform": "dv360",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "io",
+          "risk_level": "low",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "io"
+          ]
+        },
+        {
+          "action": "list",
+          "description": "查询 DV360 Line Item 列表，可按 IO 过滤。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "advertiser_id": {
+                "type": "string"
+              },
+              "io_id": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "advertiser_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_line_items"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "dv360_list_line_items",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "io",
+          "platform": "dv360",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "line_item",
+          "risk_level": "low",
+          "skill": "dv360-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "line_item"
+          ]
+        },
+        {
+          "action": "update",
+          "description": "更新 DV360 campaign，默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Allowed DV360 campaign update fields",
+                "properties": {
+                  "end_date": {
+                    "description": "End date",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "Resource name",
+                    "type": "string"
+                  },
+                  "start_date": {
+                    "description": "Start date",
+                    "type": "string"
+                  },
+                  "status": {
+                    "description": "Resource status",
+                    "enum": [
+                      "DRAFT",
+                      "ACTIVE",
+                      "PAUSED"
+                    ],
+                    "intent_status_field": "status",
+                    "intent_status_map": {
+                      "ACTIVE": "ACTIVE",
+                      "ENABLED": "ACTIVE",
+                      "PAUSED": "PAUSED"
+                    },
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "campaign_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_campaign",
+            "pause_campaign",
+            "resume_campaign",
+            "cross_channel_batch_pause",
+            "cross_channel_batch_resume",
+            "cross_channel_batch_update_budget"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "dv360_update_campaign",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "dv360",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "campaign_id",
+          "resource_type": "campaign",
+          "risk_level": "medium",
+          "skill": "dv360-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "campaign"
+          ]
+        },
+        {
+          "action": "update",
+          "description": "更新 DV360 io，默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "io_id": {
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Allowed DV360 io update fields",
+                "properties": {
+                  "budget": {
+                    "description": "Budget",
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "end_date": {
+                    "description": "End date",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "Resource name",
+                    "type": "string"
+                  },
+                  "spend_cap_micros": {
+                    "description": "Spend cap in micros",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "start_date": {
+                    "description": "Start date",
+                    "type": "string"
+                  },
+                  "status": {
+                    "description": "Resource status",
+                    "enum": [
+                      "DRAFT",
+                      "ACTIVE",
+                      "PAUSED"
+                    ],
+                    "intent_status_field": "status",
+                    "intent_status_map": {
+                      "ACTIVE": "ACTIVE",
+                      "ENABLED": "ACTIVE",
+                      "PAUSED": "PAUSED"
+                    },
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "io_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_io"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "dv360_update_io",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "campaign",
+          "platform": "dv360",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "io_id",
+          "resource_type": "io",
+          "risk_level": "medium",
+          "skill": "dv360-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "io"
+          ]
+        },
+        {
+          "action": "update",
+          "description": "更新 DV360 line_item，默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "io_id": {
+                "type": "string"
+              },
+              "line_item_id": {
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Allowed DV360 line_item update fields",
+                "properties": {
+                  "budget": {
+                    "description": "Budget",
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "end_date": {
+                    "description": "End date",
+                    "type": "string"
+                  },
+                  "goal": {
+                    "description": "DV360 goal object",
+                    "type": "object"
+                  },
+                  "name": {
+                    "description": "Resource name",
+                    "type": "string"
+                  },
+                  "start_date": {
+                    "description": "Start date",
+                    "type": "string"
+                  },
+                  "status": {
+                    "description": "Resource status",
+                    "enum": [
+                      "DRAFT",
+                      "ACTIVE",
+                      "PAUSED"
+                    ],
+                    "intent_status_field": "status",
+                    "intent_status_map": {
+                      "ACTIVE": "ACTIVE",
+                      "ENABLED": "ACTIVE",
+                      "PAUSED": "PAUSED"
+                    },
+                    "type": "string"
+                  },
+                  "targeting": {
+                    "description": "DV360 targeting object",
+                    "type": "object"
+                  },
+                  "type": {
+                    "description": "Line item type",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "line_item_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_line_item"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "dv360_update_line_item",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "io",
+          "platform": "dv360",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "line_item_id",
+          "resource_type": "line_item",
+          "risk_level": "medium",
+          "skill": "dv360-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "line_item"
+          ]
+        }
+      ]
+    },
+    "google-ads": {
+      "digest": "2413a78d8869d76ffd463b3359b72f825e23ebc1c9a4d2ba7160460e0f2307a9",
+      "tool_count": 18,
+      "tools": [
+        {
+          "action": "create",
+          "description": "创建 Google Ads Ad。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [
+              {
+                "id": "rsa_headlines",
+                "if": {
+                  "ad_type": "RESPONSIVE_SEARCH_AD"
+                },
+                "message": "RESPONSIVE_SEARCH_AD requires headlines and descriptions",
+                "required": [
+                  "headlines",
+                  "descriptions"
+                ]
+              }
+            ],
+            "properties": {
+              "ad_group_id": {
+                "description": "Parent Ad Group ID",
+                "type": "string"
+              },
+              "ad_type": {
+                "description": "Ad format",
+                "enum": [
+                  "RESPONSIVE_SEARCH_AD",
+                  "EXPANDED_TEXT_AD",
+                  "RESPONSIVE_DISPLAY_AD"
+                ],
+                "type": "string"
+              },
+              "descriptions": {
+                "description": "Ad descriptions",
+                "items": {
+                  "maxLength": 90,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 4,
+                "minItems": 2,
+                "type": "array"
+              },
+              "final_url": {
+                "description": "Final URL",
+                "minLength": 1,
+                "type": "string"
+              },
+              "headlines": {
+                "description": "Ad headlines",
+                "items": {
+                  "maxLength": 30,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 15,
+                "minItems": 3,
+                "type": "array"
+              },
+              "name": {
+                "description": "Ad name",
+                "maxLength": 255,
+                "type": "string"
+              },
+              "path1": {
+                "description": "Display path 1",
+                "maxLength": 15,
+                "type": "string"
+              },
+              "path2": {
+                "description": "Display path 2",
+                "maxLength": 15,
+                "type": "string"
+              },
+              "responsive_search_ad": {
+                "additionalProperties": true,
+                "description": "Responsive Search Ad payload",
+                "type": "object"
+              },
+              "status": {
+                "description": "Ad status",
+                "enum": [
+                  "ENABLED",
+                  "PAUSED",
+                  "REMOVED"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [
+              [
+                "headlines",
+                "responsive_search_ad"
+              ]
+            ],
+            "provider_required": [
+              "final_url"
+            ],
+            "required": [
+              "ad_group_id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_ad",
+          "parent_resource_id_field": "ad_group_id",
+          "parent_resource_type": "ad_group",
+          "platform": "google-ads",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad"
+          ]
+        },
+        {
+          "action": "create",
+          "description": "创建 Google Ads Ad Group。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "description": "Parent Campaign ID",
+                "type": "string"
+              },
+              "cpc_bid": {
+                "description": "CPC bid in account currency",
+                "minimum": 0,
+                "type": "number"
+              },
+              "cpc_bid_micros": {
+                "description": "CPC bid in micros",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "name": {
+                "description": "Ad group name",
+                "maxLength": 255,
+                "type": "string"
+              },
+              "status": {
+                "description": "Ad group status",
+                "enum": [
+                  "ENABLED",
+                  "PAUSED",
+                  "REMOVED"
+                ],
+                "type": "string"
+              },
+              "targeting": {
+                "additionalProperties": true,
+                "description": "Ad group targeting",
+                "type": "object"
+              },
+              "type": {
+                "description": "Ad group type",
+                "enum": [
+                  "SEARCH_STANDARD",
+                  "SEARCH_DYNAMIC_ADS",
+                  "DISPLAY_STANDARD",
+                  "SHOPPING_PRODUCT",
+                  "VIDEO_TRUEVIEW_IN_STREAM",
+                  "VIDEO_BUMPER"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "type"
+            ],
+            "required": [
+              "campaign_id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_ad_group",
+          "parent_resource_id_field": "campaign_id",
+          "parent_resource_type": "campaign",
+          "platform": "google-ads",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_group_id",
+          "resource_type": "ad_group",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad_group"
+          ]
+        },
+        {
+          "action": "create",
+          "description": "创建 Google PMax Asset Group；当前仅支持 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "asset_group_type": {
+                "description": "Asset group type",
+                "enum": [
+                  "PERFORMANCE_MAX"
+                ],
+                "type": "string"
+              },
+              "campaign_id": {
+                "description": "Parent Performance Max Campaign ID",
+                "type": "string"
+              },
+              "descriptions": {
+                "description": "Description assets",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "maxItems": 5,
+                "minItems": 2,
+                "type": "array"
+              },
+              "headlines": {
+                "description": "Text headline assets",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "maxItems": 15,
+                "minItems": 3,
+                "type": "array"
+              },
+              "images": {
+                "description": "Asset references",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "logos": {
+                "description": "Asset references",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "long_headlines": {
+                "description": "Long headline assets",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "name": {
+                "description": "Asset group name",
+                "maxLength": 255,
+                "type": "string"
+              },
+              "status": {
+                "description": "Asset group status",
+                "enum": [
+                  "ENABLED",
+                  "PAUSED",
+                  "REMOVED"
+                ],
+                "type": "string"
+              },
+              "videos": {
+                "description": "Asset references",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "asset_group_type"
+            ],
+            "required": [
+              "campaign_id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_asset_group"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_asset_group",
+          "parent_resource_id_field": "campaign_id",
+          "parent_resource_type": "campaign",
+          "platform": "google-ads",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "asset_group_id",
+          "resource_type": "asset_group",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "pmax",
+            "asset_group"
+          ]
+        },
+        {
+          "action": "create",
+          "description": "创建 Google Ads Campaign。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [
+              {
+                "id": "target_cpa_dependency",
+                "if": {
+                  "bidding_strategy": "TARGET_CPA"
+                },
+                "message": "TARGET_CPA requires target_cpa_micros",
+                "required": [
+                  "target_cpa_micros"
+                ]
+              },
+              {
+                "id": "target_roas_dependency",
+                "if": {
+                  "bidding_strategy": "TARGET_ROAS"
+                },
+                "message": "TARGET_ROAS requires target_roas",
+                "required": [
+                  "target_roas"
+                ]
+              },
+              {
+                "id": "target_value_dependency",
+                "if": {
+                  "bidding_strategy": "MAXIMIZE_CONVERSION_VALUE"
+                },
+                "message": "MAXIMIZE_CONVERSION_VALUE requires target_roas",
+                "required": [
+                  "target_roas"
+                ]
+              }
+            ],
+            "properties": {
+              "advertising_channel_type": {
+                "default": "SEARCH",
+                "description": "Channel type",
+                "enum": [
+                  "SEARCH",
+                  "DISPLAY",
+                  "SHOPPING",
+                  "VIDEO",
+                  "APP",
+                  "PERFORMANCE_MAX"
+                ],
+                "input_aliases": [
+                  "campaign_type"
+                ],
+                "intent_field": "campaign_type",
+                "type": "string"
+              },
+              "bidding_strategy": {
+                "default": "MAXIMIZE_CONVERSIONS",
+                "description": "Bidding strategy",
+                "enum": [
+                  "MANUAL_CPC",
+                  "MAXIMIZE_CLICKS",
+                  "MAXIMIZE_CONVERSIONS",
+                  "TARGET_CPA",
+                  "TARGET_ROAS",
+                  "MAXIMIZE_CONVERSION_VALUE",
+                  "TARGET_IMPRESSION_SHARE"
+                ],
+                "type": "string"
+              },
+              "budget": {
+                "description": "Daily budget alias",
+                "minimum": 0,
+                "type": "number"
+              },
+              "campaign_name": {
+                "description": "Campaign name",
+                "maxLength": 255,
+                "type": "string"
+              },
+              "campaign_type": {
+                "description": "Channel type alias",
+                "enum": [
+                  "SEARCH",
+                  "DISPLAY",
+                  "SHOPPING",
+                  "VIDEO",
+                  "APP",
+                  "PERFORMANCE_MAX"
+                ],
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID; MCC is not accepted here",
+                "type": "string"
+              },
+              "daily_budget": {
+                "description": "Daily budget in account currency",
+                "minimum": 0,
+                "type": "number"
+              },
+              "end_date": {
+                "description": "YYYY-MM-DD end date",
+                "type": "string"
+              },
+              "networks": {
+                "description": "Serving networks",
+                "items": {
+                  "enum": [
+                    "GOOGLE_SEARCH",
+                    "SEARCH_PARTNERS",
+                    "DISPLAY_NETWORK"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "start_date": {
+                "description": "YYYY-MM-DD start date",
+                "type": "string"
+              },
+              "status": {
+                "description": "Campaign status",
+                "enum": [
+                  "ENABLED",
+                  "PAUSED",
+                  "REMOVED"
+                ],
+                "type": "string"
+              },
+              "target_cpa_micros": {
+                "description": "Target CPA in micros",
+                "minimum": 1,
+                "type": "integer"
+              },
+              "target_impression_share": {
+                "description": "Target impression share",
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              "target_roas": {
+                "description": "Target ROAS",
+                "minimum": 0.01,
+                "type": "number"
+              }
+            },
+            "provider_any_of": [
+              [
+                "daily_budget",
+                "budget"
+              ]
+            ],
+            "provider_required": [
+              "advertising_channel_type",
+              "bidding_strategy"
+            ],
+            "required": [
+              "customer_id",
+              "campaign_name"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_campaign",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "campaign_id",
+          "resource_type": "campaign",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "campaign"
+          ]
+        },
+        {
+          "action": "get",
+          "description": "查询 Google Ads Ad 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "ad_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_ad"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_get_ad",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "ad_group",
+          "platform": "google-ads",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "ad",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "ad"
+          ]
+        },
+        {
+          "action": "get",
+          "description": "查询 Google Ads Ad Group 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_group_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "ad_group_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_adgroup"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_get_ad_group",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "campaign",
+          "platform": "google-ads",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "ad_group",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "ad_group"
+          ]
+        },
+        {
+          "action": "get",
+          "description": "查询 PMax Asset Group 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "asset_group_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "asset_group_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_asset_group"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_get_asset_group",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "campaign",
+          "platform": "google-ads",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "asset_group",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "pmax"
+          ]
+        },
+        {
+          "action": "get",
+          "description": "查询 Google Ads Campaign 详情（支持 campaign_id 或 campaign_name）。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "type": "string"
+              },
+              "campaign_name": {
+                "description": "Campaign 名称（可通过名称查找 ID）",
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_campaign"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_get_campaign",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "campaign",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "campaign"
+          ]
+        },
+        {
+          "action": "report",
+          "description": "查询 Google Ads Campaign 报表。支持按 campaign_ids 过滤，默认查询最近30天数据。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_ids": {
+                "description": "要查询的 Campaign ID 列表，不填则默认查前5个",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "customer_id": {
+                "description": "Google Ads 账户 ID（从上下文自动获取）",
+                "type": "string"
+              },
+              "date_range": {
+                "description": "日期范围，如 LAST_30_DAYS, YESTERDAY, THIS_MONTH",
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [],
+            "type": "object"
+          },
+          "intent_types": [
+            "download_report"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_get_campaign_report",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "campaign",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "report"
+          ]
+        },
+        {
+          "action": "list",
+          "description": "查询 Google Ads Ad Group 列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "campaign_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_adgroups"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_list_ad_groups",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "campaign",
+          "platform": "google-ads",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "ad_group",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "ad_group"
+          ]
+        },
+        {
+          "action": "list",
+          "description": "查询 Google Ads Ad 列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_group_id": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "ad_group_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_ads"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_list_ads",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "ad_group",
+          "platform": "google-ads",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "ad",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "ad"
+          ]
+        },
+        {
+          "action": "list",
+          "description": "查询 PMax Campaign 的 Asset Group 列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "campaign_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_asset_groups"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_list_asset_groups",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "campaign",
+          "platform": "google-ads",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "asset_group",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "pmax"
+          ]
+        },
+        {
+          "action": "list",
+          "description": "查询 Google Ads Campaign 列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "customer_id": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_campaigns",
+            "cross_channel_overview",
+            "cross_channel_compare",
+            "cross_channel_performance_insights",
+            "cross_channel_optimize_budget",
+            "cross_channel_export_report"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_list_campaigns",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "campaign",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "campaign"
+          ]
+        },
+        {
+          "action": "list",
+          "description": "查询 Google Ads 关键词，可按 Campaign 或 Ad Group 过滤。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_group_id": {
+                "type": "string"
+              },
+              "campaign_id": {
+                "type": "string"
+              },
+              "customer_id": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_keywords"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_list_keywords",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "keyword",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "keyword"
+          ]
+        },
+        {
+          "action": "update",
+          "description": "更新 Google Ads ad，默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_id": {
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Allowed Google Ads ad update fields",
+                "properties": {
+                  "descriptions": {
+                    "description": "Descriptions",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "final_url": {
+                    "description": "Final URL",
+                    "type": "string"
+                  },
+                  "headlines": {
+                    "description": "Headlines",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "name": {
+                    "description": "Resource name",
+                    "type": "string"
+                  },
+                  "path1": {
+                    "description": "Display path 1",
+                    "type": "string"
+                  },
+                  "path2": {
+                    "description": "Display path 2",
+                    "type": "string"
+                  },
+                  "status": {
+                    "description": "Resource status",
+                    "enum": [
+                      "ENABLED",
+                      "PAUSED",
+                      "REMOVED"
+                    ],
+                    "intent_status_field": "status",
+                    "intent_status_map": {
+                      "ACTIVE": "ENABLED",
+                      "PAUSED": "PAUSED"
+                    },
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "ad_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_ad"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_update_ad",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "ad_group",
+          "platform": "google-ads",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad"
+          ]
+        },
+        {
+          "action": "update",
+          "description": "更新 Google Ads ad_group，默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_group_id": {
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Allowed Google Ads ad_group update fields",
+                "properties": {
+                  "cpc_bid": {
+                    "description": "CPC bid",
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "name": {
+                    "description": "Resource name",
+                    "type": "string"
+                  },
+                  "status": {
+                    "description": "Resource status",
+                    "enum": [
+                      "ENABLED",
+                      "PAUSED",
+                      "REMOVED"
+                    ],
+                    "intent_status_field": "status",
+                    "intent_status_map": {
+                      "ACTIVE": "ENABLED",
+                      "PAUSED": "PAUSED"
+                    },
+                    "type": "string"
+                  },
+                  "type": {
+                    "description": "Ad group type",
+                    "enum": [
+                      "SEARCH_STANDARD",
+                      "SEARCH_DYNAMIC_ADS",
+                      "DISPLAY_STANDARD"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "ad_group_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_adgroup"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_update_ad_group",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "campaign",
+          "platform": "google-ads",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_group_id",
+          "resource_type": "ad_group",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad_group"
+          ]
+        },
+        {
+          "action": "update",
+          "description": "更新 Google Ads asset_group，默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "asset_group_id": {
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Allowed Google Ads asset_group update fields",
+                "properties": {
+                  "descriptions": {
+                    "description": "Descriptions",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "headlines": {
+                    "description": "Headlines",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "images": {
+                    "description": "Image assets",
+                    "type": "array"
+                  },
+                  "name": {
+                    "description": "Resource name",
+                    "type": "string"
+                  },
+                  "status": {
+                    "description": "Resource status",
+                    "enum": [
+                      "ENABLED",
+                      "PAUSED",
+                      "REMOVED"
+                    ],
+                    "intent_status_field": "status",
+                    "intent_status_map": {
+                      "ACTIVE": "ENABLED",
+                      "PAUSED": "PAUSED"
+                    },
+                    "type": "string"
+                  },
+                  "videos": {
+                    "description": "Video assets",
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "asset_group_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_asset_group"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_update_asset_group",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "campaign",
+          "platform": "google-ads",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "asset_group_id",
+          "resource_type": "asset_group",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "asset_group"
+          ]
+        },
+        {
+          "action": "update",
+          "description": "更新 Google Ads campaign，默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Allowed Google Ads campaign update fields",
+                "properties": {
+                  "budget": {
+                    "description": "Budget alias",
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "daily_budget": {
+                    "description": "Daily budget",
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "name": {
+                    "description": "Resource name",
+                    "type": "string"
+                  },
+                  "status": {
+                    "description": "Resource status",
+                    "enum": [
+                      "ENABLED",
+                      "PAUSED",
+                      "REMOVED"
+                    ],
+                    "intent_status_field": "status",
+                    "intent_status_map": {
+                      "ACTIVE": "ENABLED",
+                      "PAUSED": "PAUSED"
+                    },
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "campaign_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_campaign",
+            "pause_campaign",
+            "resume_campaign",
+            "cross_channel_batch_pause",
+            "cross_channel_batch_resume",
+            "cross_channel_batch_update_budget"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_update_campaign",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "campaign_id",
+          "resource_type": "campaign",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "campaign"
+          ]
+        }
+      ]
+    },
+    "meta": {
+      "digest": "79f70802ebe63e3cf17535d320a0adb2507a72068fd13bf43f833f82f2dcbdb2",
+      "tool_count": 16,
+      "tools": [
+        {
+          "action": "boost",
+          "description": "将已有 Meta Page 帖子创建为推广广告。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "budget": {
+                "type": "number"
+              },
+              "duration_days": {
+                "type": "integer"
+              },
+              "page_id": {
+                "type": "string"
+              },
+              "post_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "page_id",
+              "post_id",
+              "budget",
+              "duration_days"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "boost_post"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_boost_post",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": null,
+          "resource_type": "post",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "boost",
+            "ad"
+          ]
+        },
+        {
+          "action": "create",
+          "description": "创建 Meta Ad。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "adset_id": {
+                "description": "Parent Ad Set ID",
+                "type": "string"
+              },
+              "body": {
+                "description": "Primary text",
+                "type": "string"
+              },
+              "creative": {
+                "additionalProperties": true,
+                "description": "Creative reference or inline payload",
+                "properties": {},
+                "type": "object"
+              },
+              "creative_id": {
+                "description": "Existing Creative ID",
+                "type": "string"
+              },
+              "description": {
+                "description": "Description",
+                "type": "string"
+              },
+              "name": {
+                "description": "Ad name",
+                "maxLength": 400,
+                "type": "string"
+              },
+              "object_story_spec": {
+                "additionalProperties": false,
+                "description": "Meta object story specification",
+                "properties": {
+                  "link_data": {
+                    "additionalProperties": false,
+                    "description": "Link ad story",
+                    "properties": {
+                      "description": {
+                        "description": "Description",
+                        "type": "string"
+                      },
+                      "image_hash": {
+                        "description": "Uploaded image hash",
+                        "type": "string"
+                      },
+                      "link": {
+                        "description": "Destination URL",
+                        "type": "string"
+                      },
+                      "message": {
+                        "description": "Primary text",
+                        "type": "string"
+                      },
+                      "name": {
+                        "description": "Headline",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "page_id": {
+                    "description": "Page ID",
+                    "type": "string"
+                  },
+                  "video_data": {
+                    "additionalProperties": false,
+                    "description": "Video ad story",
+                    "properties": {
+                      "message": {
+                        "description": "Primary text",
+                        "type": "string"
+                      },
+                      "title": {
+                        "description": "Video title",
+                        "type": "string"
+                      },
+                      "video_id": {
+                        "description": "Video ID",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              },
+              "status": {
+                "description": "Initial delivery status",
+                "enum": [
+                  "ACTIVE",
+                  "PAUSED"
+                ],
+                "type": "string"
+              },
+              "title": {
+                "description": "Headline",
+                "type": "string"
+              },
+              "url_tags": {
+                "description": "URL tracking tags",
+                "type": "string"
+              }
+            },
+            "provider_any_of": [
+              [
+                "creative_id",
+                "object_story_spec",
+                "creative"
+              ]
+            ],
+            "provider_required": [],
+            "required": [
+              "adset_id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_create_ad",
+          "parent_resource_id_field": "adset_id",
+          "parent_resource_type": "ad_set",
+          "platform": "meta",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad"
+          ]
+        },
+        {
+          "action": "create",
+          "description": "创建 Meta Ad Set。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [
+              {
+                "id": "conversion_goal_requires_promoted_object",
+                "if": {
+                  "optimization_goal": "OFFSITE_CONVERSIONS"
+                },
+                "message": "OFFSITE_CONVERSIONS requires promoted_object",
+                "required": [
+                  "promoted_object"
+                ]
+              },
+              {
+                "id": "value_goal_requires_promoted_object",
+                "if": {
+                  "optimization_goal": "VALUE"
+                },
+                "message": "VALUE requires promoted_object",
+                "required": [
+                  "promoted_object"
+                ]
+              },
+              {
+                "id": "app_goal_requires_promoted_object",
+                "if": {
+                  "optimization_goal": "APP_INSTALLS"
+                },
+                "message": "APP_INSTALLS requires promoted_object",
+                "required": [
+                  "promoted_object"
+                ]
+              }
+            ],
+            "properties": {
+              "bid_amount": {
+                "description": "Bid amount",
+                "minimum": 0,
+                "type": "number"
+              },
+              "bid_strategy": {
+                "description": "Bid strategy",
+                "enum": [
+                  "LOWEST_COST_WITHOUT_CAP",
+                  "LOWEST_COST_WITH_BID_CAP",
+                  "COST_CAP",
+                  "LOWEST_COST_WITH_MIN_ROAS"
+                ],
+                "type": "string"
+              },
+              "bidding_strategy": {
+                "description": "Bid strategy alias",
+                "enum": [
+                  "LOWEST_COST_WITHOUT_CAP",
+                  "LOWEST_COST_WITH_BID_CAP",
+                  "COST_CAP",
+                  "LOWEST_COST_WITH_MIN_ROAS"
+                ],
+                "type": "string"
+              },
+              "billing_event": {
+                "description": "Billing event",
+                "enum": [
+                  "IMPRESSIONS",
+                  "LINK_CLICKS",
+                  "THRUPLAY"
+                ],
+                "type": "string"
+              },
+              "budget": {
+                "description": "User-facing daily budget alias",
+                "minimum": 0,
+                "type": "number"
+              },
+              "campaign_id": {
+                "description": "Parent Campaign ID",
+                "type": "string"
+              },
+              "daily_budget": {
+                "description": "Daily budget",
+                "minimum": 0,
+                "type": "number"
+              },
+              "end_time": {
+                "description": "ISO-8601 end time",
+                "type": "string"
+              },
+              "lifetime_budget": {
+                "description": "Lifetime budget",
+                "minimum": 0,
+                "type": "number"
+              },
+              "name": {
+                "description": "Ad Set name",
+                "maxLength": 400,
+                "type": "string"
+              },
+              "optimization_goal": {
+                "description": "Optimization goal",
+                "enum": [
+                  "APP_INSTALLS",
+                  "OFFSITE_CONVERSIONS",
+                  "VALUE",
+                  "LINK_CLICKS",
+                  "LANDING_PAGE_VIEWS",
+                  "LEAD_GENERATION",
+                  "IMPRESSIONS",
+                  "REACH",
+                  "THRUPLAY",
+                  "POST_ENGAGEMENT",
+                  "EVENT_RESPONSES",
+                  "VIDEO_VIEWS"
+                ],
+                "type": "string"
+              },
+              "promoted_object": {
+                "additionalProperties": false,
+                "description": "Meta promoted object",
+                "properties": {
+                  "application_id": {
+                    "description": "Meta application ID",
+                    "type": "string"
+                  },
+                  "custom_event_str": {
+                    "description": "Provider custom event name",
+                    "type": "string"
+                  },
+                  "custom_event_type": {
+                    "description": "Conversion event",
+                    "enum": [
+                      "PURCHASE",
+                      "LEAD",
+                      "COMPLETE_REGISTRATION",
+                      "ADD_TO_CART",
+                      "INITIATE_CHECKOUT",
+                      "VIEW_CONTENT",
+                      "SEARCH",
+                      "SUBSCRIBE"
+                    ],
+                    "type": "string"
+                  },
+                  "object_store_url": {
+                    "description": "App store URL",
+                    "type": "string"
+                  },
+                  "page_id": {
+                    "description": "Facebook Page ID",
+                    "type": "string"
+                  },
+                  "pixel_id": {
+                    "description": "Meta Pixel ID",
+                    "type": "string"
+                  },
+                  "product_set_id": {
+                    "description": "Catalog product set ID",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "start_time": {
+                "description": "ISO-8601 start time",
+                "type": "string"
+              },
+              "status": {
+                "description": "Initial delivery status",
+                "enum": [
+                  "ACTIVE",
+                  "PAUSED"
+                ],
+                "type": "string"
+              },
+              "targeting": {
+                "additionalProperties": false,
+                "description": "Meta ad set targeting",
+                "properties": {
+                  "age_max": {
+                    "description": "Maximum age",
+                    "maximum": 65,
+                    "minimum": 13,
+                    "type": "integer"
+                  },
+                  "age_min": {
+                    "description": "Minimum age",
+                    "maximum": 65,
+                    "minimum": 13,
+                    "type": "integer"
+                  },
+                  "custom_audiences": {
+                    "description": "Included custom audiences",
+                    "items": {
+                      "additionalProperties": false,
+                      "description": "Custom audience reference",
+                      "properties": {
+                        "id": {
+                          "description": "Meta audience ID",
+                          "type": "string"
+                        },
+                        "name": {
+                          "description": "Optional display name",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "device_platforms": {
+                    "description": "Device platforms",
+                    "items": {
+                      "enum": [
+                        "mobile",
+                        "desktop"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "excluded_custom_audiences": {
+                    "description": "Excluded custom audiences",
+                    "items": {
+                      "additionalProperties": false,
+                      "description": "Custom audience reference",
+                      "properties": {
+                        "id": {
+                          "description": "Meta audience ID",
+                          "type": "string"
+                        },
+                        "name": {
+                          "description": "Optional display name",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "facebook_positions": {
+                    "description": "Facebook placements",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "flexible_spec": {
+                    "description": "Interest/behavior groups",
+                    "items": {
+                      "additionalProperties": true,
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "genders": {
+                    "description": "1 male, 2 female",
+                    "items": {
+                      "enum": [
+                        1,
+                        2
+                      ],
+                      "type": "integer"
+                    },
+                    "type": "array"
+                  },
+                  "geo_locations": {
+                    "additionalProperties": false,
+                    "description": "Geographic targeting",
+                    "properties": {
+                      "cities": {
+                        "description": "City references",
+                        "items": {
+                          "additionalProperties": false,
+                          "description": "City reference",
+                          "properties": {
+                            "key": {
+                              "description": "",
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "countries": {
+                        "description": "ISO country codes",
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "location_types": {
+                        "description": "Location semantics",
+                        "items": {
+                          "enum": [
+                            "home",
+                            "recent"
+                          ],
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "regions": {
+                        "description": "Region IDs",
+                        "items": {
+                          "additionalProperties": false,
+                          "description": "Region reference",
+                          "properties": {
+                            "key": {
+                              "description": "",
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "instagram_positions": {
+                    "description": "Instagram placements",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "locales": {
+                    "description": "Locale IDs",
+                    "items": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "type": "array"
+                  },
+                  "publisher_platforms": {
+                    "description": "Publisher platforms",
+                    "items": {
+                      "enum": [
+                        "facebook",
+                        "instagram",
+                        "audience_network",
+                        "messenger"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [
+              [
+                "daily_budget",
+                "lifetime_budget",
+                "budget"
+              ]
+            ],
+            "provider_required": [
+              "optimization_goal",
+              "billing_event",
+              "targeting"
+            ],
+            "required": [
+              "campaign_id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_create_adset",
+          "parent_resource_id_field": "campaign_id",
+          "parent_resource_type": "campaign",
+          "platform": "meta",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "adset_id",
+          "resource_type": "ad_set",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad_set"
+          ]
+        },
+        {
+          "action": "create",
+          "description": "创建 Meta Campaign。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [
+              {
+                "id": "reserved_requires_lifetime_budget",
+                "if": {
+                  "buying_type": "RESERVED"
+                },
+                "message": "buying_type=RESERVED requires lifetime_budget",
+                "required": [
+                  "lifetime_budget"
+                ]
+              }
+            ],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "budget": {
+                "description": "User-facing daily budget alias",
+                "minimum": 0,
+                "type": "number"
+              },
+              "buying_type": {
+                "description": "Buying type",
+                "enum": [
+                  "AUCTION",
+                  "RESERVED"
+                ],
+                "type": "string"
+              },
+              "daily_budget": {
+                "description": "Daily budget",
+                "minimum": 0,
+                "type": "number"
+              },
+              "end_time": {
+                "description": "ISO-8601 end time",
+                "type": "string"
+              },
+              "lifetime_budget": {
+                "description": "Lifetime budget",
+                "minimum": 0,
+                "type": "number"
+              },
+              "name": {
+                "description": "Campaign name",
+                "maxLength": 400,
+                "type": "string"
+              },
+              "objective": {
+                "description": "Campaign objective",
+                "enum": [
+                  "OUTCOME_SALES",
+                  "OUTCOME_LEADS",
+                  "OUTCOME_TRAFFIC",
+                  "OUTCOME_AWARENESS",
+                  "OUTCOME_ENGAGEMENT",
+                  "OUTCOME_APP_PROMOTION",
+                  "APP_INSTALLS",
+                  "PRODUCT_CATALOG_SALES",
+                  "CONVERSIONS",
+                  "TRAFFIC",
+                  "LINK_CLICKS"
+                ],
+                "intent_field": "objective",
+                "intent_map": {
+                  "brand": "OUTCOME_AWARENESS",
+                  "leads": "OUTCOME_LEADS",
+                  "sales": "OUTCOME_SALES",
+                  "traffic": "OUTCOME_TRAFFIC"
+                },
+                "type": "string"
+              },
+              "special_ad_categories": {
+                "description": "Special ad category; use NONE when not applicable",
+                "items": {
+                  "enum": [
+                    "NONE",
+                    "EMPLOYMENT",
+                    "HOUSING",
+                    "CREDIT"
+                  ],
+                  "type": "string"
+                },
+                "type": [
+                  "array",
+                  "string"
+                ]
+              },
+              "spend_cap": {
+                "description": "Campaign spend cap",
+                "minimum": 0,
+                "type": "number"
+              },
+              "start_time": {
+                "description": "ISO-8601 start time",
+                "type": "string"
+              },
+              "status": {
+                "description": "Initial delivery status",
+                "enum": [
+                  "ACTIVE",
+                  "PAUSED"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [
+              [
+                "daily_budget",
+                "lifetime_budget",
+                "budget"
+              ]
+            ],
+            "provider_required": [
+              "objective",
+              "special_ad_categories"
+            ],
+            "required": [
+              "account_id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_create_campaign",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "campaign_id",
+          "resource_type": "campaign",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "campaign"
+          ]
+        },
+        {
+          "action": "create",
+          "description": "创建 Meta Creative；当前仅支持 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "image_hash": {
+                "type": "string"
+              },
+              "image_url": {
+                "type": "string"
+              },
+              "link": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "page_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "name",
+              "page_id",
+              "link"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_creative"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_create_creative",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "creative_id",
+          "resource_type": "creative",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "creative"
+          ]
+        },
+        {
+          "action": "get",
+          "description": "获取 Meta Ad 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "ad_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_ad"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_get_ad",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "ad_group",
+          "platform": "meta",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "ad",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "ad"
+          ]
+        },
+        {
+          "action": "get",
+          "description": "获取 Meta Ad Set 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "adset_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "adset_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_adset"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_get_adset",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "campaign",
+          "platform": "meta",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "ad_set",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "ad_set"
+          ]
+        },
+        {
+          "action": "get",
+          "description": "获取 Meta Campaign 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "type": "string"
+              },
+              "campaign_name": {
+                "description": "Campaign 名称（可通过名称查找 ID）",
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_campaign"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_get_campaign",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "campaign",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "campaign"
+          ]
+        },
+        {
+          "action": "report",
+          "description": "查询 Meta Campaign 报表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "type": "string"
+              },
+              "campaign_ids": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "date_preset": {
+                "intent_field": "date_range",
+                "intent_map": {
+                  "LAST_14_DAYS": "last_14d",
+                  "LAST_30_DAYS": "last_30d",
+                  "LAST_7_DAYS": "last_7d"
+                },
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [],
+            "type": "object"
+          },
+          "intent_types": [
+            "download_report"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_get_campaign_report",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "campaign",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "report"
+          ]
+        },
+        {
+          "action": "list",
+          "description": "列出 Meta Ad Set 列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "campaign_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_adsets",
+            "list_adgroups"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_list_ad_sets",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "campaign",
+          "platform": "meta",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "ad_set",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "ad_set"
+          ]
+        },
+        {
+          "action": "list",
+          "description": "列出 Meta Ad 列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "adset_id": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "adset_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_ads"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_list_ads",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "ad_group",
+          "platform": "meta",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "ad",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "ad"
+          ]
+        },
+        {
+          "action": "list",
+          "description": "查询 Meta Custom Audience 列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_audiences"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_list_audiences",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "audience",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "audience"
+          ]
+        },
+        {
+          "action": "list",
+          "description": "列出 Meta Campaign 列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_campaigns",
+            "cross_channel_overview",
+            "cross_channel_compare",
+            "cross_channel_performance_insights",
+            "cross_channel_optimize_budget",
+            "cross_channel_export_report"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_list_campaigns",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "campaign",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "campaign"
+          ]
+        },
+        {
+          "action": "update",
+          "description": "更新 Meta ad，默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_id": {
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Allowed Meta ad update fields",
+                "properties": {
+                  "creative": {
+                    "description": "Creative payload",
+                    "type": "object"
+                  },
+                  "creative_id": {
+                    "description": "Existing creative ID",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "Resource name",
+                    "type": "string"
+                  },
+                  "status": {
+                    "description": "Delivery status",
+                    "enum": [
+                      "ACTIVE",
+                      "PAUSED"
+                    ],
+                    "intent_status_field": "status",
+                    "intent_status_map": {
+                      "ACTIVE": "ACTIVE",
+                      "PAUSED": "PAUSED"
+                    },
+                    "type": "string"
+                  },
+                  "url_tags": {
+                    "description": "URL tracking tags",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "ad_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_ad"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_update_ad",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "ad_group",
+          "platform": "meta",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad"
+          ]
+        },
+        {
+          "action": "update",
+          "description": "更新 Meta adset，默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "adset_id": {
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Allowed Meta adset update fields",
+                "properties": {
+                  "bid_amount": {
+                    "description": "Bid amount",
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "bidding_strategy": {
+                    "description": "Bidding strategy",
+                    "enum": [
+                      "LOWEST_COST_WITHOUT_CAP",
+                      "LOWEST_COST_WITH_BID_CAP",
+                      "COST_CAP",
+                      "LOWEST_COST_WITH_MIN_ROAS"
+                    ],
+                    "type": "string"
+                  },
+                  "billing_event": {
+                    "description": "Billing event",
+                    "enum": [
+                      "IMPRESSIONS",
+                      "LINK_CLICKS",
+                      "THRUPLAY"
+                    ],
+                    "type": "string"
+                  },
+                  "daily_budget": {
+                    "description": "Daily budget",
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "name": {
+                    "description": "Resource name",
+                    "type": "string"
+                  },
+                  "optimization_goal": {
+                    "description": "Optimization goal",
+                    "enum": [
+                      "APP_INSTALLS",
+                      "OFFSITE_CONVERSIONS",
+                      "VALUE",
+                      "LINK_CLICKS",
+                      "LANDING_PAGE_VIEWS",
+                      "LEAD_GENERATION",
+                      "IMPRESSIONS",
+                      "REACH",
+                      "THRUPLAY"
+                    ],
+                    "type": "string"
+                  },
+                  "status": {
+                    "description": "Delivery status",
+                    "enum": [
+                      "ACTIVE",
+                      "PAUSED"
+                    ],
+                    "intent_status_field": "status",
+                    "intent_status_map": {
+                      "ACTIVE": "ACTIVE",
+                      "PAUSED": "PAUSED"
+                    },
+                    "type": "string"
+                  },
+                  "targeting": {
+                    "description": "Meta targeting object",
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "adset_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_adset"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_update_adset",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "campaign",
+          "platform": "meta",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "adset_id",
+          "resource_type": "ad_set",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "adset"
+          ]
+        },
+        {
+          "action": "update",
+          "description": "更新 Meta campaign，默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Allowed Meta campaign update fields",
+                "properties": {
+                  "budget": {
+                    "description": "Budget alias",
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "daily_budget": {
+                    "description": "Daily budget",
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "name": {
+                    "description": "Resource name",
+                    "type": "string"
+                  },
+                  "status": {
+                    "description": "Delivery status",
+                    "enum": [
+                      "ACTIVE",
+                      "PAUSED"
+                    ],
+                    "intent_status_field": "status",
+                    "intent_status_map": {
+                      "ACTIVE": "ACTIVE",
+                      "PAUSED": "PAUSED"
+                    },
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "campaign_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_campaign",
+            "pause_campaign",
+            "resume_campaign",
+            "cross_channel_batch_pause",
+            "cross_channel_batch_resume",
+            "cross_channel_batch_update_budget"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_update_campaign",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "campaign_id",
+          "resource_type": "campaign",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "campaign"
+          ]
+        }
+      ]
+    },
+    "tiktok": {
+      "digest": "73a84533942e8db7e962cc6e405223ed2a8624945e4e0333ef0e94b6a61787df",
+      "tool_count": 24,
+      "tools": [
+        {
+          "action": "create",
+          "description": "创建 TikTok Ads Ad。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_format": {
+                "description": "Ad format",
+                "enum": [
+                  "SINGLE_VIDEO",
+                  "SINGLE_IMAGE",
+                  "CAROUSEL",
+                  "SPARK_AD"
+                ],
+                "type": "string"
+              },
+              "adgroup_id": {
+                "description": "Parent ad group ID",
+                "type": "string"
+              },
+              "campaign_id": {
+                "description": "Parent campaign ID",
+                "type": "string"
+              },
+              "conversion_id": {
+                "description": "Conversion event ID",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "creatives": {
+                "description": "Creative list",
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "landing_page_url": {
+                "description": "Landing page URL",
+                "type": "string"
+              },
+              "media": {
+                "description": "TikTok media asset payload",
+                "type": "object"
+              },
+              "name": {
+                "description": "Ad name",
+                "type": "string"
+              },
+              "status": {
+                "description": "Ad status: 1 active, 0 paused",
+                "enum": [
+                  0,
+                  1
+                ],
+                "type": "integer"
+              },
+              "text": {
+                "description": "Ad copy payload",
+                "type": "object"
+              }
+            },
+            "provider_any_of": [
+              [
+                "media",
+                "creatives"
+              ]
+            ],
+            "provider_required": [
+              "campaign_id"
+            ],
+            "required": [
+              "adgroup_id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_create_ad",
+          "parent_resource_id_field": "adgroup_id",
+          "parent_resource_type": "ad_group",
+          "platform": "tiktok",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad"
+          ]
+        },
+        {
+          "action": "create",
+          "description": "创建 TikTok Ads Ad Group。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [
+              {
+                "allowed": {
+                  "billing_event": [
+                    "OCPM"
+                  ]
+                },
+                "id": "app_android_dependencies",
+                "if": {
+                  "promotion_type": "APP_ANDROID"
+                },
+                "message": "APP_ANDROID requires app_id, deep_bid_type, operating_systems and billing_event=OCPM",
+                "required": [
+                  "app_id",
+                  "deep_bid_type",
+                  "operating_systems"
+                ]
+              },
+              {
+                "allowed": {
+                  "billing_event": [
+                    "OCPM"
+                  ]
+                },
+                "id": "app_ios_dependencies",
+                "if": {
+                  "promotion_type": "APP_IOS"
+                },
+                "message": "APP_IOS requires app_id, deep_bid_type, operating_systems and billing_event=OCPM",
+                "required": [
+                  "app_id",
+                  "deep_bid_type",
+                  "operating_systems"
+                ]
+              },
+              {
+                "id": "website_dependencies",
+                "if": {
+                  "promotion_type": "WEBSITE"
+                },
+                "message": "WEBSITE requires landing_url",
+                "required": [
+                  "landing_url"
+                ]
+              },
+              {
+                "id": "custom_bid_requires_amount",
+                "if": {
+                  "bid_type": "BID_TYPE_CUSTOM"
+                },
+                "message": "bid_type=BID_TYPE_CUSTOM requires bid_amount",
+                "required": [
+                  "bid_amount"
+                ]
+              }
+            ],
+            "properties": {
+              "age_groups": {
+                "description": "Age targeting groups",
+                "items": {
+                  "enum": [
+                    "AGE_13_17",
+                    "AGE_18_24",
+                    "AGE_25_34",
+                    "AGE_35_44",
+                    "AGE_45_54",
+                    "AGE_55_64",
+                    "AGE_65+"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "app_id": {
+                "description": "App ID returned by TikTok app lookup",
+                "lookup_result_key": "apps",
+                "lookup_tool": "tiktok_list_apps",
+                "selection_label_fields": [
+                  "app_name",
+                  "name",
+                  "display_name"
+                ],
+                "selection_value_fields": [
+                  "app_id",
+                  "id"
+                ],
+                "type": "string"
+              },
+              "auto_targeting_enabled": {
+                "description": "Enable automatic targeting",
+                "type": "boolean"
+              },
+              "bid_amount": {
+                "description": "Manual bid amount",
+                "minimum": 0,
+                "type": "number"
+              },
+              "bid_type": {
+                "description": "Bid mode",
+                "enum": [
+                  "BID_TYPE_NO_BID",
+                  "BID_TYPE_CUSTOM",
+                  "BID_TYPE_MAX_CONVERSION"
+                ],
+                "type": "string"
+              },
+              "billing_event": {
+                "description": "Billing event",
+                "enum": [
+                  "CPM",
+                  "GD",
+                  "CPV",
+                  "CPA",
+                  "OCPC",
+                  "OCPM",
+                  "CPC"
+                ],
+                "type": "string"
+              },
+              "budget": {
+                "description": "Budget in user currency; current knowledge base minimum is 50 USD",
+                "minimum": 50,
+                "type": "number"
+              },
+              "budget_mode": {
+                "description": "Ad group budget mode",
+                "enum": [
+                  "BUDGET_MODE_DAY",
+                  "BUDGET_MODE_INFINITE",
+                  "BUDGET_MODE_DYNAMIC_DAILY_BUDGET"
+                ],
+                "type": "string"
+              },
+              "campaign_id": {
+                "description": "Parent campaign ID",
+                "type": "string"
+              },
+              "conversion_id": {
+                "description": "Conversion event ID returned by TikTok lookup",
+                "lookup_result_key": "conversions",
+                "lookup_tool": "tiktok_list_conversions",
+                "minimum": 0,
+                "selection_label_fields": [
+                  "conversion_name",
+                  "name",
+                  "event_name"
+                ],
+                "selection_value_fields": [
+                  "conversion_id",
+                  "id"
+                ],
+                "type": "integer"
+              },
+              "daily_budget": {
+                "description": "Daily budget in user currency",
+                "minimum": 50,
+                "type": "number"
+              },
+              "deep_bid_type": {
+                "description": "Deep optimization goal",
+                "enum": [
+                  "AEO",
+                  "OCC",
+                  "ROAS"
+                ],
+                "type": "string"
+              },
+              "gender": {
+                "description": "Gender targeting",
+                "enum": [
+                  "GENDER_UNLIMITED",
+                  "GENDER_MALE",
+                  "GENDER_FEMALE"
+                ],
+                "type": "string"
+              },
+              "landing_url": {
+                "description": "Website landing URL",
+                "type": "string"
+              },
+              "location_ids": {
+                "description": "Country/region IDs",
+                "items": {
+                  "type": "string"
+                },
+                "lookup_result_key": "locations",
+                "lookup_tool": "tiktok_list_locations",
+                "selection_label_fields": [
+                  "location_name",
+                  "name",
+                  "country_name",
+                  "country_code"
+                ],
+                "selection_value_fields": [
+                  "location_id",
+                  "id",
+                  "country_code",
+                  "code"
+                ],
+                "type": "array"
+              },
+              "name": {
+                "description": "Ad group name; max 60 characters",
+                "type": "string"
+              },
+              "operating_systems": {
+                "description": "Operating systems",
+                "items": {
+                  "enum": [
+                    "ANDROID",
+                    "IOS"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "placement_type": {
+                "description": "Placement mode",
+                "enum": [
+                  "PLACEMENT_TYPE_NORMAL",
+                  "PLACEMENT_TYPE_AUTOMATIC"
+                ],
+                "type": "string"
+              },
+              "promotion_type": {
+                "description": "Promotion destination",
+                "enum": [
+                  "APP_ANDROID",
+                  "APP_IOS",
+                  "WEBSITE",
+                  "LEAD_FORM",
+                  "CONTENT"
+                ],
+                "type": "string"
+              },
+              "status": {
+                "description": "Ad group status: 1 active, 0 paused",
+                "enum": [
+                  0,
+                  1
+                ],
+                "type": "integer"
+              },
+              "targeting": {
+                "description": "Provider targeting object; use structured fields above for known dimensions",
+                "type": "object"
+              },
+              "tracking_url": {
+                "description": "Tracking URL",
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "promotion_type",
+              "billing_event",
+              "budget_mode",
+              "budget",
+              "location_ids"
+            ],
+            "required": [
+              "campaign_id",
+              "name",
+              "promotion_type",
+              "billing_event",
+              "budget_mode",
+              "budget",
+              "location_ids",
+              "placement_type",
+              "bid_type"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_create_adgroup",
+          "parent_resource_id_field": "campaign_id",
+          "parent_resource_type": "campaign",
+          "platform": "tiktok",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "adgroup_id",
+          "resource_type": "ad_group",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "adgroup"
+          ]
+        },
+        {
+          "action": "create",
+          "description": "创建 TikTok Ads Campaign。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [
+              {
+                "id": "daily_budget_required",
+                "if": {
+                  "budget_mode": "BUDGET_MODE_DAY"
+                },
+                "message": "budget_mode=BUDGET_MODE_DAY requires daily_budget",
+                "required": [
+                  "daily_budget"
+                ]
+              },
+              {
+                "id": "total_budget_required",
+                "if": {
+                  "budget_mode": "BUDGET_MODE_TOTAL"
+                },
+                "message": "budget_mode=BUDGET_MODE_TOTAL requires budget",
+                "required": [
+                  "budget"
+                ]
+              },
+              {
+                "id": "app_campaign_requires_app_mode",
+                "if": {
+                  "objective_type": "APP_PROMOTION"
+                },
+                "message": "objective_type=APP_PROMOTION requires app_promotion_type",
+                "required": [
+                  "app_promotion_type"
+                ]
+              }
+            ],
+            "properties": {
+              "account_id": {
+                "description": "TikTok advertiser ID",
+                "type": "string"
+              },
+              "app_promotion_type": {
+                "description": "App promotion mode; only for app campaigns",
+                "enum": [
+                  "APP_ACQUISITION",
+                  "APP_RETARGETING"
+                ],
+                "type": "string"
+              },
+              "budget": {
+                "description": "Daily/lifetime budget in user currency",
+                "minimum": 0,
+                "type": "number"
+              },
+              "budget_mode": {
+                "description": "Budget mode",
+                "enum": [
+                  "BUDGET_MODE_DAY",
+                  "BUDGET_MODE_INFINITE",
+                  "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
+                  "BUDGET_MODE_TOTAL"
+                ],
+                "type": "string"
+              },
+              "budget_restriction": {
+                "description": "Budget restriction",
+                "enum": [
+                  "NO_LIMITATION",
+                  "DAILY_BUDGET",
+                  "LIFETIME_BUDGET"
+                ],
+                "type": "string"
+              },
+              "campaign_automation_type": {
+                "description": "Automation mode",
+                "enum": [
+                  "MANUAL",
+                  "UPGRADED_SMART_PLUS"
+                ],
+                "type": "string"
+              },
+              "campaign_type": {
+                "description": "Campaign type",
+                "enum": [
+                  "REGULAR_CAMPAIGN",
+                  "IOS14_CAMPAIGN"
+                ],
+                "type": "string"
+              },
+              "daily_budget": {
+                "description": "Daily budget in user currency",
+                "minimum": 0,
+                "type": "number"
+              },
+              "name": {
+                "description": "Campaign name; max 60 characters",
+                "type": "string"
+              },
+              "objective_type": {
+                "description": "Campaign optimization objective",
+                "enum": [
+                  "APP_PROMOTION",
+                  "PRODUCT_SALES",
+                  "TRAFFIC",
+                  "VIDEO_VIEWS",
+                  "CONVERSIONS",
+                  "REACH",
+                  "LEAD_GENERATION",
+                  "ENGAGEMENT",
+                  "CATALOG_SALES",
+                  "SHOP_PURCHASES",
+                  "WEB_CONVERSIONS",
+                  "APP_INSTALL"
+                ],
+                "intent_field": "objective",
+                "intent_map": {
+                  "brand": "REACH",
+                  "leads": "LEAD_GENERATION",
+                  "sales": "PRODUCT_SALES",
+                  "traffic": "TRAFFIC"
+                },
+                "type": "string"
+              },
+              "status": {
+                "description": "Campaign status: 1 active, 0 paused",
+                "enum": [
+                  0,
+                  1
+                ],
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "objective_type",
+              "budget_mode",
+              "campaign_type"
+            ],
+            "required": [
+              "account_id",
+              "name",
+              "objective_type",
+              "budget_mode",
+              "campaign_type"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_create_campaign",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "campaign_id",
+          "resource_type": "campaign",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "campaign"
+          ]
+        },
+        {
+          "action": "get",
+          "description": "查询 TikTok Ads Ad 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_id": {
+                "type": "string"
+              },
+              "adgroup_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "adgroup_id",
+              "ad_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_ad"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_get_ad",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "ad_group",
+          "platform": "tiktok",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "ad",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "ad"
+          ]
+        },
+        {
+          "action": "get",
+          "description": "查询 TikTok Ads Ad Group 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "adgroup_id": {
+                "type": "string"
+              },
+              "campaign_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "campaign_id",
+              "adgroup_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_adgroup"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_get_adgroup",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "campaign",
+          "platform": "tiktok",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "ad_group",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "adgroup"
+          ]
+        },
+        {
+          "action": "get",
+          "description": "查询 TikTok Ads Campaign 详情（支持 campaign_id 或 campaign_name）。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "type": "string"
+              },
+              "campaign_name": {
+                "description": "Campaign 名称（可通过名称查找 ID）",
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_campaign"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_get_campaign",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "campaign",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "campaign"
+          ]
+        },
+        {
+          "action": "report",
+          "description": "查询 TikTok Ads Campaign 报表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "campaign_ids": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "date_range": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "download_report"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_get_campaign_report",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "campaign",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "report"
+          ]
+        },
+        {
+          "action": "list",
+          "description": "查询 TikTok Ads Ad Group 列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "campaign_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_adgroups"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_list_adgroups",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "campaign",
+          "platform": "tiktok",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "ad_group",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "adgroup"
+          ]
+        },
+        {
+          "action": "list",
+          "description": "查询 TikTok Ads Ad 列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "adgroup_id": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "adgroup_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_ads"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_list_ads",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "ad_group",
+          "platform": "tiktok",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "ad",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "ad"
+          ]
+        },
+        {
+          "action": "list",
+          "description": "查询 TikTok apps 参考数据。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "filtering": {
+                "type": "array"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "location_type": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_apps"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_list_apps",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "app",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "apps"
+          ]
+        },
+        {
+          "action": "list",
+          "description": "查询 TikTok Audience 列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_audiences"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_list_audiences",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "audience",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "audience"
+          ]
+        },
+        {
+          "action": "list",
+          "description": "查询 TikTok brand_safety 参考数据。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "filtering": {
+                "type": "array"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "location_type": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_brand_safety"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_list_brand_safety",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "brand_safety",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "brand_safety"
+          ]
+        },
+        {
+          "action": "list",
+          "description": "查询 TikTok Ads Campaign 列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_campaigns",
+            "cross_channel_overview",
+            "cross_channel_compare",
+            "cross_channel_performance_insights",
+            "cross_channel_optimize_budget",
+            "cross_channel_export_report"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_list_campaigns",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "campaign",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "campaign"
+          ]
+        },
+        {
+          "action": "list",
+          "description": "查询 TikTok catalogs 参考数据。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "filtering": {
+                "type": "array"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "location_type": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_catalogs"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_list_catalogs",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "catalog",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "catalogs"
+          ]
+        },
+        {
+          "action": "list",
+          "description": "查询 TikTok conversions 参考数据。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "filtering": {
+                "type": "array"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "location_type": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_conversions"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_list_conversions",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "conversion",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "conversions"
+          ]
+        },
+        {
+          "action": "list",
+          "description": "查询 TikTok creatives 素材库。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "filtering": {
+                "type": "array"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_creatives"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_list_creatives",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "creative",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "creative",
+            "creatives"
+          ]
+        },
+        {
+          "action": "list",
+          "description": "查询 TikTok devices 参考数据。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "filtering": {
+                "type": "array"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "location_type": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_devices"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_list_devices",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "device",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "devices"
+          ]
+        },
+        {
+          "action": "list",
+          "description": "查询 TikTok images 素材库。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "filtering": {
+                "type": "array"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_images"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_list_images",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "image",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "creative",
+            "images"
+          ]
+        },
+        {
+          "action": "list",
+          "description": "查询 TikTok locations 参考数据。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "filtering": {
+                "type": "array"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "location_type": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_locations"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_list_locations",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "location",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "locations"
+          ]
+        },
+        {
+          "action": "list",
+          "description": "查询 TikTok videos 素材库。",
+          "effect_class": "read",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "filtering": {
+                "type": "array"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_videos"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_list_videos",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "video",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "creative",
+            "videos"
+          ]
+        },
+        {
+          "action": "boost",
+          "description": "使用达人已有帖子创建 TikTok Spark Ad。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "adgroup_id": {
+                "type": "string"
+              },
+              "campaign_id": {
+                "type": "string"
+              },
+              "spark_post_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "campaign_id",
+              "adgroup_id",
+              "spark_post_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "boost_post"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_spark_ads_create",
+          "parent_resource_id_field": "adgroup_id",
+          "parent_resource_type": "ad_group",
+          "platform": "tiktok",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "spark",
+            "ad"
+          ]
+        },
+        {
+          "action": "update",
+          "description": "更新 TikTok Ads ad，默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_id": {
+                "type": "string"
+              },
+              "campaign_id": {
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Allowed TikTok ad update fields",
+                "properties": {
+                  "landing_page_url": {
+                    "description": "Landing page URL",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "Resource name",
+                    "type": "string"
+                  },
+                  "status": {
+                    "description": "Ad status",
+                    "enum": [
+                      0,
+                      1
+                    ],
+                    "type": "integer"
+                  },
+                  "text": {
+                    "description": "Ad text payload",
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "ad_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_ad"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_update_ad",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "ad_group",
+          "platform": "tiktok",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad"
+          ]
+        },
+        {
+          "action": "update",
+          "description": "更新 TikTok Ads adgroup，默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "adgroup_id": {
+                "type": "string"
+              },
+              "campaign_id": {
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Allowed TikTok adgroup update fields",
+                "properties": {
+                  "ad_group_status": {
+                    "description": "Ad group status",
+                    "enum": [
+                      0,
+                      1
+                    ],
+                    "type": "integer"
+                  },
+                  "age_groups": {
+                    "description": "Age groups",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "app_id": {
+                    "description": "Selected App ID",
+                    "type": "string"
+                  },
+                  "auto_targeting_enabled": {
+                    "description": "Automatic targeting",
+                    "type": "boolean"
+                  },
+                  "bid_amount": {
+                    "description": "Bid amount",
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "bid_type": {
+                    "description": "Bid mode",
+                    "enum": [
+                      "BID_TYPE_NO_BID",
+                      "BID_TYPE_CUSTOM",
+                      "BID_TYPE_MAX_CONVERSION"
+                    ],
+                    "type": "string"
+                  },
+                  "billing_event": {
+                    "description": "Billing event",
+                    "enum": [
+                      "CPM",
+                      "GD",
+                      "CPV",
+                      "CPA",
+                      "OCPC",
+                      "OCPM",
+                      "CPC"
+                    ],
+                    "type": "string"
+                  },
+                  "budget": {
+                    "description": "Budget",
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "budget_mode": {
+                    "description": "Budget mode",
+                    "enum": [
+                      "BUDGET_MODE_DAY",
+                      "BUDGET_MODE_INFINITE",
+                      "BUDGET_MODE_DYNAMIC_DAILY_BUDGET"
+                    ],
+                    "type": "string"
+                  },
+                  "daily_budget": {
+                    "description": "Daily budget",
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "deep_bid_type": {
+                    "description": "Deep optimization goal",
+                    "enum": [
+                      "AEO",
+                      "OCC",
+                      "ROAS"
+                    ],
+                    "type": "string"
+                  },
+                  "gender": {
+                    "description": "Gender",
+                    "enum": [
+                      "GENDER_UNLIMITED",
+                      "GENDER_MALE",
+                      "GENDER_FEMALE"
+                    ],
+                    "type": "string"
+                  },
+                  "landing_url": {
+                    "description": "Website landing URL",
+                    "type": "string"
+                  },
+                  "location_ids": {
+                    "description": "Selected location IDs",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "name": {
+                    "description": "Resource name",
+                    "type": "string"
+                  },
+                  "operating_systems": {
+                    "description": "Operating systems",
+                    "items": {
+                      "enum": [
+                        "ANDROID",
+                        "IOS"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "placement_type": {
+                    "description": "Placement mode",
+                    "enum": [
+                      "PLACEMENT_TYPE_NORMAL",
+                      "PLACEMENT_TYPE_AUTOMATIC"
+                    ],
+                    "type": "string"
+                  },
+                  "promotion_type": {
+                    "description": "Promotion destination",
+                    "enum": [
+                      "APP_ANDROID",
+                      "APP_IOS",
+                      "WEBSITE",
+                      "LEAD_FORM",
+                      "CONTENT"
+                    ],
+                    "type": "string"
+                  },
+                  "status": {
+                    "description": "Compatibility status",
+                    "enum": [
+                      0,
+                      1
+                    ],
+                    "intent_status_field": "ad_group_status",
+                    "intent_status_map": {
+                      "ACTIVE": 1,
+                      "PAUSED": 0
+                    },
+                    "type": "integer"
+                  },
+                  "targeting": {
+                    "description": "Provider targeting object",
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "adgroup_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_adgroup"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_update_adgroup",
+          "parent_resource_id_field": "campaign_id",
+          "parent_resource_type": "campaign",
+          "platform": "tiktok",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "adgroup_id",
+          "resource_type": "ad_group",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "adgroup"
+          ]
+        },
+        {
+          "action": "update",
+          "description": "更新 TikTok Ads campaign，默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Allowed TikTok campaign update fields",
+                "properties": {
+                  "budget": {
+                    "description": "Budget alias",
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "budget_mode": {
+                    "description": "Budget mode",
+                    "enum": [
+                      "BUDGET_MODE_DAY",
+                      "BUDGET_MODE_INFINITE",
+                      "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
+                      "BUDGET_MODE_TOTAL"
+                    ],
+                    "type": "string"
+                  },
+                  "campaign_group_status": {
+                    "description": "Campaign status",
+                    "enum": [
+                      0,
+                      1
+                    ],
+                    "type": "integer"
+                  },
+                  "daily_budget": {
+                    "description": "Daily budget",
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "name": {
+                    "description": "Resource name",
+                    "type": "string"
+                  },
+                  "objective_type": {
+                    "description": "Optimization objective",
+                    "enum": [
+                      "APP_PROMOTION",
+                      "PRODUCT_SALES",
+                      "TRAFFIC",
+                      "VIDEO_VIEWS",
+                      "CONVERSIONS",
+                      "REACH",
+                      "LEAD_GENERATION",
+                      "ENGAGEMENT",
+                      "CATALOG_SALES",
+                      "SHOP_PURCHASES",
+                      "WEB_CONVERSIONS",
+                      "APP_INSTALL"
+                    ],
+                    "type": "string"
+                  },
+                  "status": {
+                    "description": "Compatibility status",
+                    "enum": [
+                      0,
+                      1
+                    ],
+                    "intent_status_field": "campaign_group_status",
+                    "intent_status_map": {
+                      "ACTIVE": 1,
+                      "PAUSED": 0
+                    },
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "campaign_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_campaign",
+            "pause_campaign",
+            "resume_campaign",
+            "cross_channel_batch_pause",
+            "cross_channel_batch_resume",
+            "cross_channel_batch_update_budget"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_update_campaign",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "campaign_id",
+          "resource_type": "campaign",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "campaign"
+          ]
+        }
+      ]
+    }
+  },
+  "tool_count": 72
+}

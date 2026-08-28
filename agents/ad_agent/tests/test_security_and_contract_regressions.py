@@ -6,7 +6,7 @@ from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
 from agents.ad_agent.capabilities.dv360 import create_dv360_capability
 from agents.ad_agent.core.interfaces import (
     ExecutionMode, ParsedIntent, ReplayPolicy, ToolContext, ToolDefinition,
-    ToolEffect,
+    ToolEffect, ToolResult,
     ToolSchema,
 )
 from agents.ad_agent.api_clients.base import (
@@ -217,6 +217,29 @@ def test_provider_free_detail_reads_fail_closed_for_all_channels():
         assert result["results"]
         assert result["results"][0]["success"] is False
         assert "offline_mode" in result["results"][0]["error"]
+
+
+def test_read_result_without_evidence_status_is_marked_unknown():
+    runtime = AgentRuntime(offline_mode=False)
+    runtime.registry.register(
+        ToolDefinition(
+            name="statusless_read",
+            skill="test",
+            platform="meta",
+            description="read without evidence metadata",
+            input_schema=ToolSchema(),
+            required_permissions=["ads.read"],
+            effect_class=ToolEffect.READ,
+        ),
+        object(),
+    )
+
+    result = runtime._normalize_read_result_evidence(
+        runtime.registry.get("statusless_read")[0], ToolResult.ok({"items": []})
+    )
+
+    assert result.success is True
+    assert result.data["data_status"] == "unknown"
 
 
 def test_structured_red_line_fields_are_rejected_without_mutating_credentials():

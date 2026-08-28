@@ -2,7 +2,7 @@
 
 > 本文件记录当前源码状态，不代表所有平台 live API 能力已达到生产可用。默认执行模式为 `dry_run`；真实测试只允许使用 `config.yaml` 中的测试账户白名单，且不能修改线上凭证或账户元数据。下方历史记录仅供追溯，不能作为当前 live 成功证据。
 
-## 当前契约（2026-08-27）
+## 当前契约（2026-08-28）
 
 - 单 Agent + 多 Skills + Tools；平台 Capability 是可执行注册表的来源，当前共 72 个工具：Meta 16、Google Ads 18、TikTok 24、DV360 14。Capability 和按约定命名的 Provider Client 均自动发现，不依赖中心渠道/工具配置表。
 - 所有 Campaign 及下级资源创建/更新默认 dry-run；当前不会因工具已注册就调用真实写 API。
@@ -19,6 +19,9 @@
   `selection_tokens` 后会校验 user/session/account/tool/field/source 绑定，live 不接受未经 lookup 证明的裸动态 ID。
 - Contract validator 将内置工具数量作为 minimum baseline；新增 Skill/Tool 不需要修改
   中央计数，但仍必须通过统一 schema、权限、重放策略和红线字段校验。
+- `scripts/validate_contracts.py` 支持生成和校验版本化契约快照：
+  `contracts/builtin_tools.json`；它用于审查已有 Tool 的 Schema/元数据漂移，
+  不参与 Runtime 路由或渠道配置。
 - `scripts/audit_capabilities.py` 按 Capability 包约定生成 action/resource 矩阵和创建链
   缺口报告；它是 release gate，不是 Runtime 的第二套渠道注册表。
 
@@ -147,7 +150,7 @@ python -m pytest agents/ad_agent/tests/ -v
 ```
 
 测试结果：
-- 当前 `agents/ad_agent/tests/`：198 passed
+- 当前 `agents/ad_agent/tests/`：215 passed
 - 覆盖：工具注册、Schema 校验、白名单、dry-run 不调用 Client、跨平台账户、层级 ID 传递、live 确认、持久化和 Runtime 集成
 
 ## 扩展新平台
@@ -194,7 +197,7 @@ Capability。`SKILL.md` 仍只负责自然语言知识、SOP 和安全边界；�
 | 结构化日志 | ✅ | JSON 格式 |
 | Dry-run 模式 | ✅ | 无需调用线上写 API 即可测试 |
 | WriteGuard | ✅ | 持久化幂等、显式确认、unknown 结果保留 reservation、workflow lease/claim 已接入 |
-| 单元测试 | ✅ | 全量 198 个用例 |
+| 单元测试 | ✅ | 全量 215 个用例 |
 | 多平台支持 | ✅ | Meta/Google/TikTok/DV360 |
 | 可扩展性 | ✅ | Capability 与 Provider Client 按包约定自动发现，无需修改中心 Router/Runtime |
 

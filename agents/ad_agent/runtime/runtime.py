@@ -1866,6 +1866,7 @@ class AgentRuntime:
         explicitly enabled local demos.  The normal Runtime path is stricter:
         a read without a configured provider client must fail closed unless
         ``offline_mode=True`` was explicitly selected by the caller.
+
         """
         if self.offline_mode or not result or not result.success:
             return result
@@ -1882,6 +1883,34 @@ class AgentRuntime:
                 f"{tool_name} 没有配置 Provider Client；当前未启用 offline_mode，"
                 "不会返回模拟查询数据"
             )
+        return result
+
+    def _normalize_read_result_evidence(
+        self, tool_def: Any, result: ToolResult
+    ) -> ToolResult:
+        """Normalize read evidence at the Runtime result boundary.
+
+        The underlying Handler contract remains source-compatible for direct
+        callers.  Results that enter the public turn aggregation path always
+        carry an explicit evidence status; an omitted status is ``unknown``
+        and can never be inferred as live data.
+        """
+        if not result or not result.success or not tool_def.is_read_tool:
+            return result
+        data = result.data if isinstance(result.data, dict) else {}
+        if result.simulated or data.get("simulated") is True:
+            if data.get("data_status") == "offline_mock":
+                return result
+            data = dict(data)
+            data["data_status"] = "offline_mock"
+            data.setdefault("simulated", True)
+            result.data = data
+            return result
+        if data.get("data_status"):
+            return result
+        data = dict(data)
+        data["data_status"] = "unknown"
+        result.data = data
         return result
     
     def auto_load_skills(self, skills_root: str, credentials: dict = None) -> int:
@@ -3946,6 +3975,7 @@ class AgentRuntime:
                     logger.exception("工具执行失败: %s", tool_def.name)
                     result = ToolResult.error(f"工具执行失败: {exc}")
 
+                result = self._normalize_read_result_evidence(tool_def, result)
                 result = self._decorate_lookup_result(
                     tool_def, result, session.ctx, actual_platform
                 )

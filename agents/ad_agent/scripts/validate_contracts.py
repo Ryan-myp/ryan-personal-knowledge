@@ -8,6 +8,8 @@ Tool must satisfy the same registration boundary used by the service.
 
 from __future__ import annotations
 
+import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -18,10 +20,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from agents.ad_agent import AgentRuntime  # noqa: E402
-from agents.ad_agent.capabilities.dv360 import create_dv360_capability  # noqa: E402
-from agents.ad_agent.capabilities.google import create_google_capability  # noqa: E402
-from agents.ad_agent.capabilities.meta import create_meta_capability  # noqa: E402
-from agents.ad_agent.capabilities.tiktok import create_tiktok_capability  # noqa: E402
+from agents.ad_agent.capabilities.factory import (  # noqa: E402
+    discover_capability_factory,
+)
+from agents.ad_agent.scripts.audit_capabilities import discover_platform_slugs  # noqa: E402
 from agents.ad_agent.core.interfaces import ReplayPolicy, ToolEffect  # noqa: E402
 from agents.ad_agent.persistence.store import AdAgentStore  # noqa: E402
 
@@ -52,16 +54,133 @@ def _walk_keys(value, path=""):
             yield from _walk_keys(child, f"{path}[{index}]")
 
 
-def main() -> int:
+def build_runtime() -> AgentRuntime:
+    """Build the same no-I/O runtime used by the release contract gate."""
     store = AdAgentStore(":memory:")
     runtime = AgentRuntime(persistence_store=store, offline_mode=True)
-    for factory in (
-        create_meta_capability,
-        create_google_capability,
-        create_tiktok_capability,
-        create_dv360_capability,
-    ):
-        runtime.register_capability(factory())
+    for slug in discover_platform_slugs():
+        factory = discover_capability_factory(slug)
+        if callable(factory):
+            runtime.register_capability(factory())
+    # Keep the in-memory backend reachable for callers that want to close it
+    # after inspecting the runtime without changing AgentRuntime's public API.
+    runtime._contract_gate_store = store
+    return runtime
+
+
+def _canonical_json(value: object) -> str:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _digest(value: object) -> str:
+    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
+
+
+def build_contract_snapshot(runtime: AgentRuntime) -> dict:
+    """Return a deterministic, JSON-safe snapshot of executable contracts.
+
+    This is a release artifact, not Runtime configuration.  A new Capability
+    is discovered by convention and appears in the snapshot automatically;
+    updating the checked-in artifact is the deliberate review step for a
+    contract change.
+    """
+    definitions_by_platform: dict[str, list[dict]] = {}
+    for definition in runtime.registry.list_all():
+        contract = definition.to_dict()
+        contract["timeout_seconds"] = definition.timeout_seconds
+        contract["max_output_bytes"] = definition.max_output_bytes
+        definitions_by_platform.setdefault(str(definition.platform), []).append(contract)
+
+    platforms: dict[str, dict] = {}
+    for platform, contracts in sorted(definitions_by_platform.items()):
+        tools = sorted(contracts, key=lambda item: item["name"])
+        platforms[platform] = {
+            "tool_count": len(tools),
+            "digest": _digest(tools),
+            "tools": tools,
+        }
+    body = {
+        "format_version": 1,
+        "tool_count": sum(item["tool_count"] for item in platforms.values()),
+        "platforms": platforms,
+    }
+    return {**body, "digest": _digest(body)}
+
+
+def _snapshot_body(snapshot: dict) -> dict:
+    return {
+        key: value for key, value in snapshot.items() if key != "digest"
+    }
+
+
+def _snapshot_differences(expected: dict, actual: dict) -> list[str]:
+    differences: list[str] = []
+    expected_platforms = expected.get("platforms", {})
+    actual_platforms = actual.get("platforms", {})
+    for platform in sorted(set(expected_platforms) | set(actual_platforms)):
+        expected_tools = {
+            tool.get("name"): tool
+            for tool in expected_platforms.get(platform, {}).get("tools", [])
+        }
+        actual_tools = {
+            tool.get("name"): tool
+            for tool in actual_platforms.get(platform, {}).get("tools", [])
+        }
+        for name in sorted(set(expected_tools) - set(actual_tools)):
+            differences.append(f"{platform}: removed tool {name}")
+        for name in sorted(set(actual_tools) - set(expected_tools)):
+            differences.append(f"{platform}: added tool {name}")
+        for name in sorted(set(expected_tools) & set(actual_tools)):
+            if expected_tools[name] != actual_tools[name]:
+                differences.append(f"{platform}: changed contract {name}")
+    if not differences and expected.get("digest") != actual.get("digest"):
+        differences.append("snapshot digest changed without a tool-level diff")
+    return differences
+
+
+def verify_snapshot(path: Path, actual: dict) -> list[str]:
+    """Validate a checked-in snapshot and return human-readable drift errors."""
+    try:
+        expected = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return [f"cannot read contract snapshot {path}: {exc}"]
+    if not isinstance(expected, dict):
+        return [f"contract snapshot {path} must contain a JSON object"]
+
+    errors: list[str] = []
+    expected_digest = expected.get("digest")
+    if expected_digest != _digest(_snapshot_body(expected)):
+        errors.append(f"contract snapshot {path} has an invalid embedded digest")
+    if actual.get("digest") != _digest(_snapshot_body(actual)):
+        errors.append("generated contract snapshot has an invalid embedded digest")
+    if expected != actual:
+        errors.extend(_snapshot_differences(expected, actual))
+        if not errors or errors[-1] != "contract snapshot content differs":
+            errors.append("contract snapshot content differs")
+    return errors
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--snapshot",
+        type=Path,
+        help="write the discovered contract snapshot to this path",
+    )
+    group.add_argument(
+        "--check-snapshot",
+        type=Path,
+        help="fail when the discovered contract differs from this snapshot",
+    )
+    args = parser.parse_args(argv)
+
+    runtime = build_runtime()
 
     errors: list[str] = []
     tools = runtime.registry.list_all()
@@ -102,12 +221,37 @@ def main() -> int:
             if normalized in PROTECTED_FIELDS:
                 errors.append(f"{tool.name}: protected field declared in schema at {path}")
 
-    store.close()
+    snapshot = build_contract_snapshot(runtime)
+    if args.snapshot:
+        args.snapshot.parent.mkdir(parents=True, exist_ok=True)
+        args.snapshot.write_text(
+            json.dumps(snapshot, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    if args.check_snapshot:
+        errors.extend(verify_snapshot(args.check_snapshot, snapshot))
+
+    contract_store = getattr(runtime, "_contract_gate_store", None)
+    if contract_store is not None:
+        contract_store.close()
     if errors:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
-    print(f"validated {len(tools)} tools across {len(runtime.registry.list_all_platforms())} platforms")
+    if args.check_snapshot:
+        print(
+            f"validated {len(tools)} tools across "
+            f"{len(runtime.registry.list_all_platforms())} platforms; "
+            f"snapshot {args.check_snapshot} is current"
+        )
+    elif args.snapshot:
+        print(
+            f"validated {len(tools)} tools across "
+            f"{len(runtime.registry.list_all_platforms())} platforms; "
+            f"wrote {args.snapshot}"
+        )
+    else:
+        print(f"validated {len(tools)} tools across {len(runtime.registry.list_all_platforms())} platforms")
     return 0
 
 
