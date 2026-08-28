@@ -50,21 +50,13 @@
 skills/
 ├── channels/               # 渠道层（通用 API 能力）
 │   ├── meta/              # Meta Marketing API
-│   │   ├── SKILL.md       # 以 Capability 注册表为准（当前 16 个）
-│   │   ├── tools/         # 工具实现
-│   │   └── expert/        # 专家知识
+│   │   └── SKILL.md       # 自然语言知识、SOP、安全边界
 │   ├── google-ads/        # Google Ads API
-│   │   ├── SKILL.md       # 以 Capability 注册表为准（当前 18 个）
-│   │   ├── tools/
-│   │   └── expert/
+│   │   └── SKILL.md       # 自然语言知识、SOP、安全边界
 │   ├── tiktok/            # TikTok Business API
-│   │   ├── SKILL.md       # 以 Capability 注册表为准（当前 24 个）
-│   │   ├── tools/
-│   │   └── expert/
+│   │   └── SKILL.md       # 自然语言知识、SOP、安全边界
 │   └── dv360/             # DV360 API
-│       ├── SKILL.md       # 以 Capability 注册表为准（当前 14 个）
-│       ├── tools/
-│       └── expert/
+│       └── SKILL.md       # 自然语言知识、SOP、安全边界
 │
 ├── businesses/             # 业务层（特定业务规则）
 │   ├── README.md          # 业务层设计说明

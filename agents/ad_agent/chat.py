@@ -23,15 +23,8 @@ if project_root not in sys.path:
 
 from agents.ad_agent import (
     AgentRuntime,
-    create_meta_capability,
-    create_google_capability,
-    create_tiktok_capability,
-    create_dv360_capability,
     AdAgentStore,
 )
-from agents.ad_agent.user_skills.orchestrator import AdCampaignOrchestratorSkill
-from agents.ad_agent.api_clients.factory import create_platform_client
-from agents.ad_agent.capabilities.factory import create_capability, SUPPORTED_PLATFORMS
 
 
 def print_banner():
@@ -40,7 +33,7 @@ def print_banner():
 ╔══════════════════════════════════════════════════════════════╗
     ║               🚀 ad-agent 广告专家助手（安全 dry-run）          ║
 ║                                                              ║
-║  支持平台: Meta / Google Ads / TikTok / DV360                ║
+║  渠道能力: 从 skills/channels 自动发现                         ║
     ║  模式: 🧪 dry-run（创建/更新只生成计划，不调用线上写 API）      ║
 ║                                                              ║
 ║  命令:                                                       ║
@@ -143,20 +136,10 @@ def main():
         with open(args.credentials) as f:
             credentials = json.load(f)
 
-    # 注册所有平台 Capability。工厂接收的是 API Client，而不是凭证字典；
-    # Client 的构造本身不发起网络请求，且 Runtime 仍固定为 dry-run。
-    for platform in SUPPORTED_PLATFORMS:
-        credential_key = "google" if platform == "google-ads" else platform
-        runtime.register_capability(
-            create_capability(
-                platform,
-                create_platform_client(platform, credentials.get(credential_key)),
-            )
-        )
-
-    # 设置凭证（自动填充白名单）
-    if credentials:
-        runtime.set_credentials(credentials)
+    # 渠道 Skill 只提供专家上下文；Runtime 按目录约定自动发现对应
+    # Capability，并按渠道约定创建 Client。新增渠道无需修改 CLI 的中心列表。
+    skills_root = Path(__file__).parent / "skills"
+    runtime.auto_load_skills(str(skills_root), credentials)
 
     print_banner()
     platforms = runtime.registry.list_all_platforms()

@@ -139,20 +139,6 @@ class AgentRuntime:
     - Tool 执行有统一的生命周期（权限→审批→幂等→执行→审计）
     """
     
-    # 平台名称标准化映射（intent 短名 → registry 完整名）
-    PLATFORM_NAME_MAP: dict[str, str] = {
-        'google': 'google-ads',
-        'google-ads': 'google-ads',
-    }
-
-    # 平台账户 ID 字段名映射
-    PLATFORM_ACCOUNT_KEY: dict[str, str] = {
-        'google-ads': 'customer_id',
-        'meta': 'account_id',
-        'tiktok': 'advertiser_id',
-        'dv360': 'advertiser_id',
-    }
-
     # These fields are configuration/credential material, not advertising
     # resource fields.  They must never be accepted inside a tool payload or
     # an ``updates`` object.  Request-scoped ``credentials=...`` remains a
@@ -310,7 +296,7 @@ class AgentRuntime:
         for platform, reconciler in (provider_reconcilers or {}).items():
             if not isinstance(reconciler, ProviderReconciler):
                 raise TypeError("provider reconciler must implement ProviderReconciler")
-            canonical = self.PLATFORM_NAME_MAP.get(str(platform), str(platform))
+            canonical = self._canonical_platform(platform)
             self._provider_reconcilers[canonical] = reconciler
         
         # 账户白名单验证器
@@ -343,6 +329,13 @@ class AgentRuntime:
         self.tool_selector.business_context = context
         if context:
             self.tool_selector.set_business_context(context.business_name, context)
+
+    @staticmethod
+    def _canonical_platform(platform: str) -> str:
+        """Normalize aliases without keeping a Runtime platform registry."""
+        from ..capabilities.factory import normalize_platform
+
+        return normalize_platform(platform)
 
     def load_business_context(
         self, business_name: str, skills_root: Optional[str] = None,
@@ -618,12 +611,11 @@ class AgentRuntime:
         # Keep the declarative Skill as the platform lifecycle marker so the
         # next turn does not try to register the same tools again.
         if capability_platform:
-            canonical_platform = self.PLATFORM_NAME_MAP.get(
-                str(capability_platform), str(capability_platform)
-            )
+            canonical_platform = self._canonical_platform(capability_platform)
             skill_candidates = self.skill_loader.get_by_platform(canonical_platform)
             if skill_candidates:
                 self._loaded_skills.setdefault(canonical_platform, skill_candidates[0])
+                self._publish_skill_workflows(skill_candidates[0])
         
         # 注册后台任务
         self._background_tasks.extend(runtime.background_tasks)
@@ -646,6 +638,22 @@ class AgentRuntime:
     ) -> list[str]:
         """Compatibility hook; discovery already filters unregistered Tools."""
         return []
+
+    def _publish_skill_workflows(self, skill: Any) -> None:
+        """Publish an optional Skill-owned workflow without a central map.
+
+        Normal channel routing still comes from ToolDefinition metadata. A
+        Skill may add a deterministic multi-step SOP in its own optional
+        workflow contract; the Router only receives its tool-name projection,
+        and the registry remains the authority on executable tools.
+        """
+        if not hasattr(self.intent_router, "register_skill_mappings"):
+            return
+        mappings = getattr(skill, "get_workflow_mappings", lambda: {})()
+        if mappings:
+            self.intent_router.register_skill_mappings(mappings)
+            if hasattr(self.intent_parser, "register_intents"):
+                self.intent_parser.register_intents(set(mappings))
 
     def list_parameter_options(
         self, platform: Optional[str] = None, field: Optional[str] = None,
@@ -681,8 +689,8 @@ class AgentRuntime:
                         f"{tool.name}.{field_name} references unknown lookup tool {lookup_tool}"
                     )
                     continue
-                tool_platform = self.PLATFORM_NAME_MAP.get(tool.platform, tool.platform)
-                source_platform = self.PLATFORM_NAME_MAP.get(source.platform, source.platform)
+                tool_platform = self._canonical_platform(tool.platform)
+                source_platform = self._canonical_platform(source.platform)
                 if tool_platform != source_platform:
                     errors.append(
                         f"{tool.name}.{field_name} lookup tool {lookup_tool} "
@@ -699,8 +707,8 @@ class AgentRuntime:
         """将 Skill 的工具注册到 Registry"""
         registered_names: list[str] = []
         for tool_def in skill.get_tools():
-            skill_platform = self.PLATFORM_NAME_MAP.get(skill.platform, skill.platform)
-            tool_platform = self.PLATFORM_NAME_MAP.get(tool_def.platform, tool_def.platform)
+            skill_platform = self._canonical_platform(skill.platform)
+            tool_platform = self._canonical_platform(tool_def.platform)
             if skill.platform != "multi_platform" and tool_platform != skill_platform:
                 raise ValueError(
                     f"Tool '{tool_def.name}' platform '{tool_platform}' "
@@ -725,7 +733,7 @@ class AgentRuntime:
             self._skill_tool_names[skill_key] = registered_names
             self._skill_platforms[skill_key] = skill.platform
             self._skill_objects[skill_key] = skill
-            platform_key = self.PLATFORM_NAME_MAP.get(skill.platform, skill.platform)
+            platform_key = self._canonical_platform(skill.platform)
             keys = self._skill_keys_by_platform.setdefault(platform_key, [])
             if skill_key not in keys:
                 keys.append(skill_key)
@@ -878,6 +886,7 @@ class AgentRuntime:
             return False
 
         self._validate_parameter_lookup_contract()
+        self._publish_skill_workflows(skill)
 
         # 保存 Skill 和平台映射
         self._loaded_skills.setdefault(canonical_platform, skill)
@@ -1037,7 +1046,7 @@ class AgentRuntime:
         Returns:
             是否卸载成功
         """
-        canonical_platform = self.PLATFORM_NAME_MAP.get(platform, platform)
+        canonical_platform = self._canonical_platform(platform)
         candidates = list(self._skill_keys_by_platform.get(canonical_platform, []))
         if not candidates:
             primary = self._loaded_skills.get(canonical_platform) or self._loaded_skills.get(platform)
@@ -1116,7 +1125,7 @@ class AgentRuntime:
             return
 
         for platform in platforms:
-            actual_platform = self.PLATFORM_NAME_MAP.get(platform, platform)
+            actual_platform = self._canonical_platform(platform)
 
             if actual_platform in self._loaded_skills:
                 continue  # 已加载，跳过
@@ -1144,7 +1153,7 @@ class AgentRuntime:
         # 先从已加载的 Skill 中查找
         if platform in self._loaded_skills:
             return self._loaded_skills[platform]
-        canonical_platform = self.PLATFORM_NAME_MAP.get(platform, platform)
+        canonical_platform = self._canonical_platform(platform)
         for skill_key in self._skill_keys_by_platform.get(canonical_platform, []):
             skill = self._skill_objects.get(skill_key)
             if skill is not None:
@@ -1206,7 +1215,7 @@ class AgentRuntime:
                 continue
             if not hasattr(handler, "client") or getattr(handler, "client") is not None:
                 continue
-            platform = self.PLATFORM_NAME_MAP.get(tool_def.platform, tool_def.platform)
+            platform = self._canonical_platform(tool_def.platform)
             if platform not in clients:
                 clients[platform] = self._get_api_client(platform)
             client = clients[platform]
@@ -1221,11 +1230,7 @@ class AgentRuntime:
         # Keep provider construction in one side-effect-free factory.  The
         # previous implementation duplicated this map in Runtime and could
         # drift from the CLI/server construction path.
-        cred_key = "google" if platform in ("google", "google-ads") else platform
-
-        credentials = self._credentials.get(cred_key, {})
-        if not credentials:
-            credentials = self._credentials.get(platform, {})
+        credentials = self._credentials_for_platform(platform)
         if not credentials:
             return None
 
@@ -1237,6 +1242,28 @@ class AgentRuntime:
 
         return None
 
+    def _credentials_for_platform(
+        self, platform: str, credentials: Optional[Mapping[str, Any]] = None,
+    ) -> dict[str, Any]:
+        """Resolve credentials by the same canonical platform identity.
+
+        Credential dictionaries are request/application configuration, not a
+        second provider registry.  Normalizing their keys lets a newly added
+        Capability use its own platform ID without adding another Runtime
+        branch.  The returned value is copied so callers cannot mutate the
+        request envelope through a Client constructor.
+        """
+        source = credentials if credentials is not None else self._credentials
+        if not isinstance(source, Mapping):
+            return {}
+        from ..capabilities.factory import normalize_platform
+
+        wanted = normalize_platform(platform)
+        for key, value in source.items():
+            if normalize_platform(str(key)) == wanted and isinstance(value, dict):
+                return copy.deepcopy(value)
+        return {}
+
     @staticmethod
     def _discover_capability(platform: str, api_client: Any = None) -> Any:
         """Discover a built-in Capability by package convention.
@@ -1247,29 +1274,12 @@ class AgentRuntime:
         ``create_<platform>_capability`` factory. Custom channels can instead
         expose executable Tools from their Skill plugin.
         """
-        canonical = str(platform or "").strip().lower().replace("-", "_")
-        module_name = f"agents.ad_agent.capabilities.{canonical}.capability"
-        try:
-            module = __import__(module_name, fromlist=["*"])
-        except (ImportError, ModuleNotFoundError):
-            return None
-        preferred = f"create_{canonical}_capability"
-        factory = getattr(module, preferred, None)
-        if not callable(factory):
-            factory = next(
-                (
-                    value for name, value in vars(module).items()
-                    if name.startswith("create_") and name.endswith("_capability")
-                    and callable(value)
-                ),
-                None,
-            )
+        from ..capabilities.factory import discover_capability_factory, _call_factory
+
+        factory = discover_capability_factory(platform)
         if not callable(factory):
             return None
-        try:
-            return factory(api_client)
-        except TypeError:
-            return factory()
+        return _call_factory(factory, api_client)
 
     def _build_request_clients(self, credentials: Optional[dict]) -> dict[str, Any]:
         """Build per-request clients without replacing shared handlers.
@@ -1284,10 +1294,10 @@ class AgentRuntime:
         from ..api_clients.factory import create_platform_client
 
         clients: dict[str, Any] = {}
-        for platform in ("meta", "google-ads", "tiktok", "dv360"):
-            key = "google" if platform == "google-ads" else platform
-            provider_credentials = credentials.get(key) or credentials.get(platform)
-            if not isinstance(provider_credentials, dict) or not provider_credentials:
+        for raw_platform in credentials:
+            platform = self._canonical_platform(str(raw_platform))
+            provider_credentials = self._credentials_for_platform(platform, credentials)
+            if not provider_credentials:
                 continue
             try:
                 client = create_platform_client(platform, provider_credentials)
@@ -1312,9 +1322,7 @@ class AgentRuntime:
         # built-in and dynamically registered handler gets the same boundary.
         if definition.is_write_tool and self.execution_mode == ExecutionMode.LIVE.value:
             if hasattr(handler, "client"):
-                platform = self.PLATFORM_NAME_MAP.get(
-                    definition.platform, definition.platform
-                )
+                platform = self._canonical_platform(definition.platform)
                 request_client = (request_clients or {}).get(platform)
                 handler_client = getattr(handler, "client", None)
                 if request_client is None and handler_client is None:
@@ -1409,7 +1417,7 @@ class AgentRuntime:
                 invocation_handler = prepare_handler(handler, source_client)
             else:
                 client = request_clients.get(
-                    self.PLATFORM_NAME_MAP.get(definition.platform, definition.platform)
+                    self._canonical_platform(definition.platform)
                 )
                 if client is None or not hasattr(handler, "client"):
                     invocation_handler = handler
@@ -1623,6 +1631,10 @@ class AgentRuntime:
         from pathlib import Path
         
         loaded_count = 0
+        # Reuse credentials previously installed through set_credentials()
+        # when callers do not repeat them during Skill discovery. Passing an
+        # explicit empty mapping still means intentionally no provider creds.
+        credentials = self._credentials if credentials is None else credentials
         credentials = credentials or {}
         # 保存凭证配置
         if credentials:
@@ -1674,14 +1686,16 @@ class AgentRuntime:
                     # Skill metadata.  A plugin is still
                     # subject to the same registry, schema, account and write
                     # gates as built-in capabilities.
-                    cred_key = platform
-                    if platform not in credentials:
-                        cred_key = {'google-ads': 'google'}.get(platform, platform)
                     api_client = None
-                    if credentials and isinstance(credentials.get(cred_key), dict):
+                    provider_credentials = self._credentials_for_platform(
+                        platform, credentials
+                    )
+                    if provider_credentials:
                         try:
                             from ..api_clients.factory import create_platform_client
-                            api_client = create_platform_client(platform, credentials[cred_key])
+                            api_client = create_platform_client(
+                                platform, provider_credentials
+                            )
                         except Exception as e:
                             logger.debug(f"创建 {platform} API Client 失败: {e}")
                     plugin_skill = self._load_skill_plugin(skill_dir, api_client)
@@ -1706,7 +1720,7 @@ class AgentRuntime:
                         # false executable contract.
                         try:
                             from ..capabilities.factory import create_capability
-                            canonical = self.PLATFORM_NAME_MAP.get(platform, platform)
+                            canonical = self._canonical_platform(platform)
                             capability = self._discover_capability(canonical, api_client)
                             if capability is None:
                                 capability = create_capability(canonical, api_client)
@@ -1824,7 +1838,7 @@ class AgentRuntime:
         """Return the trusted principal's account scope, or ``None`` if absent."""
         if account_scope is None:
             return None
-        normalized = AgentRuntime.PLATFORM_NAME_MAP.get(platform, platform)
+        normalized = AgentRuntime._canonical_platform(platform)
         aliases = {normalized, platform}
         accounts: set[str] = set()
         for key in aliases:
@@ -1867,29 +1881,11 @@ class AgentRuntime:
         key = self.registry.generate_idempotency_key(tool_def.name, input_data, "dry-run") \
             if hasattr(self.registry, "generate_idempotency_key") else uuid.uuid4().hex[:16]
         name = input_data.get("name") or input_data.get("campaign_name") or f"dry_run_{key}"
-        tool_name = tool_def.name.lower()
-        resource_type = getattr(tool_def, "resource_type", None) or self._resource_type_for_tool(tool_name)
-        if resource_type == "line_item":
-            resource_key = "line_item_id"
-        elif resource_type == "ad_group":
-            resource_key = "ad_group_id" if "ad_group" in tool_name else "adgroup_id"
-        elif resource_type == "ad_set":
-            resource_key = "ad_set_id" if "ad_set" in tool_name else "adset_id"
-        elif resource_type == "campaign":
-            resource_key = "campaign_id"
-        elif resource_type == "creative":
-            resource_key = "creative_id"
-        elif resource_type == "io":
-            resource_key = "io_id"
-        elif resource_type == "asset_group":
-            resource_key = "asset_group_id"
-        else:
-            resource_key = "ad_id"
+        resource_type = getattr(tool_def, "resource_type", None) or "resource"
+        resource_key = self._resource_id_field(resource_type)
 
         action = str(getattr(tool_def, "action", "") or "").lower()
-        is_update = action in {"update", "pause", "resume", "enable", "disable"} or any(
-            word in tool_name for word in ("update", "pause", "resume", "enable", "disable")
-        )
+        is_update = action in {"update", "pause", "resume", "enable", "disable"}
         resource_id = input_data.get(resource_key) or f"dry_{platform}_{key}"
         data = {
             "mode": ExecutionMode.DRY_RUN.value,
@@ -1914,23 +1910,14 @@ class AgentRuntime:
 
     @staticmethod
     def _resource_type_for_tool(tool_name: str) -> str:
-        """Map provider tool naming to the shared resource vocabulary."""
-        name = str(tool_name or "").lower()
-        if "asset_group" in name:
-            return "asset_group"
-        if "line_item" in name:
-            return "line_item"
-        if "ad_group" in name or "adgroup" in name:
-            return "ad_group"
-        if "ad_set" in name or "adset" in name:
-            return "ad_set"
-        if "creative" in name:
-            return "creative"
-        if "campaign" in name:
-            return "campaign"
-        if "_io" in name or name.endswith("io"):
-            return "io"
-        return "ad"
+        """Compatibility fallback for untyped external result consumers.
+
+        Runtime-generated results always carry ``resource_type`` from the
+        ToolDefinition.  An untyped result is intentionally not inferred from
+        a provider Tool name; guessing here could persist a wrong resource
+        identity and break parent/child recovery.
+        """
+        return "resource"
 
     @staticmethod
     def _resource_id_field(resource_type: str) -> str:
@@ -1953,10 +1940,7 @@ class AgentRuntime:
         sequence = 0
         for item in results or []:
             tool_name = str(item.get("tool") or "")
-            if not tool_name or not item.get("resource_type") and not any(
-                marker in tool_name.lower()
-                for marker in ("create", "update", "pause", "resume", "enable", "disable", "boost")
-            ):
+            if not tool_name or not item.get("resource_type"):
                 continue
             # Only resource-mutating results belong in this model.  A future
             # custom Tool may use a different name, so the result metadata is
@@ -1965,9 +1949,7 @@ class AgentRuntime:
             if not item.get("account_id") and not data and not item.get("error"):
                 continue
             sequence += 1
-            resource_type = str(
-                item.get("resource_type") or cls._resource_type_for_tool(tool_name)
-            )
+            resource_type = str(item["resource_type"])
             id_field = cls._resource_id_field(resource_type)
             input_data = data.get("input") if isinstance(data.get("input"), dict) else {}
             raw_id = data.get(id_field) or input_data.get(id_field) or item.get(id_field)
@@ -2196,7 +2178,7 @@ class AgentRuntime:
                     if not tool.is_write_tool:
                         continue
                     sequence += 1
-                    actual_platform = self.PLATFORM_NAME_MAP.get(platform, platform)
+                    actual_platform = self._canonical_platform(platform)
                     parent_sequence = None
                     parent_type = getattr(tool, "parent_resource_type", None)
                     if parent_type:
@@ -2406,7 +2388,7 @@ class AgentRuntime:
         accounts: dict[str, str] = {}
         errors: list[str] = []
         for platform, tools in tool_plan.items():
-            actual_platform = self.PLATFORM_NAME_MAP.get(platform, platform)
+            actual_platform = self._canonical_platform(platform)
             resolved = self._resolve_platform_account(
                 intent, platform, tools, account_id
             )
@@ -2483,7 +2465,7 @@ class AgentRuntime:
                 self._session_manager.record_workflow_item(
                     workflow_id=workflow_id,
                     sequence=operation_sequence,
-                    platform=self.PLATFORM_NAME_MAP.get(operation.platform, operation.platform),
+                    platform=self._canonical_platform(operation.platform),
                     tool_name=tool_name,
                     status="running",
                     input_data=self._redact_for_persistence(tool_input),
@@ -2499,7 +2481,7 @@ class AgentRuntime:
                 })
                 continue
             simulated = self._simulate_write(
-                tool_def, tool_input, self.PLATFORM_NAME_MAP.get(operation.platform, operation.platform)
+                tool_def, tool_input, self._canonical_platform(operation.platform)
             )
             data = dict(simulated.data)
             data.update({
@@ -2634,7 +2616,7 @@ class AgentRuntime:
             per_platform_account = self._resolve_platform_account(
                 intent, platform, [report_def], session.ctx.account_id
             )
-            actual_platform = self.PLATFORM_NAME_MAP.get(platform, platform)
+            actual_platform = self._canonical_platform(platform)
             permission_error = self._check_tool_permissions(
                 report_def, granted_permissions
             )
@@ -3038,7 +3020,7 @@ class AgentRuntime:
         tool_call_count = 0
         for platform, tools in tool_plan.items():
             # 转换平台名称
-            actual_platform = self.PLATFORM_NAME_MAP.get(platform, platform)
+            actual_platform = self._canonical_platform(platform)
 
             # 每个平台使用自己的账户（不跨平台共享）。没有显式账户时，
             # 只允许从配置的测试白名单中自动选择。
@@ -3702,7 +3684,7 @@ class AgentRuntime:
         5. 工具定义的默认值
         """
         platform_params = intent.platform_params.get(platform, {}) or {}
-        actual_platform = self.PLATFORM_NAME_MAP.get(platform, platform)
+        actual_platform = self._canonical_platform(platform)
         tool_input = {}
 
         # 支持平台级参数和 tool_name 级参数两种输入形式。
@@ -3726,14 +3708,25 @@ class AgentRuntime:
         if isinstance(specific_params, dict):
             accepted_specific = set(tool_def.input_schema.properties)
             accepted_specific.add("selection_tokens")
-            for param_name in tool_def.input_schema.properties:
+            for param_name, field_schema in tool_def.input_schema.properties.items():
                 accepted_specific.update(aliases.get(param_name, [param_name]))
+                if isinstance(field_schema, dict):
+                    accepted_specific.update(
+                        str(value) for value in field_schema.get("input_aliases", []) or []
+                    )
             unknown_specific_params = sorted(
                 key for key in specific_params
                 if key not in accepted_specific
             )
         for param_name in tool_def.input_schema.properties:
             candidates = aliases.get(param_name, [param_name])
+            field_schema = tool_def.input_schema.properties.get(param_name, {})
+            if isinstance(field_schema, dict):
+                candidates = list(dict.fromkeys(
+                    candidates + [
+                        str(value) for value in field_schema.get("input_aliases", []) or []
+                    ]
+                ))
             for candidate in candidates:
                 if candidate in platform_params and platform_params[candidate] not in (None, ""):
                     tool_input[param_name] = platform_params[candidate]
@@ -3824,6 +3817,14 @@ class AgentRuntime:
                 )
         if intent.creative_materials and "creative_materials" not in tool_input:
             tool_input["creative_materials"] = intent.creative_materials
+
+        # Defaults are provider-owned schema metadata.  Applying them here
+        # keeps the shared Runtime generic while making the planned payload
+        # identical to what the provider adapter will receive.
+        for param_name, field_schema in tool_def.input_schema.properties.items():
+            if param_name not in tool_input and isinstance(field_schema, dict):
+                if "default" in field_schema:
+                    tool_input[param_name] = copy.deepcopy(field_schema["default"])
 
         # 从自然语言解析出的 campaign_name 兼容 name 型平台工具。
         if "name" in tool_def.input_schema.properties and "name" not in tool_input:
@@ -4130,9 +4131,7 @@ class AgentRuntime:
                         session_id=ctx.session_id,
                         user_id=ctx.user_id,
                         account_id=str(ctx.account_id or ""),
-                        platform=self.PLATFORM_NAME_MAP.get(
-                            tool_def.platform, tool_def.platform
-                        ),
+                        platform=self._canonical_platform(tool_def.platform),
                         tool_name=tool_def.name,
                         field=field_name,
                         source_tool=source_tool,
@@ -4172,10 +4171,18 @@ class AgentRuntime:
         params = intent.platform_params.get(platform, {}) or {}
         if not isinstance(params, dict):
             params = {}
-        actual_platform = self.PLATFORM_NAME_MAP.get(platform, platform)
-        preferred_key = self.PLATFORM_ACCOUNT_KEY.get(actual_platform)
-        candidate_keys = [preferred_key, "account_id", "advertiser_id", "customer_id"]
-        candidate_keys = [key for key in candidate_keys if key]
+        actual_platform = self._canonical_platform(platform)
+        # Prefer the account-like field declared by the selected Tool. This
+        # keeps account identity provider-owned instead of growing a Runtime
+        # platform/account map for every new channel.
+        account_keys = ("account_id", "advertiser_id", "customer_id")
+        declared_keys = [
+            key
+            for tool in tools
+            for key in account_keys
+            if key in getattr(getattr(tool, "input_schema", None), "properties", {})
+        ]
+        candidate_keys = list(dict.fromkeys(declared_keys + list(account_keys)))
 
         sources = [params]
         for tool in tools:
@@ -4867,9 +4874,7 @@ class AgentRuntime:
         for item in workflow.get("items", []):
             if str(item.get("status")) not in pending_statuses:
                 continue
-            platform = self.PLATFORM_NAME_MAP.get(
-                str(item.get("platform") or ""), str(item.get("platform") or "")
-            )
+            platform = self._canonical_platform(item.get("platform") or "")
             input_data = item.get("input_data") if isinstance(item.get("input_data"), dict) else {}
             account_id = None
             for account_key in ("account_id", "advertiser_id", "customer_id"):

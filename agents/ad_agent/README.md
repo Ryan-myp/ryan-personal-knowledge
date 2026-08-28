@@ -10,7 +10,7 @@
 - **结构化日志**：JSON 格式，便于 log aggregation
 - **离线演示**：无凭证时部分查询 Handler 返回 mock 数据；这些数据不代表线上结果
 - **安全边界**：写操作必须命中配置的测试账户白名单；live 还必须显式确认
-- **可扩展**：新增平台只需添加新 Capability
+- **可扩展**：渠道包按约定自动发现；新增平台不需要修改 Runtime、Router 或中心渠道表
 
 ## 支持的广告平台
 
@@ -204,14 +204,11 @@ ad_agent/
 │   └── skill.py             # Skill 加载
 ├── capabilities/
 │   ├── base.py              # 能力基类
-│   ├── meta_capability.py   # Meta 广告能力
-│   └── platform_capabilities.py  # Google/TikTok/DV360 能力
+│   ├── factory.py           # 按包约定发现 Capability
+│   └── <platform>/capability.py  # 渠道能力包
 ├── api_clients/
 │   ├── base.py              # 客户端基类（重试/限流）
-│   ├── meta_client.py       # Meta Marketing API
-│   ├── google_ads_client.py # Google Ads API
-│   ├── tiktok_client.py     # TikTok Business API
-│   └── dv360_client.py      # DV360 API
+│   └── <platform>_client.py # 按约定可选的 Provider Client
 ├── persistence/
 │   ├── store.py             # SQLite 持久化
 │   └── session_manager.py   # 会话管理器
@@ -225,14 +222,18 @@ ad_agent/
 
 ## 扩展新平台
 
-只需三步：
+新增渠道只需按包约定提供自己的实现，不需要修改中心 Router、Runtime 或平台列表：
 
 ```python
-# 1. 创建 API 客户端
+# 1. 创建 API 客户端（可选）
+#    agents/ad_agent/api_clients/new_network_client.py
 class NewPlatformClient(BasePlatformClient):
     def _do_request(self, method, url, **kwargs): ...
 
+# 工厂名按约定自动发现：create_new_network_client(credentials)
+
 # 2. 创建 Capability
+#    agents/ad_agent/capabilities/new_network/capability.py
 class NewPlatformCapability(BaseCapability):
     platform_name = "new_platform"
     
@@ -245,9 +246,15 @@ class NewPlatformCapability(BaseCapability):
     # ToolDefinition 自描述 action/resource_type/parent_resource_type，
     # 不需要修改中心 Router
 
-# 3. 注册到 Runtime
-runtime.register_capability(NewPlatformCapability(api_client))
+# 工厂名按约定自动发现：create_new_network_capability(api_client)
 ```
+
+如果渠道通过 `skills/channels/<name>/SKILL.md` 自动加载，Runtime 会发现同名
+Capability 并注入按渠道创建的 Client；没有 Client 时仍可安全生成 dry-run 计划。
+只有需要补充专家知识、SOP 或安全边界时才修改 `SKILL.md`。业务层和跨渠道 Skill
+仍然可以通过自己的 `tools.py` 提供扩展 Tool。
+需要严格的多步 SOP 时，可在 Skill 目录旁提供可选的 `workflow.yaml`；它只声明
+Tool 之间的依赖和输入输出映射，不包含可执行代码，且普通渠道不要求配置它。
 
 ## 扩展 Skill + Tools
 

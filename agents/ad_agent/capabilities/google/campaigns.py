@@ -100,7 +100,10 @@ class GoogleCreateCampaignHandler(ToolHandler):
                 return ToolResult.ok({
                     "campaign_id": campaign_id,
                     "name": input_data.get("campaign_name"),
-                    "status": "ENABLED",
+                    # Google Ads mutates are created paused by the client;
+                    # report the actual safe initial state in the unified
+                    # result instead of claiming the campaign is enabled.
+                    "status": "PAUSED",
                 })
             except Exception as e:
                 return ToolResult.error(f"Failed to create Google campaign: {e}")

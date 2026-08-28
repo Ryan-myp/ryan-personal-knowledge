@@ -75,8 +75,8 @@ def _configured_service_principal() -> RequestPrincipal:
         permissions = set(getattr(runtime, "_granted_permissions", set()))
         validator = getattr(runtime, "whitelist_validator", None)
         account_scope = {
-            platform: set(validator.get_allowed_accounts(platform))
-            for platform in ("meta", "google-ads", "tiktok", "dv360")
+            str(platform): set(values or [])
+            for platform, values in getattr(validator, "allowed_accounts", {}).items()
         } if validator is not None else {}
     else:
         permissions = set()
@@ -212,10 +212,13 @@ def _init_runtime():
             import json
             with open(creds_path) as f:
                 creds_config = json.load(f)
-                # 提取各平台凭证
-                for platform in ['meta', 'google', 'tiktok', 'dv360']:
-                    if platform in creds_config:
-                        credentials[platform] = creds_config[platform]
+                # Each provider owns its credential shape.  Do not maintain a
+                # second list of channels in the HTTP bootstrap path.
+                credentials = {
+                    str(platform): value
+                    for platform, value in creds_config.items()
+                    if isinstance(value, dict)
+                }
         
         # 如果 JSON 文件不存在，回退到 YAML
         if not credentials and config_path.exists():

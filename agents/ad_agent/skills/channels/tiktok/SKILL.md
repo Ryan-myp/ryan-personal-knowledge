@@ -9,7 +9,7 @@ tags: [tiktok, ads, api, spark-ads, pixel, conversion-api, advertising]
 
 # TikTok Ads 专家技能
 
-> 执行边界：本文包含专家知识与扩展设计。当前可执行工具以 `agents/ad_agent/capabilities/tiktok/capability.py` 注册表为准；未注册的认证、创意或定向工具不能直接调用。
+> 执行边界：本文是自然语言专家知识、SOP 和安全边界。下面的能力分类只用于帮助理解，不是 Tool 注册表；当前可执行工具由 Capability 自描述并自动发现。新增或调整 Tool 不需要修改本文件，除非要补充使用指导。
 
 ## 📌 角色定位
 
@@ -50,7 +50,10 @@ client = Client(
 - 转化数据
 - 受众分析
 
-## 🛠️ 可用 Tools
+## 🛠️ 能力与参数参考（非执行清单）
+
+以下内容用于解释业务对象和参数语义，不代表当前已注册 Tool；实际执行能力以
+Capability/plugin 发布的 ToolDefinition 为准。
 
 | Tool | 功能 | 参数 |
 |------|------|------|

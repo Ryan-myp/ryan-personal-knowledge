@@ -318,8 +318,11 @@ class MetaAPIClient(BasePlatformClient):
         }
         if 'status' in campaign:
             data['status'] = campaign['status']
-        if 'daily_budget' in campaign:
-            data['daily_budget'] = str(int(campaign['daily_budget'] * 100))  # 转为分
+        daily_budget = campaign.get('daily_budget', campaign.get('budget'))
+        if daily_budget is not None:
+            data['daily_budget'] = str(int(float(daily_budget) * 100))  # 转为分
+        if campaign.get('lifetime_budget') is not None:
+            data['lifetime_budget'] = str(int(float(campaign['lifetime_budget']) * 100))
         if 'start_time' in campaign:
             data['start_time'] = campaign['start_time']
         if 'end_time' in campaign:
@@ -331,8 +334,9 @@ class MetaAPIClient(BasePlatformClient):
     def update_campaign(self, campaign_id: str, updates: dict) -> dict:
         """更新 Campaign"""
         data = {k: v for k, v in updates.items() if v is not None}
-        if 'daily_budget' in data:
-            data['daily_budget'] = str(int(data['daily_budget'] * 100))
+        daily_budget = data.pop('daily_budget', data.pop('budget', None))
+        if daily_budget is not None:
+            data['daily_budget'] = str(int(float(daily_budget) * 100))
         return self.request('POST', f"/{campaign_id}", data=data)
     
     def pause_campaign(self, campaign_id: str) -> dict:
@@ -377,6 +381,7 @@ class MetaAPIClient(BasePlatformClient):
         if isinstance(targeting, dict):
             targeting = json.dumps(targeting)
         
+        daily_budget = adset.get('daily_budget', adset.get('budget'))
         data = {
             'name': adset['name'],
             'campaign_id': campaign_id,
@@ -384,10 +389,13 @@ class MetaAPIClient(BasePlatformClient):
             'billing_event': adset.get('billing_event', 'IMPRESSIONS'),
             'bidding_strategy': adset.get('bidding_strategy', 'LOWEST_COST_WITHOUT_CAP'),
             'bid_amount': str(adset.get('bid_amount', 100)),
-            'daily_budget': str(int(adset.get('daily_budget', 100) * 100)),
             'targeting': targeting,
             'status': adset.get('status', 'PAUSED'),
         }
+        if daily_budget is not None:
+            data['daily_budget'] = str(int(float(daily_budget) * 100))
+        elif adset.get('lifetime_budget') is not None:
+            data['lifetime_budget'] = str(int(float(adset['lifetime_budget']) * 100))
         result = self.request('POST', f"/{account_id}/adsets", data=data)
         return result.get('id', '') if isinstance(result, dict) else ''
     
@@ -397,7 +405,7 @@ class MetaAPIClient(BasePlatformClient):
         if 'bid_amount' in data:
             data['bid_amount'] = str(data['bid_amount'])
         if 'daily_budget' in data:
-            data['daily_budget'] = str(int(data['daily_budget'] * 100))
+            data['daily_budget'] = str(int(float(data['daily_budget']) * 100))
         return self.request('POST', f"/{adset_id}", data=data)
     
     def pause_adset(self, adset_id: str) -> dict:

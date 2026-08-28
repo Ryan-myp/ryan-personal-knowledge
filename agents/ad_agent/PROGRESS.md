@@ -4,7 +4,7 @@
 
 ## 当前契约（2026-08-27）
 
-- 单 Agent + 多 Skills + Tools；平台 Capability 是可执行注册表的来源，当前共 72 个工具：Meta 16、Google Ads 18、TikTok 24、DV360 14。
+- 单 Agent + 多 Skills + Tools；平台 Capability 是可执行注册表的来源，当前共 72 个工具：Meta 16、Google Ads 18、TikTok 24、DV360 14。Capability 和按约定命名的 Provider Client 均自动发现，不依赖中心渠道/工具配置表。
 - 所有 Campaign 及下级资源创建/更新默认 dry-run；当前不会因工具已注册就调用真实写 API。
 - live 仅允许配置白名单账户，且 API 确认必须携带与当前 `session_id + account_id + tool + normalized input + idempotency key` 绑定的 `confirmation_payload`。
 - 白名单只有一个账户时允许兼容性自动选择；多账户配置必须由调用方显式指定目标账户。
@@ -29,7 +29,7 @@
 ### 1. 单 Agent + 多 Skills
 - 通过 IntentRouter 自动识别用户意图并路由到对应平台的 Capability
 - 每个平台是一个独立的 CapabilityModule，可独立扩展
-- 新增平台只需添加新 Capability，无需修改 Core 层
+- 新增平台只需按约定添加渠道 Capability（以及可选的同名 API Client）；无需修改 Core、Runtime、Router 或 CLI 中心列表
 
 ### 2. API 客户端封装
 - **重试机制**: 指数退避重试（可配置最大重试次数和延迟）
@@ -72,15 +72,15 @@ ad_agent/
 │
 ├── capabilities/            # 业务能力层
 │   ├── base.py              # Capability 基类
-│   ├── meta_capability.py   # Meta 广告能力
-│   └── platform_capabilities.py  # Google/TikTok/DV360 能力
+│   ├── factory.py           # 按包约定发现 Capability
+│   └── <platform>/capability.py
 │
 ├── api_clients/             # API 客户端层
 │   ├── base.py              # 基类（重试/限流/错误分类）
 │   ├── meta_client.py       # Meta Marketing API
 │   ├── google_ads_client.py # Google Ads API
 │   ├── tiktok_client.py     # TikTok Business API
-│   └── dv360_client.py      # DV360 API（纯 Python JWT 签名）
+│   └── <platform>_client.py # 按约定可选的 Provider Client
 │
 ├── persistence/             # 持久化层
 │   ├── store.py             # SQLite 存储
@@ -93,7 +93,7 @@ ad_agent/
 │   └── orchestrator.py      # 跨平台编排 Skill
 │
 └── tests/                   # 测试
-    └── test_ad_agent.py     # 核心单元测试（当前 97 个用例通过）
+    └── test_ad_agent.py     # 核心单元测试（全量 182 个用例通过）
 ```
 
 ## 快速开始
@@ -144,19 +144,23 @@ python -m pytest agents/ad_agent/tests/ -v
 ```
 
 测试结果：
-- 当前 `agents/ad_agent/tests/`：171 passed
+- 当前 `agents/ad_agent/tests/`：182 passed
 - 覆盖：工具注册、Schema 校验、白名单、dry-run 不调用 Client、跨平台账户、层级 ID 传递、live 确认、持久化和 Runtime 集成
 
 ## 扩展新平台
 
-只需三步：
+新增渠道只需按包约定提供自己的实现；不需要修改中心 Router、Runtime 或 CLI：
 
 ```python
-# 1. 创建 API 客户端
+# 1. 创建 API 客户端（可选）
+# agents/ad_agent/api_clients/new_platform_client.py
 class NewPlatformClient(BasePlatformClient):
     def _do_request(self, method, url, **kwargs): ...
 
+# 工厂名：create_new_platform_client(credentials)
+
 # 2. 创建 Capability
+# agents/ad_agent/capabilities/new_platform/capability.py
 class NewPlatformCapability(BaseCapability):
     platform_name = "new_platform"
     
@@ -169,9 +173,12 @@ class NewPlatformCapability(BaseCapability):
     # ToolDefinition 自描述 action/resource_type/parent_resource_type，
     # 不需要修改中心 Router
 
-# 3. 注册到 Runtime
-runtime.register_capability(NewPlatformCapability(api_client))
+# 工厂名：create_new_platform_capability(api_client)
 ```
+
+将 `SKILL.md` 放入 `skills/channels/<platform>/` 后，Runtime/CLI 会自动发现渠道
+Capability。`SKILL.md` 仍只负责自然语言知识、SOP 和安全边界；只有渠道确实需要
+补充使用指导时才修改它。
 
 ## 生产级特性清单
 
@@ -184,9 +191,9 @@ runtime.register_capability(NewPlatformCapability(api_client))
 | 结构化日志 | ✅ | JSON 格式 |
 | Dry-run 模式 | ✅ | 无需调用线上写 API 即可测试 |
 | WriteGuard | ✅ | 持久化幂等、显式确认、unknown 结果保留 reservation、workflow lease/claim 已接入 |
-| 单元测试 | ✅ | 全量 171 个用例 |
+| 单元测试 | ✅ | 全量 182 个用例 |
 | 多平台支持 | ✅ | Meta/Google/TikTok/DV360 |
-| 可扩展性 | ✅ | 新增平台只需 Capability |
+| 可扩展性 | ✅ | Capability 与 Provider Client 按包约定自动发现，无需修改中心 Router/Runtime |
 
 ## 与 DAP Agent 对标
 

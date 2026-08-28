@@ -15,6 +15,8 @@ from agents.ad_agent.capabilities.google import create_google_capability
 from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
 from agents.ad_agent.capabilities.dv360 import create_dv360_capability
 from agents.ad_agent.runtime.runtime import AgentRuntime, AccountWhitelistValidator
+from agents.ad_agent.capabilities.factory import create_capability, discover_capability_factory
+from agents.ad_agent.api_clients.factory import create_platform_client
 
 
 def test_existing_channel_tools_publish_routing_metadata():
@@ -91,6 +93,95 @@ def test_new_custom_intent_is_declared_on_tool_not_router():
     assert [definition.name for definition in routed["new-network"]] == [
         "new_network_estimate_reach"
     ]
+
+
+def test_new_channel_capability_is_discovered_by_package_convention(monkeypatch):
+    """Adding a channel factory must not require editing a central map."""
+    import sys
+    import types
+
+    package_name = "agents.ad_agent.capabilities.new_network"
+    module_name = f"{package_name}.capability"
+    package = types.ModuleType(package_name)
+    package.__path__ = []
+    module = types.ModuleType(module_name)
+
+    sentinel = object()
+    module.create_new_network_capability = lambda client=None: sentinel
+    monkeypatch.setitem(sys.modules, package_name, package)
+    monkeypatch.setitem(sys.modules, module_name, module)
+
+    factory = discover_capability_factory("new-network")
+    assert callable(factory)
+    assert create_capability("new-network") is sentinel
+
+
+def test_new_channel_client_is_discovered_by_package_convention(monkeypatch):
+    import sys
+    import types
+
+    module_name = "agents.ad_agent.api_clients.new_network_client"
+    module = types.ModuleType(module_name)
+    sentinel = object()
+    module.create_new_network_client = lambda credentials=None: sentinel
+    monkeypatch.setitem(sys.modules, module_name, module)
+
+    assert create_platform_client("new-network", {"access_token": "secret"}) is sentinel
+
+
+def test_skill_can_own_optional_workflow_without_becoming_tool_registry(tmp_path):
+    from agents.ad_agent.runtime.skill import BaseSkill, SkillContract
+
+    skill_dir = tmp_path / "channels" / "workflow-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: workflow-skill\nplatform: new-network\n---\n"
+        "# Provider SOP\nUse the provider's campaign creation sequence.\n",
+        encoding="utf-8",
+    )
+    (skill_dir / "workflow.yaml").write_text(
+        "workflows:\n"
+        "  create_with_validation:\n"
+        "    steps:\n"
+        "      - id: validate\n"
+        "        tool: new_validate_campaign\n"
+        "      - id: create\n"
+        "        tool: new_create_campaign\n"
+        "        depends_on: [validate]\n",
+        encoding="utf-8",
+    )
+
+    skill = BaseSkill(SkillContract(str(skill_dir)).load())
+    assert skill.get_tools() == []
+    assert skill.get_workflow_mappings() == {
+        "create_with_validation": {
+            "new-network": ["new_validate_campaign", "new_create_campaign"]
+        }
+    }
+
+
+def test_runtime_resource_outputs_use_tool_metadata_not_tool_name():
+    definition = ToolDefinition(
+        name="provider_operation",
+        skill="provider-skill",
+        platform="new-network",
+        description="Create a campaign",
+        input_schema=ToolSchema(properties={"name": {"type": "string"}}),
+        action="create",
+        resource_type="campaign",
+        effect_class=ToolEffect.WRITE,
+    )
+    runtime = AgentRuntime.__new__(AgentRuntime)
+    runtime.registry = SimpleToolRegistry()
+    simulated = runtime._simulate_write(definition, {"name": "demo"}, "new-network")
+    assert simulated.data["campaign_id"].startswith("dry_new-network_")
+
+    assert AgentRuntime._build_resource_results([{
+        "tool": "provider_operation",
+        "platform": "new-network",
+        "success": True,
+        "data": {"campaign_id": "c1"},
+    }]) == []
 
 
 def test_live_mode_alone_cannot_enable_provider_writes():

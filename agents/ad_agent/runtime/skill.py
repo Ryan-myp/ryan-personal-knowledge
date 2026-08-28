@@ -75,6 +75,10 @@ class SkillContract:
         skill_md_path = os.path.join(self.skill_dir, "SKILL.md")
         if os.path.exists(skill_md_path):
             self._load_skill_md(skill_md_path)
+            # A workflow file is an optional Skill-owned orchestration
+            # contract. It is never required for ordinary channel Skills and
+            # is kept separate from the natural-language SKILL.md body.
+            self._load_workflow_file(skill_md_path)
         
         # 2. 加载 YAML 合约（如有）
         yaml_path = os.path.join(self.skill_dir, "contract.yaml")
@@ -142,11 +146,8 @@ class SkillContract:
                         patterns=[key]
                     ))
 
-            # SKILL.md is intentionally natural-language guidance plus
-            # identity metadata. It is not an executable routing DSL.
-
-        # 从 markdown 正文提取能力声明
-        self._extract_capabilities_from_md(content)
+        # SKILL.md is intentionally natural-language guidance plus identity
+        # metadata. Markdown headings/tables never become executable Tools.
 
     def _load_workflows(self, workflows: Any) -> None:
         """Load workflow declarations from a dedicated workflow contract."""
@@ -170,11 +171,15 @@ class SkillContract:
                         names = [names]
                     if isinstance(names, list):
                         steps.extend(self._parse_workflow_steps(names, str(platform)))
-            self.workflows[str(name)] = SkillWorkflow(
+            workflow = SkillWorkflow(
                 name=str(name),
                 steps=tuple(steps),
                 description=str(raw.get("description", "")),
             )
+            errors = workflow.validation_errors()
+            if errors:
+                raise ValueError("; ".join(errors))
+            self.workflows[str(name)] = workflow
 
     def _load_workflow_file(self, skill_md_path: str) -> None:
         """Load an optional special-case DAG beside ``SKILL.md``.
@@ -239,92 +244,6 @@ class SkillContract:
                 requires_confirmation=bool(spec.get("requires_confirmation", spec.get("confirmation", False))),
             ))
         return parsed
-    
-    def _extract_capabilities_from_md(self, content: str) -> None:
-        """从 Markdown 正文提取 tool 能力声明"""
-        # 匹配 ### Tool: tool_name 或 #### tool_name 模式
-        tool_pattern = r'###\s+Tool[:\s]+(\w+)\s*\n+(.*?)\n(?=###|\Z)'
-        for match in re.finditer(tool_pattern, content, re.DOTALL):
-            tool_name = match.group(1).strip()
-            tool_body = match.group(2).strip()
-            
-            # 解析描述
-            desc_match = re.search(r'description:\s*(.+)', tool_body, re.IGNORECASE)
-            description = desc_match.group(1).strip() if desc_match else tool_name
-            
-            # 解析参数
-            required = []
-            optional = []
-            for line in tool_body.split('\n'):
-                line = line.strip()
-                if line.startswith('- '):
-                    param = line[2:].split(':')[0].strip()
-                    if 'required' in line.lower() or ':' not in line[2:]:
-                        required.append(param)
-                    else:
-                        optional.append(param)
-            
-            self.capabilities[tool_name] = SkillCapability(
-                name=tool_name,
-                description=description,
-                required_params=required,
-                optional_params=optional,
-            )
-        
-        # 如果没有找到工具定义，尝试从表格中提取
-        if not self.capabilities:
-            self._extract_capabilities_from_table(content)
-    
-    def _extract_capabilities_from_table(self, content: str) -> None:
-        """从 Markdown 表格中提取工具定义"""
-        # 查找表格模式: | Tool | 功能 | 参数 |
-        table_pattern = r'\|\s*Tool\s*\|[^|]*\|[^|]*\|\n((?:\|.+\|\n)*)'
-        match = re.search(table_pattern, content)
-        
-        if not match:
-            return
-        
-        table_content = match.group(1)
-        
-        for line in table_content.split('\n'):
-            if not line.strip().startswith('|'):
-                continue
-            
-            parts = [p.strip() for p in line.split('|')]
-            # 过滤空元素
-            parts = [p for p in parts if p]
-            if len(parts) < 3:
-                continue
-            
-            # 跳过表头行和分隔行
-            if 'Tool' in parts[0] or '------' in parts[0] or '功能' in parts[1]:
-                continue
-            
-            # Markdown 表格结构: ['', tool_name, description, params, '']
-            # 过滤后: [tool_name, description, params]
-            tool_name = parts[0].replace('`', '').strip()
-            description = parts[1].strip()
-            params_str = parts[2].strip() if len(parts) > 2 else ''
-            
-            # 跳过空行或无效行
-            if not tool_name or tool_name.startswith('---'):
-                continue
-            
-            # 解析参数
-            required = []
-            optional = []
-            if params_str:
-                for param in params_str.split(','):
-                    param = param.strip().replace('`', '')
-                    if param:
-                        required.append(param)
-            
-            self.capabilities[tool_name] = SkillCapability(
-                name=tool_name,
-                description=description,
-                required_params=required,
-                optional_params=optional,
-            )
     
     def _load_contract_yaml(self, path: str) -> None:
         """加载 contract.yaml"""

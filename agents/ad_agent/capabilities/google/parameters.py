@@ -33,9 +33,15 @@ def google_campaign_schema() -> dict[str, Any]:
         "properties": {
             "customer_id": _field("string", "Google Ads customer ID; MCC is not accepted here"),
             "campaign_name": _field("string", "Campaign name", maxLength=255),
-            "advertising_channel_type": _field("string", "Channel type", enum=GOOGLE_CHANNEL_TYPES),
+            "advertising_channel_type": _field(
+                "string", "Channel type", enum=GOOGLE_CHANNEL_TYPES,
+                input_aliases=["campaign_type"], default="SEARCH",
+            ),
             "campaign_type": _field("string", "Channel type alias", enum=GOOGLE_CHANNEL_TYPES),
-            "bidding_strategy": _field("string", "Bidding strategy", enum=GOOGLE_BIDDING_STRATEGIES),
+            "bidding_strategy": _field(
+                "string", "Bidding strategy", enum=GOOGLE_BIDDING_STRATEGIES,
+                default="MAXIMIZE_CONVERSIONS",
+            ),
             "daily_budget": _field("number", "Daily budget in account currency", minimum=0),
             "budget": _field("number", "Daily budget alias", minimum=0),
             "status": _field("string", "Campaign status", enum=GOOGLE_STATUSES),

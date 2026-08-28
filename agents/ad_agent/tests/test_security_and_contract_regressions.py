@@ -183,7 +183,7 @@ def test_create_tools_are_not_marked_safe_to_replay():
         assert all(definition.replay_policy == ReplayPolicy.UNSAFE for definition in create_definitions)
 
 
-def test_canonical_declarative_skill_has_no_handler_without_binding(tmp_path):
+def test_skill_markdown_is_context_only_without_executable_binding(tmp_path):
     skill_dir = tmp_path / "channels" / "unbound"
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(
@@ -192,7 +192,7 @@ def test_canonical_declarative_skill_has_no_handler_without_binding(tmp_path):
         encoding="utf-8",
     )
     skill = BaseSkill(SkillContract(str(skill_dir)).load())
-    assert [tool.name for tool in skill.get_tools()] == ["unbound_read"]
+    assert skill.get_tools() == []
     assert skill.get_tool_handler("unbound_read") is None
 
 
@@ -284,6 +284,39 @@ def test_tiktok_campaign_and_app_ios_contracts_are_explicit():
 
     missing_bid = dict(valid_ios, bid_type="BID_TYPE_CUSTOM")
     assert any("bid_amount" in error for error in validate_tool_input(adgroup, missing_bid))
+
+
+def test_provider_budget_aliases_are_normalized_before_api_payload():
+    meta = MetaAPIClient({})
+    meta_payloads = []
+    meta.request = lambda method, endpoint, data=None, **kwargs: (
+        meta_payloads.append(data) or {"id": "campaign-1"}
+    )
+    assert meta.create_campaign("m1", {
+        "name": "Meta total",
+        "objective": "OUTCOME_SALES",
+        "budget": 12.5,
+        "special_ad_categories": "NONE",
+    }) == "campaign-1"
+    assert meta_payloads[-1]["daily_budget"] == "1250"
+    meta.update_campaign("campaign-1", {"budget": 15.25})
+    assert meta_payloads[-1]["daily_budget"] == "1525"
+
+    tiktok = TikTokAPIClient({})
+    tiktok_payloads = []
+    tiktok.request = lambda method, endpoint, data=None, **kwargs: (
+        tiktok_payloads.append(data) or {"campaign_id": "campaign-1"}
+    )
+    assert tiktok.create_campaign("t1", {
+        "name": "TikTok total",
+        "objective_type": "PRODUCT_SALES",
+        "campaign_type": "REGULAR_CAMPAIGN",
+        "budget_mode": "BUDGET_MODE_TOTAL",
+        "budget": 12.5,
+    }) == "campaign-1"
+    assert tiktok_payloads[-1]["budget"] == 1250
+    tiktok.update_campaign("t1", "123", {"budget": 15.25})
+    assert tiktok_payloads[-1]["campaign"]["budget"] == 1525
 
 
 def test_update_contract_rejects_unknown_nested_provider_fields():

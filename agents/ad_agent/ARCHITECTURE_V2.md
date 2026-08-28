@@ -111,15 +111,13 @@ class SimpleIntentRouter:
 class SimpleToolRegistry:
     """工具注册与执行中心"""
     
-    def register(self, capability: CapabilityModule):
-        """注册平台能力模块"""
-        for tool_def in capability.tool_definitions:
-            self._tools[tool_def.name] = tool_def
-            self._handlers[tool_def.name] = capability.get_handler(tool_def.name)
+    def register(self, tool_def: ToolDefinition, handler: ToolHandler):
+        """注册一个 Capability/plugin 提供的可执行 Tool"""
+        self._tools[tool_def.name] = (tool_def, handler)
     
     def execute(self, session_ctx: ToolContext, tool_name: str, tool_input: dict) -> ToolResult:
         """执行工具调用"""
-        handler = self._handlers.get(tool_name)
+        definition, handler = self._tools.get(tool_name, (None, None))
         if handler:
             return handler.execute(session_ctx, tool_input)
         return ToolResult(success=False, error="Handler not found")
@@ -329,13 +327,17 @@ class AdAgentStore:
 | `core/intent.py` | 533 | 意图解析、路由逻辑 |
 | `core/tool_registry.py` | 150 | 工具注册与执行 |
 | `capabilities/base.py` | 227 | 能力模块基类 |
-| `capabilities/meta_capability.py` | 26K | Meta 渠道实现 |
-| `capabilities/platform_capabilities.py` | 50K | Google/TikTok/DV360 渠道实现 |
+| `capabilities/meta/capability.py` | 当前源码 | Meta 渠道 Capability |
+| `capabilities/google/capability.py` | 当前源码 | Google Ads 渠道 Capability |
+| `capabilities/tiktok/capability.py` | 当前源码 | TikTok 渠道 Capability |
+| `capabilities/dv360/capability.py` | 当前源码 | DV360 渠道 Capability |
+| `capabilities/factory.py` | 当前源码 | 按包约定发现 Capability |
 | `api_clients/base.py` | 280 | API 客户端基类 |
 | `api_clients/meta_client.py` | 19K | Meta API 实现 |
 | `api_clients/google_ads_client.py` | 20K | Google Ads API 实现 |
 | `api_clients/tiktok_client.py` | 27K | TikTok API 实现 |
 | `api_clients/dv360_client.py` | 16K | DV360 API 实现 |
+| `api_clients/factory.py` | 当前源码 | 按包约定发现 Provider Client |
 | `api_server.py` | 300 | FastAPI 服务 |
 | `templates/chat.html` | ~1500 | Web UI |
 
@@ -379,53 +381,49 @@ selector.set_business_context("ecommerce", business_rules)
 ```
 skills/
 ├── channels/                 # 渠道层 Skill（核心能力）
-│   ├── meta/SKILL.md        # Meta Marketing API (16 tools)
-│   ├── google-ads/SKILL.md  # Google Ads API (18 tools)
-│   ├── tiktok/SKILL.md      # TikTok Ads API (24 tools)
-│   └── dv360/SKILL.md       # DV360 API (14 tools)
+│   ├── meta/SKILL.md        # Meta 专家知识、SOP、安全边界
+│   ├── google-ads/SKILL.md  # Google Ads 专家知识、SOP、安全边界
+│   ├── tiktok/SKILL.md      # TikTok 专家知识、SOP、安全边界
+│   └── dv360/SKILL.md       # DV360 专家知识、SOP、安全边界
 ├── businesses/               # 业务层 Skill（业务规则）
 │   ├── ecommerce/SKILL.md   # 电商业务
 │   ├── app/SKILL.md         # App 推广业务
 │   └── social/SKILL.md      # 社交媒体业务
-└── cross-channel/            # 跨渠道 Skill
-    └── SKILL.md              # 跨渠道管理工具
+└── cross-channel/            # 跨渠道 Skill 上下文
+    └── SKILL.md
 ```
 
 ### 2. Skill 加载流程
 
 ```python
 # api_server.py 初始化
-runtime_skill_loader = RuntimeSkillLoader()
-runtime_skill_loader.add_root(str(skills_root / "channels"))
-runtime_skill_loader.add_root(str(skills_root / "businesses"))
-runtime_skill_loader.add_root(str(skills_root / "cross-channel"))
-runtime_skills = runtime_skill_loader.load_all()
+runtime = AgentRuntime()
+runtime.auto_load_skills(str(skills_root), credentials)
 
 # 输出: ✅ 已加载 4 个 Skills: ['google-ads-api', 'meta-marketing-api', 'dv360-api', 'tiktok-ads-api']
 ```
 
 ### 3. Skill 解析逻辑
 
-`SkillContract` 类支持多种 SKILL.md 格式：
+`SkillContract` 类支持多种 SKILL.md frontmatter 格式：
 
 1. **Frontmatter 解析**：
    - 嵌套格式: `skill: {name: ..., description: ..., platform: ...}`
    - 直接格式: `name: ..., description: ...`
 
-2. **工具定义提取**：
-   - `### Tool: tool_name` 格式
-   - Markdown 表格格式: `| Tool | 功能 | 参数 |`
+2. **执行能力发现**：SKILL.md 不提取 Tool 定义；渠道 Capability 或 Skill plugin
+   提供 `ToolDefinition` 与 Handler，Runtime 只注册真实存在的 executable Tool。
 
 ### 4. Skills vs Capabilities
 
 | 概念 | 说明 | 数量 |
 |------|------|------|
-| **Skills** | SKILL.md 定义的能力集合 | 4 个 Channel Skills |
+| **Skills** | SKILL.md 提供的上下文、SOP 和安全边界 | 4 个 Channel Skills |
 | **Capabilities** | Python 实现的渠道能力模块 | 4 个 (Meta/Google/TikTok/DV360) |
-| **Tools** | 具体可执行的工具函数 | 42 个 |
+| **Tools** | Capability/plugin 提供的具体可执行工具 | 72 个基线工具 |
 
 **关系**：
-- Skills 是声明式定义（SKILL.md）
+- Skills 是自然语言上下文（SKILL.md）
 - Capabilities 是命令式实现（Python 类）
 - Tools 是实际执行的函数
 
@@ -444,9 +442,12 @@ description: New Platform API 专家技能
 
 # New Platform API
 
-## 可用 Tools
+## 创建流程与安全边界
 
-| Tool | 功能 | 参数 |
-|------|------|------|
-| `new_list_campaigns` | 列出广告系列 | account_id, limit |
-| `new_create_campaign` | 创建广告系列 | account_id, name, budget |
+这里描述参数含义、固定枚举、动态查询要求、流程和安全边界；不要用 Markdown
+Tool 清单代替可执行注册。
+EOF
+
+# Capability 按约定导出 create_new_platform_capability(api_client=None)
+# Client 按约定导出 create_new_platform_client(credentials)（可选）
+# Runtime/CLI 自动发现，无需修改中心列表

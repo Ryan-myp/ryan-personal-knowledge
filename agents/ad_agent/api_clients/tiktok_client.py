@@ -199,7 +199,7 @@ class TikTokAPIClient(BasePlatformClient):
         - campaign_automation_type: 自动化类型 (MANUAL, SMART_PLUS, etc.)
         - campaign_group_status: 状态 (0=PAUSED, 1=ACTIVE)
         - budget_restriction: 预算限制 (NO_LIMITATION, DAILY_BUDGET, LIFETIME_BUDGET)
-        - daily_budget: 每日预算（单位：分）
+        - daily_budget: 每日预算（账户货币；发送给 API 时转换为分）
         - app_promotion_type: APP 推广类型 (APP_RETARGETING, APP_ACQUISITION)
         """
         self.acquire_rate_limit(self._rate_limiter)
@@ -213,15 +213,19 @@ class TikTokAPIClient(BasePlatformClient):
             'budget_mode': campaign.get('budget_mode', 'BUDGET_MODE_INFINITE'),
             'campaign_type': campaign.get('campaign_type', 'REGULAR_CAMPAIGN'),
         }
-        # 可选字段
-        if campaign.get('daily_budget'):
-            data['daily_budget'] = int(campaign['daily_budget'] * 100)  # 转为分
+        # 预算输入使用账户货币、API 使用分。预算模式决定发送日预算
+        # 还是总预算，避免把 ``budget`` 原样透传后由服务端猜单位。
+        budget_mode = campaign.get('budget_mode')
+        if campaign.get('daily_budget') is not None:
+            data['daily_budget'] = int(float(campaign['daily_budget']) * 100)
+        elif budget_mode == 'BUDGET_MODE_TOTAL' and campaign.get('budget') is not None:
+            data['budget'] = int(float(campaign['budget']) * 100)
         if campaign.get('app_promotion_type'):
             data['app_promotion_type'] = campaign['app_promotion_type']
         # Preserve the explicit creation contract.  Previously these fields
         # were accepted by the tool schema but silently discarded here, which
         # made a dry-run plan differ from the eventual provider request.
-        for key in ('budget', 'budget_restriction', 'budget_mode', 'campaign_type',
+        for key in ('budget_restriction', 'budget_mode', 'campaign_type',
                     'campaign_automation_type', 'objective_type'):
             if key in campaign and campaign[key] not in (None, ''):
                 data[key] = campaign[key]
@@ -232,10 +236,17 @@ class TikTokAPIClient(BasePlatformClient):
     def update_campaign(self, advertiser_id: str, campaign_id: str, updates: dict) -> dict:
         """更新 Campaign"""
         self.acquire_rate_limit(self._rate_limiter)
+        normalized_updates = {key: value for key, value in updates.items() if value is not None}
+        daily_budget = normalized_updates.pop('daily_budget', None)
+        budget = normalized_updates.pop('budget', None)
+        if daily_budget is not None:
+            normalized_updates['daily_budget'] = int(float(daily_budget) * 100)
+        elif budget is not None:
+            normalized_updates['budget'] = int(float(budget) * 100)
         data = {
             'advertiser_id': str(advertiser_id),
             'campaign_id': int(campaign_id),
-            'campaign': updates,
+            'campaign': normalized_updates,
         }
         return self.request('POST', 'campaign/update/', data=data)
     
@@ -281,6 +292,7 @@ class TikTokAPIClient(BasePlatformClient):
     def create_adgroup(self, advertiser_id: str, campaign_id: str, adgroup: dict) -> str:
         """创建 Ad Group"""
         self.acquire_rate_limit(self._rate_limiter)
+        budget_mode = adgroup.get('budget_mode')
         data = {
             'advertiser_id': str(advertiser_id),
             'campaign_id': int(campaign_id),
@@ -289,14 +301,19 @@ class TikTokAPIClient(BasePlatformClient):
                 'ad_group_status': adgroup.get('status', 1),
                 'tracking_url': adgroup.get('tracking_url', ''),
                 'bid_amount': int(adgroup.get('bid_amount', 500)),  # 单位为分
-                'daily_budget': int(adgroup.get('daily_budget', 50) * 100),
             }
         }
+        daily_budget = adgroup.get('daily_budget')
+        budget = adgroup.get('budget')
+        if daily_budget is not None:
+            data['ad_group']['daily_budget'] = int(float(daily_budget) * 100)
+        elif budget is not None and budget_mode != 'BUDGET_MODE_INFINITE':
+            data['ad_group']['budget'] = int(float(budget) * 100)
         # New callers use the symbolic values from the parameter catalog;
         # keep the old numeric promote_object_type field for compatibility.
         for key in (
             'promotion_type', 'promote_object_type', 'bid_type', 'placement_type',
-            'billing_event', 'deep_bid_type', 'budget_mode', 'budget',
+            'billing_event', 'deep_bid_type', 'budget_mode',
             'app_id', 'landing_url', 'location_ids', 'operating_systems',
             'age_groups', 'gender', 'auto_targeting_enabled', 'optimization_goal',
         ):
@@ -312,11 +329,18 @@ class TikTokAPIClient(BasePlatformClient):
     def update_adgroup(self, advertiser_id: str, campaign_id: str, adgroup_id: str, updates: dict) -> dict:
         """更新 Ad Group"""
         self.acquire_rate_limit(self._rate_limiter)
+        normalized_updates = {key: value for key, value in updates.items() if value is not None}
+        daily_budget = normalized_updates.pop('daily_budget', None)
+        budget = normalized_updates.pop('budget', None)
+        if daily_budget is not None:
+            normalized_updates['daily_budget'] = int(float(daily_budget) * 100)
+        elif budget is not None:
+            normalized_updates['budget'] = int(float(budget) * 100)
         data = {
             'advertiser_id': str(advertiser_id),
             'campaign_id': int(campaign_id),
             'ad_group_id': int(adgroup_id),
-            'ad_group': updates,
+            'ad_group': normalized_updates,
         }
         return self.request('POST', 'adgroup/update/', data=data)
     

@@ -1,105 +1,41 @@
 # Skills 实现指南
 
-> 状态说明：本文保留为设计参考。当前唯一的 Skill contract/loader 位于 `runtime/skill.py`；可执行实现以 `capabilities/`、`core/` 和 `runtime/` 源码为准。`SKILL.md` 中的工具说明不等于已注册的可执行工具。当前四个平台 Capability 共 72 个工具，跨渠道编排由 Runtime + `core/cross_channel.py` 提供。
+> 状态说明：本文保留为设计参考。`SKILL.md` 只负责自然语言专家知识、SOP 和安全边界；它不是 Tool 注册表，也不提供可执行代码。可执行实现以 `capabilities/`、`api_clients/`、`core/` 和 `runtime/` 源码为准。当前四个平台 Capability 共 72 个工具，跨渠道编排由 Runtime + `core/cross_channel.py` 提供。
 
 ## 架构分层
 
 ```
 skills/
-├── SKILL.md              # 工具定义（配置层）- 已完成 ✅
-├── loader.py             # Skill 加载器 - 已完成 ✅
-├── registry.py           # 工具注册器 - 已完成 ✅
-├── meta/
-│   ├── SKILL.md          # Meta 工具定义（专家说明）
-│   ├── tools/            # Meta 工具实现 ⏳
-│   │   ├── campaign.py   # meta_create_campaign 等
-│   │   ├── adset.py      # meta_create_adset 等
-│   │   └── report.py     # meta_get_campaign_report 等
-│   └── expert/           # Meta 专家知识
-├── tiktok/
-│   ├── SKILL.md          # TikTok 工具定义（专家说明）
-│   ├── tools/            # TikTok 工具实现 ⏳
-│   └── expert/
-├── google-ads/
-│   ├── SKILL.md          # Google Ads 工具定义（专家说明）
-│   ├── tools/            # Google Ads 工具实现 ⏳
-│   └── expert/
-├── dv360/
-│   ├── SKILL.md          # DV360 工具定义（专家说明）
-│   ├── tools/            # DV360 工具实现 ⏳
-│   └── expert/
+├── channels/<platform>/
+│   ├── SKILL.md          # 自然语言知识、SOP、安全边界
+│   └── tools.py          # 可选 Skill plugin；不是必须项
 └── cross-channel/
-    ├── SKILL.md          # 跨渠道设计契约（未注册为独立工具）
-    ├── tools/            # 跨渠道工具实现 ⏳
-    └── expert/
+    └── SKILL.md          # 跨渠道知识和策略上下文
 ```
 
 ## 当前状态
 
 | 层级 | 状态 | 说明 |
 |------|------|------|
-| SKILL.md (定义层) | ✅ | 专家知识和设计契约；不作为 Runtime 工具注册源 |
-| loader.py (加载层) | ✅ 完成 | 自动解析 SKILL.md |
-| registry.py (注册层) | ✅ 完成 | 自动注册到 ToolRegistry |
-| tool_selector.py (选择层) | ✅ 完成 | 动态选择相关工具 |
-| context_optimizer.py (优化层) | ✅ 完成 | 构建精简 LLM 上下文 |
+| SKILL.md (上下文层) | ✅ | 专家知识、SOP 和安全边界；不作为 Runtime 工具注册源 |
+| runtime/skill.py (加载层) | ✅ 完成 | 自动解析 SKILL.md 和可选 plugin |
+| core/tool_registry.py (注册层) | ✅ 完成 | 统一注册与执行前 Schema 校验 |
+| core/tool_selector.py (选择层) | ✅ 完成 | 动态选择相关工具 |
+| core/context_optimizer.py (优化层) | ✅ 完成 | 构建精简 LLM 上下文 |
 | capabilities/ (实现层) | ✅ | 当前 Runtime 的实际 Handler/API Client 入口 |
 
 ## 如何补充实现
 
-### 示例：实现 meta_create_campaign
+新增内置渠道能力时，在 `capabilities/<platform>/capability.py` 中定义
+`ToolDefinition` 与 Handler，并导出 `create_<platform>_capability(api_client=None)`。
+如果需要真实 Provider 访问，再在 `api_clients/<platform>_client.py` 中导出
+`create_<platform>_client(credentials)`。Runtime 会按包约定发现它们；无需修改
+中心 Router、平台列表或其他渠道的 Skill。
 
-创建 `skills/meta/tools/campaign.py`：
-
-```python
-"""
-skills/meta/tools/campaign.py - Meta Campaign 工具实现
-"""
-
-import logging
-from typing import Any, Dict
-
-logger = logging.getLogger(__name__)
-
-
-class MetaCampaignTools:
-    """Meta Campaign 相关工具实现"""
-    
-    def __init__(self, api_client):
-        self.client = api_client
-    
-    def create_campaign(self, account_id: str, campaign: Dict[str, Any]) -> str:
-        """
-        创建 Meta Campaign
-        
-        Args:
-            account_id: 广告账户 ID
-            campaign: campaign 参数
-            
-        Returns:
-            campaign_id: 创建的广告系列 ID
-        """
-        # 调用已有的 Meta API 客户端
-        campaign_id = self.client.create_campaign(account_id, campaign)
-        logger.info(f"Created Meta campaign: {campaign_id}")
-        return campaign_id
-    
-    def update_campaign(self, account_id: str, campaign_id: str, updates: Dict[str, Any]) -> bool:
-        """更新 Meta Campaign"""
-        # 实现...
-        pass
-    
-    def pause_campaign(self, account_id: str, campaign_id: str) -> bool:
-        """暂停 Meta Campaign"""
-        # 实现...
-        pass
-```
-
-### 注册工具
-
-在 `skills/meta/SKILL.md` 中已经定义了工具，只需：
-1. 实现工具逻辑
-2. 在 `capabilities/meta_capability.py` 中调用
+如果只是扩展现有渠道或提供业务专属能力，可在对应 `skills/channels/<name>/`
+下使用 `tools.py` plugin。`SKILL.md` 只补充自然语言知识、SOP 与安全边界，不能
+用 Markdown 工具清单代替 executable Tool 注册。需要严格的多步 SOP 时，可以在
+Skill 目录中增加可选 `workflow.yaml`；它只声明 Tool 依赖，不包含执行代码。
 
 ## 动态工具选择原理
 
@@ -151,7 +87,7 @@ LLM 收到精简上下文
 
 ## 扩展新渠道（3 步）
 
-### 步骤 1：创建 SKILL.md
+### 步骤 1：创建 SKILL.md（只写自然语言上下文）
 
 ```yaml
 # skills/new-platform/SKILL.md
@@ -165,26 +101,25 @@ skill:
 
 # 新平台 API 专家 Skill
 
-## 工具列表
+## 创建流程与安全边界
 
-#### new_platform_create_campaign
-- **描述**: 创建广告系列
-- **参数**: campaign_name, budget
-
-#### new_platform_get_report
-- **描述**: 获取报表
-- **参数**: campaign_id, date_range
+描述创建广告系列所需的业务流程、参数解释、枚举含义和确认要求；不要在本文
+中声明 Tool 名称来暗示其可执行。
 ```
 
-### 步骤 2：实现工具代码
+### 步骤 2：实现 Capability 与可选 Client
 
 ```python
-# skills/new-platform/tools/campaign.py
-class NewPlatformCampaignTools:
-    def create_campaign(self, ...):
-        # 调用新平台 API
-        pass
+# agents/ad_agent/api_clients/new_platform_client.py（可选）
+def create_new_platform_client(credentials): ...
+
+# agents/ad_agent/capabilities/new_platform/capability.py
+def create_new_platform_capability(api_client=None): ...
 ```
+
+Capability 的 `ToolDefinition` 自己声明 `action`、`resource_type`、参数 Schema
+和可选 `intent_types`；Client 通过 `api_clients/<platform>_client.py` 的命名约定
+自动发现。
 
 ### 步骤 3：自动生效
 
@@ -229,7 +164,8 @@ Runtime 自动加载 plugin 后，工具仍由统一 Registry 执行；不能因
 中列出工具，就绕过 Handler、schema、白名单或 dry-run/live 安全门禁。
 
 服务启动时会自动：
-1. 扫描 `skills/` 目录下所有 SKILL.md
-2. 解析工具定义
-3. 注册到 ToolRegistry
-4. 参与动态工具选择
+1. 扫描 `skills/` 目录下所有 SKILL.md，加载受限上下文
+2. 按 `capabilities/<platform>/capability.py` 约定发现 Capability
+3. 按 `api_clients/<platform>_client.py` 约定创建可选 Client
+4. 将 Capability 或 Skill plugin 提供的 Tool 注册到 ToolRegistry
+5. 参与动态工具选择，并继续经过统一安全门禁

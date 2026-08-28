@@ -5,6 +5,8 @@ core/interfaces.py - 核心接口定义
 所有接口定义在这里，业务模块只依赖接口，不依赖具体实现。
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
