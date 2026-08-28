@@ -78,6 +78,7 @@ class DV360Capability(BaseCapability):
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "campaign"],
             live_support=False,
+            resource_id_field="campaign_id",
         ), DV360CreateCampaignHandler(api_client)))
 
         tools.append((ToolDefinition(
@@ -138,6 +139,8 @@ class DV360Capability(BaseCapability):
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "io"],
             live_support=False,
+            resource_id_field="io_id",
+            parent_resource_id_field="campaign_id",
         ), DV360CreateIOHandler(api_client)))
 
         # Create Line Item
@@ -152,6 +155,8 @@ class DV360Capability(BaseCapability):
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "line_item"],
             live_support=False,
+            resource_id_field="line_item_id",
+            parent_resource_id_field="io_id",
         ), DV360CreateLineItemHandler(api_client)))
 
         tools.append((ToolDefinition(
@@ -240,6 +245,7 @@ class DV360Capability(BaseCapability):
                 replay_policy=ReplayPolicy.UNSAFE,
                 traits=["write", resource_type],
                 live_support=False,
+                resource_id_field=resource_id,
             ), CampaignUpdateHandler(api_client, resource_type)))
 
         return tools

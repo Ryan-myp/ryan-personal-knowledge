@@ -11,7 +11,7 @@ import hashlib
 import threading
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from ..core.interfaces import (
     ToolContext, ToolResult, ToolDefinition, ToolHandler,
@@ -23,7 +23,9 @@ from ..core.tool_registry import SimpleToolRegistry
 
 PROTECTED_UPDATE_FIELDS = frozenset({
     "token", "accesstoken", "refreshtoken", "developertoken", "clientid",
-    "clientsecret", "privatekey", "bcid", "partnerid", "mcc",
+    "clientsecret", "apikey", "appsecret", "secretkey", "privatekey",
+    "privatekeyid", "serviceaccount", "serviceaccountemail", "saemail",
+    "developerkey", "bcid", "partnerid", "mcc",
     "authorization", "credential", "credentials", "perterid",
 })
 
@@ -222,9 +224,19 @@ class CampaignUpdateHandler(ToolHandler):
     后续人工启用 live 模式后的已知平台方法，不会自行改变凭证或账户元数据。
     """
 
-    def __init__(self, api_client=None, resource_type: str = "campaign"):
+    def __init__(
+        self,
+        api_client=None,
+        resource_type: str = "campaign",
+        update_adapter: Optional[Callable[..., Any]] = None,
+        resource_id_field: Optional[str] = None,
+        parent_resource_id_field: Optional[str] = None,
+    ):
         self.client = api_client
         self.resource_type = resource_type
+        self.update_adapter = update_adapter
+        self.resource_id_field = resource_id_field or f"{resource_type}_id"
+        self.parent_resource_id_field = parent_resource_id_field
 
     def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
         if not self.client:
@@ -240,59 +252,29 @@ class CampaignUpdateHandler(ToolHandler):
             )
 
         try:
-            account_id = ctx.account_id
-            if self.client.platform == "meta":
-                resource_id = input_data.get(f"{self.resource_type}_id") or input_data.get("adset_id")
-                method_name = {
-                    "campaign": "update_campaign",
-                    "adset": "update_adset",
-                    "ad": "update_ad",
-                }.get(self.resource_type)
-                method = getattr(self.client, method_name, None) if method_name else None
-                if not method or not resource_id:
-                    return ToolResult.error(f"Meta {self.resource_type} update adapter is unavailable")
-                # A Graph object can be addressed directly by ID even when it
-                # belongs to another account visible to the same token.  Do
-                # not treat the Runtime's selected account as proof of object
-                # ownership.
-                from ..api_clients.meta_client import MetaAPIClient
-                if isinstance(self.client, MetaAPIClient) and not self.client.resource_belongs_to_account(
-                    account_id, self.resource_type, resource_id
-                ):
+            resource_id = input_data.get(self.resource_id_field)
+            if not resource_id:
+                return ToolResult.error(f"{self.resource_type}_id is required")
+            parent_id = (
+                input_data.get(self.parent_resource_id_field)
+                if self.parent_resource_id_field else None
+            )
+            if self.update_adapter is None:
+                # A custom provider can expose this uniform seam and avoid
+                # writing an adapter at all.  Provider-specific signatures
+                # belong in the Capability that registered the Tool.
+                method = getattr(self.client, "update_resource", None)
+                if not callable(method):
                     return ToolResult.error(
-                        f"Meta {self.resource_type} {resource_id} does not belong to account {account_id}"
+                        f"{self.resource_type} update adapter is unavailable"
                     )
-                return ToolResult.ok({"resource_id": resource_id, "result": method(resource_id, updates)})
-
-            # The runtime/registry uses ``google-ads`` while the REST client
-            # normalizes its internal platform name to ``google``. Accept
-            # both forms so a verified campaign update is not rejected by
-            # the adapter itself.
-            if self.client.platform in ("google", "google-ads"):
-                resource_id = input_data.get(f"{self.resource_type}_id") or input_data.get("ad_group_id")
-                if self.resource_type != "campaign" or not resource_id:
-                    return ToolResult.error(f"Google {self.resource_type} update adapter is unavailable")
-                method = getattr(type(self.client), "for_customer", None)
-                client = method(self.client, account_id) if method and account_id else self.client
-                if client is self.client and account_id and hasattr(self.client, "customer_id"):
-                    self.client.customer_id = account_id
-                return ToolResult.ok({"resource_id": resource_id, "result": client.update_campaign(resource_id, updates)})
-
-            if self.client.platform == "tiktok":
-                if self.resource_type == "campaign":
-                    resource_id = input_data.get("campaign_id")
-                    method = self.client.update_campaign
-                    args = (account_id, resource_id, updates)
-                elif self.resource_type == "adgroup":
-                    resource_id = input_data.get("adgroup_id")
-                    method = self.client.update_adgroup
-                    args = (account_id, input_data.get("campaign_id"), resource_id, updates)
-                else:
-                    return ToolResult.error(f"TikTok {self.resource_type} update adapter is unavailable")
-                if not resource_id:
-                    return ToolResult.error(f"TikTok {self.resource_type}_id is required")
-                return ToolResult.ok({"resource_id": resource_id, "result": method(*args)})
-
-            return ToolResult.error(f"{self.client.platform} {self.resource_type} update adapter is unavailable")
+                value = method(
+                    self.resource_type, ctx.account_id, resource_id, parent_id, updates
+                )
+            else:
+                value = self.update_adapter(
+                    self.client, ctx, self.resource_type, resource_id, parent_id, updates
+                )
+            return ToolResult.ok({"resource_id": resource_id, "result": value})
         except Exception as exc:
             return ToolResult.error(f"Failed to update {self.resource_type}: {exc}")

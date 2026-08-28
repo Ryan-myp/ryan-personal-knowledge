@@ -43,6 +43,27 @@ from ..update_contracts import tiktok_updates
 logger = logging.getLogger(__name__)
 
 
+def _tiktok_update_adapter(client, ctx, resource_type, resource_id, parent_id, updates):
+    """Adapt TikTok's advertiser- and parent-scoped update methods."""
+    if resource_type == "campaign":
+        method = getattr(client, "update_campaign", None)
+        args = (ctx.account_id, resource_id, updates)
+    elif resource_type == "adgroup":
+        method = getattr(client, "update_adgroup", None)
+        args = (ctx.account_id, parent_id, resource_id, updates)
+    else:
+        raise AttributeError(
+            f"TikTok {resource_type} update adapter is unavailable"
+        )
+    if not callable(method):
+        raise AttributeError(
+            f"TikTok {resource_type} update adapter is unavailable"
+        )
+    if resource_type == "adgroup" and not parent_id:
+        raise ValueError("TikTok adgroup update requires campaign_id")
+    return method(*args)
+
+
 class TikTokCapability(BaseCapability):
     platform_name = "tiktok"
 
@@ -96,6 +117,7 @@ class TikTokCapability(BaseCapability):
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "campaign"],
             live_support=False,
+            resource_id_field="campaign_id",
         ), TikTokCreateCampaignHandler(api_client)))
 
         # List Ad Groups
@@ -145,6 +167,8 @@ class TikTokCapability(BaseCapability):
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "adgroup"],
             live_support=False,
+            resource_id_field="adgroup_id",
+            parent_resource_id_field="campaign_id",
         ), TikTokCreateAdGroupHandler(api_client)))
 
         # List Ads
@@ -194,6 +218,8 @@ class TikTokCapability(BaseCapability):
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "ad"],
             live_support=False,
+            resource_id_field="ad_id",
+            parent_resource_id_field="adgroup_id",
         ), TikTokCreateAdHandler(api_client)))
 
         # Get Report
@@ -249,6 +275,8 @@ class TikTokCapability(BaseCapability):
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "spark", "ad"],
             live_support=False,
+            resource_id_field="ad_id",
+            parent_resource_id_field="adgroup_id",
         ), TikTokSparkAdsCreateHandler(api_client)))
 
         for resource_name, result_key, handler in [
@@ -323,7 +351,17 @@ class TikTokCapability(BaseCapability):
                 replay_policy=ReplayPolicy.UNSAFE,
                 traits=["write", resource_type],
                 live_support=False,
-            ), CampaignUpdateHandler(api_client, resource_type)))
+                resource_id_field=resource_id,
+                parent_resource_id_field=(
+                    "campaign_id" if resource_type == "adgroup" else None
+                ),
+            ), CampaignUpdateHandler(
+                api_client, resource_type, _tiktok_update_adapter,
+                resource_id_field=resource_id,
+                parent_resource_id_field=(
+                    "campaign_id" if resource_type == "adgroup" else None
+                ),
+            )))
 
         return tools
 

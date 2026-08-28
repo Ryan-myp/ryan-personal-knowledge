@@ -146,7 +146,9 @@ class AgentRuntime:
     # this validator.
     PROTECTED_INPUT_FIELDS = frozenset({
         "token", "accesstoken", "refreshtoken", "developertoken", "clientid",
-        "clientsecret", "privatekey", "bcid", "partnerid", "mcc",
+        "clientsecret", "apikey", "appsecret", "secretkey", "privatekey",
+        "privatekeyid", "serviceaccount", "serviceaccountemail", "saemail",
+        "developerkey", "bcid", "partnerid", "mcc",
         "authorization", "credential", "credentials", "perterid",
     })
 
@@ -2068,7 +2070,10 @@ class AgentRuntime:
             if hasattr(self.registry, "generate_idempotency_key") else uuid.uuid4().hex[:16]
         name = input_data.get("name") or input_data.get("campaign_name") or f"dry_run_{key}"
         resource_type = getattr(tool_def, "resource_type", None) or "resource"
-        resource_key = self._resource_id_field(resource_type)
+        resource_key = self._resource_id_field_for_tool(tool_def)
+        parent_type = getattr(tool_def, "parent_resource_type", None)
+        parent_field = self._parent_resource_id_field_for_tool(tool_def)
+        parent_id = input_data.get(parent_field) if parent_field else None
 
         action = str(getattr(tool_def, "action", "") or "").lower()
         is_update = action in {"update", "pause", "resume", "enable", "disable"}
@@ -2079,6 +2084,12 @@ class AgentRuntime:
             "live_support": bool(getattr(tool_def, "live_support", False)),
             "operation": "update" if is_update else "create",
             resource_key: resource_id,
+            "resource_id_field": resource_key,
+            "parent_resource_type": parent_type,
+            "parent_resource_id_field": parent_field,
+            "parent_resource_id": (
+                str(parent_id) if parent_id not in (None, "") else None
+            ),
             "name": name,
             "status": "SIMULATED_UPDATED" if is_update else "SIMULATED_DRAFT",
             "input": {k: v for k, v in input_data.items() if k != "credentials"},
@@ -2119,6 +2130,70 @@ class AgentRuntime:
         }.get(resource_type, "resource_id")
 
     @classmethod
+    def _resource_id_field_for_tool(cls, tool_def: Any) -> str:
+        """Resolve the provider resource ID from the Tool contract.
+
+        The fallback only covers the shared logical resource vocabulary.  A
+        provider with a different wire name can publish
+        ``resource_id_field`` on its Tool and does not require a Runtime
+        change.
+        """
+        declared = str(getattr(tool_def, "resource_id_field", "") or "").strip()
+        if declared:
+            return declared
+        return cls._resource_id_field(str(getattr(tool_def, "resource_type", "") or ""))
+
+    @staticmethod
+    def _parent_resource_id_field_for_tool(tool_def: Any) -> Optional[str]:
+        """Resolve a Tool's parent ID field without provider branching.
+
+        ``parent_resource_id_field`` is authoritative.  The schema marker is
+        useful for plugin Tools that want to keep metadata close to their
+        input contract; conventional logical names remain a compatibility
+        fallback for older Tools.
+        """
+        declared = str(
+            getattr(tool_def, "parent_resource_id_field", "") or ""
+        ).strip()
+        if declared:
+            return declared
+
+        schema = getattr(tool_def, "input_schema", None)
+        properties = getattr(schema, "properties", {}) if schema else {}
+        if isinstance(properties, dict):
+            marked = [
+                str(name) for name, spec in properties.items()
+                if isinstance(spec, dict)
+                and (spec.get("parent_resource_id") or spec.get("x-parent-resource-id"))
+            ]
+            if len(marked) == 1:
+                return marked[0]
+
+        parent_type = str(getattr(tool_def, "parent_resource_type", "") or "")
+        normalized_parent = re.sub(r"[^a-z0-9]+", "_", parent_type.lower()).strip("_")
+        candidates = [f"{normalized_parent}_id"] if normalized_parent else []
+        # These are logical naming aliases, not provider/channel mappings.
+        # Explicit Tool metadata should be used when a provider has another
+        # spelling or multiple parent identifiers in one payload.
+        candidates.extend({
+            "ad_set": ("ad_set_id", "adset_id"),
+            "ad_group": ("ad_group_id", "adgroup_id"),
+        }.get(normalized_parent, ()))
+        if isinstance(properties, dict):
+            for candidate in candidates:
+                if candidate in properties:
+                    return candidate
+        return candidates[0] if candidates else None
+
+    @classmethod
+    def _parent_resource_id_for_tool(
+        cls, tool_def: Any, input_data: Optional[dict[str, Any]] = None,
+    ) -> Optional[str]:
+        field = cls._parent_resource_id_field_for_tool(tool_def)
+        value = (input_data or {}).get(field) if field else None
+        return str(value) if value not in (None, "") else None
+
+    @classmethod
     def _build_resource_results(cls, results: list[dict]) -> list[dict]:
         """Normalize write results without exposing provider credentials."""
         resource_items: list[ResourceResult] = []
@@ -2136,7 +2211,7 @@ class AgentRuntime:
                 continue
             sequence += 1
             resource_type = str(item["resource_type"])
-            id_field = cls._resource_id_field(resource_type)
+            id_field = str(item.get("resource_id_field") or cls._resource_id_field(resource_type))
             input_data = data.get("input") if isinstance(data.get("input"), dict) else {}
             raw_id = data.get(id_field) or input_data.get(id_field) or item.get(id_field)
             if raw_id in (None, ""):
@@ -2159,12 +2234,14 @@ class AgentRuntime:
             else:
                 status = "failed"
 
-            parent_field = {
-                "ad_set": "campaign_id", "ad_group": "campaign_id",
-                "ad": "adset_id", "io": "campaign_id",
-                "line_item": "io_id", "asset_group": "campaign_id",
-            }.get(resource_type)
-            parent_id = input_data.get(parent_field) if parent_field else None
+            parent_type = item.get("parent_resource_type") or data.get("parent_resource_type")
+            parent_id = item.get("parent_resource_id") or data.get("parent_resource_id")
+            if parent_id in (None, ""):
+                # External consumers may provide a normalized result without
+                # the top-level parent ID.  Only use the declared metadata
+                # when available; do not guess from the provider name.
+                parent_field = item.get("parent_resource_id_field")
+                parent_id = input_data.get(parent_field) if parent_field else None
             parent_id = str(parent_id) if parent_id not in (None, "") else None
             parent_sequence = None
             if parent_id:
@@ -2181,6 +2258,7 @@ class AgentRuntime:
                 resource_type=resource_type,
                 tool_name=tool_name,
                 status=status,
+                parent_resource_type=(str(parent_type) if parent_type else None),
                 account_id=(str(item.get("account_id")) if item.get("account_id") is not None else None),
                 parent_sequence=parent_sequence,
                 parent_resource_id=parent_id,
@@ -2242,7 +2320,8 @@ class AgentRuntime:
     def _redact_for_persistence(value: Any) -> Any:
         """移除可能包含凭证的字段后再写入 SQLite。"""
         sensitive = (
-            "token", "secret", "private_key", "credential", "authorization",
+            "token", "secret", "api_key", "private_key", "private_key_id",
+            "service_account", "sa_email", "developer_key", "credential", "authorization",
             "bc_id", "bcid", "partner_id", "partnerid", "perter_id", "perterid", "developer_token",
             "mcc", "client_id", "clientid",
         )
@@ -2465,17 +2544,30 @@ class AgentRuntime:
             output_data = self._redact_for_persistence(item.get("data"))
             input_data = self._redact_for_persistence(workflow_inputs.get(index, {}))
             resource_type = getattr(definition, "resource_type", None) or self._resource_type_for_tool(tool_name)
-            resource_id_field = self._resource_id_field(resource_type)
+            resource_id_field = str(
+                item.get("resource_id_field")
+                or self._resource_id_field_for_tool(definition)
+            )
             output_object = item.get("data") if isinstance(item.get("data"), dict) else {}
             raw_resource_id = output_object.get(resource_id_field)
             if raw_resource_id in (None, ""):
                 raw_resource_id = input_data.get(resource_id_field)
-            parent_type = getattr(definition, "parent_resource_type", None)
-            parent_field = {
-                "campaign": "campaign_id", "ad_set": "adset_id", "ad_group": "ad_group_id",
-                "io": "io_id", "line_item": "line_item_id",
-            }.get(parent_type or "")
-            parent_resource_id = input_data.get(parent_field) if parent_field else None
+            parent_type = (
+                item.get("parent_resource_type")
+                or output_object.get("parent_resource_type")
+                or getattr(definition, "parent_resource_type", None)
+            )
+            parent_field = str(
+                item.get("parent_resource_id_field")
+                or output_object.get("parent_resource_id_field")
+                or self._parent_resource_id_field_for_tool(definition)
+                or ""
+            ) or None
+            parent_resource_id = (
+                item.get("parent_resource_id")
+                or output_object.get("parent_resource_id")
+                or (input_data.get(parent_field) if parent_field else None)
+            )
             actual_platform = str(item.get("platform") or "")
             parent_sequence = sequence_by_resource_id.get(
                 (actual_platform, str(parent_resource_id))
@@ -3800,14 +3892,40 @@ class AgentRuntime:
                         "execution_status": "unknown",
                     }
                 self._heartbeat_workflow(workflow_id)
-                
+
+                resource_type = getattr(tool_def, "resource_type", None)
+                resource_id_field = self._resource_id_field_for_tool(tool_def)
+                parent_type = getattr(tool_def, "parent_resource_type", None)
+                parent_field = self._parent_resource_id_field_for_tool(tool_def)
+                parent_id = tool_input.get(parent_field) if parent_field else None
+                # Keep hierarchy metadata next to the provider result. This
+                # is especially important for live adapters whose response
+                # only contains the newly created object's ID.
+                if resource_type and isinstance(result.data, dict):
+                    result.data = {
+                        **result.data,
+                        "resource_type": resource_type,
+                        "resource_id_field": resource_id_field,
+                        "parent_resource_type": parent_type,
+                        "parent_resource_id_field": parent_field,
+                        "parent_resource_id": (
+                            str(parent_id) if parent_id not in (None, "") else None
+                        ),
+                    }
+
                 result_index = len(results)
                 safe_result_data = self._redact_for_persistence(result.data)
                 safe_result_error = self._redact_for_persistence(result.error)
                 results.append({
                     "tool": tool_def.name,
                     "platform": platform,
-                    "resource_type": getattr(tool_def, "resource_type", None),
+                    "resource_type": resource_type,
+                    "resource_id_field": resource_id_field,
+                    "parent_resource_type": parent_type,
+                    "parent_resource_id_field": parent_field,
+                    "parent_resource_id": (
+                        str(parent_id) if parent_id not in (None, "") else None
+                    ),
                     "account_id": per_platform_account,
                     "success": result.success,
                     "data": safe_result_data,
@@ -5342,10 +5460,22 @@ class SessionContext:
         """保存工具执行结果，供后续 Tool 引用"""
         self.tool_results[tool_name] = result
         # 如果结果中有 campaign_id 等关键字段，自动保存到 protected_state
-        for key in [
+        keys = [
             "campaign_id", "ad_set_id", "adset_id", "ad_group_id", "adgroup_id",
             "creative_id", "io_id", "line_item_id", "ad_id",
-        ]:
+        ]
+        # Plugin resources may use a provider-specific identifier. Runtime
+        # annotates it from the registered Tool contract; accept only a plain
+        # identifier-shaped key so arbitrary result data cannot become shared
+        # execution state.
+        declared = result.data.get("resource_id_field") if isinstance(result.data, dict) else None
+        if (
+            isinstance(declared, str)
+            and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*_id", declared)
+            and declared not in keys
+        ):
+            keys.append(declared)
+        for key in keys:
             if key in result.data:
                 self.protected_state[key] = result.data[key]
                 if platform:

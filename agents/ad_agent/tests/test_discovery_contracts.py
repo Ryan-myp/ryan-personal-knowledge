@@ -41,6 +41,77 @@ def test_existing_channel_tools_publish_routing_metadata():
     assert by_name["dv360_create_line_item"].parent_resource_type == "io"
 
 
+def test_existing_channel_tools_publish_wire_id_fields_for_hierarchy():
+    definitions = []
+    for capability in (
+        create_meta_capability(), create_google_capability(),
+        create_tiktok_capability(), create_dv360_capability(),
+    ):
+        definitions.extend(definition for definition, _ in capability.register_tools())
+
+    by_name = {definition.name: definition for definition in definitions}
+    assert by_name["meta_create_ad"].parent_resource_id_field == "adset_id"
+    assert by_name["google_create_ad"].parent_resource_id_field == "ad_group_id"
+    assert by_name["tiktok_create_adgroup"].resource_id_field == "adgroup_id"
+    assert by_name["tiktok_create_ad"].parent_resource_id_field == "adgroup_id"
+    assert by_name["dv360_create_line_item"].parent_resource_id_field == "io_id"
+
+
+def test_resource_results_follow_declared_parent_fields_across_channels():
+    cases = [
+        ("meta", "meta_create_campaign", "meta_create_adset", "campaign_id", "c-meta", "adset_id", "s-meta"),
+        ("google-ads", "google_create_campaign", "google_create_ad_group", "campaign_id", "c-google", "ad_group_id", "g-google"),
+        ("tiktok", "tiktok_create_campaign", "tiktok_create_adgroup", "campaign_id", "c-tiktok", "adgroup_id", "g-tiktok"),
+        ("dv360", "dv360_create_campaign", "dv360_create_io", "campaign_id", "c-dv360", "io_id", "io-dv360"),
+    ]
+    definitions = {}
+    for capability in (
+        create_meta_capability(), create_google_capability(),
+        create_tiktok_capability(), create_dv360_capability(),
+    ):
+        definitions.update({definition.name: definition for definition, _ in capability.register_tools()})
+
+    normalized = []
+    for platform, parent_name, child_name, parent_id_field, parent_id, child_id_field, child_id in cases:
+        parent = definitions[parent_name]
+        child = definitions[child_name]
+        normalized.extend([
+            {
+                "tool": parent.name,
+                "platform": platform,
+                "resource_type": parent.resource_type,
+                "resource_id_field": parent.resource_id_field or parent_id_field,
+                "success": True,
+                "data": {
+                    "simulated": True,
+                    parent.resource_id_field or parent_id_field: parent_id,
+                    "input": {},
+                },
+            },
+            {
+                "tool": child.name,
+                "platform": platform,
+                "resource_type": child.resource_type,
+                "resource_id_field": child.resource_id_field or child_id_field,
+                "parent_resource_type": child.parent_resource_type,
+                "parent_resource_id_field": child.parent_resource_id_field,
+                "parent_resource_id": parent_id,
+                "success": True,
+                "data": {
+                    "simulated": True,
+                    child.resource_id_field or child_id_field: child_id,
+                    "input": {child.parent_resource_id_field: parent_id},
+                },
+            },
+        ])
+
+    results = AgentRuntime._build_resource_results(normalized)
+    assert len(results) == 8
+    for index in (1, 3, 5, 7):
+        assert results[index]["parent_sequence"] == results[index - 1]["sequence"]
+        assert results[index]["parent_resource_id"] == results[index - 1]["logical_resource_id"]
+
+
 def test_new_standard_tool_is_discovered_without_router_configuration():
     registry = SimpleToolRegistry()
 

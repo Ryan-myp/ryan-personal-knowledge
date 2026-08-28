@@ -1331,6 +1331,10 @@ class TestIterationContracts:
             "    description: Schema-aware extension\n"
             "    risk: low\n"
             "    effect: read\n"
+            "    resource_type: custom_child\n"
+            "    parent_resource_type: custom_parent\n"
+            "    resource_id_field: child_key\n"
+            "    parent_resource_id_field: parent_key\n"
             "    input_schema:\n"
             "      required: [mode]\n"
             "      properties:\n"
@@ -1348,6 +1352,8 @@ class TestIterationContracts:
 
         assert definition.input_schema.properties["mode"]["enum"] == ["FAST", "SAFE"]
         assert definition.input_schema.conditional_rules[0]["required"] == ["audit_id"]
+        assert definition.resource_id_field == "child_key"
+        assert definition.parent_resource_id_field == "parent_key"
 
     def test_provider_list_pagination_is_consumed(self):
         meta = MetaAPIClient({"access_token": "caller-token"})

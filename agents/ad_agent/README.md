@@ -249,8 +249,9 @@ class NewPlatformCapability(BaseCapability):
             ...
         ]
     
-    # ToolDefinition 自描述 action/resource_type/parent_resource_type，
-    # 不需要修改中心 Router
+    # ToolDefinition 自描述 action/resource_type/parent_resource_type；
+    # 层级 Tool 另外声明 resource_id_field/parent_resource_id_field，
+    # 不需要修改中心 Router 或 Runtime 的渠道分支
 
 # 工厂名按约定自动发现：create_new_network_capability(api_client)
 ```

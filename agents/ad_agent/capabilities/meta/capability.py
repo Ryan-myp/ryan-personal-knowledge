@@ -19,6 +19,27 @@ from ..update_contracts import meta_updates
 logger = logging.getLogger(__name__)
 
 
+def _meta_update_adapter(client, ctx, resource_type, resource_id, _parent_id, updates):
+    """Adapt Meta's object-specific Graph update methods for one Tool."""
+    method_name = {
+        "campaign": "update_campaign",
+        "adset": "update_adset",
+        "ad": "update_ad",
+    }.get(resource_type)
+    method = getattr(client, method_name, None) if method_name else None
+    if not callable(method):
+        raise AttributeError(f"Meta {resource_type} update adapter is unavailable")
+    # A Graph object can be addressed directly by ID even when the same token
+    # can see more than one account. Verify ownership before the write.
+    if isinstance(client, MetaAPIClient) and not client.resource_belongs_to_account(
+        ctx.account_id, resource_type, resource_id
+    ):
+        raise PermissionError(
+            f"Meta {resource_type} {resource_id} does not belong to account {ctx.account_id}"
+        )
+    return method(resource_id, updates)
+
+
 class MetaCapability(BaseCapability):
     platform_name = "meta"
 
@@ -72,6 +93,7 @@ class MetaCapability(BaseCapability):
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "campaign"],
             live_support=False,
+            resource_id_field="campaign_id",
         ), MetaCreateCampaignHandler(api_client)))
 
         # List Ad Sets
@@ -118,6 +140,8 @@ class MetaCapability(BaseCapability):
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "ad_set"],
             live_support=False,
+            resource_id_field="adset_id",
+            parent_resource_id_field="campaign_id",
         ), MetaCreateAdSetHandler(api_client)))
 
         # List Ads
@@ -164,7 +188,9 @@ class MetaCapability(BaseCapability):
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "ad"],
             live_support=False,
+            resource_id_field="ad_id",
             parent_resource_type="ad_set",
+            parent_resource_id_field="adset_id",
         ), MetaCreateAdHandler(api_client)))
 
         # Get Report
@@ -252,6 +278,7 @@ class MetaCapability(BaseCapability):
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "creative"],
             live_support=False,
+            resource_id_field="creative_id",
         ), MetaCreateCreativeHandler(api_client)))
 
         # Update tools: dry-run 可完整生成计划；live 仅调用已存在的 Client 方法。
@@ -273,7 +300,14 @@ class MetaCapability(BaseCapability):
                 replay_policy=ReplayPolicy.UNSAFE,
                 traits=["write", resource_type],
                 live_support=False,
-            ), CampaignUpdateHandler(api_client, resource_type)))
+                resource_id_field=resource_id,
+            ), CampaignUpdateHandler(
+                api_client, resource_type, _meta_update_adapter,
+                resource_id_field=resource_id,
+                parent_resource_id_field={
+                    "adset": "campaign_id", "ad": "adset_id",
+                }.get(resource_type),
+            )))
 
         return tools
 

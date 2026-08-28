@@ -101,7 +101,9 @@ class SimpleIntentRouter:
 `SKILL.md` 只提供自然语言专家知识、SOP、适用边界和安全注意事项，
 不承担可执行 DSL。Capability/plugin 注册可执行 Tool，并在
 `ToolDefinition` 中声明 `action`、`resource_type`、`parent_resource_type`
-及可选 `intent_types`。Runtime 根据父子资源层级排序创建链，并统一执行
+及可选 `intent_types`。涉及层级创建的 Tool 还应声明
+`resource_id_field` 与 `parent_resource_id_field`，把各平台的 ID 拼写差异
+留在渠道 Capability 内。Runtime 根据父子资源层级排序创建链，并统一执行
 权限、账户、dry-run、审批、幂等与恢复。严格 DAG 只作为特殊扩展点，不是
 每个 Skill 的必填配置。
 
@@ -112,6 +114,10 @@ selection token 绑定用户、租户、会话、账户、目标 Tool、字段�
 跨上下文复用。新增参数只改所属 Capability 的 Schema/adapter，不改 Runtime 的
 渠道分支；既有 Meta、Google、TikTok、DV360 创建适配器也必须保持 Schema 到
 Provider payload 的显式透传。
+
+更新操作同样遵循该边界：共享 `CampaignUpdateHandler` 只处理输入安全校验和
+统一调用协议，Meta/Google/TikTok 的资源级 API 签名由各自 Capability adapter
+负责；新增 Provider 可提供自己的 adapter，或实现统一的 `update_resource` 接口。
 
 ### 3. ToolRegistry (工具注册中心)
 ```python

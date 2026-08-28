@@ -61,10 +61,11 @@ def dv360_campaign_schema() -> dict[str, Any]:
 
 def dv360_io_schema() -> dict[str, Any]:
     return {
-        "required": ["advertiser_id", "name"],
+        "required": ["advertiser_id", "campaign_id", "name"],
         "provider_required": ["budget", "start_date", "end_date"],
         "properties": {
             "advertiser_id": _field("string", "DV360 advertiser ID"),
+            "campaign_id": _field("string", "Parent Campaign ID"),
             "name": _field("string", "Insertion Order name", minLength=1, maxLength=255),
             "budget": _field("number", "Spend cap in account currency", minimum=0),
             "spend_cap_micros": _field("integer", "Spend cap in micros", minimum=0),

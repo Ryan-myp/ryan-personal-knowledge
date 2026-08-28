@@ -32,7 +32,9 @@ from agents.ad_agent.persistence.store import AdAgentStore  # noqa: E402
 MINIMUM_COUNTS = {"meta": 16, "google-ads": 18, "tiktok": 24, "dv360": 14}
 PROTECTED_FIELDS = {
     "token", "accesstoken", "refreshtoken", "developertoken", "clientid",
-    "clientsecret", "privatekey", "bcid", "partnerid", "mcc",
+    "clientsecret", "apikey", "appsecret", "secretkey", "privatekey",
+    "privatekeyid", "serviceaccount", "serviceaccountemail", "saemail",
+    "developerkey", "bcid", "partnerid", "mcc",
     "authorization", "credential", "credentials", "perterid",
 }
 
@@ -84,6 +86,18 @@ def main() -> int:
             errors.append(f"{tool.name}: read tool must require ads.read")
         if tool.is_write_tool and "ads.plan" not in tool.required_permissions:
             errors.append(f"{tool.name}: write tool must require ads.plan")
+        properties = getattr(tool.input_schema, "properties", {}) or {}
+        parent_field = getattr(tool, "parent_resource_id_field", None)
+        if parent_field and parent_field not in properties:
+            errors.append(
+                f"{tool.name}: parent_resource_id_field '{parent_field}' "
+                "must be declared in input_schema.properties"
+            )
+        if tool.action == "create" and tool.parent_resource_type and not parent_field:
+            errors.append(
+                f"{tool.name}: create tool with parent_resource_type "
+                "must declare parent_resource_id_field"
+            )
         for normalized, path in _walk_keys(tool.input_schema.to_dict()):
             if normalized in PROTECTED_FIELDS:
                 errors.append(f"{tool.name}: protected field declared in schema at {path}")

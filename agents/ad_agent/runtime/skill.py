@@ -45,6 +45,8 @@ class SkillCapability:
     action: str = ""
     resource_type: str = ""
     parent_resource_type: Optional[str] = None
+    resource_id_field: Optional[str] = None
+    parent_resource_id_field: Optional[str] = None
     intent_types: list[str] = field(default_factory=list)
 
 
@@ -273,6 +275,8 @@ class SkillContract:
                 action=str(spec.get('action', '') or ''),
                 resource_type=str(spec.get('resource_type', '') or ''),
                 parent_resource_type=spec.get('parent_resource_type'),
+                resource_id_field=spec.get('resource_id_field'),
+                parent_resource_id_field=spec.get('parent_resource_id_field'),
                 intent_types=list(spec.get('intent_types', []) or []),
             )
     
@@ -311,6 +315,8 @@ class SkillContract:
                     action=str(spec.get('action', '') or ''),
                     resource_type=str(spec.get('resource_type', '') or ''),
                     parent_resource_type=spec.get('parent_resource_type'),
+                    resource_id_field=spec.get('resource_id_field'),
+                    parent_resource_id_field=spec.get('parent_resource_id_field'),
                     intent_types=list(spec.get('intent_types', []) or []),
                 )
 
@@ -398,6 +404,8 @@ class BaseSkill(Skill):
                 action=cap.action,
                 resource_type=cap.resource_type,
                 parent_resource_type=cap.parent_resource_type,
+                resource_id_field=cap.resource_id_field,
+                parent_resource_id_field=cap.parent_resource_id_field,
                 intent_types=list(cap.intent_types),
             ))
         return tools

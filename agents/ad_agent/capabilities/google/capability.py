@@ -33,6 +33,22 @@ from ..update_contracts import google_updates
 logger = logging.getLogger(__name__)
 
 
+def _google_update_adapter(client, ctx, resource_type, resource_id, _parent_id, updates):
+    """Adapt Google Ads' customer-scoped campaign update method."""
+    if resource_type != "campaign":
+        raise AttributeError(
+            f"Google {resource_type} update adapter is unavailable"
+        )
+    factory = getattr(type(client), "for_customer", None)
+    scoped_client = factory(client, ctx.account_id) if factory and ctx.account_id else client
+    if scoped_client is client and ctx.account_id and hasattr(client, "customer_id"):
+        client.customer_id = ctx.account_id
+    method = getattr(scoped_client, "update_campaign", None)
+    if not callable(method):
+        raise AttributeError("Google campaign update adapter is unavailable")
+    return method(resource_id, updates)
+
+
 class GoogleCapability(BaseCapability):
     platform_name = "google-ads"
 
@@ -86,6 +102,7 @@ class GoogleCapability(BaseCapability):
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "campaign"],
             live_support=False,
+            resource_id_field="campaign_id",
         ), GoogleCreateCampaignHandler(api_client)))
 
         # List Ad Groups
@@ -132,6 +149,8 @@ class GoogleCapability(BaseCapability):
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "ad_group"],
             live_support=False,
+            resource_id_field="ad_group_id",
+            parent_resource_id_field="campaign_id",
         ), GoogleCreateAdGroupHandler(api_client)))
 
         # List Ads
@@ -178,6 +197,8 @@ class GoogleCapability(BaseCapability):
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "ad"],
             live_support=False,
+            resource_id_field="ad_id",
+            parent_resource_id_field="ad_group_id",
         ), GoogleCreateAdHandler(api_client)))
 
         # List Asset Groups (PMax)
@@ -223,6 +244,8 @@ class GoogleCapability(BaseCapability):
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "pmax", "asset_group"],
             live_support=False,
+            resource_id_field="asset_group_id",
+            parent_resource_id_field="campaign_id",
         ), GoogleCreateAssetGroupHandler(api_client)))
 
         # Get Campaign Report
@@ -287,7 +310,11 @@ class GoogleCapability(BaseCapability):
                 replay_policy=ReplayPolicy.UNSAFE,
                 traits=["write", resource_type],
                 live_support=False,
-            ), CampaignUpdateHandler(api_client, resource_type)))
+                resource_id_field=resource_id,
+            ), CampaignUpdateHandler(
+                api_client, resource_type, _google_update_adapter,
+                resource_id_field=resource_id,
+            )))
 
         return tools
 

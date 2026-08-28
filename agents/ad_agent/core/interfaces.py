@@ -114,6 +114,14 @@ class ToolDefinition:
     timeout_seconds: float = 30.0
     max_output_bytes: int = 1_000_000
     required_permissions: list[str] = field(default_factory=list)
+    # Provider schemas do not agree on identifier spelling (for example
+    # ``adset_id`` vs ``ad_group_id``).  Keep the wire names on the Tool
+    # contract so Runtime can persist and connect resources without knowing a
+    # provider's hierarchy.  The Runtime has a conservative naming fallback
+    # for older/custom Tools, but provider Capabilities should declare these
+    # fields whenever the schema is ambiguous.
+    resource_id_field: Optional[str] = None
+    parent_resource_id_field: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.timeout_seconds <= 0:
@@ -275,6 +283,8 @@ class ToolDefinition:
             "effect_class": self.effect_class.value, "replay_policy": self.replay_policy.value,
             "traits": list(self.traits), "live_support": self.live_support,
             "required_permissions": list(self.required_permissions),
+            "resource_id_field": self.resource_id_field,
+            "parent_resource_id_field": self.parent_resource_id_field,
             "input_schema": self.input_schema.to_dict() if self.input_schema else None,
         }
 
@@ -350,6 +360,7 @@ class ResourceResult:
     resource_type: str
     tool_name: str
     status: str
+    parent_resource_type: Optional[str] = None
     account_id: Optional[str] = None
     parent_sequence: Optional[int] = None
     parent_resource_id: Optional[str] = None
@@ -368,6 +379,7 @@ class ResourceResult:
             "sequence": self.sequence,
             "platform": self.platform,
             "resource_type": self.resource_type,
+            "parent_resource_type": self.parent_resource_type,
             "tool": self.tool_name,
             "status": self.status,
             "account_id": self.account_id,
