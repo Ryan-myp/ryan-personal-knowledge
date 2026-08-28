@@ -285,19 +285,23 @@ class NewPlatformCapability(BaseCapability):
 
 如果渠道通过 `skills/channels/<name>/SKILL.md` 自动加载，Runtime 会发现同名
 Capability 并注入按渠道创建的 Client；没有 Client 时仍可安全生成 dry-run 计划。
-只有需要补充专家知识、SOP 或安全边界时才修改 `SKILL.md`。业务层和跨渠道 Skill
-仍然可以通过自己的 `tools.py` 提供扩展 Tool。
+只有需要补充专家知识、SOP 或安全边界时才修改 `SKILL.md`。可执行能力必须通过
+受注册和审计的 Capability/Tool 扩展，用户上传 Skill 中的 `tools.py`、`scripts/`、
+MCP 或其他代码文件不会被 Runtime 导入或执行。
 
 规则解析和 LLM 结果规范化都会读取当前已注册的平台集合。新增渠道的自然语言别名
 可以由其平台标识自动获得（例如 `snapchat-ads` / `snapchat ads`）；若需要中文或
 品牌别名，由渠道 Skill 在自己的边界提供解析前置层即可，不需要修改中心 Router。
-需要严格的多步 SOP 时，可在 Skill 目录旁提供可选的 `workflow.yaml`；它只声明
-Tool 之间的依赖和输入输出映射，不包含可执行代码，且普通渠道不要求配置它。
+Skill 包遵循标准目录约定：至少包含 `SKILL.md`，可包含 `references/`、`scripts/`、
+`assets/`、`evals/` 和其他包文件。管理系统负责保存、版本化和评测这些文件；
+`scripts/`、`assets/`、`evals/` 及 `workflow.yaml` 都不是 Runtime 的自动执行入口。
 
 ## 扩展 Skill + Tools
 
-新增能力优先放在独立 Skill 目录，不需要修改 Runtime 的核心路由。目录至少包含
-`SKILL.md`，并在 `tools.py` 或 `tools/__init__.py` 中导出：
+新增业务流程优先放在独立的标准 Skill 目录，不需要修改 Runtime 的核心路由。目录
+至少包含 `SKILL.md`，可包含 `references/`、`scripts/`、`assets/`、`evals/` 和其他
+包文件；这些文件只作为管理、版本和评测对象。只有仓库内受信任的源码扩展，才可在
+`tools.py` 或 `tools/__init__.py` 中导出可执行 Tool：
 
 ```python
 def create_skill(api_client=None):
@@ -306,7 +310,7 @@ def create_skill(api_client=None):
 
 返回的 Skill 需要实现 `get_tools()`、`get_tool_handler(tool_name)`。每个 Tool
 应在自己的 `ToolDefinition` 中声明元数据；标准意图无需额外映射，自定义意图
-可使用 `intent_types=["my_intent"]`。Runtime 会自动发现该目录，注册声明的
+可使用 `intent_types=["my_intent"]`。Runtime 会自动发现受信任源码扩展，注册声明的
 工具；没有可执行 Handler 的声明不会被注册，也不会因为 Skill 文档存在而伪造执行能力。
 所有扩展工具继续经过 schema 校验、账户白名单、dry-run/live gate、红线字段检查和审计。
 

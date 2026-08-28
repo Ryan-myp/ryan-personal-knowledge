@@ -8,7 +8,7 @@
 skills/
 ├── channels/<platform>/
 │   ├── SKILL.md          # 自然语言知识、SOP、安全边界
-│   └── tools.py          # 可选 Skill plugin；不是必须项
+│   └── references/        # 可选上下文资料
 └── cross-channel/
     └── SKILL.md          # 跨渠道知识和策略上下文
 ```
@@ -32,10 +32,13 @@ skills/
 `create_<platform>_client(credentials)`。Runtime 会按包约定发现它们；无需修改
 中心 Router、平台列表或其他渠道的 Skill。
 
-如果只是扩展现有渠道或提供业务专属能力，可在对应 `skills/channels/<name>/`
-下使用 `tools.py` plugin。`SKILL.md` 只补充自然语言知识、SOP 与安全边界，不能
-用 Markdown 工具清单代替 executable Tool 注册。需要严格的多步 SOP 时，可以在
-Skill 目录中增加可选 `workflow.yaml`；它只声明 Tool 依赖，不包含执行代码。
+如果只是补充现有渠道或提供业务专属流程，使用标准 Skill 目录中的 `SKILL.md`、
+`references/`、`scripts/`、`assets/`、`evals/` 等包文件提供上下文；这些文件由管理
+系统保存、版本化和评测，但不会自动执行。`SKILL.md` 只补充自然语言知识、SOP 与
+安全边界，不能用 Markdown 工具清单代替 executable Tool 注册。可执行能力必须在
+受注册和审计的 Capability/Tool 中实现；`workflow.yaml` 不是 Skill 的上传、编辑或
+执行入口。LLM 根据 Skill 上下文提出计划，Runtime + Tool metadata + Harness 负责
+顺序、参数、权限、账户、dry-run、确认、幂等和恢复。
 
 ## 动态工具选择原理
 
@@ -128,17 +131,18 @@ Capability 的 `ToolDefinition` 自己声明 `action`、`resource_type`、参数
 python agents/ad_agent/api_server.py
 ```
 
-## 当前推荐的可执行扩展契约
+## 当前推荐的可执行扩展契约（仅仓库内受信任源码）
 
 对于不需要修改内置 Capability 的新增功能，使用以下目录结构：
 
 ```text
 skills/channels/<skill-name>/
 ├── SKILL.md
-└── tools.py                 # 或 tools/__init__.py
+└── tools.py                 # 或 tools/__init__.py；仅受信任源码可用
 ```
 
-`tools.py` 导出 `create_skill(api_client=None)`，返回实现 Core `Skill` 接口的对象：
+仓库内受信任的 `tools.py` 导出 `create_skill(api_client=None)`，返回实现 Core
+`Skill` 接口的对象。用户通过管理系统上传的 Skill 包不会加载此类插件：
 
 ```python
 class MySkill(Skill):
@@ -158,9 +162,9 @@ def create_skill(api_client=None):
 `SKILL.md` 保持自然语言，用于专家知识、SOP 和安全边界。标准操作由
 ToolDefinition 的 `action`、`resource_type`、`parent_resource_type` 自动发现；
 非标准操作在 ToolDefinition 上声明 `intent_types=["my_intent"]`。新增 Tool
-或渠道不需要编辑中心 Router/workflow 配置文件。
+或渠道不需要编辑中心 Router 配置文件。
 
-Runtime 自动加载 plugin 后，工具仍由统一 Registry 执行；不能因为在 `SKILL.md`
+Runtime 自动加载受信任 plugin 后，工具仍由统一 Registry 执行；不能因为在 `SKILL.md`
 中列出工具，就绕过 Handler、schema、白名单或 dry-run/live 安全门禁。
 
 服务启动时会自动：

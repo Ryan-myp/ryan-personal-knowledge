@@ -16,7 +16,6 @@ from typing import Any, Optional
 from pathlib import Path
 from ..core.interfaces import (
     RiskLevel, ReplayPolicy, ToolDefinition, ToolEffect, ToolHandler, ToolSchema, Skill,
-    SkillWorkflow, SkillWorkflowStep,
 )
 from ..core.platform import normalize_platform
 
@@ -80,7 +79,6 @@ class SkillContract:
         self.platform_aliases: list[str] = []
         self.triggers: list[SkillTrigger] = []
         self.capabilities: dict[str, SkillCapability] = {}
-        self.workflows: dict[str, SkillWorkflow] = {}
         self.references: dict[str, str] = {}  # ref_name -> file_path
         self.reference_documents: dict[str, str] = {}
         self.expert_knowledge: dict[str, str] = {}
@@ -256,10 +254,6 @@ class SkillContract:
             self._load_skill_md(skill_md_path)
             if self.context_only:
                 return self
-            # A workflow file is an optional Skill-owned orchestration
-            # contract. It is never required for ordinary channel Skills and
-            # is kept separate from the natural-language SKILL.md body.
-            self._load_workflow_file(skill_md_path)
         
         # 2. 加载 YAML 合约（如有）
         yaml_path = os.path.join(self.skill_dir, "contract.yaml")
@@ -396,102 +390,6 @@ class SkillContract:
             return result
         raise ValueError("Skill triggers must be a string, list or object")
 
-    def _load_workflows(self, workflows: Any) -> None:
-        """Load workflow declarations from a dedicated workflow contract."""
-        if not isinstance(workflows, dict):
-            return
-        for name, raw in workflows.items():
-            if isinstance(raw, list):
-                raw = {"tools": raw}
-            if not isinstance(raw, dict):
-                continue
-            raw_steps = raw.get("steps")
-            if raw_steps is None:
-                raw_steps = raw.get("tools", [])
-            if not isinstance(raw_steps, list):
-                raw_steps = []
-            steps = self._parse_workflow_steps(raw_steps, self.platform or None)
-            raw_platforms = raw.get("platforms", {})
-            if isinstance(raw_platforms, dict):
-                for platform, names in raw_platforms.items():
-                    if isinstance(names, str):
-                        names = [names]
-                    if isinstance(names, list):
-                        steps.extend(self._parse_workflow_steps(names, str(platform)))
-            workflow = SkillWorkflow(
-                name=str(name),
-                steps=tuple(steps),
-                description=str(raw.get("description", "")),
-            )
-            errors = workflow.validation_errors()
-            if errors:
-                raise ValueError("; ".join(errors))
-            self.workflows[str(name)] = workflow
-
-    def _load_workflow_file(self, skill_md_path: str) -> None:
-        """Load an optional special-case DAG beside ``SKILL.md``.
-
-        This is not part of normal Tool discovery. A Skill without this file
-        is the normal case and is driven by its natural-language SOP and
-        registered self-described Tools.
-        """
-        skill_dir = Path(skill_md_path).parent
-        for filename in ("workflow.yaml", "workflows.yaml"):
-            workflow_path = skill_dir / filename
-            if not workflow_path.exists():
-                continue
-            try:
-                with workflow_path.open("r", encoding="utf-8") as file:
-                    raw = yaml.safe_load(file) or {}
-            except (OSError, yaml.YAMLError) as exc:
-                raise ValueError(f"Invalid Skill workflow contract {workflow_path}: {exc}") from exc
-            if isinstance(raw, dict) and isinstance(raw.get("workflows"), dict):
-                raw = raw["workflows"]
-            self.workflows = {}
-            self._load_workflows(raw)
-            return
-
-    @staticmethod
-    def _parse_workflow_steps(raw_steps: list[Any], platform: Optional[str]) -> list[SkillWorkflowStep]:
-        parsed: list[SkillWorkflowStep] = []
-        for index, item in enumerate(raw_steps):
-            if isinstance(item, str):
-                tool_name = item
-                spec: dict[str, Any] = {}
-            elif isinstance(item, dict) and item.get("tool"):
-                tool_name = str(item["tool"])
-                spec = item
-            else:
-                continue
-            default_prefix = platform or "step"
-            step_id = str(
-                spec.get("id") or f"{default_prefix}_step_{len(parsed) + 1}"
-            )
-            depends_on = spec.get("depends_on", spec.get("after", [])) or []
-            if isinstance(depends_on, str):
-                depends_on = [depends_on]
-            required_inputs = spec.get("required_inputs", spec.get("requires", [])) or []
-            if isinstance(required_inputs, str):
-                required_inputs = [required_inputs]
-            when = spec.get("when", {}) or {}
-            input_mapping = spec.get("input_mapping", spec.get("input_map", {})) or {}
-            output_mapping = spec.get("output_mapping", spec.get("output_map", {})) or {}
-            parsed.append(SkillWorkflowStep(
-                id=step_id,
-                tool=tool_name,
-                platform=str(spec.get("platform") or platform or "") or None,
-                depends_on=tuple(str(value) for value in depends_on),
-                when=dict(when) if isinstance(when, dict) else {},
-                required_inputs=tuple(str(value) for value in required_inputs),
-                input_mapping={str(key): str(value) for key, value in input_mapping.items()}
-                if isinstance(input_mapping, dict) else {},
-                output_mapping={str(key): str(value) for key, value in output_mapping.items()}
-                if isinstance(output_mapping, dict) else {},
-                on_error=str(spec.get("on_error", "stop")),
-                requires_confirmation=bool(spec.get("requires_confirmation", spec.get("confirmation", False))),
-            ))
-        return parsed
-    
     def _load_contract_yaml(self, path: str) -> None:
         """加载 contract.yaml"""
         with open(path, 'r', encoding='utf-8') as f:
@@ -662,20 +560,6 @@ class BaseSkill(Skill):
         """返回指定工具的执行器"""
         return self._handlers.get(tool_name)
 
-    def get_workflows(self) -> dict[str, SkillWorkflow]:
-        return dict(self._contract.workflows)
-
-    def get_workflow_mappings(self) -> dict[str, dict[str, list[str]]]:
-        """Expose only the Skill's declarative orchestration plan."""
-        result: dict[str, dict[str, list[str]]] = {}
-        for name, workflow in self._contract.workflows.items():
-            mapping = workflow.tool_mapping()
-            if "" in mapping and self.platform:
-                mapping = {self.platform: list(mapping[""])}
-            if mapping:
-                result[name] = mapping
-        return result
-    
     def _build_properties(self, tool_name: str) -> dict[str, Any]:
         """构建工具输入参数的 JSON Schema properties"""
         cap = self._contract.capabilities.get(tool_name)

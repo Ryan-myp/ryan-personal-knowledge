@@ -12,7 +12,7 @@ skill:
 
 # 跨渠道 Campaign 管理 Skill
 
-> 实现边界：本文件描述跨渠道业务流程、统一口径和安全 SOP，不是可执行 Tool 注册表。当前 Runtime 通过已注册的平台 Tool 完成查询，并在统一聚合器中处理 comparison、洞察、预算建议和 CSV 导出；缺失指标、多币种及离线数据会明确标记，不会用 mock 数据冒充线上数据。需要稳定多步顺序时，使用同目录的 `workflow.yaml` 声明依赖和映射；普通自然语言流程不需要结构化 workflow。
+> 实现边界：本文件描述跨渠道业务流程、统一口径和安全 SOP，不是可执行 Tool 注册表。当前 Runtime 通过已注册的平台 Tool 完成查询，并在统一聚合器中处理 comparison、洞察、预算建议和 CSV 导出；缺失指标、多币种及离线数据会明确标记，不会用 mock 数据冒充线上数据。LLM 根据本 Skill 的自然语言上下文提出计划，Runtime + Tool metadata + Harness 负责受控执行；Skill 包中的 `workflow.yaml` 不是上传、编辑或执行入口。
 
 ## 概述
 

@@ -84,9 +84,10 @@ Tool 注册表，也不执行代码。Capability/plugin 才提供 `ToolDefinitio
 `/parameter-options/resolve` 调用对应的只读 lookup Tool 获取。Resolver 复用权限、
 账户白名单和超时边界，并可返回绑定用户/会话/账户的短期 selection token。
 
-普通 Skill 只需要自然语言 SOP。只有需要严格确定性顺序的特殊流程，才在 Skill
-目录旁增加可选 `workflow.yaml`；它是无代码的 DAG 声明，Runtime 仍统一执行权限、
-账户、dry-run、确认、幂等和恢复检查。
+标准 Skill 只需要自然语言 SOP。流程由 LLM 根据 Skill 上下文提出计划，再由
+Runtime、Tool metadata 和 Harness 负责工具选择、顺序、权限、账户、dry-run、确认、
+幂等和恢复检查。`workflow.yaml` 不是 Skill 的上传、编辑或执行入口；Skill 包中的
+其他文件可以被保存和管理，但不会因此获得执行能力。
 
 ### 1. 业务 Skill 不直接引用渠道 Skill
 ```python

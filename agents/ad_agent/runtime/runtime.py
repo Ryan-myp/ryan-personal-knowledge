@@ -253,10 +253,6 @@ class AgentRuntime:
         # Runtime context per tenant.
         self._managed_context_skills: dict[str, Skill] = {}
         self._managed_skill_tenant_id: Optional[str] = None
-        # Optional deterministic workflows are indexed by their declared
-        # intent name.  Normal routing never depends on this map; it is only
-        # consulted when a Skill explicitly publishes a workflow contract.
-        self._skill_workflows: dict[str, Any] = {}
         self._skill_factories: dict[str, callable] = {}  # platform -> Capability factory
         self._credentials: dict = {}  # API 凭证配置
         self.knowledge_provider = knowledge_provider or LocalMarkdownKnowledgeProvider(
@@ -743,7 +739,6 @@ class AgentRuntime:
             skill_candidates = self.skill_loader.get_by_platform(canonical_platform)
             if skill_candidates:
                 self._loaded_skills.setdefault(canonical_platform, skill_candidates[0])
-                self._publish_skill_workflows(skill_candidates[0])
         
         # 注册后台任务
         self._background_tasks.extend(runtime.background_tasks)
@@ -760,177 +755,6 @@ class AgentRuntime:
         self._refresh_unbound_clients()
         
         return runtime
-
-    def _validate_routed_skill_workflow(
-        self, intent: ParsedIntent, tool_plan: dict[str, list[Any]]
-    ) -> list[str]:
-        """Validate the optional Skill workflow against the live registry."""
-        workflow = self._skill_workflows.get(intent.intent_type)
-        if workflow is None:
-            return []
-        routed_names = {
-            definition.name
-            for definitions in tool_plan.values()
-            for definition in definitions
-        }
-        errors: list[str] = []
-        for step in workflow.ordered_steps():
-            try:
-                definition, _handler = self._get_registered_tool(step.tool)
-            except KeyError:
-                errors.append(
-                    f"workflow {workflow.name}: step {step.id} references unavailable tool {step.tool}"
-                )
-                continue
-            if step.tool not in routed_names:
-                errors.append(
-                    f"workflow {workflow.name}: step {step.id} tool {step.tool} is not routed for intent {intent.intent_type}"
-                )
-                continue
-            if step.platform and self._canonical_platform(step.platform) != self._canonical_platform(definition.platform):
-                errors.append(
-                    f"workflow {workflow.name}: step {step.id} platform does not match tool {step.tool}"
-                )
-        return errors
-
-    @staticmethod
-    def _workflow_condition_matches(
-        step: Any, intent: ParsedIntent, ctx: Optional[ToolContext] = None,
-    ) -> bool:
-        """Evaluate the small, deterministic ``when`` contract.
-
-        Conditions may use intent fields directly, for example
-        ``when: {objective: sales}``, or the explicit operators
-        ``equals``, ``not_equals`` and ``in``.  No expressions or code are
-        evaluated.  Missing fields fail closed, which prevents an optional
-        branch from accidentally becoming a write.
-        """
-        conditions = getattr(step, "when", {}) or {}
-        if not isinstance(conditions, dict) or not conditions:
-            return True
-        source = {
-            "intent_type": getattr(intent, "intent_type", None),
-            "objective": getattr(intent, "objective", None),
-            "campaign_type": getattr(intent, "campaign_type", None),
-            "budget": getattr(intent, "budget", None),
-            "platforms": list(getattr(intent, "platforms", []) or []),
-        }
-        if ctx is not None:
-            source["protected_state"] = getattr(ctx, "protected_state", {}) or {}
-        for key, expected in conditions.items():
-            actual = source.get(str(key))
-            if isinstance(expected, dict):
-                if "equals" in expected and actual != expected["equals"]:
-                    return False
-                if "not_equals" in expected and actual == expected["not_equals"]:
-                    return False
-                if "in" in expected and actual not in (expected["in"] or []):
-                    return False
-                if set(expected) - {"equals", "not_equals", "in"}:
-                    return False
-            elif actual != expected:
-                return False
-        return True
-
-    def _workflow_execution_groups(
-        self, intent: ParsedIntent, tool_plan: dict[str, list[Any]],
-    ) -> tuple[list[tuple[str, list[Any], Any]], list[str]]:
-        """Build ordered execution groups from an optional Skill workflow.
-
-        A group is intentionally allowed to repeat a platform.  That keeps a
-        cross-platform DAG's global order intact while preserving the
-        existing per-platform account/policy boundary inside ``run``.
-        """
-        workflow = self._skill_workflows.get(intent.intent_type)
-        if workflow is None:
-            return [(platform, tools, None) for platform, tools in tool_plan.items()], []
-        errors = self._validate_routed_skill_workflow(intent, tool_plan)
-        if errors:
-            return [], errors
-        groups: list[tuple[str, list[Any]]] = []
-        for step in workflow.ordered_steps():
-            if not self._workflow_condition_matches(step, intent):
-                continue
-            try:
-                definition, _handler = self._get_registered_tool(step.tool)
-            except KeyError:
-                continue
-            platform = self._canonical_platform(step.platform or definition.platform)
-            groups.append((platform, [definition], step))
-        return groups, []
-
-    @staticmethod
-    def _workflow_resolve_path(
-        path: str, intent: ParsedIntent, workflow_outputs: Mapping[str, Any],
-    ) -> Any:
-        """Resolve a data-only workflow reference such as ``create.id``."""
-        path = str(path or "")
-        if path.startswith("$input."):
-            value: Any = intent.platform_params or {}
-            path = path[len("$input."):]
-        elif path.startswith("$steps."):
-            path = path[len("$steps."):]
-            value = workflow_outputs
-        else:
-            value = workflow_outputs
-        for part in path.split(".") if path else []:
-            if isinstance(value, Mapping):
-                value = value.get(part)
-            else:
-                return None
-        return value
-
-    def _apply_workflow_input_mapping(
-        self, step: Any, tool_input: dict[str, Any], intent: ParsedIntent,
-        workflow_outputs: Mapping[str, Any],
-    ) -> None:
-        """Apply Skill-owned input bindings without allowing arbitrary code."""
-        for destination, source in (getattr(step, "input_mapping", {}) or {}).items():
-            value = self._workflow_resolve_path(source, intent, workflow_outputs)
-            if value is not None:
-                tool_input[str(destination)] = copy.deepcopy(value)
-
-    def _publish_skill_workflows(self, skill: Any) -> None:
-        """Publish an optional Skill-owned workflow without a central map.
-
-        Normal channel routing still comes from ToolDefinition metadata. A
-        Skill may add a deterministic multi-step SOP in its own optional
-        workflow contract; the Router only receives its tool-name projection,
-        and the registry remains the authority on executable tools.
-        """
-        workflows = getattr(skill, "get_workflows", lambda: {})() or {}
-        for workflow_name, workflow in workflows.items():
-            # The workflow name is its intent extension point.  Do not let a
-            # later Skill silently replace an already published plan: two
-            # Skills claiming the same intent would make execution ambiguous.
-            existing = self._skill_workflows.get(str(workflow_name))
-            if existing is not None and existing != workflow:
-                raise ValueError(
-                    f"Skill workflow intent '{workflow_name}' is already published"
-                )
-            self._skill_workflows[str(workflow_name)] = workflow
-        if not hasattr(self.intent_router, "register_skill_mappings"):
-            return
-        mappings = getattr(skill, "get_workflow_mappings", lambda: {})()
-        if mappings:
-            # The core Skill default intentionally permits workflow steps to
-            # omit platform because the Skill itself already owns one. Keep
-            # custom Skills source-compatible with BaseSkill's normalization
-            # instead of requiring every implementation to duplicate it.
-            if getattr(skill, "platform", None):
-                normalized_mappings = {}
-                for workflow_name, platform_mappings in mappings.items():
-                    normalized_mappings[workflow_name] = {
-                        (
-                            str(getattr(skill, "platform"))
-                            if platform == "" else str(platform)
-                        ): names
-                        for platform, names in platform_mappings.items()
-                    }
-                mappings = normalized_mappings
-            self.intent_router.register_skill_mappings(mappings)
-            if hasattr(self.intent_parser, "register_intents"):
-                self.intent_parser.register_intents(set(mappings))
 
     def list_parameter_options(
         self, platform: Optional[str] = None, field: Optional[str] = None,
@@ -1257,7 +1081,6 @@ class AgentRuntime:
             return False
 
         self._validate_parameter_lookup_contract()
-        self._publish_skill_workflows(skill)
         if hasattr(self.intent_parser, "register_tool_definitions"):
             self.intent_parser.register_tool_definitions(self.registry.list_all())
 
@@ -3529,37 +3352,12 @@ class AgentRuntime:
             }
 
         # Step 3: discover Tools from their self-described action/resource
-        # metadata. Skills provide expert context and SOP; they do not need a
-        # second central workflow file for every channel/tool combination.
+        # metadata. Skills provide expert context and SOP; the Runtime orders
+        # the returned Tool plan from provider-owned resource metadata.
         tool_plan = self.intent_router.route(intent, self.registry)
-        workflow_contract_errors = self._validate_routed_skill_workflow(
-            intent, tool_plan
-        )
-        execution_groups, execution_errors = self._workflow_execution_groups(
-            intent, tool_plan
-        )
-        workflow_contract_errors.extend(execution_errors)
-        if workflow_contract_errors:
-            reply = "❌ Skill workflow contract 阻止本次请求：" + "；".join(
-                workflow_contract_errors
-            )
-            session.add_message({"role": "user", "content": safe_user_input})
-            session.add_message({"role": "assistant", "content": reply})
-            return {
-                "session_id": session_id,
-                "turn_id": turn_id,
-                "timestamp": datetime.now().isoformat(),
-                "intent": intent.to_dict(),
-                "tool_plan": {},
-                "tool_selection": None,
-                "results": [],
-                "reply": reply,
-                "needs_confirmation": False,
-                "confirmation_payload": None,
-                "policy_errors": workflow_contract_errors,
-            }
+        execution_groups = list(tool_plan.items())
         routed_tools = [
-            tool for _platform, tools, _step in execution_groups for tool in tools
+            tool for _platform, tools in execution_groups for tool in tools
         ]
         tool_selection = self.tool_selector.optimize_for_llm(
             safe_user_input, intent, routed_tools
@@ -3653,32 +3451,7 @@ class AgentRuntime:
         workflow_sequence = 0
 
         tool_call_count = 0
-        workflow_outputs: dict[str, Any] = {}
-        workflow_status: dict[str, bool] = {}
-        workflow_stop = False
-        active_workflow = self._skill_workflows.get(intent.intent_type)
-        if active_workflow is not None:
-            # A conditionally disabled step is a deterministic skipped
-            # dependency, not an absent dependency.  Dependents must not run
-            # unless the Skill explicitly models an alternative branch.
-            for step in active_workflow.ordered_steps():
-                workflow_status[step.id] = self._workflow_condition_matches(
-                    step, intent, session.ctx
-                )
-
-        def mark_workflow_failure(step: Any) -> None:
-            """Apply the declarative error policy to an executed step."""
-            nonlocal workflow_stop
-            if step is None:
-                return
-            # ``continue`` means the failed step does not satisfy the
-            # business operation, but its dependents are explicitly allowed
-            # to run. ``skip_dependents`` and ``stop`` remain fail-closed.
-            workflow_status[step.id] = step.on_error == "continue"
-            if step.on_error == "stop":
-                workflow_stop = True
-
-        for platform, tools, workflow_step in execution_groups:
+        for platform, tools in execution_groups:
             # 转换平台名称
             actual_platform = self._canonical_platform(platform)
 
@@ -3711,7 +3484,6 @@ class AgentRuntime:
                             "question": f"请提供 {actual_platform} 账户ID（当前只读模式仅允许查询测试账户）",
                         },
                     })
-                    mark_workflow_failure(workflow_step)
                     needs_confirmation = True
                     confirmation_payload = results[-1]["confirmation_payload"]
                     continue
@@ -3731,44 +3503,12 @@ class AgentRuntime:
                         "success": False,
                         "error": f"账户不在白名单中: {error_msg}",
                     })
-                    mark_workflow_failure(workflow_step)
                     continue
 
             # 非只读模式：写操作需要白名单 + 幂等保护
             chain_blocked = False
             chain_blocker = None
             for tool_def in tools:
-                if workflow_step is not None:
-                    if workflow_stop:
-                        results.append({
-                            "tool": tool_def.name,
-                            "platform": platform,
-                            "resource_type": getattr(tool_def, "resource_type", None),
-                            "success": False,
-                            "data": {"skipped": True, "execution_status": "skipped"},
-                            "error": "Skill workflow stopped after a previous step failure",
-                            "needs_confirmation": False,
-                            "skipped": True,
-                        })
-                        workflow_status[workflow_step.id] = False
-                        continue
-                    failed_dependencies = [
-                        dependency for dependency in workflow_step.depends_on
-                        if not workflow_status.get(dependency, False)
-                    ]
-                    if failed_dependencies:
-                        results.append({
-                            "tool": tool_def.name,
-                            "platform": platform,
-                            "resource_type": getattr(tool_def, "resource_type", None),
-                            "success": False,
-                            "data": {"skipped": True, "execution_status": "skipped"},
-                            "error": "Skill workflow dependency failed: " + ", ".join(failed_dependencies),
-                            "needs_confirmation": False,
-                            "skipped": True,
-                        })
-                        workflow_status[workflow_step.id] = False
-                        continue
                 self._heartbeat_workflow(workflow_id)
                 if workflow_id and tool_def.is_write_tool:
                     workflow_sequence += 1
@@ -3797,7 +3537,6 @@ class AgentRuntime:
                     })
                     chain_blocked = True
                     chain_blocker = tool_def.name
-                    mark_workflow_failure(workflow_step)
                     continue
                 if chain_blocked:
                     results.append({
@@ -3823,7 +3562,6 @@ class AgentRuntime:
                     })
                     chain_blocked = True
                     chain_blocker = tool_def.name
-                    mark_workflow_failure(workflow_step)
                     continue
                 if not self._read_only_mode:
                     if tool_def.is_write_tool and per_platform_account:
@@ -3835,7 +3573,6 @@ class AgentRuntime:
                                 "success": False,
                                 "error": f"账户验证失败: {error_msg}",
                             })
-                            mark_workflow_failure(workflow_step)
                             continue
                 # 为当前平台临时设置账户上下文
                 original_account = session.ctx.account_id
@@ -3845,10 +3582,6 @@ class AgentRuntime:
                 tool_input = self._build_tool_input(
                     tool_def, intent, platform, session.ctx
                 )
-                if workflow_step is not None:
-                    self._apply_workflow_input_mapping(
-                        workflow_step, tool_input, intent, workflow_outputs
-                    )
                 if workflow_id and tool_def.is_write_tool:
                     self._session_manager.record_workflow_item(
                         workflow_id=workflow_id,
@@ -3875,7 +3608,6 @@ class AgentRuntime:
                     chain_blocked = True
                     chain_blocker = tool_def.name
                     session.ctx.account_id = original_account
-                    mark_workflow_failure(workflow_step)
                     continue
 
                 unknown_params = tool_input.pop("_unknown_params", None)
@@ -3895,7 +3627,6 @@ class AgentRuntime:
                     chain_blocked = True
                     chain_blocker = tool_def.name
                     session.ctx.account_id = original_account
-                    mark_workflow_failure(workflow_step)
                     continue
 
                 selection_errors = tool_input.pop("_selection_errors", None)
@@ -3911,7 +3642,6 @@ class AgentRuntime:
                     chain_blocked = True
                     chain_blocker = tool_def.name
                     session.ctx.account_id = original_account
-                    mark_workflow_failure(workflow_step)
                     continue
                 
                 # 检查必需参数是否齐全，不齐全则询问用户
@@ -3939,7 +3669,6 @@ class AgentRuntime:
                     chain_blocked = True
                     chain_blocker = tool_def.name
                     session.ctx.account_id = original_account
-                    mark_workflow_failure(workflow_step)
                     continue
 
                 semantic_errors = self._validate_semantic_write_input(
@@ -3956,7 +3685,6 @@ class AgentRuntime:
                     chain_blocked = True
                     chain_blocker = tool_def.name
                     session.ctx.account_id = original_account
-                    mark_workflow_failure(workflow_step)
                     continue
 
                 # Provider-specific requirements are stricter than the
@@ -3981,7 +3709,6 @@ class AgentRuntime:
                         chain_blocked = True
                         chain_blocker = tool_def.name
                         session.ctx.account_id = original_account
-                        mark_workflow_failure(workflow_step)
                         continue
 
                 if tool_def.is_write_tool and self.execution_mode == ExecutionMode.LIVE.value and (
@@ -4005,7 +3732,6 @@ class AgentRuntime:
                     chain_blocked = True
                     chain_blocker = tool_def.name
                     session.ctx.account_id = original_account
-                    mark_workflow_failure(workflow_step)
                     continue
 
                 if (
@@ -4023,7 +3749,6 @@ class AgentRuntime:
                     chain_blocked = True
                     chain_blocker = tool_def.name
                     session.ctx.account_id = original_account
-                    mark_workflow_failure(workflow_step)
                     continue
 
                 # live 写入必须由调用方显式确认；dry-run 不需要确认，因为不会
@@ -4062,7 +3787,6 @@ class AgentRuntime:
                     chain_blocked = True
                     chain_blocker = tool_def.name
                     session.ctx.account_id = original_account
-                    mark_workflow_failure(workflow_step)
                     continue
 
                 if tool_def.is_write_tool and self.execution_mode == ExecutionMode.LIVE.value and confirmed and incoming_confirmation_payload is not None and not self._confirmation_matches(
@@ -4086,7 +3810,6 @@ class AgentRuntime:
                     chain_blocked = True
                     chain_blocker = tool_def.name
                     session.ctx.account_id = original_account
-                    mark_workflow_failure(workflow_step)
                     continue
 
                 if (
@@ -4117,7 +3840,6 @@ class AgentRuntime:
                         chain_blocked = True
                         chain_blocker = tool_def.name
                         session.ctx.account_id = original_account
-                        mark_workflow_failure(workflow_step)
                         continue
 
                 if tool_def.is_write_tool and self.execution_mode == ExecutionMode.LIVE.value and not confirmed:
@@ -4141,7 +3863,6 @@ class AgentRuntime:
                     chain_blocked = True
                     chain_blocker = tool_def.name
                     session.ctx.account_id = original_account
-                    mark_workflow_failure(workflow_step)
                     continue
 
                 # 使用最终规范化后的输入生成幂等键，保证 reserve 与成功后的
@@ -4165,7 +3886,6 @@ class AgentRuntime:
                         chain_blocked = True
                         chain_blocker = tool_def.name
                         session.ctx.account_id = original_account
-                        mark_workflow_failure(workflow_step)
                         continue
                 
                 # dry-run 下写工具只生成本地模拟结果，绝不触发 API Client。
@@ -4260,20 +3980,6 @@ class AgentRuntime:
                     simulated=result.simulated,
                 )
                 session.save_result(tool_def.name, safe_result, platform=actual_platform)
-
-                if workflow_step is not None:
-                    if result.success and not result.requires_confirmation:
-                        workflow_status[workflow_step.id] = True
-                    else:
-                        mark_workflow_failure(workflow_step)
-                    output = result.data if isinstance(result.data, dict) else {}
-                    workflow_outputs[workflow_step.id] = copy.deepcopy(output)
-                    for destination, source in (workflow_step.output_mapping or {}).items():
-                        value = self._workflow_resolve_path(
-                            source, intent, workflow_outputs
-                        )
-                        if value is not None:
-                            session.ctx.protected_state[str(destination)] = copy.deepcopy(value)
 
                 # 将 protected_state 同步回 ctx，使后续 Tool 可以读取
                 session.ctx.protected_state.update(session.protected_state)

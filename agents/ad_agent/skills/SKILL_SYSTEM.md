@@ -25,7 +25,7 @@ skills/
 # 可执行能力不放在上面的 Markdown 目录中：
 capabilities/<platform>/capability.py  # 渠道 Capability + ToolDefinition
 api_clients/<platform>_client.py        # 可选 Provider Client
-skills/<name>/tools.py                  # 可选 Skill plugin
+skills/<name>/tools.py                  # 仅受信任源码扩展，不属于上传 Skill
 ```
 
 ## Skill 定义格式
@@ -35,9 +35,12 @@ skills/<name>/tools.py                  # 可选 Skill plugin
 每个可执行 Tool 必须由 Capability/plugin 以结构化 `ToolDefinition` 和 Handler 注册，
 这样 schema、权限、Provider adapter 和 Harness 门禁可以被 Runtime 统一验证。
 
-如果确实需要确定性的多步编排，可以在 Skill 目录中额外提供 `workflow.yaml`；它只能
-声明 Tool 名称、依赖、条件和输入输出映射，不能包含 Python、网络调用或绕过 Runtime 的
-执行逻辑。普通 Skill 不需要这个文件，流程知识仍然可以只用自然语言表达。
+Skill 包遵循标准目录约定：至少包含 `SKILL.md`，也可以包含 `references/`、`scripts/`、
+`assets/`、`evals/` 和其他包文件。`SKILL.md` 以自然语言提供专家知识、SOP 和安全
+边界；LLM 负责理解这些上下文并提出工具计划，Runtime + Tool metadata + Harness
+负责把计划落实为受控执行。上述目录内容由管理系统保存、版本化和评测，但不会被
+Runtime 自动导入或执行；`workflow.yaml` 不是上传、编辑或执行入口。只有仓库内经
+验证的源码扩展才可以提供 Tool，用户上传的同名文件不会被当作插件加载。
 
 SKILL.md 的推荐内容：
 
