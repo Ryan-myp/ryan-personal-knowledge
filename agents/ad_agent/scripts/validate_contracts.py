@@ -25,6 +25,7 @@ from agents.ad_agent.capabilities.factory import (  # noqa: E402
 )
 from agents.ad_agent.scripts.audit_capabilities import discover_platform_slugs  # noqa: E402
 from agents.ad_agent.core.interfaces import ReplayPolicy, ToolEffect  # noqa: E402
+from agents.ad_agent.core.security import PROTECTED_INPUT_FIELDS  # noqa: E402
 from agents.ad_agent.persistence.store import AdAgentStore  # noqa: E402
 
 
@@ -32,13 +33,7 @@ from agents.ad_agent.persistence.store import AdAgentStore  # noqa: E402
 # Additional Skill-owned tools must be allowed without editing this release
 # gate; every discovered tool is still checked below for its contract.
 MINIMUM_COUNTS = {"meta": 16, "google-ads": 18, "tiktok": 24, "dv360": 14}
-PROTECTED_FIELDS = {
-    "token", "accesstoken", "refreshtoken", "developertoken", "clientid",
-    "clientsecret", "apikey", "appsecret", "secretkey", "privatekey",
-    "privatekeyid", "serviceaccount", "serviceaccountemail", "saemail",
-    "developerkey", "bcid", "partnerid", "mcc",
-    "authorization", "credential", "credentials", "perterid",
-}
+PROTECTED_FIELDS = set(PROTECTED_INPUT_FIELDS)
 
 
 def _walk_keys(value, path=""):

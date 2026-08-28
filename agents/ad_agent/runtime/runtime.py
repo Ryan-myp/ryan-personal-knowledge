@@ -2606,7 +2606,8 @@ class AgentRuntime:
             "token", "secret", "api_key", "private_key", "private_key_id",
             "service_account", "sa_email", "developer_key", "credential", "authorization",
             "bc_id", "bcid", "partner_id", "partnerid", "perter_id", "perterid", "developer_token",
-            "mcc", "client_id", "clientid",
+            "mcc", "login_customer_id", "logincustomerid",
+            "manager_customer_id", "managercustomerid", "client_id", "clientid",
         )
         if isinstance(value, dict):
             return {
@@ -2630,14 +2631,14 @@ class AgentRuntime:
                 r"(?is)(?P<prefix>['\"]?private[_-]?key['\"]?\s*[:=]\s*)['\"]-----BEGIN.*?-----END[^\r\n]*-----['\"]",
                 r"(?is)(?P<prefix>['\"]?private[_-]?key['\"]?\s*[:=]\s*)['\"][^'\"]*['\"]",
                 r"(?is)(?P<prefix>['\"]?client[_-]?secret['\"]?\s*[:=]\s*)['\"][^'\"]*['\"]",
-                r"(?is)(?P<prefix>['\"]?(?:bc[_-]?id|partner[_-]?id|perter[_-]?id|mcc|client[_-]?id)['\"]?\s*[:=]\s*)['\"][^'\"]*['\"]",
+                r"(?is)(?P<prefix>['\"]?(?:bc[_-]?id|partner[_-]?id|perter[_-]?id|mcc|login[_-]?customer[_-]?id|manager[_-]?customer[_-]?id|client[_-]?id)['\"]?\s*[:=]\s*)['\"][^'\"]*['\"]",
                 r"(?is)(?P<prefix>['\"]?authorization['\"]?\s*[:=]\s*)['\"][^'\"]*['\"]",
                 # Unquoted key/value forms used by logs and CLI snippets.
                 r"(?i)(?P<prefix>\b(?:access|refresh|developer)[_-]?token\s*[:=]\s*)[^\s,;}]+",
                 r"(?is)(?P<prefix>\bprivate[_-]?key\s*[:=]\s*)-----BEGIN.*?-----END[^\r\n]*-----",
                 r"(?i)(?P<prefix>\bprivate[_-]?key\s*[:=]\s*)[^\s,;}]+",
                 r"(?i)(?P<prefix>\bclient[_-]?secret\s*[:=]\s*)[^\s,;}]+",
-                r"(?i)(?P<prefix>\b(?:bc[_-]?id|partner[_-]?id|perter[_-]?id|mcc|client[_-]?id|authorization)\s*[:=]\s*)[^\s,;}]+",
+                r"(?i)(?P<prefix>\b(?:bc[_-]?id|partner[_-]?id|perter[_-]?id|mcc|login[_-]?customer[_-]?id|manager[_-]?customer[_-]?id|client[_-]?id|authorization)\s*[:=]\s*)[^\s,;}]+",
             )
             redacted = value
             for pattern in patterns:

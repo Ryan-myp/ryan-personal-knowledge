@@ -15,7 +15,8 @@ PROTECTED_INPUT_FIELDS = frozenset({
     "clientsecret", "apikey", "appsecret", "secretkey", "privatekey",
     "privatekeyid", "serviceaccount", "serviceaccountemail", "saemail",
     "developerkey", "authorization", "credential", "credentials",
-    "perterid",
+    "bcid", "partnerid", "perterid", "mcc",
+    "logincustomerid", "managercustomerid",
 })
 
 

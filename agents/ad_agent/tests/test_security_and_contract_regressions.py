@@ -620,6 +620,35 @@ def test_redaction_handles_json_and_python_dict_strings():
     assert "<redacted>" in value
 
 
+@pytest.mark.parametrize(
+    "field",
+    [
+        "bc_id", "partnerId", "perterId", "mcc",
+        "login_customer_id", "managerCustomerId",
+    ],
+)
+def test_configuration_redlines_are_rejected_at_top_level_platform_params(field):
+    runtime = AgentRuntime()
+    result = runtime.run(
+        "你好",
+        session_id=f"redline-{field}",
+        platform_params={"meta": {field: "must-not-enter"}},
+    )
+
+    assert result["results"] == []
+    assert result["policy_errors"]
+    assert field in result["policy_errors"][0]
+    assert "must-not-enter" not in str(result)
+
+
+def test_account_selector_remains_allowed_while_configuration_fields_do_not():
+    runtime = AgentRuntime()
+    assert runtime._validate_tool_input_redline({"account_id": "test-account"}) == []
+    assert runtime._validate_tool_input_redline({"advertiser_id": "test-advertiser"}) == []
+    assert runtime._validate_tool_input_redline({"customer_id": "test-customer"}) == []
+    assert runtime._validate_tool_input_redline({"bc_id": "business-center"}) == ["bc_id"]
+
+
 class MinimalMetaClient:
     platform = "meta"
 
