@@ -250,6 +250,7 @@ class SessionManager:
         provider_resource_id: Optional[str] = None,
         logical_resource_id: Optional[str] = None,
         account_id: Optional[str] = None,
+        parent_resource_type: Optional[str] = None,
     ) -> None:
         self.store.upsert_workflow_item(
             item_id=f"{workflow_id}:{sequence}", workflow_id=workflow_id,
@@ -261,6 +262,7 @@ class SessionManager:
             provider_resource_id=provider_resource_id,
             logical_resource_id=logical_resource_id,
             account_id=account_id,
+            parent_resource_type=parent_resource_type,
         )
 
     def get_workflow(self, workflow_id: str) -> Optional[dict]:
@@ -281,12 +283,13 @@ class SessionManager:
         provider_resource_id: Optional[str] = None,
         logical_resource_id: Optional[str] = None,
         account_id: Optional[str] = None,
+        parent_resource_type: Optional[str] = None,
     ) -> bool:
         return self.store.update_workflow_item(
             workflow_id, sequence, status, output_data, error,
             compensation_required, resource_type, parent_sequence,
             parent_resource_id, provider_resource_id, logical_resource_id,
-            account_id,
+            account_id, parent_resource_type,
         )
 
     def list_resumable_workflows(

@@ -12,6 +12,7 @@ from agents.ad_agent.api_clients.dv360_client import DV360APIClient
 from agents.ad_agent.api_clients.google_ads_client import GoogleAdsAPIClient
 from agents.ad_agent.api_clients.meta_client import MetaAPIClient
 from agents.ad_agent.api_clients.tiktok_client import TikTokAPIClient
+from agents.ad_agent.capabilities.tiktok.campaigns import TikTokGetCampaignHandler
 
 
 def test_generic_campaign_type_maps_to_google_wire_field():
@@ -137,6 +138,43 @@ def test_tiktok_ad_creation_preserves_existing_schema_fields():
         "daily_budget": 50,
     })
     assert payloads[-1]["ad_group"]["conversion_id"] == 42
+
+
+def test_tiktok_campaign_lookup_by_name_uses_list_result():
+    class Client:
+        def list_campaigns(self, advertiser_id, page_size=20):
+            assert advertiser_id == "t1"
+            assert page_size == 20
+            return [{"campaign_id": "101", "campaign_name": "Sales App"}]
+
+        def get_campaign(self, advertiser_id, campaign_id):
+            return {
+                "campaign_id": campaign_id,
+                "campaign_name": "Sales App",
+                "advertiser_id": advertiser_id,
+            }
+
+    result = TikTokGetCampaignHandler(Client()).execute(
+        ToolContext(session_id="s1", user_id="u1", account_id="t1"),
+        {"campaign_name": "Sales App"},
+    )
+
+    assert result.success is True
+    assert result.data["campaign"]["campaign_id"] == "101"
+
+
+def test_meta_boost_client_builds_timestamped_request():
+    client = MetaAPIClient({"access_token": "test"})
+    payloads = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        payloads.append((method, endpoint, data)) or {"id": "boost-1"}
+    )
+
+    result = client.boost_post("m1", "page-1", "post-1", 10, 1)
+
+    assert result == "boost-1"
+    assert payloads[-1][0:2] == ("POST", "/m1/promoted_objects")
+    assert payloads[-1][2]["scheduled_publish_time"] > 0
 
 
 def test_google_creation_options_are_mapped_to_rest_resources():

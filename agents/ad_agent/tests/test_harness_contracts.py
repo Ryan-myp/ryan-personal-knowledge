@@ -371,6 +371,8 @@ def test_workflow_write_items_are_checkpointed_before_execution():
     assert workflow["items"]
     assert all(item["status"] == "succeeded" for item in workflow["items"])
     assert all(item["account_id"] == "m1" for item in workflow["items"])
+    assert workflow["items"][1]["parent_resource_type"] == "campaign"
+    assert workflow["items"][1]["parent_resource_id"]
     assert len(workflow["items"]) == 3
 
 
@@ -391,6 +393,7 @@ def test_workflow_resume_plan_preserves_account_scope():
     plan = runtime.get_workflow_resume_plan("resume-account-workflow", user_id="u1")
 
     assert plan["items"][0]["account_id"] == "m1"
+    assert plan["items"][0]["resource_type"] == "campaign"
 
 
 def test_legacy_workflow_resume_plan_recovers_account_from_session():
@@ -444,6 +447,7 @@ def test_old_workflow_items_schema_is_migrated_with_account_scope(tmp_path):
         row[1] for row in store._get_conn().execute("PRAGMA table_info(workflow_items)")
     }
     assert "account_id" in columns
+    assert "parent_resource_type" in columns
 
 
 def test_fresh_running_workflow_is_not_resumable_or_claimed():

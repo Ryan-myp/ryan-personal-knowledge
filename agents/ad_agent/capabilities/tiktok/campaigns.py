@@ -57,7 +57,7 @@ class TikTokGetCampaignHandler(ToolHandler):
         if not campaign_id and campaign_name:
             try:
                 if self.client and advertiser_id:
-                    call_with_optional_page_size(
+                    campaigns = call_with_optional_page_size(
                         self.client.list_campaigns,
                         advertiser_id,
                         limit=input_data.get("limit", 20),
@@ -65,9 +65,15 @@ class TikTokGetCampaignHandler(ToolHandler):
                     )
                     name_lower = campaign_name.lower()
                     for c in campaigns:
-                        cname = (c.get("name") or "").lower()
+                        cname = (
+                            c.get("name")
+                            or c.get("campaign_name")
+                            or ""
+                        ).lower()
                         if cname == name_lower or name_lower in cname or cname in name_lower:
-                            campaign_id = str(c.get("id", ""))
+                            campaign_id = str(
+                                c.get("id") or c.get("campaign_id") or ""
+                            )
                             break
                 if not campaign_id:
                     return ToolResult.error(f"未找到名为 '{campaign_name}' 的 Campaign，请先列出 Campaign 列表获取准确 ID")

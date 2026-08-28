@@ -1964,7 +1964,15 @@ class AgentRuntime:
                     plugin_skill = self._load_skill_plugin(skill_dir, api_client)
                     if plugin_skill is not None:
                         before_tool_count = len(self.registry.list_all())
-                        self.register_skill(plugin_skill, platform, api_client)
+                        registered = self.register_skill(
+                            plugin_skill, platform, api_client
+                        )
+                        if not registered:
+                            logger.warning(
+                                "⚠️ Skill plugin '%s' 未注册任何可执行工具",
+                                plugin_skill.name,
+                            )
+                            continue
                         loaded_count += 1
                         logger.info(
                             f"✅ 自动加载 Skill plugin: {plugin_skill.name} ({platform}, "
@@ -2107,13 +2115,31 @@ class AgentRuntime:
 
     @staticmethod
     def _resource_type_for_tool(tool_name: str) -> str:
-        """Compatibility fallback for untyped external result consumers.
+        """Recover a conservative logical type from a legacy Tool name.
 
-        Runtime-generated results always carry ``resource_type`` from the
-        ToolDefinition.  An untyped result is intentionally not inferred from
-        a provider Tool name; guessing here could persist a wrong resource
-        identity and break parent/child recovery.
+        New workflow rows always persist the ToolDefinition metadata.  Older
+        rows may only have names such as ``meta_create_campaign``.  This
+        fallback is used for recovery display and migration only; it does not
+        select a handler or construct a provider payload.  Unknown names stay
+        generic instead of being guessed from an arbitrary final token.
         """
+        name = re.sub(r"[^a-z0-9]+", "_", str(tool_name or "").lower())
+        markers = (
+            ("line_item", "line_item"), ("lineitem", "line_item"),
+            ("asset_group", "asset_group"), ("assetgroup", "asset_group"),
+            ("ad_set", "ad_set"), ("adset", "ad_set"),
+            ("ad_group", "ad_group"), ("adgroup", "ad_group"),
+            ("campaign", "campaign"), ("creative", "creative"),
+            ("audience", "audience"), ("keyword", "keyword"),
+            ("location", "location"), ("device", "device"),
+            ("catalog", "catalog"), ("conversion", "conversion"),
+            ("brand_safety", "brand_safety"), ("advertiser", "advertiser"),
+            ("flight", "flight"), ("post", "post"), ("video", "video"),
+            ("image", "image"), ("app", "app"), ("io", "io"),
+        )
+        for marker, resource_type in markers:
+            if marker in name:
+                return resource_type
         return "resource"
 
     @staticmethod
@@ -2466,6 +2492,7 @@ class AgentRuntime:
                         input_data={},
                         account_id=planned_account,
                         resource_type=getattr(tool, "resource_type", None),
+                        parent_resource_type=parent_type,
                         parent_sequence=parent_sequence,
                     )
                     sequence_by_resource[(actual_platform, tool.resource_type)] = sequence
@@ -2603,6 +2630,7 @@ class AgentRuntime:
                 output_data=output_data,
                 error=item.get("error"),
                 resource_type=resource_type,
+                parent_resource_type=(str(parent_type) if parent_type else None),
                 parent_sequence=parent_sequence,
                 parent_resource_id=(str(parent_resource_id) if parent_resource_id not in (None, "") else None),
                 provider_resource_id=provider_resource_id,
@@ -2763,6 +2791,7 @@ class AgentRuntime:
                     status="running",
                     input_data=self._redact_for_persistence(tool_input),
                     account_id=operation.account_id,
+                    parent_resource_type=getattr(tool_def, "parent_resource_type", None),
                 )
             schema_errors = validate_tool_input(tool_def.input_schema, tool_input)
             if schema_errors:
@@ -3496,6 +3525,7 @@ class AgentRuntime:
                         status="running",
                         input_data={},
                         account_id=per_platform_account,
+                        parent_resource_type=getattr(tool_def, "parent_resource_type", None),
                     )
                 tool_call_count += 1
                 budget_error = self._check_turn_budget(
@@ -3573,6 +3603,7 @@ class AgentRuntime:
                         status="running",
                         input_data=self._redact_for_persistence(tool_input),
                         account_id=per_platform_account,
+                        parent_resource_type=getattr(tool_def, "parent_resource_type", None),
                     )
 
                 protected_paths = self._validate_protected_input(tool_input)
@@ -5160,6 +5191,23 @@ class AgentRuntime:
                         return str(value)
             return session_account_id or None
 
+        definitions = {
+            definition.name: definition
+            for definition in self.registry.list_all()
+        }
+
+        def item_definition_value(
+            item: Mapping[str, Any], field: str,
+        ) -> Optional[str]:
+            value = item.get(field)
+            if value not in (None, ""):
+                return str(value)
+            definition = definitions.get(str(item.get("tool_name") or ""))
+            value = getattr(definition, field, None) if definition else None
+            if value in (None, "") and field == "resource_type":
+                value = self._resource_type_for_tool(str(item.get("tool_name") or ""))
+            return str(value) if value not in (None, "") else None
+
         return {
             "workflow_id": workflow_id,
             "status": workflow.get("status"),
@@ -5172,6 +5220,11 @@ class AgentRuntime:
                     "platform": self._canonical_platform(str(item.get("platform") or "")),
                     "account_id": item_account_id(item),
                     "tool_name": item.get("tool_name"),
+                    "resource_type": item_definition_value(item, "resource_type"),
+                    "parent_resource_type": item_definition_value(
+                        item, "parent_resource_type"
+                    ),
+                    "parent_resource_id": item.get("parent_resource_id"),
                     "status": item.get("status"),
                     "input_data": self._redact_for_persistence(item.get("input_data") or {}),
                     "error": self._redact_for_persistence(item.get("error")),

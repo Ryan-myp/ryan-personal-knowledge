@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 from pathlib import Path
 from ..core.interfaces import (
-    ToolDefinition, ToolHandler, ToolSchema, Skill, ToolContext,
+    RiskLevel, ToolDefinition, ToolEffect, ToolHandler, ToolSchema, Skill,
     SkillWorkflow, SkillWorkflowStep,
 )
 
@@ -287,7 +287,7 @@ class SkillContract:
         从 tools/ 目录加载工具定义。
         每个 .yaml/.json 文件定义一个 ToolDefinition。
         """
-        for filename in os.listdir(tools_dir):
+        for filename in sorted(os.listdir(tools_dir)):
             if not filename.endswith(('.yaml', '.yml', '.json')):
                 continue
             filepath = os.path.join(tools_dir, filename)
@@ -454,7 +454,6 @@ class BaseSkill(Skill):
         return properties
     
     def _parse_risk(self, level: str) -> 'RiskLevel':
-        from ..core.interfaces import RiskLevel
         mapping = {
             "low": RiskLevel.LOW,
             "medium": RiskLevel.MEDIUM,
@@ -464,7 +463,6 @@ class BaseSkill(Skill):
         return mapping.get(level, RiskLevel.LOW)
     
     def _parse_effect(self, effect: str) -> 'ToolEffect':
-        from ..core.interfaces import ToolEffect
         mapping = {
             "read": ToolEffect.READ,
             "write": ToolEffect.WRITE,
@@ -505,7 +503,7 @@ class SkillLoader:
         if not root_path.is_dir():
             return
 
-        for skill_file in root_path.rglob("SKILL.md"):
+        for skill_file in sorted(root_path.rglob("SKILL.md")):
             self._load_single_skill(str(skill_file.parent))
     
     def _is_skill_dir(self, path: str) -> bool:
@@ -519,6 +517,14 @@ class SkillLoader:
             return  # 跳过无名称的目录
         
         skill = BaseSkill(contract)
+        existing = self._skills.get(contract.name)
+        if existing is not None and getattr(existing, "skill_dir", None) != skill_dir:
+            raise ValueError(
+                f"duplicate Skill name '{contract.name}' in {skill_dir}"
+            )
+        # Keep the source directory on the loaded object for deterministic
+        # duplicate detection when multiple roots are configured.
+        setattr(skill, "skill_dir", skill_dir)
         self._skills[contract.name] = skill
     
     def get(self, name: str) -> Optional[Skill]:

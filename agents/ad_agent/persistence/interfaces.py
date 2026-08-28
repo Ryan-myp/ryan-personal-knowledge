@@ -75,6 +75,7 @@ class PersistenceBackend(Protocol):
         provider_resource_id: Optional[str] = None,
         logical_resource_id: Optional[str] = None,
         account_id: Optional[str] = None,
+        parent_resource_type: Optional[str] = None,
     ) -> None: ...
     def get_workflow(self, workflow_id: str) -> Optional[dict]: ...
     def update_workflow_item(
@@ -87,6 +88,7 @@ class PersistenceBackend(Protocol):
         provider_resource_id: Optional[str] = None,
         logical_resource_id: Optional[str] = None,
         account_id: Optional[str] = None,
+        parent_resource_type: Optional[str] = None,
     ) -> bool: ...
     def mark_workflow_items_for_compensation(
         self, workflow_id: str, sequences: list[int],
