@@ -186,6 +186,10 @@ def main(argv: list[str] | None = None) -> int:
             errors.append(f"{platform}: expected at least {minimum} built-in tools, got {actual}")
 
     for tool in tools:
+        if not any(str(intent).strip() for intent in (tool.intent_types or [])):
+            errors.append(
+                f"{tool.name}: intent_types must be explicitly published for routing"
+            )
         try:
             json.dumps(tool.input_schema.to_dict(), ensure_ascii=False)
         except (TypeError, ValueError) as exc:

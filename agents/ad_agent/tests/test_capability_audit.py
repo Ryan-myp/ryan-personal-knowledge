@@ -17,6 +17,11 @@ def test_capability_audit_discovers_all_installed_channels_without_issues():
     assert set(report["platforms"]) == {"meta", "google-ads", "tiktok", "dv360"}
     assert report["platforms"]["tiktok"]["actions"]["create:ad_group"] == 1
     assert report["platforms"]["dv360"]["actions"]["create:line_item"] == 1
+    assert all(
+        item["intent_types"]
+        for details in report["platforms"].values()
+        for item in details["creation_chain"]
+    )
 
 
 def test_contract_snapshot_is_deterministic_and_partitioned_by_platform():

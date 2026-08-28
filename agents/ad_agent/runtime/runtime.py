@@ -1126,22 +1126,6 @@ class AgentRuntime:
             logger.warning(f"⚠️ Capability '{platform}' 没有定义任何工具")
             return False
 
-        # A plugin may optionally publish a named intent for its own Tool.
-        # Convert that declaration onto the Tool itself at registration time;
-        # the Router still discovers by metadata and never stores a platform
-        # routing table. New plugins should prefer ``intent_types`` directly
-        # on ToolDefinition.
-        plugin_intents = getattr(skill, "intent_to_tools", {}) or {}
-        if isinstance(plugin_intents, dict):
-            for intent_name, platform_tools in plugin_intents.items():
-                names = platform_tools.get(canonical_platform, []) if isinstance(platform_tools, dict) else []
-                if isinstance(names, str):
-                    names = [names]
-                for definition, _handler in tools:
-                    if definition.name in names and hasattr(definition, "add_intents"):
-                        definition.add_intents([str(intent_name)])
-                if hasattr(self.intent_parser, "register_intents"):
-                    self.intent_parser.register_intents([str(intent_name)])
         if hasattr(self.intent_parser, "register_intents"):
             self.intent_parser.register_intents(
                 intent

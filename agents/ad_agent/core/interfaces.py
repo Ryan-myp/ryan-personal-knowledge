@@ -740,12 +740,6 @@ class CapabilityRuntime:
     # handler by itself.
     ad_format_catalogs: list[dict[str, Any]] = field(default_factory=list)
 
-    @property
-    def intent_to_tools(self) -> dict[str, dict[str, list[str]]]:
-        """Deprecated compatibility view; routing is Tool metadata based."""
-        return {}
-
-
 class WriteGuard(ABC):
     """
     写入保护接口 - 对应 Go 的 core.WriteExecutionGuard

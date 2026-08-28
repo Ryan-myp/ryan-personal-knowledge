@@ -945,48 +945,10 @@ class SimpleIntentRouter(IntentRouter):
     plugin 自己的定义。这里不维护平台工具名称表，因此新增渠道只需要
     注册 Capability + Skill；新增同类 Tool 也不需要修改 Router。
 
-    ``custom_mappings`` 和 ``register_skill_mappings`` 仅保留为外部扩展
-    兼容入口，不参与内置渠道路由，也不是新增能力的必填配置。
+    路由只读取 ToolDefinition 的 intent_types/action/resource 元数据；不接受
+    中心化的 intent-to-tool 配置，避免新增 Skill/Tool 时还要修改 Router。
     """
 
-    def __init__(self, custom_mappings: dict = None):
-        self._mappings = {
-            str(intent): {str(platform): list(names) for platform, names in platforms.items()}
-            for intent, platforms in (custom_mappings or {}).items()
-        }
-        # Kept as a read-only-era compatibility name for integrations that
-        # inspect the router. Built-in routing never writes this map.
-        self._capability_mappings = self._mappings
-        self._skill_mappings: dict[str, dict[str, list[str]]] = {}
-
-    def register_capability_mappings(self, mappings: dict) -> None:
-        """Deprecated extension alias; prefer ToolDefinition metadata."""
-        for intent, platforms in (mappings or {}).items():
-            self._mappings.setdefault(str(intent), {}).update(
-                {str(platform): list(names) for platform, names in (platforms or {}).items()}
-            )
-
-    def register_skill_mappings(self, mappings: dict) -> None:
-        """Register an explicit plugin extension without a built-in table."""
-        for intent_type, platforms in (mappings or {}).items():
-            for platform, names in (platforms or {}).items():
-                if not names:
-                    continue
-                self._skill_mappings.setdefault(str(intent_type), {})[
-                    str(platform)
-                ] = list(names)
-                if normalize_platform(platform) == "google-ads":
-                    self._skill_mappings.setdefault(str(intent_type), {})[
-                        "google"
-                    ] = list(names)
-
-    def get_skill_mapping(self, intent_type: str) -> dict[str, list[str]] | None:
-        """Return the authoritative Skill route, if one was registered."""
-        mapping = self._skill_mappings.get(str(intent_type))
-        if mapping is None:
-            return None
-        return {platform: list(names) for platform, names in mapping.items()}
-    
     def route(
         self,
         intent: ParsedIntent,
@@ -999,22 +961,12 @@ class SimpleIntentRouter(IntentRouter):
             {platform: [ToolDefinition, ...]}
         """
         result: dict[str, list[ToolDefinition]] = {}
-        explicit = self._skill_mappings.get(intent.intent_type) or self._mappings.get(intent.intent_type)
         for platform in intent.platforms:
             canonical = normalize_platform(platform)
-            if explicit is not None:
-                names = explicit.get(platform, explicit.get(canonical, []))
-                tools = []
-                for name in names:
-                    try:
-                        tools.append(registry.get(name)[0])
-                    except KeyError:
-                        continue
-            else:
-                tools = [
-                    definition for definition in registry.list_by_platform(canonical)
-                    if self._matches_intent(definition, intent.intent_type)
-                ]
+            tools = [
+                definition for definition in registry.list_by_platform(canonical)
+                if self._matches_intent(definition, intent.intent_type)
+            ]
             tools = self._order_by_resource_dependencies(tools)
             if tools:
                 result[platform] = tools

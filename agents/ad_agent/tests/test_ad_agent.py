@@ -1119,15 +1119,12 @@ class TestIterationContracts:
         with pytest.raises(ValueError, match="creative"):
             client.create_ad("act_test", "adset-1", {"name": "unsafe-default"})
 
-    def test_capability_mappings_only_reference_registered_tools(self):
+    def test_capability_tools_publish_route_metadata(self):
         from agents.ad_agent.capabilities.meta import create_meta_capability
         from agents.ad_agent.capabilities.google import create_google_capability
         from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
         from agents.ad_agent.capabilities.dv360 import create_dv360_capability
-        from agents.ad_agent.core.intent import SimpleIntentRouter
-
         registry = SimpleToolRegistry()
-        router = SimpleIntentRouter()
         for capability in [
             create_meta_capability(),
             create_google_capability(),
@@ -1135,17 +1132,8 @@ class TestIterationContracts:
             create_dv360_capability(),
         ]:
             runtime = capability.configure(type("Context", (), {"registry": registry})())
-            router.register_capability_mappings(runtime.intent_to_tools)
-
-        missing = []
-        for intent_type, platforms in router._capability_mappings.items():
-            for platform, tool_names in platforms.items():
-                for name in tool_names:
-                    try:
-                        registry.get(name)
-                    except KeyError:
-                        missing.append((intent_type, platform, name))
-        assert missing == []
+            assert runtime is not None
+        assert all(tool.intent_types for tool in registry.list_all())
         # DV360 IO/Line Item reads and Google PMax Asset Group planning are
         # now part of the executable capability contract.
         assert len(registry.list_all()) == 120
@@ -1230,9 +1218,6 @@ class TestIterationContracts:
             name = "custom-meta-insights"
             platform = "meta"
             description = "Custom read-only extension"
-            intent_to_tools = {"custom_meta_insight_intent": {
-                "meta": ["custom_meta_insight"],
-            }}
 
             def __init__(self):
                 self.definition = ToolDefinition(
@@ -1241,6 +1226,7 @@ class TestIterationContracts:
                     platform=self.platform,
                     description="Read a custom local insight",
                     input_schema=ToolSchema(),
+                    intent_types=["custom_meta_insight_intent"],
                 )
 
             def get_tools(self):
@@ -1288,9 +1274,8 @@ class TestIterationContracts:
             "    name = 'custom-insights'\n"
             "    platform = 'meta'\n"
             "    description = 'Local insight extension'\n"
-            "    intent_to_tools = {'custom_insight': {'meta': ['custom_insight']}}\n"
             "    def __init__(self):\n"
-            "        self.definition = ToolDefinition(name='custom_insight', skill=self.name, platform=self.platform, description='local insight', input_schema=ToolSchema())\n"
+            "        self.definition = ToolDefinition(name='custom_insight', skill=self.name, platform=self.platform, description='local insight', input_schema=ToolSchema(), intent_types=['custom_insight'])\n"
             "    def get_tools(self):\n"
             "        return [self.definition]\n"
             "    def get_tool_handler(self, tool_name):\n"
