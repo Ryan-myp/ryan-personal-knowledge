@@ -81,21 +81,6 @@ class DynamicToolSelector:
     5. 返回精简的工具列表给 LLM
     """
     
-    # 意图类型 → 工具关键词映射（用于筛选）
-    INTENT_TOOL_MAP = {
-        "create_campaign": ["create", "add", "new"],
-        "create_asset_group": ["create", "add", "new", "asset", "pmax"],
-        "update_campaign": ["update", "modify", "edit"],
-        "pause_campaign": ["pause", "stop", "disable"],
-        "resume_campaign": ["resume", "start", "enable"],
-        "list_campaigns": ["list", "query", "search", "get_", "campaign"],
-        "get_report": ["report", "get_", "list_", "query", "search"],
-        "optimize_bidding": ["optimize", "bid", "pricing"],
-        "get_audience": ["audience", "target", "demographic"],
-        "manage_creative": ["creative", "ad", "material"],
-        "cross_channel": ["overview", "compare", "budget", "cross"],
-    }
-    
     def __init__(self, skill_loader=None, knowledge_provider: Optional[KnowledgeProvider] = None):
         # Runtime injects its canonical SkillLoader.  The lazy fallback keeps
         # the standalone selector usable without importing the Runtime package
@@ -363,32 +348,48 @@ class DynamicToolSelector:
         if not intent_type:
             return tools[:5]  # 限制返回数量，避免过长
         
-        # 获取该意图类型的关键词
-        keywords = self.INTENT_TOOL_MAP.get(intent_type, [])
-        
-        if not keywords:
-            return tools
-        
-        # 筛选匹配关键词的工具
-        filtered = []
-        for tool in tools:
-            tool_name = tool.name.lower()
-            tool_desc = tool.description.lower()
-            
-            # 检查工具名或描述是否包含关键词
-            if any(kw in tool_name or kw in tool_desc for kw in keywords):
-                filtered.append(tool)
-        
-        # 如果没有匹配，返回前 N 个最常用的工具
-        if not filtered:
-            # 按使用频率排序（查询类工具优先）
-            priority_tools = ["get_", "list_", "query_", "report", "optimize"]
-            filtered = sorted(
-                tools,
-                key=lambda t: next((i for i, p in enumerate(priority_tools) if p in t.name), 99)
-            )[:5]
-        
-        return filtered[:8]  # 限制最多 8 个工具
+        # Tool metadata is the routing contract.  In particular, do not add a
+        # new intent to a core ``intent -> keyword`` table: a provider Skill or
+        # Capability must be able to publish a new intent without changing the
+        # shared selector.
+        exact = [
+            tool for tool in tools
+            if intent_type in (getattr(tool, "intent_types", None) or [])
+        ]
+        if exact:
+            return exact[:8]
+
+        # Keep a bounded, metadata-only fallback for older/custom tools that
+        # have not published intent_types yet.  The selector never interprets
+        # provider-specific intent names; it only compares generic fields that
+        # are already part of ToolDefinition.
+        intent_tokens = {
+            token for token in re.split(r"[^a-z0-9]+", str(intent_type).lower())
+            if token and token not in {"the", "a", "an", "to", "for"}
+        }
+        ranked: list[tuple[int, int, ToolDefinition]] = []
+        for index, tool in enumerate(tools):
+            metadata = " ".join(
+                str(value or "").lower()
+                for value in (
+                    getattr(tool, "action", ""),
+                    getattr(tool, "resource_type", ""),
+                    " ".join(getattr(tool, "traits", []) or []),
+                    getattr(tool, "name", ""),
+                    getattr(tool, "description", ""),
+                )
+            )
+            score = sum(1 for token in intent_tokens if token in metadata)
+            if score:
+                ranked.append((score, -index, tool))
+        if ranked:
+            ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+            return [tool for _score, _index, tool in ranked[:8]]
+
+        # Unknown intents must remain bounded.  The LLM can ask for the
+        # missing capability rather than receiving the entire provider tool
+        # catalog and hallucinating a route.
+        return tools[:5]
     
     def _get_expert_knowledge(
         self, 
@@ -400,22 +401,32 @@ class DynamicToolSelector:
         if not skill:
             return ""
         
-        # 根据意图类型选择专家知识
-        knowledge_map = {
-            "create_campaign": ["bidding_strategies", "targeting_guide", "best_practices"],
-            "get_report": ["report_metrics", "optimization_tips"],
-            "optimize_bidding": ["bidding_strategies", "cost_control"],
-            "manage_creative": ["creative_best_practices", "ad_copy_tips"],
+        knowledge = getattr(skill, "expert_knowledge", {}) or {}
+        if not isinstance(knowledge, dict):
+            return ""
+
+        # Knowledge keys are Skill-owned.  Prefer an exact key, then select
+        # keys whose names overlap the Tool-published intent tokens, and finally
+        # use a small deterministic prefix.  No shared selector table is needed
+        # when a Skill adds a new knowledge section or workflow intent.
+        intent_text = str(intent_type or "").lower()
+        intent_tokens = {
+            token for token in re.split(r"[^a-z0-9]+", intent_text)
+            if token and token not in {"the", "a", "an", "to", "for"}
         }
-        
-        needed_keys = knowledge_map.get(intent_type, ["general"])
-        
-        expert_knowledge = []
-        for key in needed_keys:
-            if key in skill.expert_knowledge:
-                expert_knowledge.append(f"## {key}\n{skill.expert_knowledge[key]}")
-        
-        return "\n\n".join(expert_knowledge) if expert_knowledge else ""
+        keys = list(knowledge.keys())
+        if intent_type in knowledge:
+            selected_keys = [intent_type]
+        else:
+            selected_keys = [
+                key for key in keys
+                if any(token in str(key).lower() for token in intent_tokens)
+            ][:3]
+            if not selected_keys:
+                selected_keys = keys[:2]
+        return "\n\n".join(
+            f"## {key}\n{knowledge[key]}" for key in selected_keys
+        )
     
     def _merge_expert_knowledge(self, tools: List[ToolDefinition]) -> str:
         """合并多个工具的专家知识"""

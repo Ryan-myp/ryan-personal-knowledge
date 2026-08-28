@@ -436,6 +436,31 @@ def test_tool_selector_discovers_platform_from_registered_tools():
     assert [tool.name for tool in selection.selected_tools] == [definition.name]
 
 
+def test_tool_selector_uses_tool_published_intents_without_core_mapping():
+    definition = ToolDefinition(
+        name="snapchat_sync_product_feed",
+        skill="snapchat-ads",
+        platform="snapchat-ads",
+        description="Synchronize a merchant feed",
+        input_schema=ToolSchema(),
+        action="sync",
+        resource_type="product_feed",
+        intent_types=["sync_product_feed"],
+    )
+    selector = DynamicToolSelector(skill_loader=type(
+        "Loader", (), {"_skills": {}, "get_skill": lambda self, _name: None}
+    )())
+
+    selection = selector.select_tools(
+        "同步商品 feed",
+        ParsedIntent("sync_product_feed", "同步商品 feed", ["snapchat-ads"]),
+        [definition],
+    )
+
+    assert [tool.name for tool in selection.selected_tools] == [definition.name]
+    assert not hasattr(selector, "INTENT_TOOL_MAP")
+
+
 def test_cross_channel_orchestrator_builds_chain_from_tool_metadata():
     tools = [
         ToolDefinition(
