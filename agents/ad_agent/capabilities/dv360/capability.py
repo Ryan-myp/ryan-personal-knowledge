@@ -221,7 +221,6 @@ class DV360Capability(BaseCapability):
             effect_class=ToolEffect.READ,
             replay_policy=ReplayPolicy.SAFE,
             traits=["read", "report"],
-            live_support=False,
         ), DV360GetLineItemReportHandler(api_client)))
 
         for resource_type, resource_id in [("campaign", "campaign_id"), ("io", "io_id"), ("line_item", "line_item_id")]:

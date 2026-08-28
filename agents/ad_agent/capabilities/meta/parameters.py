@@ -117,18 +117,6 @@ def meta_campaign_schema() -> dict[str, Any]:
                 "required": ["lifetime_budget"],
                 "message": "buying_type=RESERVED requires lifetime_budget",
             },
-            {
-                "id": "app_objective_requires_application",
-                "if": {"objective": "OUTCOME_APP_PROMOTION"},
-                "required": ["promoted_object"],
-                "message": "OUTCOME_APP_PROMOTION requires promoted_object",
-            },
-            {
-                "id": "catalog_objective_requires_product_set",
-                "if": {"objective": "PRODUCT_CATALOG_SALES"},
-                "required": ["promoted_object"],
-                "message": "PRODUCT_CATALOG_SALES requires promoted_object",
-            },
         ],
     }
 
@@ -181,7 +169,7 @@ def meta_adset_schema() -> dict[str, Any]:
 def meta_ad_schema() -> dict[str, Any]:
     return {
         "required": ["adset_id", "name"],
-        "provider_any_of": [["creative_id", "object_story_spec"]],
+        "provider_any_of": [["creative_id", "object_story_spec", "creative"]],
         "properties": {
             "adset_id": _field("string", "Parent Ad Set ID"),
             "name": _field("string", "Ad name", maxLength=400),

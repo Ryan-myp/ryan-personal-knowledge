@@ -198,6 +198,7 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
 def tiktok_ad_schema() -> dict[str, Any]:
     return {
         "required": ["adgroup_id", "name"],
+        "provider_required": ["campaign_id"],
         "provider_any_of": [["media", "creatives"]],
         "properties": {
             "adgroup_id": _field("string", "Parent ad group ID"),

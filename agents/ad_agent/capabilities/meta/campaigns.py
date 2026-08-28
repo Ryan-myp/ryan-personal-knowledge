@@ -8,6 +8,7 @@ from ...core.interfaces import (
     ToolContext, RiskLevel, ToolEffect, ReplayPolicy
 )
 from ...api_clients.meta_client import MetaAPIClient
+from ..base import call_with_optional_page_size
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,11 @@ class MetaListCampaignsHandler(ToolHandler):
         account_id = ctx.account_id
         if self.client and account_id:
             try:
-                campaigns = self.client.list_campaigns(account_id)
+                campaigns = call_with_optional_page_size(
+                    self.client.list_campaigns,
+                    account_id,
+                    limit=input_data.get("limit", 25),
+                )
                 return ToolResult.ok({
                     "campaigns": campaigns,
                     "account_id": account_id,
@@ -51,7 +56,14 @@ class MetaGetCampaignHandler(ToolHandler):
         # 如果只有名称没有 ID，先列出 campaigns 找匹配的
         if not campaign_id and campaign_name:
             try:
-                campaigns = self.client.list_campaigns(account_id) if self.client else []
+                campaigns = (
+                    call_with_optional_page_size(
+                        self.client.list_campaigns,
+                        account_id,
+                        limit=input_data.get("limit", 25),
+                    )
+                    if self.client else []
+                )
                 name_lower = campaign_name.lower()
                 for c in campaigns:
                     cname = (c.get("name") or c.get("campaign_name") or "").lower()

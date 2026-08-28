@@ -8,6 +8,7 @@ from ...core.interfaces import (
     ToolContext, RiskLevel, ToolEffect, ReplayPolicy
 )
 from ...api_clients.meta_client import MetaAPIClient
+from ..base import call_with_optional_page_size
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,12 @@ class MetaListAdsHandler(ToolHandler):
                     return ToolResult.error(
                         f"Ad Set {adset_id} does not belong to account {ctx.account_id}"
                     )
-                ads = self.client.list_ads(ctx.account_id, adset_id)
+                ads = call_with_optional_page_size(
+                    self.client.list_ads,
+                    ctx.account_id,
+                    adset_id,
+                    limit=input_data.get("limit", 25),
+                )
                 return ToolResult.ok({"ads": ads, "data_status": "live"})
             except Exception as e:
                 return ToolResult.error(f"Failed to list Meta ads: {e}")

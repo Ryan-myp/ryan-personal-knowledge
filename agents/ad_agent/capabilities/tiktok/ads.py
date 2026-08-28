@@ -8,6 +8,7 @@ from ...core.interfaces import (
     ToolContext, RiskLevel, ToolEffect, ReplayPolicy
 )
 from ...api_clients.tiktok_client import TikTokAPIClient
+from ..base import call_with_optional_page_size
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,13 @@ class TikTokListAdsHandler(ToolHandler):
         adgroup_id = input_data.get("adgroup_id")
         if self.client and ctx.account_id and adgroup_id:
             try:
-                ads = self.client.list_ads(ctx.account_id, adgroup_id)
+                ads = call_with_optional_page_size(
+                    self.client.list_ads,
+                    ctx.account_id,
+                    adgroup_id,
+                    limit=input_data.get("limit", 20),
+                    parameter_names=("page_size", "limit"),
+                )
                 return ToolResult.ok({"ads": ads, "data_status": "live"})
             except Exception as e:
                 return ToolResult.error(f"Failed to list TikTok ads: {e}")
@@ -46,7 +53,7 @@ class TikTokGetAdHandler(ToolHandler):
                 "ad": {
                     "id": ad_id,
                     "name": "Test Ad",
-                    "status": "ENABLED",
+                    "status": input_data.get("status", 1),
                 },
                 "data_status": "offline_no_client",
                 "simulated": True,
@@ -70,7 +77,7 @@ class TikTokCreateAdHandler(ToolHandler):
                 return ToolResult.ok({
                     "ad_id": ad_id,
                     "name": input_data.get("name"),
-                    "status": "ENABLED",
+                    "status": input_data.get("status", 1),
                 })
             except Exception as e:
                 return ToolResult.error(f"Failed to create TikTok ad: {e}")
@@ -78,5 +85,5 @@ class TikTokCreateAdHandler(ToolHandler):
             return ToolResult.ok({
                 "ad_id": f"ad_{adgroup_id}",
                 "name": input_data.get("name"),
-                "status": "ENABLED",
+                "status": input_data.get("status", 1),
             })

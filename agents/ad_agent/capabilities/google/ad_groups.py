@@ -9,6 +9,7 @@ from ...core.interfaces import (
 )
 from ...api_clients.google_ads_client import GoogleAdsAPIClient
 from ._utils import for_customer
+from ..base import call_with_optional_page_size
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,12 @@ class GoogleListAdGroupsHandler(ToolHandler):
         if self.client and campaign_id:
             try:
                 client = for_customer(self.client, ctx.account_id)
-                ad_groups = client.list_ad_groups(campaign_id)
+                ad_groups = call_with_optional_page_size(
+                    client.list_ad_groups,
+                    campaign_id,
+                    limit=input_data.get("limit", 100),
+                    parameter_names=("page_size", "limit"),
+                )
                 return ToolResult.ok({"ad_groups": ad_groups, "data_status": "live"})
             except Exception as e:
                 return ToolResult.error(f"Failed to list Google ad groups: {e}")

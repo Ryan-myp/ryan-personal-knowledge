@@ -122,6 +122,10 @@ Provider live lookup 返回的动态选项会附带短时 `selection_token`。�
 
 当前核心 Harness 已具备：受限 Tool/Skill 契约、统一 Runtime 执行入口、权限/账户白名单、dry-run、显式确认、持久化幂等、workflow checkpoint/lease/recovery、Provider 回查入口，以及 LLM 输出后的二次 schema 校验。结论是“核心骨架符合，尚未达到生产闭环”，不能把当前 72 个工具数或单元测试通过当成 Provider live 已验证。
 
+可用 `python3 agents/ad_agent/scripts/audit_capabilities.py` 做无网络能力审计；它按
+Capability 包约定自动发现渠道，输出 action/resource 矩阵和创建链，不是 Runtime 的第二套
+渠道注册表。
+
 暂留的工程缺口：
 
 - 观察性只保留接入入口，尚未接入 trace、指标、告警和审计检索。
@@ -223,7 +227,8 @@ ad_agent/
 ├── user_skills/
 │   └── orchestrator.py      # 用户层编排 Skill
 └── tests/
-    └── test_ad_agent.py     # 单元测试
+    ├── test_ad_agent.py      # 核心回归测试
+    └── ...                   # Harness、契约与 Provider 回归测试
 ```
 
 ## 扩展新平台

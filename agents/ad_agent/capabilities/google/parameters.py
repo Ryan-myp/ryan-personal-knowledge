@@ -36,6 +36,7 @@ def google_campaign_schema() -> dict[str, Any]:
             "advertising_channel_type": _field(
                 "string", "Channel type", enum=GOOGLE_CHANNEL_TYPES,
                 input_aliases=["campaign_type"], default="SEARCH",
+                intent_field="campaign_type",
             ),
             "campaign_type": _field("string", "Channel type alias", enum=GOOGLE_CHANNEL_TYPES),
             "bidding_strategy": _field(

@@ -19,6 +19,8 @@
   `selection_tokens` 后会校验 user/session/account/tool/field/source 绑定，live 不接受未经 lookup 证明的裸动态 ID。
 - Contract validator 将内置工具数量作为 minimum baseline；新增 Skill/Tool 不需要修改
   中央计数，但仍必须通过统一 schema、权限、重放策略和红线字段校验。
+- `scripts/audit_capabilities.py` 按 Capability 包约定生成 action/resource 矩阵和创建链
+  缺口报告；它是 release gate，不是 Runtime 的第二套渠道注册表。
 
 ## 项目概述
 
@@ -93,7 +95,8 @@ ad_agent/
 │   └── orchestrator.py      # 跨平台编排 Skill
 │
 └── tests/                   # 测试
-    └── test_ad_agent.py     # 核心单元测试（全量 182 个用例通过）
+    ├── test_ad_agent.py      # 核心回归测试
+    └── ...                   # Harness、契约与四渠道回归测试
 ```
 
 ## 快速开始
@@ -144,7 +147,7 @@ python -m pytest agents/ad_agent/tests/ -v
 ```
 
 测试结果：
-- 当前 `agents/ad_agent/tests/`：182 passed
+- 当前 `agents/ad_agent/tests/`：198 passed
 - 覆盖：工具注册、Schema 校验、白名单、dry-run 不调用 Client、跨平台账户、层级 ID 传递、live 确认、持久化和 Runtime 集成
 
 ## 扩展新平台
@@ -191,7 +194,7 @@ Capability。`SKILL.md` 仍只负责自然语言知识、SOP 和安全边界；�
 | 结构化日志 | ✅ | JSON 格式 |
 | Dry-run 模式 | ✅ | 无需调用线上写 API 即可测试 |
 | WriteGuard | ✅ | 持久化幂等、显式确认、unknown 结果保留 reservation、workflow lease/claim 已接入 |
-| 单元测试 | ✅ | 全量 182 个用例 |
+| 单元测试 | ✅ | 全量 198 个用例 |
 | 多平台支持 | ✅ | Meta/Google/TikTok/DV360 |
 | 可扩展性 | ✅ | Capability 与 Provider Client 按包约定自动发现，无需修改中心 Router/Runtime |
 

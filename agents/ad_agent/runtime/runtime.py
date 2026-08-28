@@ -4261,6 +4261,20 @@ class AgentRuntime:
                 tool_input.setdefault("objective", intent.objective)
         if getattr(intent, "campaign_type", None) and "campaign_type" in tool_def.input_schema.properties:
             tool_input.setdefault("campaign_type", intent.campaign_type)
+        # ``campaign_type`` is a common business-level field, but providers
+        # may expose a different wire field (Google uses
+        # ``advertising_channel_type``). The mapping is declared on the
+        # provider field schema so Runtime does not own a provider enum map.
+        if getattr(intent, "campaign_type", None):
+            for param_name, field_schema in tool_def.input_schema.properties.items():
+                if param_name in tool_input or not isinstance(field_schema, dict):
+                    continue
+                if field_schema.get("intent_field") != "campaign_type":
+                    continue
+                mapped = (field_schema.get("intent_map") or {}).get(
+                    str(intent.campaign_type).upper(), intent.campaign_type
+                )
+                tool_input[param_name] = mapped
         if getattr(intent, "date_range", None):
             if "date_range" in tool_def.input_schema.properties:
                 tool_input.setdefault("date_range", intent.date_range)

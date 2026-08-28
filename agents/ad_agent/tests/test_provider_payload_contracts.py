@@ -2,10 +2,64 @@
 
 import json
 
+from agents.ad_agent.capabilities.meta import create_meta_capability
+from agents.ad_agent.capabilities.google import create_google_capability
+from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
+from agents.ad_agent.capabilities.dv360 import create_dv360_capability
+from agents.ad_agent.core.interfaces import ParsedIntent, ToolContext
+from agents.ad_agent.runtime.runtime import AgentRuntime
 from agents.ad_agent.api_clients.dv360_client import DV360APIClient
 from agents.ad_agent.api_clients.google_ads_client import GoogleAdsAPIClient
 from agents.ad_agent.api_clients.meta_client import MetaAPIClient
 from agents.ad_agent.api_clients.tiktok_client import TikTokAPIClient
+
+
+def test_generic_campaign_type_maps_to_google_wire_field():
+    runtime = AgentRuntime()
+    definition = next(
+        definition
+        for definition, _handler in create_google_capability().register_tools()
+        if definition.name == "google_create_campaign"
+    )
+    intent = ParsedIntent(
+        intent_type="create_campaign",
+        raw_input="create DISPLAY campaign",
+        platforms=["google-ads"],
+        campaign_type="DISPLAY",
+        platform_params={"google-ads": {}},
+    )
+
+    tool_input = runtime._build_tool_input(
+        definition,
+        intent,
+        "google-ads",
+        ToolContext(session_id="s1", user_id="u1", account_id="customer-1"),
+    )
+
+    assert tool_input["advertising_channel_type"] == "DISPLAY"
+
+
+def test_existing_creation_contracts_keep_provider_specific_fixes():
+    meta_definitions = {
+        definition.name: definition
+        for definition, _handler in create_meta_capability().register_tools()
+    }
+    assert "creative" in meta_definitions["meta_create_ad"].input_schema.provider_any_of[0]
+    assert not meta_definitions["meta_create_campaign"].input_schema.conditional_rules[1:]
+
+    tiktok_definitions = {
+        definition.name: definition
+        for definition, _handler in create_tiktok_capability().register_tools()
+    }
+    assert tiktok_definitions["tiktok_create_ad"].input_schema.provider_required == [
+        "campaign_id"
+    ]
+
+    dv360_definitions = {
+        definition.name: definition
+        for definition, _handler in create_dv360_capability().register_tools()
+    }
+    assert dv360_definitions["dv360_get_line_item_report"].live_support is True
 
 
 def test_meta_creation_options_are_forwarded_to_provider_payloads():

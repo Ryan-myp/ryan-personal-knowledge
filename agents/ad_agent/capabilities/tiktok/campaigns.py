@@ -8,6 +8,7 @@ from ...core.interfaces import (
     ToolContext, RiskLevel, ToolEffect, ReplayPolicy
 )
 from ...api_clients.tiktok_client import TikTokAPIClient
+from ..base import call_with_optional_page_size
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,12 @@ class TikTokListCampaignsHandler(ToolHandler):
         advertiser_id = ctx.account_id
         if self.client and advertiser_id:
             try:
-                campaigns = self.client.list_campaigns(advertiser_id)
+                campaigns = call_with_optional_page_size(
+                    self.client.list_campaigns,
+                    advertiser_id,
+                    limit=input_data.get("limit", 20),
+                    parameter_names=("page_size", "limit"),
+                )
                 return ToolResult.ok({
                     "campaigns": campaigns,
                     "account_id": advertiser_id,
@@ -51,7 +57,12 @@ class TikTokGetCampaignHandler(ToolHandler):
         if not campaign_id and campaign_name:
             try:
                 if self.client and advertiser_id:
-                    campaigns = self.client.list_campaigns(advertiser_id)
+                    call_with_optional_page_size(
+                        self.client.list_campaigns,
+                        advertiser_id,
+                        limit=input_data.get("limit", 20),
+                        parameter_names=("page_size", "limit"),
+                    )
                     name_lower = campaign_name.lower()
                     for c in campaigns:
                         cname = (c.get("name") or "").lower()

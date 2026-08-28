@@ -8,6 +8,7 @@ from ...core.interfaces import (
     ToolContext, RiskLevel, ToolEffect, ReplayPolicy
 )
 from ...api_clients.dv360_client import DV360APIClient
+from ..base import call_with_optional_page_size
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,12 @@ class DV360ListIOHandler(ToolHandler):
     def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
         if self.client and ctx.account_id:
             try:
-                ios = self.client.list_ios(ctx.account_id, input_data.get("limit", 20))
+                ios = call_with_optional_page_size(
+                    self.client.list_ios,
+                    ctx.account_id,
+                    limit=input_data.get("limit", 20),
+                    parameter_names=("page_size", "limit"),
+                )
                 return ToolResult.ok({"ios": ios, "data_status": "live"})
             except Exception as exc:
                 return ToolResult.error(f"Failed to list DV360 IOs: {exc}")

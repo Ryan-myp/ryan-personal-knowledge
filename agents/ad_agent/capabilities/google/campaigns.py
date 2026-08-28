@@ -9,6 +9,7 @@ from ...core.interfaces import (
 )
 from ...api_clients.google_ads_client import GoogleAdsAPIClient
 from ._utils import for_customer
+from ..base import call_with_optional_page_size
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,11 @@ class GoogleListCampaignsHandler(ToolHandler):
         if self.client and customer_id:
             try:
                 client = for_customer(self.client, customer_id)
-                campaigns = client.list_campaigns()
+                campaigns = call_with_optional_page_size(
+                    client.list_campaigns,
+                    limit=input_data.get("limit", 100),
+                    parameter_names=("page_size", "limit"),
+                )
                 return ToolResult.ok({
                     "campaigns": campaigns,
                     "account_id": customer_id,
@@ -54,7 +59,11 @@ class GoogleGetCampaignHandler(ToolHandler):
             try:
                 if self.client and customer_id:
                     client = for_customer(self.client, customer_id)
-                    campaigns = client.list_campaigns()
+                    campaigns = call_with_optional_page_size(
+                        client.list_campaigns,
+                        limit=input_data.get("limit", 100),
+                        parameter_names=("page_size", "limit"),
+                    )
                     name_lower = campaign_name.lower()
                     for c in campaigns:
                         cname = (c.get("campaign_name") or "").lower()
@@ -99,7 +108,11 @@ class GoogleCreateCampaignHandler(ToolHandler):
                 client = for_customer(self.client, customer_id)
                 campaign_id = client.create_campaign(
                     name=input_data.get("campaign_name") or input_data.get("name"),
-                    advertising_channel_type=input_data.get("advertising_channel_type", "SEARCH"),
+                    advertising_channel_type=(
+                        input_data.get("advertising_channel_type")
+                        or input_data.get("campaign_type")
+                        or "SEARCH"
+                    ),
                     bidding_strategy=input_data.get("bidding_strategy", "MAXIMIZE_CONVERSIONS"),
                     daily_budget=float(input_data.get("budget", input_data.get("daily_budget", 0))),
                     target_cpa_micros=input_data.get("target_cpa_micros"),

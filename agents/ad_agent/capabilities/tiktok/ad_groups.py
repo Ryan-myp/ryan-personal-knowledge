@@ -8,6 +8,7 @@ from ...core.interfaces import (
     ToolContext, RiskLevel, ToolEffect, ReplayPolicy
 )
 from ...api_clients.tiktok_client import TikTokAPIClient
+from ..base import call_with_optional_page_size
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,13 @@ class TikTokListAdGroupsHandler(ToolHandler):
         campaign_id = input_data.get("campaign_id")
         if self.client and ctx.account_id and campaign_id:
             try:
-                adgroups = self.client.list_adgroups(ctx.account_id, campaign_id)
+                adgroups = call_with_optional_page_size(
+                    self.client.list_adgroups,
+                    ctx.account_id,
+                    campaign_id,
+                    limit=input_data.get("limit", 20),
+                    parameter_names=("page_size", "limit"),
+                )
                 return ToolResult.ok({"adgroups": adgroups, "data_status": "live"})
             except Exception as e:
                 return ToolResult.error(f"Failed to list TikTok adgroups: {e}")

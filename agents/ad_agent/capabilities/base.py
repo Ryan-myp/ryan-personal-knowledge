@@ -8,6 +8,7 @@ capabilities/base.py - 平台 Capability 基类
 """
 
 import hashlib
+import inspect
 import threading
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -28,6 +29,33 @@ PROTECTED_UPDATE_FIELDS = frozenset({
     "developerkey", "bcid", "partnerid", "mcc",
     "authorization", "credential", "credentials", "perterid",
 })
+
+
+def call_with_optional_page_size(
+    method: Callable,
+    *args: Any,
+    limit: Any = None,
+    parameter_names: tuple[str, ...] = ("limit", "page_size"),
+) -> Any:
+    """Pass paging to adapters that advertise it, preserving old adapters.
+
+    Provider clients are intentionally replaceable.  A read-only handler must
+    not force every test/custom client to grow a paging keyword just because
+    the built-in adapter exposes one.  Signature inspection also avoids a
+    broad ``TypeError`` retry that could accidentally duplicate a call when
+    the provider method itself raises a TypeError.
+    """
+    try:
+        parameters = inspect.signature(method).parameters
+    except (TypeError, ValueError):
+        return method(*args)
+    # ``**kwargs`` alone is not evidence that an adapter consumes paging;
+    # permissive test doubles commonly expose every method that way. Only an
+    # explicitly named parameter opts into the additional argument.
+    name = next((candidate for candidate in parameter_names if candidate in parameters), None)
+    if name is None or limit is None:
+        return method(*args)
+    return method(*args, **{name: limit})
 
 
 def protected_update_paths(value: Any, path: str = "") -> list[str]:
