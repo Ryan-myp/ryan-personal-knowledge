@@ -6,6 +6,7 @@ author: Ryan
 created: 2026-08-14
 updated: 2026-08-14
 tags: [dv360, display-video, google, programmatic, dsp, advertising, line-item, creative]
+aliases: [display video, dio]
 ---
 
 # Display & Video 360 完整专家技能 v2.0

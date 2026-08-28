@@ -291,12 +291,9 @@ class AgentRuntime:
         # Reconciliation is provider-owned. Built-in adapters use only
         # registered read tools; custom providers can replace/extend them
         # without adding provider branches to the Runtime.
-        self._provider_reconcilers: dict[str, ProviderReconciler] = {
-            "meta": ToolReadbackReconciler("meta"),
-            "google-ads": ToolReadbackReconciler("google-ads"),
-            "tiktok": ToolReadbackReconciler("tiktok"),
-            "dv360": ToolReadbackReconciler("dv360"),
-        }
+        # Custom provider reconcilers are optional. The default reconciler
+        # discovers a matching read Tool from registered metadata at use time.
+        self._provider_reconcilers: dict[str, ProviderReconciler] = {}
         for platform, reconciler in (provider_reconcilers or {}).items():
             if not isinstance(reconciler, ProviderReconciler):
                 raise TypeError("provider reconciler must implement ProviderReconciler")
@@ -601,6 +598,19 @@ class AgentRuntime:
                 for definition in self.registry.list_all()
                 for intent in (getattr(definition, "intent_types", []) or [])
             )
+        if hasattr(self.intent_parser, "register_platforms"):
+            self.intent_parser.register_platforms(
+                definition.platform for definition in self.registry.list_all()
+            )
+        if hasattr(self.intent_parser, "register_tool_schemas"):
+            schemas_by_platform: dict[str, list[dict]] = {}
+            for definition in self.registry.list_all():
+                if definition.input_schema is not None:
+                    schemas_by_platform.setdefault(definition.platform, []).append(
+                        definition.input_schema.to_dict()
+                    )
+            for schema_platform, schemas in schemas_by_platform.items():
+                self.intent_parser.register_tool_schemas(schema_platform, schemas)
 
         # Capability.configure() registers platform tools before returning.
         # Apply the read-only boundary immediately so callers cannot forget a
@@ -933,6 +943,11 @@ class AgentRuntime:
 
     def _register_skill(self, skill: Skill) -> None:
         """将 Skill 的工具注册到 Registry"""
+        if hasattr(self.intent_parser, "register_platform_aliases"):
+            self.intent_parser.register_platform_aliases(
+                getattr(skill, "platform", ""),
+                getattr(skill, "platform_aliases", []) or [],
+            )
         registered_names: list[str] = []
         for tool_def in skill.get_tools():
             skill_platform = self._canonical_platform(skill.platform)
@@ -1080,6 +1095,24 @@ class AgentRuntime:
                 for definition, _handler in tools
                 for intent in (getattr(definition, "intent_types", []) or [])
             )
+        if hasattr(self.intent_parser, "register_platforms"):
+            self.intent_parser.register_platforms(
+                definition.platform for definition, _handler in tools
+            )
+        if hasattr(self.intent_parser, "register_platform_aliases"):
+            self.intent_parser.register_platform_aliases(
+                canonical_platform,
+                getattr(skill, "platform_aliases", []) or [],
+            )
+        if hasattr(self.intent_parser, "register_tool_schemas"):
+            schemas_by_platform: dict[str, list[dict]] = {}
+            for definition, _handler in tools:
+                if definition.input_schema is not None:
+                    schemas_by_platform.setdefault(definition.platform, []).append(
+                        definition.input_schema.to_dict()
+                    )
+            for schema_platform, schemas in schemas_by_platform.items():
+                self.intent_parser.register_tool_schemas(schema_platform, schemas)
         
         # 注册工具
         registered_count = 0
@@ -2696,6 +2729,63 @@ class AgentRuntime:
             "confirmation_payload": None,
         }
 
+    def _resolve_readback_definition(self, write_tool: str):
+        """Find the read Tool matching a write Tool's resource metadata."""
+        try:
+            write_definition, _handler = self._get_registered_tool(write_tool)
+        except KeyError:
+            return None
+        platform = self._canonical_platform(write_definition.platform)
+        expected_name = write_tool
+        for action in ("create", "update"):
+            expected_name = expected_name.replace(f"_{action}_", "_get_")
+        candidates = []
+        for definition in self.registry.list_all():
+            if not definition.is_read_tool:
+                continue
+            if self._canonical_platform(definition.platform) != platform:
+                continue
+            if definition.action != "get" or definition.resource_type != write_definition.resource_type:
+                continue
+            score = 1 if definition.name == expected_name else 0
+            candidates.append((score, definition))
+        if not candidates:
+            return None
+        return sorted(candidates, key=lambda item: (-item[0], item[1].name))[0][1]
+
+    def _find_campaign_report_tool(self, platform: str):
+        """Discover a campaign report Tool from registered metadata.
+
+        Cross-channel aggregation is a shared concern, but the report
+        endpoint belongs to each provider Capability.  Prefer a read-only
+        report Tool that accepts campaign IDs and let providers expose their
+        own naming/schema without editing this Runtime.
+        """
+        normalized = self._canonical_platform(platform)
+        candidates = []
+        for definition in self.registry.list_all():
+            if self._canonical_platform(definition.platform) != normalized:
+                continue
+            if not definition.is_read_tool:
+                continue
+            properties = getattr(definition.input_schema, "properties", {}) or {}
+            if not ({"campaign_id", "campaign_ids"} & set(properties)):
+                continue
+            name = str(definition.name).lower()
+            action = str(getattr(definition, "action", "")).lower()
+            resource = str(getattr(definition, "resource_type", "")).lower()
+            if action not in {"report", "export", "download"} and resource != "report":
+                continue
+            score = (
+                2 if "campaign" in name else 0,
+                1 if "report" in name else 0,
+                1 if "campaign_ids" in properties else 0,
+            )
+            candidates.append((score, definition))
+        if not candidates:
+            return None
+        return sorted(candidates, key=lambda item: (-item[0][0], -item[0][1], -item[0][2], item[1].name))[0][1]
+
     def _collect_cross_channel_metrics(
         self,
         intent: ParsedIntent,
@@ -2724,14 +2814,6 @@ class AgentRuntime:
         }:
             return
 
-        report_tools = {
-            "meta": "meta_get_campaign_report",
-            "google": "google_get_campaign_report",
-            "tiktok": "tiktok_get_campaign_report",
-            # DV360 currently has no verified campaign-level report adapter.
-            # Do not silently substitute a Line Item report in a Campaign
-            # comparison; that would produce a semantically incorrect result.
-        }
         already_collected = {item.get("tool") for item in results}
         listing_results = {
             item.get("platform"): item
@@ -2740,12 +2822,8 @@ class AgentRuntime:
         }
 
         for platform, listing in listing_results.items():
-            report_name = report_tools.get(platform)
-            if not report_name or report_name in already_collected:
-                continue
-            try:
-                report_def, _ = self._get_registered_tool(report_name)
-            except KeyError:
+            report_def = self._find_campaign_report_tool(platform)
+            if not report_def or report_def.name in already_collected:
                 continue
 
             listing_data = listing.get("data") if isinstance(listing.get("data"), dict) else {}
@@ -2775,7 +2853,7 @@ class AgentRuntime:
             )
             if permission_error:
                 results.append({
-                    "tool": report_name,
+                    "tool": report_def.name,
                     "platform": platform,
                     "success": False,
                     "error": permission_error,
@@ -2787,7 +2865,7 @@ class AgentRuntime:
             )
             if not allowed:
                 results.append({
-                    "tool": report_name,
+                    "tool": report_def.name,
                     "platform": platform,
                     "success": False,
                     "error": f"指标采集账户校验失败: {account_error}",
@@ -2808,7 +2886,10 @@ class AgentRuntime:
                     report_input.setdefault("date_range", intent.date_range)
                 if "date_preset" in report_def.input_schema.properties:
                     report_input.setdefault(
-                        "date_preset", self._platform_date_range(platform, intent.date_range)
+                        "date_preset",
+                        self._platform_date_range(
+                            platform, intent.date_range, report_def, "date_preset"
+                        ),
                     )
             if "campaign_ids" in report_def.input_schema.properties:
                 report_input["campaign_ids"] = campaign_ids
@@ -2824,7 +2905,7 @@ class AgentRuntime:
             missing = validate_tool_input(report_def.input_schema, report_input)
             if missing:
                 results.append({
-                    "tool": report_name,
+                    "tool": report_def.name,
                     "platform": platform,
                     "success": False,
                     "error": f"指标采集参数不完整: {missing}",
@@ -2836,10 +2917,10 @@ class AgentRuntime:
             started_at = datetime.now().isoformat()
             try:
                 report_result = self._execute_tool(
-                    session.ctx, report_name, report_input, request_clients
+                    session.ctx, report_def.name, report_input, request_clients
                 )
                 results.append({
-                    "tool": report_name,
+                    "tool": report_def.name,
                     "platform": platform,
                     "success": report_result.success,
                     "account_id": per_platform_account,
@@ -2847,16 +2928,16 @@ class AgentRuntime:
                     "error": self._redact_for_persistence(report_result.error),
                     "needs_confirmation": report_result.requires_confirmation,
                 })
-                session.save_result(report_name, report_result, platform=actual_platform)
+                session.save_result(report_def.name, report_result, platform=actual_platform)
                 session.ctx.protected_state.update(session.protected_state)
                 self._persist_tool_result(
                     session, turn_id, report_def, actual_platform,
                     report_input, report_result,
                 )
             except Exception as exc:
-                logger.exception("跨渠道指标采集失败: %s", report_name)
+                logger.exception("跨渠道指标采集失败: %s", report_def.name)
                 results.append({
-                    "tool": report_name,
+                    "tool": report_def.name,
                     "platform": platform,
                     "success": False,
                     "error": f"跨渠道指标采集失败: {exc}",
@@ -3890,15 +3971,18 @@ class AgentRuntime:
         }
     
     @staticmethod
-    def _platform_date_range(platform: str, date_range: Any) -> Any:
-        """Map common date-range vocabulary to a platform contract."""
-        if not isinstance(date_range, str):
+    def _platform_date_range(
+        platform: str, date_range: Any, tool_def: Any = None, field_name: str = "date_preset",
+    ) -> Any:
+        """Apply a provider-owned date mapping declared by the Tool Schema."""
+        if not isinstance(date_range, str) or tool_def is None:
             return date_range
-        if platform == "meta":
-            return date_range.lower().replace("_days", "d")
-        if platform == "google":
-            return date_range.upper()
-        return date_range
+        properties = getattr(getattr(tool_def, "input_schema", None), "properties", {}) or {}
+        field_schema = properties.get(field_name, {})
+        if not isinstance(field_schema, dict):
+            return date_range
+        mapping = field_schema.get("intent_map") or {}
+        return mapping.get(date_range, mapping.get(date_range.upper(), date_range))
 
     @staticmethod
     def _normalize_provider_updates(tool_def: Any, updates: dict[str, Any]) -> dict[str, Any]:
@@ -4064,7 +4148,10 @@ class AgentRuntime:
                 tool_input.setdefault("date_range", intent.date_range)
             if "date_preset" in tool_def.input_schema.properties:
                 tool_input.setdefault(
-                    "date_preset", self._platform_date_range(platform, intent.date_range)
+                    "date_preset",
+                    self._platform_date_range(
+                        platform, intent.date_range, tool_def, "date_preset"
+                    ),
                 )
         if intent.creative_materials and "creative_materials" not in tool_input:
             tool_input["creative_materials"] = intent.creative_materials
@@ -5146,9 +5233,7 @@ class AgentRuntime:
                 })
                 continue
 
-            reconciler = self._provider_reconcilers.get(platform)
-            if reconciler is None:
-                raise ValueError(f"no ProviderReconciler registered for platform {platform}")
+            reconciler = self._provider_reconcilers.get(platform) or ToolReadbackReconciler(platform)
 
             ctx = ToolContext(
                 session_id=str(workflow.get("session_id") or ""),
@@ -5176,6 +5261,7 @@ class AgentRuntime:
                     item=item,
                     tool_context=ctx,
                     execute_read=execute_read,
+                    resolve_read_tool=self._resolve_readback_definition,
                 )
             )
             if not isinstance(observation, ReconciliationObservation):

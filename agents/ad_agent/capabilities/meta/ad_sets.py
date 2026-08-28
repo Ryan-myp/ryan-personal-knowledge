@@ -28,7 +28,7 @@ class MetaListAdSetsHandler(ToolHandler):
                         f"Campaign {campaign_id} does not belong to account {account_id}"
                     )
                 ad_sets = self.client.list_adsets(account_id, campaign_id)
-                return ToolResult.ok({"ad_sets": ad_sets})
+                return ToolResult.ok({"ad_sets": ad_sets, "data_status": "live"})
             except Exception as e:
                 return ToolResult.error(f"Failed to list Meta ad sets: {e}")
         else:
@@ -50,14 +50,18 @@ class MetaGetAdSetHandler(ToolHandler):
                         f"Ad Set {adset_id} does not belong to account {ctx.account_id}"
                     )
                 adset = self.client.get_adset(adset_id)
-                return ToolResult.ok({"adset": adset})
+                return ToolResult.ok({"adset": adset, "data_status": "live"})
             except Exception as e:
                 return ToolResult.error(f"Failed to get Meta adset: {e}")
         else:
             return ToolResult.ok({
-                "id": adset_id,
-                "name": "Test AdSet",
-                "status": "ACTIVE",
+                "adset": {
+                    "id": adset_id,
+                    "name": "Test AdSet",
+                    "status": "ACTIVE",
+                },
+                "data_status": "offline_no_client",
+                "simulated": True,
             })
 
 
@@ -83,7 +87,9 @@ class MetaCreateAdSetHandler(ToolHandler):
                 return ToolResult.ok({
                     "adset_id": adset_id,
                     "name": input_data.get("name"),
-                    "status": "ACTIVE",
+                    # The client creates Ad Sets paused by default unless the
+                    # request explicitly selected another provider status.
+                    "status": input_data.get("status", "PAUSED"),
                 })
             except Exception as e:
                 return ToolResult.error(f"Failed to create Meta adset: {e}")

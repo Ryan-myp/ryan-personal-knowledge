@@ -27,7 +27,7 @@ class MetaListAdsHandler(ToolHandler):
                         f"Ad Set {adset_id} does not belong to account {ctx.account_id}"
                     )
                 ads = self.client.list_ads(ctx.account_id, adset_id)
-                return ToolResult.ok({"ads": ads})
+                return ToolResult.ok({"ads": ads, "data_status": "live"})
             except Exception as e:
                 return ToolResult.error(f"Failed to list Meta ads: {e}")
         else:
@@ -49,14 +49,18 @@ class MetaGetAdHandler(ToolHandler):
                         f"Ad {ad_id} does not belong to account {ctx.account_id}"
                     )
                 ad = self.client.get_ad(ad_id)
-                return ToolResult.ok({"ad": ad})
+                return ToolResult.ok({"ad": ad, "data_status": "live"})
             except Exception as e:
                 return ToolResult.error(f"Failed to get Meta ad: {e}")
         else:
             return ToolResult.ok({
-                "id": ad_id,
-                "name": "Test Ad",
-                "status": "ACTIVE",
+                "ad": {
+                    "id": ad_id,
+                    "name": "Test Ad",
+                    "status": "ACTIVE",
+                },
+                "data_status": "offline_no_client",
+                "simulated": True,
             })
 
 
@@ -82,7 +86,7 @@ class MetaCreateAdHandler(ToolHandler):
                 return ToolResult.ok({
                     "ad_id": ad_id,
                     "name": input_data.get("name"),
-                    "status": "ACTIVE",
+                    "status": input_data.get("status", "PAUSED"),
                 })
             except Exception as e:
                 return ToolResult.error(f"Failed to create Meta ad: {e}")

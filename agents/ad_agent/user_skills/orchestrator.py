@@ -8,7 +8,7 @@ user_skills/orchestrator.py - 跨平台编排 Skill
 """
 
 import json
-from typing import Any
+from typing import Any, Iterable, Optional
 from ..core.interfaces import (
     ToolDefinition, ToolHandler, ToolSchema, ToolResult,
     ToolContext, RiskLevel, ToolEffect, ReplayPolicy
@@ -29,8 +29,9 @@ class AdCampaignOrchestratorHandler(ToolHandler):
     - 返回可执行的步骤列表（含确认卡片）
     """
     
-    def __init__(self, intent_router=None):
+    def __init__(self, intent_router=None, available_tools: Optional[Iterable[ToolDefinition]] = None):
         self.intent_router = intent_router
+        self.available_tools = list(available_tools or [])
     
     def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
         """
@@ -48,6 +49,7 @@ class AdCampaignOrchestratorHandler(ToolHandler):
         objective = input_data.get("objective", "sales")
         budget = input_data.get("budget", 100)
         materials = input_data.get("creative_materials", [])
+        platform_params = input_data.get("platform_params") or {}
         
         # 构建结构化意图
         intent = ParsedIntent(
@@ -57,7 +59,7 @@ class AdCampaignOrchestratorHandler(ToolHandler):
             objective=objective,
             budget=budget,
             creative_materials=materials,
-            platform_params={p: {} for p in platforms},
+            platform_params={p: dict(platform_params.get(p) or {}) for p in platforms},
         )
         
         # 生成分步执行计划
@@ -82,87 +84,70 @@ class AdCampaignOrchestratorHandler(ToolHandler):
         """构建各平台的执行步骤"""
         plan = []
         
-        platform_configs = {
-            "meta": {
-                "tool_sequence": ["meta_create_campaign", "meta_create_adset", "meta_create_ad"],
-                "params_template": {
-                    "campaign_name": f"{intent.objective or 'sales'}_campaign",
-                    "objective": self._map_objective_to_meta(intent.objective),
-                    "budget": intent.budget or 100,
-                }
-            },
-            "google": {
-                "tool_sequence": ["google_create_campaign", "google_create_ad_group", "google_create_ad"],
-                "params_template": {
-                    "campaign_name": f"{intent.objective or 'sales'}_campaign",
-                    "advertising_channel_type": self._map_objective_to_google(intent.objective),
-                    "bidding_strategy": "MAXIMIZE_CONVERSIONS",
-                    "campaign_budget": intent.budget or 100,
-                }
-            },
-            "tiktok": {
-                "tool_sequence": ["tiktok_create_campaign", "tiktok_create_adgroup", "tiktok_create_ad"],
-                "params_template": {
-                    "campaign_name": f"{intent.objective or 'sales'}_campaign",
-                    "objective": self._map_objective_to_tiktok(intent.objective),
-                    "budget": intent.budget or 50,
-                }
-            },
-            "dv360": {
-                "tool_sequence": ["dv360_create_campaign", "dv360_create_io", "dv360_create_line_item"],
-                "params_template": {
-                    "campaign_name": f"{intent.objective or 'brand'}_campaign",
-                    "goal_type": "IMPRESSIONS",
-                }
-            },
-        }
-        
         for platform in intent.platforms:
-            config = platform_configs.get(platform, {})
+            tools = self._creation_tools(platform)
+            params = {
+                "name": f"{intent.objective or 'sales'}_campaign",
+                "objective": intent.objective,
+                "budget": intent.budget or 100,
+            }
+            params.update(intent.platform_params.get(platform, {}) or {})
             plan.append({
                 "platform": platform,
-                "tools": config.get("tool_sequence", []),
-                "params": config.get("params_template", {}),
+                "tools": [tool.name for tool in tools],
+                "params": params,
                 "description": self._get_platform_description(platform),
             })
         
         return plan
-    
-    def _map_objective_to_meta(self, objective: str) -> str:
-        mapping = {
-            "sales": "OUTCOME_SALES",
-            "leads": "OUTCOME_LEADS",
-            "traffic": "OUTCOME_TRAFFIC",
-            "brand": "OUTCOME_ENGAGEMENT",
-        }
-        return mapping.get(objective, "OUTCOME_SALES")
-    
-    def _map_objective_to_google(self, objective: str) -> str:
-        mapping = {
-            "sales": "SHOPPING",
-            "leads": "SEARCH",
-            "traffic": "SEARCH",
-            "brand": "DISPLAY",
-        }
-        return mapping.get(objective, "SEARCH")
-    
-    def _map_objective_to_tiktok(self, objective: str) -> str:
-        mapping = {
-            "sales": "PRODUCT_SALES",
-            "leads": "LEAD_GENERATION",
-            "traffic": "TRAFFIC",
-            "brand": "BRAND_AWARENESS",
-        }
-        return mapping.get(objective, "PRODUCT_SALES")
+
+    def _creation_tools(self, platform: str) -> list[ToolDefinition]:
+        """Discover a provider's creation chain from Tool metadata.
+
+        The orchestrator intentionally has no provider map.  A Capability
+        publishes ``action``, ``resource_type`` and ``parent_resource_type``;
+        this method turns those declarations into a stable parent-before-child
+        plan for any registered platform.
+        """
+        normalized = self._normalize_platform(platform)
+        tools = [
+            tool for tool in self.available_tools
+            if self._normalize_platform(tool.platform) == normalized
+            and tool.action == "create"
+            and "create_campaign" in (tool.intent_types or [])
+        ]
+        remaining = list(tools)
+        ordered: list[ToolDefinition] = []
+        created_resources: set[str] = set()
+        while remaining:
+            ready = [
+                tool for tool in remaining
+                if not tool.parent_resource_type
+                or tool.parent_resource_type in created_resources
+            ]
+            if not ready:
+                # Keep malformed/custom graphs visible in the plan rather than
+                # silently dropping a provider's declared creation Tool.
+                ready = remaining[:1]
+            for tool in ready:
+                ordered.append(tool)
+                remaining.remove(tool)
+                created_resources.add(tool.resource_type)
+        return ordered
+
+    @staticmethod
+    def _normalize_platform(platform: str) -> str:
+        value = str(platform or "").strip().lower()
+        return {"google": "google-ads", "google_ads": "google-ads"}.get(value, value)
     
     def _get_platform_description(self, platform: str) -> str:
-        descs = {
-            "meta": "Meta（Facebook + Instagram）广告投放",
-            "google": "Google Ads 广告投放",
-            "tiktok": "TikTok Ads 广告投放",
-            "dv360": "DV360 程序化广告投放",
-        }
-        return descs.get(platform, platform)
+        tools = [
+            tool for tool in self.available_tools
+            if self._normalize_platform(tool.platform) == self._normalize_platform(platform)
+        ]
+        if tools:
+            return f"{platform}：{tools[0].skill}"
+        return platform
 
 
 class AdCampaignOrchestratorSkill:
@@ -174,6 +159,9 @@ class AdCampaignOrchestratorSkill:
     """
     
     TOOL_NAME = "ad_campaign_orchestrator"
+
+    def __init__(self, available_tools: Optional[Iterable[ToolDefinition]] = None):
+        self.available_tools = list(available_tools or [])
     
     def get_tool_definition(self) -> ToolDefinition:
         return ToolDefinition(
@@ -182,8 +170,7 @@ class AdCampaignOrchestratorSkill:
             platform="multi_platform",
             description=(
                 "跨平台广告投放编排工具。接受用户的自然语言投放需求，"
-                "自动生成多平台广告创建计划并返回确认卡片。"
-                "支持 Meta、Google Ads、TikTok、DV360 四大平台。"
+                "根据已注册平台 Capability 的 Tool 元数据生成广告创建计划并返回确认卡片。"
             ),
             input_schema=ToolSchema(
                 required=["user_input"],
@@ -194,6 +181,7 @@ class AdCampaignOrchestratorSkill:
                     "budget": {"type": "number", "description": "每日预算（元）"},
                     "duration_days": {"type": "integer", "description": "投放天数"},
                     "creative_materials": {"type": "array", "description": "素材列表"},
+                    "platform_params": {"type": "object", "description": "各平台或 Tool 的额外参数"},
                 }
             ),
             risk_level=RiskLevel.LOW,
@@ -203,10 +191,10 @@ class AdCampaignOrchestratorSkill:
         )
     
     def get_handler(self) -> ToolHandler:
-        return AdCampaignOrchestratorHandler()
+        return AdCampaignOrchestratorHandler(available_tools=self.available_tools)
 
 
-def create_orchestrator_skill():
+def create_orchestrator_skill(available_tools: Optional[Iterable[ToolDefinition]] = None):
     """工厂函数：创建编排 Skill"""
-    skill = AdCampaignOrchestratorSkill()
+    skill = AdCampaignOrchestratorSkill(available_tools=available_tools)
     return skill.get_tool_definition(), skill.get_handler()

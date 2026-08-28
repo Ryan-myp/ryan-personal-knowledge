@@ -121,8 +121,11 @@ class TikTokCapability(BaseCapability):
             platform="tiktok",
             description="查询 TikTok Ads Ad Group 详情。",
             input_schema=ToolSchema(
-                required=["adgroup_id"],
-                properties={"adgroup_id": {"type": "string"}},
+                required=["campaign_id", "adgroup_id"],
+                properties={
+                    "campaign_id": {"type": "string"},
+                    "adgroup_id": {"type": "string"},
+                },
             ),
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
@@ -167,8 +170,11 @@ class TikTokCapability(BaseCapability):
             platform="tiktok",
             description="查询 TikTok Ads Ad 详情。",
             input_schema=ToolSchema(
-                required=["ad_id"],
-                properties={"ad_id": {"type": "string"}},
+                required=["adgroup_id", "ad_id"],
+                properties={
+                    "adgroup_id": {"type": "string"},
+                    "ad_id": {"type": "string"},
+                },
             ),
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,

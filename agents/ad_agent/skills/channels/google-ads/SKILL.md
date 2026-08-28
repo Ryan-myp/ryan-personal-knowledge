@@ -5,6 +5,7 @@ version: 1.0.0
 author: Ryan
 created: 2026-08-14
 tags: [google, ads, api, google-ads, bidding, reporting, advertising]
+aliases: [gads, 谷歌]
 ---
 
 # Google Ads API 专家技能

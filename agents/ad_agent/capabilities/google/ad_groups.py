@@ -23,7 +23,7 @@ class GoogleListAdGroupsHandler(ToolHandler):
             try:
                 client = for_customer(self.client, ctx.account_id)
                 ad_groups = client.list_ad_groups(campaign_id)
-                return ToolResult.ok({"ad_groups": ad_groups})
+                return ToolResult.ok({"ad_groups": ad_groups, "data_status": "live"})
             except Exception as e:
                 return ToolResult.error(f"Failed to list Google ad groups: {e}")
         else:
@@ -40,14 +40,18 @@ class GoogleGetAdGroupHandler(ToolHandler):
             try:
                 client = for_customer(self.client, ctx.account_id)
                 ad_group = client.get_ad_group(ad_group_id)
-                return ToolResult.ok({"ad_group": ad_group})
+                return ToolResult.ok({"ad_group": ad_group, "data_status": "live"})
             except Exception as e:
                 return ToolResult.error(f"Failed to get Google ad group: {e}")
         else:
             return ToolResult.ok({
-                "id": ad_group_id,
-                "name": "Test Ad Group",
-                "status": "ENABLED",
+                "ad_group": {
+                    "id": ad_group_id,
+                    "name": "Test Ad Group",
+                    "status": "PAUSED",
+                },
+                "data_status": "offline_no_client",
+                "simulated": True,
             })
 
 
@@ -72,7 +76,8 @@ class GoogleCreateAdGroupHandler(ToolHandler):
                 return ToolResult.ok({
                     "ad_group_id": ad_group_id,
                     "name": input_data.get("name"),
-                    "status": "ENABLED",
+                    # Google mutate adapters default new resources to PAUSED.
+                    "status": input_data.get("status", "PAUSED"),
                 })
             except Exception as e:
                 return ToolResult.error(f"Failed to create Google ad group: {e}")

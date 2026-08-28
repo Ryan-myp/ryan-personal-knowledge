@@ -5,6 +5,7 @@ version: 1.0.0
 author: Ryan
 created: 2026-08-14
 tags: [meta, facebook, instagram, marketing-api, pixel, capi, advertising]
+aliases: [facebook, instagram, fb]
 ---
 
 # Meta Marketing API 专家技能

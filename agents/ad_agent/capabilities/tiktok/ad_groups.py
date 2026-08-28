@@ -21,7 +21,7 @@ class TikTokListAdGroupsHandler(ToolHandler):
         if self.client and ctx.account_id and campaign_id:
             try:
                 adgroups = self.client.list_adgroups(ctx.account_id, campaign_id)
-                return ToolResult.ok({"adgroups": adgroups})
+                return ToolResult.ok({"adgroups": adgroups, "data_status": "live"})
             except Exception as e:
                 return ToolResult.error(f"Failed to list TikTok adgroups: {e}")
         else:
@@ -34,19 +34,24 @@ class TikTokGetAdGroupHandler(ToolHandler):
 
     def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
         adgroup_id = input_data.get("adgroup_id")
-        if self.client and ctx.account_id and input_data.get("campaign_id"):
+        campaign_id = input_data.get("campaign_id")
+        if self.client and ctx.account_id and campaign_id and adgroup_id:
             try:
                 adgroup = self.client.get_adgroup(
-                    ctx.account_id, input_data.get("campaign_id"), adgroup_id
+                    ctx.account_id, campaign_id, adgroup_id
                 )
-                return ToolResult.ok({"adgroup": adgroup})
+                return ToolResult.ok({"adgroup": adgroup, "data_status": "live"})
             except Exception as e:
                 return ToolResult.error(f"Failed to get TikTok adgroup: {e}")
         else:
             return ToolResult.ok({
-                "id": adgroup_id,
-                "name": "Test AdGroup",
-                "status": "ENABLED",
+                "adgroup": {
+                    "id": adgroup_id,
+                    "name": "Test AdGroup",
+                    "status": "ENABLED",
+                },
+                "data_status": "offline_no_client",
+                "simulated": True,
             })
 
 

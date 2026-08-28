@@ -36,7 +36,7 @@ class LLMIntentParser(IntentParser):
 请输出 JSON 格式（不要输出其他内容）：
 {{
   "intent_type": "create_campaign | create_asset_group | create_creative | update_campaign | update_adset | update_adgroup | update_ad | pause_campaign | resume_campaign | cross_channel_overview | cross_channel_compare | cross_channel_performance_insights | cross_channel_optimize_budget | cross_channel_export_report | cross_channel_batch_pause | cross_channel_batch_resume | cross_channel_batch_update_budget | boost_post | run_remarketing | download_report",
-  "platforms": ["meta", "google", "tiktok", "dv360"],
+  "platforms": ["当前 Runtime 已注册的平台标识"],
   "objective": "sales | leads | traffic | brand",
   "campaign_type": "平台 Campaign 类型，如 SEARCH / SHOPPING / APP_INSTALL",
   "budget_daily": 100,
@@ -46,8 +46,7 @@ class LLMIntentParser(IntentParser):
     {{"type": "image", "description": "海报图"}}
   ],
   "platform_params": {{
-    "meta": {{}},
-    "google": {{}}
+    "<platform>": {{"<provider_field>": "<value>"}}
   }}
 }}
 
@@ -57,11 +56,7 @@ class LLMIntentParser(IntentParser):
 - traffic：网站流量
 - brand：品牌曝光
 
-平台说明：
-- meta：Facebook/Instagram 广告
-- google：Google Ads
-- tiktok：TikTok Ads
-- dv360：Display & Video 360
+平台说明：只能从当前 Runtime 已注册的平台中选择；平台 Skill 会提供自然语言别名和参数语义。
 """.strip()
 
     def __init__(self, llm_client=None):
@@ -72,10 +67,62 @@ class LLMIntentParser(IntentParser):
         """
         self._llm = llm_client
         self._custom_intents: set[str] = set()
+        # Built-ins provide useful natural-language aliases. Additional
+        # platforms are published by Runtime when their Capability/Skill is
+        # registered; the parser must not need a central channel edit.
+        self._platform_aliases: dict[str, str] = {
+            "meta": "meta", "facebook": "meta", "instagram": "meta", "ins": "meta",
+            "google": "google", "google ads": "google", "google-ads": "google",
+            "google_ads": "google", "gads": "google", "谷歌": "google",
+            "tiktok": "tiktok", "抖音": "tiktok",
+            "dv360": "dv360", "display video": "dv360", "dio": "dv360",
+        }
+        self._known_platforms: set[str] = {"meta", "google", "tiktok", "dv360"}
+        self._platform_field_specs: dict[str, dict[str, dict]] = {}
 
     def register_intents(self, intents: set[str] | list[str]) -> None:
         """Allow registered Skills to extend the intent contract safely."""
         self._custom_intents.update(str(intent) for intent in (intents or []))
+
+    def register_platforms(self, platforms: set[str] | list[str]) -> None:
+        """Publish platform identifiers from registered Capabilities/Skills."""
+        for platform in platforms or []:
+            value = str(platform or "").strip().lower()
+            if not value:
+                continue
+            canonical = {"google-ads": "google", "google_ads": "google"}.get(value, value)
+            self._known_platforms.add(canonical)
+            self._platform_aliases.setdefault(value, canonical)
+            self._platform_aliases.setdefault(value.replace("-", " "), canonical)
+            self._platform_aliases.setdefault(value.replace("_", " "), canonical)
+
+    def register_platform_aliases(self, platform: str, aliases: list[str] | set[str]) -> None:
+        """Publish Skill-owned natural-language aliases for a platform."""
+        value = str(platform or "").strip().lower()
+        if not value:
+            return
+        self.register_platforms([value])
+        canonical = {"google-ads": "google", "google_ads": "google"}.get(value, value)
+        for alias in aliases or []:
+            text = str(alias or "").strip().lower()
+            if text:
+                self._platform_aliases[text] = canonical
+
+    def register_tool_schemas(self, platform: str, schemas: list[dict] | tuple[dict, ...]) -> None:
+        """Publish provider fields so rule parsing also remains extensible."""
+        value = str(platform or "").strip().lower()
+        canonical = {"google-ads": "google", "google_ads": "google"}.get(value, value)
+        if not canonical:
+            return
+        self.register_platforms([canonical])
+        fields = self._platform_field_specs.setdefault(canonical, {})
+        for schema in schemas or []:
+            properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
+            if not isinstance(properties, dict):
+                continue
+            for field, spec in properties.items():
+                if isinstance(spec, dict):
+                    fields[str(field)] = dict(spec)
     
     def inject_llm(self, llm_client) -> None:
         """注入自定义 LLM 客户端"""
@@ -94,6 +141,10 @@ class LLMIntentParser(IntentParser):
     def _parse_with_llm(self, user_input: str, context: ToolContext) -> ParsedIntent:
         """使用 LLM 解析意图"""
         prompt = self.PARSE_PROMPT_TEMPLATE.format(user_input=user_input)
+        prompt += (
+            "\n\n当前 Runtime 已注册的平台（只能从这里选择）: "
+            + ", ".join(sorted(self._known_platforms))
+        )
         
         messages = [{"role": "system", "content": "你是一个广告投放意图分析助手，只输出 JSON。"}]
         skill_context = (
@@ -145,7 +196,10 @@ class LLMIntentParser(IntentParser):
         # 检测平台
         platforms = self._detect_platforms(text)
         if intent_type.startswith("cross_channel") and not platforms:
-            platforms = ["meta", "google", "tiktok", "dv360"]
+            # Use the channels currently registered with Runtime. This keeps
+            # a generic "cross-channel" request extensible without editing
+            # the parser when a new provider is installed.
+            platforms = sorted(self._known_platforms)
         
         # 检测投放目标
         objective = self._detect_objective(text)
@@ -341,12 +395,9 @@ class LLMIntentParser(IntentParser):
         params = {p: {} for p in platforms}
         text = user_input.lower()
 
-        platform_aliases = {
-            "meta": ["meta", "facebook", "instagram"],
-            "google": ["google", "google ads", "google-ads", "gads", "谷歌"],
-            "tiktok": ["tiktok", "抖音"],
-            "dv360": ["dv360", "display video"],
-        }
+        platform_aliases: dict[str, list[str]] = {}
+        for alias, canonical in self._platform_aliases.items():
+            platform_aliases.setdefault(canonical, []).append(alias)
 
         # Prefer platform-qualified IDs. A single generic campaign_id is only
         # a fallback; copying it to every channel is unsafe for cross-channel
@@ -361,12 +412,11 @@ class LLMIntentParser(IntentParser):
             )
             if campaign_match:
                 params[platform]["campaign_id"] = campaign_match.group(1)
-            account_key = {
-                "meta": "account_id",
-                "google": "customer_id",
-                "tiktok": "advertiser_id",
-                "dv360": "advertiser_id",
-            }.get(platform, "account_id")
+            declared_account_keys = [
+                key for key in self._platform_field_specs.get(platform, {})
+                if key in {"account_id", "advertiser_id", "customer_id"}
+            ]
+            account_key = declared_account_keys[0] if declared_account_keys else "account_id"
             account_match = re.search(
                 rf"(?:{alias_pattern})\s*(?:account|ad[_-]?account|customer|advertiser)(?:[_-]?id)?\s*[=:]\s*([\w-]+)",
                 text,
@@ -446,59 +496,47 @@ class LLMIntentParser(IntentParser):
                 if len(platforms) == 1:
                     params[platforms[0]]["ad_id"] = ad_match.group(1)
 
-        # DV360 Line Item ID 提取。Campaign ID 不能替代 Line Item ID：两者
-        # 属于不同资源层级，混用会把合法查询路由到错误的报表契约。
-        line_item_match = re.search(r'line[_ -]?item[_ -]?id[=:\s]+([\w-]+)', text, re.IGNORECASE)
-        if line_item_match:
-            if "dv360" in platforms:
-                params["dv360"]["line_item_id"] = line_item_match.group(1)
-
-        asset_group_match = re.search(
-            r'asset[_ -]?group[_ -]?id[=:\s]+([\w-]+)', text, re.IGNORECASE
-        )
-        if asset_group_match and "google" in platforms:
-            params["google"]["asset_group_id"] = asset_group_match.group(1)
-
-        # Parse provider fields that are commonly supplied as explicit
-        # key/value pairs.  The LLM path can emit the full structured object,
-        # but the rule fallback must be useful too.  Provider-specific values
-        # are only assigned to their channel; never copy a TikTok enum into
-        # Meta/Google when the request spans multiple platforms.
-        provider_param_keys = {
-            "tiktok": [
-                "objective_type", "promotion_type", "billing_event", "bid_type",
-                "placement_type", "deep_bid_type", "budget_mode", "campaign_type",
-                "campaign_automation_type", "budget_restriction", "app_id",
-                "location_ids", "operating_systems", "age_groups", "gender",
-                "landing_url",
-            ],
-            "meta": ["objective", "optimization_goal", "billing_event", "bidding_strategy"],
-            "google": [
-                "advertising_channel_type", "bidding_strategy", "target_cpa_micros",
-                "target_roas",
-            ],
-            "dv360": ["campaign_type", "goal_type"],
+        # Provider fields come from registered Tool Schemas. For a standalone
+        # parser with no registry yet, a single-platform request can still use
+        # the generic ``field=value`` fallback; validation later decides
+        # whether that field belongs to the selected Tool.
+        generic_fields = {
+            key.lower(): value
+            for key, value in re.findall(
+                r"(?<![\w-])([A-Za-z][\w-]*)\s*[=:：]\s*([^\s;；]+)", user_input
+            )
+            if key.lower() not in {
+            "campaign_id", "campaign_ids", "ad_group_id", "adgroup_id", "ad_id",
+            "account_id", "customer_id", "advertiser_id", "budget", "status",
+            }
         }
-        array_params = {"location_ids", "operating_systems", "age_groups"}
-        numeric_params = {"target_cpa_micros", "target_roas"}
 
-        def parse_parameter_value(key: str, raw_value: str):
+        def parse_parameter_value(key: str, raw_value: str, spec: Optional[dict] = None):
             value = raw_value.strip().strip("[](){}").strip().strip("'\"")
-            if key in array_params:
+            spec = spec if isinstance(spec, dict) else {}
+            is_array = spec.get("type") == "array" or isinstance(spec.get("items"), dict)
+            if is_array:
                 return [
                     item.strip().strip("'\"")
                     for item in re.split(r"[,，]", value)
                     if item.strip()
                 ]
-            if key in numeric_params:
+            if spec.get("type") in {"number", "integer"}:
                 try:
                     return float(value) if "." in value else int(value)
                 except ValueError:
                     return value
-            return value.upper() if key not in {"app_id", "landing_url"} else value
+            return value.upper() if not (key.endswith("_id") or key.endswith("_url")) else value
 
-        for platform, keys in provider_param_keys.items():
-            if platform not in params:
+        for platform in platforms:
+            field_specs = self._platform_field_specs.get(platform, {})
+            # These values have dedicated intent extraction below; parsing a
+            # create-schema ``status`` as a platform-level update field would
+            # make an update request fail the closed parameter contract.
+            keys = set(field_specs) - {"status", "updates"}
+            if len(platforms) == 1:
+                keys.update(generic_fields)
+            if not keys:
                 continue
             aliases_for_platform = platform_aliases.get(platform, [platform])
             alias_pattern = "|".join(re.escape(alias) for alias in aliases_for_platform)
@@ -517,7 +555,9 @@ class LLMIntentParser(IntentParser):
                     )
                 match = qualified or unqualified
                 if match:
-                    params[platform][key] = parse_parameter_value(key, match.group(1))
+                    params[platform][key] = parse_parameter_value(
+                        key, match.group(1), field_specs.get(key)
+                    )
         
         # campaign_name 提取 - 支持 "名称=xxx"、"name: xxx"、"：xxx"、"详情: xxx" 等格式
         name_patterns = [
@@ -592,14 +632,22 @@ class LLMIntentParser(IntentParser):
     def _detect_platforms(self, text: str) -> list[str]:
         """检测目标平台"""
         platforms = []
-        if any(kw in text for kw in ["meta", "facebook", "ins", "instagram"]):
-            platforms.append("meta")
-        if any(kw in text for kw in ["google", "gads", "谷歌"]):
-            platforms.append("google")
-        if any(kw in text for kw in ["tiktok", "抖音"]):
-            platforms.append("tiktok")
-        if any(kw in text for kw in ["dv360", "display video", "dio"]):
-            platforms.append("dv360")
+        # Longest aliases first prevents a generic alias from shadowing a
+        # provider's more specific spelling. Every registered platform gets
+        # the same fallback recognition path as built-ins.
+        first_mentions: list[tuple[int, str]] = []
+        for canonical in self._known_platforms:
+            aliases = sorted(
+                (alias for alias, value in self._platform_aliases.items() if value == canonical),
+                key=len,
+                reverse=True,
+            )
+            positions = [text.find(alias) for alias in aliases if text.find(alias) >= 0]
+            if positions:
+                first_mentions.append((min(positions), canonical))
+        for _position, canonical in sorted(first_mentions):
+            if canonical not in platforms:
+                platforms.append(canonical)
         # 如果没有指定平台，返回空列表（需要用户明确指定）
         return platforms
     
@@ -723,18 +771,11 @@ class LLMIntentParser(IntentParser):
         platforms = data.get("platforms", [])
         if isinstance(platforms, str):
             platforms = [platforms]
-        platform_aliases = {
-            "google-ads": "google",
-            "google_ads": "google",
-            "facebook": "meta",
-            "instagram": "meta",
-            "抖音": "tiktok",
-            "谷歌": "google",
-        }
+        platform_aliases = self._platform_aliases
         normalized_platforms = []
         for platform in platforms if isinstance(platforms, list) else []:
             normalized = platform_aliases.get(str(platform).lower(), str(platform).lower())
-            if normalized in {"meta", "google", "tiktok", "dv360"} and normalized not in normalized_platforms:
+            if normalized in self._known_platforms and normalized not in normalized_platforms:
                 normalized_platforms.append(normalized)
         data["platforms"] = normalized_platforms
 
@@ -751,7 +792,7 @@ class LLMIntentParser(IntentParser):
         normalized_params = {}
         for key, value in params.items():
             normalized = platform_aliases.get(str(key).lower(), str(key).lower())
-            if normalized in {"meta", "google", "tiktok", "dv360"}:
+            if normalized in self._known_platforms:
                 normalized_params[normalized] = value if isinstance(value, dict) else {}
         for p in normalized_platforms:
             normalized_params.setdefault(p, {})
@@ -879,46 +920,3 @@ class SimpleIntentRouter(IntentRouter):
             for tool in tools:
                 sequence.append((platform, tool))
         return sequence
-
-
-# ─── 预定义的意图规则（供 Capability 覆盖默认规则使用）────────────
-
-INTENT_RULES = {
-    "create_campaign": {
-        "meta": {
-            "description": "Meta Marketing API 广告投放",
-            "required_tools": ["meta_create_campaign", "meta_create_ad_set", "meta_create_ad"],
-            "params_template": {
-                "campaign_name": "{objective}_campaign_{timestamp}",
-                "objective": "OUTCOME_SALES",
-                "daily_budget": "{{budget}}",
-            }
-        },
-        "google": {
-            "description": "Google Ads 广告投放",
-            "required_tools": ["google_create_campaign", "google_create_ad_group", "google_create_ad"],
-            "params_template": {
-                "campaign_name": "{objective}_campaign",
-                "advertising_channel_type": "SEARCH",
-                "bidding_strategy": "MAXIMIZE_CONVERSIONS",
-            }
-        },
-        "tiktok": {
-            "description": "TikTok Ads 广告投放",
-            "required_tools": ["tiktok_create_campaign", "tiktok_create_ad_group", "tiktok_create_ad"],
-            "params_template": {
-                "campaign_name": "{objective}_campaign",
-                "objective": "PRODUCT_SALES",
-                "daily_budget": "{{budget}}",
-            }
-        },
-        "dv360": {
-            "description": "DV360 广告投放",
-            "required_tools": ["dv360_create_campaign", "dv360_create_io", "dv360_create_line_item"],
-            "params_template": {
-                "campaign_name": "{objective}_campaign",
-                "goal_type": "IMPRESSIONS",
-            }
-        },
-    }
-}

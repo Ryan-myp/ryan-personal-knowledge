@@ -398,6 +398,14 @@ class MetaAPIClient(BasePlatformClient):
             'targeting': targeting,
             'status': adset.get('status', 'PAUSED'),
         }
+        # ``promoted_object`` is required by several conversion/app/catalog
+        # optimization goals. Preserve the complete schema-declared object
+        # instead of silently dropping it before the Graph request.
+        promoted_object = adset.get('promoted_object')
+        if promoted_object is not None:
+            if not isinstance(promoted_object, dict):
+                raise ValueError("Meta Ad Set promoted_object must be an object")
+            data['promoted_object'] = json.dumps(promoted_object)
         if daily_budget is not None:
             data['daily_budget'] = str(int(float(daily_budget) * 100))
         elif adset.get('lifetime_budget') is not None:

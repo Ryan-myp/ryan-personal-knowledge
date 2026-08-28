@@ -164,6 +164,7 @@ class MetaCapability(BaseCapability):
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "ad"],
             live_support=False,
+            parent_resource_type="ad_set",
         ), MetaCreateAdHandler(api_client)))
 
         # Get Report
@@ -176,7 +177,15 @@ class MetaCapability(BaseCapability):
                 properties={
                     "campaign_id": {"type": "string"},
                     "campaign_ids": {"type": "array", "items": {"type": "string"}},
-                    "date_preset": {"type": "string"},
+                    "date_preset": {
+                        "type": "string",
+                        "intent_field": "date_range",
+                        "intent_map": {
+                            "LAST_7_DAYS": "last_7d",
+                            "LAST_14_DAYS": "last_14d",
+                            "LAST_30_DAYS": "last_30d",
+                        },
+                    },
                 },
             ),
             risk_level=RiskLevel.LOW,

@@ -72,7 +72,7 @@ class LLMIntentParser:
     PARSE_PROMPT_TEMPLATE = """
     你是广告投放专家助手。请分析用户的投放需求：
     - intent_type: create/update/pause/resume/cross-channel | boost_post | download_report
-    - platforms: ["meta", "google", "tiktok", "dv360"]
+    - platforms: 当前 Runtime 已注册的平台标识列表
     - objective: sales | leads | traffic | brand
     - platform_params: 各平台具体参数
     """
@@ -352,6 +352,10 @@ class AdAgentStore:
 ## 八、扩展指南
 
 ### 新增平台
+
+新增平台只需要在自己的包中发布 Capability、可选的 API Client 和 Skill。
+Runtime、IntentRouter、工具选择器和跨渠道聚合入口都从已注册 Tool 的元数据发现平台，
+不再维护一份四渠道列表。内置平台名称只作为现有 Skill 的自然语言别名示例。
 ```python
 # 1. 创建 API Client
 class NewPlatformClient(BaseAPIClient):
@@ -408,7 +412,7 @@ skills/
 runtime = AgentRuntime()
 runtime.auto_load_skills(str(skills_root), credentials)
 
-# 输出: ✅ 已加载 4 个 Skills: ['google-ads-api', 'meta-marketing-api', 'dv360-api', 'tiktok-ads-api']
+# 输出: ✅ 已加载当前 Skill 根目录下发现的 Skills
 ```
 
 ### 3. Skill 解析逻辑
@@ -426,9 +430,9 @@ runtime.auto_load_skills(str(skills_root), credentials)
 
 | 概念 | 说明 | 数量 |
 |------|------|------|
-| **Skills** | SKILL.md 提供的上下文、SOP 和安全边界 | 4 个 Channel Skills |
-| **Capabilities** | Python 实现的渠道能力模块 | 4 个 (Meta/Google/TikTok/DV360) |
-| **Tools** | Capability/plugin 提供的具体可执行工具 | 72 个基线工具 |
+| **Skills** | SKILL.md 提供的上下文、SOP 和安全边界 | 按已加载 Skill 动态发现（当前内置 4 个） |
+| **Capabilities** | Python 实现的渠道能力模块 | 按包约定动态发现（当前内置 4 个） |
+| **Tools** | Capability/plugin 提供的具体可执行工具 | 按注册结果动态统计（当前基线 72 个） |
 
 **关系**：
 - Skills 是自然语言上下文（SKILL.md）

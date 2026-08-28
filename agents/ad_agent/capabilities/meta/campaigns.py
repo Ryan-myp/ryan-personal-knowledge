@@ -21,7 +21,11 @@ class MetaListCampaignsHandler(ToolHandler):
         if self.client and account_id:
             try:
                 campaigns = self.client.list_campaigns(account_id)
-                return ToolResult.ok({"campaigns": campaigns, "data_status": "live"})
+                return ToolResult.ok({
+                    "campaigns": campaigns,
+                    "account_id": account_id,
+                    "data_status": "live",
+                })
             except Exception as e:
                 return ToolResult.error(f"Failed to list Meta campaigns: {e}")
         # Mock data for testing / offline mode
@@ -73,7 +77,11 @@ class MetaGetCampaignHandler(ToolHandler):
                         f"Campaign {campaign_id} does not belong to account {account_id}"
                     )
                 campaign = self.client.get_campaign(campaign_id)
-                return ToolResult.ok({"campaign": campaign})
+                return ToolResult.ok({
+                    "campaign": campaign,
+                    "account_id": account_id,
+                    "data_status": "live",
+                })
             except Exception as e:
                 return ToolResult.error(f"Failed to get Meta campaign: {e}")
         # Mock fallback

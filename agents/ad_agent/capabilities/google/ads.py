@@ -23,7 +23,7 @@ class GoogleListAdsHandler(ToolHandler):
             try:
                 client = for_customer(self.client, ctx.account_id)
                 ads = client.list_ads(ad_group_id)
-                return ToolResult.ok({"ads": ads})
+                return ToolResult.ok({"ads": ads, "data_status": "live"})
             except Exception as e:
                 return ToolResult.error(f"Failed to list Google ads: {e}")
         else:
@@ -40,14 +40,18 @@ class GoogleGetAdHandler(ToolHandler):
             try:
                 client = for_customer(self.client, ctx.account_id)
                 ad = client.get_ad(ad_id)
-                return ToolResult.ok({"ad": ad})
+                return ToolResult.ok({"ad": ad, "data_status": "live"})
             except Exception as e:
                 return ToolResult.error(f"Failed to get Google ad: {e}")
         else:
             return ToolResult.ok({
-                "id": ad_id,
-                "name": "Test Ad",
-                "status": "ENABLED",
+                "ad": {
+                    "id": ad_id,
+                    "name": "Test Ad",
+                    "status": "PAUSED",
+                },
+                "data_status": "offline_no_client",
+                "simulated": True,
             })
 
 
@@ -77,7 +81,7 @@ class GoogleCreateAdHandler(ToolHandler):
                 return ToolResult.ok({
                     "ad_id": ad_id,
                     "name": input_data.get("name"),
-                    "status": "ENABLED",
+                    "status": input_data.get("status", "PAUSED"),
                 })
             except Exception as e:
                 return ToolResult.error(f"Failed to create Google ad: {e}")

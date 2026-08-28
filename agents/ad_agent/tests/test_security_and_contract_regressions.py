@@ -4,7 +4,10 @@ from agents.ad_agent.capabilities.meta import create_meta_capability
 from agents.ad_agent.capabilities.google import create_google_capability
 from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
 from agents.ad_agent.capabilities.dv360 import create_dv360_capability
-from agents.ad_agent.core.interfaces import ExecutionMode, ReplayPolicy, ToolContext
+from agents.ad_agent.core.interfaces import (
+    ExecutionMode, ParsedIntent, ReplayPolicy, ToolContext, ToolDefinition,
+    ToolSchema,
+)
 from agents.ad_agent.api_clients.base import (
     APIError,
     AuthError,
@@ -21,12 +24,84 @@ from agents.ad_agent.runtime.runtime import AccountWhitelistValidator, AgentRunt
 from agents.ad_agent.persistence.store import AdAgentStore
 from agents.ad_agent.runtime.skill import BaseSkill, SkillContract
 from agents.ad_agent.core.tool_registry import validate_tool_input
+from agents.ad_agent.core.intent import LLMIntentParser
+from agents.ad_agent.core.tool_selector import DynamicToolSelector
+from agents.ad_agent.user_skills.orchestrator import AdCampaignOrchestratorHandler
 
 
 def whitelist(**accounts):
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = accounts
     return validator
+
+
+def test_intent_parser_accepts_new_registered_platform_without_core_edit():
+    parser = LLMIntentParser()
+    parser.register_platforms(["snapchat-ads"])
+    parser.register_tool_schemas(
+        "snapchat-ads",
+        [{"properties": {"optimization_goal": {"type": "string"}}}],
+    )
+
+    intent = parser.parse(
+        "查询 Snapchat Ads campaign optimization_goal=CONVERSIONS", None
+    )
+
+    assert intent.platforms == ["snapchat-ads"]
+    assert intent.platform_params["snapchat-ads"]["optimization_goal"] == "CONVERSIONS"
+
+
+def test_tool_selector_discovers_platform_from_registered_tools():
+    definition = ToolDefinition(
+        name="snapchat_create_campaign",
+        skill="snapchat-ads",
+        platform="snapchat-ads",
+        description="create a campaign",
+        input_schema=ToolSchema(),
+    )
+    loader = type(
+        "Loader",
+        (),
+        {"_skills": {}, "get_skill": lambda self, _name: None},
+    )()
+    selector = DynamicToolSelector(skill_loader=loader)
+
+    selection = selector.select_tools(
+        "创建 Snapchat Ads campaign",
+        ParsedIntent("create_campaign", "创建 Snapchat Ads campaign", []),
+        [definition],
+    )
+
+    assert selection.platform == "snapchat-ads"
+    assert [tool.name for tool in selection.selected_tools] == [definition.name]
+
+
+def test_cross_channel_orchestrator_builds_chain_from_tool_metadata():
+    tools = [
+        ToolDefinition(
+            name="snapchat_create_campaign", skill="snapchat", platform="snapchat-ads",
+            description="create campaign", input_schema=ToolSchema(),
+            action="create", resource_type="campaign", intent_types=["create_campaign"],
+        ),
+        ToolDefinition(
+            name="snapchat_create_ad_group", skill="snapchat", platform="snapchat-ads",
+            description="create ad group", input_schema=ToolSchema(),
+            action="create", resource_type="ad_group", parent_resource_type="campaign",
+            intent_types=["create_campaign"],
+        ),
+    ]
+    handler = AdCampaignOrchestratorHandler(available_tools=tools)
+
+    plan = handler._build_execution_plan(
+        ParsedIntent(
+            "create_campaign", "create", ["snapchat-ads"],
+            objective="sales", budget=20,
+            platform_params={"snapchat-ads": {"promotion_type": "APP"}},
+        )
+    )
+
+    assert plan[0]["tools"] == ["snapchat_create_campaign", "snapchat_create_ad_group"]
+    assert plan[0]["params"]["promotion_type"] == "APP"
 
 
 def test_provider_free_detail_reads_fail_closed_for_all_channels():
@@ -271,6 +346,18 @@ def test_tiktok_campaign_and_app_ios_contracts_are_explicit():
         rule.get("id") == "app_ios_dependencies"
         for rule in adgroup.conditional_rules
     )
+
+    get_definitions = {
+        definition.name: definition
+        for definition, _ in create_tiktok_capability().register_tools()
+        if definition.name in {"tiktok_get_adgroup", "tiktok_get_ad"}
+    }
+    assert get_definitions["tiktok_get_adgroup"].input_schema.required == [
+        "campaign_id", "adgroup_id"
+    ]
+    assert get_definitions["tiktok_get_ad"].input_schema.required == [
+        "adgroup_id", "ad_id"
+    ]
 
     valid_ios = {
         "campaign_id": "c1", "name": "iOS acquisition",

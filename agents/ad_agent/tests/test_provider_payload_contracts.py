@@ -33,11 +33,15 @@ def test_meta_creation_options_are_forwarded_to_provider_payloads():
         "name": "Ad Set",
         "bid_strategy": "COST_CAP",
         "targeting": {"geo_locations": {"countries": ["US"]}},
+        "promoted_object": {"pixel_id": "px1", "custom_event_type": "PURCHASE"},
         "start_time": "2026-08-28T00:00:00+0000",
         "end_time": "2026-09-04T00:00:00+0000",
     })
     assert payloads[-1]["bidding_strategy"] == "COST_CAP"
     assert payloads[-1]["targeting"]
+    assert json.loads(payloads[-1]["promoted_object"]) == {
+        "pixel_id": "px1", "custom_event_type": "PURCHASE"
+    }
     assert payloads[-1]["start_time"].startswith("2026-08-28")
 
     client.create_ad("m1", "as1", {
@@ -70,6 +74,15 @@ def test_tiktok_ad_creation_preserves_existing_schema_fields():
     assert ad["creatives"] == [{"video_id": "video-1"}]
     assert ad["status"] == 0
     assert ad["landing_page_url"] == "https://example.test"
+    client.create_adgroup("t1", "101", {
+        "name": "App Group",
+        "promotion_type": "APP_ANDROID",
+        "billing_event": "OCPM",
+        "conversion_id": 42,
+        "budget_mode": "BUDGET_MODE_DAY",
+        "daily_budget": 50,
+    })
+    assert payloads[-1]["ad_group"]["conversion_id"] == 42
 
 
 def test_google_creation_options_are_mapped_to_rest_resources():

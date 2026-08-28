@@ -23,7 +23,11 @@ class GoogleListCampaignsHandler(ToolHandler):
             try:
                 client = for_customer(self.client, customer_id)
                 campaigns = client.list_campaigns()
-                return ToolResult.ok({"campaigns": campaigns, "data_status": "live"})
+                return ToolResult.ok({
+                    "campaigns": campaigns,
+                    "account_id": customer_id,
+                    "data_status": "live",
+                })
             except Exception as e:
                 return ToolResult.error(f"Failed to list Google campaigns: {e}")
         # Mock data for testing / offline mode
@@ -66,7 +70,11 @@ class GoogleGetCampaignHandler(ToolHandler):
             try:
                 client = for_customer(self.client, customer_id)
                 campaign = client.get_campaign(campaign_id)
-                return ToolResult.ok({"campaign": campaign})
+                return ToolResult.ok({
+                    "campaign": campaign,
+                    "account_id": customer_id,
+                    "data_status": "live",
+                })
             except Exception as e:
                 return ToolResult.error(f"Failed to get Google campaign: {e}")
         return ToolResult.ok({

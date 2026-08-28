@@ -21,7 +21,11 @@ class DV360ListCampaignsHandler(ToolHandler):
         if self.client and advertiser_id:
             try:
                 campaigns = self.client.list_campaigns(advertiser_id)
-                return ToolResult.ok({"campaigns": campaigns, "data_status": "live"})
+                return ToolResult.ok({
+                    "campaigns": campaigns,
+                    "account_id": advertiser_id,
+                    "data_status": "live",
+                })
             except Exception as e:
                 return ToolResult.error(f"Failed to list DV360 campaigns: {e}")
         else:
@@ -59,7 +63,7 @@ class DV360GetCampaignHandler(ToolHandler):
         if self.client and campaign_id:
             try:
                 campaign = self.client.get_campaign(advertiser_id, campaign_id)
-                return ToolResult.ok({"campaign": campaign})
+                return ToolResult.ok({"campaign": campaign, "data_status": "live"})
             except Exception as e:
                 return ToolResult.error(f"Failed to get DV360 campaign: {e}")
         return ToolResult.ok({
@@ -67,7 +71,9 @@ class DV360GetCampaignHandler(ToolHandler):
                 "id": campaign_id or "mock_id",
                 "name": campaign_name or "Mock Campaign",
                 "status": "ACTIVE",
-            }
+            },
+            "data_status": "offline_no_client",
+            "simulated": True,
         })
 
 

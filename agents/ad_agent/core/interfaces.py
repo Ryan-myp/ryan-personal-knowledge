@@ -127,7 +127,11 @@ class ToolDefinition:
             self.parent_resource_type = {
                 "ad_set": "campaign", "ad_group": "campaign", "io": "campaign",
                 "line_item": "io", "asset_group": "campaign",
-                "ad": "ad_set" if self.platform == "meta" else "ad_group",
+                # Provider-specific parent relationships must be declared by
+                # the Capability.  The generic fallback keeps existing
+                # non-Meta providers usable without making the core platform
+                # aware; Meta's Ad Tool declares ``ad_set`` explicitly.
+                "ad": "ad_group",
             }.get(self.resource_type)
         if self.parent_resource_type:
             self.parent_resource_type = self._normalize_resource(
@@ -443,6 +447,9 @@ class ReconciliationContext:
     item: Mapping[str, Any]
     tool_context: ToolContext
     execute_read: Callable[[str, dict[str, Any]], ToolResult]
+    # Optional Runtime-owned metadata lookup. Provider reconcilers can use it
+    # to discover the matching read Tool without a shared provider table.
+    resolve_read_tool: Optional[Callable[[str], Any]] = None
 
 
 class ProviderReconciler(ABC):

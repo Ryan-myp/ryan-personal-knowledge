@@ -5,6 +5,7 @@ version: 1.0.0
 author: Ryan
 created: 2026-08-14
 tags: [tiktok, ads, api, spark-ads, pixel, conversion-api, advertising]
+aliases: [douyin, 抖音]
 ---
 
 # TikTok Ads 专家技能

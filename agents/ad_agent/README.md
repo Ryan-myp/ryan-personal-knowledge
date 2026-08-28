@@ -11,6 +11,7 @@
 - **离线演示**：无凭证时部分查询 Handler 返回 mock 数据；这些数据不代表线上结果
 - **安全边界**：写操作必须命中配置的测试账户白名单；live 还必须显式确认
 - **可扩展**：渠道包按约定自动发现；新增平台不需要修改 Runtime、Router 或中心渠道表
+- **动态平台识别**：解析器从已注册 Capability/Skill 发布平台标识；内置渠道只保留自然语言别名，不维护固定四渠道路由表
 
 ## 支持的广告平台
 
@@ -258,6 +259,10 @@ class NewPlatformCapability(BaseCapability):
 Capability 并注入按渠道创建的 Client；没有 Client 时仍可安全生成 dry-run 计划。
 只有需要补充专家知识、SOP 或安全边界时才修改 `SKILL.md`。业务层和跨渠道 Skill
 仍然可以通过自己的 `tools.py` 提供扩展 Tool。
+
+规则解析和 LLM 结果规范化都会读取当前已注册的平台集合。新增渠道的自然语言别名
+可以由其平台标识自动获得（例如 `snapchat-ads` / `snapchat ads`）；若需要中文或
+品牌别名，由渠道 Skill 在自己的边界提供解析前置层即可，不需要修改中心 Router。
 需要严格的多步 SOP 时，可在 Skill 目录旁提供可选的 `workflow.yaml`；它只声明
 Tool 之间的依赖和输入输出映射，不包含可执行代码，且普通渠道不要求配置它。
 

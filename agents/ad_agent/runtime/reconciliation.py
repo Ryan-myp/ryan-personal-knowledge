@@ -3,49 +3,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 
 from ..core.interfaces import (
     ProviderReconciler,
     ReconciliationContext,
     ReconciliationObservation,
 )
-
-
-READBACK_TOOLS: dict[str, dict[str, str]] = {
-    "meta": {
-        "meta_create_campaign": "meta_get_campaign",
-        "meta_update_campaign": "meta_get_campaign",
-        "meta_create_adset": "meta_get_adset",
-        "meta_update_adset": "meta_get_adset",
-        "meta_create_ad": "meta_get_ad",
-        "meta_update_ad": "meta_get_ad",
-    },
-    "google-ads": {
-        "google_create_campaign": "google_get_campaign",
-        "google_update_campaign": "google_get_campaign",
-        "google_create_ad_group": "google_get_ad_group",
-        "google_update_ad_group": "google_get_ad_group",
-        "google_create_ad": "google_get_ad",
-        "google_update_ad": "google_get_ad",
-    },
-    "tiktok": {
-        "tiktok_create_campaign": "tiktok_get_campaign",
-        "tiktok_update_campaign": "tiktok_get_campaign",
-        "tiktok_create_adgroup": "tiktok_get_adgroup",
-        "tiktok_update_adgroup": "tiktok_get_adgroup",
-        "tiktok_create_ad": "tiktok_get_ad",
-        "tiktok_update_ad": "tiktok_get_ad",
-    },
-    "dv360": {
-        "dv360_create_campaign": "dv360_get_campaign",
-        "dv360_update_campaign": "dv360_get_campaign",
-        "dv360_create_io": "dv360_get_io",
-        "dv360_update_io": "dv360_get_io",
-        "dv360_create_line_item": "dv360_get_line_item",
-        "dv360_update_line_item": "dv360_get_line_item",
-    },
-}
 
 
 def _now() -> str:
@@ -55,26 +19,36 @@ def _now() -> str:
 class ToolReadbackReconciler(ProviderReconciler):
     """Resolve a write by invoking the provider's read-only tool.
 
-    The mapping is provider-owned data. The shared Runtime only supplies the
-    callback, so the read-back still passes through normal schema, account,
-    permission, timeout and client boundaries.
+    A provider may pass an explicit mapping for an exceptional API contract.
+    Otherwise Runtime resolves the matching read Tool from registered
+    metadata, so adding a provider does not require a shared channel table.
     """
 
     def __init__(self, platform: str, readback_tools: Mapping[str, str] | None = None):
         self.platform = platform
-        self.readback_tools = dict(readback_tools or READBACK_TOOLS.get(platform, {}))
+        self.readback_tools = dict(readback_tools or {})
 
     def reconcile(self, context: ReconciliationContext) -> ReconciliationObservation:
         sequence = int(context.item.get("sequence"))
         write_tool = str(context.item.get("tool_name") or "")
         read_tool = self.readback_tools.get(write_tool)
+        read_definition = None
+        if not read_tool and context.resolve_read_tool:
+            read_definition = context.resolve_read_tool(write_tool)
+            if read_definition is not None:
+                read_tool = str(getattr(read_definition, "name", read_definition))
         if not read_tool:
             return self._unknown(
                 sequence,
                 "no verified read-back tool is registered for this write tool",
             )
 
-        read_input, resource_id = self._read_input(read_tool, context.item)
+        read_input, resource_id = self._read_input(
+            read_tool,
+            context.item,
+            getattr(getattr(read_definition, "input_schema", None), "properties", None),
+            getattr(getattr(read_definition, "input_schema", None), "required", None),
+        )
         if not read_input:
             return self._unknown(
                 sequence,
@@ -121,7 +95,12 @@ class ToolReadbackReconciler(ProviderReconciler):
         )
 
     @staticmethod
-    def _read_input(read_tool: str, item: Mapping[str, Any]) -> tuple[dict[str, Any], str | None]:
+    def _read_input(
+        read_tool: str,
+        item: Mapping[str, Any],
+        properties: Optional[Mapping[str, Any]] = None,
+        required: Optional[list[str]] = None,
+    ) -> tuple[dict[str, Any], str | None]:
         source: dict[str, Any] = {}
         for key in ("input_data", "output_data"):
             value = item.get(key)
@@ -131,28 +110,55 @@ class ToolReadbackReconciler(ProviderReconciler):
         if isinstance(nested, dict):
             source.update(nested)
 
-        resource_key = {
-            "meta_get_campaign": "campaign_id",
-            "meta_get_adset": "adset_id",
-            "meta_get_ad": "ad_id",
-            "google_get_campaign": "campaign_id",
-            "google_get_ad_group": "ad_group_id",
-            "google_get_ad": "ad_id",
-            "tiktok_get_campaign": "campaign_id",
-            "tiktok_get_adgroup": "adgroup_id",
-            "tiktok_get_ad": "ad_id",
-            "dv360_get_campaign": "campaign_id",
-            "dv360_get_io": "io_id",
-            "dv360_get_line_item": "line_item_id",
-        }.get(read_tool)
-        resource_id = source.get(resource_key) if resource_key else None
-        if resource_id is None:
-            resource_id = source.get("resource_id") or source.get("id")
-        if resource_id is not None:
-            return {resource_key or "resource_id": str(resource_id)}, str(resource_id)
+        fields = list(properties or {})
+        if not fields:
+            suffix = read_tool.rsplit("_get_", 1)[-1]
+            fields = [f"{suffix}_id"]
+        required_fields = list(required or [])
+        identifier_fields = [field for field in fields if str(field).endswith("_id")]
+        ordered_fields = list(dict.fromkeys(required_fields + identifier_fields))
+        read_input: dict[str, Any] = {}
+        for field in ordered_fields:
+            value = ToolReadbackReconciler._find_source_value(
+                source,
+                field,
+                generic_fallback=not properties or len(identifier_fields) == 1,
+            )
+            if value is not None:
+                read_input[field] = str(value)
+        if read_input:
+            resource_id = ToolReadbackReconciler._resource_id_for_tool(
+                read_tool, read_input
+            )
+            return read_input, resource_id
         if read_tool.endswith("get_campaign") and source.get("name"):
             return {"campaign_name": source["name"]}, None
         return {}, None
+
+    @staticmethod
+    def _find_source_value(
+        source: Mapping[str, Any], field: str, *, generic_fallback: bool = True,
+    ) -> Any:
+        if source.get(field) is not None:
+            return source[field]
+        normalized = str(field).replace("_", "").lower()
+        for key, value in source.items():
+            if str(key).replace("_", "").lower() == normalized and value is not None:
+                return value
+        if generic_fallback and field.endswith("_id"):
+            return source.get("resource_id") or source.get("id")
+        return None
+
+    @staticmethod
+    def _resource_id_for_tool(read_tool: str, values: Mapping[str, Any]) -> str | None:
+        suffix = read_tool.rsplit("_get_", 1)[-1].replace("_", "").lower()
+        candidates = [
+            (key, value) for key, value in values.items()
+            if str(key).replace("_", "").lower().endswith(suffix + "id")
+        ]
+        if candidates:
+            return str(candidates[0][1])
+        return next((str(value) for value in values.values() if value is not None), None)
 
     @staticmethod
     def _extract_resource(data: Mapping[str, Any]) -> dict[str, Any]:

@@ -316,6 +316,7 @@ class TikTokAPIClient(BasePlatformClient):
             'billing_event', 'deep_bid_type', 'budget_mode',
             'app_id', 'landing_url', 'location_ids', 'operating_systems',
             'age_groups', 'gender', 'auto_targeting_enabled', 'optimization_goal',
+            'conversion_id',
         ):
             if key in adgroup and adgroup[key] not in (None, ''):
                 data['ad_group'][key] = adgroup[key]

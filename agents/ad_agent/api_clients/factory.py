@@ -53,6 +53,18 @@ def discover_client_factory(platform: str):
         factory = getattr(module, name, None)
         if callable(factory):
             return factory
+    # Built-in and lightweight provider clients may expose exactly one client
+    # class without a factory function. Keep the package convention useful
+    # without adding another central provider map; ambiguous modules must
+    # publish an explicit ``create_<platform>_client`` factory.
+    classes = [
+        value for value in vars(module).values()
+        if inspect.isclass(value)
+        and value.__module__ == module.__name__
+        and value.__name__.lower().endswith("client")
+    ]
+    if len(classes) == 1:
+        return lambda credentials, client_class=classes[0]: client_class(credentials)
     return None
 
 
@@ -84,16 +96,4 @@ def create_platform_client(platform: str, credentials: Optional[dict[str, Any]] 
     discovered = discover_client_factory(platform)
     if callable(discovered):
         return _call_factory(discovered, credentials)
-    if platform == "meta":
-        from .meta_client import MetaAPIClient
-        return MetaAPIClient(credentials)
-    if platform == "google-ads":
-        from .google_ads_client import GoogleAdsAPIClient
-        return GoogleAdsAPIClient(credentials)
-    if platform == "tiktok":
-        from .tiktok_client import TikTokAPIClient
-        return TikTokAPIClient(credentials)
-    if platform == "dv360":
-        from .dv360_client import DV360APIClient
-        return DV360APIClient(credentials)
     return None

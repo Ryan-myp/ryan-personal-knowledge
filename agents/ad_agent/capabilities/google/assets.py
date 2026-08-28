@@ -23,7 +23,7 @@ class GoogleListAssetGroupsHandler(ToolHandler):
             try:
                 client = for_customer(self.client, ctx.account_id)
                 asset_groups = client.list_asset_groups(campaign_id)
-                return ToolResult.ok({"asset_groups": asset_groups})
+                return ToolResult.ok({"asset_groups": asset_groups, "data_status": "live"})
             except Exception as e:
                 return ToolResult.error(f"Failed to list Google asset groups: {e}")
         else:
@@ -40,14 +40,18 @@ class GoogleGetAssetGroupHandler(ToolHandler):
             try:
                 client = for_customer(self.client, ctx.account_id)
                 asset_group = client.get_asset_group(asset_group_id)
-                return ToolResult.ok({"asset_group": asset_group})
+                return ToolResult.ok({"asset_group": asset_group, "data_status": "live"})
             except Exception as e:
                 return ToolResult.error(f"Failed to get Google asset group: {e}")
         else:
             return ToolResult.ok({
-                "id": asset_group_id,
-                "name": "Test Asset Group",
-                "status": "ENABLED",
+                "asset_group": {
+                    "id": asset_group_id,
+                    "name": "Test Asset Group",
+                    "status": "PAUSED",
+                },
+                "data_status": "offline_no_client",
+                "simulated": True,
             })
 
 

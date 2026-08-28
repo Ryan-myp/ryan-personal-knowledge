@@ -21,7 +21,11 @@ class TikTokListCampaignsHandler(ToolHandler):
         if self.client and advertiser_id:
             try:
                 campaigns = self.client.list_campaigns(advertiser_id)
-                return ToolResult.ok({"campaigns": campaigns, "data_status": "live"})
+                return ToolResult.ok({
+                    "campaigns": campaigns,
+                    "account_id": advertiser_id,
+                    "data_status": "live",
+                })
             except Exception as e:
                 return ToolResult.error(f"Failed to list TikTok campaigns: {e}")
         # Mock data for testing / offline mode
@@ -62,7 +66,11 @@ class TikTokGetCampaignHandler(ToolHandler):
         if self.client and campaign_id:
             try:
                 campaign = self.client.get_campaign(advertiser_id, campaign_id)
-                return ToolResult.ok({"campaign": campaign})
+                return ToolResult.ok({
+                    "campaign": campaign,
+                    "account_id": advertiser_id,
+                    "data_status": "live",
+                })
             except Exception as e:
                 return ToolResult.error(f"Failed to get TikTok campaign: {e}")
         return ToolResult.ok({
@@ -91,7 +99,7 @@ class TikTokCreateCampaignHandler(ToolHandler):
                 return ToolResult.ok({
                     "campaign_id": campaign_id,
                     "name": input_data.get("name"),
-                    "status": "DISABLED",
+                    "status": input_data.get("status", 1),
                 })
             except Exception as e:
                 return ToolResult.error(f"Failed to create TikTok campaign: {e}")

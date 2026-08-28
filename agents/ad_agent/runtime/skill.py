@@ -61,6 +61,7 @@ class SkillContract:
         self.version: str = "1.0"
         self.description: str = ""
         self.platform: str = ""
+        self.platform_aliases: list[str] = []
         self.triggers: list[SkillTrigger] = []
         self.capabilities: dict[str, SkillCapability] = {}
         self.workflows: dict[str, SkillWorkflow] = {}
@@ -131,6 +132,11 @@ class SkillContract:
                 self.description = fm_yaml.get('description', '')
                 # 使用目录名作为默认平台
                 self.platform = fm_yaml.get('platform', os.path.basename(os.path.dirname(path)))
+
+            aliases = fm_yaml.get("aliases", [])
+            if isinstance(aliases, str):
+                aliases = [aliases]
+            self.platform_aliases = [str(alias).lower() for alias in aliases or []]
             
             # 解析 triggers
             triggers = fm_yaml.get('triggers', [])
@@ -337,6 +343,10 @@ class BaseSkill(Skill):
     @property
     def version(self) -> str:
         return self._contract.version
+
+    @property
+    def platform_aliases(self) -> list[str]:
+        return list(self._contract.platform_aliases)
 
     @property
     def expert_knowledge(self) -> dict[str, str]:

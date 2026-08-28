@@ -131,13 +131,16 @@ class DynamicToolSelector:
             ToolSelection: 选中的工具 + 上下文
         """
         # 1. 确定目标平台
-        platforms = intent.platforms or self._detect_platforms(user_input)
+        platforms = intent.platforms or self._detect_platforms(user_input, available_tools)
         
         # 2. 根据业务上下文过滤平台
         if self.business_context:
             platforms = [p for p in platforms if self.business_context.is_channel_allowed(p)]
             if not platforms:
-                platforms = self.business_context.allowed_channels[:2]  # 回退到默认
+                platforms = [
+                    platform for platform in self._registered_platforms(available_tools)
+                    if self.business_context.is_channel_allowed(platform)
+                ]
         
         # 3. 根据意图类型筛选工具
         intent_type = intent.intent_type
@@ -191,7 +194,7 @@ class DynamicToolSelector:
         few registered tools, while the authoritative post-parse route still
         comes from ``IntentRouter``.
         """
-        platforms = self._detect_platforms(user_input)
+        platforms = self._detect_platforms(user_input, available_tools)
         probe_intent = ParsedIntent(
             intent_type=intent_type or "",
             raw_input=user_input,
@@ -242,23 +245,62 @@ class DynamicToolSelector:
             for item in knowledge
         )[:max_chars]
     
-    def _detect_platforms(self, user_input: str) -> List[str]:
-        """从用户输入中检测平台"""
-        platforms = []
-        text = user_input.lower()
-        
-        platform_keywords = {
-            "meta": ["meta", "facebook", "instagram", "fb"],
-            "google": ["google", "gads", "google ads"],
-            "tiktok": ["tiktok", "douyin"],
-            "dv360": ["dv360", "display video"],
+    def _registered_platforms(self, available_tools: List[ToolDefinition]) -> List[str]:
+        """Return platforms published by the current Tool/Skill registry."""
+        platforms = {
+            self._normalize_platform(tool.platform)
+            for tool in (available_tools or [])
+            if getattr(tool, "platform", None)
+            and str(tool.platform).lower() != "multi_platform"
         }
-        
-        for platform, keywords in platform_keywords.items():
-            if any(kw in text for kw in keywords):
-                platforms.append(platform)
-        
-        return platforms if platforms else ["meta", "google"]  # 默认
+        for skill in getattr(self.skill_loader, "_skills", {}).values():
+            platform = getattr(skill, "platform", "")
+            if platform and str(platform).lower() != "multi_platform":
+                platforms.add(self._normalize_platform(platform))
+        return sorted(platforms)
+
+    def _platform_aliases(self, platform: str) -> set[str]:
+        """Build recognition aliases from registered platform/Skill identity."""
+        normalized = self._normalize_platform(platform)
+        aliases = {
+            normalized,
+            normalized.replace("-", " "),
+            normalized.replace("_", " "),
+        }
+        for skill in getattr(self.skill_loader, "_skills", {}).values():
+            if self._normalize_platform(getattr(skill, "platform", "")) != normalized:
+                continue
+            name = str(getattr(skill, "name", "") or "").lower()
+            if name:
+                aliases.update({name, name.replace("-", " "), name.replace("_", " ")})
+            for alias in getattr(skill, "platform_aliases", []) or []:
+                alias = str(alias).lower().strip()
+                if alias:
+                    aliases.add(alias)
+        return {alias for alias in aliases if alias}
+
+    def _detect_platforms(
+        self,
+        user_input: str,
+        available_tools: Optional[List[ToolDefinition]] = None,
+    ) -> List[str]:
+        """从当前注册的 Tool/Skill 身份中检测平台，不维护渠道表。"""
+        text = (user_input or "").lower()
+        mentions = []
+        for platform in self._registered_platforms(available_tools or []):
+            positions = [
+                text.find(alias)
+                for alias in self._platform_aliases(platform)
+                if text.find(alias) >= 0
+            ]
+            if positions:
+                mentions.append((min(positions), platform))
+        return [platform for _position, platform in sorted(mentions)]
+
+    @staticmethod
+    def _normalize_platform(platform: str) -> str:
+        value = str(platform or "").strip().lower()
+        return {"google": "google-ads", "google_ads": "google-ads"}.get(value, value)
     
     def _get_platform_tools(
         self, 
@@ -266,11 +308,10 @@ class DynamicToolSelector:
         available_tools: List[ToolDefinition]
     ) -> List[ToolDefinition]:
         """获取指定平台的所有工具"""
-        aliases = {"google": "google-ads", "google_ads": "google-ads"}
-        normalized = aliases.get(platform, platform)
+        normalized = self._normalize_platform(platform)
         return [
             t for t in available_tools
-            if aliases.get(t.platform, t.platform) == normalized
+            if self._normalize_platform(t.platform) == normalized
         ]
     
     def _filter_by_intent(
@@ -365,16 +406,12 @@ class DynamicToolSelector:
         is normally ``meta-marketing-api-expert`` rather than ``meta``.  The
         old direct lookup therefore silently disabled expert knowledge.
         """
-        aliases = {"google": "google-ads", "google_ads": "google-ads"}
-        normalized = aliases.get(str(platform).lower(), str(platform).lower())
+        normalized = self._normalize_platform(platform)
         skill = self.skill_loader.get_skill(platform)
         if skill:
             return skill
         for candidate in getattr(self.skill_loader, "_skills", {}).values():
-            candidate_platform = aliases.get(
-                str(getattr(candidate, "platform", "")).lower(),
-                str(getattr(candidate, "platform", "")).lower(),
-            )
+            candidate_platform = self._normalize_platform(getattr(candidate, "platform", ""))
             if candidate_platform == normalized:
                 return candidate
         return None
@@ -450,7 +487,7 @@ class DynamicToolSelector:
             }
         """
         selection = self.select_tools(user_input, intent, all_tools)
-        platforms = intent.platforms or self._detect_platforms(user_input)
+        platforms = intent.platforms or self._detect_platforms(user_input, all_tools)
         knowledge = self._query_knowledge(
             user_input, platforms, intent_type=intent.intent_type
         )
