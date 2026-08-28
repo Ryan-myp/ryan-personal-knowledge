@@ -60,6 +60,13 @@ def method_tool(
     live_support: Optional[bool] = None,
     provider_required: Optional[Iterable[str]] = None,
     provider_any_of: Optional[Iterable[Iterable[str]]] = None,
+    conditional_rules: Optional[Iterable[dict[str, Any]]] = None,
+    additional_properties: bool = False,
+    contract_version: str = "1",
+    provider_api_version: Optional[str] = None,
+    timeout_seconds: float = 30.0,
+    max_output_bytes: int = 1_000_000,
+    required_permissions: Optional[Iterable[str]] = None,
 ) -> tuple[ToolDefinition, ProviderMethodHandler]:
     """Build one provider-owned Tool and its fixed method handler."""
     effect = ToolEffect.WRITE if write else ToolEffect.READ
@@ -75,6 +82,8 @@ def method_tool(
             properties=dict(properties),
             provider_required=list(provider_required or []),
             provider_any_of=[list(group) for group in (provider_any_of or [])],
+            conditional_rules=[dict(rule) for rule in (conditional_rules or [])],
+            additional_properties=bool(additional_properties),
         ),
         action=action,
         resource_type=resource_type,
@@ -87,6 +96,11 @@ def method_tool(
         replay_policy=ReplayPolicy.UNSAFE if write else ReplayPolicy.SAFE,
         traits=list(traits) if traits is not None else (["write"] if write else ["read"]),
         live_support=live_support,
+        contract_version=contract_version,
+        provider_api_version=provider_api_version,
+        timeout_seconds=timeout_seconds,
+        max_output_bytes=max_output_bytes,
+        required_permissions=list(required_permissions or []),
     )
     handler = ProviderMethodHandler(
         None,

@@ -50,6 +50,26 @@ class TemporaryError(APIError):
     pass
 
 
+class ProviderVersionAdapter:
+    """Optional request/response compatibility layer for one API version.
+
+    A provider can keep a stable Tool contract while an endpoint changes by
+    registering an adapter in ``VERSION_ADAPTERS`` on its Client. The adapter
+    is intentionally provider-owned; Runtime only checks compatibility and
+    propagates the Tool's declared API version.
+    """
+
+    def adapt_request(
+        self, method: str, endpoint: str, kwargs: dict[str, Any]
+    ) -> tuple[str, dict[str, Any]]:
+        return endpoint, kwargs
+
+    def adapt_response(
+        self, method: str, endpoint: str, response: dict[str, Any]
+    ) -> dict[str, Any]:
+        return response
+
+
 # ─── 重试配置 ───────────────────────────────────────────────────
 
 @dataclass
@@ -102,24 +122,27 @@ class RateLimiter:
         otherwise a saturated limiter could outlive the tool timeout before
         the HTTP request even started.
         """
-        # A client is shared by multiple Runtime sessions.  Protect the
-        # timestamp window so concurrent requests cannot oversubscribe it.
-        with self._lock:
-            now = time.time()
-            self._timestamps = [t for t in self._timestamps if now - t < self.period]
+        # A client is shared by multiple Runtime sessions. Protect only the
+        # timestamp mutation; sleeping while holding this lock would turn one
+        # saturated request into a process-wide queue for the same provider.
+        started = time.monotonic()
+        while True:
+            with self._lock:
+                now = time.time()
+                self._timestamps = [t for t in self._timestamps if now - t < self.period]
+                if len(self._timestamps) < self.max_requests:
+                    self._timestamps.append(now)
+                    return
+                wait_time = max(self.period - (now - self._timestamps[0]), 0.0)
 
-            if len(self._timestamps) >= self.max_requests:
-                wait_time = self.period - (now - self._timestamps[0])
-                if wait_time > 0:
-                    if max_wait is not None and wait_time > max_wait:
-                        raise TemporaryError("Provider request deadline exceeded while rate limited")
-                    logger.debug(f"Rate limiter: waiting {wait_time:.2f}s")
-                    time.sleep(wait_time)
-                    now = time.time()
-                    self._timestamps = [
-                        t for t in self._timestamps if now - t < self.period
-                    ]
-            self._timestamps.append(time.time())
+            elapsed = time.monotonic() - started
+            remaining = None if max_wait is None else float(max_wait) - elapsed
+            if remaining is not None and wait_time > remaining:
+                raise TemporaryError(
+                    "Provider request deadline exceeded while rate limited"
+                )
+            logger.debug("Rate limiter: waiting %.2fs", wait_time)
+            time.sleep(wait_time)
 
 
 # ─── 基类 ────────────────────────────────────────────────────────
@@ -139,6 +162,10 @@ class BasePlatformClient(ABC):
     - 统一错误分类
     - 请求日志
     """
+
+    API_VERSION = ""
+    SUPPORTED_API_VERSIONS: tuple[str, ...] = ()
+    VERSION_ADAPTERS: dict[str, ProviderVersionAdapter] = {}
     
     def __init__(
         self,
@@ -158,6 +185,58 @@ class BasePlatformClient(ABC):
         self._session_cache: dict[str, Any] = {}  # 请求级缓存
         self.request_timeout = 30.0
         self.request_deadline: Optional[float] = None
+
+    def supports_tool_api_version(self, version: Optional[str]) -> bool:
+        """Whether this client can satisfy a Tool's provider API contract."""
+        requested = str(version or "").strip()
+        if not requested:
+            return True
+        actual = str(getattr(self, "api_version", "") or "").strip()
+        if actual and actual == requested:
+            return True
+        adapters = getattr(self, "VERSION_ADAPTERS", {}) or {}
+        return requested in adapters
+
+    def _version_adapter(self, version: Optional[str] = None):
+        requested = str(version or getattr(self, "api_version", "") or "").strip()
+        if not requested or requested == str(getattr(self, "api_version", "") or "").strip():
+            return None
+        adapter = (getattr(self, "VERSION_ADAPTERS", {}) or {}).get(requested)
+        if adapter is None:
+            return None
+        if isinstance(adapter, type):
+            adapter = adapter()
+        return adapter
+
+    def adapt_request(
+        self,
+        method: str,
+        endpoint: str,
+        kwargs: dict[str, Any],
+        contract_version: Optional[str] = None,
+    ) -> tuple[str, dict[str, Any]]:
+        adapter = self._version_adapter(contract_version)
+        if adapter is None:
+            return endpoint, kwargs
+        result = adapter.adapt_request(method, endpoint, dict(kwargs))
+        if not isinstance(result, tuple) or len(result) != 2:
+            raise APIError("provider version adapter returned an invalid request")
+        return str(result[0]), dict(result[1])
+
+    def adapt_response(
+        self,
+        method: str,
+        endpoint: str,
+        response: dict[str, Any],
+        contract_version: Optional[str] = None,
+    ) -> dict[str, Any]:
+        adapter = self._version_adapter(contract_version)
+        if adapter is None:
+            return response
+        result = adapter.adapt_response(method, endpoint, dict(response))
+        if not isinstance(result, dict):
+            raise APIError("provider version adapter returned an invalid response")
+        return result
 
     def set_request_timeout(self, timeout_seconds: float) -> None:
         """Set the upper bound used by provider HTTP calls for one tool turn."""
@@ -282,9 +361,16 @@ class BasePlatformClient(ABC):
         try:
             if self.request_deadline is not None and self.request_deadline <= time.monotonic():
                 raise TemporaryError("Provider request deadline exceeded")
-            url = self._build_url(endpoint)
+            contract_version = getattr(self, "requested_tool_api_version", None)
+            request_endpoint, request_kwargs = self.adapt_request(
+                method, endpoint, kwargs, contract_version
+            )
+            url = self._build_url(request_endpoint)
             logger.debug(f"[{self.platform}] {method} {endpoint}")
-            response = self._do_request(method, url, **kwargs)
+            response = self._do_request(method, url, **request_kwargs)
+            response = self.adapt_response(
+                method, endpoint, response, contract_version
+            )
             status_code = response.get("status_code", 200)
             error = self._handle_error(response, status_code)
             if error:

@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 
 from .interfaces import ToolDefinition, ParsedIntent, ToolContext
 from .knowledge import KnowledgeProvider
+from .platform import normalize_platform
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +31,9 @@ class BusinessContext:
 
     def is_channel_allowed(self, channel: str) -> bool:
         """检查渠道是否被允许"""
-        aliases = {"google-ads": "google", "google_ads": "google"}
-        normalized = aliases.get(str(channel).lower(), str(channel).lower())
-        disallowed = {aliases.get(str(item).lower(), str(item).lower()) for item in self.disallowed_channels}
-        allowed = {aliases.get(str(item).lower(), str(item).lower()) for item in self.allowed_channels}
+        normalized = normalize_platform(channel)
+        disallowed = {normalize_platform(item) for item in self.disallowed_channels}
+        allowed = {normalize_platform(item) for item in self.allowed_channels}
         if normalized in disallowed:
             return False
         if allowed and normalized not in allowed:
@@ -297,10 +297,7 @@ class DynamicToolSelector:
                 mentions.append((min(positions), platform))
         return [platform for _position, platform in sorted(mentions)]
 
-    @staticmethod
-    def _normalize_platform(platform: str) -> str:
-        value = str(platform or "").strip().lower()
-        return {"google": "google-ads", "google_ads": "google-ads"}.get(value, value)
+    _normalize_platform = staticmethod(normalize_platform)
     
     def _get_platform_tools(
         self, 

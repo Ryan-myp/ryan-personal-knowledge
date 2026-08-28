@@ -20,6 +20,7 @@ from .interfaces import (
     ToolContext, ParsedIntent, IntentParser, IntentRouter,
     ToolDefinition, ToolRegistry
 )
+from .platform import normalize_platform, parser_platform
 
 
 class LLMIntentParser(IntentParser):
@@ -121,7 +122,7 @@ class LLMIntentParser(IntentParser):
             value = str(platform or "").strip().lower()
             if not value:
                 continue
-            canonical = {"google-ads": "google", "google_ads": "google"}.get(value, value)
+            canonical = parser_platform(value)
             self._known_platforms.add(canonical)
             self._platform_aliases.setdefault(canonical, canonical)
             self._platform_aliases.setdefault(value, canonical)
@@ -134,7 +135,7 @@ class LLMIntentParser(IntentParser):
         if not value:
             return
         self.register_platforms([value])
-        canonical = {"google-ads": "google", "google_ads": "google"}.get(value, value)
+        canonical = parser_platform(value)
         for alias in aliases or []:
             text = str(alias or "").strip().lower()
             if text:
@@ -143,7 +144,7 @@ class LLMIntentParser(IntentParser):
     def register_tool_schemas(self, platform: str, schemas: list[dict] | tuple[dict, ...]) -> None:
         """Publish provider fields so rule parsing also remains extensible."""
         value = str(platform or "").strip().lower()
-        canonical = {"google-ads": "google", "google_ads": "google"}.get(value, value)
+        canonical = parser_platform(value)
         if not canonical:
             return
         self.register_platforms([canonical])
@@ -907,7 +908,7 @@ class SimpleIntentRouter(IntentRouter):
                 self._skill_mappings.setdefault(str(intent_type), {})[
                     str(platform)
                 ] = list(names)
-                if platform == "google-ads":
+                if normalize_platform(platform) == "google-ads":
                     self._skill_mappings.setdefault(str(intent_type), {})[
                         "google"
                     ] = list(names)
@@ -933,9 +934,7 @@ class SimpleIntentRouter(IntentRouter):
         result: dict[str, list[ToolDefinition]] = {}
         explicit = self._skill_mappings.get(intent.intent_type) or self._mappings.get(intent.intent_type)
         for platform in intent.platforms:
-            canonical = {"google": "google-ads", "google_ads": "google-ads"}.get(
-                str(platform).lower(), str(platform).lower()
-            )
+            canonical = normalize_platform(platform)
             if explicit is not None:
                 names = explicit.get(platform, explicit.get(canonical, []))
                 tools = []

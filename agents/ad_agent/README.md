@@ -12,6 +12,7 @@
 - **安全边界**：写操作必须命中配置的测试账户白名单；live 还必须显式确认
 - **可扩展**：渠道包按约定自动发现；新增平台不需要修改 Runtime、Router 或中心渠道表
 - **动态平台识别**：解析器从已注册 Capability/Skill 发布平台标识；内置渠道只保留自然语言别名，不维护固定四渠道路由表
+- **版本兼容**：Tool 声明 Provider API 版本；版本差异由渠道 Client 自己的 adapter 处理，Runtime 不增加渠道分支
 
 ## 支持的广告平台
 
@@ -22,6 +23,8 @@
 | TikTok | tiktok-ads-expert | tiktok_client.py | 40（账户、层级资源、素材、定向参考数据、报表与生命周期接口） |
 | DV360 | dv360-expert | dv360_client.py | 20（Advertiser、Campaign、IO、Line Item 与异步报表接口） |
 | **合计** |  |  | **107** |
+
+> 107 是当前四个 Capability 已实现的 Client 方法/业务 Tool 数量，不是 Meta、Google Ads、TikTok 或 DV360 官方 API 的完整接口总量。新增官方接口时，应在对应渠道 Client 增加固定方法，在 Capability 增加 Tool Schema/adapter，再由覆盖率审计和契约快照阻止漏注册或漂移。
 
 ## 安装
 
@@ -133,6 +136,7 @@ Capability 包约定自动发现渠道，输出 action/resource 矩阵和创建�
 - Provider schema 目前以代码契约为准，已接入本地版本化快照和代码契约 drift gate；尚未接入 Provider API schema 拉取和真实测试账户 E2E。动态组合约束仍需按渠道逐项补齐。
 - 部分 workflow 只标记 `compensation_required` 并转人工复核，尚无经过 Provider 验证的自动补偿执行器；这属于刻意的安全降级，不是已完成能力。
 - live 还需要凭证轮换/授权中心、合作方级配额策略，以及可中断的异步执行 worker。
+- 当前四个 Client 已提供版本元数据和 adapter 接口，但每个平台目前仍只声明一个实际支持版本；升级时需要在渠道 Client 增加新版本、请求/响应 adapter、Provider contract 回归和测试账户 E2E，不能只修改 Tool 上的版本字符串。
 
 因此下一阶段应优先做“Provider schema 对照 + 测试账户 E2E”，再逐个把工具加入 `live_approved_tools`，而不是一次性开放全部渠道写入。代码契约漂移可先通过以下 release gate：
 
@@ -143,6 +147,20 @@ python3 agents/ad_agent/scripts/validate_contracts.py --check-snapshot agents/ad
 更新操作同样使用渠道拥有的嵌套 Schema：Meta、Google Ads、TikTok、DV360 的 `updates` 只允许当前适配器声明的字段，未知字段会在计划阶段报错，不会静默丢弃或带入 live 请求。缺少带 `lookup_tool` 的动态字段时，返回结果中的 `confirmation_payload.lookup_tools` 会告诉调用方应先调用哪个查询工具。通用目标（sales/leads/traffic/brand）由各 Skill 的字段元数据映射为 Provider 枚举，不由 Runtime 维护一张不可扩展的渠道表。
 
 dry-run 结果中的 `provider_validation` 会单独标记 Provider 必填字段是否齐全：计划可以先生成，但 `ready: false` 时不能视为可直接 live 执行。
+
+### Provider 接口扩展与版本升级
+
+新增接口的最小闭环是：
+
+1. 在渠道自己的 `api_clients/<provider>_client.py` 增加固定、可测试的方法；不要把用户输入的方法名直接转发到 HTTP。
+2. 在渠道自己的 `capabilities/<provider>/capability.py` 用 `method_tool()` 或显式 `ToolDefinition` 暴露 Schema、枚举、条件依赖、权限、超时和资源层级。
+3. 需要账户 App、地域、事件等运行时选项时，增加同渠道只读 lookup Tool，并在字段上声明 `lookup_tool`。
+4. 运行 `audit_capabilities.py`、`validate_contracts.py` 和 Provider 回归测试，确认接口已注册、契约稳定且创建链没有断点。
+
+Provider API 升级时，保持稳定的 Tool 名称和业务输入契约，在渠道 Client 中增加
+`SUPPORTED_API_VERSIONS` 与 `VERSION_ADAPTERS[旧版本]`，由 adapter 改写请求和响应；Runtime
+只做版本兼容检查，不需要新增渠道分支。若新旧版本语义无法安全转换，则让该 Tool
+暂时返回版本不兼容并保持 dry-run，避免静默发送错误 payload。
 
 凭证文件格式：
 ```json

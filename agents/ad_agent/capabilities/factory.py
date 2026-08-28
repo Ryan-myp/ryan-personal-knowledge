@@ -11,21 +11,8 @@ from __future__ import annotations
 
 import importlib
 import inspect
-import re
 from typing import Any, Optional
-
-
-PLATFORM_ALIASES = {
-    "google": "google-ads",
-    "google_ads": "google-ads",
-    "google-ads": "google-ads",
-}
-
-
-def normalize_platform(platform: str) -> str:
-    """Return the canonical Runtime platform name."""
-    value = str(platform or "").strip().lower()
-    return PLATFORM_ALIASES.get(value, value)
+from ..core.platform import normalize_platform, platform_slug
 
 
 def _module_slug(platform: str) -> str:
@@ -36,7 +23,7 @@ def _module_slug(platform: str) -> str:
     # than making every caller carry a special case.
     if canonical == "google-ads":
         return "google"
-    return re.sub(r"[^a-z0-9]+", "_", canonical).strip("_")
+    return platform_slug(canonical)
 
 
 def discover_capability_factory(platform: str):

@@ -13,6 +13,7 @@ from agents.ad_agent.api_clients.base import (
     APIError,
     AuthError,
     BasePlatformClient,
+    ProviderVersionAdapter,
     RateLimitError,
     RetryConfig,
     TemporaryError,
@@ -545,6 +546,69 @@ def test_generic_token_is_a_red_line_in_structured_inputs():
     assert "token" in result["policy_errors"][0]
 
 
+def test_account_configuration_fields_are_only_allowed_as_top_level_selectors():
+    runtime = AgentRuntime(enforce_account_scope=False)
+    calls = []
+
+    class Handler:
+        def execute(self, _ctx, _input):
+            calls.append(True)
+            return ToolResult.ok({"ok": True})
+
+    runtime.registry.register(
+        ToolDefinition(
+            name="provider_update",
+            skill="provider",
+            platform="provider",
+            description="update",
+            input_schema=ToolSchema(additional_properties=True),
+            effect_class=ToolEffect.WRITE,
+        ),
+        Handler(),
+    )
+
+    result = runtime._execute_tool(
+        ToolContext("s1", "u1", "account-1"),
+        "provider_update",
+        {"account_id": "account-1", "updates": {"account_id": "other-account"}},
+    )
+
+    assert result.success is False
+    assert "updates.account_id" in result.error
+    assert calls == []
+
+
+def test_live_write_rejects_custom_handler_without_provider_client():
+    runtime = AgentRuntime(
+        execution_mode=ExecutionMode.LIVE.value,
+        allow_live_writes=True,
+        enforce_account_scope=False,
+    )
+
+    class Handler:
+        def execute(self, _ctx, _input):
+            return ToolResult.ok({"mutated": True})
+
+    runtime.registry.register(
+        ToolDefinition(
+            name="custom_live_write",
+            skill="custom",
+            platform="custom-provider",
+            description="write",
+            input_schema=ToolSchema(),
+            effect_class=ToolEffect.WRITE,
+            live_support=True,
+        ),
+        Handler(),
+    )
+
+    result = runtime._execute_tool(ToolContext("s1", "u1"), "custom_live_write", {})
+
+    assert result.success is False
+    assert result.data["execution_status"] == "provider_unavailable"
+    assert "未暴露受控 Provider Client" in result.error
+
+
 def test_redaction_handles_json_and_python_dict_strings():
     redact = AgentRuntime._redact_for_persistence
     value = redact(
@@ -1070,6 +1134,90 @@ class RetryProbeClient(BasePlatformClient):
     def _reset_auth(self):
         self.reset_count += 1
         return self.refreshable
+
+
+class VersionProbeAdapter(ProviderVersionAdapter):
+    def adapt_request(self, method, endpoint, kwargs):
+        kwargs["adapter_pass"] = kwargs.get("adapter_pass", 0) + 1
+        return f"/v1{endpoint}", kwargs
+
+    def adapt_response(self, method, endpoint, response):
+        response = dict(response)
+        response.setdefault("data", {})["adapted"] = True
+        return response
+
+
+class VersionProbeClient(BasePlatformClient):
+    API_VERSION = "v2"
+    SUPPORTED_API_VERSIONS = ("v2", "v1")
+    VERSION_ADAPTERS = {"v1": VersionProbeAdapter}
+
+    def __init__(self, responses):
+        super().__init__("", "version-probe", RetryConfig(max_retries=1, base_delay=0, jitter=False))
+        self.api_version = "v2"
+        self.responses = list(responses)
+        self.calls = []
+
+    def _do_request(self, method, url, **kwargs):
+        self.calls.append((method, url, kwargs))
+        return self.responses.pop(0)
+
+    def _extract_data(self, response):
+        return response.get("data", {})
+
+    def _handle_error(self, response, status_code):
+        return TemporaryError("retry") if status_code >= 500 else None
+
+
+def test_provider_version_adapter_is_invocation_scoped_and_retry_safe():
+    client = VersionProbeClient(
+        [
+            {"status_code": 500, "data": {}, "headers": {}},
+            {"status_code": 200, "data": {}, "headers": {}},
+        ]
+    )
+    client.requested_tool_api_version = "v1"
+
+    result = client.request_raw("GET", "/resource")
+
+    assert result["data"]["adapted"] is True
+    assert len(client.calls) == 2
+    assert [call[1] for call in client.calls] == ["/v1/resource", "/v1/resource"]
+    assert all(call[2]["adapter_pass"] == 1 for call in client.calls)
+    assert client.supports_tool_api_version("v1") is True
+    assert client.supports_tool_api_version("v0") is False
+
+
+def test_runtime_rejects_tool_version_not_supported_by_provider_client():
+    client = VersionProbeClient([])
+    calls = []
+
+    class Handler:
+        def __init__(self):
+            self.client = client
+
+        def execute(self, _ctx, _input):
+            calls.append(True)
+            return ToolResult.ok({"unexpected": True})
+
+    runtime = AgentRuntime(enforce_account_scope=False)
+    runtime.registry.register(
+        ToolDefinition(
+            name="versioned_read",
+            skill="provider",
+            platform="version-probe",
+            description="read",
+            input_schema=ToolSchema(),
+            provider_api_version="v0",
+        ),
+        Handler(),
+    )
+
+    result = runtime._execute_tool(ToolContext("s1", "u1"), "versioned_read", {})
+
+    assert result.success is False
+    assert "要求 Provider API v0" in result.error
+    assert calls == []
 
 
 def test_401_recovery_retries_safe_reads_but_not_writes():

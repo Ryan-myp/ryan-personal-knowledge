@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import threading
 from typing import Any, Optional
+from .platform import normalize_platform
 
 
 @dataclass(frozen=True)
@@ -79,8 +80,7 @@ class ParameterCatalogRegistry:
 
     @staticmethod
     def _normalize_platform(platform: str) -> str:
-        aliases = {"google": "google-ads", "google_ads": "google-ads"}
-        return aliases.get(str(platform).lower(), str(platform).lower())
+        return normalize_platform(platform)
 
     def register(self, catalog: ParameterCatalog) -> None:
         if not isinstance(catalog, ParameterCatalog):

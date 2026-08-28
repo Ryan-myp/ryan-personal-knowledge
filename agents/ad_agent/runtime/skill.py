@@ -18,6 +18,7 @@ from ..core.interfaces import (
     RiskLevel, ReplayPolicy, ToolDefinition, ToolEffect, ToolHandler, ToolSchema, Skill,
     SkillWorkflow, SkillWorkflowStep,
 )
+from ..core.platform import normalize_platform
 
 
 logger = logging.getLogger(__name__)
@@ -783,12 +784,10 @@ class SkillLoader:
     
     def get_by_platform(self, platform: str) -> list[Skill]:
         """获取某平台的所有 Skills"""
-        aliases = {"google": "google-ads", "google_ads": "google-ads"}
-        normalized = aliases.get(str(platform or "").strip().lower(), str(platform or "").strip().lower())
+        normalized = normalize_platform(platform)
         return [
             s for s in self._skills.values()
-            if aliases.get(str(s.platform or "").strip().lower(), str(s.platform or "").strip().lower())
-            == normalized
+            if normalize_platform(s.platform) == normalized
         ]
 
     def get_tools_by_platform(self, platform: str) -> list[ToolDefinition]:

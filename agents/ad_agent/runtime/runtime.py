@@ -48,6 +48,12 @@ from ..core.parameter_selection import (
     ParameterSelectionSigner,
 )
 from ..core.auth import RequestPrincipal, normalize_account_id, normalize_platform
+from ..core.security import (
+    PROTECTED_INPUT_FIELDS,
+    normalize_field_name,
+    protected_field_paths,
+    protected_update_paths,
+)
 from .skill import Skill, SkillLoader
 from ..persistence.session_manager import SessionManager
 from ..persistence.interfaces import PersistenceBackend
@@ -176,13 +182,7 @@ class AgentRuntime:
     # an ``updates`` object.  Request-scoped ``credentials=...`` remains a
     # separate, in-memory transport input and is intentionally not scanned by
     # this validator.
-    PROTECTED_INPUT_FIELDS = frozenset({
-        "token", "accesstoken", "refreshtoken", "developertoken", "clientid",
-        "clientsecret", "apikey", "appsecret", "secretkey", "privatekey",
-        "privatekeyid", "serviceaccount", "serviceaccountemail", "saemail",
-        "developerkey", "bcid", "partnerid", "mcc",
-        "authorization", "credential", "credentials", "perterid",
-    })
+    PROTECTED_INPUT_FIELDS = PROTECTED_INPUT_FIELDS
 
     def __init__(
         self,
@@ -994,14 +994,6 @@ class AgentRuntime:
             if handler:
                 self.registry.register(tool_def, handler)
                 registered_names.append(tool_def.name)
-        if not registered_names and skill.platform and skill.platform != "multi_platform":
-            # BaseCapability's orchestrator Skill intentionally carries
-            # knowledge/handlers but no duplicate ToolDefinitions; the
-            # platform definitions were registered just before it was built.
-            registered_names = [
-                definition.name
-                for definition in self.registry.list_by_platform(skill.platform)
-            ]
         if registered_names:
             skill_key = str(getattr(skill, "name", "") or skill.platform)
             self._skill_tool_names[skill_key] = registered_names
@@ -1616,6 +1608,13 @@ class AgentRuntime:
         """Execute a tool with an optional request-scoped provider client."""
         definition, handler = self._get_registered_tool(tool_name)
 
+        protected_paths = self._validate_tool_input_redline(input_data)
+        if protected_paths:
+            return ToolResult.error(
+                "请求包含禁止传入的凭证/账户配置字段："
+                + ", ".join(protected_paths)
+            )
+
         # Some legacy handlers retain an offline fixture fallback when their
         # ``client`` is None. That is useful for explicit dry-run/unit tests,
         # but it must never be reachable from an approved live write: a
@@ -1623,19 +1622,28 @@ class AgentRuntime:
         # mutation. Keep this check in the shared execution seam so every
         # built-in and dynamically registered handler gets the same boundary.
         if definition.is_write_tool and self.execution_mode == ExecutionMode.LIVE.value:
-            if hasattr(handler, "client"):
-                platform = self._canonical_platform(definition.platform)
-                request_client = (request_clients or {}).get(platform)
-                handler_client = getattr(handler, "client", None)
-                if request_client is None and handler_client is None:
-                    return ToolResult(
-                        success=False,
-                        data={"execution_status": "provider_unavailable"},
-                        error=(
-                            f"{tool_name} 未配置 Provider Client；live 写入已拒绝，"
-                            "不会返回本地模拟结果"
-                        ),
-                    )
+            platform = self._canonical_platform(definition.platform)
+            request_client = (request_clients or {}).get(platform)
+            handler_has_client = hasattr(handler, "client")
+            handler_client = getattr(handler, "client", None) if handler_has_client else None
+            if not handler_has_client:
+                return ToolResult(
+                    success=False,
+                    data={"execution_status": "provider_unavailable"},
+                    error=(
+                        f"{tool_name} 的 live Handler 未暴露受控 Provider Client；"
+                        "live 写入已拒绝"
+                    ),
+                )
+            if request_client is None and handler_client is None:
+                return ToolResult(
+                    success=False,
+                    data={"execution_status": "provider_unavailable"},
+                    error=(
+                        f"{tool_name} 未配置 Provider Client；live 写入已拒绝，"
+                        "不会返回本地模拟结果"
+                    ),
+                )
 
         turn_deadline = ctx.metadata.get("turn_deadline") if ctx else None
         now = time.monotonic()
@@ -1666,34 +1674,78 @@ class AgentRuntime:
                 ),
             )
 
-        def prepare_handler(source_handler: Any, source_client: Any = None) -> Any:
-            """Isolate request-scoped client state and propagate the deadline."""
+        def prepare_handler(source_handler: Any, source_client: Any = None) -> tuple[Any, bool]:
+            """Isolate client state and return ``(handler, is_isolated)``."""
             if source_client is None:
-                return source_handler
+                return source_handler, False
             client_type = type(source_client)
             timeout_setter = getattr(client_type, "set_request_timeout", None)
             timeout_attribute = "request_timeout" in getattr(source_client, "__dict__", {})
             # Test doubles and third-party clients sometimes implement a
             # permissive __getattr__.  Do not shallow-copy those objects just
             # because an arbitrary attribute lookup appeared to succeed.
-            if not callable(timeout_setter) and not timeout_attribute:
-                return source_handler
-            isolated_handler = copy.copy(source_handler)
-            isolated_client = copy.copy(source_client)
+            expected = str(getattr(definition, "provider_api_version", "") or "").strip()
+            client_state = getattr(source_client, "__dict__", {})
+            actual_value = client_state.get("api_version") if isinstance(client_state, dict) else None
+            if actual_value in (None, ""):
+                actual_value = getattr(type(source_client), "api_version", "")
+            actual = str(actual_value or "").strip()
+            needs_version_marker = bool(expected and actual and expected != actual)
+            if not callable(timeout_setter) and not timeout_attribute and not needs_version_marker:
+                return source_handler, False
+            try:
+                isolated_handler = copy.copy(source_handler)
+                isolated_client = copy.copy(source_client)
+            except Exception as exc:
+                if expected and actual and expected != actual:
+                    raise RuntimeError(
+                        f"{tool_name} 的 Provider Client 不支持请求级隔离，无法安全使用版本 adapter"
+                    ) from exc
+                if not callable(timeout_setter) and not timeout_attribute:
+                    return source_handler, False
+                raise RuntimeError(
+                    f"{tool_name} 的 Provider Client 无法创建请求级隔离副本"
+                ) from exc
             remaining = max(tool_deadline - time.monotonic(), 0.001)
             budget_setter = getattr(isolated_client, "set_request_budget", None)
             if callable(budget_setter):
                 budget_setter(remaining)
-                return_value = isolated_handler
-                return_value.client = isolated_client
-                return return_value
-            setter = getattr(isolated_client, "set_request_timeout", None)
-            if callable(setter):
-                setter(remaining)
-            elif hasattr(isolated_client, "request_timeout"):
-                isolated_client.request_timeout = remaining
+            else:
+                setter = getattr(isolated_client, "set_request_timeout", None)
+                if callable(setter):
+                    setter(remaining)
+                elif hasattr(isolated_client, "request_timeout"):
+                    isolated_client.request_timeout = remaining
             isolated_handler.client = isolated_client
-            return isolated_handler
+            return isolated_handler, True
+
+        def provider_version_error(client: Any) -> Optional[str]:
+            """Reject a Tool/client version mismatch before provider I/O."""
+            expected = str(getattr(definition, "provider_api_version", "") or "").strip()
+            if not expected or client is None:
+                return None
+            checker = getattr(type(client), "supports_tool_api_version", None)
+            if callable(checker):
+                compatible = bool(checker(client, expected))
+            else:
+                client_state = getattr(client, "__dict__", {})
+                actual_value = client_state.get("api_version") if isinstance(client_state, dict) else None
+                if actual_value in (None, ""):
+                    actual_value = getattr(type(client), "api_version", "")
+                actual = str(actual_value or "").strip()
+                compatible = not actual or actual == expected
+            if compatible:
+                return None
+            client_state = getattr(client, "__dict__", {})
+            actual_value = client_state.get("api_version") if isinstance(client_state, dict) else None
+            if actual_value in (None, ""):
+                actual_value = getattr(type(client), "api_version", "")
+            actual = str(actual_value or "unknown")
+            supported = getattr(type(client), "SUPPORTED_API_VERSIONS", ()) or ()
+            return (
+                f"{tool_name} 要求 Provider API {expected}，当前 Client 为 {actual}；"
+                f"支持版本: {list(supported)}。请升级 Client 或提供版本 adapter"
+            )
 
         # A handler's fixture fallback is useful for explicit offline unit
         # tests, but it must not look like live provider data in the normal
@@ -1716,15 +1768,34 @@ class AgentRuntime:
                 # this invocation so request timeout state cannot race with a
                 # different session using the same handler.
                 source_client = getattr(handler, "client", None)
-                invocation_handler = prepare_handler(handler, source_client)
+                invocation_handler, client_isolated = prepare_handler(handler, source_client)
             else:
                 client = request_clients.get(
                     self._canonical_platform(definition.platform)
                 )
                 if client is None or not hasattr(handler, "client"):
                     invocation_handler = handler
+                    client_isolated = False
                 else:
-                    invocation_handler = prepare_handler(handler, client)
+                    invocation_handler, client_isolated = prepare_handler(handler, client)
+
+            active_client = getattr(invocation_handler, "client", None)
+            version_error = provider_version_error(active_client)
+            if version_error:
+                return ToolResult.error(version_error)
+            if active_client is not None and client_isolated:
+                # BasePlatformClient reads this marker when selecting a
+                # provider-owned request/response adapter. It is invocation
+                # scoped because one Runtime may host multiple Tool versions.
+                try:
+                    active_client.requested_tool_api_version = str(
+                        getattr(definition, "provider_api_version", "") or ""
+                    ) or None
+                except Exception:
+                    # Third-party clients may be immutable; compatibility was
+                    # already checked, so they can still execute exact-match
+                    # contracts without the optional adapter marker.
+                    pass
 
             if definition.input_schema:
                 errors = validate_tool_input(definition.input_schema, input_data)
@@ -1787,25 +1858,39 @@ class AgentRuntime:
     @classmethod
     def _protected_field_paths(cls, value: Any, path: str = "") -> list[str]:
         """Return structured paths containing configuration/credential keys."""
-        found: list[str] = []
-        if isinstance(value, dict):
-            for key, item in value.items():
-                key_text = str(key)
-                normalized = re.sub(r"[^a-z0-9]", "", key_text.lower())
-                current = f"{path}.{key_text}" if path else key_text
-                if normalized in cls.PROTECTED_INPUT_FIELDS:
-                    found.append(current)
-                else:
-                    found.extend(cls._protected_field_paths(item, current))
-        elif isinstance(value, (list, tuple)):
-            for index, item in enumerate(value):
-                found.extend(cls._protected_field_paths(item, f"{path}[{index}]"))
-        return found
+        return protected_field_paths(value, cls.PROTECTED_INPUT_FIELDS, path, limit=100)
 
     @classmethod
     def _validate_protected_input(cls, value: Any) -> list[str]:
         paths = cls._protected_field_paths(value)
         return paths[:10]
+
+    @classmethod
+    def _validate_tool_input_redline(cls, value: Any) -> list[str]:
+        """Validate credentials everywhere and account config inside updates.
+
+        ``account_id``/``customer_id`` are valid top-level selectors, so they
+        cannot be globally rejected. They become protected configuration once
+        nested below an ``updates`` payload. Keeping this check in the Runtime
+        execution seam also protects custom Skill handlers and batch plans.
+        """
+        paths = cls._validate_protected_input(value)
+
+        def visit(node: Any, path: str = "") -> None:
+            if isinstance(node, dict):
+                for key, child in node.items():
+                    key_text = str(key)
+                    current = f"{path}.{key_text}" if path else key_text
+                    if normalize_field_name(key_text) in {"updates", "update"}:
+                        paths.extend(protected_update_paths(child, current))
+                    else:
+                        visit(child, current)
+            elif isinstance(node, (list, tuple)):
+                for index, child in enumerate(node):
+                    visit(child, f"{path}[{index}]")
+
+        visit(value)
+        return list(dict.fromkeys(paths))[:10]
 
     @staticmethod
     def _confirmation_plan(
@@ -3302,7 +3387,7 @@ class AgentRuntime:
         
         # 如果提供了 platform_params（来自确认请求），合并到意图中
         if platform_params:
-            protected_paths = self._validate_protected_input(platform_params)
+            protected_paths = self._validate_tool_input_redline(platform_params)
             if protected_paths:
                 error = "请求包含禁止传入的凭证/账户配置字段：" + ", ".join(protected_paths)
                 session.add_message({"role": "user", "content": safe_user_input})
@@ -3686,7 +3771,7 @@ class AgentRuntime:
                         parent_resource_type=getattr(tool_def, "parent_resource_type", None),
                     )
 
-                protected_paths = self._validate_protected_input(tool_input)
+                protected_paths = self._validate_tool_input_redline(tool_input)
                 if protected_paths:
                     error = "请求包含禁止传入的凭证/账户配置字段：" + ", ".join(protected_paths)
                     results.append({

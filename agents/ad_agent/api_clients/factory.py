@@ -11,24 +11,12 @@ from __future__ import annotations
 import copy
 import importlib
 import inspect
-import re
 from typing import Any, Optional
-
-
-PLATFORM_ALIASES = {
-    "google": "google-ads",
-    "google_ads": "google-ads",
-    "google-ads": "google-ads",
-}
-
-
-def normalize_platform(platform: str) -> str:
-    value = str(platform or "").strip().lower()
-    return PLATFORM_ALIASES.get(value, value)
+from ..core.platform import normalize_platform, platform_slug
 
 
 def _module_slug(platform: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", normalize_platform(platform)).strip("_")
+    return platform_slug(platform)
 
 
 def discover_client_factory(platform: str):

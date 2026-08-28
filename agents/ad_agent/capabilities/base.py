@@ -20,15 +20,7 @@ from ..core.interfaces import (
     WriteGuard, RiskLevel, ToolEffect
 )
 from ..core.tool_registry import SimpleToolRegistry
-
-
-PROTECTED_UPDATE_FIELDS = frozenset({
-    "token", "accesstoken", "refreshtoken", "developertoken", "clientid",
-    "clientsecret", "apikey", "appsecret", "secretkey", "privatekey",
-    "privatekeyid", "serviceaccount", "serviceaccountemail", "saemail",
-    "developerkey", "bcid", "partnerid", "mcc",
-    "authorization", "credential", "credentials", "perterid",
-})
+from ..core.security import protected_update_paths
 
 
 def call_with_optional_page_size(
@@ -56,24 +48,6 @@ def call_with_optional_page_size(
     if name is None or limit is None:
         return method(*args)
     return method(*args, **{name: limit})
-
-
-def protected_update_paths(value: Any, path: str = "") -> list[str]:
-    """Find red-line configuration fields in a provider update payload."""
-    found: list[str] = []
-    if isinstance(value, dict):
-        for key, item in value.items():
-            key_text = str(key)
-            normalized = "".join(char for char in key_text.lower() if char.isalnum())
-            current = f"{path}.{key_text}" if path else key_text
-            if normalized in PROTECTED_UPDATE_FIELDS:
-                found.append(current)
-            else:
-                found.extend(protected_update_paths(item, current))
-    elif isinstance(value, (list, tuple)):
-        for index, item in enumerate(value):
-            found.extend(protected_update_paths(item, f"{path}[{index}]"))
-    return found[:10]
 
 
 class BaseCapability(CapabilityModule, ABC):

@@ -28,7 +28,7 @@
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐    │
 │  │ IntentParser    │  │ IntentRouter    │  │ ToolRegistry             │    │
 │  │ 意图解析         │→│ 路由分发         │→ │ 工具注册/执行            │    │
-│  │ - LLM/P规则      │  │ - 多平台支持    │  │ - 107 tools              │    │
+│  │ - LLM/规则 fallback│ │ - 发现式路由   │  │ - 107 tools              │    │
 │  └─────────────────┘  └─────────────────┘  └─────────────────────────┘    │
 │                                                                             │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐    │
@@ -68,7 +68,7 @@
 ```python
 # 位置: core/intent.py
 class LLMIntentParser:
-    """基于 LLM 的意图解析"""
+    """LLM 解析，失败时使用同一类中的规则 fallback。"""
     PARSE_PROMPT_TEMPLATE = """
     你是广告投放专家助手。请分析用户的投放需求：
     - intent_type: create/update/pause/resume/cross-channel | boost_post | download_report
@@ -77,18 +77,10 @@ class LLMIntentParser:
     - platform_params: 各平台具体参数
     """
 
-class SimpleIntentParser:
-    """基于规则的轻量级解析（默认）"""
-    def _detect_intent(self, text: str) -> str:
-        # 报表查询
-        if any(kw in text for kw in ["报表", "report", "下载", "查看数据"]):
-            return "download_report"
-        # 创建广告
-        if any(kw in text for kw in ["投放", "创建广告", "创建", "promote"]):
-            return "create_campaign"
-        # 列表查询
-        if any(kw in text for kw in ["列表", "list", "查询"]):
-            return "list_campaigns"
+    def parse(self, text: str, context: ToolContext) -> ParsedIntent:
+        # 平台集合、Skill aliases 和 Tool Schema 均来自当前注册对象；
+        # Router 不维护 Meta/Google/TikTok/DV360 的中心路由表。
+        ...
 ```
 
 ### 2. IntentRouter (发现式意图路由器)
@@ -266,6 +258,19 @@ class TikTokAPIClient(BaseAPIClient):
                                               ▼
                                          返回给用户 (JSON/HTML)
 ```
+
+### Provider 接口与版本演进
+
+当前 107 个 Tool 是四个 Capability 对其已实现 Client 方法的覆盖基线，不等于四个
+官方 Marketing API 的全量接口。新增接口由渠道包自己完成 Client 方法、Tool Schema、
+参数目录/lookup 和 payload adapter，再通过 `audit_capabilities.py` 与契约快照进入
+发布门禁。
+
+`ToolDefinition.provider_api_version` 是 Tool 与 Provider Client 之间的版本契约。
+`BasePlatformClient` 负责检查 `SUPPORTED_API_VERSIONS`，并把请求/响应交给渠道 Client
+拥有的 `VERSION_ADAPTERS`。因此版本升级不需要修改 Runtime 或 IntentRouter；只需增加
+渠道 Client 的版本支持、adapter 和对应回归。如果字段语义不能兼容，必须 fail-closed，
+保留 dry-run，不得静默发送未经验证的 Provider payload。
 
 ## 五、安全机制与执行模式
 

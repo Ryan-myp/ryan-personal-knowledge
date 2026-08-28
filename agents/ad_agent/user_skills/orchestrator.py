@@ -14,6 +14,7 @@ from ..core.interfaces import (
     ToolContext, RiskLevel, ToolEffect, ReplayPolicy
 )
 from ..core.intent import ParsedIntent
+from ..core.platform import normalize_platform
 
 
 class AdCampaignOrchestratorHandler(ToolHandler):
@@ -137,8 +138,7 @@ class AdCampaignOrchestratorHandler(ToolHandler):
 
     @staticmethod
     def _normalize_platform(platform: str) -> str:
-        value = str(platform or "").strip().lower()
-        return {"google": "google-ads", "google_ads": "google-ads"}.get(value, value)
+        return normalize_platform(platform)
     
     def _get_platform_description(self, platform: str) -> str:
         tools = [

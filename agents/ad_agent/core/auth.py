@@ -12,17 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional
-
-
-def normalize_platform(platform: str) -> str:
-    """Normalize the platform aliases used by the Runtime authorization map."""
-    aliases = {
-        "google": "google-ads",
-        "google_ads": "google-ads",
-        "google ads": "google-ads",
-    }
-    value = str(platform or "").strip().lower()
-    return aliases.get(value, value)
+from .platform import normalize_platform
 
 
 def normalize_account_id(account_id: Any) -> str:
