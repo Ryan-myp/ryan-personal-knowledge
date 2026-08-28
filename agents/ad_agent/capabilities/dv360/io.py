@@ -60,7 +60,7 @@ class DV360CreateIOHandler(ToolHandler):
                 return ToolResult.ok({
                     "io_id": io_id,
                     "name": input_data.get("name"),
-                    "status": "ACTIVE",
+                    "status": input_data.get("status", "DRAFT"),
                 })
             except Exception as e:
                 return ToolResult.error(f"Failed to create DV360 IO: {e}")
@@ -68,5 +68,5 @@ class DV360CreateIOHandler(ToolHandler):
             return ToolResult.ok({
                 "io_id": "dv360_io_1",
                 "name": input_data.get("name"),
-                "status": "ACTIVE",
+                "status": input_data.get("status", "DRAFT"),
             })

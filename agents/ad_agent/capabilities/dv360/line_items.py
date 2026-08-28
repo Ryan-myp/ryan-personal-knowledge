@@ -64,7 +64,7 @@ class DV360CreateLineItemHandler(ToolHandler):
                 return ToolResult.ok({
                     "line_item_id": line_item_id,
                     "name": input_data.get("name"),
-                    "status": "ACTIVE",
+                    "status": input_data.get("status", "DRAFT"),
                 })
             except Exception as e:
                 return ToolResult.error(f"Failed to create DV360 line item: {e}")
@@ -72,5 +72,5 @@ class DV360CreateLineItemHandler(ToolHandler):
             return ToolResult.ok({
                 "line_item_id": "dv360_li_1",
                 "name": input_data.get("name"),
-                "status": "ACTIVE",
+                "status": input_data.get("status", "DRAFT"),
             })

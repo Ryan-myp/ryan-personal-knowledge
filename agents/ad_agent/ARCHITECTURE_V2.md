@@ -105,6 +105,14 @@ class SimpleIntentRouter:
 权限、账户、dry-run、审批、幂等与恢复。严格 DAG 只作为特殊扩展点，不是
 每个 Skill 的必填配置。
 
+参数选择也遵循同一边界：固定 Provider 枚举由 Tool Schema 的 `enum` 自动生成
+catalog；账户相关的 App、地域、转化事件等由字段上的 `lookup_tool` 声明，
+`GET /parameter-options/resolve` 才会执行对应的只读查询。查询结果中的短期
+selection token 绑定用户、租户、会话、账户、目标 Tool、字段和来源 Tool，不能
+跨上下文复用。新增参数只改所属 Capability 的 Schema/adapter，不改 Runtime 的
+渠道分支；既有 Meta、Google、TikTok、DV360 创建适配器也必须保持 Schema 到
+Provider payload 的显式透传。
+
 ### 3. ToolRegistry (工具注册中心)
 ```python
 # 位置: core/tool_registry.py

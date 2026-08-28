@@ -617,6 +617,33 @@ class SkillWorkflow:
             return self.platforms
         return {"": self.tools} if self.tools else {}
 
+    def ordered_steps(self) -> list[SkillWorkflowStep]:
+        """Return a stable topological order for Runtime execution.
+
+        ``validation_errors`` checks that the graph is a DAG, but callers also
+        need the graph order rather than the file order.  A declaration-order
+        tie break keeps plans reproducible when two independent steps are
+        ready at the same time.  The method is deliberately data-only: a
+        workflow can select Tools, but it cannot execute Python or bypass the
+        Runtime policy gates.
+        """
+        errors = self.validation_errors()
+        if errors:
+            raise ValueError("; ".join(errors))
+        by_id = {step.id: step for step in self.steps}
+        remaining = {step.id: set(step.depends_on) for step in self.steps}
+        ordered: list[SkillWorkflowStep] = []
+        while remaining:
+            ready = [step.id for step in self.steps if step.id in remaining and not remaining[step.id]]
+            if not ready:
+                raise ValueError(f"workflow {self.name}: step dependencies contain a cycle")
+            for step_id in ready:
+                ordered.append(by_id[step_id])
+                remaining.pop(step_id, None)
+            for deps in remaining.values():
+                deps.difference_update(ready)
+        return ordered
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,

@@ -63,8 +63,11 @@ class GoogleCreateAdGroupHandler(ToolHandler):
                 ad_group_id = client.create_ad_group(
                     campaign_id=campaign_id,
                     name=input_data.get("name"),
-                    cpc_bid_micros=int(float(input_data.get("cpc_bid", 0.5)) * 1_000_000),
+                    cpc_bid_micros=input_data.get("cpc_bid_micros")
+                    or int(float(input_data.get("cpc_bid", 0.5)) * 1_000_000),
                     type=input_data.get("type", "SEARCH_DYNAMIC_ADS"),
+                    status=input_data.get("status"),
+                    targeting=input_data.get("targeting"),
                 )
                 return ToolResult.ok({
                     "ad_group_id": ad_group_id,

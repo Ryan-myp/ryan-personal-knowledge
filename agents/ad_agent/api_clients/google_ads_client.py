@@ -428,6 +428,11 @@ class GoogleAdsAPIClient(BasePlatformClient):
         daily_budget: float,
         target_cpa_micros: int = None,
         target_roas: float = None,
+        target_impression_share: float = None,
+        status: str = None,
+        networks: list[str] = None,
+        start_date: str = None,
+        end_date: str = None,
     ) -> str:
         """
         创建 Campaign（需要先创建 CampaignBudget）
@@ -454,9 +459,21 @@ class GoogleAdsAPIClient(BasePlatformClient):
         campaign_data = {
             'name': name,
             'advertisingChannelType': advertising_channel_type,
-            'status': 'PAUSED',
+            'status': status or 'PAUSED',
             'campaignBudget': budget_resource_name,
         }
+
+        if start_date:
+            campaign_data['startDate'] = start_date
+        if end_date:
+            campaign_data['endDate'] = end_date
+        if networks:
+            selected = {str(network).upper() for network in networks}
+            campaign_data['networkSettings'] = {
+                'targetGoogleSearch': 'GOOGLE_SEARCH' in selected,
+                'targetSearchNetwork': 'SEARCH_PARTNERS' in selected,
+                'targetContentNetwork': 'DISPLAY_NETWORK' in selected,
+            }
         
         # 出价策略附加参数
         strategy = (bidding_strategy or 'MAXIMIZE_CONVERSIONS').upper()
@@ -468,6 +485,15 @@ class GoogleAdsAPIClient(BasePlatformClient):
             }
         elif strategy == 'TARGET_ROAS':
             campaign_data['targetRoas'] = {'targetRoas': target_roas or 4.0}
+        elif strategy == 'MAXIMIZE_CLICKS':
+            campaign_data['maximizeClicks'] = {}
+        elif strategy == 'MAXIMIZE_CONVERSION_VALUE':
+            campaign_data['maximizeConversionValue'] = {}
+        elif strategy == 'TARGET_IMPRESSION_SHARE':
+            campaign_data['targetImpressionShare'] = {
+                'location': 'ANYWHERE_ON_PAGE',
+                'locationFractionMicros': int(float(target_impression_share or 0.5) * 1_000_000),
+            }
         else:
             campaign_data['maximizeConversions'] = {}
 
@@ -545,15 +571,22 @@ class GoogleAdsAPIClient(BasePlatformClient):
         name: str,
         cpc_bid_micros: int = 500000,
         type: str = "SEARCH_DYNAMIC_ADS",
+        status: str = None,
+        targeting: dict = None,
     ) -> str:
         """创建 Ad Group"""
         ad_group_data = {
             'name': name,
-            'status': 'PAUSED',
+            'status': status or 'PAUSED',
             'campaign': f'customers/{self.customer_id}/campaigns/{campaign_id}',
             'type': type,
             'cpcBidMicros': cpc_bid_micros,
         }
+        if targeting:
+            # ``targeting`` is a provider-ready targetingSetting object. More
+            # granular criteria are separate Google Ads resources and should
+            # be added as a dedicated Tool instead of being silently dropped.
+            ad_group_data['targetingSetting'] = self._camel_case_keys(targeting)
         
         resp = self._mutate('adGroups', {'create': ad_group_data})
         resource_name = self._mutation_resource_name(resp)
@@ -569,19 +602,34 @@ class GoogleAdsAPIClient(BasePlatformClient):
         headlines: list[str],
         descriptions: list[str],
         final_url: str,
+        ad_type: str = None,
+        path1: str = None,
+        path2: str = None,
+        responsive_search_ad: dict = None,
+        status: str = None,
     ) -> str:
         """创建响应式搜索广告"""
+        if ad_type and str(ad_type).upper() != "RESPONSIVE_SEARCH_AD":
+            raise ValueError(
+                "Google create_search_ad currently supports only RESPONSIVE_SEARCH_AD"
+            )
         ad_data = {
             'adGroup': f'customers/{self.customer_id}/adGroups/{ad_group_id}',
-            'status': 'PAUSED',
+            'status': status or 'PAUSED',
             'ad': {
                 'finalUrls': [final_url],
-                'responsiveSearchAd': {
+                'responsiveSearchAd': responsive_search_ad or {
                     'headlines': [{'text': h} for h in headlines[:15]],
                     'descriptions': [{'text': d} for d in descriptions[:4]],
                 },
             },
         }
+        rsa = ad_data['ad'].get('responsiveSearchAd')
+        if isinstance(rsa, dict):
+            if path1:
+                rsa['path1'] = path1
+            if path2:
+                rsa['path2'] = path2
         resp = self._mutate('adGroupAds', {'create': ad_data})
         resource_name = self._mutation_resource_name(resp)
         if not resource_name:

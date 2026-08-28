@@ -96,6 +96,11 @@ class GoogleCreateCampaignHandler(ToolHandler):
                     daily_budget=float(input_data.get("budget", input_data.get("daily_budget", 0))),
                     target_cpa_micros=input_data.get("target_cpa_micros"),
                     target_roas=input_data.get("target_roas"),
+                    target_impression_share=input_data.get("target_impression_share"),
+                    status=input_data.get("status"),
+                    networks=input_data.get("networks"),
+                    start_date=input_data.get("start_date"),
+                    end_date=input_data.get("end_date"),
                 )
                 return ToolResult.ok({
                     "campaign_id": campaign_id,

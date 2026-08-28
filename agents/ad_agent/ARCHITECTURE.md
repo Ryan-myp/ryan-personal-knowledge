@@ -73,6 +73,21 @@ skills/
 
 ## 核心设计原则
 
+### 0. Skill、Capability 和参数契约的边界
+
+`SKILL.md` 是自然语言上下文：描述平台知识、SOP、适用范围和安全边界；它不是
+Tool 注册表，也不执行代码。Capability/plugin 才提供 `ToolDefinition`、Handler
+和 Provider Client。每个 Tool 自己声明 action、资源层级、输入 Schema、固定枚举
+以及可选的 `lookup_tool`。
+
+固定枚举由 `/parameter-options` 暴露；App、地域、转化事件等账户相关值由
+`/parameter-options/resolve` 调用对应的只读 lookup Tool 获取。Resolver 复用权限、
+账户白名单和超时边界，并可返回绑定用户/会话/账户的短期 selection token。
+
+普通 Skill 只需要自然语言 SOP。只有需要严格确定性顺序的特殊流程，才在 Skill
+目录旁增加可选 `workflow.yaml`；它是无代码的 DAG 声明，Runtime 仍统一执行权限、
+账户、dry-run、确认、幂等和恢复检查。
+
 ### 1. 业务 Skill 不直接引用渠道 Skill
 ```python
 # ❌ 错误：业务直接 import 渠道
@@ -142,6 +157,13 @@ ToolSelector 筛选
 ```
 
 ## 扩展指南
+
+### 新增渠道或 Tool
+
+新增渠道只需提供约定目录下的 Capability factory（以及可选的 Provider Client）和
+渠道 Skill；新增 Tool 只需在所属 Capability/plugin 中注册自描述的 ToolDefinition。
+不需要修改中心 Router、Runtime 平台列表或跨渠道映射表。既有渠道也遵循同一注册、
+Schema、权限、账户边界和参数透传契约。
 
 ### 新增业务（3 步）
 

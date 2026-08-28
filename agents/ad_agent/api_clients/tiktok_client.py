@@ -385,8 +385,13 @@ class TikTokAPIClient(BasePlatformClient):
         # 素材
         if ad.get('media'):
             data['ad']['media'] = ad['media']
+        if ad.get('creatives'):
+            data['ad']['creatives'] = ad['creatives']
         if ad.get('text'):
             data['ad']['text'] = ad['text']
+        for key in ('ad_format', 'status'):
+            if key in ad and ad[key] not in (None, ''):
+                data['ad'][key] = ad[key]
         
         result = self.request('POST', 'ad/create/', data=data)
         return str(result.get('ad_id', '')) if isinstance(result, dict) else ''

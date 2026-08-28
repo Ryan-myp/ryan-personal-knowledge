@@ -1,7 +1,11 @@
 """Regression tests for metadata-driven Tool discovery."""
 
 from agents.ad_agent.core.interfaces import (
+    IntentParser,
     ParsedIntent,
+    Skill,
+    SkillWorkflow,
+    SkillWorkflowStep,
     ToolContext,
     ToolDefinition,
     ToolEffect,
@@ -158,6 +162,286 @@ def test_skill_can_own_optional_workflow_without_becoming_tool_registry(tmp_path
             "new-network": ["new_validate_campaign", "new_create_campaign"]
         }
     }
+
+
+def test_skill_workflow_executes_dependency_order_and_input_mapping():
+    calls = []
+
+    class FixedIntentParser(IntentParser):
+        def parse(self, _user_input, _context):
+            return ParsedIntent(
+                intent_type="create_campaign",
+                raw_input="create",
+                platforms=["new-network"],
+                objective="sales",
+            )
+
+    class ValidateHandler:
+        def execute(self, _ctx, _input):
+            calls.append("validate")
+            return ToolResult.ok({"validation_id": "validation-1"})
+
+    class CreateHandler:
+        def execute(self, _ctx, input_data):
+            calls.append(("create", input_data["validation_id"]))
+            return ToolResult.ok({"campaign_id": "provider-campaign-1"})
+
+    class WorkflowSkill(Skill):
+        name = "new-network-skill"
+        platform = "new-network"
+        description = "New network campaign workflow"
+
+        def __init__(self):
+            self.handlers = {
+                "new_validate_campaign": ValidateHandler(),
+                "new_create_campaign": CreateHandler(),
+            }
+
+        def get_tools(self):
+            return [
+                ToolDefinition(
+                    name="new_validate_campaign",
+                    skill=self.name,
+                    platform=self.platform,
+                    description="Validate campaign",
+                    input_schema=ToolSchema(
+                        properties={"account_id": {"type": "string"}},
+                    ),
+                    action="validate",
+                    resource_type="campaign",
+                    intent_types=["create_campaign"],
+                ),
+                ToolDefinition(
+                    name="new_create_campaign",
+                    skill=self.name,
+                    platform=self.platform,
+                    description="Create campaign",
+                    input_schema=ToolSchema(
+                        required=["account_id", "name", "validation_id"],
+                        properties={
+                            "account_id": {"type": "string"},
+                            "name": {"type": "string"},
+                            "validation_id": {"type": "string"},
+                        },
+                    ),
+                    action="create",
+                    resource_type="campaign",
+                    intent_types=["create_campaign"],
+                    effect_class=ToolEffect.WRITE,
+                ),
+            ]
+
+        def get_tool_handler(self, tool_name):
+            return self.handlers[tool_name]
+
+        def get_workflows(self):
+            return {
+                "create_campaign": SkillWorkflow(
+                    name="create_campaign",
+                    steps=(
+                        SkillWorkflowStep(
+                            id="create",
+                            tool="new_create_campaign",
+                            depends_on=("validate",),
+                            input_mapping={"validation_id": "validate.validation_id"},
+                        ),
+                        SkillWorkflowStep(
+                            id="validate",
+                            tool="new_validate_campaign",
+                            output_mapping={"validation_id": "validate.validation_id"},
+                        ),
+                    ),
+                )
+            }
+
+    validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+    validator.allowed_accounts = {"new-network": ["n1"]}
+    runtime = AgentRuntime(
+        intent_parser=FixedIntentParser(),
+        whitelist_validator=validator,
+    )
+    assert runtime.register_skill(WorkflowSkill(), "new-network") is True
+
+    result = runtime.run(
+        "create",
+        account_id="n1",
+        platform_params={"new-network": {"name": "workflow-campaign"}},
+    )
+
+    # Dry-run writes are intentionally intercepted before the Handler. The
+    # planned payload is still the evidence that the workflow mapping ran.
+    assert calls == ["validate"]
+    assert [item["tool"] for item in result["results"]] == [
+        "new_validate_campaign", "new_create_campaign",
+    ]
+    assert result["results"][1]["success"] is True
+    assert result["results"][1]["data"]["input"]["validation_id"] == "validation-1"
+
+
+def test_skill_workflow_when_false_skips_step_and_blocks_dependents():
+    class FixedIntentParser(IntentParser):
+        def parse(self, _user_input, _context):
+            return ParsedIntent(
+                intent_type="create_campaign",
+                raw_input="create",
+                platforms=["new-network"],
+                objective="traffic",
+            )
+
+    class WorkflowSkill(Skill):
+        name = "conditional-network-skill"
+        platform = "new-network"
+        description = "Conditional network workflow"
+
+        def get_tools(self):
+            return [
+                ToolDefinition(
+                    name="new_validate_campaign",
+                    skill=self.name,
+                    platform=self.platform,
+                    description="Validate campaign",
+                    input_schema=ToolSchema(),
+                    action="validate",
+                    resource_type="campaign",
+                    intent_types=["create_campaign"],
+                ),
+                ToolDefinition(
+                    name="new_create_campaign",
+                    skill=self.name,
+                    platform=self.platform,
+                    description="Create campaign",
+                    input_schema=ToolSchema(),
+                    action="create",
+                    resource_type="campaign",
+                    intent_types=["create_campaign"],
+                    effect_class=ToolEffect.WRITE,
+                ),
+            ]
+
+        def get_tool_handler(self, _tool_name):
+            return type("Handler", (), {"execute": lambda _self, _ctx, _input: ToolResult.ok({})})()
+
+        def get_workflows(self):
+            return {
+                "create_campaign": SkillWorkflow(
+                    name="create_campaign",
+                    steps=(
+                        SkillWorkflowStep(
+                            id="validate",
+                            tool="new_validate_campaign",
+                            when={"objective": "sales"},
+                        ),
+                        SkillWorkflowStep(
+                            id="create",
+                            tool="new_create_campaign",
+                            depends_on=("validate",),
+                        ),
+                    ),
+                )
+            }
+
+    validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+    validator.allowed_accounts = {"new-network": ["n1"]}
+    runtime = AgentRuntime(
+        intent_parser=FixedIntentParser(),
+        whitelist_validator=validator,
+    )
+    runtime.register_skill(WorkflowSkill(), "new-network")
+
+    result = runtime.run("create", account_id="n1")
+
+    assert len(result["results"]) == 1
+    assert result["results"][0]["tool"] == "new_create_campaign"
+    assert result["results"][0]["skipped"] is True
+    assert "validate" in result["results"][0]["error"]
+
+
+def test_skill_workflow_on_error_continue_allows_explicit_dependent_step():
+    class FixedIntentParser(IntentParser):
+        def parse(self, _user_input, _context):
+            return ParsedIntent(
+                intent_type="create_campaign",
+                raw_input="create",
+                platforms=["new-network"],
+            )
+
+    class WorkflowSkill(Skill):
+        name = "continue-network-skill"
+        platform = "new-network"
+        description = "Continue-on-error workflow"
+
+        def get_tools(self):
+            return [
+                ToolDefinition(
+                    name="new_validate_campaign",
+                    skill=self.name,
+                    platform=self.platform,
+                    description="Validate campaign",
+                    input_schema=ToolSchema(),
+                    action="validate",
+                    resource_type="campaign",
+                    intent_types=["create_campaign"],
+                ),
+                ToolDefinition(
+                    name="new_create_campaign",
+                    skill=self.name,
+                    platform=self.platform,
+                    description="Create campaign",
+                    input_schema=ToolSchema(),
+                    action="create",
+                    resource_type="campaign",
+                    intent_types=["create_campaign"],
+                    effect_class=ToolEffect.WRITE,
+                ),
+            ]
+
+        def get_tool_handler(self, tool_name):
+            if tool_name == "new_validate_campaign":
+                return type(
+                    "FailingHandler",
+                    (),
+                    {"execute": lambda _self, _ctx, _input: ToolResult.error("validation failed")},
+                )()
+            return type(
+                "Handler",
+                (),
+                {"execute": lambda _self, _ctx, _input: ToolResult.ok({})},
+            )()
+
+        def get_workflows(self):
+            return {
+                "create_campaign": SkillWorkflow(
+                    name="create_campaign",
+                    steps=(
+                        SkillWorkflowStep(
+                            id="validate",
+                            tool="new_validate_campaign",
+                            on_error="continue",
+                        ),
+                        SkillWorkflowStep(
+                            id="create",
+                            tool="new_create_campaign",
+                            depends_on=("validate",),
+                        ),
+                    ),
+                )
+            }
+
+    validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+    validator.allowed_accounts = {"new-network": ["n1"]}
+    runtime = AgentRuntime(
+        intent_parser=FixedIntentParser(),
+        whitelist_validator=validator,
+    )
+    runtime.register_skill(WorkflowSkill(), "new-network")
+
+    result = runtime.run("create", account_id="n1")
+
+    assert [item["tool"] for item in result["results"]] == [
+        "new_validate_campaign", "new_create_campaign",
+    ]
+    assert result["results"][0]["success"] is False
+    assert result["results"][1]["success"] is True
 
 
 def test_runtime_resource_outputs_use_tool_metadata_not_tool_name():

@@ -112,6 +112,11 @@ Provider live lookup 返回的动态选项会附带短时 `selection_token`。�
 
 动态字段的 `lookup_tool` 在 Skill 注册时还会被检查：来源工具必须已注册、属于同一渠道且是只读工具。没有 Provider Client 时，live 写入会 fail-closed，不会把 Handler 的离线 fixture 当成线上成功。
 
+表单或前端需要实时加载账户相关参数时，调用 `GET /parameter-options/resolve`，
+传入 `platform`、`field`、`tool_name`、`account_id` 和可选 `session_id`；认证主体
+由 `X-API-Key` 对应的 principal 提供，接口不会信任 query/body 中的用户身份。该接口
+只解析动态 lookup，固定枚举仍使用 `GET /parameter-options`。
+
 ### Harness Engineering 评估
 
 当前核心 Harness 已具备：受限 Tool/Skill 契约、统一 Runtime 执行入口、权限/账户白名单、dry-run、显式确认、持久化幂等、workflow checkpoint/lease/recovery、Provider 回查入口，以及 LLM 输出后的二次 schema 校验。结论是“核心骨架符合，尚未达到生产闭环”，不能把当前 72 个工具数或单元测试通过当成 Provider live 已验证。

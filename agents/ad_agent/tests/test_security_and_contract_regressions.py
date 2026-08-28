@@ -457,6 +457,31 @@ def test_live_lookup_mints_context_bound_selection_token_for_dry_run_create():
     assert adgroup["data"]["input"]["app_id"] == "app-1"
 
 
+def test_parameter_options_resolver_reuses_lookup_tool_boundaries():
+    class LookupClient:
+        platform = "tiktok"
+
+        def list_apps(self, filtering=None, page_size=20):
+            return [{"app_id": "app-2", "app_name": "Resolver App"}]
+
+    validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+    validator.allowed_accounts = {"tiktok": ["t1"]}
+    runtime = AgentRuntime(
+        whitelist_validator=validator,
+        selection_token_secret="selection-secret-1234",
+    )
+    runtime.register_capability(create_tiktok_capability(LookupClient()))
+
+    selection = runtime.resolve_parameter_options(
+        "tiktok", "app_id", "tiktok_create_adgroup", "t1",
+        session_id="resolver-session", user_id="u1", tenant_id="tenant-a",
+    )
+
+    assert selection["tool_name"] == "tiktok_create_adgroup"
+    assert selection["options"][0]["value"] == "app-2"
+    assert selection["options"][0]["selection_token"].startswith("ps1.")
+
+
 def test_live_dynamic_parameter_rejects_unattested_raw_value():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"tiktok": ["t1"]}

@@ -316,6 +316,8 @@ class MetaAPIClient(BasePlatformClient):
             'special_ad_categories': campaign.get('special_ad_categories', 'NONE'),
             'is_adset_budget_sharing_enabled': 'False',  # 不使用 campaign budget 时必须指定
         }
+        if campaign.get('buying_type') is not None:
+            data['buying_type'] = campaign['buying_type']
         if 'status' in campaign:
             data['status'] = campaign['status']
         daily_budget = campaign.get('daily_budget', campaign.get('budget'))
@@ -323,6 +325,8 @@ class MetaAPIClient(BasePlatformClient):
             data['daily_budget'] = str(int(float(daily_budget) * 100))  # 转为分
         if campaign.get('lifetime_budget') is not None:
             data['lifetime_budget'] = str(int(float(campaign['lifetime_budget']) * 100))
+        if campaign.get('spend_cap') is not None:
+            data['spend_cap'] = str(int(float(campaign['spend_cap']) * 100))
         if 'start_time' in campaign:
             data['start_time'] = campaign['start_time']
         if 'end_time' in campaign:
@@ -387,7 +391,9 @@ class MetaAPIClient(BasePlatformClient):
             'campaign_id': campaign_id,
             'optimization_goal': adset.get('optimization_goal', 'REACH'),
             'billing_event': adset.get('billing_event', 'IMPRESSIONS'),
-            'bidding_strategy': adset.get('bidding_strategy', 'LOWEST_COST_WITHOUT_CAP'),
+            'bidding_strategy': adset.get(
+                'bidding_strategy', adset.get('bid_strategy', 'LOWEST_COST_WITHOUT_CAP')
+            ),
             'bid_amount': str(adset.get('bid_amount', 100)),
             'targeting': targeting,
             'status': adset.get('status', 'PAUSED'),
@@ -396,6 +402,10 @@ class MetaAPIClient(BasePlatformClient):
             data['daily_budget'] = str(int(float(daily_budget) * 100))
         elif adset.get('lifetime_budget') is not None:
             data['lifetime_budget'] = str(int(float(adset['lifetime_budget']) * 100))
+        if 'start_time' in adset:
+            data['start_time'] = adset['start_time']
+        if 'end_time' in adset:
+            data['end_time'] = adset['end_time']
         result = self.request('POST', f"/{account_id}/adsets", data=data)
         return result.get('id', '') if isinstance(result, dict) else ''
     
@@ -447,6 +457,8 @@ class MetaAPIClient(BasePlatformClient):
             creative['creative_id'] = ad['creative_id']
         elif ad.get('object_story_spec'):
             creative['object_story_spec'] = ad['object_story_spec']
+        elif ad.get('creative'):
+            creative = ad['creative']
         else:
             # Never invent a Page, destination URL, or advertising message.
             # A live create must be explicit about its creative ownership and

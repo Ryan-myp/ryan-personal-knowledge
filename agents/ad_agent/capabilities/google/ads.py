@@ -68,6 +68,11 @@ class GoogleCreateAdHandler(ToolHandler):
                     headlines=input_data.get("headlines") or [input_data.get("name", "Ad")],
                     descriptions=input_data.get("descriptions") or [input_data.get("description", "")],
                     final_url=final_url,
+                    ad_type=input_data.get("ad_type"),
+                    path1=input_data.get("path1"),
+                    path2=input_data.get("path2"),
+                    responsive_search_ad=input_data.get("responsive_search_ad"),
+                    status=input_data.get("status"),
                 )
                 return ToolResult.ok({
                     "ad_id": ad_id,

@@ -332,13 +332,24 @@ class DV360APIClient(BasePlatformClient):
     def create_io(self, advertiser_id: str, io: dict) -> str:
         """创建 IO"""
         now = datetime.now()
+        start_date = io.get('start_date')
+        end_date = io.get('end_date')
+        try:
+            start_seconds = int(datetime.strptime(start_date, '%Y-%m-%d').timestamp()) if start_date else int(now.timestamp())
+            end_seconds = int(datetime.strptime(end_date, '%Y-%m-%d').timestamp()) if end_date else int(now.replace(year=now.year + 1).timestamp())
+        except (TypeError, ValueError):
+            raise ValueError('start_date/end_date must use YYYY-MM-DD')
         body = {
             'name': io['name'],
-            'startDateSeconds': int(now.timestamp()),
-            'endDateSeconds': int((now.replace(year=now.year + 1)).timestamp()),
-            'spendCapMicros': int(io.get('budget', 1000) * 1_000_000),
-            'status': 'DRAFT',
+            'startDateSeconds': start_seconds,
+            'endDateSeconds': end_seconds,
+            'spendCapMicros': int(io.get('spend_cap_micros', float(io.get('budget', 1000)) * 1_000_000)),
+            'status': io.get('status', 'DRAFT'),
         }
+        if io.get('pacing_type'):
+            body['pacing'] = {'pacingType': io['pacing_type']}
+        if io.get('frequency_cap'):
+            body['frequencyCap'] = io['frequency_cap']
         
         result = self.request_raw('POST', f"{self.BASE_URL}/advertisers/{advertiser_id}/insertionOrders", data=body)
         name = result.get('data', {}).get('name', '')
@@ -375,13 +386,38 @@ class DV360APIClient(BasePlatformClient):
     
     def create_line_item(self, advertiser_id: str, io_id: str, line_item: dict) -> str:
         """创建 Line Item"""
+        raw_goal = line_item.get('goal')
+        if isinstance(raw_goal, dict):
+            goal = {
+                'goalType': raw_goal.get('goalType', raw_goal.get('goal_type', 'IMPRESSIONS')),
+            }
+            for source, target in (('target_cpa', 'targetCpa'), ('target_roas', 'targetRoas')):
+                if raw_goal.get(source) is not None:
+                    goal[target] = raw_goal[source]
+            # Preserve provider-ready extension fields while normalizing the
+            # schema-owned snake_case names above.
+            for key, value in raw_goal.items():
+                if key not in {'goal_type', 'target_cpa', 'target_roas'}:
+                    goal[key] = value
+        else:
+            goal = raw_goal or {'goalType': 'IMPRESSIONS'}
         body = {
             'name': line_item['name'],
-            'goal': line_item.get('goal', {'goalType': 'IMPRESSIONS'}),
+            'goal': goal,
             'targeting': line_item.get('targeting', {}),
             'lineItemType': line_item.get('type', 'SPONSORED'),
-            'status': 'DRAFT',
+            'status': line_item.get('status', 'DRAFT'),
         }
+        if line_item.get('budget') is not None:
+            body['budget'] = float(line_item['budget'])
+        if line_item.get('start_date'):
+            body['startDate'] = line_item['start_date']
+        if line_item.get('end_date'):
+            body['endDate'] = line_item['end_date']
+        if line_item.get('bid_strategy'):
+            body['bidStrategy'] = line_item['bid_strategy']
+        if line_item.get('bid_amount') is not None:
+            body['bidAmount'] = float(line_item['bid_amount'])
         
         result = self.request_raw('POST',
                                    f"{self.BASE_URL}/advertisers/{advertiser_id}/insertionOrders/{io_id}/lineItems",

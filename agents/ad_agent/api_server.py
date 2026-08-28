@@ -516,6 +516,48 @@ async def get_parameter_options(
     }
 
 
+@app.get("/parameter-options/resolve", tags=["info"])
+async def resolve_parameter_options(
+    http_request: Request,
+    platform: str = Query(..., min_length=1, max_length=50),
+    field: str = Query(..., min_length=1, max_length=100),
+    tool_name: str = Query(..., min_length=1, max_length=150),
+    account_id: str = Query(..., min_length=1, max_length=200),
+    session_id: Optional[str] = Query(None, max_length=200),
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Resolve a provider-backed parameter catalog for a form or UI.
+
+    Identity, tenant, permissions and account scope come only from the
+    authenticated principal.  Query parameters select the catalog/account;
+    they cannot impersonate a user or grant access to an account.
+    """
+    principal = _authorize_request(x_api_key, http_request)
+    if not runtime:
+        raise HTTPException(status_code=503, detail="服务未初始化")
+    try:
+        return await run_in_threadpool(
+            runtime.resolve_parameter_options,
+            platform=platform,
+            field=field,
+            tool_name=tool_name,
+            account_id=account_id,
+            session_id=session_id,
+            user_id=principal.user_id,
+            tenant_id=principal.tenant_id,
+            account_scope=principal.account_scope,
+            granted_permissions=principal.permissions,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=_safe_exception_text(exc))
+
+
 @app.get("/workflows/{workflow_id}", tags=["workflows"])
 async def get_workflow(
     workflow_id: str,

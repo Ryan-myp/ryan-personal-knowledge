@@ -27,6 +27,7 @@ class FakeRuntime:
     def __init__(self):
         self.registry = FakeRegistry()
         self.calls = []
+        self.parameter_option_calls = []
 
     def run(self, **kwargs):
         self.calls.append(kwargs)
@@ -34,6 +35,14 @@ class FakeRuntime:
             "success": True,
             "reply": "local fake response",
             "results": [],
+        }
+
+    def resolve_parameter_options(self, **kwargs):
+        self.parameter_option_calls.append(kwargs)
+        return {
+            "tool_name": kwargs["tool_name"],
+            "field": kwargs["field"],
+            "options": [{"value": "app-1", "label": "Demo App"}],
         }
 
 
@@ -225,3 +234,52 @@ def test_parameter_options_endpoint_can_scope_same_field_to_tool(monkeypatch):
     assert "BUDGET_MODE_TOTAL" not in {
         item["value"] for item in options[0]["options"]
     }
+
+
+def test_parameter_options_resolve_uses_authenticated_principal(monkeypatch, fake_server):
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "scoped-key": {
+                "user_id": "gateway-user",
+                "tenant_id": "tenant-a",
+                "permissions": ["ads.read"],
+                "account_scope": {"tiktok": ["t1"]},
+            }
+        }),
+    )
+    with TestClient(api_server.app) as client:
+        response = client.get(
+            "/parameter-options/resolve",
+            headers={"X-API-Key": "scoped-key"},
+            params={
+                "platform": "tiktok",
+                "field": "app_id",
+                "tool_name": "tiktok_create_adgroup",
+                "account_id": "t1",
+                "session_id": "selection-session",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["options"][0]["value"] == "app-1"
+    call = fake_server.parameter_option_calls[0]
+    assert call["user_id"] == "gateway-user"
+    assert call["tenant_id"] == "tenant-a"
+    assert call["account_scope"] == {"tiktok": frozenset({"t1"})}
+    assert call["granted_permissions"] == frozenset({"ads.read"})
+
+
+def test_parameter_options_resolve_requires_account_id(fake_server):
+    with TestClient(api_server.app) as client:
+        response = client.get(
+            "/parameter-options/resolve",
+            headers={"X-API-Key": "test-key"},
+            params={
+                "platform": "tiktok",
+                "field": "app_id",
+                "tool_name": "tiktok_create_adgroup",
+            },
+        )
+    assert response.status_code == 422
+    assert fake_server.parameter_option_calls == []
