@@ -465,13 +465,20 @@ class GoogleAdsAPIClient(BasePlatformClient):
         status: str = None,
         networks: list[str] = None,
         app_campaign_setting: dict = None,
+        advertising_channel_sub_type: str = None,
+        shopping_setting: dict = None,
+        campaign_goal_setting: dict = None,
+        video_setting: dict = None,
+        targeting_setting: dict = None,
+        network_setting: dict = None,
+        final_url_suffix: str = None,
         start_date: str = None,
         end_date: str = None,
     ) -> str:
         """
         创建 Campaign（需要先创建 CampaignBudget）
         
-        advertising_channel_type: SEARCH | SHOPPING | PERFORMANCE_MAX | VIDEO | DISPLAY | APP
+        advertising_channel_type: SEARCH | SHOPPING | MAX | MULTI_CHANNEL | VIDEO | DISPLAY
         bidding_strategy: MANUAL_CPC | TARGET_CPA | MAXIMIZE_CONVERSIONS | TARGET_ROAS
         """
         try:
@@ -502,6 +509,22 @@ class GoogleAdsAPIClient(BasePlatformClient):
             'status': status or 'PAUSED',
             'campaignBudget': budget_resource_name,
         }
+
+        if advertising_channel_sub_type:
+            campaign_data['advertisingChannelSubType'] = advertising_channel_sub_type
+        for field_name, value in (
+            ('shoppingSetting', shopping_setting),
+            ('campaignGoalSetting', campaign_goal_setting),
+            ('videoSetting', video_setting),
+            ('targetingSetting', targeting_setting),
+            ('networkSetting', network_setting),
+        ):
+            if value is not None:
+                if not isinstance(value, dict):
+                    raise ValueError(f"{field_name} must be an object")
+                campaign_data[field_name] = self._camel_case_keys(value)
+        if final_url_suffix:
+            campaign_data['finalUrlSuffix'] = final_url_suffix
 
         if start_date:
             campaign_data['startDate'] = start_date

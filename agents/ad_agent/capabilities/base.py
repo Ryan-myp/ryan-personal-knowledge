@@ -109,7 +109,18 @@ class BaseCapability(CapabilityModule, ABC):
         # Workflow policy belongs to the Skill contract. Capability only
         # registers executable tools and its provider-independent write guard.
         write_guard = self._build_write_guard()
-        return CapabilityRuntime(write_guard=write_guard)
+        return CapabilityRuntime(
+            write_guard=write_guard,
+            ad_format_catalogs=self.get_ad_format_catalog(),
+        )
+
+    def get_ad_format_catalog(self) -> list[dict[str, Any]]:
+        """Return provider-owned format coverage metadata.
+
+        A provider may extend this without changing Runtime.  The default is
+        empty so custom capabilities can adopt the contract incrementally.
+        """
+        return []
     
     def _register_platform_tools(self, registry: SimpleToolRegistry) -> None:
         """子类实现：将平台工具注册到 Registry"""

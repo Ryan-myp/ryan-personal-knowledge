@@ -26,7 +26,7 @@ from .reports import GoogleGetReportHandler
 from .keywords import GoogleListKeywordsHandler
 from .parameters import (
     google_campaign_schema, google_ad_group_schema, google_ad_schema,
-    google_asset_group_schema,
+    google_asset_group_schema, google_ad_format_catalog,
 )
 from ...api_clients.google_ads_client import GoogleAdsAPIClient
 from ..update_contracts import google_updates
@@ -73,6 +73,9 @@ class GoogleCapability(BaseCapability):
         "create_pmax_asset_group": ["google_create_pmax_asset_group", "google_create_asset_group"],
         "get_campaign_report": ["google_get_campaign_report"], "get_adgroup_report": ["google_get_adgroup_report"],
     }
+
+    def get_ad_format_catalog(self) -> list[dict]:
+        return google_ad_format_catalog()
 
     def _extended_provider_tools(self, client):
         """Expose Google Ads client endpoints with dedicated contracts."""

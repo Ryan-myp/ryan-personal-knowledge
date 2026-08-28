@@ -44,6 +44,20 @@ class ExecutionMode(Enum):
     DRY_RUN = "dry_run"
     LIVE = "live"
 
+
+class AdFormatCoverage(Enum):
+    """Evidence level for a provider-owned campaign/ad format contract.
+
+    This is deliberately separate from ``ToolDefinition.live_support``:
+    a format can have a useful dry-run payload contract while live writes are
+    still disabled by the product safety boundary.
+    """
+
+    SUPPORTED_DRY_RUN = "supported_dry_run"
+    PARTIAL_DRY_RUN = "partial_dry_run"
+    DECLARED_ONLY = "declared_only"
+    PLANNED = "planned"
+
 # ─── Tool 定义 ──────────────────────────────────────────────────
 
 @dataclass
@@ -720,6 +734,11 @@ class CapabilityRuntime:
     # a dynamic lookup descriptor without making the shared Runtime know a
     # provider's field names.
     parameter_catalogs: list[Any] = field(default_factory=list)
+
+    # Provider-owned campaign/ad-format coverage.  This metadata is exposed
+    # to forms, planning and release audits; it never becomes an executable
+    # handler by itself.
+    ad_format_catalogs: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def intent_to_tools(self) -> dict[str, dict[str, list[str]]]:

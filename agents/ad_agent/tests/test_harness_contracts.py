@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from agents.ad_agent.capabilities.meta import create_meta_capability
+from agents.ad_agent.capabilities.google import create_google_capability
 from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
 from agents.ad_agent.core.interfaces import (
     ToolContext, ToolSchema, ToolDefinition, ToolEffect,
@@ -336,6 +337,39 @@ def test_parameter_catalogs_expose_static_and_dynamic_options():
     )
     assert "BUDGET_MODE_TOTAL" in {item["value"] for item in campaign_budget["options"]}
     assert "BUDGET_MODE_TOTAL" not in {item["value"] for item in adgroup_budget["options"]}
+
+
+def test_provider_owned_ad_format_catalog_reports_real_coverage():
+    runtime = AgentRuntime(offline_mode=True)
+    runtime.register_capability(create_google_capability())
+    runtime.register_capability(create_meta_capability())
+    runtime.register_capability(create_tiktok_capability())
+
+    google = runtime.list_ad_formats("google-ads")
+    meta = runtime.list_ad_formats("meta")
+    tiktok = runtime.list_ad_formats("tiktok")
+
+    assert {item["format_id"] for item in google} >= {
+        "search", "performance_max", "shopping", "video", "display", "app",
+    }
+    assert {item["format_id"] for item in meta} >= {
+        "traffic", "conversion", "lead", "engagement", "catalog", "messaging",
+    }
+    assert {item["format_id"] for item in tiktok} >= {
+        "product_sales", "spark", "lead", "app", "brand",
+    }
+    assert all(
+        item["payload_adapter"]
+        for item in [*google, *meta, *tiktok]
+        if item["coverage"] == "supported_dry_run"
+    )
+    registered = {definition.name for definition in runtime.registry.list_all()}
+    assert all(
+        tool_name in registered
+        for item in [*google, *meta, *tiktok]
+        for tool_name in item["tool_names"]
+    )
+    assert runtime.list_ad_formats("dv360") == []
 
 
 def test_workflow_state_machine_and_cancel_are_durable():

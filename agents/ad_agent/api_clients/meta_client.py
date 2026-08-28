@@ -325,7 +325,8 @@ class MetaAPIClient(BasePlatformClient):
             'APP_INSTALLS', 'PRODUCT_CATALOG_SALES', 'CONVERSIONS', 
             'TRAFFIC', 'LINK_CLICKS', 'OUTCOME_SALES', 
             'OUTCOME_APP_PROMOTION', 'OUTCOME_TRAFFIC',
-            'OUTCOME_AWARENESS', 'OUTCOME_LEADS', 'OUTCOME_ENGAGEMENT'
+            'OUTCOME_AWARENESS', 'OUTCOME_LEADS', 'OUTCOME_ENGAGEMENT',
+            'OUTCOME_CONVERSIONS', 'OUTCOME_MESSAGES'
         ]
         objective = campaign.get('objective', 'OUTCOME_SALES')
         if objective not in valid_objectives:
@@ -360,6 +361,10 @@ class MetaAPIClient(BasePlatformClient):
             data['start_time'] = campaign['start_time']
         if 'end_time' in campaign:
             data['end_time'] = campaign['end_time']
+        for field_name in ('catalog_id', 'conversion_specs', 'messaging_apps'):
+            if campaign.get(field_name) is not None:
+                value = campaign[field_name]
+                data[field_name] = json.dumps(value) if isinstance(value, (dict, list)) else value
         
         result = self.request('POST', f"/{account_id}/campaigns", data=data)
         resource_id = result.get('id') if isinstance(result, dict) else None
@@ -439,6 +444,10 @@ class MetaAPIClient(BasePlatformClient):
             if not isinstance(promoted_object, dict):
                 raise ValueError("Meta Ad Set promoted_object must be an object")
             data['promoted_object'] = json.dumps(promoted_object)
+        for field_name in ('lead_gen_config', 'product_set_id', 'messaging_apps'):
+            if adset.get(field_name) is not None:
+                value = adset[field_name]
+                data[field_name] = json.dumps(value) if isinstance(value, (dict, list)) else value
         if daily_budget is not None:
             data['daily_budget'] = str(int(float(daily_budget) * 100))
         elif adset.get('lifetime_budget') is not None:

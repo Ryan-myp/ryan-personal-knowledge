@@ -422,6 +422,32 @@ async def get_tools(
     }
 
 
+@app.get("/ad-formats", tags=["info"])
+async def get_ad_formats(
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    platform: Optional[str] = Query(None, max_length=50),
+    coverage: Optional[str] = Query(None, max_length=40),
+):
+    """Expose provider-owned ad-format coverage without making network calls.
+
+    ``coverage`` distinguishes a declared enum from a payload-backed
+    dry-run contract.  This endpoint is metadata-only and cannot enable live
+    writes or accept credentials/account identifiers.
+    """
+    _authorize_request(x_api_key, http_request)
+    if not runtime:
+        return {"formats": []}
+    try:
+        return {
+            "platform": platform,
+            "coverage": coverage,
+            "formats": runtime.list_ad_formats(platform, coverage),
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
 class SkillVersionRequest(BaseModel):
     """Complete standard Agent Skill directory snapshot.
 

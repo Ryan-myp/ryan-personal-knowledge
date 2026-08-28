@@ -38,6 +38,7 @@ from .parameters import (
     tiktok_campaign_schema,
     tiktok_adgroup_schema,
     tiktok_ad_schema,
+    tiktok_ad_format_catalog,
 )
 from ..update_contracts import tiktok_updates
 
@@ -98,6 +99,9 @@ class TikTokCapability(BaseCapability):
         "list_apps": ["tiktok_list_apps"], "list_brand_safety": ["tiktok_list_brand_safety"],
         "get_report": ["tiktok_get_report"],
     }
+
+    def get_ad_format_catalog(self) -> list[dict]:
+        return tiktok_ad_format_catalog()
 
     def _extended_provider_tools(self, client):
         """Expose TikTok account, reference, reporting and lifecycle APIs."""

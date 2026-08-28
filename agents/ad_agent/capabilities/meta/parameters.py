@@ -7,13 +7,15 @@ from typing import Any
 
 META_OBJECTIVES = [
     "OUTCOME_SALES", "OUTCOME_LEADS", "OUTCOME_TRAFFIC", "OUTCOME_AWARENESS",
-    "OUTCOME_ENGAGEMENT", "OUTCOME_APP_PROMOTION", "APP_INSTALLS",
+    "OUTCOME_ENGAGEMENT", "OUTCOME_APP_PROMOTION", "OUTCOME_CONVERSIONS",
+    "OUTCOME_MESSAGES", "APP_INSTALLS",
     "PRODUCT_CATALOG_SALES", "CONVERSIONS", "TRAFFIC", "LINK_CLICKS",
 ]
 META_OPTIMIZATION_GOALS = [
     "APP_INSTALLS", "OFFSITE_CONVERSIONS", "VALUE", "LINK_CLICKS",
     "LANDING_PAGE_VIEWS", "LEAD_GENERATION", "IMPRESSIONS", "REACH",
     "THRUPLAY", "POST_ENGAGEMENT", "EVENT_RESPONSES", "VIDEO_VIEWS",
+    "CONVERSIONS", "LEADS", "MESSAGES", "PAGE_LIKES", "THRU_PLAY",
 ]
 META_BILLING_EVENTS = ["IMPRESSIONS", "LINK_CLICKS", "THRUPLAY"]
 META_BID_STRATEGIES = [
@@ -109,6 +111,11 @@ def meta_campaign_schema() -> dict[str, Any]:
             "spend_cap": _field("number", "Campaign spend cap", minimum=0),
             "start_time": _field("string", "ISO-8601 start time"),
             "end_time": _field("string", "ISO-8601 end time"),
+            "catalog_id": _field("string", "Meta product catalog ID"),
+            "conversion_specs": _field("array", "Conversion event specifications", items={"type": "object", "additionalProperties": True}),
+            "messaging_apps": _field(
+                "array", "Messaging destinations", items={"type": "string", "enum": ["MESSENGER", "WHATSAPP", "INSTAGRAM_DIRECT"]}
+            ),
         },
         "conditional_rules": [
             {
@@ -142,6 +149,11 @@ def meta_adset_schema() -> dict[str, Any]:
             "status": _field("string", "Initial delivery status", enum=META_STATUS),
             "start_time": _field("string", "ISO-8601 start time"),
             "end_time": _field("string", "ISO-8601 end time"),
+            "lead_gen_config": _field("object", "Instant Form configuration", additionalProperties=True),
+            "product_set_id": _field("string", "Catalog product set ID"),
+            "messaging_apps": _field(
+                "array", "Messaging destinations", items={"type": "string", "enum": ["MESSENGER", "WHATSAPP", "INSTAGRAM_DIRECT"]}
+            ),
         },
         "conditional_rules": [
             {
@@ -182,12 +194,22 @@ def meta_ad_schema() -> dict[str, Any]:
                     "name": _field("string", "Headline"),
                     "description": _field("string", "Description"),
                     "image_hash": _field("string", "Uploaded image hash"),
+                    "call_to_action": _object({
+                        "type": _field("string", "Call to action type"),
+                        "value": _field("object", "Call to action destination", additionalProperties=True),
+                    }, "Link ad call to action"),
                 }, "Link ad story"),
                 "video_data": _object({
                     "video_id": _field("string", "Video ID"),
                     "message": _field("string", "Primary text"),
                     "title": _field("string", "Video title"),
+                    "call_to_action": _object({
+                        "type": _field("string", "Call to action type"),
+                        "value": _field("object", "Call to action destination", additionalProperties=True),
+                    }, "Video ad call to action"),
                 }, "Video ad story"),
+                "carousel_data": _field("object", "Carousel ad story", additionalProperties=True),
+                "lead_gen": _field("object", "Lead generation creative", additionalProperties=True),
             }, "Meta object story specification"),
             "creative": _object({}, "Creative reference or inline payload", additional_properties=True),
             "body": _field("string", "Primary text"),
@@ -197,3 +219,90 @@ def meta_ad_schema() -> dict[str, Any]:
             "status": _field("string", "Initial delivery status", enum=META_STATUS),
         },
     }
+
+
+def meta_ad_format_catalog() -> list[dict[str, Any]]:
+    """Advertised Meta objectives/formats and their current contract depth."""
+    return [
+        {
+            "format_id": "traffic",
+            "category": "traffic",
+            "resource_type": "campaign",
+            "coverage": "partial_dry_run",
+            "tool_names": ["meta_create_campaign", "meta_create_adset", "meta_create_ad"],
+            "dependencies": ["targeting", "optimization_goal", "link_data"],
+            "supported_fields": ["OUTCOME_TRAFFIC", "LINK_CLICKS", "targeting", "object_story_spec.link_data"],
+            "gaps": ["objective-specific CTA validation", "placement compatibility validation"],
+        },
+        {
+            "format_id": "conversion",
+            "category": "conversion",
+            "resource_type": "campaign",
+            "coverage": "partial_dry_run",
+            "tool_names": ["meta_create_campaign", "meta_create_adset", "meta_create_ad"],
+            "dependencies": ["promoted_object", "conversion_specs", "pixel_or_capi"],
+            "supported_fields": ["OUTCOME_CONVERSIONS", "OFFSITE_CONVERSIONS", "CONVERSIONS", "promoted_object"],
+            "gaps": ["conversion event lookup/validation", "objective-specific creative contract"],
+        },
+        {
+            "format_id": "lead",
+            "category": "lead",
+            "resource_type": "campaign",
+            "coverage": "partial_dry_run",
+            "tool_names": ["meta_create_campaign", "meta_create_adset", "meta_create_ad"],
+            "dependencies": ["lead_gen_config", "form_id", "page_id"],
+            "supported_fields": ["OUTCOME_LEADS", "LEADS", "lead_gen_config", "lead_gen"],
+            "gaps": ["Instant Form lookup/validation", "dedicated lead creative builder"],
+        },
+        {
+            "format_id": "engagement",
+            "category": "engagement",
+            "resource_type": "campaign",
+            "coverage": "partial_dry_run",
+            "tool_names": ["meta_create_campaign", "meta_create_adset", "meta_create_ad"],
+            "dependencies": ["post_id_or_story", "targeting", "optimization_goal"],
+            "supported_fields": ["OUTCOME_ENGAGEMENT", "POST_ENGAGEMENT", "VIDEO_VIEWS"],
+            "gaps": ["Page Likes/Video Views specialized creative validation"],
+        },
+        {
+            "format_id": "link_image",
+            "category": "traffic",
+            "resource_type": "ad",
+            "coverage": "supported_dry_run",
+            "tool_names": ["meta_create_ad"],
+            "payload_adapter": "MetaAPIClient.create_ad",
+            "dependencies": ["adset", "page_id", "link_data"],
+            "supported_fields": ["link", "message", "name", "description", "image_hash", "call_to_action"],
+            "gaps": ["live mutation approval"],
+        },
+        {
+            "format_id": "link_video",
+            "category": "engagement",
+            "resource_type": "ad",
+            "coverage": "supported_dry_run",
+            "tool_names": ["meta_create_ad"],
+            "payload_adapter": "MetaAPIClient.create_ad",
+            "dependencies": ["adset", "page_id", "video_data"],
+            "supported_fields": ["video_id", "message", "title", "call_to_action"],
+            "gaps": ["live mutation approval"],
+        },
+        {
+            "format_id": "catalog",
+            "category": "catalog",
+            "resource_type": "campaign",
+            "coverage": "declared_only",
+            "tool_names": ["meta_create_campaign", "meta_create_adset", "meta_create_ad"],
+            "dependencies": ["catalog_id", "product_set_id", "catalog creative"],
+            "gaps": ["catalog/product set lookup", "dedicated catalog creative builder", "dynamic product rules"],
+        },
+        {
+            "format_id": "messaging",
+            "category": "messaging",
+            "resource_type": "campaign",
+            "coverage": "partial_dry_run",
+            "tool_names": ["meta_create_campaign", "meta_create_adset", "meta_create_ad"],
+            "dependencies": ["messaging_apps", "SEND_MESSAGE CTA", "page_or_business_messaging_identity"],
+            "supported_fields": ["OUTCOME_MESSAGES", "MESSAGES", "messaging_apps", "call_to_action"],
+            "gaps": ["messaging destination validation", "dedicated messaging creative builder"],
+        },
+    ]

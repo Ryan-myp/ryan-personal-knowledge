@@ -13,7 +13,10 @@ from .reports import MetaGetReportHandler
 from .audiences import MetaListAudiencesHandler
 from .boost import MetaBoostPostHandler
 from .creatives import MetaCreateCreativeHandler
-from .parameters import meta_campaign_schema, meta_adset_schema, meta_ad_schema
+from .parameters import (
+    meta_campaign_schema, meta_adset_schema, meta_ad_schema,
+    meta_ad_format_catalog,
+)
 from ...api_clients.meta_client import MetaAPIClient
 from ..update_contracts import meta_updates
 
@@ -65,6 +68,9 @@ class MetaCapability(BaseCapability):
         "get_adset_report": ["meta_get_adset_report"], "get_ad_report": ["meta_get_ad_report"],
         "boost_post": ["meta_boost_post"],
     }
+
+    def get_ad_format_catalog(self) -> list[dict]:
+        return meta_ad_format_catalog()
 
     def _extended_provider_tools(self, client):
         """Expose Meta client endpoints not represented by hierarchy handlers."""

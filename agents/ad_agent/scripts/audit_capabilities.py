@@ -23,7 +23,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from agents.ad_agent.capabilities.factory import discover_capability_factory  # noqa: E402
-from agents.ad_agent.core.interfaces import ReplayPolicy, ToolEffect  # noqa: E402
+from agents.ad_agent.core.interfaces import AdFormatCoverage, ReplayPolicy, ToolEffect  # noqa: E402
 from agents.ad_agent.runtime.runtime import AgentRuntime  # noqa: E402
 
 
@@ -138,10 +138,35 @@ def audit_capabilities() -> dict[str, Any]:
                     "live_support": bool(definition.live_support),
                 })
 
+        ad_formats = [dict(item) for item in runtime.ad_format_catalogs.get(platform, [])]
+        format_issues: list[str] = []
+        definition_names = {definition.name for definition in definitions}
+        for entry in ad_formats:
+            missing = sorted(set(entry.get("tool_names", [])) - definition_names)
+            if missing:
+                format_issues.append(
+                    f"{entry.get('format_id')}: unknown Tools: {', '.join(missing)}"
+                )
+            if (
+                entry.get("coverage") == AdFormatCoverage.SUPPORTED_DRY_RUN.value
+                and not str(entry.get("payload_adapter") or "").strip()
+            ):
+                format_issues.append(
+                    f"{entry.get('format_id')}: supported_dry_run has no payload_adapter"
+                )
+            if entry.get("live_support"):
+                format_issues.append(
+                    f"{entry.get('format_id')}: format live_support must be false"
+                )
+        platform_issues.extend(format_issues)
         report["platforms"][platform] = {
             "tool_count": len(definitions),
             "actions": dict(sorted(actions.items())),
             "creation_chain": creation_chain,
+            "ad_formats": ad_formats,
+            "ad_format_coverage": dict(sorted(Counter(
+                str(entry.get("coverage")) for entry in ad_formats
+            ).items())),
             "live_read_tools": sorted(live_read_tools),
             "live_write_tools": sorted(live_write_tools),
             "issues": platform_issues,
@@ -169,6 +194,11 @@ def _print_text(report: dict[str, Any]) -> None:
                 f"  create {item['resource_type']} <- {parent} "
                 f"(parent_id={parent_field}, live={item['live_support']})"
             )
+        if details.get("ad_formats"):
+            print("  ad formats: " + ", ".join(
+                f"{item['format_id']}={item['coverage']}"
+                for item in details["ad_formats"]
+            ))
         if details["live_read_tools"]:
             print(f"  live reads: {len(details['live_read_tools'])}")
         if details["live_write_tools"]:

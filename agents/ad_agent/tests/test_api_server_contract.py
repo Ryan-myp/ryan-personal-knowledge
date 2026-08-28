@@ -45,6 +45,13 @@ class FakeRuntime:
             "options": [{"value": "app-1", "label": "Demo App"}],
         }
 
+    def list_ad_formats(self, platform=None, coverage=None):
+        return [{
+            "format_id": "demo",
+            "platform": platform or "demo",
+            "coverage": coverage or "declared_only",
+        }]
+
 
 @pytest.fixture
 def fake_server(monkeypatch):
@@ -284,6 +291,18 @@ def test_parameter_options_resolve_uses_authenticated_principal(monkeypatch, fak
     assert call["tenant_id"] == "tenant-a"
     assert call["account_scope"] == {"tiktok": frozenset({"t1"})}
     assert call["granted_permissions"] == frozenset({"ads.read"})
+
+
+def test_ad_formats_endpoint_exposes_metadata_only(fake_server):
+    with TestClient(api_server.app) as client:
+        response = client.get(
+            "/ad-formats",
+            headers={"X-API-Key": "test-key"},
+            params={"platform": "tiktok", "coverage": "partial_dry_run"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["formats"][0]["format_id"] == "demo"
 
 
 def test_parameter_options_resolve_requires_account_id(fake_server):

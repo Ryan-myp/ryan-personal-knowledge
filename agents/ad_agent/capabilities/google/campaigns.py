@@ -126,6 +126,13 @@ class GoogleCreateCampaignHandler(ToolHandler):
                     status=input_data.get("status"),
                     networks=input_data.get("networks"),
                     app_campaign_setting=input_data.get("app_campaign_setting"),
+                    advertising_channel_sub_type=input_data.get("advertising_channel_sub_type"),
+                    shopping_setting=input_data.get("shopping_setting"),
+                    campaign_goal_setting=input_data.get("campaign_goal_setting"),
+                    video_setting=input_data.get("video_setting"),
+                    targeting_setting=input_data.get("targeting_setting"),
+                    network_setting=input_data.get("network_setting"),
+                    final_url_suffix=input_data.get("final_url_suffix"),
                     start_date=input_data.get("start_date"),
                     end_date=input_data.get("end_date"),
                 )

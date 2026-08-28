@@ -35,7 +35,8 @@ from ..core.interfaces import (
     ToolContext, ToolResult, ChatMessage, CapabilityModule,
     CapabilityRuntime, ToolRegistry, WriteGuard, IntentParser, IntentRouter,
     ParsedIntent, ToolHandler, ToolEffect, ExecutionMode, ProviderReconciler,
-    ReconciliationContext, ReconciliationObservation, ResourceResult
+    ReconciliationContext, ReconciliationObservation, ResourceResult,
+    AdFormatCoverage,
 )
 from ..core.tool_registry import GuardedToolRegistry, SimpleToolRegistry, validate_tool_input
 from ..core.intent import LLMIntentParser, SimpleIntentRouter
@@ -271,6 +272,9 @@ class AgentRuntime:
             knowledge_provider=self.knowledge_provider,
         )
         self.parameter_catalogs = ParameterCatalogRegistry()
+        # This is a metadata index, not a second executable routing table.
+        # Each provider Capability owns and publishes its own entries.
+        self.ad_format_catalogs: dict[str, list[dict[str, Any]]] = {}
         selection_secret = selection_token_secret or os.environ.get(
             "AD_AGENT_SELECTION_TOKEN_KEY"
         )
@@ -714,6 +718,10 @@ class AgentRuntime:
         self.parameter_catalogs.register_many(
             getattr(runtime, "parameter_catalogs", []) or []
         )
+        self._register_ad_format_catalog(
+            getattr(module, "platform_name", "") or "",
+            getattr(runtime, "ad_format_catalogs", []) or [],
+        )
         self._validate_parameter_lookup_contract()
         if hasattr(self.intent_parser, "register_intents"):
             self.intent_parser.register_intents(
@@ -774,6 +782,98 @@ class AgentRuntime:
         self._refresh_unbound_clients()
         
         return runtime
+
+    def _register_ad_format_catalog(
+        self, platform: str, catalogs: list[dict[str, Any]]
+    ) -> None:
+        """Validate and index a Capability's format metadata.
+
+        The catalog is intentionally declarative.  It cannot register a
+        handler, expand permissions, or enable live writes.  Duplicate IDs
+        are rejected so two provider packages cannot silently disagree about
+        the same format contract.
+        """
+        if not catalogs:
+            return
+        canonical = self._canonical_platform(platform)
+        allowed = {item.value for item in AdFormatCoverage}
+        existing = {
+            str(item.get("format_id")): item
+            for item in self.ad_format_catalogs.get(canonical, [])
+        }
+        normalized: list[dict[str, Any]] = list(
+            self.ad_format_catalogs.get(canonical, [])
+        )
+        for item in catalogs:
+            if not isinstance(item, dict):
+                raise ValueError(f"{canonical}: ad format catalog entry must be an object")
+            entry = dict(item)
+            format_id = str(entry.get("format_id", "")).strip()
+            status = str(entry.get("coverage", "")).strip().lower()
+            if not format_id:
+                raise ValueError(f"{canonical}: ad format catalog entry needs format_id")
+            if status not in allowed:
+                raise ValueError(
+                    f"{canonical}.{format_id}: unsupported coverage {status!r}"
+                )
+            if not str(entry.get("category", "")).strip():
+                raise ValueError(f"{canonical}.{format_id}: category is required")
+            if not str(entry.get("resource_type", "")).strip():
+                raise ValueError(f"{canonical}.{format_id}: resource_type is required")
+            tool_names = entry.get("tool_names", []) or []
+            if not isinstance(tool_names, list) or not all(
+                isinstance(name, str) and name for name in tool_names
+            ):
+                raise ValueError(f"{canonical}.{format_id}: tool_names must be a string list")
+            entry["format_id"] = format_id
+            entry["coverage"] = status
+            entry["tool_names"] = list(dict.fromkeys(tool_names))
+            entry["live_support"] = bool(entry.get("live_support", False))
+            registered_tools = {
+                definition.name for definition in self.registry.list_all()
+            }
+            missing_tools = sorted(set(entry["tool_names"]) - registered_tools)
+            if missing_tools:
+                raise ValueError(
+                    f"{canonical}.{format_id}: unknown tool_names: {', '.join(missing_tools)}"
+                )
+            if entry["live_support"]:
+                raise ValueError(
+                    f"{canonical}.{format_id}: ad-format live_support must remain false; "
+                    "live enablement is a separate deployment approval"
+                )
+            if status == AdFormatCoverage.SUPPORTED_DRY_RUN.value and not entry.get(
+                "payload_adapter"
+            ):
+                raise ValueError(
+                    f"{canonical}.{format_id}: supported_dry_run needs payload_adapter"
+                )
+            previous = existing.get(format_id)
+            if previous is not None and previous != entry:
+                raise ValueError(f"{canonical}.{format_id}: conflicting catalog entry")
+            if previous is None:
+                existing[format_id] = entry
+                normalized.append(entry)
+        self.ad_format_catalogs[canonical] = normalized
+
+    def list_ad_formats(
+        self, platform: Optional[str] = None, coverage: Optional[str] = None
+    ) -> list[dict[str, Any]]:
+        """Return JSON-safe format coverage metadata for UI/planners."""
+        if coverage is not None:
+            coverage = str(coverage).strip().lower()
+            if coverage not in {item.value for item in AdFormatCoverage}:
+                raise ValueError(f"unsupported ad format coverage: {coverage}")
+        platforms = [self._canonical_platform(platform)] if platform else sorted(
+            self.ad_format_catalogs
+        )
+        result: list[dict[str, Any]] = []
+        for current in platforms:
+            for entry in self.ad_format_catalogs.get(current, []):
+                if coverage and entry.get("coverage") != coverage:
+                    continue
+                result.append({"platform": current, **dict(entry)})
+        return result
 
     def list_parameter_options(
         self, platform: Optional[str] = None, field: Optional[str] = None,
