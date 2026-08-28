@@ -7,7 +7,6 @@ runtime/runtime.py - Agent Runtime 主循环
 2. 处理用户输入 → LLM → ToolCall → 执行 → 返回结果
 3. 多平台 Skill 工具的统一调度
 4. 跨 Skill 上下文传递
-5. 预留 MultiAgentBridge 接口（用于后续切换到多 Agent）
 """
 
 from __future__ import annotations
@@ -27,7 +26,6 @@ import inspect
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from types import MappingProxyType
-from abc import ABC, abstractmethod
 from typing import Any, Mapping, Optional
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -130,8 +128,7 @@ class AgentRuntime:
     │  ├─ SessionManager（会话管理）             │
     │  ├─ IntentRouter（意图路由）               │
     │  ├─ ToolRegistry（工具执行）               │
-    │  ├─ WriteGuard（写入保护）                 │
-    │  └─ MultiAgentBridge（多 Agent 预留）      │
+    │  └─ WriteGuard（写入保护）                 │
     └─────────────────────────────────────────┘
     
     借鉴 DAP Agent internal/core/engine/runtime.go 的核心设计：
@@ -305,9 +302,6 @@ class AgentRuntime:
         
         # 账户白名单验证器
         self.whitelist_validator = whitelist_validator or AccountWhitelistValidator()
-        
-        # 预留：多 Agent 桥接
-        self._multi_agent_bridge: Optional["MultiAgentBridge"] = None
         
         # 持久化层（可选）
         self._session_manager: Optional[SessionManager] = None
@@ -5156,28 +5150,6 @@ class AgentRuntime:
             session.ctx.credentials = self._freeze_credentials(copy.deepcopy(credentials))
         return session
     
-    # ─── 多 Agent 桥接（预留） ─────────────────────────────────
-    
-    def attach_multi_agent_bridge(self, bridge: "MultiAgentBridge") -> None:
-        """
-        附加多 Agent 桥接器。
-        
-        当前是单 Agent 模式，调用此方法后可无缝切换到多 Agent 模式。
-        桥接器负责将单次 run() 拆分为多个 Agent 实例的协作调用。
-        """
-        self._multi_agent_bridge = bridge
-    
-    def run_multi_agent(self, user_input: str, **kwargs) -> dict:
-        """
-        多 Agent 模式入口（预留接口）。
-        
-        当 attach_multi_agent_bridge() 被调用后，此方法生效。
-        否则回退到单 Agent 模式（调用 run()）。
-        """
-        if self._multi_agent_bridge:
-            return self._multi_agent_bridge.dispatch(user_input, **kwargs)
-        return self.run(user_input, **kwargs)
-
     def get_workflow(
         self,
         workflow_id: str,
@@ -5693,33 +5665,3 @@ class CapabilityContextWrapper:
     def register_skill(self, skill: Skill) -> None:
         """注册一个 Skill"""
         self.skills[skill.name] = skill
-
-
-# ─── MultiAgentBridge（预留接口） ──────────────────────────────
-
-class MultiAgentBridge:
-    """
-    多 Agent 桥接器接口。
-    
-    预留：未来可从单 Agent 切换到多 Agent 架构时，
-    实现此接口并 attach 到 AgentRuntime。
-    
-    职责：
-    - 将单次 run() 请求拆分为多个子 Agent 任务
-    - 协调各子 Agent 的执行顺序和依赖
-    - 汇总各子 Agent 的执行结果
-    """
-    
-    @abstractmethod
-    def dispatch(self, user_input: str, **kwargs) -> dict:
-        """分发请求到多个子 Agent"""
-        pass
-    
-    @abstractmethod
-    def collect_results(self, agent_results: list[dict]) -> dict:
-        """收集并汇总各子 Agent 的结果"""
-        pass
-
-
-from abc import ABC
-MultiAgentBridge.__abstractmethods__ = {"dispatch", "collect_results"}
