@@ -5,8 +5,14 @@ ad_agent - 多渠道广告投放 Agent
 
 快速开始：
     from ad_agent import AgentRuntime, create_meta_capability
+    from ad_agent.core.llm_client import create_llm_client
     
-    runtime = AgentRuntime()
+    runtime = AgentRuntime(
+        require_llm=True,
+        llm_client=create_llm_client(
+            model="gpt-4o-mini", api_key=os.environ["OPENAI_API_KEY"]
+        ),
+    )
     runtime.register_capability(create_meta_capability())
     result = runtime.run(user_input="投放Meta广告", user_id="user_001")
 """

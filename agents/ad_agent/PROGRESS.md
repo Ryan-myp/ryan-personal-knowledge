@@ -114,11 +114,12 @@ ad_agent/
 pip install -r requirements.txt
 ```
 
-### Mock 模式（无需凭证）
+### 离线契约评测模式（无需凭证）
 ```python
 from ad_agent import AgentRuntime, create_meta_capability, create_google_capability
 
-runtime = AgentRuntime()
+# 仅用于显式离线测试/评测；产品 Runtime 默认必须配置 LLM。
+runtime = AgentRuntime(require_llm=False, offline_mode=True)
 runtime.register_capability(create_meta_capability())
 runtime.register_capability(create_google_capability())
 
@@ -132,7 +133,9 @@ print(result["reply"])
 ### 真实 API 模式
 ```python
 import json
+import os
 from ad_agent import AgentRuntime
+from ad_agent.core.llm_client import create_llm_client
 from ad_agent.api_clients.meta_client import MetaAPIClient
 from ad_agent.capabilities.meta import create_meta_capability
 
@@ -144,7 +147,11 @@ with open("credentials.json") as f:
 api_client = MetaAPIClient(credentials["meta"])
 capability = create_meta_capability(api_client)
 
-runtime = AgentRuntime()
+# 生产入口仍需注入 LLM；真实 API 客户端只负责渠道调用，写操作仍默认为 dry-run。
+runtime = AgentRuntime(
+    llm_client=create_llm_client(model=os.environ["LLM_MODEL"], api_key=os.environ["OPENAI_API_KEY"]),
+    require_llm=True,
+)
 runtime.register_capability(capability)
 ```
 
@@ -155,7 +162,7 @@ python -m pytest agents/ad_agent/tests/ -v
 ```
 
 测试结果：
-- 当前 `agents/ad_agent/tests/`：269 passed（本轮完整回归；另有 1 条本机依赖弃用 warning）
+- 当前 `agents/ad_agent/tests/`：290 passed（本轮完整回归；另有 1 条本机依赖弃用 warning）
 - 覆盖：工具注册、Schema 校验、白名单、dry-run 不调用 Client、跨平台账户、层级 ID 传递、live 确认、持久化和 Runtime 集成
 
 ## 扩展新平台

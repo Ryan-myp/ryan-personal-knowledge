@@ -165,6 +165,10 @@ def run(session_input: Mapping[str, Any]) -> Dict[str, Any]:
     runtime = AgentRuntime(
         persistence_store=AdAgentStore(":memory:"),
         skill_roots=[str(skills_root / ".skill-up-bootstrap")],
+        # skill-up's Runtime engine intentionally uses deterministic rule
+        # parsing for offline contract evaluation. This is an explicit test
+        # mode; product Runtime defaults remain LLM-required.
+        require_llm=False,
         offline_mode=True,
         execution_mode="dry_run",
         enforce_account_scope=True,

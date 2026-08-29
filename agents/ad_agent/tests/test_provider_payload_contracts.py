@@ -22,7 +22,7 @@ from agents.ad_agent.capabilities.base import CampaignUpdateHandler
 
 
 def test_generic_campaign_type_maps_to_google_wire_field():
-    runtime = AgentRuntime()
+    runtime = AgentRuntime(require_llm=False, )
     definition = next(
         definition
         for definition, _handler in create_google_capability().register_tools()

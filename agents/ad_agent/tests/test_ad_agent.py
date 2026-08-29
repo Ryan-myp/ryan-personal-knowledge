@@ -53,7 +53,7 @@ def store():
 def runtime():
     """创建只读模式的 runtime"""
     store = AdAgentStore(":memory:")
-    rt = AgentRuntime(persistence_store=store, read_only_mode=True)
+    rt = AgentRuntime(require_llm=False, persistence_store=store, read_only_mode=True)
     rt.register_capability(create_meta_capability_mock())
     rt.register_capability(create_google_capability_mock())
     rt.register_capability(create_tiktok_capability_mock())
@@ -213,7 +213,7 @@ class TestReadOnlyMode:
 
     def test_non_readonly_keeps_write_tools(self):
         """非只读模式下，写工具应保留"""
-        rt = AgentRuntime(read_only_mode=False)
+        rt = AgentRuntime(require_llm=False, read_only_mode=False)
         rt.register_capability(create_meta_capability_mock())
         all_tools = rt.registry.list_all()
         write_tools = [t for t in all_tools if t.is_write_tool]
@@ -221,11 +221,11 @@ class TestReadOnlyMode:
 
     def test_tool_count_decreases_after_filter(self):
         """过滤前后工具数量应对比"""
-        rt_full = AgentRuntime(read_only_mode=False)
+        rt_full = AgentRuntime(require_llm=False, read_only_mode=False)
         rt_full.register_capability(create_meta_capability_mock())
         count_full = len(rt_full.registry.list_all())
 
-        rt_readonly = AgentRuntime(read_only_mode=True)
+        rt_readonly = AgentRuntime(require_llm=False, read_only_mode=True)
         rt_readonly.register_capability(create_meta_capability_mock())
         rt_readonly.enable_read_only_mode()
         count_readonly = len(rt_readonly.registry.list_all())
@@ -416,7 +416,7 @@ class TestIntentParser:
 
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1"], "tiktok": ["t1"]}
-        rt = AgentRuntime(
+        rt = AgentRuntime(require_llm=False,
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
         )
@@ -480,7 +480,7 @@ class TestRuntimeQuery:
         llm = FakeLLM()
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1"]}
-        rt = AgentRuntime(
+        rt = AgentRuntime(require_llm=False,
             llm_client=llm,
             whitelist_validator=validator,
             offline_mode=True,
@@ -556,7 +556,7 @@ class TestRuntimeQuery:
         from agents.ad_agent.capabilities.meta import create_meta_capability
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1", "m2"]}
-        rt = AgentRuntime(whitelist_validator=validator, offline_mode=True)
+        rt = AgentRuntime(require_llm=False, whitelist_validator=validator, offline_mode=True)
         rt.register_capability(create_meta_capability())
 
         result = rt.run("列出 Meta campaign", user_id="multi-account-user")
@@ -569,7 +569,7 @@ class TestRuntimeQuery:
         from agents.ad_agent.capabilities.meta import create_meta_capability
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1"]}
-        rt = AgentRuntime(whitelist_validator=validator, offline_mode=False)
+        rt = AgentRuntime(require_llm=False, whitelist_validator=validator, offline_mode=False)
         rt.register_capability(create_meta_capability())
         result = rt.run(
             "列出 Meta campaign 列表",
@@ -584,7 +584,7 @@ class TestRuntimeQuery:
         from agents.ad_agent.capabilities.meta import create_meta_capability
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1"]}
-        rt = AgentRuntime(whitelist_validator=validator, offline_mode=True)
+        rt = AgentRuntime(require_llm=False, whitelist_validator=validator, offline_mode=True)
         rt.register_capability(create_meta_capability())
         result = rt.run(
             "列出 Meta campaign 列表",
@@ -597,7 +597,7 @@ class TestRuntimeQuery:
     def test_business_context_blocks_disallowed_channel(self):
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"tiktok": ["t1"]}
-        rt = AgentRuntime(
+        rt = AgentRuntime(require_llm=False,
             whitelist_validator=validator,
             business_context=BusinessContext(
                 business_name="app",
@@ -618,7 +618,7 @@ class TestRuntimeQuery:
                 seen.extend(messages)
                 return '{"intent_type":"chat","platforms":[]}'
 
-        rt = AgentRuntime(intent_parser=__import__(
+        rt = AgentRuntime(require_llm=False, intent_parser=__import__(
             "agents.ad_agent.core.intent", fromlist=["LLMIntentParser"]
         ).LLMIntentParser(LLM()))
         result = rt.run(
@@ -656,7 +656,7 @@ class TestSafeWriteExecution:
             "meta": ["m1"], "google-ads": ["g1"],
             "tiktok": ["t1"], "dv360": ["d1"],
         }
-        rt = AgentRuntime(
+        rt = AgentRuntime(require_llm=False,
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
             execution_mode=mode,
@@ -701,7 +701,7 @@ class TestSafeWriteExecution:
 
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1"], "google-ads": ["g1"]}
-        rt = AgentRuntime(
+        rt = AgentRuntime(require_llm=False,
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
         )
@@ -805,7 +805,7 @@ class TestSafeWriteExecution:
         google = self.FakeClient("google-ads")
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1"], "google-ads": ["g1"]}
-        rt = AgentRuntime(persistence_store=AdAgentStore(":memory:"), whitelist_validator=validator)
+        rt = AgentRuntime(require_llm=False, persistence_store=AdAgentStore(":memory:"), whitelist_validator=validator)
         rt.register_capability(create_meta_capability(meta))
         rt.register_capability(create_google_capability(google))
         result = rt.run(
@@ -819,7 +819,7 @@ class TestSafeWriteExecution:
         store = AdAgentStore(":memory:")
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["meta-test"]}
-        first_runtime = AgentRuntime(
+        first_runtime = AgentRuntime(require_llm=False,
             persistence_store=store,
             whitelist_validator=validator,
         )
@@ -830,7 +830,7 @@ class TestSafeWriteExecution:
             account_id="meta-test",
         )
 
-        second_runtime = AgentRuntime(
+        second_runtime = AgentRuntime(require_llm=False,
             persistence_store=store,
             whitelist_validator=validator,
         )
@@ -852,7 +852,7 @@ class TestSafeWriteExecution:
 
     def test_runtime_credentials_are_read_only_and_caller_owned_input_is_unchanged(self):
         credentials = {"meta": {"access_token": "caller-token"}}
-        rt = AgentRuntime(enforce_account_scope=False)
+        rt = AgentRuntime(require_llm=False, enforce_account_scope=False)
         rt.register_capability(create_meta_capability_mock())
         result = rt.run("你好", user_id="u1", credentials=credentials)
         assert credentials == {"meta": {"access_token": "caller-token"}}
@@ -1022,7 +1022,7 @@ class TestIterationContracts:
     def test_dv360_report_routes_with_line_item_id(self):
         from agents.ad_agent.capabilities.dv360 import create_dv360_capability
 
-        rt = AgentRuntime(enforce_account_scope=True, offline_mode=True)
+        rt = AgentRuntime(require_llm=False, enforce_account_scope=True, offline_mode=True)
         rt.register_capability(create_dv360_capability())
         result = rt.run(
             "下载 DV360 line_item_id=li-1 最近7天报表",
@@ -1242,7 +1242,7 @@ class TestIterationContracts:
 
                 return Handler()
 
-        rt = AgentRuntime(enforce_account_scope=False)
+        rt = AgentRuntime(require_llm=False, enforce_account_scope=False)
         skill = CustomSkill()
         rt.register_skill(skill, "meta")
         assert [tool.name for tool in rt.registry.list_all()] == ["custom_meta_insight"]
@@ -1290,7 +1290,7 @@ class TestIterationContracts:
             encoding="utf-8",
         )
 
-        rt = AgentRuntime(enforce_account_scope=False)
+        rt = AgentRuntime(require_llm=False, enforce_account_scope=False)
         assert rt.auto_load_skills(str(skill_root)) == 1
         assert [tool.name for tool in rt.registry.list_all()] == ["custom_insight"]
         result = rt._execute_tool(
@@ -1502,7 +1502,7 @@ class TestIterationContracts:
         google = GoogleClient()
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1"], "google-ads": ["g1"]}
-        rt = AgentRuntime(
+        rt = AgentRuntime(require_llm=False,
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
         )
@@ -1638,7 +1638,7 @@ class TestIterationContracts:
         client = FakeClient()
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"google-ads": ["g1"]}
-        rt = AgentRuntime(
+        rt = AgentRuntime(require_llm=False,
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
             execution_mode=ExecutionMode.LIVE.value,
@@ -1666,7 +1666,7 @@ class TestIterationContracts:
 
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"google-ads": ["g1"]}
-        rt = AgentRuntime(
+        rt = AgentRuntime(require_llm=False,
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
             execution_mode=ExecutionMode.LIVE.value,
@@ -1744,7 +1744,7 @@ class TestCrossChannelAnalysis:
 
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1"]}
-        rt = AgentRuntime(
+        rt = AgentRuntime(require_llm=False,
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
             offline_mode=True,

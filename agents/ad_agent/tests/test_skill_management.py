@@ -42,7 +42,7 @@ def test_standard_skill_directory_is_versioned_and_published(tmp_path):
     )
     assert detailed["files"]["scripts/check.py"]["encoding"] == "base64"
 
-    runtime = AgentRuntime(persistence_store=store, offline_mode=True)
+    runtime = AgentRuntime(require_llm=False, persistence_store=store, offline_mode=True)
     published = manager.publish(
         "tenant-a", "business-growth", "1.0.0", runtime=runtime
     )
@@ -97,7 +97,7 @@ def test_invalid_standard_skill_package_is_rejected(files, message):
 
 def test_managed_skill_cannot_switch_runtime_tenant():
     store = AdAgentStore(":memory:")
-    runtime = AgentRuntime(persistence_store=store, offline_mode=True)
+    runtime = AgentRuntime(require_llm=False, persistence_store=store, offline_mode=True)
     manager = ManagedSkillManager(store)
     manager.create_version("tenant-a", "first-skill", "1.0.0", _files("first-skill"), "u1")
     manager.publish("tenant-a", "first-skill", "1.0.0", runtime=runtime)

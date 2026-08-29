@@ -12,7 +12,7 @@ import logging
 import math
 import yaml
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Optional, Union
 from pathlib import Path
 from ..core.interfaces import (
     RiskLevel, ReplayPolicy, ToolDefinition, ToolEffect, ToolHandler, ToolSchema, Skill,
@@ -638,6 +638,27 @@ class SkillLoader:
         for root in self._roots:
             self._load_from_root(root)
         return self._skills
+
+    def iter_skill_dirs(self, roots: Optional[list[Union[str, Path]]] = None) -> list[Path]:
+        """Return every standard Skill directory discovered under the roots.
+
+        A standard Agent Skill is identified by the presence of ``SKILL.md``;
+        its parent directory may be the root itself or any nested directory.
+        Keeping this discovery rule here prevents Runtime callers from
+        assuming a repository-specific layout such as ``channels/`` or
+        ``businesses/``.  The returned paths are deterministic and deduplicated
+        when multiple roots overlap.
+        """
+        discovered: set[Path] = set()
+        scan_roots = self._roots if roots is None else [Path(root) for root in roots]
+        for raw_root in scan_roots:
+            root = Path(raw_root)
+            if not root.is_dir():
+                continue
+            for skill_file in root.rglob("SKILL.md"):
+                if skill_file.is_file():
+                    discovered.add(skill_file.parent.resolve())
+        return sorted(discovered, key=lambda path: str(path))
 
     @property
     def errors(self) -> dict[str, str]:

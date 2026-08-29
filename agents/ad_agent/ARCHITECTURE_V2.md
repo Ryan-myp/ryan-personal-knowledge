@@ -419,8 +419,8 @@ skills/
 ### 2. Skill 加载流程
 
 ```python
-# api_server.py 初始化
-runtime = AgentRuntime()
+# api_server.py 初始化（生产入口注入 LLM；离线评测才显式 require_llm=False）
+runtime = AgentRuntime(llm_client=create_llm_client(...), require_llm=True)
 runtime.auto_load_skills(str(skills_root), credentials)
 
 # 输出: ✅ 已加载当前 Skill 根目录下发现的 Skills

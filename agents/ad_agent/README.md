@@ -79,6 +79,9 @@ result = runtime.run(
 print(result["reply"])
 ```
 
+`AgentRuntime` 默认要求已注入 LLM；不会在模型不可用时自动切换为规则解析。
+只有测试或明确的离线工具才可以显式传入 `require_llm=False`，并且这不代表产品运行模式。
+
 ## 使用真实 API（仅测试账号）
 
 ```python
@@ -147,7 +150,7 @@ Provider live lookup 返回的动态选项会附带短时 `selection_token`。�
 
 ### Harness Engineering 评估
 
-当前核心 Harness 已具备：受限 Tool/Skill 契约、统一 Runtime 执行入口、权限/账户白名单、dry-run、显式确认、持久化幂等、workflow checkpoint/lease/recovery、Provider 回查入口，以及 LLM 输出后的二次 schema 校验。另有 `scripts/validate_contracts.py` 和 `contracts/builtin_tools.json` 提供版本化契约快照、Provider 方法覆盖率和 drift gate。结论是“核心骨架符合，尚未达到生产闭环”，不能把当前 127 个工具数或单元测试通过当成 Provider live 已验证。
+当前核心 Harness 已具备：受限 Tool/Skill 契约、统一 Runtime 执行入口、权限/账户白名单、dry-run、显式确认、持久化幂等、workflow checkpoint/lease/recovery、Provider 回查入口，以及 LLM 输出后的二次 schema 校验。另有 `scripts/validate_contracts.py` 和 `contracts/builtin_tools.json` 提供版本化契约快照、Provider 方法覆盖率和 drift gate。结论是“核心骨架符合，尚未达到生产闭环”，不能把当前 129 个工具数或单元测试通过当成 Provider live 已验证。
 
 可用 `python3 agents/ad_agent/scripts/audit_capabilities.py` 做无网络能力审计；它按
 Capability 包约定自动发现渠道，输出 action/resource 矩阵和创建链，不是 Runtime 的第二套

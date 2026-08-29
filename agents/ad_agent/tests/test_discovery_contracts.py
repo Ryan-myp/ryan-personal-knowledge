@@ -313,6 +313,13 @@ def test_runtime_can_require_model_backed_intent_parsing():
         runtime.run("查询 Meta campaign")
 
 
+def test_runtime_requires_llm_by_default():
+    runtime = AgentRuntime()
+
+    with pytest.raises(RuntimeError, match="LLM client is required"):
+        runtime.run("查询 Meta campaign")
+
+
 def test_new_channel_capability_is_discovered_by_package_convention(monkeypatch):
     """Adding a channel factory must not require editing a central map."""
     import sys
@@ -376,13 +383,57 @@ def test_plugin_only_channel_auto_discovers_without_capability_or_central_config
         encoding="utf-8",
     )
 
-    runtime = AgentRuntime(enforce_account_scope=False)
+    runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
 
     assert runtime.auto_load_skills(str(skill_root)) == 1
     assert [tool.name for tool in runtime.registry.list_all()] == [
         "new_network_list_campaigns"
     ]
     assert runtime.skill_loader.get("new-network-skill").platform_aliases == ["新网络"]
+
+
+def test_standard_skill_discovery_does_not_require_category_directories(tmp_path):
+    """A standard Skill may be mounted at root or under arbitrary nesting."""
+    skill_root = tmp_path / "mounted-skills"
+    skill_dir = skill_root / "vendor" / "campaign-planning"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: campaign-planning\n"
+        "platform: new-network\n"
+        "description: planning extension\n"
+        "---\n\n"
+        "Use the registered planning tool.\n",
+        encoding="utf-8",
+    )
+    (skill_dir / "references").mkdir()
+    (skill_dir / "references" / "rules.md").write_text(
+        "Planning guidance", encoding="utf-8"
+    )
+    (skill_dir / "tools.py").write_text(
+        "from agents.ad_agent.core.interfaces import Skill, ToolDefinition, ToolSchema, ToolResult\n"
+        "class PlanningSkill(Skill):\n"
+        "    name = 'campaign-planning'\n"
+        "    platform = 'new-network'\n"
+        "    description = 'planning extension'\n"
+        "    def get_tools(self):\n"
+        "        return [ToolDefinition(name='new_network_plan', skill=self.name, platform=self.platform, description='plan', input_schema=ToolSchema(), action='estimate', resource_type='plan', intent_types=['plan_campaign'])]\n"
+        "    def get_tool_handler(self, name):\n"
+        "        return lambda _ctx, _input: ToolResult.ok({'planned': True})\n"
+        "def create_skill(api_client=None):\n"
+        "    return PlanningSkill()\n",
+        encoding="utf-8",
+    )
+
+    runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
+
+    assert runtime.auto_load_skills(str(skill_root)) == 1
+    assert [tool.name for tool in runtime.registry.list_all()] == [
+        "new_network_plan"
+    ]
+    loaded = runtime.skill_loader.get("campaign-planning")
+    assert loaded is not None
+    assert loaded.reference_documents["references/rules.md"] == "Planning guidance"
 
 
 def test_runtime_resource_outputs_use_tool_metadata_not_tool_name():
@@ -412,7 +463,7 @@ def test_runtime_resource_outputs_use_tool_metadata_not_tool_name():
 def test_live_mode_alone_cannot_enable_provider_writes():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"meta": ["m1"]}
-    runtime = AgentRuntime(
+    runtime = AgentRuntime(require_llm=False,
         execution_mode="live",
         live_approved_tools={"meta_update_campaign"},
         granted_permissions={"ads.read", "ads.plan", "ads.write"},

@@ -38,7 +38,7 @@ def _whitelist(**accounts):
 
 
 def test_runtime_registry_cannot_bypass_execution_boundary():
-    runtime = AgentRuntime(whitelist_validator=_whitelist(meta=["m1"]))
+    runtime = AgentRuntime(require_llm=False, whitelist_validator=_whitelist(meta=["m1"]))
     runtime.register_capability(create_meta_capability())
     definition, _ = runtime.registry.get("meta_create_campaign")
 
@@ -91,7 +91,7 @@ def test_selector_only_builds_context_and_cannot_shrink_authoritative_plan():
         def execute(self, _ctx, _input_data):
             return ToolResult.ok({"executed": True})
 
-    runtime = AgentRuntime(
+    runtime = AgentRuntime(require_llm=False,
         intent_parser=Parser(), intent_router=Router(),
         tool_selector=NarrowSelector(),
         whitelist_validator=_whitelist(meta=["m1"]),
@@ -128,7 +128,7 @@ def test_knowledge_context_is_read_only_bounded_and_source_addressable():
             )]
 
     provider = Provider()
-    runtime = AgentRuntime(knowledge_provider=provider)
+    runtime = AgentRuntime(require_llm=False, knowledge_provider=provider)
     result = runtime.run("查询 Meta campaign", account_id=None)
 
     assert provider.calls
@@ -138,7 +138,7 @@ def test_knowledge_context_is_read_only_bounded_and_source_addressable():
 
 
 def test_direct_runtime_rejects_non_object_platform_params():
-    result = AgentRuntime().run("查询 Meta campaign", platform_params=[])
+    result = AgentRuntime(require_llm=False, ).run("查询 Meta campaign", platform_params=[])
     assert result["policy_errors"] == ["platform_params 必须是对象"]
 
 
@@ -180,7 +180,7 @@ def test_parameter_selection_tokens_are_signed_and_context_bound():
 
 
 def test_live_write_without_provider_client_fails_closed():
-    runtime = AgentRuntime(
+    runtime = AgentRuntime(require_llm=False,
         whitelist_validator=_whitelist(tiktok=["t1"]),
         execution_mode="live",
         allow_live_writes=True,
@@ -221,7 +221,7 @@ def test_lookup_contract_must_reference_same_provider_read_tool():
             return CapabilityRuntime()
 
     with pytest.raises(ValueError, match="unknown lookup tool"):
-        AgentRuntime().register_capability(BadLookupCapability())
+        AgentRuntime(require_llm=False, ).register_capability(BadLookupCapability())
 
 
 def test_provider_specific_rate_limiters_use_request_deadline():
@@ -265,7 +265,7 @@ def test_live_confirmation_requires_payload_even_for_direct_runtime_call():
             calls.append((campaign_id, updates))
             return {"campaign_id": campaign_id}
 
-    runtime = AgentRuntime(
+    runtime = AgentRuntime(require_llm=False,
         persistence_store=AdAgentStore(":memory:"),
         whitelist_validator=_whitelist(meta=["m1"]),
         execution_mode="live",
@@ -295,7 +295,7 @@ def test_live_write_without_write_guard_fails_closed():
             calls.append((campaign_id, updates))
             return {"campaign_id": campaign_id}
 
-    runtime = AgentRuntime(
+    runtime = AgentRuntime(require_llm=False,
         whitelist_validator=_whitelist(meta=["m1"]),
         execution_mode="live",
         allow_live_writes=True,
@@ -316,7 +316,7 @@ def test_live_write_without_write_guard_fails_closed():
 
 
 def test_parameter_catalogs_expose_static_and_dynamic_options():
-    runtime = AgentRuntime(offline_mode=True)
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
     runtime.register_capability(create_tiktok_capability())
 
     objective = runtime.list_parameter_options("tiktok", "objective_type")[0]
@@ -340,7 +340,7 @@ def test_parameter_catalogs_expose_static_and_dynamic_options():
 
 
 def test_provider_owned_ad_format_catalog_reports_real_coverage():
-    runtime = AgentRuntime(offline_mode=True)
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
     runtime.register_capability(create_google_capability())
     runtime.register_capability(create_meta_capability())
     runtime.register_capability(create_tiktok_capability())
@@ -373,7 +373,7 @@ def test_provider_owned_ad_format_catalog_reports_real_coverage():
 
 
 def test_hierarchy_guide_formats_keep_provider_enum_and_execution_boundaries():
-    runtime = AgentRuntime(offline_mode=True)
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
     runtime.register_capability(create_google_capability())
 
     campaign_tool, _handler = runtime.registry.get("google_create_campaign")
@@ -421,7 +421,7 @@ def test_workflow_state_machine_and_cancel_are_durable():
     assert store.update_workflow("w1", "planned") is True
     assert store.update_workflow("w1", "succeeded") is False
 
-    runtime = AgentRuntime(
+    runtime = AgentRuntime(require_llm=False,
         persistence_store=store,
         whitelist_validator=_whitelist(meta=["m1"]),
     )
@@ -432,7 +432,7 @@ def test_workflow_state_machine_and_cancel_are_durable():
 
 def test_workflow_write_items_are_checkpointed_before_execution():
     store = AdAgentStore(":memory:")
-    runtime = AgentRuntime(
+    runtime = AgentRuntime(require_llm=False,
         persistence_store=store,
         whitelist_validator=_whitelist(meta=["m1"]),
     )
@@ -463,7 +463,7 @@ def test_workflow_resume_plan_preserves_account_scope():
         "meta_create_campaign", "failed", {"campaign_id": "c1"},
         account_id="m1",
     )
-    runtime = AgentRuntime(persistence_store=store)
+    runtime = AgentRuntime(require_llm=False, persistence_store=store)
 
     plan = runtime.get_workflow_resume_plan("resume-account-workflow", user_id="u1")
 
@@ -482,7 +482,7 @@ def test_legacy_workflow_resume_plan_recovers_account_from_session():
         "legacy-resume-workflow:1", "legacy-resume-workflow", 1, "meta",
         "meta_create_campaign", "failed", {"campaign_id": "c1"},
     )
-    runtime = AgentRuntime(persistence_store=store)
+    runtime = AgentRuntime(require_llm=False, persistence_store=store)
 
     plan = runtime.get_workflow_resume_plan("legacy-resume-workflow", user_id="u1")
 
@@ -532,7 +532,7 @@ def test_fresh_running_workflow_is_not_resumable_or_claimed():
         "fresh-workflow", "fresh-session", "create_campaign", "live",
         status="running",
     )
-    runtime = AgentRuntime(
+    runtime = AgentRuntime(require_llm=False,
         persistence_store=store,
         workflow_stale_after_seconds=300,
     )
@@ -550,7 +550,7 @@ def test_workflow_heartbeat_refreshes_lease_and_preserves_running_state():
         "heartbeat-workflow", "heartbeat-session", "create_campaign", "live",
         status="running",
     )
-    runtime = AgentRuntime(
+    runtime = AgentRuntime(require_llm=False,
         persistence_store=store,
         workflow_stale_after_seconds=300,
     )
@@ -582,7 +582,7 @@ def test_stale_running_workflow_enters_recovery_required():
         )
         store._get_conn().commit()
 
-    runtime = AgentRuntime(
+    runtime = AgentRuntime(require_llm=False,
         persistence_store=store,
         workflow_stale_after_seconds=300,
     )
@@ -634,7 +634,7 @@ def test_resumable_workflows_keep_user_and_tenant_boundaries():
             )
             store._get_conn().commit()
 
-    runtime = AgentRuntime(
+    runtime = AgentRuntime(require_llm=False,
         persistence_store=store,
         workflow_stale_after_seconds=300,
     )
@@ -688,7 +688,7 @@ def test_provider_reconciler_uses_only_runtime_read_callback():
         "meta_create_campaign", "failed", {"account_id": "m1", "campaign_id": "c1"},
         error="provider timeout",
     )
-    runtime = AgentRuntime(
+    runtime = AgentRuntime(require_llm=False,
         persistence_store=store,
         whitelist_validator=_whitelist(meta=["m1"]),
         provider_reconcilers={"meta": Reconciler()},
@@ -708,7 +708,7 @@ def test_provider_reconciler_uses_only_runtime_read_callback():
 
 
 def test_turn_tool_budget_stops_long_create_chain():
-    runtime = AgentRuntime(
+    runtime = AgentRuntime(require_llm=False,
         max_tool_calls=1,
         whitelist_validator=_whitelist(meta=["m1"]),
     )
@@ -744,7 +744,7 @@ def test_missing_tool_permission_fails_closed_before_handler_execution():
             definition, _ = registry.get("permissioned_read")
             return {"meta": [definition]}
 
-    runtime = AgentRuntime(
+    runtime = AgentRuntime(require_llm=False,
         intent_parser=Parser(),
         intent_router=Router(),
         whitelist_validator=_whitelist(meta=["m1"]),
@@ -769,7 +769,7 @@ def test_missing_tool_permission_fails_closed_before_handler_execution():
 
 
 def test_builtin_tools_declare_read_or_plan_permissions():
-    runtime = AgentRuntime(whitelist_validator=_whitelist(meta=["m1"]))
+    runtime = AgentRuntime(require_llm=False, whitelist_validator=_whitelist(meta=["m1"]))
     runtime.register_capability(create_meta_capability())
     tools = runtime.registry.list_all()
 
@@ -784,7 +784,7 @@ def test_builtin_tools_declare_read_or_plan_permissions():
 
 def test_trusted_principal_overrides_user_id_and_restricts_accounts():
     store = AdAgentStore(":memory:")
-    runtime = AgentRuntime(
+    runtime = AgentRuntime(require_llm=False,
         persistence_store=store,
         whitelist_validator=_whitelist(meta=["m1", "m2"]),
     )
@@ -827,7 +827,7 @@ def test_workflow_recovery_requires_verified_observations():
         "meta_create_campaign", "failed", {"campaign_id": "c1"},
         error="provider timeout",
     )
-    runtime = AgentRuntime(persistence_store=store)
+    runtime = AgentRuntime(require_llm=False, persistence_store=store)
 
     plan = runtime.get_workflow_resume_plan("recovery-workflow", user_id="u1")
     assert plan["resumable"] is True
@@ -873,7 +873,7 @@ def test_workflow_access_isolated_by_tenant_even_when_user_id_matches():
     store.create_workflow(
         "tenant-workflow", "tenant-session", "create_campaign", "dry_run", status="failed"
     )
-    runtime = AgentRuntime(persistence_store=store)
+    runtime = AgentRuntime(require_llm=False, persistence_store=store)
 
     with pytest.raises(PermissionError, match="different tenant"):
         runtime.get_workflow(
@@ -905,7 +905,7 @@ def test_tool_timeout_returns_explicit_timed_out_result_and_signals_handler():
             time.sleep(0.01)
             return type("Result", (), {"success": True, "data": {}})()
 
-    runtime = AgentRuntime()
+    runtime = AgentRuntime(require_llm=False, )
     definition = ToolDefinition(
         name="slow_read",
         skill="test",

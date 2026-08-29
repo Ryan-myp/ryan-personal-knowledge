@@ -212,7 +212,7 @@ def test_tools_endpoint_exposes_parameter_schema_and_enum_catalog(monkeypatch):
     from agents.ad_agent import AgentRuntime
     from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
 
-    runtime = AgentRuntime(offline_mode=True)
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
     runtime.register_capability(create_tiktok_capability())
     monkeypatch.setattr(api_server, "runtime", runtime)
     monkeypatch.setattr(api_server, "API_KEY", "test-key")
@@ -233,7 +233,7 @@ def test_parameter_options_endpoint_can_scope_same_field_to_tool(monkeypatch):
     from agents.ad_agent import AgentRuntime
     from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
 
-    runtime = AgentRuntime(offline_mode=True)
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
     runtime.register_capability(create_tiktok_capability())
     monkeypatch.setattr(api_server, "runtime", runtime)
     monkeypatch.setattr(api_server, "API_KEY", "test-key")
@@ -325,7 +325,7 @@ def test_managed_skill_api_versions_and_publishing_are_tenant_scoped(monkeypatch
     from agents.ad_agent.persistence.store import AdAgentStore
 
     store = AdAgentStore(str(tmp_path / "skills.db"))
-    managed_runtime = AgentRuntime(persistence_store=store, offline_mode=True)
+    managed_runtime = AgentRuntime(require_llm=False, persistence_store=store, offline_mode=True)
     monkeypatch.setattr(api_server, "runtime", managed_runtime)
     monkeypatch.setattr(api_server, "API_KEY", "")
     monkeypatch.setattr(api_server, "ALLOW_UNAUTHENTICATED", False)

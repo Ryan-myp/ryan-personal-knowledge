@@ -193,7 +193,10 @@ class AgentRuntime:
         write_guard: WriteGuard = None,
         skill_roots: list[str] = None,
         llm_client=None,  # 可选：自定义 LLM 客户端
-        require_llm: bool = False,
+        # A production Agent is model-backed by definition.  Tests and
+        # explicitly offline tooling may opt into the legacy rule parser with
+        # ``require_llm=False``; the default must never silently degrade.
+        require_llm: bool = True,
         persistence_store: PersistenceBackend = None,
         whitelist_validator: AccountWhitelistValidator = None,
         read_only_mode: bool = False,
@@ -240,6 +243,13 @@ class AgentRuntime:
         self.skill_loader = SkillLoader(skill_roots)
         self.skill_loader.load_all()
         self._llm = llm_client
+        # A caller may inject an already-configured LLMIntentParser instead
+        # of passing the model separately.  Treat that parser-owned model as
+        # the same model-backed Agent dependency; otherwise the strict
+        # startup gate would reject a valid LLM configuration while checking
+        # only the Runtime field.
+        if self._llm is None and isinstance(self.intent_parser, LLMIntentParser):
+            self._llm = getattr(self.intent_parser, "_llm", None)
         self._sessions: dict[str, "SessionContext"] = {}
         self._session_locks: dict[str, threading.RLock] = {}
         self._session_locks_guard = threading.RLock()
@@ -2046,10 +2056,11 @@ class AgentRuntime:
         自动加载 skills 目录下的所有 Skills。
         
         策略：
-        1. 扫描 channels/ 子目录（渠道层 Skills）
-        2. 扫描 businesses/ 子目录（业务层 Skills）
-        3. 扫描 cross-channel/ 子目录（跨渠道 Skills）
-        4. 只加载有工具定义的 Skill
+        1. 按标准 Agent Skill 约定发现所有包含 SKILL.md 的目录（可在根目录或任意层级）
+        2. 业务上下文 Skill 只作为策略上下文，不注册执行工具
+        3. 有受控插件的 Skill 通过统一 Runtime 注册工具
+        4. 没有插件但能按包约定发现 Capability 的渠道 Skill，加载该 Capability
+        5. 其他 Skill 只保留为自然语言上下文，不会因文件名或 workflow.yaml 变成工具
         
         Args:
             skills_root: Skills 根目录路径
@@ -2078,25 +2089,16 @@ class AgentRuntime:
         self.skill_loader.add_root(skills_root)
         self.skill_loader.load_all()
         
-        skill_roots = [
-            Path(skills_root) / "channels",
-            Path(skills_root) / "businesses",
-            Path(skills_root) / "cross-channel",
-        ]
-        
-        for root in skill_roots:
-            if not root.exists():
-                continue
-            
-            for skill_dir in root.iterdir():
-                if not skill_dir.is_dir():
-                    continue
-                
-                skill_file = skill_dir / "SKILL.md"
-                if not skill_file.exists():
-                    continue
-                
-                try:
+        # SkillLoader is the single source of truth for standard directory
+        # discovery.  Do not infer behavior from a parent folder name: a
+        # packaged Skill can be mounted at the root or nested arbitrarily.
+        # Only scan the root explicitly requested by this call.  The Runtime
+        # may also have its built-in Skill root registered; including it here
+        # would make a caller's temporary/managed root unexpectedly register
+        # all built-in Capabilities a second time.
+        for skill_dir in self.skill_loader.iter_skill_dirs([skills_root]):
+            try:
+                    skill_file = skill_dir / "SKILL.md"
                     # 解析 SKILL.md frontmatter
                     with open(skill_file, 'r', encoding='utf-8') as f:
                         content = f.read()
@@ -2156,41 +2158,40 @@ class AgentRuntime:
                         continue
                     
                     # Channel capability discovery is based on package
-                    # convention, not on whether SKILL.md happens to contain
-                    # a Markdown tool table. Business/cross-channel Skills
-                    # remain context-only unless they expose a plugin.
-                    if root.name == "channels":
-                        # SKILL.md is declarative scope/context.  Executable
-                        # tools come only from the verified provider
-                        # Capability, so documentation cannot drift into a
-                        # false executable contract.
-                        try:
-                            from ..capabilities.factory import create_capability
-                            canonical = self._canonical_platform(platform)
-                            capability = self._discover_capability(canonical, api_client)
-                            if capability is None:
-                                capability = create_capability(canonical, api_client)
-                            before_tool_count = len(self.registry.list_all())
-                            self.register_capability(capability)
-                            registered_count = len(self.registry.list_all()) - before_tool_count
-                            if registered_count <= 0:
-                                logger.warning(
-                                    "⚠️ Capability '%s' 未注册任何可执行工具",
-                                    canonical,
-                                )
-                                continue
-                            loaded_count += 1
-                            logger.info(
-                                "✅ 自动加载 Capability: %s (%s, %s executable tools)",
-                                platform,
-                                platform,
-                                registered_count,
+                    # convention, not on a parent directory name or a
+                    # Markdown table. Business/context Skills remain
+                    # context-only because their frontmatter is handled by
+                    # SkillContract as ``context_only`` and never reaches
+                    # this loop.
+                    try:
+                        from ..capabilities.factory import create_capability
+                        canonical = self._canonical_platform(platform)
+                        capability = self._discover_capability(canonical, api_client)
+                        if capability is None:
+                            capability = create_capability(canonical, api_client)
+                        before_tool_count = len(self.registry.list_all())
+                        self.register_capability(capability)
+                        registered_count = len(self.registry.list_all()) - before_tool_count
+                        if registered_count <= 0:
+                            logger.warning(
+                                "⚠️ Capability '%s' 未注册任何可执行工具",
+                                canonical,
                             )
-                        except ValueError:
-                            logger.warning("⚠️ 未找到平台 Capability: %s", platform)
-                
-                except Exception as e:
-                    logger.warning(f"⚠️ 解析 Skill {skill_dir.name}/SKILL.md 失败: {e}")
+                            continue
+                        loaded_count += 1
+                        logger.info(
+                            "✅ 自动加载 Capability: %s (%s, %s executable tools)",
+                            platform,
+                            platform,
+                            registered_count,
+                        )
+                    except ValueError:
+                        # A normal advisory Skill may have no executable
+                        # Capability. That is expected and must not make a
+                        # package layout convention mandatory.
+                        logger.debug("未找到平台 Capability: %s", platform)
+            except Exception as e:
+                logger.warning(f"⚠️ 解析 Skill {skill_dir.name}/SKILL.md 失败: {e}")
         
         logger.info(f"✅ 自动加载完成，共加载 {loaded_count} 个 Skills")
         return loaded_count
