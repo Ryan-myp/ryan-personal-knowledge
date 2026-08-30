@@ -29,6 +29,7 @@
 │  │ IntentParser    │  │ IntentRouter    │  │ ToolRegistry             │    │
 │  │ 意图解析         │→│ 路由分发         │→ │ 工具注册/执行            │    │
 │  │ - LLM 结构化解析    │ │ - 发现式路由   │  │ - 249 tools              │    │
+│  │ - 上下文反馈         │ │ - 确定性执行   │  │ - 受控 Runtime gates     │    │
 │  └─────────────────┘  └─────────────────┘  └─────────────────────────┘    │
 │                                                                             │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐    │
@@ -258,6 +259,12 @@ class TikTokAPIClient(BaseAPIClient):
                                               ▼
                                          返回给用户 (JSON/HTML)
 ```
+
+每回合的 LLM 负责理解请求并提出结构化 Planner 输入；`IntentRouter` 只读取当前
+ToolDefinition 的自描述元数据，Runtime 再执行 schema、权限、账户、dry-run、确认和
+幂等校验。工具结果不会直接变成下一次执行指令，而是以限量、脱敏的
+`prior_tool_results` 上下文反馈给后续 LLM 回合，用于补参和连续对话。这是单 Agent 的
+模型规划闭环，不引入第二套 `workflow.yaml` 执行引擎。
 
 ### Provider 接口与版本演进
 

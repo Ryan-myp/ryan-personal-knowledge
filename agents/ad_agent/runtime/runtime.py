@@ -537,6 +537,31 @@ class AgentRuntime:
             return builder(user_input, available_tools, intent_type, tenant_id)
         return builder(user_input, available_tools, intent_type)
 
+    def _build_prior_tool_results_context(
+        self, session: "SessionContext", max_results: int = 8, max_chars: int = 4000
+    ) -> str:
+        """Build a bounded, redacted context view of prior Tool results.
+
+        Tool results are durable execution evidence, not conversation prose.
+        Keeping this bridge explicit lets a later LLM turn understand IDs,
+        statuses and lookup output without exposing raw result objects as a
+        new execution interface or allowing the model to bypass Runtime gates.
+        """
+        rows: list[str] = []
+        for tool_name, result in list(session.tool_results.items())[-max_results:]:
+            if not isinstance(result, ToolResult):
+                continue
+            safe = self._redact_for_persistence(result.to_dict())
+            try:
+                encoded = json.dumps(safe, ensure_ascii=False, sort_keys=True, default=str)
+            except (TypeError, ValueError):
+                encoded = json.dumps(
+                    {"success": result.success, "error": str(result.error or "")},
+                    ensure_ascii=False,
+                )
+            rows.append(f"[{tool_name}] {encoded[:1200]}")
+        return "\n".join(rows)[:max_chars]
+
     def load_business_context(
         self, business_name: str, skills_root: Optional[str] = None,
     ) -> BusinessContext:
@@ -3863,9 +3888,11 @@ class AgentRuntime:
         # an intent.  The post-parse IntentRouter remains authoritative, so
         # this context can improve recognition but cannot grant execution.
         try:
-            session.ctx.metadata["skill_context"] = self._build_skill_context(
+            skill_context = self._build_skill_context(
                 safe_user_input, self.registry.list_all(), None, tenant_id
             )
+            skill_context["prior_tool_results"] = self._build_prior_tool_results_context(session)
+            session.ctx.metadata["skill_context"] = skill_context
         except Exception as exc:
             logger.debug("构建 Skill 解析上下文失败: %s", exc)
         intent = self.intent_parser.parse(safe_user_input, session.ctx)
@@ -3873,12 +3900,14 @@ class AgentRuntime:
         # the model-facing explanation/context; IntentRouter remains the sole
         # authority for the executable plan below.
         try:
-            session.ctx.metadata["skill_context"] = self._build_skill_context(
+            skill_context = self._build_skill_context(
                 safe_user_input,
                 self.registry.list_all(),
                 intent.intent_type,
                 tenant_id,
             )
+            skill_context["prior_tool_results"] = self._build_prior_tool_results_context(session)
+            session.ctx.metadata["skill_context"] = skill_context
         except Exception as exc:
             logger.debug("构建意图级 Skill/知识上下文失败: %s", exc)
         

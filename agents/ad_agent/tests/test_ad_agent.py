@@ -381,6 +381,49 @@ class TestIntentParser:
         assert "meta_list_campaigns" in prompt_text
         assert "Meta campaign scope" in prompt_text
 
+    def test_llm_parser_receives_prior_tool_results_as_context_only(self):
+        from agents.ad_agent.runtime.runtime import SessionContext
+
+        class FakeLLM:
+            def __init__(self):
+                self.calls = []
+
+            def call(self, messages):
+                self.calls.append(messages)
+                return '{"intent_type":"get_campaign","platforms":["meta"]}'
+
+        llm = FakeLLM()
+        parser = LLMIntentParser(llm)
+        runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
+        session = SessionContext("s1", ToolContext("s1", "u1"))
+        session.save_result(
+            "meta_list_campaigns",
+            ToolResult.ok({
+                "campaign_id": "c1",
+                "status": "PAUSED",
+                "access_token": "must-not-be-forwarded",
+            }),
+            platform="meta",
+        )
+        prior = runtime._build_prior_tool_results_context(session)
+
+        parser.parse(
+            "查看刚才的 Meta campaign",
+            ToolContext(
+                session_id="s1",
+                user_id="u1",
+                metadata={"skill_context": {"prior_tool_results": prior}},
+            ),
+        )
+        prompt_text = "\n".join(
+            message["content"] for message in llm.calls[0]
+            if message["role"] == "system"
+        )
+        assert "meta_list_campaigns" in prompt_text
+        assert "c1" in prompt_text
+        assert "PAUSED" in prompt_text
+        assert "must-not-be-forwarded" not in prompt_text
+
     def test_direct_multi_platform_comparison(self):
         from agents.ad_agent.core.intent import LLMIntentParser
         parser = LLMIntentParser()
