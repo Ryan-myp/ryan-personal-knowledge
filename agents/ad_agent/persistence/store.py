@@ -500,20 +500,27 @@ class AdAgentStore:
             return self._skill_row(published)
 
     def set_skill_evaluation(
-        self, version_id: str, status: str, run_id: Optional[str] = None,
+        self, version_id: str, tenant_id: str, status: str, run_id: Optional[str] = None,
         report: Optional[dict] = None,
     ) -> bool:
         with self._lock:
             conn = self._get_conn()
-            cursor = conn.execute(
+            sql = (
                 "UPDATE skill_versions SET evaluation_status = ?, "
-                "evaluation_run_id = ?, evaluation_report = ? WHERE version_id = ?",
-                (
-                    str(status), str(run_id) if run_id else None,
-                    json.dumps(report or {}, ensure_ascii=False, sort_keys=True),
-                    str(version_id),
-                ),
+                "evaluation_run_id = ?, evaluation_report = ? "
+                "WHERE version_id = ? AND tenant_id = ?"
             )
+            params = [
+                str(status), str(run_id) if run_id else None,
+                json.dumps(report or {}, ensure_ascii=False, sort_keys=True),
+                str(version_id), str(tenant_id),
+            ]
+            # A worker from an older retry must not overwrite the current
+            # evaluation attached to this immutable version.
+            if run_id:
+                sql += " AND evaluation_run_id = ?"
+                params.append(str(run_id))
+            cursor = conn.execute(sql, params)
             conn.commit()
             return cursor.rowcount > 0
 
@@ -593,20 +600,20 @@ class AdAgentStore:
             return self._skill_row(row)
 
     def update_skill_evaluation_run(
-        self, run_id: str, status: str, report: Optional[dict] = None,
+        self, run_id: str, tenant_id: str, status: str, report: Optional[dict] = None,
         error: Optional[str] = None,
     ) -> bool:
         with self._lock:
             conn = self._get_conn()
             cursor = conn.execute(
                 "UPDATE skill_evaluation_runs SET status = ?, report = ?, error = ?, "
-                "updated_at = ? WHERE run_id = ?",
+                "updated_at = ? WHERE run_id = ? AND tenant_id = ?",
                 (
                     str(status),
                     json.dumps(report or {}, ensure_ascii=False, sort_keys=True),
                     str(error) if error else None,
                     datetime.now().isoformat(),
-                    str(run_id),
+                    str(run_id), str(tenant_id),
                 ),
             )
             conn.commit()

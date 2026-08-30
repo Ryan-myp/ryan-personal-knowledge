@@ -660,8 +660,11 @@ class ManagedSkillManager:
 
     def _execute_evaluation(self, run_id: str, record: Mapping[str, Any]) -> None:
         version_id = str(record["version_id"])
-        self.store.update_skill_evaluation_run(run_id, "running")
-        self.store.set_skill_evaluation(version_id, "running", run_id=run_id)
+        tenant_id = str(record["tenant_id"])
+        self.store.update_skill_evaluation_run(run_id, tenant_id, "running")
+        self.store.set_skill_evaluation(
+            version_id, tenant_id, "running", run_id=run_id
+        )
         report: dict[str, Any] = {"run_id": run_id}
         try:
             eval_path, _config = self._validate_eval_config(record)
@@ -758,18 +761,30 @@ class ManagedSkillManager:
             # report, even if an Agent prints them accidentally.
             from .runtime.runtime import AgentRuntime
             safe_report = AgentRuntime._redact_for_persistence(report)
-            self.store.update_skill_evaluation_run(run_id, status, safe_report, error)
-            self.store.set_skill_evaluation(version_id, status, run_id, safe_report)
+            self.store.update_skill_evaluation_run(
+                run_id, tenant_id, status, safe_report, error
+            )
+            self.store.set_skill_evaluation(
+                version_id, tenant_id, status, run_id, safe_report
+            )
             if generated_eval is not None:
                 generated_eval.unlink(missing_ok=True)
         except subprocess.TimeoutExpired:
             error = "skill-up evaluation timed out"
-            self.store.update_skill_evaluation_run(run_id, "error", report, error)
-            self.store.set_skill_evaluation(version_id, "error", run_id, report)
+            self.store.update_skill_evaluation_run(
+                run_id, tenant_id, "error", report, error
+            )
+            self.store.set_skill_evaluation(
+                version_id, tenant_id, "error", run_id, report
+            )
         except Exception as exc:
             error = f"skill-up evaluation failed to start: {type(exc).__name__}: {exc}"
-            self.store.update_skill_evaluation_run(run_id, "error", report, error)
-            self.store.set_skill_evaluation(version_id, "error", run_id, report)
+            self.store.update_skill_evaluation_run(
+                run_id, tenant_id, "error", report, error
+            )
+            self.store.set_skill_evaluation(
+                version_id, tenant_id, "error", run_id, report
+            )
 
     @staticmethod
     def _evaluation_environment() -> dict[str, str]:

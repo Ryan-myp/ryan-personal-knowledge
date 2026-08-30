@@ -422,6 +422,32 @@ def test_interrupted_skill_up_evaluation_is_recovered_and_retryable():
     assert retry["run_id"] == "new-run"
 
 
+def test_skill_evaluation_updates_are_tenant_and_run_scoped():
+    store = AdAgentStore(":memory:")
+    manager = ManagedSkillManager(store)
+    manager.create_version("tenant-a", "scoped-eval", "1.0.0", _files("scoped-eval"), "u1")
+    version = store.get_skill_version("tenant-a", "scoped-eval", "1.0.0")
+    store.claim_skill_evaluation("run-a", version["version_id"], "tenant-a")
+
+    assert store.update_skill_evaluation_run(
+        "run-a", "tenant-b", "running"
+    ) is False
+    assert store.set_skill_evaluation(
+        version["version_id"], "tenant-b", "running", run_id="run-a"
+    ) is False
+    assert store.get_skill_evaluation("run-a", "tenant-a")["status"] == "queued"
+    assert store.get_skill_version("tenant-a", "scoped-eval", "1.0.0")[
+        "evaluation_status"
+    ] == "queued"
+
+    assert store.update_skill_evaluation_run(
+        "run-a", "tenant-a", "running"
+    ) is True
+    assert store.set_skill_evaluation(
+        version["version_id"], "tenant-a", "running", run_id="run-a"
+    ) is True
+
+
 def test_skill_up_never_imports_user_skill_plugin(tmp_path, monkeypatch):
     """Managed Skill evaluation must remain context-only even with tools.py."""
     from agents.ad_agent.evals import skill_up_engine

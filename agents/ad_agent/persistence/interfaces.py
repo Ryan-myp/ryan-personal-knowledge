@@ -129,7 +129,7 @@ class PersistenceBackend(Protocol):
         self, tenant_id: str, skill_name: str, version: str,
     ) -> Optional[dict]: ...
     def set_skill_evaluation(
-        self, version_id: str, status: str, run_id: Optional[str] = None,
+        self, version_id: str, tenant_id: str, status: str, run_id: Optional[str] = None,
         report: Optional[dict] = None,
     ) -> bool: ...
     def create_skill_evaluation(
@@ -141,7 +141,7 @@ class PersistenceBackend(Protocol):
     ) -> Optional[dict]: ...
     def get_skill_evaluation(self, run_id: str, tenant_id: str) -> Optional[dict]: ...
     def update_skill_evaluation_run(
-        self, run_id: str, status: str, report: Optional[dict] = None,
+        self, run_id: str, tenant_id: str, status: str, report: Optional[dict] = None,
         error: Optional[str] = None,
     ) -> bool: ...
     def recover_stale_skill_evaluations(
