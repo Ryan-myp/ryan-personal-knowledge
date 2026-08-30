@@ -40,6 +40,7 @@ from .parameters import (
     google_campaign_criterion_schema, google_keyword_update_schema,
     google_user_list_schema, google_user_list_update_schema,
     google_bidding_strategy_schema, google_bidding_strategy_update_schema,
+    google_product_group_update_schema, google_product_group_read_schema,
 )
 from ...api_clients.google_ads_client import GoogleAdsAPIClient
 from ..update_contracts import google_updates
@@ -94,6 +95,10 @@ class GoogleCapability(BaseCapability):
         "create_search_ad": ["google_create_search_ad", "google_create_ad"],
         "create_pmax_asset_group": ["google_create_pmax_asset_group", "google_create_asset_group"],
         "create_product_group": ["google_create_product_group"],
+        "list_product_groups": ["google_list_product_groups"],
+        "get_product_group": ["google_get_product_group"],
+        "update_product_group": ["google_update_product_group"],
+        "delete_product_group": ["google_delete_product_group"],
         "create_responsive_display_ad": ["google_create_responsive_display_ad"],
         "create_video_ad": ["google_create_video_ad"],
         "create_demand_gen_multi_asset_ad": ["google_create_demand_gen_multi_asset_ad"],
@@ -182,6 +187,9 @@ class GoogleCapability(BaseCapability):
         asset_group_schema = google_asset_group_schema()
         app_ad_group_schema = google_app_ad_group_schema()
         app_ad_schema = google_app_ad_schema()
+        product_group_read_schema = google_product_group_read_schema()
+        product_group_update_schema = google_product_group_update_schema()
+        product_group_read_properties = product_group_read_schema["properties"]
         tools = [
             method_tool(
                 platform="google-ads", skill="google-ads-api-expert",
@@ -819,6 +827,66 @@ class GoogleCapability(BaseCapability):
                     "cpc_bid_micros": data.get("cpc_bid_micros"),
                     "bidding_category_level": data.get("bidding_category_level", "LEVEL1"),
                 }),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_list_product_groups",
+                description="查询 Google Shopping Ad Group 下的 Product Group/Listing Group 列表。",
+                method_name="list_product_groups", result_key="product_groups",
+                properties=product_group_read_properties,
+                required=["ad_group_id"], action="list", resource_type="product_group",
+                parent_resource_type="ad_group", parent_resource_id_field="ad_group_id",
+                intent_types=["list_product_groups"], traits=["read", "product_group", "shopping"],
+                argument_builder=lambda _ctx, data: ((data["ad_group_id"],), {
+                    "page_size": data.get("limit", 100),
+                }),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_get_product_group",
+                description="查询 Google Shopping 单个 Product Group/Listing Group 详情。",
+                method_name="get_product_group", result_key="product_group",
+                properties=product_group_read_properties,
+                required=["ad_group_id", "product_group_id"], action="get",
+                resource_type="product_group", parent_resource_type="ad_group",
+                resource_id_field="product_group_id", parent_resource_id_field="ad_group_id",
+                intent_types=["get_product_group"], traits=["read", "product_group", "shopping"],
+                argument_builder=lambda _ctx, data: ((
+                    data["ad_group_id"], data["product_group_id"]
+                ), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_update_product_group",
+                description="更新 Google Shopping Product Group 状态或 CPC 出价；默认仅生成 dry-run 计划。",
+                method_name="update_product_group", result_key="product_group_result",
+                properties={
+                    **product_group_read_properties,
+                    "updates": product_group_update_schema,
+                },
+                required=["ad_group_id", "product_group_id", "updates"],
+                provider_required=["updates"], action="update", resource_type="product_group",
+                parent_resource_type="ad_group", resource_id_field="product_group_id",
+                parent_resource_id_field="ad_group_id", intent_types=["update_product_group"],
+                traits=["write", "product_group", "shopping"], write=True,
+                argument_builder=lambda _ctx, data: ((
+                    data["ad_group_id"], data["product_group_id"], data["updates"]
+                ), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_delete_product_group",
+                description="删除 Google Shopping Product Group/Listing Group；默认仅生成 dry-run 计划。",
+                method_name="delete_product_group", result_key="product_group_result",
+                properties=product_group_read_properties,
+                required=["ad_group_id", "product_group_id"], action="delete",
+                resource_type="product_group", parent_resource_type="ad_group",
+                resource_id_field="product_group_id", parent_resource_id_field="ad_group_id",
+                intent_types=["delete_product_group"], traits=["write", "product_group", "shopping"],
+                write=True,
+                argument_builder=lambda _ctx, data: ((
+                    data["ad_group_id"], data["product_group_id"]
+                ), {}),
             ),
             method_tool(
                 platform="google-ads", skill="google-ads-api-expert",

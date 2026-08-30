@@ -871,6 +871,37 @@ def google_product_group_schema() -> dict[str, Any]:
     }
 
 
+def google_product_group_update_schema() -> dict[str, Any]:
+    """Mutable fields for a Standard Shopping listing-group criterion."""
+    return _object({
+        "status": _field(
+            "string", "Listing-group status", enum=GOOGLE_STATUSES,
+        ),
+        "cpc_bid_micros": _field(
+            "integer", "Product partition CPC bid in micros", minimum=0,
+        ),
+        "cpc_bid": _field(
+            "number", "Product partition CPC bid in account currency", minimum=0,
+        ),
+    }, "Allowed Product Group update fields", additional_properties=False)
+
+
+def google_product_group_read_schema() -> dict[str, Any]:
+    """Common identity/selection fields for Product Group read Tools."""
+    return {
+        "properties": {
+            "customer_id": _field("string", "Google Ads customer ID"),
+            "ad_group_id": _field("string", "Parent Shopping ad group ID", minLength=1),
+            "product_group_id": _field(
+                "string", "AdGroupCriterion listing-group criterion ID", minLength=1,
+            ),
+            "limit": _field(
+                "integer", "Maximum number of product groups", minimum=1, maximum=10_000,
+            ),
+        },
+    }
+
+
 def google_ad_schema() -> dict[str, Any]:
     return {
         "required": ["ad_group_id", "name"],

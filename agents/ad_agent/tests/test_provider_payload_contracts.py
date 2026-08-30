@@ -3193,7 +3193,7 @@ def test_google_product_group_creation_builds_listing_group_criterion():
     assert client.create_product_group(
         "123", "product_type_1", "Shoes", partition_type="SUBDIVISION",
         parent_criterion_id="123~111", cpc_bid_micros=250000,
-    ) == "123~456"
+    ) == "456"
     resource, operations = calls[-1]
     assert resource == "adGroupCriteria"
     criterion = operations[0]["create"]
@@ -3225,6 +3225,126 @@ def test_google_product_group_creation_builds_listing_group_criterion():
 
     with pytest.raises(ValueError, match="another customer|belong"):
         client.create_product_group("123", "brand", "Acme", parent_criterion_id="999~1")
+
+
+def test_google_product_group_queries_normalize_listing_group_rows():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    calls = []
+
+    def search(query, **kwargs):
+        calls.append((query, kwargs))
+        return [{
+            "adGroup": {"id": "456"},
+            "adGroupCriterion": {
+                "criterionId": "789",
+                "resourceName": "customers/123/adGroupCriteria/456~789",
+                "status": "ENABLED",
+                "cpcBidMicros": "250000",
+                "listingGroup": {
+                    "type": "SUBDIVISION",
+                    "parentAdGroupCriterion": "customers/123/adGroupCriteria/456~700",
+                    "caseValue": {
+                        "productType": {"level": "LEVEL2", "value": "Shoes"}
+                    },
+                },
+            },
+        }]
+
+    client._search_all = search
+    groups = client.list_product_groups("456", page_size=25)
+    assert groups == [{
+        "id": "789",
+        "product_group_id": "789",
+        "ad_group_id": "456",
+        "resource_name": "customers/123/adGroupCriteria/456~789",
+        "status": "ENABLED",
+        "cpc_bid_micros": "250000",
+        "partition_type": "SUBDIVISION",
+        "product_group_type": "product_type_2",
+        "value": "Shoes",
+        "parent_criterion_id": "customers/123/adGroupCriteria/456~700",
+    }]
+    assert calls[0][1] == {"page_size": 25}
+    assert "ad_group_criterion.type = LISTING_GROUP" in calls[0][0]
+    assert "ad_group.id = 456" in calls[0][0]
+
+    client._search_all = lambda query, **kwargs: [{
+        "ad_group": {"id": "456"},
+        "ad_group_criterion": {
+            "criterion_id": "790",
+            "listing_group": {
+                "type": "UNIT",
+                "case_value": {"product_custom_label": {
+                    "index": "INDEX3", "value": "clearance"
+                }},
+            },
+        },
+    }]
+    assert client.get_product_group("456", "790")["product_group_type"] == "custom_label_3"
+
+
+def test_google_product_group_update_and_delete_use_composite_criterion_resource():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    calls = []
+    client._mutate = lambda resource, operation: (
+        calls.append((resource, operation)) or {}
+    )
+
+    assert client.update_product_group(
+        "456", "789", {"status": "PAUSED", "cpc_bid": 0.25}
+    ) == {
+        "success": True, "ad_group_id": "456", "product_group_id": "789",
+    }
+    assert calls[0] == (
+        "adGroupCriteria",
+        {
+            "update": {
+                "resourceName": "customers/123/adGroupCriteria/456~789",
+                "status": "PAUSED",
+                "cpcBidMicros": 250000,
+            },
+            "updateMask": {"paths": ["status", "cpcBidMicros"]},
+        },
+    )
+
+    assert client.delete_product_group("456", "789") == {
+        "success": True, "ad_group_id": "456", "product_group_id": "789",
+    }
+    assert calls[1] == (
+        "adGroupCriteria",
+        {"remove": "customers/123/adGroupCriteria/456~789"},
+    )
+
+    with pytest.raises(ValueError, match="Unsupported Google product group"):
+        client.update_product_group("456", "789", {"product_group_type": "brand"})
+
+
+def test_google_product_group_lifecycle_tools_are_scoped_and_dry_run_only():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_google_capability().register_tools()
+    }
+    expected = {
+        "google_create_product_group", "google_list_product_groups",
+        "google_get_product_group", "google_update_product_group",
+        "google_delete_product_group",
+    }
+    assert expected <= definitions.keys()
+    assert definitions["google_list_product_groups"].input_schema.required == ["ad_group_id"]
+    assert definitions["google_get_product_group"].input_schema.required == [
+        "ad_group_id", "product_group_id",
+    ]
+    assert definitions["google_update_product_group"].input_schema.required == [
+        "ad_group_id", "product_group_id", "updates",
+    ]
+    assert definitions["google_update_product_group"].input_schema.properties["updates"][
+        "additionalProperties"
+    ] is False
+    assert all(
+        definitions[name].is_write_tool and definitions[name].live_support is False
+        for name in expected
+        if definitions[name].is_write_tool
+    )
 
 
 def test_google_responsive_display_ad_builds_dedicated_ad_payload():

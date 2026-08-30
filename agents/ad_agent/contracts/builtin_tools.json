@@ -1,5 +1,5 @@
 {
-  "digest": "0fb72ac2f4ca1be61393fdea2e1ec19f8a4667029a097ba175d2ad9523e7ec5f",
+  "digest": "9ab6c1287d2bc67c048be9098d765c1fdf7248cfacf2a8c286d3518af454dce2",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -2023,8 +2023,8 @@
       ]
     },
     "google-ads": {
-      "digest": "eb0450e0e60e785b1c5a2daf4e13bfa3c58e1fcec5ff1af6a523b5ebf2eddda0",
-      "tool_count": 74,
+      "digest": "f7b03016822e9f979473f25d1af6694565e7ae2d3ddfbe1009ccb4f3c02b9804",
+      "tool_count": 78,
       "tools": [
         {
           "action": "create",
@@ -7127,6 +7127,71 @@
           "action": "delete",
           "activation_rules": [],
           "contract_version": "1.3.0",
+          "description": "删除 Google Shopping Product Group/Listing Group；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_group_id": {
+                "description": "Parent Shopping ad group ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of product groups",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "product_group_id": {
+                "description": "AdGroupCriterion listing-group criterion ID",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "ad_group_id",
+              "product_group_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_product_group"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_delete_product_group",
+          "parent_resource_id_field": "ad_group_id",
+          "parent_resource_type": "ad_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "product_group_id",
+          "resource_type": "product_group",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "product_group",
+            "shopping"
+          ]
+        },
+        {
+          "action": "delete",
+          "activation_rules": [],
+          "contract_version": "1.3.0",
           "description": "删除 Google Ads User List；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -7778,6 +7843,71 @@
           "action": "get",
           "activation_rules": [],
           "contract_version": "1.3.0",
+          "description": "查询 Google Shopping 单个 Product Group/Listing Group 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_group_id": {
+                "description": "Parent Shopping ad group ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of product groups",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "product_group_id": {
+                "description": "AdGroupCriterion listing-group criterion ID",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "ad_group_id",
+              "product_group_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_product_group"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_get_product_group",
+          "parent_resource_id_field": "ad_group_id",
+          "parent_resource_type": "ad_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "product_group_id",
+          "resource_type": "product_group",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "product_group",
+            "shopping"
+          ]
+        },
+        {
+          "action": "get",
+          "activation_rules": [],
+          "contract_version": "1.3.0",
           "description": "查询 Google Ads 第一方 User List 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -8417,6 +8547,70 @@
           "traits": [
             "read",
             "keyword"
+          ]
+        },
+        {
+          "action": "list",
+          "activation_rules": [],
+          "contract_version": "1.3.0",
+          "description": "查询 Google Shopping Ad Group 下的 Product Group/Listing Group 列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_group_id": {
+                "description": "Parent Shopping ad group ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of product groups",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "product_group_id": {
+                "description": "AdGroupCriterion listing-group criterion ID",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "ad_group_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_product_groups"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_list_product_groups",
+          "parent_resource_id_field": "ad_group_id",
+          "parent_resource_type": "ad_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "product_group",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "product_group",
+            "shopping"
           ]
         },
         {
@@ -9463,6 +9657,100 @@
           "traits": [
             "write",
             "keyword"
+          ]
+        },
+        {
+          "action": "update",
+          "activation_rules": [],
+          "contract_version": "1.3.0",
+          "description": "更新 Google Shopping Product Group 状态或 CPC 出价；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_group_id": {
+                "description": "Parent Shopping ad group ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of product groups",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "product_group_id": {
+                "description": "AdGroupCriterion listing-group criterion ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Allowed Product Group update fields",
+                "properties": {
+                  "cpc_bid": {
+                    "description": "Product partition CPC bid in account currency",
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "cpc_bid_micros": {
+                    "description": "Product partition CPC bid in micros",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "status": {
+                    "description": "Listing-group status",
+                    "enum": [
+                      "ENABLED",
+                      "PAUSED",
+                      "REMOVED"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "updates"
+            ],
+            "required": [
+              "ad_group_id",
+              "product_group_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_product_group"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_update_product_group",
+          "parent_resource_id_field": "ad_group_id",
+          "parent_resource_type": "ad_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "product_group_id",
+          "resource_type": "product_group",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "product_group",
+            "shopping"
           ]
         },
         {
@@ -24732,6 +25020,30 @@
         "status": "implemented"
       },
       {
+        "action": "list",
+        "method": "list_product_groups",
+        "resource": "product_group",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_product_group",
+        "resource": "product_group",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "method": "update_product_group",
+        "resource": "product_group",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "method": "delete_product_group",
+        "resource": "product_group",
+        "status": "implemented"
+      },
+      {
         "action": "create_responsive_display",
         "method": "create_responsive_display_ad",
         "resource": "ad",
@@ -25773,5 +26085,5 @@
       ]
     }
   },
-  "tool_count": 245
+  "tool_count": 249
 }

@@ -117,6 +117,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         "eligible_for_search",
     }
     KEYWORD_UPDATE_FIELDS = {"status", "cpc_bid_micros", "cpc_bid"}
+    PRODUCT_GROUP_UPDATE_FIELDS = {"status", "cpc_bid_micros", "cpc_bid"}
     USER_LIST_UPLOAD_COLUMNS = {"hashed_email", "hashed_phone_number"}
     MAX_USER_LIST_UPLOAD_BYTES = 100 * 1024 * 1024
     MAX_USER_LIST_UPLOAD_ROWS = 100_000
@@ -1493,7 +1494,200 @@ class GoogleAdsAPIClient(BasePlatformClient):
         resource_name = self._mutation_resource_name(response)
         if not resource_name:
             raise APIError(f"Product group mutate returned no resource name: {response}")
-        return str(resource_name).rsplit("/", 1)[-1]
+        # ``AdGroupCriterion`` resource names use the composite
+        # ``ad_group_id~criterion_id`` key.  The Tool contract exposes the
+        # criterion ID separately because the parent ad group is already an
+        # explicit input to get/update/delete, matching keyword lifecycle
+        # methods and the GAQL ``criterion_id`` field.
+        return str(resource_name).rsplit("/", 1)[-1].rsplit("~", 1)[-1]
+
+    def _product_group_query(self, where: str = "") -> str:
+        """Return the GAQL projection for Standard Shopping listing groups."""
+        query = (
+            "SELECT ad_group.id, ad_group_criterion.criterion_id, "
+            "ad_group_criterion.resource_name, ad_group_criterion.status, "
+            "ad_group_criterion.cpc_bid_micros, "
+            "ad_group_criterion.listing_group.type, "
+            "ad_group_criterion.listing_group.parent_ad_group_criterion, "
+            "ad_group_criterion.listing_group.case_value.product_brand.value, "
+            "ad_group_criterion.listing_group.case_value.product_bidding_category.id, "
+            "ad_group_criterion.listing_group.case_value.product_bidding_category.level, "
+            "ad_group_criterion.listing_group.case_value.product_channel.channel, "
+            "ad_group_criterion.listing_group.case_value.product_condition.condition, "
+            "ad_group_criterion.listing_group.case_value.product_custom_label.index, "
+            "ad_group_criterion.listing_group.case_value.product_custom_label.value, "
+            "ad_group_criterion.listing_group.case_value.product_item_id.value, "
+            "ad_group_criterion.listing_group.case_value.product_type.level, "
+            "ad_group_criterion.listing_group.case_value.product_type.value "
+            "FROM ad_group_criterion"
+        )
+        filters = ["ad_group_criterion.type = LISTING_GROUP"]
+        if where:
+            filters.append(where)
+        return f"{query} WHERE {' AND '.join(filters)}"
+
+    @classmethod
+    def _normalize_product_group(cls, row: dict) -> dict[str, Any]:
+        """Flatten a Google listing-group criterion for the Tool contract."""
+        criterion = row.get("adGroupCriterion", row.get("ad_group_criterion", {})) or {}
+        ad_group = row.get("adGroup", row.get("ad_group", {})) or {}
+        listing = criterion.get("listingGroup", criterion.get("listing_group", {})) or {}
+        case = listing.get("caseValue", listing.get("case_value", {})) or {}
+
+        def nested(value: dict, *keys: str) -> Any:
+            current: Any = value
+            for key in keys:
+                if not isinstance(current, dict):
+                    return None
+                current = current.get(key, current.get(cls._camel_case(key)))
+            return current
+
+        dimensions = (
+            ("productType", "product_type", "product_type"),
+            ("productBrand", "product_brand", "brand"),
+            ("productCondition", "product_condition", "condition"),
+            ("productCustomLabel", "product_custom_label", "custom_label"),
+            ("productChannel", "product_channel", "channel"),
+            ("productItemId", "product_item_id", "item_id"),
+            ("productBiddingCategory", "product_bidding_category", "bidding_category"),
+        )
+        product_group_type = "all_products"
+        value: Any = None
+        for camel_key, snake_key, dimension in dimensions:
+            detail = case.get(camel_key, case.get(snake_key))
+            if not isinstance(detail, dict):
+                continue
+            product_group_type = dimension
+            if dimension == "product_type":
+                level = nested(detail, "level")
+                if level:
+                    product_group_type = f"product_type_{str(level).upper().replace('LEVEL', '')}"
+                value = nested(detail, "value")
+            elif dimension == "custom_label":
+                index = nested(detail, "index")
+                if index:
+                    product_group_type = f"custom_label_{str(index).upper().replace('INDEX', '')}"
+                value = nested(detail, "value")
+            elif dimension == "bidding_category":
+                value = nested(detail, "id")
+            elif dimension == "condition":
+                value = nested(detail, "condition")
+            elif dimension == "channel":
+                value = nested(detail, "channel")
+            else:
+                value = nested(detail, "value")
+            break
+
+        resource_name = criterion.get("resourceName", criterion.get("resource_name"))
+        criterion_id = criterion.get("criterionId", criterion.get("criterion_id"))
+        return {
+            "id": criterion_id,
+            "product_group_id": criterion_id,
+            "ad_group_id": ad_group.get("id"),
+            "resource_name": resource_name,
+            "status": criterion.get("status"),
+            "cpc_bid_micros": criterion.get(
+                "cpcBidMicros", criterion.get("cpc_bid_micros")
+            ),
+            "partition_type": listing.get("type"),
+            "product_group_type": product_group_type,
+            "value": value,
+            "parent_criterion_id": listing.get(
+                "parentAdGroupCriterion", listing.get("parent_ad_group_criterion")
+            ),
+        }
+
+    def list_product_groups(self, ad_group_id: str, page_size: int = 100) -> list[dict]:
+        """List Standard Shopping listing-group criteria under one ad group."""
+        ad_group_id = self._numeric_id(ad_group_id, "ad_group_id")
+        rows = self._search_all(
+            self._product_group_query(f"ad_group.id = {ad_group_id}"),
+            page_size=page_size,
+        )
+        return [self._normalize_product_group(row) for row in rows]
+
+    def get_product_group(self, ad_group_id: str, product_group_id: str) -> dict:
+        """Get one Standard Shopping listing-group criterion."""
+        ad_group_id = self._numeric_id(ad_group_id, "ad_group_id")
+        product_group_id = self._numeric_id(product_group_id, "product_group_id")
+        rows = self._search_all(
+            self._product_group_query(
+                f"ad_group.id = {ad_group_id} "
+                f"AND ad_group_criterion.criterion_id = {product_group_id}"
+            ),
+            page_size=1,
+        )
+        if not rows:
+            raise APIError(
+                f"Google product group {ad_group_id}~{product_group_id} was not found"
+            )
+        return self._normalize_product_group(rows[0])
+
+    def update_product_group(
+        self, ad_group_id: str, product_group_id: str, updates: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Update mutable fields on one listing-group criterion."""
+        ad_group_id = self._numeric_id(ad_group_id, "ad_group_id")
+        product_group_id = self._numeric_id(product_group_id, "product_group_id")
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("updates must be a non-empty object")
+        unknown = set(updates) - self.PRODUCT_GROUP_UPDATE_FIELDS
+        if unknown:
+            raise ValueError(
+                f"Unsupported Google product group update fields: {sorted(unknown)}"
+            )
+        normalized = {key: value for key, value in updates.items() if value is not None}
+        if not normalized:
+            raise ValueError("updates must contain at least one non-null field")
+        if "status" in normalized:
+            normalized["status"] = str(normalized["status"]).upper()
+            if normalized["status"] not in {"ENABLED", "PAUSED", "REMOVED"}:
+                raise ValueError("product group status must be ENABLED, PAUSED or REMOVED")
+        if "cpc_bid" in normalized:
+            try:
+                normalized["cpc_bid_micros"] = int(
+                    float(normalized.pop("cpc_bid")) * 1_000_000
+                )
+            except (TypeError, ValueError) as exc:
+                raise ValueError("cpc_bid must be a non-negative number") from exc
+        if "cpc_bid_micros" in normalized:
+            try:
+                normalized["cpc_bid_micros"] = int(normalized["cpc_bid_micros"])
+            except (TypeError, ValueError) as exc:
+                raise ValueError("cpc_bid_micros must be a non-negative integer") from exc
+            if normalized["cpc_bid_micros"] < 0:
+                raise ValueError("cpc_bid_micros must be a non-negative integer")
+
+        resource_name = (
+            f"customers/{self.customer_id}/adGroupCriteria/"
+            f"{ad_group_id}~{product_group_id}"
+        )
+        self._mutate("adGroupCriteria", {
+            "update": self._camel_case_keys({"resourceName": resource_name, **normalized}),
+            "updateMask": {
+                "paths": [self._camel_case(key) for key in normalized],
+            },
+        })
+        return {
+            "success": True,
+            "ad_group_id": ad_group_id,
+            "product_group_id": product_group_id,
+        }
+
+    def delete_product_group(self, ad_group_id: str, product_group_id: str) -> dict[str, Any]:
+        """Remove one Standard Shopping listing-group criterion."""
+        ad_group_id = self._numeric_id(ad_group_id, "ad_group_id")
+        product_group_id = self._numeric_id(product_group_id, "product_group_id")
+        resource_name = (
+            f"customers/{self.customer_id}/adGroupCriteria/"
+            f"{ad_group_id}~{product_group_id}"
+        )
+        self._mutate("adGroupCriteria", {"remove": resource_name})
+        return {
+            "success": True,
+            "ad_group_id": ad_group_id,
+            "product_group_id": product_group_id,
+        }
 
     # ==================== Campaign Criterion ====================
 
