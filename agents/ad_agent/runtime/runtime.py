@@ -2809,10 +2809,12 @@ class AgentRuntime:
         tool_plan: dict[str, list[Any]],
         results: list[dict],
         workflow_inputs: dict[int, dict],
+        planning_errors: Optional[list[str]] = None,
     ) -> None:
         """Persist item-level state and record when a live chain needs review."""
         if not workflow_id or not self._session_manager:
             return
+        planning_errors = list(planning_errors or [])
         write_tools = {
             tool.name for tools in tool_plan.values() for tool in tools
             if tool.is_write_tool
@@ -2841,13 +2843,25 @@ class AgentRuntime:
         for index, item in enumerate(results):
             if item.get("tool") not in write_tools:
                 continue
+            # A batch-level planning error is not an executable workflow item.
+            # Do not assign it a provider Tool's sequence: doing so can
+            # overwrite a real item from another platform.
+            if item.get("batch_planning_error"):
+                continue
             tool_name = str(item.get("tool") or "")
             seen_occurrences[tool_name] = seen_occurrences.get(tool_name, 0) + 1
-            item_sequence = (
-                seen_occurrences[tool_name]
-                if result_occurrences.get(tool_name, 0) > 1
-                else sequence_by_tool.get(tool_name)
-            )
+            explicit_sequence = item.get("workflow_sequence")
+            if explicit_sequence not in (None, ""):
+                try:
+                    item_sequence = int(explicit_sequence)
+                except (TypeError, ValueError):
+                    item_sequence = None
+            else:
+                item_sequence = (
+                    seen_occurrences[tool_name]
+                    if result_occurrences.get(tool_name, 0) > 1
+                    else sequence_by_tool.get(tool_name)
+                )
             if item_sequence is None:
                 continue
             item_sequences.append(item_sequence)
@@ -2961,6 +2975,12 @@ class AgentRuntime:
         elif unsupported_sequences:
             status = "blocked"
             compensation_required = False
+        elif planning_errors:
+            # A batch can contain valid dry-run items and unsupported or
+            # malformed platform entries. The workflow is not wholly
+            # successful in that case; surface the partial plan as blocked.
+            status = "blocked"
+            compensation_required = False
         elif any(
             item.get("needs_confirmation")
             for item in results if item.get("tool") in write_tools
@@ -2977,6 +2997,7 @@ class AgentRuntime:
                 "write_item_count": len(item_sequences),
                 "successful_items": len(successful_sequences),
                 "failed_items": len(failed_sequences),
+                "planning_error_count": len(planning_errors),
                 "compensation_required": compensation_required,
                 "compensation_policy": "manual_review_required",
             },
@@ -3006,6 +3027,29 @@ class AgentRuntime:
             if intent_type in (getattr(tool, "intent_types", []) or [])
         ]
         candidates = exact or candidates
+        if intent_type == "cross_channel_batch_update_budget":
+            # Budget support is a provider-published contract, not an
+            # assumption of every Campaign update endpoint. A provider that
+            # exposes status/name updates but no budget field must fail closed
+            # for this batch action.
+            candidates = [
+                tool for tool in candidates
+                if isinstance(
+                    (getattr(tool.input_schema, "properties", {}) or {}).get(
+                        "updates", {}
+                    ),
+                    dict,
+                )
+                and bool(
+                    {
+                        "budget", "daily_budget"
+                    }.intersection(
+                        (
+                            getattr(tool.input_schema, "properties", {}) or {}
+                        ).get("updates", {}).get("properties", {})
+                    )
+                )
+            ]
         if len(candidates) == 1:
             return candidates[0]
 
@@ -3042,30 +3086,71 @@ class AgentRuntime:
         """
         accounts: dict[str, str] = {}
         errors: list[str] = []
-        for platform, tools in tool_plan.items():
-            actual_platform = self._canonical_platform(platform)
+        tool_by_platform: dict[str, Any] = {
+            self._canonical_platform(platform): self._select_batch_campaign_tool(
+                tools, intent.intent_type
+            )
+            for platform, tools in tool_plan.items()
+        }
+        tools_by_platform = {
+            self._canonical_platform(platform): tools
+            for platform, tools in tool_plan.items()
+        }
+        blocked_platforms: set[str] = set()
+
+        # Report every requested platform, including one that has no matching
+        # Tool. Previously route omission made an unsupported channel silently
+        # disappear from a cross-channel request.
+        for requested_platform in intent.platforms:
+            actual_platform = self._canonical_platform(requested_platform)
+            if actual_platform not in tools_by_platform:
+                errors.append(f"{actual_platform}: 没有已注册的 Campaign 批量更新工具")
+                blocked_platforms.add(actual_platform)
+            elif tool_by_platform.get(actual_platform) is None:
+                errors.append(f"{actual_platform}: 没有唯一兼容的 Campaign 批量更新工具")
+                blocked_platforms.add(actual_platform)
+
+        for actual_platform, tool_def in tool_by_platform.items():
+            if tool_def is None:
+                continue
+            raw_platform = next(
+                (
+                    platform for platform in tool_plan
+                    if self._canonical_platform(platform) == actual_platform
+                ),
+                actual_platform,
+            )
             resolved = self._resolve_platform_account(
-                intent, platform, tools, account_id
+                intent, raw_platform, [tool_def], account_id
             )
             allowed, error = self._validate_account_with_principal(
                 actual_platform, resolved, True, account_scope
             )
             if not allowed:
-                errors.append(f"{platform}: {error}")
-            else:
-                accounts[platform] = resolved
+                errors.append(f"{actual_platform}: {error}")
+                blocked_platforms.add(actual_platform)
+                continue
+            permission_error = self._check_tool_permissions(
+                tool_def, granted_permissions
+            )
+            if permission_error:
+                errors.append(f"{actual_platform}: {permission_error}")
+                blocked_platforms.add(actual_platform)
+                continue
+            accounts[actual_platform] = resolved
 
-            for tool_def in tools:
-                permission_error = self._check_tool_permissions(
-                    tool_def, granted_permissions
-                )
-                if permission_error:
-                    errors.append(f"{platform}: {permission_error}")
-                    accounts.pop(platform, None)
-                    break
-
-        operations, planning_errors = build_batch_operations(intent, accounts)
+        supported_platforms = {
+            platform for platform, tool in tool_by_platform.items()
+            if tool is not None
+        }
+        operations, planning_errors = build_batch_operations(
+            intent,
+            accounts,
+            supported_platforms=supported_platforms,
+            blocked_platforms=blocked_platforms,
+        )
         errors.extend(planning_errors)
+        errors = list(dict.fromkeys(errors))
         results: list[dict] = []
         workflow_inputs: dict[int, dict] = {}
         if len(operations) > self.max_tool_calls:
@@ -3074,15 +3159,11 @@ class AgentRuntime:
                 f"最多允许 {self.max_tool_calls} 项"
             )
             operations = []
-        # A route may contain more than one Tool for a batch intent.  Never
-        # use registration order as a provider-specific convention: a newly
-        # added channel can publish a read/lookup Tool before its campaign
-        # updater.  The Tool metadata is the only routing contract shared by
-        # Runtime and provider Capabilities.
-        tool_by_platform = {
-            platform: self._select_batch_campaign_tool(tools, intent.intent_type)
-            for platform, tools in tool_plan.items()
-        }
+        # A route may contain more than one Tool for a batch intent. Never use
+        # registration order as a provider-specific convention: a newly added
+        # channel can publish a read/lookup Tool before its Campaign updater.
+        # The Tool metadata is the only routing contract shared by Runtime and
+        # provider Capabilities.
         tool_name_by_platform = {
             platform: tool.name
             for platform, tool in tool_by_platform.items()
@@ -3096,8 +3177,10 @@ class AgentRuntime:
                 "success": False,
                 "data": {"batch": True, "planned": False},
                 "error": message,
+                "batch_planning_error": True,
             })
 
+        operation_sequence = 0
         for operation in operations:
             self._heartbeat_workflow(workflow_id)
             tool_name = tool_name_by_platform.get(operation.platform)
@@ -3109,21 +3192,26 @@ class AgentRuntime:
                     "data": {"batch": True, "planned": False},
                     "error": (
                         "该平台没有唯一兼容的 Campaign 更新工具"
-                        if tool_plan.get(operation.platform)
+                        if tools_by_platform.get(operation.platform)
                         else "该平台没有已注册的 Campaign 更新工具"
                     ),
+                    "batch_planning_error": True,
                 })
                 continue
             tool_def = tool_by_platform.get(operation.platform)
+            operation_sequence += 1
+            resource_id_field = self._resource_id_field_for_tool(tool_def)
             tool_input = {
-                "campaign_id": operation.campaign_id,
+                resource_id_field: operation.campaign_id,
                 "updates": self._normalize_provider_updates(
                     tool_def, operation.updates
                 ),
             }
-            operation_sequence = sum(
-                1 for item in results if item.get("tool") == tool_name
-            ) + 1
+            properties = getattr(tool_def.input_schema, "properties", {}) or {}
+            for account_field in ("account_id", "advertiser_id", "customer_id"):
+                if account_field in properties:
+                    tool_input[account_field] = operation.account_id
+                    break
             if workflow_id and self._session_manager:
                 self._session_manager.record_workflow_item(
                     workflow_id=workflow_id,
@@ -3133,16 +3221,33 @@ class AgentRuntime:
                     status="running",
                     input_data=self._redact_for_persistence(tool_input),
                     account_id=operation.account_id,
+                    resource_type=getattr(tool_def, "resource_type", None),
                     parent_resource_type=getattr(tool_def, "parent_resource_type", None),
                 )
+            result_index = len(results)
+            workflow_inputs[result_index] = tool_input
+            protected_paths = self._validate_tool_input_redline(tool_input)
+            if protected_paths:
+                results.append({
+                    "tool": tool_name,
+                    "platform": operation.platform,
+                    "account_id": operation.account_id,
+                    "success": False,
+                    "data": {"batch": True, "planned": False},
+                    "error": "请求包含禁止传入的凭证/账户配置字段：" + ", ".join(protected_paths),
+                    "workflow_sequence": operation_sequence,
+                })
+                continue
             schema_errors = validate_tool_input(tool_def.input_schema, tool_input)
             if schema_errors:
                 results.append({
                     "tool": tool_name,
                     "platform": operation.platform,
+                    "account_id": operation.account_id,
                     "success": False,
                     "data": {"batch": True, "planned": False},
                     "error": f"Input validation failed: {schema_errors}",
+                    "workflow_sequence": operation_sequence,
                 })
                 continue
             simulated = self._simulate_write(
@@ -3169,6 +3274,7 @@ class AgentRuntime:
             results.append({
                 "tool": tool_name,
                 "platform": operation.platform,
+                "account_id": operation.account_id,
                 # Batch management currently has a planning implementation
                 # only.  In live mode never report a simulated item as a
                 # successful external write.
@@ -3179,13 +3285,16 @@ class AgentRuntime:
                     if live_batch else None
                 ),
                 "needs_confirmation": False,
+                "workflow_sequence": operation_sequence,
             })
-            workflow_inputs[result_index] = tool_input
 
         session.add_message({"role": "user", "content": user_input})
         reply = self._generate_reply(intent, results, bool(errors and not operations))
         session.add_message({"role": "assistant", "content": reply})
-        self._finish_workflow(workflow_id, tool_plan, results, workflow_inputs)
+        self._finish_workflow(
+            workflow_id, tool_plan, results, workflow_inputs,
+            planning_errors=errors,
+        )
         resource_results = self._build_resource_results(results)
         if self._session_manager:
             self._session_manager.update_session(
@@ -3666,6 +3775,22 @@ class AgentRuntime:
                 "policy_errors": parameter_errors,
             }
         
+        # Batch management is a first-class planning operation.  It expands
+        # IDs into independent items while retaining the normal whitelist and
+        # workflow audit boundaries; no provider Handler is called here.
+        if intent.intent_type in {
+            "cross_channel_batch_pause",
+            "cross_channel_batch_resume",
+            "cross_channel_batch_update_budget",
+        }:
+            workflow_id = self._start_workflow(session, intent, tool_plan)
+            return self._run_batch_plan(
+                safe_user_input, session, turn_id, intent, tool_plan,
+                account_id, workflow_id,
+                account_scope=account_scope,
+                granted_permissions=effective_permissions,
+            )
+
         # 检查是否需要执行任何工具
         if not tool_plan:
             return {
@@ -3688,22 +3813,6 @@ class AgentRuntime:
                 "needs_confirmation": False,
                 "confirmation_payload": None,
             }
-
-        # Batch management is a first-class planning operation.  It expands
-        # IDs into independent items while retaining the normal whitelist and
-        # workflow audit boundaries; no provider Handler is called here.
-        if intent.intent_type in {
-            "cross_channel_batch_pause",
-            "cross_channel_batch_resume",
-            "cross_channel_batch_update_budget",
-        }:
-            workflow_id = self._start_workflow(session, intent, tool_plan)
-            return self._run_batch_plan(
-                safe_user_input, session, turn_id, intent, tool_plan,
-                account_id, workflow_id,
-                account_scope=account_scope,
-                granted_permissions=effective_permissions,
-            )
         
         # Keep the caller's approval separate from the response payload that
         # is built during this turn.  Reusing the same variable would erase a

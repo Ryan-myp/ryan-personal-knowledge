@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 import csv
 import io
 from typing import Any, Iterable, Optional
+from .platform import normalize_platform
 
 
 def _number(value: Any) -> Optional[float]:
@@ -143,9 +144,16 @@ class BatchOperation:
     def __post_init__(self) -> None:
         # Validate the complete scope at construction time. The operation
         # remains a provider-neutral plan and contains no client or secret.
-        CampaignRef(self.platform, self.account_id, self.campaign_id)
-        if not str(self.action or "").strip():
+        campaign_ref = CampaignRef(self.platform, self.account_id, self.campaign_id)
+        object.__setattr__(self, "platform", campaign_ref.platform)
+        object.__setattr__(self, "account_id", campaign_ref.account_id)
+        object.__setattr__(self, "campaign_id", campaign_ref.campaign_id)
+        action = str(self.action or "").strip().lower()
+        if not action:
             raise ValueError("BatchOperation requires action")
+        if action not in {"pause", "resume", "update_budget"}:
+            raise ValueError(f"Unsupported BatchOperation action: {action}")
+        object.__setattr__(self, "action", action)
 
     @property
     def campaign_ref(self) -> CampaignRef:
@@ -163,7 +171,11 @@ class BatchOperation:
 
 
 def build_batch_operations(
-    intent: Any, accounts: dict[str, str]
+    intent: Any,
+    accounts: dict[str, str],
+    *,
+    supported_platforms: Optional[set[str]] = None,
+    blocked_platforms: Optional[set[str]] = None,
 ) -> tuple[list[BatchOperation], list[str]]:
     """Build validated platform-scoped batch operations from ParsedIntent.
 
@@ -182,13 +194,44 @@ def build_batch_operations(
 
     operations: list[BatchOperation] = []
     errors: list[str] = []
+    supported = (
+        {normalize_platform(platform) for platform in supported_platforms}
+        if supported_platforms is not None else None
+    )
+    blocked = {
+        normalize_platform(platform) for platform in (blocked_platforms or set())
+    }
     for platform in getattr(intent, "platforms", []) or []:
-        params = (getattr(intent, "platform_params", {}) or {}).get(platform, {})
+        actual_platform = normalize_platform(platform)
+        # Tool discovery is authoritative for whether a provider can take
+        # part in this batch. The Runtime reports the unsupported platform;
+        # the core planner must not manufacture an account/id error for it.
+        if supported is not None and actual_platform not in supported:
+            continue
+        if actual_platform in blocked:
+            continue
+
+        platform_params = getattr(intent, "platform_params", {}) or {}
+        params = platform_params.get(platform, {})
+        if not isinstance(params, dict):
+            params = platform_params.get(actual_platform, {})
         if not isinstance(params, dict):
             params = {}
-        raw_ids = params.get("campaign_ids")
-        if raw_ids is None:
-            raw_ids = params.get("campaign_id")
+        # Accept both platform-level arguments and a Tool-scoped argument
+        # object. This keeps the planner compatible with provider-owned
+        # schemas without adding provider names to Core.
+        parameter_sources = [params]
+        parameter_sources.extend(
+            value for value in params.values() if isinstance(value, dict)
+        )
+        raw_ids = next(
+            (
+                source.get("campaign_ids", source.get("campaign_id"))
+                for source in parameter_sources
+                if source.get("campaign_ids", source.get("campaign_id")) is not None
+            ),
+            None,
+        )
         if isinstance(raw_ids, str):
             raw_ids = [value.strip() for value in raw_ids.replace("，", ",").split(",")]
         elif raw_ids is None:
@@ -198,11 +241,11 @@ def build_batch_operations(
         campaign_ids = [str(value).strip() for value in raw_ids if str(value).strip()]
         campaign_ids = list(dict.fromkeys(campaign_ids))
         if not campaign_ids:
-            errors.append(f"{platform}: 缺少 campaign_id/campaign_ids")
+            errors.append(f"{actual_platform}: 缺少 campaign_id/campaign_ids")
             continue
-        account_id = accounts.get(platform)
+        account_id = accounts.get(actual_platform) or accounts.get(platform)
         if not account_id:
-            errors.append(f"{platform}: 缺少账户ID")
+            errors.append(f"{actual_platform}: 缺少账户ID")
             continue
 
         if action == "pause":
@@ -212,9 +255,29 @@ def build_batch_operations(
         elif action == "resume":
             updates = {"status": "ACTIVE"}
         else:
-            supplied = params.get("updates")
+            supplied = next(
+                (
+                    source.get("updates")
+                    for source in parameter_sources
+                    if isinstance(source.get("updates"), dict)
+                ),
+                {},
+            )
             supplied = dict(supplied) if isinstance(supplied, dict) else {}
-            budget = supplied.get("daily_budget", supplied.get("budget", params.get("budget")))
+            budget = supplied.get(
+                "daily_budget",
+                supplied.get(
+                    "budget",
+                    next(
+                        (
+                            source.get("budget", source.get("daily_budget"))
+                            for source in parameter_sources
+                            if source.get("budget", source.get("daily_budget")) is not None
+                        ),
+                        None,
+                    ),
+                ),
+            )
             if budget is None:
                 budget = getattr(intent, "budget", None)
             try:
@@ -222,12 +285,12 @@ def build_batch_operations(
             except (TypeError, ValueError):
                 budget = None
             if budget is None or budget <= 0:
-                errors.append(f"{platform}: 预算必须是大于 0 的数字")
+                errors.append(f"{actual_platform}: 预算必须是大于 0 的数字")
                 continue
             updates = {**supplied, "daily_budget": budget}
 
         operations.extend(
-            BatchOperation(platform, str(account_id), campaign_id, action, updates)
+            BatchOperation(actual_platform, str(account_id), campaign_id, action, updates)
             for campaign_id in campaign_ids
         )
     return operations, errors

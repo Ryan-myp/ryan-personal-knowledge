@@ -10,6 +10,7 @@ import pytest
 from agents.ad_agent.capabilities.meta import create_meta_capability
 from agents.ad_agent.capabilities.google import create_google_capability
 from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
+from agents.ad_agent.capabilities.dv360 import create_dv360_capability
 from agents.ad_agent.core.interfaces import (
     ToolContext, ToolSchema, ToolDefinition, ToolEffect,
     ProviderReconciler, ReconciliationObservation, CapabilityRuntime,
@@ -123,6 +124,58 @@ def test_batch_planner_fails_closed_for_ambiguous_campaign_updaters():
     assert AgentRuntime._select_batch_campaign_tool(
         [first, second], "cross_channel_batch_pause"
     ) is None
+
+
+def test_batch_budget_uses_provider_schema_and_rejects_unsupported_provider():
+    runtime = AgentRuntime(
+        require_llm=False,
+        persistence_store=AdAgentStore(":memory:"),
+        whitelist_validator=_whitelist(dv360=["d1"]),
+    )
+    runtime.register_capability(create_dv360_capability())
+
+    result = runtime.run(
+        "批量更新 DV360 campaign_ids=campaign-1 预算100元/天",
+        user_id="u1",
+        platform_params={"dv360": {"account_id": "d1"}},
+    )
+
+    assert result["results"][0]["success"] is False
+    assert "没有唯一兼容" in result["results"][0]["error"]
+    workflow = runtime._session_manager.get_workflow(result["workflow_id"])
+    assert workflow["status"] == "blocked"
+    assert workflow["metadata"]["planning_error_count"] == 1
+    assert workflow["items"] == []
+
+
+def test_batch_items_have_global_sequences_and_keep_account_on_validation_failure():
+    runtime = AgentRuntime(
+        require_llm=False,
+        persistence_store=AdAgentStore(":memory:"),
+        whitelist_validator=_whitelist(meta=["m1"], google=["g1"]),
+    )
+    runtime.register_capability(create_meta_capability())
+    runtime.register_capability(create_google_capability())
+
+    result = runtime.run(
+        "跨渠道批量更新 Meta 和 Google campaign_ids=meta-1 预算100元/天",
+        user_id="u1",
+        platform_params={
+            "meta": {
+                "account_id": "m1",
+                "campaign_ids": ["meta-1"],
+                "updates": {"invalid_field": "reject-me"},
+            },
+            "google": {"account_id": "g1", "campaign_ids": ["google-1"]},
+        },
+    )
+
+    workflow = runtime._session_manager.get_workflow(result["workflow_id"])
+    assert [item["sequence"] for item in workflow["items"]] == [1, 2]
+    assert [item["account_id"] for item in workflow["items"]] == ["m1", "g1"]
+    assert workflow["items"][0]["status"] == "failed"
+    assert workflow["items"][0]["input_data"]["campaign_id"] == "meta-1"
+    assert workflow["items"][1]["status"] == "succeeded"
 
 
 def test_capability_unload_clears_tools_and_derived_discovery_indexes():
