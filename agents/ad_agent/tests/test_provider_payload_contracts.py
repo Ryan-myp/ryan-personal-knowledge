@@ -46,6 +46,40 @@ def test_generic_campaign_type_maps_to_google_wire_field():
     assert tool_input["advertising_channel_type"] == "DISPLAY"
 
 
+def test_google_conversion_action_queries_normalize_gaql_rows():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    calls = []
+
+    def search(query, **kwargs):
+        calls.append((query, kwargs))
+        return [{
+            "conversionAction": {
+                "id": "42", "resourceName": "customers/123/conversionActions/42",
+                "name": "Purchase", "status": "ENABLED", "type": "WEBPAGE",
+                "category": "PURCHASE", "origin": "WEBSITE",
+                "ownerCustomer": "customers/123", "countingType": "MANY",
+                "clickThroughLookbackWindowDays": "30",
+                "valueSettings": {
+                    "defaultValue": 10.0, "alwaysUseDefaultValue": True,
+                },
+            }
+        }]
+
+    client._search_all = search
+    actions = client.list_conversion_actions(page_size=25)
+    assert actions[0]["name"] == "Purchase"
+    assert actions[0]["resource_name"].endswith("/42")
+    assert actions[0]["value_settings"] == {
+        "default_value": 10.0, "always_use_default_value": True,
+    }
+    assert calls[0][1] == {"page_size": 25}
+
+    client._search = lambda query: {"results": [{
+        "conversionAction": {"id": "42", "name": "Purchase"}
+    }]}
+    assert client.get_conversion_action("42")["id"] == "42"
+
+
 def test_existing_creation_contracts_keep_provider_specific_fixes():
     meta_definitions = {
         definition.name: definition

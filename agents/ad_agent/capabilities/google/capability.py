@@ -63,7 +63,7 @@ class GoogleCapability(BaseCapability):
     platform_name = "google-ads"
     provider_client_class = GoogleAdsAPIClient
     provider_method_exclusions = {"for_customer"}
-    capability_version = "1.1.0"
+    capability_version = "1.2.0"
     provider_api_version = "v24"
     provider_method_coverage = {
         "list_campaigns": ["google_list_campaigns"], "get_campaign": ["google_get_campaign"],
@@ -90,6 +90,8 @@ class GoogleCapability(BaseCapability):
         "create_campaign_criteria": ["google_create_campaign_criteria"],
         "update_campaign_criterion": ["google_update_campaign_criterion"],
         "delete_campaign_criterion": ["google_delete_campaign_criterion"],
+        "list_conversion_actions": ["google_list_conversion_actions"],
+        "get_conversion_action": ["google_get_conversion_action"],
         "get_campaign_report": ["google_get_campaign_report"], "get_adgroup_report": ["google_get_adgroup_report"],
     }
 
@@ -222,6 +224,28 @@ class GoogleCapability(BaseCapability):
                 intent_types=["delete_campaign_criterion"], traits=["write", "campaign_criterion", "targeting"],
                 write=True,
                 argument_builder=lambda _ctx, data: ((data["campaign_id"], data["criterion_id"]), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_list_conversion_actions", description="查询 Google Ads 转化动作列表。",
+                method_name="list_conversion_actions", result_key="conversion_actions",
+                properties={"customer_id": {"type": "string"}, "limit": {"type": "integer"}},
+                required=["customer_id"], action="list", resource_type="conversion_action",
+                intent_types=["list_conversion_actions"], traits=["read", "conversion"],
+                argument_builder=lambda _ctx, data: ((), {"page_size": data.get("limit", 100)}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_get_conversion_action", description="查询 Google Ads 转化动作详情。",
+                method_name="get_conversion_action", result_key="conversion_action",
+                properties={
+                    "customer_id": {"type": "string"},
+                    "conversion_action_id": {"type": "string"},
+                },
+                required=["customer_id", "conversion_action_id"], action="get",
+                resource_type="conversion_action", resource_id_field="conversion_action_id",
+                intent_types=["get_conversion_action"], traits=["read", "conversion"],
+                argument_builder=lambda _ctx, data: ((data["conversion_action_id"],), {}),
             ),
             method_tool(
                 platform="google-ads", skill="google-ads-api-expert",

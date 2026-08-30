@@ -296,6 +296,94 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 'bidding_strategy': camp.get('biddingStrategy'),
             }
         raise APIError(f"Google campaign {campaign_id} was not found")
+
+    @classmethod
+    def _normalize_conversion_action(cls, row: dict) -> dict:
+        """Normalize a GAQL conversion action row for Tool consumers."""
+        action = row.get("conversionAction", row.get("conversion_action", {}))
+        if not isinstance(action, dict):
+            action = {}
+        value_settings = action.get(
+            "valueSettings", action.get("value_settings", {})
+        )
+        if not isinstance(value_settings, dict):
+            value_settings = {}
+        return {
+            "id": action.get("id"),
+            "resource_name": action.get("resourceName", action.get("resource_name")),
+            "name": action.get("name"),
+            "status": action.get("status"),
+            "type": action.get("type"),
+            "category": action.get("category"),
+            "origin": action.get("origin"),
+            "owner_customer": action.get(
+                "ownerCustomer", action.get("owner_customer")
+            ),
+            "counting_type": action.get(
+                "countingType", action.get("counting_type")
+            ),
+            "click_through_lookback_window_days": action.get(
+                "clickThroughLookbackWindowDays",
+                action.get("click_through_lookback_window_days"),
+            ),
+            "view_through_lookback_window_days": action.get(
+                "viewThroughLookbackWindowDays",
+                action.get("view_through_lookback_window_days"),
+            ),
+            "value_settings": {
+                "default_value": value_settings.get(
+                    "defaultValue", value_settings.get("default_value")
+                ),
+                "always_use_default_value": value_settings.get(
+                    "alwaysUseDefaultValue",
+                    value_settings.get("always_use_default_value"),
+                ),
+            },
+        }
+
+    def list_conversion_actions(self, page_size: int = 100) -> list[dict]:
+        """List conversion actions configured for the selected customer."""
+        query = (
+            "SELECT conversion_action.id, conversion_action.resource_name, "
+            "conversion_action.name, conversion_action.status, "
+            "conversion_action.type, conversion_action.category, "
+            "conversion_action.origin, conversion_action.owner_customer, "
+            "conversion_action.counting_type, "
+            "conversion_action.click_through_lookback_window_days, "
+            "conversion_action.view_through_lookback_window_days, "
+            "conversion_action.value_settings.default_value, "
+            "conversion_action.value_settings.always_use_default_value "
+            "FROM conversion_action"
+        )
+        return [
+            self._normalize_conversion_action(row)
+            for row in self._search_all(query, page_size=page_size)
+        ]
+
+    def get_conversion_action(self, conversion_action_id: str) -> dict:
+        """Get one conversion action by numeric ID."""
+        conversion_action_id = self._numeric_id(
+            conversion_action_id, "conversion_action_id"
+        )
+        query = (
+            "SELECT conversion_action.id, conversion_action.resource_name, "
+            "conversion_action.name, conversion_action.status, "
+            "conversion_action.type, conversion_action.category, "
+            "conversion_action.origin, conversion_action.owner_customer, "
+            "conversion_action.counting_type, "
+            "conversion_action.click_through_lookback_window_days, "
+            "conversion_action.view_through_lookback_window_days, "
+            "conversion_action.value_settings.default_value, "
+            "conversion_action.value_settings.always_use_default_value "
+            f"FROM conversion_action WHERE conversion_action.id = {conversion_action_id}"
+        )
+        payload = self._response_payload(self._search(query))
+        rows = payload.get("results", []) if isinstance(payload, dict) else []
+        if rows and isinstance(rows[0], dict):
+            return self._normalize_conversion_action(rows[0])
+        raise APIError(
+            f"Google conversion action {conversion_action_id} was not found"
+        )
     
     def list_ad_groups(self, campaign_id: str, page_size: int = 100) -> list:
         """获取 Ad Group 列表"""
