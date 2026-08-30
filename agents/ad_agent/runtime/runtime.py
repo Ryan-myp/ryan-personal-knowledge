@@ -2439,35 +2439,6 @@ class AgentRuntime:
         return ToolResult.dry_run(data)
 
     @staticmethod
-    def _resource_type_for_tool(tool_name: str) -> str:
-        """Recover a conservative logical type from a legacy Tool name.
-
-        New workflow rows always persist the ToolDefinition metadata.  Older
-        rows may only have names such as ``meta_create_campaign``.  This
-        fallback is used for recovery display and migration only; it does not
-        select a handler or construct a provider payload.  Unknown names stay
-        generic instead of being guessed from an arbitrary final token.
-        """
-        name = re.sub(r"[^a-z0-9]+", "_", str(tool_name or "").lower())
-        markers = (
-            ("line_item", "line_item"), ("lineitem", "line_item"),
-            ("asset_group", "asset_group"), ("assetgroup", "asset_group"),
-            ("ad_set", "ad_set"), ("adset", "ad_set"),
-            ("ad_group", "ad_group"), ("adgroup", "ad_group"),
-            ("campaign", "campaign"), ("creative", "creative"),
-            ("audience", "audience"), ("keyword", "keyword"),
-            ("location", "location"), ("device", "device"),
-            ("catalog", "catalog"), ("conversion", "conversion"),
-            ("brand_safety", "brand_safety"), ("advertiser", "advertiser"),
-            ("flight", "flight"), ("post", "post"), ("video", "video"),
-            ("image", "image"), ("app", "app"), ("io", "io"),
-        )
-        for marker, resource_type in markers:
-            if marker in name:
-                return resource_type
-        return "resource"
-
-    @staticmethod
     def _resource_id_field(resource_type: str) -> str:
         return {
             "campaign": "campaign_id",
@@ -2918,7 +2889,7 @@ class AgentRuntime:
             definition = definition_by_tool.get(tool_name)
             output_data = self._redact_for_persistence(item.get("data"))
             input_data = self._redact_for_persistence(workflow_inputs.get(index, {}))
-            resource_type = getattr(definition, "resource_type", None) or self._resource_type_for_tool(tool_name)
+            resource_type = getattr(definition, "resource_type", None)
             resource_id_field = str(
                 item.get("resource_id_field")
                 or self._resource_id_field_for_tool(definition)
@@ -5862,8 +5833,6 @@ class AgentRuntime:
                 return str(value)
             definition = definitions.get(str(item.get("tool_name") or ""))
             value = getattr(definition, field, None) if definition else None
-            if value in (None, "") and field == "resource_type":
-                value = self._resource_type_for_tool(str(item.get("tool_name") or ""))
             return str(value) if value not in (None, "") else None
 
         return {

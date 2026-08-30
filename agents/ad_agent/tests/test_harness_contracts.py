@@ -622,6 +622,7 @@ def test_workflow_resume_plan_preserves_account_scope():
         "resume-account-workflow:1", "resume-account-workflow", 1, "meta",
         "meta_create_campaign", "failed", {"campaign_id": "c1"},
         account_id="m1",
+        resource_type="campaign",
     )
     runtime = AgentRuntime(require_llm=False, persistence_store=store)
 
