@@ -384,6 +384,52 @@ class GoogleAdsAPIClient(BasePlatformClient):
         raise APIError(
             f"Google conversion action {conversion_action_id} was not found"
         )
+
+    @classmethod
+    def _normalize_bidding_strategy(cls, row: dict) -> dict:
+        """Normalize a GAQL bidding strategy row for Tool consumers."""
+        strategy = row.get("biddingStrategy", row.get("bidding_strategy", {}))
+        if not isinstance(strategy, dict):
+            strategy = {}
+        return {
+            "id": strategy.get("id"),
+            "resource_name": strategy.get(
+                "resourceName", strategy.get("resource_name")
+            ),
+            "name": strategy.get("name"),
+            "status": strategy.get("status"),
+            "type": strategy.get("type"),
+        }
+
+    def list_bidding_strategies(self, page_size: int = 100) -> list[dict]:
+        """List bidding strategies configured for the selected customer."""
+        query = (
+            "SELECT bidding_strategy.id, bidding_strategy.resource_name, "
+            "bidding_strategy.name, bidding_strategy.status, bidding_strategy.type "
+            "FROM bidding_strategy"
+        )
+        return [
+            self._normalize_bidding_strategy(row)
+            for row in self._search_all(query, page_size=page_size)
+        ]
+
+    def get_bidding_strategy(self, bidding_strategy_id: str) -> dict:
+        """Get one bidding strategy by numeric ID."""
+        bidding_strategy_id = self._numeric_id(
+            bidding_strategy_id, "bidding_strategy_id"
+        )
+        query = (
+            "SELECT bidding_strategy.id, bidding_strategy.resource_name, "
+            "bidding_strategy.name, bidding_strategy.status, bidding_strategy.type "
+            f"FROM bidding_strategy WHERE bidding_strategy.id = {bidding_strategy_id}"
+        )
+        payload = self._response_payload(self._search(query))
+        rows = payload.get("results", []) if isinstance(payload, dict) else []
+        if rows and isinstance(rows[0], dict):
+            return self._normalize_bidding_strategy(rows[0])
+        raise APIError(
+            f"Google bidding strategy {bidding_strategy_id} was not found"
+        )
     
     def list_ad_groups(self, campaign_id: str, page_size: int = 100) -> list:
         """获取 Ad Group 列表"""

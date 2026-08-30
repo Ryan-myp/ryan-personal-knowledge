@@ -1,5 +1,5 @@
 {
-  "digest": "417df4f4f5592bb171ef3ac1984ea590c1891a3d1d6e8547972f59036c026582",
+  "digest": "60393f1e47589eb7e99221bfae341444e3ae08ce8e2dee0e064531e1defe0665",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -1983,8 +1983,8 @@
       ]
     },
     "google-ads": {
-      "digest": "98edfdfe83fc4eba29bb7ff019021f3cd21f47af3a564232e72c8ea4795af28e",
-      "tool_count": 39,
+      "digest": "32d07d8a89e3da2bb08b46fabf3a497fc5ead247eef260fc10ba24af2b735bf1",
+      "tool_count": 41,
       "tools": [
         {
           "action": "create",
@@ -4121,6 +4121,55 @@
         {
           "action": "get",
           "contract_version": "1.2.0",
+          "description": "查询 Google Ads 出价策略详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "bidding_strategy_id": {
+                "type": "string"
+              },
+              "customer_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id",
+              "bidding_strategy_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_bidding_strategy"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_get_bidding_strategy",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "bidding_strategy_id",
+          "resource_type": "bidding_strategy",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "bidding"
+          ]
+        },
+        {
+          "action": "get",
+          "contract_version": "1.2.0",
           "description": "查询 Google Ads Campaign 详情（支持 campaign_id 或 campaign_name）。",
           "effect_class": "read",
           "input_schema": {
@@ -4547,6 +4596,54 @@
           "traits": [
             "read",
             "pmax"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.2.0",
+          "description": "查询 Google Ads 出价策略列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "customer_id": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_bidding_strategies"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_list_bidding_strategies",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "bidding_strategy",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "bidding"
           ]
         },
         {
@@ -11524,5 +11621,5 @@
       ]
     }
   },
-  "tool_count": 150
+  "tool_count": 152
 }

@@ -92,6 +92,8 @@ class GoogleCapability(BaseCapability):
         "delete_campaign_criterion": ["google_delete_campaign_criterion"],
         "list_conversion_actions": ["google_list_conversion_actions"],
         "get_conversion_action": ["google_get_conversion_action"],
+        "list_bidding_strategies": ["google_list_bidding_strategies"],
+        "get_bidding_strategy": ["google_get_bidding_strategy"],
         "get_campaign_report": ["google_get_campaign_report"], "get_adgroup_report": ["google_get_adgroup_report"],
     }
 
@@ -246,6 +248,28 @@ class GoogleCapability(BaseCapability):
                 resource_type="conversion_action", resource_id_field="conversion_action_id",
                 intent_types=["get_conversion_action"], traits=["read", "conversion"],
                 argument_builder=lambda _ctx, data: ((data["conversion_action_id"],), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_list_bidding_strategies", description="查询 Google Ads 出价策略列表。",
+                method_name="list_bidding_strategies", result_key="bidding_strategies",
+                properties={"customer_id": {"type": "string"}, "limit": {"type": "integer"}},
+                required=["customer_id"], action="list", resource_type="bidding_strategy",
+                intent_types=["list_bidding_strategies"], traits=["read", "bidding"],
+                argument_builder=lambda _ctx, data: ((), {"page_size": data.get("limit", 100)}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_get_bidding_strategy", description="查询 Google Ads 出价策略详情。",
+                method_name="get_bidding_strategy", result_key="bidding_strategy",
+                properties={
+                    "customer_id": {"type": "string"},
+                    "bidding_strategy_id": {"type": "string"},
+                },
+                required=["customer_id", "bidding_strategy_id"], action="get",
+                resource_type="bidding_strategy", resource_id_field="bidding_strategy_id",
+                intent_types=["get_bidding_strategy"], traits=["read", "bidding"],
+                argument_builder=lambda _ctx, data: ((data["bidding_strategy_id"],), {}),
             ),
             method_tool(
                 platform="google-ads", skill="google-ads-api-expert",

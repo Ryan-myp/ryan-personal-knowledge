@@ -80,6 +80,33 @@ def test_google_conversion_action_queries_normalize_gaql_rows():
     assert client.get_conversion_action("42")["id"] == "42"
 
 
+def test_google_bidding_strategy_queries_normalize_gaql_rows():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    calls = []
+
+    def search(query, **kwargs):
+        calls.append((query, kwargs))
+        return [{
+            "biddingStrategy": {
+                "id": "7", "resourceName": "customers/123/biddingStrategies/7",
+                "name": "Max conversions", "status": "ENABLED", "type": "MAXIMIZE_CONVERSIONS",
+            }
+        }]
+
+    client._search_all = search
+    strategies = client.list_bidding_strategies(page_size=10)
+    assert strategies == [{
+        "id": "7", "resource_name": "customers/123/biddingStrategies/7",
+        "name": "Max conversions", "status": "ENABLED", "type": "MAXIMIZE_CONVERSIONS",
+    }]
+    assert calls[0][1] == {"page_size": 10}
+
+    client._search = lambda query: {"results": [{
+        "biddingStrategy": {"id": "7", "name": "Max conversions"}
+    }]}
+    assert client.get_bidding_strategy("7")["name"] == "Max conversions"
+
+
 def test_existing_creation_contracts_keep_provider_specific_fixes():
     meta_definitions = {
         definition.name: definition
