@@ -12,6 +12,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Optional, Protocol
+from .platform import normalize_platform
 
 
 @dataclass(frozen=True)
@@ -62,7 +63,6 @@ class LocalMarkdownKnowledgeProvider:
     and provenance, never arbitrary file contents or write operations.
     """
 
-    _ALIASES = {"google": "google", "google-ads": "google", "google_ads": "google"}
     _SENSITIVE_TERMS = re.compile(
         r"(?i)\b(?:access[_ -]?token|refresh[_ -]?token|developer[_ -]?token|"
         r"private[_ -]?key|client[_ -]?(?:id|secret)|authorization|credentials?|"
@@ -127,7 +127,9 @@ class LocalMarkdownKnowledgeProvider:
     @classmethod
     def _normalize_platform(cls, platform: str) -> str:
         value = str(platform or "all").lower()
-        return cls._ALIASES.get(value, value)
+        if value == "all":
+            return value
+        return normalize_platform(value)
 
     @staticmethod
     def _terms(query: str, intent_type: Optional[str]) -> list[str]:

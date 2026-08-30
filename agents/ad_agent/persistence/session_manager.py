@@ -11,6 +11,7 @@ from datetime import datetime
 
 from .interfaces import PersistenceBackend
 from .models import ToolCallRecord, CampaignRecord
+from ..core.platform import normalize_platform
 
 logger = logging.getLogger(__name__)
 
@@ -168,7 +169,7 @@ class SessionManager:
         # 简化：返回所有 Campaign，实际应该按 platform + campaign_id 过滤
         campaigns = []
         for platform, cid, account_id in campaign_keys:
-            normalized_platform = 'google-ads' if platform == 'google' else platform
+            normalized_platform = normalize_platform(platform)
             rec = self.store.get_campaign(normalized_platform, cid, account_id)
             if rec:
                 campaigns.append(rec)

@@ -13,7 +13,9 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from datetime import datetime
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from agents.ad_agent.core.platform import normalize_platform
 
 
 @dataclass
@@ -119,10 +121,18 @@ class MarkdownWikiLoader:
         """搜索知识库"""
         results = []
         query_lower = query.lower()
+        normalized_platforms = {
+            normalize_platform(platform) if str(platform).lower() != "all" else "all"
+            for platform in (platforms or [])
+        }
         
         for entry in self.entries.values():
             # 过滤平台
-            if platforms and entry.platform not in platforms and entry.platform != 'all':
+            entry_platform = (
+                normalize_platform(entry.platform)
+                if str(entry.platform).lower() != "all" else "all"
+            )
+            if normalized_platforms and entry_platform not in normalized_platforms and entry_platform != 'all':
                 continue
             
             # 过滤知识类型
@@ -142,9 +152,18 @@ class MarkdownWikiLoader:
     def get_by_type(self, knowledge_type: str, platform: str = None) -> List[WikiEntry]:
         """按类型获取条目"""
         results = []
+        normalized_platform = (
+            normalize_platform(platform)
+            if platform and str(platform).lower() != "all" else platform
+        )
         for entry in self.entries.values():
             if entry.knowledge_type == knowledge_type:
-                if platform is None or entry.platform == platform or entry.platform == 'all':
+                entry_platform = (
+                    normalize_platform(entry.platform)
+                    if str(entry.platform).lower() != "all" else "all"
+                )
+                if platform is None or str(platform).lower() == "all" \
+                        or entry_platform == normalized_platform or entry_platform == 'all':
                     results.append(entry)
         return results
     
@@ -227,9 +246,11 @@ class WikiQueryTool:
     
     def get_workflow(self, platform: str, workflow_type: str = None) -> Dict:
         """获取工作流"""
-        results = self.loader.get_by_type('workflow', platform)
+        results = self.loader.get_by_type(
+            'workflow', None if not platform or str(platform).lower() == 'all' else platform
+        )
         return {
-            'platform': platform,
+            'platform': platform or 'all',
             'workflows': [r.content for r in results]
         }
     
@@ -273,7 +294,7 @@ def main():
                        choices=['search', 'best_practices', 'errors', 'workflow', 'stats'])
     parser.add_argument('--query', '-q', default=None)
     parser.add_argument('--platform', '-p', default=None,
-                       choices=['google', 'meta', 'tiktok', 'dv360', 'all'])
+                       help='平台标识；不限制为固定渠道，all 表示全部')
     parser.add_argument('--error', '-e', default=None)
     parser.add_argument('--workflow-type', '-w', default=None)
     parser.add_argument('--limit', '-n', type=int, default=10)
@@ -296,7 +317,7 @@ def main():
         print(json.dumps(result, ensure_ascii=False, indent=2))
     
     elif args.action == 'workflow':
-        result = tool.get_workflow(args.platform or 'google', args.workflow_type)
+        result = tool.get_workflow(args.platform or 'all', args.workflow_type)
         print(json.dumps(result, ensure_ascii=False, indent=2))
     
     elif args.action == 'stats':
