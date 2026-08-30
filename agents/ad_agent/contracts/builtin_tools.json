@@ -1,5 +1,5 @@
 {
-  "digest": "5732157e0e69bd337aaa75f07e5dc037fc349fb93f35622e3605b81df9480c74",
+  "digest": "f59cdccc2bf46b6343bffcd1a15cf8f7033db99dde18912420a3dc4ccb2e5f95",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -7969,8 +7969,8 @@
       ]
     },
     "meta": {
-      "digest": "a79702f87e9187346b8249ecd3a30072fadbafcff65a1e3af86d5f61c6a081c7",
-      "tool_count": 64,
+      "digest": "0f8dda66d7419b56161d222a96018768f8c002dbc77705e9f81e285ca037aeef",
+      "tool_count": 66,
       "tools": [
         {
           "action": "boost",
@@ -8047,6 +8047,9 @@
                   ]
                 },
                 "catalog_id": {
+                  "exists": false
+                },
+                "link": {
                   "exists": false
                 },
                 "messaging_app": {
@@ -9392,6 +9395,161 @@
         },
         {
           "action": "create",
+          "activation_rules": [
+            {
+              "if": {
+                "link": {
+                  "exists": true
+                },
+                "objective": {
+                  "aliases": [
+                    "objective_type"
+                  ],
+                  "in": [
+                    "OUTCOME_CONVERSIONS",
+                    "CONVERSIONS"
+                  ]
+                },
+                "optimization_goal": {
+                  "in": [
+                    "CONVERSIONS",
+                    "OFFSITE_CONVERSIONS",
+                    "VALUE"
+                  ]
+                }
+              }
+            }
+          ],
+          "contract_version": "1.4.0",
+          "description": "创建 Meta Conversion 网站链接广告；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [
+              {
+                "id": "video_link_requires_video_id",
+                "if": {
+                  "media_type": "VIDEO"
+                },
+                "message": "VIDEO link creatives require video_id",
+                "required": [
+                  "video_id"
+                ]
+              }
+            ],
+            "properties": {
+              "adset_id": {
+                "description": "Parent Meta Ad Set ID",
+                "type": "string"
+              },
+              "call_to_action_type": {
+                "default": "LEARN_MORE",
+                "description": "Link ad CTA",
+                "enum": [
+                  "LEARN_MORE",
+                  "SHOP_NOW",
+                  "SIGN_UP",
+                  "CONTACT_US"
+                ],
+                "type": "string"
+              },
+              "description": {
+                "description": "Description",
+                "type": "string"
+              },
+              "headline": {
+                "description": "Headline",
+                "type": "string"
+              },
+              "image_hash": {
+                "description": "Uploaded image hash",
+                "minLength": 1,
+                "type": "string"
+              },
+              "link": {
+                "description": "Destination URL",
+                "minLength": 1,
+                "type": "string"
+              },
+              "media_type": {
+                "default": "IMAGE",
+                "description": "Link creative media type",
+                "enum": [
+                  "IMAGE",
+                  "VIDEO"
+                ],
+                "type": "string"
+              },
+              "message": {
+                "description": "Primary text",
+                "type": "string"
+              },
+              "name": {
+                "description": "Ad name",
+                "maxLength": 400,
+                "type": "string"
+              },
+              "page_id": {
+                "description": "Facebook Page ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "status": {
+                "description": "Initial delivery status",
+                "enum": [
+                  "ACTIVE",
+                  "PAUSED"
+                ],
+                "type": "string"
+              },
+              "video_id": {
+                "description": "Uploaded video ID",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "page_id",
+              "link"
+            ],
+            "required": [
+              "adset_id",
+              "name",
+              "page_id",
+              "link"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_conversion_ad",
+            "create_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_create_conversion_ad",
+          "parent_resource_id_field": "adset_id",
+          "parent_resource_type": "ad_set",
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad",
+            "conversion"
+          ]
+        },
+        {
+          "action": "create",
           "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "创建 Meta Creative；当前仅支持 dry-run 计划。",
@@ -10187,6 +10345,159 @@
             "write",
             "catalog",
             "product_set"
+          ]
+        },
+        {
+          "action": "create",
+          "activation_rules": [
+            {
+              "if": {
+                "link": {
+                  "exists": true
+                },
+                "objective": {
+                  "aliases": [
+                    "objective_type"
+                  ],
+                  "in": [
+                    "OUTCOME_TRAFFIC",
+                    "TRAFFIC"
+                  ]
+                },
+                "optimization_goal": {
+                  "in": [
+                    "LINK_CLICKS"
+                  ]
+                }
+              }
+            }
+          ],
+          "contract_version": "1.4.0",
+          "description": "创建 Meta Traffic 网站链接广告；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [
+              {
+                "id": "video_link_requires_video_id",
+                "if": {
+                  "media_type": "VIDEO"
+                },
+                "message": "VIDEO link creatives require video_id",
+                "required": [
+                  "video_id"
+                ]
+              }
+            ],
+            "properties": {
+              "adset_id": {
+                "description": "Parent Meta Ad Set ID",
+                "type": "string"
+              },
+              "call_to_action_type": {
+                "default": "LEARN_MORE",
+                "description": "Link ad CTA",
+                "enum": [
+                  "LEARN_MORE",
+                  "SHOP_NOW",
+                  "SIGN_UP",
+                  "CONTACT_US"
+                ],
+                "type": "string"
+              },
+              "description": {
+                "description": "Description",
+                "type": "string"
+              },
+              "headline": {
+                "description": "Headline",
+                "type": "string"
+              },
+              "image_hash": {
+                "description": "Uploaded image hash",
+                "minLength": 1,
+                "type": "string"
+              },
+              "link": {
+                "description": "Destination URL",
+                "minLength": 1,
+                "type": "string"
+              },
+              "media_type": {
+                "default": "IMAGE",
+                "description": "Link creative media type",
+                "enum": [
+                  "IMAGE",
+                  "VIDEO"
+                ],
+                "type": "string"
+              },
+              "message": {
+                "description": "Primary text",
+                "type": "string"
+              },
+              "name": {
+                "description": "Ad name",
+                "maxLength": 400,
+                "type": "string"
+              },
+              "page_id": {
+                "description": "Facebook Page ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "status": {
+                "description": "Initial delivery status",
+                "enum": [
+                  "ACTIVE",
+                  "PAUSED"
+                ],
+                "type": "string"
+              },
+              "video_id": {
+                "description": "Uploaded video ID",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "page_id",
+              "link"
+            ],
+            "required": [
+              "adset_id",
+              "name",
+              "page_id",
+              "link"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_traffic_ad",
+            "create_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_create_traffic_ad",
+          "parent_resource_id_field": "adset_id",
+          "parent_resource_type": "ad_set",
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad",
+            "traffic"
           ]
         },
         {
@@ -21495,6 +21806,12 @@
         "status": "implemented"
       },
       {
+        "action": "create_link",
+        "method": "create_link_ad",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
         "action": "update",
         "method": "update_ad",
         "resource": "ad",
@@ -22248,5 +22565,5 @@
       ]
     }
   },
-  "tool_count": 228
+  "tool_count": 230
 }

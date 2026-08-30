@@ -16,7 +16,7 @@ from .creatives import MetaCreateCreativeHandler
 from .parameters import (
     meta_campaign_schema, meta_adset_schema, meta_ad_schema,
     meta_ad_format_catalog, meta_lead_ad_schema, meta_catalog_ad_schema,
-    meta_messaging_ad_schema,
+    meta_messaging_ad_schema, meta_link_ad_schema,
     meta_audience_schema, meta_conversion_event_schema, meta_creative_schema,
     meta_catalog_schema, meta_product_set_schema,
     meta_lead_form_schema,
@@ -98,6 +98,7 @@ class MetaCapability(BaseCapability):
         "create_ad": ["meta_create_ad"], "create_lead_ad": ["meta_create_lead_ad"],
         "create_catalog_ad": ["meta_create_catalog_ad"],
         "create_messaging_ad": ["meta_create_messaging_ad"],
+        "create_link_ad": ["meta_create_traffic_ad", "meta_create_conversion_ad"],
         "update_ad": ["meta_update_ad"],
         "pause_ad": ["meta_pause_ad"], "delete_ad": ["meta_delete_ad"],
         "create_creative": ["meta_create_creative"],
@@ -671,6 +672,52 @@ class MetaCapability(BaseCapability):
                     },
                 ), {}),
             ),
+        ]
+        for tool_name, intent_name, objective_values, optimization_values, traits in (
+            (
+                "meta_create_traffic_ad", "create_traffic_ad",
+                ["OUTCOME_TRAFFIC", "TRAFFIC"], ["LINK_CLICKS"],
+                ["write", "ad", "traffic"],
+            ),
+            (
+                "meta_create_conversion_ad", "create_conversion_ad",
+                ["OUTCOME_CONVERSIONS", "CONVERSIONS"],
+                ["CONVERSIONS", "OFFSITE_CONVERSIONS", "VALUE"],
+                ["write", "ad", "conversion"],
+            ),
+        ):
+            link_schema = meta_link_ad_schema()
+            tools.append(method_tool(
+                platform="meta", skill="meta-marketing-api", name=tool_name,
+                description=(
+                    "创建 Meta Traffic 网站链接广告；默认仅生成 dry-run 计划。"
+                    if intent_name == "create_traffic_ad"
+                    else "创建 Meta Conversion 网站链接广告；默认仅生成 dry-run 计划。"
+                ),
+                method_name="create_link_ad", result_key="ad_id",
+                properties=link_schema["properties"], required=link_schema["required"],
+                provider_required=link_schema["provider_required"],
+                conditional_rules=link_schema["conditional_rules"],
+                action="create", resource_type="ad", parent_resource_type="ad_set",
+                resource_id_field="ad_id", parent_resource_id_field="adset_id",
+                intent_types=[intent_name, "create_campaign"],
+                activation_rules=[{
+                    "if": {
+                        "objective": {"aliases": ["objective_type"], "in": objective_values},
+                        "optimization_goal": {"in": optimization_values},
+                        "link": {"exists": True},
+                    },
+                }],
+                traits=traits, write=True,
+                argument_builder=lambda ctx, data: ((
+                    account_from(ctx, data, "account_id"), data["adset_id"], {
+                        key: data[key] for key in link_schema["properties"]
+                        if key != "adset_id" and key in data
+                    },
+                ), {}),
+            ))
+
+        tools.extend([
             method_tool(
                 platform="meta", skill="meta-marketing-api", name="meta_get_audience",
                 description="查询 Meta Custom 或 Lookalike Audience 详情。", method_name="get_audience",
@@ -718,7 +765,7 @@ class MetaCapability(BaseCapability):
                 write=True,
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["audience_id"]), {}),
             ),
-        ]
+        ])
         for method_name, resource_type, resource_id, intent in (
             ("delete_campaign", "campaign", "campaign_id", "delete_campaign"),
             ("delete_adset", "ad_set", "adset_id", "delete_adset"),
@@ -922,6 +969,7 @@ class MetaCapability(BaseCapability):
                     "ad_format": {"not_in": ["LEAD", "CATALOG"]},
                     "catalog_id": {"exists": False},
                     "messaging_app": {"exists": False},
+                    "link": {"exists": False},
                 },
             }],
         ), MetaCreateAdHandler(api_client)))

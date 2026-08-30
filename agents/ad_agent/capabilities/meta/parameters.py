@@ -777,6 +777,43 @@ def meta_messaging_ad_schema() -> dict[str, Any]:
     }
 
 
+def meta_link_ad_schema() -> dict[str, Any]:
+    """Create contract for a website-link image or video creative."""
+    return {
+        "required": ["adset_id", "name", "page_id", "link"],
+        "provider_required": ["page_id", "link"],
+        "properties": {
+            "adset_id": _field("string", "Parent Meta Ad Set ID"),
+            "name": _field("string", "Ad name", maxLength=400),
+            "page_id": _field("string", "Facebook Page ID", minLength=1),
+            "link": _field("string", "Destination URL", minLength=1),
+            "media_type": _field(
+                "string", "Link creative media type", enum=["IMAGE", "VIDEO"],
+                default="IMAGE",
+            ),
+            "image_hash": _field("string", "Uploaded image hash", minLength=1),
+            "video_id": _field("string", "Uploaded video ID", minLength=1),
+            "message": _field("string", "Primary text"),
+            "headline": _field("string", "Headline"),
+            "description": _field("string", "Description"),
+            "call_to_action_type": _field(
+                "string", "Link ad CTA",
+                enum=["LEARN_MORE", "SHOP_NOW", "SIGN_UP", "CONTACT_US"],
+                default="LEARN_MORE",
+            ),
+            "status": _field("string", "Initial delivery status", enum=META_STATUS),
+        },
+        "conditional_rules": [
+            {
+                "id": "video_link_requires_video_id",
+                "if": {"media_type": "VIDEO"},
+                "required": ["video_id"],
+                "message": "VIDEO link creatives require video_id",
+            },
+        ],
+    }
+
+
 def meta_ad_format_catalog() -> list[dict[str, Any]]:
     """Advertised Meta objectives/formats and their current contract depth."""
     source_document = "docs/ad-platform-hierarchy-guide-v5.md"
@@ -786,10 +823,10 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
             "category": "traffic",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
-            "tool_names": ["meta_create_campaign", "meta_create_adset", "meta_create_ad"],
+            "tool_names": ["meta_create_campaign", "meta_create_adset", "meta_create_traffic_ad"],
             "dependencies": ["targeting", "optimization_goal", "link_data"],
             "supported_fields": ["OUTCOME_TRAFFIC", "LINK_CLICKS", "targeting", "object_story_spec.link_data"],
-            "gaps": ["objective-specific CTA validation", "placement compatibility validation"],
+            "gaps": ["placement compatibility validation"],
             "source_document": source_document,
         },
         {
@@ -797,10 +834,10 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
             "category": "conversion",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
-            "tool_names": ["meta_create_campaign", "meta_create_adset", "meta_create_ad"],
+            "tool_names": ["meta_create_campaign", "meta_create_adset", "meta_create_conversion_ad"],
             "dependencies": ["promoted_object", "conversion_specs", "pixel_or_capi"],
             "supported_fields": ["OUTCOME_CONVERSIONS", "OFFSITE_CONVERSIONS", "CONVERSIONS", "promoted_object"],
-            "gaps": ["conversion event lookup/validation", "objective-specific creative contract"],
+            "gaps": ["conversion event lookup/validation"],
             "source_document": source_document,
         },
         {
@@ -842,8 +879,8 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
             "category": "traffic",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
-            "tool_names": ["meta_create_ad"],
-            "payload_adapter": "MetaAPIClient.create_ad",
+            "tool_names": ["meta_create_traffic_ad"],
+            "payload_adapter": "MetaAPIClient.create_link_ad",
             "dependencies": ["adset", "page_id", "link_data"],
             "supported_fields": ["link", "message", "name", "description", "image_hash", "call_to_action"],
             "gaps": ["live mutation approval"],

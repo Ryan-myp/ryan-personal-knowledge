@@ -1549,6 +1549,59 @@ class MetaAPIClient(BasePlatformClient):
             },
         )
 
+    def create_link_ad(self, account_id: str, adset_id: str, ad: dict) -> str:
+        """Create a website-link image or video ad."""
+        if not isinstance(ad, dict):
+            raise ValueError("link ad must be an object")
+        page_id = str(ad.get("page_id") or "").strip()
+        link = str(ad.get("link") or "").strip()
+        media_type = str(ad.get("media_type") or "IMAGE").upper().strip()
+        cta_type = str(ad.get("call_to_action_type") or "LEARN_MORE").upper().strip()
+        if not page_id or not link:
+            raise ValueError("page_id and link are required")
+        if media_type not in {"IMAGE", "VIDEO"}:
+            raise ValueError("media_type must be IMAGE or VIDEO")
+        if cta_type not in {"LEARN_MORE", "SHOP_NOW", "SIGN_UP", "CONTACT_US"}:
+            raise ValueError("Unsupported link ad CTA type")
+
+        if media_type == "VIDEO":
+            video_id = str(ad.get("video_id") or "").strip()
+            if not video_id:
+                raise ValueError("VIDEO link creatives require video_id")
+            creative_spec = {
+                "page_id": page_id,
+                "video_data": {
+                    "video_id": video_id,
+                    "message": ad.get("message", ""),
+                    "title": ad.get("headline", ""),
+                    "call_to_action": {
+                        "type": cta_type,
+                        "value": {"link": link},
+                    },
+                },
+            }
+        else:
+            link_data: dict[str, Any] = {
+                "link": link,
+                "message": ad.get("message", ""),
+                "name": ad.get("headline", ""),
+                "description": ad.get("description", ""),
+                "call_to_action": {"type": cta_type},
+            }
+            if ad.get("image_hash"):
+                link_data["image_hash"] = ad["image_hash"]
+            creative_spec = {"page_id": page_id, "link_data": link_data}
+
+        return self.create_ad(
+            account_id,
+            adset_id,
+            {
+                "name": ad.get("name", "Untitled Link Ad"),
+                "status": ad.get("status", "PAUSED"),
+                "object_story_spec": creative_spec,
+            },
+        )
+
     def update_ad(self, ad_id: str, updates: dict) -> dict:
         """更新 Ad"""
         data = {k: v for k, v in updates.items() if v is not None}

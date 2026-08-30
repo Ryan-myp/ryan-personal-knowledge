@@ -2455,6 +2455,85 @@ def test_meta_messaging_tool_publishes_destination_contract_and_route():
     ]
 
 
+@pytest.mark.parametrize(
+    "media_type, extra, expected_key",
+    [
+        ("IMAGE", {"image_hash": "img-hash-1"}, "link_data"),
+        ("VIDEO", {"video_id": "video-1"}, "video_data"),
+    ],
+)
+def test_meta_link_ad_builds_object_story_spec(media_type, extra, expected_key):
+    client = MetaAPIClient({"access_token": "test"})
+    payloads = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        payloads.append((method, endpoint, data)) or {"id": "ad-link-1"}
+    )
+
+    assert client.create_link_ad("act_1", "as_1", {
+        "name": "Link Ad", "page_id": "page-1", "link": "https://example.test/landing",
+        "media_type": media_type, "message": "Learn more", "headline": "Offer",
+        "call_to_action_type": "LEARN_MORE", **extra,
+    }) == "ad-link-1"
+    creative = json.loads(payloads[-1][2]["creative"])
+    story = creative["object_story_spec"]
+    assert story["page_id"] == "page-1"
+    assert expected_key in story
+    if media_type == "IMAGE":
+        assert story[expected_key]["link"] == "https://example.test/landing"
+        assert story[expected_key]["image_hash"] == "img-hash-1"
+    else:
+        assert story[expected_key]["video_id"] == "video-1"
+        assert story[expected_key]["call_to_action"]["value"] == {
+            "link": "https://example.test/landing"
+        }
+
+    with pytest.raises(ValueError, match="VIDEO link creatives require video_id"):
+        client.create_link_ad("act_1", "as_1", {
+            "page_id": "page-1", "link": "https://example.test/landing",
+            "media_type": "VIDEO",
+        })
+
+
+def test_meta_traffic_and_conversion_tools_route_link_creatives():
+    capability = create_meta_capability()
+    definitions = {
+        definition.name: definition
+        for definition, _handler in capability.register_tools()
+    }
+    for name in ("meta_create_traffic_ad", "meta_create_conversion_ad"):
+        assert definitions[name].input_schema.properties["link"]["minLength"] == 1
+        assert definitions[name].input_schema.properties["media_type"]["enum"] == [
+            "IMAGE", "VIDEO"
+        ]
+
+    runtime = AgentRuntime(require_llm=False)
+    runtime.register_capability(capability)
+    cases = [
+        (
+            "OUTCOME_TRAFFIC", "LINK_CLICKS", "meta_create_traffic_ad",
+        ),
+        (
+            "OUTCOME_CONVERSIONS", "CONVERSIONS", "meta_create_conversion_ad",
+        ),
+    ]
+    for objective, optimization_goal, expected in cases:
+        routed = runtime.intent_router.route(
+            ParsedIntent(
+                "create_campaign", "create", ["meta"],
+                platform_params={"meta": {
+                    "objective": objective,
+                    "optimization_goal": optimization_goal,
+                    "page_id": "page-1",
+                    "link": "https://example.test/landing",
+                }},
+            ),
+            runtime.registry,
+        )
+        assert [definition.name for definition in routed["meta"]] == [
+            "meta_create_campaign", "meta_create_adset", expected,
+        ]
+
+
 def test_meta_creative_crud_uses_account_scoped_graph_edges():
     client = MetaAPIClient({"access_token": "test"})
     calls = []
