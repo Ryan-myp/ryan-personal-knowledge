@@ -501,6 +501,39 @@ def meta_creative_schema() -> dict[str, Any]:
     }
 
 
+def meta_image_asset_schema() -> dict[str, Any]:
+    """Contract for Meta ad-image upload and listing."""
+    return {
+        "properties": {
+            "account_id": _field("string", "Meta ad account ID"),
+            "image_url": _field(
+                "string", "HTTPS URL of an image that Meta can fetch",
+                minLength=1, maxLength=2048,
+            ),
+            "name": _field("string", "Optional image asset name", maxLength=400),
+            "limit": _field("integer", "Maximum number of image assets", minimum=1, maximum=1000),
+        },
+        "upload_required": ["account_id", "image_url"],
+    }
+
+
+def meta_video_asset_schema() -> dict[str, Any]:
+    """Contract for Meta ad-video upload and listing."""
+    return {
+        "properties": {
+            "account_id": _field("string", "Meta ad account ID"),
+            "file_url": _field(
+                "string", "HTTPS URL of a video file that Meta can fetch",
+                minLength=1, maxLength=2048,
+            ),
+            "title": _field("string", "Optional video title", maxLength=400),
+            "description": _field("string", "Optional video description", maxLength=2000),
+            "limit": _field("integer", "Maximum number of video assets", minimum=1, maximum=1000),
+        },
+        "upload_required": ["account_id", "file_url"],
+    }
+
+
 def meta_promoted_object_schema() -> dict[str, Any]:
     return _object({
         "pixel_id": _field("string", "Meta Pixel ID"),

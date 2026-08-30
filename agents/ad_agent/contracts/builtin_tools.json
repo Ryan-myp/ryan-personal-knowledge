@@ -1,5 +1,5 @@
 {
-  "digest": "7d8fbf57ef561c6ded1f5f19f62e987af0720a83f43d066a312e5cf1efc64680",
+  "digest": "5b12b1b6ed2d74ae3cf81bafc88cf91782981d0c4377242c35a5eb535f8a1c79",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -10022,8 +10022,8 @@
       ]
     },
     "meta": {
-      "digest": "ffb2242311dfb0881f98e0c8046e98f8a726e8f9ce5210b16cf614def3b74880",
-      "tool_count": 68,
+      "digest": "57369ca5c37fb8889f9e67fee73df0a146250b234eb10f7442b31ac049bd948b",
+      "tool_count": 72,
       "tools": [
         {
           "action": "boost",
@@ -14535,6 +14535,62 @@
           "action": "list",
           "activation_rules": [],
           "contract_version": "1.4.0",
+          "description": "查询 Meta 广告账户已上传的图片素材。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of image assets",
+                "maximum": 1000,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_image_assets",
+            "list_assets"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_list_image_assets",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "readback_tool": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "image_asset",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "creative",
+            "image_asset"
+          ]
+        },
+        {
+          "action": "list",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
           "description": "查询 Facebook Page 下已发布的 Lead Ads Instant Form。",
           "effect_class": "read",
           "input_schema": {
@@ -14734,6 +14790,62 @@
             "read",
             "catalog",
             "product_set"
+          ]
+        },
+        {
+          "action": "list",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
+          "description": "查询 Meta 广告账户已上传的视频素材。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of video assets",
+                "maximum": 1000,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_video_assets",
+            "list_assets"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_list_video_assets",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "readback_tool": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "video_asset",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "creative",
+            "video_asset"
           ]
         },
         {
@@ -16470,6 +16582,151 @@
             "write",
             "audience",
             "source_upload"
+          ]
+        },
+        {
+          "action": "upload",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
+          "description": "上传可由 Meta 获取的 HTTPS 图片素材；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "image_url": {
+                "description": "HTTPS URL of an image that Meta can fetch",
+                "maxLength": 2048,
+                "minLength": 1,
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of image assets",
+                "maximum": 1000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "name": {
+                "description": "Optional image asset name",
+                "maxLength": 400,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "image_url"
+            ],
+            "required": [
+              "account_id",
+              "image_url"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "upload_image_asset",
+            "upload_asset"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_upload_image_asset",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "readback_tool": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": null,
+          "resource_type": "image_asset",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "creative",
+            "image_asset"
+          ]
+        },
+        {
+          "action": "upload",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
+          "description": "上传可由 Meta 获取的 HTTPS 视频素材；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "description": {
+                "description": "Optional video description",
+                "maxLength": 2000,
+                "type": "string"
+              },
+              "file_url": {
+                "description": "HTTPS URL of a video file that Meta can fetch",
+                "maxLength": 2048,
+                "minLength": 1,
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of video assets",
+                "maximum": 1000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "title": {
+                "description": "Optional video title",
+                "maxLength": 400,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "file_url"
+            ],
+            "required": [
+              "account_id",
+              "file_url"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "upload_video_asset",
+            "upload_asset"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_upload_video_asset",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "readback_tool": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": null,
+          "resource_type": "video_asset",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "creative",
+            "video_asset"
           ]
         }
       ]
@@ -26597,6 +26854,54 @@
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
+        "method": "list_image_assets",
+        "provider": "meta",
+        "resource": "image_asset",
+        "source_url": "https://developers.facebook.com/docs/marketing-api/reference",
+        "status": "implemented"
+      },
+      {
+        "action": "upload",
+        "api_version": "v19.0",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_graph_edges_baseline",
+        "method": "upload_image_asset",
+        "provider": "meta",
+        "resource": "image_asset",
+        "source_url": "https://developers.facebook.com/docs/marketing-api/reference",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "api_version": "v19.0",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_graph_edges_baseline",
+        "method": "list_video_assets",
+        "provider": "meta",
+        "resource": "video_asset",
+        "source_url": "https://developers.facebook.com/docs/marketing-api/reference",
+        "status": "implemented"
+      },
+      {
+        "action": "upload",
+        "api_version": "v19.0",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_graph_edges_baseline",
+        "method": "upload_video_asset",
+        "provider": "meta",
+        "resource": "video_asset",
+        "source_url": "https://developers.facebook.com/docs/marketing-api/reference",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "api_version": "v19.0",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_graph_edges_baseline",
         "method": "list_audiences",
         "provider": "meta",
         "resource": "audience",
@@ -28077,5 +28382,5 @@
       ]
     }
   },
-  "tool_count": 251
+  "tool_count": 255
 }

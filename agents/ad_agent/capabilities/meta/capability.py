@@ -24,6 +24,7 @@ from .parameters import (
     meta_custom_conversion_management_schema,
     meta_targeting_search_schema,
     meta_lookalike_audience_schema,
+    meta_image_asset_schema, meta_video_asset_schema,
 )
 from ...api_clients.meta_client import MetaAPIClient
 from ..update_contracts import meta_updates
@@ -107,6 +108,10 @@ class MetaCapability(BaseCapability):
         "create_creative": ["meta_create_creative"],
         "list_creatives": ["meta_list_creatives"], "get_creative": ["meta_get_creative"],
         "update_creative": ["meta_update_creative"], "delete_creative": ["meta_delete_creative"],
+        "list_image_assets": ["meta_list_image_assets"],
+        "upload_image_asset": ["meta_upload_image_asset"],
+        "list_video_assets": ["meta_list_video_assets"],
+        "upload_video_asset": ["meta_upload_video_asset"],
         "get_campaign_report": ["meta_get_campaign_report"],
         "get_adset_report": ["meta_get_adset_report"], "get_ad_report": ["meta_get_ad_report"],
         "boost_post": ["meta_boost_post"],
@@ -145,6 +150,8 @@ class MetaCapability(BaseCapability):
         }
         creative_schema = meta_creative_schema()
         creative_properties = creative_schema["properties"]
+        image_asset_schema = meta_image_asset_schema()
+        video_asset_schema = meta_video_asset_schema()
         catalog_schema = meta_catalog_schema()
         catalog_properties = catalog_schema["properties"]
         product_set_schema = meta_product_set_schema()
@@ -221,6 +228,62 @@ class MetaCapability(BaseCapability):
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["pixel_id"]), {
                     "fields": data.get("fields"),
                 }),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api",
+                name="meta_list_image_assets",
+                description="查询 Meta 广告账户已上传的图片素材。",
+                method_name="list_image_assets", result_key="image_assets",
+                properties={key: image_asset_schema["properties"][key]
+                            for key in ("account_id", "limit")},
+                required=["account_id"], action="list", resource_type="image_asset",
+                intent_types=["list_image_assets", "list_assets"],
+                traits=["read", "creative", "image_asset"],
+                argument_builder=lambda ctx, data: ((account(ctx, data),), {
+                    "limit": data.get("limit", 25),
+                }),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api",
+                name="meta_upload_image_asset",
+                description="上传可由 Meta 获取的 HTTPS 图片素材；默认仅生成 dry-run 计划。",
+                method_name="upload_image_asset", result_key="image_asset",
+                properties=image_asset_schema["properties"],
+                required=image_asset_schema["upload_required"],
+                provider_required=["image_url"], action="upload", resource_type="image_asset",
+                intent_types=["upload_image_asset", "upload_asset"],
+                traits=["write", "creative", "image_asset"], write=True, live_support=False,
+                argument_builder=lambda ctx, data: ((account(ctx, data), {
+                    key: data[key] for key in ("image_url", "name") if key in data
+                }), {}),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api",
+                name="meta_list_video_assets",
+                description="查询 Meta 广告账户已上传的视频素材。",
+                method_name="list_video_assets", result_key="video_assets",
+                properties={key: video_asset_schema["properties"][key]
+                            for key in ("account_id", "limit")},
+                required=["account_id"], action="list", resource_type="video_asset",
+                intent_types=["list_video_assets", "list_assets"],
+                traits=["read", "creative", "video_asset"],
+                argument_builder=lambda ctx, data: ((account(ctx, data),), {
+                    "limit": data.get("limit", 25),
+                }),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api",
+                name="meta_upload_video_asset",
+                description="上传可由 Meta 获取的 HTTPS 视频素材；默认仅生成 dry-run 计划。",
+                method_name="upload_video_asset", result_key="video_asset",
+                properties=video_asset_schema["properties"],
+                required=video_asset_schema["upload_required"],
+                provider_required=["file_url"], action="upload", resource_type="video_asset",
+                intent_types=["upload_video_asset", "upload_asset"],
+                traits=["write", "creative", "video_asset"], write=True, live_support=False,
+                argument_builder=lambda ctx, data: ((account(ctx, data), {
+                    key: data[key] for key in ("file_url", "title", "description") if key in data
+                }), {}),
             ),
             method_tool(
                 platform="meta", skill="meta-marketing-api", name="meta_send_conversion_events",

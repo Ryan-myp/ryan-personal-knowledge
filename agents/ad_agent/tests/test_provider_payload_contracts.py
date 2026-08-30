@@ -74,6 +74,12 @@ def test_creation_tools_publish_provider_payload_requirements():
     assert definitions["meta"]["meta_create_product_set"].input_schema.provider_required == [
         "catalog_id", "name"
     ]
+    assert definitions["meta"]["meta_upload_image_asset"].input_schema.provider_required == [
+        "image_url"
+    ]
+    assert definitions["meta"]["meta_upload_video_asset"].input_schema.provider_required == [
+        "file_url"
+    ]
 
     assert definitions["tiktok"]["tiktok_create_pixel"].input_schema.provider_required == [
         "name", "object_type"
@@ -126,6 +132,65 @@ def test_tiktok_video_upload_supports_provider_url_without_local_file():
         "video_url": "https://cdn.example/video.mp4",
     }
     assert calls[0][3] is None
+
+
+def test_meta_image_asset_upload_normalizes_graph_image_map():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+    client.request = lambda method, endpoint, data=None, **_kwargs: (
+        calls.append((method, endpoint, data)) or {
+            "images": {
+                "creative.png": {
+                    "hash": "hash-1", "url": "https://cdn.example/creative.png"
+                }
+            }
+        }
+    )
+
+    result = client.upload_image_asset(
+        "act_123", {"image_url": "https://cdn.example/creative.png", "name": "creative"}
+    )
+
+    assert result["hash"] == "hash-1"
+    assert calls == [(
+        "POST", "/act_123/adimages",
+        {"url": "https://cdn.example/creative.png", "name": "creative"},
+    )]
+    with pytest.raises(ValueError, match=r"HTTP\(S\) URL"):
+        client.upload_image_asset("123", {"image_url": "/tmp/creative.png"})
+
+
+def test_meta_video_asset_upload_and_list_use_provider_edges():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+
+    def request(method, endpoint, data=None, **kwargs):
+        calls.append((method, endpoint, data, kwargs))
+        if method == "POST":
+            return {"id": "video-1", "status": "processing"}
+        return {"data": [{"id": "video-1", "title": "Demo"}]}
+
+    client.request = request
+    uploaded = client.upload_video_asset(
+        "123", {
+            "file_url": "https://cdn.example/demo.mp4",
+            "title": "Demo",
+            "description": "Test video",
+        }
+    )
+    listed = client.list_video_assets("123", limit=10)
+
+    assert uploaded["id"] == "video-1"
+    assert listed == [{"id": "video-1", "title": "Demo"}]
+    assert calls[0][0:3] == (
+        "POST", "/act_123/advideos",
+        {
+            "file_url": "https://cdn.example/demo.mp4",
+            "title": "Demo",
+            "description": "Test video",
+        },
+    )
+    assert calls[1][0:2] == ("GET", "/act_123/advideos")
 
 
 def test_tiktok_media_upload_rejects_ambiguous_sources_and_exposes_tools():

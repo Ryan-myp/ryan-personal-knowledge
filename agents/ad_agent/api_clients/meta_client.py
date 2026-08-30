@@ -15,6 +15,7 @@ import re
 import time
 import threading
 from typing import Any, Optional
+from urllib.parse import urlparse
 import requests
 
 from .base import BasePlatformClient, APIError, AuthError, RateLimitError, TemporaryError, RetryConfig, RateLimiter
@@ -1701,6 +1702,109 @@ class MetaAPIClient(BasePlatformClient):
                 "fields": "id,name,object_story_spec,thumbnail_url,body,title,call_to_action_type",
             },
         )
+
+    # ==================== Image / Video Asset 管理 ====================
+
+    @staticmethod
+    def _require_https_asset_url(value: Any, field_name: str) -> str:
+        """Accept only provider-fetchable HTTP(S) asset URLs."""
+        url = str(value or "").strip()
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError(f"{field_name} must be an absolute HTTP(S) URL")
+        return url
+
+    def list_image_assets(self, account_id: str, limit: int = 25) -> list:
+        """List image assets uploaded to a Meta ad account."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 1000:
+            raise ValueError("image asset limit must be between 1 and 1000")
+        result = self.request(
+            "GET", f"/act_{account_id}/adimages",
+            extra_params={
+                "limit": limit,
+                "fields": "hash,url,name,original_width,original_height,created_time",
+            },
+        )
+        # Meta's adimages edge returns an object keyed by filename/hash rather
+        # than the usual Graph ``data`` list. Normalize it at the Provider
+        # boundary so Runtime and Skills see one stable list shape.
+        if isinstance(result, dict) and isinstance(result.get("images"), dict):
+            assets = []
+            for key, value in result["images"].items():
+                if isinstance(value, dict):
+                    asset = dict(value)
+                    asset.setdefault("name", key)
+                    assets.append(asset)
+            return assets
+        if isinstance(result, dict) and isinstance(result.get("data"), list):
+            return result["data"]
+        return result if isinstance(result, list) else []
+
+    def upload_image_asset(self, account_id: str, asset: dict) -> dict:
+        """Upload one remotely hosted image and return its provider hash."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        if not isinstance(asset, dict):
+            raise ValueError("image asset must be an object")
+        unknown = sorted(set(asset) - {"image_url", "name"})
+        if unknown:
+            raise ValueError(f"unsupported Meta image asset fields: {', '.join(unknown)}")
+        image_url = self._require_https_asset_url(asset.get("image_url"), "image_url")
+        data: dict[str, Any] = {"url": image_url}
+        if asset.get("name") is not None:
+            name = str(asset["name"]).strip()
+            if not name:
+                raise ValueError("image asset name must be non-empty when provided")
+            data["name"] = name
+        self.acquire_rate_limit(self._get_account_limiter(account_id))
+        result = self.request("POST", f"/act_{account_id}/adimages", data=data)
+        if isinstance(result, dict) and isinstance(result.get("images"), dict):
+            entries = [value for value in result["images"].values() if isinstance(value, dict)]
+            if len(entries) == 1:
+                result = entries[0]
+        result = self.require_resource_object(result, "Meta image asset upload")
+        if not str(result.get("hash") or "").strip():
+            raise APIError("Meta image asset upload response did not contain an image hash")
+        return result
+
+    def list_video_assets(self, account_id: str, limit: int = 25) -> list:
+        """List video assets uploaded to a Meta ad account."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 1000:
+            raise ValueError("video asset limit must be between 1 and 1000")
+        return self._list_graph_pages(
+            account_id,
+            f"/act_{account_id}/advideos",
+            {
+                "limit": limit,
+                "fields": "id,title,description,status,created_time,permalink_url",
+            },
+        )
+
+    def upload_video_asset(self, account_id: str, asset: dict) -> dict:
+        """Start a Meta video upload from a remotely hosted file URL."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        if not isinstance(asset, dict):
+            raise ValueError("video asset must be an object")
+        unknown = sorted(set(asset) - {"file_url", "title", "description"})
+        if unknown:
+            raise ValueError(f"unsupported Meta video asset fields: {', '.join(unknown)}")
+        file_url = self._require_https_asset_url(asset.get("file_url"), "file_url")
+        data: dict[str, Any] = {"file_url": file_url}
+        for field_name in ("title", "description"):
+            if asset.get(field_name) is not None:
+                value = str(asset[field_name]).strip()
+                if not value:
+                    raise ValueError(f"video asset {field_name} must be non-empty when provided")
+                data[field_name] = value
+        self.acquire_rate_limit(self._get_account_limiter(account_id))
+        result = self.require_resource_object(
+            self.request("POST", f"/act_{account_id}/advideos", data=data),
+            "Meta video asset upload",
+        )
+        if not str(result.get("id") or "").strip():
+            raise APIError("Meta video asset upload response did not contain a video ID")
+        return result
 
     def get_creative(self, account_id: str, creative_id: str, fields: list = None) -> dict:
         """Get one Creative after verifying account ownership."""
