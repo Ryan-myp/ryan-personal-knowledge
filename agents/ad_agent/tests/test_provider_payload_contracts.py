@@ -1072,6 +1072,84 @@ def test_meta_custom_conversion_create_validates_pixel_scope_and_builds_payload(
         })
 
 
+def test_meta_custom_conversion_lifecycle_builds_scoped_graph_requests():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+    client.acquire_rate_limit = lambda *_args, **_kwargs: None
+    client.resource_belongs_to_account = lambda account_id, resource_type, resource_id: (
+        calls.append(("ownership", account_id, resource_type, resource_id)) or True
+    )
+
+    def request(method, endpoint, data=None, **kwargs):
+        calls.append((method, endpoint, data, kwargs.get("extra_params")))
+        if method == "GET" and endpoint.startswith("/act_"):
+            return {"data": [{"id": "cc-1", "name": "Paid Purchase"}]}
+        return {"id": "cc-1", "success": True}
+
+    client.request = request
+
+    assert client.list_custom_conversions("act_123", fields=["id", "name"], limit=10) == [
+        {"id": "cc-1", "name": "Paid Purchase"}
+    ]
+    assert client.get_custom_conversion("act_123", "cc-1", fields=["id"]) == {
+        "id": "cc-1", "success": True
+    }
+    assert client.update_custom_conversion("act_123", "cc-1", {
+        "name": "Paid Purchase v2", "default_conversion_value": 19.9,
+    }) == {
+        "success": True, "custom_conversion_id": "cc-1",
+        "result": {"id": "cc-1", "success": True},
+    }
+    assert client.delete_custom_conversion("act_123", "cc-1") == {
+        "success": True, "custom_conversion_id": "cc-1",
+    }
+
+    assert calls == [
+        ("GET", "/act_123/customconversions", None, {
+            "limit": 10, "fields": "id,name",
+        }),
+        ("ownership", "123", "custom_conversion", "cc-1"),
+        ("GET", "/cc-1", None, {"fields": "id"}),
+        ("ownership", "123", "custom_conversion", "cc-1"),
+        ("POST", "/cc-1", {
+            "name": "Paid Purchase v2", "default_conversion_value": 19.9,
+        }, None),
+        ("ownership", "123", "custom_conversion", "cc-1"),
+        ("DELETE", "/cc-1", None, None),
+    ]
+
+    with pytest.raises(ValueError, match="Unsupported Meta Custom Conversion"):
+        client.update_custom_conversion("123", "cc-1", {"rule": "not mutable"})
+
+
+def test_meta_custom_conversion_management_tools_publish_closed_lifecycle_contracts():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_meta_capability().register_tools()
+    }
+    assert {
+        "meta_list_custom_conversions", "meta_get_custom_conversion",
+        "meta_update_custom_conversion", "meta_delete_custom_conversion",
+    } <= definitions.keys()
+    assert definitions["meta_list_custom_conversions"].input_schema.required == [
+        "account_id"
+    ]
+    assert definitions["meta_update_custom_conversion"].input_schema.required == [
+        "account_id", "custom_conversion_id", "updates"
+    ]
+    assert definitions["meta_update_custom_conversion"].input_schema.properties[
+        "updates"
+    ]["additionalProperties"] is False
+    assert definitions["meta_update_custom_conversion"].live_support is False
+    assert validate_tool_input(
+        definitions["meta_update_custom_conversion"].input_schema,
+        {
+            "account_id": "act_1", "custom_conversion_id": "cc_1",
+            "updates": {"name": "Renamed"},
+        },
+    ) == []
+
+
 def test_meta_capi_events_validate_pixel_ownership_and_build_provider_envelope():
     client = MetaAPIClient({"access_token": "test"})
     calls = []

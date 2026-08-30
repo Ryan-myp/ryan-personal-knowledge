@@ -345,6 +345,43 @@ def meta_custom_conversion_schema() -> dict[str, Any]:
     }
 
 
+def meta_custom_conversion_management_schema() -> dict[str, Any]:
+    """Contracts for the verified Meta Custom Conversion node lifecycle.
+
+    Meta only exposes a small mutable field set for this resource.  Keeping
+    it separate from the create contract prevents create-only fields such as
+    ``pixel_id`` and ``rule`` from accidentally becoming update inputs.
+    """
+    return {
+        "properties": {
+            "account_id": _field("string", "Meta ad account ID"),
+            "custom_conversion_id": _field(
+                "string", "Meta Custom Conversion ID", minLength=1
+            ),
+            "fields": _field(
+                "array", "Optional Graph fields to return",
+                items={"type": "string", "minLength": 1},
+            ),
+            "limit": _field(
+                "integer", "Maximum number of Custom Conversions",
+                minimum=1, maximum=1000,
+            ),
+            "updates": _object({
+                "name": _field(
+                    "string", "Custom conversion name", minLength=1, maxLength=400
+                ),
+                "default_conversion_value": _field(
+                    "number", "Default conversion value", minimum=0
+                ),
+                "description": _field(
+                    "string", "Custom conversion description", maxLength=1000
+                ),
+            }, "Mutable Custom Conversion fields"),
+        },
+        "update_required": ["account_id", "custom_conversion_id", "updates"],
+    }
+
+
 def meta_lead_form_schema() -> dict[str, Any]:
     """Contracts for Page-scoped Meta Lead Ads Instant Forms.
 

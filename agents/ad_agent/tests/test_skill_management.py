@@ -174,6 +174,17 @@ def test_managed_skill_cannot_switch_runtime_tenant():
         manager.publish("tenant-b", "second-skill", "1.0.0", runtime=runtime)
 
 
+def test_separate_in_memory_stores_do_not_share_materialized_skill_cache():
+    first_store = AdAgentStore(":memory:")
+    second_store = AdAgentStore(":memory:")
+    first = ManagedSkillManager(first_store)
+    second = ManagedSkillManager(second_store)
+
+    assert first.root != second.root
+    first_store.close()
+    second_store.close()
+
+
 def test_publish_does_not_commit_when_runtime_activation_fails():
     store = AdAgentStore(":memory:")
     manager = ManagedSkillManager(store)

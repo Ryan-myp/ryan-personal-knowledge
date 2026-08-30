@@ -278,7 +278,23 @@ class ManagedSkillManager:
         else:
             db_path = getattr(store, "_db_path", ":memory:")
             if db_path == ":memory:":
-                base = Path(tempfile.gettempdir()) / "ad-agent-managed-skills"
+                # An in-memory SQLite store has no durable identity.  A
+                # process-wide materialization directory would therefore let
+                # unrelated stores collide on the same tenant/Skill/version
+                # path (and produce a false digest-mismatch failure).  Reuse
+                # one temporary root for managers sharing the same store,
+                # while isolating separate in-memory stores.
+                base_value = getattr(store, "_managed_skills_root", None)
+                if not base_value:
+                    base_value = tempfile.mkdtemp(prefix="ad-agent-managed-skills-")
+                    try:
+                        setattr(store, "_managed_skills_root", base_value)
+                    except Exception:
+                        # Backends with restricted attributes still get a
+                        # manager-local temporary root; durable backends use
+                        # the database-derived path below.
+                        pass
+                base = Path(base_value)
             else:
                 base = Path(str(db_path)).expanduser().resolve().parent / "managed-skills"
             self.root = base

@@ -291,8 +291,9 @@ class MetaAPIClient(BasePlatformClient):
         """Create a Meta Custom Conversion for an account-owned Pixel.
 
         Meta documents creation on ``/{ad-account}/customconversions``.  The
-        current endpoint does not support update/delete operations, so this
-        client intentionally exposes only the verified create operation.
+        generated Meta SDK also exposes the account edge and node-level
+        read/update/delete operations.  Keep those operations explicit here
+        rather than forwarding arbitrary Graph paths from a Tool.
         """
         account_id = self._clean_meta_id(account_id, "account_id")
         if not isinstance(conversion, dict):
@@ -338,6 +339,125 @@ class MetaAPIClient(BasePlatformClient):
         result = self.request("POST", f"/act_{account_id}/customconversions", data=data)
         resource_id = result.get("id") if isinstance(result, dict) else None
         return self.require_resource_id(resource_id, "Meta custom conversion create")
+
+    def list_custom_conversions(
+        self, account_id: str, fields: list[str] | None = None, limit: int = 25
+    ) -> list:
+        """List Custom Conversions owned by a Meta ad account."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 1000:
+            raise ValueError("custom conversion limit must be between 1 and 1000")
+        return self._list_graph_pages(
+            account_id,
+            f"/act_{account_id}/customconversions",
+            {
+                "limit": limit,
+                "fields": ",".join(fields) if fields else (
+                    "id,name,rule,advanced_rule,custom_event_type,action_source_type,"
+                    "default_conversion_value,description,event_source_id,creation_time"
+                ),
+            },
+        )
+
+    def get_custom_conversion(
+        self, account_id: str, custom_conversion_id: str, fields: list[str] | None = None
+    ) -> dict:
+        """Get one Custom Conversion after account ownership verification."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        custom_conversion_id = self._clean_meta_id(
+            custom_conversion_id, "custom_conversion_id"
+        )
+        if not self.resource_belongs_to_account(
+            account_id, "custom_conversion", custom_conversion_id
+        ):
+            raise PermissionError(
+                f"Meta custom conversion {custom_conversion_id} does not belong to account "
+                f"{account_id}"
+            )
+        params = {
+            "fields": ",".join(fields) if fields else (
+                "id,name,rule,advanced_rule,custom_event_type,action_source_type,"
+                "default_conversion_value,description,event_source_id,creation_time"
+            )
+        }
+        return self.require_resource_object(
+            self.request("GET", f"/{custom_conversion_id}", extra_params=params),
+            "Meta custom conversion get",
+        )
+
+    def update_custom_conversion(
+        self, account_id: str, custom_conversion_id: str, updates: dict
+    ) -> dict:
+        """Update the mutable Custom Conversion fields exposed by Meta."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        custom_conversion_id = self._clean_meta_id(
+            custom_conversion_id, "custom_conversion_id"
+        )
+        if not self.resource_belongs_to_account(
+            account_id, "custom_conversion", custom_conversion_id
+        ):
+            raise PermissionError(
+                f"Meta custom conversion {custom_conversion_id} does not belong to account "
+                f"{account_id}"
+            )
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("updates must be a non-empty object")
+        allowed = {"name", "default_conversion_value", "description"}
+        unknown = sorted(set(updates) - allowed)
+        if unknown:
+            raise ValueError(
+                "Unsupported Meta Custom Conversion update fields: "
+                + ", ".join(unknown)
+            )
+        data: dict[str, Any] = {}
+        if "name" in updates:
+            name = str(updates["name"] or "").strip()
+            if not name:
+                raise ValueError("Custom conversion name must be a non-empty string")
+            data["name"] = name
+        if "description" in updates:
+            description = updates["description"]
+            if not isinstance(description, str):
+                raise ValueError("Custom conversion description must be a string")
+            data["description"] = description
+        if "default_conversion_value" in updates:
+            try:
+                value = float(updates["default_conversion_value"])
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "default_conversion_value must be a non-negative number"
+                ) from exc
+            if value < 0:
+                raise ValueError("default_conversion_value must be non-negative")
+            data["default_conversion_value"] = value
+        if not data:
+            raise ValueError("updates must contain a supported non-null field")
+        self.acquire_rate_limit(self._get_account_limiter(account_id))
+        result = self.request("POST", f"/{custom_conversion_id}", data=data)
+        return {
+            "success": True,
+            "custom_conversion_id": custom_conversion_id,
+            "result": result,
+        }
+
+    def delete_custom_conversion(
+        self, account_id: str, custom_conversion_id: str
+    ) -> dict:
+        """Delete a Custom Conversion after account ownership verification."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        custom_conversion_id = self._clean_meta_id(
+            custom_conversion_id, "custom_conversion_id"
+        )
+        if not self.resource_belongs_to_account(
+            account_id, "custom_conversion", custom_conversion_id
+        ):
+            raise PermissionError(
+                f"Meta custom conversion {custom_conversion_id} does not belong to account "
+                f"{account_id}"
+            )
+        self.acquire_rate_limit(self._get_account_limiter(account_id))
+        self.request("DELETE", f"/{custom_conversion_id}")
+        return {"success": True, "custom_conversion_id": custom_conversion_id}
 
     @staticmethod
     def _clean_meta_id(value: Any, field_name: str) -> str:
@@ -1012,6 +1132,8 @@ class MetaAPIClient(BasePlatformClient):
             items = self.list_audiences(account_id)
         elif resource_type == "pixel":
             items = self.list_pixels(account_id)
+        elif resource_type == "custom_conversion":
+            items = self.list_custom_conversions(account_id)
         elif resource_type == "creative":
             items = self.list_creatives(account_id)
         elif resource_type == "catalog":
@@ -1027,6 +1149,7 @@ class MetaAPIClient(BasePlatformClient):
                 item.get("id"), item.get("campaign_id"), item.get("adset_id"),
                 item.get("ad_id"), item.get("audience_id"),
                 item.get("pixel_id"), item.get("catalog_id"),
+                item.get("custom_conversion_id"),
             }
             if resource_id in {str(value) for value in identifiers if value is not None}:
                 return True

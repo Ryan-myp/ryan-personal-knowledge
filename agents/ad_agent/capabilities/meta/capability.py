@@ -20,6 +20,7 @@ from .parameters import (
     meta_catalog_schema, meta_product_set_schema,
     meta_lead_form_schema,
     meta_custom_conversion_schema,
+    meta_custom_conversion_management_schema,
     meta_targeting_search_schema,
 )
 from ...api_clients.meta_client import MetaAPIClient
@@ -76,6 +77,10 @@ class MetaCapability(BaseCapability):
         "search_targeting": ["meta_search_targeting_options"],
         "get_pixel": ["meta_get_pixel"],
         "create_custom_conversion": ["meta_create_custom_conversion"],
+        "list_custom_conversions": ["meta_list_custom_conversions"],
+        "get_custom_conversion": ["meta_get_custom_conversion"],
+        "update_custom_conversion": ["meta_update_custom_conversion"],
+        "delete_custom_conversion": ["meta_delete_custom_conversion"],
         "send_conversion_events": [
             "meta_send_conversion_events", "meta_test_conversion_events"
         ],
@@ -111,6 +116,10 @@ class MetaCapability(BaseCapability):
         audience_properties = audience_schema["properties"]
         conversion_schema = meta_conversion_event_schema()
         custom_conversion_schema = meta_custom_conversion_schema()
+        custom_conversion_management_schema = meta_custom_conversion_management_schema()
+        custom_conversion_management_properties = (
+            custom_conversion_management_schema["properties"]
+        )
         test_conversion_schema = {
             **conversion_schema,
             "required": [*conversion_schema["required"], "test_event_code"],
@@ -251,6 +260,75 @@ class MetaCapability(BaseCapability):
                 argument_builder=lambda ctx, data: ((account(ctx, data), {
                     key: value for key, value in data.items() if key != "account_id"
                 }), {}),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api",
+                name="meta_list_custom_conversions",
+                description="查询 Meta 广告账户下的 Custom Conversion。",
+                method_name="list_custom_conversions", result_key="custom_conversions",
+                properties={
+                    key: custom_conversion_management_properties[key]
+                    for key in ("account_id", "fields", "limit")
+                },
+                required=["account_id"], action="list", resource_type="custom_conversion",
+                intent_types=["list_custom_conversions"],
+                traits=["read", "conversion", "custom_conversion"],
+                argument_builder=lambda ctx, data: ((account(ctx, data),), {
+                    "fields": data.get("fields"), "limit": data.get("limit", 25),
+                }),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api",
+                name="meta_get_custom_conversion",
+                description="查询 Meta Custom Conversion 详情。",
+                method_name="get_custom_conversion", result_key="custom_conversion",
+                properties={
+                    key: custom_conversion_management_properties[key]
+                    for key in ("account_id", "custom_conversion_id", "fields")
+                },
+                required=["account_id", "custom_conversion_id"], action="get",
+                resource_type="custom_conversion", resource_id_field="custom_conversion_id",
+                intent_types=["get_custom_conversion"],
+                traits=["read", "conversion", "custom_conversion"],
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["custom_conversion_id"]
+                ), {"fields": data.get("fields")}),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api",
+                name="meta_update_custom_conversion",
+                description="更新 Meta Custom Conversion 的可变字段；默认仅生成 dry-run 计划。",
+                method_name="update_custom_conversion", result_key="custom_conversion_result",
+                properties={
+                    key: custom_conversion_management_properties[key]
+                    for key in ("account_id", "custom_conversion_id", "updates")
+                },
+                required=custom_conversion_management_schema["update_required"],
+                provider_required=["custom_conversion_id", "updates"], action="update",
+                resource_type="custom_conversion", resource_id_field="custom_conversion_id",
+                intent_types=["update_custom_conversion"],
+                traits=["write", "conversion", "custom_conversion"], write=True,
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["custom_conversion_id"], data["updates"]
+                ), {}),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api",
+                name="meta_delete_custom_conversion",
+                description="删除 Meta Custom Conversion；默认仅生成 dry-run 计划。",
+                method_name="delete_custom_conversion", result_key="custom_conversion_result",
+                properties={
+                    key: custom_conversion_management_properties[key]
+                    for key in ("account_id", "custom_conversion_id")
+                },
+                required=["account_id", "custom_conversion_id"],
+                provider_required=["custom_conversion_id"], action="delete",
+                resource_type="custom_conversion", resource_id_field="custom_conversion_id",
+                intent_types=["delete_custom_conversion"],
+                traits=["write", "conversion", "custom_conversion"], write=True,
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["custom_conversion_id"]
+                ), {}),
             ),
             method_tool(
                 platform="meta", skill="meta-marketing-api", name="meta_list_lead_forms",

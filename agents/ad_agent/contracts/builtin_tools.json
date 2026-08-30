@@ -1,5 +1,5 @@
 {
-  "digest": "23b2d69db0b5f69b797f28d96e2cbd66ef2116293f3159149a85f7e13570c008",
+  "digest": "cc696d8814c951adad6250c4a3778d28acd312e95f8ea403619d301d731ec503",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -7576,8 +7576,8 @@
       ]
     },
     "meta": {
-      "digest": "89e800ccbce1bd5c7212d03c7d8af690c9c70947b18e967c1bc23ed887aca4bf",
-      "tool_count": 59,
+      "digest": "32fc1a210ebb5dac3f9cfea38dcc70e7e8c70ee6022b0b0cc636ef612515607e",
+      "tool_count": 63,
       "tools": [
         {
           "action": "boost",
@@ -9838,6 +9838,61 @@
         {
           "action": "delete",
           "contract_version": "1.4.0",
+          "description": "删除 Meta Custom Conversion；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "custom_conversion_id": {
+                "description": "Meta Custom Conversion ID",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "custom_conversion_id"
+            ],
+            "required": [
+              "account_id",
+              "custom_conversion_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_custom_conversion"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_delete_custom_conversion",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "custom_conversion_id",
+          "resource_type": "custom_conversion",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "conversion",
+            "custom_conversion"
+          ]
+        },
+        {
+          "action": "delete",
+          "contract_version": "1.4.0",
           "description": "删除 Meta 商品集；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -10446,6 +10501,67 @@
         {
           "action": "get",
           "contract_version": "1.4.0",
+          "description": "查询 Meta Custom Conversion 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "custom_conversion_id": {
+                "description": "Meta Custom Conversion ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "fields": {
+                "description": "Optional Graph fields to return",
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "custom_conversion_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_custom_conversion"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_get_custom_conversion",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "custom_conversion_id",
+          "resource_type": "custom_conversion",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "conversion",
+            "custom_conversion"
+          ]
+        },
+        {
+          "action": "get",
+          "contract_version": "1.4.0",
           "description": "查询 Meta Lead Ads Instant Form 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -10965,6 +11081,67 @@
           "traits": [
             "read",
             "creative"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.4.0",
+          "description": "查询 Meta 广告账户下的 Custom Conversion。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "fields": {
+                "description": "Optional Graph fields to return",
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "limit": {
+                "description": "Maximum number of Custom Conversions",
+                "maximum": 1000,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_custom_conversions"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_list_custom_conversions",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "custom_conversion",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "conversion",
+            "custom_conversion"
           ]
         },
         {
@@ -12283,6 +12460,86 @@
           "traits": [
             "write",
             "creative"
+          ]
+        },
+        {
+          "action": "update",
+          "contract_version": "1.4.0",
+          "description": "更新 Meta Custom Conversion 的可变字段；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "custom_conversion_id": {
+                "description": "Meta Custom Conversion ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Mutable Custom Conversion fields",
+                "properties": {
+                  "default_conversion_value": {
+                    "description": "Default conversion value",
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "description": {
+                    "description": "Custom conversion description",
+                    "maxLength": 1000,
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "Custom conversion name",
+                    "maxLength": 400,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "custom_conversion_id",
+              "updates"
+            ],
+            "required": [
+              "account_id",
+              "custom_conversion_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_custom_conversion"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_update_custom_conversion",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "custom_conversion_id",
+          "resource_type": "custom_conversion",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "conversion",
+            "custom_conversion"
           ]
         },
         {
@@ -20491,27 +20748,31 @@
       },
       {
         "action": "list",
-        "gap": "当前公开 CustomConversion edge 文档仅确认创建操作，列表读取尚未完成版本化验证",
+        "method": "list_custom_conversions",
+        "notes": "Meta SDK v19.0 account edge contract",
         "resource": "custom_conversion",
-        "status": "planned"
+        "status": "implemented"
       },
       {
         "action": "get",
-        "gap": "当前公开 CustomConversion edge 文档仅确认创建操作，详情读取尚未完成版本化验证",
+        "method": "get_custom_conversion",
+        "notes": "Meta SDK v19.0 node contract",
         "resource": "custom_conversion",
-        "status": "planned"
+        "status": "implemented"
       },
       {
         "action": "update",
-        "gap": "当前公开 CustomConversion edge 文档明确未确认更新操作",
+        "method": "update_custom_conversion",
+        "notes": "Only name/default_conversion_value/description are mutable",
         "resource": "custom_conversion",
-        "status": "planned"
+        "status": "implemented"
       },
       {
         "action": "delete",
-        "gap": "当前公开 CustomConversion edge 文档明确未确认删除操作",
+        "method": "delete_custom_conversion",
+        "notes": "Meta SDK v19.0 node contract",
         "resource": "custom_conversion",
-        "status": "planned"
+        "status": "implemented"
       },
       {
         "action": "event",
@@ -21041,5 +21302,5 @@
       ]
     }
   },
-  "tool_count": 221
+  "tool_count": 225
 }

@@ -45,11 +45,16 @@ def test_capability_audit_includes_provider_owned_api_surface_and_planned_gaps()
         entry["resource"] == "pixel"
         for entry in meta["api_surface_planned"]
     )
-    assert any(
-        entry["resource"] == "custom_conversion"
-        and entry["action"] == "update"
-        for entry in meta["api_surface_planned"]
-    )
+    custom_conversion_actions = {
+        entry["action"]
+        for method in (
+            "create_custom_conversion", "list_custom_conversions",
+            "get_custom_conversion", "update_custom_conversion",
+            "delete_custom_conversion",
+        )
+        for entry in meta["provider_method_coverage"][method]["surface_entries"]
+    }
+    assert custom_conversion_actions == {"create", "list", "get", "update", "delete"}
     assert report["surface_gaps"] == {
         platform: [] for platform in report["platforms"]
     }
