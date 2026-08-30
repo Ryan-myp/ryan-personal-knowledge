@@ -36,6 +36,13 @@ TIKTOK_GENDERS = ["GENDER_UNLIMITED", "GENDER_MALE", "GENDER_FEMALE"]
 TIKTOK_OPERATING_SYSTEMS = ["ANDROID", "IOS"]
 TIKTOK_AD_FORMATS = ["SINGLE_VIDEO", "SINGLE_IMAGE", "CAROUSEL", "SPARK_AD"]
 TIKTOK_AUDIENCE_TYPES = ["CUSTOM", "CUSTOM_AUDIENCE", "LOOKALIKE", "LOOKALIKE_AUDIENCE"]
+TIKTOK_AUDIENCE_CALCULATE_TYPES = [
+    "EMAIL_SHA256", "FIRST_MD5", "FIRST_SHA256", "GAID_MD5", "GAID_SHA256",
+    "IDFA_MD5", "IDFA_SHA256", "MAID_MD5", "MAID_SHA256", "MULTIPLE_TYPES",
+    "PHONE_SHA256",
+]
+TIKTOK_AUDIENCE_ACTIONS = ["REPLACE", "APPEND", "REMOVE"]
+TIKTOK_AUDIENCE_SUB_TYPES = ["NORMAL", "REACH_FREQUENCY"]
 
 
 def _field(
@@ -110,19 +117,81 @@ def tiktok_campaign_schema() -> dict[str, Any]:
 
 
 def tiktok_audience_schema() -> dict[str, Any]:
-    """Schema for provider-managed custom/lookalike audience creation."""
+    """Schema for TikTok's customer-file custom audience creation."""
     return {
-        "required": ["account_id", "name", "audience_type"],
-        "provider_required": ["name", "audience_type"],
+        "required": ["account_id", "name", "calculate_type", "file_paths"],
+        "provider_required": ["name", "calculate_type", "file_paths"],
         "properties": {
             "account_id": _field("string", "TikTok advertiser ID"),
             "name": _field("string", "Audience name", minLength=1),
-            "audience_type": _field("string", "Audience type", enum=TIKTOK_AUDIENCE_TYPES),
-            "rule": _field("object", "Event/source rule for a custom audience", additionalProperties=True),
-            "retention_in_days": _field("integer", "Retention window in days", minimum=1, maximum=540),
-            "source_audience_id": _field("string", "Source audience ID for a lookalike"),
-            "country_codes": _field("array", "Lookalike target countries", items={"type": "string", "minLength": 2}),
-            "ratio": _field("number", "Lookalike ratio", minimum=0.01, maximum=0.20),
+            "calculate_type": _field(
+                "string", "Encryption type matching the uploaded file",
+                enum=TIKTOK_AUDIENCE_CALCULATE_TYPES,
+            ),
+            "file_paths": _field(
+                "array", "TikTok uploaded file paths", minItems=1, maxItems=500,
+                items={"type": "string", "minLength": 16, "maxLength": 16},
+            ),
+            "retention_in_days": _field("integer", "Retention window in days", minimum=1, maximum=365),
+            "audience_sub_type": _field("string", "Audience subtype", enum=TIKTOK_AUDIENCE_SUB_TYPES),
+            "audience_enhancement": _field("boolean", "Enable audience enhancement"),
+        },
+    }
+
+
+def tiktok_audience_update_schema() -> dict[str, Any]:
+    """Schema for TikTok's official custom-audience update endpoint."""
+    return {
+        "required": ["account_id", "audience_id", "updates"],
+        "provider_required": ["updates"],
+        "properties": {
+            "account_id": _field("string", "TikTok advertiser ID"),
+            "audience_id": _field("string", "TikTok custom audience ID"),
+            "updates": _field(
+                "object", "Audience name or encrypted file update",
+                properties={
+                    "custom_audience_name": _field(
+                        "string", "New audience name", minLength=1, maxLength=128,
+                    ),
+                    "file_paths": _field(
+                        "array", "TikTok uploaded file paths", minItems=1, maxItems=50,
+                        items={"type": "string", "minLength": 16, "maxLength": 16},
+                    ),
+                    "action": _field(
+                        "string", "File operation", enum=TIKTOK_AUDIENCE_ACTIONS,
+                    ),
+                    "audience_enhancement": _field(
+                        "boolean", "Enable audience enhancement",
+                    ),
+                    "audience_sub_type": _field(
+                        "string", "Audience subtype", enum=["REACH_FREQUENCY"],
+                    ),
+                    "context_info": _field(
+                        "object", "TikTok request context", additionalProperties=False,
+                    ),
+                },
+                additionalProperties=False,
+            ),
+        },
+    }
+
+
+def tiktok_audience_file_upload_schema() -> dict[str, Any]:
+    """Schema for the multipart upload step preceding audience create/update."""
+    return {
+        "required": ["account_id", "file_path", "calculate_type"],
+        "provider_required": ["file_path", "calculate_type"],
+        "properties": {
+            "account_id": _field("string", "TikTok advertiser ID"),
+            "file_path": _field(
+                "string", "Local CSV/TXT file path; contents are never put in model context",
+                minLength=1,
+            ),
+            "calculate_type": _field(
+                "string", "Encryption type matching the uploaded file",
+                enum=TIKTOK_AUDIENCE_CALCULATE_TYPES,
+            ),
+            "file_name": _field("string", "Optional upload filename", maxLength=255),
         },
     }
 

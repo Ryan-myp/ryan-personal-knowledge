@@ -8,6 +8,8 @@ import logging
 import time
 import json
 import re
+import hashlib
+from pathlib import Path
 from datetime import date, timedelta
 from typing import Any, Optional
 import requests
@@ -94,14 +96,23 @@ class TikTokAPIClient(BasePlatformClient):
                 break
             envelope = response.get("data", {})
             payload = self._data_section(envelope)
-            if not isinstance(payload, dict):
-                raise APIError(
-                    f"TikTok {endpoint} returned an invalid list envelope"
+            if isinstance(payload, list):
+                # Current v1.3 DMP endpoints return ``data`` as the list and
+                # ``page_info`` as a sibling of it.
+                page_items = payload
+                page_info = (
+                    envelope.get("page_info", {})
+                    if isinstance(envelope, dict) else {}
                 )
-            page_items = payload.get("list", []) if isinstance(payload, dict) else []
+            elif isinstance(payload, dict):
+                # Keep the parser compatible with older list-shaped endpoint
+                # responses that nest items under ``list``.
+                page_items = payload.get("list", [])
+                page_info = payload.get("page_info", {})
+            else:
+                raise APIError(f"TikTok {endpoint} returned an invalid list envelope")
             if isinstance(page_items, list):
                 items.extend(page_items)
-            page_info = payload.get("page_info", {}) if isinstance(payload, dict) else {}
             if not isinstance(page_info, dict):
                 break
             try:
@@ -113,17 +124,22 @@ class TikTokAPIClient(BasePlatformClient):
         return items
     
     def _do_request(self, method: str, url: str, **kwargs) -> dict:
-        headers = {
-            'Access-Token': self.access_token,
-            'Content-Type': 'application/json',
-            **kwargs.get('headers', {}),
-        }
+        is_multipart = bool(kwargs.get('files'))
+        headers = {'Access-Token': self.access_token, **kwargs.get('headers', {})}
+        if not is_multipart:
+            headers.setdefault('Content-Type', 'application/json')
         
         try:
             if method == 'GET':
                 resp = requests.get(url, headers=headers, params=kwargs.get('params'), timeout=self.http_timeout())
             elif method == 'POST':
-                resp = requests.post(url, headers=headers, json=kwargs.get('data'), timeout=self.http_timeout())
+                if is_multipart:
+                    resp = requests.post(
+                        url, headers=headers, data=kwargs.get('data'),
+                        files=kwargs.get('files'), timeout=self.http_timeout(),
+                    )
+                else:
+                    resp = requests.post(url, headers=headers, json=kwargs.get('data'), timeout=self.http_timeout())
             elif method == 'DELETE':
                 resp = requests.delete(url, headers=headers, timeout=self.http_timeout())
             else:
@@ -736,40 +752,80 @@ class TikTokAPIClient(BasePlatformClient):
     
     # ==================== 人群定向查询 ====================
     
-    def list_audiences(self, advertiser_id: str, filtering: list = None, page_size: int = 20) -> list:
+    def list_audiences(
+        self, advertiser_id: str, custom_audience_ids: list[str] = None,
+        page_size: int = 20,
+    ) -> list:
         """获取人群包列表"""
-        self.acquire_rate_limit(self._rate_limiter)
         data = {
             'advertiser_id': str(advertiser_id),
             'page_size': page_size,
         }
-        if filtering:
-            data['filtering'] = filtering
-        result = self.request('GET', 'audience/get/', params=data)
-        payload = self._data_section(result)
-        audiences = []
-        if isinstance(payload, dict):
-            audiences = payload.get('audience_list', payload.get('list', []))
-        return audiences
-    
+        if custom_audience_ids:
+            data['custom_audience_ids'] = [str(item) for item in custom_audience_ids]
+        return self._list_pages('dmp/custom_audience/list/', data)
+
     def get_audience(self, advertiser_id: str, audience_id: str) -> dict:
         """获取人群包详情"""
-        filtering = [{'field': 'AUDIENCE_IDS', 'operator': 'IN', 'values': [int(audience_id)]}]
-        result = self.list_audiences(advertiser_id, filtering=filtering)
-        return result[0] if result else {}
+        advertiser_id = str(advertiser_id or '').strip()
+        audience_id = str(audience_id or '').strip()
+        if not advertiser_id.isdigit() or not audience_id.isdigit():
+            raise ValueError("advertiser_id and audience_id must contain digits only")
+        self.acquire_rate_limit(self._rate_limiter)
+        result = self.request(
+            'GET', 'dmp/custom_audience/get/',
+            params={
+                'advertiser_id': advertiser_id,
+                'custom_audience_ids': [audience_id],
+            },
+        )
+        payload = self._data_section(result)
+        if isinstance(payload, list) and payload:
+            first = payload[0]
+            if isinstance(first, dict) and isinstance(first.get('audience_details'), list):
+                return first['audience_details'][0] if first['audience_details'] else {}
+            return first if isinstance(first, dict) else {}
+        if isinstance(payload, dict):
+            details = payload.get('audience_details')
+            if isinstance(details, list) and details:
+                return details[0]
+            return payload
+        return {}
 
     def create_audience(self, advertiser_id: str, audience: dict) -> str:
-        """创建 TikTok 自定义或相似受众。"""
+        """Create a TikTok customer-file custom audience."""
         if not isinstance(audience, dict):
             raise ValueError("audience must be an object")
-        name = str(audience.get("name") or "").strip()
-        audience_type = str(audience.get("audience_type") or "").strip().upper()
-        if not name or not audience_type:
-            raise ValueError("audience name and audience_type are required")
-        if audience_type not in {"CUSTOM", "CUSTOM_AUDIENCE", "LOOKALIKE", "LOOKALIKE_AUDIENCE"}:
-            raise ValueError("unsupported TikTok audience_type")
-        data = {"advertiser_id": str(advertiser_id), **audience}
-        result = self.request("POST", "audience/create/", data=data)
+        advertiser_id = str(advertiser_id or "").strip()
+        if not advertiser_id.isdigit():
+            raise ValueError("advertiser_id must contain digits only")
+        name = str(audience.get("name") or audience.get("custom_audience_name") or "").strip()
+        calculate_type = str(audience.get("calculate_type") or "").strip().upper()
+        file_paths = audience.get("file_paths")
+        calculate_type_values = {
+            "EMAIL_SHA256": "8", "FIRST_MD5": "7", "FIRST_SHA256": "6",
+            "GAID_MD5": "13", "GAID_SHA256": "16", "IDFA_MD5": "12",
+            "IDFA_SHA256": "15", "MAID_MD5": "7", "MAID_SHA256": "6",
+            "MULTIPLE_TYPES": "100", "PHONE_SHA256": "9",
+        }
+        if not name or len(name) > 128:
+            raise ValueError("audience name must contain 1-128 characters")
+        if calculate_type not in calculate_type_values:
+            raise ValueError("unsupported TikTok calculate_type")
+        if not isinstance(file_paths, list) or not file_paths or len(file_paths) > 500:
+            raise ValueError("file_paths must contain 1-500 uploaded file paths")
+        if any(not isinstance(path, str) or not re.fullmatch(r"[A-Za-z0-9_-]{16}", path) for path in file_paths):
+            raise ValueError("file_paths must contain TikTok file paths returned by upload")
+        data = {
+            "advertiser_id": advertiser_id,
+            "custom_audience_name": name,
+            "calculate_type": calculate_type_values[calculate_type],
+            "file_paths": file_paths,
+        }
+        for key in ("retention_in_days", "audience_sub_type", "audience_enhancement"):
+            if audience.get(key) is not None:
+                data[key] = audience[key]
+        result = self.request("POST", "dmp/custom_audience/create/", data=data)
         payload = self._data_section(result)
         resource_id = None
         if isinstance(payload, dict):
@@ -780,6 +836,114 @@ class TikTokAPIClient(BasePlatformClient):
             )
         return self.require_resource_id(resource_id, "TikTok audience create")
 
+    def update_audience(
+        self, advertiser_id: str, audience_id: str, updates: dict,
+    ) -> dict:
+        """Update a TikTok custom audience name or uploaded file set.
+
+        TikTok requires file operations to reference paths returned by
+        ``upload_audience_file``. Raw customer identifiers are never accepted
+        at this provider boundary.
+        """
+        advertiser_id = str(advertiser_id or "").strip()
+        audience_id = str(audience_id or "").strip()
+        if not advertiser_id.isdigit() or not audience_id.isdigit():
+            raise ValueError("advertiser_id and audience_id must contain digits only")
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("updates must be a non-empty object")
+        allowed = {
+            "custom_audience_name", "file_paths", "action",
+            "audience_enhancement", "audience_sub_type", "context_info",
+        }
+        unknown = set(updates) - allowed
+        if unknown:
+            raise ValueError(f"Unsupported TikTok audience update fields: {sorted(unknown)}")
+        payload = {key: value for key, value in updates.items() if value is not None}
+        has_name = payload.get("custom_audience_name") not in (None, "")
+        file_paths = payload.get("file_paths")
+        has_files = file_paths not in (None, [], "")
+        if not has_name and not has_files:
+            raise ValueError("updates requires custom_audience_name or file_paths")
+        if has_name:
+            name = str(payload["custom_audience_name"]).strip()
+            if not name or len(name) > 128:
+                raise ValueError("custom_audience_name must contain 1-128 characters")
+            payload["custom_audience_name"] = name
+        if has_files:
+            if not isinstance(file_paths, list) or not file_paths or len(file_paths) > 50:
+                raise ValueError("file_paths must contain 1-50 uploaded file paths")
+            if any(not isinstance(path, str) or not re.fullmatch(r"[A-Za-z0-9_-]{16}", path) for path in file_paths):
+                raise ValueError("file_paths must contain TikTok file paths returned by upload")
+            payload["file_paths"] = file_paths
+            action = str(payload.get("action", "REPLACE")).upper()
+            if action not in {"REPLACE", "APPEND", "REMOVE"}:
+                raise ValueError("action must be REPLACE, APPEND or REMOVE")
+            payload["action"] = action
+        self.acquire_rate_limit(self._rate_limiter)
+        result = self.request(
+            "POST", "dmp/custom_audience/update/",
+            data={
+                "advertiser_id": advertiser_id,
+                "custom_audience_id": audience_id,
+                **payload,
+            },
+        )
+        return result if isinstance(result, dict) else {"result": result}
+
+    def upload_audience_file(
+        self, advertiser_id: str, file_path: str, calculate_type: str,
+        file_name: str = None,
+    ) -> dict:
+        """Upload an encrypted CSV/TXT file and return TikTok's file_path."""
+        advertiser_id = str(advertiser_id or "").strip()
+        if not advertiser_id.isdigit():
+            raise ValueError("advertiser_id must contain digits only")
+        calculate_type_values = {
+            "EMAIL_SHA256": "8", "FIRST_MD5": "7", "FIRST_SHA256": "6",
+            "GAID_MD5": "13", "GAID_SHA256": "16", "IDFA_MD5": "12",
+            "IDFA_SHA256": "15", "MAID_MD5": "7", "MAID_SHA256": "6",
+            "MULTIPLE_TYPES": "100", "PHONE_SHA256": "9",
+        }
+        calculate_key = str(calculate_type or "").strip().upper()
+        if calculate_key not in calculate_type_values:
+            raise ValueError(
+                "calculate_type must be one of "
+                + ", ".join(sorted(calculate_type_values))
+            )
+        path = Path(str(file_path or "")).expanduser()
+        if not path.is_file():
+            raise ValueError("file_path must point to an existing file")
+        if path.suffix.lower() not in {".csv", ".txt"}:
+            raise ValueError("file_path must use a .csv or .txt extension")
+        if path.stat().st_size <= 0:
+            raise ValueError("audience upload file must not be empty")
+        if path.stat().st_size > 100 * 1024 * 1024:
+            raise ValueError("audience upload file cannot exceed 100 MiB")
+        digest = hashlib.md5()
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        upload_name = str(file_name or path.name).strip()
+        if not upload_name or Path(upload_name).name != upload_name:
+            raise ValueError("file_name must be a simple filename")
+        if Path(upload_name).suffix.lower() not in {".csv", ".txt"}:
+            raise ValueError("file_name must use a .csv or .txt extension")
+        self.acquire_rate_limit(self._rate_limiter)
+        with path.open("rb") as stream:
+            result = self.request(
+                "POST", "dmp/custom_audience/file/upload/",
+                data={
+                    "advertiser_id": advertiser_id,
+                    "calculate_type": calculate_type_values[calculate_key],
+                    "file_name": upload_name,
+                    "file_signature": digest.hexdigest(),
+                },
+                files={"file": (upload_name, stream, "text/plain")},
+            )
+        if isinstance(result, dict):
+            return result
+        return {"result": result}
+
     def delete_audience(self, advertiser_id: str, audience_id: str) -> dict:
         """删除 TikTok 自定义或相似受众。"""
         advertiser_id = str(advertiser_id or "").strip()
@@ -787,8 +951,8 @@ class TikTokAPIClient(BasePlatformClient):
         if not advertiser_id.isdigit() or not audience_id.isdigit():
             raise ValueError("advertiser_id and audience_id must contain digits only")
         self.request(
-            "POST", "audience/delete/",
-            data={"advertiser_id": advertiser_id, "audience_id": audience_id},
+            "POST", "dmp/custom_audience/delete/",
+            data={"advertiser_id": advertiser_id, "custom_audience_ids": [audience_id]},
         )
         return {"success": True, "audience_id": audience_id}
     

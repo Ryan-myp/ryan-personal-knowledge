@@ -626,7 +626,8 @@ def test_tiktok_audience_delete_tool_calls_provider_method():
     assert definition.action == "delete"
     assert definition.resource_type == "audience"
     assert calls[-1] == (
-        "POST", "audience/delete/", {"advertiser_id": "123", "audience_id": "456"}
+        "POST", "dmp/custom_audience/delete/",
+        {"advertiser_id": "123", "custom_audience_ids": ["456"]},
     )
 
 
@@ -663,21 +664,110 @@ def test_tiktok_audience_creation_builds_provider_envelope():
         calls.append((method, endpoint, data)) or {"audience_id": "aud-1"}
     )
 
-    assert client.create_audience("adv-1", {
+    assert client.create_audience("123", {
         "name": "Purchasers 30D",
-        "audience_type": "CUSTOM_AUDIENCE",
-        "rule": {"event_sources": ["PIXEL_ID"]},
+        "calculate_type": "EMAIL_SHA256",
+        "file_paths": ["abcdefghijklmnop"],
         "retention_in_days": 30,
     }) == "aud-1"
     assert calls == [(
-        "POST", "audience/create/", {
-            "advertiser_id": "adv-1",
-            "name": "Purchasers 30D",
-            "audience_type": "CUSTOM_AUDIENCE",
-            "rule": {"event_sources": ["PIXEL_ID"]},
+        "POST", "dmp/custom_audience/create/", {
+            "advertiser_id": "123",
+            "custom_audience_name": "Purchasers 30D",
+            "calculate_type": "8",
+            "file_paths": ["abcdefghijklmnop"],
             "retention_in_days": 30,
         },
     )]
+
+
+def test_tiktok_audience_reads_use_official_dmp_endpoints():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+
+    def request_raw(method, endpoint, **kwargs):
+        calls.append((method, endpoint, kwargs))
+        return {
+            "status_code": 200,
+            "data": {
+                "code": 0,
+                "data": [{"audience_id": "456", "name": "Purchasers"}],
+                "page_info": {"total_page": 1},
+            },
+        }
+
+    client.request_raw = request_raw
+    assert client.list_audiences("123", page_size=100) == [
+        {"audience_id": "456", "name": "Purchasers"}
+    ]
+    assert calls[0][0] == "GET"
+    assert calls[0][1].endswith("/dmp/custom_audience/list/")
+
+    detail_calls = []
+    client.request = lambda method, endpoint, params=None, **kwargs: (
+        detail_calls.append((method, endpoint, params))
+        or [{"audience_details": [{"audience_id": "456", "status": "READY"}]}]
+    )
+    assert client.get_audience("123", "456") == {
+        "audience_id": "456", "status": "READY"
+    }
+    assert detail_calls == [(
+        "GET", "dmp/custom_audience/get/",
+        {"advertiser_id": "123", "custom_audience_ids": ["456"]},
+    )]
+
+
+def test_tiktok_audience_update_builds_official_file_operation_payload():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        calls.append((method, endpoint, data)) or {"updated": True}
+    )
+
+    result = client.update_audience("123", "456", {
+        "file_paths": ["abcdefghijklmnop"],
+        "action": "APPEND",
+    })
+
+    assert result == {"updated": True}
+    assert calls == [(
+        "POST", "dmp/custom_audience/update/", {
+            "advertiser_id": "123",
+            "custom_audience_id": "456",
+            "file_paths": ["abcdefghijklmnop"],
+            "action": "APPEND",
+        },
+    )]
+    with pytest.raises(ValueError, match="custom_audience_name or file_paths"):
+        client.update_audience("123", "456", {"action": "REPLACE"})
+
+
+def test_tiktok_audience_file_upload_hashes_file_and_uses_multipart_contract(tmp_path):
+    client = TikTokAPIClient({"access_token": "test"})
+    source = tmp_path / "audience.csv"
+    source.write_bytes(b"email\n" + b"a" * 64 + b"\n")
+    calls = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        calls.append((method, endpoint, data, kwargs)) or {"file_path": "abcdefghijklmnop"}
+    )
+
+    result = client.upload_audience_file("123", str(source), "EMAIL_SHA256")
+
+    assert result == {"file_path": "abcdefghijklmnop"}
+    method, endpoint, data, kwargs = calls[0]
+    assert (method, endpoint) == (
+        "POST", "dmp/custom_audience/file/upload/"
+    )
+    assert data["advertiser_id"] == "123"
+    assert data["calculate_type"] == "8"
+    assert data["file_signature"] == "1ca580e2a89424daff7196518f934ffa"
+    assert kwargs["files"]["file"][0] == "audience.csv"
+    assert kwargs["files"]["file"][1].closed is True
+
+    with pytest.raises(ValueError, match=".csv or .txt"):
+        bad = tmp_path / "audience.json"
+        bad.write_text("{}", encoding="utf-8")
+        client.upload_audience_file("123", str(bad), "EMAIL_SHA256")
 
 
 def test_google_campaign_criteria_builds_targeting_mutations():

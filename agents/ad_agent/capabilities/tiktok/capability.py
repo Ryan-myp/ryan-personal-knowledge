@@ -42,6 +42,8 @@ from .parameters import (
     tiktok_app_ad_schema,
     tiktok_ad_format_catalog,
     tiktok_audience_schema,
+    tiktok_audience_update_schema,
+    tiktok_audience_file_upload_schema,
     tiktok_targeting_update_schema,
 )
 from ..update_contracts import tiktok_updates
@@ -95,6 +97,8 @@ class TikTokCapability(BaseCapability):
         "get_campaign_report": ["tiktok_get_campaign_report"], "get_adgroup_report": ["tiktok_get_adgroup_report"],
         "list_audiences": ["tiktok_list_audiences"], "get_audience": ["tiktok_get_audience"],
         "create_audience": ["tiktok_create_audience"],
+        "update_audience": ["tiktok_update_audience"],
+        "upload_audience_file": ["tiktok_upload_audience_file"],
         "delete_audience": ["tiktok_delete_audience"],
         "list_interest_categories": ["tiktok_list_interest_categories"],
         "get_interest_category": ["tiktok_get_interest_category"], "list_locations": ["tiktok_list_locations"],
@@ -134,7 +138,7 @@ class TikTokCapability(BaseCapability):
             ),
             method_tool(
                 platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_create_audience",
-                description="创建 TikTok 自定义或相似受众；默认仅生成 dry-run 计划。",
+                description="通过已上传的加密文件创建 TikTok Custom Audience；默认仅生成 dry-run 计划。",
                 method_name="create_audience", result_key="audience_id",
                 properties=tiktok_audience_schema()["properties"],
                 required=tiktok_audience_schema()["required"],
@@ -147,7 +151,7 @@ class TikTokCapability(BaseCapability):
             ),
             method_tool(
                 platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_delete_audience",
-                description="删除 TikTok Custom 或 Lookalike Audience；默认仅生成 dry-run 计划。",
+                description="删除 TikTok Custom Audience；默认仅生成 dry-run 计划。",
                 method_name="delete_audience", result_key="audience_result",
                 properties={
                     "account_id": {"type": "string", "description": "TikTok advertiser ID"},
@@ -157,6 +161,34 @@ class TikTokCapability(BaseCapability):
                 resource_id_field="audience_id", intent_types=["delete_audience"],
                 traits=["write", "audience"], write=True,
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["audience_id"]), {}),
+            ),
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_update_audience",
+                description="更新 TikTok Custom Audience 名称或已上传文件；默认仅生成 dry-run 计划。",
+                method_name="update_audience", result_key="audience_result",
+                properties=tiktok_audience_update_schema()["properties"],
+                required=tiktok_audience_update_schema()["required"],
+                provider_required=tiktok_audience_update_schema()["provider_required"],
+                action="update", resource_type="audience", resource_id_field="audience_id",
+                intent_types=["update_audience"], traits=["write", "audience"],
+                write=True, live_support=False,
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["audience_id"], data["updates"]
+                ), {}),
+            ),
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_upload_audience_file",
+                description="上传 TikTok Custom Audience 的加密 CSV/TXT 文件；默认仅生成 dry-run 计划。",
+                method_name="upload_audience_file", result_key="audience_file",
+                properties=tiktok_audience_file_upload_schema()["properties"],
+                required=tiktok_audience_file_upload_schema()["required"],
+                provider_required=tiktok_audience_file_upload_schema()["provider_required"],
+                action="upload", resource_type="audience", resource_id_field=None,
+                intent_types=["upload_audience_file"], traits=["write", "audience", "source_upload"],
+                write=True, live_support=False,
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["file_path"], data["calculate_type"], data.get("file_name")
+                ), {}),
             ),
             method_tool(
                 platform="tiktok", skill="tiktok-ads-api-expert",
