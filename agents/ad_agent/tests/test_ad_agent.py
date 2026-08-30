@@ -721,8 +721,21 @@ class TestSafeWriteExecution:
             "创建 Meta 和 Google 广告系列",
             user_id="u1",
             platform_params={
-                "meta": {"account_id": "m1", "name": "Meta campaign"},
-                "google": {"customer_id": "g1", "campaign_name": "Google campaign"},
+                "meta": {
+                    "account_id": "m1", "name": "Meta campaign",
+                    "objective": "OUTCOME_SALES", "special_ad_categories": "NONE",
+                    "budget": 100, "optimization_goal": "OFFSITE_CONVERSIONS",
+                    "billing_event": "IMPRESSIONS",
+                    "targeting": {"geo_locations": {"countries": ["US"]}},
+                    "promoted_object": {"pixel_id": "px1"}, "creative": {"id": "cr1"},
+                },
+                "google": {
+                    "customer_id": "g1", "campaign_name": "Google campaign",
+                    "advertising_channel_type": "SEARCH",
+                    "bidding_strategy": "MAXIMIZE_CONVERSIONS", "budget": 100,
+                    "type": "SEARCH_STANDARD", "final_url": "https://example.com",
+                    "headlines": ["a", "b", "c"], "descriptions": ["a", "b"],
+                },
             },
         )
         assert all(item["success"] for item in result["results"])

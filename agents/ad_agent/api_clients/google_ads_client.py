@@ -8,6 +8,8 @@ api_clients/google_ads_client.py - Google Ads API 生产级客户端（HTTP 直�
 Customer → Campaign → AdGroup → Ad
 """
 
+from __future__ import annotations
+
 import logging
 import time
 import json

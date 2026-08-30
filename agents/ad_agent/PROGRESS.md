@@ -106,8 +106,8 @@ ad_agent/
 ├── logger/                  # 日志系统
 │   └── __init__.py          # JSON 格式化器
 │
-├── user_skills/             # 用户层 Skill
-│   └── orchestrator.py      # 跨平台编排 Skill
+├── user_skills/             # 标准用户 Skill（知识/SOP/参考/评测）
+│   └── README.md             # 不提供第二套执行编排器
 │
 └── tests/                   # 测试
     ├── test_ad_agent.py      # 核心回归测试

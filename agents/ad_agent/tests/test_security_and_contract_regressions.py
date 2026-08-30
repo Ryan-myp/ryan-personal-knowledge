@@ -30,7 +30,6 @@ from agents.ad_agent.core.cross_channel import CampaignRef, BatchOperation
 from agents.ad_agent.core.auth import normalize_account_id, normalize_platform
 from agents.ad_agent.core.intent import LLMIntentParser
 from agents.ad_agent.core.tool_selector import DynamicToolSelector
-from agents.ad_agent.user_skills.orchestrator import AdCampaignOrchestratorHandler
 
 
 def whitelist(**accounts):
@@ -429,6 +428,70 @@ def test_tiktok_cross_channel_create_maps_daily_budget_to_adgroup_budget():
     assert ad_group["data"]["provider_validation"]["ready"] is True
 
 
+def test_cross_channel_create_preflight_blocks_all_chains_before_execution():
+    """One incomplete channel must not let another channel create first."""
+    runtime = AgentRuntime(
+        require_llm=False,
+        whitelist_validator=whitelist(meta=["m1"], tiktok=["t1"]),
+    )
+    runtime.register_capability(create_meta_capability())
+    runtime.register_capability(create_tiktok_capability())
+
+    result = runtime.run(
+        "跨渠道创建 Meta 和 TikTok campaign 名称=preflight",
+        platform_params={
+            "meta": {
+                "account_id": "m1",
+                "name": "preflight",
+                "objective": "OUTCOME_SALES",
+                "special_ad_categories": "NONE",
+                "budget": 100,
+                "optimization_goal": "OFFSITE_CONVERSIONS",
+                "billing_event": "IMPRESSIONS",
+                "targeting": {"geo_locations": {"countries": ["US"]}},
+                "promoted_object": {"pixel_id": "px1"},
+                "creative": {"id": "cr1"},
+            },
+            "tiktok": {
+                "account_id": "t1",
+                "name": "preflight",
+                "objective_type": "APP_PROMOTION",
+                "app_promotion_type": "APP_ACQUISITION",
+                "campaign_type": "REGULAR_CAMPAIGN",
+                "budget_mode": "BUDGET_MODE_DAY",
+                "daily_budget": 100,
+                "promotion_type": "APP_ANDROID",
+                "billing_event": "OCPM",
+                "location_ids": ["US"],
+                "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
+                "bid_type": "BID_TYPE_NO_BID",
+                "landing_url": "https://example.com",
+                "media": {"video_id": "v1"},
+            },
+        },
+    )
+
+    preflight = result["creation_preflight"]
+    assert preflight["ready"] is False
+    assert result["workflow_id"] is None
+    assert len(result["results"]) == 6
+    assert all(item["preflight"] is True for item in result["results"])
+    assert all(item["success"] is False for item in result["results"])
+    assert all("simulated" not in item["data"] for item in result["results"])
+    assert any(
+        item["platform"] == "tiktok"
+        and item["tool"] == "tiktok_create_adgroup"
+        and "app_id" in item["data"]["missing_fields"]
+        for item in result["results"]
+    )
+    assert any(
+        item["platform"] == "meta"
+        and item["data"]["status"] == "ready"
+        and item["skipped"] is True
+        for item in result["results"]
+    )
+
+
 def test_structured_google_platform_alias_params_reach_provider_tool():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"google-ads": ["g1"]}
@@ -501,34 +564,6 @@ def test_tool_selector_uses_tool_published_intents_without_core_mapping():
 
     assert [tool.name for tool in selection.selected_tools] == [definition.name]
     assert not hasattr(selector, "INTENT_TOOL_MAP")
-
-
-def test_cross_channel_orchestrator_builds_chain_from_tool_metadata():
-    tools = [
-        ToolDefinition(
-            name="snapchat_create_campaign", skill="snapchat", platform="snapchat-ads",
-            description="create campaign", input_schema=ToolSchema(),
-            action="create", resource_type="campaign", intent_types=["create_campaign"],
-        ),
-        ToolDefinition(
-            name="snapchat_create_ad_group", skill="snapchat", platform="snapchat-ads",
-            description="create ad group", input_schema=ToolSchema(),
-            action="create", resource_type="ad_group", parent_resource_type="campaign",
-            intent_types=["create_campaign"],
-        ),
-    ]
-    handler = AdCampaignOrchestratorHandler(available_tools=tools)
-
-    plan = handler._build_execution_plan(
-        ParsedIntent(
-            "create_campaign", "create", ["snapchat-ads"],
-            objective="sales", budget=20,
-            platform_params={"snapchat-ads": {"promotion_type": "APP"}},
-        )
-    )
-
-    assert plan[0]["tools"] == ["snapchat_create_campaign", "snapchat_create_ad_group"]
-    assert plan[0]["params"]["promotion_type"] == "APP"
 
 
 def test_provider_free_detail_reads_fail_closed_for_all_channels():

@@ -40,7 +40,13 @@ from ..core.interfaces import (
 )
 from ..core.tool_registry import GuardedToolRegistry, SimpleToolRegistry, validate_tool_input
 from ..core.intent import LLMIntentParser, SimpleIntentRouter
-from ..core.cross_channel import CrossChannelAggregator, CrossChannelAnalyzer, build_batch_operations
+from ..core.cross_channel import (
+    CreationPreflight,
+    CreationPreflightItem,
+    CrossChannelAggregator,
+    CrossChannelAnalyzer,
+    build_batch_operations,
+)
 from ..core.tool_selector import BusinessContext, DynamicToolSelector
 from ..core.knowledge import KnowledgeProvider, LocalMarkdownKnowledgeProvider
 from ..core.parameter_catalog import ParameterCatalogRegistry
@@ -3097,6 +3103,208 @@ class AgentRuntime:
         ]
         return batch_candidates[0] if len(batch_candidates) == 1 else None
 
+    def _preflight_cross_channel_creation(
+        self,
+        intent: ParsedIntent,
+        tool_plan: dict[str, list[Any]],
+        session: "SessionContext",
+        account_id: Optional[str],
+        account_scope: Optional[Mapping[str, Any]],
+        granted_permissions: Optional[set[str] | frozenset[str]],
+    ) -> CreationPreflight:
+        """Validate every requested creation chain before the first Tool runs.
+
+        A cross-channel create is an all-or-nothing *plan* even while Runtime
+        is in dry-run mode. Each provider chain is checked independently from
+        its Tool Schema, conditional rules, lookup contract and resource
+        metadata. Synthetic parent IDs are used only inside this preflight
+        context to validate child payloads; no provider ID is invented or
+        persisted.
+        """
+        items: list[CreationPreflightItem] = []
+        errors: list[str] = []
+        routes_by_platform: dict[str, tuple[str, list[Any]]] = {}
+        for raw_platform, tools in tool_plan.items():
+            canonical = self._canonical_platform(raw_platform)
+            routes_by_platform.setdefault(canonical, (raw_platform, tools))
+
+        for requested_platform in intent.platforms:
+            platform = self._canonical_platform(requested_platform)
+            route = routes_by_platform.get(platform)
+            if route is None or not route[1]:
+                message = f"{platform}: 没有已注册的 create_campaign Tool"
+                errors.append(message)
+                items.append(CreationPreflightItem(
+                    platform=platform,
+                    tool_name="<creation_chain>",
+                    resource_type=None,
+                    parent_resource_type=None,
+                    status="blocked",
+                    errors=(message,),
+                ))
+                continue
+
+            raw_platform, tools = route
+            account = self._resolve_platform_account(
+                intent, raw_platform, tools, account_id
+            )
+            if not account:
+                candidates = self._available_accounts_for_request(platform, account_scope)
+                if len(candidates) == 1:
+                    account = candidates[0]
+
+            account_errors: list[str] = []
+            if not account:
+                account_errors.append(f"{platform}: 缺少账户ID")
+            else:
+                allowed, account_error = self._validate_account_with_principal(
+                    platform, account, True, account_scope
+                )
+                if not allowed:
+                    account_errors.append(f"{platform}: {account_error}")
+
+            # This context is deliberately isolated from the live session. It
+            # prevents a prior campaign in the conversation from satisfying a
+            # new chain's parent dependency.
+            preflight_ctx = ToolContext(
+                session_id=session.session_id,
+                user_id=session.ctx.user_id,
+                account_id=account,
+                credentials={},
+            )
+            prior_failed: Optional[str] = None
+            for tool_def in tools:
+                tool_errors = list(account_errors)
+                missing_fields: list[str] = []
+                tool_input: dict[str, Any] = {}
+                if not account_errors:
+                    tool_input = self._build_tool_input(
+                        tool_def, intent, raw_platform, preflight_ctx
+                    )
+                    missing_fields = list(tool_input.pop("_missing_params", []) or [])
+                    unknown_params = list(tool_input.pop("_unknown_params", []) or [])
+                    selection_errors = list(tool_input.pop("_selection_errors", []) or [])
+                    if missing_fields:
+                        tool_errors.extend(
+                            f"缺少必需参数: {field}" for field in missing_fields
+                        )
+                    if unknown_params:
+                        tool_errors.append(
+                            "工具参数契约不支持以下字段：" + ", ".join(unknown_params)
+                        )
+                    if selection_errors:
+                        tool_errors.append(
+                            "参数选择凭证无效：" + "; ".join(selection_errors)
+                        )
+                    protected_paths = self._validate_tool_input_redline(tool_input)
+                    if protected_paths:
+                        tool_errors.append(
+                            "请求包含禁止传入的凭证/账户配置字段："
+                            + ", ".join(protected_paths)
+                        )
+                    if tool_def.is_write_tool:
+                        schema = tool_def.input_schema
+                        missing_fields.extend(
+                            field_name
+                            for field_name in (schema.provider_required or [])
+                            if tool_input.get(field_name) in (None, "")
+                            and field_name not in missing_fields
+                        )
+                        for alternatives in (schema.provider_any_of or []):
+                            if not any(
+                                tool_input.get(field_name) not in (None, "", {}, [])
+                                for field_name in alternatives
+                            ):
+                                missing_fields.append(
+                                    "one_of(" + ", ".join(alternatives) + ")"
+                                )
+                        tool_errors.extend(
+                            self._validate_semantic_write_input(tool_def, tool_input)
+                        )
+                        tool_errors.extend(
+                            validate_tool_input(
+                                tool_def.input_schema,
+                                tool_input,
+                                include_provider_contract=True,
+                            )
+                        )
+                        if self.execution_mode == ExecutionMode.LIVE.value:
+                            if not self.allow_live_writes:
+                                tool_errors.append("Runtime 全局 allow_live_writes 未开启")
+                            elif not tool_def.live_support:
+                                tool_errors.append("该 Tool 当前仅支持 dry-run")
+                            elif tool_def.name not in self._live_approved_tools:
+                                tool_errors.append("该 Tool 未加入 live 执行批准清单")
+                            if self.write_guard is None:
+                                tool_errors.append("live 写操作必须配置 WriteGuard")
+                if prior_failed:
+                    tool_errors.append(f"前置 Tool {prior_failed} 未通过 preflight")
+
+                normalized_errors = tuple(dict.fromkeys(str(error) for error in tool_errors))
+                status = "blocked" if normalized_errors else "ready"
+                items.append(CreationPreflightItem(
+                    platform=platform,
+                    tool_name=tool_def.name,
+                    resource_type=getattr(tool_def, "resource_type", None),
+                    parent_resource_type=getattr(tool_def, "parent_resource_type", None),
+                    status=status,
+                    account_id=account,
+                    missing_fields=tuple(dict.fromkeys(missing_fields)),
+                    errors=normalized_errors,
+                ))
+                if normalized_errors and prior_failed is None:
+                    prior_failed = tool_def.name
+                # Make the next child validate against a local placeholder,
+                # never against an actual or persisted provider identifier.
+                resource_type = str(getattr(tool_def, "resource_type", "") or "")
+                if resource_type:
+                    resource_field = self._resource_id_field_for_tool(tool_def)
+                    placeholder = f"preflight:{platform}:{resource_type}"
+                    preflight_ctx.protected_state[resource_field] = placeholder
+                    preflight_ctx.protected_state[f"{platform}:{resource_field}"] = placeholder
+
+        unique_errors = tuple(dict.fromkeys(errors + [
+            error
+            for item in items
+            for error in item.errors
+            if error and error not in errors
+        ]))
+        return CreationPreflight(
+            ready=not unique_errors,
+            items=tuple(items),
+            errors=unique_errors,
+        )
+
+    @staticmethod
+    def _creation_preflight_results(preflight: CreationPreflight) -> list[dict[str, Any]]:
+        """Expose item-level preflight state using the normal result shape."""
+        results: list[dict[str, Any]] = []
+        for item in preflight.items:
+            error = "; ".join(item.errors) if item.errors else None
+            results.append({
+                "tool": item.tool_name,
+                "platform": item.platform,
+                "resource_type": item.resource_type,
+                "parent_resource_type": item.parent_resource_type,
+                "account_id": item.account_id,
+                # These are validation records, not executed Tool results.
+                # Even a ready item must not look successful when another
+                # channel blocked the all-channel plan.
+                "success": False,
+                "data": {
+                    "preflight": True,
+                    "status": item.status,
+                    "execution_status": "skipped_before_execution",
+                    "missing_fields": list(item.missing_fields),
+                    "errors": list(item.errors),
+                },
+                "error": error,
+                "needs_confirmation": False,
+                "preflight": True,
+                "skipped": True,
+            })
+        return results
+
     def _run_batch_plan(
         self,
         user_input: str,
@@ -3805,6 +4013,66 @@ class AgentRuntime:
                 "confirmation_payload": None,
                 "policy_errors": parameter_errors,
             }
+
+        # Cross-channel creation is preflighted as one provider-neutral plan.
+        # This must happen before workflow creation or any provider Tool is
+        # invoked, otherwise one channel could be committed/planned before a
+        # later channel reveals a missing objective, app, targeting or asset.
+        creation_preflight = None
+        if (
+            intent.intent_type == "create_campaign"
+            and len({self._canonical_platform(p) for p in intent.platforms}) > 1
+        ):
+            creation_preflight = self._preflight_cross_channel_creation(
+                intent,
+                tool_plan,
+                session,
+                account_id,
+                account_scope,
+                effective_permissions,
+            )
+            if not creation_preflight.ready:
+                preflight_results = self._creation_preflight_results(creation_preflight)
+                reply = (
+                    "❌ 跨渠道创建 preflight 未通过；已停止所有渠道的创建。"
+                    "请先补齐各渠道/层级的参数后重试。"
+                )
+                session.add_message({"role": "user", "content": safe_user_input})
+                session.add_message({"role": "assistant", "content": reply})
+                if self._session_manager:
+                    self._session_manager.update_session(
+                        session_id,
+                        {
+                            "execution_mode": self.execution_mode,
+                            "read_only_mode": self._read_only_mode,
+                            "message_count": len(session.messages),
+                            "messages": self._redact_for_persistence(session.messages[-20:]),
+                        },
+                    )
+                return {
+                    "session_id": session_id,
+                    "turn_id": turn_id,
+                    "timestamp": datetime.now().isoformat(),
+                    "intent": intent.to_dict(),
+                    "tool_plan": {k: [t.name for t in v] for k, v in tool_plan.items()},
+                    "tool_selection": {
+                        "tool_count": tool_selection["tool_count"],
+                        "tools": [tool.name for tool in tool_selection["selected_tools"]],
+                        "platforms": tool_selection["platforms"],
+                        "context": tool_selection["context"],
+                        "tool_prompt": tool_selection["tool_prompt"],
+                        "expert_knowledge": tool_selection["expert_knowledge"],
+                        "knowledge": tool_selection.get("knowledge", []),
+                    },
+                    "results": preflight_results,
+                    "resource_results": [],
+                    "workflow_id": None,
+                    "creation_preflight": creation_preflight.to_dict(),
+                    "reply": reply,
+                    "needs_confirmation": False,
+                    "confirmation_payload": None,
+                    "policy_errors": list(creation_preflight.errors),
+                }
         
         # Batch management is a first-class planning operation.  It expands
         # IDs into independent items while retaining the normal whitelist and
@@ -4505,6 +4773,9 @@ class AgentRuntime:
             "results": results,
             "resource_results": resource_results,
             "workflow_id": workflow_id,
+            "creation_preflight": (
+                creation_preflight.to_dict() if creation_preflight else None
+            ),
             "cross_channel_summary": cross_channel_summary,
             "cross_channel_insights": cross_channel_insights,
             "cross_channel_budget_plan": cross_channel_budget_plan,

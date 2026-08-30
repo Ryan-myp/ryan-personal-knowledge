@@ -11,6 +11,53 @@ from typing import Any, Iterable, Optional
 from .platform import normalize_platform
 
 
+@dataclass(frozen=True)
+class CreationPreflightItem:
+    """Provider-neutral validation result for one creation-chain Tool.
+
+    The Runtime fills this model from Tool metadata and schema validation. It
+    deliberately has no provider enum or adapter reference, so a newly added
+    channel can participate by publishing the same Tool contract.
+    """
+
+    platform: str
+    tool_name: str
+    resource_type: Optional[str]
+    parent_resource_type: Optional[str]
+    status: str
+    account_id: Optional[str] = None
+    missing_fields: tuple[str, ...] = ()
+    errors: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "platform": self.platform,
+            "tool": self.tool_name,
+            "resource_type": self.resource_type,
+            "parent_resource_type": self.parent_resource_type,
+            "status": self.status,
+            "account_id": self.account_id,
+            "missing_fields": list(self.missing_fields),
+            "errors": list(self.errors),
+        }
+
+
+@dataclass(frozen=True)
+class CreationPreflight:
+    """All-channel creation validation completed before any Tool executes."""
+
+    ready: bool
+    items: tuple[CreationPreflightItem, ...] = ()
+    errors: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "ready": self.ready,
+            "items": [item.to_dict() for item in self.items],
+            "errors": list(self.errors),
+        }
+
+
 def _number(value: Any) -> Optional[float]:
     if value is None or value == "":
         return None
