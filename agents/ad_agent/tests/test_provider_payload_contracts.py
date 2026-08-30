@@ -2371,6 +2371,90 @@ def test_meta_catalog_ad_builds_template_story_spec():
         client.create_catalog_ad("act_1", "as_1", {"name": "Missing"})
 
 
+def test_meta_messaging_ad_builds_click_to_message_story_spec():
+    client = MetaAPIClient({"access_token": "test"})
+    payloads = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        payloads.append((method, endpoint, data)) or {"id": "ad-message-1"}
+    )
+
+    assert client.create_messaging_ad("act_1", "as_1", {
+        "name": "WhatsApp Ad", "page_id": "page-1", "messaging_app": "WHATSAPP",
+        "call_to_action_type": "WHATSAPP", "message": "Chat with us",
+        "headline": "Talk to sales", "link": "https://example.test/contact",
+        "status": "PAUSED",
+    }) == "ad-message-1"
+    method, endpoint, data = payloads[-1]
+    assert (method, endpoint) == ("POST", "/act_1/ads")
+    creative = json.loads(data["creative"])
+    assert creative == {
+        "object_story_spec": {
+            "page_id": "page-1",
+            "link_data": {
+                "link": "https://example.test/contact",
+                "message": "Chat with us",
+                "name": "Talk to sales",
+                "description": "",
+                "call_to_action": {"type": "WHATSAPP"},
+            },
+        }
+    }
+
+    with pytest.raises(ValueError, match="requires SEND_MESSAGE CTA"):
+        client.create_messaging_ad("act_1", "as_1", {
+            "page_id": "page-1", "messaging_app": "MESSENGER",
+            "call_to_action_type": "WHATSAPP",
+        })
+
+
+def test_meta_messaging_tool_publishes_destination_contract_and_route():
+    capability = create_meta_capability()
+    definitions = {
+        definition.name: definition
+        for definition, _handler in capability.register_tools()
+    }
+    messaging = definitions["meta_create_messaging_ad"]
+    assert messaging.input_schema.properties["messaging_app"]["enum"] == [
+        "MESSENGER", "WHATSAPP", "INSTAGRAM_DIRECT"
+    ]
+    assert messaging.input_schema.properties["call_to_action_type"]["enum"] == [
+        "SEND_MESSAGE", "WHATSAPP"
+    ]
+    assert validate_tool_input(
+        messaging.input_schema,
+        {
+            "adset_id": "as-1", "name": "Message Ad", "page_id": "page-1",
+            "messaging_app": "MESSENGER", "call_to_action_type": "SEND_MESSAGE",
+        },
+        include_provider_contract=True,
+    ) == []
+    assert validate_tool_input(
+        messaging.input_schema,
+        {
+            "adset_id": "as-1", "name": "Message Ad", "page_id": "page-1",
+            "messaging_app": "WHATSAPP", "call_to_action_type": "SEND_MESSAGE",
+        },
+        include_provider_contract=True,
+    )
+
+    runtime = AgentRuntime(require_llm=False)
+    runtime.register_capability(capability)
+    routed = runtime.intent_router.route(
+        ParsedIntent(
+            "create_campaign", "create", ["meta"],
+            platform_params={"meta": {
+                "objective": "OUTCOME_MESSAGES",
+                "optimization_goal": "MESSAGES",
+                "messaging_app": "MESSENGER",
+            }},
+        ),
+        runtime.registry,
+    )
+    assert [definition.name for definition in routed["meta"]] == [
+        "meta_create_campaign", "meta_create_adset", "meta_create_messaging_ad",
+    ]
+
+
 def test_meta_creative_crud_uses_account_scoped_graph_edges():
     client = MetaAPIClient({"access_token": "test"})
     calls = []

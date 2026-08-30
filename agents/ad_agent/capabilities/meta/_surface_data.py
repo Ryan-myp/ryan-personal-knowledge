@@ -21,6 +21,7 @@ API_SURFACE = [
     {"resource": "ad", "action": "create", "method": "create_ad", "status": "implemented"},
     {"resource": "ad", "action": "create_lead", "method": "create_lead_ad", "status": "implemented"},
     {"resource": "ad", "action": "create_catalog", "method": "create_catalog_ad", "status": "implemented"},
+    {"resource": "ad", "action": "create_messaging", "method": "create_messaging_ad", "status": "implemented"},
     {"resource": "ad", "action": "update", "method": "update_ad", "status": "implemented"},
     {"resource": "ad", "action": "pause", "method": "pause_ad", "status": "implemented"},
     {"resource": "ad", "action": "delete", "method": "delete_ad", "status": "implemented"},

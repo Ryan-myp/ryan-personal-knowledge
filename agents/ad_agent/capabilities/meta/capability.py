@@ -16,6 +16,7 @@ from .creatives import MetaCreateCreativeHandler
 from .parameters import (
     meta_campaign_schema, meta_adset_schema, meta_ad_schema,
     meta_ad_format_catalog, meta_lead_ad_schema, meta_catalog_ad_schema,
+    meta_messaging_ad_schema,
     meta_audience_schema, meta_conversion_event_schema, meta_creative_schema,
     meta_catalog_schema, meta_product_set_schema,
     meta_lead_form_schema,
@@ -96,6 +97,7 @@ class MetaCapability(BaseCapability):
         "list_ads": ["meta_list_ads"], "get_ad": ["meta_get_ad"],
         "create_ad": ["meta_create_ad"], "create_lead_ad": ["meta_create_lead_ad"],
         "create_catalog_ad": ["meta_create_catalog_ad"],
+        "create_messaging_ad": ["meta_create_messaging_ad"],
         "update_ad": ["meta_update_ad"],
         "pause_ad": ["meta_pause_ad"], "delete_ad": ["meta_delete_ad"],
         "create_creative": ["meta_create_creative"],
@@ -641,6 +643,35 @@ class MetaCapability(BaseCapability):
                 }), {}),
             ),
             method_tool(
+                platform="meta", skill="meta-marketing-api",
+                name="meta_create_messaging_ad",
+                description="创建 Meta Click-to-Message 消息广告；默认仅生成 dry-run 计划。",
+                method_name="create_messaging_ad", result_key="ad_id",
+                properties=meta_messaging_ad_schema()["properties"],
+                required=meta_messaging_ad_schema()["required"],
+                provider_required=meta_messaging_ad_schema()["provider_required"],
+                conditional_rules=meta_messaging_ad_schema()["conditional_rules"],
+                action="create", resource_type="ad", parent_resource_type="ad_set",
+                resource_id_field="ad_id", parent_resource_id_field="adset_id",
+                intent_types=["create_messaging_ad", "create_campaign"],
+                activation_rules=[{
+                    "if": {
+                        "objective": {"aliases": ["objective_type"], "in": [
+                            "OUTCOME_MESSAGES", "MESSAGES",
+                        ]},
+                        "optimization_goal": {"in": ["MESSAGES"]},
+                        "messaging_app": {"exists": True},
+                    },
+                }],
+                traits=["write", "ad", "messaging", "click_to_message"], write=True,
+                argument_builder=lambda ctx, data: ((
+                    account_from(ctx, data, "account_id"), data["adset_id"], {
+                        key: data[key] for key in meta_messaging_ad_schema()["properties"]
+                        if key != "adset_id" and key in data
+                    },
+                ), {}),
+            ),
+            method_tool(
                 platform="meta", skill="meta-marketing-api", name="meta_get_audience",
                 description="查询 Meta Custom 或 Lookalike Audience 详情。", method_name="get_audience",
                 result_key="audience", properties={
@@ -890,6 +921,7 @@ class MetaCapability(BaseCapability):
                     "optimization_goal": {"not_in": ["LEAD_GENERATION", "LEADS"]},
                     "ad_format": {"not_in": ["LEAD", "CATALOG"]},
                     "catalog_id": {"exists": False},
+                    "messaging_app": {"exists": False},
                 },
             }],
         ), MetaCreateAdHandler(api_client)))

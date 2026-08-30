@@ -27,6 +27,7 @@ META_CTA_TYPES = [
     "WATCH_VIDEO", "SEND_MESSAGE", "WHATSAPP", "GET_QUOTE", "BOOK_TRAVEL",
 ]
 META_AD_FORMATS = ["LINK", "VIDEO", "CAROUSEL", "LEAD", "CATALOG"]
+META_MESSAGING_APPS = ["MESSENGER", "WHATSAPP", "INSTAGRAM_DIRECT"]
 META_SPECIAL_AD_CATEGORIES = ["NONE", "EMPLOYMENT", "HOUSING", "CREDIT"]
 META_STATUS = ["ACTIVE", "PAUSED"]
 META_CUSTOM_EVENT_TYPES = [
@@ -728,6 +729,54 @@ def meta_catalog_ad_schema() -> dict[str, Any]:
     }
 
 
+def meta_messaging_ad_schema() -> dict[str, Any]:
+    """Create contract for a Meta click-to-message creative."""
+    return {
+        "required": [
+            "adset_id", "name", "page_id", "messaging_app",
+            "call_to_action_type",
+        ],
+        "provider_required": ["page_id", "messaging_app", "call_to_action_type"],
+        "properties": {
+            "adset_id": _field("string", "Parent Meta Ad Set ID"),
+            "name": _field("string", "Ad name", maxLength=400),
+            "page_id": _field("string", "Facebook Page ID", minLength=1),
+            "messaging_app": _field(
+                "string", "Click-to-message destination",
+                enum=META_MESSAGING_APPS,
+            ),
+            "link": _field("string", "Optional destination URL", minLength=1),
+            "message": _field("string", "Primary text"),
+            "headline": _field("string", "Headline"),
+            "description": _field("string", "Description"),
+            "call_to_action_type": _field(
+                "string", "Messaging CTA type", enum=["SEND_MESSAGE", "WHATSAPP"],
+            ),
+            "status": _field("string", "Initial delivery status", enum=META_STATUS),
+        },
+        "conditional_rules": [
+            {
+                "id": "whatsapp_requires_whatsapp_cta",
+                "if": {"messaging_app": "WHATSAPP"},
+                "allowed": {"call_to_action_type": ["WHATSAPP"]},
+                "message": "WHATSAPP destination requires WHATSAPP CTA",
+            },
+            {
+                "id": "messenger_requires_send_message_cta",
+                "if": {"messaging_app": "MESSENGER"},
+                "allowed": {"call_to_action_type": ["SEND_MESSAGE"]},
+                "message": "MESSENGER destination requires SEND_MESSAGE CTA",
+            },
+            {
+                "id": "instagram_direct_requires_send_message_cta",
+                "if": {"messaging_app": "INSTAGRAM_DIRECT"},
+                "allowed": {"call_to_action_type": ["SEND_MESSAGE"]},
+                "message": "INSTAGRAM_DIRECT destination requires SEND_MESSAGE CTA",
+            },
+        ],
+    }
+
+
 def meta_ad_format_catalog() -> list[dict[str, Any]]:
     """Advertised Meta objectives/formats and their current contract depth."""
     source_document = "docs/ad-platform-hierarchy-guide-v5.md"
@@ -839,21 +888,22 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
             "category": "messaging",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
-            "tool_names": ["meta_create_campaign", "meta_create_adset", "meta_create_ad"],
+            "tool_names": ["meta_create_campaign", "meta_create_adset", "meta_create_ad", "meta_create_messaging_ad"],
             "dependencies": ["messaging_apps", "SEND_MESSAGE CTA", "page_or_business_messaging_identity"],
             "supported_fields": ["OUTCOME_MESSAGES", "MESSAGES", "messaging_apps", "call_to_action"],
-            "gaps": ["messaging destination validation", "dedicated messaging creative builder"],
+            "gaps": ["objective-specific placement compatibility validation"],
             "source_document": source_document,
         },
         {
             "format_id": "messaging.click_to_message",
             "category": "messaging",
             "resource_type": "ad",
-            "coverage": "partial_dry_run",
-            "tool_names": ["meta_create_ad"],
-            "dependencies": ["page_id", "messaging_apps", "SEND_MESSAGE CTA"],
-            "supported_fields": ["object_story_spec.link_data", "messaging_apps"],
-            "gaps": ["messaging destination validation", "dedicated messaging creative builder"],
+            "coverage": "supported_dry_run",
+            "tool_names": ["meta_create_messaging_ad"],
+            "payload_adapter": "MetaAPIClient.create_messaging_ad",
+            "dependencies": ["page_id", "messaging_app", "SEND_MESSAGE/WHATSAPP CTA"],
+            "supported_fields": ["page_id", "messaging_app", "link", "message", "headline", "description", "call_to_action_type"],
+            "gaps": ["live mutation approval"],
             "source_document": source_document,
         },
     ]

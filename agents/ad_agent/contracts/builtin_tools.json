@@ -1,5 +1,5 @@
 {
-  "digest": "921e82694b4649797d83f39b1045681e787324aa23a6e65653501997b65c51e5",
+  "digest": "5732157e0e69bd337aaa75f07e5dc037fc349fb93f35622e3605b81df9480c74",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -7969,8 +7969,8 @@
       ]
     },
     "meta": {
-      "digest": "b43bd3c0ad475f735d5d533d2fbf0b57f63844c1a762481a58242980eecf8cab",
-      "tool_count": 63,
+      "digest": "a79702f87e9187346b8249ecd3a30072fadbafcff65a1e3af86d5f61c6a081c7",
+      "tool_count": 64,
       "tools": [
         {
           "action": "boost",
@@ -8047,6 +8047,9 @@
                   ]
                 },
                 "catalog_id": {
+                  "exists": false
+                },
+                "messaging_app": {
                   "exists": false
                 },
                 "objective": {
@@ -9937,6 +9940,175 @@
           "traits": [
             "write",
             "lead_form"
+          ]
+        },
+        {
+          "action": "create",
+          "activation_rules": [
+            {
+              "if": {
+                "messaging_app": {
+                  "exists": true
+                },
+                "objective": {
+                  "aliases": [
+                    "objective_type"
+                  ],
+                  "in": [
+                    "OUTCOME_MESSAGES",
+                    "MESSAGES"
+                  ]
+                },
+                "optimization_goal": {
+                  "in": [
+                    "MESSAGES"
+                  ]
+                }
+              }
+            }
+          ],
+          "contract_version": "1.4.0",
+          "description": "创建 Meta Click-to-Message 消息广告；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [
+              {
+                "allowed": {
+                  "call_to_action_type": [
+                    "WHATSAPP"
+                  ]
+                },
+                "id": "whatsapp_requires_whatsapp_cta",
+                "if": {
+                  "messaging_app": "WHATSAPP"
+                },
+                "message": "WHATSAPP destination requires WHATSAPP CTA"
+              },
+              {
+                "allowed": {
+                  "call_to_action_type": [
+                    "SEND_MESSAGE"
+                  ]
+                },
+                "id": "messenger_requires_send_message_cta",
+                "if": {
+                  "messaging_app": "MESSENGER"
+                },
+                "message": "MESSENGER destination requires SEND_MESSAGE CTA"
+              },
+              {
+                "allowed": {
+                  "call_to_action_type": [
+                    "SEND_MESSAGE"
+                  ]
+                },
+                "id": "instagram_direct_requires_send_message_cta",
+                "if": {
+                  "messaging_app": "INSTAGRAM_DIRECT"
+                },
+                "message": "INSTAGRAM_DIRECT destination requires SEND_MESSAGE CTA"
+              }
+            ],
+            "properties": {
+              "adset_id": {
+                "description": "Parent Meta Ad Set ID",
+                "type": "string"
+              },
+              "call_to_action_type": {
+                "description": "Messaging CTA type",
+                "enum": [
+                  "SEND_MESSAGE",
+                  "WHATSAPP"
+                ],
+                "type": "string"
+              },
+              "description": {
+                "description": "Description",
+                "type": "string"
+              },
+              "headline": {
+                "description": "Headline",
+                "type": "string"
+              },
+              "link": {
+                "description": "Optional destination URL",
+                "minLength": 1,
+                "type": "string"
+              },
+              "message": {
+                "description": "Primary text",
+                "type": "string"
+              },
+              "messaging_app": {
+                "description": "Click-to-message destination",
+                "enum": [
+                  "MESSENGER",
+                  "WHATSAPP",
+                  "INSTAGRAM_DIRECT"
+                ],
+                "type": "string"
+              },
+              "name": {
+                "description": "Ad name",
+                "maxLength": 400,
+                "type": "string"
+              },
+              "page_id": {
+                "description": "Facebook Page ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "status": {
+                "description": "Initial delivery status",
+                "enum": [
+                  "ACTIVE",
+                  "PAUSED"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "page_id",
+              "messaging_app",
+              "call_to_action_type"
+            ],
+            "required": [
+              "adset_id",
+              "name",
+              "page_id",
+              "messaging_app",
+              "call_to_action_type"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_messaging_ad",
+            "create_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_create_messaging_ad",
+          "parent_resource_id_field": "adset_id",
+          "parent_resource_type": "ad_set",
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad",
+            "messaging",
+            "click_to_message"
           ]
         },
         {
@@ -21317,6 +21489,12 @@
         "status": "implemented"
       },
       {
+        "action": "create_messaging",
+        "method": "create_messaging_ad",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
         "action": "update",
         "method": "update_ad",
         "resource": "ad",
@@ -22070,5 +22248,5 @@
       ]
     }
   },
-  "tool_count": 227
+  "tool_count": 228
 }

@@ -1515,6 +1515,40 @@ class MetaAPIClient(BasePlatformClient):
             },
         )
     
+    def create_messaging_ad(self, account_id: str, adset_id: str, ad: dict) -> str:
+        """Create a click-to-message ad with a provider-shaped story spec."""
+        if not isinstance(ad, dict):
+            raise ValueError("messaging ad must be an object")
+        page_id = str(ad.get("page_id") or "").strip()
+        messaging_app = str(ad.get("messaging_app") or "").upper().strip()
+        cta_type = str(ad.get("call_to_action_type") or "").upper().strip()
+        if not page_id or messaging_app not in {"MESSENGER", "WHATSAPP", "INSTAGRAM_DIRECT"}:
+            raise ValueError("page_id and a supported messaging_app are required")
+        expected_cta = "WHATSAPP" if messaging_app == "WHATSAPP" else "SEND_MESSAGE"
+        if cta_type != expected_cta:
+            raise ValueError(f"{messaging_app} destination requires {expected_cta} CTA")
+
+        link_data: dict[str, Any] = {
+            "message": ad.get("message", ""),
+            "name": ad.get("headline", ""),
+            "description": ad.get("description", ""),
+            "call_to_action": {"type": cta_type},
+        }
+        if ad.get("link"):
+            link_data["link"] = ad["link"]
+        return self.create_ad(
+            account_id,
+            adset_id,
+            {
+                "name": ad.get("name", "Untitled Messaging Ad"),
+                "status": ad.get("status", "PAUSED"),
+                "object_story_spec": {
+                    "page_id": page_id,
+                    "link_data": link_data,
+                },
+            },
+        )
+
     def update_ad(self, ad_id: str, updates: dict) -> dict:
         """更新 Ad"""
         data = {k: v for k, v in updates.items() if v is not None}
