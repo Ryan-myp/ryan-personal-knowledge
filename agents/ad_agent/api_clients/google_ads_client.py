@@ -110,6 +110,13 @@ class GoogleAdsAPIClient(BasePlatformClient):
     USER_LIST_UPLOAD_COLUMNS = {"hashed_email", "hashed_phone_number"}
     MAX_USER_LIST_UPLOAD_BYTES = 100 * 1024 * 1024
     MAX_USER_LIST_UPLOAD_ROWS = 100_000
+    BIDDING_STRATEGY_TYPES = {
+        "MANUAL_CPC", "MAXIMIZE_CONVERSIONS", "MAXIMIZE_CONVERSION_VALUE",
+        "TARGET_CPA", "TARGET_ROAS", "TARGET_IMPRESSION_SHARE",
+    }
+    TARGET_IMPRESSION_SHARE_LOCATIONS = {
+        "ANYWHERE_ON_PAGE", "TOP_OF_PAGE", "ABSOLUTE_TOP_OF_PAGE",
+    }
     
     def __init__(
         self,
@@ -697,6 +704,194 @@ class GoogleAdsAPIClient(BasePlatformClient):
         raise APIError(
             f"Google bidding strategy {bidding_strategy_id} was not found"
         )
+
+    @classmethod
+    def _build_bidding_scheme(
+        cls, strategy: dict[str, Any], *, require_type: bool = True
+    ) -> tuple[str, dict[str, Any], list[str]]:
+        """Translate stable strategy fields to one Google bidding scheme."""
+        strategy_type = str(strategy.get("strategy_type") or "").strip().upper()
+        if require_type and strategy_type not in cls.BIDDING_STRATEGY_TYPES:
+            raise ValueError(
+                f"strategy_type must be one of {sorted(cls.BIDDING_STRATEGY_TYPES)}"
+            )
+        if not strategy_type:
+            raise ValueError("strategy_type is required when changing bid settings")
+
+        def positive_number(field: str, *, maximum: float | None = None) -> Any:
+            value = strategy.get(field)
+            if value is None:
+                raise ValueError(f"{field} is required for {strategy_type}")
+            try:
+                value = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{field} must be a positive number") from exc
+            if value <= 0 or (maximum is not None and value > maximum):
+                limit = f" and at most {maximum}" if maximum is not None else ""
+                raise ValueError(f"{field} must be greater than 0{limit}")
+            return int(value) if field.endswith("_micros") else value
+
+        def optional_micros(fields: tuple[str, ...]) -> dict[str, Any]:
+            result: dict[str, Any] = {}
+            for field in fields:
+                value = strategy.get(field)
+                if value is None:
+                    continue
+                try:
+                    value = int(value)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(f"{field} must be a non-negative integer") from exc
+                if value < 0:
+                    raise ValueError(f"{field} must be a non-negative integer")
+                result[cls._camel_case(field)] = value
+            return result
+
+        if strategy_type == "MANUAL_CPC":
+            scheme_key = "manualCpc"
+            scheme = {}
+            if strategy.get("enhanced_cpc_enabled") is not None:
+                if not isinstance(strategy["enhanced_cpc_enabled"], bool):
+                    raise ValueError("enhanced_cpc_enabled must be boolean")
+                scheme["enhancedCpcEnabled"] = strategy["enhanced_cpc_enabled"]
+            paths = ["manualCpc.enhancedCpcEnabled"] if scheme else []
+        elif strategy_type == "MAXIMIZE_CONVERSIONS":
+            scheme_key = "maximizeConversions"
+            scheme = optional_micros(("cpc_bid_ceiling_micros", "cpc_bid_floor_micros"))
+            if strategy.get("target_cpa_micros") is not None:
+                scheme["targetCpaMicros"] = positive_number("target_cpa_micros")
+            paths = [f"maximizeConversions.{key}" for key in scheme]
+        elif strategy_type == "MAXIMIZE_CONVERSION_VALUE":
+            scheme_key = "maximizeConversionValue"
+            scheme = optional_micros(("cpc_bid_ceiling_micros", "cpc_bid_floor_micros"))
+            if strategy.get("target_roas") is not None:
+                scheme["targetRoas"] = positive_number("target_roas", maximum=1000.0)
+            paths = [f"maximizeConversionValue.{key}" for key in scheme]
+        elif strategy_type == "TARGET_CPA":
+            scheme_key = "targetCpa"
+            scheme = {
+                "targetCpaMicros": positive_number("target_cpa_micros"),
+                **optional_micros(("cpc_bid_ceiling_micros", "cpc_bid_floor_micros")),
+            }
+            paths = [f"targetCpa.{key}" for key in scheme]
+        elif strategy_type == "TARGET_ROAS":
+            scheme_key = "targetRoas"
+            scheme = {
+                "targetRoas": positive_number("target_roas", maximum=1000.0),
+                **optional_micros(("cpc_bid_ceiling_micros", "cpc_bid_floor_micros")),
+            }
+            paths = [f"targetRoas.{key}" for key in scheme]
+        else:
+            scheme_key = "targetImpressionShare"
+            location = str(
+                strategy.get("target_impression_share_location") or ""
+            ).strip().upper()
+            if location not in cls.TARGET_IMPRESSION_SHARE_LOCATIONS:
+                raise ValueError(
+                    "target_impression_share_location must be one of "
+                    f"{sorted(cls.TARGET_IMPRESSION_SHARE_LOCATIONS)}"
+                )
+            share = strategy.get("target_impression_share")
+            try:
+                share = float(share)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("target_impression_share must be between 0 and 1") from exc
+            if not 0 < share <= 1:
+                raise ValueError("target_impression_share must be between 0 and 1")
+            scheme = {
+                "location": location,
+                "locationFractionMicros": int(share * 1_000_000),
+                "cpcBidCeilingMicros": positive_number("cpc_bid_ceiling_micros"),
+            }
+            paths = [f"targetImpressionShare.{key}" for key in scheme]
+        return scheme_key, scheme, paths
+
+    def create_bidding_strategy(self, strategy: dict[str, Any]) -> str:
+        """Create a Google Ads portfolio BiddingStrategy."""
+        if not isinstance(strategy, dict):
+            raise ValueError("strategy must be an object")
+        name = str(strategy.get("name") or "").strip()
+        if not name:
+            raise ValueError("bidding strategy name is required")
+        if len(name) > 255:
+            raise ValueError("bidding strategy name must be at most 255 characters")
+        scheme_key, scheme, _paths = self._build_bidding_scheme(strategy)
+        response = self._mutate("biddingStrategies", {
+            "create": {"name": name, scheme_key: scheme},
+        })
+        resource_name = self._mutation_resource_name(response)
+        if not resource_name:
+            raise APIError(
+                f"BiddingStrategy mutate returned no resource name: {response}"
+            )
+        return str(resource_name.rsplit("/", 1)[-1])
+
+    def update_bidding_strategy(
+        self, bidding_strategy_id: str, updates: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Update a strategy name or verified mutable portfolio bid fields."""
+        bidding_strategy_id = self._numeric_id(
+            bidding_strategy_id, "bidding_strategy_id"
+        )
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("updates must be a non-empty object")
+        allowed = {
+            "name", "strategy_type", "target_cpa_micros", "target_roas",
+            "target_impression_share", "target_impression_share_location",
+            "cpc_bid_ceiling_micros", "cpc_bid_floor_micros",
+            "enhanced_cpc_enabled",
+        }
+        unknown = set(updates) - allowed
+        if unknown:
+            raise ValueError(
+                f"Unsupported Google BiddingStrategy update fields: {sorted(unknown)}"
+            )
+
+        resource: dict[str, Any] = {
+            "resourceName": (
+                f"customers/{self.customer_id}/biddingStrategies/"
+                f"{bidding_strategy_id}"
+            )
+        }
+        update_paths: list[str] = []
+        if updates.get("name") is not None:
+            name = str(updates["name"]).strip()
+            if not name:
+                raise ValueError("name must not be empty")
+            if len(name) > 255:
+                raise ValueError("name must be at most 255 characters")
+            resource["name"] = name
+            update_paths.append("name")
+
+        setting_updates = {
+            key: value for key, value in updates.items()
+            if key not in {"name", "strategy_type"}
+        }
+        if setting_updates:
+            scheme_key, scheme, paths = self._build_bidding_scheme(
+                updates, require_type=True
+            )
+            resource[scheme_key] = scheme
+            update_paths.extend(paths)
+        if not update_paths:
+            raise ValueError("updates must contain a supported non-null field")
+        self._mutate("biddingStrategies", {
+            "update": resource,
+            "updateMask": {"paths": update_paths},
+        })
+        return {"success": True, "bidding_strategy_id": bidding_strategy_id}
+
+    def delete_bidding_strategy(self, bidding_strategy_id: str) -> dict[str, Any]:
+        """Remove one Google Ads portfolio BiddingStrategy."""
+        bidding_strategy_id = self._numeric_id(
+            bidding_strategy_id, "bidding_strategy_id"
+        )
+        self._mutate("biddingStrategies", {
+            "remove": (
+                f"customers/{self.customer_id}/biddingStrategies/"
+                f"{bidding_strategy_id}"
+            )
+        })
+        return {"success": True, "bidding_strategy_id": bidding_strategy_id}
 
     @classmethod
     def _normalize_user_list(cls, row: dict) -> dict:

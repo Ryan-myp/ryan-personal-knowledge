@@ -34,6 +34,7 @@ from .parameters import (
     google_conversion_action_schema, google_conversion_action_update_schema,
     google_campaign_criterion_schema,
     google_user_list_schema, google_user_list_update_schema,
+    google_bidding_strategy_schema, google_bidding_strategy_update_schema,
 )
 from ...api_clients.google_ads_client import GoogleAdsAPIClient
 from ..update_contracts import google_updates
@@ -65,7 +66,7 @@ class GoogleCapability(BaseCapability):
     platform_name = "google-ads"
     provider_client_class = GoogleAdsAPIClient
     provider_method_exclusions = {"for_customer"}
-    capability_version = "1.2.0"
+    capability_version = "1.3.0"
     provider_api_version = "v24"
     provider_method_coverage = {
         "list_campaigns": ["google_list_campaigns"], "get_campaign": ["google_get_campaign"],
@@ -100,6 +101,9 @@ class GoogleCapability(BaseCapability):
         "delete_conversion_action": ["google_delete_conversion_action"],
         "list_bidding_strategies": ["google_list_bidding_strategies"],
         "get_bidding_strategy": ["google_get_bidding_strategy"],
+        "create_bidding_strategy": ["google_create_bidding_strategy"],
+        "update_bidding_strategy": ["google_update_bidding_strategy"],
+        "delete_bidding_strategy": ["google_delete_bidding_strategy"],
         "list_user_lists": ["google_list_user_lists"],
         "get_user_list": ["google_get_user_list"],
         "create_user_list": ["google_create_user_list"],
@@ -120,6 +124,8 @@ class GoogleCapability(BaseCapability):
         conversion_action_update_schema = google_conversion_action_update_schema()
         user_list_schema = google_user_list_schema()
         user_list_update_schema = google_user_list_update_schema()
+        bidding_strategy_schema = google_bidding_strategy_schema()
+        bidding_strategy_update_schema = google_bidding_strategy_update_schema()
         user_list_properties = user_list_schema["properties"]
         create_user_list_properties = {
             key: user_list_properties[key]
@@ -367,6 +373,68 @@ class GoogleCapability(BaseCapability):
                 required=["customer_id", "bidding_strategy_id"], action="get",
                 resource_type="bidding_strategy", resource_id_field="bidding_strategy_id",
                 intent_types=["get_bidding_strategy"], traits=["read", "bidding"],
+                argument_builder=lambda _ctx, data: ((data["bidding_strategy_id"],), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_create_bidding_strategy",
+                description="创建 Google Ads Portfolio BiddingStrategy；默认仅生成 dry-run 计划。",
+                method_name="create_bidding_strategy", result_key="bidding_strategy_id",
+                properties={
+                    key: bidding_strategy_schema["properties"][key]
+                    for key in (
+                        "customer_id", "name", "strategy_type", "target_cpa_micros",
+                        "target_roas", "target_impression_share",
+                        "target_impression_share_location", "cpc_bid_ceiling_micros",
+                        "cpc_bid_floor_micros", "enhanced_cpc_enabled",
+                    )
+                },
+                required=bidding_strategy_schema["required"],
+                provider_required=bidding_strategy_schema["provider_required"],
+                conditional_rules=bidding_strategy_schema["conditional_rules"],
+                action="create", resource_type="bidding_strategy",
+                resource_id_field="bidding_strategy_id",
+                intent_types=["create_bidding_strategy"], traits=["write", "bidding"], write=True,
+                argument_builder=lambda _ctx, data: (({
+                    key: data.get(key)
+                    for key in (
+                        "name", "strategy_type", "target_cpa_micros", "target_roas",
+                        "target_impression_share", "target_impression_share_location",
+                        "cpc_bid_ceiling_micros", "cpc_bid_floor_micros",
+                        "enhanced_cpc_enabled",
+                    )
+                    if data.get(key) is not None
+                },), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_update_bidding_strategy",
+                description="更新 Google Ads Portfolio BiddingStrategy；默认仅生成 dry-run 计划。",
+                method_name="update_bidding_strategy", result_key="bidding_strategy_result",
+                properties={
+                    "customer_id": bidding_strategy_schema["properties"]["customer_id"],
+                    "bidding_strategy_id": bidding_strategy_schema["properties"]["bidding_strategy_id"],
+                    "updates": bidding_strategy_update_schema,
+                },
+                required=["customer_id", "bidding_strategy_id", "updates"],
+                action="update", resource_type="bidding_strategy",
+                resource_id_field="bidding_strategy_id",
+                intent_types=["update_bidding_strategy"], traits=["write", "bidding"], write=True,
+                argument_builder=lambda _ctx, data: ((data["bidding_strategy_id"], data["updates"]), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_delete_bidding_strategy",
+                description="删除 Google Ads Portfolio BiddingStrategy；默认仅生成 dry-run 计划。",
+                method_name="delete_bidding_strategy", result_key="bidding_strategy_result",
+                properties={
+                    "customer_id": bidding_strategy_schema["properties"]["customer_id"],
+                    "bidding_strategy_id": bidding_strategy_schema["properties"]["bidding_strategy_id"],
+                },
+                required=["customer_id", "bidding_strategy_id"],
+                action="delete", resource_type="bidding_strategy",
+                resource_id_field="bidding_strategy_id",
+                intent_types=["delete_bidding_strategy"], traits=["write", "bidding"], write=True,
                 argument_builder=lambda _ctx, data: ((data["bidding_strategy_id"],), {}),
             ),
             method_tool(

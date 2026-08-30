@@ -1,5 +1,5 @@
 {
-  "digest": "bb72efd0589467840a7139c07d567bc538f9db5ab068a946587c7e15e9394e0f",
+  "digest": "aad56cc3cb52eaa924c2e94cf8547b28d621ce76b06f2189fe1fbce1d42b5d1b",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -1983,12 +1983,12 @@
       ]
     },
     "google-ads": {
-      "digest": "e131b4eba4db1be579a9b5f7dc66ffcd0cdb66c8ba9264d8c9c39923507e4e70",
-      "tool_count": 53,
+      "digest": "5b4d58cd021db71daa60d409adeec20ce81331063f05cd22819e7294276b05d7",
+      "tool_count": 56,
       "tools": [
         {
           "action": "create",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "创建 Google Ads Ad。",
           "effect_class": "write",
           "input_schema": {
@@ -2130,7 +2130,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "创建 Google Ads Ad Group。",
           "effect_class": "write",
           "input_schema": {
@@ -2220,7 +2220,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "创建 Google PMax Asset Group；当前仅支持 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -2347,7 +2347,149 @@
         },
         {
           "action": "create",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
+          "description": "创建 Google Ads Portfolio BiddingStrategy；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [
+              {
+                "id": "target_cpa_dependency",
+                "if": {
+                  "strategy_type": "TARGET_CPA"
+                },
+                "message": "TARGET_CPA requires target_cpa_micros",
+                "required": [
+                  "target_cpa_micros"
+                ]
+              },
+              {
+                "id": "target_roas_dependency",
+                "if": {
+                  "strategy_type": "TARGET_ROAS"
+                },
+                "message": "TARGET_ROAS requires target_roas",
+                "required": [
+                  "target_roas"
+                ]
+              },
+              {
+                "id": "target_impression_share_dependency",
+                "if": {
+                  "strategy_type": "TARGET_IMPRESSION_SHARE"
+                },
+                "message": "TARGET_IMPRESSION_SHARE requires location, share and cpc_bid_ceiling_micros",
+                "required": [
+                  "target_impression_share",
+                  "target_impression_share_location",
+                  "cpc_bid_ceiling_micros"
+                ]
+              }
+            ],
+            "properties": {
+              "cpc_bid_ceiling_micros": {
+                "description": "Maximum CPC bid in micros",
+                "minimum": 1,
+                "type": "integer"
+              },
+              "cpc_bid_floor_micros": {
+                "description": "Minimum CPC bid in micros",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID; MCC is not accepted",
+                "type": "string"
+              },
+              "enhanced_cpc_enabled": {
+                "description": "Enable enhanced CPC for Manual CPC",
+                "type": "boolean"
+              },
+              "name": {
+                "description": "Portfolio bidding strategy name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "strategy_type": {
+                "description": "Portfolio bidding strategy scheme",
+                "enum": [
+                  "MANUAL_CPC",
+                  "MAXIMIZE_CONVERSIONS",
+                  "MAXIMIZE_CONVERSION_VALUE",
+                  "TARGET_CPA",
+                  "TARGET_ROAS",
+                  "TARGET_IMPRESSION_SHARE"
+                ],
+                "type": "string"
+              },
+              "target_cpa_micros": {
+                "description": "Target CPA in account micros",
+                "minimum": 1,
+                "type": "integer"
+              },
+              "target_impression_share": {
+                "description": "Target impression share as a fraction",
+                "exclusiveMinimum": 0,
+                "maximum": 1,
+                "type": "number"
+              },
+              "target_impression_share_location": {
+                "description": "Target search result location",
+                "enum": [
+                  "ANYWHERE_ON_PAGE",
+                  "TOP_OF_PAGE",
+                  "ABSOLUTE_TOP_OF_PAGE"
+                ],
+                "type": "string"
+              },
+              "target_roas": {
+                "description": "Target ROAS",
+                "exclusiveMinimum": 0,
+                "maximum": 1000,
+                "type": "number"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "name",
+              "strategy_type"
+            ],
+            "required": [
+              "customer_id",
+              "name",
+              "strategy_type"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_bidding_strategy"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_bidding_strategy",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "bidding_strategy_id",
+          "resource_type": "bidding_strategy",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "bidding"
+          ]
+        },
+        {
+          "action": "create",
+          "contract_version": "1.3.0",
           "description": "创建 Google Ads Campaign。",
           "effect_class": "write",
           "input_schema": {
@@ -2673,7 +2815,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "创建 Google Ads CampaignBudget；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -2753,7 +2895,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "批量创建 Google Ads CampaignCriterion；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -2957,7 +3099,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "创建 Google Ads Conversion Action；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -3146,7 +3288,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "批量创建 Google Ad Group 关键词/否定关键词；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -3239,7 +3381,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "创建 Google PMax Asset Group；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -3307,7 +3449,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "创建 Google Shopping Product Group/Listing Group；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -3597,7 +3739,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "创建 Google Responsive Display Ad；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -3787,7 +3929,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "创建 Google Responsive Search Ad；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -3865,7 +4007,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "创建 Google Ads Customer Match User List；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -3976,7 +4118,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "创建 Google Video Ad（可跳过、不可跳过、Bumper 或 Outstream）；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -4091,7 +4233,59 @@
         },
         {
           "action": "delete",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
+          "description": "删除 Google Ads Portfolio BiddingStrategy；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "bidding_strategy_id": {
+                "description": "BiddingStrategy numeric ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID; MCC is not accepted",
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id",
+              "bidding_strategy_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_bidding_strategy"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_delete_bidding_strategy",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "bidding_strategy_id",
+          "resource_type": "bidding_strategy",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "bidding"
+          ]
+        },
+        {
+          "action": "delete",
+          "contract_version": "1.3.0",
           "description": "删除未被引用的 Google Ads CampaignBudget；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -4169,7 +4363,7 @@
         },
         {
           "action": "delete",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "删除 Google Ads CampaignCriterion；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -4227,7 +4421,7 @@
         },
         {
           "action": "delete",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "删除 Google Ads Conversion Action；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -4278,7 +4472,7 @@
         },
         {
           "action": "delete",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "删除 Google Ads User List；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -4330,7 +4524,7 @@
         },
         {
           "action": "get",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "查询 Google Ads Ad 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -4375,7 +4569,7 @@
         },
         {
           "action": "get",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "查询 Google Ads Ad Group 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -4420,7 +4614,7 @@
         },
         {
           "action": "report",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "查询 Google Ads Ad Group 级报表。",
           "effect_class": "read",
           "input_schema": {
@@ -4478,7 +4672,7 @@
         },
         {
           "action": "get",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "查询 Google Ads 客户级 Asset 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -4536,7 +4730,7 @@
         },
         {
           "action": "get",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "查询 PMax Asset Group 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -4581,7 +4775,7 @@
         },
         {
           "action": "get",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "查询 Google Ads 出价策略详情。",
           "effect_class": "read",
           "input_schema": {
@@ -4630,7 +4824,7 @@
         },
         {
           "action": "get",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "查询 Google Ads Campaign 详情（支持 campaign_id 或 campaign_name）。",
           "effect_class": "read",
           "input_schema": {
@@ -4677,7 +4871,7 @@
         },
         {
           "action": "get",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "查询 Google Ads CampaignBudget 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -4755,7 +4949,7 @@
         },
         {
           "action": "get",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "查询 Google Ads 单个 CampaignCriterion 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -4813,7 +5007,7 @@
         },
         {
           "action": "report",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "查询 Google Ads Campaign 报表。支持按 campaign_ids 过滤，默认查询最近30天数据。",
           "effect_class": "read",
           "input_schema": {
@@ -4868,7 +5062,7 @@
         },
         {
           "action": "get",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "查询 Google Ads 转化动作详情。",
           "effect_class": "read",
           "input_schema": {
@@ -4917,7 +5111,7 @@
         },
         {
           "action": "get",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "查询 Google Ads 第一方 User List 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -4966,7 +5160,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "查询 Google Ads Ad Group 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -5014,7 +5208,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "查询 Google Ads Ad 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -5062,7 +5256,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "查询 PMax Campaign 的 Asset Group 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -5110,7 +5304,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "查询 Google Ads 客户级可复用 Asset 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -5167,7 +5361,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "查询 Google Ads 出价策略列表。",
           "effect_class": "read",
           "input_schema": {
@@ -5215,7 +5409,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "查询 Google Ads CampaignBudget 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -5293,7 +5487,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "查询 Google Ads CampaignCriterion（地域、语言、设备、受众和人口属性定向）。",
           "effect_class": "read",
           "input_schema": {
@@ -5349,7 +5543,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "查询 Google Ads Campaign 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -5402,7 +5596,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "查询 Google Ads 转化动作列表。",
           "effect_class": "read",
           "input_schema": {
@@ -5450,7 +5644,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "查询 Google Ads 经理账户下可访问的客户账户。",
           "effect_class": "read",
           "input_schema": {
@@ -5498,7 +5692,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "查询 Google Ads 关键词，可按 Campaign 或 Ad Group 过滤。",
           "effect_class": "read",
           "input_schema": {
@@ -5550,7 +5744,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "查询 Google Ads 第一方 User List 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -5598,7 +5792,7 @@
         },
         {
           "action": "pause",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "调用 Google Ads pause_campaign 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -5643,7 +5837,7 @@
         },
         {
           "action": "resume",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "调用 Google Ads resume_campaign 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -5688,7 +5882,7 @@
         },
         {
           "action": "update",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "更新 Google Ads ad，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -5785,7 +5979,7 @@
         },
         {
           "action": "update",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "更新 Google Ads ad_group，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -5870,7 +6064,7 @@
         },
         {
           "action": "update",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "更新 Google Ads asset_group，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -5963,7 +6157,125 @@
         },
         {
           "action": "update",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
+          "description": "更新 Google Ads Portfolio BiddingStrategy；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "bidding_strategy_id": {
+                "description": "BiddingStrategy numeric ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID; MCC is not accepted",
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Allowed BiddingStrategy update fields",
+                "properties": {
+                  "cpc_bid_ceiling_micros": {
+                    "description": "Maximum CPC bid in micros",
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "cpc_bid_floor_micros": {
+                    "description": "Minimum CPC bid in micros",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "enhanced_cpc_enabled": {
+                    "description": "Enable enhanced CPC for Manual CPC",
+                    "type": "boolean"
+                  },
+                  "name": {
+                    "description": "Portfolio bidding strategy name",
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "strategy_type": {
+                    "description": "Existing strategy scheme; required for bid-setting updates",
+                    "enum": [
+                      "MANUAL_CPC",
+                      "MAXIMIZE_CONVERSIONS",
+                      "MAXIMIZE_CONVERSION_VALUE",
+                      "TARGET_CPA",
+                      "TARGET_ROAS",
+                      "TARGET_IMPRESSION_SHARE"
+                    ],
+                    "type": "string"
+                  },
+                  "target_cpa_micros": {
+                    "description": "Target CPA in account micros",
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "target_impression_share": {
+                    "description": "Target impression share as a fraction",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1,
+                    "type": "number"
+                  },
+                  "target_impression_share_location": {
+                    "description": "Target search result location",
+                    "enum": [
+                      "ANYWHERE_ON_PAGE",
+                      "TOP_OF_PAGE",
+                      "ABSOLUTE_TOP_OF_PAGE"
+                    ],
+                    "type": "string"
+                  },
+                  "target_roas": {
+                    "description": "Target ROAS",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1000,
+                    "type": "number"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id",
+              "bidding_strategy_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_bidding_strategy"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_update_bidding_strategy",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "bidding_strategy_id",
+          "resource_type": "bidding_strategy",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "bidding"
+          ]
+        },
+        {
+          "action": "update",
+          "contract_version": "1.3.0",
           "description": "更新 Google Ads campaign，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -6049,7 +6361,7 @@
         },
         {
           "action": "update",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "更新 Google Ads CampaignBudget；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -6162,7 +6474,7 @@
         },
         {
           "action": "update",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "更新 Google Ads CampaignCriterion 的状态、排除标记或出价系数；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -6246,7 +6558,7 @@
         },
         {
           "action": "update",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "更新 Google Ads Conversion Action；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -6394,7 +6706,7 @@
         },
         {
           "action": "update",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "更新 Google Ads User List 的可变字段；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -6479,7 +6791,7 @@
         },
         {
           "action": "upload",
-          "contract_version": "1.2.0",
+          "contract_version": "1.3.0",
           "description": "向 Google Ads Customer Match User List 上传仅含 SHA-256 邮箱/手机号的本地 CSV/TSV；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -14883,5 +15195,5 @@
       ]
     }
   },
-  "tool_count": 187
+  "tool_count": 190
 }

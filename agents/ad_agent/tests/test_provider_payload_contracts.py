@@ -225,6 +225,64 @@ def test_google_bidding_strategy_queries_normalize_gaql_rows():
     assert client.get_bidding_strategy("7")["name"] == "Max conversions"
 
 
+def test_google_bidding_strategy_lifecycle_builds_official_scheme_payloads():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    calls = []
+    client._mutate = lambda resource, operation: (
+        calls.append((resource, operation))
+        or {"results": [{"resourceName": "customers/123/biddingStrategies/8"}]}
+    )
+
+    assert client.create_bidding_strategy({
+        "name": "Portfolio tCPA",
+        "strategy_type": "TARGET_CPA",
+        "target_cpa_micros": 500000,
+    }) == "8"
+    assert calls[0] == ("biddingStrategies", {"create": {
+        "name": "Portfolio tCPA",
+        "targetCpa": {"targetCpaMicros": 500000},
+    }})
+
+    client.update_bidding_strategy("8", {
+        "strategy_type": "TARGET_ROAS",
+        "target_roas": 4.5,
+        "cpc_bid_ceiling_micros": 2_000_000,
+    })
+    assert calls[1] == ("biddingStrategies", {
+        "update": {
+            "resourceName": "customers/123/biddingStrategies/8",
+            "targetRoas": {
+                "targetRoas": 4.5,
+                "cpcBidCeilingMicros": 2_000_000,
+            },
+        },
+        "updateMask": {"paths": [
+            "targetRoas.targetRoas", "targetRoas.cpcBidCeilingMicros",
+        ]},
+    })
+
+    client.delete_bidding_strategy("8")
+    assert calls[2] == ("biddingStrategies", {
+        "remove": "customers/123/biddingStrategies/8",
+    })
+
+
+def test_google_bidding_strategy_rejects_incomplete_strategy_specific_settings():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    with pytest.raises(ValueError, match="target_cpa_micros"):
+        client.create_bidding_strategy({
+            "name": "Missing target",
+            "strategy_type": "TARGET_CPA",
+        })
+    with pytest.raises(ValueError, match="target_impression_share_location"):
+        client.create_bidding_strategy({
+            "name": "Missing location",
+            "strategy_type": "TARGET_IMPRESSION_SHARE",
+            "target_impression_share": 0.5,
+            "cpc_bid_ceiling_micros": 1_000_000,
+        })
+
+
 def test_google_user_list_queries_normalize_gaql_rows():
     client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
     client._search_all = lambda query, **kwargs: [{
@@ -364,6 +422,8 @@ def test_google_user_list_tools_expose_lifecycle_and_closed_upload_contract():
     assert {
         "google_create_user_list", "google_update_user_list",
         "google_delete_user_list", "google_upload_user_list_data",
+        "google_create_bidding_strategy", "google_update_bidding_strategy",
+        "google_delete_bidding_strategy",
     } <= definitions.keys()
     create = definitions["google_create_user_list"]
     assert create.input_schema.properties["upload_key_type"]["enum"] == [
@@ -378,6 +438,17 @@ def test_google_user_list_tools_expose_lifecycle_and_closed_upload_contract():
         include_provider_contract=True,
     )
     assert any("not allowed" in error for error in errors)
+    bidding = definitions["google_create_bidding_strategy"]
+    assert bidding.input_schema.properties["strategy_type"]["enum"] == [
+        "MANUAL_CPC", "MAXIMIZE_CONVERSIONS", "MAXIMIZE_CONVERSION_VALUE",
+        "TARGET_CPA", "TARGET_ROAS", "TARGET_IMPRESSION_SHARE",
+    ]
+    bidding_errors = validate_tool_input(
+        bidding.input_schema,
+        {"customer_id": "123", "name": "tCPA", "strategy_type": "TARGET_CPA"},
+        include_provider_contract=True,
+    )
+    assert any("target_cpa_micros" in error for error in bidding_errors)
 
 
 def test_google_customer_client_queries_normalize_manager_rows():

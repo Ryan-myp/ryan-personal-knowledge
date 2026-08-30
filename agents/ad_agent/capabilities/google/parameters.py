@@ -13,6 +13,13 @@ GOOGLE_BIDDING_STRATEGIES = [
     "MANUAL_CPC", "MAXIMIZE_CLICKS", "MAXIMIZE_CONVERSIONS", "TARGET_CPA",
     "TARGET_ROAS", "MAXIMIZE_CONVERSION_VALUE", "TARGET_IMPRESSION_SHARE",
 ]
+GOOGLE_PORTFOLIO_BIDDING_STRATEGIES = [
+    "MANUAL_CPC", "MAXIMIZE_CONVERSIONS", "MAXIMIZE_CONVERSION_VALUE",
+    "TARGET_CPA", "TARGET_ROAS", "TARGET_IMPRESSION_SHARE",
+]
+GOOGLE_TARGET_IMPRESSION_SHARE_LOCATIONS = [
+    "ANYWHERE_ON_PAGE", "TOP_OF_PAGE", "ABSOLUTE_TOP_OF_PAGE",
+]
 GOOGLE_STATUSES = ["ENABLED", "PAUSED", "REMOVED"]
 GOOGLE_AD_GROUP_TYPES = [
     "SEARCH_STANDARD", "SEARCH_DYNAMIC_ADS", "DISPLAY_STANDARD",
@@ -234,6 +241,84 @@ def google_user_list_schema() -> dict[str, Any]:
 
 def google_user_list_update_schema() -> dict[str, Any]:
     return google_user_list_schema()["properties"]["updates"]
+
+
+def google_bidding_strategy_schema() -> dict[str, Any]:
+    """Schema for portfolio BiddingStrategy lifecycle Tools."""
+    return {
+        "required": ["customer_id", "name", "strategy_type"],
+        "provider_required": ["name", "strategy_type"],
+        "properties": {
+            "customer_id": _field("string", "Google Ads customer ID; MCC is not accepted"),
+            "bidding_strategy_id": _field("string", "BiddingStrategy numeric ID", minLength=1),
+            "name": _field("string", "Portfolio bidding strategy name", minLength=1, maxLength=255),
+            "strategy_type": _field(
+                "string", "Portfolio bidding strategy scheme",
+                enum=GOOGLE_PORTFOLIO_BIDDING_STRATEGIES,
+            ),
+            "target_cpa_micros": _field("integer", "Target CPA in account micros", minimum=1),
+            "target_roas": _field("number", "Target ROAS", exclusiveMinimum=0, maximum=1000),
+            "target_impression_share": _field(
+                "number", "Target impression share as a fraction",
+                exclusiveMinimum=0, maximum=1,
+            ),
+            "target_impression_share_location": _field(
+                "string", "Target search result location",
+                enum=GOOGLE_TARGET_IMPRESSION_SHARE_LOCATIONS,
+            ),
+            "cpc_bid_ceiling_micros": _field("integer", "Maximum CPC bid in micros", minimum=1),
+            "cpc_bid_floor_micros": _field("integer", "Minimum CPC bid in micros", minimum=0),
+            "enhanced_cpc_enabled": _field("boolean", "Enable enhanced CPC for Manual CPC"),
+            "updates": _object({
+                "name": _field("string", "Portfolio bidding strategy name", minLength=1, maxLength=255),
+                "strategy_type": _field(
+                    "string", "Existing strategy scheme; required for bid-setting updates",
+                    enum=GOOGLE_PORTFOLIO_BIDDING_STRATEGIES,
+                ),
+                "target_cpa_micros": _field("integer", "Target CPA in account micros", minimum=1),
+                "target_roas": _field("number", "Target ROAS", exclusiveMinimum=0, maximum=1000),
+                "target_impression_share": _field(
+                    "number", "Target impression share as a fraction",
+                    exclusiveMinimum=0, maximum=1,
+                ),
+                "target_impression_share_location": _field(
+                    "string", "Target search result location",
+                    enum=GOOGLE_TARGET_IMPRESSION_SHARE_LOCATIONS,
+                ),
+                "cpc_bid_ceiling_micros": _field("integer", "Maximum CPC bid in micros", minimum=1),
+                "cpc_bid_floor_micros": _field("integer", "Minimum CPC bid in micros", minimum=0),
+                "enhanced_cpc_enabled": _field("boolean", "Enable enhanced CPC for Manual CPC"),
+            }, "Allowed BiddingStrategy update fields", additional_properties=False),
+        },
+        "conditional_rules": [
+            {
+                "id": "target_cpa_dependency",
+                "if": {"strategy_type": "TARGET_CPA"},
+                "required": ["target_cpa_micros"],
+                "message": "TARGET_CPA requires target_cpa_micros",
+            },
+            {
+                "id": "target_roas_dependency",
+                "if": {"strategy_type": "TARGET_ROAS"},
+                "required": ["target_roas"],
+                "message": "TARGET_ROAS requires target_roas",
+            },
+            {
+                "id": "target_impression_share_dependency",
+                "if": {"strategy_type": "TARGET_IMPRESSION_SHARE"},
+                "required": [
+                    "target_impression_share",
+                    "target_impression_share_location",
+                    "cpc_bid_ceiling_micros",
+                ],
+                "message": "TARGET_IMPRESSION_SHARE requires location, share and cpc_bid_ceiling_micros",
+            },
+        ],
+    }
+
+
+def google_bidding_strategy_update_schema() -> dict[str, Any]:
+    return google_bidding_strategy_schema()["properties"]["updates"]
 
 
 def google_campaign_budget_update_schema() -> dict[str, Any]:
