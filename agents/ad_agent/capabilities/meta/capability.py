@@ -597,7 +597,16 @@ class MetaCapability(BaseCapability):
                 provider_required=meta_lead_ad_schema()["provider_required"],
                 action="create", resource_type="ad", parent_resource_type="ad_set",
                 resource_id_field="ad_id", parent_resource_id_field="adset_id",
-                intent_types=["create_lead_ad"], traits=["write", "ad", "lead", "instant_form"], write=True,
+                intent_types=["create_lead_ad", "create_campaign"],
+                activation_rules=[
+                    {"field": "objective", "aliases": ["objective_type"], "in": [
+                        "leads", "OUTCOME_LEADS", "LEAD_GENERATION", "LEADS",
+                    ]},
+                    {"field": "optimization_goal", "in": ["LEAD_GENERATION", "LEADS"]},
+                    {"field": "ad_format", "in": ["LEAD"]},
+                    {"field": "form_id", "exists": True},
+                ],
+                traits=["write", "ad", "lead", "instant_form"], write=True,
                 argument_builder=lambda ctx, data: ((account_from(ctx, data, "account_id"), data["adset_id"], {
                     key: data[key] for key in (
                         "name", "page_id", "form_id", "link", "message", "headline",
@@ -614,7 +623,15 @@ class MetaCapability(BaseCapability):
                 provider_required=meta_catalog_ad_schema()["provider_required"],
                 action="create", resource_type="ad", parent_resource_type="ad_set",
                 resource_id_field="ad_id", parent_resource_id_field="adset_id",
-                intent_types=["create_catalog_ad"],
+                intent_types=["create_catalog_ad", "create_campaign"],
+                activation_rules=[
+                    {"field": "objective", "aliases": ["objective_type"], "in": [
+                        "PRODUCT_CATALOG_SALES", "CATALOG_SALES",
+                    ]},
+                    {"field": "ad_format", "in": ["CATALOG"]},
+                    {"field": "catalog_id", "exists": True},
+                    {"field": "product_set_id", "exists": True},
+                ],
                 traits=["write", "ad", "catalog", "dynamic_product"], write=True,
                 argument_builder=lambda ctx, data: ((account_from(ctx, data, "account_id"), data["adset_id"], {
                     key: data[key] for key in (
@@ -864,6 +881,17 @@ class MetaCapability(BaseCapability):
             resource_id_field="ad_id",
             parent_resource_type="ad_set",
             parent_resource_id_field="adset_id",
+            activation_rules=[{
+                "if": {
+                    "objective": {"aliases": ["objective_type"], "not_in": [
+                        "leads", "OUTCOME_LEADS", "LEAD_GENERATION", "LEADS",
+                        "PRODUCT_CATALOG_SALES", "CATALOG_SALES",
+                    ]},
+                    "optimization_goal": {"not_in": ["LEAD_GENERATION", "LEADS"]},
+                    "ad_format": {"not_in": ["LEAD", "CATALOG"]},
+                    "catalog_id": {"exists": False},
+                },
+            }],
         ), MetaCreateAdHandler(api_client)))
 
         # Get Report

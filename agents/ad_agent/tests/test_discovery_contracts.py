@@ -102,6 +102,57 @@ def test_google_campaign_route_selects_type_specific_creation_chain(
     assert [definition.name for definition in routed["google-ads"]] == expected_tools
 
 
+@pytest.mark.parametrize(
+    "platform, params, expected_tools",
+    [
+        (
+            "meta",
+            {"objective": "OUTCOME_LEADS"},
+            ["meta_create_campaign", "meta_create_adset", "meta_create_lead_ad"],
+        ),
+        (
+            "meta",
+            {"catalog_id": "catalog-1"},
+            ["meta_create_campaign", "meta_create_adset", "meta_create_catalog_ad"],
+        ),
+        (
+            "tiktok",
+            {"objective_type": "LEAD_GENERATION"},
+            ["tiktok_create_campaign", "tiktok_create_adgroup", "tiktok_create_lead_ad"],
+        ),
+        (
+            "tiktok",
+            {"objective_type": "APP_PROMOTION"},
+            ["tiktok_create_campaign", "tiktok_create_adgroup", "tiktok_create_app_ad"],
+        ),
+        (
+            "tiktok",
+            {"ad_format": "SINGLE_VIDEO"},
+            ["tiktok_create_campaign", "tiktok_create_adgroup", "tiktok_create_single_video_ad"],
+        ),
+        (
+            "tiktok",
+            {"spark_post_id": "post-1"},
+            ["tiktok_create_campaign", "tiktok_create_adgroup", "tiktok_spark_ads_create"],
+        ),
+    ],
+)
+def test_meta_and_tiktok_campaign_routes_select_specialized_ad_chain(
+    platform, params, expected_tools,
+):
+    runtime = AgentRuntime(require_llm=False)
+    factory = create_meta_capability if platform == "meta" else create_tiktok_capability
+    runtime.register_capability(factory())
+    routed = runtime.intent_router.route(
+        ParsedIntent(
+            "create_campaign", "create", [platform], platform_params={platform: params},
+        ),
+        runtime.registry,
+    )
+
+    assert [definition.name for definition in routed[platform]] == expected_tools
+
+
 def test_resource_results_follow_declared_parent_fields_across_channels():
     cases = [
         ("meta", "meta_create_campaign", "meta_create_adset", "campaign_id", "c-meta", "adset_id", "s-meta"),

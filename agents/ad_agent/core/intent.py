@@ -1063,15 +1063,58 @@ class SimpleIntentRouter(IntentRouter):
             for candidate in candidates:
                 if candidate in params and params[candidate] not in (None, ""):
                     return params[candidate]
-            if field == "campaign_type" and getattr(intent, "campaign_type", None):
+            if "campaign_type" in candidates and getattr(intent, "campaign_type", None):
                 return intent.campaign_type
-            if field == "objective" and getattr(intent, "objective", None):
+            if "objective" in candidates and getattr(intent, "objective", None):
                 return intent.objective
             return default
 
+        def value_present(field: str, aliases: list[str]) -> bool:
+            """Return whether a provider field has a meaningful value.
+
+            Presence is intentionally different from equality with ``None``:
+            provider-owned activation rules often need to select a specialized
+            chain when an optional reference such as ``catalog_id`` or
+            ``spark_post_id`` is supplied.  The generic fallback can then use
+            ``{"exists": False}`` without adding provider logic to Core.
+            """
+            candidates = [field, *aliases]
+            if any(
+                candidate in params and params[candidate] not in (None, "", {}, [])
+                for candidate in candidates
+            ):
+                return True
+            if "campaign_type" in candidates:
+                return bool(getattr(intent, "campaign_type", None))
+            if "objective" in candidates:
+                return bool(getattr(intent, "objective", None))
+            return False
+
         def condition_matches(field: str, condition: Any, rule: dict[str, Any]) -> bool:
             aliases = [str(item) for item in (rule.get("aliases") or [])]
+            if isinstance(condition, dict):
+                aliases.extend(str(item) for item in (condition.get("aliases") or []))
+                aliases = list(dict.fromkeys(aliases))
             actual = value_for(field, aliases, rule.get("default"))
+            if isinstance(condition, dict):
+                present = value_present(field, aliases)
+                if "exists" in condition or "present" in condition:
+                    expected = condition.get("exists", condition.get("present"))
+                    return present is bool(expected)
+                if "not_exists" in condition or "not_present" in condition:
+                    expected = condition.get("not_exists", condition.get("not_present"))
+                    return present is not bool(expected)
+                if "in" in condition:
+                    return actual in list(condition.get("in") or [])
+                if "not_in" in condition:
+                    return actual not in list(condition.get("not_in") or [])
+                if "equals" in condition:
+                    expected = condition.get("equals")
+                    return actual in expected if isinstance(expected, list) else actual == expected
+                if "not_equals" in condition:
+                    expected = condition.get("not_equals")
+                    return actual not in expected if isinstance(expected, list) else actual != expected
+                return False
             if isinstance(condition, (list, tuple, set, frozenset)):
                 expected = list(condition)
                 return actual in expected
@@ -1083,6 +1126,13 @@ class SimpleIntentRouter(IntentRouter):
                 return False
             aliases = [str(item) for item in (rule.get("aliases") or [])]
             actual = value_for(field, aliases, rule.get("default"))
+            present = value_present(field, aliases)
+            if "exists" in rule or "present" in rule:
+                expected = rule.get("exists", rule.get("present"))
+                return present is bool(expected)
+            if "not_exists" in rule or "not_present" in rule:
+                expected = rule.get("not_exists", rule.get("not_present"))
+                return present is not bool(expected)
             if "in" in rule:
                 return actual in list(rule.get("in") or [])
             if "equals" in rule:

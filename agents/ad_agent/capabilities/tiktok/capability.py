@@ -594,7 +594,15 @@ class TikTokCapability(BaseCapability):
                 provider_any_of=tiktok_lead_ad_schema()["provider_any_of"],
                 action="create", resource_type="ad", parent_resource_type="ad_group",
                 resource_id_field="ad_id", parent_resource_id_field="adgroup_id",
-                intent_types=["create_lead_ad"],
+                intent_types=["create_lead_ad", "create_campaign"],
+                activation_rules=[
+                    {"field": "objective", "aliases": ["objective_type"], "in": [
+                        "leads", "LEAD_GENERATION",
+                    ]},
+                    {"field": "promotion_type", "in": ["LEAD_FORM"]},
+                    {"field": "ad_format", "in": ["LEAD"]},
+                    {"field": "page_id", "exists": True},
+                ],
                 traits=["write", "ad", "lead", "instant_form"], write=True,
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["campaign_id"], data["adgroup_id"], {
                     key: data[key] for key in tiktok_lead_ad_schema()["properties"] if key in data
@@ -610,7 +618,14 @@ class TikTokCapability(BaseCapability):
                 provider_any_of=tiktok_app_ad_schema()["provider_any_of"],
                 action="create", resource_type="ad", parent_resource_type="ad_group",
                 resource_id_field="ad_id", parent_resource_id_field="adgroup_id",
-                intent_types=["create_app_ad"],
+                intent_types=["create_app_ad", "create_campaign"],
+                activation_rules=[
+                    {"field": "objective", "aliases": ["objective_type"], "in": [
+                        "APP_PROMOTION", "APP_INSTALL", "app",
+                    ]},
+                    {"field": "promotion_type", "in": ["APP_ANDROID", "APP_IOS"]},
+                    {"field": "app_id", "exists": True},
+                ],
                 traits=["write", "ad", "app", "app_promotion"], write=True,
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["campaign_id"], data["adgroup_id"], {
                     key: data[key] for key in tiktok_app_ad_schema()["properties"] if key in data
@@ -856,6 +871,18 @@ class TikTokCapability(BaseCapability):
             live_support=False,
             resource_id_field="ad_id",
             parent_resource_id_field="adgroup_id",
+            activation_rules=[{
+                "if": {
+                    "ad_format": {"aliases": ["creative_type"], "not_in": [
+                        "SINGLE_VIDEO", "SINGLE_IMAGE", "CAROUSEL", "SPARK_AD", "SPARK",
+                    ]},
+                    "objective": {"aliases": ["objective_type"], "not_in": [
+                        "leads", "LEAD_GENERATION", "APP_PROMOTION", "APP_INSTALL", "app",
+                    ]},
+                    "promotion_type": {"not_in": ["LEAD_FORM", "APP_ANDROID", "APP_IOS"]},
+                    "spark_post_id": {"aliases": ["tiktok_item_id"], "exists": False},
+                },
+            }],
         ), TikTokCreateAdHandler(api_client)))
 
         for format_name, tool_name, method_name, schema_factory, intent_name in (
@@ -873,7 +900,11 @@ class TikTokCapability(BaseCapability):
                 provider_any_of=schema["provider_any_of"],
                 action="create", resource_type="ad", parent_resource_type="ad_group",
                 resource_id_field="ad_id", parent_resource_id_field="adgroup_id",
-                intent_types=[intent_name], traits=["write", "ad", format_name.lower()],
+                intent_types=[intent_name, "create_campaign"],
+                activation_rules=[{
+                    "field": "ad_format", "aliases": ["creative_type"], "in": [format_name],
+                }],
+                traits=["write", "ad", format_name.lower()],
                 write=True,
                 argument_builder=lambda ctx, data: ((
                     account_from(ctx, data), data["campaign_id"], data["adgroup_id"], {
@@ -937,7 +968,14 @@ class TikTokCapability(BaseCapability):
             traits=["write", "spark", "ad"],
             live_support=False,
             resource_id_field="ad_id",
+            parent_resource_type="ad_group",
             parent_resource_id_field="adgroup_id",
+            intent_types=["create_spark_ad", "create_campaign"],
+            activation_rules=[{
+                "field": "spark_post_id", "aliases": ["tiktok_item_id"], "exists": True,
+            }, {
+                "field": "ad_format", "in": ["SPARK_AD", "SPARK"],
+            }],
         ), TikTokSparkAdsCreateHandler(api_client)))
 
         for resource_name, result_key, handler in [
