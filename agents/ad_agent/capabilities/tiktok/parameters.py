@@ -22,7 +22,9 @@ TIKTOK_BUDGET_MODES = [
     "BUDGET_MODE_DYNAMIC_DAILY_BUDGET", "BUDGET_MODE_TOTAL",
 ]
 TIKTOK_BUDGET_RESTRICTIONS = ["NO_LIMITATION", "DAILY_BUDGET", "LIFETIME_BUDGET"]
-TIKTOK_PROMOTION_TYPES = ["APP_ANDROID", "APP_IOS", "WEBSITE", "LEAD_FORM", "CONTENT"]
+TIKTOK_PROMOTION_TYPES = [
+    "APP_ANDROID", "APP_IOS", "WEBSITE", "LEAD_FORM", "CONTENT", "CATALOG",
+]
 TIKTOK_PLACEMENTS = ["PLACEMENT_TIKTOK", "PLACEMENT_PANGLE", "PLACEMENT_GLOBAL_APP_BUNDLE"]
 TIKTOK_BID_TYPES = ["BID_TYPE_NO_BID", "BID_TYPE_CUSTOM", "BID_TYPE_MAX_CONVERSION"]
 TIKTOK_BILLING_EVENTS = ["CPM", "GD", "CPV", "CPA", "OCPC", "OCPM", "CPC"]
@@ -545,8 +547,26 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
             ),
             "tracking_url": _field("string", "Tracking URL"),
             "status": _field("integer", "Ad group status: 1 active, 0 paused", enum=[0, 1]),
-            "catalog_id": _field("string", "TikTok catalog ID"),
-            "product_set_id": _field("string", "TikTok product set ID"),
+            "catalog_id": _field(
+                "string", "TikTok catalog ID",
+                lookup_tool="tiktok_list_catalogs", lookup_result_key="catalogs",
+                selection_value_fields=["catalog_id", "id"],
+                selection_label_fields=["catalog_name", "name", "id"],
+            ),
+            "product_set_id": _field(
+                "string", "TikTok product set ID",
+                lookup_tool="tiktok_list_product_sets", lookup_result_key="product_sets",
+                selection_value_fields=["product_set_id", "id"],
+                selection_label_fields=["product_set_name", "name", "id"],
+            ),
+            "brand_safety_type": _field(
+                "string", "TikTok brand safety type",
+                lookup_tool="tiktok_list_brand_safety", lookup_result_key="brand_safety",
+            ),
+            "brand_safety_partner": _field(
+                "string", "Brand safety verification partner",
+                enum=["IAS", "OPEN_SLATE"],
+            ),
             "audience_ids": _field("array", "Included audience IDs", items={"type": "string"}),
             "excluded_audience_ids": _field("array", "Excluded audience IDs", items={"type": "string"}),
         },
@@ -582,6 +602,12 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
                 "if": {"placement_type": "PLACEMENT_TYPE_NORMAL"},
                 "required": ["placements"],
                 "message": "placement_type=PLACEMENT_TYPE_NORMAL requires placements",
+            },
+            {
+                "id": "catalog_promotion_requires_product_selection",
+                "if": {"promotion_type": "CATALOG"},
+                "required": ["catalog_id", "product_set_id"],
+                "message": "promotion_type=CATALOG requires catalog_id and product_set_id",
             },
         ],
     }

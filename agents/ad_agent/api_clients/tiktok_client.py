@@ -376,9 +376,15 @@ class TikTokAPIClient(BasePlatformClient):
             'optimization_event', 'pixel_id', 'brand_safety_type',
             'brand_safety_partner', 'audience_type', 'audience_ids',
             'excluded_audience_ids',
+            'catalog_id', 'product_set_id',
         ):
             if key in adgroup and adgroup[key] not in (None, ''):
                 data['ad_group'][key] = adgroup[key]
+        if adgroup.get('promotion_type') == 'CATALOG':
+            if not str(adgroup.get('catalog_id') or '').strip():
+                raise ValueError('TikTok CATALOG promotion requires catalog_id')
+            if not str(adgroup.get('product_set_id') or '').strip():
+                raise ValueError('TikTok CATALOG promotion requires product_set_id')
         # 定向
         if adgroup.get('targeting'):
             data['ad_group']['targeting'] = adgroup['targeting']

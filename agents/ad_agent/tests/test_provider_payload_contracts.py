@@ -1445,6 +1445,40 @@ def test_tiktok_ad_creation_preserves_existing_schema_fields():
     assert payloads[-1]["ad_group"]["pixel_id"] == "pixel-1"
 
 
+def test_tiktok_catalog_adgroup_contract_requires_and_forwards_product_selection():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_tiktok_capability().register_tools()
+    }
+    schema = definitions["tiktok_create_adgroup"].input_schema
+    assert "CATALOG" in schema.properties["promotion_type"]["enum"]
+    assert schema.properties["catalog_id"]["lookup_tool"] == "tiktok_list_catalogs"
+    assert schema.properties["product_set_id"]["lookup_tool"] == "tiktok_list_product_sets"
+
+    base = {
+        "campaign_id": "101", "name": "Catalog group",
+        "promotion_type": "CATALOG", "billing_event": "OCPM",
+        "bid_type": "BID_TYPE_NO_BID", "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
+        "budget_mode": "BUDGET_MODE_DAY", "budget": 50, "location_ids": ["US"],
+    }
+    errors = validate_tool_input(schema, base, include_provider_contract=True)
+    assert any("catalog_id" in error and "product_set_id" in error for error in errors)
+
+    client = TikTokAPIClient({"access_token": "test"})
+    payloads = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        payloads.append(data) or {"ad_group_id": "ag-1"}
+    )
+    result = client.create_adgroup("t1", "101", {
+        **base, "catalog_id": "catalog-1", "product_set_id": "set-1",
+    })
+    assert result == "ag-1"
+    assert payloads[-1]["ad_group"]["catalog_id"] == "catalog-1"
+    assert payloads[-1]["ad_group"]["product_set_id"] == "set-1"
+    with pytest.raises(ValueError, match="CATALOG promotion requires catalog_id"):
+        client.create_adgroup("t1", "101", {**base, "product_set_id": "set-1"})
+
+
 def test_tiktok_typed_ad_tools_validate_assets_and_fix_format_payloads():
     client = TikTokAPIClient({"access_token": "test"})
     payloads = []

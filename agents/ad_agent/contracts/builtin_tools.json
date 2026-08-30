@@ -1,5 +1,5 @@
 {
-  "digest": "520ec59a6d8566e7e37e96f261fa0031bda5e3ad7a3cd2cc622dfe8464eed382",
+  "digest": "1bdadecb1895f751a83aa6b8d6494eb86a9576ad28d82446d312135af089fb56",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -12428,7 +12428,7 @@
       ]
     },
     "tiktok": {
-      "digest": "aaa5d8eeaffe5d4a7436c04de01c81bd3a18c5a497cc61bcdbd4f7f68933a3b4",
+      "digest": "65e4817e304ca39bee6970715dba1504ef7f283010cb6a9390830a1fa5ddb6f0",
       "tool_count": 69,
       "tools": [
         {
@@ -12661,6 +12661,17 @@
                 "required": [
                   "placements"
                 ]
+              },
+              {
+                "id": "catalog_promotion_requires_product_selection",
+                "if": {
+                  "promotion_type": "CATALOG"
+                },
+                "message": "promotion_type=CATALOG requires catalog_id and product_set_id",
+                "required": [
+                  "catalog_id",
+                  "product_set_id"
+                ]
               }
             ],
             "properties": {
@@ -12733,6 +12744,20 @@
                 ],
                 "type": "string"
               },
+              "brand_safety_partner": {
+                "description": "Brand safety verification partner",
+                "enum": [
+                  "IAS",
+                  "OPEN_SLATE"
+                ],
+                "type": "string"
+              },
+              "brand_safety_type": {
+                "description": "TikTok brand safety type",
+                "lookup_result_key": "brand_safety",
+                "lookup_tool": "tiktok_list_brand_safety",
+                "type": "string"
+              },
               "budget": {
                 "description": "Budget in user currency; current knowledge base minimum is 50 USD",
                 "minimum": 50,
@@ -12753,6 +12778,17 @@
               },
               "catalog_id": {
                 "description": "TikTok catalog ID",
+                "lookup_result_key": "catalogs",
+                "lookup_tool": "tiktok_list_catalogs",
+                "selection_label_fields": [
+                  "catalog_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "catalog_id",
+                  "id"
+                ],
                 "type": "string"
               },
               "conversion_id": {
@@ -12880,6 +12916,17 @@
               },
               "product_set_id": {
                 "description": "TikTok product set ID",
+                "lookup_result_key": "product_sets",
+                "lookup_tool": "tiktok_list_product_sets",
+                "selection_label_fields": [
+                  "product_set_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "product_set_id",
+                  "id"
+                ],
                 "type": "string"
               },
               "promotion_type": {
@@ -12889,7 +12936,8 @@
                   "APP_IOS",
                   "WEBSITE",
                   "LEAD_FORM",
-                  "CONTENT"
+                  "CONTENT",
+                  "CATALOG"
                 ],
                 "type": "string"
               },
