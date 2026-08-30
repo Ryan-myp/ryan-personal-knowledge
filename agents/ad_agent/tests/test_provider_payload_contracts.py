@@ -133,6 +133,42 @@ def test_meta_graph_payload_normalizes_categories_and_nested_updates():
     assert payloads[-1]["daily_budget"] == "1200"
 
 
+def test_meta_audience_crud_builds_custom_and_lookalike_payloads():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        calls.append((method, endpoint, data)) or {"id": "aud-1"}
+    )
+    client.resource_belongs_to_account = lambda account_id, resource_type, resource_id: True
+
+    assert client.create_audience("act-123", {
+        "name": "Purchasers 30D", "subtype": "CUSTOM",
+        "rule": {"event": {"eq": "purchase"}}, "retention_days": 30,
+        "customer_file_source": "USER_PROVIDED_ONLY",
+    }) == "aud-1"
+    custom = calls[-1]
+    assert custom[:2] == ("POST", "/act_act-123/customaudiences")
+    assert json.loads(custom[2]["rule"]) == {"event": {"eq": "purchase"}}
+    assert custom[2]["retention_days"] == 30
+
+    assert client.create_audience("123", {
+        "name": "US Lookalike", "subtype": "LOOKALIKE",
+        "origin_audience_id": "aud-1", "country": "us", "ratio": 0.05,
+    }) == "aud-1"
+    lookalike = calls[-1][2]
+    assert lookalike["origin_audience_id"] == "aud-1"
+    assert json.loads(lookalike["lookalike_spec"]) == {
+        "country": "US", "ratio": 0.05, "type": "similarity",
+    }
+
+    assert client.update_audience("123", "aud-1", {
+        "name": "Updated", "rule": {"event": "lead"},
+    })["success"] is True
+    assert json.loads(calls[-1][2]["rule"]) == {"event": "lead"}
+    assert client.delete_audience("123", "aud-1")["success"] is True
+    assert calls[-1][:2] == ("DELETE", "/aud-1")
+
+
 def test_tiktok_ad_creation_preserves_existing_schema_fields():
     client = TikTokAPIClient({"access_token": "test"})
     payloads = []

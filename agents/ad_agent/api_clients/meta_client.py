@@ -9,6 +9,7 @@ api_clients/meta_client.py - Meta Marketing API 生产级客户端
 
 import json
 import logging
+import re
 import time
 import threading
 from typing import Any, Optional
@@ -245,7 +246,7 @@ class MetaAPIClient(BasePlatformClient):
 
     def list_audiences(self, account_id: str, limit: int = 25) -> list:
         """获取广告账户下的 Custom Audience 列表。"""
-        clean_id = account_id.replace('act_', '')
+        clean_id = self._clean_meta_id(account_id, "account_id")
         return self._list_graph_pages(
             clean_id,
             f"/act_{clean_id}/customaudiences",
@@ -254,6 +255,135 @@ class MetaAPIClient(BasePlatformClient):
                 'fields': 'id,name,subtype,approximate_count,delivery_status',
             },
         )
+
+    @staticmethod
+    def _clean_meta_id(value: Any, field_name: str) -> str:
+        """Validate a Graph object/account ID before URL construction."""
+        raw = str(value or "").strip()
+        if raw.startswith("act_"):
+            raw = raw[4:]
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", raw):
+            raise ValueError(f"{field_name} must be a simple Meta object ID")
+        return raw
+
+    def get_audience(self, account_id: str, audience_id: str, fields: list = None) -> dict:
+        """Get one Custom/Lookalike Audience visible to an ad account."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        audience_id = self._clean_meta_id(audience_id, "audience_id")
+        # The account is intentionally part of the Tool contract even though
+        # Graph addresses the object by ID.  Verify visibility so a token
+        # shared across accounts cannot read an unrelated Audience.
+        if not self.resource_belongs_to_account(account_id, "audience", audience_id):
+            raise PermissionError(
+                f"Meta audience {audience_id} does not belong to account {account_id}"
+            )
+        params = {
+            "fields": ",".join(fields) if fields else (
+                "id,name,subtype,description,approximate_count,delivery_status,"
+                "operation_status,retention_days,rule,lookalike_spec,origin_audience_id"
+            )
+        }
+        return self.require_resource_object(
+            self.request("GET", f"/{audience_id}", extra_params=params),
+            "Meta audience get",
+        )
+
+    def create_audience(self, account_id: str, audience: dict) -> str:
+        """Create a Meta Custom or Lookalike Audience.
+
+        ``rule`` and ``lookalike_spec`` are JSON objects in the Tool contract,
+        but Meta's Graph endpoint expects JSON-encoded parameter strings.
+        This translation remains provider-owned and is never performed by
+        Runtime or a business Skill.
+        """
+        account_id = self._clean_meta_id(account_id, "account_id")
+        if not isinstance(audience, dict):
+            raise ValueError("audience must be an object")
+        name = str(audience.get("name") or "").strip()
+        subtype = str(audience.get("subtype") or "").strip().upper()
+        if not name or subtype not in {"CUSTOM", "LOOKALIKE"}:
+            raise ValueError("audience name and subtype=CUSTOM or LOOKALIKE are required")
+
+        data: dict[str, Any] = {"name": name, "subtype": subtype}
+        for field_name in (
+            "description", "customer_file_source", "retention_days", "prefill",
+            "pixel_id", "event_source_group",
+        ):
+            if audience.get(field_name) is not None:
+                data[field_name] = audience[field_name]
+        if audience.get("rule") is not None:
+            if not isinstance(audience["rule"], dict):
+                raise ValueError("rule must be an object")
+            data["rule"] = json.dumps(audience["rule"], separators=(",", ":"))
+
+        if subtype == "LOOKALIKE":
+            origin_id = self._clean_meta_id(
+                audience.get("origin_audience_id"), "origin_audience_id"
+            )
+            country = str(audience.get("country") or "").strip().upper()
+            if not re.fullmatch(r"[A-Z]{2}", country):
+                raise ValueError("country must be a two-letter ISO country code")
+            try:
+                ratio = float(audience.get("ratio", 0.01))
+            except (TypeError, ValueError) as exc:
+                raise ValueError("ratio must be between 0.01 and 0.20") from exc
+            if not 0.01 <= ratio <= 0.20:
+                raise ValueError("ratio must be between 0.01 and 0.20")
+            lookalike_type = str(audience.get("lookalike_type", "similarity")).lower()
+            if lookalike_type not in {"similarity", "reach"}:
+                raise ValueError("lookalike_type must be similarity or reach")
+            data["origin_audience_id"] = origin_id
+            data["lookalike_spec"] = json.dumps({
+                "country": country,
+                "ratio": ratio,
+                "type": lookalike_type,
+            }, separators=(",", ":"))
+
+        self.acquire_rate_limit(self._get_account_limiter(account_id))
+        result = self.request("POST", f"/act_{account_id}/customaudiences", data=data)
+        resource_id = result.get("id") if isinstance(result, dict) else None
+        return self.require_resource_id(resource_id, "Meta audience create")
+
+    def update_audience(
+        self, account_id: str, audience_id: str, updates: dict
+    ) -> dict:
+        """Update the supported mutable Custom Audience fields."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        audience_id = self._clean_meta_id(audience_id, "audience_id")
+        if not self.resource_belongs_to_account(account_id, "audience", audience_id):
+            raise PermissionError(
+                f"Meta audience {audience_id} does not belong to account {account_id}"
+            )
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("updates must be a non-empty object")
+        allowed = {
+            "name", "description", "retention_days", "rule",
+        }
+        unknown = set(updates) - allowed
+        if unknown:
+            raise ValueError(f"Unsupported Meta Audience update fields: {sorted(unknown)}")
+        data = {key: value for key, value in updates.items() if value is not None}
+        if "rule" in data:
+            if not isinstance(data["rule"], dict):
+                raise ValueError("rule must be an object")
+            data["rule"] = json.dumps(data["rule"], separators=(",", ":"))
+        if not data:
+            raise ValueError("updates must contain a supported non-null field")
+        self.acquire_rate_limit(self._get_account_limiter(account_id))
+        result = self.request("POST", f"/{audience_id}", data=data)
+        return {"success": True, "audience_id": audience_id, "result": result}
+
+    def delete_audience(self, account_id: str, audience_id: str) -> dict:
+        """Delete a Custom Audience after account ownership verification."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        audience_id = self._clean_meta_id(audience_id, "audience_id")
+        if not self.resource_belongs_to_account(account_id, "audience", audience_id):
+            raise PermissionError(
+                f"Meta audience {audience_id} does not belong to account {account_id}"
+            )
+        self.acquire_rate_limit(self._get_account_limiter(account_id))
+        self.request("DELETE", f"/{audience_id}")
+        return {"success": True, "audience_id": audience_id}
 
     def list_catalogs(self, account_id: str, limit: int = 25) -> list:
         """获取广告账户可用的商品目录。"""
@@ -350,6 +480,8 @@ class MetaAPIClient(BasePlatformClient):
             items = self.list_adsets(account_id)
         elif resource_type == "ad":
             items = self.list_ads(account_id)
+        elif resource_type == "audience":
+            items = self.list_audiences(account_id)
         else:
             return False
         if not isinstance(items, list):
@@ -359,7 +491,7 @@ class MetaAPIClient(BasePlatformClient):
                 continue
             identifiers = {
                 item.get("id"), item.get("campaign_id"), item.get("adset_id"),
-                item.get("ad_id"),
+                item.get("ad_id"), item.get("audience_id"),
             }
             if resource_id in {str(value) for value in identifiers if value is not None}:
                 return True

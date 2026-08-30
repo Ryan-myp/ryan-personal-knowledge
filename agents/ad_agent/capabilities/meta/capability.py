@@ -16,6 +16,7 @@ from .creatives import MetaCreateCreativeHandler
 from .parameters import (
     meta_campaign_schema, meta_adset_schema, meta_ad_schema,
     meta_ad_format_catalog, meta_lead_ad_schema, meta_catalog_ad_schema,
+    meta_audience_schema,
 )
 from ...api_clients.meta_client import MetaAPIClient
 from ..update_contracts import meta_updates
@@ -55,7 +56,9 @@ class MetaCapability(BaseCapability):
     # routing.
     provider_method_coverage = {
         "list_accounts": ["meta_list_accounts"], "get_account": ["meta_get_account"],
-        "list_audiences": ["meta_list_audiences"], "list_catalogs": ["meta_list_catalogs"],
+        "list_audiences": ["meta_list_audiences"], "get_audience": ["meta_get_audience"],
+        "create_audience": ["meta_create_audience"], "update_audience": ["meta_update_audience"],
+        "delete_audience": ["meta_delete_audience"], "list_catalogs": ["meta_list_catalogs"],
         "list_product_sets": ["meta_list_product_sets"], "list_campaigns": ["meta_list_campaigns"],
         "list_pages": ["meta_list_pages"], "list_pixels": ["meta_list_pixels"],
         "list_lead_forms": ["meta_list_lead_forms"],
@@ -80,6 +83,8 @@ class MetaCapability(BaseCapability):
     def _extended_provider_tools(self, client):
         """Expose Meta client endpoints not represented by hierarchy handlers."""
         account = lambda ctx, data: account_from(ctx, data, "account_id")
+        audience_schema = meta_audience_schema()
+        audience_properties = audience_schema["properties"]
         tools = [
             method_tool(
                 platform="meta", skill="meta-marketing-api", name="meta_list_pages",
@@ -220,6 +225,53 @@ class MetaCapability(BaseCapability):
                         "headline", "description", "ad_style", "call_to_action_type", "status",
                     ) if key in data
                 }), {}),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_get_audience",
+                description="查询 Meta Custom 或 Lookalike Audience 详情。", method_name="get_audience",
+                result_key="audience", properties={
+                    key: audience_properties[key] for key in ("account_id", "audience_id")
+                }, required=["account_id", "audience_id"], action="get", resource_type="audience",
+                resource_id_field="audience_id", intent_types=["get_audience"], traits=["read", "audience"],
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["audience_id"]), {}),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_create_audience",
+                description="创建 Meta Custom 或 Lookalike Audience；默认仅生成 dry-run 计划。",
+                method_name="create_audience", result_key="audience_id", properties={
+                    key: audience_properties[key] for key in (
+                        "account_id", "name", "subtype", "description", "customer_file_source",
+                        "retention_days", "rule", "prefill", "pixel_id", "event_source_group",
+                        "origin_audience_id", "country", "ratio", "lookalike_type",
+                    )
+                }, required=["account_id", "name", "subtype"],
+                provider_required=["name", "subtype"],
+                conditional_rules=audience_schema["conditional_rules"], action="create", resource_type="audience",
+                resource_id_field="audience_id", intent_types=["create_audience"], traits=["write", "audience"],
+                write=True,
+                argument_builder=lambda ctx, data: ((account(ctx, data), {
+                    key: value for key, value in data.items() if key != "account_id"
+                }), {}),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_update_audience",
+                description="更新 Meta Audience 的名称、描述、规则或来源属性；默认仅生成 dry-run 计划。",
+                method_name="update_audience", result_key="audience_result", properties={
+                    key: audience_properties[key] for key in ("account_id", "audience_id", "updates")
+                }, required=["account_id", "audience_id", "updates"], action="update", resource_type="audience",
+                resource_id_field="audience_id", intent_types=["update_audience"], traits=["write", "audience"],
+                write=True,
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["audience_id"], data["updates"]), {}),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_delete_audience",
+                description="删除 Meta Custom 或 Lookalike Audience；默认仅生成 dry-run 计划。",
+                method_name="delete_audience", result_key="audience_result", properties={
+                    key: audience_properties[key] for key in ("account_id", "audience_id")
+                }, required=["account_id", "audience_id"], action="delete", resource_type="audience",
+                resource_id_field="audience_id", intent_types=["delete_audience"], traits=["write", "audience"],
+                write=True,
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["audience_id"]), {}),
             ),
         ]
         for method_name, resource_type, resource_id, intent in (

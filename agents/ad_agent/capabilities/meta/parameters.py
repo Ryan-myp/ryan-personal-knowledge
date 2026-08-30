@@ -28,6 +28,11 @@ META_CUSTOM_EVENT_TYPES = [
     "PURCHASE", "LEAD", "COMPLETE_REGISTRATION", "ADD_TO_CART",
     "INITIATE_CHECKOUT", "VIEW_CONTENT", "SEARCH", "SUBSCRIBE",
 ]
+META_AUDIENCE_SUBTYPES = ["CUSTOM", "LOOKALIKE"]
+META_CUSTOMER_FILE_SOURCES = [
+    "USER_PROVIDED_ONLY", "PARTNER_PROVIDED_ONLY", "BOTH_USER_AND_PARTNER_PROVIDED",
+]
+META_LOOKALIKE_TYPES = ["similarity", "reach"]
 
 
 def _field(field_type: Any, description: str = "", **kwargs: Any) -> dict[str, Any]:
@@ -70,6 +75,48 @@ def meta_targeting_schema() -> dict[str, Any]:
         "excluded_custom_audiences": _field("array", "Excluded custom audiences", items=audience_ref),
         "flexible_spec": _field("array", "Interest/behavior groups", items={"type": "object", "additionalProperties": True}),
     }, "Meta ad set targeting")
+
+
+def meta_audience_schema() -> dict[str, Any]:
+    """Contract for Meta Custom and Lookalike Audience management."""
+    return {
+        "required": ["account_id", "name", "subtype"],
+        "provider_required": ["name", "subtype"],
+        "properties": {
+            "account_id": _field("string", "Meta ad account ID"),
+            "audience_id": _field("string", "Meta Custom Audience ID", minLength=1),
+            "name": _field("string", "Audience name", minLength=1, maxLength=400),
+            "subtype": _field("string", "Audience subtype", enum=META_AUDIENCE_SUBTYPES),
+            "description": _field("string", "Audience description", maxLength=1000),
+            "customer_file_source": _field(
+                "string", "Source of customer-file data", enum=META_CUSTOMER_FILE_SOURCES,
+            ),
+            "retention_days": _field("integer", "Website/event retention window", minimum=1, maximum=180),
+            "rule": _field("object", "Meta website/event audience rule", additionalProperties=True),
+            "prefill": _field("boolean", "Prefill audience with prior events"),
+            "pixel_id": _field("string", "Meta Pixel source ID"),
+            "event_source_group": _field("string", "Meta event source group ID"),
+            "origin_audience_id": _field("string", "Source Custom Audience ID for Lookalike"),
+            "country": _field("string", "Two-letter lookalike country code", minLength=2, maxLength=2),
+            "ratio": _field("number", "Lookalike ratio", minimum=0.01, maximum=0.20),
+            "lookalike_type": _field("string", "Lookalike expansion type", enum=META_LOOKALIKE_TYPES),
+            "limit": _field("integer", "Maximum number of audiences", minimum=1, maximum=1000),
+            "updates": _object({
+                "name": _field("string", "Audience name", minLength=1, maxLength=400),
+                "description": _field("string", "Audience description", maxLength=1000),
+                "retention_days": _field("integer", "Website/event retention window", minimum=1, maximum=180),
+                "rule": _field("object", "Meta website/event audience rule", additionalProperties=True),
+            }, "Allowed Custom Audience update fields"),
+        },
+        "conditional_rules": [
+            {
+                "id": "lookalike_source",
+                "if": {"subtype": "LOOKALIKE"},
+                "required": ["origin_audience_id", "country"],
+                "message": "LOOKALIKE requires origin_audience_id and country",
+            },
+        ],
+    }
 
 
 def meta_promoted_object_schema() -> dict[str, Any]:

@@ -1,5 +1,5 @@
 {
-  "digest": "01f97c9345a978fcc8ffb6df771c142f16f9f223fdf3eba603ce5932978a0582",
+  "digest": "dd08b57ab1c3baea6a7e582f724e43393c8fc7b1bbd1ec47fd1d2b81937525d7",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -5390,8 +5390,8 @@
       ]
     },
     "meta": {
-      "digest": "52a5b0c1a476b25c105c497027207daa3f5f6ff2db59772fca399dc8e39eedbd",
-      "tool_count": 31,
+      "digest": "bd557cdbec2f12f22c73f6de334f5868a374a35e45aa0291658c82064e6b9cb8",
+      "tool_count": 35,
       "tools": [
         {
           "action": "boost",
@@ -6083,6 +6083,144 @@
         {
           "action": "create",
           "contract_version": "1.1.0",
+          "description": "创建 Meta Custom 或 Lookalike Audience；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [
+              {
+                "id": "lookalike_source",
+                "if": {
+                  "subtype": "LOOKALIKE"
+                },
+                "message": "LOOKALIKE requires origin_audience_id and country",
+                "required": [
+                  "origin_audience_id",
+                  "country"
+                ]
+              }
+            ],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "country": {
+                "description": "Two-letter lookalike country code",
+                "maxLength": 2,
+                "minLength": 2,
+                "type": "string"
+              },
+              "customer_file_source": {
+                "description": "Source of customer-file data",
+                "enum": [
+                  "USER_PROVIDED_ONLY",
+                  "PARTNER_PROVIDED_ONLY",
+                  "BOTH_USER_AND_PARTNER_PROVIDED"
+                ],
+                "type": "string"
+              },
+              "description": {
+                "description": "Audience description",
+                "maxLength": 1000,
+                "type": "string"
+              },
+              "event_source_group": {
+                "description": "Meta event source group ID",
+                "type": "string"
+              },
+              "lookalike_type": {
+                "description": "Lookalike expansion type",
+                "enum": [
+                  "similarity",
+                  "reach"
+                ],
+                "type": "string"
+              },
+              "name": {
+                "description": "Audience name",
+                "maxLength": 400,
+                "minLength": 1,
+                "type": "string"
+              },
+              "origin_audience_id": {
+                "description": "Source Custom Audience ID for Lookalike",
+                "type": "string"
+              },
+              "pixel_id": {
+                "description": "Meta Pixel source ID",
+                "type": "string"
+              },
+              "prefill": {
+                "description": "Prefill audience with prior events",
+                "type": "boolean"
+              },
+              "ratio": {
+                "description": "Lookalike ratio",
+                "maximum": 0.2,
+                "minimum": 0.01,
+                "type": "number"
+              },
+              "retention_days": {
+                "description": "Website/event retention window",
+                "maximum": 180,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "rule": {
+                "additionalProperties": true,
+                "description": "Meta website/event audience rule",
+                "type": "object"
+              },
+              "subtype": {
+                "description": "Audience subtype",
+                "enum": [
+                  "CUSTOM",
+                  "LOOKALIKE"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "name",
+              "subtype"
+            ],
+            "required": [
+              "account_id",
+              "name",
+              "subtype"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_audience"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_create_audience",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "audience_id",
+          "resource_type": "audience",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "audience"
+          ]
+        },
+        {
+          "action": "create",
+          "contract_version": "1.1.0",
           "description": "创建 Meta Campaign。",
           "effect_class": "write",
           "input_schema": {
@@ -6568,6 +6706,58 @@
           ]
         },
         {
+          "action": "delete",
+          "contract_version": "1.1.0",
+          "description": "删除 Meta Custom 或 Lookalike Audience；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "audience_id": {
+                "description": "Meta Custom Audience ID",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "audience_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_audience"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_delete_audience",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "audience_id",
+          "resource_type": "audience",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "audience"
+          ]
+        },
+        {
           "action": "get",
           "contract_version": "1.1.0",
           "description": "获取 Meta 广告账户详情。",
@@ -6830,6 +7020,58 @@
             "read",
             "report",
             "ad_set"
+          ]
+        },
+        {
+          "action": "get",
+          "contract_version": "1.1.0",
+          "description": "查询 Meta Custom 或 Lookalike Audience 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "audience_id": {
+                "description": "Meta Custom Audience ID",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "audience_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_audience"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_get_audience",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "audience_id",
+          "resource_type": "audience",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "audience"
           ]
         },
         {
@@ -7795,6 +8037,88 @@
           "traits": [
             "write",
             "ad_set"
+          ]
+        },
+        {
+          "action": "update",
+          "contract_version": "1.1.0",
+          "description": "更新 Meta Audience 的名称、描述、规则或来源属性；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "audience_id": {
+                "description": "Meta Custom Audience ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Allowed Custom Audience update fields",
+                "properties": {
+                  "description": {
+                    "description": "Audience description",
+                    "maxLength": 1000,
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "Audience name",
+                    "maxLength": 400,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "retention_days": {
+                    "description": "Website/event retention window",
+                    "maximum": 180,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "rule": {
+                    "additionalProperties": true,
+                    "description": "Meta website/event audience rule",
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "audience_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_audience"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_update_audience",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "audience_id",
+          "resource_type": "audience",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "audience"
           ]
         },
         {
@@ -11052,5 +11376,5 @@
       ]
     }
   },
-  "tool_count": 143
+  "tool_count": 147
 }
