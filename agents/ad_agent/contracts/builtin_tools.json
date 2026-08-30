@@ -1,13 +1,14 @@
 {
-  "digest": "bdc9eea4d5045c307c0e93bdc621e8956c13523bc31a5f47e0ced419a0748753",
+  "digest": "d9cf2a8a2497397c46861c05b45795bd160c27585f0deb8d1783f75a56a8dfd1",
   "format_version": 1,
   "platforms": {
     "dv360": {
-      "digest": "59a2eb706d05041f0a43ea55ea0ea93dd32280031a7ef6ebe119a45839b041d9",
+      "digest": "5878f5b8b688d7f76d3e29ce4fed3cc48f0435c266ceed81fbd7cc6b0bd134ea",
       "tool_count": 32,
       "tools": [
         {
           "action": "activate",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "调用 DV360 activate_io 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -57,6 +58,7 @@
         },
         {
           "action": "activate",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "激活 DV360 Line Item；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -110,6 +112,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "创建 DV360 Campaign。",
           "effect_class": "write",
@@ -209,6 +212,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "创建 DV360 Creative；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -260,6 +264,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "创建 DV360 IO（Order & Invoice）。",
           "effect_class": "write",
@@ -381,6 +386,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "创建 DV360 Line Item。",
           "effect_class": "write",
@@ -547,6 +553,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "为 DV360 Line Item 绑定定向选项；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -607,6 +614,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "创建 DV360 异步报表任务；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -658,6 +666,7 @@
         },
         {
           "action": "delete",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "删除 DV360 Campaign；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -708,6 +717,7 @@
         },
         {
           "action": "delete",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "删除 DV360 Creative；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -757,6 +767,7 @@
         },
         {
           "action": "delete",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "删除 DV360 Insertion Order；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -806,6 +817,7 @@
         },
         {
           "action": "delete",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "删除 DV360 Line Item；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -859,6 +871,7 @@
         },
         {
           "action": "delete",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "解除 DV360 Line Item 的定向绑定；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -916,6 +929,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "获取 DV360 Advertiser 详情。",
           "effect_class": "read",
@@ -961,6 +975,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "查询 DV360 Campaign 详情（支持 campaign_id 或 campaign_name）。",
           "effect_class": "read",
@@ -1008,6 +1023,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "查询 DV360 Creative 详情。",
           "effect_class": "read",
@@ -1057,6 +1073,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "查询 DV360 Insertion Order 详情。",
           "effect_class": "read",
@@ -1102,6 +1119,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "查询 DV360 Line Item 详情。",
           "effect_class": "read",
@@ -1151,6 +1169,7 @@
         },
         {
           "action": "report",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "查询 DV360 Line Item 报表；当前不提供 Campaign-level report。",
           "effect_class": "read",
@@ -1212,6 +1231,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "获取 DV360 异步报表结果。",
           "effect_class": "read",
@@ -1264,6 +1284,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "查询 DV360 Advertiser 列表。",
           "effect_class": "read",
@@ -1303,6 +1324,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "查询 DV360 Campaign 列表。",
           "effect_class": "read",
@@ -1356,6 +1378,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "查询 DV360 Advertiser 下的 Creative 列表。",
           "effect_class": "read",
@@ -1407,6 +1430,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "查询 DV360 Insertion Order 列表。",
           "effect_class": "read",
@@ -1455,6 +1479,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "查询 DV360 Line Item 已绑定的定向选项。",
           "effect_class": "read",
@@ -1511,6 +1536,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "查询 DV360 Line Item 列表，可按 IO 过滤。",
           "effect_class": "read",
@@ -1562,6 +1588,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "查询 DV360 Targeting Option 目录（枚举/参考数据）。",
           "effect_class": "read",
@@ -1613,6 +1640,7 @@
         },
         {
           "action": "pause",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "调用 DV360 pause_io 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -1662,6 +1690,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "更新 DV360 campaign，默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -1747,6 +1776,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "更新 DV360 Creative；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -1800,6 +1830,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "更新 DV360 io，默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -1890,6 +1921,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.1.0",
           "description": "更新 DV360 line_item，默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -1991,11 +2023,23 @@
       ]
     },
     "google-ads": {
-      "digest": "d38cc358a4c04f97eeecc7594d18860496b5deabdccecee6dbf95043ad90027f",
+      "digest": "aef084cff4376050d00dc1d3aa5a783c2d5454c17b586b1f0739cbd7a0a23b32",
       "tool_count": 61,
       "tools": [
         {
           "action": "create",
+          "activation_rules": [
+            {
+              "aliases": [
+                "advertising_channel_type"
+              ],
+              "default": "SEARCH",
+              "field": "campaign_type",
+              "in": [
+                "SEARCH"
+              ]
+            }
+          ],
           "contract_version": "1.3.0",
           "description": "创建 Google Ads Ad。",
           "effect_class": "write",
@@ -2138,6 +2182,19 @@
         },
         {
           "action": "create",
+          "activation_rules": [
+            {
+              "aliases": [
+                "advertising_channel_type"
+              ],
+              "field": "campaign_type",
+              "not_in": [
+                "PERFORMANCE_MAX",
+                "MAX",
+                "MULTI_CHANNEL"
+              ]
+            }
+          ],
           "contract_version": "1.3.0",
           "description": "创建 Google Ads Ad Group。",
           "effect_class": "write",
@@ -2228,6 +2285,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "创建 Google Ads 可复用 Asset（文本、图片、YouTube 视频或 HTML5 ZIP）；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -2388,6 +2446,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "创建 Google PMax Asset Group；当前仅支持 dry-run 计划。",
           "effect_class": "write",
@@ -2544,6 +2603,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "创建 Google Ads Portfolio BiddingStrategy；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -2686,6 +2746,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "创建 Google Ads Campaign。",
           "effect_class": "write",
@@ -3241,6 +3302,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "创建 Google Ads CampaignBudget；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -3324,6 +3386,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "批量创建 Google Ads CampaignCriterion；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -3528,6 +3591,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "创建 Google Ads Conversion Action；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -3717,6 +3781,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "批量创建 Google Ad Group 关键词/否定关键词；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -3810,6 +3875,18 @@
         },
         {
           "action": "create",
+          "activation_rules": [
+            {
+              "aliases": [
+                "advertising_channel_type"
+              ],
+              "field": "campaign_type",
+              "in": [
+                "PERFORMANCE_MAX",
+                "MAX"
+              ]
+            }
+          ],
           "contract_version": "1.3.0",
           "description": "创建 Google PMax Asset Group；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -3940,7 +4017,8 @@
             "type": "object"
           },
           "intent_types": [
-            "create_pmax_asset_group"
+            "create_pmax_asset_group",
+            "create_campaign"
           ],
           "live_support": false,
           "max_output_bytes": 1000000,
@@ -3965,6 +4043,17 @@
         },
         {
           "action": "create",
+          "activation_rules": [
+            {
+              "aliases": [
+                "advertising_channel_type"
+              ],
+              "field": "campaign_type",
+              "in": [
+                "SHOPPING"
+              ]
+            }
+          ],
           "contract_version": "1.3.0",
           "description": "创建 Google Shopping Product Group/Listing Group；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -4229,7 +4318,8 @@
             "type": "object"
           },
           "intent_types": [
-            "create_product_group"
+            "create_product_group",
+            "create_campaign"
           ],
           "live_support": false,
           "max_output_bytes": 1000000,
@@ -4255,6 +4345,17 @@
         },
         {
           "action": "create",
+          "activation_rules": [
+            {
+              "aliases": [
+                "advertising_channel_type"
+              ],
+              "field": "campaign_type",
+              "in": [
+                "DISPLAY"
+              ]
+            }
+          ],
           "contract_version": "1.3.0",
           "description": "创建 Google Responsive Display Ad；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -4419,7 +4520,8 @@
             "type": "object"
           },
           "intent_types": [
-            "create_responsive_display_ad"
+            "create_responsive_display_ad",
+            "create_campaign"
           ],
           "live_support": false,
           "max_output_bytes": 1000000,
@@ -4445,6 +4547,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "创建 Google Responsive Search Ad；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -4527,6 +4630,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "创建 Google Ads Customer Match User List；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -4638,6 +4742,17 @@
         },
         {
           "action": "create",
+          "activation_rules": [
+            {
+              "aliases": [
+                "advertising_channel_type"
+              ],
+              "field": "campaign_type",
+              "in": [
+                "VIDEO"
+              ]
+            }
+          ],
           "contract_version": "1.3.0",
           "description": "创建 Google Video Ad（可跳过、不可跳过、Bumper 或 Outstream）；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -4727,7 +4842,8 @@
             "type": "object"
           },
           "intent_types": [
-            "create_video_ad"
+            "create_video_ad",
+            "create_campaign"
           ],
           "live_support": false,
           "max_output_bytes": 1000000,
@@ -4753,6 +4869,7 @@
         },
         {
           "action": "delete",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "删除 Google Ads Ad；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -4805,6 +4922,7 @@
         },
         {
           "action": "delete",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "删除 Google Ads Ad Group；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -4852,6 +4970,7 @@
         },
         {
           "action": "delete",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "移除 Google Ads 客户级可复用 Asset；Asset 仍被引用时由 Google Ads 拒绝；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -4910,6 +5029,7 @@
         },
         {
           "action": "delete",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "删除 Google Ads Portfolio BiddingStrategy；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -4962,6 +5082,7 @@
         },
         {
           "action": "delete",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "删除 Google Ads Campaign；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -5010,6 +5131,7 @@
         },
         {
           "action": "delete",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "删除未被引用的 Google Ads CampaignBudget；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -5088,6 +5210,7 @@
         },
         {
           "action": "delete",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "删除 Google Ads CampaignCriterion；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -5146,6 +5269,7 @@
         },
         {
           "action": "delete",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "删除 Google Ads Conversion Action；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -5197,6 +5321,7 @@
         },
         {
           "action": "delete",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "删除 Google Ads User List；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -5249,6 +5374,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "查询 Google Ads Ad 详情。",
           "effect_class": "read",
@@ -5294,6 +5420,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "查询 Google Ads Ad Group 详情。",
           "effect_class": "read",
@@ -5339,6 +5466,7 @@
         },
         {
           "action": "report",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "查询 Google Ads Ad Group 级报表。",
           "effect_class": "read",
@@ -5397,6 +5525,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "查询 Google Ads 客户级 Asset 详情。",
           "effect_class": "read",
@@ -5455,6 +5584,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "查询 PMax Asset Group 详情。",
           "effect_class": "read",
@@ -5500,6 +5630,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "查询 Google Ads 出价策略详情。",
           "effect_class": "read",
@@ -5549,6 +5680,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "查询 Google Ads Campaign 详情（支持 campaign_id 或 campaign_name）。",
           "effect_class": "read",
@@ -5596,6 +5728,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "查询 Google Ads CampaignBudget 详情。",
           "effect_class": "read",
@@ -5674,6 +5807,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "查询 Google Ads 单个 CampaignCriterion 详情。",
           "effect_class": "read",
@@ -5732,6 +5866,7 @@
         },
         {
           "action": "report",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "查询 Google Ads Campaign 报表。支持按 campaign_ids 过滤，默认查询最近30天数据。",
           "effect_class": "read",
@@ -5787,6 +5922,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "查询 Google Ads 转化动作详情。",
           "effect_class": "read",
@@ -5836,6 +5972,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "查询 Google Ads 第一方 User List 详情。",
           "effect_class": "read",
@@ -5885,6 +6022,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "查询 Google Ads Ad Group 列表。",
           "effect_class": "read",
@@ -5933,6 +6071,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "查询 Google Ads Ad 列表。",
           "effect_class": "read",
@@ -5981,6 +6120,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "查询 PMax Campaign 的 Asset Group 列表。",
           "effect_class": "read",
@@ -6029,6 +6169,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "查询 Google Ads 客户级可复用 Asset 列表。",
           "effect_class": "read",
@@ -6086,6 +6227,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "查询 Google Ads 出价策略列表。",
           "effect_class": "read",
@@ -6134,6 +6276,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "查询 Google Ads CampaignBudget 列表。",
           "effect_class": "read",
@@ -6212,6 +6355,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "查询 Google Ads CampaignCriterion（地域、语言、设备、受众和人口属性定向）。",
           "effect_class": "read",
@@ -6268,6 +6412,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "查询 Google Ads Campaign 列表。",
           "effect_class": "read",
@@ -6321,6 +6466,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "查询 Google Ads 转化动作列表。",
           "effect_class": "read",
@@ -6369,6 +6515,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "查询 Google Ads 经理账户下可访问的客户账户。",
           "effect_class": "read",
@@ -6417,6 +6564,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "查询 Google Ads 关键词，可按 Campaign 或 Ad Group 过滤。",
           "effect_class": "read",
@@ -6469,6 +6617,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "查询 Google Ads 第一方 User List 列表。",
           "effect_class": "read",
@@ -6517,6 +6666,7 @@
         },
         {
           "action": "pause",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "调用 Google Ads pause_campaign 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -6562,6 +6712,7 @@
         },
         {
           "action": "resume",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "调用 Google Ads resume_campaign 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -6607,6 +6758,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "更新 Google Ads ad，默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -6704,6 +6856,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "更新 Google Ads ad_group，默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -6789,6 +6942,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "更新 Google Ads asset_group，默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -6882,6 +7036,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "更新 Google Ads Portfolio BiddingStrategy；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -7000,6 +7155,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "更新 Google Ads campaign，默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -7086,6 +7242,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "更新 Google Ads CampaignBudget；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -7199,6 +7356,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "更新 Google Ads CampaignCriterion 的状态、排除标记或出价系数；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -7283,6 +7441,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "更新 Google Ads Conversion Action；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -7431,6 +7590,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "更新 Google Ads User List 的可变字段；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -7516,6 +7676,7 @@
         },
         {
           "action": "upload",
+          "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "向 Google Ads Customer Match User List 上传仅含 SHA-256 邮箱/手机号的本地 CSV/TSV；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -7576,11 +7737,12 @@
       ]
     },
     "meta": {
-      "digest": "32fc1a210ebb5dac3f9cfea38dcc70e7e8c70ee6022b0b0cc636ef612515607e",
+      "digest": "acd14942d113a80ad6aecb33f81c076827b342fd32e08efd7031d3b31580b16a",
       "tool_count": 63,
       "tools": [
         {
           "action": "boost",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "将已有 Meta Page 帖子创建为推广广告。",
           "effect_class": "write",
@@ -7643,6 +7805,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "创建 Meta Ad。",
           "effect_class": "write",
@@ -7900,6 +8063,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "创建 Meta Ad Set。",
           "effect_class": "write",
@@ -8399,6 +8563,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "创建 Meta Custom 或 Lookalike Audience；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -8537,6 +8702,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "创建 Meta Campaign。",
           "effect_class": "write",
@@ -8729,6 +8895,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "创建 Meta 商品目录；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -8804,6 +8971,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "创建 Meta Catalog/Dynamic Product Ad；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -8930,6 +9098,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "创建 Meta Creative；当前仅支持 dry-run 计划。",
           "effect_class": "write",
@@ -9000,6 +9169,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "为 Meta Pixel 创建 Custom Conversion；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -9136,6 +9306,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "创建 Meta Lead Ads Instant Form 广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -9239,6 +9410,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "创建 Meta Lead Ads Instant Form；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -9447,6 +9619,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "在 Meta 商品目录下创建商品集；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -9524,6 +9697,7 @@
         },
         {
           "action": "delete",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "删除 Meta ad；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -9576,6 +9750,7 @@
         },
         {
           "action": "delete",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "删除 Meta ad_set；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -9628,6 +9803,7 @@
         },
         {
           "action": "delete",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "删除 Meta Custom 或 Lookalike Audience；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -9680,6 +9856,7 @@
         },
         {
           "action": "delete",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "删除 Meta campaign；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -9733,6 +9910,7 @@
         },
         {
           "action": "delete",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "删除 Meta 商品目录；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -9785,6 +9963,7 @@
         },
         {
           "action": "delete",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "删除 Meta Creative；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -9837,6 +10016,7 @@
         },
         {
           "action": "delete",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "删除 Meta Custom Conversion；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -9892,6 +10072,7 @@
         },
         {
           "action": "delete",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "删除 Meta 商品集；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -9960,6 +10141,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "获取 Meta 广告账户详情。",
           "effect_class": "read",
@@ -10011,6 +10193,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "获取 Meta Ad 详情。",
           "effect_class": "read",
@@ -10056,6 +10239,7 @@
         },
         {
           "action": "report",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "查询 Meta Ad 级报表。",
           "effect_class": "read",
@@ -10118,6 +10302,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "获取 Meta Ad Set 详情。",
           "effect_class": "read",
@@ -10163,6 +10348,7 @@
         },
         {
           "action": "report",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "查询 Meta Ad Set 级报表。",
           "effect_class": "read",
@@ -10225,6 +10411,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "查询 Meta Custom 或 Lookalike Audience 详情。",
           "effect_class": "read",
@@ -10277,6 +10464,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "获取 Meta Campaign 详情。",
           "effect_class": "read",
@@ -10324,6 +10512,7 @@
         },
         {
           "action": "report",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "查询 Meta Campaign 报表。",
           "effect_class": "read",
@@ -10382,6 +10571,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "查询 Meta 商品目录详情。",
           "effect_class": "read",
@@ -10441,6 +10631,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "查询 Meta Creative 详情。",
           "effect_class": "read",
@@ -10500,6 +10691,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "查询 Meta Custom Conversion 详情。",
           "effect_class": "read",
@@ -10561,6 +10753,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "查询 Meta Lead Ads Instant Form 详情。",
           "effect_class": "read",
@@ -10616,6 +10809,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "查询 Meta Pixel 详情。",
           "effect_class": "read",
@@ -10671,6 +10865,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "查询 Meta 商品集详情。",
           "effect_class": "read",
@@ -10746,6 +10941,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "列出 Meta 可访问的广告账户。",
           "effect_class": "read",
@@ -10789,6 +10985,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "列出 Meta Ad Set 列表。",
           "effect_class": "read",
@@ -10838,6 +11035,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "列出 Meta Ad 列表。",
           "effect_class": "read",
@@ -10886,6 +11084,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "查询 Meta Custom Audience 列表。",
           "effect_class": "read",
@@ -10932,6 +11131,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "列出 Meta Campaign 列表。",
           "effect_class": "read",
@@ -10985,6 +11185,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "查询 Meta 商品目录。",
           "effect_class": "read",
@@ -11033,6 +11234,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "查询 Meta 广告账户下的 Creative。",
           "effect_class": "read",
@@ -11085,6 +11287,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "查询 Meta 广告账户下的 Custom Conversion。",
           "effect_class": "read",
@@ -11146,6 +11349,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "查询 Facebook Page 下已发布的 Lead Ads Instant Form。",
           "effect_class": "read",
@@ -11194,6 +11398,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "查询广告账户可推广的 Facebook Page。",
           "effect_class": "read",
@@ -11242,6 +11447,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "查询 Meta 广告账户下的 Pixel。",
           "effect_class": "read",
@@ -11290,6 +11496,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "查询 Meta 商品目录下的商品集。",
           "effect_class": "read",
@@ -11343,6 +11550,7 @@
         },
         {
           "action": "pause",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "调用 Meta pause_ad 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -11388,6 +11596,7 @@
         },
         {
           "action": "pause",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "调用 Meta pause_adset 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -11433,6 +11642,7 @@
         },
         {
           "action": "pause",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "调用 Meta pause_campaign 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -11478,6 +11688,7 @@
         },
         {
           "action": "resume",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "调用 Meta resume_campaign 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -11523,6 +11734,7 @@
         },
         {
           "action": "search",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "查询 Meta Targeting Search 选项（兴趣、地理、语言、职位等）；只读，返回的 ID 可用于后续 Ad Set 定向选择。",
           "effect_class": "read",
@@ -11600,6 +11812,7 @@
         },
         {
           "action": "send",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "向 Meta Pixel 发送 Conversions API 事件；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -11780,6 +11993,7 @@
         },
         {
           "action": "test",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "向 Meta Test Events 发送一批 Conversions API 测试事件；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -11965,6 +12179,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "更新 Meta ad，默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -12047,6 +12262,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "更新 Meta ad_set，默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -12165,6 +12381,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "更新 Meta Audience 的名称、描述、规则或来源属性；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -12247,6 +12464,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "更新 Meta campaign，默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -12332,6 +12550,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "更新 Meta 商品目录名称；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -12398,6 +12617,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "更新 Meta Creative 名称；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -12464,6 +12684,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "更新 Meta Custom Conversion 的可变字段；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -12544,6 +12765,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "更新 Meta Lead Ads Instant Form 名称；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -12747,6 +12969,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "更新 Meta 商品集名称或筛选条件；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -12834,6 +13057,7 @@
         },
         {
           "action": "upload",
+          "activation_rules": [],
           "contract_version": "1.4.0",
           "description": "向 Meta Custom Audience 上传已 SHA-256 哈希的客户标识；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -13046,11 +13270,12 @@
       ]
     },
     "tiktok": {
-      "digest": "3e22fe68b0ddc13f1b9448ea4399e4c06d2bab172d56dacc4daf6fe31f8d9067",
+      "digest": "13c05682787c77a83cbabb4fe2dc913f1e1fedd1217c7b42615a7a44461efea5",
       "tool_count": 69,
       "tools": [
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "创建 TikTok Ads Ad。",
           "effect_class": "write",
@@ -13397,6 +13622,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "创建 TikTok Ads Ad Group。",
           "effect_class": "write",
@@ -14088,6 +14314,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "创建 TikTok App Promotion 广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -14264,6 +14491,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "通过已上传的加密文件创建 TikTok Custom Audience；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -14368,6 +14596,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "创建 TikTok Ads Campaign。",
           "effect_class": "write",
@@ -14543,6 +14772,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "创建 TikTok CAROUSEL 广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -14873,6 +15103,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "创建 TikTok Creative Portfolio（CTA/Card 等增强素材）；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -14944,6 +15175,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "创建 TikTok 自定义广告身份；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -15009,6 +15241,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "创建 TikTok Lead Generation Instant Form 广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -15149,6 +15382,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "创建 TikTok Website 或 App Pixel；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -15219,6 +15453,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "创建 TikTok SINGLE_IMAGE 广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -15549,6 +15784,7 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "创建 TikTok SINGLE_VIDEO 广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -15879,6 +16115,7 @@
         },
         {
           "action": "delete",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "删除 TikTok Custom Audience；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -15930,6 +16167,7 @@
         },
         {
           "action": "delete",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "调用 TikTok delete_campaign 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -15980,6 +16218,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok Ads Ad 详情。",
           "effect_class": "read",
@@ -16029,6 +16268,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok Ads Ad Group 详情。",
           "effect_class": "read",
@@ -16078,6 +16318,7 @@
         },
         {
           "action": "report",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok Ad Group 级报表。",
           "effect_class": "read",
@@ -16137,6 +16378,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "获取 TikTok Audience 详情。",
           "effect_class": "read",
@@ -16186,6 +16428,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok Ads Campaign 详情（支持 campaign_id 或 campaign_name）。",
           "effect_class": "read",
@@ -16233,6 +16476,7 @@
         },
         {
           "action": "report",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok Ads Campaign 报表。",
           "effect_class": "read",
@@ -16287,6 +16531,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "获取 TikTok 转化事件详情。",
           "effect_class": "read",
@@ -16336,6 +16581,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok Creative Portfolio 详情。",
           "effect_class": "read",
@@ -16392,6 +16638,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok 身份关联的自有帖子信息，用于 Spark Ads 预校验。",
           "effect_class": "read",
@@ -16467,6 +16714,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "获取 TikTok 兴趣类别详情。",
           "effect_class": "read",
@@ -16512,6 +16760,7 @@
         },
         {
           "action": "get",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok Pixel 详情。",
           "effect_class": "read",
@@ -16577,6 +16826,7 @@
         },
         {
           "action": "report",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok 广告报表。",
           "effect_class": "read",
@@ -16631,6 +16881,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "列出 TikTok 广告主账户。",
           "effect_class": "read",
@@ -16679,6 +16930,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok Action 类别和特殊行业类别。",
           "effect_class": "read",
@@ -16738,6 +16990,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok Ads Ad Group 列表。",
           "effect_class": "read",
@@ -16786,6 +17039,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok Ads Ad 列表。",
           "effect_class": "read",
@@ -16834,6 +17088,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok apps 参考数据。",
           "effect_class": "read",
@@ -16883,6 +17138,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok Audience 列表。",
           "effect_class": "read",
@@ -16929,6 +17185,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok brand_safety 参考数据。",
           "effect_class": "read",
@@ -16978,6 +17235,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok browser 定向选项。",
           "effect_class": "read",
@@ -17017,6 +17275,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok Ads Campaign 列表。",
           "effect_class": "read",
@@ -17070,6 +17329,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok carrier 定向选项。",
           "effect_class": "read",
@@ -17109,6 +17369,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok 商品目录；Catalog/Product Set 的创建、更新和删除当前没有经过验证的 Ads API Tool。",
           "effect_class": "read",
@@ -17165,6 +17426,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok conversions 参考数据。",
           "effect_class": "read",
@@ -17219,6 +17481,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok creatives 素材库。",
           "effect_class": "read",
@@ -17271,6 +17534,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok 官方设备型号定向选项。",
           "effect_class": "read",
@@ -17319,6 +17583,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok devices 参考数据。",
           "effect_class": "read",
@@ -17368,6 +17633,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok 广告账户下的可用广告身份。",
           "effect_class": "read",
@@ -17437,6 +17703,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok images 素材库。",
           "effect_class": "read",
@@ -17489,6 +17756,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok 兴趣类别。",
           "effect_class": "read",
@@ -17587,6 +17855,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok 官方语言定向选项。",
           "effect_class": "read",
@@ -17635,6 +17904,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok locations 参考数据。",
           "effect_class": "read",
@@ -17684,6 +17954,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok operating_system 定向选项。",
           "effect_class": "read",
@@ -17723,6 +17994,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok 广告主下的 Pixel。",
           "effect_class": "read",
@@ -17786,6 +18058,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok 商品集。",
           "effect_class": "read",
@@ -17845,6 +18118,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "按投放位置、广告目标和业务条件查询 TikTok 官方可用地域。",
           "effect_class": "read",
@@ -17962,6 +18236,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "查询 TikTok videos 素材库。",
           "effect_class": "read",
@@ -18014,6 +18289,7 @@
         },
         {
           "action": "pause",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "调用 TikTok pause_adgroup 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -18067,6 +18343,7 @@
         },
         {
           "action": "pause",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "调用 TikTok pause_campaign 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -18116,6 +18393,7 @@
         },
         {
           "action": "preview",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "生成 TikTok Creative Portfolio 预览链接。",
           "effect_class": "read",
@@ -18180,6 +18458,7 @@
         },
         {
           "action": "recommend",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "根据种子词查询 TikTok 兴趣定向推荐关键词。",
           "effect_class": "read",
@@ -18274,6 +18553,7 @@
         },
         {
           "action": "resume",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "调用 TikTok resume_campaign 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -18323,6 +18603,7 @@
         },
         {
           "action": "list",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "按关键词搜索 TikTok 投放地域。",
           "effect_class": "read",
@@ -18371,6 +18652,7 @@
         },
         {
           "action": "send",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "通过 TikTok Pixel Track 发送单个转化事件；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -18546,6 +18828,7 @@
         },
         {
           "action": "send",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "通过 TikTok Pixel Batch 发送一批转化事件；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -18737,6 +19020,7 @@
         },
         {
           "action": "boost",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "使用达人已有帖子创建 TikTok Spark Ad。",
           "effect_class": "write",
@@ -18795,6 +19079,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "更新 TikTok Ads ad，默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -18871,6 +19156,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "更新 TikTok Ads ad_group，默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -19072,6 +19358,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "独立更新 TikTok Ad Group 定向；动态 ID 必须来自对应 lookup Tool，默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -19310,6 +19597,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "更新 TikTok Custom Audience 名称或已上传文件；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -19413,6 +19701,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "更新 TikTok Ads campaign，默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -19534,6 +19823,7 @@
         },
         {
           "action": "update",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "更新 TikTok Pixel 名称；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -19613,6 +19903,7 @@
         },
         {
           "action": "upload",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "上传 TikTok Custom Audience 的加密 CSV/TXT 文件；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -19692,6 +19983,7 @@
         },
         {
           "action": "upload",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "上传或绑定 TikTok 广告图片素材；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -19774,6 +20066,7 @@
         },
         {
           "action": "upload",
+          "activation_rules": [],
           "contract_version": "1.2.0",
           "description": "上传或绑定 TikTok 广告视频素材；默认仅生成 dry-run 计划。",
           "effect_class": "write",

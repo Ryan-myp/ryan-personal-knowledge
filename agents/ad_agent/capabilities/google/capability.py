@@ -666,7 +666,12 @@ class GoogleCapability(BaseCapability):
                 provider_required=asset_group_schema["provider_required"], action="create",
                 resource_type="asset_group", parent_resource_type="campaign",
                 resource_id_field="asset_group_id", parent_resource_id_field="campaign_id",
-                intent_types=["create_pmax_asset_group"], traits=["write", "asset_group"], write=True,
+                intent_types=["create_pmax_asset_group", "create_campaign"],
+                activation_rules=[{
+                    "field": "campaign_type", "aliases": ["advertising_channel_type"],
+                    "in": ["PERFORMANCE_MAX", "MAX"],
+                }],
+                traits=["write", "asset_group"], write=True,
                 argument_builder=lambda _ctx, data: ((data["campaign_id"], data["name"], data["headlines"]), {
                     "descriptions": data["descriptions"], "images": data.get("images"),
                     "videos": data.get("videos"), "asset_group_type": data["asset_group_type"],
@@ -686,7 +691,12 @@ class GoogleCapability(BaseCapability):
                 conditional_rules=google_product_group_schema()["conditional_rules"],
                 action="create", resource_type="product_group", parent_resource_type="ad_group",
                 resource_id_field="product_group_id", parent_resource_id_field="ad_group_id",
-                intent_types=["create_product_group"], traits=["write", "product_group", "shopping"], write=True,
+                intent_types=["create_product_group", "create_campaign"],
+                activation_rules=[{
+                    "field": "campaign_type", "aliases": ["advertising_channel_type"],
+                    "in": ["SHOPPING"],
+                }],
+                traits=["write", "product_group", "shopping"], write=True,
                 argument_builder=lambda _ctx, data: ((data["ad_group_id"], data["product_group_type"]), {
                     "value": data.get("value"),
                     "partition_type": data.get("partition_type", "UNIT"),
@@ -705,7 +715,12 @@ class GoogleCapability(BaseCapability):
                 provider_required=google_responsive_display_ad_schema()["provider_required"],
                 action="create", resource_type="ad", parent_resource_type="ad_group",
                 resource_id_field="ad_id", parent_resource_id_field="ad_group_id",
-                intent_types=["create_responsive_display_ad"], traits=["write", "ad", "display"], write=True,
+                intent_types=["create_responsive_display_ad", "create_campaign"],
+                activation_rules=[{
+                    "field": "campaign_type", "aliases": ["advertising_channel_type"],
+                    "in": ["DISPLAY"],
+                }],
+                traits=["write", "ad", "display"], write=True,
                 argument_builder=lambda _ctx, data: ((data["ad_group_id"], data["name"], data["final_url"]), {
                     "headlines": data["headlines"], "long_headline": data["long_headline"],
                     "descriptions": data["descriptions"], "business_name": data["business_name"],
@@ -728,7 +743,12 @@ class GoogleCapability(BaseCapability):
                 provider_required=google_video_ad_schema()["provider_required"],
                 action="create", resource_type="ad", parent_resource_type="ad_group",
                 resource_id_field="ad_id", parent_resource_id_field="ad_group_id",
-                intent_types=["create_video_ad"], traits=["write", "ad", "video"], write=True,
+                intent_types=["create_video_ad", "create_campaign"],
+                activation_rules=[{
+                    "field": "campaign_type", "aliases": ["advertising_channel_type"],
+                    "in": ["VIDEO"],
+                }],
+                traits=["write", "ad", "video"], write=True,
                 argument_builder=lambda _ctx, data: ((
                     data["ad_group_id"], data["name"], data["video_ad_format"],
                     data["video_id"], data["final_url"],
@@ -874,6 +894,11 @@ class GoogleCapability(BaseCapability):
             live_support=False,
             resource_id_field="ad_group_id",
             parent_resource_id_field="campaign_id",
+            activation_rules=[{
+                "field": "campaign_type",
+                "aliases": ["advertising_channel_type"],
+                "not_in": ["PERFORMANCE_MAX", "MAX", "MULTI_CHANNEL"],
+            }],
         ), GoogleCreateAdGroupHandler(api_client)))
 
         # List Ads
@@ -922,6 +947,12 @@ class GoogleCapability(BaseCapability):
             live_support=False,
             resource_id_field="ad_id",
             parent_resource_id_field="ad_group_id",
+            activation_rules=[{
+                "field": "campaign_type",
+                "aliases": ["advertising_channel_type"],
+                "in": ["SEARCH"],
+                "default": "SEARCH",
+            }],
         ), GoogleCreateAdHandler(api_client)))
 
         # List Asset Groups (PMax)

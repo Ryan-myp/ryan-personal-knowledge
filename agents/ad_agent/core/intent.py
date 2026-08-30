@@ -1009,6 +1009,7 @@ class SimpleIntentRouter(IntentRouter):
             tools = [
                 definition for definition in registry.list_by_platform(canonical)
                 if self._matches_intent(definition, intent.intent_type)
+                and self._matches_activation(definition, intent, platform)
             ]
             tools = self._order_by_resource_dependencies(tools)
             if tools:
@@ -1019,6 +1020,94 @@ class SimpleIntentRouter(IntentRouter):
     @staticmethod
     def _matches_intent(definition: ToolDefinition, intent_type: str) -> bool:
         return str(intent_type) in set(getattr(definition, "intent_types", []) or [])
+
+    @classmethod
+    def _matches_activation(
+        cls, definition: ToolDefinition, intent: ParsedIntent, platform: str,
+    ) -> bool:
+        """Apply provider-published Tool activation rules.
+
+        Rules are data, not a central provider map. A rule may use ``if`` or
+        ``when`` with field/value pairs, or the compact form
+        ``{"field": "campaign_type", "in": ["SEARCH"]}``. Field aliases
+        and defaults are declared by the provider. Multiple rules are ORed;
+        multiple conditions inside one rule are ANDed. ``not_in`` treats a
+        missing field as a match, which is useful for a generic fallback Tool.
+        """
+        rules = getattr(definition, "activation_rules", None) or []
+        if not rules:
+            return True
+        # An explicitly requested specialized intent is already an
+        # unambiguous route. Activation predicates only narrow the generic
+        # ``create_campaign`` composition path.
+        if (
+            str(getattr(intent, "intent_type", "")) != "create_campaign"
+            and str(getattr(intent, "intent_type", ""))
+            in set(getattr(definition, "intent_types", []) or [])
+        ):
+            return True
+        params: dict[str, Any] = {}
+        for raw_platform, values in (getattr(intent, "platform_params", {}) or {}).items():
+            if normalize_platform(str(raw_platform)) != normalize_platform(platform):
+                continue
+            if not isinstance(values, dict):
+                continue
+            for key, value in values.items():
+                if isinstance(value, dict) and isinstance(params.get(key), dict):
+                    params[key] = {**params[key], **value}
+                else:
+                    params[key] = value
+
+        def value_for(field: str, aliases: list[str], default: Any = None) -> Any:
+            candidates = [field, *aliases]
+            for candidate in candidates:
+                if candidate in params and params[candidate] not in (None, ""):
+                    return params[candidate]
+            if field == "campaign_type" and getattr(intent, "campaign_type", None):
+                return intent.campaign_type
+            if field == "objective" and getattr(intent, "objective", None):
+                return intent.objective
+            return default
+
+        def condition_matches(field: str, condition: Any, rule: dict[str, Any]) -> bool:
+            aliases = [str(item) for item in (rule.get("aliases") or [])]
+            actual = value_for(field, aliases, rule.get("default"))
+            if isinstance(condition, (list, tuple, set, frozenset)):
+                expected = list(condition)
+                return actual in expected
+            return actual == condition
+
+        def compact_matches(rule: dict[str, Any]) -> bool:
+            field = str(rule.get("field") or "").strip()
+            if not field:
+                return False
+            aliases = [str(item) for item in (rule.get("aliases") or [])]
+            actual = value_for(field, aliases, rule.get("default"))
+            if "in" in rule:
+                return actual in list(rule.get("in") or [])
+            if "equals" in rule:
+                expected = rule.get("equals")
+                return actual in expected if isinstance(expected, list) else actual == expected
+            if "not_in" in rule:
+                return actual not in list(rule.get("not_in") or [])
+            if "not_equals" in rule:
+                expected = rule.get("not_equals")
+                return actual not in expected if isinstance(expected, list) else actual != expected
+            return True
+
+        for rule in rules:
+            if not isinstance(rule, dict):
+                continue
+            conditions = rule.get("if", rule.get("when"))
+            if isinstance(conditions, dict):
+                if all(
+                    condition_matches(str(field), condition, rule)
+                    for field, condition in conditions.items()
+                ):
+                    return True
+            elif compact_matches(rule):
+                return True
+        return False
 
     @staticmethod
     def _order_by_resource_dependencies(

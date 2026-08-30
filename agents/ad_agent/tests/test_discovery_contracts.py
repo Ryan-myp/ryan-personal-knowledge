@@ -59,6 +59,49 @@ def test_existing_channel_tools_publish_wire_id_fields_for_hierarchy():
     assert by_name["dv360_create_line_item"].parent_resource_id_field == "io_id"
 
 
+@pytest.mark.parametrize(
+    "campaign_type, expected_tools",
+    [
+        (
+            "SEARCH",
+            ["google_create_campaign", "google_create_ad_group", "google_create_ad"],
+        ),
+        (
+            "PERFORMANCE_MAX",
+            ["google_create_campaign", "google_create_pmax_asset_group"],
+        ),
+        (
+            "SHOPPING",
+            ["google_create_campaign", "google_create_ad_group", "google_create_product_group"],
+        ),
+        (
+            "DISPLAY",
+            ["google_create_campaign", "google_create_ad_group", "google_create_responsive_display_ad"],
+        ),
+        (
+            "VIDEO",
+            ["google_create_campaign", "google_create_ad_group", "google_create_video_ad"],
+        ),
+    ],
+)
+def test_google_campaign_route_selects_type_specific_creation_chain(
+    campaign_type, expected_tools,
+):
+    runtime = AgentRuntime(require_llm=False)
+    runtime.register_capability(create_google_capability())
+    routed = runtime.intent_router.route(
+        ParsedIntent(
+            "create_campaign", "create", ["google-ads"],
+            platform_params={
+                "google-ads": {"advertising_channel_type": campaign_type},
+            },
+        ),
+        runtime.registry,
+    )
+
+    assert [definition.name for definition in routed["google-ads"]] == expected_tools
+
+
 def test_resource_results_follow_declared_parent_fields_across_channels():
     cases = [
         ("meta", "meta_create_campaign", "meta_create_adset", "campaign_id", "c-meta", "adset_id", "s-meta"),

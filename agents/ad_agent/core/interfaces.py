@@ -126,6 +126,11 @@ class ToolDefinition:
     resource_type: str = ""
     parent_resource_type: Optional[str] = None
     intent_types: list[str] = field(default_factory=list)
+    # Provider-owned routing predicates. A Tool can publish a conditional
+    # creation-chain membership without adding a provider branch to Router.
+    # Each rule is JSON-serializable and is evaluated against ParsedIntent and
+    # the platform's structured parameters.
+    activation_rules: list[dict[str, Any]] = field(default_factory=list)
     risk_level: RiskLevel = RiskLevel.LOW  # 风险等级
     effect_class: ToolEffect = ToolEffect.READ  # 效果分类
     # Unsafe is the default for writes.  A ToolDefinition constructed by a
@@ -340,6 +345,7 @@ class ToolDefinition:
             "resource_type": self.resource_type,
             "parent_resource_type": self.parent_resource_type,
             "intent_types": list(self.intent_types),
+            "activation_rules": [dict(rule) for rule in self.activation_rules],
             "risk_level": self.risk_level.value,
             "effect_class": self.effect_class.value, "replay_policy": self.replay_policy.value,
             "traits": list(self.traits), "live_support": self.live_support,

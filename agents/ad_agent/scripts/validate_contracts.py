@@ -208,6 +208,12 @@ def main(argv: list[str] | None = None) -> int:
                 f"{tool.name}: intent_types must be explicitly published for routing"
             )
         try:
+            json.dumps(tool.activation_rules, ensure_ascii=False)
+        except (TypeError, ValueError) as exc:
+            errors.append(f"{tool.name}: activation_rules are not JSON serializable: {exc}")
+        if not isinstance(tool.activation_rules, list):
+            errors.append(f"{tool.name}: activation_rules must be a list")
+        try:
             json.dumps(tool.input_schema.to_dict(), ensure_ascii=False)
         except (TypeError, ValueError) as exc:
             errors.append(f"{tool.name}: schema is not JSON serializable: {exc}")
