@@ -271,14 +271,12 @@ class AgentRuntime:
         self._skill_tool_names: dict[str, list[str]] = {}
         self._skill_platforms: dict[str, str] = {}
         self._skill_format_ids: dict[str, set[str]] = {}
-        # User-managed Skills are context packages.  They are deliberately
-        # tracked separately from executable provider Skills so an uploaded
-        # directory cannot become a Tool merely by containing a contract or a
-        # Python file.  A process-local Runtime serves one managed-skill
-        # tenant at a time; a multi-tenant deployment should provision one
-        # Runtime context per tenant.
-        self._managed_context_skills: dict[str, Skill] = {}
-        self._managed_skill_tenant_id: Optional[str] = None
+        # User-managed Skills are tenant-owned context packages.  They are
+        # deliberately tracked separately from executable provider Skills so
+        # an uploaded directory cannot become a Tool merely by containing a
+        # contract or a Python file.  The Runtime itself is process-global,
+        # therefore this index must be tenant-scoped.
+        self._managed_context_skills: dict[str, dict[str, Skill]] = {}
         self._managed_skill_lock = threading.RLock()
         self._skill_factories: dict[str, callable] = {}  # platform -> Capability factory
         self._credentials: dict = {}  # API 凭证配置
@@ -414,9 +412,7 @@ class AgentRuntime:
         # Skill aliases are context metadata, but they must follow the same
         # lifecycle as their active Skill.  Provider identity itself remains
         # discovered from Tool metadata; aliases never create Tools.
-        for skill in list(self._skill_objects.values()) + list(
-            self._managed_context_skills.values()
-        ):
+        for skill in list(self._skill_objects.values()):
             if hasattr(self.intent_parser, "register_platform_aliases"):
                 self.intent_parser.register_platform_aliases(
                     getattr(skill, "platform", ""),
@@ -460,75 +456,86 @@ class AgentRuntime:
 
         with self._managed_skill_lock:
             if (
-                self._managed_skill_tenant_id is not None
-                and self._managed_skill_tenant_id != tenant_id
-            ):
-                raise PermissionError(
-                    "this Runtime already has managed Skills for another tenant"
-                )
-            if (
                 contract.name in self._skill_objects
-                and contract.name not in self._managed_context_skills
             ):
                 raise ValueError(
                     "managed Skill name conflicts with executable Skill: "
                     f"{contract.name}"
                 )
 
-            # Replace only a previous managed version. A built-in Skill with
-            # the same name is protected by the conflict check above.
-            self.skill_loader._skills[contract.name] = skill
-            self._managed_context_skills[contract.name] = skill
-            self._managed_skill_tenant_id = tenant_id
-            if hasattr(self.intent_parser, "register_platform_aliases"):
-                self.intent_parser.register_platform_aliases(
-                    getattr(skill, "platform", ""),
-                    getattr(skill, "platform_aliases", []) or [],
-                )
+            # Replace only a previous managed version for this tenant. A
+            # built-in Skill with the same name is protected by the conflict
+            # check above. Managed Skills never enter SkillLoader or the
+            # global parser alias index; both are process-wide and would leak
+            # tenant-owned context.
+            self._managed_context_skills.setdefault(tenant_id, {})[contract.name] = skill
             if hasattr(self.tool_selector, "register_context_skill"):
-                self.tool_selector.register_context_skill(skill)
+                self.tool_selector.register_context_skill(skill, tenant_id=tenant_id)
             self._refresh_parser_catalog()
         return True
 
-    def unload_managed_skill(self, skill_name: str) -> bool:
+    def unload_managed_skill(self, skill_name: str, tenant_id: str = "default") -> bool:
         """Remove advisory context without touching executable provider Tools."""
         key = str(skill_name or "")
+        tenant_id = str(tenant_id or "default")
         with self._managed_skill_lock:
-            skill = self._managed_context_skills.pop(key, None)
+            tenant_skills = self._managed_context_skills.get(tenant_id)
+            skill = tenant_skills.pop(key, None) if tenant_skills else None
             if skill is None:
                 return False
-            if self.skill_loader._skills.get(key) is skill:
-                self.skill_loader._skills.pop(key, None)
             if hasattr(self.tool_selector, "unregister_context_skill"):
-                self.tool_selector.unregister_context_skill(key)
-            if not self._managed_context_skills:
-                self._managed_skill_tenant_id = None
+                self.tool_selector.unregister_context_skill(key, tenant_id=tenant_id)
+            if not tenant_skills:
+                self._managed_context_skills.pop(tenant_id, None)
             self._refresh_parser_catalog()
             return True
 
-    def get_managed_skills(self) -> dict[str, Skill]:
-        """Return a shallow copy for diagnostics/UI; no credentials included."""
-        with self._managed_skill_lock:
-            return dict(self._managed_context_skills)
+    def get_managed_skills(self, tenant_id: Optional[str] = None) -> dict[str, Skill]:
+        """Return tenant-scoped managed Skills for diagnostics/UI.
 
-    def _ensure_managed_skill_tenant(self, tenant_id: str) -> None:
-        """Reject a turn that could observe another tenant's Skill context.
-
-        A Runtime instance is process-local and currently owns one managed
-        Skill tenant.  The HTTP layer may still authenticate multiple tenant
-        principals, so this check must live at the Runtime boundary as well;
-        otherwise a caller could reach ``run()`` directly and receive the
-        context loaded for a different tenant.  A future multi-tenant host
-        should provision one Runtime context per tenant instead of weakening
-        this fail-closed check.
+        The no-argument form is retained for single-tenant callers. Once the
+        Runtime contains multiple non-default tenants it returns an empty
+        mapping instead of guessing and exposing another tenant's context.
         """
         with self._managed_skill_lock:
-            bound_tenant = self._managed_skill_tenant_id
-        requested_tenant = str(tenant_id or "default")
-        if bound_tenant is not None and str(bound_tenant) != requested_tenant:
-            raise PermissionError(
-                "Runtime managed Skill context belongs to a different tenant"
+            if tenant_id is not None:
+                return dict(self._managed_context_skills.get(str(tenant_id or "default"), {}))
+            if len(self._managed_context_skills) == 1:
+                return dict(next(iter(self._managed_context_skills.values())))
+            if "default" in self._managed_context_skills:
+                return dict(self._managed_context_skills["default"])
+            return {}
+
+    def _build_skill_context(
+        self,
+        user_input: str,
+        available_tools: list,
+        intent_type: Optional[str],
+        tenant_id: str,
+    ) -> dict:
+        """Call selector extensions without breaking older injected selectors."""
+        builder = getattr(self.tool_selector, "build_context_for_input", None)
+        if not callable(builder):
+            return {}
+        try:
+            parameters = inspect.signature(builder).parameters.values()
+        except (TypeError, ValueError):
+            parameters = ()
+        supports_keyword = any(
+            parameter.name == "tenant_id" or parameter.kind == inspect.Parameter.VAR_KEYWORD
+            for parameter in parameters
+        )
+        supports_extra_positional = any(
+            parameter.kind == inspect.Parameter.VAR_POSITIONAL
+            for parameter in parameters
+        )
+        if supports_keyword:
+            return builder(
+                user_input, available_tools, intent_type, tenant_id=tenant_id
             )
+        if supports_extra_positional:
+            return builder(user_input, available_tools, intent_type, tenant_id)
+        return builder(user_input, available_tools, intent_type)
 
     def load_business_context(
         self, business_name: str, skills_root: Optional[str] = None,
@@ -3800,9 +3807,6 @@ class AgentRuntime:
         account context, tool outputs and confirmation state.
         """
         self.assert_llm_ready()
-        self._ensure_managed_skill_tenant(
-            principal.tenant_id if principal is not None else (tenant_id or "default")
-        )
         lock = self._get_session_lock(session_id or "__new_session__")
         effective_user_id = principal.user_id if principal is not None else user_id
         effective_permissions = (
@@ -3901,8 +3905,8 @@ class AgentRuntime:
         # an intent.  The post-parse IntentRouter remains authoritative, so
         # this context can improve recognition but cannot grant execution.
         try:
-            session.ctx.metadata["skill_context"] = self.tool_selector.build_context_for_input(
-                safe_user_input, self.registry.list_all()
+            session.ctx.metadata["skill_context"] = self._build_skill_context(
+                safe_user_input, self.registry.list_all(), None, tenant_id
             )
         except Exception as exc:
             logger.debug("构建 Skill 解析上下文失败: %s", exc)
@@ -3911,8 +3915,11 @@ class AgentRuntime:
         # the model-facing explanation/context; IntentRouter remains the sole
         # authority for the executable plan below.
         try:
-            session.ctx.metadata["skill_context"] = self.tool_selector.build_context_for_input(
-                safe_user_input, self.registry.list_all(), intent.intent_type
+            session.ctx.metadata["skill_context"] = self._build_skill_context(
+                safe_user_input,
+                self.registry.list_all(),
+                intent.intent_type,
+                tenant_id,
             )
         except Exception as exc:
             logger.debug("构建意图级 Skill/知识上下文失败: %s", exc)

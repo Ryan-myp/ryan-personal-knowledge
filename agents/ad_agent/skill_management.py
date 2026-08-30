@@ -573,7 +573,7 @@ class ManagedSkillManager:
                     str(old_materialized), tenant_id=str(tenant_id)
                 )
             else:
-                runtime.unload_managed_skill(skill_name)
+                runtime.unload_managed_skill(skill_name, tenant_id=str(tenant_id))
         except Exception:
             # The durable release was not advanced.  Keep the original store
             # error as the caller-visible failure and surface rollback detail

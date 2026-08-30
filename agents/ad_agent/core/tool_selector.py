@@ -9,6 +9,7 @@ core/tool_selector.py - 动态工具选择器
 
 import re
 import logging
+import threading
 from typing import List, Dict, Optional, Set
 from dataclasses import dataclass, field
 
@@ -92,16 +93,31 @@ class DynamicToolSelector:
         self.skill_loader = skill_loader
         self.knowledge_provider = knowledge_provider
         self.business_context: Optional[BusinessContext] = None
-        self._context_skills: dict[str, object] = {}
+        # Managed Skills are tenant-owned advisory context.  Keep them out of
+        # the executable SkillLoader and select them per request so the
+        # process-global Runtime can safely serve multiple tenants.
+        self._context_skills: dict[str, dict[str, object]] = {}
+        self._context_skills_lock = threading.RLock()
 
-    def register_context_skill(self, skill: object) -> None:
+    def register_context_skill(self, skill: object, tenant_id: str = "default") -> None:
         """Register a user-managed Skill as bounded advisory context only."""
         name = str(getattr(skill, "name", "") or "").strip()
         if name:
-            self._context_skills[name] = skill
+            tenant = str(tenant_id or "default")
+            with self._context_skills_lock:
+                self._context_skills.setdefault(tenant, {})[name] = skill
 
-    def unregister_context_skill(self, skill_name: str) -> None:
-        self._context_skills.pop(str(skill_name or ""), None)
+    def unregister_context_skill(
+        self, skill_name: str, tenant_id: str = "default"
+    ) -> None:
+        tenant = str(tenant_id or "default")
+        with self._context_skills_lock:
+            skills = self._context_skills.get(tenant)
+            if not skills:
+                return
+            skills.pop(str(skill_name or ""), None)
+            if not skills:
+                self._context_skills.pop(tenant, None)
     
     def set_business_context(self, business_name: str, context: BusinessContext):
         """设置业务上下文"""
@@ -179,6 +195,7 @@ class DynamicToolSelector:
         user_input: str,
         available_tools: List[ToolDefinition],
         intent_type: Optional[str] = None,
+        tenant_id: str = "default",
     ) -> dict:
         """Build bounded Skill context before intent parsing.
 
@@ -201,7 +218,7 @@ class DynamicToolSelector:
         )
         if knowledge:
             selection.expert_knowledge = self._format_knowledge(knowledge)
-        managed_context = self._managed_skill_context(user_input)
+        managed_context = self._managed_skill_context(user_input, tenant_id=tenant_id)
         if managed_context:
             selection.expert_knowledge = "\n\n".join(
                 part for part in (selection.expert_knowledge, managed_context) if part
@@ -213,12 +230,20 @@ class DynamicToolSelector:
             "knowledge": knowledge,
         }
 
-    def _managed_skill_context(self, user_input: str, max_chars: int = 6000) -> str:
+    def _managed_skill_context(
+        self,
+        user_input: str,
+        max_chars: int = 6000,
+        tenant_id: str = "default",
+    ) -> str:
         """Build bounded, clearly non-executable context from managed Skills."""
-        if not self._context_skills:
+        tenant = str(tenant_id or "default")
+        with self._context_skills_lock:
+            context_skills = dict(self._context_skills.get(tenant, {}))
+        if not context_skills:
             return ""
         sections: list[str] = []
-        for name, skill in sorted(self._context_skills.items()):
+        for name, skill in sorted(context_skills.items()):
             markdown = str(getattr(skill, "raw_markdown", "") or "")
             description = str(getattr(skill, "description", "") or "")
             if not markdown and not description:

@@ -58,7 +58,7 @@ def test_standard_skill_directory_is_versioned_and_published(tmp_path):
         tool.skill == "business-growth" for tool in runtime.registry.list_all()
     )
     context = runtime.tool_selector.build_context_for_input(
-        "规划一个跨渠道投放", runtime.registry.list_all()
+        "规划一个跨渠道投放", runtime.registry.list_all(), tenant_id="tenant-a"
     )
     assert "Ask for objective" in context["expert_knowledge"]
     assert "must never be imported" not in context["expert_knowledge"]
@@ -163,15 +163,42 @@ def test_invalid_standard_skill_package_is_rejected(files, message):
         manager.create_version("tenant-a", "business-growth", "1.0.0", files, "u1")
 
 
-def test_managed_skill_cannot_switch_runtime_tenant():
+def test_managed_skills_are_isolated_by_tenant_on_shared_runtime():
     store = AdAgentStore(":memory:")
     runtime = AgentRuntime(require_llm=False, persistence_store=store, offline_mode=True)
     manager = ManagedSkillManager(store)
-    manager.create_version("tenant-a", "first-skill", "1.0.0", _files("first-skill"), "u1")
+    first_files = _files("first-skill")
+    first_files["SKILL.md"] = first_files["SKILL.md"].replace(
+        "platform: multi_platform\n", "platform: multi_platform\naliases: [tenant-a-only]\n"
+    ).replace(
+        "# Campaign planning", "# Tenant A planning"
+    )
+    second_files = _files("second-skill")
+    second_files["SKILL.md"] = second_files["SKILL.md"].replace(
+        "# Campaign planning", "# Tenant B planning"
+    )
+    manager.create_version("tenant-a", "first-skill", "1.0.0", first_files, "u1")
     manager.publish("tenant-a", "first-skill", "1.0.0", runtime=runtime)
-    manager.create_version("tenant-b", "second-skill", "1.0.0", _files("second-skill"), "u2")
-    with pytest.raises(PermissionError):
-        manager.publish("tenant-b", "second-skill", "1.0.0", runtime=runtime)
+    manager.create_version("tenant-b", "second-skill", "1.0.0", second_files, "u2")
+    manager.publish("tenant-b", "second-skill", "1.0.0", runtime=runtime)
+
+    tenant_a_context = runtime.tool_selector.build_context_for_input(
+        "规划一个跨渠道投放", runtime.registry.list_all(), tenant_id="tenant-a"
+    )
+    tenant_b_context = runtime.tool_selector.build_context_for_input(
+        "规划一个跨渠道投放", runtime.registry.list_all(), tenant_id="tenant-b"
+    )
+    assert "first-skill" in tenant_a_context["expert_knowledge"]
+    assert "Tenant A planning" in tenant_a_context["expert_knowledge"]
+    assert "second-skill" not in tenant_a_context["expert_knowledge"]
+    assert "second-skill" in tenant_b_context["expert_knowledge"]
+    assert "Tenant B planning" in tenant_b_context["expert_knowledge"]
+    assert "first-skill" not in tenant_b_context["expert_knowledge"]
+    assert set(runtime.get_managed_skills("tenant-a")) == {"first-skill"}
+    assert set(runtime.get_managed_skills("tenant-b")) == {"second-skill"}
+    assert runtime.skill_loader.get("first-skill") is None
+    assert runtime.skill_loader.get("second-skill") is None
+    assert "tenant-a-only" not in getattr(runtime.intent_parser, "_platform_aliases", {})
 
 
 def test_separate_in_memory_stores_do_not_share_materialized_skill_cache():
@@ -551,7 +578,7 @@ def test_skill_up_never_imports_user_skill_plugin(tmp_path, monkeypatch):
     assert not marker.exists()
 
 
-def test_runtime_rejects_turn_for_another_managed_skill_tenant():
+def test_runtime_turn_uses_request_tenant_managed_context():
     from agents.ad_agent.core.auth import RequestPrincipal
 
     store = AdAgentStore(":memory:")
@@ -560,15 +587,27 @@ def test_runtime_rejects_turn_for_another_managed_skill_tenant():
     manager.create_version("tenant-a", "tenant-skill", "1.0.0", _files("tenant-skill"), "u1")
     manager.publish("tenant-a", "tenant-skill", "1.0.0", runtime=runtime)
 
-    with pytest.raises(PermissionError, match="different tenant"):
-        runtime.run(
-            "查询 Meta campaign",
-            principal=RequestPrincipal(
-                user_id="u2",
-                tenant_id="tenant-b",
-                permissions=frozenset({"ads.read"}),
-            ),
+    class Parser:
+        def __init__(self):
+            self.contexts = []
+
+        def parse(self, _text, context):
+            self.contexts.append(context.metadata.get("skill_context", {}))
+            from agents.ad_agent.core.interfaces import ParsedIntent
+            return ParsedIntent("chat", "查询 Meta campaign", [])
+
+    parser = Parser()
+    runtime.intent_parser = parser
+    runtime.run(
+        "查询 Meta campaign",
+        principal=RequestPrincipal(
+            user_id="u2",
+            tenant_id="tenant-b",
+            permissions=frozenset({"ads.read"}),
         )
+    )
+    assert parser.contexts
+    assert "tenant-skill" not in parser.contexts[0].get("expert_knowledge", "")
 
 
 @pytest.mark.parametrize("permissions", ["ads.read", {"ads.read": True}, ["ads.read", 1]])
