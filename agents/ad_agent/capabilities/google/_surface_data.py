@@ -17,7 +17,7 @@ API_SURFACE = [
     {"resource": "keyword", "action": "create", "method": "create_keywords", "status": "implemented"},
     {"resource": "asset_group", "action": "list", "method": "list_asset_groups", "status": "implemented"},
     {"resource": "asset_group", "action": "get", "method": "get_asset_group", "status": "implemented"},
-    {"resource": "asset_group", "action": "create", "method": "create_pmax_asset_group", "status": "implemented"},
+    {"resource": "asset_group", "action": "create", "method": "create_pmax_asset_group", "status": "planned", "gap": "PMax Asset Group 需要已验证的 AssetService 多步 mutate 适配器；当前仅保留 dry-run Tool"},
     {"resource": "campaign", "action": "report", "method": "get_campaign_report", "status": "implemented"},
     {"resource": "ad_group", "action": "report", "method": "get_adgroup_report", "status": "implemented"},
     {"resource": "campaign_budget", "action": "list", "method": "list_campaign_budgets", "status": "implemented"},
