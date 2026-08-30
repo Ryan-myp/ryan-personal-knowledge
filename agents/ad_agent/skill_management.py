@@ -66,6 +66,32 @@ _EVAL_EXECUTOR = ThreadPoolExecutor(
 )
 _EVAL_CAPACITY = threading.BoundedSemaphore(_EVAL_MAX_WORKERS + _EVAL_MAX_QUEUE)
 
+# ``ManagedSkillManager`` is intentionally a short-lived facade in the HTTP
+# layer.  Keep publication locking outside the instance so two requests that
+# create two facades still serialize the coupled Runtime-activation and
+# SQLite-release-pointer transition.  SQLite is currently a single-process
+# backend; a future multi-process backend must move this contract into its
+# transactional/lease implementation rather than relying on this lock.
+_PUBLICATION_LOCKS: dict[tuple[str, str, str], threading.RLock] = {}
+_PUBLICATION_LOCKS_GUARD = threading.RLock()
+
+
+def _publication_lock_key(store: Any, tenant_id: str, skill_name: str) -> tuple[str, str, str]:
+    db_path = str(getattr(store, "_db_path", "")).strip()
+    if db_path and db_path != ":memory:":
+        db_path = os.path.abspath(os.path.expanduser(db_path))
+    else:
+        # Separate in-memory stores do not share state; use the object identity
+        # to avoid accidentally serializing unrelated test/embedded stores.
+        db_path = f":memory:{id(store)}"
+    return db_path, str(tenant_id or "default"), str(skill_name)
+
+
+def _get_publication_lock(store: Any, tenant_id: str, skill_name: str) -> threading.RLock:
+    key = _publication_lock_key(store, tenant_id, skill_name)
+    with _PUBLICATION_LOCKS_GUARD:
+        return _PUBLICATION_LOCKS.setdefault(key, threading.RLock())
+
 
 def _safe_component(value: str, field: str) -> str:
     value = str(value or "").strip().lower()
@@ -374,6 +400,20 @@ class ManagedSkillManager:
         return target
 
     def publish(
+        self, tenant_id: str, skill_name: str, version: str, runtime: Any = None,
+    ) -> Optional[dict[str, Any]]:
+        """Publish one immutable version as one process-local release transition.
+
+        Activation and the durable release pointer are coupled: callers must
+        never observe another request interleaving between those two steps.
+        The lock is shared by manager facades created for the same store,
+        tenant and Skill, which is important because the API creates a new
+        manager for each request.
+        """
+        with _get_publication_lock(self.store, tenant_id, skill_name):
+            return self._publish_unlocked(tenant_id, skill_name, version, runtime)
+
+    def _publish_unlocked(
         self, tenant_id: str, skill_name: str, version: str, runtime: Any = None,
     ) -> Optional[dict[str, Any]]:
         record = self.store.get_skill_version(tenant_id, skill_name, version)

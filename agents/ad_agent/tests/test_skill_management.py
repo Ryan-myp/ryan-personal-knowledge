@@ -2,6 +2,7 @@
 
 import pytest
 import time
+import threading
 from pathlib import Path
 
 from agents.ad_agent import AgentRuntime
@@ -79,6 +80,68 @@ def test_new_version_archives_previous_release_and_active_lookup_is_scoped(tmp_p
         "1.1.0", "1.0.0"
     ]
     assert manager.get_version("tenant-b", "business-growth") is None
+
+
+def test_publication_serializes_runtime_activation_and_release_pointer(tmp_path):
+    """Separate HTTP manager facades cannot diverge Runtime and SQLite state."""
+    store = AdAgentStore(":memory:")
+    manager_a = ManagedSkillManager(store, root=str(tmp_path / "managed"))
+    manager_b = ManagedSkillManager(store, root=str(tmp_path / "managed"))
+    manager_a.create_version("tenant-a", "release-skill", "1.0.0", _files("release-skill"), "u1")
+    manager_a.create_version(
+        "tenant-a", "release-skill", "2.0.0",
+        {**_files("release-skill"), "SKILL.md": _files("release-skill")["SKILL.md"].replace("1.0.0", "2.0.0")},
+        "u1",
+    )
+
+    class RecordingRuntime:
+        def __init__(self):
+            self.first_entered = threading.Event()
+            self.release_first = threading.Event()
+            self.active = 0
+            self.max_active = 0
+            self._lock = threading.Lock()
+            self.loaded_versions = []
+
+        def load_managed_skill(self, path, **_kwargs):
+            with self._lock:
+                self.active += 1
+                self.max_active = max(self.max_active, self.active)
+                first = not self.loaded_versions
+            if first:
+                self.first_entered.set()
+                self.release_first.wait(timeout=2)
+            self.loaded_versions.append(Path(path).name)
+            with self._lock:
+                self.active -= 1
+            return True
+
+    runtime = RecordingRuntime()
+    errors = []
+
+    def publish(manager, version):
+        try:
+            manager.publish("tenant-a", "release-skill", version, runtime=runtime)
+        except Exception as exc:  # pragma: no cover - assertion below reports it
+            errors.append(exc)
+
+    first = threading.Thread(target=publish, args=(manager_a, "1.0.0"))
+    second = threading.Thread(target=publish, args=(manager_b, "2.0.0"))
+    first.start()
+    assert runtime.first_entered.wait(timeout=2)
+    second.start()
+    # The second request has its own manager, so only a shared publication
+    # lock can keep it from activating while the first request is in flight.
+    time.sleep(0.05)
+    assert runtime.max_active == 1
+    runtime.release_first.set()
+    first.join(timeout=2)
+    second.join(timeout=2)
+
+    assert errors == []
+    assert runtime.max_active == 1
+    assert runtime.loaded_versions == ["1_0_0", "2_0_0"]
+    assert manager_a.get_version("tenant-a", "release-skill")["version"] == "2.0.0"
 
 
 @pytest.mark.parametrize(
