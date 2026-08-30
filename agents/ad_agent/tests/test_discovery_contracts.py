@@ -102,6 +102,67 @@ def test_google_campaign_route_selects_type_specific_creation_chain(
     assert [definition.name for definition in routed["google-ads"]] == expected_tools
 
 
+def test_google_app_campaign_route_selects_app_hierarchy_chain():
+    runtime = AgentRuntime(require_llm=False)
+    runtime.register_capability(create_google_capability())
+    routed = runtime.intent_router.route(
+        ParsedIntent(
+            "create_campaign", "create", ["google-ads"],
+            platform_params={
+                "google-ads": {
+                    "advertising_channel_type": "MULTI_CHANNEL",
+                    "advertising_channel_sub_type": "APP_CAMPAIGN",
+                },
+            },
+        ),
+        runtime.registry,
+    )
+
+    assert [definition.name for definition in routed["google-ads"]] == [
+        "google_create_campaign",
+        "google_create_app_ad_group",
+        "google_create_app_ad",
+    ]
+    assert "google_create_ad_group" not in {
+        definition.name for definition in routed["google-ads"]
+    }
+
+
+def test_google_app_campaign_chain_is_dry_run_ready():
+    validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+    validator.allowed_accounts = {"google-ads": ["123"]}
+    runtime = AgentRuntime(require_llm=False, whitelist_validator=validator)
+    runtime.register_capability(create_google_capability())
+
+    result = runtime.run(
+        "创建 Google App campaign 名称=app-dry-run",
+        user_id="app-chain-test",
+        account_id="123",
+        platform_params={
+            "google-ads": {
+                "customer_id": "123",
+                "campaign_name": "app-dry-run",
+                "advertising_channel_type": "MULTI_CHANNEL",
+                "advertising_channel_sub_type": "APP_CAMPAIGN",
+                "bidding_strategy": "MAXIMIZE_CONVERSIONS",
+                "budget": 100,
+                "app_campaign_setting": {
+                    "app_id": "com.example.app",
+                    "app_store": "GOOGLE_APP_STORE",
+                    "bidding_strategy_goal_type": "OPTIMIZE_INSTALLS_TARGET_INSTALL_COST",
+                },
+                "headlines": [{"text": "Install now"}, {"text": "Try the app"}],
+                "descriptions": [{"text": "A useful app"}, {"text": "Download today"}],
+            },
+        },
+    )
+
+    assert [item["tool"] for item in result["results"]] == [
+        "google_create_campaign", "google_create_app_ad_group", "google_create_app_ad",
+    ]
+    assert all(item["success"] and item["data"]["simulated"] for item in result["results"])
+
+
 @pytest.mark.parametrize(
     "platform, params, expected_tools",
     [

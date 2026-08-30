@@ -1,5 +1,5 @@
 {
-  "digest": "cdaf1a1fe8e8769938b8317aabfe962986c654943263ebeab2a616662598cf62",
+  "digest": "921e82694b4649797d83f39b1045681e787324aa23a6e65653501997b65c51e5",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -2023,8 +2023,8 @@
       ]
     },
     "google-ads": {
-      "digest": "aef084cff4376050d00dc1d3aa5a783c2d5454c17b586b1f0739cbd7a0a23b32",
-      "tool_count": 61,
+      "digest": "4afbc0d03012fbbdf247b9f3d3e689b9646cc692682b497356715b2ef7878930",
+      "tool_count": 63,
       "tools": [
         {
           "action": "create",
@@ -2281,6 +2281,238 @@
           "traits": [
             "write",
             "ad_group"
+          ]
+        },
+        {
+          "action": "create",
+          "activation_rules": [
+            {
+              "if": {
+                "advertising_channel_sub_type": {
+                  "in": [
+                    "APP_CAMPAIGN",
+                    "APP_CAMPAIGN_FOR_ENGAGEMENT"
+                  ]
+                },
+                "campaign_type": {
+                  "aliases": [
+                    "advertising_channel_type"
+                  ],
+                  "in": [
+                    "MULTI_CHANNEL",
+                    "APP"
+                  ]
+                }
+              }
+            }
+          ],
+          "contract_version": "1.3.0",
+          "description": "创建 Google App Campaign AppAd 素材广告；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_group_id": {
+                "description": "Parent App campaign Ad Group ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "descriptions": {
+                "description": "App ad description text assets",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "maxItems": 5,
+                "minItems": 2,
+                "type": "array"
+              },
+              "headlines": {
+                "description": "App ad headline text assets",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "maxItems": 5,
+                "minItems": 2,
+                "type": "array"
+              },
+              "html5_media_bundles": {
+                "description": "Existing Google Asset references",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "images": {
+                "description": "Existing Google Asset references",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "name": {
+                "description": "App ad name",
+                "maxLength": 255,
+                "type": "string"
+              },
+              "status": {
+                "description": "Ad status",
+                "enum": [
+                  "ENABLED",
+                  "PAUSED",
+                  "REMOVED"
+                ],
+                "type": "string"
+              },
+              "videos": {
+                "description": "Existing Google Asset references",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "headlines",
+              "descriptions"
+            ],
+            "required": [
+              "ad_group_id",
+              "name",
+              "headlines",
+              "descriptions"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_app_ad",
+            "create_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_app_ad",
+          "parent_resource_id_field": "ad_group_id",
+          "parent_resource_type": "ad_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad",
+            "app"
+          ]
+        },
+        {
+          "action": "create",
+          "activation_rules": [
+            {
+              "if": {
+                "advertising_channel_sub_type": {
+                  "in": [
+                    "APP_CAMPAIGN",
+                    "APP_CAMPAIGN_FOR_ENGAGEMENT"
+                  ]
+                },
+                "campaign_type": {
+                  "aliases": [
+                    "advertising_channel_type"
+                  ],
+                  "in": [
+                    "MULTI_CHANNEL",
+                    "APP"
+                  ]
+                }
+              }
+            }
+          ],
+          "contract_version": "1.3.0",
+          "description": "创建 Google App Campaign Ad Group；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "description": "Parent App Campaign ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "name": {
+                "description": "App campaign ad group name",
+                "maxLength": 255,
+                "type": "string"
+              },
+              "status": {
+                "description": "Ad group status",
+                "enum": [
+                  "ENABLED",
+                  "PAUSED",
+                  "REMOVED"
+                ],
+                "type": "string"
+              },
+              "type": {
+                "default": "SEARCH_STANDARD",
+                "description": "Google App campaign ad group type",
+                "enum": [
+                  "SEARCH_STANDARD"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "type"
+            ],
+            "required": [
+              "campaign_id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_app_ad_group",
+            "create_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_app_ad_group",
+          "parent_resource_id_field": "campaign_id",
+          "parent_resource_type": "campaign",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_group_id",
+          "resource_type": "ad_group",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad_group",
+            "app"
           ]
         },
         {
@@ -20914,6 +21146,13 @@
         "status": "implemented"
       },
       {
+        "action": "create_app",
+        "method": "create_app_ad",
+        "notes": "Dry-run AppAd payload builder; live mutation remains disabled until test-account verification",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
         "action": "list",
         "method": "list_user_lists",
         "resource": "user_list",
@@ -21831,5 +22070,5 @@
       ]
     }
   },
-  "tool_count": 225
+  "tool_count": 227
 }

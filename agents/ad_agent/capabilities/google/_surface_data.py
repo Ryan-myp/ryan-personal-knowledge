@@ -55,6 +55,7 @@ API_SURFACE = [
     {"resource": "ad", "action": "create_responsive_display", "method": "create_responsive_display_ad", "status": "implemented"},
     {"resource": "ad", "action": "create_search", "method": "create_search_ad", "status": "implemented"},
     {"resource": "ad", "action": "create_video", "method": "create_video_ad", "status": "implemented"},
+    {"resource": "ad", "action": "create_app", "method": "create_app_ad", "status": "implemented", "notes": "Dry-run AppAd payload builder; live mutation remains disabled until test-account verification"},
     {"resource": "user_list", "action": "list", "method": "list_user_lists", "status": "implemented"},
     {"resource": "user_list", "action": "get", "method": "get_user_list", "status": "implemented"},
     {"resource": "user_list", "action": "create", "method": "create_user_list", "status": "implemented"},

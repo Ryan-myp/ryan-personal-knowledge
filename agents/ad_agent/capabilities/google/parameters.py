@@ -546,6 +546,57 @@ def google_ad_group_schema() -> dict[str, Any]:
     }
 
 
+def google_app_ad_group_schema() -> dict[str, Any]:
+    """Contract for the Ad Group used by Google App campaigns.
+
+    App campaigns use ``MULTI_CHANNEL`` at Campaign level but still create an
+    Ad Group before attaching AppAd assets.  Keep this contract separate from
+    Search/Display/Shopping Ad Groups so their provider defaults and required
+    fields cannot leak into App campaign planning.
+    """
+    return {
+        "required": ["campaign_id", "name"],
+        "provider_required": ["type"],
+        "properties": {
+            "campaign_id": _field("string", "Parent App Campaign ID", minLength=1),
+            "name": _field("string", "App campaign ad group name", maxLength=255),
+            "type": _field(
+                "string", "Google App campaign ad group type",
+                enum=["SEARCH_STANDARD"], default="SEARCH_STANDARD",
+            ),
+            "status": _field("string", "Ad group status", enum=GOOGLE_STATUSES),
+        },
+    }
+
+
+def google_app_ad_schema() -> dict[str, Any]:
+    """Dry-run contract for the Google ``Ad.appAd`` asset payload."""
+    asset = _field(
+        "array", "Existing Google Asset references", minItems=1,
+        items={"type": "object", "additionalProperties": True},
+    )
+    return {
+        "required": ["ad_group_id", "name", "headlines", "descriptions"],
+        "provider_required": ["headlines", "descriptions"],
+        "properties": {
+            "ad_group_id": _field("string", "Parent App campaign Ad Group ID", minLength=1),
+            "name": _field("string", "App ad name", maxLength=255),
+            "headlines": _field(
+                "array", "App ad headline text assets", minItems=2, maxItems=5,
+                items={"type": "object", "additionalProperties": True},
+            ),
+            "descriptions": _field(
+                "array", "App ad description text assets", minItems=2, maxItems=5,
+                items={"type": "object", "additionalProperties": True},
+            ),
+            "images": asset,
+            "videos": asset,
+            "html5_media_bundles": asset,
+            "status": _field("string", "Ad status", enum=GOOGLE_STATUSES),
+        },
+    }
+
+
 def google_keyword_schema() -> dict[str, Any]:
     """Create contract for Ad Group Criterion keyword mutations."""
     return {
@@ -962,10 +1013,10 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
             "category": "app",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
-            "tool_names": ["google_create_campaign"],
+            "tool_names": ["google_create_campaign", "google_create_app_ad_group", "google_create_app_ad"],
             "dependencies": ["MULTI_CHANNEL", "advertising_channel_sub_type", "app_campaign_setting", "app assets"],
-            "supported_fields": ["app_campaign_setting", "bidding_strategy"],
-            "gaps": ["App campaign asset/ad tool", "engagement selective optimization"],
+            "supported_fields": ["app_campaign_setting", "bidding_strategy", "headlines", "descriptions", "images", "videos"],
+            "gaps": ["Asset upload/reference validation", "engagement selective optimization", "live provider verification"],
             "source_document": source_document,
         },
         {
@@ -973,10 +1024,10 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
             "category": "app",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
-            "tool_names": ["google_create_campaign"],
+            "tool_names": ["google_create_campaign", "google_create_app_ad_group", "google_create_app_ad"],
             "dependencies": ["MULTI_CHANNEL", "APP_CAMPAIGN", "app_campaign_setting", "app assets"],
-            "supported_fields": ["app_id", "app_store", "bidding_strategy_type", "OPTIMIZE_INSTALLS_TARGET_INSTALL_COST"],
-            "gaps": ["App campaign asset/ad Tool", "live provider verification"],
+            "supported_fields": ["app_id", "app_store", "bidding_strategy_type", "OPTIMIZE_INSTALLS_TARGET_INSTALL_COST", "headlines", "descriptions"],
+            "gaps": ["Asset upload/reference validation", "live provider verification"],
             "source_document": source_document,
         },
         {
@@ -984,10 +1035,22 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
             "category": "app",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
-            "tool_names": ["google_create_campaign"],
+            "tool_names": ["google_create_campaign", "google_create_app_ad_group", "google_create_app_ad"],
             "dependencies": ["MULTI_CHANNEL", "APP_CAMPAIGN_FOR_ENGAGEMENT", "app_campaign_setting", "app assets"],
-            "supported_fields": ["app_id", "app_store", "bidding_strategy_type", "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_INSTALL_COST"],
-            "gaps": ["App campaign asset/ad Tool", "live provider verification"],
+            "supported_fields": ["app_id", "app_store", "bidding_strategy_type", "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_INSTALL_COST", "selective_optimization", "headlines", "descriptions"],
+            "gaps": ["Asset upload/reference validation", "live provider verification"],
+            "source_document": source_document,
+        },
+        {
+            "format_id": "app.ad",
+            "category": "app",
+            "resource_type": "ad",
+            "coverage": "supported_dry_run",
+            "tool_names": ["google_create_app_ad"],
+            "payload_adapter": "GoogleAdsAPIClient.create_app_ad",
+            "dependencies": ["app_ad_group", "headlines", "descriptions", "images_or_videos"],
+            "supported_fields": ["headlines", "descriptions", "images", "videos", "html5_media_bundles"],
+            "gaps": ["Asset upload/reference validation", "live provider verification"],
             "source_document": source_document,
         },
         # v24 exposes additional campaign channel types beyond the six

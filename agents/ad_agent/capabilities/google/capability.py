@@ -26,7 +26,8 @@ from .reports import GoogleGetReportHandler
 from .keywords import GoogleListKeywordsHandler
 from ._utils import for_customer
 from .parameters import (
-    google_campaign_schema, google_ad_group_schema, google_ad_schema,
+    google_campaign_schema, google_ad_group_schema, google_app_ad_group_schema,
+    google_app_ad_schema, google_ad_schema,
     google_asset_schema, google_asset_create_schema, google_asset_group_schema, google_ad_format_catalog, google_keyword_schema,
     google_product_group_schema, google_responsive_display_ad_schema,
     google_video_ad_schema, google_campaign_budget_schema,
@@ -82,7 +83,9 @@ class GoogleCapability(BaseCapability):
         "update_campaign": ["google_update_campaign"], "update_ad_group": ["google_update_ad_group"],
         "update_ad": ["google_update_ad"], "update_asset_group": ["google_update_asset_group"],
         "pause_campaign": ["google_pause_campaign"], "resume_campaign": ["google_resume_campaign"],
-        "create_ad_group": ["google_create_ad_group"], "create_search_ad": ["google_create_search_ad", "google_create_ad"],
+        "create_ad_group": ["google_create_ad_group", "google_create_app_ad_group"],
+        "create_app_ad": ["google_create_app_ad"],
+        "create_search_ad": ["google_create_search_ad", "google_create_ad"],
         "create_pmax_asset_group": ["google_create_pmax_asset_group", "google_create_asset_group"],
         "create_product_group": ["google_create_product_group"],
         "create_responsive_display_ad": ["google_create_responsive_display_ad"],
@@ -163,6 +166,8 @@ class GoogleCapability(BaseCapability):
         asset_schema = google_asset_schema()
         asset_create_schema = google_asset_create_schema()
         asset_group_schema = google_asset_group_schema()
+        app_ad_group_schema = google_app_ad_group_schema()
+        app_ad_schema = google_app_ad_schema()
         tools = [
             method_tool(
                 platform="google-ads", skill="google-ads-api-expert",
@@ -175,6 +180,66 @@ class GoogleCapability(BaseCapability):
                 intent_types=["delete_campaign", "cross_channel_batch_delete"],
                 traits=["write", "campaign"], write=True,
                 argument_builder=lambda _ctx, data: ((data["campaign_id"],), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_create_app_ad_group",
+                description="创建 Google App Campaign Ad Group；默认仅生成 dry-run 计划。",
+                method_name="create_ad_group", result_key="ad_group_id",
+                properties=app_ad_group_schema["properties"],
+                required=app_ad_group_schema["required"],
+                provider_required=app_ad_group_schema["provider_required"],
+                action="create", resource_type="ad_group", parent_resource_type="campaign",
+                resource_id_field="ad_group_id", parent_resource_id_field="campaign_id",
+                intent_types=["create_app_ad_group", "create_campaign"],
+                activation_rules=[{
+                    "if": {
+                        "campaign_type": {"aliases": ["advertising_channel_type"], "in": [
+                            "MULTI_CHANNEL", "APP",
+                        ]},
+                        "advertising_channel_sub_type": {"in": [
+                            "APP_CAMPAIGN", "APP_CAMPAIGN_FOR_ENGAGEMENT",
+                        ]},
+                    },
+                }],
+                traits=["write", "ad_group", "app"], write=True, live_support=False,
+                argument_builder=lambda _ctx, data: ((
+                    data["campaign_id"], data["name"],
+                ), {
+                    "type": data.get("type", "SEARCH_STANDARD"),
+                    "status": data.get("status"),
+                }),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_create_app_ad",
+                description="创建 Google App Campaign AppAd 素材广告；默认仅生成 dry-run 计划。",
+                method_name="create_app_ad", result_key="app_ad_plan",
+                properties=app_ad_schema["properties"],
+                required=app_ad_schema["required"],
+                provider_required=app_ad_schema["provider_required"],
+                action="create", resource_type="ad", parent_resource_type="ad_group",
+                resource_id_field="ad_id", parent_resource_id_field="ad_group_id",
+                intent_types=["create_app_ad", "create_campaign"],
+                activation_rules=[{
+                    "if": {
+                        "campaign_type": {"aliases": ["advertising_channel_type"], "in": [
+                            "MULTI_CHANNEL", "APP",
+                        ]},
+                        "advertising_channel_sub_type": {"in": [
+                            "APP_CAMPAIGN", "APP_CAMPAIGN_FOR_ENGAGEMENT",
+                        ]},
+                    },
+                }],
+                traits=["write", "ad", "app"], write=True, live_support=False,
+                argument_builder=lambda _ctx, data: ((
+                    data["ad_group_id"], data["name"], data["headlines"], data["descriptions"],
+                ), {
+                    "images": data.get("images"),
+                    "videos": data.get("videos"),
+                    "html5_media_bundles": data.get("html5_media_bundles"),
+                    "status": data.get("status"),
+                }),
             ),
             method_tool(
                 platform="google-ads", skill="google-ads-api-expert",

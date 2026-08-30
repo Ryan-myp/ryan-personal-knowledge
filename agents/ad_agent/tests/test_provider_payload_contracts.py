@@ -1521,6 +1521,47 @@ def test_google_pmax_asset_group_builds_bounded_multistep_dry_run_plan():
         ]
 
 
+def test_google_app_ad_builds_dry_run_asset_payload_without_provider_io():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    plan = client.create_app_ad(
+        "42", "App install ad",
+        headlines=[{"text": "Install the app"}, {"text": "Shop anywhere"}],
+        descriptions=[{"text": "Fast mobile shopping"}, {"text": "Download today"}],
+        images=[{"resource_name": "customers/123/assets/88"}],
+        videos=[{"asset_id": "99"}],
+    )
+
+    assert plan["mode"] == "dry_run"
+    assert plan["execution_status"] == "planned"
+    assert plan["live_support"] is False
+    create = plan["operation"]["adGroupAds"]["create"]
+    assert create["resourceName"] == "customers/123/ads/-1"
+    assert create["adGroup"] == "customers/123/adGroups/42"
+    assert create["status"] == "PAUSED"
+    assert create["ad"]["appAd"]["headlines"] == [
+        {"text": "Install the app"}, {"text": "Shop anywhere"}
+    ]
+    assert create["ad"]["appAd"]["images"] == [
+        {"resourceName": "customers/123/assets/88"}
+    ]
+    assert create["ad"]["appAd"]["youtubeVideos"] == [
+        {"assetId": "99"}
+    ]
+
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_google_capability().register_tools()
+    }
+    app_group = definitions["google_create_app_ad_group"]
+    app_ad = definitions["google_create_app_ad"]
+    assert app_group.live_support is False
+    assert app_group.input_schema.properties["type"]["default"] == "SEARCH_STANDARD"
+    assert app_ad.live_support is False
+    assert app_ad.input_schema.required == [
+        "ad_group_id", "name", "headlines", "descriptions"
+    ]
+
+
 def test_meta_audience_crud_builds_custom_and_lookalike_payloads():
     client = MetaAPIClient({"access_token": "test"})
     calls = []

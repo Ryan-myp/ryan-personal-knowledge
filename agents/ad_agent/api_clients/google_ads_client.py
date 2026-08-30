@@ -2493,6 +2493,78 @@ class GoogleAdsAPIClient(BasePlatformClient):
         if not resource_name:
             raise APIError(f"Ad group mutate returned no resource name: {resp}")
         return str(resource_name.split('/')[-1])
+
+    def create_app_ad(
+        self,
+        ad_group_id: str,
+        name: str,
+        headlines: list[Any],
+        descriptions: list[Any],
+        images: list[Any] = None,
+        videos: list[Any] = None,
+        html5_media_bundles: list[Any] = None,
+        status: str = None,
+    ) -> dict[str, Any]:
+        """Build a Google AppAd mutation plan without provider I/O.
+
+        App campaign creative is an ``Ad.appAd`` payload attached to an App
+        campaign Ad Group.  The product deliberately exposes this adapter as
+        dry-run-only until the selected test customer has verified the exact
+        AssetService/AdGroupAd mutation sequence.  Keeping the provider-shaped
+        plan here means that verification later changes this adapter, not the
+        Skill, Runtime, or route metadata.
+        """
+        ad_group_id = self._numeric_id(ad_group_id, "ad_group_id")
+        if not str(name or "").strip():
+            raise ValueError("name is required")
+        if not isinstance(headlines, list) or not 2 <= len(headlines) <= 5:
+            raise ValueError("App Ad requires 2 to 5 headlines")
+        if not isinstance(descriptions, list) or not 2 <= len(descriptions) <= 5:
+            raise ValueError("App Ad requires 2 to 5 descriptions")
+        status = str(status or "PAUSED").upper()
+        if status not in {"PAUSED", "ENABLED"}:
+            raise ValueError("status must be PAUSED or ENABLED")
+
+        app_ad: dict[str, Any] = {
+            "headlines": [self._text_asset(item) for item in headlines],
+            "descriptions": [self._text_asset(item) for item in descriptions],
+        }
+        for field_name, values in (
+            ("images", images),
+            ("youtubeVideos", videos),
+            ("html5MediaBundles", html5_media_bundles),
+        ):
+            if values:
+                if not isinstance(values, list):
+                    raise ValueError(f"{field_name} must be a list")
+                app_ad[field_name] = [self._asset_reference(item) for item in values]
+
+        customer = str(self.customer_id or "").strip()
+        if not re.fullmatch(r"\d+", customer):
+            raise ValueError("customer_id must contain digits only")
+        ad_resource_name = f"customers/{customer}/ads/-1"
+        operation = {
+            "adGroupAds": {
+                "create": {
+                    "resourceName": ad_resource_name,
+                    "adGroup": f"customers/{customer}/adGroups/{ad_group_id}",
+                    "status": status,
+                    "ad": {
+                        "name": str(name).strip(),
+                        "appAd": app_ad,
+                    },
+                }
+            }
+        }
+        return {
+            "ad_resource_name": ad_resource_name,
+            "ad_group_id": ad_group_id,
+            "operation": operation,
+            "execution_status": "planned",
+            "mode": "dry_run",
+            "live_support": False,
+            "requires_verified_live_adapter": True,
+        }
     
     # ==================== Ad 管理 ====================
     
