@@ -179,6 +179,53 @@ def test_batch_items_have_global_sequences_and_keep_account_on_validation_failur
     assert workflow["items"][1]["status"] == "succeeded"
 
 
+def test_cross_channel_batch_status_mapping_is_provider_owned():
+    """Batch status stays neutral in Core and maps through each Tool schema."""
+    runtime = AgentRuntime(
+        require_llm=False,
+        persistence_store=AdAgentStore(":memory:"),
+        whitelist_validator=_whitelist(
+            meta=["m1"], google=["g1"], tiktok=["t1"], dv360=["d1"],
+        ),
+    )
+    runtime.register_capability(create_meta_capability())
+    runtime.register_capability(create_google_capability())
+    runtime.register_capability(create_tiktok_capability())
+    runtime.register_capability(create_dv360_capability())
+
+    platform_params = {
+        "meta": {"account_id": "m1", "campaign_ids": ["meta-1"]},
+        "google": {"customer_id": "g1", "campaign_ids": ["google-1"]},
+        "tiktok": {"account_id": "t1", "campaign_ids": ["tiktok-1"]},
+        "dv360": {"advertiser_id": "d1", "campaign_ids": ["dv360-1"]},
+    }
+    expected = {
+        "meta": {"pause": {"status": "PAUSED"}, "resume": {"status": "ACTIVE"}},
+        "google-ads": {
+            "pause": {"status": "PAUSED"}, "resume": {"status": "ENABLED"},
+        },
+        "tiktok": {
+            "pause": {"campaign_group_status": 0},
+            "resume": {"campaign_group_status": 1},
+        },
+        "dv360": {"pause": {"status": "PAUSED"}, "resume": {"status": "ACTIVE"}},
+    }
+
+    for action, text in (
+        ("pause", "跨渠道批量暂停 Meta、Google、TikTok、DV360 campaign"),
+        ("resume", "跨渠道批量恢复 Meta、Google、TikTok、DV360 campaign"),
+    ):
+        result = runtime.run(text, user_id="batch-user", platform_params=platform_params)
+        assert result["intent"]["intent_type"] == f"cross_channel_batch_{action}"
+        by_platform = {
+            item["platform"]: item["data"]["input"]["updates"]
+            for item in result["results"]
+        }
+        assert by_platform == {
+            platform: values[action] for platform, values in expected.items()
+        }
+
+
 def test_capability_unload_clears_tools_and_derived_discovery_indexes():
     """A Capability unload must be symmetric with registration."""
     runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
