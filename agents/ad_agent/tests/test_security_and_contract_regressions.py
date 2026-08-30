@@ -387,6 +387,48 @@ def test_four_channel_create_chains_are_dry_run_only(
     assert all(item["data"]["provider_validation"]["ready"] is True for item in result["results"])
 
 
+def test_tiktok_cross_channel_create_maps_daily_budget_to_adgroup_budget():
+    """The provider-owned alias must keep the TikTok create chain intact."""
+    runtime = AgentRuntime(
+        require_llm=False,
+        whitelist_validator=whitelist(tiktok=["t1"]),
+    )
+    runtime.register_capability(create_tiktok_capability())
+
+    result = runtime.run(
+        "创建 TikTok campaign 名称=daily-budget-chain",
+        user_id="daily-budget-test",
+        account_id="t1",
+        platform_params={
+            "tiktok": {
+                "account_id": "t1",
+                "name": "daily-budget-chain",
+                "objective_type": "PRODUCT_SALES",
+                "campaign_type": "REGULAR_CAMPAIGN",
+                "budget_mode": "BUDGET_MODE_DAY",
+                "daily_budget": 100,
+                "promotion_type": "WEBSITE",
+                "billing_event": "OCPM",
+                "location_ids": ["US"],
+                "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
+                "bid_type": "BID_TYPE_NO_BID",
+                "landing_url": "https://example.com",
+                "media": {"video_id": "v1"},
+            },
+        },
+    )
+
+    assert [item["tool"] for item in result["results"]] == [
+        "tiktok_create_campaign",
+        "tiktok_create_adgroup",
+        "tiktok_create_ad",
+    ]
+    ad_group = result["results"][1]
+    assert ad_group["success"] is True
+    assert ad_group["data"]["input"]["budget"] == 100
+    assert ad_group["data"]["provider_validation"]["ready"] is True
+
+
 def test_structured_google_platform_alias_params_reach_provider_tool():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"google-ads": ["g1"]}

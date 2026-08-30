@@ -1,5 +1,5 @@
 {
-  "digest": "cc696d8814c951adad6250c4a3778d28acd312e95f8ea403619d301d731ec503",
+  "digest": "bdc9eea4d5045c307c0e93bdc621e8956c13523bc31a5f47e0ced419a0748753",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -13046,7 +13046,7 @@
       ]
     },
     "tiktok": {
-      "digest": "81de258c6fe6fc03b5ff7a4021e5c3c2f9259a3e66ea162d5c5aee746f615064",
+      "digest": "3e22fe68b0ddc13f1b9448ea4399e4c06d2bab172d56dacc4daf6fe31f8d9067",
       "tool_count": 69,
       "tools": [
         {
@@ -13609,6 +13609,9 @@
               },
               "budget": {
                 "description": "Budget in user currency; current knowledge base minimum is 50 USD",
+                "input_aliases": [
+                  "daily_budget"
+                ],
                 "minimum": 50,
                 "type": "number"
               },

@@ -548,7 +548,16 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
             ),
             "budget_mode": _field("string", "Ad group budget mode", enum=TIKTOK_BUDGET_MODES[:3]),
             "budget_optmize_on": _field("boolean", "Enable Campaign Budget Optimization"),
-            "budget": _field("number", "Budget in user currency; current knowledge base minimum is 50 USD", minimum=50),
+            "budget": _field(
+                "number",
+                "Budget in user currency; current knowledge base minimum is 50 USD",
+                minimum=50,
+                # TikTok's ad-group endpoint calls the wire field ``budget``
+                # even when the business request supplies a daily budget.
+                # Keep this semantic alias provider-owned so Core/Runtime do
+                # not grow a TikTok-specific budget branch.
+                input_aliases=["daily_budget"],
+            ),
             "daily_budget": _field("number", "Daily budget in user currency", minimum=50),
             "location_ids": _field(
                 "array", "Country/region IDs", items={"type": "string"},
