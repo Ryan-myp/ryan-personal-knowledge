@@ -72,7 +72,7 @@ class GoogleCapability(BaseCapability):
     platform_name = "google-ads"
     provider_client_class = GoogleAdsAPIClient
     provider_method_exclusions = {"for_customer"}
-    capability_version = "1.3.1"
+    capability_version = "1.4.0"
     provider_api_version = "v24"
     provider_method_coverage = {
         "list_campaigns": ["google_list_campaigns"], "get_campaign": ["google_get_campaign"],
@@ -139,6 +139,8 @@ class GoogleCapability(BaseCapability):
         "delete_user_list": ["google_delete_user_list"],
         "upload_user_list_data": ["google_upload_user_list_data"],
         "list_customer_clients": ["google_list_customer_clients"],
+        "list_experiments": ["google_list_experiments"],
+        "list_experiment_arms": ["google_list_experiment_arms"],
         "get_campaign_report": ["google_get_campaign_report"], "get_adgroup_report": ["google_get_adgroup_report"],
     }
 
@@ -194,6 +196,38 @@ class GoogleCapability(BaseCapability):
         product_group_update_schema = google_product_group_update_schema()
         product_group_read_properties = product_group_read_schema["properties"]
         tools = [
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_list_experiments",
+                description="查询 Google Ads Campaign Experiment。",
+                method_name="list_experiments", result_key="experiments",
+                properties={
+                    "customer_id": {"type": "string"},
+                    "query": {"type": "string", "description": "可选 GAQL 查询"},
+                    "limit": {"type": "integer"},
+                },
+                required=["customer_id"], action="list", resource_type="experiment",
+                intent_types=["list_experiments"], traits=["read", "experiment"],
+                argument_builder=lambda _ctx, data: ((), {
+                    "query": data.get("query"), "page_size": data.get("limit", 100),
+                }),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_list_experiment_arms",
+                description="查询 Google Ads Experiment Arm。",
+                method_name="list_experiment_arms", result_key="experiment_arms",
+                properties={
+                    "customer_id": {"type": "string"},
+                    "query": {"type": "string", "description": "可选 GAQL 查询"},
+                    "limit": {"type": "integer"},
+                },
+                required=["customer_id"], action="list", resource_type="experiment_arm",
+                intent_types=["list_experiment_arms"], traits=["read", "experiment"],
+                argument_builder=lambda _ctx, data: ((), {
+                    "query": data.get("query"), "page_size": data.get("limit", 100),
+                }),
+            ),
             method_tool(
                 platform="google-ads", skill="google-ads-api-expert",
                 name="google_delete_campaign",

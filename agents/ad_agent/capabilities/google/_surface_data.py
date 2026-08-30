@@ -113,4 +113,6 @@ API_SURFACE = [
     {"resource": "user_list", "action": "delete", "method": "delete_user_list", "status": "implemented"},
     {"resource": "user_list", "action": "upload", "method": "upload_user_list_data", "status": "implemented"},
     {"resource": "customer_client", "action": "list", "method": "list_customer_clients", "status": "implemented"},
+    {"resource": "experiment", "action": "list", "method": "list_experiments", "status": "implemented", "notes": "GAQL read surface; Experiment mutation lifecycle remains planned"},
+    {"resource": "experiment_arm", "action": "list", "method": "list_experiment_arms", "status": "implemented", "notes": "GAQL read surface; Experiment Arm mutation lifecycle remains planned"},
 ]

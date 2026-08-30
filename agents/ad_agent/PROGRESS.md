@@ -4,7 +4,7 @@
 
 ## 当前契约（2026-08-30）
 
-- 单 Agent + 多 Skills + Tools；平台 Capability 是可执行注册表的来源，当前共 248 个工具：Meta 67、Google Ads 78、TikTok 72、DV360 31。Capability 和按约定命名的 Provider Client 均自动发现，不依赖中心渠道/工具配置表；每个 Capability 还提供 Provider 方法覆盖率发布门禁。DV360 Campaign 创建尚未建设，仅在 API Surface 标记为 planned，不注册不可执行 Tool。
+- 单 Agent + 多 Skills + Tools；平台 Capability 是可执行注册表的来源，当前共 250 个工具：Meta 67、Google Ads 80、TikTok 72、DV360 31。Capability 和按约定命名的 Provider Client 均自动发现，不依赖中心渠道/工具配置表；每个 Capability 还提供 Provider 方法覆盖率发布门禁。DV360 Campaign 创建尚未建设，仅在 API Surface 标记为 planned，不注册不可执行 Tool。
 - 所有 Campaign 及下级资源创建/更新默认 dry-run；当前不会因工具已注册就调用真实写 API。
 - live 仅允许配置白名单账户，且 API 确认必须携带与当前 `session_id + account_id + tool + normalized input + idempotency key` 绑定的 `confirmation_payload`。
 - 白名单只有一个账户时允许兼容性自动选择；多账户配置必须由调用方显式指定目标账户。
@@ -32,13 +32,15 @@
 - 每个渠道 Capability 包另有 `api_surface.py`，声明已实现与计划中的官方资源操作；审计会
   检查已实现项是否同时存在 Client 方法、覆盖映射和 executable Tool，并把计划项显式列为
   后续建设缺口。
+- Google Ads 已补齐 Experiment 与 Experiment Arm 的 GAQL 只读查询 Tool；Experiment
+  mutation lifecycle 仍保留在官方清单的 planned 缺口中，未将部分能力误报为完整 CRUD。
 - 每个渠道 `_surface_data.py` 另有 `OFFICIAL_INVENTORY`，登记官方资源/动作、endpoint
   或 Provider operation、API version、来源和状态；审计会单独输出官方基线覆盖率、缺口和
   `dry_run_only`/`live_verified` 证据。当前基线明确为 `scoped_not_exhaustive`，不能把
   Tool 数量当成 Provider 官方接口总量。
 - 当前已实现的 Provider Client 方法均纳入三段式追踪：Client method → Capability
   `provider_method_coverage` → `api_surface.py` → executable Tool。现有覆盖为 DV360
-  29/29、Google Ads 74/74、Meta 65/65、TikTok 72/72；同一 Client 方法映射多个业务
+  29/29、Google Ads 76/76、Meta 65/65、TikTok 72/72；同一 Client 方法映射多个业务
   Tool 时会在审计 JSON 中保留全部映射，不以工具数量冒充官方接口完整度。
 
 ## 项目概述
@@ -173,7 +175,7 @@ python -m pytest agents/ad_agent/tests/ -v
 ```
 
 测试结果：
-- 当前 `agents/ad_agent/tests/`：437 passed（另有 1 条本机依赖弃用 warning）。
+- 当前 `agents/ad_agent/tests/`：451 passed（另有 1 条本机依赖弃用 warning）。
 - 覆盖：工具注册、Schema 校验、白名单、dry-run 不调用 Client、跨平台账户、层级 ID 传递、live 确认、持久化和 Runtime 集成
 
 ## 扩展新平台

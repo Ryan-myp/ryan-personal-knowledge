@@ -369,6 +369,78 @@ class GoogleAdsAPIClient(BasePlatformClient):
             }
         raise APIError(f"Google campaign {campaign_id} was not found")
 
+    @staticmethod
+    def _normalize_experiment(row: dict) -> dict[str, Any]:
+        """Normalize one GAQL Experiment row without exposing wire casing."""
+        experiment = row.get("experiment", {}) if isinstance(row, dict) else {}
+        if not isinstance(experiment, dict):
+            experiment = {}
+        return {
+            "id": experiment.get("id"),
+            "resource_name": experiment.get(
+                "resourceName", experiment.get("resource_name")
+            ),
+            "name": experiment.get("name"),
+            "description": experiment.get("description"),
+            "status": experiment.get("status"),
+            "type": experiment.get("type"),
+            "start_date": experiment.get("startDate", experiment.get("start_date")),
+            "end_date": experiment.get("endDate", experiment.get("end_date")),
+            "suffix": experiment.get("suffix"),
+            "base_campaign": experiment.get(
+                "baseCampaign", experiment.get("base_campaign")
+            ),
+            "experiment_campaign": experiment.get(
+                "experimentCampaign", experiment.get("experiment_campaign")
+            ),
+        }
+
+    def list_experiments(
+        self, query: str | None = None, page_size: int = 100
+    ) -> list[dict[str, Any]]:
+        """List Google Ads Experiments through the read-only GAQL surface."""
+        query = query or (
+            "SELECT experiment.id, experiment.resource_name, experiment.name, "
+            "experiment.description, experiment.status, experiment.type, "
+            "experiment.start_date, experiment.end_date, experiment.suffix, "
+            "experiment.base_campaign, experiment.experiment_campaign "
+            "FROM experiment"
+        )
+        return [
+            self._normalize_experiment(row)
+            for row in self._search_all(query, page_size=page_size)
+        ]
+
+    def list_experiment_arms(
+        self, query: str | None = None, page_size: int = 100
+    ) -> list[dict[str, Any]]:
+        """List Google Ads Experiment Arms through the read-only GAQL surface."""
+        query = query or (
+            "SELECT experiment_arm.id, experiment_arm.resource_name, "
+            "experiment_arm.name, experiment_arm.experiment, "
+            "experiment_arm.control, experiment_arm.traffic_split "
+            "FROM experiment_arm"
+        )
+        rows = self._search_all(query, page_size=page_size)
+        normalized: list[dict[str, Any]] = []
+        for row in rows:
+            arm = row.get("experimentArm", row.get("experiment_arm", {}))
+            if not isinstance(arm, dict):
+                arm = {}
+            normalized.append({
+                "id": arm.get("id"),
+                "resource_name": arm.get(
+                    "resourceName", arm.get("resource_name")
+                ),
+                "name": arm.get("name"),
+                "experiment": arm.get("experiment"),
+                "control": arm.get("control"),
+                "traffic_split": arm.get(
+                    "trafficSplit", arm.get("traffic_split")
+                ),
+            })
+        return normalized
+
     @classmethod
     def _normalize_customer_client(cls, row: dict) -> dict:
         """Normalize one manager-account customer_client GAQL row."""

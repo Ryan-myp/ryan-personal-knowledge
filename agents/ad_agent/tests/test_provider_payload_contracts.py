@@ -606,6 +606,60 @@ def test_google_bidding_strategy_queries_normalize_gaql_rows():
     assert client.get_bidding_strategy("7")["name"] == "Max conversions"
 
 
+def test_google_experiment_read_surfaces_normalize_gaql_rows_and_queries():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    calls = []
+
+    def search_all(query, **kwargs):
+        calls.append((query, kwargs))
+        if "experiment_arm" in query:
+            return [{
+                "experimentArm": {
+                    "id": "2",
+                    "resourceName": "customers/123/experimentArms/2",
+                    "name": "Treatment",
+                    "experiment": "customers/123/experiments/1",
+                    "control": False,
+                    "trafficSplit": 50,
+                }
+            }]
+        return [{
+            "experiment": {
+                "id": "1",
+                "resourceName": "customers/123/experiments/1",
+                "name": "Budget test",
+                "description": "test",
+                "status": "SETUP",
+                "type": "SEARCH_CUSTOM",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-30",
+                "suffix": " treatment",
+                "baseCampaign": "customers/123/campaigns/9",
+                "experimentCampaign": "customers/123/campaigns/10",
+            }
+        }]
+
+    client._search_all = search_all
+    assert client.list_experiments(page_size=10)[0] == {
+        "id": "1",
+        "resource_name": "customers/123/experiments/1",
+        "name": "Budget test",
+        "description": "test",
+        "status": "SETUP",
+        "type": "SEARCH_CUSTOM",
+        "start_date": "2026-09-01",
+        "end_date": "2026-09-30",
+        "suffix": " treatment",
+        "base_campaign": "customers/123/campaigns/9",
+        "experiment_campaign": "customers/123/campaigns/10",
+    }
+    assert client.list_experiment_arms(page_size=5)[0]["traffic_split"] == 50
+    assert calls[0][1] == {"page_size": 10}
+    assert calls[1][1] == {"page_size": 5}
+    assert "FROM experiment" in calls[0][0]
+    assert "FROM experiment_arm" in calls[1][0]
+
+
 def test_google_bidding_strategy_lifecycle_builds_official_scheme_payloads():
     client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
     calls = []
