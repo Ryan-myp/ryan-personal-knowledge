@@ -6,6 +6,8 @@ runtime/skill.py - Skill 加载与执行
 可执行 Tool 由 Capability/plugin 自注册并携带自己的结构化元数据。
 """
 
+from __future__ import annotations
+
 import os
 import re
 import logging
@@ -652,7 +654,39 @@ class SkillLoader:
         """加载所有根目录下的 Skills"""
         for root in self._roots:
             self._load_from_root(root)
-        return self._skills
+        return self.list_all()
+
+    @property
+    def roots(self) -> tuple[Path, ...]:
+        """Return the configured discovery roots as an immutable snapshot.
+
+        Runtime and selectors should not depend on the loader's private index
+        or mutate its roots in place.  The loader remains the owner of both
+        discovery configuration and the loaded Skill cache.
+        """
+        return tuple(self._roots)
+
+    def list_all(self) -> dict[str, Skill]:
+        """Return a snapshot of all successfully loaded Skills."""
+        return dict(self._skills)
+
+    def load_skill_dir(self, skill_dir: str | Path) -> Optional[Skill]:
+        """Load one standard Skill directory through the public loader seam.
+
+        The operation is idempotent for the same Skill name and source path;
+        malformed packages still raise so callers that explicitly request a
+        package can report the validation error.
+        """
+        self._load_single_skill(str(skill_dir))
+        directory = str(Path(skill_dir).expanduser().resolve())
+        for skill in self._skills.values():
+            if str(getattr(skill, "skill_dir", "")) == directory:
+                return skill
+        return None
+
+    def unload(self, name: str) -> bool:
+        """Unload a Skill by name and report whether it was present."""
+        return self._skills.pop(str(name), None) is not None
 
     def iter_skill_dirs(self, roots: Optional[list[Union[str, Path]]] = None) -> list[Path]:
         """Return every standard Skill directory discovered under the roots.

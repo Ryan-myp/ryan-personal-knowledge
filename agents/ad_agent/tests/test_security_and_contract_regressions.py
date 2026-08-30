@@ -147,6 +147,26 @@ def test_skill_loader_ignores_business_context_files_without_malformed_errors(tm
     assert loader.errors == {}
 
 
+def test_skill_loader_public_lifecycle_returns_snapshots(tmp_path):
+    skill_dir = tmp_path / "skills" / "snapshot-provider"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: snapshot-provider\nplatform: snapshot-provider\n---\n",
+        encoding="utf-8",
+    )
+
+    loader = SkillLoader(str(tmp_path))
+    loaded = loader.load_all()
+
+    assert loaded is not loader.list_all()
+    assert loader.roots == (tmp_path,)
+    assert loader.load_skill_dir(skill_dir).name == "snapshot-provider"
+    assert loader.list_all()["snapshot-provider"].platform == "snapshot-provider"
+    assert loader.unload("snapshot-provider") is True
+    assert loader.list_all() == {}
+    assert loader.unload("snapshot-provider") is False
+
+
 def test_skill_contract_preserves_harness_operational_metadata(tmp_path):
     skill_dir = tmp_path / "channels" / "metadata-provider"
     skill_dir.mkdir(parents=True)

@@ -306,7 +306,8 @@ class DynamicToolSelector:
             if getattr(tool, "platform", None)
             and str(tool.platform).lower() != "multi_platform"
         }
-        for skill in getattr(self.skill_loader, "_skills", {}).values():
+        loaded_skills = getattr(self.skill_loader, "list_all", lambda: {})()
+        for skill in loaded_skills.values():
             platform = getattr(skill, "platform", "")
             if platform and str(platform).lower() != "multi_platform":
                 platforms.add(self._normalize_platform(platform))
@@ -320,7 +321,8 @@ class DynamicToolSelector:
             normalized.replace("-", " "),
             normalized.replace("_", " "),
         }
-        for skill in getattr(self.skill_loader, "_skills", {}).values():
+        loaded_skills = getattr(self.skill_loader, "list_all", lambda: {})()
+        for skill in loaded_skills.values():
             if self._normalize_platform(getattr(skill, "platform", "")) != normalized:
                 continue
             name = str(getattr(skill, "name", "") or "").lower()
@@ -486,7 +488,8 @@ class DynamicToolSelector:
         skill = self.skill_loader.get_skill(platform)
         if skill:
             return skill
-        for candidate in getattr(self.skill_loader, "_skills", {}).values():
+        loaded_skills = getattr(self.skill_loader, "list_all", lambda: {})()
+        for candidate in loaded_skills.values():
             candidate_platform = self._normalize_platform(getattr(candidate, "platform", ""))
             if candidate_platform == normalized:
                 return candidate

@@ -1536,10 +1536,8 @@ class AgentRuntime:
             self._skill_tool_names.pop(target_key, None)
             self._skill_platforms.pop(target_key, None)
             self._skill_objects.pop(target_key, None)
-            if target_skill is not None and self.skill_loader._skills.get(
-                getattr(target_skill, "name", "")
-            ) is target_skill:
-                self.skill_loader._skills.pop(getattr(target_skill, "name", ""), None)
+            if target_skill is not None:
+                self.skill_loader.unload(getattr(target_skill, "name", ""))
 
             remaining = [key for key in candidates if key != target_key]
             if remaining:
@@ -1569,17 +1567,12 @@ class AgentRuntime:
     
     def get_available_skills(self) -> dict[str, Skill]:
         """获取所有可用的 Skills（包括未加载的）"""
-        all_skills = {}
-        for root in self.skill_loader._roots:
-            if not root.exists():
-                continue
-            for skill_file in root.rglob("SKILL.md"):
-                try:
-                    self.skill_loader._load_single_skill(str(skill_file.parent))
-                except Exception as exc:
-                    logger.debug("加载可用 Skill 失败 %s: %s", skill_file, exc)
-        all_skills.update(self.skill_loader._skills)
-        return all_skills
+        for skill_dir in self.skill_loader.iter_skill_dirs():
+            try:
+                self.skill_loader.load_skill_dir(skill_dir)
+            except Exception as exc:
+                logger.debug("加载可用 Skill 失败 %s: %s", skill_dir, exc)
+        return self.skill_loader.list_all()
     
     def _load_required_skills(self, platforms: list[str]) -> None:
         """
@@ -1626,32 +1619,12 @@ class AgentRuntime:
             if skill is not None:
                 return skill
 
-        # 从 canonical SkillLoader 中递归查找，覆盖 skills/channels/* 等
-        # 分组目录。
-        for root in self.skill_loader._roots:
-            if not root.exists():
-                continue
-            for skill_file in root.rglob("SKILL.md"):
-                skill_dir = skill_file.parent
-                try:
-                    with open(skill_file, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                    if not content.startswith('---'):
-                        continue
-                    match = re.match(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
-                    if not match:
-                        continue
-                    metadata = yaml.safe_load(match.group(1)) or {}
-                    skill_meta = metadata.get("skill", {}) if isinstance(metadata.get("skill"), dict) else {}
-                    skill_platform = metadata.get('platform') or skill_meta.get('platform') or skill_dir.name
-                    if skill_platform == platform or skill_dir.name == platform:
-                        # 直接加载这个 skill，避免再次使用浅层 loader。
-                        self.skill_loader._load_single_skill(str(skill_dir))
-                        for loaded in self.skill_loader._skills.values():
-                            if loaded.platform == platform:
-                                return loaded
-                except Exception as e:
-                    logger.debug(f"解析 Skill 文件失败 {skill_dir.name}: {e}")
+        # SkillLoader owns recursive discovery and package validation.  Runtime
+        # only asks for the loaded package by its declared platform; it does not
+        # parse another copy of SKILL.md or inspect loader internals.
+        candidates = self.skill_loader.get_by_platform(canonical_platform)
+        if candidates:
+            return candidates[0]
         return None
     
     def set_credentials(self, credentials: dict) -> None:
@@ -2217,9 +2190,6 @@ class AgentRuntime:
         Returns:
             成功加载的 Skill 数量
         """
-        import yaml
-        from pathlib import Path
-        
         loaded_count = 0
         # Reuse credentials previously installed through set_credentials()
         # when callers do not repeat them during Skill discovery. Passing an
@@ -2246,26 +2216,14 @@ class AgentRuntime:
         # all built-in Capabilities a second time.
         for skill_dir in self.skill_loader.iter_skill_dirs([skills_root]):
             try:
-                    skill_file = skill_dir / "SKILL.md"
-                    # 解析 SKILL.md frontmatter
-                    with open(skill_file, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                    
-                    metadata = {}
-                    if content.startswith('---'):
-                        import re
-                        match = re.match(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
-                        if match:
-                            metadata = yaml.safe_load(match.group(1))
-                    
-                    metadata = metadata if isinstance(metadata, dict) else {}
-                    skill_metadata = metadata.get('skill', {})
-                    skill_metadata = skill_metadata if isinstance(skill_metadata, dict) else {}
-                    platform = (
-                        metadata.get('platform')
-                        or skill_metadata.get('platform')
-                        or skill_dir.name
-                    )
+                    # SkillLoader owns SKILL.md parsing, standard frontmatter,
+                    # duplicate detection and malformed-package isolation.
+                    # Runtime consumes the validated package instead of
+                    # maintaining a second YAML parser for the same contract.
+                    loaded_skill = self.skill_loader.load_skill_dir(skill_dir)
+                    if loaded_skill is None or bool(getattr(loaded_skill, "context_only", False)):
+                        continue
+                    platform = loaded_skill.platform
 
                     # Loading SKILL.md supplies bounded expert context. It
                     # does not register routes or executable workflow steps.
