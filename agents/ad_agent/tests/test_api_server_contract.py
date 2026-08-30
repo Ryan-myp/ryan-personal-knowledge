@@ -375,3 +375,67 @@ def test_managed_skill_api_versions_and_publishing_are_tenant_scoped(monkeypatch
     assert "growth-skill" in managed_runtime.get_managed_skills()
     assert managed_runtime.registry.list_all() == []
     store.close()
+
+
+def test_chat_activates_published_skill_for_authenticated_request_tenant(monkeypatch, tmp_path):
+    from agents.ad_agent import AgentRuntime
+    from agents.ad_agent.core.interfaces import ParsedIntent
+    from agents.ad_agent.persistence.store import AdAgentStore
+    from agents.ad_agent.skill_management import ManagedSkillManager
+
+    store = AdAgentStore(str(tmp_path / "multi-tenant-skills.db"))
+    managed_runtime = AgentRuntime(
+        require_llm=False, persistence_store=store, offline_mode=True
+    )
+    manager = ManagedSkillManager(store)
+    manager.create_version(
+        "tenant-b",
+        "tenant-guidance",
+        "1.0.0",
+        {
+            "SKILL.md": (
+                "---\nname: tenant-guidance\ndescription: Tenant guidance\n"
+                "platform: multi_platform\n---\n\nUse the tenant policy.\n"
+            )
+        },
+        "editor",
+    )
+    manager.publish("tenant-b", "tenant-guidance", "1.0.0")
+
+    class Parser:
+        def __init__(self):
+            self.context = None
+
+        def parse(self, _text, context):
+            self.context = context.metadata.get("skill_context", {})
+            return ParsedIntent("chat", "查询广告", [])
+
+    parser = Parser()
+    managed_runtime.intent_parser = parser
+    monkeypatch.setattr(api_server, "runtime", managed_runtime)
+    monkeypatch.setattr(api_server, "API_KEY", "tenant-key")
+    monkeypatch.setattr(api_server, "ALLOW_UNAUTHENTICATED", False)
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "tenant-key": {
+                "user_id": "tenant-user",
+                "tenant_id": "tenant-b",
+                "permissions": ["ads.read"],
+            }
+        }),
+    )
+
+    with TestClient(api_server.app) as client:
+        response = client.post(
+            "/chat",
+            headers={"X-API-Key": "tenant-key"},
+            json={"user_input": "查询广告"},
+        )
+
+    assert response.status_code == 200
+    assert parser.context is not None
+    assert "tenant-guidance" in parser.context.get("expert_knowledge", "")
+    assert "tenant-guidance" in managed_runtime.get_managed_skills("tenant-b")
+    assert manager.activate_published("tenant-b", managed_runtime) == 0
+    store.close()

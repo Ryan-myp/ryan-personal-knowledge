@@ -45,6 +45,8 @@ skill-name/
 
 用户上传的 Skill 作为 advisory context 保存和版本化。它可以指导 Agent 组合
 已有 Tools，但不能携带凭证、自动导入 Python、注册任意 HTTP 动作或改变账户白名单。
+多租户 HTTP 请求在进入 Agent 前只激活认证 Principal 对应租户的已发布版本；该激活
+按不可变物化快照幂等跳过，Provider Tool Registry 仍不按租户动态变更。
 带 `evals/eval.yaml` 的版本发布前必须通过受控 Skill-up Engine；用户不能提供
 自定义命令、judge script、MCP server 或环境注入。
 

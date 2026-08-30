@@ -598,9 +598,25 @@ class ManagedSkillManager:
     def activate_published(self, tenant_id: str, runtime: Any) -> int:
         records = self.store.list_skill_versions(tenant_id, None, 200)
         active = [record for record in records if record.get("status") == "published"]
+        current = {}
+        get_managed = getattr(runtime, "get_managed_skills", None)
+        if callable(get_managed):
+            current = get_managed(str(tenant_id or "default")) or {}
         loaded = 0
         for record in active:
             materialized = self._materialize(record)
+            existing = current.get(str(record.get("skill_name") or ""))
+            # Validate/materialize before skipping so a changed digest cannot
+            # bypass the immutable snapshot check. The directory path is part
+            # of the identity because each published version has its own
+            # materialized snapshot.
+            existing_dir = str(getattr(existing, "skill_dir", ""))
+            if (
+                existing is not None
+                and existing_dir
+                and Path(existing_dir).resolve() == materialized.resolve()
+            ):
+                continue
             runtime.load_managed_skill(str(materialized), tenant_id=str(tenant_id))
             loaded += 1
         return loaded

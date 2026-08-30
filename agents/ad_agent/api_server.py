@@ -353,6 +353,7 @@ async def chat(
         raise HTTPException(status_code=503, detail="服务未初始化")
     try:
         principal = _authorize_request(x_api_key, http_request)
+        _activate_request_tenant_skills(principal)
         if request.confirmed and not request.confirmation_payload:
             raise HTTPException(
                 status_code=400,
@@ -476,6 +477,30 @@ def _skill_manager_or_503() -> ManagedSkillManager:
 def _require_skill_permission(principal: RequestPrincipal, permission: str) -> None:
     if permission not in principal.permissions and "admin" not in principal.permissions:
         raise HTTPException(status_code=403, detail=f"缺少 Skill 管理权限：{permission}")
+
+
+def _activate_request_tenant_skills(principal: RequestPrincipal) -> None:
+    """Load the authenticated tenant's published Skills before Agent turns.
+
+    Startup activation covers the configured service tenant. API-key
+    principal mappings may serve multiple tenants from the same process, so a
+    request for another tenant must activate only that tenant's published
+    advisory snapshots. ``activate_published`` is idempotent and skips an
+    already materialized release.
+    """
+    if not runtime or not getattr(runtime, "persistence_store", None):
+        return
+    try:
+        ManagedSkillManager(runtime.persistence_store).activate_published(
+            principal.tenant_id, runtime
+        )
+    except Exception as exc:
+        logger.error(
+            "无法激活租户 %s 的已发布 Skill: %s",
+            principal.tenant_id,
+            _safe_exception_text(exc),
+        )
+        raise HTTPException(status_code=503, detail="租户 Skill 上下文加载失败") from exc
 
 
 @app.get("/skills", tags=["skills"])
@@ -666,6 +691,7 @@ async def chat_stream(
     
     try:
         principal = _authorize_request(x_api_key, http_request)
+        _activate_request_tenant_skills(principal)
         if request.confirmed and not request.confirmation_payload:
             raise HTTPException(
                 status_code=400,
