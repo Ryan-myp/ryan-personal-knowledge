@@ -33,6 +33,20 @@ def _files(name="business-growth"):
     }
 
 
+def test_cross_channel_skill_is_natural_language_guidance_not_tool_registry():
+    skill_path = Path(__file__).resolve().parents[1] / "skills" / "cross-channel" / "SKILL.md"
+    content = skill_path.read_text(encoding="utf-8")
+
+    # Internal intent labels and illustrative workflow files are Runtime
+    # concerns. Keeping them out of the Skill prevents the LLM from treating
+    # a prose capability list as executable Tool metadata.
+    assert "cross_channel_" not in content
+    assert "workflow.yaml" not in content
+    assert "expert/" not in content
+    assert "Registry" in content
+    assert "不是固定的 Tool 名称" in content
+
+
 def test_standard_skill_directory_is_versioned_and_published(tmp_path):
     store = AdAgentStore(":memory:")
     manager = ManagedSkillManager(store, root=str(tmp_path / "managed"))

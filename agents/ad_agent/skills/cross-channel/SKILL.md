@@ -1,220 +1,98 @@
 ---
 skill:
   name: cross-channel-campaign-manager
-  version: "1.0"
-  description: "跨渠道 Campaign 管理器 - 统一管理 Google/Meta/TikTok/DV360 多平台投放"
+  version: "1.1"
+  description: "跨渠道 Campaign 管理器 - 统一管理多平台投放"
   platform: cross-channel
   author: "Ryan"
   expertise_level: "expert"
-  last_updated: "2026-08-24"
+  last_updated: "2026-08-30"
 
 ---
 
 # 跨渠道 Campaign 管理 Skill
 
-> 实现边界：本文件描述跨渠道业务流程、统一口径和安全 SOP，不是可执行 Tool 注册表。当前 Runtime 通过已注册的平台 Tool 完成查询，并在统一聚合器中处理 comparison、洞察、预算建议和 CSV 导出；缺失指标、多币种及离线数据会明确标记，不会用 mock 数据冒充线上数据。LLM 根据本 Skill 的自然语言上下文提出计划，Runtime + Tool metadata + Harness 负责受控执行；Skill 包中的 `workflow.yaml` 不是上传、编辑或执行入口。
+> 实现边界：本文件只描述跨渠道业务流程、统一口径和安全 SOP，不声明接口、函数或可执行动作。LLM 根据本 Skill 的自然语言上下文理解目标并提出计划；Runtime 只从当前 Registry 发现真实存在的 Capability Tool，再依据 Tool metadata、schema 和 Harness 完成受控执行。缺失指标、多币种及离线数据必须明确标记，不得用 mock 数据冒充线上数据。
 
 ## 概述
 
-跨渠道 Campaign 管理 Expert Skill，提供：
-- 多平台 Campaign 统一视图
-- 跨平台预算智能分配
-- 性能对比分析
-- 批量操作管理
-- 统一报表汇总
+这是面向跨平台投放管理的业务 Skill，覆盖 Campaign 总览、性能比较、预算分析、
+批量生命周期管理、统一报表、异常诊断和渠道建议。它只提供业务语义和处理 SOP，
+不维护平台列表、Tool 清单、接口路径或参数枚举。
 
-## 能力意图与流程契约（不是 Tool 注册）
+## 业务能力与编排原则
 
-本 Skill 只定义跨渠道业务流程和统一口径。可执行能力由当前已注册
-Capability 发布的 ToolDefinition 动态决定；编排时必须先读取实际 Tool Schema
-和广告类型目录，不得假设某个渠道存在某个固定 Tool 名称。新增渠道或 Tool
-不需要修改本 Skill 的 Tool 清单。
+下面描述的是业务目标和处理步骤，不是固定的 Tool 名称，也不是接口清单。
+执行前必须从当前 Registry 读取实际可用的 Tool metadata、输入 schema、账户
+范围和广告类型目录；如果当前渠道没有匹配能力，应明确返回“不支持”，不能猜测
+接口名、拼接 endpoint 或把另一个渠道的能力套过来。新增渠道或新增 Tool 不需要
+修改本 Skill。
 
-### 1. Campaign 总览
+### 1. Campaign 总览与平台对比
 
-#### cross_channel_get_campaign_overview
-- **描述**: 获取所有平台 Campaign 总览
-- **参数**:
-  - date_range: 日期范围
-  - platforms: 平台列表 (可选，默认全部)
-  - metrics: 需要显示的指标
-- **返回**:
-  ```json
-  {
-    "total_campaigns": 15,
-    "total_spend": 50000,
-    "total_impressions": 10000000,
-    "platforms": {
-      "meta": {"campaigns": 5, "spend": 20000, "impressions": 4000000},
-      "tiktok": {"campaigns": 4, "spend": 15000, "impressions": 3000000},
-      "google": {"campaigns": 4, "spend": 10000, "impressions": 2000000},
-      "dv360": {"campaigns": 2, "spend": 5000, "impressions": 1000000}
-    }
-  }
-  ```
+当用户要求查看总览时，按用户指定的渠道和账户范围发现 Campaign 查询能力，再按
+需要补充渠道提供的报表能力。统一结果至少区分 Campaign 数量、花费、曝光、点击、
+转化、收入、币种和数据来源；不同币种不得直接相加，缺少字段不得补零。
 
-#### cross_channel_get_platform_comparison
-- **描述**: 各平台性能对比
-- **参数**:
-  - platforms: 平台列表
-  - metrics: ["impressions", "clicks", "spend", "conversions", "ctr", "cpc", "cpm", "cvr"]
+当用户要求平台对比时，先确认各渠道都能提供相同统计口径和时间范围，再计算 CTR、
+CPC、CPA、ROAS 等派生指标。无法对齐的字段要标记不可比，并在回复中说明原因。
 
-### 2. 预算分配
+### 2. 预算分析与分配建议
 
-#### cross_channel_optimize_budget
-- **描述**: 智能跨平台预算分配
-- **参数**:
-  - total_budget: 总预算
-  - optimization_goal: 优化目标 (MAXIMIZE_ROAS/MINIMIZE_CPA/MAXIMIZE_CONVERSIONS)
-  - constraints: 各平台预算上限/下限
-- **返回**:
-  ```json
-  {
-    "allocations": [
-      {"platform": "meta", "budget": 25000, "expected_roi": 3.5},
-      {"platform": "tiktok", "budget": 20000, "expected_roi": 2.8},
-      {"platform": "google", "budget": 15000, "expected_roi": 4.2}
-    ],
-    "total_expected_roi": 3.4
-  }
-  ```
+根据总预算、目标、历史表现、归因口径和平台约束生成预算建议。比例分配和优化
+分配都属于计划或分析动作；先展示每个平台的分配、假设、上下限和预期影响，再
+等待用户确认。若用户要求实际更新，按每个渠道声明的 Campaign 更新 schema 分别
+生成受账户范围、幂等、dry-run 和确认门禁约束的计划，不把建议结果直接当成平台写入。
 
-#### cross_channel_allocate_budget
-- **描述**: 按比例分配预算
-- **参数**:
-  - total_budget: 总预算
-  - ratios: 各平台分配比例 {"meta": 0.4, "tiktok": 0.3, "google": 0.3}
+### 3. Campaign 批量生命周期管理
 
-### 3. 批量操作
+暂停、恢复、预算更新或删除前，必须逐项确认渠道、账户和 Campaign ID，不能跨渠道
+复用 ID。Runtime 应发现每个渠道声明的对应生命周期能力，并按 schema 校验参数；
+缺少某项能力的渠道只返回该项阻塞原因，不选择相近但语义不同的接口。批量操作要
+展开为可审计的 item，保留部分失败、恢复和人工复核所需的信息。
 
-#### cross_channel_batch_pause
-- **描述**: 批量暂停多平台 Campaign
-- **参数**:
-  - platform_campaigns: {"meta": ["id1", "id2"], "tiktok": ["id3"]}
-  - reason: 暂停原因
+### 4. 统一报表与导出
 
-#### cross_channel_batch_resume
-- **描述**: 批量恢复多平台 Campaign
+先按渠道能力查询原始数据，再由统一聚合器规范化字段、币种、数据来源和拆分维度。
+导出只包含已获得且可解释的数据；本地生成的 CSV/XLSX 不能被描述成已经写入或同步
+到广告平台。
 
-#### cross_channel_batch_update_budget
-- **描述**: 批量更新各平台预算
-- **参数**:
-  - updates: [{"platform": "meta", "campaign_id": "xxx", "budget": 500}]
+### 5. 性能诊断、异常与渠道建议
 
-### 4. 统一报表
+性能洞察必须给出时间范围、比较基线、样本量、数据来源和不确定性。异常检测应
+区分数据缺失、平台延迟和真正的投放异常。渠道建议只能基于用户提供的行业、目标、
+预算、历史表现和约束生成，不能把经验判断包装成实时平台事实。
 
-#### cross_channel_get_unified_report
-- **描述**: 获取跨平台统一报表
-- **参数**:
-  - date_range: 日期范围
-  - metrics: 需要展示的指标
-  - breakdown_by: 拆分维度 ("platform" / "campaign" / "day")
+### 6. 能力发现与新增扩展
 
-#### cross_channel_export_report
-- **描述**: 导出跨平台报表
-- **参数**:
-  - date_range: 日期范围
-  - format: "csv" / "xlsx"
-
-### 5. 性能诊断
-
-#### cross_channel_get_performance_insights
-- **描述**: 跨平台性能洞察
-- **参数**:
-  - date_range: 日期范围
-  - threshold: 异常阈值
-
-#### cross_channel_detect_anomalies
-- **描述**: 检测投放异常
-- **参数**:
-  - date_range: 日期范围
-  - metrics: ["cpm", "ctr", "cvr", "cpc"]
-
-### 6. 渠道推荐
-
-#### cross_channel_get_channel_recommendations
-- **描述**: 获取渠道投放建议
-- **参数**:
-  - industry: 行业
-  - objective: 投放目标
-  - budget: 预算范围
-
-## 专家知识 (Expert Knowledge)
-
-### 跨渠道投放策略
-详见 [expert/multi_channel_strategy.md](expert/multi_channel_strategy.md)
-
-### 预算分配算法
-详见 [expert/budget_allocation.md](expert/budget_allocation.md)
-
-### 渠道协同效应
-详见 [expert/channel_synergy.md](expert/channel_synergy.md)
+静态选项由渠道 Tool schema 声明，账户、App、地域、转化事件等动态值由渠道只读
+lookup 能力提供。上层业务只依赖“查询 Campaign”“读取报表”“更新 Campaign”等
+业务语义；具体渠道的字段、接口版本和资源层级由 Provider Capability 自己声明和
+适配。Skill 不复制这些细节，也不因为新增渠道而增加条件分支。
 
 ## 常见场景
 
-### 场景 1: 新品上市多平台投放
-```yaml
-objective: MAXIMIZE_REACH
-budget: 100000
-channels:
-  meta:
-    allocation: 0.4
-    focus: "brand_awareness"
-  tiktok:
-    allocation: 0.3
-    focus: "viral_content"
-  google:
-    allocation: 0.2
-    focus: "search_capture"
-  dv360:
-    allocation: 0.1
-    focus: "premium_inventory"
-```
+### 场景 1：新品上市多平台投放
 
-### 场景 2: 双11大促投放
-```yaml
-objective: MAXIMIZE_ROAS
-budget: 500000
-strategy: "aggressive_scaling"
-channels:
-  meta:
-    budget_boost: 1.5
-    targeting: "lookalike"
-  tiktok:
-    budget_boost: 2.0
-    creative: "spark_ads"
-  google:
-    budget_boost: 1.2
-    bidding: "target_roas"
-```
+先确认投放目标、预算、时间范围、渠道可用性和各渠道所需的 Campaign 层级参数；
+然后按每个渠道的真实 schema 分别补齐参数，生成跨渠道 preflight 和 dry-run 计划。
+任何一个渠道缺少必填参数，都先返回缺口，不开始其他渠道的创建链路。
 
-### 场景 3: 预算优化调整
-```yaml
-action: "optimize_budget"
-current_spend:
-  meta: 30000
-  tiktok: 20000
-  google: 15000
-optimization_goal: "minimize_cpa"
-constraints:
-  meta: {"min": 20000, "max": 40000}
-  tiktok: {"min": 15000, "max": 30000}
-  google: {"min": 10000, "max": 20000}
-```
+### 场景 2：大促期间预算调整
 
-## 流程能力清单
+先读取统一口径的历史表现和当前约束，再生成分配建议。建议中的渠道预算、优化目标
+和假设必须逐项展示；实际修改要拆成平台和 Campaign 级别的受控写入，并要求显式确认。
 
-| 能力意图 | 描述 | 风险等级 |
-|--------|------|----------|
-| cross_channel_get_campaign_overview | 获取 Campaign 总览 | LOW |
-| cross_channel_get_platform_comparison | 平台性能对比 | LOW |
-| cross_channel_optimize_budget | 智能预算分配 | MEDIUM |
-| cross_channel_allocate_budget | 按比例分配预算 | MEDIUM |
-| cross_channel_batch_pause | 批量暂停 Campaign | MEDIUM |
-| cross_channel_batch_resume | 批量恢复 Campaign | LOW |
-| cross_channel_batch_update_budget | 批量更新预算 | MEDIUM |
-| cross_channel_get_unified_report | 获取统一报表 | LOW |
-| cross_channel_export_report | 导出报表 | LOW |
-| cross_channel_get_performance_insights | 性能洞察 | LOW |
-| cross_channel_detect_anomalies | 检测异常 | LOW |
-| cross_channel_get_channel_recommendations | 渠道推荐 | LOW |
+### 场景 3：跨渠道异常处理
+
+先区分数据延迟、指标不可比和投放异常，再给出诊断依据。涉及暂停或预算修改时，
+只生成带 Campaign、账户、原因和幂等信息的计划，不能因为异常判断直接执行写操作。
+
+## 风险与确认边界
+
+- 查询、聚合和分析可以在只读权限内执行，但必须保留来源和缺失字段。
+- 预算建议、暂停、恢复、预算更新和删除都必须先生成 dry-run 计划；真实写入需要
+  受控测试账户、权限、幂等键和显式确认。
+- 任何渠道写入失败都要保留逐项结果，不得把部分成功伪装成整体成功。
+- 凭证、账户配置和受保护字段不属于 Skill 内容、模型上下文或 Tool 输入。
+- Skill 只提供自然语言 SOP；可执行能力始终来自当前已注册的 Provider Capability。
