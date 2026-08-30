@@ -1602,6 +1602,49 @@ class MetaAPIClient(BasePlatformClient):
             },
         )
 
+    def create_engagement_ad(self, account_id: str, adset_id: str, ad: dict) -> str:
+        """Create a post-engagement or video-views ad."""
+        if not isinstance(ad, dict):
+            raise ValueError("engagement ad must be an object")
+        page_id = str(ad.get("page_id") or "").strip()
+        engagement_type = str(ad.get("engagement_type") or "").upper().strip()
+        if not page_id or engagement_type not in {"POST_ENGAGEMENT", "VIDEO_VIEWS"}:
+            raise ValueError(
+                "page_id and engagement_type=POST_ENGAGEMENT or VIDEO_VIEWS are required"
+            )
+
+        if engagement_type == "POST_ENGAGEMENT":
+            post_id = str(ad.get("post_id") or "").strip()
+            if not post_id:
+                raise ValueError("POST_ENGAGEMENT creatives require post_id")
+            creative_spec = {"page_id": page_id, "post_id": post_id}
+        else:
+            video_id = str(ad.get("video_id") or "").strip()
+            cta_type = str(ad.get("call_to_action_type") or "WATCH_VIDEO").upper().strip()
+            if not video_id:
+                raise ValueError("VIDEO_VIEWS creatives require video_id")
+            if cta_type != "WATCH_VIDEO":
+                raise ValueError("VIDEO_VIEWS creatives require WATCH_VIDEO CTA")
+            creative_spec = {
+                "page_id": page_id,
+                "video_data": {
+                    "video_id": video_id,
+                    "message": ad.get("message", ""),
+                    "title": ad.get("headline", ""),
+                    "call_to_action": {"type": cta_type},
+                },
+            }
+
+        return self.create_ad(
+            account_id,
+            adset_id,
+            {
+                "name": ad.get("name", "Untitled Engagement Ad"),
+                "status": ad.get("status", "PAUSED"),
+                "object_story_spec": creative_spec,
+            },
+        )
+
     def update_ad(self, ad_id: str, updates: dict) -> dict:
         """更新 Ad"""
         data = {k: v for k, v in updates.items() if v is not None}

@@ -16,7 +16,7 @@ from .creatives import MetaCreateCreativeHandler
 from .parameters import (
     meta_campaign_schema, meta_adset_schema, meta_ad_schema,
     meta_ad_format_catalog, meta_lead_ad_schema, meta_catalog_ad_schema,
-    meta_messaging_ad_schema, meta_link_ad_schema,
+    meta_messaging_ad_schema, meta_link_ad_schema, meta_engagement_ad_schema,
     meta_audience_schema, meta_conversion_event_schema, meta_creative_schema,
     meta_catalog_schema, meta_product_set_schema,
     meta_lead_form_schema,
@@ -99,6 +99,7 @@ class MetaCapability(BaseCapability):
         "create_catalog_ad": ["meta_create_catalog_ad"],
         "create_messaging_ad": ["meta_create_messaging_ad"],
         "create_link_ad": ["meta_create_traffic_ad", "meta_create_conversion_ad"],
+        "create_engagement_ad": ["meta_create_engagement_ad"],
         "update_ad": ["meta_update_ad"],
         "pause_ad": ["meta_pause_ad"], "delete_ad": ["meta_delete_ad"],
         "create_creative": ["meta_create_creative"],
@@ -717,6 +718,40 @@ class MetaCapability(BaseCapability):
                 ), {}),
             ))
 
+        engagement_schema = meta_engagement_ad_schema()
+        tools.append(method_tool(
+            platform="meta", skill="meta-marketing-api",
+            name="meta_create_engagement_ad",
+            description="创建 Meta Post Engagement/Video Views 广告；默认仅生成 dry-run 计划。",
+            method_name="create_engagement_ad", result_key="ad_id",
+            properties=engagement_schema["properties"],
+            required=engagement_schema["required"],
+            provider_required=engagement_schema["provider_required"],
+            conditional_rules=engagement_schema["conditional_rules"],
+            action="create", resource_type="ad", parent_resource_type="ad_set",
+            resource_id_field="ad_id", parent_resource_id_field="adset_id",
+            intent_types=["create_engagement_ad", "create_campaign"],
+            activation_rules=[
+                {"if": {
+                    "objective": {"aliases": ["objective_type"], "in": ["OUTCOME_ENGAGEMENT"]},
+                    "optimization_goal": {"in": ["POST_ENGAGEMENT"]},
+                    "post_id": {"exists": True},
+                }},
+                {"if": {
+                    "objective": {"aliases": ["objective_type"], "in": ["OUTCOME_ENGAGEMENT"]},
+                    "optimization_goal": {"in": ["VIDEO_VIEWS"]},
+                    "video_id": {"exists": True},
+                }},
+            ],
+            traits=["write", "ad", "engagement"], write=True,
+            argument_builder=lambda ctx, data: ((
+                account_from(ctx, data, "account_id"), data["adset_id"], {
+                    key: data[key] for key in engagement_schema["properties"]
+                    if key != "adset_id" and key in data
+                },
+            ), {}),
+        ))
+
         tools.extend([
             method_tool(
                 platform="meta", skill="meta-marketing-api", name="meta_get_audience",
@@ -970,6 +1005,8 @@ class MetaCapability(BaseCapability):
                     "catalog_id": {"exists": False},
                     "messaging_app": {"exists": False},
                     "link": {"exists": False},
+                    "post_id": {"exists": False},
+                    "video_id": {"exists": False},
                 },
             }],
         ), MetaCreateAdHandler(api_client)))

@@ -4,7 +4,7 @@
 
 ## 当前契约（2026-08-30）
 
-- 单 Agent + 多 Skills + Tools；平台 Capability 是可执行注册表的来源，当前共 230 个工具：Meta 66、Google Ads 63、TikTok 69、DV360 32。Capability 和按约定命名的 Provider Client 均自动发现，不依赖中心渠道/工具配置表；每个 Capability 还提供 Provider 方法覆盖率发布门禁。
+- 单 Agent + 多 Skills + Tools；平台 Capability 是可执行注册表的来源，当前共 231 个工具：Meta 67、Google Ads 63、TikTok 69、DV360 32。Capability 和按约定命名的 Provider Client 均自动发现，不依赖中心渠道/工具配置表；每个 Capability 还提供 Provider 方法覆盖率发布门禁。
 - 所有 Campaign 及下级资源创建/更新默认 dry-run；当前不会因工具已注册就调用真实写 API。
 - live 仅允许配置白名单账户，且 API 确认必须携带与当前 `session_id + account_id + tool + normalized input + idempotency key` 绑定的 `confirmation_payload`。
 - 白名单只有一个账户时允许兼容性自动选择；多账户配置必须由调用方显式指定目标账户。
@@ -169,7 +169,7 @@ python -m pytest agents/ad_agent/tests/ -v
 ```
 
 测试结果：
-- 当前 `agents/ad_agent/tests/`：423 passed（另有 1 条本机依赖弃用 warning）。
+- 当前 `agents/ad_agent/tests/`：426 passed（另有 1 条本机依赖弃用 warning）。
 - 覆盖：工具注册、Schema 校验、白名单、dry-run 不调用 Client、跨平台账户、层级 ID 传递、live 确认、持久化和 Runtime 集成
 
 ## 扩展新平台
@@ -216,7 +216,7 @@ Capability。`SKILL.md` 仍只负责自然语言知识、SOP 和安全边界；�
 | 结构化日志 | ✅ | JSON 格式 |
 | Dry-run 模式 | ✅ | 无需调用线上写 API 即可测试 |
 | WriteGuard | ✅ | 持久化幂等、显式确认、unknown 结果保留 reservation、workflow lease/claim 已接入 |
-| 单元测试 | ✅ | `agents/ad_agent/tests/`：423 passed |
+| 单元测试 | ✅ | `agents/ad_agent/tests/`：426 passed |
 | 多平台支持 | ✅ | Meta/Google/TikTok/DV360 |
 | 可扩展性 | ✅ | Capability 与 Provider Client 按包约定自动发现，无需修改中心 Router/Runtime |
 

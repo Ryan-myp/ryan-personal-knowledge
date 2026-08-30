@@ -2534,6 +2534,84 @@ def test_meta_traffic_and_conversion_tools_route_link_creatives():
         ]
 
 
+@pytest.mark.parametrize(
+    "engagement_type, source_field, source_value, expected_story",
+    [
+        (
+            "POST_ENGAGEMENT", "post_id", "post-1",
+            {"page_id": "page-1", "post_id": "post-1"},
+        ),
+        (
+            "VIDEO_VIEWS", "video_id", "video-1",
+            {
+                "page_id": "page-1",
+                "video_data": {
+                    "video_id": "video-1", "message": "Watch this",
+                    "title": "New video",
+                    "call_to_action": {"type": "WATCH_VIDEO"},
+                },
+            },
+        ),
+    ],
+)
+def test_meta_engagement_ad_builds_post_or_video_story_spec(
+    engagement_type, source_field, source_value, expected_story,
+):
+    client = MetaAPIClient({"access_token": "test"})
+    payloads = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        payloads.append((method, endpoint, data)) or {"id": "ad-engagement-1"}
+    )
+
+    input_data = {
+        "name": "Engagement Ad", "page_id": "page-1",
+        "engagement_type": engagement_type, source_field: source_value,
+        "message": "Watch this", "headline": "New video",
+        "call_to_action_type": "WATCH_VIDEO",
+    }
+    assert client.create_engagement_ad("act_1", "as_1", input_data) == "ad-engagement-1"
+    creative = json.loads(payloads[-1][2]["creative"])
+    assert creative["object_story_spec"] == expected_story
+
+    missing = dict(input_data)
+    missing.pop(source_field)
+    with pytest.raises(ValueError, match=f"{engagement_type} creatives require"):
+        client.create_engagement_ad("act_1", "as_1", missing)
+
+
+def test_meta_engagement_tool_routes_post_and_video_objectives():
+    capability = create_meta_capability()
+    definitions = {
+        definition.name: definition
+        for definition, _handler in capability.register_tools()
+    }
+    engagement = definitions["meta_create_engagement_ad"]
+    assert engagement.input_schema.properties["engagement_type"]["enum"] == [
+        "POST_ENGAGEMENT", "VIDEO_VIEWS"
+    ]
+    runtime = AgentRuntime(require_llm=False)
+    runtime.register_capability(capability)
+    cases = [
+        ("POST_ENGAGEMENT", {"post_id": "post-1"}),
+        ("VIDEO_VIEWS", {"video_id": "video-1"}),
+    ]
+    for optimization_goal, source in cases:
+        routed = runtime.intent_router.route(
+            ParsedIntent(
+                "create_campaign", "create", ["meta"],
+                platform_params={"meta": {
+                    "objective": "OUTCOME_ENGAGEMENT",
+                    "optimization_goal": optimization_goal,
+                    "page_id": "page-1", **source,
+                }},
+            ),
+            runtime.registry,
+        )
+        assert [definition.name for definition in routed["meta"]] == [
+            "meta_create_campaign", "meta_create_adset", "meta_create_engagement_ad",
+        ]
+
+
 def test_meta_creative_crud_uses_account_scoped_graph_edges():
     client = MetaAPIClient({"access_token": "test"})
     calls = []

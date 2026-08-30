@@ -1,5 +1,5 @@
 {
-  "digest": "f59cdccc2bf46b6343bffcd1a15cf8f7033db99dde18912420a3dc4ccb2e5f95",
+  "digest": "096a458e63bbaa158c5a4e382cdcd2f655b13d831760f5b321fd2bf17243b8f1",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -7969,8 +7969,8 @@
       ]
     },
     "meta": {
-      "digest": "0f8dda66d7419b56161d222a96018768f8c002dbc77705e9f81e285ca037aeef",
-      "tool_count": 66,
+      "digest": "37309d354a5bd59f710af81ce44b8cf55ac7fed744cc05e0a18abbd407ef7191",
+      "tool_count": 67,
       "tools": [
         {
           "action": "boost",
@@ -8073,6 +8073,12 @@
                     "LEAD_GENERATION",
                     "LEADS"
                   ]
+                },
+                "post_id": {
+                  "exists": false
+                },
+                "video_id": {
+                  "exists": false
                 }
               }
             }
@@ -9754,6 +9760,176 @@
             "write",
             "conversion",
             "pixel"
+          ]
+        },
+        {
+          "action": "create",
+          "activation_rules": [
+            {
+              "if": {
+                "objective": {
+                  "aliases": [
+                    "objective_type"
+                  ],
+                  "in": [
+                    "OUTCOME_ENGAGEMENT"
+                  ]
+                },
+                "optimization_goal": {
+                  "in": [
+                    "POST_ENGAGEMENT"
+                  ]
+                },
+                "post_id": {
+                  "exists": true
+                }
+              }
+            },
+            {
+              "if": {
+                "objective": {
+                  "aliases": [
+                    "objective_type"
+                  ],
+                  "in": [
+                    "OUTCOME_ENGAGEMENT"
+                  ]
+                },
+                "optimization_goal": {
+                  "in": [
+                    "VIDEO_VIEWS"
+                  ]
+                },
+                "video_id": {
+                  "exists": true
+                }
+              }
+            }
+          ],
+          "contract_version": "1.4.0",
+          "description": "创建 Meta Post Engagement/Video Views 广告；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [
+              {
+                "id": "post_engagement_requires_post_id",
+                "if": {
+                  "engagement_type": "POST_ENGAGEMENT"
+                },
+                "message": "POST_ENGAGEMENT creatives require post_id",
+                "required": [
+                  "post_id"
+                ]
+              },
+              {
+                "id": "video_views_requires_video_id",
+                "if": {
+                  "engagement_type": "VIDEO_VIEWS"
+                },
+                "message": "VIDEO_VIEWS creatives require video_id and WATCH_VIDEO CTA",
+                "required": [
+                  "video_id",
+                  "call_to_action_type"
+                ]
+              }
+            ],
+            "properties": {
+              "adset_id": {
+                "description": "Parent Meta Ad Set ID",
+                "type": "string"
+              },
+              "call_to_action_type": {
+                "default": "WATCH_VIDEO",
+                "description": "Video engagement CTA",
+                "enum": [
+                  "WATCH_VIDEO"
+                ],
+                "type": "string"
+              },
+              "engagement_type": {
+                "description": "Engagement creative type",
+                "enum": [
+                  "POST_ENGAGEMENT",
+                  "VIDEO_VIEWS"
+                ],
+                "type": "string"
+              },
+              "headline": {
+                "description": "Video title",
+                "type": "string"
+              },
+              "message": {
+                "description": "Primary text",
+                "type": "string"
+              },
+              "name": {
+                "description": "Ad name",
+                "maxLength": 400,
+                "type": "string"
+              },
+              "page_id": {
+                "description": "Facebook Page ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "post_id": {
+                "description": "Existing Page post ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "status": {
+                "description": "Initial delivery status",
+                "enum": [
+                  "ACTIVE",
+                  "PAUSED"
+                ],
+                "type": "string"
+              },
+              "video_id": {
+                "description": "Video ID",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "page_id",
+              "engagement_type"
+            ],
+            "required": [
+              "adset_id",
+              "name",
+              "page_id",
+              "engagement_type"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_engagement_ad",
+            "create_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_create_engagement_ad",
+          "parent_resource_id_field": "adset_id",
+          "parent_resource_type": "ad_set",
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad",
+            "engagement"
           ]
         },
         {
@@ -21812,6 +21988,12 @@
         "status": "implemented"
       },
       {
+        "action": "create_engagement",
+        "method": "create_engagement_ad",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
         "action": "update",
         "method": "update_ad",
         "resource": "ad",
@@ -22565,5 +22747,5 @@
       ]
     }
   },
-  "tool_count": 230
+  "tool_count": 231
 }

@@ -814,6 +814,46 @@ def meta_link_ad_schema() -> dict[str, Any]:
     }
 
 
+def meta_engagement_ad_schema() -> dict[str, Any]:
+    """Create contract for post-engagement and video-view creatives."""
+    return {
+        "required": ["adset_id", "name", "page_id", "engagement_type"],
+        "provider_required": ["page_id", "engagement_type"],
+        "properties": {
+            "adset_id": _field("string", "Parent Meta Ad Set ID"),
+            "name": _field("string", "Ad name", maxLength=400),
+            "page_id": _field("string", "Facebook Page ID", minLength=1),
+            "engagement_type": _field(
+                "string", "Engagement creative type",
+                enum=["POST_ENGAGEMENT", "VIDEO_VIEWS"],
+            ),
+            "post_id": _field("string", "Existing Page post ID", minLength=1),
+            "video_id": _field("string", "Video ID", minLength=1),
+            "message": _field("string", "Primary text"),
+            "headline": _field("string", "Video title"),
+            "call_to_action_type": _field(
+                "string", "Video engagement CTA", enum=["WATCH_VIDEO"],
+                default="WATCH_VIDEO",
+            ),
+            "status": _field("string", "Initial delivery status", enum=META_STATUS),
+        },
+        "conditional_rules": [
+            {
+                "id": "post_engagement_requires_post_id",
+                "if": {"engagement_type": "POST_ENGAGEMENT"},
+                "required": ["post_id"],
+                "message": "POST_ENGAGEMENT creatives require post_id",
+            },
+            {
+                "id": "video_views_requires_video_id",
+                "if": {"engagement_type": "VIDEO_VIEWS"},
+                "required": ["video_id", "call_to_action_type"],
+                "message": "VIDEO_VIEWS creatives require video_id and WATCH_VIDEO CTA",
+            },
+        ],
+    }
+
+
 def meta_ad_format_catalog() -> list[dict[str, Any]]:
     """Advertised Meta objectives/formats and their current contract depth."""
     source_document = "docs/ad-platform-hierarchy-guide-v5.md"
@@ -868,10 +908,10 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
             "category": "engagement",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
-            "tool_names": ["meta_create_campaign", "meta_create_adset", "meta_create_ad"],
+            "tool_names": ["meta_create_campaign", "meta_create_adset", "meta_create_engagement_ad"],
             "dependencies": ["post_id_or_story", "targeting", "optimization_goal"],
             "supported_fields": ["OUTCOME_ENGAGEMENT", "POST_ENGAGEMENT", "VIDEO_VIEWS"],
-            "gaps": ["Page Likes/Video Views specialized creative validation"],
+            "gaps": ["Page Likes specialized creative validation", "placement compatibility validation"],
             "source_document": source_document,
         },
         {
@@ -891,10 +931,10 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
             "category": "engagement",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
-            "tool_names": ["meta_create_ad"],
-            "payload_adapter": "MetaAPIClient.create_ad",
+            "tool_names": ["meta_create_engagement_ad"],
+            "payload_adapter": "MetaAPIClient.create_engagement_ad",
             "dependencies": ["adset", "page_id", "video_data"],
-            "supported_fields": ["video_id", "message", "title", "call_to_action"],
+            "supported_fields": ["page_id", "video_id", "message", "headline", "call_to_action_type"],
             "gaps": ["live mutation approval"],
             "source_document": source_document,
         },
