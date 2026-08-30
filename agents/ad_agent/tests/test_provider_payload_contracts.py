@@ -488,13 +488,49 @@ def test_meta_audience_crud_builds_custom_and_lookalike_payloads():
     assert json.loads(lookalike["lookalike_spec"]) == {
         "country": "US", "ratio": 0.05, "type": "similarity",
     }
-
     assert client.update_audience("123", "aud-1", {
         "name": "Updated", "rule": {"event": "lead"},
     })["success"] is True
     assert json.loads(calls[-1][2]["rule"]) == {"event": "lead"}
     assert client.delete_audience("123", "aud-1")["success"] is True
     assert calls[-1][:2] == ("DELETE", "/aud-1")
+
+
+def test_meta_audience_source_upload_accepts_only_sha256_rows():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+    client.resource_belongs_to_account = lambda account_id, resource_type, resource_id: True
+    client.acquire_rate_limit = lambda *_args, **_kwargs: None
+    client.request = lambda method, endpoint, data=None, **_kwargs: (
+        calls.append((method, endpoint, data)) or {"audience_id": "aud-1", "num_received": 2}
+    )
+    result = client.upload_audience_users(
+        "act-123", "aud-1", ["EMAIL", "PHONE"],
+        [["A" * 64, "b" * 64], ["c" * 64, "D" * 64]],
+    )
+    assert result["num_received"] == 2
+    assert calls == [("POST", "/aud-1/users", {
+        "payload": json.dumps({
+            "schema": ["EMAIL", "PHONE"],
+            "data": [["a" * 64, "b" * 64], ["c" * 64, "d" * 64]],
+        }, separators=(",", ":")),
+    })]
+
+    with pytest.raises(ValueError, match="SHA-256"):
+        client.upload_audience_users(
+            "123", "aud-1", ["EMAIL"], [["raw-email@example.test"]]
+        )
+
+
+def test_meta_audience_upload_tool_is_dry_run_and_closed():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_meta_capability().register_tools()
+    }
+    tool = definitions["meta_upload_audience_users"]
+    assert tool.live_support is False
+    assert tool.input_schema.properties["upload_schema"]["items"]["enum"]
+    assert tool.input_schema.properties["upload_data"]["items"]["items"]["maxLength"] == 64
 
 
 def test_tiktok_ad_creation_preserves_existing_schema_fields():

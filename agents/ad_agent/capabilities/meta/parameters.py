@@ -32,6 +32,10 @@ META_AUDIENCE_SUBTYPES = ["CUSTOM", "LOOKALIKE"]
 META_CUSTOMER_FILE_SOURCES = [
     "USER_PROVIDED_ONLY", "PARTNER_PROVIDED_ONLY", "BOTH_USER_AND_PARTNER_PROVIDED",
 ]
+META_AUDIENCE_UPLOAD_SCHEMAS = [
+    "EMAIL", "PHONE", "FN", "LN", "ZIP", "CT", "ST", "COUNTRY", "DOB",
+    "DOBY", "DOBM", "DOBD", "GEN", "MADID", "EXTERN_ID",
+]
 META_LOOKALIKE_TYPES = ["similarity", "reach"]
 META_CAPI_EVENT_NAMES = [
     "AddPaymentInfo", "AddToCart", "AddToWishlist", "CompleteRegistration",
@@ -125,6 +129,18 @@ def meta_audience_schema() -> dict[str, Any]:
                 "retention_days": _field("integer", "Website/event retention window", minimum=1, maximum=180),
                 "rule": _field("object", "Meta website/event audience rule", additionalProperties=True),
             }, "Allowed Custom Audience update fields"),
+            "upload_schema": _field(
+                "array", "Meta customer-data upload schema", minItems=1, maxItems=15,
+                items={"type": "string", "enum": META_AUDIENCE_UPLOAD_SCHEMAS},
+            ),
+            "upload_data": _field(
+                "array", "Rows of normalized SHA-256 customer identifiers",
+                minItems=1, maxItems=10000,
+                items={
+                    "type": "array", "minItems": 1, "maxItems": 15,
+                    "items": {"type": "string", "minLength": 64, "maxLength": 64},
+                },
+            ),
         },
         "conditional_rules": [
             {
@@ -134,6 +150,7 @@ def meta_audience_schema() -> dict[str, Any]:
                 "message": "LOOKALIKE requires origin_audience_id and country",
             },
         ],
+        "upload_required": ["account_id", "audience_id", "upload_schema", "upload_data"],
     }
 
 

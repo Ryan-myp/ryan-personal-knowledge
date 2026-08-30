@@ -1,5 +1,5 @@
 {
-  "digest": "71f380d52619e6c642a534bf592a148fba064eb4d71b15c23e6560b209bc0579",
+  "digest": "896dd97c6e6470691656be059807a9e37eb88f56e48ccd2e99f9fed80435bd68",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -5844,8 +5844,8 @@
       ]
     },
     "meta": {
-      "digest": "47a5e494e2a5cfc978737cb09d6312655d992008094a56c6c927be6a46790557",
-      "tool_count": 52,
+      "digest": "d54879b5fd86af8375f5958b63da2b71811ac18a2d445ea95a850de208165b1d",
+      "tool_count": 53,
       "tools": [
         {
           "action": "boost",
@@ -10145,6 +10145,217 @@
             "catalog",
             "product_set"
           ]
+        },
+        {
+          "action": "upload",
+          "contract_version": "1.2.0",
+          "description": "向 Meta Custom Audience 上传已 SHA-256 哈希的客户标识；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "audience_id": {
+                "description": "Meta Custom Audience ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "country": {
+                "description": "Two-letter lookalike country code",
+                "maxLength": 2,
+                "minLength": 2,
+                "type": "string"
+              },
+              "customer_file_source": {
+                "description": "Source of customer-file data",
+                "enum": [
+                  "USER_PROVIDED_ONLY",
+                  "PARTNER_PROVIDED_ONLY",
+                  "BOTH_USER_AND_PARTNER_PROVIDED"
+                ],
+                "type": "string"
+              },
+              "description": {
+                "description": "Audience description",
+                "maxLength": 1000,
+                "type": "string"
+              },
+              "event_source_group": {
+                "description": "Meta event source group ID",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of audiences",
+                "maximum": 1000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "lookalike_type": {
+                "description": "Lookalike expansion type",
+                "enum": [
+                  "similarity",
+                  "reach"
+                ],
+                "type": "string"
+              },
+              "name": {
+                "description": "Audience name",
+                "maxLength": 400,
+                "minLength": 1,
+                "type": "string"
+              },
+              "origin_audience_id": {
+                "description": "Source Custom Audience ID for Lookalike",
+                "type": "string"
+              },
+              "pixel_id": {
+                "description": "Meta Pixel source ID",
+                "type": "string"
+              },
+              "prefill": {
+                "description": "Prefill audience with prior events",
+                "type": "boolean"
+              },
+              "ratio": {
+                "description": "Lookalike ratio",
+                "maximum": 0.2,
+                "minimum": 0.01,
+                "type": "number"
+              },
+              "retention_days": {
+                "description": "Website/event retention window",
+                "maximum": 180,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "rule": {
+                "additionalProperties": true,
+                "description": "Meta website/event audience rule",
+                "type": "object"
+              },
+              "subtype": {
+                "description": "Audience subtype",
+                "enum": [
+                  "CUSTOM",
+                  "LOOKALIKE"
+                ],
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Allowed Custom Audience update fields",
+                "properties": {
+                  "description": {
+                    "description": "Audience description",
+                    "maxLength": 1000,
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "Audience name",
+                    "maxLength": 400,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "retention_days": {
+                    "description": "Website/event retention window",
+                    "maximum": 180,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "rule": {
+                    "additionalProperties": true,
+                    "description": "Meta website/event audience rule",
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              },
+              "upload_data": {
+                "description": "Rows of normalized SHA-256 customer identifiers",
+                "items": {
+                  "items": {
+                    "maxLength": 64,
+                    "minLength": 64,
+                    "type": "string"
+                  },
+                  "maxItems": 15,
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "maxItems": 10000,
+                "minItems": 1,
+                "type": "array"
+              },
+              "upload_schema": {
+                "description": "Meta customer-data upload schema",
+                "items": {
+                  "enum": [
+                    "EMAIL",
+                    "PHONE",
+                    "FN",
+                    "LN",
+                    "ZIP",
+                    "CT",
+                    "ST",
+                    "COUNTRY",
+                    "DOB",
+                    "DOBY",
+                    "DOBM",
+                    "DOBD",
+                    "GEN",
+                    "MADID",
+                    "EXTERN_ID"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 15,
+                "minItems": 1,
+                "type": "array"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "audience_id",
+              "upload_schema",
+              "upload_data"
+            ],
+            "required": [
+              "account_id",
+              "audience_id",
+              "upload_schema",
+              "upload_data"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "upload_audience_users"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_upload_audience_users",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "audience_id",
+          "resource_type": "audience",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "audience",
+            "source_upload"
+          ]
         }
       ]
     },
@@ -13601,5 +13812,5 @@
       ]
     }
   },
-  "tool_count": 175
+  "tool_count": 176
 }

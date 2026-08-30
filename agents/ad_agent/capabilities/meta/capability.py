@@ -60,7 +60,8 @@ class MetaCapability(BaseCapability):
         "list_accounts": ["meta_list_accounts"], "get_account": ["meta_get_account"],
         "list_audiences": ["meta_list_audiences"], "get_audience": ["meta_get_audience"],
         "create_audience": ["meta_create_audience"], "update_audience": ["meta_update_audience"],
-        "delete_audience": ["meta_delete_audience"], "list_catalogs": ["meta_list_catalogs"],
+        "delete_audience": ["meta_delete_audience"], "upload_audience_users": ["meta_upload_audience_users"],
+        "list_catalogs": ["meta_list_catalogs"],
         "get_catalog": ["meta_get_catalog"], "create_catalog": ["meta_create_catalog"],
         "update_catalog": ["meta_update_catalog"], "delete_catalog": ["meta_delete_catalog"],
         "list_product_sets": ["meta_list_product_sets"],
@@ -118,6 +119,21 @@ class MetaCapability(BaseCapability):
                 argument_builder=lambda ctx, data: ((account(ctx, data),), {
                     "limit": data.get("limit", 25),
                 }),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_upload_audience_users",
+                description="向 Meta Custom Audience 上传已 SHA-256 哈希的客户标识；默认仅生成 dry-run 计划。",
+                method_name="upload_audience_users", result_key="audience_upload",
+                properties=audience_properties,
+                required=audience_schema["upload_required"],
+                provider_required=["audience_id", "upload_schema", "upload_data"],
+                action="upload", resource_type="audience", resource_id_field="audience_id",
+                intent_types=["upload_audience_users"], traits=["write", "audience", "source_upload"],
+                write=True, live_support=False,
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["audience_id"],
+                    data["upload_schema"], data["upload_data"],
+                ), {}),
             ),
             method_tool(
                 platform="meta", skill="meta-marketing-api", name="meta_list_pixels",

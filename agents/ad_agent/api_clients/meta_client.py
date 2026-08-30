@@ -385,6 +385,64 @@ class MetaAPIClient(BasePlatformClient):
         self.request("DELETE", f"/{audience_id}")
         return {"success": True, "audience_id": audience_id}
 
+    def upload_audience_users(
+        self, account_id: str, audience_id: str,
+        upload_schema: list[str], upload_data: list[list[str]],
+    ) -> dict:
+        """Upload pre-hashed customer identifiers to a Custom Audience.
+
+        The Tool contract intentionally accepts only SHA-256 values.  The
+        service must not receive raw email addresses or phone numbers because
+        those values could otherwise enter request logs, audit records, or
+        model context.  Normalization and hashing remain the caller's
+        responsibility before invoking this provider boundary.
+        """
+        account_id = self._clean_meta_id(account_id, "account_id")
+        audience_id = self._clean_meta_id(audience_id, "audience_id")
+        if not self.resource_belongs_to_account(account_id, "audience", audience_id):
+            raise PermissionError(
+                f"Meta audience {audience_id} does not belong to account {account_id}"
+            )
+        allowed_schema = {
+            "EMAIL", "PHONE", "FN", "LN", "ZIP", "CT", "ST", "COUNTRY", "DOB",
+            "DOBY", "DOBM", "DOBD", "GEN", "MADID", "EXTERN_ID",
+        }
+        if not isinstance(upload_schema, list) or not upload_schema:
+            raise ValueError("upload_schema must be a non-empty list")
+        normalized_schema = [str(item or "").strip().upper() for item in upload_schema]
+        if len(set(normalized_schema)) != len(normalized_schema) or any(
+            item not in allowed_schema for item in normalized_schema
+        ):
+            raise ValueError("upload_schema contains an unsupported or duplicate field")
+        if not isinstance(upload_data, list) or not upload_data:
+            raise ValueError("upload_data must be a non-empty list")
+        if len(upload_data) > 10000:
+            raise ValueError("upload_data cannot contain more than 10000 rows")
+        rows: list[list[str]] = []
+        for row_index, row in enumerate(upload_data):
+            if not isinstance(row, list) or len(row) != len(normalized_schema):
+                raise ValueError(
+                    f"upload_data[{row_index}] must contain one SHA-256 value per schema field"
+                )
+            normalized_row: list[str] = []
+            for value_index, value in enumerate(row):
+                value_text = str(value or "").strip().lower()
+                if not re.fullmatch(r"[0-9a-f]{64}", value_text):
+                    raise ValueError(
+                        f"upload_data[{row_index}][{value_index}] must be a SHA-256 hex digest"
+                    )
+                normalized_row.append(value_text)
+            rows.append(normalized_row)
+        payload = json.dumps(
+            {"schema": normalized_schema, "data": rows},
+            ensure_ascii=False, separators=(",", ":"),
+        )
+        self.acquire_rate_limit(self._get_account_limiter(account_id))
+        result = self.request(
+            "POST", f"/{audience_id}/users", data={"payload": payload}
+        )
+        return self.require_resource_object(result, "Meta audience source upload")
+
     def list_catalogs(self, account_id: str, limit: int = 25) -> list:
         """获取广告账户可用的商品目录。"""
         clean_id = self._clean_meta_id(account_id, "account_id")

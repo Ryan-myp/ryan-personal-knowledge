@@ -37,7 +37,7 @@ API_SURFACE = [
     {"resource": "audience", "action": "create", "method": "create_audience", "status": "implemented"},
     {"resource": "audience", "action": "update", "method": "update_audience", "status": "implemented"},
     {"resource": "audience", "action": "delete", "method": "delete_audience", "status": "implemented"},
-    {"resource": "audience", "action": "source_upload", "status": "planned", "gap": "Custom Audience 用户文件上传与哈希字段校验尚未实现"},
+    {"resource": "audience", "action": "source_upload", "method": "upload_audience_users", "status": "implemented"},
     {"resource": "pixel", "action": "events", "status": "planned", "gap": "Pixel 事件配置和事件测试尚无独立 Tool"},
     {"resource": "conversion", "action": "event", "method": "send_conversion_events", "status": "implemented"},
     {"resource": "lead_form", "action": "create", "method": "create_lead_form", "status": "implemented"},
