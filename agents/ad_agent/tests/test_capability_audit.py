@@ -41,8 +41,13 @@ def test_capability_audit_includes_provider_owned_api_surface_and_planned_gaps()
         for entry in google["api_surface_planned"]
     )
     assert meta["api_surface"]["implemented"] > 0
-    assert not any(
+    assert any(
         entry["resource"] == "pixel"
+        for entry in meta["api_surface_planned"]
+    )
+    assert any(
+        entry["resource"] == "custom_conversion"
+        and entry["action"] == "update"
         for entry in meta["api_surface_planned"]
     )
     assert report["surface_gaps"] == {

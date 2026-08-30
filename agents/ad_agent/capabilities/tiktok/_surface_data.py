@@ -37,6 +37,7 @@ API_SURFACE = [
     {"resource": "pixel", "action": "get", "method": "get_pixel", "status": "implemented"},
     {"resource": "pixel", "action": "create", "method": "create_pixel", "status": "implemented"},
     {"resource": "pixel", "action": "update", "method": "update_pixel", "status": "implemented"},
+    {"resource": "pixel", "action": "delete", "status": "planned", "gap": "TikTok Pixel 删除 endpoint 尚未完成版本化验证，暂不伪造删除 Tool"},
     {"resource": "pixel_event", "action": "send", "method": "send_pixel_event", "status": "implemented"},
     {"resource": "pixel_event_batch", "action": "send", "method": "send_pixel_events", "status": "implemented"},
     {"resource": "catalog", "action": "list", "method": "list_catalogs", "status": "implemented"},
