@@ -667,6 +667,8 @@ def test_tiktok_targeting_tool_exposes_lookup_backed_schema_and_is_dry_run_only(
     assert targeting.parent_resource_type == "campaign"
     assert targeting.parent_resource_id_field == "campaign_id"
     assert targeting.live_support is False
+    generic_updates = definitions["tiktok_update_adgroup"].input_schema.properties["updates"]
+    assert "targeting" not in generic_updates["properties"]
 
 
 def test_tiktok_provider_envelope_is_decoded_for_ids_and_lookup_lists():

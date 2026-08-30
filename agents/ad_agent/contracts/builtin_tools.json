@@ -1,5 +1,5 @@
 {
-  "digest": "3a831d90d3ccb36785fdd58093534f0a47e6dcbac88cba379e512fe40adb3b58",
+  "digest": "a2ea6d38146b09b9e7c5138b1a34853f703cf5a7efef3631d1a269678c24e526",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -9623,7 +9623,7 @@
       ]
     },
     "tiktok": {
-      "digest": "dc13fb9f22583b6a487bf20c5c0fa5fc2e058f41272192b98f8508d0ab308f24",
+      "digest": "0c6755a2763883f20c1c5f54504ebc8039c6214b5678577aa10fd3cfc633eb49",
       "tool_count": 45,
       "tools": [
         {
@@ -12676,10 +12676,6 @@
                       "PAUSED": 0
                     },
                     "type": "integer"
-                  },
-                  "targeting": {
-                    "description": "Provider targeting object",
-                    "type": "object"
                   }
                 },
                 "type": "object"

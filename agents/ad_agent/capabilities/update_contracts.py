@@ -165,7 +165,6 @@ def tiktok_updates(resource_type: str) -> dict[str, Any]:
             "age_groups": _field("array", "Age groups", items={"type": "string"}),
             "gender": _field("string", "Gender", enum=["GENDER_UNLIMITED", "GENDER_MALE", "GENDER_FEMALE"]),
             "auto_targeting_enabled": _field("boolean", "Automatic targeting"),
-            "targeting": _field("object", "Provider targeting object"),
         })
     elif resource_type == "ad":
         common.update({
