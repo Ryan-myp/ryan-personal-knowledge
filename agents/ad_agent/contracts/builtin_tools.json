@@ -1,5 +1,5 @@
 {
-  "digest": "70f4bbcf3ec2f4738889710b5ab5cad32fbde98bfcf1da2e06c096ef40a59e64",
+  "digest": "6c772f8d9f4030cd601727ab2a70e28901209c75edd534f2ddf20ad4bf98d242",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -11828,8 +11828,8 @@
       ]
     },
     "tiktok": {
-      "digest": "4266e3208a52c5005bf7f145590e189cee1296ea892855042f7d5882b79c23f4",
-      "tool_count": 57,
+      "digest": "5e963826e7930e787d615a2aafc57adc904c8e9f17760084f00205cddc953b9b",
+      "tool_count": 60,
       "tools": [
         {
           "action": "create",
@@ -12891,6 +12891,71 @@
         {
           "action": "create",
           "contract_version": "1.2.0",
+          "description": "创建 TikTok 自定义广告身份；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "TikTok advertiser ID",
+                "type": "string"
+              },
+              "display_name": {
+                "description": "Customized identity display name",
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              "image_uri": {
+                "description": "Uploaded TikTok avatar image ID",
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "account_id",
+              "display_name",
+              "image_uri"
+            ],
+            "required": [
+              "account_id",
+              "display_name",
+              "image_uri"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_identity"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_create_identity",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "identity_id",
+          "resource_type": "identity",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "identity",
+            "creative"
+          ]
+        },
+        {
+          "action": "create",
+          "contract_version": "1.2.0",
           "description": "创建 TikTok Lead Generation Instant Form 广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -13482,6 +13547,81 @@
           "traits": [
             "read",
             "conversion"
+          ]
+        },
+        {
+          "action": "get",
+          "contract_version": "1.2.0",
+          "description": "查询 TikTok 身份关联的自有帖子信息，用于 Spark Ads 预校验。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "TikTok advertiser ID",
+                "type": "string"
+              },
+              "identity_id": {
+                "description": "TikTok identity ID",
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "identity_type": {
+                "description": "Identity type",
+                "enum": [
+                  "AUTH_CODE",
+                  "TT_USER"
+                ],
+                "type": "string"
+              },
+              "item_id": {
+                "description": "TikTok post ID",
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "account_id",
+              "identity_type",
+              "identity_id",
+              "item_id"
+            ],
+            "required": [
+              "account_id",
+              "identity_type",
+              "identity_id",
+              "item_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_identity_video_info"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_get_identity_video_info",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "item_id",
+          "resource_type": "identity_video",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "identity",
+            "spark"
           ]
         },
         {
@@ -14316,6 +14456,75 @@
           "traits": [
             "read",
             "devices"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.2.0",
+          "description": "查询 TikTok 广告账户下的可用广告身份。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "TikTok advertiser ID",
+                "type": "string"
+              },
+              "identity_type": {
+                "description": "Identity type filter",
+                "enum": [
+                  "CUSTOMIZED_USER",
+                  "AUTH_CODE",
+                  "TT_USER"
+                ],
+                "type": "string"
+              },
+              "limit": {
+                "description": "Page size",
+                "maximum": 100,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "page": {
+                "description": "Page number",
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "account_id"
+            ],
+            "required": [
+              "account_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_identities"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_list_identities",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "identity",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "identity",
+            "creative"
           ]
         },
         {
@@ -16550,5 +16759,5 @@
       ]
     }
   },
-  "tool_count": 200
+  "tool_count": 203
 }

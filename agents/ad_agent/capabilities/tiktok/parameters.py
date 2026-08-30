@@ -53,6 +53,7 @@ TIKTOK_KEYWORD_LANGUAGES = [
 ]
 TIKTOK_INTEREST_KEYWORD_MODES = ["FUZZ_MATCH", "SEMANTIC_RECOMMEND"]
 TIKTOK_INTEREST_AUDIENCE_TYPES = ["GENERAL_INTEREST", "PURCHASE_INTENTION"]
+TIKTOK_IDENTITY_TYPES = ["CUSTOMIZED_USER", "AUTH_CODE", "TT_USER"]
 
 
 def _field(
@@ -359,6 +360,47 @@ def tiktok_creative_portfolio_schema() -> dict[str, Any]:
                 items={"type": "object", "additionalProperties": True},
                 minItems=1, maxItems=100,
             ),
+        },
+    }
+
+
+def tiktok_identity_create_schema() -> dict[str, Any]:
+    """Schema for TikTok v1.3 customized identity creation."""
+    return {
+        "required": ["account_id", "display_name", "image_uri"],
+        "provider_required": ["account_id", "display_name", "image_uri"],
+        "properties": {
+            "account_id": _field("string", "TikTok advertiser ID"),
+            "display_name": _field("string", "Customized identity display name", minLength=1, maxLength=100),
+            "image_uri": _field("string", "Uploaded TikTok avatar image ID", minLength=1, maxLength=128),
+        },
+    }
+
+
+def tiktok_identity_list_schema() -> dict[str, Any]:
+    """Schema for TikTok v1.3 advertiser identity lookup."""
+    return {
+        "required": ["account_id"],
+        "provider_required": ["account_id"],
+        "properties": {
+            "account_id": _field("string", "TikTok advertiser ID"),
+            "identity_type": _field("string", "Identity type filter", enum=TIKTOK_IDENTITY_TYPES),
+            "page": _field("integer", "Page number", minimum=1),
+            "limit": _field("integer", "Page size", minimum=1, maximum=100),
+        },
+    }
+
+
+def tiktok_identity_video_info_schema() -> dict[str, Any]:
+    """Schema for TikTok owned-post information lookup by identity."""
+    return {
+        "required": ["account_id", "identity_type", "identity_id", "item_id"],
+        "provider_required": ["account_id", "identity_type", "identity_id", "item_id"],
+        "properties": {
+            "account_id": _field("string", "TikTok advertiser ID"),
+            "identity_type": _field("string", "Identity type", enum=["AUTH_CODE", "TT_USER"]),
+            "identity_id": _field("string", "TikTok identity ID", minLength=1, maxLength=128),
+            "item_id": _field("string", "TikTok post ID", minLength=1, maxLength=128),
         },
     }
 

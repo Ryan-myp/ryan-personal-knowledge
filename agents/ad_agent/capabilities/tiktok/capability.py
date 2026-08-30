@@ -49,6 +49,9 @@ from .parameters import (
     tiktok_pixel_event_schema,
     tiktok_pixel_batch_schema,
     tiktok_creative_portfolio_schema,
+    tiktok_identity_create_schema,
+    tiktok_identity_list_schema,
+    tiktok_identity_video_info_schema,
     tiktok_targeting_update_schema,
     TIKTOK_OBJECTIVE_TYPES,
     TIKTOK_PLACEMENTS,
@@ -126,6 +129,9 @@ class TikTokCapability(BaseCapability):
         "send_pixel_event": ["tiktok_send_pixel_event"],
         "send_pixel_events": ["tiktok_send_pixel_events"],
         "create_creative_portfolio": ["tiktok_create_creative_portfolio"],
+        "create_identity": ["tiktok_create_identity"],
+        "list_identities": ["tiktok_list_identities"],
+        "get_identity_video_info": ["tiktok_get_identity_video_info"],
         "list_catalogs": ["tiktok_list_catalogs"], "list_product_sets": ["tiktok_list_product_sets"],
         "list_apps": ["tiktok_list_apps"], "list_brand_safety": ["tiktok_list_brand_safety"],
         "get_report": ["tiktok_get_report"],
@@ -143,6 +149,9 @@ class TikTokCapability(BaseCapability):
         pixel_event = tiktok_pixel_event_schema()
         pixel_batch = tiktok_pixel_batch_schema()
         creative_portfolio = tiktok_creative_portfolio_schema()
+        identity_create = tiktok_identity_create_schema()
+        identity_list = tiktok_identity_list_schema()
+        identity_video_info = tiktok_identity_video_info_schema()
         tools = [
             method_tool(
                 platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_upload_image",
@@ -442,6 +451,44 @@ class TikTokCapability(BaseCapability):
                 argument_builder=lambda ctx, data: ((
                     account(ctx, data), data.get("creative_portfolio_type", "CTA"),
                     data.get("portfolio_content"),
+                ), {}),
+            ),
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_create_identity",
+                description="创建 TikTok 自定义广告身份；默认仅生成 dry-run 计划。",
+                method_name="create_identity", result_key="identity_result",
+                properties=identity_create["properties"], required=identity_create["required"],
+                provider_required=identity_create["provider_required"],
+                action="create", resource_type="identity", resource_id_field="identity_id",
+                intent_types=["create_identity"], traits=["write", "identity", "creative"],
+                write=True, live_support=False,
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["display_name"], data["image_uri"],
+                ), {}),
+            ),
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_identities",
+                description="查询 TikTok 广告账户下的可用广告身份。",
+                method_name="list_identities", result_key="identities",
+                properties=identity_list["properties"], required=identity_list["required"],
+                provider_required=identity_list["provider_required"],
+                action="list", resource_type="identity", intent_types=["list_identities"],
+                traits=["read", "identity", "creative"],
+                argument_builder=lambda ctx, data: ((account(ctx, data),), {
+                    "identity_type": data.get("identity_type"),
+                    "page": data.get("page", 1), "page_size": data.get("limit", 20),
+                }),
+            ),
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_get_identity_video_info",
+                description="查询 TikTok 身份关联的自有帖子信息，用于 Spark Ads 预校验。",
+                method_name="get_identity_video_info", result_key="identity_video",
+                properties=identity_video_info["properties"], required=identity_video_info["required"],
+                provider_required=identity_video_info["provider_required"],
+                action="get", resource_type="identity_video", resource_id_field="item_id",
+                intent_types=["get_identity_video_info"], traits=["read", "identity", "spark"],
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["identity_type"], data["identity_id"], data["item_id"],
                 ), {}),
             ),
             method_tool(

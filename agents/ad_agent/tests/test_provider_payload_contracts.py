@@ -203,6 +203,49 @@ def test_tiktok_targeting_reference_lookups_build_official_v13_queries():
     ]
 
 
+def test_tiktok_identity_tools_cover_create_lookup_and_spark_video_preflight():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+
+    def request(method, endpoint, data=None, **kwargs):
+        calls.append((method, endpoint, data, kwargs))
+        if endpoint == "identity/get/":
+            return {"list": [{"identity_id": "i1"}]}
+        return {"identity_id": "i1", "video_id": "v1"}
+
+    client.request = request
+    assert client.create_identity("123", "Brand identity", "image-1")["identity_id"] == "i1"
+    assert client.list_identities("123", "AUTH_CODE", page=2, page_size=10) == [
+        {"identity_id": "i1"}
+    ]
+    assert client.get_identity_video_info("123", "AUTH_CODE", "i1", "v1")["video_id"] == "v1"
+    assert calls == [
+        ("POST", "identity/create/", {
+            "advertiser_id": "123", "display_name": "Brand identity", "image_uri": "image-1",
+        }, {}),
+        ("GET", "identity/get/", None, {"params": {
+            "advertiser_id": "123", "page": 2, "page_size": 10, "identity_type": "AUTH_CODE",
+        }}),
+        ("GET", "identity/video/info/", None, {"params": {
+            "advertiser_id": "123", "identity_type": "AUTH_CODE",
+            "identity_id": "i1", "item_id": "v1",
+        }}),
+    ]
+
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_tiktok_capability().register_tools()
+    }
+    assert definitions["tiktok_create_identity"].live_support is False
+    assert definitions["tiktok_create_identity"].input_schema.properties.keys() == {
+        "account_id", "display_name", "image_uri",
+    }
+    assert "identity_authorized_bc_id" not in definitions["tiktok_list_identities"].input_schema.properties
+    assert definitions["tiktok_get_identity_video_info"].input_schema.properties["identity_type"]["enum"] == [
+        "AUTH_CODE", "TT_USER",
+    ]
+
+
 def test_generic_campaign_type_maps_to_google_wire_field():
     runtime = AgentRuntime(require_llm=False, )
     definition = next(

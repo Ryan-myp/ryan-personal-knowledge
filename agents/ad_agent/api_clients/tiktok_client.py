@@ -1551,6 +1551,84 @@ class TikTokAPIClient(BasePlatformClient):
         self.acquire_rate_limit(self._rate_limiter)
         result = self.request("POST", "creative/portfolio/create/", data=data)
         return result if isinstance(result, dict) else {"result": result}
+
+    # ==================== Identity 管理 ====================
+
+    def create_identity(self, advertiser_id: str, display_name: str, image_uri: str) -> dict:
+        """Create a TikTok customized user identity."""
+        advertiser_id = str(advertiser_id or "").strip()
+        display_name = str(display_name or "").strip()
+        image_uri = str(image_uri or "").strip()
+        if not advertiser_id.isdigit():
+            raise ValueError("advertiser_id must contain digits only")
+        if not display_name or len(display_name) > 100:
+            raise ValueError("display_name must be between 1 and 100 characters")
+        if not image_uri:
+            raise ValueError("image_uri is required")
+        self.acquire_rate_limit(self._rate_limiter)
+        result = self.request("POST", "identity/create/", data={
+            "advertiser_id": advertiser_id,
+            "display_name": display_name,
+            "image_uri": image_uri,
+        })
+        return result if isinstance(result, dict) else {"result": result}
+
+    def list_identities(
+        self,
+        advertiser_id: str,
+        identity_type: str = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> list:
+        """List advertiser identities supported by the safe Tool contract."""
+        advertiser_id = str(advertiser_id or "").strip()
+        if not advertiser_id.isdigit():
+            raise ValueError("advertiser_id must contain digits only")
+        if identity_type is not None and str(identity_type).upper() not in {
+            "CUSTOMIZED_USER", "AUTH_CODE", "TT_USER",
+        }:
+            raise ValueError("unsupported identity_type")
+        try:
+            page = int(page)
+            page_size = int(page_size)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("page must be positive and page_size must be between 1 and 100") from exc
+        if page < 1 or not 1 <= page_size <= 100:
+            raise ValueError("page must be positive and page_size must be between 1 and 100")
+        params: dict[str, Any] = {
+            "advertiser_id": advertiser_id, "page": page, "page_size": page_size,
+        }
+        if identity_type:
+            params["identity_type"] = str(identity_type).upper()
+        self.acquire_rate_limit(self._rate_limiter)
+        result = self.request("GET", "identity/get/", params=params)
+        payload = self._data_section(result)
+        if isinstance(payload, list):
+            return payload
+        return payload.get("list", payload.get("identities", [])) if isinstance(payload, dict) else []
+
+    def get_identity_video_info(
+        self, advertiser_id: str, identity_type: str, identity_id: str, item_id: str
+    ) -> dict:
+        """Get owned TikTok post information for an AUTH_CODE or TT_USER identity."""
+        advertiser_id = str(advertiser_id or "").strip()
+        identity_type = str(identity_type or "").strip().upper()
+        identity_id = str(identity_id or "").strip()
+        item_id = str(item_id or "").strip()
+        if not advertiser_id.isdigit():
+            raise ValueError("advertiser_id must contain digits only")
+        if identity_type not in {"AUTH_CODE", "TT_USER"}:
+            raise ValueError("identity_type must be AUTH_CODE or TT_USER")
+        if not identity_id or not item_id:
+            raise ValueError("identity_id and item_id are required")
+        self.acquire_rate_limit(self._rate_limiter)
+        result = self.request("GET", "identity/video/info/", params={
+            "advertiser_id": advertiser_id,
+            "identity_type": identity_type,
+            "identity_id": identity_id,
+            "item_id": item_id,
+        })
+        return result if isinstance(result, dict) else {"result": result}
     
     # ==================== 商品目录查询 ====================
     
