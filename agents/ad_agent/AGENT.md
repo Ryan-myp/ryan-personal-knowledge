@@ -1,0 +1,132 @@
+# Ad Agent 系统开发契约
+
+本文是 `agents/ad_agent` 的产品级架构与开发指导，约束后续模块如何扩展。
+仓库级操作规则仍以同目录的 `AGENTS.md` 为准；两者冲突时，以用户明确需求和
+`AGENTS.md` 的安全约束为准。
+
+## 1. 产品定义
+
+这是一个由 LLM 驱动的单 Agent 广告管理系统，不是四个渠道 Agent 的集合：
+
+```text
+用户请求
+  -> 一个 Agent / LLM
+  -> Skill 上下文、SOP 和业务策略
+  -> Tool metadata 选择与参数计划
+  -> Runtime policy gates
+  -> Provider Capability Tool
+  -> Provider API Client
+```
+
+- Agent 负责理解、拆解、询问缺失信息、编排和总结。
+- Skill 负责自然语言知识、业务流程、渠道规则、前置条件和安全提示。
+- Tool 是一个有明确输入/输出、权限、风险、重放、超时和资源层级的可执行动作。
+- Capability 是渠道拥有的 Tool 注册和 Provider 适配边界。
+- Client 负责认证后的请求、版本适配、限流、重试、错误分类和 payload 转换。
+- Runtime/Core 只实现通用规划、校验、授权、dry-run、幂等、恢复和跨渠道聚合，
+  不为某个渠道或业务流程增加分支。
+
+## 2. Skill 边界
+
+Skill 必须使用标准目录格式，至少包含 `SKILL.md`，也可以包含：
+
+```text
+skill-name/
+├── SKILL.md       # 必需：身份、知识、SOP 和安全边界
+├── references/    # 可选：详细文档、字段说明和示例
+├── scripts/       # 可选：随包保存的辅助材料，不由 Runtime 自动执行
+├── assets/        # 可选：模板、图片和其他资源
+└── evals/         # 可选：skill-up 数据文件和验收用例
+```
+
+`SKILL.md` 使用自然语言描述流程；frontmatter 只声明身份、版本、平台别名和
+非执行触发上下文。Markdown 表格、`workflow.yaml`、`scripts/` 或 `assets/`
+都不能自动变成 Tool，也不能绕过 Registry、权限和 Runtime gate。
+
+用户上传的 Skill 作为 advisory context 保存和版本化。它可以指导 Agent 组合
+已有 Tools，但不能携带凭证、自动导入 Python、注册任意 HTTP 动作或改变账户白名单。
+带 `evals/eval.yaml` 的版本发布前必须通过受控 Skill-up Engine；用户不能提供
+自定义命令、judge script、MCP server 或环境注入。
+
+## 3. 扩展规则
+
+### 3.1 新增业务流程
+
+如果流程只是在已有原子能力之上重新编排，新增或修改标准 Skill 目录即可：
+知识放 `SKILL.md`/`references/`，验收用例放 `evals/`。不要在 Runtime 中添加
+渠道判断，不要复制一份 Tool 清单，不要用 `workflow.yaml` 建第二套执行引擎。
+
+### 3.2 新增 Provider API 能力
+
+如果确实需要新的外部动作，按以下顺序在渠道包内完成最小闭环：
+
+1. 在 `api_clients/<provider>_client.py` 增加固定方法；方法名和 endpoint 不能来自用户输入。
+2. 在 `capabilities/<provider>/capability.py` 增加 Tool Schema、handler/adapter、
+   资源层级、`intent_types`、权限、风险、重放、超时和输出上限。
+3. 静态选项放在渠道 Tool schema；账户、App、地域、事件等动态值增加同渠道只读
+   lookup Tool，并通过 `lookup_tool`/selection token 关联，不在 Core 写渠道枚举。
+4. 在该渠道 `api_surface.py` 标记 implemented 或 planned，并增加 Provider payload、
+   schema、权限、dry-run、失败恢复和账户隔离测试。
+5. 运行能力审计、契约快照和全量测试后再提交。新增渠道不需要修改 Runtime、Router
+   或中心渠道表。
+
+### 3.3 API 版本升级
+
+保持稳定的 Tool 名称和业务输入契约，在渠道 Client 内增加版本列表、请求/响应
+adapter 和回归测试；不能只修改 `/tools` 返回的版本字符串。若语义不能安全转换，
+新版本必须先保持 dry-run 或返回版本不兼容，禁止静默发送未知 payload。
+
+## 4. 广告资源和跨渠道管理
+
+跨渠道对象必须使用 `(platform, account_id, resource_type, resource_id)` 作为完整
+身份，不能把不同渠道的数字 ID 互相复用。跨渠道 Campaign 操作先生成带逐项状态的
+本地计划，再由每个渠道的 Capability 执行或回查；失败或不确定结果进入
+`unknown`/`recovery_required`，不得把缺失指标填成 0，也不得把一个渠道的成功推断成
+另一个渠道的成功。
+
+广告创建优先覆盖完整层级和参数目录：Campaign、下级资源、定向、受众、素材、转化
+目标和出价策略。固定枚举必须来自 Provider schema；动态参数必须先 lookup 或在
+dry-run 中明确标记未解析。未完成的官方资源写入 API 进入 Surface 的 planned 清单，
+不能以一个宽泛 Tool 冒充完整 CRUD。
+
+## 5. 安全红线
+
+- 默认执行模式是 `dry_run`；所有 Campaign 及下级资源写入先规划和校验，不真实调用。
+- live 写入同时需要受控测试账户白名单、部署级 live fuse、Tool 白名单、权限和显式确认。
+- 未经用户和部署配置明确指定，不得选用线上账户进行写测试。
+- 永远不修改或接受为业务更新字段：`access_token`、`refresh_token`、
+  `developer_token`、`client_id`、`client_secret`、`private_key`、`bc_id`、
+  `partner_id`/`perter_id`、`mcc` 及同义字段。
+- 凭证只存在进程内受控 Client；不进入 Skill、LLM 上下文、Tool payload、SQLite、
+  错误信息、评测输入或评测报告。
+- 读/写对象必须验证账户范围；Provider 对象 ID 不能仅凭格式或用户文本信任。
+- 用户输入只能选择已注册 Tool，不能选择 method、endpoint、脚本或命令。
+
+## 6. 性能和可靠性边界
+
+复用进程内 Registry、Skill metadata、Provider Client 和 rate limiter；LLM 上下文只
+注入与当前意图相关的有限 Tool。列表、报表和批量操作必须有 page size、最大页数、
+调用上限、超时和输出字节上限。外部请求的重试、限流和错误分类放在 Client，跨渠道
+并发和逐项状态放在 Runtime/Core。
+
+SQLite 当前按单进程使用；所有持久化依赖必须经过 `PersistenceBackend`，不得把 SQL
+泄露到 Skill、HTTP 或 Provider 层。未来换 MySQL/PostgreSQL 时，必须保持事务、幂等
+reservation、workflow lease 和租户隔离语义。
+
+观察性先保留 trace、metrics、告警和审计检索入口，不因为暂未接入而改变 Tool 契约
+或安全 gate。
+
+## 7. 提交前门禁
+
+```bash
+python3.13 -m compileall -q agents/ad_agent
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=. \
+  python3.13 -m pytest agents/ad_agent/tests -q
+python3 agents/ad_agent/scripts/audit_capabilities.py
+python3 agents/ad_agent/scripts/validate_contracts.py \
+  --check-snapshot agents/ad_agent/contracts/builtin_tools.json
+git diff --check
+```
+
+任何能力只有在 Client、Capability、Schema、Surface、测试和契约快照一致后，才算
+“已接入”；只有经过指定测试账户的手动验证并加入 live 白名单后，才算“live 已验证”。

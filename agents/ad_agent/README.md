@@ -13,6 +13,7 @@
 - **可扩展**：渠道包按约定自动发现；新增平台不需要修改 Runtime、Router 或中心渠道表
 - **动态平台识别**：解析器从已注册 Capability/Skill 发布平台标识；内置渠道只保留自然语言别名，不维护固定四渠道路由表
 - **版本兼容**：Tool 声明 Provider API 版本；版本差异由渠道 Client 自己的 adapter 处理，Runtime 不增加渠道分支
+- **开发契约**：后续模块遵循 [`AGENT.md`](./AGENT.md)；仓库安全与操作约束见 [`AGENTS.md`](./AGENTS.md)
 
 ## 支持的广告平台
 
