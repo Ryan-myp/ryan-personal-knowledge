@@ -93,6 +93,31 @@ def test_capability_audit_includes_provider_owned_api_surface_and_planned_gaps()
     )
 
 
+def test_capability_audit_reports_scoped_official_inventory_separately_from_tools():
+    report = audit_capabilities()
+
+    for platform, details in report["platforms"].items():
+        inventory = details["official_inventory"]
+        assert inventory["total"] > 0, platform
+        assert inventory["source_url"].startswith("https://"), platform
+        assert inventory["completeness"] == "scoped_not_exhaustive"
+        assert inventory["covered"] + inventory["gaps"] == inventory["total"]
+        assert inventory["execution_statuses"], platform
+        assert inventory["evidence_levels"] == {"provider_doc_scope": inventory["total"]}
+        assert len(inventory["evidence_gaps"]) == inventory["total"]
+        assert all(
+            entry["endpoint"] and entry["source_url"]
+            for entry in inventory["covered_entries"] + inventory["gaps_entries"]
+        )
+
+    # The report must not imply that a Tool count is the provider's full API
+    # count.  Known planned operations remain visible as inventory gaps.
+    assert any(
+        entry["resource"] == "experiment"
+        for entry in report["platforms"]["google-ads"]["official_inventory"]["gaps_entries"]
+    )
+
+
 def test_capability_audit_keeps_client_method_tool_surface_chain_complete():
     report = audit_capabilities()
 

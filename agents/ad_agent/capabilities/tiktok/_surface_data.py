@@ -1,5 +1,33 @@
 """TikTok coverage baseline and deliberate follow-up inventory."""
 
+PROVIDER_METADATA = {
+    "provider": "tiktok",
+    "api_version": "v1.3",
+    "source_url": "https://business-api.tiktok.com/portal/docs",
+    "inventory_scope": "official_open_api_baseline",
+    "completeness": "scoped_not_exhaustive",
+}
+
+OFFICIAL_INVENTORY = [
+    {"resource": "advertiser", "action": "list", "status": "implemented", "surface_method": "list_accounts", "provider_operation": "advertiser/info"},
+    {"resource": "campaign", "action": "crud", "status": "implemented", "surface_method": "create_campaign", "provider_operation": "campaign/create|update|delete|get"},
+    {"resource": "ad_group", "action": "crud", "status": "implemented", "surface_method": "create_adgroup", "provider_operation": "adgroup/create|update|delete|get"},
+    {"resource": "ad", "action": "crud", "status": "implemented", "surface_method": "create_ad", "provider_operation": "ad/create|update|delete|get"},
+    {"resource": "audience", "action": "crud", "status": "implemented", "surface_method": "create_audience", "provider_operation": "audience/*"},
+    {"resource": "targeting_reference", "action": "read", "status": "implemented", "surface_method": "list_locations", "provider_operation": "tool/* reference endpoints"},
+    {"resource": "pixel", "action": "crud", "status": "implemented", "surface_method": "create_pixel", "provider_operation": "pixel/*"},
+    {"resource": "pixel_event", "action": "send", "status": "implemented", "surface_method": "send_pixel_event", "provider_operation": "pixel/track"},
+    {"resource": "report", "action": "read", "status": "implemented", "surface_method": "get_report", "provider_operation": "report/integrated/get"},
+    {"resource": "asset_library", "action": "crud", "status": "implemented", "surface_method": "upload_image", "provider_operation": "file/image/ad/upload|file/video/ad/upload"},
+    {"resource": "app", "action": "list", "status": "implemented", "surface_method": "list_apps", "provider_operation": "app/list"},
+    {"resource": "catalog", "action": "read", "status": "implemented", "surface_method": "list_catalogs", "provider_operation": "catalog/list"},
+    {"resource": "creative", "action": "crud", "status": "planned", "provider_operation": "creative management endpoints"},
+    {"resource": "automated_rule", "action": "crud", "status": "planned", "provider_operation": "automated_rule/*"},
+    {"resource": "comment", "action": "crud", "status": "planned", "provider_operation": "comment/*"},
+    {"resource": "catalog", "action": "crud", "status": "planned", "provider_operation": "catalog/* create|update|delete"},
+    {"resource": "product_set", "action": "crud", "status": "planned", "provider_operation": "product_set/* create|update|delete"},
+]
+
 API_SURFACE = [
     {"resource": "account", "action": "list", "method": "list_accounts", "status": "implemented"},
     {"resource": "campaign", "action": "crud", "method": "create_campaign", "status": "implemented"},

@@ -24,7 +24,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from agents.ad_agent.capabilities.factory import discover_capability_factory  # noqa: E402
-from agents.ad_agent.capabilities.api_surface import IMPLEMENTED, validate_surface  # noqa: E402
+from agents.ad_agent.capabilities.api_surface import (  # noqa: E402
+    IMPLEMENTED,
+    build_inventory_report,
+    validate_inventory,
+    validate_surface,
+)
 from agents.ad_agent.core.interfaces import AdFormatCoverage, ReplayPolicy, ToolEffect  # noqa: E402
 from agents.ad_agent.runtime.runtime import AgentRuntime  # noqa: E402
 from agents.ad_agent.skill_management import (  # noqa: E402
@@ -118,11 +123,30 @@ def audit_capabilities() -> dict[str, Any]:
             try:
                 surface_module = importlib.import_module(surface_module_name)
                 surface = list(getattr(surface_module, "API_SURFACE", []) or [])
+                inventory = list(getattr(surface_module, "OFFICIAL_INVENTORY", []) or [])
+                provider_metadata = dict(
+                    getattr(surface_module, "PROVIDER_METADATA", {}) or {}
+                )
             except (ImportError, AttributeError) as exc:
                 surface = []
+                inventory = []
+                provider_metadata = {}
                 report["issues"].append(f"{slug}: provider API surface unavailable: {exc}")
             surface_errors = validate_surface(surface)
             report["issues"].extend(f"{slug}: {error}" for error in surface_errors)
+            inventory_errors = validate_inventory(inventory, provider_metadata)
+            report["issues"].extend(f"{slug}: {error}" for error in inventory_errors)
+            if not inventory:
+                report["issues"].append(
+                    f"{slug}: OFFICIAL_INVENTORY is required for a provider capability"
+                )
+            for metadata_field in (
+                "provider", "api_version", "source_url", "inventory_scope", "completeness"
+            ):
+                if not str(provider_metadata.get(metadata_field) or "").strip():
+                    report["issues"].append(
+                        f"{slug}: provider metadata field {metadata_field!r} is required"
+                    )
             platform_key = str(getattr(capability, "platform_name", slug))
             registered_names = {
                 definition.name for definition in runtime.registry.list_all()
@@ -177,6 +201,20 @@ def audit_capabilities() -> dict[str, Any]:
                 )
             report.setdefault("surface_gaps", {})[platform_key] = surface_gaps
             report.setdefault("surface_planned", {})[platform_key] = planned_entries
+            inventory_report = build_inventory_report(
+                surface, inventory, provider_metadata
+            )
+            inventory_claim_gaps = [
+                entry
+                for entry in inventory_report.get("gaps_entries", [])
+                if entry.get("status") == IMPLEMENTED
+            ]
+            for entry in inventory_claim_gaps:
+                report["issues"].append(
+                    f"{slug}: official inventory claims implemented but has no Surface coverage: "
+                    f"{entry.get('resource')}:{entry.get('action')}"
+                )
+            report.setdefault("official_inventory", {})[platform_key] = inventory_report
             report.setdefault("surface_summary", {})[platform_key] = {
                 "implemented": implemented_surface,
                 "planned": len(planned_entries),
@@ -325,6 +363,7 @@ def audit_capabilities() -> dict[str, Any]:
             "api_surface": report.get("surface_summary", {}).get(platform, {}),
             "api_surface_gaps": report.get("surface_gaps", {}).get(platform, []),
             "api_surface_planned": report.get("surface_planned", {}).get(platform, []),
+            "official_inventory": report.get("official_inventory", {}).get(platform, {}),
             "provider_method_coverage": report.get(
                 "provider_method_coverage", {}
             ).get(platform, {}),
@@ -369,6 +408,42 @@ def _print_text(report: dict[str, Any]) -> None:
                 f"implemented={surface.get('implemented', 0)}, "
                 f"planned={surface.get('planned', 0)}, total={surface.get('total', 0)}"
             )
+        inventory = details.get("official_inventory", {})
+        if inventory:
+            print(
+                "  official inventory: "
+                f"covered={inventory.get('covered', 0)}, "
+                f"gaps={inventory.get('gaps', 0)}, "
+                f"total={inventory.get('total', 0)}, "
+                f"ratio={inventory.get('coverage_ratio', 0):.1%}, "
+                f"scope={inventory.get('completeness', 'unknown')}"
+            )
+            if inventory.get("execution_statuses"):
+                print(
+                    "  covered execution: "
+                    + ", ".join(
+                        f"{key}={value}"
+                        for key, value in inventory["execution_statuses"].items()
+                    )
+                )
+            if inventory.get("evidence_levels"):
+                print(
+                    "  inventory evidence: "
+                    + ", ".join(
+                        f"{key}={value}"
+                        for key, value in inventory["evidence_levels"].items()
+                    )
+                )
+            if inventory.get("evidence_gaps"):
+                print(
+                    "  evidence gaps: "
+                    f"{len(inventory['evidence_gaps'])} entries need operation-specific source or E2E"
+                )
+            for entry in inventory.get("gaps_entries", []):
+                print(
+                    f"  inventory gap: {entry.get('resource')}:{entry.get('action')} - "
+                    f"{entry.get('provider_operation')}"
+                )
         coverage = details.get("provider_method_coverage", {})
         if coverage:
             print(

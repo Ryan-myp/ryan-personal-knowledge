@@ -1,5 +1,40 @@
 """Google Ads coverage baseline and deliberate follow-up inventory."""
 
+PROVIDER_METADATA = {
+    "provider": "google-ads",
+    "api_version": "v24",
+    "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+    "inventory_scope": "official_resource_operations_baseline",
+    "completeness": "scoped_not_exhaustive",
+}
+
+# This is intentionally a provider-owned, reviewable baseline rather than a
+# claim that these are every Google Ads API method.  New resources/operations
+# must be added here before they can be called "covered" in release reports.
+OFFICIAL_INVENTORY = [
+    {"resource": "campaign", "action": "list", "status": "implemented", "surface_method": "list_campaigns", "provider_operation": "GoogleAdsService.search: campaign"},
+    {"resource": "campaign", "action": "mutate", "status": "implemented", "surface_method": "create_campaign", "provider_operation": "CampaignService.mutateCampaigns"},
+    {"resource": "ad_group", "action": "list", "status": "implemented", "surface_method": "list_ad_groups", "provider_operation": "GoogleAdsService.search: ad_group"},
+    {"resource": "ad_group", "action": "mutate", "status": "implemented", "surface_method": "create_ad_group", "provider_operation": "AdGroupService.mutateAdGroups"},
+    {"resource": "ad", "action": "list", "status": "implemented", "surface_method": "list_ads", "provider_operation": "GoogleAdsService.search: ad_group_ad"},
+    {"resource": "ad", "action": "mutate", "status": "implemented", "surface_method": "create_search_ad", "provider_operation": "AdGroupAdService.mutateAdGroupAds"},
+    {"resource": "keyword", "action": "list", "status": "implemented", "surface_method": "list_keywords", "provider_operation": "GoogleAdsService.search: ad_group_criterion"},
+    {"resource": "keyword", "action": "mutate", "status": "implemented", "surface_method": "create_keywords", "provider_operation": "AdGroupCriterionService.mutateAdGroupCriteria"},
+    {"resource": "asset", "action": "list", "status": "implemented", "surface_method": "list_assets", "provider_operation": "GoogleAdsService.search: asset"},
+    {"resource": "asset", "action": "mutate", "status": "implemented", "surface_method": "create_asset", "provider_operation": "AssetService.mutateAssets"},
+    {"resource": "campaign_budget", "action": "mutate", "status": "implemented", "surface_method": "create_campaign_budget", "provider_operation": "CampaignBudgetService.mutateCampaignBudgets"},
+    {"resource": "campaign_criterion", "action": "mutate", "status": "implemented", "surface_method": "create_campaign_criteria", "provider_operation": "CampaignCriterionService.mutateCampaignCriteria"},
+    {"resource": "conversion_action", "action": "mutate", "status": "implemented", "surface_method": "create_conversion_action", "provider_operation": "ConversionActionService.mutateConversionActions"},
+    {"resource": "user_list", "action": "mutate", "status": "implemented", "surface_method": "create_user_list", "provider_operation": "UserListService.mutateUserLists"},
+    {"resource": "bidding_strategy", "action": "mutate", "status": "implemented", "surface_method": "create_bidding_strategy", "provider_operation": "BiddingStrategyService.mutateBiddingStrategies"},
+    {"resource": "report", "action": "query", "status": "implemented", "surface_method": "get_campaign_report", "provider_operation": "GoogleAdsService.search/searchStream"},
+    {"resource": "experiment", "action": "crud", "status": "planned", "provider_operation": "ExperimentService"},
+    {"resource": "feed", "action": "crud", "status": "planned", "provider_operation": "FeedService / FeedItemService"},
+    {"resource": "campaign_asset", "action": "mutate", "status": "planned", "provider_operation": "CampaignAssetService"},
+    {"resource": "asset_group_asset", "action": "mutate", "status": "planned", "provider_operation": "AssetGroupAssetService"},
+    {"resource": "conversion_goal", "action": "mutate", "status": "planned", "provider_operation": "CustomerConversionGoalService / CampaignConversionGoalService"},
+]
+
 API_SURFACE = [
     {"resource": "campaign", "action": "list", "method": "list_campaigns", "status": "implemented"},
     {"resource": "campaign", "action": "get", "method": "get_campaign", "status": "implemented"},

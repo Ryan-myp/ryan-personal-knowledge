@@ -1,5 +1,33 @@
 """Meta coverage baseline and deliberate follow-up inventory."""
 
+PROVIDER_METADATA = {
+    "provider": "meta",
+    "api_version": "v19.0",
+    "source_url": "https://developers.facebook.com/docs/marketing-api/reference",
+    "inventory_scope": "official_graph_edges_baseline",
+    "completeness": "scoped_not_exhaustive",
+}
+
+OFFICIAL_INVENTORY = [
+    {"resource": "campaign", "action": "crud", "status": "implemented", "surface_method": "create_campaign", "provider_operation": "AdAccount/{account_id}/campaigns"},
+    {"resource": "ad_set", "action": "crud", "status": "implemented", "surface_method": "create_adset", "provider_operation": "AdAccount/{account_id}/adsets"},
+    {"resource": "ad", "action": "crud", "status": "implemented", "surface_method": "create_ad", "provider_operation": "AdSet/{adset_id}/ads"},
+    {"resource": "creative", "action": "crud", "status": "implemented", "surface_method": "create_creative", "provider_operation": "AdAccount/{account_id}/adcreatives"},
+    {"resource": "audience", "action": "crud", "status": "implemented", "surface_method": "create_audience", "provider_operation": "AdAccount/{account_id}/customaudiences"},
+    {"resource": "catalog", "action": "crud", "status": "implemented", "surface_method": "create_catalog", "provider_operation": "Business/{business_id}/owned_product_catalogs"},
+    {"resource": "product_set", "action": "crud", "status": "implemented", "surface_method": "create_product_set", "provider_operation": "ProductCatalog/{catalog_id}/product_sets"},
+    {"resource": "pixel", "action": "read", "status": "implemented", "surface_method": "list_pixels", "provider_operation": "AdAccount/{account_id}/adspixels"},
+    {"resource": "custom_conversion", "action": "crud", "status": "implemented", "surface_method": "create_custom_conversion", "provider_operation": "AdAccount/{account_id}/customconversions"},
+    {"resource": "lead_form", "action": "read", "status": "implemented", "surface_method": "list_lead_forms", "provider_operation": "Page/{page_id}/leadgen_forms"},
+    {"resource": "insights", "action": "read", "status": "implemented", "surface_method": "get_campaign_report", "provider_operation": "AdAccount/{account_id}/insights"},
+    {"resource": "targeting", "action": "search", "status": "implemented", "surface_method": "search_targeting", "provider_operation": "/targetingsearch"},
+    {"resource": "lookalike_audience", "action": "crud", "status": "planned", "provider_operation": "CustomAudience lookalike_spec"},
+    {"resource": "image_asset", "action": "crud", "status": "planned", "provider_operation": "AdAccount/{account_id}/adimages"},
+    {"resource": "video_asset", "action": "crud", "status": "planned", "provider_operation": "AdAccount/{account_id}/advideos"},
+    {"resource": "lead", "action": "read", "status": "planned", "provider_operation": "Page/{page_id}/leadgen_forms/{form_id}/leads"},
+    {"resource": "business", "action": "read", "status": "planned", "provider_operation": "Business Manager Graph API"},
+]
+
 API_SURFACE = [
     {"resource": "account", "action": "list", "method": "list_accounts", "status": "implemented"},
     {"resource": "account", "action": "get", "method": "get_account", "status": "implemented"},

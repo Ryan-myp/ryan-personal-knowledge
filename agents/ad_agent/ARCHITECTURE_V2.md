@@ -279,6 +279,22 @@ ToolDefinition 的自描述元数据，Runtime 再执行 schema、权限、账�
 渠道 Client 的版本支持、adapter 和对应回归。如果字段语义不能兼容，必须 fail-closed，
 保留 dry-run，不得静默发送未经验证的 Provider payload。
 
+### Provider 能力完整度审计
+
+每个渠道包维护两份互补的 provider-owned 声明：
+
+| 声明 | 含义 | 能否代表官方全量 |
+|---|---|---|
+| `API_SURFACE` | 已落到 Client/Capability/Tool 的代码实现，以及 planned 缺口 | 不能 |
+| `OFFICIAL_INVENTORY` | 有官方文档来源的资源/动作基线、endpoint/operation 和实现状态 | 只有 `completeness` 明确完整时才可以 |
+
+审计先验证 `OFFICIAL_INVENTORY -> API_SURFACE`，再验证原有的
+`API_SURFACE -> Client -> Tool`。因此同一条报告会同时回答“我们写了什么”和“登记的
+官方能力还有什么没写”。目前各渠道基线均标记 `scoped_not_exhaustive`，这是诚实的覆盖率
+口径，不把 248 个 Tool 或某个渠道的 Tool 数量冒充 Provider 全部接口。官方文档只支持
+资源级结论、但还没有 operation-specific source 或测试账户证据时，执行状态仍保持
+`dry_run_only`。
+
 ## 五、安全机制与执行模式
 
 默认 `execution_mode=dry_run`。所有写工具在 dry-run 中只由 Runtime 生成本地模拟 ID，不进入 Handler/API Client；live 写入必须同时满足测试账户白名单和 `confirmed=True`。读操作可按平台账户查询，但生产环境仍应由调用方限制账户范围。

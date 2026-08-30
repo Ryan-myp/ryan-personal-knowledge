@@ -32,6 +32,10 @@
 - 每个渠道 Capability 包另有 `api_surface.py`，声明已实现与计划中的官方资源操作；审计会
   检查已实现项是否同时存在 Client 方法、覆盖映射和 executable Tool，并把计划项显式列为
   后续建设缺口。
+- 每个渠道 `_surface_data.py` 另有 `OFFICIAL_INVENTORY`，登记官方资源/动作、endpoint
+  或 Provider operation、API version、来源和状态；审计会单独输出官方基线覆盖率、缺口和
+  `dry_run_only`/`live_verified` 证据。当前基线明确为 `scoped_not_exhaustive`，不能把
+  Tool 数量当成 Provider 官方接口总量。
 - 当前已实现的 Provider Client 方法均纳入三段式追踪：Client method → Capability
   `provider_method_coverage` → `api_surface.py` → executable Tool。现有覆盖为 DV360
   29/29、Google Ads 74/74、Meta 65/65、TikTok 72/72；同一 Client 方法映射多个业务

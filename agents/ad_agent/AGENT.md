@@ -69,8 +69,24 @@ skill-name/
    lookup Tool，并通过 `lookup_tool`/selection token 关联，不在 Core 写渠道枚举。
 4. 在该渠道 `api_surface.py` 标记 implemented 或 planned，并增加 Provider payload、
    schema、权限、dry-run、失败恢复和账户隔离测试。
-5. 运行能力审计、契约快照和全量测试后再提交。新增渠道不需要修改 Runtime、Router
+5. 在该渠道 `_surface_data.py` 的 `OFFICIAL_INVENTORY` 登记官方资源/动作、endpoint
+   或 Provider operation、API version、官方 source URL 和当前状态。这个清单是覆盖
+   基线，不得写成“官方完整接口总数”；范围不完整时必须声明
+   `completeness: scoped_not_exhaustive`。
+6. 运行能力审计、契约快照和全量测试后再提交。新增渠道不需要修改 Runtime、Router
    或中心渠道表。
+
+审计必须同时看三条链：
+
+```text
+官方能力基线 OFFICIAL_INVENTORY
+  -> 当前实现 API_SURFACE
+  -> Client method -> Capability Tool -> Runtime
+```
+
+`API_SURFACE.status=implemented` 只表示已有代码契约；`execution_status=dry_run_only`
+表示尚未通过测试账户 E2E，不能当成 live 能力。官方清单里的 planned 项和报告里的
+`gaps_entries` 必须继续可见，不能用增加一个宽泛 Tool 把缺口隐藏掉。
 
 ### 3.3 API 版本升级
 

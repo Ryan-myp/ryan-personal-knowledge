@@ -26,7 +26,19 @@
 | DV360 | dv360-expert | dv360_client.py | 31（Advertiser、Campaign 查询、IO、Line Item、Creative、定向与异步报表接口） |
 | **合计** |  |  | **248** |
 
-> 248 是当前四个 Capability 已注册的业务 Tool 数量，不是 Meta、Google Ads、TikTok 或 DV360 官方 API 的完整接口总量。各渠道包的 `api_surface.py` 同时维护已实现和计划中的官方资源清单；新增官方接口时，应在对应渠道 Client 增加固定方法，在 Capability 增加 Tool Schema/adapter，再由 Surface 审计和契约快照阻止漏注册或漂移。DV360 Campaign 创建当前明确为 planned，不会暴露一个无 Client 适配器的假 Tool。
+> 248 是当前四个 Capability 已注册的业务 Tool 数量，不是 Meta、Google Ads、TikTok 或 DV360 官方 API 的完整接口总量。各渠道包的 `_surface_data.py` 同时维护实现 Surface 和 `OFFICIAL_INVENTORY` 官方能力基线；后者必须带 endpoint/Provider operation、API version、官方来源和状态，并明确是否为完整清单。新增官方接口时，应在对应渠道 Client 增加固定方法，在 Capability 增加 Tool Schema/adapter，再由 Surface、官方清单审计和契约快照阻止漏注册或漂移。DV360 Campaign 创建当前明确为 planned，不会暴露一个无 Client 适配器的假 Tool。
+
+能力完整度要以审计报告为准，而不是 Tool 数量。运行：
+
+```bash
+python3 agents/ad_agent/scripts/audit_capabilities.py
+```
+
+报告分别输出 `api surface`（代码实现覆盖）和 `official inventory`（已登记官方基线覆盖）。
+当前官方清单是 `scoped_not_exhaustive`，因此报告中的比例只能用于当前基线治理；要宣称
+某渠道完整，必须先把该渠道官方资源/动作清单补齐，并为每项补 operation-specific source
+或 Provider E2E 证据。当前实现默认 `dry_run_only`，即使出现在 `covered` 里也不代表已验证
+live。
 
 ### 广告类型覆盖边界
 

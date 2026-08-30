@@ -1,5 +1,29 @@
 """DV360 current baseline; deeper construction is intentionally deferred."""
 
+PROVIDER_METADATA = {
+    "provider": "dv360",
+    "api_version": "v4",
+    "source_url": "https://developers.google.com/display-video/api/reference/rest/v4",
+    "inventory_scope": "basic_management_reporting_only",
+    "completeness": "scoped_not_exhaustive",
+}
+
+# DV360 is deliberately scoped to the already agreed basic layer.  This list
+# makes the deferral explicit instead of implying that 31 Tools are complete.
+OFFICIAL_INVENTORY = [
+    {"resource": "advertiser", "action": "read", "status": "implemented", "surface_method": "list_advertisers", "provider_operation": "advertisers.list|get"},
+    {"resource": "campaign", "action": "read", "status": "implemented", "surface_method": "list_campaigns", "provider_operation": "advertisers.campaigns.list|get"},
+    {"resource": "insertion_order", "action": "crud", "status": "implemented", "surface_method": "create_io", "provider_operation": "advertisers.insertionOrders.*"},
+    {"resource": "line_item", "action": "crud", "status": "implemented", "surface_method": "create_line_item", "provider_operation": "advertisers.lineItems.*"},
+    {"resource": "creative", "action": "crud", "status": "implemented", "surface_method": "create_creative", "provider_operation": "advertisers.creatives.*"},
+    {"resource": "targeting", "action": "crud", "status": "implemented", "surface_method": "create_line_item_assigned_targeting_option", "provider_operation": "advertisers.lineItems.targetingTypes.assignedTargetingOptions.*"},
+    {"resource": "report", "action": "async", "status": "implemented", "surface_method": "create_report", "provider_operation": "partners.runReports|queries.*"},
+    {"resource": "campaign", "action": "create", "status": "planned", "provider_operation": "advertisers.campaigns.create"},
+    {"resource": "audience", "action": "crud", "status": "planned", "provider_operation": "firstAndThirdPartyAudiences.*"},
+    {"resource": "inventory_source", "action": "crud", "status": "planned", "provider_operation": "inventorySources.*"},
+    {"resource": "ad_format", "action": "catalog", "status": "planned", "provider_operation": "creative types and line item types"},
+]
+
 API_SURFACE = [
     {"resource": "advertiser", "action": "list", "method": "list_advertisers", "status": "implemented"},
     {"resource": "advertiser", "action": "get", "method": "get_advertiser", "status": "implemented"},
