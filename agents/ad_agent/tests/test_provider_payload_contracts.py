@@ -2265,6 +2265,85 @@ def test_google_creation_options_are_mapped_to_rest_resources():
     assert ad["responsiveSearchAd"]["path2"] == "now"
 
 
+def test_google_campaign_contract_covers_channel_specific_parameters():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_google_capability().register_tools()
+    }
+    schema = definitions["google_create_campaign"].input_schema
+
+    # Nested settings are closed contracts, not arbitrary dictionaries.
+    assert schema.properties["shopping_setting"]["additionalProperties"] is False
+    assert schema.properties["network_setting"]["properties"].keys() >= {
+        "target_google_search", "target_search_partners", "target_content_network",
+    }
+    assert "TARGET_CPM" in schema.properties["bidding_strategy"]["enum"]
+    assert "DEMAND_GEN" in schema.properties["advertising_channel_type"]["enum"]
+
+    valid_video = {
+        "customer_id": "123", "campaign_name": "Video", "daily_budget": 10,
+        "advertising_channel_type": "VIDEO", "bidding_strategy": "TARGET_CPM",
+        "target_cpm_micros": 2500000,
+        "video_setting": {"smart_performance": False},
+    }
+    assert validate_tool_input(schema, valid_video, include_provider_contract=True) == []
+
+    missing_video_setting = {key: value for key, value in valid_video.items() if key != "video_setting"}
+    assert any("video_setting" in error for error in validate_tool_input(
+        schema, missing_video_setting, include_provider_contract=True,
+    ))
+
+    engagement = {
+        "customer_id": "123", "campaign_name": "App engagement", "daily_budget": 10,
+        "advertising_channel_type": "MULTI_CHANNEL",
+        "advertising_channel_sub_type": "APP_CAMPAIGN_FOR_ENGAGEMENT",
+        "app_campaign_setting": {
+            "app_id": "com.example.app", "app_store": "GOOGLE_APP_STORE",
+        },
+        "bidding_strategy": "MAXIMIZE_CONVERSIONS",
+    }
+    assert any("selective_optimization" in error for error in validate_tool_input(
+        schema, engagement, include_provider_contract=True,
+    ))
+    engagement["app_campaign_setting"]["selective_optimization"] = [
+        "customers/123/conversionActions/9"
+    ]
+    assert validate_tool_input(schema, engagement, include_provider_contract=True) == []
+
+    shopping = {
+        "customer_id": "123", "campaign_name": "Shopping", "daily_budget": 10,
+        "advertising_channel_type": "SHOPPING", "bidding_strategy": "MANUAL_CPC",
+    }
+    assert any("shopping_setting" in error for error in validate_tool_input(
+        schema, shopping, include_provider_contract=True,
+    ))
+
+
+def test_google_campaign_client_normalizes_channel_alias_and_video_bidding():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "g1"})
+    operations = []
+    client._mutate = lambda resource, operation: (
+        operations.append((resource, operation)) or {
+            "data": {"results": [{"resourceName": f"customers/g1/{resource}/resource-1"}]}
+        }
+    )
+
+    client.create_campaign(
+        "PMax", "MAX", "MAXIMIZE_CONVERSIONS", 10,
+    )
+    campaign = operations[1][1]["create"]
+    assert campaign["advertisingChannelType"] == "PERFORMANCE_MAX"
+
+    operations.clear()
+    client.create_campaign(
+        "Video", "VIDEO", "TARGET_CPM", 10, target_cpm_micros=2500000,
+        network_setting={"target_content_network": True},
+    )
+    campaign = operations[1][1]["create"]
+    assert campaign["targetCpm"] == {"targetCpmMicros": 2500000}
+    assert campaign["networkSettings"] == {"targetContentNetwork": True}
+
+
 def test_google_keyword_creation_batches_criterion_operations():
     client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "g1"})
     calls = []

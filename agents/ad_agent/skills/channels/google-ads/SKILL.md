@@ -64,6 +64,17 @@ campaign_service = client.get_service('CampaignService')
 每次创建前必须按当前广告类型 Schema 校验预算、目标、网络、App/Shopping 设置和
 素材依赖；未标记为 `supported_dry_run` 的格式不得声称已有完整支持。
 
+Campaign 类型和参数以当前 Google Ads API 版本的 Capability Schema 为准。除
+Search、Display、Shopping、Video、App 和 Performance Max 外，Demand Gen、Hotel、
+Local、Smart、Travel、Local Services 等渠道也可以被识别，但在专用下级资源 Tool
+尚未发布前只能报告为未覆盖，不能把通用 Campaign 创建误报成完整业务流程。
+App Campaign 的渠道类型是 `MULTI_CHANNEL`，需要 App 设置；Shopping 需要
+Merchant Center 设置；Video 需要 Video 设置；Performance Max 需要目标设置。
+Target CPM/CPV 和 Target Impression Share 的依赖参数也由 Schema 条件校验，
+不要用默认值替代用户未提供的优化目标参数。Campaign 输入中的 `MAX`/`APP` 仅由
+Client 做兼容性归一化，Tool 对外仍发布 Google 当前的 `PERFORMANCE_MAX`/
+`MULTI_CHANNEL` 枚举。
+
 ## 📚 参考文档
 
 - **官方文档**: https://developers.google.com/google-ads/api/docs/start

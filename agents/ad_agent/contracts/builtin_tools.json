@@ -1,5 +1,5 @@
 {
-  "digest": "9367f5f165ce88629693efa9e04637072409b8e151a5315bfd3a74d8b4c03558",
+  "digest": "e3fbb2725efa15bc548c99175b130bee58eb7807dc0b7b077dca7890e604e2b0",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -1983,7 +1983,7 @@
       ]
     },
     "google-ads": {
-      "digest": "49d5435546554e15ef39bdbde5594862825685f08980a6c2900ba9c682ec83a1",
+      "digest": "dcfec2388f5d034d7a72ac4476d5a77a44b90420c56162cbfa549419942f421e",
       "tool_count": 58,
       "tools": [
         {
@@ -2706,13 +2706,35 @@
                 ]
               },
               {
-                "id": "target_value_dependency",
+                "id": "target_impression_share_dependency",
                 "if": {
-                  "bidding_strategy": "MAXIMIZE_CONVERSION_VALUE"
+                  "bidding_strategy": "TARGET_IMPRESSION_SHARE"
                 },
-                "message": "MAXIMIZE_CONVERSION_VALUE requires target_roas",
+                "message": "TARGET_IMPRESSION_SHARE requires share, location and cpc_bid_ceiling_micros",
                 "required": [
-                  "target_roas"
+                  "target_impression_share",
+                  "target_impression_share_location",
+                  "cpc_bid_ceiling_micros"
+                ]
+              },
+              {
+                "id": "target_cpm_dependency",
+                "if": {
+                  "bidding_strategy": "TARGET_CPM"
+                },
+                "message": "TARGET_CPM requires target_cpm_micros",
+                "required": [
+                  "target_cpm_micros"
+                ]
+              },
+              {
+                "id": "target_cpv_dependency",
+                "if": {
+                  "bidding_strategy": "TARGET_CPV"
+                },
+                "message": "TARGET_CPV requires target_cpv_micros",
+                "required": [
+                  "target_cpv_micros"
                 ]
               },
               {
@@ -2749,6 +2771,46 @@
                   "advertising_channel_sub_type": "APP_CAMPAIGN_FOR_ENGAGEMENT"
                 },
                 "message": "APP_CAMPAIGN_FOR_ENGAGEMENT requires advertising_channel_type=MULTI_CHANNEL"
+              },
+              {
+                "id": "app_engagement_selective_optimization",
+                "if": {
+                  "advertising_channel_sub_type": "APP_CAMPAIGN_FOR_ENGAGEMENT"
+                },
+                "message": "APP_CAMPAIGN_FOR_ENGAGEMENT requires app_campaign_setting.selective_optimization",
+                "required": [
+                  "app_campaign_setting.selective_optimization"
+                ]
+              },
+              {
+                "id": "shopping_setting_dependency",
+                "if": {
+                  "advertising_channel_type": "SHOPPING"
+                },
+                "message": "SHOPPING requires shopping_setting with Merchant Center fields",
+                "required": [
+                  "shopping_setting"
+                ]
+              },
+              {
+                "id": "video_setting_dependency",
+                "if": {
+                  "advertising_channel_type": "VIDEO"
+                },
+                "message": "VIDEO requires video_setting",
+                "required": [
+                  "video_setting"
+                ]
+              },
+              {
+                "id": "pmax_goal_setting_dependency",
+                "if": {
+                  "advertising_channel_type": "PERFORMANCE_MAX"
+                },
+                "message": "PERFORMANCE_MAX requires campaign_goal_setting",
+                "required": [
+                  "campaign_goal_setting"
+                ]
               }
             ],
             "properties": {
@@ -2767,14 +2829,24 @@
                   "SEARCH",
                   "DISPLAY",
                   "SHOPPING",
+                  "HOTEL",
                   "VIDEO",
                   "MULTI_CHANNEL",
-                  "PERFORMANCE_MAX"
+                  "LOCAL",
+                  "SMART",
+                  "DEMAND_GEN",
+                  "PERFORMANCE_MAX",
+                  "TRAVEL",
+                  "LOCAL_SERVICES"
                 ],
                 "input_aliases": [
                   "campaign_type"
                 ],
                 "intent_field": "campaign_type",
+                "intent_map": {
+                  "APP": "MULTI_CHANNEL",
+                  "MAX": "PERFORMANCE_MAX"
+                },
                 "type": "string"
               },
               "app_campaign_setting": {
@@ -2811,8 +2883,21 @@
                       "MAXIMIZE_CONVERSION_VALUE"
                     ],
                     "type": "string"
+                  },
+                  "selective_optimization": {
+                    "description": "Conversion action resource names used for App Engagement",
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "type": "array"
                   }
                 },
+                "required": [
+                  "app_id",
+                  "app_store"
+                ],
                 "type": "object"
               },
               "bidding_strategy": {
@@ -2825,7 +2910,11 @@
                   "TARGET_CPA",
                   "TARGET_ROAS",
                   "MAXIMIZE_CONVERSION_VALUE",
-                  "TARGET_IMPRESSION_SHARE"
+                  "TARGET_IMPRESSION_SHARE",
+                  "MANUAL_CPM",
+                  "MANUAL_CPV",
+                  "TARGET_CPM",
+                  "TARGET_CPV"
                 ],
                 "type": "string"
               },
@@ -2835,8 +2924,29 @@
                 "type": "number"
               },
               "campaign_goal_setting": {
-                "additionalProperties": true,
-                "description": "Performance Max campaign goal setting",
+                "additionalProperties": false,
+                "description": "Performance Max campaign goal settings",
+                "properties": {
+                  "ecommerce_checkout_progress": {
+                    "description": "E-commerce checkout progress",
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "goal_type": {
+                    "description": "Performance Max campaign goal",
+                    "enum": [
+                      "SALES_GOAL_TYPE_ECOMMERCE",
+                      "LEAD_GENERATION",
+                      "APP_INSTALL",
+                      "APP_ENGAGEMENT"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "goal_type"
+                ],
                 "type": "object"
               },
               "campaign_name": {
@@ -2845,16 +2955,29 @@
                 "type": "string"
               },
               "campaign_type": {
-                "description": "Channel type alias",
+                "description": "Channel type input alias",
                 "enum": [
                   "SEARCH",
                   "DISPLAY",
                   "SHOPPING",
+                  "HOTEL",
                   "VIDEO",
                   "MULTI_CHANNEL",
-                  "PERFORMANCE_MAX"
+                  "LOCAL",
+                  "SMART",
+                  "DEMAND_GEN",
+                  "PERFORMANCE_MAX",
+                  "TRAVEL",
+                  "LOCAL_SERVICES",
+                  "MAX",
+                  "APP"
                 ],
                 "type": "string"
+              },
+              "cpc_bid_ceiling_micros": {
+                "description": "Maximum CPC bid for Target Impression Share",
+                "minimum": 1,
+                "type": "integer"
               },
               "customer_id": {
                 "description": "Google Ads customer ID; MCC is not accepted here",
@@ -2874,8 +2997,22 @@
                 "type": "string"
               },
               "network_setting": {
-                "additionalProperties": true,
-                "description": "Campaign network settings",
+                "additionalProperties": false,
+                "description": "Google Campaign network settings",
+                "properties": {
+                  "target_content_network": {
+                    "description": "Serve on the Display/content network",
+                    "type": "boolean"
+                  },
+                  "target_google_search": {
+                    "description": "Serve on Google Search",
+                    "type": "boolean"
+                  },
+                  "target_search_partners": {
+                    "description": "Serve on Search partners",
+                    "type": "boolean"
+                  }
+                },
                 "type": "object"
               },
               "networks": {
@@ -2900,6 +3037,7 @@
                   },
                   "marketing_language": {
                     "description": "Shopping marketing language",
+                    "maxLength": 5,
                     "minLength": 2,
                     "type": "string"
                   },
@@ -2916,10 +3054,16 @@
                   },
                   "sales_country": {
                     "description": "Shopping sales country",
+                    "maxLength": 3,
                     "minLength": 2,
                     "type": "string"
                   }
                 },
+                "required": [
+                  "merchant_id",
+                  "sales_country",
+                  "marketing_language"
+                ],
                 "type": "object"
               },
               "start_date": {
@@ -2940,11 +3084,30 @@
                 "minimum": 1,
                 "type": "integer"
               },
+              "target_cpm_micros": {
+                "description": "Target CPM in account micros",
+                "minimum": 1,
+                "type": "integer"
+              },
+              "target_cpv_micros": {
+                "description": "Target CPV in account micros",
+                "minimum": 1,
+                "type": "integer"
+              },
               "target_impression_share": {
                 "description": "Target impression share",
                 "maximum": 1,
                 "minimum": 0,
                 "type": "number"
+              },
+              "target_impression_share_location": {
+                "description": "Target search result location",
+                "enum": [
+                  "ANYWHERE_ON_PAGE",
+                  "TOP_OF_PAGE",
+                  "ABSOLUTE_TOP_OF_PAGE"
+                ],
+                "type": "string"
               },
               "target_roas": {
                 "description": "Target ROAS",
@@ -2952,13 +3115,79 @@
                 "type": "number"
               },
               "targeting_setting": {
-                "additionalProperties": true,
-                "description": "Campaign targeting settings",
+                "additionalProperties": false,
+                "description": "Google Campaign targeting settings",
+                "properties": {
+                  "geo_target_type": {
+                    "description": "Geographic targeting behavior",
+                    "enum": [
+                      "LOCAL_OR_PRESENT",
+                      "PRESENCE"
+                    ],
+                    "type": "string"
+                  },
+                  "target_restrictions": {
+                    "description": "Targeting dimensions that should be restricted",
+                    "items": {
+                      "additionalProperties": false,
+                      "description": "Target restriction",
+                      "properties": {
+                        "bid_only": {
+                          "description": "Bid only instead of restricting reach",
+                          "type": "boolean"
+                        },
+                        "targeting_dimension": {
+                          "description": "Google targeting dimension",
+                          "enum": [
+                            "AUDIENCE",
+                            "AGE_RANGE",
+                            "GENDER",
+                            "INCOME_RANGE",
+                            "PARENTAL_STATUS",
+                            "PLACEMENT",
+                            "TOPIC",
+                            "USER_INTEREST",
+                            "CUSTOM_AFFINITY",
+                            "CUSTOM_INTENT",
+                            "KEYWORD",
+                            "LOCATION"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "targeting_dimension"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
                 "type": "object"
               },
               "video_setting": {
-                "additionalProperties": true,
+                "additionalProperties": false,
                 "description": "Google Video campaign settings",
+                "properties": {
+                  "smart_performance": {
+                    "description": "Enable Smart performance optimization",
+                    "type": "boolean"
+                  },
+                  "video_ad_format_preference": {
+                    "description": "Preferred video ad formats",
+                    "items": {
+                      "enum": [
+                        "TRUE_VIEW_IN_STREAM",
+                        "NON_TRUE_VIEW_IN_STREAM",
+                        "BUMPER",
+                        "OUTSTREAM"
+                      ],
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
                 "type": "object"
               }
             },

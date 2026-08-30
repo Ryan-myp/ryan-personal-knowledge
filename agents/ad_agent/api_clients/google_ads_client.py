@@ -39,6 +39,12 @@ class GoogleAdsAPIClient(BasePlatformClient):
     API_VERSION = "v24"
     SUPPORTED_API_VERSIONS = (API_VERSION,)
     BASE_URL = f"https://googleads.googleapis.com/{API_VERSION}"
+    CHANNEL_TYPE_ALIASES = {
+        # Keep the adapter tolerant of terminology found in older campaign
+        # briefs while always emitting the current Google Ads enum.
+        "MAX": "PERFORMANCE_MAX",
+        "APP": "MULTI_CHANNEL",
+    }
     DATE_LITERALS = {
         "TODAY", "YESTERDAY", "LAST_7_DAYS", "LAST_14_DAYS", "LAST_30_DAYS",
         "THIS_MONTH", "LAST_MONTH", "THIS_WEEK_SUN_TODAY", "THIS_WEEK_MON_TODAY",
@@ -2146,6 +2152,10 @@ class GoogleAdsAPIClient(BasePlatformClient):
         target_cpa_micros: int = None,
         target_roas: float = None,
         target_impression_share: float = None,
+        target_impression_share_location: str = None,
+        cpc_bid_ceiling_micros: int = None,
+        target_cpm_micros: int = None,
+        target_cpv_micros: int = None,
         status: str = None,
         networks: list[str] = None,
         app_campaign_setting: dict = None,
@@ -2187,6 +2197,10 @@ class GoogleAdsAPIClient(BasePlatformClient):
         budget_resource_name = self._mutation_resource_name(budget_resp)
 
         # Step 2: 创建 Campaign（初始状态 PAUSED）
+        advertising_channel_type = self.CHANNEL_TYPE_ALIASES.get(
+            str(advertising_channel_type or "").upper(),
+            str(advertising_channel_type or "").upper(),
+        )
         campaign_data = {
             'name': name,
             'advertisingChannelType': advertising_channel_type,
@@ -2201,7 +2215,6 @@ class GoogleAdsAPIClient(BasePlatformClient):
             ('campaignGoalSetting', campaign_goal_setting),
             ('videoSetting', video_setting),
             ('targetingSetting', targeting_setting),
-            ('networkSetting', network_setting),
         ):
             if value is not None:
                 if not isinstance(value, dict):
@@ -2214,13 +2227,23 @@ class GoogleAdsAPIClient(BasePlatformClient):
             campaign_data['startDate'] = start_date
         if end_date:
             campaign_data['endDate'] = end_date
+        if network_setting is not None:
+            if not isinstance(network_setting, dict):
+                raise ValueError("network_setting must be an object")
+            campaign_data['networkSettings'] = self._camel_case_keys(network_setting)
         if networks:
             selected = {str(network).upper() for network in networks}
-            campaign_data['networkSettings'] = {
+            network_settings = dict(campaign_data.get('networkSettings', {}))
+            network_settings.update({
                 'targetGoogleSearch': 'GOOGLE_SEARCH' in selected,
                 'targetSearchNetwork': 'SEARCH_PARTNERS' in selected,
                 'targetContentNetwork': 'DISPLAY_NETWORK' in selected,
-            }
+            })
+            # The explicit convenience list supplies the canonical network
+            # switches; provider-shaped switches already supplied above are
+            # retained for fields not represented by the convenience list.
+            network_settings.update(campaign_data.get('networkSettings', {}))
+            campaign_data['networkSettings'] = network_settings
 
         if app_campaign_setting is not None:
             if not isinstance(app_campaign_setting, dict):
@@ -2235,6 +2258,10 @@ class GoogleAdsAPIClient(BasePlatformClient):
         
         # 出价策略附加参数
         strategy = (bidding_strategy or 'MAXIMIZE_CONVERSIONS').upper()
+        if strategy == 'TARGET_CPM' and int(target_cpm_micros or 0) <= 0:
+            raise ValueError("TARGET_CPM requires a positive target_cpm_micros")
+        if strategy == 'TARGET_CPV' and int(target_cpv_micros or 0) <= 0:
+            raise ValueError("TARGET_CPV requires a positive target_cpv_micros")
         if strategy == 'MANUAL_CPC':
             campaign_data['manualCpc'] = {}
         elif strategy == 'TARGET_CPA':
@@ -2255,10 +2282,26 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 campaign_data['maximizeConversionValue']['targetRoas'] = target_roas
         elif strategy == 'TARGET_IMPRESSION_SHARE':
             campaign_data['targetImpressionShare'] = {
-                'location': 'ANYWHERE_ON_PAGE',
+                'location': target_impression_share_location or 'ANYWHERE_ON_PAGE',
                 'locationFractionMicros': int(float(
                     0.5 if target_impression_share is None else target_impression_share
                 ) * 1_000_000),
+            }
+            if cpc_bid_ceiling_micros is not None:
+                campaign_data['targetImpressionShare']['cpcBidCeilingMicros'] = int(
+                    cpc_bid_ceiling_micros
+                )
+        elif strategy == 'MANUAL_CPM':
+            campaign_data['manualCpm'] = {}
+        elif strategy == 'MANUAL_CPV':
+            campaign_data['manualCpv'] = {}
+        elif strategy == 'TARGET_CPM':
+            campaign_data['targetCpm'] = {
+                'targetCpmMicros': int(target_cpm_micros or 0),
+            }
+        elif strategy == 'TARGET_CPV':
+            campaign_data['targetCpv'] = {
+                'targetCpvMicros': int(target_cpv_micros or 0),
             }
         else:
             campaign_data['maximizeConversions'] = {}

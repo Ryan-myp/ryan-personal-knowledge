@@ -6,12 +6,20 @@ from typing import Any
 
 
 GOOGLE_CHANNEL_TYPES = [
-    "SEARCH", "DISPLAY", "SHOPPING", "VIDEO", "MULTI_CHANNEL", "PERFORMANCE_MAX",
+    # AdvertisingChannelType values published by the Google Ads v24 API.
+    # ``MAX`` and ``APP`` are intentionally not advertised here: they are
+    # terminology used by older internal examples, not provider enum values.
+    "SEARCH", "DISPLAY", "SHOPPING", "HOTEL", "VIDEO", "MULTI_CHANNEL",
+    "LOCAL", "SMART", "DEMAND_GEN", "PERFORMANCE_MAX", "TRAVEL",
+    "LOCAL_SERVICES",
 ]
+GOOGLE_CHANNEL_INPUT_TYPES = [*GOOGLE_CHANNEL_TYPES, "MAX", "APP"]
+GOOGLE_CHANNEL_TYPE_INTENT_MAP = {"MAX": "PERFORMANCE_MAX", "APP": "MULTI_CHANNEL"}
 GOOGLE_CHANNEL_SUB_TYPES = ["APP_CAMPAIGN", "APP_CAMPAIGN_FOR_ENGAGEMENT"]
 GOOGLE_BIDDING_STRATEGIES = [
     "MANUAL_CPC", "MAXIMIZE_CLICKS", "MAXIMIZE_CONVERSIONS", "TARGET_CPA",
     "TARGET_ROAS", "MAXIMIZE_CONVERSION_VALUE", "TARGET_IMPRESSION_SHARE",
+    "MANUAL_CPM", "MANUAL_CPV", "TARGET_CPM", "TARGET_CPV",
 ]
 GOOGLE_PORTFOLIO_BIDDING_STRATEGIES = [
     "MANUAL_CPC", "MAXIMIZE_CONVERSIONS", "MAXIMIZE_CONVERSION_VALUE",
@@ -48,6 +56,19 @@ GOOGLE_PRODUCT_CHANNELS = ["ONLINE", "LOCAL"]
 GOOGLE_PRODUCT_LEVELS = ["LEVEL1", "LEVEL2", "LEVEL3", "LEVEL4", "LEVEL5"]
 GOOGLE_VIDEO_AD_FORMATS = [
     "SKIPPABLE_IN_STREAM", "NON_SKIPPABLE_IN_STREAM", "BUMPER", "OUTSTREAM",
+]
+GOOGLE_VIDEO_CAMPAIGN_FORMAT_PREFERENCES = [
+    "TRUE_VIEW_IN_STREAM", "NON_TRUE_VIEW_IN_STREAM", "BUMPER", "OUTSTREAM",
+]
+GOOGLE_TARGETING_DIMENSIONS = [
+    "AUDIENCE", "AGE_RANGE", "GENDER", "INCOME_RANGE", "PARENTAL_STATUS",
+    "PLACEMENT", "TOPIC", "USER_INTEREST", "CUSTOM_AFFINITY", "CUSTOM_INTENT",
+    "KEYWORD", "LOCATION",
+]
+GOOGLE_GEO_TARGET_TYPES = ["LOCAL_OR_PRESENT", "PRESENCE"]
+GOOGLE_PMAX_GOAL_TYPES = [
+    "SALES_GOAL_TYPE_ECOMMERCE", "LEAD_GENERATION", "APP_INSTALL",
+    "APP_ENGAGEMENT",
 ]
 GOOGLE_CAMPAIGN_CRITERION_TYPES = [
     "LOCATION", "LANGUAGE", "DEVICE", "USER_LIST", "USER_INTEREST",
@@ -121,14 +142,18 @@ def _field(field_type: Any, description: str = "", **kwargs: Any) -> dict[str, A
 
 
 def _object(
-    properties: dict[str, Any], description: str, *, additional_properties: bool = False
+    properties: dict[str, Any], description: str, *,
+    additional_properties: bool = False, required: list[str] | None = None,
 ) -> dict[str, Any]:
-    return {
+    schema = {
         "type": "object",
         "description": description,
         "properties": properties,
         "additionalProperties": additional_properties,
     }
+    if required:
+        schema["required"] = list(required)
+    return schema
 
 
 def google_campaign_budget_schema() -> dict[str, Any]:
@@ -333,6 +358,92 @@ def google_campaign_budget_update_schema() -> dict[str, Any]:
     }, "Allowed CampaignBudget update fields")
 
 
+def google_app_campaign_setting_schema() -> dict[str, Any]:
+    """Closed contract for the settings specific to App campaigns."""
+    return _object({
+        "app_id": _field("string", "Google Play package name or iOS App Store ID", minLength=1),
+        "app_store": _field("string", "App store", enum=GOOGLE_APP_STORES),
+        "bidding_strategy_type": _field(
+            "string", "App campaign bidding strategy", enum=GOOGLE_APP_BIDDING_TYPES,
+        ),
+        "bidding_strategy_goal_type": _field(
+            "string", "App campaign optimization goal", enum=[
+                "OPTIMIZE_INSTALLS_TARGET_INSTALL_COST",
+                "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_INSTALL_COST",
+            ],
+        ),
+        "selective_optimization": _field(
+            "array", "Conversion action resource names used for App Engagement",
+            minItems=1, items={"type": "string", "minLength": 1},
+        ),
+    }, "Google App Campaign settings", required=["app_id", "app_store"])
+
+
+def google_shopping_setting_schema() -> dict[str, Any]:
+    """Closed contract for Merchant Center-backed Shopping campaigns."""
+    return _object({
+        "merchant_id": _field("integer", "Merchant Center ID", minimum=1),
+        "sales_country": _field("string", "Shopping sales country", minLength=2, maxLength=3),
+        "marketing_language": _field("string", "Shopping marketing language", minLength=2, maxLength=5),
+        "priority": _field("integer", "Shopping campaign priority", minimum=0, maximum=100),
+        "exclude_offline_store_locations": _field("boolean", "Exclude offline store locations"),
+    }, "Google Shopping settings", required=["merchant_id", "sales_country", "marketing_language"])
+
+
+def google_video_setting_schema() -> dict[str, Any]:
+    """Video campaign controls exposed by the hierarchy guide."""
+    return _object({
+        "smart_performance": _field("boolean", "Enable Smart performance optimization"),
+        "video_ad_format_preference": _field(
+            "array", "Preferred video ad formats", minItems=1,
+            items={"type": "string", "enum": GOOGLE_VIDEO_CAMPAIGN_FORMAT_PREFERENCES},
+        ),
+    }, "Google Video campaign settings")
+
+
+def google_targeting_setting_schema() -> dict[str, Any]:
+    """Campaign-level audience restriction contract.
+
+    Granular locations, audiences and demographics remain separate
+    CampaignCriterion tools.  This object only describes Google's
+    ``targetRestrictions`` switch and therefore cannot silently accept an
+    arbitrary provider payload.
+    """
+    return _object({
+        "geo_target_type": _field(
+            "string", "Geographic targeting behavior", enum=GOOGLE_GEO_TARGET_TYPES,
+        ),
+        "target_restrictions": _field(
+            "array", "Targeting dimensions that should be restricted",
+            items=_object({
+                "targeting_dimension": _field(
+                    "string", "Google targeting dimension", enum=GOOGLE_TARGETING_DIMENSIONS,
+                ),
+                "bid_only": _field("boolean", "Bid only instead of restricting reach"),
+            }, "Target restriction", required=["targeting_dimension"]),
+        ),
+    }, "Google Campaign targeting settings")
+
+
+def google_network_setting_schema() -> dict[str, Any]:
+    """Serving network switches for Search/Display campaigns."""
+    return _object({
+        "target_google_search": _field("boolean", "Serve on Google Search"),
+        "target_search_partners": _field("boolean", "Serve on Search partners"),
+        "target_content_network": _field("boolean", "Serve on the Display/content network"),
+    }, "Google Campaign network settings")
+
+
+def google_campaign_goal_setting_schema() -> dict[str, Any]:
+    """PMax goal metadata from the campaign creation contract."""
+    return _object({
+        "goal_type": _field("string", "Performance Max campaign goal", enum=GOOGLE_PMAX_GOAL_TYPES),
+        "ecommerce_checkout_progress": _field(
+            "number", "E-commerce checkout progress", minimum=0, maximum=1,
+        ),
+    }, "Performance Max campaign goal settings", required=["goal_type"])
+
+
 def google_campaign_schema() -> dict[str, Any]:
     return {
         "required": ["customer_id", "campaign_name"],
@@ -345,8 +456,9 @@ def google_campaign_schema() -> dict[str, Any]:
                 "string", "Channel type", enum=GOOGLE_CHANNEL_TYPES,
                 input_aliases=["campaign_type"], default="SEARCH",
                 intent_field="campaign_type",
+                intent_map=GOOGLE_CHANNEL_TYPE_INTENT_MAP,
             ),
-            "campaign_type": _field("string", "Channel type alias", enum=GOOGLE_CHANNEL_TYPES),
+            "campaign_type": _field("string", "Channel type input alias", enum=GOOGLE_CHANNEL_INPUT_TYPES),
             "advertising_channel_sub_type": _field(
                 "string", "Channel subtype (App campaigns and Performance Max)",
                 enum=GOOGLE_CHANNEL_SUB_TYPES,
@@ -362,41 +474,37 @@ def google_campaign_schema() -> dict[str, Any]:
             "target_roas": _field("number", "Target ROAS", minimum=0.01),
             "target_impression_share": _field("number", "Target impression share", minimum=0, maximum=1),
             "networks": _field("array", "Serving networks", items={"type": "string", "enum": GOOGLE_TARGETING_NETWORKS}),
-            "app_campaign_setting": _object({
-                "app_id": _field("string", "Google Play package name or iOS App Store ID", minLength=1),
-                "app_store": _field("string", "App store", enum=GOOGLE_APP_STORES),
-                "bidding_strategy_type": _field(
-                    "string", "App campaign bidding strategy", enum=GOOGLE_APP_BIDDING_TYPES,
-                ),
-                "bidding_strategy_goal_type": _field(
-                    "string", "App campaign optimization goal", enum=[
-                        "OPTIMIZE_INSTALLS_TARGET_INSTALL_COST",
-                        "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_INSTALL_COST",
-                    ],
-                ),
-            }, "Google App Campaign settings"),
-            "shopping_setting": _object({
-                "merchant_id": _field("integer", "Merchant Center ID", minimum=1),
-                "sales_country": _field("string", "Shopping sales country", minLength=2),
-                "marketing_language": _field("string", "Shopping marketing language", minLength=2),
-                "priority": _field("integer", "Shopping campaign priority", minimum=0, maximum=100),
-                "exclude_offline_store_locations": _field("boolean", "Exclude offline store locations"),
-            }, "Google Shopping settings"),
-            "campaign_goal_setting": _field("object", "Performance Max campaign goal setting", additionalProperties=True),
-            "video_setting": _field("object", "Google Video campaign settings", additionalProperties=True),
-            "targeting_setting": _field("object", "Campaign targeting settings", additionalProperties=True),
-            "network_setting": _field("object", "Campaign network settings", additionalProperties=True),
+            "app_campaign_setting": google_app_campaign_setting_schema(),
+            "shopping_setting": google_shopping_setting_schema(),
+            "campaign_goal_setting": google_campaign_goal_setting_schema(),
+            "video_setting": google_video_setting_schema(),
+            "targeting_setting": google_targeting_setting_schema(),
+            "network_setting": google_network_setting_schema(),
             "final_url_suffix": _field("string", "Final URL suffix for tracking"),
             "start_date": _field("string", "YYYY-MM-DD start date"),
             "end_date": _field("string", "YYYY-MM-DD end date"),
+            "target_impression_share_location": _field(
+                "string", "Target search result location",
+                enum=GOOGLE_TARGET_IMPRESSION_SHARE_LOCATIONS,
+            ),
+            "cpc_bid_ceiling_micros": _field(
+                "integer", "Maximum CPC bid for Target Impression Share", minimum=1,
+            ),
+            "target_cpm_micros": _field("integer", "Target CPM in account micros", minimum=1),
+            "target_cpv_micros": _field("integer", "Target CPV in account micros", minimum=1),
         },
         "conditional_rules": [
             {"id": "target_cpa_dependency", "if": {"bidding_strategy": "TARGET_CPA"},
              "required": ["target_cpa_micros"], "message": "TARGET_CPA requires target_cpa_micros"},
             {"id": "target_roas_dependency", "if": {"bidding_strategy": "TARGET_ROAS"},
              "required": ["target_roas"], "message": "TARGET_ROAS requires target_roas"},
-            {"id": "target_value_dependency", "if": {"bidding_strategy": "MAXIMIZE_CONVERSION_VALUE"},
-             "required": ["target_roas"], "message": "MAXIMIZE_CONVERSION_VALUE requires target_roas"},
+            {"id": "target_impression_share_dependency", "if": {"bidding_strategy": "TARGET_IMPRESSION_SHARE"},
+             "required": ["target_impression_share", "target_impression_share_location", "cpc_bid_ceiling_micros"],
+             "message": "TARGET_IMPRESSION_SHARE requires share, location and cpc_bid_ceiling_micros"},
+            {"id": "target_cpm_dependency", "if": {"bidding_strategy": "TARGET_CPM"},
+             "required": ["target_cpm_micros"], "message": "TARGET_CPM requires target_cpm_micros"},
+            {"id": "target_cpv_dependency", "if": {"bidding_strategy": "TARGET_CPV"},
+             "required": ["target_cpv_micros"], "message": "TARGET_CPV requires target_cpv_micros"},
             {"id": "app_campaign_dependency", "if": {"advertising_channel_type": "MULTI_CHANNEL"},
              "required": ["advertising_channel_sub_type", "app_campaign_setting"],
              "message": "MULTI_CHANNEL App campaigns require advertising_channel_sub_type and app_campaign_setting"},
@@ -406,6 +514,18 @@ def google_campaign_schema() -> dict[str, Any]:
             {"id": "app_engagement_channel_dependency", "if": {"advertising_channel_sub_type": "APP_CAMPAIGN_FOR_ENGAGEMENT"},
              "allowed": {"advertising_channel_type": ["MULTI_CHANNEL"]},
              "message": "APP_CAMPAIGN_FOR_ENGAGEMENT requires advertising_channel_type=MULTI_CHANNEL"},
+            {"id": "app_engagement_selective_optimization", "if": {"advertising_channel_sub_type": "APP_CAMPAIGN_FOR_ENGAGEMENT"},
+             "required": ["app_campaign_setting.selective_optimization"],
+             "message": "APP_CAMPAIGN_FOR_ENGAGEMENT requires app_campaign_setting.selective_optimization"},
+            {"id": "shopping_setting_dependency", "if": {"advertising_channel_type": "SHOPPING"},
+             "required": ["shopping_setting"],
+             "message": "SHOPPING requires shopping_setting with Merchant Center fields"},
+            {"id": "video_setting_dependency", "if": {"advertising_channel_type": "VIDEO"},
+             "required": ["video_setting"],
+             "message": "VIDEO requires video_setting"},
+            {"id": "pmax_goal_setting_dependency", "if": {"advertising_channel_type": "PERFORMANCE_MAX"},
+             "required": ["campaign_goal_setting"],
+             "message": "PERFORMANCE_MAX requires campaign_goal_setting"},
         ],
     }
 
@@ -869,6 +989,70 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
             "supported_fields": ["app_id", "app_store", "bidding_strategy_type", "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_INSTALL_COST"],
             "gaps": ["App campaign asset/ad Tool", "live provider verification"],
             "source_document": source_document,
+        },
+        # v24 exposes additional campaign channel types beyond the six
+        # formats covered by the current hierarchy guide.  Publish them as
+        # explicit gaps so a caller can distinguish an accepted enum from a
+        # complete campaign workflow.
+        {
+            "format_id": "demand_gen",
+            "category": "demand_gen",
+            "resource_type": "campaign",
+            "coverage": "declared_only",
+            "tool_names": [],
+            "dependencies": ["demand_gen_ad", "audiences", "assets"],
+            "gaps": ["dedicated Demand Gen campaign/ad payload Tools"],
+            "source_document": "Google Ads API v24 AdvertisingChannelType",
+        },
+        {
+            "format_id": "hotel",
+            "category": "hotel",
+            "resource_type": "campaign",
+            "coverage": "declared_only",
+            "tool_names": [],
+            "dependencies": ["hotel_ad_group", "hotel_feed"],
+            "gaps": ["dedicated Hotel campaign/ad payload Tools"],
+            "source_document": "Google Ads API v24 AdvertisingChannelType",
+        },
+        {
+            "format_id": "local",
+            "category": "local",
+            "resource_type": "campaign",
+            "coverage": "declared_only",
+            "tool_names": [],
+            "dependencies": ["business_profile", "local_ad"],
+            "gaps": ["dedicated Local campaign/ad payload Tools"],
+            "source_document": "Google Ads API v24 AdvertisingChannelType",
+        },
+        {
+            "format_id": "smart",
+            "category": "smart",
+            "resource_type": "campaign",
+            "coverage": "declared_only",
+            "tool_names": [],
+            "dependencies": ["smart_campaign_ad"],
+            "gaps": ["dedicated Smart campaign/ad payload Tools"],
+            "source_document": "Google Ads API v24 AdvertisingChannelType",
+        },
+        {
+            "format_id": "travel",
+            "category": "travel",
+            "resource_type": "campaign",
+            "coverage": "declared_only",
+            "tool_names": [],
+            "dependencies": ["travel_ad", "travel_feed"],
+            "gaps": ["dedicated Travel campaign/ad payload Tools"],
+            "source_document": "Google Ads API v24 AdvertisingChannelType",
+        },
+        {
+            "format_id": "local_services",
+            "category": "local_services",
+            "resource_type": "campaign",
+            "coverage": "declared_only",
+            "tool_names": [],
+            "dependencies": ["local_services_lead"],
+            "gaps": ["dedicated Local Services API integration"],
+            "source_document": "Google Ads API v24 AdvertisingChannelType",
         },
     ]
 

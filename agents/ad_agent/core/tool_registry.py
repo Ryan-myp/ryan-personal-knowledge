@@ -310,6 +310,15 @@ def validate_tool_input(
     def is_missing(value: Any) -> bool:
         return value in (None, "", {}, [])
 
+    def value_at(path: str) -> Any:
+        """Read a dotted field path for cross-object conditional rules."""
+        value: Any = data
+        for part in str(path).split("."):
+            if not isinstance(value, dict) or part not in value:
+                return None
+            value = value[part]
+        return value
+
     def validate_finite_numbers(value: Any, path: str = "") -> None:
         """Reject non-JSON numeric values even inside open provider objects."""
         if isinstance(value, bool):
@@ -385,7 +394,7 @@ def validate_tool_input(
             continue
 
         for field_name in rule.get("required", rule.get("required_fields", [])) or []:
-            if is_missing(data.get(field_name)):
+            if is_missing(value_at(field_name)):
                 errors.append(
                     rule.get("message")
                     or f"Field '{field_name}' is required when {conditions}"
@@ -394,14 +403,15 @@ def validate_tool_input(
         allowed = rule.get("allowed", rule.get("enum", {}))
         if isinstance(allowed, dict):
             for field_name, values in allowed.items():
-                if field_name in data and data[field_name] not in values:
+                field_value = value_at(field_name)
+                if field_value is not None and field_value not in values:
                     errors.append(
                         rule.get("message")
                         or f"Field '{field_name}' must be one of {list(values)} when {conditions}"
                     )
 
         for field_name in rule.get("forbidden", rule.get("forbidden_fields", [])) or []:
-            if not is_missing(data.get(field_name)):
+            if not is_missing(value_at(field_name)):
                 errors.append(
                     rule.get("message")
                     or f"Field '{field_name}' is not allowed when {conditions}"
