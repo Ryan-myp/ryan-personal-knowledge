@@ -194,12 +194,12 @@ def _validate_no_credential_assignments(files: Mapping[str, bytes]) -> None:
 
     Natural-language guidance may explain that credentials are Runtime-owned,
     but a Skill package must not contain credential-shaped assignments. Eval
-    case fixtures are excluded because they deliberately test this boundary
-    and are never loaded as model context.
+    cases can be sent to a model by a judge/engine, so they are covered by the
+    same boundary as SKILL.md and references.
     """
     for raw_path, data in files.items():
         path = str(raw_path)
-        if path.lower().startswith("evals/") or Path(path).suffix.lower() not in _TEXT_SUFFIXES:
+        if Path(path).suffix.lower() not in _TEXT_SUFFIXES:
             continue
         try:
             text = bytes(data).decode("utf-8")
@@ -222,6 +222,49 @@ def skill_package_digest(files: Mapping[str, bytes]) -> str:
         digest.update(len(data).to_bytes(8, "big"))
         digest.update(data)
     return digest.hexdigest()
+
+
+def _evaluation_secret_values() -> tuple[str, ...]:
+    """Return high-confidence secret values for report/error scrubbing.
+
+    The evaluation subprocess is intentionally given a minimal environment,
+    but a platform SDK or the ``skill-up`` CLI can still echo a configured
+    secret in its diagnostics.  Scrub the actual values as a second boundary;
+    do not rely only on field-name based redaction.
+    """
+    markers = (
+        "API_KEY", "ACCESS_TOKEN", "REFRESH_TOKEN", "DEVELOPER_TOKEN",
+        "CLIENT_SECRET", "APP_SECRET", "PRIVATE_KEY", "PASSWORD",
+        "CREDENTIAL", "AUTHORIZATION", "BC_ID", "PARTNER_ID", "PERTER_ID",
+        "MCC", "LOGIN_CUSTOMER_ID", "MANAGER_CUSTOMER_ID",
+    )
+    values = {
+        str(value)
+        for key, value in os.environ.items()
+        if any(marker in key.upper() for marker in markers)
+        and isinstance(value, str) and len(value) >= 8
+    }
+    return tuple(sorted(values, key=len, reverse=True))
+
+
+def _safe_evaluation_payload(value: Any) -> Any:
+    """Redact persisted evaluation evidence, including echoed env secrets."""
+    from .runtime.runtime import AgentRuntime
+
+    redacted = AgentRuntime._redact_for_persistence(value)
+
+    def scrub(item: Any) -> Any:
+        if isinstance(item, str):
+            for secret in _evaluation_secret_values():
+                item = item.replace(secret, "<redacted>")
+            return item
+        if isinstance(item, dict):
+            return {key: scrub(child) for key, child in item.items()}
+        if isinstance(item, list):
+            return [scrub(child) for child in item]
+        return item
+
+    return scrub(redacted)
 
 
 class ManagedSkillManager:
@@ -381,8 +424,13 @@ class ManagedSkillManager:
         version = re.sub(r"[^a-zA-Z0-9_-]", "_", str(record["version"]))
         if not version:
             raise SkillPackageError("invalid Skill version path")
+        expected_digest = str(record.get("sha256") or "")
+        if not re.fullmatch(r"[0-9a-f]{64}", expected_digest):
+            raise SkillPackageError("invalid Skill package digest")
         target = self.root / tenant_key / skill_name / version
         if target.exists():
+            if not target.is_dir() or self._directory_digest(target) != expected_digest:
+                raise SkillPackageError("materialized Skill snapshot digest mismatch")
             return target
         staging_root = self.root / ".staging"
         staging_root.mkdir(parents=True, exist_ok=True)
@@ -399,6 +447,25 @@ class ManagedSkillManager:
             shutil.rmtree(staging, ignore_errors=True)
             raise
         return target
+
+    @staticmethod
+    def _directory_digest(directory: Path) -> str:
+        """Hash a materialized package without following links."""
+        files: dict[str, bytes] = {}
+        for path in sorted(directory.rglob("*")):
+            if path.is_symlink():
+                raise SkillPackageError(
+                    f"materialized Skill contains a non-regular file: {path.name}"
+                )
+            if path.is_dir():
+                continue
+            if not path.is_file():
+                raise SkillPackageError(
+                    f"materialized Skill contains a non-regular file: {path.name}"
+                )
+            relative = path.relative_to(directory).as_posix()
+            files[relative] = path.read_bytes()
+        return skill_package_digest(files)
 
     def publish(
         self, tenant_id: str, skill_name: str, version: str, runtime: Any = None,
@@ -666,23 +733,29 @@ class ManagedSkillManager:
             version_id, tenant_id, "running", run_id=run_id
         )
         report: dict[str, Any] = {"run_id": run_id}
+        evaluation_workspace: Optional[Path] = None
+        generated_eval: Optional[Path] = None
         try:
             eval_path, _config = self._validate_eval_config(record)
             package_root = self._materialize(record)
-            actual_eval = package_root / eval_path
             report_root = self.root / ".evaluations" / run_id
             report_root.mkdir(parents=True, exist_ok=True)
+            # Run skill-up against a disposable copy.  The materialized
+            # version directory is an immutable cache and must never receive
+            # generated eval config, output, or files created by the CLI.
+            evaluation_workspace = report_root / "workspace"
+            shutil.copytree(package_root, evaluation_workspace)
+            actual_eval = evaluation_workspace / eval_path
             command = os.environ.get("SKILL_UP_BIN", "skill-up")
             command_parts = [command] if os.path.sep in command else [shutil.which(command) or command]
             timeout = max(1, min(int(os.environ.get("AD_AGENT_SKILL_UP_TIMEOUT", "900")), 1800))
-            evaluation_env = self._evaluation_environment()
+            engine_name = str((_config.get("engine") or {}).get("name", ""))
+            evaluation_env = self._evaluation_environment(engine_name)
             evaluation_env["AD_AGENT_REPO_ROOT"] = str(
                 Path(__file__).resolve().parents[2]
             )
-            evaluation_env["AD_AGENT_SKILLS_ROOT"] = str(package_root)
+            evaluation_env["AD_AGENT_SKILLS_ROOT"] = str(evaluation_workspace)
             eval_config = _config
-            generated_eval: Optional[Path] = None
-            engine_name = str((_config.get("engine") or {}).get("name", ""))
             if engine_name in {"ad-agent-runtime", "claude_sdk"}:
                 # The platform owns these adapters. User packages may provide
                 # cases and judges, but never the command that runs them.
@@ -691,7 +764,7 @@ class ManagedSkillManager:
                     else "skill_up_engine.py"
                 )
                 adapter = Path(__file__).resolve().parent / "evals" / adapter_name
-                generated_eval = package_root / f".skill-up-eval-{run_id}.yaml"
+                generated_eval = evaluation_workspace / f".skill-up-eval-{run_id}.yaml"
                 eval_config = dict(_config)
                 original_engine = _config.get("engine") or {}
                 eval_config["engine"] = {
@@ -728,7 +801,7 @@ class ManagedSkillManager:
                 actual_eval = generated_eval
             validation = subprocess.run(
                 command_parts + ["validate", str(actual_eval)],
-                cwd=str(package_root), capture_output=True, text=True,
+                cwd=str(evaluation_workspace), capture_output=True, text=True,
                 timeout=timeout, check=False, env=evaluation_env,
             )
             report["validate_exit_code"] = validation.returncode
@@ -743,7 +816,7 @@ class ManagedSkillManager:
                         "run", str(actual_eval),
                         "--output-dir", str(report_root), "--no-delete",
                     ],
-                    cwd=str(package_root), capture_output=True, text=True,
+                    cwd=str(evaluation_workspace), capture_output=True, text=True,
                     timeout=timeout, check=False, env=evaluation_env,
                 )
                 report["run_exit_code"] = run.returncode
@@ -758,36 +831,42 @@ class ManagedSkillManager:
                 status = "passed" if run.returncode == 0 else "failed"
                 error = None if status == "passed" else "skill-up evaluation failed"
             # Provider credentials must never be retained in an evaluation
-            # report, even if an Agent prints them accidentally.
-            from .runtime.runtime import AgentRuntime
-            safe_report = AgentRuntime._redact_for_persistence(report)
+            # report, even if an Agent/CLI prints them accidentally.
+            safe_report = _safe_evaluation_payload(report)
             self.store.update_skill_evaluation_run(
-                run_id, tenant_id, status, safe_report, error
+                run_id, tenant_id, status, safe_report,
+                _safe_evaluation_payload(error) if error else None,
             )
             self.store.set_skill_evaluation(
                 version_id, tenant_id, status, run_id, safe_report
             )
-            if generated_eval is not None:
-                generated_eval.unlink(missing_ok=True)
         except subprocess.TimeoutExpired:
             error = "skill-up evaluation timed out"
+            safe_report = _safe_evaluation_payload(report)
             self.store.update_skill_evaluation_run(
-                run_id, tenant_id, "error", report, error
+                run_id, tenant_id, "error", safe_report, error
             )
             self.store.set_skill_evaluation(
-                version_id, tenant_id, "error", run_id, report
+                version_id, tenant_id, "error", run_id, safe_report
             )
         except Exception as exc:
             error = f"skill-up evaluation failed to start: {type(exc).__name__}: {exc}"
+            safe_report = _safe_evaluation_payload(report)
             self.store.update_skill_evaluation_run(
-                run_id, tenant_id, "error", report, error
+                run_id, tenant_id, "error", safe_report,
+                _safe_evaluation_payload(error),
             )
             self.store.set_skill_evaluation(
-                version_id, tenant_id, "error", run_id, report
+                version_id, tenant_id, "error", run_id, safe_report
             )
+        finally:
+            if generated_eval is not None:
+                generated_eval.unlink(missing_ok=True)
+            if evaluation_workspace is not None:
+                shutil.rmtree(evaluation_workspace, ignore_errors=True)
 
     @staticmethod
-    def _evaluation_environment() -> dict[str, str]:
+    def _evaluation_environment(engine_name: str = "") -> dict[str, str]:
         """Remove advertising credentials from the skill-up subprocess.
 
         The selected model credential may be needed by a built-in Engine, but
@@ -795,17 +874,20 @@ class ManagedSkillManager:
         evaluation environment.  This is defense in depth in addition to
         Runtime payload redaction.
         """
-        environment = dict(os.environ)
-        secret_markers = (
-            "ACCESS_TOKEN", "REFRESH_TOKEN", "DEVELOPER_TOKEN", "CLIENT_SECRET",
-            "APP_SECRET", "PRIVATE_KEY", "SERVICE_ACCOUNT", "BC_ID", "PARTNER_ID",
-            "PERTER_ID", "MCC", "AD_AGENT_API_KEY", "AD_PLATFORM_CREDENTIAL",
-        )
-        provider_prefixes = ("META_", "TIKTOK_", "GOOGLE_ADS_", "DV360_")
-        for key in list(environment):
-            upper = key.upper()
-            if any(marker in upper for marker in secret_markers) or any(
-                upper.startswith(prefix) for prefix in provider_prefixes
+        # Start from a small allowlist.  Copying the entire service process
+        # environment is unsafe because it commonly contains provider tokens,
+        # OPENAI_API_KEY, CI secrets, and user-specific SDK configuration.
+        safe_keys = {"PATH", "LANG", "LC_ALL", "LC_CTYPE", "TZ", "TMPDIR"}
+        environment = {
+            key: value for key, value in os.environ.items() if key in safe_keys
+        }
+        if engine_name == "claude_sdk":
+            # Claude is the only managed evaluator that needs a model secret.
+            # Keep only its explicitly supported key/base URL; never pass the
+            # ad-agent/OpenAI/provider credential set through to the child.
+            for key in (
+                "ANTHROPIC_API_KEY", "AD_AGENT_CLAUDE_API_KEY", "ANTHROPIC_BASE_URL",
             ):
-                environment.pop(key, None)
+                if os.environ.get(key):
+                    environment[key] = os.environ[key]
         return environment

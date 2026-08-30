@@ -7,7 +7,11 @@ from pathlib import Path
 
 from agents.ad_agent import AgentRuntime
 from agents.ad_agent.persistence.store import AdAgentStore
-from agents.ad_agent.skill_management import ManagedSkillManager, SkillPackageError
+from agents.ad_agent.skill_management import (
+    ManagedSkillManager,
+    SkillPackageError,
+    _safe_evaluation_payload,
+)
 
 
 def _files(name="business-growth"):
@@ -186,6 +190,44 @@ def test_publish_does_not_commit_when_runtime_activation_fails():
     assert manager.get_version("tenant-a", "broken-skill") is None
 
 
+def test_materialized_skill_cache_rejects_tampering(tmp_path):
+    store = AdAgentStore(":memory:")
+    manager = ManagedSkillManager(store, root=str(tmp_path / "managed"))
+    manager.create_version("tenant-a", "tamper-check", "1.0.0", _files("tamper-check"), "u1")
+    record = store.get_skill_version("tenant-a", "tamper-check", "1.0.0")
+
+    materialized = manager._materialize(record)
+    (materialized / "SKILL.md").write_text("tampered\n", encoding="utf-8")
+    with pytest.raises(SkillPackageError, match="snapshot digest mismatch"):
+        manager._materialize(record)
+
+
+def test_evaluation_payload_scrubs_echoed_environment_secrets(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-secret-value")
+    monkeypatch.setenv("META_ACCESS_TOKEN", "meta-secret-value")
+    payload = _safe_evaluation_payload({
+        "stdout": "OPENAI_API_KEY=openai-secret-value META_ACCESS_TOKEN=meta-secret-value",
+    })
+    assert "openai-secret-value" not in payload["stdout"]
+    assert "meta-secret-value" not in payload["stdout"]
+    assert payload["stdout"].count("<redacted>") == 2
+
+
+def test_skill_up_environment_is_minimal_and_engine_scoped(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-secret-value")
+    monkeypatch.setenv("META_ACCESS_TOKEN", "meta-secret-value")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-secret-value")
+    runtime_env = ManagedSkillManager._evaluation_environment("ad-agent-runtime")
+    claude_env = ManagedSkillManager._evaluation_environment("claude_sdk")
+
+    assert "OPENAI_API_KEY" not in runtime_env
+    assert "META_ACCESS_TOKEN" not in runtime_env
+    assert "ANTHROPIC_API_KEY" not in runtime_env
+    assert claude_env["ANTHROPIC_API_KEY"] == "anthropic-secret-value"
+    assert "OPENAI_API_KEY" not in claude_env
+    assert "META_ACCESS_TOKEN" not in claude_env
+
+
 def test_skill_up_config_is_data_only_and_uses_standard_package_files():
     store = AdAgentStore(":memory:")
     manager = ManagedSkillManager(store)
@@ -356,6 +398,10 @@ def test_skill_up_evaluation_is_persisted_for_an_immutable_version(tmp_path, mon
     version = manager.get_version("tenant-a", "runnable-eval", "1.0.0")
     assert version["evaluation_status"] == "passed"
     assert version["evaluation_run_id"] == run["run_id"]
+    materialized = manager._materialize(store.get_skill_version(
+        "tenant-a", "runnable-eval", "1.0.0"
+    ))
+    assert not list(materialized.glob(".skill-up-eval-*.yaml"))
 
 
 def test_skill_up_allows_only_one_active_evaluation_per_version(tmp_path, monkeypatch):
