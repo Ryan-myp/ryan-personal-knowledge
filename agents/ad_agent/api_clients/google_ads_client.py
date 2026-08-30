@@ -1374,7 +1374,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         parent_criterion_id: str = None,
         cpc_bid_micros: int = None,
         bidding_category_level: str = "LEVEL1",
-    ) -> str:
+    ) -> dict[str, Any]:
         """Create one Shopping product partition criterion.
 
         Google Shopping product groups are not a standalone resource.  They
@@ -2622,19 +2622,119 @@ class GoogleAdsAPIClient(BasePlatformClient):
         descriptions: list[dict] = None,
         images: list[dict] = None,
         videos: list[str] = None,
-    ) -> str:
+        *,
+        asset_group_type: str = "PERFORMANCE_MAX",
+        final_urls: list[str] = None,
+        long_headlines: list[dict] = None,
+        logos: list[dict] = None,
+        final_mobile_urls: list[str] = None,
+        status: str = "PAUSED",
+    ) -> dict[str, Any]:
+        """Build a verified-shape PMax mutation plan without provider I/O.
+
+        PMax creation spans AssetGroup, Asset and AssetGroupAsset mutations.
+        The current product contract intentionally exposes this as a
+        dry-run-only operation: the returned plan contains temporary resource
+        names and can be reviewed before a separately approved live adapter is
+        introduced.  It must never be mistaken for a provider success.
         """
-        创建 PMax Asset Group
-        
-        headlines: [{"text": "...", "pin_field": "HEADLINE"}, ...]
-        """
-        # A resource-shaped placeholder is dangerous here: callers could
-        # persist it as if Google had accepted the multi-step mutation.  The
-        # Capability is dry-run-only until a real AssetService implementation
-        # is available, so fail explicitly if this adapter is called directly.
-        raise NotImplementedError(
-            "Google PMax Asset Group creation requires a verified AssetService adapter"
-        )
+        campaign_id = self._numeric_id(campaign_id, "campaign_id")
+        if not str(name or "").strip():
+            raise ValueError("name is required")
+        if str(asset_group_type or "").upper() != "PERFORMANCE_MAX":
+            raise ValueError("asset_group_type must be PERFORMANCE_MAX")
+        status = str(status or "PAUSED").upper()
+        if status not in {"PAUSED", "ENABLED"}:
+            raise ValueError("status must be PAUSED or ENABLED")
+        if not isinstance(final_urls, list) or not final_urls:
+            raise ValueError("final_urls must be a non-empty list")
+        if not isinstance(headlines, list) or len(headlines) < 3:
+            raise ValueError("headlines must contain at least 3 assets")
+        if not isinstance(long_headlines, list) or not long_headlines:
+            raise ValueError("long_headlines must contain at least 1 asset")
+        if not isinstance(descriptions, list) or len(descriptions) < 2:
+            raise ValueError("descriptions must contain at least 2 assets")
+
+        customer = str(self.customer_id or "").strip()
+        if not re.fullmatch(r"\d+", customer):
+            raise ValueError("customer_id must contain digits only")
+        asset_group_resource = f"customers/{customer}/assetGroups/-1"
+        operations: list[dict[str, Any]] = [{
+            "resource": "assetGroups",
+            "operation": {
+                "create": {
+                    "resourceName": asset_group_resource,
+                    "campaign": f"customers/{customer}/campaigns/{campaign_id}",
+                    "name": str(name).strip(),
+                    "assetGroupType": "PERFORMANCE_MAX",
+                    "status": status,
+                    "finalUrls": [str(url).strip() for url in final_urls],
+                    **({
+                        "finalMobileUrls": [str(url).strip() for url in final_mobile_urls]
+                    } if final_mobile_urls else {}),
+                }
+            },
+        }]
+
+        temporary_asset_id = -2
+
+        def asset_resource(value: Any, field_type: str) -> str:
+            nonlocal temporary_asset_id
+            if isinstance(value, str):
+                value = {"asset": value}
+            if not isinstance(value, dict) or not value:
+                raise ValueError(f"{field_type} asset must be an object or resource name")
+            reference = value.get("asset") or value.get("resource_name") or value.get("asset_id")
+            if reference not in (None, ""):
+                reference = str(reference).strip()
+                if reference.startswith("customers/"):
+                    return reference
+                if not re.fullmatch(r"\d+", reference):
+                    raise ValueError(f"{field_type} asset reference must be a Google Asset ID or resource name")
+                return f"customers/{customer}/assets/{reference}"
+            text = str(value.get("text") or "").strip()
+            if field_type not in {"HEADLINE", "LONG_HEADLINE", "DESCRIPTION"} or not text:
+                raise ValueError(
+                    f"{field_type} requires an existing asset reference; only text assets can be created in the plan"
+                )
+            resource = f"customers/{customer}/assets/{temporary_asset_id}"
+            temporary_asset_id -= 1
+            operations.append({
+                "resource": "assets",
+                "operation": {"create": {
+                    "resourceName": resource,
+                    "name": str(value.get("name") or f"pmax_{field_type.lower()}"),
+                    "textAsset": {"text": text},
+                }},
+            })
+            return resource
+
+        for field_name, field_type, values in (
+            ("headlines", "HEADLINE", headlines),
+            ("long_headlines", "LONG_HEADLINE", long_headlines),
+            ("descriptions", "DESCRIPTION", descriptions),
+            ("images", "MARKETING_IMAGE", images or []),
+            ("logos", "LOGO", logos or []),
+            ("videos", "YOUTUBE_VIDEO", videos or []),
+        ):
+            for value in values:
+                resource = asset_resource(value, field_type)
+                operations.append({
+                    "resource": "assetGroupAssets",
+                    "operation": {"create": {
+                        "assetGroup": asset_group_resource,
+                        "asset": resource,
+                        "fieldType": field_type,
+                    }},
+                })
+        return {
+            "mode": "dry_run",
+            "execution_status": "planned",
+            "live_support": False,
+            "requires_verified_live_adapter": True,
+            "asset_group_resource_name": asset_group_resource,
+            "operations": operations,
+        }
     
     # ==================== 报表查询 ====================
     

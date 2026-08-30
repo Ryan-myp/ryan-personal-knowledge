@@ -718,7 +718,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
             "tool_names": ["google_create_campaign", "google_create_pmax_asset_group"],
             "dependencies": ["asset_group", "assets", "audience_signals", "product_feed"],
             "supported_fields": ["campaign_goal_setting", "headlines", "descriptions", "images", "videos", "logos"],
-            "gaps": ["verified AssetService adapter", "audience signals", "listing groups/product targets"],
+            "gaps": ["live AssetService mutation approval", "audience signals", "listing groups/product targets"],
             "source_document": source_document,
         },
         {
@@ -729,7 +729,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
             "tool_names": ["google_create_pmax_asset_group"],
             "dependencies": ["asset_group", "assets", "audience_signals", "listing_group"],
             "supported_fields": ["headlines", "descriptions", "images", "videos"],
-            "gaps": ["verified AssetService adapter", "audience signal and listing group Tools"],
+            "gaps": ["live AssetService mutation approval", "audience signal and listing group Tools"],
             "source_document": source_document,
         },
         {
@@ -920,14 +920,22 @@ def google_asset_create_schema() -> dict[str, Any]:
 def google_asset_group_schema() -> dict[str, Any]:
     asset = _field("array", "Asset references", minItems=1, items={"type": "object", "additionalProperties": True})
     return {
-        "required": ["campaign_id", "name"],
-        "provider_required": ["asset_group_type"],
+        "required": [
+            "campaign_id", "name", "asset_group_type", "final_urls",
+            "headlines", "long_headlines", "descriptions",
+        ],
+        "provider_required": [
+            "asset_group_type", "final_urls", "headlines",
+            "long_headlines", "descriptions",
+        ],
         "properties": {
             "campaign_id": _field("string", "Parent Performance Max Campaign ID"),
             "name": _field("string", "Asset group name", maxLength=255),
             "asset_group_type": _field("string", "Asset group type", enum=GOOGLE_ASSET_GROUP_TYPES),
-            "headlines": _field("array", "Text headline assets", minItems=3, maxItems=15, items={"type": "object", "additionalProperties": True}),
-            "long_headlines": _field("array", "Long headline assets", minItems=1, items={"type": "object", "additionalProperties": True}),
+            "final_urls": _field("array", "Asset group landing page URLs", minItems=1, maxItems=20, items={"type": "string", "minLength": 1}),
+            "final_mobile_urls": _field("array", "Optional mobile landing page URLs", maxItems=20, items={"type": "string", "minLength": 1}),
+            "headlines": _field("array", "Text headline assets or existing Asset references", minItems=3, maxItems=15, items={"type": "object", "additionalProperties": True}),
+            "long_headlines": _field("array", "Long headline assets or existing Asset references", minItems=1, maxItems=5, items={"type": "object", "additionalProperties": True}),
             "descriptions": _field("array", "Description assets", minItems=2, maxItems=5, items={"type": "object", "additionalProperties": True}),
             "images": asset,
             "videos": asset,

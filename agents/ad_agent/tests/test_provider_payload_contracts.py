@@ -938,6 +938,63 @@ def test_google_asset_tools_publish_read_contracts():
     assert definitions["google_get_asset"].input_schema.required == ["customer_id", "asset_id"]
 
 
+def test_google_pmax_asset_group_builds_bounded_multistep_dry_run_plan():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    plan = client.create_pmax_asset_group(
+        "42", "Summer PMax", [
+            {"text": "Headline one"}, {"text": "Headline two"},
+            {"text": "Headline three"},
+        ],
+        descriptions=[{"text": "Description one"}, {"text": "Description two"}],
+        long_headlines=[{"text": "A longer headline"}],
+        images=[{"asset_id": "88"}],
+        videos=[{"resource_name": "customers/123/assets/99"}],
+        final_urls=["https://example.test/landing"],
+    )
+
+    assert plan["mode"] == "dry_run"
+    assert plan["execution_status"] == "planned"
+    assert plan["live_support"] is False
+    assert plan["requires_verified_live_adapter"] is True
+    assert plan["asset_group_resource_name"] == "customers/123/assetGroups/-1"
+    group = plan["operations"][0]["operation"]["create"]
+    assert group == {
+        "resourceName": "customers/123/assetGroups/-1",
+        "campaign": "customers/123/campaigns/42",
+        "name": "Summer PMax",
+        "assetGroupType": "PERFORMANCE_MAX",
+        "status": "PAUSED",
+        "finalUrls": ["https://example.test/landing"],
+    }
+    assert any(
+        operation["resource"] == "assets"
+        and operation["operation"]["create"]["textAsset"] == {"text": "Headline one"}
+        for operation in plan["operations"]
+    )
+    links = [
+        operation["operation"]["create"]
+        for operation in plan["operations"]
+        if operation["resource"] == "assetGroupAssets"
+    ]
+    assert {link["fieldType"] for link in links} == {
+        "HEADLINE", "LONG_HEADLINE", "DESCRIPTION", "MARKETING_IMAGE", "YOUTUBE_VIDEO",
+    }
+    assert {link["asset"] for link in links if link["fieldType"] == "MARKETING_IMAGE"} == {
+        "customers/123/assets/88"
+    }
+
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_google_capability().register_tools()
+    }
+    for name in ("google_create_pmax_asset_group", "google_create_asset_group"):
+        assert definitions[name].live_support is False
+        assert definitions[name].input_schema.required == [
+            "campaign_id", "name", "asset_group_type", "final_urls",
+            "headlines", "long_headlines", "descriptions",
+        ]
+
+
 def test_meta_audience_crud_builds_custom_and_lookalike_payloads():
     client = MetaAPIClient({"access_token": "test"})
     calls = []

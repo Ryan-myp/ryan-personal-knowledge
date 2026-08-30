@@ -89,11 +89,20 @@ class GoogleCreateAssetGroupHandler(ToolHandler):
                 descriptions=input_data.get("descriptions", []),
                 images=input_data.get("images", []),
                 videos=input_data.get("videos", []),
+                asset_group_type=input_data.get("asset_group_type", "PERFORMANCE_MAX"),
+                final_urls=input_data.get("final_urls"),
+                long_headlines=input_data.get("long_headlines"),
+                logos=input_data.get("logos"),
+                final_mobile_urls=input_data.get("final_mobile_urls"),
+                status=input_data.get("status", "PAUSED"),
             )
             return ToolResult.ok({
-                "asset_group_id": asset_group_id,
+                "asset_group_id": asset_group_id.get("asset_group_resource_name")
+                if isinstance(asset_group_id, dict) else asset_group_id,
+                "plan": asset_group_id,
                 "name": input_data.get("name"),
                 "status": "PAUSED",
+                "execution_status": "planned",
             })
         except Exception as exc:
             return ToolResult.error(f"Failed to create Google asset group: {exc}")

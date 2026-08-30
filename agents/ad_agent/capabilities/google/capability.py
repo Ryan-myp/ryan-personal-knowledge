@@ -160,6 +160,7 @@ class GoogleCapability(BaseCapability):
         }
         asset_schema = google_asset_schema()
         asset_create_schema = google_asset_create_schema()
+        asset_group_schema = google_asset_group_schema()
         tools = [
             method_tool(
                 platform="google-ads", skill="google-ads-api-expert",
@@ -603,18 +604,18 @@ class GoogleCapability(BaseCapability):
             method_tool(
                 platform="google-ads", skill="google-ads-api-expert",
                 name="google_create_pmax_asset_group", description="创建 Google PMax Asset Group；默认仅生成 dry-run 计划。",
-                method_name="create_pmax_asset_group", result_key="asset_group_id",
-                properties={
-                    "campaign_id": {"type": "string"}, "name": {"type": "string"},
-                    "headlines": {"type": "array", "items": {"type": "string"}},
-                    "descriptions": {"type": "array", "items": {"type": "string"}},
-                    "images": {"type": "array"}, "videos": {"type": "array"},
-                }, required=["campaign_id", "name", "headlines"], action="create",
+                method_name="create_pmax_asset_group", result_key="asset_group_plan",
+                properties=asset_group_schema["properties"], required=asset_group_schema["required"],
+                provider_required=asset_group_schema["provider_required"], action="create",
                 resource_type="asset_group", parent_resource_type="campaign",
                 resource_id_field="asset_group_id", parent_resource_id_field="campaign_id",
                 intent_types=["create_pmax_asset_group"], traits=["write", "asset_group"], write=True,
                 argument_builder=lambda _ctx, data: ((data["campaign_id"], data["name"], data["headlines"]), {
-                    "descriptions": data.get("descriptions"), "images": data.get("images"), "videos": data.get("videos"),
+                    "descriptions": data["descriptions"], "images": data.get("images"),
+                    "videos": data.get("videos"), "asset_group_type": data["asset_group_type"],
+                    "final_urls": data["final_urls"], "long_headlines": data["long_headlines"],
+                    "logos": data.get("logos"), "final_mobile_urls": data.get("final_mobile_urls"),
+                    "status": data.get("status"),
                 }),
             ),
             method_tool(

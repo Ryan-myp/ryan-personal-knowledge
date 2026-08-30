@@ -1,5 +1,5 @@
 {
-  "digest": "259c0cf9d584c8769ddf735199534e07b0b7cf032b1a8567d73d31135f0c4678",
+  "digest": "c766f8b061f4029328e15f4ae7de98526cd02645db89c8cb927c16ea0b3af297",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -1983,7 +1983,7 @@
       ]
     },
     "google-ads": {
-      "digest": "7f823674c8368e025b9e2dca7fe9370b560a86a60b79329c50ddf1ec58654578",
+      "digest": "7db187ba0641110bbeca1111b40dad64d7642d994b30e8a547108289fe7c5ce4",
       "tool_count": 57,
       "tools": [
         {
@@ -2409,8 +2409,27 @@
                 "minItems": 2,
                 "type": "array"
               },
+              "final_mobile_urls": {
+                "description": "Optional mobile landing page URLs",
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              "final_urls": {
+                "description": "Asset group landing page URLs",
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "minItems": 1,
+                "type": "array"
+              },
               "headlines": {
-                "description": "Text headline assets",
+                "description": "Text headline assets or existing Asset references",
                 "items": {
                   "additionalProperties": true,
                   "type": "object"
@@ -2438,11 +2457,12 @@
                 "type": "array"
               },
               "long_headlines": {
-                "description": "Long headline assets",
+                "description": "Long headline assets or existing Asset references",
                 "items": {
                   "additionalProperties": true,
                   "type": "object"
                 },
+                "maxItems": 5,
                 "minItems": 1,
                 "type": "array"
               },
@@ -2472,11 +2492,20 @@
             },
             "provider_any_of": [],
             "provider_required": [
-              "asset_group_type"
+              "asset_group_type",
+              "final_urls",
+              "headlines",
+              "long_headlines",
+              "descriptions"
             ],
             "required": [
               "campaign_id",
-              "name"
+              "name",
+              "asset_group_type",
+              "final_urls",
+              "headlines",
+              "long_headlines",
+              "descriptions"
             ],
             "type": "object"
           },
@@ -3549,37 +3578,124 @@
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
+              "asset_group_type": {
+                "description": "Asset group type",
+                "enum": [
+                  "PERFORMANCE_MAX"
+                ],
+                "type": "string"
+              },
               "campaign_id": {
+                "description": "Parent Performance Max Campaign ID",
                 "type": "string"
               },
               "descriptions": {
+                "description": "Description assets",
                 "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "maxItems": 5,
+                "minItems": 2,
+                "type": "array"
+              },
+              "final_mobile_urls": {
+                "description": "Optional mobile landing page URLs",
+                "items": {
+                  "minLength": 1,
                   "type": "string"
                 },
+                "maxItems": 20,
+                "type": "array"
+              },
+              "final_urls": {
+                "description": "Asset group landing page URLs",
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "minItems": 1,
                 "type": "array"
               },
               "headlines": {
+                "description": "Text headline assets or existing Asset references",
                 "items": {
-                  "type": "string"
+                  "additionalProperties": true,
+                  "type": "object"
                 },
+                "maxItems": 15,
+                "minItems": 3,
                 "type": "array"
               },
               "images": {
+                "description": "Asset references",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "logos": {
+                "description": "Asset references",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "long_headlines": {
+                "description": "Long headline assets or existing Asset references",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "maxItems": 5,
+                "minItems": 1,
                 "type": "array"
               },
               "name": {
+                "description": "Asset group name",
+                "maxLength": 255,
+                "type": "string"
+              },
+              "status": {
+                "description": "Asset group status",
+                "enum": [
+                  "ENABLED",
+                  "PAUSED",
+                  "REMOVED"
+                ],
                 "type": "string"
               },
               "videos": {
+                "description": "Asset references",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "minItems": 1,
                 "type": "array"
               }
             },
             "provider_any_of": [],
-            "provider_required": [],
+            "provider_required": [
+              "asset_group_type",
+              "final_urls",
+              "headlines",
+              "long_headlines",
+              "descriptions"
+            ],
             "required": [
               "campaign_id",
               "name",
-              "headlines"
+              "asset_group_type",
+              "final_urls",
+              "headlines",
+              "long_headlines",
+              "descriptions"
             ],
             "type": "object"
           },
