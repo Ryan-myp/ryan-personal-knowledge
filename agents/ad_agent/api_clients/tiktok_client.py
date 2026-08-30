@@ -1703,6 +1703,54 @@ class TikTokAPIClient(BasePlatformClient):
         result = self.request("POST", "creative/portfolio/create/", data=data)
         return result if isinstance(result, dict) else {"result": result}
 
+    def get_creative_portfolio(
+        self, advertiser_id: str, creative_portfolio_id: str
+    ) -> dict:
+        """Get a TikTok v1.3 Creative Portfolio by advertiser scope."""
+        advertiser_id = str(advertiser_id or "").strip()
+        creative_portfolio_id = str(creative_portfolio_id or "").strip()
+        if not advertiser_id.isdigit():
+            raise ValueError("advertiser_id must contain digits only")
+        if not creative_portfolio_id:
+            raise ValueError("creative_portfolio_id is required")
+        self.acquire_rate_limit(self._rate_limiter)
+        result = self.request(
+            "POST", "creative/portfolio/get/", data={
+                "advertiser_id": advertiser_id,
+                "creative_portfolio_id": creative_portfolio_id,
+            },
+        )
+        return self.require_resource_object(
+            result if isinstance(result, dict) else {},
+            "TikTok creative portfolio get",
+        )
+
+    def preview_creative_portfolio(
+        self,
+        advertiser_id: str,
+        creative_portfolio_id: str,
+        preview_type: str = "CARD",
+    ) -> dict:
+        """Create a TikTok Creative Portfolio preview link/iframe."""
+        advertiser_id = str(advertiser_id or "").strip()
+        creative_portfolio_id = str(creative_portfolio_id or "").strip()
+        preview_type = str(preview_type or "CARD").strip().upper()
+        if not advertiser_id.isdigit():
+            raise ValueError("advertiser_id must contain digits only")
+        if not creative_portfolio_id:
+            raise ValueError("creative_portfolio_id is required")
+        if preview_type != "CARD":
+            raise ValueError("preview_type must be CARD")
+        self.acquire_rate_limit(self._rate_limiter)
+        result = self.request(
+            "POST", "creative/ads_preview/create/", data={
+                "advertiser_id": advertiser_id,
+                "preview_type": preview_type,
+                "card_id": creative_portfolio_id,
+            },
+        )
+        return result if isinstance(result, dict) else {"result": result}
+
     # ==================== Identity 管理 ====================
 
     def create_identity(self, advertiser_id: str, display_name: str, image_uri: str) -> dict:

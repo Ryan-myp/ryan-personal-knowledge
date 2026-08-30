@@ -33,6 +33,7 @@ access token、应用密钥或其他凭证。Tool 输入只允许账户选择和
 - 创建广告组（Ad Group）
 - 创建广告创意（Ad）
 - Spark Ads 特殊配置
+- Creative Portfolio 支持创建、详情查询和预览；这不是独立 Creative CRUD
 
 ### 3. 事件追踪
 - Pixel 生命周期：查询、创建和更新 Pixel；Pixel 删除未纳入当前已验证能力

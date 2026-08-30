@@ -1,5 +1,5 @@
 {
-  "digest": "42d8bf12b3373a42b61aecd3bf86f024ccb1a12e87fce9399a6fff9dd804ce44",
+  "digest": "9367f5f165ce88629693efa9e04637072409b8e151a5315bfd3a74d8b4c03558",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -12022,8 +12022,8 @@
       ]
     },
     "tiktok": {
-      "digest": "142ba053066fea61c523ee58af7e82571653f8383dc1448950b90cdd3ec49a47",
-      "tool_count": 67,
+      "digest": "aaa5d8eeaffe5d4a7436c04de01c81bd3a18c5a497cc61bcdbd4f7f68933a3b4",
+      "tool_count": 69,
       "tools": [
         {
           "action": "create",
@@ -14278,6 +14278,62 @@
         {
           "action": "get",
           "contract_version": "1.2.0",
+          "description": "查询 TikTok Creative Portfolio 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "TikTok advertiser ID",
+                "type": "string"
+              },
+              "creative_portfolio_id": {
+                "description": "TikTok Creative Portfolio ID",
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "creative_portfolio_id"
+            ],
+            "required": [
+              "account_id",
+              "creative_portfolio_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_creative_portfolio"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_get_creative_portfolio",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "creative_portfolio_id",
+          "resource_type": "creative_portfolio",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "creative",
+            "portfolio"
+          ]
+        },
+        {
+          "action": "get",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok 身份关联的自有帖子信息，用于 Spark Ads 预校验。",
           "effect_class": "read",
           "input_schema": {
@@ -16000,6 +16056,70 @@
           ]
         },
         {
+          "action": "preview",
+          "contract_version": "1.2.0",
+          "description": "生成 TikTok Creative Portfolio 预览链接。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "TikTok advertiser ID",
+                "type": "string"
+              },
+              "creative_portfolio_id": {
+                "description": "TikTok Creative Portfolio ID",
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "preview_type": {
+                "description": "Preview type supported by TikTok",
+                "enum": [
+                  "CARD"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "creative_portfolio_id"
+            ],
+            "required": [
+              "account_id",
+              "creative_portfolio_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "preview_creative_portfolio"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_preview_creative_portfolio",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "creative_portfolio_id",
+          "resource_type": "creative_portfolio",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "creative",
+            "portfolio",
+            "preview"
+          ]
+        },
+        {
           "action": "recommend",
           "contract_version": "1.2.0",
           "description": "根据种子词查询 TikTok 兴趣定向推荐关键词。",
@@ -17699,5 +17819,5 @@
       ]
     }
   },
-  "tool_count": 212
+  "tool_count": 214
 }

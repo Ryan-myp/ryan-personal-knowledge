@@ -401,6 +401,37 @@ def tiktok_creative_portfolio_schema() -> dict[str, Any]:
     }
 
 
+def tiktok_creative_portfolio_get_schema() -> dict[str, Any]:
+    """Schema for reading one TikTok Creative Portfolio."""
+    return {
+        "required": ["account_id", "creative_portfolio_id"],
+        "provider_required": ["creative_portfolio_id"],
+        "properties": {
+            "account_id": _field("string", "TikTok advertiser ID"),
+            "creative_portfolio_id": _field(
+                "string", "TikTok Creative Portfolio ID", minLength=1, maxLength=128,
+            ),
+        },
+    }
+
+
+def tiktok_creative_portfolio_preview_schema() -> dict[str, Any]:
+    """Schema for creating a TikTok Creative Portfolio preview."""
+    return {
+        "required": ["account_id", "creative_portfolio_id"],
+        "provider_required": ["creative_portfolio_id"],
+        "properties": {
+            "account_id": _field("string", "TikTok advertiser ID"),
+            "creative_portfolio_id": _field(
+                "string", "TikTok Creative Portfolio ID", minLength=1, maxLength=128,
+            ),
+            "preview_type": _field(
+                "string", "Preview type supported by TikTok", enum=["CARD"],
+            ),
+        },
+    }
+
+
 def tiktok_identity_create_schema() -> dict[str, Any]:
     """Schema for TikTok v1.3 customized identity creation."""
     return {

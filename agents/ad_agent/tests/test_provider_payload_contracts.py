@@ -252,6 +252,60 @@ def test_tiktok_creative_portfolio_uses_official_v13_payload_and_keeps_crud_gap_
     ) == []
 
 
+def test_tiktok_creative_portfolio_get_and_preview_use_scoped_verified_endpoints():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+
+    def request(method, endpoint, data=None, params=None, **_kwargs):
+        calls.append((method, endpoint, data, params))
+        if endpoint == "creative/portfolio/get/":
+            return {
+                "creative_portfolio_id": "portfolio-1",
+                "creative_portfolio_type": "CTA",
+                "portfolio_content": [{"asset_ids": ["asset-1"]}],
+            }
+        return {"preview_link": "https://preview.example/portfolio-1", "iframe": "<iframe/>"}
+
+    client.request = request
+    assert client.get_creative_portfolio("123", "portfolio-1")["creative_portfolio_id"] == (
+        "portfolio-1"
+    )
+    assert client.preview_creative_portfolio("123", "portfolio-1") == {
+        "preview_link": "https://preview.example/portfolio-1",
+        "iframe": "<iframe/>",
+    }
+    assert calls == [
+        (
+            "POST", "creative/portfolio/get/",
+            {"advertiser_id": "123", "creative_portfolio_id": "portfolio-1"},
+            None,
+        ),
+        (
+            "POST", "creative/ads_preview/create/",
+            {"advertiser_id": "123", "preview_type": "CARD", "card_id": "portfolio-1"},
+            None,
+        ),
+    ]
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_tiktok_capability().register_tools()
+    }
+    get_tool = definitions["tiktok_get_creative_portfolio"]
+    preview_tool = definitions["tiktok_preview_creative_portfolio"]
+    assert get_tool.input_schema.required == ["account_id", "creative_portfolio_id"]
+    assert preview_tool.input_schema.properties["preview_type"]["enum"] == ["CARD"]
+    assert preview_tool.live_support is True
+    assert validate_tool_input(
+        get_tool.input_schema,
+        {"account_id": "123", "creative_portfolio_id": "portfolio-1"},
+        include_provider_contract=True,
+    ) == []
+    assert validate_tool_input(
+        preview_tool.input_schema,
+        {"account_id": "123", "creative_portfolio_id": "portfolio-1", "preview_type": "VIDEO"},
+    )
+
+
 def test_tiktok_targeting_reference_lookups_build_official_v13_queries():
     client = TikTokAPIClient({"access_token": "test"})
     calls = []

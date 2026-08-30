@@ -50,6 +50,8 @@ from .parameters import (
     tiktok_pixel_event_schema,
     tiktok_pixel_batch_schema,
     tiktok_creative_portfolio_schema,
+    tiktok_creative_portfolio_get_schema,
+    tiktok_creative_portfolio_preview_schema,
     tiktok_identity_create_schema,
     tiktok_identity_list_schema,
     tiktok_identity_video_info_schema,
@@ -138,6 +140,8 @@ class TikTokCapability(BaseCapability):
         "send_pixel_event": ["tiktok_send_pixel_event"],
         "send_pixel_events": ["tiktok_send_pixel_events"],
         "create_creative_portfolio": ["tiktok_create_creative_portfolio"],
+        "get_creative_portfolio": ["tiktok_get_creative_portfolio"],
+        "preview_creative_portfolio": ["tiktok_preview_creative_portfolio"],
         "create_identity": ["tiktok_create_identity"],
         "list_identities": ["tiktok_list_identities"],
         "get_identity_video_info": ["tiktok_get_identity_video_info"],
@@ -159,6 +163,8 @@ class TikTokCapability(BaseCapability):
         pixel_batch = tiktok_pixel_batch_schema()
         pixel = tiktok_pixel_schema()
         creative_portfolio = tiktok_creative_portfolio_schema()
+        creative_portfolio_get = tiktok_creative_portfolio_get_schema()
+        creative_portfolio_preview = tiktok_creative_portfolio_preview_schema()
         identity_create = tiktok_identity_create_schema()
         identity_list = tiktok_identity_list_schema()
         identity_video_info = tiktok_identity_video_info_schema()
@@ -506,6 +512,37 @@ class TikTokCapability(BaseCapability):
                 argument_builder=lambda ctx, data: ((
                     account(ctx, data), data.get("creative_portfolio_type", "CTA"),
                     data.get("portfolio_content"),
+                ), {}),
+            ),
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_get_creative_portfolio",
+                description="查询 TikTok Creative Portfolio 详情。",
+                method_name="get_creative_portfolio", result_key="creative_portfolio",
+                properties=creative_portfolio_get["properties"],
+                required=creative_portfolio_get["required"],
+                provider_required=creative_portfolio_get["provider_required"],
+                action="get", resource_type="creative_portfolio",
+                resource_id_field="creative_portfolio_id",
+                intent_types=["get_creative_portfolio"],
+                traits=["read", "creative", "portfolio"],
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["creative_portfolio_id"],
+                ), {}),
+            ),
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_preview_creative_portfolio",
+                description="生成 TikTok Creative Portfolio 预览链接。",
+                method_name="preview_creative_portfolio", result_key="creative_portfolio_preview",
+                properties=creative_portfolio_preview["properties"],
+                required=creative_portfolio_preview["required"],
+                provider_required=creative_portfolio_preview["provider_required"],
+                action="preview", resource_type="creative_portfolio",
+                resource_id_field="creative_portfolio_id",
+                intent_types=["preview_creative_portfolio"],
+                traits=["read", "creative", "portfolio", "preview"],
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["creative_portfolio_id"],
+                    data.get("preview_type", "CARD"),
                 ), {}),
             ),
             method_tool(

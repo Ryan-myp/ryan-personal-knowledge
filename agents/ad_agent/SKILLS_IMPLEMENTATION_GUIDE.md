@@ -1,6 +1,6 @@
 # Skills 实现指南
 
-> 状态说明：本文保留为设计参考。`SKILL.md` 只负责自然语言专家知识、SOP 和安全边界；它不是 Tool 注册表，也不提供可执行代码。可执行实现以 `capabilities/`、`api_clients/`、`core/` 和 `runtime/` 源码为准。当前四个平台 Capability 共 212 个工具，跨渠道编排由 Runtime + `core/cross_channel.py` 提供。
+> 状态说明：本文保留为设计参考。`SKILL.md` 只负责自然语言专家知识、SOP 和安全边界；它不是 Tool 注册表，也不提供可执行代码。可执行实现以 `capabilities/`、`api_clients/`、`core/` 和 `runtime/` 源码为准。当前四个平台 Capability 共 214 个工具，跨渠道编排由 Runtime + `core/cross_channel.py` 提供。
 
 ## 架构分层
 
