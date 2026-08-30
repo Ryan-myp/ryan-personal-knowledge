@@ -1,6 +1,7 @@
 """Regression tests for metadata-driven Tool discovery."""
 
 import pytest
+import os
 
 from agents.ad_agent.core.interfaces import (
     IntentParser,
@@ -434,6 +435,26 @@ def test_standard_skill_discovery_does_not_require_category_directories(tmp_path
     loaded = runtime.skill_loader.get("campaign-planning")
     assert loaded is not None
     assert loaded.reference_documents["references/rules.md"] == "Planning guidance"
+
+
+def test_skill_loader_normalizes_root_paths_for_idempotent_reload(tmp_path):
+    from agents.ad_agent.runtime.skill import SkillLoader
+
+    skill_dir = tmp_path / "skills" / "reloadable"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: reloadable\nplatform: new-network\n"
+        "description: reloadable skill\n---\n\nGuidance.\n",
+        encoding="utf-8",
+    )
+
+    loader = SkillLoader(str(skill_dir.parent))
+    loader.add_root(os.path.relpath(skill_dir.parent, os.getcwd()))
+    loaded = loader.load_all()
+
+    assert loader.errors == {}
+    assert list(loaded) == ["reloadable"]
+    assert loaded["reloadable"].skill_dir == str(skill_dir.resolve())
 
 
 def test_runtime_resource_outputs_use_tool_metadata_not_tool_name():

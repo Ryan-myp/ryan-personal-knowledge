@@ -704,21 +704,32 @@ class SkillLoader:
     
     def _load_single_skill(self, skill_dir: str) -> None:
         """加载单个 Skill"""
-        contract = SkillContract(skill_dir).load()
+        # Roots can be mounted through different spellings (for example an
+        # absolute path during Runtime construction and a relative path from
+        # an embedding application's reload call).  Compare canonical paths
+        # so the same standard Skill remains reloadable and is not reported
+        # as a duplicate package.
+        canonical_dir = str(Path(skill_dir).expanduser().resolve())
+        contract = SkillContract(canonical_dir).load()
         if contract.context_only:
             return
         if not contract.name:
             return  # 跳过无名称的目录
-        
+
         skill = BaseSkill(contract)
         existing = self._skills.get(contract.name)
-        if existing is not None and getattr(existing, "skill_dir", None) != skill_dir:
+        existing_dir = getattr(existing, "skill_dir", None)
+        if existing is not None and existing_dir:
+            existing_canonical = str(Path(existing_dir).expanduser().resolve())
+        else:
+            existing_canonical = existing_dir
+        if existing is not None and existing_canonical != canonical_dir:
             raise ValueError(
-                f"duplicate Skill name '{contract.name}' in {skill_dir}"
+                f"duplicate Skill name '{contract.name}' in {canonical_dir}"
             )
         # Keep the source directory on the loaded object for deterministic
         # duplicate detection when multiple roots are configured.
-        setattr(skill, "skill_dir", skill_dir)
+        setattr(skill, "skill_dir", canonical_dir)
         self._skills[contract.name] = skill
     
     def get(self, name: str) -> Optional[Skill]:
