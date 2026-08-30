@@ -429,6 +429,24 @@ class MetaAPIClient(BasePlatformClient):
             {"limit": limit, "fields": "id,name,last_fired_time"},
         )
 
+    def get_pixel(self, account_id: str, pixel_id: str, fields: list = None) -> dict:
+        """Get one Meta Pixel after verifying it belongs to the ad account."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        pixel_id = self._clean_meta_id(pixel_id, "pixel_id")
+        if not self.resource_belongs_to_account(account_id, "pixel", pixel_id):
+            raise PermissionError(
+                f"Meta pixel {pixel_id} does not belong to account {account_id}"
+            )
+        params = {
+            "fields": ",".join(fields) if fields else (
+                "id,name,last_fired_time,creation_time,owner_ad_account"
+            )
+        }
+        return self.require_resource_object(
+            self.request("GET", f"/{pixel_id}", extra_params=params),
+            "Meta pixel get",
+        )
+
     def list_lead_forms(self, page_id: str, limit: int = 25) -> list:
         """List Instant Forms published on a Facebook Page."""
         page_id = str(page_id or "").strip()
@@ -474,6 +492,10 @@ class MetaAPIClient(BasePlatformClient):
         if not account_id or not resource_id:
             return False
         resource_id = str(resource_id)
+        resource_type = {
+            "ad_set": "adset", "ad_group": "adset", "audiences": "audience",
+            "pixels": "pixel",
+        }.get(str(resource_type or "").lower(), str(resource_type or "").lower())
         if resource_type == "campaign":
             items = self.list_campaigns(account_id)
         elif resource_type == "adset":
@@ -482,6 +504,8 @@ class MetaAPIClient(BasePlatformClient):
             items = self.list_ads(account_id)
         elif resource_type == "audience":
             items = self.list_audiences(account_id)
+        elif resource_type == "pixel":
+            items = self.list_pixels(account_id)
         else:
             return False
         if not isinstance(items, list):
@@ -492,6 +516,7 @@ class MetaAPIClient(BasePlatformClient):
             identifiers = {
                 item.get("id"), item.get("campaign_id"), item.get("adset_id"),
                 item.get("ad_id"), item.get("audience_id"),
+                item.get("pixel_id"),
             }
             if resource_id in {str(value) for value in identifiers if value is not None}:
                 return True

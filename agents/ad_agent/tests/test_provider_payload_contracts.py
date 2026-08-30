@@ -220,6 +220,34 @@ def test_meta_graph_payload_normalizes_categories_and_nested_updates():
     assert payloads[-1]["daily_budget"] == "1200"
 
 
+def test_meta_pixel_get_checks_account_ownership_and_forwards_fields():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+    client.resource_belongs_to_account = lambda account_id, resource_type, resource_id: (
+        calls.append(("ownership", account_id, resource_type, resource_id)) or True
+    )
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        calls.append((method, endpoint, kwargs.get("extra_params")))
+        or {"id": "px-1", "name": "Web Pixel"}
+    )
+
+    pixel = client.get_pixel("act-123", "px-1", fields=["id", "name"])
+    assert pixel == {"id": "px-1", "name": "Web Pixel"}
+    assert calls == [
+        ("ownership", "act-123", "pixel", "px-1"),
+        ("GET", "/px-1", {"fields": "id,name"}),
+    ]
+
+
+def test_meta_resource_ownership_accepts_graph_ids_and_ad_set_alias():
+    client = MetaAPIClient({"access_token": "test"})
+    client.list_pixels = lambda account_id, limit=25: [{"id": "px-1"}]
+    assert client.resource_belongs_to_account("123", "pixel", "px-1") is True
+
+    client.list_adsets = lambda account_id, campaign_id=None, limit=25: [{"id": "as-1"}]
+    assert client.resource_belongs_to_account("123", "ad_set", "as-1") is True
+
+
 def test_meta_audience_crud_builds_custom_and_lookalike_payloads():
     client = MetaAPIClient({"access_token": "test"})
     calls = []

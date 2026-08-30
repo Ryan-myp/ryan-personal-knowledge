@@ -49,7 +49,7 @@ class MetaCapability(BaseCapability):
     platform_name = "meta"
     provider_client_class = MetaAPIClient
     provider_method_exclusions = {"resource_belongs_to_account"}
-    capability_version = "1.1.0"
+    capability_version = "1.2.0"
     provider_api_version = "v19.0"
     # Provider endpoint -> executable Tool(s).  This lives with the provider
     # package and is consumed only by the release audit, never by Runtime
@@ -61,6 +61,7 @@ class MetaCapability(BaseCapability):
         "delete_audience": ["meta_delete_audience"], "list_catalogs": ["meta_list_catalogs"],
         "list_product_sets": ["meta_list_product_sets"], "list_campaigns": ["meta_list_campaigns"],
         "list_pages": ["meta_list_pages"], "list_pixels": ["meta_list_pixels"],
+        "get_pixel": ["meta_get_pixel"],
         "list_lead_forms": ["meta_list_lead_forms"],
         "get_campaign": ["meta_get_campaign"], "create_campaign": ["meta_create_campaign"],
         "update_campaign": ["meta_update_campaign"], "pause_campaign": ["meta_pause_campaign"],
@@ -106,6 +107,19 @@ class MetaCapability(BaseCapability):
                 intent_types=["list_pixels"], traits=["read", "pixel"],
                 argument_builder=lambda ctx, data: ((account(ctx, data),), {
                     "limit": data.get("limit", 25),
+                }),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_get_pixel",
+                description="查询 Meta Pixel 详情。", method_name="get_pixel",
+                result_key="pixel", properties={
+                    "account_id": {"type": "string"},
+                    "pixel_id": {"type": "string"},
+                    "fields": {"type": "array", "items": {"type": "string"}},
+                }, required=["account_id", "pixel_id"], action="get", resource_type="pixel",
+                resource_id_field="pixel_id", intent_types=["get_pixel"], traits=["read", "pixel"],
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["pixel_id"]), {
+                    "fields": data.get("fields"),
                 }),
             ),
             method_tool(
