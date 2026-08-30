@@ -611,6 +611,77 @@ class AdAgentStore:
             )
             conn.commit()
             return cursor.rowcount > 0
+
+    def recover_stale_skill_evaluations(
+        self, stale_after_seconds: float = 900.0,
+    ) -> int:
+        """Mark evaluations interrupted by a process failure as retryable.
+
+        Evaluation workers are process-local, so a queued/running row cannot
+        be resumed after the process that owned it disappears.  The update is
+        guarded by both ``run_id`` and the version's current run ID, which
+        keeps a late worker from overwriting a newer retry.  A future
+        multi-process backend should preserve this atomic lease-recovery
+        contract, even if it implements it with row locks or a lease table.
+        """
+        try:
+            age = max(0.0, float(stale_after_seconds))
+        except (TypeError, ValueError):
+            raise ValueError("stale_after_seconds must be a non-negative number")
+        cutoff = (datetime.now() - timedelta(seconds=age)).isoformat()
+        recovered = 0
+        with self._lock:
+            conn = self._get_conn()
+            rows = conn.execute(
+                "SELECT run_id, version_id FROM skill_evaluation_runs "
+                "WHERE status IN ('queued', 'running') AND updated_at <= ?",
+                (cutoff,),
+            ).fetchall()
+            for row in rows:
+                run_id = str(row["run_id"])
+                version_id = str(row["version_id"])
+                now = datetime.now().isoformat()
+                report = {
+                    "recovered": True,
+                    "reason": "evaluation worker interrupted before completion",
+                    "recovered_at": now,
+                }
+                conn.execute("SAVEPOINT recover_skill_evaluation")
+                version_cursor = conn.execute(
+                    "UPDATE skill_versions SET evaluation_status = 'error', "
+                    "evaluation_run_id = ?, evaluation_report = ? "
+                    "WHERE version_id = ? AND evaluation_run_id = ? "
+                    "AND evaluation_status IN ('queued', 'running')",
+                    (
+                        run_id,
+                        json.dumps(report, ensure_ascii=False, sort_keys=True),
+                        version_id,
+                        run_id,
+                    ),
+                )
+                if version_cursor.rowcount != 1:
+                    conn.execute("ROLLBACK TO recover_skill_evaluation")
+                    conn.execute("RELEASE recover_skill_evaluation")
+                    continue
+                run_cursor = conn.execute(
+                    "UPDATE skill_evaluation_runs SET status = 'error', "
+                    "report = ?, error = ?, updated_at = ? "
+                    "WHERE run_id = ? AND status IN ('queued', 'running')",
+                    (
+                        json.dumps(report, ensure_ascii=False, sort_keys=True),
+                        "skill-up evaluation interrupted; retry is allowed",
+                        now,
+                        run_id,
+                    ),
+                )
+                if run_cursor.rowcount == 1 and version_cursor.rowcount == 1:
+                    conn.execute("RELEASE recover_skill_evaluation")
+                    recovered += 1
+                else:
+                    conn.execute("ROLLBACK TO recover_skill_evaluation")
+                    conn.execute("RELEASE recover_skill_evaluation")
+            conn.commit()
+        return recovered
     
     # -- Session --
     

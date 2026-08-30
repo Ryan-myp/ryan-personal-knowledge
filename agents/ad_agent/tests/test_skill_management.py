@@ -107,6 +107,22 @@ def test_managed_skill_cannot_switch_runtime_tenant():
         manager.publish("tenant-b", "second-skill", "1.0.0", runtime=runtime)
 
 
+def test_publish_does_not_commit_when_runtime_activation_fails():
+    store = AdAgentStore(":memory:")
+    manager = ManagedSkillManager(store)
+    manager.create_version("tenant-a", "broken-skill", "1.0.0", _files("broken-skill"), "u1")
+
+    class BrokenRuntime:
+        def load_managed_skill(self, *_args, **_kwargs):
+            raise ValueError("invalid managed context")
+
+    with pytest.raises(SkillPackageError, match="release was not published"):
+        manager.publish("tenant-a", "broken-skill", "1.0.0", runtime=BrokenRuntime())
+    record = manager.get_version("tenant-a", "broken-skill", "1.0.0")
+    assert record["status"] == "draft"
+    assert manager.get_version("tenant-a", "broken-skill") is None
+
+
 def test_skill_up_config_is_data_only_and_uses_standard_package_files():
     store = AdAgentStore(":memory:")
     manager = ManagedSkillManager(store)
@@ -296,6 +312,32 @@ def test_skill_up_allows_only_one_active_evaluation_per_version(tmp_path, monkey
     assert manager.get_evaluation("tenant-a", first["run_id"])["status"] in {
         "queued", "running", "passed", "failed", "error"
     }
+
+
+def test_interrupted_skill_up_evaluation_is_recovered_and_retryable():
+    store = AdAgentStore(":memory:")
+    manager = ManagedSkillManager(store)
+    manager.create_version("tenant-a", "recoverable-eval", "1.0.0", _files("recoverable-eval"), "u1")
+    version = store.get_skill_version("tenant-a", "recoverable-eval", "1.0.0")
+    run = store.claim_skill_evaluation("old-run", version["version_id"], "tenant-a")
+    assert run["status"] == "queued"
+
+    with store._lock:
+        store._get_conn().execute(
+            "UPDATE skill_evaluation_runs SET updated_at = ? WHERE run_id = ?",
+            ("2000-01-01T00:00:00", "old-run"),
+        )
+        store._get_conn().commit()
+
+    assert manager.recover_interrupted_evaluations(stale_after_seconds=900) == 1
+    recovered = manager.get_evaluation("tenant-a", "old-run")
+    assert recovered["status"] == "error"
+    assert "interrupted" in recovered["error"]
+    version = manager.get_version("tenant-a", "recoverable-eval", "1.0.0")
+    assert version["evaluation_status"] == "error"
+
+    retry = store.claim_skill_evaluation("new-run", version["version_id"], "tenant-a")
+    assert retry["run_id"] == "new-run"
 
 
 def test_skill_up_never_imports_user_skill_plugin(tmp_path, monkeypatch):

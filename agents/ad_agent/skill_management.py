@@ -393,12 +393,82 @@ class ManagedSkillManager:
                 "Skill version with evals/eval.yaml must pass skill-up before publication"
             )
         materialized = self._materialize(record)
-        published = self.store.publish_skill_version(tenant_id, skill_name, version)
-        if not published:
-            return None
+
+        # Activate first, then commit the durable release pointer.  Runtime
+        # activation is context-only but can still fail on malformed package
+        # data or tenant conflicts; publishing first would leave a release
+        # visible in the database that this process never loaded.  Keep the
+        # old snapshot so a storage failure can restore the in-memory view.
+        previous = self.store.get_skill_version(tenant_id, skill_name)
+        activated = False
         if runtime is not None:
-            runtime.load_managed_skill(str(materialized), tenant_id=str(tenant_id))
+            try:
+                activated = bool(
+                    runtime.load_managed_skill(
+                        str(materialized), tenant_id=str(tenant_id)
+                    )
+                )
+            except PermissionError:
+                # Tenant isolation is a policy failure, not a package
+                # activation failure; preserve the caller-visible 409 path.
+                raise
+            except Exception as exc:
+                raise SkillPackageError(
+                    f"Skill activation failed; release was not published: {exc}"
+                ) from exc
+            if not activated:
+                raise SkillPackageError(
+                    "Skill activation failed; release was not published"
+                )
+        try:
+            published = self.store.publish_skill_version(tenant_id, skill_name, version)
+        except Exception:
+            self._restore_runtime_release(
+                runtime, tenant_id, skill_name, previous, activated
+            )
+            raise
+        if not published:
+            self._restore_runtime_release(
+                runtime, tenant_id, skill_name, previous, activated
+            )
+            return None
         return self._public(published)
+
+    def _restore_runtime_release(
+        self, runtime: Any, tenant_id: str, skill_name: str,
+        previous: Optional[Mapping[str, Any]], activated: bool,
+    ) -> None:
+        """Best-effort rollback for the in-memory release after DB failure."""
+        if runtime is None or not activated:
+            return
+        try:
+            if previous and previous.get("status") == "published":
+                old_materialized = self._materialize(previous)
+                runtime.load_managed_skill(
+                    str(old_materialized), tenant_id=str(tenant_id)
+                )
+            else:
+                runtime.unload_managed_skill(skill_name)
+        except Exception:
+            # The durable release was not advanced.  Keep the original store
+            # error as the caller-visible failure and surface rollback detail
+            # through logs rather than leaking it into an API response.
+            import logging
+            logging.getLogger(__name__).exception(
+                "failed to roll back managed Skill '%s' after publication error",
+                skill_name,
+            )
+
+    def recover_interrupted_evaluations(
+        self, stale_after_seconds: float = 900.0,
+    ) -> int:
+        """Recover process-local Skill-up jobs left in queued/running state."""
+        recover = getattr(self.store, "recover_stale_skill_evaluations", None)
+        if not callable(recover):
+            raise SkillPackageError(
+                "persistence backend does not support Skill evaluation recovery"
+            )
+        return int(recover(stale_after_seconds))
 
     def activate_published(self, tenant_id: str, runtime: Any) -> int:
         records = self.store.list_skill_versions(tenant_id, None, 200)

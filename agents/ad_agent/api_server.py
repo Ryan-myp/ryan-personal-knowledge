@@ -253,7 +253,13 @@ def _init_runtime():
         # advisory context only. They never replace or add provider Tools.
         # This process is intentionally bound to its configured service
         # tenant; multi-tenant deployments should isolate Runtime contexts.
-        ManagedSkillManager(store).activate_published(
+        skill_manager = ManagedSkillManager(store)
+        recovered = skill_manager.recover_interrupted_evaluations(
+            stale_after_seconds=0
+        )
+        if recovered:
+            logger.warning("已恢复 %s 个被中断的 Skill-up 评测任务", recovered)
+        skill_manager.activate_published(
             os.environ.get("AD_AGENT_SERVICE_TENANT", "default"), runtime
         )
 

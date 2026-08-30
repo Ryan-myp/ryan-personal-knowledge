@@ -55,7 +55,7 @@ from ..core.security import (
     protected_field_paths,
     protected_update_paths,
 )
-from .skill import Skill, SkillLoader
+from .skill import BaseSkill, Skill, SkillContract, SkillLoader
 from ..persistence.session_manager import SessionManager
 from ..persistence.interfaces import PersistenceBackend
 from ..persistence.models import ToolCallRecord
@@ -272,6 +272,7 @@ class AgentRuntime:
         # Runtime context per tenant.
         self._managed_context_skills: dict[str, Skill] = {}
         self._managed_skill_tenant_id: Optional[str] = None
+        self._managed_skill_lock = threading.RLock()
         self._skill_factories: dict[str, callable] = {}  # platform -> Capability factory
         self._credentials: dict = {}  # API 凭证配置
         self.knowledge_provider = knowledge_provider or LocalMarkdownKnowledgeProvider(
@@ -409,60 +410,70 @@ class AgentRuntime:
         but cannot create a new side-effect path.
         """
         from pathlib import Path
-        from .skill import SkillContract
 
         tenant_id = str(tenant_id or "default")
-        if (
-            self._managed_skill_tenant_id is not None
-            and self._managed_skill_tenant_id != tenant_id
-        ):
-            raise PermissionError(
-                "this Runtime already has managed Skills for another tenant"
-            )
         directory = Path(skill_dir).resolve()
         if not directory.is_dir() or not (directory / "SKILL.md").is_file():
             raise ValueError("managed Skill directory must contain SKILL.md")
         contract = SkillContract(str(directory)).load()
         if contract.context_only or not contract.name:
             raise ValueError("managed Skill must be a standalone Skill with a name")
-        if contract.name in self._skill_objects and contract.name not in self._managed_context_skills:
-            raise ValueError(f"managed Skill name conflicts with executable Skill: {contract.name}")
+        # Build the complete advisory object before touching any Runtime
+        # indexes. A malformed package therefore cannot remove the old
+        # published context.
+        skill = BaseSkill(contract)
+        setattr(skill, "skill_dir", str(directory))
 
-        # Replace only a previous managed version.  A built-in Skill with the
-        # same name is protected by the conflict check above.
-        self._managed_context_skills.pop(contract.name, None)
-        self.skill_loader._skills.pop(contract.name, None)
-        self.skill_loader._load_single_skill(str(directory))
-        skill = self.skill_loader.get(contract.name)
-        if skill is None:
-            raise ValueError(f"failed to load managed Skill: {contract.name}")
-        self._managed_context_skills[contract.name] = skill
-        self._managed_skill_tenant_id = tenant_id
-        if hasattr(self.intent_parser, "register_platform_aliases"):
-            self.intent_parser.register_platform_aliases(
-                getattr(skill, "platform", ""),
-                getattr(skill, "platform_aliases", []) or [],
-            )
-        if hasattr(self.tool_selector, "register_context_skill"):
-            self.tool_selector.register_context_skill(skill)
+        with self._managed_skill_lock:
+            if (
+                self._managed_skill_tenant_id is not None
+                and self._managed_skill_tenant_id != tenant_id
+            ):
+                raise PermissionError(
+                    "this Runtime already has managed Skills for another tenant"
+                )
+            if (
+                contract.name in self._skill_objects
+                and contract.name not in self._managed_context_skills
+            ):
+                raise ValueError(
+                    "managed Skill name conflicts with executable Skill: "
+                    f"{contract.name}"
+                )
+
+            # Replace only a previous managed version. A built-in Skill with
+            # the same name is protected by the conflict check above.
+            self.skill_loader._skills[contract.name] = skill
+            self._managed_context_skills[contract.name] = skill
+            self._managed_skill_tenant_id = tenant_id
+            if hasattr(self.intent_parser, "register_platform_aliases"):
+                self.intent_parser.register_platform_aliases(
+                    getattr(skill, "platform", ""),
+                    getattr(skill, "platform_aliases", []) or [],
+                )
+            if hasattr(self.tool_selector, "register_context_skill"):
+                self.tool_selector.register_context_skill(skill)
         return True
 
     def unload_managed_skill(self, skill_name: str) -> bool:
         """Remove advisory context without touching executable provider Tools."""
         key = str(skill_name or "")
-        skill = self._managed_context_skills.pop(key, None)
-        if skill is None:
-            return False
-        self.skill_loader._skills.pop(key, None)
-        if hasattr(self.tool_selector, "unregister_context_skill"):
-            self.tool_selector.unregister_context_skill(key)
-        if not self._managed_context_skills:
-            self._managed_skill_tenant_id = None
-        return True
+        with self._managed_skill_lock:
+            skill = self._managed_context_skills.pop(key, None)
+            if skill is None:
+                return False
+            if self.skill_loader._skills.get(key) is skill:
+                self.skill_loader._skills.pop(key, None)
+            if hasattr(self.tool_selector, "unregister_context_skill"):
+                self.tool_selector.unregister_context_skill(key)
+            if not self._managed_context_skills:
+                self._managed_skill_tenant_id = None
+            return True
 
     def get_managed_skills(self) -> dict[str, Skill]:
         """Return a shallow copy for diagnostics/UI; no credentials included."""
-        return dict(self._managed_context_skills)
+        with self._managed_skill_lock:
+            return dict(self._managed_context_skills)
 
     def _ensure_managed_skill_tenant(self, tenant_id: str) -> None:
         """Reject a turn that could observe another tenant's Skill context.
@@ -475,7 +486,8 @@ class AgentRuntime:
         should provision one Runtime context per tenant instead of weakening
         this fail-closed check.
         """
-        bound_tenant = self._managed_skill_tenant_id
+        with self._managed_skill_lock:
+            bound_tenant = self._managed_skill_tenant_id
         requested_tenant = str(tenant_id or "default")
         if bound_tenant is not None and str(bound_tenant) != requested_tenant:
             raise PermissionError(
