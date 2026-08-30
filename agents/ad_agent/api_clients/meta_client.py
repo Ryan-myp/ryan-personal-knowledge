@@ -1117,6 +1117,18 @@ class MetaAPIClient(BasePlatformClient):
     def resume_campaign(self, campaign_id: str) -> dict:
         """恢复 Campaign"""
         return self.update_campaign(campaign_id, {'status': 'ACTIVE'})
+
+    def delete_campaign(self, account_id: str, campaign_id: str) -> dict:
+        """Delete a Campaign after proving it belongs to the ad account."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        campaign_id = self._clean_meta_id(campaign_id, "campaign_id")
+        if not self.resource_belongs_to_account(account_id, "campaign", campaign_id):
+            raise PermissionError(
+                f"Meta campaign {campaign_id} does not belong to account {account_id}"
+            )
+        self.acquire_rate_limit(self._get_account_limiter(account_id))
+        self.request("DELETE", f"/{campaign_id}")
+        return {"success": True, "campaign_id": campaign_id}
     
     # ==================== Ad Set 管理 ====================
     
@@ -1214,6 +1226,18 @@ class MetaAPIClient(BasePlatformClient):
     def pause_adset(self, adset_id: str) -> dict:
         """暂停 Ad Set"""
         return self.update_adset(adset_id, {'status': 'PAUSED'})
+
+    def delete_adset(self, account_id: str, adset_id: str) -> dict:
+        """Delete an Ad Set after proving it belongs to the ad account."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        adset_id = self._clean_meta_id(adset_id, "adset_id")
+        if not self.resource_belongs_to_account(account_id, "ad_set", adset_id):
+            raise PermissionError(
+                f"Meta ad set {adset_id} does not belong to account {account_id}"
+            )
+        self.acquire_rate_limit(self._get_account_limiter(account_id))
+        self.request("DELETE", f"/{adset_id}")
+        return {"success": True, "adset_id": adset_id}
     
     # ==================== Ad 管理 ====================
     
@@ -1376,6 +1400,18 @@ class MetaAPIClient(BasePlatformClient):
     def pause_ad(self, ad_id: str) -> dict:
         """暂停 Ad"""
         return self.update_ad(ad_id, {'status': 'PAUSED'})
+
+    def delete_ad(self, account_id: str, ad_id: str) -> dict:
+        """Delete an Ad after proving it belongs to the ad account."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        ad_id = self._clean_meta_id(ad_id, "ad_id")
+        if not self.resource_belongs_to_account(account_id, "ad", ad_id):
+            raise PermissionError(
+                f"Meta ad {ad_id} does not belong to account {account_id}"
+            )
+        self.acquire_rate_limit(self._get_account_limiter(account_id))
+        self.request("DELETE", f"/{ad_id}")
+        return {"success": True, "ad_id": ad_id}
     
     # ==================== Creative 管理 ====================
     

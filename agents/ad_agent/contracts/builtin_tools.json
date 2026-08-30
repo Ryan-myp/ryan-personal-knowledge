@@ -1,5 +1,5 @@
 {
-  "digest": "f6e0c890fcc367e7c30ca4f9f950aa44319d3da6b4a9363e6f6c07e501bb431d",
+  "digest": "c264e987d89ef6d613458684f41c2977577a6b22ee83b760b97085ad8c2c33f6",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -7574,12 +7574,12 @@
       ]
     },
     "meta": {
-      "digest": "e4be4b4210deb365716100b6a418339ae41d11e1650eb25b8be44daf805f757d",
-      "tool_count": 56,
+      "digest": "29b2531a7fb8d7c783e6441f4d747e43f0855ca055dc8dfadf0345776dff3594",
+      "tool_count": 59,
       "tools": [
         {
           "action": "boost",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "将已有 Meta Page 帖子创建为推广广告。",
           "effect_class": "write",
           "input_schema": {
@@ -7641,7 +7641,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "创建 Meta Ad。",
           "effect_class": "write",
           "input_schema": {
@@ -7898,7 +7898,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "创建 Meta Ad Set。",
           "effect_class": "write",
           "input_schema": {
@@ -8397,7 +8397,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "创建 Meta Custom 或 Lookalike Audience；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -8535,7 +8535,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "创建 Meta Campaign。",
           "effect_class": "write",
           "input_schema": {
@@ -8727,7 +8727,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "创建 Meta 商品目录；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -8802,7 +8802,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "创建 Meta Catalog/Dynamic Product Ad；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -8928,7 +8928,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "创建 Meta Creative；当前仅支持 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -8998,7 +8998,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "为 Meta Pixel 创建 Custom Conversion；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -9134,7 +9134,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "创建 Meta Lead Ads Instant Form 广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -9237,7 +9237,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "创建 Meta Lead Ads Instant Form；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -9445,7 +9445,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "在 Meta 商品目录下创建商品集；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -9522,7 +9522,111 @@
         },
         {
           "action": "delete",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
+          "description": "删除 Meta ad；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "ad_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "account_id",
+              "ad_id"
+            ],
+            "required": [
+              "account_id",
+              "ad_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_ad"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_delete_ad",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "ad_group",
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad"
+          ]
+        },
+        {
+          "action": "delete",
+          "contract_version": "1.4.0",
+          "description": "删除 Meta ad_set；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "adset_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "account_id",
+              "adset_id"
+            ],
+            "required": [
+              "account_id",
+              "adset_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_adset"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_delete_adset",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "campaign",
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "adset_id",
+          "resource_type": "ad_set",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad_set"
+          ]
+        },
+        {
+          "action": "delete",
+          "contract_version": "1.4.0",
           "description": "删除 Meta Custom 或 Lookalike Audience；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -9574,7 +9678,59 @@
         },
         {
           "action": "delete",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
+          "description": "删除 Meta campaign；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "campaign_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "account_id",
+              "campaign_id"
+            ],
+            "required": [
+              "account_id",
+              "campaign_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_delete_campaign",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "campaign_id",
+          "resource_type": "campaign",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "campaign"
+          ]
+        },
+        {
+          "action": "delete",
+          "contract_version": "1.4.0",
           "description": "删除 Meta 商品目录；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -9626,7 +9782,7 @@
         },
         {
           "action": "delete",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "删除 Meta Creative；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -9678,7 +9834,7 @@
         },
         {
           "action": "delete",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "删除 Meta 商品集；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -9746,7 +9902,7 @@
         },
         {
           "action": "get",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "获取 Meta 广告账户详情。",
           "effect_class": "read",
           "input_schema": {
@@ -9797,7 +9953,7 @@
         },
         {
           "action": "get",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "获取 Meta Ad 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -9842,7 +9998,7 @@
         },
         {
           "action": "report",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "查询 Meta Ad 级报表。",
           "effect_class": "read",
           "input_schema": {
@@ -9904,7 +10060,7 @@
         },
         {
           "action": "get",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "获取 Meta Ad Set 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -9949,7 +10105,7 @@
         },
         {
           "action": "report",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "查询 Meta Ad Set 级报表。",
           "effect_class": "read",
           "input_schema": {
@@ -10011,7 +10167,7 @@
         },
         {
           "action": "get",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "查询 Meta Custom 或 Lookalike Audience 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -10063,7 +10219,7 @@
         },
         {
           "action": "get",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "获取 Meta Campaign 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -10110,7 +10266,7 @@
         },
         {
           "action": "report",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "查询 Meta Campaign 报表。",
           "effect_class": "read",
           "input_schema": {
@@ -10168,7 +10324,7 @@
         },
         {
           "action": "get",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "查询 Meta 商品目录详情。",
           "effect_class": "read",
           "input_schema": {
@@ -10227,7 +10383,7 @@
         },
         {
           "action": "get",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "查询 Meta Creative 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -10286,7 +10442,7 @@
         },
         {
           "action": "get",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "查询 Meta Lead Ads Instant Form 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -10341,7 +10497,7 @@
         },
         {
           "action": "get",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "查询 Meta Pixel 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -10396,7 +10552,7 @@
         },
         {
           "action": "get",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "查询 Meta 商品集详情。",
           "effect_class": "read",
           "input_schema": {
@@ -10471,7 +10627,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "列出 Meta 可访问的广告账户。",
           "effect_class": "read",
           "input_schema": {
@@ -10514,7 +10670,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "列出 Meta Ad Set 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -10563,7 +10719,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "列出 Meta Ad 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -10611,7 +10767,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "查询 Meta Custom Audience 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -10657,7 +10813,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "列出 Meta Campaign 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -10710,7 +10866,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "查询 Meta 商品目录。",
           "effect_class": "read",
           "input_schema": {
@@ -10758,7 +10914,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "查询 Meta 广告账户下的 Creative。",
           "effect_class": "read",
           "input_schema": {
@@ -10810,7 +10966,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "查询 Facebook Page 下已发布的 Lead Ads Instant Form。",
           "effect_class": "read",
           "input_schema": {
@@ -10858,7 +11014,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "查询广告账户可推广的 Facebook Page。",
           "effect_class": "read",
           "input_schema": {
@@ -10906,7 +11062,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "查询 Meta 广告账户下的 Pixel。",
           "effect_class": "read",
           "input_schema": {
@@ -10954,7 +11110,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "查询 Meta 商品目录下的商品集。",
           "effect_class": "read",
           "input_schema": {
@@ -11007,7 +11163,7 @@
         },
         {
           "action": "pause",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "调用 Meta pause_ad 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -11052,7 +11208,7 @@
         },
         {
           "action": "pause",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "调用 Meta pause_adset 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -11097,7 +11253,7 @@
         },
         {
           "action": "pause",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "调用 Meta pause_campaign 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -11142,7 +11298,7 @@
         },
         {
           "action": "resume",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "调用 Meta resume_campaign 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -11187,7 +11343,7 @@
         },
         {
           "action": "search",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "查询 Meta Targeting Search 选项（兴趣、地理、语言、职位等）；只读，返回的 ID 可用于后续 Ad Set 定向选择。",
           "effect_class": "read",
           "input_schema": {
@@ -11264,7 +11420,7 @@
         },
         {
           "action": "send",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "向 Meta Pixel 发送 Conversions API 事件；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -11444,7 +11600,7 @@
         },
         {
           "action": "test",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "向 Meta Test Events 发送一批 Conversions API 测试事件；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -11629,7 +11785,7 @@
         },
         {
           "action": "update",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "更新 Meta ad，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -11711,7 +11867,7 @@
         },
         {
           "action": "update",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "更新 Meta ad_set，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -11829,7 +11985,7 @@
         },
         {
           "action": "update",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "更新 Meta Audience 的名称、描述、规则或来源属性；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -11911,7 +12067,7 @@
         },
         {
           "action": "update",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "更新 Meta campaign，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -11996,7 +12152,7 @@
         },
         {
           "action": "update",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "更新 Meta 商品目录名称；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -12062,7 +12218,7 @@
         },
         {
           "action": "update",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "更新 Meta Creative 名称；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -12128,7 +12284,7 @@
         },
         {
           "action": "update",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "更新 Meta Lead Ads Instant Form 名称；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -12331,7 +12487,7 @@
         },
         {
           "action": "update",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "更新 Meta 商品集名称或筛选条件；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -12418,7 +12574,7 @@
         },
         {
           "action": "upload",
-          "contract_version": "1.3.0",
+          "contract_version": "1.4.0",
           "description": "向 Meta Custom Audience 上传已 SHA-256 哈希的客户标识；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -20060,6 +20216,12 @@
         "status": "implemented"
       },
       {
+        "action": "delete",
+        "method": "delete_campaign",
+        "resource": "campaign",
+        "status": "implemented"
+      },
+      {
         "action": "list",
         "method": "list_adsets",
         "resource": "ad_set",
@@ -20086,6 +20248,12 @@
       {
         "action": "update",
         "method": "update_adset",
+        "resource": "ad_set",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "method": "delete_adset",
         "resource": "ad_set",
         "status": "implemented"
       },
@@ -20128,6 +20296,12 @@
       {
         "action": "pause",
         "method": "pause_ad",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "method": "delete_ad",
         "resource": "ad",
         "status": "implemented"
       },
@@ -20863,5 +21037,5 @@
       ]
     }
   },
-  "tool_count": 218
+  "tool_count": 221
 }

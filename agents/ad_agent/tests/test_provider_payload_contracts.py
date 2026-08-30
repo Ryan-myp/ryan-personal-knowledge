@@ -955,6 +955,57 @@ def test_meta_graph_payload_normalizes_categories_and_nested_updates():
     assert payloads[-1]["daily_budget"] == "1200"
 
 
+def test_meta_core_hierarchy_delete_methods_are_scoped_and_use_graph_delete():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+    client.resource_belongs_to_account = lambda account_id, resource_type, resource_id: (
+        calls.append(("ownership", account_id, resource_type, resource_id)) or True
+    )
+    client.acquire_rate_limit = lambda *_args, **_kwargs: None
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        calls.append((method, endpoint, data)) or {}
+    )
+
+    assert client.delete_campaign("act_123", "campaign-1")["campaign_id"] == "campaign-1"
+    assert client.delete_adset("123", "adset-1")["adset_id"] == "adset-1"
+    assert client.delete_ad("123", "ad-1")["ad_id"] == "ad-1"
+
+    assert calls == [
+        ("ownership", "123", "campaign", "campaign-1"),
+        ("DELETE", "/campaign-1", None),
+        ("ownership", "123", "ad_set", "adset-1"),
+        ("DELETE", "/adset-1", None),
+        ("ownership", "123", "ad", "ad-1"),
+        ("DELETE", "/ad-1", None),
+    ]
+
+    client.resource_belongs_to_account = lambda *_args: False
+    with pytest.raises(PermissionError, match="does not belong"):
+        client.delete_ad("123", "ad-1")
+    with pytest.raises(ValueError, match="simple Meta object ID"):
+        client.delete_campaign("123", "campaign/1")
+
+
+def test_meta_core_hierarchy_delete_tools_are_dry_run_and_scoped():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_meta_capability().register_tools()
+    }
+    expected = {
+        "meta_delete_campaign": ("campaign_id", "campaign"),
+        "meta_delete_adset": ("adset_id", "ad_set"),
+        "meta_delete_ad": ("ad_id", "ad"),
+    }
+    for name, (resource_id, resource_type) in expected.items():
+        definition = definitions[name]
+        assert definition.is_write_tool
+        assert definition.live_support is False
+        assert definition.action == "delete"
+        assert definition.resource_type == resource_type
+        assert definition.input_schema.required == ["account_id", resource_id]
+        assert definition.input_schema.provider_required == ["account_id", resource_id]
+
+
 def test_meta_pixel_get_checks_account_ownership_and_forwards_fields():
     client = MetaAPIClient({"access_token": "test"})
     calls = []

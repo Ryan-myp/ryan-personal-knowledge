@@ -4,7 +4,7 @@
 
 ## 当前契约（2026-08-30）
 
-- 单 Agent + 多 Skills + Tools；平台 Capability 是可执行注册表的来源，当前共 218 个工具：Meta 56、Google Ads 61、TikTok 69、DV360 32。Capability 和按约定命名的 Provider Client 均自动发现，不依赖中心渠道/工具配置表；每个 Capability 还提供 Provider 方法覆盖率发布门禁。
+- 单 Agent + 多 Skills + Tools；平台 Capability 是可执行注册表的来源，当前共 221 个工具：Meta 59、Google Ads 61、TikTok 69、DV360 32。Capability 和按约定命名的 Provider Client 均自动发现，不依赖中心渠道/工具配置表；每个 Capability 还提供 Provider 方法覆盖率发布门禁。
 - 所有 Campaign 及下级资源创建/更新默认 dry-run；当前不会因工具已注册就调用真实写 API。
 - live 仅允许配置白名单账户，且 API 确认必须携带与当前 `session_id + account_id + tool + normalized input + idempotency key` 绑定的 `confirmation_payload`。
 - 白名单只有一个账户时允许兼容性自动选择；多账户配置必须由调用方显式指定目标账户。
@@ -34,7 +34,7 @@
   后续建设缺口。
 - 当前已实现的 Provider Client 方法均纳入三段式追踪：Client method → Capability
   `provider_method_coverage` → `api_surface.py` → executable Tool。现有覆盖为 DV360
-  28/28、Google Ads 59/59、Meta 55/55、TikTok 69/69；同一 Client 方法映射多个业务
+  28/28、Google Ads 59/59、Meta 58/58、TikTok 69/69；同一 Client 方法映射多个业务
   Tool 时会在审计 JSON 中保留全部映射，不以工具数量冒充官方接口完整度。
 
 ## 项目概述

@@ -53,7 +53,7 @@ class MetaCapability(BaseCapability):
     platform_name = "meta"
     provider_client_class = MetaAPIClient
     provider_method_exclusions = {"resource_belongs_to_account"}
-    capability_version = "1.3.0"
+    capability_version = "1.4.0"
     provider_api_version = "v19.0"
     # Provider endpoint -> executable Tool(s).  This lives with the provider
     # package and is consumed only by the release audit, never by Runtime
@@ -83,14 +83,17 @@ class MetaCapability(BaseCapability):
         "create_lead_form": ["meta_create_lead_form"], "update_lead_form": ["meta_update_lead_form"],
         "get_campaign": ["meta_get_campaign"], "create_campaign": ["meta_create_campaign"],
         "update_campaign": ["meta_update_campaign"], "pause_campaign": ["meta_pause_campaign"],
-        "resume_campaign": ["meta_resume_campaign"], "list_adsets": ["meta_list_ad_sets"],
+        "resume_campaign": ["meta_resume_campaign"], "delete_campaign": ["meta_delete_campaign"],
+        "list_adsets": ["meta_list_ad_sets"],
         "get_adset": ["meta_get_adset"], "create_adset": ["meta_create_adset"],
         "update_adset": ["meta_update_adset"], "pause_adset": ["meta_pause_adset"],
+        "delete_adset": ["meta_delete_adset"],
         "list_ads": ["meta_list_ads"], "get_ad": ["meta_get_ad"],
         "create_ad": ["meta_create_ad"], "create_lead_ad": ["meta_create_lead_ad"],
         "create_catalog_ad": ["meta_create_catalog_ad"],
         "update_ad": ["meta_update_ad"],
-        "pause_ad": ["meta_pause_ad"], "create_creative": ["meta_create_creative"],
+        "pause_ad": ["meta_pause_ad"], "delete_ad": ["meta_delete_ad"],
+        "create_creative": ["meta_create_creative"],
         "list_creatives": ["meta_list_creatives"], "get_creative": ["meta_get_creative"],
         "update_creative": ["meta_update_creative"], "delete_creative": ["meta_delete_creative"],
         "get_campaign_report": ["meta_get_campaign_report"],
@@ -590,6 +593,28 @@ class MetaCapability(BaseCapability):
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["audience_id"]), {}),
             ),
         ]
+        for method_name, resource_type, resource_id, intent in (
+            ("delete_campaign", "campaign", "campaign_id", "delete_campaign"),
+            ("delete_adset", "ad_set", "adset_id", "delete_adset"),
+            ("delete_ad", "ad", "ad_id", "delete_ad"),
+        ):
+            tools.append(method_tool(
+                platform="meta", skill="meta-marketing-api", name=f"meta_{method_name}",
+                description=f"删除 Meta {resource_type}；默认仅生成 dry-run 计划。",
+                method_name=method_name, result_key=f"{resource_type}_result",
+                properties={
+                    "account_id": {"type": "string"},
+                    resource_id: {"type": "string"},
+                },
+                required=["account_id", resource_id],
+                provider_required=["account_id", resource_id],
+                action="delete", resource_type=resource_type,
+                resource_id_field=resource_id, intent_types=[intent],
+                traits=["write", resource_type], write=True,
+                argument_builder=lambda ctx, data, field=resource_id: (
+                    (account(ctx, data), data[field]), {}
+                ),
+            ))
         for method_name, resource_type, resource_id, intent in (
             ("pause_campaign", "campaign", "campaign_id", "pause_campaign"),
             ("resume_campaign", "campaign", "campaign_id", "resume_campaign"),
