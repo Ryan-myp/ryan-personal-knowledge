@@ -14,6 +14,8 @@ import json
 import copy
 import re
 import threading
+import csv
+from pathlib import Path
 from typing import Any, Optional
 from datetime import datetime
 import requests
@@ -94,6 +96,20 @@ class GoogleAdsAPIClient(BasePlatformClient):
         "AGE_RANGE", "GENDER", "PARENTAL_STATUS", "INCOME_RANGE",
         "CONTENT_LABEL", "PLACEMENT", "TOPIC",
     }
+    USER_LIST_UPLOAD_KEY_TYPES = {
+        "CONTACT_INFO", "CRM_ID", "MOBILE_ADVERTISING_ID",
+    }
+    USER_LIST_DATA_SOURCE_TYPES = {
+        "FIRST_PARTY", "THIRD_PARTY_CREDIT_BUREAU",
+        "THIRD_PARTY_VOTER_FILE", "THIRD_PARTY_PARTNER_DATA",
+    }
+    USER_LIST_UPDATE_FIELDS = {
+        "name", "description", "membership_life_span", "integration_code",
+        "eligible_for_search",
+    }
+    USER_LIST_UPLOAD_COLUMNS = {"hashed_email", "hashed_phone_number"}
+    MAX_USER_LIST_UPLOAD_BYTES = 100 * 1024 * 1024
+    MAX_USER_LIST_UPLOAD_ROWS = 100_000
     
     def __init__(
         self,
@@ -738,6 +754,253 @@ class GoogleAdsAPIClient(BasePlatformClient):
         if rows and isinstance(rows[0], dict):
             return self._normalize_user_list(rows[0])
         raise APIError(f"Google user list {user_list_id} was not found")
+
+    def create_user_list(self, user_list: dict[str, Any]) -> str:
+        """Create a first-party CRM-based UserList.
+
+        The provider owns the wire translation here.  The Capability only
+        exposes the stable business contract, while this method maps it to
+        ``UserList.crmBasedUserList`` and the customer-level mutate endpoint.
+        """
+        if not isinstance(user_list, dict):
+            raise ValueError("user_list must be an object")
+        name = str(user_list.get("name") or "").strip()
+        if not name:
+            raise ValueError("user list name is required")
+        if len(name) > 255:
+            raise ValueError("user list name must be at most 255 characters")
+
+        description = user_list.get("description")
+        if description is not None:
+            description = str(description).strip()
+            if len(description) > 1000:
+                raise ValueError("user list description must be at most 1000 characters")
+
+        membership_life_span = user_list.get("membership_life_span", 540)
+        try:
+            membership_life_span = int(membership_life_span)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("membership_life_span must be an integer from 0 to 540") from exc
+        if not 0 <= membership_life_span <= 540:
+            raise ValueError("membership_life_span must be an integer from 0 to 540")
+
+        upload_key_type = str(
+            user_list.get("upload_key_type") or "CONTACT_INFO"
+        ).strip().upper()
+        if upload_key_type not in self.USER_LIST_UPLOAD_KEY_TYPES:
+            raise ValueError(
+                f"upload_key_type must be one of {sorted(self.USER_LIST_UPLOAD_KEY_TYPES)}"
+            )
+        data_source_type = str(
+            user_list.get("data_source_type") or "FIRST_PARTY"
+        ).strip().upper()
+        if data_source_type not in self.USER_LIST_DATA_SOURCE_TYPES:
+            raise ValueError(
+                f"data_source_type must be one of {sorted(self.USER_LIST_DATA_SOURCE_TYPES)}"
+            )
+        app_id = user_list.get("app_id")
+        if upload_key_type == "MOBILE_ADVERTISING_ID" and not str(app_id or "").strip():
+            raise ValueError("app_id is required for MOBILE_ADVERTISING_ID user lists")
+
+        crm_based_user_list: dict[str, Any] = {
+            "uploadKeyType": upload_key_type,
+            "dataSourceType": data_source_type,
+        }
+        if app_id is not None:
+            app_id = str(app_id).strip()
+            if app_id:
+                crm_based_user_list["appId"] = app_id
+        payload: dict[str, Any] = {
+            "name": name,
+            "membershipLifeSpan": membership_life_span,
+            "crmBasedUserList": crm_based_user_list,
+        }
+        if description:
+            payload["description"] = description
+        if user_list.get("integration_code") is not None:
+            integration_code = str(user_list["integration_code"]).strip()
+            if integration_code:
+                payload["integrationCode"] = integration_code
+        if user_list.get("eligible_for_search") is not None:
+            payload["eligibleForSearch"] = bool(user_list["eligible_for_search"])
+
+        response = self._mutate("userLists", {"create": payload})
+        resource_name = self._mutation_resource_name(response)
+        if not resource_name:
+            raise APIError(f"UserList mutate returned no resource name: {response}")
+        return str(resource_name.rsplit("/", 1)[-1])
+
+    def update_user_list(
+        self, user_list_id: str, updates: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Update the verified mutable fields of a UserList."""
+        user_list_id = self._numeric_id(user_list_id, "user_list_id")
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("updates must be a non-empty object")
+        unknown = set(updates) - self.USER_LIST_UPDATE_FIELDS
+        if unknown:
+            raise ValueError(
+                f"Unsupported Google UserList update fields: {sorted(unknown)}"
+            )
+
+        normalized: dict[str, Any] = {}
+        update_paths: list[str] = []
+        for key, value in updates.items():
+            if value is None:
+                continue
+            if key in {"name", "description", "integration_code"}:
+                value = str(value).strip()
+                if key == "name" and not value:
+                    raise ValueError("name must not be empty")
+                if key == "name" and len(value) > 255:
+                    raise ValueError("name must be at most 255 characters")
+                if key == "description" and len(value) > 1000:
+                    raise ValueError("description must be at most 1000 characters")
+            elif key == "membership_life_span":
+                try:
+                    value = int(value)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError("membership_life_span must be an integer from 0 to 540") from exc
+                if not 0 <= value <= 540:
+                    raise ValueError("membership_life_span must be an integer from 0 to 540")
+            elif key == "eligible_for_search":
+                if not isinstance(value, bool):
+                    raise ValueError("eligible_for_search must be boolean")
+            wire_key = self._camel_case(key)
+            normalized[wire_key] = value
+            update_paths.append(wire_key)
+        if not normalized:
+            raise ValueError("updates must contain a supported non-null field")
+
+        resource_name = f"customers/{self.customer_id}/userLists/{user_list_id}"
+        self._mutate("userLists", {
+            "update": {"resourceName": resource_name, **normalized},
+            "updateMask": {"paths": update_paths},
+        })
+        return {"success": True, "user_list_id": user_list_id}
+
+    def delete_user_list(self, user_list_id: str) -> dict[str, Any]:
+        """Remove one Google Ads UserList."""
+        user_list_id = self._numeric_id(user_list_id, "user_list_id")
+        self._mutate("userLists", {
+            "remove": f"customers/{self.customer_id}/userLists/{user_list_id}"
+        })
+        return {"success": True, "user_list_id": user_list_id}
+
+    @classmethod
+    def _read_hashed_user_list_file(cls, file_path: str) -> tuple[list[dict[str, Any]], int]:
+        """Read a strict hashed Customer Match CSV/TSV without retaining raw IDs."""
+        path = Path(str(file_path or "")).expanduser()
+        if path.suffix.lower() not in {".csv", ".tsv"}:
+            raise ValueError("file_path must point to a .csv or .tsv file")
+        if not path.is_file():
+            raise ValueError("file_path must point to an existing regular file")
+        if path.stat().st_size > cls.MAX_USER_LIST_UPLOAD_BYTES:
+            raise ValueError("user list upload file is too large")
+
+        delimiter = "\t" if path.suffix.lower() == ".tsv" else ","
+        operations: list[dict[str, Any]] = []
+        with path.open("r", encoding="utf-8-sig", newline="") as handle:
+            reader = csv.reader(handle, delimiter=delimiter)
+            try:
+                header = [str(item or "").strip() for item in next(reader)]
+            except StopIteration as exc:
+                raise ValueError("user list upload file must have a header") from exc
+            if not header or any(not item for item in header):
+                raise ValueError("user list upload header contains an empty column")
+            if len(header) != len(set(header)):
+                raise ValueError("user list upload header must not contain duplicates")
+            unknown = set(header) - cls.USER_LIST_UPLOAD_COLUMNS
+            if unknown or not set(header):
+                raise ValueError(
+                    "user list upload columns may only be hashed_email and hashed_phone_number"
+                )
+
+            rows_read = 0
+            for row in reader:
+                rows_read += 1
+                if rows_read > cls.MAX_USER_LIST_UPLOAD_ROWS:
+                    raise ValueError("user list upload contains too many rows")
+                if len(row) != len(header):
+                    raise ValueError(f"user list upload row {rows_read} has the wrong number of columns")
+                identifiers: list[dict[str, str]] = []
+                for column, value in zip(header, row):
+                    value = str(value or "").strip()
+                    if not value:
+                        continue
+                    if not re.fullmatch(r"[0-9a-fA-F]{64}", value):
+                        raise ValueError(
+                            f"user list upload row {rows_read} contains a non-SHA-256 {column} value"
+                        )
+                    identifiers.append({GoogleAdsAPIClient._camel_case(column): value.lower()})
+                if identifiers:
+                    operations.append({"create": {"userIdentifiers": identifiers}})
+            if not operations:
+                raise ValueError("user list upload file contains no hashed identifiers")
+        return operations, len(operations)
+
+    def upload_user_list_data(
+        self, user_list_id: str, file_path: str
+    ) -> dict[str, Any]:
+        """Upload hashed Customer Match identifiers through an offline job.
+
+        Only SHA-256 hex values in CSV/TSV columns named ``hashed_email`` and
+        ``hashed_phone_number`` are accepted.  The method never returns the
+        uploaded identifiers or the source file contents.
+        """
+        user_list_id = self._numeric_id(user_list_id, "user_list_id")
+        operations, row_count = self._read_hashed_user_list_file(file_path)
+        user_list_resource = f"customers/{self.customer_id}/userLists/{user_list_id}"
+
+        create_response = self.request_raw(
+            "POST",
+            f"{self.BASE_URL}/customers/{self.customer_id}/offlineUserDataJobs:create",
+            data={
+                "job": {
+                    "type": "CUSTOMER_MATCH_USER_LIST",
+                    "customerMatchUserListMetadata": {
+                        "userList": user_list_resource,
+                    },
+                }
+            },
+        )
+        create_status = create_response.get("status_code", 200)
+        if create_status not in (200, 201, 202):
+            raise APIError(
+                f"Google OfflineUserDataJob create returned HTTP {create_status}",
+                status_code=create_status, response=create_response,
+            )
+        job_resource = self._response_payload(create_response).get("resourceName", "")
+        if not job_resource:
+            raise APIError("OfflineUserDataJob create returned no resource name")
+
+        add_response = self.request_raw(
+            "POST", f"{job_resource}:addOperations",
+            data={"operations": operations},
+        )
+        add_status = add_response.get("status_code", 200)
+        if add_status not in (200, 201, 202):
+            raise APIError(
+                f"Google OfflineUserDataJob addOperations returned HTTP {add_status}",
+                status_code=add_status, response=add_response,
+            )
+
+        run_response = self.request_raw("POST", f"{job_resource}:run", data={})
+        run_status = run_response.get("status_code", 200)
+        if run_status not in (200, 201, 202):
+            raise APIError(
+                f"Google OfflineUserDataJob run returned HTTP {run_status}",
+                status_code=run_status, response=run_response,
+            )
+        job_id = str(job_resource).rsplit("/", 1)[-1]
+        return {
+            "success": True,
+            "job_id": job_id,
+            "job_resource_name": str(job_resource),
+            "user_list_id": user_list_id,
+            "rows_uploaded": row_count,
+            "status": "RUNNING",
+        }
     
     def list_ad_groups(self, campaign_id: str, page_size: int = 100) -> list:
         """获取 Ad Group 列表"""

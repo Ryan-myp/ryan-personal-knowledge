@@ -1,5 +1,5 @@
 {
-  "digest": "d8f2517f2eaa61cb7f6c788c52d0d12f4e6c197284b563999fbd8267753bc810",
+  "digest": "bb72efd0589467840a7139c07d567bc538f9db5ab068a946587c7e15e9394e0f",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -1983,8 +1983,8 @@
       ]
     },
     "google-ads": {
-      "digest": "65875624dbb378794a9c08234a8ea89f2d967a882e90503df8ab5153d346a2aa",
-      "tool_count": 49,
+      "digest": "e131b4eba4db1be579a9b5f7dc66ffcd0cdb66c8ba9264d8c9c39923507e4e70",
+      "tool_count": 53,
       "tools": [
         {
           "action": "create",
@@ -3866,6 +3866,117 @@
         {
           "action": "create",
           "contract_version": "1.2.0",
+          "description": "创建 Google Ads Customer Match User List；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [
+              {
+                "id": "mobile_user_list_app_dependency",
+                "if": {
+                  "upload_key_type": "MOBILE_ADVERTISING_ID"
+                },
+                "message": "MOBILE_ADVERTISING_ID requires app_id",
+                "required": [
+                  "app_id"
+                ]
+              }
+            ],
+            "properties": {
+              "app_id": {
+                "description": "App ID required for mobile advertising ID lists",
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID; MCC is not accepted",
+                "type": "string"
+              },
+              "data_source_type": {
+                "default": "FIRST_PARTY",
+                "description": "CRM data source",
+                "enum": [
+                  "FIRST_PARTY",
+                  "THIRD_PARTY_CREDIT_BUREAU",
+                  "THIRD_PARTY_VOTER_FILE",
+                  "THIRD_PARTY_PARTNER_DATA"
+                ],
+                "type": "string"
+              },
+              "description": {
+                "description": "UserList description",
+                "maxLength": 1000,
+                "type": "string"
+              },
+              "eligible_for_search": {
+                "description": "Whether the list may be used for Search",
+                "type": "boolean"
+              },
+              "integration_code": {
+                "description": "Advertiser integration correlation code",
+                "type": "string"
+              },
+              "membership_life_span": {
+                "default": 540,
+                "description": "Membership duration in days",
+                "maximum": 540,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "name": {
+                "description": "UserList name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "upload_key_type": {
+                "default": "CONTACT_INFO",
+                "description": "Customer Match matching key type",
+                "enum": [
+                  "CONTACT_INFO",
+                  "CRM_ID",
+                  "MOBILE_ADVERTISING_ID"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "name"
+            ],
+            "required": [
+              "customer_id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_user_list"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_user_list",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "user_list_id",
+          "resource_type": "user_list",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "audience"
+          ]
+        },
+        {
+          "action": "create",
+          "contract_version": "1.2.0",
           "description": "创建 Google Video Ad（可跳过、不可跳过、Bumper 或 Outstream）；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -4163,6 +4274,58 @@
           "traits": [
             "write",
             "conversion"
+          ]
+        },
+        {
+          "action": "delete",
+          "contract_version": "1.2.0",
+          "description": "删除 Google Ads User List；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "customer_id": {
+                "description": "Google Ads customer ID; MCC is not accepted",
+                "type": "string"
+              },
+              "user_list_id": {
+                "description": "Google UserList numeric ID",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id",
+              "user_list_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_user_list"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_delete_user_list",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "user_list_id",
+          "resource_type": "user_list",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "audience"
           ]
         },
         {
@@ -6227,6 +6390,150 @@
           "traits": [
             "write",
             "conversion"
+          ]
+        },
+        {
+          "action": "update",
+          "contract_version": "1.2.0",
+          "description": "更新 Google Ads User List 的可变字段；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "customer_id": {
+                "description": "Google Ads customer ID; MCC is not accepted",
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Allowed UserList update fields",
+                "properties": {
+                  "description": {
+                    "description": "UserList description",
+                    "maxLength": 1000,
+                    "type": "string"
+                  },
+                  "eligible_for_search": {
+                    "description": "Whether the list may be used for Search",
+                    "type": "boolean"
+                  },
+                  "integration_code": {
+                    "description": "Advertiser integration correlation code",
+                    "type": "string"
+                  },
+                  "membership_life_span": {
+                    "description": "Membership duration in days",
+                    "maximum": 540,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "name": {
+                    "description": "UserList name",
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "user_list_id": {
+                "description": "Google UserList numeric ID",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id",
+              "user_list_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_user_list"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_update_user_list",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "user_list_id",
+          "resource_type": "user_list",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "audience"
+          ]
+        },
+        {
+          "action": "upload",
+          "contract_version": "1.2.0",
+          "description": "向 Google Ads Customer Match User List 上传仅含 SHA-256 邮箱/手机号的本地 CSV/TSV；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "customer_id": {
+                "description": "Google Ads customer ID; MCC is not accepted",
+                "type": "string"
+              },
+              "file_path": {
+                "description": "Local .csv/.tsv file containing only SHA-256 identifiers",
+                "minLength": 1,
+                "type": "string"
+              },
+              "user_list_id": {
+                "description": "Google UserList numeric ID",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id",
+              "user_list_id",
+              "file_path"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "upload_user_list_data"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_upload_user_list_data",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "user_list_id",
+          "resource_type": "user_list",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "audience",
+            "data_upload"
           ]
         }
       ]
@@ -14576,5 +14883,5 @@
       ]
     }
   },
-  "tool_count": 183
+  "tool_count": 187
 }

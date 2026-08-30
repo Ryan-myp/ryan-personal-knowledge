@@ -96,6 +96,13 @@ GOOGLE_CONVERSION_ACTION_CATEGORIES = [
 ]
 GOOGLE_CONVERSION_ACTION_STATUSES = ["ENABLED", "REMOVED", "HIDDEN"]
 GOOGLE_CONVERSION_ACTION_COUNTING_TYPES = ["ONE_PER_CLICK", "MANY_PER_CLICK"]
+GOOGLE_USER_LIST_UPLOAD_KEY_TYPES = [
+    "CONTACT_INFO", "CRM_ID", "MOBILE_ADVERTISING_ID",
+]
+GOOGLE_USER_LIST_DATA_SOURCE_TYPES = [
+    "FIRST_PARTY", "THIRD_PARTY_CREDIT_BUREAU", "THIRD_PARTY_VOTER_FILE",
+    "THIRD_PARTY_PARTNER_DATA",
+]
 
 
 def _field(field_type: Any, description: str = "", **kwargs: Any) -> dict[str, Any]:
@@ -173,6 +180,60 @@ def google_conversion_action_update_schema() -> dict[str, Any]:
             "always_use_default_value": _field("boolean", "Always use fallback value"),
         }, "Conversion value settings"),
     }, "Allowed ConversionAction update fields")
+
+
+def google_user_list_schema() -> dict[str, Any]:
+    """Schemas for first-party CRM UserList lifecycle and upload Tools."""
+    return {
+        "required": ["customer_id", "name"],
+        "provider_required": ["name"],
+        "properties": {
+            "customer_id": _field("string", "Google Ads customer ID; MCC is not accepted"),
+            "user_list_id": _field("string", "Google UserList numeric ID", minLength=1),
+            "name": _field("string", "UserList name", minLength=1, maxLength=255),
+            "description": _field("string", "UserList description", maxLength=1000),
+            "membership_life_span": _field(
+                "integer", "Membership duration in days", minimum=0, maximum=540,
+                default=540,
+            ),
+            "integration_code": _field("string", "Advertiser integration correlation code"),
+            "eligible_for_search": _field("boolean", "Whether the list may be used for Search"),
+            "upload_key_type": _field(
+                "string", "Customer Match matching key type",
+                enum=GOOGLE_USER_LIST_UPLOAD_KEY_TYPES, default="CONTACT_INFO",
+            ),
+            "data_source_type": _field(
+                "string", "CRM data source", enum=GOOGLE_USER_LIST_DATA_SOURCE_TYPES,
+                default="FIRST_PARTY",
+            ),
+            "app_id": _field("string", "App ID required for mobile advertising ID lists"),
+            "file_path": _field(
+                "string", "Local .csv/.tsv file containing only SHA-256 identifiers",
+                minLength=1,
+            ),
+            "updates": _object({
+                "name": _field("string", "UserList name", minLength=1, maxLength=255),
+                "description": _field("string", "UserList description", maxLength=1000),
+                "membership_life_span": _field(
+                    "integer", "Membership duration in days", minimum=0, maximum=540,
+                ),
+                "integration_code": _field("string", "Advertiser integration correlation code"),
+                "eligible_for_search": _field("boolean", "Whether the list may be used for Search"),
+            }, "Allowed UserList update fields", additional_properties=False),
+        },
+        "conditional_rules": [
+            {
+                "id": "mobile_user_list_app_dependency",
+                "if": {"upload_key_type": "MOBILE_ADVERTISING_ID"},
+                "required": ["app_id"],
+                "message": "MOBILE_ADVERTISING_ID requires app_id",
+            },
+        ],
+    }
+
+
+def google_user_list_update_schema() -> dict[str, Any]:
+    return google_user_list_schema()["properties"]["updates"]
 
 
 def google_campaign_budget_update_schema() -> dict[str, Any]:

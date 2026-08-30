@@ -33,6 +33,7 @@ from .parameters import (
     google_campaign_budget_update_schema,
     google_conversion_action_schema, google_conversion_action_update_schema,
     google_campaign_criterion_schema,
+    google_user_list_schema, google_user_list_update_schema,
 )
 from ...api_clients.google_ads_client import GoogleAdsAPIClient
 from ..update_contracts import google_updates
@@ -101,6 +102,10 @@ class GoogleCapability(BaseCapability):
         "get_bidding_strategy": ["google_get_bidding_strategy"],
         "list_user_lists": ["google_list_user_lists"],
         "get_user_list": ["google_get_user_list"],
+        "create_user_list": ["google_create_user_list"],
+        "update_user_list": ["google_update_user_list"],
+        "delete_user_list": ["google_delete_user_list"],
+        "upload_user_list_data": ["google_upload_user_list_data"],
         "list_customer_clients": ["google_list_customer_clients"],
         "get_campaign_report": ["google_get_campaign_report"], "get_adgroup_report": ["google_get_adgroup_report"],
     }
@@ -113,6 +118,17 @@ class GoogleCapability(BaseCapability):
         budget_schema = google_campaign_budget_schema()
         conversion_action_schema = google_conversion_action_schema()
         conversion_action_update_schema = google_conversion_action_update_schema()
+        user_list_schema = google_user_list_schema()
+        user_list_update_schema = google_user_list_update_schema()
+        user_list_properties = user_list_schema["properties"]
+        create_user_list_properties = {
+            key: user_list_properties[key]
+            for key in (
+                "customer_id", "name", "description", "membership_life_span",
+                "integration_code", "eligible_for_search", "upload_key_type",
+                "data_source_type", "app_id",
+            )
+        }
         criterion_schema = google_campaign_criterion_schema()
         criterion_properties = criterion_schema["properties"]
         list_criterion_properties = {
@@ -374,6 +390,74 @@ class GoogleCapability(BaseCapability):
                 resource_type="user_list", resource_id_field="user_list_id",
                 intent_types=["get_user_list"], traits=["read", "audience"],
                 argument_builder=lambda _ctx, data: ((data["user_list_id"],), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_create_user_list",
+                description="创建 Google Ads Customer Match User List；默认仅生成 dry-run 计划。",
+                method_name="create_user_list", result_key="user_list_id",
+                properties=create_user_list_properties,
+                required=user_list_schema["required"],
+                provider_required=user_list_schema["provider_required"],
+                conditional_rules=user_list_schema["conditional_rules"],
+                action="create", resource_type="user_list", resource_id_field="user_list_id",
+                intent_types=["create_user_list"], traits=["write", "audience"], write=True,
+                argument_builder=lambda _ctx, data: (({
+                    key: data.get(key)
+                    for key in (
+                        "name", "description", "membership_life_span",
+                        "integration_code", "eligible_for_search", "upload_key_type",
+                        "data_source_type", "app_id",
+                    )
+                    if data.get(key) is not None
+                },), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_update_user_list",
+                description="更新 Google Ads User List 的可变字段；默认仅生成 dry-run 计划。",
+                method_name="update_user_list", result_key="user_list_result",
+                properties={
+                    "customer_id": user_list_properties["customer_id"],
+                    "user_list_id": user_list_properties["user_list_id"],
+                    "updates": user_list_update_schema,
+                },
+                required=["customer_id", "user_list_id", "updates"],
+                action="update", resource_type="user_list", resource_id_field="user_list_id",
+                intent_types=["update_user_list"], traits=["write", "audience"], write=True,
+                argument_builder=lambda _ctx, data: ((data["user_list_id"], data["updates"]), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_delete_user_list",
+                description="删除 Google Ads User List；默认仅生成 dry-run 计划。",
+                method_name="delete_user_list", result_key="user_list_result",
+                properties={
+                    "customer_id": user_list_properties["customer_id"],
+                    "user_list_id": user_list_properties["user_list_id"],
+                },
+                required=["customer_id", "user_list_id"],
+                action="delete", resource_type="user_list", resource_id_field="user_list_id",
+                intent_types=["delete_user_list"], traits=["write", "audience"], write=True,
+                argument_builder=lambda _ctx, data: ((data["user_list_id"],), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_upload_user_list_data",
+                description=(
+                    "向 Google Ads Customer Match User List 上传仅含 SHA-256 邮箱/手机号的本地 CSV/TSV；"
+                    "默认仅生成 dry-run 计划。"
+                ),
+                method_name="upload_user_list_data", result_key="upload_result",
+                properties={
+                    "customer_id": user_list_properties["customer_id"],
+                    "user_list_id": user_list_properties["user_list_id"],
+                    "file_path": user_list_properties["file_path"],
+                },
+                required=["customer_id", "user_list_id", "file_path"],
+                action="upload", resource_type="user_list", resource_id_field="user_list_id",
+                intent_types=["upload_user_list_data"], traits=["write", "audience", "data_upload"], write=True,
+                argument_builder=lambda _ctx, data: ((data["user_list_id"], data["file_path"]), {}),
             ),
             method_tool(
                 platform="google-ads", skill="google-ads-api-expert",

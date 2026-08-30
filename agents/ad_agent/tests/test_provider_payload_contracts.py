@@ -251,6 +251,135 @@ def test_google_user_list_queries_normalize_gaql_rows():
     assert client.get_user_list("9")["name"] == "Purchasers"
 
 
+def test_google_user_list_lifecycle_builds_customer_mutate_payloads():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    calls = []
+    client._mutate = lambda resource, operation: (
+        calls.append((resource, operation))
+        or {"results": [{"resourceName": "customers/123/userLists/77"}]}
+    )
+
+    assert client.create_user_list({
+        "name": "Purchasers",
+        "description": "Recent purchasers",
+        "membership_life_span": 30,
+        "upload_key_type": "CONTACT_INFO",
+    }) == "77"
+    assert calls[0] == ("userLists", {"create": {
+        "name": "Purchasers",
+        "description": "Recent purchasers",
+        "membershipLifeSpan": 30,
+        "crmBasedUserList": {
+            "uploadKeyType": "CONTACT_INFO",
+            "dataSourceType": "FIRST_PARTY",
+        },
+    }})
+
+    client.update_user_list("77", {
+        "name": "Recent purchasers",
+        "membership_life_span": 45,
+        "eligible_for_search": True,
+    })
+    assert calls[1] == ("userLists", {
+        "update": {
+            "resourceName": "customers/123/userLists/77",
+            "name": "Recent purchasers",
+            "membershipLifeSpan": 45,
+            "eligibleForSearch": True,
+        },
+        "updateMask": {"paths": [
+            "name", "membershipLifeSpan", "eligibleForSearch",
+        ]},
+    })
+
+    client.delete_user_list("77")
+    assert calls[2] == ("userLists", {
+        "remove": "customers/123/userLists/77",
+    })
+
+
+def test_google_user_list_upload_uses_hashed_file_and_three_step_offline_job(tmp_path):
+    digest = "a" * 64
+    source = tmp_path / "customers.csv"
+    source.write_text(
+        "hashed_email,hashed_phone_number\n"
+        f"{digest},{'b' * 64}\n",
+        encoding="utf-8",
+    )
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    calls = []
+    responses = iter([
+        {"status_code": 200, "data": {
+            "resourceName": "customers/123/offlineUserDataJobs/88",
+        }},
+        {"status_code": 200, "data": {}},
+        {"status_code": 200, "data": {"name": "operations/abc"}},
+    ])
+    client.request_raw = lambda method, endpoint, data=None, **_kwargs: (
+        calls.append((method, endpoint, data)) or next(responses)
+    )
+
+    result = client.upload_user_list_data("77", str(source))
+
+    assert result == {
+        "success": True,
+        "job_id": "88",
+        "job_resource_name": "customers/123/offlineUserDataJobs/88",
+        "user_list_id": "77",
+        "rows_uploaded": 1,
+        "status": "RUNNING",
+    }
+    assert [call[1] for call in calls] == [
+        "https://googleads.googleapis.com/v24/customers/123/offlineUserDataJobs:create",
+        "customers/123/offlineUserDataJobs/88:addOperations",
+        "customers/123/offlineUserDataJobs/88:run",
+    ]
+    assert calls[0][2]["job"]["customerMatchUserListMetadata"]["userList"] == (
+        "customers/123/userLists/77"
+    )
+    assert calls[1][2] == {"operations": [{"create": {"userIdentifiers": [
+        {"hashedEmail": digest}, {"hashedPhoneNumber": "b" * 64},
+    ]}}]}
+    assert digest not in str(result)
+
+
+def test_google_user_list_upload_rejects_raw_or_unknown_columns(tmp_path):
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    raw = tmp_path / "raw.csv"
+    raw.write_text("email\nuser@example.com\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="only be hashed_email"):
+        client.upload_user_list_data("77", str(raw))
+
+    malformed = tmp_path / "malformed.csv"
+    malformed.write_text("hashed_email\nnot-a-sha256\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="non-SHA-256"):
+        client.upload_user_list_data("77", str(malformed))
+
+
+def test_google_user_list_tools_expose_lifecycle_and_closed_upload_contract():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_google_capability().register_tools()
+    }
+    assert {
+        "google_create_user_list", "google_update_user_list",
+        "google_delete_user_list", "google_upload_user_list_data",
+    } <= definitions.keys()
+    create = definitions["google_create_user_list"]
+    assert create.input_schema.properties["upload_key_type"]["enum"] == [
+        "CONTACT_INFO", "CRM_ID", "MOBILE_ADVERTISING_ID",
+    ]
+    upload = definitions["google_upload_user_list_data"]
+    assert upload.input_schema.additional_properties is False
+    assert upload.live_support is False
+    errors = validate_tool_input(
+        upload.input_schema,
+        {"customer_id": "123", "user_list_id": "77", "file_path": "/tmp/x.csv", "email": "x"},
+        include_provider_contract=True,
+    )
+    assert any("not allowed" in error for error in errors)
+
+
 def test_google_customer_client_queries_normalize_manager_rows():
     client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
     calls = []

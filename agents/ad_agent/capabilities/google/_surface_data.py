@@ -47,8 +47,9 @@ API_SURFACE = [
     {"resource": "asset", "action": "delete", "status": "planned", "gap": "AssetService 删除权限和关联约束尚未完成验证"},
     {"resource": "user_list", "action": "list", "method": "list_user_lists", "status": "implemented"},
     {"resource": "user_list", "action": "get", "method": "get_user_list", "status": "implemented"},
-    {"resource": "user_list", "action": "create", "status": "planned", "gap": "第一方受众列表创建与客户数据上传尚未完成验证"},
-    {"resource": "user_list", "action": "update", "status": "planned", "gap": "第一方受众列表更新字段尚未完成验证"},
-    {"resource": "user_list", "action": "delete", "status": "planned", "gap": "第一方受众列表删除权限和依赖约束尚未完成验证"},
+    {"resource": "user_list", "action": "create", "method": "create_user_list", "status": "implemented"},
+    {"resource": "user_list", "action": "update", "method": "update_user_list", "status": "implemented"},
+    {"resource": "user_list", "action": "delete", "method": "delete_user_list", "status": "implemented"},
+    {"resource": "user_list", "action": "upload", "method": "upload_user_list_data", "status": "implemented"},
     {"resource": "customer_client", "action": "list", "method": "list_customer_clients", "status": "implemented"},
 ]
