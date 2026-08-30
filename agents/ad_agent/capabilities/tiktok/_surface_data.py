@@ -33,6 +33,10 @@ API_SURFACE = [
     {"resource": "image", "action": "upload", "method": "upload_image", "status": "implemented"},
     {"resource": "conversion", "action": "list", "method": "list_conversions", "status": "implemented"},
     {"resource": "conversion", "action": "get", "method": "get_conversion", "status": "implemented"},
+    {"resource": "pixel", "action": "list", "method": "list_pixels", "status": "implemented"},
+    {"resource": "pixel", "action": "get", "method": "get_pixel", "status": "implemented"},
+    {"resource": "pixel", "action": "create", "method": "create_pixel", "status": "implemented"},
+    {"resource": "pixel", "action": "update", "method": "update_pixel", "status": "implemented"},
     {"resource": "pixel_event", "action": "send", "method": "send_pixel_event", "status": "implemented"},
     {"resource": "pixel_event_batch", "action": "send", "method": "send_pixel_events", "status": "implemented"},
     {"resource": "catalog", "action": "list", "method": "list_catalogs", "status": "implemented"},
@@ -44,7 +48,6 @@ API_SURFACE = [
     {"resource": "audience", "action": "source_upload", "method": "upload_audience_file", "status": "implemented"},
     {"resource": "creative", "action": "crud", "status": "planned", "gap": "TikTok 创意对象由广告创建接口生成，尚缺独立创意管理/编辑能力"},
     {"resource": "lead_form", "action": "crud", "status": "not_applicable", "gap": "Instant Form/Page 由 TikTok Instant Page Editor SDK 管理，不属于当前 Ads API CRUD；广告创建通过 page_id 引用"},
-    {"resource": "pixel", "action": "crud", "status": "planned", "gap": "Pixel/事件配置尚无 Tool"},
     {"resource": "catalog", "action": "crud", "status": "planned", "gap": "当前已提供 catalog/get 与 product_set/get 读取 Tool；Catalog/Product Set 创建、更新、删除尚无经过验证的 TikTok Ads API endpoint/Tool，不能伪造为已实现"},
     {"resource": "ad_group_targeting", "action": "update", "method": "update_adgroup_targeting", "status": "implemented"},
 ]

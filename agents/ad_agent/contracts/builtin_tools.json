@@ -1,5 +1,5 @@
 {
-  "digest": "aac5d363e2a9fff132678108156bab89ef7c67e3aec29b7bf0e347869d7e909d",
+  "digest": "42d8bf12b3373a42b61aecd3bf86f024ccb1a12e87fce9399a6fff9dd804ce44",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -12022,8 +12022,8 @@
       ]
     },
     "tiktok": {
-      "digest": "0f35bf0c2bf72bcb22557152e1a585329f3deff5a68886d8ecb1c95d7ef1529f",
-      "tool_count": 63,
+      "digest": "142ba053066fea61c523ee58af7e82571653f8383dc1448950b90cdd3ec49a47",
+      "tool_count": 67,
       "tools": [
         {
           "action": "create",
@@ -13445,6 +13445,73 @@
         {
           "action": "create",
           "contract_version": "1.2.0",
+          "description": "创建 TikTok Website 或 App Pixel；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "TikTok advertiser ID",
+                "type": "string"
+              },
+              "name": {
+                "description": "Pixel name",
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "object_type": {
+                "description": "Pixel source type",
+                "enum": [
+                  "WEBSITE",
+                  "APP"
+                ],
+                "type": "string"
+              },
+              "tracking_url": {
+                "description": "Website URL associated with the Pixel",
+                "maxLength": 2048,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "name",
+              "object_type"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_pixel"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_create_pixel",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "pixel_id",
+          "resource_type": "pixel",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "pixel"
+          ]
+        },
+        {
+          "action": "create",
+          "contract_version": "1.2.0",
           "description": "创建 TikTok SINGLE_IMAGE 广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -14326,6 +14393,71 @@
           "traits": [
             "read",
             "targeting"
+          ]
+        },
+        {
+          "action": "get",
+          "contract_version": "1.2.0",
+          "description": "查询 TikTok Pixel 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "TikTok advertiser ID",
+                "type": "string"
+              },
+              "pixel_id": {
+                "description": "TikTok Pixel ID/code",
+                "lookup_result_key": "pixels",
+                "lookup_tool": "tiktok_list_pixels",
+                "maxLength": 128,
+                "minLength": 1,
+                "selection_label_fields": [
+                  "name",
+                  "pixel_id",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "pixel_id",
+                  "id",
+                  "code"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "pixel_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_pixel"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_get_pixel",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "pixel_id",
+          "resource_type": "pixel",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "pixel"
           ]
         },
         {
@@ -15472,6 +15604,69 @@
           "traits": [
             "read",
             "targeting"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.2.0",
+          "description": "查询 TikTok 广告主下的 Pixel。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "TikTok advertiser ID",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of Pixels",
+                "minimum": 1,
+                "type": "integer"
+              },
+              "pixel_ids": {
+                "description": "Optional Pixel IDs to retrieve",
+                "items": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "minItems": 1,
+                "type": "array"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_pixels"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_list_pixels",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "pixel",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "pixel",
+            "lookup"
           ]
         },
         {
@@ -17159,6 +17354,85 @@
           ]
         },
         {
+          "action": "update",
+          "contract_version": "1.2.0",
+          "description": "更新 TikTok Pixel 名称；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "TikTok advertiser ID",
+                "type": "string"
+              },
+              "pixel_id": {
+                "description": "TikTok Pixel ID/code",
+                "lookup_result_key": "pixels",
+                "lookup_tool": "tiktok_list_pixels",
+                "maxLength": 128,
+                "minLength": 1,
+                "selection_label_fields": [
+                  "name",
+                  "pixel_id",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "pixel_id",
+                  "id",
+                  "code"
+                ],
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Supported TikTok Pixel update fields",
+                "properties": {
+                  "name": {
+                    "description": "Pixel name",
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "pixel_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_pixel"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_update_pixel",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "pixel_id",
+          "resource_type": "pixel",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "pixel"
+          ]
+        },
+        {
           "action": "upload",
           "contract_version": "1.2.0",
           "description": "上传 TikTok Custom Audience 的加密 CSV/TXT 文件；默认仅生成 dry-run 计划。",
@@ -17425,5 +17699,5 @@
       ]
     }
   },
-  "tool_count": 208
+  "tool_count": 212
 }

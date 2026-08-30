@@ -46,6 +46,7 @@ from .parameters import (
     tiktok_audience_file_upload_schema,
     tiktok_image_upload_schema,
     tiktok_video_upload_schema,
+    tiktok_pixel_schema,
     tiktok_pixel_event_schema,
     tiktok_pixel_batch_schema,
     tiktok_creative_portfolio_schema,
@@ -132,6 +133,8 @@ class TikTokCapability(BaseCapability):
         "list_videos": ["tiktok_list_videos"], "list_images": ["tiktok_list_images"],
         "upload_image": ["tiktok_upload_image"], "upload_video": ["tiktok_upload_video"],
         "list_conversions": ["tiktok_list_conversions"], "get_conversion": ["tiktok_get_conversion"],
+        "list_pixels": ["tiktok_list_pixels"], "get_pixel": ["tiktok_get_pixel"],
+        "create_pixel": ["tiktok_create_pixel"], "update_pixel": ["tiktok_update_pixel"],
         "send_pixel_event": ["tiktok_send_pixel_event"],
         "send_pixel_events": ["tiktok_send_pixel_events"],
         "create_creative_portfolio": ["tiktok_create_creative_portfolio"],
@@ -154,6 +157,7 @@ class TikTokCapability(BaseCapability):
         video_upload = tiktok_video_upload_schema()
         pixel_event = tiktok_pixel_event_schema()
         pixel_batch = tiktok_pixel_batch_schema()
+        pixel = tiktok_pixel_schema()
         creative_portfolio = tiktok_creative_portfolio_schema()
         identity_create = tiktok_identity_create_schema()
         identity_list = tiktok_identity_list_schema()
@@ -415,6 +419,51 @@ class TikTokCapability(BaseCapability):
                 required=["account_id", "conversion_id"], action="get", resource_type="conversion",
                 intent_types=["get_conversion"], traits=["read", "conversion"],
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["conversion_id"]), {}),
+            ),
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_pixels",
+                description="查询 TikTok 广告主下的 Pixel。", method_name="list_pixels",
+                result_key="pixels", properties={key: pixel["properties"][key]
+                for key in ("account_id", "pixel_ids", "limit")},
+                required=["account_id"], action="list", resource_type="pixel",
+                intent_types=["list_pixels"], traits=["read", "pixel", "lookup"],
+                argument_builder=lambda ctx, data: ((account(ctx, data), data.get("pixel_ids")), {
+                    "page_size": data.get("limit", 20),
+                }),
+            ),
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_get_pixel",
+                description="查询 TikTok Pixel 详情。", method_name="get_pixel",
+                result_key="pixel", properties={key: pixel["properties"][key]
+                for key in ("account_id", "pixel_id")},
+                required=["account_id", "pixel_id"], action="get", resource_type="pixel",
+                resource_id_field="pixel_id", intent_types=["get_pixel"],
+                traits=["read", "pixel"],
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["pixel_id"]), {}),
+            ),
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_create_pixel",
+                description="创建 TikTok Website 或 App Pixel；默认仅生成 dry-run 计划。",
+                method_name="create_pixel", result_key="pixel_id",
+                properties={key: pixel["properties"][key]
+                for key in ("account_id", "name", "object_type", "tracking_url")},
+                required=pixel["create_required"], action="create", resource_type="pixel",
+                resource_id_field="pixel_id", intent_types=["create_pixel"],
+                traits=["write", "pixel"], write=True, live_support=False,
+                argument_builder=lambda ctx, data: ((account(ctx, data), {
+                    key: value for key, value in data.items() if key != "account_id"
+                }), {}),
+            ),
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_update_pixel",
+                description="更新 TikTok Pixel 名称；默认仅生成 dry-run 计划。",
+                method_name="update_pixel", result_key="pixel_result",
+                properties={key: pixel["properties"][key]
+                for key in ("account_id", "pixel_id", "updates")},
+                required=pixel["update_required"], action="update", resource_type="pixel",
+                resource_id_field="pixel_id", intent_types=["update_pixel"],
+                traits=["write", "pixel"], write=True, live_support=False,
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["pixel_id"], data["updates"]), {}),
             ),
             method_tool(
                 platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_send_pixel_event",

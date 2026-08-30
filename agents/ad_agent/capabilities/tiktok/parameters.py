@@ -54,6 +54,7 @@ TIKTOK_KEYWORD_LANGUAGES = [
 TIKTOK_INTEREST_KEYWORD_MODES = ["FUZZ_MATCH", "SEMANTIC_RECOMMEND"]
 TIKTOK_INTEREST_AUDIENCE_TYPES = ["GENERAL_INTEREST", "PURCHASE_INTENTION"]
 TIKTOK_IDENTITY_TYPES = ["CUSTOMIZED_USER", "AUTH_CODE", "TT_USER"]
+TIKTOK_PIXEL_OBJECT_TYPES = ["WEBSITE", "APP"]
 
 
 def _field(
@@ -305,6 +306,42 @@ def _tiktok_pixel_event_properties() -> dict[str, Any]:
             },
             additionalProperties=True,
         ),
+    }
+
+
+def tiktok_pixel_schema() -> dict[str, Any]:
+    """Schema for TikTok Pixel list/get/create/update operations."""
+    pixel_id = _field(
+        "string", "TikTok Pixel ID/code", minLength=1, maxLength=128,
+        lookup_tool="tiktok_list_pixels", lookup_result_key="pixels",
+        selection_value_fields=["pixel_id", "id", "code"],
+        selection_label_fields=["name", "pixel_id", "id"],
+    )
+    return {
+        "create_required": ["account_id", "name", "object_type"],
+        "update_required": ["account_id", "pixel_id", "updates"],
+        "properties": {
+            "account_id": _field("string", "TikTok advertiser ID"),
+            "pixel_id": pixel_id,
+            "pixel_ids": _field(
+                "array", "Optional Pixel IDs to retrieve", minItems=1, maxItems=100,
+                items={"type": "string", "minLength": 1, "maxLength": 128},
+            ),
+            "limit": _field("integer", "Maximum number of Pixels", minimum=1),
+            "name": _field("string", "Pixel name", minLength=1, maxLength=128),
+            "object_type": _field(
+                "string", "Pixel source type", enum=TIKTOK_PIXEL_OBJECT_TYPES,
+            ),
+            "tracking_url": _field("string", "Website URL associated with the Pixel", maxLength=2048),
+            "updates": {
+                "type": "object",
+                "description": "Supported TikTok Pixel update fields",
+                "properties": {
+                    "name": _field("string", "Pixel name", minLength=1, maxLength=128),
+                },
+                "additionalProperties": False,
+            },
+        },
     }
 
 

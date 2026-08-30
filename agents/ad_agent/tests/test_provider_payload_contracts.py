@@ -123,6 +123,61 @@ def test_tiktok_pixel_track_and_batch_build_v13_payloads_and_tools():
     ) == []
 
 
+def test_tiktok_pixel_lifecycle_builds_scoped_v13_payloads_and_tools():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+
+    def request(method, endpoint, data=None, params=None, **_kwargs):
+        calls.append((method, endpoint, data, params))
+        if endpoint == "pixel/get/":
+            return {"list": [{"pixel_id": "px-1", "name": "Website Pixel"}]}
+        if endpoint == "pixel/create/":
+            return {"pixel_id": "px-new"}
+        return {"updated": True}
+
+    client.request = request
+    assert client.list_pixels("123", pixel_ids=["px-1"], page_size=10) == [
+        {"pixel_id": "px-1", "name": "Website Pixel"}
+    ]
+    assert client.get_pixel("123", "px-1")["name"] == "Website Pixel"
+    assert client.create_pixel("123", {
+        "name": "App Pixel", "object_type": "APP",
+    }) == "px-new"
+    assert client.update_pixel("123", "px-1", {"name": "Renamed Pixel"})["success"] is True
+
+    assert calls[0] == (
+        "GET", "pixel/get/", None,
+        {"advertiser_id": "123", "page_size": 10, "pixel_ids": ["px-1"]},
+    )
+    assert calls[2] == (
+        "POST", "pixel/create/",
+        {"advertiser_id": "123", "name": "App Pixel", "object_type": "APP"}, None,
+    )
+    assert calls[-1] == (
+        "POST", "pixel/update/",
+        {"advertiser_id": "123", "pixel_id": "px-1", "name": "Renamed Pixel"}, None,
+    )
+
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_tiktok_capability().register_tools()
+    }
+    assert {
+        "tiktok_list_pixels", "tiktok_get_pixel",
+        "tiktok_create_pixel", "tiktok_update_pixel",
+    } <= definitions.keys()
+    assert definitions["tiktok_get_pixel"].input_schema.properties["pixel_id"]["lookup_tool"] == (
+        "tiktok_list_pixels"
+    )
+    assert definitions["tiktok_create_pixel"].live_support is False
+    assert definitions["tiktok_update_pixel"].input_schema.properties["updates"]["additionalProperties"] is False
+    assert validate_tool_input(
+        definitions["tiktok_create_pixel"].input_schema,
+        {"account_id": "123", "name": "Website Pixel", "object_type": "WEBSITE"},
+        include_provider_contract=True,
+    ) == []
+
+
 def test_tiktok_catalog_queries_are_scoped_validated_and_published_as_provider_tools():
     client = TikTokAPIClient({"access_token": "test"})
     calls = []

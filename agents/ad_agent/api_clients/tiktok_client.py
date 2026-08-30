@@ -1518,6 +1518,101 @@ class TikTokAPIClient(BasePlatformClient):
         result = self.list_conversions(advertiser_id, filtering=filtering)
         return result[0] if result else {}
 
+    # ==================== Pixel 管理 ====================
+
+    def list_pixels(
+        self, advertiser_id: str, pixel_ids: list[str] = None, page_size: int = 20
+    ) -> list:
+        """List TikTok Pixels for an advertiser."""
+        advertiser_id = str(advertiser_id or "").strip()
+        if not advertiser_id:
+            raise ValueError("advertiser_id must not be empty")
+        if pixel_ids is not None:
+            if not isinstance(pixel_ids, list) or not pixel_ids:
+                raise ValueError("pixel_ids must be a non-empty list when provided")
+            pixel_ids = [str(value or "").strip() for value in pixel_ids]
+            if any(not value for value in pixel_ids):
+                raise ValueError("pixel_ids must contain non-empty values")
+        data = {"advertiser_id": advertiser_id, "page_size": page_size}
+        if pixel_ids:
+            data["pixel_ids"] = pixel_ids
+        self.acquire_rate_limit(self._rate_limiter)
+        result = self.request("GET", "pixel/get/", params=data)
+        payload = self._data_section(result)
+        if not isinstance(payload, dict):
+            return []
+        return payload.get("list", []) if isinstance(payload.get("list"), list) else []
+
+    def get_pixel(self, advertiser_id: str, pixel_id: str) -> dict:
+        """Get one TikTok Pixel and keep the advertiser scope explicit."""
+        pixel_id = str(pixel_id or "").strip()
+        if not pixel_id:
+            raise ValueError("pixel_id must not be empty")
+        pixels = self.list_pixels(advertiser_id, pixel_ids=[pixel_id], page_size=1)
+        return next(
+            (item for item in pixels if isinstance(item, dict) and str(
+                item.get("pixel_id") or item.get("id") or item.get("code")
+            ) == pixel_id),
+            {},
+        )
+
+    def create_pixel(self, advertiser_id: str, pixel: dict) -> str:
+        """Create a TikTok Website or App Pixel."""
+        advertiser_id = str(advertiser_id or "").strip()
+        if not advertiser_id:
+            raise ValueError("advertiser_id must not be empty")
+        if not isinstance(pixel, dict):
+            raise ValueError("pixel must be an object")
+        allowed = {"name", "object_type", "tracking_url"}
+        unknown = sorted(set(pixel) - allowed)
+        if unknown:
+            raise ValueError(f"unsupported pixel fields: {', '.join(unknown)}")
+        name = str(pixel.get("name") or "").strip()
+        object_type = str(pixel.get("object_type") or "").strip().upper()
+        if not name or object_type not in {"WEBSITE", "APP"}:
+            raise ValueError("pixel name and object_type=WEBSITE or APP are required")
+        data = {
+            "advertiser_id": advertiser_id,
+            "name": name,
+            "object_type": object_type,
+        }
+        if pixel.get("tracking_url") is not None:
+            tracking_url = str(pixel["tracking_url"]).strip()
+            if not tracking_url:
+                raise ValueError("tracking_url must not be empty when provided")
+            data["tracking_url"] = tracking_url
+        self.acquire_rate_limit(self._rate_limiter)
+        result = self.request("POST", "pixel/create/", data=data)
+        payload = self._data_section(result)
+        pixel_id = payload.get("pixel_id") or payload.get("id") if isinstance(payload, dict) else None
+        return self.require_resource_id(pixel_id, "TikTok pixel create")
+
+    def update_pixel(self, advertiser_id: str, pixel_id: str, updates: dict) -> dict:
+        """Update the Pixel name supported by TikTok's Pixel update edge."""
+        advertiser_id = str(advertiser_id or "").strip()
+        pixel_id = str(pixel_id or "").strip()
+        if not advertiser_id or not pixel_id:
+            raise ValueError("advertiser_id and pixel_id must not be empty")
+        if not self.get_pixel(advertiser_id, pixel_id):
+            raise PermissionError(
+                f"TikTok pixel {pixel_id} does not belong to advertiser {advertiser_id}"
+            )
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("updates must be a non-empty object")
+        unknown = sorted(set(updates) - {"name"})
+        if unknown:
+            raise ValueError(f"unsupported pixel update fields: {', '.join(unknown)}")
+        name = str(updates.get("name") or "").strip()
+        if not name:
+            raise ValueError("pixel update name must not be empty")
+        self.acquire_rate_limit(self._rate_limiter)
+        result = self.request("POST", "pixel/update/", data={
+            "advertiser_id": advertiser_id,
+            "pixel_id": pixel_id,
+            "name": name,
+        })
+        return {"success": True, "pixel_id": pixel_id, "result": result}
+
     # ==================== Pixel 事件发送 ====================
 
     @staticmethod
