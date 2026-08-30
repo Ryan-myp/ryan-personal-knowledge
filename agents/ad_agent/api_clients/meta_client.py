@@ -1156,15 +1156,21 @@ class MetaAPIClient(BasePlatformClient):
             targeting = json.dumps(targeting)
         
         daily_budget = adset.get('daily_budget', adset.get('budget'))
+        bid_strategy = adset.get(
+            'bid_strategy', adset.get('bidding_strategy', 'LOWEST_COST_WITHOUT_CAP')
+        )
+        bid_amount = adset.get('bid_amount')
+        if bid_strategy in {"LOWEST_COST_WITH_BID_CAP", "COST_CAP"} and bid_amount is None:
+            raise ValueError(f"Meta {bid_strategy} requires bid_amount")
+        if bid_strategy == "LOWEST_COST_WITH_MIN_ROAS" and adset.get("roas_average_floor") is None:
+            raise ValueError("Meta LOWEST_COST_WITH_MIN_ROAS requires roas_average_floor")
         data = {
             'name': adset['name'],
             'campaign_id': campaign_id,
             'optimization_goal': adset.get('optimization_goal', 'REACH'),
             'billing_event': adset.get('billing_event', 'IMPRESSIONS'),
-            'bidding_strategy': adset.get(
-                'bidding_strategy', adset.get('bid_strategy', 'LOWEST_COST_WITHOUT_CAP')
-            ),
-            'bid_amount': str(adset.get('bid_amount', 100)),
+            'bidding_strategy': bid_strategy,
+            'bid_amount': str(bid_amount if bid_amount is not None else 100),
             'targeting': targeting,
             'status': adset.get('status', 'PAUSED'),
         }
@@ -1176,6 +1182,8 @@ class MetaAPIClient(BasePlatformClient):
             if not isinstance(promoted_object, dict):
                 raise ValueError("Meta Ad Set promoted_object must be an object")
             data['promoted_object'] = json.dumps(promoted_object)
+        if adset.get('roas_average_floor') is not None:
+            data['roas_average_floor'] = str(adset['roas_average_floor'])
         for field_name in ('lead_gen_config', 'product_set_id', 'messaging_apps'):
             if adset.get(field_name) is not None:
                 value = adset[field_name]

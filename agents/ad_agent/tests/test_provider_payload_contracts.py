@@ -849,6 +849,7 @@ def test_meta_creation_options_are_forwarded_to_provider_payloads():
     client.create_adset("m1", "c1", {
         "name": "Ad Set",
         "bid_strategy": "COST_CAP",
+        "bid_amount": 5,
         "targeting": {"geo_locations": {"countries": ["US"]}},
         "promoted_object": {"pixel_id": "px1", "custom_event_type": "PURCHASE"},
         "start_time": "2026-08-28T00:00:00+0000",
@@ -2229,6 +2230,58 @@ def test_meta_campaign_special_categories_are_validated_before_graph_request():
             "name": "Invalid", "objective": "OUTCOME_SALES",
             "special_ad_categories": ["UNKNOWN"],
         })
+
+
+def test_meta_adset_bid_strategy_and_inline_creative_contracts_are_explicit():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_meta_capability().register_tools()
+    }
+    adset_schema = definitions["meta_create_adset"].input_schema
+    base = {
+        "campaign_id": "campaign-1", "name": "Sales ad set",
+        "targeting": {"geo_locations": {"countries": ["US"]}},
+        "optimization_goal": "OFFSITE_CONVERSIONS",
+        "billing_event": "IMPRESSIONS", "daily_budget": 20,
+        "promoted_object": {"pixel_id": "pixel-1", "custom_event_type": "PURCHASE"},
+        "bid_strategy": "COST_CAP",
+    }
+    assert any("bid_amount" in error for error in validate_tool_input(
+        adset_schema, base, include_provider_contract=True,
+    ))
+    base["bid_amount"] = 5
+    assert validate_tool_input(adset_schema, base, include_provider_contract=True) == []
+
+    min_roas = {**base, "bid_strategy": "LOWEST_COST_WITH_MIN_ROAS"}
+    assert any("roas_average_floor" in error for error in validate_tool_input(
+        adset_schema, min_roas, include_provider_contract=True,
+    ))
+    min_roas["roas_average_floor"] = 1.25
+    assert validate_tool_input(adset_schema, min_roas, include_provider_contract=True) == []
+
+    ad_schema = definitions["meta_create_ad"].input_schema
+    cta_schema = ad_schema.properties["object_story_spec"]["properties"]["link_data"]["properties"]["call_to_action"]
+    assert "SEND_MESSAGE" in cta_schema["properties"]["type"]["enum"]
+    assert "CAROUSEL" in ad_schema.properties["ad_format"]["enum"]
+
+
+def test_meta_adset_client_rejects_missing_cap_limits_and_forwards_roas_floor():
+    client = MetaAPIClient({"access_token": "test"})
+    payloads = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        payloads.append(data) or {"id": "adset-1"}
+    )
+    with pytest.raises(ValueError, match="COST_CAP requires bid_amount"):
+        client.create_adset("123", "campaign-1", {
+            "name": "Cost cap", "bid_strategy": "COST_CAP",
+        })
+
+    assert client.create_adset("123", "campaign-1", {
+        "name": "Min ROAS", "bid_strategy": "LOWEST_COST_WITH_MIN_ROAS",
+        "roas_average_floor": 1.4,
+    }) == "adset-1"
+    assert payloads[-1]["bidding_strategy"] == "LOWEST_COST_WITH_MIN_ROAS"
+    assert payloads[-1]["roas_average_floor"] == "1.4"
 
 
 def test_google_creation_options_are_mapped_to_rest_resources():

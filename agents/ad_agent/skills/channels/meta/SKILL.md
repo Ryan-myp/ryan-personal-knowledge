@@ -62,6 +62,12 @@ Meta targeting ID，也不要把搜索结果当成写入操作。`special_ad_cat
 `NONE` 与 `EMPLOYMENT`、`HOUSING`、`CREDIT` 互斥，非法类别必须在进入 Graph API
 前拒绝。
 
+Ad Set 出价策略必须携带对应参数：`LOWEST_COST_WITH_BID_CAP` 和 `COST_CAP`
+需要 `bid_amount`，`LOWEST_COST_WITH_MIN_ROAS` 需要 `roas_average_floor`；不能用
+默认 bid 覆盖用户未提供的硬性约束。Inline Ad 的 Link、Video、Carousel、Lead、
+Catalog 格式和 CTA 也必须使用当前 Tool Schema 声明的组合，不得把任意字符串当作
+合法 CTA 或素材类型。
+
 发送 CAPI 事件时，先用当前 Capability 发布的 `meta_list_pixels` 选择目标 Pixel，
 事件批次必须包含 `event_name`、Unix 秒级 `event_time`、`action_source` 和
 `user_data`。用户匹配字段应在进入 Tool 前按 Meta 规范标准化并哈希；使用

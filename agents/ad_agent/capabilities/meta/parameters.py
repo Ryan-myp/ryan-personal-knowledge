@@ -22,6 +22,11 @@ META_BID_STRATEGIES = [
     "LOWEST_COST_WITHOUT_CAP", "LOWEST_COST_WITH_BID_CAP", "COST_CAP",
     "LOWEST_COST_WITH_MIN_ROAS",
 ]
+META_CTA_TYPES = [
+    "LEARN_MORE", "SHOP_NOW", "SIGN_UP", "CONTACT_US", "LIKE_PAGE",
+    "WATCH_VIDEO", "SEND_MESSAGE", "WHATSAPP", "GET_QUOTE", "BOOK_TRAVEL",
+]
+META_AD_FORMATS = ["LINK", "VIDEO", "CAROUSEL", "LEAD", "CATALOG"]
 META_SPECIAL_AD_CATEGORIES = ["NONE", "EMPLOYMENT", "HOUSING", "CREDIT"]
 META_STATUS = ["ACTIVE", "PAUSED"]
 META_CUSTOM_EVENT_TYPES = [
@@ -491,6 +496,9 @@ def meta_adset_schema() -> dict[str, Any]:
             "billing_event": _field("string", "Billing event", enum=META_BILLING_EVENTS),
             "bid_strategy": _field("string", "Bid strategy", enum=META_BID_STRATEGIES),
             "bidding_strategy": _field("string", "Bid strategy alias", enum=META_BID_STRATEGIES),
+            "roas_average_floor": _field(
+                "number", "Minimum ROAS floor for LOWEST_COST_WITH_MIN_ROAS", minimum=0.01,
+            ),
             "promoted_object": meta_promoted_object_schema(),
             "daily_budget": _field("number", "Daily budget", minimum=0),
             "lifetime_budget": _field("number", "Lifetime budget", minimum=0),
@@ -529,6 +537,42 @@ def meta_adset_schema() -> dict[str, Any]:
                 "required": ["promoted_object"],
                 "message": "APP_INSTALLS requires promoted_object",
             },
+            {
+                "id": "bid_cap_requires_bid_amount",
+                "if": {"bid_strategy": "LOWEST_COST_WITH_BID_CAP"},
+                "required": ["bid_amount"],
+                "message": "LOWEST_COST_WITH_BID_CAP requires bid_amount",
+            },
+            {
+                "id": "cost_cap_requires_bid_amount",
+                "if": {"bid_strategy": "COST_CAP"},
+                "required": ["bid_amount"],
+                "message": "COST_CAP requires bid_amount",
+            },
+            {
+                "id": "min_roas_requires_floor",
+                "if": {"bid_strategy": "LOWEST_COST_WITH_MIN_ROAS"},
+                "required": ["roas_average_floor"],
+                "message": "LOWEST_COST_WITH_MIN_ROAS requires roas_average_floor",
+            },
+            {
+                "id": "bid_cap_alias_requires_bid_amount",
+                "if": {"bidding_strategy": "LOWEST_COST_WITH_BID_CAP"},
+                "required": ["bid_amount"],
+                "message": "LOWEST_COST_WITH_BID_CAP requires bid_amount",
+            },
+            {
+                "id": "cost_cap_alias_requires_bid_amount",
+                "if": {"bidding_strategy": "COST_CAP"},
+                "required": ["bid_amount"],
+                "message": "COST_CAP requires bid_amount",
+            },
+            {
+                "id": "min_roas_alias_requires_floor",
+                "if": {"bidding_strategy": "LOWEST_COST_WITH_MIN_ROAS"},
+                "required": ["roas_average_floor"],
+                "message": "LOWEST_COST_WITH_MIN_ROAS requires roas_average_floor",
+            },
         ],
     }
 
@@ -540,6 +584,7 @@ def meta_ad_schema() -> dict[str, Any]:
         "properties": {
             "adset_id": _field("string", "Parent Ad Set ID"),
             "name": _field("string", "Ad name", maxLength=400),
+            "ad_format": _field("string", "Inline creative format", enum=META_AD_FORMATS),
             "creative_id": _field("string", "Existing Creative ID"),
             "object_story_spec": _object({
                 "page_id": _field("string", "Page ID"),
@@ -550,7 +595,7 @@ def meta_ad_schema() -> dict[str, Any]:
                     "description": _field("string", "Description"),
                     "image_hash": _field("string", "Uploaded image hash"),
                     "call_to_action": _object({
-                        "type": _field("string", "Call to action type"),
+                        "type": _field("string", "Call to action type", enum=META_CTA_TYPES),
                         "value": _field("object", "Call to action destination", additionalProperties=True),
                     }, "Link ad call to action"),
                 }, "Link ad story"),
@@ -559,7 +604,7 @@ def meta_ad_schema() -> dict[str, Any]:
                     "message": _field("string", "Primary text"),
                     "title": _field("string", "Video title"),
                     "call_to_action": _object({
-                        "type": _field("string", "Call to action type"),
+                        "type": _field("string", "Call to action type", enum=META_CTA_TYPES),
                         "value": _field("object", "Call to action destination", additionalProperties=True),
                     }, "Video ad call to action"),
                 }, "Video ad story"),

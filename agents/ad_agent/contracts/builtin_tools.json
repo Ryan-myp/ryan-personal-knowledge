@@ -1,5 +1,5 @@
 {
-  "digest": "563a6fc8474a8f55701c4a04dee6e00a69500dac2f59b6efdfb768dc4cf94301",
+  "digest": "520ec59a6d8566e7e37e96f261fa0031bda5e3ad7a3cd2cc622dfe8464eed382",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -7414,7 +7414,7 @@
       ]
     },
     "meta": {
-      "digest": "c96b5a0efcf32dc517afc01b592d46f2813351dacc9520e78f72eaa237879ed5",
+      "digest": "1c6485ce4d0e721ff66d84475544aec9c405abaa95f49a9c23b99ea4190d167e",
       "tool_count": 56,
       "tools": [
         {
@@ -7489,6 +7489,17 @@
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
+              "ad_format": {
+                "description": "Inline creative format",
+                "enum": [
+                  "LINK",
+                  "VIDEO",
+                  "CAROUSEL",
+                  "LEAD",
+                  "CATALOG"
+                ],
+                "type": "string"
+              },
               "adset_id": {
                 "description": "Parent Ad Set ID",
                 "type": "string"
@@ -7540,6 +7551,18 @@
                         "properties": {
                           "type": {
                             "description": "Call to action type",
+                            "enum": [
+                              "LEARN_MORE",
+                              "SHOP_NOW",
+                              "SIGN_UP",
+                              "CONTACT_US",
+                              "LIKE_PAGE",
+                              "WATCH_VIDEO",
+                              "SEND_MESSAGE",
+                              "WHATSAPP",
+                              "GET_QUOTE",
+                              "BOOK_TRAVEL"
+                            ],
                             "type": "string"
                           },
                           "value": {
@@ -7587,6 +7610,18 @@
                         "properties": {
                           "type": {
                             "description": "Call to action type",
+                            "enum": [
+                              "LEARN_MORE",
+                              "SHOP_NOW",
+                              "SIGN_UP",
+                              "CONTACT_US",
+                              "LIKE_PAGE",
+                              "WATCH_VIDEO",
+                              "SEND_MESSAGE",
+                              "WHATSAPP",
+                              "GET_QUOTE",
+                              "BOOK_TRAVEL"
+                            ],
                             "type": "string"
                           },
                           "value": {
@@ -7707,6 +7742,66 @@
                 "message": "APP_INSTALLS requires promoted_object",
                 "required": [
                   "promoted_object"
+                ]
+              },
+              {
+                "id": "bid_cap_requires_bid_amount",
+                "if": {
+                  "bid_strategy": "LOWEST_COST_WITH_BID_CAP"
+                },
+                "message": "LOWEST_COST_WITH_BID_CAP requires bid_amount",
+                "required": [
+                  "bid_amount"
+                ]
+              },
+              {
+                "id": "cost_cap_requires_bid_amount",
+                "if": {
+                  "bid_strategy": "COST_CAP"
+                },
+                "message": "COST_CAP requires bid_amount",
+                "required": [
+                  "bid_amount"
+                ]
+              },
+              {
+                "id": "min_roas_requires_floor",
+                "if": {
+                  "bid_strategy": "LOWEST_COST_WITH_MIN_ROAS"
+                },
+                "message": "LOWEST_COST_WITH_MIN_ROAS requires roas_average_floor",
+                "required": [
+                  "roas_average_floor"
+                ]
+              },
+              {
+                "id": "bid_cap_alias_requires_bid_amount",
+                "if": {
+                  "bidding_strategy": "LOWEST_COST_WITH_BID_CAP"
+                },
+                "message": "LOWEST_COST_WITH_BID_CAP requires bid_amount",
+                "required": [
+                  "bid_amount"
+                ]
+              },
+              {
+                "id": "cost_cap_alias_requires_bid_amount",
+                "if": {
+                  "bidding_strategy": "COST_CAP"
+                },
+                "message": "COST_CAP requires bid_amount",
+                "required": [
+                  "bid_amount"
+                ]
+              },
+              {
+                "id": "min_roas_alias_requires_floor",
+                "if": {
+                  "bidding_strategy": "LOWEST_COST_WITH_MIN_ROAS"
+                },
+                "message": "LOWEST_COST_WITH_MIN_ROAS requires roas_average_floor",
+                "required": [
+                  "roas_average_floor"
                 ]
               }
             ],
@@ -7871,6 +7966,11 @@
                   }
                 },
                 "type": "object"
+              },
+              "roas_average_floor": {
+                "description": "Minimum ROAS floor for LOWEST_COST_WITH_MIN_ROAS",
+                "minimum": 0.01,
+                "type": "number"
               },
               "start_time": {
                 "description": "ISO-8601 start time",
