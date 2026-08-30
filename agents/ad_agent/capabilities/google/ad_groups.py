@@ -83,6 +83,7 @@ class GoogleCreateAdGroupHandler(ToolHandler):
                     type=input_data.get("type", "SEARCH_DYNAMIC_ADS"),
                     status=input_data.get("status"),
                     targeting=input_data.get("targeting"),
+                    demand_gen_ad_group_settings=input_data.get("demand_gen_ad_group_settings"),
                 )
                 return ToolResult.ok({
                     "ad_group_id": ad_group_id,

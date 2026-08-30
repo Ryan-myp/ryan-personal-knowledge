@@ -60,6 +60,13 @@ GOOGLE_VIDEO_AD_FORMATS = [
 GOOGLE_VIDEO_CAMPAIGN_FORMAT_PREFERENCES = [
     "TRUE_VIEW_IN_STREAM", "NON_TRUE_VIEW_IN_STREAM", "BUMPER", "OUTSTREAM",
 ]
+GOOGLE_LOCAL_LOCATION_SOURCE_TYPES = [
+    "GOOGLE_MY_BUSINESS", "AFFILIATE",
+]
+GOOGLE_DEMAND_GEN_CHANNEL_CONFIGS = ["CHANNEL_STRATEGY", "SELECTED_CHANNELS"]
+GOOGLE_DEMAND_GEN_CHANNEL_STRATEGIES = [
+    "ALL_CHANNELS", "ALL_OWNED_AND_OPERATED_CHANNELS",
+]
 GOOGLE_TARGETING_DIMENSIONS = [
     "AUDIENCE", "AGE_RANGE", "GENDER", "INCOME_RANGE", "PARENTAL_STATUS",
     "PLACEMENT", "TOPIC", "USER_INTEREST", "CUSTOM_AFFINITY", "CUSTOM_INTENT",
@@ -401,6 +408,56 @@ def google_video_setting_schema() -> dict[str, Any]:
     }, "Google Video campaign settings")
 
 
+def google_demand_gen_campaign_setting_schema() -> dict[str, Any]:
+    """Campaign-level Demand Gen settings from Google Ads v24."""
+    return _object({
+        "upgraded_targeting": _field(
+            "boolean", "Enable Demand Gen upgraded targeting",
+        ),
+    }, "Google Demand Gen campaign settings")
+
+
+def google_hotel_setting_schema() -> dict[str, Any]:
+    """Hotel Center linkage required by Hotel campaigns."""
+    return _object({
+        "hotel_center_id": _field("string", "Hotel Center account ID", minLength=1),
+        "disable_hotel_setting": _field(
+            "boolean", "Disable Hotel Center settings for this campaign",
+        ),
+    }, "Google Hotel campaign settings", required=["hotel_center_id"])
+
+
+def google_local_campaign_setting_schema() -> dict[str, Any]:
+    """Business profile source for Local campaigns."""
+    return _object({
+        "location_source_type": _field(
+            "string", "Source of business locations",
+            enum=GOOGLE_LOCAL_LOCATION_SOURCE_TYPES,
+        ),
+    }, "Google Local campaign settings", required=["location_source_type"])
+
+
+def google_travel_campaign_setting_schema() -> dict[str, Any]:
+    """Travel account linkage required by Travel campaigns."""
+    return _object({
+        "travel_account_id": _field("string", "Travel account ID", minLength=1),
+    }, "Google Travel campaign settings", required=["travel_account_id"])
+
+
+def google_local_services_campaign_setting_schema() -> dict[str, Any]:
+    """Declared contract for Local Services category bids.
+
+    Local Services uses additional Local Services resources and operations;
+    this schema is intentionally descriptive until that API is integrated.
+    """
+    return _object({
+        "category_bids": _field(
+            "array", "Local Services category bids",
+            items={"type": "object", "additionalProperties": False},
+        ),
+    }, "Google Local Services campaign settings")
+
+
 def google_targeting_setting_schema() -> dict[str, Any]:
     """Campaign-level audience restriction contract.
 
@@ -478,6 +535,11 @@ def google_campaign_schema() -> dict[str, Any]:
             "shopping_setting": google_shopping_setting_schema(),
             "campaign_goal_setting": google_campaign_goal_setting_schema(),
             "video_setting": google_video_setting_schema(),
+            "demand_gen_campaign_settings": google_demand_gen_campaign_setting_schema(),
+            "hotel_setting": google_hotel_setting_schema(),
+            "local_campaign_setting": google_local_campaign_setting_schema(),
+            "travel_campaign_settings": google_travel_campaign_setting_schema(),
+            "local_services_campaign_settings": google_local_services_campaign_setting_schema(),
             "targeting_setting": google_targeting_setting_schema(),
             "network_setting": google_network_setting_schema(),
             "final_url_suffix": _field("string", "Final URL suffix for tracking"),
@@ -526,6 +588,18 @@ def google_campaign_schema() -> dict[str, Any]:
             {"id": "pmax_goal_setting_dependency", "if": {"advertising_channel_type": "PERFORMANCE_MAX"},
              "required": ["campaign_goal_setting"],
              "message": "PERFORMANCE_MAX requires campaign_goal_setting"},
+            {"id": "demand_gen_setting_dependency", "if": {"advertising_channel_type": "DEMAND_GEN"},
+             "required": ["demand_gen_campaign_settings"],
+             "message": "DEMAND_GEN requires demand_gen_campaign_settings"},
+            {"id": "hotel_setting_dependency", "if": {"advertising_channel_type": "HOTEL"},
+             "required": ["hotel_setting"],
+             "message": "HOTEL requires hotel_setting with hotel_center_id"},
+            {"id": "local_setting_dependency", "if": {"advertising_channel_type": "LOCAL"},
+             "required": ["local_campaign_setting"],
+             "message": "LOCAL requires local_campaign_setting"},
+            {"id": "travel_setting_dependency", "if": {"advertising_channel_type": "TRAVEL"},
+             "required": ["travel_campaign_settings"],
+             "message": "TRAVEL requires travel_campaign_settings"},
         ],
     }
 
@@ -536,13 +610,47 @@ def google_ad_group_schema() -> dict[str, Any]:
         "provider_required": ["type"],
         "properties": {
             "campaign_id": _field("string", "Parent Campaign ID"),
+            "campaign_type": _field(
+                "string", "Parent campaign type used to select the provider ad-group default",
+                enum=GOOGLE_CHANNEL_INPUT_TYPES,
+            ),
             "name": _field("string", "Ad group name", maxLength=255),
-            "type": _field("string", "Ad group type", enum=GOOGLE_AD_GROUP_TYPES),
+            "type": _field("string", "Ad group type", enum=[
+                *GOOGLE_AD_GROUP_TYPES,
+                "HOTEL_ADS", "PROMOTED_HOTEL_ADS", "VIDEO_NON_SKIPPABLE_IN_STREAM",
+                "VIDEO_TRUE_VIEW_IN_DISPLAY", "VIDEO_RESPONSIVE", "SMART_CAMPAIGN_ADS",
+                "TRAVEL_ADS", "YOUTUBE_AUDIO",
+            ], default="SEARCH_STANDARD"),
             "cpc_bid": _field("number", "CPC bid in account currency", minimum=0),
             "cpc_bid_micros": _field("integer", "CPC bid in micros", minimum=0),
             "status": _field("string", "Ad group status", enum=GOOGLE_STATUSES),
             "targeting": _field("object", "Ad group targeting", additionalProperties=True),
+            "demand_gen_ad_group_settings": _object({
+                "channel_controls": _object({
+                    "channel_config": _field(
+                        "string", "Demand Gen channel configuration",
+                        enum=GOOGLE_DEMAND_GEN_CHANNEL_CONFIGS,
+                    ),
+                    "channel_strategy": _field(
+                        "string", "Demand Gen channel strategy",
+                        enum=GOOGLE_DEMAND_GEN_CHANNEL_STRATEGIES,
+                    ),
+                    "selected_channels": _object({
+                        key: _field("boolean", f"Enable Demand Gen {key}")
+                        for key in (
+                            "youtube_shorts", "youtube_in_feed", "youtube_in_stream",
+                            "gmail", "maps", "discover", "display",
+                        )
+                    }, "Selected Demand Gen channels"),
+                }, "Demand Gen channel controls"),
+            }, "Demand Gen ad group settings"),
         },
+        "conditional_rules": [
+            {"id": "demand_gen_ad_group_setting_dependency",
+             "if": {"campaign_type": "DEMAND_GEN"},
+             "required": ["demand_gen_ad_group_settings"],
+             "message": "DEMAND_GEN ad groups require demand_gen_ad_group_settings"},
+        ],
     }
 
 
@@ -839,6 +947,185 @@ def google_video_ad_schema() -> dict[str, Any]:
     }
 
 
+def _google_ad_text_assets(description: str, *, min_items: int = 1, max_items: int | None = None) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {"minItems": min_items}
+    if max_items is not None:
+        kwargs["maxItems"] = max_items
+    return _field(
+        "array", description, items={"type": ["string", "object"], "additionalProperties": True},
+        **kwargs,
+    )
+
+
+def _google_ad_asset_refs(description: str, *, min_items: int = 1) -> dict[str, Any]:
+    return _field(
+        "array", description, minItems=min_items,
+        items={"type": ["string", "object"], "additionalProperties": True},
+    )
+
+
+def google_demand_gen_multi_asset_ad_schema() -> dict[str, Any]:
+    """Demand Gen multi-asset ad contract backed by ``Ad.demandGenMultiAssetAd``."""
+    return {
+        "required": ["ad_group_id", "name", "final_url", "headlines", "descriptions", "business_name"],
+        "provider_required": ["headlines", "descriptions", "business_name"],
+        "properties": {
+            "ad_group_id": _field("string", "Parent Demand Gen ad group ID", minLength=1),
+            "name": _field("string", "Ad name", minLength=1, maxLength=255),
+            "final_url": _field("string", "Final URL", minLength=1),
+            "headlines": _google_ad_text_assets("Demand Gen headlines", min_items=3, max_items=5),
+            "descriptions": _google_ad_text_assets("Demand Gen descriptions", min_items=2, max_items=5),
+            "business_name": _field("string", "Advertiser business name", minLength=1, maxLength=25),
+            "marketing_images": _google_ad_asset_refs("Landscape marketing image assets"),
+            "square_marketing_images": _google_ad_asset_refs("Square marketing image assets"),
+            "portrait_marketing_images": _google_ad_asset_refs("Portrait marketing image assets"),
+            "tall_portrait_marketing_images": _google_ad_asset_refs("Tall portrait marketing image assets"),
+            "classic_display_images": _google_ad_asset_refs("Classic display image assets"),
+            "logo_images": _google_ad_asset_refs("Logo image assets"),
+            "call_to_action_text": _field("string", "Call to action text"),
+            "status": _field("string", "Ad status", enum=GOOGLE_STATUSES),
+        },
+    }
+
+
+def google_demand_gen_carousel_ad_schema() -> dict[str, Any]:
+    """Demand Gen carousel ad contract backed by ``Ad.demandGenCarouselAd``."""
+    return {
+        "required": ["ad_group_id", "name", "final_url", "headline", "description", "carousel_cards"],
+        "provider_required": ["headline", "description", "carousel_cards"],
+        "properties": {
+            "ad_group_id": _field("string", "Parent Demand Gen ad group ID", minLength=1),
+            "name": _field("string", "Ad name", minLength=1, maxLength=255),
+            "final_url": _field("string", "Final URL", minLength=1),
+            "headline": _field("string", "Carousel headline", minLength=1),
+            "description": _field("string", "Carousel description", minLength=1),
+            "business_name": _field("string", "Advertiser business name", minLength=1, maxLength=25),
+            "logo_image": _field("object", "Logo image asset reference", additionalProperties=True),
+            "call_to_action_text": _field("string", "Call to action text"),
+            "carousel_cards": _field(
+                "array", "Demand Gen carousel cards", minItems=2, maxItems=10,
+                items=_object({
+                    "headline": _field("string", "Card headline", minLength=1),
+                    "marketing_image_asset": _field("string", "1.91:1 image Asset resource name"),
+                    "square_marketing_image_asset": _field("string", "1:1 image Asset resource name"),
+                    "portrait_marketing_image_asset": _field("string", "4:5 image Asset resource name"),
+                    "call_to_action_text": _field("string", "Card call to action"),
+                }, "Demand Gen carousel card", additional_properties=False),
+            ),
+            "status": _field("string", "Ad status", enum=GOOGLE_STATUSES),
+        },
+    }
+
+
+def google_demand_gen_video_responsive_ad_schema() -> dict[str, Any]:
+    """Demand Gen video responsive ad contract."""
+    return {
+        "required": ["ad_group_id", "name", "business_name", "videos", "headlines", "descriptions"],
+        "provider_required": ["business_name", "videos", "headlines", "descriptions"],
+        "properties": {
+            "ad_group_id": _field("string", "Parent Demand Gen ad group ID", minLength=1),
+            "name": _field("string", "Ad name", minLength=1, maxLength=255),
+            "final_url": _field("string", "Final URL", minLength=1),
+            "business_name": _field("string", "Advertiser business name", minLength=1, maxLength=25),
+            "videos": _google_ad_asset_refs("YouTube video assets"),
+            "headlines": _google_ad_text_assets("Demand Gen headlines", min_items=3, max_items=5),
+            "long_headlines": _google_ad_text_assets("Demand Gen long headlines", min_items=1, max_items=5),
+            "descriptions": _google_ad_text_assets("Demand Gen descriptions", min_items=2, max_items=5),
+            "logo_images": _google_ad_asset_refs("Logo image assets"),
+            "companion_banners": _google_ad_asset_refs("Companion banner assets"),
+            "call_to_actions": _google_ad_asset_refs("Call-to-action assets"),
+            "breadcrumb1": _field("string", "Display breadcrumb 1"),
+            "breadcrumb2": _field("string", "Display breadcrumb 2"),
+            "status": _field("string", "Ad status", enum=GOOGLE_STATUSES),
+        },
+    }
+
+
+def google_demand_gen_product_ad_schema() -> dict[str, Any]:
+    """Demand Gen product ad contract backed by Merchant Center products."""
+    return {
+        "required": ["ad_group_id", "name"],
+        "provider_required": ["headline", "description", "business_name", "logo_image", "call_to_action"],
+        "properties": {
+            "ad_group_id": _field("string", "Parent Demand Gen ad group ID", minLength=1),
+            "name": _field("string", "Ad name", minLength=1, maxLength=255),
+            "final_url": _field("string", "Optional final URL override", minLength=1),
+            "headline": _field("object", "Product ad headline asset", additionalProperties=True),
+            "description": _field("object", "Product ad description asset", additionalProperties=True),
+            "business_name": _field("object", "Business name text asset", additionalProperties=True),
+            "logo_image": _field("object", "Logo image asset", additionalProperties=True),
+            "call_to_action": _field("object", "Call-to-action asset", additionalProperties=True),
+            "breadcrumb1": _field("string", "Display breadcrumb 1"),
+            "breadcrumb2": _field("string", "Display breadcrumb 2"),
+            "status": _field("string", "Ad status", enum=GOOGLE_STATUSES),
+        },
+    }
+
+
+def google_hotel_ad_schema() -> dict[str, Any]:
+    """Hotel ads are feed-backed; the v24 ``HotelAdInfo`` payload is empty."""
+    return {
+        "required": ["ad_group_id", "name"],
+        "provider_required": [],
+        "properties": {
+            "ad_group_id": _field("string", "Parent Hotel ad group ID", minLength=1),
+            "name": _field("string", "Ad name", minLength=1, maxLength=255),
+            "status": _field("string", "Ad status", enum=GOOGLE_STATUSES),
+        },
+    }
+
+
+def google_local_ad_schema() -> dict[str, Any]:
+    """Local campaign ad contract backed by ``Ad.localAd``."""
+    return {
+        "required": ["ad_group_id", "name", "final_url", "headlines", "descriptions"],
+        "provider_required": ["headlines", "descriptions"],
+        "properties": {
+            "ad_group_id": _field("string", "Parent Local ad group ID", minLength=1),
+            "name": _field("string", "Ad name", minLength=1, maxLength=255),
+            "final_url": _field("string", "Final URL", minLength=1),
+            "headlines": _google_ad_text_assets("Local ad headlines", min_items=3, max_items=15),
+            "descriptions": _google_ad_text_assets("Local ad descriptions", min_items=2, max_items=5),
+            "path1": _field("string", "Display path 1", maxLength=15),
+            "path2": _field("string", "Display path 2", maxLength=15),
+            "logo_images": _google_ad_asset_refs("Logo image assets"),
+            "videos": _google_ad_asset_refs("Video assets"),
+            "marketing_images": _google_ad_asset_refs("Marketing image assets"),
+            "call_to_actions": _google_ad_asset_refs("Call-to-action assets"),
+            "status": _field("string", "Ad status", enum=GOOGLE_STATUSES),
+        },
+    }
+
+
+def google_smart_campaign_ad_schema() -> dict[str, Any]:
+    """Smart campaign ad contract backed by ``Ad.smartCampaignAd``."""
+    return {
+        "required": ["ad_group_id", "name", "final_url", "headlines", "descriptions"],
+        "provider_required": ["headlines", "descriptions"],
+        "properties": {
+            "ad_group_id": _field("string", "Parent Smart campaign ad group ID", minLength=1),
+            "name": _field("string", "Ad name", minLength=1, maxLength=255),
+            "final_url": _field("string", "Final URL", minLength=1),
+            "headlines": _google_ad_text_assets("Smart campaign headlines", min_items=3, max_items=3),
+            "descriptions": _google_ad_text_assets("Smart campaign descriptions", min_items=2, max_items=2),
+            "status": _field("string", "Ad status", enum=GOOGLE_STATUSES),
+        },
+    }
+
+
+def google_travel_ad_schema() -> dict[str, Any]:
+    """Travel ads are feed-backed; the v24 ``TravelAdInfo`` payload is empty."""
+    return {
+        "required": ["ad_group_id", "name"],
+        "provider_required": [],
+        "properties": {
+            "ad_group_id": _field("string", "Parent Travel ad group ID", minLength=1),
+            "name": _field("string", "Ad name", minLength=1, maxLength=255),
+            "status": _field("string", "Ad status", enum=GOOGLE_STATUSES),
+        },
+    }
+
+
 def google_ad_format_catalog() -> list[dict[str, Any]]:
     """Advertised Google formats, grounded in the hierarchy guide.
 
@@ -1061,51 +1348,152 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
             "format_id": "demand_gen",
             "category": "demand_gen",
             "resource_type": "campaign",
-            "coverage": "declared_only",
-            "tool_names": [],
+            "coverage": "partial_dry_run",
+            "tool_names": ["google_create_campaign", "google_create_specialized_ad_group"],
             "dependencies": ["demand_gen_ad", "audiences", "assets"],
-            "gaps": ["dedicated Demand Gen campaign/ad payload Tools"],
+            "supported_fields": ["demand_gen_campaign_settings", "demand_gen_ad_group_settings"],
+            "gaps": ["live mutation approval", "Demand Gen audience/asset reference validation"],
             "source_document": "Google Ads API v24 AdvertisingChannelType",
         },
         {
             "format_id": "hotel",
             "category": "hotel",
             "resource_type": "campaign",
-            "coverage": "declared_only",
-            "tool_names": [],
+            "coverage": "partial_dry_run",
+            "tool_names": ["google_create_campaign", "google_create_specialized_ad_group", "google_create_hotel_ad"],
             "dependencies": ["hotel_ad_group", "hotel_feed"],
-            "gaps": ["dedicated Hotel campaign/ad payload Tools"],
+            "supported_fields": ["hotel_setting", "hotel_ad"],
+            "gaps": ["Hotel Center feed/property validation", "live mutation approval"],
             "source_document": "Google Ads API v24 AdvertisingChannelType",
         },
         {
             "format_id": "local",
             "category": "local",
             "resource_type": "campaign",
-            "coverage": "declared_only",
-            "tool_names": [],
+            "coverage": "partial_dry_run",
+            "tool_names": ["google_create_campaign", "google_create_specialized_ad_group", "google_create_local_ad"],
             "dependencies": ["business_profile", "local_ad"],
-            "gaps": ["dedicated Local campaign/ad payload Tools"],
+            "supported_fields": ["local_campaign_setting", "headlines", "descriptions", "assets"],
+            "gaps": ["Business Profile/location validation", "live mutation approval"],
             "source_document": "Google Ads API v24 AdvertisingChannelType",
         },
         {
             "format_id": "smart",
             "category": "smart",
             "resource_type": "campaign",
-            "coverage": "declared_only",
-            "tool_names": [],
+            "coverage": "partial_dry_run",
+            "tool_names": ["google_create_campaign", "google_create_specialized_ad_group", "google_create_smart_campaign_ad"],
             "dependencies": ["smart_campaign_ad"],
-            "gaps": ["dedicated Smart campaign/ad payload Tools"],
+            "supported_fields": ["headlines", "descriptions", "final_url"],
+            "gaps": ["SmartCampaignSetting lifecycle validation", "live mutation approval"],
             "source_document": "Google Ads API v24 AdvertisingChannelType",
         },
         {
             "format_id": "travel",
             "category": "travel",
             "resource_type": "campaign",
-            "coverage": "declared_only",
-            "tool_names": [],
+            "coverage": "partial_dry_run",
+            "tool_names": ["google_create_campaign", "google_create_specialized_ad_group", "google_create_travel_ad"],
             "dependencies": ["travel_ad", "travel_feed"],
-            "gaps": ["dedicated Travel campaign/ad payload Tools"],
+            "supported_fields": ["travel_campaign_settings", "travel_ad"],
+            "gaps": ["Travel feed/account validation", "live mutation approval"],
             "source_document": "Google Ads API v24 AdvertisingChannelType",
+        },
+        {
+            "format_id": "demand_gen.multi_asset_ad",
+            "category": "demand_gen",
+            "resource_type": "ad",
+            "coverage": "supported_dry_run",
+            "tool_names": ["google_create_demand_gen_multi_asset_ad"],
+            "payload_adapter": "GoogleAdsAPIClient.create_demand_gen_multi_asset_ad",
+            "dependencies": ["ad_group", "assets", "final_url"],
+            "supported_fields": ["headlines", "descriptions", "business_name", "marketing_images", "logo_images"],
+            "gaps": ["live mutation approval"],
+            "source_document": "Google Ads API v24 Ad.demandGenMultiAssetAd",
+        },
+        {
+            "format_id": "demand_gen.carousel_ad",
+            "category": "demand_gen",
+            "resource_type": "ad",
+            "coverage": "supported_dry_run",
+            "tool_names": ["google_create_demand_gen_carousel_ad"],
+            "payload_adapter": "GoogleAdsAPIClient.create_demand_gen_carousel_ad",
+            "dependencies": ["ad_group", "carousel_cards"],
+            "supported_fields": ["headline", "description", "carousel_cards", "logo_image"],
+            "gaps": ["live mutation approval"],
+            "source_document": "Google Ads API v24 Ad.demandGenCarouselAd",
+        },
+        {
+            "format_id": "demand_gen.video_responsive_ad",
+            "category": "demand_gen",
+            "resource_type": "ad",
+            "coverage": "supported_dry_run",
+            "tool_names": ["google_create_demand_gen_video_responsive_ad"],
+            "payload_adapter": "GoogleAdsAPIClient.create_demand_gen_video_responsive_ad",
+            "dependencies": ["ad_group", "videos", "assets"],
+            "supported_fields": ["business_name", "videos", "headlines", "long_headlines", "descriptions"],
+            "gaps": ["live mutation approval"],
+            "source_document": "Google Ads API v24 Ad.demandGenVideoResponsiveAd",
+        },
+        {
+            "format_id": "demand_gen.product_ad",
+            "category": "demand_gen",
+            "resource_type": "ad",
+            "coverage": "supported_dry_run",
+            "tool_names": ["google_create_demand_gen_product_ad"],
+            "payload_adapter": "GoogleAdsAPIClient.create_demand_gen_product_ad",
+            "dependencies": ["ad_group", "merchant_center", "product_feed"],
+            "supported_fields": ["headline", "description", "business_name", "logo_image", "call_to_action"],
+            "gaps": ["Merchant Center product validation", "live mutation approval"],
+            "source_document": "Google Ads API v24 Ad.demandGenProductAd",
+        },
+        {
+            "format_id": "hotel.ad",
+            "category": "hotel",
+            "resource_type": "ad",
+            "coverage": "supported_dry_run",
+            "tool_names": ["google_create_hotel_ad"],
+            "payload_adapter": "GoogleAdsAPIClient.create_hotel_ad",
+            "dependencies": ["hotel_ad_group", "hotel_feed"],
+            "supported_fields": ["name", "status"],
+            "gaps": ["Hotel Center feed/property validation", "live mutation approval"],
+            "source_document": "Google Ads API v24 Ad.hotelAd",
+        },
+        {
+            "format_id": "local.ad",
+            "category": "local",
+            "resource_type": "ad",
+            "coverage": "supported_dry_run",
+            "tool_names": ["google_create_local_ad"],
+            "payload_adapter": "GoogleAdsAPIClient.create_local_ad",
+            "dependencies": ["local_ad_group", "business_profile", "assets"],
+            "supported_fields": ["headlines", "descriptions", "marketing_images", "logo_images", "videos"],
+            "gaps": ["Business Profile/location validation", "live mutation approval"],
+            "source_document": "Google Ads API v24 Ad.localAd",
+        },
+        {
+            "format_id": "smart.ad",
+            "category": "smart",
+            "resource_type": "ad",
+            "coverage": "supported_dry_run",
+            "tool_names": ["google_create_smart_campaign_ad"],
+            "payload_adapter": "GoogleAdsAPIClient.create_smart_campaign_ad",
+            "dependencies": ["smart_ad_group", "headlines", "descriptions", "final_url"],
+            "supported_fields": ["headlines", "descriptions", "final_url"],
+            "gaps": ["SmartCampaignSetting lifecycle validation", "live mutation approval"],
+            "source_document": "Google Ads API v24 Ad.smartCampaignAd",
+        },
+        {
+            "format_id": "travel.ad",
+            "category": "travel",
+            "resource_type": "ad",
+            "coverage": "supported_dry_run",
+            "tool_names": ["google_create_travel_ad"],
+            "payload_adapter": "GoogleAdsAPIClient.create_travel_ad",
+            "dependencies": ["travel_ad_group", "travel_feed"],
+            "supported_fields": ["name", "status"],
+            "gaps": ["Travel feed/account validation", "live mutation approval"],
+            "source_document": "Google Ads API v24 Ad.travelAd",
         },
         {
             "format_id": "local_services",

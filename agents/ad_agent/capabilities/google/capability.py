@@ -2,7 +2,7 @@
 capabilities/google/capability.py - Google Capability 定义
 """
 import logging
-from typing import Optional
+from typing import Any, Optional
 from ...core.interfaces import ToolDefinition, ToolSchema, RiskLevel, ToolEffect, ReplayPolicy, ToolHandler
 from ..base import BaseCapability, CampaignUpdateHandler
 from ..provider_tools import bind_provider_method, method_tool
@@ -31,6 +31,10 @@ from .parameters import (
     google_asset_schema, google_asset_create_schema, google_asset_group_schema, google_ad_format_catalog, google_keyword_schema,
     google_product_group_schema, google_responsive_display_ad_schema,
     google_video_ad_schema, google_campaign_budget_schema,
+    google_demand_gen_multi_asset_ad_schema, google_demand_gen_carousel_ad_schema,
+    google_demand_gen_video_responsive_ad_schema, google_demand_gen_product_ad_schema,
+    google_hotel_ad_schema, google_local_ad_schema, google_smart_campaign_ad_schema,
+    google_travel_ad_schema,
     google_campaign_budget_update_schema,
     google_conversion_action_schema, google_conversion_action_update_schema,
     google_campaign_criterion_schema,
@@ -90,6 +94,14 @@ class GoogleCapability(BaseCapability):
         "create_product_group": ["google_create_product_group"],
         "create_responsive_display_ad": ["google_create_responsive_display_ad"],
         "create_video_ad": ["google_create_video_ad"],
+        "create_demand_gen_multi_asset_ad": ["google_create_demand_gen_multi_asset_ad"],
+        "create_demand_gen_carousel_ad": ["google_create_demand_gen_carousel_ad"],
+        "create_demand_gen_video_responsive_ad": ["google_create_demand_gen_video_responsive_ad"],
+        "create_demand_gen_product_ad": ["google_create_demand_gen_product_ad"],
+        "create_hotel_ad": ["google_create_hotel_ad"],
+        "create_local_ad": ["google_create_local_ad"],
+        "create_smart_campaign_ad": ["google_create_smart_campaign_ad"],
+        "create_travel_ad": ["google_create_travel_ad"],
         "list_campaign_budgets": ["google_list_campaign_budgets"],
         "get_campaign_budget": ["google_get_campaign_budget"],
         "create_campaign_budget": ["google_create_campaign_budget"],
@@ -851,6 +863,122 @@ class GoogleCapability(BaseCapability):
                 resource_id_field="campaign_id", intent_types=[f"provider_{intent}"], traits=["write", "campaign"], write=True,
                 argument_builder=lambda _ctx, data: ((data["campaign_id"],), {}),
             ))
+
+        # Google v24 uses the regular AdGroup/AdGroupAd resources for these
+        # channel-specific formats.  They stay separate Tools so Skills can
+        # compose an explicit creation chain and callers never have to pass a
+        # provider-specific discriminator through an untyped payload object.
+        tools.append(method_tool(
+            platform="google-ads", skill="google-ads-api-expert",
+            name="google_create_specialized_ad_group",
+            description="创建 Google Demand Gen、Hotel、Local、Smart 或 Travel Ad Group；默认仅生成 dry-run 计划。",
+            method_name="create_ad_group", result_key="ad_group_id",
+            properties=google_ad_group_schema()["properties"],
+            required=google_ad_group_schema()["required"],
+            provider_required=google_ad_group_schema()["provider_required"],
+            action="create", resource_type="ad_group", parent_resource_type="campaign",
+            resource_id_field="ad_group_id", parent_resource_id_field="campaign_id",
+            intent_types=["create_ad_group", "create_campaign"],
+            activation_rules=[{
+                "field": "campaign_type", "aliases": ["advertising_channel_type"],
+                "in": ["DEMAND_GEN", "HOTEL", "LOCAL", "SMART", "TRAVEL"],
+            }],
+            traits=["write", "ad_group", "specialized_campaign"], write=True, live_support=False,
+            argument_builder=lambda _ctx, data: ((data["campaign_id"], data["name"]), {
+                "cpc_bid_micros": data.get("cpc_bid_micros") or int(float(data.get("cpc_bid", 0.5)) * 1_000_000),
+                "type": ({
+                    "DEMAND_GEN": "SEARCH_STANDARD",
+                    "HOTEL": "HOTEL_ADS",
+                    "LOCAL": "SMART_CAMPAIGN_ADS",
+                    "SMART": "SMART_CAMPAIGN_ADS",
+                    "TRAVEL": "TRAVEL_ADS",
+                }.get(str(data.get("campaign_type") or "").upper())
+                or data.get("type", "SEARCH_STANDARD")),
+                "status": data.get("status"), "targeting": data.get("targeting"),
+                "demand_gen_ad_group_settings": data.get("demand_gen_ad_group_settings"),
+            }),
+        ))
+
+        def _ad_tool(
+            *, name: str, description: str, method_name: str, schema: dict[str, Any],
+            channel_types: list[str], positional: list[str], optional: list[str],
+        ) -> tuple[ToolDefinition, ToolHandler]:
+            return method_tool(
+                platform="google-ads", skill="google-ads-api-expert", name=name,
+                description=description, method_name=method_name, result_key="ad_plan",
+                properties=schema["properties"], required=schema["required"],
+                provider_required=schema.get("provider_required", []),
+                provider_any_of=schema.get("provider_any_of", []),
+                conditional_rules=schema.get("conditional_rules", []),
+                action="create", resource_type="ad", parent_resource_type="ad_group",
+                resource_id_field="ad_id", parent_resource_id_field="ad_group_id",
+                intent_types=[method_name, "create_campaign"],
+                activation_rules=[{
+                    "field": "campaign_type", "aliases": ["advertising_channel_type"],
+                    "in": channel_types,
+                }],
+                traits=["write", "ad", "specialized_campaign"], write=True, live_support=False,
+                argument_builder=lambda _ctx, data, p=positional, o=optional: (
+                    tuple(data[key] for key in p),
+                    {key: data.get(key) for key in o},
+                ),
+            )
+
+        tools.extend([
+            _ad_tool(
+                name="google_create_demand_gen_multi_asset_ad",
+                description="创建 Google Demand Gen Multi Asset Ad；默认仅生成 dry-run 计划。",
+                method_name="create_demand_gen_multi_asset_ad",
+                schema=google_demand_gen_multi_asset_ad_schema(), channel_types=["DEMAND_GEN"],
+                positional=["ad_group_id", "name", "final_url", "headlines", "descriptions", "business_name"],
+                optional=["marketing_images", "square_marketing_images", "portrait_marketing_images", "tall_portrait_marketing_images", "classic_display_images", "logo_images", "call_to_action_text", "status"],
+            ),
+            _ad_tool(
+                name="google_create_demand_gen_carousel_ad",
+                description="创建 Google Demand Gen Carousel Ad；默认仅生成 dry-run 计划。",
+                method_name="create_demand_gen_carousel_ad",
+                schema=google_demand_gen_carousel_ad_schema(), channel_types=["DEMAND_GEN"],
+                positional=["ad_group_id", "name", "final_url", "headline", "description", "carousel_cards"],
+                optional=["business_name", "logo_image", "call_to_action_text", "status"],
+            ),
+            _ad_tool(
+                name="google_create_demand_gen_video_responsive_ad",
+                description="创建 Google Demand Gen Video Responsive Ad；默认仅生成 dry-run 计划。",
+                method_name="create_demand_gen_video_responsive_ad",
+                schema=google_demand_gen_video_responsive_ad_schema(), channel_types=["DEMAND_GEN"],
+                positional=["ad_group_id", "name", "business_name", "videos", "headlines", "descriptions"],
+                optional=["final_url", "long_headlines", "logo_images", "companion_banners", "call_to_actions", "breadcrumb1", "breadcrumb2", "status"],
+            ),
+            _ad_tool(
+                name="google_create_demand_gen_product_ad",
+                description="创建 Google Demand Gen Product Ad；默认仅生成 dry-run 计划。",
+                method_name="create_demand_gen_product_ad",
+                schema=google_demand_gen_product_ad_schema(), channel_types=["DEMAND_GEN"],
+                positional=["ad_group_id", "name", "headline", "description", "business_name", "logo_image", "call_to_action"],
+                optional=["final_url", "breadcrumb1", "breadcrumb2", "status"],
+            ),
+            _ad_tool(
+                name="google_create_hotel_ad", description="创建 Google Hotel Ad；默认仅生成 dry-run 计划。",
+                method_name="create_hotel_ad", schema=google_hotel_ad_schema(), channel_types=["HOTEL"],
+                positional=["ad_group_id", "name"], optional=["status"],
+            ),
+            _ad_tool(
+                name="google_create_local_ad", description="创建 Google Local Ad；默认仅生成 dry-run 计划。",
+                method_name="create_local_ad", schema=google_local_ad_schema(), channel_types=["LOCAL"],
+                positional=["ad_group_id", "name", "final_url", "headlines", "descriptions"],
+                optional=["path1", "path2", "logo_images", "videos", "marketing_images", "call_to_actions", "status"],
+            ),
+            _ad_tool(
+                name="google_create_smart_campaign_ad", description="创建 Google Smart Campaign Ad；默认仅生成 dry-run 计划。",
+                method_name="create_smart_campaign_ad", schema=google_smart_campaign_ad_schema(), channel_types=["SMART"],
+                positional=["ad_group_id", "name", "final_url", "headlines", "descriptions"], optional=["status"],
+            ),
+            _ad_tool(
+                name="google_create_travel_ad", description="创建 Google Travel Ad；默认仅生成 dry-run 计划。",
+                method_name="create_travel_ad", schema=google_travel_ad_schema(), channel_types=["TRAVEL"],
+                positional=["ad_group_id", "name"], optional=["status"],
+            ),
+        ])
         bound_tools = []
         for tool in tools:
             definition, handler = bind_provider_method(tool, client)
@@ -962,7 +1090,10 @@ class GoogleCapability(BaseCapability):
             activation_rules=[{
                 "field": "campaign_type",
                 "aliases": ["advertising_channel_type"],
-                "not_in": ["PERFORMANCE_MAX", "MAX", "MULTI_CHANNEL"],
+                "not_in": [
+                    "PERFORMANCE_MAX", "MAX", "MULTI_CHANNEL", "DEMAND_GEN",
+                    "HOTEL", "LOCAL", "SMART", "TRAVEL", "LOCAL_SERVICES",
+                ],
             }],
         ), GoogleCreateAdGroupHandler(api_client)))
 

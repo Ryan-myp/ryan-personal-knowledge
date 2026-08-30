@@ -1,5 +1,5 @@
 {
-  "digest": "a6388079e51c9f0134f713b6e11d027b053649716839bb428a7b7a1d6f399f57",
+  "digest": "3438e17784ff6afbd4a502ea6ee52ce68af910ab206369e54a5ae4e89e4e59cb",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -2023,8 +2023,8 @@
       ]
     },
     "google-ads": {
-      "digest": "4afbc0d03012fbbdf247b9f3d3e689b9646cc692682b497356715b2ef7878930",
-      "tool_count": 63,
+      "digest": "9b0097090783514ad92780f888b362ab482ea1f83cf139c968299e66805fc1f7",
+      "tool_count": 72,
       "tools": [
         {
           "action": "create",
@@ -2191,7 +2191,13 @@
               "not_in": [
                 "PERFORMANCE_MAX",
                 "MAX",
-                "MULTI_CHANNEL"
+                "MULTI_CHANNEL",
+                "DEMAND_GEN",
+                "HOTEL",
+                "LOCAL",
+                "SMART",
+                "TRAVEL",
+                "LOCAL_SERVICES"
               ]
             }
           ],
@@ -2201,10 +2207,41 @@
           "input_schema": {
             "additionalProperties": false,
             "additional_properties": false,
-            "conditional_rules": [],
+            "conditional_rules": [
+              {
+                "id": "demand_gen_ad_group_setting_dependency",
+                "if": {
+                  "campaign_type": "DEMAND_GEN"
+                },
+                "message": "DEMAND_GEN ad groups require demand_gen_ad_group_settings",
+                "required": [
+                  "demand_gen_ad_group_settings"
+                ]
+              }
+            ],
             "properties": {
               "campaign_id": {
                 "description": "Parent Campaign ID",
+                "type": "string"
+              },
+              "campaign_type": {
+                "description": "Parent campaign type used to select the provider ad-group default",
+                "enum": [
+                  "SEARCH",
+                  "DISPLAY",
+                  "SHOPPING",
+                  "HOTEL",
+                  "VIDEO",
+                  "MULTI_CHANNEL",
+                  "LOCAL",
+                  "SMART",
+                  "DEMAND_GEN",
+                  "PERFORMANCE_MAX",
+                  "TRAVEL",
+                  "LOCAL_SERVICES",
+                  "MAX",
+                  "APP"
+                ],
                 "type": "string"
               },
               "cpc_bid": {
@@ -2216,6 +2253,71 @@
                 "description": "CPC bid in micros",
                 "minimum": 0,
                 "type": "integer"
+              },
+              "demand_gen_ad_group_settings": {
+                "additionalProperties": false,
+                "description": "Demand Gen ad group settings",
+                "properties": {
+                  "channel_controls": {
+                    "additionalProperties": false,
+                    "description": "Demand Gen channel controls",
+                    "properties": {
+                      "channel_config": {
+                        "description": "Demand Gen channel configuration",
+                        "enum": [
+                          "CHANNEL_STRATEGY",
+                          "SELECTED_CHANNELS"
+                        ],
+                        "type": "string"
+                      },
+                      "channel_strategy": {
+                        "description": "Demand Gen channel strategy",
+                        "enum": [
+                          "ALL_CHANNELS",
+                          "ALL_OWNED_AND_OPERATED_CHANNELS"
+                        ],
+                        "type": "string"
+                      },
+                      "selected_channels": {
+                        "additionalProperties": false,
+                        "description": "Selected Demand Gen channels",
+                        "properties": {
+                          "discover": {
+                            "description": "Enable Demand Gen discover",
+                            "type": "boolean"
+                          },
+                          "display": {
+                            "description": "Enable Demand Gen display",
+                            "type": "boolean"
+                          },
+                          "gmail": {
+                            "description": "Enable Demand Gen gmail",
+                            "type": "boolean"
+                          },
+                          "maps": {
+                            "description": "Enable Demand Gen maps",
+                            "type": "boolean"
+                          },
+                          "youtube_in_feed": {
+                            "description": "Enable Demand Gen youtube_in_feed",
+                            "type": "boolean"
+                          },
+                          "youtube_in_stream": {
+                            "description": "Enable Demand Gen youtube_in_stream",
+                            "type": "boolean"
+                          },
+                          "youtube_shorts": {
+                            "description": "Enable Demand Gen youtube_shorts",
+                            "type": "boolean"
+                          }
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "type": "object"
               },
               "name": {
                 "description": "Ad group name",
@@ -2237,6 +2339,7 @@
                 "type": "object"
               },
               "type": {
+                "default": "SEARCH_STANDARD",
                 "description": "Ad group type",
                 "enum": [
                   "SEARCH_STANDARD",
@@ -2244,7 +2347,15 @@
                   "DISPLAY_STANDARD",
                   "SHOPPING_PRODUCT",
                   "VIDEO_TRUEVIEW_IN_STREAM",
-                  "VIDEO_BUMPER"
+                  "VIDEO_BUMPER",
+                  "HOTEL_ADS",
+                  "PROMOTED_HOTEL_ADS",
+                  "VIDEO_NON_SKIPPABLE_IN_STREAM",
+                  "VIDEO_TRUE_VIEW_IN_DISPLAY",
+                  "VIDEO_RESPONSIVE",
+                  "SMART_CAMPAIGN_ADS",
+                  "TRAVEL_ADS",
+                  "YOUTUBE_AUDIO"
                 ],
                 "type": "string"
               }
@@ -3112,6 +3223,46 @@
                 "required": [
                   "campaign_goal_setting"
                 ]
+              },
+              {
+                "id": "demand_gen_setting_dependency",
+                "if": {
+                  "advertising_channel_type": "DEMAND_GEN"
+                },
+                "message": "DEMAND_GEN requires demand_gen_campaign_settings",
+                "required": [
+                  "demand_gen_campaign_settings"
+                ]
+              },
+              {
+                "id": "hotel_setting_dependency",
+                "if": {
+                  "advertising_channel_type": "HOTEL"
+                },
+                "message": "HOTEL requires hotel_setting with hotel_center_id",
+                "required": [
+                  "hotel_setting"
+                ]
+              },
+              {
+                "id": "local_setting_dependency",
+                "if": {
+                  "advertising_channel_type": "LOCAL"
+                },
+                "message": "LOCAL requires local_campaign_setting",
+                "required": [
+                  "local_campaign_setting"
+                ]
+              },
+              {
+                "id": "travel_setting_dependency",
+                "if": {
+                  "advertising_channel_type": "TRAVEL"
+                },
+                "message": "TRAVEL requires travel_campaign_settings",
+                "required": [
+                  "travel_campaign_settings"
+                ]
               }
             ],
             "properties": {
@@ -3289,6 +3440,17 @@
                 "minimum": 0,
                 "type": "number"
               },
+              "demand_gen_campaign_settings": {
+                "additionalProperties": false,
+                "description": "Google Demand Gen campaign settings",
+                "properties": {
+                  "upgraded_targeting": {
+                    "description": "Enable Demand Gen upgraded targeting",
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              },
               "end_date": {
                 "description": "YYYY-MM-DD end date",
                 "type": "string"
@@ -3296,6 +3458,58 @@
               "final_url_suffix": {
                 "description": "Final URL suffix for tracking",
                 "type": "string"
+              },
+              "hotel_setting": {
+                "additionalProperties": false,
+                "description": "Google Hotel campaign settings",
+                "properties": {
+                  "disable_hotel_setting": {
+                    "description": "Disable Hotel Center settings for this campaign",
+                    "type": "boolean"
+                  },
+                  "hotel_center_id": {
+                    "description": "Hotel Center account ID",
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "hotel_center_id"
+                ],
+                "type": "object"
+              },
+              "local_campaign_setting": {
+                "additionalProperties": false,
+                "description": "Google Local campaign settings",
+                "properties": {
+                  "location_source_type": {
+                    "description": "Source of business locations",
+                    "enum": [
+                      "GOOGLE_MY_BUSINESS",
+                      "AFFILIATE"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "location_source_type"
+                ],
+                "type": "object"
+              },
+              "local_services_campaign_settings": {
+                "additionalProperties": false,
+                "description": "Google Local Services campaign settings",
+                "properties": {
+                  "category_bids": {
+                    "description": "Local Services category bids",
+                    "items": {
+                      "additionalProperties": false,
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
               },
               "network_setting": {
                 "additionalProperties": false,
@@ -3464,6 +3678,21 @@
                     "type": "array"
                   }
                 },
+                "type": "object"
+              },
+              "travel_campaign_settings": {
+                "additionalProperties": false,
+                "description": "Google Travel campaign settings",
+                "properties": {
+                  "travel_account_id": {
+                    "description": "Travel account ID",
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "travel_account_id"
+                ],
                 "type": "object"
               },
               "video_setting": {
@@ -4013,6 +4242,738 @@
         },
         {
           "action": "create",
+          "activation_rules": [
+            {
+              "aliases": [
+                "advertising_channel_type"
+              ],
+              "field": "campaign_type",
+              "in": [
+                "DEMAND_GEN"
+              ]
+            }
+          ],
+          "contract_version": "1.3.0",
+          "description": "创建 Google Demand Gen Carousel Ad；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_group_id": {
+                "description": "Parent Demand Gen ad group ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "business_name": {
+                "description": "Advertiser business name",
+                "maxLength": 25,
+                "minLength": 1,
+                "type": "string"
+              },
+              "call_to_action_text": {
+                "description": "Call to action text",
+                "type": "string"
+              },
+              "carousel_cards": {
+                "description": "Demand Gen carousel cards",
+                "items": {
+                  "additionalProperties": false,
+                  "description": "Demand Gen carousel card",
+                  "properties": {
+                    "call_to_action_text": {
+                      "description": "Card call to action",
+                      "type": "string"
+                    },
+                    "headline": {
+                      "description": "Card headline",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "marketing_image_asset": {
+                      "description": "1.91:1 image Asset resource name",
+                      "type": "string"
+                    },
+                    "portrait_marketing_image_asset": {
+                      "description": "4:5 image Asset resource name",
+                      "type": "string"
+                    },
+                    "square_marketing_image_asset": {
+                      "description": "1:1 image Asset resource name",
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "maxItems": 10,
+                "minItems": 2,
+                "type": "array"
+              },
+              "description": {
+                "description": "Carousel description",
+                "minLength": 1,
+                "type": "string"
+              },
+              "final_url": {
+                "description": "Final URL",
+                "minLength": 1,
+                "type": "string"
+              },
+              "headline": {
+                "description": "Carousel headline",
+                "minLength": 1,
+                "type": "string"
+              },
+              "logo_image": {
+                "additionalProperties": true,
+                "description": "Logo image asset reference",
+                "type": "object"
+              },
+              "name": {
+                "description": "Ad name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "status": {
+                "description": "Ad status",
+                "enum": [
+                  "ENABLED",
+                  "PAUSED",
+                  "REMOVED"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "headline",
+              "description",
+              "carousel_cards"
+            ],
+            "required": [
+              "ad_group_id",
+              "name",
+              "final_url",
+              "headline",
+              "description",
+              "carousel_cards"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_demand_gen_carousel_ad",
+            "create_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_demand_gen_carousel_ad",
+          "parent_resource_id_field": "ad_group_id",
+          "parent_resource_type": "ad_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad",
+            "specialized_campaign"
+          ]
+        },
+        {
+          "action": "create",
+          "activation_rules": [
+            {
+              "aliases": [
+                "advertising_channel_type"
+              ],
+              "field": "campaign_type",
+              "in": [
+                "DEMAND_GEN"
+              ]
+            }
+          ],
+          "contract_version": "1.3.0",
+          "description": "创建 Google Demand Gen Multi Asset Ad；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_group_id": {
+                "description": "Parent Demand Gen ad group ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "business_name": {
+                "description": "Advertiser business name",
+                "maxLength": 25,
+                "minLength": 1,
+                "type": "string"
+              },
+              "call_to_action_text": {
+                "description": "Call to action text",
+                "type": "string"
+              },
+              "classic_display_images": {
+                "description": "Classic display image assets",
+                "items": {
+                  "additionalProperties": true,
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "descriptions": {
+                "description": "Demand Gen descriptions",
+                "items": {
+                  "additionalProperties": true,
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "maxItems": 5,
+                "minItems": 2,
+                "type": "array"
+              },
+              "final_url": {
+                "description": "Final URL",
+                "minLength": 1,
+                "type": "string"
+              },
+              "headlines": {
+                "description": "Demand Gen headlines",
+                "items": {
+                  "additionalProperties": true,
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "maxItems": 5,
+                "minItems": 3,
+                "type": "array"
+              },
+              "logo_images": {
+                "description": "Logo image assets",
+                "items": {
+                  "additionalProperties": true,
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "marketing_images": {
+                "description": "Landscape marketing image assets",
+                "items": {
+                  "additionalProperties": true,
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "name": {
+                "description": "Ad name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "portrait_marketing_images": {
+                "description": "Portrait marketing image assets",
+                "items": {
+                  "additionalProperties": true,
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "square_marketing_images": {
+                "description": "Square marketing image assets",
+                "items": {
+                  "additionalProperties": true,
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "status": {
+                "description": "Ad status",
+                "enum": [
+                  "ENABLED",
+                  "PAUSED",
+                  "REMOVED"
+                ],
+                "type": "string"
+              },
+              "tall_portrait_marketing_images": {
+                "description": "Tall portrait marketing image assets",
+                "items": {
+                  "additionalProperties": true,
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "minItems": 1,
+                "type": "array"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "headlines",
+              "descriptions",
+              "business_name"
+            ],
+            "required": [
+              "ad_group_id",
+              "name",
+              "final_url",
+              "headlines",
+              "descriptions",
+              "business_name"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_demand_gen_multi_asset_ad",
+            "create_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_demand_gen_multi_asset_ad",
+          "parent_resource_id_field": "ad_group_id",
+          "parent_resource_type": "ad_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad",
+            "specialized_campaign"
+          ]
+        },
+        {
+          "action": "create",
+          "activation_rules": [
+            {
+              "aliases": [
+                "advertising_channel_type"
+              ],
+              "field": "campaign_type",
+              "in": [
+                "DEMAND_GEN"
+              ]
+            }
+          ],
+          "contract_version": "1.3.0",
+          "description": "创建 Google Demand Gen Product Ad；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_group_id": {
+                "description": "Parent Demand Gen ad group ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "breadcrumb1": {
+                "description": "Display breadcrumb 1",
+                "type": "string"
+              },
+              "breadcrumb2": {
+                "description": "Display breadcrumb 2",
+                "type": "string"
+              },
+              "business_name": {
+                "additionalProperties": true,
+                "description": "Business name text asset",
+                "type": "object"
+              },
+              "call_to_action": {
+                "additionalProperties": true,
+                "description": "Call-to-action asset",
+                "type": "object"
+              },
+              "description": {
+                "additionalProperties": true,
+                "description": "Product ad description asset",
+                "type": "object"
+              },
+              "final_url": {
+                "description": "Optional final URL override",
+                "minLength": 1,
+                "type": "string"
+              },
+              "headline": {
+                "additionalProperties": true,
+                "description": "Product ad headline asset",
+                "type": "object"
+              },
+              "logo_image": {
+                "additionalProperties": true,
+                "description": "Logo image asset",
+                "type": "object"
+              },
+              "name": {
+                "description": "Ad name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "status": {
+                "description": "Ad status",
+                "enum": [
+                  "ENABLED",
+                  "PAUSED",
+                  "REMOVED"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "headline",
+              "description",
+              "business_name",
+              "logo_image",
+              "call_to_action"
+            ],
+            "required": [
+              "ad_group_id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_demand_gen_product_ad",
+            "create_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_demand_gen_product_ad",
+          "parent_resource_id_field": "ad_group_id",
+          "parent_resource_type": "ad_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad",
+            "specialized_campaign"
+          ]
+        },
+        {
+          "action": "create",
+          "activation_rules": [
+            {
+              "aliases": [
+                "advertising_channel_type"
+              ],
+              "field": "campaign_type",
+              "in": [
+                "DEMAND_GEN"
+              ]
+            }
+          ],
+          "contract_version": "1.3.0",
+          "description": "创建 Google Demand Gen Video Responsive Ad；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_group_id": {
+                "description": "Parent Demand Gen ad group ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "breadcrumb1": {
+                "description": "Display breadcrumb 1",
+                "type": "string"
+              },
+              "breadcrumb2": {
+                "description": "Display breadcrumb 2",
+                "type": "string"
+              },
+              "business_name": {
+                "description": "Advertiser business name",
+                "maxLength": 25,
+                "minLength": 1,
+                "type": "string"
+              },
+              "call_to_actions": {
+                "description": "Call-to-action assets",
+                "items": {
+                  "additionalProperties": true,
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "companion_banners": {
+                "description": "Companion banner assets",
+                "items": {
+                  "additionalProperties": true,
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "descriptions": {
+                "description": "Demand Gen descriptions",
+                "items": {
+                  "additionalProperties": true,
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "maxItems": 5,
+                "minItems": 2,
+                "type": "array"
+              },
+              "final_url": {
+                "description": "Final URL",
+                "minLength": 1,
+                "type": "string"
+              },
+              "headlines": {
+                "description": "Demand Gen headlines",
+                "items": {
+                  "additionalProperties": true,
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "maxItems": 5,
+                "minItems": 3,
+                "type": "array"
+              },
+              "logo_images": {
+                "description": "Logo image assets",
+                "items": {
+                  "additionalProperties": true,
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "long_headlines": {
+                "description": "Demand Gen long headlines",
+                "items": {
+                  "additionalProperties": true,
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "maxItems": 5,
+                "minItems": 1,
+                "type": "array"
+              },
+              "name": {
+                "description": "Ad name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "status": {
+                "description": "Ad status",
+                "enum": [
+                  "ENABLED",
+                  "PAUSED",
+                  "REMOVED"
+                ],
+                "type": "string"
+              },
+              "videos": {
+                "description": "YouTube video assets",
+                "items": {
+                  "additionalProperties": true,
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "minItems": 1,
+                "type": "array"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "business_name",
+              "videos",
+              "headlines",
+              "descriptions"
+            ],
+            "required": [
+              "ad_group_id",
+              "name",
+              "business_name",
+              "videos",
+              "headlines",
+              "descriptions"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_demand_gen_video_responsive_ad",
+            "create_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_demand_gen_video_responsive_ad",
+          "parent_resource_id_field": "ad_group_id",
+          "parent_resource_type": "ad_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad",
+            "specialized_campaign"
+          ]
+        },
+        {
+          "action": "create",
+          "activation_rules": [
+            {
+              "aliases": [
+                "advertising_channel_type"
+              ],
+              "field": "campaign_type",
+              "in": [
+                "HOTEL"
+              ]
+            }
+          ],
+          "contract_version": "1.3.0",
+          "description": "创建 Google Hotel Ad；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_group_id": {
+                "description": "Parent Hotel ad group ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "name": {
+                "description": "Ad name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "status": {
+                "description": "Ad status",
+                "enum": [
+                  "ENABLED",
+                  "PAUSED",
+                  "REMOVED"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "ad_group_id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_hotel_ad",
+            "create_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_hotel_ad",
+          "parent_resource_id_field": "ad_group_id",
+          "parent_resource_type": "ad_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad",
+            "specialized_campaign"
+          ]
+        },
+        {
+          "action": "create",
           "activation_rules": [],
           "contract_version": "1.3.0",
           "description": "批量创建 Google Ad Group 关键词/否定关键词；默认仅生成 dry-run 计划。",
@@ -4103,6 +5064,177 @@
           "traits": [
             "write",
             "keyword"
+          ]
+        },
+        {
+          "action": "create",
+          "activation_rules": [
+            {
+              "aliases": [
+                "advertising_channel_type"
+              ],
+              "field": "campaign_type",
+              "in": [
+                "LOCAL"
+              ]
+            }
+          ],
+          "contract_version": "1.3.0",
+          "description": "创建 Google Local Ad；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_group_id": {
+                "description": "Parent Local ad group ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "call_to_actions": {
+                "description": "Call-to-action assets",
+                "items": {
+                  "additionalProperties": true,
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "descriptions": {
+                "description": "Local ad descriptions",
+                "items": {
+                  "additionalProperties": true,
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "maxItems": 5,
+                "minItems": 2,
+                "type": "array"
+              },
+              "final_url": {
+                "description": "Final URL",
+                "minLength": 1,
+                "type": "string"
+              },
+              "headlines": {
+                "description": "Local ad headlines",
+                "items": {
+                  "additionalProperties": true,
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "maxItems": 15,
+                "minItems": 3,
+                "type": "array"
+              },
+              "logo_images": {
+                "description": "Logo image assets",
+                "items": {
+                  "additionalProperties": true,
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "marketing_images": {
+                "description": "Marketing image assets",
+                "items": {
+                  "additionalProperties": true,
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "name": {
+                "description": "Ad name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "path1": {
+                "description": "Display path 1",
+                "maxLength": 15,
+                "type": "string"
+              },
+              "path2": {
+                "description": "Display path 2",
+                "maxLength": 15,
+                "type": "string"
+              },
+              "status": {
+                "description": "Ad status",
+                "enum": [
+                  "ENABLED",
+                  "PAUSED",
+                  "REMOVED"
+                ],
+                "type": "string"
+              },
+              "videos": {
+                "description": "Video assets",
+                "items": {
+                  "additionalProperties": true,
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "minItems": 1,
+                "type": "array"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "headlines",
+              "descriptions"
+            ],
+            "required": [
+              "ad_group_id",
+              "name",
+              "final_url",
+              "headlines",
+              "descriptions"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_local_ad",
+            "create_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_local_ad",
+          "parent_resource_id_field": "ad_group_id",
+          "parent_resource_type": "ad_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad",
+            "specialized_campaign"
           ]
         },
         {
@@ -4858,6 +5990,396 @@
           "traits": [
             "write",
             "ad"
+          ]
+        },
+        {
+          "action": "create",
+          "activation_rules": [
+            {
+              "aliases": [
+                "advertising_channel_type"
+              ],
+              "field": "campaign_type",
+              "in": [
+                "SMART"
+              ]
+            }
+          ],
+          "contract_version": "1.3.0",
+          "description": "创建 Google Smart Campaign Ad；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_group_id": {
+                "description": "Parent Smart campaign ad group ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "descriptions": {
+                "description": "Smart campaign descriptions",
+                "items": {
+                  "additionalProperties": true,
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "final_url": {
+                "description": "Final URL",
+                "minLength": 1,
+                "type": "string"
+              },
+              "headlines": {
+                "description": "Smart campaign headlines",
+                "items": {
+                  "additionalProperties": true,
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "maxItems": 3,
+                "minItems": 3,
+                "type": "array"
+              },
+              "name": {
+                "description": "Ad name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "status": {
+                "description": "Ad status",
+                "enum": [
+                  "ENABLED",
+                  "PAUSED",
+                  "REMOVED"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "headlines",
+              "descriptions"
+            ],
+            "required": [
+              "ad_group_id",
+              "name",
+              "final_url",
+              "headlines",
+              "descriptions"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_smart_campaign_ad",
+            "create_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_smart_campaign_ad",
+          "parent_resource_id_field": "ad_group_id",
+          "parent_resource_type": "ad_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad",
+            "specialized_campaign"
+          ]
+        },
+        {
+          "action": "create",
+          "activation_rules": [
+            {
+              "aliases": [
+                "advertising_channel_type"
+              ],
+              "field": "campaign_type",
+              "in": [
+                "DEMAND_GEN",
+                "HOTEL",
+                "LOCAL",
+                "SMART",
+                "TRAVEL"
+              ]
+            }
+          ],
+          "contract_version": "1.3.0",
+          "description": "创建 Google Demand Gen、Hotel、Local、Smart 或 Travel Ad Group；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "description": "Parent Campaign ID",
+                "type": "string"
+              },
+              "campaign_type": {
+                "description": "Parent campaign type used to select the provider ad-group default",
+                "enum": [
+                  "SEARCH",
+                  "DISPLAY",
+                  "SHOPPING",
+                  "HOTEL",
+                  "VIDEO",
+                  "MULTI_CHANNEL",
+                  "LOCAL",
+                  "SMART",
+                  "DEMAND_GEN",
+                  "PERFORMANCE_MAX",
+                  "TRAVEL",
+                  "LOCAL_SERVICES",
+                  "MAX",
+                  "APP"
+                ],
+                "type": "string"
+              },
+              "cpc_bid": {
+                "description": "CPC bid in account currency",
+                "minimum": 0,
+                "type": "number"
+              },
+              "cpc_bid_micros": {
+                "description": "CPC bid in micros",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "demand_gen_ad_group_settings": {
+                "additionalProperties": false,
+                "description": "Demand Gen ad group settings",
+                "properties": {
+                  "channel_controls": {
+                    "additionalProperties": false,
+                    "description": "Demand Gen channel controls",
+                    "properties": {
+                      "channel_config": {
+                        "description": "Demand Gen channel configuration",
+                        "enum": [
+                          "CHANNEL_STRATEGY",
+                          "SELECTED_CHANNELS"
+                        ],
+                        "type": "string"
+                      },
+                      "channel_strategy": {
+                        "description": "Demand Gen channel strategy",
+                        "enum": [
+                          "ALL_CHANNELS",
+                          "ALL_OWNED_AND_OPERATED_CHANNELS"
+                        ],
+                        "type": "string"
+                      },
+                      "selected_channels": {
+                        "additionalProperties": false,
+                        "description": "Selected Demand Gen channels",
+                        "properties": {
+                          "discover": {
+                            "description": "Enable Demand Gen discover",
+                            "type": "boolean"
+                          },
+                          "display": {
+                            "description": "Enable Demand Gen display",
+                            "type": "boolean"
+                          },
+                          "gmail": {
+                            "description": "Enable Demand Gen gmail",
+                            "type": "boolean"
+                          },
+                          "maps": {
+                            "description": "Enable Demand Gen maps",
+                            "type": "boolean"
+                          },
+                          "youtube_in_feed": {
+                            "description": "Enable Demand Gen youtube_in_feed",
+                            "type": "boolean"
+                          },
+                          "youtube_in_stream": {
+                            "description": "Enable Demand Gen youtube_in_stream",
+                            "type": "boolean"
+                          },
+                          "youtube_shorts": {
+                            "description": "Enable Demand Gen youtube_shorts",
+                            "type": "boolean"
+                          }
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              },
+              "name": {
+                "description": "Ad group name",
+                "maxLength": 255,
+                "type": "string"
+              },
+              "status": {
+                "description": "Ad group status",
+                "enum": [
+                  "ENABLED",
+                  "PAUSED",
+                  "REMOVED"
+                ],
+                "type": "string"
+              },
+              "targeting": {
+                "additionalProperties": true,
+                "description": "Ad group targeting",
+                "type": "object"
+              },
+              "type": {
+                "default": "SEARCH_STANDARD",
+                "description": "Ad group type",
+                "enum": [
+                  "SEARCH_STANDARD",
+                  "SEARCH_DYNAMIC_ADS",
+                  "DISPLAY_STANDARD",
+                  "SHOPPING_PRODUCT",
+                  "VIDEO_TRUEVIEW_IN_STREAM",
+                  "VIDEO_BUMPER",
+                  "HOTEL_ADS",
+                  "PROMOTED_HOTEL_ADS",
+                  "VIDEO_NON_SKIPPABLE_IN_STREAM",
+                  "VIDEO_TRUE_VIEW_IN_DISPLAY",
+                  "VIDEO_RESPONSIVE",
+                  "SMART_CAMPAIGN_ADS",
+                  "TRAVEL_ADS",
+                  "YOUTUBE_AUDIO"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "type"
+            ],
+            "required": [
+              "campaign_id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_ad_group",
+            "create_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_specialized_ad_group",
+          "parent_resource_id_field": "campaign_id",
+          "parent_resource_type": "campaign",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_group_id",
+          "resource_type": "ad_group",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad_group",
+            "specialized_campaign"
+          ]
+        },
+        {
+          "action": "create",
+          "activation_rules": [
+            {
+              "aliases": [
+                "advertising_channel_type"
+              ],
+              "field": "campaign_type",
+              "in": [
+                "TRAVEL"
+              ]
+            }
+          ],
+          "contract_version": "1.3.0",
+          "description": "创建 Google Travel Ad；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_group_id": {
+                "description": "Parent Travel ad group ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "name": {
+                "description": "Ad name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "status": {
+                "description": "Ad status",
+                "enum": [
+                  "ENABLED",
+                  "PAUSED",
+                  "REMOVED"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "ad_group_id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_travel_ad",
+            "create_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_travel_ad",
+          "parent_resource_id_field": "ad_group_id",
+          "parent_resource_type": "ad_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad",
+            "specialized_campaign"
           ]
         },
         {
@@ -23100,6 +24622,69 @@
         "status": "implemented"
       },
       {
+        "action": "create_specialized",
+        "method": "create_ad_group",
+        "notes": "Specialized channel routing reuses the standard AdGroup resource",
+        "resource": "ad_group",
+        "status": "implemented"
+      },
+      {
+        "action": "create_demand_gen_multi_asset",
+        "method": "create_demand_gen_multi_asset_ad",
+        "notes": "v24 dry-run AdGroupAd payload builder",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "create_demand_gen_carousel",
+        "method": "create_demand_gen_carousel_ad",
+        "notes": "v24 dry-run AdGroupAd payload builder",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "create_demand_gen_video_responsive",
+        "method": "create_demand_gen_video_responsive_ad",
+        "notes": "v24 dry-run AdGroupAd payload builder",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "create_demand_gen_product",
+        "method": "create_demand_gen_product_ad",
+        "notes": "v24 dry-run AdGroupAd payload builder",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "create_hotel",
+        "method": "create_hotel_ad",
+        "notes": "v24 feed-backed empty HotelAdInfo dry-run payload",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "create_local",
+        "method": "create_local_ad",
+        "notes": "v24 dry-run AdGroupAd payload builder",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "create_smart_campaign",
+        "method": "create_smart_campaign_ad",
+        "notes": "v24 dry-run AdGroupAd payload builder",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "create_travel",
+        "method": "create_travel_ad",
+        "notes": "v24 feed-backed empty TravelAdInfo dry-run payload",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
         "action": "list",
         "method": "list_user_lists",
         "resource": "user_list",
@@ -24053,5 +25638,5 @@
       ]
     }
   },
-  "tool_count": 234
+  "tool_count": 243
 }

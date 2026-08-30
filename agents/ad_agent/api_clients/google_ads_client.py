@@ -2167,6 +2167,11 @@ class GoogleAdsAPIClient(BasePlatformClient):
         video_setting: dict = None,
         targeting_setting: dict = None,
         network_setting: dict = None,
+        demand_gen_campaign_settings: dict = None,
+        hotel_setting: dict = None,
+        local_campaign_setting: dict = None,
+        travel_campaign_settings: dict = None,
+        local_services_campaign_settings: dict = None,
         final_url_suffix: str = None,
         start_date: str = None,
         end_date: str = None,
@@ -2217,6 +2222,11 @@ class GoogleAdsAPIClient(BasePlatformClient):
             ('campaignGoalSetting', campaign_goal_setting),
             ('videoSetting', video_setting),
             ('targetingSetting', targeting_setting),
+            ('demandGenCampaignSettings', demand_gen_campaign_settings),
+            ('hotelSetting', hotel_setting),
+            ('localCampaignSetting', local_campaign_setting),
+            ('travelCampaignSettings', travel_campaign_settings),
+            ('localServicesCampaignSettings', local_services_campaign_settings),
         ):
             if value is not None:
                 if not isinstance(value, dict):
@@ -2473,6 +2483,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         type: str = "SEARCH_DYNAMIC_ADS",
         status: str = None,
         targeting: dict = None,
+        demand_gen_ad_group_settings: dict = None,
     ) -> str:
         """创建 Ad Group"""
         ad_group_data = {
@@ -2487,12 +2498,225 @@ class GoogleAdsAPIClient(BasePlatformClient):
             # granular criteria are separate Google Ads resources and should
             # be added as a dedicated Tool instead of being silently dropped.
             ad_group_data['targetingSetting'] = self._camel_case_keys(targeting)
+        if demand_gen_ad_group_settings is not None:
+            if not isinstance(demand_gen_ad_group_settings, dict):
+                raise ValueError("demand_gen_ad_group_settings must be an object")
+            ad_group_data['demandGenAdGroupSettings'] = self._camel_case_keys(
+                demand_gen_ad_group_settings
+            )
         
         resp = self._mutate('adGroups', {'create': ad_group_data})
         resource_name = self._mutation_resource_name(resp)
         if not resource_name:
             raise APIError(f"Ad group mutate returned no resource name: {resp}")
         return str(resource_name.split('/')[-1])
+
+    def _specialized_ad_plan(
+        self,
+        ad_group_id: str,
+        name: str,
+        ad_field: str,
+        ad_payload: dict[str, Any],
+        *,
+        final_url: str = None,
+        status: str = None,
+    ) -> dict[str, Any]:
+        """Build a standard v24 AdGroupAd plan for a specialized Ad payload."""
+        ad_group_id = self._numeric_id(ad_group_id, "ad_group_id")
+        if not str(name or "").strip():
+            raise ValueError("name is required")
+        status = str(status or "PAUSED").upper()
+        if status not in {"PAUSED", "ENABLED"}:
+            raise ValueError("status must be PAUSED or ENABLED")
+        customer = str(self.customer_id or "").strip()
+        if not re.fullmatch(r"\d+", customer):
+            raise ValueError("customer_id must contain digits only")
+        ad: dict[str, Any] = {"name": str(name).strip(), ad_field: ad_payload}
+        if final_url:
+            ad["finalUrls"] = [str(final_url).strip()]
+        ad_group_ad_resource = f"customers/{customer}/adGroupAds/-1"
+        operation = {
+            "adGroupAds": {
+                "create": {
+                    "resourceName": ad_group_ad_resource,
+                    "adGroup": f"customers/{customer}/adGroups/{ad_group_id}",
+                    "status": status,
+                    "ad": ad,
+                }
+            }
+        }
+        return {
+            "ad_resource_name": f"customers/{customer}/ads/-1",
+            "ad_group_id": ad_group_id,
+            "format": ad_field,
+            "operation": operation,
+            "execution_status": "planned",
+            "mode": "dry_run",
+            "live_support": False,
+            "requires_verified_live_adapter": True,
+        }
+
+    def create_demand_gen_multi_asset_ad(
+        self, ad_group_id: str, name: str, final_url: str,
+        headlines: list[Any], descriptions: list[Any], business_name: str,
+        marketing_images: list[Any] = None, square_marketing_images: list[Any] = None,
+        portrait_marketing_images: list[Any] = None, tall_portrait_marketing_images: list[Any] = None,
+        classic_display_images: list[Any] = None, logo_images: list[Any] = None,
+        call_to_action_text: str = None, status: str = None,
+    ) -> dict[str, Any]:
+        if not isinstance(headlines, list) or not headlines:
+            raise ValueError("headlines must be a non-empty list")
+        if not isinstance(descriptions, list) or not descriptions:
+            raise ValueError("descriptions must be a non-empty list")
+        if not str(business_name or "").strip():
+            raise ValueError("business_name is required")
+        payload: dict[str, Any] = {
+            "headlines": [self._text_asset(item) for item in headlines],
+            "descriptions": [self._text_asset(item) for item in descriptions],
+            "businessName": business_name,
+        }
+        for wire_name, values in (
+            ("marketingImages", marketing_images), ("squareMarketingImages", square_marketing_images),
+            ("portraitMarketingImages", portrait_marketing_images),
+            ("tallPortraitMarketingImages", tall_portrait_marketing_images),
+            ("classicDisplayImages", classic_display_images), ("logoImages", logo_images),
+        ):
+            if values:
+                payload[wire_name] = [self._asset_reference(item) for item in values]
+        if call_to_action_text is not None:
+            payload["callToActionText"] = call_to_action_text
+        return self._specialized_ad_plan(
+            ad_group_id, name, "demandGenMultiAssetAd", payload,
+            final_url=final_url, status=status,
+        )
+
+    def create_demand_gen_carousel_ad(
+        self, ad_group_id: str, name: str, final_url: str,
+        headline: str, description: str, carousel_cards: list[dict[str, Any]],
+        business_name: str = None, logo_image: Any = None,
+        call_to_action_text: str = None, status: str = None,
+    ) -> dict[str, Any]:
+        if not isinstance(carousel_cards, list) or len(carousel_cards) < 2:
+            raise ValueError("carousel_cards must contain at least 2 cards")
+        payload: dict[str, Any] = {
+            "headline": self._text_asset(headline),
+            "description": self._text_asset(description),
+            "carouselCards": [self._camel_case_keys(card) for card in carousel_cards],
+        }
+        if business_name:
+            payload["businessName"] = business_name
+        if logo_image is not None:
+            payload["logoImage"] = self._asset_reference(logo_image)
+        if call_to_action_text is not None:
+            payload["callToActionText"] = call_to_action_text
+        return self._specialized_ad_plan(
+            ad_group_id, name, "demandGenCarouselAd", payload,
+            final_url=final_url, status=status,
+        )
+
+    def create_demand_gen_video_responsive_ad(
+        self, ad_group_id: str, name: str, business_name: str,
+        videos: list[Any], headlines: list[Any], descriptions: list[Any],
+        final_url: str = None, long_headlines: list[Any] = None,
+        logo_images: list[Any] = None, companion_banners: list[Any] = None,
+        call_to_actions: list[Any] = None, breadcrumb1: str = None,
+        breadcrumb2: str = None, status: str = None,
+    ) -> dict[str, Any]:
+        if not isinstance(videos, list) or not videos:
+            raise ValueError("videos must be a non-empty list")
+        if not isinstance(headlines, list) or not headlines:
+            raise ValueError("headlines must be a non-empty list")
+        if not isinstance(descriptions, list) or not descriptions:
+            raise ValueError("descriptions must be a non-empty list")
+        payload: dict[str, Any] = {
+            "businessName": self._text_asset(business_name),
+            "videos": [self._asset_reference(item) for item in videos],
+            "headlines": [self._text_asset(item) for item in headlines],
+            "descriptions": [self._text_asset(item) for item in descriptions],
+        }
+        for wire_name, values in (
+            ("longHeadlines", long_headlines), ("logoImages", logo_images),
+            ("companionBanners", companion_banners), ("callToActions", call_to_actions),
+        ):
+            if values:
+                converter = self._text_asset if wire_name == "longHeadlines" else self._asset_reference
+                payload[wire_name] = [converter(item) for item in values]
+        for wire_name, value in (("breadcrumb1", breadcrumb1), ("breadcrumb2", breadcrumb2)):
+            if value is not None:
+                payload[wire_name] = value
+        return self._specialized_ad_plan(
+            ad_group_id, name, "demandGenVideoResponsiveAd", payload,
+            final_url=final_url, status=status,
+        )
+
+    def create_demand_gen_product_ad(
+        self, ad_group_id: str, name: str, headline: Any, description: Any,
+        business_name: Any, logo_image: Any, call_to_action: Any,
+        final_url: str = None, breadcrumb1: str = None, breadcrumb2: str = None,
+        status: str = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "headline": self._text_asset(headline),
+            "description": self._text_asset(description),
+            "businessName": self._text_asset(business_name),
+            "logoImage": self._asset_reference(logo_image),
+            "callToAction": self._asset_reference(call_to_action),
+        }
+        for wire_name, value in (("breadcrumb1", breadcrumb1), ("breadcrumb2", breadcrumb2)):
+            if value is not None:
+                payload[wire_name] = value
+        return self._specialized_ad_plan(
+            ad_group_id, name, "demandGenProductAd", payload,
+            final_url=final_url, status=status,
+        )
+
+    def create_hotel_ad(self, ad_group_id: str, name: str, status: str = None) -> dict[str, Any]:
+        return self._specialized_ad_plan(
+            ad_group_id, name, "hotelAd", {}, status=status,
+        )
+
+    def create_local_ad(
+        self, ad_group_id: str, name: str, final_url: str,
+        headlines: list[Any], descriptions: list[Any], path1: str = None,
+        path2: str = None, logo_images: list[Any] = None, videos: list[Any] = None,
+        marketing_images: list[Any] = None, call_to_actions: list[Any] = None,
+        status: str = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "headlines": [self._text_asset(item) for item in headlines],
+            "descriptions": [self._text_asset(item) for item in descriptions],
+        }
+        for wire_name, value in (("path1", path1), ("path2", path2)):
+            if value is not None:
+                payload[wire_name] = value
+        for wire_name, values in (
+            ("logoImages", logo_images), ("videos", videos),
+            ("marketingImages", marketing_images), ("callToActions", call_to_actions),
+        ):
+            if values:
+                payload[wire_name] = [self._asset_reference(item) for item in values]
+        return self._specialized_ad_plan(
+            ad_group_id, name, "localAd", payload,
+            final_url=final_url, status=status,
+        )
+
+    def create_smart_campaign_ad(
+        self, ad_group_id: str, name: str, final_url: str,
+        headlines: list[Any], descriptions: list[Any], status: str = None,
+    ) -> dict[str, Any]:
+        payload = {
+            "headlines": [self._text_asset(item) for item in headlines],
+            "descriptions": [self._text_asset(item) for item in descriptions],
+        }
+        return self._specialized_ad_plan(
+            ad_group_id, name, "smartCampaignAd", payload,
+            final_url=final_url, status=status,
+        )
+
+    def create_travel_ad(self, ad_group_id: str, name: str, status: str = None) -> dict[str, Any]:
+        return self._specialized_ad_plan(
+            ad_group_id, name, "travelAd", {}, status=status,
+        )
 
     def create_app_ad(
         self,
