@@ -50,6 +50,9 @@ class GoogleAdsAPIClient(BasePlatformClient):
     # verified.
     AD_UPDATE_FIELDS = {"status"}
     ASSET_GROUP_UPDATE_FIELDS = {"name", "status"}
+    CAMPAIGN_BUDGET_UPDATE_FIELDS = {
+        "name", "daily_budget", "budget", "delivery_method", "explicitly_shared",
+    }
     
     def __init__(
         self,
@@ -631,6 +634,121 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 'status': ag.get('status'),
             }
         raise APIError(f"Google asset group {asset_group_id} was not found")
+
+    # ==================== CampaignBudget 管理 ====================
+
+    @staticmethod
+    def _normalize_campaign_budget(row: dict) -> dict:
+        budget = row.get("campaignBudget", row.get("campaign_budget", row)) or {}
+        return {
+            "id": budget.get("id"),
+            "resource_name": budget.get("resourceName", budget.get("resource_name")),
+            "name": budget.get("name"),
+            "amount_micros": budget.get("amountMicros", budget.get("amount_micros")),
+            "delivery_method": budget.get("deliveryMethod", budget.get("delivery_method")),
+            "explicitly_shared": budget.get("explicitlyShared", budget.get("explicitly_shared")),
+            "status": budget.get("status"),
+            "reference_count": budget.get("referenceCount", budget.get("reference_count")),
+        }
+
+    def list_campaign_budgets(self, page_size: int = 100) -> list[dict]:
+        """List customer CampaignBudget resources through GAQL."""
+        query = (
+            "SELECT campaign_budget.id, campaign_budget.resource_name, "
+            "campaign_budget.name, campaign_budget.amount_micros, "
+            "campaign_budget.delivery_method, campaign_budget.explicitly_shared, "
+            "campaign_budget.status, campaign_budget.reference_count "
+            "FROM campaign_budget"
+        )
+        return [self._normalize_campaign_budget(row) for row in self._search_all(query, page_size=page_size)]
+
+    def get_campaign_budget(self, budget_id: str) -> dict:
+        """Get one CampaignBudget by numeric ID."""
+        budget_id = self._numeric_id(budget_id, "budget_id")
+        query = (
+            "SELECT campaign_budget.id, campaign_budget.resource_name, "
+            "campaign_budget.name, campaign_budget.amount_micros, "
+            "campaign_budget.delivery_method, campaign_budget.explicitly_shared, "
+            "campaign_budget.status, campaign_budget.reference_count "
+            f"FROM campaign_budget WHERE campaign_budget.id = {budget_id}"
+        )
+        rows = self._search(query)
+        payload = self._response_payload(rows)
+        results = payload.get("results", []) if isinstance(payload, dict) else []
+        if results:
+            return self._normalize_campaign_budget(results[0])
+        raise APIError(f"Google campaign budget {budget_id} was not found")
+
+    def create_campaign_budget(
+        self,
+        name: str,
+        daily_budget: float,
+        delivery_method: str = "STANDARD",
+        explicitly_shared: bool = False,
+    ) -> str:
+        """Create a standalone CampaignBudget and return its numeric ID."""
+        if not str(name or "").strip():
+            raise ValueError("name is required")
+        try:
+            amount_micros = int(float(daily_budget) * 1_000_000)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("daily_budget must be greater than 0") from exc
+        if amount_micros <= 0:
+            raise ValueError("daily_budget must be greater than 0")
+        delivery_method = str(delivery_method or "STANDARD").upper()
+        if delivery_method != "STANDARD":
+            raise ValueError("Google Ads currently supports STANDARD delivery for CampaignBudget")
+        response = self._mutate("campaignBudgets", {"create": {
+            "name": name,
+            "amountMicros": amount_micros,
+            "deliveryMethod": delivery_method,
+            "explicitlyShared": bool(explicitly_shared),
+        }})
+        resource_name = self._mutation_resource_name(response)
+        if not resource_name:
+            raise APIError(f"CampaignBudget mutate returned no resource name: {response}")
+        return str(resource_name.rsplit("/", 1)[-1])
+
+    def update_campaign_budget(self, budget_id: str, updates: dict) -> dict:
+        """Update the supported mutable CampaignBudget fields."""
+        budget_id = self._numeric_id(budget_id, "budget_id")
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("updates must be a non-empty object")
+        unknown = set(updates) - self.CAMPAIGN_BUDGET_UPDATE_FIELDS
+        if unknown:
+            raise ValueError(f"Unsupported Google CampaignBudget update fields: {sorted(unknown)}")
+        normalized = {key: value for key, value in updates.items() if value is not None}
+        if "budget" in normalized and "daily_budget" in normalized:
+            raise ValueError("use only one of budget or daily_budget")
+        amount = normalized.pop("daily_budget", normalized.pop("budget", None))
+        if amount is not None:
+            try:
+                amount_micros = int(float(amount) * 1_000_000)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("daily_budget must be greater than 0") from exc
+            if amount_micros <= 0:
+                raise ValueError("daily_budget must be greater than 0")
+            normalized["amount_micros"] = amount_micros
+        if "delivery_method" in normalized:
+            normalized["delivery_method"] = str(normalized["delivery_method"]).upper()
+            if normalized["delivery_method"] != "STANDARD":
+                raise ValueError("Google Ads currently supports STANDARD delivery for CampaignBudget")
+        if not normalized:
+            raise ValueError("updates must contain a supported non-null field")
+        patch = {"resourceName": f"customers/{self.customer_id}/campaignBudgets/{budget_id}"}
+        patch.update(normalized)
+        self._mutate("campaignBudgets", {
+            "update": self._camel_case_keys(patch),
+            "updateMask": {"paths": sorted(self._camel_case(key) for key in normalized)},
+        })
+        return {"success": True, "budget_id": budget_id}
+
+    def delete_campaign_budget(self, budget_id: str) -> dict:
+        """Remove an unreferenced CampaignBudget."""
+        budget_id = self._numeric_id(budget_id, "budget_id")
+        resource_name = f"customers/{self.customer_id}/campaignBudgets/{budget_id}"
+        self._mutate("campaignBudgets", {"remove": resource_name})
+        return {"success": True, "budget_id": budget_id}
     
     def create_campaign(
         self,

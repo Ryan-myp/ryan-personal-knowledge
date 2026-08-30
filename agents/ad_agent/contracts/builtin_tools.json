@@ -1,5 +1,5 @@
 {
-  "digest": "302b51b9b44695816cc97b1f2a23fe11420cc011d9a00858bd5d049f947c1450",
+  "digest": "d8e85aa2b5f559045a18bf33dfb4e0335c846e1f6e6a48380e4242adb79abba4",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -1983,8 +1983,8 @@
       ]
     },
     "google-ads": {
-      "digest": "4196d501ab1d82b522cad636fb9bbde2cdd19e3514c51fbd588783e027181a72",
-      "tool_count": 27,
+      "digest": "b38bcc0f7b5ff31a827b0402c8ed3b76117b77def792f60fda205ac38ec79eb2",
+      "tool_count": 32,
       "tools": [
         {
           "action": "create",
@@ -2669,6 +2669,86 @@
           "traits": [
             "write",
             "campaign"
+          ]
+        },
+        {
+          "action": "create",
+          "contract_version": "1.1.0",
+          "description": "创建 Google Ads CampaignBudget；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "budget_id": {
+                "description": "CampaignBudget ID",
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "daily_budget": {
+                "description": "Daily budget in account currency",
+                "minimum": 0.01,
+                "type": "number"
+              },
+              "delivery_method": {
+                "description": "Budget delivery method",
+                "enum": [
+                  "STANDARD"
+                ],
+                "type": "string"
+              },
+              "explicitly_shared": {
+                "description": "Whether the budget is shared",
+                "type": "boolean"
+              },
+              "limit": {
+                "description": "Maximum number of budgets",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "name": {
+                "description": "Budget name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id",
+              "name",
+              "daily_budget"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_campaign_budget"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_campaign_budget",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "budget_id",
+          "resource_type": "campaign_budget",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "campaign_budget"
           ]
         },
         {
@@ -3506,6 +3586,84 @@
           ]
         },
         {
+          "action": "delete",
+          "contract_version": "1.1.0",
+          "description": "删除未被引用的 Google Ads CampaignBudget；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "budget_id": {
+                "description": "CampaignBudget ID",
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "daily_budget": {
+                "description": "Daily budget in account currency",
+                "minimum": 0.01,
+                "type": "number"
+              },
+              "delivery_method": {
+                "description": "Budget delivery method",
+                "enum": [
+                  "STANDARD"
+                ],
+                "type": "string"
+              },
+              "explicitly_shared": {
+                "description": "Whether the budget is shared",
+                "type": "boolean"
+              },
+              "limit": {
+                "description": "Maximum number of budgets",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "name": {
+                "description": "Budget name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "budget_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_campaign_budget"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_delete_campaign_budget",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "budget_id",
+          "resource_type": "campaign_budget",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "campaign_budget"
+          ]
+        },
+        {
           "action": "get",
           "contract_version": "1.1.0",
           "description": "查询 Google Ads Ad 详情。",
@@ -3746,6 +3904,84 @@
           ]
         },
         {
+          "action": "get",
+          "contract_version": "1.1.0",
+          "description": "查询 Google Ads CampaignBudget 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "budget_id": {
+                "description": "CampaignBudget ID",
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "daily_budget": {
+                "description": "Daily budget in account currency",
+                "minimum": 0.01,
+                "type": "number"
+              },
+              "delivery_method": {
+                "description": "Budget delivery method",
+                "enum": [
+                  "STANDARD"
+                ],
+                "type": "string"
+              },
+              "explicitly_shared": {
+                "description": "Whether the budget is shared",
+                "type": "boolean"
+              },
+              "limit": {
+                "description": "Maximum number of budgets",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "name": {
+                "description": "Budget name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "budget_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_campaign_budget"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_get_campaign_budget",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "budget_id",
+          "resource_type": "campaign_budget",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "campaign_budget"
+          ]
+        },
+        {
           "action": "report",
           "contract_version": "1.1.0",
           "description": "查询 Google Ads Campaign 报表。支持按 campaign_ids 过滤，默认查询最近30天数据。",
@@ -3942,6 +4178,84 @@
           "traits": [
             "read",
             "pmax"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.1.0",
+          "description": "查询 Google Ads CampaignBudget 列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "budget_id": {
+                "description": "CampaignBudget ID",
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "daily_budget": {
+                "description": "Daily budget in account currency",
+                "minimum": 0.01,
+                "type": "number"
+              },
+              "delivery_method": {
+                "description": "Budget delivery method",
+                "enum": [
+                  "STANDARD"
+                ],
+                "type": "string"
+              },
+              "explicitly_shared": {
+                "description": "Whether the budget is shared",
+                "type": "boolean"
+              },
+              "limit": {
+                "description": "Maximum number of budgets",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "name": {
+                "description": "Budget name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_campaign_budgets"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_list_campaign_budgets",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "campaign_budget",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "campaign_budget"
           ]
         },
         {
@@ -4498,6 +4812,119 @@
           "traits": [
             "write",
             "campaign"
+          ]
+        },
+        {
+          "action": "update",
+          "contract_version": "1.1.0",
+          "description": "更新 Google Ads CampaignBudget；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "budget_id": {
+                "description": "CampaignBudget ID",
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "daily_budget": {
+                "description": "Daily budget in account currency",
+                "minimum": 0.01,
+                "type": "number"
+              },
+              "delivery_method": {
+                "description": "Budget delivery method",
+                "enum": [
+                  "STANDARD"
+                ],
+                "type": "string"
+              },
+              "explicitly_shared": {
+                "description": "Whether the budget is shared",
+                "type": "boolean"
+              },
+              "limit": {
+                "description": "Maximum number of budgets",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "name": {
+                "description": "Budget name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Allowed CampaignBudget update fields",
+                "properties": {
+                  "budget": {
+                    "description": "Daily budget alias",
+                    "minimum": 0.01,
+                    "type": "number"
+                  },
+                  "daily_budget": {
+                    "description": "Daily budget in account currency",
+                    "minimum": 0.01,
+                    "type": "number"
+                  },
+                  "delivery_method": {
+                    "description": "Budget delivery method",
+                    "enum": [
+                      "STANDARD"
+                    ],
+                    "type": "string"
+                  },
+                  "explicitly_shared": {
+                    "description": "Whether the budget is shared",
+                    "type": "boolean"
+                  },
+                  "name": {
+                    "description": "Budget name",
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "budget_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_campaign_budget"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_update_campaign_budget",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "budget_id",
+          "resource_type": "campaign_budget",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "campaign_budget"
           ]
         }
       ]
@@ -9926,5 +10353,5 @@
       ]
     }
   },
-  "tool_count": 129
+  "tool_count": 134
 }

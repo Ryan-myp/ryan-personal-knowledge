@@ -24,6 +24,26 @@ def test_capability_audit_discovers_all_installed_channels_without_issues():
     )
 
 
+def test_capability_audit_includes_provider_owned_api_surface_and_planned_gaps():
+    report = audit_capabilities()
+
+    google = report["platforms"]["google-ads"]
+    meta = report["platforms"]["meta"]
+    assert google["api_surface"]["implemented"] > 0
+    assert google["api_surface"]["planned"] > 0
+    assert any(
+        entry["resource"] == "campaign_criterion"
+        for entry in google["api_surface_planned"]
+    )
+    assert any(
+        entry["resource"] == "pixel"
+        for entry in meta["api_surface_planned"]
+    )
+    assert report["surface_gaps"] == {
+        platform: [] for platform in report["platforms"]
+    }
+
+
 def test_contract_snapshot_is_deterministic_and_partitioned_by_platform():
     runtime = build_runtime()
     first = build_contract_snapshot(runtime)

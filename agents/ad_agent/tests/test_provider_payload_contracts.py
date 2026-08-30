@@ -895,3 +895,72 @@ def test_google_and_dv360_existing_update_adapters_build_provider_mutations():
         "budget": 20, "status": "PAUSED", "targeting": {"country": "US"}
     }
     assert kwargs["params"]["updateMask"] == "budget,status,targeting"
+
+
+def test_google_campaign_budget_tools_cover_gaql_and_mutations():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
+    client._search_all = lambda query, page_size=100: [{
+        "campaignBudget": {
+            "id": "7", "resourceName": "customers/123/campaignBudgets/7",
+            "name": "Daily", "amountMicros": "2500000",
+            "deliveryMethod": "STANDARD", "explicitlyShared": False,
+        }
+    }]
+    budgets = client.list_campaign_budgets()
+    assert budgets[0]["id"] == "7"
+    assert budgets[0]["amount_micros"] == "2500000"
+
+    client._search = lambda query: {"data": {"results": [{
+        "campaignBudget": {"id": "7", "name": "Daily", "amountMicros": 2500000}
+    }]}}
+    assert client.get_campaign_budget("7")["name"] == "Daily"
+
+    operations = []
+    client._mutate = lambda resource, operation: (
+        operations.append((resource, operation)) or {
+            "data": {"results": [{
+                "resourceName": "customers/123/campaignBudgets/8"
+            }]}
+        }
+    )
+    assert client.create_campaign_budget("New", 3.5) == "8"
+    assert operations[-1][1]["create"] == {
+        "name": "New", "amountMicros": 3500000,
+        "deliveryMethod": "STANDARD", "explicitlyShared": False,
+    }
+    assert client.update_campaign_budget("8", {"daily_budget": 4, "name": "Updated"})["success"]
+    assert operations[-1][1]["update"] == {
+        "resourceName": "customers/123/campaignBudgets/8",
+        "amountMicros": 4000000, "name": "Updated",
+    }
+    assert operations[-1][1]["updateMask"] == {"paths": ["amountMicros", "name"]}
+    assert client.delete_campaign_budget("8")["success"]
+    assert operations[-1][1] == {
+        "remove": "customers/123/campaignBudgets/8"
+    }
+
+
+def test_google_extended_provider_tools_resolve_customer_scoped_client():
+    seen = []
+
+    class TrackingGoogleClient(GoogleAdsAPIClient):
+        def for_customer(self, customer_id):
+            scoped = super().for_customer(customer_id)
+            scoped.get_campaign_budget = lambda budget_id: (
+                seen.append((scoped.customer_id, budget_id)) or {"id": budget_id}
+            )
+            return scoped
+
+    client = TrackingGoogleClient({"access_token": "test", "customer_id": "base"})
+    capability = create_google_capability(client)
+    definitions = {
+        definition.name: handler
+        for definition, handler in capability.register_tools()
+    }
+    handler = definitions["google_get_campaign_budget"]
+    result = handler.execute(
+        ToolContext(session_id="s1", user_id="u1", account_id="customer-2"),
+        {"budget_id": "7"},
+    )
+    assert result.ok
+    assert seen == [("customer-2", "7")]

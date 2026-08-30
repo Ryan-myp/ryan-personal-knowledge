@@ -24,11 +24,13 @@ from .assets import (
 )
 from .reports import GoogleGetReportHandler
 from .keywords import GoogleListKeywordsHandler
+from ._utils import for_customer
 from .parameters import (
     google_campaign_schema, google_ad_group_schema, google_ad_schema,
     google_asset_group_schema, google_ad_format_catalog, google_keyword_schema,
     google_product_group_schema, google_responsive_display_ad_schema,
-    google_video_ad_schema,
+    google_video_ad_schema, google_campaign_budget_schema,
+    google_campaign_budget_update_schema,
 )
 from ...api_clients.google_ads_client import GoogleAdsAPIClient
 from ..update_contracts import google_updates
@@ -77,6 +79,11 @@ class GoogleCapability(BaseCapability):
         "create_product_group": ["google_create_product_group"],
         "create_responsive_display_ad": ["google_create_responsive_display_ad"],
         "create_video_ad": ["google_create_video_ad"],
+        "list_campaign_budgets": ["google_list_campaign_budgets"],
+        "get_campaign_budget": ["google_get_campaign_budget"],
+        "create_campaign_budget": ["google_create_campaign_budget"],
+        "update_campaign_budget": ["google_update_campaign_budget"],
+        "delete_campaign_budget": ["google_delete_campaign_budget"],
         "get_campaign_report": ["google_get_campaign_report"], "get_adgroup_report": ["google_get_adgroup_report"],
     }
 
@@ -85,7 +92,57 @@ class GoogleCapability(BaseCapability):
 
     def _extended_provider_tools(self, client):
         """Expose Google Ads client endpoints with dedicated contracts."""
+        budget_schema = google_campaign_budget_schema()
         tools = [
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_list_campaign_budgets", description="查询 Google Ads CampaignBudget 列表。",
+                method_name="list_campaign_budgets", result_key="budgets",
+                properties=budget_schema["properties"], required=["customer_id"],
+                action="list", resource_type="campaign_budget", intent_types=["list_campaign_budgets"],
+                traits=["read", "campaign_budget"],
+                argument_builder=lambda _ctx, data: ((), {"page_size": data.get("limit", 100)}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_get_campaign_budget", description="查询 Google Ads CampaignBudget 详情。",
+                method_name="get_campaign_budget", result_key="budget",
+                properties=budget_schema["properties"], required=["budget_id"],
+                action="get", resource_type="campaign_budget", resource_id_field="budget_id",
+                intent_types=["get_campaign_budget"], traits=["read", "campaign_budget"],
+                argument_builder=lambda _ctx, data: ((data["budget_id"],), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_create_campaign_budget", description="创建 Google Ads CampaignBudget；默认仅生成 dry-run 计划。",
+                method_name="create_campaign_budget", result_key="budget_id",
+                properties=budget_schema["properties"], required=["customer_id", "name", "daily_budget"],
+                action="create", resource_type="campaign_budget", resource_id_field="budget_id",
+                intent_types=["create_campaign_budget"], traits=["write", "campaign_budget"], write=True,
+                argument_builder=lambda _ctx, data: ((data["name"], data["daily_budget"]), {
+                    "delivery_method": data.get("delivery_method", "STANDARD"),
+                    "explicitly_shared": data.get("explicitly_shared", False),
+                }),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_update_campaign_budget", description="更新 Google Ads CampaignBudget；默认仅生成 dry-run 计划。",
+                method_name="update_campaign_budget", result_key="budget_result",
+                properties={**budget_schema["properties"], "updates": google_campaign_budget_update_schema()},
+                required=["budget_id", "updates"], action="update", resource_type="campaign_budget",
+                resource_id_field="budget_id", intent_types=["update_campaign_budget"],
+                traits=["write", "campaign_budget"], write=True,
+                argument_builder=lambda _ctx, data: ((data["budget_id"], data["updates"]), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_delete_campaign_budget", description="删除未被引用的 Google Ads CampaignBudget；默认仅生成 dry-run 计划。",
+                method_name="delete_campaign_budget", result_key="budget_result",
+                properties=budget_schema["properties"], required=["budget_id"], action="delete",
+                resource_type="campaign_budget", resource_id_field="budget_id",
+                intent_types=["delete_campaign_budget"], traits=["write", "campaign_budget"], write=True,
+                argument_builder=lambda _ctx, data: ((data["budget_id"],), {}),
+            ),
             method_tool(
                 platform="google-ads", skill="google-ads-api-expert",
                 name="google_create_search_ad", description="创建 Google Responsive Search Ad；默认仅生成 dry-run 计划。",
@@ -226,7 +283,14 @@ class GoogleCapability(BaseCapability):
                 resource_id_field="campaign_id", intent_types=[f"provider_{intent}"], traits=["write", "campaign"], write=True,
                 argument_builder=lambda _ctx, data: ((data["campaign_id"],), {}),
             ))
-        return [bind_provider_method(tool, client) for tool in tools]
+        bound_tools = []
+        for tool in tools:
+            definition, handler = bind_provider_method(tool, client)
+            handler.client_resolver = lambda ctx, data, base=client: for_customer(
+                base, ctx.account_id or data.get("customer_id")
+            )
+            bound_tools.append((definition, handler))
+        return bound_tools
 
     def register_tools(self) -> list[tuple[ToolDefinition, ToolHandler]]:
         tools = []

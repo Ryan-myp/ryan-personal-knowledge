@@ -11,6 +11,7 @@ and does not require editing a central channel list.
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import sys
 from collections import Counter
@@ -23,6 +24,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from agents.ad_agent.capabilities.factory import discover_capability_factory  # noqa: E402
+from agents.ad_agent.capabilities.api_surface import IMPLEMENTED, validate_surface  # noqa: E402
 from agents.ad_agent.core.interfaces import AdFormatCoverage, ReplayPolicy, ToolEffect  # noqa: E402
 from agents.ad_agent.runtime.runtime import AgentRuntime  # noqa: E402
 
@@ -60,6 +62,56 @@ def audit_capabilities() -> dict[str, Any]:
             client_class = getattr(capability, "provider_client_class", None)
             coverage = getattr(capability, "provider_method_coverage", {}) or {}
             exclusions = set(getattr(capability, "provider_method_exclusions", set()) or set())
+            surface_module_name = f"{type(capability).__module__.rsplit('.', 1)[0]}.api_surface"
+            try:
+                surface_module = importlib.import_module(surface_module_name)
+                surface = list(getattr(surface_module, "API_SURFACE", []) or [])
+            except (ImportError, AttributeError) as exc:
+                surface = []
+                report["issues"].append(f"{slug}: provider API surface unavailable: {exc}")
+            surface_errors = validate_surface(surface)
+            report["issues"].extend(f"{slug}: {error}" for error in surface_errors)
+            platform_key = str(getattr(capability, "platform_name", slug))
+            registered_names = {
+                definition.name for definition in runtime.registry.list_all()
+                if str(definition.platform) == platform_key
+            }
+            surface_gaps: list[str] = []
+            planned_entries: list[dict[str, Any]] = []
+            implemented_surface = 0
+            for entry in surface:
+                if not isinstance(entry, dict):
+                    continue
+                if entry.get("status") != IMPLEMENTED:
+                    if entry.get("status") == "planned":
+                        planned_entries.append(entry)
+                    continue
+                implemented_surface += 1
+                method_name = str(entry.get("method") or "")
+                if client_class is not None and not callable(getattr(client_class, method_name, None)):
+                    surface_gaps.append(
+                        f"{entry.get('resource')}:{entry.get('action')} method {method_name} is not on Client"
+                    )
+                mapped_tools = coverage.get(method_name, [])
+                if isinstance(mapped_tools, str):
+                    mapped_tools = [mapped_tools]
+                missing_tools = sorted(set(mapped_tools or []) - registered_names)
+                if not mapped_tools:
+                    surface_gaps.append(
+                        f"{entry.get('resource')}:{entry.get('action')} method {method_name} has no coverage mapping"
+                    )
+                elif missing_tools:
+                    surface_gaps.append(
+                        f"{entry.get('resource')}:{entry.get('action')} missing Tools: {', '.join(missing_tools)}"
+                    )
+            report.setdefault("surface_gaps", {})[platform_key] = surface_gaps
+            report.setdefault("surface_planned", {})[platform_key] = planned_entries
+            report.setdefault("surface_summary", {})[platform_key] = {
+                "implemented": implemented_surface,
+                "planned": len(planned_entries),
+                "total": len(surface),
+            }
+            report["issues"].extend(f"{slug}: API surface gap: {gap}" for gap in surface_gaps)
             if client_class is not None:
                 public_methods = {
                     name for name, member in vars(client_class).items()
@@ -179,6 +231,9 @@ def audit_capabilities() -> dict[str, Any]:
             ).items())),
             "live_read_tools": sorted(live_read_tools),
             "live_write_tools": sorted(live_write_tools),
+            "api_surface": report.get("surface_summary", {}).get(platform, {}),
+            "api_surface_gaps": report.get("surface_gaps", {}).get(platform, []),
+            "api_surface_planned": report.get("surface_planned", {}).get(platform, []),
             "issues": platform_issues,
         }
         report["issues"].extend(f"{platform}: {issue}" for issue in platform_issues)
@@ -213,6 +268,18 @@ def _print_text(report: dict[str, Any]) -> None:
             print(f"  live reads: {len(details['live_read_tools'])}")
         if details["live_write_tools"]:
             print(f"  live writes: {len(details['live_write_tools'])}")
+        surface = details.get("api_surface", {})
+        if surface:
+            print(
+                "  api surface: "
+                f"implemented={surface.get('implemented', 0)}, "
+                f"planned={surface.get('planned', 0)}, total={surface.get('total', 0)}"
+            )
+        for entry in details.get("api_surface_planned", []):
+            print(
+                f"  planned gap: {entry.get('resource')}:{entry.get('action')} - "
+                f"{entry.get('gap')}"
+            )
         for issue in details["issues"]:
             print(f"  ISSUE: {issue}")
     if report["issues"]:

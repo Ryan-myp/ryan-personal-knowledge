@@ -41,6 +41,8 @@ GOOGLE_VIDEO_AD_FORMATS = [
     "SKIPPABLE_IN_STREAM", "NON_SKIPPABLE_IN_STREAM", "BUMPER", "OUTSTREAM",
 ]
 
+GOOGLE_BUDGET_DELIVERY_METHODS = ["STANDARD"]
+
 
 def _field(field_type: Any, description: str = "", **kwargs: Any) -> dict[str, Any]:
     value = {"type": field_type, "description": description}
@@ -57,6 +59,32 @@ def _object(
         "properties": properties,
         "additionalProperties": additional_properties,
     }
+
+
+def google_campaign_budget_schema() -> dict[str, Any]:
+    """Schema for the standalone CampaignBudget management Tools."""
+    return {
+        "properties": {
+            "customer_id": _field("string", "Google Ads customer ID"),
+            "budget_id": _field("string", "CampaignBudget ID"),
+            "name": _field("string", "Budget name", minLength=1, maxLength=255),
+            "daily_budget": _field("number", "Daily budget in account currency", minimum=0.01),
+            "limit": _field("integer", "Maximum number of budgets", minimum=1, maximum=10000),
+            "delivery_method": _field("string", "Budget delivery method", enum=GOOGLE_BUDGET_DELIVERY_METHODS),
+            "explicitly_shared": _field("boolean", "Whether the budget is shared"),
+        },
+        "conditional_rules": [],
+    }
+
+
+def google_campaign_budget_update_schema() -> dict[str, Any]:
+    return _object({
+        "name": _field("string", "Budget name", minLength=1, maxLength=255),
+        "daily_budget": _field("number", "Daily budget in account currency", minimum=0.01),
+        "budget": _field("number", "Daily budget alias", minimum=0.01),
+        "delivery_method": _field("string", "Budget delivery method", enum=GOOGLE_BUDGET_DELIVERY_METHODS),
+        "explicitly_shared": _field("boolean", "Whether the budget is shared"),
+    }, "Allowed CampaignBudget update fields")
 
 
 def google_campaign_schema() -> dict[str, Any]:

@@ -29,6 +29,9 @@
   不参与 Runtime 路由或渠道配置。
 - `scripts/audit_capabilities.py` 按 Capability 包约定生成 action/resource 矩阵和创建链
   缺口报告；它是 release gate，不是 Runtime 的第二套渠道注册表。
+- 每个渠道 Capability 包另有 `api_surface.py`，声明已实现与计划中的官方资源操作；审计会
+  检查已实现项是否同时存在 Client 方法、覆盖映射和 executable Tool，并把计划项显式列为
+  后续建设缺口。
 
 ## 项目概述
 
