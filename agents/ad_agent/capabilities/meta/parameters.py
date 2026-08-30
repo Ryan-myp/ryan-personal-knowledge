@@ -45,6 +45,12 @@ META_CAPI_ACTION_SOURCES = [
 META_CATALOG_VERTICALS = [
     "commerce", "destination_items", "flights", "home_listings", "hotels", "vehicles",
 ]
+META_LEAD_FORM_QUESTION_TYPES = [
+    "EMAIL", "FULL_NAME", "FIRST_NAME", "LAST_NAME", "PHONE", "CITY", "STATE",
+    "ZIP", "COUNTRY", "JOB_TITLE", "COMPANY_NAME", "WORK_EMAIL", "WORK_PHONE",
+    "DATE_OF_BIRTH", "GENDER", "MARITAL_STATUS", "RELATIONSHIP_STATUS",
+    "MILITARY_STATUS", "STREET_ADDRESS", "POSTAL_CODE", "CUSTOM",
+]
 
 
 def _field(field_type: Any, description: str = "", **kwargs: Any) -> dict[str, Any]:
@@ -241,6 +247,62 @@ def meta_conversion_event_schema() -> dict[str, Any]:
                 "string", "Optional Meta Events Manager test code"
             ),
         },
+    }
+
+
+def meta_lead_form_schema() -> dict[str, Any]:
+    """Contracts for Page-scoped Meta Lead Ads Instant Forms.
+
+    ``questions`` and the presentation blocks are converted to the JSON
+    strings required by the Graph API in the Provider Client.  The top-level
+    ``account_id`` is an authorization scope for the Runtime; the Page ID is
+    the provider resource parent used by the API.
+    """
+    question = _object({
+        "type": _field(
+            "string", "Standard or custom Instant Form question type",
+            enum=META_LEAD_FORM_QUESTION_TYPES,
+        ),
+        "key": _field("string", "Stable key for a CUSTOM question", minLength=1, maxLength=100),
+        "label": _field("string", "Label for a CUSTOM question", minLength=1, maxLength=200),
+        "options": _field(
+            "array", "Optional answer choices for a CUSTOM question",
+            items={"type": "string"}, minItems=1, maxItems=50,
+        ),
+    }, "Meta Instant Form question", additional_properties=False)
+    privacy_policy = _object({
+        "url": _field("string", "Privacy policy URL", minLength=1),
+        "link_text": _field("string", "Privacy policy link text", minLength=1),
+    }, "Privacy policy displayed in the Instant Form", additional_properties=False)
+    presentation = _object({}, "Provider presentation block", additional_properties=True)
+    return {
+        "required": ["account_id", "page_id", "name", "questions", "privacy_policy"],
+        "provider_required": ["name", "questions", "privacy_policy"],
+        "properties": {
+            "account_id": _field("string", "Meta ad account authorization scope"),
+            "page_id": _field(
+                "string", "Facebook Page that owns the Instant Form",
+                minLength=1, lookup_tool="meta_list_pages", lookup_result_key="pages",
+                selection_value_fields=["id", "page_id"],
+                selection_label_fields=["name", "id"],
+            ),
+            "form_id": _field("string", "Meta Instant Form ID", minLength=1),
+            "name": _field("string", "Instant Form name", minLength=1, maxLength=400),
+            "questions": _field("array", "Instant Form questions", items=question, minItems=1, maxItems=15),
+            "privacy_policy": privacy_policy,
+            "follow_up_action_url": _field("string", "Optional post-submit follow-up URL"),
+            "context_card": presentation,
+            "thank_you_page": presentation,
+            "locale": _field("string", "Form locale, for example en_US"),
+            "is_for_calling": _field("boolean", "Whether the form is intended for calling"),
+            "fields": _field("array", "Fields to return", items={"type": "string"}),
+            "limit": _field("integer", "Maximum number of forms", minimum=1, maximum=1000),
+            "updates": _object({
+                "name": _field("string", "Instant Form name", minLength=1, maxLength=400),
+            }, "Supported Instant Form update fields", additional_properties=False),
+        },
+        "create_required": ["account_id", "page_id", "name", "questions", "privacy_policy"],
+        "update_required": ["account_id", "page_id", "form_id", "updates"],
     }
 
 

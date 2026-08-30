@@ -18,6 +18,7 @@ from .parameters import (
     meta_ad_format_catalog, meta_lead_ad_schema, meta_catalog_ad_schema,
     meta_audience_schema, meta_conversion_event_schema, meta_creative_schema,
     meta_catalog_schema, meta_product_set_schema,
+    meta_lead_form_schema,
 )
 from ...api_clients.meta_client import MetaAPIClient
 from ..update_contracts import meta_updates
@@ -72,6 +73,7 @@ class MetaCapability(BaseCapability):
         "get_pixel": ["meta_get_pixel"],
         "send_conversion_events": ["meta_send_conversion_events"],
         "list_lead_forms": ["meta_list_lead_forms"], "get_lead_form": ["meta_get_lead_form"],
+        "create_lead_form": ["meta_create_lead_form"], "update_lead_form": ["meta_update_lead_form"],
         "get_campaign": ["meta_get_campaign"], "create_campaign": ["meta_create_campaign"],
         "update_campaign": ["meta_update_campaign"], "pause_campaign": ["meta_pause_campaign"],
         "resume_campaign": ["meta_resume_campaign"], "list_adsets": ["meta_list_ad_sets"],
@@ -104,6 +106,7 @@ class MetaCapability(BaseCapability):
         catalog_properties = catalog_schema["properties"]
         product_set_schema = meta_product_set_schema()
         product_set_properties = product_set_schema["properties"]
+        lead_form_schema = meta_lead_form_schema()
         tools = [
             method_tool(
                 platform="meta", skill="meta-marketing-api", name="meta_list_pages",
@@ -218,6 +221,37 @@ class MetaCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((data["page_id"], data["form_id"]), {
                     "fields": data.get("fields"),
                 }),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_create_lead_form",
+                description="创建 Meta Lead Ads Instant Form；默认仅生成 dry-run 计划。",
+                method_name="create_lead_form", result_key="lead_form_id",
+                properties=lead_form_schema["properties"],
+                required=lead_form_schema["required"],
+                provider_required=lead_form_schema["provider_required"],
+                action="create", resource_type="lead_form",
+                parent_resource_type="page", parent_resource_id_field="page_id",
+                intent_types=["create_lead_form"], traits=["write", "lead_form"],
+                write=True, live_support=False,
+                argument_builder=lambda _ctx, data: ((data["page_id"], {
+                    key: value for key, value in data.items()
+                    if key not in {"account_id", "page_id", "form_id", "fields", "limit", "updates"}
+                }), {}),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_update_lead_form",
+                description="更新 Meta Lead Ads Instant Form 名称；默认仅生成 dry-run 计划。",
+                method_name="update_lead_form", result_key="lead_form",
+                properties=lead_form_schema["properties"],
+                required=lead_form_schema["update_required"],
+                action="update", resource_type="lead_form",
+                parent_resource_type="page", resource_id_field="form_id",
+                parent_resource_id_field="page_id",
+                intent_types=["update_lead_form"], traits=["write", "lead_form"],
+                write=True, live_support=False,
+                argument_builder=lambda _ctx, data: ((
+                    data["page_id"], data["form_id"], data["updates"]
+                ), {}),
             ),
             method_tool(
                 platform="meta", skill="meta-marketing-api", name="meta_list_accounts",

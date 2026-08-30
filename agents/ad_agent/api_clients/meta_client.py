@@ -747,6 +747,81 @@ class MetaAPIClient(BasePlatformClient):
             self.request("GET", f"/{form_id}", extra_params=params),
             "Meta lead form get",
         )
+
+    def create_lead_form(self, page_id: str, form: dict) -> str:
+        """Create a Page-owned Meta Lead Ads Instant Form.
+
+        Meta expects the structured question and presentation blocks as JSON
+        strings on the Graph API wire.  This method owns that translation;
+        the Capability owns the closed input contract and Runtime owns dry-run
+        and account authorization gates.
+        """
+        page_id = self._clean_meta_id(page_id, "page_id")
+        if not isinstance(form, dict):
+            raise ValueError("lead form must be an object")
+        name = str(form.get("name") or "").strip()
+        questions = form.get("questions")
+        privacy_policy = form.get("privacy_policy")
+        if not name or not isinstance(questions, list) or not questions:
+            raise ValueError("name and a non-empty questions list are required")
+        if not isinstance(privacy_policy, dict):
+            raise ValueError("privacy_policy must be an object")
+        if not str(privacy_policy.get("url") or "").strip() or not str(
+            privacy_policy.get("link_text") or ""
+        ).strip():
+            raise ValueError("privacy_policy requires url and link_text")
+        for index, question in enumerate(questions):
+            if not isinstance(question, dict):
+                raise ValueError(f"questions[{index}] must be an object")
+            question_type = str(question.get("type") or "").upper()
+            if not question_type:
+                raise ValueError(f"questions[{index}].type is required")
+            if question_type == "CUSTOM" and (
+                not str(question.get("key") or "").strip()
+                or not str(question.get("label") or "").strip()
+            ):
+                raise ValueError(
+                    f"questions[{index}] CUSTOM questions require key and label"
+                )
+
+        data: dict[str, Any] = {
+            "name": name,
+            "questions": json.dumps(questions, ensure_ascii=False, separators=(",", ":")),
+            "privacy_policy": json.dumps(
+                privacy_policy, ensure_ascii=False, separators=(",", ":")
+            ),
+        }
+        for field in ("follow_up_action_url", "locale"):
+            if form.get(field) not in (None, ""):
+                data[field] = form[field]
+        for field in ("context_card", "thank_you_page"):
+            if form.get(field) is not None:
+                if not isinstance(form[field], dict):
+                    raise ValueError(f"{field} must be an object")
+                data[field] = json.dumps(
+                    form[field], ensure_ascii=False, separators=(",", ":")
+                )
+        if form.get("is_for_calling") is not None:
+            data["is_for_calling"] = bool(form["is_for_calling"])
+        self.acquire_rate_limit(self._get_account_limiter(page_id))
+        result = self.request("POST", f"/{page_id}/leadgen_forms", data=data)
+        resource_id = result.get("id") if isinstance(result, dict) else None
+        return self.require_resource_id(resource_id, "Meta lead form create")
+
+    def update_lead_form(self, page_id: str, form_id: str, updates: dict) -> dict:
+        """Update the supported mutable field of a Page-owned Instant Form."""
+        page_id = self._clean_meta_id(page_id, "page_id")
+        form_id = self._clean_meta_id(form_id, "form_id")
+        if not isinstance(updates, dict) or not str(updates.get("name") or "").strip():
+            raise ValueError("updates.name is required for Meta lead form update")
+        # Graph IDs are not globally writable merely because the token can
+        # address them; prove Page ownership before the mutation.
+        self.get_lead_form(page_id, form_id, fields=["id"])
+        self.acquire_rate_limit(self._get_account_limiter(page_id))
+        return self.require_resource_object(
+            self.request("POST", f"/{form_id}", data={"name": updates["name"]}),
+            "Meta lead form update",
+        )
     
     # ==================== Campaign 管理 ====================
     

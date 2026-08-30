@@ -347,6 +347,63 @@ def test_meta_lead_form_get_checks_page_ownership_and_forwards_fields():
     assert calls == [("GET", "/form-1", {"fields": "id,status"})]
 
 
+def test_meta_lead_form_create_serializes_structured_graph_fields():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+    client.acquire_rate_limit = lambda *_args, **_kwargs: None
+    client.request = lambda method, endpoint, data=None, **_kwargs: (
+        calls.append((method, endpoint, data)) or {"id": "form-new"}
+    )
+    form_id = client.create_lead_form("page-1", {
+        "name": "Demo lead form",
+        "questions": [
+            {"type": "FULL_NAME"},
+            {"type": "CUSTOM", "key": "company", "label": "Company"},
+        ],
+        "privacy_policy": {
+            "url": "https://example.test/privacy",
+            "link_text": "Privacy Policy",
+        },
+        "context_card": {"title": "Tell us about you"},
+        "locale": "en_US",
+    })
+    assert form_id == "form-new"
+    assert calls[0][:2] == ("POST", "/page-1/leadgen_forms")
+    assert calls[0][2]["name"] == "Demo lead form"
+    assert json.loads(calls[0][2]["questions"])[1]["key"] == "company"
+    assert json.loads(calls[0][2]["privacy_policy"])["link_text"] == "Privacy Policy"
+    assert json.loads(calls[0][2]["context_card"])["title"] == "Tell us about you"
+
+
+def test_meta_lead_form_update_verifies_page_ownership_before_mutation():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+    client.get_lead_form = lambda page_id, form_id, fields=None: {
+        "id": form_id, "page": {"id": page_id}
+    }
+    client.acquire_rate_limit = lambda *_args, **_kwargs: None
+    client.request = lambda method, endpoint, data=None, **_kwargs: (
+        calls.append((method, endpoint, data)) or {"id": "form-1", "name": data["name"]}
+    )
+    result = client.update_lead_form("page-1", "form-1", {"name": "Renamed form"})
+    assert result == {"id": "form-1", "name": "Renamed form"}
+    assert calls == [("POST", "/form-1", {"name": "Renamed form"})]
+
+
+def test_meta_lead_form_tools_expose_closed_create_and_update_contracts():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_meta_capability().register_tools()
+    }
+    create_tool = definitions["meta_create_lead_form"]
+    update_tool = definitions["meta_update_lead_form"]
+    assert create_tool.live_support is False
+    assert create_tool.input_schema.properties["page_id"]["lookup_tool"] == "meta_list_pages"
+    assert create_tool.input_schema.properties["questions"]["items"]["additionalProperties"] is False
+    assert update_tool.input_schema.properties["updates"]["additionalProperties"] is False
+    assert update_tool.input_schema.required == ["account_id", "page_id", "form_id", "updates"]
+
+
 def test_meta_audience_crud_builds_custom_and_lookalike_payloads():
     client = MetaAPIClient({"access_token": "test"})
     calls = []

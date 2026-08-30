@@ -1,5 +1,5 @@
 {
-  "digest": "a2ea6d38146b09b9e7c5138b1a34853f703cf5a7efef3631d1a269678c24e526",
+  "digest": "595b65af7ce37c47602f37aa3ba402693b9745d96a1b65f9d5d8f8ed486fe721",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -5729,8 +5729,8 @@
       ]
     },
     "meta": {
-      "digest": "ca46e9e961f22431cfd5ac583153347d639bed1cf7b2dfbefbe2d2b1269e3b14",
-      "tool_count": 50,
+      "digest": "47a5e494e2a5cfc978737cb09d6312655d992008094a56c6c927be6a46790557",
+      "tool_count": 52,
       "tools": [
         {
           "action": "boost",
@@ -7113,6 +7113,214 @@
             "ad",
             "lead",
             "instant_form"
+          ]
+        },
+        {
+          "action": "create",
+          "contract_version": "1.2.0",
+          "description": "创建 Meta Lead Ads Instant Form；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account authorization scope",
+                "type": "string"
+              },
+              "context_card": {
+                "additionalProperties": true,
+                "description": "Provider presentation block",
+                "properties": {},
+                "type": "object"
+              },
+              "fields": {
+                "description": "Fields to return",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "follow_up_action_url": {
+                "description": "Optional post-submit follow-up URL",
+                "type": "string"
+              },
+              "form_id": {
+                "description": "Meta Instant Form ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "is_for_calling": {
+                "description": "Whether the form is intended for calling",
+                "type": "boolean"
+              },
+              "limit": {
+                "description": "Maximum number of forms",
+                "maximum": 1000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "locale": {
+                "description": "Form locale, for example en_US",
+                "type": "string"
+              },
+              "name": {
+                "description": "Instant Form name",
+                "maxLength": 400,
+                "minLength": 1,
+                "type": "string"
+              },
+              "page_id": {
+                "description": "Facebook Page that owns the Instant Form",
+                "lookup_result_key": "pages",
+                "lookup_tool": "meta_list_pages",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "page_id"
+                ],
+                "type": "string"
+              },
+              "privacy_policy": {
+                "additionalProperties": false,
+                "description": "Privacy policy displayed in the Instant Form",
+                "properties": {
+                  "link_text": {
+                    "description": "Privacy policy link text",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "url": {
+                    "description": "Privacy policy URL",
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "questions": {
+                "description": "Instant Form questions",
+                "items": {
+                  "additionalProperties": false,
+                  "description": "Meta Instant Form question",
+                  "properties": {
+                    "key": {
+                      "description": "Stable key for a CUSTOM question",
+                      "maxLength": 100,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "label": {
+                      "description": "Label for a CUSTOM question",
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "options": {
+                      "description": "Optional answer choices for a CUSTOM question",
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 50,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "type": {
+                      "description": "Standard or custom Instant Form question type",
+                      "enum": [
+                        "EMAIL",
+                        "FULL_NAME",
+                        "FIRST_NAME",
+                        "LAST_NAME",
+                        "PHONE",
+                        "CITY",
+                        "STATE",
+                        "ZIP",
+                        "COUNTRY",
+                        "JOB_TITLE",
+                        "COMPANY_NAME",
+                        "WORK_EMAIL",
+                        "WORK_PHONE",
+                        "DATE_OF_BIRTH",
+                        "GENDER",
+                        "MARITAL_STATUS",
+                        "RELATIONSHIP_STATUS",
+                        "MILITARY_STATUS",
+                        "STREET_ADDRESS",
+                        "POSTAL_CODE",
+                        "CUSTOM"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "maxItems": 15,
+                "minItems": 1,
+                "type": "array"
+              },
+              "thank_you_page": {
+                "additionalProperties": true,
+                "description": "Provider presentation block",
+                "properties": {},
+                "type": "object"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Supported Instant Form update fields",
+                "properties": {
+                  "name": {
+                    "description": "Instant Form name",
+                    "maxLength": 400,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "name",
+              "questions",
+              "privacy_policy"
+            ],
+            "required": [
+              "account_id",
+              "page_id",
+              "name",
+              "questions",
+              "privacy_policy"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_lead_form"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_create_lead_form",
+          "parent_resource_id_field": "page_id",
+          "parent_resource_type": "page",
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": null,
+          "resource_type": "lead_form",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "lead_form"
           ]
         },
         {
@@ -9531,6 +9739,209 @@
           "traits": [
             "write",
             "creative"
+          ]
+        },
+        {
+          "action": "update",
+          "contract_version": "1.2.0",
+          "description": "更新 Meta Lead Ads Instant Form 名称；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account authorization scope",
+                "type": "string"
+              },
+              "context_card": {
+                "additionalProperties": true,
+                "description": "Provider presentation block",
+                "properties": {},
+                "type": "object"
+              },
+              "fields": {
+                "description": "Fields to return",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "follow_up_action_url": {
+                "description": "Optional post-submit follow-up URL",
+                "type": "string"
+              },
+              "form_id": {
+                "description": "Meta Instant Form ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "is_for_calling": {
+                "description": "Whether the form is intended for calling",
+                "type": "boolean"
+              },
+              "limit": {
+                "description": "Maximum number of forms",
+                "maximum": 1000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "locale": {
+                "description": "Form locale, for example en_US",
+                "type": "string"
+              },
+              "name": {
+                "description": "Instant Form name",
+                "maxLength": 400,
+                "minLength": 1,
+                "type": "string"
+              },
+              "page_id": {
+                "description": "Facebook Page that owns the Instant Form",
+                "lookup_result_key": "pages",
+                "lookup_tool": "meta_list_pages",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "page_id"
+                ],
+                "type": "string"
+              },
+              "privacy_policy": {
+                "additionalProperties": false,
+                "description": "Privacy policy displayed in the Instant Form",
+                "properties": {
+                  "link_text": {
+                    "description": "Privacy policy link text",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "url": {
+                    "description": "Privacy policy URL",
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "questions": {
+                "description": "Instant Form questions",
+                "items": {
+                  "additionalProperties": false,
+                  "description": "Meta Instant Form question",
+                  "properties": {
+                    "key": {
+                      "description": "Stable key for a CUSTOM question",
+                      "maxLength": 100,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "label": {
+                      "description": "Label for a CUSTOM question",
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "options": {
+                      "description": "Optional answer choices for a CUSTOM question",
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 50,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "type": {
+                      "description": "Standard or custom Instant Form question type",
+                      "enum": [
+                        "EMAIL",
+                        "FULL_NAME",
+                        "FIRST_NAME",
+                        "LAST_NAME",
+                        "PHONE",
+                        "CITY",
+                        "STATE",
+                        "ZIP",
+                        "COUNTRY",
+                        "JOB_TITLE",
+                        "COMPANY_NAME",
+                        "WORK_EMAIL",
+                        "WORK_PHONE",
+                        "DATE_OF_BIRTH",
+                        "GENDER",
+                        "MARITAL_STATUS",
+                        "RELATIONSHIP_STATUS",
+                        "MILITARY_STATUS",
+                        "STREET_ADDRESS",
+                        "POSTAL_CODE",
+                        "CUSTOM"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "maxItems": 15,
+                "minItems": 1,
+                "type": "array"
+              },
+              "thank_you_page": {
+                "additionalProperties": true,
+                "description": "Provider presentation block",
+                "properties": {},
+                "type": "object"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Supported Instant Form update fields",
+                "properties": {
+                  "name": {
+                    "description": "Instant Form name",
+                    "maxLength": 400,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "page_id",
+              "form_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_lead_form"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_update_lead_form",
+          "parent_resource_id_field": "page_id",
+          "parent_resource_type": "page",
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "form_id",
+          "resource_type": "lead_form",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "lead_form"
           ]
         },
         {
@@ -13075,5 +13486,5 @@
       ]
     }
   },
-  "tool_count": 171
+  "tool_count": 173
 }
