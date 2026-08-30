@@ -43,6 +43,7 @@ _MAX_FILES = 512
 _MAX_FILE_BYTES = 2 * 1024 * 1024
 _MAX_PACKAGE_BYTES = 16 * 1024 * 1024
 _TEXT_SUFFIXES = {".md", ".markdown", ".txt", ".yaml", ".yml", ".json", ".csv"}
+_MANAGED_EVAL_ENGINES = {"claude_sdk", "ad-agent-runtime"}
 _CREDENTIAL_ASSIGNMENT_RE = re.compile(
     r"(?im)(?P<field>access[_-]?token|refresh[_-]?token|developer[_-]?token|"
     r"client[_-]?secret|private[_-]?key|app[_-]?secret|api[_-]?key|"
@@ -525,9 +526,9 @@ class ManagedSkillManager:
         """Validate the user Skill's data-only skill-up configuration.
 
         The service deliberately does not execute user-provided custom engine
-        commands or judge scripts. Built-in engines and declarative/agent
-        judges run in the isolated evaluation workspace and use only the
-        platform's configured credentials.
+        commands or judge scripts. Platform-managed adapters and declarative
+        judges run in the isolated evaluation workspace; the adapter receives
+        no advertising credentials.
         """
         files = decode_skill_files(record.get("files") or {})
         eval_path = Path("evals/eval.yaml")
@@ -544,16 +545,16 @@ class ManagedSkillManager:
             raise SkillPackageError("skill-up engine must be an object")
         if engine.get("custom") is not None:
             raise SkillPackageError("managed Skill evaluation cannot use a Custom Engine")
-        if str(engine.get("name", "")).strip() not in {
-            "codex", "claude_code", "claude_sdk", "qodercli", "qwen_code", "ad-agent-runtime",
-        }:
+        engine_name = str(engine.get("name", "")).strip()
+        if engine_name not in _MANAGED_EVAL_ENGINES:
             raise SkillPackageError(
-                "managed Skill evaluation must use a built-in skill-up Agent Engine"
+                "managed Skill evaluation must use a platform-managed engine: "
+                "claude_sdk or ad-agent-runtime"
             )
         engine_kwargs = engine.get("kwargs") or {}
         if not isinstance(engine_kwargs, Mapping):
             raise SkillPackageError("managed Skill evaluation engine.kwargs must be an object")
-        if str(engine.get("name", "")).strip() == "claude_sdk":
+        if engine_name == "claude_sdk":
             allowed_kwargs = {
                 "max_tokens", "file_paths", "max_skill_context_chars",
                 "max_tool_context_chars", "max_file_context_chars",

@@ -196,7 +196,7 @@ def test_skill_up_config_is_data_only_and_uses_standard_package_files():
             "environment:\n  type: none\n"
             "mcp:\n  servers: []\n"
             "skills:\n  - source: local_path\n    path: .\n"
-            "engine:\n  name: codex\n"
+            "engine:\n  name: ad-agent-runtime\n"
             "cases:\n  files:\n    - evals/cases/basic.yaml\n"
         ),
         "evals/cases/basic.yaml": (
@@ -213,7 +213,7 @@ def test_skill_up_config_is_data_only_and_uses_standard_package_files():
         store.get_skill_version("tenant-a", "evaluated-skill", "1.0.0")
     )
     assert str(eval_path) == "evals/eval.yaml"
-    assert config["engine"]["name"] == "codex"
+    assert config["engine"]["name"] == "ad-agent-runtime"
     assert record["evaluation_status"] == "not_run"
 
 
@@ -227,7 +227,7 @@ def test_skill_with_evaluation_suite_cannot_publish_before_passing(tmp_path):
             "environment:\n  type: none\n"
             "mcp:\n  servers: []\n"
             "skills:\n  - source: local_path\n    path: .\n"
-            "engine:\n  name: codex\n"
+            "engine:\n  name: ad-agent-runtime\n"
             "cases:\n  files: [evals/cases/basic.yaml]\n"
         ),
         "evals/cases/basic.yaml": "id: basic\ninput:\n  prompt: test\n",
@@ -297,6 +297,25 @@ def test_skill_up_config_rejects_custom_engines_and_judge_scripts():
         )
 
 
+def test_managed_skill_eval_rejects_external_cli_engines():
+    store = AdAgentStore(":memory:")
+    manager = ManagedSkillManager(store)
+    files = {
+        **_files("external-engine"),
+        "evals/eval.yaml": (
+            "skills:\n  - source: local_path\n    path: .\n"
+            "engine:\n  name: codex\n"
+            "cases:\n  files: [evals/cases/basic.yaml]\n"
+        ),
+        "evals/cases/basic.yaml": "id: basic\ninput:\n  prompt: test\n",
+    }
+    manager.create_version("tenant-a", "external-engine", "1.0.0", files, "u1")
+    with pytest.raises(SkillPackageError, match="platform-managed engine"):
+        manager._validate_eval_config(
+            store.get_skill_version("tenant-a", "external-engine", "1.0.0")
+        )
+
+
 def test_skill_up_evaluation_is_persisted_for_an_immutable_version(tmp_path, monkeypatch):
     store = AdAgentStore(":memory:")
     manager = ManagedSkillManager(store, root=str(tmp_path / "managed"))
@@ -307,7 +326,7 @@ def test_skill_up_evaluation_is_persisted_for_an_immutable_version(tmp_path, mon
             "environment:\n  type: none\n"
             "mcp:\n  servers: []\n"
             "skills:\n  - source: local_path\n    path: .\n"
-            "engine:\n  name: codex\n"
+            "engine:\n  name: ad-agent-runtime\n"
             "cases:\n  files:\n    - evals/cases/basic.yaml\n"
         ),
         "evals/cases/basic.yaml": "id: basic\ninput:\n  prompt: test\n",
@@ -349,7 +368,7 @@ def test_skill_up_allows_only_one_active_evaluation_per_version(tmp_path, monkey
             "environment:\n  type: none\n"
             "mcp:\n  servers: []\n"
             "skills:\n  - source: local_path\n    path: .\n"
-            "engine:\n  name: codex\n"
+            "engine:\n  name: ad-agent-runtime\n"
             "cases:\n  files: [evals/cases/basic.yaml]\n"
         ),
         "evals/cases/basic.yaml": "id: basic\ninput:\n  prompt: test\n",

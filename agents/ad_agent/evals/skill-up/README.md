@@ -33,8 +33,9 @@ AD_AGENT_REPO_ROOT="$PWD" skill-up run \
 - 凭证字段的拒绝/脱敏
 
 这套 Custom Engine 评测的是应用 Runtime 的真实执行边界。若要单独评估
-某个 `SKILL.md` 对通用 Coding Agent 的自然语言指导效果，应另外使用
-skill-up 的内置 `codex`/`claude_code` Engine；那条路径不能替代本套
+某个 `SKILL.md` 对通用 Coding Agent 的自然语言指导效果，应在受控的外部
+评测环境中另外使用 skill-up 的内置 `codex`/`claude_code` Engine；管理 API
+不会把用户上传的 Skill 交给这些 CLI。那条路径不能替代本套
 Runtime 集成评测。
 
 用户管理的标准 Skill 版本可以在自身目录放置 `evals/eval.yaml` 和

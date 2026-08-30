@@ -71,8 +71,8 @@ evals/eval.yaml
 evals/cases/*.yaml
 ```
 
-平台只接受内置 `codex`、`claude_code`、`qodercli`、`qwen_code`、平台托管的
-`claude_sdk`，以及平台托管的 `ad-agent-runtime` Engine。`claude_sdk` 使用可选
+管理 API 只接受平台托管的 `claude_sdk` 和 `ad-agent-runtime` Engine，不接受
+`codex`、`claude_code`、`qodercli`、`qwen_code` 等外部 CLI Engine。`claude_sdk` 使用可选
 的 Anthropic Python SDK 评估自然语言 Skill；它读取 Skill 文本、声明的只读
 workspace 文件和可信 Tool 描述，但不执行广告 Tool、不连接 MCP，也不接收
 Google、Meta、TikTok、DV360 凭证。后者使用仓库固定适配器验证 Skill 与广告底座
