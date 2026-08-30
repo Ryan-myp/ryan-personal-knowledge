@@ -387,7 +387,7 @@ class MetaAPIClient(BasePlatformClient):
 
     def list_catalogs(self, account_id: str, limit: int = 25) -> list:
         """获取广告账户可用的商品目录。"""
-        clean_id = account_id.replace('act_', '')
+        clean_id = self._clean_meta_id(account_id, "account_id")
         return self._list_graph_pages(
             clean_id,
             f"/act_{clean_id}/owned_product_catalogs",
@@ -397,11 +397,100 @@ class MetaAPIClient(BasePlatformClient):
             },
         )
 
-    def list_product_sets(self, catalog_id: str, limit: int = 25) -> list:
+    def get_catalog(self, account_id: str, catalog_id: str, fields: list = None) -> dict:
+        """Get one Catalog after verifying it is visible under the ad account."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        catalog_id = self._clean_meta_id(catalog_id, "catalog_id")
+        if not self.resource_belongs_to_account(account_id, "catalog", catalog_id):
+            raise PermissionError(
+                f"Meta catalog {catalog_id} does not belong to account {account_id}"
+            )
+        params = {
+            "fields": ",".join(fields) if fields else (
+                "id,name,vertical,product_count,feed_count,created_time,updated_time"
+            )
+        }
+        return self.require_resource_object(
+            self.request("GET", f"/{catalog_id}", extra_params=params),
+            "Meta catalog get",
+        )
+
+    def create_catalog(self, business_id: str, catalog: dict) -> str:
+        """Create a Product Catalog under an explicitly supplied Business ID.
+
+        Meta's Catalog creation endpoint is Business-scoped rather than
+        ad-account-scoped.  Keep that distinction visible in the Tool
+        contract instead of silently treating ``account_id`` as a Business.
+        """
+        business_id = self._clean_meta_id(business_id, "business_id")
+        if not isinstance(catalog, dict):
+            raise ValueError("catalog must be an object")
+        name = str(catalog.get("name") or "").strip()
+        vertical = str(catalog.get("vertical") or "").strip().lower()
+        if not name or not vertical:
+            raise ValueError("catalog name and vertical are required")
+        allowed_verticals = {
+            "commerce", "destination_items", "flights", "home_listings",
+            "hotels", "vehicles",
+        }
+        if vertical not in allowed_verticals:
+            raise ValueError(
+                f"Unsupported Meta catalog vertical {vertical!r}; "
+                f"expected one of {sorted(allowed_verticals)}"
+            )
+        data = {"name": name, "vertical": vertical}
+        if catalog.get("is_checkout") is not None:
+            data["is_checkout"] = bool(catalog["is_checkout"])
+        self.acquire_rate_limit(self._get_account_limiter(business_id))
+        result = self.request(
+            "POST", f"/{business_id}/owned_product_catalogs", data=data
+        )
+        resource_id = result.get("id") if isinstance(result, dict) else None
+        return self.require_resource_id(resource_id, "Meta catalog create")
+
+    def update_catalog(self, account_id: str, catalog_id: str, updates: dict) -> dict:
+        """Update the supported mutable Catalog fields after ownership check."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        catalog_id = self._clean_meta_id(catalog_id, "catalog_id")
+        if not self.resource_belongs_to_account(account_id, "catalog", catalog_id):
+            raise PermissionError(
+                f"Meta catalog {catalog_id} does not belong to account {account_id}"
+            )
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("updates must be a non-empty object")
+        unknown = set(updates) - {"name"}
+        if unknown:
+            raise ValueError(f"Unsupported Meta Catalog update fields: {sorted(unknown)}")
+        name = str(updates.get("name") or "").strip()
+        if not name:
+            raise ValueError("Catalog name must be a non-empty string")
+        self.acquire_rate_limit(self._get_account_limiter(account_id))
+        result = self.request("POST", f"/{catalog_id}", data={"name": name})
+        return {"success": True, "catalog_id": catalog_id, "result": result}
+
+    def delete_catalog(self, account_id: str, catalog_id: str) -> dict:
+        """Delete a Catalog after ownership verification."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        catalog_id = self._clean_meta_id(catalog_id, "catalog_id")
+        if not self.resource_belongs_to_account(account_id, "catalog", catalog_id):
+            raise PermissionError(
+                f"Meta catalog {catalog_id} does not belong to account {account_id}"
+            )
+        self.acquire_rate_limit(self._get_account_limiter(account_id))
+        self.request("DELETE", f"/{catalog_id}")
+        return {"success": True, "catalog_id": catalog_id}
+
+    def list_product_sets(
+        self, account_id: str, catalog_id: str, limit: int = 25
+    ) -> list:
         """获取商品目录下的商品集。"""
+        account_id = self._clean_meta_id(account_id, "account_id")
         clean_id = str(catalog_id).strip()
-        if not clean_id:
-            raise ValueError("catalog_id is required")
+        clean_id = self._clean_meta_id(clean_id, "catalog_id")
+        if not self.resource_belongs_to_account(account_id, "catalog", clean_id):
+            raise PermissionError(
+                f"Meta catalog {clean_id} does not belong to account {account_id}"
+            )
         return self._list_graph_pages(
             clean_id,
             f"/{clean_id}/product_sets",
@@ -409,6 +498,132 @@ class MetaAPIClient(BasePlatformClient):
                 'limit': limit,
                 'fields': 'id,name,filter,product_count',
             },
+        )
+
+    def get_product_set(
+        self, account_id: str, catalog_id: str, product_set_id: str,
+        fields: list = None,
+    ) -> dict:
+        """Get one Product Set after Catalog/account ownership checks."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        catalog_id = self._clean_meta_id(catalog_id, "catalog_id")
+        product_set_id = self._clean_meta_id(product_set_id, "product_set_id")
+        if not self._product_set_belongs_to_catalog(
+            account_id, catalog_id, product_set_id
+        ):
+            raise PermissionError(
+                f"Meta product set {product_set_id} is not in catalog {catalog_id} "
+                f"for account {account_id}"
+            )
+        params = {
+            "fields": ",".join(fields) if fields else (
+                "id,name,filter,product_count,updated_time"
+            )
+        }
+        return self.require_resource_object(
+            self.request("GET", f"/{product_set_id}", extra_params=params),
+            "Meta product set get",
+        )
+
+    def create_product_set(
+        self, account_id: str, catalog_id: str, product_set: dict
+    ) -> str:
+        """Create a Product Set under an account-owned Catalog."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        catalog_id = self._clean_meta_id(catalog_id, "catalog_id")
+        if not self.resource_belongs_to_account(account_id, "catalog", catalog_id):
+            raise PermissionError(
+                f"Meta catalog {catalog_id} does not belong to account {account_id}"
+            )
+        if not isinstance(product_set, dict):
+            raise ValueError("product_set must be an object")
+        name = str(product_set.get("name") or "").strip()
+        if not name:
+            raise ValueError("product set name is required")
+        data: dict[str, Any] = {"name": name}
+        if product_set.get("filter") is not None:
+            if not isinstance(product_set["filter"], dict):
+                raise ValueError("product set filter must be an object")
+            data["filter"] = json.dumps(
+                product_set["filter"], separators=(",", ":")
+            )
+        self.acquire_rate_limit(self._get_account_limiter(account_id))
+        result = self.request("POST", f"/{catalog_id}/product_sets", data=data)
+        resource_id = result.get("id") if isinstance(result, dict) else None
+        return self.require_resource_id(resource_id, "Meta product set create")
+
+    def update_product_set(
+        self, account_id: str, catalog_id: str, product_set_id: str, updates: dict
+    ) -> dict:
+        """Update a Product Set after Catalog/account ownership checks."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        catalog_id = self._clean_meta_id(catalog_id, "catalog_id")
+        product_set_id = self._clean_meta_id(product_set_id, "product_set_id")
+        if not self._product_set_belongs_to_catalog(
+            account_id, catalog_id, product_set_id
+        ):
+            raise PermissionError(
+                f"Meta product set {product_set_id} is not in catalog {catalog_id} "
+                f"for account {account_id}"
+            )
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("updates must be a non-empty object")
+        unknown = set(updates) - {"name", "filter"}
+        if unknown:
+            raise ValueError(
+                f"Unsupported Meta Product Set update fields: {sorted(unknown)}"
+            )
+        data: dict[str, Any] = {}
+        if "name" in updates:
+            name = str(updates["name"] or "").strip()
+            if not name:
+                raise ValueError("Product set name must be a non-empty string")
+            data["name"] = name
+        if "filter" in updates:
+            if not isinstance(updates["filter"], dict):
+                raise ValueError("product set filter must be an object")
+            data["filter"] = json.dumps(updates["filter"], separators=(",", ":"))
+        if not data:
+            raise ValueError("updates must contain a supported non-null field")
+        self.acquire_rate_limit(self._get_account_limiter(account_id))
+        result = self.request("POST", f"/{product_set_id}", data=data)
+        return {"success": True, "product_set_id": product_set_id, "result": result}
+
+    def delete_product_set(
+        self, account_id: str, catalog_id: str, product_set_id: str
+    ) -> dict:
+        """Delete a Product Set after Catalog/account ownership checks."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        catalog_id = self._clean_meta_id(catalog_id, "catalog_id")
+        product_set_id = self._clean_meta_id(product_set_id, "product_set_id")
+        if not self._product_set_belongs_to_catalog(
+            account_id, catalog_id, product_set_id
+        ):
+            raise PermissionError(
+                f"Meta product set {product_set_id} is not in catalog {catalog_id} "
+                f"for account {account_id}"
+            )
+        self.acquire_rate_limit(self._get_account_limiter(account_id))
+        self.request("DELETE", f"/{product_set_id}")
+        return {"success": True, "product_set_id": product_set_id}
+
+    def _product_set_belongs_to_catalog(
+        self, account_id: str, catalog_id: str, product_set_id: str
+    ) -> bool:
+        """Check a Product Set through the account-visible Catalog edge."""
+        if not self.resource_belongs_to_account(account_id, "catalog", catalog_id):
+            return False
+        product_sets = self._list_graph_pages(
+            catalog_id,
+            f"/{catalog_id}/product_sets",
+            {
+                "limit": 100,
+                "fields": "id",
+            },
+        )
+        return any(
+            isinstance(item, dict) and str(item.get("id")) == str(product_set_id)
+            for item in product_sets
         )
 
     def list_pages(self, account_id: str, limit: int = 25) -> list:
@@ -583,6 +798,8 @@ class MetaAPIClient(BasePlatformClient):
             items = self.list_pixels(account_id)
         elif resource_type == "creative":
             items = self.list_creatives(account_id)
+        elif resource_type == "catalog":
+            items = self.list_catalogs(account_id)
         else:
             return False
         if not isinstance(items, list):
@@ -593,7 +810,7 @@ class MetaAPIClient(BasePlatformClient):
             identifiers = {
                 item.get("id"), item.get("campaign_id"), item.get("adset_id"),
                 item.get("ad_id"), item.get("audience_id"),
-                item.get("pixel_id"),
+                item.get("pixel_id"), item.get("catalog_id"),
             }
             if resource_id in {str(value) for value in identifiers if value is not None}:
                 return True

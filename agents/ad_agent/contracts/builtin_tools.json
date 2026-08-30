@@ -1,5 +1,5 @@
 {
-  "digest": "70aea2335bcb4d190aede1ef49a12870e9a9f3542e2fcdd51f500063eed19c48",
+  "digest": "934a94d23ed73179ca8b734fbd31810cd04dcf1207b8f49aaf1291c150d258a8",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -5729,8 +5729,8 @@
       ]
     },
     "meta": {
-      "digest": "9586704ab61ae706ca66d8a0c2ef9db51f92cbdc35434485b23048efd700fb4e",
-      "tool_count": 42,
+      "digest": "ca46e9e961f22431cfd5ac583153347d639bed1cf7b2dfbefbe2d2b1269e3b14",
+      "tool_count": 50,
       "tools": [
         {
           "action": "boost",
@@ -6752,6 +6752,77 @@
         {
           "action": "create",
           "contract_version": "1.2.0",
+          "description": "创建 Meta 商品目录；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "business_id": {
+                "description": "Meta Business ID used only for Catalog creation",
+                "minLength": 1,
+                "type": "string"
+              },
+              "is_checkout": {
+                "description": "Whether checkout is enabled",
+                "type": "boolean"
+              },
+              "name": {
+                "description": "Catalog name",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "vertical": {
+                "description": "Catalog vertical",
+                "enum": [
+                  "commerce",
+                  "destination_items",
+                  "flights",
+                  "home_listings",
+                  "hotels",
+                  "vehicles"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "business_id",
+              "name",
+              "vertical"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_catalog"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_create_catalog",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "catalog_id",
+          "resource_type": "catalog",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "catalog"
+          ]
+        },
+        {
+          "action": "create",
+          "contract_version": "1.2.0",
           "description": "创建 Meta Catalog/Dynamic Product Ad；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -7045,6 +7116,80 @@
           ]
         },
         {
+          "action": "create",
+          "contract_version": "1.2.0",
+          "description": "在 Meta 商品目录下创建商品集；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "catalog_id": {
+                "description": "Parent Meta Product Catalog ID",
+                "lookup_result_key": "catalogs",
+                "lookup_tool": "meta_list_catalogs",
+                "selection_label_fields": [
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "catalog_id"
+                ],
+                "type": "string"
+              },
+              "filter": {
+                "additionalProperties": true,
+                "description": "Meta product set filter expression",
+                "type": "object"
+              },
+              "name": {
+                "description": "Product Set name",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "catalog_id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_product_set"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_create_product_set",
+          "parent_resource_id_field": "catalog_id",
+          "parent_resource_type": "catalog",
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "product_set_id",
+          "resource_type": "product_set",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "catalog",
+            "product_set"
+          ]
+        },
+        {
           "action": "delete",
           "contract_version": "1.2.0",
           "description": "删除 Meta Custom 或 Lookalike Audience；默认仅生成 dry-run 计划。",
@@ -7099,6 +7244,58 @@
         {
           "action": "delete",
           "contract_version": "1.2.0",
+          "description": "删除 Meta 商品目录；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "catalog_id": {
+                "description": "Meta Product Catalog ID",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "catalog_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_catalog"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_delete_catalog",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "catalog_id",
+          "resource_type": "catalog",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "catalog"
+          ]
+        },
+        {
+          "action": "delete",
+          "contract_version": "1.2.0",
           "description": "删除 Meta Creative；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -7146,6 +7343,74 @@
           "traits": [
             "write",
             "creative"
+          ]
+        },
+        {
+          "action": "delete",
+          "contract_version": "1.2.0",
+          "description": "删除 Meta 商品集；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "catalog_id": {
+                "description": "Parent Meta Product Catalog ID",
+                "lookup_result_key": "catalogs",
+                "lookup_tool": "meta_list_catalogs",
+                "selection_label_fields": [
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "catalog_id"
+                ],
+                "type": "string"
+              },
+              "product_set_id": {
+                "description": "Meta Product Set ID",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "catalog_id",
+              "product_set_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_product_set"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_delete_product_set",
+          "parent_resource_id_field": "catalog_id",
+          "parent_resource_type": "catalog",
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "product_set_id",
+          "resource_type": "product_set",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "catalog",
+            "product_set"
           ]
         },
         {
@@ -7573,6 +7838,65 @@
         {
           "action": "get",
           "contract_version": "1.2.0",
+          "description": "查询 Meta 商品目录详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "catalog_id": {
+                "description": "Meta Product Catalog ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "fields": {
+                "description": "Fields to return",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "catalog_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_catalog"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_get_catalog",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "catalog_id",
+          "resource_type": "catalog",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "catalog"
+          ]
+        },
+        {
+          "action": "get",
+          "contract_version": "1.2.0",
           "description": "查询 Meta Creative 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -7737,6 +8061,81 @@
           "traits": [
             "read",
             "pixel"
+          ]
+        },
+        {
+          "action": "get",
+          "contract_version": "1.2.0",
+          "description": "查询 Meta 商品集详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "catalog_id": {
+                "description": "Parent Meta Product Catalog ID",
+                "lookup_result_key": "catalogs",
+                "lookup_tool": "meta_list_catalogs",
+                "selection_label_fields": [
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "catalog_id"
+                ],
+                "type": "string"
+              },
+              "fields": {
+                "description": "Fields to return",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "product_set_id": {
+                "description": "Meta Product Set ID",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "catalog_id",
+              "product_set_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_product_set"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_get_product_set",
+          "parent_resource_id_field": "catalog_id",
+          "parent_resource_type": "catalog",
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "product_set_id",
+          "resource_type": "product_set",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "catalog",
+            "product_set"
           ]
         },
         {
@@ -8232,6 +8631,9 @@
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
+              "account_id": {
+                "type": "string"
+              },
               "catalog_id": {
                 "type": "string"
               },
@@ -8242,6 +8644,7 @@
             "provider_any_of": [],
             "provider_required": [],
             "required": [
+              "account_id",
               "catalog_id"
             ],
             "type": "object"
@@ -9001,6 +9404,72 @@
         {
           "action": "update",
           "contract_version": "1.2.0",
+          "description": "更新 Meta 商品目录名称；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "catalog_id": {
+                "description": "Meta Product Catalog ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Supported Catalog update fields",
+                "properties": {
+                  "name": {
+                    "description": "Catalog name",
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "catalog_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_catalog"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_update_catalog",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "catalog_id",
+          "resource_type": "catalog",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "catalog"
+          ]
+        },
+        {
+          "action": "update",
+          "contract_version": "1.2.0",
           "description": "更新 Meta Creative 名称；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -9062,6 +9531,93 @@
           "traits": [
             "write",
             "creative"
+          ]
+        },
+        {
+          "action": "update",
+          "contract_version": "1.2.0",
+          "description": "更新 Meta 商品集名称或筛选条件；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "catalog_id": {
+                "description": "Parent Meta Product Catalog ID",
+                "lookup_result_key": "catalogs",
+                "lookup_tool": "meta_list_catalogs",
+                "selection_label_fields": [
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "catalog_id"
+                ],
+                "type": "string"
+              },
+              "product_set_id": {
+                "description": "Meta Product Set ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Supported Product Set update fields",
+                "properties": {
+                  "filter": {
+                    "additionalProperties": true,
+                    "description": "Meta product set filter expression",
+                    "type": "object"
+                  },
+                  "name": {
+                    "description": "Product Set name",
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "catalog_id",
+              "product_set_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_product_set"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_update_product_set",
+          "parent_resource_id_field": "catalog_id",
+          "parent_resource_type": "catalog",
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "product_set_id",
+          "resource_type": "product_set",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "catalog",
+            "product_set"
           ]
         }
       ]
@@ -12285,5 +12841,5 @@
       ]
     }
   },
-  "tool_count": 162
+  "tool_count": 170
 }

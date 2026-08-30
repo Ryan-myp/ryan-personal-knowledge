@@ -17,6 +17,7 @@ from .parameters import (
     meta_campaign_schema, meta_adset_schema, meta_ad_schema,
     meta_ad_format_catalog, meta_lead_ad_schema, meta_catalog_ad_schema,
     meta_audience_schema, meta_conversion_event_schema, meta_creative_schema,
+    meta_catalog_schema, meta_product_set_schema,
 )
 from ...api_clients.meta_client import MetaAPIClient
 from ..update_contracts import meta_updates
@@ -59,7 +60,14 @@ class MetaCapability(BaseCapability):
         "list_audiences": ["meta_list_audiences"], "get_audience": ["meta_get_audience"],
         "create_audience": ["meta_create_audience"], "update_audience": ["meta_update_audience"],
         "delete_audience": ["meta_delete_audience"], "list_catalogs": ["meta_list_catalogs"],
-        "list_product_sets": ["meta_list_product_sets"], "list_campaigns": ["meta_list_campaigns"],
+        "get_catalog": ["meta_get_catalog"], "create_catalog": ["meta_create_catalog"],
+        "update_catalog": ["meta_update_catalog"], "delete_catalog": ["meta_delete_catalog"],
+        "list_product_sets": ["meta_list_product_sets"],
+        "get_product_set": ["meta_get_product_set"],
+        "create_product_set": ["meta_create_product_set"],
+        "update_product_set": ["meta_update_product_set"],
+        "delete_product_set": ["meta_delete_product_set"],
+        "list_campaigns": ["meta_list_campaigns"],
         "list_pages": ["meta_list_pages"], "list_pixels": ["meta_list_pixels"],
         "get_pixel": ["meta_get_pixel"],
         "send_conversion_events": ["meta_send_conversion_events"],
@@ -92,6 +100,10 @@ class MetaCapability(BaseCapability):
         conversion_schema = meta_conversion_event_schema()
         creative_schema = meta_creative_schema()
         creative_properties = creative_schema["properties"]
+        catalog_schema = meta_catalog_schema()
+        catalog_properties = catalog_schema["properties"]
+        product_set_schema = meta_product_set_schema()
+        product_set_properties = product_set_schema["properties"]
         tools = [
             method_tool(
                 platform="meta", skill="meta-marketing-api", name="meta_list_pages",
@@ -243,13 +255,98 @@ class MetaCapability(BaseCapability):
                 platform="meta", skill="meta-marketing-api", name="meta_list_product_sets",
                 description="查询 Meta 商品目录下的商品集。", method_name="list_product_sets",
                 result_key="product_sets", properties={
+                    "account_id": {"type": "string"},
                     "catalog_id": {"type": "string"},
                     "limit": {"type": "integer"},
-                }, required=["catalog_id"], action="list", resource_type="product_set",
+                }, required=["account_id", "catalog_id"], action="list", resource_type="product_set",
                 intent_types=["list_product_sets"], traits=["read", "catalog", "product_set"],
-                argument_builder=lambda _ctx, data: ((data["catalog_id"],), {
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["catalog_id"]), {
                     "limit": data.get("limit", 25),
                 }),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_get_catalog",
+                description="查询 Meta 商品目录详情。", method_name="get_catalog",
+                result_key="catalog", properties={
+                    key: catalog_properties[key] for key in ("account_id", "catalog_id", "fields")
+                }, required=["account_id", "catalog_id"], action="get", resource_type="catalog",
+                resource_id_field="catalog_id", intent_types=["get_catalog"], traits=["read", "catalog"],
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["catalog_id"]), {
+                    "fields": data.get("fields"),
+                }),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_create_catalog",
+                description="创建 Meta 商品目录；默认仅生成 dry-run 计划。",
+                method_name="create_catalog", result_key="catalog_id", properties={
+                    key: catalog_properties[key] for key in ("business_id", "name", "vertical", "is_checkout")
+                }, required=catalog_schema["create_required"], action="create", resource_type="catalog",
+                resource_id_field="catalog_id", intent_types=["create_catalog"], traits=["write", "catalog"], write=True,
+                argument_builder=lambda _ctx, data: ((data["business_id"], {
+                    key: data[key] for key in ("name", "vertical", "is_checkout") if key in data
+                }), {}),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_update_catalog",
+                description="更新 Meta 商品目录名称；默认仅生成 dry-run 计划。",
+                method_name="update_catalog", result_key="catalog_result", properties={
+                    key: catalog_properties[key] for key in ("account_id", "catalog_id", "updates")
+                }, required=catalog_schema["update_required"], action="update", resource_type="catalog",
+                resource_id_field="catalog_id", intent_types=["update_catalog"], traits=["write", "catalog"], write=True,
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["catalog_id"], data["updates"]), {}),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_delete_catalog",
+                description="删除 Meta 商品目录；默认仅生成 dry-run 计划。",
+                method_name="delete_catalog", result_key="catalog_result", properties={
+                    key: catalog_properties[key] for key in ("account_id", "catalog_id")
+                }, required=["account_id", "catalog_id"], action="delete", resource_type="catalog",
+                resource_id_field="catalog_id", intent_types=["delete_catalog"], traits=["write", "catalog"], write=True,
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["catalog_id"]), {}),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_get_product_set",
+                description="查询 Meta 商品集详情。", method_name="get_product_set",
+                result_key="product_set", properties={
+                    key: product_set_properties[key] for key in ("account_id", "catalog_id", "product_set_id", "fields")
+                }, required=product_set_schema["get_required"], action="get", resource_type="product_set",
+                parent_resource_type="catalog", resource_id_field="product_set_id",
+                parent_resource_id_field="catalog_id", intent_types=["get_product_set"], traits=["read", "catalog", "product_set"],
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["catalog_id"], data["product_set_id"]), {
+                    "fields": data.get("fields"),
+                }),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_create_product_set",
+                description="在 Meta 商品目录下创建商品集；默认仅生成 dry-run 计划。",
+                method_name="create_product_set", result_key="product_set_id", properties={
+                    key: product_set_properties[key] for key in ("account_id", "catalog_id", "name", "filter")
+                }, required=product_set_schema["create_required"], action="create", resource_type="product_set",
+                parent_resource_type="catalog", resource_id_field="product_set_id", parent_resource_id_field="catalog_id",
+                intent_types=["create_product_set"], traits=["write", "catalog", "product_set"], write=True,
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["catalog_id"], {
+                    key: data[key] for key in ("name", "filter") if key in data
+                }), {}),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_update_product_set",
+                description="更新 Meta 商品集名称或筛选条件；默认仅生成 dry-run 计划。",
+                method_name="update_product_set", result_key="product_set_result", properties={
+                    key: product_set_properties[key] for key in ("account_id", "catalog_id", "product_set_id", "updates")
+                }, required=product_set_schema["update_required"], action="update", resource_type="product_set",
+                parent_resource_type="catalog", resource_id_field="product_set_id", parent_resource_id_field="catalog_id",
+                intent_types=["update_product_set"], traits=["write", "catalog", "product_set"], write=True,
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["catalog_id"], data["product_set_id"], data["updates"]), {}),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_delete_product_set",
+                description="删除 Meta 商品集；默认仅生成 dry-run 计划。",
+                method_name="delete_product_set", result_key="product_set_result", properties={
+                    key: product_set_properties[key] for key in ("account_id", "catalog_id", "product_set_id")
+                }, required=product_set_schema["get_required"], action="delete", resource_type="product_set",
+                parent_resource_type="catalog", resource_id_field="product_set_id", parent_resource_id_field="catalog_id",
+                intent_types=["delete_product_set"], traits=["write", "catalog", "product_set"], write=True,
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["catalog_id"], data["product_set_id"]), {}),
             ),
             method_tool(
                 platform="meta", skill="meta-marketing-api", name="meta_get_adset_report",

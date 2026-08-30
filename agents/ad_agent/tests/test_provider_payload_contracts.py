@@ -880,6 +880,85 @@ def test_meta_catalog_tools_expose_lookup_and_format_contract():
     assert catalog_ad.live_support is False
 
 
+def test_meta_catalog_and_product_set_tools_cover_scoped_crud():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+
+    client.resource_belongs_to_account = lambda account_id, resource_type, resource_id: (
+        calls.append(("ownership", account_id, resource_type, resource_id)) or True
+    )
+    client._list_graph_pages = lambda account_id, endpoint, params, **kwargs: (
+        calls.append(("list", account_id, endpoint, params)) or [{"id": "ps1"}]
+    )
+
+    def request(method, endpoint, data=None, **kwargs):
+        calls.append((method, endpoint, data, kwargs.get("extra_params")))
+        if method == "GET" and endpoint == "/cat1":
+            return {"id": "cat1", "name": "Catalog"}
+        if method == "GET" and endpoint == "/ps1":
+            return {"id": "ps1", "name": "Set"}
+        if method == "POST" and endpoint == "/biz1/owned_product_catalogs":
+            return {"id": "cat2"}
+        if method == "POST" and endpoint == "/cat1/product_sets":
+            return {"id": "ps2"}
+        return {"success": True}
+
+    client.request = request
+
+    assert client.get_catalog("act_1", "cat1")["id"] == "cat1"
+    assert client.create_catalog("biz1", {
+        "name": "Catalog", "vertical": "commerce", "is_checkout": False,
+    }) == "cat2"
+    assert client.update_catalog("1", "cat1", {"name": "Updated"})["success"]
+    assert client.delete_catalog("1", "cat1")["catalog_id"] == "cat1"
+    assert client.list_product_sets("1", "cat1")[0]["id"] == "ps1"
+    assert client.get_product_set("1", "cat1", "ps1")["id"] == "ps1"
+    assert client.create_product_set("1", "cat1", {
+        "name": "Set", "filter": {"brand": {"eq": "Acme"}},
+    }) == "ps2"
+    assert client.update_product_set("1", "cat1", "ps1", {
+        "filter": {"availability": {"eq": "in stock"}},
+    })["success"]
+    assert client.delete_product_set("1", "cat1", "ps1")["product_set_id"] == "ps1"
+
+    create_catalog_call = next(
+        item for item in calls
+        if item[:2] == ("POST", "/biz1/owned_product_catalogs")
+    )
+    assert create_catalog_call[2] == {
+        "name": "Catalog", "vertical": "commerce", "is_checkout": False,
+    }
+    create_set_call = next(
+        item for item in calls
+        if item[:2] == ("POST", "/cat1/product_sets")
+    )
+    assert json.loads(create_set_call[2]["filter"]) == {"brand": {"eq": "Acme"}}
+
+
+def test_meta_catalog_tools_require_scope_and_keep_writes_dry_run():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_meta_capability().register_tools()
+    }
+    expected = {
+        "meta_get_catalog", "meta_create_catalog", "meta_update_catalog", "meta_delete_catalog",
+        "meta_list_product_sets", "meta_get_product_set", "meta_create_product_set",
+        "meta_update_product_set", "meta_delete_product_set",
+    }
+    assert expected <= set(definitions)
+    assert definitions["meta_list_product_sets"].input_schema.required == [
+        "account_id", "catalog_id"
+    ]
+    assert definitions["meta_create_catalog"].input_schema.required == [
+        "business_id", "name", "vertical"
+    ]
+    assert all(
+        definitions[name].is_write_tool and definitions[name].live_support is False
+        for name in expected
+        if definitions[name].is_write_tool
+    )
+
+
 def test_google_creation_options_are_mapped_to_rest_resources():
     client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "g1"})
     operations = []

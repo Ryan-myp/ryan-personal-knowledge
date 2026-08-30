@@ -42,6 +42,9 @@ META_CAPI_EVENT_NAMES = [
 META_CAPI_ACTION_SOURCES = [
     "website", "app", "physical_store", "phone_call", "chat", "email", "other",
 ]
+META_CATALOG_VERTICALS = [
+    "commerce", "destination_items", "flights", "home_listings", "hotels", "vehicles",
+]
 
 
 def _field(field_type: Any, description: str = "", **kwargs: Any) -> dict[str, Any]:
@@ -125,6 +128,63 @@ def meta_audience_schema() -> dict[str, Any]:
                 "message": "LOOKALIKE requires origin_audience_id and country",
             },
         ],
+    }
+
+
+def meta_catalog_schema() -> dict[str, Any]:
+    """Contracts for Meta Catalog and Product Set management."""
+    catalog_ref = {
+        "account_id": _field("string", "Meta ad account ID"),
+        "catalog_id": _field("string", "Meta Product Catalog ID", minLength=1),
+        "business_id": _field(
+            "string", "Meta Business ID used only for Catalog creation", minLength=1
+        ),
+        "name": _field("string", "Catalog name", minLength=1, maxLength=200),
+        "vertical": _field("string", "Catalog vertical", enum=META_CATALOG_VERTICALS),
+        "is_checkout": _field("boolean", "Whether checkout is enabled"),
+        "fields": _field("array", "Fields to return", items={"type": "string"}),
+        "limit": _field("integer", "Maximum number of records", minimum=1, maximum=1000),
+        "updates": _object({
+            "name": _field("string", "Catalog name", minLength=1, maxLength=200),
+        }, "Supported Catalog update fields"),
+    }
+    return {
+        "properties": catalog_ref,
+        "create_required": ["business_id", "name", "vertical"],
+        "update_required": ["account_id", "catalog_id", "updates"],
+    }
+
+
+def meta_product_set_schema() -> dict[str, Any]:
+    """Contracts for Meta Product Set management under an account-owned Catalog."""
+    return {
+        "properties": {
+            "account_id": _field("string", "Meta ad account ID"),
+            "catalog_id": _field(
+                "string", "Parent Meta Product Catalog ID",
+                lookup_tool="meta_list_catalogs", lookup_result_key="catalogs",
+                selection_value_fields=["id", "catalog_id"],
+                selection_label_fields=["name", "id"],
+            ),
+            "product_set_id": _field("string", "Meta Product Set ID", minLength=1),
+            "name": _field("string", "Product Set name", minLength=1, maxLength=200),
+            "filter": _field(
+                "object", "Meta product set filter expression",
+                additionalProperties=True,
+            ),
+            "fields": _field("array", "Fields to return", items={"type": "string"}),
+            "limit": _field("integer", "Maximum number of records", minimum=1, maximum=1000),
+            "updates": _object({
+                "name": _field("string", "Product Set name", minLength=1, maxLength=200),
+                "filter": _field(
+                    "object", "Meta product set filter expression",
+                    additionalProperties=True,
+                ),
+            }, "Supported Product Set update fields"),
+        },
+        "create_required": ["account_id", "catalog_id", "name"],
+        "get_required": ["account_id", "catalog_id", "product_set_id"],
+        "update_required": ["account_id", "catalog_id", "product_set_id", "updates"],
     }
 
 
