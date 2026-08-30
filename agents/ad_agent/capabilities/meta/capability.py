@@ -409,6 +409,7 @@ class MetaCapability(BaseCapability):
                 provider_required=lead_form_schema["provider_required"],
                 action="create", resource_type="lead_form",
                 parent_resource_type="page", parent_resource_id_field="page_id",
+                resource_id_field="form_id",
                 intent_types=["create_lead_form"], traits=["write", "lead_form"],
                 write=True, live_support=False,
                 argument_builder=lambda _ctx, data: ((data["page_id"], {
@@ -1093,6 +1094,7 @@ class MetaCapability(BaseCapability):
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "boost", "ad"],
             live_support=False,
+            resource_id_field="ad_id",
         ), MetaBoostPostHandler(api_client)))
 
         tools.append((ToolDefinition(

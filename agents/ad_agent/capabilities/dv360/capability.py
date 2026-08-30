@@ -204,6 +204,7 @@ class DV360Capability(BaseCapability):
                 method_name="create_report", result_key="report_id",
                 properties={"advertiser_id": {"type": "string"}, "report": {"type": "object"}},
                 required=["advertiser_id", "report"], action="create", resource_type="report",
+                resource_id_field="report_id",
                 intent_types=["create_report"], traits=["write", "report"], write=True,
                 provider_required=["report"],
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["report"]), {}),

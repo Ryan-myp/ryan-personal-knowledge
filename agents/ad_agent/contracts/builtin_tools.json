@@ -1,9 +1,9 @@
 {
-  "digest": "75b3bc721f86279478d09985d07c31286c01a29356056de84c747a2715d5de06",
+  "digest": "b30cee7e51c7e645b4969d8281febcc94276f1c4f801ff5e07fabadb5e2a3f02",
   "format_version": 1,
   "platforms": {
     "dv360": {
-      "digest": "12e2a0c08082f8c176164f7e9d3bc41f7df492c1e481602ae6662ddd62b50fd9",
+      "digest": "7a89e00f1090e83413d0f92cd9f307a7c30262cbfc23cbf78e52e8357b3769ba",
       "tool_count": 31,
       "tools": [
         {
@@ -556,7 +556,7 @@
           "required_permissions": [
             "ads.plan"
           ],
-          "resource_id_field": null,
+          "resource_id_field": "report_id",
           "resource_type": "report",
           "risk_level": "medium",
           "skill": "dv360-api",
@@ -9805,7 +9805,7 @@
       ]
     },
     "meta": {
-      "digest": "e5fcfbdc0f3feb897fa46052c097784110dab6ed26331606543bdcc4f9a24065",
+      "digest": "43998e0dff9aeb75534ec16b402a8b86a83d6ae6564e286e6fd0deb7e0e499af",
       "tool_count": 67,
       "tools": [
         {
@@ -9860,7 +9860,7 @@
           "required_permissions": [
             "ads.plan"
           ],
-          "resource_id_field": null,
+          "resource_id_field": "ad_id",
           "resource_type": "post",
           "risk_level": "medium",
           "skill": "meta-marketing-api",
@@ -12102,7 +12102,7 @@
           "required_permissions": [
             "ads.plan"
           ],
-          "resource_id_field": null,
+          "resource_id_field": "form_id",
           "resource_type": "lead_form",
           "risk_level": "medium",
           "skill": "meta-marketing-api",
