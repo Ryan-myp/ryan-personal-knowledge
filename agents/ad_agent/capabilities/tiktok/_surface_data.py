@@ -45,6 +45,6 @@ API_SURFACE = [
     {"resource": "creative", "action": "crud", "status": "planned", "gap": "TikTok 创意对象由广告创建接口生成，尚缺独立创意管理/编辑能力"},
     {"resource": "lead_form", "action": "crud", "status": "not_applicable", "gap": "Instant Form/Page 由 TikTok Instant Page Editor SDK 管理，不属于当前 Ads API CRUD；广告创建通过 page_id 引用"},
     {"resource": "pixel", "action": "crud", "status": "planned", "gap": "Pixel/事件配置尚无 Tool"},
-    {"resource": "catalog", "action": "crud", "status": "planned", "gap": "Catalog/Product Set 管理尚无完整 Tool"},
+    {"resource": "catalog", "action": "crud", "status": "planned", "gap": "当前已提供 catalog/get 与 product_set/get 读取 Tool；Catalog/Product Set 创建、更新、删除尚无经过验证的 TikTok Ads API endpoint/Tool，不能伪造为已实现"},
     {"resource": "ad_group_targeting", "action": "update", "method": "update_adgroup_targeting", "status": "implemented"},
 ]

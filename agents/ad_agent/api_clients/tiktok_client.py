@@ -1687,12 +1687,35 @@ class TikTokAPIClient(BasePlatformClient):
         return result if isinstance(result, dict) else {"result": result}
     
     # ==================== 商品目录查询 ====================
+
+    @staticmethod
+    def _validate_catalog_query(
+        advertiser_id: str,
+        filtering: Optional[list],
+        page_size: int,
+    ) -> tuple[str, Optional[list], int]:
+        """Validate the shared v1.3 Catalog/Product Set query contract."""
+        advertiser_id = str(advertiser_id or "").strip()
+        if not advertiser_id.isdigit():
+            raise ValueError("advertiser_id must contain digits only")
+        if filtering is not None and not isinstance(filtering, list):
+            raise ValueError("filtering must be an array when provided")
+        try:
+            page_size = int(page_size)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("page_size must be between 1 and 100") from exc
+        if not 1 <= page_size <= 100:
+            raise ValueError("page_size must be between 1 and 100")
+        return advertiser_id, filtering, page_size
     
     def list_catalogs(self, advertiser_id: str, filtering: list = None, page_size: int = 20) -> list:
-        """获取商品目录列表"""
+        """List TikTok Catalogs through the official v1.3 read endpoint."""
+        advertiser_id, filtering, page_size = self._validate_catalog_query(
+            advertiser_id, filtering, page_size
+        )
         self.acquire_rate_limit(self._rate_limiter)
         data = {
-            'advertiser_id': str(advertiser_id),
+            'advertiser_id': advertiser_id,
             'page_size': page_size,
         }
         if filtering:
@@ -1702,10 +1725,15 @@ class TikTokAPIClient(BasePlatformClient):
         return payload.get('list', []) if isinstance(payload, dict) else []
     
     def list_product_sets(self, advertiser_id: str, catalog_id: str = None, filtering: list = None, page_size: int = 20) -> list:
-        """获取商品集列表"""
+        """List TikTok Product Sets through the official v1.3 read endpoint."""
+        advertiser_id, filtering, page_size = self._validate_catalog_query(
+            advertiser_id, filtering, page_size
+        )
+        if catalog_id is not None and not str(catalog_id).strip():
+            raise ValueError("catalog_id must not be empty when provided")
         self.acquire_rate_limit(self._rate_limiter)
         data = {
-            'advertiser_id': str(advertiser_id),
+            'advertiser_id': advertiser_id,
             'page_size': page_size,
         }
         if catalog_id:

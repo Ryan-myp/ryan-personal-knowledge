@@ -530,12 +530,31 @@ class TikTokCapability(BaseCapability):
                 }), {}),
             ),
             method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_catalogs",
+                description="查询 TikTok 商品目录；Catalog/Product Set 的创建、更新和删除当前没有经过验证的 Ads API Tool。",
+                method_name="list_catalogs", result_key="catalogs",
+                properties={
+                    "account_id": {"type": "string"},
+                    "filtering": {"type": "array"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                },
+                required=["account_id"], provider_required=["account_id"],
+                action="list", resource_type="catalog", intent_types=["list_catalogs"],
+                traits=["read", "catalog", "lookup"],
+                argument_builder=lambda ctx, data: ((account(ctx, data),), {
+                    "filtering": data.get("filtering"),
+                    "page_size": data.get("limit", 20),
+                }),
+            ),
+            method_tool(
                 platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_product_sets",
                 description="查询 TikTok 商品集。", method_name="list_product_sets", result_key="product_sets",
                 properties={"account_id": {"type": "string"}, "catalog_id": {"type": "string"},
-                            "filtering": {"type": "array"}, "limit": {"type": "integer"}},
-                required=["account_id"], action="list", resource_type="product_set",
-                intent_types=["list_product_sets"], traits=["read", "catalog"],
+                            "filtering": {"type": "array"},
+                            "limit": {"type": "integer", "minimum": 1, "maximum": 100}},
+                required=["account_id"], provider_required=["account_id"],
+                action="list", resource_type="product_set",
+                intent_types=["list_product_sets"], traits=["read", "catalog", "lookup"],
                 argument_builder=lambda ctx, data: ((account(ctx, data),), {
                     "catalog_id": data.get("catalog_id"), "filtering": data.get("filtering"),
                     "page_size": data.get("limit", 20),
@@ -858,7 +877,6 @@ class TikTokCapability(BaseCapability):
             ("conversions", "account", TikTokListConversionsHandler(api_client)),
             ("locations", None, TikTokListLocationsHandler(api_client)),
             ("devices", None, TikTokListDevicesHandler(api_client)),
-            ("catalogs", "account", TikTokListCatalogsHandler(api_client)),
             ("apps", None, TikTokListAppsHandler(api_client)),
             ("brand_safety", None, TikTokListBrandSafetyHandler(api_client)),
         ]

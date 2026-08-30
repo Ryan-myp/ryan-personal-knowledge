@@ -1,5 +1,5 @@
 {
-  "digest": "db862f6382048fe73c15bf0c2332508d14d4bb340167257d42d40ce951e192b1",
+  "digest": "9757f861fa22fdba823595db2df3ccbcb8770965a0564d03849a75609192a81d",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -11886,7 +11886,7 @@
       ]
     },
     "tiktok": {
-      "digest": "27f8420b70856f1d45421630ac656a210b10b31017bdfe10bf3ee609eb4fe383",
+      "digest": "0f35bf0c2bf72bcb22557152e1a585329f3deff5a68886d8ecb1c95d7ef1529f",
       "tool_count": 63,
       "tools": [
         {
@@ -14727,7 +14727,7 @@
         {
           "action": "list",
           "contract_version": "1.2.0",
-          "description": "查询 TikTok catalogs 参考数据。",
+          "description": "查询 TikTok 商品目录；Catalog/Product Set 的创建、更新和删除当前没有经过验证的 Ads API Tool。",
           "effect_class": "read",
           "input_schema": {
             "additionalProperties": false,
@@ -14741,14 +14741,15 @@
                 "type": "array"
               },
               "limit": {
+                "maximum": 100,
+                "minimum": 1,
                 "type": "integer"
-              },
-              "location_type": {
-                "type": "string"
               }
             },
             "provider_any_of": [],
-            "provider_required": [],
+            "provider_required": [
+              "account_id"
+            ],
             "required": [
               "account_id"
             ],
@@ -14775,7 +14776,8 @@
           "timeout_seconds": 30.0,
           "traits": [
             "read",
-            "catalogs"
+            "catalog",
+            "lookup"
           ]
         },
         {
@@ -15356,11 +15358,15 @@
                 "type": "array"
               },
               "limit": {
+                "maximum": 100,
+                "minimum": 1,
                 "type": "integer"
               }
             },
             "provider_any_of": [],
-            "provider_required": [],
+            "provider_required": [
+              "account_id"
+            ],
             "required": [
               "account_id"
             ],
@@ -15387,7 +15393,8 @@
           "timeout_seconds": 30.0,
           "traits": [
             "read",
-            "catalog"
+            "catalog",
+            "lookup"
           ]
         },
         {

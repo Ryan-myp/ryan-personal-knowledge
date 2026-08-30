@@ -123,6 +123,50 @@ def test_tiktok_pixel_track_and_batch_build_v13_payloads_and_tools():
     ) == []
 
 
+def test_tiktok_catalog_queries_are_scoped_validated_and_published_as_provider_tools():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    client.request = lambda method, endpoint, params=None, **_kwargs: (
+        calls.append((method, endpoint, params))
+        or {"data": {"list": [{"id": "catalog-1"}]}}
+    )
+
+    assert client.list_catalogs(
+        "123", filtering=[{"field": "CATALOG_IDS", "operator": "IN", "values": ["catalog-1"]}],
+        page_size=50,
+    ) == [{"id": "catalog-1"}]
+    assert client.list_product_sets("123", "catalog-1", page_size=10) == [
+        {"id": "catalog-1"}
+    ]
+    assert calls == [
+        (
+            "GET", "catalog/get/",
+            {
+                "advertiser_id": "123", "page_size": 50,
+                "filtering": [{"field": "CATALOG_IDS", "operator": "IN", "values": ["catalog-1"]}],
+            },
+        ),
+        (
+            "GET", "product_set/get/",
+            {"advertiser_id": "123", "page_size": 10, "catalog_id": "catalog-1"},
+        ),
+    ]
+    with pytest.raises(ValueError, match="digits only"):
+        client.list_catalogs("advertiser-123")
+    with pytest.raises(ValueError, match="between 1 and 100"):
+        client.list_product_sets("123", page_size=101)
+    with pytest.raises(ValueError, match="filtering must be an array"):
+        client.list_catalogs("123", filtering={"field": "CATALOG_IDS"})
+
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_tiktok_capability().register_tools()
+    }
+    assert definitions["tiktok_list_catalogs"].input_schema.provider_required == ["account_id"]
+    assert definitions["tiktok_list_product_sets"].input_schema.properties["limit"]["maximum"] == 100
+    assert definitions["tiktok_list_catalogs"].traits == ["read", "catalog", "lookup"]
+
+
 def test_tiktok_creative_portfolio_uses_official_v13_payload_and_keeps_crud_gap_explicit():
     client = TikTokAPIClient({"access_token": "test"})
     calls = []
