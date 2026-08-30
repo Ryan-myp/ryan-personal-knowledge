@@ -572,6 +572,62 @@ class TikTokAPIClient(BasePlatformClient):
         resource_id = payload.get('ad_id') if isinstance(payload, dict) else None
         return self.require_resource_id(resource_id, "TikTok ad create")
 
+    def _create_format_ad(
+        self,
+        advertiser_id: str,
+        campaign_id: str,
+        adgroup_id: str,
+        ad: dict,
+        format_name: str,
+        asset_fields: tuple[str, ...],
+        min_image_count: int = 0,
+    ) -> str:
+        """Create a typed ad after validating its format-specific asset shape."""
+        if not isinstance(ad, dict):
+            raise ValueError("ad must be an object")
+        normalized = dict(ad)
+        normalized["ad_format"] = format_name
+        if not any(normalized.get(field) for field in asset_fields):
+            raise ValueError(
+                f"{format_name} ad requires one of: {', '.join(asset_fields)}"
+            )
+        if min_image_count:
+            image_ids = normalized.get("image_ids")
+            if image_ids and (
+                not isinstance(image_ids, list) or len(image_ids) < min_image_count
+            ):
+                raise ValueError(
+                    f"{format_name} ad image_ids must contain at least {min_image_count} items"
+                )
+        return self.create_ad(advertiser_id, campaign_id, adgroup_id, normalized)
+
+    def create_single_video_ad(
+        self, advertiser_id: str, campaign_id: str, adgroup_id: str, ad: dict
+    ) -> str:
+        """Create a single-video ad through TikTok's ad-create endpoint."""
+        return self._create_format_ad(
+            advertiser_id, campaign_id, adgroup_id, ad, "SINGLE_VIDEO",
+            ("video_id", "media", "creatives"),
+        )
+
+    def create_single_image_ad(
+        self, advertiser_id: str, campaign_id: str, adgroup_id: str, ad: dict
+    ) -> str:
+        """Create a single-image ad through TikTok's ad-create endpoint."""
+        return self._create_format_ad(
+            advertiser_id, campaign_id, adgroup_id, ad, "SINGLE_IMAGE",
+            ("image_ids", "media", "creatives"),
+        )
+
+    def create_carousel_ad(
+        self, advertiser_id: str, campaign_id: str, adgroup_id: str, ad: dict
+    ) -> str:
+        """Create a carousel ad with at least two image IDs when image IDs are used."""
+        return self._create_format_ad(
+            advertiser_id, campaign_id, adgroup_id, ad, "CAROUSEL",
+            ("image_ids", "media", "creatives"), min_image_count=2,
+        )
+
     def create_lead_ad(
         self,
         advertiser_id: str,

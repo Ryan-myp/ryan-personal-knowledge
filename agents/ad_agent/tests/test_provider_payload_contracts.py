@@ -1206,6 +1206,37 @@ def test_tiktok_ad_creation_preserves_existing_schema_fields():
     assert payloads[-1]["ad_group"]["pixel_id"] == "pixel-1"
 
 
+def test_tiktok_typed_ad_tools_validate_assets_and_fix_format_payloads():
+    client = TikTokAPIClient({"access_token": "test"})
+    payloads = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        payloads.append((method, endpoint, data)) or {"ad_id": "ad-1"}
+    )
+
+    client.create_single_video_ad("t1", "101", "202", {"name": "Video", "video_id": "v1"})
+    client.create_single_image_ad("t1", "101", "202", {"name": "Image", "image_ids": ["i1"]})
+    client.create_carousel_ad(
+        "t1", "101", "202", {"name": "Carousel", "image_ids": ["i1", "i2"]}
+    )
+    assert [payload[2]["ad"]["ad_format"] for payload in payloads] == [
+        "SINGLE_VIDEO", "SINGLE_IMAGE", "CAROUSEL",
+    ]
+    with pytest.raises(ValueError, match="at least 2"):
+        client.create_carousel_ad("t1", "101", "202", {"name": "Carousel", "image_ids": ["i1"]})
+    with pytest.raises(ValueError, match="requires one of"):
+        client.create_single_video_ad("t1", "101", "202", {"name": "Video"})
+
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_tiktok_capability().register_tools()
+    }
+    assert definitions["tiktok_create_single_video_ad"].input_schema.properties["ad_format"]["enum"] == [
+        "SINGLE_VIDEO",
+    ]
+    assert definitions["tiktok_create_carousel_ad"].input_schema.properties["image_ids"]["minItems"] == 2
+    assert definitions["tiktok_create_single_image_ad"].live_support is False
+
+
 def test_tiktok_targeting_update_validates_dimensions_and_builds_scoped_payload():
     client = TikTokAPIClient({"access_token": "test"})
     payloads = []

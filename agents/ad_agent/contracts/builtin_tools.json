@@ -1,5 +1,5 @@
 {
-  "digest": "6c772f8d9f4030cd601727ab2a70e28901209c75edd534f2ddf20ad4bf98d242",
+  "digest": "3ff6116405ba0cf250fb50072c4394f9faa7c4fb75ae0cda5fffbc3f26f8df99",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -11828,8 +11828,8 @@
       ]
     },
     "tiktok": {
-      "digest": "5e963826e7930e787d615a2aafc57adc904c8e9f17760084f00205cddc953b9b",
-      "tool_count": 60,
+      "digest": "27f8420b70856f1d45421630ac656a210b10b31017bdfe10bf3ee609eb4fe383",
+      "tool_count": 63,
       "tools": [
         {
           "action": "create",
@@ -12820,6 +12820,161 @@
         {
           "action": "create",
           "contract_version": "1.2.0",
+          "description": "创建 TikTok CAROUSEL 广告；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_format": {
+                "description": "Fixed TikTok ad format for this Tool",
+                "enum": [
+                  "CAROUSEL"
+                ],
+                "type": "string"
+              },
+              "adgroup_id": {
+                "description": "Parent ad group ID",
+                "type": "string"
+              },
+              "call_to_action": {
+                "description": "Call to action",
+                "type": "string"
+              },
+              "campaign_id": {
+                "description": "Parent campaign ID",
+                "type": "string"
+              },
+              "catalog_id": {
+                "description": "TikTok catalog ID",
+                "type": "string"
+              },
+              "conversion_id": {
+                "description": "Conversion event ID",
+                "lookup_result_key": "conversions",
+                "lookup_tool": "tiktok_list_conversions",
+                "minimum": 0,
+                "selection_label_fields": [
+                  "conversion_name",
+                  "name",
+                  "event_name"
+                ],
+                "selection_value_fields": [
+                  "conversion_id",
+                  "id"
+                ],
+                "type": "integer"
+              },
+              "creatives": {
+                "description": "Carousel creative/card payload",
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "identity_id": {
+                "description": "TikTok identity ID",
+                "type": "string"
+              },
+              "image_ids": {
+                "description": "Carousel image asset IDs (at least two)",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 2,
+                "type": "array"
+              },
+              "landing_page_url": {
+                "description": "Landing page URL",
+                "type": "string"
+              },
+              "media": {
+                "description": "Carousel media/card payload",
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "name": {
+                "description": "Ad name",
+                "type": "string"
+              },
+              "page_id": {
+                "description": "TikTok Instant Page or Instant Form page ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "product_set_id": {
+                "description": "TikTok product set ID",
+                "type": "string"
+              },
+              "spark_post_id": {
+                "description": "Spark post ID",
+                "type": "string"
+              },
+              "status": {
+                "description": "Ad status: 1 active, 0 paused",
+                "enum": [
+                  0,
+                  1
+                ],
+                "type": "integer"
+              },
+              "text": {
+                "additionalProperties": true,
+                "description": "Ad copy payload",
+                "type": "object"
+              },
+              "video_id": {
+                "description": "Video asset ID",
+                "type": "string"
+              }
+            },
+            "provider_any_of": [
+              [
+                "image_ids",
+                "media",
+                "creatives"
+              ]
+            ],
+            "provider_required": [
+              "campaign_id"
+            ],
+            "required": [
+              "adgroup_id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_carousel_ad"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_create_carousel_ad",
+          "parent_resource_id_field": "adgroup_id",
+          "parent_resource_type": "ad_group",
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad",
+            "carousel"
+          ]
+        },
+        {
+          "action": "create",
+          "contract_version": "1.2.0",
           "description": "创建 TikTok Creative Portfolio（CTA/Card 等增强素材）；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -13091,6 +13246,316 @@
             "ad",
             "lead",
             "instant_form"
+          ]
+        },
+        {
+          "action": "create",
+          "contract_version": "1.2.0",
+          "description": "创建 TikTok SINGLE_IMAGE 广告；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_format": {
+                "description": "Fixed TikTok ad format for this Tool",
+                "enum": [
+                  "SINGLE_IMAGE"
+                ],
+                "type": "string"
+              },
+              "adgroup_id": {
+                "description": "Parent ad group ID",
+                "type": "string"
+              },
+              "call_to_action": {
+                "description": "Call to action",
+                "type": "string"
+              },
+              "campaign_id": {
+                "description": "Parent campaign ID",
+                "type": "string"
+              },
+              "catalog_id": {
+                "description": "TikTok catalog ID",
+                "type": "string"
+              },
+              "conversion_id": {
+                "description": "Conversion event ID",
+                "lookup_result_key": "conversions",
+                "lookup_tool": "tiktok_list_conversions",
+                "minimum": 0,
+                "selection_label_fields": [
+                  "conversion_name",
+                  "name",
+                  "event_name"
+                ],
+                "selection_value_fields": [
+                  "conversion_id",
+                  "id"
+                ],
+                "type": "integer"
+              },
+              "creatives": {
+                "description": "Single-image creative payload",
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "identity_id": {
+                "description": "TikTok identity ID",
+                "type": "string"
+              },
+              "image_ids": {
+                "description": "Uploaded TikTok image asset IDs",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "landing_page_url": {
+                "description": "Landing page URL",
+                "type": "string"
+              },
+              "media": {
+                "description": "Single-image media payload",
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "name": {
+                "description": "Ad name",
+                "type": "string"
+              },
+              "page_id": {
+                "description": "TikTok Instant Page or Instant Form page ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "product_set_id": {
+                "description": "TikTok product set ID",
+                "type": "string"
+              },
+              "spark_post_id": {
+                "description": "Spark post ID",
+                "type": "string"
+              },
+              "status": {
+                "description": "Ad status: 1 active, 0 paused",
+                "enum": [
+                  0,
+                  1
+                ],
+                "type": "integer"
+              },
+              "text": {
+                "additionalProperties": true,
+                "description": "Ad copy payload",
+                "type": "object"
+              },
+              "video_id": {
+                "description": "Video asset ID",
+                "type": "string"
+              }
+            },
+            "provider_any_of": [
+              [
+                "image_ids",
+                "media",
+                "creatives"
+              ]
+            ],
+            "provider_required": [
+              "campaign_id"
+            ],
+            "required": [
+              "adgroup_id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_single_image_ad"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_create_single_image_ad",
+          "parent_resource_id_field": "adgroup_id",
+          "parent_resource_type": "ad_group",
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad",
+            "single_image"
+          ]
+        },
+        {
+          "action": "create",
+          "contract_version": "1.2.0",
+          "description": "创建 TikTok SINGLE_VIDEO 广告；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_format": {
+                "description": "Fixed TikTok ad format for this Tool",
+                "enum": [
+                  "SINGLE_VIDEO"
+                ],
+                "type": "string"
+              },
+              "adgroup_id": {
+                "description": "Parent ad group ID",
+                "type": "string"
+              },
+              "call_to_action": {
+                "description": "Call to action",
+                "type": "string"
+              },
+              "campaign_id": {
+                "description": "Parent campaign ID",
+                "type": "string"
+              },
+              "catalog_id": {
+                "description": "TikTok catalog ID",
+                "type": "string"
+              },
+              "conversion_id": {
+                "description": "Conversion event ID",
+                "lookup_result_key": "conversions",
+                "lookup_tool": "tiktok_list_conversions",
+                "minimum": 0,
+                "selection_label_fields": [
+                  "conversion_name",
+                  "name",
+                  "event_name"
+                ],
+                "selection_value_fields": [
+                  "conversion_id",
+                  "id"
+                ],
+                "type": "integer"
+              },
+              "creatives": {
+                "description": "Single-video creative payload",
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "identity_id": {
+                "description": "TikTok identity ID",
+                "type": "string"
+              },
+              "image_ids": {
+                "description": "Image asset IDs",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "landing_page_url": {
+                "description": "Landing page URL",
+                "type": "string"
+              },
+              "media": {
+                "description": "Single-video media payload",
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "name": {
+                "description": "Ad name",
+                "type": "string"
+              },
+              "page_id": {
+                "description": "TikTok Instant Page or Instant Form page ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "product_set_id": {
+                "description": "TikTok product set ID",
+                "type": "string"
+              },
+              "spark_post_id": {
+                "description": "Spark post ID",
+                "type": "string"
+              },
+              "status": {
+                "description": "Ad status: 1 active, 0 paused",
+                "enum": [
+                  0,
+                  1
+                ],
+                "type": "integer"
+              },
+              "text": {
+                "additionalProperties": true,
+                "description": "Ad copy payload",
+                "type": "object"
+              },
+              "video_id": {
+                "description": "Uploaded TikTok video asset ID",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [
+              [
+                "video_id",
+                "media",
+                "creatives"
+              ]
+            ],
+            "provider_required": [
+              "campaign_id"
+            ],
+            "required": [
+              "adgroup_id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_single_video_ad"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_create_single_video_ad",
+          "parent_resource_id_field": "adgroup_id",
+          "parent_resource_type": "ad_group",
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad",
+            "single_video"
           ]
         },
         {
@@ -16759,5 +17224,5 @@
       ]
     }
   },
-  "tool_count": 203
+  "tool_count": 206
 }

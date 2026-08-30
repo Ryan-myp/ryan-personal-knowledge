@@ -52,6 +52,9 @@ from .parameters import (
     tiktok_identity_create_schema,
     tiktok_identity_list_schema,
     tiktok_identity_video_info_schema,
+    tiktok_single_video_ad_schema,
+    tiktok_single_image_ad_schema,
+    tiktok_carousel_ad_schema,
     tiktok_targeting_update_schema,
     TIKTOK_OBJECTIVE_TYPES,
     TIKTOK_PLACEMENTS,
@@ -106,6 +109,9 @@ class TikTokCapability(BaseCapability):
         "update_ad": ["tiktok_update_ad"], "pause_adgroup": ["tiktok_pause_adgroup"],
         "list_ads": ["tiktok_list_ads"], "get_ad": ["tiktok_get_ad"],
         "create_ad": ["tiktok_create_ad"], "create_lead_ad": ["tiktok_create_lead_ad"],
+        "create_single_video_ad": ["tiktok_create_single_video_ad"],
+        "create_single_image_ad": ["tiktok_create_single_image_ad"],
+        "create_carousel_ad": ["tiktok_create_carousel_ad"],
         "create_app_ad": ["tiktok_create_app_ad"], "create_spark_ad": ["tiktok_spark_ads_create"],
         "get_campaign_report": ["tiktok_get_campaign_report"], "get_adgroup_report": ["tiktok_get_adgroup_report"],
         "list_audiences": ["tiktok_list_audiences"], "get_audience": ["tiktok_get_audience"],
@@ -741,6 +747,31 @@ class TikTokCapability(BaseCapability):
             resource_id_field="ad_id",
             parent_resource_id_field="adgroup_id",
         ), TikTokCreateAdHandler(api_client)))
+
+        for format_name, tool_name, method_name, schema_factory, intent_name in (
+            ("SINGLE_VIDEO", "tiktok_create_single_video_ad", "create_single_video_ad", tiktok_single_video_ad_schema, "create_single_video_ad"),
+            ("SINGLE_IMAGE", "tiktok_create_single_image_ad", "create_single_image_ad", tiktok_single_image_ad_schema, "create_single_image_ad"),
+            ("CAROUSEL", "tiktok_create_carousel_ad", "create_carousel_ad", tiktok_carousel_ad_schema, "create_carousel_ad"),
+        ):
+            schema = schema_factory()
+            tools.append(method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name=tool_name,
+                description=f"创建 TikTok {format_name} 广告；默认仅生成 dry-run 计划。",
+                method_name=method_name, result_key="ad_id",
+                properties=schema["properties"], required=schema["required"],
+                provider_required=schema["provider_required"],
+                provider_any_of=schema["provider_any_of"],
+                action="create", resource_type="ad", parent_resource_type="ad_group",
+                resource_id_field="ad_id", parent_resource_id_field="adgroup_id",
+                intent_types=[intent_name], traits=["write", "ad", format_name.lower()],
+                write=True,
+                argument_builder=lambda ctx, data: ((
+                    account_from(ctx, data), data["campaign_id"], data["adgroup_id"], {
+                        key: value for key, value in data.items()
+                        if key not in {"account_id", "campaign_id", "adgroup_id"}
+                    },
+                ), {}),
+            ))
 
         # Get Report
         tools.append((ToolDefinition(

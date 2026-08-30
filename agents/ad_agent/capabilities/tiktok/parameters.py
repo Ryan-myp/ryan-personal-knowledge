@@ -631,6 +631,62 @@ def tiktok_ad_schema() -> dict[str, Any]:
     }
 
 
+def _tiktok_format_ad_schema(
+    format_name: str,
+    description: str,
+    asset_properties: dict[str, Any],
+) -> dict[str, Any]:
+    """Build a format-specific view over TikTok's ad-create contract."""
+    base = tiktok_ad_schema()
+    properties = dict(base["properties"])
+    properties["ad_format"] = _field(
+        "string", "Fixed TikTok ad format for this Tool", enum=[format_name]
+    )
+    properties.update(asset_properties)
+    return {
+        "required": ["adgroup_id", "name"],
+        "provider_required": ["campaign_id"],
+        "provider_any_of": [[*asset_properties.keys()]],
+        "properties": properties,
+        "description": description,
+    }
+
+
+def tiktok_single_video_ad_schema() -> dict[str, Any]:
+    return _tiktok_format_ad_schema(
+        "SINGLE_VIDEO", "TikTok single-video ad", {
+            "video_id": _field("string", "Uploaded TikTok video asset ID", minLength=1),
+            "media": _field("array", "Single-video media payload", items={"type": "object"}),
+            "creatives": _field("array", "Single-video creative payload", items={"type": "object"}),
+        },
+    )
+
+
+def tiktok_single_image_ad_schema() -> dict[str, Any]:
+    return _tiktok_format_ad_schema(
+        "SINGLE_IMAGE", "TikTok single-image ad", {
+            "image_ids": _field(
+                "array", "Uploaded TikTok image asset IDs", items={"type": "string"}, minItems=1,
+            ),
+            "media": _field("array", "Single-image media payload", items={"type": "object"}),
+            "creatives": _field("array", "Single-image creative payload", items={"type": "object"}),
+        },
+    )
+
+
+def tiktok_carousel_ad_schema() -> dict[str, Any]:
+    return _tiktok_format_ad_schema(
+        "CAROUSEL", "TikTok carousel ad", {
+            "image_ids": _field(
+                "array", "Carousel image asset IDs (at least two)",
+                items={"type": "string"}, minItems=2,
+            ),
+            "media": _field("array", "Carousel media/card payload", items={"type": "object"}),
+            "creatives": _field("array", "Carousel creative/card payload", items={"type": "object"}),
+        },
+    )
+
+
 def tiktok_lead_ad_schema() -> dict[str, Any]:
     """Create contract for a TikTok Lead Generation Instant Form ad.
 
@@ -758,8 +814,9 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
             "format_id": "single_video",
             "category": "product_sales",
             "resource_type": "ad",
-            "coverage": "partial_dry_run",
-            "tool_names": ["tiktok_create_ad"],
+            "coverage": "supported_dry_run",
+            "tool_names": ["tiktok_create_single_video_ad"],
+            "payload_adapter": "TikTokAPIClient.create_single_video_ad",
             "dependencies": ["ad_group", "video_id_or_media", "text"],
             "supported_fields": ["ad_format", "video_id", "media", "text"],
             "gaps": ["dedicated video payload validation"],
@@ -769,8 +826,9 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
             "format_id": "single_image",
             "category": "product_sales",
             "resource_type": "ad",
-            "coverage": "partial_dry_run",
-            "tool_names": ["tiktok_create_ad"],
+            "coverage": "supported_dry_run",
+            "tool_names": ["tiktok_create_single_image_ad"],
+            "payload_adapter": "TikTokAPIClient.create_single_image_ad",
             "dependencies": ["ad_group", "image_ids_or_media", "text"],
             "supported_fields": ["ad_format", "image_ids", "media", "text"],
             "gaps": ["dedicated image payload validation"],
@@ -780,8 +838,9 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
             "format_id": "carousel",
             "category": "product_sales",
             "resource_type": "ad",
-            "coverage": "partial_dry_run",
-            "tool_names": ["tiktok_create_ad"],
+            "coverage": "supported_dry_run",
+            "tool_names": ["tiktok_create_carousel_ad"],
+            "payload_adapter": "TikTokAPIClient.create_carousel_ad",
             "dependencies": ["ad_group", "image_ids_or_media", "carousel card rules"],
             "supported_fields": ["ad_format", "image_ids", "media", "text"],
             "gaps": ["carousel card schema and validation"],
