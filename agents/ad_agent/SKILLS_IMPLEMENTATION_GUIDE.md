@@ -160,7 +160,9 @@ def create_skill(api_client=None):
 ```
 
 `SKILL.md` 保持自然语言，用于专家知识、SOP 和安全边界。标准操作由
-ToolDefinition 的 `action`、`resource_type`、`parent_resource_type` 自动发现；
+ToolDefinition 的 `action`、`resource_type`、`parent_resource_type` 自动发现；资源 ID
+字段和异常结果回查关系也必须由 Tool 显式声明，Runtime 不根据 `campaign`、`ad` 等
+资源名或 Tool 名称推断它们；
 非标准操作在 ToolDefinition 上声明 `intent_types=["my_intent"]`。新增 Tool
 或渠道不需要编辑中心 Router 配置文件。
 

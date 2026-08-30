@@ -882,7 +882,8 @@ class MetaCapability(BaseCapability):
                     "campaign_name": {"type": "string", "description": "Campaign 名称（可通过名称查找 ID）"},
                 },
             ),
-            action="get", resource_type="campaign", intent_types=["get_campaign"],
+            action="get", resource_type="campaign", resource_id_field="campaign_id",
+            intent_types=["get_campaign"],
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
             replay_policy=ReplayPolicy.SAFE,
@@ -934,6 +935,7 @@ class MetaCapability(BaseCapability):
                 properties={"adset_id": {"type": "string"}},
             ),
             action="get", resource_type="ad_set", parent_resource_type="campaign",
+            resource_id_field="adset_id",
             intent_types=["get_adset"],
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
@@ -975,7 +977,6 @@ class MetaCapability(BaseCapability):
             traits=["read", "ad"],
             action="list", resource_type="ad", intent_types=["list_ads"],
             parent_resource_type="ad_set",
-            parent_resource_id_field="adset_id",
         ), MetaListAdsHandler(api_client)))
 
         # Get Ad
@@ -992,7 +993,8 @@ class MetaCapability(BaseCapability):
             effect_class=ToolEffect.READ,
             replay_policy=ReplayPolicy.SAFE,
             traits=["read", "ad"],
-            action="get", resource_type="ad", intent_types=["get_ad"],
+            action="get", resource_type="ad", resource_id_field="ad_id",
+            intent_types=["get_ad"],
             parent_resource_type="ad_set",
         ), MetaGetAdHandler(api_client)))
 

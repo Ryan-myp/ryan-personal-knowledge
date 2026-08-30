@@ -196,7 +196,8 @@ dry-run 结果中的 `provider_validation` 会单独标记 Provider 必填字段
 1. 在渠道自己的 `api_clients/<provider>_client.py` 增加固定、可测试的方法；不要把用户输入的方法名直接转发到 HTTP。
 2. 在渠道自己的 `capabilities/<provider>/capability.py` 用 `method_tool()` 或显式 `ToolDefinition` 暴露 Schema、枚举、条件依赖、权限、超时和资源层级。
 3. 需要账户 App、地域、事件等运行时选项时，增加同渠道只读 lookup Tool，并在字段上声明 `lookup_tool`。
-4. 运行 `audit_capabilities.py`、`validate_contracts.py` 和 Provider 回归测试，确认接口已注册、契约稳定且创建链没有断点。
+4. 对可能需要结果回查的写 Tool，声明 `resource_id_field`、`parent_resource_id_field` 和可选 `readback_tool`；Runtime 不从 Tool 名称或资源类型猜 ID/回查接口。
+5. 运行 `audit_capabilities.py`、`validate_contracts.py` 和 Provider 回归测试，确认接口已注册、契约稳定且创建链没有断点。
 
 Provider API 升级时，保持稳定的 Tool 名称和业务输入契约，在渠道 Client 中增加
 `SUPPORTED_API_VERSIONS` 与 `VERSION_ADAPTERS[旧版本]`，并通过
@@ -313,7 +314,8 @@ class NewPlatformCapability(BaseCapability):
         ]
     
     # ToolDefinition 自描述 action/resource_type/parent_resource_type；
-    # 层级 Tool 另外声明 resource_id_field/parent_resource_id_field，
+    # 层级 Tool 另外声明 resource_id_field/parent_resource_id_field；
+    # 需要异常写入回查时声明 readback_tool；
     # 不需要修改中心 Router 或 Runtime 的渠道分支
 
 # 工厂名按约定自动发现：create_new_network_capability(api_client)

@@ -14,7 +14,7 @@ from agents.ad_agent.capabilities.dv360 import create_dv360_capability
 from agents.ad_agent.core.interfaces import (
     ToolContext, ToolSchema, ToolDefinition, ToolEffect,
     ProviderReconciler, ReconciliationObservation, CapabilityRuntime,
-    ParsedIntent, ToolResult,
+    ReconciliationContext, ParsedIntent, ToolResult,
 )
 from agents.ad_agent.core.knowledge import KnowledgeDocument
 from agents.ad_agent.core.intent import LLMIntentParser
@@ -30,6 +30,7 @@ from agents.ad_agent.api_clients.tiktok_client import TikTokAPIClient
 from agents.ad_agent.api_clients.dv360_client import DV360APIClient
 from agents.ad_agent.persistence.store import AdAgentStore
 from agents.ad_agent.runtime.runtime import AccountWhitelistValidator, AgentRuntime
+from agents.ad_agent.runtime.reconciliation import ToolReadbackReconciler
 
 
 def _whitelist(**accounts):
@@ -1108,3 +1109,98 @@ def test_wiki_error_lookup_honors_limit_without_runtime_name_error():
     assert len(solutions) == 1
     assert "重试" in solutions[0]
     assert len(wiki_get_errors("RESOURCE_EXHAUSTED", platform="google", limit=1)) == 1
+
+
+def test_readback_resolution_uses_explicit_metadata_not_tool_name_conventions():
+    runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
+    write = ToolDefinition(
+        name="vendor_mutate_widget_v2",
+        skill="vendor",
+        platform="vendor",
+        description="Mutate a widget",
+        input_schema=ToolSchema(properties={"widget_key": {"type": "string"}}),
+        action="update",
+        resource_type="widget",
+        resource_id_field="widget_key",
+        intent_types=["update_widget"],
+        effect_class=ToolEffect.WRITE,
+    )
+    read = ToolDefinition(
+        name="vendor_fetch_widget_by_key",
+        skill="vendor",
+        platform="vendor",
+        description="Fetch a widget",
+        input_schema=ToolSchema(
+            required=["widget_key"],
+            properties={"widget_key": {"type": "string"}},
+        ),
+        action="get",
+        resource_type="widget",
+        resource_id_field="widget_key",
+        intent_types=["get_widget"],
+        effect_class=ToolEffect.READ,
+    )
+    runtime.registry.register(write, lambda _ctx, _input: ToolResult.ok({}))
+    runtime.registry.register(read, lambda _ctx, _input: ToolResult.ok({}))
+
+    assert runtime._resolve_readback_definition(write.name) is read
+
+    ambiguous = ToolDefinition(
+        name="vendor_fetch_widget_by_alias",
+        skill="vendor",
+        platform="vendor",
+        description="Fetch a widget by alias",
+        input_schema=read.input_schema,
+        action="get",
+        resource_type="widget",
+        resource_id_field="widget_key",
+        intent_types=["get_widget_by_alias"],
+        effect_class=ToolEffect.READ,
+    )
+    runtime.registry.register(ambiguous, lambda _ctx, _input: ToolResult.ok({}))
+    assert runtime._resolve_readback_definition(write.name) is None
+
+    write.readback_tool = read.name
+    assert runtime._resolve_readback_definition(write.name) is read
+
+
+def test_generic_readback_uses_tool_declared_identity_for_arbitrary_resource():
+    read = ToolDefinition(
+        name="vendor_fetch_widget",
+        skill="vendor",
+        platform="vendor",
+        description="Fetch a widget",
+        input_schema=ToolSchema(
+            required=["widget_key"],
+            properties={"widget_key": {"type": "string"}},
+        ),
+        action="get",
+        resource_type="widget",
+        resource_id_field="widget_key",
+        intent_types=["get_widget"],
+        effect_class=ToolEffect.READ,
+    )
+    calls = []
+
+    observation = ToolReadbackReconciler("vendor").reconcile(
+        ReconciliationContext(
+            workflow={},
+            item={
+                "sequence": 7,
+                "tool_name": "vendor_mutate_widget",
+                "account_id": "acct-1",
+                "input_data": {"widget_key": "w-1"},
+            },
+            tool_context=ToolContext("session-1", "user-1", "acct-1"),
+            execute_read=lambda name, payload: (
+                calls.append((name, payload))
+                or ToolResult.ok({"payload": {"widget_key": "w-1", "state": "active"}})
+            ),
+            resolve_tool=lambda name: read if name == read.name else None,
+            resolve_read_tool=lambda _write_name: read,
+        )
+    )
+
+    assert observation.status == "succeeded"
+    assert observation.provider_resource_id == "w-1"
+    assert calls == [(read.name, {"widget_key": "w-1"})]

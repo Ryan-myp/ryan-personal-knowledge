@@ -658,6 +658,7 @@ def test_runtime_resource_outputs_use_tool_metadata_not_tool_name():
         input_schema=ToolSchema(properties={"name": {"type": "string"}}),
         action="create",
         resource_type="campaign",
+        resource_id_field="campaign_id",
         intent_types=["create_campaign"],
         effect_class=ToolEffect.WRITE,
     )

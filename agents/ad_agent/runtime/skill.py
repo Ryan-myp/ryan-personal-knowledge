@@ -56,6 +56,7 @@ class SkillCapability:
     parent_resource_type: Optional[str] = None
     resource_id_field: Optional[str] = None
     parent_resource_id_field: Optional[str] = None
+    readback_tool: Optional[str] = None
     intent_types: list[str] = field(default_factory=list)
     replay_policy: str = ""
     traits: list[str] = field(default_factory=list)
@@ -247,6 +248,7 @@ class SkillContract:
             parent_resource_type=optional_string("parent_resource_type"),
             resource_id_field=optional_string("resource_id_field"),
             parent_resource_id_field=optional_string("parent_resource_id_field"),
+            readback_tool=optional_string("readback_tool"),
             intent_types=cls._string_list(
                 spec.get("intent_types", []), f"tool {name}.intent_types"
             ),
@@ -563,6 +565,7 @@ class BaseSkill(Skill):
                 parent_resource_type=cap.parent_resource_type,
                 resource_id_field=cap.resource_id_field,
                 parent_resource_id_field=cap.parent_resource_id_field,
+                readback_tool=cap.readback_tool,
                 intent_types=list(cap.intent_types),
                 replay_policy=self._parse_replay_policy(cap.replay_policy, cap.effect),
                 traits=list(cap.traits),

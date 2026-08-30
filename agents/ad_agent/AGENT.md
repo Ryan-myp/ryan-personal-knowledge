@@ -104,7 +104,8 @@ Core 或 Router 中维护渠道表。Markdown 表格、`workflow.yaml`、`script
 身份，不能把不同渠道的数字 ID 互相复用。当前跨渠道 Campaign 批量管理支持暂停、
 恢复、预算更新和删除的 dry-run 计划；每个动作均由目标渠道发布的 Campaign Tool
 元数据驱动选择，不能在 Core 中写渠道分支。跨渠道操作先生成带逐项状态的本地计划，
-再由每个渠道的 Capability 执行或回查；失败或不确定结果进入
+再由每个渠道的 Capability 执行或回查；回查 Tool、资源 ID 字段和父资源字段必须来自
+渠道 Tool 合约，Runtime 不从工具名推断；失败或不确定结果进入
 `unknown`/`recovery_required`，不得把缺失指标填成 0，也不得把一个渠道的成功推断成
 另一个渠道的成功。
 

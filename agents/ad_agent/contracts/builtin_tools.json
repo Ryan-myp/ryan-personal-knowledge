@@ -1,9 +1,9 @@
 {
-  "digest": "b30cee7e51c7e645b4969d8281febcc94276f1c4f801ff5e07fabadb5e2a3f02",
+  "digest": "80becea9ea2a4f1cf1db391fb70272cfdcc864bfafbe9e5d226664bb898ceb91",
   "format_version": 1,
   "platforms": {
     "dv360": {
-      "digest": "7a89e00f1090e83413d0f92cd9f307a7c30262cbfc23cbf78e52e8357b3769ba",
+      "digest": "d90ffd5ec40f120a88b22c55db89f6ded76921cef381281b9f8e63cde38caad3",
       "tool_count": 31,
       "tools": [
         {
@@ -42,6 +42,7 @@
           "parent_resource_type": null,
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -96,6 +97,7 @@
           "parent_resource_type": "io",
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -148,6 +150,7 @@
           "parent_resource_type": null,
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -271,6 +274,7 @@
           "parent_resource_type": "campaign",
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -439,6 +443,7 @@
           "parent_resource_type": "io",
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -500,6 +505,7 @@
           "parent_resource_type": "line_item",
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -552,6 +558,7 @@
           "parent_resource_type": null,
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -603,6 +610,7 @@
           "parent_resource_type": null,
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -653,6 +661,7 @@
           "parent_resource_type": null,
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -703,6 +712,7 @@
           "parent_resource_type": null,
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -757,6 +767,7 @@
           "parent_resource_type": "io",
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -815,6 +826,7 @@
           "parent_resource_type": "line_item",
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -861,6 +873,7 @@
           "parent_resource_type": null,
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -909,11 +922,12 @@
           "parent_resource_type": null,
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
           ],
-          "resource_id_field": null,
+          "resource_id_field": "campaign_id",
           "resource_type": "campaign",
           "risk_level": "low",
           "skill": "dv360-api",
@@ -959,6 +973,7 @@
           "parent_resource_type": null,
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -1005,11 +1020,12 @@
           "parent_resource_type": "campaign",
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
           ],
-          "resource_id_field": null,
+          "resource_id_field": "io_id",
           "resource_type": "io",
           "risk_level": "low",
           "skill": "dv360-api",
@@ -1051,15 +1067,16 @@
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "dv360_get_line_item",
-          "parent_resource_id_field": null,
+          "parent_resource_id_field": "io_id",
           "parent_resource_type": "io",
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
           ],
-          "resource_id_field": null,
+          "resource_id_field": "line_item_id",
           "resource_type": "line_item",
           "risk_level": "low",
           "skill": "dv360-api",
@@ -1117,6 +1134,7 @@
           "parent_resource_type": null,
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -1170,6 +1188,7 @@
           "parent_resource_type": null,
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -1210,6 +1229,7 @@
           "parent_resource_type": null,
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -1264,6 +1284,7 @@
           "parent_resource_type": null,
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -1316,6 +1337,7 @@
           "parent_resource_type": null,
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -1365,6 +1387,7 @@
           "parent_resource_type": "campaign",
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -1422,6 +1445,7 @@
           "parent_resource_type": "line_item",
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -1470,10 +1494,11 @@
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "dv360_list_line_items",
-          "parent_resource_id_field": null,
+          "parent_resource_id_field": "io_id",
           "parent_resource_type": "io",
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -1526,6 +1551,7 @@
           "parent_resource_type": null,
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -1576,6 +1602,7 @@
           "parent_resource_type": null,
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -1662,6 +1689,7 @@
           "parent_resource_type": null,
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -1716,6 +1744,7 @@
           "parent_resource_type": null,
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -1807,6 +1836,7 @@
           "parent_resource_type": "campaign",
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -1908,6 +1938,7 @@
           "parent_resource_type": "io",
           "platform": "dv360",
           "provider_api_version": "v4",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -1925,7 +1956,7 @@
       ]
     },
     "google-ads": {
-      "digest": "aa427a989af1578043b81dae2d1dc445b7f615d3e90bcb348b4020bdfca32d07",
+      "digest": "26b38ea6d550f054ae91996ed26ec49f06585ef639407c1da0eead7bd1ec34c8",
       "tool_count": 78,
       "tools": [
         {
@@ -2068,6 +2099,7 @@
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -2282,6 +2314,7 @@
           "parent_resource_type": "campaign",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -2418,6 +2451,7 @@
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -2513,6 +2547,7 @@
           "parent_resource_type": "campaign",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -2675,6 +2710,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -2831,6 +2867,7 @@
           "parent_resource_type": "campaign",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -2975,6 +3012,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -3649,6 +3687,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -3733,6 +3772,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -3937,6 +3977,7 @@
           "parent_resource_type": "campaign",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -4128,6 +4169,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -4275,6 +4317,7 @@
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -4472,6 +4515,7 @@
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -4592,6 +4636,7 @@
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -4783,6 +4828,7 @@
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -4859,6 +4905,7 @@
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -4954,6 +5001,7 @@
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -5124,6 +5172,7 @@
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -5293,6 +5342,7 @@
           "parent_resource_type": "campaign",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -5594,6 +5644,7 @@
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -5796,6 +5847,7 @@
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -5880,6 +5932,7 @@
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -5992,6 +6045,7 @@
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -6193,6 +6247,7 @@
           "parent_resource_type": "campaign",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -6269,6 +6324,7 @@
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -6382,6 +6438,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -6508,6 +6565,7 @@
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -6562,6 +6620,7 @@
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -6610,6 +6669,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -6669,6 +6729,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -6722,6 +6783,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -6771,6 +6833,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -6850,6 +6913,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -6908,6 +6972,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -6961,6 +7026,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -7011,6 +7077,7 @@
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -7075,6 +7142,7 @@
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -7129,6 +7197,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -7175,11 +7244,12 @@
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
           ],
-          "resource_id_field": null,
+          "resource_id_field": "ad_id",
           "resource_type": "ad",
           "risk_level": "low",
           "skill": "google-ads-api-expert",
@@ -7221,11 +7291,12 @@
           "parent_resource_type": "campaign",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
           ],
-          "resource_id_field": null,
+          "resource_id_field": "ad_group_id",
           "resource_type": "ad_group",
           "risk_level": "low",
           "skill": "google-ads-api-expert",
@@ -7279,6 +7350,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -7339,6 +7411,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -7385,11 +7458,12 @@
           "parent_resource_type": "campaign",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
           ],
-          "resource_id_field": null,
+          "resource_id_field": "asset_group_id",
           "resource_type": "asset_group",
           "risk_level": "low",
           "skill": "google-ads-api-expert",
@@ -7435,6 +7509,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -7483,11 +7558,12 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
           ],
-          "resource_id_field": null,
+          "resource_id_field": "campaign_id",
           "resource_type": "campaign",
           "risk_level": "low",
           "skill": "google-ads-api-expert",
@@ -7562,6 +7638,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -7620,6 +7697,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -7678,6 +7756,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -7728,6 +7807,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -7792,6 +7872,7 @@
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -7843,6 +7924,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -7888,10 +7970,11 @@
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_list_ad_groups",
-          "parent_resource_id_field": null,
+          "parent_resource_id_field": "campaign_id",
           "parent_resource_type": "campaign",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -7937,10 +8020,11 @@
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_list_ads",
-          "parent_resource_id_field": null,
+          "parent_resource_id_field": "ad_group_id",
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -7990,6 +8074,7 @@
           "parent_resource_type": "campaign",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -8048,6 +8133,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -8097,6 +8183,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -8176,6 +8263,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -8232,6 +8320,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -8287,6 +8376,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -8336,6 +8426,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -8385,6 +8476,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -8438,6 +8530,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -8501,6 +8594,7 @@
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -8551,6 +8645,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -8597,6 +8692,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -8643,6 +8739,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -8741,6 +8838,7 @@
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -8827,6 +8925,7 @@
           "parent_resource_type": "campaign",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -8921,6 +9020,7 @@
           "parent_resource_type": "campaign",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -9040,6 +9140,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -9127,6 +9228,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -9241,6 +9343,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -9325,6 +9428,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -9475,6 +9579,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -9548,6 +9653,7 @@
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -9641,6 +9747,7 @@
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -9728,6 +9835,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -9787,6 +9895,7 @@
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -9805,7 +9914,7 @@
       ]
     },
     "meta": {
-      "digest": "43998e0dff9aeb75534ec16b402a8b86a83d6ae6564e286e6fd0deb7e0e499af",
+      "digest": "24dd7e429a8641ccc8768500ea8771bc2a118a2abc851909ab66f408044da5b2",
       "tool_count": 67,
       "tools": [
         {
@@ -9856,6 +9965,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -10160,6 +10270,7 @@
           "parent_resource_type": "ad_set",
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -10660,6 +10771,7 @@
           "parent_resource_type": "campaign",
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -10799,6 +10911,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -10992,6 +11105,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -11068,6 +11182,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -11219,6 +11334,7 @@
           "parent_resource_type": "ad_set",
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -11375,6 +11491,7 @@
           "parent_resource_type": "ad_set",
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -11447,6 +11564,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -11583,6 +11701,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -11753,6 +11872,7 @@
           "parent_resource_type": "ad_set",
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -11887,6 +12007,7 @@
           "parent_resource_type": "ad_set",
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -12098,6 +12219,7 @@
           "parent_resource_type": "page",
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -12265,6 +12387,7 @@
           "parent_resource_type": "ad_set",
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -12344,6 +12467,7 @@
           "parent_resource_type": "catalog",
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -12497,6 +12621,7 @@
           "parent_resource_type": "ad_set",
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -12551,6 +12676,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -12604,6 +12730,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -12657,6 +12784,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -12711,6 +12839,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -12764,6 +12893,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -12817,6 +12947,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -12872,6 +13003,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -12941,6 +13073,7 @@
           "parent_resource_type": "catalog",
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -12994,6 +13127,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -13040,11 +13174,12 @@
           "parent_resource_type": "ad_set",
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
           ],
-          "resource_id_field": null,
+          "resource_id_field": "ad_id",
           "resource_type": "ad",
           "risk_level": "low",
           "skill": "meta-marketing-api",
@@ -13102,6 +13237,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -13149,11 +13285,12 @@
           "parent_resource_type": "campaign",
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
           ],
-          "resource_id_field": null,
+          "resource_id_field": "adset_id",
           "resource_type": "ad_set",
           "risk_level": "low",
           "skill": "meta-marketing-api",
@@ -13211,6 +13348,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -13265,6 +13403,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -13313,11 +13452,12 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
           ],
-          "resource_id_field": null,
+          "resource_id_field": "campaign_id",
           "resource_type": "campaign",
           "risk_level": "low",
           "skill": "meta-marketing-api",
@@ -13373,6 +13513,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -13433,6 +13574,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -13493,6 +13635,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -13554,6 +13697,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -13611,6 +13755,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -13667,6 +13812,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -13742,6 +13888,7 @@
           "parent_resource_type": "catalog",
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -13787,6 +13934,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -13836,6 +13984,7 @@
           "parent_resource_type": "campaign",
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -13881,10 +14030,11 @@
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_list_ads",
-          "parent_resource_id_field": "adset_id",
+          "parent_resource_id_field": null,
           "parent_resource_type": "ad_set",
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -13932,6 +14082,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -13986,6 +14137,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -14035,6 +14187,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -14088,6 +14241,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -14149,6 +14303,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -14199,6 +14354,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -14248,6 +14404,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -14297,6 +14454,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -14350,6 +14508,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -14397,6 +14556,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -14443,6 +14603,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -14489,6 +14650,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -14535,6 +14697,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -14612,6 +14775,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -14792,6 +14956,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -14977,6 +15142,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -15063,6 +15229,7 @@
           "parent_resource_type": "ad_set",
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -15182,6 +15349,7 @@
           "parent_resource_type": "campaign",
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -15265,6 +15433,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -15351,6 +15520,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -15418,6 +15588,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -15485,6 +15656,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -15565,6 +15737,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -15770,6 +15943,7 @@
           "parent_resource_type": "page",
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -15857,6 +16031,7 @@
           "parent_resource_type": "catalog",
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -16069,6 +16244,7 @@
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -16087,7 +16263,7 @@
       ]
     },
     "tiktok": {
-      "digest": "56196344df8646f1b0cf51060176d10074bc25b66adc18956f8cb3637623bcd4",
+      "digest": "d72c29b769914a54d2ca3c852082c05f436e6bd591aa67ad7ed32ca8317b2689",
       "tool_count": 72,
       "tools": [
         {
@@ -16483,6 +16659,7 @@
           "parent_resource_type": "ad_group",
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -17205,6 +17382,7 @@
           "parent_resource_type": "campaign",
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -17404,6 +17582,7 @@
           "parent_resource_type": "ad_group",
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -17511,6 +17690,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -17687,6 +17867,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -18028,6 +18209,7 @@
           "parent_resource_type": "ad_group",
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -18100,6 +18282,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -18166,6 +18349,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -18334,6 +18518,7 @@
           "parent_resource_type": "ad_group",
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -18407,6 +18592,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -18838,6 +19024,7 @@
           "parent_resource_type": "ad_group",
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -19582,6 +19769,7 @@
           "parent_resource_type": "campaign",
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -19926,6 +20114,7 @@
           "parent_resource_type": "ad_group",
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -20268,6 +20457,7 @@
           "parent_resource_type": "ad_group",
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -20321,6 +20511,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -20372,6 +20563,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -20418,15 +20610,16 @@
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_get_ad",
-          "parent_resource_id_field": null,
+          "parent_resource_id_field": "adgroup_id",
           "parent_resource_type": "ad_group",
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
           ],
-          "resource_id_field": null,
+          "resource_id_field": "ad_id",
           "resource_type": "ad",
           "risk_level": "low",
           "skill": "tiktok-ads-api-expert",
@@ -20468,15 +20661,16 @@
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_get_adgroup",
-          "parent_resource_id_field": null,
+          "parent_resource_id_field": "campaign_id",
           "parent_resource_type": "campaign",
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
           ],
-          "resource_id_field": null,
+          "resource_id_field": "adgroup_id",
           "resource_type": "ad_group",
           "risk_level": "low",
           "skill": "tiktok-ads-api-expert",
@@ -20531,6 +20725,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -20582,6 +20777,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -20630,11 +20826,12 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
           ],
-          "resource_id_field": null,
+          "resource_id_field": "campaign_id",
           "resource_type": "campaign",
           "risk_level": "low",
           "skill": "tiktok-ads-api-expert",
@@ -20686,6 +20883,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -20736,6 +20934,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -20792,6 +20991,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -20868,6 +21068,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -20915,6 +21116,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -20981,6 +21183,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -21036,6 +21239,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -21085,6 +21289,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -21144,6 +21349,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -21194,6 +21400,7 @@
           "parent_resource_type": "campaign",
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -21243,6 +21450,7 @@
           "parent_resource_type": "ad_group",
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -21293,6 +21501,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -21340,6 +21549,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -21390,6 +21600,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -21430,6 +21641,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -21484,6 +21696,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -21524,6 +21737,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -21580,6 +21794,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -21636,6 +21851,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -21688,6 +21904,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -21737,6 +21954,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -21788,6 +22006,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -21857,6 +22076,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -21910,6 +22130,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -22009,6 +22230,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -22058,6 +22280,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -22109,6 +22332,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -22149,6 +22373,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -22212,6 +22437,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -22272,6 +22498,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -22390,6 +22617,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -22443,6 +22671,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -22498,6 +22727,7 @@
           "parent_resource_type": "campaign",
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -22548,6 +22778,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -22611,6 +22842,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -22707,6 +22939,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -22758,6 +22991,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -22807,6 +23041,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"
@@ -22981,6 +23216,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -23172,6 +23408,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -23249,6 +23486,7 @@
           "parent_resource_type": "ad_group",
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -23327,6 +23565,7 @@
           "parent_resource_type": "ad_group",
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -23529,6 +23768,7 @@
           "parent_resource_type": "campaign",
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -23767,6 +24007,7 @@
           "parent_resource_type": "campaign",
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -23872,6 +24113,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -23994,6 +24236,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -24074,6 +24317,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -24153,6 +24397,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -24235,6 +24480,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -24339,6 +24585,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -24401,6 +24648,7 @@
           "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
+          "readback_tool": null,
           "replay_policy": "safe",
           "required_permissions": [
             "ads.read"

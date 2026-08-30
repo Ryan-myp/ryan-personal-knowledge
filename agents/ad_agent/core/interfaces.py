@@ -160,6 +160,11 @@ class ToolDefinition:
     # fields whenever the schema is ambiguous.
     resource_id_field: Optional[str] = None
     parent_resource_id_field: Optional[str] = None
+    # Optional explicit read-back edge for an uncertain write.  The Runtime
+    # validates and invokes this read Tool, but never derives its name from
+    # the write Tool name.  This is especially important when a provider has
+    # multiple get variants for the same logical resource.
+    readback_tool: Optional[str] = None
     # Version metadata is descriptive contract data, not routing logic.  A
     # provider can publish a new client/Capability contract while keeping the
     # stable Tool name; Runtime and Router do not need a provider-specific
@@ -196,6 +201,8 @@ class ToolDefinition:
             self.parent_resource_type = self._normalize_resource(
                 self.parent_resource_type
             )
+        if self.readback_tool is not None:
+            self.readback_tool = str(self.readback_tool).strip() or None
         self.intent_types = list(dict.fromkeys(str(item) for item in self.intent_types))
 
     def routing_metadata_errors(self) -> list[str]:
@@ -253,6 +260,7 @@ class ToolDefinition:
             "required_permissions": list(self.required_permissions),
             "resource_id_field": self.resource_id_field,
             "parent_resource_id_field": self.parent_resource_id_field,
+            "readback_tool": self.readback_tool,
             "contract_version": self.contract_version,
             "provider_api_version": self.provider_api_version,
             "input_schema": self.input_schema.to_dict() if self.input_schema else None,
@@ -499,6 +507,10 @@ class ReconciliationContext:
     # Optional Runtime-owned metadata lookup. Provider reconcilers can use it
     # to discover the matching read Tool without a shared provider table.
     resolve_read_tool: Optional[Callable[[str], Any]] = None
+    # Resolve an explicitly declared Tool name. This keeps provider-owned
+    # readback mappings declarative while preventing reconcilers from gaining
+    # direct registry/handler access.
+    resolve_tool: Optional[Callable[[str], Any]] = None
 
 
 class ProviderReconciler(ABC):

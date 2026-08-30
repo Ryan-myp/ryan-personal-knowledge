@@ -2440,30 +2440,35 @@ class AgentRuntime:
 
     @staticmethod
     def _resource_id_field(resource_type: str) -> str:
-        return {
-            "campaign": "campaign_id",
-            "ad_set": "adset_id",
-            "ad_group": "ad_group_id",
-            "ad": "ad_id",
-            "creative": "creative_id",
-            "io": "io_id",
-            "line_item": "line_item_id",
-            "asset_group": "asset_group_id",
-        }.get(resource_type, "resource_id")
+        # Kept as a compatibility helper for callers that need a neutral
+        # result key. Provider/Skill Tools must declare the actual wire field
+        # through ``resource_id_field``; Core must not turn a logical resource
+        # type into a provider field name.
+        return "resource_id"
 
     @classmethod
     def _resource_id_field_for_tool(cls, tool_def: Any) -> str:
         """Resolve the provider resource ID from the Tool contract.
 
-        The fallback only covers the shared logical resource vocabulary.  A
-        provider with a different wire name can publish
+        A provider with a different wire name publishes
         ``resource_id_field`` on its Tool and does not require a Runtime
-        change.
+        change. A schema marker is accepted for custom Skill tools, but there
+        is deliberately no resource-type-to-field lookup here.
         """
         declared = str(getattr(tool_def, "resource_id_field", "") or "").strip()
         if declared:
             return declared
-        return cls._resource_id_field(str(getattr(tool_def, "resource_type", "") or ""))
+        schema = getattr(tool_def, "input_schema", None)
+        properties = getattr(schema, "properties", {}) if schema else {}
+        if isinstance(properties, dict):
+            marked = [
+                str(name) for name, spec in properties.items()
+                if isinstance(spec, dict)
+                and (spec.get("resource_id") or spec.get("x-resource-id"))
+            ]
+            if len(marked) == 1:
+                return marked[0]
+        return "resource_id"
 
     @staticmethod
     def _parent_resource_id_field_for_tool(tool_def: Any) -> Optional[str]:
@@ -2494,18 +2499,11 @@ class AgentRuntime:
         parent_type = str(getattr(tool_def, "parent_resource_type", "") or "")
         normalized_parent = re.sub(r"[^a-z0-9]+", "_", parent_type.lower()).strip("_")
         candidates = [f"{normalized_parent}_id"] if normalized_parent else []
-        # These are logical naming aliases, not provider/channel mappings.
-        # Explicit Tool metadata should be used when a provider has another
-        # spelling or multiple parent identifiers in one payload.
-        candidates.extend({
-            "ad_set": ("ad_set_id", "adset_id"),
-            "ad_group": ("ad_group_id", "adgroup_id"),
-        }.get(normalized_parent, ()))
         if isinstance(properties, dict):
             for candidate in candidates:
                 if candidate in properties:
                     return candidate
-        return candidates[0] if candidates else None
+        return None
 
     @classmethod
     def _parent_resource_id_for_tool(
@@ -2519,7 +2517,7 @@ class AgentRuntime:
     def _build_resource_results(cls, results: list[dict]) -> list[dict]:
         """Normalize write results without exposing provider credentials."""
         resource_items: list[ResourceResult] = []
-        id_index: dict[tuple[str, str], int] = {}
+        id_index: dict[tuple[str, str, str], int] = {}
         sequence = 0
         for item in results or []:
             tool_name = str(item.get("tool") or "")
@@ -2567,8 +2565,10 @@ class AgentRuntime:
             parent_id = str(parent_id) if parent_id not in (None, "") else None
             normalized_platform = cls._canonical_platform(str(item.get("platform") or ""))
             parent_sequence = None
-            if parent_id:
-                parent_sequence = id_index.get((normalized_platform, parent_id))
+            if parent_id and parent_type:
+                parent_sequence = id_index.get(
+                    (normalized_platform, str(parent_type), parent_id)
+                )
             local_id = raw_id if simulated else None
             provider_id = raw_id if raw_id and not simulated else None
             logical_id = str(
@@ -2593,7 +2593,7 @@ class AgentRuntime:
             )
             resource_items.append(normalized)
             if raw_id:
-                id_index[(normalized_platform, raw_id)] = sequence
+                id_index[(normalized_platform, resource_type, raw_id)] = sequence
         return [item.to_dict() for item in resource_items]
 
     @staticmethod
@@ -2841,7 +2841,7 @@ class AgentRuntime:
             if name in write_tools:
                 result_occurrences[name] = result_occurrences.get(name, 0) + 1
         seen_occurrences: dict[str, int] = {}
-        sequence_by_resource_id: dict[tuple[str, str], int] = {}
+        sequence_by_resource_id: dict[tuple[str, str, str], int] = {}
         for index, item in enumerate(results):
             if item.get("tool") not in write_tools:
                 continue
@@ -2922,8 +2922,8 @@ class AgentRuntime:
                         account_id = input_data[account_key]
                         break
             parent_sequence = sequence_by_resource_id.get(
-                (actual_platform, str(parent_resource_id))
-            ) if parent_resource_id not in (None, "") else None
+                (actual_platform, str(parent_type or ""), str(parent_resource_id))
+            ) if parent_resource_id not in (None, "") and parent_type else None
             simulated = bool(output_object.get("simulated") or item.get("simulated"))
             provider_resource_id = (
                 str(raw_resource_id) if raw_resource_id not in (None, "") and not simulated else None
@@ -2949,7 +2949,9 @@ class AgentRuntime:
                 account_id=(str(account_id) if account_id not in (None, "") else None),
             )
             if raw_resource_id not in (None, ""):
-                sequence_by_resource_id[(actual_platform, str(raw_resource_id))] = item_sequence
+                sequence_by_resource_id[
+                    (actual_platform, str(resource_type or ""), str(raw_resource_id))
+                ] = item_sequence
 
         persisted = self._session_manager.get_workflow(workflow_id) or {}
         pending_items = [
@@ -3533,9 +3535,24 @@ class AgentRuntime:
         except KeyError:
             return None
         platform = self._canonical_platform(write_definition.platform)
-        expected_name = write_tool
-        for action in ("create", "update"):
-            expected_name = expected_name.replace(f"_{action}_", "_get_")
+        declared_readback = str(
+            getattr(write_definition, "readback_tool", "") or ""
+        ).strip()
+        if declared_readback:
+            try:
+                candidate, _handler = self._get_registered_tool(declared_readback)
+            except KeyError:
+                return None
+            if not candidate.is_read_tool:
+                return None
+            if self._canonical_platform(candidate.platform) != platform:
+                return None
+            if candidate.action != "get" or candidate.resource_type != write_definition.resource_type:
+                return None
+            if candidate.parent_resource_type != write_definition.parent_resource_type:
+                return None
+            return candidate
+
         candidates = []
         for definition in self.registry.list_all():
             if not definition.is_read_tool:
@@ -3544,11 +3561,13 @@ class AgentRuntime:
                 continue
             if definition.action != "get" or definition.resource_type != write_definition.resource_type:
                 continue
-            score = 1 if definition.name == expected_name else 0
-            candidates.append((score, definition))
-        if not candidates:
-            return None
-        return sorted(candidates, key=lambda item: (-item[0], item[1].name))[0][1]
+            if definition.parent_resource_type != write_definition.parent_resource_type:
+                continue
+            candidates.append(definition)
+        # A name/order based tie-breaker would make a provider upgrade
+        # silently reconcile against the wrong endpoint. Ambiguity is a
+        # provider contract problem and must remain visible to recovery.
+        return candidates[0] if len(candidates) == 1 else None
 
     def _find_campaign_report_tool(self, platform: str):
         """Discover a campaign report Tool from registered metadata.
@@ -6116,6 +6135,8 @@ class AgentRuntime:
                     tool_context=ctx,
                     execute_read=execute_read,
                     resolve_read_tool=self._resolve_readback_definition,
+                    resolve_tool=lambda tool_name: self._get_registered_tool(tool_name)[0]
+                    if tool_name else None,
                 )
             )
             if not isinstance(observation, ReconciliationObservation):
