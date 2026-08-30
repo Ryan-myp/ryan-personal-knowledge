@@ -770,6 +770,56 @@ def test_google_get_asset_uses_numeric_id_and_customer_scope():
     assert captured[0][1] == "111"
 
 
+def test_google_asset_creation_builds_text_and_binary_asset_payloads(tmp_path):
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    calls = []
+    client._mutate = lambda resource, operation: (
+        calls.append((resource, operation))
+        or {"results": [{"resourceName": "customers/123/assets/9"}]}
+    )
+
+    assert client.create_asset({
+        "asset_type": "TEXT", "name": "Headline", "text": "Sale today",
+        "final_urls": ["https://example.test"],
+    }) == "9"
+    assert calls[0] == ("assets", {"create": {
+        "name": "Headline",
+        "finalUrls": ["https://example.test"],
+        "textAsset": {"text": "Sale today"},
+    }})
+
+    image = tmp_path / "creative.png"
+    image.write_bytes(b"png-bytes")
+    assert client.create_asset({
+        "asset_type": "IMAGE", "file_path": str(image), "mime_type": "IMAGE_PNG",
+    }) == "9"
+    image_payload = calls[1][1]["create"]["imageAsset"]
+    assert image_payload == {
+        "data": "cG5nLWJ5dGVz", "fileSize": 9, "mimeType": "IMAGE_PNG",
+    }
+
+
+def test_google_asset_creation_rejects_wrong_payload_variants_and_exposes_tool():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    with pytest.raises(ValueError, match="text is required"):
+        client.create_asset({"asset_type": "TEXT"})
+    with pytest.raises(ValueError, match="11-character"):
+        client.create_asset({
+            "asset_type": "YOUTUBE_VIDEO", "youtube_video_id": "bad",
+            "youtube_video_title": "Video",
+        })
+
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_google_capability().register_tools()
+    }
+    create_tool = definitions["google_create_asset"]
+    assert create_tool.live_support is False
+    assert create_tool.input_schema.properties["asset_type"]["enum"] == [
+        "TEXT", "IMAGE", "YOUTUBE_VIDEO", "MEDIA_BUNDLE",
+    ]
+
+
 def test_google_asset_tools_publish_read_contracts():
     definitions = {
         definition.name: definition

@@ -20,6 +20,8 @@ GOOGLE_PORTFOLIO_BIDDING_STRATEGIES = [
 GOOGLE_TARGET_IMPRESSION_SHARE_LOCATIONS = [
     "ANYWHERE_ON_PAGE", "TOP_OF_PAGE", "ABSOLUTE_TOP_OF_PAGE",
 ]
+GOOGLE_ASSET_TYPES = ["TEXT", "IMAGE", "YOUTUBE_VIDEO", "MEDIA_BUNDLE"]
+GOOGLE_ASSET_IMAGE_MIME_TYPES = ["IMAGE_JPEG", "IMAGE_GIF", "IMAGE_PNG"]
 GOOGLE_STATUSES = ["ENABLED", "PAUSED", "REMOVED"]
 GOOGLE_AD_GROUP_TYPES = [
     "SEARCH_STANDARD", "SEARCH_DYNAMIC_ADS", "DISPLAY_STANDARD",
@@ -879,6 +881,39 @@ def google_asset_schema() -> dict[str, Any]:
             "asset_id": _field("string", "Google Asset ID", minLength=1),
             "limit": _field("integer", "Maximum number of assets", minimum=1, maximum=10000),
         },
+    }
+
+
+def google_asset_create_schema() -> dict[str, Any]:
+    """Schema for reusable text, image, video and HTML5 assets."""
+    return {
+        "required": ["customer_id", "asset_type"],
+        "provider_required": ["asset_type"],
+        "properties": {
+            "customer_id": _field("string", "Google Ads customer ID"),
+            "asset_type": _field("string", "Asset payload type", enum=GOOGLE_ASSET_TYPES),
+            "name": _field("string", "Optional asset name", minLength=1, maxLength=255),
+            "text": _field("string", "Text asset content", minLength=1),
+            "file_path": _field("string", "Local image or HTML5 ZIP file path", minLength=1),
+            "mime_type": _field("string", "Image MIME enum", enum=GOOGLE_ASSET_IMAGE_MIME_TYPES),
+            "youtube_video_id": _field("string", "11-character YouTube video ID", minLength=11, maxLength=11),
+            "youtube_video_title": _field("string", "YouTube video title", minLength=1),
+            "final_urls": _field("array", "Optional final URLs", items={"type": "string"}),
+            "final_mobile_urls": _field("array", "Optional final mobile URLs", items={"type": "string"}),
+            "tracking_url_template": _field("string", "Optional tracking URL template"),
+            "final_url_suffix": _field("string", "Optional final URL suffix"),
+        },
+        "conditional_rules": [
+            {"id": "text_asset_dependency", "if": {"asset_type": "TEXT"},
+             "required": ["text"], "message": "TEXT assets require text"},
+            {"id": "image_asset_dependency", "if": {"asset_type": "IMAGE"},
+             "required": ["file_path", "mime_type"], "message": "IMAGE assets require file_path and mime_type"},
+            {"id": "youtube_asset_dependency", "if": {"asset_type": "YOUTUBE_VIDEO"},
+             "required": ["youtube_video_id", "youtube_video_title"],
+             "message": "YOUTUBE_VIDEO assets require youtube_video_id and youtube_video_title"},
+            {"id": "media_bundle_dependency", "if": {"asset_type": "MEDIA_BUNDLE"},
+             "required": ["file_path"], "message": "MEDIA_BUNDLE assets require file_path"},
+        ],
     }
 
 

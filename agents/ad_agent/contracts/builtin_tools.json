@@ -1,5 +1,5 @@
 {
-  "digest": "aad56cc3cb52eaa924c2e94cf8547b28d621ce76b06f2189fe1fbce1d42b5d1b",
+  "digest": "565004af0f083058051777fc0d7559007f2a411337a23317d26dfb31b274a64c",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -1983,8 +1983,8 @@
       ]
     },
     "google-ads": {
-      "digest": "5b4d58cd021db71daa60d409adeec20ce81331063f05cd22819e7294276b05d7",
-      "tool_count": 56,
+      "digest": "7f823674c8368e025b9e2dca7fe9370b560a86a60b79329c50ddf1ec58654578",
+      "tool_count": 57,
       "tools": [
         {
           "action": "create",
@@ -2216,6 +2216,166 @@
           "traits": [
             "write",
             "ad_group"
+          ]
+        },
+        {
+          "action": "create",
+          "contract_version": "1.3.0",
+          "description": "创建 Google Ads 可复用 Asset（文本、图片、YouTube 视频或 HTML5 ZIP）；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [
+              {
+                "id": "text_asset_dependency",
+                "if": {
+                  "asset_type": "TEXT"
+                },
+                "message": "TEXT assets require text",
+                "required": [
+                  "text"
+                ]
+              },
+              {
+                "id": "image_asset_dependency",
+                "if": {
+                  "asset_type": "IMAGE"
+                },
+                "message": "IMAGE assets require file_path and mime_type",
+                "required": [
+                  "file_path",
+                  "mime_type"
+                ]
+              },
+              {
+                "id": "youtube_asset_dependency",
+                "if": {
+                  "asset_type": "YOUTUBE_VIDEO"
+                },
+                "message": "YOUTUBE_VIDEO assets require youtube_video_id and youtube_video_title",
+                "required": [
+                  "youtube_video_id",
+                  "youtube_video_title"
+                ]
+              },
+              {
+                "id": "media_bundle_dependency",
+                "if": {
+                  "asset_type": "MEDIA_BUNDLE"
+                },
+                "message": "MEDIA_BUNDLE assets require file_path",
+                "required": [
+                  "file_path"
+                ]
+              }
+            ],
+            "properties": {
+              "asset_type": {
+                "description": "Asset payload type",
+                "enum": [
+                  "TEXT",
+                  "IMAGE",
+                  "YOUTUBE_VIDEO",
+                  "MEDIA_BUNDLE"
+                ],
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "file_path": {
+                "description": "Local image or HTML5 ZIP file path",
+                "minLength": 1,
+                "type": "string"
+              },
+              "final_mobile_urls": {
+                "description": "Optional final mobile URLs",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "final_url_suffix": {
+                "description": "Optional final URL suffix",
+                "type": "string"
+              },
+              "final_urls": {
+                "description": "Optional final URLs",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "mime_type": {
+                "description": "Image MIME enum",
+                "enum": [
+                  "IMAGE_JPEG",
+                  "IMAGE_GIF",
+                  "IMAGE_PNG"
+                ],
+                "type": "string"
+              },
+              "name": {
+                "description": "Optional asset name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "text": {
+                "description": "Text asset content",
+                "minLength": 1,
+                "type": "string"
+              },
+              "tracking_url_template": {
+                "description": "Optional tracking URL template",
+                "type": "string"
+              },
+              "youtube_video_id": {
+                "description": "11-character YouTube video ID",
+                "maxLength": 11,
+                "minLength": 11,
+                "type": "string"
+              },
+              "youtube_video_title": {
+                "description": "YouTube video title",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "asset_type"
+            ],
+            "required": [
+              "customer_id",
+              "asset_type"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_asset"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_asset",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "asset_id",
+          "resource_type": "asset",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "asset"
           ]
         },
         {
@@ -15195,5 +15355,5 @@
       ]
     }
   },
-  "tool_count": 190
+  "tool_count": 191
 }

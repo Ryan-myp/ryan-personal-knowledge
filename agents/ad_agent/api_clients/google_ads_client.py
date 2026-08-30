@@ -15,6 +15,7 @@ import copy
 import re
 import threading
 import csv
+import base64
 from pathlib import Path
 from typing import Any, Optional
 from datetime import datetime
@@ -117,6 +118,9 @@ class GoogleAdsAPIClient(BasePlatformClient):
     TARGET_IMPRESSION_SHARE_LOCATIONS = {
         "ANYWHERE_ON_PAGE", "TOP_OF_PAGE", "ABSOLUTE_TOP_OF_PAGE",
     }
+    ASSET_TYPES = {"TEXT", "IMAGE", "YOUTUBE_VIDEO", "MEDIA_BUNDLE"}
+    ASSET_MIME_TYPES = {"IMAGE_JPEG", "IMAGE_GIF", "IMAGE_PNG", "HTML5_AD_ZIP"}
+    MAX_ASSET_UPLOAD_BYTES = 50 * 1024 * 1024
     
     def __init__(
         self,
@@ -1906,6 +1910,103 @@ class GoogleAdsAPIClient(BasePlatformClient):
         if items:
             return scoped._normalize_asset(items[0])
         raise APIError(f"Google asset {asset_id} was not found")
+
+    @classmethod
+    def _read_asset_file(cls, file_path: str, *, allowed_suffixes: set[str]) -> bytes:
+        path = Path(str(file_path or "")).expanduser()
+        if path.suffix.lower() not in allowed_suffixes:
+            suffixes = ", ".join(sorted(allowed_suffixes))
+            raise ValueError(f"file_path must use one of: {suffixes}")
+        if not path.is_file():
+            raise ValueError("file_path must point to an existing regular file")
+        if path.stat().st_size > cls.MAX_ASSET_UPLOAD_BYTES:
+            raise ValueError("asset upload file is too large")
+        return path.read_bytes()
+
+    def create_asset(self, asset: dict[str, Any]) -> str:
+        """Create a reusable Google Asset through AssetService.
+
+        AssetService accepts text, image, YouTube video and HTML5 media
+        bundle assets.  Text is sent as text content; binary assets are read
+        from a caller-selected local file and encoded only for the provider
+        request.  Assets are immutable after creation in the Google Ads API.
+        """
+        if not isinstance(asset, dict):
+            raise ValueError("asset must be an object")
+        asset_type = str(asset.get("asset_type") or "").strip().upper()
+        if asset_type not in self.ASSET_TYPES:
+            raise ValueError(f"asset_type must be one of {sorted(self.ASSET_TYPES)}")
+        payload: dict[str, Any] = {}
+        if asset.get("name") is not None:
+            name = str(asset["name"]).strip()
+            if not name:
+                raise ValueError("name must not be empty")
+            if len(name) > 255:
+                raise ValueError("name must be at most 255 characters")
+            payload["name"] = name
+        if asset.get("final_urls") is not None:
+            final_urls = asset["final_urls"]
+            if not isinstance(final_urls, list) or not final_urls:
+                raise ValueError("final_urls must be a non-empty list when provided")
+            payload["finalUrls"] = [str(url).strip() for url in final_urls]
+        if asset.get("final_mobile_urls") is not None:
+            final_mobile_urls = asset["final_mobile_urls"]
+            if not isinstance(final_mobile_urls, list):
+                raise ValueError("final_mobile_urls must be a list")
+            payload["finalMobileUrls"] = [str(url).strip() for url in final_mobile_urls]
+        if asset.get("tracking_url_template") is not None:
+            payload["trackingUrlTemplate"] = str(asset["tracking_url_template"]).strip()
+        if asset.get("final_url_suffix") is not None:
+            payload["finalUrlSuffix"] = str(asset["final_url_suffix"]).strip()
+
+        if asset_type == "TEXT":
+            text = str(asset.get("text") or "").strip()
+            if not text:
+                raise ValueError("text is required for TEXT assets")
+            payload["textAsset"] = {"text": text}
+        elif asset_type == "YOUTUBE_VIDEO":
+            video_id = str(asset.get("youtube_video_id") or "").strip()
+            video_title = str(asset.get("youtube_video_title") or "").strip()
+            if not video_id or not video_title:
+                raise ValueError(
+                    "youtube_video_id and youtube_video_title are required for YOUTUBE_VIDEO assets"
+                )
+            if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
+                raise ValueError("youtube_video_id must be an 11-character YouTube ID")
+            payload["youtubeVideoAsset"] = {
+                "youtubeVideoId": video_id,
+                "youtubeVideoTitle": video_title,
+            }
+        else:
+            file_path = asset.get("file_path")
+            if asset_type == "IMAGE":
+                mime_type = str(asset.get("mime_type") or "").strip().upper()
+                if mime_type not in {"IMAGE_JPEG", "IMAGE_GIF", "IMAGE_PNG"}:
+                    raise ValueError(
+                        "mime_type must be IMAGE_JPEG, IMAGE_GIF or IMAGE_PNG for IMAGE assets"
+                    )
+                suffixes = {
+                    "IMAGE_JPEG": {".jpg", ".jpeg"},
+                    "IMAGE_GIF": {".gif"},
+                    "IMAGE_PNG": {".png"},
+                }[mime_type]
+                raw = self._read_asset_file(file_path, allowed_suffixes=suffixes)
+                payload["imageAsset"] = {
+                    "data": base64.b64encode(raw).decode("ascii"),
+                    "fileSize": len(raw),
+                    "mimeType": mime_type,
+                }
+            else:
+                raw = self._read_asset_file(file_path, allowed_suffixes={".zip"})
+                payload["mediaBundleAsset"] = {
+                    "data": base64.b64encode(raw).decode("ascii"),
+                }
+
+        response = self._mutate("assets", {"create": payload})
+        resource_name = self._mutation_resource_name(response)
+        if not resource_name:
+            raise APIError(f"Asset mutate returned no resource name: {response}")
+        return str(resource_name.rsplit("/", 1)[-1])
 
     # ==================== CampaignBudget 管理 ====================
 

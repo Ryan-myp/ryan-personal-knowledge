@@ -27,7 +27,7 @@ from .keywords import GoogleListKeywordsHandler
 from ._utils import for_customer
 from .parameters import (
     google_campaign_schema, google_ad_group_schema, google_ad_schema,
-    google_asset_schema, google_asset_group_schema, google_ad_format_catalog, google_keyword_schema,
+    google_asset_schema, google_asset_create_schema, google_asset_group_schema, google_ad_format_catalog, google_keyword_schema,
     google_product_group_schema, google_responsive_display_ad_schema,
     google_video_ad_schema, google_campaign_budget_schema,
     google_campaign_budget_update_schema,
@@ -74,6 +74,7 @@ class GoogleCapability(BaseCapability):
         "list_ads": ["google_list_ads"], "get_ad": ["google_get_ad"],
         "list_keywords": ["google_list_keywords"], "list_asset_groups": ["google_list_asset_groups"],
         "list_assets": ["google_list_assets"], "get_asset": ["google_get_asset"],
+        "create_asset": ["google_create_asset"],
         "create_keywords": ["google_create_keywords"],
         "get_asset_group": ["google_get_asset_group"], "create_campaign": ["google_create_campaign"],
         "update_campaign": ["google_update_campaign"], "update_ad_group": ["google_update_ad_group"],
@@ -158,6 +159,7 @@ class GoogleCapability(BaseCapability):
             for key in ("customer_id", "campaign_id", "criterion_id")
         }
         asset_schema = google_asset_schema()
+        asset_create_schema = google_asset_create_schema()
         tools = [
             method_tool(
                 platform="google-ads", skill="google-ads-api-expert",
@@ -178,6 +180,30 @@ class GoogleCapability(BaseCapability):
                 action="get", resource_type="asset", resource_id_field="asset_id",
                 intent_types=["get_asset"], traits=["read", "asset"],
                 argument_builder=lambda _ctx, data: ((data["asset_id"], data.get("customer_id")), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_create_asset",
+                description=(
+                    "创建 Google Ads 可复用 Asset（文本、图片、YouTube 视频或 HTML5 ZIP）；"
+                    "默认仅生成 dry-run 计划。"
+                ),
+                method_name="create_asset", result_key="asset_id",
+                properties=asset_create_schema["properties"],
+                required=asset_create_schema["required"],
+                provider_required=asset_create_schema["provider_required"],
+                conditional_rules=asset_create_schema["conditional_rules"],
+                action="create", resource_type="asset", resource_id_field="asset_id",
+                intent_types=["create_asset"], traits=["write", "asset"], write=True,
+                argument_builder=lambda _ctx, data: (({
+                    key: data.get(key)
+                    for key in (
+                        "asset_type", "name", "text", "file_path", "mime_type",
+                        "youtube_video_id", "youtube_video_title", "final_urls",
+                        "final_mobile_urls", "tracking_url_template", "final_url_suffix",
+                    )
+                    if data.get(key) is not None
+                },), {}),
             ),
             method_tool(
                 platform="google-ads", skill="google-ads-api-expert",
