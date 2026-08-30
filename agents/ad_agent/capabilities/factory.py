@@ -11,29 +11,52 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import pkgutil
 from typing import Any, Optional
 from ..core.platform import normalize_platform, platform_slug
 
 
 def _module_slug(platform: str) -> str:
     """Convert a platform identifier into its package/module spelling."""
-    canonical = normalize_platform(platform)
-    # The existing package is named ``google`` while the public platform ID
-    # is ``google-ads``. Keep this package spelling local to discovery rather
-    # than making every caller carry a special case.
-    if canonical == "google-ads":
-        return "google"
-    return platform_slug(canonical)
+    return platform_slug(platform)
+
+
+def _discover_noncanonical_module(canonical: str):
+    """Find a provider package by its declared identity, not a central map."""
+    package = importlib.import_module(__package__)
+    for module_info in pkgutil.iter_modules(getattr(package, "__path__", ())):
+        if not module_info.ispkg or module_info.name.startswith("_"):
+            continue
+        module_name = f"{__package__}.{module_info.name}.capability"
+        try:
+            module = importlib.import_module(module_name)
+        except ModuleNotFoundError as exc:
+            if exc.name in {module_name, module_name.rsplit(".", 1)[0]}:
+                continue
+            raise
+        if not any(
+            inspect.isclass(value)
+            and normalize_platform(getattr(value, "platform_name", "")) == canonical
+            for value in vars(module).values()
+        ):
+            continue
+        factories = sorted(
+            value for name, value in vars(module).items()
+            if name.startswith("create_")
+            and name.endswith("_capability")
+            and callable(value)
+        )
+        if factories:
+            return factories[0]
+    return None
 
 
 def discover_capability_factory(platform: str):
     """Find a Capability factory by package convention.
 
-    A provider package owns its executable surface.  The shared runtime only
-    knows the convention ``capabilities/<platform>/capability.py`` and the
-    factory name ``create_<platform>_capability``.  The built-in ``google``
-    package is the one deliberate alias because its public platform ID is
-    ``google-ads``.
+    A provider package owns its executable surface.  The shared runtime first
+    tries the conventional package/factory name, then discovers a package
+    whose Capability declares the requested platform identity.
     """
     canonical = normalize_platform(platform)
     slug = _module_slug(canonical)
@@ -45,12 +68,10 @@ def discover_capability_factory(platform: str):
         # hide a dependency failure raised from inside an installed provider.
         missing_names = {module_name, module_name.rsplit(".", 1)[0]}
         if exc.name in missing_names:
-            return None
+            return _discover_noncanonical_module(canonical)
         raise
 
     candidates = [f"create_{slug}_capability"]
-    if canonical == "google-ads":
-        candidates.append("create_google_capability")
     for name in candidates:
         factory = getattr(module, name, None)
         if callable(factory):

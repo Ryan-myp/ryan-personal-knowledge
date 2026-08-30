@@ -35,8 +35,6 @@ def discover_client_factory(platform: str):
             return None
         raise
     names = [f"create_{slug}_client"]
-    if canonical == "google-ads":
-        names.append("create_google_ads_client")
     for name in names:
         factory = getattr(module, name, None)
         if callable(factory):

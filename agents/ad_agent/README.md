@@ -325,9 +325,11 @@ Capability 并注入按渠道创建的 Client；没有 Client 时仍可安全生
 受注册和审计的 Capability/Tool 扩展，用户上传 Skill 中的 `tools.py`、`scripts/`、
 MCP 或其他代码文件不会被 Runtime 导入或执行。
 
-LLM 结果规范化会读取当前已注册的平台集合。新增渠道的自然语言别名
-可以由其平台标识自动获得（例如 `snapchat-ads` / `snapchat ads`）；若需要中文或
-品牌别名，由渠道 Skill 在自己的边界提供解析前置层即可，不需要修改中心 Router。
+LLM 结果规范化会读取当前已注册的平台集合。新增渠道的自然语言别名可以由其
+平台标识自动获得（例如 `snapchat-ads` / `snapchat ads`）；若需要中文或品牌别名，
+直接在渠道 Skill 的 frontmatter `aliases` 中声明即可，平台身份解析会自动发现，
+不需要修改 Core、中心 Router 或渠道表。`parser_platform` 仅用于兼容外部解析结果的
+展示标签，不创建 Tool，也不参与权限判断。
 Skill 包遵循标准目录约定：至少包含 `SKILL.md`，可包含 `references/`、`scripts/`、
 `assets/`、`evals/` 和其他包文件。管理系统负责保存、版本化和评测这些文件；
 `scripts/`、`assets/`、`evals/` 及 `workflow.yaml` 都不是 Runtime 的自动执行入口。

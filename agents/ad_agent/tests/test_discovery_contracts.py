@@ -14,6 +14,9 @@ from agents.ad_agent.core.interfaces import (
     ToolSchema,
 )
 from agents.ad_agent.core.intent import LLMIntentParser, SimpleIntentRouter
+from agents.ad_agent.core.platform import (
+    normalize_platform, parser_platform, recognition_aliases,
+)
 from agents.ad_agent.core.tool_registry import SimpleToolRegistry
 from agents.ad_agent.capabilities.meta import create_meta_capability
 from agents.ad_agent.capabilities.google import create_google_capability
@@ -402,6 +405,13 @@ def test_new_tool_publishes_dynamic_intent_context_without_parser_edit():
     parser.register_tool_definitions([definition])
     assert "estimate_reach" in parser._intent_candidates_prompt()
     assert "Estimate audience reach" in parser._intent_candidates_prompt()
+
+
+def test_platform_identity_is_declared_by_channel_skill_metadata():
+    """Aliases and parser labels come from Skill metadata, not Core channel code."""
+    assert normalize_platform("google ads") == "google-ads"
+    assert parser_platform("google-ads") == "google"
+    assert "谷歌" in recognition_aliases("google-ads")
 
 
 def test_standard_skill_ignores_workflow_yaml_as_package_data(tmp_path):

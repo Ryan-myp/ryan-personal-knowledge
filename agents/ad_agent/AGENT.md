@@ -39,8 +39,9 @@ skill-name/
 └── evals/         # 可选：skill-up 数据文件和验收用例
 ```
 
-`SKILL.md` 使用自然语言描述流程；frontmatter 只声明身份、版本、平台别名和
-非执行触发上下文。Markdown 表格、`workflow.yaml`、`scripts/` 或 `assets/`
+`SKILL.md` 使用自然语言描述流程；frontmatter 只声明身份、版本、平台别名、可选的
+解析展示标识和非执行触发上下文。平台别名由渠道 Skill 元数据自动发现，不需要在
+Core 或 Router 中维护渠道表。Markdown 表格、`workflow.yaml`、`scripts/` 或 `assets/`
 都不能自动变成 Tool，也不能绕过 Registry、权限和 Runtime gate。
 
 用户上传的 Skill 作为 advisory context 保存和版本化。它可以指导 Agent 组合
