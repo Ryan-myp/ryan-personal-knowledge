@@ -65,6 +65,10 @@ META_LEAD_FORM_QUESTION_TYPES = [
     "DATE_OF_BIRTH", "GENDER", "MARITAL_STATUS", "RELATIONSHIP_STATUS",
     "MILITARY_STATUS", "STREET_ADDRESS", "POSTAL_CODE", "CUSTOM",
 ]
+META_TARGETING_SEARCH_TYPES = [
+    "adinterest", "adgeolocation", "adlocale", "adzipcode",
+    "adworkposition", "adtargetingcategory",
+]
 
 
 def _field(field_type: Any, description: str = "", **kwargs: Any) -> dict[str, Any]:
@@ -73,13 +77,19 @@ def _field(field_type: Any, description: str = "", **kwargs: Any) -> dict[str, A
     return value
 
 
-def _object(properties: dict[str, Any], description: str, *, additional_properties: bool = False) -> dict[str, Any]:
-    return {
+def _object(
+    properties: dict[str, Any], description: str, *,
+    additional_properties: bool = False, required: list[str] | None = None,
+) -> dict[str, Any]:
+    schema = {
         "type": "object",
         "description": description,
         "properties": properties,
         "additionalProperties": additional_properties,
     }
+    if required:
+        schema["required"] = list(required)
+    return schema
 
 
 def meta_targeting_schema() -> dict[str, Any]:
@@ -107,6 +117,23 @@ def meta_targeting_schema() -> dict[str, Any]:
         "excluded_custom_audiences": _field("array", "Excluded custom audiences", items=audience_ref),
         "flexible_spec": _field("array", "Interest/behavior groups", items={"type": "object", "additionalProperties": True}),
     }, "Meta ad set targeting")
+
+
+def meta_targeting_search_schema() -> dict[str, Any]:
+    """Schema for Meta's account-scoped Targeting Search endpoint."""
+    return {
+        "required": ["account_id", "query"],
+        "provider_required": ["account_id", "query"],
+        "properties": {
+            "account_id": _field("string", "Meta ad account ID"),
+            "query": _field("string", "Search text or location name", minLength=1, maxLength=200),
+            "type": _field(
+                "string", "Meta targeting search category",
+                enum=META_TARGETING_SEARCH_TYPES, default="adinterest",
+            ),
+            "limit": _field("integer", "Maximum options to return", minimum=1, maximum=100),
+        },
+    }
 
 
 def meta_audience_schema() -> dict[str, Any]:

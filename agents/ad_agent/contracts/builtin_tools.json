@@ -1,5 +1,5 @@
 {
-  "digest": "e3fbb2725efa15bc548c99175b130bee58eb7807dc0b7b077dca7890e604e2b0",
+  "digest": "563a6fc8474a8f55701c4a04dee6e00a69500dac2f59b6efdfb768dc4cf94301",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -7414,8 +7414,8 @@
       ]
     },
     "meta": {
-      "digest": "35202b296cf97423c9e4fe822e5322428af7d2a805ad0f1be3d7db5c5ef4c3e5",
-      "tool_count": 55,
+      "digest": "c96b5a0efcf32dc517afc01b592d46f2813351dacc9520e78f72eaa237879ed5",
+      "tool_count": 56,
       "tools": [
         {
           "action": "boost",
@@ -10881,6 +10881,83 @@
           "traits": [
             "write",
             "campaign"
+          ]
+        },
+        {
+          "action": "search",
+          "contract_version": "1.3.0",
+          "description": "查询 Meta Targeting Search 选项（兴趣、地理、语言、职位等）；只读，返回的 ID 可用于后续 Ad Set 定向选择。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum options to return",
+                "maximum": 100,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "query": {
+                "description": "Search text or location name",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": {
+                "default": "adinterest",
+                "description": "Meta targeting search category",
+                "enum": [
+                  "adinterest",
+                  "adgeolocation",
+                  "adlocale",
+                  "adzipcode",
+                  "adworkposition",
+                  "adtargetingcategory"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "account_id",
+              "query"
+            ],
+            "required": [
+              "account_id",
+              "query"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "search_targeting_options",
+            "lookup_targeting_options"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_search_targeting_options",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "targeting_option",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "targeting",
+            "lookup"
           ]
         },
         {
@@ -18048,5 +18125,5 @@
       ]
     }
   },
-  "tool_count": 214
+  "tool_count": 215
 }

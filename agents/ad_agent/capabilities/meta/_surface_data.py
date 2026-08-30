@@ -26,6 +26,7 @@ API_SURFACE = [
     {"resource": "product_set", "action": "update", "method": "update_product_set", "status": "implemented"},
     {"resource": "product_set", "action": "delete", "method": "delete_product_set", "status": "implemented"},
     {"resource": "page", "action": "list", "method": "list_pages", "status": "implemented"},
+    {"resource": "targeting_option", "action": "search", "method": "search_targeting", "status": "implemented"},
     {"resource": "pixel", "action": "list", "method": "list_pixels", "status": "implemented"},
     {"resource": "pixel", "action": "get", "method": "get_pixel", "status": "implemented"},
     {"resource": "lead_form", "action": "list", "method": "list_lead_forms", "status": "implemented"},

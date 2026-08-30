@@ -56,6 +56,12 @@ targeting、promoted object、Page/Pixel/Catalog/Form/Messaging 依赖。新增 
 接口或版本适配只在 Meta Client/Capability 内完成，不应修改业务 Skill 来“接线”；
 未标记为 `supported_dry_run` 的广告格式不得声称已有完整支持。
 
+兴趣、行为、地理、语言、职位等动态定向值必须先通过当前 Capability 发布的
+Targeting Search 只读能力查询，再在当前账户和会话范围内完成选择；不要凭空猜测
+Meta targeting ID，也不要把搜索结果当成写入操作。`special_ad_categories` 中的
+`NONE` 与 `EMPLOYMENT`、`HOUSING`、`CREDIT` 互斥，非法类别必须在进入 Graph API
+前拒绝。
+
 发送 CAPI 事件时，先用当前 Capability 发布的 `meta_list_pixels` 选择目标 Pixel，
 事件批次必须包含 `event_name`、Unix 秒级 `event_time`、`action_source` 和
 `user_data`。用户匹配字段应在进入 Tool 前按 Meta 规范标准化并哈希；使用

@@ -215,6 +215,35 @@ class MetaAPIClient(BasePlatformClient):
         params = {'fields': ','.join(fields) if fields else 'id,name,account_id,status'}
         return self.request('GET', f"/{account_id}", extra_params=params)
 
+    def search_targeting(
+        self, account_id: str, query: str, search_type: str = "adinterest", limit: int = 25
+    ) -> list[dict[str, Any]]:
+        """Search account-independent targeting options via Meta's Graph API.
+
+        The returned IDs are provider values used inside an Ad Set targeting
+        payload.  This is deliberately read-only; selecting an option for a
+        later create request is handled by Runtime's signed selection-token
+        flow rather than by trusting a copied ID.
+        """
+        account_id = self._clean_meta_id(account_id, "account_id")
+        query = str(query or "").strip()
+        if not query:
+            raise ValueError("targeting search query must be non-empty")
+        search_type = str(search_type or "adinterest").strip().lower()
+        valid_types = {
+            "adinterest", "adgeolocation", "adlocale", "adzipcode",
+            "adworkposition", "adtargetingcategory",
+        }
+        if search_type not in valid_types:
+            raise ValueError(f"Unsupported Meta targeting search type: {search_type}")
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100:
+            raise ValueError("targeting search limit must be between 1 and 100")
+        return self._list_graph_pages(
+            account_id,
+            f"/act_{account_id}/targetingsearch",
+            {"q": query, "type": search_type, "limit": limit},
+        )
+
     def _list_graph_pages(
         self, account_id: str, endpoint: str, params: dict,
         item_key: str = "data", max_pages: int = 100,
@@ -1030,6 +1059,16 @@ class MetaAPIClient(BasePlatformClient):
             special_ad_categories = [special_ad_categories]
         if not isinstance(special_ad_categories, list):
             raise ValueError("Meta special_ad_categories must be a string or list")
+        special_ad_categories = [str(category).upper() for category in special_ad_categories]
+        allowed_special_categories = {"NONE", "EMPLOYMENT", "HOUSING", "CREDIT"}
+        unknown_categories = set(special_ad_categories) - allowed_special_categories
+        if unknown_categories:
+            raise ValueError(
+                "Unsupported Meta special_ad_categories: "
+                + ", ".join(sorted(unknown_categories))
+            )
+        if "NONE" in special_ad_categories and len(special_ad_categories) > 1:
+            raise ValueError("Meta special_ad_categories=NONE cannot be combined with another category")
 
         data = {
             'name': campaign['name'],

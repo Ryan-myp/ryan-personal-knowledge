@@ -20,6 +20,7 @@ from .parameters import (
     meta_catalog_schema, meta_product_set_schema,
     meta_lead_form_schema,
     meta_custom_conversion_schema,
+    meta_targeting_search_schema,
 )
 from ...api_clients.meta_client import MetaAPIClient
 from ..update_contracts import meta_updates
@@ -72,6 +73,7 @@ class MetaCapability(BaseCapability):
         "delete_product_set": ["meta_delete_product_set"],
         "list_campaigns": ["meta_list_campaigns"],
         "list_pages": ["meta_list_pages"], "list_pixels": ["meta_list_pixels"],
+        "search_targeting": ["meta_search_targeting_options"],
         "get_pixel": ["meta_get_pixel"],
         "create_custom_conversion": ["meta_create_custom_conversion"],
         "send_conversion_events": [
@@ -138,6 +140,27 @@ class MetaCapability(BaseCapability):
                 }, required=["account_id"], action="list", resource_type="page",
                 intent_types=["list_pages"], traits=["read", "page"],
                 argument_builder=lambda ctx, data: ((account(ctx, data),), {
+                    "limit": data.get("limit", 25),
+                }),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api",
+                name="meta_search_targeting_options",
+                description=(
+                    "查询 Meta Targeting Search 选项（兴趣、地理、语言、职位等）；"
+                    "只读，返回的 ID 可用于后续 Ad Set 定向选择。"
+                ),
+                method_name="search_targeting", result_key="targeting_options",
+                properties=meta_targeting_search_schema()["properties"],
+                required=meta_targeting_search_schema()["required"],
+                provider_required=meta_targeting_search_schema()["provider_required"],
+                action="search", resource_type="targeting_option",
+                intent_types=["search_targeting_options", "lookup_targeting_options"],
+                traits=["read", "targeting", "lookup"],
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["query"],
+                ), {
+                    "search_type": data.get("type", "adinterest"),
                     "limit": data.get("limit", 25),
                 }),
             ),

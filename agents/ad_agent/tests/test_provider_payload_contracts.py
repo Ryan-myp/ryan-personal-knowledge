@@ -2186,6 +2186,51 @@ def test_meta_catalog_tools_require_scope_and_keep_writes_dry_run():
     )
 
 
+def test_meta_targeting_search_is_scoped_read_only_and_published():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+    client._list_graph_pages = lambda account_id, endpoint, params, **kwargs: (
+        calls.append((account_id, endpoint, params, kwargs))
+        or [{"id": "interest-1", "name": "Marketing"}]
+    )
+
+    assert client.search_targeting(
+        "act_123", "marketing", search_type="adinterest", limit=10,
+    ) == [{"id": "interest-1", "name": "Marketing"}]
+    assert calls == [(
+        "123", "/act_123/targetingsearch",
+        {"q": "marketing", "type": "adinterest", "limit": 10}, {},
+    )]
+    with pytest.raises(ValueError, match="non-empty"):
+        client.search_targeting("123", "")
+    with pytest.raises(ValueError, match="between 1 and 100"):
+        client.search_targeting("123", "marketing", limit=101)
+
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_meta_capability().register_tools()
+    }
+    targeting = definitions["meta_search_targeting_options"]
+    assert targeting.is_write_tool is False
+    assert targeting.input_schema.required == ["account_id", "query"]
+    assert "adinterest" in targeting.input_schema.properties["type"]["enum"]
+
+
+def test_meta_campaign_special_categories_are_validated_before_graph_request():
+    client = MetaAPIClient({"access_token": "test"})
+    client.request = lambda *args, **kwargs: {"id": "campaign-1"}
+    with pytest.raises(ValueError, match="cannot be combined"):
+        client.create_campaign("123", {
+            "name": "Restricted", "objective": "OUTCOME_SALES",
+            "special_ad_categories": ["NONE", "HOUSING"],
+        })
+    with pytest.raises(ValueError, match="Unsupported Meta"):
+        client.create_campaign("123", {
+            "name": "Invalid", "objective": "OUTCOME_SALES",
+            "special_ad_categories": ["UNKNOWN"],
+        })
+
+
 def test_google_creation_options_are_mapped_to_rest_resources():
     client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "g1"})
     operations = []
