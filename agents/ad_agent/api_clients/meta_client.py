@@ -7,6 +7,8 @@ api_clients/meta_client.py - Meta Marketing API 生产级客户端
 - 统一错误分类
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import re

@@ -642,6 +642,46 @@ def test_meta_capi_tool_exposes_pixel_lookup_and_is_dry_run_only():
     assert tool.live_support is False
 
 
+def test_meta_test_capi_tool_requires_test_code_and_uses_test_endpoint_contract():
+    calls = []
+
+    class Client:
+        def send_conversion_events(self, account_id, pixel_id, events, test_event_code=None):
+            calls.append((account_id, pixel_id, events, test_event_code))
+            return {"events_received": 1}
+
+    definitions = {
+        definition.name: (definition, handler)
+        for definition, handler in create_meta_capability(Client()).register_tools()
+    }
+    tool, handler = definitions["meta_test_conversion_events"]
+    event = {
+        "event_name": "Purchase",
+        "event_time": 1720000000,
+        "action_source": "website",
+        "user_data": {"em": ["a" * 64]},
+    }
+
+    assert tool.action == "test"
+    assert tool.resource_type == "pixel_event"
+    assert tool.live_support is False
+    assert "test_event_code" in tool.input_schema.required
+    assert validate_tool_input(
+        tool.input_schema,
+        {"account_id": "act_1", "pixel_id": "px_1", "events": [event]},
+    )
+    result = handler.execute(
+        ToolContext(session_id="s1", user_id="u1", account_id="act_1"),
+        {
+            "account_id": "act_1", "pixel_id": "px_1", "events": [event],
+            "test_event_code": "TEST123",
+        },
+    )
+
+    assert result.success is True
+    assert calls == [("act_1", "px_1", [event], "TEST123")]
+
+
 def test_meta_resource_ownership_accepts_graph_ids_and_ad_set_alias():
     client = MetaAPIClient({"access_token": "test"})
     client.list_pixels = lambda account_id, limit=25: [{"id": "px-1"}]

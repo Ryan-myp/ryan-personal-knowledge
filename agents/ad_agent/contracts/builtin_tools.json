@@ -1,5 +1,5 @@
 {
-  "digest": "ff532f436952ce705d85e49ff2f1d3c0669adaaf72cede97330737d8f681b585",
+  "digest": "d6ee7b3efb73c5cf437a07e23501a1817990ca4fb128f120f8b610347a1c5a05",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -7011,8 +7011,8 @@
       ]
     },
     "meta": {
-      "digest": "d54879b5fd86af8375f5958b63da2b71811ac18a2d445ea95a850de208165b1d",
-      "tool_count": 53,
+      "digest": "2aff7281a36fc8fb90f1e83754e8b24d006aed3c14263a726866c4282ee7fa36",
+      "tool_count": 54,
       "tools": [
         {
           "action": "boost",
@@ -10522,6 +10522,191 @@
             "conversion",
             "pixel",
             "capi"
+          ]
+        },
+        {
+          "action": "test",
+          "contract_version": "1.2.0",
+          "description": "向 Meta Test Events 发送一批 Conversions API 测试事件；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "events": {
+                "description": "One or more CAPI events",
+                "items": {
+                  "additionalProperties": false,
+                  "description": "Meta Conversions API event",
+                  "properties": {
+                    "action_source": {
+                      "description": "Origin of the conversion event",
+                      "enum": [
+                        "website",
+                        "app",
+                        "physical_store",
+                        "phone_call",
+                        "chat",
+                        "email",
+                        "other"
+                      ],
+                      "type": "string"
+                    },
+                    "app_data": {
+                      "additionalProperties": true,
+                      "description": "Mobile app event metadata",
+                      "properties": {},
+                      "type": "object"
+                    },
+                    "custom_data": {
+                      "additionalProperties": true,
+                      "description": "Purchase, content and order metadata",
+                      "properties": {},
+                      "type": "object"
+                    },
+                    "data_processing_options": {
+                      "description": "Limited data use options",
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "data_processing_options_country": {
+                      "description": "Data processing country code",
+                      "type": "integer"
+                    },
+                    "data_processing_options_state": {
+                      "description": "Data processing state code",
+                      "type": "integer"
+                    },
+                    "event_id": {
+                      "description": "Stable deduplication ID",
+                      "type": "string"
+                    },
+                    "event_name": {
+                      "allow_custom": true,
+                      "description": "Meta standard or custom event name",
+                      "known_values": [
+                        "AddPaymentInfo",
+                        "AddToCart",
+                        "AddToWishlist",
+                        "CompleteRegistration",
+                        "Contact",
+                        "CustomizeProduct",
+                        "Donate",
+                        "FindLocation",
+                        "InitiateCheckout",
+                        "Lead",
+                        "Purchase",
+                        "Schedule",
+                        "Search",
+                        "StartTrial",
+                        "SubmitApplication",
+                        "Subscribe",
+                        "ViewContent"
+                      ],
+                      "maxLength": 100,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "event_source_url": {
+                      "description": "URL where the event occurred",
+                      "type": "string"
+                    },
+                    "event_time": {
+                      "description": "Unix event timestamp in seconds",
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "opt_out": {
+                      "description": "Whether the user opted out of processing",
+                      "type": "boolean"
+                    },
+                    "user_data": {
+                      "additionalProperties": true,
+                      "description": "Normalized/hashed user matching data",
+                      "properties": {},
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "event_name",
+                    "event_time",
+                    "action_source",
+                    "user_data"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 1000,
+                "minItems": 1,
+                "type": "array"
+              },
+              "pixel_id": {
+                "description": "Meta Pixel ID",
+                "lookup_result_key": "pixels",
+                "lookup_tool": "meta_list_pixels",
+                "selection_label_fields": [
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "pixel_id"
+                ],
+                "type": "string"
+              },
+              "test_event_code": {
+                "description": "Meta Test Events code; required for test delivery",
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "pixel_id",
+              "events",
+              "test_event_code"
+            ],
+            "required": [
+              "account_id",
+              "pixel_id",
+              "events",
+              "test_event_code"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "test_conversion_events",
+            "test_capi_events"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_test_conversion_events",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "pixel_id",
+          "resource_type": "pixel_event",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "conversion",
+            "pixel",
+            "capi",
+            "test"
           ]
         },
         {
@@ -15511,5 +15696,5 @@
       ]
     }
   },
-  "tool_count": 192
+  "tool_count": 193
 }

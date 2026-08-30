@@ -72,7 +72,9 @@ class MetaCapability(BaseCapability):
         "list_campaigns": ["meta_list_campaigns"],
         "list_pages": ["meta_list_pages"], "list_pixels": ["meta_list_pixels"],
         "get_pixel": ["meta_get_pixel"],
-        "send_conversion_events": ["meta_send_conversion_events"],
+        "send_conversion_events": [
+            "meta_send_conversion_events", "meta_test_conversion_events"
+        ],
         "list_lead_forms": ["meta_list_lead_forms"], "get_lead_form": ["meta_get_lead_form"],
         "create_lead_form": ["meta_create_lead_form"], "update_lead_form": ["meta_update_lead_form"],
         "get_campaign": ["meta_get_campaign"], "create_campaign": ["meta_create_campaign"],
@@ -101,6 +103,22 @@ class MetaCapability(BaseCapability):
         audience_schema = meta_audience_schema()
         audience_properties = audience_schema["properties"]
         conversion_schema = meta_conversion_event_schema()
+        test_conversion_schema = {
+            **conversion_schema,
+            "required": [*conversion_schema["required"], "test_event_code"],
+            "provider_required": [
+                *conversion_schema["provider_required"], "test_event_code"
+            ],
+            "properties": {
+                **conversion_schema["properties"],
+                "test_event_code": {
+                    "type": "string",
+                    "description": "Meta Test Events code; required for test delivery",
+                    "minLength": 1,
+                    "maxLength": 100,
+                },
+            },
+        }
         creative_schema = meta_creative_schema()
         creative_properties = creative_schema["properties"]
         catalog_schema = meta_catalog_schema()
@@ -171,6 +189,24 @@ class MetaCapability(BaseCapability):
                 argument_builder=lambda ctx, data: ((
                     account(ctx, data), data["pixel_id"], data["events"],
                 ), {"test_event_code": data.get("test_event_code")}),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_test_conversion_events",
+                description=(
+                    "向 Meta Test Events 发送一批 Conversions API 测试事件；"
+                    "默认仅生成 dry-run 计划。"
+                ),
+                method_name="send_conversion_events", result_key="conversion_test_result",
+                properties=test_conversion_schema["properties"],
+                required=test_conversion_schema["required"],
+                provider_required=test_conversion_schema["provider_required"],
+                action="test", resource_type="pixel_event", resource_id_field="pixel_id",
+                intent_types=["test_conversion_events", "test_capi_events"],
+                traits=["write", "conversion", "pixel", "capi", "test"],
+                write=True, live_support=False,
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["pixel_id"], data["events"],
+                ), {"test_event_code": data["test_event_code"]}),
             ),
             method_tool(
                 platform="meta", skill="meta-marketing-api", name="meta_list_lead_forms",
