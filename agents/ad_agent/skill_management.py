@@ -47,6 +47,7 @@ _MANAGED_EVAL_ENGINES = {"claude_sdk", "ad-agent-runtime"}
 _CREDENTIAL_ASSIGNMENT_RE = re.compile(
     r"(?im)(?P<field>access[_-]?token|refresh[_-]?token|developer[_-]?token|"
     r"client[_-]?secret|private[_-]?key|app[_-]?secret|api[_-]?key|"
+    r"service[_-]?account(?:[_-]?file)?|credential(?:s)?[_-]?file|"
     r"bc[_-]?id|partner[_-]?id|perter[_-]?id|mcc|login[_-]?customer[_-]?id|"
     r"manager[_-]?customer[_-]?id)\s*[:=]"
 )

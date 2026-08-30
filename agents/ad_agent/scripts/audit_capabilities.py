@@ -27,6 +27,10 @@ from agents.ad_agent.capabilities.factory import discover_capability_factory  # 
 from agents.ad_agent.capabilities.api_surface import IMPLEMENTED, validate_surface  # noqa: E402
 from agents.ad_agent.core.interfaces import AdFormatCoverage, ReplayPolicy, ToolEffect  # noqa: E402
 from agents.ad_agent.runtime.runtime import AgentRuntime  # noqa: E402
+from agents.ad_agent.skill_management import (  # noqa: E402
+    SkillPackageError,
+    _validate_no_credential_assignments,
+)
 
 
 def discover_platform_slugs() -> list[str]:
@@ -46,9 +50,35 @@ def _schema_properties(definition: Any) -> dict[str, Any]:
     return getattr(schema, "properties", {}) or {}
 
 
+def _audit_skill_context(report: dict[str, Any]) -> None:
+    """Reject credential-shaped assignments in built-in Skill context.
+
+    Skills are supplied to the LLM as context.  This check keeps the same
+    assignment-level redline used for managed Skill uploads applied to the
+    repository-owned packages as well; prose may explain that Runtime owns
+    credentials, but a Skill must not contain a config snippet for them.
+    """
+    skills_root = Path(__file__).resolve().parents[1] / "skills"
+    skill_issues: list[str] = []
+    for skill_file in sorted(skills_root.rglob("SKILL.md")):
+        try:
+            skill_dir = skill_file.parent
+            files = {
+                path.relative_to(skill_dir).as_posix(): path.read_bytes()
+                for path in sorted(skill_dir.rglob("*"))
+                if path.is_file() and not path.is_symlink()
+            }
+            _validate_no_credential_assignments(files)
+        except (OSError, SkillPackageError) as exc:
+            skill_issues.append(f"{skill_file.relative_to(skills_root)}: {exc}")
+    report["skill_context_issues"] = skill_issues
+    report["issues"].extend(f"skill context: {issue}" for issue in skill_issues)
+
+
 def audit_capabilities() -> dict[str, Any]:
     """Build a JSON-safe capability report without constructing API clients."""
     report: dict[str, Any] = {"platforms": {}, "issues": []}
+    _audit_skill_context(report)
     runtime = AgentRuntime(offline_mode=True, enforce_account_scope=False)
 
     for slug in discover_platform_slugs():

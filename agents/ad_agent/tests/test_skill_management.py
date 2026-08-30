@@ -300,6 +300,16 @@ def test_skill_package_rejects_credential_assignments_in_context_files():
         manager.create_version("tenant-a", "credential-skill", "1.0.0", files, "u1")
 
 
+def test_skill_package_rejects_service_account_file_assignments():
+    manager = ManagedSkillManager(AdAgentStore(":memory:"))
+    files = {
+        **_files("service-account-skill"),
+        "references/auth.md": "service_account_file: /tmp/provider.json\n",
+    }
+    with pytest.raises(SkillPackageError, match="forbidden credential field assignment"):
+        manager.create_version("tenant-a", "service-account-skill", "1.0.0", files, "u1")
+
+
 def test_skill_up_config_allows_platform_managed_claude_sdk_with_safe_kwargs():
     store = AdAgentStore(":memory:")
     manager = ManagedSkillManager(store)

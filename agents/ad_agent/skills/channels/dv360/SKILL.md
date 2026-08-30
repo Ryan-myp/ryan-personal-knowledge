@@ -100,14 +100,8 @@ A:
 
 ### 前置要求
 
-1. 在 Google Cloud Console 创建服务账号
-2. 下载 JSON 密钥文件
-3. 在 `config/ad_platform_credentials.json` 配置:
-```json
-{
-  "dv360": {
-    "service_account_file": "/path/to/service-account.json",
-    "customer_id": "YOUR_CUSTOMER_ID"
-  }
-}
-```
+1. 在受信任的部署/授权系统中配置 DV360 Client 所需的认证材料和测试账户。
+2. 由 Runtime 注入已授权的 advertiser scope；Skill、Tool 输入和模型上下文不承载
+   service-account 文件、私钥、Token 或 advertiser/customer 身份配置。
+3. 创建和更新仍先生成 dry-run 计划；只有后续指定测试账户、完成人工验证并加入
+   live 白名单后，才允许单独开放对应 Tool。
