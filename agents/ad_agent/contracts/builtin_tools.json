@@ -1,9 +1,9 @@
 {
-  "digest": "c264e987d89ef6d613458684f41c2977577a6b22ee83b760b97085ad8c2c33f6",
+  "digest": "23b2d69db0b5f69b797f28d96e2cbd66ef2116293f3159149a85f7e13570c008",
   "format_version": 1,
   "platforms": {
     "dv360": {
-      "digest": "a55a81bef316fde6c397faed5d7a61fa8a9762153332b3d4ebbd79179b8193c1",
+      "digest": "59a2eb706d05041f0a43ea55ea0ea93dd32280031a7ef6ebe119a45839b041d9",
       "tool_count": 32,
       "tools": [
         {
@@ -682,7 +682,8 @@
             "type": "object"
           },
           "intent_types": [
-            "delete_campaign"
+            "delete_campaign",
+            "cross_channel_batch_delete"
           ],
           "live_support": false,
           "max_output_bytes": 1000000,
@@ -1990,7 +1991,7 @@
       ]
     },
     "google-ads": {
-      "digest": "1e107582a42e1bd2896a9302c0dc20eb20623c19990560c4cdd60a74c35009a1",
+      "digest": "d38cc358a4c04f97eeecc7594d18860496b5deabdccecee6dbf95043ad90027f",
       "tool_count": 61,
       "tools": [
         {
@@ -4983,7 +4984,8 @@
             "type": "object"
           },
           "intent_types": [
-            "delete_campaign"
+            "delete_campaign",
+            "cross_channel_batch_delete"
           ],
           "live_support": false,
           "max_output_bytes": 1000000,
@@ -7574,7 +7576,7 @@
       ]
     },
     "meta": {
-      "digest": "29b2531a7fb8d7c783e6441f4d747e43f0855ca055dc8dfadf0345776dff3594",
+      "digest": "89e800ccbce1bd5c7212d03c7d8af690c9c70947b18e967c1bc23ed887aca4bf",
       "tool_count": 59,
       "tools": [
         {
@@ -9705,7 +9707,8 @@
             "type": "object"
           },
           "intent_types": [
-            "delete_campaign"
+            "delete_campaign",
+            "cross_channel_batch_delete"
           ],
           "live_support": false,
           "max_output_bytes": 1000000,
@@ -12786,7 +12789,7 @@
       ]
     },
     "tiktok": {
-      "digest": "28c549d33b2b4e968addbe216da78919ac508e6f1b829fe4641900d61046e131",
+      "digest": "81de258c6fe6fc03b5ff7a4021e5c3c2f9259a3e66ea162d5c5aee746f615064",
       "tool_count": 69,
       "tools": [
         {
@@ -15691,7 +15694,8 @@
             "type": "object"
           },
           "intent_types": [
-            "provider_delete_campaign"
+            "provider_delete_campaign",
+            "cross_channel_batch_delete"
           ],
           "live_support": false,
           "max_output_bytes": 1000000,

@@ -151,7 +151,7 @@ class BatchOperation:
         action = str(self.action or "").strip().lower()
         if not action:
             raise ValueError("BatchOperation requires action")
-        if action not in {"pause", "resume", "update_budget"}:
+        if action not in {"pause", "resume", "update_budget", "delete"}:
             raise ValueError(f"Unsupported BatchOperation action: {action}")
         object.__setattr__(self, "action", action)
 
@@ -187,6 +187,7 @@ def build_batch_operations(
         "cross_channel_batch_pause": "pause",
         "cross_channel_batch_resume": "resume",
         "cross_channel_batch_update_budget": "update_budget",
+        "cross_channel_batch_delete": "delete",
     }
     action = action_map.get(getattr(intent, "intent_type", ""))
     if not action:
@@ -254,6 +255,12 @@ def build_batch_operations(
             updates = {"status": "PAUSED"}
         elif action == "resume":
             updates = {"status": "ACTIVE"}
+        elif action == "delete":
+            # Deletion has no provider-neutral update payload.  The selected
+            # Capability's delete Tool owns the actual provider operation;
+            # this layer only carries the scoped identity into the dry-run
+            # plan.
+            updates = {}
         else:
             supplied = next(
                 (

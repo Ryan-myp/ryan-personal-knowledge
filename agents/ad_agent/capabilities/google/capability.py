@@ -172,7 +172,8 @@ class GoogleCapability(BaseCapability):
                 properties={"campaign_id": {"type": "string"}},
                 required=["campaign_id"], provider_required=["campaign_id"],
                 action="delete", resource_type="campaign", resource_id_field="campaign_id",
-                intent_types=["delete_campaign"], traits=["write", "campaign"], write=True,
+                intent_types=["delete_campaign", "cross_channel_batch_delete"],
+                traits=["write", "campaign"], write=True,
                 argument_builder=lambda _ctx, data: ((data["campaign_id"],), {}),
             ),
             method_tool(

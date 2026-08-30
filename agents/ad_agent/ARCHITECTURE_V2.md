@@ -71,7 +71,7 @@ class LLMIntentParser:
     """LLM 解析；生产 Runtime 不降级为规则解析。"""
     PARSE_PROMPT_TEMPLATE = """
     你是广告投放专家助手。请分析用户的投放需求：
-    - intent_type: create/update/pause/resume/cross-channel | boost_post | download_report
+    - intent_type: create/update/pause/resume/delete/cross-channel | boost_post | download_report
     - platforms: 当前 Runtime 已注册的平台标识列表
     - objective: sales | leads | traffic | brand
     - platform_params: 各平台具体参数

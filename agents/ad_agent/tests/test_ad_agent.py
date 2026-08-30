@@ -278,6 +278,15 @@ class TestIntentParser:
         assert intent.intent_type == "update_campaign"
         assert intent.platforms == ["dv360", "google", "meta", "tiktok"]
 
+    def test_cross_channel_delete_selects_batch_management_intent(self):
+        parser = LLMIntentParser()
+        intent = parser.parse(
+            "跨渠道删除 Meta campaign_id=111 和 Google campaign_id=222", None
+        )
+
+        assert intent.intent_type == "cross_channel_batch_delete"
+        assert intent.platforms == ["meta", "google"]
+
     def test_single_channel_create_does_not_expand_to_all_platforms(self):
         parser = LLMIntentParser()
         intent = parser.parse("创建 campaign", None)
@@ -896,6 +905,51 @@ class TestSafeWriteExecution:
         assert result["intent"]["intent_type"] == "cross_channel_batch_update_budget"
         assert all(not item["success"] for item in result["results"])
         assert "大于 0" in result["results"][0]["error"]
+
+    def test_cross_channel_delete_is_scoped_dry_run_and_never_calls_clients(self):
+        from agents.ad_agent.capabilities.meta import create_meta_capability
+        from agents.ad_agent.capabilities.google import create_google_capability
+        from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
+        from agents.ad_agent.capabilities.dv360 import create_dv360_capability
+
+        validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+        validator.allowed_accounts = {
+            "meta": ["m1"], "google-ads": ["g1"],
+            "tiktok": ["t1"], "dv360": ["d1"],
+        }
+        clients = [self.FakeClient(platform) for platform in ("meta", "google", "tiktok")]
+        rt = AgentRuntime(
+            require_llm=False,
+            persistence_store=AdAgentStore(":memory:"),
+            whitelist_validator=validator,
+        )
+        rt.register_capability(create_meta_capability(clients[0]))
+        rt.register_capability(create_google_capability(clients[1]))
+        rt.register_capability(create_tiktok_capability(clients[2]))
+        rt.register_capability(create_dv360_capability())
+
+        result = rt.run(
+            "跨渠道删除 Meta campaign_id=111、Google campaign_id=222、"
+            "TikTok campaign_id=333、DV360 campaign_id=444",
+            user_id="delete-user",
+            platform_params={
+                "meta": {"account_id": "m1"},
+                "google": {"customer_id": "g1"},
+                "tiktok": {"account_id": "t1"},
+                "dv360": {"advertiser_id": "d1"},
+            },
+        )
+
+        assert result["intent"]["intent_type"] == "cross_channel_batch_delete"
+        assert {item["tool"] for item in result["results"]} == {
+            "meta_delete_campaign", "google_delete_campaign",
+            "tiktok_delete_campaign", "dv360_delete_campaign",
+        }
+        assert all(item["success"] for item in result["results"])
+        assert all(item["data"]["operation"] == "delete" for item in result["results"])
+        assert all(item["data"]["simulated"] for item in result["results"])
+        assert all("updates" not in item["data"]["input"] for item in result["results"])
+        assert all(client.calls == [] for client in clients)
 
 
 # ─── Mock Handler 测试 ─────────────────────────────────────────

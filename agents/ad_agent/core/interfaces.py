@@ -289,6 +289,8 @@ class ToolDefinition:
             return ["pause_campaign", "cross_channel_batch_pause"]
         if action in {"resume", "enable"} and resource == "campaign":
             return ["resume_campaign", "cross_channel_batch_resume"]
+        if action == "delete" and resource == "campaign":
+            return ["delete_campaign", "cross_channel_batch_delete"]
         if action == "update":
             return {
                 "campaign": ["update_campaign", "pause_campaign", "resume_campaign", "cross_channel_batch_pause", "cross_channel_batch_resume", "cross_channel_batch_update_budget"],

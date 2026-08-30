@@ -2403,12 +2403,14 @@ class AgentRuntime:
 
         action = str(getattr(tool_def, "action", "") or "").lower()
         is_update = action in {"update", "pause", "resume", "enable", "disable"}
+        is_delete = action == "delete"
         resource_id = input_data.get(resource_key) or f"dry_{platform}_{key}"
+        operation = "delete" if is_delete else ("update" if is_update else "create")
         data = {
             "mode": ExecutionMode.DRY_RUN.value,
             "simulated": True,
             "live_support": bool(getattr(tool_def, "live_support", False)),
-            "operation": "update" if is_update else "create",
+            "operation": operation,
             resource_key: resource_id,
             "resource_id_field": resource_key,
             "parent_resource_type": parent_type,
@@ -2417,7 +2419,10 @@ class AgentRuntime:
                 str(parent_id) if parent_id not in (None, "") else None
             ),
             "name": name,
-            "status": "SIMULATED_UPDATED" if is_update else "SIMULATED_DRAFT",
+            "status": (
+                "SIMULATED_DELETED" if is_delete
+                else ("SIMULATED_UPDATED" if is_update else "SIMULATED_DRAFT")
+            ),
             "input": {k: v for k, v in input_data.items() if k != "credentials"},
         }
         provider_errors = validate_tool_input(
@@ -3031,7 +3036,7 @@ class AgentRuntime:
     def _select_batch_campaign_tool(
         tools: Iterable[Any], intent_type: str,
     ) -> Optional[Any]:
-        """Select the one provider Tool that can update a Campaign.
+        """Select the one provider Tool for a cross-channel Campaign action.
 
         Cross-channel batch planning is intentionally provider-neutral.  The
         route can contain lookup or specialized Tools as well as the updater,
@@ -3040,9 +3045,12 @@ class AgentRuntime:
         more than one candidate remains, fail closed instead of guessing
         which provider operation should receive the update.
         """
+        batch_action = (
+            "delete" if intent_type == "cross_channel_batch_delete" else "update"
+        )
         candidates = [
             tool for tool in (tools or [])
-            if str(getattr(tool, "action", "") or "").lower() == "update"
+            if str(getattr(tool, "action", "") or "").lower() == batch_action
             and str(getattr(tool, "resource_type", "") or "").lower()
             in {"campaign", "campaigns"}
         ]
@@ -3128,10 +3136,10 @@ class AgentRuntime:
         for requested_platform in intent.platforms:
             actual_platform = self._canonical_platform(requested_platform)
             if actual_platform not in tools_by_platform:
-                errors.append(f"{actual_platform}: 没有已注册的 Campaign 批量更新工具")
+                errors.append(f"{actual_platform}: 没有已注册的 Campaign 批量管理工具")
                 blocked_platforms.add(actual_platform)
             elif tool_by_platform.get(actual_platform) is None:
-                errors.append(f"{actual_platform}: 没有唯一兼容的 Campaign 批量更新工具")
+                errors.append(f"{actual_platform}: 没有唯一兼容的 Campaign 批量管理工具")
                 blocked_platforms.add(actual_platform)
 
         for actual_platform, tool_def in tool_by_platform.items():
@@ -3215,9 +3223,9 @@ class AgentRuntime:
                     "success": False,
                     "data": {"batch": True, "planned": False},
                     "error": (
-                        "该平台没有唯一兼容的 Campaign 更新工具"
+                        "该平台没有唯一兼容的 Campaign 批量管理工具"
                         if tools_by_platform.get(operation.platform)
-                        else "该平台没有已注册的 Campaign 更新工具"
+                        else "该平台没有已注册的 Campaign 批量管理工具"
                     ),
                     "batch_planning_error": True,
                 })
@@ -3225,12 +3233,11 @@ class AgentRuntime:
             tool_def = tool_by_platform.get(operation.platform)
             operation_sequence += 1
             resource_id_field = self._resource_id_field_for_tool(tool_def)
-            tool_input = {
-                resource_id_field: operation.campaign_id,
-                "updates": self._normalize_provider_updates(
+            tool_input = {resource_id_field: operation.campaign_id}
+            if operation.action != "delete":
+                tool_input["updates"] = self._normalize_provider_updates(
                     tool_def, operation.updates
-                ),
-            }
+                )
             properties = getattr(tool_def.input_schema, "properties", {}) or {}
             for account_field in ("account_id", "advertiser_id", "customer_id"):
                 if account_field in properties:
@@ -3806,6 +3813,7 @@ class AgentRuntime:
             "cross_channel_batch_pause",
             "cross_channel_batch_resume",
             "cross_channel_batch_update_budget",
+            "cross_channel_batch_delete",
         }:
             workflow_id = self._start_workflow(session, intent, tool_plan)
             return self._run_batch_plan(
@@ -5168,23 +5176,31 @@ class AgentRuntime:
         else:
             # Read-only offline adapters may also annotate their fixture data
             # with ``simulated``.  Only Runtime-generated write plans carry a
-            # create/update operation, so do not describe a list/report as a
-            # simulated write.
+            # create/update/delete operation, so do not describe a list/report
+            # as a simulated write.
             simulated_results = [
                 r for r in results
                 if isinstance(r.get("data"), dict)
                 and r["data"].get("simulated")
-                and r["data"].get("operation") in ("create", "update")
+                and r["data"].get("operation") in ("create", "update", "delete")
             ]
             if simulated_results and len(simulated_results) == len(results):
-                operation = "更新" if (
+                if any(
+                    item.get("data", {}).get("operation") == "delete"
+                    for item in simulated_results
+                ):
+                    operation = "删除"
+                elif (
                     intent.intent_type.startswith("update")
                     or intent.intent_type in (
                         "pause_campaign", "resume_campaign",
                         "cross_channel_batch_pause", "cross_channel_batch_resume",
                         "cross_channel_batch_update_budget",
                     )
-                ) else "创建"
+                ):
+                    operation = "更新"
+                else:
+                    operation = "创建"
                 return (
                     f"🧪 dry-run：已模拟{operation} {len(simulated_results)} 个广告资源，"
                     "未调用任何线上写 API。\n"

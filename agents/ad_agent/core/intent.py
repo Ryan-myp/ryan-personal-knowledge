@@ -395,6 +395,10 @@ class LLMIntentParser(IntentParser):
         ]):
             return "create_campaign"
         if is_cross_request and any(kw in text for kw in [
+            "删除", "移除", "delete", "remove",
+        ]):
+            return "cross_channel_batch_delete"
+        if is_cross_request and any(kw in text for kw in [
             "预算优化", "优化预算", "预算分配", "分配预算", "allocate budget", "budget optimization",
         ]):
             return "cross_channel_optimize_budget"
@@ -429,6 +433,8 @@ class LLMIntentParser(IntentParser):
         ):
             return "cross_channel_compare"
         if any(marker in text for marker in batch_markers):
+            if any(kw in text for kw in ["删除", "移除", "delete", "remove"]):
+                return "cross_channel_batch_delete"
             if any(kw in text for kw in ["暂停", "停用", "pause", "disable"]):
                 return "cross_channel_batch_pause"
             if any(kw in text for kw in ["恢复", "启用", "resume", "enable"]):
@@ -475,6 +481,9 @@ class LLMIntentParser(IntentParser):
                 return "update_ad"
             if any(kw in text for kw in ["广告系列", "campaign"]):
                 return "update_campaign"
+        if any(kw in text for kw in ["删除", "移除", "delete", "remove"]):
+            if any(kw in text for kw in ["campaign", "广告系列"]):
+                return "delete_campaign"
         if any(kw in text for kw in ["暂停", "停用", "pause", "disable"]):
             return "pause_campaign"
         if any(kw in text for kw in ["恢复", "启用", "resume", "enable"]):
@@ -910,10 +919,12 @@ class LLMIntentParser(IntentParser):
         valid_intents = {
             "create_campaign", "create_asset_group", "update_campaign", "update_adset",
             "update_adgroup", "update_ad", "pause_campaign", "resume_campaign",
+            "delete_campaign", "delete_adset", "delete_ad", "delete_ad_group",
             "cross_channel_overview", "cross_channel_compare",
             "cross_channel_performance_insights", "cross_channel_optimize_budget",
             "cross_channel_export_report", "cross_channel_batch_pause", "cross_channel_batch_resume",
-            "cross_channel_batch_update_budget", "boost_post", "run_remarketing",
+            "cross_channel_batch_update_budget", "cross_channel_batch_delete",
+            "boost_post", "run_remarketing",
             "download_report", "list_campaigns", "get_campaign", "list_adgroups",
             "list_adsets", "list_ads", "list_audiences", "list_ios", "get_io",
             "list_line_items", "get_line_item", "chat",

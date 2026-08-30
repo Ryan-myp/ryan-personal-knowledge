@@ -609,7 +609,9 @@ class MetaCapability(BaseCapability):
                 required=["account_id", resource_id],
                 provider_required=["account_id", resource_id],
                 action="delete", resource_type=resource_type,
-                resource_id_field=resource_id, intent_types=[intent],
+                resource_id_field=resource_id, intent_types=[intent] if intent != "delete_campaign" else [
+                    "delete_campaign", "cross_channel_batch_delete"
+                ],
                 traits=["write", resource_type], write=True,
                 argument_builder=lambda ctx, data, field=resource_id: (
                     (account(ctx, data), data[field]), {}

@@ -690,7 +690,11 @@ class TikTokCapability(BaseCapability):
                 action=method_name.split("_", 1)[0], resource_type=resource_type,
                 resource_id_field=resource_id, parent_resource_type="campaign" if method_name == "pause_adgroup" else None,
                 parent_resource_id_field="campaign_id" if method_name == "pause_adgroup" else None,
-                intent_types=[f"provider_{intent}"], traits=["write", resource_type], write=True,
+                intent_types=(
+                    ["provider_delete_campaign", "cross_channel_batch_delete"]
+                    if intent == "delete_campaign" else [f"provider_{intent}"]
+                ),
+                traits=["write", resource_type], write=True,
                 argument_builder=(
                     (lambda ctx, data, field=resource_id: ((account(ctx, data), data["campaign_id"], data[field]), {}))
                     if method_name == "pause_adgroup" else
