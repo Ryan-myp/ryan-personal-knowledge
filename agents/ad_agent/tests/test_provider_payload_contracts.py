@@ -1652,6 +1652,58 @@ def test_meta_audience_crud_builds_custom_and_lookalike_payloads():
     assert calls[-1][:2] == ("DELETE", "/aud-1")
 
 
+def test_meta_lookalike_tool_exposes_source_lookup_and_fixed_subtype():
+    calls = []
+
+    class Client:
+        def create_audience(self, account_id, audience):
+            calls.append((account_id, audience))
+            return "lal-1"
+
+    definitions = {
+        definition.name: (definition, handler)
+        for definition, handler in create_meta_capability(Client()).register_tools()
+    }
+    tool, handler = definitions["meta_create_lookalike_audience"]
+
+    assert tool.resource_type == "lookalike_audience"
+    assert tool.input_schema.required == [
+        "account_id", "name", "origin_audience_id", "country"
+    ]
+    source = tool.input_schema.properties["origin_audience_id"]
+    assert source["lookup_tool"] == "meta_list_audiences"
+    assert source["lookup_result_key"] == "audiences"
+    assert validate_tool_input(
+        tool.input_schema,
+        {
+            "account_id": "act_1",
+            "name": "US Purchasers",
+            "origin_audience_id": "aud-1",
+            "country": "US",
+        },
+    ) == []
+
+    result = handler.execute(
+        ToolContext(session_id="s1", user_id="u1", account_id="act_1"),
+        {
+            "account_id": "act_1",
+            "name": "US Purchasers",
+            "origin_audience_id": "aud-1",
+            "country": "US",
+            "ratio": 0.05,
+        },
+    )
+
+    assert result.success is True
+    assert calls == [("act_1", {
+        "name": "US Purchasers",
+        "subtype": "LOOKALIKE",
+        "origin_audience_id": "aud-1",
+        "country": "US",
+        "ratio": 0.05,
+    })]
+
+
 def test_meta_audience_source_upload_accepts_only_sha256_rows():
     client = MetaAPIClient({"access_token": "test"})
     calls = []

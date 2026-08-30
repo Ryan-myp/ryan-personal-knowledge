@@ -197,6 +197,47 @@ def meta_audience_schema() -> dict[str, Any]:
     }
 
 
+def meta_lookalike_audience_schema() -> dict[str, Any]:
+    """Dedicated contract for Meta Lookalike Audience creation.
+
+    Meta exposes Lookalike creation through the Custom Audience edge, but the
+    provider payload has a different required relationship than a generic
+    Custom Audience.  Keep that relationship visible to callers instead of
+    asking an LLM/UI to infer it from a free-form ``subtype`` field.
+    """
+    return {
+        "required": ["account_id", "name", "origin_audience_id", "country"],
+        "provider_required": [
+            "name", "origin_audience_id", "country",
+        ],
+        "properties": {
+            "account_id": _field("string", "Meta ad account ID"),
+            "name": _field("string", "Lookalike Audience name", minLength=1, maxLength=400),
+            "description": _field("string", "Audience description", maxLength=1000),
+            "origin_audience_id": _field(
+                "string", "Source Custom Audience ID for Lookalike",
+                minLength=1,
+                lookup_tool="meta_list_audiences",
+                lookup_result_key="audiences",
+                selection_value_fields=["id", "audience_id"],
+                selection_label_fields=["name", "id"],
+            ),
+            "country": _field(
+                "string", "Two-letter ISO lookalike country code",
+                minLength=2, maxLength=2,
+            ),
+            "ratio": _field(
+                "number", "Lookalike ratio", minimum=0.01, maximum=0.20,
+                default=0.01,
+            ),
+            "lookalike_type": _field(
+                "string", "Lookalike expansion type",
+                enum=META_LOOKALIKE_TYPES, default="similarity",
+            ),
+        },
+    }
+
+
 def meta_catalog_schema() -> dict[str, Any]:
     """Contracts for Meta Catalog and Product Set management."""
     catalog_ref = {

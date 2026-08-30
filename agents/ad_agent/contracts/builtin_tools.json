@@ -1,5 +1,5 @@
 {
-  "digest": "071db994b462501db80aab3bca158fa361ea3c2d70207fd110a34e499679b888",
+  "digest": "7d8fbf57ef561c6ded1f5f19f62e987af0720a83f43d066a312e5cf1efc64680",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -10022,8 +10022,8 @@
       ]
     },
     "meta": {
-      "digest": "24dd7e429a8641ccc8768500ea8771bc2a118a2abc851909ab66f408044da5b2",
-      "tool_count": 67,
+      "digest": "ffb2242311dfb0881f98e0c8046e98f8a726e8f9ce5210b16cf614def3b74880",
+      "tool_count": 68,
       "tools": [
         {
           "action": "boost",
@@ -12340,6 +12340,110 @@
           "traits": [
             "write",
             "lead_form"
+          ]
+        },
+        {
+          "action": "create",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
+          "description": "基于 Meta Custom Audience 创建 Lookalike Audience；源 Audience 必须来自当前广告账户，默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "country": {
+                "description": "Two-letter ISO lookalike country code",
+                "maxLength": 2,
+                "minLength": 2,
+                "type": "string"
+              },
+              "description": {
+                "description": "Audience description",
+                "maxLength": 1000,
+                "type": "string"
+              },
+              "lookalike_type": {
+                "default": "similarity",
+                "description": "Lookalike expansion type",
+                "enum": [
+                  "similarity",
+                  "reach"
+                ],
+                "type": "string"
+              },
+              "name": {
+                "description": "Lookalike Audience name",
+                "maxLength": 400,
+                "minLength": 1,
+                "type": "string"
+              },
+              "origin_audience_id": {
+                "description": "Source Custom Audience ID for Lookalike",
+                "lookup_result_key": "audiences",
+                "lookup_tool": "meta_list_audiences",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "audience_id"
+                ],
+                "type": "string"
+              },
+              "ratio": {
+                "default": 0.01,
+                "description": "Lookalike ratio",
+                "maximum": 0.2,
+                "minimum": 0.01,
+                "type": "number"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "name",
+              "origin_audience_id",
+              "country"
+            ],
+            "required": [
+              "account_id",
+              "name",
+              "origin_audience_id",
+              "country"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_lookalike_audience"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_create_lookalike_audience",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "readback_tool": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "audience_id",
+          "resource_type": "lookalike_audience",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "audience",
+            "lookalike"
           ]
         },
         {
@@ -26752,6 +26856,54 @@
         "status": "implemented"
       },
       {
+        "action": "create",
+        "api_version": "v19.0",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_graph_edges_baseline",
+        "method": "create_audience",
+        "provider": "meta",
+        "resource": "lookalike_audience",
+        "source_url": "https://developers.facebook.com/docs/marketing-api/reference",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "api_version": "v19.0",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_graph_edges_baseline",
+        "method": "get_audience",
+        "provider": "meta",
+        "resource": "lookalike_audience",
+        "source_url": "https://developers.facebook.com/docs/marketing-api/reference",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "api_version": "v19.0",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_graph_edges_baseline",
+        "method": "update_audience",
+        "provider": "meta",
+        "resource": "lookalike_audience",
+        "source_url": "https://developers.facebook.com/docs/marketing-api/reference",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "api_version": "v19.0",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_graph_edges_baseline",
+        "method": "delete_audience",
+        "provider": "meta",
+        "resource": "lookalike_audience",
+        "source_url": "https://developers.facebook.com/docs/marketing-api/reference",
+        "status": "implemented"
+      },
+      {
         "action": "update",
         "api_version": "v19.0",
         "evidence_level": "code_contract",
@@ -27925,5 +28077,5 @@
       ]
     }
   },
-  "tool_count": 250
+  "tool_count": 251
 }

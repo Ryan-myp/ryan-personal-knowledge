@@ -58,6 +58,15 @@ def test_capability_audit_includes_provider_owned_api_surface_and_planned_gaps()
         for entry in google["api_surface_planned"]
     )
     assert meta["api_surface"]["implemented"] > 0
+    assert "meta_create_lookalike_audience" in {
+        tool
+        for method in meta["provider_method_coverage"].values()
+        for tool in method["tools"]
+    }
+    assert not any(
+        entry["resource"] == "lookalike_audience"
+        for entry in meta["official_inventory"]["gaps_entries"]
+    )
     assert any(
         entry["resource"] == "pixel"
         for entry in meta["api_surface_planned"]

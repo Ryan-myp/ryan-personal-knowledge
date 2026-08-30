@@ -23,6 +23,7 @@ from .parameters import (
     meta_custom_conversion_schema,
     meta_custom_conversion_management_schema,
     meta_targeting_search_schema,
+    meta_lookalike_audience_schema,
 )
 from ...api_clients.meta_client import MetaAPIClient
 from ..update_contracts import meta_updates
@@ -63,7 +64,8 @@ class MetaCapability(BaseCapability):
     provider_method_coverage = {
         "list_accounts": ["meta_list_accounts"], "get_account": ["meta_get_account"],
         "list_audiences": ["meta_list_audiences"], "get_audience": ["meta_get_audience"],
-        "create_audience": ["meta_create_audience"], "update_audience": ["meta_update_audience"],
+        "create_audience": ["meta_create_audience", "meta_create_lookalike_audience"],
+        "update_audience": ["meta_update_audience"],
         "delete_audience": ["meta_delete_audience"], "upload_audience_users": ["meta_upload_audience_users"],
         "list_catalogs": ["meta_list_catalogs"],
         "get_catalog": ["meta_get_catalog"], "create_catalog": ["meta_create_catalog"],
@@ -118,6 +120,7 @@ class MetaCapability(BaseCapability):
         account = lambda ctx, data: account_from(ctx, data, "account_id")
         audience_schema = meta_audience_schema()
         audience_properties = audience_schema["properties"]
+        lookalike_schema = meta_lookalike_audience_schema()
         conversion_schema = meta_conversion_event_schema()
         custom_conversion_schema = meta_custom_conversion_schema()
         custom_conversion_management_schema = meta_custom_conversion_management_schema()
@@ -779,6 +782,30 @@ class MetaCapability(BaseCapability):
                 write=True,
                 argument_builder=lambda ctx, data: ((account(ctx, data), {
                     key: value for key, value in data.items() if key != "account_id"
+                    }), {}),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api",
+                name="meta_create_lookalike_audience",
+                description=(
+                    "基于 Meta Custom Audience 创建 Lookalike Audience；"
+                    "源 Audience 必须来自当前广告账户，默认仅生成 dry-run 计划。"
+                ),
+                method_name="create_audience", result_key="audience_id",
+                properties=lookalike_schema["properties"],
+                required=lookalike_schema["required"],
+                provider_required=lookalike_schema["provider_required"],
+                action="create", resource_type="lookalike_audience",
+                resource_id_field="audience_id",
+                intent_types=["create_lookalike_audience"],
+                traits=["write", "audience", "lookalike"], write=True,
+                argument_builder=lambda ctx, data: ((account(ctx, data), {
+                    "name": data["name"],
+                    "subtype": "LOOKALIKE",
+                    **{
+                        key: value for key, value in data.items()
+                        if key not in {"account_id", "name"}
+                    },
                 }), {}),
             ),
             method_tool(

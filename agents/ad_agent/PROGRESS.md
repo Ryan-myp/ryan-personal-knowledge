@@ -4,7 +4,7 @@
 
 ## 当前契约（2026-08-30）
 
-- 单 Agent + 多 Skills + Tools；平台 Capability 是可执行注册表的来源，当前共 250 个工具：Meta 67、Google Ads 80、TikTok 72、DV360 31。Capability 和按约定命名的 Provider Client 均自动发现，不依赖中心渠道/工具配置表；每个 Capability 还提供 Provider 方法覆盖率发布门禁。DV360 Campaign 创建尚未建设，仅在 API Surface 标记为 planned，不注册不可执行 Tool。
+- 单 Agent + 多 Skills + Tools；平台 Capability 是可执行注册表的来源，当前共 251 个工具：Meta 68、Google Ads 80、TikTok 72、DV360 31。Capability 和按约定命名的 Provider Client 均自动发现，不依赖中心渠道/工具配置表；每个 Capability 还提供 Provider 方法覆盖率发布门禁。DV360 Campaign 创建尚未建设，仅在 API Surface 标记为 planned，不注册不可执行 Tool。
 - 所有 Campaign 及下级资源创建/更新默认 dry-run；当前不会因工具已注册就调用真实写 API。
 - live 仅允许配置白名单账户，且 API 确认必须携带与当前 `session_id + account_id + tool + normalized input + idempotency key` 绑定的 `confirmation_payload`。
 - 白名单只有一个账户时允许兼容性自动选择；多账户配置必须由调用方显式指定目标账户。
@@ -34,6 +34,9 @@
   后续建设缺口。
 - Google Ads 已补齐 Experiment 与 Experiment Arm 的 GAQL 只读查询 Tool；Experiment
   mutation lifecycle 仍保留在官方清单的 planned 缺口中，未将部分能力误报为完整 CRUD。
+- Meta 已将 Lookalike Audience 从泛化 Audience 能力中拆出专用创建 Tool；源 Audience
+  通过 `meta_list_audiences` 的动态 lookup 选择，固定 `LOOKALIKE` subtype 由 Capability
+  注入，且不在 Runtime/Core 增加渠道分支。
 - 每个渠道 `_surface_data.py` 另有 `OFFICIAL_INVENTORY`，登记官方资源/动作、endpoint
   或 Provider operation、API version、来源和状态；审计会单独输出官方基线覆盖率、缺口和
   `dry_run_only`/`live_verified` 证据。当前基线明确为 `scoped_not_exhaustive`，不能把
