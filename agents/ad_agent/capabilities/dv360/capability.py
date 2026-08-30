@@ -114,6 +114,7 @@ class DV360Capability(BaseCapability):
                 "creative": {"type": "object"}}, required=["advertiser_id", "creative"], action="create",
                 resource_type="creative", resource_id_field="creative_id", intent_types=["create_creative"],
                 traits=["write", "creative"], write=True,
+                provider_required=["creative"],
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["creative"]), {}),
             ),
             method_tool(
@@ -170,6 +171,7 @@ class DV360Capability(BaseCapability):
                 action="create", resource_type="targeting_assignment", parent_resource_type="line_item",
                 resource_id_field="assigned_targeting_option_id", parent_resource_id_field="line_item_id",
                 intent_types=["create_targeting_assignment"], traits=["write", "targeting"], write=True,
+                provider_required=["targeting_type", "assigned_targeting_option"],
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["line_item_id"], data["targeting_type"],
                     data["assigned_targeting_option"]), {}),
             ),
@@ -201,6 +203,7 @@ class DV360Capability(BaseCapability):
                 properties={"advertiser_id": {"type": "string"}, "report": {"type": "object"}},
                 required=["advertiser_id", "report"], action="create", resource_type="report",
                 intent_types=["create_report"], traits=["write", "report"], write=True,
+                provider_required=["report"],
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["report"]), {}),
             ),
             method_tool(

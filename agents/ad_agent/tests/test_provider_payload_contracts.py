@@ -23,6 +23,71 @@ from agents.ad_agent.capabilities.google.capability import _google_update_adapte
 from agents.ad_agent.capabilities.base import CampaignUpdateHandler
 
 
+def test_creation_tools_publish_provider_payload_requirements():
+    """Provider contracts must describe payload fields beyond account scope."""
+    capabilities = {
+        "dv360": create_dv360_capability(),
+        "google-ads": create_google_capability(),
+        "meta": create_meta_capability(),
+        "tiktok": create_tiktok_capability(),
+    }
+    definitions = {
+        platform: {
+            definition.name: definition
+            for definition, _handler in capability.register_tools()
+        }
+        for platform, capability in capabilities.items()
+    }
+
+    assert definitions["dv360"]["dv360_create_creative"].input_schema.provider_required == [
+        "creative"
+    ]
+    assert definitions["dv360"]["dv360_create_line_item_assigned_targeting_option"].input_schema.provider_required == [
+        "targeting_type", "assigned_targeting_option"
+    ]
+    assert definitions["dv360"]["dv360_create_report"].input_schema.provider_required == [
+        "report"
+    ]
+
+    assert definitions["google-ads"]["google_create_campaign_budget"].input_schema.provider_required == [
+        "name", "daily_budget"
+    ]
+    assert definitions["google-ads"]["google_create_search_ad"].input_schema.provider_required == [
+        "headlines", "descriptions", "final_url"
+    ]
+
+    assert definitions["meta"]["meta_create_ad"].input_schema.provider_any_of == [
+        ["creative_id", "object_story_spec", "creative", "media", "image_url"]
+    ]
+    assert validate_tool_input(
+        definitions["meta"]["meta_create_ad"].input_schema,
+        {"adset_id": "adset-1", "name": "image ad", "media": [{"url": "https://cdn.example/image.png"}]},
+        include_provider_contract=True,
+    ) == []
+    assert definitions["meta"]["meta_create_creative"].input_schema.provider_required == [
+        "name", "page_id", "link"
+    ]
+    assert definitions["meta"]["meta_create_catalog"].input_schema.provider_required == [
+        "business_id", "name", "vertical"
+    ]
+    assert definitions["meta"]["meta_create_product_set"].input_schema.provider_required == [
+        "catalog_id", "name"
+    ]
+
+    assert definitions["tiktok"]["tiktok_create_pixel"].input_schema.provider_required == [
+        "name", "object_type"
+    ]
+
+    # Runtime context supplies the account/customer scope; missing business
+    # payload fields must still be visible as provider-contract failures.
+    errors = validate_tool_input(
+        definitions["google-ads"]["google_create_campaign_budget"].input_schema,
+        {"customer_id": "123", "name": "budget"},
+        include_provider_contract=True,
+    )
+    assert any("daily_budget" in error for error in errors)
+
+
 def test_tiktok_image_upload_builds_official_multipart_payload(tmp_path):
     image = tmp_path / "creative.png"
     image.write_bytes(b"image-bytes")

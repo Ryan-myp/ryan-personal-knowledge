@@ -580,7 +580,12 @@ def meta_adset_schema() -> dict[str, Any]:
 def meta_ad_schema() -> dict[str, Any]:
     return {
         "required": ["adset_id", "name"],
-        "provider_any_of": [["creative_id", "object_story_spec", "creative"]],
+        # ``media`` is a supported provider-side shortcut for a simple image
+        # ad. Keep it in the same source contract as the explicit Creative
+        # variants so the Tool schema matches MetaClient.create_ad.
+        "provider_any_of": [[
+            "creative_id", "object_story_spec", "creative", "media", "image_url"
+        ]],
         "properties": {
             "adset_id": _field("string", "Parent Ad Set ID"),
             "name": _field("string", "Ad name", maxLength=400),
@@ -612,6 +617,14 @@ def meta_ad_schema() -> dict[str, Any]:
                 "lead_gen": _field("object", "Lead generation creative", additionalProperties=True),
             }, "Meta object story specification"),
             "creative": _object({}, "Creative reference or inline payload", additional_properties=True),
+            "media": _field(
+                "array", "Simple media shortcut; the first item must contain a provider URL",
+                minItems=1, items=_object({
+                    "type": _field("string", "Media type"),
+                    "url": _field("string", "Provider-accessible media URL", minLength=1),
+                }, "Meta media item", additional_properties=True, required=["url"]),
+            ),
+            "image_url": _field("string", "Simple image creative URL", minLength=1),
             "body": _field("string", "Primary text"),
             "title": _field("string", "Headline"),
             "description": _field("string", "Description"),

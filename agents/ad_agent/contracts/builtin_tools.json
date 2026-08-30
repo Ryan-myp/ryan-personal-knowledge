@@ -1,9 +1,9 @@
 {
-  "digest": "47ebe1e9b1cd257ec2c0374b335f3d1849a3a584eafe9bb2b789a78144346962",
+  "digest": "367f58651c47ad670b2a29d604afd21f3a2ce11f6a6bbb3c92ce7b58ce355cfe",
   "format_version": 1,
   "platforms": {
     "dv360": {
-      "digest": "036e1673714fdb47d5205d263158730420d875532fbaa4d3042a9bde33f34050",
+      "digest": "a55a81bef316fde6c397faed5d7a61fa8a9762153332b3d4ebbd79179b8193c1",
       "tool_count": 32,
       "tools": [
         {
@@ -225,7 +225,9 @@
               }
             },
             "provider_any_of": [],
-            "provider_required": [],
+            "provider_required": [
+              "creative"
+            ],
             "required": [
               "advertiser_id",
               "creative"
@@ -567,7 +569,10 @@
               }
             },
             "provider_any_of": [],
-            "provider_required": [],
+            "provider_required": [
+              "targeting_type",
+              "assigned_targeting_option"
+            ],
             "required": [
               "advertiser_id",
               "line_item_id",
@@ -618,7 +623,9 @@
               }
             },
             "provider_any_of": [],
-            "provider_required": [],
+            "provider_required": [
+              "report"
+            ],
             "required": [
               "advertiser_id",
               "report"
@@ -1983,7 +1990,7 @@
       ]
     },
     "google-ads": {
-      "digest": "dcfec2388f5d034d7a72ac4476d5a77a44b90420c56162cbfa549419942f421e",
+      "digest": "96981bd0ab298f2c2ad8017f7f5303a842105dc46b9ba8273e80060904e339e4",
       "tool_count": 58,
       "tools": [
         {
@@ -3279,7 +3286,10 @@
               }
             },
             "provider_any_of": [],
-            "provider_required": [],
+            "provider_required": [
+              "name",
+              "daily_budget"
+            ],
             "required": [
               "customer_id",
               "name",
@@ -4477,7 +4487,11 @@
               }
             },
             "provider_any_of": [],
-            "provider_required": [],
+            "provider_required": [
+              "headlines",
+              "descriptions",
+              "final_url"
+            ],
             "required": [
               "ad_group_id",
               "headlines",
@@ -7414,7 +7428,7 @@
       ]
     },
     "meta": {
-      "digest": "1c6485ce4d0e721ff66d84475544aec9c405abaa95f49a9c23b99ea4190d167e",
+      "digest": "e4be4b4210deb365716100b6a418339ae41d11e1650eb25b8be44daf805f757d",
       "tool_count": 56,
       "tools": [
         {
@@ -7521,6 +7535,35 @@
               "description": {
                 "description": "Description",
                 "type": "string"
+              },
+              "image_url": {
+                "description": "Simple image creative URL",
+                "minLength": 1,
+                "type": "string"
+              },
+              "media": {
+                "description": "Simple media shortcut; the first item must contain a provider URL",
+                "items": {
+                  "additionalProperties": true,
+                  "description": "Meta media item",
+                  "properties": {
+                    "type": {
+                      "description": "Media type",
+                      "type": "string"
+                    },
+                    "url": {
+                      "description": "Provider-accessible media URL",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "url"
+                  ],
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
               },
               "name": {
                 "description": "Ad name",
@@ -7671,7 +7714,9 @@
               [
                 "creative_id",
                 "object_story_spec",
-                "creative"
+                "creative",
+                "media",
+                "image_url"
               ]
             ],
             "provider_required": [],
@@ -8573,7 +8618,11 @@
               }
             },
             "provider_any_of": [],
-            "provider_required": [],
+            "provider_required": [
+              "business_id",
+              "name",
+              "vertical"
+            ],
             "required": [
               "business_id",
               "name",
@@ -8764,7 +8813,11 @@
               }
             },
             "provider_any_of": [],
-            "provider_required": [],
+            "provider_required": [
+              "name",
+              "page_id",
+              "link"
+            ],
             "required": [
               "account_id",
               "name",
@@ -9285,7 +9338,10 @@
               }
             },
             "provider_any_of": [],
-            "provider_required": [],
+            "provider_required": [
+              "catalog_id",
+              "name"
+            ],
             "required": [
               "account_id",
               "catalog_id",
@@ -12428,7 +12484,7 @@
       ]
     },
     "tiktok": {
-      "digest": "4b708dc11090f00784cda44b80575a1fa508c1941d55a5414661f0c2788f4f5e",
+      "digest": "28c549d33b2b4e968addbe216da78919ac508e6f1b829fe4641900d61046e131",
       "tool_count": 69,
       "tools": [
         {
@@ -14561,7 +14617,10 @@
               }
             },
             "provider_any_of": [],
-            "provider_required": [],
+            "provider_required": [
+              "name",
+              "object_type"
+            ],
             "required": [
               "account_id",
               "name",

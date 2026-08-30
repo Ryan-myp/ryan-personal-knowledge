@@ -454,6 +454,7 @@ class TikTokCapability(BaseCapability):
                 properties={key: pixel["properties"][key]
                 for key in ("account_id", "name", "object_type", "tracking_url")},
                 required=pixel["create_required"], action="create", resource_type="pixel",
+                provider_required=["name", "object_type"],
                 resource_id_field="pixel_id", intent_types=["create_pixel"],
                 traits=["write", "pixel"], write=True, live_support=False,
                 argument_builder=lambda ctx, data: ((account(ctx, data), {

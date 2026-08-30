@@ -407,7 +407,9 @@ class MetaCapability(BaseCapability):
                 description="创建 Meta 商品目录；默认仅生成 dry-run 计划。",
                 method_name="create_catalog", result_key="catalog_id", properties={
                     key: catalog_properties[key] for key in ("business_id", "name", "vertical", "is_checkout")
-                }, required=catalog_schema["create_required"], action="create", resource_type="catalog",
+                }, required=catalog_schema["create_required"],
+                provider_required=["business_id", "name", "vertical"],
+                action="create", resource_type="catalog",
                 resource_id_field="catalog_id", intent_types=["create_catalog"], traits=["write", "catalog"], write=True,
                 argument_builder=lambda _ctx, data: ((data["business_id"], {
                     key: data[key] for key in ("name", "vertical", "is_checkout") if key in data
@@ -448,7 +450,9 @@ class MetaCapability(BaseCapability):
                 description="在 Meta 商品目录下创建商品集；默认仅生成 dry-run 计划。",
                 method_name="create_product_set", result_key="product_set_id", properties={
                     key: product_set_properties[key] for key in ("account_id", "catalog_id", "name", "filter")
-                }, required=product_set_schema["create_required"], action="create", resource_type="product_set",
+                }, required=product_set_schema["create_required"],
+                provider_required=["catalog_id", "name"],
+                action="create", resource_type="product_set",
                 parent_resource_type="catalog", resource_id_field="product_set_id", parent_resource_id_field="catalog_id",
                 intent_types=["create_product_set"], traits=["write", "catalog", "product_set"], write=True,
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["catalog_id"], {
@@ -827,6 +831,7 @@ class MetaCapability(BaseCapability):
             description="创建 Meta Creative；当前仅支持 dry-run 计划。",
             input_schema=ToolSchema(
                 required=["account_id", "name", "page_id", "link"],
+                provider_required=["name", "page_id", "link"],
                 properties={
                     "account_id": {"type": "string"},
                     "name": {"type": "string"},

@@ -243,6 +243,7 @@ class GoogleCapability(BaseCapability):
                 name="google_create_campaign_budget", description="创建 Google Ads CampaignBudget；默认仅生成 dry-run 计划。",
                 method_name="create_campaign_budget", result_key="budget_id",
                 properties=budget_schema["properties"], required=["customer_id", "name", "daily_budget"],
+                provider_required=["name", "daily_budget"],
                 action="create", resource_type="campaign_budget", resource_id_field="budget_id",
                 intent_types=["create_campaign_budget"], traits=["write", "campaign_budget"], write=True,
                 argument_builder=lambda _ctx, data: ((data["name"], data["daily_budget"]), {
@@ -595,6 +596,7 @@ class GoogleCapability(BaseCapability):
                     "path1": {"type": "string"}, "path2": {"type": "string"},
                     "responsive_search_ad": {"type": "object"}, "status": {"type": "string"},
                 }, required=["ad_group_id", "headlines", "descriptions", "final_url"],
+                provider_required=["headlines", "descriptions", "final_url"],
                 action="create", resource_type="ad", parent_resource_type="ad_group",
                 resource_id_field="ad_id", parent_resource_id_field="ad_group_id",
                 intent_types=["create_search_ad"], traits=["write", "ad"], write=True,
