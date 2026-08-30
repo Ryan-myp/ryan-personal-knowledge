@@ -26,7 +26,7 @@ import inspect
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from types import MappingProxyType
-from typing import Any, Mapping, Optional
+from typing import Any, Iterable, Mapping, Optional
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import yaml
@@ -2901,6 +2901,45 @@ class AgentRuntime:
             },
         )
 
+    @staticmethod
+    def _select_batch_campaign_tool(
+        tools: Iterable[Any], intent_type: str,
+    ) -> Optional[Any]:
+        """Select the one provider Tool that can update a Campaign.
+
+        Cross-channel batch planning is intentionally provider-neutral.  The
+        route can contain lookup or specialized Tools as well as the updater,
+        so list position is not a valid contract.  Prefer an exact intent
+        declaration, then use the provider-owned action/resource metadata. If
+        more than one candidate remains, fail closed instead of guessing
+        which provider operation should receive the update.
+        """
+        candidates = [
+            tool for tool in (tools or [])
+            if str(getattr(tool, "action", "") or "").lower() == "update"
+            and str(getattr(tool, "resource_type", "") or "").lower()
+            in {"campaign", "campaigns"}
+        ]
+        exact = [
+            tool for tool in candidates
+            if intent_type in (getattr(tool, "intent_types", []) or [])
+        ]
+        candidates = exact or candidates
+        if len(candidates) == 1:
+            return candidates[0]
+
+        # A provider may expose several campaign update variants.  A
+        # capability can disambiguate explicitly with a ``batch`` trait;
+        # otherwise a cross-channel operation must not choose by name/order.
+        batch_candidates = [
+            tool for tool in candidates
+            if "batch" in {
+                str(trait or "").strip().lower()
+                for trait in (getattr(tool, "traits", []) or [])
+            }
+        ]
+        return batch_candidates[0] if len(batch_candidates) == 1 else None
+
     def _run_batch_plan(
         self,
         user_input: str,
@@ -2954,10 +2993,19 @@ class AgentRuntime:
                 f"最多允许 {self.max_tool_calls} 项"
             )
             operations = []
-        tool_name_by_platform = {
-            platform: tools[0].name
+        # A route may contain more than one Tool for a batch intent.  Never
+        # use registration order as a provider-specific convention: a newly
+        # added channel can publish a read/lookup Tool before its campaign
+        # updater.  The Tool metadata is the only routing contract shared by
+        # Runtime and provider Capabilities.
+        tool_by_platform = {
+            platform: self._select_batch_campaign_tool(tools, intent.intent_type)
             for platform, tools in tool_plan.items()
-            if tools
+        }
+        tool_name_by_platform = {
+            platform: tool.name
+            for platform, tool in tool_by_platform.items()
+            if tool is not None
         }
         for message in errors:
             platform = message.split(":", 1)[0]
@@ -2978,15 +3026,14 @@ class AgentRuntime:
                     "platform": operation.platform,
                     "success": False,
                     "data": {"batch": True, "planned": False},
-                    "error": "该平台没有已注册的 Campaign 更新工具",
+                    "error": (
+                        "该平台没有唯一兼容的 Campaign 更新工具"
+                        if tool_plan.get(operation.platform)
+                        else "该平台没有已注册的 Campaign 更新工具"
+                    ),
                 })
                 continue
-            tool_def = next(
-                (tool for tool in tool_plan[operation.platform] if tool.name == tool_name),
-                None,
-            )
-            if tool_def is None:
-                continue
+            tool_def = tool_by_platform.get(operation.platform)
             tool_input = {
                 "campaign_id": operation.campaign_id,
                 "updates": self._normalize_provider_updates(

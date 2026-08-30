@@ -65,6 +65,66 @@ def test_runtime_registry_cannot_bypass_execution_boundary():
     ).success is False
 
 
+def test_batch_planner_selects_campaign_updater_from_tool_metadata():
+    """Batch routing must not depend on provider Tool registration order."""
+    lookup = ToolDefinition(
+        name="new_network_list_campaigns",
+        skill="new-network",
+        platform="new-network",
+        description="List campaigns",
+        input_schema=ToolSchema(),
+        action="list",
+        resource_type="campaign",
+        intent_types=["cross_channel_batch_pause"],
+    )
+    updater = ToolDefinition(
+        name="new_network_update_campaign",
+        skill="new-network",
+        platform="new-network",
+        description="Update a campaign",
+        input_schema=ToolSchema(properties={"updates": {"type": "object"}}),
+        action="update",
+        resource_type="campaign",
+        intent_types=["cross_channel_batch_pause"],
+        effect_class=ToolEffect.WRITE,
+    )
+
+    selected = AgentRuntime._select_batch_campaign_tool(
+        [lookup, updater], "cross_channel_batch_pause"
+    )
+
+    assert selected is updater
+
+
+def test_batch_planner_fails_closed_for_ambiguous_campaign_updaters():
+    first = ToolDefinition(
+        name="new_network_update_campaign_a",
+        skill="new-network",
+        platform="new-network",
+        description="Update a campaign variant A",
+        input_schema=ToolSchema(),
+        action="update",
+        resource_type="campaign",
+        intent_types=["cross_channel_batch_pause"],
+        effect_class=ToolEffect.WRITE,
+    )
+    second = ToolDefinition(
+        name="new_network_update_campaign_b",
+        skill="new-network",
+        platform="new-network",
+        description="Update a campaign variant B",
+        input_schema=ToolSchema(),
+        action="update",
+        resource_type="campaign",
+        intent_types=["cross_channel_batch_pause"],
+        effect_class=ToolEffect.WRITE,
+    )
+
+    assert AgentRuntime._select_batch_campaign_tool(
+        [first, second], "cross_channel_batch_pause"
+    ) is None
+
+
 def test_selector_only_builds_context_and_cannot_shrink_authoritative_plan():
     class Parser:
         def parse(self, _text, _ctx):
