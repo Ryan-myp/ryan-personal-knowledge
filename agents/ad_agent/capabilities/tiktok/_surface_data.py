@@ -30,5 +30,5 @@ API_SURFACE = [
     {"resource": "lead_form", "action": "crud", "status": "planned", "gap": "Lead Form 查询与创建尚无 Tool"},
     {"resource": "pixel", "action": "crud", "status": "planned", "gap": "Pixel/事件配置尚无 Tool"},
     {"resource": "catalog", "action": "crud", "status": "planned", "gap": "Catalog/Product Set 管理尚无完整 Tool"},
-    {"resource": "ad_group_targeting", "action": "update", "status": "planned", "gap": "定向目前混在 Ad Group payload，缺少独立校验/枚举闭环"},
+    {"resource": "ad_group_targeting", "action": "update", "method": "update_adgroup_targeting", "status": "implemented"},
 ]

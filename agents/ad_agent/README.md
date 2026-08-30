@@ -19,13 +19,13 @@
 
 | 平台 | Skill | API 客户端 | 工具数量 |
 |------|-------|-----------|---------|
-| Meta | meta-marketing-api-expert | meta_client.py | 37（账户、Page/Pixel 详情/列表、Lead Form 列表/详情、Audience CRUD、层级资源、Lead Ads、Catalog Ads、报表与生命周期接口） |
-| Google Ads | google-ads-api-expert | google_ads_client.py | 43（层级资源、CampaignBudget、CampaignCriterion 定向、Conversion Action/出价策略/User List 查询、Search Ad、Responsive Display Ad、Video Ad、关键词、Product Group、PMax、报表与生命周期接口） |
-| TikTok | tiktok-ads-expert | tiktok_client.py | 44（账户、层级资源、Lead/App 广告、素材、受众 CRUD、定向参考数据、报表与生命周期接口） |
+| Meta | meta-marketing-api-expert | meta_client.py | 50（账户、Page/Pixel 详情/列表、Lead Form 列表/详情、Audience CRUD、Catalog/Product Set CRUD、层级资源、Lead Ads、Catalog Ads、报表与生命周期接口） |
+| Google Ads | google-ads-api-expert | google_ads_client.py | 44（层级资源、CampaignBudget、CampaignCriterion 定向、Conversion Action/出价策略/User List 查询、Search Ad、Responsive Display Ad、Video Ad、关键词、Product Group、PMax、报表与生命周期接口） |
+| TikTok | tiktok-ads-api-expert | tiktok_client.py | 45（账户、层级资源、独立 Ad Group 定向更新、Lead/App 广告、素材、受众 CRUD、定向参考数据、报表与生命周期接口） |
 | DV360 | dv360-expert | dv360_client.py | 32（Advertiser、Campaign、IO、Line Item、Creative、定向与异步报表接口） |
-| **合计** |  |  | **170** |
+| **合计** |  |  | **171** |
 
-> 170 是当前四个 Capability 已实现的 Client 方法/业务 Tool 数量，不是 Meta、Google Ads、TikTok 或 DV360 官方 API 的完整接口总量。各渠道包的 `api_surface.py` 同时维护已实现和计划中的官方资源清单；新增官方接口时，应在对应渠道 Client 增加固定方法，在 Capability 增加 Tool Schema/adapter，再由 Surface 审计和契约快照阻止漏注册或漂移。
+> 171 是当前四个 Capability 已实现的 Client 方法/业务 Tool 数量，不是 Meta、Google Ads、TikTok 或 DV360 官方 API 的完整接口总量。各渠道包的 `api_surface.py` 同时维护已实现和计划中的官方资源清单；新增官方接口时，应在对应渠道 Client 增加固定方法，在 Capability 增加 Tool Schema/adapter，再由 Surface 审计和契约快照阻止漏注册或漂移。
 
 ### 广告类型覆盖边界
 

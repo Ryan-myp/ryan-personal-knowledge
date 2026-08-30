@@ -1,5 +1,5 @@
 {
-  "digest": "934a94d23ed73179ca8b734fbd31810cd04dcf1207b8f49aaf1291c150d258a8",
+  "digest": "3a831d90d3ccb36785fdd58093534f0a47e6dcbac88cba379e512fe40adb3b58",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -9623,8 +9623,8 @@
       ]
     },
     "tiktok": {
-      "digest": "85e5baa3b4eefaa25b98236da671a07a05a8a2cb12c7d5f212bbac2a82d9ec2d",
-      "tool_count": 44,
+      "digest": "dc13fb9f22583b6a487bf20c5c0fa5fc2e058f41272192b98f8508d0ab308f24",
+      "tool_count": 45,
       "tools": [
         {
           "action": "create",
@@ -12720,6 +12720,244 @@
         {
           "action": "update",
           "contract_version": "1.2.0",
+          "description": "独立更新 TikTok Ad Group 定向；动态 ID 必须来自对应 lookup Tool，默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "TikTok advertiser ID",
+                "type": "string"
+              },
+              "adgroup_id": {
+                "description": "Target Ad Group ID",
+                "type": "string"
+              },
+              "campaign_id": {
+                "description": "Parent campaign ID",
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Structured Ad Group targeting fields",
+                "properties": {
+                  "age_groups": {
+                    "description": "Age targeting groups",
+                    "items": {
+                      "enum": [
+                        "AGE_13_17",
+                        "AGE_18_24",
+                        "AGE_25_34",
+                        "AGE_35_44",
+                        "AGE_45_54",
+                        "AGE_55_64",
+                        "AGE_65+"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "audience_ids": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "lookup_result_key": "audiences",
+                    "lookup_tool": "tiktok_list_audiences",
+                    "selection_label_fields": [
+                      "name",
+                      "audience_id",
+                      "id"
+                    ],
+                    "selection_value_fields": [
+                      "audience_id",
+                      "id"
+                    ],
+                    "type": "array"
+                  },
+                  "auto_targeting_enabled": {
+                    "description": "Enable automatic targeting",
+                    "type": "boolean"
+                  },
+                  "browser_ids": {
+                    "description": "Browser IDs",
+                    "items": {
+                      "type": "string"
+                    },
+                    "lookup_result_key": "browsers",
+                    "lookup_tool": "tiktok_list_browsers",
+                    "selection_label_fields": [
+                      "browser_name",
+                      "name",
+                      "id"
+                    ],
+                    "selection_value_fields": [
+                      "browser_id",
+                      "id"
+                    ],
+                    "type": "array"
+                  },
+                  "carrier_ids": {
+                    "description": "Carrier IDs",
+                    "items": {
+                      "type": "string"
+                    },
+                    "lookup_result_key": "carriers",
+                    "lookup_tool": "tiktok_list_carriers",
+                    "selection_label_fields": [
+                      "carrier_name",
+                      "name",
+                      "id"
+                    ],
+                    "selection_value_fields": [
+                      "carrier_id",
+                      "id"
+                    ],
+                    "type": "array"
+                  },
+                  "device_ids": {
+                    "description": "Device IDs",
+                    "items": {
+                      "type": "string"
+                    },
+                    "lookup_result_key": "devices",
+                    "lookup_tool": "tiktok_list_devices",
+                    "selection_label_fields": [
+                      "device_name",
+                      "name",
+                      "id"
+                    ],
+                    "selection_value_fields": [
+                      "device_id",
+                      "id"
+                    ],
+                    "type": "array"
+                  },
+                  "excluded_audience_ids": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "lookup_result_key": "audiences",
+                    "lookup_tool": "tiktok_list_audiences",
+                    "selection_label_fields": [
+                      "name",
+                      "audience_id",
+                      "id"
+                    ],
+                    "selection_value_fields": [
+                      "audience_id",
+                      "id"
+                    ],
+                    "type": "array"
+                  },
+                  "gender": {
+                    "description": "Gender targeting",
+                    "enum": [
+                      "GENDER_UNLIMITED",
+                      "GENDER_MALE",
+                      "GENDER_FEMALE"
+                    ],
+                    "type": "string"
+                  },
+                  "interest_category_ids": {
+                    "description": "Interest category IDs",
+                    "items": {
+                      "type": "string"
+                    },
+                    "lookup_result_key": "interest_categories",
+                    "lookup_tool": "tiktok_list_interest_categories",
+                    "selection_label_fields": [
+                      "interest_category_name",
+                      "category_name",
+                      "name",
+                      "id"
+                    ],
+                    "selection_value_fields": [
+                      "interest_category_id",
+                      "category_id",
+                      "id"
+                    ],
+                    "type": "array"
+                  },
+                  "location_ids": {
+                    "description": "Selected location IDs",
+                    "items": {
+                      "type": "string"
+                    },
+                    "lookup_result_key": "locations",
+                    "lookup_tool": "tiktok_list_locations",
+                    "selection_label_fields": [
+                      "location_name",
+                      "name",
+                      "country_name",
+                      "country_code"
+                    ],
+                    "selection_value_fields": [
+                      "location_id",
+                      "id",
+                      "country_code",
+                      "code"
+                    ],
+                    "type": "array"
+                  },
+                  "operating_systems": {
+                    "description": "Operating systems",
+                    "items": {
+                      "enum": [
+                        "ANDROID",
+                        "IOS"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "campaign_id",
+              "adgroup_id",
+              "updates"
+            ],
+            "required": [
+              "account_id",
+              "campaign_id",
+              "adgroup_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_adgroup_targeting"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_update_adgroup_targeting",
+          "parent_resource_id_field": "campaign_id",
+          "parent_resource_type": "campaign",
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "adgroup_id",
+          "resource_type": "ad_group",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad_group",
+            "targeting"
+          ]
+        },
+        {
+          "action": "update",
+          "contract_version": "1.2.0",
           "description": "更新 TikTok Ads campaign，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -12841,5 +13079,5 @@
       ]
     }
   },
-  "tool_count": 170
+  "tool_count": 171
 }

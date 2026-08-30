@@ -420,6 +420,41 @@ def test_tiktok_ad_creation_preserves_existing_schema_fields():
     assert payloads[-1]["ad_group"]["conversion_id"] == 42
 
 
+def test_tiktok_targeting_update_validates_dimensions_and_builds_scoped_payload():
+    client = TikTokAPIClient({"access_token": "test"})
+    payloads = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        payloads.append((method, endpoint, data)) or {"code": 0, "data": {}}
+    )
+
+    result = client.update_adgroup_targeting("t1", "101", "202", {
+        "location_ids": ["US"],
+        "operating_systems": ["ANDROID"],
+        "age_groups": ["AGE_18_24"],
+        "gender": "GENDER_UNLIMITED",
+        "interest_category_ids": ["cat-1"],
+    })
+    assert result["code"] == 0
+    assert payloads[-1] == (
+        "POST", "adgroup/update/", {
+            "advertiser_id": "t1", "campaign_id": 101, "ad_group_id": 202,
+            "ad_group": {
+                "location_ids": ["US"],
+                "operating_systems": ["ANDROID"],
+                "age_groups": ["AGE_18_24"],
+                "gender": "GENDER_UNLIMITED",
+                "interest_category_ids": ["cat-1"],
+            },
+        },
+    )
+    with pytest.raises(ValueError, match="Unsupported TikTok targeting fields"):
+        client.update_adgroup_targeting("t1", "101", "202", {"unknown": ["x"]})
+    with pytest.raises(ValueError, match="operating_systems"):
+        client.update_adgroup_targeting("t1", "101", "202", {
+            "operating_systems": ["WINDOWS"],
+        })
+
+
 def test_tiktok_audience_delete_tool_calls_provider_method():
     client = TikTokAPIClient({"access_token": "test"})
     calls = []
@@ -610,6 +645,28 @@ def test_tiktok_lead_and_app_tools_publish_provider_contracts():
         "APP_ANDROID", "APP_IOS"
     ]
     assert app.parent_resource_id_field == "adgroup_id"
+
+
+def test_tiktok_targeting_tool_exposes_lookup_backed_schema_and_is_dry_run_only():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_tiktok_capability().register_tools()
+    }
+    targeting = definitions["tiktok_update_adgroup_targeting"]
+    assert targeting.input_schema.required == [
+        "account_id", "campaign_id", "adgroup_id", "updates"
+    ]
+    nested = targeting.input_schema.properties["updates"]
+    assert nested["additionalProperties"] is False
+    assert nested["properties"]["location_ids"]["lookup_tool"] == (
+        "tiktok_list_locations"
+    )
+    assert nested["properties"]["interest_category_ids"]["lookup_tool"] == (
+        "tiktok_list_interest_categories"
+    )
+    assert targeting.parent_resource_type == "campaign"
+    assert targeting.parent_resource_id_field == "campaign_id"
+    assert targeting.live_support is False
 
 
 def test_tiktok_provider_envelope_is_decoded_for_ids_and_lookup_lists():

@@ -42,6 +42,7 @@ from .parameters import (
     tiktok_app_ad_schema,
     tiktok_ad_format_catalog,
     tiktok_audience_schema,
+    tiktok_targeting_update_schema,
 )
 from ..update_contracts import tiktok_updates
 
@@ -86,6 +87,7 @@ class TikTokCapability(BaseCapability):
         "resume_campaign": ["tiktok_resume_campaign"], "delete_campaign": ["tiktok_delete_campaign"],
         "list_adgroups": ["tiktok_list_adgroups"], "get_adgroup": ["tiktok_get_adgroup"],
         "create_adgroup": ["tiktok_create_adgroup"], "update_adgroup": ["tiktok_update_adgroup"],
+        "update_adgroup_targeting": ["tiktok_update_adgroup_targeting"],
         "update_ad": ["tiktok_update_ad"], "pause_adgroup": ["tiktok_pause_adgroup"],
         "list_ads": ["tiktok_list_ads"], "get_ad": ["tiktok_get_ad"],
         "create_ad": ["tiktok_create_ad"], "create_lead_ad": ["tiktok_create_lead_ad"],
@@ -112,6 +114,7 @@ class TikTokCapability(BaseCapability):
     def _extended_provider_tools(self, client):
         """Expose TikTok account, reference, reporting and lifecycle APIs."""
         account = lambda ctx, data: account_from(ctx, data, "account_id", "advertiser_id")
+        targeting_schema = tiktok_targeting_update_schema()
         tools = [
             method_tool(
                 platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_accounts",
@@ -154,6 +157,22 @@ class TikTokCapability(BaseCapability):
                 resource_id_field="audience_id", intent_types=["delete_audience"],
                 traits=["write", "audience"], write=True,
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["audience_id"]), {}),
+            ),
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert",
+                name="tiktok_update_adgroup_targeting",
+                description="独立更新 TikTok Ad Group 定向；动态 ID 必须来自对应 lookup Tool，默认仅生成 dry-run 计划。",
+                method_name="update_adgroup_targeting", result_key="targeting_result",
+                properties=targeting_schema["properties"],
+                required=targeting_schema["required"],
+                provider_required=targeting_schema["provider_required"],
+                action="update", resource_type="ad_group", parent_resource_type="campaign",
+                resource_id_field="adgroup_id", parent_resource_id_field="campaign_id",
+                intent_types=["update_adgroup_targeting"], traits=["write", "ad_group", "targeting"],
+                write=True,
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["campaign_id"], data["adgroup_id"], data["updates"]
+                ), {}),
             ),
             method_tool(
                 platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_interest_categories",

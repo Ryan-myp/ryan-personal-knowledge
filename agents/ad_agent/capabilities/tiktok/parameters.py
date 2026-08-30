@@ -222,6 +222,82 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
     }
 
 
+def tiktok_targeting_update_schema() -> dict[str, Any]:
+    """Schema for independent, lookup-aware TikTok Ad Group targeting updates."""
+    return {
+        "required": ["account_id", "campaign_id", "adgroup_id", "updates"],
+        "provider_required": ["campaign_id", "adgroup_id", "updates"],
+        "properties": {
+            "account_id": _field("string", "TikTok advertiser ID"),
+            "campaign_id": _field("string", "Parent campaign ID"),
+            "adgroup_id": _field("string", "Target Ad Group ID"),
+            "updates": _field(
+                "object", "Structured Ad Group targeting fields",
+                properties=tiktok_targeting_fields(), additionalProperties=False,
+            ),
+        },
+    }
+
+
+def tiktok_targeting_fields() -> dict[str, Any]:
+    """Nested targeting properties shared by the targeting Tool contract."""
+    audience_ref = {
+        "type": "array", "items": {"type": "string"},
+        "lookup_tool": "tiktok_list_audiences", "lookup_result_key": "audiences",
+        "selection_value_fields": ["audience_id", "id"],
+        "selection_label_fields": ["name", "audience_id", "id"],
+    }
+    return {
+        "location_ids": _field(
+            "array", "Selected location IDs",
+            items={"type": "string"}, lookup_tool="tiktok_list_locations",
+            lookup_result_key="locations",
+            selection_value_fields=["location_id", "id", "country_code", "code"],
+            selection_label_fields=["location_name", "name", "country_name", "country_code"],
+        ),
+        "operating_systems": _field(
+            "array", "Operating systems",
+            items={"type": "string", "enum": TIKTOK_OPERATING_SYSTEMS},
+        ),
+        "age_groups": _field(
+            "array", "Age targeting groups",
+            items={"type": "string", "enum": TIKTOK_AGE_GROUPS},
+        ),
+        "gender": _field("string", "Gender targeting", enum=TIKTOK_GENDERS),
+        "auto_targeting_enabled": _field("boolean", "Enable automatic targeting"),
+        "audience_ids": audience_ref,
+        "excluded_audience_ids": audience_ref,
+        "interest_category_ids": _field(
+            "array", "Interest category IDs",
+            items={"type": "string"}, lookup_tool="tiktok_list_interest_categories",
+            lookup_result_key="interest_categories",
+            selection_value_fields=["interest_category_id", "category_id", "id"],
+            selection_label_fields=["interest_category_name", "category_name", "name", "id"],
+        ),
+        "device_ids": _field(
+            "array", "Device IDs",
+            items={"type": "string"}, lookup_tool="tiktok_list_devices",
+            lookup_result_key="devices",
+            selection_value_fields=["device_id", "id"],
+            selection_label_fields=["device_name", "name", "id"],
+        ),
+        "carrier_ids": _field(
+            "array", "Carrier IDs",
+            items={"type": "string"}, lookup_tool="tiktok_list_carriers",
+            lookup_result_key="carriers",
+            selection_value_fields=["carrier_id", "id"],
+            selection_label_fields=["carrier_name", "name", "id"],
+        ),
+        "browser_ids": _field(
+            "array", "Browser IDs",
+            items={"type": "string"}, lookup_tool="tiktok_list_browsers",
+            lookup_result_key="browsers",
+            selection_value_fields=["browser_id", "id"],
+            selection_label_fields=["browser_name", "name", "id"],
+        ),
+    }
+
+
 def tiktok_ad_schema() -> dict[str, Any]:
     return {
         "required": ["adgroup_id", "name"],

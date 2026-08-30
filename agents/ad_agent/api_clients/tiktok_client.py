@@ -387,6 +387,92 @@ class TikTokAPIClient(BasePlatformClient):
         }
         return self.request('POST', 'adgroup/update/', data=data)
 
+    def update_adgroup_targeting(
+        self, advertiser_id: str, campaign_id: str, adgroup_id: str,
+        targeting: dict,
+    ) -> dict:
+        """Update the structured targeting dimensions of one Ad Group.
+
+        Targeting is deliberately a separate adapter from general Ad Group
+        metadata updates.  This keeps the Tool contract explicit and lets
+        lookup-backed IDs be validated before they reach TikTok's payload.
+        """
+        if not isinstance(targeting, dict) or not targeting:
+            raise ValueError("targeting must be a non-empty object")
+        allowed_fields = {
+            "location_ids", "operating_systems", "age_groups", "gender",
+            "auto_targeting_enabled", "audience_ids", "excluded_audience_ids",
+            "interest_category_ids", "device_ids", "carrier_ids", "browser_ids",
+        }
+        unknown = set(targeting) - allowed_fields
+        if unknown:
+            raise ValueError(
+                f"Unsupported TikTok targeting fields: {sorted(unknown)}"
+            )
+        normalized: dict[str, Any] = {}
+        list_fields = {
+            "location_ids", "operating_systems", "age_groups", "audience_ids",
+            "excluded_audience_ids", "interest_category_ids", "device_ids",
+            "carrier_ids", "browser_ids",
+        }
+        for field_name, value in targeting.items():
+            if value is None:
+                continue
+            if field_name in list_fields:
+                if not isinstance(value, list) or not value:
+                    raise ValueError(f"targeting.{field_name} must be a non-empty array")
+                if any(item in (None, "") for item in value):
+                    raise ValueError(
+                        f"targeting.{field_name} must not contain empty values"
+                    )
+                normalized[field_name] = value
+            else:
+                normalized[field_name] = value
+
+        operating_systems = normalized.get("operating_systems")
+        if operating_systems and any(
+            str(value).upper() not in {"ANDROID", "IOS"}
+            for value in operating_systems
+        ):
+            raise ValueError("targeting.operating_systems must contain ANDROID or IOS")
+        if operating_systems:
+            normalized["operating_systems"] = [
+                str(value).upper() for value in operating_systems
+            ]
+        age_groups = normalized.get("age_groups")
+        allowed_age_groups = {
+            "AGE_13_17", "AGE_18_24", "AGE_25_34", "AGE_35_44",
+            "AGE_45_54", "AGE_55_64", "AGE_65+",
+        }
+        if age_groups and any(str(value) not in allowed_age_groups for value in age_groups):
+            raise ValueError(
+                f"targeting.age_groups must contain only {sorted(allowed_age_groups)}"
+            )
+        if age_groups:
+            normalized["age_groups"] = [str(value).upper() for value in age_groups]
+        if "gender" in normalized and normalized["gender"] not in {
+            "GENDER_UNLIMITED", "GENDER_MALE", "GENDER_FEMALE",
+        }:
+            normalized_gender = str(normalized["gender"]).upper()
+            if normalized_gender not in {
+                "GENDER_UNLIMITED", "GENDER_MALE", "GENDER_FEMALE",
+            }:
+                raise ValueError(
+                    "targeting.gender must be GENDER_UNLIMITED, GENDER_MALE or GENDER_FEMALE"
+                )
+            normalized["gender"] = normalized_gender
+        if not normalized:
+            raise ValueError("targeting must contain a supported non-null field")
+
+        self.acquire_rate_limit(self._rate_limiter)
+        data = {
+            "advertiser_id": str(advertiser_id),
+            "campaign_id": int(campaign_id),
+            "ad_group_id": int(adgroup_id),
+            "ad_group": normalized,
+        }
+        return self.request("POST", "adgroup/update/", data=data)
+
     def update_ad(self, advertiser_id: str, adgroup_id: str, ad_id: str, updates: dict) -> dict:
         """Update an Ad using TikTok's advertiser/ad-group scoped endpoint."""
         self.acquire_rate_limit(self._rate_limiter)
