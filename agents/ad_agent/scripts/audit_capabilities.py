@@ -87,6 +87,7 @@ def audit_capabilities() -> dict[str, Any]:
             surface_gaps: list[str] = []
             planned_entries: list[dict[str, Any]] = []
             implemented_surface = 0
+            implemented_surface_methods: set[str] = set()
             for entry in surface:
                 if not isinstance(entry, dict):
                     continue
@@ -96,6 +97,8 @@ def audit_capabilities() -> dict[str, Any]:
                     continue
                 implemented_surface += 1
                 method_name = str(entry.get("method") or "")
+                if method_name:
+                    implemented_surface_methods.add(method_name)
                 if client_class is not None and not callable(getattr(client_class, method_name, None)):
                     surface_gaps.append(
                         f"{entry.get('resource')}:{entry.get('action')} method {method_name} is not on Client"
@@ -112,12 +115,41 @@ def audit_capabilities() -> dict[str, Any]:
                     surface_gaps.append(
                         f"{entry.get('resource')}:{entry.get('action')} missing Tools: {', '.join(missing_tools)}"
                     )
+            coverage_without_surface = sorted(
+                set(str(method) for method in coverage if str(method).strip())
+                - implemented_surface_methods
+            )
+            if coverage_without_surface:
+                surface_gaps.append(
+                    "provider methods missing API Surface entries: "
+                    + ", ".join(coverage_without_surface)
+                )
             report.setdefault("surface_gaps", {})[platform_key] = surface_gaps
             report.setdefault("surface_planned", {})[platform_key] = planned_entries
             report.setdefault("surface_summary", {})[platform_key] = {
                 "implemented": implemented_surface,
                 "planned": len(planned_entries),
                 "total": len(surface),
+            }
+            report.setdefault("provider_method_coverage", {})[platform_key] = {
+                str(method): {
+                    "tools": list(
+                        coverage[method]
+                        if isinstance(coverage[method], (list, tuple, set))
+                        else [coverage[method]]
+                    ),
+                    "surface_entries": [
+                        {
+                            "resource": entry.get("resource"),
+                            "action": entry.get("action"),
+                            "status": entry.get("status"),
+                        }
+                        for entry in surface
+                        if isinstance(entry, dict)
+                        and entry.get("method") == method
+                    ],
+                }
+                for method in sorted(coverage)
             }
             report["issues"].extend(f"{slug}: API surface gap: {gap}" for gap in surface_gaps)
             if client_class is not None:
@@ -242,6 +274,9 @@ def audit_capabilities() -> dict[str, Any]:
             "api_surface": report.get("surface_summary", {}).get(platform, {}),
             "api_surface_gaps": report.get("surface_gaps", {}).get(platform, []),
             "api_surface_planned": report.get("surface_planned", {}).get(platform, []),
+            "provider_method_coverage": report.get(
+                "provider_method_coverage", {}
+            ).get(platform, {}),
             "issues": platform_issues,
         }
         report["issues"].extend(f"{platform}: {issue}" for issue in platform_issues)
@@ -282,6 +317,13 @@ def _print_text(report: dict[str, Any]) -> None:
                 "  api surface: "
                 f"implemented={surface.get('implemented', 0)}, "
                 f"planned={surface.get('planned', 0)}, total={surface.get('total', 0)}"
+            )
+        coverage = details.get("provider_method_coverage", {})
+        if coverage:
+            print(
+                "  provider methods: "
+                f"mapped={len(coverage)}, "
+                f"surface={sum(bool(item.get('surface_entries')) for item in coverage.values())}"
             )
         for entry in details.get("api_surface_planned", []):
             print(

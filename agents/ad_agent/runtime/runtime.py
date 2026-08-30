@@ -292,6 +292,7 @@ class AgentRuntime:
         # contract snapshot detect an API version change even when Tool names
         # and schemas remain unchanged.
         self.provider_version_contracts: dict[str, dict[str, Any]] = {}
+        self.provider_api_surfaces: dict[str, list[dict[str, Any]]] = {}
         selection_secret = selection_token_secret or os.environ.get(
             "AD_AGENT_SELECTION_TOKEN_KEY"
         )
@@ -777,6 +778,7 @@ class AgentRuntime:
         }
         before_formats = copy.deepcopy(self.ad_format_catalogs)
         before_provider_versions = copy.deepcopy(self.provider_version_contracts)
+        before_provider_surfaces = copy.deepcopy(self.provider_api_surfaces)
         try:
             return self._register_capability_unchecked(module)
         except Exception:
@@ -812,6 +814,7 @@ class AgentRuntime:
                         self._loaded_skills.pop(canonical, None)
             self.ad_format_catalogs = before_formats
             self.provider_version_contracts = before_provider_versions
+            self.provider_api_surfaces = before_provider_surfaces
             try:
                 self._refresh_parser_catalog()
             except Exception:
@@ -857,6 +860,13 @@ class AgentRuntime:
             if platform:
                 self.provider_version_contracts[platform] = copy.deepcopy(
                     provider_contract_getter()
+                )
+        provider_surface_getter = getattr(module, "get_api_surface", None)
+        if callable(provider_surface_getter):
+            platform = self._canonical_platform(getattr(module, "platform_name", ""))
+            if platform:
+                self.provider_api_surfaces[platform] = copy.deepcopy(
+                    provider_surface_getter()
                 )
         self._validate_parameter_lookup_contract()
         # Capability.configure() registers platform tools before returning.

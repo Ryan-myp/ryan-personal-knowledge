@@ -53,6 +53,20 @@ def test_capability_audit_includes_provider_owned_api_surface_and_planned_gaps()
     assert report["surface_gaps"] == {
         platform: [] for platform in report["platforms"]
     }
+    assert all(
+        all(item["surface_entries"] for item in methods.values())
+        for methods in report["provider_method_coverage"].values()
+    )
+
+
+def test_capability_audit_keeps_client_method_tool_surface_chain_complete():
+    report = audit_capabilities()
+
+    for platform, methods in report["provider_method_coverage"].items():
+        assert methods, platform
+        for method, coverage in methods.items():
+            assert coverage["tools"], f"{platform}:{method} has no Tool"
+            assert coverage["surface_entries"], f"{platform}:{method} has no Surface entry"
 
 
 def test_contract_snapshot_is_deterministic_and_partitioned_by_platform():
@@ -64,6 +78,9 @@ def test_contract_snapshot_is_deterministic_and_partitioned_by_platform():
     assert first["tool_count"] >= 124
     assert set(first["platforms"]) == {"meta", "google-ads", "tiktok", "dv360"}
     assert all(details["digest"] for details in first["platforms"].values())
+    assert set(first["provider_api_surfaces"]) == {
+        "meta", "google-ads", "tiktok", "dv360"
+    }
 
 
 def test_contract_snapshot_reports_existing_tool_drift(tmp_path):

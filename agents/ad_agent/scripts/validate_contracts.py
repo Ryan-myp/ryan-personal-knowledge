@@ -107,6 +107,12 @@ def build_contract_snapshot(runtime: AgentRuntime) -> dict:
                 getattr(runtime, "provider_version_contracts", {}).items()
             )
         },
+        "provider_api_surfaces": {
+            str(platform): [dict(entry) for entry in entries]
+            for platform, entries in sorted(
+                getattr(runtime, "provider_api_surfaces", {}).items()
+            )
+        },
     }
     return {**body, "digest": _digest(body)}
 
@@ -137,6 +143,11 @@ def _snapshot_differences(expected: dict, actual: dict) -> list[str]:
         for name in sorted(set(expected_tools) & set(actual_tools)):
             if expected_tools[name] != actual_tools[name]:
                 differences.append(f"{platform}: changed contract {name}")
+    expected_surfaces = expected.get("provider_api_surfaces", {})
+    actual_surfaces = actual.get("provider_api_surfaces", {})
+    for platform in sorted(set(expected_surfaces) | set(actual_surfaces)):
+        if expected_surfaces.get(platform) != actual_surfaces.get(platform):
+            differences.append(f"{platform}: changed provider API surface")
     if not differences and expected.get("digest") != actual.get("digest"):
         differences.append("snapshot digest changed without a tool-level diff")
     return differences

@@ -32,6 +32,10 @@
 - 每个渠道 Capability 包另有 `api_surface.py`，声明已实现与计划中的官方资源操作；审计会
   检查已实现项是否同时存在 Client 方法、覆盖映射和 executable Tool，并把计划项显式列为
   后续建设缺口。
+- 当前已实现的 Provider Client 方法均纳入三段式追踪：Client method → Capability
+  `provider_method_coverage` → `api_surface.py` → executable Tool。现有覆盖为 DV360
+  28/28、Google Ads 56/56、Meta 55/55、TikTok 69/69；同一 Client 方法映射多个业务
+  Tool 时会在审计 JSON 中保留全部映射，不以工具数量冒充官方接口完整度。
 
 ## 项目概述
 
@@ -165,7 +169,7 @@ python -m pytest agents/ad_agent/tests/ -v
 ```
 
 测试结果：
-- 当前 `agents/ad_agent/tests/`：380 passed（另有 1 条本机依赖弃用 warning）。
+- 当前 `agents/ad_agent/tests/`：389 passed（另有 1 条本机依赖弃用 warning）。
 - 覆盖：工具注册、Schema 校验、白名单、dry-run 不调用 Client、跨平台账户、层级 ID 传递、live 确认、持久化和 Runtime 集成
 
 ## 扩展新平台
@@ -212,7 +216,7 @@ Capability。`SKILL.md` 仍只负责自然语言知识、SOP 和安全边界；�
 | 结构化日志 | ✅ | JSON 格式 |
 | Dry-run 模式 | ✅ | 无需调用线上写 API 即可测试 |
 | WriteGuard | ✅ | 持久化幂等、显式确认、unknown 结果保留 reservation、workflow lease/claim 已接入 |
-| 单元测试 | ✅ | `agents/ad_agent/tests/`：380 passed |
+| 单元测试 | ✅ | `agents/ad_agent/tests/`：389 passed |
 | 多平台支持 | ✅ | Meta/Google/TikTok/DV360 |
 | 可扩展性 | ✅ | Capability 与 Provider Client 按包约定自动发现，无需修改中心 Router/Runtime |
 

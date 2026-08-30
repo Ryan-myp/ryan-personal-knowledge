@@ -1,5 +1,5 @@
 {
-  "digest": "20786913f30361f742a71edc3e44561b0e48fe24ccde18683ef993a715da8c9a",
+  "digest": "47ebe1e9b1cd257ec2c0374b335f3d1849a3a584eafe9bb2b789a78144346962",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -19252,6 +19252,1355 @@
         }
       ]
     }
+  },
+  "provider_api_surfaces": {
+    "dv360": [
+      {
+        "action": "list",
+        "method": "list_advertisers",
+        "resource": "advertiser",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_advertiser",
+        "resource": "advertiser",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_campaigns",
+        "resource": "campaign",
+        "status": "implemented"
+      },
+      {
+        "action": "crud",
+        "method": "get_campaign",
+        "resource": "campaign",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "method": "delete_campaign",
+        "resource": "campaign",
+        "status": "implemented"
+      },
+      {
+        "action": "crud",
+        "method": "create_io",
+        "resource": "insertion_order",
+        "status": "implemented"
+      },
+      {
+        "action": "activate",
+        "method": "activate_io",
+        "resource": "insertion_order",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_ios",
+        "resource": "insertion_order",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_io",
+        "resource": "insertion_order",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "method": "delete_io",
+        "resource": "insertion_order",
+        "status": "implemented"
+      },
+      {
+        "action": "pause",
+        "method": "pause_io",
+        "resource": "insertion_order",
+        "status": "implemented"
+      },
+      {
+        "action": "crud",
+        "method": "create_line_item",
+        "resource": "line_item",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_line_items",
+        "resource": "line_item",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_line_item",
+        "resource": "line_item",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "method": "delete_line_item",
+        "resource": "line_item",
+        "status": "implemented"
+      },
+      {
+        "action": "activate",
+        "method": "activate_line_item",
+        "resource": "line_item",
+        "status": "implemented"
+      },
+      {
+        "action": "crud",
+        "method": "create_creative",
+        "resource": "creative",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_creatives",
+        "resource": "creative",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_creative",
+        "resource": "creative",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "method": "update_creative",
+        "resource": "creative",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "method": "delete_creative",
+        "resource": "creative",
+        "status": "implemented"
+      },
+      {
+        "action": "assignment",
+        "method": "create_line_item_assigned_targeting_option",
+        "resource": "targeting",
+        "status": "implemented"
+      },
+      {
+        "action": "list_assignments",
+        "method": "list_line_item_assigned_targeting_options",
+        "resource": "targeting",
+        "status": "implemented"
+      },
+      {
+        "action": "delete_assignment",
+        "method": "delete_line_item_assigned_targeting_option",
+        "resource": "targeting",
+        "status": "implemented"
+      },
+      {
+        "action": "async",
+        "method": "create_report",
+        "resource": "report",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_report_result",
+        "resource": "report",
+        "status": "implemented"
+      },
+      {
+        "action": "report",
+        "method": "get_line_item_report",
+        "resource": "line_item",
+        "status": "implemented"
+      },
+      {
+        "action": "catalog",
+        "method": "list_targeting_options",
+        "resource": "targeting",
+        "status": "implemented"
+      },
+      {
+        "action": "crud",
+        "gap": "DV360 受众与定向深度建设按计划暂缓",
+        "resource": "audience",
+        "status": "planned"
+      },
+      {
+        "action": "crud",
+        "gap": "库存来源与品牌安全资源尚无完整 Tool",
+        "resource": "inventory_source",
+        "status": "planned"
+      }
+    ],
+    "google-ads": [
+      {
+        "action": "list",
+        "method": "list_campaigns",
+        "resource": "campaign",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_campaign",
+        "resource": "campaign",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "method": "create_campaign",
+        "resource": "campaign",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "method": "update_campaign",
+        "resource": "campaign",
+        "status": "implemented"
+      },
+      {
+        "action": "pause",
+        "method": "pause_campaign",
+        "resource": "campaign",
+        "status": "implemented"
+      },
+      {
+        "action": "resume",
+        "method": "resume_campaign",
+        "resource": "campaign",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_ad_groups",
+        "resource": "ad_group",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_ad_group",
+        "resource": "ad_group",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "method": "create_ad_group",
+        "resource": "ad_group",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "method": "update_ad_group",
+        "resource": "ad_group",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_ads",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_ad",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "method": "update_ad",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_keywords",
+        "resource": "keyword",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "method": "create_keywords",
+        "resource": "keyword",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_asset_groups",
+        "resource": "asset_group",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_asset_group",
+        "resource": "asset_group",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "method": "create_pmax_asset_group",
+        "resource": "asset_group",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "method": "update_asset_group",
+        "resource": "asset_group",
+        "status": "implemented"
+      },
+      {
+        "action": "live_create",
+        "gap": "PMax Asset Group live 多步 AssetService mutate 尚未经过指定测试账户验证",
+        "resource": "asset_group",
+        "status": "planned"
+      },
+      {
+        "action": "report",
+        "method": "get_campaign_report",
+        "resource": "campaign",
+        "status": "implemented"
+      },
+      {
+        "action": "report",
+        "method": "get_adgroup_report",
+        "resource": "ad_group",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_campaign_budgets",
+        "resource": "campaign_budget",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_campaign_budget",
+        "resource": "campaign_budget",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "method": "create_campaign_budget",
+        "resource": "campaign_budget",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "method": "update_campaign_budget",
+        "resource": "campaign_budget",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "method": "delete_campaign_budget",
+        "resource": "campaign_budget",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_bidding_strategies",
+        "resource": "bidding_strategy",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_bidding_strategy",
+        "resource": "bidding_strategy",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "method": "create_bidding_strategy",
+        "resource": "bidding_strategy",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "method": "update_bidding_strategy",
+        "resource": "bidding_strategy",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "method": "delete_bidding_strategy",
+        "resource": "bidding_strategy",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_campaign_criteria",
+        "resource": "campaign_criterion",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_campaign_criterion",
+        "resource": "campaign_criterion",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "method": "create_campaign_criteria",
+        "resource": "campaign_criterion",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "method": "update_campaign_criterion",
+        "resource": "campaign_criterion",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "method": "delete_campaign_criterion",
+        "resource": "campaign_criterion",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_conversion_actions",
+        "resource": "conversion_action",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_conversion_action",
+        "resource": "conversion_action",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "method": "create_conversion_action",
+        "resource": "conversion_action",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "method": "update_conversion_action",
+        "resource": "conversion_action",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "method": "delete_conversion_action",
+        "resource": "conversion_action",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_assets",
+        "resource": "asset",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_asset",
+        "resource": "asset",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "method": "create_asset",
+        "resource": "asset",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "gap": "Google Asset 大多数字段不可变，更新语义尚未完成验证",
+        "resource": "asset",
+        "status": "planned"
+      },
+      {
+        "action": "delete",
+        "method": "delete_asset",
+        "notes": "AssetService remove；仍被引用的 Asset 由 Provider 拒绝",
+        "resource": "asset",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "method": "create_product_group",
+        "resource": "product_group",
+        "status": "implemented"
+      },
+      {
+        "action": "create_responsive_display",
+        "method": "create_responsive_display_ad",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "create_search",
+        "method": "create_search_ad",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "create_video",
+        "method": "create_video_ad",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_user_lists",
+        "resource": "user_list",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_user_list",
+        "resource": "user_list",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "method": "create_user_list",
+        "resource": "user_list",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "method": "update_user_list",
+        "resource": "user_list",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "method": "delete_user_list",
+        "resource": "user_list",
+        "status": "implemented"
+      },
+      {
+        "action": "upload",
+        "method": "upload_user_list_data",
+        "resource": "user_list",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_customer_clients",
+        "resource": "customer_client",
+        "status": "implemented"
+      }
+    ],
+    "meta": [
+      {
+        "action": "list",
+        "method": "list_accounts",
+        "resource": "account",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_account",
+        "resource": "account",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_campaigns",
+        "resource": "campaign",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_campaign",
+        "resource": "campaign",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "method": "create_campaign",
+        "resource": "campaign",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "method": "update_campaign",
+        "resource": "campaign",
+        "status": "implemented"
+      },
+      {
+        "action": "pause",
+        "method": "pause_campaign",
+        "resource": "campaign",
+        "status": "implemented"
+      },
+      {
+        "action": "resume",
+        "method": "resume_campaign",
+        "resource": "campaign",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_adsets",
+        "resource": "ad_set",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_adset",
+        "resource": "ad_set",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "method": "create_adset",
+        "resource": "ad_set",
+        "status": "implemented"
+      },
+      {
+        "action": "pause",
+        "method": "pause_adset",
+        "resource": "ad_set",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "method": "update_adset",
+        "resource": "ad_set",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_ads",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_ad",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "method": "create_ad",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "create_lead",
+        "method": "create_lead_ad",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "create_catalog",
+        "method": "create_catalog_ad",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "method": "update_ad",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "pause",
+        "method": "pause_ad",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "pause",
+        "method": "pause_adset",
+        "resource": "ad_set",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "method": "create_creative",
+        "resource": "creative",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_audiences",
+        "resource": "audience",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_catalogs",
+        "resource": "catalog",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_catalog",
+        "resource": "catalog",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "method": "create_catalog",
+        "resource": "catalog",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "method": "update_catalog",
+        "resource": "catalog",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "method": "delete_catalog",
+        "resource": "catalog",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_product_sets",
+        "resource": "product_set",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_product_set",
+        "resource": "product_set",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "method": "create_product_set",
+        "resource": "product_set",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "method": "update_product_set",
+        "resource": "product_set",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "method": "delete_product_set",
+        "resource": "product_set",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_pages",
+        "resource": "page",
+        "status": "implemented"
+      },
+      {
+        "action": "search",
+        "method": "search_targeting",
+        "resource": "targeting_option",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_pixels",
+        "resource": "pixel",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_pixel",
+        "resource": "pixel",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_lead_forms",
+        "resource": "lead_form",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_lead_form",
+        "resource": "lead_form",
+        "status": "implemented"
+      },
+      {
+        "action": "report",
+        "method": "get_campaign_report",
+        "resource": "campaign",
+        "status": "implemented"
+      },
+      {
+        "action": "report",
+        "method": "get_adset_report",
+        "resource": "ad_set",
+        "status": "implemented"
+      },
+      {
+        "action": "report",
+        "method": "get_ad_report",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_audience",
+        "resource": "audience",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "method": "create_audience",
+        "resource": "audience",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "method": "update_audience",
+        "resource": "audience",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "method": "delete_audience",
+        "resource": "audience",
+        "status": "implemented"
+      },
+      {
+        "action": "source_upload",
+        "method": "upload_audience_users",
+        "resource": "audience",
+        "status": "implemented"
+      },
+      {
+        "action": "events_test",
+        "method": "send_conversion_events",
+        "resource": "pixel",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "method": "create_custom_conversion",
+        "resource": "custom_conversion",
+        "status": "implemented"
+      },
+      {
+        "action": "events_config",
+        "gap": "公开 Graph API 文档未确认 Pixel CAPI 配置的稳定独立读写接口，暂不伪造 Tool",
+        "resource": "pixel",
+        "status": "planned"
+      },
+      {
+        "action": "list",
+        "gap": "当前公开 CustomConversion edge 文档仅确认创建操作，列表读取尚未完成版本化验证",
+        "resource": "custom_conversion",
+        "status": "planned"
+      },
+      {
+        "action": "get",
+        "gap": "当前公开 CustomConversion edge 文档仅确认创建操作，详情读取尚未完成版本化验证",
+        "resource": "custom_conversion",
+        "status": "planned"
+      },
+      {
+        "action": "update",
+        "gap": "当前公开 CustomConversion edge 文档明确未确认更新操作",
+        "resource": "custom_conversion",
+        "status": "planned"
+      },
+      {
+        "action": "delete",
+        "gap": "当前公开 CustomConversion edge 文档明确未确认删除操作",
+        "resource": "custom_conversion",
+        "status": "planned"
+      },
+      {
+        "action": "event",
+        "method": "send_conversion_events",
+        "resource": "conversion",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "method": "create_lead_form",
+        "resource": "lead_form",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "method": "update_lead_form",
+        "resource": "lead_form",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_creatives",
+        "resource": "creative",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_creative",
+        "resource": "creative",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "method": "update_creative",
+        "resource": "creative",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "method": "delete_creative",
+        "resource": "creative",
+        "status": "implemented"
+      },
+      {
+        "action": "boost",
+        "method": "boost_post",
+        "resource": "post",
+        "status": "implemented"
+      }
+    ],
+    "tiktok": [
+      {
+        "action": "list",
+        "method": "list_accounts",
+        "resource": "account",
+        "status": "implemented"
+      },
+      {
+        "action": "crud",
+        "method": "create_campaign",
+        "resource": "campaign",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_campaigns",
+        "resource": "campaign",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_campaign",
+        "resource": "campaign",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "method": "update_campaign",
+        "resource": "campaign",
+        "status": "implemented"
+      },
+      {
+        "action": "pause",
+        "method": "pause_campaign",
+        "resource": "campaign",
+        "status": "implemented"
+      },
+      {
+        "action": "resume",
+        "method": "resume_campaign",
+        "resource": "campaign",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "method": "delete_campaign",
+        "resource": "campaign",
+        "status": "implemented"
+      },
+      {
+        "action": "crud",
+        "method": "create_adgroup",
+        "resource": "ad_group",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_adgroups",
+        "resource": "ad_group",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_adgroup",
+        "resource": "ad_group",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "method": "update_adgroup",
+        "resource": "ad_group",
+        "status": "implemented"
+      },
+      {
+        "action": "pause",
+        "method": "pause_adgroup",
+        "resource": "ad_group",
+        "status": "implemented"
+      },
+      {
+        "action": "crud",
+        "method": "create_ad",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_ads",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_ad",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "method": "update_ad",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "create_single_video",
+        "method": "create_single_video_ad",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "create_single_image",
+        "method": "create_single_image_ad",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "create_carousel",
+        "method": "create_carousel_ad",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "create_lead",
+        "method": "create_lead_ad",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "create_app",
+        "method": "create_app_ad",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "create_spark",
+        "method": "create_spark_ad",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_audiences",
+        "resource": "audience",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_audience",
+        "resource": "audience",
+        "status": "implemented"
+      },
+      {
+        "action": "create_customer_file",
+        "method": "create_audience",
+        "resource": "audience",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_interest_categories",
+        "resource": "interest_category",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_interest_category",
+        "resource": "interest_category",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_action_categories",
+        "resource": "action_category",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_languages",
+        "resource": "language",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_browsers",
+        "resource": "browser",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_carriers",
+        "resource": "carrier",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_devices",
+        "resource": "device",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_operating_systems",
+        "resource": "operating_system",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_device_models",
+        "resource": "device_model",
+        "status": "implemented"
+      },
+      {
+        "action": "recommend",
+        "method": "recommend_interest_keywords",
+        "resource": "interest_keyword",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_locations",
+        "resource": "location",
+        "status": "implemented"
+      },
+      {
+        "action": "search",
+        "method": "search_locations",
+        "resource": "location",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_regions",
+        "resource": "region",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_creatives",
+        "resource": "creative",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "method": "create_creative_portfolio",
+        "resource": "creative_portfolio",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_creative_portfolio",
+        "resource": "creative_portfolio",
+        "status": "implemented"
+      },
+      {
+        "action": "preview",
+        "method": "preview_creative_portfolio",
+        "resource": "creative_portfolio",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "method": "create_identity",
+        "resource": "identity",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_identities",
+        "resource": "identity",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_identity_video_info",
+        "resource": "identity_video",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_videos",
+        "resource": "video",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_images",
+        "resource": "image",
+        "status": "implemented"
+      },
+      {
+        "action": "upload",
+        "method": "upload_video",
+        "resource": "video",
+        "status": "implemented"
+      },
+      {
+        "action": "upload",
+        "method": "upload_image",
+        "resource": "image",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_conversions",
+        "resource": "conversion",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_conversion",
+        "resource": "conversion",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_pixels",
+        "resource": "pixel",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_pixel",
+        "resource": "pixel",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "method": "create_pixel",
+        "resource": "pixel",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "method": "update_pixel",
+        "resource": "pixel",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "gap": "TikTok Pixel 删除 endpoint 尚未完成版本化验证，暂不伪造删除 Tool",
+        "resource": "pixel",
+        "status": "planned"
+      },
+      {
+        "action": "send",
+        "method": "send_pixel_event",
+        "resource": "pixel_event",
+        "status": "implemented"
+      },
+      {
+        "action": "send",
+        "method": "send_pixel_events",
+        "resource": "pixel_event_batch",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_catalogs",
+        "resource": "catalog",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_product_sets",
+        "resource": "product_set",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_apps",
+        "resource": "app",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "method": "get_report",
+        "resource": "report",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "method": "delete_audience",
+        "resource": "audience",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "method": "update_audience",
+        "resource": "audience",
+        "status": "implemented"
+      },
+      {
+        "action": "source_upload",
+        "method": "upload_audience_file",
+        "resource": "audience",
+        "status": "implemented"
+      },
+      {
+        "action": "crud",
+        "gap": "TikTok 创意对象由广告创建接口生成，尚缺独立创意管理/编辑能力",
+        "resource": "creative",
+        "status": "planned"
+      },
+      {
+        "action": "crud",
+        "gap": "Instant Form/Page 由 TikTok Instant Page Editor SDK 管理，不属于当前 Ads API CRUD；广告创建通过 page_id 引用",
+        "resource": "lead_form",
+        "status": "not_applicable"
+      },
+      {
+        "action": "crud",
+        "gap": "当前已提供 catalog/get 与 product_set/get 读取 Tool；Catalog/Product Set 创建、更新、删除尚无经过验证的 TikTok Ads API endpoint/Tool，不能伪造为已实现",
+        "resource": "catalog",
+        "status": "planned"
+      },
+      {
+        "action": "update",
+        "method": "update_adgroup_targeting",
+        "resource": "ad_group_targeting",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "method": "list_brand_safety",
+        "resource": "brand_safety",
+        "status": "implemented"
+      },
+      {
+        "action": "report",
+        "method": "get_adgroup_report",
+        "resource": "ad_group",
+        "status": "implemented"
+      },
+      {
+        "action": "report",
+        "method": "get_campaign_report",
+        "resource": "campaign",
+        "status": "implemented"
+      }
+    ]
   },
   "provider_version_contracts": {
     "dv360": {

@@ -8,6 +8,7 @@ capabilities/base.py - 平台 Capability 基类
 """
 
 import hashlib
+import importlib
 import inspect
 import threading
 from abc import ABC, abstractmethod
@@ -142,6 +143,16 @@ class BaseCapability(CapabilityModule, ABC):
             }
         contract["capability_api_version"] = str(self.provider_api_version or "")
         return contract
+
+    def get_api_surface(self) -> list[dict[str, Any]]:
+        """Return this provider package's declarative API surface."""
+        module_name = f"{type(self).__module__.rsplit('.', 1)[0]}.api_surface"
+        try:
+            module = importlib.import_module(module_name)
+        except (ImportError, AttributeError):
+            return []
+        entries = getattr(module, "API_SURFACE", []) or []
+        return [dict(entry) for entry in entries if isinstance(entry, dict)]
 
     def _validate_provider_version_contract(
         self,
