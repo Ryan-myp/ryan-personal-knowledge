@@ -48,6 +48,7 @@ from .parameters import (
     tiktok_video_upload_schema,
     tiktok_pixel_event_schema,
     tiktok_pixel_batch_schema,
+    tiktok_creative_portfolio_schema,
     tiktok_targeting_update_schema,
     TIKTOK_OBJECTIVE_TYPES,
     TIKTOK_PLACEMENTS,
@@ -117,6 +118,7 @@ class TikTokCapability(BaseCapability):
         "list_conversions": ["tiktok_list_conversions"], "get_conversion": ["tiktok_get_conversion"],
         "send_pixel_event": ["tiktok_send_pixel_event"],
         "send_pixel_events": ["tiktok_send_pixel_events"],
+        "create_creative_portfolio": ["tiktok_create_creative_portfolio"],
         "list_catalogs": ["tiktok_list_catalogs"], "list_product_sets": ["tiktok_list_product_sets"],
         "list_apps": ["tiktok_list_apps"], "list_brand_safety": ["tiktok_list_brand_safety"],
         "get_report": ["tiktok_get_report"],
@@ -133,6 +135,7 @@ class TikTokCapability(BaseCapability):
         video_upload = tiktok_video_upload_schema()
         pixel_event = tiktok_pixel_event_schema()
         pixel_batch = tiktok_pixel_batch_schema()
+        creative_portfolio = tiktok_creative_portfolio_schema()
         tools = [
             method_tool(
                 platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_upload_image",
@@ -352,6 +355,20 @@ class TikTokCapability(BaseCapability):
                 traits=["write", "pixel", "conversion", "event", "batch"], write=True, live_support=False,
                 argument_builder=lambda ctx, data: ((
                     account(ctx, data), data["pixel_id"], data["events"],
+                ), {}),
+            ),
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_create_creative_portfolio",
+                description="创建 TikTok Creative Portfolio（CTA/Card 等增强素材）；默认仅生成 dry-run 计划。",
+                method_name="create_creative_portfolio", result_key="creative_portfolio_result",
+                properties=creative_portfolio["properties"], required=creative_portfolio["required"],
+                provider_required=creative_portfolio["provider_required"],
+                action="create", resource_type="creative_portfolio", resource_id_field="creative_portfolio_id",
+                intent_types=["create_creative_portfolio"],
+                traits=["write", "creative", "portfolio"], write=True, live_support=False,
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data.get("creative_portfolio_type", "CTA"),
+                    data.get("portfolio_content"),
                 ), {}),
             ),
             method_tool(

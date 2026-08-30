@@ -1393,6 +1393,37 @@ class TikTokAPIClient(BasePlatformClient):
             "POST", "pixel/batch/", data={"pixel_code": pixel_code, "batch": batch}
         )
         return result if isinstance(result, dict) else {"result": result}
+
+    def create_creative_portfolio(
+        self,
+        advertiser_id: str,
+        creative_portfolio_type: str = "CTA",
+        portfolio_content: list[dict] = None,
+    ) -> dict:
+        """Create a TikTok v1.3 Creative Portfolio."""
+        advertiser_id = str(advertiser_id or "").strip()
+        if not advertiser_id:
+            raise ValueError("advertiser_id must not be empty")
+        portfolio_type = str(creative_portfolio_type or "CTA").strip().upper()
+        allowed_types = {
+            "CTA", "CARD", "PREMIUM_BADGE", "STICKER", "DOWNLOAD_CARD", "PRODUCT_CARD",
+        }
+        if portfolio_type not in allowed_types:
+            raise ValueError(f"creative_portfolio_type must be one of {sorted(allowed_types)}")
+        if portfolio_content is not None:
+            if not isinstance(portfolio_content, list) or not portfolio_content:
+                raise ValueError("portfolio_content must be a non-empty list when provided")
+            if len(portfolio_content) > 100 or any(not isinstance(item, dict) for item in portfolio_content):
+                raise ValueError("portfolio_content must contain at most 100 objects")
+        data = {
+            "advertiser_id": advertiser_id,
+            "creative_portfolio_type": portfolio_type,
+        }
+        if portfolio_content is not None:
+            data["portfolio_content"] = portfolio_content
+        self.acquire_rate_limit(self._rate_limiter)
+        result = self.request("POST", "creative/portfolio/create/", data=data)
+        return result if isinstance(result, dict) else {"result": result}
     
     # ==================== 商品目录查询 ====================
     

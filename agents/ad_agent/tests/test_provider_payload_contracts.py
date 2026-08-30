@@ -123,6 +123,36 @@ def test_tiktok_pixel_track_and_batch_build_v13_payloads_and_tools():
     ) == []
 
 
+def test_tiktok_creative_portfolio_uses_official_v13_payload_and_keeps_crud_gap_explicit():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    client.request = lambda method, endpoint, data=None, **_kwargs: (
+        calls.append((method, endpoint, data)) or {"portfolio_id": "portfolio-1"}
+    )
+    content = [{"call_to_action_text": "Shop now", "asset_ids": ["asset-1"]}]
+
+    result = client.create_creative_portfolio("123", "CTA", content)
+
+    assert result == {"portfolio_id": "portfolio-1"}
+    assert calls == [(
+        "POST", "creative/portfolio/create/", {
+            "advertiser_id": "123",
+            "creative_portfolio_type": "CTA",
+            "portfolio_content": content,
+        },
+    )]
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_tiktok_capability().register_tools()
+    }
+    tool = definitions["tiktok_create_creative_portfolio"]
+    assert tool.live_support is False
+    assert validate_tool_input(
+        tool.input_schema,
+        {"account_id": "123", "creative_portfolio_type": "CTA", "portfolio_content": content},
+    ) == []
+
+
 def test_generic_campaign_type_maps_to_google_wire_field():
     runtime = AgentRuntime(require_llm=False, )
     definition = next(

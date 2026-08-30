@@ -337,6 +337,26 @@ def tiktok_pixel_batch_schema() -> dict[str, Any]:
     }
 
 
+def tiktok_creative_portfolio_schema() -> dict[str, Any]:
+    """Schema for TikTok v1.3 Creative Portfolio creation."""
+    return {
+        "required": ["account_id"],
+        "provider_required": ["account_id"],
+        "properties": {
+            "account_id": _field("string", "TikTok advertiser ID"),
+            "creative_portfolio_type": _field(
+                "string", "Portfolio type",
+                enum=["CTA", "CARD", "PREMIUM_BADGE", "STICKER", "DOWNLOAD_CARD", "PRODUCT_CARD"],
+            ),
+            "portfolio_content": _field(
+                "array", "Portfolio content records",
+                items={"type": "object", "additionalProperties": True},
+                minItems=1, maxItems=100,
+            ),
+        },
+    }
+
+
 def tiktok_adgroup_schema() -> dict[str, Any]:
     return {
         "required": [

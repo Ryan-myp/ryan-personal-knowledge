@@ -1,5 +1,5 @@
 {
-  "digest": "cf9661e5d82fa9f0fa2217d7735aa2f7206141acf0515ae811286496f3aaf27d",
+  "digest": "259c0cf9d584c8769ddf735199534e07b0b7cf032b1a8567d73d31135f0c4678",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -11712,8 +11712,8 @@
       ]
     },
     "tiktok": {
-      "digest": "9210c37052c5cbfacb1b86af43eeee51d0a8c9c9c355c397d76c70b2df914384",
-      "tool_count": 52,
+      "digest": "8d327f35abb68fcd2b134c6e7fb20a967d57ef9812e6fa6cfb95297228253015",
+      "tool_count": 53,
       "tools": [
         {
           "action": "create",
@@ -12699,6 +12699,77 @@
           "traits": [
             "write",
             "campaign"
+          ]
+        },
+        {
+          "action": "create",
+          "contract_version": "1.2.0",
+          "description": "创建 TikTok Creative Portfolio（CTA/Card 等增强素材）；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "TikTok advertiser ID",
+                "type": "string"
+              },
+              "creative_portfolio_type": {
+                "description": "Portfolio type",
+                "enum": [
+                  "CTA",
+                  "CARD",
+                  "PREMIUM_BADGE",
+                  "STICKER",
+                  "DOWNLOAD_CARD",
+                  "PRODUCT_CARD"
+                ],
+                "type": "string"
+              },
+              "portfolio_content": {
+                "description": "Portfolio content records",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "maxItems": 100,
+                "minItems": 1,
+                "type": "array"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "account_id"
+            ],
+            "required": [
+              "account_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_creative_portfolio"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_create_creative_portfolio",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "creative_portfolio_id",
+          "resource_type": "creative_portfolio",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "creative",
+            "portfolio"
           ]
         },
         {
@@ -16062,5 +16133,5 @@
       ]
     }
   },
-  "tool_count": 195
+  "tool_count": 196
 }
