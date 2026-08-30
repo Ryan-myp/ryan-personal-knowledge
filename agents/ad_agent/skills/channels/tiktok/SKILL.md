@@ -65,6 +65,12 @@ lookup 选择 `catalog_id`、`product_set_id`；第三方 Brand Safety 必须同
 `IOS14_PLUS` 必须提供 `min_ios_version`。兴趣、设备型号、语言等动态定向值不能凭空编造，
 应先调用对应的只读 lookup Tool。
 
+Ad/Creative 创建时，视频、图片、目录、商品集和广告身份应使用对应素材库或资源
+lookup 返回的 ID；普通视频/图片/轮播使用专用格式 Tool，Spark 使用 `tiktok_item_id`
+或 Spark 专用 Tool，Lead/App 广告分别遵循 `page_id`、`app_id` 与对应深链字段契约。
+Provider Creative 的 `creative_type`、`operation_status`、追踪 URL、商品选择和 Spark
+互动字段已在当前 Ad Schema 中显式声明，不能放入未定义的顶层参数。
+
 ## 📚 参考文档
 
 - **官方文档**: https://business-api.tiktok.com/portal/docs

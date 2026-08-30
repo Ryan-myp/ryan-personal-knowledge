@@ -1511,6 +1511,37 @@ def test_tiktok_adgroup_contract_exposes_optimization_targeting_and_schedule_fie
     assert validate_tool_input(schema, base, include_provider_contract=True) == []
 
 
+def test_tiktok_ad_contract_exposes_lookup_backed_assets_and_provider_creative_fields():
+    definition = next(
+        definition for definition, _handler in create_tiktok_capability().register_tools()
+        if definition.name == "tiktok_create_ad"
+    )
+    schema = definition.input_schema
+    assert schema.properties["video_id"]["lookup_tool"] == "tiktok_list_videos"
+    assert schema.properties["image_ids"]["lookup_tool"] == "tiktok_list_images"
+    assert schema.properties["catalog_id"]["lookup_tool"] == "tiktok_list_catalogs"
+    assert schema.properties["identity_id"]["lookup_tool"] == "tiktok_list_identities"
+    assert "SINGLE_VIDEO" in schema.properties["creative_type"]["enum"]
+    assert "tiktok_item_id" in schema.properties
+
+    client = TikTokAPIClient({"access_token": "test"})
+    payloads = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        payloads.append(data) or {"ad_id": "ad-1"}
+    )
+    client.create_ad("t1", "101", "202", {
+        "name": "Video creative", "video_id": "video-1",
+        "creative_type": "SINGLE_VIDEO", "ad_text": "Try it",
+        "call_to_action_id": "cta-1", "identity_id": "identity-1",
+        "deeplink": "myapp://home", "operation_status": "ENABLE",
+    })
+    ad = payloads[-1]["ad"]
+    assert ad["creative_type"] == "SINGLE_VIDEO"
+    assert ad["ad_text"] == "Try it"
+    assert ad["call_to_action_id"] == "cta-1"
+    assert ad["deeplink"] == "myapp://home"
+
+
 def test_tiktok_typed_ad_tools_validate_assets_and_fix_format_payloads():
     client = TikTokAPIClient({"access_token": "test"})
     payloads = []

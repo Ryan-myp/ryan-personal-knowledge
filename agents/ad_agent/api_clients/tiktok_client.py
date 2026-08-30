@@ -576,9 +576,18 @@ class TikTokAPIClient(BasePlatformClient):
             'ad_format', 'status', 'video_id', 'image_ids', 'spark_post_id',
             'page_id', 'tracking_pixel_id', 'operation_status', 'creative_type',
             'display_name', 'catalog_id', 'product_set_id', 'call_to_action',
-            'identity_id', 'promotion_type', 'app_id', 'app_promotion_type',
+            'call_to_action_id', 'ad_text', 'identity_id', 'identity_type',
+            'tiktok_item_id', 'promotion_type', 'app_id', 'app_promotion_type',
             'operating_systems', 'deep_link', 'tracking_url', 'promote_object', 'ad_text_settings',
             'brand_safety', 'run_time_settings',
+            'deeplink', 'deeplink_type', 'click_tracking_url',
+            'impression_tracking_url', 'video_view_tracking_url',
+            'dynamic_destination', 'dynamic_format', 'product_specific_type',
+            'sku_ids', 'item_group_ids', 'shopping_ads_deeplink_type',
+            'shopping_ads_fallback_type', 'shopping_ads_video_package_id',
+            'shopping_ads_word_set', 'promotional_music_disabled',
+            'item_duet_status', 'item_stitch_status', 'instant_product_page_used',
+            'playable_url',
         ):
             if key in ad and ad[key] not in (None, ''):
                 data['ad'][key] = ad[key]

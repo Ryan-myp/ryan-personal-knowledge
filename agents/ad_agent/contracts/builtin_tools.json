@@ -1,5 +1,5 @@
 {
-  "digest": "a9d6cfda28834e3da5a3ce90861d44bde99ac0aa7ce929e5b0bc7933d1dfa18c",
+  "digest": "75a13f27c4582b90d2a917431de7c1d4cca9c39cc9debc1337954938b7bf2157",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -12428,7 +12428,7 @@
       ]
     },
     "tiktok": {
-      "digest": "4bdfb3ddde70d6f6bd5dfbe399c90b1280ff5bf2f340092f1102e5f10b0f44bc",
+      "digest": "4b708dc11090f00784cda44b80575a1fa508c1941d55a5414661f0c2788f4f5e",
       "tool_count": 69,
       "tools": [
         {
@@ -12451,6 +12451,10 @@
                 ],
                 "type": "string"
               },
+              "ad_text": {
+                "description": "Provider ad text",
+                "type": "string"
+              },
               "adgroup_id": {
                 "description": "Parent ad group ID",
                 "type": "string"
@@ -12459,12 +12463,32 @@
                 "description": "Call to action",
                 "type": "string"
               },
+              "call_to_action_id": {
+                "description": "Provider call-to-action ID",
+                "type": "string"
+              },
               "campaign_id": {
                 "description": "Parent campaign ID",
                 "type": "string"
               },
               "catalog_id": {
                 "description": "TikTok catalog ID",
+                "lookup_result_key": "catalogs",
+                "lookup_tool": "tiktok_list_catalogs",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "catalog_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "catalog_id",
+                  "id"
+                ],
+                "type": "string"
+              },
+              "click_tracking_url": {
+                "description": "Click tracking URL",
                 "type": "string"
               },
               "conversion_id": {
@@ -12483,6 +12507,15 @@
                 ],
                 "type": "integer"
               },
+              "creative_type": {
+                "description": "Provider creative type",
+                "enum": [
+                  "SINGLE_IMAGE",
+                  "SINGLE_VIDEO",
+                  "LIVE_CONTENT"
+                ],
+                "type": "string"
+              },
               "creatives": {
                 "description": "Creative list",
                 "items": {
@@ -12490,16 +12523,92 @@
                 },
                 "type": "array"
               },
+              "deeplink": {
+                "description": "App deep link",
+                "type": "string"
+              },
+              "deeplink_type": {
+                "description": "Deep link behavior",
+                "type": "string"
+              },
+              "dynamic_destination": {
+                "description": "Dynamic landing page destination",
+                "type": "string"
+              },
+              "dynamic_format": {
+                "description": "Dynamic creative format",
+                "type": "string"
+              },
               "identity_id": {
                 "description": "TikTok identity ID",
+                "lookup_result_key": "identities",
+                "lookup_tool": "tiktok_list_identities",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "display_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "identity_id",
+                  "id"
+                ],
+                "type": "string"
+              },
+              "identity_type": {
+                "description": "TikTok identity type",
                 "type": "string"
               },
               "image_ids": {
                 "description": "Image asset IDs",
                 "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "lookup_result_key": "images",
+                "lookup_tool": "tiktok_list_images",
+                "selection_label_fields": [
+                  "file_name",
+                  "image_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "image_id",
+                  "id"
+                ],
+                "type": "array"
+              },
+              "impression_tracking_url": {
+                "description": "Impression tracking URL",
+                "type": "string"
+              },
+              "instant_product_page_used": {
+                "description": "Use TikTok instant product page",
+                "type": "boolean"
+              },
+              "item_duet_status": {
+                "description": "Spark duet status",
+                "enum": [
+                  "ENABLE",
+                  "DISABLE"
+                ],
+                "type": "string"
+              },
+              "item_group_ids": {
+                "description": "Shopping item group IDs",
+                "items": {
                   "type": "string"
                 },
                 "type": "array"
+              },
+              "item_stitch_status": {
+                "description": "Spark stitch status",
+                "enum": [
+                  "ENABLE",
+                  "DISABLE"
+                ],
+                "type": "string"
               },
               "landing_page_url": {
                 "description": "Landing page URL",
@@ -12519,14 +12628,72 @@
                 "description": "Ad name",
                 "type": "string"
               },
+              "operation_status": {
+                "description": "Provider ad status",
+                "enum": [
+                  "ENABLE",
+                  "DISABLE"
+                ],
+                "type": "string"
+              },
               "page_id": {
                 "description": "TikTok Instant Page or Instant Form page ID",
                 "minLength": 1,
                 "type": "string"
               },
+              "playable_url": {
+                "description": "Playable ad URL",
+                "type": "string"
+              },
               "product_set_id": {
                 "description": "TikTok product set ID",
+                "lookup_result_key": "product_sets",
+                "lookup_tool": "tiktok_list_product_sets",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "product_set_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "product_set_id",
+                  "id"
+                ],
                 "type": "string"
+              },
+              "product_specific_type": {
+                "description": "Shopping product selection mode",
+                "type": "string"
+              },
+              "promotional_music_disabled": {
+                "description": "Disable promotional music for Spark creative",
+                "type": "boolean"
+              },
+              "shopping_ads_deeplink_type": {
+                "description": "Shopping ads deep link behavior",
+                "type": "string"
+              },
+              "shopping_ads_fallback_type": {
+                "description": "Shopping ads fallback behavior",
+                "type": "string"
+              },
+              "shopping_ads_video_package_id": {
+                "description": "Shopping ads video package ID",
+                "type": "string"
+              },
+              "shopping_ads_word_set": {
+                "description": "Shopping ads word set IDs",
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              "sku_ids": {
+                "description": "Shopping SKU IDs",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               },
               "spark_post_id": {
                 "description": "Spark post ID",
@@ -12545,8 +12712,29 @@
                 "description": "Ad copy payload",
                 "type": "object"
               },
+              "tiktok_item_id": {
+                "description": "Owned TikTok post ID for Spark creative",
+                "type": "string"
+              },
               "video_id": {
                 "description": "Video asset ID",
+                "lookup_result_key": "videos",
+                "lookup_tool": "tiktok_list_videos",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "file_name",
+                  "video_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "video_id",
+                  "id"
+                ],
+                "type": "string"
+              },
+              "video_view_tracking_url": {
+                "description": "Video view tracking URL",
                 "type": "string"
               }
             },
@@ -13749,6 +13937,10 @@
                 ],
                 "type": "string"
               },
+              "ad_text": {
+                "description": "Provider ad text",
+                "type": "string"
+              },
               "adgroup_id": {
                 "description": "Parent ad group ID",
                 "type": "string"
@@ -13757,12 +13949,32 @@
                 "description": "Call to action",
                 "type": "string"
               },
+              "call_to_action_id": {
+                "description": "Provider call-to-action ID",
+                "type": "string"
+              },
               "campaign_id": {
                 "description": "Parent campaign ID",
                 "type": "string"
               },
               "catalog_id": {
                 "description": "TikTok catalog ID",
+                "lookup_result_key": "catalogs",
+                "lookup_tool": "tiktok_list_catalogs",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "catalog_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "catalog_id",
+                  "id"
+                ],
+                "type": "string"
+              },
+              "click_tracking_url": {
+                "description": "Click tracking URL",
                 "type": "string"
               },
               "conversion_id": {
@@ -13781,6 +13993,15 @@
                 ],
                 "type": "integer"
               },
+              "creative_type": {
+                "description": "Provider creative type",
+                "enum": [
+                  "SINGLE_IMAGE",
+                  "SINGLE_VIDEO",
+                  "LIVE_CONTENT"
+                ],
+                "type": "string"
+              },
               "creatives": {
                 "description": "Carousel creative/card payload",
                 "items": {
@@ -13788,8 +14009,40 @@
                 },
                 "type": "array"
               },
+              "deeplink": {
+                "description": "App deep link",
+                "type": "string"
+              },
+              "deeplink_type": {
+                "description": "Deep link behavior",
+                "type": "string"
+              },
+              "dynamic_destination": {
+                "description": "Dynamic landing page destination",
+                "type": "string"
+              },
+              "dynamic_format": {
+                "description": "Dynamic creative format",
+                "type": "string"
+              },
               "identity_id": {
                 "description": "TikTok identity ID",
+                "lookup_result_key": "identities",
+                "lookup_tool": "tiktok_list_identities",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "display_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "identity_id",
+                  "id"
+                ],
+                "type": "string"
+              },
+              "identity_type": {
+                "description": "TikTok identity type",
                 "type": "string"
               },
               "image_ids": {
@@ -13799,6 +14052,37 @@
                 },
                 "minItems": 2,
                 "type": "array"
+              },
+              "impression_tracking_url": {
+                "description": "Impression tracking URL",
+                "type": "string"
+              },
+              "instant_product_page_used": {
+                "description": "Use TikTok instant product page",
+                "type": "boolean"
+              },
+              "item_duet_status": {
+                "description": "Spark duet status",
+                "enum": [
+                  "ENABLE",
+                  "DISABLE"
+                ],
+                "type": "string"
+              },
+              "item_group_ids": {
+                "description": "Shopping item group IDs",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "item_stitch_status": {
+                "description": "Spark stitch status",
+                "enum": [
+                  "ENABLE",
+                  "DISABLE"
+                ],
+                "type": "string"
               },
               "landing_page_url": {
                 "description": "Landing page URL",
@@ -13815,14 +14099,72 @@
                 "description": "Ad name",
                 "type": "string"
               },
+              "operation_status": {
+                "description": "Provider ad status",
+                "enum": [
+                  "ENABLE",
+                  "DISABLE"
+                ],
+                "type": "string"
+              },
               "page_id": {
                 "description": "TikTok Instant Page or Instant Form page ID",
                 "minLength": 1,
                 "type": "string"
               },
+              "playable_url": {
+                "description": "Playable ad URL",
+                "type": "string"
+              },
               "product_set_id": {
                 "description": "TikTok product set ID",
+                "lookup_result_key": "product_sets",
+                "lookup_tool": "tiktok_list_product_sets",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "product_set_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "product_set_id",
+                  "id"
+                ],
                 "type": "string"
+              },
+              "product_specific_type": {
+                "description": "Shopping product selection mode",
+                "type": "string"
+              },
+              "promotional_music_disabled": {
+                "description": "Disable promotional music for Spark creative",
+                "type": "boolean"
+              },
+              "shopping_ads_deeplink_type": {
+                "description": "Shopping ads deep link behavior",
+                "type": "string"
+              },
+              "shopping_ads_fallback_type": {
+                "description": "Shopping ads fallback behavior",
+                "type": "string"
+              },
+              "shopping_ads_video_package_id": {
+                "description": "Shopping ads video package ID",
+                "type": "string"
+              },
+              "shopping_ads_word_set": {
+                "description": "Shopping ads word set IDs",
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              "sku_ids": {
+                "description": "Shopping SKU IDs",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               },
               "spark_post_id": {
                 "description": "Spark post ID",
@@ -13841,8 +14183,29 @@
                 "description": "Ad copy payload",
                 "type": "object"
               },
+              "tiktok_item_id": {
+                "description": "Owned TikTok post ID for Spark creative",
+                "type": "string"
+              },
               "video_id": {
                 "description": "Video asset ID",
+                "lookup_result_key": "videos",
+                "lookup_tool": "tiktok_list_videos",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "file_name",
+                  "video_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "video_id",
+                  "id"
+                ],
+                "type": "string"
+              },
+              "video_view_tracking_url": {
+                "description": "Video view tracking URL",
                 "type": "string"
               }
             },
@@ -14247,6 +14610,10 @@
                 ],
                 "type": "string"
               },
+              "ad_text": {
+                "description": "Provider ad text",
+                "type": "string"
+              },
               "adgroup_id": {
                 "description": "Parent ad group ID",
                 "type": "string"
@@ -14255,12 +14622,32 @@
                 "description": "Call to action",
                 "type": "string"
               },
+              "call_to_action_id": {
+                "description": "Provider call-to-action ID",
+                "type": "string"
+              },
               "campaign_id": {
                 "description": "Parent campaign ID",
                 "type": "string"
               },
               "catalog_id": {
                 "description": "TikTok catalog ID",
+                "lookup_result_key": "catalogs",
+                "lookup_tool": "tiktok_list_catalogs",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "catalog_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "catalog_id",
+                  "id"
+                ],
+                "type": "string"
+              },
+              "click_tracking_url": {
+                "description": "Click tracking URL",
                 "type": "string"
               },
               "conversion_id": {
@@ -14279,6 +14666,15 @@
                 ],
                 "type": "integer"
               },
+              "creative_type": {
+                "description": "Provider creative type",
+                "enum": [
+                  "SINGLE_IMAGE",
+                  "SINGLE_VIDEO",
+                  "LIVE_CONTENT"
+                ],
+                "type": "string"
+              },
               "creatives": {
                 "description": "Single-image creative payload",
                 "items": {
@@ -14286,8 +14682,40 @@
                 },
                 "type": "array"
               },
+              "deeplink": {
+                "description": "App deep link",
+                "type": "string"
+              },
+              "deeplink_type": {
+                "description": "Deep link behavior",
+                "type": "string"
+              },
+              "dynamic_destination": {
+                "description": "Dynamic landing page destination",
+                "type": "string"
+              },
+              "dynamic_format": {
+                "description": "Dynamic creative format",
+                "type": "string"
+              },
               "identity_id": {
                 "description": "TikTok identity ID",
+                "lookup_result_key": "identities",
+                "lookup_tool": "tiktok_list_identities",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "display_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "identity_id",
+                  "id"
+                ],
+                "type": "string"
+              },
+              "identity_type": {
+                "description": "TikTok identity type",
                 "type": "string"
               },
               "image_ids": {
@@ -14297,6 +14725,37 @@
                 },
                 "minItems": 1,
                 "type": "array"
+              },
+              "impression_tracking_url": {
+                "description": "Impression tracking URL",
+                "type": "string"
+              },
+              "instant_product_page_used": {
+                "description": "Use TikTok instant product page",
+                "type": "boolean"
+              },
+              "item_duet_status": {
+                "description": "Spark duet status",
+                "enum": [
+                  "ENABLE",
+                  "DISABLE"
+                ],
+                "type": "string"
+              },
+              "item_group_ids": {
+                "description": "Shopping item group IDs",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "item_stitch_status": {
+                "description": "Spark stitch status",
+                "enum": [
+                  "ENABLE",
+                  "DISABLE"
+                ],
+                "type": "string"
               },
               "landing_page_url": {
                 "description": "Landing page URL",
@@ -14313,14 +14772,72 @@
                 "description": "Ad name",
                 "type": "string"
               },
+              "operation_status": {
+                "description": "Provider ad status",
+                "enum": [
+                  "ENABLE",
+                  "DISABLE"
+                ],
+                "type": "string"
+              },
               "page_id": {
                 "description": "TikTok Instant Page or Instant Form page ID",
                 "minLength": 1,
                 "type": "string"
               },
+              "playable_url": {
+                "description": "Playable ad URL",
+                "type": "string"
+              },
               "product_set_id": {
                 "description": "TikTok product set ID",
+                "lookup_result_key": "product_sets",
+                "lookup_tool": "tiktok_list_product_sets",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "product_set_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "product_set_id",
+                  "id"
+                ],
                 "type": "string"
+              },
+              "product_specific_type": {
+                "description": "Shopping product selection mode",
+                "type": "string"
+              },
+              "promotional_music_disabled": {
+                "description": "Disable promotional music for Spark creative",
+                "type": "boolean"
+              },
+              "shopping_ads_deeplink_type": {
+                "description": "Shopping ads deep link behavior",
+                "type": "string"
+              },
+              "shopping_ads_fallback_type": {
+                "description": "Shopping ads fallback behavior",
+                "type": "string"
+              },
+              "shopping_ads_video_package_id": {
+                "description": "Shopping ads video package ID",
+                "type": "string"
+              },
+              "shopping_ads_word_set": {
+                "description": "Shopping ads word set IDs",
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              "sku_ids": {
+                "description": "Shopping SKU IDs",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               },
               "spark_post_id": {
                 "description": "Spark post ID",
@@ -14339,8 +14856,29 @@
                 "description": "Ad copy payload",
                 "type": "object"
               },
+              "tiktok_item_id": {
+                "description": "Owned TikTok post ID for Spark creative",
+                "type": "string"
+              },
               "video_id": {
                 "description": "Video asset ID",
+                "lookup_result_key": "videos",
+                "lookup_tool": "tiktok_list_videos",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "file_name",
+                  "video_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "video_id",
+                  "id"
+                ],
+                "type": "string"
+              },
+              "video_view_tracking_url": {
+                "description": "Video view tracking URL",
                 "type": "string"
               }
             },
@@ -14402,6 +14940,10 @@
                 ],
                 "type": "string"
               },
+              "ad_text": {
+                "description": "Provider ad text",
+                "type": "string"
+              },
               "adgroup_id": {
                 "description": "Parent ad group ID",
                 "type": "string"
@@ -14410,12 +14952,32 @@
                 "description": "Call to action",
                 "type": "string"
               },
+              "call_to_action_id": {
+                "description": "Provider call-to-action ID",
+                "type": "string"
+              },
               "campaign_id": {
                 "description": "Parent campaign ID",
                 "type": "string"
               },
               "catalog_id": {
                 "description": "TikTok catalog ID",
+                "lookup_result_key": "catalogs",
+                "lookup_tool": "tiktok_list_catalogs",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "catalog_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "catalog_id",
+                  "id"
+                ],
+                "type": "string"
+              },
+              "click_tracking_url": {
+                "description": "Click tracking URL",
                 "type": "string"
               },
               "conversion_id": {
@@ -14434,6 +14996,15 @@
                 ],
                 "type": "integer"
               },
+              "creative_type": {
+                "description": "Provider creative type",
+                "enum": [
+                  "SINGLE_IMAGE",
+                  "SINGLE_VIDEO",
+                  "LIVE_CONTENT"
+                ],
+                "type": "string"
+              },
               "creatives": {
                 "description": "Single-video creative payload",
                 "items": {
@@ -14441,16 +15012,92 @@
                 },
                 "type": "array"
               },
+              "deeplink": {
+                "description": "App deep link",
+                "type": "string"
+              },
+              "deeplink_type": {
+                "description": "Deep link behavior",
+                "type": "string"
+              },
+              "dynamic_destination": {
+                "description": "Dynamic landing page destination",
+                "type": "string"
+              },
+              "dynamic_format": {
+                "description": "Dynamic creative format",
+                "type": "string"
+              },
               "identity_id": {
                 "description": "TikTok identity ID",
+                "lookup_result_key": "identities",
+                "lookup_tool": "tiktok_list_identities",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "display_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "identity_id",
+                  "id"
+                ],
+                "type": "string"
+              },
+              "identity_type": {
+                "description": "TikTok identity type",
                 "type": "string"
               },
               "image_ids": {
                 "description": "Image asset IDs",
                 "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "lookup_result_key": "images",
+                "lookup_tool": "tiktok_list_images",
+                "selection_label_fields": [
+                  "file_name",
+                  "image_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "image_id",
+                  "id"
+                ],
+                "type": "array"
+              },
+              "impression_tracking_url": {
+                "description": "Impression tracking URL",
+                "type": "string"
+              },
+              "instant_product_page_used": {
+                "description": "Use TikTok instant product page",
+                "type": "boolean"
+              },
+              "item_duet_status": {
+                "description": "Spark duet status",
+                "enum": [
+                  "ENABLE",
+                  "DISABLE"
+                ],
+                "type": "string"
+              },
+              "item_group_ids": {
+                "description": "Shopping item group IDs",
+                "items": {
                   "type": "string"
                 },
                 "type": "array"
+              },
+              "item_stitch_status": {
+                "description": "Spark stitch status",
+                "enum": [
+                  "ENABLE",
+                  "DISABLE"
+                ],
+                "type": "string"
               },
               "landing_page_url": {
                 "description": "Landing page URL",
@@ -14467,14 +15114,72 @@
                 "description": "Ad name",
                 "type": "string"
               },
+              "operation_status": {
+                "description": "Provider ad status",
+                "enum": [
+                  "ENABLE",
+                  "DISABLE"
+                ],
+                "type": "string"
+              },
               "page_id": {
                 "description": "TikTok Instant Page or Instant Form page ID",
                 "minLength": 1,
                 "type": "string"
               },
+              "playable_url": {
+                "description": "Playable ad URL",
+                "type": "string"
+              },
               "product_set_id": {
                 "description": "TikTok product set ID",
+                "lookup_result_key": "product_sets",
+                "lookup_tool": "tiktok_list_product_sets",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "product_set_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "product_set_id",
+                  "id"
+                ],
                 "type": "string"
+              },
+              "product_specific_type": {
+                "description": "Shopping product selection mode",
+                "type": "string"
+              },
+              "promotional_music_disabled": {
+                "description": "Disable promotional music for Spark creative",
+                "type": "boolean"
+              },
+              "shopping_ads_deeplink_type": {
+                "description": "Shopping ads deep link behavior",
+                "type": "string"
+              },
+              "shopping_ads_fallback_type": {
+                "description": "Shopping ads fallback behavior",
+                "type": "string"
+              },
+              "shopping_ads_video_package_id": {
+                "description": "Shopping ads video package ID",
+                "type": "string"
+              },
+              "shopping_ads_word_set": {
+                "description": "Shopping ads word set IDs",
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              "sku_ids": {
+                "description": "Shopping SKU IDs",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               },
               "spark_post_id": {
                 "description": "Spark post ID",
@@ -14493,9 +15198,17 @@
                 "description": "Ad copy payload",
                 "type": "object"
               },
+              "tiktok_item_id": {
+                "description": "Owned TikTok post ID for Spark creative",
+                "type": "string"
+              },
               "video_id": {
                 "description": "Uploaded TikTok video asset ID",
                 "minLength": 1,
+                "type": "string"
+              },
+              "video_view_tracking_url": {
+                "description": "Video view tracking URL",
                 "type": "string"
               }
             },

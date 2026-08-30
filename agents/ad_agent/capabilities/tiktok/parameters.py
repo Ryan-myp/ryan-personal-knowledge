@@ -50,6 +50,8 @@ TIKTOK_AGE_GROUPS = [
 TIKTOK_GENDERS = ["GENDER_UNLIMITED", "GENDER_MALE", "GENDER_FEMALE"]
 TIKTOK_OPERATING_SYSTEMS = ["ANDROID", "IOS"]
 TIKTOK_AD_FORMATS = ["SINGLE_VIDEO", "SINGLE_IMAGE", "CAROUSEL", "SPARK_AD"]
+TIKTOK_CREATIVE_TYPES = ["SINGLE_IMAGE", "SINGLE_VIDEO", "LIVE_CONTENT"]
+TIKTOK_OPERATION_STATUSES = ["ENABLE", "DISABLE"]
 TIKTOK_AUDIENCE_TYPES = ["CUSTOM", "CUSTOM_AUDIENCE", "LOOKALIKE", "LOOKALIKE_AUDIENCE"]
 TIKTOK_AUDIENCE_CALCULATE_TYPES = [
     "EMAIL_SHA256", "FIRST_MD5", "FIRST_SHA256", "GAID_MD5", "GAID_SHA256",
@@ -802,14 +804,64 @@ def tiktok_ad_schema() -> dict[str, Any]:
             "media": _field(["array", "object"], "TikTok media asset payload", items={"type": "object"}),
             "creatives": _field("array", "Creative list", items={"type": "object"}),
             "text": _field("object", "Ad copy payload", additionalProperties=True),
-            "video_id": _field("string", "Video asset ID"),
-            "image_ids": _field("array", "Image asset IDs", items={"type": "string"}),
+            "video_id": _field(
+                "string", "Video asset ID", minLength=1,
+                lookup_tool="tiktok_list_videos", lookup_result_key="videos",
+                selection_value_fields=["video_id", "id"],
+                selection_label_fields=["file_name", "video_name", "name", "id"],
+            ),
+            "image_ids": _field(
+                "array", "Image asset IDs", items={"type": "string", "minLength": 1},
+                lookup_tool="tiktok_list_images", lookup_result_key="images",
+                selection_value_fields=["image_id", "id"],
+                selection_label_fields=["file_name", "image_name", "name", "id"],
+            ),
             "spark_post_id": _field("string", "Spark post ID"),
             "page_id": _field("string", "TikTok Instant Page or Instant Form page ID", minLength=1),
-            "catalog_id": _field("string", "TikTok catalog ID"),
-            "product_set_id": _field("string", "TikTok product set ID"),
+            "catalog_id": _field(
+                "string", "TikTok catalog ID", minLength=1,
+                lookup_tool="tiktok_list_catalogs", lookup_result_key="catalogs",
+                selection_value_fields=["catalog_id", "id"],
+                selection_label_fields=["catalog_name", "name", "id"],
+            ),
+            "product_set_id": _field(
+                "string", "TikTok product set ID", minLength=1,
+                lookup_tool="tiktok_list_product_sets", lookup_result_key="product_sets",
+                selection_value_fields=["product_set_id", "id"],
+                selection_label_fields=["product_set_name", "name", "id"],
+            ),
             "call_to_action": _field("string", "Call to action"),
-            "identity_id": _field("string", "TikTok identity ID"),
+            "call_to_action_id": _field("string", "Provider call-to-action ID"),
+            "creative_type": _field("string", "Provider creative type", enum=TIKTOK_CREATIVE_TYPES),
+            "ad_text": _field("string", "Provider ad text"),
+            "identity_id": _field(
+                "string", "TikTok identity ID", minLength=1,
+                lookup_tool="tiktok_list_identities", lookup_result_key="identities",
+                selection_value_fields=["identity_id", "id"],
+                selection_label_fields=["display_name", "name", "id"],
+            ),
+            "identity_type": _field("string", "TikTok identity type"),
+            "tiktok_item_id": _field("string", "Owned TikTok post ID for Spark creative"),
+            "deeplink": _field("string", "App deep link"),
+            "deeplink_type": _field("string", "Deep link behavior"),
+            "click_tracking_url": _field("string", "Click tracking URL"),
+            "impression_tracking_url": _field("string", "Impression tracking URL"),
+            "video_view_tracking_url": _field("string", "Video view tracking URL"),
+            "operation_status": _field("string", "Provider ad status", enum=TIKTOK_OPERATION_STATUSES),
+            "dynamic_destination": _field("string", "Dynamic landing page destination"),
+            "dynamic_format": _field("string", "Dynamic creative format"),
+            "product_specific_type": _field("string", "Shopping product selection mode"),
+            "sku_ids": _field("array", "Shopping SKU IDs", items={"type": "string"}),
+            "item_group_ids": _field("array", "Shopping item group IDs", items={"type": "string"}),
+            "shopping_ads_deeplink_type": _field("string", "Shopping ads deep link behavior"),
+            "shopping_ads_fallback_type": _field("string", "Shopping ads fallback behavior"),
+            "shopping_ads_video_package_id": _field("string", "Shopping ads video package ID"),
+            "shopping_ads_word_set": _field("array", "Shopping ads word set IDs", items={"type": "integer"}),
+            "promotional_music_disabled": _field("boolean", "Disable promotional music for Spark creative"),
+            "item_duet_status": _field("string", "Spark duet status", enum=TIKTOK_OPERATION_STATUSES),
+            "item_stitch_status": _field("string", "Spark stitch status", enum=TIKTOK_OPERATION_STATUSES),
+            "instant_product_page_used": _field("boolean", "Use TikTok instant product page"),
+            "playable_url": _field("string", "Playable ad URL"),
             "status": _field("integer", "Ad status: 1 active, 0 paused", enum=[0, 1]),
         },
     }
