@@ -1,5 +1,5 @@
 {
-  "digest": "fe44fa60759e9e3314414085643e3bc47c91710f54d74a426ac460187faef97b",
+  "digest": "70f4bbcf3ec2f4738889710b5ab5cad32fbde98bfcf1da2e06c096ef40a59e64",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -11828,8 +11828,8 @@
       ]
     },
     "tiktok": {
-      "digest": "57f6d274af992dab7d287f9875f5e3ec69aa55816c47a2a83a57a954b2d235df",
-      "tool_count": 56,
+      "digest": "4266e3208a52c5005bf7f145590e189cee1296ea892855042f7d5882b79c23f4",
+      "tool_count": 57,
       "tools": [
         {
           "action": "create",
@@ -13634,6 +13634,65 @@
         {
           "action": "list",
           "contract_version": "1.2.0",
+          "description": "查询 TikTok Action 类别和特殊行业类别。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "special_industries": {
+                "items": {
+                  "enum": [
+                    "HOUSING",
+                    "EMPLOYMENT",
+                    "CREDIT"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "account_id"
+            ],
+            "required": [
+              "account_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_action_categories"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_list_action_categories",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "action_category",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "targeting",
+            "lookup"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok Ads Ad Group 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -14321,16 +14380,67 @@
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
-              "parent_ids": {
+              "account_id": {
+                "type": "string"
+              },
+              "language": {
+                "enum": [
+                  "en",
+                  "zh",
+                  "ja",
+                  "de",
+                  "es",
+                  "fr",
+                  "id",
+                  "it",
+                  "ko",
+                  "ru",
+                  "th",
+                  "tr",
+                  "vi",
+                  "ar",
+                  "pt",
+                  "ms"
+                ],
+                "type": "string"
+              },
+              "placements": {
                 "items": {
+                  "enum": [
+                    "PLACEMENT_TIKTOK",
+                    "PLACEMENT_PANGLE",
+                    "PLACEMENT_GLOBAL_APP_BUNDLE"
+                  ],
                   "type": "string"
                 },
                 "type": "array"
+              },
+              "special_industries": {
+                "items": {
+                  "enum": [
+                    "HOUSING",
+                    "EMPLOYMENT",
+                    "CREDIT"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "version": {
+                "enum": [
+                  1,
+                  2
+                ],
+                "type": "integer"
               }
             },
             "provider_any_of": [],
-            "provider_required": [],
-            "required": [],
+            "provider_required": [
+              "account_id"
+            ],
+            "required": [
+              "account_id"
+            ],
             "type": "object"
           },
           "intent_types": [
@@ -14354,7 +14464,8 @@
           "timeout_seconds": 30.0,
           "traits": [
             "read",
-            "targeting"
+            "targeting",
+            "lookup"
           ]
         },
         {
@@ -16439,5 +16550,5 @@
       ]
     }
   },
-  "tool_count": 199
+  "tool_count": 200
 }

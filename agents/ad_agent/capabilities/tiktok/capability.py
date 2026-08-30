@@ -111,6 +111,7 @@ class TikTokCapability(BaseCapability):
         "upload_audience_file": ["tiktok_upload_audience_file"],
         "delete_audience": ["tiktok_delete_audience"],
         "list_interest_categories": ["tiktok_list_interest_categories"],
+        "list_action_categories": ["tiktok_list_action_categories"],
         "get_interest_category": ["tiktok_get_interest_category"], "list_locations": ["tiktok_list_locations"],
         "list_languages": ["tiktok_list_languages"],
         "list_device_models": ["tiktok_list_device_models"],
@@ -265,9 +266,35 @@ class TikTokCapability(BaseCapability):
             method_tool(
                 platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_interest_categories",
                 description="查询 TikTok 兴趣类别。", method_name="list_interest_categories", result_key="interest_categories",
-                properties={"parent_ids": {"type": "array", "items": {"type": "string"}}},
+                properties={
+                    "account_id": {"type": "string"}, "version": {"type": "integer", "enum": [1, 2]},
+                    "placements": {"type": "array", "items": {"type": "string", "enum": TIKTOK_PLACEMENTS}},
+                    "special_industries": {"type": "array", "items": {"type": "string", "enum": ["HOUSING", "EMPLOYMENT", "CREDIT"]}},
+                    "language": {"type": "string", "enum": ["en", "zh", "ja", "de", "es", "fr", "id", "it", "ko", "ru", "th", "tr", "vi", "ar", "pt", "ms"]},
+                },
+                required=["account_id"], provider_required=["account_id"],
                 action="list", resource_type="interest_category", intent_types=["list_interests"],
-                traits=["read", "targeting"], argument_builder=lambda _ctx, data: ((data.get("parent_ids"),), {}),
+                traits=["read", "targeting", "lookup"],
+                argument_builder=lambda ctx, data: ((account(ctx, data),), {
+                    "version": data.get("version", 2), "placements": data.get("placements"),
+                    "special_industries": data.get("special_industries"),
+                    "language": data.get("language", "en"),
+                }),
+            ),
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_action_categories",
+                description="查询 TikTok Action 类别和特殊行业类别。", method_name="list_action_categories",
+                result_key="action_categories",
+                properties={
+                    "account_id": {"type": "string"},
+                    "special_industries": {"type": "array", "items": {"type": "string", "enum": ["HOUSING", "EMPLOYMENT", "CREDIT"]}},
+                },
+                required=["account_id"], provider_required=["account_id"],
+                action="list", resource_type="action_category", intent_types=["list_action_categories"],
+                traits=["read", "targeting", "lookup"],
+                argument_builder=lambda ctx, data: ((account(ctx, data),), {
+                    "special_industries": data.get("special_industries"),
+                }),
             ),
             method_tool(
                 platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_get_interest_category",

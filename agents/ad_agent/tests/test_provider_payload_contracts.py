@@ -162,6 +162,11 @@ def test_tiktok_targeting_reference_lookups_build_official_v13_queries():
         return {"list": [{"id": "1"}]}
 
     client.request = request
+    assert client.list_interest_categories(
+        "123", version=2, placements=["PLACEMENT_TIKTOK"],
+        special_industries=["HOUSING"], language="zh",
+    ) == [{"id": "1"}]
+    assert client.list_action_categories("123", ["HOUSING"]) == [{"id": "1"}]
     assert client.list_languages("123") == [{"id": "1"}]
     assert client.list_device_models("123") == [{"id": "1"}]
     assert client.recommend_interest_keywords(
@@ -169,6 +174,13 @@ def test_tiktok_targeting_reference_lookups_build_official_v13_queries():
         mode="SEMANTIC_RECOMMEND", audience_type="PURCHASE_INTENTION",
     ) == [{"id": "1"}]
     assert calls == [
+        ("GET", "tool/interest_category/", {"params": {
+            "advertiser_id": "123", "version": 2, "language": "zh",
+            "placements": ["PLACEMENT_TIKTOK"], "special_industries": ["HOUSING"],
+        }}),
+        ("GET", "tool/action_category/", {"params": {
+            "advertiser_id": "123", "special_industries": ["HOUSING"],
+        }}),
         ("GET", "tool/language/", {"params": {"advertiser_id": "123"}}),
         ("GET", "tool/device_model/", {"params": {"advertiser_id": "123"}}),
         ("GET", "tool/interest_keyword/recommend/", {"params": {
@@ -184,6 +196,8 @@ def test_tiktok_targeting_reference_lookups_build_official_v13_queries():
     }
     assert definitions["tiktok_list_languages"].effect_class.value == "read"
     assert definitions["tiktok_list_device_models"].input_schema.required == ["account_id"]
+    assert definitions["tiktok_list_interest_categories"].input_schema.required == ["account_id"]
+    assert definitions["tiktok_list_action_categories"].input_schema.required == ["account_id"]
     assert definitions["tiktok_recommend_interest_keywords"].input_schema.properties["mode"]["enum"] == [
         "FUZZ_MATCH", "SEMANTIC_RECOMMEND",
     ]

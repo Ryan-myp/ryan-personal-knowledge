@@ -12,6 +12,7 @@ API_SURFACE = [
     {"resource": "audience", "action": "get", "method": "get_audience", "status": "implemented"},
     {"resource": "audience", "action": "create_customer_file", "method": "create_audience", "status": "implemented"},
     {"resource": "interest_category", "action": "list", "method": "list_interest_categories", "status": "implemented"},
+    {"resource": "action_category", "action": "list", "method": "list_action_categories", "status": "implemented"},
     {"resource": "language", "action": "list", "method": "list_languages", "status": "implemented"},
     {"resource": "device_model", "action": "list", "method": "list_device_models", "status": "implemented"},
     {"resource": "interest_keyword", "action": "recommend", "method": "recommend_interest_keywords", "status": "implemented"},

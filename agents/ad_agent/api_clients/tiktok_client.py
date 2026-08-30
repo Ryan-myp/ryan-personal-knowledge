@@ -963,15 +963,64 @@ class TikTokAPIClient(BasePlatformClient):
         )
         return {"success": True, "audience_id": audience_id}
     
-    def list_interest_categories(self, parent_ids: list = None) -> list:
-        """获取兴趣类别列表"""
+    def list_interest_categories(
+        self,
+        advertiser_id: str = None,
+        version: int = 2,
+        placements: list[str] = None,
+        special_industries: list[str] = None,
+        language: str = "en",
+    ) -> list:
+        """获取账户范围内 TikTok v1.3 兴趣类别列表。"""
+        advertiser_id = str(advertiser_id or "").strip()
+        if not advertiser_id.isdigit():
+            raise ValueError("advertiser_id must contain digits only")
+        try:
+            version = int(version)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("version must be 1 or 2") from exc
+        if version not in {1, 2}:
+            raise ValueError("version must be 1 or 2")
+        language = str(language or "en").strip().lower()
+        if language not in {
+            "en", "zh", "ja", "de", "es", "fr", "id", "it", "ko",
+            "ru", "th", "tr", "vi", "ar", "pt", "ms",
+        }:
+            raise ValueError("unsupported interest category language")
+        if placements is not None and (not isinstance(placements, list) or not placements):
+            raise ValueError("placements must be a non-empty list when provided")
+        params: dict[str, Any] = {
+            "advertiser_id": advertiser_id, "version": version, "language": language,
+        }
+        if placements:
+            params["placements"] = placements
+        if special_industries:
+            params["special_industries"] = special_industries
         self.acquire_rate_limit(self._rate_limiter)
-        data = {}
-        if parent_ids:
-            data['parent_ids'] = parent_ids
-        result = self.request('GET', 'interest_category/list/', params=data)
+        result = self.request("GET", "tool/interest_category/", params=params)
         payload = self._data_section(result)
-        return payload.get('list', []) if isinstance(payload, dict) else []
+        if isinstance(payload, list):
+            return payload
+        return payload.get("list", payload.get("interest_categories", [])) if isinstance(payload, dict) else []
+
+    def list_action_categories(
+        self, advertiser_id: str, special_industries: list[str] = None
+    ) -> list:
+        """获取 TikTok v1.3 行业/特殊行业 Action 类别。"""
+        advertiser_id = str(advertiser_id or "").strip()
+        if not advertiser_id.isdigit():
+            raise ValueError("advertiser_id must contain digits only")
+        if special_industries is not None and not isinstance(special_industries, list):
+            raise ValueError("special_industries must be a list")
+        params: dict[str, Any] = {"advertiser_id": advertiser_id}
+        if special_industries:
+            params["special_industries"] = special_industries
+        self.acquire_rate_limit(self._rate_limiter)
+        result = self.request("GET", "tool/action_category/", params=params)
+        payload = self._data_section(result)
+        if isinstance(payload, list):
+            return payload
+        return payload.get("list", payload.get("action_categories", [])) if isinstance(payload, dict) else []
 
     def list_languages(self, advertiser_id: str) -> list:
         """获取 TikTok 官方语言定向选项。"""
