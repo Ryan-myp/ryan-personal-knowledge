@@ -457,6 +457,29 @@ class MetaAPIClient(BasePlatformClient):
             f"/{page_id}/leadgen_forms",
             {"limit": limit, "fields": "id,name,status,created_time,updated_time"},
         )
+
+    def get_lead_form(self, page_id: str, form_id: str, fields: list = None) -> dict:
+        """Get one Instant Form after verifying it belongs to the Page."""
+        page_id = self._clean_meta_id(page_id, "page_id")
+        form_id = self._clean_meta_id(form_id, "form_id")
+        forms = self.list_lead_forms(page_id, limit=100)
+        if not any(
+            isinstance(item, dict) and str(item.get("id")) == form_id
+            for item in forms
+        ):
+            raise PermissionError(
+                f"Meta lead form {form_id} does not belong to page {page_id}"
+            )
+        params = {
+            "fields": ",".join(fields) if fields else (
+                "id,name,status,created_time,updated_time,page,questions,"
+                "privacy_policy_url,follow_up_action"
+            )
+        }
+        return self.require_resource_object(
+            self.request("GET", f"/{form_id}", extra_params=params),
+            "Meta lead form get",
+        )
     
     # ==================== Campaign 管理 ====================
     

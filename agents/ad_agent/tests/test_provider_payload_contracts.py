@@ -248,6 +248,20 @@ def test_meta_resource_ownership_accepts_graph_ids_and_ad_set_alias():
     assert client.resource_belongs_to_account("123", "ad_set", "as-1") is True
 
 
+def test_meta_lead_form_get_checks_page_ownership_and_forwards_fields():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+    client.list_lead_forms = lambda page_id, limit=25: [{"id": "form-1"}]
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        calls.append((method, endpoint, kwargs.get("extra_params")))
+        or {"id": "form-1", "status": "ACTIVE"}
+    )
+
+    form = client.get_lead_form("page-1", "form-1", fields=["id", "status"])
+    assert form == {"id": "form-1", "status": "ACTIVE"}
+    assert calls == [("GET", "/form-1", {"fields": "id,status"})]
+
+
 def test_meta_audience_crud_builds_custom_and_lookalike_payloads():
     client = MetaAPIClient({"access_token": "test"})
     calls = []

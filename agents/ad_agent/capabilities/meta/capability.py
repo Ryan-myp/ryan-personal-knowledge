@@ -62,7 +62,7 @@ class MetaCapability(BaseCapability):
         "list_product_sets": ["meta_list_product_sets"], "list_campaigns": ["meta_list_campaigns"],
         "list_pages": ["meta_list_pages"], "list_pixels": ["meta_list_pixels"],
         "get_pixel": ["meta_get_pixel"],
-        "list_lead_forms": ["meta_list_lead_forms"],
+        "list_lead_forms": ["meta_list_lead_forms"], "get_lead_form": ["meta_get_lead_form"],
         "get_campaign": ["meta_get_campaign"], "create_campaign": ["meta_create_campaign"],
         "update_campaign": ["meta_update_campaign"], "pause_campaign": ["meta_pause_campaign"],
         "resume_campaign": ["meta_resume_campaign"], "list_adsets": ["meta_list_ad_sets"],
@@ -131,6 +131,19 @@ class MetaCapability(BaseCapability):
                 intent_types=["list_lead_forms"], traits=["read", "lead_form"],
                 argument_builder=lambda _ctx, data: ((data["page_id"],), {
                     "limit": data.get("limit", 25),
+                }),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_get_lead_form",
+                description="查询 Meta Lead Ads Instant Form 详情。", method_name="get_lead_form",
+                result_key="lead_form", properties={
+                    "page_id": {"type": "string"},
+                    "form_id": {"type": "string"},
+                    "fields": {"type": "array", "items": {"type": "string"}},
+                }, required=["page_id", "form_id"], action="get", resource_type="lead_form",
+                resource_id_field="form_id", intent_types=["get_lead_form"], traits=["read", "lead_form"],
+                argument_builder=lambda _ctx, data: ((data["page_id"], data["form_id"]), {
+                    "fields": data.get("fields"),
                 }),
             ),
             method_tool(

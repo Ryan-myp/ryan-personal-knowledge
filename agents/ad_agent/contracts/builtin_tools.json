@@ -1,5 +1,5 @@
 {
-  "digest": "c25b6fbe074b5cf6de693c7cf4d21247c78b04ed76c2859d579e37c6412bcf9c",
+  "digest": "0678f37a03d5f052913204ebf895e5f02f465ebf5ee50f8ae24e6f5cc47443a7",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -5681,8 +5681,8 @@
       ]
     },
     "meta": {
-      "digest": "a5e877c00ffcb3a95188df9d0d0912a27a91ddd21755a0dd1705765fba1d320b",
-      "tool_count": 36,
+      "digest": "ba9c0545e85eda728d1a1d08f3de49d95961a98a2f6030895a46dafa6ebc3489",
+      "tool_count": 37,
       "tools": [
         {
           "action": "boost",
@@ -7468,6 +7468,61 @@
           "traits": [
             "read",
             "report"
+          ]
+        },
+        {
+          "action": "get",
+          "contract_version": "1.2.0",
+          "description": "查询 Meta Lead Ads Instant Form 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "fields": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "form_id": {
+                "type": "string"
+              },
+              "page_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "page_id",
+              "form_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_lead_form"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_get_lead_form",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "form_id",
+          "resource_type": "lead_form",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "lead_form"
           ]
         },
         {
@@ -11773,5 +11828,5 @@
       ]
     }
   },
-  "tool_count": 155
+  "tool_count": 156
 }
