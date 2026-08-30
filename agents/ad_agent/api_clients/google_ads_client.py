@@ -116,6 +116,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         "name", "description", "membership_life_span", "integration_code",
         "eligible_for_search",
     }
+    KEYWORD_UPDATE_FIELDS = {"status", "cpc_bid_micros", "cpc_bid"}
     USER_LIST_UPLOAD_COLUMNS = {"hashed_email", "hashed_phone_number"}
     MAX_USER_LIST_UPLOAD_BYTES = 100 * 1024 * 1024
     MAX_USER_LIST_UPLOAD_ROWS = 100_000
@@ -1372,6 +1373,64 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 f"{len(operations)} operations: {response}"
             )
         return resource_ids
+
+    def update_keyword(
+        self, ad_group_id: str, criterion_id: str, updates: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Update mutable fields on one Google AdGroupCriterion keyword."""
+        ad_group_id = self._numeric_id(ad_group_id, "ad_group_id")
+        criterion_id = self._numeric_id(criterion_id, "criterion_id")
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("updates must be a non-empty object")
+        unknown = set(updates) - self.KEYWORD_UPDATE_FIELDS
+        if unknown:
+            raise ValueError(f"Unsupported Google keyword update fields: {sorted(unknown)}")
+
+        normalized = {key: value for key, value in updates.items() if value is not None}
+        if not normalized:
+            raise ValueError("updates must contain at least one non-null field")
+        if "status" in normalized:
+            normalized["status"] = str(normalized["status"]).upper()
+            if normalized["status"] not in {"ENABLED", "PAUSED"}:
+                raise ValueError("keyword status must be ENABLED or PAUSED")
+        if "cpc_bid" in normalized:
+            try:
+                normalized["cpc_bid_micros"] = int(
+                    float(normalized.pop("cpc_bid")) * 1_000_000
+                )
+            except (TypeError, ValueError) as exc:
+                raise ValueError("cpc_bid must be a non-negative number") from exc
+        if "cpc_bid_micros" in normalized:
+            try:
+                normalized["cpc_bid_micros"] = int(normalized["cpc_bid_micros"])
+            except (TypeError, ValueError) as exc:
+                raise ValueError("cpc_bid_micros must be a non-negative integer") from exc
+            if normalized["cpc_bid_micros"] < 0:
+                raise ValueError("cpc_bid_micros must be a non-negative integer")
+
+        resource_name = (
+            f"customers/{self.customer_id}/adGroupCriteria/"
+            f"{ad_group_id}~{criterion_id}"
+        )
+        patch = {"resourceName": resource_name, **normalized}
+        self._mutate("adGroupCriteria", {
+            "update": self._camel_case_keys(patch),
+            "updateMask": {
+                "paths": [self._camel_case(key) for key in normalized],
+            },
+        })
+        return {"success": True, "ad_group_id": ad_group_id, "keyword_id": criterion_id}
+
+    def delete_keyword(self, ad_group_id: str, criterion_id: str) -> dict[str, Any]:
+        """Remove one Google AdGroupCriterion keyword."""
+        ad_group_id = self._numeric_id(ad_group_id, "ad_group_id")
+        criterion_id = self._numeric_id(criterion_id, "criterion_id")
+        resource_name = (
+            f"customers/{self.customer_id}/adGroupCriteria/"
+            f"{ad_group_id}~{criterion_id}"
+        )
+        self._mutate("adGroupCriteria", {"remove": resource_name})
+        return {"success": True, "ad_group_id": ad_group_id, "keyword_id": criterion_id}
 
     def create_product_group(
         self,

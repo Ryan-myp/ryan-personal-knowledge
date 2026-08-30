@@ -251,6 +251,12 @@ class TestIntentParser:
         assert intent.intent_type == "list_campaigns"
         assert "google" in intent.platforms
 
+    def test_google_keyword_lifecycle_intents_are_distinct(self):
+        parser = LLMIntentParser()
+        assert parser.parse("创建 Google 关键词", None).intent_type == "create_keywords"
+        assert parser.parse("更新 Google 关键词", None).intent_type == "update_keyword"
+        assert parser.parse("删除 Google 关键词", None).intent_type == "delete_keyword"
+
     def test_report_query(self):
         from agents.ad_agent.core.intent import LLMIntentParser
         parser = LLMIntentParser()

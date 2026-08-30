@@ -28,7 +28,7 @@
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐    │
 │  │ IntentParser    │  │ IntentRouter    │  │ ToolRegistry             │    │
 │  │ 意图解析         │→│ 路由分发         │→ │ 工具注册/执行            │    │
-│  │ - LLM 结构化解析    │ │ - 发现式路由   │  │ - 243 tools              │    │
+│  │ - LLM 结构化解析    │ │ - 发现式路由   │  │ - 245 tools              │    │
 │  └─────────────────┘  └─────────────────┘  └─────────────────────────┘    │
 │                                                                             │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐    │
@@ -45,7 +45,7 @@
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌──────────────────┐  │
 │  │ Meta        │  │ Google Ads  │  │ TikTok      │  │ DV360            │  │
 │  │ Capability  │  │ Capability  │  │ Capability  │  │ Capability       │  │
-│  │ 67 tools    │  │ 72 tools    │  │ 72 tools    │  │ 32 tools         │  │
+│  │ 67 tools    │  │ 74 tools    │  │ 72 tools    │  │ 32 tools         │  │
 │  └─────────────┘  └─────────────┘  └─────────────┘  └──────────────────┘  │
 └─────────────────────────────────────────────────────────────────────────────┘
                                    │
@@ -226,12 +226,12 @@ class TikTokAPIClient(BaseAPIClient):
         return resp.get('data', {}).get('list', [])
 ```
 
-## 三、工具清单（当前 Capability 共 243 个工具）
+## 三、工具清单（当前 Capability 共 245 个工具）
 
 | 平台 | 工具数量 | 工具列表 |
 |------|---------|---------|
 | **Meta** | 67 | 账户、Page/Pixel 详情/列表、Pixel Custom Conversion 创建、Lead Form 列表/详情、Audience CRUD、查询/创建 Campaign、Ad Set、Ad、Lead Ads、Catalog Ads、Creative；商品目录/商品集；受众；Boost；生命周期；报表 |
-| **Google Ads** | 72 | 查询/创建/删除 Campaign、CampaignBudget、CampaignCriterion 定向、Conversion Action 生命周期、User List 生命周期与 Customer Match 哈希数据上传、BiddingStrategy 生命周期与优化参数、可复用文本/图片/YouTube/HTML5 Asset 创建/移除、出价策略查询、Ad Group/Ad 完整 CRUD、关键词、Search Ad、Responsive Display Ad、Video Ad、Demand Gen、Hotel、Local、Smart、Travel、Product Group、PMax Asset Group；生命周期；报表 |
+| **Google Ads** | 74 | 查询/创建/删除 Campaign、CampaignBudget、CampaignCriterion 定向、Conversion Action 生命周期、User List 生命周期与 Customer Match 哈希数据上传、BiddingStrategy 生命周期与优化参数、可复用文本/图片/YouTube/HTML5 Asset 创建/移除、出价策略查询、Ad Group/Ad 完整 CRUD、关键词完整生命周期、Search Ad、Responsive Display Ad、Video Ad、Demand Gen、Hotel、Local、Smart、Travel、Product Group、PMax Asset Group；生命周期；报表 |
 | **TikTok** | 72 | 账户、查询/创建 Campaign、Ad Group、Ad；Lead/App/Spark/Product Sales 广告；Identity、Creative Portfolio 创建/查询/预览；图片/视频 Asset Library 上传；上下文地域、转化、设备、目录、应用、品牌安全查询；Pixel 生命周期与事件；Spark Ads；受众 CRUD；生命周期；报表 |
 | **DV360** | 32 | 查询 Advertiser/Campaign/IO/Line Item/Creative；创建/更新/删除 Creative；定向目录与 Line Item 定向绑定；删除/激活/暂停 IO/Line Item；异步报表；更新工具 |
 
@@ -261,7 +261,7 @@ class TikTokAPIClient(BaseAPIClient):
 
 ### Provider 接口与版本演进
 
-当前 243 个 Tool 是四个 Capability 对其已实现 Client 方法的覆盖基线，不等于四个
+当前 245 个 Tool 是四个 Capability 对其已实现 Client 方法的覆盖基线，不等于四个
 官方 Marketing API 的全量接口。新增接口由渠道包自己完成 Client 方法、Tool Schema、
 参数目录/lookup 和 payload adapter，再通过 `audit_capabilities.py` 与契约快照进入
 发布门禁。
@@ -443,7 +443,7 @@ runtime.auto_load_skills(str(skills_root), credentials)
 |------|------|------|
 | **Skills** | SKILL.md 提供的上下文、SOP 和安全边界 | 按已加载 Skill 动态发现（当前内置 4 个） |
 | **Capabilities** | Python 实现的渠道能力模块 | 按包约定动态发现（当前内置 4 个） |
-| **Tools** | Capability/plugin 提供的具体可执行工具 | 按注册结果动态统计（当前基线 243 个） |
+| **Tools** | Capability/plugin 提供的具体可执行工具 | 按注册结果动态统计（当前基线 245 个） |
 
 **关系**：
 - Skills 是自然语言上下文（SKILL.md）

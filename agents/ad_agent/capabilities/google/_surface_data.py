@@ -19,6 +19,8 @@ API_SURFACE = [
     {"resource": "ad", "action": "update", "method": "update_ad", "status": "implemented"},
     {"resource": "keyword", "action": "list", "method": "list_keywords", "status": "implemented"},
     {"resource": "keyword", "action": "create", "method": "create_keywords", "status": "implemented"},
+    {"resource": "keyword", "action": "update", "method": "update_keyword", "status": "implemented"},
+    {"resource": "keyword", "action": "delete", "method": "delete_keyword", "status": "implemented"},
     {"resource": "asset_group", "action": "list", "method": "list_asset_groups", "status": "implemented"},
     {"resource": "asset_group", "action": "get", "method": "get_asset_group", "status": "implemented"},
     {"resource": "asset_group", "action": "create", "method": "create_pmax_asset_group", "status": "implemented"},

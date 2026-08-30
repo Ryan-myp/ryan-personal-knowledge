@@ -726,6 +726,18 @@ def google_keyword_schema() -> dict[str, Any]:
     }
 
 
+def google_keyword_update_schema() -> dict[str, Any]:
+    """Closed mutable-field contract for one keyword criterion update."""
+    return _object({
+        "status": _field(
+            "string", "Keyword criterion status", enum=GOOGLE_STATUSES[:2]
+        ),
+        "cpc_bid_micros": _field(
+            "integer", "Criterion CPC bid in micros", minimum=0
+        ),
+    }, "Mutable Google AdGroupCriterion keyword fields")
+
+
 def google_campaign_criterion_item_schema() -> dict[str, Any]:
     """Schema for one provider-neutral CampaignCriterion specification.
 

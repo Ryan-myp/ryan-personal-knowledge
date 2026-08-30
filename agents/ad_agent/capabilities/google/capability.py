@@ -37,7 +37,7 @@ from .parameters import (
     google_travel_ad_schema,
     google_campaign_budget_update_schema,
     google_conversion_action_schema, google_conversion_action_update_schema,
-    google_campaign_criterion_schema,
+    google_campaign_criterion_schema, google_keyword_update_schema,
     google_user_list_schema, google_user_list_update_schema,
     google_bidding_strategy_schema, google_bidding_strategy_update_schema,
 )
@@ -83,6 +83,8 @@ class GoogleCapability(BaseCapability):
         "list_assets": ["google_list_assets"], "get_asset": ["google_get_asset"],
         "create_asset": ["google_create_asset"], "delete_asset": ["google_delete_asset"],
         "create_keywords": ["google_create_keywords"],
+        "update_keyword": ["google_update_keyword"],
+        "delete_keyword": ["google_delete_keyword"],
         "get_asset_group": ["google_get_asset_group"], "create_campaign": ["google_create_campaign"],
         "update_campaign": ["google_update_campaign"], "update_ad_group": ["google_update_ad_group"],
         "update_ad": ["google_update_ad"], "update_asset_group": ["google_update_asset_group"],
@@ -734,6 +736,42 @@ class GoogleCapability(BaseCapability):
                 resource_id_field="keyword_ids", parent_resource_id_field="ad_group_id",
                 intent_types=["create_keywords"], traits=["write", "keyword"], write=True,
                 argument_builder=lambda _ctx, data: ((data["ad_group_id"], data["keywords"]), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_update_keyword",
+                description="更新 Google Ad Group 关键词状态或 CPC 出价；默认仅生成 dry-run 计划。",
+                method_name="update_keyword", result_key="keyword_id",
+                properties={
+                    "ad_group_id": {"type": "string"},
+                    "criterion_id": {"type": "string"},
+                    "updates": google_keyword_update_schema(),
+                },
+                required=["ad_group_id", "criterion_id", "updates"],
+                provider_required=["updates"], action="update", resource_type="keyword",
+                parent_resource_type="ad_group", resource_id_field="keyword_id",
+                parent_resource_id_field="ad_group_id",
+                intent_types=["update_keyword"], traits=["write", "keyword"], write=True,
+                argument_builder=lambda _ctx, data: ((
+                    data["ad_group_id"], data["criterion_id"], data["updates"]
+                ), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_delete_keyword",
+                description="删除 Google Ad Group 关键词；默认仅生成 dry-run 计划。",
+                method_name="delete_keyword", result_key="keyword_id",
+                properties={
+                    "ad_group_id": {"type": "string"},
+                    "criterion_id": {"type": "string"},
+                },
+                required=["ad_group_id", "criterion_id"], action="delete",
+                resource_type="keyword", parent_resource_type="ad_group",
+                resource_id_field="keyword_id", parent_resource_id_field="ad_group_id",
+                intent_types=["delete_keyword"], traits=["write", "keyword"], write=True,
+                argument_builder=lambda _ctx, data: ((
+                    data["ad_group_id"], data["criterion_id"]
+                ), {}),
             ),
             method_tool(
                 platform="google-ads", skill="google-ads-api-expert",

@@ -1,5 +1,5 @@
 {
-  "digest": "3438e17784ff6afbd4a502ea6ee52ce68af910ab206369e54a5ae4e89e4e59cb",
+  "digest": "0fb72ac2f4ca1be61393fdea2e1ec19f8a4667029a097ba175d2ad9523e7ec5f",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -2023,8 +2023,8 @@
       ]
     },
     "google-ads": {
-      "digest": "9b0097090783514ad92780f888b362ab482ea1f83cf139c968299e66805fc1f7",
-      "tool_count": 72,
+      "digest": "eb0450e0e60e785b1c5a2daf4e13bfa3c58e1fcec5ff1af6a523b5ebf2eddda0",
+      "tool_count": 74,
       "tools": [
         {
           "action": "create",
@@ -7077,6 +7077,56 @@
           "action": "delete",
           "activation_rules": [],
           "contract_version": "1.3.0",
+          "description": "删除 Google Ad Group 关键词；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_group_id": {
+                "type": "string"
+              },
+              "criterion_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "ad_group_id",
+              "criterion_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_keyword"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_delete_keyword",
+          "parent_resource_id_field": "ad_group_id",
+          "parent_resource_type": "ad_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "keyword_id",
+          "resource_type": "keyword",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "keyword"
+          ]
+        },
+        {
+          "action": "delete",
+          "activation_rules": [],
+          "contract_version": "1.3.0",
           "description": "删除 Google Ads User List；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -9340,6 +9390,79 @@
           "traits": [
             "write",
             "conversion"
+          ]
+        },
+        {
+          "action": "update",
+          "activation_rules": [],
+          "contract_version": "1.3.0",
+          "description": "更新 Google Ad Group 关键词状态或 CPC 出价；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_group_id": {
+                "type": "string"
+              },
+              "criterion_id": {
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Mutable Google AdGroupCriterion keyword fields",
+                "properties": {
+                  "cpc_bid_micros": {
+                    "description": "Criterion CPC bid in micros",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "status": {
+                    "description": "Keyword criterion status",
+                    "enum": [
+                      "ENABLED",
+                      "PAUSED"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "updates"
+            ],
+            "required": [
+              "ad_group_id",
+              "criterion_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_keyword"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_update_keyword",
+          "parent_resource_id_field": "ad_group_id",
+          "parent_resource_type": "ad_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "keyword_id",
+          "resource_type": "keyword",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "keyword"
           ]
         },
         {
@@ -24398,6 +24521,18 @@
         "status": "implemented"
       },
       {
+        "action": "update",
+        "method": "update_keyword",
+        "resource": "keyword",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "method": "delete_keyword",
+        "resource": "keyword",
+        "status": "implemented"
+      },
+      {
         "action": "list",
         "method": "list_asset_groups",
         "resource": "asset_group",
@@ -25638,5 +25773,5 @@
       ]
     }
   },
-  "tool_count": 243
+  "tool_count": 245
 }

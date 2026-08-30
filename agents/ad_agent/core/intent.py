@@ -467,6 +467,8 @@ class LLMIntentParser(IntentParser):
                 return "resume_campaign"
             return "cross_channel_overview"
         if any(kw in text for kw in ["更新", "修改", "编辑", "update", "modify", "edit"]):
+            if any(kw in text for kw in ["关键词", "keyword", "keywords"]):
+                return "update_keyword"
             if any(kw in text for kw in ["line item", "line_item", "行项目"]):
                 return "update_line_item"
             if any(kw in text for kw in ["insertion order", "insertion_order", "订单"]):
@@ -482,6 +484,8 @@ class LLMIntentParser(IntentParser):
             if any(kw in text for kw in ["广告系列", "campaign"]):
                 return "update_campaign"
         if any(kw in text for kw in ["删除", "移除", "delete", "remove"]):
+            if any(kw in text for kw in ["关键词", "keyword", "keywords"]):
+                return "delete_keyword"
             if any(kw in text for kw in ["campaign", "广告系列"]):
                 return "delete_campaign"
         if any(kw in text for kw in ["暂停", "停用", "pause", "disable"]):
@@ -489,6 +493,9 @@ class LLMIntentParser(IntentParser):
         if any(kw in text for kw in ["恢复", "启用", "resume", "enable"]):
             return "resume_campaign"
         # 先检查创建意图（优先级高于列表，避免"创建广告系列"误匹配）
+        if any(kw in text for kw in ["关键词", "keyword", "keywords"]):
+            if any(kw in text for kw in ["创建", "新建", "create", "add"]):
+                return "create_keywords"
         if any(kw in text for kw in ["asset group", "asset_group", "素材组", "资产组"]):
             if any(kw in text for kw in ["创建", "新建", "create", "add"]):
                 return "create_asset_group"
@@ -930,6 +937,7 @@ class LLMIntentParser(IntentParser):
             "list_line_items", "get_line_item", "chat",
             "update_io", "update_line_item", "update_asset_group",
             "create_creative", "list_creatives", "list_videos", "list_images", "list_keywords",
+            "create_keywords", "update_keyword", "delete_keyword",
             "list_conversions", "list_locations", "list_devices", "list_catalogs", "list_apps",
             "list_brand_safety", "list_asset_groups", "list_advertisers",
             "get_adset", "get_adgroup", "get_ad", "get_asset_group",

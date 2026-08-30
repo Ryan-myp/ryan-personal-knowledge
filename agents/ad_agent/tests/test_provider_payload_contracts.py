@@ -3150,6 +3150,37 @@ def test_google_keyword_creation_batches_criterion_operations():
     assert calls[0][1][1]["create"]["negative"] is True
 
 
+def test_google_keyword_update_and_delete_use_composite_criterion_resource():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "g1"})
+    calls = []
+    client._mutate = lambda resource, operation: (
+        calls.append((resource, operation)) or {}
+    )
+
+    assert client.update_keyword(
+        "123", "456", {"status": "PAUSED", "cpc_bid_micros": 250000}
+    ) == {"success": True, "ad_group_id": "123", "keyword_id": "456"}
+    resource, operation = calls[0]
+    assert resource == "adGroupCriteria"
+    assert operation["update"]["resourceName"] == (
+        "customers/g1/adGroupCriteria/123~456"
+    )
+    assert operation["update"]["status"] == "PAUSED"
+    assert operation["update"]["cpcBidMicros"] == 250000
+    assert operation["updateMask"]["paths"] == ["status", "cpcBidMicros"]
+
+    assert client.delete_keyword("123", "456") == {
+        "success": True, "ad_group_id": "123", "keyword_id": "456"
+    }
+    assert calls[1] == (
+        "adGroupCriteria",
+        {"remove": "customers/g1/adGroupCriteria/123~456"},
+    )
+
+    with pytest.raises(ValueError, match="Unsupported Google keyword"):
+        client.update_keyword("123", "456", {"text": "immutable"})
+
+
 def test_google_product_group_creation_builds_listing_group_criterion():
     client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "g1"})
     calls = []
