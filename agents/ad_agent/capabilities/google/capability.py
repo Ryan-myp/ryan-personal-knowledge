@@ -31,6 +31,7 @@ from .parameters import (
     google_product_group_schema, google_responsive_display_ad_schema,
     google_video_ad_schema, google_campaign_budget_schema,
     google_campaign_budget_update_schema,
+    google_conversion_action_schema, google_conversion_action_update_schema,
     google_campaign_criterion_schema,
 )
 from ...api_clients.google_ads_client import GoogleAdsAPIClient
@@ -93,6 +94,9 @@ class GoogleCapability(BaseCapability):
         "delete_campaign_criterion": ["google_delete_campaign_criterion"],
         "list_conversion_actions": ["google_list_conversion_actions"],
         "get_conversion_action": ["google_get_conversion_action"],
+        "create_conversion_action": ["google_create_conversion_action"],
+        "update_conversion_action": ["google_update_conversion_action"],
+        "delete_conversion_action": ["google_delete_conversion_action"],
         "list_bidding_strategies": ["google_list_bidding_strategies"],
         "get_bidding_strategy": ["google_get_bidding_strategy"],
         "list_user_lists": ["google_list_user_lists"],
@@ -107,6 +111,8 @@ class GoogleCapability(BaseCapability):
     def _extended_provider_tools(self, client):
         """Expose Google Ads client endpoints with dedicated contracts."""
         budget_schema = google_campaign_budget_schema()
+        conversion_action_schema = google_conversion_action_schema()
+        conversion_action_update_schema = google_conversion_action_update_schema()
         criterion_schema = google_campaign_criterion_schema()
         criterion_properties = criterion_schema["properties"]
         list_criterion_properties = {
@@ -199,6 +205,57 @@ class GoogleCapability(BaseCapability):
                 resource_type="campaign_budget", resource_id_field="budget_id",
                 intent_types=["delete_campaign_budget"], traits=["write", "campaign_budget"], write=True,
                 argument_builder=lambda _ctx, data: ((data["budget_id"],), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_create_conversion_action",
+                description="创建 Google Ads Conversion Action；默认仅生成 dry-run 计划。",
+                method_name="create_conversion_action", result_key="conversion_action_id",
+                properties=conversion_action_schema["properties"],
+                required=conversion_action_schema["required"],
+                provider_required=conversion_action_schema["provider_required"],
+                action="create", resource_type="conversion_action",
+                resource_id_field="conversion_action_id",
+                intent_types=["create_conversion_action"],
+                traits=["write", "conversion"], write=True, live_support=False,
+                argument_builder=lambda _ctx, data: (({
+                    key: value for key, value in data.items() if key != "customer_id"
+                },), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_update_conversion_action",
+                description="更新 Google Ads Conversion Action；默认仅生成 dry-run 计划。",
+                method_name="update_conversion_action", result_key="conversion_action_result",
+                properties={
+                    "customer_id": conversion_action_schema["properties"]["customer_id"],
+                    "conversion_action_id": {"type": "string", "description": "Conversion Action ID"},
+                    "updates": conversion_action_update_schema,
+                },
+                required=["customer_id", "conversion_action_id", "updates"],
+                action="update", resource_type="conversion_action",
+                resource_id_field="conversion_action_id",
+                intent_types=["update_conversion_action"],
+                traits=["write", "conversion"], write=True, live_support=False,
+                argument_builder=lambda _ctx, data: ((
+                    data["conversion_action_id"], data["updates"]
+                ), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_delete_conversion_action",
+                description="删除 Google Ads Conversion Action；默认仅生成 dry-run 计划。",
+                method_name="delete_conversion_action", result_key="conversion_action_result",
+                properties={
+                    "customer_id": conversion_action_schema["properties"]["customer_id"],
+                    "conversion_action_id": {"type": "string", "description": "Conversion Action ID"},
+                },
+                required=["customer_id", "conversion_action_id"],
+                action="delete", resource_type="conversion_action",
+                resource_id_field="conversion_action_id",
+                intent_types=["delete_conversion_action"],
+                traits=["write", "conversion"], write=True, live_support=False,
+                argument_builder=lambda _ctx, data: ((data["conversion_action_id"],), {}),
             ),
             method_tool(
                 platform="google-ads", skill="google-ads-api-expert",

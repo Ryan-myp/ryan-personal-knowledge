@@ -54,6 +54,41 @@ class GoogleAdsAPIClient(BasePlatformClient):
         "name", "daily_budget", "budget", "delivery_method", "explicitly_shared",
     }
     CAMPAIGN_CRITERION_UPDATE_FIELDS = {"status", "negative", "bid_modifier"}
+    CONVERSION_ACTION_TYPES = {
+        "AD_CALL", "CLICK_TO_CALL", "GOOGLE_PLAY_DOWNLOAD",
+        "GOOGLE_PLAY_IN_APP_PURCHASE", "UPLOAD_CALLS", "UPLOAD_CLICKS",
+        "WEBPAGE", "WEBSITE_CALL", "STORE_SALES_DIRECT_UPLOAD", "STORE_SALES",
+        "FIREBASE_ANDROID_FIRST_OPEN", "FIREBASE_ANDROID_IN_APP_PURCHASE",
+        "FIREBASE_ANDROID_CUSTOM", "FIREBASE_IOS_FIRST_OPEN",
+        "FIREBASE_IOS_IN_APP_PURCHASE", "FIREBASE_IOS_CUSTOM",
+        "THIRD_PARTY_APP_ANALYTICS_ANDROID_FIRST_OPEN",
+        "THIRD_PARTY_APP_ANALYTICS_ANDROID_IN_APP_PURCHASE",
+        "THIRD_PARTY_APP_ANALYTICS_ANDROID_CUSTOM",
+        "THIRD_PARTY_APP_ANALYTICS_IOS_FIRST_OPEN",
+        "THIRD_PARTY_APP_ANALYTICS_IOS_IN_APP_PURCHASE",
+        "THIRD_PARTY_APP_ANALYTICS_IOS_CUSTOM", "ANDROID_APP_PRE_REGISTRATION",
+        "ANDROID_INSTALLS_ALL_OTHER_APPS", "FLOODLIGHT_ACTION",
+        "FLOODLIGHT_TRANSACTION", "GOOGLE_HOSTED", "LEAD_FORM_SUBMIT",
+        "SEARCH_ADS_360", "SMART_CAMPAIGN_AD_CLICKS_TO_CALL",
+        "SMART_CAMPAIGN_MAP_CLICKS_TO_CALL", "SMART_CAMPAIGN_MAP_DIRECTIONS",
+        "SMART_CAMPAIGN_TRACKED_CALLS", "STORE_VISITS", "WEBPAGE_CODELESS",
+        "UNIVERSAL_ANALYTICS_GOAL", "UNIVERSAL_ANALYTICS_TRANSACTION",
+        "GOOGLE_ANALYTICS_4_CUSTOM", "GOOGLE_ANALYTICS_4_PURCHASE",
+    }
+    CONVERSION_ACTION_CATEGORIES = {
+        "DEFAULT", "PAGE_VIEW", "PURCHASE", "SIGNUP", "DOWNLOAD", "ADD_TO_CART",
+        "BEGIN_CHECKOUT", "SUBSCRIBE_PAID", "PHONE_CALL_LEAD", "IMPORTED_LEAD",
+        "SUBMIT_LEAD_FORM", "BOOK_APPOINTMENT", "REQUEST_QUOTE", "GET_DIRECTIONS",
+        "OUTBOUND_CLICK", "CONTACT", "ENGAGEMENT", "STORE_VISIT", "STORE_SALE",
+        "QUALIFIED_LEAD", "CONVERTED_LEAD",
+    }
+    CONVERSION_ACTION_STATUSES = {"ENABLED", "REMOVED", "HIDDEN"}
+    CONVERSION_ACTION_COUNTING_TYPES = {"ONE_PER_CLICK", "MANY_PER_CLICK"}
+    CONVERSION_ACTION_UPDATE_FIELDS = {
+        "name", "status", "category", "counting_type", "primary_for_goal",
+        "include_in_conversions_metric", "click_through_lookback_window_days",
+        "view_through_lookback_window_days", "value_settings",
+    }
     CAMPAIGN_CRITERION_TYPES = {
         "LOCATION", "LANGUAGE", "DEVICE", "USER_LIST", "USER_INTEREST",
         "AGE_RANGE", "GENDER", "PARENTAL_STATUS", "INCOME_RANGE",
@@ -424,6 +459,182 @@ class GoogleAdsAPIClient(BasePlatformClient):
         raise APIError(
             f"Google conversion action {conversion_action_id} was not found"
         )
+
+    def create_conversion_action(self, action: dict[str, Any]) -> str:
+        """Create one Google Ads ConversionAction through customer mutate."""
+        if not isinstance(action, dict):
+            raise ValueError("conversion action must be an object")
+        name = str(action.get("name") or "").strip()
+        action_type = str(action.get("type") or "").strip().upper()
+        category = str(action.get("category") or "").strip().upper()
+        if not name:
+            raise ValueError("conversion action name is required")
+        if action_type not in self.CONVERSION_ACTION_TYPES:
+            raise ValueError(
+                f"type must be one of {sorted(self.CONVERSION_ACTION_TYPES)}"
+            )
+        if category not in self.CONVERSION_ACTION_CATEGORIES:
+            raise ValueError(
+                f"category must be one of {sorted(self.CONVERSION_ACTION_CATEGORIES)}"
+            )
+        status = str(action.get("status") or "ENABLED").strip().upper()
+        if status not in self.CONVERSION_ACTION_STATUSES:
+            raise ValueError(
+                f"status must be one of {sorted(self.CONVERSION_ACTION_STATUSES)}"
+            )
+        counting_type = str(
+            action.get("counting_type") or "MANY_PER_CLICK"
+        ).strip().upper()
+        if counting_type not in self.CONVERSION_ACTION_COUNTING_TYPES:
+            raise ValueError(
+                "counting_type must be ONE_PER_CLICK or MANY_PER_CLICK"
+            )
+
+        payload: dict[str, Any] = {
+            "name": name,
+            "type": action_type,
+            "category": category,
+            "status": status,
+            "countingType": counting_type,
+        }
+        for key in (
+            "primary_for_goal", "include_in_conversions_metric",
+            "click_through_lookback_window_days",
+            "view_through_lookback_window_days",
+        ):
+            value = action.get(key)
+            if value is None:
+                continue
+            if key.endswith("_days"):
+                try:
+                    value = int(value)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(f"{key} must be a positive integer") from exc
+                if value <= 0:
+                    raise ValueError(f"{key} must be a positive integer")
+            payload[self._camel_case(key)] = value
+
+        value_settings = action.get("value_settings")
+        if value_settings is not None:
+            payload["valueSettings"] = self._normalize_conversion_value_settings(
+                value_settings
+            )
+        response = self._mutate("conversionActions", {"create": payload})
+        resource_name = self._mutation_resource_name(response)
+        if not resource_name:
+            raise APIError(
+                f"ConversionAction mutate returned no resource name: {response}"
+            )
+        return str(resource_name.rsplit("/", 1)[-1])
+
+    @staticmethod
+    def _normalize_conversion_value_settings(value_settings: Any) -> dict[str, Any]:
+        if not isinstance(value_settings, dict) or not value_settings:
+            raise ValueError("value_settings must be a non-empty object")
+        allowed = {
+            "default_value", "default_currency_code", "always_use_default_value",
+        }
+        unknown = set(value_settings) - allowed
+        if unknown:
+            raise ValueError(
+                f"Unsupported Google value_settings fields: {sorted(unknown)}"
+            )
+        result: dict[str, Any] = {}
+        for key, value in value_settings.items():
+            if value is None:
+                continue
+            if key == "default_value":
+                try:
+                    value = float(value)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError("default_value must be a number") from exc
+            result[GoogleAdsAPIClient._camel_case(key)] = value
+        if not result:
+            raise ValueError("value_settings must contain a non-null field")
+        return result
+
+    def update_conversion_action(
+        self, conversion_action_id: str, updates: dict[str, Any]
+    ) -> dict:
+        """Update mutable ConversionAction fields with an explicit mask."""
+        conversion_action_id = self._numeric_id(
+            conversion_action_id, "conversion_action_id"
+        )
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("updates must be a non-empty object")
+        unknown = set(updates) - self.CONVERSION_ACTION_UPDATE_FIELDS
+        if unknown:
+            raise ValueError(
+                f"Unsupported Google ConversionAction update fields: {sorted(unknown)}"
+            )
+        normalized: dict[str, Any] = {}
+        update_paths: list[str] = []
+        for key, value in updates.items():
+            if value is None:
+                continue
+            if key == "name":
+                value = str(value).strip()
+                if not value:
+                    raise ValueError("name must not be empty")
+            elif key == "status":
+                value = str(value).strip().upper()
+                if value not in self.CONVERSION_ACTION_STATUSES:
+                    raise ValueError(
+                        f"status must be one of {sorted(self.CONVERSION_ACTION_STATUSES)}"
+                    )
+            elif key == "category":
+                value = str(value).strip().upper()
+                if value not in self.CONVERSION_ACTION_CATEGORIES:
+                    raise ValueError(
+                        f"category must be one of {sorted(self.CONVERSION_ACTION_CATEGORIES)}"
+                    )
+            elif key == "counting_type":
+                value = str(value).strip().upper()
+                if value not in self.CONVERSION_ACTION_COUNTING_TYPES:
+                    raise ValueError(
+                        "counting_type must be ONE_PER_CLICK or MANY_PER_CLICK"
+                    )
+            elif key.endswith("_days"):
+                try:
+                    value = int(value)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(f"{key} must be a positive integer") from exc
+                if value <= 0:
+                    raise ValueError(f"{key} must be a positive integer")
+            if key == "value_settings":
+                value = self._normalize_conversion_value_settings(value)
+                normalized["valueSettings"] = value
+                update_paths.extend(
+                    f"valueSettings.{self._camel_case(field)}"
+                    for field in value
+                )
+            else:
+                wire_key = self._camel_case(key)
+                normalized[wire_key] = value
+                update_paths.append(wire_key)
+        if not normalized:
+            raise ValueError("updates must contain a supported non-null field")
+        resource_name = (
+            f"customers/{self.customer_id}/conversionActions/{conversion_action_id}"
+        )
+        self._mutate("conversionActions", {
+            "update": {"resourceName": resource_name, **normalized},
+            "updateMask": {"paths": update_paths},
+        })
+        return {"success": True, "conversion_action_id": conversion_action_id}
+
+    def delete_conversion_action(self, conversion_action_id: str) -> dict:
+        """Remove one Google Ads ConversionAction."""
+        conversion_action_id = self._numeric_id(
+            conversion_action_id, "conversion_action_id"
+        )
+        self._mutate("conversionActions", {
+            "remove": (
+                f"customers/{self.customer_id}/conversionActions/"
+                f"{conversion_action_id}"
+            )
+        })
+        return {"success": True, "conversion_action_id": conversion_action_id}
 
     @classmethod
     def _normalize_bidding_strategy(cls, row: dict) -> dict:

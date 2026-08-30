@@ -1,5 +1,5 @@
 {
-  "digest": "edbb00390c55d1344da028924653e93b0f7f6f7c7511d868e4c4eb5668b3b93d",
+  "digest": "d8f2517f2eaa61cb7f6c788c52d0d12f4e6c197284b563999fbd8267753bc810",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -1983,8 +1983,8 @@
       ]
     },
     "google-ads": {
-      "digest": "ece3e46f536290b85bed3d7a6cbe662fe107aae91b6763db5ebb15c184e491eb",
-      "tool_count": 46,
+      "digest": "65875624dbb378794a9c08234a8ea89f2d967a882e90503df8ab5153d346a2aa",
+      "tool_count": 49,
       "tools": [
         {
           "action": "create",
@@ -2958,6 +2958,195 @@
         {
           "action": "create",
           "contract_version": "1.2.0",
+          "description": "创建 Google Ads Conversion Action；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "category": {
+                "description": "Conversion category",
+                "enum": [
+                  "DEFAULT",
+                  "PAGE_VIEW",
+                  "PURCHASE",
+                  "SIGNUP",
+                  "DOWNLOAD",
+                  "ADD_TO_CART",
+                  "BEGIN_CHECKOUT",
+                  "SUBSCRIBE_PAID",
+                  "PHONE_CALL_LEAD",
+                  "IMPORTED_LEAD",
+                  "SUBMIT_LEAD_FORM",
+                  "BOOK_APPOINTMENT",
+                  "REQUEST_QUOTE",
+                  "GET_DIRECTIONS",
+                  "OUTBOUND_CLICK",
+                  "CONTACT",
+                  "ENGAGEMENT",
+                  "STORE_VISIT",
+                  "STORE_SALE",
+                  "QUALIFIED_LEAD",
+                  "CONVERTED_LEAD"
+                ],
+                "type": "string"
+              },
+              "click_through_lookback_window_days": {
+                "description": "Click-through lookback window",
+                "minimum": 1,
+                "type": "integer"
+              },
+              "counting_type": {
+                "default": "MANY_PER_CLICK",
+                "description": "How conversions are counted",
+                "enum": [
+                  "ONE_PER_CLICK",
+                  "MANY_PER_CLICK"
+                ],
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID; MCC is not accepted",
+                "type": "string"
+              },
+              "include_in_conversions_metric": {
+                "description": "Include in conversions metric",
+                "type": "boolean"
+              },
+              "name": {
+                "description": "Conversion action name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "primary_for_goal": {
+                "description": "Whether this action is primary for goals",
+                "type": "boolean"
+              },
+              "status": {
+                "default": "ENABLED",
+                "description": "Accrual status",
+                "enum": [
+                  "ENABLED",
+                  "REMOVED",
+                  "HIDDEN"
+                ],
+                "type": "string"
+              },
+              "type": {
+                "description": "Immutable conversion action type",
+                "enum": [
+                  "AD_CALL",
+                  "CLICK_TO_CALL",
+                  "GOOGLE_PLAY_DOWNLOAD",
+                  "GOOGLE_PLAY_IN_APP_PURCHASE",
+                  "UPLOAD_CALLS",
+                  "UPLOAD_CLICKS",
+                  "WEBPAGE",
+                  "WEBSITE_CALL",
+                  "STORE_SALES_DIRECT_UPLOAD",
+                  "STORE_SALES",
+                  "FIREBASE_ANDROID_FIRST_OPEN",
+                  "FIREBASE_ANDROID_IN_APP_PURCHASE",
+                  "FIREBASE_ANDROID_CUSTOM",
+                  "FIREBASE_IOS_FIRST_OPEN",
+                  "FIREBASE_IOS_IN_APP_PURCHASE",
+                  "FIREBASE_IOS_CUSTOM",
+                  "THIRD_PARTY_APP_ANALYTICS_ANDROID_FIRST_OPEN",
+                  "THIRD_PARTY_APP_ANALYTICS_ANDROID_IN_APP_PURCHASE",
+                  "THIRD_PARTY_APP_ANALYTICS_ANDROID_CUSTOM",
+                  "THIRD_PARTY_APP_ANALYTICS_IOS_FIRST_OPEN",
+                  "THIRD_PARTY_APP_ANALYTICS_IOS_IN_APP_PURCHASE",
+                  "THIRD_PARTY_APP_ANALYTICS_IOS_CUSTOM",
+                  "ANDROID_APP_PRE_REGISTRATION",
+                  "ANDROID_INSTALLS_ALL_OTHER_APPS",
+                  "FLOODLIGHT_ACTION",
+                  "FLOODLIGHT_TRANSACTION",
+                  "GOOGLE_HOSTED",
+                  "LEAD_FORM_SUBMIT",
+                  "SEARCH_ADS_360",
+                  "SMART_CAMPAIGN_AD_CLICKS_TO_CALL",
+                  "SMART_CAMPAIGN_MAP_CLICKS_TO_CALL",
+                  "SMART_CAMPAIGN_MAP_DIRECTIONS",
+                  "SMART_CAMPAIGN_TRACKED_CALLS",
+                  "STORE_VISITS",
+                  "WEBPAGE_CODELESS",
+                  "UNIVERSAL_ANALYTICS_GOAL",
+                  "UNIVERSAL_ANALYTICS_TRANSACTION",
+                  "GOOGLE_ANALYTICS_4_CUSTOM",
+                  "GOOGLE_ANALYTICS_4_PURCHASE"
+                ],
+                "type": "string"
+              },
+              "value_settings": {
+                "additionalProperties": false,
+                "description": "Conversion value settings",
+                "properties": {
+                  "always_use_default_value": {
+                    "description": "Always use fallback value",
+                    "type": "boolean"
+                  },
+                  "default_currency_code": {
+                    "description": "Fallback currency code",
+                    "maxLength": 3,
+                    "minLength": 3,
+                    "type": "string"
+                  },
+                  "default_value": {
+                    "description": "Fallback conversion value",
+                    "type": "number"
+                  }
+                },
+                "type": "object"
+              },
+              "view_through_lookback_window_days": {
+                "description": "View-through lookback window",
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "name",
+              "type",
+              "category"
+            ],
+            "required": [
+              "customer_id",
+              "name",
+              "type",
+              "category"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_conversion_action"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_conversion_action",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "conversion_action_id",
+          "resource_type": "conversion_action",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "conversion"
+          ]
+        },
+        {
+          "action": "create",
+          "contract_version": "1.2.0",
           "description": "批量创建 Google Ad Group 关键词/否定关键词；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -3923,6 +4112,57 @@
             "write",
             "campaign_criterion",
             "targeting"
+          ]
+        },
+        {
+          "action": "delete",
+          "contract_version": "1.2.0",
+          "description": "删除 Google Ads Conversion Action；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "conversion_action_id": {
+                "description": "Conversion Action ID",
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID; MCC is not accepted",
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id",
+              "conversion_action_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_conversion_action"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_delete_conversion_action",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "conversion_action_id",
+          "resource_type": "conversion_action",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "conversion"
           ]
         },
         {
@@ -5839,6 +6079,154 @@
             "write",
             "campaign_criterion",
             "targeting"
+          ]
+        },
+        {
+          "action": "update",
+          "contract_version": "1.2.0",
+          "description": "更新 Google Ads Conversion Action；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "conversion_action_id": {
+                "description": "Conversion Action ID",
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID; MCC is not accepted",
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Allowed ConversionAction update fields",
+                "properties": {
+                  "category": {
+                    "description": "Conversion category",
+                    "enum": [
+                      "DEFAULT",
+                      "PAGE_VIEW",
+                      "PURCHASE",
+                      "SIGNUP",
+                      "DOWNLOAD",
+                      "ADD_TO_CART",
+                      "BEGIN_CHECKOUT",
+                      "SUBSCRIBE_PAID",
+                      "PHONE_CALL_LEAD",
+                      "IMPORTED_LEAD",
+                      "SUBMIT_LEAD_FORM",
+                      "BOOK_APPOINTMENT",
+                      "REQUEST_QUOTE",
+                      "GET_DIRECTIONS",
+                      "OUTBOUND_CLICK",
+                      "CONTACT",
+                      "ENGAGEMENT",
+                      "STORE_VISIT",
+                      "STORE_SALE",
+                      "QUALIFIED_LEAD",
+                      "CONVERTED_LEAD"
+                    ],
+                    "type": "string"
+                  },
+                  "click_through_lookback_window_days": {
+                    "description": "Click-through lookback window",
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "counting_type": {
+                    "description": "How conversions are counted",
+                    "enum": [
+                      "ONE_PER_CLICK",
+                      "MANY_PER_CLICK"
+                    ],
+                    "type": "string"
+                  },
+                  "include_in_conversions_metric": {
+                    "description": "Include in conversions metric",
+                    "type": "boolean"
+                  },
+                  "name": {
+                    "description": "Conversion action name",
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "primary_for_goal": {
+                    "description": "Whether this action is primary for goals",
+                    "type": "boolean"
+                  },
+                  "status": {
+                    "description": "Accrual status",
+                    "enum": [
+                      "ENABLED",
+                      "REMOVED",
+                      "HIDDEN"
+                    ],
+                    "type": "string"
+                  },
+                  "value_settings": {
+                    "additionalProperties": false,
+                    "description": "Conversion value settings",
+                    "properties": {
+                      "always_use_default_value": {
+                        "description": "Always use fallback value",
+                        "type": "boolean"
+                      },
+                      "default_currency_code": {
+                        "description": "Fallback currency code",
+                        "maxLength": 3,
+                        "minLength": 3,
+                        "type": "string"
+                      },
+                      "default_value": {
+                        "description": "Fallback conversion value",
+                        "type": "number"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "view_through_lookback_window_days": {
+                    "description": "View-through lookback window",
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id",
+              "conversion_action_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_conversion_action"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_update_conversion_action",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "conversion_action_id",
+          "resource_type": "conversion_action",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "conversion"
           ]
         }
       ]
@@ -14188,5 +14576,5 @@
       ]
     }
   },
-  "tool_count": 180
+  "tool_count": 183
 }

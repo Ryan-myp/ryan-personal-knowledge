@@ -66,6 +66,36 @@ GOOGLE_CONTENT_LABELS = [
 ]
 
 GOOGLE_BUDGET_DELIVERY_METHODS = ["STANDARD"]
+GOOGLE_CONVERSION_ACTION_TYPES = [
+    "AD_CALL", "CLICK_TO_CALL", "GOOGLE_PLAY_DOWNLOAD",
+    "GOOGLE_PLAY_IN_APP_PURCHASE", "UPLOAD_CALLS", "UPLOAD_CLICKS", "WEBPAGE",
+    "WEBSITE_CALL", "STORE_SALES_DIRECT_UPLOAD", "STORE_SALES",
+    "FIREBASE_ANDROID_FIRST_OPEN", "FIREBASE_ANDROID_IN_APP_PURCHASE",
+    "FIREBASE_ANDROID_CUSTOM", "FIREBASE_IOS_FIRST_OPEN",
+    "FIREBASE_IOS_IN_APP_PURCHASE", "FIREBASE_IOS_CUSTOM",
+    "THIRD_PARTY_APP_ANALYTICS_ANDROID_FIRST_OPEN",
+    "THIRD_PARTY_APP_ANALYTICS_ANDROID_IN_APP_PURCHASE",
+    "THIRD_PARTY_APP_ANALYTICS_ANDROID_CUSTOM",
+    "THIRD_PARTY_APP_ANALYTICS_IOS_FIRST_OPEN",
+    "THIRD_PARTY_APP_ANALYTICS_IOS_IN_APP_PURCHASE",
+    "THIRD_PARTY_APP_ANALYTICS_IOS_CUSTOM", "ANDROID_APP_PRE_REGISTRATION",
+    "ANDROID_INSTALLS_ALL_OTHER_APPS", "FLOODLIGHT_ACTION",
+    "FLOODLIGHT_TRANSACTION", "GOOGLE_HOSTED", "LEAD_FORM_SUBMIT",
+    "SEARCH_ADS_360", "SMART_CAMPAIGN_AD_CLICKS_TO_CALL",
+    "SMART_CAMPAIGN_MAP_CLICKS_TO_CALL", "SMART_CAMPAIGN_MAP_DIRECTIONS",
+    "SMART_CAMPAIGN_TRACKED_CALLS", "STORE_VISITS", "WEBPAGE_CODELESS",
+    "UNIVERSAL_ANALYTICS_GOAL", "UNIVERSAL_ANALYTICS_TRANSACTION",
+    "GOOGLE_ANALYTICS_4_CUSTOM", "GOOGLE_ANALYTICS_4_PURCHASE",
+]
+GOOGLE_CONVERSION_ACTION_CATEGORIES = [
+    "DEFAULT", "PAGE_VIEW", "PURCHASE", "SIGNUP", "DOWNLOAD", "ADD_TO_CART",
+    "BEGIN_CHECKOUT", "SUBSCRIBE_PAID", "PHONE_CALL_LEAD", "IMPORTED_LEAD",
+    "SUBMIT_LEAD_FORM", "BOOK_APPOINTMENT", "REQUEST_QUOTE", "GET_DIRECTIONS",
+    "OUTBOUND_CLICK", "CONTACT", "ENGAGEMENT", "STORE_VISIT", "STORE_SALE",
+    "QUALIFIED_LEAD", "CONVERTED_LEAD",
+]
+GOOGLE_CONVERSION_ACTION_STATUSES = ["ENABLED", "REMOVED", "HIDDEN"]
+GOOGLE_CONVERSION_ACTION_COUNTING_TYPES = ["ONE_PER_CLICK", "MANY_PER_CLICK"]
 
 
 def _field(field_type: Any, description: str = "", **kwargs: Any) -> dict[str, Any]:
@@ -99,6 +129,50 @@ def google_campaign_budget_schema() -> dict[str, Any]:
         },
         "conditional_rules": [],
     }
+
+
+def google_conversion_action_schema() -> dict[str, Any]:
+    """Schema for customer-scoped ConversionAction creation."""
+    return {
+        "required": ["customer_id", "name", "type", "category"],
+        "provider_required": ["name", "type", "category"],
+        "properties": {
+            "customer_id": _field("string", "Google Ads customer ID; MCC is not accepted"),
+            "name": _field("string", "Conversion action name", minLength=1, maxLength=255),
+            "type": _field("string", "Immutable conversion action type", enum=GOOGLE_CONVERSION_ACTION_TYPES),
+            "category": _field("string", "Conversion category", enum=GOOGLE_CONVERSION_ACTION_CATEGORIES),
+            "status": _field("string", "Accrual status", enum=GOOGLE_CONVERSION_ACTION_STATUSES, default="ENABLED"),
+            "counting_type": _field("string", "How conversions are counted", enum=GOOGLE_CONVERSION_ACTION_COUNTING_TYPES, default="MANY_PER_CLICK"),
+            "primary_for_goal": _field("boolean", "Whether this action is primary for goals"),
+            "include_in_conversions_metric": _field("boolean", "Include in conversions metric"),
+            "click_through_lookback_window_days": _field("integer", "Click-through lookback window", minimum=1),
+            "view_through_lookback_window_days": _field("integer", "View-through lookback window", minimum=1),
+            "value_settings": _object({
+                "default_value": _field("number", "Fallback conversion value"),
+                "default_currency_code": _field("string", "Fallback currency code", minLength=3, maxLength=3),
+                "always_use_default_value": _field("boolean", "Always use fallback value"),
+            }, "Conversion value settings"),
+        },
+    }
+
+
+def google_conversion_action_update_schema() -> dict[str, Any]:
+    """Closed mutable-field contract for ConversionAction updates."""
+    return _object({
+        "name": _field("string", "Conversion action name", minLength=1, maxLength=255),
+        "status": _field("string", "Accrual status", enum=GOOGLE_CONVERSION_ACTION_STATUSES),
+        "category": _field("string", "Conversion category", enum=GOOGLE_CONVERSION_ACTION_CATEGORIES),
+        "counting_type": _field("string", "How conversions are counted", enum=GOOGLE_CONVERSION_ACTION_COUNTING_TYPES),
+        "primary_for_goal": _field("boolean", "Whether this action is primary for goals"),
+        "include_in_conversions_metric": _field("boolean", "Include in conversions metric"),
+        "click_through_lookback_window_days": _field("integer", "Click-through lookback window", minimum=1),
+        "view_through_lookback_window_days": _field("integer", "View-through lookback window", minimum=1),
+        "value_settings": _object({
+            "default_value": _field("number", "Fallback conversion value"),
+            "default_currency_code": _field("string", "Fallback currency code", minLength=3, maxLength=3),
+            "always_use_default_value": _field("boolean", "Always use fallback value"),
+        }, "Conversion value settings"),
+    }, "Allowed ConversionAction update fields")
 
 
 def google_campaign_budget_update_schema() -> dict[str, Any]:

@@ -143,6 +143,61 @@ def test_google_conversion_action_queries_normalize_gaql_rows():
     assert client.get_conversion_action("42")["id"] == "42"
 
 
+def test_google_conversion_action_lifecycle_builds_customer_mutations():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    calls = []
+
+    def mutate(resource, operation):
+        calls.append((resource, operation))
+        return {"results": [{
+            "resourceName": "customers/123/conversionActions/42"
+        }]}
+
+    client._mutate = mutate
+    action_id = client.create_conversion_action({
+        "name": "Purchase",
+        "type": "WEBPAGE",
+        "category": "PURCHASE",
+        "counting_type": "MANY_PER_CLICK",
+        "value_settings": {
+            "default_value": 10,
+            "default_currency_code": "USD",
+            "always_use_default_value": True,
+        },
+    })
+    assert action_id == "42"
+    assert calls[0][0] == "conversionActions"
+    assert calls[0][1]["create"]["countingType"] == "MANY_PER_CLICK"
+    assert calls[0][1]["create"]["valueSettings"]["defaultCurrencyCode"] == "USD"
+
+    assert client.update_conversion_action("42", {
+        "name": "Completed purchase",
+        "value_settings": {"default_value": 12.5},
+    }) == {"success": True, "conversion_action_id": "42"}
+    assert calls[1][1]["update"]["resourceName"].endswith("/42")
+    assert calls[1][1]["updateMask"]["paths"] == [
+        "name", "valueSettings.defaultValue"
+    ]
+
+    assert client.delete_conversion_action("42") == {
+        "success": True, "conversion_action_id": "42"
+    }
+    assert calls[2] == (
+        "conversionActions",
+        {"remove": "customers/123/conversionActions/42"},
+    )
+
+
+def test_google_conversion_action_rejects_immutable_or_invalid_fields():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    with pytest.raises(ValueError, match="type must be one"):
+        client.create_conversion_action({
+            "name": "Invalid", "type": "NOT_A_TYPE", "category": "PURCHASE"
+        })
+    with pytest.raises(ValueError, match="Unsupported Google ConversionAction"):
+        client.update_conversion_action("42", {"type": "WEBPAGE"})
+
+
 def test_google_bidding_strategy_queries_normalize_gaql_rows():
     client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
     calls = []
