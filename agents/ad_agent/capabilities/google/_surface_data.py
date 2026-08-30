@@ -41,6 +41,10 @@ API_SURFACE = [
     {"resource": "conversion_action", "action": "update", "status": "planned", "gap": "转化动作更新字段和 mutate 尚未完成验证"},
     {"resource": "conversion_action", "action": "delete", "status": "planned", "gap": "转化动作删除权限和依赖约束尚未完成验证"},
     {"resource": "asset", "action": "crud", "status": "planned", "gap": "素材资源和素材关联尚无完整 Tool"},
-    {"resource": "user_list", "action": "crud", "status": "planned", "gap": "第一方受众列表尚无独立 Tool"},
+    {"resource": "user_list", "action": "list", "method": "list_user_lists", "status": "implemented"},
+    {"resource": "user_list", "action": "get", "method": "get_user_list", "status": "implemented"},
+    {"resource": "user_list", "action": "create", "status": "planned", "gap": "第一方受众列表创建与客户数据上传尚未完成验证"},
+    {"resource": "user_list", "action": "update", "status": "planned", "gap": "第一方受众列表更新字段尚未完成验证"},
+    {"resource": "user_list", "action": "delete", "status": "planned", "gap": "第一方受众列表删除权限和依赖约束尚未完成验证"},
     {"resource": "customer_client", "action": "list", "status": "planned", "gap": "经理账户下客户枚举尚无 Tool"},
 ]

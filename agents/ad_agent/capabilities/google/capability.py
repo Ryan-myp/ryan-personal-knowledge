@@ -94,6 +94,8 @@ class GoogleCapability(BaseCapability):
         "get_conversion_action": ["google_get_conversion_action"],
         "list_bidding_strategies": ["google_list_bidding_strategies"],
         "get_bidding_strategy": ["google_get_bidding_strategy"],
+        "list_user_lists": ["google_list_user_lists"],
+        "get_user_list": ["google_get_user_list"],
         "get_campaign_report": ["google_get_campaign_report"], "get_adgroup_report": ["google_get_adgroup_report"],
     }
 
@@ -270,6 +272,28 @@ class GoogleCapability(BaseCapability):
                 resource_type="bidding_strategy", resource_id_field="bidding_strategy_id",
                 intent_types=["get_bidding_strategy"], traits=["read", "bidding"],
                 argument_builder=lambda _ctx, data: ((data["bidding_strategy_id"],), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_list_user_lists", description="查询 Google Ads 第一方 User List 列表。",
+                method_name="list_user_lists", result_key="user_lists",
+                properties={"customer_id": {"type": "string"}, "limit": {"type": "integer"}},
+                required=["customer_id"], action="list", resource_type="user_list",
+                intent_types=["list_user_lists"], traits=["read", "audience"],
+                argument_builder=lambda _ctx, data: ((), {"page_size": data.get("limit", 100)}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_get_user_list", description="查询 Google Ads 第一方 User List 详情。",
+                method_name="get_user_list", result_key="user_list",
+                properties={
+                    "customer_id": {"type": "string"},
+                    "user_list_id": {"type": "string"},
+                },
+                required=["customer_id", "user_list_id"], action="get",
+                resource_type="user_list", resource_id_field="user_list_id",
+                intent_types=["get_user_list"], traits=["read", "audience"],
+                argument_builder=lambda _ctx, data: ((data["user_list_id"],), {}),
             ),
             method_tool(
                 platform="google-ads", skill="google-ads-api-expert",

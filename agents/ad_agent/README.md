@@ -19,12 +19,12 @@
 | 平台 | Skill | API 客户端 | 工具数量 |
 |------|-------|-----------|---------|
 | Meta | meta-marketing-api-expert | meta_client.py | 35（账户、Page/Pixel/Lead Form 查询、Audience CRUD、层级资源、Lead Ads、Catalog Ads、报表与生命周期接口） |
-| Google Ads | google-ads-api-expert | google_ads_client.py | 41（层级资源、CampaignBudget、CampaignCriterion 定向、Conversion Action/出价策略查询、Search Ad、Responsive Display Ad、Video Ad、关键词、Product Group、PMax、报表与生命周期接口） |
+| Google Ads | google-ads-api-expert | google_ads_client.py | 43（层级资源、CampaignBudget、CampaignCriterion 定向、Conversion Action/出价策略/User List 查询、Search Ad、Responsive Display Ad、Video Ad、关键词、Product Group、PMax、报表与生命周期接口） |
 | TikTok | tiktok-ads-expert | tiktok_client.py | 44（账户、层级资源、Lead/App 广告、素材、受众 CRUD、定向参考数据、报表与生命周期接口） |
 | DV360 | dv360-expert | dv360_client.py | 32（Advertiser、Campaign、IO、Line Item、Creative、定向与异步报表接口） |
-| **合计** |  |  | **152** |
+| **合计** |  |  | **154** |
 
-> 152 是当前四个 Capability 已实现的 Client 方法/业务 Tool 数量，不是 Meta、Google Ads、TikTok 或 DV360 官方 API 的完整接口总量。各渠道包的 `api_surface.py` 同时维护已实现和计划中的官方资源清单；新增官方接口时，应在对应渠道 Client 增加固定方法，在 Capability 增加 Tool Schema/adapter，再由 Surface 审计和契约快照阻止漏注册或漂移。
+> 154 是当前四个 Capability 已实现的 Client 方法/业务 Tool 数量，不是 Meta、Google Ads、TikTok 或 DV360 官方 API 的完整接口总量。各渠道包的 `api_surface.py` 同时维护已实现和计划中的官方资源清单；新增官方接口时，应在对应渠道 Client 增加固定方法，在 Capability 增加 Tool Schema/adapter，再由 Surface 审计和契约快照阻止漏注册或漂移。
 
 ### 广告类型覆盖边界
 
@@ -150,7 +150,7 @@ Provider live lookup 返回的动态选项会附带短时 `selection_token`。�
 
 ### Harness Engineering 评估
 
-当前核心 Harness 已具备：受限 Tool/Skill 契约、统一 Runtime 执行入口、权限/账户白名单、dry-run、显式确认、持久化幂等、workflow checkpoint/lease/recovery、Provider 回查入口，以及 LLM 输出后的二次 schema 校验。另有 `scripts/audit_capabilities.py`、`scripts/validate_contracts.py` 和 `contracts/builtin_tools.json` 提供 API Surface、版本化契约快照、Provider 方法覆盖率和 drift gate。结论是“核心骨架符合，尚未达到生产闭环”，不能把当前 152 个工具数或单元测试通过当成 Provider live 已验证。
+当前核心 Harness 已具备：受限 Tool/Skill 契约、统一 Runtime 执行入口、权限/账户白名单、dry-run、显式确认、持久化幂等、workflow checkpoint/lease/recovery、Provider 回查入口，以及 LLM 输出后的二次 schema 校验。另有 `scripts/audit_capabilities.py`、`scripts/validate_contracts.py` 和 `contracts/builtin_tools.json` 提供 API Surface、版本化契约快照、Provider 方法覆盖率和 drift gate。结论是“核心骨架符合，尚未达到生产闭环”，不能把当前 154 个工具数或单元测试通过当成 Provider live 已验证。
 
 可用 `python3 agents/ad_agent/scripts/audit_capabilities.py` 做无网络能力审计；它按
 Capability 包约定自动发现渠道，输出 action/resource 矩阵和创建链，不是 Runtime 的第二套

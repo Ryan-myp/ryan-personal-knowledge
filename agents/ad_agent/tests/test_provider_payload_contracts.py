@@ -107,6 +107,32 @@ def test_google_bidding_strategy_queries_normalize_gaql_rows():
     assert client.get_bidding_strategy("7")["name"] == "Max conversions"
 
 
+def test_google_user_list_queries_normalize_gaql_rows():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    client._search_all = lambda query, **kwargs: [{
+        "userList": {
+            "id": "9", "resourceName": "customers/123/userLists/9",
+            "name": "Purchasers", "description": "Recent purchasers",
+            "type": "CRM_BASED", "membershipStatus": "OPEN",
+            "membershipLifeSpan": "30", "sizeForDisplay": "1000",
+            "sizeForSearch": "900",
+        }
+    }]
+    user_lists = client.list_user_lists(page_size=12)
+    assert user_lists == [{
+        "id": "9", "resource_name": "customers/123/userLists/9",
+        "name": "Purchasers", "description": "Recent purchasers",
+        "type": "CRM_BASED", "membership_status": "OPEN",
+        "membership_life_span": "30", "size_for_display": "1000",
+        "size_for_search": "900",
+    }]
+
+    client._search = lambda query: {"results": [{
+        "userList": {"id": "9", "name": "Purchasers"}
+    }]}
+    assert client.get_user_list("9")["name"] == "Purchasers"
+
+
 def test_existing_creation_contracts_keep_provider_specific_fixes():
     meta_definitions = {
         definition.name: definition

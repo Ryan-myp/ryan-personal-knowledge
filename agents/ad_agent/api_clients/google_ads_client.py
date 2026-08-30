@@ -430,6 +430,63 @@ class GoogleAdsAPIClient(BasePlatformClient):
         raise APIError(
             f"Google bidding strategy {bidding_strategy_id} was not found"
         )
+
+    @classmethod
+    def _normalize_user_list(cls, row: dict) -> dict:
+        """Normalize a GAQL user-list row for audience lookup Tools."""
+        user_list = row.get("userList", row.get("user_list", {}))
+        if not isinstance(user_list, dict):
+            user_list = {}
+        return {
+            "id": user_list.get("id"),
+            "resource_name": user_list.get(
+                "resourceName", user_list.get("resource_name")
+            ),
+            "name": user_list.get("name"),
+            "description": user_list.get("description"),
+            "type": user_list.get("type"),
+            "membership_status": user_list.get(
+                "membershipStatus", user_list.get("membership_status")
+            ),
+            "membership_life_span": user_list.get(
+                "membershipLifeSpan", user_list.get("membership_life_span")
+            ),
+            "size_for_display": user_list.get(
+                "sizeForDisplay", user_list.get("size_for_display")
+            ),
+            "size_for_search": user_list.get(
+                "sizeForSearch", user_list.get("size_for_search")
+            ),
+        }
+
+    def list_user_lists(self, page_size: int = 100) -> list[dict]:
+        """List first-party user lists configured for the selected customer."""
+        query = (
+            "SELECT user_list.id, user_list.resource_name, user_list.name, "
+            "user_list.description, user_list.type, user_list.membership_status, "
+            "user_list.membership_life_span, user_list.size_for_display, "
+            "user_list.size_for_search FROM user_list"
+        )
+        return [
+            self._normalize_user_list(row)
+            for row in self._search_all(query, page_size=page_size)
+        ]
+
+    def get_user_list(self, user_list_id: str) -> dict:
+        """Get one first-party user list by numeric ID."""
+        user_list_id = self._numeric_id(user_list_id, "user_list_id")
+        query = (
+            "SELECT user_list.id, user_list.resource_name, user_list.name, "
+            "user_list.description, user_list.type, user_list.membership_status, "
+            "user_list.membership_life_span, user_list.size_for_display, "
+            "user_list.size_for_search "
+            f"FROM user_list WHERE user_list.id = {user_list_id}"
+        )
+        payload = self._response_payload(self._search(query))
+        rows = payload.get("results", []) if isinstance(payload, dict) else []
+        if rows and isinstance(rows[0], dict):
+            return self._normalize_user_list(rows[0])
+        raise APIError(f"Google user list {user_list_id} was not found")
     
     def list_ad_groups(self, campaign_id: str, page_size: int = 100) -> list:
         """获取 Ad Group 列表"""

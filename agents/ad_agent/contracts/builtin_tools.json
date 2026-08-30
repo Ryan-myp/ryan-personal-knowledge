@@ -1,5 +1,5 @@
 {
-  "digest": "60393f1e47589eb7e99221bfae341444e3ae08ce8e2dee0e064531e1defe0665",
+  "digest": "63a2483650ffc09a97d1c7ad2f8950c6dbf987eae98ceaf62bce130047adcc6a",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -1983,8 +1983,8 @@
       ]
     },
     "google-ads": {
-      "digest": "32d07d8a89e3da2bb08b46fabf3a497fc5ead247eef260fc10ba24af2b735bf1",
-      "tool_count": 41,
+      "digest": "bfa33bfcadb456ec112c0a61f1364c8d6aa00477a9e1ded38cad01e4e01a23b2",
+      "tool_count": 43,
       "tools": [
         {
           "action": "create",
@@ -4455,6 +4455,55 @@
           ]
         },
         {
+          "action": "get",
+          "contract_version": "1.2.0",
+          "description": "查询 Google Ads 第一方 User List 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "customer_id": {
+                "type": "string"
+              },
+              "user_list_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id",
+              "user_list_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_user_list"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_get_user_list",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "user_list_id",
+          "resource_type": "user_list",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "audience"
+          ]
+        },
+        {
           "action": "list",
           "contract_version": "1.2.0",
           "description": "查询 Google Ads Ad Group 列表。",
@@ -4931,6 +4980,54 @@
           "traits": [
             "read",
             "keyword"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.2.0",
+          "description": "查询 Google Ads 第一方 User List 列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "customer_id": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_user_lists"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_list_user_lists",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "user_list",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "audience"
           ]
         },
         {
@@ -11621,5 +11718,5 @@
       ]
     }
   },
-  "tool_count": 152
+  "tool_count": 154
 }
