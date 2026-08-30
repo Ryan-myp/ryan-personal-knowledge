@@ -72,7 +72,7 @@ class GoogleCapability(BaseCapability):
     platform_name = "google-ads"
     provider_client_class = GoogleAdsAPIClient
     provider_method_exclusions = {"for_customer"}
-    capability_version = "1.3.0"
+    capability_version = "1.3.1"
     provider_api_version = "v24"
     provider_method_coverage = {
         "list_campaigns": ["google_list_campaigns"], "get_campaign": ["google_get_campaign"],
@@ -90,7 +90,10 @@ class GoogleCapability(BaseCapability):
         "update_campaign": ["google_update_campaign"], "update_ad_group": ["google_update_ad_group"],
         "update_ad": ["google_update_ad"], "update_asset_group": ["google_update_asset_group"],
         "pause_campaign": ["google_pause_campaign"], "resume_campaign": ["google_resume_campaign"],
-        "create_ad_group": ["google_create_ad_group", "google_create_app_ad_group"],
+        "create_ad_group": [
+            "google_create_ad_group", "google_create_app_ad_group",
+            "google_create_specialized_ad_group",
+        ],
         "create_app_ad": ["google_create_app_ad"],
         "create_search_ad": ["google_create_search_ad", "google_create_ad"],
         "create_pmax_asset_group": ["google_create_pmax_asset_group", "google_create_asset_group"],

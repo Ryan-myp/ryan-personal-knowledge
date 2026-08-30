@@ -50,6 +50,20 @@ def _schema_properties(definition: Any) -> dict[str, Any]:
     return getattr(schema, "properties", {}) or {}
 
 
+def _covered_tool_names(coverage: dict[str, Any]) -> set[str]:
+    """Return the executable Tool names represented by method coverage."""
+    return {
+        str(tool_name)
+        for tool_names in (coverage or {}).values()
+        for tool_name in (
+            tool_names
+            if isinstance(tool_names, (list, tuple, set))
+            else [tool_names]
+        )
+        if str(tool_name).strip()
+    }
+
+
 def _audit_skill_context(report: dict[str, Any]) -> None:
     """Reject credential-shaped assignments in built-in Skill context.
 
@@ -114,6 +128,7 @@ def audit_capabilities() -> dict[str, Any]:
                 definition.name for definition in runtime.registry.list_all()
                 if str(definition.platform) == platform_key
             }
+            covered_tool_names = _covered_tool_names(coverage)
             surface_gaps: list[str] = []
             planned_entries: list[dict[str, Any]] = []
             implemented_surface = 0
@@ -145,6 +160,12 @@ def audit_capabilities() -> dict[str, Any]:
                     surface_gaps.append(
                         f"{entry.get('resource')}:{entry.get('action')} missing Tools: {', '.join(missing_tools)}"
                     )
+            unmapped_tools = sorted(registered_names - covered_tool_names)
+            if unmapped_tools:
+                surface_gaps.append(
+                    "registered Tools missing provider method coverage: "
+                    + ", ".join(unmapped_tools)
+                )
             coverage_without_surface = sorted(
                 set(str(method) for method in coverage if str(method).strip())
                 - implemented_surface_methods

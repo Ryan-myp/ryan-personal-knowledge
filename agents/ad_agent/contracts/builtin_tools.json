@@ -1,15 +1,15 @@
 {
-  "digest": "9ab6c1287d2bc67c048be9098d765c1fdf7248cfacf2a8c286d3518af454dce2",
+  "digest": "ca913f71ae57f9b7d36c441c575530fe02b5fb4f385ab0b5a76a795487da918a",
   "format_version": 1,
   "platforms": {
     "dv360": {
-      "digest": "5878f5b8b688d7f76d3e29ce4fed3cc48f0435c266ceed81fbd7cc6b0bd134ea",
-      "tool_count": 32,
+      "digest": "ceba11f4e00c566dc45eb92740ed72aab86280fe32297ff91ac84efb2fb35b58",
+      "tool_count": 31,
       "tools": [
         {
           "action": "activate",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "调用 DV360 activate_io 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -59,7 +59,7 @@
         {
           "action": "activate",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "激活 DV360 Line Item；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -113,107 +113,7 @@
         {
           "action": "create",
           "activation_rules": [],
-          "contract_version": "1.1.0",
-          "description": "创建 DV360 Campaign。",
-          "effect_class": "write",
-          "input_schema": {
-            "additionalProperties": false,
-            "additional_properties": false,
-            "conditional_rules": [],
-            "properties": {
-              "advertiser_id": {
-                "description": "DV360 advertiser ID",
-                "type": "string"
-              },
-              "campaign_type": {
-                "description": "Campaign channel type",
-                "enum": [
-                  "DISPLAY",
-                  "VIDEO",
-                  "AUDIO",
-                  "CONNECTED_TV",
-                  "DOOH"
-                ],
-                "type": "string"
-              },
-              "end_date": {
-                "description": "ISO date YYYY-MM-DD",
-                "type": "string"
-              },
-              "name": {
-                "description": "Campaign display name",
-                "maxLength": 255,
-                "minLength": 1,
-                "type": "string"
-              },
-              "objective": {
-                "description": "Campaign objective",
-                "enum": [
-                  "IMPRESSIONS",
-                  "CLICKS",
-                  "CONVERSIONS",
-                  "REVENUE",
-                  "VIEWABLE_IMPRESSIONS",
-                  "VIDEO_COMPLETIONS"
-                ],
-                "type": "string"
-              },
-              "start_date": {
-                "description": "ISO date YYYY-MM-DD",
-                "type": "string"
-              },
-              "status": {
-                "description": "Initial status",
-                "enum": [
-                  "DRAFT",
-                  "ACTIVE",
-                  "PAUSED",
-                  "ARCHIVED"
-                ],
-                "type": "string"
-              }
-            },
-            "provider_any_of": [],
-            "provider_required": [
-              "campaign_type",
-              "objective",
-              "start_date",
-              "end_date"
-            ],
-            "required": [
-              "advertiser_id",
-              "name"
-            ],
-            "type": "object"
-          },
-          "intent_types": [
-            "create_campaign"
-          ],
-          "live_support": false,
-          "max_output_bytes": 1000000,
-          "name": "dv360_create_campaign",
-          "parent_resource_id_field": null,
-          "parent_resource_type": null,
-          "platform": "dv360",
-          "provider_api_version": "v4",
-          "replay_policy": "unsafe",
-          "required_permissions": [
-            "ads.plan"
-          ],
-          "resource_id_field": "campaign_id",
-          "resource_type": "campaign",
-          "risk_level": "medium",
-          "skill": "dv360-api",
-          "timeout_seconds": 30.0,
-          "traits": [
-            "write",
-            "campaign"
-          ]
-        },
-        {
-          "action": "create",
-          "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "创建 DV360 Creative；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -265,7 +165,7 @@
         {
           "action": "create",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "创建 DV360 IO（Order & Invoice）。",
           "effect_class": "write",
           "input_schema": {
@@ -387,7 +287,7 @@
         {
           "action": "create",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "创建 DV360 Line Item。",
           "effect_class": "write",
           "input_schema": {
@@ -554,7 +454,7 @@
         {
           "action": "create",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "为 DV360 Line Item 绑定定向选项；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -615,7 +515,7 @@
         {
           "action": "create",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "创建 DV360 异步报表任务；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -667,7 +567,7 @@
         {
           "action": "delete",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "删除 DV360 Campaign；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -718,7 +618,7 @@
         {
           "action": "delete",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "删除 DV360 Creative；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -768,7 +668,7 @@
         {
           "action": "delete",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "删除 DV360 Insertion Order；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -818,7 +718,7 @@
         {
           "action": "delete",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "删除 DV360 Line Item；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -872,7 +772,7 @@
         {
           "action": "delete",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "解除 DV360 Line Item 的定向绑定；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -930,7 +830,7 @@
         {
           "action": "get",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "获取 DV360 Advertiser 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -976,7 +876,7 @@
         {
           "action": "get",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 DV360 Campaign 详情（支持 campaign_id 或 campaign_name）。",
           "effect_class": "read",
           "input_schema": {
@@ -1024,7 +924,7 @@
         {
           "action": "get",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 DV360 Creative 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -1074,7 +974,7 @@
         {
           "action": "get",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 DV360 Insertion Order 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -1120,7 +1020,7 @@
         {
           "action": "get",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 DV360 Line Item 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -1170,7 +1070,7 @@
         {
           "action": "report",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 DV360 Line Item 报表；当前不提供 Campaign-level report。",
           "effect_class": "read",
           "input_schema": {
@@ -1232,7 +1132,7 @@
         {
           "action": "get",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "获取 DV360 异步报表结果。",
           "effect_class": "read",
           "input_schema": {
@@ -1285,7 +1185,7 @@
         {
           "action": "list",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 DV360 Advertiser 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -1325,7 +1225,7 @@
         {
           "action": "list",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 DV360 Campaign 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -1379,7 +1279,7 @@
         {
           "action": "list",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 DV360 Advertiser 下的 Creative 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -1431,7 +1331,7 @@
         {
           "action": "list",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 DV360 Insertion Order 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -1480,7 +1380,7 @@
         {
           "action": "list",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 DV360 Line Item 已绑定的定向选项。",
           "effect_class": "read",
           "input_schema": {
@@ -1537,7 +1437,7 @@
         {
           "action": "list",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 DV360 Line Item 列表，可按 IO 过滤。",
           "effect_class": "read",
           "input_schema": {
@@ -1589,7 +1489,7 @@
         {
           "action": "list",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 DV360 Targeting Option 目录（枚举/参考数据）。",
           "effect_class": "read",
           "input_schema": {
@@ -1641,7 +1541,7 @@
         {
           "action": "pause",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "调用 DV360 pause_io 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -1691,7 +1591,7 @@
         {
           "action": "update",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "更新 DV360 campaign，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -1777,7 +1677,7 @@
         {
           "action": "update",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "更新 DV360 Creative；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -1831,7 +1731,7 @@
         {
           "action": "update",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "更新 DV360 io，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -1922,7 +1822,7 @@
         {
           "action": "update",
           "activation_rules": [],
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "更新 DV360 line_item，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -2023,7 +1923,7 @@
       ]
     },
     "google-ads": {
-      "digest": "f7b03016822e9f979473f25d1af6694565e7ae2d3ddfbe1009ccb4f3c02b9804",
+      "digest": "59c23d58bbcd1b1dfc8833ef20dc17cfae4f170292f61379c9cf58d5a25fadc3",
       "tool_count": 78,
       "tools": [
         {
@@ -2040,7 +1940,7 @@
               ]
             }
           ],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "创建 Google Ads Ad。",
           "effect_class": "write",
           "input_schema": {
@@ -2201,7 +2101,7 @@
               ]
             }
           ],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "创建 Google Ads Ad Group。",
           "effect_class": "write",
           "input_schema": {
@@ -2417,7 +2317,7 @@
               }
             }
           ],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "创建 Google App Campaign AppAd 素材广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -2554,7 +2454,7 @@
               }
             }
           ],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "创建 Google App Campaign Ad Group；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -2629,7 +2529,7 @@
         {
           "action": "create",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "创建 Google Ads 可复用 Asset（文本、图片、YouTube 视频或 HTML5 ZIP）；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -2790,7 +2690,7 @@
         {
           "action": "create",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "创建 Google PMax Asset Group；当前仅支持 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -2947,7 +2847,7 @@
         {
           "action": "create",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "创建 Google Ads Portfolio BiddingStrategy；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -3090,7 +2990,7 @@
         {
           "action": "create",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "创建 Google Ads Campaign。",
           "effect_class": "write",
           "input_schema": {
@@ -3764,7 +3664,7 @@
         {
           "action": "create",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "创建 Google Ads CampaignBudget；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -3848,7 +3748,7 @@
         {
           "action": "create",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "批量创建 Google Ads CampaignCriterion；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -4053,7 +3953,7 @@
         {
           "action": "create",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "创建 Google Ads Conversion Action；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -4253,7 +4153,7 @@
               ]
             }
           ],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "创建 Google Demand Gen Carousel Ad；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -4401,7 +4301,7 @@
               ]
             }
           ],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "创建 Google Demand Gen Multi Asset Ad；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -4598,7 +4498,7 @@
               ]
             }
           ],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "创建 Google Demand Gen Product Ad；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -4718,7 +4618,7 @@
               ]
             }
           ],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "创建 Google Demand Gen Video Responsive Ad；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -4909,7 +4809,7 @@
               ]
             }
           ],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "创建 Google Hotel Ad；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -4975,7 +4875,7 @@
         {
           "action": "create",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "批量创建 Google Ad Group 关键词/否定关键词；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -5079,7 +4979,7 @@
               ]
             }
           ],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "创建 Google Local Ad；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -5251,7 +5151,7 @@
               ]
             }
           ],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "创建 Google PMax Asset Group；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -5418,7 +5318,7 @@
               ]
             }
           ],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "创建 Google Shopping Product Group/Listing Group；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -5720,7 +5620,7 @@
               ]
             }
           ],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "创建 Google Responsive Display Ad；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -5912,7 +5812,7 @@
         {
           "action": "create",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "创建 Google Responsive Search Ad；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -6005,7 +5905,7 @@
               ]
             }
           ],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "创建 Google Smart Campaign Ad；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -6122,7 +6022,7 @@
               ]
             }
           ],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "创建 Google Demand Gen、Hotel、Local、Smart 或 Travel Ad Group；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -6319,7 +6219,7 @@
               ]
             }
           ],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "创建 Google Travel Ad；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -6385,7 +6285,7 @@
         {
           "action": "create",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "创建 Google Ads Customer Match User List；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -6507,7 +6407,7 @@
               ]
             }
           ],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "创建 Google Video Ad（可跳过、不可跳过、Bumper 或 Outstream）；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -6624,7 +6524,7 @@
         {
           "action": "delete",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "删除 Google Ads Ad；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -6677,7 +6577,7 @@
         {
           "action": "delete",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "删除 Google Ads Ad Group；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -6725,7 +6625,7 @@
         {
           "action": "delete",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "移除 Google Ads 客户级可复用 Asset；Asset 仍被引用时由 Google Ads 拒绝；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -6784,7 +6684,7 @@
         {
           "action": "delete",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "删除 Google Ads Portfolio BiddingStrategy；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -6837,7 +6737,7 @@
         {
           "action": "delete",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "删除 Google Ads Campaign；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -6886,7 +6786,7 @@
         {
           "action": "delete",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "删除未被引用的 Google Ads CampaignBudget；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -6965,7 +6865,7 @@
         {
           "action": "delete",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "删除 Google Ads CampaignCriterion；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -7024,7 +6924,7 @@
         {
           "action": "delete",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "删除 Google Ads Conversion Action；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -7076,7 +6976,7 @@
         {
           "action": "delete",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "删除 Google Ad Group 关键词；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -7126,7 +7026,7 @@
         {
           "action": "delete",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "删除 Google Shopping Product Group/Listing Group；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -7191,7 +7091,7 @@
         {
           "action": "delete",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "删除 Google Ads User List；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -7244,7 +7144,7 @@
         {
           "action": "get",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "查询 Google Ads Ad 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -7290,7 +7190,7 @@
         {
           "action": "get",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "查询 Google Ads Ad Group 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -7336,7 +7236,7 @@
         {
           "action": "report",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "查询 Google Ads Ad Group 级报表。",
           "effect_class": "read",
           "input_schema": {
@@ -7395,7 +7295,7 @@
         {
           "action": "get",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "查询 Google Ads 客户级 Asset 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -7454,7 +7354,7 @@
         {
           "action": "get",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "查询 PMax Asset Group 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -7500,7 +7400,7 @@
         {
           "action": "get",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "查询 Google Ads 出价策略详情。",
           "effect_class": "read",
           "input_schema": {
@@ -7550,7 +7450,7 @@
         {
           "action": "get",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "查询 Google Ads Campaign 详情（支持 campaign_id 或 campaign_name）。",
           "effect_class": "read",
           "input_schema": {
@@ -7598,7 +7498,7 @@
         {
           "action": "get",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "查询 Google Ads CampaignBudget 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -7677,7 +7577,7 @@
         {
           "action": "get",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "查询 Google Ads 单个 CampaignCriterion 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -7736,7 +7636,7 @@
         {
           "action": "report",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "查询 Google Ads Campaign 报表。支持按 campaign_ids 过滤，默认查询最近30天数据。",
           "effect_class": "read",
           "input_schema": {
@@ -7792,7 +7692,7 @@
         {
           "action": "get",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "查询 Google Ads 转化动作详情。",
           "effect_class": "read",
           "input_schema": {
@@ -7842,7 +7742,7 @@
         {
           "action": "get",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "查询 Google Shopping 单个 Product Group/Listing Group 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -7907,7 +7807,7 @@
         {
           "action": "get",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "查询 Google Ads 第一方 User List 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -7957,7 +7857,7 @@
         {
           "action": "list",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "查询 Google Ads Ad Group 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -8006,7 +7906,7 @@
         {
           "action": "list",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "查询 Google Ads Ad 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -8055,7 +7955,7 @@
         {
           "action": "list",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "查询 PMax Campaign 的 Asset Group 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -8104,7 +8004,7 @@
         {
           "action": "list",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "查询 Google Ads 客户级可复用 Asset 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -8162,7 +8062,7 @@
         {
           "action": "list",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "查询 Google Ads 出价策略列表。",
           "effect_class": "read",
           "input_schema": {
@@ -8211,7 +8111,7 @@
         {
           "action": "list",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "查询 Google Ads CampaignBudget 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -8290,7 +8190,7 @@
         {
           "action": "list",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "查询 Google Ads CampaignCriterion（地域、语言、设备、受众和人口属性定向）。",
           "effect_class": "read",
           "input_schema": {
@@ -8347,7 +8247,7 @@
         {
           "action": "list",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "查询 Google Ads Campaign 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -8401,7 +8301,7 @@
         {
           "action": "list",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "查询 Google Ads 转化动作列表。",
           "effect_class": "read",
           "input_schema": {
@@ -8450,7 +8350,7 @@
         {
           "action": "list",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "查询 Google Ads 经理账户下可访问的客户账户。",
           "effect_class": "read",
           "input_schema": {
@@ -8499,7 +8399,7 @@
         {
           "action": "list",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "查询 Google Ads 关键词，可按 Campaign 或 Ad Group 过滤。",
           "effect_class": "read",
           "input_schema": {
@@ -8552,7 +8452,7 @@
         {
           "action": "list",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "查询 Google Shopping Ad Group 下的 Product Group/Listing Group 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -8616,7 +8516,7 @@
         {
           "action": "list",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "查询 Google Ads 第一方 User List 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -8665,7 +8565,7 @@
         {
           "action": "pause",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "调用 Google Ads pause_campaign 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -8711,7 +8611,7 @@
         {
           "action": "resume",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "调用 Google Ads resume_campaign 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -8757,7 +8657,7 @@
         {
           "action": "update",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "更新 Google Ads ad，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -8855,7 +8755,7 @@
         {
           "action": "update",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "更新 Google Ads ad_group，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -8941,7 +8841,7 @@
         {
           "action": "update",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "更新 Google Ads asset_group，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -9035,7 +8935,7 @@
         {
           "action": "update",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "更新 Google Ads Portfolio BiddingStrategy；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -9154,7 +9054,7 @@
         {
           "action": "update",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "更新 Google Ads campaign，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -9241,7 +9141,7 @@
         {
           "action": "update",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "更新 Google Ads CampaignBudget；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -9355,7 +9255,7 @@
         {
           "action": "update",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "更新 Google Ads CampaignCriterion 的状态、排除标记或出价系数；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -9440,7 +9340,7 @@
         {
           "action": "update",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "更新 Google Ads Conversion Action；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -9589,7 +9489,7 @@
         {
           "action": "update",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "更新 Google Ad Group 关键词状态或 CPC 出价；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -9662,7 +9562,7 @@
         {
           "action": "update",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "更新 Google Shopping Product Group 状态或 CPC 出价；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -9756,7 +9656,7 @@
         {
           "action": "update",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "更新 Google Ads User List 的可变字段；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -9842,7 +9742,7 @@
         {
           "action": "upload",
           "activation_rules": [],
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "向 Google Ads Customer Match User List 上传仅含 SHA-256 邮箱/手机号的本地 CSV/TSV；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -24543,8 +24443,20 @@
         "status": "implemented"
       },
       {
+        "action": "create",
+        "gap": "DV360 Campaign 创建适配器尚未建设，Campaign/IO/Line Item 深度建设按计划暂缓",
+        "resource": "campaign",
+        "status": "planned"
+      },
+      {
         "action": "delete",
         "method": "delete_campaign",
+        "resource": "campaign",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "method": "update_resource",
         "resource": "campaign",
         "status": "implemented"
       },
@@ -24585,6 +24497,12 @@
         "status": "implemented"
       },
       {
+        "action": "update",
+        "method": "update_resource",
+        "resource": "insertion_order",
+        "status": "implemented"
+      },
+      {
         "action": "crud",
         "method": "create_line_item",
         "resource": "line_item",
@@ -24611,6 +24529,12 @@
       {
         "action": "activate",
         "method": "activate_line_item",
+        "resource": "line_item",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "method": "update_resource",
         "resource": "line_item",
         "status": "implemented"
       },
@@ -26085,5 +26009,5 @@
       ]
     }
   },
-  "tool_count": 249
+  "tool_count": 248
 }

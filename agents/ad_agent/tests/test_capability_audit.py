@@ -1,4 +1,7 @@
-from agents.ad_agent.scripts.audit_capabilities import audit_capabilities
+from agents.ad_agent.scripts.audit_capabilities import (
+    _covered_tool_names,
+    audit_capabilities,
+)
 from agents.ad_agent.scripts.validate_contracts import (
     build_contract_snapshot,
     build_runtime,
@@ -7,6 +10,20 @@ from agents.ad_agent.scripts.validate_contracts import (
 
 import copy
 import json
+
+
+def test_capability_audit_can_detect_registered_tools_missing_from_coverage():
+    coverage = {
+        "list_campaigns": ["provider_list_campaigns"],
+        "update_campaign": "provider_update_campaign",
+    }
+
+    assert _covered_tool_names(coverage) == {
+        "provider_list_campaigns", "provider_update_campaign"
+    }
+    assert {"provider_update_campaign", "unmapped_tool"} - _covered_tool_names(coverage) == {
+        "unmapped_tool"
+    }
 
 
 def test_capability_audit_discovers_all_installed_channels_without_issues():
@@ -57,6 +74,18 @@ def test_capability_audit_includes_provider_owned_api_surface_and_planned_gaps()
     assert custom_conversion_actions == {"create", "list", "get", "update", "delete"}
     assert report["surface_gaps"] == {
         platform: [] for platform in report["platforms"]
+    }
+    dv360 = report["platforms"]["dv360"]
+    assert not any(
+        item["tool"] == "dv360_create_campaign"
+        for item in dv360["creation_chain"]
+    )
+    assert any(
+        item["resource"] == "campaign" and item["action"] == "create"
+        for item in dv360["api_surface_planned"]
+    )
+    assert set(dv360["provider_method_coverage"]["update_resource"]["tools"]) == {
+        "dv360_update_campaign", "dv360_update_io", "dv360_update_line_item",
     }
     assert all(
         all(item["surface_entries"] for item in methods.values())

@@ -9,7 +9,6 @@ from ..provider_tools import account_from, bind_provider_method, method_tool
 from .campaigns import (
     DV360ListCampaignsHandler,
     DV360GetCampaignHandler,
-    DV360CreateCampaignHandler,
 )
 from .io import DV360CreateIOHandler, DV360ListIOHandler, DV360GetIOHandler
 from .line_items import (
@@ -21,7 +20,7 @@ from .reports import DV360GetLineItemReportHandler
 from .advertisers import DV360ListAdvertisersHandler
 from ...api_clients.dv360_client import DV360APIClient
 from ..update_contracts import dv360_updates
-from .parameters import dv360_campaign_schema, dv360_io_schema, dv360_line_item_schema
+from .parameters import dv360_io_schema, dv360_line_item_schema
 
 logger = logging.getLogger(__name__)
 
@@ -29,13 +28,15 @@ logger = logging.getLogger(__name__)
 class DV360Capability(BaseCapability):
     platform_name = "dv360"
     provider_client_class = DV360APIClient
-    provider_method_exclusions = {"update_resource"}
-    capability_version = "1.1.0"
+    capability_version = "1.2.0"
     provider_api_version = "v4"
     provider_method_coverage = {
         "list_advertisers": ["dv360_list_advertisers"], "get_advertiser": ["dv360_get_advertiser"],
         "list_campaigns": ["dv360_list_campaigns"], "get_campaign": ["dv360_get_campaign"],
         "delete_campaign": ["dv360_delete_campaign"],
+        "update_resource": [
+            "dv360_update_campaign", "dv360_update_io", "dv360_update_line_item",
+        ],
         "list_ios": ["dv360_list_ios"], "get_io": ["dv360_get_io"], "create_io": ["dv360_create_io"],
         "delete_io": ["dv360_delete_io"],
         "activate_io": ["dv360_activate_io"], "pause_io": ["dv360_pause_io"],
@@ -284,21 +285,6 @@ class DV360Capability(BaseCapability):
             replay_policy=ReplayPolicy.SAFE,
             traits=["read", "campaign"],
         ), DV360GetCampaignHandler(api_client)))
-
-        # Create Campaign
-        tools.append((ToolDefinition(
-            name="dv360_create_campaign",
-            skill="dv360-api",
-            platform="dv360",
-            description="创建 DV360 Campaign。",
-            input_schema=ToolSchema(**dv360_campaign_schema()),
-            risk_level=RiskLevel.MEDIUM,
-            effect_class=ToolEffect.WRITE,
-            replay_policy=ReplayPolicy.UNSAFE,
-            traits=["write", "campaign"],
-            live_support=False,
-            resource_id_field="campaign_id",
-        ), DV360CreateCampaignHandler(api_client)))
 
         tools.append((ToolDefinition(
             name="dv360_list_ios",

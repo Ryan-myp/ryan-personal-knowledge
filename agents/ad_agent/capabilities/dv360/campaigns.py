@@ -85,16 +85,3 @@ class DV360GetCampaignHandler(ToolHandler):
             "data_status": "offline_no_client",
             "simulated": True,
         })
-
-
-class DV360CreateCampaignHandler(ToolHandler):
-    def __init__(self, api_client: Optional[DV360APIClient] = None):
-        self.client = api_client
-
-    def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
-        advertiser_id = ctx.account_id
-        if self.client and advertiser_id:
-            # DV360 API Client 当前未提供 Campaign create 适配器；在 live 模式
-            # 下明确拒绝，避免把不存在的方法当成已支持能力。
-            return ToolResult.error("DV360 Campaign live create adapter is not enabled")
-        return ToolResult.error("DV360 Campaign live create adapter is not enabled")

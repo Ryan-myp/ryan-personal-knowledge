@@ -379,14 +379,6 @@ def test_public_tool_contract_includes_operational_and_json_schema_fields():
                 "tiktok_create_product_sales_ad",
             ],
         ),
-        (
-            "dv360", "d1", create_dv360_capability,
-            {"advertiser_id": "d1", "name": "smoke", "campaign_type": "DISPLAY",
-             "objective": "CLICKS", "start_date": "2026-08-28", "end_date": "2026-09-04",
-             "budget": 100, "type": "DISPLAY_DEFAULT", "goal": {"goal_type": "CLICKS"},
-             "targeting": {"geo": {"country": ["US"]}}},
-            ["dv360_create_campaign", "dv360_create_io", "dv360_create_line_item"],
-        ),
     ],
 )
 def test_four_channel_create_chains_are_dry_run_only(

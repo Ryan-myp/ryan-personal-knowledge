@@ -228,7 +228,6 @@ def test_resource_results_follow_declared_parent_fields_across_channels():
         ("meta", "meta_create_campaign", "meta_create_adset", "campaign_id", "c-meta", "adset_id", "s-meta"),
         ("google-ads", "google_create_campaign", "google_create_ad_group", "campaign_id", "c-google", "ad_group_id", "g-google"),
         ("tiktok", "tiktok_create_campaign", "tiktok_create_adgroup", "campaign_id", "c-tiktok", "adgroup_id", "g-tiktok"),
-        ("dv360", "dv360_create_campaign", "dv360_create_io", "campaign_id", "c-dv360", "io_id", "io-dv360"),
     ]
     definitions = {}
     for capability in (
@@ -274,8 +273,8 @@ def test_resource_results_follow_declared_parent_fields_across_channels():
         ])
 
     results = AgentRuntime._build_resource_results(normalized)
-    assert len(results) == 8
-    for index in (1, 3, 5, 7):
+    assert len(results) == 6
+    for index in (1, 3, 5):
         assert results[index]["parent_sequence"] == results[index - 1]["sequence"]
         assert results[index]["parent_resource_id"] == results[index - 1]["logical_resource_id"]
         assert results[index]["resource_ref"]["platform"] == results[index]["platform"]
