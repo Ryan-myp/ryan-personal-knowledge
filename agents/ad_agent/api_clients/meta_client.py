@@ -447,6 +447,58 @@ class MetaAPIClient(BasePlatformClient):
             "Meta pixel get",
         )
 
+    def send_conversion_events(
+        self,
+        account_id: str,
+        pixel_id: str,
+        events: list[dict],
+        test_event_code: str | None = None,
+    ) -> dict:
+        """Send a validated batch to Meta's Conversions API."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        pixel_id = self._clean_meta_id(pixel_id, "pixel_id")
+        if not isinstance(events, list) or not events:
+            raise ValueError("events must be a non-empty array")
+        if len(events) > 1000:
+            raise ValueError("events cannot contain more than 1000 items")
+        required_fields = {"event_name", "event_time", "action_source", "user_data"}
+        allowed_action_sources = {
+            "website", "app", "physical_store", "phone_call", "chat", "email", "other",
+        }
+        for index, event in enumerate(events):
+            if not isinstance(event, dict):
+                raise ValueError(f"events[{index}] must be an object")
+            missing = sorted(required_fields - set(event))
+            if missing:
+                raise ValueError(
+                    f"events[{index}] is missing required fields: {', '.join(missing)}"
+                )
+            if not isinstance(event["user_data"], dict):
+                raise ValueError(f"events[{index}].user_data must be an object")
+            if not isinstance(event["event_name"], str) or not event["event_name"].strip():
+                raise ValueError(f"events[{index}].event_name must be a non-empty string")
+            if event["action_source"] not in allowed_action_sources:
+                raise ValueError(
+                    f"events[{index}].action_source must be one of "
+                    f"{sorted(allowed_action_sources)}"
+                )
+            try:
+                event_time = int(event["event_time"])
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"events[{index}].event_time must be an integer") from exc
+            if event_time <= 0:
+                raise ValueError(f"events[{index}].event_time must be positive")
+        if not self.resource_belongs_to_account(account_id, "pixel", pixel_id):
+            raise PermissionError(
+                f"Meta pixel {pixel_id} does not belong to account {account_id}"
+            )
+        data: dict[str, Any] = {"data": events}
+        if test_event_code not in (None, ""):
+            data["test_event_code"] = str(test_event_code).strip()
+        self.acquire_rate_limit(self._get_account_limiter(account_id))
+        result = self.request("POST", f"/{pixel_id}/events", data=data)
+        return self.require_resource_object(result, "Meta Conversions API events")
+
     def list_lead_forms(self, page_id: str, limit: int = 25) -> list:
         """List Instant Forms published on a Facebook Page."""
         page_id = str(page_id or "").strip()

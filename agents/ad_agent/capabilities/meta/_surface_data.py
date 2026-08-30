@@ -31,7 +31,7 @@ API_SURFACE = [
     {"resource": "audience", "action": "delete", "method": "delete_audience", "status": "implemented"},
     {"resource": "audience", "action": "source_upload", "status": "planned", "gap": "Custom Audience 用户文件上传与哈希字段校验尚未实现"},
     {"resource": "pixel", "action": "events", "status": "planned", "gap": "Pixel 事件配置和事件测试尚无独立 Tool"},
-    {"resource": "conversion", "action": "event", "status": "planned", "gap": "Conversions API/Offline Event 尚无 Tool"},
+    {"resource": "conversion", "action": "event", "method": "send_conversion_events", "status": "implemented"},
     {"resource": "lead_form", "action": "create", "status": "planned", "gap": "Lead Form 创建接口尚未完成验证"},
     {"resource": "lead_form", "action": "update", "status": "planned", "gap": "Lead Form 更新接口尚未完成验证"},
     {"resource": "creative", "action": "crud", "status": "planned", "gap": "Creative 当前只有 create，媒体上传/更新/删除未覆盖"},

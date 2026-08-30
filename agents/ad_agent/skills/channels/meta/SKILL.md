@@ -55,6 +55,12 @@ targeting、promoted object、Page/Pixel/Catalog/Form/Messaging 依赖。新增 
 接口或版本适配只在 Meta Client/Capability 内完成，不应修改业务 Skill 来“接线”；
 未标记为 `supported_dry_run` 的广告格式不得声称已有完整支持。
 
+发送 CAPI 事件时，先用当前 Capability 发布的 `meta_list_pixels` 选择目标 Pixel，
+事件批次必须包含 `event_name`、Unix 秒级 `event_time`、`action_source` 和
+`user_data`。用户匹配字段应在进入 Tool 前按 Meta 规范标准化并哈希；使用
+`event_id` 做 Pixel/CAPI 去重，联调时才提供 `test_event_code`。该 Tool 默认只生成
+dry-run 计划，不能把测试码或用户数据写入 Skill 文件、凭证配置或日志。
+
 ## 📚 参考文档
 
 - **官方文档**: https://developers.facebook.com/docs/marketing-api

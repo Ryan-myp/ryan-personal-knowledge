@@ -33,6 +33,15 @@ META_CUSTOMER_FILE_SOURCES = [
     "USER_PROVIDED_ONLY", "PARTNER_PROVIDED_ONLY", "BOTH_USER_AND_PARTNER_PROVIDED",
 ]
 META_LOOKALIKE_TYPES = ["similarity", "reach"]
+META_CAPI_EVENT_NAMES = [
+    "AddPaymentInfo", "AddToCart", "AddToWishlist", "CompleteRegistration",
+    "Contact", "CustomizeProduct", "Donate", "FindLocation", "InitiateCheckout",
+    "Lead", "Purchase", "Schedule", "Search", "StartTrial", "SubmitApplication",
+    "Subscribe", "ViewContent",
+]
+META_CAPI_ACTION_SOURCES = [
+    "website", "app", "physical_store", "phone_call", "chat", "email", "other",
+]
 
 
 def _field(field_type: Any, description: str = "", **kwargs: Any) -> dict[str, Any]:
@@ -116,6 +125,62 @@ def meta_audience_schema() -> dict[str, Any]:
                 "message": "LOOKALIKE requires origin_audience_id and country",
             },
         ],
+    }
+
+
+def meta_conversion_event_schema() -> dict[str, Any]:
+    """Contract for server-side Meta Conversions API events."""
+    event = _object({
+        "event_name": _field(
+            "string", "Meta standard or custom event name", minLength=1, maxLength=100,
+            known_values=META_CAPI_EVENT_NAMES, allow_custom=True,
+        ),
+        "event_time": _field("integer", "Unix event timestamp in seconds", minimum=1),
+        "action_source": _field(
+            "string", "Origin of the conversion event", enum=META_CAPI_ACTION_SOURCES
+        ),
+        "event_source_url": _field("string", "URL where the event occurred"),
+        "event_id": _field("string", "Stable deduplication ID"),
+        "user_data": _object(
+            {}, "Normalized/hashed user matching data", additional_properties=True
+        ),
+        "custom_data": _object(
+            {}, "Purchase, content and order metadata", additional_properties=True
+        ),
+        "app_data": _object(
+            {}, "Mobile app event metadata", additional_properties=True
+        ),
+        "opt_out": _field("boolean", "Whether the user opted out of processing"),
+        "data_processing_options": _field(
+            "array", "Limited data use options", items={"type": "string"}
+        ),
+        "data_processing_options_country": _field(
+            "integer", "Data processing country code"
+        ),
+        "data_processing_options_state": _field(
+            "integer", "Data processing state code"
+        ),
+    }, "Meta Conversions API event")
+    event["required"] = ["event_name", "event_time", "action_source", "user_data"]
+    return {
+        "required": ["account_id", "pixel_id", "events"],
+        "provider_required": ["pixel_id", "events"],
+        "properties": {
+            "account_id": _field("string", "Meta ad account ID"),
+            "pixel_id": _field(
+                "string", "Meta Pixel ID",
+                lookup_tool="meta_list_pixels", lookup_result_key="pixels",
+                selection_value_fields=["id", "pixel_id"],
+                selection_label_fields=["name", "id"],
+            ),
+            "events": _field(
+                "array", "One or more CAPI events", items=event,
+                minItems=1, maxItems=1000,
+            ),
+            "test_event_code": _field(
+                "string", "Optional Meta Events Manager test code"
+            ),
+        },
     }
 
 

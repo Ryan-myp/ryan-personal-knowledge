@@ -16,7 +16,7 @@ from .creatives import MetaCreateCreativeHandler
 from .parameters import (
     meta_campaign_schema, meta_adset_schema, meta_ad_schema,
     meta_ad_format_catalog, meta_lead_ad_schema, meta_catalog_ad_schema,
-    meta_audience_schema,
+    meta_audience_schema, meta_conversion_event_schema,
 )
 from ...api_clients.meta_client import MetaAPIClient
 from ..update_contracts import meta_updates
@@ -62,6 +62,7 @@ class MetaCapability(BaseCapability):
         "list_product_sets": ["meta_list_product_sets"], "list_campaigns": ["meta_list_campaigns"],
         "list_pages": ["meta_list_pages"], "list_pixels": ["meta_list_pixels"],
         "get_pixel": ["meta_get_pixel"],
+        "send_conversion_events": ["meta_send_conversion_events"],
         "list_lead_forms": ["meta_list_lead_forms"], "get_lead_form": ["meta_get_lead_form"],
         "get_campaign": ["meta_get_campaign"], "create_campaign": ["meta_create_campaign"],
         "update_campaign": ["meta_update_campaign"], "pause_campaign": ["meta_pause_campaign"],
@@ -86,6 +87,7 @@ class MetaCapability(BaseCapability):
         account = lambda ctx, data: account_from(ctx, data, "account_id")
         audience_schema = meta_audience_schema()
         audience_properties = audience_schema["properties"]
+        conversion_schema = meta_conversion_event_schema()
         tools = [
             method_tool(
                 platform="meta", skill="meta-marketing-api", name="meta_list_pages",
@@ -121,6 +123,19 @@ class MetaCapability(BaseCapability):
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["pixel_id"]), {
                     "fields": data.get("fields"),
                 }),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_send_conversion_events",
+                description="向 Meta Pixel 发送 Conversions API 事件；默认仅生成 dry-run 计划。",
+                method_name="send_conversion_events", result_key="conversion_result",
+                properties=conversion_schema["properties"], required=conversion_schema["required"],
+                provider_required=conversion_schema["provider_required"], action="send",
+                resource_type="conversion", resource_id_field="pixel_id",
+                intent_types=["send_conversion_events", "send_capi_events"],
+                traits=["write", "conversion", "pixel", "capi"], write=True,
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["pixel_id"], data["events"],
+                ), {"test_event_code": data.get("test_event_code")}),
             ),
             method_tool(
                 platform="meta", skill="meta-marketing-api", name="meta_list_lead_forms",

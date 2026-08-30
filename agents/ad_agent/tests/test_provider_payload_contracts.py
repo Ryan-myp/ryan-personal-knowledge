@@ -239,6 +239,55 @@ def test_meta_pixel_get_checks_account_ownership_and_forwards_fields():
     ]
 
 
+def test_meta_capi_events_validate_pixel_ownership_and_build_provider_envelope():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+    client.resource_belongs_to_account = lambda account_id, resource_type, resource_id: (
+        calls.append(("ownership", account_id, resource_type, resource_id)) or True
+    )
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        calls.append((method, endpoint, data))
+        or {"events_received": 1, "fbtrace_id": "trace-1"}
+    )
+    result = client.send_conversion_events("act_123", "px-1", [{
+        "event_name": "Purchase", "event_time": 1720000000,
+        "action_source": "website", "user_data": {"em": ["a" * 64]},
+        "custom_data": {"value": 12.5, "currency": "USD"},
+        "event_id": "order-1",
+    }], test_event_code="TEST123")
+    assert result["events_received"] == 1
+    assert calls[0] == ("ownership", "123", "pixel", "px-1")
+    assert calls[1][0:2] == ("POST", "/px-1/events")
+    assert calls[1][2] == {
+        "data": [{
+            "event_name": "Purchase", "event_time": 1720000000,
+            "action_source": "website", "user_data": {"em": ["a" * 64]},
+            "custom_data": {"value": 12.5, "currency": "USD"},
+            "event_id": "order-1",
+        }],
+        "test_event_code": "TEST123",
+    }
+
+    with pytest.raises(ValueError, match="missing required fields"):
+        client.send_conversion_events("123", "px-1", [{
+            "event_name": "Purchase", "event_time": 1720000000,
+            "action_source": "website",
+        }])
+
+
+def test_meta_capi_tool_exposes_pixel_lookup_and_is_dry_run_only():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_meta_capability().register_tools()
+    }
+    tool = definitions["meta_send_conversion_events"]
+    assert tool.input_schema.properties["pixel_id"]["lookup_tool"] == "meta_list_pixels"
+    assert tool.input_schema.properties["events"]["items"]["required"] == [
+        "event_name", "event_time", "action_source", "user_data"
+    ]
+    assert tool.live_support is False
+
+
 def test_meta_resource_ownership_accepts_graph_ids_and_ad_set_alias():
     client = MetaAPIClient({"access_token": "test"})
     client.list_pixels = lambda account_id, limit=25: [{"id": "px-1"}]
