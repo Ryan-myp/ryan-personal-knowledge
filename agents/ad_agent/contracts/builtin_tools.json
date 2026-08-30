@@ -1,5 +1,5 @@
 {
-  "digest": "367f58651c47ad670b2a29d604afd21f3a2ce11f6a6bbb3c92ce7b58ce355cfe",
+  "digest": "f6e0c890fcc367e7c30ca4f9f950aa44319d3da6b4a9363e6f6c07e501bb431d",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -1990,8 +1990,8 @@
       ]
     },
     "google-ads": {
-      "digest": "96981bd0ab298f2c2ad8017f7f5303a842105dc46b9ba8273e80060904e339e4",
-      "tool_count": 58,
+      "digest": "1e107582a42e1bd2896a9302c0dc20eb20623c19990560c4cdd60a74c35009a1",
+      "tool_count": 61,
       "tools": [
         {
           "action": "create",
@@ -4753,6 +4753,105 @@
         {
           "action": "delete",
           "contract_version": "1.3.0",
+          "description": "删除 Google Ads Ad；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_group_id": {
+                "type": "string"
+              },
+              "ad_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "ad_group_id",
+              "ad_id"
+            ],
+            "required": [
+              "ad_group_id",
+              "ad_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_ad"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_delete_ad",
+          "parent_resource_id_field": "ad_group_id",
+          "parent_resource_type": "ad_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad"
+          ]
+        },
+        {
+          "action": "delete",
+          "contract_version": "1.3.0",
+          "description": "删除 Google Ads Ad Group；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_group_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "ad_group_id"
+            ],
+            "required": [
+              "ad_group_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_ad_group"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_delete_ad_group",
+          "parent_resource_id_field": null,
+          "parent_resource_type": "campaign",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_group_id",
+          "resource_type": "ad_group",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad_group"
+          ]
+        },
+        {
+          "action": "delete",
+          "contract_version": "1.3.0",
           "description": "移除 Google Ads 客户级可复用 Asset；Asset 仍被引用时由 Google Ads 拒绝；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -4858,6 +4957,53 @@
           "traits": [
             "write",
             "bidding"
+          ]
+        },
+        {
+          "action": "delete",
+          "contract_version": "1.3.0",
+          "description": "删除 Google Ads Campaign；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "campaign_id"
+            ],
+            "required": [
+              "campaign_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_campaign"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_delete_campaign",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "campaign_id",
+          "resource_type": "campaign",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "campaign"
           ]
         },
         {
@@ -19521,6 +19667,12 @@
         "status": "implemented"
       },
       {
+        "action": "delete",
+        "method": "delete_campaign",
+        "resource": "campaign",
+        "status": "implemented"
+      },
+      {
         "action": "pause",
         "method": "pause_campaign",
         "resource": "campaign",
@@ -19557,6 +19709,12 @@
         "status": "implemented"
       },
       {
+        "action": "delete",
+        "method": "delete_ad_group",
+        "resource": "ad_group",
+        "status": "implemented"
+      },
+      {
         "action": "list",
         "method": "list_ads",
         "resource": "ad",
@@ -19565,6 +19723,12 @@
       {
         "action": "get",
         "method": "get_ad",
+        "resource": "ad",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "method": "delete_ad",
         "resource": "ad",
         "status": "implemented"
       },
@@ -20699,5 +20863,5 @@
       ]
     }
   },
-  "tool_count": 215
+  "tool_count": 218
 }

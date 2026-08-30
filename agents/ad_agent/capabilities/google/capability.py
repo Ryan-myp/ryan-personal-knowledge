@@ -72,6 +72,8 @@ class GoogleCapability(BaseCapability):
         "list_campaigns": ["google_list_campaigns"], "get_campaign": ["google_get_campaign"],
         "list_ad_groups": ["google_list_ad_groups"], "get_ad_group": ["google_get_ad_group"],
         "list_ads": ["google_list_ads"], "get_ad": ["google_get_ad"],
+        "delete_campaign": ["google_delete_campaign"],
+        "delete_ad_group": ["google_delete_ad_group"], "delete_ad": ["google_delete_ad"],
         "list_keywords": ["google_list_keywords"], "list_asset_groups": ["google_list_asset_groups"],
         "list_assets": ["google_list_assets"], "get_asset": ["google_get_asset"],
         "create_asset": ["google_create_asset"], "delete_asset": ["google_delete_asset"],
@@ -162,6 +164,44 @@ class GoogleCapability(BaseCapability):
         asset_create_schema = google_asset_create_schema()
         asset_group_schema = google_asset_group_schema()
         tools = [
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_delete_campaign",
+                description="删除 Google Ads Campaign；默认仅生成 dry-run 计划。",
+                method_name="delete_campaign", result_key="campaign_result",
+                properties={"campaign_id": {"type": "string"}},
+                required=["campaign_id"], provider_required=["campaign_id"],
+                action="delete", resource_type="campaign", resource_id_field="campaign_id",
+                intent_types=["delete_campaign"], traits=["write", "campaign"], write=True,
+                argument_builder=lambda _ctx, data: ((data["campaign_id"],), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_delete_ad_group",
+                description="删除 Google Ads Ad Group；默认仅生成 dry-run 计划。",
+                method_name="delete_ad_group", result_key="ad_group_result",
+                properties={"ad_group_id": {"type": "string"}},
+                required=["ad_group_id"], provider_required=["ad_group_id"],
+                action="delete", resource_type="ad_group", resource_id_field="ad_group_id",
+                intent_types=["delete_ad_group"], traits=["write", "ad_group"], write=True,
+                argument_builder=lambda _ctx, data: ((data["ad_group_id"],), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_delete_ad",
+                description="删除 Google Ads Ad；默认仅生成 dry-run 计划。",
+                method_name="delete_ad", result_key="ad_result",
+                properties={
+                    "ad_group_id": {"type": "string"},
+                    "ad_id": {"type": "string"},
+                },
+                required=["ad_group_id", "ad_id"],
+                provider_required=["ad_group_id", "ad_id"],
+                action="delete", resource_type="ad", parent_resource_type="ad_group",
+                resource_id_field="ad_id", parent_resource_id_field="ad_group_id",
+                intent_types=["delete_ad"], traits=["write", "ad"], write=True,
+                argument_builder=lambda _ctx, data: ((data["ad_group_id"], data["ad_id"]), {}),
+            ),
             method_tool(
                 platform="google-ads", skill="google-ads-api-expert",
                 name="google_list_assets", description="查询 Google Ads 客户级可复用 Asset 列表。",

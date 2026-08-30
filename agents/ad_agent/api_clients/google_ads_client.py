@@ -2366,6 +2366,13 @@ class GoogleAdsAPIClient(BasePlatformClient):
             })
         return {'success': True, 'campaign_id': campaign_id}
 
+    def delete_campaign(self, campaign_id: str) -> dict:
+        """Remove a Google Ads Campaign through the customer mutate API."""
+        campaign_id = self._numeric_id(campaign_id, "campaign_id")
+        resource_name = f"customers/{self.customer_id}/campaigns/{campaign_id}"
+        self._mutate("campaigns", {"remove": resource_name})
+        return {"success": True, "campaign_id": campaign_id}
+
     def _update_resource(
         self,
         resource: str,
@@ -2413,12 +2420,33 @@ class GoogleAdsAPIClient(BasePlatformClient):
             self.AD_GROUP_UPDATE_FIELDS, "ad_group_id",
         )
 
+    def delete_ad_group(self, ad_group_id: str) -> dict:
+        """Remove a Google Ads Ad Group through the customer mutate API."""
+        ad_group_id = self._numeric_id(ad_group_id, "ad_group_id")
+        resource_name = f"customers/{self.customer_id}/adGroups/{ad_group_id}"
+        self._mutate("adGroups", {"remove": resource_name})
+        return {"success": True, "ad_group_id": ad_group_id}
+
     def update_ad(self, ad_id: str, updates: dict) -> dict:
         """Update mutable Google Ads AdGroupAd fields."""
         return self._update_resource(
             "adGroupAds", ad_id, updates,
             self.AD_UPDATE_FIELDS, "ad_id",
         )
+
+    def delete_ad(self, ad_group_id: str, ad_id: str) -> dict:
+        """Remove an AdGroupAd using Google's composite resource name."""
+        ad_group_id = self._numeric_id(ad_group_id, "ad_group_id")
+        ad_id = self._numeric_id(ad_id, "ad_id")
+        resource_name = (
+            f"customers/{self.customer_id}/adGroupAds/{ad_group_id}~{ad_id}"
+        )
+        self._mutate("adGroupAds", {"remove": resource_name})
+        return {
+            "success": True,
+            "ad_group_id": ad_group_id,
+            "ad_id": ad_id,
+        }
 
     def update_asset_group(self, asset_group_id: str, updates: dict) -> dict:
         """Update mutable Performance Max Asset Group fields."""

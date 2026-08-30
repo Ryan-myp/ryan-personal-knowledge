@@ -2525,6 +2525,41 @@ def test_google_creation_options_are_mapped_to_rest_resources():
     assert ad["responsiveSearchAd"]["path2"] == "now"
 
 
+def test_google_core_hierarchy_delete_methods_use_customer_mutate_remove():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
+    operations = []
+    client._mutate = lambda resource, operation: operations.append((resource, operation)) or {}
+
+    assert client.delete_campaign("10")["campaign_id"] == "10"
+    assert client.delete_ad_group("20")["ad_group_id"] == "20"
+    assert client.delete_ad("20", "30")["ad_id"] == "30"
+
+    assert operations == [
+        ("campaigns", {"remove": "customers/123/campaigns/10"}),
+        ("adGroups", {"remove": "customers/123/adGroups/20"}),
+        ("adGroupAds", {"remove": "customers/123/adGroupAds/20~30"}),
+    ]
+    with pytest.raises(ValueError, match="digits only"):
+        client.delete_ad("20", "ad-30")
+
+
+def test_google_core_hierarchy_delete_tools_are_dry_run_and_traced():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_google_capability().register_tools()
+    }
+    expected = {
+        "google_delete_campaign": ["campaign_id"],
+        "google_delete_ad_group": ["ad_group_id"],
+        "google_delete_ad": ["ad_group_id", "ad_id"],
+    }
+    for name, required in expected.items():
+        definition = definitions[name]
+        assert definition.is_write_tool
+        assert definition.live_support is False
+        assert definition.input_schema.provider_required == required
+
+
 def test_google_campaign_contract_covers_channel_specific_parameters():
     definitions = {
         definition.name: definition
