@@ -117,11 +117,10 @@ class ToolDefinition:
     platform: str                          # 所属平台（meta/google/tiktok/dv360）
     description: str                       # 工具描述（给 LLM 使用）
     input_schema: ToolSchema               # 输入参数 Schema
-    # Self-description used by the planner.  A Tool declares what it acts on;
+    # Self-description used by the planner. A Tool declares what it acts on;
     # the Runtime can then discover the right Tool without a central
-    # intent->tool table.  The defaults intentionally support existing Tools:
-    # ``__post_init__`` derives metadata from the conventional tool name and
-    # traits when a provider has not filled it explicitly.
+    # intent->tool table. These are required Capability/Skill-owned contract
+    # fields; Core never derives them from a tool name.
     action: str = ""
     resource_type: str = ""
     parent_resource_type: Optional[str] = None
@@ -191,26 +190,29 @@ class ToolDefinition:
                 ) from exc
         if self.is_write_tool and self.replay_policy != ReplayPolicy.UNSAFE:
             raise ValueError("write tools must use ReplayPolicy.UNSAFE")
-        self.action, self.resource_type = self._derive_resource_metadata(
-            self.action, self.resource_type
-        )
-        if not self.parent_resource_type:
-            self.parent_resource_type = {
-                "ad_set": "campaign", "ad_group": "campaign", "io": "campaign",
-                "line_item": "io", "asset_group": "campaign",
-                # Provider-specific parent relationships must be declared by
-                # the Capability.  The generic fallback keeps existing
-                # non-Meta providers usable without making the core platform
-                # aware; Meta's Ad Tool declares ``ad_set`` explicitly.
-                "ad": "ad_group",
-            }.get(self.resource_type)
+        self.action = str(self.action or "").strip().lower()
+        self.resource_type = self._normalize_resource(self.resource_type)
         if self.parent_resource_type:
             self.parent_resource_type = self._normalize_resource(
                 self.parent_resource_type
             )
         self.intent_types = list(dict.fromkeys(str(item) for item in self.intent_types))
+
+    def routing_metadata_errors(self) -> list[str]:
+        """Return missing self-description fields without Core inference.
+
+        Construction remains permissive for low-level registry/unit-test
+        fixtures. Capability and Skill registration boundaries call this
+        method and fail closed before exposing an incomplete executable Tool.
+        """
+        errors = []
+        if not self.action:
+            errors.append("action")
+        if not self.resource_type:
+            errors.append("resource_type")
         if not self.intent_types:
-            self.intent_types = self._derive_intents()
+            errors.append("intent_types")
+        return errors
 
     @staticmethod
     def _normalize_resource(value: str) -> str:
@@ -223,109 +225,6 @@ class ToolDefinition:
             "devices": "device", "catalogs": "catalog",
         }
         return aliases.get(normalized, normalized)
-
-    def _derive_resource_metadata(self, action: str, resource: str) -> tuple[str, str]:
-        name = self.name.lower().replace("-", "_")
-        tokens = name.split("_")
-        known_actions = (
-            "create", "list", "get", "update", "delete", "pause", "resume",
-            "enable", "disable", "boost", "report", "export", "download",
-            "estimate", "validate", "auth", "track", "send", "run",
-        )
-        derived_action = str(action or "").lower()
-        if not derived_action and "spark" in tokens:
-            derived_action = "boost"
-        if not derived_action:
-            if "report" in tokens or name.endswith("_export_report") or name.endswith("_download_report"):
-                derived_action = "report"
-            elif name.endswith("_create"):
-                derived_action = "create"
-        if not derived_action:
-            for token in tokens:
-                if token in known_actions:
-                    derived_action = token
-                    break
-            if not derived_action and "spark" in tokens:
-                derived_action = "boost"
-        normalized_resource = self._normalize_resource(resource)
-        if not normalized_resource:
-            patterns = (
-                ("line_item", "line_item"), ("asset_group", "asset_group"),
-                ("ad_set", "ad_set"), ("adset", "ad_set"),
-                ("ad_group", "ad_group"), ("adgroup", "ad_group"),
-                ("campaign", "campaign"), ("creative", "creative"),
-                ("audience", "audience"), ("conversion", "conversion"),
-                ("keywords", "keyword"), ("keyword", "keyword"),
-                ("location", "location"), ("device", "device"),
-                ("catalog", "catalog"), ("app", "app"), ("video", "video"),
-                ("image", "image"), ("brand_safety", "brand_safety"),
-                ("post", "post"), ("flight", "flight"), ("io", "io"),
-                ("advertiser", "advertiser"), ("report", "report"),
-                ("ads", "ad"),
-            )
-            for marker, value in patterns:
-                if marker in name:
-                    normalized_resource = value
-                    break
-            if not normalized_resource:
-                for token in reversed(tokens):
-                    if token not in known_actions and token not in {"meta", "google", "ads", "tiktok", "dv360", "spark"}:
-                        normalized_resource = self._normalize_resource(token)
-                        break
-        return derived_action or "custom", normalized_resource or "resource"
-
-    def _derive_intents(self) -> list[str]:
-        action = self.action
-        resource = self.resource_type
-        if resource == "post" or action == "boost":
-            return ["boost_post"]
-        if action in {"report", "export", "download"} or resource == "report":
-            return ["download_report"]
-        if action == "create":
-            return {
-                "campaign": ["create_campaign"],
-                "ad_set": ["create_campaign"], "ad_group": ["create_campaign"],
-                "ad": ["create_campaign"], "io": ["create_campaign"],
-                "line_item": ["create_campaign"],
-                "asset_group": ["create_asset_group"],
-                "creative": ["create_creative"],
-            }.get(resource, [])
-        if action in {"pause", "disable"} and resource == "campaign":
-            return ["pause_campaign", "cross_channel_batch_pause"]
-        if action in {"resume", "enable"} and resource == "campaign":
-            return ["resume_campaign", "cross_channel_batch_resume"]
-        if action == "delete" and resource == "campaign":
-            return ["delete_campaign", "cross_channel_batch_delete"]
-        if action == "update":
-            return {
-                "campaign": ["update_campaign", "pause_campaign", "resume_campaign", "cross_channel_batch_pause", "cross_channel_batch_resume", "cross_channel_batch_update_budget"],
-                "ad_set": ["update_adset"], "ad_group": ["update_adgroup"],
-                "ad": ["update_ad"], "io": ["update_io"],
-                "line_item": ["update_line_item"],
-                "asset_group": ["update_asset_group"],
-            }.get(resource, [])
-        if action == "list":
-            return {
-                "campaign": ["list_campaigns", "cross_channel_overview", "cross_channel_compare", "cross_channel_performance_insights", "cross_channel_optimize_budget", "cross_channel_export_report"],
-                "ad_set": ["list_adsets", "list_adgroups"],
-                "ad_group": ["list_adgroups"], "ad": ["list_ads"],
-                "audience": ["list_audiences"], "io": ["list_ios"],
-                "line_item": ["list_line_items"], "asset_group": ["list_asset_groups"],
-                "creative": ["list_creatives"],
-                "video": ["list_videos"], "image": ["list_images"],
-                "keyword": ["list_keywords"], "conversion": ["list_conversions"],
-                "location": ["list_locations"], "device": ["list_devices"],
-                "catalog": ["list_catalogs"], "app": ["list_apps"],
-                "brand_safety": ["list_brand_safety"], "advertiser": ["list_advertisers"],
-            }.get(resource, [])
-        if action == "get":
-            return {
-                "campaign": ["get_campaign"], "io": ["get_io"],
-                "line_item": ["get_line_item"], "asset_group": ["get_asset_group"],
-                "ad_set": ["get_adset"], "ad_group": ["get_adgroup"],
-                "ad": ["get_ad"],
-            }.get(resource, [])
-        return []
 
     def add_intents(self, intents: list[str] | tuple[str, ...] | set[str]) -> None:
         self.intent_types = list(dict.fromkeys(self.intent_types + [str(item) for item in intents]))

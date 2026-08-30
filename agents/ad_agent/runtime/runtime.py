@@ -1326,6 +1326,12 @@ class AgentRuntime:
                     f"Tool '{tool_def.name}' platform '{tool_platform}' "
                     f"does not match Skill platform '{canonical_platform}'"
                 )
+            metadata_errors = tool_def.routing_metadata_errors()
+            if metadata_errors:
+                raise ValueError(
+                    f"Skill '{skill_key}' Tool '{tool_def.name}' is missing explicit "
+                    "routing metadata: " + ", ".join(metadata_errors)
+                )
             if self._read_only_mode and tool_def.is_write_tool:
                 continue
             if not tool_def.required_permissions:

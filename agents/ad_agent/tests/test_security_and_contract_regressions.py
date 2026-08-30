@@ -1391,9 +1391,12 @@ def test_capability_without_version_metadata_does_not_create_unknown_contract():
                     name="versionless_read",
                     skill="versionless-provider",
                     platform="versionless-provider",
-                    description="read without a published provider version",
-                    input_schema=ToolSchema(),
-                ),
+                        description="read without a published provider version",
+                        input_schema=ToolSchema(),
+                        action="read",
+                        resource_type="status",
+                        intent_types=["read_status"],
+                    ),
                 Handler(),
             )]
 

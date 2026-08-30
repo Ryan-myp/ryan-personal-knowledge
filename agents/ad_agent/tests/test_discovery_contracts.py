@@ -46,6 +46,24 @@ def test_existing_channel_tools_publish_routing_metadata():
     assert by_name["dv360_create_line_item"].parent_resource_type == "io"
 
 
+def test_core_does_not_infer_routing_metadata_from_tool_name():
+    definition = ToolDefinition(
+        name="new_network_create_campaign",
+        skill="new-network-skill",
+        platform="new-network",
+        description="An intentionally incomplete low-level fixture",
+        input_schema=ToolSchema(),
+    )
+
+    assert definition.action == ""
+    assert definition.resource_type == ""
+    assert definition.parent_resource_type is None
+    assert definition.intent_types == []
+    assert definition.routing_metadata_errors() == [
+        "action", "resource_type", "intent_types",
+    ]
+
+
 def test_existing_channel_tools_publish_wire_id_fields_for_hierarchy():
     definitions = []
     for capability in (
@@ -300,6 +318,7 @@ def test_new_standard_tool_is_discovered_without_router_configuration():
             input_schema=ToolSchema(),
             action="create",
             resource_type="campaign",
+            intent_types=["create_campaign"],
             effect_class=ToolEffect.WRITE,
         ),
         Handler(),
@@ -639,6 +658,7 @@ def test_runtime_resource_outputs_use_tool_metadata_not_tool_name():
         input_schema=ToolSchema(properties={"name": {"type": "string"}}),
         action="create",
         resource_type="campaign",
+        intent_types=["create_campaign"],
         effect_class=ToolEffect.WRITE,
     )
     runtime = AgentRuntime.__new__(AgentRuntime)

@@ -236,6 +236,12 @@ class BaseCapability(CapabilityModule, ABC):
             else ""
         )
         for defn, handler in tools:
+            metadata_errors = defn.routing_metadata_errors()
+            if metadata_errors:
+                raise ValueError(
+                    f"{self.platform_name} Tool {defn.name} is missing explicit routing metadata: "
+                    + ", ".join(metadata_errors)
+                )
             if not defn.provider_api_version:
                 # An absent version is a valid extension state: a custom
                 # Capability may expose a provider-agnostic/local Tool or a

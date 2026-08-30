@@ -1,9 +1,9 @@
 {
-  "digest": "710a24a907c9b089921b12e1f0eb1d3d459e0db53f01299c0941f4c96b81b9ab",
+  "digest": "10ff17cd1699aa6c52ff18cd09e5cdd1edaa8bab65bd3fc411ac3a23705cbc5b",
   "format_version": 1,
   "platforms": {
     "dv360": {
-      "digest": "ceba11f4e00c566dc45eb92740ed72aab86280fe32297ff91ac84efb2fb35b58",
+      "digest": "12e2a0c08082f8c176164f7e9d3bc41f7df492c1e481602ae6662ddd62b50fd9",
       "tool_count": 31,
       "tools": [
         {
@@ -39,7 +39,7 @@
           "max_output_bytes": 1000000,
           "name": "dv360_activate_io",
           "parent_resource_id_field": null,
-          "parent_resource_type": "campaign",
+          "parent_resource_type": null,
           "platform": "dv360",
           "provider_api_version": "v4",
           "replay_policy": "unsafe",
@@ -261,6 +261,7 @@
             "type": "object"
           },
           "intent_types": [
+            "create_io",
             "create_campaign"
           ],
           "live_support": false,
@@ -428,6 +429,7 @@
             "type": "object"
           },
           "intent_types": [
+            "create_line_item",
             "create_campaign"
           ],
           "live_support": false,
@@ -698,7 +700,7 @@
           "max_output_bytes": 1000000,
           "name": "dv360_delete_io",
           "parent_resource_id_field": null,
-          "parent_resource_type": "campaign",
+          "parent_resource_type": null,
           "platform": "dv360",
           "provider_api_version": "v4",
           "replay_policy": "unsafe",
@@ -1112,7 +1114,7 @@
           "max_output_bytes": 1000000,
           "name": "dv360_get_line_item_report",
           "parent_resource_id_field": null,
-          "parent_resource_type": "io",
+          "parent_resource_type": null,
           "platform": "dv360",
           "provider_api_version": "v4",
           "replay_policy": "safe",
@@ -1120,7 +1122,7 @@
             "ads.read"
           ],
           "resource_id_field": null,
-          "resource_type": "line_item",
+          "resource_type": "report",
           "risk_level": "low",
           "skill": "dv360-api",
           "timeout_seconds": 30.0,
@@ -1571,7 +1573,7 @@
           "max_output_bytes": 1000000,
           "name": "dv360_pause_io",
           "parent_resource_id_field": null,
-          "parent_resource_type": "campaign",
+          "parent_resource_type": null,
           "platform": "dv360",
           "provider_api_version": "v4",
           "replay_policy": "unsafe",
@@ -1923,7 +1925,7 @@
       ]
     },
     "google-ads": {
-      "digest": "59c23d58bbcd1b1dfc8833ef20dc17cfae4f170292f61379c9cf58d5a25fadc3",
+      "digest": "492c927342a4b029db04218105dbc24311bd02bbc07c76560d69fe8ce1cd296c",
       "tool_count": 78,
       "tools": [
         {
@@ -6605,7 +6607,7 @@
           "max_output_bytes": 1000000,
           "name": "google_delete_ad_group",
           "parent_resource_id_field": null,
-          "parent_resource_type": "campaign",
+          "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
           "replay_policy": "unsafe",
@@ -7274,7 +7276,7 @@
           "max_output_bytes": 1000000,
           "name": "google_get_adgroup_report",
           "parent_resource_id_field": null,
-          "parent_resource_type": "campaign",
+          "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
           "replay_policy": "safe",
@@ -7680,7 +7682,7 @@
             "ads.read"
           ],
           "resource_id_field": null,
-          "resource_type": "campaign",
+          "resource_type": "report",
           "risk_level": "low",
           "skill": "google-ads-api-expert",
           "timeout_seconds": 30.0,
@@ -9802,7 +9804,7 @@
       ]
     },
     "meta": {
-      "digest": "37309d354a5bd59f710af81ce44b8cf55ac7fed744cc05e0a18abbd407ef7191",
+      "digest": "11137d70389d4afbb2d238f01bd4062dd2a5373354e88ea95d6c1ce9a4ae7fee",
       "tool_count": 67,
       "tools": [
         {
@@ -12545,7 +12547,7 @@
           "max_output_bytes": 1000000,
           "name": "meta_delete_ad",
           "parent_resource_id_field": null,
-          "parent_resource_type": "ad_group",
+          "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
           "replay_policy": "unsafe",
@@ -12598,7 +12600,7 @@
           "max_output_bytes": 1000000,
           "name": "meta_delete_adset",
           "parent_resource_id_field": null,
-          "parent_resource_type": "campaign",
+          "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
           "replay_policy": "unsafe",
@@ -13096,7 +13098,7 @@
           "max_output_bytes": 1000000,
           "name": "meta_get_ad_report",
           "parent_resource_id_field": null,
-          "parent_resource_type": "ad_group",
+          "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
           "replay_policy": "safe",
@@ -13205,7 +13207,7 @@
           "max_output_bytes": 1000000,
           "name": "meta_get_adset_report",
           "parent_resource_id_field": null,
-          "parent_resource_type": "campaign",
+          "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
           "replay_policy": "safe",
@@ -13374,7 +13376,7 @@
             "ads.read"
           ],
           "resource_id_field": null,
-          "resource_type": "campaign",
+          "resource_type": "report",
           "risk_level": "low",
           "skill": "meta-marketing-api",
           "timeout_seconds": 30.0,
@@ -13823,8 +13825,7 @@
             "type": "object"
           },
           "intent_types": [
-            "list_adsets",
-            "list_adgroups"
+            "list_adsets"
           ],
           "live_support": true,
           "max_output_bytes": 1000000,
@@ -14391,7 +14392,7 @@
           "max_output_bytes": 1000000,
           "name": "meta_pause_ad",
           "parent_resource_id_field": null,
-          "parent_resource_type": "ad_group",
+          "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
           "replay_policy": "unsafe",
@@ -14437,7 +14438,7 @@
           "max_output_bytes": 1000000,
           "name": "meta_pause_adset",
           "parent_resource_id_field": null,
-          "parent_resource_type": "campaign",
+          "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
           "replay_policy": "unsafe",
@@ -15057,7 +15058,7 @@
           "max_output_bytes": 1000000,
           "name": "meta_update_ad",
           "parent_resource_id_field": null,
-          "parent_resource_type": "ad_group",
+          "parent_resource_type": "ad_set",
           "platform": "meta",
           "provider_api_version": "v19.0",
           "replay_policy": "unsafe",
@@ -16084,7 +16085,7 @@
       ]
     },
     "tiktok": {
-      "digest": "3af129cebf11dd9e13f39be230bd9a50a84836d7648e1d2880201357b78f5900",
+      "digest": "072aa2c64ad46ceabe46aa747a9b6410cb6e8e0c109595e639894210e2727b95",
       "tool_count": 72,
       "tools": [
         {
@@ -20525,7 +20526,7 @@
           "max_output_bytes": 1000000,
           "name": "tiktok_get_adgroup_report",
           "parent_resource_id_field": null,
-          "parent_resource_type": "campaign",
+          "parent_resource_type": null,
           "platform": "tiktok",
           "provider_api_version": "v1.3",
           "replay_policy": "safe",
@@ -20687,7 +20688,7 @@
             "ads.read"
           ],
           "resource_id_field": null,
-          "resource_type": "campaign",
+          "resource_type": "report",
           "risk_level": "low",
           "skill": "tiktok-ads-api-expert",
           "timeout_seconds": 30.0,
@@ -23186,7 +23187,7 @@
           ]
         },
         {
-          "action": "boost",
+          "action": "create",
           "activation_rules": [
             {
               "aliases": [

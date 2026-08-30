@@ -1343,6 +1343,8 @@ class TestIterationContracts:
                     platform=self.platform,
                     description="Read a custom local insight",
                     input_schema=ToolSchema(),
+                    action="read",
+                    resource_type="insight",
                     intent_types=["custom_meta_insight_intent"],
                 )
 
@@ -1394,7 +1396,7 @@ class TestIterationContracts:
             "    platform = 'meta'\n"
             "    description = 'Local insight extension'\n"
             "    def __init__(self):\n"
-            "        self.definition = ToolDefinition(name='custom_insight', skill=self.name, platform=self.platform, description='local insight', input_schema=ToolSchema(), intent_types=['custom_insight'])\n"
+            "        self.definition = ToolDefinition(name='custom_insight', skill=self.name, platform=self.platform, description='local insight', input_schema=ToolSchema(), action='read', resource_type='insight', intent_types=['custom_insight'])\n"
             "    def get_tools(self):\n"
             "        return [self.definition]\n"
             "    def get_tool_handler(self, tool_name):\n"
