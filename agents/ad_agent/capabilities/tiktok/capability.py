@@ -38,6 +38,8 @@ from .parameters import (
     tiktok_campaign_schema,
     tiktok_adgroup_schema,
     tiktok_ad_schema,
+    tiktok_product_sales_adgroup_schema,
+    tiktok_product_sales_ad_schema,
     tiktok_lead_ad_schema,
     tiktok_app_ad_schema,
     tiktok_ad_format_catalog,
@@ -99,7 +101,7 @@ def _tiktok_update_adapter(client, ctx, resource_type, resource_id, parent_id, u
 class TikTokCapability(BaseCapability):
     platform_name = "tiktok"
     provider_client_class = TikTokAPIClient
-    capability_version = "1.2.0"
+    capability_version = "1.3.0"
     provider_api_version = "v1.3"
     provider_method_coverage = {
         "list_accounts": ["tiktok_list_accounts"], "list_campaigns": ["tiktok_list_campaigns"],
@@ -107,11 +109,11 @@ class TikTokCapability(BaseCapability):
         "update_campaign": ["tiktok_update_campaign"], "pause_campaign": ["tiktok_pause_campaign"],
         "resume_campaign": ["tiktok_resume_campaign"], "delete_campaign": ["tiktok_delete_campaign"],
         "list_adgroups": ["tiktok_list_adgroups"], "get_adgroup": ["tiktok_get_adgroup"],
-        "create_adgroup": ["tiktok_create_adgroup"], "update_adgroup": ["tiktok_update_adgroup"],
+        "create_adgroup": ["tiktok_create_adgroup"], "create_product_sales_adgroup": ["tiktok_create_product_sales_adgroup"], "update_adgroup": ["tiktok_update_adgroup"],
         "update_adgroup_targeting": ["tiktok_update_adgroup_targeting"],
         "update_ad": ["tiktok_update_ad"], "pause_adgroup": ["tiktok_pause_adgroup"],
         "list_ads": ["tiktok_list_ads"], "get_ad": ["tiktok_get_ad"],
-        "create_ad": ["tiktok_create_ad"], "create_lead_ad": ["tiktok_create_lead_ad"],
+        "create_ad": ["tiktok_create_ad"], "create_product_sales_ad": ["tiktok_create_product_sales_ad"], "create_lead_ad": ["tiktok_create_lead_ad"],
         "create_single_video_ad": ["tiktok_create_single_video_ad"],
         "create_single_image_ad": ["tiktok_create_single_image_ad"],
         "create_carousel_ad": ["tiktok_create_carousel_ad"],
@@ -146,6 +148,7 @@ class TikTokCapability(BaseCapability):
         "list_identities": ["tiktok_list_identities"],
         "get_identity_video_info": ["tiktok_get_identity_video_info"],
         "list_catalogs": ["tiktok_list_catalogs"], "list_product_sets": ["tiktok_list_product_sets"],
+        "validate_product_selection": ["tiktok_validate_product_selection"],
         "list_apps": ["tiktok_list_apps"], "list_brand_safety": ["tiktok_list_brand_safety"],
         "get_report": ["tiktok_get_report"],
     }
@@ -663,6 +666,28 @@ class TikTokCapability(BaseCapability):
                 }),
             ),
             method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert",
+                name="tiktok_validate_product_selection",
+                description=(
+                    "校验 TikTok Catalog 与 Product Set 的归属关系；通过 product_set/get "
+                    "完成可用的引用校验，不声称覆盖商品 Feed 健康度诊断。"
+                ),
+                method_name="validate_product_selection", result_key="validation",
+                properties={
+                    "account_id": {"type": "string"},
+                    "catalog_id": {"type": "string", "minLength": 1},
+                    "product_set_id": {"type": "string", "minLength": 1},
+                },
+                required=["account_id", "catalog_id", "product_set_id"],
+                provider_required=["account_id", "catalog_id", "product_set_id"],
+                action="validate", resource_type="product_selection",
+                intent_types=["validate_product_selection"],
+                traits=["read", "catalog", "product_set", "validation"],
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["catalog_id"], data["product_set_id"],
+                ), {}),
+            ),
+            method_tool(
                 platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_get_adgroup_report",
                 description="查询 TikTok Ad Group 级报表。", method_name="get_adgroup_report", result_key="report",
                 properties={"account_id": {"type": "string"}, "campaign_id": {"type": "string"},
@@ -820,7 +845,52 @@ class TikTokCapability(BaseCapability):
             live_support=False,
             resource_id_field="adgroup_id",
             parent_resource_id_field="campaign_id",
+            activation_rules=[{
+                "if": {
+                    "objective_type": {"aliases": ["objective"], "not_in": ["PRODUCT_SALES", "sales"]},
+                    "product_source": {"not_in": ["CATALOG", "STORE", "SHOWCASE"]},
+                    "catalog_id": {"exists": False},
+                    "product_set_id": {"exists": False},
+                    "store_id": {"exists": False},
+                },
+            }],
         ), TikTokCreateAdGroupHandler(api_client)))
+
+        # Product Sales Ad Group: provider-specific product/Shop references
+        # live on the normal Ad Group endpoint, but are exposed through a
+        # dedicated contract so Skills can compose this path explicitly.
+        product_sales_adgroup = tiktok_product_sales_adgroup_schema()
+        tools.append(method_tool(
+            platform="tiktok", skill="tiktok-ads-api-expert",
+            name="tiktok_create_product_sales_adgroup",
+            description=(
+                "创建 TikTok Product Sales 商品销售广告组，支持 Website、Catalog 和 Shop "
+                "商品来源；默认仅生成 dry-run 计划。"
+            ),
+            method_name="create_product_sales_adgroup", result_key="adgroup_id",
+            properties=product_sales_adgroup["properties"],
+            required=product_sales_adgroup["required"],
+            provider_required=product_sales_adgroup["provider_required"],
+            conditional_rules=product_sales_adgroup["conditional_rules"],
+            action="create", resource_type="ad_group", parent_resource_type="campaign",
+            resource_id_field="adgroup_id", parent_resource_id_field="campaign_id",
+            intent_types=["create_product_sales_adgroup", "create_campaign"],
+            activation_rules=[
+                {"field": "objective_type", "aliases": ["objective"], "in": ["PRODUCT_SALES", "sales"]},
+                {"field": "product_source", "in": ["CATALOG", "STORE", "SHOWCASE"]},
+                {"field": "catalog_id", "exists": True},
+                {"field": "product_set_id", "exists": True},
+                {"field": "store_id", "exists": True},
+            ],
+            traits=["write", "adgroup", "product_sales", "catalog", "shop"],
+            write=True, live_support=False,
+            argument_builder=lambda ctx, data: ((
+                account_from(ctx, data), data["campaign_id"], {
+                    key: value for key, value in data.items()
+                    if key not in {"account_id", "campaign_id"}
+                },
+            ), {}),
+        ))
 
         # List Ads
         tools.append((ToolDefinition(
@@ -878,12 +948,54 @@ class TikTokCapability(BaseCapability):
                     ]},
                     "objective": {"aliases": ["objective_type"], "not_in": [
                         "leads", "LEAD_GENERATION", "APP_PROMOTION", "APP_INSTALL", "app",
+                        "PRODUCT_SALES", "sales",
                     ]},
                     "promotion_type": {"not_in": ["LEAD_FORM", "APP_ANDROID", "APP_IOS"]},
                     "spark_post_id": {"aliases": ["tiktok_item_id"], "exists": False},
+                    "catalog_id": {"exists": False},
+                    "product_set_id": {"exists": False},
+                    "store_id": {"exists": False},
+                    "product_source": {"not_in": ["CATALOG", "STORE", "SHOWCASE"]},
                 },
             }],
         ), TikTokCreateAdHandler(api_client)))
+
+        # Product Sales Ad: typed product/Shop destination contract over the
+        # same provider ad-create endpoint. It owns catalog/product-set and
+        # Shop reference validation without adding provider logic to Core.
+        product_sales_ad = tiktok_product_sales_ad_schema()
+        tools.append(method_tool(
+            platform="tiktok", skill="tiktok-ads-api-expert",
+            name="tiktok_create_product_sales_ad",
+            description=(
+                "创建 TikTok Product Sales 商品销售广告，支持 Catalog、Shop 商品引用和素材创意；"
+                "默认仅生成 dry-run 计划。"
+            ),
+            method_name="create_product_sales_ad", result_key="ad_id",
+            properties=product_sales_ad["properties"],
+            required=product_sales_ad["required"],
+            provider_required=product_sales_ad["provider_required"],
+            provider_any_of=product_sales_ad["provider_any_of"],
+            conditional_rules=product_sales_ad["conditional_rules"],
+            action="create", resource_type="ad", parent_resource_type="ad_group",
+            resource_id_field="ad_id", parent_resource_id_field="adgroup_id",
+            intent_types=["create_product_sales_ad", "create_campaign"],
+            activation_rules=[
+                {"field": "objective_type", "aliases": ["objective"], "in": ["PRODUCT_SALES", "sales"]},
+                {"field": "product_source", "in": ["CATALOG", "STORE", "SHOWCASE"]},
+                {"field": "catalog_id", "exists": True},
+                {"field": "product_set_id", "exists": True},
+                {"field": "store_id", "exists": True},
+            ],
+            traits=["write", "ad", "product_sales", "catalog", "shop"],
+            write=True, live_support=False,
+            argument_builder=lambda ctx, data: ((
+                account_from(ctx, data), data["campaign_id"], data["adgroup_id"], {
+                    key: value for key, value in data.items()
+                    if key not in {"account_id", "campaign_id", "adgroup_id"}
+                },
+            ), {}),
+        ))
 
         for format_name, tool_name, method_name, schema_factory, intent_name in (
             ("SINGLE_VIDEO", "tiktok_create_single_video_ad", "create_single_video_ad", tiktok_single_video_ad_schema, "create_single_video_ad"),

@@ -876,6 +876,90 @@ def tiktok_ad_schema() -> dict[str, Any]:
     }
 
 
+def tiktok_product_sales_adgroup_schema() -> dict[str, Any]:
+    """Schema for the Product Sales ad-group composition path.
+
+    TikTok exposes Product Sales through the regular campaign/ad-group
+    endpoints, but its product destination has provider-specific references.
+    Keep those references in a dedicated contract so a Skill can compose a
+    sales flow without teaching Core about Catalog or Shop semantics.
+    """
+    base = tiktok_adgroup_schema()
+    properties = dict(base["properties"])
+    properties["promotion_type"] = {
+        **properties["promotion_type"],
+        "enum": ["WEBSITE", "CATALOG"],
+    }
+    properties["product_source"] = {
+        **properties["product_source"],
+        "enum": ["CATALOG", "STORE", "SHOWCASE"],
+    }
+    properties["store_id"] = {
+        **properties["store_id"],
+        "minLength": 1,
+    }
+    return {
+        "required": list(base["required"]),
+        "provider_required": list(base["provider_required"]),
+        "properties": properties,
+        "conditional_rules": [
+            *base["conditional_rules"],
+            {
+                "id": "product_sales_catalog_source_requires_product_selection",
+                "if": {"product_source": "CATALOG"},
+                "required": ["catalog_id", "product_set_id"],
+                "message": "product_source=CATALOG requires catalog_id and product_set_id",
+            },
+            {
+                "id": "product_sales_shop_source_requires_store",
+                "if": {"product_source": "STORE"},
+                "required": ["store_id"],
+                "message": "product_source=STORE requires store_id",
+            },
+        ],
+    }
+
+
+def tiktok_product_sales_ad_schema() -> dict[str, Any]:
+    """Schema for Product Sales ads, including Catalog and Shop references."""
+    base = tiktok_ad_schema()
+    properties = dict(base["properties"])
+    properties["product_source"] = _field(
+        "string", "Product Sales destination source",
+        enum=["CATALOG", "STORE", "SHOWCASE"],
+    )
+    properties["store_id"] = _field("string", "TikTok Shop or Storefront ID", minLength=1)
+    return {
+        "required": list(base["required"]),
+        "provider_required": list(base["provider_required"]),
+        "provider_any_of": [[
+            "media", "creatives", "video_id", "image_ids",
+            "sku_ids", "item_group_ids", "product_set_id",
+        ]],
+        "properties": properties,
+        "conditional_rules": [
+            {
+                "id": "product_sales_ad_catalog_source_requires_product_selection",
+                "if": {"product_source": "CATALOG"},
+                "required": ["catalog_id", "product_set_id"],
+                "message": "product_source=CATALOG requires catalog_id and product_set_id",
+            },
+            {
+                "id": "product_sales_ad_shop_source_requires_store",
+                "if": {"product_source": "STORE"},
+                "required": ["store_id"],
+                "message": "product_source=STORE requires store_id",
+            },
+            {
+                "id": "product_sales_ad_catalog_promotion_requires_product_selection",
+                "if": {"promotion_type": "CATALOG"},
+                "required": ["catalog_id", "product_set_id"],
+                "message": "promotion_type=CATALOG requires catalog_id and product_set_id",
+            },
+        ],
+    }
+
+
 def _tiktok_format_ad_schema(
     format_name: str,
     description: str,
@@ -1025,22 +1109,24 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
             "format_id": "product_sales",
             "category": "product_sales",
             "resource_type": "campaign",
-            "coverage": "partial_dry_run",
-            "tool_names": ["tiktok_create_campaign", "tiktok_create_adgroup", "tiktok_create_ad"],
+            "coverage": "supported_dry_run",
+            "tool_names": ["tiktok_create_campaign", "tiktok_create_product_sales_adgroup", "tiktok_create_product_sales_ad"],
+            "payload_adapter": "TikTokAPIClient.create_product_sales_adgroup/create_product_sales_ad",
             "dependencies": ["PRODUCT_SALES", "ad_group", "product_or_landing_destination"],
-            "supported_fields": ["objective_type", "budget_mode", "promotion_type", "targeting", "media"],
-            "gaps": ["Shop/product-specific resource builders", "product feed validation"],
+            "supported_fields": ["objective_type", "budget_mode", "promotion_type", "product_source", "catalog_id", "product_set_id", "store_id", "targeting", "media"],
+            "gaps": ["live mutation approval", "catalog feed health diagnostics"],
             "source_document": source_document,
         },
         {
             "format_id": "product_sales.shop",
             "category": "product_sales",
             "resource_type": "ad_group",
-            "coverage": "partial_dry_run",
-            "tool_names": ["tiktok_create_campaign", "tiktok_create_adgroup"],
-            "dependencies": ["PRODUCT_SALES", "catalog_id", "product_set_id"],
-            "supported_fields": ["catalog_id", "product_set_id", "promotion_type"],
-            "gaps": ["Shop/product-specific resource builders", "product feed validation"],
+            "coverage": "supported_dry_run",
+            "tool_names": ["tiktok_create_campaign", "tiktok_create_product_sales_adgroup", "tiktok_create_product_sales_ad", "tiktok_validate_product_selection"],
+            "payload_adapter": "TikTokAPIClient.create_product_sales_adgroup/create_product_sales_ad",
+            "dependencies": ["PRODUCT_SALES", "catalog_id", "product_set_id", "tiktok_validate_product_selection"],
+            "supported_fields": ["catalog_id", "product_set_id", "promotion_type", "product_source", "store_id"],
+            "gaps": ["live mutation approval", "catalog feed health diagnostics"],
             "source_document": source_document,
         },
         {

@@ -403,6 +403,33 @@ class TikTokAPIClient(BasePlatformClient):
         payload = self._data_section(result)
         resource_id = payload.get('ad_group_id') if isinstance(payload, dict) else None
         return self.require_resource_id(resource_id, "TikTok ad group create")
+
+    def create_product_sales_adgroup(
+        self, advertiser_id: str, campaign_id: str, adgroup: dict
+    ) -> str:
+        """Create a Product Sales ad group through the regular v1.3 endpoint.
+
+        This is a typed adapter, not a second TikTok endpoint.  The provider
+        uses the same ``adgroup/create/`` resource for website, catalog and
+        Shop destinations; the typed method keeps the destination checks at
+        the provider boundary.
+        """
+        if not isinstance(adgroup, dict):
+            raise ValueError("Product Sales ad group must be an object")
+        normalized = dict(adgroup)
+        normalized["objective_type"] = "PRODUCT_SALES"
+        product_source = str(normalized.get("product_source") or "").upper()
+        promotion_type = str(normalized.get("promotion_type") or "").upper()
+        if promotion_type not in {"WEBSITE", "CATALOG"}:
+            raise ValueError("Product Sales requires promotion_type=WEBSITE or CATALOG")
+        if promotion_type == "CATALOG" or product_source == "CATALOG":
+            if not str(normalized.get("catalog_id") or "").strip():
+                raise ValueError("Product Sales catalog destination requires catalog_id")
+            if not str(normalized.get("product_set_id") or "").strip():
+                raise ValueError("Product Sales catalog destination requires product_set_id")
+        if product_source == "STORE" and not str(normalized.get("store_id") or "").strip():
+            raise ValueError("Product Sales Shop destination requires store_id")
+        return self.create_adgroup(advertiser_id, campaign_id, normalized)
     
     def update_adgroup(self, advertiser_id: str, campaign_id: str, adgroup_id: str, updates: dict) -> dict:
         """更新 Ad Group"""
@@ -596,6 +623,46 @@ class TikTokAPIClient(BasePlatformClient):
         payload = self._data_section(result)
         resource_id = payload.get('ad_id') if isinstance(payload, dict) else None
         return self.require_resource_id(resource_id, "TikTok ad create")
+
+    def create_product_sales_ad(
+        self, advertiser_id: str, campaign_id: str, adgroup_id: str, ad: dict
+    ) -> str:
+        """Create a typed Product Sales ad through ``ad/create/``."""
+        if not isinstance(ad, dict):
+            raise ValueError("Product Sales ad must be an object")
+        normalized = dict(ad)
+        normalized["objective_type"] = "PRODUCT_SALES"
+        product_source = str(normalized.get("product_source") or "").upper()
+        promotion_type = str(normalized.get("promotion_type") or "").upper()
+        if promotion_type == "CATALOG" or product_source == "CATALOG":
+            if not str(normalized.get("catalog_id") or "").strip():
+                raise ValueError("Product Sales catalog destination requires catalog_id")
+            if not str(normalized.get("product_set_id") or "").strip():
+                raise ValueError("Product Sales catalog destination requires product_set_id")
+        if product_source == "STORE" and not str(normalized.get("store_id") or "").strip():
+            raise ValueError("Product Sales Shop destination requires store_id")
+        ad_format = str(normalized.get("ad_format") or "").upper()
+        if ad_format in {"SINGLE_VIDEO", "SINGLE_IMAGE", "CAROUSEL"}:
+            return self._create_format_ad(
+                advertiser_id, campaign_id, adgroup_id, normalized, ad_format,
+                {
+                    "SINGLE_VIDEO": ("video_id", "media", "creatives"),
+                    "SINGLE_IMAGE": ("image_ids", "media", "creatives"),
+                    "CAROUSEL": ("image_ids", "media", "creatives"),
+                }[ad_format],
+                min_image_count=2 if ad_format == "CAROUSEL" else 0,
+            )
+        if not any(
+            normalized.get(field) not in (None, "", {}, [])
+            for field in (
+                "media", "creatives", "video_id", "image_ids",
+                "sku_ids", "item_group_ids", "product_set_id",
+            )
+        ):
+            raise ValueError(
+                "Product Sales ad requires media, creatives, an asset ID, or product selection"
+            )
+        return self.create_ad(advertiser_id, campaign_id, adgroup_id, normalized)
 
     def _create_format_ad(
         self,
@@ -1911,6 +1978,36 @@ class TikTokAPIClient(BasePlatformClient):
         result = self.request('GET', 'product_set/get/', params=data)
         payload = self._data_section(result)
         return payload.get('list', []) if isinstance(payload, dict) else []
+
+    def validate_product_selection(
+        self, advertiser_id: str, catalog_id: str, product_set_id: str
+    ) -> dict:
+        """Validate that a product set reference belongs to a catalog.
+
+        TikTok does not expose a separate feed-validation endpoint in the
+        currently supported API contract.  This read operation verifies the
+        strongest check available without inventing one: the product set is
+        returned by ``product_set/get`` for the supplied catalog.
+        """
+        catalog_id = str(catalog_id or "").strip()
+        product_set_id = str(product_set_id or "").strip()
+        if not catalog_id or not product_set_id:
+            raise ValueError("catalog_id and product_set_id are required")
+        product_sets = self.list_product_sets(advertiser_id, catalog_id=catalog_id)
+        match = next(
+            (
+                item for item in product_sets
+                if str(item.get("product_set_id") or item.get("id") or "") == product_set_id
+            ),
+            None,
+        )
+        return {
+            "valid": match is not None,
+            "catalog_id": catalog_id,
+            "product_set_id": product_set_id,
+            "product_set": match,
+            "checked_via": "product_set/get",
+        }
     
     # ==================== 应用信息查询 ====================
     

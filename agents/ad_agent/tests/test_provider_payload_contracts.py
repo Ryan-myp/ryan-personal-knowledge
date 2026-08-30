@@ -1714,6 +1714,77 @@ def test_tiktok_catalog_adgroup_contract_requires_and_forwards_product_selection
         client.create_adgroup("t1", "101", {**base, "product_set_id": "set-1"})
 
 
+def test_tiktok_product_sales_tools_cover_catalog_and_shop_destinations():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_tiktok_capability().register_tools()
+    }
+    adgroup = definitions["tiktok_create_product_sales_adgroup"]
+    ad = definitions["tiktok_create_product_sales_ad"]
+
+    assert adgroup.input_schema.properties["product_source"]["enum"] == [
+        "CATALOG", "STORE", "SHOWCASE",
+    ]
+    assert "product_sales_catalog_source_requires_product_selection" in {
+        rule["id"] for rule in adgroup.input_schema.conditional_rules
+    }
+    assert ad.input_schema.provider_any_of == [[
+        "media", "creatives", "video_id", "image_ids",
+        "sku_ids", "item_group_ids", "product_set_id",
+    ]]
+
+    base = {
+        "campaign_id": "101", "name": "Shop sales group",
+        "promotion_type": "CATALOG", "product_source": "STORE",
+        "catalog_id": "catalog-1", "product_set_id": "set-1",
+        "billing_event": "OCPM", "bid_type": "BID_TYPE_NO_BID",
+        "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
+        "budget_mode": "BUDGET_MODE_DAY", "budget": 50,
+        "location_ids": ["US"],
+    }
+    errors = validate_tool_input(
+        adgroup.input_schema, base, include_provider_contract=True,
+    )
+    assert any("store_id" in error for error in errors)
+    base["store_id"] = "shop-1"
+    assert validate_tool_input(
+        adgroup.input_schema, base, include_provider_contract=True,
+    ) == []
+
+    client = TikTokAPIClient({"access_token": "test"})
+    payloads = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        payloads.append((method, endpoint, data)) or {"ad_group_id": "ag-1"}
+    )
+    assert client.create_product_sales_adgroup("t1", "101", base) == "ag-1"
+    assert payloads[-1][1] == "adgroup/create/"
+    assert payloads[-1][2]["ad_group"]["product_source"] == "STORE"
+    assert payloads[-1][2]["ad_group"]["store_id"] == "shop-1"
+
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        payloads.append((method, endpoint, data)) or {"ad_id": "ad-1"}
+    )
+    assert client.create_product_sales_ad("t1", "101", "202", {
+        "name": "Shop video", "product_source": "STORE", "store_id": "shop-1",
+        "ad_format": "SINGLE_VIDEO", "video_id": "video-1",
+    }) == "ad-1"
+    assert payloads[-1][1] == "ad/create/"
+    assert payloads[-1][2]["ad"]["video_id"] == "video-1"
+
+
+def test_tiktok_product_selection_validation_uses_product_set_lookup():
+    client = TikTokAPIClient({"access_token": "test"})
+    client.list_product_sets = lambda advertiser_id, catalog_id=None: [
+        {"product_set_id": "set-1", "name": "Approved products"},
+    ]
+
+    valid = client.validate_product_selection("123", "catalog-1", "set-1")
+    invalid = client.validate_product_selection("123", "catalog-1", "set-2")
+    assert valid["valid"] is True
+    assert invalid["valid"] is False
+    assert valid["checked_via"] == "product_set/get"
+
+
 def test_tiktok_adgroup_contract_exposes_optimization_targeting_and_schedule_fields():
     definition = next(
         definition for definition, _handler in create_tiktok_capability().register_tools()

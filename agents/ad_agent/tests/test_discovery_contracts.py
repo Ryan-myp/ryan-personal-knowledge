@@ -196,6 +196,15 @@ def test_google_app_campaign_chain_is_dry_run_ready():
             {"spark_post_id": "post-1"},
             ["tiktok_create_campaign", "tiktok_create_adgroup", "tiktok_spark_ads_create"],
         ),
+        (
+            "tiktok",
+            {"objective_type": "PRODUCT_SALES"},
+            [
+                "tiktok_create_campaign",
+                "tiktok_create_product_sales_adgroup",
+                "tiktok_create_product_sales_ad",
+            ],
+        ),
     ],
 )
 def test_meta_and_tiktok_campaign_routes_select_specialized_ad_chain(

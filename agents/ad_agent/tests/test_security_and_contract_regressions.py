@@ -353,7 +353,11 @@ def test_public_tool_contract_includes_operational_and_json_schema_fields():
              "location_ids": ["US"], "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
              "bid_type": "BID_TYPE_NO_BID", "landing_url": "https://example.com",
              "media": {"video_id": "v1"}},
-            ["tiktok_create_campaign", "tiktok_create_adgroup", "tiktok_create_ad"],
+            [
+                "tiktok_create_campaign",
+                "tiktok_create_product_sales_adgroup",
+                "tiktok_create_product_sales_ad",
+            ],
         ),
         (
             "dv360", "d1", create_dv360_capability,
@@ -419,8 +423,8 @@ def test_tiktok_cross_channel_create_maps_daily_budget_to_adgroup_budget():
 
     assert [item["tool"] for item in result["results"]] == [
         "tiktok_create_campaign",
-        "tiktok_create_adgroup",
-        "tiktok_create_ad",
+        "tiktok_create_product_sales_adgroup",
+        "tiktok_create_product_sales_ad",
     ]
     ad_group = result["results"][1]
     assert ad_group["success"] is True
