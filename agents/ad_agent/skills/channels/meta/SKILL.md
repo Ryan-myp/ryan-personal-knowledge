@@ -37,6 +37,7 @@ access token、应用密钥或其他凭证。Tool 输入只允许账户选择和
 ### 3. 事件追踪
 - Pixel 事件发送
 - Conversion API (CAPI)
+- Pixel Custom Conversion 创建（当前公开 edge 未确认完整更新/删除生命周期）
 - 高级匹配
 
 ### 4. 受众管理

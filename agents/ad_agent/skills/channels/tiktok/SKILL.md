@@ -35,6 +35,7 @@ access token、应用密钥或其他凭证。Tool 输入只允许账户选择和
 - Spark Ads 特殊配置
 
 ### 3. 事件追踪
+- Pixel 生命周期：查询、创建和更新 Pixel；Pixel 删除未纳入当前已验证能力
 - Pixel 事件发送
 - Conversion API 实现
 - 用户数据加密
