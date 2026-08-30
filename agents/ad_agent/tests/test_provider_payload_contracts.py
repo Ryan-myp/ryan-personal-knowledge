@@ -1022,6 +1022,25 @@ def test_google_asset_creation_rejects_wrong_payload_variants_and_exposes_tool()
     ]
 
 
+def test_google_asset_delete_uses_customer_scoped_asset_remove():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="111")
+    calls = []
+    client._mutate = lambda resource, operation: calls.append((resource, operation)) or {}
+
+    assert client.delete_asset("7", "222") == {"success": True, "asset_id": "7"}
+    assert calls == [("assets", {
+        "remove": "customers/222/assets/7",
+    })]
+
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_google_capability().register_tools()
+    }
+    delete_tool = definitions["google_delete_asset"]
+    assert delete_tool.live_support is False
+    assert delete_tool.input_schema.required == ["customer_id", "asset_id"]
+
+
 def test_google_asset_tools_publish_read_contracts():
     definitions = {
         definition.name: definition

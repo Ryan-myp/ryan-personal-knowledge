@@ -2008,6 +2008,20 @@ class GoogleAdsAPIClient(BasePlatformClient):
             raise APIError(f"Asset mutate returned no resource name: {response}")
         return str(resource_name.rsplit("/", 1)[-1])
 
+    def delete_asset(self, asset_id: str, customer_id: str = None) -> dict:
+        """Remove a reusable customer-level Asset through AssetService.
+
+        Google Ads Assets are immutable in content. Removal is a separate
+        mutate operation and is rejected while the asset is still referenced.
+        """
+        asset_id = self._numeric_id(asset_id, "asset_id")
+        scoped = self.for_customer(customer_id) if customer_id else self
+        if not str(scoped.customer_id or "").strip():
+            raise ValueError("customer_id is required to remove an asset")
+        resource_name = f"customers/{scoped.customer_id}/assets/{asset_id}"
+        scoped._mutate("assets", {"remove": resource_name})
+        return {"success": True, "asset_id": asset_id}
+
     # ==================== CampaignBudget 管理 ====================
 
     @staticmethod

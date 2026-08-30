@@ -1,5 +1,5 @@
 {
-  "digest": "3ff6116405ba0cf250fb50072c4394f9faa7c4fb75ae0cda5fffbc3f26f8df99",
+  "digest": "db862f6382048fe73c15bf0c2332508d14d4bb340167257d42d40ce951e192b1",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -1983,8 +1983,8 @@
       ]
     },
     "google-ads": {
-      "digest": "7db187ba0641110bbeca1111b40dad64d7642d994b30e8a547108289fe7c5ce4",
-      "tool_count": 57,
+      "digest": "49d5435546554e15ef39bdbde5594862825685f08980a6c2900ba9c682ec83a1",
+      "tool_count": 58,
       "tools": [
         {
           "action": "create",
@@ -4505,6 +4505,64 @@
             "write",
             "ad",
             "video"
+          ]
+        },
+        {
+          "action": "delete",
+          "contract_version": "1.3.0",
+          "description": "移除 Google Ads 客户级可复用 Asset；Asset 仍被引用时由 Google Ads 拒绝；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "asset_id": {
+                "description": "Google Asset ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of assets",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id",
+              "asset_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_asset"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_delete_asset",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "asset_id",
+          "resource_type": "asset",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "asset"
           ]
         },
         {
@@ -17224,5 +17282,5 @@
       ]
     }
   },
-  "tool_count": 206
+  "tool_count": 207
 }

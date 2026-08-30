@@ -74,7 +74,7 @@ class GoogleCapability(BaseCapability):
         "list_ads": ["google_list_ads"], "get_ad": ["google_get_ad"],
         "list_keywords": ["google_list_keywords"], "list_asset_groups": ["google_list_asset_groups"],
         "list_assets": ["google_list_assets"], "get_asset": ["google_get_asset"],
-        "create_asset": ["google_create_asset"],
+        "create_asset": ["google_create_asset"], "delete_asset": ["google_delete_asset"],
         "create_keywords": ["google_create_keywords"],
         "get_asset_group": ["google_get_asset_group"], "create_campaign": ["google_create_campaign"],
         "update_campaign": ["google_update_campaign"], "update_ad_group": ["google_update_ad_group"],
@@ -205,6 +205,20 @@ class GoogleCapability(BaseCapability):
                     )
                     if data.get(key) is not None
                 },), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_delete_asset",
+                description=(
+                    "移除 Google Ads 客户级可复用 Asset；Asset 仍被引用时由 Google Ads 拒绝；"
+                    "默认仅生成 dry-run 计划。"
+                ),
+                method_name="delete_asset", result_key="asset_result",
+                properties=asset_schema["properties"],
+                required=["customer_id", "asset_id"],
+                action="delete", resource_type="asset", resource_id_field="asset_id",
+                intent_types=["delete_asset"], traits=["write", "asset"], write=True,
+                argument_builder=lambda _ctx, data: ((data["asset_id"], data.get("customer_id")), {}),
             ),
             method_tool(
                 platform="google-ads", skill="google-ads-api-expert",

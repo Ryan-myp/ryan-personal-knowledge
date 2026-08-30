@@ -45,7 +45,7 @@ API_SURFACE = [
     {"resource": "asset", "action": "get", "method": "get_asset", "status": "implemented"},
     {"resource": "asset", "action": "create", "method": "create_asset", "status": "implemented"},
     {"resource": "asset", "action": "update", "status": "planned", "gap": "Google Asset 大多数字段不可变，更新语义尚未完成验证"},
-    {"resource": "asset", "action": "delete", "status": "planned", "gap": "AssetService 删除权限和关联约束尚未完成验证"},
+    {"resource": "asset", "action": "delete", "method": "delete_asset", "status": "implemented", "notes": "AssetService remove；仍被引用的 Asset 由 Provider 拒绝"},
     {"resource": "user_list", "action": "list", "method": "list_user_lists", "status": "implemented"},
     {"resource": "user_list", "action": "get", "method": "get_user_list", "status": "implemented"},
     {"resource": "user_list", "action": "create", "method": "create_user_list", "status": "implemented"},
