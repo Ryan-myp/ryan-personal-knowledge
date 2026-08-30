@@ -136,6 +136,9 @@ class PersistenceBackend(Protocol):
         self, run_id: str, version_id: str, tenant_id: str,
         status: str = "queued",
     ) -> dict: ...
+    def claim_skill_evaluation(
+        self, run_id: str, version_id: str, tenant_id: str,
+    ) -> Optional[dict]: ...
     def get_skill_evaluation(self, run_id: str, tenant_id: str) -> Optional[dict]: ...
     def update_skill_evaluation_run(
         self, run_id: str, status: str, report: Optional[dict] = None,

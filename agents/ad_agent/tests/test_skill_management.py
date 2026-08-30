@@ -260,6 +260,44 @@ def test_skill_up_evaluation_is_persisted_for_an_immutable_version(tmp_path, mon
     assert version["evaluation_run_id"] == run["run_id"]
 
 
+def test_skill_up_allows_only_one_active_evaluation_per_version(tmp_path, monkeypatch):
+    store = AdAgentStore(":memory:")
+    manager = ManagedSkillManager(store, root=str(tmp_path / "managed"))
+    files = {
+        **_files("single-flight-eval"),
+        "evals/eval.yaml": (
+            "schema_version: v1alpha1\n"
+            "environment:\n  type: none\n"
+            "mcp:\n  servers: []\n"
+            "skills:\n  - source: local_path\n    path: .\n"
+            "engine:\n  name: codex\n"
+            "cases:\n  files: [evals/cases/basic.yaml]\n"
+        ),
+        "evals/cases/basic.yaml": "id: basic\ninput:\n  prompt: test\n",
+    }
+    manager.create_version("tenant-a", "single-flight-eval", "1.0.0", files, "u1")
+    fake_bin = tmp_path / "skill-up"
+    fake_bin.write_text(
+        "#!/usr/bin/env python3\n"
+        "import pathlib, sys, time\n"
+        "if sys.argv[1] == 'validate': sys.exit(0)\n"
+        "time.sleep(0.15)\n"
+        "out = pathlib.Path(sys.argv[sys.argv.index('--output-dir') + 1])\n"
+        "out.mkdir(parents=True, exist_ok=True)\n"
+        "(out / 'result.json').write_text('{}')\n",
+        encoding="utf-8",
+    )
+    fake_bin.chmod(0o755)
+    monkeypatch.setenv("SKILL_UP_BIN", str(fake_bin))
+
+    first = manager.start_evaluation("tenant-a", "single-flight-eval", "1.0.0")
+    with pytest.raises(SkillPackageError, match="already has an evaluation"):
+        manager.start_evaluation("tenant-a", "single-flight-eval", "1.0.0")
+    assert manager.get_evaluation("tenant-a", first["run_id"])["status"] in {
+        "queued", "running", "passed", "failed", "error"
+    }
+
+
 def test_skill_up_never_imports_user_skill_plugin(tmp_path, monkeypatch):
     """Managed Skill evaluation must remain context-only even with tools.py."""
     from agents.ad_agent.evals import skill_up_engine

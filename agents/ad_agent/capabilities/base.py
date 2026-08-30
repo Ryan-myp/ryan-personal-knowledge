@@ -127,11 +127,18 @@ class BaseCapability(CapabilityModule, ABC):
         tools = self.register_tools()
         for defn, handler in tools:
             if not defn.provider_api_version:
-                defn.provider_api_version = str(
+                # An absent version is a valid extension state: a custom
+                # Capability may expose a provider-agnostic/local Tool or a
+                # client that has not published version metadata yet. Do not
+                # turn that absence into the literal version ``unknown``;
+                # Runtime would then treat it as a concrete contract and
+                # reject every real client whose version is known.
+                provided_version = (
                     getattr(getattr(self, "_api_client", None), "api_version", "")
                     or getattr(self, "provider_api_version", "")
-                    or "unknown"
                 )
+                if provided_version:
+                    defn.provider_api_version = str(provided_version)
             # Capability version is deliberately attached at registration
             # time, so a provider can publish a new Tool contract without a
             # Runtime/Router change.

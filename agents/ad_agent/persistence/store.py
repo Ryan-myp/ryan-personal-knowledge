@@ -538,6 +538,51 @@ class AdAgentStore:
             ).fetchone()
             return self._skill_row(row) or {}
 
+    def claim_skill_evaluation(
+        self, run_id: str, version_id: str, tenant_id: str,
+    ) -> Optional[dict]:
+        """Atomically claim one version for a queued evaluation.
+
+        The version row is the durable single-flight lock.  Keeping the
+        claim and run creation in one transaction prevents two API workers
+        from evaluating the same immutable version concurrently, and gives a
+        future MySQL/PostgreSQL backend a precise transaction contract to
+        preserve.
+        """
+        now = datetime.now().isoformat()
+        with self._lock:
+            conn = self._get_conn()
+            row = conn.execute(
+                "SELECT version_id, evaluation_status FROM skill_versions "
+                "WHERE version_id = ? AND tenant_id = ?",
+                (str(version_id), str(tenant_id)),
+            ).fetchone()
+            if not row or str(row["evaluation_status"]) in {"queued", "running"}:
+                return None
+            conn.execute(
+                "INSERT INTO skill_evaluation_runs "
+                "(run_id, version_id, tenant_id, status, created_at, updated_at) "
+                "VALUES (?, ?, ?, 'queued', ?, ?)",
+                (str(run_id), str(version_id), str(tenant_id), now, now),
+            )
+            cursor = conn.execute(
+                "UPDATE skill_versions SET evaluation_status = 'queued', "
+                "evaluation_run_id = ?, evaluation_report = '{}' "
+                "WHERE version_id = ? AND tenant_id = ? "
+                "AND evaluation_status NOT IN ('queued', 'running')",
+                (str(run_id), str(version_id), str(tenant_id)),
+            )
+            if cursor.rowcount != 1:
+                conn.rollback()
+                return None
+            conn.commit()
+            claimed = conn.execute(
+                "SELECT * FROM skill_evaluation_runs WHERE run_id = ? "
+                "AND tenant_id = ?",
+                (str(run_id), str(tenant_id)),
+            ).fetchone()
+            return self._skill_row(claimed)
+
     def get_skill_evaluation(self, run_id: str, tenant_id: str) -> Optional[dict]:
         with self._lock:
             row = self._get_conn().execute(

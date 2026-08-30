@@ -1274,6 +1274,48 @@ def test_runtime_rejects_tool_version_not_supported_by_provider_client():
     assert calls == []
 
 
+def test_capability_without_version_metadata_does_not_create_unknown_contract():
+    from agents.ad_agent.capabilities.base import BaseCapability
+
+    client = object()
+
+    class Handler:
+        def __init__(self):
+            self.client = client
+
+        def execute(self, _ctx, _input):
+            return ToolResult.ok({"source": "versionless-capability"})
+
+    class VersionlessCapability(BaseCapability):
+        platform_name = "versionless-provider"
+
+        def __init__(self):
+            self._api_client = client
+
+        def register_tools(self):
+            return [(
+                ToolDefinition(
+                    name="versionless_read",
+                    skill="versionless-provider",
+                    platform="versionless-provider",
+                    description="read without a published provider version",
+                    input_schema=ToolSchema(),
+                ),
+                Handler(),
+            )]
+
+    runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
+    runtime.register_capability(VersionlessCapability())
+    definition, _handler = runtime._get_registered_tool("versionless_read")
+
+    assert definition.provider_api_version is None
+    result = runtime._execute_tool(
+        ToolContext("s1", "u1"), "versionless_read", {}
+    )
+    assert result.success is True
+    assert result.data["source"] == "versionless-capability"
+
+
 def test_401_recovery_retries_safe_reads_but_not_writes():
     read_client = RetryProbeClient(
         [{"status_code": 401, "data": {}}, {"status_code": 200, "data": {"ok": True}}],

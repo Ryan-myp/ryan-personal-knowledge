@@ -24,6 +24,7 @@ import tempfile
 import threading
 import uuid
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, Optional
 
@@ -48,6 +49,22 @@ _CREDENTIAL_ASSIGNMENT_RE = re.compile(
     r"bc[_-]?id|partner[_-]?id|perter[_-]?id|mcc|login[_-]?customer[_-]?id|"
     r"manager[_-]?customer[_-]?id)\s*[:=]"
 )
+
+# Skill evaluation is an expensive external process/API operation. Keep a
+# process-level bounded queue because the HTTP layer creates a short-lived
+# manager facade per request; a manager-local executor would not actually
+# bound concurrent evaluations across requests.
+_EVAL_MAX_WORKERS = max(
+    1, min(int(os.environ.get("AD_AGENT_SKILL_EVAL_WORKERS", "2")), 8)
+)
+_EVAL_MAX_QUEUE = max(
+    0, min(int(os.environ.get("AD_AGENT_SKILL_EVAL_QUEUE", "8")), 64)
+)
+_EVAL_EXECUTOR = ThreadPoolExecutor(
+    max_workers=_EVAL_MAX_WORKERS,
+    thread_name_prefix="ad-agent-skill-eval",
+)
+_EVAL_CAPACITY = threading.BoundedSemaphore(_EVAL_MAX_WORKERS + _EVAL_MAX_QUEUE)
 
 
 def _safe_component(value: str, field: str) -> str:
@@ -499,20 +516,32 @@ class ManagedSkillManager:
         if not record:
             raise KeyError("Skill version not found")
         self._validate_eval_config(record)
+        if not _EVAL_CAPACITY.acquire(blocking=False):
+            raise SkillPackageError(
+                "skill-up evaluation queue is full; retry after an active run completes"
+            )
         run_id = uuid.uuid4().hex
-        run = self.store.create_skill_evaluation(
-            run_id, str(record["version_id"]), str(tenant_id), status="queued"
-        )
-        self.store.set_skill_evaluation(
-            str(record["version_id"]), "queued", run_id=run_id
-        )
-        thread = threading.Thread(
-            target=self._execute_evaluation,
-            args=(run_id, record),
-            daemon=True,
-            name=f"ad-agent-skill-eval-{run_id[:8]}",
-        )
-        thread.start()
+        try:
+            claim = getattr(self.store, "claim_skill_evaluation", None)
+            if not callable(claim):
+                # A backend that has not adopted the single-flight contract
+                # must fail closed rather than silently reintroduce duplicate
+                # evaluation runs.
+                raise SkillPackageError(
+                    "persistence backend does not support atomic Skill evaluation claims"
+                )
+            run = claim(run_id, str(record["version_id"]), str(tenant_id))
+            if not run:
+                raise SkillPackageError(
+                    "this Skill version already has an evaluation in progress"
+                )
+            future = _EVAL_EXECUTOR.submit(
+                self._execute_evaluation, run_id, record
+            )
+            future.add_done_callback(lambda _future: _EVAL_CAPACITY.release())
+        except Exception:
+            _EVAL_CAPACITY.release()
+            raise
         return run
 
     def get_evaluation(self, tenant_id: str, run_id: str) -> Optional[dict]:
