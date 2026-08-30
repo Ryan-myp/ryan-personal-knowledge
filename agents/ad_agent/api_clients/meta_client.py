@@ -280,6 +280,35 @@ class MetaAPIClient(BasePlatformClient):
                 'fields': 'id,name,filter,product_count',
             },
         )
+
+    def list_pages(self, account_id: str, limit: int = 25) -> list:
+        """List Facebook Pages available for promotion by an ad account."""
+        clean_id = str(account_id).replace("act_", "")
+        return self._list_graph_pages(
+            clean_id,
+            f"/act_{clean_id}/promoted_pages",
+            {"limit": limit, "fields": "id,name,category"},
+        )
+
+    def list_pixels(self, account_id: str, limit: int = 25) -> list:
+        """List Meta Pixels owned by an ad account."""
+        clean_id = str(account_id).replace("act_", "")
+        return self._list_graph_pages(
+            clean_id,
+            f"/act_{clean_id}/adspixels",
+            {"limit": limit, "fields": "id,name,last_fired_time"},
+        )
+
+    def list_lead_forms(self, page_id: str, limit: int = 25) -> list:
+        """List Instant Forms published on a Facebook Page."""
+        page_id = str(page_id or "").strip()
+        if not page_id:
+            raise ValueError("page_id is required")
+        return self._list_graph_pages(
+            page_id,
+            f"/{page_id}/leadgen_forms",
+            {"limit": limit, "fields": "id,name,status,created_time,updated_time"},
+        )
     
     # ==================== Campaign 管理 ====================
     

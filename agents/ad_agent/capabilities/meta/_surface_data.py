@@ -17,6 +17,9 @@ API_SURFACE = [
     {"resource": "audience", "action": "list", "method": "list_audiences", "status": "implemented"},
     {"resource": "catalog", "action": "list", "method": "list_catalogs", "status": "implemented"},
     {"resource": "product_set", "action": "list", "method": "list_product_sets", "status": "implemented"},
+    {"resource": "page", "action": "list", "method": "list_pages", "status": "implemented"},
+    {"resource": "pixel", "action": "list", "method": "list_pixels", "status": "implemented"},
+    {"resource": "lead_form", "action": "list", "method": "list_lead_forms", "status": "implemented"},
     {"resource": "campaign", "action": "report", "method": "get_campaign_report", "status": "implemented"},
     {"resource": "ad_set", "action": "report", "method": "get_adset_report", "status": "implemented"},
     {"resource": "ad", "action": "report", "method": "get_ad_report", "status": "implemented"},
@@ -25,6 +28,5 @@ API_SURFACE = [
     {"resource": "conversion", "action": "event", "status": "planned", "gap": "Conversions API/Offline Event 尚无 Tool"},
     {"resource": "lead_form", "action": "crud", "status": "planned", "gap": "Lead Form 查询与管理尚无 Tool"},
     {"resource": "creative", "action": "crud", "status": "planned", "gap": "Creative 当前只有 create，媒体上传/更新/删除未覆盖"},
-    {"resource": "page", "action": "list", "status": "planned", "gap": "Page 资产枚举尚无 Tool"},
     {"resource": "catalog", "action": "crud", "status": "planned", "gap": "Catalog/Product Set 管理尚无完整 Tool"},
 ]

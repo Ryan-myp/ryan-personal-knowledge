@@ -57,6 +57,8 @@ class MetaCapability(BaseCapability):
         "list_accounts": ["meta_list_accounts"], "get_account": ["meta_get_account"],
         "list_audiences": ["meta_list_audiences"], "list_catalogs": ["meta_list_catalogs"],
         "list_product_sets": ["meta_list_product_sets"], "list_campaigns": ["meta_list_campaigns"],
+        "list_pages": ["meta_list_pages"], "list_pixels": ["meta_list_pixels"],
+        "list_lead_forms": ["meta_list_lead_forms"],
         "get_campaign": ["meta_get_campaign"], "create_campaign": ["meta_create_campaign"],
         "update_campaign": ["meta_update_campaign"], "pause_campaign": ["meta_pause_campaign"],
         "resume_campaign": ["meta_resume_campaign"], "list_adsets": ["meta_list_ad_sets"],
@@ -79,6 +81,39 @@ class MetaCapability(BaseCapability):
         """Expose Meta client endpoints not represented by hierarchy handlers."""
         account = lambda ctx, data: account_from(ctx, data, "account_id")
         tools = [
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_list_pages",
+                description="查询广告账户可推广的 Facebook Page。", method_name="list_pages",
+                result_key="pages", properties={
+                    "account_id": {"type": "string"}, "limit": {"type": "integer"},
+                }, required=["account_id"], action="list", resource_type="page",
+                intent_types=["list_pages"], traits=["read", "page"],
+                argument_builder=lambda ctx, data: ((account(ctx, data),), {
+                    "limit": data.get("limit", 25),
+                }),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_list_pixels",
+                description="查询 Meta 广告账户下的 Pixel。", method_name="list_pixels",
+                result_key="pixels", properties={
+                    "account_id": {"type": "string"}, "limit": {"type": "integer"},
+                }, required=["account_id"], action="list", resource_type="pixel",
+                intent_types=["list_pixels"], traits=["read", "pixel"],
+                argument_builder=lambda ctx, data: ((account(ctx, data),), {
+                    "limit": data.get("limit", 25),
+                }),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_list_lead_forms",
+                description="查询 Facebook Page 下已发布的 Lead Ads Instant Form。",
+                method_name="list_lead_forms", result_key="lead_forms", properties={
+                    "page_id": {"type": "string"}, "limit": {"type": "integer"},
+                }, required=["page_id"], action="list", resource_type="lead_form",
+                intent_types=["list_lead_forms"], traits=["read", "lead_form"],
+                argument_builder=lambda _ctx, data: ((data["page_id"],), {
+                    "limit": data.get("limit", 25),
+                }),
+            ),
             method_tool(
                 platform="meta", skill="meta-marketing-api", name="meta_list_accounts",
                 description="列出 Meta 可访问的广告账户。", method_name="list_accounts",

@@ -318,6 +318,27 @@ def test_meta_client_does_not_mutate_caller_query_params(monkeypatch):
     assert captured["params"]["access_token"] == "test"
 
 
+def test_meta_creation_dependency_lookups_cover_pages_pixels_and_lead_forms():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+
+    def fake_pages(account_id, endpoint, params, item_key="data", max_pages=100):
+        calls.append((account_id, endpoint, params))
+        return [{"id": "resource-1"}]
+
+    client._list_graph_pages = fake_pages
+    assert client.list_pages("act_123")[0]["id"] == "resource-1"
+    assert client.list_pixels("123")[0]["id"] == "resource-1"
+    assert client.list_lead_forms("page-1")[0]["id"] == "resource-1"
+    assert calls == [
+        ("123", "/act_123/promoted_pages", {"limit": 25, "fields": "id,name,category"}),
+        ("123", "/act_123/adspixels", {"limit": 25, "fields": "id,name,last_fired_time"}),
+        ("page-1", "/page-1/leadgen_forms", {
+            "limit": 25, "fields": "id,name,status,created_time,updated_time"
+        }),
+    ]
+
+
 def test_tiktok_campaign_lookup_by_name_uses_list_result():
     class Client:
         def list_campaigns(self, advertiser_id, page_size=20):

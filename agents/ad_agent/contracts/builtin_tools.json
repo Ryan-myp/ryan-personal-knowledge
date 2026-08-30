@@ -1,5 +1,5 @@
 {
-  "digest": "d8e85aa2b5f559045a18bf33dfb4e0335c846e1f6e6a48380e4242adb79abba4",
+  "digest": "741c7390a29bd01cc11d957a5fb81642401e4092e868e3cfa80c3b7a68dc0b75",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -4930,8 +4930,8 @@
       ]
     },
     "meta": {
-      "digest": "b21c794e9a8003417d117c3ccd9bf8ea61c0f57f01ae8b9394be917a3fdd59ae",
-      "tool_count": 28,
+      "digest": "52a5b0c1a476b25c105c497027207daa3f5f6ff2db59772fca399dc8e39eedbd",
+      "tool_count": 31,
       "tools": [
         {
           "action": "boost",
@@ -6762,6 +6762,150 @@
           "traits": [
             "read",
             "catalog"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.1.0",
+          "description": "查询 Facebook Page 下已发布的 Lead Ads Instant Form。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "limit": {
+                "type": "integer"
+              },
+              "page_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "page_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_lead_forms"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_list_lead_forms",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "lead_form",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "lead_form"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.1.0",
+          "description": "查询广告账户可推广的 Facebook Page。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_pages"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_list_pages",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "page",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "page"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.1.0",
+          "description": "查询 Meta 广告账户下的 Pixel。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_pixels"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_list_pixels",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "pixel",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "pixel"
           ]
         },
         {
@@ -10353,5 +10497,5 @@
       ]
     }
   },
-  "tool_count": 134
+  "tool_count": 137
 }
