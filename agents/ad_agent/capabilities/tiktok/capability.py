@@ -77,7 +77,7 @@ def _tiktok_update_adapter(client, ctx, resource_type, resource_id, parent_id, u
 class TikTokCapability(BaseCapability):
     platform_name = "tiktok"
     provider_client_class = TikTokAPIClient
-    capability_version = "1.1.0"
+    capability_version = "1.2.0"
     provider_api_version = "v1.3"
     provider_method_coverage = {
         "list_accounts": ["tiktok_list_accounts"], "list_campaigns": ["tiktok_list_campaigns"],
@@ -93,6 +93,7 @@ class TikTokCapability(BaseCapability):
         "get_campaign_report": ["tiktok_get_campaign_report"], "get_adgroup_report": ["tiktok_get_adgroup_report"],
         "list_audiences": ["tiktok_list_audiences"], "get_audience": ["tiktok_get_audience"],
         "create_audience": ["tiktok_create_audience"],
+        "delete_audience": ["tiktok_delete_audience"],
         "list_interest_categories": ["tiktok_list_interest_categories"],
         "get_interest_category": ["tiktok_get_interest_category"], "list_locations": ["tiktok_list_locations"],
         "search_locations": ["tiktok_search_locations"], "list_devices": ["tiktok_list_devices"],
@@ -140,6 +141,19 @@ class TikTokCapability(BaseCapability):
                 argument_builder=lambda ctx, data: ((account(ctx, data), {
                     key: value for key, value in data.items() if key != "account_id"
                 }), {}),
+            ),
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_delete_audience",
+                description="删除 TikTok Custom 或 Lookalike Audience；默认仅生成 dry-run 计划。",
+                method_name="delete_audience", result_key="audience_result",
+                properties={
+                    "account_id": {"type": "string", "description": "TikTok advertiser ID"},
+                    "audience_id": {"type": "string", "description": "TikTok audience ID"},
+                },
+                required=["account_id", "audience_id"], action="delete", resource_type="audience",
+                resource_id_field="audience_id", intent_types=["delete_audience"],
+                traits=["write", "audience"], write=True,
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["audience_id"]), {}),
             ),
             method_tool(
                 platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_interest_categories",

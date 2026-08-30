@@ -206,6 +206,31 @@ def test_tiktok_ad_creation_preserves_existing_schema_fields():
     assert payloads[-1]["ad_group"]["conversion_id"] == 42
 
 
+def test_tiktok_audience_delete_tool_calls_provider_method():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        calls.append((method, endpoint, data)) or {"code": 0, "data": {}}
+    )
+
+    definitions = {
+        definition.name: (definition, handler)
+        for definition, handler in create_tiktok_capability(client).register_tools()
+    }
+    definition, handler = definitions["tiktok_delete_audience"]
+    result = handler.execute(
+        ToolContext(session_id="s1", user_id="u1", account_id="123"),
+        {"account_id": "123", "audience_id": "456"},
+    )
+
+    assert result.success is True
+    assert definition.action == "delete"
+    assert definition.resource_type == "audience"
+    assert calls[-1] == (
+        "POST", "audience/delete/", {"advertiser_id": "123", "audience_id": "456"}
+    )
+
+
 def test_tiktok_lead_ad_builds_instant_form_promote_object():
     client = TikTokAPIClient({"access_token": "test"})
     payloads = []

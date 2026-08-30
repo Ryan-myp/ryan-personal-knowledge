@@ -693,6 +693,18 @@ class TikTokAPIClient(BasePlatformClient):
                 or payload.get("id")
             )
         return self.require_resource_id(resource_id, "TikTok audience create")
+
+    def delete_audience(self, advertiser_id: str, audience_id: str) -> dict:
+        """删除 TikTok 自定义或相似受众。"""
+        advertiser_id = str(advertiser_id or "").strip()
+        audience_id = str(audience_id or "").strip()
+        if not advertiser_id.isdigit() or not audience_id.isdigit():
+            raise ValueError("advertiser_id and audience_id must contain digits only")
+        self.request(
+            "POST", "audience/delete/",
+            data={"advertiser_id": advertiser_id, "audience_id": audience_id},
+        )
+        return {"success": True, "audience_id": audience_id}
     
     def list_interest_categories(self, parent_ids: list = None) -> list:
         """获取兴趣类别列表"""

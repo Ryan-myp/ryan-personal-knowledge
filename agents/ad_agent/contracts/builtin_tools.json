@@ -1,5 +1,5 @@
 {
-  "digest": "dd08b57ab1c3baea6a7e582f724e43393c8fc7b1bbd1ec47fd1d2b81937525d7",
+  "digest": "e9e576d0a714a57032d97a68f4ade6e3fa2337fd8beb6db8e669e04dd4a8621e",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -8209,12 +8209,12 @@
       ]
     },
     "tiktok": {
-      "digest": "5aa811760ce72960e56488fdbcf480eb96b566aa085529f23f4a19a5083954a8",
-      "tool_count": 43,
+      "digest": "85e5baa3b4eefaa25b98236da671a07a05a8a2cb12c7d5f212bbac2a82d9ec2d",
+      "tool_count": 44,
       "tools": [
         {
           "action": "create",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "创建 TikTok Ads Ad。",
           "effect_class": "write",
           "input_schema": {
@@ -8371,7 +8371,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "创建 TikTok Ads Ad Group。",
           "effect_class": "write",
           "input_schema": {
@@ -8711,7 +8711,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "创建 TikTok App Promotion 广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -8887,7 +8887,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "创建 TikTok 自定义或相似受众；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -8982,7 +8982,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "创建 TikTok Ads Campaign。",
           "effect_class": "write",
           "input_schema": {
@@ -9157,7 +9157,7 @@
         },
         {
           "action": "create",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "创建 TikTok Lead Generation Instant Form 广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -9292,7 +9292,58 @@
         },
         {
           "action": "delete",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
+          "description": "删除 TikTok Custom 或 Lookalike Audience；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "TikTok advertiser ID",
+                "type": "string"
+              },
+              "audience_id": {
+                "description": "TikTok audience ID",
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "audience_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_audience"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_delete_audience",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "audience_id",
+          "resource_type": "audience",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "audience"
+          ]
+        },
+        {
+          "action": "delete",
+          "contract_version": "1.2.0",
           "description": "调用 TikTok delete_campaign 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -9341,7 +9392,7 @@
         },
         {
           "action": "get",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok Ads Ad 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -9390,7 +9441,7 @@
         },
         {
           "action": "get",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok Ads Ad Group 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -9439,7 +9490,7 @@
         },
         {
           "action": "report",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok Ad Group 级报表。",
           "effect_class": "read",
           "input_schema": {
@@ -9498,7 +9549,7 @@
         },
         {
           "action": "get",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "获取 TikTok Audience 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -9547,7 +9598,7 @@
         },
         {
           "action": "get",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok Ads Campaign 详情（支持 campaign_id 或 campaign_name）。",
           "effect_class": "read",
           "input_schema": {
@@ -9594,7 +9645,7 @@
         },
         {
           "action": "report",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok Ads Campaign 报表。",
           "effect_class": "read",
           "input_schema": {
@@ -9648,7 +9699,7 @@
         },
         {
           "action": "get",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "获取 TikTok 转化事件详情。",
           "effect_class": "read",
           "input_schema": {
@@ -9697,7 +9748,7 @@
         },
         {
           "action": "get",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "获取 TikTok 兴趣类别详情。",
           "effect_class": "read",
           "input_schema": {
@@ -9742,7 +9793,7 @@
         },
         {
           "action": "report",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok 广告报表。",
           "effect_class": "read",
           "input_schema": {
@@ -9796,7 +9847,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "列出 TikTok 广告主账户。",
           "effect_class": "read",
           "input_schema": {
@@ -9844,7 +9895,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok Ads Ad Group 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -9892,7 +9943,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok Ads Ad 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -9940,7 +9991,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok apps 参考数据。",
           "effect_class": "read",
           "input_schema": {
@@ -9989,7 +10040,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok Audience 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -10035,7 +10086,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok brand_safety 参考数据。",
           "effect_class": "read",
           "input_schema": {
@@ -10084,7 +10135,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok browser 定向选项。",
           "effect_class": "read",
           "input_schema": {
@@ -10123,7 +10174,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok Ads Campaign 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -10176,7 +10227,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok carrier 定向选项。",
           "effect_class": "read",
           "input_schema": {
@@ -10215,7 +10266,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok catalogs 参考数据。",
           "effect_class": "read",
           "input_schema": {
@@ -10269,7 +10320,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok conversions 参考数据。",
           "effect_class": "read",
           "input_schema": {
@@ -10323,7 +10374,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok creatives 素材库。",
           "effect_class": "read",
           "input_schema": {
@@ -10375,7 +10426,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok devices 参考数据。",
           "effect_class": "read",
           "input_schema": {
@@ -10424,7 +10475,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok images 素材库。",
           "effect_class": "read",
           "input_schema": {
@@ -10476,7 +10527,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok 兴趣类别。",
           "effect_class": "read",
           "input_schema": {
@@ -10522,7 +10573,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok locations 参考数据。",
           "effect_class": "read",
           "input_schema": {
@@ -10571,7 +10622,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok operating_system 定向选项。",
           "effect_class": "read",
           "input_schema": {
@@ -10610,7 +10661,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok 商品集。",
           "effect_class": "read",
           "input_schema": {
@@ -10664,7 +10715,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok videos 素材库。",
           "effect_class": "read",
           "input_schema": {
@@ -10716,7 +10767,7 @@
         },
         {
           "action": "pause",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "调用 TikTok pause_adgroup 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -10769,7 +10820,7 @@
         },
         {
           "action": "pause",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "调用 TikTok pause_campaign 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -10818,7 +10869,7 @@
         },
         {
           "action": "resume",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "调用 TikTok resume_campaign 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -10867,7 +10918,7 @@
         },
         {
           "action": "list",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "按关键词搜索 TikTok 投放地域。",
           "effect_class": "read",
           "input_schema": {
@@ -10915,7 +10966,7 @@
         },
         {
           "action": "boost",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "使用达人已有帖子创建 TikTok Spark Ad。",
           "effect_class": "write",
           "input_schema": {
@@ -10973,7 +11024,7 @@
         },
         {
           "action": "update",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "更新 TikTok Ads ad，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -11049,7 +11100,7 @@
         },
         {
           "action": "update",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "更新 TikTok Ads ad_group，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -11254,7 +11305,7 @@
         },
         {
           "action": "update",
-          "contract_version": "1.1.0",
+          "contract_version": "1.2.0",
           "description": "更新 TikTok Ads campaign，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -11376,5 +11427,5 @@
       ]
     }
   },
-  "tool_count": 147
+  "tool_count": 148
 }
