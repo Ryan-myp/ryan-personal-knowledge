@@ -1334,6 +1334,65 @@ class TikTokAPIClient(BasePlatformClient):
         filtering = [{'field': 'CONVERSION_IDS', 'operator': 'IN', 'values': [int(conversion_id)]}]
         result = self.list_conversions(advertiser_id, filtering=filtering)
         return result[0] if result else {}
+
+    # ==================== Pixel 事件发送 ====================
+
+    @staticmethod
+    def _validate_pixel_code(pixel_id: str) -> str:
+        pixel_code = str(pixel_id or "").strip()
+        if not pixel_code:
+            raise ValueError("pixel_id must not be empty")
+        return pixel_code
+
+    @staticmethod
+    def _validate_pixel_event(event: dict) -> dict:
+        if not isinstance(event, dict):
+            raise ValueError("pixel event must be an object")
+        event_name = str(event.get("event") or "").strip()
+        if not event_name:
+            raise ValueError("pixel event requires event")
+        normalized = dict(event)
+        normalized["event"] = event_name
+        for field in ("context", "properties"):
+            if field in normalized and normalized[field] is not None and not isinstance(normalized[field], dict):
+                raise ValueError(f"pixel event {field} must be an object")
+        if "timestamp" in normalized and normalized["timestamp"] is not None:
+            if not isinstance(normalized["timestamp"], str) or not normalized["timestamp"].strip():
+                raise ValueError("pixel event timestamp must be a non-empty ISO 8601 string")
+        return normalized
+
+    def send_pixel_event(self, advertiser_id: str, pixel_id: str, event: dict) -> dict:
+        """Send one event through TikTok's v1.3 Pixel Track endpoint."""
+        # ``advertiser_id`` scopes the Tool request and rate-limit accounting;
+        # TikTok's Pixel Track body itself is keyed by pixel_code.
+        if not str(advertiser_id or "").strip():
+            raise ValueError("advertiser_id must not be empty")
+        pixel_code = self._validate_pixel_code(pixel_id)
+        payload = self._validate_pixel_event(event)
+        payload["pixel_code"] = pixel_code
+        self.acquire_rate_limit(self._rate_limiter)
+        result = self.request("POST", "pixel/track/", data=payload)
+        return result if isinstance(result, dict) else {"result": result}
+
+    def send_pixel_events(self, advertiser_id: str, pixel_id: str, events: list[dict]) -> dict:
+        """Send a batch through TikTok's v1.3 Pixel Batch endpoint."""
+        if not str(advertiser_id or "").strip():
+            raise ValueError("advertiser_id must not be empty")
+        if not isinstance(events, list) or not events:
+            raise ValueError("events must be a non-empty list")
+        if len(events) > 50:
+            raise ValueError("events must contain at most 50 items")
+        pixel_code = self._validate_pixel_code(pixel_id)
+        batch = []
+        for event in events:
+            normalized = self._validate_pixel_event(event)
+            normalized["type"] = "track"
+            batch.append(normalized)
+        self.acquire_rate_limit(self._rate_limiter)
+        result = self.request(
+            "POST", "pixel/batch/", data={"pixel_code": pixel_code, "batch": batch}
+        )
+        return result if isinstance(result, dict) else {"result": result}
     
     # ==================== 商品目录查询 ====================
     

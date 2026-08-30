@@ -22,6 +22,8 @@ API_SURFACE = [
     {"resource": "image", "action": "upload", "method": "upload_image", "status": "implemented"},
     {"resource": "conversion", "action": "list", "method": "list_conversions", "status": "implemented"},
     {"resource": "conversion", "action": "get", "method": "get_conversion", "status": "implemented"},
+    {"resource": "pixel_event", "action": "send", "method": "send_pixel_event", "status": "implemented"},
+    {"resource": "pixel_event_batch", "action": "send", "method": "send_pixel_events", "status": "implemented"},
     {"resource": "catalog", "action": "list", "method": "list_catalogs", "status": "implemented"},
     {"resource": "product_set", "action": "list", "method": "list_product_sets", "status": "implemented"},
     {"resource": "app", "action": "list", "method": "list_apps", "status": "implemented"},

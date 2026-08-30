@@ -46,6 +46,8 @@ from .parameters import (
     tiktok_audience_file_upload_schema,
     tiktok_image_upload_schema,
     tiktok_video_upload_schema,
+    tiktok_pixel_event_schema,
+    tiktok_pixel_batch_schema,
     tiktok_targeting_update_schema,
     TIKTOK_OBJECTIVE_TYPES,
     TIKTOK_PLACEMENTS,
@@ -113,6 +115,8 @@ class TikTokCapability(BaseCapability):
         "list_videos": ["tiktok_list_videos"], "list_images": ["tiktok_list_images"],
         "upload_image": ["tiktok_upload_image"], "upload_video": ["tiktok_upload_video"],
         "list_conversions": ["tiktok_list_conversions"], "get_conversion": ["tiktok_get_conversion"],
+        "send_pixel_event": ["tiktok_send_pixel_event"],
+        "send_pixel_events": ["tiktok_send_pixel_events"],
         "list_catalogs": ["tiktok_list_catalogs"], "list_product_sets": ["tiktok_list_product_sets"],
         "list_apps": ["tiktok_list_apps"], "list_brand_safety": ["tiktok_list_brand_safety"],
         "get_report": ["tiktok_get_report"],
@@ -127,6 +131,8 @@ class TikTokCapability(BaseCapability):
         targeting_schema = tiktok_targeting_update_schema()
         image_upload = tiktok_image_upload_schema()
         video_upload = tiktok_video_upload_schema()
+        pixel_event = tiktok_pixel_event_schema()
+        pixel_batch = tiktok_pixel_batch_schema()
         tools = [
             method_tool(
                 platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_upload_image",
@@ -318,6 +324,35 @@ class TikTokCapability(BaseCapability):
                 required=["account_id", "conversion_id"], action="get", resource_type="conversion",
                 intent_types=["get_conversion"], traits=["read", "conversion"],
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["conversion_id"]), {}),
+            ),
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_send_pixel_event",
+                description="通过 TikTok Pixel Track 发送单个转化事件；默认仅生成 dry-run 计划。",
+                method_name="send_pixel_event", result_key="pixel_event_result",
+                properties=pixel_event["properties"], required=pixel_event["required"],
+                provider_required=pixel_event["provider_required"],
+                action="send", resource_type="pixel_event", resource_id_field="pixel_id",
+                intent_types=["send_pixel_event", "track_tiktok_pixel"],
+                traits=["write", "pixel", "conversion", "event"], write=True, live_support=False,
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["pixel_id"], {
+                        key: value for key, value in data.items()
+                        if key not in {"account_id", "pixel_id"}
+                    },
+                ), {}),
+            ),
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_send_pixel_events",
+                description="通过 TikTok Pixel Batch 发送一批转化事件；默认仅生成 dry-run 计划。",
+                method_name="send_pixel_events", result_key="pixel_events_result",
+                properties=pixel_batch["properties"], required=pixel_batch["required"],
+                provider_required=pixel_batch["provider_required"],
+                action="send", resource_type="pixel_event_batch", resource_id_field="pixel_id",
+                intent_types=["send_pixel_events", "track_tiktok_pixel_batch"],
+                traits=["write", "pixel", "conversion", "event", "batch"], write=True, live_support=False,
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["pixel_id"], data["events"],
+                ), {}),
             ),
             method_tool(
                 platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_create_lead_ad",

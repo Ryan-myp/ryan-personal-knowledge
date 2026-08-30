@@ -84,6 +84,45 @@ def test_tiktok_media_upload_rejects_ambiguous_sources_and_exposes_tools():
     assert any("exactly one" in error for error in errors)
 
 
+def test_tiktok_pixel_track_and_batch_build_v13_payloads_and_tools():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    client.request = lambda method, endpoint, data=None, **_kwargs: (
+        calls.append((method, endpoint, data)) or {"result": "ok"}
+    )
+    event = {
+        "event": "CompletePayment",
+        "event_id": "order-1",
+        "timestamp": "2026-08-30T12:00:00Z",
+        "context": {"page": {"url": "https://example.test/checkout"}},
+        "properties": {"value": 19.9, "currency": "USD"},
+    }
+
+    assert client.send_pixel_event("123", "pixel-code", event) == {"result": "ok"}
+    assert calls[0] == ("POST", "pixel/track/", {**event, "pixel_code": "pixel-code"})
+
+    assert client.send_pixel_events("123", "pixel-code", [event]) == {"result": "ok"}
+    assert calls[1] == (
+        "POST", "pixel/batch/",
+        {"pixel_code": "pixel-code", "batch": [{**event, "type": "track"}]},
+    )
+
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_tiktok_capability().register_tools()
+    }
+    assert definitions["tiktok_send_pixel_event"].live_support is False
+    assert definitions["tiktok_send_pixel_events"].input_schema.properties["events"]["maxItems"] == 50
+    assert validate_tool_input(
+        definitions["tiktok_send_pixel_event"].input_schema,
+        {"account_id": "123", "pixel_id": "pixel-code", **event},
+    ) == []
+    assert validate_tool_input(
+        definitions["tiktok_send_pixel_events"].input_schema,
+        {"account_id": "123", "pixel_id": "pixel-code", "events": [event]},
+    ) == []
+
+
 def test_generic_campaign_type_maps_to_google_wire_field():
     runtime = AgentRuntime(require_llm=False, )
     definition = next(

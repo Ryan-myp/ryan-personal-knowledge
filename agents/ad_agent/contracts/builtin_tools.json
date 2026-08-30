@@ -1,5 +1,5 @@
 {
-  "digest": "d6ee7b3efb73c5cf437a07e23501a1817990ca4fb128f120f8b610347a1c5a05",
+  "digest": "cf9661e5d82fa9f0fa2217d7735aa2f7206141acf0515ae811286496f3aaf27d",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -11712,8 +11712,8 @@
       ]
     },
     "tiktok": {
-      "digest": "7a96927edf9017ffc13735c2d25915982a06875a5241e4aa797cb8c33066eab7",
-      "tool_count": 50,
+      "digest": "9210c37052c5cbfacb1b86af43eeee51d0a8c9c9c355c397d76c70b2df914384",
+      "tool_count": 52,
       "tools": [
         {
           "action": "create",
@@ -14633,6 +14633,372 @@
           ]
         },
         {
+          "action": "send",
+          "contract_version": "1.2.0",
+          "description": "通过 TikTok Pixel Track 发送单个转化事件；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "TikTok advertiser ID",
+                "type": "string"
+              },
+              "context": {
+                "additionalProperties": false,
+                "description": "Browser, page and user matching context",
+                "properties": {
+                  "ad": {
+                    "additionalProperties": false,
+                    "description": "TikTok ad click context",
+                    "properties": {
+                      "callback": {
+                        "description": "TikTok callback value",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "ip": {
+                    "description": "Non-hashed public browser IP",
+                    "type": "string"
+                  },
+                  "page": {
+                    "additionalProperties": false,
+                    "description": "Page where the event occurred",
+                    "properties": {
+                      "referrer": {
+                        "description": "Page referrer",
+                        "type": "string"
+                      },
+                      "url": {
+                        "description": "Page URL",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "user": {
+                    "additionalProperties": false,
+                    "description": "TikTok user matching identifiers",
+                    "properties": {
+                      "email": {
+                        "description": "SHA-256 hashed email",
+                        "type": "string"
+                      },
+                      "external_id": {
+                        "description": "SHA-256 hashed advertiser user ID",
+                        "type": "string"
+                      },
+                      "phone_number": {
+                        "description": "SHA-256 hashed phone number",
+                        "type": "string"
+                      },
+                      "ttp": {
+                        "description": "TikTok _ttp cookie value",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "user_agent": {
+                    "description": "Non-hashed browser user agent",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "event": {
+                "description": "TikTok web conversion event name",
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              "event_id": {
+                "description": "Stable event ID used for Pixel/Events API deduplication",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "pixel_id": {
+                "description": "TikTok Pixel code",
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "properties": {
+                "additionalProperties": true,
+                "description": "Event value, currency, contents and custom properties",
+                "properties": {
+                  "contents": {
+                    "description": "Items related to the web event",
+                    "items": {
+                      "additionalProperties": true,
+                      "type": "object"
+                    },
+                    "maxItems": 100,
+                    "type": "array"
+                  },
+                  "currency": {
+                    "description": "ISO 4217 currency code",
+                    "maxLength": 3,
+                    "type": "string"
+                  },
+                  "description": {
+                    "description": "Item or page description",
+                    "type": "string"
+                  },
+                  "query": {
+                    "description": "Search query or coupon code",
+                    "type": "string"
+                  },
+                  "value": {
+                    "description": "Order or conversion value",
+                    "type": "number"
+                  }
+                },
+                "type": "object"
+              },
+              "timestamp": {
+                "description": "Event timestamp in ISO 8601 format",
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "pixel_id",
+              "event"
+            ],
+            "required": [
+              "account_id",
+              "pixel_id",
+              "event"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "send_pixel_event",
+            "track_tiktok_pixel"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_send_pixel_event",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "pixel_id",
+          "resource_type": "pixel_event",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "pixel",
+            "conversion",
+            "event"
+          ]
+        },
+        {
+          "action": "send",
+          "contract_version": "1.2.0",
+          "description": "通过 TikTok Pixel Batch 发送一批转化事件；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "TikTok advertiser ID",
+                "type": "string"
+              },
+              "events": {
+                "description": "One or more TikTok web conversion events (max 50)",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "context": {
+                      "additionalProperties": false,
+                      "description": "Browser, page and user matching context",
+                      "properties": {
+                        "ad": {
+                          "additionalProperties": false,
+                          "description": "TikTok ad click context",
+                          "properties": {
+                            "callback": {
+                              "description": "TikTok callback value",
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "ip": {
+                          "description": "Non-hashed public browser IP",
+                          "type": "string"
+                        },
+                        "page": {
+                          "additionalProperties": false,
+                          "description": "Page where the event occurred",
+                          "properties": {
+                            "referrer": {
+                              "description": "Page referrer",
+                              "type": "string"
+                            },
+                            "url": {
+                              "description": "Page URL",
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "user": {
+                          "additionalProperties": false,
+                          "description": "TikTok user matching identifiers",
+                          "properties": {
+                            "email": {
+                              "description": "SHA-256 hashed email",
+                              "type": "string"
+                            },
+                            "external_id": {
+                              "description": "SHA-256 hashed advertiser user ID",
+                              "type": "string"
+                            },
+                            "phone_number": {
+                              "description": "SHA-256 hashed phone number",
+                              "type": "string"
+                            },
+                            "ttp": {
+                              "description": "TikTok _ttp cookie value",
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "user_agent": {
+                          "description": "Non-hashed browser user agent",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "event": {
+                      "description": "TikTok web conversion event name",
+                      "maxLength": 100,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "event_id": {
+                      "description": "Stable event ID used for Pixel/Events API deduplication",
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "properties": {
+                      "additionalProperties": true,
+                      "description": "Event value, currency, contents and custom properties",
+                      "properties": {
+                        "contents": {
+                          "description": "Items related to the web event",
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "maxItems": 100,
+                          "type": "array"
+                        },
+                        "currency": {
+                          "description": "ISO 4217 currency code",
+                          "maxLength": 3,
+                          "type": "string"
+                        },
+                        "description": {
+                          "description": "Item or page description",
+                          "type": "string"
+                        },
+                        "query": {
+                          "description": "Search query or coupon code",
+                          "type": "string"
+                        },
+                        "value": {
+                          "description": "Order or conversion value",
+                          "type": "number"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "timestamp": {
+                      "description": "Event timestamp in ISO 8601 format",
+                      "maxLength": 64,
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "event"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 50,
+                "minItems": 1,
+                "type": "array"
+              },
+              "pixel_id": {
+                "description": "TikTok Pixel code",
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "pixel_id",
+              "events"
+            ],
+            "required": [
+              "account_id",
+              "pixel_id",
+              "events"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "send_pixel_events",
+            "track_tiktok_pixel_batch"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_send_pixel_events",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "pixel_id",
+          "resource_type": "pixel_event_batch",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "pixel",
+            "conversion",
+            "event",
+            "batch"
+          ]
+        },
+        {
           "action": "boost",
           "contract_version": "1.2.0",
           "description": "使用达人已有帖子创建 TikTok Spark Ad。",
@@ -15696,5 +16062,5 @@
       ]
     }
   },
-  "tool_count": 193
+  "tool_count": 195
 }

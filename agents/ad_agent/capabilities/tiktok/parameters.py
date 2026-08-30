@@ -239,6 +239,104 @@ def tiktok_video_upload_schema() -> dict[str, Any]:
     }
 
 
+def _tiktok_pixel_event_properties() -> dict[str, Any]:
+    """Shared event fields from TikTok v1.3 Pixel Track contracts."""
+    return {
+        "event": _field(
+            "string", "TikTok web conversion event name", minLength=1, maxLength=100,
+        ),
+        "event_id": _field(
+            "string", "Stable event ID used for Pixel/Events API deduplication",
+            minLength=1, maxLength=200,
+        ),
+        "timestamp": _field(
+            "string", "Event timestamp in ISO 8601 format", minLength=1, maxLength=64,
+        ),
+        "context": _field(
+            "object", "Browser, page and user matching context",
+            properties={
+                "ip": _field("string", "Non-hashed public browser IP"),
+                "user_agent": _field("string", "Non-hashed browser user agent"),
+                "page": _field(
+                    "object", "Page where the event occurred",
+                    properties={
+                        "url": _field("string", "Page URL"),
+                        "referrer": _field("string", "Page referrer"),
+                    },
+                    additionalProperties=False,
+                ),
+                "user": _field(
+                    "object", "TikTok user matching identifiers",
+                    properties={
+                        "email": _field("string", "SHA-256 hashed email"),
+                        "phone_number": _field("string", "SHA-256 hashed phone number"),
+                        "external_id": _field("string", "SHA-256 hashed advertiser user ID"),
+                        "ttp": _field("string", "TikTok _ttp cookie value"),
+                    },
+                    additionalProperties=False,
+                ),
+                "ad": _field(
+                    "object", "TikTok ad click context",
+                    properties={"callback": _field("string", "TikTok callback value")},
+                    additionalProperties=False,
+                ),
+            },
+            additionalProperties=False,
+        ),
+        "properties": _field(
+            "object", "Event value, currency, contents and custom properties",
+            properties={
+                "value": _field("number", "Order or conversion value"),
+                "currency": _field("string", "ISO 4217 currency code", maxLength=3),
+                "description": _field("string", "Item or page description"),
+                "query": _field("string", "Search query or coupon code"),
+                "contents": _field(
+                    "array", "Items related to the web event",
+                    items={"type": "object", "additionalProperties": True},
+                    maxItems=100,
+                ),
+            },
+            additionalProperties=True,
+        ),
+    }
+
+
+def tiktok_pixel_event_schema() -> dict[str, Any]:
+    """Schema for TikTok's v1.3 single Pixel Track endpoint."""
+    return {
+        "required": ["account_id", "pixel_id", "event"],
+        "provider_required": ["pixel_id", "event"],
+        "properties": {
+            "account_id": _field("string", "TikTok advertiser ID"),
+            "pixel_id": _field("string", "TikTok Pixel code", minLength=1, maxLength=128),
+            **_tiktok_pixel_event_properties(),
+        },
+    }
+
+
+def tiktok_pixel_batch_schema() -> dict[str, Any]:
+    """Schema for TikTok's v1.3 batch Pixel Track endpoint."""
+    event_properties = _tiktok_pixel_event_properties()
+    return {
+        "required": ["account_id", "pixel_id", "events"],
+        "provider_required": ["pixel_id", "events"],
+        "properties": {
+            "account_id": _field("string", "TikTok advertiser ID"),
+            "pixel_id": _field("string", "TikTok Pixel code", minLength=1, maxLength=128),
+            "events": _field(
+                "array", "One or more TikTok web conversion events (max 50)",
+                items={
+                    "type": "object",
+                    "required": ["event"],
+                    "properties": event_properties,
+                    "additionalProperties": False,
+                },
+                minItems=1, maxItems=50,
+            ),
+        },
+    }
+
+
 def tiktok_adgroup_schema() -> dict[str, Any]:
     return {
         "required": [
