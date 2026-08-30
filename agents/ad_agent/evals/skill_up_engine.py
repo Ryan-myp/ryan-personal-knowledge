@@ -183,7 +183,12 @@ def run(session_input: Mapping[str, Any]) -> Dict[str, Any]:
     ).resolve()
     runtime.auto_load_skills(str(base_skills_root))
     if skills_root != base_skills_root:
-        runtime.auto_load_skills(str(skills_root))
+        # A managed package is context only.  Do not pass its root through
+        # auto_load_skills: that discovery seam is intentionally allowed to
+        # load trusted executable Skill plugins, while an uploaded package
+        # may contain an arbitrary tools.py/scripts/ tree.  The dedicated
+        # managed loader parses SKILL.md/references and never imports code or
+        # registers Tools.
         if (skills_root / "SKILL.md").is_file():
             runtime.load_managed_skill(str(skills_root), tenant_id="skill-up")
     started = time.monotonic()
@@ -191,6 +196,7 @@ def run(session_input: Mapping[str, Any]) -> Dict[str, Any]:
         user_input=prompt,
         session_id="skill-up:" + str(session_input.get("case_id") or "case"),
         user_id="skill-up-eval",
+        tenant_id="skill-up",
     )
     duration_ms = max(int((time.monotonic() - started) * 1000), 0)
     return _session_result(

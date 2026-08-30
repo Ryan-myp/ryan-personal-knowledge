@@ -25,6 +25,25 @@ def normalize_account_id(account_id: Any) -> str:
     return value[4:] if value.lower().startswith("act_") else value
 
 
+def _normalize_permissions(value: Any) -> frozenset[str]:
+    """Normalize trusted permission claims without accepting scalar strings.
+
+    Treating ``"ads.read"`` as an iterable would produce a set of
+    characters.  That is usually a denial, but malformed claims should be
+    rejected at the authentication boundary rather than silently changing
+    authorization semantics.
+    """
+    if value is None:
+        return frozenset()
+    if isinstance(value, (str, bytes)) or not isinstance(
+        value, (list, tuple, set, frozenset)
+    ):
+        raise ValueError("permissions must be an array of strings")
+    if any(not isinstance(item, str) or not item.strip() for item in value):
+        raise ValueError("permissions must contain non-empty strings")
+    return frozenset(item.strip() for item in value)
+
+
 @dataclass(frozen=True)
 class RequestPrincipal:
     """Authorization claims supplied by a trusted embedding boundary.
@@ -48,11 +67,7 @@ class RequestPrincipal:
             raise ValueError("RequestPrincipal.user_id must not be empty")
         object.__setattr__(self, "user_id", user_id)
         object.__setattr__(self, "tenant_id", tenant_id or "default")
-        object.__setattr__(
-            self,
-            "permissions",
-            frozenset(str(item).strip() for item in (self.permissions or ()) if str(item).strip()),
-        )
+        object.__setattr__(self, "permissions", _normalize_permissions(self.permissions))
         normalized_scope: dict[str, frozenset[str]] = {}
         for platform, accounts in (self.account_scope or {}).items():
             normalized_platform = normalize_platform(platform)
@@ -78,7 +93,7 @@ class RequestPrincipal:
         return cls(
             user_id=str(claims.get("user_id", claims.get("sub", ""))),
             tenant_id=str(claims.get("tenant_id", claims.get("tenant", "default"))),
-            permissions=frozenset(claims.get("permissions", ()) or ()),
+            permissions=_normalize_permissions(claims.get("permissions", ()) or ()),
             account_scope={
                 str(platform): accounts
                 for platform, accounts in raw_scope.items()

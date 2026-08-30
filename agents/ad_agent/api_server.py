@@ -367,6 +367,8 @@ async def chat(
         return JSONResponse(content=result)
     except HTTPException:
         raise
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
         return JSONResponse(
             content={"success": False, "error": _safe_exception_text(e)},

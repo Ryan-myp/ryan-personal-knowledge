@@ -2,6 +2,7 @@
 
 import pytest
 import time
+from pathlib import Path
 
 from agents.ad_agent import AgentRuntime
 from agents.ad_agent.persistence.store import AdAgentStore
@@ -257,3 +258,67 @@ def test_skill_up_evaluation_is_persisted_for_an_immutable_version(tmp_path, mon
     version = manager.get_version("tenant-a", "runnable-eval", "1.0.0")
     assert version["evaluation_status"] == "passed"
     assert version["evaluation_run_id"] == run["run_id"]
+
+
+def test_skill_up_never_imports_user_skill_plugin(tmp_path, monkeypatch):
+    """Managed Skill evaluation must remain context-only even with tools.py."""
+    from agents.ad_agent.evals import skill_up_engine
+
+    skill_dir = tmp_path / "managed-skill"
+    skill_dir.mkdir()
+    marker = tmp_path / "plugin-imported"
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: evaluated-context\n"
+        "description: Context-only evaluation fixture\n"
+        "platform: multi_platform\n"
+        "---\n\nUse the registered provider Tools.\n",
+        encoding="utf-8",
+    )
+    (skill_dir / "tools.py").write_text(
+        "from pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text('imported')\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AD_AGENT_SKILLS_ROOT", str(skill_dir))
+    monkeypatch.setenv(
+        "AD_AGENT_BASE_SKILLS_ROOT",
+        str(Path(__file__).resolve().parents[1] / "skills"),
+    )
+
+    result = skill_up_engine.run({
+        "case_id": "managed-plugin-boundary",
+        "prompt": "规划一个跨渠道投放",
+        "workspace": str(tmp_path / "workspace"),
+    })
+
+    assert result["metadata"]["runtime_execution_mode"] == "dry_run"
+    assert not marker.exists()
+
+
+def test_runtime_rejects_turn_for_another_managed_skill_tenant():
+    from agents.ad_agent.core.auth import RequestPrincipal
+
+    store = AdAgentStore(":memory:")
+    runtime = AgentRuntime(require_llm=False, persistence_store=store, offline_mode=True)
+    manager = ManagedSkillManager(store)
+    manager.create_version("tenant-a", "tenant-skill", "1.0.0", _files("tenant-skill"), "u1")
+    manager.publish("tenant-a", "tenant-skill", "1.0.0", runtime=runtime)
+
+    with pytest.raises(PermissionError, match="different tenant"):
+        runtime.run(
+            "查询 Meta campaign",
+            principal=RequestPrincipal(
+                user_id="u2",
+                tenant_id="tenant-b",
+                permissions=frozenset({"ads.read"}),
+            ),
+        )
+
+
+@pytest.mark.parametrize("permissions", ["ads.read", {"ads.read": True}, ["ads.read", 1]])
+def test_request_principal_rejects_malformed_permission_claims(permissions):
+    from agents.ad_agent.core.auth import RequestPrincipal
+
+    with pytest.raises(ValueError, match="permissions"):
+        RequestPrincipal(user_id="u1", permissions=permissions)

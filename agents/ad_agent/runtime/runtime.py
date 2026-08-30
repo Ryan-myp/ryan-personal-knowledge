@@ -464,6 +464,24 @@ class AgentRuntime:
         """Return a shallow copy for diagnostics/UI; no credentials included."""
         return dict(self._managed_context_skills)
 
+    def _ensure_managed_skill_tenant(self, tenant_id: str) -> None:
+        """Reject a turn that could observe another tenant's Skill context.
+
+        A Runtime instance is process-local and currently owns one managed
+        Skill tenant.  The HTTP layer may still authenticate multiple tenant
+        principals, so this check must live at the Runtime boundary as well;
+        otherwise a caller could reach ``run()`` directly and receive the
+        context loaded for a different tenant.  A future multi-tenant host
+        should provision one Runtime context per tenant instead of weakening
+        this fail-closed check.
+        """
+        bound_tenant = self._managed_skill_tenant_id
+        requested_tenant = str(tenant_id or "default")
+        if bound_tenant is not None and str(bound_tenant) != requested_tenant:
+            raise PermissionError(
+                "Runtime managed Skill context belongs to a different tenant"
+            )
+
     def load_business_context(
         self, business_name: str, skills_root: Optional[str] = None,
     ) -> BusinessContext:
@@ -3285,6 +3303,7 @@ class AgentRuntime:
         confirmed: bool = False,
         confirmation_payload: Optional[dict] = None,
         principal: Optional[RequestPrincipal] = None,
+        tenant_id: Optional[str] = None,
     ) -> dict:
         """Execute one turn while serializing turns for the same session.
 
@@ -3293,6 +3312,9 @@ class AgentRuntime:
         account context, tool outputs and confirmation state.
         """
         self.assert_llm_ready()
+        self._ensure_managed_skill_tenant(
+            principal.tenant_id if principal is not None else (tenant_id or "default")
+        )
         lock = self._get_session_lock(session_id or "__new_session__")
         effective_user_id = principal.user_id if principal is not None else user_id
         effective_permissions = (
@@ -3313,7 +3335,11 @@ class AgentRuntime:
                 confirmation_payload=confirmation_payload,
                 granted_permissions=effective_permissions,
                 account_scope=effective_account_scope,
-                tenant_id=principal.tenant_id if principal is not None else "default",
+                tenant_id=(
+                    principal.tenant_id
+                    if principal is not None
+                    else (tenant_id or "default")
+                ),
             )
 
     def _run_unlocked(
