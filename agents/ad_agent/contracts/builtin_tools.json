@@ -1,5 +1,5 @@
 {
-  "digest": "6526e9091ce5da639d6637ecfced15ef8efbf63ab245e54721774248ef2754c2",
+  "digest": "01f97c9345a978fcc8ffb6df771c142f16f9f223fdf3eba603ce5932978a0582",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -1983,8 +1983,8 @@
       ]
     },
     "google-ads": {
-      "digest": "b38bcc0f7b5ff31a827b0402c8ed3b76117b77def792f60fda205ac38ec79eb2",
-      "tool_count": 32,
+      "digest": "160ebccda841ae530c6853609481ce7e1bb7067f9624ed3915306cab1d0e42fd",
+      "tool_count": 37,
       "tools": [
         {
           "action": "create",
@@ -2749,6 +2749,210 @@
           "traits": [
             "write",
             "campaign_budget"
+          ]
+        },
+        {
+          "action": "create",
+          "contract_version": "1.1.0",
+          "description": "批量创建 Google Ads CampaignCriterion；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "description": "Parent Campaign ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "criteria": {
+                "description": "Campaign criteria to create",
+                "items": {
+                  "additionalProperties": false,
+                  "description": "CampaignCriterion specification",
+                  "properties": {
+                    "age_range": {
+                      "description": "Age range",
+                      "enum": [
+                        "AGE_RANGE_18_24",
+                        "AGE_RANGE_25_34",
+                        "AGE_RANGE_35_44",
+                        "AGE_RANGE_45_54",
+                        "AGE_RANGE_55_64",
+                        "AGE_RANGE_65_UP",
+                        "AGE_RANGE_UNDETERMINED"
+                      ],
+                      "type": "string"
+                    },
+                    "bid_modifier": {
+                      "description": "Optional bid modifier",
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "content_label": {
+                      "description": "Content label",
+                      "enum": [
+                        "CONTENT_LABEL_DLT",
+                        "CONTENT_LABEL_DL_G",
+                        "CONTENT_LABEL_DL_PG",
+                        "CONTENT_LABEL_DL_T",
+                        "CONTENT_LABEL_DL_MA",
+                        "CONTENT_LABEL_DLV",
+                        "CONTENT_LABEL_DNS",
+                        "CONTENT_LABEL_UNRATED"
+                      ],
+                      "type": "string"
+                    },
+                    "criterion_type": {
+                      "description": "Campaign criterion kind",
+                      "enum": [
+                        "LOCATION",
+                        "LANGUAGE",
+                        "DEVICE",
+                        "USER_LIST",
+                        "USER_INTEREST",
+                        "AGE_RANGE",
+                        "GENDER",
+                        "PARENTAL_STATUS",
+                        "INCOME_RANGE",
+                        "CONTENT_LABEL",
+                        "PLACEMENT",
+                        "TOPIC"
+                      ],
+                      "type": "string"
+                    },
+                    "device": {
+                      "description": "Device type",
+                      "enum": [
+                        "MOBILE",
+                        "TABLET",
+                        "DESKTOP",
+                        "CONNECTED_TV"
+                      ],
+                      "type": "string"
+                    },
+                    "gender": {
+                      "description": "Gender",
+                      "enum": [
+                        "MALE",
+                        "FEMALE",
+                        "UNDETERMINED"
+                      ],
+                      "type": "string"
+                    },
+                    "income_range": {
+                      "description": "Household income range",
+                      "enum": [
+                        "INCOME_RANGE_0_50",
+                        "INCOME_RANGE_50_60",
+                        "INCOME_RANGE_60_70",
+                        "INCOME_RANGE_70_80",
+                        "INCOME_RANGE_80_90",
+                        "INCOME_RANGE_90_100",
+                        "INCOME_RANGE_UNDETERMINED"
+                      ],
+                      "type": "string"
+                    },
+                    "language_id": {
+                      "description": "Google language constant ID or resource name",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "location_id": {
+                      "description": "Google geo target constant ID or resource name",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "negative": {
+                      "description": "Exclude instead of include this criterion",
+                      "type": "boolean"
+                    },
+                    "parental_status": {
+                      "description": "Parental status",
+                      "enum": [
+                        "PARENT",
+                        "NOT_A_PARENT",
+                        "UNDETERMINED"
+                      ],
+                      "type": "string"
+                    },
+                    "placement_url": {
+                      "description": "Placement URL",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "status": {
+                      "description": "Criterion status",
+                      "enum": [
+                        "ENABLED",
+                        "PAUSED"
+                      ],
+                      "type": "string"
+                    },
+                    "topic_id": {
+                      "description": "Google topic constant ID or resource name",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "user_interest_id": {
+                      "description": "Google UserInterest ID or resource name",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "user_list_id": {
+                      "description": "Google UserList ID or resource name",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "criterion_type"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 1000,
+                "minItems": 1,
+                "type": "array"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "criteria"
+            ],
+            "required": [
+              "campaign_id",
+              "criteria"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_campaign_criteria"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_campaign_criteria",
+          "parent_resource_id_field": "campaign_id",
+          "parent_resource_type": "campaign",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "criterion_ids",
+          "resource_type": "campaign_criterion",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "campaign_criterion",
+            "targeting"
           ]
         },
         {
@@ -3664,6 +3868,64 @@
           ]
         },
         {
+          "action": "delete",
+          "contract_version": "1.1.0",
+          "description": "删除 Google Ads CampaignCriterion；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "description": "Parent Campaign ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "criterion_id": {
+                "description": "Campaign criterion ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "campaign_id",
+              "criterion_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_campaign_criterion"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_delete_campaign_criterion",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "criterion_id",
+          "resource_type": "campaign_criterion",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "campaign_criterion",
+            "targeting"
+          ]
+        },
+        {
           "action": "get",
           "contract_version": "1.1.0",
           "description": "查询 Google Ads Ad 详情。",
@@ -3982,6 +4244,64 @@
           ]
         },
         {
+          "action": "get",
+          "contract_version": "1.1.0",
+          "description": "查询 Google Ads 单个 CampaignCriterion 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "description": "Parent Campaign ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "criterion_id": {
+                "description": "Campaign criterion ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "campaign_id",
+              "criterion_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_campaign_criterion"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_get_campaign_criterion",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "criterion_id",
+          "resource_type": "campaign_criterion",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "campaign_criterion",
+            "targeting"
+          ]
+        },
+        {
           "action": "report",
           "contract_version": "1.1.0",
           "description": "查询 Google Ads Campaign 报表。支持按 campaign_ids 过滤，默认查询最近30天数据。",
@@ -4256,6 +4576,62 @@
           "traits": [
             "read",
             "campaign_budget"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.1.0",
+          "description": "查询 Google Ads CampaignCriterion（地域、语言、设备、受众和人口属性定向）。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "description": "Parent Campaign ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of criteria",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_campaign_criteria"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_list_campaign_criteria",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "campaign_criterion",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "campaign_criterion",
+            "targeting"
           ]
         },
         {
@@ -4925,6 +5301,90 @@
           "traits": [
             "write",
             "campaign_budget"
+          ]
+        },
+        {
+          "action": "update",
+          "contract_version": "1.1.0",
+          "description": "更新 Google Ads CampaignCriterion 的状态、排除标记或出价系数；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "description": "Parent Campaign ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "criterion_id": {
+                "description": "Campaign criterion ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Allowed CampaignCriterion update fields",
+                "properties": {
+                  "bid_modifier": {
+                    "description": "Bid modifier",
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "negative": {
+                    "description": "Exclude instead of include this criterion",
+                    "type": "boolean"
+                  },
+                  "status": {
+                    "description": "Criterion status",
+                    "enum": [
+                      "ENABLED",
+                      "PAUSED",
+                      "REMOVED"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "campaign_id",
+              "criterion_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_campaign_criterion"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_update_campaign_criterion",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "criterion_id",
+          "resource_type": "campaign_criterion",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "campaign_criterion",
+            "targeting"
           ]
         }
       ]
@@ -10592,5 +11052,5 @@
       ]
     }
   },
-  "tool_count": 138
+  "tool_count": 143
 }

@@ -31,6 +31,7 @@ from .parameters import (
     google_product_group_schema, google_responsive_display_ad_schema,
     google_video_ad_schema, google_campaign_budget_schema,
     google_campaign_budget_update_schema,
+    google_campaign_criterion_schema,
 )
 from ...api_clients.google_ads_client import GoogleAdsAPIClient
 from ..update_contracts import google_updates
@@ -84,6 +85,11 @@ class GoogleCapability(BaseCapability):
         "create_campaign_budget": ["google_create_campaign_budget"],
         "update_campaign_budget": ["google_update_campaign_budget"],
         "delete_campaign_budget": ["google_delete_campaign_budget"],
+        "list_campaign_criteria": ["google_list_campaign_criteria"],
+        "get_campaign_criterion": ["google_get_campaign_criterion"],
+        "create_campaign_criteria": ["google_create_campaign_criteria"],
+        "update_campaign_criterion": ["google_update_campaign_criterion"],
+        "delete_campaign_criterion": ["google_delete_campaign_criterion"],
         "get_campaign_report": ["google_get_campaign_report"], "get_adgroup_report": ["google_get_adgroup_report"],
     }
 
@@ -93,6 +99,28 @@ class GoogleCapability(BaseCapability):
     def _extended_provider_tools(self, client):
         """Expose Google Ads client endpoints with dedicated contracts."""
         budget_schema = google_campaign_budget_schema()
+        criterion_schema = google_campaign_criterion_schema()
+        criterion_properties = criterion_schema["properties"]
+        list_criterion_properties = {
+            key: criterion_properties[key]
+            for key in ("customer_id", "campaign_id", "limit")
+        }
+        get_criterion_properties = {
+            key: criterion_properties[key]
+            for key in ("customer_id", "campaign_id", "criterion_id")
+        }
+        create_criterion_properties = {
+            key: criterion_properties[key]
+            for key in ("customer_id", "campaign_id", "criteria")
+        }
+        update_criterion_properties = {
+            key: criterion_properties[key]
+            for key in ("customer_id", "campaign_id", "criterion_id", "updates")
+        }
+        delete_criterion_properties = {
+            key: criterion_properties[key]
+            for key in ("customer_id", "campaign_id", "criterion_id")
+        }
         tools = [
             method_tool(
                 platform="google-ads", skill="google-ads-api-expert",
@@ -142,6 +170,58 @@ class GoogleCapability(BaseCapability):
                 resource_type="campaign_budget", resource_id_field="budget_id",
                 intent_types=["delete_campaign_budget"], traits=["write", "campaign_budget"], write=True,
                 argument_builder=lambda _ctx, data: ((data["budget_id"],), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_list_campaign_criteria", description="查询 Google Ads CampaignCriterion（地域、语言、设备、受众和人口属性定向）。",
+                method_name="list_campaign_criteria", result_key="criteria",
+                properties=list_criterion_properties, required=[],
+                action="list", resource_type="campaign_criterion",
+                intent_types=["list_campaign_criteria"], traits=["read", "campaign_criterion", "targeting"],
+                argument_builder=lambda _ctx, data: ((data.get("campaign_id"),), {
+                    "page_size": data.get("limit", 100),
+                }),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_get_campaign_criterion", description="查询 Google Ads 单个 CampaignCriterion 详情。",
+                method_name="get_campaign_criterion", result_key="criterion",
+                properties=get_criterion_properties, required=["campaign_id", "criterion_id"],
+                action="get", resource_type="campaign_criterion", resource_id_field="criterion_id",
+                intent_types=["get_campaign_criterion"], traits=["read", "campaign_criterion", "targeting"],
+                argument_builder=lambda _ctx, data: ((data["campaign_id"], data["criterion_id"]), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_create_campaign_criteria", description="批量创建 Google Ads CampaignCriterion；默认仅生成 dry-run 计划。",
+                method_name="create_campaign_criteria", result_key="criterion_ids",
+                properties=create_criterion_properties, required=["campaign_id", "criteria"],
+                provider_required=["criteria"], action="create", resource_type="campaign_criterion",
+                parent_resource_type="campaign", resource_id_field="criterion_ids",
+                parent_resource_id_field="campaign_id", intent_types=["create_campaign_criteria"],
+                traits=["write", "campaign_criterion", "targeting"], write=True,
+                argument_builder=lambda _ctx, data: ((data["campaign_id"], data["criteria"]), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_update_campaign_criterion", description="更新 Google Ads CampaignCriterion 的状态、排除标记或出价系数；默认仅生成 dry-run 计划。",
+                method_name="update_campaign_criterion", result_key="criterion_result",
+                properties=update_criterion_properties,
+                required=["campaign_id", "criterion_id", "updates"], action="update",
+                resource_type="campaign_criterion", resource_id_field="criterion_id",
+                intent_types=["update_campaign_criterion"], traits=["write", "campaign_criterion", "targeting"],
+                write=True,
+                argument_builder=lambda _ctx, data: ((data["campaign_id"], data["criterion_id"], data["updates"]), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_delete_campaign_criterion", description="删除 Google Ads CampaignCriterion；默认仅生成 dry-run 计划。",
+                method_name="delete_campaign_criterion", result_key="criterion_result",
+                properties=delete_criterion_properties, required=["campaign_id", "criterion_id"],
+                action="delete", resource_type="campaign_criterion", resource_id_field="criterion_id",
+                intent_types=["delete_campaign_criterion"], traits=["write", "campaign_criterion", "targeting"],
+                write=True,
+                argument_builder=lambda _ctx, data: ((data["campaign_id"], data["criterion_id"]), {}),
             ),
             method_tool(
                 platform="google-ads", skill="google-ads-api-expert",

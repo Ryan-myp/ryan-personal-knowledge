@@ -53,6 +53,12 @@ class GoogleAdsAPIClient(BasePlatformClient):
     CAMPAIGN_BUDGET_UPDATE_FIELDS = {
         "name", "daily_budget", "budget", "delivery_method", "explicitly_shared",
     }
+    CAMPAIGN_CRITERION_UPDATE_FIELDS = {"status", "negative", "bid_modifier"}
+    CAMPAIGN_CRITERION_TYPES = {
+        "LOCATION", "LANGUAGE", "DEVICE", "USER_LIST", "USER_INTEREST",
+        "AGE_RANGE", "GENDER", "PARENTAL_STATUS", "INCOME_RANGE",
+        "CONTENT_LABEL", "PLACEMENT", "TOPIC",
+    }
     
     def __init__(
         self,
@@ -517,6 +523,316 @@ class GoogleAdsAPIClient(BasePlatformClient):
         if not resource_name:
             raise APIError(f"Product group mutate returned no resource name: {response}")
         return str(resource_name).rsplit("/", 1)[-1]
+
+    # ==================== Campaign Criterion ====================
+
+    @staticmethod
+    def _criterion_resource_reference(
+        value: Any, prefix: str, field_name: str, customer_id: str = ""
+    ) -> str:
+        """Normalize a Google Ads criterion reference without path injection."""
+        raw = str(value or "").strip()
+        if not raw:
+            raise ValueError(f"{field_name} is required")
+        if re.fullmatch(rf"{re.escape(prefix)}/\d+", raw):
+            return raw
+        if re.fullmatch(r"\d+", raw):
+            return f"{prefix}/{raw}"
+        if prefix in {"userLists", "userInterests"}:
+            customer = str(customer_id or "").strip()
+            if not re.fullmatch(r"\d+", customer):
+                raise ValueError("customer_id must contain digits only")
+            match = re.fullmatch(rf"customers/{customer}/{re.escape(prefix)}/(\d+)", raw)
+            if match:
+                return raw
+        raise ValueError(f"{field_name} must be a numeric ID or {prefix}/<id> resource name")
+
+    @staticmethod
+    def _criterion_enum_info(value: Any, allowed: set[str], field_name: str) -> dict[str, str]:
+        normalized = str(value or "").strip().upper()
+        if normalized not in allowed:
+            raise ValueError(f"{field_name} must be one of {sorted(allowed)}")
+        return {"type": normalized}
+
+    def _campaign_criterion_query(self, where: str = "") -> str:
+        """Return the explicit GAQL projection used by criterion reads."""
+        query = (
+            "SELECT campaign.id, campaign_criterion.criterion_id, "
+            "campaign_criterion.type, campaign_criterion.status, "
+            "campaign_criterion.negative, campaign_criterion.bid_modifier, "
+            "campaign_criterion.location.geo_target_constant, "
+            "campaign_criterion.language.language_constant, "
+            "campaign_criterion.user_list.user_list, "
+            "campaign_criterion.user_interest.user_interest_category, "
+            "campaign_criterion.device.type, campaign_criterion.age_range.type, "
+            "campaign_criterion.gender.type, campaign_criterion.parental_status.type, "
+            "campaign_criterion.income_range.type, campaign_criterion.content_label.type, "
+            "campaign_criterion.placement.url, campaign_criterion.topic.topic_constant "
+            "FROM campaign_criterion"
+        )
+        return f"{query} WHERE {where}" if where else query
+
+    @classmethod
+    def _normalize_campaign_criterion(cls, row: dict) -> dict:
+        criterion = row.get("campaignCriterion", row.get("campaign_criterion", {})) or {}
+        campaign = row.get("campaign", {}) or {}
+
+        def value(*keys: str) -> Any:
+            current: Any = criterion
+            for key in keys:
+                if not isinstance(current, dict):
+                    return None
+                current = current.get(key, current.get(cls._camel_case(key)))
+            return current
+
+        result = {
+            "id": value("criterion_id"),
+            "criterion_id": value("criterion_id"),
+            "campaign_id": campaign.get("id"),
+            "type": value("type"),
+            "status": value("status"),
+            "negative": value("negative"),
+            "bid_modifier": value("bid_modifier"),
+            "location_id": value("location", "geo_target_constant"),
+            "language_id": value("language", "language_constant"),
+            "user_list_id": value("user_list", "user_list"),
+            "user_interest_id": value(
+                "user_interest", "user_interest_category"
+            ),
+            "device": value("device", "type"),
+            "age_range": value("age_range", "type"),
+            "gender": value("gender", "type"),
+            "parental_status": value("parental_status", "type"),
+            "income_range": value("income_range", "type"),
+            "content_label": value("content_label", "type"),
+            "placement_url": value("placement", "url"),
+            "topic_id": value("topic", "topic_constant", "topicConstant"),
+            "resource_name": criterion.get("resourceName", criterion.get("resource_name")),
+        }
+        return result
+
+    def list_campaign_criteria(
+        self, campaign_id: str = None, page_size: int = 100
+    ) -> list[dict]:
+        """List CampaignCriterion targeting/exclusion rows."""
+        where = ""
+        if campaign_id is not None:
+            where = f"campaign.id = {self._numeric_id(campaign_id, 'campaign_id')}"
+        rows = self._search_all(
+            self._campaign_criterion_query(where), page_size=page_size
+        )
+        return [self._normalize_campaign_criterion(row) for row in rows]
+
+    def get_campaign_criterion(self, campaign_id: str, criterion_id: str) -> dict:
+        """Get one CampaignCriterion by its Campaign-scoped criterion ID."""
+        campaign_id = self._numeric_id(campaign_id, "campaign_id")
+        criterion_id = self._numeric_id(criterion_id, "criterion_id")
+        rows = self._search_all(
+            self._campaign_criterion_query(
+                f"campaign.id = {campaign_id} "
+                f"AND campaign_criterion.criterion_id = {criterion_id}"
+            ),
+            page_size=1,
+        )
+        if not rows:
+            raise APIError(
+                f"Google campaign criterion {campaign_id}~{criterion_id} was not found"
+            )
+        return self._normalize_campaign_criterion(rows[0])
+
+    def _build_campaign_criterion(
+        self, campaign_id: str, spec: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Translate one neutral criterion spec into Google's one-of payload."""
+        if not isinstance(spec, dict):
+            raise ValueError("criteria items must be objects")
+        criterion_type = str(spec.get("criterion_type") or "").strip().upper()
+        if criterion_type not in self.CAMPAIGN_CRITERION_TYPES:
+            raise ValueError(
+                f"criterion_type must be one of {sorted(self.CAMPAIGN_CRITERION_TYPES)}"
+            )
+        criterion: dict[str, Any] = {
+            "campaign": f"customers/{self.customer_id}/campaigns/{campaign_id}",
+            "status": str(spec.get("status") or "PAUSED").upper(),
+            "negative": bool(spec.get("negative", False)),
+        }
+        if criterion["status"] not in {"ENABLED", "PAUSED"}:
+            raise ValueError("new CampaignCriterion status must be ENABLED or PAUSED")
+        if spec.get("bid_modifier") is not None:
+            try:
+                bid_modifier = float(spec["bid_modifier"])
+            except (TypeError, ValueError) as exc:
+                raise ValueError("bid_modifier must be a non-negative number") from exc
+            if bid_modifier < 0:
+                raise ValueError("bid_modifier must be a non-negative number")
+            criterion["bidModifier"] = bid_modifier
+
+        if criterion_type == "LOCATION":
+            criterion["location"] = {
+                "geoTargetConstant": self._criterion_resource_reference(
+                    spec.get("location_id"), "geoTargetConstants", "location_id"
+                )
+            }
+        elif criterion_type == "LANGUAGE":
+            criterion["language"] = {
+                "languageConstant": self._criterion_resource_reference(
+                    spec.get("language_id"), "languageConstants", "language_id"
+                )
+            }
+        elif criterion_type == "USER_LIST":
+            criterion["userList"] = {
+                "userList": self._criterion_resource_reference(
+                    spec.get("user_list_id"), "userLists", "user_list_id", self.customer_id
+                )
+            }
+        elif criterion_type == "USER_INTEREST":
+            criterion["userInterest"] = {
+                "userInterestCategory": self._criterion_resource_reference(
+                    spec.get("user_interest_id"),
+                    "userInterests", "user_interest_id", self.customer_id,
+                )
+            }
+        elif criterion_type == "DEVICE":
+            criterion["device"] = self._criterion_enum_info(
+                spec.get("device"), {"MOBILE", "TABLET", "DESKTOP", "CONNECTED_TV"}, "device"
+            )
+        elif criterion_type == "AGE_RANGE":
+            criterion["ageRange"] = self._criterion_enum_info(
+                spec.get("age_range"), {
+                    "AGE_RANGE_18_24", "AGE_RANGE_25_34", "AGE_RANGE_35_44",
+                    "AGE_RANGE_45_54", "AGE_RANGE_55_64", "AGE_RANGE_65_UP",
+                    "AGE_RANGE_UNDETERMINED",
+                }, "age_range"
+            )
+        elif criterion_type == "GENDER":
+            criterion["gender"] = self._criterion_enum_info(
+                spec.get("gender"), {"MALE", "FEMALE", "UNDETERMINED"}, "gender"
+            )
+        elif criterion_type == "PARENTAL_STATUS":
+            criterion["parentalStatus"] = self._criterion_enum_info(
+                spec.get("parental_status"), {"PARENT", "NOT_A_PARENT", "UNDETERMINED"}, "parental_status"
+            )
+        elif criterion_type == "INCOME_RANGE":
+            criterion["incomeRange"] = self._criterion_enum_info(
+                spec.get("income_range"), {
+                    "INCOME_RANGE_0_50", "INCOME_RANGE_50_60", "INCOME_RANGE_60_70",
+                    "INCOME_RANGE_70_80", "INCOME_RANGE_80_90", "INCOME_RANGE_90_100",
+                    "INCOME_RANGE_UNDETERMINED",
+                }, "income_range"
+            )
+        elif criterion_type == "CONTENT_LABEL":
+            criterion["contentLabel"] = self._criterion_enum_info(
+                spec.get("content_label"), {
+                    "CONTENT_LABEL_DLT", "CONTENT_LABEL_DL_G", "CONTENT_LABEL_DL_PG",
+                    "CONTENT_LABEL_DL_T", "CONTENT_LABEL_DL_MA", "CONTENT_LABEL_DLV",
+                    "CONTENT_LABEL_DNS", "CONTENT_LABEL_UNRATED",
+                }, "content_label"
+            )
+        elif criterion_type == "PLACEMENT":
+            placement = str(spec.get("placement_url") or "").strip()
+            if not placement or any(char in placement for char in "\r\n"):
+                raise ValueError("placement_url is required and must be a single line")
+            criterion["placement"] = {"url": placement}
+        elif criterion_type == "TOPIC":
+            criterion["topic"] = {
+                "topicConstant": self._criterion_resource_reference(
+                    spec.get("topic_id"), "topicConstants", "topic_id"
+                )
+            }
+        return criterion
+
+    def create_campaign_criteria(
+        self, campaign_id: str, criteria: list[dict[str, Any]]
+    ) -> list[str]:
+        """Create a bounded batch of CampaignCriterion mutations."""
+        campaign_id = self._numeric_id(campaign_id, "campaign_id")
+        if not isinstance(criteria, list) or not criteria:
+            raise ValueError("criteria must be a non-empty list")
+        if len(criteria) > 1000:
+            raise ValueError("criteria cannot contain more than 1000 items")
+        operations = [
+            {"create": self._build_campaign_criterion(campaign_id, spec)}
+            for spec in criteria
+        ]
+        response = self._mutate_operations("campaignCriteria", operations)
+        data = self._response_payload(response)
+        results = data.get("results", []) if isinstance(data, dict) else []
+        resource_ids = []
+        for result in results:
+            if isinstance(result, dict) and result.get("resourceName"):
+                resource_id = str(result["resourceName"]).rsplit("/", 1)[-1]
+                # CampaignCriterion resource names use the composite
+                # ``campaign_id~criterion_id`` key.  Return the criterion ID
+                # expected by the Tool contract; the parent campaign remains
+                # an explicit input on subsequent get/update/delete calls.
+                resource_ids.append(resource_id.rsplit("~", 1)[-1])
+        if len(resource_ids) != len(operations):
+            raise APIError(
+                f"Google CampaignCriterion mutate returned {len(resource_ids)} resources "
+                f"for {len(operations)} operations: {response}"
+            )
+        return resource_ids
+
+    def update_campaign_criterion(
+        self, campaign_id: str, criterion_id: str, updates: dict[str, Any]
+    ) -> dict:
+        """Update the small mutable CampaignCriterion field set."""
+        campaign_id = self._numeric_id(campaign_id, "campaign_id")
+        criterion_id = self._numeric_id(criterion_id, "criterion_id")
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("updates must be a non-empty object")
+        unknown = set(updates) - self.CAMPAIGN_CRITERION_UPDATE_FIELDS
+        if unknown:
+            raise ValueError(f"Unsupported Google CampaignCriterion update fields: {sorted(unknown)}")
+        patch: dict[str, Any] = {
+            "resourceName": (
+                f"customers/{self.customer_id}/campaignCriteria/"
+                f"{campaign_id}~{criterion_id}"
+            )
+        }
+        mask: list[str] = []
+        if "status" in updates:
+            status = str(updates["status"] or "").upper()
+            if status not in {"ENABLED", "PAUSED", "REMOVED"}:
+                raise ValueError("status must be ENABLED, PAUSED or REMOVED")
+            patch["status"] = status
+            mask.append("status")
+        if "negative" in updates:
+            if not isinstance(updates["negative"], bool):
+                raise ValueError("negative must be boolean")
+            patch["negative"] = updates["negative"]
+            mask.append("negative")
+        if "bid_modifier" in updates:
+            try:
+                bid_modifier = float(updates["bid_modifier"])
+            except (TypeError, ValueError) as exc:
+                raise ValueError("bid_modifier must be a non-negative number") from exc
+            if bid_modifier < 0:
+                raise ValueError("bid_modifier must be a non-negative number")
+            patch["bidModifier"] = bid_modifier
+            mask.append("bidModifier")
+        if not mask:
+            raise ValueError("updates must contain a supported non-null field")
+        self._mutate("campaignCriteria", {
+            "update": patch,
+            "updateMask": {"paths": mask},
+        })
+        return {"success": True, "campaign_id": campaign_id, "criterion_id": criterion_id}
+
+    def delete_campaign_criterion(self, campaign_id: str, criterion_id: str) -> dict:
+        """Remove one CampaignCriterion by its campaign-scoped resource name."""
+        campaign_id = self._numeric_id(campaign_id, "campaign_id")
+        criterion_id = self._numeric_id(criterion_id, "criterion_id")
+        resource_name = (
+            f"customers/{self.customer_id}/campaignCriteria/"
+            f"{campaign_id}~{criterion_id}"
+        )
+        self._mutate("campaignCriteria", {"remove": resource_name})
+        return {
+            "success": True,
+            "campaign_id": campaign_id,
+            "criterion_id": criterion_id,
+        }
 
     def _criterion_resource_name(self, ad_group_id: str, criterion_id: Any) -> str:
         """Normalize a parent criterion ID without allowing path injection."""

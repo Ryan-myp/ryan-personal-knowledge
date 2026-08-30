@@ -220,6 +220,77 @@ def test_tiktok_audience_creation_builds_provider_envelope():
     )]
 
 
+def test_google_campaign_criteria_builds_targeting_mutations():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
+    calls = []
+    client.request_raw = lambda method, url, data=None, **kwargs: (
+        calls.append((method, url, data)) or {
+            "status_code": 200,
+            "data": {"results": [
+                {"resourceName": "customers/123/campaignCriteria/456~1"},
+                {"resourceName": "customers/123/campaignCriteria/456~2"},
+            ]},
+        }
+    )
+
+    ids = client.create_campaign_criteria("456", [
+        {"criterion_type": "LOCATION", "location_id": "geoTargetConstants/1014044"},
+        {"criterion_type": "DEVICE", "device": "MOBILE", "negative": True},
+    ])
+
+    assert ids == ["1", "2"]
+    assert calls[-1][0] == "POST"
+    assert calls[-1][1].endswith("/customers/123/campaignCriteria:mutate")
+    operations = calls[-1][2]["operations"]
+    assert operations[0]["create"]["campaign"] == "customers/123/campaigns/456"
+    assert operations[0]["create"]["location"] == {
+        "geoTargetConstant": "geoTargetConstants/1014044"
+    }
+    assert operations[1]["create"]["device"] == {"type": "MOBILE"}
+    assert operations[1]["create"]["negative"] is True
+
+
+def test_google_campaign_criterion_update_and_delete_are_scoped():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
+    calls = []
+    client.request_raw = lambda method, url, data=None, **kwargs: (
+        calls.append((method, url, data)) or {"status_code": 200, "data": {"results": []}}
+    )
+
+    assert client.update_campaign_criterion("456", "7", {
+        "status": "PAUSED", "bid_modifier": 1.25,
+    })["success"] is True
+    assert client.delete_campaign_criterion("456", "7")["success"] is True
+
+    update = calls[-2][2]["operations"][0]
+    assert update["update"]["resourceName"] == "customers/123/campaignCriteria/456~7"
+    assert update["update"]["bidModifier"] == 1.25
+    assert update["updateMask"] == {"paths": ["status", "bidModifier"]}
+    remove = calls[-1][2]["operations"][0]
+    assert remove["remove"] == "customers/123/campaignCriteria/456~7"
+
+
+def test_google_campaign_criterion_reads_normalize_oneof_fields():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
+    client._search_all = lambda query, page_size=100: [{
+        "campaign": {"id": "456"},
+        "campaignCriterion": {
+            "criterionId": "7",
+            "type": "LOCATION",
+            "status": "ENABLED",
+            "negative": False,
+            "location": {"geoTargetConstant": "geoTargetConstants/1014044"},
+        },
+    }]
+
+    result = client.get_campaign_criterion("456", "7")
+
+    assert result["criterion_id"] == "7"
+    assert result["campaign_id"] == "456"
+    assert result["location_id"] == "geoTargetConstants/1014044"
+    assert result["type"] == "LOCATION"
+
+
 def test_tiktok_app_ad_builds_app_install_promote_object_and_checks_os():
     client = TikTokAPIClient({"access_token": "test"})
     payloads = []

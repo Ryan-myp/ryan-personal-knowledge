@@ -40,6 +40,30 @@ GOOGLE_PRODUCT_LEVELS = ["LEVEL1", "LEVEL2", "LEVEL3", "LEVEL4", "LEVEL5"]
 GOOGLE_VIDEO_AD_FORMATS = [
     "SKIPPABLE_IN_STREAM", "NON_SKIPPABLE_IN_STREAM", "BUMPER", "OUTSTREAM",
 ]
+GOOGLE_CAMPAIGN_CRITERION_TYPES = [
+    "LOCATION", "LANGUAGE", "DEVICE", "USER_LIST", "USER_INTEREST",
+    "AGE_RANGE", "GENDER", "PARENTAL_STATUS", "INCOME_RANGE",
+    "CONTENT_LABEL", "PLACEMENT", "TOPIC",
+]
+GOOGLE_CRITERION_STATUSES = ["ENABLED", "PAUSED", "REMOVED"]
+GOOGLE_CRITERION_DEVICES = ["MOBILE", "TABLET", "DESKTOP", "CONNECTED_TV"]
+GOOGLE_AGE_RANGES = [
+    "AGE_RANGE_18_24", "AGE_RANGE_25_34", "AGE_RANGE_35_44",
+    "AGE_RANGE_45_54", "AGE_RANGE_55_64", "AGE_RANGE_65_UP",
+    "AGE_RANGE_UNDETERMINED",
+]
+GOOGLE_GENDERS = ["MALE", "FEMALE", "UNDETERMINED"]
+GOOGLE_PARENTAL_STATUSES = ["PARENT", "NOT_A_PARENT", "UNDETERMINED"]
+GOOGLE_INCOME_RANGES = [
+    "INCOME_RANGE_0_50", "INCOME_RANGE_50_60", "INCOME_RANGE_60_70",
+    "INCOME_RANGE_70_80", "INCOME_RANGE_80_90", "INCOME_RANGE_90_100",
+    "INCOME_RANGE_UNDETERMINED",
+]
+GOOGLE_CONTENT_LABELS = [
+    "CONTENT_LABEL_DLT", "CONTENT_LABEL_DL_G", "CONTENT_LABEL_DL_PG",
+    "CONTENT_LABEL_DL_T", "CONTENT_LABEL_DL_MA", "CONTENT_LABEL_DLV",
+    "CONTENT_LABEL_DNS", "CONTENT_LABEL_UNRATED",
+]
 
 GOOGLE_BUDGET_DELIVERY_METHODS = ["STANDARD"]
 
@@ -198,6 +222,75 @@ def google_keyword_schema() -> dict[str, Any]:
                 }, "Keyword criterion"),
             ),
         },
+    }
+
+
+def google_campaign_criterion_item_schema() -> dict[str, Any]:
+    """Schema for one provider-neutral CampaignCriterion specification.
+
+    Google stores location, language, device, audience and demographic
+    targeting as one-of fields on CampaignCriterion.  The discriminator and
+    explicit value fields keep the Tool contract renderable by a UI while the
+    Client performs the type-specific required-field validation before a
+    provider mutation.
+    """
+    return _object({
+        "criterion_type": _field(
+            "string", "Campaign criterion kind", enum=GOOGLE_CAMPAIGN_CRITERION_TYPES,
+        ),
+        "status": _field("string", "Criterion status", enum=GOOGLE_CRITERION_STATUSES[:2]),
+        "negative": _field("boolean", "Exclude instead of include this criterion"),
+        "bid_modifier": _field("number", "Optional bid modifier", minimum=0),
+        "location_id": _field(
+            "string", "Google geo target constant ID or resource name", minLength=1,
+        ),
+        "language_id": _field(
+            "string", "Google language constant ID or resource name", minLength=1,
+        ),
+        "user_list_id": _field(
+            "string", "Google UserList ID or resource name", minLength=1,
+        ),
+        "user_interest_id": _field(
+            "string", "Google UserInterest ID or resource name", minLength=1,
+        ),
+        "age_range": _field("string", "Age range", enum=GOOGLE_AGE_RANGES),
+        "gender": _field("string", "Gender", enum=GOOGLE_GENDERS),
+        "parental_status": _field(
+            "string", "Parental status", enum=GOOGLE_PARENTAL_STATUSES,
+        ),
+        "income_range": _field(
+            "string", "Household income range", enum=GOOGLE_INCOME_RANGES,
+        ),
+        "device": _field("string", "Device type", enum=GOOGLE_CRITERION_DEVICES),
+        "content_label": _field(
+            "string", "Content label", enum=GOOGLE_CONTENT_LABELS,
+        ),
+        "placement_url": _field("string", "Placement URL", minLength=1),
+        "topic_id": _field(
+            "string", "Google topic constant ID or resource name", minLength=1,
+        ),
+    }, "CampaignCriterion specification", additional_properties=False) | {
+        "required": ["criterion_type"],
+    }
+
+
+def google_campaign_criterion_schema() -> dict[str, Any]:
+    """Schemas for CampaignCriterion list/get/create/update/delete Tools."""
+    item = google_campaign_criterion_item_schema()
+    return {
+        "properties": {
+            "customer_id": _field("string", "Google Ads customer ID"),
+            "campaign_id": _field("string", "Parent Campaign ID", minLength=1),
+            "criterion_id": _field("string", "Campaign criterion ID", minLength=1),
+            "limit": _field("integer", "Maximum number of criteria", minimum=1, maximum=10_000),
+            "criteria": _field("array", "Campaign criteria to create", minItems=1, maxItems=1000, items=item),
+            "updates": _object({
+                "status": _field("string", "Criterion status", enum=GOOGLE_CRITERION_STATUSES),
+                "negative": _field("boolean", "Exclude instead of include this criterion"),
+                "bid_modifier": _field("number", "Bid modifier", minimum=0),
+            }, "Allowed CampaignCriterion update fields", additional_properties=False),
+        },
+        "conditional_rules": [],
     }
 
 
