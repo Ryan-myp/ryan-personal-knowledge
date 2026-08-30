@@ -1,5 +1,5 @@
 {
-  "digest": "c766f8b061f4029328e15f4ae7de98526cd02645db89c8cb927c16ea0b3af297",
+  "digest": "fe44fa60759e9e3314414085643e3bc47c91710f54d74a426ac460187faef97b",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -11828,8 +11828,8 @@
       ]
     },
     "tiktok": {
-      "digest": "8d327f35abb68fcd2b134c6e7fb20a967d57ef9812e6fa6cfb95297228253015",
-      "tool_count": 53,
+      "digest": "57f6d274af992dab7d287f9875f5e3ec69aa55816c47a2a83a57a954b2d235df",
+      "tool_count": 56,
       "tools": [
         {
           "action": "create",
@@ -14165,6 +14165,54 @@
         {
           "action": "list",
           "contract_version": "1.2.0",
+          "description": "查询 TikTok 官方设备型号定向选项。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "account_id"
+            ],
+            "required": [
+              "account_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_device_models"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_list_device_models",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "device_model",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "targeting",
+            "lookup"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok devices 参考数据。",
           "effect_class": "read",
           "input_schema": {
@@ -14307,6 +14355,54 @@
           "traits": [
             "read",
             "targeting"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.2.0",
+          "description": "查询 TikTok 官方语言定向选项。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "account_id"
+            ],
+            "required": [
+              "account_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_languages"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_list_languages",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "language",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "targeting",
+            "lookup"
           ]
         },
         {
@@ -14720,6 +14816,100 @@
           "traits": [
             "write",
             "campaign"
+          ]
+        },
+        {
+          "action": "recommend",
+          "contract_version": "1.2.0",
+          "description": "根据种子词查询 TikTok 兴趣定向推荐关键词。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "audience_type": {
+                "enum": [
+                  "GENERAL_INTEREST",
+                  "PURCHASE_INTENTION"
+                ],
+                "type": "string"
+              },
+              "keyword": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "language": {
+                "enum": [
+                  "fr",
+                  "id",
+                  "it",
+                  "ja",
+                  "ms",
+                  "ar",
+                  "vi",
+                  "en",
+                  "ru",
+                  "es",
+                  "th",
+                  "tr",
+                  "hi",
+                  "zh",
+                  "de",
+                  "ko"
+                ],
+                "type": "string"
+              },
+              "limit": {
+                "maximum": 50,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "mode": {
+                "enum": [
+                  "FUZZ_MATCH",
+                  "SEMANTIC_RECOMMEND"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "account_id",
+              "keyword"
+            ],
+            "required": [
+              "account_id",
+              "keyword"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "recommend_interest_keywords"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_recommend_interest_keywords",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "interest_keyword",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "targeting",
+            "lookup"
           ]
         },
         {
@@ -16249,5 +16439,5 @@
       ]
     }
   },
-  "tool_count": 196
+  "tool_count": 199
 }

@@ -52,6 +52,9 @@ from .parameters import (
     tiktok_targeting_update_schema,
     TIKTOK_OBJECTIVE_TYPES,
     TIKTOK_PLACEMENTS,
+    TIKTOK_KEYWORD_LANGUAGES,
+    TIKTOK_INTEREST_KEYWORD_MODES,
+    TIKTOK_INTEREST_AUDIENCE_TYPES,
 )
 from ..update_contracts import tiktok_updates
 
@@ -109,6 +112,9 @@ class TikTokCapability(BaseCapability):
         "delete_audience": ["tiktok_delete_audience"],
         "list_interest_categories": ["tiktok_list_interest_categories"],
         "get_interest_category": ["tiktok_get_interest_category"], "list_locations": ["tiktok_list_locations"],
+        "list_languages": ["tiktok_list_languages"],
+        "list_device_models": ["tiktok_list_device_models"],
+        "recommend_interest_keywords": ["tiktok_recommend_interest_keywords"],
         "search_locations": ["tiktok_search_locations"], "list_regions": ["tiktok_list_regions"],
         "list_devices": ["tiktok_list_devices"],
         "list_operating_systems": ["tiktok_list_operating_systems"], "list_carriers": ["tiktok_list_carriers"],
@@ -319,6 +325,46 @@ class TikTokCapability(BaseCapability):
                 intent_types=[f"list_{resource_type}s"], traits=["read", "targeting"],
                 argument_builder=lambda _ctx, _data: ((), {}),
             ))
+        tools.extend([
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_languages",
+                description="查询 TikTok 官方语言定向选项。", method_name="list_languages",
+                result_key="languages", properties={"account_id": {"type": "string"}},
+                required=["account_id"], provider_required=["account_id"],
+                action="list", resource_type="language", intent_types=["list_languages"],
+                traits=["read", "targeting", "lookup"],
+                argument_builder=lambda ctx, data: ((account(ctx, data),), {}),
+            ),
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_device_models",
+                description="查询 TikTok 官方设备型号定向选项。", method_name="list_device_models",
+                result_key="device_models", properties={"account_id": {"type": "string"}},
+                required=["account_id"], provider_required=["account_id"],
+                action="list", resource_type="device_model", intent_types=["list_device_models"],
+                traits=["read", "targeting", "lookup"],
+                argument_builder=lambda ctx, data: ((account(ctx, data),), {}),
+            ),
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_recommend_interest_keywords",
+                description="根据种子词查询 TikTok 兴趣定向推荐关键词。",
+                method_name="recommend_interest_keywords", result_key="interest_keywords",
+                properties={
+                    "account_id": {"type": "string"}, "keyword": {"type": "string", "minLength": 1},
+                    "language": {"type": "string", "enum": TIKTOK_KEYWORD_LANGUAGES},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                    "mode": {"type": "string", "enum": TIKTOK_INTEREST_KEYWORD_MODES},
+                    "audience_type": {"type": "string", "enum": TIKTOK_INTEREST_AUDIENCE_TYPES},
+                },
+                required=["account_id", "keyword"], provider_required=["account_id", "keyword"],
+                action="recommend", resource_type="interest_keyword",
+                intent_types=["recommend_interest_keywords"], traits=["read", "targeting", "lookup"],
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["keyword"]), {
+                    "language": data.get("language", "en"), "limit": data.get("limit", 50),
+                    "mode": data.get("mode", "FUZZ_MATCH"),
+                    "audience_type": data.get("audience_type", "GENERAL_INTEREST"),
+                }),
+            ),
+        ])
         tools.extend([
             method_tool(
                 platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_get_conversion",

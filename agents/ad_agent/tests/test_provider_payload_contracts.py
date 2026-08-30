@@ -153,6 +153,42 @@ def test_tiktok_creative_portfolio_uses_official_v13_payload_and_keeps_crud_gap_
     ) == []
 
 
+def test_tiktok_targeting_reference_lookups_build_official_v13_queries():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+
+    def request(method, endpoint, **kwargs):
+        calls.append((method, endpoint, kwargs))
+        return {"list": [{"id": "1"}]}
+
+    client.request = request
+    assert client.list_languages("123") == [{"id": "1"}]
+    assert client.list_device_models("123") == [{"id": "1"}]
+    assert client.recommend_interest_keywords(
+        "123", "running shoes", language="en", limit=10,
+        mode="SEMANTIC_RECOMMEND", audience_type="PURCHASE_INTENTION",
+    ) == [{"id": "1"}]
+    assert calls == [
+        ("GET", "tool/language/", {"params": {"advertiser_id": "123"}}),
+        ("GET", "tool/device_model/", {"params": {"advertiser_id": "123"}}),
+        ("GET", "tool/interest_keyword/recommend/", {"params": {
+            "advertiser_id": "123", "keyword": "running shoes", "language": "en",
+            "limit": 10, "mode": "SEMANTIC_RECOMMEND",
+            "audience_type": "PURCHASE_INTENTION",
+        }}),
+    ]
+
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_tiktok_capability().register_tools()
+    }
+    assert definitions["tiktok_list_languages"].effect_class.value == "read"
+    assert definitions["tiktok_list_device_models"].input_schema.required == ["account_id"]
+    assert definitions["tiktok_recommend_interest_keywords"].input_schema.properties["mode"]["enum"] == [
+        "FUZZ_MATCH", "SEMANTIC_RECOMMEND",
+    ]
+
+
 def test_generic_campaign_type_maps_to_google_wire_field():
     runtime = AgentRuntime(require_llm=False, )
     definition = next(

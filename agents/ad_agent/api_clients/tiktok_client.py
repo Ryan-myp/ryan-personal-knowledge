@@ -972,6 +972,84 @@ class TikTokAPIClient(BasePlatformClient):
         result = self.request('GET', 'interest_category/list/', params=data)
         payload = self._data_section(result)
         return payload.get('list', []) if isinstance(payload, dict) else []
+
+    def list_languages(self, advertiser_id: str) -> list:
+        """获取 TikTok 官方语言定向选项。"""
+        advertiser_id = str(advertiser_id or "").strip()
+        if not advertiser_id.isdigit():
+            raise ValueError("advertiser_id must contain digits only")
+        self.acquire_rate_limit(self._rate_limiter)
+        result = self.request(
+            "GET", "tool/language/", params={"advertiser_id": advertiser_id}
+        )
+        payload = self._data_section(result)
+        if isinstance(payload, list):
+            return payload
+        return payload.get("list", payload.get("languages", [])) if isinstance(payload, dict) else []
+
+    def list_device_models(self, advertiser_id: str) -> list:
+        """获取 TikTok 官方设备型号定向选项。"""
+        advertiser_id = str(advertiser_id or "").strip()
+        if not advertiser_id.isdigit():
+            raise ValueError("advertiser_id must contain digits only")
+        self.acquire_rate_limit(self._rate_limiter)
+        result = self.request(
+            "GET", "tool/device_model/", params={"advertiser_id": advertiser_id}
+        )
+        payload = self._data_section(result)
+        if isinstance(payload, list):
+            return payload
+        return payload.get("list", payload.get("device_models", [])) if isinstance(payload, dict) else []
+
+    def recommend_interest_keywords(
+        self,
+        advertiser_id: str,
+        keyword: str,
+        language: str = "en",
+        limit: int = 50,
+        mode: str = "FUZZ_MATCH",
+        audience_type: str = "GENERAL_INTEREST",
+    ) -> list:
+        """根据种子词获取 TikTok 兴趣定向推荐。"""
+        advertiser_id = str(advertiser_id or "").strip()
+        if not advertiser_id.isdigit():
+            raise ValueError("advertiser_id must contain digits only")
+        keyword = str(keyword or "").strip()
+        if not keyword:
+            raise ValueError("keyword is required")
+        language = str(language or "en").strip().lower()
+        if language not in {
+            "fr", "id", "it", "ja", "ms", "ar", "vi", "en", "ru", "es",
+            "th", "tr", "hi", "zh", "de", "ko",
+        }:
+            raise ValueError("unsupported keyword language")
+        try:
+            limit = int(limit)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("limit must be between 1 and 50") from exc
+        if not 1 <= limit <= 50:
+            raise ValueError("limit must be between 1 and 50")
+        mode = str(mode or "FUZZ_MATCH").strip().upper()
+        if mode not in {"FUZZ_MATCH", "SEMANTIC_RECOMMEND"}:
+            raise ValueError("unsupported interest keyword recommendation mode")
+        audience_type = str(audience_type or "GENERAL_INTEREST").strip().upper()
+        if audience_type not in {"GENERAL_INTEREST", "PURCHASE_INTENTION"}:
+            raise ValueError("unsupported interest keyword audience type")
+        self.acquire_rate_limit(self._rate_limiter)
+        result = self.request(
+            "GET", "tool/interest_keyword/recommend/", params={
+                "advertiser_id": advertiser_id,
+                "keyword": keyword,
+                "language": language,
+                "limit": limit,
+                "mode": mode,
+                "audience_type": audience_type,
+            }
+        )
+        payload = self._data_section(result)
+        if isinstance(payload, list):
+            return payload
+        return payload.get("list", payload.get("keywords", [])) if isinstance(payload, dict) else []
     
     def get_interest_category(self, category_id: str) -> dict:
         """获取兴趣类别详情"""
