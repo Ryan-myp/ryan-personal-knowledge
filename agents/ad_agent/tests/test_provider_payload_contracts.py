@@ -17,6 +17,7 @@ from agents.ad_agent.api_clients.meta_client import MetaAPIClient
 from agents.ad_agent.api_clients.tiktok_client import TikTokAPIClient
 from agents.ad_agent.api_clients.base import APIError
 from agents.ad_agent.capabilities.tiktok.campaigns import TikTokGetCampaignHandler
+from agents.ad_agent.capabilities.google.campaigns import GoogleCreateCampaignHandler
 from agents.ad_agent.capabilities.meta.capability import _meta_update_adapter
 from agents.ad_agent.capabilities.tiktok.capability import _tiktok_update_adapter
 from agents.ad_agent.capabilities.google.capability import _google_update_adapter
@@ -3005,6 +3006,37 @@ def test_google_creation_options_are_mapped_to_rest_resources():
     ad = operations[-1][1]["create"]["ad"]
     assert ad["responsiveSearchAd"]["path1"] == "buy"
     assert ad["responsiveSearchAd"]["path2"] == "now"
+
+
+def test_google_campaign_handler_forwards_all_optimization_parameters():
+    """The Tool schema and live handler must expose the same optimizer contract."""
+    captured = {}
+
+    class FakeGoogleClient:
+        def create_campaign(self, **kwargs):
+            captured.update(kwargs)
+            return "campaign-1"
+
+    handler = GoogleCreateCampaignHandler(FakeGoogleClient())
+    result = handler.execute(
+        ToolContext(session_id="s1", user_id="u1", account_id="customer-1"),
+        {
+            "campaign_name": "Video optimization",
+            "advertising_channel_type": "VIDEO",
+            "bidding_strategy": "TARGET_CPM",
+            "daily_budget": 25,
+            "target_impression_share_location": "TOP_OF_PAGE",
+            "cpc_bid_ceiling_micros": 1_500_000,
+            "target_cpm_micros": 2_500_000,
+            "target_cpv_micros": 3_500_000,
+        },
+    )
+
+    assert result.success is True
+    assert captured["target_impression_share_location"] == "TOP_OF_PAGE"
+    assert captured["cpc_bid_ceiling_micros"] == 1_500_000
+    assert captured["target_cpm_micros"] == 2_500_000
+    assert captured["target_cpv_micros"] == 3_500_000
 
 
 def test_google_core_hierarchy_delete_methods_use_customer_mutate_remove():

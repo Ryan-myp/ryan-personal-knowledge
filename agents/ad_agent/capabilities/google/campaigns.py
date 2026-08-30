@@ -123,6 +123,12 @@ class GoogleCreateCampaignHandler(ToolHandler):
                     target_cpa_micros=input_data.get("target_cpa_micros"),
                     target_roas=input_data.get("target_roas"),
                     target_impression_share=input_data.get("target_impression_share"),
+                    target_impression_share_location=input_data.get(
+                        "target_impression_share_location"
+                    ),
+                    cpc_bid_ceiling_micros=input_data.get("cpc_bid_ceiling_micros"),
+                    target_cpm_micros=input_data.get("target_cpm_micros"),
+                    target_cpv_micros=input_data.get("target_cpv_micros"),
                     status=input_data.get("status"),
                     networks=input_data.get("networks"),
                     app_campaign_setting=input_data.get("app_campaign_setting"),
