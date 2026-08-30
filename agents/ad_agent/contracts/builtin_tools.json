@@ -1,5 +1,5 @@
 {
-  "digest": "10ff17cd1699aa6c52ff18cd09e5cdd1edaa8bab65bd3fc411ac3a23705cbc5b",
+  "digest": "75b3bc721f86279478d09985d07c31286c01a29356056de84c747a2715d5de06",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -1925,7 +1925,7 @@
       ]
     },
     "google-ads": {
-      "digest": "492c927342a4b029db04218105dbc24311bd02bbc07c76560d69fe8ce1cd296c",
+      "digest": "aa427a989af1578043b81dae2d1dc445b7f615d3e90bcb348b4020bdfca32d07",
       "tool_count": 78,
       "tools": [
         {
@@ -7668,6 +7668,7 @@
             "type": "object"
           },
           "intent_types": [
+            "get_campaign_report",
             "download_report"
           ],
           "live_support": true,
@@ -9804,7 +9805,7 @@
       ]
     },
     "meta": {
-      "digest": "11137d70389d4afbb2d238f01bd4062dd2a5373354e88ea95d6c1ce9a4ae7fee",
+      "digest": "e5fcfbdc0f3feb897fa46052c097784110dab6ed26331606543bdcc4f9a24065",
       "tool_count": 67,
       "tools": [
         {
@@ -13362,6 +13363,7 @@
             "type": "object"
           },
           "intent_types": [
+            "get_campaign_report",
             "download_report"
           ],
           "live_support": true,
@@ -16085,7 +16087,7 @@
       ]
     },
     "tiktok": {
-      "digest": "072aa2c64ad46ceabe46aa747a9b6410cb6e8e0c109595e639894210e2727b95",
+      "digest": "56196344df8646f1b0cf51060176d10074bc25b66adc18956f8cb3637623bcd4",
       "tool_count": 72,
       "tools": [
         {
@@ -20674,6 +20676,7 @@
             "type": "object"
           },
           "intent_types": [
+            "get_campaign_report",
             "download_report"
           ],
           "live_support": true,

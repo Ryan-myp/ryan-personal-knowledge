@@ -3568,20 +3568,22 @@ class AgentRuntime:
             properties = getattr(definition.input_schema, "properties", {}) or {}
             if not ({"campaign_id", "campaign_ids"} & set(properties)):
                 continue
-            name = str(definition.name).lower()
             action = str(getattr(definition, "action", "")).lower()
             resource = str(getattr(definition, "resource_type", "")).lower()
             if action not in {"report", "export", "download"} and resource != "report":
                 continue
-            score = (
-                2 if "campaign" in name else 0,
-                1 if "report" in name else 0,
-                1 if "campaign_ids" in properties else 0,
-            )
-            candidates.append((score, definition))
+            candidates.append(definition)
         if not candidates:
             return None
-        return sorted(candidates, key=lambda item: (-item[0][0], -item[0][1], -item[0][2], item[1].name))[0][1]
+        campaign_report_tools = [
+            definition for definition in candidates
+            if "get_campaign_report" in (getattr(definition, "intent_types", []) or [])
+        ]
+        if len(campaign_report_tools) == 1:
+            return campaign_report_tools[0]
+        if len(candidates) == 1:
+            return candidates[0]
+        return None
 
     def _collect_cross_channel_metrics(
         self,
