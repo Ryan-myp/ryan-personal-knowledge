@@ -20,13 +20,13 @@
 
 | 平台 | Skill | API 客户端 | 工具数量 |
 |------|-------|-----------|---------|
-| Meta | meta-marketing-api-expert | meta_client.py | 67（账户、Page/Pixel 详情/列表、Custom Conversion CRUD、Lead Form 列表/详情、Audience CRUD、Catalog/Product Set CRUD、层级资源、Traffic/Conversion/Lead/Engagement/Catalog/Messaging Ads、报表与生命周期接口） |
-| Google Ads | google-ads-api-expert | google_ads_client.py | 78（层级资源完整 CRUD、CampaignBudget、CampaignCriterion 定向、Conversion Action 生命周期、User List 生命周期与 Customer Match 哈希数据上传、BiddingStrategy 生命周期与优化参数、可复用文本/图片/YouTube/HTML5 Asset 创建/移除、Search Ad、Responsive Display Ad、Video Ad、Demand Gen、Hotel、Local、Smart、Travel、关键词完整生命周期、Product Group、PMax、报表与生命周期接口） |
+| Meta | meta-marketing-api-expert | meta_client.py | 68（账户、Page/Pixel 详情/列表、Custom Conversion CRUD、Lead Form 列表/详情、Audience/Lookalike Audience CRUD、Catalog/Product Set CRUD、层级资源、Traffic/Conversion/Lead/Engagement/Catalog/Messaging Ads、报表与生命周期接口） |
+| Google Ads | google-ads-api-expert | google_ads_client.py | 80（层级资源完整 CRUD、CampaignBudget、CampaignCriterion 定向、Conversion Action 生命周期、User List 生命周期与 Customer Match 哈希数据上传、BiddingStrategy 生命周期与优化参数、可复用文本/图片/YouTube/HTML5 Asset 创建/移除、Search Ad、Responsive Display Ad、Video Ad、Demand Gen、Hotel、Local、Smart、Travel、关键词完整生命周期、Product Group、PMax、Experiment/Experiment Arm 查询、报表与生命周期接口） |
 | TikTok | tiktok-ads-api-expert | tiktok_client.py | 72（账户、层级资源、Ad Group 定向更新、Lead/App/Spark/Product Sales 广告、Identity、Creative Portfolio 创建/查询/预览、图片/视频 Asset Library、受众 CRUD、官方定向参考数据、Pixel 生命周期、Pixel 事件、报表与生命周期接口） |
 | DV360 | dv360-expert | dv360_client.py | 31（Advertiser、Campaign 查询、IO、Line Item、Creative、定向与异步报表接口） |
-| **合计** |  |  | **248** |
+| **合计** |  |  | **251** |
 
-> 248 是当前四个 Capability 已注册的业务 Tool 数量，不是 Meta、Google Ads、TikTok 或 DV360 官方 API 的完整接口总量。各渠道包的 `_surface_data.py` 同时维护实现 Surface 和 `OFFICIAL_INVENTORY` 官方能力基线；后者必须带 endpoint/Provider operation、API version、官方来源和状态，并明确是否为完整清单。新增官方接口时，应在对应渠道 Client 增加固定方法，在 Capability 增加 Tool Schema/adapter，再由 Surface、官方清单审计和契约快照阻止漏注册或漂移。DV360 Campaign 创建当前明确为 planned，不会暴露一个无 Client 适配器的假 Tool。
+> 251 是当前四个 Capability 已注册的业务 Tool 数量，不是 Meta、Google Ads、TikTok 或 DV360 官方 API 的完整接口总量。各渠道包的 `_surface_data.py` 同时维护实现 Surface 和 `OFFICIAL_INVENTORY` 官方能力基线；后者必须带 endpoint/Provider operation、API version、官方来源和状态，并明确是否为完整清单。新增官方接口时，应在对应渠道 Client 增加固定方法，在 Capability 增加 Tool Schema/adapter，再由 Surface、官方清单审计和契约快照阻止漏注册或漂移。DV360 Campaign 创建当前明确为 planned，不会暴露一个无 Client 适配器的假 Tool。
 
 能力完整度要以审计报告为准，而不是 Tool 数量。运行：
 
@@ -164,7 +164,7 @@ Provider live lookup 返回的动态选项会附带短时 `selection_token`。�
 
 ### Harness Engineering 评估
 
-当前核心 Harness 已具备：受限 Tool/Skill 契约、统一 Runtime 执行入口、权限/账户白名单、dry-run、显式确认、持久化幂等、workflow checkpoint/lease/recovery、Provider 回查入口、LLM 输出后的二次 schema 校验，以及下一回合可用的脱敏 Tool 结果上下文。另有 `scripts/audit_capabilities.py`、`scripts/validate_contracts.py` 和 `contracts/builtin_tools.json` 提供 API Surface、版本化契约快照、Provider 方法覆盖率和 drift gate。结论是“核心骨架符合，尚未达到生产闭环”，不能把当前 248 个工具数或单元测试通过当成 Provider live 已验证。
+当前核心 Harness 已具备：受限 Tool/Skill 契约、统一 Runtime 执行入口、权限/账户白名单、dry-run、显式确认、持久化幂等、workflow checkpoint/lease/recovery、Provider 回查入口、LLM 输出后的二次 schema 校验，以及下一回合可用的脱敏 Tool 结果上下文。另有 `scripts/audit_capabilities.py`、`scripts/validate_contracts.py` 和 `contracts/builtin_tools.json` 提供 API Surface、版本化契约快照、Provider 方法覆盖率和 drift gate。结论是“核心骨架符合，尚未达到生产闭环”，不能把当前 251 个工具数或单元测试通过当成 Provider live 已验证。
 
 可用 `python3 agents/ad_agent/scripts/audit_capabilities.py` 做无网络能力审计；它按
 Capability 包约定自动发现渠道，输出 action/resource 矩阵和创建链，不是 Runtime 的第二套
