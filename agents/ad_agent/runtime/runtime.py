@@ -264,6 +264,7 @@ class AgentRuntime:
         self._skill_keys_by_platform: dict[str, list[str]] = {}
         self._skill_tool_names: dict[str, list[str]] = {}
         self._skill_platforms: dict[str, str] = {}
+        self._skill_format_ids: dict[str, set[str]] = {}
         # User-managed Skills are context packages.  They are deliberately
         # tracked separately from executable provider Skills so an uploaded
         # directory cannot become a Tool merely by containing a contract or a
@@ -389,6 +390,27 @@ class AgentRuntime:
         if context:
             self.tool_selector.set_business_context(context.business_name, context)
 
+    def _refresh_parser_catalog(self) -> None:
+        """Synchronize parser discovery data with the active Tool registry."""
+        refresh = getattr(self.intent_parser, "refresh_tool_catalog", None)
+        definitions = self.registry.list_all()
+        if callable(refresh):
+            refresh(definitions)
+        elif hasattr(self.intent_parser, "register_tool_definitions"):
+            self.intent_parser.register_tool_definitions(definitions)
+
+        # Skill aliases are context metadata, but they must follow the same
+        # lifecycle as their active Skill.  Provider identity itself remains
+        # discovered from Tool metadata; aliases never create Tools.
+        for skill in list(self._skill_objects.values()) + list(
+            self._managed_context_skills.values()
+        ):
+            if hasattr(self.intent_parser, "register_platform_aliases"):
+                self.intent_parser.register_platform_aliases(
+                    getattr(skill, "platform", ""),
+                    getattr(skill, "platform_aliases", []) or [],
+                )
+
     @staticmethod
     def _canonical_platform(platform: str) -> str:
         """Normalize aliases without keeping a Runtime platform registry."""
@@ -453,6 +475,7 @@ class AgentRuntime:
                 )
             if hasattr(self.tool_selector, "register_context_skill"):
                 self.tool_selector.register_context_skill(skill)
+            self._refresh_parser_catalog()
         return True
 
     def unload_managed_skill(self, skill_name: str) -> bool:
@@ -468,6 +491,7 @@ class AgentRuntime:
                 self.tool_selector.unregister_context_skill(key)
             if not self._managed_context_skills:
                 self._managed_skill_tenant_id = None
+            self._refresh_parser_catalog()
             return True
 
     def get_managed_skills(self) -> dict[str, Skill]:
@@ -741,6 +765,9 @@ class AgentRuntime:
         对应 DAP Agent 的 CapabilityModule.Configure() 模式：
         业务模块不直接操作 Runtime，而是通过接口注入能力。
         """
+        before_tool_names = {
+            definition.name for definition in self.registry.list_all()
+        }
         context = CapabilityContextWrapper(self.registry)
         runtime = module.configure(context)
 
@@ -763,26 +790,6 @@ class AgentRuntime:
             getattr(runtime, "ad_format_catalogs", []) or [],
         )
         self._validate_parameter_lookup_contract()
-        if hasattr(self.intent_parser, "register_intents"):
-            self.intent_parser.register_intents(
-                intent
-                for definition in self.registry.list_all()
-                for intent in (getattr(definition, "intent_types", []) or [])
-            )
-        if hasattr(self.intent_parser, "register_platforms"):
-            self.intent_parser.register_platforms(
-                definition.platform for definition in self.registry.list_all()
-            )
-        if hasattr(self.intent_parser, "register_tool_schemas"):
-            schemas_by_platform: dict[str, list[dict]] = {}
-            for definition in self.registry.list_all():
-                if definition.input_schema is not None:
-                    schemas_by_platform.setdefault(definition.platform, []).append(
-                        definition.input_schema.to_dict()
-                    )
-            for schema_platform, schemas in schemas_by_platform.items():
-                self.intent_parser.register_tool_schemas(schema_platform, schemas)
-
         # Capability.configure() registers platform tools before returning.
         # Apply the read-only boundary immediately so callers cannot forget a
         # second, manually-invoked enable_read_only_mode() call.
@@ -805,7 +812,34 @@ class AgentRuntime:
             canonical_platform = self._canonical_platform(capability_platform)
             skill_candidates = self.skill_loader.get_by_platform(canonical_platform)
             if skill_candidates:
-                self._loaded_skills.setdefault(canonical_platform, skill_candidates[0])
+                primary_skill = skill_candidates[0]
+                self._loaded_skills.setdefault(canonical_platform, primary_skill)
+                skill_key = str(getattr(primary_skill, "name", "") or canonical_platform)
+            else:
+                primary_skill = None
+                skill_key = f"{canonical_platform}:capability:{id(module)}"
+            registered_names = sorted(
+                definition.name
+                for definition in self.registry.list_all()
+                if definition.name not in before_tool_names
+            )
+            if registered_names:
+                self._skill_tool_names[skill_key] = registered_names
+                self._skill_platforms[skill_key] = canonical_platform
+                if primary_skill is not None:
+                    self._skill_objects[skill_key] = primary_skill
+                self._skill_keys_by_platform.setdefault(canonical_platform, []).append(
+                    skill_key
+                )
+                self._skill_format_ids[skill_key] = {
+                    str(item.get("format_id"))
+                    for item in (getattr(runtime, "ad_format_catalogs", []) or [])
+                    if isinstance(item, dict) and item.get("format_id")
+                }
+
+        # Rebuild derived discovery state after ownership has been recorded.
+        # This is the same lifecycle boundary used by unload_skill().
+        self._refresh_parser_catalog()
         
         # 注册后台任务
         self._background_tasks.extend(runtime.background_tasks)
@@ -1166,31 +1200,6 @@ class AgentRuntime:
             logger.warning(f"⚠️ Capability '{platform}' 没有定义任何工具")
             return False
 
-        if hasattr(self.intent_parser, "register_intents"):
-            self.intent_parser.register_intents(
-                intent
-                for definition, _handler in tools
-                for intent in (getattr(definition, "intent_types", []) or [])
-            )
-        if hasattr(self.intent_parser, "register_platforms"):
-            self.intent_parser.register_platforms(
-                definition.platform for definition, _handler in tools
-            )
-        if hasattr(self.intent_parser, "register_platform_aliases"):
-            self.intent_parser.register_platform_aliases(
-                canonical_platform,
-                getattr(skill, "platform_aliases", []) or [],
-            )
-        if hasattr(self.intent_parser, "register_tool_schemas"):
-            schemas_by_platform: dict[str, list[dict]] = {}
-            for definition, _handler in tools:
-                if definition.input_schema is not None:
-                    schemas_by_platform.setdefault(definition.platform, []).append(
-                        definition.input_schema.to_dict()
-                    )
-            for schema_platform, schemas in schemas_by_platform.items():
-                self.intent_parser.register_tool_schemas(schema_platform, schemas)
-        
         # 注册工具
         registered_count = 0
         for tool_def, handler in tools:
@@ -1235,6 +1244,8 @@ class AgentRuntime:
         keys = self._skill_keys_by_platform.setdefault(canonical_platform, [])
         if skill_key not in keys:
             keys.append(skill_key)
+
+        self._refresh_parser_catalog()
 
         logger.info(f"✅ 已动态注册 Skill '{skill.name}'，共 {registered_count} 个工具")
         return True
@@ -1415,14 +1426,28 @@ class AgentRuntime:
                 if target_key not in candidates:
                     target_key = candidates[0]
             tool_names = list(self._skill_tool_names.get(target_key, []))
+            target_skill = self._skill_objects.get(target_key)
 
             # Use the registry's locking/unregister seam instead of mutating
             # private indexes directly.
             for name in dict.fromkeys(tool_names):
                 self.registry.unregister(name)
+            self.parameter_catalogs.remove_tools(tool_names)
+            format_ids = self._skill_format_ids.pop(target_key, set())
+            if format_ids:
+                self.ad_format_catalogs[canonical_platform] = [
+                    entry for entry in self.ad_format_catalogs.get(canonical_platform, [])
+                    if str(entry.get("format_id")) not in format_ids
+                ]
+                if not self.ad_format_catalogs[canonical_platform]:
+                    self.ad_format_catalogs.pop(canonical_platform, None)
             self._skill_tool_names.pop(target_key, None)
             self._skill_platforms.pop(target_key, None)
             self._skill_objects.pop(target_key, None)
+            if target_skill is not None and self.skill_loader._skills.get(
+                getattr(target_skill, "name", "")
+            ) is target_skill:
+                self.skill_loader._skills.pop(getattr(target_skill, "name", ""), None)
 
             remaining = [key for key in candidates if key != target_key]
             if remaining:
@@ -1436,6 +1461,7 @@ class AgentRuntime:
 
             if platform != canonical_platform:
                 self._loaded_skills.pop(platform, None)
+            self._refresh_parser_catalog()
             logger.info(
                 "✅ 已卸载 Skill '%s' (platform=%s)，移除 %s 个工具",
                 target_key, canonical_platform, len(set(tool_names)),

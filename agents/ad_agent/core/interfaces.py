@@ -827,6 +827,17 @@ class IntentParser(ABC):
         """
         return None
 
+    def refresh_tool_catalog(
+        self, definitions: list[ToolDefinition] | tuple[ToolDefinition, ...]
+    ) -> None:
+        """Replace the parser's discoverable Tool catalog after a lifecycle change.
+
+        Implementations that keep derived intent/schema indexes should rebuild
+        them here.  The default preserves compatibility with lightweight
+        custom parsers that only support incremental registration.
+        """
+        self.register_tool_definitions(definitions)
+
 
 class IntentRouter(ABC):
     """

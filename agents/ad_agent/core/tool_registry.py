@@ -156,6 +156,12 @@ class SimpleToolRegistry(ToolRegistry):
                 del self._by_skill[skill]
             if defn.platform in self._by_platform and not self._by_platform[defn.platform]:
                 del self._by_platform[defn.platform]
+            definitions = self._skill_tool_defs.get(skill, [])
+            self._skill_tool_defs[skill] = [
+                item for item in definitions if item.name != tool_name
+            ]
+            if not self._skill_tool_defs[skill]:
+                del self._skill_tool_defs[skill]
     
     def execute(
         self,

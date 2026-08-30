@@ -125,6 +125,7 @@ class TestToolRegistry:
         assert len(registry.list_all()) == 1
         registry.unregister("test_tool")
         assert len(registry.list_all()) == 0
+        assert registry.get_skill_tool_defs("test") == []
 
     def test_unregister_nonexistent(self):
         registry = SimpleToolRegistry()
@@ -1255,8 +1256,10 @@ class TestIterationContracts:
             rt.registry,
         )
         assert [tool.name for tool in routed["meta"]] == ["custom_meta_insight"]
+        assert "custom_meta_insight_intent" in rt.intent_parser._intent_candidates_prompt()
         assert rt.unload_skill("meta") is True
         assert rt.registry.list_all() == []
+        assert "custom_meta_insight_intent" not in rt.intent_parser._intent_candidates_prompt()
 
     def test_skill_directory_plugin_is_auto_discovered(self, tmp_path):
         skill_root = tmp_path / "skills"

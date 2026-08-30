@@ -75,7 +75,11 @@ class LLMIntentParser(IntentParser):
         """
         self._llm = llm_client
         self.allow_rule_fallback = bool(allow_rule_fallback)
+        # Explicit parser extensions and Tool-derived intents have different
+        # lifecycles.  Keeping them separate lets Runtime remove a Skill
+        # without leaving its intent names in the LLM contract.
         self._custom_intents: set[str] = set()
+        self._tool_intents: set[str] = set()
         # Platform identity and natural-language aliases are published by
         # Skills.  Discover the installed channel metadata for standalone
         # parser use; Runtime registration remains the authoritative update
@@ -111,7 +115,34 @@ class LLMIntentParser(IntentParser):
                     "resource_type": str(getattr(definition, "resource_type", "") or ""),
                     "traits": [str(item) for item in (getattr(definition, "traits", []) or [])],
                 }
-            self.register_intents(intents)
+            self._tool_intents.update(intents)
+
+    def refresh_tool_catalog(
+        self, definitions: list[ToolDefinition] | tuple[ToolDefinition, ...]
+    ) -> None:
+        """Rebuild all Tool-derived parser indexes after load/unload.
+
+        Runtime registration is dynamic. Incremental registration alone would
+        leave removed Tool names, intents, provider fields and platform IDs in
+        subsequent model prompts. Installed Skill aliases are reloaded as a
+        stable baseline; Runtime then adds aliases for currently active
+        Skills.
+        """
+        self._intent_catalog.clear()
+        self._tool_intents.clear()
+        self._platform_field_specs.clear()
+        self._known_platforms.clear()
+        self._platform_aliases.clear()
+        self._load_installed_channel_metadata()
+        for definition in definitions or []:
+            self.register_platforms([getattr(definition, "platform", "")])
+            schema = getattr(definition, "input_schema", None)
+            if schema is not None:
+                self.register_tool_schemas(
+                    getattr(definition, "platform", ""),
+                    [schema.to_dict() if hasattr(schema, "to_dict") else schema],
+                )
+        self.register_tool_definitions(definitions)
 
     def _intent_candidates_prompt(self) -> str:
         """Return a bounded, deterministic intent catalog for the LLM."""
@@ -893,6 +924,7 @@ class LLMIntentParser(IntentParser):
             "get_adset", "get_adgroup", "get_ad", "get_asset_group",
         }
         valid_intents.update(self._custom_intents)
+        valid_intents.update(self._tool_intents)
         valid_intents.update(self._intent_catalog)
         if data.get("intent_type") not in valid_intents:
             data["intent_type"] = "chat"

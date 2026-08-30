@@ -125,6 +125,25 @@ def test_batch_planner_fails_closed_for_ambiguous_campaign_updaters():
     ) is None
 
 
+def test_capability_unload_clears_tools_and_derived_discovery_indexes():
+    """A Capability unload must be symmetric with registration."""
+    runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
+    runtime.register_capability(create_meta_capability())
+
+    assert runtime.registry.list_by_platform("meta")
+    assert "meta_create_campaign" in runtime.intent_parser._intent_candidates_prompt()
+    assert runtime.parameter_catalogs.list("meta")
+    assert runtime.list_ad_formats("meta")
+
+    assert runtime.unload_skill("meta") is True
+
+    assert runtime.registry.list_by_platform("meta") == []
+    assert "meta_create_campaign" not in runtime.intent_parser._intent_candidates_prompt()
+    assert runtime.parameter_catalogs.list("meta") == []
+    assert runtime.list_ad_formats("meta") == []
+    assert runtime.skill_loader.get_by_platform("meta") == []
+
+
 def test_selector_only_builds_context_and_cannot_shrink_authoritative_plan():
     class Parser:
         def parse(self, _text, _ctx):

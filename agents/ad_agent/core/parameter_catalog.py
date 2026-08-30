@@ -107,6 +107,18 @@ class ParameterCatalogRegistry:
         for catalog in catalogs or ():
             self.register(catalog)
 
+    def remove_tools(self, tool_names: list[str] | tuple[str, ...] | set[str]) -> None:
+        """Remove catalogs published by Tools that are no longer registered."""
+        names = {str(name) for name in (tool_names or ())}
+        if not names:
+            return
+        with self._lock:
+            self._catalogs = {
+                key: catalog
+                for key, catalog in self._catalogs.items()
+                if catalog.tool_name not in names
+            }
+
     def register_tool_schema(
         self, platform: str, properties: dict[str, Any],
         tool_name: Optional[str] = None,
