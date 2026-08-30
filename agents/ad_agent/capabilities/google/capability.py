@@ -96,6 +96,7 @@ class GoogleCapability(BaseCapability):
         "get_bidding_strategy": ["google_get_bidding_strategy"],
         "list_user_lists": ["google_list_user_lists"],
         "get_user_list": ["google_get_user_list"],
+        "list_customer_clients": ["google_list_customer_clients"],
         "get_campaign_report": ["google_get_campaign_report"], "get_adgroup_report": ["google_get_adgroup_report"],
     }
 
@@ -294,6 +295,21 @@ class GoogleCapability(BaseCapability):
                 resource_type="user_list", resource_id_field="user_list_id",
                 intent_types=["get_user_list"], traits=["read", "audience"],
                 argument_builder=lambda _ctx, data: ((data["user_list_id"],), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_list_customer_clients",
+                description="查询 Google Ads 经理账户下可访问的客户账户。",
+                method_name="list_customer_clients", result_key="customer_clients",
+                properties={
+                    "customer_id": {"type": "string"},
+                    "limit": {"type": "integer"},
+                },
+                required=["customer_id"], action="list", resource_type="customer_client",
+                intent_types=["list_customer_clients"], traits=["read", "account"],
+                argument_builder=lambda _ctx, data: ((), {
+                    "page_size": data.get("limit", 100),
+                }),
             ),
             method_tool(
                 platform="google-ads", skill="google-ads-api-expert",

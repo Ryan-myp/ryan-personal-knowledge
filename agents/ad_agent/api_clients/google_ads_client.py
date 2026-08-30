@@ -298,6 +298,46 @@ class GoogleAdsAPIClient(BasePlatformClient):
         raise APIError(f"Google campaign {campaign_id} was not found")
 
     @classmethod
+    def _normalize_customer_client(cls, row: dict) -> dict:
+        """Normalize one manager-account customer_client GAQL row."""
+        client = row.get("customerClient", row.get("customer_client", {}))
+        if not isinstance(client, dict):
+            client = {}
+        return {
+            "id": client.get("id"),
+            "resource_name": client.get("resourceName", client.get("resource_name")),
+            "client_customer": client.get(
+                "clientCustomer", client.get("client_customer")
+            ),
+            "level": client.get("level"),
+            "manager": client.get("manager"),
+            "descriptive_name": client.get(
+                "descriptiveName", client.get("descriptive_name")
+            ),
+            "currency_code": client.get(
+                "currencyCode", client.get("currency_code")
+            ),
+            "time_zone": client.get("timeZone", client.get("time_zone")),
+            "status": client.get("status"),
+        }
+
+    def list_customer_clients(self, page_size: int = 100) -> list[dict]:
+        """List enabled child customers visible from the selected manager."""
+        self._numeric_id(self.customer_id, "customer_id")
+        query = (
+            "SELECT customer_client.id, customer_client.resource_name, "
+            "customer_client.client_customer, customer_client.level, "
+            "customer_client.manager, customer_client.descriptive_name, "
+            "customer_client.currency_code, customer_client.time_zone, "
+            "customer_client.status FROM customer_client "
+            "WHERE customer_client.status = 'ENABLED'"
+        )
+        return [
+            self._normalize_customer_client(row)
+            for row in self._search_all(query, page_size=page_size)
+        ]
+
+    @classmethod
     def _normalize_conversion_action(cls, row: dict) -> dict:
         """Normalize a GAQL conversion action row for Tool consumers."""
         action = row.get("conversionAction", row.get("conversion_action", {}))

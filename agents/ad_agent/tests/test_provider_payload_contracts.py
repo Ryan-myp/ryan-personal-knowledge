@@ -133,6 +133,42 @@ def test_google_user_list_queries_normalize_gaql_rows():
     assert client.get_user_list("9")["name"] == "Purchasers"
 
 
+def test_google_customer_client_queries_normalize_manager_rows():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    calls = []
+    client._search_all = lambda query, **kwargs: (
+        calls.append((query, kwargs)) or [{
+            "customerClient": {
+                "id": "456", "resourceName": "customers/456",
+                "clientCustomer": "customers/456", "level": "1",
+                "manager": False, "descriptiveName": "Child account",
+                "currencyCode": "USD", "timeZone": "America/Los_Angeles",
+                "status": "ENABLED",
+            }
+        }]
+    )
+    clients = client.list_customer_clients(page_size=25)
+    assert clients == [{
+        "id": "456", "resource_name": "customers/456",
+        "client_customer": "customers/456", "level": "1", "manager": False,
+        "descriptive_name": "Child account", "currency_code": "USD",
+        "time_zone": "America/Los_Angeles", "status": "ENABLED",
+    }]
+    assert calls[0][1] == {"page_size": 25}
+    assert "FROM customer_client" in calls[0][0]
+
+
+def test_google_customer_client_tool_is_read_only():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_google_capability().register_tools()
+    }
+    tool = definitions["google_list_customer_clients"]
+    assert tool.resource_type == "customer_client"
+    assert tool.is_write_tool is False
+    assert tool.input_schema.required == ["customer_id"]
+
+
 def test_existing_creation_contracts_keep_provider_specific_fixes():
     meta_definitions = {
         definition.name: definition

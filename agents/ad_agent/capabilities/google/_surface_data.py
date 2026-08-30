@@ -46,5 +46,5 @@ API_SURFACE = [
     {"resource": "user_list", "action": "create", "status": "planned", "gap": "第一方受众列表创建与客户数据上传尚未完成验证"},
     {"resource": "user_list", "action": "update", "status": "planned", "gap": "第一方受众列表更新字段尚未完成验证"},
     {"resource": "user_list", "action": "delete", "status": "planned", "gap": "第一方受众列表删除权限和依赖约束尚未完成验证"},
-    {"resource": "customer_client", "action": "list", "status": "planned", "gap": "经理账户下客户枚举尚无 Tool"},
+    {"resource": "customer_client", "action": "list", "method": "list_customer_clients", "status": "implemented"},
 ]

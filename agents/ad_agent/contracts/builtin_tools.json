@@ -1,5 +1,5 @@
 {
-  "digest": "2dd10a4580f829803a90ba9b163e13cb9034b618b19d6aace990d2594ac079dc",
+  "digest": "8fbba50adbe03c60c58458a8715f393227a81d5cc21e40cff104f4bf619b4795",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -1983,8 +1983,8 @@
       ]
     },
     "google-ads": {
-      "digest": "bfa33bfcadb456ec112c0a61f1364c8d6aa00477a9e1ded38cad01e4e01a23b2",
-      "tool_count": 43,
+      "digest": "955d1022afd0e34e2fa15e41b98f0b9f552faf06bf87c678d28ff88e5e730298",
+      "tool_count": 44,
       "tools": [
         {
           "action": "create",
@@ -4928,6 +4928,54 @@
           "traits": [
             "read",
             "conversion"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.2.0",
+          "description": "查询 Google Ads 经理账户下可访问的客户账户。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "customer_id": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_customer_clients"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_list_customer_clients",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "customer_client",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "account"
           ]
         },
         {
@@ -12008,5 +12056,5 @@
       ]
     }
   },
-  "tool_count": 157
+  "tool_count": 158
 }
