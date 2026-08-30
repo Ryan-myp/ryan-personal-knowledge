@@ -30,8 +30,8 @@ OFFICIAL_INVENTORY = [
     {"resource": "report", "action": "query", "status": "implemented", "surface_method": "get_campaign_report", "provider_operation": "GoogleAdsService.search/searchStream"},
     {"resource": "experiment", "action": "crud", "status": "planned", "provider_operation": "ExperimentService"},
     {"resource": "feed", "action": "crud", "status": "planned", "provider_operation": "FeedService / FeedItemService"},
-    {"resource": "campaign_asset", "action": "mutate", "status": "planned", "provider_operation": "CampaignAssetService"},
-    {"resource": "asset_group_asset", "action": "mutate", "status": "planned", "provider_operation": "AssetGroupAssetService"},
+    {"resource": "campaign_asset", "action": "mutate", "status": "implemented", "surface_method": "create_campaign_asset", "provider_operation": "CampaignAssetService.mutateCampaignAssets"},
+    {"resource": "asset_group_asset", "action": "mutate", "status": "implemented", "surface_method": "create_asset_group_asset", "provider_operation": "AssetGroupAssetService.mutateAssetGroupAssets"},
     {"resource": "conversion_goal", "action": "mutate", "status": "planned", "provider_operation": "CustomerConversionGoalService / CampaignConversionGoalService"},
 ]
 
@@ -88,6 +88,12 @@ API_SURFACE = [
     {"resource": "asset", "action": "create", "method": "create_asset", "status": "implemented"},
     {"resource": "asset", "action": "update", "status": "planned", "gap": "Google Asset 大多数字段不可变，更新语义尚未完成验证"},
     {"resource": "asset", "action": "delete", "method": "delete_asset", "status": "implemented", "notes": "AssetService remove；仍被引用的 Asset 由 Provider 拒绝"},
+    {"resource": "campaign_asset", "action": "list", "method": "list_campaign_assets", "status": "implemented"},
+    {"resource": "campaign_asset", "action": "create", "method": "create_campaign_asset", "status": "implemented"},
+    {"resource": "campaign_asset", "action": "delete", "method": "delete_campaign_asset", "status": "implemented"},
+    {"resource": "asset_group_asset", "action": "list", "method": "list_asset_group_assets", "status": "implemented"},
+    {"resource": "asset_group_asset", "action": "create", "method": "create_asset_group_asset", "status": "implemented"},
+    {"resource": "asset_group_asset", "action": "delete", "method": "delete_asset_group_asset", "status": "implemented"},
     {"resource": "product_group", "action": "create", "method": "create_product_group", "status": "implemented"},
     {"resource": "product_group", "action": "list", "method": "list_product_groups", "status": "implemented"},
     {"resource": "product_group", "action": "get", "method": "get_product_group", "status": "implemented"},

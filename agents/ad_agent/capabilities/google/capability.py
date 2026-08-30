@@ -28,7 +28,8 @@ from ._utils import for_customer
 from .parameters import (
     google_campaign_schema, google_ad_group_schema, google_app_ad_group_schema,
     google_app_ad_schema, google_ad_schema,
-    google_asset_schema, google_asset_create_schema, google_asset_group_schema, google_ad_format_catalog, google_keyword_schema,
+    google_asset_schema, google_asset_create_schema, google_campaign_asset_schema,
+    google_asset_group_asset_schema, google_asset_group_schema, google_ad_format_catalog, google_keyword_schema,
     google_product_group_schema, google_responsive_display_ad_schema,
     google_video_ad_schema, google_campaign_budget_schema,
     google_demand_gen_multi_asset_ad_schema, google_demand_gen_carousel_ad_schema,
@@ -83,6 +84,12 @@ class GoogleCapability(BaseCapability):
         "list_keywords": ["google_list_keywords"], "list_asset_groups": ["google_list_asset_groups"],
         "list_assets": ["google_list_assets"], "get_asset": ["google_get_asset"],
         "create_asset": ["google_create_asset"], "delete_asset": ["google_delete_asset"],
+        "list_campaign_assets": ["google_list_campaign_assets"],
+        "create_campaign_asset": ["google_create_campaign_asset"],
+        "delete_campaign_asset": ["google_delete_campaign_asset"],
+        "list_asset_group_assets": ["google_list_asset_group_assets"],
+        "create_asset_group_asset": ["google_create_asset_group_asset"],
+        "delete_asset_group_asset": ["google_delete_asset_group_asset"],
         "create_keywords": ["google_create_keywords"],
         "update_keyword": ["google_update_keyword"],
         "delete_keyword": ["google_delete_keyword"],
@@ -189,6 +196,8 @@ class GoogleCapability(BaseCapability):
         }
         asset_schema = google_asset_schema()
         asset_create_schema = google_asset_create_schema()
+        campaign_asset_schema = google_campaign_asset_schema()
+        asset_group_asset_schema = google_asset_group_asset_schema()
         asset_group_schema = google_asset_group_schema()
         app_ad_group_schema = google_app_ad_group_schema()
         app_ad_schema = google_app_ad_schema()
@@ -384,6 +393,106 @@ class GoogleCapability(BaseCapability):
                 action="delete", resource_type="asset", resource_id_field="asset_id",
                 intent_types=["delete_asset"], traits=["write", "asset"], write=True,
                 argument_builder=lambda _ctx, data: ((data["asset_id"], data.get("customer_id")), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_list_campaign_assets",
+                description="查询 Google Ads Campaign 已关联的 Asset 列表。",
+                method_name="list_campaign_assets", result_key="campaign_assets",
+                properties=campaign_asset_schema["properties"],
+                required=["customer_id", "campaign_id"],
+                action="list", resource_type="campaign_asset",
+                parent_resource_type="campaign",
+                parent_resource_id_field="campaign_id",
+                intent_types=["list_campaign_assets"],
+                traits=["read", "asset", "campaign_asset"],
+                argument_builder=lambda _ctx, data: ((data["campaign_id"],), {
+                    "page_size": data.get("limit", 100),
+                }),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_create_campaign_asset",
+                description="将 Google Asset 关联到 Campaign；默认仅生成 dry-run 计划。",
+                method_name="create_campaign_asset", result_key="campaign_asset_id",
+                properties=campaign_asset_schema["properties"],
+                required=["customer_id", "campaign_id", "asset_id", "field_type"],
+                provider_required=["campaign_id", "asset_id", "field_type"],
+                action="create", resource_type="campaign_asset",
+                parent_resource_type="campaign",
+                parent_resource_id_field="campaign_id",
+                intent_types=["create_campaign_asset"],
+                traits=["write", "asset", "campaign_asset"], write=True,
+                argument_builder=lambda _ctx, data: ((
+                    data["campaign_id"], data["asset_id"], data["field_type"]
+                ), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_delete_campaign_asset",
+                description="移除 Campaign 与 Google Asset 的关联；默认仅生成 dry-run 计划。",
+                method_name="delete_campaign_asset", result_key="campaign_asset_result",
+                properties=campaign_asset_schema["properties"],
+                required=["customer_id", "campaign_id", "asset_id", "field_type"],
+                provider_required=["campaign_id", "asset_id", "field_type"],
+                action="delete", resource_type="campaign_asset",
+                parent_resource_type="campaign",
+                parent_resource_id_field="campaign_id",
+                intent_types=["delete_campaign_asset"],
+                traits=["write", "asset", "campaign_asset"], write=True,
+                argument_builder=lambda _ctx, data: ((
+                    data["campaign_id"], data["asset_id"], data["field_type"]
+                ), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_list_asset_group_assets",
+                description="查询 Google PMax Asset Group 已关联的 Asset 列表。",
+                method_name="list_asset_group_assets", result_key="asset_group_assets",
+                properties=asset_group_asset_schema["properties"],
+                required=["customer_id", "asset_group_id"],
+                action="list", resource_type="asset_group_asset",
+                parent_resource_type="asset_group",
+                parent_resource_id_field="asset_group_id",
+                intent_types=["list_asset_group_assets"],
+                traits=["read", "asset", "asset_group_asset", "pmax"],
+                argument_builder=lambda _ctx, data: ((data["asset_group_id"],), {
+                    "page_size": data.get("limit", 100),
+                }),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_create_asset_group_asset",
+                description="将 Google Asset 关联到 PMax Asset Group；默认仅生成 dry-run 计划。",
+                method_name="create_asset_group_asset", result_key="asset_group_asset_id",
+                properties=asset_group_asset_schema["properties"],
+                required=["customer_id", "asset_group_id", "asset_id", "field_type"],
+                provider_required=["asset_group_id", "asset_id", "field_type"],
+                action="create", resource_type="asset_group_asset",
+                parent_resource_type="asset_group",
+                parent_resource_id_field="asset_group_id",
+                intent_types=["create_asset_group_asset"],
+                traits=["write", "asset", "asset_group_asset", "pmax"], write=True,
+                argument_builder=lambda _ctx, data: ((
+                    data["asset_group_id"], data["asset_id"], data["field_type"]
+                ), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_delete_asset_group_asset",
+                description="移除 PMax Asset Group 与 Google Asset 的关联；默认仅生成 dry-run 计划。",
+                method_name="delete_asset_group_asset", result_key="asset_group_asset_result",
+                properties=asset_group_asset_schema["properties"],
+                required=["customer_id", "asset_group_id", "asset_id", "field_type"],
+                provider_required=["asset_group_id", "asset_id", "field_type"],
+                action="delete", resource_type="asset_group_asset",
+                parent_resource_type="asset_group",
+                parent_resource_id_field="asset_group_id",
+                intent_types=["delete_asset_group_asset"],
+                traits=["write", "asset", "asset_group_asset", "pmax"], write=True,
+                argument_builder=lambda _ctx, data: ((
+                    data["asset_group_id"], data["asset_id"], data["field_type"]
+                ), {}),
             ),
             method_tool(
                 platform="google-ads", skill="google-ads-api-expert",

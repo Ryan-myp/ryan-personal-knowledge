@@ -1,5 +1,5 @@
 {
-  "digest": "5b12b1b6ed2d74ae3cf81bafc88cf91782981d0c4377242c35a5eb535f8a1c79",
+  "digest": "bdbabc20763510224b89a34bedc4a68e24b8753467894413bfd5057a87d7aee2",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -1956,8 +1956,8 @@
       ]
     },
     "google-ads": {
-      "digest": "c28927c362dd9cd852322a05b0263a09968d04a9a21a429fd4c0e42409c392ab",
-      "tool_count": 80,
+      "digest": "68ee335f1482ff6520937511bdc553e146b6127409e152fb6df8973c32284e40",
+      "tool_count": 86,
       "tools": [
         {
           "action": "create",
@@ -2887,6 +2887,97 @@
           "action": "create",
           "activation_rules": [],
           "contract_version": "1.4.0",
+          "description": "将 Google Asset 关联到 PMax Asset Group；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "asset_group_id": {
+                "description": "Parent Performance Max Asset Group ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "asset_id": {
+                "description": "Reusable Google Asset ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "field_type": {
+                "description": "Asset group asset field type",
+                "enum": [
+                  "HEADLINE",
+                  "LONG_HEADLINE",
+                  "DESCRIPTION",
+                  "MARKETING_IMAGE",
+                  "SQUARE_MARKETING_IMAGE",
+                  "PORTRAIT_MARKETING_IMAGE",
+                  "LOGO",
+                  "LANDSCAPE_LOGO",
+                  "YOUTUBE_VIDEO",
+                  "MEDIA_BUNDLE",
+                  "CALL_TO_ACTION_SELECTION",
+                  "BUSINESS_NAME"
+                ],
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of AssetGroupAsset rows",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "asset_group_id",
+              "asset_id",
+              "field_type"
+            ],
+            "required": [
+              "customer_id",
+              "asset_group_id",
+              "asset_id",
+              "field_type"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_asset_group_asset"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_asset_group_asset",
+          "parent_resource_id_field": "asset_group_id",
+          "parent_resource_type": "asset_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": null,
+          "resource_type": "asset_group_asset",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "asset",
+            "asset_group_asset",
+            "pmax"
+          ]
+        },
+        {
+          "action": "create",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
           "description": "创建 Google Ads Portfolio BiddingStrategy；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -3700,6 +3791,104 @@
           "traits": [
             "write",
             "campaign"
+          ]
+        },
+        {
+          "action": "create",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
+          "description": "将 Google Asset 关联到 Campaign；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "asset_id": {
+                "description": "Reusable Google Asset ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "campaign_id": {
+                "description": "Parent Campaign ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "field_type": {
+                "description": "Campaign asset field type",
+                "enum": [
+                  "HEADLINE",
+                  "DESCRIPTION",
+                  "LONG_HEADLINE",
+                  "MARKETING_IMAGE",
+                  "MEDIA_BUNDLE",
+                  "YOUTUBE_VIDEO",
+                  "LOGO",
+                  "LANDSCAPE_LOGO",
+                  "BUSINESS_NAME",
+                  "CALL_TO_ACTION",
+                  "CALLOUT",
+                  "SITELINK",
+                  "STRUCTURED_SNIPPET",
+                  "PRICE",
+                  "PROMOTION",
+                  "MOBILE_APP",
+                  "CALL",
+                  "LEAD_FORM",
+                  "HOTEL_CALLOUT",
+                  "BOOK_ON_GOOGLE"
+                ],
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of CampaignAsset rows",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "campaign_id",
+              "asset_id",
+              "field_type"
+            ],
+            "required": [
+              "customer_id",
+              "campaign_id",
+              "asset_id",
+              "field_type"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_campaign_asset"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_campaign_asset",
+          "parent_resource_id_field": "campaign_id",
+          "parent_resource_type": "campaign",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": null,
+          "resource_type": "campaign_asset",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "asset",
+            "campaign_asset"
           ]
         },
         {
@@ -6748,6 +6937,97 @@
           "action": "delete",
           "activation_rules": [],
           "contract_version": "1.4.0",
+          "description": "移除 PMax Asset Group 与 Google Asset 的关联；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "asset_group_id": {
+                "description": "Parent Performance Max Asset Group ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "asset_id": {
+                "description": "Reusable Google Asset ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "field_type": {
+                "description": "Asset group asset field type",
+                "enum": [
+                  "HEADLINE",
+                  "LONG_HEADLINE",
+                  "DESCRIPTION",
+                  "MARKETING_IMAGE",
+                  "SQUARE_MARKETING_IMAGE",
+                  "PORTRAIT_MARKETING_IMAGE",
+                  "LOGO",
+                  "LANDSCAPE_LOGO",
+                  "YOUTUBE_VIDEO",
+                  "MEDIA_BUNDLE",
+                  "CALL_TO_ACTION_SELECTION",
+                  "BUSINESS_NAME"
+                ],
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of AssetGroupAsset rows",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "asset_group_id",
+              "asset_id",
+              "field_type"
+            ],
+            "required": [
+              "customer_id",
+              "asset_group_id",
+              "asset_id",
+              "field_type"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_asset_group_asset"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_delete_asset_group_asset",
+          "parent_resource_id_field": "asset_group_id",
+          "parent_resource_type": "asset_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": null,
+          "resource_type": "asset_group_asset",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "asset",
+            "asset_group_asset",
+            "pmax"
+          ]
+        },
+        {
+          "action": "delete",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
           "description": "删除 Google Ads Portfolio BiddingStrategy；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -6846,6 +7126,104 @@
           "traits": [
             "write",
             "campaign"
+          ]
+        },
+        {
+          "action": "delete",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
+          "description": "移除 Campaign 与 Google Asset 的关联；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "asset_id": {
+                "description": "Reusable Google Asset ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "campaign_id": {
+                "description": "Parent Campaign ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "field_type": {
+                "description": "Campaign asset field type",
+                "enum": [
+                  "HEADLINE",
+                  "DESCRIPTION",
+                  "LONG_HEADLINE",
+                  "MARKETING_IMAGE",
+                  "MEDIA_BUNDLE",
+                  "YOUTUBE_VIDEO",
+                  "LOGO",
+                  "LANDSCAPE_LOGO",
+                  "BUSINESS_NAME",
+                  "CALL_TO_ACTION",
+                  "CALLOUT",
+                  "SITELINK",
+                  "STRUCTURED_SNIPPET",
+                  "PRICE",
+                  "PROMOTION",
+                  "MOBILE_APP",
+                  "CALL",
+                  "LEAD_FORM",
+                  "HOTEL_CALLOUT",
+                  "BOOK_ON_GOOGLE"
+                ],
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of CampaignAsset rows",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "campaign_id",
+              "asset_id",
+              "field_type"
+            ],
+            "required": [
+              "customer_id",
+              "campaign_id",
+              "asset_id",
+              "field_type"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_campaign_asset"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_delete_campaign_asset",
+          "parent_resource_id_field": "campaign_id",
+          "parent_resource_type": "campaign",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": null,
+          "resource_type": "campaign_asset",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "asset",
+            "campaign_asset"
           ]
         },
         {
@@ -8043,6 +8421,91 @@
           "action": "list",
           "activation_rules": [],
           "contract_version": "1.4.0",
+          "description": "查询 Google PMax Asset Group 已关联的 Asset 列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "asset_group_id": {
+                "description": "Parent Performance Max Asset Group ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "asset_id": {
+                "description": "Reusable Google Asset ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "field_type": {
+                "description": "Asset group asset field type",
+                "enum": [
+                  "HEADLINE",
+                  "LONG_HEADLINE",
+                  "DESCRIPTION",
+                  "MARKETING_IMAGE",
+                  "SQUARE_MARKETING_IMAGE",
+                  "PORTRAIT_MARKETING_IMAGE",
+                  "LOGO",
+                  "LANDSCAPE_LOGO",
+                  "YOUTUBE_VIDEO",
+                  "MEDIA_BUNDLE",
+                  "CALL_TO_ACTION_SELECTION",
+                  "BUSINESS_NAME"
+                ],
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of AssetGroupAsset rows",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id",
+              "asset_group_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_asset_group_assets"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_list_asset_group_assets",
+          "parent_resource_id_field": "asset_group_id",
+          "parent_resource_type": "asset_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "asset_group_asset",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "asset",
+            "asset_group_asset",
+            "pmax"
+          ]
+        },
+        {
+          "action": "list",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
           "description": "查询 PMax Campaign 的 Asset Group 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -8196,6 +8659,98 @@
           "traits": [
             "read",
             "bidding"
+          ]
+        },
+        {
+          "action": "list",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
+          "description": "查询 Google Ads Campaign 已关联的 Asset 列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "asset_id": {
+                "description": "Reusable Google Asset ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "campaign_id": {
+                "description": "Parent Campaign ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "field_type": {
+                "description": "Campaign asset field type",
+                "enum": [
+                  "HEADLINE",
+                  "DESCRIPTION",
+                  "LONG_HEADLINE",
+                  "MARKETING_IMAGE",
+                  "MEDIA_BUNDLE",
+                  "YOUTUBE_VIDEO",
+                  "LOGO",
+                  "LANDSCAPE_LOGO",
+                  "BUSINESS_NAME",
+                  "CALL_TO_ACTION",
+                  "CALLOUT",
+                  "SITELINK",
+                  "STRUCTURED_SNIPPET",
+                  "PRICE",
+                  "PROMOTION",
+                  "MOBILE_APP",
+                  "CALL",
+                  "LEAD_FORM",
+                  "HOTEL_CALLOUT",
+                  "BOOK_ON_GOOGLE"
+                ],
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of CampaignAsset rows",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id",
+              "campaign_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_campaign_assets"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_list_campaign_assets",
+          "parent_resource_id_field": "campaign_id",
+          "parent_resource_type": "campaign",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "campaign_asset",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "asset",
+            "campaign_asset"
           ]
         },
         {
@@ -26175,6 +26730,78 @@
         "status": "implemented"
       },
       {
+        "action": "list",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "list_campaign_assets",
+        "provider": "google-ads",
+        "resource": "campaign_asset",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "create_campaign_asset",
+        "provider": "google-ads",
+        "resource": "campaign_asset",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "delete_campaign_asset",
+        "provider": "google-ads",
+        "resource": "campaign_asset",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "list_asset_group_assets",
+        "provider": "google-ads",
+        "resource": "asset_group_asset",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "create_asset_group_asset",
+        "provider": "google-ads",
+        "resource": "asset_group_asset",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "delete_asset_group_asset",
+        "provider": "google-ads",
+        "resource": "asset_group_asset",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
         "action": "create",
         "api_version": "v24",
         "evidence_level": "code_contract",
@@ -28382,5 +29009,5 @@
       ]
     }
   },
-  "tool_count": 255
+  "tool_count": 261
 }

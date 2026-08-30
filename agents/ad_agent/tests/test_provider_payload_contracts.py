@@ -1641,6 +1641,88 @@ def test_google_pmax_asset_group_builds_bounded_multistep_dry_run_plan():
         ]
 
 
+def test_google_asset_association_lifecycle_builds_v24_payloads_and_tools():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    calls = []
+    client._mutate = lambda resource, operation: calls.append((resource, operation)) or {
+        "results": [{"resourceName": "customers/123/campaignAssets/42~88~HEADLINE"}]
+    }
+
+    assert client.create_campaign_asset("42", "88", "headline") == (
+        "customers/123/campaignAssets/42~88~HEADLINE"
+    )
+    assert calls[-1] == ("campaignAssets", {"create": {
+        "campaign": "customers/123/campaigns/42",
+        "asset": "customers/123/assets/88",
+        "fieldType": "HEADLINE",
+    }})
+    assert client.delete_campaign_asset("42", "88", "HEADLINE")["resource_name"] == (
+        "customers/123/campaignAssets/42~88~HEADLINE"
+    )
+    assert calls[-1] == ("campaignAssets", {
+        "remove": "customers/123/campaignAssets/42~88~HEADLINE",
+    })
+
+    client._mutate = lambda resource, operation: calls.append((resource, operation)) or {
+        "results": [{"resourceName": "customers/123/assetGroupAssets/7~88~MARKETING_IMAGE"}]
+    }
+    assert client.create_asset_group_asset("7", "88", "marketing_image") == (
+        "customers/123/assetGroupAssets/7~88~MARKETING_IMAGE"
+    )
+    assert calls[-1] == ("assetGroupAssets", {"create": {
+        "assetGroup": "customers/123/assetGroups/7",
+        "asset": "customers/123/assets/88",
+        "fieldType": "MARKETING_IMAGE",
+    }})
+    assert client.delete_asset_group_asset("7", "88", "MARKETING_IMAGE")["resource_name"] == (
+        "customers/123/assetGroupAssets/7~88~MARKETING_IMAGE"
+    )
+    assert calls[-1] == ("assetGroupAssets", {
+        "remove": "customers/123/assetGroupAssets/7~88~MARKETING_IMAGE",
+    })
+
+    campaign_rows = [{"campaignAsset": {
+        "resourceName": "customers/123/campaignAssets/42~88~HEADLINE",
+        "campaign": "customers/123/campaigns/42",
+        "asset": "customers/123/assets/88",
+        "fieldType": "HEADLINE",
+        "status": "ENABLED",
+    }}]
+    group_rows = [{"assetGroupAsset": {
+        "resourceName": "customers/123/assetGroupAssets/7~88~MARKETING_IMAGE",
+        "assetGroup": "customers/123/assetGroups/7",
+        "asset": "customers/123/assets/88",
+        "fieldType": "MARKETING_IMAGE",
+    }}]
+    client._search_all = lambda query, page_size=100: (
+        campaign_rows if "campaign_asset" in query else group_rows
+    )
+    assert client.list_campaign_assets("42")[0]["field_type"] == "HEADLINE"
+    assert client.list_asset_group_assets("7")[0]["asset_group"] == (
+        "customers/123/assetGroups/7"
+    )
+
+    with pytest.raises(ValueError, match="another customer"):
+        client.create_campaign_asset("customers/999/campaigns/42", "88", "HEADLINE")
+
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_google_capability().register_tools()
+    }
+    expected = {
+        "google_list_campaign_assets", "google_create_campaign_asset",
+        "google_delete_campaign_asset", "google_list_asset_group_assets",
+        "google_create_asset_group_asset", "google_delete_asset_group_asset",
+    }
+    assert expected <= definitions.keys()
+    assert definitions["google_list_campaign_assets"].input_schema.required == [
+        "customer_id", "campaign_id"
+    ]
+    for name in expected - {"google_list_campaign_assets", "google_list_asset_group_assets"}:
+        assert definitions[name].is_write_tool
+        assert definitions[name].live_support is False
+
+
 def test_google_app_ad_builds_dry_run_asset_payload_without_provider_io():
     client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
     plan = client.create_app_ad(

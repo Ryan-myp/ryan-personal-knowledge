@@ -30,6 +30,19 @@ GOOGLE_TARGET_IMPRESSION_SHARE_LOCATIONS = [
 ]
 GOOGLE_ASSET_TYPES = ["TEXT", "IMAGE", "YOUTUBE_VIDEO", "MEDIA_BUNDLE"]
 GOOGLE_ASSET_IMAGE_MIME_TYPES = ["IMAGE_JPEG", "IMAGE_GIF", "IMAGE_PNG"]
+GOOGLE_CAMPAIGN_ASSET_FIELD_TYPES = [
+    "HEADLINE", "DESCRIPTION", "LONG_HEADLINE", "MARKETING_IMAGE",
+    "MEDIA_BUNDLE", "YOUTUBE_VIDEO", "LOGO", "LANDSCAPE_LOGO",
+    "BUSINESS_NAME", "CALL_TO_ACTION", "CALLOUT", "SITELINK",
+    "STRUCTURED_SNIPPET", "PRICE", "PROMOTION", "MOBILE_APP",
+    "CALL", "LEAD_FORM", "HOTEL_CALLOUT", "BOOK_ON_GOOGLE",
+]
+GOOGLE_ASSET_GROUP_ASSET_FIELD_TYPES = [
+    "HEADLINE", "LONG_HEADLINE", "DESCRIPTION", "MARKETING_IMAGE",
+    "SQUARE_MARKETING_IMAGE", "PORTRAIT_MARKETING_IMAGE", "LOGO",
+    "LANDSCAPE_LOGO", "YOUTUBE_VIDEO", "MEDIA_BUNDLE",
+    "CALL_TO_ACTION_SELECTION", "BUSINESS_NAME",
+]
 GOOGLE_STATUSES = ["ENABLED", "PAUSED", "REMOVED"]
 GOOGLE_AD_GROUP_TYPES = [
     "SEARCH_STANDARD", "SEARCH_DYNAMIC_ADS", "DISPLAY_STANDARD",
@@ -1592,6 +1605,46 @@ def google_asset_create_schema() -> dict[str, Any]:
             {"id": "media_bundle_dependency", "if": {"asset_type": "MEDIA_BUNDLE"},
              "required": ["file_path"], "message": "MEDIA_BUNDLE assets require file_path"},
         ],
+    }
+
+
+def google_campaign_asset_schema() -> dict[str, Any]:
+    """Schema for Campaign-to-Asset association reads and mutations."""
+    return {
+        "properties": {
+            "customer_id": _field("string", "Google Ads customer ID"),
+            "campaign_id": _field("string", "Parent Campaign ID", minLength=1),
+            "asset_id": _field("string", "Reusable Google Asset ID", minLength=1),
+            "field_type": _field(
+                "string", "Campaign asset field type",
+                enum=GOOGLE_CAMPAIGN_ASSET_FIELD_TYPES,
+            ),
+            "limit": _field(
+                "integer", "Maximum number of CampaignAsset rows",
+                minimum=1, maximum=10000,
+            ),
+        },
+    }
+
+
+def google_asset_group_asset_schema() -> dict[str, Any]:
+    """Schema for PMax AssetGroup-to-Asset association reads and mutations."""
+    return {
+        "properties": {
+            "customer_id": _field("string", "Google Ads customer ID"),
+            "asset_group_id": _field(
+                "string", "Parent Performance Max Asset Group ID", minLength=1
+            ),
+            "asset_id": _field("string", "Reusable Google Asset ID", minLength=1),
+            "field_type": _field(
+                "string", "Asset group asset field type",
+                enum=GOOGLE_ASSET_GROUP_ASSET_FIELD_TYPES,
+            ),
+            "limit": _field(
+                "integer", "Maximum number of AssetGroupAsset rows",
+                minimum=1, maximum=10000,
+            ),
+        },
     }
 
 

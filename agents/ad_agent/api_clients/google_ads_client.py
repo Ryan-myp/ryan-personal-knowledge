@@ -130,6 +130,22 @@ class GoogleAdsAPIClient(BasePlatformClient):
     }
     ASSET_TYPES = {"TEXT", "IMAGE", "YOUTUBE_VIDEO", "MEDIA_BUNDLE"}
     ASSET_MIME_TYPES = {"IMAGE_JPEG", "IMAGE_GIF", "IMAGE_PNG", "HTML5_AD_ZIP"}
+    # CampaignAsset and AssetGroupAsset both use the provider's FieldType
+    # enum.  Keep the enum in the client because it is part of the v24
+    # payload contract, not a workflow concern.
+    CAMPAIGN_ASSET_FIELD_TYPES = {
+        "HEADLINE", "DESCRIPTION", "LONG_HEADLINE", "MARKETING_IMAGE",
+        "MEDIA_BUNDLE", "YOUTUBE_VIDEO", "LOGO", "LANDSCAPE_LOGO",
+        "BUSINESS_NAME", "CALL_TO_ACTION", "CALLOUT", "SITELINK",
+        "STRUCTURED_SNIPPET", "PRICE", "PROMOTION", "MOBILE_APP",
+        "CALL", "LEAD_FORM", "HOTEL_CALLOUT", "BOOK_ON_GOOGLE",
+    }
+    ASSET_GROUP_ASSET_FIELD_TYPES = {
+        "HEADLINE", "LONG_HEADLINE", "DESCRIPTION", "MARKETING_IMAGE",
+        "SQUARE_MARKETING_IMAGE", "PORTRAIT_MARKETING_IMAGE", "LOGO",
+        "LANDSCAPE_LOGO", "YOUTUBE_VIDEO", "MEDIA_BUNDLE",
+        "CALL_TO_ACTION_SELECTION", "BUSINESS_NAME",
+    }
     MAX_ASSET_UPLOAD_BYTES = 50 * 1024 * 1024
     
     def __init__(
@@ -2354,6 +2370,189 @@ class GoogleAdsAPIClient(BasePlatformClient):
         resource_name = f"customers/{scoped.customer_id}/assets/{asset_id}"
         scoped._mutate("assets", {"remove": resource_name})
         return {"success": True, "asset_id": asset_id}
+
+    def _customer_resource_name(
+        self, value: Any, collection: str, field_name: str
+    ) -> str:
+        """Normalize an ID/resource name and enforce the current customer scope."""
+        value = str(value or "").strip()
+        customer = self._numeric_id(self.customer_id, "customer_id")
+        if re.fullmatch(r"\d+", value):
+            return f"customers/{customer}/{collection}/{value}"
+        match = re.fullmatch(
+            rf"customers/(\d+)/{re.escape(collection)}/(\d+)", value
+        )
+        if match:
+            if match.group(1) != customer:
+                raise ValueError(f"{field_name} belongs to another customer")
+            return value
+        raise ValueError(
+            f"{field_name} must be a numeric ID or a customer-scoped "
+            f"{collection} resource name"
+        )
+
+    @staticmethod
+    def _normalize_asset_link(row: dict, resource_key: str) -> dict:
+        """Normalize a CampaignAsset/AssetGroupAsset GAQL row."""
+        snake_key = {
+            "campaignAsset": "campaign_asset",
+            "assetGroupAsset": "asset_group_asset",
+        }.get(resource_key, resource_key)
+        link = row.get(resource_key, row.get(snake_key, row)) or {}
+
+        def value(*keys: str) -> Any:
+            current: Any = link
+            for key in keys:
+                if not isinstance(current, dict):
+                    return None
+                current = current.get(key)
+                if current is None:
+                    current = link.get(GoogleAdsAPIClient._camel_case(key))
+            return current
+
+        return {
+            "resource_name": value("resource_name"),
+            "campaign": value("campaign"),
+            "asset_group": value("asset_group"),
+            "asset": value("asset"),
+            "field_type": value("field_type"),
+            "status": value("status"),
+            "primary_status": value("primary_status"),
+            "primary_status_reasons": value("primary_status_reasons") or [],
+        }
+
+    def list_campaign_assets(
+        self, campaign_id: str, page_size: int = 100
+    ) -> list[dict[str, Any]]:
+        """List assets attached to one Campaign through GAQL."""
+        campaign_id = self._numeric_id(campaign_id, "campaign_id")
+        query = (
+            "SELECT campaign_asset.resource_name, campaign_asset.campaign, "
+            "campaign_asset.asset, campaign_asset.field_type, campaign_asset.status, "
+            "campaign_asset.primary_status, campaign_asset.primary_status_reasons "
+            "FROM campaign_asset "
+            f"WHERE campaign.id = {campaign_id}"
+        )
+        return [
+            self._normalize_asset_link(row, "campaignAsset")
+            for row in self._search_all(query, page_size=page_size)
+        ]
+
+    def create_campaign_asset(
+        self, campaign_id: str, asset_id: str, field_type: str
+    ) -> str:
+        """Attach one reusable Asset to a Campaign."""
+        campaign = self._customer_resource_name(campaign_id, "campaigns", "campaign_id")
+        asset = self._customer_resource_name(asset_id, "assets", "asset_id")
+        field_type = str(field_type or "").strip().upper()
+        if field_type not in self.CAMPAIGN_ASSET_FIELD_TYPES:
+            raise ValueError(
+                f"field_type must be one of {sorted(self.CAMPAIGN_ASSET_FIELD_TYPES)}"
+            )
+        response = self._mutate("campaignAssets", {"create": {
+            "campaign": campaign,
+            "asset": asset,
+            "fieldType": field_type,
+        }})
+        resource_name = self._mutation_resource_name(response)
+        if not resource_name:
+            raise APIError(f"CampaignAsset mutate returned no resource name: {response}")
+        return str(resource_name)
+
+    def delete_campaign_asset(
+        self, campaign_id: str, asset_id: str, field_type: str
+    ) -> dict[str, Any]:
+        """Remove one Campaign-to-Asset association."""
+        campaign = self._customer_resource_name(campaign_id, "campaigns", "campaign_id")
+        asset = self._customer_resource_name(asset_id, "assets", "asset_id")
+        field_type = str(field_type or "").strip().upper()
+        if field_type not in self.CAMPAIGN_ASSET_FIELD_TYPES:
+            raise ValueError(
+                f"field_type must be one of {sorted(self.CAMPAIGN_ASSET_FIELD_TYPES)}"
+            )
+        campaign_number = campaign.rsplit("/", 1)[-1]
+        asset_number = asset.rsplit("/", 1)[-1]
+        resource_name = (
+            f"customers/{self.customer_id}/campaignAssets/"
+            f"{campaign_number}~{asset_number}~{field_type}"
+        )
+        self._mutate("campaignAssets", {"remove": resource_name})
+        return {
+            "success": True,
+            "campaign_id": campaign_number,
+            "asset_id": asset_number,
+            "field_type": field_type,
+            "resource_name": resource_name,
+        }
+
+    def list_asset_group_assets(
+        self, asset_group_id: str, page_size: int = 100
+    ) -> list[dict[str, Any]]:
+        """List assets attached to one PMax AssetGroup through GAQL."""
+        asset_group_id = self._numeric_id(asset_group_id, "asset_group_id")
+        query = (
+            "SELECT asset_group_asset.resource_name, asset_group_asset.asset_group, "
+            "asset_group_asset.asset, asset_group_asset.field_type, "
+            "asset_group_asset.status, asset_group_asset.primary_status, "
+            "asset_group_asset.primary_status_reasons "
+            "FROM asset_group_asset "
+            f"WHERE asset_group.id = {asset_group_id}"
+        )
+        return [
+            self._normalize_asset_link(row, "assetGroupAsset")
+            for row in self._search_all(query, page_size=page_size)
+        ]
+
+    def create_asset_group_asset(
+        self, asset_group_id: str, asset_id: str, field_type: str
+    ) -> str:
+        """Attach one reusable Asset to a PMax AssetGroup."""
+        asset_group = self._customer_resource_name(
+            asset_group_id, "assetGroups", "asset_group_id"
+        )
+        asset = self._customer_resource_name(asset_id, "assets", "asset_id")
+        field_type = str(field_type or "").strip().upper()
+        if field_type not in self.ASSET_GROUP_ASSET_FIELD_TYPES:
+            raise ValueError(
+                f"field_type must be one of {sorted(self.ASSET_GROUP_ASSET_FIELD_TYPES)}"
+            )
+        response = self._mutate("assetGroupAssets", {"create": {
+            "assetGroup": asset_group,
+            "asset": asset,
+            "fieldType": field_type,
+        }})
+        resource_name = self._mutation_resource_name(response)
+        if not resource_name:
+            raise APIError(f"AssetGroupAsset mutate returned no resource name: {response}")
+        return str(resource_name)
+
+    def delete_asset_group_asset(
+        self, asset_group_id: str, asset_id: str, field_type: str
+    ) -> dict[str, Any]:
+        """Remove one PMax AssetGroup-to-Asset association."""
+        asset_group = self._customer_resource_name(
+            asset_group_id, "assetGroups", "asset_group_id"
+        )
+        asset = self._customer_resource_name(asset_id, "assets", "asset_id")
+        field_type = str(field_type or "").strip().upper()
+        if field_type not in self.ASSET_GROUP_ASSET_FIELD_TYPES:
+            raise ValueError(
+                f"field_type must be one of {sorted(self.ASSET_GROUP_ASSET_FIELD_TYPES)}"
+            )
+        asset_group_number = asset_group.rsplit("/", 1)[-1]
+        asset_number = asset.rsplit("/", 1)[-1]
+        resource_name = (
+            f"customers/{self.customer_id}/assetGroupAssets/"
+            f"{asset_group_number}~{asset_number}~{field_type}"
+        )
+        self._mutate("assetGroupAssets", {"remove": resource_name})
+        return {
+            "success": True,
+            "asset_group_id": asset_group_number,
+            "asset_id": asset_number,
+            "field_type": field_type,
+            "resource_name": resource_name,
+        }
 
     # ==================== CampaignBudget 管理 ====================
 
