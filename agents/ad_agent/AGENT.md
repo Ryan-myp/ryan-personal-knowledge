@@ -72,9 +72,12 @@ skill-name/
 
 ### 3.3 API 版本升级
 
-保持稳定的 Tool 名称和业务输入契约，在渠道 Client 内增加版本列表、请求/响应
-adapter 和回归测试；不能只修改 `/tools` 返回的版本字符串。若语义不能安全转换，
-新版本必须先保持 dry-run 或返回版本不兼容，禁止静默发送未知 payload。
+保持稳定的 Tool 名称和业务输入契约，在渠道 Client 内通过
+`version_contract()` 声明实际版本、完整兼容版本列表和请求/响应 adapter；Capability
+注册与 `audit_capabilities.py` 会校验 Client、Capability、Tool 三者一致。每次升级都要
+补 provider-owned adapter 回归测试和指定测试账户 E2E；不能只修改 `/tools` 返回的版本
+字符串。若语义不能安全转换，新版本必须先保持 dry-run 或返回版本不兼容，禁止静默发送
+未知 payload。
 
 ## 4. 广告资源和跨渠道管理
 

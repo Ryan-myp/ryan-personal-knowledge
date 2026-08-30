@@ -101,6 +101,12 @@ def build_contract_snapshot(runtime: AgentRuntime) -> dict:
         "format_version": 1,
         "tool_count": sum(item["tool_count"] for item in platforms.values()),
         "platforms": platforms,
+        "provider_version_contracts": {
+            str(platform): dict(contract)
+            for platform, contract in sorted(
+                getattr(runtime, "provider_version_contracts", {}).items()
+            )
+        },
     }
     return {**body, "digest": _digest(body)}
 

@@ -164,7 +164,7 @@ Capability 包约定自动发现渠道，输出 action/resource 矩阵和创建�
 - Provider schema 目前以代码契约为准，已接入本地版本化快照和代码契约 drift gate；尚未接入 Provider API schema 拉取和真实测试账户 E2E。动态组合约束仍需按渠道逐项补齐。
 - 部分 workflow 只标记 `compensation_required` 并转人工复核，尚无经过 Provider 验证的自动补偿执行器；这属于刻意的安全降级，不是已完成能力。
 - live 还需要凭证轮换/授权中心、合作方级配额策略，以及可中断的异步执行 worker。
-- 当前四个 Client 已提供版本元数据和 adapter 接口，但每个平台目前仍只声明一个实际支持版本；升级时需要在渠道 Client 增加新版本、请求/响应 adapter、Provider contract 回归和测试账户 E2E，不能只修改 Tool 上的版本字符串。
+- 当前四个 Client 已提供版本元数据和 adapter 接口，Capability 注册与能力审计会校验 Client、Capability、Tool 三者的 Provider contract；每个平台目前仍只声明一个实际支持版本。升级时仍需要在渠道 Client 增加真实新版本、请求/响应 adapter、Provider contract 回归和测试账户 E2E，不能只修改 Tool 上的版本字符串。
 
 因此下一阶段应优先做“Provider schema 对照 + 测试账户 E2E”，再逐个把工具加入 `live_approved_tools`，而不是一次性开放全部渠道写入。代码契约漂移可先通过以下 release gate：
 
@@ -186,9 +186,10 @@ dry-run 结果中的 `provider_validation` 会单独标记 Provider 必填字段
 4. 运行 `audit_capabilities.py`、`validate_contracts.py` 和 Provider 回归测试，确认接口已注册、契约稳定且创建链没有断点。
 
 Provider API 升级时，保持稳定的 Tool 名称和业务输入契约，在渠道 Client 中增加
-`SUPPORTED_API_VERSIONS` 与 `VERSION_ADAPTERS[旧版本]`，由 adapter 改写请求和响应；Runtime
-只做版本兼容检查，不需要新增渠道分支。若新旧版本语义无法安全转换，则让该 Tool
-暂时返回版本不兼容并保持 dry-run，避免静默发送错误 payload。
+`SUPPORTED_API_VERSIONS` 与 `VERSION_ADAPTERS[旧版本]`，并通过
+`version_contract()` 校验实际版本、兼容版本和 adapter 是否完整，由 adapter 改写请求和
+响应；Runtime 只做版本兼容检查，不需要新增渠道分支。若新旧版本语义无法安全转换，则
+让该 Tool 暂时返回版本不兼容并保持 dry-run，避免静默发送错误 payload。
 
 凭证文件格式：
 ```json

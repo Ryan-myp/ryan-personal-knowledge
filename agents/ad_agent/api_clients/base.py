@@ -166,6 +166,73 @@ class BasePlatformClient(ABC):
     API_VERSION = ""
     SUPPORTED_API_VERSIONS: tuple[str, ...] = ()
     VERSION_ADAPTERS: dict[str, ProviderVersionAdapter] = {}
+
+    @classmethod
+    def version_contract(cls) -> dict[str, Any]:
+        """Return the provider-owned API version compatibility contract.
+
+        ``API_VERSION`` is the version used by the client implementation.
+        ``SUPPORTED_API_VERSIONS`` is the complete set of versions that a
+        Tool may declare, including versions translated by an adapter.
+        Keeping this metadata on the Client makes an API upgrade a provider
+        package change instead of a Runtime convention or a free-form Tool
+        string.
+        """
+        actual = str(getattr(cls, "API_VERSION", "") or "").strip()
+        supported = tuple(
+            str(version).strip()
+            for version in (getattr(cls, "SUPPORTED_API_VERSIONS", ()) or ())
+            if str(version).strip()
+        )
+        adapters = getattr(cls, "VERSION_ADAPTERS", {}) or {}
+        normalized_adapters = {
+            str(version).strip(): adapter
+            for version, adapter in adapters.items()
+        }
+        adapter_versions = tuple(sorted(normalized_adapters))
+        issues: list[str] = []
+
+        # A custom/local Client may intentionally publish no provider version
+        # metadata.  Preserve that extension state; a partially declared
+        # contract, however, is unsafe and must be rejected.
+        if not actual and not supported and not adapter_versions:
+            return {
+                "api_version": "",
+                "supported_api_versions": [],
+                "adapter_versions": [],
+                "issues": [],
+            }
+        if not actual:
+            issues.append("API_VERSION must be declared when version metadata is published")
+        if not supported:
+            issues.append("SUPPORTED_API_VERSIONS must contain the active API version")
+        if actual and actual not in supported:
+            issues.append(
+                f"API_VERSION {actual!r} is missing from SUPPORTED_API_VERSIONS"
+            )
+        for version in adapter_versions:
+            if not version:
+                issues.append("VERSION_ADAPTERS contains an empty version")
+            elif version not in supported:
+                issues.append(
+                    f"adapter version {version!r} is missing from SUPPORTED_API_VERSIONS"
+                )
+            adapter = normalized_adapters.get(version)
+            if not callable(getattr(adapter, "adapt_request", None)):
+                issues.append(f"adapter {version!r} has no callable adapt_request")
+            if not callable(getattr(adapter, "adapt_response", None)):
+                issues.append(f"adapter {version!r} has no callable adapt_response")
+        return {
+            "api_version": actual,
+            "supported_api_versions": list(dict.fromkeys(supported)),
+            "adapter_versions": list(adapter_versions),
+            "issues": issues,
+        }
+
+    @classmethod
+    def validate_version_contract(cls) -> list[str]:
+        """Return deterministic errors for the provider version contract."""
+        return list(cls.version_contract().get("issues", []))
     
     def __init__(
         self,

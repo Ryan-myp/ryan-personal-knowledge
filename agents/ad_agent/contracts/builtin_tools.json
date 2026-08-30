@@ -1,5 +1,5 @@
 {
-  "digest": "75a13f27c4582b90d2a917431de7c1d4cca9c39cc9debc1337954938b7bf2157",
+  "digest": "20786913f30361f742a71edc3e44561b0e48fe24ccde18683ef993a715da8c9a",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -19250,6 +19250,44 @@
             "source_upload"
           ]
         }
+      ]
+    }
+  },
+  "provider_version_contracts": {
+    "dv360": {
+      "adapter_versions": [],
+      "api_version": "v4",
+      "capability_api_version": "v4",
+      "issues": [],
+      "supported_api_versions": [
+        "v4"
+      ]
+    },
+    "google-ads": {
+      "adapter_versions": [],
+      "api_version": "v24",
+      "capability_api_version": "v24",
+      "issues": [],
+      "supported_api_versions": [
+        "v24"
+      ]
+    },
+    "meta": {
+      "adapter_versions": [],
+      "api_version": "v19.0",
+      "capability_api_version": "v19.0",
+      "issues": [],
+      "supported_api_versions": [
+        "v19.0"
+      ]
+    },
+    "tiktok": {
+      "adapter_versions": [],
+      "api_version": "v1.3",
+      "capability_api_version": "v1.3",
+      "issues": [],
+      "supported_api_versions": [
+        "v1.3"
       ]
     }
   },

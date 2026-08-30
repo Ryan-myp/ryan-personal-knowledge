@@ -60,6 +60,14 @@ def audit_capabilities() -> dict[str, Any]:
             capability = factory()
             runtime.register_capability(capability)
             client_class = getattr(capability, "provider_client_class", None)
+            provider_contract = getattr(capability, "get_provider_version_contract", None)
+            if callable(provider_contract):
+                version_contract = provider_contract()
+                report.setdefault("provider_version_contracts", {})[str(
+                    getattr(capability, "platform_name", slug)
+                )] = version_contract
+                for issue in version_contract.get("issues", []):
+                    report["issues"].append(f"{slug}: Provider API version contract: {issue}")
             coverage = getattr(capability, "provider_method_coverage", {}) or {}
             exclusions = set(getattr(capability, "provider_method_exclusions", set()) or set())
             surface_module_name = f"{type(capability).__module__.rsplit('.', 1)[0]}.api_surface"

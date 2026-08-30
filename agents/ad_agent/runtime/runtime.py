@@ -287,6 +287,11 @@ class AgentRuntime:
         # This is a metadata index, not a second executable routing table.
         # Each provider Capability owns and publishes its own entries.
         self.ad_format_catalogs: dict[str, list[dict[str, Any]]] = {}
+        # Provider-owned compatibility metadata is a diagnostic/release
+        # index, never a routing table.  Keeping it on Runtime lets the
+        # contract snapshot detect an API version change even when Tool names
+        # and schemas remain unchanged.
+        self.provider_version_contracts: dict[str, dict[str, Any]] = {}
         selection_secret = selection_token_secret or os.environ.get(
             "AD_AGENT_SELECTION_TOKEN_KEY"
         )
@@ -771,6 +776,7 @@ class AgentRuntime:
             definition.name for definition in self.registry.list_all()
         }
         before_formats = copy.deepcopy(self.ad_format_catalogs)
+        before_provider_versions = copy.deepcopy(self.provider_version_contracts)
         try:
             return self._register_capability_unchecked(module)
         except Exception:
@@ -805,6 +811,7 @@ class AgentRuntime:
                         self._skill_keys_by_platform.pop(canonical, None)
                         self._loaded_skills.pop(canonical, None)
             self.ad_format_catalogs = before_formats
+            self.provider_version_contracts = before_provider_versions
             try:
                 self._refresh_parser_catalog()
             except Exception:
@@ -844,6 +851,13 @@ class AgentRuntime:
             getattr(module, "platform_name", "") or "",
             getattr(runtime, "ad_format_catalogs", []) or [],
         )
+        provider_contract_getter = getattr(module, "get_provider_version_contract", None)
+        if callable(provider_contract_getter):
+            platform = self._canonical_platform(getattr(module, "platform_name", ""))
+            if platform:
+                self.provider_version_contracts[platform] = copy.deepcopy(
+                    provider_contract_getter()
+                )
         self._validate_parameter_lookup_contract()
         # Capability.configure() registers platform tools before returning.
         # Apply the read-only boundary immediately so callers cannot forget a

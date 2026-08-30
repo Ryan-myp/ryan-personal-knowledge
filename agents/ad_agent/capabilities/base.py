@@ -121,10 +121,109 @@ class BaseCapability(CapabilityModule, ABC):
         empty so custom capabilities can adopt the contract incrementally.
         """
         return []
+
+    def get_provider_version_contract(self) -> dict[str, Any]:
+        """Expose the Client-owned version contract for audits and tooling."""
+        client_class = getattr(self, "provider_client_class", None)
+        version_contract = getattr(client_class, "version_contract", None)
+        if callable(version_contract):
+            contract = dict(version_contract())
+        else:
+            contract = {
+                "api_version": str(getattr(client_class, "API_VERSION", "") or ""),
+                "supported_api_versions": list(
+                    getattr(client_class, "SUPPORTED_API_VERSIONS", ()) or ()
+                ),
+                "adapter_versions": sorted(
+                    str(version)
+                    for version in (getattr(client_class, "VERSION_ADAPTERS", {}) or {})
+                ),
+                "issues": [],
+            }
+        contract["capability_api_version"] = str(self.provider_api_version or "")
+        return contract
+
+    def _validate_provider_version_contract(
+        self,
+        definitions: list[tuple[ToolDefinition, ToolHandler]],
+    ) -> list[str]:
+        """Validate Capability, Client and Tool version declarations together."""
+        client_class = getattr(self, "provider_client_class", None)
+        contract = self.get_provider_version_contract()
+        # A local/provider-agnostic Capability may not have a Client at all.
+        # Do not force it to invent a provider version contract.
+        if client_class is None:
+            return []
+        errors = list(contract.get("issues", []))
+        supported = set(str(item).strip() for item in contract.get("supported_api_versions", []))
+        adapters = set(str(item).strip() for item in contract.get("adapter_versions", []))
+        compatible = supported | adapters
+        capability_version = str(self.provider_api_version or "").strip()
+        client_name = getattr(client_class, "__name__", type(client_class).__name__)
+        if capability_version and not compatible:
+            errors.append(
+                f"Capability provider_api_version {capability_version!r} cannot be verified; "
+                f"Client {client_name} publishes no supported API versions"
+            )
+        elif capability_version and capability_version not in compatible:
+            errors.append(
+                f"Capability provider_api_version {capability_version!r} is not supported by "
+                f"Client {client_name}: "
+                f"{sorted(compatible)}"
+            )
+
+        bound_client = getattr(self, "_api_client", None)
+        # Test doubles and replaceable clients may implement permissive
+        # ``__getattr__``.  Only trust an instance-owned value here; an
+        # arbitrary callable returned for ``api_version`` is not metadata.
+        bound_state = getattr(bound_client, "__dict__", {})
+        bound_value = (
+            bound_state.get("api_version")
+            if isinstance(bound_state, dict)
+            else None
+        )
+        bound_actual = str(
+            bound_value or getattr(client_class, "API_VERSION", "") or ""
+        ).strip()
+        for definition, _handler in definitions:
+            declared = str(
+                getattr(definition, "provider_api_version", "")
+                or capability_version
+                or contract.get("api_version", "")
+                or ""
+            ).strip()
+            if not declared or not compatible:
+                continue
+            if declared not in compatible:
+                errors.append(
+                    f"Tool {definition.name} provider_api_version {declared!r} is not supported by "
+                    f"Client {sorted(compatible)}"
+                )
+            elif bound_actual and bound_actual != declared and declared not in adapters:
+                errors.append(
+                    f"Tool {definition.name} requires {declared!r}, but bound Client uses "
+                    f"{bound_actual!r} without an adapter"
+                )
+        return list(dict.fromkeys(errors))
     
     def _register_platform_tools(self, registry: SimpleToolRegistry) -> None:
         """子类实现：将平台工具注册到 Registry"""
         tools = self.register_tools()
+        version_errors = self._validate_provider_version_contract(tools)
+        if version_errors:
+            raise ValueError(
+                f"{self.platform_name} Provider API version contract invalid: "
+                + "; ".join(version_errors)
+            )
+        provider_contract = self.get_provider_version_contract()
+        client_version = str(provider_contract.get("api_version") or "").strip()
+        bound_client = getattr(self, "_api_client", None)
+        bound_state = getattr(bound_client, "__dict__", {})
+        bound_client_version = (
+            str(bound_state.get("api_version") or "").strip()
+            if isinstance(bound_state, dict)
+            else ""
+        )
         for defn, handler in tools:
             if not defn.provider_api_version:
                 # An absent version is a valid extension state: a custom
@@ -134,8 +233,9 @@ class BaseCapability(CapabilityModule, ABC):
                 # Runtime would then treat it as a concrete contract and
                 # reject every real client whose version is known.
                 provided_version = (
-                    getattr(getattr(self, "_api_client", None), "api_version", "")
+                    bound_client_version
                     or getattr(self, "provider_api_version", "")
+                    or client_version
                 )
                 if provided_version:
                     defn.provider_api_version = str(provided_version)
