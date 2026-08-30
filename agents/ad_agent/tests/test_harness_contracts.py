@@ -144,6 +144,34 @@ def test_capability_unload_clears_tools_and_derived_discovery_indexes():
     assert runtime.skill_loader.get_by_platform("meta") == []
 
 
+def test_capability_registration_rolls_back_partial_tool_registration():
+    """A failed provider configure must not leave a half-loaded Capability."""
+
+    class PartialCapability:
+        platform_name = "partial-provider"
+
+        def configure(self, context):
+            context.registry.register(
+                ToolDefinition(
+                    name="partial_provider_first",
+                    skill="partial-provider",
+                    platform="partial-provider",
+                    description="first tool",
+                    input_schema=ToolSchema(),
+                ),
+                lambda _ctx, _input: ToolResult.ok({"ok": True}),
+            )
+            raise RuntimeError("provider configure failed")
+
+    runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
+    with pytest.raises(RuntimeError, match="provider configure failed"):
+        runtime.register_capability(PartialCapability())
+
+    assert runtime.registry.list_by_platform("partial-provider") == []
+    assert runtime.parameter_catalogs.list("partial-provider") == []
+    assert "partial-provider" not in runtime.get_loaded_skills()
+
+
 def test_selector_only_builds_context_and_cannot_shrink_authoritative_plan():
     class Parser:
         def parse(self, _text, _ctx):

@@ -759,6 +759,61 @@ class AgentRuntime:
     # ─── Capability 注册 ───────────────────────────────────────
     
     def register_capability(self, module: CapabilityModule) -> CapabilityRuntime:
+        """Register a Capability atomically from the Runtime's perspective.
+
+        Capability ``configure`` implementations register Tools through a
+        callback, so a failure after the first Tool would otherwise leave a
+        half-loaded provider in the live Registry.  Keep the rollback here,
+        at the boundary that owns the derived indexes, rather than requiring
+        every provider package to implement its own transaction protocol.
+        """
+        before_tool_names = {
+            definition.name for definition in self.registry.list_all()
+        }
+        before_formats = copy.deepcopy(self.ad_format_catalogs)
+        try:
+            return self._register_capability_unchecked(module)
+        except Exception:
+            current_tool_names = {
+                definition.name for definition in self.registry.list_all()
+            }
+            added_tool_names = current_tool_names - before_tool_names
+            for name in added_tool_names:
+                self.registry.unregister(name)
+            self.parameter_catalogs.remove_tools(list(added_tool_names))
+
+            # Normally ownership indexes are written only after all metadata
+            # validation succeeds.  Remove them defensively as well so a
+            # future failure in the final parser refresh cannot leave an
+            # unloadable Skill marker behind.
+            for skill_key, tool_names in list(self._skill_tool_names.items()):
+                if not (set(tool_names) & added_tool_names):
+                    continue
+                platform = self._skill_platforms.pop(skill_key, None)
+                self._skill_tool_names.pop(skill_key, None)
+                self._skill_objects.pop(skill_key, None)
+                self._skill_format_ids.pop(skill_key, None)
+                if platform:
+                    canonical = self._canonical_platform(platform)
+                    keys = [
+                        key for key in self._skill_keys_by_platform.get(canonical, [])
+                        if key != skill_key
+                    ]
+                    if keys:
+                        self._skill_keys_by_platform[canonical] = keys
+                    else:
+                        self._skill_keys_by_platform.pop(canonical, None)
+                        self._loaded_skills.pop(canonical, None)
+            self.ad_format_catalogs = before_formats
+            try:
+                self._refresh_parser_catalog()
+            except Exception:
+                logger.exception("Capability rollback could not refresh parser catalog")
+            raise
+
+    def _register_capability_unchecked(
+        self, module: CapabilityModule
+    ) -> CapabilityRuntime:
         """
         注册一个 CapabilityModule。
         
