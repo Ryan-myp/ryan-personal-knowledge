@@ -510,6 +510,11 @@ class DynamicToolSelector:
                 lines.append(f"   Provider 必填: {tool.input_schema.provider_required}")
             if tool.input_schema.provider_any_of:
                 lines.append(f"   Provider 至少选择一项: {tool.input_schema.provider_any_of}")
+            if tool.input_schema.provider_exactly_one_of:
+                lines.append(
+                    f"   Provider 必须且只能选择一项: "
+                    f"{tool.input_schema.provider_exactly_one_of}"
+                )
             if tool.input_schema.conditional_rules:
                 lines.append(f"   条件依赖: {tool.input_schema.conditional_rules}")
             lines.append("")

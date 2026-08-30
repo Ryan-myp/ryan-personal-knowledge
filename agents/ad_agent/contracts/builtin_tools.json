@@ -1,5 +1,5 @@
 {
-  "digest": "9ab1f569f61c31220c4800dd7376b8f57aaa9f1a2211df9e61aff8049a132cf9",
+  "digest": "edbb00390c55d1344da028924653e93b0f7f6f7c7511d868e4c4eb5668b3b93d",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -10360,8 +10360,8 @@
       ]
     },
     "tiktok": {
-      "digest": "1e9d12396a89cb2c54872559151fc0ebc7994e20ccbfb9ebcb05017e67175fcb",
-      "tool_count": 47,
+      "digest": "53bb78df3c585d05ecb229f80a215df5f2024bd734367ead4178adb5bd9ce525",
+      "tool_count": 49,
       "tools": [
         {
           "action": "create",
@@ -13999,9 +13999,194 @@
             "audience",
             "source_upload"
           ]
+        },
+        {
+          "action": "upload",
+          "contract_version": "1.2.0",
+          "description": "上传或绑定 TikTok 广告图片素材；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "TikTok advertiser ID",
+                "type": "string"
+              },
+              "file_id": {
+                "description": "TikTok file repository ID; only used with UPLOAD_BY_FILE_ID",
+                "type": "string"
+              },
+              "file_name": {
+                "description": "Optional Asset Library filename",
+                "maxLength": 100,
+                "type": "string"
+              },
+              "file_path": {
+                "description": "Local image path; only used with UPLOAD_BY_FILE",
+                "type": "string"
+              },
+              "image_url": {
+                "description": "Provider-reachable image URL; only used with UPLOAD_BY_URL",
+                "type": "string"
+              },
+              "upload_type": {
+                "description": "TikTok upload mode",
+                "enum": [
+                  "UPLOAD_BY_FILE",
+                  "UPLOAD_BY_URL",
+                  "UPLOAD_BY_FILE_ID",
+                  "UPLOAD_BY_VIDEO_ID"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_exactly_one_of": [
+              [
+                "file_path",
+                "image_url",
+                "file_id"
+              ]
+            ],
+            "provider_required": [],
+            "required": [
+              "account_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "upload_image"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_upload_image",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "image_id",
+          "resource_type": "image",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "creative",
+            "image",
+            "source_upload"
+          ]
+        },
+        {
+          "action": "upload",
+          "contract_version": "1.2.0",
+          "description": "上传或绑定 TikTok 广告视频素材；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "TikTok advertiser ID",
+                "type": "string"
+              },
+              "auto_bind_enabled": {
+                "description": "Bind an automatically fixed video",
+                "type": "boolean"
+              },
+              "auto_fix_enabled": {
+                "description": "Automatically fix detected video flaws",
+                "type": "boolean"
+              },
+              "file_id": {
+                "description": "TikTok file repository ID; only used with UPLOAD_BY_FILE_ID",
+                "type": "string"
+              },
+              "file_name": {
+                "description": "Optional Asset Library filename",
+                "maxLength": 100,
+                "type": "string"
+              },
+              "file_path": {
+                "description": "Local video path; only used with UPLOAD_BY_FILE",
+                "type": "string"
+              },
+              "flaw_detect": {
+                "description": "Enable video flaw detection",
+                "type": "boolean"
+              },
+              "is_third_party": {
+                "description": "Whether the video is a third-party asset",
+                "type": "boolean"
+              },
+              "upload_type": {
+                "description": "TikTok upload mode",
+                "enum": [
+                  "UPLOAD_BY_FILE",
+                  "UPLOAD_BY_URL",
+                  "UPLOAD_BY_FILE_ID",
+                  "UPLOAD_BY_VIDEO_ID"
+                ],
+                "type": "string"
+              },
+              "video_id": {
+                "description": "Existing TikTok video ID to bind to this advertiser",
+                "type": "string"
+              },
+              "video_url": {
+                "description": "Provider-reachable video URL; only used with UPLOAD_BY_URL",
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_exactly_one_of": [
+              [
+                "file_path",
+                "video_url",
+                "video_id",
+                "file_id"
+              ]
+            ],
+            "provider_required": [],
+            "required": [
+              "account_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "upload_video"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_upload_video",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "video_id",
+          "resource_type": "video",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "creative",
+            "video",
+            "source_upload"
+          ]
         }
       ]
     }
   },
-  "tool_count": 178
+  "tool_count": 180
 }

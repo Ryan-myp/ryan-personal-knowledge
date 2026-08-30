@@ -1065,6 +1065,197 @@ class TikTokAPIClient(BasePlatformClient):
         result = self.request('GET', 'image/get/', params=data)
         payload = self._data_section(result)
         return payload.get('list', []) if isinstance(payload, dict) else []
+
+    # ==================== 创意素材上传 ====================
+
+    @staticmethod
+    def _validate_media_file(file_path: str, allowed_suffixes: set[str], label: str) -> Path:
+        path = Path(str(file_path or "")).expanduser()
+        if not path.is_file():
+            raise ValueError(f"{label} file_path must point to an existing file")
+        if path.suffix.lower() not in allowed_suffixes:
+            suffixes = ", ".join(sorted(allowed_suffixes))
+            raise ValueError(f"{label} file_path must use one of: {suffixes}")
+        if path.stat().st_size <= 0:
+            raise ValueError(f"{label} file must not be empty")
+        return path
+
+    @staticmethod
+    def _media_file_signature(path: Path) -> str:
+        digest = hashlib.md5()
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    @staticmethod
+    def _media_upload_name(file_name: Optional[str], path: Optional[Path], label: str) -> str:
+        name = str(file_name or (path.name if path else "")).strip()
+        if not name or Path(name).name != name:
+            raise ValueError(f"{label} file_name must be a simple filename")
+        if len(name) > 100:
+            name = name[:100]
+        return name
+
+    @staticmethod
+    def _media_upload_type(
+        upload_type: Optional[str], file_path: Optional[str], asset_url: Optional[str],
+        asset_id: Optional[str], label: str,
+    ) -> str:
+        provided = [bool(file_path), bool(asset_url), bool(asset_id)]
+        if sum(provided) != 1:
+            raise ValueError(
+                f"{label} upload requires exactly one of file_path, url, or asset_id"
+            )
+        value = str(upload_type or "").strip().upper()
+        if not value:
+            value = "UPLOAD_BY_FILE" if file_path else (
+                "UPLOAD_BY_URL" if asset_url else "UPLOAD_BY_FILE_ID"
+            )
+        valid = {"UPLOAD_BY_FILE", "UPLOAD_BY_URL", "UPLOAD_BY_FILE_ID", "UPLOAD_BY_VIDEO_ID"}
+        if value not in valid:
+            raise ValueError(f"unsupported {label} upload_type")
+        if file_path and value != "UPLOAD_BY_FILE":
+            raise ValueError(f"{label} file_path requires upload_type=UPLOAD_BY_FILE")
+        if asset_url and value != "UPLOAD_BY_URL":
+            raise ValueError(f"{label} url requires upload_type=UPLOAD_BY_URL")
+        if asset_id and value not in {"UPLOAD_BY_FILE_ID", "UPLOAD_BY_VIDEO_ID"}:
+            raise ValueError(f"{label} asset_id requires a file/video ID upload type")
+        return value
+
+    def upload_image(
+        self,
+        advertiser_id: str,
+        file_path: Optional[str] = None,
+        image_url: Optional[str] = None,
+        file_id: Optional[str] = None,
+        file_name: Optional[str] = None,
+        upload_type: Optional[str] = None,
+    ) -> dict:
+        """Upload an image to TikTok's advertiser Asset Library.
+
+        The endpoint accepts a local multipart file, a provider-reachable URL,
+        or an existing file repository ID.  The returned image ID is the only
+        value that downstream ad creation needs; raw file bytes never enter a
+        Tool result or persisted Runtime state.
+        """
+        advertiser_id = str(advertiser_id or "").strip()
+        if not advertiser_id.isdigit():
+            raise ValueError("advertiser_id must contain digits only")
+        upload_kind = self._media_upload_type(
+            upload_type, file_path, image_url, file_id, "image"
+        )
+        if file_id and upload_kind != "UPLOAD_BY_FILE_ID":
+            raise ValueError("file_id requires upload_type=UPLOAD_BY_FILE_ID")
+        path = None
+        if file_path:
+            path = self._validate_media_file(
+                file_path, {".jpg", ".jpeg", ".png", ".webp"}, "image"
+            )
+        name = self._media_upload_name(file_name, path, "image") if (file_name or path) else None
+        form_data: dict[str, Any] = {
+            "advertiser_id": advertiser_id,
+            "upload_type": upload_kind,
+        }
+        files = None
+        if path:
+            form_data["file_name"] = name
+            form_data["image_signature"] = self._media_file_signature(path)
+            stream = path.open("rb")
+            files = {"image_file": (name, stream, "application/octet-stream")}
+        elif image_url:
+            form_data["image_url"] = str(image_url).strip()
+            if name:
+                form_data["file_name"] = name
+        else:
+            form_data["file_id"] = str(file_id).strip()
+            if name:
+                form_data["file_name"] = name
+        self.acquire_rate_limit(self._rate_limiter)
+        try:
+            result = self.request("POST", "file/image/ad/upload/", data=form_data, files=files)
+        finally:
+            if files:
+                files["image_file"][1].close()
+        payload = self._data_section(result)
+        if not isinstance(payload, dict):
+            raise APIError("TikTok image upload returned an invalid response envelope")
+        image_id = payload.get("image_id") or payload.get("id")
+        if not image_id:
+            raise APIError("TikTok image upload returned no image_id")
+        return {"image_id": str(image_id), "asset": payload}
+
+    def upload_video(
+        self,
+        advertiser_id: str,
+        file_path: Optional[str] = None,
+        video_url: Optional[str] = None,
+        video_id: Optional[str] = None,
+        file_id: Optional[str] = None,
+        file_name: Optional[str] = None,
+        upload_type: Optional[str] = None,
+        flaw_detect: Optional[bool] = None,
+        auto_fix_enabled: Optional[bool] = None,
+        auto_bind_enabled: Optional[bool] = None,
+        is_third_party: Optional[bool] = None,
+    ) -> dict:
+        """Upload or bind a video in TikTok's advertiser Asset Library."""
+        advertiser_id = str(advertiser_id or "").strip()
+        if not advertiser_id.isdigit():
+            raise ValueError("advertiser_id must contain digits only")
+        if video_id and file_id:
+            raise ValueError("video upload accepts only one of video_id or file_id")
+        asset_id = video_id or file_id
+        upload_kind = self._media_upload_type(
+            upload_type, file_path, video_url, asset_id, "video"
+        )
+        if video_id and upload_kind != "UPLOAD_BY_VIDEO_ID":
+            raise ValueError("video_id requires upload_type=UPLOAD_BY_VIDEO_ID")
+        if file_id and upload_kind != "UPLOAD_BY_FILE_ID":
+            raise ValueError("file_id requires upload_type=UPLOAD_BY_FILE_ID")
+        path = None
+        if file_path:
+            path = self._validate_media_file(
+                file_path, {".mp4", ".mov", ".m4v", ".avi", ".webm"}, "video"
+            )
+        name = self._media_upload_name(file_name, path, "video") if (file_name or path) else None
+        form_data: dict[str, Any] = {
+            "advertiser_id": advertiser_id,
+            "upload_type": upload_kind,
+        }
+        for key, value in (
+            ("flaw_detect", flaw_detect), ("auto_fix_enabled", auto_fix_enabled),
+            ("auto_bind_enabled", auto_bind_enabled), ("is_third_party", is_third_party),
+        ):
+            if value is not None:
+                form_data[key] = value
+        files = None
+        if path:
+            form_data["file_name"] = name
+            form_data["video_signature"] = self._media_file_signature(path)
+            stream = path.open("rb")
+            files = {"video_file": (name, stream, "application/octet-stream")}
+        elif video_url:
+            form_data["video_url"] = str(video_url).strip()
+            if name:
+                form_data["file_name"] = name
+        elif video_id:
+            form_data["video_id"] = str(video_id).strip()
+        else:
+            form_data["file_id"] = str(file_id).strip()
+        self.acquire_rate_limit(self._rate_limiter)
+        try:
+            result = self.request("POST", "file/video/ad/upload/", data=form_data, files=files)
+        finally:
+            if files:
+                files["video_file"][1].close()
+        payload = self._data_section(result)
+        if not isinstance(payload, dict):
+            raise APIError("TikTok video upload returned an invalid response envelope")
+        result_video_id = payload.get("video_id") or payload.get("id")
+        if not result_video_id:
+            raise APIError("TikTok video upload returned no video_id")
+        return {"video_id": str(result_video_id), "asset": payload}
     
     # ==================== 转化追踪查询 ====================
     

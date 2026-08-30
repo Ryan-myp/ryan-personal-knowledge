@@ -60,6 +60,7 @@ def method_tool(
     live_support: Optional[bool] = None,
     provider_required: Optional[Iterable[str]] = None,
     provider_any_of: Optional[Iterable[Iterable[str]]] = None,
+    provider_exactly_one_of: Optional[Iterable[Iterable[str]]] = None,
     conditional_rules: Optional[Iterable[dict[str, Any]]] = None,
     additional_properties: bool = False,
     contract_version: str = "1",
@@ -82,6 +83,9 @@ def method_tool(
             properties=dict(properties),
             provider_required=list(provider_required or []),
             provider_any_of=[list(group) for group in (provider_any_of or [])],
+            provider_exactly_one_of=[
+                list(group) for group in (provider_exactly_one_of or [])
+            ],
             conditional_rules=[dict(rule) for rule in (conditional_rules or [])],
             additional_properties=bool(additional_properties),
         ),

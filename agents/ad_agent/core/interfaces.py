@@ -71,6 +71,10 @@ class ToolSchema:
     # while live execution can fail before reaching a provider.
     provider_required: list[str] = field(default_factory=list)
     provider_any_of: list[list[str]] = field(default_factory=list)
+    # Some provider endpoints require exactly one source variant (for example
+    # a local file, URL, or existing asset ID). Keep this distinct from
+    # ``provider_any_of``, which only guarantees that at least one is present.
+    provider_exactly_one_of: list[list[str]] = field(default_factory=list)
     # Rules that cannot be represented by a flat ``required``/``enum`` pair.
     # The shape intentionally stays JSON-serializable because it is also
     # exposed to UI/LLM callers through /tools.
@@ -83,7 +87,7 @@ class ToolSchema:
 
     def to_dict(self) -> dict[str, Any]:
         """Return the public, JSON-compatible tool contract."""
-        return {
+        contract = {
             "type": self.type,
             "required": list(self.required),
             "properties": self.properties,
@@ -95,6 +99,11 @@ class ToolSchema:
             # exposing the JSON Schema spelling to external consumers.
             "additionalProperties": self.additional_properties,
         }
+        if self.provider_exactly_one_of:
+            contract["provider_exactly_one_of"] = [
+                list(group) for group in self.provider_exactly_one_of
+            ]
+        return contract
 
 @dataclass
 class ToolDefinition:

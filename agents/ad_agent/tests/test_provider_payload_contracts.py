@@ -1,6 +1,7 @@
 """Ensure existing provider creation schemas reach their API adapters."""
 
 import json
+import hashlib
 import pytest
 
 from agents.ad_agent.capabilities.meta import create_meta_capability
@@ -8,6 +9,7 @@ from agents.ad_agent.capabilities.google import create_google_capability
 from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
 from agents.ad_agent.capabilities.dv360 import create_dv360_capability
 from agents.ad_agent.core.interfaces import ParsedIntent, ToolContext
+from agents.ad_agent.core.tool_registry import validate_tool_input
 from agents.ad_agent.runtime.runtime import AgentRuntime
 from agents.ad_agent.api_clients.dv360_client import DV360APIClient
 from agents.ad_agent.api_clients.google_ads_client import GoogleAdsAPIClient
@@ -19,6 +21,67 @@ from agents.ad_agent.capabilities.meta.capability import _meta_update_adapter
 from agents.ad_agent.capabilities.tiktok.capability import _tiktok_update_adapter
 from agents.ad_agent.capabilities.google.capability import _google_update_adapter
 from agents.ad_agent.capabilities.base import CampaignUpdateHandler
+
+
+def test_tiktok_image_upload_builds_official_multipart_payload(tmp_path):
+    image = tmp_path / "creative.png"
+    image.write_bytes(b"image-bytes")
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    client.request = lambda method, endpoint, data=None, files=None, **_kwargs: (
+        calls.append((method, endpoint, data, files)) or {"image_id": "img-1"}
+    )
+
+    result = client.upload_image("123", file_path=str(image))
+
+    assert result["image_id"] == "img-1"
+    assert calls[0][0:2] == ("POST", "file/image/ad/upload/")
+    assert calls[0][2]["advertiser_id"] == "123"
+    assert calls[0][2]["upload_type"] == "UPLOAD_BY_FILE"
+    assert calls[0][2]["image_signature"] == hashlib.md5(b"image-bytes").hexdigest()
+    assert calls[0][3]["image_file"][0] == "creative.png"
+    assert calls[0][3]["image_file"][1].closed is True
+
+
+def test_tiktok_video_upload_supports_provider_url_without_local_file():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    client.request = lambda method, endpoint, data=None, files=None, **_kwargs: (
+        calls.append((method, endpoint, data, files)) or {"video_id": "vid-1"}
+    )
+
+    result = client.upload_video("123", video_url="https://cdn.example/video.mp4")
+
+    assert result["video_id"] == "vid-1"
+    assert calls[0][0:2] == ("POST", "file/video/ad/upload/")
+    assert calls[0][2] == {
+        "advertiser_id": "123",
+        "upload_type": "UPLOAD_BY_URL",
+        "video_url": "https://cdn.example/video.mp4",
+    }
+    assert calls[0][3] is None
+
+
+def test_tiktok_media_upload_rejects_ambiguous_sources_and_exposes_tools():
+    client = TikTokAPIClient({"access_token": "test"})
+    with pytest.raises(ValueError, match="exactly one"):
+        client.upload_image("123", image_url="https://cdn.example/a.png", file_id="f1")
+
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_tiktok_capability().register_tools()
+    }
+    assert {"tiktok_upload_image", "tiktok_upload_video"} <= definitions.keys()
+    assert definitions["tiktok_upload_image"].input_schema.provider_exactly_one_of == [
+        ["file_path", "image_url", "file_id"]
+    ]
+    assert definitions["tiktok_upload_video"].live_support is False
+    errors = validate_tool_input(
+        definitions["tiktok_upload_image"].input_schema,
+        {"account_id": "123", "image_url": "https://cdn.example/a.png", "file_id": "f1"},
+        include_provider_contract=True,
+    )
+    assert any("exactly one" in error for error in errors)
 
 
 def test_generic_campaign_type_maps_to_google_wire_field():

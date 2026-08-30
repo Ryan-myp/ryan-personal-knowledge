@@ -150,6 +150,16 @@ class SkillContract:
             raise ValueError(
                 f"Skill {field_name}.provider_any_of must be a list of string lists"
             )
+        provider_exactly_one_of = schema.get("provider_exactly_one_of", []) or []
+        if not isinstance(provider_exactly_one_of, list) or any(
+            not isinstance(group, list)
+            or not group
+            or not all(isinstance(item, str) and item.strip() for item in group)
+            for group in provider_exactly_one_of
+        ):
+            raise ValueError(
+                f"Skill {field_name}.provider_exactly_one_of must be a list of string lists"
+            )
         conditional_rules = schema.get("conditional_rules", []) or []
         if not isinstance(conditional_rules, list) or any(
             not isinstance(rule, dict) for rule in conditional_rules
@@ -522,6 +532,11 @@ class BaseSkill(Skill):
                 provider_required=list(declared_schema.get("provider_required", []) or []),
                 provider_any_of=[
                     list(group) for group in (declared_schema.get("provider_any_of", []) or [])
+                ],
+                provider_exactly_one_of=[
+                    list(group) for group in (
+                        declared_schema.get("provider_exactly_one_of", []) or []
+                    )
                 ],
                 conditional_rules=list(declared_schema.get("conditional_rules", []) or []),
                 additional_properties=bool(

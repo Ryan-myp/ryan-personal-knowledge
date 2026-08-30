@@ -43,6 +43,9 @@ TIKTOK_AUDIENCE_CALCULATE_TYPES = [
 ]
 TIKTOK_AUDIENCE_ACTIONS = ["REPLACE", "APPEND", "REMOVE"]
 TIKTOK_AUDIENCE_SUB_TYPES = ["NORMAL", "REACH_FREQUENCY"]
+TIKTOK_MEDIA_UPLOAD_TYPES = [
+    "UPLOAD_BY_FILE", "UPLOAD_BY_URL", "UPLOAD_BY_FILE_ID", "UPLOAD_BY_VIDEO_ID",
+]
 
 
 def _field(
@@ -192,6 +195,45 @@ def tiktok_audience_file_upload_schema() -> dict[str, Any]:
                 enum=TIKTOK_AUDIENCE_CALCULATE_TYPES,
             ),
             "file_name": _field("string", "Optional upload filename", maxLength=255),
+        },
+    }
+
+
+def tiktok_image_upload_schema() -> dict[str, Any]:
+    """Schema for TikTok advertiser image Asset Library upload/binding."""
+    return {
+        "required": ["account_id"],
+        "provider_required": [],
+        "provider_exactly_one_of": [["file_path", "image_url", "file_id"]],
+        "properties": {
+            "account_id": _field("string", "TikTok advertiser ID"),
+            "file_path": _field("string", "Local image path; only used with UPLOAD_BY_FILE"),
+            "image_url": _field("string", "Provider-reachable image URL; only used with UPLOAD_BY_URL"),
+            "file_id": _field("string", "TikTok file repository ID; only used with UPLOAD_BY_FILE_ID"),
+            "file_name": _field("string", "Optional Asset Library filename", maxLength=100),
+            "upload_type": _field("string", "TikTok upload mode", enum=TIKTOK_MEDIA_UPLOAD_TYPES),
+        },
+    }
+
+
+def tiktok_video_upload_schema() -> dict[str, Any]:
+    """Schema for TikTok advertiser video Asset Library upload/binding."""
+    return {
+        "required": ["account_id"],
+        "provider_required": [],
+        "provider_exactly_one_of": [["file_path", "video_url", "video_id", "file_id"]],
+        "properties": {
+            "account_id": _field("string", "TikTok advertiser ID"),
+            "file_path": _field("string", "Local video path; only used with UPLOAD_BY_FILE"),
+            "video_url": _field("string", "Provider-reachable video URL; only used with UPLOAD_BY_URL"),
+            "video_id": _field("string", "Existing TikTok video ID to bind to this advertiser"),
+            "file_id": _field("string", "TikTok file repository ID; only used with UPLOAD_BY_FILE_ID"),
+            "file_name": _field("string", "Optional Asset Library filename", maxLength=100),
+            "upload_type": _field("string", "TikTok upload mode", enum=TIKTOK_MEDIA_UPLOAD_TYPES),
+            "flaw_detect": _field("boolean", "Enable video flaw detection"),
+            "auto_fix_enabled": _field("boolean", "Automatically fix detected video flaws"),
+            "auto_bind_enabled": _field("boolean", "Bind an automatically fixed video"),
+            "is_third_party": _field("boolean", "Whether the video is a third-party asset"),
         },
     }
 

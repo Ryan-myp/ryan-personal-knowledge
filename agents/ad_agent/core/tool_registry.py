@@ -341,6 +341,16 @@ def validate_tool_input(
                     "Provider contract requires one of: "
                     + ", ".join(alternatives)
                 )
+        for alternatives in getattr(schema, "provider_exactly_one_of", []) or []:
+            present = [
+                field_name for field_name in alternatives
+                if data.get(field_name) not in (None, "", {}, [])
+            ]
+            if len(present) != 1:
+                errors.append(
+                    "Provider contract requires exactly one of: "
+                    + ", ".join(alternatives)
+                )
 
     # Closed-world tool contracts prevent a caller from believing an
     # unsupported parameter was applied when a Handler simply ignored it.

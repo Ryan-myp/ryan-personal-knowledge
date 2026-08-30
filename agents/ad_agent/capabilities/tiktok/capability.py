@@ -44,6 +44,8 @@ from .parameters import (
     tiktok_audience_schema,
     tiktok_audience_update_schema,
     tiktok_audience_file_upload_schema,
+    tiktok_image_upload_schema,
+    tiktok_video_upload_schema,
     tiktok_targeting_update_schema,
 )
 from ..update_contracts import tiktok_updates
@@ -106,6 +108,7 @@ class TikTokCapability(BaseCapability):
         "list_operating_systems": ["tiktok_list_operating_systems"], "list_carriers": ["tiktok_list_carriers"],
         "list_browsers": ["tiktok_list_browsers"], "list_creatives": ["tiktok_list_creatives"],
         "list_videos": ["tiktok_list_videos"], "list_images": ["tiktok_list_images"],
+        "upload_image": ["tiktok_upload_image"], "upload_video": ["tiktok_upload_video"],
         "list_conversions": ["tiktok_list_conversions"], "get_conversion": ["tiktok_get_conversion"],
         "list_catalogs": ["tiktok_list_catalogs"], "list_product_sets": ["tiktok_list_product_sets"],
         "list_apps": ["tiktok_list_apps"], "list_brand_safety": ["tiktok_list_brand_safety"],
@@ -119,7 +122,42 @@ class TikTokCapability(BaseCapability):
         """Expose TikTok account, reference, reporting and lifecycle APIs."""
         account = lambda ctx, data: account_from(ctx, data, "account_id", "advertiser_id")
         targeting_schema = tiktok_targeting_update_schema()
+        image_upload = tiktok_image_upload_schema()
+        video_upload = tiktok_video_upload_schema()
         tools = [
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_upload_image",
+                description="上传或绑定 TikTok 广告图片素材；默认仅生成 dry-run 计划。",
+                method_name="upload_image", result_key="image_id",
+                properties=image_upload["properties"], required=image_upload["required"],
+                provider_required=image_upload["provider_required"],
+                provider_exactly_one_of=image_upload["provider_exactly_one_of"],
+                action="upload", resource_type="image", resource_id_field="image_id",
+                intent_types=["upload_image"], traits=["write", "creative", "image", "source_upload"],
+                write=True, live_support=False,
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data.get("file_path"), data.get("image_url"),
+                    data.get("file_id"), data.get("file_name"), data.get("upload_type"),
+                ), {}),
+            ),
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_upload_video",
+                description="上传或绑定 TikTok 广告视频素材；默认仅生成 dry-run 计划。",
+                method_name="upload_video", result_key="video_id",
+                properties=video_upload["properties"], required=video_upload["required"],
+                provider_required=video_upload["provider_required"],
+                provider_exactly_one_of=video_upload["provider_exactly_one_of"],
+                action="upload", resource_type="video", resource_id_field="video_id",
+                intent_types=["upload_video"], traits=["write", "creative", "video", "source_upload"],
+                write=True, live_support=False,
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data.get("file_path"), data.get("video_url"),
+                    data.get("video_id"), data.get("file_id"), data.get("file_name"),
+                    data.get("upload_type"), data.get("flaw_detect"),
+                    data.get("auto_fix_enabled"), data.get("auto_bind_enabled"),
+                    data.get("is_third_party"),
+                ), {}),
+            ),
             method_tool(
                 platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_accounts",
                 description="列出 TikTok 广告主账户。", method_name="list_accounts", result_key="accounts",
