@@ -675,6 +675,50 @@ def test_runtime_resource_outputs_use_tool_metadata_not_tool_name():
     }]) == []
 
 
+def test_runtime_input_compatibility_comes_from_schema_or_generic_semantics():
+    """Core must not carry a provider resource-alias table."""
+    definition = ToolDefinition(
+        name="new_network_create_resource",
+        skill="new-network",
+        platform="new-network",
+        description="Create a resource",
+        input_schema=ToolSchema(properties={
+            "name": {"type": "string"},
+            "ad_set_id": {"type": "string"},
+            "source_id": {
+                "type": "string",
+                "input_aliases": ["origin_id"],
+            },
+        }),
+        action="create",
+        resource_type="resource",
+        intent_types=["create_resource"],
+        effect_class=ToolEffect.WRITE,
+    )
+    runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
+    intent = ParsedIntent(
+        intent_type="create_resource",
+        raw_input="create resource",
+        platforms=["new-network"],
+        platform_params={"new-network": {
+            "campaign_name": "demo",
+            "adset_id": "set-1",
+            "origin_id": "source-1",
+        }},
+    )
+
+    tool_input = runtime._build_tool_input(
+        definition,
+        intent,
+        "new-network",
+        ToolContext(session_id="s1", user_id="u1", account_id="account-1"),
+    )
+
+    assert tool_input["name"] == "demo"
+    assert tool_input["ad_set_id"] == "set-1"
+    assert tool_input["source_id"] == "source-1"
+
+
 def test_live_mode_alone_cannot_enable_provider_writes():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"meta": ["m1"]}

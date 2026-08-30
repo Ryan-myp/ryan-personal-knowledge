@@ -37,6 +37,8 @@
 - Meta 已将 Lookalike Audience 从泛化 Audience 能力中拆出专用创建 Tool；源 Audience
   通过 `meta_list_audiences` 的动态 lookup 选择，固定 `LOOKALIKE` subtype 由 Capability
   注入，且不在 Runtime/Core 增加渠道分支。
+- Runtime 参数兼容已改为 Schema `input_aliases` 加 provider-neutral 归一化；Core 不再维护
+  `adset_id`/`adgroup_id` 等渠道资源别名表，新增 Provider 字段可由自身 Tool 合约声明。
 - 每个渠道 `_surface_data.py` 另有 `OFFICIAL_INVENTORY`，登记官方资源/动作、endpoint
   或 Provider operation、API version、来源和状态；审计会单独输出官方基线覆盖率、缺口和
   `dry_run_only`/`live_verified` 证据。当前基线明确为 `scoped_not_exhaustive`，不能把
@@ -178,7 +180,7 @@ python -m pytest agents/ad_agent/tests/ -v
 ```
 
 测试结果：
-- 当前 `agents/ad_agent/tests/`：451 passed（另有 1 条本机依赖弃用 warning）。
+- 当前 `agents/ad_agent/tests/`：453 passed（另有 1 条本机依赖弃用 warning）。
 - 覆盖：工具注册、Schema 校验、白名单、dry-run 不调用 Client、跨平台账户、层级 ID 传递、live 确认、持久化和 Runtime 集成
 
 ## 扩展新平台
@@ -225,7 +227,7 @@ Capability。`SKILL.md` 仍只负责自然语言知识、SOP 和安全边界；�
 | 结构化日志 | ✅ | JSON 格式 |
 | Dry-run 模式 | ✅ | 无需调用线上写 API 即可测试 |
 | WriteGuard | ✅ | 持久化幂等、显式确认、unknown 结果保留 reservation、workflow lease/claim 已接入 |
-| 单元测试 | ✅ | `agents/ad_agent/tests/`：437 passed |
+| 单元测试 | ✅ | `agents/ad_agent/tests/`：453 passed |
 | 多平台支持 | ✅ | Meta/Google/TikTok/DV360 |
 | 可扩展性 | ✅ | Capability 与 Provider Client 按包约定自动发现，无需修改中心 Router/Runtime |
 

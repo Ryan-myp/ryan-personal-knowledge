@@ -67,7 +67,9 @@ Core 或 Router 中维护渠道表。Markdown 表格、`workflow.yaml`、`script
 2. 在 `capabilities/<provider>/capability.py` 增加 Tool Schema、handler/adapter、
    资源层级、`intent_types`、权限、风险、重放、超时和输出上限。
 3. 静态选项放在渠道 Tool schema；账户、App、地域、事件等动态值增加同渠道只读
-   lookup Tool，并通过 `lookup_tool`/selection token 关联，不在 Core 写渠道枚举。
+   lookup Tool，并通过 `lookup_tool`/selection token 关联，不在 Core 写渠道枚举。Provider
+   字段兼容别名由 Tool schema 的 `input_aliases` 声明；Core 只做标点无关的通用归一化，
+   不维护 `adset_id`、`adgroup_id` 等渠道字段别名表。
 4. 在该渠道 `api_surface.py` 标记 implemented 或 planned，并增加 Provider payload、
    schema、权限、dry-run、失败恢复和账户隔离测试。
 5. 在该渠道 `_surface_data.py` 的 `OFFICIAL_INVENTORY` 登记官方资源/动作、endpoint

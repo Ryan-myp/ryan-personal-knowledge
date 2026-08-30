@@ -4808,6 +4808,44 @@ class AgentRuntime:
             normalized[status_field] = status_map[status]
         return normalized
 
+    @staticmethod
+    def _normalize_input_field(value: Any) -> str:
+        """Normalize a field label without knowing a provider's vocabulary."""
+        return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
+
+    @classmethod
+    def _input_candidates(
+        cls,
+        field_name: str,
+        field_schema: Any,
+        available_keys: Any = (),
+    ) -> list[str]:
+        """Return schema-owned and provider-neutral input aliases.
+
+        A Capability may publish exact ``input_aliases`` for a provider
+        contract. For legacy/user-facing payloads, Core only applies generic
+        semantics: punctuation-insensitive identifiers, account identity
+        labels, and a single ``name`` field accepting a qualified ``*_name``.
+        It never lists a provider's resource names.
+        """
+        candidates = [str(field_name)]
+        if isinstance(field_schema, dict):
+            candidates.extend(
+                str(value) for value in field_schema.get("input_aliases", []) or []
+            )
+        keys = [str(key) for key in (available_keys or ())]
+        normalized = cls._normalize_input_field(field_name)
+        account_fields = {"accountid", "adaccountid", "advertiserid", "customerid"}
+        for key in keys:
+            key_normalized = cls._normalize_input_field(key)
+            if key_normalized == normalized:
+                candidates.append(key)
+            elif field_name == "name" and key_normalized.endswith("name"):
+                candidates.append(key)
+            elif normalized in account_fields and key_normalized in account_fields:
+                candidates.append(key)
+        return list(dict.fromkeys(candidates))
+
     def _build_tool_input(
         self,
         tool_def: Any,
@@ -4835,40 +4873,28 @@ class AgentRuntime:
         if isinstance(specific_params, dict):
             platform_params = {**platform_params, **specific_params}
 
-        # 从平台参数中提取该工具需要的字段，并统一跨渠道命名。
-        aliases = {
-            "name": ["name", "campaign_name", "adset_name", "ad_set_name", "adgroup_name", "line_item_name"],
-            "campaign_name": ["campaign_name", "name"],
-            "account_id": ["account_id", "ad_account_id", "advertiser_id", "customer_id"],
-            "customer_id": ["customer_id", "account_id"],
-            "advertiser_id": ["advertiser_id", "account_id"],
-            "ad_set_id": ["ad_set_id", "adset_id"],
-            "adset_id": ["adset_id", "ad_set_id"],
-            "ad_group_id": ["ad_group_id", "adgroup_id"],
-            "adgroup_id": ["adgroup_id", "ad_group_id"],
+        # 从平台参数中提取该工具需要的字段。兼容关系来自 Tool Schema 的
+        # input_aliases；Core 只保留 provider-neutral 的字段归一化，不维护
+        # adset/adgroup 等渠道字段表。
+        account_input_fields = {
+            "account_id", "ad_account_id", "advertiser_id", "customer_id",
         }
         if isinstance(specific_params, dict):
             accepted_specific = set(tool_def.input_schema.properties)
-            accepted_specific.add("selection_tokens")
+            accepted_specific.update(account_input_fields | {"selection_tokens"})
             for param_name, field_schema in tool_def.input_schema.properties.items():
-                accepted_specific.update(aliases.get(param_name, [param_name]))
-                if isinstance(field_schema, dict):
-                    accepted_specific.update(
-                        str(value) for value in field_schema.get("input_aliases", []) or []
-                    )
+                accepted_specific.update(self._input_candidates(
+                    param_name, field_schema, specific_params.keys()
+                ))
             unknown_specific_params = sorted(
                 key for key in specific_params
                 if key not in accepted_specific
             )
         for param_name in tool_def.input_schema.properties:
-            candidates = aliases.get(param_name, [param_name])
             field_schema = tool_def.input_schema.properties.get(param_name, {})
-            if isinstance(field_schema, dict):
-                candidates = list(dict.fromkeys(
-                    candidates + [
-                        str(value) for value in field_schema.get("input_aliases", []) or []
-                    ]
-                ))
+            candidates = self._input_candidates(
+                param_name, field_schema, platform_params.keys()
+            )
             for candidate in candidates:
                 if candidate in platform_params and platform_params[candidate] not in (None, ""):
                     tool_input[param_name] = platform_params[candidate]
@@ -4888,7 +4914,14 @@ class AgentRuntime:
             for param_name in tool_def.input_schema.properties:
                 if param_name in tool_input:
                     continue
-                for candidate in aliases.get(param_name, [param_name]):
+                state_field_names = [
+                    str(key).rsplit(":", 1)[-1] for key in protected
+                ]
+                for candidate in self._input_candidates(
+                    param_name,
+                    tool_def.input_schema.properties.get(param_name, {}),
+                    state_field_names,
+                ):
                     scoped_candidates = (
                         f"{actual_platform}:{candidate}",
                         f"{platform}:{candidate}",
@@ -5068,16 +5101,11 @@ class AgentRuntime:
         legitimate sibling fields at the first parent step.
         """
         errors: list[str] = []
-        aliases = {
-            "name", "campaign_name", "adset_name", "ad_set_name",
-            "adgroup_name", "line_item_name", "account_id", "advertiser_id",
-            "customer_id", "ad_account_id", "ad_set_id", "adset_id",
-            "ad_group_id", "adgroup_id",
-        }
         common = {
             "budget", "daily_budget", "objective", "campaign_type",
             "date_range", "date_preset", "creative_materials", "campaign_id",
-            "campaign_ids", "line_item_id", "asset_group_id",
+            "campaign_ids", "account_id", "ad_account_id", "advertiser_id",
+            "customer_id",
         }
         for platform, values in (intent.platform_params or {}).items():
             if platform.startswith("_") or not isinstance(values, dict):
@@ -5089,11 +5117,20 @@ class AgentRuntime:
                 if self._canonical_platform(routed_platform) == canonical
                 for tool in routed_tools
             ]
-            allowed = set(common) | aliases | {"selection_tokens"} | {tool.name for tool in tools}
-            for tool in tools:
-                allowed.update(getattr(tool.input_schema, "properties", {}) or {})
             for key, value in values.items():
-                if key.startswith("_") or key in allowed:
+                if key.startswith("_") or key in common or key in {"selection_tokens"}:
+                    continue
+                if key in {tool.name for tool in tools}:
+                    continue
+                if any(
+                    any(
+                        key in self._input_candidates(field_name, field_schema, [key])
+                        for field_name, field_schema in (
+                            getattr(tool.input_schema, "properties", {}) or {}
+                        ).items()
+                    )
+                    for tool in tools
+                ):
                     continue
                 errors.append(f"{platform}.{key} 未被当前工具链声明")
 
@@ -5103,10 +5140,14 @@ class AgentRuntime:
                 scoped = values.get(tool.name)
                 if not isinstance(scoped, dict):
                     continue
-                properties = set(getattr(tool.input_schema, "properties", {}) or {})
-                scoped_allowed = properties | aliases | {"selection_tokens"}
                 for key in scoped:
-                    if key not in scoped_allowed:
+                    if key == "selection_tokens":
+                        continue
+                    properties = getattr(tool.input_schema, "properties", {}) or {}
+                    if not any(
+                        key in self._input_candidates(field_name, field_schema, [key])
+                        for field_name, field_schema in properties.items()
+                    ):
                         errors.append(f"{platform}.{tool.name}.{key} 未被工具 Schema 声明")
         return errors[:20]
 
