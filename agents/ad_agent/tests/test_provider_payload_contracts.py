@@ -1479,6 +1479,38 @@ def test_tiktok_catalog_adgroup_contract_requires_and_forwards_product_selection
         client.create_adgroup("t1", "101", {**base, "product_set_id": "set-1"})
 
 
+def test_tiktok_adgroup_contract_exposes_optimization_targeting_and_schedule_fields():
+    definition = next(
+        definition for definition, _handler in create_tiktok_capability().register_tools()
+        if definition.name == "tiktok_create_adgroup"
+    )
+    schema = definition.input_schema
+    assert "VALUE" in schema.properties["optimization_goal"]["enum"]
+    assert schema.properties["interest_category_ids"]["lookup_tool"] == (
+        "tiktok_list_interest_categories"
+    )
+    assert schema.properties["device_model_ids"]["lookup_tool"] == (
+        "tiktok_list_device_models"
+    )
+    assert any(
+        rule["id"] == "ocpm_custom_bid_requires_conversion_bid_price"
+        for rule in schema.conditional_rules
+    )
+
+    base = {
+        "campaign_id": "101", "name": "Conversion group",
+        "promotion_type": "WEBSITE", "billing_event": "OCPM",
+        "bid_type": "BID_TYPE_CUSTOM", "bid_amount": 5,
+        "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
+        "budget_mode": "BUDGET_MODE_DAY", "budget": 50,
+        "location_ids": ["US"], "landing_url": "https://example.test",
+    }
+    errors = validate_tool_input(schema, base, include_provider_contract=True)
+    assert any("conversion_bid_price" in error for error in errors)
+    base["conversion_bid_price"] = 4
+    assert validate_tool_input(schema, base, include_provider_contract=True) == []
+
+
 def test_tiktok_typed_ad_tools_validate_assets_and_fix_format_payloads():
     client = TikTokAPIClient({"access_token": "test"})
     payloads = []

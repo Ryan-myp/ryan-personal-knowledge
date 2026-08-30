@@ -59,6 +59,12 @@ Editor SDK 管理，当前 Ads API Capability 不伪造 Lead Form CRUD。新增 
 适配只在 TikTok Client/Capability 内完成，不应修改业务 Skill 来“接线”；未标记为
 `supported_dry_run` 的广告格式不得声称已有完整支持。
 
+Ad Group 的优化目标必须使用当前 Tool Schema 的枚举；`BID_TYPE_CUSTOM` 搭配 `OCPM`
+时还需要 `conversion_bid_price`。`promotion_type=CATALOG` 必须先通过目录和商品集
+lookup 选择 `catalog_id`、`product_set_id`；第三方 Brand Safety 必须同时提供合法伙伴，
+`IOS14_PLUS` 必须提供 `min_ios_version`。兴趣、设备型号、语言等动态定向值不能凭空编造，
+应先调用对应的只读 lookup Tool。
+
 ## 📚 参考文档
 
 - **官方文档**: https://business-api.tiktok.com/portal/docs

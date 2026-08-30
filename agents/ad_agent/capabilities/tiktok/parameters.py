@@ -30,6 +30,18 @@ TIKTOK_BID_TYPES = ["BID_TYPE_NO_BID", "BID_TYPE_CUSTOM", "BID_TYPE_MAX_CONVERSI
 TIKTOK_BILLING_EVENTS = ["CPM", "GD", "CPV", "CPA", "OCPC", "OCPM", "CPC"]
 TIKTOK_PLACEMENT_TYPES = ["PLACEMENT_TYPE_NORMAL", "PLACEMENT_TYPE_AUTOMATIC"]
 TIKTOK_DEEP_BID_TYPES = ["AEO", "OCC", "ROAS"]
+TIKTOK_OPTIMIZATION_GOALS = [
+    "CLICK", "CONVERSION", "INSTALL", "IN_APP_EVENT", "REACH", "VIDEO_VIEW",
+    "VALUE", "LEAD_GENERATION", "ENGAGEMENT", "PRODUCT_SALES", "WEB_CONVERSIONS",
+    "SHOP_PURCHASES", "CATALOG_SALES",
+]
+TIKTOK_PACING_MODES = ["PACING_MODE_SMOOTH", "PACING_MODE_FAST"]
+TIKTOK_SCHEDULE_TYPES = ["SCHEDULE_START_END", "SCHEDULE_FROM_NOW"]
+TIKTOK_BRAND_SAFETY_TYPES = [
+    "NO_BRAND_SAFETY", "STANDARD_INVENTORY", "LIMITED_INVENTORY", "THIRD_PARTY",
+]
+TIKTOK_PRODUCT_SOURCES = ["UNSET", "CATALOG", "STORE", "SHOWCASE"]
+TIKTOK_SHOPPING_ADS_TYPES = ["UNSET", "VIDEO", "LIVE", "CATALOG_LISTING_ADS"]
 TIKTOK_APP_PROMOTION_TYPES = ["APP_ACQUISITION", "APP_RETARGETING"]
 TIKTOK_AGE_GROUPS = [
     "AGE_13_17", "AGE_18_24", "AGE_25_34", "AGE_35_44",
@@ -498,9 +510,17 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
             "billing_event": _field("string", "Billing event", enum=TIKTOK_BILLING_EVENTS),
             "bid_type": _field("string", "Bid mode", enum=TIKTOK_BID_TYPES),
             "bid_amount": _field("number", "Manual bid amount", minimum=0),
+            "bid_price": _field(
+                "number", "Provider bid price; required for custom bid strategies", minimum=0,
+            ),
+            "conversion_bid_price": _field(
+                "number", "Target cost per conversion for OCPM custom bidding", minimum=0,
+            ),
+            "deep_cpa_bid": _field("number", "Deep CPA bid", minimum=0),
+            "roas_bid": _field("number", "ROAS target for value optimization", minimum=0),
             "deep_bid_type": _field("string", "Deep optimization goal", enum=TIKTOK_DEEP_BID_TYPES),
             "optimization_goal": _field(
-                "string", "Ad group optimization goal", enum=TIKTOK_DEEP_BID_TYPES,
+                "string", "Ad group optimization goal", enum=TIKTOK_OPTIMIZATION_GOALS,
             ),
             "conversion_id": _field(
                 "integer", "Conversion event ID returned by TikTok lookup",
@@ -525,6 +545,7 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
                 enum=["TIKTOK_NATIVE_PAGE"],
             ),
             "budget_mode": _field("string", "Ad group budget mode", enum=TIKTOK_BUDGET_MODES[:3]),
+            "budget_optmize_on": _field("boolean", "Enable Campaign Budget Optimization"),
             "budget": _field("number", "Budget in user currency; current knowledge base minimum is 50 USD", minimum=50),
             "daily_budget": _field("number", "Daily budget in user currency", minimum=50),
             "location_ids": _field(
@@ -569,6 +590,57 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
             ),
             "audience_ids": _field("array", "Included audience IDs", items={"type": "string"}),
             "excluded_audience_ids": _field("array", "Excluded audience IDs", items={"type": "string"}),
+            "interest_category_ids": _field(
+                "array", "Interest category IDs", items={"type": "string"},
+                lookup_tool="tiktok_list_interest_categories", lookup_result_key="interest_categories",
+                selection_value_fields=["interest_category_id", "category_id", "id"],
+                selection_label_fields=["interest_category_name", "category_name", "name", "id"],
+            ),
+            "interest_keyword_ids": _field("array", "Interest keyword IDs", items={"type": "string"}),
+            "interest_keywords": _field("array", "Interest keyword values", items={"type": "string"}),
+            "purchase_intention_keyword_ids": _field(
+                "array", "Purchase intention keyword IDs", items={"type": "string"},
+            ),
+            "device_model_ids": _field(
+                "array", "Device model IDs", items={"type": "string"},
+                lookup_tool="tiktok_list_device_models", lookup_result_key="device_models",
+                selection_value_fields=["device_id", "device_model_id", "id"],
+                selection_label_fields=["device_name", "device_model_name", "name", "id"],
+            ),
+            "languages": _field(
+                "array", "Language targeting values", items={"type": "string"},
+                lookup_tool="tiktok_list_languages", lookup_result_key="languages",
+            ),
+            "network_types": _field("array", "Network types", items={"type": "string"}),
+            "min_android_version": _field("string", "Minimum Android version"),
+            "min_ios_version": _field("string", "Minimum iOS version"),
+            "ios14_targeting": _field(
+                "string", "iOS 14 targeting mode",
+                enum=["UNSET", "IOS14_MINUS", "IOS14_PLUS"],
+            ),
+            "device_price_ranges": _field(
+                "array", "Device price range values", items={"type": "integer"},
+            ),
+            "contextual_tag_ids": _field("array", "Contextual targeting tag IDs", items={"type": "string"}),
+            "targeting_expansion": _field("object", "Targeting expansion settings", additionalProperties=True),
+            "household_income": _field("string", "Household income targeting value"),
+            "spending_power": _field("string", "Spending power targeting value"),
+            "blocked_pangle_app_ids": _field("array", "Blocked Pangle app IDs", items={"type": "string"}),
+            "pacing": _field("string", "Budget pacing mode", enum=TIKTOK_PACING_MODES),
+            "schedule_type": _field("string", "Ad group schedule mode", enum=TIKTOK_SCHEDULE_TYPES),
+            "schedule_start_time": _field("string", "Scheduled start time"),
+            "schedule_end_time": _field("string", "Scheduled end time"),
+            "dayparting": _field("string", "Dayparting schedule"),
+            "frequency": _field("number", "Frequency cap", minimum=0),
+            "frequency_schedule": _field("string", "Frequency cap schedule"),
+            "product_source": _field("string", "Shopping product source", enum=TIKTOK_PRODUCT_SOURCES),
+            "shopping_ads_type": _field("string", "Shopping ads type", enum=TIKTOK_SHOPPING_ADS_TYPES),
+            "shopping_ads_retargeting_type": _field("string", "Shopping ads retargeting type"),
+            "shopping_ads_retargeting_actions_days": _field(
+                "integer", "Shopping ads retargeting lookback days", minimum=0,
+            ),
+            "store_id": _field("string", "TikTok Shop or Storefront ID"),
+            "is_hfss": _field("boolean", "Whether the product is high fat, salt or sugar"),
         },
         "conditional_rules": [
             {
@@ -608,6 +680,24 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
                 "if": {"promotion_type": "CATALOG"},
                 "required": ["catalog_id", "product_set_id"],
                 "message": "promotion_type=CATALOG requires catalog_id and product_set_id",
+            },
+            {
+                "id": "ocpm_custom_bid_requires_conversion_bid_price",
+                "if": {"bid_type": "BID_TYPE_CUSTOM", "billing_event": "OCPM"},
+                "required": ["conversion_bid_price"],
+                "message": "OCPM with BID_TYPE_CUSTOM requires conversion_bid_price",
+            },
+            {
+                "id": "third_party_brand_safety_requires_partner",
+                "if": {"brand_safety_type": "THIRD_PARTY"},
+                "required": ["brand_safety_partner"],
+                "message": "brand_safety_type=THIRD_PARTY requires brand_safety_partner",
+            },
+            {
+                "id": "ios14_targeting_requires_min_ios_version",
+                "if": {"ios14_targeting": "IOS14_PLUS"},
+                "required": ["min_ios_version"],
+                "message": "ios14_targeting=IOS14_PLUS requires min_ios_version",
             },
         ],
     }

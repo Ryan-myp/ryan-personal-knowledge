@@ -377,6 +377,16 @@ class TikTokAPIClient(BasePlatformClient):
             'brand_safety_partner', 'audience_type', 'audience_ids',
             'excluded_audience_ids',
             'catalog_id', 'product_set_id',
+            'bid_price', 'conversion_bid_price', 'deep_cpa_bid', 'roas_bid',
+            'budget_optmize_on', 'interest_category_ids', 'interest_keyword_ids',
+            'interest_keywords', 'purchase_intention_keyword_ids', 'device_model_ids',
+            'languages', 'network_types', 'min_android_version', 'min_ios_version',
+            'ios14_targeting', 'device_price_ranges', 'contextual_tag_ids',
+            'targeting_expansion', 'household_income', 'spending_power',
+            'blocked_pangle_app_ids', 'pacing', 'schedule_type', 'schedule_start_time',
+            'schedule_end_time', 'dayparting', 'frequency', 'frequency_schedule',
+            'product_source', 'shopping_ads_type', 'shopping_ads_retargeting_type',
+            'shopping_ads_retargeting_actions_days', 'store_id', 'is_hfss',
         ):
             if key in adgroup and adgroup[key] not in (None, ''):
                 data['ad_group'][key] = adgroup[key]

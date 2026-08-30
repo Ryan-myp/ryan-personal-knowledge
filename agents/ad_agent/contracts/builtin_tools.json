@@ -1,5 +1,5 @@
 {
-  "digest": "1bdadecb1895f751a83aa6b8d6494eb86a9576ad28d82446d312135af089fb56",
+  "digest": "a9d6cfda28834e3da5a3ce90861d44bde99ac0aa7ce929e5b0bc7933d1dfa18c",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -12428,7 +12428,7 @@
       ]
     },
     "tiktok": {
-      "digest": "65e4817e304ca39bee6970715dba1504ef7f283010cb6a9390830a1fa5ddb6f0",
+      "digest": "4bdfb3ddde70d6f6bd5dfbe399c90b1280ff5bf2f340092f1102e5f10b0f44bc",
       "tool_count": 69,
       "tools": [
         {
@@ -12672,6 +12672,37 @@
                   "catalog_id",
                   "product_set_id"
                 ]
+              },
+              {
+                "id": "ocpm_custom_bid_requires_conversion_bid_price",
+                "if": {
+                  "bid_type": "BID_TYPE_CUSTOM",
+                  "billing_event": "OCPM"
+                },
+                "message": "OCPM with BID_TYPE_CUSTOM requires conversion_bid_price",
+                "required": [
+                  "conversion_bid_price"
+                ]
+              },
+              {
+                "id": "third_party_brand_safety_requires_partner",
+                "if": {
+                  "brand_safety_type": "THIRD_PARTY"
+                },
+                "message": "brand_safety_type=THIRD_PARTY requires brand_safety_partner",
+                "required": [
+                  "brand_safety_partner"
+                ]
+              },
+              {
+                "id": "ios14_targeting_requires_min_ios_version",
+                "if": {
+                  "ios14_targeting": "IOS14_PLUS"
+                },
+                "message": "ios14_targeting=IOS14_PLUS requires min_ios_version",
+                "required": [
+                  "min_ios_version"
+                ]
               }
             ],
             "properties": {
@@ -12722,6 +12753,11 @@
                 "minimum": 0,
                 "type": "number"
               },
+              "bid_price": {
+                "description": "Provider bid price; required for custom bid strategies",
+                "minimum": 0,
+                "type": "number"
+              },
               "bid_type": {
                 "description": "Bid mode",
                 "enum": [
@@ -12743,6 +12779,13 @@
                   "CPC"
                 ],
                 "type": "string"
+              },
+              "blocked_pangle_app_ids": {
+                "description": "Blocked Pangle app IDs",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               },
               "brand_safety_partner": {
                 "description": "Brand safety verification partner",
@@ -12772,6 +12815,10 @@
                 ],
                 "type": "string"
               },
+              "budget_optmize_on": {
+                "description": "Enable Campaign Budget Optimization",
+                "type": "boolean"
+              },
               "campaign_id": {
                 "description": "Parent campaign ID",
                 "type": "string"
@@ -12790,6 +12837,18 @@
                   "id"
                 ],
                 "type": "string"
+              },
+              "contextual_tag_ids": {
+                "description": "Contextual targeting tag IDs",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "conversion_bid_price": {
+                "description": "Target cost per conversion for OCPM custom bidding",
+                "minimum": 0,
+                "type": "number"
               },
               "conversion_id": {
                 "description": "Conversion event ID returned by TikTok lookup",
@@ -12812,6 +12871,10 @@
                 "minimum": 50,
                 "type": "number"
               },
+              "dayparting": {
+                "description": "Dayparting schedule",
+                "type": "string"
+              },
               "deep_bid_type": {
                 "description": "Deep optimization goal",
                 "enum": [
@@ -12821,12 +12884,53 @@
                 ],
                 "type": "string"
               },
+              "deep_cpa_bid": {
+                "description": "Deep CPA bid",
+                "minimum": 0,
+                "type": "number"
+              },
+              "device_model_ids": {
+                "description": "Device model IDs",
+                "items": {
+                  "type": "string"
+                },
+                "lookup_result_key": "device_models",
+                "lookup_tool": "tiktok_list_device_models",
+                "selection_label_fields": [
+                  "device_name",
+                  "device_model_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "device_id",
+                  "device_model_id",
+                  "id"
+                ],
+                "type": "array"
+              },
+              "device_price_ranges": {
+                "description": "Device price range values",
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
               "excluded_audience_ids": {
                 "description": "Excluded audience IDs",
                 "items": {
                   "type": "string"
                 },
                 "type": "array"
+              },
+              "frequency": {
+                "description": "Frequency cap",
+                "minimum": 0,
+                "type": "number"
+              },
+              "frequency_schedule": {
+                "description": "Frequency cap schedule",
+                "type": "string"
               },
               "gender": {
                 "description": "Gender targeting",
@@ -12837,9 +12941,69 @@
                 ],
                 "type": "string"
               },
+              "household_income": {
+                "description": "Household income targeting value",
+                "type": "string"
+              },
+              "interest_category_ids": {
+                "description": "Interest category IDs",
+                "items": {
+                  "type": "string"
+                },
+                "lookup_result_key": "interest_categories",
+                "lookup_tool": "tiktok_list_interest_categories",
+                "selection_label_fields": [
+                  "interest_category_name",
+                  "category_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "interest_category_id",
+                  "category_id",
+                  "id"
+                ],
+                "type": "array"
+              },
+              "interest_keyword_ids": {
+                "description": "Interest keyword IDs",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "interest_keywords": {
+                "description": "Interest keyword values",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "ios14_targeting": {
+                "description": "iOS 14 targeting mode",
+                "enum": [
+                  "UNSET",
+                  "IOS14_MINUS",
+                  "IOS14_PLUS"
+                ],
+                "type": "string"
+              },
+              "is_hfss": {
+                "description": "Whether the product is high fat, salt or sugar",
+                "type": "boolean"
+              },
               "landing_url": {
                 "description": "Website landing URL",
                 "type": "string"
+              },
+              "languages": {
+                "description": "Language targeting values",
+                "items": {
+                  "type": "string"
+                },
+                "lookup_result_key": "languages",
+                "lookup_tool": "tiktok_list_languages",
+                "type": "array"
               },
               "location_ids": {
                 "description": "Country/region IDs",
@@ -12862,9 +13026,24 @@
                 ],
                 "type": "array"
               },
+              "min_android_version": {
+                "description": "Minimum Android version",
+                "type": "string"
+              },
+              "min_ios_version": {
+                "description": "Minimum iOS version",
+                "type": "string"
+              },
               "name": {
                 "description": "Ad group name; max 60 characters",
                 "type": "string"
+              },
+              "network_types": {
+                "description": "Network types",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               },
               "operating_systems": {
                 "description": "Operating systems",
@@ -12884,9 +13063,27 @@
               "optimization_goal": {
                 "description": "Ad group optimization goal",
                 "enum": [
-                  "AEO",
-                  "OCC",
-                  "ROAS"
+                  "CLICK",
+                  "CONVERSION",
+                  "INSTALL",
+                  "IN_APP_EVENT",
+                  "REACH",
+                  "VIDEO_VIEW",
+                  "VALUE",
+                  "LEAD_GENERATION",
+                  "ENGAGEMENT",
+                  "PRODUCT_SALES",
+                  "WEB_CONVERSIONS",
+                  "SHOP_PURCHASES",
+                  "CATALOG_SALES"
+                ],
+                "type": "string"
+              },
+              "pacing": {
+                "description": "Budget pacing mode",
+                "enum": [
+                  "PACING_MODE_SMOOTH",
+                  "PACING_MODE_FAST"
                 ],
                 "type": "string"
               },
@@ -12929,6 +13126,16 @@
                 ],
                 "type": "string"
               },
+              "product_source": {
+                "description": "Shopping product source",
+                "enum": [
+                  "UNSET",
+                  "CATALOG",
+                  "STORE",
+                  "SHOWCASE"
+                ],
+                "type": "string"
+              },
               "promotion_type": {
                 "description": "Promotion destination",
                 "enum": [
@@ -12948,6 +13155,57 @@
                 ],
                 "type": "string"
               },
+              "purchase_intention_keyword_ids": {
+                "description": "Purchase intention keyword IDs",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "roas_bid": {
+                "description": "ROAS target for value optimization",
+                "minimum": 0,
+                "type": "number"
+              },
+              "schedule_end_time": {
+                "description": "Scheduled end time",
+                "type": "string"
+              },
+              "schedule_start_time": {
+                "description": "Scheduled start time",
+                "type": "string"
+              },
+              "schedule_type": {
+                "description": "Ad group schedule mode",
+                "enum": [
+                  "SCHEDULE_START_END",
+                  "SCHEDULE_FROM_NOW"
+                ],
+                "type": "string"
+              },
+              "shopping_ads_retargeting_actions_days": {
+                "description": "Shopping ads retargeting lookback days",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "shopping_ads_retargeting_type": {
+                "description": "Shopping ads retargeting type",
+                "type": "string"
+              },
+              "shopping_ads_type": {
+                "description": "Shopping ads type",
+                "enum": [
+                  "UNSET",
+                  "VIDEO",
+                  "LIVE",
+                  "CATALOG_LISTING_ADS"
+                ],
+                "type": "string"
+              },
+              "spending_power": {
+                "description": "Spending power targeting value",
+                "type": "string"
+              },
               "status": {
                 "description": "Ad group status: 1 active, 0 paused",
                 "enum": [
@@ -12956,8 +13214,17 @@
                 ],
                 "type": "integer"
               },
+              "store_id": {
+                "description": "TikTok Shop or Storefront ID",
+                "type": "string"
+              },
               "targeting": {
                 "description": "Provider targeting object; use structured fields above for known dimensions",
+                "type": "object"
+              },
+              "targeting_expansion": {
+                "additionalProperties": true,
+                "description": "Targeting expansion settings",
                 "type": "object"
               },
               "tracking_url": {
