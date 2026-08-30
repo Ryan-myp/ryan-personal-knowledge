@@ -23,6 +23,7 @@ TIKTOK_BUDGET_MODES = [
 ]
 TIKTOK_BUDGET_RESTRICTIONS = ["NO_LIMITATION", "DAILY_BUDGET", "LIFETIME_BUDGET"]
 TIKTOK_PROMOTION_TYPES = ["APP_ANDROID", "APP_IOS", "WEBSITE", "LEAD_FORM", "CONTENT"]
+TIKTOK_PLACEMENTS = ["PLACEMENT_TIKTOK", "PLACEMENT_PANGLE", "PLACEMENT_GLOBAL_APP_BUNDLE"]
 TIKTOK_BID_TYPES = ["BID_TYPE_NO_BID", "BID_TYPE_CUSTOM", "BID_TYPE_MAX_CONVERSION"]
 TIKTOK_BILLING_EVENTS = ["CPM", "GD", "CPV", "CPA", "OCPC", "OCPM", "CPC"]
 TIKTOK_PLACEMENT_TYPES = ["PLACEMENT_TYPE_NORMAL", "PLACEMENT_TYPE_AUTOMATIC"]
@@ -272,7 +273,21 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
                 selection_value_fields=["conversion_id", "id"],
                 selection_label_fields=["conversion_name", "name", "event_name"],
             ),
+            "optimization_event": _field(
+                "string", "Provider conversion event used for optimization",
+            ),
+            "pixel_id": _field(
+                "string", "TikTok Pixel ID for landing-page tracking",
+            ),
             "placement_type": _field("string", "Placement mode", enum=TIKTOK_PLACEMENT_TYPES),
+            "placements": _field(
+                "array", "Apps where the ad is delivered",
+                items={"type": "string", "enum": TIKTOK_PLACEMENTS},
+            ),
+            "promotion_website_type": _field(
+                "string", "TikTok native Instant Page type",
+                enum=["TIKTOK_NATIVE_PAGE"],
+            ),
             "budget_mode": _field("string", "Ad group budget mode", enum=TIKTOK_BUDGET_MODES[:3]),
             "budget": _field("number", "Budget in user currency; current knowledge base minimum is 50 USD", minimum=50),
             "daily_budget": _field("number", "Daily budget in user currency", minimum=50),
@@ -296,7 +311,6 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
             ),
             "tracking_url": _field("string", "Tracking URL"),
             "status": _field("integer", "Ad group status: 1 active, 0 paused", enum=[0, 1]),
-            "form_id": _field("string", "TikTok Instant Form ID"),
             "catalog_id": _field("string", "TikTok catalog ID"),
             "product_set_id": _field("string", "TikTok product set ID"),
             "audience_ids": _field("array", "Included audience IDs", items={"type": "string"}),
@@ -328,6 +342,12 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
                 "if": {"bid_type": "BID_TYPE_CUSTOM"},
                 "required": ["bid_amount"],
                 "message": "bid_type=BID_TYPE_CUSTOM requires bid_amount",
+            },
+            {
+                "id": "normal_placement_requires_apps",
+                "if": {"placement_type": "PLACEMENT_TYPE_NORMAL"},
+                "required": ["placements"],
+                "message": "placement_type=PLACEMENT_TYPE_NORMAL requires placements",
             },
         ],
     }
@@ -435,7 +455,7 @@ def tiktok_ad_schema() -> dict[str, Any]:
             "video_id": _field("string", "Video asset ID"),
             "image_ids": _field("array", "Image asset IDs", items={"type": "string"}),
             "spark_post_id": _field("string", "Spark post ID"),
-            "form_id": _field("string", "TikTok Instant Form ID"),
+            "page_id": _field("string", "TikTok Instant Page or Instant Form page ID", minLength=1),
             "catalog_id": _field("string", "TikTok catalog ID"),
             "product_set_id": _field("string", "TikTok product set ID"),
             "call_to_action": _field("string", "Call to action"),
@@ -446,20 +466,20 @@ def tiktok_ad_schema() -> dict[str, Any]:
 
 
 def tiktok_lead_ad_schema() -> dict[str, Any]:
-    """Create contract for a TikTok Lead Generation Instant Form ad."""
+    """Create contract for a TikTok Lead Generation Instant Form ad.
+
+    TikTok represents an Instant Form as an Instant Page in the ad-create
+    contract. The page itself is managed by the Instant Page Editor SDK.
+    """
     return {
-        "required": ["campaign_id", "adgroup_id", "name", "form_id"],
-        "provider_required": ["campaign_id", "form_id"],
+        "required": ["campaign_id", "adgroup_id", "name", "page_id"],
+        "provider_required": ["campaign_id", "page_id"],
         "provider_any_of": [["media", "creatives"]],
         "properties": {
             "campaign_id": _field("string", "Parent campaign ID"),
             "adgroup_id": _field("string", "Parent ad group ID"),
             "name": _field("string", "Ad name"),
-            "form_id": _field("string", "TikTok Instant Form ID", minLength=1),
-            "promotion_type": _field(
-                "string", "Fixed lead promotion destination", enum=["LEAD_FORM"],
-                default="LEAD_FORM",
-            ),
+            "page_id": _field("string", "TikTok Instant Page / Instant Form page ID", minLength=1),
             "landing_page_url": _field("string", "Optional fallback landing URL"),
             "tracking_url": _field("string", "Tracking URL"),
             "conversion_id": _field(
@@ -473,6 +493,10 @@ def tiktok_lead_ad_schema() -> dict[str, Any]:
             "text": _field("object", "Ad copy payload", additionalProperties=True),
             "call_to_action": _field("string", "Lead form call to action"),
             "status": _field("integer", "Ad status: 1 active, 0 paused", enum=[0, 1]),
+            "operation_status": _field(
+                "string", "Provider creation status", enum=["ENABLE", "DISABLE"],
+            ),
+            "tracking_pixel_id": _field("integer", "TikTok tracking Pixel ID", minimum=0),
         },
     }
 
@@ -604,9 +628,9 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
             "coverage": "partial_dry_run",
             "tool_names": ["tiktok_create_campaign", "tiktok_create_adgroup", "tiktok_create_lead_ad"],
             "payload_adapter": "TikTokAPIClient.create_lead_ad",
-            "dependencies": ["LEAD_GENERATION", "LEAD_FORM", "form_id"],
-            "supported_fields": ["objective_type", "promotion_type", "form_id", "media"],
-            "gaps": ["Instant Form lookup/validation", "live mutation approval"],
+            "dependencies": ["LEAD_GENERATION", "TIKTOK_NATIVE_PAGE", "page_id"],
+            "supported_fields": ["objective_type", "page_id", "media"],
+            "gaps": ["Instant Page Editor SDK integration", "page lookup/validation", "live mutation approval"],
             "source_document": source_document,
         },
         {
@@ -616,9 +640,9 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
             "coverage": "supported_dry_run",
             "tool_names": ["tiktok_create_adgroup", "tiktok_create_lead_ad"],
             "payload_adapter": "TikTokAPIClient.create_lead_ad",
-            "dependencies": ["LEAD_GENERATION", "LEAD_FORM", "form_id"],
-            "supported_fields": ["promotion_type", "form_id"],
-            "gaps": ["Instant Form lookup/validation", "live mutation approval"],
+            "dependencies": ["LEAD_GENERATION", "TIKTOK_NATIVE_PAGE", "page_id"],
+            "supported_fields": ["page_id"],
+            "gaps": ["Instant Page Editor SDK integration", "page lookup/validation", "live mutation approval"],
             "source_document": source_document,
         },
         {

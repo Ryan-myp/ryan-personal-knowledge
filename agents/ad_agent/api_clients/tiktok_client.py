@@ -372,7 +372,10 @@ class TikTokAPIClient(BasePlatformClient):
             'billing_event', 'deep_bid_type', 'budget_mode',
             'app_id', 'landing_url', 'location_ids', 'operating_systems',
             'age_groups', 'gender', 'auto_targeting_enabled', 'optimization_goal',
-            'conversion_id',
+            'conversion_id', 'placements', 'promotion_website_type',
+            'optimization_event', 'pixel_id', 'brand_safety_type',
+            'brand_safety_partner', 'audience_type', 'audience_ids',
+            'excluded_audience_ids',
         ):
             if key in adgroup and adgroup[key] not in (None, ''):
                 data['ad_group'][key] = adgroup[key]
@@ -555,7 +558,8 @@ class TikTokAPIClient(BasePlatformClient):
         # builder, but it must not silently discard a valid provider field.
         for key in (
             'ad_format', 'status', 'video_id', 'image_ids', 'spark_post_id',
-            'form_id', 'catalog_id', 'product_set_id', 'call_to_action',
+            'page_id', 'tracking_pixel_id', 'operation_status', 'creative_type',
+            'display_name', 'catalog_id', 'product_set_id', 'call_to_action',
             'identity_id', 'promotion_type', 'app_id', 'app_promotion_type',
             'operating_systems', 'deep_link', 'tracking_url', 'promote_object', 'ad_text_settings',
             'brand_safety', 'run_time_settings',
@@ -575,18 +579,21 @@ class TikTokAPIClient(BasePlatformClient):
         adgroup_id: str,
         ad: dict,
     ) -> str:
-        """Create a TikTok Lead Generation ad bound to an Instant Form."""
+        """Create a Lead Generation ad bound to a TikTok Instant Page.
+
+        TikTok's v1.3 ad-create contract represents an Instant Form with
+        ``page_id``. The form/page is created by the Instant Page Editor SDK,
+        not by an Ads API Lead Form CRUD endpoint.
+        """
         if not isinstance(ad, dict):
             raise ValueError("lead ad must be an object")
-        form_id = str(ad.get("form_id") or "").strip()
-        if not form_id:
-            raise ValueError("form_id is required")
+        page_id = str(ad.get("page_id") or "").strip()
+        if not page_id or not page_id.isdigit():
+            raise ValueError("page_id is required and must contain digits only")
         normalized = dict(ad)
-        normalized["promotion_type"] = "LEAD_FORM"
-        normalized["form_id"] = form_id
-        normalized["promote_object"] = {
-            "lead_form": {"form_id": form_id},
-        }
+        normalized["page_id"] = int(page_id)
+        normalized.pop("form_id", None)
+        normalized.pop("promote_object", None)
         return self.create_ad(advertiser_id, campaign_id, adgroup_id, normalized)
 
     def create_app_ad(
@@ -994,6 +1001,56 @@ class TikTokAPIClient(BasePlatformClient):
         result = self.request('GET', 'location/search/', params=data)
         payload = self._data_section(result)
         return payload.get('list', []) if isinstance(payload, dict) else []
+
+    def list_regions(
+        self,
+        advertiser_id: str,
+        placements: list[str],
+        objective_type: str,
+        promotion_target_type: str = None,
+        operating_system: str = None,
+        brand_safety_type: str = None,
+        brand_safety_partner: str = None,
+        level_range: str = None,
+        rf_campaign_type: str = None,
+    ) -> list:
+        """Get available regions from TikTok's official Tool Region API.
+
+        Region availability depends on placement and campaign objective. The
+        older location helper remains available for generic targeting, while
+        this method exposes the provider-owned context required by v1.3.
+        """
+        advertiser_id = str(advertiser_id or '').strip()
+        if not advertiser_id.isdigit():
+            raise ValueError("advertiser_id must contain digits only")
+        if not isinstance(placements, list) or not placements:
+            raise ValueError("placements must be a non-empty array")
+        objective_type = str(objective_type or '').strip()
+        if not objective_type:
+            raise ValueError("objective_type is required")
+        params: dict[str, Any] = {
+            'advertiser_id': advertiser_id,
+            'placements': placements,
+            'objective_type': objective_type,
+        }
+        for key, value in (
+            ('promotion_target_type', promotion_target_type),
+            ('operating_system', operating_system),
+            ('brand_safety_type', brand_safety_type),
+            ('brand_safety_partner', brand_safety_partner),
+            ('level_range', level_range),
+            ('rf_campaign_type', rf_campaign_type),
+        ):
+            if value not in (None, ''):
+                params[key] = value
+        self.acquire_rate_limit(self._rate_limiter)
+        result = self.request('GET', 'tool/region/', params=params)
+        payload = self._data_section(result)
+        if isinstance(payload, list):
+            return payload
+        if isinstance(payload, dict):
+            return payload.get('list', payload.get('regions', payload.get('locations', [])))
+        return []
     
     # ==================== 设备定向查询 ====================
     

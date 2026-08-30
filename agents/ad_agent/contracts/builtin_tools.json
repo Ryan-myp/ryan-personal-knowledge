@@ -1,5 +1,5 @@
 {
-  "digest": "565004af0f083058051777fc0d7559007f2a411337a23317d26dfb31b274a64c",
+  "digest": "ff532f436952ce705d85e49ff2f1d3c0669adaaf72cede97330737d8f681b585",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -11527,8 +11527,8 @@
       ]
     },
     "tiktok": {
-      "digest": "53bb78df3c585d05ecb229f80a215df5f2024bd734367ead4178adb5bd9ce525",
-      "tool_count": 49,
+      "digest": "7a96927edf9017ffc13735c2d25915982a06875a5241e4aa797cb8c33066eab7",
+      "tool_count": 50,
       "tools": [
         {
           "action": "create",
@@ -11589,10 +11589,6 @@
                 },
                 "type": "array"
               },
-              "form_id": {
-                "description": "TikTok Instant Form ID",
-                "type": "string"
-              },
               "identity_id": {
                 "description": "TikTok identity ID",
                 "type": "string"
@@ -11620,6 +11616,11 @@
               },
               "name": {
                 "description": "Ad name",
+                "type": "string"
+              },
+              "page_id": {
+                "description": "TikTok Instant Page or Instant Form page ID",
+                "minLength": 1,
                 "type": "string"
               },
               "product_set_id": {
@@ -11748,6 +11749,16 @@
                 "message": "bid_type=BID_TYPE_CUSTOM requires bid_amount",
                 "required": [
                   "bid_amount"
+                ]
+              },
+              {
+                "id": "normal_placement_requires_apps",
+                "if": {
+                  "placement_type": "PLACEMENT_TYPE_NORMAL"
+                },
+                "message": "placement_type=PLACEMENT_TYPE_NORMAL requires placements",
+                "required": [
+                  "placements"
                 ]
               }
             ],
@@ -11880,10 +11891,6 @@
                 },
                 "type": "array"
               },
-              "form_id": {
-                "description": "TikTok Instant Form ID",
-                "type": "string"
-              },
               "gender": {
                 "description": "Gender targeting",
                 "enum": [
@@ -11933,6 +11940,10 @@
                 },
                 "type": "array"
               },
+              "optimization_event": {
+                "description": "Provider conversion event used for optimization",
+                "type": "string"
+              },
               "optimization_goal": {
                 "description": "Ad group optimization goal",
                 "enum": [
@@ -11942,6 +11953,10 @@
                 ],
                 "type": "string"
               },
+              "pixel_id": {
+                "description": "TikTok Pixel ID for landing-page tracking",
+                "type": "string"
+              },
               "placement_type": {
                 "description": "Placement mode",
                 "enum": [
@@ -11949,6 +11964,18 @@
                   "PLACEMENT_TYPE_AUTOMATIC"
                 ],
                 "type": "string"
+              },
+              "placements": {
+                "description": "Apps where the ad is delivered",
+                "items": {
+                  "enum": [
+                    "PLACEMENT_TIKTOK",
+                    "PLACEMENT_PANGLE",
+                    "PLACEMENT_GLOBAL_APP_BUNDLE"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
               },
               "product_set_id": {
                 "description": "TikTok product set ID",
@@ -11962,6 +11989,13 @@
                   "WEBSITE",
                   "LEAD_FORM",
                   "CONTENT"
+                ],
+                "type": "string"
+              },
+              "promotion_website_type": {
+                "description": "TikTok native Instant Page type",
+                "enum": [
+                  "TIKTOK_NATIVE_PAGE"
                 ],
                 "type": "string"
               },
@@ -12527,11 +12561,6 @@
                 },
                 "type": "array"
               },
-              "form_id": {
-                "description": "TikTok Instant Form ID",
-                "minLength": 1,
-                "type": "string"
-              },
               "landing_page_url": {
                 "description": "Optional fallback landing URL",
                 "type": "string"
@@ -12547,12 +12576,17 @@
                 "description": "Ad name",
                 "type": "string"
               },
-              "promotion_type": {
-                "default": "LEAD_FORM",
-                "description": "Fixed lead promotion destination",
+              "operation_status": {
+                "description": "Provider creation status",
                 "enum": [
-                  "LEAD_FORM"
+                  "ENABLE",
+                  "DISABLE"
                 ],
+                "type": "string"
+              },
+              "page_id": {
+                "description": "TikTok Instant Page / Instant Form page ID",
+                "minLength": 1,
                 "type": "string"
               },
               "status": {
@@ -12568,6 +12602,11 @@
                 "description": "Ad copy payload",
                 "type": "object"
               },
+              "tracking_pixel_id": {
+                "description": "TikTok tracking Pixel ID",
+                "minimum": 0,
+                "type": "integer"
+              },
               "tracking_url": {
                 "description": "Tracking URL",
                 "type": "string"
@@ -12581,13 +12620,13 @@
             ],
             "provider_required": [
               "campaign_id",
-              "form_id"
+              "page_id"
             ],
             "required": [
               "campaign_id",
               "adgroup_id",
               "name",
-              "form_id"
+              "page_id"
             ],
             "type": "object"
           },
@@ -14043,6 +14082,123 @@
         {
           "action": "list",
           "contract_version": "1.2.0",
+          "description": "按投放位置、广告目标和业务条件查询 TikTok 官方可用地域。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "brand_safety_partner": {
+                "enum": [
+                  "IAS",
+                  "OPEN_SLATE"
+                ],
+                "type": "string"
+              },
+              "brand_safety_type": {
+                "type": "string"
+              },
+              "level_range": {
+                "enum": [
+                  "ALL",
+                  "TO_COUNTRY",
+                  "TO_PROVINCE",
+                  "TO_CITY",
+                  "TO_DISTRICT"
+                ],
+                "type": "string"
+              },
+              "objective_type": {
+                "enum": [
+                  "APP_PROMOTION",
+                  "PRODUCT_SALES",
+                  "TRAFFIC",
+                  "VIDEO_VIEWS",
+                  "CONVERSIONS",
+                  "REACH",
+                  "LEAD_GENERATION",
+                  "ENGAGEMENT",
+                  "CATALOG_SALES",
+                  "SHOP_PURCHASES",
+                  "WEB_CONVERSIONS",
+                  "APP_INSTALL"
+                ],
+                "type": "string"
+              },
+              "operating_system": {
+                "enum": [
+                  "ANDROID",
+                  "IOS"
+                ],
+                "type": "string"
+              },
+              "placements": {
+                "items": {
+                  "enum": [
+                    "PLACEMENT_TIKTOK",
+                    "PLACEMENT_PANGLE",
+                    "PLACEMENT_GLOBAL_APP_BUNDLE"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "promotion_target_type": {
+                "enum": [
+                  "INSTANT_PAGE",
+                  "EXTERNAL_WEBSITE"
+                ],
+                "type": "string"
+              },
+              "rf_campaign_type": {
+                "enum": [
+                  "STANDARD",
+                  "PULSE"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "placements",
+              "objective_type"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_regions"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_list_regions",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "region",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "targeting",
+            "lookup"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.2.0",
           "description": "查询 TikTok videos 素材库。",
           "effect_class": "read",
           "input_schema": {
@@ -15355,5 +15511,5 @@
       ]
     }
   },
-  "tool_count": 191
+  "tool_count": 192
 }

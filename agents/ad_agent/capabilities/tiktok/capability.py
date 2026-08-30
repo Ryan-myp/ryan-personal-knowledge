@@ -47,6 +47,8 @@ from .parameters import (
     tiktok_image_upload_schema,
     tiktok_video_upload_schema,
     tiktok_targeting_update_schema,
+    TIKTOK_OBJECTIVE_TYPES,
+    TIKTOK_PLACEMENTS,
 )
 from ..update_contracts import tiktok_updates
 
@@ -104,7 +106,8 @@ class TikTokCapability(BaseCapability):
         "delete_audience": ["tiktok_delete_audience"],
         "list_interest_categories": ["tiktok_list_interest_categories"],
         "get_interest_category": ["tiktok_get_interest_category"], "list_locations": ["tiktok_list_locations"],
-        "search_locations": ["tiktok_search_locations"], "list_devices": ["tiktok_list_devices"],
+        "search_locations": ["tiktok_search_locations"], "list_regions": ["tiktok_list_regions"],
+        "list_devices": ["tiktok_list_devices"],
         "list_operating_systems": ["tiktok_list_operating_systems"], "list_carriers": ["tiktok_list_carriers"],
         "list_browsers": ["tiktok_list_browsers"], "list_creatives": ["tiktok_list_creatives"],
         "list_videos": ["tiktok_list_videos"], "list_images": ["tiktok_list_images"],
@@ -265,6 +268,33 @@ class TikTokCapability(BaseCapability):
                 required=["keyword"], action="list", resource_type="location", intent_types=["search_locations"],
                 traits=["read", "targeting"], argument_builder=lambda _ctx, data: ((data["keyword"],), {
                     "location_type": data.get("location_type")
+                }),
+            ),
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_regions",
+                description="按投放位置、广告目标和业务条件查询 TikTok 官方可用地域。",
+                method_name="list_regions", result_key="regions",
+                properties={
+                    "account_id": {"type": "string"},
+                    "placements": {"type": "array", "items": {"type": "string", "enum": TIKTOK_PLACEMENTS}},
+                    "objective_type": {"type": "string", "enum": TIKTOK_OBJECTIVE_TYPES},
+                    "promotion_target_type": {"type": "string", "enum": ["INSTANT_PAGE", "EXTERNAL_WEBSITE"]},
+                    "operating_system": {"type": "string", "enum": ["ANDROID", "IOS"]},
+                    "brand_safety_type": {"type": "string"},
+                    "brand_safety_partner": {"type": "string", "enum": ["IAS", "OPEN_SLATE"]},
+                    "level_range": {"type": "string", "enum": ["ALL", "TO_COUNTRY", "TO_PROVINCE", "TO_CITY", "TO_DISTRICT"]},
+                    "rf_campaign_type": {"type": "string", "enum": ["STANDARD", "PULSE"]},
+                },
+                required=["account_id", "placements", "objective_type"],
+                action="list", resource_type="region", intent_types=["list_regions"],
+                traits=["read", "targeting", "lookup"],
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["placements"], data["objective_type"]), {
+                    "promotion_target_type": data.get("promotion_target_type"),
+                    "operating_system": data.get("operating_system"),
+                    "brand_safety_type": data.get("brand_safety_type"),
+                    "brand_safety_partner": data.get("brand_safety_partner"),
+                    "level_range": data.get("level_range"),
+                    "rf_campaign_type": data.get("rf_campaign_type"),
                 }),
             ),
         ]

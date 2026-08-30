@@ -934,8 +934,17 @@ def test_tiktok_ad_creation_preserves_existing_schema_fields():
         "conversion_id": 42,
         "budget_mode": "BUDGET_MODE_DAY",
         "daily_budget": 50,
+        "placement_type": "PLACEMENT_TYPE_NORMAL",
+        "placements": ["PLACEMENT_TIKTOK"],
+        "promotion_website_type": "TIKTOK_NATIVE_PAGE",
+        "optimization_event": "LEAD_GENERATION",
+        "pixel_id": "pixel-1",
     })
     assert payloads[-1]["ad_group"]["conversion_id"] == 42
+    assert payloads[-1]["ad_group"]["placements"] == ["PLACEMENT_TIKTOK"]
+    assert payloads[-1]["ad_group"]["promotion_website_type"] == "TIKTOK_NATIVE_PAGE"
+    assert payloads[-1]["ad_group"]["optimization_event"] == "LEAD_GENERATION"
+    assert payloads[-1]["ad_group"]["pixel_id"] == "pixel-1"
 
 
 def test_tiktok_targeting_update_validates_dimensions_and_builds_scoped_payload():
@@ -999,7 +1008,7 @@ def test_tiktok_audience_delete_tool_calls_provider_method():
     )
 
 
-def test_tiktok_lead_ad_builds_instant_form_promote_object():
+def test_tiktok_lead_ad_builds_instant_page_payload():
     client = TikTokAPIClient({"access_token": "test"})
     payloads = []
     client.request = lambda method, endpoint, data=None, **kwargs: (
@@ -1007,7 +1016,7 @@ def test_tiktok_lead_ad_builds_instant_form_promote_object():
     )
 
     assert client.create_lead_ad("t1", "101", "202", {
-        "name": "Lead ad", "form_id": "form-1",
+        "name": "Lead ad", "page_id": "9001",
         "media": [{"video_id": "video-1"}],
         "text": {"primary_text": "Get the guide"},
         "tracking_url": "https://example.test/track",
@@ -1015,13 +1024,13 @@ def test_tiktok_lead_ad_builds_instant_form_promote_object():
     method, endpoint, data = payloads[-1]
     assert (method, endpoint) == ("POST", "ad/create/")
     ad = data["ad"]
-    assert ad["promotion_type"] == "LEAD_FORM"
-    assert ad["form_id"] == "form-1"
-    assert ad["promote_object"] == {"lead_form": {"form_id": "form-1"}}
+    assert ad["page_id"] == 9001
+    assert "form_id" not in ad
+    assert "promote_object" not in ad
     assert ad["media"] == [{"video_id": "video-1"}]
     assert ad["tracking_url"] == "https://example.test/track"
 
-    with pytest.raises(ValueError, match="form_id is required"):
+    with pytest.raises(ValueError, match="page_id is required"):
         client.create_lead_ad("t1", "101", "202", {"name": "Missing"})
 
 
@@ -1242,11 +1251,12 @@ def test_tiktok_lead_and_app_tools_publish_provider_contracts():
         for definition, _handler in create_tiktok_capability().register_tools()
     }
     lead = definitions["tiktok_create_lead_ad"]
-    assert lead.input_schema.properties["form_id"]["minLength"] == 1
+    assert lead.input_schema.properties["page_id"]["minLength"] == 1
     assert lead.input_schema.properties["conversion_id"]["lookup_tool"] == (
         "tiktok_list_conversions"
     )
     assert lead.parent_resource_type == "ad_group"
+    assert "form_id" not in lead.input_schema.properties
     app = definitions["tiktok_create_app_ad"]
     assert app.input_schema.properties["app_id"]["lookup_tool"] == "tiktok_list_apps"
     assert app.input_schema.properties["promotion_type"]["enum"] == [
@@ -1313,6 +1323,28 @@ def test_tiktok_provider_envelope_is_decoded_for_ids_and_lookup_lists():
         "headers": {},
     }
     assert client.list_locations() == [{"location_id": "US"}]
+
+
+def test_tiktok_tool_region_uses_contextual_official_endpoint():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    client.request = lambda method, endpoint, params=None, **kwargs: (
+        calls.append((method, endpoint, params)) or {
+            "code": 0, "message": "OK", "data": {"list": [{"location_id": "US"}]}
+        }
+    )
+
+    assert client.list_regions(
+        "123", ["PLACEMENT_TIKTOK"], "LEAD_GENERATION",
+        promotion_target_type="INSTANT_PAGE", level_range="TO_COUNTRY",
+    ) == [{"location_id": "US"}]
+    assert calls == [("GET", "tool/region/", {
+        "advertiser_id": "123",
+        "placements": ["PLACEMENT_TIKTOK"],
+        "objective_type": "LEAD_GENERATION",
+        "promotion_target_type": "INSTANT_PAGE",
+        "level_range": "TO_COUNTRY",
+    })]
 
 
 def test_tiktok_report_failure_and_missing_task_are_not_silent_successes():

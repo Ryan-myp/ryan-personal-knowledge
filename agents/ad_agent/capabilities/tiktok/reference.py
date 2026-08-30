@@ -24,6 +24,18 @@ class _TikTokReferenceHandler(ToolHandler):
                     )
                 elif self.method_name == "list_locations":
                     value = method(location_type=input_data.get("location_type"))
+                elif self.method_name == "list_regions":
+                    value = method(
+                        ctx.account_id,
+                        placements=input_data["placements"],
+                        objective_type=input_data["objective_type"],
+                        promotion_target_type=input_data.get("promotion_target_type"),
+                        operating_system=input_data.get("operating_system"),
+                        brand_safety_type=input_data.get("brand_safety_type"),
+                        brand_safety_partner=input_data.get("brand_safety_partner"),
+                        level_range=input_data.get("level_range"),
+                        rf_campaign_type=input_data.get("rf_campaign_type"),
+                    )
                 elif self.method_name == "list_apps":
                     value = method(
                         filtering=input_data.get("filtering"),

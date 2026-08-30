@@ -51,7 +51,9 @@ access token、应用密钥或其他凭证。Tool 输入只允许账户选择和
 ToolDefinition、`/tools` Schema 和 `/ad-formats` 目录，再选择实际可用能力。
 
 创建前必须校验 objective、campaign/ad group budget、promotion type、billing event、
-bid/deep bid、地域/设备/App/Form/Catalog 依赖和素材格式。新增 TikTok API 接口或版本
+bid/deep bid、地域/设备/App/Instant Page/Catalog 依赖和素材格式。Lead Generation 的
+Instant Form 在 Ads API 创建广告时以 `page_id` 引用；页面本身由 TikTok Instant Page
+Editor SDK 管理，当前 Ads API Capability 不伪造 Lead Form CRUD。新增 TikTok API 接口或版本
 适配只在 TikTok Client/Capability 内完成，不应修改业务 Skill 来“接线”；未标记为
 `supported_dry_run` 的广告格式不得声称已有完整支持。
 
