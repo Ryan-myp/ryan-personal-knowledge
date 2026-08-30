@@ -1,5 +1,5 @@
 {
-  "digest": "741c7390a29bd01cc11d957a5fb81642401e4092e868e3cfa80c3b7a68dc0b75",
+  "digest": "6526e9091ce5da639d6637ecfced15ef8efbf63ab245e54721774248ef2754c2",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -7425,8 +7425,8 @@
       ]
     },
     "tiktok": {
-      "digest": "2909b1b861829223c72f57c55a0e6eb63faa2aaaad18e87d608f31e9a230bdcf",
-      "tool_count": 42,
+      "digest": "5aa811760ce72960e56488fdbcf480eb96b566aa085529f23f4a19a5083954a8",
+      "tool_count": 43,
       "tools": [
         {
           "action": "create",
@@ -8099,6 +8099,101 @@
             "ad",
             "app",
             "app_promotion"
+          ]
+        },
+        {
+          "action": "create",
+          "contract_version": "1.1.0",
+          "description": "创建 TikTok 自定义或相似受众；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "TikTok advertiser ID",
+                "type": "string"
+              },
+              "audience_type": {
+                "description": "Audience type",
+                "enum": [
+                  "CUSTOM",
+                  "CUSTOM_AUDIENCE",
+                  "LOOKALIKE",
+                  "LOOKALIKE_AUDIENCE"
+                ],
+                "type": "string"
+              },
+              "country_codes": {
+                "description": "Lookalike target countries",
+                "items": {
+                  "minLength": 2,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "name": {
+                "description": "Audience name",
+                "minLength": 1,
+                "type": "string"
+              },
+              "ratio": {
+                "description": "Lookalike ratio",
+                "maximum": 0.2,
+                "minimum": 0.01,
+                "type": "number"
+              },
+              "retention_in_days": {
+                "description": "Retention window in days",
+                "maximum": 540,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "rule": {
+                "additionalProperties": true,
+                "description": "Event/source rule for a custom audience",
+                "type": "object"
+              },
+              "source_audience_id": {
+                "description": "Source audience ID for a lookalike",
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "name",
+              "audience_type"
+            ],
+            "required": [
+              "account_id",
+              "name",
+              "audience_type"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_audience"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_create_audience",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "audience_id",
+          "resource_type": "audience",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "audience"
           ]
         },
         {
@@ -10497,5 +10592,5 @@
       ]
     }
   },
-  "tool_count": 137
+  "tool_count": 138
 }

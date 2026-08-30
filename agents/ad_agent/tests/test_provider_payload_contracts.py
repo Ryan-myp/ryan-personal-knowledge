@@ -196,6 +196,30 @@ def test_tiktok_lead_ad_builds_instant_form_promote_object():
         client.create_lead_ad("t1", "101", "202", {"name": "Missing"})
 
 
+def test_tiktok_audience_creation_builds_provider_envelope():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        calls.append((method, endpoint, data)) or {"audience_id": "aud-1"}
+    )
+
+    assert client.create_audience("adv-1", {
+        "name": "Purchasers 30D",
+        "audience_type": "CUSTOM_AUDIENCE",
+        "rule": {"event_sources": ["PIXEL_ID"]},
+        "retention_in_days": 30,
+    }) == "aud-1"
+    assert calls == [(
+        "POST", "audience/create/", {
+            "advertiser_id": "adv-1",
+            "name": "Purchasers 30D",
+            "audience_type": "CUSTOM_AUDIENCE",
+            "rule": {"event_sources": ["PIXEL_ID"]},
+            "retention_in_days": 30,
+        },
+    )]
+
+
 def test_tiktok_app_ad_builds_app_install_promote_object_and_checks_os():
     client = TikTokAPIClient({"access_token": "test"})
     payloads = []

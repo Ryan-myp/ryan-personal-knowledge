@@ -35,6 +35,7 @@ TIKTOK_AGE_GROUPS = [
 TIKTOK_GENDERS = ["GENDER_UNLIMITED", "GENDER_MALE", "GENDER_FEMALE"]
 TIKTOK_OPERATING_SYSTEMS = ["ANDROID", "IOS"]
 TIKTOK_AD_FORMATS = ["SINGLE_VIDEO", "SINGLE_IMAGE", "CAROUSEL", "SPARK_AD"]
+TIKTOK_AUDIENCE_TYPES = ["CUSTOM", "CUSTOM_AUDIENCE", "LOOKALIKE", "LOOKALIKE_AUDIENCE"]
 
 
 def _field(
@@ -105,6 +106,24 @@ def tiktok_campaign_schema() -> dict[str, Any]:
                 "message": "objective_type=APP_PROMOTION requires app_promotion_type",
             },
         ],
+    }
+
+
+def tiktok_audience_schema() -> dict[str, Any]:
+    """Schema for provider-managed custom/lookalike audience creation."""
+    return {
+        "required": ["account_id", "name", "audience_type"],
+        "provider_required": ["name", "audience_type"],
+        "properties": {
+            "account_id": _field("string", "TikTok advertiser ID"),
+            "name": _field("string", "Audience name", minLength=1),
+            "audience_type": _field("string", "Audience type", enum=TIKTOK_AUDIENCE_TYPES),
+            "rule": _field("object", "Event/source rule for a custom audience", additionalProperties=True),
+            "retention_in_days": _field("integer", "Retention window in days", minimum=1, maximum=540),
+            "source_audience_id": _field("string", "Source audience ID for a lookalike"),
+            "country_codes": _field("array", "Lookalike target countries", items={"type": "string", "minLength": 2}),
+            "ratio": _field("number", "Lookalike ratio", minimum=0.01, maximum=0.20),
+        },
     }
 
 

@@ -671,6 +671,28 @@ class TikTokAPIClient(BasePlatformClient):
         filtering = [{'field': 'AUDIENCE_IDS', 'operator': 'IN', 'values': [int(audience_id)]}]
         result = self.list_audiences(advertiser_id, filtering=filtering)
         return result[0] if result else {}
+
+    def create_audience(self, advertiser_id: str, audience: dict) -> str:
+        """创建 TikTok 自定义或相似受众。"""
+        if not isinstance(audience, dict):
+            raise ValueError("audience must be an object")
+        name = str(audience.get("name") or "").strip()
+        audience_type = str(audience.get("audience_type") or "").strip().upper()
+        if not name or not audience_type:
+            raise ValueError("audience name and audience_type are required")
+        if audience_type not in {"CUSTOM", "CUSTOM_AUDIENCE", "LOOKALIKE", "LOOKALIKE_AUDIENCE"}:
+            raise ValueError("unsupported TikTok audience_type")
+        data = {"advertiser_id": str(advertiser_id), **audience}
+        result = self.request("POST", "audience/create/", data=data)
+        payload = self._data_section(result)
+        resource_id = None
+        if isinstance(payload, dict):
+            resource_id = (
+                payload.get("audience_id")
+                or payload.get("custom_audience_id")
+                or payload.get("id")
+            )
+        return self.require_resource_id(resource_id, "TikTok audience create")
     
     def list_interest_categories(self, parent_ids: list = None) -> list:
         """获取兴趣类别列表"""

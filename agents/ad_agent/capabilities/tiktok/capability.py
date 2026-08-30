@@ -41,6 +41,7 @@ from .parameters import (
     tiktok_lead_ad_schema,
     tiktok_app_ad_schema,
     tiktok_ad_format_catalog,
+    tiktok_audience_schema,
 )
 from ..update_contracts import tiktok_updates
 
@@ -91,6 +92,7 @@ class TikTokCapability(BaseCapability):
         "create_app_ad": ["tiktok_create_app_ad"], "create_spark_ad": ["tiktok_spark_ads_create"],
         "get_campaign_report": ["tiktok_get_campaign_report"], "get_adgroup_report": ["tiktok_get_adgroup_report"],
         "list_audiences": ["tiktok_list_audiences"], "get_audience": ["tiktok_get_audience"],
+        "create_audience": ["tiktok_create_audience"],
         "list_interest_categories": ["tiktok_list_interest_categories"],
         "get_interest_category": ["tiktok_get_interest_category"], "list_locations": ["tiktok_list_locations"],
         "search_locations": ["tiktok_search_locations"], "list_devices": ["tiktok_list_devices"],
@@ -125,6 +127,19 @@ class TikTokCapability(BaseCapability):
                 required=["account_id", "audience_id"], action="get", resource_type="audience",
                 intent_types=["get_audience"], traits=["read", "audience"],
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["audience_id"]), {}),
+            ),
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_create_audience",
+                description="创建 TikTok 自定义或相似受众；默认仅生成 dry-run 计划。",
+                method_name="create_audience", result_key="audience_id",
+                properties=tiktok_audience_schema()["properties"],
+                required=tiktok_audience_schema()["required"],
+                provider_required=tiktok_audience_schema()["provider_required"],
+                action="create", resource_type="audience", resource_id_field="audience_id",
+                intent_types=["create_audience"], traits=["write", "audience"], write=True,
+                argument_builder=lambda ctx, data: ((account(ctx, data), {
+                    key: value for key, value in data.items() if key != "account_id"
+                }), {}),
             ),
             method_tool(
                 platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_interest_categories",
