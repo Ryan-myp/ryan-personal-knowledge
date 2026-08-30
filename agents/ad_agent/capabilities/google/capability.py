@@ -27,7 +27,7 @@ from .keywords import GoogleListKeywordsHandler
 from ._utils import for_customer
 from .parameters import (
     google_campaign_schema, google_ad_group_schema, google_ad_schema,
-    google_asset_group_schema, google_ad_format_catalog, google_keyword_schema,
+    google_asset_schema, google_asset_group_schema, google_ad_format_catalog, google_keyword_schema,
     google_product_group_schema, google_responsive_display_ad_schema,
     google_video_ad_schema, google_campaign_budget_schema,
     google_campaign_budget_update_schema,
@@ -70,6 +70,7 @@ class GoogleCapability(BaseCapability):
         "list_ad_groups": ["google_list_ad_groups"], "get_ad_group": ["google_get_ad_group"],
         "list_ads": ["google_list_ads"], "get_ad": ["google_get_ad"],
         "list_keywords": ["google_list_keywords"], "list_asset_groups": ["google_list_asset_groups"],
+        "list_assets": ["google_list_assets"], "get_asset": ["google_get_asset"],
         "create_keywords": ["google_create_keywords"],
         "get_asset_group": ["google_get_asset_group"], "create_campaign": ["google_create_campaign"],
         "update_campaign": ["google_update_campaign"], "update_ad_group": ["google_update_ad_group"],
@@ -128,7 +129,28 @@ class GoogleCapability(BaseCapability):
             key: criterion_properties[key]
             for key in ("customer_id", "campaign_id", "criterion_id")
         }
+        asset_schema = google_asset_schema()
         tools = [
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_list_assets", description="查询 Google Ads 客户级可复用 Asset 列表。",
+                method_name="list_assets", result_key="assets",
+                properties=asset_schema["properties"], required=["customer_id"],
+                action="list", resource_type="asset", intent_types=["list_assets"],
+                traits=["read", "asset"],
+                argument_builder=lambda _ctx, data: ((data.get("customer_id"),), {
+                    "page_size": data.get("limit", 100),
+                }),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_get_asset", description="查询 Google Ads 客户级 Asset 详情。",
+                method_name="get_asset", result_key="asset",
+                properties=asset_schema["properties"], required=["customer_id", "asset_id"],
+                action="get", resource_type="asset", resource_id_field="asset_id",
+                intent_types=["get_asset"], traits=["read", "asset"],
+                argument_builder=lambda _ctx, data: ((data["asset_id"], data.get("customer_id")), {}),
+            ),
             method_tool(
                 platform="google-ads", skill="google-ads-api-expert",
                 name="google_list_campaign_budgets", description="查询 Google Ads CampaignBudget 列表。",

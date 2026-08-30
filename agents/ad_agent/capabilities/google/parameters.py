@@ -651,6 +651,17 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
     ]
 
 
+def google_asset_schema() -> dict[str, Any]:
+    """Schema for customer-level reusable Google Asset reads."""
+    return {
+        "properties": {
+            "customer_id": _field("string", "Google Ads customer ID"),
+            "asset_id": _field("string", "Google Asset ID", minLength=1),
+            "limit": _field("integer", "Maximum number of assets", minimum=1, maximum=10000),
+        },
+    }
+
+
 def google_asset_group_schema() -> dict[str, Any]:
     asset = _field("array", "Asset references", minItems=1, items={"type": "object", "additionalProperties": True})
     return {

@@ -404,6 +404,63 @@ def test_meta_lead_form_tools_expose_closed_create_and_update_contracts():
     assert update_tool.input_schema.required == ["account_id", "page_id", "form_id", "updates"]
 
 
+def test_google_asset_reads_are_customer_scoped_and_normalized():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "111"})
+    captured = []
+
+    def fake_search_all(query, page_size=100):
+        captured.append((query, page_size, client.customer_id))
+        return [{
+            "asset": {
+                "id": "7",
+                "resourceName": "customers/222/assets/7",
+                "name": "Headline asset",
+                "type": "TEXT",
+                "textAsset": {"text": "Sale today"},
+                "finalUrls": ["https://example.test"],
+            }
+        }]
+
+    client._search_all = fake_search_all
+    assets = client.list_assets("222", page_size=25)
+    assert assets == [{
+        "id": "7",
+        "resource_name": "customers/222/assets/7",
+        "name": "Headline asset",
+        "type": "TEXT",
+        "text": "Sale today",
+        "image_url": None,
+        "youtube_video_id": None,
+        "final_urls": ["https://example.test"],
+        "final_mobile_urls": [],
+    }]
+    assert captured[0][1:] == (25, "111")
+    assert client.customer_id == "111"
+
+
+def test_google_get_asset_uses_numeric_id_and_customer_scope():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "111"})
+    captured = []
+    client._search = lambda query: (
+        captured.append((query, client.customer_id))
+        or {"data": {"results": [{"asset": {"id": "7", "type": "IMAGE"}}]}}
+    )
+    asset = client.get_asset("7", "222")
+    assert asset["id"] == "7"
+    assert asset["type"] == "IMAGE"
+    assert "WHERE asset.id = 7" in captured[0][0]
+    assert captured[0][1] == "111"
+
+
+def test_google_asset_tools_publish_read_contracts():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_google_capability().register_tools()
+    }
+    assert definitions["google_list_assets"].input_schema.required == ["customer_id"]
+    assert definitions["google_get_asset"].input_schema.required == ["customer_id", "asset_id"]
+
+
 def test_meta_audience_crud_builds_custom_and_lookalike_payloads():
     client = MetaAPIClient({"access_token": "test"})
     calls = []

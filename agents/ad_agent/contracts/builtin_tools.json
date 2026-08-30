@@ -1,5 +1,5 @@
 {
-  "digest": "595b65af7ce37c47602f37aa3ba402693b9745d96a1b65f9d5d8f8ed486fe721",
+  "digest": "71f380d52619e6c642a534bf592a148fba064eb4d71b15c23e6560b209bc0579",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -1983,8 +1983,8 @@
       ]
     },
     "google-ads": {
-      "digest": "955d1022afd0e34e2fa15e41b98f0b9f552faf06bf87c678d28ff88e5e730298",
-      "tool_count": 44,
+      "digest": "ece3e46f536290b85bed3d7a6cbe662fe107aae91b6763db5ebb15c184e491eb",
+      "tool_count": 46,
       "tools": [
         {
           "action": "create",
@@ -4076,6 +4076,64 @@
         {
           "action": "get",
           "contract_version": "1.2.0",
+          "description": "查询 Google Ads 客户级 Asset 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "asset_id": {
+                "description": "Google Asset ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of assets",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id",
+              "asset_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_asset"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_get_asset",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "asset_id",
+          "resource_type": "asset",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "asset"
+          ]
+        },
+        {
+          "action": "get",
+          "contract_version": "1.2.0",
           "description": "查询 PMax Asset Group 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -4645,6 +4703,63 @@
           "traits": [
             "read",
             "pmax"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.2.0",
+          "description": "查询 Google Ads 客户级可复用 Asset 列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "asset_id": {
+                "description": "Google Asset ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of assets",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_assets"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_list_assets",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "asset",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "asset"
           ]
         },
         {
@@ -13486,5 +13601,5 @@
       ]
     }
   },
-  "tool_count": 173
+  "tool_count": 175
 }

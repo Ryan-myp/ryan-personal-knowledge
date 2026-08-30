@@ -1182,6 +1182,62 @@ class GoogleAdsAPIClient(BasePlatformClient):
             }
         raise APIError(f"Google asset group {asset_group_id} was not found")
 
+    @staticmethod
+    def _normalize_asset(row: dict) -> dict:
+        """Normalize one GAQL Asset row without dropping typed asset data."""
+        asset = row.get("asset", row) or {}
+        text_asset = asset.get("textAsset", asset.get("text_asset", {})) or {}
+        image_asset = asset.get("imageAsset", asset.get("image_asset", {})) or {}
+        full_size = image_asset.get("fullSize", image_asset.get("full_size", {})) or {}
+        video_asset = asset.get(
+            "youtubeVideoAsset", asset.get("youtube_video_asset", {})
+        ) or {}
+        return {
+            "id": asset.get("id"),
+            "resource_name": asset.get("resourceName", asset.get("resource_name")),
+            "name": asset.get("name"),
+            "type": asset.get("type"),
+            "text": text_asset.get("text"),
+            "image_url": full_size.get("url"),
+            "youtube_video_id": video_asset.get(
+                "youtubeVideoId", video_asset.get("youtube_video_id")
+            ),
+            "final_urls": asset.get("finalUrls", asset.get("final_urls", [])) or [],
+            "final_mobile_urls": asset.get(
+                "finalMobileUrls", asset.get("final_mobile_urls", [])
+            ) or [],
+        }
+
+    def list_assets(self, customer_id: str = None, page_size: int = 100) -> list[dict]:
+        """List reusable customer-level Assets through GAQL."""
+        scoped = self.for_customer(customer_id) if customer_id else self
+        query = (
+            "SELECT asset.id, asset.resource_name, asset.name, asset.type, "
+            "asset.text_asset.text, asset.image_asset.full_size.url, "
+            "asset.youtube_video_asset.youtube_video_id, asset.final_urls, "
+            "asset.final_mobile_urls FROM asset"
+        )
+        return [
+            scoped._normalize_asset(row)
+            for row in scoped._search_all(query, page_size=page_size)
+        ]
+
+    def get_asset(self, asset_id: str, customer_id: str = None) -> dict:
+        """Get one reusable customer-level Asset by numeric ID."""
+        asset_id = self._numeric_id(asset_id, "asset_id")
+        scoped = self.for_customer(customer_id) if customer_id else self
+        query = (
+            "SELECT asset.id, asset.resource_name, asset.name, asset.type, "
+            "asset.text_asset.text, asset.image_asset.full_size.url, "
+            "asset.youtube_video_asset.youtube_video_id, asset.final_urls, "
+            "asset.final_mobile_urls FROM asset "
+            f"WHERE asset.id = {asset_id}"
+        )
+        items = scoped._response_payload(scoped._search(query)).get("results", [])
+        if items:
+            return scoped._normalize_asset(items[0])
+        raise APIError(f"Google asset {asset_id} was not found")
+
     # ==================== CampaignBudget 管理 ====================
 
     @staticmethod
