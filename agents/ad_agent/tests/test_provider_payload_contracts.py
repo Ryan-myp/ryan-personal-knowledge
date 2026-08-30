@@ -811,6 +811,49 @@ def test_meta_catalog_ad_builds_template_story_spec():
         client.create_catalog_ad("act_1", "as_1", {"name": "Missing"})
 
 
+def test_meta_creative_crud_uses_account_scoped_graph_edges():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+    client.resource_belongs_to_account = lambda account_id, resource_type, resource_id: (
+        calls.append(("ownership", account_id, resource_type, resource_id)) or True
+    )
+    client._list_graph_pages = lambda account_id, endpoint, params, **kwargs: (
+        calls.append(("list", account_id, endpoint, params)) or [{"id": "cr-1", "name": "Old"}]
+    )
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        calls.append((method, endpoint, data, kwargs.get("extra_params")))
+        or ({"id": "cr-1", "name": "New"} if method == "GET" else {"success": True})
+    )
+
+    assert client.list_creatives("act_123", limit=10)[0]["id"] == "cr-1"
+    assert client.get_creative("act_123", "cr-1", fields=["id", "name"])["id"] == "cr-1"
+    assert client.update_creative("act_123", "cr-1", {"name": "New"})["success"] is True
+    assert client.delete_creative("act_123", "cr-1")["creative_id"] == "cr-1"
+    assert calls[0][0:3] == ("list", "123", "/act_123/adcreatives")
+    assert calls[1] == ("ownership", "123", "creative", "cr-1")
+    assert calls[2] == ("GET", "/cr-1", None, {"fields": "id,name"})
+    assert calls[3] == ("ownership", "123", "creative", "cr-1")
+    assert calls[4][0:3] == ("POST", "/cr-1", {"name": "New"})
+    assert calls[5] == ("ownership", "123", "creative", "cr-1")
+    assert calls[6][0:2] == ("DELETE", "/cr-1")
+
+
+def test_meta_creative_tools_publish_crud_and_narrow_update_contract():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_meta_capability().register_tools()
+    }
+    assert {
+        "meta_list_creatives", "meta_get_creative", "meta_create_creative",
+        "meta_update_creative", "meta_delete_creative",
+    } <= set(definitions)
+    updates = definitions["meta_update_creative"].input_schema.properties["updates"]
+    assert updates["properties"] == {
+        "name": updates["properties"]["name"]
+    }
+    assert updates["additionalProperties"] is False
+
+
 def test_meta_catalog_tools_expose_lookup_and_format_contract():
     capability = create_meta_capability()
     definitions = {

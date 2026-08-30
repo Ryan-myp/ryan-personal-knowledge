@@ -34,6 +34,9 @@ API_SURFACE = [
     {"resource": "conversion", "action": "event", "method": "send_conversion_events", "status": "implemented"},
     {"resource": "lead_form", "action": "create", "status": "planned", "gap": "Lead Form 创建接口尚未完成验证"},
     {"resource": "lead_form", "action": "update", "status": "planned", "gap": "Lead Form 更新接口尚未完成验证"},
-    {"resource": "creative", "action": "crud", "status": "planned", "gap": "Creative 当前只有 create，媒体上传/更新/删除未覆盖"},
+    {"resource": "creative", "action": "list", "method": "list_creatives", "status": "implemented"},
+    {"resource": "creative", "action": "get", "method": "get_creative", "status": "implemented"},
+    {"resource": "creative", "action": "update", "method": "update_creative", "status": "implemented"},
+    {"resource": "creative", "action": "delete", "method": "delete_creative", "status": "implemented"},
     {"resource": "catalog", "action": "crud", "status": "planned", "gap": "Catalog/Product Set 管理尚无完整 Tool"},
 ]

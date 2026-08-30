@@ -1,5 +1,5 @@
 {
-  "digest": "8fbba50adbe03c60c58458a8715f393227a81d5cc21e40cff104f4bf619b4795",
+  "digest": "70aea2335bcb4d190aede1ef49a12870e9a9f3542e2fcdd51f500063eed19c48",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -5729,8 +5729,8 @@
       ]
     },
     "meta": {
-      "digest": "2ab612cc451c8e95fb21b17a7d4860366a26777bee01aff0316e7b160088c24e",
-      "tool_count": 38,
+      "digest": "9586704ab61ae706ca66d8a0c2ef9db51f92cbdc35434485b23048efd700fb4e",
+      "tool_count": 42,
       "tools": [
         {
           "action": "boost",
@@ -7097,6 +7097,58 @@
           ]
         },
         {
+          "action": "delete",
+          "contract_version": "1.2.0",
+          "description": "删除 Meta Creative；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "creative_id": {
+                "description": "Meta Creative ID",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "creative_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_creative"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_delete_creative",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "creative_id",
+          "resource_type": "creative",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "creative"
+          ]
+        },
+        {
           "action": "get",
           "contract_version": "1.2.0",
           "description": "获取 Meta 广告账户详情。",
@@ -7521,6 +7573,65 @@
         {
           "action": "get",
           "contract_version": "1.2.0",
+          "description": "查询 Meta Creative 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "creative_id": {
+                "description": "Meta Creative ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "fields": {
+                "description": "Fields to return",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "creative_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_creative"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_get_creative",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "creative_id",
+          "resource_type": "creative",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "creative"
+          ]
+        },
+        {
+          "action": "get",
+          "contract_version": "1.2.0",
           "description": "查询 Meta Lead Ads Instant Form 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -7913,6 +8024,58 @@
           "traits": [
             "read",
             "catalog"
+          ]
+        },
+        {
+          "action": "list",
+          "contract_version": "1.2.0",
+          "description": "查询 Meta 广告账户下的 Creative。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of creatives",
+                "maximum": 1000,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_creatives"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_list_creatives",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "creative",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "creative"
           ]
         },
         {
@@ -8833,6 +8996,72 @@
           "traits": [
             "write",
             "campaign"
+          ]
+        },
+        {
+          "action": "update",
+          "contract_version": "1.2.0",
+          "description": "更新 Meta Creative 名称；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "creative_id": {
+                "description": "Meta Creative ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Supported Creative update fields",
+                "properties": {
+                  "name": {
+                    "description": "Creative name",
+                    "maxLength": 400,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "creative_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_creative"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "meta_update_creative",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "creative_id",
+          "resource_type": "creative",
+          "risk_level": "medium",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "creative"
           ]
         }
       ]
@@ -12056,5 +12285,5 @@
       ]
     }
   },
-  "tool_count": 158
+  "tool_count": 162
 }

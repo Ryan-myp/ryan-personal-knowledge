@@ -16,7 +16,7 @@ from .creatives import MetaCreateCreativeHandler
 from .parameters import (
     meta_campaign_schema, meta_adset_schema, meta_ad_schema,
     meta_ad_format_catalog, meta_lead_ad_schema, meta_catalog_ad_schema,
-    meta_audience_schema, meta_conversion_event_schema,
+    meta_audience_schema, meta_conversion_event_schema, meta_creative_schema,
 )
 from ...api_clients.meta_client import MetaAPIClient
 from ..update_contracts import meta_updates
@@ -74,6 +74,8 @@ class MetaCapability(BaseCapability):
         "create_catalog_ad": ["meta_create_catalog_ad"],
         "update_ad": ["meta_update_ad"],
         "pause_ad": ["meta_pause_ad"], "create_creative": ["meta_create_creative"],
+        "list_creatives": ["meta_list_creatives"], "get_creative": ["meta_get_creative"],
+        "update_creative": ["meta_update_creative"], "delete_creative": ["meta_delete_creative"],
         "get_campaign_report": ["meta_get_campaign_report"],
         "get_adset_report": ["meta_get_adset_report"], "get_ad_report": ["meta_get_ad_report"],
         "boost_post": ["meta_boost_post"],
@@ -88,6 +90,8 @@ class MetaCapability(BaseCapability):
         audience_schema = meta_audience_schema()
         audience_properties = audience_schema["properties"]
         conversion_schema = meta_conversion_event_schema()
+        creative_schema = meta_creative_schema()
+        creative_properties = creative_schema["properties"]
         tools = [
             method_tool(
                 platform="meta", skill="meta-marketing-api", name="meta_list_pages",
@@ -147,6 +151,48 @@ class MetaCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((data["page_id"],), {
                     "limit": data.get("limit", 25),
                 }),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_list_creatives",
+                description="查询 Meta 广告账户下的 Creative。", method_name="list_creatives",
+                result_key="creatives", properties={
+                    key: creative_properties[key] for key in ("account_id", "limit")
+                }, required=["account_id"], action="list", resource_type="creative",
+                intent_types=["list_creatives"], traits=["read", "creative"],
+                argument_builder=lambda ctx, data: ((account(ctx, data),), {
+                    "limit": data.get("limit", 25),
+                }),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_get_creative",
+                description="查询 Meta Creative 详情。", method_name="get_creative",
+                result_key="creative", properties={
+                    key: creative_properties[key] for key in ("account_id", "creative_id", "fields")
+                }, required=["account_id", "creative_id"], action="get", resource_type="creative",
+                resource_id_field="creative_id", intent_types=["get_creative"], traits=["read", "creative"],
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["creative_id"]), {
+                    "fields": data.get("fields"),
+                }),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_update_creative",
+                description="更新 Meta Creative 名称；默认仅生成 dry-run 计划。",
+                method_name="update_creative", result_key="creative_result",
+                properties={key: creative_properties[key] for key in ("account_id", "creative_id", "updates")},
+                required=["account_id", "creative_id", "updates"], action="update", resource_type="creative",
+                resource_id_field="creative_id", intent_types=["update_creative"], traits=["write", "creative"],
+                write=True,
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["creative_id"], data["updates"]), {}),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_delete_creative",
+                description="删除 Meta Creative；默认仅生成 dry-run 计划。",
+                method_name="delete_creative", result_key="creative_result",
+                properties={key: creative_properties[key] for key in ("account_id", "creative_id")},
+                required=["account_id", "creative_id"], action="delete", resource_type="creative",
+                resource_id_field="creative_id", intent_types=["delete_creative"], traits=["write", "creative"],
+                write=True,
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["creative_id"]), {}),
             ),
             method_tool(
                 platform="meta", skill="meta-marketing-api", name="meta_get_lead_form",

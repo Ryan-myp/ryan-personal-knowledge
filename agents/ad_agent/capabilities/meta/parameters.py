@@ -184,6 +184,27 @@ def meta_conversion_event_schema() -> dict[str, Any]:
     }
 
 
+def meta_creative_schema() -> dict[str, Any]:
+    """Contract for Meta Creative reads and the supported mutable fields."""
+    return {
+        "properties": {
+            "account_id": _field("string", "Meta ad account ID"),
+            "creative_id": _field("string", "Meta Creative ID", minLength=1),
+            "name": _field("string", "Creative name", minLength=1, maxLength=400),
+            "page_id": _field("string", "Facebook Page ID"),
+            "link": _field("string", "Destination URL"),
+            "message": _field("string", "Primary text"),
+            "image_hash": _field("string", "Uploaded image hash"),
+            "image_url": _field("string", "Image URL for create"),
+            "fields": _field("array", "Fields to return", items={"type": "string"}),
+            "limit": _field("integer", "Maximum number of creatives", minimum=1, maximum=1000),
+            "updates": _object({
+                "name": _field("string", "Creative name", minLength=1, maxLength=400),
+            }, "Supported Creative update fields"),
+        },
+    }
+
+
 def meta_promoted_object_schema() -> dict[str, Any]:
     return _object({
         "pixel_id": _field("string", "Meta Pixel ID"),

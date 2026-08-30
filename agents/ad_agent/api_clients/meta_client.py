@@ -581,6 +581,8 @@ class MetaAPIClient(BasePlatformClient):
             items = self.list_audiences(account_id)
         elif resource_type == "pixel":
             items = self.list_pixels(account_id)
+        elif resource_type == "creative":
+            items = self.list_creatives(account_id)
         else:
             return False
         if not isinstance(items, list):
@@ -928,6 +930,7 @@ class MetaAPIClient(BasePlatformClient):
     
     def create_creative(self, account_id: str, creative: dict) -> str:
         """创建 Creative"""
+        account_id = self._clean_meta_id(account_id, "account_id")
         self.acquire_rate_limit(self._get_account_limiter(account_id))
         data = {
             'name': creative.get('name', 'Creative'),
@@ -943,9 +946,71 @@ class MetaAPIClient(BasePlatformClient):
         if creative.get('image_url'):
             data['object_story_spec']['link_data']['image_url'] = creative['image_url']
         
-        result = self.request('POST', f"/{account_id}/creatives", data=data)
+        result = self.request('POST', f"/act_{account_id}/creatives", data=data)
         resource_id = result.get('id') if isinstance(result, dict) else None
         return self.require_resource_id(resource_id, "Meta creative create")
+
+    def list_creatives(self, account_id: str, limit: int = 25) -> list:
+        """List ad creatives owned by a Meta ad account."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        return self._list_graph_pages(
+            account_id,
+            f"/act_{account_id}/adcreatives",
+            {
+                "limit": limit,
+                "fields": "id,name,object_story_spec,thumbnail_url,body,title,call_to_action_type",
+            },
+        )
+
+    def get_creative(self, account_id: str, creative_id: str, fields: list = None) -> dict:
+        """Get one Creative after verifying account ownership."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        creative_id = self._clean_meta_id(creative_id, "creative_id")
+        if not self.resource_belongs_to_account(account_id, "creative", creative_id):
+            raise PermissionError(
+                f"Meta creative {creative_id} does not belong to account {account_id}"
+            )
+        params = {
+            "fields": ",".join(fields) if fields else (
+                "id,name,object_story_spec,thumbnail_url,body,title,call_to_action_type"
+            )
+        }
+        return self.require_resource_object(
+            self.request("GET", f"/{creative_id}", extra_params=params),
+            "Meta creative get",
+        )
+
+    def update_creative(self, account_id: str, creative_id: str, updates: dict) -> dict:
+        """Update the supported mutable Creative field."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        creative_id = self._clean_meta_id(creative_id, "creative_id")
+        if not self.resource_belongs_to_account(account_id, "creative", creative_id):
+            raise PermissionError(
+                f"Meta creative {creative_id} does not belong to account {account_id}"
+            )
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("updates must be a non-empty object")
+        unknown = set(updates) - {"name"}
+        if unknown:
+            raise ValueError(f"Unsupported Meta Creative update fields: {sorted(unknown)}")
+        name = str(updates.get("name") or "").strip()
+        if not name:
+            raise ValueError("Creative name must be a non-empty string")
+        self.acquire_rate_limit(self._get_account_limiter(account_id))
+        result = self.request("POST", f"/{creative_id}", data={"name": name})
+        return {"success": True, "creative_id": creative_id, "result": result}
+
+    def delete_creative(self, account_id: str, creative_id: str) -> dict:
+        """Delete a Creative after account ownership verification."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        creative_id = self._clean_meta_id(creative_id, "creative_id")
+        if not self.resource_belongs_to_account(account_id, "creative", creative_id):
+            raise PermissionError(
+                f"Meta creative {creative_id} does not belong to account {account_id}"
+            )
+        self.acquire_rate_limit(self._get_account_limiter(account_id))
+        self.request("DELETE", f"/{creative_id}")
+        return {"success": True, "creative_id": creative_id}
     
     # ==================== 报表查询 ====================
     
