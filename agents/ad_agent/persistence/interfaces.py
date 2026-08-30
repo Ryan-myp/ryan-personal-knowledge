@@ -128,6 +128,9 @@ class PersistenceBackend(Protocol):
     def publish_skill_version(
         self, tenant_id: str, skill_name: str, version: str,
     ) -> Optional[dict]: ...
+    def unpublish_skill_version(
+        self, tenant_id: str, skill_name: str, version: str,
+    ) -> Optional[dict]: ...
     def set_skill_evaluation(
         self, version_id: str, tenant_id: str, status: str, run_id: Optional[str] = None,
         report: Optional[dict] = None,

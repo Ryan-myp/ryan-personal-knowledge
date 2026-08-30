@@ -104,6 +104,34 @@ def test_new_version_archives_previous_release_and_active_lookup_is_scoped(tmp_p
     assert manager.get_version("tenant-b", "business-growth") is None
 
 
+def test_unpublish_removes_release_but_keeps_version_for_explicit_rollback(tmp_path):
+    store = AdAgentStore(":memory:")
+    manager = ManagedSkillManager(store, root=str(tmp_path / "managed"))
+    manager.create_version("tenant-a", "business-growth", "1.0.0", _files(), "u1")
+
+    runtime = AgentRuntime(require_llm=False, persistence_store=store, offline_mode=True)
+    manager.publish("tenant-a", "business-growth", "1.0.0", runtime=runtime)
+    assert "business-growth" in runtime.get_managed_skills("tenant-a")
+
+    unpublished = manager.unpublish(
+        "tenant-a", "business-growth", "1.0.0", runtime=runtime
+    )
+
+    assert unpublished["status"] == "archived"
+    assert manager.get_version("tenant-a", "business-growth") is None
+    assert manager.get_version("tenant-a", "business-growth", "1.0.0")["status"] == "archived"
+    assert "business-growth" not in runtime.get_managed_skills("tenant-a")
+
+    # Re-publishing the immutable archived snapshot is the explicit rollback
+    # path; it must restore both the release pointer and Runtime context.
+    rolled_back = manager.publish(
+        "tenant-a", "business-growth", "1.0.0", runtime=runtime
+    )
+    assert rolled_back["status"] == "published"
+    assert manager.get_version("tenant-a", "business-growth")["version"] == "1.0.0"
+    assert "business-growth" in runtime.get_managed_skills("tenant-a")
+
+
 def test_publication_serializes_runtime_activation_and_release_pointer(tmp_path):
     """Separate HTTP manager facades cannot diverge Runtime and SQLite state."""
     store = AdAgentStore(":memory:")

@@ -498,6 +498,51 @@ class ManagedSkillManager:
         with _get_publication_lock(self.store, tenant_id, skill_name):
             return self._publish_unlocked(tenant_id, skill_name, version, runtime)
 
+    def unpublish(
+        self, tenant_id: str, skill_name: str, version: str, runtime: Any = None,
+    ) -> Optional[dict[str, Any]]:
+        """Atomically deactivate the current tenant/Skill release.
+
+        Unpublishing never deletes a version.  It removes the active release
+        pointer and archives the immutable snapshot, allowing operators to
+        publish that exact version again as an explicit rollback. Runtime
+        context is removed before the durable pointer is cleared; if storage
+        fails, the published context is restored best-effort just like the
+        publish path.
+        """
+        with _get_publication_lock(self.store, tenant_id, skill_name):
+            current = self.store.get_skill_version(tenant_id, skill_name)
+            if not current or str(current.get("version")) != str(version):
+                return None
+
+            unloaded = False
+            if runtime is not None:
+                try:
+                    # Missing in-memory context is already the desired state;
+                    # the durable release still needs to be removed.
+                    runtime.unload_managed_skill(
+                        skill_name, tenant_id=str(tenant_id)
+                    )
+                    unloaded = True
+                except Exception as exc:
+                    raise SkillPackageError(
+                        f"Skill deactivation failed; release was not unpublished: {exc}"
+                    ) from exc
+            try:
+                unpublished = self.store.unpublish_skill_version(
+                    tenant_id, skill_name, version
+                )
+            except Exception:
+                self._restore_runtime_release(
+                    runtime, tenant_id, skill_name, current, unloaded
+                )
+                raise
+            if not unpublished:
+                self._restore_runtime_release(
+                    runtime, tenant_id, skill_name, current, unloaded
+                )
+            return self._public(unpublished) if unpublished else None
+
     def _publish_unlocked(
         self, tenant_id: str, skill_name: str, version: str, runtime: Any = None,
     ) -> Optional[dict[str, Any]]:

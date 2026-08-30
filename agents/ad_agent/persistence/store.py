@@ -474,7 +474,11 @@ class AdAgentStore:
                 "AND skill_name = ? AND version = ?",
                 (str(tenant_id), str(skill_name), str(version)),
             ).fetchone()
-            if not row or str(row["status"]) == "archived":
+            # Archived versions remain immutable and can be selected as an
+            # explicit rollback target.  The release pointer is the source of
+            # truth for what is currently active; version status alone must
+            # not make rollback impossible.
+            if not row:
                 return None
             conn.execute(
                 "UPDATE skill_versions SET status = 'archived' WHERE tenant_id = ? "
@@ -498,6 +502,43 @@ class AdAgentStore:
                 (str(row["version_id"]),),
             ).fetchone()
             return self._skill_row(published)
+
+    def unpublish_skill_version(
+        self, tenant_id: str, skill_name: str, version: str,
+    ) -> Optional[dict]:
+        """Remove the active release pointer and archive that version.
+
+        The version remains available for audit or an explicit later rollback;
+        only the tenant/Skill release pointer is removed.  The join and
+        version check make this operation safe when an older API request tries
+        to unpublish a release that has already been replaced.
+        """
+        with self._lock:
+            conn = self._get_conn()
+            row = conn.execute(
+                """SELECT v.* FROM skill_versions v
+                   JOIN skill_releases r ON r.version_id = v.version_id
+                   WHERE r.tenant_id = ? AND r.skill_name = ?
+                     AND v.version = ?""",
+                (str(tenant_id), str(skill_name), str(version)),
+            ).fetchone()
+            if not row:
+                return None
+            conn.execute(
+                "DELETE FROM skill_releases WHERE tenant_id = ? AND skill_name = ?",
+                (str(tenant_id), str(skill_name)),
+            )
+            conn.execute(
+                "UPDATE skill_versions SET status = 'archived' "
+                "WHERE version_id = ? AND tenant_id = ?",
+                (str(row["version_id"]), str(tenant_id)),
+            )
+            conn.commit()
+            unpublished = conn.execute(
+                "SELECT * FROM skill_versions WHERE version_id = ?",
+                (str(row["version_id"]),),
+            ).fetchone()
+            return self._skill_row(unpublished)
 
     def set_skill_evaluation(
         self, version_id: str, tenant_id: str, status: str, run_id: Optional[str] = None,

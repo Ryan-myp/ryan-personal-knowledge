@@ -622,7 +622,34 @@ async def publish_managed_skill_version(
     except SkillPackageError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     if not result:
-        raise HTTPException(status_code=404, detail="Skill version not found or archived")
+        raise HTTPException(status_code=404, detail="Skill version not found")
+    return result
+
+
+@app.post("/skills/{skill_name}/versions/{version}/unpublish", tags=["skills"])
+async def unpublish_managed_skill_version(
+    skill_name: str,
+    version: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Deactivate the current release without deleting its immutable version."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_skill_permission(principal, "skills.write")
+    manager = _skill_manager_or_503()
+    try:
+        result = manager.unpublish(
+            principal.tenant_id, skill_name, version, runtime=runtime
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except SkillPackageError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    if not result:
+        raise HTTPException(
+            status_code=409,
+            detail="Skill version is not the current published release",
+        )
     return result
 
 

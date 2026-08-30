@@ -41,6 +41,10 @@ skill-up 评测（可选，但发布前建议通过）
 发布一个版本（同一租户/Skill 只有一个 published）
       ↓
 Runtime 加载为 advisory context
+
+已发布版本可通过 `unpublish` 安全下线：删除当前 release pointer、保留不可变版本
+快照并归档，同时卸载对应租户的 Runtime context。历史版本可以再次显式发布，作为
+回滚操作；不会自动回滚到某个“最近版本”。
 ```
 
 发布新版本会把旧版本标记为 `archived`，历史版本仍可查看和复测。带有
@@ -59,6 +63,7 @@ context 在 Selector 中按租户选择，避免把一个租户的业务规则�
 - `POST /skills/{name}/versions/{version}/evaluate`：异步触发 skill-up
 - `GET /skills/evaluations/{run_id}`：查询评测状态和报告
 - `POST /skills/{name}/versions/{version}/publish`：发布并激活版本
+- `POST /skills/{name}/versions/{version}/unpublish`：下线当前发布版本但保留快照
 
 接口要求显式的 `skills.read`、`skills.write`、`skills.evaluate` 权限；请求体
 里的 `user_id` 不参与身份判断，租户来自认证后的 `RequestPrincipal`。
