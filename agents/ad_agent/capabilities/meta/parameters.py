@@ -46,6 +46,16 @@ META_CAPI_EVENT_NAMES = [
 META_CAPI_ACTION_SOURCES = [
     "website", "app", "physical_store", "phone_call", "chat", "email", "other",
 ]
+META_CUSTOM_CONVERSION_EVENT_TYPES = [
+    "ADD_PAYMENT_INFO", "ADD_TO_CART", "ADD_TO_WISHLIST", "COMPLETE_REGISTRATION",
+    "CONTENT_VIEW", "INITIATED_CHECKOUT", "LEAD", "PURCHASE", "SEARCH", "CONTACT",
+    "CUSTOMIZE_PRODUCT", "DONATE", "FIND_LOCATION", "SCHEDULE", "START_TRIAL",
+    "SUBMIT_APPLICATION", "SUBSCRIBE", "LISTING_INTERACTION", "FACEBOOK_SELECTED", "OTHER",
+]
+META_CUSTOM_CONVERSION_ACTION_SOURCES = [
+    "app", "chat", "email", "other", "phone_call", "physical_store",
+    "system_generated", "website", "business_messaging",
+]
 META_CATALOG_VERTICALS = [
     "commerce", "destination_items", "flights", "home_listings", "hotels", "vehicles",
 ]
@@ -263,6 +273,42 @@ def meta_conversion_event_schema() -> dict[str, Any]:
             "test_event_code": _field(
                 "string", "Optional Meta Events Manager test code"
             ),
+        },
+    }
+
+
+def meta_custom_conversion_schema() -> dict[str, Any]:
+    """Contract for the Meta-documented Pixel Custom Conversion create edge."""
+    pixel_id = _field(
+        "string", "Meta Pixel ID", minLength=1,
+        lookup_tool="meta_list_pixels", lookup_result_key="pixels",
+        selection_value_fields=["id", "pixel_id"],
+        selection_label_fields=["name", "id"],
+    )
+    return {
+        "required": ["account_id", "pixel_id", "name", "rule"],
+        # ``pixel_id`` is translated to the provider's ``event_source_id``
+        # inside the Client; provider validation runs before that adapter.
+        "provider_required": ["name", "rule"],
+        "properties": {
+            "account_id": _field("string", "Meta ad account ID"),
+            "pixel_id": pixel_id,
+            "name": _field("string", "Custom conversion name", minLength=1, maxLength=400),
+            "rule": _field(
+                "string", "Rule expression used to count matching Pixel events",
+                minLength=1, maxLength=5000,
+            ),
+            "action_source_type": _field(
+                "string", "Action source type", enum=META_CUSTOM_CONVERSION_ACTION_SOURCES,
+            ),
+            "advanced_rule": _field("string", "Advanced multi-source rule", maxLength=5000),
+            "custom_event_type": _field(
+                "string", "Custom conversion event type", enum=META_CUSTOM_CONVERSION_EVENT_TYPES,
+            ),
+            "default_conversion_value": _field(
+                "number", "Default conversion value", minimum=0,
+            ),
+            "description": _field("string", "Custom conversion description", maxLength=1000),
         },
     }
 

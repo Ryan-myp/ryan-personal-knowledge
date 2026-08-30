@@ -39,7 +39,7 @@ API_SURFACE = [
     {"resource": "audience", "action": "delete", "method": "delete_audience", "status": "implemented"},
     {"resource": "audience", "action": "source_upload", "method": "upload_audience_users", "status": "implemented"},
     {"resource": "pixel", "action": "events_test", "method": "send_conversion_events", "status": "implemented"},
-    {"resource": "pixel", "action": "events_config", "status": "planned", "gap": "Pixel 事件配置尚无独立 Tool"},
+    {"resource": "custom_conversion", "action": "create", "method": "create_custom_conversion", "status": "implemented"},
     {"resource": "conversion", "action": "event", "method": "send_conversion_events", "status": "implemented"},
     {"resource": "lead_form", "action": "create", "method": "create_lead_form", "status": "implemented"},
     {"resource": "lead_form", "action": "update", "method": "update_lead_form", "status": "implemented"},

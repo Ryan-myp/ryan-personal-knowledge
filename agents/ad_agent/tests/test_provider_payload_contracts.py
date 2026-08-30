@@ -799,6 +799,53 @@ def test_meta_pixel_get_checks_account_ownership_and_forwards_fields():
     ]
 
 
+def test_meta_custom_conversion_create_validates_pixel_scope_and_builds_payload():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+    client.resource_belongs_to_account = lambda account_id, resource_type, resource_id: (
+        calls.append(("ownership", account_id, resource_type, resource_id)) or True
+    )
+    client.acquire_rate_limit = lambda *_args, **_kwargs: None
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        calls.append((method, endpoint, data, kwargs.get("extra_params")))
+        or {"id": "cc-1", "is_custom_event_type_predicted": "0"}
+    )
+
+    conversion_id = client.create_custom_conversion("act_123", {
+        "pixel_id": "px-1",
+        "name": "Paid Purchase",
+        "rule": "event.source_url contains 'checkout'",
+        "custom_event_type": "PURCHASE",
+        "action_source_type": "website",
+        "default_conversion_value": 19.9,
+    })
+    assert conversion_id == "cc-1"
+    assert calls == [
+        ("ownership", "123", "pixel", "px-1"),
+        ("POST", "/act_123/customconversions",
+        {
+            "event_source_id": "px-1",
+            "name": "Paid Purchase",
+            "rule": "event.source_url contains 'checkout'",
+            "custom_event_type": "PURCHASE",
+            "action_source_type": "website",
+            "default_conversion_value": 19.9,
+        },
+        None,
+        ),
+    ]
+
+    with pytest.raises(ValueError, match="unsupported"):
+        client.create_custom_conversion("act_123", {
+            "pixel_id": "px-1", "name": "bad", "rule": "x", "access_token": "bad",
+        })
+    with pytest.raises(PermissionError):
+        client.resource_belongs_to_account = lambda *_args: False
+        client.create_custom_conversion("act_123", {
+            "pixel_id": "px-1", "name": "bad", "rule": "x",
+        })
+
+
 def test_meta_capi_events_validate_pixel_ownership_and_build_provider_envelope():
     client = MetaAPIClient({"access_token": "test"})
     calls = []
@@ -846,6 +893,25 @@ def test_meta_capi_tool_exposes_pixel_lookup_and_is_dry_run_only():
         "event_name", "event_time", "action_source", "user_data"
     ]
     assert tool.live_support is False
+
+
+def test_meta_custom_conversion_tool_exposes_pixel_lookup_and_dry_run():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_meta_capability().register_tools()
+    }
+    tool = definitions["meta_create_custom_conversion"]
+    assert tool.live_support is False
+    assert tool.input_schema.properties["pixel_id"]["lookup_tool"] == "meta_list_pixels"
+    assert validate_tool_input(
+        tool.input_schema,
+        {
+            "account_id": "act_1",
+            "pixel_id": "px_1",
+            "name": "Paid Purchase",
+            "rule": "event_name == 'Purchase'",
+        },
+    ) == []
 
 
 def test_meta_test_capi_tool_requires_test_code_and_uses_test_endpoint_contract():

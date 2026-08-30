@@ -258,6 +258,58 @@ class MetaAPIClient(BasePlatformClient):
             },
         )
 
+    def create_custom_conversion(self, account_id: str, conversion: dict) -> str:
+        """Create a Meta Custom Conversion for an account-owned Pixel.
+
+        Meta documents creation on ``/{ad-account}/customconversions``.  The
+        current endpoint does not support update/delete operations, so this
+        client intentionally exposes only the verified create operation.
+        """
+        account_id = self._clean_meta_id(account_id, "account_id")
+        if not isinstance(conversion, dict):
+            raise ValueError("conversion must be an object")
+        allowed_fields = {
+            "pixel_id", "name", "rule", "action_source_type", "advanced_rule",
+            "custom_event_type", "default_conversion_value", "description",
+        }
+        unknown = sorted(set(conversion) - allowed_fields)
+        if unknown:
+            raise ValueError(f"unsupported custom conversion fields: {', '.join(unknown)}")
+        pixel_id = self._clean_meta_id(conversion.get("pixel_id"), "pixel_id")
+        if not self.resource_belongs_to_account(account_id, "pixel", pixel_id):
+            raise PermissionError(
+                f"Meta pixel {pixel_id} does not belong to account {account_id}"
+            )
+        name = str(conversion.get("name") or "").strip()
+        rule = str(conversion.get("rule") or "").strip()
+        if not name or not rule:
+            raise ValueError("custom conversion name and rule are required")
+        data: dict[str, Any] = {
+            "event_source_id": pixel_id,
+            "name": name,
+            "rule": rule,
+        }
+        for field_name in (
+            "action_source_type", "advanced_rule", "custom_event_type", "description",
+        ):
+            if conversion.get(field_name) is not None:
+                value = conversion[field_name]
+                if not isinstance(value, str) or not value.strip():
+                    raise ValueError(f"{field_name} must be a non-empty string")
+                data[field_name] = value.strip()
+        if conversion.get("default_conversion_value") is not None:
+            try:
+                value = float(conversion["default_conversion_value"])
+            except (TypeError, ValueError) as exc:
+                raise ValueError("default_conversion_value must be a non-negative number") from exc
+            if value < 0:
+                raise ValueError("default_conversion_value must be non-negative")
+            data["default_conversion_value"] = value
+        self.acquire_rate_limit(self._get_account_limiter(account_id))
+        result = self.request("POST", f"/act_{account_id}/customconversions", data=data)
+        resource_id = result.get("id") if isinstance(result, dict) else None
+        return self.require_resource_id(resource_id, "Meta custom conversion create")
+
     @staticmethod
     def _clean_meta_id(value: Any, field_name: str) -> str:
         """Validate a Graph object/account ID before URL construction."""

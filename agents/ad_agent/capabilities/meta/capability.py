@@ -19,6 +19,7 @@ from .parameters import (
     meta_audience_schema, meta_conversion_event_schema, meta_creative_schema,
     meta_catalog_schema, meta_product_set_schema,
     meta_lead_form_schema,
+    meta_custom_conversion_schema,
 )
 from ...api_clients.meta_client import MetaAPIClient
 from ..update_contracts import meta_updates
@@ -51,7 +52,7 @@ class MetaCapability(BaseCapability):
     platform_name = "meta"
     provider_client_class = MetaAPIClient
     provider_method_exclusions = {"resource_belongs_to_account"}
-    capability_version = "1.2.0"
+    capability_version = "1.3.0"
     provider_api_version = "v19.0"
     # Provider endpoint -> executable Tool(s).  This lives with the provider
     # package and is consumed only by the release audit, never by Runtime
@@ -72,6 +73,7 @@ class MetaCapability(BaseCapability):
         "list_campaigns": ["meta_list_campaigns"],
         "list_pages": ["meta_list_pages"], "list_pixels": ["meta_list_pixels"],
         "get_pixel": ["meta_get_pixel"],
+        "create_custom_conversion": ["meta_create_custom_conversion"],
         "send_conversion_events": [
             "meta_send_conversion_events", "meta_test_conversion_events"
         ],
@@ -103,6 +105,7 @@ class MetaCapability(BaseCapability):
         audience_schema = meta_audience_schema()
         audience_properties = audience_schema["properties"]
         conversion_schema = meta_conversion_event_schema()
+        custom_conversion_schema = meta_custom_conversion_schema()
         test_conversion_schema = {
             **conversion_schema,
             "required": [*conversion_schema["required"], "test_event_code"],
@@ -207,6 +210,21 @@ class MetaCapability(BaseCapability):
                 argument_builder=lambda ctx, data: ((
                     account(ctx, data), data["pixel_id"], data["events"],
                 ), {"test_event_code": data["test_event_code"]}),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_create_custom_conversion",
+                description="为 Meta Pixel 创建 Custom Conversion；默认仅生成 dry-run 计划。",
+                method_name="create_custom_conversion", result_key="custom_conversion_id",
+                properties=custom_conversion_schema["properties"],
+                required=custom_conversion_schema["required"],
+                provider_required=custom_conversion_schema["provider_required"],
+                action="create", resource_type="custom_conversion",
+                resource_id_field="custom_conversion_id",
+                intent_types=["create_custom_conversion"],
+                traits=["write", "conversion", "pixel"], write=True, live_support=False,
+                argument_builder=lambda ctx, data: ((account(ctx, data), {
+                    key: value for key, value in data.items() if key != "account_id"
+                }), {}),
             ),
             method_tool(
                 platform="meta", skill="meta-marketing-api", name="meta_list_lead_forms",
