@@ -42,21 +42,9 @@ Skill 包遵循标准目录约定：至少包含 `SKILL.md`，也可以包含 `r
 Runtime 自动导入或执行；`workflow.yaml` 不是上传、编辑或执行入口。只有仓库内经
 验证的源码扩展才可以提供 Tool，用户上传的同名文件不会被当作插件加载。
 
-SKILL.md 的推荐内容：
-
-```yaml
-skill:
-  name: meta-marketing-api
-  version: "1.0"
-  description: "Meta Marketing API 专家 Skill"
-  platform: meta
-  author: "Ryan"
-  
-skills:
-  - name: meta_bidding_expert
-    description: "出价策略专家"
-    strategies: [...]
-```
+SKILL.md 的 frontmatter 只建议声明 Skill 身份和版本等元数据；专家知识、流程和
+安全边界使用自然语言 Markdown 编写。渠道 Tool、参数 schema 和 handler 不写入
+SKILL.md，而由对应 Capability 在 Registry 中注册。
 
 ## 跨渠道 Campaign 管理
 

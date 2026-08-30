@@ -68,7 +68,7 @@ Ad Set 出价策略必须携带对应参数：`LOWEST_COST_WITH_BID_CAP` 和 `CO
 Catalog 格式和 CTA 也必须使用当前 Tool Schema 声明的组合，不得把任意字符串当作
 合法 CTA 或素材类型。
 
-发送 CAPI 事件时，先用当前 Capability 发布的 `meta_list_pixels` 选择目标 Pixel，
+发送 CAPI 事件时，先用当前 Capability 发布的 Pixel 查询/lookup 能力选择目标 Pixel，
 事件批次必须包含 `event_name`、Unix 秒级 `event_time`、`action_source` 和
 `user_data`。用户匹配字段应在进入 Tool 前按 Meta 规范标准化并哈希；使用
 `event_id` 做 Pixel/CAPI 去重，联调时才提供 `test_event_code`。该 Tool 默认只生成
