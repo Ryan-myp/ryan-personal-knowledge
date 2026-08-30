@@ -95,6 +95,18 @@
         .new-chat-btn:hover {
             background: var(--accent-hover);
         }
+
+        .skill-nav-btn {
+            margin-top: 0;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-light);
+            color: var(--text-primary);
+        }
+
+        .skill-nav-btn:hover {
+            background: var(--bg-hover);
+            border-color: var(--accent);
+        }
         
         .chat-history {
             flex: 1;
@@ -763,6 +775,221 @@
         .btn-confirm:hover {
             background: var(--accent-hover);
         }
+
+        /* Skills 管理台 */
+        .skill-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 900;
+            display: none;
+            padding: 24px;
+            background: rgba(0, 0, 0, 0.82);
+        }
+
+        .skill-overlay.active { display: flex; }
+
+        .skill-console {
+            width: min(1180px, 100%);
+            height: min(820px, 100%);
+            margin: auto;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-light);
+            border-radius: 16px;
+            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+        }
+
+        .skill-console-header,
+        .skill-toolbar,
+        .skill-editor-header,
+        .skill-editor-footer {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .skill-console-header {
+            justify-content: space-between;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .skill-console-title { font-size: 16px; font-weight: 600; }
+        .skill-console-subtitle { margin-top: 4px; font-size: 12px; color: var(--text-muted); }
+
+        .icon-btn {
+            width: 32px;
+            height: 32px;
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 18px;
+        }
+
+        .icon-btn:hover { color: var(--text-primary); border-color: var(--accent); }
+
+        .skill-toolbar {
+            flex-wrap: wrap;
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-tertiary);
+        }
+
+        .skill-toolbar label { font-size: 12px; color: var(--text-secondary); }
+        .skill-toolbar input,
+        .skill-editor input,
+        .skill-editor select,
+        .skill-editor textarea {
+            color: var(--text-primary);
+            background: var(--bg-primary);
+            border: 1px solid var(--border-light);
+            border-radius: 7px;
+            outline: none;
+        }
+
+        .skill-toolbar input {
+            width: 180px;
+            padding: 8px 10px;
+        }
+
+        .skill-toolbar input:focus,
+        .skill-editor input:focus,
+        .skill-editor select:focus,
+        .skill-editor textarea:focus { border-color: var(--accent); }
+
+        .skill-toolbar .btn,
+        .skill-editor-footer .btn {
+            padding: 8px 12px;
+            font-size: 12px;
+        }
+
+        .skill-toolbar .btn-primary,
+        .skill-editor-footer .btn-primary { background: var(--accent); color: white; }
+        .skill-toolbar .btn-secondary,
+        .skill-editor-footer .btn-secondary { background: var(--bg-hover); color: var(--text-primary); border: 1px solid var(--border-light); }
+
+        .skill-notice {
+            display: none;
+            margin: 12px 20px 0;
+            padding: 10px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .skill-notice.active { display: block; }
+        .skill-notice.error { color: #fecaca; background: var(--error-light); border: 1px solid rgba(239, 68, 68, 0.3); }
+        .skill-notice.success { color: #bbf7d0; background: var(--success-light); border: 1px solid rgba(34, 197, 94, 0.3); }
+
+        .skill-console-body {
+            min-height: 0;
+            flex: 1;
+            display: grid;
+            grid-template-columns: 300px minmax(0, 1fr);
+        }
+
+        .skill-list {
+            min-height: 0;
+            overflow-y: auto;
+            padding: 16px;
+            border-right: 1px solid var(--border);
+        }
+
+        .skill-list-empty { padding: 24px 8px; color: var(--text-muted); font-size: 13px; line-height: 1.6; }
+
+        .skill-list-group { margin-bottom: 18px; }
+        .skill-list-name { margin: 0 6px 8px; font-size: 13px; font-weight: 600; color: var(--text-primary); }
+
+        .skill-version-item {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 9px 10px;
+            margin-bottom: 5px;
+            text-align: left;
+            color: var(--text-secondary);
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        .skill-version-item:hover,
+        .skill-version-item.active { color: var(--text-primary); background: var(--bg-hover); border-color: var(--accent); }
+        .skill-version-meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+        .skill-version-number { font-size: 13px; }
+        .skill-version-digest { overflow: hidden; text-overflow: ellipsis; font-size: 10px; color: var(--text-muted); }
+
+        .skill-status {
+            flex-shrink: 0;
+            padding: 3px 6px;
+            border-radius: 5px;
+            font-size: 10px;
+            background: var(--bg-active);
+        }
+
+        .skill-status.published, .skill-status.passed { color: var(--success); }
+        .skill-status.failed, .skill-status.error { color: var(--error); }
+        .skill-status.queued, .skill-status.running { color: var(--warning); }
+
+        .skill-editor {
+            min-width: 0;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .skill-editor-header { padding: 16px 20px 12px; flex-wrap: wrap; }
+        .skill-editor-header label { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); }
+        .skill-editor-header input { width: 170px; padding: 8px 10px; }
+        .skill-editor-header input.version-input { width: 92px; }
+        .skill-immutable-note { margin-left: auto; font-size: 11px; color: var(--text-muted); }
+
+        .skill-files {
+            min-height: 0;
+            flex: 1;
+            overflow-y: auto;
+            padding: 0 20px 16px;
+        }
+
+        .skill-file-row {
+            margin-bottom: 12px;
+            padding: 12px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 9px;
+        }
+
+        .skill-file-row-header { display: flex; gap: 8px; margin-bottom: 8px; }
+        .skill-file-row-header input { flex: 1; min-width: 0; padding: 7px 9px; font-size: 12px; }
+        .skill-file-row-header select { width: 105px; padding: 7px 6px; font-size: 12px; }
+        .skill-file-row-header button { padding: 0 9px; border: 1px solid var(--border-light); border-radius: 6px; background: var(--bg-primary); color: var(--text-secondary); cursor: pointer; }
+        .skill-file-row-header button:hover { color: var(--error); border-color: var(--error); }
+        .skill-file-row textarea { width: 100%; min-height: 150px; padding: 10px; resize: vertical; font: 12px/1.55 Monaco, Menlo, monospace; }
+        .skill-file-hint { margin-top: 5px; color: var(--text-muted); font-size: 10px; }
+
+        .skill-editor-footer {
+            flex-wrap: wrap;
+            padding: 12px 20px;
+            border-top: 1px solid var(--border);
+        }
+
+        .skill-editor-footer .spacer { flex: 1; }
+        .skill-eval-summary { width: 100%; color: var(--text-muted); font-size: 11px; line-height: 1.5; }
+
+        @media (max-width: 760px) {
+            .skill-overlay { padding: 0; }
+            .skill-console { height: 100%; border-radius: 0; }
+            .skill-console-body { grid-template-columns: 1fr; grid-template-rows: 190px minmax(0, 1fr); }
+            .skill-list { border-right: 0; border-bottom: 1px solid var(--border); }
+            .skill-immutable-note { width: 100%; margin-left: 0; }
+        }
         
         /* 确认卡片容器 - 位于输入框上方 */
         .confirm-card-container {
@@ -916,6 +1143,10 @@
             </svg>
             新对话
         </button>
+        <button class="new-chat-btn skill-nav-btn" onclick="openSkillManager()">
+            <span>🧩</span>
+            Skills 管理
+        </button>
         
         <div class="chat-history" id="chatHistory">
             <div class="chat-history-item active">
@@ -1060,12 +1291,379 @@
             </div>
         </div>
     </aside>
+
+    <!-- 标准 Agent Skills 管理台：只管理 advisory context，不注册 Tool。 -->
+    <div class="skill-overlay" id="skillOverlay" aria-hidden="true">
+        <section class="skill-console" role="dialog" aria-modal="true" aria-labelledby="skillConsoleTitle">
+            <header class="skill-console-header">
+                <div>
+                    <div class="skill-console-title" id="skillConsoleTitle">Skills 管理</div>
+                    <div class="skill-console-subtitle">标准 Skill 目录（SKILL.md · references/ · scripts/ · assets/ · evals/） · 不可变版本 · Skill-up 发布门禁</div>
+                </div>
+                <button class="icon-btn" type="button" onclick="closeSkillManager()" aria-label="关闭">×</button>
+            </header>
+            <div class="skill-toolbar">
+                <label for="skillApiKey">服务 API Key</label>
+                <input id="skillApiKey" type="password" autocomplete="off" placeholder="仅保存在当前页面内">
+                <button class="btn btn-secondary" type="button" onclick="loadManagedSkills()">刷新</button>
+                <button class="btn btn-primary" type="button" onclick="newSkillDraft()">新建 Skill 版本</button>
+                <label for="skillZipInput">ZIP 导入</label>
+                <input id="skillZipInput" type="file" accept=".zip,application/zip" onchange="uploadSkillZip()">
+            </div>
+            <div class="skill-notice" id="skillNotice" role="status"></div>
+            <div class="skill-console-body">
+                <div class="skill-list" id="skillList">
+                    <div class="skill-list-empty">打开管理台后加载当前租户的 Skill 版本。</div>
+                </div>
+                <div class="skill-editor">
+                    <div class="skill-editor-header">
+                        <label>名称 <input id="skillNameInput" maxlength="64" placeholder="例如 growth-planner"></label>
+                        <label>版本 <input class="version-input" id="skillVersionInput" maxlength="80" value="1.0.0" placeholder="1.0.0"></label>
+                        <span class="skill-immutable-note">已保存版本不可直接修改，请递增版本号另存</span>
+                    </div>
+                    <div class="skill-files" id="skillFiles"></div>
+                    <div class="skill-editor-footer">
+                        <div class="skill-eval-summary" id="skillEvalSummary">选择一个版本，或新建一个标准 Skill 目录。</div>
+                        <button class="btn btn-secondary" type="button" onclick="addSkillFile()">+ 添加文件</button>
+                        <span class="spacer"></span>
+                        <button class="btn btn-secondary" type="button" onclick="evaluateSelectedSkill()">Skill-up 评测</button>
+                        <button class="btn btn-secondary" type="button" onclick="unpublishSelectedSkill()">下线</button>
+                        <button class="btn btn-primary" type="button" onclick="saveSkillDraft()">保存为新版本</button>
+                        <button class="btn btn-primary" type="button" onclick="publishSelectedSkill()">发布 / 回滚</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
     
     <script>
         let pendingRequest = null;
         let sessionId = null;
         let apiCallCount = 0;
         let conversationCount = 0;
+        let serviceApiKey = '';
+        const skillState = {
+            versions: [],
+            selected: null,
+            detail: null,
+            files: [],
+            evaluationTimer: null,
+        };
+
+        function requestHeaders(extra = {}) {
+            const headers = new Headers(extra);
+            const key = serviceApiKey || document.getElementById('skillApiKey')?.value.trim() || '';
+            if (key) headers.set('X-API-Key', key);
+            return headers;
+        }
+
+        function authenticatedFetch(url, options = {}) {
+            return fetch(url, { ...options, headers: requestHeaders(options.headers || {}) });
+        }
+
+        async function apiFetch(url, options = {}) {
+            const response = await authenticatedFetch(url, options);
+            const text = await response.text();
+            let data = {};
+            try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { detail: text }; }
+            if (!response.ok) {
+                if (response.status === 401 || response.status === 403) {
+                    showSkillNotice('请求未授权。请填写当前 ad-agent 服务 API Key；它不是任何渠道的 Provider Token。', true);
+                }
+                throw new Error(data.detail || data.error || `请求失败（${response.status}）`);
+            }
+            return data;
+        }
+
+        function openSkillManager() {
+            document.getElementById('skillOverlay').classList.add('active');
+            document.getElementById('skillOverlay').setAttribute('aria-hidden', 'false');
+            document.getElementById('skillApiKey').value = serviceApiKey;
+            loadManagedSkills();
+        }
+
+        function closeSkillManager() {
+            if (skillState.evaluationTimer) window.clearTimeout(skillState.evaluationTimer);
+            skillState.evaluationTimer = null;
+            document.getElementById('skillOverlay').classList.remove('active');
+            document.getElementById('skillOverlay').setAttribute('aria-hidden', 'true');
+        }
+
+        function showSkillNotice(message, isError = false) {
+            const notice = document.getElementById('skillNotice');
+            notice.textContent = message || '';
+            notice.className = `skill-notice active ${isError ? 'error' : 'success'}`;
+        }
+
+        function clearSkillNotice() {
+            const notice = document.getElementById('skillNotice');
+            notice.textContent = '';
+            notice.className = 'skill-notice';
+        }
+
+        function skillStatusLabel(status) {
+            return {
+                published: '已发布', draft: '草稿', archived: '已归档',
+                not_run: '未评测', queued: '排队中', running: '评测中',
+                passed: '评测通过', failed: '评测失败', error: '评测异常',
+            }[status] || status || '未知';
+        }
+
+        async function loadManagedSkills(select = null) {
+            clearSkillNotice();
+            serviceApiKey = document.getElementById('skillApiKey').value.trim();
+            try {
+                const data = await apiFetch('/skills?limit=200');
+                skillState.versions = data.skills || [];
+                renderSkillList();
+                if (select) {
+                    await selectSkillVersion(select.skillName, select.version);
+                } else if (skillState.selected) {
+                    const stillExists = skillState.versions.some(item =>
+                        item.skill_name === skillState.selected.skillName && item.version === skillState.selected.version
+                    );
+                    if (stillExists) await selectSkillVersion(skillState.selected.skillName, skillState.selected.version);
+                }
+                if (!skillState.versions.length) newSkillDraft();
+            } catch (error) {
+                renderSkillList();
+                showSkillNotice(error.message, true);
+            }
+        }
+
+        function renderSkillList() {
+            const list = document.getElementById('skillList');
+            list.replaceChildren();
+            if (!skillState.versions.length) {
+                const empty = document.createElement('div');
+                empty.className = 'skill-list-empty';
+                empty.textContent = '当前租户还没有 Skill 版本。点击“新建 Skill 版本”开始。';
+                list.appendChild(empty);
+                return;
+            }
+            const groups = new Map();
+            for (const item of skillState.versions) {
+                if (!groups.has(item.skill_name)) groups.set(item.skill_name, []);
+                groups.get(item.skill_name).push(item);
+            }
+            for (const [name, versions] of groups) {
+                const group = document.createElement('div');
+                group.className = 'skill-list-group';
+                const title = document.createElement('div');
+                title.className = 'skill-list-name';
+                title.textContent = name;
+                group.appendChild(title);
+                for (const item of versions) {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'skill-version-item';
+                    if (skillState.selected && skillState.selected.skillName === item.skill_name && skillState.selected.version === item.version) {
+                        button.classList.add('active');
+                    }
+                    const meta = document.createElement('span');
+                    meta.className = 'skill-version-meta';
+                    const version = document.createElement('span');
+                    version.className = 'skill-version-number';
+                    version.textContent = `v${item.version}`;
+                    const digest = document.createElement('span');
+                    digest.className = 'skill-version-digest';
+                    digest.textContent = item.sha256 ? `${item.sha256.slice(0, 12)}…` : '无 digest';
+                    meta.append(version, digest);
+                    const status = document.createElement('span');
+                    status.className = `skill-status ${item.status || ''}`;
+                    status.textContent = skillStatusLabel(item.status);
+                    button.append(meta, status);
+                    button.addEventListener('click', () => selectSkillVersion(item.skill_name, item.version));
+                    group.appendChild(button);
+                }
+                list.appendChild(group);
+            }
+        }
+
+        function newSkillDraft() {
+            if (skillState.evaluationTimer) window.clearTimeout(skillState.evaluationTimer);
+            skillState.evaluationTimer = null;
+            skillState.selected = null;
+            skillState.detail = null;
+            skillState.files = [{
+                path: 'SKILL.md', encoding: 'utf-8',
+                content: '---\nname: new-skill\ndescription: Describe what this Skill does\nplatform: multi_platform\n---\n\n# Instructions\n\nDescribe the business workflow in natural language.\n',
+            }];
+            document.getElementById('skillNameInput').value = 'new-skill';
+            document.getElementById('skillVersionInput').value = '1.0.0';
+            document.getElementById('skillEvalSummary').textContent = '草稿不会影响已发布 Skill；保存时请使用新的语义化版本号。';
+            renderSkillList();
+            renderSkillFiles();
+            clearSkillNotice();
+        }
+
+        function likelyTextPath(path) {
+            return path === 'SKILL.md' || /\.(md|markdown|txt|yaml|yml|json|csv|py|js|ts|sh)$/i.test(path);
+        }
+
+        function decodeBase64(value) {
+            try {
+                const binary = atob(value || '');
+                const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+                return new TextDecoder().decode(bytes);
+            } catch (_) { return value || ''; }
+        }
+
+        async function selectSkillVersion(skillName, version) {
+            try {
+                const data = await apiFetch(`/skills/${encodeURIComponent(skillName)}/versions/${encodeURIComponent(version)}`);
+                skillState.selected = { skillName, version };
+                skillState.detail = data;
+                skillState.files = Object.entries(data.files || {}).map(([path, value]) => ({
+                    path,
+                    encoding: value && value.encoding === 'base64' && !likelyTextPath(path) ? 'base64' : 'utf-8',
+                    content: value && value.encoding === 'base64' ? decodeBase64(value.content) : String(value || ''),
+                }));
+                document.getElementById('skillNameInput').value = skillName;
+                document.getElementById('skillVersionInput').value = version;
+                renderSkillList();
+                renderSkillFiles();
+                renderSkillEvaluation(data);
+            } catch (error) { showSkillNotice(error.message, true); }
+        }
+
+        function renderSkillFiles() {
+            const container = document.getElementById('skillFiles');
+            container.replaceChildren();
+            for (const [index, file] of skillState.files.entries()) {
+                const row = document.createElement('div');
+                row.className = 'skill-file-row';
+                const header = document.createElement('div');
+                header.className = 'skill-file-row-header';
+                const path = document.createElement('input');
+                path.type = 'text'; path.placeholder = 'references/guide.md'; path.value = file.path;
+                path.addEventListener('input', () => { file.path = path.value; });
+                const encoding = document.createElement('select');
+                encoding.innerHTML = '<option value="utf-8">UTF-8 文本</option><option value="base64">Base64 二进制</option>';
+                encoding.value = file.encoding;
+                encoding.addEventListener('change', () => { file.encoding = encoding.value; });
+                const remove = document.createElement('button');
+                remove.type = 'button'; remove.textContent = '删除';
+                remove.addEventListener('click', () => { skillState.files.splice(index, 1); renderSkillFiles(); });
+                header.append(path, encoding, remove);
+                const content = document.createElement('textarea');
+                content.spellcheck = false; content.value = file.content;
+                content.addEventListener('input', () => { file.content = content.value; });
+                const hint = document.createElement('div');
+                hint.className = 'skill-file-hint';
+                hint.textContent = file.encoding === 'base64' ? '二进制文件请输入严格 Base64；脚本和资源只作为包内容保存，不会被 Runtime 自动执行。' : '自然语言流程写入 SKILL.md，详细资料可放在 references/；evals/eval.yaml 可启用 Skill-up 发布门禁。';
+                row.append(header, content, hint);
+                container.appendChild(row);
+            }
+        }
+
+        function addSkillFile() {
+            skillState.files.push({ path: 'references/new.md', encoding: 'utf-8', content: '' });
+            renderSkillFiles();
+            const rows = document.querySelectorAll('.skill-file-row');
+            rows[rows.length - 1]?.querySelector('input')?.focus();
+        }
+
+        function collectSkillFiles() {
+            const files = {};
+            for (const file of skillState.files) {
+                const path = file.path.trim();
+                if (!path) throw new Error('Skill 文件路径不能为空');
+                if (Object.prototype.hasOwnProperty.call(files, path)) throw new Error(`重复的 Skill 文件：${path}`);
+                files[path] = file.encoding === 'base64' ? { encoding: 'base64', content: file.content.trim() } : file.content;
+            }
+            return files;
+        }
+
+        async function saveSkillDraft() {
+            try {
+                const skillName = document.getElementById('skillNameInput').value.trim().toLowerCase();
+                const version = document.getElementById('skillVersionInput').value.trim();
+                if (!skillName || !version) throw new Error('请填写 Skill 名称和语义化版本号');
+                const data = await apiFetch(`/skills/${encodeURIComponent(skillName)}/versions`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ version, files: collectSkillFiles() }),
+                });
+                showSkillNotice(`已保存 ${skillName}@${version}，digest: ${data.sha256 || '已生成'}`);
+                await loadManagedSkills({ skillName, version });
+            } catch (error) { showSkillNotice(error.message, true); }
+        }
+
+        async function uploadSkillZip() {
+            const input = document.getElementById('skillZipInput');
+            const archive = input.files[0];
+            if (!archive) return;
+            try {
+                const skillName = document.getElementById('skillNameInput').value.trim().toLowerCase();
+                const version = document.getElementById('skillVersionInput').value.trim();
+                if (!skillName || !version) throw new Error('ZIP 导入前请填写 Skill 名称和版本');
+                const data = await apiFetch(`/skills/${encodeURIComponent(skillName)}/versions/archive?version=${encodeURIComponent(version)}`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/zip' }, body: archive,
+                });
+                showSkillNotice(`已导入 ${skillName}@${version}，digest: ${data.sha256 || '已生成'}`);
+                input.value = '';
+                await loadManagedSkills({ skillName, version });
+            } catch (error) { input.value = ''; showSkillNotice(error.message, true); }
+        }
+
+        function renderSkillEvaluation(detail) {
+            const summary = document.getElementById('skillEvalSummary');
+            const evalStatus = detail.evaluation_status || 'not_run';
+            const runId = detail.evaluation_run_id ? ` · run ${detail.evaluation_run_id.slice(0, 10)}…` : '';
+            const release = detail.status === 'published' ? '已发布' : detail.status === 'archived' ? '已归档' : '草稿';
+            summary.textContent = `版本状态：${release} · Skill-up：${skillStatusLabel(evalStatus)}${runId}`;
+        }
+
+        async function evaluateSelectedSkill() {
+            if (!skillState.selected) { showSkillNotice('请先保存并选择一个版本，再发起评测。', true); return; }
+            try {
+                const { skillName, version } = skillState.selected;
+                const run = await apiFetch(`/skills/${encodeURIComponent(skillName)}/versions/${encodeURIComponent(version)}/evaluate`, { method: 'POST' });
+                renderSkillEvaluation({ ...(skillState.detail || {}), evaluation_status: run.status || 'queued', evaluation_run_id: run.run_id });
+                showSkillNotice(`Skill-up 已启动（${run.run_id}），正在轮询结果……`);
+                pollSkillEvaluation(run.run_id);
+            } catch (error) { showSkillNotice(error.message, true); }
+        }
+
+        async function pollSkillEvaluation(runId) {
+            if (skillState.evaluationTimer) window.clearTimeout(skillState.evaluationTimer);
+            try {
+                const run = await apiFetch(`/skills/evaluations/${encodeURIComponent(runId)}`);
+                const status = run.status || 'error';
+                renderSkillEvaluation({ ...(skillState.detail || {}), evaluation_status: status, evaluation_run_id: runId });
+                if (status === 'queued' || status === 'running') {
+                    skillState.evaluationTimer = window.setTimeout(() => pollSkillEvaluation(runId), 2000);
+                } else {
+                    await loadManagedSkills(skillState.selected);
+                    showSkillNotice(status === 'passed' ? 'Skill-up 评测通过，可以发布。' : `Skill-up 结束：${skillStatusLabel(status)}`, status !== 'passed');
+                }
+            } catch (error) {
+                showSkillNotice(error.message, true);
+                skillState.evaluationTimer = window.setTimeout(() => pollSkillEvaluation(runId), 4000);
+            }
+        }
+
+        async function publishSelectedSkill() {
+            if (!skillState.selected) { showSkillNotice('请先选择要发布或回滚的不可变版本。', true); return; }
+            if (!window.confirm(`确认将 ${skillState.selected.skillName}@${skillState.selected.version} 设为当前发布版本？`)) return;
+            try {
+                const { skillName, version } = skillState.selected;
+                await apiFetch(`/skills/${encodeURIComponent(skillName)}/versions/${encodeURIComponent(version)}/publish`, { method: 'POST' });
+                showSkillNotice(`已发布 ${skillName}@${version}；若它是旧版本，这也是一次显式回滚。`);
+                await loadManagedSkills({ skillName, version });
+            } catch (error) { showSkillNotice(error.message, true); }
+        }
+
+        async function unpublishSelectedSkill() {
+            if (!skillState.selected || skillState.detail?.status !== 'published') { showSkillNotice('只有当前已发布版本可以下线。', true); return; }
+            if (!window.confirm(`确认下线 ${skillState.selected.skillName}@${skillState.selected.version}？`)) return;
+            try {
+                const { skillName, version } = skillState.selected;
+                await apiFetch(`/skills/${encodeURIComponent(skillName)}/versions/${encodeURIComponent(version)}/unpublish`, { method: 'POST' });
+                showSkillNotice(`已下线 ${skillName}@${version}，版本仍保留，可随后显式回滚。`);
+                await loadManagedSkills({ skillName, version });
+            } catch (error) { showSkillNotice(error.message, true); }
+        }
         
         // Auto-resize textarea
         function autoResize(textarea) {
@@ -1293,7 +1891,7 @@
                     requestParams.account_id = account_id;
                 }
                 
-                const response = await fetch('/chat', {
+                const response = await authenticatedFetch('/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(requestParams)
@@ -1342,7 +1940,7 @@
             document.getElementById('statToday').textContent = conversationCount;
 
             try {
-                const response = await fetch('/chat', {
+                const response = await authenticatedFetch('/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({

@@ -69,6 +69,26 @@ def test_health_is_safe_and_does_not_require_api_key(fake_server):
     assert response.json()["execution_mode"] == "dry_run"
 
 
+def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
+    """Keep the shipped UI aligned with the tenant-scoped Skill API surface."""
+    with TestClient(api_server.app) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    html = response.text
+    for marker in (
+        "Skills 管理", "SKILL.md", "references/", "scripts/", "assets/", "evals/",
+        "保存为新版本", "ZIP 导入", "Skill-up 评测", "发布 / 回滚", "下线",
+        "/skills?limit=200", "/versions/archive", "/evaluate", "/evaluations/",
+        "X-API-Key",
+    ):
+        assert marker in html
+    # The browser may hold the service API key in memory, but the page must
+    # never offer fields or examples for advertising-provider credentials.
+    for forbidden in ("access_token", "refresh_token", "client_secret", "developer_token"):
+        assert forbidden not in html
+
+
 def test_chat_requires_api_key(fake_server):
     with TestClient(api_server.app) as client:
         response = client.post("/chat", json={"user_input": "查询 Meta campaign"})
