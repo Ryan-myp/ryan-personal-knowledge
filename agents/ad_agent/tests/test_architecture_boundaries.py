@@ -4,13 +4,14 @@ import pytest
 
 from agents.ad_agent.core.execution_plan import ExecutionPlan, PlanNode
 from agents.ad_agent.core.interfaces import (
-    ParsedIntent, ToolDefinition, ToolSchema, ToolEffect,
+    ParsedIntent, ToolDefinition, ToolSchema, ToolEffect, ToolContext, ToolResult,
 )
 from agents.ad_agent.core.tool_selector import DynamicToolSelector
 from agents.ad_agent.runtime.runtime import AgentRuntime
 from agents.ad_agent.skills.businesses.policy import BusinessSkillPolicy
 from agents.ad_agent.runtime.account_policy import AccountWhitelistValidator
 from agents.ad_agent.runtime.session_context import SessionContext
+from agents.ad_agent.core.intent import LLMIntentParser
 
 
 def test_runtime_discovers_domain_features_without_a_central_workflow_table():
@@ -119,3 +120,42 @@ def test_execution_plan_is_provider_neutral_and_validates_dependencies():
     )
     with pytest.raises(ValueError, match="dependency cycle"):
         cyclic.validate()
+
+
+def test_new_skill_intent_and_objective_are_not_filtered_by_core():
+    """A new Skill can publish its own vocabulary without editing Core."""
+    parser = LLMIntentParser()
+
+    normalized = parser._normalize_intent({
+        "intent_type": "create_partner_bundle",
+        "platforms": [],
+        "objective": "retention",
+    })
+
+    assert normalized["intent_type"] == "create_partner_bundle"
+    assert normalized["objective"] == "retention"
+
+
+def test_session_context_uses_declared_resource_metadata_only():
+    """Session state must not carry a central list of ad resource IDs."""
+    session = SessionContext("s1", ToolContext("s1", "u1"))
+
+    session.save_result(
+        "custom_create",
+        ToolResult.ok({"custom_id": "c1"}),
+        platform="new-network",
+    )
+    assert session.protected_state == {}
+
+    session.save_result(
+        "custom_create",
+        ToolResult.ok({
+            "custom_id": "c1",
+            "resource_id_field": "custom_id",
+        }),
+        platform="new-network",
+    )
+    assert session.protected_state == {
+        "custom_id": "c1",
+        "new-network:custom_id": "c1",
+    }

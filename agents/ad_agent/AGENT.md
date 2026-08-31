@@ -38,6 +38,11 @@ Runtime 不承载业务流程实现。可选业务扩展通过通用接口自动
 
 Runtime 只调用这些接口，不识别 `ecommerce`、`app`、`cross-channel` 等业务名称。
 
+`ToolInputBuilder` 只能按 Tool Schema 的字段名、`input_aliases`、`intent_field`、
+`intent_aliases` 和 `intent_map` 组装输入；不得在 Runtime/Builder 中新增
+`budget`、`objective`、`campaign` 等业务字段的专门分支。资源 ID 只能通过
+Tool 的 `resource_id_field` 进入会话保护状态。
+
 ## 2. Skill 边界
 
 Skill 必须使用标准目录格式，至少包含 `SKILL.md`，也可以包含：

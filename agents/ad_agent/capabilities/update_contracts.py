@@ -26,13 +26,31 @@ def _object(properties: dict[str, Any], description: str) -> dict[str, Any]:
     }
 
 
+def _with_lifecycle_defaults(schema: dict[str, Any]) -> dict[str, Any]:
+    """Publish provider-neutral intent defaults as Tool metadata.
+
+    The wire value is still normalized by the nested status field's
+    provider-owned ``intent_status_map``.  Runtime only applies this metadata
+    generically and never owns pause/resume semantics.
+    """
+    schema["intent_defaults"] = {
+        "pause_campaign": {"status": "PAUSED"},
+        "resume_campaign": {"status": "ACTIVE"},
+        "cross_channel_batch_pause": {"status": "PAUSED"},
+        "cross_channel_batch_resume": {"status": "ACTIVE"},
+    }
+    return schema
+
+
 def meta_updates(resource_type: str) -> dict[str, Any]:
     common = {
         "name": _field("string", "Resource name"),
         "status": _field(
             "string", "Delivery status", enum=["ACTIVE", "PAUSED"],
             intent_status_field="status",
-            intent_status_map={"ACTIVE": "ACTIVE", "PAUSED": "PAUSED"},
+            intent_status_map={
+                "ACTIVE": "ACTIVE", "ENABLED": "ACTIVE", "PAUSED": "PAUSED",
+            },
         ),
     }
     if resource_type == "campaign":
@@ -64,7 +82,9 @@ def meta_updates(resource_type: str) -> dict[str, Any]:
             "creative_id": _field("string", "Existing creative ID"),
             "url_tags": _field("string", "URL tracking tags"),
         })
-    return _object(common, f"Allowed Meta {resource_type} update fields")
+    return _with_lifecycle_defaults(
+        _object(common, f"Allowed Meta {resource_type} update fields")
+    )
 
 
 def google_updates(resource_type: str) -> dict[str, Any]:
@@ -73,7 +93,9 @@ def google_updates(resource_type: str) -> dict[str, Any]:
         "status": _field(
             "string", "Resource status", enum=["ENABLED", "PAUSED", "REMOVED"],
             intent_status_field="status",
-            intent_status_map={"ACTIVE": "ENABLED", "PAUSED": "PAUSED"},
+            intent_status_map={
+                "ACTIVE": "ENABLED", "ENABLED": "ENABLED", "PAUSED": "PAUSED",
+            },
         ),
     }
     if resource_type == "campaign":
@@ -103,7 +125,9 @@ def google_updates(resource_type: str) -> dict[str, Any]:
             "images": _field("array", "Image assets"),
             "videos": _field("array", "Video assets"),
         })
-    return _object(common, f"Allowed Google Ads {resource_type} update fields")
+    return _with_lifecycle_defaults(
+        _object(common, f"Allowed Google Ads {resource_type} update fields")
+    )
 
 
 def tiktok_updates(resource_type: str) -> dict[str, Any]:
@@ -117,7 +141,7 @@ def tiktok_updates(resource_type: str) -> dict[str, Any]:
         "status": _field(
             "integer", "Compatibility status", enum=[0, 1],
             intent_status_field=status_field,
-            intent_status_map={"ACTIVE": 1, "PAUSED": 0},
+            intent_status_map={"ACTIVE": 1, "ENABLED": 1, "PAUSED": 0},
         ),
     }
     if resource_type == "campaign":
@@ -172,7 +196,9 @@ def tiktok_updates(resource_type: str) -> dict[str, Any]:
             "text": _field("object", "Ad text payload"),
             "status": _field("integer", "Ad status", enum=[0, 1]),
         })
-    return _object(common, f"Allowed TikTok {resource_type} update fields")
+    return _with_lifecycle_defaults(
+        _object(common, f"Allowed TikTok {resource_type} update fields")
+    )
 
 
 def dv360_updates(resource_type: str) -> dict[str, Any]:
@@ -201,4 +227,6 @@ def dv360_updates(resource_type: str) -> dict[str, Any]:
             "budget": _field("number", "Budget", minimum=0),
             "spend_cap_micros": _field("integer", "Spend cap in micros", minimum=0),
         })
-    return _object(common, f"Allowed DV360 {resource_type} update fields")
+    return _with_lifecycle_defaults(
+        _object(common, f"Allowed DV360 {resource_type} update fields")
+    )

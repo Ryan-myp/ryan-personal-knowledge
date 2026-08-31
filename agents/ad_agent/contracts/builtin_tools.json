@@ -1,9 +1,9 @@
 {
-  "digest": "b845395a35b9e568d801b630215c67db300e221e3bc62d843161e0fef86b5e95",
+  "digest": "24d507ef92a88adbeb26b0bc03b0b26aaad54f14da8f2b2f16f847edf7df738b",
   "format_version": 1,
   "platforms": {
     "dv360": {
-      "digest": "d90ffd5ec40f120a88b22c55db89f6ded76921cef381281b9f8e63cde38caad3",
+      "digest": "39b0c7aff46b9efc098b6c9a7000d848dc0d66a28ec51ffd4fa21cf1c9341f1d",
       "tool_count": 31,
       "tools": [
         {
@@ -1634,6 +1634,20 @@
               "updates": {
                 "additionalProperties": false,
                 "description": "Allowed DV360 campaign update fields",
+                "intent_defaults": {
+                  "cross_channel_batch_pause": {
+                    "status": "PAUSED"
+                  },
+                  "cross_channel_batch_resume": {
+                    "status": "ACTIVE"
+                  },
+                  "pause_campaign": {
+                    "status": "PAUSED"
+                  },
+                  "resume_campaign": {
+                    "status": "ACTIVE"
+                  }
+                },
                 "properties": {
                   "end_date": {
                     "description": "End date",
@@ -1776,6 +1790,20 @@
               "updates": {
                 "additionalProperties": false,
                 "description": "Allowed DV360 io update fields",
+                "intent_defaults": {
+                  "cross_channel_batch_pause": {
+                    "status": "PAUSED"
+                  },
+                  "cross_channel_batch_resume": {
+                    "status": "ACTIVE"
+                  },
+                  "pause_campaign": {
+                    "status": "PAUSED"
+                  },
+                  "resume_campaign": {
+                    "status": "ACTIVE"
+                  }
+                },
                 "properties": {
                   "budget": {
                     "description": "Budget",
@@ -1871,6 +1899,20 @@
               "updates": {
                 "additionalProperties": false,
                 "description": "Allowed DV360 line_item update fields",
+                "intent_defaults": {
+                  "cross_channel_batch_pause": {
+                    "status": "PAUSED"
+                  },
+                  "cross_channel_batch_resume": {
+                    "status": "ACTIVE"
+                  },
+                  "pause_campaign": {
+                    "status": "PAUSED"
+                  },
+                  "resume_campaign": {
+                    "status": "ACTIVE"
+                  }
+                },
                 "properties": {
                   "budget": {
                     "description": "Budget",
@@ -1956,7 +1998,7 @@
       ]
     },
     "google-ads": {
-      "digest": "4d79f528f2772f4b997d6886d9ec35499f2db1d13469de8150c39b17885ad3cf",
+      "digest": "a1c66c091b815c73ea53e629c2f7a4ff4543a75a719b5591bf26738d22951fd5",
       "tool_count": 94,
       "tools": [
         {
@@ -10090,6 +10132,20 @@
               "updates": {
                 "additionalProperties": false,
                 "description": "Allowed Google Ads ad update fields",
+                "intent_defaults": {
+                  "cross_channel_batch_pause": {
+                    "status": "PAUSED"
+                  },
+                  "cross_channel_batch_resume": {
+                    "status": "ACTIVE"
+                  },
+                  "pause_campaign": {
+                    "status": "PAUSED"
+                  },
+                  "resume_campaign": {
+                    "status": "ACTIVE"
+                  }
+                },
                 "properties": {
                   "descriptions": {
                     "description": "Descriptions",
@@ -10131,6 +10187,7 @@
                     "intent_status_field": "status",
                     "intent_status_map": {
                       "ACTIVE": "ENABLED",
+                      "ENABLED": "ENABLED",
                       "PAUSED": "PAUSED"
                     },
                     "type": "string"
@@ -10189,6 +10246,20 @@
               "updates": {
                 "additionalProperties": false,
                 "description": "Allowed Google Ads ad_group update fields",
+                "intent_defaults": {
+                  "cross_channel_batch_pause": {
+                    "status": "PAUSED"
+                  },
+                  "cross_channel_batch_resume": {
+                    "status": "ACTIVE"
+                  },
+                  "pause_campaign": {
+                    "status": "PAUSED"
+                  },
+                  "resume_campaign": {
+                    "status": "ACTIVE"
+                  }
+                },
                 "properties": {
                   "cpc_bid": {
                     "description": "CPC bid",
@@ -10209,6 +10280,7 @@
                     "intent_status_field": "status",
                     "intent_status_map": {
                       "ACTIVE": "ENABLED",
+                      "ENABLED": "ENABLED",
                       "PAUSED": "PAUSED"
                     },
                     "type": "string"
@@ -10276,6 +10348,20 @@
               "updates": {
                 "additionalProperties": false,
                 "description": "Allowed Google Ads asset_group update fields",
+                "intent_defaults": {
+                  "cross_channel_batch_pause": {
+                    "status": "PAUSED"
+                  },
+                  "cross_channel_batch_resume": {
+                    "status": "ACTIVE"
+                  },
+                  "pause_campaign": {
+                    "status": "PAUSED"
+                  },
+                  "resume_campaign": {
+                    "status": "ACTIVE"
+                  }
+                },
                 "properties": {
                   "descriptions": {
                     "description": "Descriptions",
@@ -10309,6 +10395,7 @@
                     "intent_status_field": "status",
                     "intent_status_map": {
                       "ACTIVE": "ENABLED",
+                      "ENABLED": "ENABLED",
                       "PAUSED": "PAUSED"
                     },
                     "type": "string"
@@ -10491,6 +10578,20 @@
               "updates": {
                 "additionalProperties": false,
                 "description": "Allowed Google Ads campaign update fields",
+                "intent_defaults": {
+                  "cross_channel_batch_pause": {
+                    "status": "PAUSED"
+                  },
+                  "cross_channel_batch_resume": {
+                    "status": "ACTIVE"
+                  },
+                  "pause_campaign": {
+                    "status": "PAUSED"
+                  },
+                  "resume_campaign": {
+                    "status": "ACTIVE"
+                  }
+                },
                 "properties": {
                   "budget": {
                     "description": "Budget alias",
@@ -10516,6 +10617,7 @@
                     "intent_status_field": "status",
                     "intent_status_map": {
                       "ACTIVE": "ENABLED",
+                      "ENABLED": "ENABLED",
                       "PAUSED": "PAUSED"
                     },
                     "type": "string"
@@ -11378,7 +11480,7 @@
       ]
     },
     "meta": {
-      "digest": "57369ca5c37fb8889f9e67fee73df0a146250b234eb10f7442b31ac049bd948b",
+      "digest": "c8057dc34953dc4e218ce5c46be7b108d6c676d8ce2735b2d883da8c7f9954e3",
       "tool_count": 72,
       "tools": [
         {
@@ -16857,6 +16959,20 @@
               "updates": {
                 "additionalProperties": false,
                 "description": "Allowed Meta ad update fields",
+                "intent_defaults": {
+                  "cross_channel_batch_pause": {
+                    "status": "PAUSED"
+                  },
+                  "cross_channel_batch_resume": {
+                    "status": "ACTIVE"
+                  },
+                  "pause_campaign": {
+                    "status": "PAUSED"
+                  },
+                  "resume_campaign": {
+                    "status": "ACTIVE"
+                  }
+                },
                 "properties": {
                   "creative": {
                     "description": "Creative payload",
@@ -16879,6 +16995,7 @@
                     "intent_status_field": "status",
                     "intent_status_map": {
                       "ACTIVE": "ACTIVE",
+                      "ENABLED": "ACTIVE",
                       "PAUSED": "PAUSED"
                     },
                     "type": "string"
@@ -16941,6 +17058,20 @@
               "updates": {
                 "additionalProperties": false,
                 "description": "Allowed Meta adset update fields",
+                "intent_defaults": {
+                  "cross_channel_batch_pause": {
+                    "status": "PAUSED"
+                  },
+                  "cross_channel_batch_resume": {
+                    "status": "ACTIVE"
+                  },
+                  "pause_campaign": {
+                    "status": "PAUSED"
+                  },
+                  "resume_campaign": {
+                    "status": "ACTIVE"
+                  }
+                },
                 "properties": {
                   "bid_amount": {
                     "description": "Bid amount",
@@ -16999,6 +17130,7 @@
                     "intent_status_field": "status",
                     "intent_status_map": {
                       "ACTIVE": "ACTIVE",
+                      "ENABLED": "ACTIVE",
                       "PAUSED": "PAUSED"
                     },
                     "type": "string"
@@ -17145,6 +17277,20 @@
               "updates": {
                 "additionalProperties": false,
                 "description": "Allowed Meta campaign update fields",
+                "intent_defaults": {
+                  "cross_channel_batch_pause": {
+                    "status": "PAUSED"
+                  },
+                  "cross_channel_batch_resume": {
+                    "status": "ACTIVE"
+                  },
+                  "pause_campaign": {
+                    "status": "PAUSED"
+                  },
+                  "resume_campaign": {
+                    "status": "ACTIVE"
+                  }
+                },
                 "properties": {
                   "budget": {
                     "description": "Budget alias",
@@ -17169,6 +17315,7 @@
                     "intent_status_field": "status",
                     "intent_status_map": {
                       "ACTIVE": "ACTIVE",
+                      "ENABLED": "ACTIVE",
                       "PAUSED": "PAUSED"
                     },
                     "type": "string"
@@ -18088,7 +18235,7 @@
       ]
     },
     "tiktok": {
-      "digest": "d72c29b769914a54d2ca3c852082c05f436e6bd591aa67ad7ed32ca8317b2689",
+      "digest": "e7c20c8a6b1786318a6a88d2eea1cbbd62aacd41de357bdf89218962c64757e4",
       "tool_count": 72,
       "tools": [
         {
@@ -18812,6 +18959,9 @@
               },
               "daily_budget": {
                 "description": "Daily budget in user currency",
+                "intent_aliases": [
+                  "budget"
+                ],
                 "minimum": 50,
                 "type": "number"
               },
@@ -19626,6 +19776,9 @@
               },
               "daily_budget": {
                 "description": "Daily budget in user currency",
+                "intent_aliases": [
+                  "budget"
+                ],
                 "minimum": 0,
                 "type": "number"
               },
@@ -21202,6 +21355,9 @@
               },
               "daily_budget": {
                 "description": "Daily budget in user currency",
+                "intent_aliases": [
+                  "budget"
+                ],
                 "minimum": 50,
                 "type": "number"
               },
@@ -25347,6 +25503,20 @@
               "updates": {
                 "additionalProperties": false,
                 "description": "Allowed TikTok ad update fields",
+                "intent_defaults": {
+                  "cross_channel_batch_pause": {
+                    "status": "PAUSED"
+                  },
+                  "cross_channel_batch_resume": {
+                    "status": "ACTIVE"
+                  },
+                  "pause_campaign": {
+                    "status": "PAUSED"
+                  },
+                  "resume_campaign": {
+                    "status": "ACTIVE"
+                  }
+                },
                 "properties": {
                   "landing_page_url": {
                     "description": "Landing page URL",
@@ -25425,6 +25595,20 @@
               "updates": {
                 "additionalProperties": false,
                 "description": "Allowed TikTok adgroup update fields",
+                "intent_defaults": {
+                  "cross_channel_batch_pause": {
+                    "status": "PAUSED"
+                  },
+                  "cross_channel_batch_resume": {
+                    "status": "ACTIVE"
+                  },
+                  "pause_campaign": {
+                    "status": "PAUSED"
+                  },
+                  "resume_campaign": {
+                    "status": "ACTIVE"
+                  }
+                },
                 "properties": {
                   "ad_group_status": {
                     "description": "Ad group status",
@@ -25567,6 +25751,7 @@
                     "intent_status_field": "ad_group_status",
                     "intent_status_map": {
                       "ACTIVE": 1,
+                      "ENABLED": 1,
                       "PAUSED": 0
                     },
                     "type": "integer"
@@ -25970,6 +26155,20 @@
               "updates": {
                 "additionalProperties": false,
                 "description": "Allowed TikTok campaign update fields",
+                "intent_defaults": {
+                  "cross_channel_batch_pause": {
+                    "status": "PAUSED"
+                  },
+                  "cross_channel_batch_resume": {
+                    "status": "ACTIVE"
+                  },
+                  "pause_campaign": {
+                    "status": "PAUSED"
+                  },
+                  "resume_campaign": {
+                    "status": "ACTIVE"
+                  }
+                },
                 "properties": {
                   "budget": {
                     "description": "Budget alias",
@@ -26030,6 +26229,7 @@
                     "intent_status_field": "campaign_group_status",
                     "intent_status_map": {
                       "ACTIVE": 1,
+                      "ENABLED": 1,
                       "PAUSED": 0
                     },
                     "type": "integer"

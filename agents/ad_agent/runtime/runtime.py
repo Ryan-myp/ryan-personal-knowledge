@@ -24,12 +24,10 @@ import logging
 import importlib.util
 import inspect
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
-import yaml
 
 from ..core.interfaces import (
     ToolContext, ToolResult, CapabilityModule,
@@ -1788,7 +1786,7 @@ class AgentRuntime:
         """生成本地模拟结果，保证 dry-run 不触发任何平台 API。"""
         key = self.registry.generate_idempotency_key(tool_def.name, input_data, "dry-run") \
             if hasattr(self.registry, "generate_idempotency_key") else uuid.uuid4().hex[:16]
-        name = input_data.get("name") or input_data.get("campaign_name") or f"dry_run_{key}"
+        name = input_data.get("name") or f"dry_run_{key}"
         resource_type = getattr(tool_def, "resource_type", None) or "resource"
         resource_key = self._resource_id_field_for_tool(tool_def)
         parent_type = getattr(tool_def, "parent_resource_type", None)
@@ -1989,37 +1987,6 @@ class AgentRuntime:
         return [item.to_dict() for item in resource_items]
 
     @staticmethod
-    def _validate_semantic_write_input(tool_def: Any, input_data: dict) -> list[str]:
-        """Validate invariants that the small ToolSchema cannot express."""
-        errors: list[str] = []
-        for key in ("budget", "daily_budget"):
-            if key not in input_data or input_data[key] is None:
-                continue
-            value = input_data[key]
-            if isinstance(value, bool):
-                errors.append(f"{key} must be a number greater than 0")
-                continue
-            try:
-                if float(value) <= 0:
-                    errors.append(f"{key} must be a number greater than 0")
-            except (TypeError, ValueError):
-                errors.append(f"{key} must be a number greater than 0")
-
-        updates = input_data.get("updates")
-        if "updates" in tool_def.input_schema.required:
-            if not isinstance(updates, dict) or not updates:
-                errors.append("updates must be a non-empty object")
-
-        duration = input_data.get("duration_days")
-        if duration is not None:
-            try:
-                if int(duration) <= 0:
-                    errors.append("duration_days must be greater than 0")
-            except (TypeError, ValueError):
-                errors.append("duration_days must be a positive integer")
-        return errors
-
-    @staticmethod
     def _freeze_credentials(value: Any) -> Any:
         """Make credentials visible to handlers as a read-only snapshot."""
         if isinstance(value, dict):
@@ -2103,19 +2070,6 @@ class AgentRuntime:
                 started_at=now, ended_at=datetime.now().isoformat(),
             ),
         )
-
-        campaign_id = result.data.get("campaign_id") if isinstance(result.data, dict) else None
-        if campaign_id:
-            self._session_manager.save_campaign(
-                platform=platform,
-                campaign_id=str(campaign_id),
-                name=str(result.data.get("name") or input_data.get("name") or ""),
-                status=str(result.data.get("status") or "DRAFT"),
-                objective=input_data.get("objective"),
-                budget_daily=input_data.get("budget"),
-                metadata={"simulated": result.simulated},
-                account_id=session.ctx.account_id,
-            )
 
     def _resolve_readback_definition(self, write_tool: str):
         """Find the read Tool matching a write Tool's resource metadata."""
@@ -2614,16 +2568,16 @@ class AgentRuntime:
                         parent_resource_type=getattr(tool_def, "parent_resource_type", None),
                     )
                 tool_call_count += 1
-                budget_error = self._check_turn_budget(
+                turn_budget_error = self._check_turn_budget(
                     turn_deadline, tool_call_count, self.max_tool_calls
                 )
-                if budget_error:
+                if turn_budget_error:
                     results.append({
                         "tool": tool_def.name,
                         "platform": platform,
                         "success": False,
                         "data": {"execution_status": "budget_exceeded"},
-                        "error": budget_error,
+                        "error": turn_budget_error,
                         "needs_confirmation": False,
                     })
                     chain_blocked = True
@@ -2762,15 +2716,16 @@ class AgentRuntime:
                     session.ctx.account_id = original_account
                     continue
 
-                semantic_errors = self._validate_semantic_write_input(
-                    tool_def, tool_input
-                ) if tool_def.is_write_tool else []
-                if semantic_errors:
+                schema_errors = (
+                    validate_tool_input(tool_def.input_schema, tool_input)
+                    if tool_def.input_schema else []
+                )
+                if schema_errors:
                     results.append({
                         "tool": tool_def.name,
                         "platform": platform,
                         "success": False,
-                        "error": f"Input validation failed: {semantic_errors}",
+                        "error": f"Input validation failed: {schema_errors}",
                         "needs_confirmation": False,
                     })
                     chain_blocked = True

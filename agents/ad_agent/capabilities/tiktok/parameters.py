@@ -114,7 +114,12 @@ def tiktok_campaign_schema() -> dict[str, Any]:
             "budget_restriction": _field("string", "Budget restriction", enum=TIKTOK_BUDGET_RESTRICTIONS),
             "budget_mode": _field("string", "Budget mode", enum=TIKTOK_BUDGET_MODES),
             "budget": _field("number", "Daily/lifetime budget in user currency", minimum=0),
-            "daily_budget": _field("number", "Daily budget in user currency", minimum=0),
+            "daily_budget": _field(
+                "number", "Daily budget in user currency", minimum=0,
+                # The common ParsedIntent carries a generic budget value;
+                # this provider field is the wire-level daily-budget variant.
+                intent_aliases=["budget"],
+            ),
             "app_promotion_type": _field(
                 "string", "App promotion mode; only for app campaigns",
                 enum=TIKTOK_APP_PROMOTION_TYPES,
@@ -558,7 +563,12 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
                 # not grow a TikTok-specific budget branch.
                 input_aliases=["daily_budget"],
             ),
-            "daily_budget": _field("number", "Daily budget in user currency", minimum=50),
+            "daily_budget": _field(
+                "number", "Daily budget in user currency", minimum=50,
+                # The common ParsedIntent carries a generic budget value;
+                # this provider field is the wire-level daily-budget variant.
+                intent_aliases=["budget"],
+            ),
             "location_ids": _field(
                 "array", "Country/region IDs", items={"type": "string"},
                 lookup_tool="tiktok_list_locations", lookup_result_key="locations",

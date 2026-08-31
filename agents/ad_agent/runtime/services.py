@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from ..core.features import RuntimeServices as RuntimeServicesPort
+from ..core.tool_registry import validate_tool_input as validate_registered_tool_input
 
 
 class RuntimeServices(RuntimeServicesPort):
@@ -97,8 +98,20 @@ class RuntimeServices(RuntimeServicesPort):
     def validate_input_redline(self, value: Any) -> list[str]:
         return self._runtime.security.validate_input_redline(value)
 
-    def validate_semantic_write(self, tool: Any, value: dict[str, Any]) -> list[str]:
-        return self._runtime._validate_semantic_write_input(tool, value)
+    def validate_tool_input(
+        self,
+        tool: Any,
+        value: dict[str, Any],
+        include_provider_contract: bool = False,
+    ) -> list[str]:
+        schema = getattr(tool, "input_schema", None)
+        if schema is None:
+            return []
+        return validate_registered_tool_input(
+            schema,
+            value,
+            include_provider_contract=include_provider_contract,
+        )
 
     def resource_id_field(self, tool: Any) -> str:
         return self._runtime._resource_id_field_for_tool(tool)

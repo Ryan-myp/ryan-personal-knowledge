@@ -44,7 +44,7 @@ class LLMIntentParser(IntentParser):
 {{
   "intent_type": "{intent_candidates}",
   "platforms": ["当前 Runtime 已注册的平台标识"],
-  "objective": "sales | leads | traffic | brand",
+  "objective": "可选的业务目标标签（由当前 Skill/Tool 契约定义）",
   "campaign_type": "平台 Campaign 类型，如 SEARCH / SHOPPING / APP_INSTALL",
   "budget_daily": 100,
   "duration_days": 7,
@@ -933,29 +933,8 @@ class LLMIntentParser(IntentParser):
             data["budget"] = data.get("budget_daily")
         if data.get("date_range") is None and data.get("time_range") is not None:
             data["date_range"] = data.get("time_range")
-        valid_intents = {
-            "create_campaign", "create_asset_group", "update_campaign", "update_adset",
-            "update_adgroup", "update_ad", "pause_campaign", "resume_campaign",
-            "delete_campaign", "delete_adset", "delete_ad", "delete_ad_group",
-            "cross_channel_overview", "cross_channel_compare",
-            "cross_channel_performance_insights", "cross_channel_optimize_budget",
-            "cross_channel_export_report", "cross_channel_batch_pause", "cross_channel_batch_resume",
-            "cross_channel_batch_update_budget", "cross_channel_batch_delete",
-            "boost_post", "run_remarketing",
-            "download_report", "list_campaigns", "get_campaign", "list_adgroups",
-            "list_adsets", "list_ads", "list_audiences", "list_ios", "get_io",
-            "list_line_items", "get_line_item", "chat",
-            "update_io", "update_line_item", "update_asset_group",
-            "create_creative", "list_creatives", "list_videos", "list_images", "list_keywords",
-            "create_keywords", "update_keyword", "delete_keyword",
-            "list_conversions", "list_locations", "list_devices", "list_catalogs", "list_apps",
-            "list_brand_safety", "list_asset_groups", "list_advertisers",
-            "get_adset", "get_adgroup", "get_ad", "get_asset_group",
-        }
-        valid_intents.update(self._custom_intents)
-        valid_intents.update(self._tool_intents)
-        valid_intents.update(self._intent_catalog)
-        if data.get("intent_type") not in valid_intents:
+        intent_type = data.get("intent_type")
+        if not isinstance(intent_type, str) or not intent_type.strip():
             data["intent_type"] = "chat"
 
         # 确保 platforms 是列表，并限制为实际注册体系支持的平台。
@@ -970,8 +949,8 @@ class LLMIntentParser(IntentParser):
                 normalized_platforms.append(normalized)
         data["platforms"] = normalized_platforms
 
-        if data.get("objective") not in {None, "sales", "leads", "traffic", "brand"}:
-            data["objective"] = None
+        if data.get("objective") is not None:
+            data["objective"] = str(data["objective"]).strip() or None
         if data.get("campaign_type") is not None:
             data["campaign_type"] = str(data["campaign_type"]).upper()
         if not isinstance(data.get("creative_materials"), list):

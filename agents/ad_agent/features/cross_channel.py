@@ -246,9 +246,7 @@ class CrossChannelFeature:
                                     "one_of(" + ", ".join(alternatives) + ")"
                                 )
                         tool_errors.extend(
-                            services.validate_semantic_write(
-                                tool_def, tool_input
-                            )
+                            services.validate_tool_input(tool_def, tool_input)
                         )
                         tool_errors.extend(
                             validate_tool_input(

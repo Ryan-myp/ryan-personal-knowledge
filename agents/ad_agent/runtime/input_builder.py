@@ -93,6 +93,9 @@ class ToolInputBuilder:
             candidates.extend(
                 str(value) for value in field_schema.get("input_aliases", []) or []
             )
+            candidates.extend(
+                str(value) for value in field_schema.get("intent_aliases", []) or []
+            )
         keys = [str(key) for key in (available_keys or ())]
         normalized = cls._normalize_input_field(field_name)
         account_fields = {
@@ -103,6 +106,12 @@ class ToolInputBuilder:
             if key_normalized == normalized:
                 candidates.append(key)
             elif field_name == "name" and key_normalized.endswith("name"):
+                candidates.append(key)
+            elif key_normalized == normalized + "s":
+                # Plural collection inputs (for example a batch of resource
+                # IDs) may feed a singular Tool field when that is the only
+                # field declared by the selected Tool. This is a generic
+                # shape compatibility rule, not a resource-name table.
                 candidates.append(key)
             elif normalized in account_fields and key_normalized in account_fields:
                 candidates.append(key)
@@ -417,72 +426,66 @@ class ToolInputBuilder:
                         tool_input[field_name] = protected[candidate]
                         break
 
-        budget = getattr(intent, "budget", None)
-        if budget is not None:
-            tool_input.setdefault("budget", budget)
-            if "daily_budget" in properties:
-                tool_input.setdefault("daily_budget", budget)
-        if tool_input.get("budget") not in (None, "") and "daily_budget" in properties:
-            tool_input.setdefault("daily_budget", tool_input["budget"])
-
-        objective = getattr(intent, "objective", None)
-        if objective:
-            for field_name, schema in properties.items():
-                if field_name in tool_input or not isinstance(schema, dict):
+        # Project the generic ParsedIntent fields only through metadata owned
+        # by the selected Tool.  A provider may map an input field to a
+        # different intent field and/or publish an enum translation through
+        # ``intent_field`` and ``intent_map``.  Runtime does not need to know
+        # whether that field means budget, objective, campaign type, date
+        # range, or something introduced by a future Skill.
+        intent_values = (
+            vars(intent)
+            if hasattr(intent, "__dict__") and isinstance(vars(intent), dict)
+            else {}
+        )
+        for field_name, schema in properties.items():
+            if field_name in tool_input or not isinstance(schema, dict):
+                continue
+            intent_field = str(schema.get("intent_field") or field_name)
+            candidates = [intent_field]
+            aliases = schema.get("intent_aliases", []) or []
+            if isinstance(aliases, (list, tuple, set, frozenset)):
+                candidates.extend(str(alias) for alias in aliases)
+            for candidate in candidates:
+                value = intent_values.get(candidate)
+                if value in (None, "", {}, []):
                     continue
-                if schema.get("intent_field") == "objective":
-                    tool_input[field_name] = (
-                        schema.get("intent_map", {}).get(
-                            str(objective).lower(), objective
-                        )
+                mapping = schema.get("intent_map") or {}
+                if isinstance(mapping, dict):
+                    value = mapping.get(
+                        str(value).lower(),
+                        mapping.get(str(value).upper(), value),
                     )
-            if "objective" in properties:
-                tool_input.setdefault("objective", objective)
+                tool_input[field_name] = copy.deepcopy(value)
+                break
 
-        campaign_type = getattr(intent, "campaign_type", None)
-        if campaign_type and "campaign_type" in properties:
-            tool_input.setdefault("campaign_type", campaign_type)
-        if campaign_type:
-            for field_name, schema in properties.items():
-                if field_name in tool_input or not isinstance(schema, dict):
-                    continue
-                if schema.get("intent_field") == "campaign_type":
-                    tool_input[field_name] = schema.get("intent_map", {}).get(
-                        str(campaign_type).upper(), campaign_type
-                    )
-
-        date_range = getattr(intent, "date_range", None)
-        if date_range:
-            if "date_range" in properties:
-                tool_input.setdefault("date_range", date_range)
-            if "date_preset" in properties:
-                tool_input.setdefault(
-                    "date_preset",
-                    self.platform_date_range(platform, date_range, tool_def),
-                )
-        materials = getattr(intent, "creative_materials", None)
-        if materials and "creative_materials" not in tool_input:
-            tool_input["creative_materials"] = materials
+        # Provider contracts may publish intent-scoped defaults for a
+        # structured field such as ``updates``.  The builder only interprets
+        # this generic metadata; it does not know which actions or wire values
+        # a provider uses.
+        intent_type = str(getattr(intent, "intent_type", "") or "")
+        for field_name, schema in properties.items():
+            if field_name in tool_input or not isinstance(schema, dict):
+                continue
+            defaults = schema.get("intent_defaults")
+            if not isinstance(defaults, dict):
+                continue
+            default = defaults.get(intent_type)
+            if isinstance(default, dict):
+                tool_input[field_name] = copy.deepcopy(default)
 
         for field_name, schema in properties.items():
             if field_name not in tool_input and isinstance(schema, dict) and "default" in schema:
                 tool_input[field_name] = copy.deepcopy(schema["default"])
 
-        if "name" in properties and "name" not in tool_input:
-            campaign_name = platform_params.get("campaign_name")
-            if campaign_name:
-                tool_input["name"] = campaign_name
         if "name" in tool_def.input_schema.required and "name" not in tool_input:
-            resource_type = getattr(tool_def, "resource_type", "")
-            if services.is_dry_run() and resource_type in {"ad_set", "ad_group", "line_item"}:
-                tool_input["name"] = f"{platform}_dry_run_{resource_type}"
-
-        if "updates" in tool_def.input_schema.required:
-            intent_type = getattr(intent, "intent_type", "")
-            if intent_type in {"pause_campaign", "resume_campaign"}:
-                tool_input["updates"] = {
-                    "status": "PAUSED" if intent_type == "pause_campaign" else "ACTIVE"
-                }
+            # Child resources can be planned before their provider parent is
+            # created.  A generic hierarchy-based placeholder keeps dry-run
+            # planning possible without naming any advertising resource types.
+            if services.is_dry_run() and getattr(tool_def, "parent_resource_type", None):
+                resource_type = getattr(tool_def, "resource_type", "") or "resource"
+                tool_input["name"] = (
+                    f"{actual_platform}_dry_run_{str(resource_type).replace(' ', '_')}"
+                )
         if isinstance(tool_input.get("updates"), dict) and "status" in tool_input["updates"]:
             tool_input["updates"] = self.normalize_provider_updates(
                 tool_def, tool_input["updates"]
@@ -520,11 +523,8 @@ class ToolInputBuilder:
     ) -> list[str]:
         services = self.services
         errors: list[str] = []
-        common = {
-            "budget", "daily_budget", "objective", "campaign_type",
-            "date_range", "date_preset", "creative_materials", "campaign_id",
-            "campaign_ids", *self.ACCOUNT_FIELDS,
-        }
+        intent_fields = set(vars(intent)) if hasattr(intent, "__dict__") else set()
+        common = intent_fields | set(self.ACCOUNT_FIELDS) | {"selection_tokens"}
         for platform, values in (getattr(intent, "platform_params", {}) or {}).items():
             if str(platform).startswith("_") or not isinstance(values, dict):
                 continue
@@ -535,9 +535,18 @@ class ToolInputBuilder:
                 if services.canonical_platform(routed_platform) == canonical
                 for tool in routed_tools
             ]
+            # The parser may extract a parent/context identifier that is not
+            # an input of the final action Tool. Treat it as valid only when
+            # another registered Tool in the same provider package declares
+            # the field or one of its aliases. This keeps the contract closed
+            # without maintaining a central list of advertising field names.
+            registered_tools = getattr(services.registry, "list_by_platform", None)
+            if callable(registered_tools):
+                tools.extend(registered_tools(canonical))
+            tools = list({tool.name: tool for tool in tools}.values())
             tool_names = {tool.name for tool in tools}
             for key in values:
-                if key.startswith("_") or key in common or key == "selection_tokens":
+                if key.startswith("_") or key in common:
                     continue
                 if key in tool_names:
                     continue
