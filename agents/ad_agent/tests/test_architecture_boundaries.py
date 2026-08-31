@@ -12,6 +12,7 @@ from agents.ad_agent.skills.businesses.policy import BusinessSkillPolicy
 from agents.ad_agent.runtime.account_policy import AccountWhitelistValidator
 from agents.ad_agent.runtime.session_context import SessionContext
 from agents.ad_agent.core.intent import LLMIntentParser
+from agents.ad_agent.core.intent import SimpleIntentRouter
 
 
 def test_runtime_discovers_domain_features_without_a_central_workflow_table():
@@ -159,3 +160,30 @@ def test_session_context_uses_declared_resource_metadata_only():
         "custom_id": "c1",
         "new-network:custom_id": "c1",
     }
+
+
+def test_router_resolves_llm_intent_synonym_from_registered_tool_metadata():
+    registry = __import__(
+        "agents.ad_agent.core.tool_registry",
+        fromlist=["SimpleToolRegistry"],
+    ).SimpleToolRegistry()
+    report_tool = ToolDefinition(
+        name="new_network_download_report",
+        skill="new-network",
+        platform="new-network",
+        description="Query reports",
+        input_schema=ToolSchema(),
+        action="report",
+        resource_type="report",
+        intent_types=["download_report"],
+    )
+    registry.register(report_tool, lambda _ctx, _data: ToolResult.ok({"report": []}))
+
+    routed = SimpleIntentRouter().route(
+        ParsedIntent("query_report", "query report", ["new-network"]),
+        registry,
+    )
+
+    assert [tool.name for tool in routed["new-network"]] == [
+        "new_network_download_report"
+    ]

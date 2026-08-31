@@ -40,9 +40,12 @@ class LLMIntentParser(IntentParser):
 
 用户输入：{user_input}
 
-请输出 JSON 格式（不要输出其他内容）：
+请输出 JSON 格式（不要输出其他内容）。`intent_type` 必须从下面给出的候选目录
+中逐字选择，不能自行创造、翻译或改写新的 intent 名称；如果没有合适候选，使用
+`chat`：
 {{
-  "intent_type": "{intent_candidates}",
+  "intent_type": "<从候选目录逐字选择>",
+  "intent_candidates": "{intent_candidates}",
   "platforms": ["当前 Runtime 已注册的平台标识"],
   "objective": "可选的业务目标标签（由当前 Skill/Tool 契约定义）",
   "campaign_type": "平台 Campaign 类型，如 SEARCH / SHOPPING / APP_INSTALL",
@@ -1003,11 +1006,26 @@ class SimpleIntentRouter(IntentRouter):
         result: dict[str, list[ToolDefinition]] = {}
         for platform in intent.platforms:
             canonical = normalize_platform(platform)
+            platform_definitions = registry.list_by_platform(canonical)
             tools = [
-                definition for definition in registry.list_by_platform(canonical)
+                definition for definition in platform_definitions
                 if self._matches_intent(definition, intent.intent_type)
                 and self._matches_activation(definition, intent, platform)
             ]
+            if not tools:
+                # LLMs occasionally return a semantic synonym such as
+                # ``query_report`` although the registered Tool contract uses
+                # ``download_report``. Resolve only against provider-published
+                # intent metadata; this is not a provider or business table.
+                alias = self._resolve_intent_alias(
+                    intent.intent_type, platform_definitions
+                )
+                if alias:
+                    tools = [
+                        definition for definition in platform_definitions
+                        if self._matches_intent(definition, alias)
+                        and self._matches_activation(definition, intent, platform)
+                    ]
             tools = self._order_by_resource_dependencies(tools)
             if tools:
                 result[platform] = tools
@@ -1017,6 +1035,46 @@ class SimpleIntentRouter(IntentRouter):
     @staticmethod
     def _matches_intent(definition: ToolDefinition, intent_type: str) -> bool:
         return str(intent_type) in set(getattr(definition, "intent_types", []) or [])
+
+    @classmethod
+    def _resolve_intent_alias(
+        cls, requested: str, definitions: list[ToolDefinition],
+    ) -> Optional[str]:
+        """Resolve an unregistered semantic synonym from Tool intent metadata."""
+        requested_tokens = {
+            token for token in re.split(r"[^a-z0-9]+", str(requested).lower())
+            if token
+        }
+        if not requested_tokens:
+            return None
+
+        candidates: set[str] = {
+            str(intent).strip()
+            for definition in definitions
+            for intent in (getattr(definition, "intent_types", []) or [])
+            if str(intent).strip()
+        }
+        scored: list[tuple[float, int, str]] = []
+        for candidate in candidates:
+            candidate_tokens = {
+                token for token in re.split(r"[^a-z0-9]+", candidate.lower())
+                if token
+            }
+            overlap = requested_tokens & candidate_tokens
+            if not overlap:
+                continue
+            # Prefer the candidate that explains the largest proportion of
+            # the requested phrase, then the shortest contract name. A unique
+            # best score is required; ambiguity remains fail-closed.
+            score = len(overlap) / max(len(requested_tokens), len(candidate_tokens))
+            scored.append((score, -len(candidate_tokens), candidate))
+        if not scored:
+            return None
+        scored.sort(reverse=True)
+        best = scored[0]
+        if len(scored) > 1 and scored[1][:2] == best[:2]:
+            return None
+        return best[2]
 
     @classmethod
     def _matches_activation(
