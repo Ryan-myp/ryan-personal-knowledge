@@ -1751,3 +1751,58 @@ def google_asset_group_schema() -> dict[str, Any]:
             "status": _field("string", "Asset group status", enum=GOOGLE_STATUSES),
         },
     }
+
+
+def google_feed_schema() -> dict[str, Any]:
+    """Schema for Google Ads Feed and FeedItem management."""
+    return {
+        "properties": {
+            "customer_id": _field("string", "Google Ads customer ID"),
+            "feed_id": _field("string", "Google Feed ID", minLength=1),
+            "name": _field("string", "Feed name", minLength=1, maxLength=255),
+            "origin": _field(
+                "string", "Feed origin",
+                enum=["UNKNOWN", "USER", "GOOGLE"],
+            ),
+            "attributes": _field(
+                "array", "Feed attribute definitions",
+                items={"type": "object", "additionalProperties": True},
+            ),
+            "feed_item_resource_name": _field(
+                "string", "FeedItem resource name",
+                minLength=1,
+            ),
+            "attribute_values": _field(
+                "array", "FeedItem attribute values",
+                items={"type": "object", "additionalProperties": True},
+            ),
+            "limit": _field(
+                "integer", "Maximum number of rows",
+                minimum=1, maximum=10000,
+            ),
+        },
+    }
+
+
+def google_conversion_goal_schema() -> dict[str, Any]:
+    """Schema for Customer/Campaign ConversionGoal read and update Tools."""
+    goal_updates = _object({
+        "biddable": _field("boolean", "Whether this goal is biddable"),
+        "value_settings": _field(
+            "object", "Conversion value settings",
+            additionalProperties=True,
+        ),
+    }, "Allowed Google conversion goal update fields")
+    return {
+        "properties": {
+            "customer_id": _field("string", "Google Ads customer ID"),
+            "campaign_id": _field("string", "Campaign ID", minLength=1),
+            "category": _field("string", "Conversion goal category", minLength=1),
+            "origin": _field("string", "Conversion goal origin", minLength=1),
+            "updates": goal_updates,
+            "limit": _field(
+                "integer", "Maximum number of goals",
+                minimum=1, maximum=10000,
+            ),
+        },
+    }

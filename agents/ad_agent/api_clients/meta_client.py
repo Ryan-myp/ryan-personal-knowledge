@@ -210,7 +210,37 @@ class MetaAPIClient(BasePlatformClient):
         except Exception as e:
             logger.error(f"Failed to list accounts: {e}")
             return []
-    
+
+    def list_businesses(
+        self, fields: list[str] | None = None, limit: int = 25
+    ) -> list[dict[str, Any]]:
+        """List businesses visible to the current Meta user/token."""
+        selected_fields = ",".join(fields) if fields else (
+            "id,name,verification_status,primary_page"
+        )
+        return self._list_graph_pages(
+            "user",
+            "/me/businesses",
+            {"limit": limit, "fields": selected_fields},
+        )
+
+    def get_business(
+        self, business_id: str, fields: list[str] | None = None
+    ) -> dict[str, Any]:
+        """Get one Meta Business Manager object."""
+        business_id = self._clean_meta_id(business_id, "business_id")
+        selected_fields = ",".join(fields) if fields else (
+            "id,name,verification_status,primary_page,owned_ad_accounts,"
+            "owned_pages"
+        )
+        return self.require_resource_object(
+            self.request(
+                "GET", f"/{business_id}",
+                extra_params={"fields": selected_fields},
+            ),
+            "Meta business get",
+        )
+
     def get_account(self, account_id: str, fields: list = None) -> dict:
         """获取账户详情"""
         params = {'fields': ','.join(fields) if fields else 'id,name,account_id,status'}
@@ -1008,6 +1038,28 @@ class MetaAPIClient(BasePlatformClient):
         return self.require_resource_object(
             self.request("GET", f"/{form_id}", extra_params=params),
             "Meta lead form get",
+        )
+
+    def list_leads(
+        self,
+        page_id: str,
+        form_id: str,
+        fields: list[str] | None = None,
+        limit: int = 25,
+    ) -> list[dict[str, Any]]:
+        """List leads submitted to a Page-owned Instant Form."""
+        page_id = self._clean_meta_id(page_id, "page_id")
+        form_id = self._clean_meta_id(form_id, "form_id")
+        # Prove the form belongs to the requested Page before reading leads.
+        self.get_lead_form(page_id, form_id, fields=["id"])
+        selected_fields = ",".join(fields) if fields else (
+            "id,created_time,field_data,form_id,ad_id,ad_name,"
+            "campaign_id,campaign_name,adset_id,adset_name,is_organic"
+        )
+        return self._list_graph_pages(
+            form_id,
+            f"/{form_id}/leads",
+            {"limit": limit, "fields": selected_fields},
         )
 
     def create_lead_form(self, page_id: str, form: dict) -> str:

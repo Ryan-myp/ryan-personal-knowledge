@@ -29,8 +29,8 @@ OFFICIAL_INVENTORY = [
     {"resource": "image_asset", "action": "upload", "status": "implemented", "surface_method": "upload_image_asset", "provider_operation": "AdAccount/{account_id}/adimages"},
     {"resource": "video_asset", "action": "list", "status": "implemented", "surface_method": "list_video_assets", "provider_operation": "AdAccount/{account_id}/advideos"},
     {"resource": "video_asset", "action": "upload", "status": "implemented", "surface_method": "upload_video_asset", "provider_operation": "AdAccount/{account_id}/advideos"},
-    {"resource": "lead", "action": "read", "status": "planned", "provider_operation": "Page/{page_id}/leadgen_forms/{form_id}/leads"},
-    {"resource": "business", "action": "read", "status": "planned", "provider_operation": "Business Manager Graph API"},
+    {"resource": "lead", "action": "read", "status": "implemented", "surface_method": "list_leads", "provider_operation": "Page/{page_id}/leadgen_forms/{form_id}/leads"},
+    {"resource": "business", "action": "read", "status": "implemented", "surface_method": "get_business", "provider_operation": "Business Manager Graph API"},
 ]
 
 API_SURFACE = [
@@ -105,6 +105,9 @@ API_SURFACE = [
     {"resource": "conversion", "action": "event", "method": "send_conversion_events", "status": "implemented"},
     {"resource": "lead_form", "action": "create", "method": "create_lead_form", "status": "implemented"},
     {"resource": "lead_form", "action": "update", "method": "update_lead_form", "status": "implemented"},
+    {"resource": "lead", "action": "list", "method": "list_leads", "status": "implemented"},
+    {"resource": "business", "action": "list", "method": "list_businesses", "status": "implemented"},
+    {"resource": "business", "action": "get", "method": "get_business", "status": "implemented"},
     {"resource": "creative", "action": "list", "method": "list_creatives", "status": "implemented"},
     {"resource": "creative", "action": "get", "method": "get_creative", "status": "implemented"},
     {"resource": "creative", "action": "update", "method": "update_creative", "status": "implemented"},

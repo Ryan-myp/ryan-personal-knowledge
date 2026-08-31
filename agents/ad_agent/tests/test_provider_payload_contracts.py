@@ -4079,3 +4079,87 @@ def test_google_extended_provider_tools_resolve_customer_scoped_client():
     )
     assert result.ok
     assert seen == [("customer-2", "7")]
+
+
+def test_google_feed_and_conversion_goal_methods_build_explicit_operations():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
+    client._search_all = lambda query, page_size=100: [{
+        "feed": {
+            "id": "7",
+            "resourceName": "customers/123/feeds/7",
+            "name": "Local feed",
+            "origin": "USER",
+            "status": "ENABLED",
+            "attributes": [],
+        }
+    }]
+    assert client.list_feeds()[0]["id"] == "7"
+
+    operations = []
+    client._mutate = lambda resource, operation: (
+        operations.append((resource, operation)) or {
+            "data": {"results": [{
+                "resourceName": "customers/123/feeds/8"
+            }]}
+        }
+    )
+    assert client.create_feed({"name": "New feed", "origin": "USER"}) == "8"
+    assert operations[-1][0] == "feeds"
+    assert operations[-1][1]["create"] == {"name": "New feed", "origin": "USER"}
+    assert client.update_feed("8", {"name": "Updated"})["success"]
+    assert operations[-1][1]["updateMask"] == {"paths": ["name"]}
+    assert client.delete_feed("8")["success"]
+
+    assert client.create_feed_item(
+        "8", [{"feed_attribute_id": 1, "string_value": "x"}]
+    ) == "customers/123/feeds/8"
+    assert operations[-1][0] == "feedItems"
+    assert client.update_feed_item(
+        "customers/123/feedItems/9",
+        {"attribute_values": [{"feed_attribute_id": 1, "string_value": "y"}]},
+    )["success"]
+    assert client.delete_feed_item("customers/123/feedItems/9")["success"]
+
+    client._search_all = lambda query, page_size=100: [{
+        "customerConversionGoal": {
+            "resourceName": "customers/123/customerConversionGoals/PURCHASE~WEBPAGE",
+            "category": "PURCHASE",
+            "origin": "WEBPAGE",
+            "biddable": True,
+        }
+    }]
+    assert client.list_customer_conversion_goals()[0]["category"] == "PURCHASE"
+    assert client.update_customer_conversion_goal(
+        "PURCHASE", "WEBPAGE", {"biddable": False}
+    )["success"]
+    assert client.list_campaign_conversion_goals("7")[0]["category"] == "PURCHASE"
+    assert client.update_campaign_conversion_goal(
+        "7", "PURCHASE", "WEBPAGE", {"biddable": True}
+    )["success"]
+
+
+def test_meta_lead_reader_verifies_form_ownership_before_listing():
+    client = MetaAPIClient({"access_token": "test"})
+    seen = []
+    client.get_lead_form = lambda page_id, form_id, fields=None: (
+        seen.append(("form", page_id, form_id, fields)) or {"id": form_id}
+    )
+    client._list_graph_pages = lambda account_id, endpoint, params, **kwargs: (
+        seen.append(("leads", account_id, endpoint, params)) or [{"id": "lead-1"}]
+    )
+
+    leads = client.list_leads("page-1", "form-1")
+
+    assert leads == [{"id": "lead-1"}]
+    assert seen[0][0] == "form"
+    assert seen[1][1:] == (
+        "form-1",
+        "/form-1/leads",
+        {
+            "limit": 25,
+            "fields": (
+                "id,created_time,field_data,form_id,ad_id,ad_name,"
+                "campaign_id,campaign_name,adset_id,adset_name,is_organic"
+            ),
+        },
+    )

@@ -119,11 +119,14 @@ def test_capability_audit_reports_scoped_official_inventory_separately_from_tool
             for entry in inventory["covered_entries"] + inventory["gaps_entries"]
         )
 
-    # The report must not imply that a Tool count is the provider's full API
-    # count.  Known planned operations remain visible as inventory gaps.
+    # Newly implemented resources must move from the explicit planned gap
+    # list into covered entries without changing the scoped-not-exhaustive
+    # semantics of the provider inventory.
+    google_covered = report["platforms"]["google-ads"]["official_inventory"]["covered_entries"]
+    assert any(entry["resource"] == "feed" for entry in google_covered)
     assert any(
-        entry["resource"] == "feed"
-        for entry in report["platforms"]["google-ads"]["official_inventory"]["gaps_entries"]
+        entry["resource"] == "conversion_goal"
+        for entry in google_covered
     )
 
 

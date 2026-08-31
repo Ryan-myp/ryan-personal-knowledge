@@ -25,6 +25,8 @@ from .parameters import (
     meta_targeting_search_schema,
     meta_lookalike_audience_schema,
     meta_image_asset_schema, meta_video_asset_schema,
+    meta_lead_schema,
+    meta_business_schema,
 )
 from ...api_clients.meta_client import MetaAPIClient
 from ..update_contracts import meta_updates
@@ -89,6 +91,8 @@ class MetaCapability(BaseCapability):
             "meta_send_conversion_events", "meta_test_conversion_events"
         ],
         "list_lead_forms": ["meta_list_lead_forms"], "get_lead_form": ["meta_get_lead_form"],
+        "list_leads": ["meta_list_leads"],
+        "list_businesses": ["meta_list_businesses"], "get_business": ["meta_get_business"],
         "create_lead_form": ["meta_create_lead_form"], "update_lead_form": ["meta_update_lead_form"],
         "get_campaign": ["meta_get_campaign"], "create_campaign": ["meta_create_campaign"],
         "update_campaign": ["meta_update_campaign"], "pause_campaign": ["meta_pause_campaign"],
@@ -157,6 +161,8 @@ class MetaCapability(BaseCapability):
         product_set_schema = meta_product_set_schema()
         product_set_properties = product_set_schema["properties"]
         lead_form_schema = meta_lead_form_schema()
+        lead_schema = meta_lead_schema()
+        business_schema = meta_business_schema()
         tools = [
             method_tool(
                 platform="meta", skill="meta-marketing-api", name="meta_list_pages",
@@ -412,6 +418,24 @@ class MetaCapability(BaseCapability):
                 }),
             ),
             method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_list_leads",
+                description="查询 Meta Instant Form 收集到的 Lead 数据。",
+                method_name="list_leads", result_key="leads",
+                properties=lead_schema["properties"],
+                required=lead_schema["required"],
+                provider_required=lead_schema["provider_required"],
+                action="list", resource_type="lead",
+                parent_resource_type="lead_form",
+                parent_resource_id_field="form_id",
+                intent_types=["list_leads"], traits=["read", "lead"],
+                argument_builder=lambda ctx, data: ((
+                    data["page_id"], data["form_id"]
+                ), {
+                    "fields": data.get("fields"),
+                    "limit": data.get("limit", 25),
+                }),
+            ),
+            method_tool(
                 platform="meta", skill="meta-marketing-api", name="meta_list_creatives",
                 description="查询 Meta 广告账户下的 Creative。", method_name="list_creatives",
                 result_key="creatives", properties={
@@ -505,6 +529,31 @@ class MetaCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((data.get("business_id"),), {}),
                 action="list", resource_type="account", intent_types=["list_accounts"],
                 traits=["read", "account"],
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_list_businesses",
+                description="查询当前 Meta 用户可访问的 Business Manager 列表。",
+                method_name="list_businesses", result_key="businesses",
+                properties=business_schema["properties"],
+                action="list", resource_type="business",
+                intent_types=["list_businesses"], traits=["read", "business"],
+                argument_builder=lambda _ctx, data: ((), {
+                    "fields": data.get("fields"),
+                    "limit": data.get("limit", 25),
+                }),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_get_business",
+                description="查询 Meta Business Manager 详情。",
+                method_name="get_business", result_key="business",
+                properties=business_schema["properties"],
+                required=["business_id"],
+                action="get", resource_type="business",
+                resource_id_field="business_id",
+                intent_types=["get_business"], traits=["read", "business"],
+                argument_builder=lambda _ctx, data: ((data["business_id"],), {
+                    "fields": data.get("fields"),
+                }),
             ),
             method_tool(
                 platform="meta", skill="meta-marketing-api", name="meta_get_account",

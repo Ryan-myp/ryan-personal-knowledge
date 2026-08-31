@@ -43,6 +43,7 @@ from .parameters import (
     google_user_list_schema, google_user_list_update_schema,
     google_bidding_strategy_schema, google_bidding_strategy_update_schema,
     google_product_group_update_schema, google_product_group_read_schema,
+    google_feed_schema, google_conversion_goal_schema,
 )
 from ...api_clients.google_ads_client import GoogleAdsAPIClient
 from ..update_contracts import google_updates
@@ -158,6 +159,17 @@ class GoogleCapability(BaseCapability):
         "graduate_experiment": ["google_graduate_experiment"],
         "promote_experiment": ["google_promote_experiment"],
         "get_campaign_report": ["google_get_campaign_report"], "get_adgroup_report": ["google_get_adgroup_report"],
+        "list_feeds": ["google_list_feeds"], "get_feed": ["google_get_feed"],
+        "create_feed": ["google_create_feed"], "update_feed": ["google_update_feed"],
+        "delete_feed": ["google_delete_feed"],
+        "list_feed_items": ["google_list_feed_items"],
+        "create_feed_item": ["google_create_feed_item"],
+        "update_feed_item": ["google_update_feed_item"],
+        "delete_feed_item": ["google_delete_feed_item"],
+        "list_customer_conversion_goals": ["google_list_customer_conversion_goals"],
+        "update_customer_conversion_goal": ["google_update_customer_conversion_goal"],
+        "list_campaign_conversion_goals": ["google_list_campaign_conversion_goals"],
+        "update_campaign_conversion_goal": ["google_update_campaign_conversion_goal"],
     }
 
     def get_ad_format_catalog(self) -> list[dict]:
@@ -215,6 +227,8 @@ class GoogleCapability(BaseCapability):
         product_group_read_properties = product_group_read_schema["properties"]
         experiment_schema = google_experiment_schema()
         experiment_update_schema = google_experiment_update_schema()
+        feed_schema = google_feed_schema()
+        conversion_goal_schema = google_conversion_goal_schema()
 
         def _experiment_input(data: dict[str, Any]) -> dict[str, Any]:
             return {
@@ -1327,6 +1341,219 @@ class GoogleCapability(BaseCapability):
                 positional=["ad_group_id", "name"], optional=["status"],
             ),
         ])
+
+        # Feed/FeedItem and ConversionGoal are first-class Google Ads
+        # resources.  They are exposed with explicit provider-owned schemas so
+        # Skills can compose them without a generic passthrough endpoint.
+        tools.extend([
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_list_feeds",
+                description="查询 Google Ads Feed 列表。",
+                method_name="list_feeds", result_key="feeds",
+                properties=feed_schema["properties"], required=["customer_id"],
+                action="list", resource_type="feed",
+                intent_types=["list_feeds"], traits=["read", "feed"],
+                argument_builder=lambda _ctx, data: ((), {
+                    "page_size": data.get("limit", 100),
+                }),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_get_feed",
+                description="查询 Google Ads Feed 详情。",
+                method_name="get_feed", result_key="feed",
+                properties=feed_schema["properties"], required=["customer_id", "feed_id"],
+                action="get", resource_type="feed", resource_id_field="feed_id",
+                intent_types=["get_feed"], traits=["read", "feed"],
+                argument_builder=lambda _ctx, data: ((data["feed_id"],), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_create_feed",
+                description="创建 Google Ads Feed；默认仅生成 dry-run 计划。",
+                method_name="create_feed", result_key="feed_id",
+                properties=feed_schema["properties"], required=["customer_id", "name"],
+                provider_required=["name"],
+                action="create", resource_type="feed", resource_id_field="feed_id",
+                intent_types=["create_feed"], traits=["write", "feed"],
+                write=True,
+                argument_builder=lambda _ctx, data: (({
+                    key: data.get(key)
+                    for key in ("name", "origin", "attributes")
+                    if data.get(key) is not None
+                },), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_update_feed",
+                description="更新 Google Ads Feed；默认仅生成 dry-run 计划。",
+                method_name="update_feed", result_key="feed_result",
+                properties=feed_schema["properties"] | {
+                    "updates": {
+                        "type": "object",
+                        "additionalProperties": True,
+                    },
+                },
+                required=["customer_id", "feed_id", "updates"],
+                provider_required=["feed_id", "updates"],
+                action="update", resource_type="feed", resource_id_field="feed_id",
+                intent_types=["update_feed"], traits=["write", "feed"],
+                write=True,
+                argument_builder=lambda _ctx, data: ((data["feed_id"], data["updates"]), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_delete_feed",
+                description="删除 Google Ads Feed；默认仅生成 dry-run 计划。",
+                method_name="delete_feed", result_key="feed_result",
+                properties=feed_schema["properties"], required=["customer_id", "feed_id"],
+                action="delete", resource_type="feed", resource_id_field="feed_id",
+                intent_types=["delete_feed"], traits=["write", "feed"],
+                write=True,
+                argument_builder=lambda _ctx, data: ((data["feed_id"],), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_list_feed_items",
+                description="查询 Google Ads FeedItem 列表。",
+                method_name="list_feed_items", result_key="feed_items",
+                properties=feed_schema["properties"],
+                required=["customer_id", "feed_id"],
+                action="list", resource_type="feed_item",
+                parent_resource_type="feed", parent_resource_id_field="feed_id",
+                intent_types=["list_feed_items"], traits=["read", "feed", "feed_item"],
+                argument_builder=lambda _ctx, data: ((data["feed_id"],), {
+                    "page_size": data.get("limit", 100),
+                }),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_create_feed_item",
+                description="创建 Google Ads FeedItem；默认仅生成 dry-run 计划。",
+                method_name="create_feed_item", result_key="feed_item_id",
+                properties=feed_schema["properties"],
+                required=["customer_id", "feed_id", "attribute_values"],
+                provider_required=["feed_id", "attribute_values"],
+                action="create", resource_type="feed_item",
+                parent_resource_type="feed", parent_resource_id_field="feed_id",
+                intent_types=["create_feed_item"], traits=["write", "feed", "feed_item"],
+                write=True,
+                argument_builder=lambda _ctx, data: (
+                    (data["feed_id"], data["attribute_values"]), {}
+                ),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_update_feed_item",
+                description="更新 Google Ads FeedItem；默认仅生成 dry-run 计划。",
+                method_name="update_feed_item", result_key="feed_item_result",
+                properties={
+                    "customer_id": feed_schema["properties"]["customer_id"],
+                    "feed_item_resource_name": feed_schema["properties"]["feed_item_resource_name"],
+                    "updates": {
+                        "type": "object",
+                        "properties": {
+                            "attribute_values": feed_schema["properties"]["attribute_values"],
+                        },
+                        "required": ["attribute_values"],
+                        "additionalProperties": False,
+                    },
+                },
+                required=["customer_id", "feed_item_resource_name", "updates"],
+                provider_required=["feed_item_resource_name", "updates"],
+                action="update", resource_type="feed_item",
+                intent_types=["update_feed_item"], traits=["write", "feed", "feed_item"],
+                write=True,
+                argument_builder=lambda _ctx, data: (
+                    (data["feed_item_resource_name"], data["updates"]), {}
+                ),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_delete_feed_item",
+                description="删除 Google Ads FeedItem；默认仅生成 dry-run 计划。",
+                method_name="delete_feed_item", result_key="feed_item_result",
+                properties=feed_schema["properties"],
+                required=["customer_id", "feed_item_resource_name"],
+                action="delete", resource_type="feed_item",
+                intent_types=["delete_feed_item"], traits=["write", "feed", "feed_item"],
+                write=True,
+                argument_builder=lambda _ctx, data: (
+                    (data["feed_item_resource_name"],), {}
+                ),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_list_customer_conversion_goals",
+                description="查询 Google Ads Customer Conversion Goal 列表。",
+                method_name="list_customer_conversion_goals",
+                result_key="conversion_goals",
+                properties=conversion_goal_schema["properties"],
+                required=["customer_id"],
+                action="list", resource_type="customer_conversion_goal",
+                intent_types=["list_customer_conversion_goals"],
+                traits=["read", "conversion_goal"],
+                argument_builder=lambda _ctx, data: ((), {
+                    "page_size": data.get("limit", 100),
+                }),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_update_customer_conversion_goal",
+                description="更新 Google Ads Customer Conversion Goal；默认仅生成 dry-run 计划。",
+                method_name="update_customer_conversion_goal",
+                result_key="conversion_goal_result",
+                properties=conversion_goal_schema["properties"],
+                required=["customer_id", "category", "origin", "updates"],
+                provider_required=["category", "origin", "updates"],
+                action="update", resource_type="customer_conversion_goal",
+                intent_types=["update_customer_conversion_goal"],
+                traits=["write", "conversion_goal"],
+                write=True,
+                argument_builder=lambda _ctx, data: ((
+                    data["category"], data["origin"], data["updates"]
+                ), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_list_campaign_conversion_goals",
+                description="查询 Google Ads Campaign Conversion Goal 列表。",
+                method_name="list_campaign_conversion_goals",
+                result_key="conversion_goals",
+                properties=conversion_goal_schema["properties"],
+                required=["customer_id", "campaign_id"],
+                action="list", resource_type="campaign_conversion_goal",
+                parent_resource_type="campaign",
+                parent_resource_id_field="campaign_id",
+                intent_types=["list_campaign_conversion_goals"],
+                traits=["read", "conversion_goal"],
+                argument_builder=lambda _ctx, data: ((data["campaign_id"],), {
+                    "page_size": data.get("limit", 100),
+                }),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_update_campaign_conversion_goal",
+                description="更新 Google Ads Campaign Conversion Goal；默认仅生成 dry-run 计划。",
+                method_name="update_campaign_conversion_goal",
+                result_key="conversion_goal_result",
+                properties=conversion_goal_schema["properties"],
+                required=["customer_id", "campaign_id", "category", "origin", "updates"],
+                provider_required=["campaign_id", "category", "origin", "updates"],
+                action="update", resource_type="campaign_conversion_goal",
+                parent_resource_type="campaign",
+                parent_resource_id_field="campaign_id",
+                intent_types=["update_campaign_conversion_goal"],
+                traits=["write", "conversion_goal"],
+                write=True,
+                argument_builder=lambda _ctx, data: ((
+                    data["campaign_id"], data["category"], data["origin"],
+                    data["updates"],
+                ), {}),
+            ),
+        ])
+
         bound_tools = []
         for tool in tools:
             definition, handler = bind_provider_method(tool, client)

@@ -29,10 +29,10 @@ OFFICIAL_INVENTORY = [
     {"resource": "bidding_strategy", "action": "mutate", "status": "implemented", "surface_method": "create_bidding_strategy", "provider_operation": "BiddingStrategyService.mutateBiddingStrategies"},
     {"resource": "report", "action": "query", "status": "implemented", "surface_method": "get_campaign_report", "provider_operation": "GoogleAdsService.search/searchStream"},
     {"resource": "experiment", "action": "crud", "status": "implemented", "surface_method": "create_experiment", "provider_operation": "ExperimentService.MutateExperiments + schedule/end/graduate/promote"},
-    {"resource": "feed", "action": "crud", "status": "planned", "provider_operation": "FeedService / FeedItemService"},
+    {"resource": "feed", "action": "crud", "status": "implemented", "surface_method": "create_feed", "provider_operation": "FeedService / FeedItemService"},
     {"resource": "campaign_asset", "action": "mutate", "status": "implemented", "surface_method": "create_campaign_asset", "provider_operation": "CampaignAssetService.mutateCampaignAssets"},
     {"resource": "asset_group_asset", "action": "mutate", "status": "implemented", "surface_method": "create_asset_group_asset", "provider_operation": "AssetGroupAssetService.mutateAssetGroupAssets"},
-    {"resource": "conversion_goal", "action": "mutate", "status": "planned", "provider_operation": "CustomerConversionGoalService / CampaignConversionGoalService"},
+    {"resource": "conversion_goal", "action": "mutate", "status": "implemented", "surface_method": "update_customer_conversion_goal", "provider_operation": "CustomerConversionGoalService / CampaignConversionGoalService"},
 ]
 
 API_SURFACE = [
@@ -129,4 +129,17 @@ API_SURFACE = [
     {"resource": "experiment", "action": "graduate", "method": "graduate_experiment", "status": "implemented", "notes": "Dedicated ExperimentService lifecycle RPC; execution remains dry-run-only"},
     {"resource": "experiment", "action": "promote", "method": "promote_experiment", "status": "implemented", "notes": "Dedicated ExperimentService lifecycle RPC; execution remains dry-run-only"},
     {"resource": "experiment_arm", "action": "list", "method": "list_experiment_arms", "status": "implemented", "notes": "GAQL read surface; arm mutation is a separate follow-up"},
+    {"resource": "feed", "action": "list", "method": "list_feeds", "status": "implemented"},
+    {"resource": "feed", "action": "get", "method": "get_feed", "status": "implemented"},
+    {"resource": "feed", "action": "create", "method": "create_feed", "status": "implemented"},
+    {"resource": "feed", "action": "update", "method": "update_feed", "status": "implemented"},
+    {"resource": "feed", "action": "delete", "method": "delete_feed", "status": "implemented"},
+    {"resource": "feed_item", "action": "list", "method": "list_feed_items", "status": "implemented"},
+    {"resource": "feed_item", "action": "create", "method": "create_feed_item", "status": "implemented"},
+    {"resource": "feed_item", "action": "update", "method": "update_feed_item", "status": "implemented"},
+    {"resource": "feed_item", "action": "delete", "method": "delete_feed_item", "status": "implemented"},
+    {"resource": "customer_conversion_goal", "action": "list", "method": "list_customer_conversion_goals", "status": "implemented"},
+    {"resource": "customer_conversion_goal", "action": "update", "method": "update_customer_conversion_goal", "status": "implemented"},
+    {"resource": "campaign_conversion_goal", "action": "list", "method": "list_campaign_conversion_goals", "status": "implemented"},
+    {"resource": "campaign_conversion_goal", "action": "update", "method": "update_campaign_conversion_goal", "status": "implemented"},
 ]

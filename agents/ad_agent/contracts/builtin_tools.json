@@ -1,5 +1,5 @@
 {
-  "digest": "24d507ef92a88adbeb26b0bc03b0b26aaad54f14da8f2b2f16f847edf7df738b",
+  "digest": "0807d412115631448dea54a36d6124197bdae6c395a5cfca571c6240a165c3e8",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -1998,8 +1998,8 @@
       ]
     },
     "google-ads": {
-      "digest": "a1c66c091b815c73ea53e629c2f7a4ff4543a75a719b5591bf26738d22951fd5",
-      "tool_count": 94,
+      "digest": "9bf0d9def828bb425582c383891da3b33cdfa8fa15c19ad943c579d55257a0a6",
+      "tool_count": 107,
       "tools": [
         {
           "action": "create",
@@ -5293,6 +5293,205 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
+          "description": "创建 Google Ads Feed；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "attribute_values": {
+                "description": "FeedItem attribute values",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "attributes": {
+                "description": "Feed attribute definitions",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "feed_id": {
+                "description": "Google Feed ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "feed_item_resource_name": {
+                "description": "FeedItem resource name",
+                "minLength": 1,
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of rows",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "name": {
+                "description": "Feed name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "origin": {
+                "description": "Feed origin",
+                "enum": [
+                  "UNKNOWN",
+                  "USER",
+                  "GOOGLE"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "name"
+            ],
+            "required": [
+              "customer_id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_feed"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_feed",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "feed_id",
+          "resource_type": "feed",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "feed"
+          ]
+        },
+        {
+          "action": "create",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
+          "description": "创建 Google Ads FeedItem；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "attribute_values": {
+                "description": "FeedItem attribute values",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "attributes": {
+                "description": "Feed attribute definitions",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "feed_id": {
+                "description": "Google Feed ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "feed_item_resource_name": {
+                "description": "FeedItem resource name",
+                "minLength": 1,
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of rows",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "name": {
+                "description": "Feed name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "origin": {
+                "description": "Feed origin",
+                "enum": [
+                  "UNKNOWN",
+                  "USER",
+                  "GOOGLE"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "feed_id",
+              "attribute_values"
+            ],
+            "required": [
+              "customer_id",
+              "feed_id",
+              "attribute_values"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_feed_item"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_feed_item",
+          "parent_resource_id_field": "feed_id",
+          "parent_resource_type": "feed",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": null,
+          "resource_type": "feed_item",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "feed",
+            "feed_item"
+          ]
+        },
+        {
+          "action": "create",
           "activation_rules": [
             {
               "aliases": [
@@ -7730,6 +7929,199 @@
           "action": "delete",
           "activation_rules": [],
           "contract_version": "1.4.0",
+          "description": "删除 Google Ads Feed；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "attribute_values": {
+                "description": "FeedItem attribute values",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "attributes": {
+                "description": "Feed attribute definitions",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "feed_id": {
+                "description": "Google Feed ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "feed_item_resource_name": {
+                "description": "FeedItem resource name",
+                "minLength": 1,
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of rows",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "name": {
+                "description": "Feed name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "origin": {
+                "description": "Feed origin",
+                "enum": [
+                  "UNKNOWN",
+                  "USER",
+                  "GOOGLE"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id",
+              "feed_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_feed"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_delete_feed",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "feed_id",
+          "resource_type": "feed",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "feed"
+          ]
+        },
+        {
+          "action": "delete",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
+          "description": "删除 Google Ads FeedItem；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "attribute_values": {
+                "description": "FeedItem attribute values",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "attributes": {
+                "description": "Feed attribute definitions",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "feed_id": {
+                "description": "Google Feed ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "feed_item_resource_name": {
+                "description": "FeedItem resource name",
+                "minLength": 1,
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of rows",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "name": {
+                "description": "Feed name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "origin": {
+                "description": "Feed origin",
+                "enum": [
+                  "UNKNOWN",
+                  "USER",
+                  "GOOGLE"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id",
+              "feed_item_resource_name"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_feed_item"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_delete_feed_item",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": null,
+          "resource_type": "feed_item",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "feed",
+            "feed_item"
+          ]
+        },
+        {
+          "action": "delete",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
           "description": "删除 Google Ad Group 关键词；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -8752,6 +9144,102 @@
           "action": "get",
           "activation_rules": [],
           "contract_version": "1.4.0",
+          "description": "查询 Google Ads Feed 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "attribute_values": {
+                "description": "FeedItem attribute values",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "attributes": {
+                "description": "Feed attribute definitions",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "feed_id": {
+                "description": "Google Feed ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "feed_item_resource_name": {
+                "description": "FeedItem resource name",
+                "minLength": 1,
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of rows",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "name": {
+                "description": "Feed name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "origin": {
+                "description": "Feed origin",
+                "enum": [
+                  "UNKNOWN",
+                  "USER",
+                  "GOOGLE"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id",
+              "feed_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_feed"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_get_feed",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "feed_id",
+          "resource_type": "feed",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "feed"
+          ]
+        },
+        {
+          "action": "get",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
           "description": "查询 Google Shopping 单个 Product Group/Listing Group 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -9435,6 +9923,92 @@
           "action": "list",
           "activation_rules": [],
           "contract_version": "1.4.0",
+          "description": "查询 Google Ads Campaign Conversion Goal 列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "description": "Campaign ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "category": {
+                "description": "Conversion goal category",
+                "minLength": 1,
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of goals",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "origin": {
+                "description": "Conversion goal origin",
+                "minLength": 1,
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Allowed Google conversion goal update fields",
+                "properties": {
+                  "biddable": {
+                    "description": "Whether this goal is biddable",
+                    "type": "boolean"
+                  },
+                  "value_settings": {
+                    "additionalProperties": true,
+                    "description": "Conversion value settings",
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id",
+              "campaign_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_campaign_conversion_goals"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_list_campaign_conversion_goals",
+          "parent_resource_id_field": "campaign_id",
+          "parent_resource_type": "campaign",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "campaign_conversion_goal",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "conversion_goal"
+          ]
+        },
+        {
+          "action": "list",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
           "description": "查询 Google Ads CampaignCriterion（地域、语言、设备、受众和人口属性定向）。",
           "effect_class": "read",
           "input_schema": {
@@ -9648,6 +10222,91 @@
           "action": "list",
           "activation_rules": [],
           "contract_version": "1.4.0",
+          "description": "查询 Google Ads Customer Conversion Goal 列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "description": "Campaign ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "category": {
+                "description": "Conversion goal category",
+                "minLength": 1,
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of goals",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "origin": {
+                "description": "Conversion goal origin",
+                "minLength": 1,
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Allowed Google conversion goal update fields",
+                "properties": {
+                  "biddable": {
+                    "description": "Whether this goal is biddable",
+                    "type": "boolean"
+                  },
+                  "value_settings": {
+                    "additionalProperties": true,
+                    "description": "Conversion value settings",
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_customer_conversion_goals"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_list_customer_conversion_goals",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "customer_conversion_goal",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "conversion_goal"
+          ]
+        },
+        {
+          "action": "list",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
           "description": "查询 Google Ads Experiment Arm。",
           "effect_class": "read",
           "input_schema": {
@@ -9750,6 +10409,198 @@
           "traits": [
             "read",
             "experiment"
+          ]
+        },
+        {
+          "action": "list",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
+          "description": "查询 Google Ads FeedItem 列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "attribute_values": {
+                "description": "FeedItem attribute values",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "attributes": {
+                "description": "Feed attribute definitions",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "feed_id": {
+                "description": "Google Feed ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "feed_item_resource_name": {
+                "description": "FeedItem resource name",
+                "minLength": 1,
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of rows",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "name": {
+                "description": "Feed name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "origin": {
+                "description": "Feed origin",
+                "enum": [
+                  "UNKNOWN",
+                  "USER",
+                  "GOOGLE"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id",
+              "feed_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_feed_items"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_list_feed_items",
+          "parent_resource_id_field": "feed_id",
+          "parent_resource_type": "feed",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "feed_item",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "feed",
+            "feed_item"
+          ]
+        },
+        {
+          "action": "list",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
+          "description": "查询 Google Ads Feed 列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "attribute_values": {
+                "description": "FeedItem attribute values",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "attributes": {
+                "description": "Feed attribute definitions",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "feed_id": {
+                "description": "Google Feed ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "feed_item_resource_name": {
+                "description": "FeedItem resource name",
+                "minLength": 1,
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of rows",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "name": {
+                "description": "Feed name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "origin": {
+                "description": "Feed origin",
+                "enum": [
+                  "UNKNOWN",
+                  "USER",
+                  "GOOGLE"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_feeds"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_list_feeds",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "feed",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "feed"
           ]
         },
         {
@@ -10783,6 +11634,100 @@
           "action": "update",
           "activation_rules": [],
           "contract_version": "1.4.0",
+          "description": "更新 Google Ads Campaign Conversion Goal；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "description": "Campaign ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "category": {
+                "description": "Conversion goal category",
+                "minLength": 1,
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of goals",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "origin": {
+                "description": "Conversion goal origin",
+                "minLength": 1,
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Allowed Google conversion goal update fields",
+                "properties": {
+                  "biddable": {
+                    "description": "Whether this goal is biddable",
+                    "type": "boolean"
+                  },
+                  "value_settings": {
+                    "additionalProperties": true,
+                    "description": "Conversion value settings",
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "campaign_id",
+              "category",
+              "origin",
+              "updates"
+            ],
+            "required": [
+              "customer_id",
+              "campaign_id",
+              "category",
+              "origin",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_campaign_conversion_goal"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_update_campaign_conversion_goal",
+          "parent_resource_id_field": "campaign_id",
+          "parent_resource_type": "campaign",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": null,
+          "resource_type": "campaign_conversion_goal",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "conversion_goal"
+          ]
+        },
+        {
+          "action": "update",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
           "description": "更新 Google Ads CampaignCriterion 的状态、排除标记或出价系数；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -11019,6 +11964,98 @@
           "action": "update",
           "activation_rules": [],
           "contract_version": "1.4.0",
+          "description": "更新 Google Ads Customer Conversion Goal；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "campaign_id": {
+                "description": "Campaign ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "category": {
+                "description": "Conversion goal category",
+                "minLength": 1,
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of goals",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "origin": {
+                "description": "Conversion goal origin",
+                "minLength": 1,
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Allowed Google conversion goal update fields",
+                "properties": {
+                  "biddable": {
+                    "description": "Whether this goal is biddable",
+                    "type": "boolean"
+                  },
+                  "value_settings": {
+                    "additionalProperties": true,
+                    "description": "Conversion value settings",
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "category",
+              "origin",
+              "updates"
+            ],
+            "required": [
+              "customer_id",
+              "category",
+              "origin",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_customer_conversion_goal"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_update_customer_conversion_goal",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": null,
+          "resource_type": "customer_conversion_goal",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "conversion_goal"
+          ]
+        },
+        {
+          "action": "update",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
           "description": "更新 Google Ads Experiment 可变字段；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -11158,6 +12195,186 @@
           "traits": [
             "write",
             "experiment"
+          ]
+        },
+        {
+          "action": "update",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
+          "description": "更新 Google Ads Feed；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "attribute_values": {
+                "description": "FeedItem attribute values",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "attributes": {
+                "description": "Feed attribute definitions",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "feed_id": {
+                "description": "Google Feed ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "feed_item_resource_name": {
+                "description": "FeedItem resource name",
+                "minLength": 1,
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of rows",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "name": {
+                "description": "Feed name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "origin": {
+                "description": "Feed origin",
+                "enum": [
+                  "UNKNOWN",
+                  "USER",
+                  "GOOGLE"
+                ],
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "feed_id",
+              "updates"
+            ],
+            "required": [
+              "customer_id",
+              "feed_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_feed"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_update_feed",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "feed_id",
+          "resource_type": "feed",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "feed"
+          ]
+        },
+        {
+          "action": "update",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
+          "description": "更新 Google Ads FeedItem；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "feed_item_resource_name": {
+                "description": "FeedItem resource name",
+                "minLength": 1,
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "properties": {
+                  "attribute_values": {
+                    "description": "FeedItem attribute values",
+                    "items": {
+                      "additionalProperties": true,
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "attribute_values"
+                ],
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "feed_item_resource_name",
+              "updates"
+            ],
+            "required": [
+              "customer_id",
+              "feed_item_resource_name",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_feed_item"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_update_feed_item",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": null,
+          "resource_type": "feed_item",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "feed",
+            "feed_item"
           ]
         },
         {
@@ -11480,8 +12697,8 @@
       ]
     },
     "meta": {
-      "digest": "c8057dc34953dc4e218ce5c46be7b108d6c676d8ce2735b2d883da8c7f9954e3",
-      "tool_count": 72,
+      "digest": "62efe2100c6500adc3ebd64991bce6ea7e088259fa65d2b4e46eef7e7ddc111d",
+      "tool_count": 75,
       "tools": [
         {
           "action": "boost",
@@ -15092,6 +16309,68 @@
           "action": "get",
           "activation_rules": [],
           "contract_version": "1.4.0",
+          "description": "查询 Meta Business Manager 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "business_id": {
+                "description": "Meta Business ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "fields": {
+                "description": "Business fields to return",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "limit": {
+                "description": "Maximum number of businesses",
+                "maximum": 100,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "business_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_business"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_get_business",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "readback_tool": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "business_id",
+          "resource_type": "business",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "business"
+          ]
+        },
+        {
+          "action": "get",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
           "description": "获取 Meta Campaign 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -15771,6 +17050,66 @@
           "action": "list",
           "activation_rules": [],
           "contract_version": "1.4.0",
+          "description": "查询当前 Meta 用户可访问的 Business Manager 列表。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "business_id": {
+                "description": "Meta Business ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "fields": {
+                "description": "Business fields to return",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "limit": {
+                "description": "Maximum number of businesses",
+                "maximum": 100,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_businesses"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_list_businesses",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "readback_tool": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "business",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "business"
+          ]
+        },
+        {
+          "action": "list",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
           "description": "列出 Meta Campaign 列表。",
           "effect_class": "read",
           "input_schema": {
@@ -16093,6 +17432,92 @@
           "traits": [
             "read",
             "lead_form"
+          ]
+        },
+        {
+          "action": "list",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
+          "description": "查询 Meta Instant Form 收集到的 Lead 数据。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account authorization scope",
+                "type": "string"
+              },
+              "fields": {
+                "description": "Lead fields to return",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "form_id": {
+                "description": "Meta Instant Form ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of leads",
+                "maximum": 1000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "page_id": {
+                "description": "Facebook Page that owns the Instant Form",
+                "lookup_result_key": "pages",
+                "lookup_tool": "meta_list_pages",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "page_id"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "page_id",
+              "form_id"
+            ],
+            "required": [
+              "account_id",
+              "page_id",
+              "form_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_leads"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_list_leads",
+          "parent_resource_id_field": "form_id",
+          "parent_resource_type": "lead_form",
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "readback_tool": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "lead",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "lead"
           ]
         },
         {
@@ -28240,6 +29665,162 @@
         "resource": "experiment_arm",
         "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
         "status": "implemented"
+      },
+      {
+        "action": "list",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "list_feeds",
+        "provider": "google-ads",
+        "resource": "feed",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "get_feed",
+        "provider": "google-ads",
+        "resource": "feed",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "create_feed",
+        "provider": "google-ads",
+        "resource": "feed",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "update_feed",
+        "provider": "google-ads",
+        "resource": "feed",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "delete_feed",
+        "provider": "google-ads",
+        "resource": "feed",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "list_feed_items",
+        "provider": "google-ads",
+        "resource": "feed_item",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "create_feed_item",
+        "provider": "google-ads",
+        "resource": "feed_item",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "update_feed_item",
+        "provider": "google-ads",
+        "resource": "feed_item",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "delete_feed_item",
+        "provider": "google-ads",
+        "resource": "feed_item",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "list_customer_conversion_goals",
+        "provider": "google-ads",
+        "resource": "customer_conversion_goal",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "update_customer_conversion_goal",
+        "provider": "google-ads",
+        "resource": "customer_conversion_goal",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "list_campaign_conversion_goals",
+        "provider": "google-ads",
+        "resource": "campaign_conversion_goal",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "update_campaign_conversion_goal",
+        "provider": "google-ads",
+        "resource": "campaign_conversion_goal",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
       }
     ],
     "meta": [
@@ -29096,6 +30677,42 @@
         "method": "update_lead_form",
         "provider": "meta",
         "resource": "lead_form",
+        "source_url": "https://developers.facebook.com/docs/marketing-api/reference",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "api_version": "v19.0",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_graph_edges_baseline",
+        "method": "list_leads",
+        "provider": "meta",
+        "resource": "lead",
+        "source_url": "https://developers.facebook.com/docs/marketing-api/reference",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "api_version": "v19.0",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_graph_edges_baseline",
+        "method": "list_businesses",
+        "provider": "meta",
+        "resource": "business",
+        "source_url": "https://developers.facebook.com/docs/marketing-api/reference",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "api_version": "v19.0",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_graph_edges_baseline",
+        "method": "get_business",
+        "provider": "meta",
+        "resource": "business",
         "source_url": "https://developers.facebook.com/docs/marketing-api/reference",
         "status": "implemented"
       },
@@ -30113,5 +31730,5 @@
       ]
     }
   },
-  "tool_count": 269
+  "tool_count": 285
 }

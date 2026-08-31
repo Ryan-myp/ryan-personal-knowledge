@@ -480,6 +480,37 @@ def meta_lead_form_schema() -> dict[str, Any]:
     }
 
 
+def meta_lead_schema() -> dict[str, Any]:
+    """Schema for reading leads submitted through a Meta Instant Form."""
+    return {
+        "required": ["account_id", "page_id", "form_id"],
+        "provider_required": ["page_id", "form_id"],
+        "properties": {
+            "account_id": _field("string", "Meta ad account authorization scope"),
+            "page_id": _field(
+                "string", "Facebook Page that owns the Instant Form",
+                minLength=1, lookup_tool="meta_list_pages", lookup_result_key="pages",
+                selection_value_fields=["id", "page_id"],
+                selection_label_fields=["name", "id"],
+            ),
+            "form_id": _field("string", "Meta Instant Form ID", minLength=1),
+            "fields": _field("array", "Lead fields to return", items={"type": "string"}),
+            "limit": _field("integer", "Maximum number of leads", minimum=1, maximum=1000),
+        },
+    }
+
+
+def meta_business_schema() -> dict[str, Any]:
+    """Schema for Meta Business Manager read operations."""
+    return {
+        "properties": {
+            "business_id": _field("string", "Meta Business ID", minLength=1),
+            "fields": _field("array", "Business fields to return", items={"type": "string"}),
+            "limit": _field("integer", "Maximum number of businesses", minimum=1, maximum=100),
+        },
+    }
+
+
 def meta_creative_schema() -> dict[str, Any]:
     """Contract for Meta Creative reads and the supported mutable fields."""
     return {

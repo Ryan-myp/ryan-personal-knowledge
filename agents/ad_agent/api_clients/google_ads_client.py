@@ -4154,6 +4154,269 @@ class GoogleAdsAPIClient(BasePlatformClient):
             return str(budget.get("resourceName") or budget.get("resource_name") or "")
         return str(budget or "")
 
+    # ==================== Feeds / Conversion Goals ====================
+
+    @staticmethod
+    def _normalize_feed(row: dict[str, Any]) -> dict[str, Any]:
+        feed = row.get("feed", row) if isinstance(row, dict) else {}
+        feed = feed if isinstance(feed, dict) else {}
+        return {
+            "id": feed.get("id"),
+            "resource_name": feed.get("resourceName", feed.get("resource_name")),
+            "name": feed.get("name"),
+            "origin": feed.get("origin"),
+            "status": feed.get("status"),
+            "attributes": feed.get("attributes", []),
+        }
+
+    def list_feeds(self, page_size: int = 100) -> list[dict[str, Any]]:
+        """List customer-level Feed resources through GAQL."""
+        del page_size
+        rows = self._search_all(
+            "SELECT feed.id, feed.resource_name, feed.name, feed.origin, "
+            "feed.status, feed.attributes FROM feed"
+        )
+        return [self._normalize_feed(row) for row in rows]
+
+    def get_feed(self, feed_id: str) -> dict[str, Any]:
+        """Get one customer-level Feed resource through GAQL."""
+        feed_id = self._numeric_id(feed_id, "feed_id")
+        rows = self._search(
+            "SELECT feed.id, feed.resource_name, feed.name, feed.origin, "
+            f"feed.status, feed.attributes FROM feed WHERE feed.id = {feed_id}"
+        )
+        payload = self._response_payload(rows)
+        result_rows = payload.get("results", []) if isinstance(payload, dict) else []
+        if result_rows and isinstance(result_rows[0], dict):
+            return self._normalize_feed(result_rows[0])
+        raise APIError(f"Google Feed {feed_id} was not found")
+
+    @classmethod
+    def _feed_payload(cls, feed: dict[str, Any], *, require_name: bool = True) -> dict[str, Any]:
+        if not isinstance(feed, dict) or not feed:
+            raise ValueError("feed must be a non-empty object")
+        allowed = {"name", "origin", "attributes"}
+        unknown = set(feed) - allowed
+        if unknown:
+            raise ValueError(f"Unsupported Google Feed fields: {sorted(unknown)}")
+        payload: dict[str, Any] = {}
+        if require_name and not str(feed.get("name") or "").strip():
+            raise ValueError("feed name is required")
+        if feed.get("name") is not None:
+            payload["name"] = str(feed["name"]).strip()
+        if feed.get("origin") is not None:
+            payload["origin"] = str(feed["origin"]).strip().upper()
+        if feed.get("attributes") is not None:
+            if not isinstance(feed["attributes"], list):
+                raise ValueError("feed attributes must be a list")
+            payload["attributes"] = cls._camel_case_keys(feed["attributes"])
+        return payload
+
+    def create_feed(self, feed: dict[str, Any]) -> str:
+        """Create one Feed through FeedService.MutateFeeds."""
+        response = self._mutate("feeds", {"create": self._feed_payload(feed)})
+        resource_name = self._mutation_resource_name(response)
+        resource_name = self.require_resource_id(resource_name, "Google Feed create")
+        return resource_name.rsplit("/", 1)[-1]
+
+    def update_feed(self, feed_id: str, updates: dict[str, Any]) -> dict[str, Any]:
+        """Update mutable Feed fields through FeedService.MutateFeeds."""
+        feed_id = self._numeric_id(feed_id, "feed_id")
+        payload = self._feed_payload(updates, require_name=False)
+        if not payload:
+            raise ValueError("feed updates must contain a supported field")
+        resource_name = f"customers/{self.customer_id}/feeds/{feed_id}"
+        self._mutate("feeds", {
+            "update": {"resourceName": resource_name, **payload},
+            "updateMask": {"paths": [self._camel_case(key) for key in payload]},
+        })
+        return {"success": True, "feed_id": feed_id}
+
+    def delete_feed(self, feed_id: str) -> dict[str, Any]:
+        """Remove one Feed through FeedService.MutateFeeds."""
+        feed_id = self._numeric_id(feed_id, "feed_id")
+        self._mutate("feeds", {
+            "remove": f"customers/{self.customer_id}/feeds/{feed_id}"
+        })
+        return {"success": True, "feed_id": feed_id}
+
+    @staticmethod
+    def _normalize_feed_item(row: dict[str, Any]) -> dict[str, Any]:
+        item = row.get("feedItem", row) if isinstance(row, dict) else {}
+        item = item if isinstance(item, dict) else {}
+        return {
+            "resource_name": item.get("resourceName", item.get("resource_name")),
+            "feed": item.get("feed"),
+            "status": item.get("status"),
+            "attribute_values": item.get(
+                "attributeValues", item.get("attribute_values", [])
+            ),
+        }
+
+    def list_feed_items(
+        self, feed_id: str, page_size: int = 100
+    ) -> list[dict[str, Any]]:
+        """List FeedItem resources for one Feed through GAQL."""
+        feed_id = self._numeric_id(feed_id, "feed_id")
+        del page_size
+        rows = self._search_all(
+            "SELECT feed_item.resource_name, feed_item.feed, feed_item.status, "
+            "feed_item.attribute_values "
+            f"FROM feed_item WHERE feed_item.feed = "
+            f"'customers/{self.customer_id}/feeds/{feed_id}'"
+        )
+        return [self._normalize_feed_item(row) for row in rows]
+
+    def create_feed_item(
+        self, feed_id: str, attribute_values: list[dict[str, Any]]
+    ) -> str:
+        """Create one FeedItem through FeedItemService.MutateFeedItems."""
+        feed_id = self._numeric_id(feed_id, "feed_id")
+        if not isinstance(attribute_values, list) or not attribute_values:
+            raise ValueError("attribute_values must be a non-empty list")
+        payload = {
+            "feed": f"customers/{self.customer_id}/feeds/{feed_id}",
+            "attributeValues": self._camel_case_keys(attribute_values),
+        }
+        response = self._mutate("feedItems", {"create": payload})
+        resource_name = self._mutation_resource_name(response)
+        resource_name = self.require_resource_id(
+            resource_name, "Google FeedItem create"
+        )
+        return resource_name
+
+    def update_feed_item(
+        self, feed_item_resource_name: str, updates: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Update FeedItem attribute values through FeedItemService."""
+        resource_name = str(feed_item_resource_name or "").strip()
+        if not resource_name.startswith(f"customers/{self.customer_id}/feedItems/"):
+            raise ValueError("feed_item_resource_name must belong to the current customer")
+        if not isinstance(updates, dict) or set(updates) - {"attribute_values"}:
+            raise ValueError("feed item updates only support attribute_values")
+        attribute_values = updates.get("attribute_values")
+        if not isinstance(attribute_values, list) or not attribute_values:
+            raise ValueError("attribute_values must be a non-empty list")
+        self._mutate("feedItems", {
+            "update": {
+                "resourceName": resource_name,
+                "attributeValues": self._camel_case_keys(attribute_values),
+            },
+            "updateMask": {"paths": ["attributeValues"]},
+        })
+        return {"success": True, "feed_item_resource_name": resource_name}
+
+    def delete_feed_item(self, feed_item_resource_name: str) -> dict[str, Any]:
+        """Remove one FeedItem through FeedItemService.MutateFeedItems."""
+        resource_name = str(feed_item_resource_name or "").strip()
+        if not resource_name.startswith(f"customers/{self.customer_id}/feedItems/"):
+            raise ValueError("feed_item_resource_name must belong to the current customer")
+        self._mutate("feedItems", {"remove": resource_name})
+        return {"success": True, "feed_item_resource_name": resource_name}
+
+    @staticmethod
+    def _normalize_conversion_goal(row: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(row, dict):
+            return {}
+        goal = (
+            row.get("customerConversionGoal")
+            or row.get("customer_conversion_goal")
+            or row.get("campaignConversionGoal")
+            or row.get("campaign_conversion_goal")
+            or row
+        )
+        goal = goal if isinstance(goal, dict) else {}
+        return {
+            "resource_name": goal.get("resourceName", goal.get("resource_name")),
+            "category": goal.get("category"),
+            "origin": goal.get("origin"),
+            "biddable": goal.get("biddable"),
+            "value_settings": goal.get(
+                "valueSettings", goal.get("value_settings")
+            ),
+        }
+
+    def list_customer_conversion_goals(
+        self, page_size: int = 100
+    ) -> list[dict[str, Any]]:
+        """List CustomerConversionGoal resources through GAQL."""
+        del page_size
+        rows = self._search_all(
+            "SELECT customer_conversion_goal.resource_name, "
+            "customer_conversion_goal.category, customer_conversion_goal.origin, "
+            "customer_conversion_goal.biddable, "
+            "customer_conversion_goal.value_settings "
+            "FROM customer_conversion_goal"
+        )
+        return [self._normalize_conversion_goal(row) for row in rows]
+
+    def update_customer_conversion_goal(
+        self, category: str, origin: str, updates: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Update one CustomerConversionGoal resource."""
+        if not str(category or "").strip() or not str(origin or "").strip():
+            raise ValueError("category and origin are required")
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("conversion goal updates must be a non-empty object")
+        allowed = {"biddable", "value_settings"}
+        unknown = set(updates) - allowed
+        if unknown:
+            raise ValueError(
+                f"Unsupported Google CustomerConversionGoal fields: {sorted(unknown)}"
+            )
+        payload = self._camel_case_keys(updates)
+        resource_name = (
+            f"customers/{self.customer_id}/customerConversionGoals/"
+            f"{str(category).upper()}~{str(origin).upper()}"
+        )
+        self._mutate("customerConversionGoals", {
+            "update": {"resourceName": resource_name, **payload},
+            "updateMask": {"paths": [self._camel_case(key) for key in updates]},
+        })
+        return {"success": True, "resource_name": resource_name}
+
+    def list_campaign_conversion_goals(
+        self, campaign_id: str, page_size: int = 100
+    ) -> list[dict[str, Any]]:
+        """List CampaignConversionGoal resources for one Campaign."""
+        campaign_id = self._numeric_id(campaign_id, "campaign_id")
+        del page_size
+        rows = self._search_all(
+            "SELECT campaign_conversion_goal.resource_name, "
+            "campaign_conversion_goal.category, campaign_conversion_goal.origin, "
+            "campaign_conversion_goal.biddable, "
+            "campaign_conversion_goal.value_settings "
+            f"FROM campaign_conversion_goal WHERE campaign.id = {campaign_id}"
+        )
+        return [self._normalize_conversion_goal(row) for row in rows]
+
+    def update_campaign_conversion_goal(
+        self, campaign_id: str, category: str, origin: str,
+        updates: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Update one CampaignConversionGoal resource."""
+        campaign_id = self._numeric_id(campaign_id, "campaign_id")
+        if not str(category or "").strip() or not str(origin or "").strip():
+            raise ValueError("category and origin are required")
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("conversion goal updates must be a non-empty object")
+        allowed = {"biddable", "value_settings"}
+        unknown = set(updates) - allowed
+        if unknown:
+            raise ValueError(
+                f"Unsupported Google CampaignConversionGoal fields: {sorted(unknown)}"
+            )
+        payload = self._camel_case_keys(updates)
+        resource_name = (
+            f"customers/{self.customer_id}/campaignConversionGoals/"
+            f"{campaign_id}~{str(category).upper()}~{str(origin).upper()}"
+        )
+        self._mutate("campaignConversionGoals", {
+            "update": {"resourceName": resource_name, **payload},
+            "updateMask": {"paths": [self._camel_case(key) for key in updates]},
+        })
+        return {"success": True, "resource_name": resource_name}
+
     def _search(
         self, query: str, page_token: str = None, page_size: int = None,
     ) -> dict:
