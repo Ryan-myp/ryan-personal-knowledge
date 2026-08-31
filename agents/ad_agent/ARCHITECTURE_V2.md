@@ -105,9 +105,9 @@ Runtime 本身不承载业务流程。业务策略通过 `RuntimePolicy` 注入�
 因此大多数业务流程只需要新增标准 Skill 和已有 Tools；需要新外部动作时增加
 Capability Tool，只有复杂的二阶段、批量或聚合流程才增加 Skill-owned Feature。
 
-当前已实现：业务策略、跨渠道流程和回复渲染已经迁出 Runtime。输入组装、动态参数
-选择和 Provider 兼容归一化仍由 Runtime 的通用 helper 承担，后续会继续收敛到独立
-的 `ToolInputBuilder`/parameter service。
+当前已实现：业务策略、跨渠道流程、回复渲染、输入组装、动态参数选择、Provider
+兼容归一化和账户上下文解析已经迁出 Runtime，分别由 Policy、Feature、Renderer、
+`ToolInputBuilder`/parameter service 和 `AccountResolver` 承担。
 
 参数选择也遵循同一边界：固定 Provider 枚举由 Tool Schema 的 `enum` 自动生成
 catalog；账户相关的 App、地域、转化事件等由字段上的 `lookup_tool` 声明，

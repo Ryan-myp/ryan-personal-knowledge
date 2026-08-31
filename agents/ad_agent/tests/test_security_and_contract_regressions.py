@@ -1176,7 +1176,7 @@ def test_live_dynamic_parameter_rejects_unattested_raw_value():
         definition for definition, _ in create_tiktok_capability().register_tools()
         if definition.name == "tiktok_create_adgroup"
     )
-    errors = runtime._apply_selection_tokens(
+    errors = runtime.input_builder.apply_selection_tokens(
         definition,
         {"app_id": "app-1"},
         {"app_id": "app-1"},

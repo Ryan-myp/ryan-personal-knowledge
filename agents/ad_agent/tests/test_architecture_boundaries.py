@@ -14,6 +14,9 @@ def test_runtime_discovers_domain_features_without_a_central_workflow_table():
     }
     assert not hasattr(runtime, "business_context")
     assert not hasattr(runtime, "load_business_context")
+    assert not hasattr(runtime, "_build_tool_input")
+    assert not hasattr(runtime, "_apply_selection_tokens")
+    assert runtime.input_builder.runtime is runtime
     assert not hasattr(DynamicToolSelector(), "business_context")
 
 

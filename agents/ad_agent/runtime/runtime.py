@@ -49,7 +49,6 @@ from ..core.policy import RuntimePolicy, validate_policies
 from ..core.knowledge import KnowledgeProvider, LocalMarkdownKnowledgeProvider
 from ..core.parameter_catalog import ParameterCatalogRegistry
 from ..core.parameter_selection import (
-    ParameterSelectionError,
     ParameterSelectionSigner,
 )
 from ..core.auth import RequestPrincipal, normalize_account_id, normalize_platform
@@ -60,6 +59,8 @@ from ..core.security import (
     protected_update_paths,
 )
 from .skill import BaseSkill, Skill, SkillContract, SkillLoader
+from .input_builder import ToolInputBuilder
+from .account_context import AccountResolver
 from ..persistence.session_manager import SessionManager
 from ..persistence.interfaces import PersistenceBackend
 from ..persistence.models import ToolCallRecord
@@ -314,6 +315,8 @@ class AgentRuntime:
         self._parameter_selection_signer = ParameterSelectionSigner(
             selection_secret, parameter_selection_ttl_seconds
         )
+        self.input_builder = ToolInputBuilder(self)
+        self.account_resolver = AccountResolver(self)
         self.policies: list[RuntimePolicy] = list(policies or [])
         if self.policies and hasattr(self.tool_selector, "set_policies"):
             self.tool_selector.set_policies(self.policies)
@@ -1051,7 +1054,7 @@ class AgentRuntime:
                 input_data[account_field] = str(account_id)
                 break
         result = self._execute_tool(session.ctx, source_tool, input_data)
-        result = self._decorate_lookup_result(
+        result = self.input_builder.decorate_lookup_result(
             definition, result, session.ctx, actual_platform
         )
         result = self._enforce_result_limit(result, definition)
@@ -1080,7 +1083,9 @@ class AgentRuntime:
         for tool in definitions.values():
             properties = getattr(tool.input_schema, "properties", {}) or {}
             for field_name, field_schema in properties.items():
-                lookup_tool = self._lookup_tool_for_schema_field(field_schema)
+                lookup_tool = self.input_builder.lookup_tool_for_schema_field(
+                    field_schema
+                )
                 if not lookup_tool:
                     continue
                 source = definitions.get(lookup_tool)
@@ -2688,7 +2693,7 @@ class AgentRuntime:
                         parent_sequence = sequence_by_resource.get(
                             (actual_platform, parent_type)
                         )
-                    planned_account = self._resolve_platform_account(
+                    planned_account = self.account_resolver.resolve(
                         intent,
                         platform,
                         [tool],
@@ -3176,7 +3181,7 @@ class AgentRuntime:
         )
         feature = self._feature_for_intent(intent)
 
-        parameter_errors = self._validate_platform_parameter_contract(
+        parameter_errors = self.input_builder.validate_platform_parameter_contract(
             intent, tool_plan
         )
         if parameter_errors:
@@ -3343,7 +3348,7 @@ class AgentRuntime:
 
             # 每个平台使用自己的账户（不跨平台共享）。没有显式账户时，
             # 只允许从配置的测试白名单中自动选择。
-            per_platform_account = self._resolve_platform_account(
+            per_platform_account = self.account_resolver.resolve(
                 intent, platform, tools, account_id
             )
             if not per_platform_account:
@@ -3465,7 +3470,7 @@ class AgentRuntime:
                 session.ctx.account_id = per_platform_account
 
                 # 构建执行输入
-                tool_input = self._build_tool_input(
+                tool_input = self.input_builder.build(
                     tool_def, intent, platform, session.ctx
                 )
                 if workflow_id and tool_def.is_write_tool:
@@ -3533,7 +3538,7 @@ class AgentRuntime:
                 # 检查必需参数是否齐全，不齐全则询问用户
                 missing_params = tool_input.pop("_missing_params", None)
                 if missing_params:
-                    lookup_tools = self._lookup_tools_for_fields(
+                    lookup_tools = self.input_builder.lookup_tools_for_fields(
                         tool_def, missing_params
                     )
                     results.append({
@@ -3792,7 +3797,7 @@ class AgentRuntime:
                     result = ToolResult.error(f"工具执行失败: {exc}")
 
                 result = self._normalize_read_result_evidence(tool_def, result)
-                result = self._decorate_lookup_result(
+                result = self.input_builder.decorate_lookup_result(
                     tool_def, result, session.ctx, actual_platform
                 )
                 result = self._enforce_result_limit(result, tool_def)
@@ -3972,659 +3977,6 @@ class AgentRuntime:
             "needs_confirmation": needs_confirmation,
             "confirmation_payload": confirmation_payload,
         }
-    
-    @staticmethod
-    def _platform_date_range(
-        platform: str, date_range: Any, tool_def: Any = None, field_name: str = "date_preset",
-    ) -> Any:
-        """Apply a provider-owned date mapping declared by the Tool Schema."""
-        if not isinstance(date_range, str) or tool_def is None:
-            return date_range
-        properties = getattr(getattr(tool_def, "input_schema", None), "properties", {}) or {}
-        field_schema = properties.get(field_name, {})
-        if not isinstance(field_schema, dict):
-            return date_range
-        mapping = field_schema.get("intent_map") or {}
-        return mapping.get(date_range, mapping.get(date_range.upper(), date_range))
-
-    @staticmethod
-    def _normalize_provider_updates(tool_def: Any, updates: dict[str, Any]) -> dict[str, Any]:
-        """Apply only mappings declared by the selected Tool Schema."""
-        normalized = dict(updates)
-        if "status" not in normalized:
-            return normalized
-        update_schema = (tool_def.input_schema.properties.get("updates") or {})
-        status_schema = (update_schema.get("properties") or {}).get("status", {})
-        status = str(normalized.get("status", "")).upper()
-        status_map = status_schema.get("intent_status_map") or {}
-        status_field = status_schema.get("intent_status_field", "status")
-        if status in status_map:
-            if status_field != "status":
-                normalized.pop("status", None)
-            normalized[status_field] = status_map[status]
-        return normalized
-
-    @staticmethod
-    def _normalize_input_field(value: Any) -> str:
-        """Normalize a field label without knowing a provider's vocabulary."""
-        return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
-
-    @classmethod
-    def _input_candidates(
-        cls,
-        field_name: str,
-        field_schema: Any,
-        available_keys: Any = (),
-    ) -> list[str]:
-        """Return schema-owned and provider-neutral input aliases.
-
-        A Capability may publish exact ``input_aliases`` for a provider
-        contract. For legacy/user-facing payloads, Core only applies generic
-        semantics: punctuation-insensitive identifiers, account identity
-        labels, and a single ``name`` field accepting a qualified ``*_name``.
-        It never lists a provider's resource names.
-        """
-        candidates = [str(field_name)]
-        if isinstance(field_schema, dict):
-            candidates.extend(
-                str(value) for value in field_schema.get("input_aliases", []) or []
-            )
-        keys = [str(key) for key in (available_keys or ())]
-        normalized = cls._normalize_input_field(field_name)
-        account_fields = {"accountid", "adaccountid", "advertiserid", "customerid"}
-        for key in keys:
-            key_normalized = cls._normalize_input_field(key)
-            if key_normalized == normalized:
-                candidates.append(key)
-            elif field_name == "name" and key_normalized.endswith("name"):
-                candidates.append(key)
-            elif normalized in account_fields and key_normalized in account_fields:
-                candidates.append(key)
-        return list(dict.fromkeys(candidates))
-
-    def _build_tool_input(
-        self,
-        tool_def: Any,
-        intent: ParsedIntent,
-        platform: str,
-        ctx: Any = None,
-    ) -> dict:
-        """
-        根据意图和工具定义，构建执行输入。
-        
-        优先级：
-        1. intent.platform_params[platform][tool_name]  ← 最具体
-        2. intent.platform_params[platform].get(...)     ← 平台级参数
-        3. ctx.account_id                              ← 账户ID
-        4. intent 通用字段（budget, objective 等）
-        5. 工具定义的默认值
-        """
-        platform_params = self._platform_params_for_intent(intent, platform)
-        actual_platform = self._canonical_platform(platform)
-        tool_input = {}
-
-        # 支持平台级参数和 tool_name 级参数两种输入形式。
-        specific_params = platform_params.get(tool_def.name, {}) if isinstance(platform_params, dict) else {}
-        unknown_specific_params: list[str] = []
-        if isinstance(specific_params, dict):
-            platform_params = {**platform_params, **specific_params}
-
-        # 从平台参数中提取该工具需要的字段。兼容关系来自 Tool Schema 的
-        # input_aliases；Core 只保留 provider-neutral 的字段归一化，不维护
-        # adset/adgroup 等渠道字段表。
-        account_input_fields = {
-            "account_id", "ad_account_id", "advertiser_id", "customer_id",
-        }
-        if isinstance(specific_params, dict):
-            accepted_specific = set(tool_def.input_schema.properties)
-            accepted_specific.update(account_input_fields | {"selection_tokens"})
-            for param_name, field_schema in tool_def.input_schema.properties.items():
-                accepted_specific.update(self._input_candidates(
-                    param_name, field_schema, specific_params.keys()
-                ))
-            unknown_specific_params = sorted(
-                key for key in specific_params
-                if key not in accepted_specific
-            )
-        for param_name in tool_def.input_schema.properties:
-            field_schema = tool_def.input_schema.properties.get(param_name, {})
-            candidates = self._input_candidates(
-                param_name, field_schema, platform_params.keys()
-            )
-            for candidate in candidates:
-                if candidate in platform_params and platform_params[candidate] not in (None, ""):
-                    tool_input[param_name] = platform_params[candidate]
-                    break
-        
-        # 填充账户 ID（从上下文）
-        if ctx and ctx.account_id:
-            for account_field in ["account_id", "advertiser_id", "customer_id"]:
-                if account_field in tool_def.input_schema.properties and account_field not in tool_input:
-                    tool_input[account_field] = ctx.account_id
-                    break
-
-        # 使用上一步工具产生的资源 ID，形成 campaign → 下级层级的依赖链。
-        if ctx:
-            protected = getattr(ctx, "protected_state", {}) or {}
-            scoped_keys_exist = any(":" in key for key in protected)
-            for param_name in tool_def.input_schema.properties:
-                if param_name in tool_input:
-                    continue
-                state_field_names = [
-                    str(key).rsplit(":", 1)[-1] for key in protected
-                ]
-                for candidate in self._input_candidates(
-                    param_name,
-                    tool_def.input_schema.properties.get(param_name, {}),
-                    state_field_names,
-                ):
-                    scoped_candidates = (
-                        f"{actual_platform}:{candidate}",
-                        f"{platform}:{candidate}",
-                    )
-                    scoped_value = next(
-                        (
-                            protected[key]
-                            for key in scoped_candidates
-                            if key in protected and protected[key] not in (None, "")
-                        ),
-                        None,
-                    )
-                    if scoped_value is not None:
-                        tool_input[param_name] = scoped_value
-                        break
-                    # Compatibility for sessions created before namespaced
-                    # state existed. Never use an unscoped ID once the session
-                    # contains any platform-scoped state.
-                    if (
-                        not scoped_keys_exist
-                        and candidate in protected
-                        and protected[candidate] not in (None, "")
-                    ):
-                        tool_input[param_name] = protected[candidate]
-                        break
-        
-        # 填充通用字段
-        if intent.budget is not None and "budget" not in tool_input:
-            tool_input["budget"] = intent.budget
-        # Meta/TikTok/DV360 payloads use daily_budget or budget depending on
-        # resource level. Preserve the common user-facing budget in the
-        # provider field as well; otherwise a valid dry-run request would
-        # produce an incomplete future live payload.
-        if intent.budget is not None and "daily_budget" in tool_def.input_schema.properties:
-            tool_input.setdefault("daily_budget", intent.budget)
-        # ``budget`` is the common user-facing alias.  Keep it in the public
-        # plan for readability, but also materialize the provider field when
-        # the selected Tool declares one.  This makes dry-run provider
-        # readiness reflect the payload that a future adapter will receive.
-        if (
-            tool_input.get("budget") not in (None, "")
-            and "daily_budget" in tool_def.input_schema.properties
-        ):
-            tool_input.setdefault("daily_budget", tool_input["budget"])
-        # Map the common objective through provider-owned metadata.
-        # The shared Runtime does not maintain a provider enum table; a Skill
-        # can add/replace this mapping in its own field schema.
-        if intent.objective:
-            for param_name, field_schema in tool_def.input_schema.properties.items():
-                if param_name in tool_input or not isinstance(field_schema, dict):
-                    continue
-                if field_schema.get("intent_field") != "objective":
-                    continue
-                mapped = (field_schema.get("intent_map") or {}).get(
-                    str(intent.objective).lower(), intent.objective
-                )
-                tool_input[param_name] = mapped
-            if "objective" in tool_def.input_schema.properties:
-                tool_input.setdefault("objective", intent.objective)
-        if getattr(intent, "campaign_type", None) and "campaign_type" in tool_def.input_schema.properties:
-            tool_input.setdefault("campaign_type", intent.campaign_type)
-        # ``campaign_type`` is a shared intent field, but providers
-        # may expose a different wire field (Google uses
-        # ``advertising_channel_type``). The mapping is declared on the
-        # provider field schema so Runtime does not own a provider enum map.
-        if getattr(intent, "campaign_type", None):
-            for param_name, field_schema in tool_def.input_schema.properties.items():
-                if param_name in tool_input or not isinstance(field_schema, dict):
-                    continue
-                if field_schema.get("intent_field") != "campaign_type":
-                    continue
-                mapped = (field_schema.get("intent_map") or {}).get(
-                    str(intent.campaign_type).upper(), intent.campaign_type
-                )
-                tool_input[param_name] = mapped
-        if getattr(intent, "date_range", None):
-            if "date_range" in tool_def.input_schema.properties:
-                tool_input.setdefault("date_range", intent.date_range)
-            if "date_preset" in tool_def.input_schema.properties:
-                tool_input.setdefault(
-                    "date_preset",
-                    self._platform_date_range(
-                        platform, intent.date_range, tool_def, "date_preset"
-                    ),
-                )
-        if intent.creative_materials and "creative_materials" not in tool_input:
-            tool_input["creative_materials"] = intent.creative_materials
-
-        # Defaults are provider-owned schema metadata.  Applying them here
-        # keeps the shared Runtime generic while making the planned payload
-        # identical to what the provider adapter will receive.
-        for param_name, field_schema in tool_def.input_schema.properties.items():
-            if param_name not in tool_input and isinstance(field_schema, dict):
-                if "default" in field_schema:
-                    tool_input[param_name] = copy.deepcopy(field_schema["default"])
-
-        # 从自然语言解析出的 campaign_name 兼容 name 型平台工具。
-        if "name" in tool_def.input_schema.properties and "name" not in tool_input:
-            campaign_name = platform_params.get("campaign_name")
-            if campaign_name:
-                tool_input["name"] = campaign_name
-
-        # dry-run 创建下级资源时提供确定性的本地默认名称，不生成任何线上对象。
-        if "name" in tool_def.input_schema.required and "name" not in tool_input:
-            resource_type = getattr(tool_def, "resource_type", "")
-            if self.is_dry_run and resource_type == "ad_set":
-                tool_input["name"] = f"{platform}_dry_run_adset"
-            elif self.is_dry_run and resource_type == "ad_group":
-                tool_input["name"] = f"{platform}_dry_run_adgroup"
-            elif self.is_dry_run and resource_type == "line_item":
-                tool_input["name"] = f"{platform}_dry_run_line_item"
-
-        if "updates" in tool_def.input_schema.required:
-            if intent.intent_type in ("pause_campaign", "resume_campaign"):
-                paused = intent.intent_type == "pause_campaign"
-                # The generic intent uses ACTIVE/PAUSED.  The provider-owned
-                # update schema below declares the wire field/value mapping;
-                # Runtime should not branch on provider names here.
-                tool_input["updates"] = {"status": "PAUSED" if paused else "ACTIVE"}
-            elif "updates" not in tool_input:
-                pass
-
-        # Normalize generic status wording into the provider field used by
-        # update adapters.  The parser can safely understand "暂停/恢复" once,
-        # while each Capability owns the final wire-level representation.
-        updates = tool_input.get("updates")
-        if isinstance(updates, dict) and "status" in updates:
-            tool_input["updates"] = self._normalize_provider_updates(
-                tool_def, updates
-            )
-
-        selection_errors = self._apply_selection_tokens(
-            tool_def, tool_input, platform_params, ctx
-        )
-
-        # 检查必需参数是否齐全
-        missing = []
-        for req in tool_def.input_schema.required or []:
-            if req not in tool_input:
-                missing.append(req)
-
-        # Conditional requirements are part of the same parameter contract as
-        # flat ``required`` fields. Surface them as missing parameters so a
-        # caller can immediately follow the field's lookup_tool metadata
-        # instead of receiving a late, opaque validation error.
-        for rule in tool_def.input_schema.conditional_rules or []:
-            if not isinstance(rule, dict):
-                continue
-            conditions = rule.get("if", rule.get("when", {}))
-            if not isinstance(conditions, dict) or any(
-                tool_input.get(key) != expected
-                for key, expected in conditions.items()
-            ):
-                continue
-            for req in rule.get("required", rule.get("required_fields", [])) or []:
-                if req not in tool_input and req not in missing:
-                    missing.append(req)
-        
-        if missing:
-            # 参数不全，标记为需要确认
-            tool_input["_missing_params"] = missing
-        if unknown_specific_params:
-            tool_input["_unknown_params"] = unknown_specific_params
-        if selection_errors:
-            tool_input["_selection_errors"] = selection_errors
-
-        return tool_input
-
-    def _validate_platform_parameter_contract(
-        self, intent: ParsedIntent, tool_plan: dict[str, list[Any]],
-    ) -> list[str]:
-        """Reject platform parameters that no planned tool can consume.
-
-        ``platform_params`` is an aggregate payload for a multi-step create
-        chain, so a field may belong to a later child tool.  Validate against
-        the union of all planned tool schemas instead of rejecting those
-        legitimate sibling fields at the first parent step.
-        """
-        errors: list[str] = []
-        common = {
-            "budget", "daily_budget", "objective", "campaign_type",
-            "date_range", "date_preset", "creative_materials", "campaign_id",
-            "campaign_ids", "account_id", "ad_account_id", "advertiser_id",
-            "customer_id",
-        }
-        for platform, values in (intent.platform_params or {}).items():
-            if platform.startswith("_") or not isinstance(values, dict):
-                continue
-            canonical = self._canonical_platform(platform)
-            tools = [
-                tool
-                for routed_platform, routed_tools in tool_plan.items()
-                if self._canonical_platform(routed_platform) == canonical
-                for tool in routed_tools
-            ]
-            for key, value in values.items():
-                if key.startswith("_") or key in common or key in {"selection_tokens"}:
-                    continue
-                if key in {tool.name for tool in tools}:
-                    continue
-                if any(
-                    any(
-                        key in self._input_candidates(field_name, field_schema, [key])
-                        for field_name, field_schema in (
-                            getattr(tool.input_schema, "properties", {}) or {}
-                        ).items()
-                    )
-                    for tool in tools
-                ):
-                    continue
-                errors.append(f"{platform}.{key} 未被当前工具链声明")
-
-            # Tool-scoped payloads are unambiguous and can be checked against
-            # that exact schema, including its alias-compatible identifiers.
-            for tool in tools:
-                scoped = values.get(tool.name)
-                if not isinstance(scoped, dict):
-                    continue
-                for key in scoped:
-                    if key == "selection_tokens":
-                        continue
-                    properties = getattr(tool.input_schema, "properties", {}) or {}
-                    if not any(
-                        key in self._input_candidates(field_name, field_schema, [key])
-                        for field_name, field_schema in properties.items()
-                    ):
-                        errors.append(f"{platform}.{tool.name}.{key} 未被工具 Schema 声明")
-        return errors[:20]
-
-    @staticmethod
-    def _lookup_tools_for_fields(tool_def: Any, fields: list[str]) -> dict[str, str]:
-        """Expose the lookup tool associated with missing dynamic fields."""
-        properties = getattr(tool_def.input_schema, "properties", {}) or {}
-        lookups: dict[str, str] = {}
-        for field in fields or []:
-            spec = properties.get(field, {})
-            if not isinstance(spec, dict):
-                continue
-            lookup_tool = spec.get("lookup_tool")
-            if not lookup_tool and isinstance(spec.get("lookup"), dict):
-                lookup_tool = spec["lookup"].get("tool")
-            if lookup_tool:
-                lookups[field] = str(lookup_tool)
-        return lookups
-
-    @staticmethod
-    def _lookup_tool_for_schema_field(field_schema: Any) -> Optional[str]:
-        if not isinstance(field_schema, dict):
-            return None
-        lookup_tool = field_schema.get("lookup_tool")
-        if not lookup_tool and isinstance(field_schema.get("lookup"), dict):
-            lookup_tool = field_schema["lookup"].get("tool")
-        return str(lookup_tool) if lookup_tool else None
-
-    def _lookup_targets_for_tool(self, source_tool_name: str) -> list[tuple[Any, str, dict]]:
-        """Find Skill-owned fields whose values come from one lookup tool."""
-        targets: list[tuple[Any, str, dict]] = []
-        for candidate in self.registry.list_all():
-            schema = getattr(candidate, "input_schema", None)
-            for field_name, field_schema in (getattr(schema, "properties", {}) or {}).items():
-                if "." in str(field_name):
-                    # Nested selection binding needs a provider-specific path
-                    # contract; do not issue a token that cannot be consumed.
-                    continue
-                if self._lookup_tool_for_schema_field(field_schema) == source_tool_name:
-                    targets.append((candidate, str(field_name), field_schema))
-        return targets
-
-    @staticmethod
-    def _lookup_result_key(source_tool_name: str, field_schema: dict[str, Any]) -> str:
-        configured = field_schema.get("lookup_result_key")
-        if configured:
-            return str(configured)
-        marker = "_list_"
-        return source_tool_name.split(marker, 1)[1] if marker in source_tool_name else source_tool_name
-
-    @staticmethod
-    def _selection_value_fields(field_name: str, field_schema: dict[str, Any]) -> list[str]:
-        configured = field_schema.get("selection_value_fields")
-        if isinstance(configured, (list, tuple)):
-            return [str(value) for value in configured]
-        singular = field_name[:-1] if field_name.endswith("_ids") else field_name
-        return [singular, "id", "value", "code"]
-
-    @staticmethod
-    def _selection_label_fields(field_schema: dict[str, Any]) -> list[str]:
-        configured = field_schema.get("selection_label_fields")
-        if isinstance(configured, (list, tuple)):
-            return [str(value) for value in configured]
-        return ["name", "label", "display_name", "app_name", "location_name", "country_name"]
-
-    @classmethod
-    def _extract_selection_option(
-        cls, item: Any, field_name: str, field_schema: dict[str, Any],
-    ) -> tuple[Any, str] | None:
-        if isinstance(item, dict):
-            value = None
-            for key in cls._selection_value_fields(field_name, field_schema):
-                if item.get(key) not in (None, ""):
-                    value = item[key]
-                    break
-            if value in (None, ""):
-                return None
-            label = value
-            for key in cls._selection_label_fields(field_schema):
-                if item.get(key) not in (None, ""):
-                    label = item[key]
-                    break
-            return value, str(label)
-        if item not in (None, "") and isinstance(item, (str, int, float)):
-            return item, str(item)
-        return None
-
-    def _decorate_lookup_result(
-        self, tool_def: Any, result: ToolResult, ctx: ToolContext,
-        platform: str,
-    ) -> ToolResult:
-        """Attach bounded selection tokens to live provider lookup results."""
-        if not result.success or not isinstance(result.data, dict):
-            return result
-        # Offline fixtures are not provider evidence and must never mint a
-        # token that could authorize a later live write.
-        if str(result.data.get("data_status", "")).lower() != "live":
-            return result
-        selections: list[dict[str, Any]] = []
-        for target_tool, field_name, field_schema in self._lookup_targets_for_tool(tool_def.name):
-            field_type = field_schema.get("type")
-            item_schema = field_schema.get("items") if field_type == "array" else None
-            if field_type not in {"string", "number", "integer", "array"}:
-                continue
-            if field_type == "array" and item_schema and item_schema.get("type") not in {"string", "number", "integer"}:
-                continue
-            result_key = self._lookup_result_key(tool_def.name, field_schema)
-            values = result.data.get(result_key)
-            if not isinstance(values, list):
-                continue
-            options: list[dict[str, Any]] = []
-            seen: set[str] = set()
-            for item in values:
-                extracted = self._extract_selection_option(item, field_name, field_schema)
-                if extracted is None:
-                    continue
-                value, label = extracted
-                identity = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
-                if identity in seen:
-                    continue
-                seen.add(identity)
-                token, expires_at = self._parameter_selection_signer.issue(
-                    session_id=ctx.session_id,
-                    user_id=ctx.user_id,
-                    account_id=str(ctx.account_id or ""),
-                    platform=platform,
-                    tool_name=target_tool.name,
-                    field=field_name,
-                    source_tool=tool_def.name,
-                    value=value,
-                )
-                options.append({
-                    "value": value,
-                    "label": label,
-                    "selection_token": token,
-                })
-            if options:
-                selections.append({
-                    "tool_name": target_tool.name,
-                    "platform": target_tool.platform,
-                    "field": field_name,
-                    "source_tool": tool_def.name,
-                    "expires_at": datetime.fromtimestamp(
-                        expires_at, tz=timezone.utc
-                    ).isoformat(),
-                    "options": options,
-                })
-        if selections:
-            result.data = {**result.data, "parameter_selections": selections}
-        return result
-
-    def _apply_selection_tokens(
-        self, tool_def: Any, tool_input: dict[str, Any],
-        platform_params: dict[str, Any], ctx: Any,
-    ) -> list[str]:
-        """Resolve selection tokens and reject values from another context."""
-        raw_tokens = platform_params.get("selection_tokens")
-        if raw_tokens is None:
-            raw_tokens = {}
-        if not isinstance(raw_tokens, dict):
-            return ["selection_tokens must be an object"]
-
-        errors: list[str] = []
-        properties = getattr(tool_def.input_schema, "properties", {}) or {}
-        for field_name, token_input in raw_tokens.items():
-            field_name = str(field_name)
-            field_schema = properties.get(field_name)
-            source_tool = self._lookup_tool_for_schema_field(field_schema)
-            if not source_tool:
-                errors.append(f"{field_name} does not accept a provider selection token")
-                continue
-            field_type = field_schema.get("type") if isinstance(field_schema, dict) else None
-            if field_type not in {"string", "number", "integer", "array"}:
-                errors.append(f"selection_tokens.{field_name} must target a scalar or array field")
-                continue
-            is_array = field_type == "array"
-            tokens = token_input if is_array else [token_input]
-            if not isinstance(tokens, list) or not tokens or any(not isinstance(token, str) for token in tokens):
-                errors.append(f"selection_tokens.{field_name} must match the field shape")
-                continue
-            resolved: list[Any] = []
-            for token in tokens:
-                try:
-                    resolved.append(self._parameter_selection_signer.verify(
-                        token,
-                        session_id=ctx.session_id,
-                        user_id=ctx.user_id,
-                        account_id=str(ctx.account_id or ""),
-                        platform=self._canonical_platform(tool_def.platform),
-                        tool_name=tool_def.name,
-                        field=field_name,
-                        source_tool=source_tool,
-                    ))
-                except ParameterSelectionError as exc:
-                    errors.append(f"selection_tokens.{field_name}: {exc}")
-            if len(resolved) != len(tokens):
-                continue
-            value = resolved if is_array else resolved[0]
-            if field_name in tool_input and tool_input[field_name] != value:
-                errors.append(f"{field_name} does not match its selection token")
-                continue
-            tool_input[field_name] = value
-
-        if self.execution_mode == ExecutionMode.LIVE.value and tool_def.is_write_tool:
-            for field_name, field_schema in properties.items():
-                if not self._lookup_tool_for_schema_field(field_schema):
-                    continue
-                if field_schema.get("type") not in {"string", "number", "integer", "array"}:
-                    continue
-                if field_name not in tool_input:
-                    continue
-                if field_name not in raw_tokens:
-                    errors.append(
-                        f"live 写入字段 {field_name} 必须使用 provider lookup 返回的 selection_token"
-                    )
-        return errors
-
-    def _resolve_platform_account(
-        self,
-        intent: ParsedIntent,
-        platform: str,
-        tools: list[Any],
-        fallback_account: Optional[str],
-    ) -> Optional[str]:
-        """解析单个平台账户，优先使用平台/工具级参数，再回退到公共账户。"""
-        params = self._platform_params_for_intent(intent, platform)
-        actual_platform = self._canonical_platform(platform)
-        # Prefer the account-like field declared by the selected Tool. This
-        # keeps account identity provider-owned instead of growing a Runtime
-        # platform/account map for every new channel.
-        account_keys = ("account_id", "advertiser_id", "customer_id")
-        declared_keys = [
-            key
-            for tool in tools
-            for key in account_keys
-            if key in getattr(getattr(tool, "input_schema", None), "properties", {})
-        ]
-        candidate_keys = list(dict.fromkeys(declared_keys + list(account_keys)))
-
-        sources = [params]
-        for tool in tools:
-            specific = params.get(tool.name)
-            if isinstance(specific, dict):
-                sources.append(specific)
-        for source in sources:
-            for key in candidate_keys:
-                value = source.get(key)
-                if value not in (None, ""):
-                    return str(value)
-
-        if fallback_account:
-            return str(fallback_account)
-        allowed = self.whitelist_validator.get_allowed_accounts(actual_platform)
-        # Do not infer an account when the whitelist contains more than one
-        # candidate.  The caller must provide the exact test account in that
-        # case; a one-account fallback keeps the existing local UX intact.
-        return str(allowed[0]) if len(allowed) == 1 else None
-
-    def _platform_params_for_intent(
-        self, intent: ParsedIntent, platform: str,
-    ) -> dict[str, Any]:
-        """Merge structured params whose platform aliases resolve identically.
-
-        Natural-language parsing uses the public alias ``google`` while API
-        callers commonly send ``google-ads``. Keeping alias normalization at
-        this boundary prevents provider-specific fields from silently
-        disappearing during the parser/request merge.
-        """
-        requested = self._canonical_platform(platform)
-        merged: dict[str, Any] = {}
-        for raw_platform, values in (intent.platform_params or {}).items():
-            if self._canonical_platform(str(raw_platform)) != requested:
-                continue
-            if not isinstance(values, dict):
-                continue
-            for key, value in values.items():
-                if isinstance(value, dict) and isinstance(merged.get(key), dict):
-                    merged[key] = {**merged[key], **copy.deepcopy(value)}
-                else:
-                    merged[key] = copy.deepcopy(value)
-        return merged
     
 # ─── Session 管理 ──────────────────────────────────────────
     

@@ -164,7 +164,7 @@ class CrossChannelFeature:
                 continue
 
             raw_platform, tools = route
-            account = runtime._resolve_platform_account(
+            account = runtime.account_resolver.resolve(
                 intent, raw_platform, tools, account_id
             )
             if not account:
@@ -196,7 +196,7 @@ class CrossChannelFeature:
                 missing_fields: list[str] = []
                 tool_input: dict[str, Any] = {}
                 if not account_errors:
-                    tool_input = runtime._build_tool_input(
+                    tool_input = runtime.input_builder.build(
                         tool_def, intent, raw_platform, preflight_ctx
                     )
                     missing_fields = list(
@@ -384,7 +384,7 @@ class CrossChannelFeature:
                 ),
                 actual_platform,
             )
-            resolved = runtime._resolve_platform_account(
+            resolved = runtime.account_resolver.resolve(
                 intent, raw_platform, [tool_def], account_id
             )
             allowed, error = runtime._validate_account_with_principal(
@@ -462,7 +462,7 @@ class CrossChannelFeature:
             resource_id_field = runtime._resource_id_field_for_tool(tool_def)
             tool_input = {resource_id_field: operation.campaign_id}
             if operation.action != "delete":
-                tool_input["updates"] = runtime._normalize_provider_updates(
+                tool_input["updates"] = runtime.input_builder.normalize_provider_updates(
                     tool_def, operation.updates
                 )
             properties = getattr(tool_def.input_schema, "properties", {}) or {}
@@ -623,7 +623,7 @@ class CrossChannelFeature:
             if not campaign_ids:
                 continue
             tool_plan.setdefault(platform, []).append(report_def)
-            per_platform_account = runtime._resolve_platform_account(
+            per_platform_account = runtime.account_resolver.resolve(
                 intent, platform, [report_def], session.ctx.account_id
             )
             actual_platform = runtime._canonical_platform(platform)
@@ -650,7 +650,9 @@ class CrossChannelFeature:
                     "error": f"指标采集账户校验失败: {account_error}",
                 })
                 continue
-            platform_params = runtime._platform_params_for_intent(intent, platform)
+            platform_params = runtime.input_builder.platform_params_for_intent(
+                intent, platform
+            )
             report_input = {
                 key: value
                 for key, value in platform_params.items()
@@ -666,7 +668,7 @@ class CrossChannelFeature:
                 if "date_preset" in report_def.input_schema.properties:
                     report_input.setdefault(
                         "date_preset",
-                        runtime._platform_date_range(
+                        runtime.input_builder.platform_date_range(
                             platform, intent.date_range, report_def, "date_preset"
                         ),
                     )

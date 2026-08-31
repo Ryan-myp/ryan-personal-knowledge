@@ -545,7 +545,7 @@ def test_generic_campaign_type_maps_to_google_wire_field():
         platform_params={"google-ads": {}},
     )
 
-    tool_input = runtime._build_tool_input(
+    tool_input = runtime.input_builder.build(
         definition,
         intent,
         "google-ads",

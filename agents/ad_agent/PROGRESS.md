@@ -52,7 +52,8 @@
 - Runtime 业务边界已完成第一阶段收敛：业务规则通过 `RuntimePolicy` 注入，跨渠道
   preflight/批量/二阶段报表/分析通过自动发现的 `RuntimeFeature` 承担，回复展示通过
   `ResponseRenderer` 承担。Runtime 不再包含业务策略、跨渠道流程或响应格式化实现；
-  输入构建和参数选择 helper 仍在下一阶段继续抽离。
+  输入构建、Provider 兼容归一化和 lookup selection token 已由
+  `ToolInputBuilder` 承担；账户上下文解析由 `AccountResolver` 承担。
 
 ## 项目概述
 

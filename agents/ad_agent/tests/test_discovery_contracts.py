@@ -707,7 +707,7 @@ def test_runtime_input_compatibility_comes_from_schema_or_generic_semantics():
         }},
     )
 
-    tool_input = runtime._build_tool_input(
+    tool_input = runtime.input_builder.build(
         definition,
         intent,
         "new-network",
