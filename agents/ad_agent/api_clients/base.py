@@ -408,6 +408,7 @@ class BasePlatformClient(ABC):
         endpoint: str,
         retry_count: int = 0,
         retry_non_idempotent: bool = False,
+        retry_auth_on_401: bool = False,
         **kwargs,
     ) -> dict:
         """Execute a request and return the transport envelope.
@@ -448,7 +449,10 @@ class BasePlatformClient(ABC):
                 if (
                     status_code == 401
                     and retry_count == 0
-                    and method.upper() in {"GET", "HEAD", "OPTIONS"}
+                    and (
+                        method.upper() in {"GET", "HEAD", "OPTIONS"}
+                        or retry_auth_on_401
+                    )
                     and self._reset_auth()
                 ):
                     return self.request_raw(
@@ -456,6 +460,7 @@ class BasePlatformClient(ABC):
                         endpoint,
                         retry_count=retry_count + 1,
                         retry_non_idempotent=retry_non_idempotent,
+                        retry_auth_on_401=retry_auth_on_401,
                         **kwargs,
                     )
                 return self._on_error_raw(
@@ -465,6 +470,7 @@ class BasePlatformClient(ABC):
                     retry_count,
                     kwargs,
                     retry_non_idempotent=retry_non_idempotent,
+                    retry_auth_on_401=retry_auth_on_401,
                 )
             return response
         except requests.exceptions.Timeout as e:
@@ -475,6 +481,7 @@ class BasePlatformClient(ABC):
                 retry_count,
                 kwargs,
                 retry_non_idempotent=retry_non_idempotent,
+                retry_auth_on_401=retry_auth_on_401,
             )
         except requests.exceptions.ConnectionError as e:
             return self._on_error_raw(
@@ -484,6 +491,7 @@ class BasePlatformClient(ABC):
                 retry_count,
                 kwargs,
                 retry_non_idempotent=retry_non_idempotent,
+                retry_auth_on_401=retry_auth_on_401,
             )
 
     def _reset_auth(self) -> bool:
@@ -540,6 +548,7 @@ class BasePlatformClient(ABC):
         retry_count: int,
         kwargs: dict,
         retry_non_idempotent: bool = False,
+        retry_auth_on_401: bool = False,
     ) -> dict:
         """Raw-envelope counterpart of :meth:`_on_error`."""
         logger.warning(
@@ -575,6 +584,7 @@ class BasePlatformClient(ABC):
                 endpoint,
                 retry_count + 1,
                 retry_non_idempotent=retry_non_idempotent,
+                retry_auth_on_401=retry_auth_on_401,
                 **kwargs,
             )
         raise error

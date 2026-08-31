@@ -206,6 +206,12 @@ Provider API 升级时，保持稳定的 Tool 名称和业务输入契约，在�
 响应；Runtime 只做版本兼容检查，不需要新增渠道分支。若新旧版本语义无法安全转换，则
 让该 Tool 暂时返回版本不兼容并保持 dry-run，避免静默发送错误 payload。
 
+Google Ads 当前使用 REST Client 而不是可选的 `google-ads` SDK。Client 会根据
+`access_token` 的过期时间复用进程内缓存；缓存过期或只读请求收到 401 时，使用
+`refresh_token + client_id + client_secret` 调用 Google OAuth token endpoint，
+刷新后重试当前只读请求。刷新锁按进程生效，写请求不会因为 401 自动重放；多实例部署
+需要在各实例分别配置凭证并由部署层管理共享的 OAuth 凭证。
+
 凭证文件格式：
 ```json
 {

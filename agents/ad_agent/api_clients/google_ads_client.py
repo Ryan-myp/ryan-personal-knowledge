@@ -18,6 +18,7 @@ import re
 import threading
 import csv
 import base64
+import hashlib
 from pathlib import Path
 from typing import Any, Optional
 from datetime import datetime
@@ -26,6 +27,46 @@ import requests
 from .base import BasePlatformClient, APIError, AuthError, RateLimitError, TemporaryError, RetryConfig, RateLimiter
 
 logger = logging.getLogger(__name__)
+
+
+class _GoogleOAuthTokenCache:
+    """Process-local cache for refresh-token-derived Google access tokens."""
+
+    def __init__(self):
+        self._entries: dict[str, tuple[str, float]] = {}
+        self._lock = threading.RLock()
+        self.refresh_lock = threading.RLock()
+
+    def get(self, key: str, now: Optional[float] = None) -> Optional[tuple[str, float]]:
+        if not key:
+            return None
+        now = time.time() if now is None else float(now)
+        with self._lock:
+            entry = self._entries.get(key)
+            if entry is None:
+                return None
+            token, expires_at = entry
+            if expires_at <= now + 60:
+                self._entries.pop(key, None)
+                return None
+            return entry
+
+    def put(self, key: str, token: str, expires_at: float) -> None:
+        if not key or not token:
+            return
+        with self._lock:
+            self._entries[key] = (str(token), float(expires_at))
+
+    def invalidate(self, key: str, token: Optional[str] = None) -> None:
+        if not key:
+            return
+        with self._lock:
+            entry = self._entries.get(key)
+            if entry is None or token is None or entry[0] == token:
+                self._entries.pop(key, None)
+
+
+_GOOGLE_OAUTH_TOKEN_CACHE = _GoogleOAuthTokenCache()
 
 
 class GoogleAdsAPIClient(BasePlatformClient):
@@ -196,12 +237,13 @@ class GoogleAdsAPIClient(BasePlatformClient):
         self.developer_token = self.credentials.get('developer_token', '')
         self.login_customer_id = self.credentials.get('login_customer_id', self.customer_id)
         self._rate_limiter = RateLimiter(max_requests=1000, period=60)  # 保守限流
-        # Token state is deliberately kept outside credentials.  A supplied
+        # Token state is deliberately kept outside credentials. A supplied
         # access token without an expiry is treated as caller-managed and is
-        # usable until the API rejects it; refresh is only attempted when an
-        # explicit expiry says it is stale or no access token exists.
+        # usable until the API rejects it; a refresh-token-derived token is
+        # cached process-locally with its provider expiry.
         self._access_token = self.credentials.get('access_token', '')
-        self._token_expiry = self.credentials.get('access_token_expires_at', 0) or 0
+        self._token_expiry = self._credential_token_expiry(self.credentials)
+        self._token_cache_key = self._build_token_cache_key(self.credentials)
         self._token_lock = threading.RLock()
 
     @classmethod
@@ -219,45 +261,144 @@ class GoogleAdsAPIClient(BasePlatformClient):
         with self._token_lock:
             now = time.time()
 
-            # 如果调用方提供了未过期 token，直接使用。没有 expiry 的 token
-            # 由调用方管理，避免错误地要求 refresh_token。
+            cached = _GOOGLE_OAUTH_TOKEN_CACHE.get(self._token_cache_key, now)
+            if cached is not None:
+                self._access_token, self._token_expiry = cached
+                return self._access_token
+
+            # If the caller supplied a token without an expiry, use it until
+            # Google rejects it. The 401 read retry below will invalidate it
+            # and enter the refresh path.
             if self._access_token and (
                 not self._token_expiry or self._token_expiry > now + 60
             ):
                 return self._access_token
 
-            refresh_token = self.credentials.get('refresh_token', '')
-            if not refresh_token:
-                raise AuthError("No refresh_token available")
+            # A client can be shallow-copied per customer and separate
+            # request-scoped clients can share the same refresh token. Recheck
+            # the process cache under one refresh lock to prevent a thundering
+            # herd of OAuth requests when the token expires.
+            with _GOOGLE_OAUTH_TOKEN_CACHE.refresh_lock:
+                cached = _GOOGLE_OAUTH_TOKEN_CACHE.get(
+                    self._token_cache_key, time.time()
+                )
+                if cached is not None:
+                    self._access_token, self._token_expiry = cached
+                    return self._access_token
 
-            client_id = self.credentials.get('client_id', '')
-            client_secret = self.credentials.get('client_secret', '')
+                refresh_token = self.credentials.get('refresh_token', '')
+                if not refresh_token:
+                    raise AuthError("No refresh_token available")
 
-            token_url = "https://oauth2.googleapis.com/token"
-            resp = requests.post(token_url, data={
-                'client_id': client_id,
-                'client_secret': client_secret,
-                'refresh_token': refresh_token,
-                'grant_type': 'refresh_token'
-            }, timeout=self.http_timeout())
+                client_id = self.credentials.get('client_id', '')
+                client_secret = self.credentials.get('client_secret', '')
+                if not client_id or not client_secret:
+                    raise AuthError(
+                        "Google OAuth refresh requires client_id and client_secret"
+                    )
 
-            if resp.status_code != 200:
-                raise AuthError(f"Failed to refresh token: {resp.text}")
+                token_url = str(
+                    self.credentials.get(
+                        "token_url", "https://oauth2.googleapis.com/token"
+                    )
+                ).strip()
+                resp = requests.post(token_url, data={
+                    'client_id': client_id,
+                    'client_secret': client_secret,
+                    'refresh_token': refresh_token,
+                    'grant_type': 'refresh_token'
+                }, timeout=self.http_timeout())
 
-            token_info = resp.json()
-            self._access_token = token_info['access_token']
-            self._token_expiry = now + token_info.get('expires_in', 3600)
+                if resp.status_code != 200:
+                    try:
+                        error_body = resp.json()
+                    except (TypeError, ValueError):
+                        error_body = {}
+                    detail = (
+                        error_body.get("error_description")
+                        or error_body.get("error")
+                        or f"HTTP {resp.status_code}"
+                    )
+                    raise AuthError(
+                        f"Failed to refresh Google OAuth token: {detail}"
+                    )
+                try:
+                    token_info = resp.json()
+                except (TypeError, ValueError) as exc:
+                    raise AuthError(
+                        "Failed to refresh Google OAuth token: invalid JSON response"
+                    ) from exc
+                access_token = token_info.get("access_token")
+                if not isinstance(access_token, str) or not access_token:
+                    raise AuthError(
+                        "Failed to refresh Google OAuth token: access_token missing"
+                    )
+                try:
+                    expires_in = float(token_info.get("expires_in", 3600))
+                except (TypeError, ValueError):
+                    expires_in = 3600.0
+                refreshed_at = time.time()
+                self._access_token = access_token
+                self._token_expiry = refreshed_at + max(expires_in, 1.0)
+                _GOOGLE_OAUTH_TOKEN_CACHE.put(
+                    self._token_cache_key, self._access_token, self._token_expiry
+                )
 
-            return self._access_token
+                return self._access_token
 
     def _reset_auth(self) -> bool:
         """Allow one safe read retry only when refresh credentials exist."""
         if not self.credentials.get('refresh_token'):
             return False
         with self._token_lock:
+            previous_token = self._access_token
             self._access_token = ''
             self._token_expiry = 0
+            _GOOGLE_OAUTH_TOKEN_CACHE.invalidate(
+                self._token_cache_key, previous_token
+            )
         return True
+
+    @staticmethod
+    def _build_token_cache_key(credentials: dict[str, Any]) -> str:
+        refresh_token = str(credentials.get("refresh_token") or "")
+        client_id = str(credentials.get("client_id") or "")
+        token_url = str(
+            credentials.get("token_url", "https://oauth2.googleapis.com/token")
+        )
+        if not refresh_token or not client_id:
+            return ""
+        # Never use or log the raw refresh token as a cache key.
+        return hashlib.sha256(
+            f"{client_id}|{refresh_token}|{token_url}".encode("utf-8")
+        ).hexdigest()
+
+    @staticmethod
+    def _credential_token_expiry(credentials: dict[str, Any]) -> float:
+        """Read common absolute/relative expiry shapes from config."""
+        now = time.time()
+        for key in (
+            "access_token_expires_at",
+            "access_token_expiry",
+            "expires_at",
+            "token_expiry",
+        ):
+            value = credentials.get(key)
+            if value in (None, ""):
+                continue
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return float(value)
+            if isinstance(value, str):
+                try:
+                    return datetime.fromisoformat(
+                        value.replace("Z", "+00:00")
+                    ).timestamp()
+                except ValueError:
+                    continue
+        relative = credentials.get("access_token_expires_in")
+        if isinstance(relative, (int, float)) and not isinstance(relative, bool):
+            return now + max(float(relative), 0.0)
+        return 0.0
 
     def for_customer(self, customer_id: str) -> "GoogleAdsAPIClient":
         """Return an account-scoped view without mutating this client.
@@ -4028,7 +4169,13 @@ class GoogleAdsAPIClient(BasePlatformClient):
             data['pageSize'] = self._safe_limit(page_size)
         # GAQL search is read-only despite using POST, so it is safe to retry
         # when the provider returns a transient failure.
-        return self.request_raw('POST', url, data=data, retry_non_idempotent=True)
+        return self.request_raw(
+            'POST',
+            url,
+            data=data,
+            retry_non_idempotent=True,
+            retry_auth_on_401=True,
+        )
 
     def _search_all(
         self, query: str, page_size: int = 100, max_pages: int = 100,

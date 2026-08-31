@@ -127,6 +127,11 @@ Skill-owned `RuntimeFeature`；Feature 通过 Runtime 的通用扩展上下文�
 字符串。若语义不能安全转换，新版本必须先保持 dry-run 或返回版本不兼容，禁止静默发送
 未知 payload。
 
+Google REST Client 的 OAuth access token 必须带过期管理：优先复用未过期 token，
+按 refresh-token/client 作用域复用进程内缓存，过期或只读请求收到 401 时自动刷新并
+重试一次；写请求禁止因认证失败自动重放。刷新失败必须返回认证错误，不能退回离线
+数据或关键词解析。
+
 ## 4. 广告资源和跨渠道管理
 
 跨渠道对象必须使用 `(platform, account_id, resource_type, resource_id)` 作为完整

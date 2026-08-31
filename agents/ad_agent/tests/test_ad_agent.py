@@ -9,6 +9,7 @@ import pytest
 import sys
 import os
 import json
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -1281,6 +1282,102 @@ class TestIterationContracts:
         client = GoogleAdsAPIClient(credentials)
         assert client._ensure_valid_token() == "caller-token"
         assert credentials == {"access_token": "caller-token", "customer_id": "g1"}
+
+    def test_google_refresh_token_is_cached_until_expiry(self, monkeypatch):
+        from agents.ad_agent.api_clients import google_ads_client as google_module
+
+        refresh_calls = []
+
+        class Response:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return {"access_token": "refreshed-token", "expires_in": 3600}
+
+        def refresh(url, **kwargs):
+            refresh_calls.append((url, kwargs))
+            return Response()
+
+        monkeypatch.setattr(google_module.requests, "post", refresh)
+        credentials = {
+            "access_token": "expired-token",
+            "access_token_expires_at": time.time() - 10,
+            "refresh_token": "refresh-token-cache-test",
+            "client_id": "client-id",
+            "client_secret": "client-secret",
+            "customer_id": "g1",
+        }
+
+        first = GoogleAdsAPIClient(credentials)
+        second = GoogleAdsAPIClient(dict(credentials))
+
+        assert first._ensure_valid_token() == "refreshed-token"
+        assert second._ensure_valid_token() == "refreshed-token"
+        assert len(refresh_calls) == 1
+        assert credentials["access_token"] == "expired-token"
+
+    def test_google_read_post_refreshes_once_after_401(self, monkeypatch):
+        from agents.ad_agent.api_clients import google_ads_client as google_module
+
+        refresh_calls = []
+
+        class Response:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return {"access_token": "refreshed-after-401", "expires_in": 3600}
+
+        monkeypatch.setattr(
+            google_module.requests,
+            "post",
+            lambda url, **kwargs: refresh_calls.append((url, kwargs)) or Response(),
+        )
+        client = GoogleAdsAPIClient({
+            "access_token": "expired-token",
+            "refresh_token": "refresh-token-401-test",
+            "client_id": "client-id",
+            "client_secret": "client-secret",
+            "customer_id": "g1",
+        }, retry_config=RetryConfig(max_retries=0, jitter=False))
+        responses = [
+            {"status_code": 401, "data": {}, "headers": {}},
+            {"status_code": 200, "data": {"results": [{"campaign": {"id": "1"}}]}, "headers": {}},
+        ]
+        calls = []
+
+        def do_request(method, url, **kwargs):
+            calls.append((method, url, kwargs))
+            client._build_headers()
+            return responses.pop(0)
+
+        client._do_request = do_request
+
+        response = client._search("SELECT campaign.id FROM campaign")
+
+        assert response["status_code"] == 200
+        assert len(calls) == 2
+        assert len(refresh_calls) == 1
+
+    def test_google_mutation_401_is_not_replayed(self):
+        client = GoogleAdsAPIClient({
+            "access_token": "expired-token",
+            "refresh_token": "refresh-token-mutation-test",
+            "client_id": "client-id",
+            "client_secret": "client-secret",
+            "customer_id": "g1",
+        }, retry_config=RetryConfig(max_retries=0, jitter=False))
+        calls = []
+        client._do_request = (
+            lambda method, url, **kwargs: calls.append(method)
+            or {"status_code": 401, "data": {}, "headers": {}}
+        )
+
+        with pytest.raises(AuthError):
+            client._mutate("campaigns", {"create": {"name": "no-replay"}})
+
+        assert calls == ["POST"]
 
     def test_dv360_uses_caller_managed_access_token_without_refresh(self):
         credentials = {"access_token": "caller-token", "advertiser_id": "adv-1"}
