@@ -92,6 +92,7 @@ class MetaCapability(BaseCapability):
         ],
         "list_lead_forms": ["meta_list_lead_forms"], "get_lead_form": ["meta_get_lead_form"],
         "list_leads": ["meta_list_leads"],
+        "get_lead": ["meta_get_lead"],
         "list_businesses": ["meta_list_businesses"], "get_business": ["meta_get_business"],
         "create_lead_form": ["meta_create_lead_form"], "update_lead_form": ["meta_update_lead_form"],
         "get_campaign": ["meta_get_campaign"], "create_campaign": ["meta_create_campaign"],
@@ -433,6 +434,24 @@ class MetaCapability(BaseCapability):
                 ), {
                     "fields": data.get("fields"),
                     "limit": data.get("limit", 25),
+                }),
+            ),
+            method_tool(
+                platform="meta", skill="meta-marketing-api", name="meta_get_lead",
+                description="查询 Meta Instant Form 中单个 Lead 详情。",
+                method_name="get_lead", result_key="lead",
+                properties=lead_schema["properties"],
+                required=["account_id", "page_id", "form_id", "lead_id"],
+                provider_required=["page_id", "form_id", "lead_id"],
+                action="get", resource_type="lead",
+                parent_resource_type="lead_form",
+                parent_resource_id_field="form_id",
+                resource_id_field="lead_id",
+                intent_types=["get_lead"], traits=["read", "lead"],
+                argument_builder=lambda ctx, data: ((
+                    data["page_id"], data["form_id"], data["lead_id"]
+                ), {
+                    "fields": data.get("fields"),
                 }),
             ),
             method_tool(

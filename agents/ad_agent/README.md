@@ -21,13 +21,13 @@
 
 | 平台 | Skill | API 客户端 | 工具数量 |
 |------|-------|-----------|---------|
-| Meta | meta-marketing-api-expert | meta_client.py | 75（账户、Business Manager、Page/Pixel 详情/列表、Image/Video Asset 上传与列表、Custom Conversion CRUD、Lead Form 与 Lead 读取、Audience/Lookalike Audience CRUD、Catalog/Product Set CRUD、层级资源、Traffic/Conversion/Lead/Engagement/Catalog/Messaging Ads、报表与生命周期接口） |
+| Meta | meta-marketing-api-expert | meta_client.py | 76（账户、Business Manager、Page/Pixel 详情/列表、Image/Video Asset 上传与列表、Custom Conversion CRUD、Lead Form 与 Lead 列表/详情、Audience/Lookalike Audience CRUD、Catalog/Product Set CRUD、层级资源、Traffic/Conversion/Lead/Engagement/Catalog/Messaging Ads、报表与生命周期接口） |
 | Google Ads | google-ads-api-expert | google_ads_client.py | 108（层级资源完整 CRUD、CampaignBudget、CampaignCriterion 定向、Conversion Action 生命周期、Conversion Goal、Feed/FeedItem 列表/详情/生命周期、User List 生命周期与 Customer Match 哈希数据上传、BiddingStrategy 生命周期与优化参数、可复用文本/图片/YouTube/HTML5 Asset 创建/移除、Campaign/Asset Group Asset 关联、Search Ad、Responsive Display Ad、Video Ad、Demand Gen、Hotel、Local、Smart、Travel、关键词完整生命周期、Product Group、PMax、Experiment 读写与生命周期、Experiment Arm 查询、报表与生命周期接口） |
-| TikTok | tiktok-ads-api-expert | tiktok_client.py | 78（账户列表/详情、层级资源、Ad Group 定向更新、Lead/App/Spark/Product Sales 广告、Creative/Video/Image/Catalog/Product Set 列表与详情、Identity、Creative Portfolio 创建/查询/预览、图片/视频 Asset Library、受众 CRUD、官方定向参考数据、Pixel 生命周期、Pixel 事件、报表与生命周期接口） |
+| TikTok | tiktok-ads-api-expert | tiktok_client.py | 79（账户列表/详情、层级资源、Ad Group 定向更新、Lead/App/Spark/Product Sales 广告、Creative/Video/Image/Catalog/Product Set 列表与详情、Identity 列表/详情、Creative Portfolio 创建/查询/预览、图片/视频 Asset Library、受众 CRUD、官方定向参考数据、Pixel 生命周期、Pixel 事件、报表与生命周期接口） |
 | DV360 | dv360-expert | dv360_client.py | 31（Advertiser、Campaign 查询、IO、Line Item、Creative、定向与异步报表接口） |
-| **合计** |  |  | **292** |
+| **合计** |  |  | **294** |
 
-> 292 是当前四个 Capability 已注册的业务 Tool 数量，不是 Meta、Google Ads、TikTok 或 DV360 官方 API 的完整接口总量。各渠道包的 `_surface_data.py` 同时维护实现 Surface 和 `OFFICIAL_INVENTORY` 官方能力基线；后者必须带 endpoint/Provider operation、API version、官方来源和状态，并明确是否为完整清单。新增官方接口时，应在对应渠道 Client 增加固定方法，在 Capability 增加 Tool Schema/adapter，再由 Surface、官方清单审计和契约快照阻止漏注册或漂移。Meta 图片/视频素材当前提供 HTTPS URL 上传与列表，未伪造删除或任意文件上传；DV360 Campaign 创建当前明确为 planned，不会暴露一个无 Client 适配器的假 Tool。
+> 294 是当前四个 Capability 已注册的业务 Tool 数量，不是 Meta、Google Ads、TikTok 或 DV360 官方 API 的完整接口总量。各渠道包的 `_surface_data.py` 同时维护实现 Surface 和 `OFFICIAL_INVENTORY` 官方能力基线；后者必须带 endpoint/Provider operation、API version、官方来源和状态，并明确是否为完整清单。新增官方接口时，应在对应渠道 Client 增加固定方法，在 Capability 增加 Tool Schema/adapter，再由 Surface、官方清单审计和契约快照阻止漏注册或漂移。Meta 图片/视频素材当前提供 HTTPS URL 上传与列表，未伪造删除或任意文件上传；DV360 Campaign 创建当前明确为 planned，不会暴露一个无 Client 适配器的假 Tool。
 
 能力完整度要以审计报告为准，而不是 Tool 数量。运行：
 

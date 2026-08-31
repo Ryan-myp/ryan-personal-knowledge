@@ -1062,6 +1062,25 @@ class MetaAPIClient(BasePlatformClient):
             {"limit": limit, "fields": selected_fields},
         )
 
+    def get_lead(
+        self,
+        page_id: str,
+        form_id: str,
+        lead_id: str,
+        fields: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Get one Lead after verifying its parent Instant Form."""
+        lead_id = self._clean_meta_id(lead_id, "lead_id")
+        leads = self.list_leads(page_id, form_id, fields=fields, limit=1000)
+        return next(
+            (
+                item for item in leads
+                if isinstance(item, dict)
+                and str(item.get("id") or "") == lead_id
+            ),
+            {},
+        )
+
     def create_lead_form(self, page_id: str, form: dict) -> str:
         """Create a Page-owned Meta Lead Ads Instant Form.
 

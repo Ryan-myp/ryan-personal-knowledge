@@ -473,6 +473,7 @@ def tiktok_identity_list_schema() -> dict[str, Any]:
         "provider_required": ["account_id"],
         "properties": {
             "account_id": _field("string", "TikTok advertiser ID"),
+            "identity_id": _field("string", "TikTok identity ID", minLength=1, maxLength=128),
             "identity_type": _field("string", "Identity type filter", enum=TIKTOK_IDENTITY_TYPES),
             "page": _field("integer", "Page number", minimum=1),
             "limit": _field("integer", "Page size", minimum=1, maximum=100),

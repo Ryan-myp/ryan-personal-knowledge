@@ -78,6 +78,7 @@ API_SURFACE = [
     {"resource": "creative_portfolio", "action": "preview", "method": "preview_creative_portfolio", "status": "implemented"},
     {"resource": "identity", "action": "create", "method": "create_identity", "status": "implemented"},
     {"resource": "identity", "action": "list", "method": "list_identities", "status": "implemented"},
+    {"resource": "identity", "action": "get", "method": "get_identity", "status": "implemented"},
     {"resource": "identity_video", "action": "get", "method": "get_identity_video_info", "status": "implemented"},
     {"resource": "video", "action": "list", "method": "list_videos", "status": "implemented"},
     {"resource": "video", "action": "get", "method": "get_video", "status": "implemented"},

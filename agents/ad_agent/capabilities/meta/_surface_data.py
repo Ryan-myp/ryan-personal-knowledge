@@ -106,6 +106,7 @@ API_SURFACE = [
     {"resource": "lead_form", "action": "create", "method": "create_lead_form", "status": "implemented"},
     {"resource": "lead_form", "action": "update", "method": "update_lead_form", "status": "implemented"},
     {"resource": "lead", "action": "list", "method": "list_leads", "status": "implemented"},
+    {"resource": "lead", "action": "get", "method": "get_lead", "status": "implemented"},
     {"resource": "business", "action": "list", "method": "list_businesses", "status": "implemented"},
     {"resource": "business", "action": "get", "method": "get_business", "status": "implemented"},
     {"resource": "creative", "action": "list", "method": "list_creatives", "status": "implemented"},

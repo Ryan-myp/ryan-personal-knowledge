@@ -494,6 +494,7 @@ def meta_lead_schema() -> dict[str, Any]:
                 selection_label_fields=["name", "id"],
             ),
             "form_id": _field("string", "Meta Instant Form ID", minLength=1),
+            "lead_id": _field("string", "Meta Lead ID", minLength=1),
             "fields": _field("array", "Lead fields to return", items={"type": "string"}),
             "limit": _field("integer", "Maximum number of leads", minimum=1, maximum=1000),
         },

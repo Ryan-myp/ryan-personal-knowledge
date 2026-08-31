@@ -1990,6 +1990,24 @@ class TikTokAPIClient(BasePlatformClient):
             return payload
         return payload.get("list", payload.get("identities", [])) if isinstance(payload, dict) else []
 
+    def get_identity(self, advertiser_id: str, identity_id: str) -> dict:
+        """Get one advertiser identity through the existing identity/get endpoint."""
+        advertiser_id = str(advertiser_id or "").strip()
+        identity_id = str(identity_id or "").strip()
+        if not advertiser_id.isdigit():
+            raise ValueError("advertiser_id must contain digits only")
+        if not identity_id:
+            raise ValueError("identity_id is required")
+        identities = self.list_identities(advertiser_id, page_size=100)
+        return next(
+            (
+                item for item in identities
+                if isinstance(item, dict)
+                and str(item.get("identity_id") or item.get("id") or "") == identity_id
+            ),
+            {},
+        )
+
     def get_identity_video_info(
         self, advertiser_id: str, identity_type: str, identity_id: str, item_id: str
     ) -> dict:

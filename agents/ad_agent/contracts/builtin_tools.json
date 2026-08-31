@@ -1,5 +1,5 @@
 {
-  "digest": "5c67751128307342ab5a019aaff6a9913805f4fe52368cf14a4e95bb99296451",
+  "digest": "7d81d9b7f3c013fcf5c8d0915d3fc04f44467035f54d8f3f9cbe572073b883d8",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -12795,8 +12795,8 @@
       ]
     },
     "meta": {
-      "digest": "62efe2100c6500adc3ebd64991bce6ea7e088259fa65d2b4e46eef7e7ddc111d",
-      "tool_count": 75,
+      "digest": "2051979e27027ccf5afe13e855c679518b87ecdffe021df82794a3e3b6722d22",
+      "tool_count": 76,
       "tools": [
         {
           "action": "boost",
@@ -16764,6 +16764,99 @@
           "action": "get",
           "activation_rules": [],
           "contract_version": "1.4.0",
+          "description": "查询 Meta Instant Form 中单个 Lead 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Meta ad account authorization scope",
+                "type": "string"
+              },
+              "fields": {
+                "description": "Lead fields to return",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "form_id": {
+                "description": "Meta Instant Form ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "lead_id": {
+                "description": "Meta Lead ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of leads",
+                "maximum": 1000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "page_id": {
+                "description": "Facebook Page that owns the Instant Form",
+                "lookup_result_key": "pages",
+                "lookup_tool": "meta_list_pages",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "page_id"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "page_id",
+              "form_id",
+              "lead_id"
+            ],
+            "required": [
+              "account_id",
+              "page_id",
+              "form_id",
+              "lead_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_lead"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_get_lead",
+          "parent_resource_id_field": "form_id",
+          "parent_resource_type": "lead_form",
+          "platform": "meta",
+          "provider_api_version": "v19.0",
+          "readback_tool": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "lead_id",
+          "resource_type": "lead",
+          "risk_level": "low",
+          "skill": "meta-marketing-api",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "lead"
+          ]
+        },
+        {
+          "action": "get",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
           "description": "查询 Meta Lead Ads Instant Form 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -17556,6 +17649,11 @@
               },
               "form_id": {
                 "description": "Meta Instant Form ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "lead_id": {
+                "description": "Meta Lead ID",
                 "minLength": 1,
                 "type": "string"
               },
@@ -19758,8 +19856,8 @@
       ]
     },
     "tiktok": {
-      "digest": "36cd620ea79aab25735c31e4fa9d1ee9c30377944eb846bdb6dc76c3ada182f3",
-      "tool_count": 78,
+      "digest": "84023c6b5df250a0ef3a9cbf611632c8ce0cff810cd0b0a94280c426b825d979",
+      "tool_count": 79,
       "tools": [
         {
           "action": "create",
@@ -24667,6 +24765,65 @@
           "action": "get",
           "activation_rules": [],
           "contract_version": "1.3.0",
+          "description": "查询 TikTok 广告身份详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "TikTok advertiser ID",
+                "type": "string"
+              },
+              "identity_id": {
+                "description": "TikTok identity ID",
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "account_id",
+              "identity_id"
+            ],
+            "required": [
+              "account_id",
+              "identity_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_identity"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_get_identity",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "readback_tool": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "identity_id",
+          "resource_type": "identity",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "identity",
+            "creative"
+          ]
+        },
+        {
+          "action": "get",
+          "activation_rules": [],
+          "contract_version": "1.3.0",
           "description": "查询 TikTok 身份关联的自有帖子信息，用于 Spark Ads 预校验。",
           "effect_class": "read",
           "input_schema": {
@@ -25852,6 +26009,12 @@
             "properties": {
               "account_id": {
                 "description": "TikTok advertiser ID",
+                "type": "string"
+              },
+              "identity_id": {
+                "description": "TikTok identity ID",
+                "maxLength": 128,
+                "minLength": 1,
                 "type": "string"
               },
               "identity_type": {
@@ -31117,6 +31280,18 @@
         "status": "implemented"
       },
       {
+        "action": "get",
+        "api_version": "v19.0",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_graph_edges_baseline",
+        "method": "get_lead",
+        "provider": "meta",
+        "resource": "lead",
+        "source_url": "https://developers.facebook.com/docs/marketing-api/reference",
+        "status": "implemented"
+      },
+      {
         "action": "list",
         "api_version": "v19.0",
         "evidence_level": "code_contract",
@@ -31796,6 +31971,18 @@
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_open_api_baseline",
+        "method": "get_identity",
+        "provider": "tiktok",
+        "resource": "identity",
+        "source_url": "https://business-api.tiktok.com/portal/docs",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "api_version": "v1.3",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_open_api_baseline",
         "method": "get_identity_video_info",
         "provider": "tiktok",
         "resource": "identity_video",
@@ -32226,5 +32413,5 @@
       ]
     }
   },
-  "tool_count": 292
+  "tool_count": 294
 }

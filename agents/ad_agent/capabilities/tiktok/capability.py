@@ -148,6 +148,7 @@ class TikTokCapability(BaseCapability):
         "get_creative_portfolio": ["tiktok_get_creative_portfolio"],
         "preview_creative_portfolio": ["tiktok_preview_creative_portfolio"],
         "create_identity": ["tiktok_create_identity"],
+        "get_identity": ["tiktok_get_identity"],
         "list_identities": ["tiktok_list_identities"],
         "get_identity_video_info": ["tiktok_get_identity_video_info"],
         "list_catalogs": ["tiktok_list_catalogs"], "get_catalog": ["tiktok_get_catalog"],
@@ -593,6 +594,23 @@ class TikTokCapability(BaseCapability):
                     "identity_type": data.get("identity_type"),
                     "page": data.get("page", 1), "page_size": data.get("limit", 20),
                 }),
+            ),
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_get_identity",
+                description="查询 TikTok 广告身份详情。",
+                method_name="get_identity", result_key="identity",
+                properties={
+                    "account_id": identity_list["properties"]["account_id"],
+                    "identity_id": identity_list["properties"]["identity_id"],
+                },
+                required=["account_id", "identity_id"],
+                provider_required=["account_id", "identity_id"],
+                action="get", resource_type="identity",
+                resource_id_field="identity_id",
+                intent_types=["get_identity"], traits=["read", "identity", "creative"],
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["identity_id"]
+                ), {}),
             ),
             method_tool(
                 platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_get_identity_video_info",

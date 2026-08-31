@@ -4239,3 +4239,19 @@ def test_tiktok_account_reader_reuses_account_get_endpoint():
 
     assert client.get_account("7397068114548195329")["name"] == "Demo"
     assert seen == [["7397068114548195329"]]
+
+
+def test_tiktok_identity_reader_reuses_identity_get_endpoint():
+    client = TikTokAPIClient({"access_token": "test"})
+    seen = []
+
+    def list_identities(advertiser_id, identity_type=None, page=1, page_size=20):
+        seen.append((advertiser_id, identity_type, page, page_size))
+        return [{"identity_id": "identity-1", "display_name": "Demo"}]
+
+    client.list_identities = list_identities
+
+    assert client.get_identity(
+        "7397068114548195329", "identity-1"
+    )["display_name"] == "Demo"
+    assert seen == [("7397068114548195329", None, 1, 100)]
