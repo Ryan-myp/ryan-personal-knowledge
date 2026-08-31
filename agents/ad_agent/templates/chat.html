@@ -1904,6 +1904,9 @@
                         data.detail || data.error || `请求失败（${response.status}）`
                     );
                 }
+                if (data.error) {
+                    throw new Error(data.error);
+                }
                 
                 if (data.error) {
                     addMessage('❌ ' + data.error, 'agent', null, true);
@@ -1967,6 +1970,9 @@
                         data.detail || data.error || `请求失败（${response.status}）`
                     );
                 }
+                if (data.error) {
+                    throw new Error(data.error);
+                }
 
                 // 单一完整回复，不复用 SSE 分段渲染
                 sessionId = data.session_id || sessionId;
@@ -1984,7 +1990,7 @@
                     toolSummary = `<div class="tool-results" style="margin-top:8px;flex-wrap:wrap;">${tags}</div>`;
                 }
 
-                addMessage(data.reply || (failCount > 0 ? '部分操作失败，请查看上方提示。' : '操作完成'), 'agent', null, false, toolSummary);
+                addMessage(data.reply || (failCount > 0 ? '部分操作失败，请查看上方提示。' : '服务端未返回可展示的结果。'), 'agent', null, false, toolSummary);
 
             } catch (error) {
                 removeLoading();
@@ -1999,7 +2005,7 @@
                 success: r.success
             })) || [];
             
-            addMessage(data.reply || '操作完成', 'agent', tools);
+            addMessage(data.reply || '服务端未返回可展示的结果。', 'agent', tools);
         }
         
         // Escape HTML special characters

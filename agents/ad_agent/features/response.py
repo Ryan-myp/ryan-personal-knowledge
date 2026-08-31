@@ -219,8 +219,16 @@ class AdAgentResponseRenderer:
                 if len(report) > 5:
                     lines.append(f"... 还有 {len(report) - 5} 条记录")
             else:
-                lines.append(f"[{platform}] {tool}")
-        return "\n".join(lines) or "成功执行查询操作"
+                lines.append(
+                    f"[{platform}] {tool} 返回了未标准化的数据；"
+                    "请查看接口响应中的 `results[].data`。"
+                )
+        if lines:
+            return "\n".join(lines)
+        return (
+            "查询 Tool 已返回结果，但当前结果没有匹配的展示模板；"
+            "请查看接口响应中的 `results[].data` 原始数据。"
+        )
 
     @staticmethod
     def _planned_identifier(result: dict[str, Any]) -> str:

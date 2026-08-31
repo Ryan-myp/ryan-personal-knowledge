@@ -322,9 +322,74 @@ class LLMIntentParser(IntentParser):
         if json_str:
             data = json.loads(json_str)
             data.setdefault("raw_input", user_input)
-            return ParsedIntent(**self._normalize_intent(data))
+            normalized = self._normalize_intent(data)
+            intent = ParsedIntent(**normalized)
+            if self._needs_intent_repair(intent):
+                repaired = self._repair_intent_with_llm(user_input, context, data)
+                if repaired is not None:
+                    return repaired
+            return intent
         
         raise ValueError("LLM response did not contain a valid intent JSON object")
+
+    @staticmethod
+    def _needs_intent_repair(intent: ParsedIntent) -> bool:
+        """Detect an internally inconsistent model result without keywords."""
+        # ``chat`` with a concrete provider or provider parameters is
+        # inconsistent with the structured contract. Ask the same LLM to
+        # repair the classification instead of silently routing to a greeting.
+        if str(getattr(intent, "intent_type", "") or "") != "chat":
+            return False
+        if getattr(intent, "platforms", None):
+            return True
+        return any(
+            isinstance(values, dict) and any(
+                value not in (None, "", {}, [])
+                for key, value in values.items()
+                if not str(key).startswith("_")
+            )
+            for values in (getattr(intent, "platform_params", {}) or {}).values()
+        )
+
+    def _repair_intent_with_llm(
+        self, user_input: str, context: ToolContext, previous: dict[str, Any],
+    ) -> Optional[ParsedIntent]:
+        """Run one constrained LLM repair pass for an inconsistent JSON result."""
+        if not self._llm:
+            return None
+        repair_prompt = (
+            "上一次意图 JSON 与自身字段不一致：它把请求标成了 chat，"
+            "但同时给出了具体平台或平台参数。请重新判断。\n\n"
+            f"用户输入：{user_input}\n"
+            f"上一次 JSON：{json.dumps(previous, ensure_ascii=False, default=str)}\n\n"
+            "只输出 JSON。intent_type 必须逐字复制下面候选目录中的一个值，"
+            "不能创造同义词；platforms 只能使用当前已注册平台；"
+            "如果确实是闲聊，intent_type 才可以是 chat 且 platforms 必须为空。\n"
+            f"候选目录：{self._intent_candidates_prompt()}\n"
+            f"当前平台：{', '.join(sorted(self._known_platforms))}"
+        )
+        messages = [
+            {
+                "role": "system",
+                "content": "你是严格的广告 Agent 意图校正器，只输出 JSON。",
+            },
+        ]
+        if context and getattr(context, "messages", None):
+            messages.extend(context.messages[-4:])
+        messages.append({"role": "user", "content": repair_prompt})
+        try:
+            response = self._llm.call(messages)
+            json_str = self._extract_json(response)
+            if not json_str:
+                return None
+            repaired = json.loads(json_str)
+            repaired.setdefault("raw_input", user_input)
+            if not repaired.get("platform_params"):
+                repaired["platform_params"] = previous.get("platform_params", {})
+            return ParsedIntent(**self._normalize_intent(repaired))
+        except (TypeError, ValueError, json.JSONDecodeError, RuntimeError):
+            logger.warning("LLM intent repair failed; preserving the original result")
+            return None
     
     def _parse_with_rules(self, user_input: str) -> ParsedIntent:
         """

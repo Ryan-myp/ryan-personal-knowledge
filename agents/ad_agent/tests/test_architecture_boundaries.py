@@ -13,6 +13,7 @@ from agents.ad_agent.runtime.account_policy import AccountWhitelistValidator
 from agents.ad_agent.runtime.session_context import SessionContext
 from agents.ad_agent.core.intent import LLMIntentParser
 from agents.ad_agent.core.intent import SimpleIntentRouter
+from agents.ad_agent.features.response import AdAgentResponseRenderer
 
 
 def test_runtime_discovers_domain_features_without_a_central_workflow_table():
@@ -212,3 +213,49 @@ def test_parser_drops_unregistered_routing_metadata_from_platform_params():
     assert normalized["platform_params"]["new-network"] == {
         "account_id": "a1"
     }
+
+
+def test_non_chat_request_without_a_tool_never_uses_greeting_fallback():
+    runtime = AgentRuntime(
+        require_llm=False,
+        features=[],
+        whitelist_validator=__import__(
+            "agents.ad_agent.runtime.account_policy",
+            fromlist=["AccountWhitelistValidator"],
+        ).AccountWhitelistValidator.__new__(
+            __import__(
+                "agents.ad_agent.runtime.account_policy",
+                fromlist=["AccountWhitelistValidator"],
+            ).AccountWhitelistValidator
+        ),
+    )
+    runtime.whitelist_validator.allowed_accounts = {}
+
+    class Parser:
+        def parse(self, _text, _ctx):
+            return ParsedIntent(
+                "query_report", "query report", ["new-network"],
+                platform_params={"new-network": {}},
+            )
+
+    runtime.intent_parser = Parser()
+    result = runtime.run("查询新渠道报表")
+
+    assert "未找到与意图" in result["reply"]
+    assert "你好！我是 ad-agent" not in result["reply"]
+
+
+def test_read_renderer_does_not_claim_success_for_unknown_data_shape():
+    reply = AdAgentResponseRenderer().render(
+        ParsedIntent("list_resources", "list", ["new-network"]),
+        [{
+            "tool": "new_network_list_resources",
+            "platform": "new-network",
+            "success": True,
+            "data": {"unexpected": {"value": 1}},
+        }],
+        False,
+    )
+
+    assert "成功执行查询操作" not in reply
+    assert "未标准化的数据" in reply

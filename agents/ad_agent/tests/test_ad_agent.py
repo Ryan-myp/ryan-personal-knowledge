@@ -350,6 +350,27 @@ class TestIntentParser:
         assert intent.intent_type == "list_campaigns"
         assert intent.raw_input == "查询 Google campaign"
 
+    def test_llm_repairs_chat_result_that_contains_a_provider(self):
+        from agents.ad_agent.core.intent import LLMIntentParser
+
+        class RepairingLLM:
+            def __init__(self):
+                self.calls = 0
+
+            def call(self, messages):
+                self.calls += 1
+                if self.calls == 1:
+                    return '{"intent_type":"chat","platforms":["google"]}'
+                return '{"intent_type":"list_campaigns","platforms":["google"]}'
+
+        llm = RepairingLLM()
+        parser = LLMIntentParser(llm)
+        intent = parser.parse("查询 Google campaign", None)
+
+        assert intent.intent_type == "list_campaigns"
+        assert intent.platforms == ["google"]
+        assert llm.calls == 2
+
     def test_llm_parser_receives_bounded_skill_context(self):
         from agents.ad_agent.core.intent import LLMIntentParser
 

@@ -2456,9 +2456,22 @@ class AgentRuntime:
         # 检查是否需要执行任何工具
         if not tool_plan:
             intent_type = str(getattr(intent, "intent_type", "") or "")
+            platform_params = getattr(intent, "platform_params", {}) or {}
+            has_structured_request = bool(
+                getattr(intent, "platforms", None)
+                or any(
+                    isinstance(values, dict) and any(
+                        value not in (None, "", {}, [])
+                        for value in values.values()
+                    )
+                    for values in platform_params.values()
+                )
+            )
             no_tool_reply = (
                 self.response_renderer.render_chat(safe_user_input)
-                if not intent_type or intent_type == "chat"
+            if not intent_type or (
+                    intent_type == "chat" and not has_structured_request
+                )
                 else (
                     f"未找到与意图 `{intent_type}` 匹配的已注册 Tool。"
                     "请检查当前 Skill/Tool 是否已发布，或补充更明确的操作对象。"
