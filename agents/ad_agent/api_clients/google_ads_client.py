@@ -125,6 +125,36 @@ class GoogleAdsAPIClient(BasePlatformClient):
         "MANUAL_CPC", "MAXIMIZE_CONVERSIONS", "MAXIMIZE_CONVERSION_VALUE",
         "TARGET_CPA", "TARGET_ROAS", "TARGET_IMPRESSION_SHARE",
     }
+    # ExperimentService/ExperimentArmService enums are provider contracts;
+    # keep them here with the payload adapter rather than in Runtime or a
+    # workflow.  The values are from the Google Ads API v24 proto.
+    EXPERIMENT_TYPES = {
+        "DISPLAY_AND_VIDEO_360", "AD_VARIATION", "YOUTUBE_CUSTOM",
+        "DISPLAY_CUSTOM", "SEARCH_CUSTOM", "DISPLAY_AUTOMATED_BIDDING_STRATEGY",
+        "SEARCH_AUTOMATED_BIDDING_STRATEGY", "SHOPPING_AUTOMATED_BIDDING_STRATEGY",
+        "SMART_MATCHING", "HOTEL_CUSTOM", "OPTIMIZE_ASSETS", "ADOPT_AI_MAX",
+        "ADOPT_BROAD_MATCH_KEYWORDS", "PMAX_REPLACEMENT_SHOPPING",
+    }
+    EXPERIMENT_STATUSES = {
+        "ENABLED", "REMOVED", "HALTED", "PROMOTED", "SETUP", "INITIATED", "GRADUATED",
+    }
+    EXPERIMENT_METRICS = {
+        "CLICKS", "IMPRESSIONS", "COST", "CONVERSIONS_PER_INTERACTION_RATE",
+        "COST_PER_CONVERSION", "CONVERSIONS_VALUE_PER_COST", "AVERAGE_CPC", "CTR",
+        "INCREMENTAL_CONVERSIONS", "COMPLETED_VIDEO_VIEWS", "CUSTOM_ALGORITHMS",
+        "CONVERSIONS", "CONVERSION_VALUE",
+    }
+    EXPERIMENT_METRIC_DIRECTIONS = {
+        "NO_CHANGE", "INCREASE", "DECREASE", "NO_CHANGE_OR_INCREASE",
+        "NO_CHANGE_OR_DECREASE",
+    }
+    VIDEO_EXPERIMENT_SUBTYPES = {"DEMAND_GEN_ASSET", "ASSET", "ASSET_UPLIFT"}
+    OPTIMIZE_ASSETS_EXPERIMENT_SUBTYPES = {
+        "ADD_ASSETS_TO_ASSETLESS_RETAIL", "ADD_VIDEO_ASSETS_TO_VIDEOLESS", "COMPARE_ASSETS",
+    }
+    EXPERIMENT_UPDATE_FIELDS = {
+        "name", "description", "suffix", "start_date", "end_date", "status", "goals",
+    }
     TARGET_IMPRESSION_SHARE_LOCATIONS = {
         "ANYWHERE_ON_PAGE", "TOP_OF_PAGE", "ABSOLUTE_TOP_OF_PAGE",
     }
@@ -456,6 +486,202 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 ),
             })
         return normalized
+
+    @staticmethod
+    def _iso_date(value: Any, field: str) -> str:
+        """Validate the provider's YYYY-MM-DD date contract."""
+        text = str(value or "").strip()
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+            raise ValueError(f"{field} must use YYYY-MM-DD format")
+        try:
+            datetime.strptime(text, "%Y-%m-%d")
+        except ValueError as exc:
+            raise ValueError(f"{field} must be a valid calendar date") from exc
+        return text
+
+    @classmethod
+    def _experiment_goals(cls, goals: Any) -> list[dict[str, str]]:
+        if goals is None:
+            return []
+        if not isinstance(goals, list) or not goals:
+            raise ValueError("goals must be a non-empty list when supplied")
+        normalized = []
+        for index, goal in enumerate(goals):
+            if not isinstance(goal, dict):
+                raise ValueError(f"goals[{index}] must be an object")
+            unknown = set(goal) - {"metric", "direction"}
+            if unknown:
+                raise ValueError(f"Unsupported experiment goal fields: {sorted(unknown)}")
+            metric = str(goal.get("metric") or "").strip().upper()
+            direction = str(goal.get("direction") or "").strip().upper()
+            if metric not in cls.EXPERIMENT_METRICS:
+                raise ValueError(
+                    f"goals[{index}].metric must be one of {sorted(cls.EXPERIMENT_METRICS)}"
+                )
+            if direction not in cls.EXPERIMENT_METRIC_DIRECTIONS:
+                raise ValueError(
+                    f"goals[{index}].direction must be one of "
+                    f"{sorted(cls.EXPERIMENT_METRIC_DIRECTIONS)}"
+                )
+            normalized.append({"metric": metric, "direction": direction})
+        return normalized
+
+    @classmethod
+    def _experiment_payload(
+        cls, experiment: dict[str, Any], *, require_name_and_type: bool = True,
+    ) -> dict[str, Any]:
+        if not isinstance(experiment, dict) or not experiment:
+            raise ValueError("experiment must be a non-empty object")
+        allowed = {
+            "name", "description", "suffix", "type", "status", "start_date", "end_date",
+            "goals", "sync_enabled", "video_experiment_subtype",
+            "optimize_assets_experiment_subtype",
+        }
+        unknown = set(experiment) - allowed
+        if unknown:
+            raise ValueError(f"Unsupported Google Experiment fields: {sorted(unknown)}")
+        payload: dict[str, Any] = {}
+        name = str(experiment.get("name") or "").strip()
+        if require_name_and_type and not name:
+            raise ValueError("experiment name is required")
+        if name:
+            if not 1 <= len(name) <= 1024:
+                raise ValueError("experiment name must be 1..1024 characters")
+            payload["name"] = name
+        experiment_type = str(experiment.get("type") or "").strip().upper()
+        if require_name_and_type and experiment_type not in cls.EXPERIMENT_TYPES:
+            raise ValueError(
+                f"type must be one of {sorted(cls.EXPERIMENT_TYPES)}"
+            )
+        if experiment_type:
+            if experiment_type not in cls.EXPERIMENT_TYPES:
+                raise ValueError(
+                    f"type must be one of {sorted(cls.EXPERIMENT_TYPES)}"
+                )
+            payload["type"] = experiment_type
+        for key, max_length in (("description", 2048), ("suffix", 255)):
+            if experiment.get(key) is not None:
+                value = str(experiment[key])
+                if key == "description" and not value.strip():
+                    raise ValueError("description must not be empty when supplied")
+                if len(value) > max_length:
+                    raise ValueError(f"{key} must be at most {max_length} characters")
+                payload[cls._camel_case(key)] = value
+        if experiment.get("status") is not None:
+            status = str(experiment["status"]).strip().upper()
+            if status not in cls.EXPERIMENT_STATUSES:
+                raise ValueError(
+                    f"status must be one of {sorted(cls.EXPERIMENT_STATUSES)}"
+                )
+            payload["status"] = status
+        for key in ("start_date", "end_date"):
+            if experiment.get(key) is not None:
+                payload[cls._camel_case(key)] = cls._iso_date(experiment[key], key)
+        if experiment.get("goals") is not None:
+            payload["goals"] = cls._experiment_goals(experiment["goals"])
+        if experiment.get("sync_enabled") is not None:
+            if not isinstance(experiment["sync_enabled"], bool):
+                raise ValueError("sync_enabled must be boolean")
+            payload["syncEnabled"] = experiment["sync_enabled"]
+        for input_key, wire_key, allowed_values in (
+            ("video_experiment_subtype", "videoExperiment", cls.VIDEO_EXPERIMENT_SUBTYPES),
+            ("optimize_assets_experiment_subtype", "optimizeAssetsExperiment", cls.OPTIMIZE_ASSETS_EXPERIMENT_SUBTYPES),
+        ):
+            if experiment.get(input_key) is not None:
+                value = str(experiment[input_key]).strip().upper()
+                if value not in allowed_values:
+                    raise ValueError(f"{input_key} must be one of {sorted(allowed_values)}")
+                nested_key = (
+                    "videoExperimentSubtype"
+                    if input_key == "video_experiment_subtype"
+                    else "optimizeAssetsExperimentSubtype"
+                )
+                payload[wire_key] = {nested_key: value}
+        return payload
+
+    def get_experiment(self, experiment_id: str) -> dict[str, Any]:
+        """Get one Google Experiment through the read-only GAQL surface."""
+        experiment_id = self._numeric_id(experiment_id, "experiment_id")
+        query = (
+            "SELECT experiment.id, experiment.resource_name, experiment.name, "
+            "experiment.description, experiment.status, experiment.type, "
+            "experiment.start_date, experiment.end_date, experiment.suffix, "
+            "experiment.base_campaign, experiment.experiment_campaign "
+            f"FROM experiment WHERE experiment.id = {experiment_id}"
+        )
+        rows = self._search(query)
+        payload = self._response_payload(rows)
+        result_rows = payload.get("results", []) if isinstance(payload, dict) else []
+        if result_rows and isinstance(result_rows[0], dict):
+            return self._normalize_experiment(result_rows[0])
+        raise APIError(f"Google experiment {experiment_id} was not found")
+
+    def create_experiment(self, experiment: dict[str, Any]) -> str:
+        """Create one Experiment through ExperimentService.MutateExperiments."""
+        payload = self._experiment_payload(experiment)
+        response = self._mutate("experiments", {"create": payload})
+        resource_name = self._mutation_resource_name(response)
+        if not resource_name:
+            raise APIError(f"Experiment mutate returned no resource name: {response}")
+        return str(resource_name.rsplit("/", 1)[-1])
+
+    def update_experiment(self, experiment_id: str, updates: dict[str, Any]) -> dict[str, Any]:
+        """Update only fields supported by the Experiment resource mask."""
+        experiment_id = self._numeric_id(experiment_id, "experiment_id")
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("updates must be a non-empty object")
+        unknown = set(updates) - self.EXPERIMENT_UPDATE_FIELDS
+        if unknown:
+            raise ValueError(f"Unsupported Google Experiment update fields: {sorted(unknown)}")
+        payload = self._experiment_payload(updates, require_name_and_type=False)
+        if not payload:
+            raise ValueError("updates must contain a supported non-null field")
+        update_mask = [self._camel_case(key) for key in updates if updates.get(key) is not None]
+        # Nested goals use the resource field name; the mask remains stable
+        # even though the REST payload uses camelCase.
+        resource_name = f"customers/{self.customer_id}/experiments/{experiment_id}"
+        self._mutate("experiments", {
+            "update": {"resourceName": resource_name, **payload},
+            "updateMask": {"paths": update_mask},
+        })
+        return {"success": True, "experiment_id": experiment_id}
+
+    def delete_experiment(self, experiment_id: str) -> dict[str, Any]:
+        """Remove one Experiment through ExperimentService."""
+        experiment_id = self._numeric_id(experiment_id, "experiment_id")
+        self._mutate("experiments", {
+            "remove": f"customers/{self.customer_id}/experiments/{experiment_id}"
+        })
+        return {"success": True, "experiment_id": experiment_id}
+
+    def _experiment_action(self, action: str, experiment_id: str, *, extra: dict[str, Any] | None = None) -> dict[str, Any]:
+        experiment_id = self._numeric_id(experiment_id, "experiment_id")
+        endpoint = f"customers/{self.customer_id}/experiments/{experiment_id}:{action}"
+        response = self.request_raw("POST", endpoint, data=extra or {})
+        status = response.get("status_code", 200)
+        if status not in (200, 201, 202):
+            raise APIError(
+                f"Google Experiment {action} returned HTTP {status}",
+                status_code=status, response=response,
+            )
+        return {
+            "success": True,
+            "experiment_id": experiment_id,
+            "operation": action,
+            "response": self._response_payload(response),
+        }
+
+    def schedule_experiment(self, experiment_id: str) -> dict[str, Any]:
+        return self._experiment_action("schedule", experiment_id)
+
+    def end_experiment(self, experiment_id: str) -> dict[str, Any]:
+        return self._experiment_action("end", experiment_id)
+
+    def graduate_experiment(self, experiment_id: str) -> dict[str, Any]:
+        return self._experiment_action("graduate", experiment_id)
+
+    def promote_experiment(self, experiment_id: str) -> dict[str, Any]:
+        return self._experiment_action("promote", experiment_id)
 
     @classmethod
     def _normalize_customer_client(cls, row: dict) -> dict:

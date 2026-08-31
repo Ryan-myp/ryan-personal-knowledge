@@ -2,9 +2,9 @@
 
 > 本文件记录当前源码状态，不代表所有平台 live API 能力已达到生产可用。默认执行模式为 `dry_run`；真实测试只允许使用 `config.yaml` 中的测试账户白名单，且不能修改线上凭证或账户元数据。下方历史记录仅供追溯，不能作为当前 live 成功证据。
 
-## 当前契约（2026-08-30）
+## 当前契约（2026-08-31）
 
-- 单 Agent + 多 Skills + Tools；平台 Capability 是可执行注册表的来源，当前共 261 个工具：Meta 72、Google Ads 86、TikTok 72、DV360 31。Capability 和按约定命名的 Provider Client 均自动发现，不依赖中心渠道/工具配置表；每个 Capability 还提供 Provider 方法覆盖率发布门禁。DV360 Campaign 创建尚未建设，仅在 API Surface 标记为 planned，不注册不可执行 Tool。
+- 单 Agent + 多 Skills + Tools；平台 Capability 是可执行注册表的来源，当前共 269 个工具：Meta 72、Google Ads 94、TikTok 72、DV360 31。Capability 和按约定命名的 Provider Client 均自动发现，不依赖中心渠道/工具配置表；每个 Capability 还提供 Provider 方法覆盖率发布门禁。DV360 Campaign 创建尚未建设，仅在 API Surface 标记为 planned，不注册不可执行 Tool。
 - 所有 Campaign 及下级资源创建/更新默认 dry-run；当前不会因工具已注册就调用真实写 API。
 - live 仅允许配置白名单账户，且 API 确认必须携带与当前 `session_id + account_id + tool + normalized input + idempotency key` 绑定的 `confirmation_payload`。
 - 白名单只有一个账户时允许兼容性自动选择；多账户配置必须由调用方显式指定目标账户。
@@ -32,8 +32,10 @@
 - 每个渠道 Capability 包另有 `api_surface.py`，声明已实现与计划中的官方资源操作；审计会
   检查已实现项是否同时存在 Client 方法、覆盖映射和 executable Tool，并把计划项显式列为
   后续建设缺口。
-- Google Ads 已补齐 Experiment 与 Experiment Arm 的 GAQL 只读查询 Tool；Experiment
-  mutation lifecycle 仍保留在官方清单的 planned 缺口中，未将部分能力误报为完整 CRUD。
+- Google Ads 已补齐 Experiment 的 GAQL 读、ExperimentService mutation 和
+  schedule/end/graduate/promote 生命周期 Tool；Experiment Arm 当前仍提供 GAQL
+  只读查询，arm mutation 保留为后续缺口。Experiment 写 Tool 仍为 dry-run-only，
+  尚未进行指定测试账户 E2E。
 - Meta 已将 Lookalike Audience 从泛化 Audience 能力中拆出专用创建 Tool；源 Audience
   通过 `meta_list_audiences` 的动态 lookup 选择，固定 `LOOKALIKE` subtype 由 Capability
   注入，且不在 Runtime/Core 增加渠道分支。
@@ -45,7 +47,7 @@
   Tool 数量当成 Provider 官方接口总量。
 - 当前已实现的 Provider Client 方法均纳入三段式追踪：Client method → Capability
   `provider_method_coverage` → `api_surface.py` → executable Tool。现有覆盖为 DV360
-  29/29、Google Ads 76/76、Meta 69/69、TikTok 72/72；同一 Client 方法映射多个业务
+  29/29、Google Ads 90/90、Meta 69/69、TikTok 72/72；同一 Client 方法映射多个业务
   Tool 时会在审计 JSON 中保留全部映射，不以工具数量冒充官方接口完整度。
 
 ## 项目概述

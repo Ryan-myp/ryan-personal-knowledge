@@ -37,6 +37,7 @@ from .parameters import (
     google_hotel_ad_schema, google_local_ad_schema, google_smart_campaign_ad_schema,
     google_travel_ad_schema,
     google_campaign_budget_update_schema,
+    google_experiment_schema, google_experiment_update_schema,
     google_conversion_action_schema, google_conversion_action_update_schema,
     google_campaign_criterion_schema, google_keyword_update_schema,
     google_user_list_schema, google_user_list_update_schema,
@@ -148,6 +149,14 @@ class GoogleCapability(BaseCapability):
         "list_customer_clients": ["google_list_customer_clients"],
         "list_experiments": ["google_list_experiments"],
         "list_experiment_arms": ["google_list_experiment_arms"],
+        "get_experiment": ["google_get_experiment"],
+        "create_experiment": ["google_create_experiment"],
+        "update_experiment": ["google_update_experiment"],
+        "delete_experiment": ["google_delete_experiment"],
+        "schedule_experiment": ["google_schedule_experiment"],
+        "end_experiment": ["google_end_experiment"],
+        "graduate_experiment": ["google_graduate_experiment"],
+        "promote_experiment": ["google_promote_experiment"],
         "get_campaign_report": ["google_get_campaign_report"], "get_adgroup_report": ["google_get_adgroup_report"],
     }
 
@@ -204,6 +213,20 @@ class GoogleCapability(BaseCapability):
         product_group_read_schema = google_product_group_read_schema()
         product_group_update_schema = google_product_group_update_schema()
         product_group_read_properties = product_group_read_schema["properties"]
+        experiment_schema = google_experiment_schema()
+        experiment_update_schema = google_experiment_update_schema()
+
+        def _experiment_input(data: dict[str, Any]) -> dict[str, Any]:
+            return {
+                key: data[key]
+                for key in (
+                    "name", "description", "suffix", "type", "status", "start_date",
+                    "end_date", "goals", "sync_enabled", "video_experiment_subtype",
+                    "optimize_assets_experiment_subtype",
+                )
+                if key in data
+            }
+
         tools = [
             method_tool(
                 platform="google-ads", skill="google-ads-api-expert",
@@ -236,6 +259,56 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((), {
                     "query": data.get("query"), "page_size": data.get("limit", 100),
                 }),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_get_experiment",
+                description="查询 Google Ads 单个 Experiment 详情。",
+                method_name="get_experiment", result_key="experiment",
+                properties=experiment_schema["properties"],
+                required=["experiment_id"], action="get", resource_type="experiment",
+                resource_id_field="experiment_id", intent_types=["get_experiment"],
+                traits=["read", "experiment"],
+                argument_builder=lambda _ctx, data: ((data["experiment_id"],), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_create_experiment",
+                description="创建 Google Ads Experiment；默认仅生成 dry-run 计划。",
+                method_name="create_experiment", result_key="experiment_id",
+                properties=experiment_schema["properties"],
+                required=["name", "type"], provider_required=["name", "type"],
+                conditional_rules=experiment_schema["conditional_rules"],
+                action="create", resource_type="experiment", resource_id_field="experiment_id",
+                intent_types=["create_experiment"], traits=["write", "experiment"],
+                write=True, live_support=False,
+                argument_builder=lambda _ctx, data: ((_experiment_input(data),), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_update_experiment",
+                description="更新 Google Ads Experiment 可变字段；默认仅生成 dry-run 计划。",
+                method_name="update_experiment", result_key="experiment_result",
+                properties={
+                    "experiment_id": experiment_schema["properties"]["experiment_id"],
+                    "updates": experiment_update_schema,
+                },
+                required=["experiment_id", "updates"], provider_required=["updates"],
+                action="update", resource_type="experiment", resource_id_field="experiment_id",
+                intent_types=["update_experiment"], traits=["write", "experiment"],
+                write=True, live_support=False,
+                argument_builder=lambda _ctx, data: ((data["experiment_id"], data["updates"]), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_delete_experiment",
+                description="删除 Google Ads Experiment；默认仅生成 dry-run 计划。",
+                method_name="delete_experiment", result_key="experiment_result",
+                properties={"experiment_id": experiment_schema["properties"]["experiment_id"]},
+                required=["experiment_id"], action="delete", resource_type="experiment",
+                resource_id_field="experiment_id", intent_types=["delete_experiment"],
+                traits=["write", "experiment"], write=True, live_support=False,
+                argument_builder=lambda _ctx, data: ((data["experiment_id"],), {}),
             ),
             method_tool(
                 platform="google-ads", skill="google-ads-api-expert",
@@ -1114,6 +1187,28 @@ class GoogleCapability(BaseCapability):
                 action=method_name.split("_", 1)[0], resource_type="campaign",
                 resource_id_field="campaign_id", intent_types=[f"provider_{intent}"], traits=["write", "campaign"], write=True,
                 argument_builder=lambda _ctx, data: ((data["campaign_id"],), {}),
+            ))
+
+        # Experiment lifecycle RPCs are separate from normal status updates;
+        # publishing them as explicit Tools prevents the Agent from treating
+        # schedule/end/graduate/promote as Campaign mutations.
+        for method_name, intent, description in (
+            ("schedule_experiment", "schedule_experiment", "排期并启动 Google Ads Experiment"),
+            ("end_experiment", "end_experiment", "结束 Google Ads Experiment"),
+            ("graduate_experiment", "graduate_experiment", "将 Google Ads Experiment 正式毕业"),
+            ("promote_experiment", "promote_experiment", "推广 Google Ads Experiment 结果"),
+        ):
+            tools.append(method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name=f"google_{method_name}",
+                description=f"{description}；默认仅生成 dry-run 计划。",
+                method_name=method_name, result_key="experiment_result",
+                properties={"experiment_id": experiment_schema["properties"]["experiment_id"]},
+                required=["experiment_id"], action=method_name.split("_", 1)[0],
+                resource_type="experiment", resource_id_field="experiment_id",
+                intent_types=[intent], traits=["write", "experiment", "lifecycle"],
+                write=True, live_support=False,
+                argument_builder=lambda _ctx, data: ((data["experiment_id"],), {}),
             ))
 
         # Google v24 uses the regular AdGroup/AdGroupAd resources for these

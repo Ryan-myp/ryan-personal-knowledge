@@ -725,6 +725,89 @@ def test_google_experiment_read_surfaces_normalize_gaql_rows_and_queries():
     assert "FROM experiment_arm" in calls[1][0]
 
 
+def test_google_experiment_service_lifecycle_builds_v24_payloads():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    mutate_calls = []
+    client._mutate = lambda resource, operation: (
+        mutate_calls.append((resource, operation))
+        or {"results": [{"resourceName": "customers/123/experiments/7"}]}
+    )
+
+    assert client.create_experiment({
+        "name": "Budget test",
+        "type": "SEARCH_CUSTOM",
+        "description": "Controlled budget experiment",
+        "suffix": " - treatment",
+        "start_date": "2026-09-01",
+        "end_date": "2026-09-30",
+        "goals": [{"metric": "CONVERSIONS", "direction": "INCREASE"}],
+        "sync_enabled": True,
+    }) == "7"
+    assert mutate_calls[0] == ("experiments", {"create": {
+        "name": "Budget test",
+        "type": "SEARCH_CUSTOM",
+        "description": "Controlled budget experiment",
+        "suffix": " - treatment",
+        "startDate": "2026-09-01",
+        "endDate": "2026-09-30",
+        "goals": [{"metric": "CONVERSIONS", "direction": "INCREASE"}],
+        "syncEnabled": True,
+    }})
+
+    assert client.update_experiment("7", {
+        "description": "Updated experiment",
+        "status": "ENABLED",
+    }) == {"success": True, "experiment_id": "7"}
+    assert mutate_calls[1] == ("experiments", {"update": {
+        "resourceName": "customers/123/experiments/7",
+        "description": "Updated experiment",
+        "status": "ENABLED",
+    }, "updateMask": {"paths": ["description", "status"]}})
+
+    assert client.delete_experiment("7") == {"success": True, "experiment_id": "7"}
+    assert mutate_calls[2] == ("experiments", {
+        "remove": "customers/123/experiments/7"
+    })
+
+    action_calls = []
+    client.request_raw = lambda method, endpoint, data=None, **_kwargs: (
+        action_calls.append((method, endpoint, data))
+        or {"status_code": 200, "data": {"name": "operations/7"}}
+    )
+    assert client.schedule_experiment("7")["operation"] == "schedule"
+    assert client.end_experiment("7")["operation"] == "end"
+    assert client.graduate_experiment("7")["operation"] == "graduate"
+    assert client.promote_experiment("7")["operation"] == "promote"
+    assert action_calls == [
+        ("POST", "customers/123/experiments/7:schedule", {}),
+        ("POST", "customers/123/experiments/7:end", {}),
+        ("POST", "customers/123/experiments/7:graduate", {}),
+        ("POST", "customers/123/experiments/7:promote", {}),
+    ]
+
+
+def test_google_experiment_tools_publish_explicit_dry_run_lifecycle_contracts():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_google_capability().register_tools()
+    }
+    expected = {
+        "google_get_experiment", "google_create_experiment", "google_update_experiment",
+        "google_delete_experiment", "google_schedule_experiment", "google_end_experiment",
+        "google_graduate_experiment", "google_promote_experiment",
+    }
+    assert expected <= definitions.keys()
+    for name in expected - {"google_get_experiment"}:
+        definition = definitions[name]
+        assert definition.live_support is False
+        assert definition.input_schema.properties["experiment_id"]["type"] == "string"
+    create = definitions["google_create_experiment"]
+    assert create.input_schema.properties["type"]["enum"]
+    assert create.input_schema.properties["goals"]["items"]["required"] == [
+        "metric", "direction"
+    ]
+
+
 def test_google_bidding_strategy_lifecycle_builds_official_scheme_payloads():
     client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
     calls = []

@@ -153,6 +153,30 @@ GOOGLE_USER_LIST_DATA_SOURCE_TYPES = [
     "FIRST_PARTY", "THIRD_PARTY_CREDIT_BUREAU", "THIRD_PARTY_VOTER_FILE",
     "THIRD_PARTY_PARTNER_DATA",
 ]
+GOOGLE_EXPERIMENT_TYPES = [
+    "DISPLAY_AND_VIDEO_360", "AD_VARIATION", "YOUTUBE_CUSTOM", "DISPLAY_CUSTOM",
+    "SEARCH_CUSTOM", "DISPLAY_AUTOMATED_BIDDING_STRATEGY",
+    "SEARCH_AUTOMATED_BIDDING_STRATEGY", "SHOPPING_AUTOMATED_BIDDING_STRATEGY",
+    "SMART_MATCHING", "HOTEL_CUSTOM", "OPTIMIZE_ASSETS", "ADOPT_AI_MAX",
+    "ADOPT_BROAD_MATCH_KEYWORDS", "PMAX_REPLACEMENT_SHOPPING",
+]
+GOOGLE_EXPERIMENT_STATUSES = [
+    "ENABLED", "REMOVED", "HALTED", "PROMOTED", "SETUP", "INITIATED", "GRADUATED",
+]
+GOOGLE_EXPERIMENT_METRICS = [
+    "CLICKS", "IMPRESSIONS", "COST", "CONVERSIONS_PER_INTERACTION_RATE",
+    "COST_PER_CONVERSION", "CONVERSIONS_VALUE_PER_COST", "AVERAGE_CPC", "CTR",
+    "INCREMENTAL_CONVERSIONS", "COMPLETED_VIDEO_VIEWS", "CUSTOM_ALGORITHMS",
+    "CONVERSIONS", "CONVERSION_VALUE",
+]
+GOOGLE_EXPERIMENT_METRIC_DIRECTIONS = [
+    "NO_CHANGE", "INCREASE", "DECREASE", "NO_CHANGE_OR_INCREASE",
+    "NO_CHANGE_OR_DECREASE",
+]
+GOOGLE_VIDEO_EXPERIMENT_SUBTYPES = ["DEMAND_GEN_ASSET", "ASSET", "ASSET_UPLIFT"]
+GOOGLE_OPTIMIZE_ASSETS_EXPERIMENT_SUBTYPES = [
+    "ADD_ASSETS_TO_ASSETLESS_RETAIL", "ADD_VIDEO_ASSETS_TO_VIDEOLESS", "COMPARE_ASSETS",
+]
 
 
 def _field(field_type: Any, description: str = "", **kwargs: Any) -> dict[str, Any]:
@@ -189,6 +213,59 @@ def google_campaign_budget_schema() -> dict[str, Any]:
             "explicitly_shared": _field("boolean", "Whether the budget is shared"),
         },
         "conditional_rules": [],
+    }
+
+
+def google_experiment_schema() -> dict[str, Any]:
+    """Schema for Google ExperimentService create/read lifecycle Tools."""
+    goal = _object({
+        "metric": _field("string", "Experiment metric", enum=GOOGLE_EXPERIMENT_METRICS),
+        "direction": _field(
+            "string", "Desired metric direction", enum=GOOGLE_EXPERIMENT_METRIC_DIRECTIONS
+        ),
+    }, "Experiment success metric", required=["metric", "direction"])
+    return {
+        "required": ["customer_id", "name", "type"],
+        "provider_required": ["name", "type"],
+        "properties": {
+            "customer_id": _field("string", "Google Ads customer ID; MCC is not accepted"),
+            "experiment_id": _field("string", "Experiment ID", minLength=1),
+            "name": _field("string", "Experiment name", minLength=1, maxLength=1024),
+            "description": _field("string", "Experiment description", minLength=1, maxLength=2048),
+            "suffix": _field("string", "Suffix for generated experiment campaigns", maxLength=255),
+            "type": _field("string", "Google Experiment type", enum=GOOGLE_EXPERIMENT_TYPES),
+            "status": _field("string", "Advertiser-chosen experiment status", enum=GOOGLE_EXPERIMENT_STATUSES),
+            "start_date": _field("string", "Start date in YYYY-MM-DD format", pattern=r"^\d{4}-\d{2}-\d{2}$"),
+            "end_date": _field("string", "End date in YYYY-MM-DD format", pattern=r"^\d{4}-\d{2}-\d{2}$"),
+            "goals": _field("array", "Experiment metric goals", items=goal, minItems=1),
+            "sync_enabled": _field("boolean", "Sync base campaign changes to trial campaigns"),
+            "video_experiment_subtype": _field("string", "YOUTUBE_CUSTOM experiment subtype", enum=GOOGLE_VIDEO_EXPERIMENT_SUBTYPES),
+            "optimize_assets_experiment_subtype": _field("string", "OPTIMIZE_ASSETS experiment subtype", enum=GOOGLE_OPTIMIZE_ASSETS_EXPERIMENT_SUBTYPES),
+            "limit": _field("integer", "Maximum number of experiments", minimum=1, maximum=10000),
+            "query": _field("string", "Optional GAQL query for experiment reads"),
+        },
+        "conditional_rules": [
+            {"id": "video_experiment_subtype", "if": {"type": "YOUTUBE_CUSTOM"},
+             "required": ["video_experiment_subtype"],
+             "message": "YOUTUBE_CUSTOM experiments require video_experiment_subtype"},
+            {"id": "optimize_assets_experiment_subtype", "if": {"type": "OPTIMIZE_ASSETS"},
+             "required": ["optimize_assets_experiment_subtype"],
+             "message": "OPTIMIZE_ASSETS experiments require optimize_assets_experiment_subtype"},
+        ],
+    }
+
+
+def google_experiment_update_schema() -> dict[str, Any]:
+    schema = google_experiment_schema()
+    properties = schema["properties"]
+    return {
+        "type": "object",
+        "description": "Mutable Google Experiment fields; immutable type and sync settings are excluded",
+        "additionalProperties": False,
+        "properties": {
+            key: properties[key]
+            for key in ("name", "description", "suffix", "status", "start_date", "end_date", "goals")
+        },
     }
 
 

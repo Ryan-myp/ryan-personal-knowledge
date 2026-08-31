@@ -122,7 +122,7 @@ def test_capability_audit_reports_scoped_official_inventory_separately_from_tool
     # The report must not imply that a Tool count is the provider's full API
     # count.  Known planned operations remain visible as inventory gaps.
     assert any(
-        entry["resource"] == "experiment"
+        entry["resource"] == "feed"
         for entry in report["platforms"]["google-ads"]["official_inventory"]["gaps_entries"]
     )
 

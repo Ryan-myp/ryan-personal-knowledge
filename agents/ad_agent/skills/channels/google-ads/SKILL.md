@@ -61,7 +61,11 @@ campaign_service = client.get_service('CampaignService')
 只需在 Google Capability/Client 中注册和验证，不应修改业务 Skill 来“接线”。
 
 能力范围包括：账户与 Campaign 查询、Campaign/Ad Group/Ad/Asset Group 的 dry-run
-创建与更新、Search 关键词与否定关键词、PMax 资产、出价策略、定向和 GAQL 报表。
+创建与更新、Search 关键词与否定关键词、PMax 资产、出价策略、定向和 GAQL 报表，
+以及 Google Experiment 的创建、更新、删除和 schedule/end/graduate/promote 生命周期
+计划。Experiment 是独立资源，不能用普通 Campaign 状态更新替代；实验目标应使用
+ExperimentService 的 metric/direction 结构，并在执行前明确基础 Campaign、实验类型、
+时间范围和流量分配依赖。
 每次创建前必须按当前广告类型 Schema 校验预算、目标、网络、App/Shopping 设置和
 素材依赖；未标记为 `supported_dry_run` 的格式不得声称已有完整支持。
 
@@ -81,6 +85,7 @@ Client 做兼容性归一化，Tool 对外仍发布 Google 当前的 `PERFORMANC
 - **官方文档**: https://developers.google.com/google-ads/api/docs/start
 - **Python SDK**: https://github.com/googleapis/google-ads-python
 - **GAQL 参考**: https://developers.google.com/google-ads/api/docs/query/overview
+- **Experiment 参考**: https://developers.google.com/google-ads/api/docs/experiments/overview
 
 ## 💡 最佳实践
 

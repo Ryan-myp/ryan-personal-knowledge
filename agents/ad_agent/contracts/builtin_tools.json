@@ -1,5 +1,5 @@
 {
-  "digest": "bdbabc20763510224b89a34bedc4a68e24b8753467894413bfd5057a87d7aee2",
+  "digest": "b845395a35b9e568d801b630215c67db300e221e3bc62d843161e0fef86b5e95",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -1956,8 +1956,8 @@
       ]
     },
     "google-ads": {
-      "digest": "68ee335f1482ff6520937511bdc553e146b6127409e152fb6df8973c32284e40",
-      "tool_count": 86,
+      "digest": "4d79f528f2772f4b997d6886d9ec35499f2db1d13469de8150c39b17885ad3cf",
+      "tool_count": 94,
       "tools": [
         {
           "action": "create",
@@ -5035,6 +5035,222 @@
         },
         {
           "action": "create",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
+          "description": "创建 Google Ads Experiment；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [
+              {
+                "id": "video_experiment_subtype",
+                "if": {
+                  "type": "YOUTUBE_CUSTOM"
+                },
+                "message": "YOUTUBE_CUSTOM experiments require video_experiment_subtype",
+                "required": [
+                  "video_experiment_subtype"
+                ]
+              },
+              {
+                "id": "optimize_assets_experiment_subtype",
+                "if": {
+                  "type": "OPTIMIZE_ASSETS"
+                },
+                "message": "OPTIMIZE_ASSETS experiments require optimize_assets_experiment_subtype",
+                "required": [
+                  "optimize_assets_experiment_subtype"
+                ]
+              }
+            ],
+            "properties": {
+              "customer_id": {
+                "description": "Google Ads customer ID; MCC is not accepted",
+                "type": "string"
+              },
+              "description": {
+                "description": "Experiment description",
+                "maxLength": 2048,
+                "minLength": 1,
+                "type": "string"
+              },
+              "end_date": {
+                "description": "End date in YYYY-MM-DD format",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
+              },
+              "experiment_id": {
+                "description": "Experiment ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "goals": {
+                "description": "Experiment metric goals",
+                "items": {
+                  "additionalProperties": false,
+                  "description": "Experiment success metric",
+                  "properties": {
+                    "direction": {
+                      "description": "Desired metric direction",
+                      "enum": [
+                        "NO_CHANGE",
+                        "INCREASE",
+                        "DECREASE",
+                        "NO_CHANGE_OR_INCREASE",
+                        "NO_CHANGE_OR_DECREASE"
+                      ],
+                      "type": "string"
+                    },
+                    "metric": {
+                      "description": "Experiment metric",
+                      "enum": [
+                        "CLICKS",
+                        "IMPRESSIONS",
+                        "COST",
+                        "CONVERSIONS_PER_INTERACTION_RATE",
+                        "COST_PER_CONVERSION",
+                        "CONVERSIONS_VALUE_PER_COST",
+                        "AVERAGE_CPC",
+                        "CTR",
+                        "INCREMENTAL_CONVERSIONS",
+                        "COMPLETED_VIDEO_VIEWS",
+                        "CUSTOM_ALGORITHMS",
+                        "CONVERSIONS",
+                        "CONVERSION_VALUE"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "metric",
+                    "direction"
+                  ],
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "limit": {
+                "description": "Maximum number of experiments",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "name": {
+                "description": "Experiment name",
+                "maxLength": 1024,
+                "minLength": 1,
+                "type": "string"
+              },
+              "optimize_assets_experiment_subtype": {
+                "description": "OPTIMIZE_ASSETS experiment subtype",
+                "enum": [
+                  "ADD_ASSETS_TO_ASSETLESS_RETAIL",
+                  "ADD_VIDEO_ASSETS_TO_VIDEOLESS",
+                  "COMPARE_ASSETS"
+                ],
+                "type": "string"
+              },
+              "query": {
+                "description": "Optional GAQL query for experiment reads",
+                "type": "string"
+              },
+              "start_date": {
+                "description": "Start date in YYYY-MM-DD format",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
+              },
+              "status": {
+                "description": "Advertiser-chosen experiment status",
+                "enum": [
+                  "ENABLED",
+                  "REMOVED",
+                  "HALTED",
+                  "PROMOTED",
+                  "SETUP",
+                  "INITIATED",
+                  "GRADUATED"
+                ],
+                "type": "string"
+              },
+              "suffix": {
+                "description": "Suffix for generated experiment campaigns",
+                "maxLength": 255,
+                "type": "string"
+              },
+              "sync_enabled": {
+                "description": "Sync base campaign changes to trial campaigns",
+                "type": "boolean"
+              },
+              "type": {
+                "description": "Google Experiment type",
+                "enum": [
+                  "DISPLAY_AND_VIDEO_360",
+                  "AD_VARIATION",
+                  "YOUTUBE_CUSTOM",
+                  "DISPLAY_CUSTOM",
+                  "SEARCH_CUSTOM",
+                  "DISPLAY_AUTOMATED_BIDDING_STRATEGY",
+                  "SEARCH_AUTOMATED_BIDDING_STRATEGY",
+                  "SHOPPING_AUTOMATED_BIDDING_STRATEGY",
+                  "SMART_MATCHING",
+                  "HOTEL_CUSTOM",
+                  "OPTIMIZE_ASSETS",
+                  "ADOPT_AI_MAX",
+                  "ADOPT_BROAD_MATCH_KEYWORDS",
+                  "PMAX_REPLACEMENT_SHOPPING"
+                ],
+                "type": "string"
+              },
+              "video_experiment_subtype": {
+                "description": "YOUTUBE_CUSTOM experiment subtype",
+                "enum": [
+                  "DEMAND_GEN_ASSET",
+                  "ASSET",
+                  "ASSET_UPLIFT"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "name",
+              "type"
+            ],
+            "required": [
+              "name",
+              "type"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_experiment"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_create_experiment",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "experiment_id",
+          "resource_type": "experiment",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "experiment"
+          ]
+        },
+        {
+          "action": "create",
           "activation_rules": [
             {
               "aliases": [
@@ -7423,6 +7639,55 @@
           "action": "delete",
           "activation_rules": [],
           "contract_version": "1.4.0",
+          "description": "删除 Google Ads Experiment；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "experiment_id": {
+                "description": "Experiment ID",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "experiment_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_experiment"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_delete_experiment",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "experiment_id",
+          "resource_type": "experiment",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "experiment"
+          ]
+        },
+        {
+          "action": "delete",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
           "description": "删除 Google Ad Group 关键词；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
@@ -7588,6 +7853,56 @@
           "traits": [
             "write",
             "audience"
+          ]
+        },
+        {
+          "action": "end",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
+          "description": "结束 Google Ads Experiment；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "experiment_id": {
+                "description": "Experiment ID",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "experiment_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "end_experiment"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_end_experiment",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "experiment_id",
+          "resource_type": "experiment",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "experiment",
+            "lifecycle"
           ]
         },
         {
@@ -8204,6 +8519,197 @@
           "action": "get",
           "activation_rules": [],
           "contract_version": "1.4.0",
+          "description": "查询 Google Ads 单个 Experiment 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "customer_id": {
+                "description": "Google Ads customer ID; MCC is not accepted",
+                "type": "string"
+              },
+              "description": {
+                "description": "Experiment description",
+                "maxLength": 2048,
+                "minLength": 1,
+                "type": "string"
+              },
+              "end_date": {
+                "description": "End date in YYYY-MM-DD format",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
+              },
+              "experiment_id": {
+                "description": "Experiment ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "goals": {
+                "description": "Experiment metric goals",
+                "items": {
+                  "additionalProperties": false,
+                  "description": "Experiment success metric",
+                  "properties": {
+                    "direction": {
+                      "description": "Desired metric direction",
+                      "enum": [
+                        "NO_CHANGE",
+                        "INCREASE",
+                        "DECREASE",
+                        "NO_CHANGE_OR_INCREASE",
+                        "NO_CHANGE_OR_DECREASE"
+                      ],
+                      "type": "string"
+                    },
+                    "metric": {
+                      "description": "Experiment metric",
+                      "enum": [
+                        "CLICKS",
+                        "IMPRESSIONS",
+                        "COST",
+                        "CONVERSIONS_PER_INTERACTION_RATE",
+                        "COST_PER_CONVERSION",
+                        "CONVERSIONS_VALUE_PER_COST",
+                        "AVERAGE_CPC",
+                        "CTR",
+                        "INCREMENTAL_CONVERSIONS",
+                        "COMPLETED_VIDEO_VIEWS",
+                        "CUSTOM_ALGORITHMS",
+                        "CONVERSIONS",
+                        "CONVERSION_VALUE"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "metric",
+                    "direction"
+                  ],
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "limit": {
+                "description": "Maximum number of experiments",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "name": {
+                "description": "Experiment name",
+                "maxLength": 1024,
+                "minLength": 1,
+                "type": "string"
+              },
+              "optimize_assets_experiment_subtype": {
+                "description": "OPTIMIZE_ASSETS experiment subtype",
+                "enum": [
+                  "ADD_ASSETS_TO_ASSETLESS_RETAIL",
+                  "ADD_VIDEO_ASSETS_TO_VIDEOLESS",
+                  "COMPARE_ASSETS"
+                ],
+                "type": "string"
+              },
+              "query": {
+                "description": "Optional GAQL query for experiment reads",
+                "type": "string"
+              },
+              "start_date": {
+                "description": "Start date in YYYY-MM-DD format",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
+              },
+              "status": {
+                "description": "Advertiser-chosen experiment status",
+                "enum": [
+                  "ENABLED",
+                  "REMOVED",
+                  "HALTED",
+                  "PROMOTED",
+                  "SETUP",
+                  "INITIATED",
+                  "GRADUATED"
+                ],
+                "type": "string"
+              },
+              "suffix": {
+                "description": "Suffix for generated experiment campaigns",
+                "maxLength": 255,
+                "type": "string"
+              },
+              "sync_enabled": {
+                "description": "Sync base campaign changes to trial campaigns",
+                "type": "boolean"
+              },
+              "type": {
+                "description": "Google Experiment type",
+                "enum": [
+                  "DISPLAY_AND_VIDEO_360",
+                  "AD_VARIATION",
+                  "YOUTUBE_CUSTOM",
+                  "DISPLAY_CUSTOM",
+                  "SEARCH_CUSTOM",
+                  "DISPLAY_AUTOMATED_BIDDING_STRATEGY",
+                  "SEARCH_AUTOMATED_BIDDING_STRATEGY",
+                  "SHOPPING_AUTOMATED_BIDDING_STRATEGY",
+                  "SMART_MATCHING",
+                  "HOTEL_CUSTOM",
+                  "OPTIMIZE_ASSETS",
+                  "ADOPT_AI_MAX",
+                  "ADOPT_BROAD_MATCH_KEYWORDS",
+                  "PMAX_REPLACEMENT_SHOPPING"
+                ],
+                "type": "string"
+              },
+              "video_experiment_subtype": {
+                "description": "YOUTUBE_CUSTOM experiment subtype",
+                "enum": [
+                  "DEMAND_GEN_ASSET",
+                  "ASSET",
+                  "ASSET_UPLIFT"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "experiment_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_experiment"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_get_experiment",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "experiment_id",
+          "resource_type": "experiment",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "experiment"
+          ]
+        },
+        {
+          "action": "get",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
           "description": "查询 Google Shopping 单个 Product Group/Listing Group 详情。",
           "effect_class": "read",
           "input_schema": {
@@ -8315,6 +8821,56 @@
           "traits": [
             "read",
             "audience"
+          ]
+        },
+        {
+          "action": "graduate",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
+          "description": "将 Google Ads Experiment 正式毕业；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "experiment_id": {
+                "description": "Experiment ID",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "experiment_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "graduate_experiment"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_graduate_experiment",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "experiment_id",
+          "resource_type": "experiment",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "experiment",
+            "lifecycle"
           ]
         },
         {
@@ -9371,6 +9927,56 @@
           ]
         },
         {
+          "action": "promote",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
+          "description": "推广 Google Ads Experiment 结果；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "experiment_id": {
+                "description": "Experiment ID",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "experiment_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "promote_experiment"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_promote_experiment",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "experiment_id",
+          "resource_type": "experiment",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "experiment",
+            "lifecycle"
+          ]
+        },
+        {
           "action": "resume",
           "activation_rules": [],
           "contract_version": "1.4.0",
@@ -9415,6 +10021,56 @@
           "traits": [
             "write",
             "campaign"
+          ]
+        },
+        {
+          "action": "schedule",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
+          "description": "排期并启动 Google Ads Experiment；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "experiment_id": {
+                "description": "Experiment ID",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "experiment_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "schedule_experiment"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_schedule_experiment",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "experiment_id",
+          "resource_type": "experiment",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "experiment",
+            "lifecycle"
           ]
         },
         {
@@ -10255,6 +10911,151 @@
           "traits": [
             "write",
             "conversion"
+          ]
+        },
+        {
+          "action": "update",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
+          "description": "更新 Google Ads Experiment 可变字段；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "experiment_id": {
+                "description": "Experiment ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Mutable Google Experiment fields; immutable type and sync settings are excluded",
+                "properties": {
+                  "description": {
+                    "description": "Experiment description",
+                    "maxLength": 2048,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "end_date": {
+                    "description": "End date in YYYY-MM-DD format",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "type": "string"
+                  },
+                  "goals": {
+                    "description": "Experiment metric goals",
+                    "items": {
+                      "additionalProperties": false,
+                      "description": "Experiment success metric",
+                      "properties": {
+                        "direction": {
+                          "description": "Desired metric direction",
+                          "enum": [
+                            "NO_CHANGE",
+                            "INCREASE",
+                            "DECREASE",
+                            "NO_CHANGE_OR_INCREASE",
+                            "NO_CHANGE_OR_DECREASE"
+                          ],
+                          "type": "string"
+                        },
+                        "metric": {
+                          "description": "Experiment metric",
+                          "enum": [
+                            "CLICKS",
+                            "IMPRESSIONS",
+                            "COST",
+                            "CONVERSIONS_PER_INTERACTION_RATE",
+                            "COST_PER_CONVERSION",
+                            "CONVERSIONS_VALUE_PER_COST",
+                            "AVERAGE_CPC",
+                            "CTR",
+                            "INCREMENTAL_CONVERSIONS",
+                            "COMPLETED_VIDEO_VIEWS",
+                            "CUSTOM_ALGORITHMS",
+                            "CONVERSIONS",
+                            "CONVERSION_VALUE"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "metric",
+                        "direction"
+                      ],
+                      "type": "object"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "name": {
+                    "description": "Experiment name",
+                    "maxLength": 1024,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "start_date": {
+                    "description": "Start date in YYYY-MM-DD format",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "type": "string"
+                  },
+                  "status": {
+                    "description": "Advertiser-chosen experiment status",
+                    "enum": [
+                      "ENABLED",
+                      "REMOVED",
+                      "HALTED",
+                      "PROMOTED",
+                      "SETUP",
+                      "INITIATED",
+                      "GRADUATED"
+                    ],
+                    "type": "string"
+                  },
+                  "suffix": {
+                    "description": "Suffix for generated experiment campaigns",
+                    "maxLength": 255,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "updates"
+            ],
+            "required": [
+              "experiment_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_experiment"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "google_update_experiment",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "experiment_id",
+          "resource_type": "experiment",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "experiment"
           ]
         },
         {
@@ -27118,7 +27919,110 @@
         "execution_status": "dry_run_only",
         "inventory_scope": "official_resource_operations_baseline",
         "method": "list_experiments",
-        "notes": "GAQL read surface; Experiment mutation lifecycle remains planned",
+        "notes": "GAQL read surface",
+        "provider": "google-ads",
+        "resource": "experiment",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "get_experiment",
+        "provider": "google-ads",
+        "resource": "experiment",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "create_experiment",
+        "notes": "Provider payload adapter; execution remains dry-run-only until test-account verification",
+        "provider": "google-ads",
+        "resource": "experiment",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "update_experiment",
+        "notes": "Mutable fields only; execution remains dry-run-only",
+        "provider": "google-ads",
+        "resource": "experiment",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "delete_experiment",
+        "notes": "Execution remains dry-run-only",
+        "provider": "google-ads",
+        "resource": "experiment",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "schedule",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "schedule_experiment",
+        "notes": "Dedicated ExperimentService lifecycle RPC; execution remains dry-run-only",
+        "provider": "google-ads",
+        "resource": "experiment",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "end",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "end_experiment",
+        "notes": "Dedicated ExperimentService lifecycle RPC; execution remains dry-run-only",
+        "provider": "google-ads",
+        "resource": "experiment",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "graduate",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "graduate_experiment",
+        "notes": "Dedicated ExperimentService lifecycle RPC; execution remains dry-run-only",
+        "provider": "google-ads",
+        "resource": "experiment",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "promote",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "promote_experiment",
+        "notes": "Dedicated ExperimentService lifecycle RPC; execution remains dry-run-only",
         "provider": "google-ads",
         "resource": "experiment",
         "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
@@ -27131,7 +28035,7 @@
         "execution_status": "dry_run_only",
         "inventory_scope": "official_resource_operations_baseline",
         "method": "list_experiment_arms",
-        "notes": "GAQL read surface; Experiment Arm mutation lifecycle remains planned",
+        "notes": "GAQL read surface; arm mutation is a separate follow-up",
         "provider": "google-ads",
         "resource": "experiment_arm",
         "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
@@ -29009,5 +29913,5 @@
       ]
     }
   },
-  "tool_count": 261
+  "tool_count": 269
 }
