@@ -83,14 +83,14 @@ business:
 用户请求 (业务: ecommerce)
     │
     ▼
-BusinessContext 解析
+BusinessSkillPolicy 解析
     │
     ├─ allowed_channels: [meta, google]
     ├─ allowed_campaign_types: [SHOPPING, SEARCH]
-    └─ business_rules: {...}
+    └─ policy rules: {...}
     │
     ▼
-ToolSelector 过滤
+RuntimePolicy + ToolSelector 过滤
     │
     ├─ 从当前已注册工具中筛选
     ├─ 只保留 meta + google 平台的工具
