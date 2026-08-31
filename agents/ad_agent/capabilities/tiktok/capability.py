@@ -104,7 +104,8 @@ class TikTokCapability(BaseCapability):
     capability_version = "1.3.0"
     provider_api_version = "v1.3"
     provider_method_coverage = {
-        "list_accounts": ["tiktok_list_accounts"], "list_campaigns": ["tiktok_list_campaigns"],
+        "list_accounts": ["tiktok_list_accounts"], "get_account": ["tiktok_get_account"],
+        "list_campaigns": ["tiktok_list_campaigns"],
         "get_campaign": ["tiktok_get_campaign"], "create_campaign": ["tiktok_create_campaign"],
         "update_campaign": ["tiktok_update_campaign"], "pause_campaign": ["tiktok_pause_campaign"],
         "resume_campaign": ["tiktok_resume_campaign"], "delete_campaign": ["tiktok_delete_campaign"],
@@ -176,6 +177,20 @@ class TikTokCapability(BaseCapability):
         identity_list = tiktok_identity_list_schema()
         identity_video_info = tiktok_identity_video_info_schema()
         tools = [
+            method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert",
+                name="tiktok_get_account",
+                description="查询 TikTok 广告主账户详情。",
+                method_name="get_account", result_key="account",
+                properties={"account_id": {"type": "string", "minLength": 1}},
+                required=["account_id"],
+                action="get", resource_type="account",
+                resource_id_field="account_id",
+                intent_types=["get_account"], traits=["read", "account"],
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data),
+                ), {}),
+            ),
             method_tool(
                 platform="tiktok", skill="tiktok-ads-api-expert", name="tiktok_upload_image",
                 description="上传或绑定 TikTok 广告图片素材；默认仅生成 dry-run 计划。",

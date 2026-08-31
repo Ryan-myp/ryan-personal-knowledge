@@ -218,6 +218,26 @@ class TikTokAPIClient(BasePlatformClient):
         if isinstance(payload, dict):
             return payload.get('advertisers', payload.get('list', []))
         return payload
+
+    def get_account(self, advertiser_id: str) -> dict:
+        """Get one TikTok advertiser through the existing account/get endpoint."""
+        advertiser_id = str(advertiser_id or "").strip()
+        if not advertiser_id.isdigit():
+            raise ValueError("advertiser_id must contain digits only")
+        accounts = self.list_accounts([advertiser_id])
+        return next(
+            (
+                item for item in accounts
+                if isinstance(item, dict)
+                and str(
+                    item.get("advertiser_id")
+                    or item.get("account_id")
+                    or item.get("id")
+                    or ""
+                ) == advertiser_id
+            ),
+            {},
+        )
     
     # ==================== Campaign 管理 ====================
     

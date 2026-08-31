@@ -4,7 +4,7 @@
 
 ## 当前契约（2026-08-31）
 
-- 单 Agent + 多 Skills + Tools；平台 Capability 是可执行注册表的来源，当前共 290 个工具：Meta 75、Google Ads 107、TikTok 77、DV360 31。Capability 和按约定命名的 Provider Client 均自动发现，不依赖中心渠道/工具配置表；每个 Capability 还提供 Provider 方法覆盖率发布门禁。DV360 Campaign 创建尚未建设，仅在 API Surface 标记为 planned，不注册不可执行 Tool。
+- 单 Agent + 多 Skills + Tools；平台 Capability 是可执行注册表的来源，当前共 291 个工具：Meta 75、Google Ads 107、TikTok 78、DV360 31。Capability 和按约定命名的 Provider Client 均自动发现，不依赖中心渠道/工具配置表；每个 Capability 还提供 Provider 方法覆盖率发布门禁。DV360 Campaign 创建尚未建设，仅在 API Surface 标记为 planned，不注册不可执行 Tool。
 - 所有 Campaign 及下级资源创建/更新默认 dry-run；当前不会因工具已注册就调用真实写 API。
 - live 仅允许配置白名单账户，且 API 确认必须携带与当前 `session_id + account_id + tool + normalized input + idempotency key` 绑定的 `confirmation_payload`。
 - 白名单只有一个账户时允许兼容性自动选择；多账户配置必须由调用方显式指定目标账户。

@@ -30,6 +30,7 @@ OFFICIAL_INVENTORY = [
 
 API_SURFACE = [
     {"resource": "account", "action": "list", "method": "list_accounts", "status": "implemented"},
+    {"resource": "account", "action": "get", "method": "get_account", "status": "implemented"},
     {"resource": "campaign", "action": "crud", "method": "create_campaign", "status": "implemented"},
     {"resource": "campaign", "action": "list", "method": "list_campaigns", "status": "implemented"},
     {"resource": "campaign", "action": "get", "method": "get_campaign", "status": "implemented"},

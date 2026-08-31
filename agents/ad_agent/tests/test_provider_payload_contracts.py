@@ -4213,3 +4213,17 @@ def test_tiktok_single_resource_readers_reuse_existing_list_endpoints():
     assert client.get_product_set(
         "7397068114548195329", "catalog-1", "set-1"
     )["product_set_id"] == "set-1"
+
+
+def test_tiktok_account_reader_reuses_account_get_endpoint():
+    client = TikTokAPIClient({"access_token": "test"})
+    seen = []
+
+    def list_accounts(advertiser_ids):
+        seen.append(advertiser_ids)
+        return [{"advertiser_id": "7397068114548195329", "name": "Demo"}]
+
+    client.list_accounts = list_accounts
+
+    assert client.get_account("7397068114548195329")["name"] == "Demo"
+    assert seen == [["7397068114548195329"]]
