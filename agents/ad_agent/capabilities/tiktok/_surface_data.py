@@ -71,6 +71,7 @@ API_SURFACE = [
     {"resource": "location", "action": "search", "method": "search_locations", "status": "implemented"},
     {"resource": "region", "action": "list", "method": "list_regions", "status": "implemented"},
     {"resource": "creative", "action": "list", "method": "list_creatives", "status": "implemented"},
+    {"resource": "creative", "action": "get", "method": "get_creative", "status": "implemented"},
     {"resource": "creative_portfolio", "action": "create", "method": "create_creative_portfolio", "status": "implemented"},
     {"resource": "creative_portfolio", "action": "get", "method": "get_creative_portfolio", "status": "implemented"},
     {"resource": "creative_portfolio", "action": "preview", "method": "preview_creative_portfolio", "status": "implemented"},

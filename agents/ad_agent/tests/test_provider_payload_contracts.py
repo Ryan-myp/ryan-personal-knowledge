@@ -4163,3 +4163,28 @@ def test_meta_lead_reader_verifies_form_ownership_before_listing():
             ),
         },
     )
+
+
+def test_tiktok_get_creative_reuses_the_scoped_creative_list_contract():
+    client = TikTokAPIClient({"access_token": "test"})
+    seen = []
+
+    def list_creatives(advertiser_id, filtering=None, page_size=20):
+        seen.append((advertiser_id, filtering, page_size))
+        return [{"creative_id": "creative-1", "name": "Demo"}]
+
+    client.list_creatives = list_creatives
+
+    assert client.get_creative("7397068114548195329", "creative-1") == {
+        "creative_id": "creative-1",
+        "name": "Demo",
+    }
+    assert seen == [(
+        "7397068114548195329",
+        [{
+            "field": "CREATIVE_IDS",
+            "operator": "IN",
+            "values": ["creative-1"],
+        }],
+        1,
+    )]

@@ -1371,6 +1371,30 @@ class TikTokAPIClient(BasePlatformClient):
         result = self.request('GET', 'creative/get/', params=data)
         payload = self._data_section(result)
         return payload.get('list', []) if isinstance(payload, dict) else []
+
+    def get_creative(self, advertiser_id: str, creative_id: str) -> dict:
+        """Get one Creative through the existing creative/get endpoint."""
+        advertiser_id = str(advertiser_id or "").strip()
+        creative_id = str(creative_id or "").strip()
+        if not advertiser_id or not creative_id:
+            raise ValueError("advertiser_id and creative_id must not be empty")
+        creatives = self.list_creatives(
+            advertiser_id,
+            filtering=[{
+                "field": "CREATIVE_IDS",
+                "operator": "IN",
+                "values": [creative_id],
+            }],
+            page_size=1,
+        )
+        return next(
+            (
+                item for item in creatives
+                if isinstance(item, dict)
+                and str(item.get("creative_id") or item.get("id") or "") == creative_id
+            ),
+            {},
+        )
     
     def list_videos(self, advertiser_id: str, filtering: list = None, page_size: int = 20) -> list:
         """获取视频列表"""

@@ -1,5 +1,5 @@
 {
-  "digest": "0807d412115631448dea54a36d6124197bdae6c395a5cfca571c6240a165c3e8",
+  "digest": "48d90e45bea55c3ca21bfa7ff1e2cdf2594679971975c07ce9de732b5f3f7451",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -19660,8 +19660,8 @@
       ]
     },
     "tiktok": {
-      "digest": "e7c20c8a6b1786318a6a88d2eea1cbbd62aacd41de357bdf89218962c64757e4",
-      "tool_count": 72,
+      "digest": "316faf34890832ef88a611df6ca65c99097bafd56867ef342d87555542b05829",
+      "tool_count": 73,
       "tools": [
         {
           "action": "create",
@@ -24353,6 +24353,58 @@
           "traits": [
             "read",
             "conversion"
+          ]
+        },
+        {
+          "action": "get",
+          "activation_rules": [],
+          "contract_version": "1.3.0",
+          "description": "查询 TikTok Creative 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "creative_id": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "creative_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_creative"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_get_creative",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "readback_tool": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "creative_id",
+          "resource_type": "creative",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "creative"
           ]
         },
         {
@@ -31283,6 +31335,18 @@
         "status": "implemented"
       },
       {
+        "action": "get",
+        "api_version": "v1.3",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_open_api_baseline",
+        "method": "get_creative",
+        "provider": "tiktok",
+        "resource": "creative",
+        "source_url": "https://business-api.tiktok.com/portal/docs",
+        "status": "implemented"
+      },
+      {
         "action": "create",
         "api_version": "v1.3",
         "evidence_level": "code_contract",
@@ -31730,5 +31794,5 @@
       ]
     }
   },
-  "tool_count": 285
+  "tool_count": 286
 }

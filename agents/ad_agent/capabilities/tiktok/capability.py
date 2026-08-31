@@ -134,6 +134,7 @@ class TikTokCapability(BaseCapability):
         "list_devices": ["tiktok_list_devices"],
         "list_operating_systems": ["tiktok_list_operating_systems"], "list_carriers": ["tiktok_list_carriers"],
         "list_browsers": ["tiktok_list_browsers"], "list_creatives": ["tiktok_list_creatives"],
+        "get_creative": ["tiktok_get_creative"],
         "list_videos": ["tiktok_list_videos"], "list_images": ["tiktok_list_images"],
         "upload_image": ["tiktok_upload_image"], "upload_video": ["tiktok_upload_video"],
         "list_conversions": ["tiktok_list_conversions"], "get_conversion": ["tiktok_get_conversion"],
@@ -1146,6 +1147,24 @@ class TikTokCapability(BaseCapability):
                 replay_policy=ReplayPolicy.SAFE,
                 traits=["read", "creative", resource_name],
             ), handler))
+
+        tools.append(method_tool(
+            platform="tiktok", skill="tiktok-ads-api-expert",
+            name="tiktok_get_creative",
+            description="查询 TikTok Creative 详情。",
+            method_name="get_creative", result_key="creative",
+            properties={
+                "account_id": {"type": "string"},
+                "creative_id": {"type": "string", "minLength": 1},
+            },
+            required=["account_id", "creative_id"],
+            action="get", resource_type="creative",
+            resource_id_field="creative_id",
+            intent_types=["get_creative"], traits=["read", "creative"],
+            argument_builder=lambda ctx, data: ((
+                account(ctx, data), data["creative_id"]
+            ), {}),
+        ))
 
         reference_tools = [
             ("conversions", "account", TikTokListConversionsHandler(api_client)),
