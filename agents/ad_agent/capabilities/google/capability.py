@@ -163,6 +163,7 @@ class GoogleCapability(BaseCapability):
         "create_feed": ["google_create_feed"], "update_feed": ["google_update_feed"],
         "delete_feed": ["google_delete_feed"],
         "list_feed_items": ["google_list_feed_items"],
+        "get_feed_item": ["google_get_feed_item"],
         "create_feed_item": ["google_create_feed_item"],
         "update_feed_item": ["google_update_feed_item"],
         "delete_feed_item": ["google_delete_feed_item"],
@@ -1426,6 +1427,22 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((data["feed_id"],), {
                     "page_size": data.get("limit", 100),
                 }),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_get_feed_item",
+                description="查询 Google Ads FeedItem 详情。",
+                method_name="get_feed_item", result_key="feed_item",
+                properties=feed_schema["properties"],
+                required=["customer_id", "feed_id", "feed_item_resource_name"],
+                action="get", resource_type="feed_item",
+                parent_resource_type="feed",
+                parent_resource_id_field="feed_id",
+                resource_id_field="feed_item_resource_name",
+                intent_types=["get_feed_item"], traits=["read", "feed", "feed_item"],
+                argument_builder=lambda _ctx, data: ((
+                    data["feed_id"], data["feed_item_resource_name"]
+                ), {}),
             ),
             method_tool(
                 platform="google-ads", skill="google-ads-api-expert",

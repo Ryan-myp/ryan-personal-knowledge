@@ -4267,6 +4267,27 @@ class GoogleAdsAPIClient(BasePlatformClient):
         )
         return [self._normalize_feed_item(row) for row in rows]
 
+    def get_feed_item(
+        self, feed_id: str, feed_item_resource_name: str
+    ) -> dict[str, Any]:
+        """Get one FeedItem by filtering an existing FeedItem listing."""
+        feed_item_resource_name = str(feed_item_resource_name or "").strip()
+        if not feed_item_resource_name.startswith(
+            f"customers/{self.customer_id}/feedItems/"
+        ):
+            raise ValueError(
+                "feed_item_resource_name must belong to the current customer"
+            )
+        items = self.list_feed_items(feed_id)
+        return next(
+            (
+                item for item in items
+                if isinstance(item, dict)
+                and item.get("resource_name") == feed_item_resource_name
+            ),
+            {},
+        )
+
     def create_feed_item(
         self, feed_id: str, attribute_values: list[dict[str, Any]]
     ) -> str:

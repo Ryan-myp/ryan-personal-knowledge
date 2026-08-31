@@ -1,5 +1,5 @@
 {
-  "digest": "0f37ac70e7333c8280c3a7278899edd2739d7e593063b6e7a051a0a93489cce2",
+  "digest": "5c67751128307342ab5a019aaff6a9913805f4fe52368cf14a4e95bb99296451",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -1998,8 +1998,8 @@
       ]
     },
     "google-ads": {
-      "digest": "9bf0d9def828bb425582c383891da3b33cdfa8fa15c19ad943c579d55257a0a6",
-      "tool_count": 107,
+      "digest": "e76b60bd1a154673eea00ddff0e6b00bb555a398faa9fe94a7dc311b2a326d3e",
+      "tool_count": 108,
       "tools": [
         {
           "action": "create",
@@ -9234,6 +9234,104 @@
           "traits": [
             "read",
             "feed"
+          ]
+        },
+        {
+          "action": "get",
+          "activation_rules": [],
+          "contract_version": "1.4.0",
+          "description": "查询 Google Ads FeedItem 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "attribute_values": {
+                "description": "FeedItem attribute values",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "attributes": {
+                "description": "Feed attribute definitions",
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "feed_id": {
+                "description": "Google Feed ID",
+                "minLength": 1,
+                "type": "string"
+              },
+              "feed_item_resource_name": {
+                "description": "FeedItem resource name",
+                "minLength": 1,
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of rows",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "name": {
+                "description": "Feed name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "origin": {
+                "description": "Feed origin",
+                "enum": [
+                  "UNKNOWN",
+                  "USER",
+                  "GOOGLE"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "customer_id",
+              "feed_id",
+              "feed_item_resource_name"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_feed_item"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_get_feed_item",
+          "parent_resource_id_field": "feed_id",
+          "parent_resource_type": "feed",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "feed_item_resource_name",
+          "resource_type": "feed_item",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "feed",
+            "feed_item"
           ]
         },
         {
@@ -30053,6 +30151,18 @@
         "status": "implemented"
       },
       {
+        "action": "get",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "get_feed_item",
+        "provider": "google-ads",
+        "resource": "feed_item",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
         "action": "create",
         "api_version": "v24",
         "evidence_level": "code_contract",
@@ -32116,5 +32226,5 @@
       ]
     }
   },
-  "tool_count": 291
+  "tool_count": 292
 }

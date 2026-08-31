@@ -4138,6 +4138,18 @@ def test_google_feed_and_conversion_goal_methods_build_explicit_operations():
     )["success"]
 
 
+def test_google_feed_item_reader_reuses_feed_item_listing():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
+    resource_name = "customers/123/feedItems/9"
+    client.list_feed_items = lambda feed_id, page_size=100: [{
+        "resource_name": resource_name,
+        "feed": "customers/123/feeds/8",
+        "attribute_values": [],
+    }]
+
+    assert client.get_feed_item("8", resource_name)["resource_name"] == resource_name
+
+
 def test_meta_lead_reader_verifies_form_ownership_before_listing():
     client = MetaAPIClient({"access_token": "test"})
     seen = []

@@ -135,6 +135,7 @@ API_SURFACE = [
     {"resource": "feed", "action": "update", "method": "update_feed", "status": "implemented"},
     {"resource": "feed", "action": "delete", "method": "delete_feed", "status": "implemented"},
     {"resource": "feed_item", "action": "list", "method": "list_feed_items", "status": "implemented"},
+    {"resource": "feed_item", "action": "get", "method": "get_feed_item", "status": "implemented"},
     {"resource": "feed_item", "action": "create", "method": "create_feed_item", "status": "implemented"},
     {"resource": "feed_item", "action": "update", "method": "update_feed_item", "status": "implemented"},
     {"resource": "feed_item", "action": "delete", "method": "delete_feed_item", "status": "implemented"},
