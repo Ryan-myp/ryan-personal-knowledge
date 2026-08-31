@@ -31,6 +31,7 @@ from agents.ad_agent.api_clients.dv360_client import DV360APIClient
 from agents.ad_agent.persistence.store import AdAgentStore
 from agents.ad_agent.runtime.runtime import AccountWhitelistValidator, AgentRuntime
 from agents.ad_agent.runtime.reconciliation import ToolReadbackReconciler
+from agents.ad_agent.features.cross_channel import CrossChannelFeature
 
 
 def _whitelist(**accounts):
@@ -91,8 +92,8 @@ def test_batch_planner_selects_campaign_updater_from_tool_metadata():
         effect_class=ToolEffect.WRITE,
     )
 
-    selected = AgentRuntime._select_batch_campaign_tool(
-        [lookup, updater], "cross_channel_batch_pause"
+    selected = CrossChannelFeature.select_batch_campaign_tool(
+        [lookup, updater], "cross_channel_batch_pause", AgentRuntime(require_llm=False)
     )
 
     assert selected is updater
@@ -122,8 +123,8 @@ def test_batch_planner_fails_closed_for_ambiguous_campaign_updaters():
         effect_class=ToolEffect.WRITE,
     )
 
-    assert AgentRuntime._select_batch_campaign_tool(
-        [first, second], "cross_channel_batch_pause"
+    assert CrossChannelFeature.select_batch_campaign_tool(
+        [first, second], "cross_channel_batch_pause", AgentRuntime(require_llm=False)
     ) is None
 
 

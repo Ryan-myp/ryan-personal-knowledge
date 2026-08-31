@@ -49,6 +49,10 @@
   `provider_method_coverage` → `api_surface.py` → executable Tool。现有覆盖为 DV360
   29/29、Google Ads 90/90、Meta 69/69、TikTok 72/72；同一 Client 方法映射多个业务
   Tool 时会在审计 JSON 中保留全部映射，不以工具数量冒充官方接口完整度。
+- Runtime 业务边界已完成第一阶段收敛：业务规则通过 `RuntimePolicy` 注入，跨渠道
+  preflight/批量/二阶段报表/分析通过自动发现的 `RuntimeFeature` 承担，回复展示通过
+  `ResponseRenderer` 承担。Runtime 不再包含业务策略、跨渠道流程或响应格式化实现；
+  输入构建和参数选择 helper 仍在下一阶段继续抽离。
 
 ## 项目概述
 

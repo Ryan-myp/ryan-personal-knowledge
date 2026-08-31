@@ -1,0 +1,775 @@
+"""Cross-channel feature implementation.
+
+This module owns cross-channel business orchestration.  It consumes a narrow
+Runtime service object for generic execution, persistence and policy gates;
+the Runtime itself does not decide what "cross-channel" means.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any, Iterable, Mapping, Optional
+
+from ..core.cross_channel import (
+    CreationPreflight,
+    CreationPreflightItem,
+    CrossChannelAggregator,
+    CrossChannelAnalyzer,
+    build_batch_operations,
+)
+from ..core.tool_registry import validate_tool_input
+from ..core.interfaces import ToolContext
+from ..core.platform import normalize_platform
+
+
+class CrossChannelFeature:
+    """Provider-neutral cross-channel campaign and reporting workflows."""
+
+    feature_name = "cross-channel"
+
+    BATCH_INTENTS = frozenset({
+        "cross_channel_batch_pause",
+        "cross_channel_batch_resume",
+        "cross_channel_batch_update_budget",
+        "cross_channel_batch_delete",
+    })
+    ANALYSIS_INTENTS = frozenset({
+        "cross_channel_compare",
+        "cross_channel_performance_insights",
+        "cross_channel_optimize_budget",
+        "cross_channel_export_report",
+    })
+
+    def can_handle(self, intent: Any) -> bool:
+        intent_type = str(getattr(intent, "intent_type", "") or "")
+        if intent_type in self.BATCH_INTENTS or intent_type in self.ANALYSIS_INTENTS:
+            return True
+        return self.is_multi_platform_create(intent)
+
+    def is_batch_intent(self, intent: Any) -> bool:
+        return str(getattr(intent, "intent_type", "") or "") in self.BATCH_INTENTS
+
+    def handles_creation_preflight(self, intent: Any) -> bool:
+        return self.is_multi_platform_create(intent)
+
+    @staticmethod
+    def preflight_failure_reply(_intent: Any, _preflight: Any) -> str:
+        return (
+            "跨渠道创建 preflight 未通过；已停止所有渠道的创建。"
+            "请先补齐各渠道/层级的参数后重试。"
+        )
+
+    @staticmethod
+    def preflight_payload(preflight: CreationPreflight) -> dict[str, Any]:
+        return {"creation_preflight": preflight.to_dict()}
+
+    @classmethod
+    def is_multi_platform_create(
+        cls, intent: Any, runtime: Any = None
+    ) -> bool:
+        canonicalize = (
+            runtime._canonical_platform
+            if runtime is not None
+            else normalize_platform
+        )
+        platforms = {
+            canonicalize(platform)
+            for platform in (getattr(intent, "platforms", []) or [])
+        }
+        return (
+            getattr(intent, "intent_type", "") == "create_campaign"
+            and len(platforms) > 1
+        )
+
+    @staticmethod
+    def select_batch_campaign_tool(
+        tools: Iterable[Any], intent_type: str, runtime: Any,
+    ) -> Optional[Any]:
+        """Select a unique provider Campaign Tool from its metadata."""
+        batch_action = (
+            "delete" if intent_type == "cross_channel_batch_delete" else "update"
+        )
+        candidates = [
+            tool for tool in (tools or [])
+            if str(getattr(tool, "action", "") or "").lower() == batch_action
+            and str(getattr(tool, "resource_type", "") or "").lower()
+            in {"campaign", "campaigns"}
+        ]
+        exact = [
+            tool for tool in candidates
+            if intent_type in (getattr(tool, "intent_types", []) or [])
+        ]
+        candidates = exact or candidates
+        if intent_type == "cross_channel_batch_update_budget":
+            candidates = [
+                tool for tool in candidates
+                if isinstance(
+                    (getattr(tool.input_schema, "properties", {}) or {}).get(
+                        "updates", {}
+                    ),
+                    dict,
+                )
+                and bool({
+                    "budget", "daily_budget",
+                }.intersection(
+                    (
+                        getattr(tool.input_schema, "properties", {}) or {}
+                    ).get("updates", {}).get("properties", {})
+                ))
+            ]
+        if len(candidates) == 1:
+            return candidates[0]
+        batch_candidates = [
+            tool for tool in candidates
+            if "batch" in {
+                str(trait or "").strip().lower()
+                for trait in (getattr(tool, "traits", []) or [])
+            }
+        ]
+        return batch_candidates[0] if len(batch_candidates) == 1 else None
+
+    @classmethod
+    def preflight_creation(
+        cls,
+        runtime: Any,
+        intent: Any,
+        tool_plan: dict[str, list[Any]],
+        session: Any,
+        account_id: Optional[str],
+        account_scope: Optional[Mapping[str, Any]],
+        granted_permissions: Optional[set[str] | frozenset[str]],
+    ) -> CreationPreflight:
+        """Validate every requested creation chain before any Tool runs."""
+        items: list[CreationPreflightItem] = []
+        errors: list[str] = []
+        routes_by_platform: dict[str, tuple[str, list[Any]]] = {}
+        for raw_platform, tools in tool_plan.items():
+            canonical = runtime._canonical_platform(raw_platform)
+            routes_by_platform.setdefault(canonical, (raw_platform, tools))
+
+        for requested_platform in intent.platforms:
+            platform = runtime._canonical_platform(requested_platform)
+            route = routes_by_platform.get(platform)
+            if route is None or not route[1]:
+                message = f"{platform}: 没有已注册的 create_campaign Tool"
+                errors.append(message)
+                items.append(CreationPreflightItem(
+                    platform=platform,
+                    tool_name="<creation_chain>",
+                    resource_type=None,
+                    parent_resource_type=None,
+                    status="blocked",
+                    errors=(message,),
+                ))
+                continue
+
+            raw_platform, tools = route
+            account = runtime._resolve_platform_account(
+                intent, raw_platform, tools, account_id
+            )
+            if not account:
+                candidates = runtime._available_accounts_for_request(
+                    platform, account_scope
+                )
+                if len(candidates) == 1:
+                    account = candidates[0]
+
+            account_errors: list[str] = []
+            if not account:
+                account_errors.append(f"{platform}: 缺少账户ID")
+            else:
+                allowed, account_error = runtime._validate_account_with_principal(
+                    platform, account, True, account_scope
+                )
+                if not allowed:
+                    account_errors.append(f"{platform}: {account_error}")
+
+            preflight_ctx = ToolContext(
+                session_id=session.session_id,
+                user_id=session.ctx.user_id,
+                account_id=account,
+                credentials={},
+            )
+            prior_failed: Optional[str] = None
+            for tool_def in tools:
+                tool_errors = list(account_errors)
+                missing_fields: list[str] = []
+                tool_input: dict[str, Any] = {}
+                if not account_errors:
+                    tool_input = runtime._build_tool_input(
+                        tool_def, intent, raw_platform, preflight_ctx
+                    )
+                    missing_fields = list(
+                        tool_input.pop("_missing_params", []) or []
+                    )
+                    unknown_params = list(
+                        tool_input.pop("_unknown_params", []) or []
+                    )
+                    selection_errors = list(
+                        tool_input.pop("_selection_errors", []) or []
+                    )
+                    if missing_fields:
+                        tool_errors.extend(
+                            f"缺少必需参数: {field}" for field in missing_fields
+                        )
+                    if unknown_params:
+                        tool_errors.append(
+                            "工具参数契约不支持以下字段：" + ", ".join(unknown_params)
+                        )
+                    if selection_errors:
+                        tool_errors.append(
+                            "参数选择凭证无效：" + "; ".join(selection_errors)
+                        )
+                    protected_paths = runtime._validate_tool_input_redline(
+                        tool_input
+                    )
+                    if protected_paths:
+                        tool_errors.append(
+                            "请求包含禁止传入的凭证/账户配置字段："
+                            + ", ".join(protected_paths)
+                        )
+                    if tool_def.is_write_tool:
+                        schema = tool_def.input_schema
+                        missing_fields.extend(
+                            field_name
+                            for field_name in (schema.provider_required or [])
+                            if tool_input.get(field_name) in (None, "")
+                            and field_name not in missing_fields
+                        )
+                        for alternatives in (schema.provider_any_of or []):
+                            if not any(
+                                tool_input.get(field_name)
+                                not in (None, "", {}, [])
+                                for field_name in alternatives
+                            ):
+                                missing_fields.append(
+                                    "one_of(" + ", ".join(alternatives) + ")"
+                                )
+                        tool_errors.extend(
+                            runtime._validate_semantic_write_input(
+                                tool_def, tool_input
+                            )
+                        )
+                        tool_errors.extend(
+                            validate_tool_input(
+                                tool_def.input_schema,
+                                tool_input,
+                                include_provider_contract=True,
+                            )
+                        )
+                        if runtime.execution_mode == "live":
+                            if not runtime.allow_live_writes:
+                                tool_errors.append("Runtime 全局 allow_live_writes 未开启")
+                            elif not tool_def.live_support:
+                                tool_errors.append("该 Tool 当前仅支持 dry-run")
+                            elif tool_def.name not in runtime._live_approved_tools:
+                                tool_errors.append("该 Tool 未加入 live 执行批准清单")
+                            if runtime.write_guard is None:
+                                tool_errors.append("live 写操作必须配置 WriteGuard")
+                if prior_failed:
+                    tool_errors.append(f"前置 Tool {prior_failed} 未通过 preflight")
+
+                normalized_errors = tuple(
+                    dict.fromkeys(str(error) for error in tool_errors)
+                )
+                status = "blocked" if normalized_errors else "ready"
+                items.append(CreationPreflightItem(
+                    platform=platform,
+                    tool_name=tool_def.name,
+                    resource_type=getattr(tool_def, "resource_type", None),
+                    parent_resource_type=getattr(
+                        tool_def, "parent_resource_type", None
+                    ),
+                    status=status,
+                    account_id=account,
+                    missing_fields=tuple(dict.fromkeys(missing_fields)),
+                    errors=normalized_errors,
+                ))
+                if normalized_errors and prior_failed is None:
+                    prior_failed = tool_def.name
+                resource_type = str(
+                    getattr(tool_def, "resource_type", "") or ""
+                )
+                if resource_type:
+                    resource_field = runtime._resource_id_field_for_tool(tool_def)
+                    placeholder = f"preflight:{platform}:{resource_type}"
+                    preflight_ctx.protected_state[resource_field] = placeholder
+                    preflight_ctx.protected_state[
+                        f"{platform}:{resource_field}"
+                    ] = placeholder
+
+        unique_errors = tuple(dict.fromkeys(errors + [
+            error
+            for item in items
+            for error in item.errors
+            if error and error not in errors
+        ]))
+        return CreationPreflight(
+            ready=not unique_errors,
+            items=tuple(items),
+            errors=unique_errors,
+        )
+
+    @staticmethod
+    def preflight_results(preflight: CreationPreflight) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
+        for item in preflight.items:
+            error = "; ".join(item.errors) if item.errors else None
+            results.append({
+                "tool": item.tool_name,
+                "platform": item.platform,
+                "resource_type": item.resource_type,
+                "parent_resource_type": item.parent_resource_type,
+                "account_id": item.account_id,
+                "success": False,
+                "data": {
+                    "preflight": True,
+                    "status": item.status,
+                    "execution_status": "skipped_before_execution",
+                    "missing_fields": list(item.missing_fields),
+                    "errors": list(item.errors),
+                },
+                "error": error,
+                "needs_confirmation": False,
+                "preflight": True,
+                "skipped": True,
+            })
+        return results
+
+    @classmethod
+    def run_batch_plan(
+        cls,
+        runtime: Any,
+        user_input: str,
+        session: Any,
+        turn_id: str,
+        intent: Any,
+        tool_plan: dict[str, list[Any]],
+        account_id: Optional[str],
+        workflow_id: Optional[str],
+        account_scope: Optional[Mapping[str, Any]] = None,
+        granted_permissions: Optional[set[str] | frozenset[str]] = None,
+    ) -> dict[str, Any]:
+        """Build a provider-neutral, auditable batch plan."""
+        accounts: dict[str, str] = {}
+        errors: list[str] = []
+        tool_by_platform: dict[str, Any] = {
+            runtime._canonical_platform(platform): cls.select_batch_campaign_tool(
+                tools, intent.intent_type, runtime
+            )
+            for platform, tools in tool_plan.items()
+        }
+        tools_by_platform = {
+            runtime._canonical_platform(platform): tools
+            for platform, tools in tool_plan.items()
+        }
+        blocked_platforms: set[str] = set()
+
+        for requested_platform in intent.platforms:
+            actual_platform = runtime._canonical_platform(requested_platform)
+            if actual_platform not in tools_by_platform:
+                errors.append(f"{actual_platform}: 没有已注册的 Campaign 批量管理工具")
+                blocked_platforms.add(actual_platform)
+            elif tool_by_platform.get(actual_platform) is None:
+                errors.append(f"{actual_platform}: 没有唯一兼容的 Campaign 批量管理工具")
+                blocked_platforms.add(actual_platform)
+
+        for actual_platform, tool_def in tool_by_platform.items():
+            if tool_def is None:
+                continue
+            raw_platform = next(
+                (
+                    platform for platform in tool_plan
+                    if runtime._canonical_platform(platform) == actual_platform
+                ),
+                actual_platform,
+            )
+            resolved = runtime._resolve_platform_account(
+                intent, raw_platform, [tool_def], account_id
+            )
+            allowed, error = runtime._validate_account_with_principal(
+                actual_platform, resolved, True, account_scope
+            )
+            if not allowed:
+                errors.append(f"{actual_platform}: {error}")
+                blocked_platforms.add(actual_platform)
+                continue
+            permission_error = runtime._check_tool_permissions(
+                tool_def, granted_permissions
+            )
+            if permission_error:
+                errors.append(f"{actual_platform}: {permission_error}")
+                blocked_platforms.add(actual_platform)
+                continue
+            accounts[actual_platform] = resolved
+
+        supported_platforms = {
+            platform for platform, tool in tool_by_platform.items()
+            if tool is not None
+        }
+        operations, planning_errors = build_batch_operations(
+            intent,
+            accounts,
+            supported_platforms=supported_platforms,
+            blocked_platforms=blocked_platforms,
+        )
+        errors = list(dict.fromkeys(errors + planning_errors))
+        results: list[dict] = []
+        workflow_inputs: dict[int, dict] = {}
+        if len(operations) > runtime.max_tool_calls:
+            errors.append(
+                "批量操作数量超过本回合上限："
+                f"最多允许 {runtime.max_tool_calls} 项"
+            )
+            operations = []
+
+        tool_name_by_platform = {
+            platform: tool.name
+            for platform, tool in tool_by_platform.items()
+            if tool is not None
+        }
+        for message in errors:
+            platform = message.split(":", 1)[0]
+            results.append({
+                "tool": tool_name_by_platform.get(platform, "cross_channel_batch"),
+                "platform": platform,
+                "success": False,
+                "data": {"batch": True, "planned": False},
+                "error": message,
+                "batch_planning_error": True,
+            })
+
+        operation_sequence = 0
+        for operation in operations:
+            runtime._heartbeat_workflow(workflow_id)
+            tool_name = tool_name_by_platform.get(operation.platform)
+            if not tool_name:
+                results.append({
+                    "tool": "cross_channel_batch",
+                    "platform": operation.platform,
+                    "success": False,
+                    "data": {"batch": True, "planned": False},
+                    "error": (
+                        "该平台没有唯一兼容的 Campaign 批量管理工具"
+                        if tools_by_platform.get(operation.platform)
+                        else "该平台没有已注册的 Campaign 批量管理工具"
+                    ),
+                    "batch_planning_error": True,
+                })
+                continue
+            tool_def = tool_by_platform.get(operation.platform)
+            operation_sequence += 1
+            resource_id_field = runtime._resource_id_field_for_tool(tool_def)
+            tool_input = {resource_id_field: operation.campaign_id}
+            if operation.action != "delete":
+                tool_input["updates"] = runtime._normalize_provider_updates(
+                    tool_def, operation.updates
+                )
+            properties = getattr(tool_def.input_schema, "properties", {}) or {}
+            for account_field in ("account_id", "advertiser_id", "customer_id"):
+                if account_field in properties:
+                    tool_input[account_field] = operation.account_id
+                    break
+            if workflow_id and runtime._session_manager:
+                runtime._session_manager.record_workflow_item(
+                    workflow_id=workflow_id,
+                    sequence=operation_sequence,
+                    platform=runtime._canonical_platform(operation.platform),
+                    tool_name=tool_name,
+                    status="running",
+                    input_data=runtime._redact_for_persistence(tool_input),
+                    account_id=operation.account_id,
+                    resource_type=getattr(tool_def, "resource_type", None),
+                    parent_resource_type=getattr(
+                        tool_def, "parent_resource_type", None
+                    ),
+                )
+            result_index = len(results)
+            workflow_inputs[result_index] = tool_input
+            protected_paths = runtime._validate_tool_input_redline(tool_input)
+            if protected_paths:
+                results.append({
+                    "tool": tool_name,
+                    "platform": operation.platform,
+                    "account_id": operation.account_id,
+                    "success": False,
+                    "data": {"batch": True, "planned": False},
+                    "error": "请求包含禁止传入的凭证/账户配置字段："
+                    + ", ".join(protected_paths),
+                    "workflow_sequence": operation_sequence,
+                })
+                continue
+            schema_errors = validate_tool_input(tool_def.input_schema, tool_input)
+            if schema_errors:
+                results.append({
+                    "tool": tool_name,
+                    "platform": operation.platform,
+                    "account_id": operation.account_id,
+                    "success": False,
+                    "data": {"batch": True, "planned": False},
+                    "error": f"Input validation failed: {schema_errors}",
+                    "workflow_sequence": operation_sequence,
+                })
+                continue
+            simulated = runtime._simulate_write(
+                tool_def, tool_input, runtime._canonical_platform(operation.platform)
+            )
+            data = dict(simulated.data)
+            data.update({
+                "batch": True,
+                "planned": True,
+                "action": operation.action,
+                "account_id": operation.account_id,
+                "campaign_ref": operation.campaign_ref.to_dict(),
+                "campaign_id": operation.campaign_id,
+            })
+            live_batch = runtime.execution_mode == "live"
+            if live_batch:
+                data.update({"mode": "live", "execution_status": "unsupported"})
+            results.append({
+                "tool": tool_name,
+                "platform": operation.platform,
+                "account_id": operation.account_id,
+                "success": not live_batch,
+                "data": data,
+                "error": (
+                    "跨渠道批量 Campaign 更新当前仅支持 dry-run，未调用线上 API"
+                    if live_batch else None
+                ),
+                "needs_confirmation": False,
+                "workflow_sequence": operation_sequence,
+            })
+
+        session.add_message({"role": "user", "content": user_input})
+        reply = runtime.response_renderer.render(
+            intent, results, bool(errors and not operations)
+        )
+        session.add_message({"role": "assistant", "content": reply})
+        runtime._finish_workflow(
+            workflow_id, tool_plan, results, workflow_inputs,
+            planning_errors=errors,
+        )
+        resource_results = runtime._build_resource_results(results)
+        if runtime._session_manager:
+            runtime._session_manager.update_session(
+                session.session_id,
+                {
+                    "execution_mode": runtime.execution_mode,
+                    "read_only_mode": runtime._read_only_mode,
+                    "message_count": len(session.messages),
+                    "messages": runtime._redact_for_persistence(
+                        session.messages[-20:]
+                    ),
+                },
+            )
+        return {
+            "session_id": session.session_id,
+            "turn_id": turn_id,
+            "timestamp": datetime.now().isoformat(),
+            "intent": intent.to_dict(),
+            "tool_plan": {key: [tool.name for tool in tools]
+                          for key, tools in tool_plan.items()},
+            "results": results,
+            "resource_results": resource_results,
+            "workflow_id": workflow_id,
+            "reply": reply,
+            "needs_confirmation": False,
+            "confirmation_payload": None,
+        }
+
+    @classmethod
+    def collect_metrics(
+        cls,
+        runtime: Any,
+        intent: Any,
+        tool_plan: dict[str, list[Any]],
+        results: list[dict],
+        session: Any,
+        turn_id: str,
+        request_clients: Optional[dict[str, Any]] = None,
+        account_scope: Optional[Mapping[str, Any]] = None,
+        granted_permissions: Optional[set[str] | frozenset[str]] = None,
+    ) -> None:
+        """Run the second, read-only reporting phase for comparisons."""
+        if intent.intent_type not in cls.ANALYSIS_INTENTS:
+            return
+        already_collected = {item.get("tool") for item in results}
+        listing_results = {
+            item.get("platform"): item
+            for item in results
+            if item.get("success")
+            and item.get("tool", "").endswith("list_campaigns")
+        }
+        for platform, listing in listing_results.items():
+            report_def = cls._find_campaign_report_tool(runtime, platform)
+            if not report_def or report_def.name in already_collected:
+                continue
+            listing_data = (
+                listing.get("data")
+                if isinstance(listing.get("data"), dict) else {}
+            )
+            campaigns = listing_data.get("campaigns") or []
+            campaign_ids = []
+            for campaign in campaigns if isinstance(campaigns, list) else []:
+                if not isinstance(campaign, dict):
+                    continue
+                campaign_id = (
+                    campaign.get("id")
+                    or campaign.get("campaign_id")
+                    or campaign.get("campaign_group_id")
+                )
+                if campaign_id is not None and str(campaign_id) not in campaign_ids:
+                    campaign_ids.append(str(campaign_id))
+            if not campaign_ids:
+                continue
+            tool_plan.setdefault(platform, []).append(report_def)
+            per_platform_account = runtime._resolve_platform_account(
+                intent, platform, [report_def], session.ctx.account_id
+            )
+            actual_platform = runtime._canonical_platform(platform)
+            permission_error = runtime._check_tool_permissions(
+                report_def, granted_permissions
+            )
+            if permission_error:
+                results.append({
+                    "tool": report_def.name,
+                    "platform": platform,
+                    "success": False,
+                    "error": permission_error,
+                    "needs_confirmation": False,
+                })
+                continue
+            allowed, account_error = runtime._validate_account_with_principal(
+                actual_platform, per_platform_account, False, account_scope
+            )
+            if not allowed:
+                results.append({
+                    "tool": report_def.name,
+                    "platform": platform,
+                    "success": False,
+                    "error": f"指标采集账户校验失败: {account_error}",
+                })
+                continue
+            platform_params = runtime._platform_params_for_intent(intent, platform)
+            report_input = {
+                key: value
+                for key, value in platform_params.items()
+                if key in report_def.input_schema.properties
+                and key not in {
+                    "campaign_id", "campaign_ids", "account_id",
+                    "customer_id", "advertiser_id",
+                }
+            }
+            if getattr(intent, "date_range", None):
+                if "date_range" in report_def.input_schema.properties:
+                    report_input.setdefault("date_range", intent.date_range)
+                if "date_preset" in report_def.input_schema.properties:
+                    report_input.setdefault(
+                        "date_preset",
+                        runtime._platform_date_range(
+                            platform, intent.date_range, report_def, "date_preset"
+                        ),
+                    )
+            if "campaign_ids" in report_def.input_schema.properties:
+                report_input["campaign_ids"] = campaign_ids
+            elif "campaign_id" in report_def.input_schema.properties:
+                report_input["campaign_id"] = campaign_ids[0]
+            for account_key in ("account_id", "advertiser_id", "customer_id"):
+                if account_key in report_def.input_schema.properties:
+                    report_input[account_key] = per_platform_account
+                    break
+            missing = validate_tool_input(report_def.input_schema, report_input)
+            if missing:
+                results.append({
+                    "tool": report_def.name,
+                    "platform": platform,
+                    "success": False,
+                    "error": f"指标采集参数不完整: {missing}",
+                })
+                continue
+            original_account = session.ctx.account_id
+            session.ctx.account_id = per_platform_account
+            try:
+                report_result = runtime._execute_tool(
+                    session.ctx, report_def.name, report_input, request_clients
+                )
+                results.append({
+                    "tool": report_def.name,
+                    "platform": platform,
+                    "success": report_result.success,
+                    "account_id": per_platform_account,
+                    "data": runtime._redact_for_persistence(report_result.data),
+                    "error": runtime._redact_for_persistence(report_result.error),
+                    "needs_confirmation": report_result.requires_confirmation,
+                })
+                session.save_result(
+                    report_def.name, report_result, platform=actual_platform
+                )
+                session.ctx.protected_state.update(session.protected_state)
+                runtime._persist_tool_result(
+                    session, turn_id, report_def, actual_platform,
+                    report_input, report_result,
+                )
+            except Exception as exc:
+                results.append({
+                    "tool": report_def.name,
+                    "platform": platform,
+                    "success": False,
+                    "error": f"跨渠道指标采集失败: {exc}",
+                })
+            finally:
+                session.ctx.account_id = original_account
+
+    @staticmethod
+    def _find_campaign_report_tool(runtime: Any, platform: str):
+        normalized = runtime._canonical_platform(platform)
+        candidates = []
+        for definition in runtime.registry.list_all():
+            if runtime._canonical_platform(definition.platform) != normalized:
+                continue
+            if not definition.is_read_tool:
+                continue
+            properties = getattr(definition.input_schema, "properties", {}) or {}
+            if not ({"campaign_id", "campaign_ids"} & set(properties)):
+                continue
+            action = str(getattr(definition, "action", "")).lower()
+            resource = str(getattr(definition, "resource_type", "")).lower()
+            if action not in {"report", "export", "download"} and resource != "report":
+                continue
+            candidates.append(definition)
+        if not candidates:
+            return None
+        preferred = [
+            definition for definition in candidates
+            if "get_campaign_report" in (
+                getattr(definition, "intent_types", []) or []
+            )
+        ]
+        if len(preferred) == 1:
+            return preferred[0]
+        return candidates[0] if len(candidates) == 1 else None
+
+    @classmethod
+    def analyze(cls, intent: Any, results: list[dict]) -> dict[str, Any]:
+        """Return cross-channel analysis payloads for the response layer."""
+        if intent.intent_type not in cls.ANALYSIS_INTENTS:
+            return {}
+        summary = CrossChannelAggregator().aggregate(results)
+        result: dict[str, Any] = {"cross_channel_summary": summary}
+        if intent.intent_type == "cross_channel_performance_insights":
+            result["cross_channel_insights"] = (
+                CrossChannelAnalyzer.performance_insights(summary)
+            )
+        elif intent.intent_type == "cross_channel_optimize_budget":
+            params = getattr(intent, "platform_params", {}) or {}
+            common = params.get("_common", {}) if isinstance(params, dict) else {}
+            common = common if isinstance(common, dict) else {}
+            result["cross_channel_budget_plan"] = CrossChannelAnalyzer.budget_plan(
+                summary,
+                getattr(intent, "budget", None),
+                common.get("minimum_budget"),
+                common.get("maximum_budget"),
+            )
+        elif intent.intent_type == "cross_channel_export_report":
+            result["cross_channel_export"] = CrossChannelAnalyzer.export_csv(summary)
+        return result

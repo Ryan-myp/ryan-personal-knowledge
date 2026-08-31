@@ -100,6 +100,15 @@ class SimpleIntentRouter:
 权限、账户、dry-run、审批、幂等与恢复。执行顺序属于 LLM 规划和 Runtime/Harness
 的受控执行记录，不由用户 Skill 文件中的 DSL 决定。
 
+Runtime 本身不承载业务流程。业务策略通过 `RuntimePolicy` 注入，复杂业务编排通过
+按约定自动发现的 `RuntimeFeature` 注入，结果展示通过 `ResponseRenderer` 注入。
+因此大多数业务流程只需要新增标准 Skill 和已有 Tools；需要新外部动作时增加
+Capability Tool，只有复杂的二阶段、批量或聚合流程才增加 Skill-owned Feature。
+
+当前已实现：业务策略、跨渠道流程和回复渲染已经迁出 Runtime。输入组装、动态参数
+选择和 Provider 兼容归一化仍由 Runtime 的通用 helper 承担，后续会继续收敛到独立
+的 `ToolInputBuilder`/parameter service。
+
 参数选择也遵循同一边界：固定 Provider 枚举由 Tool Schema 的 `enum` 自动生成
 catalog；账户相关的 App、地域、转化事件等由字段上的 `lookup_tool` 声明，
 `GET /parameter-options/resolve` 才会执行对应的只读查询。查询结果中的短期
@@ -416,8 +425,13 @@ business_rules = {
     "max_budget": 100000,
 }
 
-# 2. 注入到 ToolSelector
-selector.set_business_context("ecommerce", business_rules)
+# 2. 由业务 Skill 适配为通用 RuntimePolicy
+policy = BusinessSkillPolicy.from_values(
+    name="ecommerce",
+    allowed_platforms=("meta", "google"),
+    rules={"min_budget": 100, "max_budget": 100000},
+)
+runtime.set_policies([policy])
 ```
 
 ## 九、Skills 系统

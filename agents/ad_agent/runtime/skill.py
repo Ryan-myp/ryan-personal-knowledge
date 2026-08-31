@@ -329,9 +329,9 @@ class SkillContract:
                 raise ValueError("Skill frontmatter.skill must be an object")
             metadata = nested if isinstance(nested, dict) else fm_yaml
 
-            # ``businesses/*/SKILL.md`` is a policy/context format consumed by
-            # AgentRuntime.load_business_context().  It is intentionally not
-            # a normal Skill and therefore has no executable name/platform.
+            # ``businesses/*/SKILL.md`` is a policy/context package consumed by
+            # the Skill-owned policy adapter. It is intentionally not a normal
+            # executable Skill and therefore has no Tool registration metadata.
             if not nested and isinstance(fm_yaml.get("business"), dict):
                 self.context_only = True
                 self.raw_yaml = fm_yaml

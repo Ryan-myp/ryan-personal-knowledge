@@ -23,8 +23,16 @@
 - Tool 是一个有明确输入/输出、权限、风险、重放、超时和资源层级的可执行动作。
 - Capability 是渠道拥有的 Tool 注册和 Provider 适配边界。
 - Client 负责认证后的请求、版本适配、限流、重试、错误分类和 payload 转换。
-- Runtime/Core 只实现通用规划、校验、授权、dry-run、幂等、恢复和跨渠道聚合，
+- Runtime/Core 只实现通用规划、校验、授权、dry-run、幂等和恢复，
   不为某个渠道或业务流程增加分支。
+
+Runtime 不承载业务流程实现。可选业务扩展通过通用接口自动发现：
+
+- `RuntimePolicy`：由业务 Skill 提供渠道过滤、预算/类型等策略；
+- `RuntimeFeature`：由需要二阶段查询、批量计划或复杂编排的 Skill/Feature 提供；
+- `ResponseRenderer`：由应用层提供结果展示。
+
+Runtime 只调用这些接口，不识别 `ecommerce`、`app`、`cross-channel` 等业务名称。
 
 ## 2. Skill 边界
 
@@ -58,6 +66,16 @@ Core 或 Router 中维护渠道表。Markdown 表格、`workflow.yaml`、`script
 如果流程只是在已有原子能力之上重新编排，新增或修改标准 Skill 目录即可：
 知识放 `SKILL.md`/`references/`，验收用例放 `evals/`。不要在 Runtime 中添加
 渠道判断，不要复制一份 Tool 清单，不要用 `workflow.yaml` 建第二套执行引擎。
+
+大多数业务扩展的落点是：
+
+```text
+已有 Tools + 新 Skill（自然语言 SOP / 约束 / evals）
+```
+
+只有流程包含跨回合状态机、二阶段数据采集、批量展开或专用结果聚合时，才增加
+Skill-owned `RuntimeFeature`；Feature 通过 Runtime 的通用扩展上下文工作，仍不需要
+修改 Runtime 主循环。新增外部 API 动作时，才增加 Provider Client + Capability Tool。
 
 ### 3.2 新增 Provider API 能力
 

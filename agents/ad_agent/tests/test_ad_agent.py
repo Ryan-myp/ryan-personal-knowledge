@@ -23,7 +23,7 @@ from agents.ad_agent.capabilities.dv360 import (
     DV360GetLineItemReportHandler,
 )
 from agents.ad_agent.runtime.runtime import AgentRuntime, AccountWhitelistValidator
-from agents.ad_agent.core.tool_selector import BusinessContext
+from agents.ad_agent.skills.businesses.policy import BusinessSkillPolicy
 from agents.ad_agent.core.interfaces import (
     ToolContext, ToolResult, RiskLevel, ToolEffect, ReplayPolicy, ToolSchema,
     ToolDefinition
@@ -658,12 +658,12 @@ class TestRuntimeQuery:
         validator.allowed_accounts = {"tiktok": ["t1"]}
         rt = AgentRuntime(require_llm=False,
             whitelist_validator=validator,
-            business_context=BusinessContext(
-                business_name="app",
-                allowed_channels=["google"],
-                disallowed_channels=["tiktok"],
-                business_rules={"min_budget": 50, "max_budget": 50000},
-            ),
+            policies=[BusinessSkillPolicy.from_values(
+                name="app",
+                allowed_platforms=("google",),
+                denied_platforms=("tiktok",),
+                rules={"min_budget": 50, "max_budget": 50000},
+            )],
         )
         result = rt.run("列出 TikTok campaign", account_id="t1")
         assert result["results"] == []

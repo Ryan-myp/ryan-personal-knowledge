@@ -94,11 +94,9 @@ Runtime、Tool metadata 和 Harness 负责工具选择、顺序、权限、账�
 # ❌ 错误：业务直接 import 渠道
 from channels.meta import MetaTools
 
-# ✅ 正确：通过 BusinessContext 声明
-business_context = BusinessContext(
-    business_name="ecommerce",
-    allowed_channels=["meta", "google"],
-)
+# ✅ 正确：由业务 Skill 提供通用策略
+policy = BusinessSkillPolicy.from_skill_file("ecommerce")
+runtime.set_policies([policy])
 ```
 
 ### 2. 业务规则配置化
@@ -117,7 +115,8 @@ business:
 ### 3. 动态工具过滤
 ```python
 # ToolSelector 自动过滤
-selector.set_business_context("ecommerce", business_context)
+runtime.set_policies([BusinessSkillPolicy.from_skill_file("ecommerce")])
+selector.set_policies(runtime.policies)
 result = selector.optimize_for_llm(user_input, intent, all_tools)
 # result['selected_tools'] 只包含 meta + google 的工具
 ```

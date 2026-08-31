@@ -15,41 +15,10 @@ from dataclasses import dataclass, field
 
 from .interfaces import ToolDefinition, ParsedIntent, ToolContext
 from .knowledge import KnowledgeProvider
+from .policy import RuntimePolicy, apply_policies, policy_metadata
 from .platform import normalize_platform
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class BusinessContext:
-    """业务上下文 - 定义业务可用的渠道和规则"""
-    business_name: str = ""
-    allowed_channels: List[str] = field(default_factory=list)
-    disallowed_channels: List[str] = field(default_factory=list)
-    allowed_campaign_types: List[str] = field(default_factory=list)
-    business_rules: Dict = field(default_factory=dict)
-    focus_metrics: List[str] = field(default_factory=list)
-
-    def is_channel_allowed(self, channel: str) -> bool:
-        """检查渠道是否被允许"""
-        normalized = normalize_platform(channel)
-        disallowed = {normalize_platform(item) for item in self.disallowed_channels}
-        allowed = {normalize_platform(item) for item in self.allowed_channels}
-        if normalized in disallowed:
-            return False
-        if allowed and normalized not in allowed:
-            return False
-        return True
-
-    def to_dict(self) -> dict:
-        return {
-            "business": self.business_name,
-            "allowed_channels": self.allowed_channels,
-            "disallowed_channels": self.disallowed_channels,
-            "allowed_campaign_types": self.allowed_campaign_types,
-            "business_rules": self.business_rules,
-            "focus_metrics": self.focus_metrics,
-        }
 
 
 @dataclass
@@ -82,7 +51,12 @@ class DynamicToolSelector:
     5. 返回精简的工具列表给 LLM
     """
     
-    def __init__(self, skill_loader=None, knowledge_provider: Optional[KnowledgeProvider] = None):
+    def __init__(
+        self,
+        skill_loader=None,
+        knowledge_provider: Optional[KnowledgeProvider] = None,
+        policies: Optional[list[RuntimePolicy]] = None,
+    ):
         # Runtime injects its canonical SkillLoader.  The lazy fallback keeps
         # the standalone selector usable without importing the Runtime package
         # during module initialization.
@@ -92,7 +66,7 @@ class DynamicToolSelector:
             skill_loader.load_all()
         self.skill_loader = skill_loader
         self.knowledge_provider = knowledge_provider
-        self.business_context: Optional[BusinessContext] = None
+        self.policies: list[RuntimePolicy] = list(policies or [])
         # Managed Skills are tenant-owned advisory context.  Keep them out of
         # the executable SkillLoader and select them per request so the
         # process-global Runtime can safely serve multiple tenants.
@@ -119,11 +93,10 @@ class DynamicToolSelector:
             if not skills:
                 self._context_skills.pop(tenant, None)
     
-    def set_business_context(self, business_name: str, context: BusinessContext):
-        """设置业务上下文"""
-        self.business_context = context
-        logger.info(f"Business context set: {business_name}, allowed_channels: {context.allowed_channels}")
-    
+    def set_policies(self, policies: list[RuntimePolicy]) -> None:
+        """Replace the policy set used for platform filtering and context."""
+        self.policies = list(policies or [])
+
     def select_tools(
         self,
         user_input: str,
@@ -145,13 +118,13 @@ class DynamicToolSelector:
         platforms = intent.platforms or self._detect_platforms(user_input, available_tools)
         
         # 2. 根据业务上下文过滤平台
-        if self.business_context:
-            platforms = [p for p in platforms if self.business_context.is_channel_allowed(p)]
+        if self.policies:
+            platforms = apply_policies(self.policies, platforms)
             if not platforms:
-                platforms = [
-                    platform for platform in self._registered_platforms(available_tools)
-                    if self.business_context.is_channel_allowed(platform)
-                ]
+                platforms = apply_policies(
+                    self.policies,
+                    self._registered_platforms(available_tools),
+                )
         
         # 3. 根据意图类型筛选工具
         intent_type = intent.intent_type
@@ -175,7 +148,7 @@ class DynamicToolSelector:
                         "intent_type": intent_type,
                         "objective": intent.objective,
                         "budget": intent.budget,
-                        "business": self.business_context.business_name if self.business_context else None,
+                        **policy_metadata(self.policies),
                     },
                     expert_knowledge=expert_knowledge,
                 )
@@ -186,7 +159,7 @@ class DynamicToolSelector:
             platform=",".join(platforms),
             expert_knowledge=self._merge_expert_knowledge(selected_tools),
             context={
-                "business_context": self.business_context.to_dict() if self.business_context else None,
+                **policy_metadata(self.policies),
             },
         )
 
