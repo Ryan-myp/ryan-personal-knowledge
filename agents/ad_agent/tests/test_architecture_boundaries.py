@@ -187,3 +187,28 @@ def test_router_resolves_llm_intent_synonym_from_registered_tool_metadata():
     assert [tool.name for tool in routed["new-network"]] == [
         "new_network_download_report"
     ]
+
+
+def test_parser_drops_unregistered_routing_metadata_from_platform_params():
+    parser = LLMIntentParser()
+    parser.register_platforms(["new-network"])
+    parser.register_tool_schemas(
+        "new-network",
+        [{"properties": {"account_id": {"type": "string"}}}],
+    )
+
+    normalized = parser._normalize_intent({
+        "intent_type": "list_resources",
+        "platforms": ["new-network"],
+        "platform_params": {
+            "new-network": {
+                "action": "list",
+                "resource_type": "resource",
+                "account_id": "a1",
+            }
+        },
+    })
+
+    assert normalized["platform_params"]["new-network"] == {
+        "account_id": "a1"
+    }

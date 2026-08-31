@@ -966,7 +966,23 @@ class LLMIntentParser(IntentParser):
         for key, value in params.items():
             normalized = platform_aliases.get(str(key).lower(), str(key).lower())
             if normalized in self._known_platforms:
-                normalized_params[normalized] = value if isinstance(value, dict) else {}
+                platform_values = value if isinstance(value, dict) else {}
+                # Models sometimes echo Tool routing metadata inside
+                # ``platform_params`` (for example ``action=list``). Keep
+                # provider fields only when the current registered Tool
+                # catalog declares them; this is derived from metadata and
+                # does not maintain a provider/business field table.
+                declared_fields = self._platform_field_specs.get(normalized, {})
+                control_fields = {
+                    "action", "resource_type", "parent_resource_type",
+                    "tool", "skill", "platform", "description",
+                    "intent_type", "intent_types", "activation_rules",
+                }
+                normalized_params[normalized] = {
+                    field: field_value
+                    for field, field_value in platform_values.items()
+                    if field not in control_fields or field in declared_fields
+                }
         for p in normalized_platforms:
             normalized_params.setdefault(p, {})
         data["platform_params"] = normalized_params

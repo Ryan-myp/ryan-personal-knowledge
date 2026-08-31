@@ -2455,6 +2455,15 @@ class AgentRuntime:
 
         # 检查是否需要执行任何工具
         if not tool_plan:
+            intent_type = str(getattr(intent, "intent_type", "") or "")
+            no_tool_reply = (
+                self.response_renderer.render_chat(safe_user_input)
+                if not intent_type or intent_type == "chat"
+                else (
+                    f"未找到与意图 `{intent_type}` 匹配的已注册 Tool。"
+                    "请检查当前 Skill/Tool 是否已发布，或补充更明确的操作对象。"
+                )
+            )
             return {
                 "session_id": session_id,
                 "turn_id": turn_id,
@@ -2472,7 +2481,7 @@ class AgentRuntime:
                     "knowledge": tool_selection.get("knowledge", []),
                 },
                 "results": [],
-                "reply": self.response_renderer.render_chat(safe_user_input),
+                "reply": no_tool_reply,
                 "needs_confirmation": False,
                 "confirmation_payload": None,
             }
