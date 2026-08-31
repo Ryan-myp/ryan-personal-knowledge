@@ -4188,3 +4188,28 @@ def test_tiktok_get_creative_reuses_the_scoped_creative_list_contract():
         }],
         1,
     )]
+
+
+def test_tiktok_single_resource_readers_reuse_existing_list_endpoints():
+    client = TikTokAPIClient({"access_token": "test"})
+    client.list_videos = lambda advertiser_id, filtering=None, page_size=20: [
+        {"video_id": "video-1"}
+    ]
+    client.list_images = lambda advertiser_id, filtering=None, page_size=20: [
+        {"image_id": "image-1"}
+    ]
+    client.list_catalogs = lambda advertiser_id, filtering=None, page_size=20: [
+        {"catalog_id": "catalog-1"}
+    ]
+    client.list_product_sets = (
+        lambda advertiser_id, catalog_id=None, filtering=None, page_size=20: [
+            {"product_set_id": "set-1", "catalog_id": catalog_id}
+        ]
+    )
+
+    assert client.get_video("7397068114548195329", "video-1")["video_id"] == "video-1"
+    assert client.get_image("7397068114548195329", "image-1")["image_id"] == "image-1"
+    assert client.get_catalog("7397068114548195329", "catalog-1")["catalog_id"] == "catalog-1"
+    assert client.get_product_set(
+        "7397068114548195329", "catalog-1", "set-1"
+    )["product_set_id"] == "set-1"

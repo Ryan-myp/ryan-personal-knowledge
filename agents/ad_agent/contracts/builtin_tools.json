@@ -1,5 +1,5 @@
 {
-  "digest": "48d90e45bea55c3ca21bfa7ff1e2cdf2594679971975c07ce9de732b5f3f7451",
+  "digest": "61e08abdbea1b9a4715c9bef5674b8b2af2943b64fc030ba9aa519e081b35df1",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -19660,8 +19660,8 @@
       ]
     },
     "tiktok": {
-      "digest": "316faf34890832ef88a611df6ca65c99097bafd56867ef342d87555542b05829",
-      "tool_count": 73,
+      "digest": "d9ba69e7a7748312930a243dbba0f6afd371947ca63f97f3485c78054e0b801d",
+      "tool_count": 77,
       "tools": [
         {
           "action": "create",
@@ -24308,6 +24308,58 @@
           "action": "get",
           "activation_rules": [],
           "contract_version": "1.3.0",
+          "description": "查询 TikTok catalog 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "catalog_id": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "catalog_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_catalog"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_get_catalog",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "readback_tool": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "catalog_id",
+          "resource_type": "catalog",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "catalog"
+          ]
+        },
+        {
+          "action": "get",
+          "activation_rules": [],
+          "contract_version": "1.3.0",
           "description": "获取 TikTok 转化事件详情。",
           "effect_class": "read",
           "input_schema": {
@@ -24546,6 +24598,58 @@
           "action": "get",
           "activation_rules": [],
           "contract_version": "1.3.0",
+          "description": "查询 TikTok image 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "image_id": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "image_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_image"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_get_image",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "readback_tool": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "image_id",
+          "resource_type": "image",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "image"
+          ]
+        },
+        {
+          "action": "get",
+          "activation_rules": [],
+          "contract_version": "1.3.0",
           "description": "获取 TikTok 兴趣类别详情。",
           "effect_class": "read",
           "input_schema": {
@@ -24657,6 +24761,64 @@
           ]
         },
         {
+          "action": "get",
+          "activation_rules": [],
+          "contract_version": "1.3.0",
+          "description": "查询 TikTok Product Set 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "catalog_id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "product_set_id": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "catalog_id",
+              "product_set_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_product_set"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_get_product_set",
+          "parent_resource_id_field": "catalog_id",
+          "parent_resource_type": "catalog",
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "readback_tool": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "product_set_id",
+          "resource_type": "product_set",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "catalog",
+            "product_set"
+          ]
+        },
+        {
           "action": "report",
           "activation_rules": [],
           "contract_version": "1.3.0",
@@ -24710,6 +24872,58 @@
           "traits": [
             "read",
             "report"
+          ]
+        },
+        {
+          "action": "get",
+          "activation_rules": [],
+          "contract_version": "1.3.0",
+          "description": "查询 TikTok video 详情。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "video_id": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "account_id",
+              "video_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_video"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_get_video",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "readback_tool": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "video_id",
+          "resource_type": "video",
+          "risk_level": "low",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "video"
           ]
         },
         {
@@ -31431,12 +31645,36 @@
         "status": "implemented"
       },
       {
+        "action": "get",
+        "api_version": "v1.3",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_open_api_baseline",
+        "method": "get_video",
+        "provider": "tiktok",
+        "resource": "video",
+        "source_url": "https://business-api.tiktok.com/portal/docs",
+        "status": "implemented"
+      },
+      {
         "action": "list",
         "api_version": "v1.3",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_open_api_baseline",
         "method": "list_images",
+        "provider": "tiktok",
+        "resource": "image",
+        "source_url": "https://business-api.tiktok.com/portal/docs",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "api_version": "v1.3",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_open_api_baseline",
+        "method": "get_image",
         "provider": "tiktok",
         "resource": "image",
         "source_url": "https://business-api.tiktok.com/portal/docs",
@@ -31587,12 +31825,36 @@
         "status": "implemented"
       },
       {
+        "action": "get",
+        "api_version": "v1.3",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_open_api_baseline",
+        "method": "get_catalog",
+        "provider": "tiktok",
+        "resource": "catalog",
+        "source_url": "https://business-api.tiktok.com/portal/docs",
+        "status": "implemented"
+      },
+      {
         "action": "list",
         "api_version": "v1.3",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_open_api_baseline",
         "method": "list_product_sets",
+        "provider": "tiktok",
+        "resource": "product_set",
+        "source_url": "https://business-api.tiktok.com/portal/docs",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "api_version": "v1.3",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_open_api_baseline",
+        "method": "get_product_set",
         "provider": "tiktok",
         "resource": "product_set",
         "source_url": "https://business-api.tiktok.com/portal/docs",
@@ -31794,5 +32056,5 @@
       ]
     }
   },
-  "tool_count": 286
+  "tool_count": 290
 }

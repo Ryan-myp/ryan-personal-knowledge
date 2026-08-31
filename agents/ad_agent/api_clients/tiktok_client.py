@@ -1408,6 +1408,30 @@ class TikTokAPIClient(BasePlatformClient):
         result = self.request('GET', 'video/get/', params=data)
         payload = self._data_section(result)
         return payload.get('list', []) if isinstance(payload, dict) else []
+
+    def get_video(self, advertiser_id: str, video_id: str) -> dict:
+        """Get one video asset through the existing video/get endpoint."""
+        advertiser_id = str(advertiser_id or "").strip()
+        video_id = str(video_id or "").strip()
+        if not advertiser_id or not video_id:
+            raise ValueError("advertiser_id and video_id must not be empty")
+        videos = self.list_videos(
+            advertiser_id,
+            filtering=[{
+                "field": "VIDEO_IDS",
+                "operator": "IN",
+                "values": [video_id],
+            }],
+            page_size=1,
+        )
+        return next(
+            (
+                item for item in videos
+                if isinstance(item, dict)
+                and str(item.get("video_id") or item.get("id") or "") == video_id
+            ),
+            {},
+        )
     
     def list_images(self, advertiser_id: str, filtering: list = None, page_size: int = 20) -> list:
         """获取图片列表"""
@@ -1421,6 +1445,30 @@ class TikTokAPIClient(BasePlatformClient):
         result = self.request('GET', 'image/get/', params=data)
         payload = self._data_section(result)
         return payload.get('list', []) if isinstance(payload, dict) else []
+
+    def get_image(self, advertiser_id: str, image_id: str) -> dict:
+        """Get one image asset through the existing image/get endpoint."""
+        advertiser_id = str(advertiser_id or "").strip()
+        image_id = str(image_id or "").strip()
+        if not advertiser_id or not image_id:
+            raise ValueError("advertiser_id and image_id must not be empty")
+        images = self.list_images(
+            advertiser_id,
+            filtering=[{
+                "field": "IMAGE_IDS",
+                "operator": "IN",
+                "values": [image_id],
+            }],
+            page_size=1,
+        )
+        return next(
+            (
+                item for item in images
+                if isinstance(item, dict)
+                and str(item.get("image_id") or item.get("id") or "") == image_id
+            ),
+            {},
+        )
 
     # ==================== 创意素材上传 ====================
 
@@ -1982,6 +2030,29 @@ class TikTokAPIClient(BasePlatformClient):
         result = self.request('GET', 'catalog/get/', params=data)
         payload = self._data_section(result)
         return payload.get('list', []) if isinstance(payload, dict) else []
+
+    def get_catalog(self, advertiser_id: str, catalog_id: str) -> dict:
+        """Get one Catalog through the existing catalog/get endpoint."""
+        catalog_id = str(catalog_id or "").strip()
+        if not catalog_id:
+            raise ValueError("catalog_id must not be empty")
+        catalogs = self.list_catalogs(
+            advertiser_id,
+            filtering=[{
+                "field": "CATALOG_IDS",
+                "operator": "IN",
+                "values": [catalog_id],
+            }],
+            page_size=1,
+        )
+        return next(
+            (
+                item for item in catalogs
+                if isinstance(item, dict)
+                and str(item.get("catalog_id") or item.get("id") or "") == catalog_id
+            ),
+            {},
+        )
     
     def list_product_sets(self, advertiser_id: str, catalog_id: str = None, filtering: list = None, page_size: int = 20) -> list:
         """List TikTok Product Sets through the official v1.3 read endpoint."""
@@ -2002,6 +2073,34 @@ class TikTokAPIClient(BasePlatformClient):
         result = self.request('GET', 'product_set/get/', params=data)
         payload = self._data_section(result)
         return payload.get('list', []) if isinstance(payload, dict) else []
+
+    def get_product_set(
+        self, advertiser_id: str, catalog_id: str, product_set_id: str
+    ) -> dict:
+        """Get one Product Set through the existing product_set/get endpoint."""
+        product_set_id = str(product_set_id or "").strip()
+        if not product_set_id:
+            raise ValueError("product_set_id must not be empty")
+        product_sets = self.list_product_sets(
+            advertiser_id,
+            catalog_id=catalog_id,
+            filtering=[{
+                "field": "PRODUCT_SET_IDS",
+                "operator": "IN",
+                "values": [product_set_id],
+            }],
+            page_size=1,
+        )
+        return next(
+            (
+                item for item in product_sets
+                if isinstance(item, dict)
+                and str(
+                    item.get("product_set_id") or item.get("id") or ""
+                ) == product_set_id
+            ),
+            {},
+        )
 
     def validate_product_selection(
         self, advertiser_id: str, catalog_id: str, product_set_id: str

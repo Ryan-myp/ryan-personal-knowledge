@@ -135,7 +135,8 @@ class TikTokCapability(BaseCapability):
         "list_operating_systems": ["tiktok_list_operating_systems"], "list_carriers": ["tiktok_list_carriers"],
         "list_browsers": ["tiktok_list_browsers"], "list_creatives": ["tiktok_list_creatives"],
         "get_creative": ["tiktok_get_creative"],
-        "list_videos": ["tiktok_list_videos"], "list_images": ["tiktok_list_images"],
+        "list_videos": ["tiktok_list_videos"], "get_video": ["tiktok_get_video"],
+        "list_images": ["tiktok_list_images"], "get_image": ["tiktok_get_image"],
         "upload_image": ["tiktok_upload_image"], "upload_video": ["tiktok_upload_video"],
         "list_conversions": ["tiktok_list_conversions"], "get_conversion": ["tiktok_get_conversion"],
         "list_pixels": ["tiktok_list_pixels"], "get_pixel": ["tiktok_get_pixel"],
@@ -148,7 +149,9 @@ class TikTokCapability(BaseCapability):
         "create_identity": ["tiktok_create_identity"],
         "list_identities": ["tiktok_list_identities"],
         "get_identity_video_info": ["tiktok_get_identity_video_info"],
-        "list_catalogs": ["tiktok_list_catalogs"], "list_product_sets": ["tiktok_list_product_sets"],
+        "list_catalogs": ["tiktok_list_catalogs"], "get_catalog": ["tiktok_get_catalog"],
+        "list_product_sets": ["tiktok_list_product_sets"],
+        "get_product_set": ["tiktok_get_product_set"],
         "validate_product_selection": ["tiktok_validate_product_selection"],
         "list_apps": ["tiktok_list_apps"], "list_brand_safety": ["tiktok_list_brand_safety"],
         "get_report": ["tiktok_get_report"],
@@ -1163,6 +1166,52 @@ class TikTokCapability(BaseCapability):
             intent_types=["get_creative"], traits=["read", "creative"],
             argument_builder=lambda ctx, data: ((
                 account(ctx, data), data["creative_id"]
+            ), {}),
+        ))
+
+        for resource_name, method_name, id_field, result_key in (
+            ("video", "get_video", "video_id", "video"),
+            ("image", "get_image", "image_id", "image"),
+            ("catalog", "get_catalog", "catalog_id", "catalog"),
+        ):
+            tools.append(method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert",
+                name=f"tiktok_get_{resource_name}",
+                description=f"查询 TikTok {resource_name} 详情。",
+                method_name=method_name, result_key=result_key,
+                properties={
+                    "account_id": {"type": "string"},
+                    id_field: {"type": "string", "minLength": 1},
+                },
+                required=["account_id", id_field],
+                action="get", resource_type=resource_name,
+                resource_id_field=id_field,
+                intent_types=[f"get_{resource_name}"],
+                traits=["read", resource_name],
+                argument_builder=lambda ctx, data, field=id_field: ((
+                    account(ctx, data), data[field]
+                ), {}),
+            ))
+
+        tools.append(method_tool(
+            platform="tiktok", skill="tiktok-ads-api-expert",
+            name="tiktok_get_product_set",
+            description="查询 TikTok Product Set 详情。",
+            method_name="get_product_set", result_key="product_set",
+            properties={
+                "account_id": {"type": "string"},
+                "catalog_id": {"type": "string", "minLength": 1},
+                "product_set_id": {"type": "string", "minLength": 1},
+            },
+            required=["account_id", "catalog_id", "product_set_id"],
+            action="get", resource_type="product_set",
+            parent_resource_type="catalog",
+            resource_id_field="product_set_id",
+            parent_resource_id_field="catalog_id",
+            intent_types=["get_product_set"],
+            traits=["read", "catalog", "product_set"],
+            argument_builder=lambda ctx, data: ((
+                account(ctx, data), data["catalog_id"], data["product_set_id"]
             ), {}),
         ))
 
