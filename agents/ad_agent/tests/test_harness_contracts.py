@@ -398,7 +398,7 @@ def test_live_write_without_provider_client_fails_closed():
     runtime.register_capability(create_tiktok_capability())
     definition, _handler = runtime._get_registered_tool("tiktok_create_adgroup")
 
-    result = runtime._execute_tool(
+    result = runtime.tool_executor.execute(
         ToolContext(session_id="s1", user_id="u1", account_id="t1"),
         definition.name,
         {},
@@ -765,7 +765,7 @@ def test_workflow_heartbeat_refreshes_lease_and_preserves_running_state():
         workflow_stale_after_seconds=300,
     )
 
-    assert runtime._heartbeat_workflow("heartbeat-workflow") is True
+    assert runtime.workflow.heartbeat("heartbeat-workflow") is True
     workflow = store.get_workflow("heartbeat-workflow")
     assert workflow["status"] == "running"
     assert workflow["lease_owner"] == runtime._workflow_lease_owner
@@ -1126,7 +1126,7 @@ def test_tool_timeout_returns_explicit_timed_out_result_and_signals_handler():
         timeout_seconds=0.001,
     )
     runtime.registry.register(definition, SlowHandler())
-    result = runtime._execute_tool(
+    result = runtime.tool_executor.execute(
         ToolContext("timeout-session", "u1"), "slow_read", {}
     )
 

@@ -31,6 +31,10 @@ Runtime 不承载业务流程实现。可选业务扩展通过通用接口自动
 - `RuntimePolicy`：由业务 Skill 提供渠道过滤、预算/类型等策略；
 - `RuntimeFeature`：由需要二阶段查询、批量计划或复杂编排的 Skill/Feature 提供；
 - `ResponseRenderer`：由应用层提供结果展示。
+- `ExecutionPlan` / `WorkflowCoordinator`：分别负责不可变计划描述和持久化执行状态，
+  不把业务流程实现塞回 Runtime。
+- `RuntimeServices` / `ToolExecutor` / `RuntimeSecurity`：分别提供 Feature 端口、
+  Tool 执行和安全边界实现。
 
 Runtime 只调用这些接口，不识别 `ecommerce`、`app`、`cross-channel` 等业务名称。
 

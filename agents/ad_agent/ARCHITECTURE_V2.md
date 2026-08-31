@@ -109,6 +109,11 @@ Capability Tool，只有复杂的二阶段、批量或聚合流程才增加 Skil
 兼容归一化和账户上下文解析已经迁出 Runtime，分别由 Policy、Feature、Renderer、
 `ToolInputBuilder`/parameter service 和 `AccountResolver` 承担。
 
+`ExecutionPlan` 是模型意图进入执行层后的通用计划对象，`WorkflowCoordinator` 是
+计划状态的持久化协调对象；两者都不包含渠道枚举、业务规则或 Provider Client。
+`RuntimeServices` 是 Feature 与 Runtime 之间的正式端口，`ToolExecutor` 和
+`RuntimeSecurity` 分别承载 Tool 执行和安全边界；Runtime 主类只组合这些组件。
+
 参数选择也遵循同一边界：固定 Provider 枚举由 Tool Schema 的 `enum` 自动生成
 catalog；账户相关的 App、地域、转化事件等由字段上的 `lookup_tool` 声明，
 `GET /parameter-options/resolve` 才会执行对应的只读查询。查询结果中的短期

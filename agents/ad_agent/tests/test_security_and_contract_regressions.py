@@ -619,7 +619,7 @@ def test_read_result_without_evidence_status_is_marked_unknown():
         object(),
     )
 
-    result = runtime._normalize_read_result_evidence(
+    result = runtime.security.normalize_read_result_evidence(
         runtime.registry.get("statusless_read")[0], ToolResult.ok({"items": []})
     )
 
@@ -685,7 +685,7 @@ def test_account_configuration_fields_are_only_allowed_as_top_level_selectors():
         Handler(),
     )
 
-    result = runtime._execute_tool(
+    result = runtime.tool_executor.execute(
         ToolContext("s1", "u1", "account-1"),
         "provider_update",
         {"account_id": "account-1", "updates": {"account_id": "other-account"}},
@@ -720,7 +720,7 @@ def test_live_write_rejects_custom_handler_without_provider_client():
         Handler(),
     )
 
-    result = runtime._execute_tool(ToolContext("s1", "u1"), "custom_live_write", {})
+    result = runtime.tool_executor.execute(ToolContext("s1", "u1"), "custom_live_write", {})
 
     assert result.success is False
     assert result.data["execution_status"] == "provider_unavailable"
@@ -761,10 +761,10 @@ def test_configuration_redlines_are_rejected_at_top_level_platform_params(field)
 
 def test_account_selector_remains_allowed_while_configuration_fields_do_not():
     runtime = AgentRuntime(require_llm=False, )
-    assert runtime._validate_tool_input_redline({"account_id": "test-account"}) == []
-    assert runtime._validate_tool_input_redline({"advertiser_id": "test-advertiser"}) == []
-    assert runtime._validate_tool_input_redline({"customer_id": "test-customer"}) == []
-    assert runtime._validate_tool_input_redline({"bc_id": "business-center"}) == ["bc_id"]
+    assert runtime.security.validate_input_redline({"account_id": "test-account"}) == []
+    assert runtime.security.validate_input_redline({"advertiser_id": "test-advertiser"}) == []
+    assert runtime.security.validate_input_redline({"customer_id": "test-customer"}) == []
+    assert runtime.security.validate_input_redline({"bc_id": "business-center"}) == ["bc_id"]
 
 
 class MinimalMetaClient:
@@ -1360,7 +1360,7 @@ def test_runtime_rejects_tool_version_not_supported_by_provider_client():
         Handler(),
     )
 
-    result = runtime._execute_tool(ToolContext("s1", "u1"), "versioned_read", {})
+    result = runtime.tool_executor.execute(ToolContext("s1", "u1"), "versioned_read", {})
 
     assert result.success is False
     assert "要求 Provider API v0" in result.error
@@ -1405,7 +1405,7 @@ def test_capability_without_version_metadata_does_not_create_unknown_contract():
     definition, _handler = runtime._get_registered_tool("versionless_read")
 
     assert definition.provider_api_version is None
-    result = runtime._execute_tool(
+    result = runtime.tool_executor.execute(
         ToolContext("s1", "u1"), "versionless_read", {}
     )
     assert result.success is True

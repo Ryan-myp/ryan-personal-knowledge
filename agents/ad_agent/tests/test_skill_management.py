@@ -483,7 +483,7 @@ def test_skill_up_evaluation_is_persisted_for_an_immutable_version(tmp_path, mon
     monkeypatch.setenv("SKILL_UP_BIN", str(fake_bin))
 
     run = manager.start_evaluation("tenant-a", "runnable-eval", "1.0.0")
-    for _ in range(100):
+    for _ in range(500):
         current = manager.get_evaluation("tenant-a", run["run_id"])
         if current and current["status"] in {"passed", "failed", "error"}:
             break

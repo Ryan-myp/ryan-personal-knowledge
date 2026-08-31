@@ -54,6 +54,12 @@
   `ResponseRenderer` 承担。Runtime 不再包含业务策略、跨渠道流程或响应格式化实现；
   输入构建、Provider 兼容归一化和 lookup selection token 已由
   `ToolInputBuilder` 承担；账户上下文解析由 `AccountResolver` 承担。
+- Runtime 计划与 Workflow 边界已进一步收敛：`ExecutionPlan` 负责通用 Tool 节点和
+  依赖边，`WorkflowCoordinator` 负责 checkpoint、lease、状态收尾和恢复所需的持久化
+  协调；Runtime 主循环只组合这些服务，不再实现 Workflow 收尾算法。
+- Tool 执行与安全边界已独立：`ToolExecutor` 负责超时、Provider Client 隔离和版本校验，
+  `RuntimeSecurity` 负责红线字段、确认令牌、结果证据和不确定失败；账户白名单、
+  会话上下文和 Capability 配置上下文也分别位于独立模块。
 
 ## 项目概述
 

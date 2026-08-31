@@ -28,19 +28,20 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping, Optional
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 import yaml
 
 from ..core.interfaces import (
-    ToolContext, ToolResult, ChatMessage, CapabilityModule,
+    ToolContext, ToolResult, CapabilityModule,
     CapabilityRuntime, ToolRegistry, WriteGuard, IntentParser, IntentRouter,
-    ParsedIntent, ToolHandler, ToolEffect, ExecutionMode, ProviderReconciler,
+    ParsedIntent, ToolEffect, ExecutionMode, ProviderReconciler,
     ReconciliationContext, ReconciliationObservation, ResourceResult,
     AdFormatCoverage,
 )
 from ..core.tool_registry import GuardedToolRegistry, SimpleToolRegistry, validate_tool_input
 from ..core.intent import LLMIntentParser, SimpleIntentRouter
 from ..core.features import RuntimeFeature
+from ..core.execution_plan import ExecutionPlan
 from ..core.response import ResponseRenderer
 from ..features.factory import discover_features, feature_for_intent
 from ..features.factory import discover_response_renderer
@@ -54,112 +55,23 @@ from ..core.parameter_selection import (
 from ..core.auth import RequestPrincipal, normalize_account_id, normalize_platform
 from ..core.security import (
     PROTECTED_INPUT_FIELDS,
-    normalize_field_name,
-    protected_field_paths,
-    protected_update_paths,
 )
 from .skill import BaseSkill, Skill, SkillContract, SkillLoader
 from .input_builder import ToolInputBuilder
 from .account_context import AccountResolver
+from .services import RuntimeServices
+from .workflow import WorkflowCoordinator
+from .account_policy import AccountWhitelistValidator
+from .session_context import SessionContext
+from .capability_context import CapabilityContextWrapper
+from .security import RuntimeSecurity
+from .tool_executor import ToolExecutor
 from ..persistence.session_manager import SessionManager
 from ..persistence.interfaces import PersistenceBackend
 from ..persistence.models import ToolCallRecord
 from .reconciliation import ToolReadbackReconciler
 
 logger = logging.getLogger(__name__)
-
-
-# ─── 账户白名单验证器 ───────────────────────────────────────────
-
-class AccountWhitelistValidator:
-    """
-    账户白名单验证器
-    
-    只允许操作配置文件中指定的测试账户，防止误操作生产账户
-    """
-    
-    def __init__(self, config_path: Optional[str] = None):
-        self.config_path = config_path or os.path.join(os.path.dirname(__file__), "..", "config.yaml")
-        self.allowed_accounts: dict[str, list[str]] = {}
-        self._load_config()
-    
-    def _load_config(self):
-        """加载配置文件"""
-        try:
-            if os.path.exists(self.config_path):
-                with open(self.config_path, 'r', encoding='utf-8') as f:
-                    config = yaml.safe_load(f)
-                    allowed_accounts = config.get('allowed_accounts', {}) if isinstance(config, dict) else {}
-                    self.allowed_accounts = (
-                        allowed_accounts if isinstance(allowed_accounts, dict) else {}
-                    )
-        except Exception as e:
-            logger.warning(f"加载账户白名单配置失败: {e}")
-    
-    def reload(self):
-        """重新加载配置"""
-        self._load_config()
-    
-    def validate_account(self, platform: str, account_id: str) -> tuple[bool, str]:
-        """
-        验证账户是否在白名单中
-        
-        Returns:
-            (is_allowed, error_message)
-        """
-        canonical_platform = normalize_platform(platform)
-        allowed = self._accounts_for_platform(canonical_platform)
-        
-        # 空白名单必须 fail closed：凭证中出现的账户 ID 不能自动成为
-        # 可操作账户。测试/本地开发应显式提供受控白名单。
-        if not allowed:
-            return False, f"{canonical_platform} 未配置受控账户白名单"
-        
-        # 检查账户是否匹配
-        normalized_account = normalize_account_id(account_id)
-        is_allowed = bool(normalized_account) and normalized_account in {
-            normalize_account_id(acc) for acc in allowed
-        }
-        
-        if not is_allowed:
-            return False, (
-                f"账户 {account_id} 不在 {canonical_platform} 白名单中。"
-                f"允许操作的账户: {', '.join(str(acc) for acc in allowed)}"
-            )
-        
-        return True, ""
-    
-    def get_allowed_accounts(self, platform: str) -> list[str]:
-        """获取平台允许操作的账户列表"""
-        return list(self._accounts_for_platform(normalize_platform(platform)))
-
-    def _accounts_for_platform(self, platform: str) -> list[Any]:
-        """Return only well-formed configured accounts for a canonical platform.
-
-        Configuration is untrusted input at process startup.  A malformed
-        platform entry (for example a scalar string) must never be iterated as
-        account IDs, and an alias must not create a second authorization map.
-        Invalid entries fail closed while valid entries for other platforms
-        remain usable.
-        """
-        configured = self.allowed_accounts
-        if not platform or not isinstance(configured, dict):
-            return []
-        values = []
-        for raw_platform, raw_accounts in configured.items():
-            if normalize_platform(raw_platform) != platform:
-                continue
-            if isinstance(raw_accounts, (str, bytes)) or not isinstance(
-                raw_accounts, (list, tuple, set, frozenset)
-            ):
-                return []
-            for account in raw_accounts:
-                if not isinstance(account, (str, int)) or isinstance(account, bool):
-                    return []
-                normalized = normalize_account_id(account)
-                if normalized:
-                    values.append(account)
-        return values
 
 
 # ─── Agent Runtime ─────────────────────────────────────────────
@@ -315,8 +227,9 @@ class AgentRuntime:
         self._parameter_selection_signer = ParameterSelectionSigner(
             selection_secret, parameter_selection_ttl_seconds
         )
-        self.input_builder = ToolInputBuilder(self)
-        self.account_resolver = AccountResolver(self)
+        self.services = RuntimeServices(self)
+        self.input_builder = ToolInputBuilder(self.services)
+        self.account_resolver = AccountResolver(self.services)
         self.policies: list[RuntimePolicy] = list(policies or [])
         if self.policies and hasattr(self.tool_selector, "set_policies"):
             self.tool_selector.set_policies(self.policies)
@@ -396,6 +309,9 @@ class AgentRuntime:
 
         # 只读模式：只注册 READ 类工具，跳过写保护检查
         self._read_only_mode = read_only_mode
+        self.workflow = WorkflowCoordinator(self.services)
+        self.security = RuntimeSecurity(self)
+        self.tool_executor = ToolExecutor(self.services)
         if read_only_mode:
             logger.info("🔒 只读模式已启用，仅允许查询操作")
 
@@ -635,43 +551,6 @@ class AgentRuntime:
             return "缺少工具所需权限：" + ", ".join(missing)
         return None
 
-    def _enforce_result_limit(self, result: ToolResult, tool_def: Any) -> ToolResult:
-        """Bound provider/LLM output before it reaches history or HTTP JSON."""
-        limit = int(getattr(tool_def, "max_output_bytes", 1_000_000) or 1_000_000)
-        try:
-            size = len(json.dumps(result.data, ensure_ascii=False, default=str).encode("utf-8"))
-        except (TypeError, ValueError):
-            return ToolResult.error(f"{tool_def.name} 返回了不可序列化的结果")
-        if size <= limit:
-            return result
-        return ToolResult.error(
-            f"{tool_def.name} 返回结果超过大小限制（最多 {limit} 字节）"
-        )
-
-    @staticmethod
-    def _is_uncertain_provider_failure(tool_def: Any, result: ToolResult) -> bool:
-        """Identify write failures where the provider may have committed.
-
-        Handlers normalize provider exceptions into ``ToolResult.error``.  A
-        transport-aware Result field is not required from every custom Skill,
-        so the Runtime also recognizes the stable error vocabulary emitted by
-        BasePlatformClient.  These outcomes must remain recoverable rather
-        than releasing the idempotency reservation for an unsafe blind retry.
-        """
-        if not tool_def.is_write_tool or not result or result.success:
-            return False
-        data = result.data if isinstance(result.data, dict) else {}
-        if str(data.get("execution_status") or "").lower() in {
-            "unknown", "timed_out", "timeout", "transport_unknown",
-        }:
-            return True
-        message = str(result.error or "").lower()
-        return any(marker in message for marker in (
-            "timeout", "timed out", "deadline", "connection error",
-            "rate limit", "rate limited", "server error", "http 5",
-            "temporarily unavailable", "temporary error",
-        ))
-    
     def inject_llm(self, llm_client) -> None:
         """注入 LLM 客户端"""
         self._llm = llm_client
@@ -1053,11 +932,11 @@ class AgentRuntime:
             if account_field in properties:
                 input_data[account_field] = str(account_id)
                 break
-        result = self._execute_tool(session.ctx, source_tool, input_data)
+        result = self.tool_executor.execute(session.ctx, source_tool, input_data)
         result = self.input_builder.decorate_lookup_result(
             definition, result, session.ctx, actual_platform
         )
-        result = self._enforce_result_limit(result, definition)
+        result = self.security.enforce_result_limit(result, definition)
         if not result.success:
             raise RuntimeError(result.error or "parameter lookup failed")
         for selection in result.data.get("parameter_selections", []):
@@ -1697,241 +1576,6 @@ class AgentRuntime:
                 logger.warning("创建请求级 %s client 失败: %s", platform, exc)
         return clients
 
-    def _execute_tool(
-        self, ctx: ToolContext, tool_name: str, input_data: dict,
-        request_clients: Optional[dict[str, Any]] = None,
-    ) -> ToolResult:
-        """Execute a tool with an optional request-scoped provider client."""
-        definition, handler = self._get_registered_tool(tool_name)
-
-        protected_paths = self._validate_tool_input_redline(input_data)
-        if protected_paths:
-            return ToolResult.error(
-                "请求包含禁止传入的凭证/账户配置字段："
-                + ", ".join(protected_paths)
-            )
-
-        # Some legacy handlers retain an offline fixture fallback when their
-        # ``client`` is None. That is useful for explicit dry-run/unit tests,
-        # but it must never be reachable from an approved live write: a
-        # locally generated ID would otherwise be reported as a provider
-        # mutation. Keep this check in the shared execution seam so every
-        # built-in and dynamically registered handler gets the same boundary.
-        if definition.is_write_tool and self.execution_mode == ExecutionMode.LIVE.value:
-            platform = self._canonical_platform(definition.platform)
-            request_client = (request_clients or {}).get(platform)
-            handler_has_client = hasattr(handler, "client")
-            handler_client = getattr(handler, "client", None) if handler_has_client else None
-            if not handler_has_client:
-                return ToolResult(
-                    success=False,
-                    data={"execution_status": "provider_unavailable"},
-                    error=(
-                        f"{tool_name} 的 live Handler 未暴露受控 Provider Client；"
-                        "live 写入已拒绝"
-                    ),
-                )
-            if request_client is None and handler_client is None:
-                return ToolResult(
-                    success=False,
-                    data={"execution_status": "provider_unavailable"},
-                    error=(
-                        f"{tool_name} 未配置 Provider Client；live 写入已拒绝，"
-                        "不会返回本地模拟结果"
-                    ),
-                )
-
-        turn_deadline = ctx.metadata.get("turn_deadline") if ctx else None
-        now = time.monotonic()
-        tool_deadline = now + float(getattr(definition, "timeout_seconds", 30.0))
-        if turn_deadline is not None:
-            tool_deadline = min(tool_deadline, float(turn_deadline))
-        if tool_deadline <= now:
-            return ToolResult(
-                success=False,
-                data={"execution_status": "timed_out"},
-                error=f"工具 {tool_name} 在执行前已超过 timeout_seconds",
-            )
-
-        previous_deadline = ctx.metadata.get("tool_deadline") if ctx else None
-        cancel_event = threading.Event()
-        if ctx:
-            ctx.metadata["tool_deadline"] = tool_deadline
-            ctx.metadata["cancel_event"] = cancel_event
-
-        def timeout_result() -> ToolResult:
-            cancel_event.set()
-            return ToolResult(
-                success=False,
-                data={"execution_status": "timed_out"},
-                error=(
-                    f"工具 {tool_name} 执行超过限制（最多 "
-                    f"{float(getattr(definition, 'timeout_seconds', 30.0)):.3g} 秒）"
-                ),
-            )
-
-        def prepare_handler(source_handler: Any, source_client: Any = None) -> tuple[Any, bool]:
-            """Isolate client state and return ``(handler, is_isolated)``."""
-            if source_client is None:
-                return source_handler, False
-            client_type = type(source_client)
-            timeout_setter = getattr(client_type, "set_request_timeout", None)
-            timeout_attribute = "request_timeout" in getattr(source_client, "__dict__", {})
-            # Test doubles and third-party clients sometimes implement a
-            # permissive __getattr__.  Do not shallow-copy those objects just
-            # because an arbitrary attribute lookup appeared to succeed.
-            expected = str(getattr(definition, "provider_api_version", "") or "").strip()
-            client_state = getattr(source_client, "__dict__", {})
-            actual_value = client_state.get("api_version") if isinstance(client_state, dict) else None
-            if actual_value in (None, ""):
-                actual_value = getattr(type(source_client), "api_version", "")
-            actual = str(actual_value or "").strip()
-            needs_version_marker = bool(expected and actual and expected != actual)
-            if not callable(timeout_setter) and not timeout_attribute and not needs_version_marker:
-                return source_handler, False
-            try:
-                isolated_handler = copy.copy(source_handler)
-                isolated_client = copy.copy(source_client)
-            except Exception as exc:
-                if expected and actual and expected != actual:
-                    raise RuntimeError(
-                        f"{tool_name} 的 Provider Client 不支持请求级隔离，无法安全使用版本 adapter"
-                    ) from exc
-                if not callable(timeout_setter) and not timeout_attribute:
-                    return source_handler, False
-                raise RuntimeError(
-                    f"{tool_name} 的 Provider Client 无法创建请求级隔离副本"
-                ) from exc
-            remaining = max(tool_deadline - time.monotonic(), 0.001)
-            budget_setter = getattr(isolated_client, "set_request_budget", None)
-            if callable(budget_setter):
-                budget_setter(remaining)
-            else:
-                setter = getattr(isolated_client, "set_request_timeout", None)
-                if callable(setter):
-                    setter(remaining)
-                elif hasattr(isolated_client, "request_timeout"):
-                    isolated_client.request_timeout = remaining
-            isolated_handler.client = isolated_client
-            return isolated_handler, True
-
-        def provider_version_error(client: Any) -> Optional[str]:
-            """Reject a Tool/client version mismatch before provider I/O."""
-            expected = str(getattr(definition, "provider_api_version", "") or "").strip()
-            if not expected or client is None:
-                return None
-            checker = getattr(type(client), "supports_tool_api_version", None)
-            if callable(checker):
-                compatible = bool(checker(client, expected))
-            else:
-                client_state = getattr(client, "__dict__", {})
-                actual_value = client_state.get("api_version") if isinstance(client_state, dict) else None
-                if actual_value in (None, ""):
-                    actual_value = getattr(type(client), "api_version", "")
-                actual = str(actual_value or "").strip()
-                compatible = not actual or actual == expected
-            if compatible:
-                return None
-            client_state = getattr(client, "__dict__", {})
-            actual_value = client_state.get("api_version") if isinstance(client_state, dict) else None
-            if actual_value in (None, ""):
-                actual_value = getattr(type(client), "api_version", "")
-            actual = str(actual_value or "unknown")
-            supported = getattr(type(client), "SUPPORTED_API_VERSIONS", ()) or ()
-            return (
-                f"{tool_name} 要求 Provider API {expected}，当前 Client 为 {actual}；"
-                f"支持版本: {list(supported)}。请升级 Client 或提供版本 adapter"
-            )
-
-        # A handler's fixture fallback is useful for explicit offline unit
-        # tests, but it must not look like live provider data in the normal
-        # Runtime path.  Guard before invoking the handler so detail reads
-        # cannot bypass the result-level simulated/data_status check.
-        if (
-            definition.is_read_tool
-            and not self.offline_mode
-            and hasattr(handler, "client")
-            and getattr(handler, "client", None) is None
-        ):
-            return ToolResult.error(
-                f"{tool_name} 没有配置 Provider Client；当前未启用 offline_mode，"
-                "不会返回模拟查询数据"
-            )
-
-        try:
-            if not request_clients:
-                # A registered handler may own a provider client. Copy it for
-                # this invocation so request timeout state cannot race with a
-                # different session using the same handler.
-                source_client = getattr(handler, "client", None)
-                invocation_handler, client_isolated = prepare_handler(handler, source_client)
-            else:
-                client = request_clients.get(
-                    self._canonical_platform(definition.platform)
-                )
-                if client is None or not hasattr(handler, "client"):
-                    invocation_handler = handler
-                    client_isolated = False
-                else:
-                    invocation_handler, client_isolated = prepare_handler(handler, client)
-
-            active_client = getattr(invocation_handler, "client", None)
-            version_error = provider_version_error(active_client)
-            if version_error:
-                return ToolResult.error(version_error)
-            if active_client is not None and client_isolated:
-                # BasePlatformClient reads this marker when selecting a
-                # provider-owned request/response adapter. It is invocation
-                # scoped because one Runtime may host multiple Tool versions.
-                try:
-                    active_client.requested_tool_api_version = str(
-                        getattr(definition, "provider_api_version", "") or ""
-                    ) or None
-                except Exception:
-                    # Third-party clients may be immutable; compatibility was
-                    # already checked, so they can still execute exact-match
-                    # contracts without the optional adapter marker.
-                    pass
-
-            if definition.input_schema:
-                errors = validate_tool_input(definition.input_schema, input_data)
-                if errors:
-                    return ToolResult.error(f"Input validation failed: {errors}")
-            def invoke_handler() -> ToolResult:
-                if hasattr(invocation_handler, "execute"):
-                    return invocation_handler.execute(ctx, input_data)
-                if callable(invocation_handler):
-                    return invocation_handler(ctx, input_data)
-                return ToolResult.error(f"Tool '{tool_name}' has no executable handler")
-
-            # Read handlers can be isolated in a worker and returned when the
-            # deadline expires.  A live write is kept synchronous: returning
-            # while an unkillable Python thread may still mutate a provider is
-            # unsafe.  Provider clients receive the same deadline and must
-            # abort their HTTP attempt; custom live handlers need equivalent
-            # cooperative cancellation before being approved.
-            if definition.is_read_tool:
-                executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ad-agent-tool")
-                future = executor.submit(invoke_handler)
-                try:
-                    result = future.result(timeout=max(tool_deadline - time.monotonic(), 0.001))
-                except FutureTimeoutError:
-                    return timeout_result()
-                finally:
-                    executor.shutdown(wait=False, cancel_futures=True)
-            else:
-                result = invoke_handler()
-            if time.monotonic() > tool_deadline:
-                return timeout_result()
-            return self._apply_read_data_boundary(tool_name, result)
-        finally:
-            if ctx:
-                if previous_deadline is None:
-                    ctx.metadata.pop("tool_deadline", None)
-                else:
-                    ctx.metadata["tool_deadline"] = previous_deadline
-                ctx.metadata.pop("cancel_event", None)
-
     def _execute_registered_tool(
         self, ctx: ToolContext, tool_name: str, input_data: dict,
     ) -> ToolResult:
@@ -1951,177 +1595,6 @@ class AgentRuntime:
             return getter(tool_name, self._registry_execution_token)
         return self.registry.get(tool_name)
 
-    @classmethod
-    def _protected_field_paths(cls, value: Any, path: str = "") -> list[str]:
-        """Return structured paths containing configuration/credential keys."""
-        return protected_field_paths(value, cls.PROTECTED_INPUT_FIELDS, path, limit=100)
-
-    @classmethod
-    def _validate_protected_input(cls, value: Any) -> list[str]:
-        paths = cls._protected_field_paths(value)
-        return paths[:10]
-
-    @classmethod
-    def _validate_tool_input_redline(cls, value: Any) -> list[str]:
-        """Validate credentials everywhere and account config inside updates.
-
-        ``account_id``/``customer_id`` are valid top-level selectors, so they
-        cannot be globally rejected. They become protected configuration once
-        nested below an ``updates`` payload. Keeping this check in the Runtime
-        execution seam also protects custom Skill handlers and batch plans.
-        """
-        paths = cls._validate_protected_input(value)
-
-        def visit(node: Any, path: str = "") -> None:
-            if isinstance(node, dict):
-                for key, child in node.items():
-                    key_text = str(key)
-                    current = f"{path}.{key_text}" if path else key_text
-                    if normalize_field_name(key_text) in {"updates", "update"}:
-                        paths.extend(protected_update_paths(child, current))
-                    else:
-                        visit(child, current)
-            elif isinstance(node, (list, tuple)):
-                for index, child in enumerate(node):
-                    visit(child, f"{path}[{index}]")
-
-        visit(value)
-        return list(dict.fromkeys(paths))[:10]
-
-    @staticmethod
-    def _confirmation_plan(
-        session_id: str,
-        user_id: str,
-        account_id: str,
-        tool_def: Any,
-        input_data: dict,
-    ) -> dict[str, str]:
-        """Build a stable, opaque confirmation binding for one write plan."""
-        normalized = json.dumps(input_data, sort_keys=True, default=str, separators=(",", ":"))
-        idempotency_key = hashlib.sha256(
-            f"{user_id}:{tool_def.name}:{normalized}".encode("utf-8")
-        ).hexdigest()[:16]
-        material = "|".join((
-            str(session_id), str(account_id or ""), tool_def.name,
-            normalized, idempotency_key,
-        ))
-        fingerprint = hashlib.sha256(material.encode("utf-8")).hexdigest()
-        token = hashlib.sha256(
-            f"ad-agent-confirm-v1:{fingerprint}".encode("utf-8")
-        ).hexdigest()
-        return {
-            "session_id": str(session_id),
-            "user_id": str(user_id),
-            "account_id": str(account_id or ""),
-            "tool": tool_def.name,
-            "plan_fingerprint": fingerprint,
-            "confirmation_token": token,
-            "idempotency_key": idempotency_key,
-        }
-
-    def _prepare_confirmation(
-        self, expected: dict[str, str], create: bool = False,
-        ttl_seconds: int = 600,
-    ) -> dict[str, str]:
-        """Attach durable expiry metadata to a live write approval plan."""
-        if not self._session_manager:
-            if create:
-                # A non-persistent Runtime can still be used by local tests;
-                # the API/server path always supplies a persistent store.
-                expected = {**expected, "approval_persistence": "in_memory"}
-            return expected
-        existing = self._session_manager.get_approval(expected["plan_fingerprint"])
-        if existing:
-            expected = {**expected, "expires_at": str(existing.get("expires_at", ""))}
-            return expected
-        if create:
-            expires_at = (datetime.now() + timedelta(seconds=ttl_seconds)).isoformat()
-            self._session_manager.create_approval(
-                expected["plan_fingerprint"], expected["confirmation_token"],
-                expected["session_id"], expected.get("user_id", ""),
-                expected["account_id"], expected["tool"], expires_at,
-            )
-            expected = {**expected, "expires_at": expires_at}
-        return expected
-
-    def _validate_confirmation_record(
-        self, expected: dict[str, str], payload: dict,
-    ) -> tuple[bool, str]:
-        if not self._session_manager:
-            return True, ""
-        return self._session_manager.validate_approval(
-            expected["plan_fingerprint"], expected["confirmation_token"],
-            expected["session_id"], expected.get("user_id", ""),
-            expected["account_id"], expected["tool"],
-        )
-
-    @classmethod
-    def _confirmation_matches(
-        cls,
-        payload: Optional[dict],
-        expected: dict[str, str],
-    ) -> bool:
-        if not isinstance(payload, dict) or payload.get("type") != "confirm_write":
-            return False
-        for key in ("session_id", "user_id", "account_id", "tool", "plan_fingerprint", "confirmation_token", "idempotency_key"):
-            if str(payload.get(key, "")) != str(expected.get(key, "")):
-                return False
-        return True
-
-    def _apply_read_data_boundary(self, tool_name: str, result: ToolResult) -> ToolResult:
-        """Prevent provider-free fixtures from masquerading as live data.
-
-        Handlers retain their direct offline fallback for unit tests and
-        explicitly enabled local demos.  The normal Runtime path is stricter:
-        a read without a configured provider client must fail closed unless
-        ``offline_mode=True`` was explicitly selected by the caller.
-
-        """
-        if self.offline_mode or not result or not result.success:
-            return result
-        try:
-            definition, _ = self._get_registered_tool(tool_name)
-        except KeyError:
-            return result
-        if not definition.is_read_tool:
-            return result
-        data = result.data if isinstance(result.data, dict) else {}
-        data_status = str(data.get("data_status") or "")
-        if result.simulated or data.get("simulated") is True or data_status.startswith("offline"):
-            return ToolResult.error(
-                f"{tool_name} 没有配置 Provider Client；当前未启用 offline_mode，"
-                "不会返回模拟查询数据"
-            )
-        return result
-
-    def _normalize_read_result_evidence(
-        self, tool_def: Any, result: ToolResult
-    ) -> ToolResult:
-        """Normalize read evidence at the Runtime result boundary.
-
-        The underlying Handler contract remains source-compatible for direct
-        callers.  Results that enter the public turn aggregation path always
-        carry an explicit evidence status; an omitted status is ``unknown``
-        and can never be inferred as live data.
-        """
-        if not result or not result.success or not tool_def.is_read_tool:
-            return result
-        data = result.data if isinstance(result.data, dict) else {}
-        if result.simulated or data.get("simulated") is True:
-            if data.get("data_status") == "offline_mock":
-                return result
-            data = dict(data)
-            data["data_status"] = "offline_mock"
-            data.setdefault("simulated", True)
-            result.data = data
-            return result
-        if data.get("data_status"):
-            return result
-        data = dict(data)
-        data["data_status"] = "unknown"
-        result.data = data
-        return result
-    
     def auto_load_skills(self, skills_root: str, credentials: dict = None) -> int:
         """
         自动加载 skills 目录下的所有 Skills。
@@ -2644,288 +2117,6 @@ class AgentRuntime:
                 account_id=session.ctx.account_id,
             )
 
-    def _start_workflow(
-        self, session: "SessionContext", intent: ParsedIntent,
-        tool_plan: dict[str, list[Any]],
-        register_items: bool = True,
-    ) -> Optional[str]:
-        """Create a local write-workflow record without contacting a provider."""
-        if not self._session_manager:
-            return None
-        if not any(tool.is_write_tool for tools in tool_plan.values() for tool in tools):
-            return None
-        workflow_id = str(uuid.uuid4())
-        self._session_manager.create_workflow(
-            workflow_id,
-            session.session_id,
-            intent.intent_type,
-            self.execution_mode,
-            status="running",
-            metadata={
-                "platforms": list(intent.platforms),
-                "dry_run": self.is_dry_run,
-                "compensation_policy": "manual_review_required",
-                "replay_policy": "explicit_operator_confirmation",
-                "raw_input": self._redact_for_persistence(intent.raw_input),
-            },
-        )
-        self._session_manager.heartbeat_workflow(
-            workflow_id,
-            self._workflow_lease_owner,
-            self.workflow_stale_after_seconds,
-        )
-        # Register every write item before the first handler can run. A
-        # feature that expands one Tool into multiple resource items can opt
-        # out and create its own item-level checkpoints through the same
-        # persistence service.
-        if register_items:
-            sequence = 0
-            sequence_by_resource: dict[tuple[str, str], int] = {}
-            for platform, tools in tool_plan.items():
-                for tool in tools:
-                    if not tool.is_write_tool:
-                        continue
-                    sequence += 1
-                    actual_platform = self._canonical_platform(platform)
-                    parent_sequence = None
-                    parent_type = getattr(tool, "parent_resource_type", None)
-                    if parent_type:
-                        parent_sequence = sequence_by_resource.get(
-                            (actual_platform, parent_type)
-                        )
-                    planned_account = self.account_resolver.resolve(
-                        intent,
-                        platform,
-                        [tool],
-                        session.ctx.account_id if len(intent.platforms) == 1 else None,
-                    )
-                    self._session_manager.record_workflow_item(
-                        workflow_id=workflow_id,
-                        sequence=sequence,
-                        platform=actual_platform,
-                        tool_name=tool.name,
-                        status="planned",
-                        input_data={},
-                        account_id=planned_account,
-                        resource_type=getattr(tool, "resource_type", None),
-                        parent_resource_type=parent_type,
-                        parent_sequence=parent_sequence,
-                    )
-                    sequence_by_resource[(actual_platform, tool.resource_type)] = sequence
-        return workflow_id
-
-    def _heartbeat_workflow(self, workflow_id: Optional[str]) -> bool:
-        """Refresh the active workflow lease before another side effect."""
-        if not workflow_id or not self._session_manager:
-            return True
-        return self._session_manager.heartbeat_workflow(
-            workflow_id,
-            self._workflow_lease_owner,
-            self.workflow_stale_after_seconds,
-        )
-
-    def _finish_workflow(
-        self,
-        workflow_id: Optional[str],
-        tool_plan: dict[str, list[Any]],
-        results: list[dict],
-        workflow_inputs: dict[int, dict],
-        planning_errors: Optional[list[str]] = None,
-    ) -> None:
-        """Persist item-level state and record when a live chain needs review."""
-        if not workflow_id or not self._session_manager:
-            return
-        planning_errors = list(planning_errors or [])
-        write_tools = {
-            tool.name for tools in tool_plan.values() for tool in tools
-            if tool.is_write_tool
-        }
-        sequence_by_tool: dict[str, int] = {}
-        definition_by_tool: dict[str, Any] = {}
-        sequence = 0
-        for platform, tools in tool_plan.items():
-            for tool in tools:
-                if tool.is_write_tool:
-                    sequence += 1
-                    sequence_by_tool[tool.name] = sequence
-                    definition_by_tool[tool.name] = tool
-        item_sequences = []
-        successful_sequences = []
-        failed_sequences = []
-        unsupported_sequences = []
-        unknown_sequences = []
-        result_occurrences: dict[str, int] = {}
-        for item in results:
-            name = str(item.get("tool") or "")
-            if name in write_tools:
-                result_occurrences[name] = result_occurrences.get(name, 0) + 1
-        seen_occurrences: dict[str, int] = {}
-        sequence_by_resource_id: dict[tuple[str, str, str], int] = {}
-        for index, item in enumerate(results):
-            if item.get("tool") not in write_tools:
-                continue
-            # A batch-level planning error is not an executable workflow item.
-            # Do not assign it a provider Tool's sequence: doing so can
-            # overwrite a real item from another platform.
-            if item.get("batch_planning_error"):
-                continue
-            tool_name = str(item.get("tool") or "")
-            seen_occurrences[tool_name] = seen_occurrences.get(tool_name, 0) + 1
-            explicit_sequence = item.get("workflow_sequence")
-            if explicit_sequence not in (None, ""):
-                try:
-                    item_sequence = int(explicit_sequence)
-                except (TypeError, ValueError):
-                    item_sequence = None
-            else:
-                item_sequence = (
-                    seen_occurrences[tool_name]
-                    if result_occurrences.get(tool_name, 0) > 1
-                    else sequence_by_tool.get(tool_name)
-                )
-            if item_sequence is None:
-                continue
-            item_sequences.append(item_sequence)
-            skipped = bool(item.get("skipped"))
-            if skipped:
-                status = "skipped"
-            elif isinstance(item.get("data"), dict) and item["data"].get("execution_status") == "unsupported":
-                status = "unsupported"
-                unsupported_sequences.append(item_sequence)
-            elif isinstance(item.get("data"), dict) and item["data"].get("execution_status") in {
-                "unknown", "timed_out", "transport_unknown",
-            }:
-                status = "unknown"
-                unknown_sequences.append(item_sequence)
-            elif item.get("needs_confirmation"):
-                status = "awaiting_confirmation"
-            elif item.get("success"):
-                status = "succeeded"
-                successful_sequences.append(item_sequence)
-            else:
-                status = "failed"
-                failed_sequences.append(item_sequence)
-            definition = definition_by_tool.get(tool_name)
-            output_data = self._redact_for_persistence(item.get("data"))
-            input_data = self._redact_for_persistence(workflow_inputs.get(index, {}))
-            resource_type = getattr(definition, "resource_type", None)
-            resource_id_field = str(
-                item.get("resource_id_field")
-                or self._resource_id_field_for_tool(definition)
-            )
-            output_object = item.get("data") if isinstance(item.get("data"), dict) else {}
-            raw_resource_id = output_object.get(resource_id_field)
-            if raw_resource_id in (None, ""):
-                raw_resource_id = input_data.get(resource_id_field)
-            parent_type = (
-                item.get("parent_resource_type")
-                or output_object.get("parent_resource_type")
-                or getattr(definition, "parent_resource_type", None)
-            )
-            parent_field = str(
-                item.get("parent_resource_id_field")
-                or output_object.get("parent_resource_id_field")
-                or self._parent_resource_id_field_for_tool(definition)
-                or ""
-            ) or None
-            parent_resource_id = (
-                item.get("parent_resource_id")
-                or output_object.get("parent_resource_id")
-                or (input_data.get(parent_field) if parent_field else None)
-            )
-            actual_platform = self._canonical_platform(str(item.get("platform") or ""))
-            account_id = item.get("account_id") or output_object.get("account_id")
-            if account_id in (None, ""):
-                for account_key in ("account_id", "advertiser_id", "customer_id"):
-                    if input_data.get(account_key) not in (None, ""):
-                        account_id = input_data[account_key]
-                        break
-            parent_sequence = sequence_by_resource_id.get(
-                (actual_platform, str(parent_type or ""), str(parent_resource_id))
-            ) if parent_resource_id not in (None, "") and parent_type else None
-            simulated = bool(output_object.get("simulated") or item.get("simulated"))
-            provider_resource_id = (
-                str(raw_resource_id) if raw_resource_id not in (None, "") and not simulated else None
-            )
-            local_resource_id = (
-                str(raw_resource_id) if raw_resource_id not in (None, "") and simulated else None
-            )
-            self._session_manager.record_workflow_item(
-                workflow_id=workflow_id,
-                sequence=item_sequence,
-                platform=actual_platform,
-                tool_name=str(item.get("tool") or ""),
-                status=status,
-                input_data=input_data,
-                output_data=output_data,
-                error=item.get("error"),
-                resource_type=resource_type,
-                parent_resource_type=(str(parent_type) if parent_type else None),
-                parent_sequence=parent_sequence,
-                parent_resource_id=(str(parent_resource_id) if parent_resource_id not in (None, "") else None),
-                provider_resource_id=provider_resource_id,
-                logical_resource_id=local_resource_id or provider_resource_id,
-                account_id=(str(account_id) if account_id not in (None, "") else None),
-            )
-            if raw_resource_id not in (None, ""):
-                sequence_by_resource_id[
-                    (actual_platform, str(resource_type or ""), str(raw_resource_id))
-                ] = item_sequence
-
-        persisted = self._session_manager.get_workflow(workflow_id) or {}
-        pending_items = [
-            item for item in persisted.get("items", [])
-            if item.get("status") in {"planned", "running"}
-        ]
-        # A process can exit before a later tool produces a result. Never
-        # close such a workflow as succeeded merely because the results list
-        # contains no explicit failure; leave it recoverable instead.
-        if pending_items:
-            status = "recovery_required" if self.execution_mode == ExecutionMode.LIVE.value else "blocked"
-            compensation_required = False
-        elif unknown_sequences:
-            status = "recovery_required"
-            compensation_required = False
-        elif failed_sequences and successful_sequences and self.execution_mode == ExecutionMode.LIVE.value:
-            self._session_manager.mark_workflow_items_for_compensation(
-                workflow_id, successful_sequences
-            )
-            status = "partially_failed"
-            compensation_required = True
-        elif failed_sequences:
-            status = "blocked" if self.is_dry_run else "failed"
-            compensation_required = False
-        elif unsupported_sequences:
-            status = "blocked"
-            compensation_required = False
-        elif planning_errors:
-            # A batch can contain valid dry-run items and unsupported or
-            # malformed platform entries. The workflow is not wholly
-            # successful in that case; surface the partial plan as blocked.
-            status = "blocked"
-            compensation_required = False
-        elif any(
-            item.get("needs_confirmation")
-            for item in results if item.get("tool") in write_tools
-        ):
-            status = "awaiting_confirmation"
-            compensation_required = False
-        else:
-            status = "planned" if self.is_dry_run else "succeeded"
-            compensation_required = False
-        self._session_manager.update_workflow(
-            workflow_id,
-            status,
-            {
-                "write_item_count": len(item_sequences),
-                "successful_items": len(successful_sequences),
-                "failed_items": len(failed_sequences),
-                "planning_error_count": len(planning_errors),
-                "compensation_required": compensation_required,
-                "compensation_policy": "manual_review_required",
-            },
-        )
-
     def _resolve_readback_definition(self, write_tool: str):
         """Find the read Tool matching a write Tool's resource metadata."""
         try:
@@ -3117,7 +2308,7 @@ class AgentRuntime:
         
         # 如果提供了 platform_params（来自确认请求），合并到意图中
         if platform_params:
-            protected_paths = self._validate_tool_input_redline(platform_params)
+            protected_paths = self.security.validate_input_redline(platform_params)
             if protected_paths:
                 error = "请求包含禁止传入的凭证/账户配置字段：" + ", ".join(protected_paths)
                 session.add_message({"role": "user", "content": safe_user_input})
@@ -3180,6 +2371,9 @@ class AgentRuntime:
             safe_user_input, intent, routed_tools
         )
         feature = self._feature_for_intent(intent)
+        execution_plan = ExecutionPlan.from_tool_plan(
+            intent, tool_plan, canonicalize=self._canonical_platform
+        )
 
         parameter_errors = self.input_builder.validate_platform_parameter_contract(
             intent, tool_plan
@@ -3205,6 +2399,7 @@ class AgentRuntime:
                 "timestamp": datetime.now().isoformat(),
                 "intent": intent.to_dict(),
                 "tool_plan": {k: [t.name for t in v] for k, v in tool_plan.items()},
+                "execution_plan": execution_plan.to_dict(),
                 "tool_selection": None,
                 "results": [parameter_result],
                 "reply": reply,
@@ -3225,7 +2420,7 @@ class AgentRuntime:
             and feature.handles_creation_preflight(intent)
         ):
             creation_preflight = feature.preflight_creation(
-                self,
+                self.services,
                 intent,
                 tool_plan,
                 session,
@@ -3259,16 +2454,17 @@ class AgentRuntime:
                     "timestamp": datetime.now().isoformat(),
                     "intent": intent.to_dict(),
                     "tool_plan": {k: [t.name for t in v] for k, v in tool_plan.items()},
-                    "tool_selection": {
+                        "tool_selection": {
                         "tool_count": tool_selection["tool_count"],
                         "tools": [tool.name for tool in tool_selection["selected_tools"]],
                         "platforms": tool_selection["platforms"],
                         "context": tool_selection["context"],
                         "tool_prompt": tool_selection["tool_prompt"],
                         "expert_knowledge": tool_selection["expert_knowledge"],
-                        "knowledge": tool_selection.get("knowledge", []),
-                    },
-                    "results": preflight_results,
+                            "knowledge": tool_selection.get("knowledge", []),
+                        },
+                        "execution_plan": execution_plan.to_dict(),
+                        "results": preflight_results,
                     "resource_results": [],
                     "workflow_id": None,
                     **(
@@ -3288,14 +2484,15 @@ class AgentRuntime:
         if feature is not None and callable(
             getattr(feature, "is_batch_intent", None)
         ) and feature.is_batch_intent(intent):
-            workflow_id = self._start_workflow(
+            workflow_id = self.workflow.start(
                 session,
                 intent,
                 tool_plan,
                 register_items=not feature.is_batch_intent(intent),
+                execution_plan=execution_plan,
             )
             return feature.run_batch_plan(
-                self,
+                self.services,
                 safe_user_input, session, turn_id, intent, tool_plan,
                 account_id, workflow_id,
                 account_scope=account_scope,
@@ -3310,6 +2507,7 @@ class AgentRuntime:
                 "timestamp": datetime.now().isoformat(),
                 "intent": intent.to_dict(),
                 "tool_plan": {},
+                "execution_plan": execution_plan.to_dict(),
                 "tool_selection": {
                     "tool_count": tool_selection["tool_count"],
                     "tools": [tool.name for tool in tool_selection["selected_tools"]],
@@ -3334,7 +2532,9 @@ class AgentRuntime:
         results = []
         needs_confirmation = False
         confirmation_payload = None
-        workflow_id = self._start_workflow(session, intent, tool_plan)
+        workflow_id = self.workflow.start(
+            session, intent, tool_plan, execution_plan=execution_plan
+        )
         # Keep sensitive execution inputs local; they are only copied through
         # the redaction path when a workflow is persisted and are never added
         # to the public result payload.
@@ -3400,7 +2600,7 @@ class AgentRuntime:
             chain_blocked = False
             chain_blocker = None
             for tool_def in tools:
-                self._heartbeat_workflow(workflow_id)
+                self.workflow.heartbeat(workflow_id)
                 if workflow_id and tool_def.is_write_tool:
                     workflow_sequence += 1
                     self._session_manager.record_workflow_item(
@@ -3485,7 +2685,7 @@ class AgentRuntime:
                         parent_resource_type=getattr(tool_def, "parent_resource_type", None),
                     )
 
-                protected_paths = self._validate_tool_input_redline(tool_input)
+                protected_paths = self.security.validate_input_redline(tool_input)
                 if protected_paths:
                     error = "请求包含禁止传入的凭证/账户配置字段：" + ", ".join(protected_paths)
                     results.append({
@@ -3646,8 +2846,8 @@ class AgentRuntime:
                 # 触发外部写 API。确认状态只来自受信任的请求字段，不从自然语言推断。
                 expected_confirmation = None
                 if tool_def.is_write_tool and self.execution_mode == ExecutionMode.LIVE.value:
-                    expected_confirmation = self._prepare_confirmation(
-                        self._confirmation_plan(
+                    expected_confirmation = self.security.prepare_confirmation(
+                        self.security.confirmation_plan(
                             session_id, session.ctx.user_id, session.ctx.account_id,
                             tool_def, tool_input,
                         ),
@@ -3680,7 +2880,7 @@ class AgentRuntime:
                     session.ctx.account_id = original_account
                     continue
 
-                if tool_def.is_write_tool and self.execution_mode == ExecutionMode.LIVE.value and confirmed and incoming_confirmation_payload is not None and not self._confirmation_matches(
+                if tool_def.is_write_tool and self.execution_mode == ExecutionMode.LIVE.value and confirmed and incoming_confirmation_payload is not None and not self.security.confirmation_matches(
                     incoming_confirmation_payload, expected_confirmation or {}
                 ):
                     results.append({
@@ -3709,7 +2909,7 @@ class AgentRuntime:
                     and confirmed
                     and incoming_confirmation_payload is not None
                 ):
-                    approval_ok, approval_error = self._validate_confirmation_record(
+                    approval_ok, approval_error = self.security.validate_confirmation_record(
                         expected_confirmation or {}, incoming_confirmation_payload
                     )
                     if not approval_ok:
@@ -3789,19 +2989,19 @@ class AgentRuntime:
                         else:
                             result = self._simulate_write(tool_def, tool_input, actual_platform)
                     else:
-                        result = self._execute_tool(
+                        result = self.tool_executor.execute(
                             session.ctx, tool_def.name, tool_input, request_clients
                         )
                 except Exception as exc:
                     logger.exception("工具执行失败: %s", tool_def.name)
                     result = ToolResult.error(f"工具执行失败: {exc}")
 
-                result = self._normalize_read_result_evidence(tool_def, result)
+                result = self.security.normalize_read_result_evidence(tool_def, result)
                 result = self.input_builder.decorate_lookup_result(
                     tool_def, result, session.ctx, actual_platform
                 )
-                result = self._enforce_result_limit(result, tool_def)
-                if self._is_uncertain_provider_failure(tool_def, result):
+                result = self.security.enforce_result_limit(result, tool_def)
+                if self.security.is_uncertain_provider_failure(tool_def, result):
                     # A transport/temporary error does not prove that the
                     # provider rejected the write. Persist an explicit
                     # unknown outcome so workflow recovery and reconciliation
@@ -3810,7 +3010,7 @@ class AgentRuntime:
                         **(result.data if isinstance(result.data, dict) else {}),
                         "execution_status": "unknown",
                     }
-                self._heartbeat_workflow(workflow_id)
+                self.workflow.heartbeat(workflow_id)
 
                 resource_type = getattr(tool_def, "resource_type", None)
                 resource_id_field = self._resource_id_field_for_tool(tool_def)
@@ -3894,7 +3094,7 @@ class AgentRuntime:
                     and tool_def.is_write_tool
                     and self.write_guard
                     and hasattr(self.write_guard, "release_write")
-                    and not self._is_uncertain_provider_failure(tool_def, result)
+                    and not self.security.is_uncertain_provider_failure(tool_def, result)
                 ):
                     self.write_guard.release_write(
                         tool_def.name, tool_input, session.ctx.user_id
@@ -3915,12 +3115,12 @@ class AgentRuntime:
             getattr(feature, "collect_metrics", None)
         ):
             feature.collect_metrics(
-                self,
+                self.services,
                 intent, tool_plan, results, session, turn_id, request_clients,
                 account_scope=account_scope,
                 granted_permissions=effective_permissions,
             )
-        self._finish_workflow(workflow_id, tool_plan, results, workflow_inputs)
+        self.workflow.finish(workflow_id, tool_plan, results, workflow_inputs)
         resource_results = self._build_resource_results(results)
 
         analysis: dict[str, Any] = {}
@@ -3959,6 +3159,7 @@ class AgentRuntime:
                 "expert_knowledge": tool_selection["expert_knowledge"],
                 "knowledge": tool_selection.get("knowledge", []),
             },
+            "execution_plan": execution_plan.to_dict(),
             "results": results,
             "resource_results": resource_results,
             "workflow_id": workflow_id,
@@ -4425,7 +3626,9 @@ class AgentRuntime:
                 permission_error = self._check_tool_permissions(definition, permissions)
                 if permission_error:
                     return ToolResult.error(permission_error)
-                return self._execute_tool(ctx, read_tool, read_input, request_clients)
+                return self.tool_executor.execute(
+                    ctx, read_tool, read_input, request_clients
+                )
 
             observation = reconciler.reconcile(
                 ReconciliationContext(
@@ -4487,85 +3690,3 @@ class AgentRuntime:
         return self._session_manager.update_workflow(
             workflow_id, "cancelled", {"cancelled_by": str(user_id)}
         )
-
-
-# ─── Session Context ────────────────────────────────────────────
-
-class SessionContext:
-    """
-    会话上下文 - 对应 Go 的 core.AgentContext + Session
-    
-    管理单次对话的历史消息和跨 Tool 调用状态。
-    """
-    
-    def __init__(self, session_id: str, ctx: ToolContext):
-        self.session_id = session_id
-        self.ctx = ctx
-        self.messages: list[dict] = []
-        self.tool_results: dict[str, ToolResult] = {}  # tool_name -> last result
-        self.protected_state: dict[str, Any] = {}      # 跨 Tool 保持的状态
-    
-    def add_message(self, message: dict) -> None:
-        """添加对话消息"""
-        self.messages.append(message)
-        self.ctx.messages = list(self.messages)
-    
-    def save_result(
-        self, tool_name: str, result: ToolResult, platform: str = None
-    ) -> None:
-        """保存工具执行结果，供后续 Tool 引用"""
-        self.tool_results[tool_name] = result
-        # 如果结果中有 campaign_id 等关键字段，自动保存到 protected_state
-        keys = [
-            "campaign_id", "ad_set_id", "adset_id", "ad_group_id", "adgroup_id",
-            "creative_id", "io_id", "line_item_id", "ad_id",
-        ]
-        # Plugin resources may use a provider-specific identifier. Runtime
-        # annotates it from the registered Tool contract; accept only a plain
-        # identifier-shaped key so arbitrary result data cannot become shared
-        # execution state.
-        declared = result.data.get("resource_id_field") if isinstance(result.data, dict) else None
-        if (
-            isinstance(declared, str)
-            and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*_id", declared)
-            and declared not in keys
-        ):
-            keys.append(declared)
-        for key in keys:
-            if key in result.data:
-                self.protected_state[key] = result.data[key]
-                if platform:
-                    self.protected_state[f"{platform}:{key}"] = result.data[key]
-    
-    def get_protected(self, key: str, default=None) -> Any:
-        """获取跨 Tool 共享的受保护状态"""
-        return self.protected_state.get(key, default)
-    
-    def to_chat_messages(self) -> list[ChatMessage]:
-        """转换为 ChatMessage 列表（供 LLM 使用）"""
-        return [
-            ChatMessage(
-                role=m["role"],
-                content=m["content"],
-            )
-            for m in self.messages
-        ]
-
-
-# ─── CapabilityContextWrapper ───────────────────────────────────
-
-class CapabilityContextWrapper:
-    """
-    Capability 配置上下文包装器。
-    
-    对应 DAP Agent 的 CapabilityContext，提供给 CapabilityModule.configure()。
-    """
-    
-    def __init__(self, registry: ToolRegistry):
-        self.registry = registry
-        self.skills: dict[str, Skill] = {}
-        self.config: dict[str, Any] = {}
-    
-    def register_skill(self, skill: Skill) -> None:
-        """注册一个 Skill"""
-        self.skills[skill.name] = skill
