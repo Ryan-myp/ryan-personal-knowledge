@@ -1360,6 +1360,24 @@ class TestIterationContracts:
         assert len(calls) == 2
         assert len(refresh_calls) == 1
 
+    def test_google_search_does_not_send_unsupported_page_size(self):
+        client = GoogleAdsAPIClient({
+            "access_token": "caller-token",
+            "customer_id": "g1",
+        })
+        captured = {}
+
+        def request_raw(method, endpoint, **kwargs):
+            captured.update({"method": method, "endpoint": endpoint, "kwargs": kwargs})
+            return {"status_code": 200, "data": {"results": []}, "headers": {}}
+
+        client.request_raw = request_raw
+        client._search("SELECT campaign.id FROM campaign", page_size=5)
+
+        assert captured["kwargs"]["data"] == {
+            "query": "SELECT campaign.id FROM campaign"
+        }
+
     def test_google_mutation_401_is_not_replayed(self):
         client = GoogleAdsAPIClient({
             "access_token": "expired-token",

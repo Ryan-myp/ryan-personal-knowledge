@@ -4165,10 +4165,13 @@ class GoogleAdsAPIClient(BasePlatformClient):
         data = {'query': query}
         if page_token:
             data['pageToken'] = page_token
-        if page_size is not None:
-            data['pageSize'] = self._safe_limit(page_size)
+        # Google Ads Search does not accept a pageSize field; the API uses a
+        # fixed response page size and returns nextPageToken when more rows
+        # remain. Keep the local page_size argument for adapter compatibility,
+        # but never put it on the wire.
+        del page_size
         # GAQL search is read-only despite using POST, so it is safe to retry
-        # when the provider returns a transient failure.
+        # when the provider returns a transient failure or an expired token.
         return self.request_raw(
             'POST',
             url,
