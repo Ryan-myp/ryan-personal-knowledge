@@ -115,6 +115,12 @@ def test_chat_forwards_request_to_runtime(fake_server):
     assert "user_id" not in fake_server.calls[0]
 
 
+def test_chat_page_does_not_turn_http_errors_into_operation_complete(fake_server):
+    html = api_server.TEMPLATE_PATH.read_text(encoding="utf-8")
+    assert "if (!response.ok)" in html
+    assert "data.detail || data.error" in html
+
+
 def test_api_key_principal_replaces_request_user_id(monkeypatch, fake_server):
     monkeypatch.setenv(
         "AD_AGENT_API_KEY_PRINCIPALS",

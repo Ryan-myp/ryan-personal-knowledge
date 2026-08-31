@@ -1898,6 +1898,12 @@
                 });
                 
                 const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(
+                        data.detail || data.error || `请求失败（${response.status}）`
+                    );
+                }
                 
                 if (data.error) {
                     addMessage('❌ ' + data.error, 'agent', null, true);
@@ -1920,7 +1926,7 @@
                 renderResponse(data);
                 
             } catch (error) {
-                addMessage('❌ 网络错误: ' + error.message, 'agent', null, true);
+                addMessage('❌ 请求失败: ' + error.message, 'agent', null, true);
             }
         }
         
@@ -1956,6 +1962,12 @@
                 const data = await response.json();
                 removeLoading();
 
+                if (!response.ok) {
+                    throw new Error(
+                        data.detail || data.error || `请求失败（${response.status}）`
+                    );
+                }
+
                 // 单一完整回复，不复用 SSE 分段渲染
                 sessionId = data.session_id || sessionId;
 
@@ -1976,7 +1988,7 @@
 
             } catch (error) {
                 removeLoading();
-                addMessage('网络错误: ' + error.message, 'agent', null, true);
+                addMessage('请求失败: ' + error.message, 'agent', null, true);
             }
         }
         
