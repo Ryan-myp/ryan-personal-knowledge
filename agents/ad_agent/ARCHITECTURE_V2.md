@@ -379,7 +379,14 @@ class AdAgentStore:
 
 | 文件 | 行数 | 职责 |
 |------|------|------|
-| `runtime/runtime.py` | 当前源码 | Agent 主循环、Session 管理、执行模式与安全边界 |
+| `runtime/runtime.py` | 当前源码 | Agent 主循环与通用生命周期协调 |
+| `runtime/services.py` | 当前源码 | RuntimeServices Feature 端口适配器 |
+| `runtime/tool_executor.py` | 当前源码 | Tool 执行、超时与 Provider Client 隔离 |
+| `runtime/security.py` | 当前源码 | 红线字段、确认、结果证据与不确定失败边界 |
+| `runtime/workflow.py` | 当前源码 | Workflow checkpoint、lease 和状态协调 |
+| `runtime/input_builder.py` | 当前源码 | Schema 驱动输入组装和动态参数选择 |
+| `runtime/account_policy.py` | 当前源码 | 测试账户白名单校验 |
+| `runtime/session_context.py` | 当前源码 | 会话与跨 Tool 状态 |
 | `core/intent.py` | 533 | 意图解析、路由逻辑 |
 | `core/tool_registry.py` | 150 | 工具注册与执行 |
 | `capabilities/base.py` | 227 | 能力模块基类 |

@@ -15,8 +15,8 @@ class AccountResolver:
         "account_id", "ad_account_id", "advertiser_id", "customer_id",
     )
 
-    def __init__(self, runtime: Any):
-        self.runtime = runtime
+    def __init__(self, services: Any):
+        self.services = services
 
     def resolve(
         self,
@@ -25,10 +25,10 @@ class AccountResolver:
         tools: list[Any],
         fallback_account: Optional[str],
     ) -> Optional[str]:
-        params = self.runtime.input_builder.platform_params_for_intent(
+        params = self.services.input_builder.platform_params_for_intent(
             intent, platform
         )
-        actual_platform = self.runtime._canonical_platform(platform)
+        actual_platform = self.services.canonical_platform(platform)
         declared_keys = [
             key
             for tool in tools
@@ -52,7 +52,5 @@ class AccountResolver:
                     return str(value)
         if fallback_account:
             return str(fallback_account)
-        allowed = self.runtime.whitelist_validator.get_allowed_accounts(
-            actual_platform
-        )
+        allowed = self.services.available_accounts(actual_platform, None)
         return str(allowed[0]) if len(allowed) == 1 else None

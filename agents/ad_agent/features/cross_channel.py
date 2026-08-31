@@ -68,7 +68,7 @@ class CrossChannelFeature:
         cls, intent: Any, runtime: Any = None
     ) -> bool:
         canonicalize = (
-            runtime._canonical_platform
+            runtime.canonical_platform
             if runtime is not None
             else normalize_platform
         )
@@ -131,7 +131,7 @@ class CrossChannelFeature:
     @classmethod
     def preflight_creation(
         cls,
-        runtime: Any,
+        services: Any,
         intent: Any,
         tool_plan: dict[str, list[Any]],
         session: Any,
@@ -144,11 +144,11 @@ class CrossChannelFeature:
         errors: list[str] = []
         routes_by_platform: dict[str, tuple[str, list[Any]]] = {}
         for raw_platform, tools in tool_plan.items():
-            canonical = runtime._canonical_platform(raw_platform)
+            canonical = services.canonical_platform(raw_platform)
             routes_by_platform.setdefault(canonical, (raw_platform, tools))
 
         for requested_platform in intent.platforms:
-            platform = runtime._canonical_platform(requested_platform)
+            platform = services.canonical_platform(requested_platform)
             route = routes_by_platform.get(platform)
             if route is None or not route[1]:
                 message = f"{platform}: 没有已注册的 create_campaign Tool"
@@ -164,11 +164,11 @@ class CrossChannelFeature:
                 continue
 
             raw_platform, tools = route
-            account = runtime.account_resolver.resolve(
+            account = services.resolve_account(
                 intent, raw_platform, tools, account_id
             )
             if not account:
-                candidates = runtime._available_accounts_for_request(
+                candidates = services.available_accounts(
                     platform, account_scope
                 )
                 if len(candidates) == 1:
@@ -178,7 +178,7 @@ class CrossChannelFeature:
             if not account:
                 account_errors.append(f"{platform}: 缺少账户ID")
             else:
-                allowed, account_error = runtime._validate_account_with_principal(
+                allowed, account_error = services.validate_account(
                     platform, account, True, account_scope
                 )
                 if not allowed:
@@ -196,7 +196,7 @@ class CrossChannelFeature:
                 missing_fields: list[str] = []
                 tool_input: dict[str, Any] = {}
                 if not account_errors:
-                    tool_input = runtime.input_builder.build(
+                    tool_input = services.input_builder.build(
                         tool_def, intent, raw_platform, preflight_ctx
                     )
                     missing_fields = list(
@@ -220,7 +220,7 @@ class CrossChannelFeature:
                         tool_errors.append(
                             "参数选择凭证无效：" + "; ".join(selection_errors)
                         )
-                    protected_paths = runtime._validate_tool_input_redline(
+                    protected_paths = services.validate_input_redline(
                         tool_input
                     )
                     if protected_paths:
@@ -246,7 +246,7 @@ class CrossChannelFeature:
                                     "one_of(" + ", ".join(alternatives) + ")"
                                 )
                         tool_errors.extend(
-                            runtime._validate_semantic_write_input(
+                            services.validate_semantic_write(
                                 tool_def, tool_input
                             )
                         )
@@ -257,14 +257,14 @@ class CrossChannelFeature:
                                 include_provider_contract=True,
                             )
                         )
-                        if runtime.execution_mode == "live":
-                            if not runtime.allow_live_writes:
+                        if services.execution_mode == "live":
+                            if not services.allow_live_writes:
                                 tool_errors.append("Runtime 全局 allow_live_writes 未开启")
                             elif not tool_def.live_support:
                                 tool_errors.append("该 Tool 当前仅支持 dry-run")
-                            elif tool_def.name not in runtime._live_approved_tools:
+                            elif tool_def.name not in services.live_approved_tools:
                                 tool_errors.append("该 Tool 未加入 live 执行批准清单")
-                            if runtime.write_guard is None:
+                            if services.write_guard is None:
                                 tool_errors.append("live 写操作必须配置 WriteGuard")
                 if prior_failed:
                     tool_errors.append(f"前置 Tool {prior_failed} 未通过 preflight")
@@ -291,7 +291,7 @@ class CrossChannelFeature:
                     getattr(tool_def, "resource_type", "") or ""
                 )
                 if resource_type:
-                    resource_field = runtime._resource_id_field_for_tool(tool_def)
+                    resource_field = services.resource_id_field(tool_def)
                     placeholder = f"preflight:{platform}:{resource_type}"
                     preflight_ctx.protected_state[resource_field] = placeholder
                     preflight_ctx.protected_state[
@@ -339,7 +339,7 @@ class CrossChannelFeature:
     @classmethod
     def run_batch_plan(
         cls,
-        runtime: Any,
+        services: Any,
         user_input: str,
         session: Any,
         turn_id: str,
@@ -354,19 +354,19 @@ class CrossChannelFeature:
         accounts: dict[str, str] = {}
         errors: list[str] = []
         tool_by_platform: dict[str, Any] = {
-            runtime._canonical_platform(platform): cls.select_batch_campaign_tool(
-                tools, intent.intent_type, runtime
+            services.canonical_platform(platform): cls.select_batch_campaign_tool(
+                tools, intent.intent_type, services
             )
             for platform, tools in tool_plan.items()
         }
         tools_by_platform = {
-            runtime._canonical_platform(platform): tools
+            services.canonical_platform(platform): tools
             for platform, tools in tool_plan.items()
         }
         blocked_platforms: set[str] = set()
 
         for requested_platform in intent.platforms:
-            actual_platform = runtime._canonical_platform(requested_platform)
+            actual_platform = services.canonical_platform(requested_platform)
             if actual_platform not in tools_by_platform:
                 errors.append(f"{actual_platform}: 没有已注册的 Campaign 批量管理工具")
                 blocked_platforms.add(actual_platform)
@@ -380,21 +380,21 @@ class CrossChannelFeature:
             raw_platform = next(
                 (
                     platform for platform in tool_plan
-                    if runtime._canonical_platform(platform) == actual_platform
+                    if services.canonical_platform(platform) == actual_platform
                 ),
                 actual_platform,
             )
-            resolved = runtime.account_resolver.resolve(
+            resolved = services.resolve_account(
                 intent, raw_platform, [tool_def], account_id
             )
-            allowed, error = runtime._validate_account_with_principal(
+            allowed, error = services.validate_account(
                 actual_platform, resolved, True, account_scope
             )
             if not allowed:
                 errors.append(f"{actual_platform}: {error}")
                 blocked_platforms.add(actual_platform)
                 continue
-            permission_error = runtime._check_tool_permissions(
+            permission_error = services.check_tool_permissions(
                 tool_def, granted_permissions
             )
             if permission_error:
@@ -416,10 +416,10 @@ class CrossChannelFeature:
         errors = list(dict.fromkeys(errors + planning_errors))
         results: list[dict] = []
         workflow_inputs: dict[int, dict] = {}
-        if len(operations) > runtime.max_tool_calls:
+        if len(operations) > services.max_tool_calls:
             errors.append(
                 "批量操作数量超过本回合上限："
-                f"最多允许 {runtime.max_tool_calls} 项"
+                f"最多允许 {services.max_tool_calls} 项"
             )
             operations = []
 
@@ -441,7 +441,7 @@ class CrossChannelFeature:
 
         operation_sequence = 0
         for operation in operations:
-            runtime._heartbeat_workflow(workflow_id)
+            services.heartbeat(workflow_id)
             tool_name = tool_name_by_platform.get(operation.platform)
             if not tool_name:
                 results.append({
@@ -459,10 +459,10 @@ class CrossChannelFeature:
                 continue
             tool_def = tool_by_platform.get(operation.platform)
             operation_sequence += 1
-            resource_id_field = runtime._resource_id_field_for_tool(tool_def)
+            resource_id_field = services.resource_id_field(tool_def)
             tool_input = {resource_id_field: operation.campaign_id}
             if operation.action != "delete":
-                tool_input["updates"] = runtime.input_builder.normalize_provider_updates(
+                tool_input["updates"] = services.input_builder.normalize_provider_updates(
                     tool_def, operation.updates
                 )
             properties = getattr(tool_def.input_schema, "properties", {}) or {}
@@ -470,14 +470,14 @@ class CrossChannelFeature:
                 if account_field in properties:
                     tool_input[account_field] = operation.account_id
                     break
-            if workflow_id and runtime._session_manager:
-                runtime._session_manager.record_workflow_item(
+            if workflow_id and services.session_manager:
+                services.session_manager.record_workflow_item(
                     workflow_id=workflow_id,
                     sequence=operation_sequence,
-                    platform=runtime._canonical_platform(operation.platform),
+                    platform=services.canonical_platform(operation.platform),
                     tool_name=tool_name,
                     status="running",
-                    input_data=runtime._redact_for_persistence(tool_input),
+                    input_data=services.redact(tool_input),
                     account_id=operation.account_id,
                     resource_type=getattr(tool_def, "resource_type", None),
                     parent_resource_type=getattr(
@@ -486,7 +486,7 @@ class CrossChannelFeature:
                 )
             result_index = len(results)
             workflow_inputs[result_index] = tool_input
-            protected_paths = runtime._validate_tool_input_redline(tool_input)
+            protected_paths = services.validate_input_redline(tool_input)
             if protected_paths:
                 results.append({
                     "tool": tool_name,
@@ -511,8 +511,8 @@ class CrossChannelFeature:
                     "workflow_sequence": operation_sequence,
                 })
                 continue
-            simulated = runtime._simulate_write(
-                tool_def, tool_input, runtime._canonical_platform(operation.platform)
+            simulated = services.simulate_write(
+                tool_def, tool_input, services.canonical_platform(operation.platform)
             )
             data = dict(simulated.data)
             data.update({
@@ -523,7 +523,7 @@ class CrossChannelFeature:
                 "campaign_ref": operation.campaign_ref.to_dict(),
                 "campaign_id": operation.campaign_id,
             })
-            live_batch = runtime.execution_mode == "live"
+            live_batch = services.execution_mode == "live"
             if live_batch:
                 data.update({"mode": "live", "execution_status": "unsupported"})
             results.append({
@@ -541,23 +541,23 @@ class CrossChannelFeature:
             })
 
         session.add_message({"role": "user", "content": user_input})
-        reply = runtime.response_renderer.render(
+        reply = services.response_renderer.render(
             intent, results, bool(errors and not operations)
         )
         session.add_message({"role": "assistant", "content": reply})
-        runtime._finish_workflow(
+        services.finish_workflow(
             workflow_id, tool_plan, results, workflow_inputs,
             planning_errors=errors,
         )
-        resource_results = runtime._build_resource_results(results)
-        if runtime._session_manager:
-            runtime._session_manager.update_session(
+        resource_results = services.build_resource_results(results)
+        if services.session_manager:
+            services.session_manager.update_session(
                 session.session_id,
                 {
-                    "execution_mode": runtime.execution_mode,
-                    "read_only_mode": runtime._read_only_mode,
+                    "execution_mode": services.execution_mode,
+                    "read_only_mode": services.read_only_mode,
                     "message_count": len(session.messages),
-                    "messages": runtime._redact_for_persistence(
+                    "messages": services.redact(
                         session.messages[-20:]
                     ),
                 },
@@ -580,7 +580,7 @@ class CrossChannelFeature:
     @classmethod
     def collect_metrics(
         cls,
-        runtime: Any,
+        services: Any,
         intent: Any,
         tool_plan: dict[str, list[Any]],
         results: list[dict],
@@ -601,7 +601,7 @@ class CrossChannelFeature:
             and item.get("tool", "").endswith("list_campaigns")
         }
         for platform, listing in listing_results.items():
-            report_def = cls._find_campaign_report_tool(runtime, platform)
+            report_def = cls._find_campaign_report_tool(services, platform)
             if not report_def or report_def.name in already_collected:
                 continue
             listing_data = (
@@ -623,11 +623,11 @@ class CrossChannelFeature:
             if not campaign_ids:
                 continue
             tool_plan.setdefault(platform, []).append(report_def)
-            per_platform_account = runtime.account_resolver.resolve(
+            per_platform_account = services.resolve_account(
                 intent, platform, [report_def], session.ctx.account_id
             )
-            actual_platform = runtime._canonical_platform(platform)
-            permission_error = runtime._check_tool_permissions(
+            actual_platform = services.canonical_platform(platform)
+            permission_error = services.check_tool_permissions(
                 report_def, granted_permissions
             )
             if permission_error:
@@ -639,7 +639,7 @@ class CrossChannelFeature:
                     "needs_confirmation": False,
                 })
                 continue
-            allowed, account_error = runtime._validate_account_with_principal(
+            allowed, account_error = services.validate_account(
                 actual_platform, per_platform_account, False, account_scope
             )
             if not allowed:
@@ -650,7 +650,7 @@ class CrossChannelFeature:
                     "error": f"指标采集账户校验失败: {account_error}",
                 })
                 continue
-            platform_params = runtime.input_builder.platform_params_for_intent(
+            platform_params = services.input_builder.platform_params_for_intent(
                 intent, platform
             )
             report_input = {
@@ -668,7 +668,7 @@ class CrossChannelFeature:
                 if "date_preset" in report_def.input_schema.properties:
                     report_input.setdefault(
                         "date_preset",
-                        runtime.input_builder.platform_date_range(
+                        services.input_builder.platform_date_range(
                             platform, intent.date_range, report_def, "date_preset"
                         ),
                     )
@@ -692,7 +692,7 @@ class CrossChannelFeature:
             original_account = session.ctx.account_id
             session.ctx.account_id = per_platform_account
             try:
-                report_result = runtime._execute_tool(
+                report_result = services.execute_tool(
                     session.ctx, report_def.name, report_input, request_clients
                 )
                 results.append({
@@ -700,15 +700,15 @@ class CrossChannelFeature:
                     "platform": platform,
                     "success": report_result.success,
                     "account_id": per_platform_account,
-                    "data": runtime._redact_for_persistence(report_result.data),
-                    "error": runtime._redact_for_persistence(report_result.error),
+                    "data": services.redact(report_result.data),
+                    "error": services.redact(report_result.error),
                     "needs_confirmation": report_result.requires_confirmation,
                 })
                 session.save_result(
                     report_def.name, report_result, platform=actual_platform
                 )
                 session.ctx.protected_state.update(session.protected_state)
-                runtime._persist_tool_result(
+                services.persist_tool_result(
                     session, turn_id, report_def, actual_platform,
                     report_input, report_result,
                 )
@@ -723,11 +723,11 @@ class CrossChannelFeature:
                 session.ctx.account_id = original_account
 
     @staticmethod
-    def _find_campaign_report_tool(runtime: Any, platform: str):
-        normalized = runtime._canonical_platform(platform)
+    def _find_campaign_report_tool(services: Any, platform: str):
+        normalized = services.canonical_platform(platform)
         candidates = []
-        for definition in runtime.registry.list_all():
-            if runtime._canonical_platform(definition.platform) != normalized:
+        for definition in services.registry.list_all():
+            if services.canonical_platform(definition.platform) != normalized:
                 continue
             if not definition.is_read_tool:
                 continue

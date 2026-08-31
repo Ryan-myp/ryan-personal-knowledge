@@ -26,14 +26,14 @@ class ToolInputBuilder:
         "account_id", "ad_account_id", "advertiser_id", "customer_id",
     )
 
-    def __init__(self, runtime: Any):
-        self.runtime = runtime
+    def __init__(self, services: Any):
+        self.services = services
 
     def platform_params_for_intent(self, intent: Any, platform: str) -> dict[str, Any]:
-        requested = self.runtime._canonical_platform(platform)
+        requested = self.services.canonical_platform(platform)
         merged: dict[str, Any] = {}
         for raw_platform, values in (getattr(intent, "platform_params", {}) or {}).items():
-            if self.runtime._canonical_platform(str(raw_platform)) != requested:
+            if self.services.canonical_platform(str(raw_platform)) != requested:
                 continue
             if not isinstance(values, dict):
                 continue
@@ -132,7 +132,7 @@ class ToolInputBuilder:
         self, source_tool_name: str
     ) -> list[tuple[Any, str, dict[str, Any]]]:
         targets = []
-        for candidate in self.runtime.registry.list_all():
+        for candidate in self.services.registry.list_all():
             schema = getattr(candidate, "input_schema", None)
             for field_name, field_schema in (
                 getattr(schema, "properties", {}) or {}
@@ -245,7 +245,7 @@ class ToolInputBuilder:
                 if identity in seen:
                     continue
                 seen.add(identity)
-                token, expires_at = self.runtime._parameter_selection_signer.issue(
+                token, expires_at = self.services.parameter_selection_signer.issue(
                     session_id=ctx.session_id,
                     user_id=ctx.user_id,
                     account_id=str(ctx.account_id or ""),
@@ -313,12 +313,12 @@ class ToolInputBuilder:
             for token in tokens:
                 try:
                     resolved.append(
-                        self.runtime._parameter_selection_signer.verify(
+                        self.services.parameter_selection_signer.verify(
                             token,
                             session_id=ctx.session_id,
                             user_id=ctx.user_id,
                             account_id=str(ctx.account_id or ""),
-                            platform=self.runtime._canonical_platform(
+                            platform=self.services.canonical_platform(
                                 tool_def.platform
                             ),
                             tool_name=tool_def.name,
@@ -336,7 +336,7 @@ class ToolInputBuilder:
                 continue
             tool_input[field_name] = value
 
-        if self.runtime.execution_mode == "live" and tool_def.is_write_tool:
+        if self.services.execution_mode == "live" and tool_def.is_write_tool:
             for field_name, field_schema in properties.items():
                 if (
                     self.lookup_tool_for_schema_field(field_schema)
@@ -354,9 +354,9 @@ class ToolInputBuilder:
         self, tool_def: Any, intent: Any, platform: str,
         ctx: Optional[ToolContext] = None,
     ) -> dict[str, Any]:
-        runtime = self.runtime
+        services = self.services
         platform_params = self.platform_params_for_intent(intent, platform)
-        actual_platform = runtime._canonical_platform(platform)
+        actual_platform = services.canonical_platform(platform)
         tool_input: dict[str, Any] = {}
         specific_params = platform_params.get(tool_def.name, {})
         unknown_specific_params: list[str] = []
@@ -474,7 +474,7 @@ class ToolInputBuilder:
                 tool_input["name"] = campaign_name
         if "name" in tool_def.input_schema.required and "name" not in tool_input:
             resource_type = getattr(tool_def, "resource_type", "")
-            if runtime.is_dry_run and resource_type in {"ad_set", "ad_group", "line_item"}:
+            if services.is_dry_run() and resource_type in {"ad_set", "ad_group", "line_item"}:
                 tool_input["name"] = f"{platform}_dry_run_{resource_type}"
 
         if "updates" in tool_def.input_schema.required:
@@ -518,6 +518,7 @@ class ToolInputBuilder:
     def validate_platform_parameter_contract(
         self, intent: Any, tool_plan: dict[str, list[Any]]
     ) -> list[str]:
+        services = self.services
         errors: list[str] = []
         common = {
             "budget", "daily_budget", "objective", "campaign_type",
@@ -527,11 +528,11 @@ class ToolInputBuilder:
         for platform, values in (getattr(intent, "platform_params", {}) or {}).items():
             if str(platform).startswith("_") or not isinstance(values, dict):
                 continue
-            canonical = self.runtime._canonical_platform(platform)
+            canonical = services.canonical_platform(platform)
             tools = [
                 tool
                 for routed_platform, routed_tools in tool_plan.items()
-                if self.runtime._canonical_platform(routed_platform) == canonical
+                if services.canonical_platform(routed_platform) == canonical
                 for tool in routed_tools
             ]
             tool_names = {tool.name for tool in tools}

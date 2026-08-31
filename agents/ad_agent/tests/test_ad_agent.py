@@ -1365,7 +1365,7 @@ class TestIterationContracts:
         skill = CustomSkill()
         rt.register_skill(skill, "meta")
         assert [tool.name for tool in rt.registry.list_all()] == ["custom_meta_insight"]
-        assert rt._execute_tool(ToolContext("s1", "u1"), "custom_meta_insight", {}).data == {
+        assert rt.tool_executor.execute(ToolContext("s1", "u1"), "custom_meta_insight", {}).data == {
             "source": "custom"
         }
         from agents.ad_agent.core.interfaces import ParsedIntent
@@ -1414,7 +1414,7 @@ class TestIterationContracts:
         rt = AgentRuntime(require_llm=False, enforce_account_scope=False)
         assert rt.auto_load_skills(str(skill_root)) == 1
         assert [tool.name for tool in rt.registry.list_all()] == ["custom_insight"]
-        result = rt._execute_tool(
+        result = rt.tool_executor.execute(
             ToolContext("s1", "u1"), "custom_insight", {}
         )
         assert result.success is True
