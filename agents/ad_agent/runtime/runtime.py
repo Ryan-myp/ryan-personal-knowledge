@@ -40,6 +40,7 @@ from ..core.tool_registry import GuardedToolRegistry, SimpleToolRegistry, valida
 from ..core.intent import LLMIntentParser, SimpleIntentRouter
 from ..core.features import RuntimeFeature
 from ..core.execution_plan import ExecutionPlan
+from ..core.execution_trace import ExecutionTrace, ExecutionEventCallback
 from ..core.response import ResponseRenderer, ResponseSynthesizer, LLMResponseSynthesizer
 from ..core.plugins import (
     PluginKind,
@@ -2490,6 +2491,7 @@ class AgentRuntime:
         principal: Optional[RequestPrincipal] = None,
         tenant_id: Optional[str] = None,
         cancellation_event: Optional[threading.Event] = None,
+        event_callback: Optional[ExecutionEventCallback] = None,
     ) -> dict:
         """Execute one turn while serializing turns for the same session.
 
@@ -2524,6 +2526,7 @@ class AgentRuntime:
                     else (tenant_id or "default")
                 ),
                 cancellation_event=cancellation_event,
+                event_callback=event_callback,
             )
 
     def _run_unlocked(
@@ -2540,6 +2543,7 @@ class AgentRuntime:
         account_scope: Optional[Mapping[str, Any]] = None,
         tenant_id: str = "default",
         cancellation_event: Optional[threading.Event] = None,
+        event_callback: Optional[ExecutionEventCallback] = None,
     ) -> dict:
         """
         执行一次完整的对话回合。
@@ -2560,8 +2564,12 @@ class AgentRuntime:
         """
         session_id = session_id or str(uuid.uuid4())
         turn_id = str(uuid.uuid4())[:8]
+        trace = ExecutionTrace(event_callback, turn_id=turn_id)
+        trace.start()
         input_error = self._validate_request_limits(user_input, platform_params)
         if input_error:
+            trace.error(reason="request_invalid")
+            trace.done("failed", safe_metadata={"reason": "request_invalid"})
             return {
                 "session_id": session_id,
                 "turn_id": turn_id,
@@ -2667,6 +2675,8 @@ class AgentRuntime:
                 error = "请求包含禁止传入的凭证/账户配置字段：" + ", ".join(protected_paths)
                 session.add_message({"role": "user", "content": safe_user_input})
                 session.add_message({"role": "assistant", "content": error})
+                trace.error(reason="protected_input")
+                trace.done("failed", safe_metadata={"reason": "protected_input"})
                 return {
                     "session_id": session_id,
                     "turn_id": turn_id,
@@ -2699,6 +2709,8 @@ class AgentRuntime:
             reply = "❌ 业务策略阻止本次请求：" + "；".join(policy_errors)
             session.add_message({"role": "user", "content": safe_user_input})
             session.add_message({"role": "assistant", "content": reply})
+            trace.error(reason="policy_blocked")
+            trace.done("failed", safe_metadata={"reason": "policy_blocked"})
             return {
                 "session_id": session_id,
                 "turn_id": turn_id,
@@ -2728,6 +2740,7 @@ class AgentRuntime:
         execution_plan = ExecutionPlan.from_tool_plan(
             intent, tool_plan, canonicalize=self._canonical_platform
         )
+        trace.bind_plan(execution_plan)
 
         parameter_errors = self.input_builder.validate_platform_parameter_contract(
             intent, tool_plan
@@ -2747,6 +2760,9 @@ class AgentRuntime:
                 "error": "; ".join(parameter_errors),
                 "needs_confirmation": False,
             }
+            trace.all_nodes_status("failed", reason="parameter_contract")
+            trace.reply()
+            trace.done("failed", safe_metadata={"reason": "parameter_contract"})
             return {
                 "session_id": session_id,
                 "turn_id": turn_id,
@@ -2802,6 +2818,9 @@ class AgentRuntime:
                             "messages": self._redact_for_persistence(session.messages[-20:]),
                         },
                     )
+                trace.all_nodes_status("failed", reason="preflight_blocked")
+                trace.reply()
+                trace.done("failed", safe_metadata={"reason": "preflight_blocked"})
                 return {
                     "session_id": session_id,
                     "turn_id": turn_id,
@@ -2845,13 +2864,26 @@ class AgentRuntime:
                 register_items=not feature.is_batch_intent(intent),
                 execution_plan=execution_plan,
             )
-            return feature.run_batch_plan(
+            batch_result = feature.run_batch_plan(
                 self.services,
                 safe_user_input, session, turn_id, intent, tool_plan,
                 account_id, workflow_id,
                 account_scope=account_scope,
                 granted_permissions=effective_permissions,
             )
+            for result in batch_result.get("results", []) if isinstance(batch_result, dict) else []:
+                node = trace.node_for(result.get("platform", ""), result.get("tool", ""))
+                trace.node_status(
+                    node,
+                    "succeeded" if result.get("success") else "failed",
+                    safe_metadata={"simulated": True, "reason": "batch_plan"},
+                )
+            trace.reply(needs_confirmation=bool(batch_result.get("needs_confirmation")) if isinstance(batch_result, dict) else False)
+            trace.done(
+                "awaiting_confirmation" if isinstance(batch_result, dict) and batch_result.get("needs_confirmation") else "succeeded",
+                safe_metadata={"batch_plan": True},
+            )
+            return batch_result
 
         # 检查是否需要执行任何工具
         if not tool_plan:
@@ -2885,6 +2917,8 @@ class AgentRuntime:
                 session=session,
                 fallback_reply=no_tool_reply,
             )
+            trace.reply()
+            trace.done("succeeded", safe_metadata={"tool_count": 0})
             return {
                 "session_id": session_id,
                 "turn_id": turn_id,
@@ -2963,6 +2997,12 @@ class AgentRuntime:
                             "question": f"请提供 {actual_platform} 账户ID（当前只读模式仅允许查询测试账户）",
                         },
                     })
+                    for tool_def in tools:
+                        trace.node_status(
+                            trace.node_for(actual_platform, tool_def.name),
+                            "awaiting_confirmation",
+                            safe_metadata={"reason": "account_required"},
+                        )
                     needs_confirmation = True
                     confirmation_payload = results[-1]["confirmation_payload"]
                     continue
@@ -2982,15 +3022,23 @@ class AgentRuntime:
                         "success": False,
                         "error": f"账户不在白名单中: {error_msg}",
                     })
+                    for tool_def in tools:
+                        trace.node_status(
+                            trace.node_for(actual_platform, tool_def.name),
+                            "failed",
+                            safe_metadata={"reason": "account_scope_denied"},
+                        )
                     continue
 
             # 非只读模式：写操作需要白名单 + 幂等保护
             chain_blocked = False
             chain_blocker = None
             for tool_def in tools:
+                node = trace.node_for(actual_platform, tool_def.name)
                 if cancellation_event is not None and cancellation_event.is_set():
                     chain_blocked = True
                     chain_blocker = tool_def.name
+                    trace.node_status(node, "skipped", safe_metadata={"reason": "cancelled"})
                     break
                 self.workflow.heartbeat(workflow_id)
                 if workflow_id and tool_def.is_write_tool:
@@ -3018,6 +3066,7 @@ class AgentRuntime:
                         "error": turn_budget_error,
                         "needs_confirmation": False,
                     })
+                    trace.node_status(node, "failed", safe_metadata={"reason": "turn_budget_exceeded"})
                     chain_blocked = True
                     chain_blocker = tool_def.name
                     continue
@@ -3030,6 +3079,7 @@ class AgentRuntime:
                         "error": f"前置工具 {chain_blocker} 未成功，已停止后续依赖步骤",
                         "skipped": True,
                     })
+                    trace.node_status(node, "skipped", safe_metadata={"reason": "dependency_blocked"})
                     continue
                 permission_error = self._check_tool_permissions(
                     tool_def, effective_permissions
@@ -3043,6 +3093,7 @@ class AgentRuntime:
                         "error": permission_error,
                         "needs_confirmation": False,
                     })
+                    trace.node_status(node, "failed", safe_metadata={"reason": "permission_denied"})
                     chain_blocked = True
                     chain_blocker = tool_def.name
                     continue
@@ -3056,6 +3107,7 @@ class AgentRuntime:
                                 "success": False,
                                 "error": f"账户验证失败: {error_msg}",
                             })
+                            trace.node_status(node, "failed", safe_metadata={"reason": "account_not_allowed"})
                             continue
                 # 为当前平台临时设置账户上下文
                 original_account = session.ctx.account_id
@@ -3088,6 +3140,7 @@ class AgentRuntime:
                         "error": error,
                         "needs_confirmation": False,
                     })
+                    trace.node_status(node, "failed", safe_metadata={"reason": "protected_input"})
                     chain_blocked = True
                     chain_blocker = tool_def.name
                     session.ctx.account_id = original_account
@@ -3107,6 +3160,7 @@ class AgentRuntime:
                         ),
                         "needs_confirmation": False,
                     })
+                    trace.node_status(node, "failed", safe_metadata={"reason": "unknown_parameters"})
                     chain_blocked = True
                     chain_blocker = tool_def.name
                     session.ctx.account_id = original_account
@@ -3122,6 +3176,7 @@ class AgentRuntime:
                         "error": "参数选择凭证无效：" + "; ".join(selection_errors),
                         "needs_confirmation": False,
                     })
+                    trace.node_status(node, "failed", safe_metadata={"reason": "invalid_parameter_selection"})
                     chain_blocked = True
                     chain_blocker = tool_def.name
                     session.ctx.account_id = original_account
@@ -3147,6 +3202,7 @@ class AgentRuntime:
                             "question": f"⚠️ 执行 {tool_def.name} 需要以下参数：{', '.join(missing_params)}，请提供这些参数",
                         },
                     })
+                    trace.confirmation(node, reason="missing_parameters")
                     needs_confirmation = True
                     confirmation_payload = results[-1]["confirmation_payload"]
                     chain_blocked = True
@@ -3166,6 +3222,7 @@ class AgentRuntime:
                         "error": f"Input validation failed: {schema_errors}",
                         "needs_confirmation": False,
                     })
+                    trace.node_status(node, "failed", safe_metadata={"reason": "schema_invalid"})
                     chain_blocked = True
                     chain_blocker = tool_def.name
                     session.ctx.account_id = original_account
@@ -3190,6 +3247,7 @@ class AgentRuntime:
                             "error": f"Provider contract validation failed: {provider_errors}",
                             "needs_confirmation": False,
                         })
+                        trace.node_status(node, "failed", safe_metadata={"reason": "provider_contract_invalid"})
                         chain_blocked = True
                         chain_blocker = tool_def.name
                         session.ctx.account_id = original_account
@@ -3213,6 +3271,7 @@ class AgentRuntime:
                         "error": f"{tool_def.name} 当前禁止 live 执行：{reason}",
                         "needs_confirmation": False,
                     })
+                    trace.node_status(node, "failed", safe_metadata={"reason": "live_write_blocked"})
                     chain_blocked = True
                     chain_blocker = tool_def.name
                     session.ctx.account_id = original_account
@@ -3230,6 +3289,7 @@ class AgentRuntime:
                         "error": "live 写操作必须配置 WriteGuard；已拒绝执行",
                         "needs_confirmation": False,
                     })
+                    trace.node_status(node, "failed", safe_metadata={"reason": "write_guard_missing"})
                     chain_blocked = True
                     chain_blocker = tool_def.name
                     session.ctx.account_id = original_account
@@ -3266,6 +3326,7 @@ class AgentRuntime:
                             "question": "请使用当前计划返回的 confirmation_payload 确认。",
                         },
                     })
+                    trace.confirmation(node, reason="confirmation_payload_required")
                     needs_confirmation = True
                     confirmation_payload = results[-1]["confirmation_payload"]
                     chain_blocked = True
@@ -3289,6 +3350,7 @@ class AgentRuntime:
                             "question": "写入计划已变化，请使用最新计划重新确认。",
                         },
                     })
+                    trace.confirmation(node, reason="confirmation_mismatch")
                     needs_confirmation = True
                     confirmation_payload = results[-1]["confirmation_payload"]
                     chain_blocked = True
@@ -3319,6 +3381,7 @@ class AgentRuntime:
                                 "question": "确认记录已过期或已使用，请重新生成计划并确认。",
                             },
                         })
+                        trace.confirmation(node, reason="confirmation_invalid")
                         needs_confirmation = True
                         confirmation_payload = results[-1]["confirmation_payload"]
                         chain_blocked = True
@@ -3342,6 +3405,7 @@ class AgentRuntime:
                             "question": f"即将对 {actual_platform} 执行 live 写操作 {tool_def.name}，请确认。",
                         },
                     })
+                    trace.confirmation(node, reason="live_confirmation_required")
                     needs_confirmation = True
                     confirmation_payload = results[-1]["confirmation_payload"]
                     chain_blocked = True
@@ -3367,6 +3431,7 @@ class AgentRuntime:
                             "success": False,
                             "error": f"Write guard blocked: {reason}",
                         })
+                        trace.node_status(node, "failed", safe_metadata={"reason": "write_guard_blocked"})
                         chain_blocked = True
                         chain_blocker = tool_def.name
                         session.ctx.account_id = original_account
@@ -3374,6 +3439,7 @@ class AgentRuntime:
                 
                 # dry-run 下写工具只生成本地模拟结果，绝不触发 API Client。
                 started_at = datetime.now().isoformat()
+                trace.node_status(node, "running")
                 try:
                     if tool_def.is_write_tool and self.is_dry_run:
                         schema_errors = validate_tool_input(tool_def.input_schema, tool_input) if tool_def.input_schema else []
@@ -3444,6 +3510,24 @@ class AgentRuntime:
                     "error": safe_result_error,
                     "needs_confirmation": result.requires_confirmation,
                 })
+                execution_status = (
+                    result.data.get("execution_status")
+                    if isinstance(result.data, dict) else None
+                )
+                result_status = (
+                    "awaiting_confirmation" if result.requires_confirmation
+                    else "succeeded" if result.success
+                    else "unknown" if execution_status == "unknown"
+                    else "failed"
+                )
+                trace.node_status(
+                    node,
+                    result_status,
+                    safe_metadata={
+                        "simulated": bool(result.simulated),
+                        "execution_status": execution_status,
+                    },
+                )
                 workflow_inputs[result_index] = copy.deepcopy(tool_input)
 
                 if not result.success or result.requires_confirmation:
@@ -3526,6 +3610,15 @@ class AgentRuntime:
             needs_confirmation,
             analysis=analysis,
             session=session,
+        )
+        trace.reply(needs_confirmation=needs_confirmation)
+        has_failure = any(
+            not item.get("success", False) and not item.get("skipped", False)
+            for item in results
+        )
+        trace.done(
+            "awaiting_confirmation" if needs_confirmation else "failed" if has_failure else "succeeded",
+            safe_metadata={"tool_count": len(results)},
         )
         
         # Step 6: 记录消息历史

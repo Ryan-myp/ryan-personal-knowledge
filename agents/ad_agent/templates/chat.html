@@ -412,28 +412,6 @@
             background: var(--error-light);
         }
         
-        /* 思考过程样式 */
-        .thinking-process {
-            margin-bottom: 12px;
-            padding: 12px;
-            background: rgba(99, 102, 241, 0.05);
-            border-left: 3px solid var(--accent);
-            border-radius: 0 8px 8px 0;
-            font-size: 13px;
-            color: var(--text-secondary);
-        }
-        
-        .thinking-step {
-            padding: 4px 0;
-            opacity: 0.9;
-        }
-        
-        .thinking-step::before {
-            content: '›';
-            margin-right: 8px;
-            color: var(--accent);
-        }
-        
         /* 数据表格样式 */
         .data-table {
             width: 100%;
@@ -1307,9 +1285,102 @@
             .trace-toolbar { gap: 8px; }
             .trace-mode-bar { align-items: flex-start; flex-direction: column; }
         }
+
+        /* 图 2 控制台布局：顶部会话栏，聊天与真实轨迹并列，底部共享活动日志。 */
+        body {
+            display: grid;
+            grid-template-columns: 68px minmax(420px, 4fr) minmax(560px, 6fr);
+            grid-template-rows: 60px minmax(0, 1fr) 132px;
+            min-width: 1080px;
+        }
+        .global-topbar {
+            grid-column: 1 / -1;
+            grid-row: 1;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 0 20px;
+            background: #08111d;
+            border-bottom: 1px solid #1d3044;
+        }
+        .global-brand-mark { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; color: #fff; font-weight: 700; background: linear-gradient(135deg, #6366f1, #8b5cf6); }
+        .global-brand-name { color: #e9f2fb; font-size: 13px; font-weight: 650; letter-spacing: .2px; }
+        .session-pill { display: flex; align-items: center; gap: 9px; margin-left: 26px; padding: 7px 11px; border: 1px solid #20384f; border-radius: 8px; background: #0b1a29; color: #71869b; font-size: 11px; }
+        .session-pill b { color: #c9d9e9; font-weight: 500; }
+        .session-pill i, .session-pill em { display: inline-block; font-style: normal; }
+        .session-pill i { width: 6px; height: 6px; border-radius: 50%; background: #64748b; }
+        .session-pill em { color: #9fb4c9; }
+        .global-actions { display: flex; align-items: center; gap: 9px; margin-left: auto; }
+        .global-readonly, .global-action { border: 1px solid #20384f; border-radius: 7px; background: #0b1a29; color: #91a8bc; cursor: pointer; }
+        .global-readonly { padding: 7px 10px; font-size: 10px; }
+        .global-action { width: 29px; height: 29px; }
+        .global-avatar { display: grid; place-items: center; width: 27px; height: 27px; border-radius: 50%; color: #d9d2ff; background: #33285f; font-size: 10px; font-weight: 700; }
+        .global-chevron, .session-chevron { color: #60788e; }
+        .sidebar { grid-column: 1; grid-row: 2 / 4; min-height: 0; width: 68px; }
+        .sidebar-header { justify-content: center; padding: 16px 8px; }
+        .sidebar-header .app-name { display: none; }
+        .new-chat-btn { margin: 12px 8px; padding: 10px; font-size: 0; }
+        .new-chat-btn svg { width: 16px; height: 16px; }
+        .skill-nav-btn span { font-size: 17px; }
+        .chat-history-item { justify-content: center; padding: 10px 8px; }
+        .chat-history-item > span:last-child { display: none; }
+        .sidebar-footer { justify-content: center; padding: 12px 8px; }
+        .sidebar-footer > span:last-child { display: none; }
+        .main-content { grid-column: 2; grid-row: 2; min-height: 0; min-width: 0; }
+        .right-panel { grid-column: 3; grid-row: 2; width: auto; min-width: 0; min-height: 0; }
+        .chat-area { min-height: 0; }
+        .activity-dock { grid-column: 2 / 4; grid-row: 3; min-height: 0; overflow: hidden; padding: 11px 18px 10px; background: #08131f; border-top: 1px solid #1d3044; }
+        .activity-dock-header { display: flex; justify-content: space-between; align-items: center; color: #d9e7f3; font-size: 11px; }
+        .activity-dock-header strong { margin-right: 12px; font-weight: 600; }
+        .activity-dock-header span { color: #71869b; }
+        .activity-chevron { margin-left: 4px; }
+        .activity-dock-actions { display: flex; align-items: center; gap: 14px; }
+        .activity-dock-actions > span { display: inline-flex; align-items: center; gap: 5px; }
+        .activity-dock-actions i { width: 6px; height: 6px; border-radius: 50%; background: #45d69d; }
+        .activity-dock-actions button { padding: 3px 7px; border: 1px solid #264057; border-radius: 5px; background: transparent; color: #7890a7; font-size: 10px; cursor: pointer; }
+        .dock-ticker { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; max-height: 84px; overflow: hidden; }
+        .dock-ticker .trace-ticker-row { min-width: 0; padding: 10px; border: 1px solid #20364b; border-radius: 9px; background: #0b1a29; }
+        .dock-ticker .trace-ticker-row:first-child { border-top: 1px solid #20364b; }
+        .dock-ticker .trace-ticker-row span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .dock-ticker .trace-ticker-time { font-size: 9px; }
+        .trace-content { position: relative; overflow: hidden; }
+        .trace-content .trace-flow { width: 57%; margin-left: 2%; margin-right: auto; min-height: 390px; }
+        .trace-content .trace-detail { position: absolute; top: 15px; right: 18px; width: 38%; max-height: 330px; overflow: auto; }
+        .trace-content .trace-mode-bar { width: 57%; }
+        .trace-empty { display: grid; place-items: center; min-height: 260px; padding: 30px; color: #647b91; border: 1px dashed #20364b; border-radius: 12px; background: rgba(9, 22, 34, .5); text-align: center; font-size: 11px; line-height: 1.6; }
+        .trace-empty strong { display: block; color: #a6bdd1; font-size: 13px; font-weight: 500; }
+        .trace-node.skipped .trace-node-mark { color: #a5b4c3; border-color: #536b80; background: #172536; }
+        .trace-node.unknown .trace-node-mark { color: #c4d6e8; }
+        .trace-ticker-dot.awaiting_confirmation { background: #fbbf24; }
+        .trace-ticker-dot.skipped { background: #64748b; }
+        .trace-ticker-dot.unknown, .trace-ticker-dot.recovery_required { background: #fb923c; }
+        @media (max-width: 1200px) {
+            body { min-width: 0; grid-template-columns: 68px minmax(0, 1fr); }
+            .right-panel { display: none; }
+            .activity-dock { grid-column: 2; }
+        }
+        @media (max-width: 768px) {
+            body { display: flex; min-width: 0; }
+            .global-topbar { position: fixed; inset: 0 0 auto; height: 56px; z-index: 20; }
+            .sidebar { display: none; }
+            .main-content { margin-top: 56px; width: 100%; }
+            .activity-dock { display: none; }
+        }
     </style>
 </head>
 <body>
+    <!-- 全局 Agent 控制台栏：对应执行会话、模式和工作区入口。 -->
+    <header class="global-topbar">
+        <div class="global-brand-mark">A</div>
+        <div class="global-brand-name">AI Ops Agent</div>
+        <div class="session-pill"><span>执行会话</span><b>广告 Agent 工作区</b><i></i><em id="globalSessionStatus">待命</em><span class="session-chevron">⌄</span></div>
+        <div class="global-actions">
+            <button class="global-readonly" type="button"><span>锁</span> 只读模式</button>
+            <button class="global-action" type="button" aria-label="筛选">▽</button>
+            <button class="global-action" type="button" aria-label="知识库">▤</button>
+            <span class="global-avatar">OP</span><span class="global-chevron">⌄</span>
+        </div>
+    </header>
     <!-- 左侧边栏 -->
     <aside class="sidebar">
         <div class="sidebar-header">
@@ -1328,7 +1399,7 @@
             <span>🧩</span>
             Skills 管理
         </button>
-        
+
         <div class="chat-history" id="chatHistory">
             <div class="chat-history-item active">
                 <span class="icon">💬</span>
@@ -1341,7 +1412,7 @@
             <span>已连接</span>
         </div>
     </aside>
-    
+
     <!-- 主内容区 -->
     <main class="main-content">
         <div class="topbar">
@@ -1441,12 +1512,17 @@
                 </div>
                 <span class="risk-badge">安全门禁已启用</span>
             </div>
-            <div class="trace-activity">
-                <div class="trace-activity-head"><span>活动日志</span><span class="trace-auto"><i></i>自动滚动</span></div>
-                <div class="trace-ticker" id="traceTicker"></div>
-            </div>
         </div>
     </aside>
+
+    <!-- 横跨聊天与轨迹区的事件时间线。 -->
+    <section class="activity-dock" aria-label="活动日志">
+        <div class="activity-dock-header">
+            <div><strong>活动日志</strong><span>全部</span><span class="activity-chevron">⌄</span></div>
+            <div class="activity-dock-actions"><span><i></i>自动滚动</span><button type="button" onclick="resetExecutionTrace()">清空</button></div>
+        </div>
+        <div class="trace-ticker dock-ticker" id="globalTraceTicker"></div>
+    </section>
 
     <!-- 标准 Agent Skills 管理台：只管理 advisory context，不注册 Tool。 -->
     <div class="skill-overlay" id="skillOverlay" aria-hidden="true">
@@ -1509,16 +1585,9 @@
         const TRACE_STATUS_LABELS = {
             planned: '计划中', running: '运行中', succeeded: '已成功',
             failed: '失败', skipped: '已跳过', awaiting_confirmation: '待确认',
-            unknown: '未知', recovery_required: '需恢复'
+            unknown: '待命', recovery_required: '需恢复'
         };
-        const TRACE_DEFAULT_NODES = [
-            { id: 'trace-intent', title: 'Intent 识别', meta: '理解用户目标与约束', kind: 'Agent', tool: 'intent.parse', action: '识别请求', state: 'planned' },
-            { id: 'trace-skill', title: 'Skill 上下文', meta: '加载匹配的业务规则与知识', kind: 'Skill', tool: 'skill.context', action: '提供上下文', state: 'planned' },
-            { id: 'trace-scope', title: '账户范围', meta: '校验租户、账户与访问权限', kind: 'Guard', tool: 'runtime.scope_check', action: '权限校验', state: 'planned' },
-            { id: 'trace-tool', title: 'Tool 执行', meta: '等待本回合的已注册能力', kind: 'Tool', tool: 'tool.pending', action: '执行能力', state: 'planned' },
-            { id: 'trace-summary', title: '结果汇总', meta: '整理已执行结果与来源', kind: 'Agent', tool: 'response.synthesis', action: '汇总结果', state: 'planned' },
-        ];
-        let traceState = { nodes: [], selectedId: null, collapsed: false, activeTurn: 0 };
+        let traceState = { nodes: [], events: [], selectedId: null, collapsed: false, activeTurn: 0, traceId: null, status: 'unknown' };
 
         function traceStatusLabel(status) {
             return TRACE_STATUS_LABELS[status] || '未知';
@@ -1527,6 +1596,21 @@
         function traceMark(kind) {
             const marks = { Agent: 'A', Skill: 'S', Guard: 'G', Tool: 'T', Meta: 'M', Google: 'G', TikTok: 'T', DV360: 'D' };
             return marks[kind] || '·';
+        }
+
+        function traceEventLabel(event) {
+            const labels = {
+                start: 'Agent 回合开始', plan: '执行计划已生成', node_started: 'Tool 开始执行',
+                node_status: 'Tool 状态更新', confirmation: '等待用户确认', reply: '回复已准备',
+                done: '回合结束', error: '执行异常'
+            };
+            const node = event.node_id ? ` · ${event.tool || event.node_id}` : '';
+            return `${labels[event.type] || '执行事件'}${node}`;
+        }
+
+        function pushTraceEvent(event) {
+            traceState.events.push({ ...event, receivedAt: Date.now() });
+            if (traceState.events.length > 80) traceState.events.shift();
         }
 
         function renderTraceDetail(node) {
@@ -1545,6 +1629,8 @@
                     <dt>资源 / 动作</dt><dd>${escapeHtml([node.resource_type, node.action].filter(Boolean).join(' · ') || '通用执行节点')}</dd>
                     <dt>平台</dt><dd>${escapeHtml(node.platform || node.kind || 'Agent')}</dd>
                     <dt>状态</dt><dd>${escapeHtml(traceStatusLabel(node.state))}</dd>
+                    <dt>耗时</dt><dd>${node.duration_ms != null ? escapeHtml(`${node.duration_ms} ms`) : '进行中 / 未记录'}</dd>
+                    <dt>门禁结果</dt><dd>${escapeHtml(node.reason || '—')}</dd>
                     <dt>输入</dt><dd>已脱敏 · 仅展示安全摘要</dd>
                 </dl>
                 <div class="trace-safe-note">此面板只展示执行事件、Tool 元数据和脱敏结果，不展示模型内部思维链。</div>
@@ -1555,6 +1641,14 @@
             const flow = document.getElementById('traceFlow');
             if (!flow) return;
             flow.replaceChildren();
+            if (!traceState.nodes.length) {
+                const empty = document.createElement('div');
+                empty.className = 'trace-empty';
+                empty.innerHTML = traceState.status === 'running'
+                    ? '<div><strong>等待 Agent 事件</strong>Runtime 正在生成本回合真实执行计划…</div>'
+                    : '<div><strong>本回合未产生 Tool 执行</strong>发送请求后，这里只显示真实计划与 Tool 状态。</div>';
+                flow.appendChild(empty);
+            }
             for (const node of traceState.nodes) {
                 const item = document.createElement('button');
                 item.type = 'button';
@@ -1572,15 +1666,15 @@
                 });
                 flow.appendChild(item);
             }
-            const ticker = document.getElementById('traceTicker');
-            if (ticker) {
+            for (const ticker of [document.getElementById('traceTicker'), document.getElementById('globalTraceTicker')]) {
+                if (!ticker) continue;
                 ticker.replaceChildren();
-                const activityNodes = traceState.nodes.filter(node => node.state !== 'planned').slice(-4);
-                const visibleNodes = activityNodes.length ? activityNodes : traceState.nodes.slice(0, 3);
-                for (const node of visibleNodes) {
+                for (const event of traceState.events.slice(-5)) {
                     const row = document.createElement('div');
                     row.className = 'trace-ticker-row';
-                    row.innerHTML = `<span class="trace-ticker-dot ${escapeHtml(node.state || 'planned')}"></span><span>${escapeHtml(node.title)} · ${escapeHtml(traceStatusLabel(node.state))}</span><span class="trace-ticker-time">安全事件</span>`;
+                    const state = event.status || 'unknown';
+                    const time = event.receivedAt ? new Date(event.receivedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—';
+                    row.innerHTML = `<span class="trace-ticker-dot ${escapeHtml(state)}"></span><span>${escapeHtml(traceEventLabel(event))}</span><span class="trace-ticker-time">${escapeHtml(time)}</span>`;
                     ticker.appendChild(row);
                 }
             }
@@ -1594,10 +1688,13 @@
             if (label) label.textContent = traceStatusLabel(status);
             if (sub) sub.textContent = subtitle || '等待下一次 Agent 回合';
             if (dot) dot.classList.toggle('idle', status === 'planned' || status === 'unknown' || status === 'succeeded' || status === 'failed');
+            const globalStatus = document.getElementById('globalSessionStatus');
+            if (globalStatus) globalStatus.textContent = traceStatusLabel(status);
+            traceState.status = status;
         }
 
         function resetExecutionTrace() {
-            traceState = { nodes: TRACE_DEFAULT_NODES.map(node => ({ ...node })), selectedId: null, collapsed: false, activeTurn: traceState.activeTurn };
+            traceState = { nodes: [], events: [], selectedId: null, collapsed: false, activeTurn: traceState.activeTurn, traceId: null, status: 'unknown' };
             document.querySelector('.right-panel')?.classList.remove('trace-collapsed');
             updateTraceHeader('unknown', '等待下一次 Agent 回合');
             renderExecutionTrace();
@@ -1617,91 +1714,130 @@
 
         function startExecutionTrace(userInput) {
             traceState.activeTurn += 1;
-            const turn = traceState.activeTurn;
-            traceState.nodes = TRACE_DEFAULT_NODES.map(node => ({ ...node }));
-            traceState.nodes[0].state = 'running';
+            traceState.nodes = [];
+            traceState.events = [];
+            traceState.traceId = null;
             traceState.selectedId = null;
-            updateTraceHeader('running', `正在处理：${String(userInput || '').slice(0, 34)}`);
+            updateTraceHeader('running', '等待 Agent 返回真实执行事件');
             renderExecutionTrace();
-            window.setTimeout(() => {
-                if (turn !== traceState.activeTurn) return;
-                for (const id of ['trace-intent', 'trace-skill', 'trace-scope']) {
-                    const node = traceState.nodes.find(item => item.id === id);
-                    if (node) node.state = 'succeeded';
-                }
-                const tool = traceState.nodes.find(item => item.id === 'trace-tool');
-                if (tool) tool.state = 'running';
-                renderExecutionTrace();
-            }, 180);
         }
 
         function updateExecutionTrace(data) {
-            traceState.activeTurn += 1;
             const planNodes = data?.execution_plan?.nodes || [];
             const results = data?.results || [];
-            const resultByTool = new Map(results.map(result => [String(result.tool || ''), result]));
             if (planNodes.length) {
-                traceState.nodes = planNodes.map((raw, index) => {
-                    const result = resultByTool.get(String(raw.tool || ''));
-                    return {
-                        id: raw.node_id || `plan-${index}`,
-                        title: raw.tool || raw.action || 'Tool 节点',
-                        meta: [raw.platform, raw.resource_type, raw.action].filter(Boolean).join(' · '),
-                        kind: raw.platform || 'Tool',
-                        tool: raw.tool,
-                        platform: raw.platform,
-                        resource_type: raw.resource_type,
-                        action: raw.action,
-                        state: result ? (result.success ? 'succeeded' : 'failed') : (data.needs_confirmation ? 'awaiting_confirmation' : 'planned'),
-                    };
-                });
-            } else if (results.length) {
-                traceState.nodes = results.map((result, index) => ({
-                    id: `result-${index}`, title: result.tool || 'Tool 执行',
-                    meta: [result.platform, result.success ? '结果已返回' : '执行失败'].filter(Boolean).join(' · '),
-                    kind: result.platform || 'Tool', tool: result.tool, platform: result.platform,
-                    state: result.success ? 'succeeded' : 'failed'
+                traceState.nodes = planNodes.map((raw, index) => ({
+                    ...(traceState.nodes.find(node => node.id === (raw.node_id || `plan-${index}`)) || {}),
+                    id: raw.node_id || `plan-${index}`, title: raw.tool || raw.action || 'Tool 节点',
+                    meta: [raw.platform, raw.resource_type, raw.action].filter(Boolean).join(' · '),
+                    kind: raw.platform || 'Tool', tool: raw.tool, platform: raw.platform,
+                    resource_type: raw.resource_type, action: raw.action,
+                    state: traceState.nodes.find(node => node.id === (raw.node_id || `plan-${index}`))?.state || 'planned'
                 }));
             }
-            if (!traceState.nodes.length) traceState.nodes = TRACE_DEFAULT_NODES.map(node => ({ ...node, state: 'succeeded' }));
-            const hasFailure = traceState.nodes.some(node => node.state === 'failed');
-            const status = data?.needs_confirmation ? 'awaiting_confirmation' : hasFailure ? 'failed' : 'succeeded';
-            updateTraceHeader(status, data?.needs_confirmation ? '等待用户确认后继续' : `${traceState.nodes.length} 个执行节点 · 已完成本回合`);
-            traceState.selectedId = traceState.nodes.find(node => node.state === 'failed')?.id || traceState.nodes[0]?.id || null;
+            // Compatibility path for non-stream callers: only update nodes
+            // that already came from an ExecutionPlan; never invent nodes
+            // from result rows.
+            for (const result of results) {
+                const node = traceState.nodes.find(item => item.tool === result.tool && (!item.state || item.state === 'planned'));
+                if (node) node.state = result.needs_confirmation ? 'awaiting_confirmation' : result.success ? 'succeeded' : 'failed';
+            }
             renderExecutionTrace();
         }
 
         function markTraceAwaitingConfirmation() {
-            traceState.activeTurn += 1;
-            const tool = traceState.nodes.find(node => node.state === 'running' || node.id === 'trace-tool');
-            if (tool) tool.state = 'awaiting_confirmation';
             updateTraceHeader('awaiting_confirmation', '需要确认后继续执行');
             renderExecutionTrace();
         }
 
         function markTraceFailed(message) {
-            traceState.activeTurn += 1;
-            const node = traceState.nodes.find(item => item.state === 'running') || traceState.nodes[traceState.nodes.length - 1];
-            if (node) {
-                node.state = 'failed';
-                node.meta = message || node.meta;
-                traceState.selectedId = node.id;
-            }
+            pushTraceEvent({ type: 'error', status: 'failed', safe_metadata: { reason: 'request_error' } });
             updateTraceHeader('failed', '本回合未完成，请查看错误信息');
             renderExecutionTrace();
         }
 
-        // SSE 适配预留：后端发送 start/plan/tool_status/reply/done 时可直接调用。
         function applyExecutionEvent(event) {
-            if (!event || !event.type) return;
-            if (event.type === 'start') startExecutionTrace(event.content || '');
-            if (event.type === 'plan' && event.execution_plan) updateExecutionTrace({ execution_plan: event.execution_plan });
-            if (event.type === 'tool_status') {
-                const node = traceState.nodes.find(item => item.tool === event.tool);
-                if (node) node.state = event.success ? 'succeeded' : 'failed';
-                renderExecutionTrace();
+            if (!event || !event.type) return null;
+            const duplicateStart = event.type === 'start' && traceState.events.some(item => item.type === 'start');
+            if (event.type === 'start') {
+                traceState.traceId = event.trace_id || traceState.traceId;
+                if (event.turn_id) traceState.activeTurn = event.turn_id;
+                updateTraceHeader('running', 'Agent 正在处理本回合');
             }
-            if (event.type === 'done') updateTraceHeader('succeeded', '本回合已完成');
+            if (event.type === 'plan' && event.execution_plan) updateExecutionTrace({ execution_plan: event.execution_plan });
+            if (event.type === 'node_started' || event.type === 'node_status' || event.type === 'confirmation') {
+                const node = traceState.nodes.find(item => item.id === event.node_id);
+                if (node) {
+                    node.state = event.status || 'unknown';
+                    node.reason = event.safe_metadata?.reason || node.reason;
+                    node.duration_ms = event.safe_metadata?.duration_ms || node.duration_ms;
+                    traceState.selectedId = node.state === 'failed' || node.state === 'recovery_required' ? node.id : traceState.selectedId;
+                }
+                updateTraceHeader(event.status || 'unknown', node ? `${node.tool} · ${traceStatusLabel(event.status)}` : 'Tool 事件已到达');
+            }
+            if (event.type === 'done') updateTraceHeader(event.status || 'succeeded', event.status === 'awaiting_confirmation' ? '等待用户确认后继续' : '本回合已完成');
+            if (event.type === 'error') updateTraceHeader('failed', '本回合未完成，请查看安全事件');
+            if (!duplicateStart) pushTraceEvent(event);
+            renderExecutionTrace();
+            return event;
+        }
+
+        async function streamChatRequest(requestParams) {
+            const response = await authenticatedFetch('/chat/stream', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+                body: JSON.stringify(requestParams)
+            });
+            if (!response.ok) {
+                const text = await response.text();
+                let data = {};
+                try { data = text ? JSON.parse(text) : {}; } catch (_) { data = {}; }
+                throw new Error(data.detail || data.error || `请求失败（${response.status}）`);
+            }
+            if (!response.body) throw new Error('服务端未返回事件流');
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let finalResult = null;
+            const consume = (block) => {
+                const line = block.split(/\r?\n/).find(item => item.startsWith('data:'));
+                if (!line) return;
+                try {
+                    const payload = JSON.parse(line.slice(5).trim());
+                    const applied = applyExecutionEvent(payload);
+                    if (applied?.type === 'reply') finalResult = applied;
+                } catch (_) {
+                    applyExecutionEvent({ type: 'error', status: 'failed', safe_metadata: { reason: 'invalid_event' } });
+                }
+            };
+            while (true) {
+                const { value, done } = await reader.read();
+                buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+                const blocks = buffer.split(/\r?\n\r?\n/);
+                buffer = blocks.pop() || '';
+                blocks.forEach(consume);
+                if (done) break;
+            }
+            if (buffer.trim()) consume(buffer);
+            if (!finalResult) throw new Error('事件流未返回最终回复');
+            return finalResult;
+        }
+
+        function renderStreamResult(data, requestParams) {
+            sessionId = data.session_id || sessionId;
+            const results = data.results || [];
+            if (data.needs_confirmation && data.confirmation_payload) {
+                showConfirm(data.confirmation_payload, {
+                    user_input: requestParams.user_input,
+                    account_id: requestParams.account_id || null,
+                    platforms: results.map(item => item.platform).filter(Boolean),
+                    platform_params: requestParams.platform_params || {}
+                });
+                return;
+            }
+            const tools = results.map(item => ({ tool: item.tool, success: item.success }));
+            addMessage(data.content || '服务端未返回可展示的结果。', 'agent', tools);
         }
 
         function requestHeaders(extra = {}) {
@@ -2247,44 +2383,8 @@
                     requestParams.account_id = account_id;
                 }
                 
-                const response = await authenticatedFetch('/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(requestParams)
-                });
-                
-                const data = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(
-                        data.detail || data.error || `请求失败（${response.status}）`
-                    );
-                }
-                if (data.error) {
-                    throw new Error(data.error);
-                }
-
-                updateExecutionTrace(data);
-                
-                if (data.error) {
-                    addMessage('❌ ' + data.error, 'agent', null, true);
-                    return;
-                }
-                
-                sessionId = data.session_id;
-                
-                // 递归处理嵌套确认
-                if (data.needs_confirmation && data.confirmation_payload) {
-                    showConfirm(data.confirmation_payload, {
-                        user_input: userInput,
-                        account_id: account_id,
-                        platforms: platforms,
-                        platform_params: requestParams.platform_params
-                    });
-                    return;
-                }
-                
-                renderResponse(data);
+                const data = await streamChatRequest(requestParams);
+                renderStreamResult(data, requestParams);
                 
             } catch (error) {
                 markTraceFailed(error.message);
@@ -2310,51 +2410,17 @@
             if (statToday) statToday.textContent = conversationCount;
 
             try {
-                const response = await authenticatedFetch('/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        user_input: text,
-                        user_id: 'web_user',
-                        session_id: sessionId
-                    })
-                });
-
+                const requestParams = {
+                    user_input: text,
+                    user_id: 'web_user',
+                    session_id: sessionId
+                };
+                const data = await streamChatRequest(requestParams);
+                removeLoading();
                 apiCallCount++;
                 const statApiCalls = document.getElementById('statAPICalls');
                 if (statApiCalls) statApiCalls.textContent = apiCallCount;
-
-                const data = await response.json();
-                removeLoading();
-
-                if (!response.ok) {
-                    throw new Error(
-                        data.detail || data.error || `请求失败（${response.status}）`
-                    );
-                }
-                if (data.error) {
-                    throw new Error(data.error);
-                }
-
-                updateExecutionTrace(data);
-
-                // 单一完整回复，不复用 SSE 分段渲染
-                sessionId = data.session_id || sessionId;
-
-                const results = data.results || [];
-                const successCount = results.filter(r => r.success).length;
-                const failCount = results.length - successCount;
-
-                // 工具执行摘要
-                let toolSummary = '';
-                if (results.length > 0) {
-                    const tags = results.map(r =>
-                        `<span class="tool-tag ${r.success ? 'success' : 'error'}">${r.success ? '✓' : '✗'} ${r.tool}</span>`
-                    ).join('');
-                    toolSummary = `<div class="tool-results" style="margin-top:8px;flex-wrap:wrap;">${tags}</div>`;
-                }
-
-                addMessage(data.reply || (failCount > 0 ? '部分操作失败，请查看上方提示。' : '服务端未返回可展示的结果。'), 'agent', null, false, toolSummary);
+                renderStreamResult(data, requestParams);
 
             } catch (error) {
                 removeLoading();
@@ -2434,15 +2500,6 @@
             flushTable();
 
             return result.join('<br>');
-        }
-
-        // Format thinking content
-        function formatThinking(content) {
-            if (!content) return '';
-            const lines = content.split('\n').filter(l => l.trim());
-            return `<div class="thinking-process">` +
-                   lines.map(l => `<div class="thinking-step">💭 ${l}</div>`).join('') +
-                   `</div>`;
         }
 
         // Format reply content (legacy, kept for compatibility)

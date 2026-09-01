@@ -7,6 +7,8 @@ import os
 import json
 import logging
 import hmac
+import asyncio
+import queue
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -1158,7 +1160,12 @@ async def chat_stream(
     http_request: Request,
     x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
 ):
-    """流式对话接口，返回 SSE 格式的思考过程"""
+    """Stream the Runtime's safe execution events over SSE.
+
+    The Runtime owns the execution lifecycle.  This endpoint only bridges its
+    observer callback to the browser; it must not infer plans or replay Tool
+    results after the turn has finished.
+    """
     from fastapi.responses import StreamingResponse
     
     if not runtime:
@@ -1177,38 +1184,105 @@ async def chat_stream(
         async def generate():
             def event(payload: dict) -> str:
                 return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+            event_queue: queue.Queue[dict] = queue.Queue(maxsize=256)
 
-            # 发送开始信号
-            yield event({"type": "start", "content": "🤔 正在分析您的需求..."})
-            
-            # 执行对话
-            result = await run_in_threadpool(
-                runtime.run,
-                user_input=user_input,
-                session_id=request.session_id,
-                account_id=request.account_id or None,
-                platform_params=request.platform_params,
-                confirmed=request.confirmed,
-                confirmation_payload=request.confirmation_payload,
-                principal=principal,
+            # This is only the stream lifecycle marker.  It intentionally
+            # carries no guessed Intent/Skill/account/Tool node; those can
+            # only arrive from Runtime's real plan/events below.
+            yield event({
+                "type": "start",
+                "event_type": "start",
+                "status": "running",
+                "safe_metadata": {"source": "stream_gateway"},
+            })
+
+            def observe(payload: dict) -> None:
+                # Runtime runs in the worker thread.  Only put the already
+                # sanitized event into the bridge queue; no request data is
+                # reconstructed in the HTTP layer.
+                try:
+                    event_queue.put_nowait(payload)
+                except queue.Full:
+                    # The trace is diagnostic; never let a slow/disconnected
+                    # client block the Agent or a Tool execution.
+                    return
+
+            task = asyncio.create_task(
+                run_in_threadpool(
+                    runtime.run,
+                    user_input=user_input,
+                    session_id=request.session_id,
+                    account_id=request.account_id or None,
+                    platform_params=request.platform_params,
+                    confirmed=request.confirmed,
+                    confirmation_payload=request.confirmation_payload,
+                    principal=principal,
+                    event_callback=observe,
+                )
             )
-            
-            # 发送思考过程
-            yield event({"type": "thinking", "content": "✅ 已完成分析，准备执行工具..."})
-            
-            # 发送工具执行状态
-            for r in result.get("results", []):
-                tool = r.get("tool", "")
-                success = r.get("success", False)
-                status = "✅" if success else "❌"
-                yield event({"type": "tool_status", "tool": tool, "success": success, "status": f"{status} {tool}"})
-            
-            # 发送最终回复
-            reply = result.get("reply", "")
-            yield event({"type": "reply", "content": reply})
-            
-            # 发送完成信号
-            yield event({"type": "done"})
+            final_event = None
+            reply_marker = None
+            try:
+                while True:
+                    try:
+                        payload = await asyncio.to_thread(event_queue.get, True, 0.25)
+                    except queue.Empty:
+                        if task.done():
+                            break
+                        continue
+                    # Runtime emits done after it has rendered the reply, but
+                    # the reply body is intentionally kept out of the trace
+                    # envelope.  Buffer done so the HTTP bridge can append the
+                    # safe final response before closing the stream.
+                    if payload.get("type") == "done":
+                        final_event = payload
+                    elif payload.get("type") == "reply":
+                        # The Runtime marker intentionally has no reply body.
+                        # It becomes the metadata envelope for the one final
+                        # reply event below, avoiding duplicate UI entries.
+                        reply_marker = payload
+                    else:
+                        yield event(payload)
+
+                result = await task
+            except Exception as exc:
+                yield event({
+                    "type": "error",
+                    "event_type": "error",
+                    "status": "failed",
+                    "safe_metadata": {"reason": "runtime_error"},
+                    "error": _safe_exception_text(exc),
+                })
+                yield event({"type": "done", "status": "failed"})
+                return
+
+            safe_results = []
+            for item in result.get("results", []) if isinstance(result, dict) else []:
+                if not isinstance(item, dict):
+                    continue
+                safe_results.append({
+                    key: AgentRuntime._redact_for_persistence(item.get(key))
+                    for key in ("tool", "platform", "resource_type", "success", "error", "needs_confirmation", "skipped", "data")
+                    if key in item
+                })
+            yield event({
+                "type": "reply",
+                "event_type": "reply",
+                "trace_id": (reply_marker or {}).get("trace_id"),
+                "seq": (reply_marker or {}).get("seq"),
+                "status": "awaiting_confirmation" if result.get("needs_confirmation") else "succeeded",
+                "content": AgentRuntime._redact_for_persistence(result.get("reply", "")),
+                "session_id": result.get("session_id"),
+                "turn_id": result.get("turn_id"),
+                "needs_confirmation": bool(result.get("needs_confirmation")),
+                "confirmation_payload": AgentRuntime._redact_for_persistence(result.get("confirmation_payload")),
+                "results": safe_results,
+            })
+            yield event(final_event or {
+                "type": "done",
+                "event_type": "done",
+                "status": "awaiting_confirmation" if result.get("needs_confirmation") else "succeeded",
+            })
         
         return StreamingResponse(
             generate(),

@@ -216,6 +216,51 @@ def test_chat_stream_returns_sse_lifecycle_events(fake_server):
     assert '"type": "done"' in body
 
 
+def test_chat_stream_forwards_runtime_events_without_inventing_steps(fake_server):
+    def run(**kwargs):
+        observe = kwargs["event_callback"]
+        observe({"type": "start", "event_type": "start", "status": "running"})
+        observe({
+            "type": "plan", "event_type": "plan", "status": "planned",
+            "execution_plan": {
+                "schema_version": "1.0", "intent_type": "list_campaigns",
+                "nodes": [{
+                    "node_id": "node-0001", "platform": "meta",
+                    "tool": "meta.list_campaigns", "action": "list",
+                    "resource_type": "campaign", "depends_on": [],
+                }],
+            },
+        })
+        observe({
+            "type": "node_started", "event_type": "node_started",
+            "node_id": "node-0001", "platform": "meta",
+            "tool": "meta.list_campaigns", "status": "running",
+        })
+        observe({
+            "type": "node_status", "event_type": "node_status",
+            "node_id": "node-0001", "platform": "meta",
+            "tool": "meta.list_campaigns", "status": "succeeded",
+        })
+        observe({"type": "done", "event_type": "done", "status": "succeeded"})
+        return {
+            "session_id": "s1", "turn_id": "t1", "reply": "完成",
+            "results": [{"tool": "meta.list_campaigns", "platform": "meta", "success": True}],
+        }
+
+    fake_server.run = run
+    with TestClient(api_server.app) as client:
+        response = client.post(
+            "/chat/stream",
+            headers={"X-API-Key": "test-key"},
+            json={"user_input": "查询 Meta campaign"},
+        )
+    body = response.text
+    assert '"node_id": "node-0001"' in body
+    assert '"type": "thinking"' not in body
+    assert '"type": "tool_status"' not in body
+    assert body.index('"type": "node_started"') < body.index('"type": "reply"') < body.index('"type": "done"')
+
+
 def test_runtime_initialization_registers_all_builtin_capabilities(monkeypatch, tmp_path):
     monkeypatch.setenv("AD_AGENT_DB_PATH", str(tmp_path / "runtime.db"))
     monkeypatch.setenv("OPENAI_API_KEY", "test-llm-key")
