@@ -116,7 +116,7 @@ def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
         "Skills 管理", "SKILL.md", "references/", "scripts/", "assets/", "evals/",
         "保存为新版本", "ZIP 导入", "Skill-up 评测", "发布 / 回滚", "下线",
         "/skills?limit=200", "/versions/archive", "/evaluate", "/evaluations/",
-        "X-API-Key",
+        "X-API-Key", "let streamError = ''", "streamError || '事件流未返回最终回复'",
     ):
         assert marker in html
     # The browser may hold the service API key in memory, but the page must
@@ -277,6 +277,23 @@ def test_chat_stream_forwards_runtime_events_without_inventing_steps(fake_server
     assert '"type": "thinking"' not in body
     assert '"type": "tool_status"' not in body
     assert body.index('"type": "node_started"') < body.index('"type": "reply"') < body.index('"type": "done"')
+
+
+def test_chat_stream_exposes_runtime_error_event(fake_server):
+    def run(**kwargs):
+        raise RuntimeError("provider request failed")
+
+    fake_server.run = run
+    with TestClient(api_server.app) as client:
+        response = client.post(
+            "/chat/stream",
+            headers={"X-API-Key": "test-key"},
+            json={"user_input": "查询 Meta campaign"},
+        )
+    assert response.status_code == 200
+    assert '"type": "error"' in response.text
+    assert "provider request failed" in response.text
+    assert '"type": "done"' in response.text
 
 
 def test_runtime_initialization_registers_all_builtin_capabilities(monkeypatch, tmp_path):
