@@ -117,6 +117,7 @@ def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
         "保存为新版本", "ZIP 导入", "Skill-up 评测", "发布 / 回滚", "下线",
         "/skills?limit=200", "/versions/archive", "/evaluate", "/evaluations/",
         "X-API-Key", "let streamError = ''", "streamError || '事件流未返回最终回复'",
+        "最近对话", "服务已连接", "grid-template-columns: 68px minmax(0, 1fr) minmax(320px, 360px)",
     ):
         assert marker in html
     # The browser may hold the service API key in memory, but the page must
