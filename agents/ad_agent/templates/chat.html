@@ -1126,6 +1126,187 @@
         @media (max-width: 768px) {
             .sidebar { display: none; }
         }
+
+        /* 执行轨迹：只展示安全的执行事件，不展示模型思维链。 */
+        .right-panel {
+            width: min(46vw, 660px);
+            min-width: 430px;
+            background: #07101b;
+            border-left-color: #1d3044;
+        }
+
+        .trace-header {
+            min-height: 68px;
+            padding: 16px 20px 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #1d3044;
+            background: #08131f;
+        }
+
+        .trace-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 15px;
+            font-weight: 600;
+        }
+
+        .trace-title #traceStatus { color: var(--success); font-size: 12px; font-weight: 500; }
+        .trace-live-dot, .mode-dot {
+            width: 7px;
+            height: 7px;
+            display: inline-block;
+            border-radius: 50%;
+            background: var(--success);
+            box-shadow: 0 0 10px rgba(34, 197, 94, .8);
+        }
+
+        .trace-live-dot.idle { background: #64748b; box-shadow: none; }
+        .trace-subtitle { margin-top: 5px; color: #7890a7; font-size: 11px; }
+        .trace-header-actions { display: flex; align-items: center; gap: 8px; }
+        .trace-icon-btn, .trace-clear-btn {
+            border: 1px solid #264057;
+            background: #0b1a29;
+            color: #aac0d5;
+            border-radius: 7px;
+            cursor: pointer;
+        }
+        .trace-icon-btn { width: 28px; height: 28px; font-size: 18px; line-height: 1; }
+        .trace-clear-btn { padding: 6px 9px; font-size: 11px; }
+        .trace-icon-btn:hover, .trace-clear-btn:hover { color: #fff; border-color: var(--accent); }
+
+        .trace-toolbar {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 13px;
+            padding: 10px 20px;
+            border-bottom: 1px solid #15283a;
+            color: #7890a7;
+            font-size: 10px;
+        }
+        .trace-legend { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+        .legend-line { width: 17px; height: 2px; display: inline-block; border-radius: 3px; }
+        .legend-line.planned { background: #64748b; }
+        .legend-line.running { background: #a78bfa; box-shadow: 0 0 8px rgba(167,139,250,.8); }
+        .legend-line.succeeded { background: #34d399; }
+        .legend-line.awaiting { background: #fbbf24; }
+
+        .trace-content { padding: 15px 18px 18px; background: #07101b; }
+        .trace-flow {
+            position: relative;
+            padding: 8px 5px 18px;
+            min-height: 300px;
+        }
+        .trace-flow::before {
+            content: '';
+            position: absolute;
+            left: 24px;
+            top: 24px;
+            bottom: 24px;
+            width: 1px;
+            background: #233b56;
+        }
+        .trace-node {
+            position: relative;
+            display: grid;
+            width: 100%;
+            grid-template-columns: 40px minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 10px;
+            min-height: 64px;
+            margin: 0 0 8px;
+            padding: 8px 10px 8px 0;
+            border: 1px solid #1e3850;
+            border-radius: 11px;
+            background: #0b1a29;
+            cursor: pointer;
+            transition: border-color .2s, background .2s, transform .2s;
+        }
+        .trace-node:hover { border-color: #5579a2; background: #102238; transform: translateX(2px); }
+        .trace-node.selected { border-color: #9676ff; box-shadow: 0 0 0 1px rgba(150,118,255,.25), 0 0 22px rgba(99,102,241,.13); }
+        .trace-node.running { border-color: #9978ff; box-shadow: 0 0 18px rgba(139,92,246,.16); }
+        .trace-node.awaiting_confirmation { border-color: #a57a1d; }
+        .trace-node.failed { border-color: #a94250; }
+        .trace-node-mark {
+            z-index: 1;
+            width: 28px;
+            height: 28px;
+            margin-left: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #3a5d80;
+            border-radius: 8px;
+            color: #c4d8ec;
+            background: #102944;
+            font-size: 11px;
+            font-weight: 700;
+        }
+        .trace-node.succeeded .trace-node-mark { color: #5ee6b0; border-color: #247b61; background: #0c302d; }
+        .trace-node.running .trace-node-mark { color: #d7c8ff; border-color: #8b5cf6; background: #24175a; animation: tracePulse 1.5s infinite; }
+        .trace-node.awaiting_confirmation .trace-node-mark { color: #fcd34d; border-color: #926c18; background: #3b2c0e; }
+        .trace-node.failed .trace-node-mark { color: #fda4af; border-color: #913b4c; background: #3d1622; }
+        .trace-node-copy { min-width: 0; }
+        .trace-node-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: #e7f0fa; }
+        .trace-node-meta { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 4px; color: #7890a7; font-size: 10px; }
+        .trace-node-state { white-space: nowrap; padding: 4px 7px; border-radius: 5px; font-size: 10px; color: #9fb4c9; background: #12263b; }
+        .trace-node.succeeded .trace-node-state { color: #54dca5; background: rgba(16, 93, 70, .35); }
+        .trace-node.running .trace-node-state { color: #c4b5fd; background: rgba(91, 55, 174, .38); }
+        .trace-node.awaiting_confirmation .trace-node-state { color: #fbbf24; background: rgba(119, 81, 9, .32); }
+        .trace-node.failed .trace-node-state { color: #fda4af; background: rgba(127, 29, 29, .3); }
+        @keyframes tracePulse { 50% { box-shadow: 0 0 0 4px rgba(139,92,246,.12); } }
+
+        .trace-detail {
+            margin-top: 1px;
+            padding: 13px 14px;
+            border: 1px solid #20364b;
+            border-radius: 10px;
+            background: #0a1725;
+        }
+        .trace-detail-empty { color: #71869b; font-size: 11px; }
+        .trace-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+        .trace-detail-title { font-size: 12px; color: #e9f2fb; }
+        .trace-detail-subtitle { margin-top: 4px; color: #7890a7; font-size: 10px; }
+        .trace-detail-close { border: 0; background: transparent; color: #8098ad; cursor: pointer; font-size: 16px; }
+        .trace-detail-grid { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 7px 10px; margin-top: 13px; font-size: 10px; }
+        .trace-detail-grid dt { color: #7890a7; }
+        .trace-detail-grid dd { overflow: hidden; text-overflow: ellipsis; color: #c4d6e8; }
+        .trace-safe-note { margin-top: 12px; padding: 8px 9px; border: 1px solid #1a594b; border-radius: 7px; color: #7ce3bb; background: rgba(7, 66, 53, .28); font-size: 10px; line-height: 1.5; }
+        .trace-mode-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 13px; padding: 11px 12px; border-top: 1px solid #1c3145; }
+        .mode-label { color: #7890a7; font-size: 10px; }
+        .mode-value { display: flex; align-items: center; gap: 7px; margin-top: 5px; color: #c4d6e8; font-size: 11px; }
+        .risk-badge { padding: 5px 8px; border: 1px solid #1a594b; border-radius: 5px; color: #63ddb1; background: rgba(7, 66, 53, .25); font-size: 10px; white-space: nowrap; }
+        .trace-activity { margin-top: 12px; padding: 12px 13px 4px; border: 1px solid #1d3348; border-radius: 10px; background: #091622; }
+        .trace-activity-head { display: flex; align-items: center; justify-content: space-between; color: #d9e7f3; font-size: 11px; }
+        .trace-auto { display: inline-flex; align-items: center; gap: 5px; color: #71869b; font-size: 10px; }
+        .trace-auto i { width: 6px; height: 6px; display: inline-block; border-radius: 50%; background: #45d69d; }
+        .trace-ticker { margin-top: 8px; }
+        .trace-ticker-row { display: grid; grid-template-columns: 6px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid #14283a; color: #9bb0c5; font-size: 10px; }
+        .trace-ticker-row:first-child { border-top: 0; }
+        .trace-ticker-dot { width: 6px; height: 6px; border-radius: 50%; background: #64748b; }
+        .trace-ticker-dot.succeeded { background: #34d399; box-shadow: 0 0 8px rgba(52,211,153,.55); }
+        .trace-ticker-dot.running { background: #a78bfa; box-shadow: 0 0 8px rgba(167,139,250,.65); }
+        .trace-ticker-dot.failed { background: #fb7185; }
+        .trace-ticker-time { color: #5e758b; white-space: nowrap; }
+
+        .trace-collapsed .trace-toolbar, .trace-collapsed .trace-content { display: none; }
+        .trace-collapsed { min-width: 68px; width: 68px; }
+        .trace-collapsed .trace-header { padding: 16px 10px; }
+        .trace-collapsed .trace-header > div:first-child { display: none; }
+        .trace-collapsed .trace-header-actions { margin: auto; }
+
+        @media (max-width: 1200px) {
+            .right-panel { display: none; }
+        }
+
+        @media (max-width: 900px) {
+            .right-panel { min-width: 0; width: 42vw; }
+            .trace-toolbar { gap: 8px; }
+            .trace-mode-bar { align-items: flex-start; flex-direction: column; }
+        }
     </style>
 </head>
 <body>
@@ -1232,62 +1413,37 @@
     
     <!-- 右侧面板 -->
     <aside class="right-panel">
-        <div class="panel-header">环境信息</div>
-        <div class="panel-content">
-            <div class="panel-section">
-                <div class="panel-section-title">平台状态</div>
-                <div class="platform-status">
-                    <div class="platform-icon meta">M</div>
-                    <span>Meta API 就绪</span>
-                </div>
-                <div class="platform-status">
-                    <div class="platform-icon tiktok">T</div>
-                    <span>TikTok API 就绪</span>
-                </div>
-                <div class="platform-status">
-                    <div class="platform-icon google">G</div>
-                    <span>Google Ads API 就绪</span>
-                </div>
-                <div class="platform-status">
-                    <div class="platform-icon dv360">D</div>
-                    <span>DV360 API 就绪</span>
-                </div>
+        <div class="trace-header">
+            <div>
+                <div class="trace-title">执行轨迹 <span class="trace-live-dot"></span><span id="traceStatus">待命</span></div>
+                <div class="trace-subtitle" id="traceSubtitle">等待下一次 Agent 回合</div>
             </div>
-            
-            <div class="panel-section">
-                <div class="panel-section-title">快速操作</div>
-                <button class="quick-action-btn" onclick="setInput('列出所有平台的 Campaign')">
-                    <span class="icon">📊</span>
-                    <span>查看 Campaign 列表</span>
-                </button>
-                <button class="quick-action-btn" onclick="setInput('预算优化建议')">
-                    <span class="icon">💰</span>
-                    <span>预算优化建议</span>
-                </button>
-                <button class="quick-action-btn" onclick="setInput('创建电商广告系列')">
-                    <span class="icon">🛒</span>
-                    <span>电商投放方案</span>
-                </button>
-                <button class="quick-action-btn" onclick="setInput('创建App安装广告')">
-                    <span class="icon">📱</span>
-                    <span>App 推广方案</span>
-                </button>
+            <div class="trace-header-actions">
+                <button class="trace-icon-btn" type="button" onclick="toggleTracePanel()" aria-label="收起执行轨迹">−</button>
+                <button class="trace-clear-btn" type="button" onclick="resetExecutionTrace()">清空</button>
             </div>
-            
-            <div class="panel-section">
-                <div class="panel-section-title">统计</div>
-                <div class="stat-item">
-                    <span class="stat-label">今日对话</span>
-                    <span class="stat-value" id="statToday">0</span>
+        </div>
+        <div class="trace-toolbar">
+            <span class="trace-legend"><i class="legend-line planned"></i>计划中</span>
+            <span class="trace-legend"><i class="legend-line running"></i>运行中</span>
+            <span class="trace-legend"><i class="legend-line succeeded"></i>已成功</span>
+            <span class="trace-legend"><i class="legend-line awaiting"></i>待确认</span>
+        </div>
+        <div class="panel-content trace-content" id="traceContent">
+            <div class="trace-flow" id="traceFlow" aria-live="polite"></div>
+            <div class="trace-detail" id="traceDetail">
+                <div class="trace-detail-empty">选择一个节点查看安全的 Tool 元数据</div>
+            </div>
+            <div class="trace-mode-bar">
+                <div>
+                    <div class="mode-label">执行模式</div>
+                    <div class="mode-value"><span class="mode-dot"></span><span id="traceMode">dry-run · 不调用线上写 API</span></div>
                 </div>
-                <div class="stat-item">
-                    <span class="stat-label">API 调用</span>
-                    <span class="stat-value success" id="statAPICalls">0</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">成功创建</span>
-                    <span class="stat-value success" id="statCreated">5</span>
-                </div>
+                <span class="risk-badge">安全门禁已启用</span>
+            </div>
+            <div class="trace-activity">
+                <div class="trace-activity-head"><span>活动日志</span><span class="trace-auto"><i></i>自动滚动</span></div>
+                <div class="trace-ticker" id="traceTicker"></div>
             </div>
         </div>
     </aside>
@@ -1349,6 +1505,204 @@
             files: [],
             evaluationTimer: null,
         };
+
+        const TRACE_STATUS_LABELS = {
+            planned: '计划中', running: '运行中', succeeded: '已成功',
+            failed: '失败', skipped: '已跳过', awaiting_confirmation: '待确认',
+            unknown: '未知', recovery_required: '需恢复'
+        };
+        const TRACE_DEFAULT_NODES = [
+            { id: 'trace-intent', title: 'Intent 识别', meta: '理解用户目标与约束', kind: 'Agent', tool: 'intent.parse', action: '识别请求', state: 'planned' },
+            { id: 'trace-skill', title: 'Skill 上下文', meta: '加载匹配的业务规则与知识', kind: 'Skill', tool: 'skill.context', action: '提供上下文', state: 'planned' },
+            { id: 'trace-scope', title: '账户范围', meta: '校验租户、账户与访问权限', kind: 'Guard', tool: 'runtime.scope_check', action: '权限校验', state: 'planned' },
+            { id: 'trace-tool', title: 'Tool 执行', meta: '等待本回合的已注册能力', kind: 'Tool', tool: 'tool.pending', action: '执行能力', state: 'planned' },
+            { id: 'trace-summary', title: '结果汇总', meta: '整理已执行结果与来源', kind: 'Agent', tool: 'response.synthesis', action: '汇总结果', state: 'planned' },
+        ];
+        let traceState = { nodes: [], selectedId: null, collapsed: false, activeTurn: 0 };
+
+        function traceStatusLabel(status) {
+            return TRACE_STATUS_LABELS[status] || '未知';
+        }
+
+        function traceMark(kind) {
+            const marks = { Agent: 'A', Skill: 'S', Guard: 'G', Tool: 'T', Meta: 'M', Google: 'G', TikTok: 'T', DV360: 'D' };
+            return marks[kind] || '·';
+        }
+
+        function renderTraceDetail(node) {
+            const detail = document.getElementById('traceDetail');
+            if (!node) {
+                detail.innerHTML = '<div class="trace-detail-empty">选择一个节点查看安全的 Tool 元数据</div>';
+                return;
+            }
+            detail.innerHTML = `
+                <div class="trace-detail-head">
+                    <div><div class="trace-detail-title">${escapeHtml(node.title)}</div><div class="trace-detail-subtitle">${escapeHtml(node.meta || '执行事件')}</div></div>
+                    <button class="trace-detail-close" type="button" onclick="clearTraceSelection()" aria-label="关闭节点详情">×</button>
+                </div>
+                <dl class="trace-detail-grid">
+                    <dt>Tool</dt><dd>${escapeHtml(node.tool || '未绑定')}</dd>
+                    <dt>资源 / 动作</dt><dd>${escapeHtml([node.resource_type, node.action].filter(Boolean).join(' · ') || '通用执行节点')}</dd>
+                    <dt>平台</dt><dd>${escapeHtml(node.platform || node.kind || 'Agent')}</dd>
+                    <dt>状态</dt><dd>${escapeHtml(traceStatusLabel(node.state))}</dd>
+                    <dt>输入</dt><dd>已脱敏 · 仅展示安全摘要</dd>
+                </dl>
+                <div class="trace-safe-note">此面板只展示执行事件、Tool 元数据和脱敏结果，不展示模型内部思维链。</div>
+            `;
+        }
+
+        function renderExecutionTrace() {
+            const flow = document.getElementById('traceFlow');
+            if (!flow) return;
+            flow.replaceChildren();
+            for (const node of traceState.nodes) {
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = `trace-node ${node.state || 'unknown'}${traceState.selectedId === node.id ? ' selected' : ''}`;
+                item.setAttribute('aria-label', `${node.title}，${traceStatusLabel(node.state)}`);
+                item.innerHTML = `
+                    <span class="trace-node-mark">${escapeHtml(traceMark(node.kind || node.platform))}</span>
+                    <span class="trace-node-copy"><span class="trace-node-title">${escapeHtml(node.title)}</span><span class="trace-node-meta">${escapeHtml(node.meta || node.tool || '')}</span></span>
+                    <span class="trace-node-state">${escapeHtml(traceStatusLabel(node.state))}</span>
+                `;
+                item.addEventListener('click', () => {
+                    traceState.selectedId = node.id;
+                    renderExecutionTrace();
+                    renderTraceDetail(node);
+                });
+                flow.appendChild(item);
+            }
+            const ticker = document.getElementById('traceTicker');
+            if (ticker) {
+                ticker.replaceChildren();
+                const activityNodes = traceState.nodes.filter(node => node.state !== 'planned').slice(-4);
+                const visibleNodes = activityNodes.length ? activityNodes : traceState.nodes.slice(0, 3);
+                for (const node of visibleNodes) {
+                    const row = document.createElement('div');
+                    row.className = 'trace-ticker-row';
+                    row.innerHTML = `<span class="trace-ticker-dot ${escapeHtml(node.state || 'planned')}"></span><span>${escapeHtml(node.title)} · ${escapeHtml(traceStatusLabel(node.state))}</span><span class="trace-ticker-time">安全事件</span>`;
+                    ticker.appendChild(row);
+                }
+            }
+            renderTraceDetail(traceState.nodes.find(node => node.id === traceState.selectedId));
+        }
+
+        function updateTraceHeader(status, subtitle) {
+            const label = document.getElementById('traceStatus');
+            const dot = document.querySelector('.trace-live-dot');
+            const sub = document.getElementById('traceSubtitle');
+            if (label) label.textContent = traceStatusLabel(status);
+            if (sub) sub.textContent = subtitle || '等待下一次 Agent 回合';
+            if (dot) dot.classList.toggle('idle', status === 'planned' || status === 'unknown' || status === 'succeeded' || status === 'failed');
+        }
+
+        function resetExecutionTrace() {
+            traceState = { nodes: TRACE_DEFAULT_NODES.map(node => ({ ...node })), selectedId: null, collapsed: false, activeTurn: traceState.activeTurn };
+            document.querySelector('.right-panel')?.classList.remove('trace-collapsed');
+            updateTraceHeader('unknown', '等待下一次 Agent 回合');
+            renderExecutionTrace();
+        }
+
+        function toggleTracePanel() {
+            traceState.collapsed = !traceState.collapsed;
+            document.querySelector('.right-panel')?.classList.toggle('trace-collapsed', traceState.collapsed);
+            const button = document.querySelector('.trace-icon-btn');
+            if (button) button.textContent = traceState.collapsed ? '+' : '−';
+        }
+
+        function clearTraceSelection() {
+            traceState.selectedId = null;
+            renderExecutionTrace();
+        }
+
+        function startExecutionTrace(userInput) {
+            traceState.activeTurn += 1;
+            const turn = traceState.activeTurn;
+            traceState.nodes = TRACE_DEFAULT_NODES.map(node => ({ ...node }));
+            traceState.nodes[0].state = 'running';
+            traceState.selectedId = null;
+            updateTraceHeader('running', `正在处理：${String(userInput || '').slice(0, 34)}`);
+            renderExecutionTrace();
+            window.setTimeout(() => {
+                if (turn !== traceState.activeTurn) return;
+                for (const id of ['trace-intent', 'trace-skill', 'trace-scope']) {
+                    const node = traceState.nodes.find(item => item.id === id);
+                    if (node) node.state = 'succeeded';
+                }
+                const tool = traceState.nodes.find(item => item.id === 'trace-tool');
+                if (tool) tool.state = 'running';
+                renderExecutionTrace();
+            }, 180);
+        }
+
+        function updateExecutionTrace(data) {
+            traceState.activeTurn += 1;
+            const planNodes = data?.execution_plan?.nodes || [];
+            const results = data?.results || [];
+            const resultByTool = new Map(results.map(result => [String(result.tool || ''), result]));
+            if (planNodes.length) {
+                traceState.nodes = planNodes.map((raw, index) => {
+                    const result = resultByTool.get(String(raw.tool || ''));
+                    return {
+                        id: raw.node_id || `plan-${index}`,
+                        title: raw.tool || raw.action || 'Tool 节点',
+                        meta: [raw.platform, raw.resource_type, raw.action].filter(Boolean).join(' · '),
+                        kind: raw.platform || 'Tool',
+                        tool: raw.tool,
+                        platform: raw.platform,
+                        resource_type: raw.resource_type,
+                        action: raw.action,
+                        state: result ? (result.success ? 'succeeded' : 'failed') : (data.needs_confirmation ? 'awaiting_confirmation' : 'planned'),
+                    };
+                });
+            } else if (results.length) {
+                traceState.nodes = results.map((result, index) => ({
+                    id: `result-${index}`, title: result.tool || 'Tool 执行',
+                    meta: [result.platform, result.success ? '结果已返回' : '执行失败'].filter(Boolean).join(' · '),
+                    kind: result.platform || 'Tool', tool: result.tool, platform: result.platform,
+                    state: result.success ? 'succeeded' : 'failed'
+                }));
+            }
+            if (!traceState.nodes.length) traceState.nodes = TRACE_DEFAULT_NODES.map(node => ({ ...node, state: 'succeeded' }));
+            const hasFailure = traceState.nodes.some(node => node.state === 'failed');
+            const status = data?.needs_confirmation ? 'awaiting_confirmation' : hasFailure ? 'failed' : 'succeeded';
+            updateTraceHeader(status, data?.needs_confirmation ? '等待用户确认后继续' : `${traceState.nodes.length} 个执行节点 · 已完成本回合`);
+            traceState.selectedId = traceState.nodes.find(node => node.state === 'failed')?.id || traceState.nodes[0]?.id || null;
+            renderExecutionTrace();
+        }
+
+        function markTraceAwaitingConfirmation() {
+            traceState.activeTurn += 1;
+            const tool = traceState.nodes.find(node => node.state === 'running' || node.id === 'trace-tool');
+            if (tool) tool.state = 'awaiting_confirmation';
+            updateTraceHeader('awaiting_confirmation', '需要确认后继续执行');
+            renderExecutionTrace();
+        }
+
+        function markTraceFailed(message) {
+            traceState.activeTurn += 1;
+            const node = traceState.nodes.find(item => item.state === 'running') || traceState.nodes[traceState.nodes.length - 1];
+            if (node) {
+                node.state = 'failed';
+                node.meta = message || node.meta;
+                traceState.selectedId = node.id;
+            }
+            updateTraceHeader('failed', '本回合未完成，请查看错误信息');
+            renderExecutionTrace();
+        }
+
+        // SSE 适配预留：后端发送 start/plan/tool_status/reply/done 时可直接调用。
+        function applyExecutionEvent(event) {
+            if (!event || !event.type) return;
+            if (event.type === 'start') startExecutionTrace(event.content || '');
+            if (event.type === 'plan' && event.execution_plan) updateExecutionTrace({ execution_plan: event.execution_plan });
+            if (event.type === 'tool_status') {
+                const node = traceState.nodes.find(item => item.tool === event.tool);
+                if (node) node.state = event.success ? 'succeeded' : 'failed';
+                renderExecutionTrace();
+            }
+            if (event.type === 'done') updateTraceHeader('succeeded', '本回合已完成');
+        }
 
         function requestHeaders(extra = {}) {
             const headers = new Headers(extra);
@@ -1764,6 +2118,7 @@
                 payload,
                 originalRequest: originalRequest  // 保存原始请求数据
             };
+            markTraceAwaitingConfirmation();
             
             // 创建确认卡片
             const card = document.createElement('div');
@@ -1860,6 +2215,7 @@
             
             // 添加确认消息到聊天
             addMessage('✅ 已确认，正在执行...', 'agent');
+            startExecutionTrace(originalRequest?.user_input || '确认并继续执行');
             
             // 发送带参数的请求 - 使用原始 user_input
             const userInput = originalRequest ? originalRequest.user_input : '';
@@ -1907,6 +2263,8 @@
                 if (data.error) {
                     throw new Error(data.error);
                 }
+
+                updateExecutionTrace(data);
                 
                 if (data.error) {
                     addMessage('❌ ' + data.error, 'agent', null, true);
@@ -1929,6 +2287,7 @@
                 renderResponse(data);
                 
             } catch (error) {
+                markTraceFailed(error.message);
                 addMessage('❌ 请求失败: ' + error.message, 'agent', null, true);
             }
         }
@@ -1944,9 +2303,11 @@
 
             addMessage(text, 'user');
             addLoading();
+            startExecutionTrace(text);
 
             conversationCount++;
-            document.getElementById('statToday').textContent = conversationCount;
+            const statToday = document.getElementById('statToday');
+            if (statToday) statToday.textContent = conversationCount;
 
             try {
                 const response = await authenticatedFetch('/chat', {
@@ -1960,7 +2321,8 @@
                 });
 
                 apiCallCount++;
-                document.getElementById('statAPICalls').textContent = apiCallCount;
+                const statApiCalls = document.getElementById('statAPICalls');
+                if (statApiCalls) statApiCalls.textContent = apiCallCount;
 
                 const data = await response.json();
                 removeLoading();
@@ -1973,6 +2335,8 @@
                 if (data.error) {
                     throw new Error(data.error);
                 }
+
+                updateExecutionTrace(data);
 
                 // 单一完整回复，不复用 SSE 分段渲染
                 sessionId = data.session_id || sessionId;
@@ -1994,6 +2358,7 @@
 
             } catch (error) {
                 removeLoading();
+                markTraceFailed(error.message);
                 addMessage('请求失败: ' + error.message, 'agent', null, true);
             }
         }
@@ -2088,6 +2453,7 @@
         // New chat
         function newChat() {
             sessionId = null;
+            resetExecutionTrace();
             document.getElementById('chatContainer').innerHTML = `
                 <div class="welcome-page" id="welcomePage">
                     <div class="welcome-icon">🤖</div>
@@ -2121,6 +2487,7 @@
         }
         
         // Initialize
+        resetExecutionTrace();
         document.getElementById('userInput').focus();
     </script>
 </body>
