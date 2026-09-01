@@ -21,6 +21,9 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+from agents.ad_agent.core.local_config import load_default_local_env
+load_default_local_env()
+
 from agents.ad_agent import (
     AgentRuntime,
     AdAgentStore,
@@ -136,9 +139,12 @@ def main():
         raise RuntimeError(
             "OPENAI_API_KEY 未设置；ad-agent CLI 必须配置 LLM，禁止降级为规则解析"
         )
+    llm_model = os.environ.get("LLM_MODEL", "").strip()
+    if not llm_model:
+        raise RuntimeError("LLM_MODEL 未设置；请在 agents/ad_agent/.env 中配置模型名称")
     from agents.ad_agent.core.llm_client import create_llm_client
     runtime.inject_llm(create_llm_client(
-        model=os.environ.get("LLM_MODEL", "gpt-4o-mini"),
+        model=llm_model,
         api_key=llm_api_key,
         base_url=os.environ.get("OPENAI_BASE_URL"),
     ))

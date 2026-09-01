@@ -27,47 +27,11 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from starlette.concurrency import run_in_threadpool
 
-
-def _load_local_env_file(path: Path) -> None:
-    """Load simple KEY=VALUE settings without evaluating the file.
-
-    The service intentionally supports a local, git-ignored ``.env`` file so
-    developers do not have to export the LLM settings in every terminal. An
-    explicitly exported environment variable always wins over the file.
-    This parser is deliberately small: it accepts comments, blank lines,
-    optional ``export`` and single/double quoted values, but never executes
-    shell syntax from the configuration file.
-    """
-    if not path.is_file():
-        return
-
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError as exc:
-        logger.warning("无法读取本地环境配置 %s: %s", path, exc)
-        return
-
-    for raw_line in lines:
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("export "):
-            line = line[7:].lstrip()
-        key, separator, value = line.partition("=")
-        key = key.strip()
-        if not separator or not key or not key.replace("_", "").isalnum():
-            continue
-        if key in os.environ:
-            continue
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
-            value = value[1:-1]
-        os.environ[key] = value
-
-
-# Keep local credentials outside source control while making service startup
-# reproducible. Explicit process environment variables take precedence.
-_load_local_env_file(Path(__file__).with_name(".env"))
+# Keep local credentials and model selection outside source control while
+# making service startup reproducible. Explicit process environment variables
+# take precedence over the ignored file.
+from agents.ad_agent.core.local_config import load_default_local_env, load_local_env_file
+load_default_local_env()
 
 # 导入 Agent 核心模块
 from agents.ad_agent import AgentRuntime
@@ -276,7 +240,7 @@ def _init_runtime():
         
         # 设置凭证到 runtime
         runtime.set_credentials(credentials)
-        llm_model = models_config.get('default', 'agnes-2.5-flash')
+        llm_model = os.environ.get("LLM_MODEL", "").strip() or models_config.get("default")
         api_key = os.environ.get('OPENAI_API_KEY', '')
         
         if api_key:

@@ -77,7 +77,7 @@ runtime = AgentRuntime(
     persistence_store=store,
     require_llm=True,
     llm_client=create_llm_client(
-        model=os.environ.get("LLM_MODEL", "gpt-4o-mini"),
+        model=os.environ["LLM_MODEL"],
         api_key=os.environ["OPENAI_API_KEY"],
         base_url=os.environ.get("OPENAI_BASE_URL"),
     ),

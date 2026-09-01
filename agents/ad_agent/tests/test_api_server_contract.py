@@ -24,7 +24,7 @@ def test_local_env_file_is_loaded_without_overriding_process_environment(tmp_pat
     )
     monkeypatch.setenv("TEST_AD_AGENT_EXISTING", "from-process")
 
-    api_server._load_local_env_file(env_file)
+    api_server.load_local_env_file(env_file)
 
     assert api_server.os.environ["TEST_AD_AGENT_LOCAL"] == "from-file"
     assert api_server.os.environ["TEST_AD_AGENT_QUOTED"] == "quoted value"

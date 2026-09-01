@@ -29,11 +29,13 @@ class LLMClient:
     ):
         """
         Args:
-            model: 模型名称，默认使用 config.yaml 中的配置
+            model: 模型名称；未显式传入时从 LLM_MODEL 读取
             api_key: API Key，默认从环境变量读取
             base_url: API 基础 URL，用于兼容其他 OpenAI 格式 API
         """
-        self.model = model or os.environ.get("LLM_MODEL", "gpt-4o-mini")
+        self.model = model or os.environ.get("LLM_MODEL", "").strip()
+        if not self.model:
+            raise ValueError("LLM_MODEL 未设置；请通过配置或构造参数提供模型名称")
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
         self.base_url = base_url or os.environ.get("OPENAI_BASE_URL")
         if timeout_seconds <= 0:

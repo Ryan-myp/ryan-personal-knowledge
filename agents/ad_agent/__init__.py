@@ -10,7 +10,7 @@ ad_agent - 多渠道广告投放 Agent
     runtime = AgentRuntime(
         require_llm=True,
         llm_client=create_llm_client(
-            model="gpt-4o-mini", api_key=os.environ["OPENAI_API_KEY"]
+            model=os.environ["LLM_MODEL"], api_key=os.environ["OPENAI_API_KEY"]
         ),
     )
     runtime.register_capability(create_meta_capability())
