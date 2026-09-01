@@ -41,6 +41,13 @@ from ..core.intent import LLMIntentParser, SimpleIntentRouter
 from ..core.features import RuntimeFeature
 from ..core.execution_plan import ExecutionPlan
 from ..core.response import ResponseRenderer
+from ..core.plugins import (
+    PluginKind,
+    PluginLoader,
+    PluginRegistry,
+    manifest_for_builtin,
+    manifest_for_managed_skill,
+)
 from ..features.factory import discover_features, feature_for_intent
 from ..features.factory import discover_response_renderer
 from ..core.tool_selector import DynamicToolSelector
@@ -171,17 +178,44 @@ class AgentRuntime:
         self._session_locks: dict[str, threading.RLock] = {}
         self._session_locks_guard = threading.RLock()
         self._background_tasks: list[dict] = []
+        # One provider-neutral lifecycle registry for all extension types.
+        # Existing discovery seams feed this registry; it is not a second
+        # Tool router and never bypasses Runtime execution gates.
+        self.plugin_registry = PluginRegistry()
+        self.plugin_loader = PluginLoader(
+            self.plugin_registry,
+            allow_trusted_source=True,
+        )
         # Optional domain workflows are discovered by package convention.
         # Runtime only knows the generic feature seam; it does not import a
         # domain workflow or maintain an intent-to-feature table.
         self.features: list[RuntimeFeature] = list(
             discover_features() if features is None else features
         )
+        for feature in self.features:
+            feature_name = str(getattr(feature, "feature_name", "") or "").strip()
+            if feature_name:
+                self._register_builtin_plugin(
+                    f"feature:{feature_name}",
+                    feature,
+                    (PluginKind.FEATURE.value,),
+                    description=f"Runtime feature {feature_name}",
+                )
         self.response_renderer: ResponseRenderer = (
             response_renderer or discover_response_renderer()
         )
         if self.response_renderer is None:
             raise RuntimeError("no response renderer is registered")
+        renderer_name = str(
+            getattr(self.response_renderer, "renderer_name", "") or ""
+        ).strip()
+        if renderer_name:
+            self._register_builtin_plugin(
+                f"renderer:{renderer_name}",
+                self.response_renderer,
+                (PluginKind.RENDERER.value,),
+                description=f"Response renderer {renderer_name}",
+            )
         self._loaded_skills: dict[str, Skill] = {}  # platform -> Skill
         # Keep exact registration ownership so multiple Skills can share a
         # platform and unload cannot rely on a non-existent ``skill.tools``
@@ -361,6 +395,44 @@ class AgentRuntime:
         """Expose the persistence abstraction to management services."""
         return self._session_manager.store if self._session_manager else None
 
+    def _register_builtin_plugin(
+        self,
+        plugin_id: str,
+        contribution: Any,
+        kinds: tuple[str, ...] | list[str],
+        *,
+        version: str = "1.0.0",
+        description: str = "",
+        replace: bool = False,
+    ) -> None:
+        """Publish a trusted in-process extension in the common registry."""
+
+        manifest = manifest_for_builtin(
+            plugin_id,
+            version,
+            kinds=tuple(kinds),
+            description=description,
+        )
+        self.plugin_loader.install(
+            manifest,
+            contribution=contribution,
+            replace=replace,
+        )
+        self.plugin_registry.activate(manifest.plugin_id)
+
+    def list_plugins(self, tenant_id: Optional[str] = None) -> list[dict[str, Any]]:
+        """Return safe, tenant-scoped plugin lifecycle metadata."""
+
+        snapshots = self.plugin_registry.snapshot()
+        if tenant_id is None:
+            return snapshots
+        tenant = str(tenant_id or "default").strip().lower()
+        return [
+            item for item in snapshots
+            if item.get("manifest", {}).get("source") != "managed"
+            or item.get("manifest", {}).get("metadata", {}).get("tenant_id") == tenant
+        ]
+
     def load_managed_skill(self, skill_dir: str, tenant_id: str = "default") -> bool:
         """Load a published standard Skill directory as advisory context.
 
@@ -399,6 +471,18 @@ class AgentRuntime:
             # global parser alias index; both are process-wide and would leak
             # tenant-owned context.
             self._managed_context_skills.setdefault(tenant_id, {})[contract.name] = skill
+            managed_manifest = manifest_for_managed_skill(
+                tenant_id,
+                contract.name,
+                contract.version,
+                description=contract.description,
+            )
+            self.plugin_loader.install(
+                managed_manifest,
+                contribution=skill,
+                replace=True,
+            )
+            self.plugin_registry.activate(managed_manifest.plugin_id)
             if hasattr(self.tool_selector, "register_context_skill"):
                 self.tool_selector.register_context_skill(skill, tenant_id=tenant_id)
             self._refresh_parser_catalog()
@@ -415,6 +499,9 @@ class AgentRuntime:
                 return False
             if hasattr(self.tool_selector, "unregister_context_skill"):
                 self.tool_selector.unregister_context_skill(key, tenant_id=tenant_id)
+            self.plugin_registry.unregister(
+                manifest_for_managed_skill(tenant_id, key, "1.0.0").plugin_id
+            )
             if not tenant_skills:
                 self._managed_context_skills.pop(tenant_id, None)
             self._refresh_parser_catalog()
@@ -612,7 +699,19 @@ class AgentRuntime:
         before_provider_versions = copy.deepcopy(self.provider_version_contracts)
         before_provider_surfaces = copy.deepcopy(self.provider_api_surfaces)
         try:
-            return self._register_capability_unchecked(module)
+            runtime = self._register_capability_unchecked(module)
+            platform = self._canonical_platform(getattr(module, "platform_name", ""))
+            if platform:
+                self._register_builtin_plugin(
+                    f"capability:{platform}",
+                    module,
+                    (PluginKind.CAPABILITY.value, PluginKind.TOOL_PROVIDER.value),
+                    version=str(
+                        getattr(module, "capability_version", "1.0.0") or "1.0.0"
+                    ),
+                    description=f"Provider capability {platform}",
+                )
+            return runtime
         except Exception:
             current_tool_names = {
                 definition.name for definition in self.registry.list_all()
@@ -647,6 +746,9 @@ class AgentRuntime:
             self.ad_format_catalogs = before_formats
             self.provider_version_contracts = before_provider_versions
             self.provider_api_surfaces = before_provider_surfaces
+            platform = self._canonical_platform(getattr(module, "platform_name", ""))
+            if platform:
+                self.plugin_registry.unregister(f"capability:{platform}")
             try:
                 self._refresh_parser_catalog()
             except Exception:
@@ -1165,6 +1267,13 @@ class AgentRuntime:
             keys.append(skill_key)
 
         self._refresh_parser_catalog()
+        self._register_builtin_plugin(
+            f"skill:{skill_key}",
+            skill,
+            (PluginKind.SKILL.value, PluginKind.TOOL_PROVIDER.value),
+            version=str(getattr(skill, "version", "1.0.0") or "1.0.0"),
+            description=str(getattr(skill, "description", "") or ""),
+        )
 
         logger.info(f"✅ 已动态注册 Skill '{skill.name}'，共 {registered_count} 个工具")
         return True
@@ -1363,6 +1472,7 @@ class AgentRuntime:
             self._skill_tool_names.pop(target_key, None)
             self._skill_platforms.pop(target_key, None)
             self._skill_objects.pop(target_key, None)
+            self.plugin_registry.unregister(f"skill:{target_key}")
             if target_skill is not None:
                 self.skill_loader.unload(getattr(target_skill, "name", ""))
 

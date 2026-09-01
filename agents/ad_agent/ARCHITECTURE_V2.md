@@ -4,6 +4,20 @@
 
 ## 一、整体架构概览
 
+当前所有可扩展对象都向统一 PluginRegistry 发布生命周期元数据：
+
+```text
+PluginManifest
+  -> PluginRegistry (register/load/activate/deactivate/unregister)
+  -> Skill / Capability+Tool / Feature / Policy / Renderer / Evaluator
+  -> Runtime 通用安全与执行门禁
+```
+
+PluginRegistry 是 Harness 的扩展控制面，不是第二个 Tool Router。它负责唯一 ID、版本、
+依赖、来源、可信级别和状态；Provider 请求仍只能从注册的 Capability Tool 进入。当前
+内置目录 discovery 已通过兼容适配接入该注册表，托管 Skill 只登记为不可执行的租户级
+上下文插件。
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           Web UI (FastAPI + HTML)                          │

@@ -18,6 +18,7 @@ Skill 描述如何理解和编排业务；Tool 描述一个可校验、可授权
 - 业务 Skill 不得直接 import `api_clients/`、持有渠道凭证或自己发 HTTP 请求。
 - `runtime/` 不得为单个业务流程硬编码 Google、Meta、TikTok 或 DV360 的分支。
 - `core/` 只依赖统一的 Tool/Capability 契约；渠道特有字段、枚举和条件规则放在对应 Provider Tool schema。
+- 所有可部署扩展必须通过 `core.plugins.PluginManifest` 和 `PluginRegistry` 声明唯一 ID、版本、贡献类型、依赖、来源和可信级别；Capability、Feature、Renderer、受信任 Skill 扩展与托管 Skill 不得各自定义一套生命周期。
 - `user_skills/` 和管理上传的 Skill 只能提供上下文；不能借助 `tools.py`、`scripts/` 或 `workflow.yaml` 绕过 registry。
 - LLM Parser 的意图目录由 Registry 中已注册 Tool 的 `intent_types`、description、action 和 resource 元数据生成；新增自定义意图必须随 Tool 声明，禁止在中心 Parser 增加意图分支。
 
@@ -45,6 +46,7 @@ Skill 描述如何理解和编排业务；Tool 描述一个可校验、可授权
 
 - 管理 API 接受完整标准 Skill 目录快照，保留 `SKILL.md`、`references/`、`scripts/`、`assets/`、`evals/` 等文件并做路径、大小、编码和 digest 校验。
 - 版本发布只激活不可变快照；Runtime 加载的是 advisory context，不会将用户包转换成 Tool。
+- 托管 Skill 只能登记为不可执行的 advisory Plugin；只有经过部署审核的 trusted source Plugin 才能携带生命周期对象，且其 Tool 仍必须经过 Runtime 的统一执行门禁。
 - Skill-up 的 `ad-agent-runtime` Engine 测试真实 Runtime/Capability dry-run 路由。
 - `claude_sdk` Engine 使用 Anthropic Python SDK 测试自然语言 Skill 效果。它可以读取 Skill 文本、受控只读文件和可信 Tool 描述，但不执行 Tool、不连接 MCP、不接收广告凭证。
 - Skill-up adapter 由平台生成，用户只能选择受控 Engine 和参数；不得把任意命令、judge script 或环境变量变成管理 API 能力。

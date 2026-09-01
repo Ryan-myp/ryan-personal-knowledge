@@ -52,6 +52,16 @@ class FakeRuntime:
             "coverage": coverage or "declared_only",
         }]
 
+    def list_plugins(self, tenant_id=None):
+        return [{
+            "manifest": {
+                "plugin_id": "renderer:ad-agent",
+                "source": "builtin",
+                "metadata": {},
+            },
+            "state": "active",
+        }]
+
 
 @pytest.fixture
 def fake_server(monkeypatch):
@@ -67,6 +77,14 @@ def test_health_is_safe_and_does_not_require_api_key(fake_server):
         response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["execution_mode"] == "dry_run"
+
+
+def test_plugins_exposes_only_safe_lifecycle_metadata(fake_server):
+    with TestClient(api_server.app) as client:
+        response = client.get("/plugins", headers={"X-API-Key": "test-key"})
+    assert response.status_code == 200
+    assert response.json()["plugins"][0]["state"] == "active"
+    assert "contribution" not in response.json()["plugins"][0]
 
 
 def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):

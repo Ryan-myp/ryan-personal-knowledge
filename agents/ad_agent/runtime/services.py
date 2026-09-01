@@ -19,6 +19,11 @@ class RuntimeServices(RuntimeServicesPort):
         return self._runtime.registry
 
     @property
+    def plugin_registry(self):
+        """Expose lifecycle metadata to trusted Runtime extensions."""
+        return self._runtime.plugin_registry
+
+    @property
     def security(self):
         return self._runtime.security
 

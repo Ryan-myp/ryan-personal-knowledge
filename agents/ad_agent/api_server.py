@@ -394,6 +394,18 @@ async def get_platforms(
     return {"platforms": runtime.registry.list_all_platforms()}
 
 
+@app.get("/plugins", tags=["info"])
+async def get_plugins(
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Expose plugin manifests and lifecycle state without executable data."""
+    principal = _authorize_request(x_api_key, http_request)
+    if not runtime:
+        return {"plugins": []}
+    return {"plugins": runtime.list_plugins(principal.tenant_id)}
+
+
 @app.get("/tools", tags=["info"])
 async def get_tools(
     http_request: Request,

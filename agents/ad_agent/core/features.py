@@ -29,6 +29,7 @@ class RuntimeServices(Protocol):
     """Generic execution services exposed to domain Features."""
 
     registry: Any
+    plugin_registry: Any
     security: Any
     parameter_selection_signer: Any
     input_builder: Any

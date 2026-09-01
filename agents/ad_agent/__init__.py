@@ -25,6 +25,7 @@ from .capabilities.dv360 import DV360Capability, create_dv360_capability
 from .persistence.store import AdAgentStore
 from .persistence.session_manager import SessionManager
 from .core.auth import RequestPrincipal
+from .core.plugins import PluginKind, PluginLoader, PluginManifest, PluginRegistry, PluginState
 
 __version__ = "1.0.0"
 __all__ = [
@@ -41,4 +42,9 @@ __all__ = [
     "AdAgentStore",
     "SessionManager",
     "RequestPrincipal",
+    "PluginKind",
+    "PluginLoader",
+    "PluginManifest",
+    "PluginRegistry",
+    "PluginState",
 ]

@@ -35,6 +35,9 @@ Runtime 不承载业务流程实现。可选业务扩展通过通用接口自动
   不把业务流程实现塞回 Runtime。
 - `RuntimeServices` / `ToolExecutor` / `RuntimeSecurity`：分别提供 Feature 端口、
   Tool 执行和安全边界实现。
+- `PluginRegistry`：统一管理扩展的 Manifest、版本、依赖和生命周期；Capability、
+  Feature、Renderer、受信任 Skill 扩展和托管 Skill 上下文都通过它登记。它不执行
+  Provider 请求，也不替代 ToolRegistry 的权限、账户、dry-run 和审计门禁。
 
 Runtime 只调用这些接口，不识别 `ecommerce`、`app`、`cross-channel` 等业务名称。
 
@@ -68,7 +71,27 @@ Core 或 Router 中维护渠道表。Markdown 表格、`workflow.yaml`、`script
 带 `evals/eval.yaml` 的版本发布前必须通过受控 Skill-up Engine；用户不能提供
 自定义命令、judge script、MCP server 或环境注入。
 
+### 2.1 Plugin 边界
+
+Plugin 是比 Skill 更宽的扩展协议，不等同于“上传任意代码即可执行”。每个 Plugin
+必须有 `PluginManifest`，声明唯一 ID、语义化版本、Plugin API 版本、贡献类型、依赖、
+权限、来源和是否可执行。当前内置源码扩展可以贡献 Capability/Tool Provider、Feature、
+Renderer 或受信任 Skill；管理端上传的 Skill 只能登记为 tenant-scoped advisory Plugin，
+不会导入其 `tools.py`/`scripts/`，也不会获得生命周期执行钩子。
+
+`PluginRegistry` 提供 `register → load → activate → deactivate → unregister` 生命周期，
+按依赖拓扑激活，并阻止版本不满足、依赖环和仍有活动依赖者的卸载。插件生命周期只
+管理扩展状态；Tool 的执行仍必须经过 Runtime 的统一安全链路。
+
 ## 3. 扩展规则
+
+### 3.0 Plugin SDK 约定
+
+新增可部署扩展优先提供自己的 Manifest 和受信任贡献对象，再由宿主适配到统一注册表；
+不要在 Runtime 里新增按插件名分支。当前目录约定 discovery 仍保留作为兼容 Loader，
+但所有已发现对象都会发布到 `runtime.plugin_registry`，可通过 `GET /plugins` 查看安全
+的生命周期元数据。后续 Plugin SDK 将把目录 discovery 逐步收敛为 Manifest/entrypoint
+解析，并补依赖锁定、包签名、沙箱和热升级。
 
 ### 3.1 新增业务流程
 
