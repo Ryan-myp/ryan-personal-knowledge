@@ -151,6 +151,20 @@ class PersistenceBackend(Protocol):
         self, stale_after_seconds: float = 900.0,
     ) -> int: ...
 
+    # -- Agent Memory -----------------------------------------------------
+    # Memory is separate from session/tool audit state.  The contract keeps
+    # Runtime independent of SQLite so a future MySQL/PostgreSQL backend can
+    # implement the same scoped recall semantics.
+    def save_memory(self, record: Any) -> None: ...
+    def search_memories(
+        self, query: str, *, tenant_id: str, user_id: str,
+        session_id: Optional[str] = None, kinds: Optional[list[str]] = None,
+        limit: int = 10,
+    ) -> list[Any]: ...
+    def delete_memory(
+        self, memory_id: str, *, tenant_id: str, user_id: str,
+    ) -> bool: ...
+
     # -- Generic Plugin package control plane ---------------------------
     # A package is an immutable declaration + file snapshot.  The release
     # pointer is tenant-scoped; activating it through this contract does not

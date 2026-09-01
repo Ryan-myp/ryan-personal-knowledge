@@ -1,3 +1,19 @@
+---
+schema_version: "1"
+id: google-campaign-hierarchy
+title: Google Ads Campaign 层级结构
+layer: platform
+knowledge_type: hierarchy
+platform: google
+source: Google Ads 官方文档 + API 实测
+source_ref: platforms/google/campaigns.md
+version: "1.0.0"
+confidence: 0.95
+updated_at: "2026-08-26"
+tags: [google, campaign, hierarchy]
+status: published
+---
+
 # Google Ads Campaign 层级结构
 
 > **来源**: 官方文档 + API 实测

@@ -24,6 +24,10 @@ from .capabilities.tiktok import TikTokCapability, create_tiktok_capability
 from .capabilities.dv360 import DV360Capability, create_dv360_capability
 from .persistence.store import AdAgentStore
 from .persistence.session_manager import SessionManager
+from .core.memory import MemoryManager, MemoryRecord, MemoryStore
+from .core.knowledge import (
+    KnowledgeDocument, KnowledgeProvider, MarkdownWikiKnowledgeProvider,
+)
 from .core.auth import RequestPrincipal
 from .core.plugins import PluginKind, PluginLoader, PluginManifest, PluginRegistry, PluginState
 from .core.plugin_package import PluginPackage, PluginPackageError, build_plugin_manifest
@@ -43,6 +47,12 @@ __all__ = [
     "create_dv360_capability",
     "AdAgentStore",
     "SessionManager",
+    "MemoryManager",
+    "MemoryRecord",
+    "MemoryStore",
+    "KnowledgeDocument",
+    "KnowledgeProvider",
+    "MarkdownWikiKnowledgeProvider",
     "RequestPrincipal",
     "PluginKind",
     "PluginLoader",

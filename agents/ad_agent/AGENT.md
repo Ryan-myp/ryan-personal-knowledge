@@ -120,6 +120,19 @@ Renderer 或受信任 Skill；管理端上传的 Skill 只能登记为 tenant-sc
 Skill-owned `RuntimeFeature`；Feature 通过 Runtime 的通用扩展上下文工作，仍不需要
 修改 Runtime 主循环。新增外部 API 动作时，才增加 Provider Client + Capability Tool。
 
+### 3.1.1 Wiki 与 Memory
+
+共享广告知识必须写入 `knowledge_base/` 的 Markdown LLM Wiki，并遵循其中的
+`SCHEMA.md` frontmatter。Runtime 只通过 `KnowledgeProvider` 读取已发布文档；不得在
+Skill、Tool 或 Runtime 中自行扫描文件、维护第二套 Wiki 索引或引入 `workflow.yaml`。
+当前知识检索是确定性的词法检索，不接入向量库；检索结果必须有界并带来源、版本和
+引用信息。
+
+Memory 不等同于会话历史、工具审计或 Campaign 状态。跨会话记忆必须通过
+`MemoryManager`/`MemoryStore`，并同时受 `tenant_id`、`user_id` 隔离。默认只接受用户
+显式记忆请求；不得把原始 Tool payload、凭证、账户配置或未脱敏异常写入 Memory。
+Memory 只能作为受限上下文辅助 LLM，不能成为 Tool、权限或账户范围的来源。
+
 ### 3.2 新增 Provider API 能力
 
 如果确实需要新的外部动作，按以下顺序在渠道包内完成最小闭环：

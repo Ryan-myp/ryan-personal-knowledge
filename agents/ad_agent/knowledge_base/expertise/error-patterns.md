@@ -1,3 +1,19 @@
+---
+schema_version: "1"
+id: ad-error-patterns
+title: 常见错误模式与解决方案
+layer: experience
+knowledge_type: error_pattern
+platform: all
+source: 错误日志 + 社区经验
+source_ref: expertise/error-patterns.md
+version: "1.0.0"
+confidence: 0.8
+updated_at: "2026-08-26"
+tags: [error, troubleshooting, api]
+status: published
+---
+
 # 常见错误模式与解决方案
 
 > **来源**: 错误日志 + 社区经验

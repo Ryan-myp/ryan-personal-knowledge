@@ -53,6 +53,7 @@ from ..features.factory import discover_response_renderer
 from ..core.tool_selector import DynamicToolSelector
 from ..core.policy import RuntimePolicy, validate_policies
 from ..core.knowledge import KnowledgeProvider, LocalMarkdownKnowledgeProvider
+from ..core.memory import MemoryManager
 from ..core.parameter_catalog import ParameterCatalogRegistry
 from ..core.parameter_selection import (
     ParameterSelectionSigner,
@@ -334,8 +335,13 @@ class AgentRuntime:
         
         # 持久化层（可选）
         self._session_manager: Optional[SessionManager] = None
+        self._memory_manager: Optional[MemoryManager] = None
         if persistence_store:
             self._session_manager = SessionManager(persistence_store)
+            if all(callable(getattr(persistence_store, method, None)) for method in (
+                "save_memory", "search_memories", "delete_memory"
+            )):
+                self._memory_manager = MemoryManager(persistence_store)
             if self.write_guard and hasattr(self.write_guard, "bind_store"):
                 self.write_guard.bind_store(persistence_store)
 
@@ -394,6 +400,11 @@ class AgentRuntime:
     def persistence_store(self):
         """Expose the persistence abstraction to management services."""
         return self._session_manager.store if self._session_manager else None
+
+    @property
+    def memory_manager(self) -> Optional[MemoryManager]:
+        """Expose the optional, provider-neutral Agent Memory service."""
+        return self._memory_manager
 
     def _register_builtin_plugin(
         self,
@@ -2341,6 +2352,37 @@ class AgentRuntime:
             if granted_permissions is None
             else frozenset(granted_permissions)
         )
+
+        # Memory is an advisory context layer, never an execution source.
+        # Only an explicit user request can create a long-lived record; normal
+        # tool results and chat history remain session/audit state.
+        recalled_memories: list[dict[str, Any]] = []
+        memory_context = ""
+        if self._memory_manager:
+            try:
+                explicit = self._memory_manager.explicit_memory_text(safe_user_input)
+                if explicit:
+                    self._memory_manager.remember(
+                        explicit,
+                        tenant_id=tenant_id,
+                        user_id=user_id,
+                        # An explicit user memory is long-lived by policy;
+                        # keep it user-scoped rather than tying it to the
+                        # current conversation session.
+                        session_id=None,
+                        source="user_explicit",
+                        kind="semantic",
+                        importance=0.85,
+                    )
+                recalled_memories, memory_context = self._memory_manager.build_context(
+                    safe_user_input,
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    session_id=session_id,
+                )
+            except Exception as exc:
+                # Memory failure must never block intent parsing or tool policy.
+                logger.debug("构建 Memory 上下文失败: %s", exc)
         
         # Step 2: 解析用户意图
         # Give an injected LLM the bounded Skill/tool context before it emits
@@ -2351,6 +2393,8 @@ class AgentRuntime:
                 safe_user_input, self.registry.list_all(), None, tenant_id
             )
             skill_context["prior_tool_results"] = self._build_prior_tool_results_context(session)
+            skill_context["memory"] = recalled_memories
+            skill_context["memory_context"] = memory_context
             session.ctx.metadata["skill_context"] = skill_context
         except Exception as exc:
             logger.debug("构建 Skill 解析上下文失败: %s", exc)
@@ -2366,6 +2410,8 @@ class AgentRuntime:
                 tenant_id,
             )
             skill_context["prior_tool_results"] = self._build_prior_tool_results_context(session)
+            skill_context["memory"] = recalled_memories
+            skill_context["memory_context"] = memory_context
             session.ctx.metadata["skill_context"] = skill_context
         except Exception as exc:
             logger.debug("构建意图级 Skill/知识上下文失败: %s", exc)
@@ -2603,6 +2649,7 @@ class AgentRuntime:
                     "expert_knowledge": tool_selection["expert_knowledge"],
                     "knowledge": tool_selection.get("knowledge", []),
                 },
+                "memory": recalled_memories,
                 "results": [],
                 "reply": no_tool_reply,
                 "needs_confirmation": False,
@@ -3246,6 +3293,7 @@ class AgentRuntime:
                 "expert_knowledge": tool_selection["expert_knowledge"],
                 "knowledge": tool_selection.get("knowledge", []),
             },
+            "memory": recalled_memories,
             "execution_plan": execution_plan.to_dict(),
             "results": results,
             "resource_results": resource_results,

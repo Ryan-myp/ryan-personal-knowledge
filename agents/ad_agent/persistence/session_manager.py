@@ -12,6 +12,7 @@ from datetime import datetime
 from .interfaces import PersistenceBackend
 from .models import ToolCallRecord, CampaignRecord
 from ..core.platform import normalize_platform
+from ..core.memory import MemoryManager, MemoryRecord
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,20 @@ class SessionManager:
     def get_session_history(self, session_id: str, limit: int = 50) -> list:
         """获取会话历史（工具调用 + 结果）"""
         return self.store.list_tool_calls(session_id, limit=limit)
+
+    # -- Agent Memory -----------------------------------------------------
+
+    def remember(self, content: str, **kwargs: Any) -> MemoryRecord:
+        """Write governed memory without exposing backend details."""
+        return MemoryManager(self.store).remember(content, **kwargs)
+
+    def recall_memories(self, query: str, **kwargs: Any) -> list[MemoryRecord]:
+        """Recall only memories within the supplied tenant/user scope."""
+        return MemoryManager(self.store).recall(query, **kwargs)
+
+    def forget_memory(self, memory_id: str, **kwargs: Any) -> bool:
+        """Tombstone one memory within the supplied tenant/user scope."""
+        return MemoryManager(self.store).forget(memory_id, **kwargs)
     
     # ─── Campaign 状态管理 ─────────────────────────────────────
     

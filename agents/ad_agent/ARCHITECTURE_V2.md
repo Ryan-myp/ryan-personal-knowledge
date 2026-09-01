@@ -398,8 +398,41 @@ class AdAgentStore:
     CREATE TABLE sessions (...)
     CREATE TABLE turns (...)
     CREATE TABLE tool_calls (...)
-    CREATE TABLE campaigns (...)  # 同步 Campaign 状态
+CREATE TABLE campaigns (...)  # 同步 Campaign 状态
 ```
+
+### 3. Markdown LLM Wiki
+
+知识库是独立的只读上下文源，不是执行引擎：
+
+```text
+Markdown Wiki (index/log/主题文档)
+        ↓ KnowledgeProvider
+确定性词法检索（标题 + 标签 + 正文 + 平台/类型过滤）
+        ↓ 有界 excerpt + citation
+Intent Parser / Skill 上下文
+```
+
+当前实现不依赖向量数据库。`core.knowledge.MarkdownWikiKnowledgeProvider` 是唯一
+Runtime Provider；`tools/wiki_query.py` 仅是 CLI/历史调用的兼容 facade，不维护自己的
+文档加载和索引逻辑。文档元数据规范见
+[`knowledge_base/SCHEMA.md`](./knowledge_base/SCHEMA.md)。
+
+### 4. Agent Memory
+
+Memory 与 Wiki、Session 和 Tool Audit 的边界如下：
+
+| 数据 | 作用 | 是否自动成为长期记忆 |
+|---|---|---|
+| SessionContext | 当前对话和跨 Tool 临时引用 | 否 |
+| Tool Audit | 调用审计和恢复证据 | 否 |
+| Markdown Wiki | 团队共享的稳定知识 | 否 |
+| MemoryRecord | 用户/租户明确保存的事实和经验 | 仅显式写入 |
+
+`MemoryManager` 提供写入、召回和删除策略，`MemoryStore` 是后端接口，当前由
+`AdAgentStore` 的 SQLite `memories` 表实现。召回先做租户/用户/会话范围过滤，再做
+确定性词法排序；过期记录和删除墓碑不返回。召回内容只作为受限 LLM 上下文，不能改变
+Tool Registry、权限、账户范围或执行计划。
 
 ## 七、关键文件索引
 

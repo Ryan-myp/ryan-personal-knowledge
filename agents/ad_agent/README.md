@@ -6,7 +6,7 @@
 
 - **单 Agent + 多 Skills**：通过意图路由自动分发到对应平台的 Capability
 - **API 客户端**：封装真实 API 请求、重试、限流和错误分类；live 能力须逐平台验证
-- **持久化层**：SQLite 存储会话、工具调用、Campaign 状态
+- **持久化层**：通过 `PersistenceBackend` 抽象存储会话、工具调用、Campaign 状态和 Agent Memory；当前 SQLite 仅支持单进程
 - **结构化日志**：JSON 格式，便于 log aggregation
 - **模型驱动**：生产入口必须配置 LLM；离线 fixture 仅用于显式测试和评测，不是产品降级路径
 - **Planner 执行闭环**：每回合由 LLM 解析当前请求和受限 Skill/Tool 上下文，Runtime 依据注册元数据生成确定性计划并执行；业务策略、跨渠道流程和响应展示通过 Skill-owned Policy/Feature/Renderer 扩展；后续回合可读取最近脱敏 Tool 结果继续补参或决策
@@ -97,6 +97,20 @@ print(result["reply"])
 
 `AgentRuntime` 默认要求已注入 LLM；不会在模型不可用时自动切换为规则解析。
 只有测试或明确的离线工具才可以显式传入 `require_llm=False`，并且这不代表产品运行模式。
+
+### Markdown LLM Wiki 与 Agent Memory
+
+知识库采用 Karpathy 风格的 Markdown-first LLM Wiki：`index.md` 做导航，`log.md`
+记录变更，`platforms/`、`business/`、`expertise/` 和 `dynamic/` 按主题组织知识。
+知识文件使用 [`knowledge_base/SCHEMA.md`](./knowledge_base/SCHEMA.md) 的 frontmatter
+描述来源、版本、置信度和状态。Runtime、CLI 和 Wiki 查询兼容入口共用
+`core.knowledge.KnowledgeProvider`；当前使用确定性的标题/标签/正文词法检索，不接入
+向量库，草稿和废弃文档不会进入召回。
+
+Memory 与 Wiki、Session、Tool Audit 分离。只有显式的“记住/保存”请求才会创建长期
+Memory；Runtime 仅在同一 `tenant_id + user_id` 范围内做有界召回，Memory 不能创建
+Tool、权限、账户范围或凭证。SQLite 的 `memories` 表通过 `PersistenceBackend` 访问，
+未来替换 MySQL/PostgreSQL 不需要修改 Runtime。
 
 ## 使用真实 API（仅测试账号）
 

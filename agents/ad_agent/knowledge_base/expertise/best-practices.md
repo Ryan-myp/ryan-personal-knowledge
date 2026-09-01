@@ -1,3 +1,19 @@
+---
+schema_version: "1"
+id: ad-best-practices
+title: 广告最佳实践
+layer: experience
+knowledge_type: best_practice
+platform: all
+source: 专家经验 + 实测数据
+source_ref: expertise/best-practices.md
+version: "1.0.0"
+confidence: 0.75
+updated_at: "2026-08-26"
+tags: [best-practice, budget, naming]
+status: published
+---
+
 # 广告最佳实践
 
 > **来源**: 专家经验 + 实测数据

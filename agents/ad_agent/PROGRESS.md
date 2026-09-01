@@ -13,6 +13,12 @@
 - 无 Provider Client 的读取默认 fail-closed；离线 fixture 仅在显式 `offline_mode=True` 下可用。
 - Workflow 有持久化 heartbeat/lease：活跃任务刷新 lease，恢复 worker 只能原子 claim
   过期或非终态任务；当前 SQLite 仍按单进程部署，多实例需换共享 backend。
+- 知识库已统一为 Markdown-first LLM Wiki：`core.knowledge.MarkdownWikiKnowledgeProvider`
+  是 Runtime 唯一入口，CLI Wiki 查询只是兼容 facade；文档使用 `SCHEMA.md` 的元数据，
+  采用有界确定性词法检索，不接入向量库。
+- Memory 已与 Session、Tool Audit、Workflow 和 Wiki 分离：通过 `MemoryManager`/
+  `MemoryStore` 进行租户/用户隔离的显式写入、词法召回、过期过滤和删除墓碑；当前由
+  SQLite `memories` 表实现，不能提供 Tool、权限、账户范围或凭证。
 - Provider timeout、连接错误、限流或 5xx 等不确定写结果会进入 `unknown` /
   `recovery_required`，并保留 pending 幂等 reservation，等待只读回查后再决定状态。
 - Provider live lookup 可为动态字段签发短时 selection token；创建请求提交

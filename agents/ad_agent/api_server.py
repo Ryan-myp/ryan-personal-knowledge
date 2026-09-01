@@ -29,6 +29,7 @@ from starlette.concurrency import run_in_threadpool
 from agents.ad_agent import AgentRuntime
 from agents.ad_agent.core.auth import RequestPrincipal
 from agents.ad_agent.core.plugin_package import PluginPackageError
+from agents.ad_agent.core.memory import MEMORY_KINDS
 from agents.ad_agent.plugin_management import PluginPackageManager
 from agents.ad_agent.skill_management import ManagedSkillManager, SkillPackageError
 
@@ -318,6 +319,16 @@ class ChatRequest(BaseModel):
     platform_params: Optional[dict] = None
 
 
+class MemoryWriteRequest(BaseModel):
+    """Explicit user memory; identity and tenant come from the principal."""
+
+    content: str = Field(min_length=1, max_length=4000)
+    kind: str = Field(default="semantic", min_length=1, max_length=32)
+    tags: list[str] = Field(default_factory=list, max_length=20)
+    importance: float = Field(default=0.5, ge=0.0, le=1.0)
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index():
     try:
@@ -383,6 +394,101 @@ async def chat(
             content={"success": False, "error": _safe_exception_text(e)},
             status_code=500,
         )
+
+
+@app.get("/knowledge/search", tags=["knowledge"])
+async def search_knowledge(
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    query: str = Query("", max_length=2000),
+    platform: Optional[str] = Query(None, max_length=64),
+    knowledge_type: Optional[str] = Query(None, max_length=64),
+    limit: int = Query(10, ge=1, le=50),
+):
+    """Search the published Markdown LLM Wiki through the Runtime provider."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.read")
+    if not runtime or not runtime.knowledge_provider:
+        raise HTTPException(status_code=503, detail="知识库未初始化")
+    documents = runtime.knowledge_provider.query(
+        query,
+        platforms=[platform] if platform else None,
+        knowledge_types=[knowledge_type] if knowledge_type else None,
+        limit=limit,
+        max_excerpt_chars=1200,
+    )
+    return {"results": [document.to_dict() for document in documents]}
+
+
+@app.get("/memory", tags=["memory"])
+async def recall_memory(
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    query: str = Query("", max_length=2000),
+    session_id: Optional[str] = Query(None, max_length=200),
+    limit: int = Query(10, ge=1, le=20),
+):
+    """Recall only the authenticated principal's tenant/user memories."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "memory.read")
+    if not runtime or not runtime.memory_manager:
+        raise HTTPException(status_code=503, detail="Memory 未初始化")
+    records = runtime.memory_manager.recall(
+        query,
+        tenant_id=principal.tenant_id,
+        user_id=principal.user_id,
+        session_id=session_id,
+        limit=limit,
+    )
+    return {"memories": [record.to_context_dict() for record in records]}
+
+
+@app.post("/memory", tags=["memory"])
+async def write_memory(
+    body: MemoryWriteRequest,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Create a governed explicit memory; no body identity is trusted."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "memory.write")
+    if body.kind.lower() not in MEMORY_KINDS:
+        raise HTTPException(status_code=422, detail="unsupported memory kind")
+    if not runtime or not runtime.memory_manager:
+        raise HTTPException(status_code=503, detail="Memory 未初始化")
+    try:
+        record = runtime.memory_manager.remember(
+            body.content,
+            tenant_id=principal.tenant_id,
+            user_id=principal.user_id,
+            kind=body.kind,
+            tags=body.tags,
+            importance=body.importance,
+            confidence=body.confidence,
+            source="api_explicit",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return JSONResponse(status_code=201, content=record.to_context_dict())
+
+
+@app.delete("/memory/{memory_id}", tags=["memory"])
+async def delete_memory(
+    memory_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Delete (tombstone) one memory within the authenticated scope."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "memory.write")
+    if not runtime or not runtime.memory_manager:
+        raise HTTPException(status_code=503, detail="Memory 未初始化")
+    deleted = runtime.memory_manager.forget(
+        memory_id, tenant_id=principal.tenant_id, user_id=principal.user_id
+    )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return {"deleted": True, "memory_id": memory_id}
 
 
 @app.get("/platforms", tags=["info"])

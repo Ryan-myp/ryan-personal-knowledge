@@ -1,3 +1,19 @@
+---
+schema_version: "1"
+id: google-constraints
+title: Google Ads 参数约束
+layer: platform
+knowledge_type: constraint
+platform: google
+source: Google Ads 官方文档 + API 实测
+source_ref: platforms/google/constraints.md
+version: "1.0.0"
+confidence: 0.95
+updated_at: "2026-08-26"
+tags: [google, constraint, validation]
+status: published
+---
+
 # Google Ads 参数约束规则
 
 > **来源**: 官方文档 + API 实测
