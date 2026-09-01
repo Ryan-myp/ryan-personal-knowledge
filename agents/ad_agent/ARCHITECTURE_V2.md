@@ -18,6 +18,12 @@ PluginRegistry 是 Harness 的扩展控制面，不是第二个 Tool Router。�
 内置目录 discovery 已通过兼容适配接入该注册表，托管 Skill 只登记为不可执行的租户级
 上下文插件。
 
+插件包管理控制面与进程内注册表分离：`PluginPackageManager` 通过
+`PersistenceBackend` 保存租户级的不可变包快照和当前 release pointer，支持版本选择、
+回滚、停用和卸载。用户上传或管理 API 激活只改变部署候选状态，不会自动 import 包内
+文件；只有受信任部署宿主在完成审核后，才能把可执行包绑定为 Runtime 的贡献对象。
+这样既保留“一切皆插件”的统一生命周期模型，也避免把用户数据包误当成可执行扩展。
+
 可部署插件包使用根目录 `plugin.manifest.json` 作为声明入口。Loader 校验包内相对路径、
 大小/数量上限、逐文件 SHA-256、确定性 package digest 和可选 HMAC 签名，但不自动导入
 入口代码。只有受信任部署宿主可以把已审核源码贡献绑定到可执行 Manifest；托管 Skill

@@ -177,6 +177,35 @@ class AdAgentStore:
     CREATE INDEX IF NOT EXISTS idx_skill_evaluation_runs_tenant
         ON skill_evaluation_runs(tenant_id, created_at DESC);
 
+    CREATE TABLE IF NOT EXISTS plugin_packages (
+        package_id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        plugin_id TEXT NOT NULL,
+        version TEXT NOT NULL,
+        manifest TEXT NOT NULL,
+        files TEXT NOT NULL,
+        package_digest TEXT NOT NULL,
+        signature_verified INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'validated',
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        activated_at TEXT,
+        last_error TEXT,
+        UNIQUE (tenant_id, plugin_id, version)
+    );
+
+    CREATE TABLE IF NOT EXISTS plugin_releases (
+        tenant_id TEXT NOT NULL,
+        plugin_id TEXT NOT NULL,
+        package_id TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, plugin_id),
+        FOREIGN KEY (package_id) REFERENCES plugin_packages(package_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_plugin_packages_tenant
+        ON plugin_packages(tenant_id, plugin_id, created_at DESC);
+
     CREATE TABLE IF NOT EXISTS write_reservations (
         idempotency_key TEXT PRIMARY KEY,
         status TEXT NOT NULL,
@@ -730,6 +759,194 @@ class AdAgentStore:
                     conn.execute("RELEASE recover_skill_evaluation")
             conn.commit()
         return recovered
+
+    # -- Generic Plugin package control plane ---------------------------
+
+    @staticmethod
+    def _plugin_row(row: Any) -> Optional[dict]:
+        if not row:
+            return None
+        value = dict(row)
+        for key in ("manifest", "files"):
+            raw = value.get(key)
+            if isinstance(raw, str):
+                try:
+                    value[key] = json.loads(raw or "{}")
+                except (TypeError, ValueError):
+                    value[key] = {}
+        value["signature_verified"] = bool(value.get("signature_verified"))
+        return value
+
+    def create_plugin_package(
+        self, package_id: str, tenant_id: str, plugin_id: str, version: str,
+        manifest: dict, files: dict[str, dict[str, Any]], package_digest: str,
+        signature_verified: bool, created_by: str, status: str = "validated",
+    ) -> dict:
+        """Persist one immutable, tenant-owned Plugin package snapshot."""
+        now = datetime.now().isoformat()
+        with self._lock:
+            conn = self._get_conn()
+            conn.execute(
+                """INSERT INTO plugin_packages
+                   (package_id, tenant_id, plugin_id, version, manifest, files,
+                    package_digest, signature_verified, status, created_by,
+                    created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    str(package_id), str(tenant_id), str(plugin_id), str(version),
+                    json.dumps(manifest, ensure_ascii=False, sort_keys=True),
+                    json.dumps(files, ensure_ascii=False, sort_keys=True),
+                    str(package_digest), int(bool(signature_verified)), str(status),
+                    str(created_by), now, now,
+                ),
+            )
+            conn.commit()
+            row = conn.execute(
+                "SELECT * FROM plugin_packages WHERE package_id = ?",
+                (str(package_id),),
+            ).fetchone()
+            return self._plugin_row(row) or {}
+
+    def get_plugin_package(
+        self, tenant_id: str, plugin_id: str, version: Optional[str] = None,
+    ) -> Optional[dict]:
+        with self._lock:
+            conn = self._get_conn()
+            if version:
+                row = conn.execute(
+                    "SELECT * FROM plugin_packages WHERE tenant_id = ? "
+                    "AND plugin_id = ? AND version = ?",
+                    (str(tenant_id), str(plugin_id), str(version)),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    """SELECT p.* FROM plugin_packages p
+                       JOIN plugin_releases r ON r.package_id = p.package_id
+                       WHERE r.tenant_id = ? AND r.plugin_id = ?""",
+                    (str(tenant_id), str(plugin_id)),
+                ).fetchone()
+            return self._plugin_row(row)
+
+    def list_plugin_packages(
+        self, tenant_id: str, plugin_id: Optional[str] = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        limit = max(1, min(int(limit), 200))
+        with self._lock:
+            conn = self._get_conn()
+            if plugin_id:
+                rows = conn.execute(
+                    "SELECT * FROM plugin_packages WHERE tenant_id = ? "
+                    "AND plugin_id = ? ORDER BY created_at DESC LIMIT ?",
+                    (str(tenant_id), str(plugin_id), limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM plugin_packages WHERE tenant_id = ? "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (str(tenant_id), limit),
+                ).fetchall()
+            return [self._plugin_row(row) for row in rows]
+
+    def activate_plugin_package(
+        self, tenant_id: str, plugin_id: str, version: str,
+    ) -> Optional[dict]:
+        now = datetime.now().isoformat()
+        with self._lock:
+            conn = self._get_conn()
+            row = conn.execute(
+                "SELECT * FROM plugin_packages WHERE tenant_id = ? "
+                "AND plugin_id = ? AND version = ?",
+                (str(tenant_id), str(plugin_id), str(version)),
+            ).fetchone()
+            if not row or str(row["status"]) == "uninstalled":
+                return None
+            conn.execute(
+                "UPDATE plugin_packages SET status = 'inactive', updated_at = ? "
+                "WHERE tenant_id = ? AND plugin_id = ? AND status = 'active'",
+                (now, str(tenant_id), str(plugin_id)),
+            )
+            conn.execute(
+                "UPDATE plugin_packages SET status = 'active', activated_at = ?, "
+                "updated_at = ?, last_error = NULL WHERE package_id = ?",
+                (now, now, str(row["package_id"])),
+            )
+            conn.execute(
+                """INSERT INTO plugin_releases
+                   (tenant_id, plugin_id, package_id, updated_at)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(tenant_id, plugin_id) DO UPDATE SET
+                   package_id = excluded.package_id, updated_at = excluded.updated_at""",
+                (str(tenant_id), str(plugin_id), str(row["package_id"]), now),
+            )
+            conn.commit()
+            active = conn.execute(
+                "SELECT * FROM plugin_packages WHERE package_id = ?",
+                (str(row["package_id"]),),
+            ).fetchone()
+            return self._plugin_row(active)
+
+    def deactivate_plugin_package(
+        self, tenant_id: str, plugin_id: str, version: str,
+    ) -> Optional[dict]:
+        now = datetime.now().isoformat()
+        with self._lock:
+            conn = self._get_conn()
+            row = conn.execute(
+                """SELECT p.* FROM plugin_packages p
+                   JOIN plugin_releases r ON r.package_id = p.package_id
+                   WHERE r.tenant_id = ? AND r.plugin_id = ?
+                     AND p.version = ?""",
+                (str(tenant_id), str(plugin_id), str(version)),
+            ).fetchone()
+            if not row:
+                return None
+            conn.execute(
+                "DELETE FROM plugin_releases WHERE tenant_id = ? AND plugin_id = ?",
+                (str(tenant_id), str(plugin_id)),
+            )
+            conn.execute(
+                "UPDATE plugin_packages SET status = 'inactive', updated_at = ? "
+                "WHERE package_id = ?",
+                (now, str(row["package_id"])),
+            )
+            conn.commit()
+            updated = conn.execute(
+                "SELECT * FROM plugin_packages WHERE package_id = ?",
+                (str(row["package_id"]),),
+            ).fetchone()
+            return self._plugin_row(updated)
+
+    def uninstall_plugin_package(
+        self, tenant_id: str, plugin_id: str, version: str,
+    ) -> Optional[dict]:
+        """Remove a package from the active release without deleting audit data."""
+        now = datetime.now().isoformat()
+        with self._lock:
+            conn = self._get_conn()
+            row = conn.execute(
+                "SELECT * FROM plugin_packages WHERE tenant_id = ? "
+                "AND plugin_id = ? AND version = ?",
+                (str(tenant_id), str(plugin_id), str(version)),
+            ).fetchone()
+            if not row or str(row["status"]) == "uninstalled":
+                return None
+            conn.execute(
+                "DELETE FROM plugin_releases WHERE tenant_id = ? AND plugin_id = ? "
+                "AND package_id = ?",
+                (str(tenant_id), str(plugin_id), str(row["package_id"])),
+            )
+            conn.execute(
+                "UPDATE plugin_packages SET status = 'uninstalled', updated_at = ? "
+                "WHERE package_id = ?",
+                (now, str(row["package_id"])),
+            )
+            conn.commit()
+            removed = conn.execute(
+                "SELECT * FROM plugin_packages WHERE package_id = ?",
+                (str(row["package_id"]),),
+            ).fetchone()
+            return self._plugin_row(removed)
     
     # -- Session --
     

@@ -133,6 +133,11 @@ def _satisfies(version: str, constraint: str) -> bool:
     raise ValueError(f"unsupported plugin dependency constraint: {constraint!r}")
 
 
+def plugin_version_satisfies(version: str, constraint: str) -> bool:
+    """Public dependency check shared by in-process and persisted plugins."""
+    return _satisfies(str(version), str(constraint))
+
+
 @dataclass(frozen=True)
 class PluginManifest:
     """Versioned, auditable declaration for one Harness extension.

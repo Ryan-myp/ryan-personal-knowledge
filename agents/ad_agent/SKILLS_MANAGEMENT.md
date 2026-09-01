@@ -68,6 +68,24 @@ context 在 Selector 中按租户选择，避免把一个租户的业务规则�
 接口要求显式的 `skills.read`、`skills.write`、`skills.evaluate` 权限；请求体
 里的 `user_id` 不参与身份判断，租户来自认证后的 `RequestPrincipal`。
 
+## Plugin 包控制面
+
+Plugin 包不是用户 Skill 的替代格式。需要管理可部署扩展的声明和版本时，可以使用
+`/plugins/packages` 保存 Manifest 与完整文件快照；它们按租户隔离、版本不可覆盖，并
+通过 `package_digest` 做篡改检测。
+
+- `GET /plugins/packages`：列出当前租户的 Plugin 包版本
+- `POST /plugins/packages`：校验并保存声明和文件，不执行文件
+- `GET /plugins/packages/{plugin_id}/versions/{version}`：读取完整包快照
+- `POST .../activate`：选择发布版本；用户包仍不会热加载到 Runtime
+- `POST .../deactivate`：移除当前发布指针但保留版本
+- `DELETE .../versions/{version}`：卸载控制面版本并保留审计记录
+
+可执行包必须由受信任部署宿主通过已审核的贡献对象接入 `PluginLoader`，不能通过用户
+API 设置 `trusted`/`executable` 绕过执行门禁。Plugin 包依赖必须在同一租户下有已激活且
+满足版本约束的版本；激活旧版本即为显式回滚。Skill 的自然语言流程仍按上面的标准
+Skill 目录和 `ManagedSkillManager` 管理，不要求 `plugin.manifest.json`。
+
 ## skill-up
 
 需要评测自然语言 Skill 时，在目录中提供：

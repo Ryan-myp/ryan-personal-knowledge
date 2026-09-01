@@ -30,6 +30,56 @@ class PluginPackageError(ValueError):
     """Raised when a Plugin package is malformed or fails integrity checks."""
 
 
+def _decode_payload_file(value: Any, path: str) -> bytes:
+    """Decode the JSON representation used by the package control plane.
+
+    Package files are data at this boundary.  The helper deliberately only
+    decodes UTF-8/base64 content; it never opens, imports, or executes a file.
+    """
+    import base64
+
+    if isinstance(value, bytes):
+        return value
+    if isinstance(value, str):
+        return value.encode("utf-8")
+    if not isinstance(value, Mapping):
+        raise PluginPackageError(f"Plugin file {path} must be text or an encoded object")
+    content = value.get("content")
+    encoding = str(value.get("encoding", "utf-8")).strip().lower()
+    if not isinstance(content, str):
+        raise PluginPackageError(f"Plugin file {path}.content must be a string")
+    if encoding in {"utf-8", "text"}:
+        return content.encode("utf-8")
+    if encoding in {"base64", "base64url"}:
+        try:
+            return base64.b64decode(content, validate=True)
+        except (TypeError, ValueError) as exc:
+            raise PluginPackageError(f"Plugin file {path} has invalid base64") from exc
+    raise PluginPackageError(f"unsupported encoding for Plugin file {path}: {encoding}")
+
+
+def normalize_plugin_files(raw_files: Mapping[str, Any]) -> dict[str, bytes]:
+    """Normalize package files supplied through a JSON management API."""
+    if not isinstance(raw_files, Mapping):
+        raise PluginPackageError("Plugin package files must be an object")
+    if not raw_files or len(raw_files) > _MAX_FILES:
+        raise PluginPackageError(f"Plugin package must contain 1..{_MAX_FILES} files")
+    normalized: dict[str, bytes] = {}
+    total = 0
+    for raw_path, raw_value in raw_files.items():
+        path = _safe_path(raw_path)
+        if path in normalized:
+            raise PluginPackageError(f"duplicate Plugin package file: {path}")
+        data = _decode_payload_file(raw_value, path)
+        if len(data) > _MAX_FILE_BYTES:
+            raise PluginPackageError(f"Plugin file {path} exceeds {_MAX_FILE_BYTES} bytes")
+        total += len(data)
+        if total > _MAX_PACKAGE_BYTES:
+            raise PluginPackageError(f"Plugin package exceeds {_MAX_PACKAGE_BYTES} bytes")
+        normalized[path] = data
+    return dict(sorted(normalized.items()))
+
+
 @dataclass(frozen=True)
 class PluginPackage:
     manifest: PluginManifest
@@ -131,6 +181,46 @@ def build_plugin_manifest(
             hashlib.sha256,
         ).hexdigest()
     return document
+
+
+def validate_plugin_payload(
+    manifest_payload: Mapping[str, Any],
+    raw_files: Mapping[str, Any],
+    *,
+    signing_key: Optional[str] = None,
+    require_signature: bool = False,
+) -> PluginPackage:
+    """Validate a package submitted as a declaration plus file snapshot.
+
+    This is the in-memory equivalent of :func:`validate_plugin_directory` for
+    the management API.  It intentionally accepts no executable object and
+    derives all hashes from the received bytes, so callers cannot claim an
+    arbitrary digest or use the API to bypass package integrity checks.
+    """
+    if not isinstance(manifest_payload, Mapping):
+        raise PluginPackageError("Plugin manifest must be an object")
+    try:
+        manifest = PluginManifest(**dict(manifest_payload))
+    except (TypeError, ValueError) as exc:
+        raise PluginPackageError(f"invalid Plugin declaration: {exc}") from exc
+    files = normalize_plugin_files(raw_files)
+    document = build_plugin_manifest(manifest, files, signing_key=signing_key)
+    # Validate the generated declaration through the same signature/hash
+    # rules as a directory package.  This keeps the two ingestion paths on one
+    # contract and avoids a second subtly different integrity implementation.
+    expected_files = document["files"]
+    actual_digest = package_digest(files)
+    signature = document.get("signature")
+    signature_verified = False
+    if require_signature and not signing_key:
+        raise PluginPackageError("signing key is required for Plugin package verification")
+    if signature is not None:
+        signature_verified = True
+    elif require_signature:
+        raise PluginPackageError("signed Plugin package is required")
+    if set(expected_files) != set(files):
+        raise PluginPackageError("Plugin manifest file list does not match package contents")
+    return PluginPackage(manifest, files, actual_digest, signature_verified)
 
 
 def validate_plugin_directory(

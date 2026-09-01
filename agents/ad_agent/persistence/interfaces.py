@@ -151,4 +151,31 @@ class PersistenceBackend(Protocol):
         self, stale_after_seconds: float = 900.0,
     ) -> int: ...
 
+    # -- Generic Plugin package control plane ---------------------------
+    # A package is an immutable declaration + file snapshot.  The release
+    # pointer is tenant-scoped; activating it through this contract does not
+    # imply importing or executing package code.
+    def create_plugin_package(
+        self, package_id: str, tenant_id: str, plugin_id: str, version: str,
+        manifest: dict[str, Any], files: dict[str, dict[str, Any]],
+        package_digest: str, signature_verified: bool, created_by: str,
+        status: str = "validated",
+    ) -> dict: ...
+    def get_plugin_package(
+        self, tenant_id: str, plugin_id: str, version: Optional[str] = None,
+    ) -> Optional[dict]: ...
+    def list_plugin_packages(
+        self, tenant_id: str, plugin_id: Optional[str] = None,
+        limit: int = 50,
+    ) -> list[dict]: ...
+    def activate_plugin_package(
+        self, tenant_id: str, plugin_id: str, version: str,
+    ) -> Optional[dict]: ...
+    def deactivate_plugin_package(
+        self, tenant_id: str, plugin_id: str, version: str,
+    ) -> Optional[dict]: ...
+    def uninstall_plugin_package(
+        self, tenant_id: str, plugin_id: str, version: str,
+    ) -> Optional[dict]: ...
+
     def close(self) -> None: ...

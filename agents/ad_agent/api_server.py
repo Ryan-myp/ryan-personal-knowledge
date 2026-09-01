@@ -28,6 +28,8 @@ from starlette.concurrency import run_in_threadpool
 # 导入 Agent 核心模块
 from agents.ad_agent import AgentRuntime
 from agents.ad_agent.core.auth import RequestPrincipal
+from agents.ad_agent.core.plugin_package import PluginPackageError
+from agents.ad_agent.plugin_management import PluginPackageManager
 from agents.ad_agent.skill_management import ManagedSkillManager, SkillPackageError
 
 # 配置路径
@@ -394,6 +396,17 @@ async def get_platforms(
     return {"platforms": runtime.registry.list_all_platforms()}
 
 
+class PluginPackageRequest(BaseModel):
+    """A declaration plus complete package snapshot.
+
+    This endpoint is a control-plane upload. It accepts arbitrary standard
+    package files as data, but does not import or execute them.
+    """
+
+    manifest: dict[str, object]
+    files: dict[str, object]
+
+
 @app.get("/plugins", tags=["info"])
 async def get_plugins(
     http_request: Request,
@@ -404,6 +417,124 @@ async def get_plugins(
     if not runtime:
         return {"plugins": []}
     return {"plugins": runtime.list_plugins(principal.tenant_id)}
+
+
+@app.get("/plugins/packages", tags=["plugins"])
+async def list_plugin_packages(
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    plugin_id: Optional[str] = Query(None, max_length=128),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """List immutable Plugin package versions for the authenticated tenant."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_plugin_permission(principal, "plugins.read")
+    manager = _plugin_manager_or_503()
+    return {
+        "tenant_id": principal.tenant_id,
+        "packages": manager.list_packages(principal.tenant_id, plugin_id, limit),
+    }
+
+
+@app.post("/plugins/packages", tags=["plugins"])
+async def create_plugin_package(
+    body: PluginPackageRequest,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Validate and store a user Plugin package without loading its code."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_plugin_permission(principal, "plugins.write")
+    manager = _plugin_manager_or_503()
+    try:
+        result = manager.create_package(
+            principal.tenant_id, body.manifest, body.files, principal.user_id
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except PluginPackageError as exc:
+        status = 409 if "already exists" in str(exc) else 422
+        raise HTTPException(status_code=status, detail=str(exc))
+    return JSONResponse(status_code=201, content=result)
+
+
+@app.get("/plugins/packages/{plugin_id}/versions/{version}", tags=["plugins"])
+async def get_plugin_package(
+    plugin_id: str,
+    version: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Return one package declaration and its complete file snapshot."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_plugin_permission(principal, "plugins.read")
+    result = _plugin_manager_or_503().get_package(
+        principal.tenant_id, plugin_id, version, include_files=True
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Plugin package not found")
+    return result
+
+
+@app.post("/plugins/packages/{plugin_id}/versions/{version}/activate", tags=["plugins"])
+async def activate_plugin_package(
+    plugin_id: str,
+    version: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Select a verified package version as the tenant release candidate.
+
+    User packages are never hot-loaded.  Executable activation remains a
+    deployment-host operation that must inject a reviewed contribution.
+    """
+    principal = _authorize_request(x_api_key, http_request)
+    _require_plugin_permission(principal, "plugins.write")
+    try:
+        result = _plugin_manager_or_503().activate(
+            principal.tenant_id, plugin_id, version
+        )
+    except PluginPackageError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    if not result:
+        raise HTTPException(status_code=404, detail="Plugin package not found")
+    return result
+
+
+@app.post("/plugins/packages/{plugin_id}/versions/{version}/deactivate", tags=["plugins"])
+async def deactivate_plugin_package(
+    plugin_id: str,
+    version: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Remove the tenant release pointer while retaining the audit snapshot."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_plugin_permission(principal, "plugins.write")
+    result = _plugin_manager_or_503().deactivate(
+        principal.tenant_id, plugin_id, version
+    )
+    if not result:
+        raise HTTPException(status_code=409, detail="Plugin package is not the active release")
+    return result
+
+
+@app.delete("/plugins/packages/{plugin_id}/versions/{version}", tags=["plugins"])
+async def uninstall_plugin_package(
+    plugin_id: str,
+    version: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Uninstall a package from the control plane without deleting its audit row."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_plugin_permission(principal, "plugins.write")
+    result = _plugin_manager_or_503().uninstall(
+        principal.tenant_id, plugin_id, version
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Plugin package not found")
+    return result
 
 
 @app.get("/tools", tags=["info"])
@@ -486,9 +617,20 @@ def _skill_manager_or_503() -> ManagedSkillManager:
     return ManagedSkillManager(runtime.persistence_store)
 
 
+def _plugin_manager_or_503() -> PluginPackageManager:
+    if not runtime or not getattr(runtime, "persistence_store", None):
+        raise HTTPException(status_code=503, detail="Plugin 管理存储未初始化")
+    return PluginPackageManager(runtime.persistence_store)
+
+
 def _require_skill_permission(principal: RequestPrincipal, permission: str) -> None:
     if permission not in principal.permissions and "admin" not in principal.permissions:
         raise HTTPException(status_code=403, detail=f"缺少 Skill 管理权限：{permission}")
+
+
+def _require_plugin_permission(principal: RequestPrincipal, permission: str) -> None:
+    if permission not in principal.permissions and "admin" not in principal.permissions:
+        raise HTTPException(status_code=403, detail=f"缺少 Plugin 管理权限：{permission}")
 
 
 def _activate_request_tenant_skills(principal: RequestPrincipal) -> None:

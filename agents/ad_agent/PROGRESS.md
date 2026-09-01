@@ -60,6 +60,10 @@
 - Tool 执行与安全边界已独立：`ToolExecutor` 负责超时、Provider Client 隔离和版本校验，
   `RuntimeSecurity` 负责红线字段、确认令牌、结果证据和不确定失败；账户白名单、
   会话上下文和 Capability 配置上下文也分别位于独立模块。
+- Plugin 包控制面已接入 `PersistenceBackend`：用户可按租户保存不可变的 Manifest +
+  文件快照，进行版本发布指针切换、依赖激活校验、显式回滚、停用和卸载；管理 API
+  只做数据校验和控制面状态变更，不导入或执行 `entrypoint`/`tools.py`，不会把用户包
+  变成 Provider Tool。可信可执行插件仍必须由受信任部署宿主绑定已审核贡献对象。
 
 ## 项目概述
 
