@@ -170,6 +170,11 @@ Provider live lookup 返回的动态选项会附带短时 `selection_token`。�
 
 当前已增加统一 `PluginRegistry`：所有内置 Capability、Runtime Feature、Response Renderer、受信任可执行 Skill 和租户托管 Skill 都登记为带 `PluginManifest` 的扩展，并提供依赖排序、版本约束、启停/卸载和安全快照；`GET /plugins` 只返回 Manifest 与生命周期元数据。这个阶段完成的是插件内核和兼容适配，不代表已经支持任意第三方代码热加载。
 
+插件包可以使用根目录 `plugin.manifest.json` 描述 `PluginManifest`、文件 SHA-256、整体
+`package_digest` 和可选 HMAC 签名。`PluginLoader.load_package()` 只验证声明和文件完整性，
+不会导入 `entrypoint` 或执行包文件；可执行插件必须由受信任部署宿主绑定已审核的源码
+贡献对象。管理端上传的标准 Skill 不要求该文件，仍然只是不可执行的 advisory context。
+
 可用 `python3 agents/ad_agent/scripts/audit_capabilities.py` 做无网络能力审计；它按
 Capability 包约定自动发现渠道，输出 action/resource 矩阵和创建链，不是 Runtime 的第二套
 渠道注册表。

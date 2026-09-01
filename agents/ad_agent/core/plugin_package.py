@@ -1,0 +1,227 @@
+"""Safe package-level manifest and integrity validation for Plugins.
+
+This module validates a package directory without importing or executing any
+file.  It is intentionally usable for both trusted source packages and
+managed Skill packages.  Whether a validated package may contribute executable
+objects remains a deployment/Loader decision.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import hashlib
+import hmac
+import json
+import re
+from pathlib import Path, PurePosixPath
+from typing import Any, Mapping, Optional
+
+from .plugins import PluginManifest
+
+
+PLUGIN_MANIFEST_FILENAME = "plugin.manifest.json"
+_MAX_FILES = 512
+_MAX_FILE_BYTES = 2 * 1024 * 1024
+_MAX_PACKAGE_BYTES = 16 * 1024 * 1024
+_SHA256_RE = r"^[0-9a-f]{64}$"
+
+
+class PluginPackageError(ValueError):
+    """Raised when a Plugin package is malformed or fails integrity checks."""
+
+
+@dataclass(frozen=True)
+class PluginPackage:
+    manifest: PluginManifest
+    files: Mapping[str, bytes]
+    package_digest: str
+    signature_verified: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "manifest": self.manifest.to_dict(),
+            "files": sorted(self.files),
+            "package_digest": self.package_digest,
+            "signature_verified": self.signature_verified,
+        }
+
+
+def _safe_path(raw: Any) -> str:
+    value = str(raw or "").replace("\\", "/")
+    path = PurePosixPath(value)
+    if (
+        not value
+        or path.is_absolute()
+        or "." in path.parts
+        or ".." in path.parts
+        or any(not part for part in path.parts)
+    ):
+        raise PluginPackageError(f"unsafe Plugin package path: {raw!r}")
+    return path.as_posix()
+
+
+def package_digest(files: Mapping[str, bytes]) -> str:
+    """Return a deterministic digest over relative names and file contents."""
+
+    digest = hashlib.sha256()
+    for raw_path in sorted(files):
+        path = _safe_path(raw_path)
+        data = files[raw_path]
+        if not isinstance(data, bytes):
+            raise PluginPackageError(f"Plugin package file {path} is not bytes")
+        encoded_path = path.encode("utf-8")
+        digest.update(len(encoded_path).to_bytes(4, "big"))
+        digest.update(encoded_path)
+        digest.update(len(data).to_bytes(8, "big"))
+        digest.update(data)
+    return digest.hexdigest()
+
+
+def _file_hashes(files: Mapping[str, bytes]) -> dict[str, str]:
+    return {
+        _safe_path(path): hashlib.sha256(data).hexdigest()
+        for path, data in files.items()
+    }
+
+
+def _signed_payload(
+    manifest: PluginManifest,
+    file_hashes: Mapping[str, str],
+    digest: str,
+) -> bytes:
+    return json.dumps(
+        {
+            "manifest": manifest.to_dict(),
+            "files": dict(sorted(file_hashes.items())),
+            "package_digest": digest,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
+def build_plugin_manifest(
+    manifest: PluginManifest,
+    files: Mapping[str, bytes],
+    *,
+    signing_key: Optional[str] = None,
+) -> dict[str, Any]:
+    """Build the JSON document written as ``plugin.manifest.json``.
+
+    The manifest file itself is excluded from ``files`` to avoid a recursive
+    digest.  The signature covers the normalized Plugin Manifest, every file
+    hash, and the package digest.
+    """
+
+    normalized_files = {_safe_path(path): data for path, data in files.items()}
+    file_hashes = _file_hashes(normalized_files)
+    digest = package_digest(normalized_files)
+    document: dict[str, Any] = {
+        "manifest": manifest.to_dict(),
+        "files": file_hashes,
+        "package_digest": digest,
+        "signature_algorithm": "hmac-sha256" if signing_key else None,
+        "signature": None,
+    }
+    if signing_key:
+        document["signature"] = hmac.new(
+            str(signing_key).encode("utf-8"),
+            _signed_payload(manifest, file_hashes, digest),
+            hashlib.sha256,
+        ).hexdigest()
+    return document
+
+
+def validate_plugin_directory(
+    directory: str | Path,
+    *,
+    signing_key: Optional[str] = None,
+    require_signature: bool = False,
+) -> PluginPackage:
+    """Validate a package and its ``plugin.manifest.json`` without execution."""
+
+    root = Path(directory).resolve()
+    if not root.is_dir():
+        raise PluginPackageError("Plugin package must be a directory")
+    manifest_path = root / PLUGIN_MANIFEST_FILENAME
+    if not manifest_path.is_file() or manifest_path.is_symlink():
+        raise PluginPackageError(f"{PLUGIN_MANIFEST_FILENAME} is required")
+    try:
+        document = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        raise PluginPackageError(f"invalid Plugin manifest: {exc}") from exc
+    if not isinstance(document, dict):
+        raise PluginPackageError("Plugin manifest must be an object")
+    raw_manifest = document.get("manifest")
+    if not isinstance(raw_manifest, Mapping):
+        raise PluginPackageError("Plugin manifest.manifest must be an object")
+    try:
+        manifest = PluginManifest(**dict(raw_manifest))
+    except (TypeError, ValueError) as exc:
+        raise PluginPackageError(f"invalid Plugin declaration: {exc}") from exc
+
+    files: dict[str, bytes] = {}
+    total = 0
+    for path in sorted(root.rglob("*")):
+        if path == manifest_path:
+            continue
+        relative = _safe_path(path.relative_to(root).as_posix())
+        if path.is_symlink():
+            raise PluginPackageError(f"Plugin package contains non-regular file: {relative}")
+        if path.is_dir():
+            continue
+        if not path.is_file():
+            raise PluginPackageError(f"Plugin package contains non-regular file: {relative}")
+        data = path.read_bytes()
+        if len(data) > _MAX_FILE_BYTES:
+            raise PluginPackageError(f"Plugin file {relative} exceeds {_MAX_FILE_BYTES} bytes")
+        total += len(data)
+        if total > _MAX_PACKAGE_BYTES:
+            raise PluginPackageError(
+                f"Plugin package exceeds {_MAX_PACKAGE_BYTES} bytes uncompressed"
+            )
+        files[relative] = data
+    if not files:
+        raise PluginPackageError("Plugin package must contain at least one file")
+    if len(files) > _MAX_FILES:
+        raise PluginPackageError(f"Plugin package contains more than {_MAX_FILES} files")
+
+    expected_files = document.get("files")
+    if not isinstance(expected_files, Mapping):
+        raise PluginPackageError("Plugin manifest.files must be an object")
+    normalized_expected = {_safe_path(path): str(value).lower() for path, value in expected_files.items()}
+    if set(normalized_expected) != set(files):
+        raise PluginPackageError("Plugin manifest file list does not match package contents")
+    actual_hashes = _file_hashes(files)
+    if any(
+        not isinstance(value, str) or not re.fullmatch(_SHA256_RE, value)
+        for value in normalized_expected.values()
+    ):
+        raise PluginPackageError("Plugin manifest contains an invalid file digest")
+    if normalized_expected != actual_hashes:
+        raise PluginPackageError("Plugin manifest file digest mismatch")
+    actual_digest = package_digest(files)
+    if str(document.get("package_digest") or "").lower() != actual_digest:
+        raise PluginPackageError("Plugin package digest mismatch")
+
+    signature = document.get("signature")
+    algorithm = document.get("signature_algorithm")
+    signature_verified = False
+    if require_signature and not signing_key:
+        raise PluginPackageError("signing key is required for Plugin package verification")
+    if signature is not None or algorithm is not None:
+        if algorithm != "hmac-sha256" or not isinstance(signature, str) or not signing_key:
+            raise PluginPackageError("Plugin package signature cannot be verified")
+        expected_signature = hmac.new(
+            str(signing_key).encode("utf-8"),
+            _signed_payload(manifest, actual_hashes, actual_digest),
+            hashlib.sha256,
+        ).hexdigest()
+        if not hmac.compare_digest(signature.lower(), expected_signature):
+            raise PluginPackageError("Plugin package signature mismatch")
+        signature_verified = True
+    elif require_signature:
+        raise PluginPackageError("signed Plugin package is required")
+
+    return PluginPackage(manifest, files, actual_digest, signature_verified)

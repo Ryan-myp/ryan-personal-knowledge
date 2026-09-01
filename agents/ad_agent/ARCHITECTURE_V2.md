@@ -18,6 +18,11 @@ PluginRegistry 是 Harness 的扩展控制面，不是第二个 Tool Router。�
 内置目录 discovery 已通过兼容适配接入该注册表，托管 Skill 只登记为不可执行的租户级
 上下文插件。
 
+可部署插件包使用根目录 `plugin.manifest.json` 作为声明入口。Loader 校验包内相对路径、
+大小/数量上限、逐文件 SHA-256、确定性 package digest 和可选 HMAC 签名，但不自动导入
+入口代码。只有受信任部署宿主可以把已审核源码贡献绑定到可执行 Manifest；托管 Skill
+包不需要该文件，也不会因为包含 `tools.py`、`scripts/` 或其他代码文件而获得执行权限。
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           Web UI (FastAPI + HTML)                          │

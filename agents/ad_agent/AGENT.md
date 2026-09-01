@@ -83,6 +83,13 @@ Renderer 或受信任 Skill；管理端上传的 Skill 只能登记为 tenant-sc
 按依赖拓扑激活，并阻止版本不满足、依赖环和仍有活动依赖者的卸载。插件生命周期只
 管理扩展状态；Tool 的执行仍必须经过 Runtime 的统一安全链路。
 
+可部署插件包的根目录可以包含 `plugin.manifest.json`。该文件中的 `manifest` 对应
+`PluginManifest`，`files` 保存除自身外所有文件的 SHA-256，`package_digest` 保存确定性
+整体摘要，必要时用 `signature_algorithm: hmac-sha256` 和部署密钥签名。`PluginLoader`
+只做解析和完整性校验，不根据 `entrypoint` 自动 import；只有受信任部署宿主在完成审核
+后，才可以绑定源码贡献对象。用户 Skill 上传仍走 ManagedSkillManager 的 advisory
+路径，不要求这个文件，也不会因为包里存在 `tools.py` 就执行它。
+
 ## 3. 扩展规则
 
 ### 3.0 Plugin SDK 约定

@@ -1,5 +1,7 @@
 """Tests for the common Agent Harness plugin contract."""
 
+import json
+
 import pytest
 
 from agents.ad_agent import AgentRuntime, create_meta_capability
@@ -10,6 +12,11 @@ from agents.ad_agent.core.plugins import (
     PluginRegistry,
     PluginState,
     manifest_for_managed_skill,
+)
+from agents.ad_agent.core.plugin_package import (
+    PluginPackageError,
+    build_plugin_manifest,
+    validate_plugin_directory,
 )
 
 
@@ -74,6 +81,14 @@ def test_untrusted_or_managed_executable_plugin_is_rejected():
             executable=True,
         )
 
+    with pytest.raises(ValueError, match="protected field"):
+        PluginManifest(
+            plugin_id="metadata-leak",
+            version="1.0.0",
+            kinds=("skill",),
+            metadata={"nested": {"client_secret": "never"}},
+        )
+
 
 def test_plugin_activation_is_dependency_ordered_and_lifecycle_managed():
     events = []
@@ -131,6 +146,63 @@ def test_manifest_loader_does_not_enable_untrusted_executable_code():
         "metadata": {"advisory_only": True},
     })
     assert record.state == PluginState.ACTIVE
+
+
+def test_plugin_package_manifest_validates_files_and_signature(tmp_path):
+    manifest = PluginManifest(
+        plugin_id="managed:reporting",
+        version="1.0.0",
+        kinds=("skill",),
+        source="managed",
+    )
+    files = {
+        "SKILL.md": b"---\nname: reporting\nversion: 1.0.0\n---\nUse reports.\n",
+        "references/metrics.md": b"CTR is clicks divided by impressions.\n",
+    }
+    document = build_plugin_manifest(manifest, files, signing_key="package-key")
+    for path, data in files.items():
+        target = tmp_path / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+    (tmp_path / "plugin.manifest.json").write_text(
+        json.dumps(document), encoding="utf-8"
+    )
+
+    package = validate_plugin_directory(
+        tmp_path,
+        signing_key="package-key",
+        require_signature=True,
+    )
+    assert package.manifest.plugin_id == "managed:reporting"
+    assert package.signature_verified is True
+
+    (tmp_path / "references/metrics.md").write_bytes(b"tampered")
+    with pytest.raises(PluginPackageError, match="digest mismatch"):
+        validate_plugin_directory(tmp_path, signing_key="package-key", require_signature=True)
+
+
+def test_plugin_package_loader_never_imports_package_files(tmp_path):
+    marker = tmp_path / "imported"
+    files = {
+        "tools.py": (
+            f"from pathlib import Path\nPath({str(marker)!r}).write_text('bad')\n"
+        ).encode(),
+    }
+    manifest = PluginManifest(
+        plugin_id="managed:code-shaped",
+        version="1.0.0",
+        kinds=("skill",),
+        source="managed",
+    )
+    (tmp_path / "tools.py").write_bytes(files["tools.py"])
+    (tmp_path / "plugin.manifest.json").write_text(
+        json.dumps(build_plugin_manifest(manifest, files)), encoding="utf-8"
+    )
+
+    registry = PluginRegistry()
+    record = PluginLoader(registry).load_package(str(tmp_path))
+    assert record.state == PluginState.ACTIVE
+    assert not marker.exists()
 
 
 def test_runtime_publishes_capability_and_builtin_extensions_to_one_registry():

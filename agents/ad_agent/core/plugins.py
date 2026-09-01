@@ -29,6 +29,12 @@ PLUGIN_API_VERSION = "1"
 _PLUGIN_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._:/-]{1,127}$")
 _VERSION_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
 _VERSION_PART_RE = re.compile(r"^(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:[-+].*)?$")
+_PROTECTED_METADATA_FIELDS = {
+    "access_token", "refresh_token", "developer_token", "client_secret",
+    "app_secret", "private_key", "api_key", "password", "authorization",
+    "bc_id", "partner_id", "perter_id", "mcc", "login_customer_id",
+    "manager_customer_id",
+}
 
 
 class PluginKind(str, Enum):
@@ -80,6 +86,20 @@ def _version_tuple(value: str) -> tuple[int, int, int]:
     if not match:
         raise ValueError(f"invalid plugin version: {value!r}")
     return tuple(int(part) for part in match.groups())
+
+
+def _validate_metadata(value: Any, path: str = "metadata") -> None:
+    """Reject credential-shaped manifest metadata before it is persisted."""
+
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            normalized = re.sub(r"[-.]", "_", str(key).strip().lower())
+            if normalized in _PROTECTED_METADATA_FIELDS:
+                raise ValueError(f"Plugin {path} contains protected field {key!r}")
+            _validate_metadata(child, f"{path}.{key}")
+    elif isinstance(value, (list, tuple)):
+        for index, child in enumerate(value):
+            _validate_metadata(child, f"{path}[{index}]")
 
 
 def _satisfies(version: str, constraint: str) -> bool:
@@ -180,7 +200,9 @@ class PluginManifest:
             _satisfies(self.version, constraint) if constraint in {"*", ""} else _validate_constraint(constraint)
         object.__setattr__(self, "dependencies", dependencies)
         object.__setattr__(self, "permissions", tuple(dict.fromkeys(str(item).strip() for item in self.permissions if str(item).strip())))
-        object.__setattr__(self, "metadata", dict(self.metadata or {}))
+        metadata = dict(self.metadata or {})
+        _validate_metadata(metadata)
+        object.__setattr__(self, "metadata", metadata)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -485,6 +507,42 @@ class PluginLoader:
         }
         return self.install(
             PluginManifest(**fields),
+            contribution=contribution,
+            lifecycle=lifecycle,
+            replace=replace,
+            activate=activate,
+        )
+
+    def load_package(
+        self,
+        directory: str,
+        *,
+        signing_key: Optional[str] = None,
+        require_signature: bool = False,
+        contribution: Any = None,
+        lifecycle: Optional[PluginLifecycle] = None,
+        replace: bool = False,
+        activate: bool = True,
+    ) -> PluginRecord:
+        """Validate a package directory, then install only its declaration.
+
+        This method never imports the package entrypoint. Executable code must
+        be bound separately by a trusted deployment host after review.
+        """
+
+        from .plugin_package import validate_plugin_directory
+
+        package = validate_plugin_directory(
+            directory,
+            signing_key=signing_key,
+            require_signature=require_signature,
+        )
+        if package.manifest.executable and contribution is None:
+            raise ValueError(
+                "an executable Plugin package requires a trusted host contribution"
+            )
+        return self.install(
+            package.manifest,
             contribution=contribution,
             lifecycle=lifecycle,
             replace=replace,

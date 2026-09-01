@@ -19,6 +19,7 @@ Skill 描述如何理解和编排业务；Tool 描述一个可校验、可授权
 - `runtime/` 不得为单个业务流程硬编码 Google、Meta、TikTok 或 DV360 的分支。
 - `core/` 只依赖统一的 Tool/Capability 契约；渠道特有字段、枚举和条件规则放在对应 Provider Tool schema。
 - 所有可部署扩展必须通过 `core.plugins.PluginManifest` 和 `PluginRegistry` 声明唯一 ID、版本、贡献类型、依赖、来源和可信级别；Capability、Feature、Renderer、受信任 Skill 扩展与托管 Skill 不得各自定义一套生命周期。
+- 可部署插件包使用根目录 `plugin.manifest.json`；Loader 必须校验文件清单、摘要和可选签名，禁止仅凭 `entrypoint` 自动导入。托管 Skill 不要求该文件，也不能借此获得代码执行权限。
 - `user_skills/` 和管理上传的 Skill 只能提供上下文；不能借助 `tools.py`、`scripts/` 或 `workflow.yaml` 绕过 registry。
 - LLM Parser 的意图目录由 Registry 中已注册 Tool 的 `intent_types`、description、action 和 resource 元数据生成；新增自定义意图必须随 Tool 声明，禁止在中心 Parser 增加意图分支。
 
