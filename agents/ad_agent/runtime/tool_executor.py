@@ -32,6 +32,15 @@ class ToolExecutor:
         request_clients: Optional[dict[str, Any]] = None,
     ) -> ToolResult:
         definition, handler = self.services.get_registered_tool(tool_name)
+        task_cancel_event = (
+            ctx.metadata.get("task_cancel_event") if ctx else None
+        )
+        if task_cancel_event is not None and task_cancel_event.is_set():
+            return ToolResult(
+                success=False,
+                data={"execution_status": "cancelled"},
+                error="异步任务已请求取消；未执行工具",
+            )
         protected_paths = self.services.security.validate_input_redline(input_data)
         if protected_paths:
             return ToolResult.error(
@@ -221,6 +230,12 @@ class ToolExecutor:
                 return ToolResult.error(f"Input validation failed: {errors}")
 
             def invoke() -> ToolResult:
+                if task_cancel_event is not None and task_cancel_event.is_set():
+                    return ToolResult(
+                        success=False,
+                        data={"execution_status": "cancelled"},
+                        error="异步任务已请求取消；未执行工具",
+                    )
                 if hasattr(invocation_handler, "execute"):
                     return invocation_handler.execute(ctx, input_data)
                 if callable(invocation_handler):

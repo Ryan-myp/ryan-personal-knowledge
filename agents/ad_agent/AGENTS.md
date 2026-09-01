@@ -58,6 +58,9 @@ Skill 描述如何理解和编排业务；Tool 描述一个可校验、可授权
 - 进程内 registry、Skill metadata、Provider client 应复用；请求中避免重复初始化和无界 Prompt 拼接。
 - 对批量操作设置明确上限、超时和并发策略；外部 Provider 限流必须在 client/capability 边界处理。
 - 观察性先沿用已有结构化审计/结果字段并预留 trace/metrics 接口，后续接入时不能改变 Tool 契约和安全 gate。
+- 长任务必须通过通用 `TaskExecutor` 排队；worker 只能重新进入 Runtime 的统一执行
+  链路，禁止直接读取任务 payload 后调用 Provider Handler。任务状态、lease、幂等和
+  取消必须经过 `PersistenceBackend`；暂停/取消只控制本地任务，不声称已回滚外部状态。
 
 ## 修改完成前检查
 

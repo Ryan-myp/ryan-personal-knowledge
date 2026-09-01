@@ -8,11 +8,11 @@ persistence/__init__.py - 持久化层
 """
 
 from .interfaces import PersistenceBackend
-from .models import CampaignRecord, ToolCallRecord
+from .models import CampaignRecord, TaskRecord, ToolCallRecord
 from .store import AdAgentStore
 from .session_manager import SessionManager
 
 __all__ = [
-    "AdAgentStore", "CampaignRecord", "ToolCallRecord", "PersistenceBackend",
+    "AdAgentStore", "CampaignRecord", "TaskRecord", "ToolCallRecord", "PersistenceBackend",
     "SessionManager",
 ]

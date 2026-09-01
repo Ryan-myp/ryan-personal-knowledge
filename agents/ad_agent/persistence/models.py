@@ -101,3 +101,68 @@ class ToolCallRecord:
             elif key == "input_data" and not isinstance(value, dict):
                 data[key] = {}
         return cls(**data)
+
+
+@dataclass
+class TaskRecord:
+    """Durable, backend-neutral record for one asynchronous Agent task.
+
+    ``payload`` and ``metadata`` are already sanitized by the trusted
+    submission boundary.  In particular, this record never carries provider
+    credentials or executable callbacks; a worker resolves ``kind`` only
+    against handlers registered by the embedding Runtime.
+    """
+
+    task_id: str
+    tenant_id: str
+    user_id: str
+    kind: str
+    status: str
+    payload: dict[str, Any] = field(default_factory=dict)
+    result: dict[str, Any] | None = None
+    error: str | None = None
+    idempotency_key: str | None = None
+    workflow_id: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    created_at: str = ""
+    updated_at: str = ""
+    started_at: str | None = None
+    finished_at: str | None = None
+    lease_owner: str | None = None
+    lease_expires_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        value = asdict(self)
+        # Return copies so an API caller cannot mutate an in-memory record.
+        value["payload"] = json.loads(json.dumps(self.payload or {}))
+        value["result"] = (
+            json.loads(json.dumps(self.result))
+            if self.result is not None else None
+        )
+        value["metadata"] = json.loads(json.dumps(self.metadata or {}))
+        return value
+
+    @classmethod
+    def from_row(cls, row: Any) -> "TaskRecord":
+        if isinstance(row, dict):
+            data = dict(row)
+        else:
+            columns = [
+                "task_id", "tenant_id", "user_id", "kind", "status", "payload",
+                "result", "error", "idempotency_key", "workflow_id", "metadata",
+                "created_at", "updated_at", "started_at", "finished_at",
+                "lease_owner", "lease_expires_at",
+            ]
+            data = dict(zip(columns, row))
+        for key, default in (
+            ("payload", {}), ("result", None), ("metadata", {}),
+        ):
+            value = data.get(key)
+            if isinstance(value, str):
+                try:
+                    data[key] = json.loads(value or "null")
+                except (TypeError, ValueError):
+                    data[key] = default
+            elif value is None and default == {}:
+                data[key] = {}
+        return cls(**data)

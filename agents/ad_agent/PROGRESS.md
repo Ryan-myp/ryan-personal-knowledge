@@ -13,6 +13,10 @@
 - 无 Provider Client 的读取默认 fail-closed；离线 fixture 仅在显式 `offline_mode=True` 下可用。
 - Workflow 有持久化 heartbeat/lease：活跃任务刷新 lease，恢复 worker 只能原子 claim
   过期或非终态任务；当前 SQLite 仍按单进程部署，多实例需换共享 backend。
+- 已增加通用异步 `TaskExecutor`：`agent.turn` 任务通过持久化队列、有限 worker/queue、
+  幂等提交、lease 心跳、暂停/恢复/取消和 stale recovery 执行；worker 只重新进入
+  `AgentRuntime.run`，不会直接调用 Provider Handler。HTTP 入口为 `/tasks`，默认仍是
+  dry-run；取消/暂停只改变本地调度状态，不表示外部平台回滚。
 - 知识库已统一为 Markdown-first LLM Wiki：`core.knowledge.MarkdownWikiKnowledgeProvider`
   是 Runtime 唯一入口，CLI Wiki 查询只是兼容 facade；文档使用 `SCHEMA.md` 的元数据，
   采用有界确定性词法检索，不接入向量库。

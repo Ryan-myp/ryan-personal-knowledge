@@ -33,6 +33,9 @@ Runtime 不承载业务流程实现。可选业务扩展通过通用接口自动
 - `ResponseRenderer`：由应用层提供结果展示。
 - `ExecutionPlan` / `WorkflowCoordinator`：分别负责不可变计划描述和持久化执行状态，
   不把业务流程实现塞回 Runtime。
+- `TaskExecutor`：负责长回合的持久化排队、受控并发、lease 心跳、取消和恢复；任务
+  worker 只重新进入 Agent Runtime，不直接调用 Provider Handler。暂停/取消是本地
+  调度语义，不代表外部广告平台已回滚。
 - `RuntimeServices` / `ToolExecutor` / `RuntimeSecurity`：分别提供 Feature 端口、
   Tool 执行和安全边界实现。
 - `PluginRegistry`：统一管理扩展的 Manifest、版本、依赖和生命周期；Capability、
@@ -221,6 +224,13 @@ dry-run 中明确标记未解析。未完成的官方资源写入 API 进入 Sur
 SQLite 当前按单进程使用；所有持久化依赖必须经过 `PersistenceBackend`，不得把 SQL
 泄露到 Skill、HTTP 或 Provider 层。未来换 MySQL/PostgreSQL 时，必须保持事务、幂等
 reservation、workflow lease 和租户隔离语义。
+
+长耗时 Agent 回合通过 `POST /tasks` 脱离 HTTP 请求线程，使用 `GET /tasks/{id}` 查询，
+并通过 pause/resume/delete 控制本地任务状态。任务输入是闭合的数据契约，默认只允许
+`agent.turn`；它不能携带凭证、confirmation token、回调、脚本或任意执行命令。任务
+状态与 Workflow 状态保持关联但不复制 Workflow 的资源状态机：Workflow 继续负责广告
+计划项审计和恢复，Task 只负责回合调度。SQLite 实现使用有限 worker/queue；跨进程部署
+时只需替换 `PersistenceBackend`，不改变 Runtime 的任务契约。
 
 观察性先保留 trace、metrics、告警和审计检索入口，不因为暂未接入而改变 Tool 契约
 或安全 gate。

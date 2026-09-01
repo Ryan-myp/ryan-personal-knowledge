@@ -6,7 +6,7 @@
 
 - **单 Agent + 多 Skills**：通过意图路由自动分发到对应平台的 Capability
 - **API 客户端**：封装真实 API 请求、重试、限流和错误分类；live 能力须逐平台验证
-- **持久化层**：通过 `PersistenceBackend` 抽象存储会话、工具调用、Campaign 状态和 Agent Memory；当前 SQLite 仅支持单进程
+- **持久化层**：通过 `PersistenceBackend` 抽象存储会话、工具调用、Campaign 状态、Agent Memory 和异步 Task；当前 SQLite 仅支持单进程
 - **结构化日志**：JSON 格式，便于 log aggregation
 - **模型驱动**：生产入口必须配置 LLM；离线 fixture 仅用于显式测试和评测，不是产品降级路径
 - **Planner 执行闭环**：每回合由 LLM 解析当前请求和受限 Skill/Tool 上下文，Runtime 依据注册元数据生成确定性计划并执行；业务策略、跨渠道流程和响应展示通过 Skill-owned Policy/Feature/Renderer 扩展；后续回合可读取最近脱敏 Tool 结果继续补参或决策
@@ -136,7 +136,16 @@ runtime.register_capability(capability)
 
 当前所有 Campaign/下级资源创建默认只生成 dry-run 计划；DV360 IO/Line Item 更新、Google PMax Asset Group 以及部分下级资源更新没有经过验证的 live adapter，live 会明确返回不支持。DV360 Campaign 创建尚未建设，API Surface 会将其标为 planned，Runtime 不会路由到不可执行的假 Tool。读取请求在没有 Provider Client 时默认 fail-closed，只有显式 `offline_mode=True` 才会返回离线 fixture。
 
-### 身份、权限和恢复边界
+### 异步任务与身份、权限和恢复边界
+
+长耗时 Agent 回合可通过 `POST /tasks` 脱离 HTTP 请求线程，使用 `GET /tasks/{id}` 查询，
+并通过 `/pause`、`/resume` 和 `DELETE` 控制本地调度。任务输入只允许已注册的
+`agent.turn` 数据契约；不接受凭证、confirmation token、回调或脚本。worker 会重新进入
+Runtime 的完整 LLM/Skill/Tool/权限/账户/dry-run/审计链路，不能直接调用 Provider Handler。
+任务状态的暂停/取消不代表外部广告平台状态已回滚；运行中的底层网络调用只能 cooperative
+cancel，超时或进程中断则进入 recovery_required，等待显式恢复/回查。
+
+身份、权限和恢复边界
 
 HTTP 请求不会信任 JSON/query 中的 `user_id`。服务端应通过已认证的 API Gateway
 配置 `AD_AGENT_API_KEY_PRINCIPALS`，把 API key 映射为 `user_id`、`tenant_id`、
@@ -215,7 +224,9 @@ Schema、权限、账户、dry-run、确认、幂等和审计门禁。后续仍�
 - SQLite 当前按单进程使用；未来 MySQL/PostgreSQL backend 需要实现同一接口的共享事务、幂等 reservation 和 lease 原子语义，并补多实例并发测试。
 - Provider schema 目前以代码契约为准，已接入本地版本化快照和代码契约 drift gate；尚未接入 Provider API schema 拉取和真实测试账户 E2E。动态组合约束仍需按渠道逐项补齐。
 - 部分 workflow 只标记 `compensation_required` 并转人工复核，尚无经过 Provider 验证的自动补偿执行器；这属于刻意的安全降级，不是已完成能力。
-- live 还需要凭证轮换/授权中心、合作方级配额策略，以及可中断的异步执行 worker。
+- live 还需要凭证轮换/授权中心、合作方级配额策略，以及 Provider 调用级别的真正可中断
+  能力；当前异步 worker 已支持任务级 cooperative cancellation，但无法强制终止一个
+  已进入底层网络调用的线程。
 - 当前四个 Client 已提供版本元数据和 adapter 接口，Capability 注册与能力审计会校验 Client、Capability、Tool 三者的 Provider contract；每个平台目前仍只声明一个实际支持版本。升级时仍需要在渠道 Client 增加真实新版本、请求/响应 adapter、Provider contract 回归和测试账户 E2E，不能只修改 Tool 上的版本字符串。
 
 因此下一阶段应优先做“Provider schema 对照 + 测试账户 E2E”，再逐个把工具加入 `live_approved_tools`，而不是一次性开放全部渠道写入。代码契约漂移可先通过以下 release gate：

@@ -319,6 +319,19 @@ class ChatRequest(BaseModel):
     platform_params: Optional[dict] = None
 
 
+class TaskSubmitRequest(BaseModel):
+    """Data-only asynchronous task envelope.
+
+    The initial registered kind is ``agent.turn``.  Its payload is the same
+    safe, provider-neutral input accepted by ``/chat``.  The API never
+    accepts callbacks, scripts, Provider clients or credentials.
+    """
+
+    kind: str = Field(default="agent.turn", min_length=1, max_length=64)
+    payload: dict = Field(default_factory=dict)
+    idempotency_key: Optional[str] = Field(default=None, max_length=200)
+
+
 class MemoryWriteRequest(BaseModel):
     """Explicit user memory; identity and tenant come from the principal."""
 
@@ -394,6 +407,143 @@ async def chat(
             content={"success": False, "error": _safe_exception_text(e)},
             status_code=500,
         )
+
+
+@app.post("/tasks", tags=["tasks"])
+async def submit_task(
+    body: TaskSubmitRequest,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    idempotency_header: Optional[str] = Header(None, alias="Idempotency-Key"),
+):
+    """Queue an Agent turn and return immediately with its durable status."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.read")
+    if not runtime or not callable(getattr(runtime, "submit_task", None)):
+        raise HTTPException(status_code=503, detail="异步任务执行器未初始化")
+    _activate_request_tenant_skills(principal)
+    idempotency_key = idempotency_header or body.idempotency_key
+    try:
+        task, created = await run_in_threadpool(
+            runtime.submit_task,
+            body.kind,
+            body.payload,
+            principal=principal,
+            idempotency_key=idempotency_key,
+        )
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except RuntimeError as exc:
+        message = str(exc)
+        status = 429 if "queue is full" in message else 503
+        raise HTTPException(status_code=status, detail=message)
+    return JSONResponse(
+        status_code=202,
+        content={"task": task, "created": created},
+    )
+
+
+@app.get("/tasks/{task_id}", tags=["tasks"])
+async def get_task(
+    task_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Read one task only within the authenticated tenant/user scope."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.read")
+    if not runtime or not callable(getattr(runtime, "get_task", None)):
+        raise HTTPException(status_code=503, detail="异步任务执行器未初始化")
+    task = await run_in_threadpool(
+        runtime.get_task, task_id,
+        user_id=principal.user_id, tenant_id=principal.tenant_id,
+    )
+    if not task:
+        raise HTTPException(status_code=404, detail="task not found")
+    return task
+
+
+@app.get("/tasks", tags=["tasks"])
+async def list_tasks(
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    status: Optional[str] = Query(None, max_length=200),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """List tasks only within the authenticated tenant/user scope."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.read")
+    if not runtime or not callable(getattr(runtime, "list_tasks", None)):
+        raise HTTPException(status_code=503, detail="异步任务执行器未初始化")
+    statuses = [item.strip() for item in status.split(",") if item.strip()] if status else None
+    tasks = await run_in_threadpool(
+        runtime.list_tasks,
+        user_id=principal.user_id, tenant_id=principal.tenant_id,
+        statuses=statuses, limit=limit,
+    )
+    return {"tasks": tasks}
+
+
+@app.post("/tasks/{task_id}/pause", tags=["tasks"])
+async def pause_task(
+    task_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Pause a queued task; a running provider operation is never force-paused."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.plan")
+    if not runtime or not callable(getattr(runtime, "pause_task", None)):
+        raise HTTPException(status_code=503, detail="异步任务执行器未初始化")
+    task = await run_in_threadpool(
+        runtime.pause_task, task_id,
+        user_id=principal.user_id, tenant_id=principal.tenant_id,
+    )
+    if not task:
+        raise HTTPException(status_code=404, detail="task not found")
+    if task.get("status") == "running":
+        raise HTTPException(status_code=409, detail="运行中的任务不能被强制暂停")
+    return task
+
+
+@app.post("/tasks/{task_id}/resume", tags=["tasks"])
+async def resume_task(
+    task_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Resume a paused task and schedule it through the bounded worker pool."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.plan")
+    if not runtime or not callable(getattr(runtime, "resume_task", None)):
+        raise HTTPException(status_code=503, detail="异步任务执行器未初始化")
+    task = await run_in_threadpool(
+        runtime.resume_task, task_id,
+        user_id=principal.user_id, tenant_id=principal.tenant_id,
+    )
+    if not task:
+        raise HTTPException(status_code=404, detail="task not found")
+    return task
+
+
+@app.delete("/tasks/{task_id}", tags=["tasks"])
+async def cancel_task(
+    task_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Cancel local task scheduling/execution; never roll back a provider."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.plan")
+    if not runtime or not callable(getattr(runtime, "cancel_task", None)):
+        raise HTTPException(status_code=503, detail="异步任务执行器未初始化")
+    task = await run_in_threadpool(
+        runtime.cancel_task, task_id,
+        user_id=principal.user_id, tenant_id=principal.tenant_id,
+    )
+    if not task:
+        raise HTTPException(status_code=404, detail="task not found")
+    return task
 
 
 @app.get("/knowledge/search", tags=["knowledge"])

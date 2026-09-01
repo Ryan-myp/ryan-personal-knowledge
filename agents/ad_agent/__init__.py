@@ -33,6 +33,10 @@ from .core.auth import RequestPrincipal
 from .core.plugins import PluginKind, PluginLoader, PluginManifest, PluginRegistry, PluginState
 from .core.plugin_package import PluginPackage, PluginPackageError, build_plugin_manifest
 from .plugin_management import PluginPackageManager
+from .runtime.task_executor import (
+    TaskCapacityError, TaskExecutionContext, TaskExecutor, TaskExecutorError,
+    UnknownTaskKind,
+)
 
 __version__ = "1.0.0"
 __all__ = [
@@ -66,4 +70,9 @@ __all__ = [
     "PluginPackageError",
     "build_plugin_manifest",
     "PluginPackageManager",
+    "TaskExecutor",
+    "TaskExecutionContext",
+    "TaskExecutorError",
+    "TaskCapacityError",
+    "UnknownTaskKind",
 ]

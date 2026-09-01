@@ -17,7 +17,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, List
 
-from .models import CampaignRecord, ToolCallRecord
+from .models import CampaignRecord, TaskRecord, ToolCallRecord
 from ..core.memory import MemoryRecord
 
 logger = logging.getLogger(__name__)
@@ -44,6 +44,17 @@ WORKFLOW_ITEM_TRANSITIONS = {
     "succeeded": {"succeeded"},
     "unsupported": {"unsupported"},
     "skipped": {"skipped"},
+}
+
+TASK_TRANSITIONS = {
+    "queued": {"queued", "running", "paused", "cancelled", "failed"},
+    "running": {"running", "succeeded", "failed", "cancelling", "cancelled", "recovery_required"},
+    "paused": {"paused", "queued", "cancelling", "cancelled"},
+    "cancelling": {"cancelling", "cancelled", "failed", "recovery_required"},
+    "recovery_required": {"recovery_required", "queued", "cancelled"},
+    "succeeded": {"succeeded"},
+    "failed": {"failed"},
+    "cancelled": {"cancelled"},
 }
 
 
@@ -236,6 +247,29 @@ class AdAgentStore:
         updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS tasks (
+        task_id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        result TEXT,
+        error TEXT,
+        idempotency_key TEXT,
+        workflow_id TEXT,
+        metadata TEXT DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        started_at TEXT,
+        finished_at TEXT,
+        lease_owner TEXT,
+        lease_expires_at TEXT,
+        UNIQUE (tenant_id, user_id, idempotency_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_tasks_scope ON tasks(tenant_id, user_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status, updated_at ASC);
+
     CREATE TABLE IF NOT EXISTS approvals (
         plan_fingerprint TEXT PRIMARY KEY,
         token_hash TEXT NOT NULL,
@@ -310,6 +344,272 @@ class AdAgentStore:
             if self._conn:
                 self._conn.close()
                 self._conn = None
+
+    # -- Generic asynchronous Agent tasks -------------------------------
+
+    @staticmethod
+    def _task_from_row(row: Any) -> Optional[TaskRecord]:
+        return TaskRecord.from_row(dict(row)) if row else None
+
+    def create_task(self, record: TaskRecord) -> TaskRecord:
+        """Create one durable task; idempotency is enforced by the database."""
+        with self._lock:
+            conn = self._get_conn()
+            conn.execute(
+                """INSERT INTO tasks
+                   (task_id, tenant_id, user_id, kind, status, payload, result,
+                    error, idempotency_key, workflow_id, metadata, created_at,
+                    updated_at, started_at, finished_at, lease_owner, lease_expires_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    record.task_id, record.tenant_id, record.user_id, record.kind,
+                    record.status, json.dumps(record.payload or {}),
+                    json.dumps(record.result) if record.result is not None else None,
+                    record.error, record.idempotency_key, record.workflow_id,
+                    json.dumps(record.metadata or {}), record.created_at,
+                    record.updated_at, record.started_at, record.finished_at,
+                    record.lease_owner, record.lease_expires_at,
+                ),
+            )
+            conn.commit()
+        return record
+
+    def get_task(
+        self, task_id: str, tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> Optional[TaskRecord]:
+        query = "SELECT * FROM tasks WHERE task_id = ?"
+        params: list[Any] = [str(task_id)]
+        if tenant_id is not None:
+            query += " AND tenant_id = ?"
+            params.append(str(tenant_id))
+        if user_id is not None:
+            query += " AND user_id = ?"
+            params.append(str(user_id))
+        with self._lock:
+            row = self._get_conn().execute(query, params).fetchone()
+            return self._task_from_row(row)
+
+    def find_task_by_idempotency(
+        self, tenant_id: str, user_id: str, idempotency_key: str,
+    ) -> Optional[TaskRecord]:
+        with self._lock:
+            row = self._get_conn().execute(
+                """SELECT * FROM tasks
+                   WHERE tenant_id = ? AND user_id = ? AND idempotency_key = ?""",
+                (str(tenant_id), str(user_id), str(idempotency_key)),
+            ).fetchone()
+            return self._task_from_row(row)
+
+    def list_tasks(
+        self, tenant_id: Optional[str] = None, user_id: Optional[str] = None,
+        statuses: Optional[list[str]] = None, limit: int = 50,
+    ) -> list[TaskRecord]:
+        query = "SELECT * FROM tasks WHERE 1 = 1"
+        params: list[Any] = []
+        if tenant_id is not None:
+            query += " AND tenant_id = ?"
+            params.append(str(tenant_id))
+        if user_id is not None:
+            query += " AND user_id = ?"
+            params.append(str(user_id))
+        if statuses:
+            values = [str(status) for status in statuses]
+            query += " AND status IN (" + ",".join("?" for _ in values) + ")"
+            params.extend(values)
+        query += " ORDER BY updated_at DESC LIMIT ?"
+        params.append(max(1, min(int(limit), 200)))
+        with self._lock:
+            rows = self._get_conn().execute(query, params).fetchall()
+            return [self._task_from_row(row) for row in rows]
+
+    def claim_task(
+        self, task_id: str, lease_owner: str, lease_seconds: float = 300.0,
+    ) -> Optional[TaskRecord]:
+        if not lease_owner or float(lease_seconds) <= 0:
+            return None
+        now = datetime.now()
+        now_iso = now.isoformat()
+        expires_iso = (now + timedelta(seconds=float(lease_seconds))).isoformat()
+        with self._lock:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                """UPDATE tasks SET status = 'running', updated_at = ?,
+                   started_at = COALESCE(started_at, ?), lease_owner = ?,
+                   lease_expires_at = ?
+                   WHERE task_id = ? AND status = 'queued'""",
+                (now_iso, now_iso, str(lease_owner), expires_iso, str(task_id)),
+            )
+            conn.commit()
+            if cursor.rowcount == 0:
+                return None
+            return self._task_from_row(
+                conn.execute("SELECT * FROM tasks WHERE task_id = ?", (str(task_id),)).fetchone()
+            )
+
+    def heartbeat_task(
+        self, task_id: str, lease_owner: str, lease_seconds: float = 300.0,
+    ) -> bool:
+        if not lease_owner or float(lease_seconds) <= 0:
+            return False
+        now = datetime.now()
+        now_iso = now.isoformat()
+        expires_iso = (now + timedelta(seconds=float(lease_seconds))).isoformat()
+        with self._lock:
+            cursor = self._get_conn().execute(
+                """UPDATE tasks SET updated_at = ?, lease_expires_at = ?
+                   WHERE task_id = ? AND lease_owner = ?
+                     AND status IN ('running', 'cancelling')""",
+                (now_iso, expires_iso, str(task_id), str(lease_owner)),
+            )
+            self._get_conn().commit()
+            return cursor.rowcount > 0
+
+    def update_task(
+        self, task_id: str, status: str, *, result: Optional[dict] = None,
+        error: Optional[str] = None, metadata: Optional[dict] = None,
+        workflow_id: Optional[str] = None,
+        expected_statuses: Optional[list[str]] = None,
+    ) -> bool:
+        status = str(status)
+        with self._lock:
+            conn = self._get_conn()
+            row = conn.execute(
+                "SELECT status, metadata FROM tasks WHERE task_id = ?", (str(task_id),)
+            ).fetchone()
+            if not row:
+                return False
+            current = str(row["status"])
+            if expected_statuses and current not in {str(item) for item in expected_statuses}:
+                return False
+            if status not in TASK_TRANSITIONS.get(current, set()):
+                logger.warning(
+                    "Rejected invalid task transition %s -> %s for %s",
+                    current, status, task_id,
+                )
+                return False
+            merged_metadata = {}
+            try:
+                merged_metadata = json.loads(row["metadata"] or "{}") or {}
+            except (TypeError, ValueError):
+                pass
+            merged_metadata.update(metadata or {})
+            now = datetime.now().isoformat()
+            terminal = status in {"succeeded", "failed", "cancelled", "recovery_required"}
+            assignments = [
+                "status = ?", "error = ?", "metadata = ?", "updated_at = ?",
+            ]
+            values: list[Any] = [status, error, json.dumps(merged_metadata), now]
+            if result is not None:
+                assignments.append("result = ?")
+                values.append(json.dumps(result))
+            if workflow_id is not None:
+                assignments.append("workflow_id = ?")
+                values.append(str(workflow_id))
+            if terminal:
+                assignments.extend(["finished_at = COALESCE(finished_at, ?)", "lease_owner = NULL", "lease_expires_at = NULL"])
+                values.append(now)
+            values.append(str(task_id))
+            cursor = conn.execute(
+                "UPDATE tasks SET " + ", ".join(assignments) + " WHERE task_id = ?",
+                values,
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def pause_task(self, task_id: str) -> Optional[TaskRecord]:
+        with self._lock:
+            conn = self._get_conn()
+            now = datetime.now().isoformat()
+            cursor = conn.execute(
+                "UPDATE tasks SET status = 'paused', updated_at = ? "
+                "WHERE task_id = ? AND status = 'queued'",
+                (now, str(task_id)),
+            )
+            conn.commit()
+            return self._task_from_row(
+                conn.execute("SELECT * FROM tasks WHERE task_id = ?", (str(task_id),)).fetchone()
+            ) if cursor.rowcount else self.get_task(str(task_id))
+
+    def resume_task(self, task_id: str) -> Optional[TaskRecord]:
+        with self._lock:
+            conn = self._get_conn()
+            now = datetime.now().isoformat()
+            cursor = conn.execute(
+                "UPDATE tasks SET status = 'queued', updated_at = ?, error = NULL "
+                "WHERE task_id = ? AND status = 'paused'",
+                (now, str(task_id)),
+            )
+            conn.commit()
+            return self._task_from_row(
+                conn.execute("SELECT * FROM tasks WHERE task_id = ?", (str(task_id),)).fetchone()
+            ) if cursor.rowcount else self.get_task(str(task_id))
+
+    def cancel_task(self, task_id: str) -> Optional[TaskRecord]:
+        with self._lock:
+            conn = self._get_conn()
+            row = conn.execute(
+                "SELECT status, metadata FROM tasks WHERE task_id = ?", (str(task_id),)
+            ).fetchone()
+            if not row:
+                return None
+            current = str(row["status"])
+            if current in {"queued", "paused"}:
+                status = "cancelled"
+            elif current in {"running", "cancelling"}:
+                status = "cancelling"
+            else:
+                return self._task_from_row(
+                    conn.execute("SELECT * FROM tasks WHERE task_id = ?", (str(task_id),)).fetchone()
+                )
+            try:
+                metadata = json.loads(row["metadata"] or "{}") or {}
+            except (TypeError, ValueError):
+                metadata = {}
+            metadata["cancellation_requested"] = True
+            now = datetime.now().isoformat()
+            finished = ", finished_at = ?" if status == "cancelled" else ""
+            values: list[Any] = [status, json.dumps(metadata), now]
+            if finished:
+                values.append(now)
+            values.append(str(task_id))
+            conn.execute(
+                "UPDATE tasks SET status = ?, metadata = ?, updated_at = ?" + finished
+                + " WHERE task_id = ?", values,
+            )
+            conn.commit()
+            return self._task_from_row(
+                conn.execute("SELECT * FROM tasks WHERE task_id = ?", (str(task_id),)).fetchone()
+            )
+
+    def recover_stale_tasks(self, stale_after_seconds: float = 300.0) -> int:
+        if float(stale_after_seconds) <= 0:
+            return 0
+        cutoff = (datetime.now() - timedelta(seconds=float(stale_after_seconds))).isoformat()
+        now = datetime.now().isoformat()
+        with self._lock:
+            conn = self._get_conn()
+            rows = conn.execute(
+                """SELECT task_id, metadata FROM tasks
+                   WHERE status IN ('running', 'cancelling')
+                     AND (updated_at <= ? OR lease_expires_at <= ?)""",
+                (cutoff, now),
+            ).fetchall()
+            for row in rows:
+                try:
+                    metadata = json.loads(row["metadata"] or "{}") or {}
+                except (TypeError, ValueError):
+                    metadata = {}
+                metadata["recovery_reason"] = "stale_task"
+                conn.execute(
+                    """UPDATE tasks SET status = 'recovery_required', updated_at = ?,
+                       finished_at = COALESCE(finished_at, ?), lease_owner = NULL,
+                       lease_expires_at = NULL, metadata = ?
+                       WHERE task_id = ? AND status IN ('running', 'cancelling')""",
+                    (now, now, json.dumps(metadata), row["task_id"]),
+                )
+            conn.commit()
+            return len(rows)
 
     # -- Write idempotency -------------------------------------------------
 

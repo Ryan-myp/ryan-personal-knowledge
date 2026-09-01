@@ -72,6 +72,7 @@ from .session_context import SessionContext
 from .capability_context import CapabilityContextWrapper
 from .security import RuntimeSecurity
 from .tool_executor import ToolExecutor
+from .task_executor import TaskExecutionContext, TaskExecutor
 from ..persistence.session_manager import SessionManager
 from ..persistence.interfaces import PersistenceBackend
 from ..persistence.models import ToolCallRecord
@@ -143,6 +144,10 @@ class AgentRuntime:
         workflow_stale_after_seconds: float = 300.0,
         selection_token_secret: Optional[str] = None,
         parameter_selection_ttl_seconds: int = 600,
+        max_task_workers: int = 4,
+        max_task_queue: int = 32,
+        task_timeout_seconds: float = 900.0,
+        task_lease_seconds: float = 300.0,
     ):
         base_registry = registry or SimpleToolRegistry()
         self.registry = (
@@ -356,6 +361,21 @@ class AgentRuntime:
         self.workflow = WorkflowCoordinator(self.services)
         self.security = RuntimeSecurity(self)
         self.tool_executor = ToolExecutor(self.services)
+        self.task_executor: Optional[TaskExecutor] = None
+        if persistence_store:
+            self.task_executor = TaskExecutor(
+                persistence_store,
+                max_workers=max_task_workers,
+                max_queue=max_task_queue,
+                task_timeout_seconds=task_timeout_seconds,
+                lease_seconds=task_lease_seconds,
+                redact=self._redact_for_persistence,
+            )
+            # This is the only built-in task kind: it re-enters the normal
+            # Agent Runtime turn boundary, so workers cannot bypass parser,
+            # policy, account, approval, idempotency or audit gates.
+            self.task_executor.register_handler("agent.turn", self._execute_agent_task)
+            self.task_executor.start()
         if read_only_mode:
             logger.info("🔒 只读模式已启用，仅允许查询操作")
 
@@ -2289,6 +2309,162 @@ class AgentRuntime:
             return answer, "llm"
         return fallback, "renderer"
 
+    # -- Durable asynchronous Agent tasks -------------------------------
+
+    def submit_task(
+        self,
+        kind: str,
+        payload: dict[str, Any],
+        *,
+        principal: Optional[RequestPrincipal] = None,
+        user_id: str = "anonymous",
+        tenant_id: str = "default",
+        idempotency_key: Optional[str] = None,
+        workflow_id: Optional[str] = None,
+    ) -> tuple[dict[str, Any], bool]:
+        """Submit a task that will re-enter the normal Runtime turn loop.
+
+        The public task contract is intentionally data-only.  ``agent.turn``
+        is validated here before persistence; credentials, confirmation
+        tokens, arbitrary callbacks and identity fields are never accepted.
+        New task kinds must be registered by trusted application code, not by
+        an HTTP request or an uploaded Skill package.
+        """
+        if self.task_executor is None:
+            raise RuntimeError("durable task executor is not configured")
+        effective_user = principal.user_id if principal is not None else str(user_id)
+        effective_tenant = principal.tenant_id if principal is not None else str(tenant_id or "default")
+        kind = str(kind or "").strip()
+        if kind != "agent.turn":
+            raise ValueError(f"unsupported task kind: {kind}")
+        if not isinstance(payload, dict):
+            raise ValueError("task payload must be an object")
+        protected_paths = self.security.validate_input_redline(payload)
+        if protected_paths:
+            raise ValueError(
+                "任务包含禁止持久化的凭证/账户配置字段：" + ", ".join(protected_paths)
+            )
+        user_input = payload.get("user_input")
+        if not isinstance(user_input, str) or not user_input.strip():
+            raise ValueError("agent.turn task requires user_input")
+        if payload.get("confirmed") or payload.get("confirmation_payload"):
+            raise ValueError(
+                "异步任务不持久化 live confirmation token；请使用同步确认接口"
+            )
+        allowed_fields = {
+            "user_input", "session_id", "account_id", "platform_params",
+            "confirmed", "confirmation_payload",
+        }
+        unknown = sorted(set(payload) - allowed_fields)
+        if unknown:
+            raise ValueError("任务参数不支持以下字段：" + ", ".join(unknown))
+        platform_params = payload.get("platform_params")
+        if platform_params is not None and not isinstance(platform_params, dict):
+            raise ValueError("platform_params must be an object")
+        safe_payload = self._redact_for_persistence({
+            "user_input": user_input,
+            "session_id": payload.get("session_id"),
+            "account_id": payload.get("account_id"),
+            "platform_params": platform_params,
+            "confirmed": False,
+            "confirmation_payload": None,
+        })
+        try:
+            json.dumps(safe_payload, ensure_ascii=False)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("任务参数必须是 JSON 可序列化对象") from exc
+        principal_claims = (
+            principal.to_safe_dict()
+            if principal is not None
+            else RequestPrincipal(
+                user_id=effective_user, tenant_id=effective_tenant,
+                permissions=self._granted_permissions,
+            ).to_safe_dict()
+        )
+        record, created = self.task_executor.submit(
+            kind,
+            safe_payload,
+            tenant_id=effective_tenant,
+            user_id=effective_user,
+            idempotency_key=idempotency_key,
+            workflow_id=workflow_id,
+            metadata={"principal": principal_claims, "submission_source": "runtime"},
+        )
+        return record.to_dict(), created
+
+    def _execute_agent_task(self, context: TaskExecutionContext) -> dict[str, Any]:
+        """Re-enter Runtime; this handler never resolves or calls a Provider."""
+        if context.is_cancelled():
+            return {"success": False, "cancelled": True}
+        claims = context.metadata.get("principal")
+        principal = RequestPrincipal.from_claims(claims) if isinstance(claims, dict) else None
+        payload = context.payload
+        return self.run(
+            user_input=str(payload.get("user_input") or ""),
+            session_id=payload.get("session_id"),
+            account_id=payload.get("account_id"),
+            platform_params=payload.get("platform_params"),
+            confirmed=False,
+            confirmation_payload=None,
+            principal=principal,
+            user_id=context.user_id,
+            tenant_id=context.tenant_id,
+            cancellation_event=context.cancel_event,
+        )
+
+    def get_task(
+        self, task_id: str, *, user_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+    ) -> Optional[dict[str, Any]]:
+        if self.task_executor is None:
+            return None
+        record = self.task_executor.get(task_id, tenant_id=tenant_id, user_id=user_id)
+        return record.to_dict() if record else None
+
+    def list_tasks(
+        self, *, user_id: str, tenant_id: str,
+        statuses: Optional[list[str]] = None, limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        if self.task_executor is None:
+            return []
+        return [
+            record.to_dict()
+            for record in self.task_executor.list(
+                tenant_id=tenant_id, user_id=user_id,
+                statuses=statuses, limit=limit,
+            )
+        ]
+
+    def pause_task(
+        self, task_id: str, *, user_id: str, tenant_id: str,
+    ) -> Optional[dict[str, Any]]:
+        if self.task_executor is None:
+            return None
+        if self.task_executor.get(task_id, tenant_id=tenant_id, user_id=user_id) is None:
+            return None
+        record = self.task_executor.pause(task_id)
+        return record.to_dict() if record else None
+
+    def resume_task(
+        self, task_id: str, *, user_id: str, tenant_id: str,
+    ) -> Optional[dict[str, Any]]:
+        if self.task_executor is None:
+            return None
+        if self.task_executor.get(task_id, tenant_id=tenant_id, user_id=user_id) is None:
+            return None
+        record = self.task_executor.resume(task_id)
+        return record.to_dict() if record else None
+
+    def cancel_task(
+        self, task_id: str, *, user_id: str, tenant_id: str,
+    ) -> Optional[dict[str, Any]]:
+        if self.task_executor is None:
+            return None
+        if self.task_executor.get(task_id, tenant_id=tenant_id, user_id=user_id) is None:
+            return None
+        record = self.task_executor.cancel(task_id)
+        return record.to_dict() if record else None
+
     def _build_skill_context_from_metadata(
         self, session: Optional["SessionContext"] = None
     ) -> dict[str, Any]:
@@ -2313,6 +2489,7 @@ class AgentRuntime:
         confirmation_payload: Optional[dict] = None,
         principal: Optional[RequestPrincipal] = None,
         tenant_id: Optional[str] = None,
+        cancellation_event: Optional[threading.Event] = None,
     ) -> dict:
         """Execute one turn while serializing turns for the same session.
 
@@ -2346,6 +2523,7 @@ class AgentRuntime:
                     if principal is not None
                     else (tenant_id or "default")
                 ),
+                cancellation_event=cancellation_event,
             )
 
     def _run_unlocked(
@@ -2361,6 +2539,7 @@ class AgentRuntime:
         granted_permissions: Optional[set[str] | frozenset[str]] = None,
         account_scope: Optional[Mapping[str, Any]] = None,
         tenant_id: str = "default",
+        cancellation_event: Optional[threading.Event] = None,
     ) -> dict:
         """
         执行一次完整的对话回合。
@@ -2408,6 +2587,10 @@ class AgentRuntime:
         turn_deadline = time.monotonic() + self.turn_timeout_seconds
         session.ctx.metadata["turn_deadline"] = turn_deadline
         session.ctx.metadata["tenant_id"] = str(tenant_id or "default")
+        if cancellation_event is not None:
+            session.ctx.metadata["task_cancel_event"] = cancellation_event
+        else:
+            session.ctx.metadata.pop("task_cancel_event", None)
         effective_permissions = (
             self._granted_permissions
             if granted_permissions is None
@@ -2746,6 +2929,8 @@ class AgentRuntime:
 
         tool_call_count = 0
         for platform, tools in execution_groups:
+            if cancellation_event is not None and cancellation_event.is_set():
+                break
             # 转换平台名称
             actual_platform = self._canonical_platform(platform)
 
@@ -2803,6 +2988,10 @@ class AgentRuntime:
             chain_blocked = False
             chain_blocker = None
             for tool_def in tools:
+                if cancellation_event is not None and cancellation_event.is_set():
+                    chain_blocked = True
+                    chain_blocker = tool_def.name
+                    break
                 self.workflow.heartbeat(workflow_id)
                 if workflow_id and tool_def.is_write_tool:
                     workflow_sequence += 1
