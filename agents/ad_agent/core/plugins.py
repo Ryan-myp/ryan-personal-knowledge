@@ -22,7 +22,7 @@ from enum import Enum
 import hashlib
 import re
 import threading
-from typing import Any, Mapping, Optional, Protocol
+from typing import Any, Iterable, Mapping, Optional, Protocol
 
 
 PLUGIN_API_VERSION = "1"
@@ -459,9 +459,23 @@ class PluginLoader:
     use the non-executable path.
     """
 
-    def __init__(self, registry: PluginRegistry, *, allow_trusted_source: bool = False):
+    def __init__(
+        self,
+        registry: PluginRegistry,
+        *,
+        allow_trusted_source: bool = False,
+        approved_permissions: Optional[Iterable[str]] = None,
+    ):
         self.registry = registry
         self.allow_trusted_source = bool(allow_trusted_source)
+        # Permission approval is deployment-owned.  An absent approval set is
+        # fail-closed for manifests that request permissions; it does not
+        # affect the existing permission checks on individual Tools.
+        self.approved_permissions = frozenset(
+            str(permission).strip()
+            for permission in (approved_permissions or ())
+            if str(permission).strip()
+        )
 
     def install(
         self,
@@ -477,6 +491,12 @@ class PluginLoader:
         if manifest.executable and not self.allow_trusted_source:
             raise PermissionError(
                 "executable plugins require a trusted deployment loader"
+            )
+        requested_permissions = set(manifest.permissions)
+        if requested_permissions - self.approved_permissions:
+            missing = ", ".join(sorted(requested_permissions - self.approved_permissions))
+            raise PermissionError(
+                f"Plugin permissions require deployment approval: {missing}"
             )
         record = self.registry.register(
             manifest,

@@ -11,7 +11,13 @@ already-reviewed executable contribution to :class:`PluginLoader`.
 from __future__ import annotations
 
 import base64
+import io
+import os
+import stat
+import tempfile
 import uuid
+import zipfile
+from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, Optional
 
 from .core.plugin_package import (
@@ -19,6 +25,7 @@ from .core.plugin_package import (
     PluginPackageError,
     normalize_plugin_files,
     package_digest,
+    validate_plugin_directory,
     validate_plugin_payload,
 )
 from .core.plugins import PluginManifest, plugin_version_satisfies
@@ -77,6 +84,90 @@ class PluginPackageManager:
         raw_files: Mapping[str, Any], created_by: str,
     ) -> dict[str, Any]:
         package = self._validate_user_package(manifest_payload, raw_files)
+        return self._store_package(tenant_id, package, created_by)
+
+    def create_archive(
+        self, tenant_id: str, archive: bytes, created_by: str,
+    ) -> dict[str, Any]:
+        """Validate and store a standard ``plugin.manifest.json`` ZIP.
+
+        Extraction is confined to a temporary directory after validating every
+        ZIP entry.  The directory validator then applies the canonical digest
+        and optional signature rules.  No archive file is imported or run.
+        """
+        if not isinstance(archive, (bytes, bytearray)):
+            raise PluginPackageError("Plugin archive must be bytes")
+        if len(archive) > 16 * 1024 * 1024:
+            raise PluginPackageError("Plugin archive exceeds 16777216 bytes")
+        try:
+            zfile = zipfile.ZipFile(io.BytesIO(bytes(archive)))
+        except (TypeError, zipfile.BadZipFile) as exc:
+            raise PluginPackageError("request body must be a valid Plugin ZIP archive") from exc
+
+        entries: dict[str, bytes] = {}
+        total_size = 0
+        with zfile:
+            infos = [info for info in zfile.infolist() if not info.is_dir()]
+            if not infos or len(infos) > 512:
+                raise PluginPackageError("Plugin archive must contain 1..512 files")
+            for info in infos:
+                raw_path = str(info.filename or "").replace("\\", "/")
+                path = PurePosixPath(raw_path)
+                if (
+                    not raw_path or path.is_absolute() or ".." in path.parts
+                    or "." in path.parts or any(not part for part in path.parts)
+                ):
+                    raise PluginPackageError(f"unsafe Plugin archive path: {info.filename!r}")
+                normalized = path.as_posix()
+                mode = (info.external_attr >> 16) & 0o170000
+                if stat.S_ISLNK(mode):
+                    raise PluginPackageError(
+                        f"symbolic links are not allowed in Plugin archives: {normalized}"
+                    )
+                if info.file_size > 2 * 1024 * 1024:
+                    raise PluginPackageError(
+                        f"Plugin file {normalized} exceeds 2097152 bytes"
+                    )
+                total_size += int(info.file_size)
+                if total_size > 16 * 1024 * 1024:
+                    raise PluginPackageError("Plugin archive exceeds 16777216 bytes uncompressed")
+                if normalized in entries:
+                    raise PluginPackageError(f"duplicate Plugin archive file: {normalized}")
+                entries[normalized] = zfile.read(info)
+
+        if "plugin.manifest.json" not in entries:
+            prefixes = {path.split("/", 1)[0] for path in entries if "/" in path}
+            if len(prefixes) == 1:
+                prefix = next(iter(prefixes)) + "/"
+                candidate = {
+                    path[len(prefix):]: data
+                    for path, data in entries.items()
+                    if path.startswith(prefix) and path[len(prefix):]
+                }
+                if "plugin.manifest.json" in candidate:
+                    entries = candidate
+        if "plugin.manifest.json" not in entries:
+            raise PluginPackageError("Plugin archive requires plugin.manifest.json")
+
+        signing_key = os.environ.get("AD_AGENT_PLUGIN_PACKAGE_SIGNING_KEY")
+        require_signature = os.environ.get("AD_AGENT_REQUIRE_PLUGIN_SIGNATURE") == "1"
+        with tempfile.TemporaryDirectory(prefix="ad-agent-plugin-validate-") as root:
+            directory = Path(root)
+            for relative, data in entries.items():
+                target = directory / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(data)
+            package = validate_plugin_directory(
+                directory,
+                signing_key=signing_key,
+                require_signature=require_signature,
+            )
+        self._validate_user_package(package.manifest.to_dict(), _encode_files(package.files))
+        return self._store_package(tenant_id, package, created_by)
+
+    def _store_package(
+        self, tenant_id: str, package: PluginPackage, created_by: str,
+    ) -> dict[str, Any]:
         manifest = package.manifest
         try:
             record = self.store.create_plugin_package(
@@ -114,6 +205,70 @@ class PluginPackageManager:
     ) -> list[dict[str, Any]]:
         records = self.store.list_plugin_packages(tenant_id, plugin_id, limit)
         return [self._public(record) for record in records]
+
+    def health(
+        self, tenant_id: str, plugin_id: str, version: str,
+    ) -> Optional[dict[str, Any]]:
+        """Return integrity/dependency health without executing package code."""
+        record = self.store.get_plugin_package(tenant_id, plugin_id, version)
+        if not record:
+            return None
+        try:
+            manifest = self._verify_record(record)
+        except PluginPackageError as exc:
+            return {
+                "package_id": record.get("package_id"),
+                "tenant_id": str(tenant_id),
+                "plugin_id": str(plugin_id),
+                "version": str(version),
+                "status": "unhealthy",
+                "integrity": "failed",
+                "dependencies": [],
+                "error": str(exc),
+                "execution_probe": "not_run",
+            }
+
+        dependencies = []
+        dependency_errors = []
+        for dependency, constraint in manifest.dependencies.items():
+            dependency_record = self.store.get_plugin_package(tenant_id, dependency)
+            compatible = False
+            actual_version = None
+            if dependency_record:
+                actual_version = dependency_record.get("version")
+                try:
+                    compatible = (
+                        dependency_record.get("status") == "active"
+                        and plugin_version_satisfies(str(actual_version), constraint)
+                    )
+                except ValueError:
+                    compatible = False
+            item = {
+                "plugin_id": dependency,
+                "constraint": constraint,
+                "version": actual_version,
+                "active": bool(dependency_record and dependency_record.get("status") == "active"),
+                "compatible": compatible,
+            }
+            dependencies.append(item)
+            if not compatible:
+                dependency_errors.append(dependency)
+        healthy = not dependency_errors and record.get("status") != "uninstalled"
+        return {
+            "package_id": record.get("package_id"),
+            "tenant_id": str(tenant_id),
+            "plugin_id": manifest.plugin_id,
+            "version": manifest.version,
+            "status": "healthy" if healthy else "unhealthy",
+            "integrity": "verified",
+            "dependencies": dependencies,
+            "error": (
+                f"inactive or incompatible dependencies: {', '.join(dependency_errors)}"
+                if dependency_errors else None
+            ),
+            "execution_probe": "not_run",
+            "runtime_loaded": False,
+        }
 
     @staticmethod
     def _verify_record(record: Mapping[str, Any]) -> PluginManifest:

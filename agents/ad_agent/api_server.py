@@ -458,7 +458,27 @@ async def create_plugin_package(
     return JSONResponse(status_code=201, content=result)
 
 
-@app.get("/plugins/packages/{plugin_id}/versions/{version}", tags=["plugins"])
+@app.post("/plugins/packages/archive", tags=["plugins"])
+async def upload_plugin_package_archive(
+    request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Import a standard ZIP containing ``plugin.manifest.json`` as data."""
+    principal = _authorize_request(x_api_key, request)
+    _require_plugin_permission(principal, "plugins.write")
+    try:
+        result = _plugin_manager_or_503().create_archive(
+            principal.tenant_id, await request.body(), principal.user_id
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except PluginPackageError as exc:
+        status = 409 if "already exists" in str(exc) else 422
+        raise HTTPException(status_code=status, detail=str(exc))
+    return JSONResponse(status_code=201, content=result)
+
+
+@app.get("/plugins/packages/{plugin_id:path}/versions/{version}", tags=["plugins"])
 async def get_plugin_package(
     plugin_id: str,
     version: str,
@@ -476,7 +496,25 @@ async def get_plugin_package(
     return result
 
 
-@app.post("/plugins/packages/{plugin_id}/versions/{version}/activate", tags=["plugins"])
+@app.get("/plugins/packages/{plugin_id:path}/versions/{version}/health", tags=["plugins"])
+async def health_plugin_package(
+    plugin_id: str,
+    version: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Check package integrity and dependency readiness without execution."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_plugin_permission(principal, "plugins.read")
+    result = _plugin_manager_or_503().health(
+        principal.tenant_id, plugin_id, version
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Plugin package not found")
+    return result
+
+
+@app.post("/plugins/packages/{plugin_id:path}/versions/{version}/activate", tags=["plugins"])
 async def activate_plugin_package(
     plugin_id: str,
     version: str,
@@ -501,7 +539,7 @@ async def activate_plugin_package(
     return result
 
 
-@app.post("/plugins/packages/{plugin_id}/versions/{version}/deactivate", tags=["plugins"])
+@app.post("/plugins/packages/{plugin_id:path}/versions/{version}/deactivate", tags=["plugins"])
 async def deactivate_plugin_package(
     plugin_id: str,
     version: str,
@@ -519,7 +557,7 @@ async def deactivate_plugin_package(
     return result
 
 
-@app.delete("/plugins/packages/{plugin_id}/versions/{version}", tags=["plugins"])
+@app.delete("/plugins/packages/{plugin_id:path}/versions/{version}", tags=["plugins"])
 async def uninstall_plugin_package(
     plugin_id: str,
     version: str,

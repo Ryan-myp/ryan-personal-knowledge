@@ -72,11 +72,14 @@ context 在 Selector 中按租户选择，避免把一个租户的业务规则�
 
 Plugin 包不是用户 Skill 的替代格式。需要管理可部署扩展的声明和版本时，可以使用
 `/plugins/packages` 保存 Manifest 与完整文件快照；它们按租户隔离、版本不可覆盖，并
-通过 `package_digest` 做篡改检测。
+通过 `package_digest` 做篡改检测。标准 ZIP 导入也会先逐项校验路径、符号链接、大小和
+Manifest 摘要；健康检查只读存储和依赖状态，不会执行包内代码。
 
 - `GET /plugins/packages`：列出当前租户的 Plugin 包版本
 - `POST /plugins/packages`：校验并保存声明和文件，不执行文件
+- `POST /plugins/packages/archive`：导入包含 `plugin.manifest.json` 的标准 ZIP
 - `GET /plugins/packages/{plugin_id}/versions/{version}`：读取完整包快照
+- `GET .../health`：检查摘要和依赖就绪状态，不执行包代码
 - `POST .../activate`：选择发布版本；用户包仍不会热加载到 Runtime
 - `POST .../deactivate`：移除当前发布指针但保留版本
 - `DELETE .../versions/{version}`：卸载控制面版本并保留审计记录

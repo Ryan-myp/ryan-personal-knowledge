@@ -175,13 +175,16 @@ Provider live lookup 返回的动态选项会附带短时 `selection_token`。�
 不会导入 `entrypoint` 或执行包文件；可执行插件必须由受信任部署宿主绑定已审核的源码
 贡献对象。管理端上传的标准 Skill 不要求该文件，仍然只是不可执行的 advisory context。
 
+管理端还支持 `POST /plugins/packages/archive` 导入标准 ZIP，并提供版本级 `health` 检查；
+健康检查只验证摘要、声明一致性和租户内依赖，不进行代码探针。
+
 可用 `python3 agents/ad_agent/scripts/audit_capabilities.py` 做无网络能力审计；它按
 Capability 包约定自动发现渠道，输出 action/resource 矩阵和创建链，不是 Runtime 的第二套
 渠道注册表。
 
 插件生命周期可通过 Runtime SDK 或 `GET /plugins` 检查；注册表不会绕过 ToolRegistry 的
-Schema、权限、账户、dry-run、确认、幂等和审计门禁。后续仍需补 Plugin Package Manifest
-文件归档上传、沙箱/独立进程、热升级回滚和插件健康检查。插件控制面已提供
+Schema、权限、账户、dry-run、确认、幂等和审计门禁。后续仍需补可信插件的
+沙箱/独立进程、热升级回滚和生产级运行时探针。插件控制面已提供
 `/plugins/packages`：按租户保存不可变的 Manifest + 完整文件快照，支持版本发布指针、
 回滚（重新激活旧版本）、停用和卸载。这个 API 只做校验和控制面状态变更，不会导入
 `entrypoint`、执行 `tools.py`，也不会向 Runtime 注册 Provider Tool；可执行插件仍需
@@ -191,7 +194,8 @@ Schema、权限、账户、dry-run、确认、幂等和审计门禁。后续仍�
 
 - 观察性只保留接入入口，尚未接入 trace、指标、告警和审计检索。
 - Plugin 包控制面已支持租户隔离、版本不可变、摘要校验、依赖激活门禁和发布回滚；
-  仍待补标准 ZIP 上传、签名来源策略的部署配置、沙箱/独立进程和可信插件健康检查。
+  已支持标准 ZIP 导入和不执行代码的完整性/依赖健康检查；仍待补可信插件的沙箱/独立
+  进程、签名来源策略的部署配置和生产级运行时探针。
 - SQLite 当前按单进程使用；未来 MySQL/PostgreSQL backend 需要实现同一接口的共享事务、幂等 reservation 和 lease 原子语义，并补多实例并发测试。
 - Provider schema 目前以代码契约为准，已接入本地版本化快照和代码契约 drift gate；尚未接入 Provider API schema 拉取和真实测试账户 E2E。动态组合约束仍需按渠道逐项补齐。
 - 部分 workflow 只标记 `compensation_required` 并转人工复核，尚无经过 Provider 验证的自动补偿执行器；这属于刻意的安全降级，不是已完成能力。

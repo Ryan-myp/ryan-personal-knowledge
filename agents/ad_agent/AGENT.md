@@ -90,6 +90,9 @@ Renderer 或受信任 Skill；管理端上传的 Skill 只能登记为 tenant-sc
 后，才可以绑定源码贡献对象。用户 Skill 上传仍走 ManagedSkillManager 的 advisory
 路径，不要求这个文件，也不会因为包里存在 `tools.py` 就执行它。
 
+可信插件 Manifest 声明的 `permissions` 还必须由部署宿主通过 `PluginLoader` 显式批准；
+未提供批准集合时按 fail-closed 处理。用户/管理 API 不能伪造这项部署批准。
+
 ## 3. 扩展规则
 
 ### 3.0 Plugin SDK 约定

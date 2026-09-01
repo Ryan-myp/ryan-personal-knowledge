@@ -148,6 +148,22 @@ def test_manifest_loader_does_not_enable_untrusted_executable_code():
     assert record.state == PluginState.ACTIVE
 
 
+def test_trusted_plugin_permissions_are_deployment_approved():
+    manifest = _trusted_manifest("permissioned-plugin")
+    manifest = PluginManifest(
+        **{**manifest.to_dict(), "permissions": ["ads.read", "plugins.health"]}
+    )
+    with pytest.raises(PermissionError, match="deployment approval"):
+        PluginLoader(PluginRegistry(), allow_trusted_source=True).install(manifest)
+
+    record = PluginLoader(
+        PluginRegistry(),
+        allow_trusted_source=True,
+        approved_permissions={"ads.read", "plugins.health"},
+    ).install(manifest)
+    assert record.state == PluginState.ACTIVE
+
+
 def test_plugin_package_manifest_validates_files_and_signature(tmp_path):
     manifest = PluginManifest(
         plugin_id="managed:reporting",

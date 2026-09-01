@@ -1,6 +1,8 @@
 """Plugin package control-plane tests; no provider or package code is executed."""
 
+import io
 import json
+import zipfile
 
 import pytest
 from fastapi.testclient import TestClient
@@ -8,7 +10,11 @@ from fastapi.testclient import TestClient
 from agents.ad_agent import AgentRuntime
 from agents.ad_agent.persistence.store import AdAgentStore
 from agents.ad_agent.plugin_management import PluginPackageManager
-from agents.ad_agent.core.plugin_package import PluginPackageError
+from agents.ad_agent.core.plugin_package import (
+    PluginPackageError,
+    build_plugin_manifest,
+)
+from agents.ad_agent.core.plugins import PluginManifest
 from agents.ad_agent import api_server
 
 
@@ -85,10 +91,40 @@ def test_plugin_package_release_requires_active_compatible_dependencies():
     dependent_manifest["dependencies"] = {"external:feature-base": "^1.0"}
     manager.create_package("tenant-a", dependent_manifest, _files(), "editor")
 
+    health = manager.health("tenant-a", "external:feature-child", "1.0.0")
+    assert health["status"] == "unhealthy"
+    assert health["dependencies"][0]["compatible"] is False
     with pytest.raises(PluginPackageError, match="not active"):
         manager.activate("tenant-a", "external:feature-child", "1.0.0")
     manager.activate("tenant-a", "external:feature-base", "1.0.0")
     assert manager.activate("tenant-a", "external:feature-child", "1.0.0")["status"] == "active"
+    store.close()
+
+
+def test_standard_plugin_zip_is_validated_without_execution(tmp_path):
+    marker = tmp_path / "archive-imported"
+    manifest = PluginManifest(
+        plugin_id="external:archive",
+        version="1.0.0",
+        kinds=("feature",),
+        source="external",
+    )
+    files = _files(str(marker))
+    document = build_plugin_manifest(
+        manifest, {path: value.encode("utf-8") for path, value in files.items()}
+    )
+    archive_buffer = io.BytesIO()
+    with zipfile.ZipFile(archive_buffer, "w") as archive:
+        archive.writestr("plugin.manifest.json", json.dumps(document))
+        for path, value in files.items():
+            archive.writestr(path, value)
+
+    store = AdAgentStore(":memory:")
+    result = PluginPackageManager(store).create_archive(
+        "tenant-a", archive_buffer.getvalue(), "editor"
+    )
+    assert result["plugin_id"] == "external:archive"
+    assert not marker.exists()
     store.close()
 
 
