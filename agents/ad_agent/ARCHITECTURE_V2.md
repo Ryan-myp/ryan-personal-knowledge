@@ -21,7 +21,8 @@ PluginRegistry 是 Harness 的扩展控制面，不是第二个 Tool Router。�
 插件包管理控制面与进程内注册表分离：`PluginPackageManager` 通过
 `PersistenceBackend` 保存租户级的不可变包快照和当前 release pointer，支持版本选择、
 回滚、停用和卸载。用户上传或管理 API 激活只改变部署候选状态，不会自动 import 包内
-文件；只有受信任部署宿主在完成审核后，才能把可执行包绑定为 Runtime 的贡献对象。
+文件；只有受信任部署宿主在完成审核后，才能把可执行包绑定为 Runtime 的贡献对象，
+并可用 `PluginLoader.upgrade()` 在进程内升级失败时恢复旧贡献对象。
 这样既保留“一切皆插件”的统一生命周期模型，也避免把用户数据包误当成可执行扩展。
 
 可部署插件包使用根目录 `plugin.manifest.json` 作为声明入口。Loader 校验包内相对路径、

@@ -101,7 +101,8 @@ Renderer 或受信任 Skill；管理端上传的 Skill 只能登记为 tenant-sc
 不要在 Runtime 里新增按插件名分支。当前目录约定 discovery 仍保留作为兼容 Loader，
 但所有已发现对象都会发布到 `runtime.plugin_registry`，可通过 `GET /plugins` 查看安全
 的生命周期元数据。后续 Plugin SDK 将把目录 discovery 逐步收敛为 Manifest/entrypoint
-解析，并补依赖锁定、包签名、沙箱和热升级。
+解析，并补沙箱和跨进程热升级；当前 `PluginLoader.upgrade()` 已覆盖受信任对象的进程内
+升级失败恢复，用户上传包仍不可执行。
 
 ### 3.1 新增业务流程
 

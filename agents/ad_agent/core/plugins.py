@@ -20,9 +20,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 import hashlib
+import logging
 import re
 import threading
 from typing import Any, Iterable, Mapping, Optional, Protocol
+
+
+logger = logging.getLogger(__name__)
 
 
 PLUGIN_API_VERSION = "1"
@@ -360,6 +364,56 @@ class PluginRegistry:
             self._records.pop(key, None)
             return True
 
+    def upgrade(
+        self,
+        manifest: PluginManifest,
+        contribution: Any = None,
+        lifecycle: Optional[PluginLifecycle] = None,
+    ) -> PluginRecord:
+        """Atomically replace a trusted contribution with rollback on failure.
+
+        The new object is activated before the old record is discarded. If
+        loading or activation fails, the previous record is restored and
+        reactivated when necessary. This is an in-process lifecycle contract;
+        package import and sandbox policy remain deployment-host concerns.
+        """
+        if not isinstance(manifest, PluginManifest):
+            raise TypeError("plugin manifest must be a PluginManifest")
+        if not manifest.executable or not manifest.trusted:
+            raise ValueError("only trusted executable plugins can be upgraded")
+        if lifecycle is None:
+            raise ValueError("trusted plugin upgrades require a lifecycle object")
+        with self._lock:
+            key = manifest.plugin_id
+            previous = self._records.get(key)
+            previous_state = previous.state if previous else None
+            if previous is not None:
+                self._ensure_no_active_dependents(key)
+                if previous.state == PluginState.ACTIVE:
+                    self._deactivate_locked(previous)
+            replacement = PluginRecord(manifest, contribution, lifecycle)
+            self._records[key] = replacement
+            try:
+                return self._activate_locked(key, set())
+            except Exception:
+                # Remove any partially loaded replacement before restoring the
+                # old opaque contribution. A failed cleanup is recorded but
+                # never hides the original upgrade failure.
+                try:
+                    self._deactivate_locked(replacement)
+                    unload = getattr(lifecycle, "unload", None)
+                    if callable(unload):
+                        unload(self)
+                except Exception:
+                    logger.exception("failed to clean up rejected plugin upgrade %s", key)
+                if previous is not None:
+                    self._records[key] = previous
+                    if previous_state == PluginState.ACTIVE:
+                        self._activate_locked(key, set())
+                else:
+                    self._records.pop(key, None)
+                raise
+
     def snapshot(self) -> list[dict[str, Any]]:
         return [record.to_dict() for record in self.list()]
 
@@ -488,6 +542,30 @@ class PluginLoader:
     ) -> PluginRecord:
         if not isinstance(manifest, PluginManifest):
             raise TypeError("plugin manifest must be a PluginManifest")
+        self._validate_deployment(manifest)
+        record = self.registry.register(
+            manifest,
+            contribution=contribution,
+            lifecycle=lifecycle,
+            replace=replace,
+        )
+        if activate:
+            return self.registry.activate(manifest.plugin_id)
+        return record
+
+    def upgrade(
+        self,
+        manifest: PluginManifest,
+        contribution: Any,
+        lifecycle: PluginLifecycle,
+    ) -> PluginRecord:
+        """Upgrade a reviewed trusted contribution with rollback semantics."""
+        if not isinstance(manifest, PluginManifest):
+            raise TypeError("plugin manifest must be a PluginManifest")
+        self._validate_deployment(manifest)
+        return self.registry.upgrade(manifest, contribution, lifecycle)
+
+    def _validate_deployment(self, manifest: PluginManifest) -> None:
         if manifest.executable and not self.allow_trusted_source:
             raise PermissionError(
                 "executable plugins require a trusted deployment loader"
@@ -498,15 +576,6 @@ class PluginLoader:
             raise PermissionError(
                 f"Plugin permissions require deployment approval: {missing}"
             )
-        record = self.registry.register(
-            manifest,
-            contribution=contribution,
-            lifecycle=lifecycle,
-            replace=replace,
-        )
-        if activate:
-            return self.registry.activate(manifest.plugin_id)
-        return record
 
     def load_manifest(
         self,

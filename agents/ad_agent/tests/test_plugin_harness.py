@@ -37,6 +37,12 @@ class _Lifecycle:
         self.events.append("unload")
 
 
+class _FailingLifecycle(_Lifecycle):
+    def activate(self, _registry):
+        self.events.append("activate-failed")
+        raise RuntimeError("upgrade rejected")
+
+
 def _trusted_manifest(plugin_id, *, dependencies=None):
     return PluginManifest(
         plugin_id=plugin_id,
@@ -162,6 +168,34 @@ def test_trusted_plugin_permissions_are_deployment_approved():
         approved_permissions={"ads.read", "plugins.health"},
     ).install(manifest)
     assert record.state == PluginState.ACTIVE
+
+
+def test_trusted_plugin_upgrade_restores_previous_version_on_failure():
+    events = []
+    registry = PluginRegistry()
+    loader = PluginLoader(registry, allow_trusted_source=True)
+    old_manifest = _trusted_manifest("upgradeable-plugin")
+    loader.install(old_manifest, contribution="old", lifecycle=_Lifecycle(events))
+    new_manifest = PluginManifest(
+        plugin_id="upgradeable-plugin",
+        version="2.0.0",
+        kinds=(PluginKind.FEATURE.value,),
+        source="trusted",
+        trusted=True,
+        executable=True,
+    )
+
+    with pytest.raises(RuntimeError, match="upgrade rejected"):
+        loader.upgrade(
+            new_manifest,
+            contribution="new",
+            lifecycle=_FailingLifecycle(events),
+        )
+
+    restored = registry.get("upgradeable-plugin")
+    assert restored.manifest.version == old_manifest.version
+    assert restored.contribution == "old"
+    assert restored.state == PluginState.ACTIVE
 
 
 def test_plugin_package_manifest_validates_files_and_signature(tmp_path):

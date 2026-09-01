@@ -184,7 +184,8 @@ Capability 包约定自动发现渠道，输出 action/resource 矩阵和创建�
 
 插件生命周期可通过 Runtime SDK 或 `GET /plugins` 检查；注册表不会绕过 ToolRegistry 的
 Schema、权限、账户、dry-run、确认、幂等和审计门禁。后续仍需补可信插件的
-沙箱/独立进程、热升级回滚和生产级运行时探针。插件控制面已提供
+沙箱/独立进程和生产级运行时探针。受信任部署宿主的 `PluginLoader.upgrade()` 已提供
+进程内升级失败自动恢复旧贡献对象的契约。插件控制面已提供
 `/plugins/packages`：按租户保存不可变的 Manifest + 完整文件快照，支持版本发布指针、
 回滚（重新激活旧版本）、停用和卸载。这个 API 只做校验和控制面状态变更，不会导入
 `entrypoint`、执行 `tools.py`，也不会向 Runtime 注册 Provider Tool；可执行插件仍需
