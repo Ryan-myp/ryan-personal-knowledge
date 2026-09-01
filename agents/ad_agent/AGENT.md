@@ -38,6 +38,9 @@ Runtime 不承载业务流程实现。可选业务扩展通过通用接口自动
 - `PluginRegistry`：统一管理扩展的 Manifest、版本、依赖和生命周期；Capability、
   Feature、Renderer、受信任 Skill 扩展和托管 Skill 上下文都通过它登记。它不执行
   Provider 请求，也不替代 ToolRegistry 的权限、账户、dry-run 和审计门禁。
+- 最终回答经过 `ResponseSynthesizer`/`ResponseRenderer` 边界：LLM 只能基于脱敏的
+  用户输入、已执行结果、知识引用和分析结果回答，不能在最终回答阶段调用 Tool 或
+  改变执行状态；LLM 输出异常时必须回退到 Renderer。
 
 Runtime 只调用这些接口，不识别 `ecommerce`、`app`、`cross-channel` 等业务名称。
 

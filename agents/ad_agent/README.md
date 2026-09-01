@@ -10,6 +10,7 @@
 - **结构化日志**：JSON 格式，便于 log aggregation
 - **模型驱动**：生产入口必须配置 LLM；离线 fixture 仅用于显式测试和评测，不是产品降级路径
 - **Planner 执行闭环**：每回合由 LLM 解析当前请求和受限 Skill/Tool 上下文，Runtime 依据注册元数据生成确定性计划并执行；业务策略、跨渠道流程和响应展示通过 Skill-owned Policy/Feature/Renderer 扩展；后续回合可读取最近脱敏 Tool 结果继续补参或决策
+- **LLM 结果闭环**：执行完成后，LLM 可基于脱敏的工具结果、知识引用和分析结果生成最终回答；输出协议、dry-run 事实和失败事实经过校验，异常时回退到确定性 Renderer
 - **安全边界**：写操作必须命中配置的测试账户白名单；live 还必须显式确认
 - **可扩展**：渠道包按约定自动发现；新增平台不需要修改 Runtime、Router 或中心渠道表
 - **业务扩展**：大多数业务只需新增标准 Skill；需要新外部动作时新增 Capability Tool，复杂编排可新增自动发现的 Feature，均不修改 Runtime 主循环

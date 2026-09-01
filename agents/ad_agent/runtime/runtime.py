@@ -40,7 +40,7 @@ from ..core.tool_registry import GuardedToolRegistry, SimpleToolRegistry, valida
 from ..core.intent import LLMIntentParser, SimpleIntentRouter
 from ..core.features import RuntimeFeature
 from ..core.execution_plan import ExecutionPlan
-from ..core.response import ResponseRenderer
+from ..core.response import ResponseRenderer, ResponseSynthesizer, LLMResponseSynthesizer
 from ..core.plugins import (
     PluginKind,
     PluginLoader,
@@ -139,6 +139,7 @@ class AgentRuntime:
         provider_reconcilers: Optional[Mapping[str, ProviderReconciler]] = None,
         features: Optional[Iterable[RuntimeFeature]] = None,
         response_renderer: Optional[ResponseRenderer] = None,
+        response_synthesizer: Optional[ResponseSynthesizer] = None,
         workflow_stale_after_seconds: float = 300.0,
         selection_token_secret: Optional[str] = None,
         parameter_selection_ttl_seconds: int = 600,
@@ -207,6 +208,11 @@ class AgentRuntime:
         )
         if self.response_renderer is None:
             raise RuntimeError("no response renderer is registered")
+        self.response_synthesizer: Optional[ResponseSynthesizer] = (
+            response_synthesizer
+            if response_synthesizer is not None
+            else (LLMResponseSynthesizer() if self._llm is not None else None)
+        )
         renderer_name = str(
             getattr(self.response_renderer, "renderer_name", "") or ""
         ).strip()
@@ -650,6 +656,8 @@ class AgentRuntime:
     def inject_llm(self, llm_client) -> None:
         """注入 LLM 客户端"""
         self._llm = llm_client
+        if self.response_synthesizer is None and llm_client is not None:
+            self.response_synthesizer = LLMResponseSynthesizer()
         if isinstance(self.intent_parser, LLMIntentParser):
             self.intent_parser.inject_llm(llm_client)
 
@@ -2240,6 +2248,59 @@ class AgentRuntime:
         with self._session_locks_guard:
             return self._session_locks.setdefault(session_id, threading.RLock())
 
+    def _render_response(
+        self,
+        user_input: str,
+        intent: Any,
+        results: list[dict[str, Any]],
+        needs_confirmation: bool,
+        analysis: Optional[dict[str, Any]] = None,
+        session: Optional["SessionContext"] = None,
+        fallback_reply: Optional[str] = None,
+    ) -> tuple[str, str]:
+        """Render a grounded answer with a deterministic safe fallback."""
+        fallback = fallback_reply or self.response_renderer.render(
+            intent, results, needs_confirmation, analysis=analysis
+        )
+        synthesizer = self.response_synthesizer
+        if synthesizer is None or self._llm is None:
+            return fallback, "renderer"
+        skill_context = self._build_skill_context_from_metadata(session)
+        try:
+            answer = synthesizer.synthesize(
+                self._llm,
+                user_input=user_input,
+                intent=intent,
+                results=self._redact_for_persistence(results),
+                knowledge=self._redact_for_persistence(
+                    skill_context.get("knowledge", [])
+                ),
+                memory=self._redact_for_persistence(
+                    skill_context.get("memory", [])
+                ),
+                analysis=self._redact_for_persistence(analysis or {}),
+                fallback_reply=fallback,
+                needs_confirmation=needs_confirmation,
+            )
+        except Exception as exc:
+            logger.debug("LLM 最终回复生成失败，使用 Renderer 兜底: %s", exc)
+            answer = None
+        if answer:
+            return answer, "llm"
+        return fallback, "renderer"
+
+    def _build_skill_context_from_metadata(
+        self, session: Optional["SessionContext"] = None
+    ) -> dict[str, Any]:
+        """Return the current advisory context without adding a new registry."""
+        # ToolContext metadata is session-scoped; this helper is only called
+        # after the current turn has established that context.
+        if session is not None:
+            value = session.ctx.metadata.get("skill_context")
+            if isinstance(value, dict):
+                return value
+        return {}
+
     def run(
         self,
         user_input: str,
@@ -2633,6 +2694,14 @@ class AgentRuntime:
                     "请检查当前 Skill/Tool 是否已发布，或补充更明确的操作对象。"
                 )
             )
+            no_tool_reply, response_source = self._render_response(
+                safe_user_input,
+                intent,
+                [],
+                False,
+                session=session,
+                fallback_reply=no_tool_reply,
+            )
             return {
                 "session_id": session_id,
                 "turn_id": turn_id,
@@ -2651,6 +2720,7 @@ class AgentRuntime:
                 },
                 "memory": recalled_memories,
                 "results": [],
+                "response_source": response_source,
                 "reply": no_tool_reply,
                 "needs_confirmation": False,
                 "confirmation_payload": None,
@@ -3260,8 +3330,13 @@ class AgentRuntime:
         analysis: dict[str, Any] = {}
         if feature is not None and callable(getattr(feature, "analyze", None)):
             analysis = feature.analyze(intent, results)
-        reply = self.response_renderer.render(
-            intent, results, needs_confirmation, analysis=analysis
+        reply, response_source = self._render_response(
+            safe_user_input,
+            intent,
+            results,
+            needs_confirmation,
+            analysis=analysis,
+            session=session,
         )
         
         # Step 6: 记录消息历史
@@ -3294,6 +3369,7 @@ class AgentRuntime:
                 "knowledge": tool_selection.get("knowledge", []),
             },
             "memory": recalled_memories,
+            "response_source": response_source,
             "execution_plan": execution_plan.to_dict(),
             "results": results,
             "resource_results": resource_results,

@@ -28,6 +28,7 @@ from .core.memory import MemoryManager, MemoryRecord, MemoryStore
 from .core.knowledge import (
     KnowledgeDocument, KnowledgeProvider, MarkdownWikiKnowledgeProvider,
 )
+from .core.response import LLMResponseSynthesizer, ResponseSynthesizer
 from .core.auth import RequestPrincipal
 from .core.plugins import PluginKind, PluginLoader, PluginManifest, PluginRegistry, PluginState
 from .core.plugin_package import PluginPackage, PluginPackageError, build_plugin_manifest
@@ -53,6 +54,8 @@ __all__ = [
     "KnowledgeDocument",
     "KnowledgeProvider",
     "MarkdownWikiKnowledgeProvider",
+    "LLMResponseSynthesizer",
+    "ResponseSynthesizer",
     "RequestPrincipal",
     "PluginKind",
     "PluginLoader",

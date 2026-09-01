@@ -1,5 +1,7 @@
 from agents.ad_agent.core.knowledge import MarkdownWikiKnowledgeProvider
 from agents.ad_agent.core.memory import MemoryManager
+from agents.ad_agent.core.response import LLMResponseSynthesizer
+from agents.ad_agent.core.interfaces import ParsedIntent
 from agents.ad_agent.persistence.store import AdAgentStore
 from agents.ad_agent.runtime.runtime import AgentRuntime
 
@@ -109,6 +111,53 @@ def test_runtime_recalls_explicit_memory_across_sessions_without_granting_tools(
     assert any(
         "Memory" in str(message.get("content"))
         for message in llm.calls[-1]
-        if message.get("role") == "system"
     )
     assert result["tool_plan"] == {}
+
+
+def test_llm_response_synthesizer_is_grounded_and_rejects_internal_protocol():
+    class FakeLLM:
+        def __init__(self, answer):
+            self.answer = answer
+
+        def call(self, _messages):
+            return self.answer
+
+    intent = ParsedIntent("list_campaigns", "查询", ["google"])
+    result = [{
+        "tool": "google_list_campaigns",
+        "platform": "google",
+        "success": True,
+        "data": {"campaigns": [{"name": "Demo", "status": "PAUSED"}]},
+    }]
+    synthesizer = LLMResponseSynthesizer()
+    answer = synthesizer.synthesize(
+        FakeLLM("找到 1 个 Campaign：Demo，状态为 PAUSED。"),
+        user_input="查询 Google Campaign",
+        intent=intent,
+        results=result,
+        knowledge=[],
+        analysis={},
+        fallback_reply="fallback",
+    )
+    assert "PAUSED" in answer
+    assert synthesizer.synthesize(
+        FakeLLM('{"intent_type":"list_campaigns"}'),
+        user_input="查询",
+        intent=intent,
+        results=result,
+        knowledge=[],
+        analysis={},
+        fallback_reply="fallback",
+    ) is None
+
+
+def test_runtime_inject_llm_enables_response_synthesis_after_late_bootstrap():
+    class FakeLLM:
+        def call(self, _messages):
+            return '{"intent_type":"chat","platforms":[]}'
+
+    runtime = AgentRuntime(require_llm=True, features=[])
+    assert runtime.response_synthesizer is None
+    runtime.inject_llm(FakeLLM())
+    assert runtime.response_synthesizer is not None

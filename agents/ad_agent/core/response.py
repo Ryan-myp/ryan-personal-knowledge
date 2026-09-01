@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 from typing import Any, Protocol
 
 
@@ -21,3 +23,108 @@ class ResponseRenderer(Protocol):
 
     def render_chat(self, user_input: str) -> str:
         ...
+
+
+class ResponseSynthesizer(Protocol):
+    """Model-backed final-answer boundary, separate from execution."""
+
+    def synthesize(
+        self,
+        llm: Any,
+        *,
+        user_input: str,
+        intent: Any,
+        results: list[dict[str, Any]],
+        knowledge: list[dict[str, Any]] | None,
+        analysis: dict[str, Any] | None,
+        fallback_reply: str,
+        needs_confirmation: bool = False,
+        memory: list[dict[str, Any]] | None = None,
+    ) -> str | None:
+        ...
+
+
+class LLMResponseSynthesizer:
+    """Produce a grounded user answer from already-executed local results.
+
+    The model receives result data only; it cannot call tools from this
+    boundary.  A failed/invalid synthesis returns ``None`` so the application
+    renderer remains the deterministic safety fallback.
+    """
+
+    _SECRET_RE = re.compile(
+        r"(?i)(?:access[_ -]?token|refresh[_ -]?token|developer[_ -]?token|"
+        r"client[_ -]?(?:secret|id)|app[_ -]?secret|private[_ -]?key|"
+        r"authorization|password|credentials?|bc[_ -]?id|mcc|partner[_ -]?id)"
+        r"\s*[:=]\s*[^\s,;]+"
+    )
+
+    @classmethod
+    def _safe_payload(cls, value: Any, max_chars: int = 12000) -> str:
+        try:
+            encoded = json.dumps(value, ensure_ascii=False, default=str)
+        except (TypeError, ValueError):
+            encoded = str(value)
+        return cls._SECRET_RE.sub("<redacted>", encoded)[:max_chars]
+
+    @staticmethod
+    def _valid_answer(answer: str, results: list[dict[str, Any]], fallback: str) -> bool:
+        text = str(answer or "").strip()
+        if not text or len(text) > 4000:
+            return False
+        # A misconfigured/mock model may return the intent JSON again instead
+        # of a user-facing answer. Never expose that internal protocol.
+        if text.startswith("{") and '"intent_type"' in text:
+            return False
+        # A model must not turn an all-failed execution into a success claim.
+        if results and not any(bool(item.get("success")) for item in results):
+            success_words = ("已成功", "成功完成", "操作完成", "已经完成")
+            if any(word in text for word in success_words):
+                return False
+        simulated = any(
+            isinstance(item.get("data"), dict)
+            and item["data"].get("simulated")
+            for item in results
+        )
+        if simulated and "dry-run" not in text.lower() and "模拟" not in text:
+            return False
+        if "access_token" in text.lower() or "refresh_token" in text.lower():
+            return False
+        return True
+
+    def synthesize(
+        self,
+        llm: Any,
+        *,
+        user_input: str,
+        intent: Any,
+        results: list[dict[str, Any]],
+        knowledge: list[dict[str, Any]] | None,
+        analysis: dict[str, Any] | None,
+        fallback_reply: str,
+        needs_confirmation: bool = False,
+        memory: list[dict[str, Any]] | None = None,
+    ) -> str | None:
+        if llm is None or needs_confirmation:
+            return None
+        prompt = (
+            "你是广告 Agent 的最终回复助手。只基于给定的用户问题、已执行结果、"
+            "知识引用和兜底答案回答，不调用工具、不编造平台数据、不改变执行状态。"
+            "如果结果是 dry-run，必须明确说明没有调用线上写 API；如果查询失败，"
+            "必须如实说明失败。优先用中文，回答简洁，保留关键数量、状态、错误和来源。\n\n"
+            f"用户问题：{str(user_input)[:4000]}\n"
+            f"意图：{self._safe_payload(getattr(intent, 'to_dict', lambda: intent)())[:2000]}\n"
+            f"已执行结果：{self._safe_payload(results)}\n"
+            f"知识引用：{self._safe_payload(knowledge or [], 5000)}\n"
+            f"受控 Memory：{self._safe_payload(memory or [], 3000)}\n"
+            f"分析结果：{self._safe_payload(analysis or {}, 5000)}\n"
+            f"兜底答案：{str(fallback_reply)[:4000]}"
+        )
+        try:
+            answer = llm.call([
+                {"role": "system", "content": "你是一个严谨、可审计的广告 Agent 回复助手。"},
+                {"role": "user", "content": prompt},
+            ])
+        except Exception:
+            return None
+        return str(answer).strip() if self._valid_answer(answer, results, fallback_reply) else None
