@@ -13,6 +13,24 @@ from fastapi.testclient import TestClient
 from agents.ad_agent import api_server
 
 
+def test_local_env_file_is_loaded_without_overriding_process_environment(tmp_path, monkeypatch):
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "# comment\n"
+        "export TEST_AD_AGENT_LOCAL=from-file\n"
+        "TEST_AD_AGENT_QUOTED='quoted value'\n"
+        "TEST_AD_AGENT_EXISTING=from-file\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TEST_AD_AGENT_EXISTING", "from-process")
+
+    api_server._load_local_env_file(env_file)
+
+    assert api_server.os.environ["TEST_AD_AGENT_LOCAL"] == "from-file"
+    assert api_server.os.environ["TEST_AD_AGENT_QUOTED"] == "quoted value"
+    assert api_server.os.environ["TEST_AD_AGENT_EXISTING"] == "from-process"
+
+
 class FakeRegistry:
     def list_all(self):
         return []
