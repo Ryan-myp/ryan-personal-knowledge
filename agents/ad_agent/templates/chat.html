@@ -1465,7 +1465,7 @@
         .skill-editor input[readonly], .skill-editor textarea[readonly] { color: var(--text-secondary); background: #191919; }
 
         /* 用户可切换的浅色工作区；核心控件覆盖保留足够对比度。 */
-        body.light-theme { --bg-primary: #f4f7fb; --bg-secondary: #ffffff; --bg-tertiary: #eef2f7; --bg-hover: #e5ebf3; --bg-active: #dbe4ee; --border: #d8e0ea; --border-light: #c2cedc; --text-primary: #172231; --text-secondary: #44566b; --text-muted: #718096; background: var(--bg-primary); color: var(--text-primary); }
+        body.light-theme { --bg-primary: #f4f7fb; --bg-secondary: #ffffff; --bg-tertiary: #eef2f7; --bg-hover: #e5ebf3; --bg-active: #dbe4ee; --border: #d8e0ea; --border-light: #c2cedc; --text-primary: #172231; --text-secondary: #44566b; --text-muted: #5e7085; --success: #13795b; --error: #b8324b; --warning: #875b00; background: var(--bg-primary); color: var(--text-primary); }
         body.light-theme .global-topbar, body.light-theme .sidebar, body.light-theme .main-content { background: var(--bg-secondary); color: var(--text-primary); }
         body.light-theme .global-topbar { border-bottom-color: var(--border); }
         body.light-theme .global-readonly, body.light-theme .global-action { color: #526579; background: #f7f9fc; border-color: var(--border-light); }
@@ -1475,13 +1475,14 @@
         body.light-theme .session-pill b, body.light-theme .session-pill em { color: #44566b; }
         body.light-theme .knowledge-console, body.light-theme .skill-console { background: #ffffff; border-color: #cbd6e2; }
         body.light-theme .knowledge-console-header, body.light-theme .skill-console-header { border-bottom-color: var(--border); }
-        body.light-theme .knowledge-console-subtitle, body.light-theme .skill-console-subtitle { color: #718096; }
+        body.light-theme .knowledge-console-subtitle, body.light-theme .skill-console-subtitle { color: #5e7085; }
         body.light-theme .knowledge-search-panel, body.light-theme .skill-toolbar, body.light-theme .knowledge-compose { background: #f4f7fb; border-color: var(--border); }
         body.light-theme .workspace-popover { color: var(--text-primary); background: #ffffff; border-color: #cbd6e2; }
         body.light-theme .workspace-form input, body.light-theme .workspace-form select, body.light-theme .knowledge-compose input, body.light-theme .knowledge-compose select, body.light-theme .knowledge-compose textarea, body.light-theme .skill-editor input, body.light-theme .skill-editor select, body.light-theme .skill-editor textarea { color: #172231; background: #ffffff; border-color: #bdc9d8; }
         body.light-theme .workspace-form-actions button, body.light-theme .icon-btn { color: #40536a; background: #edf2f7; border-color: #c3cfdd; }
         body.light-theme .knowledge-result, body.light-theme .knowledge-summary { color: #27384c; background: #f7fafd; border-color: #c6d5e4; }
         body.light-theme .knowledge-result-title, body.light-theme .knowledge-summary-body, body.light-theme .knowledge-markdown { color: #27384c; }
+        body.light-theme .knowledge-result-excerpt { color: #40536a; }
         body.light-theme .knowledge-result-meta, body.light-theme .knowledge-summary-label, body.light-theme .knowledge-filter-summary { color: #58718b; }
         body.light-theme .knowledge-markdown code, body.light-theme .knowledge-summary-body code { background: #e9eef5; color: #5b3aa5; }
         body.light-theme .knowledge-markdown pre { color: #27384c; background: #e8eef5; }
@@ -1559,6 +1560,38 @@
         body.light-theme .activity-dock-actions button { color: #40566d; border-color: #bdcbd9; }
         body.light-theme .activity-dock-actions button:hover { color: #162235; background: #edf2f7; }
         body.light-theme .dock-ticker .trace-ticker-row { background: #ffffff; border-color: #bdcbd9; }
+        body.light-theme .platform-tag.tiktok { color: #c52245; }
+        body.light-theme .platform-tag.google { color: #1f64c7; }
+        body.light-theme .platform-tag.dv360 { color: #087f8d; }
+        body.light-theme .platform-icon.tiktok { color: #c52245; }
+        body.light-theme .platform-icon.google { color: #1f64c7; }
+        body.light-theme .platform-icon.dv360 { color: #087f8d; }
+        body.light-theme .chat-history-preview, body.light-theme .chat-history-time,
+        body.light-theme .sidebar-section-label, body.light-theme .sidebar-footer small,
+        body.light-theme .input-hint, body.light-theme .message-time,
+        body.light-theme .panel-section-title { color: #5e7085; }
+        body.light-theme .skill-notice.error { color: #a42c43; background: #fdecef; border-color: #e6a2ae; }
+        body.light-theme .skill-notice.success { color: #176d52; background: #e5f6ef; border-color: #83c6ad; }
+        body.light-theme .skill-status.builtin { color: #5941a4; }
+        body.light-theme .workspace-popover-subtitle, body.light-theme .workspace-form label,
+        body.light-theme .workspace-form-status, body.light-theme .workspace-filter-summary { color: #526579; }
+        body.light-theme .workspace-mode-card { background: #edf7f8; border-color: #8ac3c8; }
+        body.light-theme .workspace-mode-card strong { color: #176d52; }
+        body.light-theme .workspace-mode-card p { color: #40566d; }
+        body.light-theme .workspace-popover-close { color: #53677d; }
+        body.light-theme .workspace-popover-close:hover { color: #162235; }
+        body.light-theme .knowledge-summary { background: linear-gradient(135deg, #eef7f8, #f5f8fc); border-color: #9bcbd0; }
+        body.light-theme .knowledge-summary-label { color: #176d52; }
+        body.light-theme .knowledge-summary-body h3, body.light-theme .knowledge-summary-body h4,
+        body.light-theme .knowledge-summary-body strong { color: #1c3046; }
+        body.light-theme .knowledge-summary-body code,
+        body.light-theme .knowledge-markdown code { color: #5941a4; background: #eeeafd; }
+        body.light-theme .knowledge-result-badge { color: #315a91; background: #e6eef9; }
+        body.light-theme .knowledge-result-details { border-top-color: #d2dce7; }
+        body.light-theme .knowledge-result-details summary { color: #315a91; }
+        body.light-theme .knowledge-markdown h3, body.light-theme .knowledge-markdown h4 { color: #1c3046; }
+        body.light-theme .knowledge-markdown pre { color: #1e3045; background: #f0f3f7; }
+        body.light-theme .skill-editor input[readonly], body.light-theme .skill-editor textarea[readonly] { color: #526579; background: #f0f3f7; }
         .sidebar { grid-column: 1; grid-row: 2 / 4; min-height: 0; width: 228px; background: #121212; }
         .sidebar-header { display: none; }
         .sidebar-brand { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
