@@ -1108,7 +1108,7 @@
         /* 执行轨迹：只展示安全的执行事件，不展示模型思维链。 */
         .right-panel {
             width: min(46vw, 660px);
-            min-width: 430px;
+            min-width: 450px;
             background: #07101b;
             border-left-color: #1d3044;
         }
@@ -1152,6 +1152,8 @@
             cursor: pointer;
         }
         .trace-icon-btn { width: 28px; height: 28px; font-size: 18px; line-height: 1; }
+        .trace-expand-btn { width: 28px; height: 28px; padding: 6px; }
+        .trace-expand-btn svg { width: 100%; height: 100%; display: block; }
         .trace-clear-btn { padding: 6px 9px; font-size: 11px; }
         .trace-icon-btn:hover, .trace-clear-btn:hover { color: #fff; border-color: var(--accent); }
 
@@ -1275,6 +1277,7 @@
 
         .trace-collapsed .trace-toolbar, .trace-collapsed .trace-content { display: none; }
         .trace-collapsed { min-width: 68px; width: 68px; }
+        .trace-collapsed .trace-clear-btn, .trace-collapsed .trace-expand-btn { display: none; }
         .trace-collapsed .trace-header { padding: 16px 10px; }
         .trace-collapsed .trace-header > div:first-child { display: none; }
         .trace-collapsed .trace-header-actions { margin: auto; }
@@ -1292,9 +1295,23 @@
         /* 图 2 控制台布局：顶部会话栏，聊天与真实轨迹并列，底部共享活动日志。 */
         body {
             display: grid;
-            grid-template-columns: 228px minmax(0, 1fr) minmax(320px, 360px);
+            grid-template-columns: 228px minmax(0, 1fr) minmax(450px, 460px);
             grid-template-rows: 60px minmax(0, 1fr) 96px;
             min-width: 1080px;
+        }
+        body.trace-expanded {
+            grid-template-columns: 228px minmax(0, 1fr) minmax(560px, 640px);
+        }
+        body.trace-collapsed {
+            grid-template-columns: 228px minmax(0, 1fr) 68px;
+        }
+        @media (min-width: 981px) and (max-width: 1440px) {
+            body.trace-expanded {
+                grid-template-columns: 228px minmax(0, 1fr) minmax(480px, 520px);
+            }
+            body.trace-expanded .trace-content {
+                grid-template-columns: minmax(215px, 1fr) minmax(215px, 1fr);
+            }
         }
         .global-topbar {
             grid-column: 1 / -1;
@@ -1357,6 +1374,27 @@
         .trace-content .trace-flow { width: auto; margin: 0; min-height: 0; max-height: 300px; overflow-y: auto; }
         .trace-content .trace-detail { position: static; width: auto; max-height: 170px; overflow: auto; margin-top: 8px; padding: 10px 11px; }
         .trace-content .trace-mode-bar { width: auto; margin-top: 8px; padding: 9px 0; }
+        body.trace-expanded .trace-content {
+            display: grid;
+            grid-template-columns: minmax(260px, 1fr) minmax(245px, 1fr);
+            align-content: start;
+            gap: 12px;
+            padding: 14px;
+        }
+        body.trace-expanded .trace-content .trace-flow {
+            max-height: none;
+            overflow-y: auto;
+            padding-right: 2px;
+        }
+        body.trace-expanded .trace-content .trace-detail {
+            max-height: none;
+            margin-top: 0;
+            overflow-y: auto;
+        }
+        body.trace-expanded .trace-content .trace-mode-bar {
+            grid-column: 1 / -1;
+            margin-top: 0;
+        }
         .trace-empty { display: grid; place-items: center; min-height: 108px; padding: 14px; color: #647b91; border: 1px dashed #20364b; border-radius: 10px; background: rgba(9, 22, 34, .5); text-align: center; font-size: 10px; line-height: 1.5; }
         .trace-empty strong { display: block; color: #a6bdd1; font-size: 13px; font-weight: 500; }
         .trace-node { min-height: 52px; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 8px; margin-bottom: 6px; padding: 6px 8px 6px 0; border-radius: 9px; }
@@ -1509,6 +1547,11 @@
                 <div class="trace-subtitle" id="traceSubtitle">等待下一次 Agent 回合</div>
             </div>
             <div class="trace-header-actions">
+                <button class="trace-expand-btn trace-icon-btn" type="button" onclick="toggleTraceExpanded()" aria-label="展开轨迹视图" title="展开轨迹视图">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M21 16v5h-5"></path>
+                    </svg>
+                </button>
                 <button class="trace-icon-btn" type="button" onclick="toggleTracePanel()" aria-label="收起执行轨迹">−</button>
                 <button class="trace-clear-btn" type="button" onclick="resetExecutionTrace()">清空</button>
             </div>
@@ -1606,7 +1649,7 @@
             failed: '失败', skipped: '已跳过', awaiting_confirmation: '待确认',
             unknown: '待命', recovery_required: '需恢复'
         };
-        let traceState = { nodes: [], events: [], selectedId: null, collapsed: false, activeTurn: 0, traceId: null, status: 'unknown', orderCounter: 0 };
+        let traceState = { nodes: [], events: [], selectedId: null, collapsed: false, expanded: false, activeTurn: 0, traceId: null, status: 'unknown', orderCounter: 0 };
 
         function traceStatusLabel(status) {
             return TRACE_STATUS_LABELS[status] || '未知';
@@ -1714,7 +1757,9 @@
         }
 
         function resetExecutionTrace() {
-            traceState = { nodes: [], events: [], selectedId: null, collapsed: false, activeTurn: traceState.activeTurn, traceId: null, status: 'unknown', orderCounter: 0 };
+            traceState = { nodes: [], events: [], selectedId: null, collapsed: false, expanded: traceState.expanded, activeTurn: traceState.activeTurn, traceId: null, status: 'unknown', orderCounter: 0 };
+            document.body.classList.remove('trace-collapsed');
+            document.body.classList.toggle('trace-expanded', traceState.expanded);
             document.querySelector('.right-panel')?.classList.remove('trace-collapsed');
             updateTraceHeader('unknown', '等待下一次 Agent 回合');
             renderExecutionTrace();
@@ -1722,9 +1767,39 @@
 
         function toggleTracePanel() {
             traceState.collapsed = !traceState.collapsed;
+            if (traceState.collapsed) {
+                traceState.expanded = false;
+                document.body.classList.remove('trace-expanded');
+            }
+            document.body.classList.toggle('trace-collapsed', traceState.collapsed);
             document.querySelector('.right-panel')?.classList.toggle('trace-collapsed', traceState.collapsed);
-            const button = document.querySelector('.trace-icon-btn');
-            if (button) button.textContent = traceState.collapsed ? '+' : '−';
+            const button = document.querySelector('.trace-header-actions .trace-icon-btn:not(.trace-expand-btn)');
+            if (button) {
+                button.textContent = traceState.collapsed ? '+' : '−';
+                button.setAttribute('aria-label', traceState.collapsed ? '展开执行轨迹' : '收起执行轨迹');
+                button.setAttribute('title', traceState.collapsed ? '展开执行轨迹' : '收起执行轨迹');
+            }
+        }
+
+        function toggleTraceExpanded() {
+            if (traceState.collapsed) {
+                traceState.collapsed = false;
+                document.body.classList.remove('trace-collapsed');
+                document.querySelector('.right-panel')?.classList.remove('trace-collapsed');
+                const collapseButton = document.querySelector('.trace-header-actions .trace-icon-btn:not(.trace-expand-btn)');
+                if (collapseButton) {
+                    collapseButton.textContent = '−';
+                    collapseButton.setAttribute('aria-label', '收起执行轨迹');
+                    collapseButton.setAttribute('title', '收起执行轨迹');
+                }
+            }
+            traceState.expanded = !traceState.expanded;
+            document.body.classList.toggle('trace-expanded', traceState.expanded);
+            const button = document.querySelector('.trace-expand-btn');
+            if (button) {
+                button.setAttribute('aria-label', traceState.expanded ? '收窄轨迹视图' : '展开轨迹视图');
+                button.setAttribute('title', traceState.expanded ? '收窄轨迹视图' : '展开轨迹视图');
+            }
         }
 
         function clearTraceSelection() {
