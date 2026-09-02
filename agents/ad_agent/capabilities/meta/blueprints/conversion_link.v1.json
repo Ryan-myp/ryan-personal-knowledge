@@ -5,6 +5,16 @@
   "ad_format": "link_conversion",
   "title": "Meta 转化链接广告",
   "description": "引导创建 Meta Conversion Campaign、Ad Set 和链接广告。",
+  "selector": {
+    "dimension": "objective",
+    "field": "campaign.objective",
+    "values": ["OUTCOME_CONVERSIONS", "CONVERSIONS"],
+    "label": "Meta 推广目标",
+    "options": [
+      {"value": "OUTCOME_CONVERSIONS", "label": "转化"},
+      {"value": "CONVERSIONS", "label": "网站转化（旧目标）"}
+    ]
+  },
   "tools": ["meta_create_campaign", "meta_create_adset", "meta_create_conversion_ad"],
   "resources": ["campaign", "ad_set", "ad"],
   "fields": [

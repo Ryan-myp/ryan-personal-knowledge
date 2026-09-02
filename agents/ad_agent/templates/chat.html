@@ -1310,6 +1310,10 @@
         .blueprint-editor { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
         .blueprint-editor-header { justify-content: space-between; padding: 16px 20px 12px; }
         .blueprint-editor-title { font-size: 15px; font-weight: 600; }
+        .blueprint-selector { margin: 0 20px 12px; padding: 11px 12px; border: 1px solid var(--border-light); border-radius: 9px; background: var(--bg-tertiary); }
+        .blueprint-selector-label { display: block; margin-bottom: 6px; color: var(--text-muted); font-size: 10px; font-weight: 600; }
+        .blueprint-selector select { width: 100%; min-height: 32px; padding: 6px 8px; border: 1px solid var(--border-light); border-radius: 6px; outline: none; color: var(--text-primary); background: var(--bg-secondary); font: inherit; font-size: 12px; }
+        .blueprint-selector-hint { margin-top: 6px; color: var(--text-muted); font-size: 10px; line-height: 1.45; }
         .blueprint-dry-run-badge {
             padding: 4px 7px;
             color: var(--warning);
@@ -1341,6 +1345,7 @@
         }
         .blueprint-field.hidden { display: none; }
         .blueprint-field.missing { border-color: rgba(245, 158, 11, .55); }
+        .blueprint-field.invalid { border-color: rgba(214, 84, 104, .72); }
         .blueprint-field-label { display: flex; align-items: center; gap: 5px; margin-bottom: 6px; color: var(--text-primary); font-size: 12px; font-weight: 600; }
         .blueprint-required { color: var(--error); }
         .blueprint-field-help { margin-bottom: 7px; color: var(--text-muted); font-size: 10px; line-height: 1.45; }
@@ -2464,6 +2469,7 @@
                         </div>
                         <span class="blueprint-dry-run-badge">DRY-RUN</span>
                     </div>
+                    <div class="blueprint-selector" id="blueprintSelector"></div>
                     <div class="blueprint-notice" id="blueprintNotice" role="status"></div>
                     <div class="blueprint-fields" id="blueprintFields">
                         <div class="blueprint-empty">选择左侧蓝图后开始填写。</div>
@@ -3761,9 +3767,70 @@
 
         function blueprintOptions(field) {
             const schema = blueprintToolFieldSchema(field.tool_ref).schema || {};
+            const arraySchema = schema.type === 'array' || (Array.isArray(schema.type) && schema.type.includes('array'));
+            if (Array.isArray(field.options) && !arraySchema) return field.options;
             if (Array.isArray(schema.enum)) return schema.enum;
             if (Array.isArray(schema.items?.enum)) return schema.items.enum;
             return [];
+        }
+
+        function blueprintSelectorOptions(blueprint) {
+            const selector = blueprint?.selector;
+            if (!selector?.dimension) return [];
+            const options = new Map();
+            for (const item of blueprintState.items) {
+                if (item.provider !== blueprint.provider || item.selector?.dimension !== selector.dimension) continue;
+                const labels = new Map((item.selector.options || []).map(option => [String(option.value), option.label || option.value]));
+                for (const value of (item.selector.values || [])) {
+                    const key = String(value);
+                    if (!options.has(key)) options.set(key, labels.get(key) || key);
+                }
+            }
+            return [...options].map(([value, label]) => ({ value, label }));
+        }
+
+        function renderBlueprintSelector() {
+            const container = document.getElementById('blueprintSelector');
+            const blueprint = blueprintState.selected;
+            if (!container || !blueprint?.selector) {
+                if (container) container.replaceChildren();
+                return;
+            }
+            const selector = blueprint.selector;
+            const options = blueprintSelectorOptions(blueprint);
+            container.replaceChildren();
+            const label = document.createElement('label');
+            label.className = 'blueprint-selector-label';
+            label.textContent = `${blueprint.provider} · ${selector.label || (selector.dimension === 'objective' ? '推广目标' : '广告系列类型')}`;
+            const control = document.createElement('select');
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = '请选择入口…';
+            control.appendChild(placeholder);
+            for (const option of options) {
+                const optionNode = document.createElement('option');
+                optionNode.value = option.value;
+                optionNode.textContent = option.label;
+                control.appendChild(optionNode);
+            }
+            const current = blueprintState.values[selector.field];
+            control.value = current === undefined ? '' : String(current);
+            control.onchange = () => chooseBlueprintEntry(blueprint.provider, selector.dimension, control.value);
+            const hint = document.createElement('div');
+            hint.className = 'blueprint-selector-hint';
+            hint.textContent = selector.dimension === 'objective'
+                ? '先选推广目标，后续只展示该目标适用的参数。'
+                : '先选广告系列类型，后续只展示该类型适用的参数。';
+            container.append(label, control, hint);
+        }
+
+        function chooseBlueprintEntry(provider, dimension, value) {
+            if (!value) return;
+            const item = blueprintState.items.find(candidate =>
+                candidate.provider === provider && candidate.selector?.dimension === dimension &&
+                (candidate.selector.values || []).map(String).includes(String(value))
+            );
+            if (item) selectBlueprint(item.id, value);
         }
 
         async function loadCreationBlueprints(selectId = null) {
@@ -3801,7 +3868,15 @@
                 list.appendChild(empty);
                 return;
             }
+            let lastProvider = '';
             for (const item of blueprintState.items) {
+                if (item.provider !== lastProvider) {
+                    const group = document.createElement('div');
+                    group.className = 'blueprint-list-meta';
+                    group.textContent = item.provider;
+                    list.appendChild(group);
+                    lastProvider = item.provider;
+                }
                 const button = document.createElement('button');
                 button.type = 'button';
                 button.className = `blueprint-list-item${blueprintState.selected?.id === item.id ? ' active' : ''}`;
@@ -3817,15 +3892,19 @@
             }
         }
 
-        function selectBlueprint(blueprintId) {
+        function selectBlueprint(blueprintId, selectorValue = null) {
             const item = blueprintState.items.find(value => value.id === blueprintId);
             if (!item) return;
             blueprintState.selected = item;
             blueprintState.values = {};
             blueprintState.previousValues = {};
             blueprintState.evaluation = null;
+            const selector = item.selector;
+            const initialValue = selectorValue || selector?.values?.[0];
+            if (selector?.field && initialValue !== undefined) blueprintState.values[selector.field] = initialValue;
             renderBlueprintList();
             renderBlueprintEditor();
+            if (selector?.field) evaluateBlueprintDraft(selector.field);
         }
 
         function renderBlueprintEditor() {
@@ -3835,6 +3914,7 @@
             if (!blueprint) return;
             if (title) title.textContent = blueprint.title || blueprint.id;
             if (meta) meta.textContent = `${blueprint.provider} · ${blueprint.ad_format} · Blueprint v${blueprint.version}`;
+            renderBlueprintSelector();
             renderBlueprintFields(blueprintState.evaluation);
         }
 
@@ -3851,7 +3931,7 @@
                     state: 'optional',
                 };
                 const wrapper = document.createElement('div');
-                wrapper.className = `blueprint-field${state.visible === false ? ' hidden' : ''}${state.state === 'missing' ? ' missing' : ''}`;
+                wrapper.className = `blueprint-field${state.visible === false ? ' hidden' : ''}${state.state === 'missing' ? ' missing' : ''}${state.state === 'invalid' ? ' invalid' : ''}`;
                 const label = document.createElement('label');
                 label.className = 'blueprint-field-label';
                 label.textContent = field.label || field.path;
@@ -3868,8 +3948,8 @@
                     help.textContent = field.description;
                     wrapper.appendChild(help);
                 }
-                const options = blueprintOptions(field);
                 const schema = blueprintToolFieldSchema(field.tool_ref).schema || {};
+                const options = blueprintOptions(field);
                 let control;
                 if (field.source === 'lookup') {
                     control = document.createElement('input');
@@ -3910,7 +3990,11 @@
             const readiness = document.getElementById('blueprintReadiness');
             if (readiness) {
                 const missing = evaluation?.missing_fields || [];
-                readiness.textContent = evaluation ? (missing.length ? `还需要填写 ${missing.length} 项` : '参数草稿已满足蓝图必填条件') : '等待填写参数';
+                const invalid = evaluation?.invalid_fields || [];
+                readiness.textContent = evaluation
+                    ? (invalid.length ? `有 ${invalid.length} 项不适用于当前选择`
+                        : missing.length ? `还需要填写 ${missing.length} 项` : '参数草稿已满足蓝图必填条件')
+                    : '等待填写参数';
             }
         }
 

@@ -59,9 +59,12 @@ live。
 
 广告创建蓝图通过 `GET /creation-blueprints` 提供给向导，前端提交当前草稿到
 `POST /creation-blueprints/{blueprint_id}/evaluate` 获取字段可见性、必填状态和受影响
-字段。两个接口都是本地元数据计算，不会调用广告渠道 API；当前已接入 TikTok App 转化
-视频、Meta 转化链接和 Google Search 三个样板，动态 lookup 仍按 dry-run 边界等待后续
-受控接入。
+字段；也可以通过 `POST /creation-blueprints/resolve` 按 Blueprint 声明的 selector
+解析入口。两个接口都是本地元数据计算，不会调用广告渠道 API。Meta 按 objective 选择
+流量、转化、潜客或目录销售；TikTok 按 objective 选择 App、流量、潜客或商品销售；
+Google Ads 按广告系列类型选择 Search、Display、Video、App、Shopping 或 Performance
+Max。每个 Blueprint 仍只引用同一渠道已注册的 Tool schema，动态 lookup 继续按 dry-run
+边界等待后续受控接入。
 
 ## 安装
 

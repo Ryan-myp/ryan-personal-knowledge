@@ -5,6 +5,13 @@
   "ad_format": "SINGLE_VIDEO",
   "title": "TikTok App 转化视频广告",
   "description": "引导创建 TikTok App Promotion 视频广告的 Campaign、Ad Group 和 Ad 参数。",
+  "selector": {
+    "dimension": "objective",
+    "field": "campaign.objective_type",
+    "values": ["APP_PROMOTION"],
+    "label": "TikTok 推广目标",
+    "options": [{"value": "APP_PROMOTION", "label": "应用推广"}]
+  },
   "tools": [
     "tiktok_create_campaign",
     "tiktok_create_adgroup",

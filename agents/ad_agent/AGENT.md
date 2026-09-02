@@ -208,6 +208,11 @@ Skill 的 `SKILL.md`/`references/` 继续负责自然语言 SOP、业务解释�
 动态值复用只读 lookup Tool。Blueprint 版本不可变，用户保存的 Preset/Template 绑定
 具体 Blueprint 版本，升级必须显式预览和迁移，不能静默改变旧模板。
 
+Blueprint 可声明一个入口 `selector`（例如 Meta/TikTok 的 `objective`，或 Google Ads
+的 `ad_format`），包含 selector 维度、读取字段、允许值和展示标签。Registry 只按这个
+声明解析，不在 Runtime、Router 或上层业务中维护渠道分支；同一创意形式下也可以由
+多个 objective Blueprint 并存。
+
 ## 4. 广告资源和跨渠道管理
 
 跨渠道对象必须使用 `(platform, account_id, resource_type, resource_id)` 作为完整

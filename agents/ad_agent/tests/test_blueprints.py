@@ -25,10 +25,55 @@ def test_tiktok_blueprint_is_json_and_references_registered_tools():
     runtime.register_capability(create_tiktok_capability())
 
     items = runtime.list_creation_blueprints("tiktok", "SINGLE_VIDEO")
-    assert len(items) == 1
-    assert items[0]["id"] == "tiktok.app_conversion_video"
+    assert {item["id"] for item in items} == {
+        "tiktok.app_conversion_video",
+        "tiktok.lead_generation",
+        "tiktok.product_sales_video",
+        "tiktok.traffic_video",
+    }
+    assert all(item["selector"]["dimension"] == "objective" for item in items)
     assert items[0]["version"] == "1.0.0"
     assert runtime.creation_blueprints.get("tiktok.app_conversion_video") is not None
+
+
+def test_blueprint_registry_resolves_each_provider_entry_dimension_without_router_branches():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    for factory in (create_meta_capability, create_tiktok_capability, create_google_capability):
+        runtime.register_capability(factory())
+
+    assert runtime.resolve_creation_blueprint(
+        "meta", selector_values={"objective": "OUTCOME_LEADS"}
+    )["id"] == "meta.lead_generation"
+    assert runtime.resolve_creation_blueprint(
+        "tiktok", selector_values={"objective": "PRODUCT_SALES"}
+    )["id"] == "tiktok.product_sales_video"
+    assert runtime.resolve_creation_blueprint(
+        "google-ads", selector_values={"ad_format": "DISPLAY"}
+    )["id"] == "google-ads.display"
+    assert runtime.resolve_creation_blueprint(
+        "google-ads", selector_values={"ad_format": "APP"}
+    )["id"] == "google-ads.app"
+    assert runtime.resolve_creation_blueprint(
+        "google-ads", selector_values={"ad_format": "UNKNOWN"}
+    ) is None
+
+
+def test_blueprint_field_options_are_declared_and_invalid_selection_is_not_ready():
+    blueprint = load_blueprint_file(
+        Path(__file__).parents[1]
+        / "capabilities"
+        / "google"
+        / "blueprints"
+        / "display.v1.json"
+    )
+    result = BlueprintCascadeEngine().evaluate(
+        blueprint,
+        {
+            "campaign.advertising_channel_type": "SEARCH",
+        },
+    )
+    assert "campaign.advertising_channel_type" in result["invalid_fields"]
+    assert result["ready"] is False
 
 
 def test_meta_and_google_blueprints_use_only_registered_tool_fields():

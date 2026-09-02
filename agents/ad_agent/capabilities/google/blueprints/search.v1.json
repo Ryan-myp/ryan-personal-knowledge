@@ -5,6 +5,13 @@
   "ad_format": "SEARCH",
   "title": "Google Search 广告",
   "description": "引导创建 Google Search Campaign、Ad Group 和 Responsive Search Ad。",
+  "selector": {
+    "dimension": "ad_format",
+    "field": "campaign.advertising_channel_type",
+    "values": ["SEARCH"],
+    "label": "Google 广告系列类型",
+    "options": [{"value": "SEARCH", "label": "搜索"}]
+  },
   "tools": ["google_create_campaign", "google_create_ad_group", "google_create_search_ad"],
   "resources": ["campaign", "ad_group", "ad"],
   "fields": [

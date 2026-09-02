@@ -128,6 +128,7 @@ class AdCreationBlueprint:
     tools: tuple[str, ...]
     fields: tuple[dict[str, Any], ...]
     rules: tuple[dict[str, Any], ...]
+    selector: Optional[dict[str, Any]]
     raw: dict[str, Any]
 
     @classmethod
@@ -173,6 +174,15 @@ class AdCreationBlueprint:
             normalized["path"] = path
             normalized["tool_ref"] = tool_ref
             normalized["source"] = source
+            if "options" in normalized:
+                options = normalized["options"]
+                if not isinstance(options, list) or not options:
+                    raise BlueprintValidationError(f"{location}.options must be a non-empty list")
+                if len({json.dumps(value, sort_keys=True) for value in options}) != len(options):
+                    raise BlueprintValidationError(f"{location}.options must not contain duplicates")
+                if any(isinstance(value, (Mapping, list, tuple, set)) for value in options):
+                    raise BlueprintValidationError(f"{location}.options must contain scalar values")
+                normalized["options"] = _copy_json(options)
             if "visible_when" in normalized:
                 _validate_condition(normalized["visible_when"], f"{location}.visible_when")
             if "required_when" in normalized:
@@ -180,6 +190,45 @@ class AdCreationBlueprint:
             fields.append(normalized)
 
         field_paths = {str(item["path"]) for item in fields}
+
+        selector_value = document.get("selector")
+        selector: Optional[dict[str, Any]] = None
+        if selector_value is not None:
+            if not isinstance(selector_value, Mapping):
+                raise BlueprintValidationError("selector must be an object")
+            dimension = _require_non_empty(selector_value.get("dimension"), "selector.dimension")
+            if not re.fullmatch(r"[a-z][a-z0-9_.-]*", dimension):
+                raise BlueprintValidationError(
+                    "selector.dimension must contain lowercase letters, digits, '.', '_' or '-'"
+                )
+            selector_field = _require_non_empty(selector_value.get("field"), "selector.field")
+            values_value = selector_value.get("values")
+            if not isinstance(values_value, list) or not values_value:
+                raise BlueprintValidationError("selector.values must be a non-empty list")
+            if len({json.dumps(value, sort_keys=True) for value in values_value}) != len(values_value):
+                raise BlueprintValidationError("selector.values must not contain duplicates")
+            if any(isinstance(value, (Mapping, list, tuple, set)) for value in values_value):
+                raise BlueprintValidationError("selector.values must contain scalar values")
+            normalized_selector = dict(selector_value)
+            normalized_selector["dimension"] = dimension
+            normalized_selector["field"] = selector_field
+            normalized_selector["values"] = _copy_json(values_value)
+            if "options" in normalized_selector:
+                options = normalized_selector["options"]
+                if not isinstance(options, list) or not all(isinstance(item, Mapping) for item in options):
+                    raise BlueprintValidationError("selector.options must be a list of objects")
+                for index, option in enumerate(options):
+                    if "value" not in option or "label" not in option:
+                        raise BlueprintValidationError(
+                            f"selector.options[{index}] needs value and label"
+                        )
+                normalized_selector["options"] = _copy_json(options)
+            selector = normalized_selector
+            if selector_field not in field_paths:
+                raise BlueprintValidationError(
+                    f"selector.field references unknown field: {selector_field}"
+                )
+
         for index, field in enumerate(fields):
             for condition_key in ("visible_when", "required_when"):
                 condition = field.get(condition_key)
@@ -233,6 +282,10 @@ class AdCreationBlueprint:
         raw["tools"] = list(tools)
         raw["fields"] = fields
         raw["rules"] = rules
+        if selector is not None:
+            raw["selector"] = _copy_json(selector)
+        else:
+            raw.pop("selector", None)
         return cls(
             blueprint_id=blueprint_id,
             version=version,
@@ -242,6 +295,7 @@ class AdCreationBlueprint:
             tools=tools,
             fields=tuple(_copy_json(fields)),
             rules=tuple(_copy_json(rules)),
+            selector=_copy_json(selector) if selector is not None else None,
             raw=raw,
         )
 
@@ -277,6 +331,7 @@ def validate_blueprint_against_tools(
 ) -> None:
     """Ensure every declarative field points to a registered Tool schema."""
     registered = set(blueprint.tools)
+    field_schemas: dict[str, Mapping[str, Any]] = {}
     for index, field in enumerate(blueprint.fields):
         tool_ref = str(field["tool_ref"])
         tool_name, schema_field = tool_ref.rsplit(".", 1)
@@ -293,6 +348,20 @@ def validate_blueprint_against_tools(
             raise BlueprintValidationError(
                 f"fields[{index}] references missing Tool field: {tool_ref}"
             )
+        field_schema = properties[schema_field]
+        if isinstance(field_schema, Mapping):
+            field_schemas[str(field["path"])] = field_schema
+            declared_options = field.get("options")
+            if isinstance(declared_options, list):
+                allowed = field_schema.get("enum")
+                if not isinstance(allowed, list) and isinstance(field_schema.get("items"), Mapping):
+                    allowed = field_schema["items"].get("enum")
+                if isinstance(allowed, list):
+                    unsupported = set(declared_options) - set(allowed)
+                    if unsupported:
+                        raise BlueprintValidationError(
+                            f"unsupported options for {tool_ref}: {sorted(unsupported, key=str)}"
+                        )
         if str(getattr(definition, "platform", "")).strip().lower() != blueprint.provider.lower():
             raise BlueprintValidationError(
                 f"blueprint provider {blueprint.provider!r} does not match {tool_name}"
@@ -315,6 +384,18 @@ def validate_blueprint_against_tools(
                 raise BlueprintValidationError(f"lookup Tool is not registered: {lookup_name}")
             if not getattr(lookup_definition, "is_read_tool", False):
                 raise BlueprintValidationError(f"lookup Tool must be read-only: {lookup_name}")
+    if blueprint.selector is not None:
+        selector_schema = field_schemas.get(str(blueprint.selector["field"]))
+        allowed = selector_schema.get("enum") if selector_schema else None
+        if not isinstance(allowed, list) and selector_schema and isinstance(selector_schema.get("items"), Mapping):
+            allowed = selector_schema["items"].get("enum")
+        if isinstance(allowed, list):
+            unsupported = set(blueprint.selector["values"]) - set(allowed)
+            if unsupported:
+                raise BlueprintValidationError(
+                    f"unsupported selector values for {blueprint.selector['field']}: "
+                    f"{sorted(unsupported, key=str)}"
+                )
 
 
 class BlueprintRegistry:
@@ -379,17 +460,82 @@ class BlueprintRegistry:
             self._owners = dict(snapshot[1])
 
     def list(
-        self, provider: Optional[str] = None, ad_format: Optional[str] = None
+        self, provider: Optional[str] = None, ad_format: Optional[str] = None,
+        selector_dimension: Optional[str] = None,
+        selector_value: Any = None,
     ) -> list[AdCreationBlueprint]:
         provider = str(provider).strip().lower() if provider else None
         ad_format = str(ad_format).strip() if ad_format else None
+        selector_dimension = str(selector_dimension).strip() if selector_dimension else None
         with self._lock:
             values = [
                 blueprint for blueprint in self._items.values()
                 if (provider is None or blueprint.provider.lower() == provider)
                 and (ad_format is None or blueprint.ad_format == ad_format)
+                and (
+                    selector_dimension is None
+                    or (
+                        blueprint.selector is not None
+                        and blueprint.selector.get("dimension") == selector_dimension
+                        and (
+                            selector_value is None
+                            or selector_value in blueprint.selector.get("values", [])
+                        )
+                    )
+                )
             ]
         return sorted(values, key=lambda item: (item.provider, item.ad_format, item.blueprint_id, item.version))
+
+    def resolve(
+        self,
+        provider: str,
+        *,
+        selector_values: Optional[Mapping[str, Any]] = None,
+        values: Optional[Mapping[str, Any]] = None,
+        version: Optional[str] = None,
+    ) -> Optional[AdCreationBlueprint]:
+        """Resolve a provider-owned Blueprint from its declared selector.
+
+        The registry deliberately has no provider branches.  A caller supplies
+        selector values such as ``{"objective": "OUTCOME_LEADS"}`` or
+        ``{"ad_format": "SEARCH"}``; the Blueprint declares how that value is
+        read and which values it accepts.
+        """
+        provider_key = str(provider or "").strip().lower()
+        requested = dict(selector_values or {})
+        nested_values = values if isinstance(values, Mapping) else {}
+        with self._lock:
+            candidates = [
+                blueprint for blueprint in self._items.values()
+                if blueprint.provider.lower() == provider_key
+                and (version is None or blueprint.version == str(version))
+            ]
+        matching: list[AdCreationBlueprint] = []
+        for blueprint in candidates:
+            selector = blueprint.selector
+            if selector is None:
+                if not requested:
+                    matching.append(blueprint)
+                continue
+            dimension = str(selector["dimension"])
+            selected = requested.get(dimension)
+            if selected is None:
+                selected = _value_at(nested_values, str(selector["field"]))
+            if selected in selector.get("values", []):
+                matching.append(blueprint)
+        if not matching:
+            return None
+        # Multiple immutable versions of the same Blueprint ID resolve to the
+        # newest version. Different IDs remain ambiguous rather than silently
+        # selecting a provider-specific default.
+        by_id: dict[str, AdCreationBlueprint] = {}
+        for blueprint in matching:
+            current = by_id.get(blueprint.blueprint_id)
+            if current is None or _version_key(blueprint.version) > _version_key(current.version):
+                by_id[blueprint.blueprint_id] = blueprint
+        if len(by_id) != 1:
+            return None
+        return next(iter(by_id.values()))
 
     def get(self, blueprint_id: str, version: Optional[str] = None) -> Optional[AdCreationBlueprint]:
         with self._lock:
@@ -403,8 +549,14 @@ class BlueprintRegistry:
             return None
         return sorted(candidates, key=lambda item: _version_key(item.version))[-1]
 
-    def to_dict(self, provider: Optional[str] = None, ad_format: Optional[str] = None) -> list[dict[str, Any]]:
-        return [blueprint.to_dict() for blueprint in self.list(provider, ad_format)]
+    def to_dict(
+        self, provider: Optional[str] = None, ad_format: Optional[str] = None,
+        selector_dimension: Optional[str] = None, selector_value: Any = None,
+    ) -> list[dict[str, Any]]:
+        return [
+            blueprint.to_dict()
+            for blueprint in self.list(provider, ad_format, selector_dimension, selector_value)
+        ]
 
 
 def _value_at(values: Mapping[str, Any], path: str) -> Any:
@@ -484,6 +636,7 @@ class BlueprintCascadeEngine:
 
         field_states: list[dict[str, Any]] = []
         missing: list[str] = []
+        invalid: list[str] = []
         for field in blueprint.fields:
             path = str(field["path"])
             visible = True
@@ -493,10 +646,19 @@ class BlueprintCascadeEngine:
             if visible and "required_when" in field:
                 required = _condition_matches(field["required_when"], current, changed)
             value = _value_at(current, path)
+            is_invalid = (
+                visible
+                and
+                _has_value(value)
+                and isinstance(field.get("options"), list)
+                and value not in field["options"]
+            )
+            if is_invalid:
+                invalid.append(path)
             is_missing = visible and required and not _has_value(value)
             if is_missing:
                 missing.append(path)
-            state = "hidden" if not visible else ("missing" if is_missing else "set" if _has_value(value) else "optional")
+            state = "hidden" if not visible else ("invalid" if is_invalid else "missing" if is_missing else "set" if _has_value(value) else "optional")
             item = {
                 "path": path,
                 "tool_ref": field["tool_ref"],
@@ -523,6 +685,7 @@ class BlueprintCascadeEngine:
             "blueprint_version": blueprint.version,
             "provider": blueprint.provider,
             "ad_format": blueprint.ad_format,
+            "selector": _copy_json(blueprint.selector),
             "fields": field_states,
             "changed_fields": sorted(changed),
             "active_rules": active_rules,
@@ -531,5 +694,6 @@ class BlueprintCascadeEngine:
             "preserve_fields": preserve,
             "ask_fields": ask,
             "missing_fields": missing,
-            "ready": not missing,
+            "invalid_fields": invalid,
+            "ready": not missing and not invalid,
         }

@@ -1,0 +1,33 @@
+{
+  "id": "meta.lead_generation",
+  "version": "1.0.0",
+  "provider": "meta",
+  "ad_format": "lead_generation",
+  "title": "Meta 潜在客户广告",
+  "description": "按 Meta 潜在客户目标创建广告组，并绑定 Facebook Instant Form。",
+  "selector": {
+    "dimension": "objective",
+    "field": "campaign.objective",
+    "values": ["OUTCOME_LEADS"],
+    "label": "Meta 推广目标",
+    "options": [{"value": "OUTCOME_LEADS", "label": "潜在客户"}]
+  },
+  "tools": ["meta_create_campaign", "meta_create_adset", "meta_create_lead_ad"],
+  "resources": ["campaign", "ad_set", "ad"],
+  "fields": [
+    {"path": "campaign.name", "tool_ref": "meta_create_campaign.name", "label": "Campaign 名称", "required": true},
+    {"path": "campaign.objective", "tool_ref": "meta_create_campaign.objective", "label": "推广目标", "required": true, "source": "enum", "options": ["OUTCOME_LEADS"]},
+    {"path": "campaign.special_ad_categories", "tool_ref": "meta_create_campaign.special_ad_categories", "label": "特殊广告类别", "required": true, "source": "enum"},
+    {"path": "campaign.buying_type", "tool_ref": "meta_create_campaign.buying_type", "label": "购买类型", "required": true, "source": "enum", "options": ["AUCTION", "RESERVED"]},
+    {"path": "campaign.daily_budget", "tool_ref": "meta_create_campaign.daily_budget", "label": "日预算", "required": true},
+    {"path": "ad_set.name", "tool_ref": "meta_create_adset.name", "label": "广告组名称", "required": true},
+    {"path": "ad_set.optimization_goal", "tool_ref": "meta_create_adset.optimization_goal", "label": "优化目标", "required": true, "source": "enum", "options": ["LEAD_GENERATION", "LEADS"]},
+    {"path": "ad_set.billing_event", "tool_ref": "meta_create_adset.billing_event", "label": "计费事件", "required": true, "source": "enum", "options": ["IMPRESSIONS"]},
+    {"path": "ad_set.targeting", "tool_ref": "meta_create_adset.targeting", "label": "定向", "required": true},
+    {"path": "ad.name", "tool_ref": "meta_create_lead_ad.name", "label": "广告名称", "required": true},
+    {"path": "ad.page_id", "tool_ref": "meta_create_lead_ad.page_id", "label": "Facebook Page", "required": true, "source": "lookup", "lookup_tool": "meta_list_pages"},
+    {"path": "ad.form_id", "tool_ref": "meta_create_lead_ad.form_id", "label": "Instant Form", "required": true, "source": "lookup", "lookup_tool": "meta_list_lead_forms"},
+    {"path": "ad.link", "tool_ref": "meta_create_lead_ad.link", "label": "备用落地页", "required": false}
+  ],
+  "rules": [{"id": "objective_changed", "when": {"field": "campaign.objective", "changed": true}, "reset": ["ad_set.optimization_goal", "ad_set.billing_event", "ad.form_id"]}]
+}

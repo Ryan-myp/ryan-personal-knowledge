@@ -1157,6 +1157,8 @@ async def get_creation_blueprints(
     x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
     provider: Optional[str] = Query(None, max_length=50),
     ad_format: Optional[str] = Query(None, max_length=80),
+    selector_dimension: Optional[str] = Query(None, max_length=40),
+    selector_value: Optional[str] = Query(None, max_length=120),
 ):
     """Expose declarative ad-creation metadata without making network calls."""
     _authorize_request(x_api_key, http_request)
@@ -1165,7 +1167,11 @@ async def get_creation_blueprints(
     return {
         "provider": provider,
         "ad_format": ad_format,
-        "blueprints": runtime.list_creation_blueprints(provider, ad_format),
+        "selector_dimension": selector_dimension,
+        "selector_value": selector_value,
+        "blueprints": runtime.list_creation_blueprints(
+            provider, ad_format, selector_dimension, selector_value
+        ),
     }
 
 
@@ -1176,6 +1182,36 @@ class BlueprintEvaluationRequest(BaseModel):
     previous_values: Optional[dict[str, object]] = None
     changed_fields: Optional[list[str]] = None
     version: Optional[str] = Field(None, max_length=80)
+
+
+class BlueprintResolveRequest(BaseModel):
+    """Selector values used to choose a provider-owned creation Blueprint."""
+
+    provider: str = Field(min_length=1, max_length=50)
+    selector_values: dict[str, object] = Field(default_factory=dict)
+    values: dict[str, object] = Field(default_factory=dict)
+    version: Optional[str] = Field(None, max_length=80)
+
+
+@app.post("/creation-blueprints/resolve", tags=["info"])
+async def resolve_creation_blueprint(
+    body: BlueprintResolveRequest,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Resolve a Blueprint by its declarative selector; metadata-only."""
+    _authorize_request(x_api_key, http_request)
+    if not runtime:
+        raise HTTPException(status_code=503, detail="服务未初始化")
+    blueprint = runtime.resolve_creation_blueprint(
+        body.provider,
+        selector_values=body.selector_values,
+        values=body.values,
+        version=body.version,
+    )
+    if blueprint is None:
+        raise HTTPException(status_code=404, detail="未找到匹配当前选择的广告创建蓝图")
+    return {"blueprint": blueprint}
 
 
 @app.post("/creation-blueprints/{blueprint_id}/evaluate", tags=["info"])

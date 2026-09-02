@@ -1,0 +1,29 @@
+{
+  "id": "google-ads.performance_max",
+  "version": "1.0.0",
+  "provider": "google-ads",
+  "ad_format": "PERFORMANCE_MAX",
+  "title": "Google Performance Max 广告",
+  "description": "Performance Max 不使用传统广告组，按 Asset Group 和素材资产配置。",
+  "selector": {"dimension": "ad_format", "field": "campaign.advertising_channel_type", "values": ["PERFORMANCE_MAX"], "label": "Google 广告系列类型", "options": [{"value": "PERFORMANCE_MAX", "label": "Performance Max"}]},
+  "tools": ["google_create_campaign", "google_create_asset_group"],
+  "resources": ["campaign", "asset_group"],
+  "fields": [
+    {"path": "campaign.campaign_name", "tool_ref": "google_create_campaign.campaign_name", "label": "Campaign 名称", "required": true},
+    {"path": "campaign.advertising_channel_type", "tool_ref": "google_create_campaign.advertising_channel_type", "label": "广告系列类型", "required": true, "source": "enum", "options": ["PERFORMANCE_MAX"]},
+    {"path": "campaign.campaign_goal_setting", "tool_ref": "google_create_campaign.campaign_goal_setting", "label": "Campaign 目标设置", "required": true},
+    {"path": "campaign.bidding_strategy", "tool_ref": "google_create_campaign.bidding_strategy", "label": "出价策略", "required": true, "source": "enum", "options": ["MAXIMIZE_CONVERSIONS", "MAXIMIZE_CONVERSION_VALUE", "TARGET_CPA", "TARGET_ROAS"]},
+    {"path": "campaign.target_cpa_micros", "tool_ref": "google_create_campaign.target_cpa_micros", "label": "目标 CPA", "visible_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_CPA"}, "required_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_CPA"}},
+    {"path": "campaign.target_roas", "tool_ref": "google_create_campaign.target_roas", "label": "目标 ROAS", "visible_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_ROAS"}, "required_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_ROAS"}},
+    {"path": "campaign.daily_budget", "tool_ref": "google_create_campaign.daily_budget", "label": "日预算", "required": true},
+    {"path": "asset_group.name", "tool_ref": "google_create_asset_group.name", "label": "Asset Group 名称", "required": true},
+    {"path": "asset_group.asset_group_type", "tool_ref": "google_create_asset_group.asset_group_type", "label": "Asset Group 类型", "required": true, "source": "enum", "options": ["PERFORMANCE_MAX"]},
+    {"path": "asset_group.final_urls", "tool_ref": "google_create_asset_group.final_urls", "label": "落地页网址", "required": true},
+    {"path": "asset_group.headlines", "tool_ref": "google_create_asset_group.headlines", "label": "标题素材", "required": true},
+    {"path": "asset_group.long_headlines", "tool_ref": "google_create_asset_group.long_headlines", "label": "长标题素材", "required": true},
+    {"path": "asset_group.descriptions", "tool_ref": "google_create_asset_group.descriptions", "label": "描述素材", "required": true},
+    {"path": "asset_group.images", "tool_ref": "google_create_asset_group.images", "label": "图片素材", "required": false},
+    {"path": "asset_group.videos", "tool_ref": "google_create_asset_group.videos", "label": "视频素材", "required": false}
+  ],
+  "rules": [{"id": "bidding_strategy_changed", "when": {"field": "campaign.bidding_strategy", "changed": true}, "reset": ["campaign.target_cpa_micros", "campaign.target_roas"]}]
+}

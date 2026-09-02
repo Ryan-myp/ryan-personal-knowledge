@@ -1,0 +1,32 @@
+{
+  "id": "tiktok.lead_generation",
+  "version": "1.0.0",
+  "provider": "tiktok",
+  "ad_format": "SINGLE_VIDEO",
+  "title": "TikTok 潜在客户视频广告",
+  "description": "TikTok 先确定潜在客户目标，再配置表单推广方式、优化和定向。",
+  "selector": {"dimension": "objective", "field": "campaign.objective_type", "values": ["LEAD_GENERATION"], "label": "TikTok 推广目标", "options": [{"value": "LEAD_GENERATION", "label": "潜在客户"}]},
+  "tools": ["tiktok_create_campaign", "tiktok_create_adgroup", "tiktok_create_lead_ad"],
+  "resources": ["campaign", "ad_group", "ad"],
+  "fields": [
+    {"path": "campaign.name", "tool_ref": "tiktok_create_campaign.name", "label": "Campaign 名称", "required": true},
+    {"path": "campaign.objective_type", "tool_ref": "tiktok_create_campaign.objective_type", "label": "推广目标", "required": true, "source": "enum", "options": ["LEAD_GENERATION"]},
+    {"path": "campaign.campaign_type", "tool_ref": "tiktok_create_campaign.campaign_type", "label": "Campaign 类型", "required": true, "source": "enum", "options": ["REGULAR_CAMPAIGN", "IOS14_CAMPAIGN"]},
+    {"path": "campaign.budget_mode", "tool_ref": "tiktok_create_campaign.budget_mode", "label": "预算模式", "required": true, "source": "enum", "options": ["BUDGET_MODE_DAY", "BUDGET_MODE_TOTAL"]},
+    {"path": "campaign.daily_budget", "tool_ref": "tiktok_create_campaign.daily_budget", "label": "日预算", "required_when": {"field": "campaign.budget_mode", "equals": "BUDGET_MODE_DAY"}},
+    {"path": "ad_group.name", "tool_ref": "tiktok_create_adgroup.name", "label": "广告组名称", "required": true},
+    {"path": "ad_group.promotion_type", "tool_ref": "tiktok_create_adgroup.promotion_type", "label": "推广方式", "required": true, "source": "enum", "options": ["LEAD_FORM"]},
+    {"path": "ad_group.optimization_goal", "tool_ref": "tiktok_create_adgroup.optimization_goal", "label": "优化目标", "required": true, "source": "enum", "options": ["LEAD_GENERATION"]},
+    {"path": "ad_group.billing_event", "tool_ref": "tiktok_create_adgroup.billing_event", "label": "计费事件", "required": true, "source": "enum", "options": ["OCPM", "CPM"]},
+    {"path": "ad_group.budget_mode", "tool_ref": "tiktok_create_adgroup.budget_mode", "label": "广告组预算模式", "required": true, "source": "enum", "options": ["BUDGET_MODE_DAY", "BUDGET_MODE_INFINITE"]},
+    {"path": "ad_group.budget", "tool_ref": "tiktok_create_adgroup.budget", "label": "广告组预算", "required": true},
+    {"path": "ad_group.location_ids", "tool_ref": "tiktok_create_adgroup.location_ids", "label": "投放地区", "required": true, "source": "lookup", "lookup_tool": "tiktok_list_locations"},
+    {"path": "ad_group.placement_type", "tool_ref": "tiktok_create_adgroup.placement_type", "label": "版位模式", "required": true, "source": "enum", "options": ["PLACEMENT_TYPE_NORMAL", "PLACEMENT_TYPE_AUTOMATIC"]},
+    {"path": "ad_group.bid_type", "tool_ref": "tiktok_create_adgroup.bid_type", "label": "出价方式", "required": true, "source": "enum", "options": ["BID_TYPE_NO_BID", "BID_TYPE_CUSTOM", "BID_TYPE_MAX_CONVERSION"]},
+    {"path": "ad_group.targeting", "tool_ref": "tiktok_create_adgroup.targeting", "label": "定向", "required": false},
+    {"path": "ad.name", "tool_ref": "tiktok_create_lead_ad.name", "label": "广告名称", "required": true},
+    {"path": "ad.page_id", "tool_ref": "tiktok_create_lead_ad.page_id", "label": "TikTok Page / Identity", "required": true},
+    {"path": "ad.media", "tool_ref": "tiktok_create_lead_ad.media", "label": "视频素材", "required": true}
+  ],
+  "rules": [{"id": "objective_changed", "when": {"field": "campaign.objective_type", "changed": true}, "reset": ["ad_group.promotion_type", "ad_group.optimization_goal", "ad_group.billing_event"]}]
+}

@@ -1,0 +1,41 @@
+{
+  "id": "meta.traffic_link",
+  "version": "1.0.0",
+  "provider": "meta",
+  "ad_format": "link_traffic",
+  "title": "Meta 流量链接广告",
+  "description": "按 Meta 流量目标创建 Campaign、Ad Set 和链接广告。",
+  "selector": {
+    "dimension": "objective",
+    "field": "campaign.objective",
+    "values": ["OUTCOME_TRAFFIC", "TRAFFIC", "LINK_CLICKS"],
+    "label": "Meta 推广目标",
+    "options": [
+      {"value": "OUTCOME_TRAFFIC", "label": "流量"},
+      {"value": "TRAFFIC", "label": "网站流量（旧目标）"},
+      {"value": "LINK_CLICKS", "label": "链接点击（旧目标）"}
+    ]
+  },
+  "tools": ["meta_create_campaign", "meta_create_adset", "meta_create_traffic_ad"],
+  "resources": ["campaign", "ad_set", "ad"],
+  "fields": [
+    {"path": "campaign.name", "tool_ref": "meta_create_campaign.name", "label": "Campaign 名称", "required": true},
+    {"path": "campaign.objective", "tool_ref": "meta_create_campaign.objective", "label": "推广目标", "required": true, "source": "enum", "options": ["OUTCOME_TRAFFIC", "TRAFFIC", "LINK_CLICKS"]},
+    {"path": "campaign.special_ad_categories", "tool_ref": "meta_create_campaign.special_ad_categories", "label": "特殊广告类别", "required": true, "source": "enum"},
+    {"path": "campaign.buying_type", "tool_ref": "meta_create_campaign.buying_type", "label": "购买类型", "required": true, "source": "enum", "options": ["AUCTION", "RESERVED"]},
+    {"path": "campaign.daily_budget", "tool_ref": "meta_create_campaign.daily_budget", "label": "日预算", "required": true},
+    {"path": "ad_set.name", "tool_ref": "meta_create_adset.name", "label": "广告组名称", "required": true},
+    {"path": "ad_set.optimization_goal", "tool_ref": "meta_create_adset.optimization_goal", "label": "优化目标", "required": true, "source": "enum", "options": ["LINK_CLICKS", "LANDING_PAGE_VIEWS"]},
+    {"path": "ad_set.billing_event", "tool_ref": "meta_create_adset.billing_event", "label": "计费事件", "required": true, "source": "enum", "options": ["IMPRESSIONS", "LINK_CLICKS"]},
+    {"path": "ad_set.targeting", "tool_ref": "meta_create_adset.targeting", "label": "定向", "required": true},
+    {"path": "ad.name", "tool_ref": "meta_create_traffic_ad.name", "label": "广告名称", "required": true},
+    {"path": "ad.page_id", "tool_ref": "meta_create_traffic_ad.page_id", "label": "Facebook Page", "required": true, "source": "lookup", "lookup_tool": "meta_list_pages"},
+    {"path": "ad.link", "tool_ref": "meta_create_traffic_ad.link", "label": "落地页链接", "required": true},
+    {"path": "ad.media_type", "tool_ref": "meta_create_traffic_ad.media_type", "label": "素材类型", "required": true, "source": "enum", "options": ["IMAGE", "VIDEO"]},
+    {"path": "ad.video_id", "tool_ref": "meta_create_traffic_ad.video_id", "label": "视频素材", "visible_when": {"field": "ad.media_type", "equals": "VIDEO"}, "required_when": {"field": "ad.media_type", "equals": "VIDEO"}}
+  ],
+  "rules": [
+    {"id": "objective_changed", "when": {"field": "campaign.objective", "changed": true}, "reset": ["ad_set.optimization_goal", "ad_set.billing_event"]},
+    {"id": "media_type_changed", "when": {"field": "ad.media_type", "changed": true}, "reset": ["ad.video_id"]}
+  ]
+}

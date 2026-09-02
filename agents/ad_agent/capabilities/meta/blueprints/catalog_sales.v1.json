@@ -1,0 +1,35 @@
+{
+  "id": "meta.catalog_sales",
+  "version": "1.0.0",
+  "provider": "meta",
+  "ad_format": "catalog_sales",
+  "title": "Meta 商品目录销售广告",
+  "description": "按 Meta 销售目标选择商品目录和商品集，创建目录广告。",
+  "selector": {
+    "dimension": "objective",
+    "field": "campaign.objective",
+    "values": ["OUTCOME_SALES", "PRODUCT_CATALOG_SALES"],
+    "label": "Meta 推广目标",
+    "options": [{"value": "OUTCOME_SALES", "label": "销售"}, {"value": "PRODUCT_CATALOG_SALES", "label": "商品目录销售（旧目标）"}]
+  },
+  "tools": ["meta_create_campaign", "meta_create_adset", "meta_create_catalog_ad"],
+  "resources": ["campaign", "ad_set", "ad"],
+  "fields": [
+    {"path": "campaign.name", "tool_ref": "meta_create_campaign.name", "label": "Campaign 名称", "required": true},
+    {"path": "campaign.objective", "tool_ref": "meta_create_campaign.objective", "label": "推广目标", "required": true, "source": "enum", "options": ["OUTCOME_SALES", "PRODUCT_CATALOG_SALES"]},
+    {"path": "campaign.special_ad_categories", "tool_ref": "meta_create_campaign.special_ad_categories", "label": "特殊广告类别", "required": true, "source": "enum"},
+    {"path": "campaign.buying_type", "tool_ref": "meta_create_campaign.buying_type", "label": "购买类型", "required": true, "source": "enum", "options": ["AUCTION", "RESERVED"]},
+    {"path": "campaign.daily_budget", "tool_ref": "meta_create_campaign.daily_budget", "label": "日预算", "required": true},
+    {"path": "ad_set.name", "tool_ref": "meta_create_adset.name", "label": "广告组名称", "required": true},
+    {"path": "ad_set.optimization_goal", "tool_ref": "meta_create_adset.optimization_goal", "label": "优化目标", "required": true, "source": "enum", "options": ["VALUE", "OFFSITE_CONVERSIONS", "CONVERSIONS"]},
+    {"path": "ad_set.billing_event", "tool_ref": "meta_create_adset.billing_event", "label": "计费事件", "required": true, "source": "enum", "options": ["IMPRESSIONS"]},
+    {"path": "ad_set.targeting", "tool_ref": "meta_create_adset.targeting", "label": "定向", "required": true},
+    {"path": "ad_set.product_set_id", "tool_ref": "meta_create_adset.product_set_id", "label": "商品集", "required": true, "source": "lookup", "lookup_tool": "meta_list_product_sets"},
+    {"path": "ad.name", "tool_ref": "meta_create_catalog_ad.name", "label": "广告名称", "required": true},
+    {"path": "ad.page_id", "tool_ref": "meta_create_catalog_ad.page_id", "label": "Facebook Page", "required": true, "source": "lookup", "lookup_tool": "meta_list_pages"},
+    {"path": "ad.product_set_id", "tool_ref": "meta_create_catalog_ad.product_set_id", "label": "广告商品集", "required": true, "source": "lookup", "lookup_tool": "meta_list_product_sets"},
+    {"path": "ad.link", "tool_ref": "meta_create_catalog_ad.link", "label": "商品落地页", "required": true},
+    {"path": "ad.ad_style", "tool_ref": "meta_create_catalog_ad.ad_style", "label": "广告样式", "required": true, "source": "enum", "options": ["CAROUSEL", "COLLAGE", "PRODUCT_SET"]}
+  ],
+  "rules": [{"id": "objective_changed", "when": {"field": "campaign.objective", "changed": true}, "reset": ["ad_set.optimization_goal", "ad_set.product_set_id", "ad.product_set_id"]}]
+}

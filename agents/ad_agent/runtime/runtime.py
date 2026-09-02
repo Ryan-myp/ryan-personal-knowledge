@@ -1062,10 +1062,30 @@ class AgentRuntime:
         ]
 
     def list_creation_blueprints(
-        self, provider: Optional[str] = None, ad_format: Optional[str] = None
+        self, provider: Optional[str] = None, ad_format: Optional[str] = None,
+        selector_dimension: Optional[str] = None, selector_value: Any = None,
     ) -> list[dict[str, Any]]:
         """Return provider-owned creation metadata without making network calls."""
-        return self.creation_blueprints.to_dict(provider, ad_format)
+        return self.creation_blueprints.to_dict(
+            provider, ad_format, selector_dimension, selector_value
+        )
+
+    def resolve_creation_blueprint(
+        self,
+        provider: str,
+        *,
+        selector_values: Optional[Mapping[str, Any]] = None,
+        values: Optional[Mapping[str, Any]] = None,
+        version: Optional[str] = None,
+    ) -> Optional[dict[str, Any]]:
+        """Resolve provider-owned creation metadata from declarative selectors."""
+        blueprint = self.creation_blueprints.resolve(
+            provider,
+            selector_values=selector_values,
+            values=values,
+            version=version,
+        )
+        return blueprint.to_dict() if blueprint is not None else None
 
     def evaluate_creation_blueprint(
         self,

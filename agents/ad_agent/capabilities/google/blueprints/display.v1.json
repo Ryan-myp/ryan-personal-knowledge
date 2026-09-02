@@ -1,0 +1,30 @@
+{
+  "id": "google-ads.display",
+  "version": "1.0.0",
+  "provider": "google-ads",
+  "ad_format": "DISPLAY",
+  "title": "Google Display 广告",
+  "description": "按 Google Display 广告系列类型配置广告组和响应式展示广告素材。",
+  "selector": {"dimension": "ad_format", "field": "campaign.advertising_channel_type", "values": ["DISPLAY"], "label": "Google 广告系列类型", "options": [{"value": "DISPLAY", "label": "展示"}]},
+  "tools": ["google_create_campaign", "google_create_ad_group", "google_create_responsive_display_ad"],
+  "resources": ["campaign", "ad_group", "ad"],
+  "fields": [
+    {"path": "campaign.campaign_name", "tool_ref": "google_create_campaign.campaign_name", "label": "Campaign 名称", "required": true},
+    {"path": "campaign.advertising_channel_type", "tool_ref": "google_create_campaign.advertising_channel_type", "label": "广告系列类型", "required": true, "source": "enum", "options": ["DISPLAY"]},
+    {"path": "campaign.bidding_strategy", "tool_ref": "google_create_campaign.bidding_strategy", "label": "出价策略", "required": true, "source": "enum", "options": ["MAXIMIZE_CONVERSIONS", "TARGET_CPA", "MANUAL_CPC"]},
+    {"path": "campaign.target_cpa_micros", "tool_ref": "google_create_campaign.target_cpa_micros", "label": "目标 CPA", "visible_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_CPA"}, "required_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_CPA"}},
+    {"path": "campaign.daily_budget", "tool_ref": "google_create_campaign.daily_budget", "label": "日预算", "required": true},
+    {"path": "ad_group.name", "tool_ref": "google_create_ad_group.name", "label": "广告组名称", "required": true},
+    {"path": "ad_group.campaign_type", "tool_ref": "google_create_ad_group.campaign_type", "label": "广告组所属类型", "required": true, "source": "enum", "options": ["DISPLAY"]},
+    {"path": "ad_group.type", "tool_ref": "google_create_ad_group.type", "label": "广告组类型", "required": true, "source": "enum", "options": ["DISPLAY_STANDARD"]},
+    {"path": "ad_group.targeting", "tool_ref": "google_create_ad_group.targeting", "label": "定向", "required": false},
+    {"path": "ad.name", "tool_ref": "google_create_responsive_display_ad.name", "label": "广告名称", "required": true},
+    {"path": "ad.final_url", "tool_ref": "google_create_responsive_display_ad.final_url", "label": "最终到达网址", "required": true},
+    {"path": "ad.headlines", "tool_ref": "google_create_responsive_display_ad.headlines", "label": "短标题", "required": true},
+    {"path": "ad.long_headline", "tool_ref": "google_create_responsive_display_ad.long_headline", "label": "长标题", "required": true},
+    {"path": "ad.descriptions", "tool_ref": "google_create_responsive_display_ad.descriptions", "label": "描述", "required": true},
+    {"path": "ad.business_name", "tool_ref": "google_create_responsive_display_ad.business_name", "label": "商家名称", "required": true},
+    {"path": "ad.marketing_images", "tool_ref": "google_create_responsive_display_ad.marketing_images", "label": "营销图片", "required": false}
+  ],
+  "rules": [{"id": "bidding_strategy_changed", "when": {"field": "campaign.bidding_strategy", "changed": true}, "reset": ["campaign.target_cpa_micros"]}]
+}

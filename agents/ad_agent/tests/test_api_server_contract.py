@@ -70,6 +70,24 @@ class FakeRuntime:
             "coverage": coverage or "declared_only",
         }]
 
+    def list_creation_blueprints(self, provider=None, ad_format=None, selector_dimension=None, selector_value=None):
+        return [{
+            "id": "demo.search",
+            "provider": provider or "google-ads",
+            "ad_format": ad_format or "SEARCH",
+            "selector": {"dimension": "ad_format", "field": "campaign.advertising_channel_type", "values": ["SEARCH"]},
+        }]
+
+    def resolve_creation_blueprint(self, provider, *, selector_values=None, values=None, version=None):
+        if (selector_values or {}).get("ad_format") != "SEARCH":
+            return None
+        return {
+            "id": "demo.search",
+            "provider": provider,
+            "ad_format": "SEARCH",
+            "version": version or "1.0.0",
+        }
+
     def list_plugins(self, tenant_id=None):
         return [{
             "manifest": {
@@ -103,6 +121,30 @@ def test_plugins_exposes_only_safe_lifecycle_metadata(fake_server):
     assert response.status_code == 200
     assert response.json()["plugins"][0]["state"] == "active"
     assert "contribution" not in response.json()["plugins"][0]
+
+
+def test_creation_blueprint_selector_endpoints_are_metadata_only(fake_server):
+    with TestClient(api_server.app) as client:
+        listing = client.get(
+            "/creation-blueprints",
+            headers={"X-API-Key": "test-key"},
+            params={"provider": "google-ads", "selector_dimension": "ad_format", "selector_value": "SEARCH"},
+        )
+        resolved = client.post(
+            "/creation-blueprints/resolve",
+            headers={"X-API-Key": "test-key"},
+            json={"provider": "google-ads", "selector_values": {"ad_format": "SEARCH"}},
+        )
+        missing = client.post(
+            "/creation-blueprints/resolve",
+            headers={"X-API-Key": "test-key"},
+            json={"provider": "google-ads", "selector_values": {"ad_format": "VIDEO"}},
+        )
+    assert listing.status_code == 200
+    assert listing.json()["blueprints"][0]["selector"]["dimension"] == "ad_format"
+    assert resolved.status_code == 200
+    assert resolved.json()["blueprint"]["id"] == "demo.search"
+    assert missing.status_code == 404
 
 
 def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
