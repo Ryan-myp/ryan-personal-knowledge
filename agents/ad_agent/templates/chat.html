@@ -1397,6 +1397,40 @@
             max-width: 800px;
             margin: 0 auto;
         }
+
+        /* Conversational creation cards: structured UI metadata rendered by
+           the page; values are always submitted through the normal chat path. */
+        .creation-card {
+            margin-top: 14px;
+            border: 1px solid rgba(99, 102, 241, .38);
+            border-radius: 12px;
+            overflow: hidden;
+            background: var(--bg-secondary);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, .16);
+        }
+        .creation-card-header { padding: 14px 16px 11px; border-bottom: 1px solid var(--border); }
+        .creation-card-kicker { color: var(--accent); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+        .creation-card-title { margin-top: 4px; color: var(--text-primary); font-size: 14px; font-weight: 650; }
+        .creation-card-meta { margin-top: 4px; color: var(--text-muted); font-size: 10px; }
+        .creation-card-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 13px 16px; }
+        .creation-card-field { min-width: 0; padding: 9px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-tertiary); }
+        .creation-card-field.hidden { display: none; }
+        .creation-card-field.missing { border-color: rgba(245, 158, 11, .58); }
+        .creation-card-field.invalid { border-color: rgba(239, 68, 68, .62); }
+        .creation-card-field label { display: flex; gap: 4px; margin-bottom: 5px; color: var(--text-primary); font-size: 11px; font-weight: 650; }
+        .creation-card-field .required { color: var(--error); }
+        .creation-card-field .help { margin-bottom: 6px; color: var(--text-muted); font-size: 10px; line-height: 1.4; }
+        .creation-card-field input, .creation-card-field select, .creation-card-field textarea { width: 100%; min-height: 30px; padding: 6px 8px; border: 1px solid var(--border-light); border-radius: 6px; outline: none; color: var(--text-primary); background: var(--bg-primary); font: inherit; font-size: 11px; }
+        .creation-card-field textarea { min-height: 58px; resize: vertical; font-family: Monaco, Menlo, monospace; font-size: 10px; }
+        .creation-card-field input:focus, .creation-card-field select:focus, .creation-card-field textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-light); }
+        .creation-card-field .source { margin-top: 5px; color: var(--text-muted); font-size: 9px; line-height: 1.35; }
+        .creation-card-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; padding: 11px 16px; border-top: 1px solid var(--border); }
+        .creation-card-status { flex: 1; min-width: 150px; color: var(--text-muted); font-size: 10px; }
+        .creation-card-action { padding: 7px 10px; border: 1px solid var(--border-light); border-radius: 7px; color: var(--text-secondary); background: var(--bg-hover); cursor: pointer; font: inherit; font-size: 10px; }
+        .creation-card-action:hover { color: var(--text-primary); border-color: var(--accent); }
+        .creation-card-action.primary { border-color: var(--accent); color: white; background: var(--accent); }
+        .creation-card-action:disabled { opacity: .55; cursor: not-allowed; }
+        @media (max-width: 720px) { .creation-card-fields { grid-template-columns: 1fr; } }
         
         /* 确认卡片样式 */
         .confirm-card {
@@ -2499,6 +2533,8 @@
         let pendingConversationDeleteIds = [];
         let pendingConversationRenameId = null;
         let workspaceTheme = 'dark';
+        const creationCardState = new Map();
+        const creationCardEvaluationTimers = new Map();
         const skillState = {
             versions: [],
             selected: null,
@@ -3280,7 +3316,8 @@
             sessionId = data.session_id || sessionId;
             selectedConversationId = sessionId;
             const results = data.results || [];
-            if (data.needs_confirmation && data.confirmation_payload) {
+            const hasCreationCards = Boolean(data.ui?.cards?.length);
+            if (data.needs_confirmation && data.confirmation_payload && !hasCreationCards) {
                 showConfirm(data.confirmation_payload, {
                     user_input: requestParams.user_input,
                     account_id: requestParams.account_id || null,
@@ -3290,7 +3327,7 @@
                 return;
             }
             const tools = results.map(item => ({ tool: item.tool, success: item.success }));
-            addMessage(data.content || '服务端未返回可展示的结果。', 'agent', tools);
+            addMessage(data.content || '我已经整理好这次广告创建需要的参数，请在卡片中确认或继续用文字补充。', 'agent', tools, false, '', null, data.ui || null);
         }
 
         function requestHeaders(extra = {}) {
@@ -4431,8 +4468,248 @@
             }
         }
         
+        function creationCardValueText(value) {
+            if (value === undefined || value === null) return '';
+            return typeof value === 'object' ? JSON.stringify(value) : String(value);
+        }
+
+        function setCreationNestedValue(target, path, value) {
+            const parts = String(path || '').split('.').filter(Boolean);
+            if (!parts.length) return;
+            let current = target;
+            parts.forEach((part, index) => {
+                if (index === parts.length - 1) current[part] = value;
+                else current = current[part] && typeof current[part] === 'object' ? current[part] : (current[part] = {});
+            });
+        }
+
+        function creationCardParams(card) {
+            const values = {};
+            (card.fields || []).forEach(field => {
+                if (field.visible === false || field.value === undefined || field.value === null || field.value === '') return;
+                setCreationNestedValue(values, field.provider_field || field.path, field.value);
+                // Keep a tool-scoped copy for repeated fields such as name or
+                // app_id. The top-level copy remains available to the
+                // provider-neutral activation predicates; the authoritative
+                // Tool builder uses the scoped value for its own schema.
+                if (field.tool) {
+                    values[field.tool] = values[field.tool] || {};
+                    setCreationNestedValue(values[field.tool], field.provider_field || field.path, field.value);
+                }
+            });
+            return { [card.provider]: values };
+        }
+
+        function creationCardDraftValues(card) {
+            const values = {};
+            (card.fields || []).forEach(field => {
+                if (field.value !== undefined && field.value !== null && field.value !== '') values[field.path] = field.value;
+            });
+            return values;
+        }
+
+        async function evaluateCreationCard(card, changedPath) {
+            if (!card.blueprint_id) return;
+            try {
+                const response = await authenticatedFetch(`/creation-blueprints/${encodeURIComponent(card.blueprint_id)}/evaluate`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ values: creationCardDraftValues(card), version: card.blueprint_version, changed_fields: changedPath ? [changedPath] : [] })
+                });
+                if (!response.ok) throw new Error(`参数检查失败（${response.status}）`);
+                const evaluation = await response.json();
+                const reset = new Set(evaluation.reset_fields || []);
+                (card.fields || []).forEach(field => {
+                    if (reset.has(field.path)) field.value = undefined;
+                    const state = (evaluation.fields || []).find(item => item.path === field.path);
+                    if (state) {
+                        field.visible = state.visible;
+                        field.required = state.required;
+                        field.state = state.state;
+                    }
+                });
+                card.missing_fields = evaluation.missing_fields || [];
+                card.invalid_fields = evaluation.invalid_fields || [];
+                card.ready = Boolean(evaluation.ready);
+                const current = document.querySelector(`.creation-card[data-card-id="${CSS.escape(card.id)}"]`);
+                if (current) current.replaceWith(renderCreationCard(card));
+            } catch (error) {
+                // A transient UI evaluation error does not alter the draft;
+                // the next chat submission still passes through the server
+                // Tool schema and authoritative cascade validation.
+                console.debug('creation card evaluation failed', error);
+            }
+        }
+
+        function scheduleCreationCardEvaluation(card, path) {
+            const prior = creationCardEvaluationTimers.get(card.id);
+            if (prior) window.clearTimeout(prior);
+            const timer = window.setTimeout(() => {
+                creationCardEvaluationTimers.delete(card.id);
+                evaluateCreationCard(card, path);
+            }, 220);
+            creationCardEvaluationTimers.set(card.id, timer);
+        }
+
+        function creationCardStatus(card) {
+            const missing = (card.fields || []).filter(field => field.visible !== false && field.required && (field.value === undefined || field.value === null || field.value === '')).length;
+            const invalid = (card.invalid_fields || []).length;
+            if (invalid) return `有 ${invalid} 项需要调整`;
+            if (missing) return `还需要补充 ${missing} 项`;
+            return card.ready ? '参数已满足当前蓝图要求' : '可以继续用文字补充参数';
+        }
+
+        function renderCreationCard(card) {
+            creationCardState.set(card.id, card);
+            const wrapper = document.createElement('section');
+            wrapper.className = 'creation-card';
+            wrapper.dataset.cardId = card.id;
+
+            const header = document.createElement('div');
+            header.className = 'creation-card-header';
+            const kicker = document.createElement('div');
+            kicker.className = 'creation-card-kicker';
+            kicker.textContent = card.type === 'ad_creation_selector' ? '广告类型选择' : '广告参数草稿';
+            const title = document.createElement('div');
+            title.className = 'creation-card-title';
+            title.textContent = card.title || '广告创建参数';
+            const meta = document.createElement('div');
+            meta.className = 'creation-card-meta';
+            meta.textContent = card.blueprint_id ? `${card.provider} · Blueprint v${card.blueprint_version} · 仅生成草稿` : `${card.provider} · 先选择创建类型`;
+            header.append(kicker, title, meta);
+            wrapper.appendChild(header);
+
+            const fields = document.createElement('div');
+            fields.className = 'creation-card-fields';
+            (card.fields || []).forEach(field => {
+                const item = document.createElement('div');
+                item.className = `creation-card-field${field.visible === false ? ' hidden' : ''}${field.state === 'missing' ? ' missing' : ''}${field.state === 'invalid' ? ' invalid' : ''}`;
+                const label = document.createElement('label');
+                label.textContent = field.label || field.path;
+                if (field.required) {
+                    const required = document.createElement('span');
+                    required.className = 'required';
+                    required.textContent = '*';
+                    label.appendChild(required);
+                }
+                item.appendChild(label);
+                if (field.description) {
+                    const help = document.createElement('div');
+                    help.className = 'help';
+                    help.textContent = field.description;
+                    item.appendChild(help);
+                }
+                let control;
+                const options = Array.isArray(field.options) ? field.options : [];
+                if (field.control === 'select' || field.control === 'multiselect') {
+                    control = document.createElement('select');
+                    if (field.control === 'multiselect') control.multiple = true;
+                    if (field.control === 'select') {
+                        const empty = document.createElement('option');
+                        empty.value = '';
+                        empty.textContent = field.required ? '请选择…' : '不设置';
+                        control.appendChild(empty);
+                    }
+                    options.forEach(option => {
+                        const node = document.createElement('option');
+                        node.value = creationCardValueText(option.value);
+                        node.textContent = option.label || node.value;
+                        if (Array.isArray(field.value) ? field.value.map(String).includes(node.value) : String(field.value ?? '') === node.value) node.selected = true;
+                        control.appendChild(node);
+                    });
+                } else if (field.control === 'checkbox') {
+                    control = document.createElement('input');
+                    control.type = 'checkbox';
+                    control.checked = Boolean(field.value);
+                } else if (field.control === 'json') {
+                    control = document.createElement('textarea');
+                    control.placeholder = Array.isArray(field.value) ? '[...]' : '{...}';
+                    control.value = creationCardValueText(field.value);
+                } else {
+                    control = document.createElement('input');
+                    control.type = field.control === 'number' ? 'number' : 'text';
+                    control.value = creationCardValueText(field.value);
+                    if (field.control === 'lookup') control.placeholder = '可填写已知 ID；列表选择将在受控查询接入后提供';
+                }
+                control.dataset.path = field.path;
+                const updateValue = () => {
+                    let value;
+                    if (field.control === 'checkbox') value = control.checked;
+                    else if (field.control === 'multiselect') value = Array.from(control.selectedOptions).map(option => option.value);
+                    else if (field.control === 'json') {
+                        const raw = control.value.trim();
+                        if (!raw) value = undefined;
+                        else { try { value = JSON.parse(raw); } catch (_) { value = raw; } }
+                    } else if (field.control === 'number') value = control.value === '' ? undefined : Number(control.value);
+                    else value = control.value === '' ? undefined : control.value;
+                    field.value = value;
+                    item.classList.toggle('missing', field.required && (value === undefined || value === null || value === ''));
+                    creationCardState.set(card.id, card);
+                    scheduleCreationCardEvaluation(card, field.path);
+                    const status = wrapper.querySelector('.creation-card-status');
+                    if (status) status.textContent = creationCardStatus(card);
+                };
+                control.addEventListener('change', updateValue);
+                if (field.control === 'text' || field.control === 'number' || field.control === 'lookup') control.addEventListener('input', updateValue);
+                item.appendChild(control);
+                const source = document.createElement('div');
+                source.className = 'source';
+                source.textContent = field.source === 'lookup' ? `动态参数 · ${field.lookup?.tool || '受控 lookup'} · 当前不自动调用渠道` : `来源 · ${field.source || 'Tool Schema'}`;
+                item.appendChild(source);
+                fields.appendChild(item);
+            });
+            wrapper.appendChild(fields);
+
+            const footer = document.createElement('div');
+            footer.className = 'creation-card-footer';
+            const status = document.createElement('span');
+            status.className = 'creation-card-status';
+            status.textContent = creationCardStatus(card);
+            footer.appendChild(status);
+            (card.actions || []).forEach(action => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = `creation-card-action${action.id === 'preview' || action.id === 'apply' ? ' primary' : ''}`;
+                button.textContent = action.label || action.id;
+                button.addEventListener('click', () => handleCreationCardAction(card.id, action.id));
+                footer.appendChild(button);
+            });
+            wrapper.appendChild(footer);
+            return wrapper;
+        }
+
+        function renderUiCards(ui) {
+            const fragment = document.createDocumentFragment();
+            (ui?.cards || []).forEach(card => fragment.appendChild(renderCreationCard(card)));
+            return fragment;
+        }
+
+        async function handleCreationCardAction(cardId, action) {
+            const card = creationCardState.get(cardId);
+            if (!card) return;
+            if (action === 'continue_chat') {
+                setInput(`请继续完善“${card.title || '广告创建'}”，我可以直接在输入框里补充参数。`);
+                return;
+            }
+            const params = creationCardParams(card);
+            const userInput = action === 'apply'
+                ? `选择${card.provider}广告创建类型并继续` : action === 'validate'
+                    ? `检查${card.title || card.provider + '广告'}参数` : `生成${card.title || card.provider + '广告'}的预览`;
+            addMessage(userInput, 'user');
+            addLoading();
+            try {
+                const requestParams = { user_input: userInput, user_id: 'web_user', session_id: sessionId, platform_params: params };
+                const data = await streamChatRequest(requestParams);
+                removeLoading();
+                renderStreamResult(data, requestParams);
+                await refreshConversationHistory({ silent: true });
+            } catch (error) {
+                removeLoading();
+                addMessage('请求失败: ' + error.message, 'agent', null, true);
+            }
+        }
+
         // Add message to chat
-        function addMessage(content, type = 'agent', tools = null, isError = false, toolSummaryHtml = '', messageTime = null) {
+        function addMessage(content, type = 'agent', tools = null, isError = false, toolSummaryHtml = '', messageTime = null, ui = null) {
             const container = document.getElementById('chatContainer');
             const welcome = document.getElementById('welcomePage');
             if (welcome) welcome.style.display = 'none';
@@ -4455,6 +4732,7 @@
                     </span>
                 `).join('')}</div>`;
             }
+            if (ui?.cards?.length) bodyHtml += '<div class="message-ui-cards"></div>';
 
             msg.innerHTML = `
                 <div class="message-avatar">${type === 'user' ? '👤' : '🤖'}</div>
@@ -4466,6 +4744,8 @@
                     <div class="message-body">${bodyHtml}</div>
                 </div>
             `;
+
+            if (ui?.cards?.length) msg.querySelector('.message-ui-cards').appendChild(renderUiCards(ui));
 
             container.appendChild(msg);
             document.getElementById('chatArea').scrollTop = document.getElementById('chatArea').scrollHeight;

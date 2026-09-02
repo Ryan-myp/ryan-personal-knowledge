@@ -36,21 +36,24 @@
       "label": "推广目标",
       "description": "决定后续可选的推广方式、优化目标和转化设置。",
       "required": true,
-      "source": "enum"
+      "source": "enum",
+      "options": ["APP_PROMOTION"]
     },
     {
       "path": "campaign.campaign_type",
       "tool_ref": "tiktok_create_campaign.campaign_type",
       "label": "Campaign 类型",
       "required": true,
-      "source": "enum"
+      "source": "enum",
+      "options": ["REGULAR_CAMPAIGN", "IOS14_CAMPAIGN"]
     },
     {
       "path": "campaign.budget_mode",
       "tool_ref": "tiktok_create_campaign.budget_mode",
       "label": "预算模式",
       "required": true,
-      "source": "enum"
+      "source": "enum",
+      "options": ["BUDGET_MODE_DAY", "BUDGET_MODE_INFINITE", "BUDGET_MODE_TOTAL"]
     },
     {
       "path": "campaign.daily_budget",
@@ -74,7 +77,8 @@
         "field": "campaign.objective_type",
         "equals": "APP_PROMOTION"
       },
-      "source": "enum"
+      "source": "enum",
+      "options": ["APP_ACQUISITION", "APP_RETARGETING"]
     },
     {
       "path": "ad_group.name",
@@ -96,7 +100,8 @@
         "field": "campaign.objective_type",
         "equals": "APP_PROMOTION"
       },
-      "source": "enum"
+      "source": "enum",
+      "options": ["APP_ANDROID", "APP_IOS"]
     },
     {
       "path": "ad_group.app_id",
@@ -119,6 +124,7 @@
       "label": "计费事件",
       "required": true,
       "source": "enum",
+      "options": ["OCPM"],
       "options_from": [
         "campaign.objective_type",
         "ad_group.promotion_type",
@@ -131,10 +137,35 @@
       "label": "优化目标",
       "required": true,
       "source": "enum",
+      "options": ["INSTALL", "IN_APP_EVENT", "CONVERSION"],
       "options_from": [
         "campaign.objective_type",
         "ad_group.promotion_type"
       ]
+    },
+    {
+      "path": "ad_group.bid_type",
+      "tool_ref": "tiktok_create_adgroup.bid_type",
+      "label": "出价方式",
+      "required": true,
+      "source": "enum",
+      "options": ["BID_TYPE_NO_BID", "BID_TYPE_CUSTOM", "BID_TYPE_MAX_CONVERSION"]
+    },
+    {
+      "path": "ad_group.deep_bid_type",
+      "tool_ref": "tiktok_create_adgroup.deep_bid_type",
+      "label": "深度优化目标",
+      "description": "App 转化广告需要选择安装、应用内事件或回报目标。",
+      "visible_when": {
+        "field": "ad_group.promotion_type",
+        "in": ["APP_ANDROID", "APP_IOS"]
+      },
+      "required_when": {
+        "field": "ad_group.promotion_type",
+        "in": ["APP_ANDROID", "APP_IOS"]
+      },
+      "source": "enum",
+      "options": ["AEO", "OCC", "ROAS"]
     },
     {
       "path": "ad_group.conversion_id",
@@ -156,7 +187,8 @@
       "tool_ref": "tiktok_create_adgroup.placement_type",
       "label": "版位模式",
       "required": true,
-      "source": "enum"
+      "source": "enum",
+      "options": ["PLACEMENT_TYPE_NORMAL", "PLACEMENT_TYPE_AUTOMATIC"]
     },
     {
       "path": "ad_group.placements",
@@ -170,7 +202,8 @@
         "field": "ad_group.placement_type",
         "equals": "PLACEMENT_TYPE_NORMAL"
       },
-      "source": "enum"
+      "source": "enum",
+      "options": ["PLACEMENT_TIKTOK", "PLACEMENT_PANGLE", "PLACEMENT_GLOBAL_APP_BUNDLE"]
     },
     {
       "path": "ad_group.location_ids",
@@ -179,6 +212,13 @@
       "required": true,
       "source": "lookup",
       "lookup_tool": "tiktok_list_locations"
+    },
+    {
+      "path": "ad_group.age_groups",
+      "tool_ref": "tiktok_create_adgroup.age_groups",
+      "label": "年龄范围",
+      "description": "TikTok 按年龄段投放；当前契约不能精确到单岁，18—35 岁需按可用年龄段确认是否覆盖 35 岁。",
+      "source": "enum"
     },
     {
       "path": "ad_group.operating_systems",
@@ -192,14 +232,16 @@
         "field": "ad_group.promotion_type",
         "in": ["APP_ANDROID", "APP_IOS"]
       },
-      "source": "enum"
+      "source": "enum",
+      "options": ["ANDROID", "IOS"]
     },
     {
       "path": "ad_group.budget_mode",
       "tool_ref": "tiktok_create_adgroup.budget_mode",
       "label": "广告组预算模式",
       "required": true,
-      "source": "enum"
+      "source": "enum",
+      "options": ["BUDGET_MODE_DAY", "BUDGET_MODE_INFINITE", "BUDGET_MODE_DYNAMIC_DAILY_BUDGET"]
     },
     {
       "path": "ad_group.budget",
@@ -228,14 +270,16 @@
       "tool_ref": "tiktok_create_app_ad.promotion_type",
       "label": "广告 App 平台",
       "required": true,
-      "source": "enum"
+      "source": "enum",
+      "options": ["APP_ANDROID", "APP_IOS"]
     },
     {
       "path": "ad.operating_systems",
       "tool_ref": "tiktok_create_app_ad.operating_systems",
       "label": "广告操作系统",
       "required": true,
-      "source": "enum"
+      "source": "enum",
+      "options": ["ANDROID", "IOS"]
     },
     {
       "path": "ad.media",

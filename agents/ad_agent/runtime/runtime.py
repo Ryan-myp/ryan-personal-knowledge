@@ -59,6 +59,7 @@ from ..knowledge_management import ManagedKnowledgeProvider
 from ..core.memory import MemoryManager
 from ..core.parameter_catalog import ParameterCatalogRegistry
 from ..core.blueprint import BlueprintRegistry, BlueprintCascadeEngine
+from ..core.creation_card import CreationCardBuilder
 from ..core.parameter_selection import (
     ParameterSelectionSigner,
 )
@@ -271,6 +272,11 @@ class AgentRuntime:
         # not execute arbitrary configuration or provider code.
         self.creation_blueprints = BlueprintRegistry()
         self.blueprint_cascade = BlueprintCascadeEngine()
+        self.creation_card_builder = CreationCardBuilder(
+            self.creation_blueprints,
+            self.registry,
+            self.blueprint_cascade,
+        )
         # This is a metadata index, not a second executable routing table.
         # Each provider Capability owns and publishes its own entries.
         self.ad_format_catalogs: dict[str, list[dict[str, Any]]] = {}
@@ -585,7 +591,7 @@ class AgentRuntime:
         """Call selector extensions without breaking older injected selectors."""
         builder = getattr(self.tool_selector, "build_context_for_input", None)
         if not callable(builder):
-            return {}
+            return {"creation_blueprints": self.creation_card_builder.llm_context()}
         try:
             parameters = inspect.signature(builder).parameters.values()
         except (TypeError, ValueError):
@@ -598,13 +604,21 @@ class AgentRuntime:
             parameter.kind == inspect.Parameter.VAR_POSITIONAL
             for parameter in parameters
         )
+        context = None
         if supports_keyword:
-            return builder(
+            context = builder(
                 user_input, available_tools, intent_type, tenant_id=tenant_id
             )
-        if supports_extra_positional:
-            return builder(user_input, available_tools, intent_type, tenant_id)
-        return builder(user_input, available_tools, intent_type)
+        elif supports_extra_positional:
+            context = builder(user_input, available_tools, intent_type, tenant_id)
+        else:
+            context = builder(user_input, available_tools, intent_type)
+        if not isinstance(context, dict):
+            context = {}
+        # Blueprints are bounded declarative context for the LLM. They do not
+        # register Tools and cannot execute lookup/provider operations.
+        context["creation_blueprints"] = self.creation_card_builder.llm_context()
+        return context
 
     def _optimize_tool_selection(
         self, user_input: str, intent: ParsedIntent,
@@ -1106,6 +1120,41 @@ class AgentRuntime:
             previous_values=previous_values,
             changed_fields=changed_fields,
         )
+
+    def build_creation_ui(self, intent: ParsedIntent) -> dict[str, Any]:
+        """Build safe conversational creation cards without executing Tools."""
+        try:
+            cards = self.creation_card_builder.build(intent)
+        except Exception:
+            logger.exception("构建广告创建参数卡失败")
+            cards = []
+        if not cards:
+            return {}
+        return self._redact_for_persistence({
+            "cards": cards,
+            "schema_version": "1.0",
+            "needs_input": any(
+                bool(card.get("missing_fields") or card.get("invalid_fields"))
+                for card in cards
+            ),
+        })
+
+    @staticmethod
+    def creation_ui_reply(ui: Mapping[str, Any]) -> str:
+        """Business-facing copy for an incomplete creation draft."""
+        cards = ui.get("cards") if isinstance(ui, Mapping) else []
+        titles = [
+            str(card.get("title") or "广告创建")
+            for card in cards or []
+            if isinstance(card, Mapping)
+        ]
+        subject = titles[0] if len(titles) == 1 else "广告创建参数"
+        if ui.get("needs_input"):
+            return (
+                f"我已经识别到你要创建{subject}，并把当前能确定的参数整理好了。"
+                "请在卡片中补充必填项；App、转化事件和地域等动态参数可以直接选择或继续用文字告诉我。"
+            )
+        return f"我已经整理好{subject}的参数草稿，可以继续用文字补充或检查参数。"
 
     def resolve_parameter_options(
         self,
@@ -2986,12 +3035,21 @@ class AgentRuntime:
                 "tools": [tool.name for tool in routed_tools[:12]],
             },
         )
+        # The card is a structured view of the same Blueprint/Tool contract
+        # used by the execution path. It is returned alongside the normal
+        # conversation so users can edit fields or continue in natural
+        # language; it never invokes a lookup or Provider API.
+        creation_ui = self.build_creation_ui(intent)
 
         parameter_errors = self.input_builder.validate_platform_parameter_contract(
             intent, tool_plan
         )
         if parameter_errors:
-            reply = "❌ 参数契约阻止本次请求：" + "；".join(parameter_errors)
+            reply = (
+                self.creation_ui_reply(creation_ui)
+                if creation_ui.get("needs_input")
+                else "❌ 参数契约阻止本次请求：" + "；".join(parameter_errors)
+            )
             first_tool = next(
                 (tool for tools in tool_plan.values() for tool in tools), None
             )
@@ -3022,6 +3080,7 @@ class AgentRuntime:
                 "needs_confirmation": False,
                 "confirmation_payload": None,
                 "policy_errors": parameter_errors,
+                "ui": creation_ui,
             }
 
         # Cross-channel creation is preflighted as one provider-neutral plan.
@@ -3052,6 +3111,8 @@ class AgentRuntime:
                     if callable(preflight_reply)
                     else "跨渠道创建 preflight 未通过；已停止所有渠道的创建。"
                 )
+                if creation_ui.get("needs_input"):
+                    reply = self.creation_ui_reply(creation_ui)
                 trace.all_nodes_status("failed", reason="preflight_blocked")
                 trace.reply()
                 trace.done("failed", safe_metadata={"reason": "preflight_blocked"})
@@ -3086,6 +3147,7 @@ class AgentRuntime:
                     "needs_confirmation": False,
                     "confirmation_payload": None,
                     "policy_errors": list(creation_preflight.errors),
+                    "ui": creation_ui,
                 }
         
         # Batch management is a first-class planning operation.  It expands
@@ -3166,6 +3228,9 @@ class AgentRuntime:
                 )
             else:
                 response_source = "renderer"
+            if creation_ui.get("needs_input"):
+                no_tool_reply = self.creation_ui_reply(creation_ui)
+                response_source = "creation_card"
             trace.stage_status(
                 "reply",
                 "回复生成",
@@ -3223,6 +3288,7 @@ class AgentRuntime:
                 "reply": no_tool_reply,
                 "needs_confirmation": False,
                 "confirmation_payload": None,
+                "ui": creation_ui,
             }
         
         # Keep the caller's approval separate from the response payload that
@@ -3979,14 +4045,17 @@ class AgentRuntime:
                 "needs_confirmation": needs_confirmation,
             },
         )
-        reply, response_source = self._render_response(
-            safe_user_input,
-            intent,
-            results,
-            needs_confirmation,
-            analysis=analysis,
-            session=session,
-        )
+        if creation_ui.get("needs_input"):
+            reply, response_source = self.creation_ui_reply(creation_ui), "creation_card"
+        else:
+            reply, response_source = self._render_response(
+                safe_user_input,
+                intent,
+                results,
+                needs_confirmation,
+                analysis=analysis,
+                session=session,
+            )
         trace.stage_status(
             "reply",
             "回复生成",
@@ -4049,6 +4118,7 @@ class AgentRuntime:
             "reply": reply,
             "needs_confirmation": needs_confirmation,
             "confirmation_payload": confirmation_payload,
+            "ui": creation_ui,
         }
     
 # ─── Session 管理 ──────────────────────────────────────────

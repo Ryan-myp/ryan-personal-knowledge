@@ -326,6 +326,24 @@ def _tool_definition(tool_registry: Any, name: str) -> Any:
     return value
 
 
+def _schema_at_path(properties: Mapping[str, Any], path: str) -> Optional[Mapping[str, Any]]:
+    """Resolve a possibly nested JSON-schema property without provider logic."""
+    current: Any = properties
+    parts = [part for part in str(path or "").split(".") if part]
+    if not parts:
+        return None
+    for index, part in enumerate(parts):
+        if not isinstance(current, Mapping) or part not in current:
+            return None
+        candidate = current[part]
+        if index == len(parts) - 1:
+            return candidate if isinstance(candidate, Mapping) else None
+        if not isinstance(candidate, Mapping):
+            return None
+        current = candidate.get("properties", {})
+    return None
+
+
 def validate_blueprint_against_tools(
     blueprint: AdCreationBlueprint, tool_registry: Any
 ) -> None:
@@ -334,7 +352,10 @@ def validate_blueprint_against_tools(
     field_schemas: dict[str, Mapping[str, Any]] = {}
     for index, field in enumerate(blueprint.fields):
         tool_ref = str(field["tool_ref"])
-        tool_name, schema_field = tool_ref.rsplit(".", 1)
+        # Tool names are opaque identifiers; the remainder is a schema path so
+        # nested provider objects can be represented without a Core/provider
+        # branch (for example ``targeting.age_groups``).
+        tool_name, schema_field = tool_ref.split(".", 1)
         if tool_name not in registered:
             raise BlueprintValidationError(
                 f"fields[{index}] references Tool outside blueprint.tools: {tool_name}"
@@ -344,11 +365,11 @@ def validate_blueprint_against_tools(
             raise BlueprintValidationError(f"blueprint Tool is not registered: {tool_name}")
         schema = getattr(definition, "input_schema", None)
         properties = getattr(schema, "properties", {}) if schema is not None else {}
-        if schema_field not in (properties or {}):
+        field_schema = _schema_at_path(properties or {}, schema_field)
+        if field_schema is None:
             raise BlueprintValidationError(
                 f"fields[{index}] references missing Tool field: {tool_ref}"
             )
-        field_schema = properties[schema_field]
         if isinstance(field_schema, Mapping):
             field_schemas[str(field["path"])] = field_schema
             declared_options = field.get("options")
@@ -368,7 +389,7 @@ def validate_blueprint_against_tools(
             )
         if field.get("source") == "lookup":
             lookup_tool = field.get("lookup_tool")
-            schema_field_spec = properties.get(schema_field) or {}
+            schema_field_spec = field_schema
             schema_lookup = schema_field_spec.get("lookup_tool")
             if isinstance(schema_field_spec.get("lookup"), Mapping):
                 schema_lookup = schema_lookup or schema_field_spec["lookup"].get("tool")

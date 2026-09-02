@@ -14,6 +14,7 @@ from agents.ad_agent.core.blueprint import (
     BlueprintValidationError,
     load_blueprint_file,
 )
+from agents.ad_agent.core.interfaces import ParsedIntent, ToolDefinition, ToolSchema, ToolEffect
 from agents.ad_agent.runtime.runtime import AgentRuntime
 
 
@@ -122,6 +123,94 @@ def test_cascade_hides_and_requires_app_fields_for_app_objective():
     assert states["ad_group.app_id"]["required"] is True
     assert states["ad_group.conversion_id"]["required"] is True
     assert "campaign.app_promotion_type" in result["missing_fields"]
+
+
+def test_creation_ui_builds_tiktok_app_card_from_registered_blueprint():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_tiktok_capability())
+    intent = ParsedIntent(
+        "create_campaign",
+        "创建 TikTok App 转化广告，投放给 18 到 35 岁用户",
+        ["tiktok"],
+        platform_params={
+            "tiktok": {
+                "objective_type": "APP_PROMOTION",
+                "promotion_type": "APP_ANDROID",
+                "age_groups": ["AGE_18_24", "AGE_25_34"],
+            }
+        },
+    )
+
+    ui = runtime.build_creation_ui(intent)
+    card = ui["cards"][0]
+    fields = {item["path"]: item for item in card["fields"]}
+
+    assert card["type"] == "ad_creation_form"
+    assert card["blueprint_id"] == "tiktok.app_conversion_video"
+    assert fields["campaign.objective_type"]["value"] == "APP_PROMOTION"
+    assert fields["ad_group.age_groups"]["value"] == ["AGE_18_24", "AGE_25_34"]
+    assert fields["ad_group.app_id"]["lookup"]["tool"] == "tiktok_list_apps"
+    assert fields["ad_group.optimization_goal"]["options"] == [
+        {"value": "INSTALL", "label": "INSTALL"},
+        {"value": "IN_APP_EVENT", "label": "IN_APP_EVENT"},
+        {"value": "CONVERSION", "label": "CONVERSION"},
+    ]
+    assert ui["needs_input"] is True
+
+
+def test_creation_ui_returns_selector_card_when_creation_dimension_is_ambiguous():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_tiktok_capability())
+    intent = ParsedIntent(
+        "create_campaign", "创建 TikTok 广告", ["tiktok"], objective="sales"
+    )
+    card = runtime.build_creation_ui(intent)["cards"][0]
+    assert card["type"] == "ad_creation_selector"
+    assert card["fields"][0]["provider_field"] == "objective_type"
+    assert card["fields"][0]["state"] == "invalid"
+    assert card["fields"][0]["path"] in card["invalid_fields"]
+
+
+def test_blueprint_tool_ref_supports_nested_schema_paths():
+    blueprint = AdCreationBlueprint.from_dict({
+        "id": "test.nested",
+        "version": "1.0.0",
+        "provider": "test",
+        "ad_format": "video",
+        "tools": ["test_create"],
+        "fields": [{
+            "path": "ad_group.targeting.age_groups",
+            "tool_ref": "test_create.targeting.age_groups",
+            "required": True,
+            "source": "enum",
+            "options": ["AGE_18_24"],
+        }],
+    })
+    from agents.ad_agent.core.tool_registry import SimpleToolRegistry
+
+    registry = SimpleToolRegistry()
+    registry.register(
+        ToolDefinition(
+            name="test_create", skill="test", platform="test",
+            description="test", action="create", resource_type="ad_group",
+            intent_types=["create_campaign"], effect_class=ToolEffect.WRITE,
+            input_schema=ToolSchema(properties={
+                "targeting": {
+                    "type": "object",
+                    "properties": {
+                        "age_groups": {
+                            "type": "array",
+                            "items": {"type": "string", "enum": ["AGE_18_24"]},
+                        }
+                    },
+                }
+            }),
+        ),
+        lambda _ctx, _input: None,
+    )
+    from agents.ad_agent.core.blueprint import validate_blueprint_against_tools
+
+    validate_blueprint_against_tools(blueprint, registry)
 
 
 def test_parent_change_reports_downstream_reset_without_mutating_values():

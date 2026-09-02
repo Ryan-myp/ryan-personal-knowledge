@@ -1641,6 +1641,7 @@ async def chat_stream(
                 "needs_confirmation": bool(result.get("needs_confirmation")),
                 "confirmation_payload": AgentRuntime._redact_for_persistence(result.get("confirmation_payload")),
                 "results": safe_results,
+                "ui": AgentRuntime._redact_for_persistence(result.get("ui") or {}),
             })
             yield event(final_event or {
                 "type": "done",
