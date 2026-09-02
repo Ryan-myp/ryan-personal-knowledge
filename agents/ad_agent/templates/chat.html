@@ -1454,6 +1454,82 @@
         .creation-card-action.primary { border-color: var(--accent); color: white; background: var(--accent); }
         .creation-card-action:disabled { opacity: .55; cursor: not-allowed; }
         @media (max-width: 720px) { .creation-card-fields { grid-template-columns: 1fr; } }
+
+        /* Creation card polish: keep the existing design tokens, but give
+           dense provider forms a clearer visual hierarchy. */
+        .message-ui-cards { width: min(100%, 860px); margin-top: 16px; }
+        .creation-card {
+            position: relative;
+            margin-top: 0;
+            border-color: rgba(99, 102, 241, .42);
+            border-radius: 14px;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, .18), 0 0 0 1px rgba(99, 102, 241, .04);
+        }
+        .creation-card::before {
+            content: '';
+            position: absolute;
+            inset: 0 0 auto;
+            height: 2px;
+            background: linear-gradient(90deg, var(--accent), #8b5cf6 55%, rgba(139, 92, 246, 0));
+        }
+        .creation-card-header {
+            padding: 17px 18px 14px;
+            background: linear-gradient(135deg, rgba(99, 102, 241, .09), transparent 58%);
+        }
+        .creation-card-header-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .creation-card-state {
+            flex: 0 0 auto;
+            padding: 4px 8px;
+            border: 1px solid rgba(245, 158, 11, .3);
+            border-radius: 999px;
+            color: var(--warning);
+            background: rgba(245, 158, 11, .09);
+            font-size: 10px;
+            line-height: 1;
+        }
+        .creation-card-state.ready { color: var(--success); border-color: rgba(34, 197, 94, .28); background: var(--success-light); }
+        .creation-card-state.invalid { color: var(--error); border-color: rgba(239, 68, 68, .28); background: var(--error-light); }
+        .creation-card-title { margin-top: 7px; font-size: 16px; font-weight: 680; letter-spacing: -.01em; }
+        .creation-card-meta { color: var(--text-secondary); font-size: 11px; line-height: 1.45; }
+        .creation-card-fields { gap: 10px; padding: 14px 18px 16px; }
+        .creation-card-field {
+            padding: 11px 12px 10px;
+            border-radius: 10px;
+            transition: border-color .18s ease, background .18s ease, box-shadow .18s ease;
+        }
+        .creation-card-field:hover { border-color: var(--border-light); background: var(--bg-hover); }
+        .creation-card-field.wide { grid-column: 1 / -1; }
+        .creation-card-field.missing { box-shadow: inset 3px 0 0 rgba(245, 158, 11, .72); }
+        .creation-card-field.invalid { box-shadow: inset 3px 0 0 rgba(239, 68, 68, .78); }
+        .creation-card-field .help { color: var(--text-secondary); }
+        .creation-card-field input, .creation-card-field select, .creation-card-field textarea { min-height: 32px; padding: 7px 9px; border-radius: 7px; transition: border-color .18s ease, box-shadow .18s ease; }
+        .creation-card-field textarea { min-height: 72px; line-height: 1.55; }
+        .creation-card-field input:focus, .creation-card-field select:focus, .creation-card-field textarea:focus { box-shadow: 0 0 0 3px var(--accent-light); }
+        .creation-card-account {
+            margin: 14px 18px 0;
+            padding: 12px 13px;
+            border-color: rgba(99, 102, 241, .34);
+            border-radius: 10px;
+            background: linear-gradient(135deg, var(--accent-light), rgba(99, 102, 241, .025));
+        }
+        .creation-card-account label { display: flex; align-items: center; gap: 5px; margin-bottom: 6px; font-weight: 680; }
+        .creation-card-account label::before { content: '执行范围'; color: var(--accent); font-size: 9px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+        .creation-card-account input { min-height: 35px; padding: 7px 9px; border-radius: 7px; font-size: 12px; }
+        .creation-card-account input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-light); }
+        .creation-card-account small { margin-top: 6px; color: var(--text-secondary); font-size: 10px; }
+        .creation-card-footer { gap: 12px; padding: 12px 18px; background: var(--bg-tertiary); }
+        .creation-card-status { flex: 1 1 180px; color: var(--text-secondary); line-height: 1.4; }
+        .creation-card-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+        .creation-card-action { min-height: 31px; padding: 7px 11px; transition: color .18s ease, border-color .18s ease, background .18s ease; }
+        .creation-card-action:hover { background: var(--accent-light); }
+        .creation-card-action.primary { box-shadow: 0 4px 12px rgba(99, 102, 241, .22); }
+        @media (max-width: 720px) {
+            .creation-card-fields { grid-template-columns: 1fr; padding-inline: 14px; }
+            .creation-card-field.wide { grid-column: auto; }
+            .creation-card-account { margin-inline: 14px; }
+            .creation-card-header, .creation-card-footer { padding-inline: 14px; }
+            .creation-card-actions { width: 100%; justify-content: flex-start; }
+        }
         
         /* 确认卡片样式 */
         .confirm-card {
@@ -4953,6 +5029,18 @@
             return card.ready ? '参数已满足当前蓝图要求' : '可以继续用文字补充参数';
         }
 
+        function creationCardStatusKind(card) {
+            if (!String(card.account_id || '').trim()) return 'account';
+            if ((card.invalid_fields || []).length) return 'invalid';
+            if ((card.missing_fields || []).length) return 'waiting';
+            return card.ready ? 'ready' : 'draft';
+        }
+
+        function creationCardStatusLabel(card) {
+            const kind = creationCardStatusKind(card);
+            return kind === 'ready' ? '可提交' : kind === 'invalid' ? '需调整' : kind === 'account' ? '需账户' : '待补充';
+        }
+
         function creationReviewRows(card) {
             return (card.fields || []).filter(field => field.visible !== false && field.value !== undefined && field.value !== null && field.value !== '').slice(0, 80).map(field => {
                 const value = field.control === 'text_list' ? presentedLines(field.value)
@@ -5037,21 +5125,27 @@
         function renderCreationCard(card) {
             creationCardState.set(card.id, card);
             const wrapper = document.createElement('section');
-            wrapper.className = 'creation-card';
+            wrapper.className = `creation-card ${creationCardStatusKind(card)}`;
             wrapper.dataset.cardId = card.id;
 
             const header = document.createElement('div');
             header.className = 'creation-card-header';
+            const headerTop = document.createElement('div');
+            headerTop.className = 'creation-card-header-top';
             const kicker = document.createElement('div');
             kicker.className = 'creation-card-kicker';
             kicker.textContent = card.type === 'ad_creation_selector' ? '广告类型选择' : '广告参数草稿';
+            const stateBadge = document.createElement('span');
+            stateBadge.className = `creation-card-state ${creationCardStatusKind(card)}`;
+            stateBadge.textContent = creationCardStatusLabel(card);
+            headerTop.append(kicker, stateBadge);
             const title = document.createElement('div');
             title.className = 'creation-card-title';
             title.textContent = card.title || '广告创建参数';
             const meta = document.createElement('div');
             meta.className = 'creation-card-meta';
             meta.textContent = card.blueprint_id ? `${card.provider} · 已整理参数，提交前会再次确认` : `${card.provider} · 先选择创建类型`;
-            header.append(kicker, title, meta);
+            header.append(headerTop, title, meta);
             wrapper.appendChild(header);
 
             const account = document.createElement('div');
@@ -5063,7 +5157,16 @@
             accountInput.autocomplete = 'off';
             accountInput.placeholder = '请输入本次操作的广告账户 ID';
             accountInput.value = card.account_id || '';
-            accountInput.addEventListener('input', () => { card.account_id = accountInput.value.trim(); });
+            accountInput.addEventListener('input', () => {
+                card.account_id = accountInput.value.trim();
+                const status = wrapper.querySelector('.creation-card-status');
+                if (status) status.textContent = creationCardStatus(card);
+                const badge = wrapper.querySelector('.creation-card-state');
+                if (badge) {
+                    badge.className = `creation-card-state ${creationCardStatusKind(card)}`;
+                    badge.textContent = creationCardStatusLabel(card);
+                }
+            });
             const accountHint = document.createElement('small');
             accountHint.textContent = '账户由你明确指定，不会自动选择。';
             account.append(accountLabel, accountInput, accountHint);
@@ -5073,7 +5176,8 @@
             fields.className = 'creation-card-fields';
             (card.fields || []).forEach(field => {
                 const item = document.createElement('div');
-                item.className = `creation-card-field${field.visible === false ? ' hidden' : ''}${field.state === 'missing' ? ' missing' : ''}${field.state === 'invalid' ? ' invalid' : ''}`;
+                const wideField = ['asset_picker', 'file_reference', 'text_list', 'object_editor', 'json'].includes(field.control);
+                item.className = `creation-card-field${wideField ? ' wide' : ''}${field.visible === false ? ' hidden' : ''}${field.state === 'missing' ? ' missing' : ''}${field.state === 'invalid' ? ' invalid' : ''}`;
                 const label = document.createElement('label');
                 label.textContent = field.label || field.path;
                 if (field.required) {
@@ -5236,14 +5340,17 @@
             status.className = 'creation-card-status';
             status.textContent = creationCardStatus(card);
             footer.appendChild(status);
+            const actions = document.createElement('div');
+            actions.className = 'creation-card-actions';
             (card.actions || []).forEach(action => {
                 const button = document.createElement('button');
                 button.type = 'button';
-                button.className = `creation-card-action${action.id === 'preview' || action.id === 'submit_create' ? ' primary' : ''}`;
+                button.className = `creation-card-action${action.id === 'submit_create' ? ' primary' : ''}`;
                 button.textContent = action.label || action.id;
                 button.addEventListener('click', () => handleCreationCardAction(card.id, action.id));
-                footer.appendChild(button);
+                actions.appendChild(button);
             });
+            footer.appendChild(actions);
             wrapper.appendChild(footer);
             return wrapper;
         }
