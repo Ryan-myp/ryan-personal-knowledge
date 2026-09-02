@@ -128,6 +128,46 @@ class ConversationMessageRecord:
 
 
 @dataclass
+class KnowledgeDocumentRecord:
+    """A tenant-scoped, versioned Markdown Wiki document snapshot."""
+
+    document_id: str
+    tenant_id: str
+    title: str
+    content: str
+    platform: str = "all"
+    layer: str = "business"
+    knowledge_type: str = "general"
+    source: str = "user"
+    source_ref: str = ""
+    version: str = "1.0.0"
+    confidence: float = 0.8
+    tags: list[str] = field(default_factory=list)
+    status: str = "draft"
+    created_by: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+    published_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        value = asdict(self)
+        value["tags"] = list(self.tags or [])
+        return value
+
+    @classmethod
+    def from_row(cls, row: Any) -> "KnowledgeDocumentRecord":
+        data = dict(row) if isinstance(row, dict) else dict(row)
+        tags = data.get("tags")
+        if isinstance(tags, str):
+            try:
+                tags = json.loads(tags or "[]")
+            except (TypeError, ValueError):
+                tags = []
+        data["tags"] = tags if isinstance(tags, list) else []
+        return cls(**data)
+
+
+@dataclass
 class TaskRecord:
     """Durable, backend-neutral record for one asynchronous Agent task.
 

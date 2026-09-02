@@ -18,7 +18,10 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, List
 
-from .models import CampaignRecord, ConversationMessageRecord, TaskRecord, ToolCallRecord
+from .models import (
+    CampaignRecord, ConversationMessageRecord, KnowledgeDocumentRecord,
+    TaskRecord, ToolCallRecord,
+)
 from ..core.memory import MemoryRecord
 
 logger = logging.getLogger(__name__)
@@ -86,6 +89,26 @@ class AdAgentStore:
         FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS knowledge_documents (
+        document_id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        platform TEXT NOT NULL DEFAULT 'all',
+        layer TEXT NOT NULL DEFAULT 'business',
+        knowledge_type TEXT NOT NULL DEFAULT 'general',
+        source TEXT NOT NULL DEFAULT 'user',
+        source_ref TEXT NOT NULL,
+        version TEXT NOT NULL,
+        confidence REAL NOT NULL DEFAULT 0.8,
+        tags TEXT NOT NULL DEFAULT '[]',
+        status TEXT NOT NULL DEFAULT 'draft',
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        published_at TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS memories (
         memory_id TEXT PRIMARY KEY,
         tenant_id TEXT NOT NULL,
@@ -136,6 +159,10 @@ class AdAgentStore:
     CREATE INDEX IF NOT EXISTS idx_tool_calls_turn ON tool_calls(session_id, turn_id);
     CREATE INDEX IF NOT EXISTS idx_conversation_messages_session
         ON conversation_messages(session_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_knowledge_documents_scope
+        ON knowledge_documents(tenant_id, status, updated_at DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_knowledge_documents_version
+        ON knowledge_documents(tenant_id, title, version);
     CREATE INDEX IF NOT EXISTS idx_campaigns_platform ON campaign_state(platform, campaign_id);
     CREATE INDEX IF NOT EXISTS idx_campaigns_name ON campaign_state(name);
     CREATE INDEX IF NOT EXISTS idx_memories_scope
@@ -1481,6 +1508,117 @@ class AdAgentStore:
                 ConversationMessageRecord.from_row(dict(row))
                 for row in reversed(rows)
             ]
+
+    # -- Tenant-scoped Markdown Wiki documents -------------------------
+
+    @staticmethod
+    def _knowledge_row(row: Any) -> Optional[KnowledgeDocumentRecord]:
+        return KnowledgeDocumentRecord.from_row(dict(row)) if row else None
+
+    def create_knowledge_document(self, record: KnowledgeDocumentRecord) -> KnowledgeDocumentRecord:
+        data = record.to_dict()
+        with self._lock:
+            conn = self._get_conn()
+            conn.execute(
+                """INSERT INTO knowledge_documents
+                   (document_id, tenant_id, title, content, platform, layer,
+                    knowledge_type, source, source_ref, version, confidence,
+                    tags, status, created_by, created_at, updated_at, published_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    data["document_id"], data["tenant_id"], data["title"],
+                    data["content"], data["platform"], data["layer"],
+                    data["knowledge_type"], data["source"], data["source_ref"],
+                    data["version"], data["confidence"],
+                    json.dumps(data["tags"], ensure_ascii=False), data["status"],
+                    data["created_by"], data["created_at"], data["updated_at"],
+                    data["published_at"],
+                ),
+            )
+            conn.commit()
+            return self._knowledge_row(
+                conn.execute(
+                    "SELECT * FROM knowledge_documents WHERE document_id = ?",
+                    (data["document_id"],),
+                ).fetchone()
+            ) or record
+
+    def get_knowledge_document(
+        self, document_id: str, *, tenant_id: Optional[str] = None,
+    ) -> Optional[KnowledgeDocumentRecord]:
+        query = "SELECT * FROM knowledge_documents WHERE document_id = ?"
+        params: list[Any] = [str(document_id)]
+        if tenant_id is not None:
+            query += " AND tenant_id = ?"
+            params.append(str(tenant_id))
+        with self._lock:
+            return self._knowledge_row(self._get_conn().execute(query, params).fetchone())
+
+    def list_knowledge_documents(
+        self, tenant_id: str, status: Optional[str] = None, limit: int = 100,
+    ) -> list[KnowledgeDocumentRecord]:
+        limit = max(1, min(int(limit), 500))
+        query = "SELECT * FROM knowledge_documents WHERE tenant_id = ?"
+        params: list[Any] = [str(tenant_id)]
+        if status:
+            query += " AND status = ?"
+            params.append(str(status))
+        query += " ORDER BY updated_at DESC LIMIT ?"
+        params.append(limit)
+        with self._lock:
+            rows = self._get_conn().execute(query, params).fetchall()
+            return [self._knowledge_row(row) for row in rows if row]
+
+    def publish_knowledge_document(
+        self, document_id: str, *, tenant_id: str,
+    ) -> Optional[KnowledgeDocumentRecord]:
+        now = datetime.now().isoformat()
+        with self._lock:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                """UPDATE knowledge_documents SET status = 'draft', updated_at = ?
+                   WHERE tenant_id = ? AND title = (
+                       SELECT title FROM knowledge_documents WHERE document_id = ?
+                   ) AND status = 'published' AND document_id != ?""",
+                (now, str(tenant_id), str(document_id), str(document_id)),
+            )
+            cursor = conn.execute(
+                """UPDATE knowledge_documents
+                   SET status = 'published', published_at = ?, updated_at = ?
+                   WHERE document_id = ? AND tenant_id = ? AND status != 'deprecated'""",
+                (now, now, str(document_id), str(tenant_id)),
+            )
+            conn.commit()
+            if not cursor.rowcount:
+                return None
+            return self._knowledge_row(
+                conn.execute(
+                    "SELECT * FROM knowledge_documents WHERE document_id = ?",
+                    (str(document_id),),
+                ).fetchone()
+            )
+
+    def unpublish_knowledge_document(
+        self, document_id: str, *, tenant_id: str,
+    ) -> Optional[KnowledgeDocumentRecord]:
+        now = datetime.now().isoformat()
+        with self._lock:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                """UPDATE knowledge_documents
+                   SET status = 'draft', updated_at = ?
+                   WHERE document_id = ? AND tenant_id = ? AND status = 'published'""",
+                (now, str(document_id), str(tenant_id)),
+            )
+            conn.commit()
+            if not cursor.rowcount:
+                return None
+            return self._knowledge_row(
+                conn.execute(
+                    "SELECT * FROM knowledge_documents WHERE document_id = ?",
+                    (str(document_id),),
+                ).fetchone()
+            )
     
     # -- Tool Calls --
     

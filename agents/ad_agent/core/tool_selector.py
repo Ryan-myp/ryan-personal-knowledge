@@ -10,6 +10,7 @@ core/tool_selector.py - 动态工具选择器
 import re
 import logging
 import threading
+import inspect
 from typing import List, Dict, Optional, Set
 from dataclasses import dataclass, field
 
@@ -187,7 +188,7 @@ class DynamicToolSelector:
         )
         selection = self.select_tools(user_input, probe_intent, available_tools)
         knowledge = self._query_knowledge(
-            user_input, platforms, intent_type=intent_type
+            user_input, platforms, intent_type=intent_type, tenant_id=tenant_id
         )
         if knowledge:
             selection.expert_knowledge = self._format_knowledge(knowledge)
@@ -245,18 +246,30 @@ class DynamicToolSelector:
         platforms: List[str],
         *,
         intent_type: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ) -> list[dict]:
         """Query advisory knowledge without changing executable routing."""
         if self.knowledge_provider is None:
             return []
         try:
-            documents = self.knowledge_provider.query(
-                user_input,
-                platforms=platforms,
-                intent_type=intent_type,
-                limit=4,
-                max_excerpt_chars=1000,
-            )
+            kwargs = {
+                "platforms": platforms,
+                "intent_type": intent_type,
+                "limit": 4,
+                "max_excerpt_chars": 1000,
+            }
+            try:
+                parameters = inspect.signature(self.knowledge_provider.query).parameters
+                if tenant_id is not None and (
+                    "tenant_id" in parameters or any(
+                        item.kind == inspect.Parameter.VAR_KEYWORD
+                        for item in parameters.values()
+                    )
+                ):
+                    kwargs["tenant_id"] = tenant_id
+            except (TypeError, ValueError):
+                pass
+            documents = self.knowledge_provider.query(user_input, **kwargs)
             return [document.to_dict() for document in documents]
         except Exception as exc:
             logger.debug("知识库查询失败，继续无知识上下文: %s", exc)
@@ -531,6 +544,7 @@ class DynamicToolSelector:
         user_input: str,
         intent: ParsedIntent,
         all_tools: List[ToolDefinition],
+        tenant_id: Optional[str] = None,
     ) -> dict:
         """
         为 LLM 优化工具选择
@@ -546,7 +560,7 @@ class DynamicToolSelector:
         selection = self.select_tools(user_input, intent, all_tools)
         platforms = intent.platforms or self._detect_platforms(user_input, all_tools)
         knowledge = self._query_knowledge(
-            user_input, platforms, intent_type=intent.intent_type
+            user_input, platforms, intent_type=intent.intent_type, tenant_id=tenant_id
         )
         if knowledge:
             selection.expert_knowledge = "\n\n".join(

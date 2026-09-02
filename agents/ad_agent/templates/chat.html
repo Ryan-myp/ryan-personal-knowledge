@@ -1370,6 +1370,7 @@
         .global-avatar { display: grid; place-items: center; width: 27px; height: 27px; border-radius: 50%; color: #d9d2ff; background: #33285f; font-size: 10px; font-weight: 700; }
         .global-chevron, .session-chevron { color: #60788e; }
         .workspace-popover { position: fixed; top: 69px; right: 20px; z-index: 850; display: none; width: min(360px, calc(100vw - 32px)); padding: 14px; border: 1px solid #29435d; border-radius: 12px; background: #0b1a29; box-shadow: 0 18px 42px rgba(0,0,0,.42); }
+        #knowledgePopover { width: min(560px, calc(100vw - 32px)); }
         .workspace-popover.active { display: block; }
         .workspace-popover-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
         .workspace-popover-title { color: #e7f0fa; font-size: 12px; font-weight: 650; }
@@ -1393,8 +1394,27 @@
         .knowledge-result { padding: 9px; border: 1px solid #203b54; border-radius: 8px; background: #071724; }
         .knowledge-result-title { color: #dceafa; font-size: 11px; font-weight: 600; }
         .knowledge-result-meta { margin-top: 4px; color: #6f91ac; font-size: 9px; }
-        .knowledge-result-excerpt { margin-top: 6px; color: #a9bed0; font-size: 10px; line-height: 1.5; }
+        .knowledge-result-excerpt { max-height: 126px; margin-top: 6px; overflow: hidden; color: #a9bed0; font-size: 10px; line-height: 1.5; }
         .knowledge-empty { padding: 14px 4px; color: #71869b; font-size: 10px; line-height: 1.5; text-align: center; }
+        .knowledge-summary { margin-top: 10px; padding: 11px 12px; border: 1px solid #2c5672; border-radius: 9px; background: linear-gradient(135deg, rgba(35, 83, 111, .38), rgba(11, 32, 49, .8)); }
+        .knowledge-summary-label { color: #7ce3bb; font-size: 10px; font-weight: 650; }
+        .knowledge-summary-body { margin-top: 6px; color: #d4e5f2; font-size: 11px; line-height: 1.65; }
+        .knowledge-result-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+        .knowledge-result-badge { flex-shrink: 0; padding: 3px 5px; border-radius: 4px; color: #a9c8ff; background: rgba(67, 109, 181, .25); font-size: 9px; }
+        .knowledge-result-details { margin-top: 8px; border-top: 1px solid #19364d; padding-top: 7px; }
+        .knowledge-result-details summary { cursor: pointer; color: #7ea6c2; font-size: 10px; }
+        .knowledge-markdown { margin-top: 7px; color: #bcd0df; font-size: 10px; line-height: 1.65; overflow-wrap: anywhere; }
+        .knowledge-markdown h3, .knowledge-markdown h4 { margin: 7px 0 4px; color: #e3eff8; font-size: 11px; }
+        .knowledge-markdown code { padding: 1px 3px; border-radius: 3px; color: #c4b5fd; background: #101a2c; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+        .knowledge-markdown pre { max-height: 150px; overflow: auto; padding: 7px; border-radius: 6px; color: #c9dced; background: #071321; font: 9px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
+        .knowledge-markdown ul { margin: 4px 0 4px 17px; }
+        .knowledge-compose { display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid #203b54; }
+        .knowledge-compose.active { display: grid; gap: 9px; }
+        .knowledge-compose textarea { width: 100%; min-height: 150px; resize: vertical; }
+        .knowledge-compose input, .knowledge-compose select, .knowledge-compose textarea { padding: 7px 8px; border: 1px solid #29435d; border-radius: 6px; outline: none; color: #d9e7f3; background: #071321; font: inherit; font-size: 11px; }
+        .knowledge-compose input:focus, .knowledge-compose select:focus, .knowledge-compose textarea:focus { border-color: #6674cf; }
+        .knowledge-compose-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+        .knowledge-compose-actions { display: flex; justify-content: flex-end; gap: 8px; }
         .sidebar { grid-column: 1; grid-row: 2 / 4; min-height: 0; width: 228px; background: #121212; }
         .sidebar-header { justify-content: flex-start; padding: 14px 16px; min-height: 58px; }
         .sidebar-brand { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -1530,7 +1550,7 @@
     </section>
     <section class="workspace-popover" id="knowledgePopover" role="dialog" aria-label="知识库搜索">
         <div class="workspace-popover-header">
-            <div><div class="workspace-popover-title">LLM Wiki 知识库</div><div class="workspace-popover-subtitle">只读检索已发布的 Markdown 知识，不会调用广告渠道接口。</div></div>
+            <div><div class="workspace-popover-title">LLM Wiki 知识库</div><div class="workspace-popover-subtitle">搜索、阅读和沉淀 Markdown 知识；不会调用广告渠道接口。</div></div>
             <button class="workspace-popover-close" type="button" onclick="closeWorkspacePopovers()" aria-label="关闭知识库">×</button>
         </div>
         <div class="workspace-form">
@@ -1544,6 +1564,26 @@
                 <input id="knowledgeApiKey" type="password" autocomplete="off" placeholder="仅保存在当前页面内" oninput="serviceApiKey = this.value.trim()">
             </label>
             <div class="workspace-form-actions"><span class="workspace-form-status" id="knowledgeStatus">输入关键词后搜索已发布知识。</span><button type="button" onclick="searchKnowledge()">搜索</button></div>
+        </div>
+        <div class="workspace-form-actions" style="margin-top:10px;">
+            <span class="workspace-filter-summary">知识文档发布后才会被 Agent 使用</span>
+            <button type="button" onclick="toggleKnowledgeComposer()">写入知识库</button>
+        </div>
+        <div class="knowledge-compose" id="knowledgeComposer">
+            <div class="knowledge-compose-grid">
+                <label>标题<input id="knowledgeTitle" maxlength="200" placeholder="例如：Meta 广告类型选择规则"></label>
+                <label>平台
+                    <select id="knowledgeWritePlatform"><option value="all">通用</option><option value="meta">Meta</option><option value="tiktok">TikTok</option><option value="google-ads">Google Ads</option><option value="dv360">DV360</option></select>
+                </label>
+                <label>知识类型
+                    <select id="knowledgeWriteType"><option value="general">通用</option><option value="hierarchy">层级</option><option value="constraint">约束</option><option value="parameter">参数</option><option value="workflow">流程</option><option value="best_practice">最佳实践</option><option value="error_pattern">错误模式</option><option value="case_study">案例</option><option value="tip">提示</option></select>
+                </label>
+                <label>版本<input id="knowledgeVersion" maxlength="80" value="1.0.0" placeholder="1.0.0"></label>
+                <label>标签<input id="knowledgeTags" maxlength="500" placeholder="用逗号分隔，例如：Meta,广告类型"></label>
+            </div>
+            <label>来源<input id="knowledgeSource" maxlength="200" value="user" placeholder="例如：投放团队经验"></label>
+            <label>正文（支持 Markdown）<textarea id="knowledgeContent" maxlength="60000" placeholder="# 规则说明\n\n写下可复用的业务规则、例子和边界。"></textarea></label>
+            <div class="workspace-form-actions"><span class="workspace-form-status" id="knowledgeWriteStatus">保存后先作为草稿，不会立即影响 Agent。</span><div class="knowledge-compose-actions"><button type="button" onclick="saveKnowledgeDocument(false)">保存草稿</button><button type="button" onclick="saveKnowledgeDocument(true)">保存并发布</button></div></div>
         </div>
         <div class="knowledge-results" id="knowledgeResults"></div>
     </section>
@@ -1907,7 +1947,53 @@
             status.classList.toggle('error', isError);
         }
 
-        function renderKnowledgeResults(results) {
+        function setKnowledgeWriteStatus(message, isError = false) {
+            const status = document.getElementById('knowledgeWriteStatus');
+            if (!status) return;
+            status.textContent = message || '';
+            status.classList.toggle('error', isError);
+        }
+
+        function toggleKnowledgeComposer() {
+            const composer = document.getElementById('knowledgeComposer');
+            if (!composer) return;
+            const active = composer.classList.toggle('active');
+            if (active) document.getElementById('knowledgeTitle')?.focus();
+        }
+
+        function formatKnowledgeMarkdown(markdown) {
+            if (!markdown) return '<span class="knowledge-empty">暂无正文</span>';
+            let source = escapeHtml(String(markdown));
+            const codeBlocks = [];
+            source = source.replace(/```(?:[a-zA-Z0-9_-]+)?\n?([\s\S]*?)```/g, (_, code) => {
+                const token = `@@KNOWLEDGE_CODE_${codeBlocks.length}@@`;
+                codeBlocks.push(`<pre>${code.trim()}</pre>`);
+                return token;
+            });
+            const lines = source.split('\n');
+            const output = [];
+            let inList = false;
+            for (let line of lines) {
+                const trimmed = line.trim();
+                if (/^[-*]\s+/.test(trimmed)) {
+                    if (!inList) { output.push('<ul>'); inList = true; }
+                    line = `<li>${trimmed.replace(/^[-*]\s+/, '')}</li>`;
+                } else {
+                    if (inList) { output.push('</ul>'); inList = false; }
+                    if (/^###\s+/.test(trimmed)) line = `<h4>${trimmed.replace(/^###\s+/, '')}</h4>`;
+                    else if (/^##\s+/.test(trimmed)) line = `<h3>${trimmed.replace(/^##\s+/, '')}</h3>`;
+                    else if (/^#\s+/.test(trimmed)) line = `<h3>${trimmed.replace(/^#\s+/, '')}</h3>`;
+                }
+                line = line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+                line = line.replace(/`([^`]+)`/g, '<code>$1</code>');
+                line = line.replace(/@@KNOWLEDGE_CODE_(\d+)@@/g, (_, index) => codeBlocks[Number(index)]);
+                output.push(line);
+            }
+            if (inList) output.push('</ul>');
+            return output.join('<br>');
+        }
+
+        function renderKnowledgeResults(results, summary = '') {
             const container = document.getElementById('knowledgeResults');
             if (!container) return;
             container.replaceChildren();
@@ -1918,19 +2004,43 @@
                 container.appendChild(empty);
                 return;
             }
+            if (summary) {
+                const summaryCard = document.createElement('section');
+                summaryCard.className = 'knowledge-summary';
+                summaryCard.innerHTML = '<div class="knowledge-summary-label">检索总结</div>';
+                const summaryBody = document.createElement('div');
+                summaryBody.className = 'knowledge-summary-body';
+                summaryBody.textContent = summary;
+                summaryCard.appendChild(summaryBody);
+                container.appendChild(summaryCard);
+            }
             for (const item of results) {
                 const card = document.createElement('article');
                 card.className = 'knowledge-result';
+                const head = document.createElement('div');
+                head.className = 'knowledge-result-head';
                 const title = document.createElement('div');
                 title.className = 'knowledge-result-title';
                 title.textContent = item.title || item.topic || item.document_id || '未命名知识';
+                const badge = document.createElement('span');
+                badge.className = 'knowledge-result-badge';
+                badge.textContent = item.confidence != null ? `可信度 ${Math.round(Number(item.confidence) * 100)}%` : '已发布';
+                head.append(title, badge);
                 const meta = document.createElement('div');
                 meta.className = 'knowledge-result-meta';
                 meta.textContent = [item.platform || '通用', item.knowledge_type || item.layer || 'general', item.source_ref || item.source].filter(Boolean).join(' · ');
                 const excerpt = document.createElement('div');
                 excerpt.className = 'knowledge-result-excerpt';
-                excerpt.textContent = item.excerpt || '暂无摘要';
-                card.append(title, meta, excerpt);
+                excerpt.innerHTML = formatKnowledgeMarkdown(item.excerpt || '暂无正文');
+                const details = document.createElement('details');
+                details.className = 'knowledge-result-details';
+                const detailsSummary = document.createElement('summary');
+                detailsSummary.textContent = '查看 Markdown 摘要';
+                const fullContent = document.createElement('div');
+                fullContent.className = 'knowledge-markdown';
+                fullContent.innerHTML = formatKnowledgeMarkdown(item.excerpt || '暂无正文');
+                details.append(detailsSummary, fullContent);
+                card.append(head, meta, excerpt, details);
                 container.appendChild(card);
             }
         }
@@ -1955,11 +2065,52 @@
                 try { data = text ? JSON.parse(text) : {}; } catch (_) { data = {}; }
                 if (!response.ok) throw new Error(data.detail || data.error || `知识库请求失败（${response.status}）`);
                 const results = Array.isArray(data.results) ? data.results : [];
-                renderKnowledgeResults(results);
-                setKnowledgeStatus(`找到 ${results.length} 条已发布知识。`);
+                renderKnowledgeResults(results, data.summary || '');
+                setKnowledgeStatus(`找到 ${results.length} 条已发布知识，已生成业务总结。`);
             } catch (error) {
                 renderKnowledgeResults([]);
                 setKnowledgeStatus(error.message || '知识库暂时不可用。', true);
+            }
+        }
+
+        async function saveKnowledgeDocument(publishNow = false) {
+            const title = document.getElementById('knowledgeTitle')?.value.trim() || '';
+            const content = document.getElementById('knowledgeContent')?.value.trim() || '';
+            const keyInput = document.getElementById('knowledgeApiKey');
+            if (keyInput?.value.trim()) serviceApiKey = keyInput.value.trim();
+            if (!title || !content) {
+                setKnowledgeWriteStatus('请填写标题和 Markdown 正文。', true);
+                return;
+            }
+            setKnowledgeWriteStatus('正在保存知识文档…');
+            const payload = {
+                title,
+                content,
+                platform: document.getElementById('knowledgeWritePlatform')?.value || 'all',
+                knowledge_type: document.getElementById('knowledgeWriteType')?.value || 'general',
+                tags: (document.getElementById('knowledgeTags')?.value || '').split(',').map(item => item.trim()).filter(Boolean),
+                source: document.getElementById('knowledgeSource')?.value.trim() || 'user',
+                version: document.getElementById('knowledgeVersion')?.value.trim() || '1.0.0',
+                confidence: 0.8,
+            };
+            try {
+                const created = await apiFetch('/knowledge/documents', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                if (publishNow) {
+                    await apiFetch(`/knowledge/documents/${encodeURIComponent(created.document_id)}/publish`, { method: 'POST' });
+                    setKnowledgeWriteStatus('已保存并发布；后续检索和 Agent 对话可以使用这份知识。');
+                } else {
+                    setKnowledgeWriteStatus('已保存为草稿；发布后才会进入检索和 Agent 上下文。');
+                }
+                if (document.getElementById('knowledgeQuery')?.value.trim()) await searchKnowledge();
+                document.getElementById('knowledgeTitle').value = '';
+                document.getElementById('knowledgeContent').value = '';
+                document.getElementById('knowledgeTags').value = '';
+            } catch (error) {
+                setKnowledgeWriteStatus(error.message || '知识文档保存失败，请检查权限和内容。', true);
             }
         }
 

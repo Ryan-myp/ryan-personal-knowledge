@@ -54,6 +54,7 @@ from ..features.factory import discover_response_renderer
 from ..core.tool_selector import DynamicToolSelector
 from ..core.policy import RuntimePolicy, validate_policies
 from ..core.knowledge import KnowledgeProvider, LocalMarkdownKnowledgeProvider
+from ..knowledge_management import ManagedKnowledgeProvider
 from ..core.memory import MemoryManager
 from ..core.parameter_catalog import ParameterCatalogRegistry
 from ..core.parameter_selection import (
@@ -249,8 +250,13 @@ class AgentRuntime:
         self._managed_skill_lock = threading.RLock()
         self._skill_factories: dict[str, callable] = {}  # platform -> Capability factory
         self._credentials: dict = {}  # API 凭证配置
-        self.knowledge_provider = knowledge_provider or LocalMarkdownKnowledgeProvider(
+        base_knowledge_provider = knowledge_provider or LocalMarkdownKnowledgeProvider(
             Path(__file__).resolve().parent.parent / "knowledge_base"
+        )
+        self.knowledge_provider = (
+            ManagedKnowledgeProvider(base_knowledge_provider, persistence_store)
+            if knowledge_provider is None and persistence_store is not None
+            else base_knowledge_provider
         )
         self.tool_selector = tool_selector or DynamicToolSelector(
             skill_loader=self.skill_loader,
@@ -591,6 +597,29 @@ class AgentRuntime:
         if supports_extra_positional:
             return builder(user_input, available_tools, intent_type, tenant_id)
         return builder(user_input, available_tools, intent_type)
+
+    def _optimize_tool_selection(
+        self, user_input: str, intent: ParsedIntent,
+        available_tools: list, tenant_id: str,
+    ) -> dict:
+        """Invoke selector extensions without breaking older selectors."""
+        optimizer = getattr(self.tool_selector, "optimize_for_llm", None)
+        if not callable(optimizer):
+            return {}
+        try:
+            parameters = inspect.signature(optimizer).parameters.values()
+        except (TypeError, ValueError):
+            parameters = ()
+        supports_keyword = any(
+            parameter.name == "tenant_id"
+            or parameter.kind == inspect.Parameter.VAR_KEYWORD
+            for parameter in parameters
+        )
+        if supports_keyword:
+            return optimizer(
+                user_input, intent, available_tools, tenant_id=tenant_id
+            )
+        return optimizer(user_input, intent, available_tools)
 
     def _build_prior_tool_results_context(
         self, session: "SessionContext", max_results: int = 8, max_chars: int = 4000
@@ -2835,8 +2864,8 @@ class AgentRuntime:
         routed_tools = [
             tool for _platform, tools in execution_groups for tool in tools
         ]
-        tool_selection = self.tool_selector.optimize_for_llm(
-            safe_user_input, intent, routed_tools
+        tool_selection = self._optimize_tool_selection(
+            safe_user_input, intent, routed_tools, tenant_id
         )
         feature = self._feature_for_intent(intent)
         execution_plan = ExecutionPlan.from_tool_plan(
@@ -3965,6 +3994,78 @@ class AgentRuntime:
                 messages = legacy if isinstance(legacy, list) else []
             conversations.append(self._conversation_summary(session, messages))
         return conversations[:limit]
+
+    def search_knowledge(
+        self, query: str, *, tenant_id: str = "default",
+        platform: Optional[str] = None, knowledge_type: Optional[str] = None,
+        limit: int = 10, max_excerpt_chars: int = 1200,
+    ) -> list[dict[str, Any]]:
+        """Search built-in and published tenant Wiki documents."""
+        if self.knowledge_provider is None:
+            return []
+        kwargs: dict[str, Any] = {
+            "platforms": [platform] if platform else None,
+            "knowledge_types": [knowledge_type] if knowledge_type else None,
+            "limit": limit,
+            "max_excerpt_chars": max_excerpt_chars,
+        }
+        try:
+            parameters = inspect.signature(self.knowledge_provider.query).parameters
+            if "tenant_id" in parameters or any(
+                item.kind == inspect.Parameter.VAR_KEYWORD
+                for item in parameters.values()
+            ):
+                kwargs["tenant_id"] = tenant_id
+        except (TypeError, ValueError):
+            pass
+        documents = self.knowledge_provider.query(query, **kwargs)
+        return [document.to_dict() for document in documents]
+
+    def summarize_knowledge(
+        self, query: str, documents: list[dict[str, Any]],
+    ) -> str:
+        """Create a business-facing summary without executing any Tool."""
+        safe_documents = self._redact_for_persistence(documents or [])
+        if not safe_documents:
+            return "暂时没有找到匹配的知识内容。可以换一个关键词，或扩大平台范围。"
+        fallback_parts = []
+        for document in safe_documents[:3]:
+            title = str(document.get("title") or document.get("topic") or "相关知识")
+            excerpt = re.sub(r"[#>*`|-]+", " ", str(document.get("excerpt") or ""))
+            excerpt = " ".join(excerpt.split())[:180]
+            fallback_parts.append(f"{title}：{excerpt}" if excerpt else title)
+        fallback = "根据检索到的资料，重点参考：" + "；".join(fallback_parts) + "。"
+        if self._llm is None:
+            return fallback[:1200]
+        prompt = (
+            "你是广告运营知识助手。请根据用户问题和检索到的 Markdown Wiki 资料，"
+            "用中文写一段面向广告运营人员的简短总结，先给结论，再给 2 到 4 条关键点。"
+            "不要提及模型、Runtime、Tool、API、检索过程或内部字段；不要编造资料中没有的事实。"
+            "只返回总结正文，不要包裹 JSON。\n\n"
+            f"用户问题：{str(query or '')[:2000]}\n"
+            f"资料：{json.dumps(safe_documents[:6], ensure_ascii=False, default=str)[:12000]}"
+        )
+        try:
+            try:
+                answer = self._llm.call(
+                    [{"role": "system", "content": "只输出业务总结。"},
+                     {"role": "user", "content": prompt}],
+                    temperature=0.2,
+                )
+            except TypeError:
+                answer = self._llm.call(
+                    [{"role": "system", "content": "只输出业务总结。"},
+                     {"role": "user", "content": prompt}],
+                )
+            answer = self._redact_for_persistence(str(answer or "")).strip()
+            internal_terms = ("runtime", "tool", "provider", "intent_type", "access_token")
+            if not answer or len(answer) > 1600 or any(
+                term in answer.lower() for term in internal_terms
+            ):
+                return fallback[:1200]
+            return answer
+        except Exception:
+            return fallback[:1200]
 
     def get_conversation(
         self, session_id: str, user_id: str, tenant_id: str = "default",

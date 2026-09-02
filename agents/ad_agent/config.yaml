@@ -27,6 +27,8 @@ live_approved_tools: []
 granted_permissions:
   - ads.read
   - ads.plan
+  - knowledge.read
+  - knowledge.write
 
 # For multi-user HTTP deployments prefer AD_AGENT_API_KEY_PRINCIPALS, whose
 # values contain trusted user_id/tenant_id/permissions/account_scope claims.

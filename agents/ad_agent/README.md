@@ -104,9 +104,17 @@ print(result["reply"])
 知识库采用 Karpathy 风格的 Markdown-first LLM Wiki：`index.md` 做导航，`log.md`
 记录变更，`platforms/`、`business/`、`expertise/` 和 `dynamic/` 按主题组织知识。
 知识文件使用 [`knowledge_base/SCHEMA.md`](./knowledge_base/SCHEMA.md) 的 frontmatter
-描述来源、版本、置信度和状态。Runtime、CLI 和 Wiki 查询兼容入口共用
-`core.knowledge.KnowledgeProvider`；当前使用确定性的标题/标签/正文词法检索，不接入
-向量库，草稿和废弃文档不会进入召回。
+描述来源、版本、置信度和状态。除了仓库内置文档外，用户还可以通过
+`POST /knowledge/documents` 保存租户隔离的 Markdown 文档，使用
+`POST /knowledge/documents/{document_id}/publish` 显式发布，并通过
+`GET /knowledge/documents` 管理当前租户文档。修改使用新的语义化版本，保留旧快照，
+与 Skills 管理采用相同的“不可变版本 + 显式发布”思路。知识写入需要 `knowledge.write`
+权限，检索仍需要 `ads.read`；草稿和废弃文档不会进入召回。
+
+`core.knowledge.KnowledgeProvider` 统一提供确定性的标题/标签/正文词法检索，不接入
+向量库。知识库搜索会先展示 LLM 生成的业务摘要，再展示带 Markdown 格式的内容摘录
+和来源；LLM 暂不可用时使用确定性摘要，不影响文档检索。用户提交的文档不能包含凭证
+字段，也不能创建 Tool 或改变权限。
 
 Memory 与 Wiki、Session、Tool Audit 分离。只有显式的“记住/保存”请求才会创建长期
 Memory；Runtime 仅在同一 `tenant_id + user_id` 范围内做有界召回，Memory 不能创建

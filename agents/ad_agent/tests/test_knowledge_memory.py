@@ -1,4 +1,11 @@
+import pytest
+
 from agents.ad_agent.core.knowledge import MarkdownWikiKnowledgeProvider
+from agents.ad_agent.knowledge_management import (
+    KnowledgeDocumentError,
+    ManagedKnowledgeManager,
+    ManagedKnowledgeProvider,
+)
 from agents.ad_agent.core.memory import MemoryManager
 from agents.ad_agent.core.response import LLMResponseSynthesizer
 from agents.ad_agent.core.interfaces import ParsedIntent
@@ -43,6 +50,47 @@ def test_wiki_draft_is_not_retrieved_and_compatibility_facade_uses_same_document
     )
     provider = MarkdownWikiKnowledgeProvider(tmp_path)
     assert provider.query("secret draft", limit=10) == []
+
+
+def test_managed_wiki_documents_are_versioned_published_and_tenant_scoped():
+    store = AdAgentStore(":memory:")
+    manager = ManagedKnowledgeManager(store)
+    created = manager.create_document(
+        "tenant-a",
+        {
+            "title": "Meta 广告类型选择规则",
+            "content": "# 选择建议\n\n- 转化目标优先使用 Conversion\n- 线索目标使用 Lead",
+            "platform": "meta",
+            "layer": "business",
+            "knowledge_type": "best_practice",
+            "source": "投放团队",
+            "tags": ["Meta", "广告类型"],
+        },
+        "user-a",
+    )
+    provider = ManagedKnowledgeProvider(MarkdownWikiKnowledgeProvider("/path/that/does/not/exist"), store)
+
+    assert provider.query("Meta 广告类型", tenant_id="tenant-a") == []
+    published = manager.publish("tenant-a", created["document_id"])
+    assert published["status"] == "published"
+    results = provider.query("Meta 广告类型", tenant_id="tenant-a", limit=5)
+    assert results[0].title == "Meta 广告类型选择规则"
+    assert provider.query("Meta 广告类型", tenant_id="tenant-b") == []
+    assert "schema_version: \"1\"" in published["markdown"]
+
+    unpublished = manager.unpublish("tenant-a", created["document_id"])
+    assert unpublished["status"] == "draft"
+    assert provider.query("Meta 广告类型", tenant_id="tenant-a") == []
+
+
+def test_managed_wiki_rejects_credential_content():
+    manager = ManagedKnowledgeManager(AdAgentStore(":memory:"))
+    with pytest.raises(KnowledgeDocumentError):
+        manager.create_document(
+            "tenant-a",
+            {"title": "不安全文档", "content": "access_token: do-not-store"},
+            "user-a",
+        )
 
 
 def test_memory_is_scoped_and_deleted_without_becoming_tool_state():

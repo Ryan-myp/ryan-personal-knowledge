@@ -40,6 +40,10 @@ from agents.ad_agent.core.plugin_package import PluginPackageError
 from agents.ad_agent.core.memory import MEMORY_KINDS
 from agents.ad_agent.plugin_management import PluginPackageManager
 from agents.ad_agent.skill_management import ManagedSkillManager, SkillPackageError
+from agents.ad_agent.knowledge_management import (
+    KnowledgeDocumentError,
+    ManagedKnowledgeManager,
+)
 
 # 配置路径
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
@@ -208,7 +212,10 @@ def _init_runtime():
                 and os.environ.get("AD_AGENT_ENABLE_LIVE") == "1"
             ),
             granted_permissions=set(
-                config.get("granted_permissions", ["ads.read", "ads.plan"]) or []
+                config.get(
+                    "granted_permissions",
+                    ["ads.read", "ads.plan", "knowledge.read", "knowledge.write"],
+                ) or []
             ),
             offline_mode=False,
             require_llm=True,
@@ -611,16 +618,118 @@ async def search_knowledge(
     """Search the published Markdown LLM Wiki through the Runtime provider."""
     principal = _authorize_request(x_api_key, http_request)
     _require_principal_permission(principal, "ads.read")
-    if not runtime or not runtime.knowledge_provider:
+    if not runtime or not callable(getattr(runtime, "search_knowledge", None)):
         raise HTTPException(status_code=503, detail="知识库未初始化")
-    documents = runtime.knowledge_provider.query(
+    documents = await run_in_threadpool(
+        runtime.search_knowledge,
         query,
-        platforms=[platform] if platform else None,
-        knowledge_types=[knowledge_type] if knowledge_type else None,
+        tenant_id=principal.tenant_id,
+        platform=platform,
+        knowledge_type=knowledge_type,
         limit=limit,
         max_excerpt_chars=1200,
     )
-    return {"results": [document.to_dict() for document in documents]}
+    summary = await run_in_threadpool(runtime.summarize_knowledge, query, documents)
+    return {"query": query, "summary": summary, "results": documents}
+
+
+class KnowledgeDocumentRequest(BaseModel):
+    """A standard Markdown Wiki document body and its frontmatter fields."""
+
+    title: str = Field(min_length=1, max_length=200)
+    content: str = Field(min_length=1, max_length=60_000)
+    platform: str = Field(default="all", max_length=64)
+    layer: str = Field(default="business", max_length=32)
+    knowledge_type: str = Field(default="general", max_length=64)
+    source: str = Field(default="user", max_length=200)
+    source_ref: str = Field(default="", max_length=500)
+    version: str = Field(default="1.0.0", max_length=80)
+    confidence: float = Field(default=0.8, ge=0.0, le=1.0)
+    tags: list[str] = Field(default_factory=list, max_length=20)
+
+
+def _knowledge_manager_or_503() -> ManagedKnowledgeManager:
+    if not runtime or not getattr(runtime, "persistence_store", None):
+        raise HTTPException(status_code=503, detail="知识库存储未初始化")
+    return ManagedKnowledgeManager(runtime.persistence_store)
+
+
+@app.get("/knowledge/documents", tags=["knowledge"])
+async def list_knowledge_documents(
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    status: Optional[str] = Query(None, max_length=32),
+    limit: int = Query(100, ge=1, le=200),
+):
+    """List tenant-owned Wiki drafts and published documents."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.read")
+    return {
+        "tenant_id": principal.tenant_id,
+        "documents": _knowledge_manager_or_503().list_documents(
+            principal.tenant_id, status=status, limit=limit
+        ),
+    }
+
+
+@app.post("/knowledge/documents", tags=["knowledge"])
+async def create_knowledge_document(
+    body: KnowledgeDocumentRequest,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Save a tenant-owned Markdown Wiki draft; publication is explicit."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "knowledge.write")
+    try:
+        result = _knowledge_manager_or_503().create_document(
+            principal.tenant_id, body.model_dump(), principal.user_id
+        )
+    except KnowledgeDocumentError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return JSONResponse(status_code=201, content=result)
+
+
+@app.get("/knowledge/documents/{document_id}", tags=["knowledge"])
+async def get_knowledge_document(
+    document_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "knowledge.read")
+    result = _knowledge_manager_or_503().get_document(principal.tenant_id, document_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="知识文档不存在或无权访问")
+    return result
+
+
+@app.post("/knowledge/documents/{document_id}/publish", tags=["knowledge"])
+async def publish_knowledge_document(
+    document_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "knowledge.write")
+    result = _knowledge_manager_or_503().publish(principal.tenant_id, document_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="知识文档不存在、已废弃或无权访问")
+    return result
+
+
+@app.post("/knowledge/documents/{document_id}/unpublish", tags=["knowledge"])
+async def unpublish_knowledge_document(
+    document_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "knowledge.write")
+    result = _knowledge_manager_or_503().unpublish(principal.tenant_id, document_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="知识文档不是当前发布状态或无权访问")
+    return result
 
 
 @app.get("/memory", tags=["memory"])

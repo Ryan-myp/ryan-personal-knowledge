@@ -120,7 +120,8 @@ def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
             "最近对话", "服务已连接", "grid-template-columns: 228px minmax(0, 1fr) minmax(450px, 460px)",
         "global-action-label", "知识库", "/sessions?limit=50",
         "/sessions/${encodeURIComponent(targetSessionId)}?limit=500",
-        "refreshConversationHistory", "loadConversation",
+        "refreshConversationHistory", "loadConversation", "检索总结",
+        "保存并发布", "/knowledge/documents", "formatKnowledgeMarkdown",
     ):
         assert marker in html
     # The browser may hold the service API key in memory, but the page must
@@ -230,6 +231,75 @@ def test_session_detail_hides_other_principal_sessions(monkeypatch, fake_server)
             headers={"X-API-Key": "scoped-key"},
         )
     assert response.status_code == 404
+
+
+def test_knowledge_document_can_be_saved_as_draft_and_published(monkeypatch):
+    from agents.ad_agent import AgentRuntime
+    from agents.ad_agent.persistence.store import AdAgentStore
+
+    store = AdAgentStore(":memory:")
+    managed_runtime = AgentRuntime(
+        require_llm=False, persistence_store=store, features=[]
+    )
+    monkeypatch.setattr(api_server, "runtime", managed_runtime)
+    monkeypatch.setattr(api_server, "API_KEY", "knowledge-key")
+    monkeypatch.setattr(api_server, "ALLOW_UNAUTHENTICATED", False)
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "knowledge-key": {
+                "user_id": "knowledge-user",
+                "tenant_id": "tenant-a",
+                "permissions": ["ads.read", "knowledge.write"],
+            }
+        }),
+    )
+    headers = {"X-API-Key": "knowledge-key"}
+    try:
+        with TestClient(api_server.app) as client:
+            created = client.post(
+                "/knowledge/documents",
+                headers=headers,
+                json={
+                    "title": "团队 Meta 投放经验",
+                    "content": "# 经验\n\n优先根据目标选择广告类型。",
+                    "platform": "meta",
+                    "knowledge_type": "best_practice",
+                },
+            )
+            assert created.status_code == 201
+            document_id = created.json()["document_id"]
+            before_publish = client.get(
+                "/knowledge/search",
+                headers=headers,
+                params={"query": "团队 Meta 投放经验"},
+            )
+            assert before_publish.status_code == 200
+            assert not any(
+                item["document_id"] == f"managed:{document_id}"
+                for item in before_publish.json()["results"]
+            )
+
+            published = client.post(
+                f"/knowledge/documents/{document_id}/publish",
+                headers=headers,
+            )
+            assert published.status_code == 200
+            after_publish = client.get(
+                "/knowledge/search",
+                headers=headers,
+                params={"query": "团队 Meta 投放经验"},
+            )
+            assert after_publish.status_code == 200
+            managed_result = next(
+                item for item in after_publish.json()["results"]
+                if item["document_id"] == f"managed:{document_id}"
+            )
+            assert managed_result["title"] == "团队 Meta 投放经验"
+            assert after_publish.json()["summary"]
+    finally:
+        managed_runtime.task_executor.shutdown(wait=True)
+        store.close()
 
 
 def test_chat_page_does_not_turn_http_errors_into_operation_complete(fake_server):

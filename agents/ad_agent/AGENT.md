@@ -128,11 +128,13 @@ Skill-owned `RuntimeFeature`；Feature 通过 Runtime 的通用扩展上下文�
 
 ### 3.1.1 Wiki 与 Memory
 
-共享广告知识必须写入 `knowledge_base/` 的 Markdown LLM Wiki，并遵循其中的
+共享广告知识可以写入仓库 `knowledge_base/` 的 Markdown LLM Wiki，也可以由有权限的
+用户通过知识库管理 API 保存为租户隔离的 Markdown 文档快照；两者都必须遵循
 `SCHEMA.md` frontmatter。Runtime 只通过 `KnowledgeProvider` 读取已发布文档；不得在
 Skill、Tool 或 Runtime 中自行扫描文件、维护第二套 Wiki 索引或引入 `workflow.yaml`。
 当前知识检索是确定性的词法检索，不接入向量库；检索结果必须有界并带来源、版本和
-引用信息。
+引用信息。用户知识文档默认是草稿，必须显式发布后才进入检索和 Agent 上下文；修改
+应递增版本并保留旧快照，不覆盖既有文档。
 
 Memory 不等同于会话历史、工具审计或 Campaign 状态。跨会话记忆必须通过
 `MemoryManager`/`MemoryStore`，并同时受 `tenant_id`、`user_id` 隔离。默认只接受用户
