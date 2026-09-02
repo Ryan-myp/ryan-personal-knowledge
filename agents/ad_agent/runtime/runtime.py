@@ -2394,6 +2394,7 @@ class AgentRuntime:
         self, session: "SessionContext", turn_id: str,
         user_input: str, reply: str,
         execution_trace: Optional[ExecutionTrace] = None,
+        ui: Optional[Mapping[str, Any]] = None,
     ) -> None:
         """Persist a complete sanitized turn and keep bounded model context.
 
@@ -2438,6 +2439,16 @@ class AgentRuntime:
             "message_count": len(session.messages),
             "messages": self._redact_for_persistence(session.messages[-20:]),
         }
+        ui_by_turn = session.ctx.metadata.get("conversation_ui", {})
+        ui_by_turn = dict(ui_by_turn) if isinstance(ui_by_turn, dict) else {}
+        if isinstance(ui, Mapping) and ui:
+            # A2UI is persisted as sanitized message metadata, not as model
+            # context. It can be restored for display, but it never grants an
+            # execution permission or bypasses the confirmation boundary.
+            ui_by_turn[str(turn_id)] = self._redact_for_persistence(dict(ui))
+        ui_by_turn = dict(list(ui_by_turn.items())[-20:])
+        session.ctx.metadata["conversation_ui"] = ui_by_turn
+        metadata["conversation_ui"] = ui_by_turn
         if execution_trace is not None:
             traces = session.ctx.metadata.get("execution_traces", {})
             traces = dict(traces) if isinstance(traces, dict) else {}
@@ -3003,7 +3014,8 @@ class AgentRuntime:
             trace.error(reason="policy_blocked")
             trace.done("failed", safe_metadata={"reason": "policy_blocked"})
             self.persist_conversation_turn(
-                session, turn_id, safe_user_input, reply, execution_trace=trace
+                session, turn_id, safe_user_input, reply,
+                execution_trace=trace,
             )
             return {
                 "session_id": session_id,
@@ -3075,7 +3087,8 @@ class AgentRuntime:
                 trace.error(reason="creation_blueprint_context_invalid")
                 trace.done("failed", safe_metadata={"reason": "creation_blueprint_context_invalid"})
                 self.persist_conversation_turn(
-                    session, turn_id, safe_user_input, reply, execution_trace=trace
+                    session, turn_id, safe_user_input, reply,
+                    execution_trace=trace,
                 )
                 return {
                     "session_id": session_id,
@@ -3100,7 +3113,8 @@ class AgentRuntime:
                 trace.error(reason="creation_blueprint_invalid")
                 trace.done("failed", safe_metadata={"reason": "creation_blueprint_invalid"})
                 self.persist_conversation_turn(
-                    session, turn_id, safe_user_input, reply, execution_trace=trace
+                    session, turn_id, safe_user_input, reply,
+                    execution_trace=trace,
                 )
                 return {
                     "session_id": session_id,
@@ -3181,7 +3195,8 @@ class AgentRuntime:
             trace.reply()
             trace.done("failed", safe_metadata={"reason": "parameter_contract"})
             self.persist_conversation_turn(
-                session, turn_id, safe_user_input, reply, execution_trace=trace
+                session, turn_id, safe_user_input, reply,
+                execution_trace=trace, ui=creation_ui,
             )
             return {
                 "session_id": session_id,
@@ -3237,7 +3252,8 @@ class AgentRuntime:
                 trace.reply()
                 trace.done("failed", safe_metadata={"reason": "preflight_blocked"})
                 self.persist_conversation_turn(
-                    session, turn_id, safe_user_input, reply, execution_trace=trace
+                    session, turn_id, safe_user_input, reply,
+                    execution_trace=trace, ui=creation_ui,
                 )
                 return {
                     "session_id": session_id,
@@ -3394,7 +3410,7 @@ class AgentRuntime:
             )
             self.persist_conversation_turn(
                 session, turn_id, safe_user_input, no_tool_reply,
-                execution_trace=trace,
+                execution_trace=trace, ui=creation_ui,
             )
             return {
                 "session_id": session_id,
@@ -4219,7 +4235,8 @@ class AgentRuntime:
         
         # Step 6: 记录消息历史
         self.persist_conversation_turn(
-            session, turn_id, safe_user_input, reply, execution_trace=trace
+            session, turn_id, safe_user_input, reply,
+            execution_trace=trace, ui=creation_ui,
         )
         
         return {
@@ -4444,6 +4461,14 @@ class AgentRuntime:
             }
             for record in records
         ]
+        ui_by_turn = metadata.get("conversation_ui", {})
+        if isinstance(ui_by_turn, dict):
+            for message in messages:
+                if message.get("role") != "assistant":
+                    continue
+                stored_ui = ui_by_turn.get(str(message.get("turn_id")))
+                if isinstance(stored_ui, dict) and stored_ui:
+                    message["ui"] = self._redact_for_persistence(stored_ui)
         if not messages:
             legacy = metadata.get("messages")
             messages = legacy if isinstance(legacy, list) else []
@@ -4615,6 +4640,9 @@ class AgentRuntime:
             stored_traces = persisted_metadata.get("execution_traces")
             if isinstance(stored_traces, dict):
                 ctx.metadata["execution_traces"] = stored_traces
+            stored_ui = persisted_metadata.get("conversation_ui")
+            if isinstance(stored_ui, dict):
+                ctx.metadata["conversation_ui"] = stored_ui
             session.messages = persisted_metadata.get("messages", [])[-20:]
             ctx.messages = list(session.messages)
             if self._session_manager and persisted:

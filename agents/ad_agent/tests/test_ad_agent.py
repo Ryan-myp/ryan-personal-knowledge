@@ -955,6 +955,43 @@ class TestRuntimeQuery:
         )
         assert conversation["execution_traces"][result["turn_id"]]["events"]
 
+    def test_runtime_persists_creation_card_with_assistant_message(self):
+        class LLM:
+            def call(self, messages):
+                return '{"intent_type":"chat","platforms":[]}'
+
+        rt = AgentRuntime(
+            require_llm=False,
+            persistence_store=AdAgentStore(":memory:"),
+            intent_parser=LLMIntentParser(LLM()),
+        )
+        result = rt.run(
+            "准备广告创建参数",
+            session_id="card-session",
+            user_id="card-user",
+        )
+        session = rt._sessions[result["session_id"]]
+        card = {
+            "type": "ad_creation_form",
+            "id": "google-ads.search@1.0.0",
+            "title": "Google Search 广告",
+            "fields": [{"path": "campaign.campaign_name", "value": "草稿"}],
+            "actions": [{"id": "submit_create", "label": "提交创建"}],
+        }
+        rt.persist_conversation_turn(
+            session,
+            "card-turn",
+            "继续完善广告参数",
+            "请检查广告参数卡片。",
+            ui={"cards": [card]},
+        )
+
+        conversation = rt.get_conversation("card-session", "card-user")
+        assistant = conversation["messages"][-1]
+        assert assistant["ui"] == {"cards": [card]}
+        metadata = json.loads(rt._session_manager.get_session("card-session")["metadata"])
+        assert metadata["conversation_ui"]["card-turn"] == {"cards": [card]}
+
 
 class TestSafeWriteExecution:
     class FakeClient:
