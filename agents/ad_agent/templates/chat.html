@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ad-agent - 广告投放专家助手</title>
+    <title>AI Ops Agent · 广告投放工作区</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
@@ -1370,7 +1370,7 @@
         .global-avatar { display: grid; place-items: center; width: 27px; height: 27px; border-radius: 50%; color: #d9d2ff; background: #33285f; font-size: 10px; font-weight: 700; }
         .global-chevron, .session-chevron { color: #60788e; }
         .workspace-popover { position: fixed; top: 69px; right: 20px; z-index: 850; display: none; width: min(360px, calc(100vw - 32px)); padding: 14px; border: 1px solid #29435d; border-radius: 12px; background: #0b1a29; box-shadow: 0 18px 42px rgba(0,0,0,.42); }
-        #knowledgePopover { width: min(560px, calc(100vw - 32px)); }
+        #knowledgePopover { top: 160px; right: auto; left: 14px; width: min(560px, calc(100vw - 32px)); }
         .workspace-popover.active { display: block; }
         .workspace-popover-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
         .workspace-popover-title { color: #e7f0fa; font-size: 12px; font-weight: 650; }
@@ -1422,8 +1422,9 @@
         .sidebar-subtitle { color: var(--text-muted); font-size: 10px; }
         .new-chat-btn { margin: 12px 14px 8px; padding: 10px 12px; min-height: 38px; font-size: 13px; }
         .new-chat-btn svg { width: 16px; height: 16px; }
-        .skill-nav-btn { justify-content: flex-start; margin-top: 0; }
+        .skill-nav-btn, .knowledge-nav-btn { justify-content: flex-start; margin-top: 0; }
         .skill-nav-btn .nav-icon { width: 18px; text-align: center; font-size: 16px; }
+        .knowledge-nav-btn .nav-icon { width: 18px; text-align: center; font-size: 16px; }
         .sidebar-section-label { padding: 16px 18px 7px; color: var(--text-muted); font-size: 10px; letter-spacing: .3px; }
         .chat-history-item { justify-content: flex-start; padding: 10px 12px; margin: 0 8px 2px; }
         .chat-history-item > span:last-child { display: inline; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1506,11 +1507,10 @@
     <header class="global-topbar">
         <div class="global-brand-mark">A</div>
         <div class="global-brand-name">AI Ops Agent</div>
-        <div class="session-pill"><span>执行会话</span><b>广告 Agent 工作区</b><i></i><em id="globalSessionStatus">待命</em><span class="session-chevron">⌄</span></div>
+        <div class="session-pill"><span>执行会话</span><b>广告投放工作区</b><i></i><em id="globalSessionStatus">待命</em><span class="session-chevron">⌄</span></div>
         <div class="global-actions">
             <button class="global-readonly" id="modeToggleButton" type="button" onclick="toggleModePopover()" aria-expanded="false"><span>锁</span> 只读模式</button>
             <button class="global-action" id="filterToggleButton" type="button" onclick="toggleFilterPopover()" aria-label="筛选" aria-expanded="false"><span aria-hidden="true">▽</span><span class="global-action-label">筛选</span></button>
-            <button class="global-action" id="knowledgeToggleButton" type="button" onclick="toggleKnowledgePopover()" aria-label="知识库" aria-expanded="false"><span aria-hidden="true">▤</span><span class="global-action-label">知识库</span></button>
             <span class="global-avatar">OP</span><span class="global-chevron">⌄</span>
         </div>
     </header>
@@ -1592,8 +1592,8 @@
         <div class="sidebar-header">
             <div class="logo">A</div>
             <div class="sidebar-brand">
-                <span class="app-name">广告 Agent</span>
-                <span class="sidebar-subtitle">投放工作区</span>
+                <span class="app-name">AI Ops Agent</span>
+                <span class="sidebar-subtitle">广告投放工作区</span>
             </div>
         </div>
         
@@ -1604,9 +1604,13 @@
             </svg>
             <span>新对话</span>
         </button>
-        <button class="new-chat-btn skill-nav-btn" onclick="openSkillManager()">
+        <button class="new-chat-btn skill-nav-btn workspace-nav" onclick="openSkillManager()">
             <span class="nav-icon">🧩</span>
             <span>Skills 管理</span>
+        </button>
+        <button class="new-chat-btn knowledge-nav-btn workspace-nav" id="knowledgeNavButton" onclick="toggleKnowledgePopover()" aria-label="知识库" aria-expanded="false">
+            <span class="nav-icon">▤</span>
+            <span>知识库</span>
         </button>
 
         <div class="sidebar-section-label">最近对话</div>
@@ -1623,7 +1627,7 @@
     <!-- 主内容区 -->
     <main class="main-content">
         <div class="topbar">
-            <span class="topbar-title">广告投放专家助手</span>
+            <span class="topbar-title">广告投放工作区</span>
             <div class="platform-tags">
                 <span class="platform-tag meta">Meta</span>
                 <span class="platform-tag tiktok">TikTok</span>
@@ -1637,7 +1641,7 @@
                 <!-- 欢迎页 -->
                 <div class="welcome-page" id="welcomePage">
                     <div class="welcome-icon">🤖</div>
-                    <h1 class="welcome-title">欢迎使用 ad-agent</h1>
+                    <h1 class="welcome-title">欢迎使用 AI Ops Agent</h1>
                     <p class="welcome-desc">我是您的广告投放专家助手，支持 Meta、TikTok、Google Ads、DV360 四大平台。<br>告诉我您的需求，我将为您制定投放方案。</p>
                     
                     <div class="feature-grid">
@@ -1833,7 +1837,7 @@
         let workspaceMode = { mode: '', loading: false };
 
         function closeWorkspacePopovers() {
-            for (const [popoverId, buttonId] of [['modePopover', 'modeToggleButton'], ['filterPopover', 'filterToggleButton'], ['knowledgePopover', 'knowledgeToggleButton']]) {
+            for (const [popoverId, buttonId] of [['modePopover', 'modeToggleButton'], ['filterPopover', 'filterToggleButton'], ['knowledgePopover', 'knowledgeNavButton']]) {
                 document.getElementById(popoverId)?.classList.remove('active');
                 const button = document.getElementById(buttonId);
                 button?.classList.remove('active');
@@ -1898,7 +1902,7 @@
         }
 
         function toggleKnowledgePopover() {
-            toggleWorkspacePopover('knowledgePopover', 'knowledgeToggleButton');
+            toggleWorkspacePopover('knowledgePopover', 'knowledgeNavButton');
             const keyInput = document.getElementById('knowledgeApiKey');
             if (keyInput && !keyInput.value) keyInput.value = serviceApiKey;
         }
@@ -2952,7 +2956,7 @@
                 <div class="message-avatar">${type === 'user' ? '👤' : '🤖'}</div>
                 <div class="message-content">
                     <div class="message-header">
-                        <span class="message-sender">${type === 'user' ? '您' : 'ad-agent'}</span>
+                        <span class="message-sender">${type === 'user' ? '您' : 'AI Ops Agent'}</span>
                         <span class="message-time">${time}</span>
                     </div>
                     <div class="message-body">${bodyHtml}</div>
@@ -2976,7 +2980,7 @@
                 <div class="message-avatar">🤖</div>
                 <div class="message-content">
                     <div class="message-header">
-                        <span class="message-sender">ad-agent</span>
+                        <span class="message-sender">AI Ops Agent</span>
                     </div>
                     <div class="loading-indicator">
                         <span></span><span></span><span></span>
@@ -3270,7 +3274,7 @@
             document.getElementById('chatContainer').innerHTML = `
                 <div class="welcome-page" id="welcomePage">
                     <div class="welcome-icon">🤖</div>
-                    <h1 class="welcome-title">欢迎使用 ad-agent</h1>
+                    <h1 class="welcome-title">欢迎使用 AI Ops Agent</h1>
                     <p class="welcome-desc">我是您的广告投放专家助手，支持 Meta、TikTok、Google Ads、DV360 四大平台。<br>告诉我您的需求，我将为您制定投放方案。</p>
                     
                     <div class="feature-grid">
@@ -3300,7 +3304,7 @@
         }
 
         document.addEventListener('click', (event) => {
-            if (!event.target.closest('.global-actions') && !event.target.closest('.workspace-popover')) {
+            if (!event.target.closest('.global-actions') && !event.target.closest('.workspace-nav') && !event.target.closest('.workspace-popover')) {
                 closeWorkspacePopovers();
             }
         });
