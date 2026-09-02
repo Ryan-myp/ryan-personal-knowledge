@@ -422,6 +422,8 @@
             gap: 8px;
             margin-bottom: 6px;
         }
+
+        .message.user .message-header { justify-content: flex-end; }
         
         .message-sender {
             font-size: 13px;
@@ -3492,7 +3494,7 @@
                 <div class="message-avatar">${type === 'user' ? '👤' : '🤖'}</div>
                 <div class="message-content">
                     <div class="message-header">
-                        <span class="message-sender">${type === 'user' ? '您' : 'AI Ops Agent'}</span>
+                        ${type === 'user' ? '' : '<span class="message-sender">AI Ops Agent</span>'}
                         <span class="message-time">${time}</span>
                     </div>
                     <div class="message-body">${bodyHtml}</div>
