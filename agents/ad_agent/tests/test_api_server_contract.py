@@ -41,11 +41,21 @@ class FakeRegistry:
 
 class FakeRuntime:
     execution_mode = "dry_run"
+    allow_live_writes = False
+    _read_only_mode = False
 
     def __init__(self):
         self.registry = FakeRegistry()
         self.calls = []
         self.parameter_option_calls = []
+        self.execution_mode = "dry_run"
+        self.allow_live_writes = False
+        self._read_only_mode = False
+
+    def set_execution_mode(self, mode):
+        if mode not in {"dry_run", "live"}:
+            raise ValueError(f"Unsupported execution_mode: {mode}")
+        self.execution_mode = mode
 
     def run(self, **kwargs):
         self.calls.append(kwargs)
@@ -108,11 +118,107 @@ def fake_server(monkeypatch):
     return fake
 
 
-def test_health_is_safe_and_does_not_require_api_key(fake_server):
+def test_health_is_safe_and_does_not_require_api_key(fake_server, monkeypatch):
+    monkeypatch.delenv("AD_AGENT_ENABLE_LIVE", raising=False)
     with TestClient(api_server.app) as client:
         response = client.get("/health")
     assert response.status_code == 200
-    assert response.json()["execution_mode"] == "dry_run"
+    payload = response.json()
+    assert payload["execution_mode"] == "dry_run"
+    assert payload["execution_mode_options"] == ["dry_run", "live"]
+    assert payload["live_mode_available"] is False
+    assert payload["live_mode_reason"] == "服务未开启 live 环境开关"
+
+
+def test_execution_mode_change_requires_planning_permission(monkeypatch, fake_server):
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "read-key": {
+                "user_id": "reader",
+                "tenant_id": "tenant-a",
+                "permissions": ["ads.read"],
+            }
+        }),
+    )
+    with TestClient(api_server.app) as client:
+        response = client.post(
+            "/settings/execution-mode",
+            headers={"X-API-Key": "read-key"},
+            json={"mode": "dry_run"},
+        )
+    assert response.status_code == 403
+    assert fake_server.execution_mode == "dry_run"
+
+
+def test_execution_mode_live_requires_write_permission_and_deployment_gate(
+    monkeypatch, fake_server
+):
+    fake_server.allow_live_writes = True
+    monkeypatch.delenv("AD_AGENT_ENABLE_LIVE", raising=False)
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "plan-key": {
+                "user_id": "planner",
+                "tenant_id": "tenant-a",
+                "permissions": ["ads.plan"],
+            },
+            "write-key": {
+                "user_id": "operator",
+                "tenant_id": "tenant-a",
+                "permissions": ["ads.plan", "ads.write"],
+            },
+        }),
+    )
+    with TestClient(api_server.app) as client:
+        missing_permission = client.post(
+            "/settings/execution-mode",
+            headers={"X-API-Key": "plan-key"},
+            json={"mode": "live"},
+        )
+        deployment_disabled = client.post(
+            "/settings/execution-mode",
+            headers={"X-API-Key": "write-key"},
+            json={"mode": "live"},
+        )
+    assert missing_permission.status_code == 403
+    assert deployment_disabled.status_code == 409
+    assert deployment_disabled.json()["detail"] == "服务未开启 live 环境开关"
+    assert fake_server.execution_mode == "dry_run"
+
+
+def test_execution_mode_can_switch_live_then_return_to_dry_run(monkeypatch, fake_server):
+    fake_server.allow_live_writes = True
+    monkeypatch.setenv("AD_AGENT_ENABLE_LIVE", "1")
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "write-key": {
+                "user_id": "operator",
+                "tenant_id": "tenant-a",
+                "permissions": ["ads.plan", "ads.write"],
+            }
+        }),
+    )
+    with TestClient(api_server.app) as client:
+        live = client.post(
+            "/settings/execution-mode",
+            headers={"X-API-Key": "write-key"},
+            json={"mode": "live"},
+        )
+        dry_run = client.post(
+            "/settings/execution-mode",
+            headers={"X-API-Key": "write-key"},
+            json={"mode": "dry_run"},
+        )
+    assert live.status_code == 200
+    assert live.json()["mode"] == "live"
+    assert live.json()["live_mode_available"] is True
+    assert "仍需账户、权限和二次确认" in live.json()["message"]
+    assert dry_run.status_code == 200
+    assert dry_run.json()["mode"] == "dry_run"
+    assert fake_server.execution_mode == "dry_run"
 
 
 def test_plugins_exposes_only_safe_lifecycle_metadata(fake_server):
@@ -173,6 +279,8 @@ def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
         "/skills/builtin/", "managed_skills", "builtin_skills", "当前操作员",
         "knowledgeFileInput", "handleKnowledgeFileUpload", "view-hidden", "返回检索",
         "themeToggleButton", "light-theme", "ad-agent-theme", "toggleTheme",
+        "executionModeSelect", "/settings/execution-mode", "live_mode_available",
+        "live_mode_reason", "应用模式", "live · 受控执行",
     ):
         assert marker in html
     # The browser may hold the service API key in memory, but the page must

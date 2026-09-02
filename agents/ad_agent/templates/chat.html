@@ -1814,6 +1814,14 @@
         .workspace-mode-card { padding: 10px; border: 1px solid #23506a; border-radius: 9px; background: #071724; }
         .workspace-mode-card strong { display: block; color: #7ce3bb; font-size: 11px; }
         .workspace-mode-card p { margin-top: 6px; color: #a8bfd2; font-size: 10px; line-height: 1.55; }
+        .workspace-mode-select-label { display: grid; gap: 5px; margin-top: 10px; color: #91a8bc; font-size: 10px; }
+        .workspace-mode-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 9px; }
+        .workspace-mode-status { min-height: 15px; color: #71869b; font-size: 10px; line-height: 1.45; }
+        .workspace-mode-status.error { color: #fda4af; }
+        .workspace-mode-status.success { color: #7ce3bb; }
+        .workspace-mode-apply { min-height: 30px; padding: 6px 10px; border: 1px solid #5368c8; border-radius: 6px; color: #eef2ff; background: #394693; cursor: pointer; font-size: 10px; white-space: nowrap; }
+        .workspace-mode-apply:hover:not(:disabled) { border-color: #8e9cff; background: #4a59ae; }
+        .workspace-mode-apply:disabled { opacity: .48; cursor: not-allowed; }
         .workspace-form { display: grid; gap: 9px; }
         .workspace-form label { display: grid; gap: 5px; color: #91a8bc; font-size: 10px; }
         .workspace-form input, .workspace-form select { width: 100%; min-height: 30px; padding: 6px 8px; border: 1px solid #29435d; border-radius: 6px; outline: none; color: #d9e7f3; background: #071321; font-size: 11px; }
@@ -2026,6 +2034,12 @@
         body.light-theme .workspace-mode-card { background: #edf7f8; border-color: #8ac3c8; }
         body.light-theme .workspace-mode-card strong { color: #176d52; }
         body.light-theme .workspace-mode-card p { color: #40566d; }
+        body.light-theme .workspace-mode-select-label { color: #526579; }
+        body.light-theme .workspace-mode-status { color: #526579; }
+        body.light-theme .workspace-mode-status.error { color: #a42c43; }
+        body.light-theme .workspace-mode-status.success { color: #176d52; }
+        body.light-theme .workspace-mode-apply { color: #ffffff; border-color: #5941a4; background: #5941a4; }
+        body.light-theme .workspace-mode-apply:hover:not(:disabled) { background: #49348d; }
         body.light-theme .workspace-popover-close { color: #53677d; }
         body.light-theme .workspace-popover-close:hover { color: #162235; }
         body.light-theme .knowledge-summary { background: linear-gradient(135deg, #eef7f8, #f5f8fc); border-color: #9bcbd0; }
@@ -2151,7 +2165,7 @@
         <div class="global-brand-name">AI Ops Agent</div>
         <div class="session-pill"><span>执行会话</span><b>广告投放工作区</b><i></i><em id="globalSessionStatus">待命</em><span class="session-chevron">⌄</span></div>
         <div class="global-actions">
-            <button class="global-readonly" id="modeToggleButton" type="button" onclick="toggleModePopover()" aria-expanded="false"><span>锁</span> 只读模式</button>
+            <button class="global-readonly" id="modeToggleButton" type="button" onclick="toggleModePopover()" aria-expanded="false"><span id="modeToggleIcon">◈</span> <span id="modeToggleLabel">dry-run</span></button>
             <button class="global-action" id="filterToggleButton" type="button" onclick="toggleFilterPopover()" aria-label="筛选" aria-expanded="false"><span aria-hidden="true">▽</span><span class="global-action-label">筛选</span></button>
             <button class="global-action theme-toggle" id="themeToggleButton" type="button" onclick="toggleTheme()" aria-label="切换主题"><span id="themeToggleIcon" aria-hidden="true">☼</span><span class="global-action-label" id="themeToggleLabel">浅色</span></button>
             <span class="global-avatar" title="当前操作员">运营</span><span class="global-chevron">⌄</span>
@@ -2159,12 +2173,22 @@
     </header>
     <section class="workspace-popover" id="modePopover" role="dialog" aria-label="执行模式说明">
         <div class="workspace-popover-header">
-            <div><div class="workspace-popover-title">执行模式</div><div class="workspace-popover-subtitle">模式由服务端配置决定，前端只展示当前安全边界。</div></div>
+            <div><div class="workspace-popover-title">执行模式</div><div class="workspace-popover-subtitle">选择当前服务实例的运行模式；live 是否可用由服务端安全配置决定。</div></div>
             <button class="workspace-popover-close" type="button" onclick="closeWorkspacePopovers()" aria-label="关闭执行模式说明">×</button>
         </div>
         <div class="workspace-mode-card">
             <strong id="workspaceModeTitle">正在读取服务模式…</strong>
             <p id="workspaceModeDescription">正在读取当前 Runtime 的执行策略。</p>
+            <label class="workspace-mode-select-label" for="executionModeSelect">当前模式
+                <select id="executionModeSelect" onchange="clearWorkspaceModeStatus()" disabled>
+                    <option value="dry_run">dry-run · 安全预览</option>
+                    <option value="live">live · 受控执行</option>
+                </select>
+            </label>
+            <div class="workspace-mode-actions">
+                <span class="workspace-mode-status" id="workspaceModeStatus" role="status" aria-live="polite"></span>
+                <button type="button" class="workspace-mode-apply" id="workspaceModeApply" onclick="applyWorkspaceMode()" disabled>应用模式</button>
+            </div>
         </div>
     </section>
     <section class="workspace-popover" id="filterPopover" role="dialog" aria-label="执行轨迹筛选">
@@ -2586,7 +2610,9 @@
         }
 
         let traceFilter = { platform: 'all', status: 'all', kind: 'all' };
-        let workspaceMode = { mode: '', loading: false };
+        let workspaceMode = {
+            mode: '', loading: false, saving: false, liveAvailable: false, liveReason: ''
+        };
 
         function closeWorkspacePopovers() {
             for (const [popoverId, buttonId] of [['modePopover', 'modeToggleButton'], ['filterPopover', 'filterToggleButton']]) {
@@ -2640,31 +2666,109 @@
             const title = document.getElementById('workspaceModeTitle');
             const description = document.getElementById('workspaceModeDescription');
             if (!title || !description) return;
+            const toggleLabel = document.getElementById('modeToggleLabel');
+            const toggleIcon = document.getElementById('modeToggleIcon');
+            const select = document.getElementById('executionModeSelect');
+            const apply = document.getElementById('workspaceModeApply');
             if (workspaceMode.loading) {
                 title.textContent = '正在读取服务模式…';
                 description.textContent = '正在读取当前 Runtime 的执行策略。';
+                if (select) select.disabled = true;
+                if (apply) apply.disabled = true;
                 return;
             }
             if (workspaceMode.mode === 'live') {
                 title.textContent = 'live 模式 · 受控执行';
                 description.textContent = '当前服务允许进入受控 live 流程；写操作仍需权限、测试账户白名单、幂等校验和显式确认。';
+                if (toggleLabel) toggleLabel.textContent = 'live';
+                if (toggleIcon) toggleIcon.textContent = '●';
             } else {
                 title.textContent = 'dry-run 模式 · 安全预览';
                 description.textContent = '查询可以正常执行；创建、修改、暂停等写操作只生成预览，不会修改广告账户。执行模式由服务端配置，不能在页面上绕过安全门禁。';
+                if (toggleLabel) toggleLabel.textContent = 'dry-run';
+                if (toggleIcon) toggleIcon.textContent = '◈';
             }
+            if (select) {
+                select.disabled = workspaceMode.saving;
+                if (select.value !== workspaceMode.mode) select.value = workspaceMode.mode || 'dry_run';
+                const liveOption = select.querySelector('option[value="live"]');
+                if (liveOption) {
+                    liveOption.disabled = !workspaceMode.liveAvailable;
+                    liveOption.title = workspaceMode.liveAvailable ? '' : (workspaceMode.liveReason || 'live 当前不可用');
+                }
+            }
+            if (apply) apply.disabled = workspaceMode.saving || !workspaceMode.mode;
+            const traceMode = document.getElementById('traceMode');
+            if (traceMode) traceMode.textContent = workspaceMode.mode === 'live'
+                ? 'live · 受控执行，写操作需确认'
+                : 'dry-run · 不调用线上写 API';
         }
 
         async function refreshWorkspaceMode() {
             workspaceMode.loading = true;
             renderWorkspaceMode();
             try {
-                const response = await fetch('/health');
+                const response = await authenticatedFetch('/health');
                 const data = await response.json();
                 workspaceMode.mode = data.execution_mode || 'dry_run';
+                workspaceMode.liveAvailable = Boolean(data.live_mode_available);
+                workspaceMode.liveReason = data.live_mode_reason || '';
             } catch (_) {
                 workspaceMode.mode = 'dry_run';
+                workspaceMode.liveAvailable = false;
+                workspaceMode.liveReason = '暂时无法读取服务模式';
             } finally {
                 workspaceMode.loading = false;
+                renderWorkspaceMode();
+            }
+        }
+
+        function clearWorkspaceModeStatus() {
+            const status = document.getElementById('workspaceModeStatus');
+            if (status) {
+                status.textContent = '';
+                status.className = 'workspace-mode-status';
+            }
+        }
+
+        async function applyWorkspaceMode() {
+            const select = document.getElementById('executionModeSelect');
+            const status = document.getElementById('workspaceModeStatus');
+            const mode = select?.value || 'dry_run';
+            if (mode === 'live' && !workspaceMode.liveAvailable) {
+                if (status) {
+                    status.textContent = workspaceMode.liveReason || 'live 当前不可用，请先完成服务端安全配置';
+                    status.className = 'workspace-mode-status error';
+                }
+                return;
+            }
+            workspaceMode.saving = true;
+            clearWorkspaceModeStatus();
+            renderWorkspaceMode();
+            try {
+                const response = await authenticatedFetch('/settings/execution-mode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode })
+                });
+                const text = await response.text();
+                let data = {};
+                try { data = text ? JSON.parse(text) : {}; } catch (_) { data = {}; }
+                if (!response.ok) throw new Error(data.detail || data.error || `切换失败（${response.status}）`);
+                workspaceMode.mode = data.mode || mode;
+                workspaceMode.liveAvailable = Boolean(data.live_mode_available);
+                workspaceMode.liveReason = data.live_mode_reason || '';
+                if (status) {
+                    status.textContent = data.message || '模式已更新';
+                    status.className = 'workspace-mode-status success';
+                }
+            } catch (error) {
+                if (status) {
+                    status.textContent = error.message || '模式切换失败';
+                    status.className = 'workspace-mode-status error';
+                }
+            } finally {
+                workspaceMode.saving = false;
                 renderWorkspaceMode();
             }
         }

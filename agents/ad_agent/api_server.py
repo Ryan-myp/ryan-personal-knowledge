@@ -342,6 +342,12 @@ class ChatRequest(BaseModel):
     platform_params: Optional[dict] = None
 
 
+class ExecutionModeRequest(BaseModel):
+    """Request to change the process-local Runtime execution mode."""
+
+    mode: str = Field(min_length=1, max_length=16)
+
+
 class SessionDeleteRequest(BaseModel):
     """Bounded local conversation deletion request."""
 
@@ -395,12 +401,83 @@ async def health():
         # Useful for tests/embedding callers that inject an already-created
         # Runtime instead of going through the ASGI lifespan.
         state = "ready"
+    live_reason = None
+    live_available = False
+    if runtime is not None:
+        if getattr(runtime, "_read_only_mode", False):
+            live_reason = "服务当前处于只读配置，不能切换到 live"
+        elif os.environ.get("AD_AGENT_ENABLE_LIVE") != "1":
+            live_reason = "服务未开启 live 环境开关"
+        elif not bool(getattr(runtime, "allow_live_writes", False)):
+            live_reason = "服务未开启 live 写入权限"
+        else:
+            live_available = True
+    else:
+        live_reason = "Runtime 尚未就绪"
     return {
         "status": "healthy" if state == "ready" else "unhealthy",
         "state": state, "error": runtime_status.get("error"),
         "service": "ad-agent", "version": "1.0.0",
         "execution_mode": runtime.execution_mode if runtime else None,
+        "execution_mode_options": ["dry_run", "live"],
+        "live_mode_available": live_available,
+        "live_mode_reason": live_reason,
         "platforms": list(platforms), "tools": len(tools),
+    }
+
+
+def _live_mode_unavailable_reason() -> Optional[str]:
+    """Return the deployment-owned reason live mode cannot be enabled."""
+    if runtime is None:
+        return "Runtime 尚未就绪"
+    if getattr(runtime, "_read_only_mode", False):
+        return "服务当前处于只读配置，不能切换到 live"
+    if os.environ.get("AD_AGENT_ENABLE_LIVE") != "1":
+        return "服务未开启 live 环境开关"
+    if not bool(getattr(runtime, "allow_live_writes", False)):
+        return "服务未开启 live 写入权限"
+    return None
+
+
+@app.post("/settings/execution-mode", tags=["settings"])
+async def change_execution_mode(
+    request: ExecutionModeRequest,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Change the in-process mode without changing deployment config.
+
+    Selecting live is an operational capability, not a UI-only preference.
+    The endpoint keeps the existing environment, permission and Runtime
+    gates in force; it never enables live writes by itself.
+    """
+    if not runtime:
+        raise HTTPException(status_code=503, detail="服务未初始化")
+    principal = _authorize_request(x_api_key, http_request)
+    mode = str(request.mode or "").strip().lower()
+    if mode not in {"dry_run", "live"}:
+        raise HTTPException(status_code=422, detail="执行模式只能是 dry_run 或 live")
+    _require_principal_permission(principal, "ads.plan")
+    if mode == "live":
+        _require_principal_permission(principal, "ads.write")
+        reason = _live_mode_unavailable_reason()
+        if reason:
+            raise HTTPException(status_code=409, detail=reason)
+    try:
+        await run_in_threadpool(runtime.set_execution_mode, mode)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    live_reason = _live_mode_unavailable_reason()
+    return {
+        "mode": runtime.execution_mode,
+        "execution_mode_options": ["dry_run", "live"],
+        "live_mode_available": live_reason is None,
+        "live_mode_reason": live_reason,
+        "message": (
+            "已切换到安全预览模式"
+            if runtime.execution_mode == "dry_run"
+            else "已切换到受控 live 模式；写操作仍需账户、权限和二次确认"
+        ),
     }
 
 

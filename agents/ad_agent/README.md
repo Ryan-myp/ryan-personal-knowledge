@@ -154,6 +154,12 @@ runtime.register_capability(capability)
 
 当前所有 Campaign/下级资源创建默认只生成 dry-run 计划；DV360 IO/Line Item 更新、Google PMax Asset Group 以及部分下级资源更新没有经过验证的 live adapter，live 会明确返回不支持。DV360 Campaign 创建尚未建设，API Surface 会将其标为 planned，Runtime 不会路由到不可执行的假 Tool。读取请求在没有 Provider Client 时默认 fail-closed，只有显式 `offline_mode=True` 才会返回离线 fixture。
 
+页面顶部的“执行模式”面板可以切换当前服务进程的 `dry_run` / `live` 模式；该选择不修改
+`config.yaml`，重启服务后恢复配置值。切换 live 需要当前身份同时拥有 `ads.plan`、
+`ads.write`，并满足 `AD_AGENT_ENABLE_LIVE=1`、`allow_live_writes: true` 和非只读配置。
+模式切换本身不会调用广告平台 API；live 写操作仍必须显式账户、命中测试白名单，并携带
+当前计划的二次确认信息。
+
 ### 异步任务与身份、权限和恢复边界
 
 长耗时 Agent 回合可通过 `POST /tasks` 脱离 HTTP 请求线程，使用 `GET /tasks/{id}` 查询，
