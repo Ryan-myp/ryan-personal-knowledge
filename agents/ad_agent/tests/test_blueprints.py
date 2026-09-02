@@ -15,6 +15,7 @@ from agents.ad_agent.core.blueprint import (
     load_blueprint_file,
 )
 from agents.ad_agent.core.interfaces import ParsedIntent, ToolDefinition, ToolSchema, ToolEffect
+from agents.ad_agent.runtime.account_policy import AccountWhitelistValidator
 from agents.ad_agent.runtime.runtime import AgentRuntime
 
 
@@ -193,6 +194,43 @@ def test_blueprint_submission_composes_declared_parent_child_tools():
     fields = {item["path"]: item for item in card["fields"]}
     assert fields["campaign.campaign_name"]["value"] == "Search draft"
     assert fields["ad_group.name"]["value"] == "Search group"
+
+
+def test_incomplete_creation_returns_card_without_failed_tool_result():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_google_capability())
+
+    result = runtime.run(
+        "创建 Google App 广告",
+        session_id="incomplete-creation",
+        user_id="test-user",
+    )
+
+    assert result["results"] == []
+    assert result["ui"]["needs_input"] is True
+    assert result["response_source"] == "creation_card"
+    assert result.get("workflow_id") is None
+    assert "请提供要操作的" in result["reply"]
+
+
+def test_explicit_blueprint_submission_waits_for_required_fields_before_execution():
+    validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+    validator.allowed_accounts = {"google-ads": ["123"]}
+    runtime = AgentRuntime(require_llm=False, whitelist_validator=validator)
+    runtime.register_capability(create_google_capability())
+
+    result = runtime.run(
+        "创建 Google App campaign",
+        account_id="123",
+        platform_params={"google-ads": {"campaign_type": "APP"}},
+        creation_blueprint_id="google-ads.app",
+        creation_blueprint_version="1.0.0",
+    )
+
+    assert result["results"] == []
+    assert result["workflow_id"] is None
+    assert result["ui"]["needs_input"] is True
+    assert result["response_source"] == "creation_card"
 
 
 def test_creation_cards_expose_account_boundary_and_friendly_asset_controls():

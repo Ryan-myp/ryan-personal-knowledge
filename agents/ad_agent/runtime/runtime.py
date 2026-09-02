@@ -1194,6 +1194,13 @@ class AgentRuntime:
             for card in cards or []
             if isinstance(card, Mapping)
         ]
+        selector_cards = [
+            card for card in cards or []
+            if isinstance(card, Mapping) and card.get("type") == "ad_creation_selector"
+        ]
+        if selector_cards:
+            provider = str(selector_cards[0].get("provider") or "目标平台")
+            return f"请先选择 {provider} 的广告创建类型，我会按对应规则整理后续参数。"
         subject = titles[0] if len(titles) == 1 else "广告创建参数"
         if ui.get("needs_input"):
             return (
@@ -3170,6 +3177,111 @@ class AgentRuntime:
         # conversation so users can edit fields or continue in natural
         # language; it never invokes a lookup or Provider API.
         creation_ui = self.build_creation_ui(intent)
+
+        # A creation Blueprint is a parameter-collection boundary. Do not
+        # enter the generic workflow/account loop while the explicit account
+        # is missing: that loop would represent a draft as a failed Tool
+        # result. Resolve the account through the same schema-driven resolver
+        # used by execution so an explicitly supplied provider account (for
+        # example Google customer_id) is treated consistently with the
+        # top-level account_id. The later card submission is the only
+        # continuation into the normal creation lifecycle.
+        creation_is_requested = self.creation_card_builder.is_creation_intent(intent)
+        creation_has_write_tools = creation_is_requested and any(
+            tool.is_write_tool
+            for tools in tool_plan.values()
+            for tool in tools
+        )
+        missing_account_platform = None
+        if creation_has_write_tools:
+            for platform, tools in execution_groups:
+                if not any(tool.is_write_tool for tool in tools):
+                    continue
+                resolved_account = self.account_resolver.resolve(
+                    intent,
+                    platform,
+                    tools,
+                    account_id,
+                    allow_automatic_account=False,
+                )
+                if not resolved_account:
+                    missing_account_platform = self._canonical_platform(platform)
+                    break
+        creation_account_missing = missing_account_platform is not None
+
+        # A natural-language dry-run with an explicitly supplied account may
+        # still be used to inspect a provider validation preview. Its card can
+        # contain fields that are not part of the selected Tool chain (for
+        # example a broader catalog card), so only an explicit Blueprint form
+        # submission makes card readiness a hard execution gate. The initial
+        # conversational request is still blocked whenever it lacks an
+        # account, which is the safety boundary visible to the user.
+        creation_needs_input = bool(
+            creation_ui.get("cards")
+            and (
+                creation_account_missing
+                or (creation_blueprint_id and creation_ui.get("needs_input"))
+            )
+        )
+        if creation_has_write_tools and (creation_account_missing or creation_needs_input):
+            trace.all_nodes_status("awaiting_confirmation", reason="creation_parameters_required")
+            trace.reply()
+            trace.done(
+                "awaiting_confirmation",
+                safe_metadata={"reason": "creation_parameters_required", "tool_count": len(routed_tools)},
+            )
+            account_payload = (
+                {
+                    "type": "ask_account",
+                    "platform": missing_account_platform,
+                    "question": f"请提供要操作的 {missing_account_platform} 广告账户 ID。",
+                }
+                if missing_account_platform
+                else None
+            )
+            reply = (
+                account_payload["question"]
+                if account_payload
+                else (
+                    self.creation_ui_reply(creation_ui)
+                    if creation_ui.get("cards")
+                    else "请先补充广告创建参数。"
+                )
+            )
+            self.persist_conversation_turn(
+                session, turn_id, safe_user_input, reply,
+                execution_trace=trace, ui=creation_ui,
+            )
+            return {
+                "session_id": session_id,
+                "turn_id": turn_id,
+                "timestamp": datetime.now().isoformat(),
+                "intent": intent.to_dict(),
+                "tool_plan": {k: [t.name for t in v] for k, v in tool_plan.items()},
+                "execution_plan": execution_plan.to_dict(),
+                "tool_selection": {
+                    "tool_count": tool_selection["tool_count"],
+                    "tools": [tool.name for tool in tool_selection["selected_tools"]],
+                    "platforms": tool_selection["platforms"],
+                    "context": tool_selection["context"],
+                    "tool_prompt": tool_selection["tool_prompt"],
+                    "expert_knowledge": tool_selection["expert_knowledge"],
+                    "knowledge": tool_selection.get("knowledge", []),
+                },
+                "memory": recalled_memories,
+                "results": [],
+                "response_source": "creation_card",
+                "reply": reply,
+                # Keep the account request in the machine-readable response
+                # even when a form card is present. The web UI intentionally
+                # renders the card (rather than a second account popup),
+                # while API clients can still use this payload to understand
+                # why the plan is paused.
+                "needs_confirmation": bool(account_payload),
+                "confirmation_payload": account_payload,
+                "workflow_id": None,
+                "ui": creation_ui,
+            }
 
         parameter_errors = self.input_builder.validate_platform_parameter_contract(
             intent, tool_plan

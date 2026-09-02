@@ -1087,7 +1087,7 @@ def test_cross_channel_create_never_auto_selects_single_whitelisted_accounts():
     assert result["workflow_id"] is None
     assert result["needs_confirmation"] is True
     assert result["confirmation_payload"]["type"] == "ask_account"
-    assert {item["platform"] for item in result["results"]} == {"meta", "tiktok"}
+    assert result["results"] == []
     assert all(item["account_id"] is None for item in result["results"])
     assert all("simulated" not in item["data"] for item in result["results"])
 

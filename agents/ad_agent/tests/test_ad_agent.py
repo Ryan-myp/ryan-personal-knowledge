@@ -1071,6 +1071,9 @@ class TestSafeWriteExecution:
         assert result["confirmation_payload"]["type"] == "ask_account"
         assert "账户" in result["confirmation_payload"]["question"]
         assert "请提供要操作的" in result["reply"]
+        if user_request.startswith("创建"):
+            assert result["results"] == []
+            assert result["workflow_id"] is None
         assert not any(
             isinstance(item.get("data"), dict)
             and item["data"].get("simulated")
