@@ -1381,6 +1381,7 @@
         .global-readonly, .global-action { border: 1px solid #20384f; border-radius: 7px; background: #0b1a29; color: #91a8bc; cursor: pointer; }
         .global-readonly { padding: 7px 10px; font-size: 10px; }
         .global-action { min-width: 38px; height: 29px; padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; font-size: 11px; }
+        .theme-toggle { min-width: 68px; }
         .global-action-label { color: #91a8bc; white-space: nowrap; }
         .global-readonly:hover, .global-action:hover, .global-readonly.active, .global-action.active { color: #e7f0fa; border-color: #6674cf; background: #10243a; }
         .global-avatar { display: grid; place-items: center; min-width: 38px; height: 27px; padding: 0 7px; border-radius: 14px; color: #d9d2ff; background: #33285f; font-size: 10px; font-weight: 650; }
@@ -1462,6 +1463,41 @@
         .knowledge-file-hint { color: var(--text-muted); font-size: 10px; line-height: 1.45; }
         .skill-editor-footer button:disabled { opacity: .42; cursor: not-allowed; }
         .skill-editor input[readonly], .skill-editor textarea[readonly] { color: var(--text-secondary); background: #191919; }
+
+        /* 用户可切换的浅色工作区；核心控件覆盖保留足够对比度。 */
+        body.light-theme { --bg-primary: #f4f7fb; --bg-secondary: #ffffff; --bg-tertiary: #eef2f7; --bg-hover: #e5ebf3; --bg-active: #dbe4ee; --border: #d8e0ea; --border-light: #c2cedc; --text-primary: #172231; --text-secondary: #44566b; --text-muted: #718096; background: var(--bg-primary); color: var(--text-primary); }
+        body.light-theme .global-topbar, body.light-theme .sidebar, body.light-theme .main-content { background: var(--bg-secondary); color: var(--text-primary); }
+        body.light-theme .global-topbar { border-bottom-color: var(--border); }
+        body.light-theme .global-readonly, body.light-theme .global-action { color: #526579; background: #f7f9fc; border-color: var(--border-light); }
+        body.light-theme .global-action-label { color: #526579; }
+        body.light-theme .global-readonly:hover, body.light-theme .global-action:hover, body.light-theme .global-readonly.active, body.light-theme .global-action.active { color: #26384d; background: #e8eef7; border-color: var(--accent); }
+        body.light-theme .session-pill { color: #718096; background: #f7f9fc; border-color: var(--border); }
+        body.light-theme .session-pill b, body.light-theme .session-pill em { color: #44566b; }
+        body.light-theme .knowledge-console, body.light-theme .skill-console { background: #ffffff; border-color: #cbd6e2; }
+        body.light-theme .knowledge-console-header, body.light-theme .skill-console-header { border-bottom-color: var(--border); }
+        body.light-theme .knowledge-console-subtitle, body.light-theme .skill-console-subtitle { color: #718096; }
+        body.light-theme .knowledge-search-panel, body.light-theme .skill-toolbar, body.light-theme .knowledge-compose { background: #f4f7fb; border-color: var(--border); }
+        body.light-theme .workspace-popover { color: var(--text-primary); background: #ffffff; border-color: #cbd6e2; }
+        body.light-theme .workspace-form input, body.light-theme .workspace-form select, body.light-theme .knowledge-compose input, body.light-theme .knowledge-compose select, body.light-theme .knowledge-compose textarea, body.light-theme .skill-editor input, body.light-theme .skill-editor select, body.light-theme .skill-editor textarea { color: #172231; background: #ffffff; border-color: #bdc9d8; }
+        body.light-theme .workspace-form-actions button, body.light-theme .icon-btn { color: #40536a; background: #edf2f7; border-color: #c3cfdd; }
+        body.light-theme .knowledge-result, body.light-theme .knowledge-summary { color: #27384c; background: #f7fafd; border-color: #c6d5e4; }
+        body.light-theme .knowledge-result-title, body.light-theme .knowledge-summary-body, body.light-theme .knowledge-markdown { color: #27384c; }
+        body.light-theme .knowledge-result-meta, body.light-theme .knowledge-summary-label, body.light-theme .knowledge-filter-summary { color: #58718b; }
+        body.light-theme .knowledge-markdown code, body.light-theme .knowledge-summary-body code { background: #e9eef5; color: #5b3aa5; }
+        body.light-theme .knowledge-markdown pre { color: #27384c; background: #e8eef5; }
+        body.light-theme .skill-list { border-right-color: var(--border); }
+        body.light-theme .skill-version-item:hover, body.light-theme .skill-version-item.active { background: #edf2f7; }
+        body.light-theme .skill-file-row { background: #f4f7fb; border-color: var(--border); }
+        body.light-theme .trace-content, body.light-theme .trace-activity, body.light-theme .activity-dock { background: #f4f7fb; border-color: var(--border); }
+        body.light-theme .right-panel, body.light-theme .trace-header { background: #ffffff; border-color: var(--border); }
+        body.light-theme .trace-toolbar { color: #6c7f93; background: #f7f9fc; border-color: var(--border); }
+        body.light-theme .trace-subtitle, body.light-theme .trace-detail-grid dt, body.light-theme .trace-ticker-time { color: #6c7f93; }
+        body.light-theme .trace-icon-btn, body.light-theme .trace-clear-btn { color: #526579; background: #edf2f7; border-color: #c3cfdd; }
+        body.light-theme .trace-node, body.light-theme .dock-ticker .trace-ticker-row { background: #ffffff; border-color: #ccd8e4; }
+        body.light-theme .trace-node-title, body.light-theme .trace-detail-title, body.light-theme .activity-dock-header { color: #24364a; }
+        body.light-theme .trace-node-meta, body.light-theme .trace-detail-subtitle, body.light-theme .activity-dock-header span { color: #6c7f93; }
+        body.light-theme .trace-detail, body.light-theme .trace-io-block { background: #ffffff; border-color: #ccd8e4; }
+        body.light-theme .trace-io-block pre { color: #27384c; background: #f2f5f9; }
         .sidebar { grid-column: 1; grid-row: 2 / 4; min-height: 0; width: 228px; background: #121212; }
         .sidebar-header { display: none; }
         .sidebar-brand { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -1566,6 +1602,7 @@
         <div class="global-actions">
             <button class="global-readonly" id="modeToggleButton" type="button" onclick="toggleModePopover()" aria-expanded="false"><span>锁</span> 只读模式</button>
             <button class="global-action" id="filterToggleButton" type="button" onclick="toggleFilterPopover()" aria-label="筛选" aria-expanded="false"><span aria-hidden="true">▽</span><span class="global-action-label">筛选</span></button>
+            <button class="global-action theme-toggle" id="themeToggleButton" type="button" onclick="toggleTheme()" aria-label="切换主题"><span id="themeToggleIcon" aria-hidden="true">☼</span><span class="global-action-label" id="themeToggleLabel">浅色</span></button>
             <span class="global-avatar" title="当前操作员">运营</span><span class="global-chevron">⌄</span>
         </div>
     </header>
@@ -1856,6 +1893,7 @@
         let conversationHistory = [];
         let selectedConversationId = null;
         let conversationHistoryRequest = 0;
+        let workspaceTheme = 'dark';
         const skillState = {
             versions: [],
             selected: null,
@@ -1911,6 +1949,26 @@
             document.getElementById('knowledgeOverlay')?.setAttribute('aria-hidden', 'true');
             document.getElementById('knowledgeNavButton')?.classList.remove('active');
             document.getElementById('knowledgeNavButton')?.setAttribute('aria-expanded', 'false');
+        }
+
+        function applyTheme(theme) {
+            workspaceTheme = theme === 'light' ? 'light' : 'dark';
+            document.body.classList.toggle('light-theme', workspaceTheme === 'light');
+            const label = document.getElementById('themeToggleLabel');
+            const icon = document.getElementById('themeToggleIcon');
+            if (label) label.textContent = workspaceTheme === 'light' ? '深色' : '浅色';
+            if (icon) icon.textContent = workspaceTheme === 'light' ? '☾' : '☼';
+            try { localStorage.setItem('ad-agent-theme', workspaceTheme); } catch (_) { /* storage may be disabled */ }
+        }
+
+        function initializeTheme() {
+            let saved = 'dark';
+            try { saved = localStorage.getItem('ad-agent-theme') || 'dark'; } catch (_) { /* use default */ }
+            applyTheme(saved);
+        }
+
+        function toggleTheme() {
+            applyTheme(workspaceTheme === 'light' ? 'dark' : 'light');
         }
 
         function toggleWorkspacePopover(popoverId, buttonId) {
@@ -3512,6 +3570,7 @@
         });
         
         // Initialize
+        initializeTheme();
         resetExecutionTrace();
         refreshWorkspaceMode();
         refreshConversationHistory();

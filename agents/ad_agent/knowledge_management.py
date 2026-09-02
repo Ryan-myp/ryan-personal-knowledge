@@ -256,30 +256,52 @@ class ManagedKnowledgeProvider:
         limit: int = 4, max_excerpt_chars: int = 1200,
         tenant_id: Optional[str] = None,
     ) -> list[KnowledgeDocument]:
-        base_results = self.base.query(
-            query, platforms=platforms, intent_type=intent_type,
-            knowledge_types=knowledge_types, limit=limit,
-            max_excerpt_chars=max_excerpt_chars,
-        )
         if not tenant_id:
-            return base_results
+            return self.base.query(
+                query, platforms=platforms, intent_type=intent_type,
+                knowledge_types=knowledge_types, limit=limit,
+                max_excerpt_chars=max_excerpt_chars,
+            )
         records = self.store.list_knowledge_documents(
             str(tenant_id), status="published", limit=500
         )
         managed = [self._managed_document(record) for record in records]
-        terms = MarkdownWikiKnowledgeProvider._terms(query, intent_type)
-        phrase = str(query or "").strip().lower()
-        allowed = {
-            MarkdownWikiKnowledgeProvider._normalize_platform(item)
-            for item in (platforms or []) if item
-        }
+        all_documents = [*self.base.documents, *managed]
+        allowed = MarkdownWikiKnowledgeProvider._effective_platforms(
+            query, all_documents, platforms
+        )
+        base_results = self.base.query(
+            query, platforms=sorted(allowed) if allowed else platforms,
+            intent_type=intent_type, knowledge_types=knowledge_types, limit=limit,
+            max_excerpt_chars=max_excerpt_chars,
+        )
         allowed_types = {
             str(item).strip().lower() for item in (knowledge_types or []) if item
         }
+        # Provider implementations are allowed to be compatibility adapters;
+        # enforce the resolved platform boundary once more before summarizing.
+        if allowed:
+            base_results = [
+                document for document in base_results
+                if MarkdownWikiKnowledgeProvider._normalize_platform(document.platform)
+                in allowed
+                or (
+                    MarkdownWikiKnowledgeProvider._normalize_platform(document.platform) == "all"
+                    and allowed_types == {"error_pattern"}
+                )
+            ]
+        terms = MarkdownWikiKnowledgeProvider._terms(query, intent_type)
+        phrase = str(query or "").strip().lower()
         ranked: list[tuple[float, KnowledgeDocument]] = []
         for document in managed:
             platform = MarkdownWikiKnowledgeProvider._normalize_platform(document.platform)
-            if allowed and platform not in allowed and platform != "all":
+            # Platform-scoped searches must not fall back to cross-channel
+            # documents: their mixed sections can leak another platform into
+            # the result and into the LLM summary.
+            universal_error_reference = (
+                platform == "all" and allowed_types == {"error_pattern"}
+            )
+            if allowed and platform not in allowed and not universal_error_reference:
                 continue
             if allowed_types and document.knowledge_type not in allowed_types:
                 continue

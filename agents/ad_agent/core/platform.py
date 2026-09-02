@@ -135,6 +135,12 @@ def parser_platform(platform: str) -> str:
     return parser_labels.get(normalized, normalized)
 
 
+def declared_platforms() -> frozenset[str]:
+    """Return provider identities declared by the loaded Skill catalog."""
+    aliases, _ = _declared_identity_maps()
+    return frozenset(value for value in aliases.values() if value and value != "all")
+
+
 def platform_slug(platform: str) -> str:
     """Convert a provider identifier into a Python package/module slug."""
     return re.sub(r"[^a-z0-9]+", "_", normalize_platform(platform)).strip("_")

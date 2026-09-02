@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Optional, Protocol
 
-from .platform import normalize_platform
+from .platform import declared_platforms, normalize_platform
 
 
 WIKI_SCHEMA_VERSION = "1"
@@ -276,6 +276,50 @@ class MarkdownWikiKnowledgeProvider:
                 terms.extend(token[index:index + 2] for index in range(len(token) - 1))
         return list(dict.fromkeys(terms))
 
+    @classmethod
+    def _effective_platforms(
+        cls,
+        query: str,
+        documents: Iterable[KnowledgeDocument],
+        platforms: Optional[Iterable[str]] = None,
+    ) -> set[str]:
+        """Resolve explicit or query-implied platform constraints.
+
+        The UI may leave the platform selector at ``all`` while the user
+        still asks for a specific channel (for example, ``Meta 广告类型``).
+        In that case lexical ranking alone is unsafe: a Google document that
+        happens to mention Meta can outrank the requested platform.  Infer
+        only from platform identities already declared by the Wiki/provider;
+        this remains provider-neutral and does not add a channel table to the
+        Runtime.
+        """
+        explicit = {
+            cls._normalize_platform(item)
+            for item in (platforms or [])
+            if item and cls._normalize_platform(item) != "all"
+        }
+        if explicit:
+            return explicit
+
+        known = {
+            cls._normalize_platform(document.platform)
+            for document in documents
+            if document.platform and cls._normalize_platform(document.platform) != "all"
+        }
+        known.update(declared_platforms())
+        if not known:
+            return set()
+        query_text = str(query or "").strip().lower()
+        terms = cls._terms(query, None)
+        inferred: set[str] = set()
+        for platform in known:
+            platform_text = platform.lower()
+            if platform_text in query_text or any(
+                cls._normalize_platform(term) == platform for term in terms
+            ):
+                inferred.add(platform)
+        return inferred
+
     def query(
         self,
         query: str,
@@ -288,7 +332,7 @@ class MarkdownWikiKnowledgeProvider:
     ) -> list[KnowledgeDocument]:
         if limit <= 0 or max_excerpt_chars <= 0:
             return []
-        allowed = {self._normalize_platform(item) for item in (platforms or []) if item}
+        allowed = self._effective_platforms(query, self._documents, platforms)
         allowed_types = {str(item).strip().lower() for item in (knowledge_types or []) if item}
         terms = self._terms(query, intent_type)
         phrase = str(query or "").strip().lower()
@@ -297,7 +341,17 @@ class MarkdownWikiKnowledgeProvider:
             if document.status != "published":
                 continue
             doc_platform = self._normalize_platform(document.platform)
-            if allowed and doc_platform not in allowed and doc_platform != "all":
+            # Once a platform is explicit or inferred from the query, keep
+            # universal documents out of the result set as well. Universal
+            # Wiki pages often contain sections for several channels; using
+            # them here can make a Meta query appear to return Google facts.
+            # Error references are intentionally cross-platform documents in
+            # the current Wiki; retain them for the dedicated error lookup
+            # compatibility path. General platform searches stay strict.
+            universal_error_reference = (
+                doc_platform == "all" and allowed_types == {"error_pattern"}
+            )
+            if allowed and doc_platform not in allowed and not universal_error_reference:
                 continue
             if allowed_types and document.knowledge_type not in allowed_types:
                 continue

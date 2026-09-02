@@ -125,6 +125,7 @@ def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
         "knowledgeOverlay", "knowledge-console", "内置 · 只读", "复制为新版本",
         "/skills/builtin/", "managed_skills", "builtin_skills", "当前操作员",
         "knowledgeFileInput", "handleKnowledgeFileUpload", "view-hidden", "返回检索",
+        "themeToggleButton", "light-theme", "ad-agent-theme", "toggleTheme",
     ):
         assert marker in html
     # The browser may hold the service API key in memory, but the page must

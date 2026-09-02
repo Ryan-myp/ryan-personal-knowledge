@@ -52,6 +52,28 @@ def test_wiki_draft_is_not_retrieved_and_compatibility_facade_uses_same_document
     assert provider.query("secret draft", limit=10) == []
 
 
+def test_query_platform_name_is_a_hard_boundary_when_selector_is_all(tmp_path):
+    (tmp_path / "platforms").mkdir()
+    (tmp_path / "platforms" / "meta.md").write_text(
+        "---\nplatform: meta\ntitle: Meta 广告类型\nstatus: published\n---\n\nMeta Campaign、Ad Set 和 Ad 层级。",
+        encoding="utf-8",
+    )
+    (tmp_path / "platforms" / "google.md").write_text(
+        "---\nplatform: google-ads\ntitle: Google 广告类型\nstatus: published\n---\n\nGoogle Search 广告，也提到 Meta 作为对比。",
+        encoding="utf-8",
+    )
+    (tmp_path / "platforms" / "general.md").write_text(
+        "---\nplatform: all\ntitle: 跨平台广告类型总览\nstatus: published\n---\n\nMeta 和 Google 的广告类型总览。",
+        encoding="utf-8",
+    )
+    provider = MarkdownWikiKnowledgeProvider(tmp_path)
+
+    results = provider.query("Meta 广告类型", limit=10)
+
+    assert results
+    assert all(item.platform == "meta" for item in results)
+
+
 def test_managed_wiki_documents_are_versioned_published_and_tenant_scoped():
     store = AdAgentStore(":memory:")
     manager = ManagedKnowledgeManager(store)
