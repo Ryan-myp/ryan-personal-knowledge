@@ -5214,6 +5214,11 @@
         });
         document.getElementById('blueprintOverlay')?.addEventListener('click', (event) => {
             if (event.target.id === 'blueprintOverlay') closeBlueprintManager();
+            // Keep clicks inside the modal from reaching the document-level
+            // popover closer.  The list re-renders itself after a selection,
+            // so the original target may no longer be attached when the
+            // event bubbles to document.
+            event.stopPropagation();
         });
         document.getElementById('historyDeleteOverlay')?.addEventListener('click', (event) => {
             if (event.target.id === 'historyDeleteOverlay') closeHistoryDeleteDialog();

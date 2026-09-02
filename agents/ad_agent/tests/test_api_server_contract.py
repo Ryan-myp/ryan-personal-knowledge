@@ -283,7 +283,7 @@ def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
         "live_mode_reason", "应用模式", "live · 受控执行",
         "sidebar > .new-chat-btn", "nav-icon", "blueprintOverlay",
         "!event.target.closest('.blueprint-overlay')",
-        "closeBlueprintManager()",
+        "closeBlueprintManager()", "event.stopPropagation()",
     ):
         assert marker in html
     # The browser may hold the service API key in memory, but the page must
