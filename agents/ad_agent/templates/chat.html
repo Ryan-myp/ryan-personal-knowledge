@@ -1289,7 +1289,7 @@
         /* 图 2 控制台布局：顶部会话栏，聊天与真实轨迹并列，底部共享活动日志。 */
         body {
             display: grid;
-            grid-template-columns: 68px minmax(0, 1fr) minmax(320px, 360px);
+            grid-template-columns: 228px minmax(0, 1fr) minmax(320px, 360px);
             grid-template-rows: 60px minmax(0, 1fr) 96px;
             min-width: 1080px;
         }
@@ -1313,7 +1313,8 @@
         .global-actions { display: flex; align-items: center; gap: 9px; margin-left: auto; }
         .global-readonly, .global-action { border: 1px solid #20384f; border-radius: 7px; background: #0b1a29; color: #91a8bc; cursor: pointer; }
         .global-readonly { padding: 7px 10px; font-size: 10px; }
-        .global-action { width: 29px; height: 29px; }
+        .global-action { min-width: 38px; height: 29px; padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; font-size: 11px; }
+        .global-action-label { color: #91a8bc; white-space: nowrap; }
         .global-avatar { display: grid; place-items: center; width: 27px; height: 27px; border-radius: 50%; color: #d9d2ff; background: #33285f; font-size: 10px; font-weight: 700; }
         .global-chevron, .session-chevron { color: #60788e; }
         .sidebar { grid-column: 1; grid-row: 2 / 4; min-height: 0; width: 228px; background: #121212; }
@@ -1387,8 +1388,8 @@
         <div class="session-pill"><span>执行会话</span><b>广告 Agent 工作区</b><i></i><em id="globalSessionStatus">待命</em><span class="session-chevron">⌄</span></div>
         <div class="global-actions">
             <button class="global-readonly" type="button"><span>锁</span> 只读模式</button>
-            <button class="global-action" type="button" aria-label="筛选">▽</button>
-            <button class="global-action" type="button" aria-label="知识库">▤</button>
+            <button class="global-action" type="button" aria-label="筛选"><span aria-hidden="true">▽</span><span class="global-action-label">筛选</span></button>
+            <button class="global-action" type="button" aria-label="知识库"><span aria-hidden="true">▤</span><span class="global-action-label">知识库</span></button>
             <span class="global-avatar">OP</span><span class="global-chevron">⌄</span>
         </div>
     </header>
