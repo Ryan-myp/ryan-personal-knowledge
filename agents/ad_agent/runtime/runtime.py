@@ -1200,14 +1200,58 @@ class AgentRuntime:
         ]
         if selector_cards:
             provider = str(selector_cards[0].get("provider") or "目标平台")
-            return f"请先选择 {provider} 的广告创建类型，我会按对应规则整理后续参数。"
-        subject = titles[0] if len(titles) == 1 else "广告创建参数"
-        if ui.get("needs_input"):
             return (
-                f"我已经识别到你要创建{subject}，并把当前能确定的参数整理好了。"
-                "请在卡片中补充必填项；App、转化事件和地域等动态参数可以直接选择或继续用文字告诉我。"
+                f"我已经识别到你要在 {provider} 创建广告。"
+                "创建之前还需要你：请提供要操作的广告账户 ID，并在下方选择推广目标或广告类型；"
+                "选定后，我会只展示与该类型匹配的参数。"
             )
-        return f"我已经整理好{subject}的参数草稿，可以继续用文字补充或检查参数。"
+        subject = titles[0] if len(titles) == 1 else "广告创建参数"
+        pending_labels: list[str] = []
+        invalid_labels: list[str] = []
+        account_missing = False
+        for card in cards or []:
+            if not isinstance(card, Mapping):
+                continue
+            account_missing = account_missing or bool(
+                card.get("account_required") and not str(card.get("account_id") or "").strip()
+            )
+            invalid_paths = {str(path) for path in (card.get("invalid_fields") or [])}
+            for field in card.get("fields") or []:
+                if not isinstance(field, Mapping) or field.get("visible") is False:
+                    continue
+                path = str(field.get("path") or "")
+                label = str(field.get("label") or path or "参数")
+                value = field.get("value")
+                is_empty = value in (None, "", [], {})
+                if path in invalid_paths or field.get("state") == "invalid":
+                    if label not in invalid_labels:
+                        invalid_labels.append(label)
+                elif field.get("required") and is_empty and label not in pending_labels:
+                    pending_labels.append(label)
+
+        # Keep account scope visible even when the Blueprint has no other
+        # missing fields. It is a user decision, not an inferred default.
+        if account_missing:
+            pending_labels.insert(0, "广告账户 ID")
+        pending_labels = list(dict.fromkeys(pending_labels))
+        invalid_labels = list(dict.fromkeys(invalid_labels))
+        visible_labels = (pending_labels + invalid_labels)[:8]
+        remaining = len(pending_labels) + len(invalid_labels) - len(visible_labels)
+        detail = "、".join(visible_labels)
+        if remaining > 0:
+            detail += f"等另外 {remaining} 项"
+        if invalid_labels:
+            action = "请先调整标记为需要修改的参数"
+        elif pending_labels:
+            action = "请在下方卡片中选择或填写这些内容"
+        else:
+            action = "你可以先查看下方预览"
+        if detail:
+            action += f"：{detail}"
+        return (
+            f"我已经识别到你要创建{subject}，并把平台规则、广告类型和可联动的参数整理到下方卡片。"
+            f"{action}。填写完整后，我会先展示最终预览，只有你确认后才会提交创建。"
+        )
 
     def resolve_parameter_options(
         self,
@@ -3240,11 +3284,11 @@ class AgentRuntime:
                 else None
             )
             reply = (
-                account_payload["question"]
-                if account_payload
+                self.creation_ui_reply(creation_ui)
+                if creation_ui.get("cards")
                 else (
-                    self.creation_ui_reply(creation_ui)
-                    if creation_ui.get("cards")
+                    account_payload["question"]
+                    if account_payload
                     else "请先补充广告创建参数。"
                 )
             )
