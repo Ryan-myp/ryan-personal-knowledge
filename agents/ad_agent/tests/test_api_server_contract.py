@@ -122,6 +122,8 @@ def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
         "/sessions/${encodeURIComponent(targetSessionId)}?limit=500",
         "refreshConversationHistory", "loadConversation", "检索总结",
         "historyManageButton", "toggleHistorySelectionMode", "deleteSelectedConversations",
+        "historySearchInput", "filterConversationHistory", "最近 7 天", "更早",
+        "requestConversationDeletion", "openHistoryDeleteDialog", "confirmHistoryDeletion",
         "deleted_session_ids", "仅影响本地历史记录",
         "保存并发布", "/knowledge/documents", "formatKnowledgeMarkdown",
         "knowledgeOverlay", "knowledge-console", "内置 · 只读", "复制为新版本",

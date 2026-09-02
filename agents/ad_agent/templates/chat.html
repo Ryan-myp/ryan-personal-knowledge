@@ -137,6 +137,35 @@
             font-size: 10px;
         }
 
+        .chat-history-search {
+            padding: 4px 16px 8px;
+        }
+        .chat-history-search input {
+            width: 100%;
+            min-height: 30px;
+            padding: 6px 9px 6px 30px;
+            border: 1px solid var(--border-light);
+            border-radius: 7px;
+            outline: none;
+            color: var(--text-primary);
+            background: var(--bg-tertiary);
+            font: inherit;
+            font-size: 11px;
+            background-image: linear-gradient(transparent, transparent), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23778699' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-4-4'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: 9px center;
+        }
+        .chat-history-search input::placeholder { color: var(--text-muted); }
+        .chat-history-search input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-light); }
+        .chat-history-group-label {
+            padding: 9px 16px 5px;
+            color: var(--text-muted);
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: .2px;
+        }
+        .chat-history-group-label:first-child { padding-top: 4px; }
+
         .chat-history-actions { display: flex; align-items: center; gap: 5px; }
         .chat-history-action {
             min-height: 24px;
@@ -197,6 +226,100 @@
             font-weight: 700;
         }
         .chat-history-item.selected-for-delete .history-select-box { color: #fff; border-color: var(--accent); background: var(--accent); }
+
+        .chat-history-open {
+            flex: 1;
+            min-width: 0;
+            height: 100%;
+            padding: 10px 8px 10px 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border: 0;
+            color: inherit;
+            background: transparent;
+            cursor: pointer;
+            text-align: left;
+        }
+        .chat-history-delete {
+            flex: 0 0 28px;
+            width: 28px;
+            height: 28px;
+            margin-right: 6px;
+            display: grid;
+            place-items: center;
+            border: 1px solid transparent;
+            border-radius: 6px;
+            color: var(--text-muted);
+            background: transparent;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity .15s, color .15s, background .15s;
+        }
+        .chat-history-item:hover .chat-history-delete, .chat-history-delete:focus { opacity: 1; }
+        .chat-history-delete:hover { color: var(--error); background: var(--error-light); border-color: rgba(239, 68, 68, .3); }
+        .chat-history-delete svg { width: 14px; height: 14px; }
+
+        .history-delete-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 1100;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(15, 23, 42, .46);
+            backdrop-filter: blur(3px);
+        }
+        .history-delete-overlay.active { display: flex; }
+        .history-delete-dialog {
+            width: min(420px, calc(100vw - 40px));
+            padding: 22px;
+            border: 1px solid #29435d;
+            border-radius: 14px;
+            background: #0f1d2c;
+            box-shadow: 0 24px 70px rgba(0, 0, 0, .38);
+        }
+        .history-delete-head { display: flex; align-items: flex-start; gap: 12px; }
+        .history-delete-icon {
+            flex: 0 0 34px;
+            width: 34px;
+            height: 34px;
+            display: grid;
+            place-items: center;
+            border: 1px solid rgba(248, 113, 113, .34);
+            border-radius: 9px;
+            color: #fda4af;
+            background: rgba(127, 29, 29, .32);
+            font-size: 16px;
+            font-weight: 700;
+        }
+        .history-delete-title { color: #e9f2fb; font-size: 15px; font-weight: 650; }
+        .history-delete-subtitle { margin-top: 5px; color: #a8bfd2; font-size: 11px; line-height: 1.55; }
+        .history-delete-note {
+            margin-top: 17px;
+            padding: 11px 12px;
+            border: 1px solid #29435d;
+            border-radius: 9px;
+            color: #c9d9e9;
+            background: #0b1a29;
+            font-size: 11px;
+            line-height: 1.55;
+        }
+        .history-delete-note strong { color: #f3d58a; font-weight: 600; }
+        .history-delete-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+        .history-delete-btn {
+            min-height: 34px;
+            padding: 7px 14px;
+            border-radius: 7px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+        .history-delete-cancel { border: 1px solid #29435d; color: #c9d9e9; background: #10243a; }
+        .history-delete-cancel:hover { border-color: #6674cf; color: #fff; }
+        .history-delete-confirm { border: 1px solid #a94250; color: #fff; background: #a42c43; }
+        .history-delete-confirm:hover { background: #8e2439; }
+        .history-delete-btn:disabled { cursor: wait; opacity: .65; }
         
         .chat-history-item .icon {
             font-size: 14px;
@@ -1628,12 +1751,29 @@
         body.light-theme .input-hint, body.light-theme .message-time,
         body.light-theme .panel-section-title { color: #5e7085; }
         body.light-theme .chat-history-header { color: #5e7085; }
+        body.light-theme .chat-history-search input { color: #26384d; background-color: #f4f7fb; border-color: #bdcbd9; }
+        body.light-theme .chat-history-search input:focus { border-color: #6952c7; box-shadow: 0 0 0 2px rgba(105, 82, 199, .14); }
+        body.light-theme .chat-history-group-label { color: #526579; }
         body.light-theme .chat-history-action { color: #526579; }
         body.light-theme .chat-history-action:hover, body.light-theme .chat-history-action.active { color: #162235; background: #e8eef5; border-color: #bdcbd9; }
         body.light-theme .chat-history-action.danger { color: #b8324b; }
         body.light-theme .chat-history-action.danger:not(:disabled):hover { color: #a42c43; background: #fdecef; border-color: #e6a2ae; }
         body.light-theme .chat-history-item.selected-for-delete { background: #edf2fb; border-color: #7060c9; box-shadow: 0 0 0 1px rgba(112, 96, 201, .12); }
         body.light-theme .history-select-box { background: #ffffff; border-color: #9fb0c1; }
+        body.light-theme .chat-history-delete { color: #5e7085; }
+        body.light-theme .chat-history-delete:hover { color: #a42c43; background: #fdecef; border-color: #e6a2ae; }
+        body.light-theme .history-delete-overlay { background: rgba(28, 42, 60, .36); }
+        body.light-theme .history-delete-dialog { border-color: #c5d1de; background: #ffffff; box-shadow: 0 24px 70px rgba(44, 62, 84, .22); }
+        body.light-theme .history-delete-icon { color: #a42c43; background: #fdecef; border-color: #e6a2ae; }
+        body.light-theme .history-delete-title { color: #162235; }
+        body.light-theme .history-delete-subtitle { color: #526579; }
+        body.light-theme .history-delete-note { color: #40536a; background: #f4f7fb; border-color: #c5d1de; }
+        body.light-theme .history-delete-note strong { color: #825d08; }
+        body.light-theme .history-delete-cancel { color: #40536a; background: #edf2f7; border-color: #bdcbd9; }
+        body.light-theme .history-delete-cancel:hover { color: #162235; background: #e8eef5; }
+        body.light-theme .history-delete-confirm { border-color: #a42c43; background: #b8324b; }
+        body.light-theme .history-delete-confirm:hover { background: #962a40; }
+        body.light-theme .chat-history-open { color: inherit; }
         body.light-theme .skill-notice.error { color: #a42c43; background: #fdecef; border-color: #e6a2ae; }
         body.light-theme .skill-notice.success { color: #176d52; background: #e5f6ef; border-color: #83c6ad; }
         body.light-theme .skill-status.builtin { color: #5941a4; }
@@ -1672,13 +1812,14 @@
             height: 58px;
             min-height: 58px;
             justify-content: flex-start;
-            padding: 10px 12px;
+            padding: 0;
             margin: 0 8px 2px;
         }
-        .chat-history-item > span:last-child { display: inline; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .chat-history-open { padding: 10px 4px 10px 12px; }
         .chat-history-item .chat-history-copy { flex: 1; }
         .chat-history-item .icon { flex: 0 0 18px; text-align: center; }
         .chat-history-item .chat-history-time { flex: 0 0 34px; margin-left: auto; padding-top: 2px; text-align: right; }
+        .chat-history-item .chat-history-delete { flex-basis: 28px; }
         .sidebar-footer { justify-content: flex-start; padding: 12px 16px; }
         .sidebar-footer > span:last-child { display: flex; flex-direction: column; gap: 2px; }
         .sidebar-footer strong { color: var(--text-secondary); font-size: 11px; font-weight: 500; }
@@ -1852,6 +1993,22 @@
             </div>
         </section>
     </div>
+    <div class="history-delete-overlay" id="historyDeleteOverlay" aria-hidden="true">
+        <section class="history-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="historyDeleteTitle" onclick="event.stopPropagation()">
+            <div class="history-delete-head">
+                <div class="history-delete-icon" aria-hidden="true">!</div>
+                <div>
+                    <div class="history-delete-title" id="historyDeleteTitle">删除历史对话</div>
+                    <div class="history-delete-subtitle" id="historyDeleteSubtitle">删除后将无法在历史记录中恢复。</div>
+                </div>
+            </div>
+            <div class="history-delete-note"><strong>仅影响本地历史记录</strong><br>不会影响广告账户、线上数据或已经执行的操作。</div>
+            <div class="history-delete-actions">
+                <button class="history-delete-btn history-delete-cancel" type="button" onclick="closeHistoryDeleteDialog()">取消</button>
+                <button class="history-delete-btn history-delete-confirm" id="historyDeleteConfirmButton" type="button" onclick="confirmHistoryDeletion()">确认删除</button>
+            </div>
+        </section>
+    </div>
     <!-- 左侧边栏 -->
     <aside class="sidebar">
         <button class="new-chat-btn" onclick="newChat()">
@@ -1877,6 +2034,9 @@
                 <button class="chat-history-action" id="historySelectAllButton" type="button" onclick="toggleSelectAllConversations()" hidden>全选</button>
                 <button class="chat-history-action danger" id="historyDeleteButton" type="button" onclick="deleteSelectedConversations()" hidden disabled>删除</button>
             </div>
+        </div>
+        <div class="chat-history-search">
+            <input id="historySearchInput" type="search" placeholder="搜索历史对话" aria-label="搜索历史对话" oninput="filterConversationHistory()">
         </div>
         <div class="chat-history" id="chatHistory">
             <div class="chat-history-status" id="chatHistoryStatus">正在加载历史对话…</div>
@@ -2060,6 +2220,8 @@
         let conversationHistoryRequest = 0;
         let historySelectionMode = false;
         const selectedConversationIds = new Set();
+        let historySearchQuery = '';
+        let pendingConversationDeleteIds = [];
         let workspaceTheme = 'dark';
         const skillState = {
             versions: [],
@@ -2866,13 +3028,40 @@
             return date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
         }
 
+        function visibleConversations() {
+            const query = historySearchQuery;
+            if (!query) return conversationHistory;
+            return conversationHistory.filter(item =>
+                `${item.title || ''} ${item.preview || ''}`.toLowerCase().includes(query)
+            );
+        }
+
+        function filterConversationHistory() {
+            historySearchQuery = document.getElementById('historySearchInput')?.value.trim().toLowerCase() || '';
+            renderConversationHistory();
+        }
+
+        function conversationGroupLabel(value) {
+            if (!value) return '更早';
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return '更早';
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const day = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+            const daysAgo = Math.floor((today.getTime() - day.getTime()) / 86400000);
+            if (daysAgo <= 0) return '今天';
+            if (daysAgo < 7) return '最近 7 天';
+            return '更早';
+        }
+
         function updateHistoryControls() {
             const manageButton = document.getElementById('historyManageButton');
             const selectAllButton = document.getElementById('historySelectAllButton');
             const deleteButton = document.getElementById('historyDeleteButton');
-            const total = conversationHistory.length;
+            const visible = visibleConversations();
+            const total = visible.length;
             const selected = [...selectedConversationIds].filter(id =>
-                conversationHistory.some(item => String(item.session_id || '') === id)
+                visible.some(item => String(item.session_id || '') === id)
             ).length;
             if (manageButton) {
                 manageButton.textContent = historySelectionMode ? '取消' : '管理';
@@ -2908,10 +3097,12 @@
 
         function toggleSelectAllConversations() {
             if (!historySelectionMode) return;
-            const ids = conversationHistory.map(item => String(item.session_id || '')).filter(Boolean);
+            const ids = visibleConversations().map(item => String(item.session_id || '')).filter(Boolean);
             const allSelected = ids.length > 0 && ids.every(id => selectedConversationIds.has(id));
-            selectedConversationIds.clear();
-            if (!allSelected) ids.forEach(id => selectedConversationIds.add(id));
+            ids.forEach(id => {
+                if (allSelected) selectedConversationIds.delete(id);
+                else selectedConversationIds.add(id);
+            });
             updateHistoryControls();
             renderConversationHistory();
         }
@@ -2926,42 +3117,98 @@
             window.setTimeout(() => notice.remove(), 4200);
         }
 
+        function requestConversationDeletion(sessionIdToDelete) {
+            if (historySelectionMode || !sessionIdToDelete) return;
+            openHistoryDeleteDialog([sessionIdToDelete]);
+        }
+
+        function openHistoryDeleteDialog(sessionIds) {
+            const availableIds = new Set(conversationHistory.map(item => String(item.session_id || '')));
+            pendingConversationDeleteIds = [...new Set((sessionIds || []).map(String))]
+                .filter(id => id && availableIds.has(id));
+            if (!pendingConversationDeleteIds.length) return;
+            const count = pendingConversationDeleteIds.length;
+            const subtitle = document.getElementById('historyDeleteSubtitle');
+            if (subtitle) {
+                subtitle.textContent = count === 1
+                    ? '确定要删除这条对话吗？删除后将从历史记录中移除。'
+                    : `确定要删除这 ${count} 条对话吗？删除后将从历史记录中移除。`;
+            }
+            const overlay = document.getElementById('historyDeleteOverlay');
+            if (!overlay) return;
+            overlay.classList.add('active');
+            overlay.setAttribute('aria-hidden', 'false');
+            document.getElementById('historyDeleteConfirmButton')?.focus();
+        }
+
+        function closeHistoryDeleteDialog() {
+            pendingConversationDeleteIds = [];
+            const overlay = document.getElementById('historyDeleteOverlay');
+            if (overlay) {
+                overlay.classList.remove('active');
+                overlay.setAttribute('aria-hidden', 'true');
+            }
+            const button = document.getElementById('historyDeleteConfirmButton');
+            if (button) {
+                button.disabled = false;
+                button.textContent = '确认删除';
+            }
+        }
+
+        async function confirmHistoryDeletion() {
+            const ids = [...pendingConversationDeleteIds];
+            if (!ids.length) return;
+            const button = document.getElementById('historyDeleteConfirmButton');
+            if (button) {
+                button.disabled = true;
+                button.textContent = '删除中…';
+            }
+            try {
+                await performConversationDeletion(ids);
+                closeHistoryDeleteDialog();
+            } catch (error) {
+                if (button) {
+                    button.disabled = false;
+                    button.textContent = '确认删除';
+                }
+                showHistoryNotice(error?.message || '删除对话失败，请稍后重试。');
+            }
+        }
+
+        async function performConversationDeletion(requestedIds) {
+            const ids = [...new Set((requestedIds || []).map(String))].filter(Boolean);
+            if (!ids.length) return;
+            const data = await apiFetch('/sessions', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_ids: ids }),
+            });
+            const deletedIds = new Set((data.deleted_session_ids || []).map(String));
+            if (!deletedIds.size) throw new Error('没有找到可删除的历史对话。');
+            conversationHistory = conversationHistory.filter(item =>
+                !deletedIds.has(String(item.session_id || ''))
+            );
+            deletedIds.forEach(id => selectedConversationIds.delete(id));
+            const deletedCurrent = sessionId && deletedIds.has(String(sessionId));
+            historySelectionMode = false;
+            selectedConversationIds.clear();
+            updateHistoryControls();
+            if (deletedCurrent) newChat();
+            else renderConversationHistory();
+            await refreshConversationHistory({ silent: true });
+            showHistoryNotice(`已删除 ${deletedIds.size} 条历史对话。`, 'success');
+        }
+
         async function deleteSelectedConversations() {
             if (!historySelectionMode || selectedConversationIds.size === 0) return;
             const requestedIds = [...selectedConversationIds].filter(id =>
                 conversationHistory.some(item => String(item.session_id || '') === id)
             );
             if (!requestedIds.length) return;
-            const noun = requestedIds.length === 1 ? '这条对话' : `${requestedIds.length} 条对话`;
-            if (!window.confirm(`确定删除${noun}吗？\n删除后仅影响本地历史记录，不会影响广告账户或线上数据。`)) return;
-            const deleteButton = document.getElementById('historyDeleteButton');
-            if (deleteButton) deleteButton.disabled = true;
-            try {
-                const data = await apiFetch('/sessions', {
-                    method: 'DELETE',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ session_ids: requestedIds }),
-                });
-                const deletedIds = new Set((data.deleted_session_ids || []).map(String));
-                conversationHistory = conversationHistory.filter(item =>
-                    !deletedIds.has(String(item.session_id || ''))
-                );
-                deletedIds.forEach(id => selectedConversationIds.delete(id));
-                const deletedCurrent = sessionId && deletedIds.has(String(sessionId));
-                historySelectionMode = false;
-                selectedConversationIds.clear();
-                updateHistoryControls();
-                if (deletedCurrent) newChat();
-                else renderConversationHistory();
-                await refreshConversationHistory({ silent: true });
-                showHistoryNotice(`已删除 ${deletedIds.size} 条历史对话。`, 'success');
-            } catch (error) {
-                updateHistoryControls();
-                showHistoryNotice(error?.message || '删除对话失败，请稍后重试。');
-            }
+            openHistoryDeleteDialog(requestedIds);
         }
 
-        function renderConversationHistory(conversations = conversationHistory) {
+        function renderConversationHistory(conversations = visibleConversations()) {
             const container = document.getElementById('chatHistory');
             if (!container) return;
             updateHistoryControls();
@@ -2969,50 +3216,79 @@
             if (!conversations.length) {
                 const empty = document.createElement('div');
                 empty.className = 'chat-history-empty';
-                empty.textContent = '暂无历史对话。发送一条消息后会自动保存。';
+                empty.textContent = historySearchQuery
+                    ? '没有匹配的历史对话。'
+                    : '暂无历史对话。发送一条消息后会自动保存。';
                 container.appendChild(empty);
                 return;
             }
+            const grouped = new Map([['今天', []], ['最近 7 天', []], ['更早', []]]);
             for (const conversation of conversations) {
-                const session = String(conversation.session_id || '');
-                if (!session) continue;
-                const item = document.createElement('button');
-                item.type = 'button';
-                const selectedForDelete = selectedConversationIds.has(session);
-                item.className = `chat-history-item${session === selectedConversationId ? ' active' : ''}${selectedForDelete ? ' selected-for-delete' : ''}`;
-                item.setAttribute('aria-label', historySelectionMode
-                    ? `${selectedForDelete ? '取消选择' : '选择'}对话：${conversation.title || '新对话'}`
-                    : `打开对话：${conversation.title || '新对话'}`);
-                item.setAttribute('aria-pressed', String(historySelectionMode && selectedForDelete));
-                item.addEventListener('click', () => historySelectionMode
-                    ? toggleConversationSelection(session)
-                    : loadConversation(session));
+                grouped.get(conversationGroupLabel(conversation.updated_at)).push(conversation);
+            }
+            for (const [groupLabel, groupConversations] of grouped) {
+                if (!groupConversations.length) continue;
+                const group = document.createElement('div');
+                group.className = 'chat-history-group-label';
+                group.textContent = groupLabel;
+                container.appendChild(group);
+                for (const conversation of groupConversations) {
+                    const session = String(conversation.session_id || '');
+                    if (!session) continue;
+                    const item = document.createElement('div');
+                    const selectedForDelete = selectedConversationIds.has(session);
+                    item.className = `chat-history-item${session === selectedConversationId ? ' active' : ''}${selectedForDelete ? ' selected-for-delete' : ''}`;
+                    const openButton = document.createElement('button');
+                    openButton.type = 'button';
+                    openButton.className = 'chat-history-open';
+                    openButton.setAttribute('aria-label', historySelectionMode
+                        ? `${selectedForDelete ? '取消选择' : '选择'}对话：${conversation.title || '新对话'}`
+                        : `打开对话：${conversation.title || '新对话'}`);
+                    openButton.setAttribute('aria-pressed', String(historySelectionMode && selectedForDelete));
+                    openButton.addEventListener('click', () => historySelectionMode
+                        ? toggleConversationSelection(session)
+                        : loadConversation(session));
 
-                if (historySelectionMode) {
-                    const selectBox = document.createElement('span');
-                    selectBox.className = 'history-select-box';
-                    selectBox.setAttribute('aria-hidden', 'true');
-                    selectBox.textContent = selectedForDelete ? '✓' : '';
-                    item.appendChild(selectBox);
+                    if (historySelectionMode) {
+                        const selectBox = document.createElement('span');
+                        selectBox.className = 'history-select-box';
+                        selectBox.setAttribute('aria-hidden', 'true');
+                        selectBox.textContent = selectedForDelete ? '✓' : '';
+                        openButton.appendChild(selectBox);
+                    }
+
+                    const icon = document.createElement('span');
+                    icon.className = 'icon';
+                    icon.textContent = '💬';
+                    const copy = document.createElement('span');
+                    copy.className = 'chat-history-copy';
+                    const title = document.createElement('span');
+                    title.className = 'chat-history-title';
+                    title.textContent = conversation.title || '新对话';
+                    const preview = document.createElement('span');
+                    preview.className = 'chat-history-preview';
+                    preview.textContent = conversation.preview || '暂无消息预览';
+                    copy.append(title, preview);
+                    const time = document.createElement('span');
+                    time.className = 'chat-history-time';
+                    time.textContent = conversationTime(conversation.updated_at);
+                    openButton.append(icon, copy, time);
+                    item.appendChild(openButton);
+                    if (!historySelectionMode) {
+                        const deleteButton = document.createElement('button');
+                        deleteButton.type = 'button';
+                        deleteButton.className = 'chat-history-delete';
+                        deleteButton.setAttribute('aria-label', `删除对话：${conversation.title || '新对话'}`);
+                        deleteButton.title = '删除这条对话';
+                        deleteButton.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"></path></svg>';
+                        deleteButton.addEventListener('click', (event) => {
+                            event.stopPropagation();
+                            requestConversationDeletion(session);
+                        });
+                        item.appendChild(deleteButton);
+                    }
+                    container.appendChild(item);
                 }
-
-                const icon = document.createElement('span');
-                icon.className = 'icon';
-                icon.textContent = '💬';
-                const copy = document.createElement('span');
-                copy.className = 'chat-history-copy';
-                const title = document.createElement('span');
-                title.className = 'chat-history-title';
-                title.textContent = conversation.title || '新对话';
-                const preview = document.createElement('span');
-                preview.className = 'chat-history-preview';
-                preview.textContent = conversation.preview || '暂无消息预览';
-                copy.append(title, preview);
-                const time = document.createElement('span');
-                time.className = 'chat-history-time';
-                time.textContent = conversationTime(conversation.updated_at);
-                item.append(icon, copy, time);
-                container.appendChild(item);
             }
         }
 
@@ -3851,8 +4127,17 @@
         document.getElementById('knowledgeOverlay')?.addEventListener('click', (event) => {
             if (event.target.id === 'knowledgeOverlay') closeWorkspacePopovers();
         });
+        document.getElementById('historyDeleteOverlay')?.addEventListener('click', (event) => {
+            if (event.target.id === 'historyDeleteOverlay') closeHistoryDeleteDialog();
+        });
         document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape') closeWorkspacePopovers();
+            if (event.key !== 'Escape') return;
+            const deleteOverlay = document.getElementById('historyDeleteOverlay');
+            if (deleteOverlay?.classList.contains('active')) {
+                closeHistoryDeleteDialog();
+                return;
+            }
+            closeWorkspacePopovers();
         });
         
         // Initialize
