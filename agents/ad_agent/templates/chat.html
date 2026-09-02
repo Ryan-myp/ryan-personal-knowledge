@@ -1498,6 +1498,67 @@
         body.light-theme .trace-node-meta, body.light-theme .trace-detail-subtitle, body.light-theme .activity-dock-header span { color: #6c7f93; }
         body.light-theme .trace-detail, body.light-theme .trace-io-block { background: #ffffff; border-color: #ccd8e4; }
         body.light-theme .trace-io-block pre { color: #27384c; background: #f2f5f9; }
+
+        /* 浅色模式的执行信息使用独立的高对比度语义色，避免沿用深色面板的低亮度文字。 */
+        body.light-theme .global-brand-name { color: #162235; }
+        body.light-theme .global-chevron, body.light-theme .session-chevron { color: #53677d; }
+        body.light-theme .session-pill > span:first-child { color: #53677d; }
+        body.light-theme .session-pill b { color: #26384d; font-weight: 600; }
+        body.light-theme .session-pill em { color: #40536a; }
+        body.light-theme .trace-title { color: #162235; }
+        body.light-theme .trace-title #traceStatus { color: #13795b; }
+        body.light-theme .trace-subtitle { color: #526579; }
+        body.light-theme .trace-toolbar { color: #526579; }
+        body.light-theme .trace-icon-btn, body.light-theme .trace-clear-btn { color: #344b63; }
+        body.light-theme .trace-icon-btn:hover, body.light-theme .trace-clear-btn:hover { color: #162235; }
+        body.light-theme .trace-node { color: #162235; }
+        body.light-theme .trace-node:hover { background: #f5f8fc; border-color: #7892ad; }
+        body.light-theme .trace-node.selected { border-color: #6952c7; box-shadow: 0 0 0 1px rgba(105, 82, 199, .18), 0 8px 20px rgba(43, 61, 85, .08); }
+        body.light-theme .trace-node.running { border-color: #765bd0; box-shadow: 0 6px 18px rgba(105, 82, 199, .12); }
+        body.light-theme .trace-node.awaiting_confirmation { border-color: #b88618; }
+        body.light-theme .trace-node.failed { border-color: #c25868; }
+        body.light-theme .trace-node.stage { background: #f1f7fc; border-color: #8aa9c3; }
+        body.light-theme .trace-node.stage .trace-node-mark { color: #245174; border-color: #8aa9c3; background: #e3eff8; }
+        body.light-theme .trace-node.stage.succeeded .trace-node-mark { color: #176d52; border-color: #5cae91; background: #e3f5ef; }
+        body.light-theme .trace-node-mark { color: #31506c; border-color: #91a8bd; background: #e7eef5; }
+        body.light-theme .trace-node.succeeded .trace-node-mark { color: #176d52; border-color: #5cae91; background: #e3f5ef; }
+        body.light-theme .trace-node.running .trace-node-mark { color: #5941a4; border-color: #907add; background: #eeeafd; }
+        body.light-theme .trace-node.awaiting_confirmation .trace-node-mark { color: #825d08; border-color: #c79a35; background: #fff5d9; }
+        body.light-theme .trace-node.failed .trace-node-mark { color: #9a3348; border-color: #d47a88; background: #fdecef; }
+        body.light-theme .trace-node-title { color: #1c3046; }
+        body.light-theme .trace-node-meta { color: #526579; }
+        body.light-theme .trace-node-state { color: #425970; background: #e8eef5; }
+        body.light-theme .trace-node.succeeded .trace-node-state { color: #176d52; background: #e1f4ed; }
+        body.light-theme .trace-node.running .trace-node-state { color: #5941a4; background: #eeeafd; }
+        body.light-theme .trace-node.awaiting_confirmation .trace-node-state { color: #825d08; background: #fff4d4; }
+        body.light-theme .trace-node.failed .trace-node-state { color: #9a3348; background: #fdecef; }
+        body.light-theme .trace-detail-empty { color: #526579; }
+        body.light-theme .trace-detail-title { color: #162235; font-weight: 600; }
+        body.light-theme .trace-detail-subtitle { color: #526579; }
+        body.light-theme .trace-detail-close { color: #53677d; }
+        body.light-theme .trace-detail-close:hover { color: #162235; }
+        body.light-theme .trace-detail-grid dt { color: #526579; }
+        body.light-theme .trace-detail-grid dd { color: #26384d; }
+        body.light-theme .trace-io-block { background: #ffffff; border-color: #bdcbd9; }
+        body.light-theme .trace-io-label { color: #304961; background: #e8eef5; }
+        body.light-theme .trace-io-block pre { color: #1e3045; background: #f5f7fa; }
+        body.light-theme .trace-safe-note { color: #176d52; background: #e5f6ef; border-color: #83c6ad; }
+        body.light-theme .trace-mode-bar { border-top-color: #d2dce7; }
+        body.light-theme .mode-label { color: #526579; }
+        body.light-theme .mode-value { color: #26384d; }
+        body.light-theme .risk-badge { color: #176d52; background: #e5f6ef; border-color: #83c6ad; }
+        body.light-theme .trace-activity { background: #ffffff; border-color: #bdcbd9; }
+        body.light-theme .trace-activity-head { color: #1c3046; }
+        body.light-theme .trace-auto { color: #526579; }
+        body.light-theme .trace-ticker-row { color: #40566d; border-top-color: #dce4ec; }
+        body.light-theme .trace-ticker-time { color: #526579; }
+        body.light-theme .trace-empty { color: #526579; background: #f8fafc; border-color: #bdcbd9; }
+        body.light-theme .trace-empty strong { color: #26384d; }
+        body.light-theme .activity-dock-header { color: #1c3046; }
+        body.light-theme .activity-dock-header span, body.light-theme .activity-dock-actions { color: #526579; }
+        body.light-theme .activity-dock-actions button { color: #40566d; border-color: #bdcbd9; }
+        body.light-theme .activity-dock-actions button:hover { color: #162235; background: #edf2f7; }
+        body.light-theme .dock-ticker .trace-ticker-row { background: #ffffff; border-color: #bdcbd9; }
         .sidebar { grid-column: 1; grid-row: 2 / 4; min-height: 0; width: 228px; background: #121212; }
         .sidebar-header { display: none; }
         .sidebar-brand { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
