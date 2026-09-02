@@ -49,6 +49,10 @@ class CrossChannelFeature:
     def is_batch_intent(self, intent: Any) -> bool:
         return str(getattr(intent, "intent_type", "") or "") in self.BATCH_INTENTS
 
+    def handles_analysis(self, intent: Any) -> bool:
+        """Declare whether this Feature owns the result-analysis phase."""
+        return str(getattr(intent, "intent_type", "") or "") in self.ANALYSIS_INTENTS
+
     def handles_creation_preflight(self, intent: Any) -> bool:
         return self.is_multi_platform_create(intent)
 
@@ -587,6 +591,7 @@ class CrossChannelFeature:
         request_clients: Optional[dict[str, Any]] = None,
         account_scope: Optional[Mapping[str, Any]] = None,
         granted_permissions: Optional[set[str] | frozenset[str]] = None,
+        execution_trace: Optional[Any] = None,
     ) -> None:
         """Run the second, read-only reporting phase for comparisons."""
         if intent.intent_type not in cls.ANALYSIS_INTENTS:
@@ -689,6 +694,16 @@ class CrossChannelFeature:
                 continue
             original_account = session.ctx.account_id
             session.ctx.account_id = per_platform_account
+            trace_node = None
+            if execution_trace is not None:
+                trace_node = execution_trace.register_dynamic_node(
+                    actual_platform,
+                    report_def.name,
+                    action=getattr(report_def, "action", ""),
+                    resource_type=getattr(report_def, "resource_type", ""),
+                    parent_resource_type=getattr(report_def, "parent_resource_type", None),
+                )
+                execution_trace.node_status(trace_node, "running")
             try:
                 report_result = services.execute_tool(
                     session.ctx, report_def.name, report_input, request_clients
@@ -710,6 +725,12 @@ class CrossChannelFeature:
                     session, turn_id, report_def, actual_platform,
                     report_input, report_result,
                 )
+                if trace_node is not None:
+                    execution_trace.node_status(
+                        trace_node,
+                        "succeeded" if report_result.success else "failed",
+                        safe_metadata={"simulated": bool(report_result.simulated)},
+                    )
             except Exception as exc:
                 results.append({
                     "tool": report_def.name,
@@ -717,6 +738,10 @@ class CrossChannelFeature:
                     "success": False,
                     "error": f"跨渠道指标采集失败: {exc}",
                 })
+                if trace_node is not None:
+                    execution_trace.node_status(
+                        trace_node, "failed", safe_metadata={"reason": "metrics_collection_failed"}
+                    )
             finally:
                 session.ctx.account_id = original_account
 

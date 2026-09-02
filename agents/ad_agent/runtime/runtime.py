@@ -2640,6 +2640,13 @@ class AgentRuntime:
         # Give an injected LLM the bounded Skill/tool context before it emits
         # an intent.  The post-parse IntentRouter remains authoritative, so
         # this context can improve recognition but cannot grant execution.
+        trace.stage_status(
+            "intent",
+            "Intent 识别",
+            "running",
+            subtitle="理解用户目标与约束",
+            safe_metadata={"phase": "intent_parsing"},
+        )
         try:
             skill_context = self._build_skill_context(
                 safe_user_input, self.registry.list_all(), None, tenant_id
@@ -2651,6 +2658,17 @@ class AgentRuntime:
         except Exception as exc:
             logger.debug("构建 Skill 解析上下文失败: %s", exc)
         intent = self.intent_parser.parse(safe_user_input, session.ctx)
+        trace.stage_status(
+            "intent",
+            "Intent 识别",
+            "succeeded",
+            subtitle="已识别请求目标",
+            platform=", ".join(str(item) for item in (intent.platforms or [])),
+            safe_metadata={
+                "intent_type": intent.intent_type,
+                "platform_count": len(intent.platforms or []),
+            },
+        )
         # Refresh advisory context with the parsed intent.  This changes only
         # the model-facing explanation/context; IntentRouter remains the sole
         # authority for the executable plan below.
@@ -2728,6 +2746,13 @@ class AgentRuntime:
         # Step 3: discover Tools from their self-described action/resource
         # metadata. Skills provide expert context and SOP; the Runtime orders
         # the returned Tool plan from provider-owned resource metadata.
+        trace.stage_status(
+            "skill_selection",
+            "Skill 选择",
+            "running",
+            subtitle="根据请求加载相关 Skill 与能力",
+            safe_metadata={"phase": "skill_selection"},
+        )
         tool_plan = self.intent_router.route(intent, self.registry)
 
         # A model may return a semantic synonym or an invalid operation name.
@@ -2773,6 +2798,16 @@ class AgentRuntime:
             intent, tool_plan, canonicalize=self._canonical_platform
         )
         trace.bind_plan(execution_plan)
+        trace.stage_status(
+            "skill_selection",
+            "Skill 选择",
+            "succeeded",
+            subtitle=(
+                f"已选择 {len(routed_tools)} 个可用 Tool"
+                if routed_tools else "未匹配到可执行 Tool"
+            ),
+            safe_metadata={"tool_count": len(routed_tools)},
+        )
 
         parameter_errors = self.input_builder.validate_platform_parameter_contract(
             intent, tool_plan
@@ -2961,6 +2996,23 @@ class AgentRuntime:
                 )
             else:
                 response_source = "renderer"
+            trace.stage_status(
+                "reply",
+                "回复生成",
+                "running",
+                subtitle="生成面向业务人员的结果说明",
+                safe_metadata={"phase": "response_rendering"},
+            )
+            # The chat renderer is the actual response boundary even when no
+            # executable Tool was selected. Keep this stage conditional on
+            # reaching the branch; it is not a prebuilt workflow step.
+            trace.stage_status(
+                "reply",
+                "回复生成",
+                "succeeded",
+                subtitle="已生成本轮回复",
+                safe_metadata={"response_source": response_source},
+            )
             trace.reply()
             trace.done(
                 "failed" if has_structured_request or intent_type != "chat" else "succeeded",
@@ -3015,6 +3067,16 @@ class AgentRuntime:
             # 转换平台名称
             actual_platform = self._canonical_platform(platform)
 
+            account_stage_id = f"account_scope:{actual_platform}"
+            trace.stage_status(
+                account_stage_id,
+                "账户范围",
+                "running",
+                subtitle=f"校验 {actual_platform} 账户与访问范围",
+                platform=actual_platform,
+                safe_metadata={"phase": "account_scope"},
+            )
+
             # 每个平台使用自己的账户（不跨平台共享）。没有显式账户时，
             # 只允许从配置的测试白名单中自动选择。
             per_platform_account = self.account_resolver.resolve(
@@ -3052,6 +3114,14 @@ class AgentRuntime:
                         )
                     needs_confirmation = True
                     confirmation_payload = results[-1]["confirmation_payload"]
+                    trace.stage_status(
+                        account_stage_id,
+                        "账户范围",
+                        "awaiting_confirmation",
+                        subtitle="等待补充账户范围",
+                        platform=actual_platform,
+                        safe_metadata={"reason": "account_required"},
+                    )
                     continue
 
             # 只读模式验证所有操作；写操作在 dry-run/live 两种模式下都必须
@@ -3075,7 +3145,24 @@ class AgentRuntime:
                             "failed",
                             safe_metadata={"reason": "account_scope_denied"},
                         )
+                    trace.stage_status(
+                        account_stage_id,
+                        "账户范围",
+                        "failed",
+                        subtitle="账户不在允许范围内",
+                        platform=actual_platform,
+                        safe_metadata={"reason": "account_scope_denied"},
+                    )
                     continue
+
+            trace.stage_status(
+                account_stage_id,
+                "账户范围",
+                "succeeded",
+                subtitle="账户范围校验通过",
+                platform=actual_platform,
+                safe_metadata={"validated": True},
+            )
 
             # 非只读模式：写操作需要白名单 + 幂等保护
             chain_blocked = False
@@ -3635,6 +3722,20 @@ class AgentRuntime:
 
         # Cross-channel comparison is a two-phase read workflow: first list
         # campaigns, then collect campaign-scoped report rows.
+        analysis_owner = getattr(feature, "handles_analysis", None) if feature is not None else None
+        analysis_stage_active = bool(
+            feature is not None
+            and callable(analysis_owner)
+            and analysis_owner(intent)
+        )
+        if analysis_stage_active:
+            trace.stage_status(
+                "analysis",
+                "结果分析",
+                "running",
+                subtitle="整理工具结果并提取业务信息",
+                safe_metadata={"phase": "result_analysis"},
+            )
         if feature is not None and callable(
             getattr(feature, "collect_metrics", None)
         ):
@@ -3643,6 +3744,7 @@ class AgentRuntime:
                 intent, tool_plan, results, session, turn_id, request_clients,
                 account_scope=account_scope,
                 granted_permissions=effective_permissions,
+                execution_trace=trace,
             )
         self.workflow.finish(workflow_id, tool_plan, results, workflow_inputs)
         resource_results = self._build_resource_results(results)
@@ -3650,6 +3752,21 @@ class AgentRuntime:
         analysis: dict[str, Any] = {}
         if feature is not None and callable(getattr(feature, "analyze", None)):
             analysis = feature.analyze(intent, results)
+        if analysis_stage_active:
+            trace.stage_status(
+                "analysis",
+                "结果分析",
+                "succeeded",
+                subtitle="结果已整理完成",
+                safe_metadata={"result_count": len(results)},
+            )
+        trace.stage_status(
+            "reply",
+            "回复生成",
+            "running",
+            subtitle="生成面向业务人员的结果说明",
+            safe_metadata={"phase": "response_rendering"},
+        )
         reply, response_source = self._render_response(
             safe_user_input,
             intent,
@@ -3657,6 +3774,13 @@ class AgentRuntime:
             needs_confirmation,
             analysis=analysis,
             session=session,
+        )
+        trace.stage_status(
+            "reply",
+            "回复生成",
+            "succeeded",
+            subtitle="已生成本轮回复",
+            safe_metadata={"response_source": response_source},
         )
         trace.reply(needs_confirmation=needs_confirmation)
         has_failure = any(

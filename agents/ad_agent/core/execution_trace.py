@@ -36,11 +36,17 @@ _SECRET_KEY = re.compile(
     re.IGNORECASE,
 )
 
+# Execution plans contain a bounded list of node objects (and dependency
+# lists).  A depth of three is enough for most metadata, but it truncates a
+# perfectly safe plan at ``execution_plan -> nodes -> node``.  Keep the
+# observer bounded without hiding the trace's own contract fields.
+_MAX_METADATA_DEPTH = 6
+
 
 def _safe_metadata(value: Any, *, depth: int = 0) -> Any:
     """Keep event metadata small and remove credential-shaped values."""
 
-    if depth > 2:
+    if depth > _MAX_METADATA_DEPTH:
         return "[truncated]"
     if isinstance(value, Mapping):
         result: dict[str, Any] = {}
@@ -66,8 +72,9 @@ class ExecutionTrace:
     """Emit a bounded, ordered trace for one Runtime turn.
 
     The callback is best-effort: tracing must never change business execution.
-    A plan is the source of node identity; event consumers must not invent
-    nodes that are absent from the plan.
+    A plan is the source of node identity. Features that discover a dependent
+    Tool after the initial plan must explicitly register it before execution;
+    consumers still never invent nodes from result rows.
     """
 
     def __init__(
@@ -82,6 +89,7 @@ class ExecutionTrace:
         self.turn_id = turn_id or ""
         self._sequence = 0
         self._started_at: dict[str, float] = {}
+        self._stage_started_at: dict[str, float] = {}
         self._node_occurrences: dict[tuple[str, str], list[dict[str, Any]]] = {}
         self._node_cursor: dict[tuple[str, str], int] = {}
         self.plan: dict[str, Any] = {"schema_version": "1.0", "intent_type": "", "nodes": []}
@@ -119,6 +127,50 @@ class ExecutionTrace:
     def start(self) -> None:
         self._emit("start", status="running", safe_metadata={"input_received": True})
 
+    def stage_status(
+        self,
+        stage_id: str,
+        title: str,
+        status: str,
+        *,
+        subtitle: str = "",
+        platform: str = "",
+        safe_metadata: Optional[Mapping[str, Any]] = None,
+    ) -> None:
+        """Emit a real Runtime lifecycle stage for the execution view.
+
+        Stages are observational nodes, not executable plan nodes.  Runtime
+        calls this at actual lifecycle boundaries (for example, around intent
+        parsing or result analysis), so the client can render the path taken
+        by this turn without pretending every request follows one workflow.
+        """
+
+        stage_key = str(stage_id or "").strip()
+        if not stage_key:
+            return
+        if status not in TRACE_STATUSES:
+            status = "unknown"
+        if status == "running":
+            self._stage_started_at[stage_key] = time.monotonic()
+        metadata = dict(safe_metadata or {})
+        started_at = self._stage_started_at.get(stage_key)
+        if started_at is not None and status != "running":
+            metadata.setdefault(
+                "duration_ms", round((time.monotonic() - started_at) * 1000, 2)
+            )
+        node_id = f"stage:{stage_key}"
+        self._emit(
+            "stage_started" if status == "running" else "stage_status",
+            node_id=node_id,
+            stage_id=stage_key,
+            kind="stage",
+            title=str(title or stage_key),
+            subtitle=str(subtitle or ""),
+            platform=str(platform or ""),
+            status=status,
+            safe_metadata=metadata,
+        )
+
     def bind_plan(self, execution_plan: Any) -> None:
         self.plan = execution_plan.to_dict()
         self._node_occurrences.clear()
@@ -127,6 +179,58 @@ class ExecutionTrace:
             key = (str(node.get("platform") or ""), str(node.get("tool") or ""))
             self._node_occurrences.setdefault(key, []).append(node)
         self._emit("plan", status="planned", execution_plan=self.plan)
+
+    def register_dynamic_node(
+        self,
+        platform: str,
+        tool_name: str,
+        *,
+        action: str = "",
+        resource_type: str = "",
+        parent_resource_type: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Register a Tool materialized by a running Feature.
+
+        Some read workflows discover a dependent report Tool only after a
+        listing result is available.  This is an explicit observation of the
+        Tool selected by the Feature, not a node inferred from a result row.
+        """
+
+        key = (str(platform or ""), str(tool_name or ""))
+        existing_nodes = self._node_occurrences.get(key, [])
+        if existing_nodes:
+            return existing_nodes[-1]
+        sequence = max(
+            [int(node.get("sequence") or 0) for node in self.plan.get("nodes", [])]
+            or [0]
+        ) + 1
+        previous_nodes = [
+            item for item in self.plan.get("nodes", [])
+            if str(item.get("platform") or "") == str(platform or "")
+        ]
+        node = {
+            "node_id": f"node-{sequence:04d}",
+            "sequence": sequence,
+            "platform": str(platform or ""),
+            "tool": str(tool_name or ""),
+            "action": str(action or ""),
+            "resource_type": str(resource_type or ""),
+            "parent_resource_type": parent_resource_type,
+            "depends_on": [previous_nodes[-1]["node_id"]] if previous_nodes else [],
+        }
+        self.plan.setdefault("nodes", []).append(node)
+        self._node_occurrences.setdefault(key, []).append(node)
+        self._emit(
+            "node_discovered",
+            node_id=node["node_id"],
+            platform=node["platform"],
+            tool=node["tool"],
+            resource_type=node["resource_type"],
+            action=node["action"],
+            status="planned",
+            safe_metadata={"source": "runtime_feature"},
+        )
+        return node
 
     def node_for(self, platform: str, tool_name: str) -> Optional[dict[str, Any]]:
         key = (str(platform or ""), str(tool_name or ""))

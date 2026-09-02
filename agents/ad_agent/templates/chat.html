@@ -1208,6 +1208,9 @@
         .trace-node.running { border-color: #9978ff; box-shadow: 0 0 18px rgba(139,92,246,.16); }
         .trace-node.awaiting_confirmation { border-color: #a57a1d; }
         .trace-node.failed { border-color: #a94250; }
+        .trace-node.stage { background: #0b1d2d; border-color: #285276; }
+        .trace-node.stage .trace-node-mark { color: #b9d7ff; border-color: #4778a8; background: #123251; }
+        .trace-node.stage.succeeded .trace-node-mark { color: #75e0bb; border-color: #287c65; background: #0d312f; }
         .trace-node-mark {
             z-index: 1;
             width: 28px;
@@ -1603,14 +1606,14 @@
             failed: '失败', skipped: '已跳过', awaiting_confirmation: '待确认',
             unknown: '待命', recovery_required: '需恢复'
         };
-        let traceState = { nodes: [], events: [], selectedId: null, collapsed: false, activeTurn: 0, traceId: null, status: 'unknown' };
+        let traceState = { nodes: [], events: [], selectedId: null, collapsed: false, activeTurn: 0, traceId: null, status: 'unknown', orderCounter: 0 };
 
         function traceStatusLabel(status) {
             return TRACE_STATUS_LABELS[status] || '未知';
         }
 
         function traceMark(kind) {
-            const marks = { Agent: 'A', Skill: 'S', Guard: 'G', Tool: 'T', Meta: 'M', Google: 'G', TikTok: 'T', DV360: 'D' };
+            const marks = { Agent: 'A', Skill: 'S', Guard: 'G', Tool: 'T', Meta: 'M', Google: 'G', TikTok: 'T', DV360: 'D', stage: '✦', intent: '◎', analysis: '◌', reply: '↗' };
             return marks[kind] || '·';
         }
 
@@ -1618,9 +1621,10 @@
             const labels = {
                 start: 'Agent 回合开始', plan: '执行计划已生成', node_started: 'Tool 开始执行',
                 node_status: 'Tool 状态更新', confirmation: '等待用户确认', reply: '回复已准备',
+                stage_started: '阶段开始', stage_status: '阶段状态更新',
                 done: '回合结束', error: '执行异常'
             };
-            const node = event.node_id ? ` · ${event.tool || event.node_id}` : '';
+            const node = event.node_id ? ` · ${event.title || event.tool || event.node_id}` : '';
             return `${labels[event.type] || '执行事件'}${node}`;
         }
 
@@ -1641,13 +1645,13 @@
                     <button class="trace-detail-close" type="button" onclick="clearTraceSelection()" aria-label="关闭节点详情">×</button>
                 </div>
                 <dl class="trace-detail-grid">
-                    <dt>Tool</dt><dd>${escapeHtml(node.tool || '未绑定')}</dd>
+                    <dt>${node.kind === 'stage' ? '阶段' : 'Tool'}</dt><dd>${escapeHtml(node.kind === 'stage' ? (node.title || '运行阶段') : (node.tool || '未绑定'))}</dd>
                     <dt>资源 / 动作</dt><dd>${escapeHtml([node.resource_type, node.action].filter(Boolean).join(' · ') || '通用执行节点')}</dd>
-                    <dt>平台</dt><dd>${escapeHtml(node.platform || node.kind || 'Agent')}</dd>
+                    <dt>平台</dt><dd>${escapeHtml(node.platform || (node.kind === 'stage' ? 'Runtime' : node.kind) || 'Agent')}</dd>
                     <dt>状态</dt><dd>${escapeHtml(traceStatusLabel(node.state))}</dd>
                     <dt>耗时</dt><dd>${node.duration_ms != null ? escapeHtml(`${node.duration_ms} ms`) : '进行中 / 未记录'}</dd>
                     <dt>门禁结果</dt><dd>${escapeHtml(node.reason || '—')}</dd>
-                    <dt>输入</dt><dd>已脱敏 · 仅展示安全摘要</dd>
+                    <dt>摘要</dt><dd>${escapeHtml(node.subtitle || '已脱敏 · 仅展示安全摘要')}</dd>
                 </dl>
                 <div class="trace-safe-note">此面板只展示执行事件、Tool 元数据和脱敏结果，不展示模型内部思维链。</div>
             `;
@@ -1665,7 +1669,7 @@
                     : '<div><strong>本回合未产生 Tool 执行</strong>发送请求后，这里只显示真实计划与 Tool 状态。</div>';
                 flow.appendChild(empty);
             }
-            for (const node of traceState.nodes) {
+            for (const node of [...traceState.nodes].sort((a, b) => (a.order || 0) - (b.order || 0))) {
                 const item = document.createElement('button');
                 item.type = 'button';
                 item.className = `trace-node ${node.state || 'unknown'}${traceState.selectedId === node.id ? ' selected' : ''}`;
@@ -1710,7 +1714,7 @@
         }
 
         function resetExecutionTrace() {
-            traceState = { nodes: [], events: [], selectedId: null, collapsed: false, activeTurn: traceState.activeTurn, traceId: null, status: 'unknown' };
+            traceState = { nodes: [], events: [], selectedId: null, collapsed: false, activeTurn: traceState.activeTurn, traceId: null, status: 'unknown', orderCounter: 0 };
             document.querySelector('.right-panel')?.classList.remove('trace-collapsed');
             updateTraceHeader('unknown', '等待下一次 Agent 回合');
             renderExecutionTrace();
@@ -1734,6 +1738,7 @@
             traceState.events = [];
             traceState.traceId = null;
             traceState.selectedId = null;
+            traceState.orderCounter = 0;
             updateTraceHeader('running', '等待 Agent 返回真实执行事件');
             renderExecutionTrace();
         }
@@ -1742,14 +1747,19 @@
             const planNodes = data?.execution_plan?.nodes || [];
             const results = data?.results || [];
             if (planNodes.length) {
-                traceState.nodes = planNodes.map((raw, index) => ({
-                    ...(traceState.nodes.find(node => node.id === (raw.node_id || `plan-${index}`)) || {}),
+                const stageNodes = traceState.nodes.filter(node => node.kind === 'stage');
+                traceState.nodes = [...stageNodes, ...planNodes.map((raw, index) => {
+                    const existing = traceState.nodes.find(node => node.id === (raw.node_id || `plan-${index}`));
+                    return {
+                    ...(existing || {}),
                     id: raw.node_id || `plan-${index}`, title: raw.tool || raw.action || 'Tool 节点',
                     meta: [raw.platform, raw.resource_type, raw.action].filter(Boolean).join(' · '),
                     kind: raw.platform || 'Tool', tool: raw.tool, platform: raw.platform,
                     resource_type: raw.resource_type, action: raw.action,
-                    state: traceState.nodes.find(node => node.id === (raw.node_id || `plan-${index}`))?.state || 'planned'
-                }));
+                    order: existing?.order || (++traceState.orderCounter),
+                    state: existing?.state || 'planned'
+                    };
+                })];
             }
             // Compatibility path for non-stream callers: only update nodes
             // that already came from an ExecutionPlan; never invent nodes
@@ -1781,6 +1791,46 @@
                 updateTraceHeader('running', 'Agent 正在处理本回合');
             }
             if (event.type === 'plan' && event.execution_plan) updateExecutionTrace({ execution_plan: event.execution_plan });
+            if (event.type === 'stage_started' || event.type === 'stage_status') {
+                const id = event.node_id || `stage:${event.stage_id}`;
+                const existing = traceState.nodes.find(item => item.id === id);
+                const node = {
+                    ...(existing || {}),
+                    id,
+                    title: event.title || event.stage_id || '运行阶段',
+                    subtitle: event.subtitle || existing?.subtitle || '',
+                    meta: event.subtitle || event.platform || 'Runtime 阶段',
+                    kind: 'stage',
+                    platform: event.platform || existing?.platform || '',
+                    state: event.status || 'unknown',
+                    order: existing?.order || (++traceState.orderCounter),
+                    reason: event.safe_metadata?.reason || existing?.reason,
+                    duration_ms: event.safe_metadata?.duration_ms || existing?.duration_ms,
+                };
+                traceState.nodes = traceState.nodes.filter(item => item.id !== id);
+                traceState.nodes.push(node);
+                updateTraceHeader(event.status || 'unknown', `${node.title} · ${traceStatusLabel(event.status)}`);
+            }
+            if (event.type === 'node_discovered') {
+                const id = event.node_id;
+                const existing = traceState.nodes.find(item => item.id === id);
+                const node = {
+                    ...(existing || {}),
+                    id,
+                    title: event.tool || event.action || 'Tool 节点',
+                    meta: [event.platform, event.resource_type, event.action].filter(Boolean).join(' · '),
+                    kind: event.platform || 'Tool',
+                    tool: event.tool,
+                    platform: event.platform,
+                    resource_type: event.resource_type,
+                    action: event.action,
+                    state: event.status || 'planned',
+                    order: existing?.order || (++traceState.orderCounter),
+                };
+                traceState.nodes = traceState.nodes.filter(item => item.id !== id);
+                traceState.nodes.push(node);
+                updateTraceHeader(node.state, `${node.title} · ${traceStatusLabel(node.state)}`);
+            }
             if (event.type === 'node_started' || event.type === 'node_status' || event.type === 'confirmation') {
                 const node = traceState.nodes.find(item => item.id === event.node_id);
                 if (node) {

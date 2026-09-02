@@ -45,3 +45,52 @@ def test_trace_does_not_copy_credentials_or_raw_exception_text():
     payload = str(events[0])
     assert "should-not-appear" not in payload
     assert "access_token" not in payload
+
+
+def test_trace_emits_real_lifecycle_stages_and_keeps_plan_metadata():
+    events = []
+    plan = ExecutionPlan(
+        schema_version="1.0",
+        intent_type="list_campaigns",
+        nodes=(PlanNode("node-0001", 1, "google", "google.list_campaigns", "list", "campaign"),),
+    )
+    trace = ExecutionTrace(events.append, turn_id="turn-3")
+
+    trace.start()
+    trace.stage_status("intent", "Intent 识别", "running", subtitle="理解用户目标")
+    trace.stage_status("intent", "Intent 识别", "succeeded", subtitle="已识别")
+    trace.bind_plan(plan)
+    trace.stage_status("reply", "回复生成", "running")
+    trace.stage_status("reply", "回复生成", "succeeded")
+    trace.done()
+
+    assert [event["type"] for event in events] == [
+        "start", "stage_started", "stage_status", "plan",
+        "stage_started", "stage_status", "done",
+    ]
+    assert events[1]["node_id"] == "stage:intent"
+    assert events[1]["kind"] == "stage"
+    assert events[3]["execution_plan"]["nodes"][0]["tool"] == "google.list_campaigns"
+    assert events[3]["execution_plan"]["nodes"][0]["platform"] == "google"
+
+
+def test_trace_registers_feature_discovered_tool_before_status_events():
+    events = []
+    trace = ExecutionTrace(events.append, turn_id="turn-4")
+    trace.bind_plan(
+        ExecutionPlan(
+            schema_version="1.0",
+            intent_type="cross_channel_compare",
+            nodes=(PlanNode("node-0001", 1, "meta", "meta.list_campaigns", "list", "campaign"),),
+        )
+    )
+
+    node = trace.register_dynamic_node(
+        "meta", "meta.get_campaign_report", action="report", resource_type="report"
+    )
+    trace.node_status(node, "running")
+
+    assert events[-2]["type"] == "node_discovered"
+    assert events[-2]["tool"] == "meta.get_campaign_report"
+    assert node["depends_on"] == ["node-0001"]
+    assert events[-1]["node_id"] == node["node_id"]
