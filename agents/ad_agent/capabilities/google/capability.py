@@ -1186,7 +1186,11 @@ class GoogleCapability(BaseCapability):
                     "adgroup_ids": {"type": "array", "items": {"type": "string"}},
                     "date_from": {"type": "string"}, "date_to": {"type": "string"},
                 }, required=["campaign_id"], action="report", resource_type="ad_group",
-                intent_types=["download_report"], traits=["read", "report", "ad_group"],
+                # ``download_report`` is the provider-neutral/account-level
+                # report intent. A child-level report must be selected by its
+                # explicit Tool-owned intent so a generic report request does
+                # not stop on the missing parent campaign_id.
+                intent_types=["get_adgroup_report"], traits=["read", "report", "ad_group"],
                 argument_builder=lambda _ctx, data: ((data["campaign_id"],), {
                     "adgroup_ids": data.get("adgroup_ids"), "date_from": data.get("date_from", "LAST_30_DAYS"),
                     "date_to": data.get("date_to", "TODAY"),

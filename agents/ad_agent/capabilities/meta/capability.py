@@ -708,7 +708,7 @@ class MetaCapability(BaseCapability):
                     "date_range": {"type": "object"},
                     "fields": {"type": "array", "items": {"type": "string"}},
                 }, required=["account_id", "adset_ids"], action="report",
-                resource_type="ad_set", intent_types=["download_report"], traits=["read", "report", "ad_set"],
+                resource_type="ad_set", intent_types=["get_adset_report"], traits=["read", "report", "ad_set"],
                 argument_builder=lambda ctx, data: ((account_from(ctx, data, "account_id"), data["adset_ids"]), {
                     "time_range": data.get("date_range"), "fields": data.get("fields")
                 }),
@@ -722,7 +722,7 @@ class MetaCapability(BaseCapability):
                     "date_range": {"type": "object"},
                     "fields": {"type": "array", "items": {"type": "string"}},
                 }, required=["account_id", "ad_ids"], action="report",
-                resource_type="ad", intent_types=["download_report"], traits=["read", "report", "ad"],
+                resource_type="ad", intent_types=["get_ad_report"], traits=["read", "report", "ad"],
                 argument_builder=lambda ctx, data: ((account_from(ctx, data, "account_id"), data["ad_ids"]), {
                     "time_range": data.get("date_range"), "fields": data.get("fields")
                 }),
@@ -1207,6 +1207,10 @@ class MetaCapability(BaseCapability):
                             "LAST_14_DAYS": "last_14d",
                             "LAST_30_DAYS": "last_30d",
                         },
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "未指定 campaign_ids 时，自动发现 Campaign 的数量上限",
                     },
                 },
             ),

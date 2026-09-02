@@ -215,6 +215,31 @@ def test_parser_drops_unregistered_routing_metadata_from_platform_params():
     }
 
 
+def test_parser_drops_llm_operation_and_note_metadata_from_platform_params():
+    parser = LLMIntentParser()
+    parser.register_platforms(["new-network"])
+    parser.register_tool_schemas(
+        "new-network",
+        [{"properties": {"account_id": {"type": "string"}}}],
+    )
+
+    normalized = parser._normalize_intent({
+        "intent_type": "list_resources",
+        "platforms": ["new-network"],
+        "platform_params": {
+            "new-network": {
+                "operation": "list",
+                "note": "campaign list",
+                "account_id": "a1",
+            }
+        },
+    })
+
+    assert normalized["platform_params"]["new-network"] == {
+        "account_id": "a1"
+    }
+
+
 def test_non_chat_request_without_a_tool_never_uses_greeting_fallback():
     runtime = AgentRuntime(
         require_llm=False,

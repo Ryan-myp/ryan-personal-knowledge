@@ -60,6 +60,11 @@ class LLMIntentParser(IntentParser):
   }}
 }}
 
+重要的输出边界：`platform_params` 只能放当前已注册 Tool schema 中声明的
+Provider 输入字段。不要把 `action`、`operation`、`resource_type`、`tool`、
+`skill`、`note`、解释文字或其他路由/思考元数据放进 `platform_params`；这些
+内容不属于 Provider 参数。不要猜测账户 ID，账户由 Runtime 上下文提供。
+
 投放目标说明：
 - sales：电商销售、转化
 - leads：线索收集
@@ -1052,6 +1057,11 @@ class LLMIntentParser(IntentParser):
                     "action", "resource_type", "parent_resource_type",
                     "tool", "skill", "platform", "description",
                     "intent_type", "intent_types", "activation_rules",
+                    # LLMs sometimes echo a Tool's routing summary as
+                    # ``operation``/``note``. They are not provider inputs;
+                    # keep the closed contract while allowing a provider to
+                    # explicitly declare either name in its own schema.
+                    "operation", "note",
                 }
                 normalized_params[normalized] = {
                     field: field_value

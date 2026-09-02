@@ -547,6 +547,78 @@ class TestIntentParser:
 # ─── Runtime 集成测试 ──────────────────────────────────────────
 
 class TestRuntimeQuery:
+    def test_generic_report_routes_to_campaign_report_without_child_ids(self):
+        from agents.ad_agent.capabilities.google import create_google_capability
+
+        class GoogleClient:
+            platform = "google-ads"
+
+            def list_campaigns(self, page_size=100):
+                return [{"id": "g1", "campaign_name": "Google 1"}]
+
+            def get_campaign_report(
+                self, campaign_ids, date_from="LAST_30_DAYS", date_to="TODAY"
+            ):
+                return [{
+                    "campaign": {"id": "g1", "name": "Google 1"},
+                    "metrics": {"impressions": 10, "clicks": 2, "cost_micros": 1000000},
+                }]
+
+        validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+        validator.allowed_accounts = {"google-ads": ["g1"]}
+        rt = AgentRuntime(
+            require_llm=False,
+            persistence_store=AdAgentStore(":memory:"),
+            whitelist_validator=validator,
+        )
+        rt.register_capability(create_google_capability(GoogleClient()))
+
+        result = rt.run(
+            "查询 Google Ads 报表",
+            user_id="u1",
+            account_id="g1",
+        )
+
+        assert result["tool_plan"]["google"] == ["google_get_campaign_report"]
+        assert result["results"][0]["success"] is True
+        assert result["results"][0]["data"]["summary"]["total_clicks"] == 2
+
+    def test_meta_generic_report_discovers_campaign_ids_before_query(self):
+        from agents.ad_agent.capabilities.meta import create_meta_capability
+
+        class MetaClient:
+            platform = "meta"
+
+            def __init__(self):
+                self.calls = []
+
+            def list_campaigns(self, account_id, limit=25):
+                self.calls.append(("list_campaigns", account_id, limit))
+                return [{"id": "m1", "name": "Meta 1"}]
+
+            def get_campaign_report(self, account_id, campaign_ids, time_range=None):
+                self.calls.append(("get_campaign_report", account_id, campaign_ids, time_range))
+                return [{"campaign_id": "m1", "impressions": 10}]
+
+        client = MetaClient()
+        validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+        validator.allowed_accounts = {"meta": ["m1"]}
+        rt = AgentRuntime(
+            require_llm=False,
+            persistence_store=AdAgentStore(":memory:"),
+            whitelist_validator=validator,
+        )
+        rt.register_capability(create_meta_capability(client))
+
+        result = rt.run("查询 Meta 报表", user_id="u1", account_id="m1")
+
+        assert result["tool_plan"]["meta"] == ["meta_get_campaign_report"]
+        assert result["results"][0]["success"] is True
+        assert client.calls == [
+            ("list_campaigns", "m1", 25),
+            ("get_campaign_report", "m1", ["m1"], None),
+        ]
+
     def test_runtime_injects_skill_context_before_llm_parsing(self):
         from agents.ad_agent.capabilities.meta import create_meta_capability
 

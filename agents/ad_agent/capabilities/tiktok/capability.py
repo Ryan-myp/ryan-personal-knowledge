@@ -731,7 +731,7 @@ class TikTokCapability(BaseCapability):
                             "adgroup_ids": {"type": "array", "items": {"type": "string"}},
                             "date_range": {"type": "object"}},
                 required=["account_id", "campaign_id"], action="report", resource_type="ad_group",
-                intent_types=["download_report"], traits=["read", "report", "ad_group"],
+                intent_types=["get_adgroup_report"], traits=["read", "report", "ad_group"],
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["campaign_id"]), {
                     "adgroup_ids": data.get("adgroup_ids"), "time_range": data.get("date_range"),
                 }),
