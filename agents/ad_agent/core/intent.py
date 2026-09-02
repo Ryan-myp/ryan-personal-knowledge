@@ -350,21 +350,13 @@ Provider 输入字段。不要把 `action`、`operation`、`resource_type`、`to
     @staticmethod
     def _needs_intent_repair(intent: ParsedIntent) -> bool:
         """Detect an internally inconsistent model result without keywords."""
-        # ``chat`` with a concrete provider or provider parameters is
-        # inconsistent with the structured contract. Ask the same LLM to
-        # repair the classification instead of silently routing to a greeting.
-        if str(getattr(intent, "intent_type", "") or "") != "chat":
-            return False
-        if getattr(intent, "platforms", None):
-            return True
-        return any(
-            isinstance(values, dict) and any(
-                value not in (None, "", {}, [])
-                for key, value in values.items()
-                if not str(key).startswith("_")
-            )
-            for values in (getattr(intent, "platform_params", {}) or {}).values()
-        )
+        # ``chat`` is the only intent with no executable meaning. Give the
+        # model one constrained correction pass even when it omitted the
+        # provider. This handles a common failure mode where a real task such
+        # as "查询 Google campaign" is classified as a greeting. The second
+        # pass is still LLM-based and must choose from the Registry catalog;
+        # it is not a keyword router.
+        return str(getattr(intent, "intent_type", "") or "") == "chat"
 
     def _repair_intent_with_llm(
         self, user_input: str, context: ToolContext, previous: dict[str, Any],
@@ -373,8 +365,10 @@ Provider 输入字段。不要把 `action`、`operation`、`resource_type`、`to
         if not self._llm:
             return None
         repair_prompt = (
-            "上一次意图 JSON 与自身字段不一致：它把请求标成了 chat，"
-            "但同时给出了具体平台或平台参数。请重新判断。\n\n"
+            "请重新判断下面的用户请求。上一次结果可能把一个广告业务请求"
+            "误判成了 chat，也可能确实是闲聊。查询、查看、列出、报表、"
+            "Campaign 详情等请求必须选择对应的已注册查询意图；不要因为用户"
+            "没有提供账户 ID 就改成 chat，账户由 Runtime 上下文提供。\n\n"
             f"用户输入：{user_input}\n"
             f"上一次 JSON：{json.dumps(previous, ensure_ascii=False, default=str)}\n\n"
             "只输出 JSON。intent_type 必须逐字复制下面候选目录中的一个值，"

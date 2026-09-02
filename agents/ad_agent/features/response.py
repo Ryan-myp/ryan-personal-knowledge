@@ -62,16 +62,12 @@ class AdAgentResponseRenderer:
             return reply
 
         if fail_count > 0 and success_count == 0:
-            errors = [
-                result.get("error", "unknown")
-                for result in results if not result.get("success")
-            ]
-            return f"执行失败：{errors}"
+            return self._render_read_failures(results)
         if fail_count > 0:
             return (
-                f"部分成功：{success_count} 个操作完成，{fail_count} 个失败。\n"
+                f"已完成 {success_count} 项，另有 {fail_count} 项暂未完成。\n"
                 + "\n".join(
-                    f"  - {result['tool']}: {result.get('error', 'failed')}"
+                    f"  - {self._friendly_error(result)}"
                     for result in results if not result.get("success")
                 )
             )
@@ -93,8 +89,8 @@ class AdAgentResponseRenderer:
             else:
                 operation = "创建"
             return (
-                f"dry-run：已模拟{operation} {len(simulated_results)} 个广告资源，"
-                "未调用任何线上写 API。\n"
+                f"已为你生成{operation}方案（共 {len(simulated_results)} 个广告资源），"
+                "当前只展示预览，尚未修改广告账户。\n"
                 + "\n".join(
                     f"  - [{result.get('platform', '?')}] {result['tool']} → "
                     f"{self._planned_identifier(result)}"
@@ -132,10 +128,37 @@ class AdAgentResponseRenderer:
             reply += self._format_budget_plan(analysis["cross_channel_budget_plan"])
         if analysis.get("cross_channel_export") is not None:
             reply += (
-                "\n\n已生成规范化 CSV 文本（仅本地生成，未写入平台）；"
-                "请从返回字段 `cross_channel_export` 获取。"
+                "\n\n已整理好跨渠道报表，可在结果中查看或下载；不会自动修改广告账户。"
             )
         return reply
+
+    @classmethod
+    def _friendly_error(cls, result: dict[str, Any]) -> str:
+        """Translate execution details into an operator-facing next step."""
+        error = str(result.get("error") or "").lower()
+        platform = str(result.get("platform") or "该平台")
+        if "provider client" in error or "没有配置" in error or "offline_mode" in error:
+            return f"{platform} 广告账户暂时无法读取，请检查账户连接和授权范围。"
+        if "缺少必需参数" in str(result.get("error") or ""):
+            return f"{platform} 查询还缺少必要信息，请补充查询对象或筛选条件。"
+        if "timeout" in error or "timed out" in error:
+            return f"{platform} 查询响应超时，请稍后重试。"
+        return f"{platform} 查询暂时未完成，请稍后重试或缩小查询范围。"
+
+    @classmethod
+    def _render_read_failures(cls, results: list[dict[str, Any]]) -> str:
+        platforms = list(dict.fromkeys(
+            str(result.get("platform") or "广告平台")
+            for result in results
+            if not result.get("success") and not result.get("skipped")
+        ))
+        if not platforms:
+            return "这次暂时没有查到可展示的数据，请稍后重试。"
+        return "暂时无法完成查询：\n" + "\n".join(
+            f"- {cls._friendly_error(result)}"
+            for result in results
+            if not result.get("success") and not result.get("skipped")
+        )
 
     @staticmethod
     def _render_read_results(results: list[dict[str, Any]]) -> str:
@@ -213,22 +236,24 @@ class AdAgentResponseRenderer:
                     )
                 for index, row in enumerate(report[:5], 1):
                     campaign = row.get("campaign", {}) if isinstance(row, dict) else {}
-                    lines.append(
-                        f"Campaign #{index}: {campaign.get('name', 'N/A')}"
+                    name = (
+                        campaign.get("name")
+                        or campaign.get("campaign_name")
+                        or (row.get("campaign_name") if isinstance(row, dict) else None)
+                        or (row.get("campaign_id") if isinstance(row, dict) else None)
+                        or f"第 {index} 条记录"
                     )
+                    lines.append(f"Campaign #{index}: {name}")
                 if len(report) > 5:
                     lines.append(f"... 还有 {len(report) - 5} 条记录")
             else:
                 lines.append(
-                    f"[{platform}] {tool} 返回了未标准化的数据；"
-                    "请查看接口响应中的 `results[].data`。"
+                    f"[{platform}] 暂时没有可展示的数据，"
+                    "请稍后重试或缩小查询范围。"
                 )
         if lines:
             return "\n".join(lines)
-        return (
-            "查询 Tool 已返回结果，但当前结果没有匹配的展示模板；"
-            "请查看接口响应中的 `results[].data` 原始数据。"
-        )
+        return "查询已完成，但暂时没有可展示的数据。你可以缩小时间范围或补充查询条件。"
 
     @staticmethod
     def _planned_identifier(result: dict[str, Any]) -> str:
@@ -310,4 +335,4 @@ class AdAgentResponseRenderer:
                 "我是广告投放专家助手，支持 Meta、TikTok、Google Ads 和 DV360 "
                 "的 Campaign 查询、参数校验、dry-run 创建计划、报表分析与跨渠道管理。"
             )
-        return "你好！我是 ad-agent，您的广告投放专家助手。请告诉我您的需求。"
+        return "我还没完全理解你的需求。你可以告诉我想查询或管理哪个平台的什么内容。"

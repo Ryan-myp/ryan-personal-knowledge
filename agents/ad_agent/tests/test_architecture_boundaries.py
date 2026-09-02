@@ -266,7 +266,9 @@ def test_non_chat_request_without_a_tool_never_uses_greeting_fallback():
     runtime.intent_parser = Parser()
     result = runtime.run("查询新渠道报表")
 
-    assert "未找到与意图" in result["reply"]
+    assert "还无法确定具体的查询对象" in result["reply"]
+    assert "Tool" not in result["reply"]
+    assert "Runtime" not in result["reply"]
     assert "你好！我是 ad-agent" not in result["reply"]
 
 
@@ -283,4 +285,4 @@ def test_read_renderer_does_not_claim_success_for_unknown_data_shape():
     )
 
     assert "成功执行查询操作" not in reply
-    assert "未标准化的数据" in reply
+    assert "没有可展示的数据" in reply

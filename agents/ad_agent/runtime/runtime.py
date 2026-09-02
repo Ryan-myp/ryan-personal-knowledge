@@ -2899,16 +2899,19 @@ class AgentRuntime:
                     for values in platform_params.values()
                 )
             )
-            no_tool_reply = (
-                self.response_renderer.render_chat(safe_user_input)
-            if not intent_type or (
-                    intent_type == "chat" and not has_structured_request
+            if intent_type == "chat" and not has_structured_request:
+                no_tool_reply = self.response_renderer.render_chat(safe_user_input)
+            elif has_structured_request:
+                no_tool_reply = (
+                    "我理解你想查询广告数据，但还无法确定具体的查询对象。"
+                    "请补充平台和对象，例如：查询 Google Ads Campaign 列表，"
+                    "或查询最近 7 天的 Google Ads 报表。"
                 )
-                else (
-                    f"未找到与意图 `{intent_type}` 匹配的已注册 Tool。"
-                    "请检查当前 Skill/Tool 是否已发布，或补充更明确的操作对象。"
+            else:
+                no_tool_reply = (
+                    "这次请求还没有匹配到可用的广告能力。请说明平台、对象和操作，"
+                    "例如查询某个广告账户的 Campaign 列表。"
                 )
-            )
             no_tool_reply, response_source = self._render_response(
                 safe_user_input,
                 intent,
@@ -2918,7 +2921,10 @@ class AgentRuntime:
                 fallback_reply=no_tool_reply,
             )
             trace.reply()
-            trace.done("succeeded", safe_metadata={"tool_count": 0})
+            trace.done(
+                "failed" if has_structured_request or intent_type != "chat" else "succeeded",
+                safe_metadata={"tool_count": 0},
+            )
             return {
                 "session_id": session_id,
                 "turn_id": turn_id,

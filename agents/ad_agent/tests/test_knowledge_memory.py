@@ -150,6 +150,20 @@ def test_llm_response_synthesizer_is_grounded_and_rejects_internal_protocol():
         analysis={},
         fallback_reply="fallback",
     ) is None
+    assert synthesizer.synthesize(
+        FakeLLM("查询未执行任何 dry-run，也未调用 Google Ads API。"),
+        user_input="查询 Google Ads 报表",
+        intent=intent,
+        results=[{
+            "tool": "google_list_campaigns",
+            "platform": "google",
+            "success": False,
+            "error": "provider unavailable",
+        }],
+        knowledge=[],
+        analysis={},
+        fallback_reply="暂时无法读取 Google Ads 广告账户，请检查账户连接。",
+    ) is None
 
 
 def test_runtime_inject_llm_enables_response_synthesis_after_late_bootstrap():
