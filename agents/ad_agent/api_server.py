@@ -342,6 +342,12 @@ class ChatRequest(BaseModel):
     platform_params: Optional[dict] = None
 
 
+class SessionDeleteRequest(BaseModel):
+    """Bounded local conversation deletion request."""
+
+    session_ids: list[str] = Field(min_length=1, max_length=50)
+
+
 class TaskSubmitRequest(BaseModel):
     """Data-only asynchronous task envelope.
 
@@ -435,6 +441,54 @@ async def get_session_history(
     if not conversation:
         raise HTTPException(status_code=404, detail="会话不存在或无权访问")
     return conversation
+
+
+@app.delete("/sessions", tags=["sessions"])
+async def delete_sessions(
+    request: SessionDeleteRequest,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Delete selected local conversations in the authenticated scope."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.read")
+    if not runtime or not callable(getattr(runtime, "delete_conversations", None)):
+        raise HTTPException(status_code=503, detail="会话存储未初始化")
+    deleted_session_ids = await run_in_threadpool(
+        runtime.delete_conversations,
+        session_ids=request.session_ids,
+        user_id=principal.user_id,
+        tenant_id=principal.tenant_id,
+    )
+    if not deleted_session_ids:
+        raise HTTPException(status_code=404, detail="没有找到可删除的会话")
+    return {
+        "deleted": True,
+        "deleted_session_ids": deleted_session_ids,
+        "deleted_count": len(deleted_session_ids),
+    }
+
+
+@app.delete("/sessions/{session_id}", tags=["sessions"])
+async def delete_session(
+    session_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Delete one local conversation in the authenticated scope."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.read")
+    if not runtime or not callable(getattr(runtime, "delete_conversation", None)):
+        raise HTTPException(status_code=503, detail="会话存储未初始化")
+    deleted = await run_in_threadpool(
+        runtime.delete_conversation,
+        session_id=session_id,
+        user_id=principal.user_id,
+        tenant_id=principal.tenant_id,
+    )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="会话不存在或无权访问")
+    return {"deleted": True, "deleted_session_id": str(session_id)}
 
 
 @app.post("/chat", tags=["chat"])

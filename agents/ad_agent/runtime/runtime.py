@@ -4130,6 +4130,44 @@ class AgentRuntime:
             "execution_traces": traces if isinstance(traces, dict) else {},
         }
 
+    def delete_conversation(
+        self, session_id: str, user_id: str, tenant_id: str = "default",
+    ) -> bool:
+        """Delete one conversation after enforcing its user/tenant scope."""
+        if not self._session_manager:
+            return False
+        normalized_session_id = str(session_id or "").strip()
+        if not normalized_session_id:
+            return False
+        session = self._session_manager.get_session(normalized_session_id)
+        if not session or str(session.get("user_id") or "") != str(user_id):
+            return False
+        metadata = self._decode_session_metadata(session)
+        if str(metadata.get("tenant_id", "default")) != str(tenant_id or "default"):
+            return False
+        deleted = self._session_manager.delete_session(normalized_session_id)
+        if deleted:
+            self._sessions.pop(normalized_session_id, None)
+        return deleted
+
+    def delete_conversations(
+        self, session_ids: list[str], user_id: str,
+        tenant_id: str = "default",
+    ) -> list[str]:
+        """Delete up to the caller-selected conversations in one scoped action."""
+        deleted: list[str] = []
+        seen: set[str] = set()
+        for session_id in session_ids or []:
+            normalized_session_id = str(session_id or "").strip()
+            if not normalized_session_id or normalized_session_id in seen:
+                continue
+            seen.add(normalized_session_id)
+            if self.delete_conversation(
+                normalized_session_id, user_id=user_id, tenant_id=tenant_id
+            ):
+                deleted.append(normalized_session_id)
+        return deleted
+
     def _legacy_execution_traces(self, session_id: str) -> dict[str, dict[str, Any]]:
         """Build a bounded compatibility trace from durable Tool audit rows."""
         if not self._session_manager:

@@ -43,6 +43,10 @@ class SessionManager:
         """获取会话信息"""
         return self.store.get_session(session_id)
 
+    def delete_session(self, session_id: str) -> bool:
+        """Delete one durable session and its cascading local history."""
+        return self.store.delete_session(str(session_id))
+
     def update_session(self, session_id: str, metadata: dict = None) -> None:
         """更新会话元数据（不保存凭证）。"""
         self.store.update_session(session_id, metadata or {})

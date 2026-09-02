@@ -1463,7 +1463,17 @@ class AdAgentStore:
             if row:
                 return dict(row)
             return None
-    
+
+    def delete_session(self, session_id: str) -> bool:
+        """Delete a session; SQLite foreign keys remove its local history."""
+        with self._lock:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                "DELETE FROM sessions WHERE session_id = ?", (str(session_id),)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
     def list_sessions(self, user_id: str = None, limit: int = 50) -> List[dict]:
         with self._lock:
             conn = self._get_conn()

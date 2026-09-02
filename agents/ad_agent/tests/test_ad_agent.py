@@ -94,6 +94,28 @@ def create_dv360_capability_mock():
     return cap
 
 
+def test_runtime_conversation_delete_enforces_user_and_tenant_scope():
+    store = AdAgentStore(":memory:")
+    rt = AgentRuntime(require_llm=False, persistence_store=store)
+    manager = rt._session_manager
+    manager.create_session("tenant-a-session", "user-a", metadata={"tenant_id": "tenant-a"})
+    manager.create_session("tenant-b-session", "user-a", metadata={"tenant_id": "tenant-b"})
+    manager.create_session("other-user-session", "user-b", metadata={"tenant_id": "tenant-a"})
+
+    assert rt.delete_conversation(
+        "tenant-a-session", user_id="user-a", tenant_id="tenant-a"
+    ) is True
+    assert rt.delete_conversation(
+        "tenant-b-session", user_id="user-a", tenant_id="tenant-a"
+    ) is False
+    assert rt.delete_conversations(
+        ["other-user-session", "tenant-b-session"],
+        user_id="user-a", tenant_id="tenant-a",
+    ) == []
+    assert manager.get_session("tenant-b-session") is not None
+    assert manager.get_session("other-user-session") is not None
+
+
 # ─── 工具注册表测试 ────────────────────────────────────────────
 
 class TestToolRegistry:
@@ -1280,6 +1302,28 @@ class TestSessionManager:
         sm.create_session("sess-2", "user-1")
         sessions = sm.list_sessions("user-1")
         assert len(sessions) == 2
+
+    def test_delete_session_cascades_local_conversation_records(self, store):
+        sm = SessionManager(store)
+        sm.create_session("sess-delete", "user-1")
+        sm.record_conversation_message("sess-delete", "turn-1", "user", "删除这条对话")
+        sm.record_conversation_message("sess-delete", "turn-1", "assistant", "已记录")
+
+        from agents.ad_agent.persistence.store import ToolCallRecord
+        sm.record_tool_call(
+            "sess-delete", "turn-1", ToolCallRecord(
+                id="tool-delete", session_id="sess-delete", turn_id="turn-1",
+                tool_name="meta_list_campaigns", platform="meta",
+                input_data={"account_id": "test"}, success=True,
+                started_at="2026-01-01T00:00:00", ended_at="2026-01-01T00:00:01",
+            )
+        )
+
+        assert sm.delete_session("sess-delete") is True
+        assert sm.get_session("sess-delete") is None
+        assert sm.list_conversation_messages("sess-delete") == []
+        assert sm.get_session_history("sess-delete") == []
+        assert sm.delete_session("sess-delete") is False
 
     def test_conversation_messages_are_stored_in_chronological_order(self, store):
         sm = SessionManager(store)

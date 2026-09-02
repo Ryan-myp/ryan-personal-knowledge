@@ -121,6 +121,8 @@ def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
         "global-action-label", "知识库", "/sessions?limit=50",
         "/sessions/${encodeURIComponent(targetSessionId)}?limit=500",
         "refreshConversationHistory", "loadConversation", "检索总结",
+        "historyManageButton", "toggleHistorySelectionMode", "deleteSelectedConversations",
+        "deleted_session_ids", "仅影响本地历史记录",
         "保存并发布", "/knowledge/documents", "formatKnowledgeMarkdown",
         "knowledgeOverlay", "knowledge-console", "内置 · 只读", "复制为新版本",
         "/skills/builtin/", "managed_skills", "builtin_skills", "当前操作员",
@@ -235,6 +237,49 @@ def test_session_detail_hides_other_principal_sessions(monkeypatch, fake_server)
             headers={"X-API-Key": "scoped-key"},
         )
     assert response.status_code == 404
+
+
+def test_session_delete_endpoints_use_authenticated_user_and_tenant_scope(monkeypatch, fake_server):
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "scoped-key": {
+                "user_id": "gateway-user",
+                "tenant_id": "tenant-a",
+                "permissions": ["ads.read"],
+            }
+        }),
+    )
+    calls = []
+
+    def delete_conversation(**kwargs):
+        calls.append(("single", kwargs))
+        return kwargs["user_id"] == "gateway-user" and kwargs["tenant_id"] == "tenant-a"
+
+    def delete_conversations(**kwargs):
+        calls.append(("batch", kwargs))
+        return ["session-a", "session-b"]
+
+    fake_server.delete_conversation = delete_conversation
+    fake_server.delete_conversations = delete_conversations
+    with TestClient(api_server.app) as client:
+        single = client.delete(
+            "/sessions/session-a", headers={"X-API-Key": "scoped-key"}
+        )
+        batch = client.request(
+            "DELETE", "/sessions", headers={"X-API-Key": "scoped-key"},
+            json={"session_ids": ["session-a", "session-b"]},
+        )
+
+    assert single.status_code == 200
+    assert single.json() == {"deleted": True, "deleted_session_id": "session-a"}
+    assert batch.status_code == 200
+    assert batch.json()["deleted_session_ids"] == ["session-a", "session-b"]
+    assert calls[0][1]["user_id"] == "gateway-user"
+    assert calls[0][1]["tenant_id"] == "tenant-a"
+    assert calls[1][1]["session_ids"] == ["session-a", "session-b"]
+    assert calls[1][1]["user_id"] == "gateway-user"
+    assert calls[1][1]["tenant_id"] == "tenant-a"
 
 
 def test_knowledge_document_can_be_saved_as_draft_and_published(monkeypatch):
