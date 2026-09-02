@@ -1,0 +1,300 @@
+{
+  "id": "tiktok.app_conversion_video",
+  "version": "1.0.0",
+  "provider": "tiktok",
+  "ad_format": "SINGLE_VIDEO",
+  "title": "TikTok App 转化视频广告",
+  "description": "引导创建 TikTok App Promotion 视频广告的 Campaign、Ad Group 和 Ad 参数。",
+  "tools": [
+    "tiktok_create_campaign",
+    "tiktok_create_adgroup",
+    "tiktok_create_app_ad"
+  ],
+  "resources": [
+    "campaign",
+    "ad_group",
+    "ad"
+  ],
+  "fields": [
+    {
+      "path": "campaign.name",
+      "tool_ref": "tiktok_create_campaign.name",
+      "label": "Campaign 名称",
+      "required": true,
+      "source": "tool_schema"
+    },
+    {
+      "path": "campaign.objective_type",
+      "tool_ref": "tiktok_create_campaign.objective_type",
+      "label": "推广目标",
+      "description": "决定后续可选的推广方式、优化目标和转化设置。",
+      "required": true,
+      "source": "enum"
+    },
+    {
+      "path": "campaign.campaign_type",
+      "tool_ref": "tiktok_create_campaign.campaign_type",
+      "label": "Campaign 类型",
+      "required": true,
+      "source": "enum"
+    },
+    {
+      "path": "campaign.budget_mode",
+      "tool_ref": "tiktok_create_campaign.budget_mode",
+      "label": "预算模式",
+      "required": true,
+      "source": "enum"
+    },
+    {
+      "path": "campaign.daily_budget",
+      "tool_ref": "tiktok_create_campaign.daily_budget",
+      "label": "日预算",
+      "required_when": {
+        "field": "campaign.budget_mode",
+        "equals": "BUDGET_MODE_DAY"
+      },
+      "source": "tool_schema"
+    },
+    {
+      "path": "campaign.app_promotion_type",
+      "tool_ref": "tiktok_create_campaign.app_promotion_type",
+      "label": "App 推广方式",
+      "visible_when": {
+        "field": "campaign.objective_type",
+        "equals": "APP_PROMOTION"
+      },
+      "required_when": {
+        "field": "campaign.objective_type",
+        "equals": "APP_PROMOTION"
+      },
+      "source": "enum"
+    },
+    {
+      "path": "ad_group.name",
+      "tool_ref": "tiktok_create_adgroup.name",
+      "label": "广告组名称",
+      "required": true,
+      "source": "tool_schema"
+    },
+    {
+      "path": "ad_group.promotion_type",
+      "tool_ref": "tiktok_create_adgroup.promotion_type",
+      "label": "推广方式",
+      "description": "App Promotion 下选择 Android 或 iOS。",
+      "visible_when": {
+        "field": "campaign.objective_type",
+        "equals": "APP_PROMOTION"
+      },
+      "required_when": {
+        "field": "campaign.objective_type",
+        "equals": "APP_PROMOTION"
+      },
+      "source": "enum"
+    },
+    {
+      "path": "ad_group.app_id",
+      "tool_ref": "tiktok_create_adgroup.app_id",
+      "label": "推广 App",
+      "visible_when": {
+        "field": "campaign.objective_type",
+        "equals": "APP_PROMOTION"
+      },
+      "required_when": {
+        "field": "campaign.objective_type",
+        "equals": "APP_PROMOTION"
+      },
+      "source": "lookup",
+      "lookup_tool": "tiktok_list_apps"
+    },
+    {
+      "path": "ad_group.billing_event",
+      "tool_ref": "tiktok_create_adgroup.billing_event",
+      "label": "计费事件",
+      "required": true,
+      "source": "enum",
+      "options_from": [
+        "campaign.objective_type",
+        "ad_group.promotion_type",
+        "ad_group.optimization_goal"
+      ]
+    },
+    {
+      "path": "ad_group.optimization_goal",
+      "tool_ref": "tiktok_create_adgroup.optimization_goal",
+      "label": "优化目标",
+      "required": true,
+      "source": "enum",
+      "options_from": [
+        "campaign.objective_type",
+        "ad_group.promotion_type"
+      ]
+    },
+    {
+      "path": "ad_group.conversion_id",
+      "tool_ref": "tiktok_create_adgroup.conversion_id",
+      "label": "转化事件",
+      "visible_when": {
+        "field": "ad_group.optimization_goal",
+        "in": ["CONVERSION", "INSTALL", "IN_APP_EVENT", "WEB_CONVERSIONS"]
+      },
+      "required_when": {
+        "field": "ad_group.optimization_goal",
+        "in": ["CONVERSION", "INSTALL", "IN_APP_EVENT", "WEB_CONVERSIONS"]
+      },
+      "source": "lookup",
+      "lookup_tool": "tiktok_list_conversions"
+    },
+    {
+      "path": "ad_group.placement_type",
+      "tool_ref": "tiktok_create_adgroup.placement_type",
+      "label": "版位模式",
+      "required": true,
+      "source": "enum"
+    },
+    {
+      "path": "ad_group.placements",
+      "tool_ref": "tiktok_create_adgroup.placements",
+      "label": "投放版位",
+      "visible_when": {
+        "field": "ad_group.placement_type",
+        "equals": "PLACEMENT_TYPE_NORMAL"
+      },
+      "required_when": {
+        "field": "ad_group.placement_type",
+        "equals": "PLACEMENT_TYPE_NORMAL"
+      },
+      "source": "enum"
+    },
+    {
+      "path": "ad_group.location_ids",
+      "tool_ref": "tiktok_create_adgroup.location_ids",
+      "label": "投放地区",
+      "required": true,
+      "source": "lookup",
+      "lookup_tool": "tiktok_list_locations"
+    },
+    {
+      "path": "ad_group.operating_systems",
+      "tool_ref": "tiktok_create_adgroup.operating_systems",
+      "label": "操作系统",
+      "visible_when": {
+        "field": "ad_group.promotion_type",
+        "in": ["APP_ANDROID", "APP_IOS"]
+      },
+      "required_when": {
+        "field": "ad_group.promotion_type",
+        "in": ["APP_ANDROID", "APP_IOS"]
+      },
+      "source": "enum"
+    },
+    {
+      "path": "ad_group.budget_mode",
+      "tool_ref": "tiktok_create_adgroup.budget_mode",
+      "label": "广告组预算模式",
+      "required": true,
+      "source": "enum"
+    },
+    {
+      "path": "ad_group.budget",
+      "tool_ref": "tiktok_create_adgroup.budget",
+      "label": "广告组预算",
+      "required": true,
+      "source": "tool_schema"
+    },
+    {
+      "path": "ad.name",
+      "tool_ref": "tiktok_create_app_ad.name",
+      "label": "广告名称",
+      "required": true,
+      "source": "tool_schema"
+    },
+    {
+      "path": "ad.app_id",
+      "tool_ref": "tiktok_create_app_ad.app_id",
+      "label": "广告 App",
+      "required": true,
+      "source": "lookup",
+      "lookup_tool": "tiktok_list_apps"
+    },
+    {
+      "path": "ad.promotion_type",
+      "tool_ref": "tiktok_create_app_ad.promotion_type",
+      "label": "广告 App 平台",
+      "required": true,
+      "source": "enum"
+    },
+    {
+      "path": "ad.operating_systems",
+      "tool_ref": "tiktok_create_app_ad.operating_systems",
+      "label": "广告操作系统",
+      "required": true,
+      "source": "enum"
+    },
+    {
+      "path": "ad.media",
+      "tool_ref": "tiktok_create_app_ad.media",
+      "label": "视频素材",
+      "required": true,
+      "source": "tool_schema"
+    }
+  ],
+  "rules": [
+    {
+      "id": "objective_changed",
+      "when": {
+        "field": "campaign.objective_type",
+        "changed": true
+      },
+      "reset": [
+        "campaign.app_promotion_type",
+        "ad_group.promotion_type",
+        "ad_group.app_id",
+        "ad_group.billing_event",
+        "ad_group.optimization_goal",
+        "ad_group.conversion_id",
+        "ad_group.operating_systems",
+        "ad.app_id",
+        "ad.promotion_type",
+        "ad.operating_systems"
+      ],
+      "revalidate": [
+        "ad_group.budget_mode",
+        "ad_group.budget",
+        "ad.media"
+      ]
+    },
+    {
+      "id": "promotion_type_changed",
+      "when": {
+        "field": "ad_group.promotion_type",
+        "changed": true
+      },
+      "reset": [
+        "ad_group.app_id",
+        "ad_group.billing_event",
+        "ad_group.optimization_goal",
+        "ad_group.conversion_id",
+        "ad_group.operating_systems",
+        "ad.app_id",
+        "ad.promotion_type",
+        "ad.operating_systems"
+      ]
+    },
+    {
+      "id": "optimization_goal_changed",
+      "when": {
+        "field": "ad_group.optimization_goal",
+        "changed": true
+      },
+      "reset": ["ad_group.billing_event", "ad_group.conversion_id"]
+    },
+    {
+      "id": "placement_mode_changed",
+      "when": {
+        "field": "ad_group.placement_type",
+        "changed": true
+      },
+      "reset": ["ad_group.placements"]
+    }
+  ]
+}

@@ -58,6 +58,7 @@ from ..core.knowledge import KnowledgeProvider, LocalMarkdownKnowledgeProvider
 from ..knowledge_management import ManagedKnowledgeProvider
 from ..core.memory import MemoryManager
 from ..core.parameter_catalog import ParameterCatalogRegistry
+from ..core.blueprint import BlueprintRegistry, BlueprintCascadeEngine
 from ..core.parameter_selection import (
     ParameterSelectionSigner,
 )
@@ -265,6 +266,11 @@ class AgentRuntime:
             knowledge_provider=self.knowledge_provider,
         )
         self.parameter_catalogs = ParameterCatalogRegistry()
+        # Provider-owned declarative creation metadata.  The registry is a
+        # discovery index only; cascade evaluation is deterministic and does
+        # not execute arbitrary configuration or provider code.
+        self.creation_blueprints = BlueprintRegistry()
+        self.blueprint_cascade = BlueprintCascadeEngine()
         # This is a metadata index, not a second executable routing table.
         # Each provider Capability owns and publishes its own entries.
         self.ad_format_catalogs: dict[str, list[dict[str, Any]]] = {}
@@ -769,6 +775,7 @@ class AgentRuntime:
         before_formats = copy.deepcopy(self.ad_format_catalogs)
         before_provider_versions = copy.deepcopy(self.provider_version_contracts)
         before_provider_surfaces = copy.deepcopy(self.provider_api_surfaces)
+        before_blueprints = self.creation_blueprints.snapshot()
         try:
             runtime = self._register_capability_unchecked(module)
             platform = self._canonical_platform(getattr(module, "platform_name", ""))
@@ -817,6 +824,7 @@ class AgentRuntime:
             self.ad_format_catalogs = before_formats
             self.provider_version_contracts = before_provider_versions
             self.provider_api_surfaces = before_provider_surfaces
+            self.creation_blueprints.restore(before_blueprints)
             platform = self._canonical_platform(getattr(module, "platform_name", ""))
             if platform:
                 self.plugin_registry.unregister(f"capability:{platform}")
@@ -855,6 +863,14 @@ class AgentRuntime:
         self.parameter_catalogs.register_many(
             getattr(runtime, "parameter_catalogs", []) or []
         )
+        platform = self._canonical_platform(getattr(module, "platform_name", ""))
+        blueprints = getattr(runtime, "creation_blueprints", []) or []
+        if blueprints:
+            self.creation_blueprints.register_many(
+                blueprints,
+                owner=platform or None,
+                tool_registry=self.registry,
+            )
         self._register_ad_format_catalog(
             getattr(module, "platform_name", "") or "",
             getattr(runtime, "ad_format_catalogs", []) or [],
@@ -1044,6 +1060,32 @@ class AgentRuntime:
                 platform=platform, field=field, tool_name=tool_name
             )
         ]
+
+    def list_creation_blueprints(
+        self, provider: Optional[str] = None, ad_format: Optional[str] = None
+    ) -> list[dict[str, Any]]:
+        """Return provider-owned creation metadata without making network calls."""
+        return self.creation_blueprints.to_dict(provider, ad_format)
+
+    def evaluate_creation_blueprint(
+        self,
+        blueprint_id: str,
+        values: Mapping[str, Any],
+        *,
+        version: Optional[str] = None,
+        previous_values: Optional[Mapping[str, Any]] = None,
+        changed_fields: Optional[Iterable[str]] = None,
+    ) -> dict[str, Any]:
+        """Evaluate cascade state for a registered Blueprint deterministically."""
+        blueprint = self.creation_blueprints.get(blueprint_id, version)
+        if blueprint is None:
+            raise KeyError(f"creation blueprint not found: {blueprint_id}@{version or 'latest'}")
+        return self.blueprint_cascade.evaluate(
+            blueprint,
+            values,
+            previous_values=previous_values,
+            changed_fields=changed_fields,
+        )
 
     def resolve_parameter_options(
         self,
@@ -1556,6 +1598,9 @@ class AgentRuntime:
             else:
                 self._skill_keys_by_platform.pop(canonical_platform, None)
                 self._loaded_skills.pop(canonical_platform, None)
+                # Blueprints are owned by the provider Capability. Remove
+                # them only after the final Skill for that platform is gone.
+                self.creation_blueprints.remove_owner(canonical_platform)
 
             if platform != canonical_platform:
                 self._loaded_skills.pop(platform, None)

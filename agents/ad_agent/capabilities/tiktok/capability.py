@@ -2,6 +2,7 @@
 capabilities/tiktok/capability.py - TikTok Capability 定义
 """
 import logging
+from pathlib import Path
 from typing import Optional
 from ...core.interfaces import ToolDefinition, ToolSchema, RiskLevel, ToolEffect, ReplayPolicy, ToolHandler
 from ..base import BaseCapability, CampaignUpdateHandler
@@ -34,6 +35,7 @@ from .reference import (
     TikTokListBrandSafetyHandler,
 )
 from ...api_clients.tiktok_client import TikTokAPIClient
+from ...core.blueprint import load_blueprint_file
 from .parameters import (
     tiktok_campaign_schema,
     tiktok_adgroup_schema,
@@ -161,6 +163,14 @@ class TikTokCapability(BaseCapability):
 
     def get_ad_format_catalog(self) -> list[dict]:
         return tiktok_ad_format_catalog()
+
+    def get_creation_blueprints(self) -> list:
+        """Load immutable, provider-owned JSON creation metadata."""
+        blueprint_dir = Path(__file__).with_name("blueprints")
+        return [
+            load_blueprint_file(path)
+            for path in sorted(blueprint_dir.glob("*.json"))
+        ]
 
     def _extended_provider_tools(self, client):
         """Expose TikTok account, reference, reporting and lifecycle APIs."""

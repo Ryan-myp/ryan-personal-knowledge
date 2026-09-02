@@ -1151,6 +1151,56 @@ async def get_ad_formats(
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+@app.get("/creation-blueprints", tags=["info"])
+async def get_creation_blueprints(
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    provider: Optional[str] = Query(None, max_length=50),
+    ad_format: Optional[str] = Query(None, max_length=80),
+):
+    """Expose declarative ad-creation metadata without making network calls."""
+    _authorize_request(x_api_key, http_request)
+    if not runtime:
+        return {"blueprints": []}
+    return {
+        "provider": provider,
+        "ad_format": ad_format,
+        "blueprints": runtime.list_creation_blueprints(provider, ad_format),
+    }
+
+
+class BlueprintEvaluationRequest(BaseModel):
+    """Current draft state sent to the deterministic cascade evaluator."""
+
+    values: dict[str, object] = Field(default_factory=dict)
+    previous_values: Optional[dict[str, object]] = None
+    changed_fields: Optional[list[str]] = None
+    version: Optional[str] = Field(None, max_length=80)
+
+
+@app.post("/creation-blueprints/{blueprint_id}/evaluate", tags=["info"])
+async def evaluate_creation_blueprint(
+    blueprint_id: str,
+    body: BlueprintEvaluationRequest,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Evaluate field cascade state; this endpoint never calls a Provider API."""
+    _authorize_request(x_api_key, http_request)
+    if not runtime:
+        raise HTTPException(status_code=503, detail="服务未初始化")
+    try:
+        return runtime.evaluate_creation_blueprint(
+            blueprint_id,
+            body.values,
+            version=body.version,
+            previous_values=body.previous_values,
+            changed_fields=body.changed_fields,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
 class SkillVersionRequest(BaseModel):
     """Complete standard Agent Skill directory snapshot.
 

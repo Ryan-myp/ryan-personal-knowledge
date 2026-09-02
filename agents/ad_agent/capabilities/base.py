@@ -113,7 +113,17 @@ class BaseCapability(CapabilityModule, ABC):
         return CapabilityRuntime(
             write_guard=write_guard,
             ad_format_catalogs=self.get_ad_format_catalog(),
+            creation_blueprints=self.get_creation_blueprints(),
         )
+
+    def get_creation_blueprints(self) -> list[Any]:
+        """Return provider-owned declarative creation blueprints.
+
+        The default keeps existing/custom capabilities source-compatible. A
+        provider may load JSON blueprints beside its Capability package; the
+        shared Runtime only validates and indexes them.
+        """
+        return []
 
     def get_ad_format_catalog(self) -> list[dict[str, Any]]:
         """Return provider-owned format coverage metadata.

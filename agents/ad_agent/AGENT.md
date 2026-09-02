@@ -187,6 +187,27 @@ Google REST Client 的 OAuth access token 必须带过期管理：优先复用�
 重试一次；写请求禁止因认证失败自动重放。刷新失败必须返回认证错误，不能退回离线
 数据或关键词解析。
 
+### 3.4 广告创建 Blueprint
+
+广告创建的级联参数使用 Provider Capability 拥有的声明式 JSON Blueprint，不能把这类
+机器可读规则塞进 Skill 的 `references/` 作为唯一事实来源，也不要求用户编写
+`workflow.yaml`：
+
+```text
+capabilities/<provider>/blueprints/<ad-format>.v<major>.json
+```
+
+Blueprint 只描述广告类型、资源层级、Tool Schema 字段引用、可见/必填条件、动态选项
+来源以及父字段变化后的 `reset`/`revalidate`/`preserve`/`ask` 影响。它不能包含脚本、
+表达式执行、Provider client、MCP、凭证或 HTTP 请求。通用 `BlueprintRegistry` 在
+Capability 注册时校验配置，并由 `BlueprintCascadeEngine` 确定性计算字段状态；最终
+参数仍必须经过注册 Tool 的 schema、权限、账户和 dry-run/live gate。
+
+Skill 的 `SKILL.md`/`references/` 继续负责自然语言 SOP、业务解释和用户沟通。Blueprint
+中的 `tool_ref` 只能引用同一 Capability 已注册的 Tool，静态枚举复用 Tool Schema，
+动态值复用只读 lookup Tool。Blueprint 版本不可变，用户保存的 Preset/Template 绑定
+具体 Blueprint 版本，升级必须显式预览和迁移，不能静默改变旧模板。
+
 ## 4. 广告资源和跨渠道管理
 
 跨渠道对象必须使用 `(platform, account_id, resource_type, resource_id)` 作为完整

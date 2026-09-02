@@ -75,6 +75,15 @@ class RuntimeServices(RuntimeServicesPort):
     def offline_mode(self) -> bool:
         return self._runtime.offline_mode
 
+    @property
+    def creation_blueprints(self):
+        """Expose declarative creation metadata to trusted Runtime features."""
+        return self._runtime.creation_blueprints
+
+    @property
+    def blueprint_cascade(self):
+        return self._runtime.blueprint_cascade
+
     def canonical_platform(self, platform: str) -> str:
         return self._runtime._canonical_platform(platform)
 
