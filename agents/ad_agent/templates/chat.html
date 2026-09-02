@@ -1222,15 +1222,20 @@
             position: relative;
             padding: 8px 5px 18px;
             min-height: 300px;
+            --trace-line-end: 0px;
         }
         .trace-flow::before {
             content: '';
             position: absolute;
             left: 24px;
             top: 24px;
-            bottom: 24px;
+            height: calc(var(--trace-line-end) - 24px);
             width: 1px;
             background: #233b56;
+            display: none;
+        }
+        .trace-flow.has-nodes::before {
+            display: block;
         }
         .trace-node {
             position: relative;
@@ -1533,6 +1538,7 @@
         body.light-theme .trace-node.running .trace-node-state { color: #5941a4; background: #eeeafd; }
         body.light-theme .trace-node.awaiting_confirmation .trace-node-state { color: #825d08; background: #fff4d4; }
         body.light-theme .trace-node.failed .trace-node-state { color: #9a3348; background: #fdecef; }
+        body.light-theme .trace-flow::before { background: #9cb1c4; }
         body.light-theme .trace-detail-empty { color: #526579; }
         body.light-theme .trace-detail-title { color: #162235; font-weight: 600; }
         body.light-theme .trace-detail-subtitle { color: #526579; }
@@ -2441,6 +2447,8 @@
             const flow = document.getElementById('traceFlow');
             if (!flow) return;
             flow.replaceChildren();
+            flow.classList.remove('has-nodes');
+            flow.style.removeProperty('--trace-line-end');
             const visibleNodes = traceState.nodes.filter(traceNodeMatchesFilter);
             const filterSummary = document.getElementById('traceFilterSummary');
             if (filterSummary) filterSummary.textContent = traceFilter.platform === 'all' && traceFilter.status === 'all' && traceFilter.kind === 'all'
@@ -2480,6 +2488,11 @@
                     renderTraceDetail(node);
                 });
                 flow.appendChild(item);
+            }
+            const lastNode = flow.querySelector('.trace-node:last-of-type');
+            if (lastNode) {
+                flow.classList.add('has-nodes');
+                flow.style.setProperty('--trace-line-end', `${lastNode.offsetTop + (lastNode.offsetHeight / 2)}px`);
             }
             for (const ticker of [document.getElementById('traceTicker'), document.getElementById('globalTraceTicker')]) {
                 if (!ticker) continue;
