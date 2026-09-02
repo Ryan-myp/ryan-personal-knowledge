@@ -340,7 +340,14 @@ Provider 输入字段。不要把 `action`、`operation`、`resource_type`、`to
             normalized = self._normalize_intent(data)
             intent = ParsedIntent(**normalized)
             if self._needs_intent_repair(intent):
-                repaired = self._repair_intent_with_llm(user_input, context, data)
+                repaired = self._repair_intent_with_llm(
+                    user_input,
+                    context,
+                    data,
+                    preserve_platforms=bool(
+                        intent.platforms or self._detect_platforms(user_input)
+                    ),
+                )
                 if repaired is not None:
                     return repaired
             return intent
@@ -359,7 +366,12 @@ Provider 输入字段。不要把 `action`、`operation`、`resource_type`、`to
         return str(getattr(intent, "intent_type", "") or "") == "chat"
 
     def _repair_intent_with_llm(
-        self, user_input: str, context: ToolContext, previous: dict[str, Any],
+        self,
+        user_input: str,
+        context: ToolContext,
+        previous: dict[str, Any],
+        *,
+        preserve_platforms: bool = False,
     ) -> Optional[ParsedIntent]:
         """Run one constrained LLM repair pass for an inconsistent JSON result."""
         if not self._llm:
@@ -377,6 +389,11 @@ Provider 输入字段。不要把 `action`、`operation`、`resource_type`、`to
             f"候选目录：{self._intent_candidates_prompt()}\n"
             f"当前平台：{', '.join(sorted(self._known_platforms))}"
         )
+        if preserve_platforms:
+            repair_prompt += (
+                "\n\n平台边界：上一次结果已经识别出平台。除非用户原文明确提到新的已注册平台，"
+                "否则必须原样保留上一次 platforms，不能自行增加其他平台。"
+            )
         messages = [
             {
                 "role": "system",
@@ -395,10 +412,122 @@ Provider 输入字段。不要把 `action`、`operation`、`resource_type`、`to
             repaired.setdefault("raw_input", user_input)
             if not repaired.get("platform_params"):
                 repaired["platform_params"] = previous.get("platform_params", {})
-            return ParsedIntent(**self._normalize_intent(repaired))
+            normalized = self._normalize_intent(repaired)
+            if preserve_platforms:
+                # A repair may fix the operation, but it must not silently
+                # widen the provider scope selected by the original parse.
+                preserved_platforms = list(
+                    self._normalize_intent(previous).get("platforms", [])
+                )
+                if not preserved_platforms:
+                    preserved_platforms = self._detect_platforms(user_input)
+                normalized["platforms"] = preserved_platforms
+                previous_params = previous.get("platform_params")
+                if isinstance(previous_params, dict):
+                    params = dict(normalized.get("platform_params") or {})
+                    for platform, values in previous_params.items():
+                        if platform not in params and isinstance(values, dict):
+                            params[platform] = dict(values)
+                    normalized["platform_params"] = params
+            return ParsedIntent(**normalized)
         except (TypeError, ValueError, json.JSONDecodeError, RuntimeError):
             logger.warning("LLM intent repair failed; preserving the original result")
             return None
+
+    def repair_for_routing(
+        self,
+        user_input: str,
+        context: ToolContext,
+        previous: ParsedIntent,
+    ) -> Optional[ParsedIntent]:
+        """Repair an intent that did not match the active Tool Registry.
+
+        A model can emit a plausible synonym (for example ``query_campaign``)
+        or a non-existent operation (for example ``create_report``). Once the
+        authoritative Router reports no match, ask the model to choose from a
+        bounded, exact catalog for the selected platform(s). This keeps the
+        extension point in ToolDefinition metadata and avoids a silent no-op.
+        """
+        if not self._llm:
+            return None
+        previous_platforms = [
+            str(platform).strip()
+            for platform in (getattr(previous, "platforms", []) or [])
+            if str(platform).strip()
+        ]
+        if not previous_platforms:
+            previous_platforms = self._detect_platforms(user_input)
+        scoped_platforms = {
+            self._canonical_catalog_platform(platform)
+            for platform in previous_platforms
+        }
+        scoped_catalog: list[str] = []
+        for intent_name in sorted(self._intent_catalog):
+            definitions = list(self._intent_catalog[intent_name].values())
+            if scoped_platforms:
+                definitions = [
+                    item for item in definitions
+                    if self._canonical_catalog_platform(item.get("platform"))
+                    in scoped_platforms
+                ]
+            if not definitions:
+                continue
+            descriptions = sorted({
+                str(item.get("description") or "").strip()
+                for item in definitions
+                if str(item.get("description") or "").strip()
+            })
+            scoped_catalog.append(
+                f"{intent_name}: {descriptions[0][:180] if descriptions else ''}"
+            )
+        catalog = " | ".join(scoped_catalog)[:7000] or "chat"
+        platform_rule = (
+            "如果上一次 platforms 非空，必须原样保留，不得增加其他平台。"
+            if previous_platforms
+            else "只有用户原文明确涉及已注册平台时才填写 platforms。"
+        )
+        prompt = (
+            "上一次意图无法匹配当前已注册的可执行能力。请只修正意图，不要编造工具、"
+            "平台或参数。intent_type 必须从下面的精确候选中逐字选择；如果确实不是广告"
+            "业务请求才选择 chat。优先选择与用户原文和候选描述语义一致的候选。"
+            f"{platform_rule}\n\n"
+            f"用户原文：{user_input}\n"
+            f"上一次意图：{json.dumps(previous.to_dict(), ensure_ascii=False, default=str)}\n"
+            f"精确候选目录：{catalog}\n"
+            f"已注册平台：{', '.join(sorted(self._known_platforms))}\n\n"
+            "只输出与原协议相同的 JSON。"
+        )
+        messages = [
+            {
+                "role": "system",
+                "content": "你是广告 Agent 的严格路由校正器，只输出 JSON。",
+            },
+        ]
+        if context and getattr(context, "messages", None):
+            messages.extend(context.messages[-4:])
+        messages.append({"role": "user", "content": prompt})
+        try:
+            response = self._llm.call(messages)
+            json_str = self._extract_json(response)
+            if not json_str:
+                return None
+            repaired = json.loads(json_str)
+            repaired.setdefault("raw_input", user_input)
+            normalized = self._normalize_intent(repaired)
+            if previous_platforms:
+                normalized["platforms"] = list(
+                    self._normalize_intent({"platforms": previous_platforms}).get(
+                        "platforms", []
+                    )
+                )
+            return ParsedIntent(**normalized)
+        except (TypeError, ValueError, json.JSONDecodeError, RuntimeError):
+            logger.warning("LLM route repair failed; preserving the original intent")
+            return None
+
+    @staticmethod
+    def _canonical_catalog_platform(platform: Any) -> str:
+        return parser_platform(str(platform or "").strip().lower())
     
     def _parse_with_rules(self, user_input: str) -> ParsedIntent:
         """

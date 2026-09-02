@@ -567,6 +567,56 @@ class TestIntentParser:
 # ─── Runtime 集成测试 ──────────────────────────────────────────
 
 class TestRuntimeQuery:
+    def test_llm_route_repair_rejects_unrelated_provider_and_reaches_google_report(self):
+        """A hallucinated operation/provider must not become a silent no-op."""
+        from agents.ad_agent.capabilities.google import create_google_capability
+
+        class GoogleClient:
+            platform = "google-ads"
+
+            def list_campaigns(self, page_size=100):
+                return [{"id": "g1", "campaign_name": "Google 1"}]
+
+            def get_campaign_report(
+                self, campaign_ids, date_from="LAST_30_DAYS", date_to="TODAY"
+            ):
+                return [{
+                    "campaign": {"id": "g1", "name": "Google 1"},
+                    "metrics": {"clicks": 2},
+                }]
+
+        class SequenceLLM:
+            def __init__(self):
+                self.responses = [
+                    '{"intent_type":"chat","platforms":["google"]}',
+                    '{"intent_type":"create_report","platforms":["dv360","google"]}',
+                    '{"intent_type":"get_campaign_report","platforms":["google"]}',
+                ]
+
+            def call(self, _messages):
+                return self.responses.pop(0)
+
+        class NoSynthesizer:
+            def synthesize(self, *_args, **_kwargs):
+                return None
+
+        validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+        validator.allowed_accounts = {"google-ads": ["g1"]}
+        rt = AgentRuntime(
+            require_llm=True,
+            llm_client=SequenceLLM(),
+            persistence_store=AdAgentStore(":memory:"),
+            whitelist_validator=validator,
+            response_synthesizer=NoSynthesizer(),
+        )
+        rt.register_capability(create_google_capability(GoogleClient()))
+
+        result = rt.run("查询 Google Ads 报表", user_id="u1", account_id="g1")
+
+        assert result["intent"]["intent_type"] == "get_campaign_report"
+        assert result["tool_plan"] == {"google": ["google_get_campaign_report"]}
+        assert result["results"][0]["success"] is True
+
     def test_generic_report_routes_to_campaign_report_without_child_ids(self):
         from agents.ad_agent.capabilities.google import create_google_capability
 

@@ -2729,6 +2729,38 @@ class AgentRuntime:
         # metadata. Skills provide expert context and SOP; the Runtime orders
         # the returned Tool plan from provider-owned resource metadata.
         tool_plan = self.intent_router.route(intent, self.registry)
+
+        # A model may return a semantic synonym or an invalid operation name.
+        # Let an LLM-aware parser repair that result against the active Tool
+        # catalog once, after the authoritative Router has rejected it. This
+        # is deliberately optional for custom parsers and is not a keyword or
+        # provider dispatch table.
+        routed_platforms = {
+            self._canonical_platform(platform) for platform in tool_plan
+        }
+        requested_platforms = {
+            self._canonical_platform(platform)
+            for platform in (getattr(intent, "platforms", []) or [])
+        }
+        route_is_incomplete = bool(
+            requested_platforms and routed_platforms != requested_platforms
+        )
+        should_repair_route = bool(
+            tool_plan
+            or route_is_incomplete
+            or str(getattr(intent, "intent_type", "") or "") != "chat"
+            or bool(getattr(intent, "platforms", []) or [])
+        )
+        if should_repair_route and (not tool_plan or route_is_incomplete):
+            repair = getattr(self.intent_parser, "repair_for_routing", None)
+            if callable(repair):
+                repaired_intent = repair(safe_user_input, session.ctx, intent)
+                if repaired_intent is not None:
+                    intent = repaired_intent
+                    self._load_required_skills(intent.platforms)
+                    policy_errors = self._validate_policies(intent)
+                    if not policy_errors:
+                        tool_plan = self.intent_router.route(intent, self.registry)
         execution_groups = list(tool_plan.items())
         routed_tools = [
             tool for _platform, tools in execution_groups for tool in tools
@@ -2912,14 +2944,23 @@ class AgentRuntime:
                     "这次请求还没有匹配到可用的广告能力。请说明平台、对象和操作，"
                     "例如查询某个广告账户的 Campaign 列表。"
                 )
-            no_tool_reply, response_source = self._render_response(
-                safe_user_input,
-                intent,
-                [],
-                False,
-                session=session,
-                fallback_reply=no_tool_reply,
-            )
+            # There is no provider evidence at this point. Structured
+            # requests must use the deterministic message; sending an empty
+            # result set to the final-answer LLM could make it claim that a
+            # query was attempted or that a report was empty. Ordinary chat
+            # still gets the normal conversational synthesizer so controlled
+            # Memory context remains useful.
+            if intent_type == "chat" and not has_structured_request:
+                no_tool_reply, response_source = self._render_response(
+                    safe_user_input,
+                    intent,
+                    [],
+                    False,
+                    session=session,
+                    fallback_reply=no_tool_reply,
+                )
+            else:
+                response_source = "renderer"
             trace.reply()
             trace.done(
                 "failed" if has_structured_request or intent_type != "chat" else "succeeded",
