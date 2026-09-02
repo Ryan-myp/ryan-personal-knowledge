@@ -31,6 +31,12 @@ class ConversationTitleGenerator:
         )
         if action_match:
             subject, action = action_match.group(2).strip(), action_match.group(1)
+            subject = re.sub(r"^(?:一下|下|一下的|下的)\s*", "", subject)
+            subject = re.sub(r"\b\d{6,}\b", "", subject)
+            subject = re.sub(r"\s+下(?:的)?\s+", " ", subject)
+            subject = re.sub(r"\s+", " ", subject).strip(" ，,：:")
+            if not subject:
+                return action
             text = f"{subject} · {action}"
         if len(text) > cls.MAX_TITLE_CHARS:
             return text[: cls.MAX_TITLE_CHARS - 1].rstrip() + "…"
@@ -57,7 +63,7 @@ class ConversationTitleGenerator:
 
     @classmethod
     def _valid_title(cls, title: str, source: str) -> bool:
-        if not title or len(title) > cls.MAX_TITLE_CHARS:
+        if len(title) < 2 or len(title) > cls.MAX_TITLE_CHARS:
             return False
         if title == source or title.lower() == source.lower():
             return False
