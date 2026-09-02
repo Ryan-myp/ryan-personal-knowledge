@@ -367,11 +367,6 @@
         .history-rename-input:focus { border-color: #6674cf; box-shadow: 0 0 0 2px rgba(99, 102, 241, .16); }
         .history-rename-status { min-height: 16px; margin-top: 6px; color: #fda4af; font-size: 10px; }
         
-        .chat-history-item .icon {
-            font-size: 14px;
-            opacity: 0.7;
-        }
-
         .chat-history-empty,
         .chat-history-status {
             padding: 12px 10px;
@@ -1883,7 +1878,6 @@
         }
         .chat-history-open { padding: 10px 4px 10px 12px; }
         .chat-history-item .chat-history-copy { flex: 1; }
-        .chat-history-item .icon { flex: 0 0 18px; text-align: center; }
         .chat-history-item .chat-history-time { flex: 0 0 34px; margin-left: auto; padding-top: 2px; text-align: right; }
         .chat-history-item .chat-history-open { padding-right: 8px; }
         .chat-history-item .chat-history-time {
@@ -3420,9 +3414,6 @@
                         openButton.appendChild(selectBox);
                     }
 
-                    const icon = document.createElement('span');
-                    icon.className = 'icon';
-                    icon.textContent = '💬';
                     const copy = document.createElement('span');
                     copy.className = 'chat-history-copy';
                     const title = document.createElement('span');
@@ -3435,7 +3426,7 @@
                     const time = document.createElement('span');
                     time.className = 'chat-history-time';
                     time.textContent = conversationTime(conversation.updated_at);
-                    openButton.append(icon, copy, time);
+                    openButton.append(copy, time);
                     item.appendChild(openButton);
                     if (!historySelectionMode) {
                         const renameButton = document.createElement('button');
