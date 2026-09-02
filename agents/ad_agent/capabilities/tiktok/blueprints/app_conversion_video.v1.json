@@ -33,10 +33,11 @@
     {
       "path": "campaign.objective_type",
       "tool_ref": "tiktok_create_campaign.objective_type",
-      "label": "推广目标",
+      "label": "推广目标（已根据入口匹配）",
       "description": "决定后续可选的推广方式、优化目标和转化设置。",
       "required": true,
       "source": "enum",
+      "presentation": "derived_readonly",
       "options": ["APP_PROMOTION"]
     },
     {
@@ -286,7 +287,9 @@
       "tool_ref": "tiktok_create_app_ad.media",
       "label": "视频素材",
       "required": true,
-      "source": "tool_schema"
+      "source": "tool_schema",
+      "presentation": "asset_picker",
+      "accept": "video/*"
     }
   ],
   "rules": [

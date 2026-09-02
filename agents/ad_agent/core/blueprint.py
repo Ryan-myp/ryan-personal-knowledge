@@ -21,6 +21,9 @@ class BlueprintValidationError(ValueError):
 
 
 _SAFE_SOURCES = {"tool_schema", "enum", "lookup", "static"}
+_SAFE_PRESENTATIONS = {
+    "text_list", "asset_picker", "file_reference", "derived_readonly",
+}
 _FORBIDDEN_KEYS = {
     "script", "scripts", "command", "commands", "exec", "execute",
     "eval", "expression", "python", "javascript", "mcp", "handler",
@@ -170,6 +173,12 @@ class AdCreationBlueprint:
             source = str(item.get("source", "tool_schema")).strip().lower()
             if source not in _SAFE_SOURCES:
                 raise BlueprintValidationError(f"{location}.source is unsupported: {source}")
+            if "presentation" in item:
+                presentation = str(item.get("presentation") or "").strip().lower()
+                if presentation not in _SAFE_PRESENTATIONS:
+                    raise BlueprintValidationError(
+                        f"{location}.presentation is unsupported: {presentation}"
+                    )
             normalized = dict(item)
             normalized["path"] = path
             normalized["tool_ref"] = tool_ref
@@ -183,6 +192,21 @@ class AdCreationBlueprint:
                 if any(isinstance(value, (Mapping, list, tuple, set)) for value in options):
                     raise BlueprintValidationError(f"{location}.options must contain scalar values")
                 normalized["options"] = _copy_json(options)
+            if "derived_from" in normalized:
+                normalized["derived_from"] = _require_non_empty(
+                    normalized.get("derived_from"), f"{location}.derived_from"
+                )
+            if "derive_map" in normalized:
+                derive_map = normalized["derive_map"]
+                if not isinstance(derive_map, Mapping) or not derive_map:
+                    raise BlueprintValidationError(
+                        f"{location}.derive_map must be a non-empty object"
+                    )
+                if any(isinstance(value, (Mapping, list, tuple, set)) for value in derive_map.values()):
+                    raise BlueprintValidationError(
+                        f"{location}.derive_map values must be scalar values"
+                    )
+                normalized["derive_map"] = _copy_json(dict(derive_map))
             if "visible_when" in normalized:
                 _validate_condition(normalized["visible_when"], f"{location}.visible_when")
             if "required_when" in normalized:
@@ -592,7 +616,44 @@ def _value_at(values: Mapping[str, Any], path: str) -> Any:
 
 
 def _has_value(value: Any) -> bool:
-    return value is not None and value != "" and value != []
+    if value is None or value == "" or value == []:
+        return False
+    if isinstance(value, Mapping):
+        return bool(value)
+    if isinstance(value, (list, tuple, set)):
+        return bool(value)
+    return True
+
+
+def _has_submittable_value(value: Any) -> bool:
+    """Do not count local-only asset staging records as provider values."""
+    if isinstance(value, Mapping):
+        if value.get("source") == "local_staging":
+            return any(
+                value.get(key) not in (None, "")
+                for key in ("asset_id", "resource_name", "id")
+            )
+        return bool(value)
+    if isinstance(value, (list, tuple, set)):
+        return any(_has_submittable_value(item) for item in value)
+    return _has_value(value)
+
+
+def _derived_value(field: Mapping[str, Any], values: Mapping[str, Any]) -> Any:
+    source_path = field.get("derived_from")
+    mapping = field.get("derive_map")
+    if not isinstance(source_path, str) or not isinstance(mapping, Mapping):
+        return None
+    source_value = _value_at(values, source_path)
+    if source_value is None:
+        return None
+    derived = mapping.get(str(source_value))
+    if derived is not None:
+        return derived
+    try:
+        return mapping.get(source_value)
+    except TypeError:
+        return None
 
 
 def _condition_matches(condition: Mapping[str, Any], values: Mapping[str, Any], changed: set[str]) -> bool:
@@ -631,7 +692,19 @@ class BlueprintCascadeEngine:
         previous_values: Optional[Mapping[str, Any]] = None,
         changed_fields: Optional[Iterable[str]] = None,
     ) -> dict[str, Any]:
-        current = values if isinstance(values, Mapping) else {}
+        current = dict(values) if isinstance(values, Mapping) else {}
+        # Materialize declarative derived values into an evaluation-only copy
+        # so visibility/required rules can depend on them without mutating the
+        # caller's draft or adding provider-specific logic to the engine.
+        for field in blueprint.fields:
+            path = str(field["path"])
+            if (
+                _value_at(current, path) is None
+                and field.get("presentation") == "derived_readonly"
+            ):
+                derived = _derived_value(field, current)
+                if derived is not None:
+                    current[path] = derived
         previous = previous_values if isinstance(previous_values, Mapping) else {}
         changed = {str(path) for path in (changed_fields or ())}
         if previous_values is not None and changed_fields is None:
@@ -667,19 +740,28 @@ class BlueprintCascadeEngine:
             if visible and "required_when" in field:
                 required = _condition_matches(field["required_when"], current, changed)
             value = _value_at(current, path)
+            if value is None and field.get("presentation") == "derived_readonly":
+                value = _derived_value(field, current)
+            if (
+                value is None
+                and field.get("presentation") == "derived_readonly"
+                and isinstance(field.get("options"), list)
+                and len(field["options"]) == 1
+            ):
+                value = field["options"][0]
             is_invalid = (
                 visible
                 and
-                _has_value(value)
+                _has_submittable_value(value)
                 and isinstance(field.get("options"), list)
                 and value not in field["options"]
             )
             if is_invalid:
                 invalid.append(path)
-            is_missing = visible and required and not _has_value(value)
+            is_missing = visible and required and not _has_submittable_value(value)
             if is_missing:
                 missing.append(path)
-            state = "hidden" if not visible else ("invalid" if is_invalid else "missing" if is_missing else "set" if _has_value(value) else "optional")
+            state = "hidden" if not visible else ("invalid" if is_invalid else "missing" if is_missing else "set" if _has_submittable_value(value) else "optional")
             item = {
                 "path": path,
                 "tool_ref": field["tool_ref"],

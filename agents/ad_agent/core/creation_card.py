@@ -24,6 +24,9 @@ from .platform import normalize_platform
 _MAX_CARDS = 8
 _MAX_FIELDS = 80
 _MAX_OPTIONS = 100
+_PRESENTATIONS = {
+    "text_list", "asset_picker", "file_reference", "derived_readonly",
+}
 _SENSITIVE_FIELD = re.compile(
     r"(?:access[_-]?token|refresh[_-]?token|client[_-]?secret|app[_-]?secret|"
     r"private[_-]?key|developer[_-]?token|bc[_-]?id|partner[_-]?id|perter[_-]?id|mcc)",
@@ -77,6 +80,9 @@ def _options(field: Mapping[str, Any], schema: Mapping[str, Any]) -> list[Any]:
 
 
 def _control_for(field: Mapping[str, Any], schema: Mapping[str, Any], options: list[Any]) -> str:
+    presentation = str(field.get("presentation") or "").strip().lower()
+    if presentation in _PRESENTATIONS:
+        return presentation
     if str(field.get("source") or "").lower() == "lookup":
         return "lookup"
     if options:
@@ -86,6 +92,11 @@ def _control_for(field: Mapping[str, Any], schema: Mapping[str, Any], options: l
         return "number"
     if field_type == "boolean":
         return "checkbox"
+    if field_type == "object":
+        return "object_editor"
+    if field_type == "array" and isinstance(schema.get("items"), Mapping):
+        if schema["items"].get("type") == "string":
+            return "text_list"
     if field_type in ("object", "array") or isinstance(field_type, list):
         return "json"
     return "text"
@@ -158,8 +169,19 @@ class CreationCardBuilder:
     def _field_value(
         self, intent: ParsedIntent, provider_values: Mapping[str, Any], field: Mapping[str, Any]
     ) -> Any:
-        _tool_name, schema_path, _schema = _schema_for_ref(self.tools, field["tool_ref"])
-        value = _value_at(provider_values, schema_path)
+        tool_name, schema_path, _schema = _schema_for_ref(self.tools, field["tool_ref"])
+        # Form submissions keep values both at the provider-neutral top level
+        # and under the authoritative Tool name. Prefer the scoped copy so a
+        # repeated field such as ``name`` cannot be overwritten by another
+        # resource in the same Blueprint.
+        scoped_values = provider_values.get(tool_name)
+        value = (
+            _value_at(scoped_values, schema_path)
+            if isinstance(scoped_values, Mapping)
+            else None
+        )
+        if value is None:
+            value = _value_at(provider_values, schema_path)
         if value is None and "." in schema_path:
             value = _value_at(provider_values, schema_path.rsplit(".", 1)[-1])
         # Generic intent values can seed only the corresponding selector
@@ -253,9 +275,11 @@ class CreationCardBuilder:
             "missing_fields": [item["path"] for item in fields if item["value"] is None or item["state"] == "invalid"],
             "invalid_fields": [item["path"] for item in fields if item["state"] == "invalid"],
             "ready": False,
+            "account_id": None,
+            "account_required": True,
             "actions": [
                 {"id": "continue_chat", "label": "继续用文字补充"},
-                {"id": "apply", "label": "应用选择"},
+                {"id": "open_form", "label": "打开填写表单"},
             ],
         }
 
@@ -279,6 +303,17 @@ class CreationCardBuilder:
             state = dict(state_by_path.get(path) or {})
             options = _options(field, schema)
             value = values.get(path)
+            if value is None:
+                # Cascade-derived readonly fields (for example a Google
+                # video ad-group type) are resolved from Blueprint metadata,
+                # not selected again by the user.
+                value = state.get("value")
+            presentation = str(field.get("presentation") or "").strip().lower()
+            if value is None and presentation == "derived_readonly" and len(options) == 1:
+                # A one-option provider value is a contract default, not a
+                # user decision. Include it in the draft and readiness state.
+                value = options[0]
+                values[path] = value
             item = {
                 "path": path,
                 "provider_field": schema_path,
@@ -292,10 +327,30 @@ class CreationCardBuilder:
                 "value": value,
                 "source": field.get("source", "tool_schema"),
             }
+            for metadata_key in ("presentation", "value_shape", "accept"):
+                if field.get(metadata_key) is not None:
+                    item[metadata_key] = field[metadata_key]
             if options:
                 item["options"] = [
                     {"value": option, "label": str(option)} for option in options
                 ]
+            if item["control"] == "object_editor":
+                properties = schema.get("properties") or {}
+                item["object_properties"] = {
+                    str(name): {
+                        key: value
+                        for key, value in {
+                            "type": spec.get("type", "string"),
+                            "description": spec.get("description", ""),
+                            "enum": spec.get("enum"),
+                            "items": spec.get("items"),
+                            "required": name in (schema.get("required") or []),
+                        }.items()
+                        if value not in (None, "", {}, [])
+                    }
+                    for name, spec in properties.items()
+                    if isinstance(spec, Mapping) and not _SENSITIVE_FIELD.search(str(name))
+                }
             if item["source"] == "lookup":
                 lookup = field.get("lookup_tool") or schema.get("lookup_tool")
                 item["lookup"] = {
@@ -315,10 +370,13 @@ class CreationCardBuilder:
             "missing_fields": list(evaluation.get("missing_fields", [])),
             "invalid_fields": list(evaluation.get("invalid_fields", [])),
             "ready": bool(evaluation.get("ready")),
+            "account_id": None,
+            "account_required": True,
             "actions": [
                 {"id": "continue_chat", "label": "继续用文字补充"},
                 {"id": "validate", "label": "检查参数"},
                 {"id": "preview", "label": "生成预览"},
+                {"id": "submit_create", "label": "提交创建"},
             ],
         }
 

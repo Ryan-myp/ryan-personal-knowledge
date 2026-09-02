@@ -675,6 +675,23 @@ def test_chat_stream_forwards_runtime_events_without_inventing_steps(fake_server
     assert body.index('"type": "node_started"') < body.index('"type": "reply"') < body.index('"type": "done"')
 
 
+def test_chat_stream_forwards_creation_blueprint_context(fake_server):
+    with TestClient(api_server.app) as client:
+        response = client.post(
+            "/chat/stream",
+            headers={"X-API-Key": "test-key"},
+            json={
+                "user_input": "按已确认参数创建 Google Ads 广告系列",
+                "account_id": "test-account",
+                "creation_blueprint_id": "google-ads.search",
+                "creation_blueprint_version": "1.0.0",
+            },
+        )
+    assert response.status_code == 200
+    assert fake_server.calls[-1]["creation_blueprint_id"] == "google-ads.search"
+    assert fake_server.calls[-1]["creation_blueprint_version"] == "1.0.0"
+
+
 def test_chat_stream_exposes_runtime_error_event(fake_server):
     def run(**kwargs):
         raise RuntimeError("provider request failed")

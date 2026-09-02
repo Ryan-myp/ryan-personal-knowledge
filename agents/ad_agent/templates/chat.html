@@ -1314,6 +1314,10 @@
         .blueprint-selector-label { display: block; margin-bottom: 6px; color: var(--text-muted); font-size: 10px; font-weight: 600; }
         .blueprint-selector select { width: 100%; min-height: 32px; padding: 6px 8px; border: 1px solid var(--border-light); border-radius: 6px; outline: none; color: var(--text-primary); background: var(--bg-secondary); font: inherit; font-size: 12px; }
         .blueprint-selector-hint { margin-top: 6px; color: var(--text-muted); font-size: 10px; line-height: 1.45; }
+        .blueprint-account { margin: 0 20px 12px; padding: 11px 12px; border: 1px solid rgba(245, 158, 11, .35); border-radius: 9px; background: rgba(245, 158, 11, .07); }
+        .blueprint-account label { display: block; color: var(--text-primary); font-size: 11px; font-weight: 650; }
+        .blueprint-account input { width: 100%; margin-top: 6px; min-height: 34px; padding: 7px 9px; border: 1px solid var(--border-light); border-radius: 7px; color: var(--text-primary); background: var(--bg-primary); font: inherit; font-size: 12px; }
+        .blueprint-account small { display: block; margin-top: 5px; color: var(--text-muted); font-size: 10px; line-height: 1.4; }
         .blueprint-dry-run-badge {
             padding: 4px 7px;
             color: var(--warning);
@@ -1367,6 +1371,19 @@
         .blueprint-field select:focus,
         .blueprint-field textarea:focus { border-color: #c28a36; }
         .blueprint-field input:disabled { color: var(--text-muted); cursor: not-allowed; }
+        .blueprint-field textarea.asset-text-list, .creation-card-field textarea.asset-text-list { font-family: inherit; font-size: 12px; line-height: 1.55; }
+        .blueprint-field input.derived-readonly, .creation-card-field input.derived-readonly { color: var(--text-secondary); background: var(--bg-hover); border-style: dashed; }
+        .asset-picker { display: flex; flex-direction: column; gap: 6px; }
+        .asset-picker input[type="file"] { padding: 7px; }
+        .asset-picker-note { color: var(--text-muted); font-size: 10px; line-height: 1.4; }
+        .asset-picker-list { display: flex; flex-wrap: wrap; gap: 5px; }
+        .asset-chip { padding: 4px 7px; border: 1px solid var(--border-light); border-radius: 999px; color: var(--text-secondary); background: var(--bg-hover); font-size: 10px; }
+        .structured-object-editor { display: grid; gap: 7px; padding: 8px; border: 1px solid var(--border-light); border-radius: 7px; background: var(--bg-primary); }
+        .structured-object-row { display: grid; gap: 4px; }
+        .structured-object-row label { color: var(--text-muted); font-size: 10px; line-height: 1.35; }
+        .structured-object-row input, .structured-object-row select, .structured-object-row textarea { min-height: 30px; padding: 6px 8px; border: 1px solid var(--border-light); border-radius: 6px; color: var(--text-primary); background: var(--bg-secondary); font: inherit; font-size: 11px; }
+        .structured-object-row textarea { min-height: 48px; resize: vertical; }
+        .structured-object-row input[type="checkbox"] { width: 16px; min-height: 16px; }
         .blueprint-field-source { margin-top: 5px; color: var(--text-muted); font-size: 10px; }
         .blueprint-editor-footer { flex-wrap: wrap; padding: 12px 20px; border-top: 1px solid var(--border); }
         .blueprint-readiness { color: var(--text-muted); font-size: 11px; }
@@ -1422,8 +1439,14 @@
         .creation-card-field .help { margin-bottom: 6px; color: var(--text-muted); font-size: 10px; line-height: 1.4; }
         .creation-card-field input, .creation-card-field select, .creation-card-field textarea { width: 100%; min-height: 30px; padding: 6px 8px; border: 1px solid var(--border-light); border-radius: 6px; outline: none; color: var(--text-primary); background: var(--bg-primary); font: inherit; font-size: 11px; }
         .creation-card-field textarea { min-height: 58px; resize: vertical; font-family: Monaco, Menlo, monospace; font-size: 10px; }
+        .creation-card-field .structured-object-editor { background: var(--bg-secondary); }
         .creation-card-field input:focus, .creation-card-field select:focus, .creation-card-field textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-light); }
         .creation-card-field .source { margin-top: 5px; color: var(--text-muted); font-size: 9px; line-height: 1.35; }
+        .creation-card-account { margin: 0 16px 3px; padding: 9px; border: 1px solid rgba(245, 158, 11, .35); border-radius: 8px; background: rgba(245, 158, 11, .07); }
+        .creation-card-account label { display: block; margin-bottom: 5px; color: var(--text-primary); font-size: 11px; font-weight: 650; }
+        .creation-card-account input { width: 100%; min-height: 32px; padding: 6px 8px; border: 1px solid var(--border-light); border-radius: 6px; color: var(--text-primary); background: var(--bg-primary); font: inherit; font-size: 11px; }
+        .creation-card-account small { display: block; margin-top: 4px; color: var(--text-muted); font-size: 9px; }
+        .creation-card-review { margin: 0 16px 12px; padding: 10px; border: 1px solid var(--border-light); border-radius: 8px; background: var(--bg-primary); color: var(--text-secondary); font-size: 11px; line-height: 1.5; }
         .creation-card-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; padding: 11px 16px; border-top: 1px solid var(--border); }
         .creation-card-status { flex: 1; min-width: 150px; color: var(--text-muted); font-size: 10px; }
         .creation-card-action { padding: 7px 10px; border: 1px solid var(--border-light); border-radius: 7px; color: var(--text-secondary); background: var(--bg-hover); cursor: pointer; font: inherit; font-size: 10px; }
@@ -2518,7 +2541,7 @@
     </div>
 
     <div class="blueprint-overlay" id="blueprintOverlay" aria-hidden="true">
-        <section class="blueprint-console" role="dialog" aria-modal="true" aria-labelledby="blueprintConsoleTitle">
+        <section class="blueprint-console" role="dialog" aria-modal="true" aria-labelledby="blueprintConsoleTitle" onclick="event.stopPropagation()">
             <header class="blueprint-console-header">
                 <div>
                     <div class="blueprint-console-title" id="blueprintConsoleTitle">广告创建向导</div>
@@ -2539,6 +2562,11 @@
                         <span class="blueprint-dry-run-badge">DRY-RUN</span>
                     </div>
                     <div class="blueprint-selector" id="blueprintSelector"></div>
+                    <div class="blueprint-account">
+                        <label for="blueprintAccountInput">广告账户 ID <span class="blueprint-required">*</span></label>
+                        <input id="blueprintAccountInput" type="text" autocomplete="off" placeholder="请输入本次要操作的广告账户 ID">
+                        <small>账户必须由你明确填写；平台不会替你猜测或自动选择账户。</small>
+                    </div>
                     <div class="blueprint-notice" id="blueprintNotice" role="status"></div>
                     <div class="blueprint-fields" id="blueprintFields">
                         <div class="blueprint-empty">选择左侧蓝图后开始填写。</div>
@@ -2570,6 +2598,8 @@
         let workspaceTheme = 'dark';
         const creationCardState = new Map();
         const creationCardEvaluationTimers = new Map();
+        let pendingBlueprintRequest = null;
+        let pendingCreationReview = null;
         const skillState = {
             versions: [],
             selected: null,
@@ -2586,6 +2616,8 @@
             previousValues: {},
             evaluation: null,
             loading: false,
+            accountId: '',
+            localFiles: {},
         };
 
         const TRACE_STATUS_LABELS = {
@@ -3437,7 +3469,9 @@
                     user_input: requestParams.user_input,
                     account_id: requestParams.account_id || null,
                     platforms: results.map(item => item.platform).filter(Boolean),
-                    platform_params: requestParams.platform_params || {}
+                    platform_params: requestParams.platform_params || {},
+                    creation_blueprint_id: requestParams.creation_blueprint_id || null,
+                    creation_blueprint_version: requestParams.creation_blueprint_version || null,
                 });
                 return;
             }
@@ -3893,13 +3927,19 @@
             return data;
         }
 
-        function openBlueprintManager() {
+        function openBlueprintManager(provider = null, selectorValue = null) {
             closeWorkspacePopovers();
             const overlay = document.getElementById('blueprintOverlay');
             if (!overlay) return;
             overlay.classList.add('active');
             overlay.setAttribute('aria-hidden', 'false');
-            loadCreationBlueprints();
+            loadCreationBlueprints().then(() => {
+                if (!provider) return;
+                const item = blueprintState.items.find(candidate =>
+                    candidate.provider === provider && (!selectorValue || (candidate.selector?.values || []).map(String).includes(String(selectorValue)))
+                );
+                if (item) selectBlueprint(item.id, selectorValue);
+            });
         }
 
         function closeBlueprintManager() {
@@ -3924,6 +3964,126 @@
             if (Array.isArray(schema.enum)) return schema.enum;
             if (Array.isArray(schema.items?.enum)) return schema.items.enum;
             return [];
+        }
+
+        function presentedLines(value) {
+            if (!Array.isArray(value)) return value ? String(value) : '';
+            return value.map(item => {
+                if (item && typeof item === 'object') return item.text || item.name || item.asset || item.resource_name || '';
+                return String(item ?? '');
+            }).filter(Boolean).join('\n');
+        }
+
+        function parsePresentedValue(field, rawValue, schema) {
+            if (field.presentation === 'text_list') {
+                const lines = String(rawValue || '').split(/\r?\n/).map(item => item.trim()).filter(Boolean);
+                return field.value_shape === 'object_text' ? lines.map(text => ({ text })) : lines;
+            }
+            if (schema.type === 'object' || schema.type === 'array' || Array.isArray(schema.type)) {
+                try { return JSON.parse(rawValue); } catch (_) { return rawValue; }
+            }
+            if (schema.type === 'number' || schema.type === 'integer') return Number(rawValue);
+            return rawValue;
+        }
+
+        function structuredObjectValueText(value) {
+            if (!value || typeof value !== 'object' || Array.isArray(value)) return '';
+            return Object.entries(value)
+                .filter(([, item]) => item !== undefined && item !== null && item !== '')
+                .map(([key, item]) => `${key}: ${Array.isArray(item) ? item.join(', ') : typeof item === 'object' ? JSON.stringify(item) : item}`)
+                .join(' · ');
+        }
+
+        function parseStructuredObjectChild(spec, rawValue) {
+            const type = spec?.type;
+            if (type === 'number' || type === 'integer') return rawValue === '' ? undefined : Number(rawValue);
+            if (type === 'boolean') return Boolean(rawValue);
+            if (type === 'array') {
+                if (spec.items?.type === 'string') return String(rawValue || '').split(/\r?\n/).map(item => item.trim()).filter(Boolean);
+                try { return JSON.parse(rawValue); } catch (_) { return rawValue; }
+            }
+            if (type === 'object') {
+                try { return JSON.parse(rawValue); } catch (_) { return rawValue; }
+            }
+            return rawValue === '' ? undefined : rawValue;
+        }
+
+        function renderStructuredObjectEditor(schema, value, onChange, metadata = null) {
+            const editor = document.createElement('div');
+            editor.className = 'structured-object-editor';
+            const properties = metadata || schema?.properties || {};
+            const current = value && typeof value === 'object' && !Array.isArray(value) ? { ...value } : {};
+            Object.entries(properties).slice(0, 40).forEach(([name, rawSpec]) => {
+                const spec = rawSpec || {};
+                const row = document.createElement('div');
+                row.className = 'structured-object-row';
+                const label = document.createElement('label');
+                label.textContent = spec.description ? `${name} · ${spec.description}` : name;
+                row.appendChild(label);
+                let control;
+                const options = Array.isArray(spec.enum) ? spec.enum : [];
+                if (options.length) {
+                    control = document.createElement('select');
+                    const empty = document.createElement('option');
+                    empty.value = ''; empty.textContent = spec.required ? '请选择…' : '不设置';
+                    control.appendChild(empty);
+                    options.forEach(option => {
+                        const item = document.createElement('option');
+                        item.value = String(option); item.textContent = String(option);
+                        control.appendChild(item);
+                    });
+                    control.value = current[name] === undefined ? '' : String(current[name]);
+                } else if (spec.type === 'boolean') {
+                    control = document.createElement('input');
+                    control.type = 'checkbox'; control.checked = Boolean(current[name]);
+                } else if (spec.type === 'array') {
+                    control = document.createElement('textarea');
+                    control.className = 'structured-object-list';
+                    control.placeholder = spec.items?.type === 'string' ? '每行一项' : '[...]';
+                    control.value = spec.items?.type === 'string'
+                        ? (Array.isArray(current[name]) ? current[name].join('\n') : '')
+                        : (current[name] === undefined ? '' : JSON.stringify(current[name]));
+                } else {
+                    control = document.createElement('input');
+                    control.type = spec.type === 'number' || spec.type === 'integer' ? 'number' : 'text';
+                    control.value = current[name] === undefined ? '' : String(current[name]);
+                }
+                const commit = () => {
+                    const value = control.type === 'checkbox' ? control.checked : parseStructuredObjectChild(spec, control.value.trim());
+                    if (value === undefined) delete current[name]; else current[name] = value;
+                    onChange({ ...current });
+                };
+                control.addEventListener(control.type === 'checkbox' || control.tagName === 'SELECT' ? 'change' : 'input', commit);
+                row.appendChild(control);
+                editor.appendChild(row);
+            });
+            if (!Object.keys(properties).length) {
+                const empty = document.createElement('div');
+                empty.className = 'asset-picker-note';
+                empty.textContent = '当前 Tool 未声明可编辑的子字段。';
+                editor.appendChild(empty);
+            }
+            return editor;
+        }
+
+        function blueprintDraftPlatformParams(blueprint) {
+            const values = {};
+            const evaluated = new Map((blueprintState.evaluation?.fields || []).map(item => [item.path, item]));
+            for (const field of (blueprint?.fields || [])) {
+                if (field.visible === false) continue;
+                let value = blueprintState.values[field.path];
+                if (value === undefined) value = evaluated.get(field.path)?.value;
+                const options = blueprintOptions(field);
+                if (value === undefined && field.presentation === 'derived_readonly' && options.length === 1) value = options[0];
+                if (value === undefined || value === null || value === '') continue;
+                const { toolName, fieldPath } = blueprintToolFieldSchema(field.tool_ref);
+                setCreationNestedValue(values, fieldPath || field.path, value);
+                if (toolName) {
+                    values[toolName] = values[toolName] || {};
+                    setCreationNestedValue(values[toolName], fieldPath || field.path, value);
+                }
+            }
+            return { [blueprint.provider]: values };
         }
 
         function blueprintSelectorOptions(blueprint) {
@@ -4051,6 +4211,7 @@
             blueprintState.values = {};
             blueprintState.previousValues = {};
             blueprintState.evaluation = null;
+            blueprintState.localFiles = {};
             const selector = item.selector;
             const initialValue = selectorValue || selector?.values?.[0];
             if (selector?.field && initialValue !== undefined) blueprintState.values[selector.field] = initialValue;
@@ -4066,6 +4227,11 @@
             if (!blueprint) return;
             if (title) title.textContent = blueprint.title || blueprint.id;
             if (meta) meta.textContent = `${blueprint.provider} · ${blueprint.ad_format} · Blueprint v${blueprint.version}`;
+            const accountInput = document.getElementById('blueprintAccountInput');
+            if (accountInput) {
+                accountInput.value = blueprintState.accountId || '';
+                accountInput.oninput = () => { blueprintState.accountId = accountInput.value.trim(); };
+            }
             renderBlueprintSelector();
             renderBlueprintFields(blueprintState.evaluation);
         }
@@ -4102,11 +4268,92 @@
                 }
                 const schema = blueprintToolFieldSchema(field.tool_ref).schema || {};
                 const options = blueprintOptions(field);
+                const displayValue = state.value !== undefined && state.value !== null
+                    ? state.value : blueprintState.values[field.path];
                 let control;
-                if (field.source === 'lookup') {
+                if (field.presentation === 'file_reference') {
+                    control = document.createElement('div');
+                    control.className = 'asset-picker';
+                    const idInput = document.createElement('input');
+                    idInput.type = 'text';
+                    idInput.placeholder = '填写已上传的素材 ID，或先选择本地文件作为草稿';
+                    idInput.value = displayValue === undefined ? '' : String(displayValue);
+                    idInput.addEventListener('change', () => updateBlueprintField(field, idInput.value.trim()));
+                    const fileInput = document.createElement('input');
+                    fileInput.type = 'file';
+                    fileInput.accept = field.accept || '*/*';
+                    fileInput.addEventListener('change', () => {
+                        const file = fileInput.files?.[0];
+                        if (!file) return;
+                        blueprintState.localFiles[field.path] = {
+                            local_file: file.name,
+                            mime_type: file.type || 'application/octet-stream',
+                            size_bytes: file.size,
+                            source: 'local_staging',
+                        };
+                        const note = control.querySelector('.asset-picker-note');
+                        if (note) note.textContent = `已加入本地草稿：${file.name}（未上传，提交前仍需素材 ID）`;
+                    });
+                    control.append(idInput, fileInput);
+                    const note = document.createElement('div');
+                    note.className = 'asset-picker-note';
+                    note.textContent = '本地文件仅用于准备素材，不会自动上传；执行前仍需对应平台素材 ID。';
+                    control.appendChild(note);
+                } else if (field.presentation === 'asset_picker') {
+                    control = document.createElement('div');
+                    control.className = 'asset-picker';
+                    const fileInput = document.createElement('input');
+                    fileInput.type = 'file';
+                    fileInput.multiple = true;
+                    fileInput.accept = field.accept || '*/*';
+                    fileInput.addEventListener('change', () => {
+                        const existing = Array.isArray(blueprintState.values[field.path]) ? blueprintState.values[field.path] : [];
+                        const selected = Array.from(fileInput.files || []).map(file => ({
+                            local_file: file.name, mime_type: file.type || 'application/octet-stream', size_bytes: file.size,
+                            source: 'local_staging',
+                        }));
+                        blueprintState.values[field.path] = [...existing, ...selected];
+                        evaluateBlueprintDraft(field.path);
+                    });
+                    control.appendChild(fileInput);
+                    const staged = Array.isArray(displayValue) ? displayValue : [];
+                    if (staged.length) {
+                        const list = document.createElement('div');
+                        list.className = 'asset-picker-list';
+                        staged.slice(0, 20).forEach(item => {
+                            const chip = document.createElement('span');
+                            chip.className = 'asset-chip';
+                            chip.textContent = item && typeof item === 'object'
+                                ? `${item.local_file || item.asset_id || item.name || '素材'}${item.source === 'local_staging' ? ' · 未上传' : ''}`
+                                : String(item);
+                            list.appendChild(chip);
+                        });
+                        control.appendChild(list);
+                    }
+                    const note = document.createElement('div');
+                    note.className = 'asset-picker-note';
+                    note.textContent = '可选择本地文件加入草稿；当前只保存文件信息，不上传到广告平台。';
+                    control.appendChild(note);
+                } else if (field.presentation === 'derived_readonly') {
+                    control = document.createElement('input');
+                    control.className = 'derived-readonly';
+                    control.readOnly = true;
+                    control.disabled = true;
+                    control.value = displayValue === undefined ? (options[0] || '') : String(displayValue);
+                } else if (field.source === 'lookup') {
                     control = document.createElement('input');
                     control.placeholder = '动态选项将在受控 lookup 接入后加载';
                     control.disabled = true;
+                } else if (schema.type === 'object') {
+                    control = renderStructuredObjectEditor(
+                        schema,
+                        displayValue,
+                        value => updateBlueprintField(field, JSON.stringify(value)),
+                    );
+                } else if (field.presentation === 'text_list') {
+                    control = document.createElement('textarea');
+                    control.className = 'asset-text-list';
+                    control.placeholder = '每行填写一条';
                 } else if (options.length) {
                     control = document.createElement('select');
                     const placeholder = document.createElement('option');
@@ -4126,16 +4373,25 @@
                     control = document.createElement('input');
                     control.type = schema.type === 'number' || schema.type === 'integer' ? 'number' : 'text';
                 }
-                control.value = blueprintState.values[field.path] === undefined
-                    ? ''
-                    : (typeof blueprintState.values[field.path] === 'object' ? JSON.stringify(blueprintState.values[field.path]) : String(blueprintState.values[field.path]));
-                control.onchange = () => updateBlueprintField(field, control.value);
+                if (field.presentation !== 'asset_picker' && field.presentation !== 'file_reference' && field.presentation !== 'derived_readonly' && schema.type !== 'object') {
+                    control.value = field.presentation === 'text_list'
+                        ? presentedLines(displayValue)
+                        : displayValue === undefined
+                            ? ''
+                            : (typeof displayValue === 'object' ? JSON.stringify(displayValue) : String(displayValue));
+                    control.onchange = () => updateBlueprintField(field, control.value);
+                }
                 wrapper.appendChild(control);
                 const source = document.createElement('div');
                 source.className = 'blueprint-field-source';
-                source.textContent = field.source === 'lookup'
-                    ? '动态参数：当前阶段不调用渠道接口'
-                    : `来源：${field.source || 'Tool Schema'}`;
+                source.textContent = field.presentation === 'derived_readonly'
+                    ? '已根据当前入口自动匹配'
+                    : field.source === 'lookup'
+                        ? '需要从指定账户中选择'
+                        : (field.presentation === 'asset_picker' || field.presentation === 'file_reference')
+                            ? '本地素材草稿，不会自动上传'
+                            : schema.type === 'object' ? '按字段填写，系统会按 Tool Schema 组装'
+                            : field.presentation === 'text_list' ? '每行填写一条' : '可直接填写';
                 wrapper.appendChild(source);
                 container.appendChild(wrapper);
             }
@@ -4153,16 +4409,10 @@
         async function updateBlueprintField(field, rawValue) {
             const prior = { ...blueprintState.values };
             const schema = blueprintToolFieldSchema(field.tool_ref).schema || {};
-            let value = rawValue;
             if (rawValue === '') {
                 delete blueprintState.values[field.path];
-            } else if (schema.type === 'object' || schema.type === 'array' || Array.isArray(schema.type)) {
-                try { value = JSON.parse(rawValue); } catch (_) { value = rawValue; }
-                blueprintState.values[field.path] = value;
-            } else if (schema.type === 'number' || schema.type === 'integer') {
-                blueprintState.values[field.path] = Number(rawValue);
             } else {
-                blueprintState.values[field.path] = value;
+                blueprintState.values[field.path] = parsePresentedValue(field, rawValue, schema);
             }
             blueprintState.previousValues = prior;
             await evaluateBlueprintDraft(field.path);
@@ -4206,6 +4456,7 @@
             blueprintState.values = {};
             blueprintState.previousValues = {};
             blueprintState.evaluation = null;
+            blueprintState.localFiles = {};
             showBlueprintNotice('');
             renderBlueprintEditor();
         }
@@ -4213,8 +4464,18 @@
         function useBlueprintInChat() {
             const blueprint = blueprintState.selected;
             if (!blueprint) return;
-            const filled = Object.entries(blueprintState.values).map(([path, value]) => `${path}=${typeof value === 'object' ? JSON.stringify(value) : value}`).join('；');
-            setInput(`请按“${blueprint.title || blueprint.id}”继续创建广告${filled ? '，当前参数草稿：' + filled : ''}`);
+            if (!blueprintState.accountId.trim()) {
+                showBlueprintNotice('请先填写本次要操作的广告账户 ID，平台不会自动选择账户。');
+                document.getElementById('blueprintAccountInput')?.focus();
+                return;
+            }
+            pendingBlueprintRequest = {
+                account_id: blueprintState.accountId.trim(),
+                platform_params: blueprintDraftPlatformParams(blueprint),
+                creation_blueprint_id: blueprint.id,
+                creation_blueprint_version: blueprint.version,
+            };
+            setInput(`请按“${blueprint.title || blueprint.id}”继续创建广告。参数草稿已带入，请先检查并确认后提交。`);
             closeBlueprintManager();
         }
 
@@ -4588,6 +4849,23 @@
             return typeof value === 'object' ? JSON.stringify(value) : String(value);
         }
 
+        function creationCardDisplayValue(field) {
+            if (field.control === 'text_list') return presentedLines(field.value);
+            return creationCardValueText(field.value);
+        }
+
+        function parseCreationCardValue(field, rawValue) {
+            if (field.control === 'text_list') {
+                const lines = String(rawValue || '').split(/\r?\n/).map(item => item.trim()).filter(Boolean);
+                return field.value_shape === 'object_text' ? lines.map(text => ({ text })) : lines;
+            }
+            if (field.control === 'json') {
+                try { return JSON.parse(rawValue); } catch (_) { return rawValue; }
+            }
+            if (field.control === 'number') return rawValue === '' ? undefined : Number(rawValue);
+            return rawValue === '' ? undefined : rawValue;
+        }
+
         function setCreationNestedValue(target, path, value) {
             const parts = String(path || '').split('.').filter(Boolean);
             if (!parts.length) return;
@@ -4666,11 +4944,93 @@
         }
 
         function creationCardStatus(card) {
+            if (!String(card.account_id || '').trim()) return '请先填写广告账户 ID';
             const missing = (card.fields || []).filter(field => field.visible !== false && field.required && (field.value === undefined || field.value === null || field.value === '')).length;
             const invalid = (card.invalid_fields || []).length;
             if (invalid) return `有 ${invalid} 项需要调整`;
             if (missing) return `还需要补充 ${missing} 项`;
             return card.ready ? '参数已满足当前蓝图要求' : '可以继续用文字补充参数';
+        }
+
+        function creationReviewRows(card) {
+            return (card.fields || []).filter(field => field.visible !== false && field.value !== undefined && field.value !== null && field.value !== '').slice(0, 80).map(field => {
+                const value = field.control === 'text_list' ? presentedLines(field.value)
+                    : field.control === 'asset_picker' ? (Array.isArray(field.value) ? field.value.map(item => item?.local_file || item?.name || item?.asset || '已选素材').join('、') : '')
+                    : field.control === 'object_editor' ? structuredObjectValueText(field.value)
+                    : creationCardValueText(field.value);
+                return `<div><span>${escapeHtml(field.label || field.path)}</span><strong>${escapeHtml(value || '已填写')}</strong></div>`;
+            }).join('');
+        }
+
+        function showCreationPreview(card) {
+            const existing = document.querySelector(`.creation-card-review[data-card-review="${CSS.escape(card.id)}"]`);
+            if (existing) { existing.remove(); return; }
+            const review = document.createElement('div');
+            review.className = 'creation-card-review';
+            review.dataset.cardReview = card.id;
+            review.innerHTML = `<strong>参数预览</strong><div>广告账户：${escapeHtml(card.account_id || '未填写')}</div>${creationReviewRows(card)}<div>当前只生成本地草稿，确认提交后才会进入执行流程。</div>`;
+            const target = document.querySelector(`.creation-card[data-card-id="${CSS.escape(card.id)}"] .creation-card-footer`);
+            if (target) target.parentElement.insertBefore(review, target);
+        }
+
+        function showCreationReview(card) {
+            if (!String(card.account_id || '').trim()) {
+                const input = document.querySelector(`.creation-card[data-card-id="${CSS.escape(card.id)}"] .creation-card-account input`);
+                input?.focus();
+                addMessage('请先填写本次要操作的广告账户 ID，再提交创建。', 'agent', null, true);
+                return;
+            }
+            if (!card.ready || card.missing_fields?.length || card.invalid_fields?.length) {
+                addMessage('还有必填参数或联动参数需要补充，请先完成卡片中的标记项。', 'agent', null, true);
+                return;
+            }
+            pendingCreationReview = card;
+            const oldCard = document.getElementById('confirmCard');
+            if (oldCard) oldCard.remove();
+            const review = document.createElement('div');
+            review.id = 'confirmCard';
+            review.className = 'confirm-card';
+            review.innerHTML = `<div class="confirm-card-header"><span class="confirm-icon">✓</span><span class="confirm-title">请确认创建参数</span></div><div class="confirm-card-body"><p>即将为账户 <strong>${escapeHtml(card.account_id)}</strong> 提交“${escapeHtml(card.title || '广告')}”的创建计划。</p><p>请确认账户、预算、定向和素材均无误。${workspaceMode.mode === 'live' ? '当前为受控执行模式，后续仍会进行安全确认。' : '当前为安全预览模式，只生成本地模拟结果，不会调用广告平台。'}</p></div><div class="confirm-card-footer"><button class="confirm-btn cancel" onclick="cancelCreationReview()">返回修改</button><button class="confirm-btn confirm" onclick="confirmCreationSubmission()">确认并提交</button></div>`;
+            document.getElementById('confirmCardContainer').appendChild(review);
+            review.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        function cancelCreationReview() {
+            pendingCreationReview = null;
+            document.getElementById('confirmCard')?.remove();
+        }
+
+        function confirmCreationSubmission() {
+            const card = pendingCreationReview;
+            pendingCreationReview = null;
+            document.getElementById('confirmCard')?.remove();
+            if (card) submitCreationCard(card);
+        }
+
+        async function submitCreationCard(card) {
+            const userInput = `提交“${card.title || card.provider + '广告'}”创建计划`;
+            const requestParams = {
+                user_input: userInput,
+                user_id: 'web_user',
+                session_id: sessionId,
+                account_id: String(card.account_id || '').trim(),
+                platform_params: creationCardParams(card),
+                creation_blueprint_id: card.blueprint_id || null,
+                creation_blueprint_version: card.blueprint_version || null,
+            };
+            addMessage('已确认参数，正在生成创建计划…', 'agent');
+            addLoading();
+            startExecutionTrace(userInput);
+            try {
+                const data = await streamChatRequest(requestParams);
+                removeLoading();
+                renderStreamResult(data, requestParams);
+                await refreshConversationHistory({ silent: true });
+            } catch (error) {
+                removeLoading();
+                markTraceFailed(error.message);
+                addMessage('提交失败：' + error.message, 'agent', null, true);
+            }
         }
 
         function renderCreationCard(card) {
@@ -4689,9 +5049,24 @@
             title.textContent = card.title || '广告创建参数';
             const meta = document.createElement('div');
             meta.className = 'creation-card-meta';
-            meta.textContent = card.blueprint_id ? `${card.provider} · Blueprint v${card.blueprint_version} · 仅生成草稿` : `${card.provider} · 先选择创建类型`;
+            meta.textContent = card.blueprint_id ? `${card.provider} · 已整理参数，提交前会再次确认` : `${card.provider} · 先选择创建类型`;
             header.append(kicker, title, meta);
             wrapper.appendChild(header);
+
+            const account = document.createElement('div');
+            account.className = 'creation-card-account';
+            const accountLabel = document.createElement('label');
+            accountLabel.textContent = '广告账户 ID *';
+            const accountInput = document.createElement('input');
+            accountInput.type = 'text';
+            accountInput.autocomplete = 'off';
+            accountInput.placeholder = '请输入本次操作的广告账户 ID';
+            accountInput.value = card.account_id || '';
+            accountInput.addEventListener('input', () => { card.account_id = accountInput.value.trim(); });
+            const accountHint = document.createElement('small');
+            accountHint.textContent = '账户由你明确指定，不会自动选择。';
+            account.append(accountLabel, accountInput, accountHint);
+            wrapper.appendChild(account);
 
             const fields = document.createElement('div');
             fields.className = 'creation-card-fields';
@@ -4715,7 +5090,68 @@
                 }
                 let control;
                 const options = Array.isArray(field.options) ? field.options : [];
-                if (field.control === 'select' || field.control === 'multiselect') {
+                if (field.control === 'file_reference') {
+                    control = document.createElement('div');
+                    control.className = 'asset-picker';
+                    const idInput = document.createElement('input');
+                    idInput.type = 'text';
+                    idInput.placeholder = '填写已上传的素材 ID，或先选择本地文件作为草稿';
+                    idInput.value = creationCardValueText(field.value);
+                    const fileInput = document.createElement('input');
+                    fileInput.type = 'file';
+                    fileInput.accept = field.accept || '*/*';
+                    fileInput.addEventListener('change', () => {
+                        const file = fileInput.files?.[0];
+                        if (file) note.textContent = `已加入本地草稿：${file.name}（未上传，提交前仍需素材 ID）`;
+                    });
+                    const note = document.createElement('div');
+                    note.className = 'asset-picker-note';
+                    note.textContent = '本地文件仅用于准备素材，不会自动上传；执行前仍需对应平台素材 ID。';
+                    idInput.addEventListener('change', () => {
+                        field.value = idInput.value.trim() || undefined;
+                        creationCardState.set(card.id, card);
+                        scheduleCreationCardEvaluation(card, field.path);
+                    });
+                    control.append(idInput, fileInput, note);
+                } else if (field.control === 'asset_picker') {
+                    control = document.createElement('div');
+                    control.className = 'asset-picker';
+                    const fileInput = document.createElement('input');
+                    fileInput.type = 'file';
+                    fileInput.multiple = true;
+                    fileInput.accept = field.accept || '*/*';
+                    fileInput.addEventListener('change', () => {
+                        const existing = Array.isArray(field.value) ? field.value : [];
+                        field.value = [...existing, ...Array.from(fileInput.files || []).map(file => ({
+                            local_file: file.name, mime_type: file.type || 'application/octet-stream',
+                            size_bytes: file.size, source: 'local_staging',
+                        }))];
+                        creationCardState.set(card.id, card);
+                        scheduleCreationCardEvaluation(card, field.path);
+                        const status = wrapper.querySelector('.creation-card-status');
+                        if (status) status.textContent = creationCardStatus(card);
+                    });
+                    control.appendChild(fileInput);
+                    const list = document.createElement('div');
+                    list.className = 'asset-picker-list';
+                    (Array.isArray(field.value) ? field.value : []).forEach(asset => {
+                        const chip = document.createElement('span');
+                        chip.className = 'asset-chip';
+                        chip.textContent = asset?.local_file || asset?.name || asset?.asset || asset?.resource_name || '已选素材';
+                        list.appendChild(chip);
+                    });
+                    control.appendChild(list);
+                    const note = document.createElement('div');
+                    note.className = 'asset-picker-note';
+                    note.textContent = '当前加入本地草稿，不会自动上传或调用渠道接口。';
+                    control.appendChild(note);
+                } else if (field.control === 'derived_readonly') {
+                    control = document.createElement('input');
+                    control.className = 'derived-readonly';
+                    control.readOnly = true;
+                    control.disabled = true;
+                    control.value = creationCardValueText(field.value || options[0]);
+                } else if (field.control === 'select' || field.control === 'multiselect') {
                     control = document.createElement('select');
                     if (field.control === 'multiselect') control.multiple = true;
                     if (field.control === 'select') {
@@ -4735,6 +5171,24 @@
                     control = document.createElement('input');
                     control.type = 'checkbox';
                     control.checked = Boolean(field.value);
+                } else if (field.control === 'text_list') {
+                    control = document.createElement('textarea');
+                    control.className = 'asset-text-list';
+                    control.placeholder = '每行填写一条';
+                    control.value = creationCardDisplayValue(field);
+                } else if (field.control === 'object_editor') {
+                    control = renderStructuredObjectEditor(
+                        null,
+                        field.value,
+                        value => {
+                            field.value = value;
+                            creationCardState.set(card.id, card);
+                            scheduleCreationCardEvaluation(card, field.path);
+                            const status = wrapper.querySelector('.creation-card-status');
+                            if (status) status.textContent = creationCardStatus(card);
+                        },
+                        field.object_properties || {},
+                    );
                 } else if (field.control === 'json') {
                     control = document.createElement('textarea');
                     control.placeholder = Array.isArray(field.value) ? '[...]' : '{...}';
@@ -4747,15 +5201,11 @@
                 }
                 control.dataset.path = field.path;
                 const updateValue = () => {
+                    if (field.control === 'asset_picker' || field.control === 'file_reference' || field.control === 'derived_readonly') return;
                     let value;
                     if (field.control === 'checkbox') value = control.checked;
                     else if (field.control === 'multiselect') value = Array.from(control.selectedOptions).map(option => option.value);
-                    else if (field.control === 'json') {
-                        const raw = control.value.trim();
-                        if (!raw) value = undefined;
-                        else { try { value = JSON.parse(raw); } catch (_) { value = raw; } }
-                    } else if (field.control === 'number') value = control.value === '' ? undefined : Number(control.value);
-                    else value = control.value === '' ? undefined : control.value;
+                    else value = parseCreationCardValue(field, control.value.trim());
                     field.value = value;
                     item.classList.toggle('missing', field.required && (value === undefined || value === null || value === ''));
                     creationCardState.set(card.id, card);
@@ -4763,12 +5213,17 @@
                     const status = wrapper.querySelector('.creation-card-status');
                     if (status) status.textContent = creationCardStatus(card);
                 };
-                control.addEventListener('change', updateValue);
-                if (field.control === 'text' || field.control === 'number' || field.control === 'lookup') control.addEventListener('input', updateValue);
+                if (field.control !== 'asset_picker' && field.control !== 'file_reference' && field.control !== 'derived_readonly' && field.control !== 'object_editor') control.addEventListener('change', updateValue);
+                if (field.control === 'text' || field.control === 'text_list' || field.control === 'number' || field.control === 'lookup') control.addEventListener('input', updateValue);
                 item.appendChild(control);
                 const source = document.createElement('div');
                 source.className = 'source';
-                source.textContent = field.source === 'lookup' ? `动态参数 · ${field.lookup?.tool || '受控 lookup'} · 当前不自动调用渠道` : `来源 · ${field.source || 'Tool Schema'}`;
+                source.textContent = field.control === 'derived_readonly'
+                    ? '由当前广告系列类型自动匹配'
+                    : field.source === 'lookup' ? '需要从指定账户中选择'
+                        : (field.control === 'asset_picker' || field.control === 'file_reference') ? '本地素材草稿'
+                            : field.control === 'object_editor' ? '按字段填写，系统会按 Tool Schema 组装'
+                                : '可直接填写';
                 item.appendChild(source);
                 fields.appendChild(item);
             });
@@ -4783,7 +5238,7 @@
             (card.actions || []).forEach(action => {
                 const button = document.createElement('button');
                 button.type = 'button';
-                button.className = `creation-card-action${action.id === 'preview' || action.id === 'apply' ? ' primary' : ''}`;
+                button.className = `creation-card-action${action.id === 'preview' || action.id === 'submit_create' ? ' primary' : ''}`;
                 button.textContent = action.label || action.id;
                 button.addEventListener('click', () => handleCreationCardAction(card.id, action.id));
                 footer.appendChild(button);
@@ -4805,21 +5260,22 @@
                 setInput(`请继续完善“${card.title || '广告创建'}”，我可以直接在输入框里补充参数。`);
                 return;
             }
-            const params = creationCardParams(card);
-            const userInput = action === 'apply'
-                ? `选择${card.provider}广告创建类型并继续` : action === 'validate'
-                    ? `检查${card.title || card.provider + '广告'}参数` : `生成${card.title || card.provider + '广告'}的预览`;
-            addMessage(userInput, 'user');
-            addLoading();
-            try {
-                const requestParams = { user_input: userInput, user_id: 'web_user', session_id: sessionId, platform_params: params };
-                const data = await streamChatRequest(requestParams);
-                removeLoading();
-                renderStreamResult(data, requestParams);
-                await refreshConversationHistory({ silent: true });
-            } catch (error) {
-                removeLoading();
-                addMessage('请求失败: ' + error.message, 'agent', null, true);
+            if (action === 'open_form') {
+                const selected = card.fields?.find(field => field.value)?.value || null;
+                openBlueprintManager(card.provider, selected);
+                return;
+            }
+            if (action === 'validate') {
+                await evaluateCreationCard(card, null);
+                addMessage(card.ready ? '参数检查完成，当前填写内容满足蓝图要求。' : '参数检查完成，请根据卡片中的提示补充或调整参数。', 'agent');
+                return;
+            }
+            if (action === 'preview') {
+                showCreationPreview(card);
+                return;
+            }
+            if (action === 'submit_create') {
+                showCreationReview(card);
             }
         }
 
@@ -4959,6 +5415,7 @@
         // Cancel confirmation
         function cancelConfirm() {
             pendingRequest = null;
+            pendingCreationReview = null;
             const card = document.getElementById('confirmCard');
             if (card) card.remove();
             addMessage('❌ 操作已取消', 'agent');
@@ -5018,7 +5475,9 @@
                     user_id: 'web_user',
                     session_id: sessionId,
                     confirmed: true,
-                    confirmation_payload: payload
+                    confirmation_payload: payload,
+                    creation_blueprint_id: originalRequest?.creation_blueprint_id || null,
+                    creation_blueprint_version: originalRequest?.creation_blueprint_version || null,
                 };
                 
                 // 如果有额外参数，添加到对应平台的 params 中
@@ -5067,8 +5526,10 @@
                 const requestParams = {
                     user_input: text,
                     user_id: 'web_user',
-                    session_id: sessionId
+                    session_id: sessionId,
+                    ...(pendingBlueprintRequest || {}),
                 };
+                pendingBlueprintRequest = null;
                 const data = await streamChatRequest(requestParams);
                 removeLoading();
                 apiCallCount++;
@@ -5167,6 +5628,8 @@
             sessionId = null;
             selectedConversationId = null;
             pendingRequest = null;
+            pendingBlueprintRequest = null;
+            pendingCreationReview = null;
             historySelectionMode = false;
             selectedConversationIds.clear();
             document.getElementById('confirmCard')?.remove();
@@ -5213,12 +5676,11 @@
             if (event.target.id === 'knowledgeOverlay') closeWorkspacePopovers();
         });
         document.getElementById('blueprintOverlay')?.addEventListener('click', (event) => {
-            if (event.target.id === 'blueprintOverlay') closeBlueprintManager();
-            // Keep clicks inside the modal from reaching the document-level
-            // popover closer.  The list re-renders itself after a selection,
-            // so the original target may no longer be attached when the
-            // event bubbles to document.
-            event.stopPropagation();
+            // Only the backdrop is a close target.  The console also stops
+            // propagation inline so a list item can safely replace its own
+            // DOM during selection without triggering a document-level
+            // popover close.
+            if (event.target === event.currentTarget) closeBlueprintManager();
         });
         document.getElementById('historyDeleteOverlay')?.addEventListener('click', (event) => {
             if (event.target.id === 'historyDeleteOverlay') closeHistoryDeleteDialog();

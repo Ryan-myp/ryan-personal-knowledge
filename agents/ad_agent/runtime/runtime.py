@@ -1139,6 +1139,52 @@ class AgentRuntime:
             ),
         })
 
+    def _creation_blueprint_tool_plan(
+        self,
+        blueprint_id: Optional[str],
+        blueprint_version: Optional[str],
+        intent: ParsedIntent,
+    ) -> tuple[Optional[dict[str, list[Any]]], Optional[str]]:
+        """Resolve a submitted Blueprint into its declared Tool composition.
+
+        A form submission is a structured continuation of an earlier turn.
+        Re-parsing its short UI label can select one leaf Tool (for example an
+        ad) instead of the Blueprint's complete parent-to-child chain. The
+        Blueprint remains the source of composition; this method only reads
+        its already-validated Tool references and never contains provider
+        names or business field branches.
+        """
+        if not blueprint_id:
+            return None, None
+        blueprint = self.creation_blueprints.get(blueprint_id, blueprint_version)
+        if blueprint is None:
+            return None, f"广告创建蓝图不存在：{blueprint_id}@{blueprint_version or 'latest'}"
+        requested_platforms = {
+            self._canonical_platform(platform)
+            for platform in (getattr(intent, "platforms", []) or [])
+        }
+        blueprint_platform = self._canonical_platform(blueprint.provider)
+        if requested_platforms and requested_platforms != {blueprint_platform}:
+            return None, "广告创建蓝图与当前请求的平台不一致，请重新打开对应向导。"
+        definitions = []
+        missing_tools = []
+        for tool_name in blueprint.tools:
+            try:
+                definition, _handler = self.registry.get(tool_name)
+            except (KeyError, LookupError):
+                missing_tools.append(str(tool_name))
+                continue
+            if self._canonical_platform(definition.platform) != blueprint_platform:
+                missing_tools.append(str(tool_name))
+                continue
+            definitions.append(definition)
+        if missing_tools:
+            return None, "广告创建蓝图依赖的能力暂不可用：" + ", ".join(missing_tools[:8])
+        if not definitions:
+            return None, "广告创建蓝图没有可用的创建能力。"
+        ordered = SimpleIntentRouter._order_by_resource_dependencies(definitions)
+        return {blueprint_platform: ordered}, None
+
     @staticmethod
     def creation_ui_reply(ui: Mapping[str, Any]) -> str:
         """Business-facing copy for an incomplete creation draft."""
@@ -2561,7 +2607,8 @@ class AgentRuntime:
             )
         allowed_fields = {
             "user_input", "session_id", "account_id", "platform_params",
-            "confirmed", "confirmation_payload",
+            "confirmed", "confirmation_payload", "creation_blueprint_id",
+            "creation_blueprint_version",
         }
         unknown = sorted(set(payload) - allowed_fields)
         if unknown:
@@ -2574,6 +2621,8 @@ class AgentRuntime:
             "session_id": payload.get("session_id"),
             "account_id": payload.get("account_id"),
             "platform_params": platform_params,
+            "creation_blueprint_id": payload.get("creation_blueprint_id"),
+            "creation_blueprint_version": payload.get("creation_blueprint_version"),
             "confirmed": False,
             "confirmation_payload": None,
         })
@@ -2612,6 +2661,8 @@ class AgentRuntime:
             session_id=payload.get("session_id"),
             account_id=payload.get("account_id"),
             platform_params=payload.get("platform_params"),
+            creation_blueprint_id=payload.get("creation_blueprint_id"),
+            creation_blueprint_version=payload.get("creation_blueprint_version"),
             confirmed=False,
             confirmation_payload=None,
             principal=principal,
@@ -2695,6 +2746,8 @@ class AgentRuntime:
         platform_params: dict = None,
         confirmed: bool = False,
         confirmation_payload: Optional[dict] = None,
+        creation_blueprint_id: Optional[str] = None,
+        creation_blueprint_version: Optional[str] = None,
         principal: Optional[RequestPrincipal] = None,
         tenant_id: Optional[str] = None,
         cancellation_event: Optional[threading.Event] = None,
@@ -2725,6 +2778,8 @@ class AgentRuntime:
                 platform_params=platform_params,
                 confirmed=confirmed,
                 confirmation_payload=confirmation_payload,
+                creation_blueprint_id=creation_blueprint_id,
+                creation_blueprint_version=creation_blueprint_version,
                 granted_permissions=effective_permissions,
                 account_scope=effective_account_scope,
                 tenant_id=(
@@ -2746,6 +2801,8 @@ class AgentRuntime:
         platform_params: dict = None,
         confirmed: bool = False,
         confirmation_payload: Optional[dict] = None,
+        creation_blueprint_id: Optional[str] = None,
+        creation_blueprint_version: Optional[str] = None,
         granted_permissions: Optional[set[str] | frozenset[str]] = None,
         account_scope: Optional[Mapping[str, Any]] = None,
         tenant_id: str = "default",
@@ -3009,6 +3066,65 @@ class AgentRuntime:
                     policy_errors = self._validate_policies(intent)
                     if not policy_errors:
                         tool_plan = self.intent_router.route(intent, self.registry)
+        if creation_blueprint_id:
+            if not (
+                str(getattr(intent, "intent_type", "") or "") == "create_campaign"
+                or str(getattr(intent, "intent_type", "") or "").startswith("create_")
+            ):
+                reply = "这份广告创建草稿需要在创建广告的对话中继续提交。"
+                trace.error(reason="creation_blueprint_context_invalid")
+                trace.done("failed", safe_metadata={"reason": "creation_blueprint_context_invalid"})
+                self.persist_conversation_turn(
+                    session, turn_id, safe_user_input, reply, execution_trace=trace
+                )
+                return {
+                    "session_id": session_id,
+                    "turn_id": turn_id,
+                    "timestamp": datetime.now().isoformat(),
+                    "intent": intent.to_dict(),
+                    "tool_plan": {},
+                    "execution_plan": {},
+                    "tool_selection": None,
+                    "results": [],
+                    "reply": reply,
+                    "needs_confirmation": False,
+                    "confirmation_payload": None,
+                    "policy_errors": ["creation blueprint requires a create intent"],
+                    "ui": {},
+                }
+            blueprint_tool_plan, blueprint_error = self._creation_blueprint_tool_plan(
+                creation_blueprint_id, creation_blueprint_version, intent
+            )
+            if blueprint_error:
+                reply = "这份广告创建草稿暂时无法继续：" + blueprint_error
+                trace.error(reason="creation_blueprint_invalid")
+                trace.done("failed", safe_metadata={"reason": "creation_blueprint_invalid"})
+                self.persist_conversation_turn(
+                    session, turn_id, safe_user_input, reply, execution_trace=trace
+                )
+                return {
+                    "session_id": session_id,
+                    "turn_id": turn_id,
+                    "timestamp": datetime.now().isoformat(),
+                    "intent": intent.to_dict(),
+                    "tool_plan": {},
+                    "execution_plan": {},
+                    "tool_selection": None,
+                    "results": [],
+                    "reply": reply,
+                    "needs_confirmation": False,
+                    "confirmation_payload": None,
+                    "policy_errors": [blueprint_error],
+                    "ui": {},
+                }
+            # Blueprint submission is an explicit structured continuation.
+            # Use the generic creation lifecycle so provider-owned Tool
+            # activation metadata and dependency ordering select the exact
+            # declared chain without trusting the short UI label.
+            intent.intent_type = "create_campaign"
+            intent.platforms = [next(iter(blueprint_tool_plan))]
+            tool_plan = blueprint_tool_plan or {}
+
         execution_groups = list(tool_plan.items())
         routed_tools = [
             tool for _platform, tools in execution_groups for tool in tools

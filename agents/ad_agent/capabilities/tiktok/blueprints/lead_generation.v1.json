@@ -10,7 +10,7 @@
   "resources": ["campaign", "ad_group", "ad"],
   "fields": [
     {"path": "campaign.name", "tool_ref": "tiktok_create_campaign.name", "label": "Campaign 名称", "required": true},
-    {"path": "campaign.objective_type", "tool_ref": "tiktok_create_campaign.objective_type", "label": "推广目标", "required": true, "source": "enum", "options": ["LEAD_GENERATION"]},
+    {"path": "campaign.objective_type", "tool_ref": "tiktok_create_campaign.objective_type", "label": "推广目标（已根据入口匹配）", "required": true, "source": "enum", "options": ["LEAD_GENERATION"], "presentation": "derived_readonly"},
     {"path": "campaign.campaign_type", "tool_ref": "tiktok_create_campaign.campaign_type", "label": "Campaign 类型", "required": true, "source": "enum", "options": ["REGULAR_CAMPAIGN", "IOS14_CAMPAIGN"]},
     {"path": "campaign.budget_mode", "tool_ref": "tiktok_create_campaign.budget_mode", "label": "预算模式", "required": true, "source": "enum", "options": ["BUDGET_MODE_DAY", "BUDGET_MODE_TOTAL"]},
     {"path": "campaign.daily_budget", "tool_ref": "tiktok_create_campaign.daily_budget", "label": "日预算", "required_when": {"field": "campaign.budget_mode", "equals": "BUDGET_MODE_DAY"}},
@@ -26,7 +26,7 @@
     {"path": "ad_group.targeting", "tool_ref": "tiktok_create_adgroup.targeting", "label": "定向", "required": false},
     {"path": "ad.name", "tool_ref": "tiktok_create_lead_ad.name", "label": "广告名称", "required": true},
     {"path": "ad.page_id", "tool_ref": "tiktok_create_lead_ad.page_id", "label": "TikTok Page / Identity", "required": true},
-    {"path": "ad.media", "tool_ref": "tiktok_create_lead_ad.media", "label": "视频素材", "required": true}
+    {"path": "ad.media", "tool_ref": "tiktok_create_lead_ad.media", "label": "视频素材", "required": true, "presentation": "asset_picker", "accept": "video/*"}
   ],
   "rules": [{"id": "objective_changed", "when": {"field": "campaign.objective_type", "changed": true}, "reset": ["ad_group.promotion_type", "ad_group.optimization_goal", "ad_group.billing_event"]}]
 }

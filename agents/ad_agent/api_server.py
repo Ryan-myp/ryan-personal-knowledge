@@ -340,6 +340,8 @@ class ChatRequest(BaseModel):
     confirmed: bool = False
     confirmation_payload: Optional[dict] = None
     platform_params: Optional[dict] = None
+    creation_blueprint_id: Optional[str] = Field(default=None, max_length=200)
+    creation_blueprint_version: Optional[str] = Field(default=None, max_length=32)
 
 
 class ExecutionModeRequest(BaseModel):
@@ -627,6 +629,8 @@ async def chat(
             platform_params=request.platform_params,
             confirmed=request.confirmed,
             confirmation_payload=request.confirmation_payload,
+            creation_blueprint_id=request.creation_blueprint_id,
+            creation_blueprint_version=request.creation_blueprint_version,
             principal=principal,
         )
         return JSONResponse(content=result)
@@ -1587,6 +1591,8 @@ class ChatStreamRequest(BaseModel):
     confirmed: bool = False
     confirmation_payload: Optional[dict] = None
     platform_params: Optional[dict] = None
+    creation_blueprint_id: Optional[str] = Field(default=None, max_length=200)
+    creation_blueprint_version: Optional[str] = Field(default=None, max_length=32)
 
 
 class WorkflowReconcileRequest(BaseModel):
@@ -1657,6 +1663,8 @@ async def chat_stream(
                     platform_params=request.platform_params,
                     confirmed=request.confirmed,
                     confirmation_payload=request.confirmation_payload,
+                    creation_blueprint_id=request.creation_blueprint_id,
+                    creation_blueprint_version=request.creation_blueprint_version,
                     principal=principal,
                     event_callback=observe,
                 )

@@ -10,8 +10,8 @@
   "resources": ["campaign", "ad_group", "ad"],
   "fields": [
     {"path": "campaign.campaign_name", "tool_ref": "google_create_campaign.campaign_name", "label": "Campaign 名称", "required": true},
-    {"path": "campaign.campaign_type", "tool_ref": "google_create_campaign.campaign_type", "label": "广告系列类型", "required": true, "source": "enum", "options": ["APP"]},
-    {"path": "campaign.advertising_channel_type", "tool_ref": "google_create_campaign.advertising_channel_type", "label": "Google API 渠道类型", "required": true, "source": "enum", "options": ["MULTI_CHANNEL"]},
+    {"path": "campaign.campaign_type", "tool_ref": "google_create_campaign.campaign_type", "label": "广告系列类型（已根据入口匹配）", "required": true, "source": "enum", "options": ["APP"], "presentation": "derived_readonly"},
+    {"path": "campaign.advertising_channel_type", "tool_ref": "google_create_campaign.advertising_channel_type", "label": "Google API 渠道类型（自动匹配）", "required": true, "source": "enum", "options": ["MULTI_CHANNEL"], "presentation": "derived_readonly"},
     {"path": "campaign.advertising_channel_sub_type", "tool_ref": "google_create_campaign.advertising_channel_sub_type", "label": "App Campaign 类型", "required": true, "source": "enum", "options": ["APP_CAMPAIGN", "APP_CAMPAIGN_FOR_ENGAGEMENT"]},
     {"path": "campaign.app_campaign_setting", "tool_ref": "google_create_campaign.app_campaign_setting", "label": "App Campaign 设置", "required": true},
     {"path": "campaign.bidding_strategy", "tool_ref": "google_create_campaign.bidding_strategy", "label": "出价策略", "required": true, "source": "enum", "options": ["MAXIMIZE_CONVERSIONS", "TARGET_CPA", "MAXIMIZE_CONVERSION_VALUE", "TARGET_ROAS"]},
@@ -19,12 +19,12 @@
     {"path": "campaign.target_roas", "tool_ref": "google_create_campaign.target_roas", "label": "目标 ROAS", "visible_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_ROAS"}, "required_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_ROAS"}},
     {"path": "campaign.daily_budget", "tool_ref": "google_create_campaign.daily_budget", "label": "日预算", "required": true},
     {"path": "ad_group.name", "tool_ref": "google_create_app_ad_group.name", "label": "广告组名称", "required": true},
-    {"path": "ad_group.type", "tool_ref": "google_create_app_ad_group.type", "label": "广告组类型", "required": true, "source": "enum", "options": ["SEARCH_STANDARD"]},
+    {"path": "ad_group.type", "tool_ref": "google_create_app_ad_group.type", "label": "广告组类型（自动匹配）", "required": true, "source": "enum", "options": ["SEARCH_STANDARD"], "presentation": "derived_readonly"},
     {"path": "ad.name", "tool_ref": "google_create_app_ad.name", "label": "广告名称", "required": true},
-    {"path": "ad.headlines", "tool_ref": "google_create_app_ad.headlines", "label": "标题素材", "required": true},
-    {"path": "ad.descriptions", "tool_ref": "google_create_app_ad.descriptions", "label": "描述素材", "required": true},
-    {"path": "ad.images", "tool_ref": "google_create_app_ad.images", "label": "图片素材", "required": false},
-    {"path": "ad.videos", "tool_ref": "google_create_app_ad.videos", "label": "视频素材", "required": false}
+    {"path": "ad.headlines", "tool_ref": "google_create_app_ad.headlines", "label": "标题素材（每行一条）", "required": true, "presentation": "text_list", "value_shape": "object_text"},
+    {"path": "ad.descriptions", "tool_ref": "google_create_app_ad.descriptions", "label": "描述素材（每行一条）", "required": true, "presentation": "text_list", "value_shape": "object_text"},
+    {"path": "ad.images", "tool_ref": "google_create_app_ad.images", "label": "图片素材", "required": false, "presentation": "asset_picker", "accept": "image/*"},
+    {"path": "ad.videos", "tool_ref": "google_create_app_ad.videos", "label": "视频素材", "required": false, "presentation": "asset_picker", "accept": "video/*"}
   ],
   "rules": [
     {"id": "bidding_strategy_changed", "when": {"field": "campaign.bidding_strategy", "changed": true}, "reset": ["campaign.target_cpa_micros", "campaign.target_roas"]},

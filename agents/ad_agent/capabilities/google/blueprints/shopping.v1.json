@@ -10,14 +10,13 @@
   "resources": ["campaign", "ad_group", "product_group"],
   "fields": [
     {"path": "campaign.campaign_name", "tool_ref": "google_create_campaign.campaign_name", "label": "Campaign 名称", "required": true},
-    {"path": "campaign.advertising_channel_type", "tool_ref": "google_create_campaign.advertising_channel_type", "label": "广告系列类型", "required": true, "source": "enum", "options": ["SHOPPING"]},
+    {"path": "campaign.advertising_channel_type", "tool_ref": "google_create_campaign.advertising_channel_type", "label": "广告系列类型（已根据入口匹配）", "required": true, "source": "enum", "options": ["SHOPPING"], "presentation": "derived_readonly"},
     {"path": "campaign.shopping_setting", "tool_ref": "google_create_campaign.shopping_setting", "label": "Merchant Center 设置", "required": true},
     {"path": "campaign.bidding_strategy", "tool_ref": "google_create_campaign.bidding_strategy", "label": "出价策略", "required": true, "source": "enum", "options": ["MAXIMIZE_CONVERSION_VALUE", "TARGET_ROAS", "MANUAL_CPC"]},
     {"path": "campaign.target_roas", "tool_ref": "google_create_campaign.target_roas", "label": "目标 ROAS", "visible_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_ROAS"}, "required_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_ROAS"}},
     {"path": "campaign.daily_budget", "tool_ref": "google_create_campaign.daily_budget", "label": "日预算", "required": true},
     {"path": "ad_group.name", "tool_ref": "google_create_ad_group.name", "label": "广告组名称", "required": true},
-    {"path": "ad_group.campaign_type", "tool_ref": "google_create_ad_group.campaign_type", "label": "广告组所属类型", "required": true, "source": "enum", "options": ["SHOPPING"]},
-    {"path": "ad_group.type", "tool_ref": "google_create_ad_group.type", "label": "广告组类型", "required": true, "source": "enum", "options": ["SHOPPING_PRODUCT"]},
+    {"path": "ad_group.type", "tool_ref": "google_create_ad_group.type", "label": "广告组类型（自动匹配）", "required": true, "source": "enum", "options": ["SHOPPING_PRODUCT"], "presentation": "derived_readonly"},
     {"path": "product_group.product_group_type", "tool_ref": "google_create_product_group.product_group_type", "label": "商品分组维度", "required": true, "source": "enum", "options": ["all_products", "product_type_1", "brand", "condition", "custom_label_0"]},
     {"path": "product_group.partition_type", "tool_ref": "google_create_product_group.partition_type", "label": "分组方式", "required": true, "source": "enum", "options": ["UNIT", "SUBDIVISION"]}
   ],

@@ -106,6 +106,112 @@ def test_google_bidding_strategy_cascade_requires_only_matching_target():
     assert "campaign.target_cpa_micros" in result["missing_fields"]
 
 
+def test_google_entry_type_is_not_repeated_at_ad_group_level():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_google_capability())
+    blueprint = runtime.creation_blueprints.get("google-ads.display")
+    assert blueprint is not None
+    paths = {field["path"] for field in blueprint.fields}
+    assert "ad_group.campaign_type" not in paths
+    group_type = next(field for field in blueprint.fields if field["path"] == "ad_group.type")
+    assert group_type["presentation"] == "derived_readonly"
+    result = runtime.evaluate_creation_blueprint("google-ads.display", {})
+    state = {item["path"]: item for item in result["fields"]}
+    assert state["campaign.advertising_channel_type"]["value"] == "DISPLAY"
+    assert state["ad_group.type"]["value"] == "DISPLAY_STANDARD"
+    assert "ad_group.type" not in result["missing_fields"]
+
+
+def test_all_google_blueprints_make_ad_group_type_provider_derived():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_google_capability())
+    for blueprint in runtime.creation_blueprints.list(provider="google-ads"):
+        field = next(
+            (item for item in blueprint.fields if item["path"] == "ad_group.type"),
+            None,
+        )
+        if field is None:
+            continue
+        assert field.get("presentation") == "derived_readonly"
+        assert field.get("source") == "enum"
+
+
+def test_google_video_ad_group_type_is_derived_from_video_format():
+    blueprint = load_blueprint_file(
+        Path(__file__).parents[1]
+        / "capabilities"
+        / "google"
+        / "blueprints"
+        / "video.v1.json"
+    )
+    result = BlueprintCascadeEngine().evaluate(
+        blueprint,
+        {"ad.video_ad_format": "BUMPER"},
+    )
+    states = {item["path"]: item for item in result["fields"]}
+    assert states["ad_group.type"]["value"] == "VIDEO_BUMPER"
+    assert states["ad_group.type"]["state"] == "set"
+    assert "ad_group.type" not in result["missing_fields"]
+
+
+def test_blueprint_submission_composes_declared_parent_child_tools():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_google_capability())
+    intent = ParsedIntent(
+        "create_search_ad", "按 Google Search 蓝图提交", ["google-ads"],
+        platform_params={"google-ads": {
+            "campaign_name": "Search draft",
+            "advertising_channel_type": "SEARCH",
+            "bidding_strategy": "MAXIMIZE_CONVERSIONS",
+            "daily_budget": 50,
+            "google_create_campaign": {
+                "campaign_name": "Search draft",
+                "advertising_channel_type": "SEARCH",
+                "bidding_strategy": "MAXIMIZE_CONVERSIONS",
+                "daily_budget": 50,
+            },
+            "google_create_ad_group": {
+                "name": "Search group", "type": "SEARCH_STANDARD",
+            },
+            "google_create_search_ad": {
+                "headlines": ["One", "Two", "Three"],
+                "descriptions": ["Description one", "Description two"],
+                "final_url": "https://example.com",
+            },
+        }},
+    )
+    plan, error = runtime._creation_blueprint_tool_plan(
+        "google-ads.search", "1.0.0", intent
+    )
+    assert error is None
+    assert [tool.name for tool in plan["google-ads"]] == [
+        "google_create_campaign", "google_create_ad_group", "google_create_search_ad",
+    ]
+    card = runtime.build_creation_ui(intent)["cards"][0]
+    assert card["ready"] is True
+    assert card["missing_fields"] == []
+    fields = {item["path"]: item for item in card["fields"]}
+    assert fields["campaign.campaign_name"]["value"] == "Search draft"
+    assert fields["ad_group.name"]["value"] == "Search group"
+
+
+def test_creation_cards_expose_account_boundary_and_friendly_asset_controls():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_google_capability())
+    intent = ParsedIntent(
+        "create_campaign", "创建 Google App 广告", ["google-ads"],
+        campaign_type="APP", platform_params={"google-ads": {"campaign_type": "APP"}},
+    )
+    card = runtime.build_creation_ui(intent)["cards"][0]
+    assert card["account_required"] is True
+    fields = {item["path"]: item for item in card["fields"]}
+    assert fields["campaign.campaign_type"]["control"] == "derived_readonly"
+    assert fields["ad.headlines"]["control"] == "text_list"
+    assert fields["ad.images"]["control"] == "asset_picker"
+    assert fields["campaign.app_campaign_setting"]["control"] == "object_editor"
+    assert "object_properties" in fields["campaign.app_campaign_setting"]
+
+
 def test_cascade_hides_and_requires_app_fields_for_app_objective():
     blueprint = load_blueprint_file(BLUEPRINT_PATH)
     result = BlueprintCascadeEngine().evaluate(
