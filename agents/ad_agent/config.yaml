@@ -27,6 +27,12 @@ live_approved_tools: []
 granted_permissions:
   - ads.read
   - ads.plan
+  # Skill management is a control-plane capability and does not grant any
+  # Provider API access. Keep its read/write/evaluation gates explicit so the
+  # local management UI can use its complete lifecycle.
+  - skills.read
+  - skills.write
+  - skills.evaluate
   - knowledge.read
   - knowledge.write
 
