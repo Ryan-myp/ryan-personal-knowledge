@@ -1,0 +1,56 @@
+{
+  "id": "meta.conversion_link",
+  "version": "1.0.0",
+  "provider": "meta",
+  "ad_format": "link_conversion",
+  "title": "Meta 转化链接广告",
+  "description": "引导创建 Meta Conversion Campaign、Ad Set 和链接广告。",
+  "tools": ["meta_create_campaign", "meta_create_adset", "meta_create_conversion_ad"],
+  "resources": ["campaign", "ad_set", "ad"],
+  "fields": [
+    {"path": "campaign.name", "tool_ref": "meta_create_campaign.name", "label": "Campaign 名称", "required": true},
+    {"path": "campaign.objective", "tool_ref": "meta_create_campaign.objective", "label": "推广目标", "required": true, "source": "enum"},
+    {"path": "campaign.buying_type", "tool_ref": "meta_create_campaign.buying_type", "label": "购买类型", "required": true, "source": "enum"},
+    {"path": "campaign.daily_budget", "tool_ref": "meta_create_campaign.daily_budget", "label": "日预算", "required": true},
+    {"path": "ad_set.name", "tool_ref": "meta_create_adset.name", "label": "广告组名称", "required": true},
+    {"path": "ad_set.optimization_goal", "tool_ref": "meta_create_adset.optimization_goal", "label": "优化目标", "required": true, "source": "enum", "options_from": ["campaign.objective"]},
+    {"path": "ad_set.billing_event", "tool_ref": "meta_create_adset.billing_event", "label": "计费事件", "required": true, "source": "enum", "options_from": ["ad_set.optimization_goal"]},
+    {"path": "ad_set.targeting", "tool_ref": "meta_create_adset.targeting", "label": "定向", "required": true},
+    {
+      "path": "ad_set.promoted_object",
+      "tool_ref": "meta_create_adset.promoted_object",
+      "label": "转化对象",
+      "visible_when": {"field": "ad_set.optimization_goal", "in": ["OFFSITE_CONVERSIONS", "VALUE", "APP_INSTALLS"]},
+      "required_when": {"field": "ad_set.optimization_goal", "in": ["OFFSITE_CONVERSIONS", "VALUE", "APP_INSTALLS"]}
+    },
+    {"path": "ad.name", "tool_ref": "meta_create_conversion_ad.name", "label": "广告名称", "required": true},
+    {"path": "ad.page_id", "tool_ref": "meta_create_conversion_ad.page_id", "label": "Facebook Page", "required": true},
+    {"path": "ad.link", "tool_ref": "meta_create_conversion_ad.link", "label": "落地页链接", "required": true},
+    {"path": "ad.media_type", "tool_ref": "meta_create_conversion_ad.media_type", "label": "素材类型", "required": true, "source": "enum"},
+    {
+      "path": "ad.video_id",
+      "tool_ref": "meta_create_conversion_ad.video_id",
+      "label": "视频素材",
+      "visible_when": {"field": "ad.media_type", "equals": "VIDEO"},
+      "required_when": {"field": "ad.media_type", "equals": "VIDEO"}
+    }
+  ],
+  "rules": [
+    {
+      "id": "objective_changed",
+      "when": {"field": "campaign.objective", "changed": true},
+      "reset": ["ad_set.optimization_goal", "ad_set.billing_event", "ad_set.promoted_object"],
+      "revalidate": ["ad_set.targeting"]
+    },
+    {
+      "id": "optimization_goal_changed",
+      "when": {"field": "ad_set.optimization_goal", "changed": true},
+      "reset": ["ad_set.billing_event", "ad_set.promoted_object"]
+    },
+    {
+      "id": "media_type_changed",
+      "when": {"field": "ad.media_type", "changed": true},
+      "reset": ["ad.video_id"]
+    }
+  ]
+}

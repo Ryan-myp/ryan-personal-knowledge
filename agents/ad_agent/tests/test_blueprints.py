@@ -5,6 +5,8 @@ from pathlib import Path
 import pytest
 
 from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
+from agents.ad_agent.capabilities.meta import create_meta_capability
+from agents.ad_agent.capabilities.google import create_google_capability
 from agents.ad_agent.core.blueprint import (
     AdCreationBlueprint,
     BlueprintCascadeEngine,
@@ -27,6 +29,35 @@ def test_tiktok_blueprint_is_json_and_references_registered_tools():
     assert items[0]["id"] == "tiktok.app_conversion_video"
     assert items[0]["version"] == "1.0.0"
     assert runtime.creation_blueprints.get("tiktok.app_conversion_video") is not None
+
+
+def test_meta_and_google_blueprints_use_only_registered_tool_fields():
+    for blueprint_id, factory, provider in (
+        ("meta.conversion_link", create_meta_capability, "meta"),
+        ("google-ads.search", create_google_capability, "google-ads"),
+    ):
+        runtime = AgentRuntime(require_llm=False, offline_mode=True)
+        runtime.register_capability(factory())
+        blueprint = runtime.creation_blueprints.get(blueprint_id)
+        assert blueprint is not None
+        assert blueprint.provider == provider
+        assert all(
+            field["tool_ref"].split(".", 1)[0] in blueprint.tools
+            for field in blueprint.fields
+        )
+
+
+def test_google_bidding_strategy_cascade_requires_only_matching_target():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_google_capability())
+    result = runtime.evaluate_creation_blueprint(
+        "google-ads.search",
+        {"campaign.bidding_strategy": "TARGET_CPA"},
+    )
+    states = {item["path"]: item for item in result["fields"]}
+    assert states["campaign.target_cpa_micros"]["required"] is True
+    assert states["campaign.target_roas"]["visible"] is False
+    assert "campaign.target_cpa_micros" in result["missing_fields"]
 
 
 def test_cascade_hides_and_requires_app_fields_for_app_objective():

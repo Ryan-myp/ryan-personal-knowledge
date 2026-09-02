@@ -1,0 +1,48 @@
+{
+  "id": "google-ads.search",
+  "version": "1.0.0",
+  "provider": "google-ads",
+  "ad_format": "SEARCH",
+  "title": "Google Search 广告",
+  "description": "引导创建 Google Search Campaign、Ad Group 和 Responsive Search Ad。",
+  "tools": ["google_create_campaign", "google_create_ad_group", "google_create_search_ad"],
+  "resources": ["campaign", "ad_group", "ad"],
+  "fields": [
+    {"path": "campaign.campaign_name", "tool_ref": "google_create_campaign.campaign_name", "label": "Campaign 名称", "required": true},
+    {"path": "campaign.advertising_channel_type", "tool_ref": "google_create_campaign.advertising_channel_type", "label": "广告系列类型", "required": true, "source": "enum"},
+    {"path": "campaign.bidding_strategy", "tool_ref": "google_create_campaign.bidding_strategy", "label": "出价策略", "required": true, "source": "enum"},
+    {
+      "path": "campaign.target_cpa_micros",
+      "tool_ref": "google_create_campaign.target_cpa_micros",
+      "label": "目标 CPA",
+      "visible_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_CPA"},
+      "required_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_CPA"}
+    },
+    {
+      "path": "campaign.target_roas",
+      "tool_ref": "google_create_campaign.target_roas",
+      "label": "目标 ROAS",
+      "visible_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_ROAS"},
+      "required_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_ROAS"}
+    },
+    {"path": "ad_group.name", "tool_ref": "google_create_ad_group.name", "label": "广告组名称", "required": true},
+    {"path": "ad_group.type", "tool_ref": "google_create_ad_group.type", "label": "广告组类型", "required": true, "source": "enum"},
+    {"path": "ad.headlines", "tool_ref": "google_create_search_ad.headlines", "label": "标题", "required": true},
+    {"path": "ad.descriptions", "tool_ref": "google_create_search_ad.descriptions", "label": "描述", "required": true},
+    {"path": "ad.final_url", "tool_ref": "google_create_search_ad.final_url", "label": "最终到达网址", "required": true}
+  ],
+  "rules": [
+    {
+      "id": "bidding_strategy_changed",
+      "when": {"field": "campaign.bidding_strategy", "changed": true},
+      "reset": ["campaign.target_cpa_micros", "campaign.target_roas"],
+      "revalidate": ["ad_group.type"]
+    },
+    {
+      "id": "channel_type_changed",
+      "when": {"field": "campaign.advertising_channel_type", "changed": true},
+      "reset": ["ad_group.type"],
+      "revalidate": ["campaign.bidding_strategy"]
+    }
+  ]
+}

@@ -57,6 +57,12 @@ live。
 
 目录中的 `supported_dry_run` 表示已有专用 payload contract，`partial_dry_run` 表示层级或部分字段可规划，`declared_only` 只表示已纳入能力地图，不能当作可执行或已验证的 live 能力。所有写操作当前仍为 dry-run。
 
+广告创建蓝图通过 `GET /creation-blueprints` 提供给向导，前端提交当前草稿到
+`POST /creation-blueprints/{blueprint_id}/evaluate` 获取字段可见性、必填状态和受影响
+字段。两个接口都是本地元数据计算，不会调用广告渠道 API；当前已接入 TikTok App 转化
+视频、Meta 转化链接和 Google Search 三个样板，动态 lookup 仍按 dry-run 边界等待后续
+受控接入。
+
 ## 安装
 
 ```bash

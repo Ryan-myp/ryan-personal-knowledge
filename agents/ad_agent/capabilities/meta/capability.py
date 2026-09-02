@@ -2,6 +2,7 @@
 capabilities/meta/capability.py - Meta Capability 定义
 """
 import logging
+from pathlib import Path
 from typing import Optional
 from ...core.interfaces import ToolDefinition, ToolSchema, RiskLevel, ToolEffect, ReplayPolicy, ToolHandler
 from ..base import BaseCapability, CampaignUpdateHandler
@@ -29,6 +30,7 @@ from .parameters import (
     meta_business_schema,
 )
 from ...api_clients.meta_client import MetaAPIClient
+from ...core.blueprint import load_blueprint_file
 from ..update_contracts import meta_updates
 
 logger = logging.getLogger(__name__)
@@ -124,6 +126,11 @@ class MetaCapability(BaseCapability):
 
     def get_ad_format_catalog(self) -> list[dict]:
         return meta_ad_format_catalog()
+
+    def get_creation_blueprints(self) -> list:
+        """Load provider-owned Meta creation blueprints from JSON."""
+        blueprint_dir = Path(__file__).with_name("blueprints")
+        return [load_blueprint_file(path) for path in sorted(blueprint_dir.glob("*.json"))]
 
     def _extended_provider_tools(self, client):
         """Expose Meta client endpoints not represented by hierarchy handlers."""
