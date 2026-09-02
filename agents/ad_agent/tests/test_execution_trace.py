@@ -94,3 +94,38 @@ def test_trace_registers_feature_discovered_tool_before_status_events():
     assert events[-2]["tool"] == "meta.get_campaign_report"
     assert node["depends_on"] == ["node-0001"]
     assert events[-1]["node_id"] == node["node_id"]
+
+
+def test_trace_emits_formatted_safe_input_and_output_without_credentials():
+    events = []
+    trace = ExecutionTrace(events.append, turn_id="turn-5")
+    trace.bind_plan(
+        ExecutionPlan(
+            schema_version="1.0",
+            intent_type="list_campaigns",
+            nodes=(PlanNode("node-0001", 1, "google", "google.list_campaigns", "list", "campaign"),),
+        )
+    )
+    node = trace.node_for("google", "google.list_campaigns")
+
+    trace.node_status(
+        node,
+        "running",
+        safe_input={"customer_id": "123", "nested": {"access_token": "secret"}},
+    )
+    trace.node_status(
+        node,
+        "succeeded",
+        safe_output={
+            "success": True,
+            "rows": [{"name": "Campaign 1", "clicks": 12}],
+            "client_secret": "secret",
+        },
+    )
+
+    started, finished = events[-2:]
+    assert started["safe_input"]["customer_id"] == "123"
+    assert "access_token" not in str(started["safe_input"])
+    assert finished["safe_output"]["success"] is True
+    assert "secret" not in str(finished["safe_output"])
+    assert "client_secret" not in str(finished["safe_output"])

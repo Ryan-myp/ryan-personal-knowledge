@@ -2646,6 +2646,10 @@ class AgentRuntime:
             "running",
             subtitle="理解用户目标与约束",
             safe_metadata={"phase": "intent_parsing"},
+            safe_input={
+                "request": safe_user_input,
+                "request_length": len(safe_user_input),
+            },
         )
         try:
             skill_context = self._build_skill_context(
@@ -2667,6 +2671,12 @@ class AgentRuntime:
             safe_metadata={
                 "intent_type": intent.intent_type,
                 "platform_count": len(intent.platforms or []),
+            },
+            safe_output={
+                "intent_type": intent.intent_type,
+                "platforms": list(intent.platforms or []),
+                "structured_parameters": bool(intent.platform_params),
+                "parameters": self._redact_for_persistence(intent.platform_params or {}),
             },
         )
         # Refresh advisory context with the parsed intent.  This changes only
@@ -2752,6 +2762,10 @@ class AgentRuntime:
             "running",
             subtitle="根据请求加载相关 Skill 与能力",
             safe_metadata={"phase": "skill_selection"},
+            safe_input={
+                "intent_type": intent.intent_type,
+                "platforms": list(intent.platforms or []),
+            },
         )
         tool_plan = self.intent_router.route(intent, self.registry)
 
@@ -2807,6 +2821,10 @@ class AgentRuntime:
                 if routed_tools else "未匹配到可执行 Tool"
             ),
             safe_metadata={"tool_count": len(routed_tools)},
+            safe_output={
+                "tool_count": len(routed_tools),
+                "tools": [tool.name for tool in routed_tools[:12]],
+            },
         )
 
         parameter_errors = self.input_builder.validate_platform_parameter_contract(
@@ -3002,6 +3020,10 @@ class AgentRuntime:
                 "running",
                 subtitle="生成面向业务人员的结果说明",
                 safe_metadata={"phase": "response_rendering"},
+                safe_input={
+                    "result_count": 0,
+                    "structured_request": has_structured_request,
+                },
             )
             # The chat renderer is the actual response boundary even when no
             # executable Tool was selected. Keep this stage conditional on
@@ -3012,6 +3034,11 @@ class AgentRuntime:
                 "succeeded",
                 subtitle="已生成本轮回复",
                 safe_metadata={"response_source": response_source},
+                safe_output={
+                    "response_source": response_source,
+                    "available": True,
+                    "preview": self._redact_for_persistence(no_tool_reply),
+                },
             )
             trace.reply()
             trace.done(
@@ -3075,6 +3102,7 @@ class AgentRuntime:
                 subtitle=f"校验 {actual_platform} 账户与访问范围",
                 platform=actual_platform,
                 safe_metadata={"phase": "account_scope"},
+                safe_input={"platform": actual_platform},
             )
 
             # 每个平台使用自己的账户（不跨平台共享）。没有显式账户时，
@@ -3121,6 +3149,7 @@ class AgentRuntime:
                         subtitle="等待补充账户范围",
                         platform=actual_platform,
                         safe_metadata={"reason": "account_required"},
+                        safe_output={"validated": False, "account_required": True},
                     )
                     continue
 
@@ -3152,6 +3181,7 @@ class AgentRuntime:
                         subtitle="账户不在允许范围内",
                         platform=actual_platform,
                         safe_metadata={"reason": "account_scope_denied"},
+                        safe_output={"validated": False, "account_allowed": False},
                     )
                     continue
 
@@ -3162,6 +3192,10 @@ class AgentRuntime:
                 subtitle="账户范围校验通过",
                 platform=actual_platform,
                 safe_metadata={"validated": True},
+                safe_output={
+                    "validated": True,
+                    "account_selected": bool(per_platform_account),
+                },
             )
 
             # 非只读模式：写操作需要白名单 + 幂等保护
@@ -3573,7 +3607,11 @@ class AgentRuntime:
                 
                 # dry-run 下写工具只生成本地模拟结果，绝不触发 API Client。
                 started_at = datetime.now().isoformat()
-                trace.node_status(node, "running")
+                trace.node_status(
+                    node,
+                    "running",
+                    safe_input=self._redact_for_persistence(tool_input),
+                )
                 try:
                     if tool_def.is_write_tool and self.is_dry_run:
                         schema_errors = validate_tool_input(tool_def.input_schema, tool_input) if tool_def.input_schema else []
@@ -3661,6 +3699,13 @@ class AgentRuntime:
                         "simulated": bool(result.simulated),
                         "execution_status": execution_status,
                     },
+                    safe_input=self._redact_for_persistence(tool_input),
+                    safe_output={
+                        "success": bool(result.success),
+                        "data": safe_result_data,
+                        "has_error": bool(safe_result_error),
+                        "execution_status": execution_status,
+                    },
                 )
                 workflow_inputs[result_index] = copy.deepcopy(tool_input)
 
@@ -3735,6 +3780,7 @@ class AgentRuntime:
                 "running",
                 subtitle="整理工具结果并提取业务信息",
                 safe_metadata={"phase": "result_analysis"},
+                safe_input={"result_count": len(results)},
             )
         if feature is not None and callable(
             getattr(feature, "collect_metrics", None)
@@ -3759,6 +3805,12 @@ class AgentRuntime:
                 "succeeded",
                 subtitle="结果已整理完成",
                 safe_metadata={"result_count": len(results)},
+                safe_input={"result_count": len(results)},
+                safe_output={
+                    "result_count": len(results),
+                    "analysis_available": bool(analysis),
+                    "summary": self._redact_for_persistence(analysis or {}),
+                },
             )
         trace.stage_status(
             "reply",
@@ -3766,6 +3818,10 @@ class AgentRuntime:
             "running",
             subtitle="生成面向业务人员的结果说明",
             safe_metadata={"phase": "response_rendering"},
+            safe_input={
+                "result_count": len(results),
+                "needs_confirmation": needs_confirmation,
+            },
         )
         reply, response_source = self._render_response(
             safe_user_input,
@@ -3781,6 +3837,11 @@ class AgentRuntime:
             "succeeded",
             subtitle="已生成本轮回复",
             safe_metadata={"response_source": response_source},
+            safe_output={
+                "response_source": response_source,
+                "available": True,
+                "preview": self._redact_for_persistence(reply),
+            },
         )
         trace.reply(needs_confirmation=needs_confirmation)
         has_failure = any(

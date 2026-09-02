@@ -255,11 +255,13 @@ def test_chat_stream_forwards_runtime_events_without_inventing_steps(fake_server
             "type": "node_started", "event_type": "node_started",
             "node_id": "node-0001", "platform": "meta",
             "tool": "meta.list_campaigns", "status": "running",
+            "safe_input": {"customer_id": "123"},
         })
         observe({
             "type": "node_status", "event_type": "node_status",
             "node_id": "node-0001", "platform": "meta",
             "tool": "meta.list_campaigns", "status": "succeeded",
+            "safe_output": {"success": True, "row_count": 2},
         })
         observe({"type": "done", "event_type": "done", "status": "succeeded"})
         return {
@@ -276,6 +278,8 @@ def test_chat_stream_forwards_runtime_events_without_inventing_steps(fake_server
         )
     body = response.text
     assert '"node_id": "node-0001"' in body
+    assert '"safe_input": {"customer_id": "123"}' in body
+    assert '"safe_output": {"success": true, "row_count": 2}' in body
     assert '"type": "thinking"' not in body
     assert '"type": "tool_status"' not in body
     assert body.index('"type": "node_started"') < body.index('"type": "reply"') < body.index('"type": "done"')

@@ -1257,7 +1257,11 @@
         .trace-detail-grid { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 7px 10px; margin-top: 13px; font-size: 10px; }
         .trace-detail-grid dt { color: #7890a7; }
         .trace-detail-grid dd { overflow: hidden; text-overflow: ellipsis; color: #c4d6e8; }
-        .trace-safe-note { margin-top: 12px; padding: 8px 9px; border: 1px solid #1a594b; border-radius: 7px; color: #7ce3bb; background: rgba(7, 66, 53, .28); font-size: 10px; line-height: 1.5; }
+        .trace-io { display: grid; gap: 8px; margin-top: 12px; }
+        .trace-io-block { min-width: 0; border: 1px solid #1d3a53; border-radius: 8px; background: #071321; overflow: hidden; }
+        .trace-io-label { padding: 7px 9px; color: #9bb7cf; background: #0b1e30; font-size: 10px; font-weight: 600; }
+        .trace-io-block pre { max-height: 155px; margin: 0; padding: 9px; overflow: auto; color: #c9dced; font: 10px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+        .trace-safe-note { margin-top: 10px; padding: 8px 9px; border: 1px solid #1a594b; border-radius: 7px; color: #7ce3bb; background: rgba(7, 66, 53, .28); font-size: 10px; line-height: 1.5; }
         .trace-mode-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 13px; padding: 11px 12px; border-top: 1px solid #1c3145; }
         .mode-label { color: #7890a7; font-size: 10px; }
         .mode-value { display: flex; align-items: center; gap: 7px; margin-top: 5px; color: #c4d6e8; font-size: 11px; }
@@ -1565,7 +1569,7 @@
         <div class="panel-content trace-content" id="traceContent">
             <div class="trace-flow" id="traceFlow" aria-live="polite"></div>
             <div class="trace-detail" id="traceDetail">
-                <div class="trace-detail-empty">选择一个节点查看安全的 Tool 元数据</div>
+                <div class="trace-detail-empty">选择一个步骤查看格式化的输入 / 输出摘要</div>
             </div>
             <div class="trace-mode-bar">
                 <div>
@@ -1676,10 +1680,20 @@
             if (traceState.events.length > 80) traceState.events.shift();
         }
 
+        function formatTracePayload(payload, emptyText = '该步骤没有独立数据') {
+            if (payload === undefined || payload === null) return emptyText;
+            try {
+                const formatted = JSON.stringify(payload, null, 2);
+                return formatted || emptyText;
+            } catch (_) {
+                return String(payload);
+            }
+        }
+
         function renderTraceDetail(node) {
             const detail = document.getElementById('traceDetail');
             if (!node) {
-                detail.innerHTML = '<div class="trace-detail-empty">选择一个节点查看安全的 Tool 元数据</div>';
+                detail.innerHTML = '<div class="trace-detail-empty">选择一个步骤查看格式化的输入 / 输出摘要</div>';
                 return;
             }
             detail.innerHTML = `
@@ -1696,7 +1710,17 @@
                     <dt>门禁结果</dt><dd>${escapeHtml(node.reason || '—')}</dd>
                     <dt>摘要</dt><dd>${escapeHtml(node.subtitle || '已脱敏 · 仅展示安全摘要')}</dd>
                 </dl>
-                <div class="trace-safe-note">此面板只展示执行事件、Tool 元数据和脱敏结果，不展示模型内部思维链。</div>
+                <div class="trace-io">
+                    <section class="trace-io-block">
+                        <div class="trace-io-label">输入 · 已脱敏</div>
+                        <pre>${escapeHtml(formatTracePayload(node.input))}</pre>
+                    </section>
+                    <section class="trace-io-block">
+                        <div class="trace-io-label">输出 · 已脱敏</div>
+                        <pre>${escapeHtml(formatTracePayload(node.output, '步骤完成后显示结果'))}</pre>
+                    </section>
+                </div>
+                <div class="trace-safe-note">输入和输出均为脱敏、限长后的业务摘要；不展示模型内部思维链或认证凭证。</div>
             `;
         }
 
@@ -1881,6 +1905,8 @@
                     order: existing?.order || (++traceState.orderCounter),
                     reason: event.safe_metadata?.reason || existing?.reason,
                     duration_ms: event.safe_metadata?.duration_ms || existing?.duration_ms,
+                    input: event.safe_input !== undefined ? event.safe_input : existing?.input,
+                    output: event.safe_output !== undefined ? event.safe_output : existing?.output,
                 };
                 traceState.nodes = traceState.nodes.filter(item => item.id !== id);
                 traceState.nodes.push(node);
@@ -1901,6 +1927,8 @@
                     action: event.action,
                     state: event.status || 'planned',
                     order: existing?.order || (++traceState.orderCounter),
+                    input: event.safe_input !== undefined ? event.safe_input : existing?.input,
+                    output: event.safe_output !== undefined ? event.safe_output : existing?.output,
                 };
                 traceState.nodes = traceState.nodes.filter(item => item.id !== id);
                 traceState.nodes.push(node);
@@ -1912,6 +1940,8 @@
                     node.state = event.status || 'unknown';
                     node.reason = event.safe_metadata?.reason || node.reason;
                     node.duration_ms = event.safe_metadata?.duration_ms || node.duration_ms;
+                    if (event.safe_input !== undefined) node.input = event.safe_input;
+                    if (event.safe_output !== undefined) node.output = event.safe_output;
                     traceState.selectedId = node.state === 'failed' || node.state === 'recovery_required' ? node.id : traceState.selectedId;
                 }
                 updateTraceHeader(event.status || 'unknown', node ? `${node.tool} · ${traceStatusLabel(event.status)}` : 'Tool 事件已到达');

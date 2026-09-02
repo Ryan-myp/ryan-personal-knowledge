@@ -1,9 +1,9 @@
 """Provider-neutral, safe execution events for Agent turn observers.
 
 The trace is an operational view of a turn, not a model-thought stream.  It
-contains only plan/tool metadata and bounded status codes so it can be sent to
-an interactive client without exposing prompts, inputs, credentials or raw
-provider exceptions.
+contains only plan/tool metadata plus explicitly bounded, sanitized input and
+output summaries so it can be sent to an interactive client without exposing
+model thoughts, credentials or raw provider exceptions.
 """
 
 from __future__ import annotations
@@ -136,6 +136,8 @@ class ExecutionTrace:
         subtitle: str = "",
         platform: str = "",
         safe_metadata: Optional[Mapping[str, Any]] = None,
+        safe_input: Any = None,
+        safe_output: Any = None,
     ) -> None:
         """Emit a real Runtime lifecycle stage for the execution view.
 
@@ -169,6 +171,8 @@ class ExecutionTrace:
             platform=str(platform or ""),
             status=status,
             safe_metadata=metadata,
+            safe_input=safe_input,
+            safe_output=safe_output,
         )
 
     def bind_plan(self, execution_plan: Any) -> None:
@@ -247,6 +251,8 @@ class ExecutionTrace:
         status: str,
         *,
         safe_metadata: Optional[Mapping[str, Any]] = None,
+        safe_input: Any = None,
+        safe_output: Any = None,
     ) -> None:
         if status not in TRACE_STATUSES:
             status = "unknown"
@@ -271,6 +277,8 @@ class ExecutionTrace:
             action=(node or {}).get("action"),
             status=status,
             safe_metadata=metadata,
+            safe_input=safe_input,
+            safe_output=safe_output,
         )
 
     def all_nodes_status(self, status: str, *, reason: str) -> None:

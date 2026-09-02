@@ -703,7 +703,11 @@ class CrossChannelFeature:
                     resource_type=getattr(report_def, "resource_type", ""),
                     parent_resource_type=getattr(report_def, "parent_resource_type", None),
                 )
-                execution_trace.node_status(trace_node, "running")
+                execution_trace.node_status(
+                    trace_node,
+                    "running",
+                    safe_input=services.redact(report_input),
+                )
             try:
                 report_result = services.execute_tool(
                     session.ctx, report_def.name, report_input, request_clients
@@ -730,6 +734,12 @@ class CrossChannelFeature:
                         trace_node,
                         "succeeded" if report_result.success else "failed",
                         safe_metadata={"simulated": bool(report_result.simulated)},
+                        safe_input=services.redact(report_input),
+                        safe_output={
+                            "success": bool(report_result.success),
+                            "data": services.redact(report_result.data),
+                            "has_error": bool(report_result.error),
+                        },
                     )
             except Exception as exc:
                 results.append({
