@@ -124,6 +124,7 @@ def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
         "historyManageButton", "toggleHistorySelectionMode", "deleteSelectedConversations",
         "historySearchInput", "filterConversationHistory", "最近 7 天", "更早",
         "requestConversationDeletion", "openHistoryDeleteDialog", "confirmHistoryDeletion",
+        "requestConversationRename", "confirmHistoryRename", "重命名对话", "method: 'PATCH'",
         "deleted_session_ids", "仅影响本地历史记录",
         "保存并发布", "/knowledge/documents", "formatKnowledgeMarkdown",
         "knowledgeOverlay", "knowledge-console", "内置 · 只读", "复制为新版本",
@@ -282,6 +283,42 @@ def test_session_delete_endpoints_use_authenticated_user_and_tenant_scope(monkey
     assert calls[1][1]["session_ids"] == ["session-a", "session-b"]
     assert calls[1][1]["user_id"] == "gateway-user"
     assert calls[1][1]["tenant_id"] == "tenant-a"
+
+
+def test_session_rename_uses_authenticated_user_and_tenant_scope(monkeypatch, fake_server):
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "scoped-key": {
+                "user_id": "gateway-user",
+                "tenant_id": "tenant-a",
+                "permissions": ["ads.read"],
+            }
+        }),
+    )
+    calls = []
+
+    def rename_conversation(**kwargs):
+        calls.append(kwargs)
+        return {
+            "session_id": kwargs["session_id"],
+            "title": kwargs["title"],
+        }
+
+    fake_server.rename_conversation = rename_conversation
+    with TestClient(api_server.app) as client:
+        response = client.patch(
+            "/sessions/session-a",
+            headers={"X-API-Key": "scoped-key"},
+            json={"title": "Meta 广告系列报表"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "session_id": "session-a", "title": "Meta 广告系列报表"
+    }
+    assert calls[0]["user_id"] == "gateway-user"
+    assert calls[0]["tenant_id"] == "tenant-a"
 
 
 def test_knowledge_document_can_be_saved_as_draft_and_published(monkeypatch):

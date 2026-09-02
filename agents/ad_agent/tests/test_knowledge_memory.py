@@ -180,7 +180,8 @@ def test_runtime_recalls_explicit_memory_across_sessions_without_granting_tools(
     assert result["memory"][0]["content"] == "偏好：优先使用 Google 搜索广告"
     assert any(
         "Memory" in str(message.get("content"))
-        for message in llm.calls[-1]
+        for call in llm.calls
+        for message in call
     )
     assert result["tool_plan"] == {}
 

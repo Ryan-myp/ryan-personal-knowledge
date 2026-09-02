@@ -327,7 +327,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_credentials=False,
-    allow_methods=["GET", "POST", "DELETE"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["Content-Type", "X-API-Key"],
 )
 
@@ -346,6 +346,12 @@ class SessionDeleteRequest(BaseModel):
     """Bounded local conversation deletion request."""
 
     session_ids: list[str] = Field(min_length=1, max_length=50)
+
+
+class SessionRenameRequest(BaseModel):
+    """A short user-facing title for one local conversation."""
+
+    title: str = Field(min_length=1, max_length=32)
 
 
 class TaskSubmitRequest(BaseModel):
@@ -438,6 +444,33 @@ async def get_session_history(
         limit=limit,
     )
     # Do not reveal whether a session exists for another principal.
+    if not conversation:
+        raise HTTPException(status_code=404, detail="会话不存在或无权访问")
+    return conversation
+
+
+@app.patch("/sessions/{session_id}", tags=["sessions"])
+async def rename_session(
+    session_id: str,
+    request: SessionRenameRequest,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Rename one local conversation inside the authenticated scope."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.read")
+    if not runtime or not callable(getattr(runtime, "rename_conversation", None)):
+        raise HTTPException(status_code=503, detail="会话存储未初始化")
+    try:
+        conversation = await run_in_threadpool(
+            runtime.rename_conversation,
+            session_id=session_id,
+            title=request.title,
+            user_id=principal.user_id,
+            tenant_id=principal.tenant_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not conversation:
         raise HTTPException(status_code=404, detail="会话不存在或无权访问")
     return conversation

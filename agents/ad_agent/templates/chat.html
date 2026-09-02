@@ -259,6 +259,23 @@
         .chat-history-item:hover .chat-history-delete, .chat-history-delete:focus { opacity: 1; }
         .chat-history-delete:hover { color: var(--error); background: var(--error-light); border-color: rgba(239, 68, 68, .3); }
         .chat-history-delete svg { width: 14px; height: 14px; }
+        .chat-history-rename {
+            flex: 0 0 28px;
+            width: 28px;
+            height: 28px;
+            display: grid;
+            place-items: center;
+            border: 1px solid transparent;
+            border-radius: 6px;
+            color: var(--text-muted);
+            background: transparent;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity .15s, color .15s, background .15s;
+        }
+        .chat-history-item:hover .chat-history-rename, .chat-history-rename:focus { opacity: 1; }
+        .chat-history-rename:hover { color: var(--accent); background: var(--accent-light); border-color: rgba(99, 102, 241, .3); }
+        .chat-history-rename svg { width: 14px; height: 14px; }
 
         .history-delete-overlay {
             position: fixed;
@@ -320,6 +337,23 @@
         .history-delete-confirm { border: 1px solid #a94250; color: #fff; background: #a42c43; }
         .history-delete-confirm:hover { background: #8e2439; }
         .history-delete-btn:disabled { cursor: wait; opacity: .65; }
+
+        .history-rename-dialog { width: min(420px, calc(100vw - 40px)); }
+        .history-rename-input {
+            width: 100%;
+            min-height: 36px;
+            margin-top: 17px;
+            padding: 8px 10px;
+            border: 1px solid #29435d;
+            border-radius: 7px;
+            outline: none;
+            color: #e9f2fb;
+            background: #0b1a29;
+            font: inherit;
+            font-size: 12px;
+        }
+        .history-rename-input:focus { border-color: #6674cf; box-shadow: 0 0 0 2px rgba(99, 102, 241, .16); }
+        .history-rename-status { min-height: 16px; margin-top: 6px; color: #fda4af; font-size: 10px; }
         
         .chat-history-item .icon {
             font-size: 14px;
@@ -1762,6 +1796,8 @@
         body.light-theme .history-select-box { background: #ffffff; border-color: #9fb0c1; }
         body.light-theme .chat-history-delete { color: #5e7085; }
         body.light-theme .chat-history-delete:hover { color: #a42c43; background: #fdecef; border-color: #e6a2ae; }
+        body.light-theme .chat-history-rename { color: #5e7085; }
+        body.light-theme .chat-history-rename:hover { color: #5941a4; background: #eeeafd; border-color: #b7a9e9; }
         body.light-theme .history-delete-overlay { background: rgba(28, 42, 60, .36); }
         body.light-theme .history-delete-dialog { border-color: #c5d1de; background: #ffffff; box-shadow: 0 24px 70px rgba(44, 62, 84, .22); }
         body.light-theme .history-delete-icon { color: #a42c43; background: #fdecef; border-color: #e6a2ae; }
@@ -1774,6 +1810,9 @@
         body.light-theme .history-delete-confirm { border-color: #a42c43; background: #b8324b; }
         body.light-theme .history-delete-confirm:hover { background: #962a40; }
         body.light-theme .chat-history-open { color: inherit; }
+        body.light-theme .history-rename-input { color: #26384d; background: #f4f7fb; border-color: #bdcbd9; }
+        body.light-theme .history-rename-input:focus { border-color: #6952c7; box-shadow: 0 0 0 2px rgba(105, 82, 199, .14); }
+        body.light-theme .history-rename-status { color: #a42c43; }
         body.light-theme .skill-notice.error { color: #a42c43; background: #fdecef; border-color: #e6a2ae; }
         body.light-theme .skill-notice.success { color: #176d52; background: #e5f6ef; border-color: #83c6ad; }
         body.light-theme .skill-status.builtin { color: #5941a4; }
@@ -1820,6 +1859,7 @@
         .chat-history-item .icon { flex: 0 0 18px; text-align: center; }
         .chat-history-item .chat-history-time { flex: 0 0 34px; margin-left: auto; padding-top: 2px; text-align: right; }
         .chat-history-item .chat-history-delete { flex-basis: 28px; }
+        .chat-history-item .chat-history-rename { flex-basis: 28px; }
         .sidebar-footer { justify-content: flex-start; padding: 12px 16px; }
         .sidebar-footer > span:last-child { display: flex; flex-direction: column; gap: 2px; }
         .sidebar-footer strong { color: var(--text-secondary); font-size: 11px; font-weight: 500; }
@@ -2006,6 +2046,23 @@
             <div class="history-delete-actions">
                 <button class="history-delete-btn history-delete-cancel" type="button" onclick="closeHistoryDeleteDialog()">取消</button>
                 <button class="history-delete-btn history-delete-confirm" id="historyDeleteConfirmButton" type="button" onclick="confirmHistoryDeletion()">确认删除</button>
+            </div>
+        </section>
+    </div>
+    <div class="history-delete-overlay" id="historyRenameOverlay" aria-hidden="true">
+        <section class="history-delete-dialog history-rename-dialog" role="dialog" aria-modal="true" aria-labelledby="historyRenameTitle" onclick="event.stopPropagation()">
+            <div class="history-delete-head">
+                <div class="history-delete-icon" aria-hidden="true">✎</div>
+                <div>
+                    <div class="history-delete-title" id="historyRenameTitle">重命名对话</div>
+                    <div class="history-delete-subtitle">给这条对话设置一个更容易识别的名称。</div>
+                </div>
+            </div>
+            <input class="history-rename-input" id="historyRenameInput" type="text" maxlength="32" placeholder="例如：Meta 广告系列报表" onkeydown="if (event.key === 'Enter') confirmHistoryRename()">
+            <div class="history-rename-status" id="historyRenameStatus" aria-live="polite"></div>
+            <div class="history-delete-actions">
+                <button class="history-delete-btn history-delete-cancel" type="button" onclick="closeHistoryRenameDialog()">取消</button>
+                <button class="history-delete-btn history-delete-confirm" id="historyRenameConfirmButton" type="button" onclick="confirmHistoryRename()">保存名称</button>
             </div>
         </section>
     </div>
@@ -2222,6 +2279,7 @@
         const selectedConversationIds = new Set();
         let historySearchQuery = '';
         let pendingConversationDeleteIds = [];
+        let pendingConversationRenameId = null;
         let workspaceTheme = 'dark';
         const skillState = {
             versions: [],
@@ -3122,6 +3180,76 @@
             openHistoryDeleteDialog([sessionIdToDelete]);
         }
 
+        function requestConversationRename(sessionIdToRename, currentTitle) {
+            if (historySelectionMode || !sessionIdToRename) return;
+            pendingConversationRenameId = String(sessionIdToRename);
+            const input = document.getElementById('historyRenameInput');
+            const status = document.getElementById('historyRenameStatus');
+            if (input) {
+                input.value = currentTitle || '';
+                input.select();
+            }
+            if (status) status.textContent = '';
+            const overlay = document.getElementById('historyRenameOverlay');
+            if (overlay) {
+                overlay.classList.add('active');
+                overlay.setAttribute('aria-hidden', 'false');
+            }
+            input?.focus();
+        }
+
+        function closeHistoryRenameDialog() {
+            pendingConversationRenameId = null;
+            const overlay = document.getElementById('historyRenameOverlay');
+            if (overlay) {
+                overlay.classList.remove('active');
+                overlay.setAttribute('aria-hidden', 'true');
+            }
+            const button = document.getElementById('historyRenameConfirmButton');
+            if (button) {
+                button.disabled = false;
+                button.textContent = '保存名称';
+            }
+        }
+
+        async function confirmHistoryRename() {
+            const session = pendingConversationRenameId;
+            const input = document.getElementById('historyRenameInput');
+            const status = document.getElementById('historyRenameStatus');
+            const title = input?.value.trim() || '';
+            if (!session) return;
+            if (!title) {
+                if (status) status.textContent = '请输入对话名称。';
+                input?.focus();
+                return;
+            }
+            const button = document.getElementById('historyRenameConfirmButton');
+            if (button) {
+                button.disabled = true;
+                button.textContent = '保存中…';
+            }
+            try {
+                const data = await apiFetch(`/sessions/${encodeURIComponent(session)}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title }),
+                });
+                const item = conversationHistory.find(
+                    conversation => String(conversation.session_id || '') === session
+                );
+                if (item) item.title = data.title || title;
+                closeHistoryRenameDialog();
+                renderConversationHistory();
+                showHistoryNotice('对话名称已更新。', 'success');
+            } catch (error) {
+                if (button) {
+                    button.disabled = false;
+                    button.textContent = '保存名称';
+                }
+                if (status) status.textContent = error?.message || '名称保存失败，请稍后重试。';
+            }
+        }
+
         function openHistoryDeleteDialog(sessionIds) {
             const availableIds = new Set(conversationHistory.map(item => String(item.session_id || '')));
             pendingConversationDeleteIds = [...new Set((sessionIds || []).map(String))]
@@ -3275,6 +3403,17 @@
                     openButton.append(icon, copy, time);
                     item.appendChild(openButton);
                     if (!historySelectionMode) {
+                        const renameButton = document.createElement('button');
+                        renameButton.type = 'button';
+                        renameButton.className = 'chat-history-rename';
+                        renameButton.setAttribute('aria-label', `重命名对话：${conversation.title || '新对话'}`);
+                        renameButton.title = '重命名这条对话';
+                        renameButton.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"></path></svg>';
+                        renameButton.addEventListener('click', (event) => {
+                            event.stopPropagation();
+                            requestConversationRename(session, conversation.title || '');
+                        });
+                        item.appendChild(renameButton);
                         const deleteButton = document.createElement('button');
                         deleteButton.type = 'button';
                         deleteButton.className = 'chat-history-delete';
@@ -4130,8 +4269,16 @@
         document.getElementById('historyDeleteOverlay')?.addEventListener('click', (event) => {
             if (event.target.id === 'historyDeleteOverlay') closeHistoryDeleteDialog();
         });
+        document.getElementById('historyRenameOverlay')?.addEventListener('click', (event) => {
+            if (event.target.id === 'historyRenameOverlay') closeHistoryRenameDialog();
+        });
         document.addEventListener('keydown', (event) => {
             if (event.key !== 'Escape') return;
+            const renameOverlay = document.getElementById('historyRenameOverlay');
+            if (renameOverlay?.classList.contains('active')) {
+                closeHistoryRenameDialog();
+                return;
+            }
             const deleteOverlay = document.getElementById('historyDeleteOverlay');
             if (deleteOverlay?.classList.contains('active')) {
                 closeHistoryDeleteDialog();

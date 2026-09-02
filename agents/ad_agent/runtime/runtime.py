@@ -42,6 +42,7 @@ from ..core.features import RuntimeFeature
 from ..core.execution_plan import ExecutionPlan
 from ..core.execution_trace import ExecutionTrace, ExecutionEventCallback
 from ..core.response import ResponseRenderer, ResponseSynthesizer, LLMResponseSynthesizer
+from ..core.conversation_title import ConversationTitleGenerator
 from ..core.plugins import (
     PluginKind,
     PluginLoader,
@@ -176,6 +177,7 @@ class AgentRuntime:
         self.skill_loader = SkillLoader(skill_roots)
         self.skill_loader.load_all()
         self._llm = llm_client
+        self.conversation_title_generator = ConversationTitleGenerator()
         # A caller may inject an already-configured LLMIntentParser instead
         # of passing the model separately.  Treat that parser-owned model as
         # the same model-backed Agent dependency; otherwise the strict
@@ -2243,6 +2245,20 @@ class AgentRuntime:
         safe_reply = self._redact_for_persistence(reply)
         session.add_message({"role": "user", "content": safe_user})
         session.add_message({"role": "assistant", "content": safe_reply})
+        if not session.ctx.metadata.get("conversation_title"):
+            first_user = next(
+                (
+                    str(message.get("content", ""))
+                    for message in session.messages
+                    if message.get("role") == "user"
+                ),
+                safe_user,
+            )
+            title, title_source = self.conversation_title_generator.generate(
+                first_user, self._llm
+            )
+            session.ctx.metadata["conversation_title"] = self._redact_for_persistence(title)
+            session.ctx.metadata["conversation_title_source"] = title_source
         if not self._session_manager:
             return
         self._session_manager.record_conversation_message(
@@ -2255,6 +2271,10 @@ class AgentRuntime:
             "execution_mode": self.execution_mode,
             "read_only_mode": self._read_only_mode,
             "tenant_id": session.ctx.metadata.get("tenant_id", "default"),
+            "conversation_title": session.ctx.metadata.get("conversation_title", "新对话"),
+            "conversation_title_source": session.ctx.metadata.get(
+                "conversation_title_source", "fallback"
+            ),
             "message_count": len(session.messages),
             "messages": self._redact_for_persistence(session.messages[-20:]),
         }
@@ -3987,7 +4007,10 @@ class AgentRuntime:
     ) -> dict[str, Any]:
         user_messages = [item for item in messages if item.get("role") == "user"]
         title_source = str((user_messages[0] if user_messages else messages[0]).get("content", "")) if messages else "新对话"
-        title = " ".join(title_source.split())[:48] or "新对话"
+        metadata = AgentRuntime._decode_session_metadata(session)
+        title = str(metadata.get("conversation_title") or "").strip()
+        if not title:
+            title = ConversationTitleGenerator.fallback_title(title_source)
         latest = str(messages[-1].get("content", "")) if messages else ""
         return {
             "session_id": str(session.get("session_id") or ""),
@@ -4018,6 +4041,39 @@ class AgentRuntime:
                 messages = legacy if isinstance(legacy, list) else []
             conversations.append(self._conversation_summary(session, messages))
         return conversations[:limit]
+
+    def rename_conversation(
+        self, session_id: str, title: str, *, user_id: str,
+        tenant_id: str = "default",
+    ) -> Optional[dict[str, Any]]:
+        """Rename one local conversation inside the authenticated scope."""
+        if not self._session_manager:
+            return None
+        persisted = self._session_manager.get_session(str(session_id))
+        if not persisted:
+            return None
+        if persisted.get("user_id") and str(persisted["user_id"]) != str(user_id):
+            return None
+        metadata = self._decode_session_metadata(persisted)
+        if str(metadata.get("tenant_id", "default")) != str(tenant_id or "default"):
+            return None
+        safe_title = self._redact_for_persistence(str(title or "")).strip()
+        if not safe_title:
+            raise ValueError("对话标题不能为空")
+        if len(safe_title) > ConversationTitleGenerator.MAX_TITLE_CHARS:
+            raise ValueError(
+                f"对话标题不能超过 {ConversationTitleGenerator.MAX_TITLE_CHARS} 个字符"
+            )
+        metadata["conversation_title"] = safe_title
+        metadata["conversation_title_source"] = "manual"
+        self._session_manager.update_session(str(session_id), metadata)
+        session = self._sessions.get(str(session_id))
+        if session is not None:
+            session.ctx.metadata.update({
+                "conversation_title": safe_title,
+                "conversation_title_source": "manual",
+            })
+        return {"session_id": str(session_id), "title": safe_title}
 
     def search_knowledge(
         self, query: str, *, tenant_id: str = "default",
@@ -4276,6 +4332,12 @@ class AgentRuntime:
             )
             session = SessionContext(session_id, ctx)
             ctx.metadata["tenant_id"] = str(tenant_id or "default")
+            stored_title = persisted_metadata.get("conversation_title")
+            if isinstance(stored_title, str) and stored_title.strip():
+                ctx.metadata["conversation_title"] = stored_title.strip()
+                ctx.metadata["conversation_title_source"] = str(
+                    persisted_metadata.get("conversation_title_source") or "legacy"
+                )
             stored_traces = persisted_metadata.get("execution_traces")
             if isinstance(stored_traces, dict):
                 ctx.metadata["execution_traces"] = stored_traces

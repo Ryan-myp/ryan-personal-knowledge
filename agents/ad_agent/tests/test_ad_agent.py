@@ -116,6 +116,42 @@ def test_runtime_conversation_delete_enforces_user_and_tenant_scope():
     assert manager.get_session("other-user-session") is not None
 
 
+def test_runtime_generates_and_persists_llm_conversation_title():
+    class TitleLLM:
+        def __init__(self):
+            self.calls = []
+
+        def call(self, messages):
+            self.calls.append(messages)
+            return '{"title":"Meta 广告系列报表"}'
+
+    store = AdAgentStore(":memory:")
+    llm = TitleLLM()
+    rt = AgentRuntime(
+        require_llm=True,
+        llm_client=llm,
+        persistence_store=store,
+        features=[],
+    )
+    session = rt._ensure_session("title-session", "user-a", None, None, tenant_id="tenant-a")
+    rt.persist_conversation_turn(
+        session,
+        "turn-1",
+        "请帮我查询 Meta campaign 最近 7 天的报表",
+        "已整理好报表。",
+    )
+
+    listed = rt.list_conversations(user_id="user-a", tenant_id="tenant-a")
+    assert listed[0]["title"] == "Meta 广告系列报表"
+    assert "用户请求" in llm.calls[0][1]["content"]
+
+    renamed = rt.rename_conversation(
+        "title-session", "Meta Q3 投放复盘", user_id="user-a", tenant_id="tenant-a"
+    )
+    assert renamed == {"session_id": "title-session", "title": "Meta Q3 投放复盘"}
+    assert rt.list_conversations(user_id="user-a", tenant_id="tenant-a")[0]["title"] == "Meta Q3 投放复盘"
+
+
 # ─── 工具注册表测试 ────────────────────────────────────────────
 
 class TestToolRegistry:
