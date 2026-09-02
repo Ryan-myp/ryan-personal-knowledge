@@ -74,8 +74,15 @@ class WorkflowCoordinator:
                         intent,
                         platform,
                         [tool],
-                        session.ctx.account_id
-                        if len(intent.platforms) == 1 else None,
+                        # A persisted session account is not a substitute for
+                        # an account explicitly supplied for a write request.
+                        # Read-only plans may still use the normal resolver
+                        # fallback, but workflow items for writes must remain
+                        # unscoped until Runtime validates the current turn.
+                        None if tool.is_write_tool else (
+                            session.ctx.account_id
+                            if len(intent.platforms) == 1 else None
+                        ),
                     )
                     store.record_workflow_item(
                         workflow_id=workflow_id,

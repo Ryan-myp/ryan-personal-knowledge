@@ -34,8 +34,10 @@ class AdAgentResponseRenderer:
             questions = []
             for result in ask_params_results:
                 payload = result.get("confirmation_payload", {})
-                if payload.get("type") == "ask_params":
-                    questions.append(payload.get("question", "请提供必要参数"))
+                if payload.get("type") in {"ask_params", "ask_account"}:
+                    questions.append(
+                        payload.get("question", "请提供必要信息")
+                    )
             if questions:
                 return "\n\n".join(questions)
         if needs_confirmation:

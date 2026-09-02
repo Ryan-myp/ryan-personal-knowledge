@@ -47,7 +47,8 @@ def test_skill_up_adapter_returns_standard_result_and_runtime_evidence(tmp_path)
         "messages": [{
             "role": "user",
             "content": (
-                "创建 TikTok campaign; name=adapter-test; "
+                "创建 TikTok campaign; account_id=7397068114548195329; "
+                "name=adapter-test; "
                 "objective_type=APP_PROMOTION; campaign_type=REGULAR_CAMPAIGN; "
                 "budget_mode=BUDGET_MODE_DAY; daily_budget=100; "
                 "app_promotion_type=APP_ACQUISITION"

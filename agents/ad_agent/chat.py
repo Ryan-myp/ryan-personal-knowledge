@@ -117,7 +117,7 @@ def main():
     parser.add_argument("--user", default="web_user", help="用户 ID")
     parser.add_argument(
         "--account",
-        help="广告账户 ID；仅在白名单恰有一个账户时允许自动选择，多个账户必须显式指定",
+        help="广告账户 ID；写操作必须显式指定，只有只读查询允许单账户白名单兜底",
     )
     args = parser.parse_args()
 

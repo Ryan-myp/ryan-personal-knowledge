@@ -58,6 +58,9 @@ class CrossChannelFeature:
 
     @staticmethod
     def preflight_failure_reply(_intent: Any, _preflight: Any) -> str:
+        errors = list(getattr(_preflight, "errors", ()) or ())
+        if any("缺少账户ID" in str(error) for error in errors):
+            return "请先提供每个投放渠道对应的广告账户 ID，再继续创建。"
         return (
             "跨渠道创建 preflight 未通过；已停止所有渠道的创建。"
             "请先补齐各渠道/层级的参数后重试。"
@@ -171,12 +174,6 @@ class CrossChannelFeature:
             account = services.resolve_account(
                 intent, raw_platform, tools, account_id
             )
-            if not account:
-                candidates = services.available_accounts(
-                    platform, account_scope
-                )
-                if len(candidates) == 1:
-                    account = candidates[0]
 
             account_errors: list[str] = []
             if not account:
@@ -317,6 +314,9 @@ class CrossChannelFeature:
         results: list[dict[str, Any]] = []
         for item in preflight.items:
             error = "; ".join(item.errors) if item.errors else None
+            account_required = any(
+                "缺少账户ID" in str(value) for value in item.errors
+            )
             results.append({
                 "tool": item.tool_name,
                 "platform": item.platform,
@@ -332,7 +332,12 @@ class CrossChannelFeature:
                     "errors": list(item.errors),
                 },
                 "error": error,
-                "needs_confirmation": False,
+                "needs_confirmation": account_required,
+                "confirmation_payload": ({
+                    "type": "ask_account",
+                    "platform": item.platform,
+                    "question": f"请提供要操作的 {item.platform} 广告账户 ID。",
+                } if account_required else None),
                 "preflight": True,
                 "skipped": True,
             })
@@ -438,6 +443,12 @@ class CrossChannelFeature:
                 "success": False,
                 "data": {"batch": True, "planned": False},
                 "error": message,
+                "needs_confirmation": "缺少账户ID" in message,
+                "confirmation_payload": ({
+                    "type": "ask_account",
+                    "platform": platform,
+                    "question": f"请提供要操作的 {platform} 广告账户 ID。",
+                } if "缺少账户ID" in message else None),
                 "batch_planning_error": True,
             })
 
@@ -542,8 +553,13 @@ class CrossChannelFeature:
                 "workflow_sequence": operation_sequence,
             })
 
+        account_requests = [
+            item for item in results
+            if "缺少账户ID" in str(item.get("error") or "")
+        ]
+        needs_confirmation = bool(account_requests)
         reply = services.response_renderer.render(
-            intent, results, bool(errors and not operations)
+            intent, results, needs_confirmation
         )
         services.persist_conversation_turn(session, turn_id, user_input, reply)
         services.finish_workflow(
@@ -562,8 +578,15 @@ class CrossChannelFeature:
             "resource_results": resource_results,
             "workflow_id": workflow_id,
             "reply": reply,
-            "needs_confirmation": False,
-            "confirmation_payload": None,
+            "needs_confirmation": needs_confirmation,
+            "confirmation_payload": ({
+                "type": "ask_account",
+                "platform": account_requests[0].get("platform"),
+                "question": (
+                    f"请提供要操作的 {account_requests[0].get('platform', '对应渠道')} "
+                    "广告账户 ID。"
+                ),
+            } if account_requests else None),
         }
 
     @classmethod

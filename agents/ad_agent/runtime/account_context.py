@@ -24,7 +24,17 @@ class AccountResolver:
         platform: str,
         tools: list[Any],
         fallback_account: Optional[str],
+        *,
+        allow_automatic_account: bool = True,
     ) -> Optional[str]:
+        """Resolve an account without crossing the write-account boundary.
+
+        ``fallback_account`` is a caller/session supplied value.  The
+        configured whitelist is only a discovery convenience for read-only
+        requests.  A write request must identify its target account in the
+        current request; silently selecting the sole whitelisted account can
+        still target the wrong advertiser after configuration changes.
+        """
         params = self.services.input_builder.platform_params_for_intent(
             intent, platform
         )
@@ -52,5 +62,9 @@ class AccountResolver:
                     return str(value)
         if fallback_account:
             return str(fallback_account)
+        if not allow_automatic_account or any(
+            bool(getattr(tool, "is_write_tool", False)) for tool in tools
+        ):
+            return None
         allowed = self.services.available_accounts(actual_platform, None)
         return str(allowed[0]) if len(allowed) == 1 else None

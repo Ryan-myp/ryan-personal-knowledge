@@ -11,7 +11,7 @@
 - **模型驱动**：生产入口必须配置 LLM；离线 fixture 仅用于显式测试和评测，不是产品降级路径
 - **Planner 执行闭环**：每回合由 LLM 解析当前请求和受限 Skill/Tool 上下文，Runtime 依据注册元数据生成确定性计划并执行；业务策略、跨渠道流程和响应展示通过 Skill-owned Policy/Feature/Renderer 扩展；后续回合可读取最近脱敏 Tool 结果继续补参或决策
 - **LLM 结果闭环**：执行完成后，LLM 可基于脱敏的工具结果、知识引用和分析结果生成最终回答；输出协议、dry-run 事实和失败事实经过校验，异常时回退到确定性 Renderer
-- **安全边界**：写操作必须命中配置的测试账户白名单；live 还必须显式确认
+- **安全边界**：写操作必须由当前请求明确提供目标账户、命中配置的测试账户白名单；live 还必须显式确认
 - **可扩展**：渠道包按约定自动发现；新增平台不需要修改 Runtime、Router 或中心渠道表
 - **业务扩展**：大多数业务只需新增标准 Skill；需要新外部动作时新增 Capability Tool，复杂编排可新增自动发现的 Feature，均不修改 Runtime 主循环
 - **广告创建蓝图**：渠道 Capability 可提供版本化 JSON Blueprint，描述广告创建字段级联；Runtime 只做通用注册、校验和确定性状态计算，不执行 Blueprint 中的代码
@@ -150,7 +150,7 @@ capability = create_meta_capability(api_client)
 runtime.register_capability(capability)
 ```
 
-切换到 `execution_mode="live"` 前，必须确认 `agents/ad_agent/config.yaml` 中已配置目标测试账号白名单，并先取得当前写入计划返回的 `confirmation_payload`，随后以同一 payload 调用 `runtime.run(..., confirmed=True, confirmation_payload=payload)`。HTTP API 会拒绝缺少该 payload 的确认请求。不要通过凭证内容自动扩大白名单；凭证只保存在进程内，不写入 SQLite。白名单只有一个账户时允许兼容性自动选择；配置多个账户后必须显式传入目标账户，避免误选。
+切换到 `execution_mode="live"` 前，必须确认 `agents/ad_agent/config.yaml` 中已配置目标测试账号白名单，并先取得当前写入计划返回的 `confirmation_payload`，随后以同一 payload 调用 `runtime.run(..., confirmed=True, confirmation_payload=payload)`。HTTP API 会拒绝缺少该 payload 的确认请求。不要通过凭证内容自动扩大白名单；凭证只保存在进程内，不写入 SQLite。写操作（创建、更新、删除、暂停/恢复及批量写）即使白名单只有一个账户，也必须在当前请求中显式传入目标账户；单账户自动兜底只适用于只读查询，避免误选广告主。
 
 当前所有 Campaign/下级资源创建默认只生成 dry-run 计划；DV360 IO/Line Item 更新、Google PMax Asset Group 以及部分下级资源更新没有经过验证的 live adapter，live 会明确返回不支持。DV360 Campaign 创建尚未建设，API Surface 会将其标为 planned，Runtime 不会路由到不可执行的假 Tool。读取请求在没有 Provider Client 时默认 fail-closed，只有显式 `offline_mode=True` 才会返回离线 fixture。
 

@@ -1019,6 +1019,40 @@ class TestSafeWriteExecution:
         assert result["results"][1]["data"]["input"]["campaign_id"].startswith("dry_meta_")
         assert result["results"][2]["data"]["input"]["adset_id"].startswith("dry_meta_")
 
+    @pytest.mark.parametrize("user_request", [
+        "创建 Meta 广告系列 名称=需要账户",
+        "更新 Meta campaign campaign_id=123 status=PAUSED",
+        "删除 Meta campaign campaign_id=123",
+    ])
+    def test_write_never_auto_selects_single_whitelisted_account(self, user_request):
+        """写请求必须由当前请求明确给出账户，不能静默选唯一白名单账户。"""
+        rt = self._runtime("meta", self.FakeClient("meta"))
+
+        result = rt.run(user_request, user_id="explicit-account-required")
+
+        assert result["needs_confirmation"] is True
+        assert result["confirmation_payload"]["type"] == "ask_account"
+        assert "账户" in result["confirmation_payload"]["question"]
+        assert "请提供要操作的" in result["reply"]
+        assert not any(
+            isinstance(item.get("data"), dict)
+            and item["data"].get("simulated")
+            for item in result["results"]
+        )
+
+    def test_batch_write_requires_explicit_account(self):
+        rt = self._runtime("meta", self.FakeClient("meta"))
+
+        result = rt.run(
+            "批量删除 Meta campaign_ids=101,102",
+            user_id="batch-explicit-account-required",
+        )
+
+        assert result["needs_confirmation"] is True
+        assert result["confirmation_payload"]["type"] == "ask_account"
+        assert "请提供要操作的" in result["reply"]
+        assert all(not item.get("success") for item in result["results"])
+
     def test_cross_platform_create_does_not_share_parent_ids(self):
         from agents.ad_agent.capabilities.meta import create_meta_capability
         from agents.ad_agent.capabilities.google import create_google_capability
@@ -1065,6 +1099,20 @@ class TestSafeWriteExecution:
             "更新 Meta campaign campaign_id=123 status=PAUSED",
             account_id="m1",
         )
+        assert result["needs_confirmation"] is True
+        assert result["results"][0]["confirmation_payload"]["type"] == "confirm_write"
+        assert client.calls == []
+
+    def test_live_delete_requires_explicit_confirmation(self):
+        client = self.FakeClient("meta")
+        rt = self._runtime("meta", client, mode=ExecutionMode.LIVE.value)
+
+        result = rt.run(
+            "删除 Meta campaign campaign_id=123",
+            user_id="delete-confirmation-user",
+            account_id="m1",
+        )
+
         assert result["needs_confirmation"] is True
         assert result["results"][0]["confirmation_payload"]["type"] == "confirm_write"
         assert client.calls == []

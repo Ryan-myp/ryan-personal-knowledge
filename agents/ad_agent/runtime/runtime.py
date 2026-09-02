@@ -3111,7 +3111,11 @@ class AgentRuntime:
                     if callable(preflight_reply)
                     else "跨渠道创建 preflight 未通过；已停止所有渠道的创建。"
                 )
-                if creation_ui.get("needs_input"):
+                if creation_ui.get("needs_input") and not any(
+                    isinstance(item.get("confirmation_payload"), dict)
+                    and item["confirmation_payload"].get("type") == "ask_account"
+                    for item in preflight_results
+                ):
                     reply = self.creation_ui_reply(creation_ui)
                 trace.all_nodes_status("failed", reason="preflight_blocked")
                 trace.reply()
@@ -3144,8 +3148,18 @@ class AgentRuntime:
                         else {"preflight": creation_preflight.to_dict()}
                     ),
                     "reply": reply,
-                    "needs_confirmation": False,
-                    "confirmation_payload": None,
+                    "needs_confirmation": any(
+                        item.get("needs_confirmation")
+                        for item in preflight_results
+                    ),
+                    "confirmation_payload": next(
+                        (
+                            item.get("confirmation_payload")
+                            for item in preflight_results
+                            if item.get("confirmation_payload")
+                        ),
+                        None,
+                    ),
                     "policy_errors": list(creation_preflight.errors),
                     "ui": creation_ui,
                 }
@@ -3327,20 +3341,22 @@ class AgentRuntime:
                 safe_input={"platform": actual_platform},
             )
 
-            # 每个平台使用自己的账户（不跨平台共享）。没有显式账户时，
-            # 只允许从配置的测试白名单中自动选择。
+            # 每个平台使用自己的账户（不跨平台共享）。读请求可以在
+            # 单账户白名单下方便地兜底；写请求必须由本回合显式提供账户，
+            # 绝不能因为白名单恰好只有一个账户就静默选中目标广告主。
+            platform_has_write = any(tool.is_write_tool for tool in tools)
             per_platform_account = self.account_resolver.resolve(
-                intent, platform, tools, account_id
+                intent,
+                platform,
+                tools,
+                account_id,
+                allow_automatic_account=not platform_has_write,
             )
             if not per_platform_account:
                 test_accounts = self._available_accounts_for_request(
                     actual_platform, account_scope
                 )
-                # A single configured test account is a safe compatibility
-                # fallback.  Once an operator configures multiple accounts,
-                # silently picking the first one could target the wrong
-                # advertiser; require the caller to select it explicitly.
-                if len(test_accounts) == 1:
+                if not platform_has_write and len(test_accounts) == 1:
                     per_platform_account = test_accounts[0]
                 else:
                     results.append({
@@ -3353,7 +3369,11 @@ class AgentRuntime:
                         "confirmation_payload": {
                             "type": "ask_account",
                             "platform": actual_platform,
-                            "question": f"请提供 {actual_platform} 账户ID（当前只读模式仅允许查询测试账户）",
+                            "question": (
+                                f"请提供要操作的 {actual_platform} 广告账户 ID。"
+                                if platform_has_write else
+                                f"请提供 {actual_platform} 账户 ID（当前仅允许查询受控账户）。"
+                            ),
                         },
                     })
                     for tool_def in tools:
@@ -3377,7 +3397,6 @@ class AgentRuntime:
 
             # 只读模式验证所有操作；写操作在 dry-run/live 两种模式下都必须
             # 命中显式测试账户白名单。
-            platform_has_write = any(tool.is_write_tool for tool in tools)
             if self._read_only_mode or platform_has_write or self.enforce_account_scope:
                 allowed, error_msg = self._validate_account_with_principal(
                     actual_platform, per_platform_account, platform_has_write,
@@ -4045,7 +4064,11 @@ class AgentRuntime:
                 "needs_confirmation": needs_confirmation,
             },
         )
-        if creation_ui.get("needs_input"):
+        if creation_ui.get("needs_input") and not any(
+            isinstance(item.get("confirmation_payload"), dict)
+            and item["confirmation_payload"].get("type") == "ask_account"
+            for item in results
+        ):
             reply, response_source = self.creation_ui_reply(creation_ui), "creation_card"
         else:
             reply, response_source = self._render_response(

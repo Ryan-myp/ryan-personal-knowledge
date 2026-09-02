@@ -1073,6 +1073,25 @@ def test_conditional_missing_parameter_exposes_lookup_tool():
     assert ask["lookup_tools"]["app_id"] == "tiktok_list_apps"
 
 
+def test_cross_channel_create_never_auto_selects_single_whitelisted_accounts():
+    validator = whitelist(meta=["m1"], tiktok=["t1"])
+    runtime = AgentRuntime(require_llm=False, whitelist_validator=validator)
+    runtime.register_capability(create_meta_capability())
+    runtime.register_capability(create_tiktok_capability())
+
+    result = runtime.run(
+        "跨渠道创建 Meta 和 TikTok campaign 名称=explicit-accounts-only",
+        user_id="cross-account-required",
+    )
+
+    assert result["workflow_id"] is None
+    assert result["needs_confirmation"] is True
+    assert result["confirmation_payload"]["type"] == "ask_account"
+    assert {item["platform"] for item in result["results"]} == {"meta", "tiktok"}
+    assert all(item["account_id"] is None for item in result["results"])
+    assert all("simulated" not in item["data"] for item in result["results"])
+
+
 def test_live_lookup_mints_context_bound_selection_token_for_dry_run_create():
     class LookupClient:
         platform = "tiktok"
