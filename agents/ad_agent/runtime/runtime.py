@@ -2199,6 +2199,39 @@ class AgentRuntime:
             return redacted
         return value
 
+    def persist_conversation_turn(
+        self, session: "SessionContext", turn_id: str,
+        user_input: str, reply: str,
+    ) -> None:
+        """Persist a complete sanitized turn and keep bounded model context.
+
+        Full history belongs to the persistence backend's message store. The
+        session metadata keeps only a small recent window for prompt context,
+        so restoring a session never requires loading an unbounded transcript.
+        """
+        safe_user = self._redact_for_persistence(user_input)
+        safe_reply = self._redact_for_persistence(reply)
+        session.add_message({"role": "user", "content": safe_user})
+        session.add_message({"role": "assistant", "content": safe_reply})
+        if not self._session_manager:
+            return
+        self._session_manager.record_conversation_message(
+            session.session_id, turn_id, "user", safe_user
+        )
+        self._session_manager.record_conversation_message(
+            session.session_id, turn_id, "assistant", safe_reply
+        )
+        self._session_manager.update_session(
+            session.session_id,
+            {
+                "execution_mode": self.execution_mode,
+                "read_only_mode": self._read_only_mode,
+                "tenant_id": session.ctx.metadata.get("tenant_id", "default"),
+                "message_count": len(session.messages),
+                "messages": self._redact_for_persistence(session.messages[-20:]),
+            },
+        )
+
     def _persist_tool_result(
         self, session: "SessionContext", turn_id: str, tool_def: Any,
         platform: str, input_data: dict, result: ToolResult,
@@ -2701,8 +2734,7 @@ class AgentRuntime:
             protected_paths = self.security.validate_input_redline(platform_params)
             if protected_paths:
                 error = "请求包含禁止传入的凭证/账户配置字段：" + ", ".join(protected_paths)
-                session.add_message({"role": "user", "content": safe_user_input})
-                session.add_message({"role": "assistant", "content": error})
+                self.persist_conversation_turn(session, turn_id, safe_user_input, error)
                 trace.error(reason="protected_input")
                 trace.done("failed", safe_metadata={"reason": "protected_input"})
                 return {
@@ -2735,8 +2767,7 @@ class AgentRuntime:
         policy_errors = self._validate_policies(intent)
         if policy_errors:
             reply = "❌ 业务策略阻止本次请求：" + "；".join(policy_errors)
-            session.add_message({"role": "user", "content": safe_user_input})
-            session.add_message({"role": "assistant", "content": reply})
+            self.persist_conversation_turn(session, turn_id, safe_user_input, reply)
             trace.error(reason="policy_blocked")
             trace.done("failed", safe_metadata={"reason": "policy_blocked"})
             return {
@@ -2832,8 +2863,7 @@ class AgentRuntime:
         )
         if parameter_errors:
             reply = "❌ 参数契约阻止本次请求：" + "；".join(parameter_errors)
-            session.add_message({"role": "user", "content": safe_user_input})
-            session.add_message({"role": "assistant", "content": reply})
+            self.persist_conversation_turn(session, turn_id, safe_user_input, reply)
             first_tool = next(
                 (tool for tools in tool_plan.values() for tool in tools), None
             )
@@ -2891,18 +2921,7 @@ class AgentRuntime:
                     if callable(preflight_reply)
                     else "跨渠道创建 preflight 未通过；已停止所有渠道的创建。"
                 )
-                session.add_message({"role": "user", "content": safe_user_input})
-                session.add_message({"role": "assistant", "content": reply})
-                if self._session_manager:
-                    self._session_manager.update_session(
-                        session_id,
-                        {
-                            "execution_mode": self.execution_mode,
-                            "read_only_mode": self._read_only_mode,
-                            "message_count": len(session.messages),
-                            "messages": self._redact_for_persistence(session.messages[-20:]),
-                        },
-                    )
+                self.persist_conversation_turn(session, turn_id, safe_user_input, reply)
                 trace.all_nodes_status("failed", reason="preflight_blocked")
                 trace.reply()
                 trace.done("failed", safe_metadata={"reason": "preflight_blocked"})
@@ -3045,6 +3064,7 @@ class AgentRuntime:
                 "failed" if has_structured_request or intent_type != "chat" else "succeeded",
                 safe_metadata={"tool_count": 0},
             )
+            self.persist_conversation_turn(session, turn_id, safe_user_input, no_tool_reply)
             return {
                 "session_id": session_id,
                 "turn_id": turn_id,
@@ -3854,18 +3874,7 @@ class AgentRuntime:
         )
         
         # Step 6: 记录消息历史
-        session.add_message({"role": "user", "content": safe_user_input})
-        session.add_message({"role": "assistant", "content": reply})
-        if self._session_manager:
-            self._session_manager.update_session(
-                session_id,
-                {
-                    "execution_mode": self.execution_mode,
-                    "read_only_mode": self._read_only_mode,
-                    "message_count": len(session.messages),
-                    "messages": self._redact_for_persistence(session.messages[-20:]),
-                },
-            )
+        self.persist_conversation_turn(session, turn_id, safe_user_input, reply)
         
         return {
             "session_id": session_id,
@@ -3905,6 +3914,86 @@ class AgentRuntime:
         }
     
 # ─── Session 管理 ──────────────────────────────────────────
+
+    @staticmethod
+    def _decode_session_metadata(session: Mapping[str, Any]) -> dict[str, Any]:
+        value = session.get("metadata")
+        if isinstance(value, dict):
+            return dict(value)
+        if isinstance(value, str):
+            try:
+                decoded = json.loads(value or "{}")
+                return decoded if isinstance(decoded, dict) else {}
+            except (TypeError, ValueError):
+                return {}
+        return {}
+
+    @staticmethod
+    def _conversation_summary(
+        session: Mapping[str, Any], messages: list[Mapping[str, Any]],
+    ) -> dict[str, Any]:
+        user_messages = [item for item in messages if item.get("role") == "user"]
+        title_source = str((user_messages[0] if user_messages else messages[0]).get("content", "")) if messages else "新对话"
+        title = " ".join(title_source.split())[:48] or "新对话"
+        latest = str(messages[-1].get("content", "")) if messages else ""
+        return {
+            "session_id": str(session.get("session_id") or ""),
+            "title": title,
+            "preview": " ".join(latest.split())[:100],
+            "message_count": len(messages) or int(session.get("message_count") or 0),
+            "created_at": session.get("created_at"),
+            "updated_at": session.get("updated_at"),
+        }
+
+    def list_conversations(
+        self, user_id: str, tenant_id: str = "default", limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """List only the authenticated principal's durable conversations."""
+        if not self._session_manager:
+            return []
+        conversations = []
+        for session in self._session_manager.list_sessions(user_id, limit=limit):
+            metadata = self._decode_session_metadata(session)
+            if str(metadata.get("tenant_id", "default")) != str(tenant_id or "default"):
+                continue
+            records = self._session_manager.list_conversation_messages(
+                str(session.get("session_id") or ""), limit=500
+            )
+            messages = [record.to_dict() for record in records]
+            if not messages:
+                legacy = metadata.get("messages")
+                messages = legacy if isinstance(legacy, list) else []
+            conversations.append(self._conversation_summary(session, messages))
+        return conversations[:limit]
+
+    def get_conversation(
+        self, session_id: str, user_id: str, tenant_id: str = "default",
+        limit: int = 500,
+    ) -> Optional[dict[str, Any]]:
+        """Load one conversation after enforcing user and tenant ownership."""
+        if not self._session_manager:
+            return None
+        session = self._session_manager.get_session(session_id)
+        if not session or str(session.get("user_id") or "") != str(user_id):
+            return None
+        metadata = self._decode_session_metadata(session)
+        if str(metadata.get("tenant_id", "default")) != str(tenant_id or "default"):
+            return None
+        records = self._session_manager.list_conversation_messages(session_id, limit=limit)
+        messages = [
+            {
+                "role": record.role,
+                "content": self._redact_for_persistence(record.content),
+                "created_at": record.created_at,
+                "turn_id": record.turn_id,
+            }
+            for record in records
+        ]
+        if not messages:
+            legacy = metadata.get("messages")
+            messages = legacy if isinstance(legacy, list) else []
+        summary = self._conversation_summary(session, messages)
+        return {**summary, "messages": messages}
     
     def _ensure_session(
         self,

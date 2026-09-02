@@ -841,7 +841,7 @@ class TestRuntimeQuery:
                 seen.extend(messages)
                 return '{"intent_type":"chat","platforms":[]}'
 
-        rt = AgentRuntime(require_llm=False, intent_parser=__import__(
+        rt = AgentRuntime(require_llm=False, persistence_store=AdAgentStore(":memory:"), intent_parser=__import__(
             "agents.ad_agent.core.intent", fromlist=["LLMIntentParser"]
         ).LLMIntentParser(LLM()))
         result = rt.run(
@@ -853,6 +853,39 @@ class TestRuntimeQuery:
         assert "PARTNER" not in serialized
         assert "KEY" not in serialized
         assert "<redacted>" in serialized
+
+        persisted = rt._session_manager.list_conversation_messages("redaction-session")
+        persisted_text = " ".join(item.content for item in persisted)
+        assert "SECRET" not in persisted_text
+        assert "PARTNER" not in persisted_text
+        assert "KEY" not in persisted_text
+
+    def test_runtime_persists_both_sides_of_a_conversation_turn(self):
+        class LLM:
+            def call(self, messages):
+                return '{"intent_type":"chat","platforms":[]}'
+
+        rt = AgentRuntime(
+            require_llm=False,
+            persistence_store=AdAgentStore(":memory:"),
+            intent_parser=__import__(
+                "agents.ad_agent.core.intent", fromlist=["LLMIntentParser"]
+            ).LLMIntentParser(LLM()),
+        )
+
+        result = rt.run(
+            "请总结一下今天的投放情况",
+            session_id="conversation-session",
+            user_id="conversation-user",
+        )
+
+        messages = rt._session_manager.list_conversation_messages(
+            result["session_id"]
+        )
+        assert [(item.role, item.content) for item in messages] == [
+            ("user", "请总结一下今天的投放情况"),
+            ("assistant", result["reply"]),
+        ]
 
 
 class TestSafeWriteExecution:
@@ -1237,6 +1270,19 @@ class TestSessionManager:
         sm.create_session("sess-2", "user-1")
         sessions = sm.list_sessions("user-1")
         assert len(sessions) == 2
+
+    def test_conversation_messages_are_stored_in_chronological_order(self, store):
+        sm = SessionManager(store)
+        sm.create_session("sess-1", "user-1")
+        sm.record_conversation_message("sess-1", "turn-1", "user", "查询广告系列")
+        sm.record_conversation_message("sess-1", "turn-1", "assistant", "已找到 2 个广告系列")
+
+        messages = sm.list_conversation_messages("sess-1")
+
+        assert [(item.role, item.content) for item in messages] == [
+            ("user", "查询广告系列"),
+            ("assistant", "已找到 2 个广告系列"),
+        ]
 
     def test_tool_call_recording(self, store):
         sm = SessionManager(store)

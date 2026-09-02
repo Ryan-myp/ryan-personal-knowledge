@@ -542,28 +542,15 @@ class CrossChannelFeature:
                 "workflow_sequence": operation_sequence,
             })
 
-        session.add_message({"role": "user", "content": user_input})
         reply = services.response_renderer.render(
             intent, results, bool(errors and not operations)
         )
-        session.add_message({"role": "assistant", "content": reply})
+        services.persist_conversation_turn(session, turn_id, user_input, reply)
         services.finish_workflow(
             workflow_id, tool_plan, results, workflow_inputs,
             planning_errors=errors,
         )
         resource_results = services.build_resource_results(results)
-        if services.session_manager:
-            services.session_manager.update_session(
-                session.session_id,
-                {
-                    "execution_mode": services.execution_mode,
-                    "read_only_mode": services.read_only_mode,
-                    "message_count": len(session.messages),
-                    "messages": services.redact(
-                        session.messages[-20:]
-                    ),
-                },
-            )
         return {
             "session_id": session.session_id,
             "turn_id": turn_id,

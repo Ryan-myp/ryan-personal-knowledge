@@ -118,7 +118,9 @@ def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
         "/skills?limit=200", "/versions/archive", "/evaluate", "/evaluations/",
         "X-API-Key", "let streamError = ''", "streamError || '事件流未返回最终回复'",
             "最近对话", "服务已连接", "grid-template-columns: 228px minmax(0, 1fr) minmax(450px, 460px)",
-        "global-action-label", "知识库",
+        "global-action-label", "知识库", "/sessions?limit=50",
+        "/sessions/${encodeURIComponent(targetSessionId)}?limit=500",
+        "refreshConversationHistory", "loadConversation",
     ):
         assert marker in html
     # The browser may hold the service API key in memory, but the page must
@@ -151,6 +153,83 @@ def test_chat_forwards_request_to_runtime(fake_server):
     assert fake_server.calls[0]["account_id"] == "m1"
     assert fake_server.calls[0]["principal"].user_id == "ad-agent-service"
     assert "user_id" not in fake_server.calls[0]
+
+
+def test_session_endpoints_use_authenticated_user_and_tenant_scope(monkeypatch, fake_server):
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "scoped-key": {
+                "user_id": "gateway-user",
+                "tenant_id": "tenant-a",
+                "permissions": ["ads.read"],
+            }
+        }),
+    )
+    calls = []
+
+    def list_conversations(**kwargs):
+        calls.append(("list", kwargs))
+        return [{
+            "session_id": "session-a",
+            "title": "查询 Meta 广告系列",
+            "preview": "已找到 2 个广告系列",
+            "message_count": 2,
+        }]
+
+    def get_conversation(**kwargs):
+        calls.append(("get", kwargs))
+        if kwargs["user_id"] != "gateway-user" or kwargs["tenant_id"] != "tenant-a":
+            return None
+        return {
+            "session_id": kwargs["session_id"],
+            "title": "查询 Meta 广告系列",
+            "preview": "已找到 2 个广告系列",
+            "message_count": 2,
+            "messages": [
+                {"role": "user", "content": "查询 Meta 广告系列"},
+                {"role": "assistant", "content": "已找到 2 个广告系列"},
+            ],
+        }
+
+    fake_server.list_conversations = list_conversations
+    fake_server.get_conversation = get_conversation
+    with TestClient(api_server.app) as client:
+        listing = client.get("/sessions", headers={"X-API-Key": "scoped-key"})
+        detail = client.get(
+            "/sessions/session-a",
+            headers={"X-API-Key": "scoped-key"},
+            params={"user_id": "forged-user"},
+        )
+
+    assert listing.status_code == 200
+    assert listing.json()["sessions"][0]["session_id"] == "session-a"
+    assert detail.status_code == 200
+    assert detail.json()["messages"][0]["content"] == "查询 Meta 广告系列"
+    assert calls[0][1]["user_id"] == "gateway-user"
+    assert calls[0][1]["tenant_id"] == "tenant-a"
+    assert calls[1][1]["user_id"] == "gateway-user"
+    assert calls[1][1]["tenant_id"] == "tenant-a"
+
+
+def test_session_detail_hides_other_principal_sessions(monkeypatch, fake_server):
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "scoped-key": {
+                "user_id": "gateway-user",
+                "tenant_id": "tenant-a",
+                "permissions": ["ads.read"],
+            }
+        }),
+    )
+    fake_server.get_conversation = lambda **kwargs: None
+    with TestClient(api_server.app) as client:
+        response = client.get(
+            "/sessions/not-owned",
+            headers={"X-API-Key": "scoped-key"},
+        )
+    assert response.status_code == 404
 
 
 def test_chat_page_does_not_turn_http_errors_into_operation_complete(fake_server):

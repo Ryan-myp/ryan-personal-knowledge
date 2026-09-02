@@ -10,7 +10,7 @@ from typing import Any, Optional
 from datetime import datetime
 
 from .interfaces import PersistenceBackend
-from .models import ToolCallRecord, CampaignRecord
+from .models import ConversationMessageRecord, ToolCallRecord, CampaignRecord
 from ..core.platform import normalize_platform
 from ..core.memory import MemoryManager, MemoryRecord
 
@@ -50,6 +50,27 @@ class SessionManager:
     def list_sessions(self, user_id: str = None, limit: int = 50) -> list:
         """列出会话"""
         return self.store.list_sessions(user_id, limit)
+
+    def record_conversation_message(
+        self, session_id: str, turn_id: str, role: str, content: str,
+    ) -> None:
+        """Persist one already-sanitized chat message."""
+        import uuid
+
+        self.store.record_conversation_message(
+            ConversationMessageRecord(
+                message_id=str(uuid.uuid4()),
+                session_id=str(session_id),
+                turn_id=str(turn_id),
+                role=str(role),
+                content=str(content),
+                created_at=datetime.now().isoformat(),
+            )
+        )
+
+    def list_conversation_messages(self, session_id: str, limit: int = 200) -> list:
+        """Return the durable chat messages in chronological order."""
+        return self.store.list_conversation_messages(session_id, limit=limit)
     
     def restore_session(self, session_id: str) -> dict:
         """

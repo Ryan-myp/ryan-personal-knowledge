@@ -3,6 +3,7 @@ persistence/store.py - SQLite 持久化存储
 
 Tables:
 - sessions: session metadata
+- conversation_messages: complete sanitized chat history
 - tool_calls: tool invocation history (with input/output/status)
 - campaign_state: campaign resource state (shared across sessions)
 """
@@ -17,7 +18,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, List
 
-from .models import CampaignRecord, TaskRecord, ToolCallRecord
+from .models import CampaignRecord, ConversationMessageRecord, TaskRecord, ToolCallRecord
 from ..core.memory import MemoryRecord
 
 logger = logging.getLogger(__name__)
@@ -75,6 +76,16 @@ class AdAgentStore:
         metadata TEXT DEFAULT '{}'
     );
 
+    CREATE TABLE IF NOT EXISTS conversation_messages (
+        message_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        turn_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS memories (
         memory_id TEXT PRIMARY KEY,
         tenant_id TEXT NOT NULL,
@@ -123,6 +134,8 @@ class AdAgentStore:
     
     CREATE INDEX IF NOT EXISTS idx_tool_calls_session ON tool_calls(session_id);
     CREATE INDEX IF NOT EXISTS idx_tool_calls_turn ON tool_calls(session_id, turn_id);
+    CREATE INDEX IF NOT EXISTS idx_conversation_messages_session
+        ON conversation_messages(session_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_campaigns_platform ON campaign_state(platform, campaign_id);
     CREATE INDEX IF NOT EXISTS idx_campaigns_name ON campaign_state(name);
     CREATE INDEX IF NOT EXISTS idx_memories_scope
@@ -1437,6 +1450,37 @@ class AdAgentStore:
                     "SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?", (limit,)
                 ).fetchall()
             return [dict(r) for r in rows]
+
+    def record_conversation_message(self, record: ConversationMessageRecord) -> None:
+        data = record.to_dict()
+        with self._lock:
+            conn = self._get_conn()
+            conn.execute(
+                """INSERT OR REPLACE INTO conversation_messages
+                   (message_id, session_id, turn_id, role, content, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    data["message_id"], data["session_id"], data["turn_id"],
+                    data["role"], data["content"], data["created_at"],
+                ),
+            )
+            conn.commit()
+
+    def list_conversation_messages(
+        self, session_id: str, limit: int = 200,
+    ) -> List[ConversationMessageRecord]:
+        with self._lock:
+            conn = self._get_conn()
+            rows = conn.execute(
+                """SELECT * FROM conversation_messages
+                   WHERE session_id = ?
+                   ORDER BY created_at DESC, rowid DESC LIMIT ?""",
+                (session_id, limit),
+            ).fetchall()
+            return [
+                ConversationMessageRecord.from_row(dict(row))
+                for row in reversed(rows)
+            ]
     
     # -- Tool Calls --
     

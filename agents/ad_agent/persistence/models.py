@@ -104,6 +104,30 @@ class ToolCallRecord:
 
 
 @dataclass
+class ConversationMessageRecord:
+    """One durable, sanitized user/assistant message in a session."""
+
+    message_id: str
+    session_id: str
+    turn_id: str
+    role: str
+    content: str
+    created_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_row(cls, row: Any) -> "ConversationMessageRecord":
+        if isinstance(row, dict):
+            data = dict(row)
+        else:
+            columns = ["message_id", "session_id", "turn_id", "role", "content", "created_at"]
+            data = dict(zip(columns, row))
+        return cls(**data)
+
+
+@dataclass
 class TaskRecord:
     """Durable, backend-neutral record for one asynchronous Agent task.
 

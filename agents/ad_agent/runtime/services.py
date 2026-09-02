@@ -133,6 +133,11 @@ class RuntimeServices(RuntimeServicesPort):
     def redact(self, value: Any) -> Any:
         return self._runtime._redact_for_persistence(value)
 
+    def persist_conversation_turn(
+        self, session: Any, turn_id: str, user_input: str, reply: str,
+    ) -> None:
+        self._runtime.persist_conversation_turn(session, turn_id, user_input, reply)
+
     def finish_workflow(
         self, workflow_id: Optional[str], tool_plan: dict[str, list[Any]],
         results: list[dict[str, Any]], workflow_inputs: dict[int, dict],

@@ -377,6 +377,51 @@ async def health():
     }
 
 
+@app.get("/sessions", tags=["sessions"])
+async def list_sessions(
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """List durable conversations owned by the authenticated principal."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.read")
+    if not runtime or not callable(getattr(runtime, "list_conversations", None)):
+        raise HTTPException(status_code=503, detail="会话存储未初始化")
+    conversations = await run_in_threadpool(
+        runtime.list_conversations,
+        user_id=principal.user_id,
+        tenant_id=principal.tenant_id,
+        limit=limit,
+    )
+    return {"sessions": conversations}
+
+
+@app.get("/sessions/{session_id}", tags=["sessions"])
+async def get_session_history(
+    session_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    limit: int = Query(500, ge=1, le=1000),
+):
+    """Load one durable conversation inside the principal's user/tenant scope."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.read")
+    if not runtime or not callable(getattr(runtime, "get_conversation", None)):
+        raise HTTPException(status_code=503, detail="会话存储未初始化")
+    conversation = await run_in_threadpool(
+        runtime.get_conversation,
+        session_id=session_id,
+        user_id=principal.user_id,
+        tenant_id=principal.tenant_id,
+        limit=limit,
+    )
+    # Do not reveal whether a session exists for another principal.
+    if not conversation:
+        raise HTTPException(status_code=404, detail="会话不存在或无权访问")
+    return conversation
+
+
 @app.post("/chat", tags=["chat"])
 async def chat(
     request: ChatRequest,
