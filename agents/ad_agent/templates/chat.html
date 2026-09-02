@@ -2059,7 +2059,18 @@
         .sidebar-brand { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
         .sidebar-header .app-name { display: block; font-size: 14px; }
         .sidebar-subtitle { color: var(--text-muted); font-size: 10px; }
-        .new-chat-btn { margin: 12px 14px 8px; padding: 10px 12px; min-height: 38px; font-size: 13px; }
+        .sidebar > .new-chat-btn {
+            height: 42px;
+            min-height: 42px;
+            margin: 12px 14px 0;
+            padding: 0 12px;
+            flex: 0 0 42px;
+            font-size: 13px;
+        }
+        .sidebar > .new-chat-btn + .new-chat-btn { margin-top: 8px; }
+        .sidebar > .new-chat-btn:last-of-type { margin-bottom: 12px; }
+        .skill-nav-btn, .knowledge-nav-btn, .blueprint-nav-btn { justify-content: flex-start; }
+        .nav-icon { width: 20px; min-width: 20px; display: inline-grid; place-items: center; text-align: center; }
         .new-chat-btn svg { width: 16px; height: 16px; }
         .skill-nav-btn, .knowledge-nav-btn { justify-content: flex-start; margin-top: 0; }
         .skill-nav-btn .nav-icon { width: 18px; text-align: center; font-size: 16px; }
@@ -5194,12 +5205,15 @@
         }
 
         document.addEventListener('click', (event) => {
-            if (!event.target.closest('.global-actions') && !event.target.closest('.workspace-nav') && !event.target.closest('.workspace-popover') && !event.target.closest('.knowledge-overlay')) {
+            if (!event.target.closest('.global-actions') && !event.target.closest('.workspace-nav') && !event.target.closest('.workspace-popover') && !event.target.closest('.knowledge-overlay') && !event.target.closest('.blueprint-overlay')) {
                 closeWorkspacePopovers();
             }
         });
         document.getElementById('knowledgeOverlay')?.addEventListener('click', (event) => {
             if (event.target.id === 'knowledgeOverlay') closeWorkspacePopovers();
+        });
+        document.getElementById('blueprintOverlay')?.addEventListener('click', (event) => {
+            if (event.target.id === 'blueprintOverlay') closeBlueprintManager();
         });
         document.getElementById('historyDeleteOverlay')?.addEventListener('click', (event) => {
             if (event.target.id === 'historyDeleteOverlay') closeHistoryDeleteDialog();
