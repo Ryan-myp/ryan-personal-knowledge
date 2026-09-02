@@ -8,10 +8,26 @@ from pathlib import Path
 from agents.ad_agent import AgentRuntime
 from agents.ad_agent.persistence.store import AdAgentStore
 from agents.ad_agent.skill_management import (
+    BuiltinSkillCatalog,
     ManagedSkillManager,
     SkillPackageError,
     _safe_evaluation_payload,
 )
+
+
+def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
+    skills_root = Path(__file__).resolve().parents[1] / "skills"
+    catalog = BuiltinSkillCatalog(skills_root)
+
+    items = catalog.list_versions(limit=200)
+
+    assert {item["skill_name"] for item in items} >= {
+        "google-ads-api-expert", "meta-marketing-api-expert", "tiktok-ads-expert",
+    }
+    assert all(item["source"] == "builtin" and item["editable"] is False for item in items)
+    detail = catalog.get_version("google-ads-api-expert", "1.0.0")
+    assert detail["files"]["SKILL.md"]["encoding"] == "base64"
+    assert detail["location"] == "channels/google-ads"
 
 
 def _files(name="business-growth"):

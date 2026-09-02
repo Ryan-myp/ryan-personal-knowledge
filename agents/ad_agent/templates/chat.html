@@ -952,6 +952,7 @@
         }
 
         .skill-status.published, .skill-status.passed { color: var(--success); }
+        .skill-status.builtin { color: #9db7ff; }
         .skill-status.failed, .skill-status.error { color: var(--error); }
         .skill-status.queued, .skill-status.running { color: var(--warning); }
 
@@ -1006,6 +1007,9 @@
             .skill-console-body { grid-template-columns: 1fr; grid-template-rows: 190px minmax(0, 1fr); }
             .skill-list { border-right: 0; border-bottom: 1px solid var(--border); }
             .skill-immutable-note { width: 100%; margin-left: 0; }
+            .knowledge-overlay { padding: 0; }
+            .knowledge-console { height: 100%; border-radius: 0; }
+            .knowledge-search-grid { grid-template-columns: 1fr; }
         }
         
         /* 确认卡片容器 - 位于输入框上方 */
@@ -1379,10 +1383,9 @@
         .global-action { min-width: 38px; height: 29px; padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; font-size: 11px; }
         .global-action-label { color: #91a8bc; white-space: nowrap; }
         .global-readonly:hover, .global-action:hover, .global-readonly.active, .global-action.active { color: #e7f0fa; border-color: #6674cf; background: #10243a; }
-        .global-avatar { display: grid; place-items: center; width: 27px; height: 27px; border-radius: 50%; color: #d9d2ff; background: #33285f; font-size: 10px; font-weight: 700; }
+        .global-avatar { display: grid; place-items: center; min-width: 38px; height: 27px; padding: 0 7px; border-radius: 14px; color: #d9d2ff; background: #33285f; font-size: 10px; font-weight: 650; }
         .global-chevron, .session-chevron { color: #60788e; }
         .workspace-popover { position: fixed; top: 69px; right: 20px; z-index: 850; display: none; width: min(360px, calc(100vw - 32px)); padding: 14px; border: 1px solid #29435d; border-radius: 12px; background: #0b1a29; box-shadow: 0 18px 42px rgba(0,0,0,.42); }
-        #knowledgePopover { top: 160px; right: auto; left: 14px; width: min(560px, calc(100vw - 32px)); }
         .workspace-popover.active { display: block; }
         .workspace-popover-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
         .workspace-popover-title { color: #e7f0fa; font-size: 12px; font-weight: 650; }
@@ -1427,6 +1430,30 @@
         .knowledge-compose input:focus, .knowledge-compose select:focus, .knowledge-compose textarea:focus { border-color: #6674cf; }
         .knowledge-compose-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
         .knowledge-compose-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+        /* 知识库与 Skills 管理使用同级的大型工作台，而不是导航旁的小气泡。 */
+        .knowledge-overlay { position: fixed; inset: 0; z-index: 890; display: none; padding: 24px; background: rgba(0, 0, 0, .82); }
+        .knowledge-overlay.active { display: flex; }
+        .knowledge-console { width: min(1180px, 100%); height: min(820px, 100%); margin: auto; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-secondary); border: 1px solid var(--border-light); border-radius: 16px; box-shadow: 0 24px 80px rgba(0, 0, 0, .55); }
+        .knowledge-console-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+        .knowledge-console-title { font-size: 16px; font-weight: 600; }
+        .knowledge-console-subtitle { margin-top: 4px; color: var(--text-muted); font-size: 12px; line-height: 1.45; }
+        .knowledge-console-body { min-height: 0; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .knowledge-search-panel { padding: 16px 20px 12px; border-bottom: 1px solid var(--border); background: var(--bg-tertiary); }
+        .knowledge-search-grid { display: grid; grid-template-columns: minmax(260px, 1.8fr) minmax(150px, .8fr) minmax(220px, 1fr); gap: 12px; }
+        .knowledge-search-panel .workspace-form-actions { margin-top: 12px; }
+        .knowledge-console .knowledge-results { min-height: 0; flex: 1; display: grid; align-content: start; gap: 10px; padding: 16px 20px; margin-top: 0; max-height: none; overflow: auto; }
+        .knowledge-console .knowledge-result { padding: 13px 14px; }
+        .knowledge-console .knowledge-result-title { font-size: 13px; }
+        .knowledge-console .knowledge-result-meta { font-size: 10px; }
+        .knowledge-console .knowledge-result-excerpt, .knowledge-console .knowledge-markdown { font-size: 12px; }
+        .knowledge-console .knowledge-summary { padding: 14px 15px; }
+        .knowledge-console .knowledge-summary-label { font-size: 11px; }
+        .knowledge-console .knowledge-summary-body { font-size: 12px; }
+        .knowledge-console .knowledge-compose { flex-shrink: 0; margin: 0 20px 16px; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-tertiary); }
+        .knowledge-console .knowledge-empty { min-height: 130px; display: grid; place-items: center; font-size: 12px; }
+        .skill-editor-footer button:disabled { opacity: .42; cursor: not-allowed; }
+        .skill-editor input[readonly], .skill-editor textarea[readonly] { color: var(--text-secondary); background: #191919; }
         .sidebar { grid-column: 1; grid-row: 2 / 4; min-height: 0; width: 228px; background: #121212; }
         .sidebar-header { display: none; }
         .sidebar-brand { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -1531,7 +1558,7 @@
         <div class="global-actions">
             <button class="global-readonly" id="modeToggleButton" type="button" onclick="toggleModePopover()" aria-expanded="false"><span>锁</span> 只读模式</button>
             <button class="global-action" id="filterToggleButton" type="button" onclick="toggleFilterPopover()" aria-label="筛选" aria-expanded="false"><span aria-hidden="true">▽</span><span class="global-action-label">筛选</span></button>
-            <span class="global-avatar">OP</span><span class="global-chevron">⌄</span>
+            <span class="global-avatar" title="当前操作员">运营</span><span class="global-chevron">⌄</span>
         </div>
     </header>
     <section class="workspace-popover" id="modePopover" role="dialog" aria-label="执行模式说明">
@@ -1568,45 +1595,54 @@
             <div class="workspace-form-actions"><span class="workspace-filter-summary" id="traceFilterSummary">当前显示全部节点</span><button type="button" onclick="clearTraceFilters()">清除筛选</button></div>
         </div>
     </section>
-    <section class="workspace-popover" id="knowledgePopover" role="dialog" aria-label="知识库搜索">
-        <div class="workspace-popover-header">
-            <div><div class="workspace-popover-title">LLM Wiki 知识库</div><div class="workspace-popover-subtitle">搜索、阅读和沉淀 Markdown 知识；不会调用广告渠道接口。</div></div>
-            <button class="workspace-popover-close" type="button" onclick="closeWorkspacePopovers()" aria-label="关闭知识库">×</button>
-        </div>
-        <div class="workspace-form">
-            <label>关键词
-                <input id="knowledgeQuery" type="search" maxlength="2000" placeholder="例如：TikTok 报表、Google OAuth" onkeydown="if (event.key === 'Enter') searchKnowledge()">
-            </label>
-            <label>平台
-                <select id="knowledgePlatform"><option value="">全部平台</option><option value="meta">Meta</option><option value="tiktok">TikTok</option><option value="google-ads">Google Ads</option><option value="dv360">DV360</option></select>
-            </label>
-            <label>服务 API Key（如服务开启鉴权）
-                <input id="knowledgeApiKey" type="password" autocomplete="off" placeholder="仅保存在当前页面内" oninput="serviceApiKey = this.value.trim()">
-            </label>
-            <div class="workspace-form-actions"><span class="workspace-form-status" id="knowledgeStatus">输入关键词后搜索已发布知识。</span><button type="button" onclick="searchKnowledge()">搜索</button></div>
-        </div>
-        <div class="workspace-form-actions" style="margin-top:10px;">
-            <span class="workspace-filter-summary">知识文档发布后才会被 Agent 使用</span>
-            <button type="button" onclick="toggleKnowledgeComposer()">写入知识库</button>
-        </div>
-        <div class="knowledge-compose" id="knowledgeComposer">
-            <div class="knowledge-compose-grid">
-                <label>标题<input id="knowledgeTitle" maxlength="200" placeholder="例如：Meta 广告类型选择规则"></label>
-                <label>平台
-                    <select id="knowledgeWritePlatform"><option value="all">通用</option><option value="meta">Meta</option><option value="tiktok">TikTok</option><option value="google-ads">Google Ads</option><option value="dv360">DV360</option></select>
-                </label>
-                <label>知识类型
-                    <select id="knowledgeWriteType"><option value="general">通用</option><option value="hierarchy">层级</option><option value="constraint">约束</option><option value="parameter">参数</option><option value="workflow">流程</option><option value="best_practice">最佳实践</option><option value="error_pattern">错误模式</option><option value="case_study">案例</option><option value="tip">提示</option></select>
-                </label>
-                <label>版本<input id="knowledgeVersion" maxlength="80" value="1.0.0" placeholder="1.0.0"></label>
-                <label>标签<input id="knowledgeTags" maxlength="500" placeholder="用逗号分隔，例如：Meta,广告类型"></label>
+    <div class="knowledge-overlay" id="knowledgeOverlay" aria-hidden="true">
+        <section class="knowledge-console" role="dialog" aria-modal="true" aria-labelledby="knowledgeConsoleTitle">
+            <header class="knowledge-console-header">
+                <div>
+                    <div class="knowledge-console-title" id="knowledgeConsoleTitle">LLM Wiki 知识库</div>
+                    <div class="knowledge-console-subtitle">搜索、阅读和沉淀 Markdown 知识；这里管理的是业务知识，不会调用广告渠道接口。</div>
+                </div>
+                <button class="icon-btn" type="button" onclick="closeWorkspacePopovers()" aria-label="关闭知识库">×</button>
+            </header>
+            <div class="knowledge-console-body">
+                <div class="knowledge-search-panel">
+                    <div class="knowledge-search-grid">
+                        <label class="workspace-form">关键词
+                            <input id="knowledgeQuery" type="search" maxlength="2000" placeholder="例如：TikTok 报表、Google OAuth" onkeydown="if (event.key === 'Enter') searchKnowledge()">
+                        </label>
+                        <label class="workspace-form">平台
+                            <select id="knowledgePlatform"><option value="">全部平台</option><option value="meta">Meta</option><option value="tiktok">TikTok</option><option value="google-ads">Google Ads</option><option value="dv360">DV360</option></select>
+                        </label>
+                        <label class="workspace-form">服务 API Key（如服务开启鉴权）
+                            <input id="knowledgeApiKey" type="password" autocomplete="off" placeholder="仅保存在当前页面内" oninput="serviceApiKey = this.value.trim()">
+                        </label>
+                    </div>
+                    <div class="workspace-form-actions"><span class="workspace-form-status" id="knowledgeStatus">输入关键词后搜索已发布知识。</span><button type="button" onclick="searchKnowledge()">搜索</button></div>
+                    <div class="workspace-form-actions" style="margin-top:10px;">
+                        <span class="workspace-filter-summary">知识文档发布后才会被 Agent 使用</span>
+                        <button type="button" onclick="toggleKnowledgeComposer()">写入知识库</button>
+                    </div>
+                </div>
+                <div class="knowledge-results" id="knowledgeResults"></div>
+                <div class="knowledge-compose" id="knowledgeComposer">
+                    <div class="knowledge-compose-grid">
+                        <label>标题<input id="knowledgeTitle" maxlength="200" placeholder="例如：Meta 广告类型选择规则"></label>
+                        <label>平台
+                            <select id="knowledgeWritePlatform"><option value="all">通用</option><option value="meta">Meta</option><option value="tiktok">TikTok</option><option value="google-ads">Google Ads</option><option value="dv360">DV360</option></select>
+                        </label>
+                        <label>知识类型
+                            <select id="knowledgeWriteType"><option value="general">通用</option><option value="hierarchy">层级</option><option value="constraint">约束</option><option value="parameter">参数</option><option value="workflow">流程</option><option value="best_practice">最佳实践</option><option value="error_pattern">错误模式</option><option value="case_study">案例</option><option value="tip">提示</option></select>
+                        </label>
+                        <label>版本<input id="knowledgeVersion" maxlength="80" value="1.0.0" placeholder="1.0.0"></label>
+                        <label>标签<input id="knowledgeTags" maxlength="500" placeholder="用逗号分隔，例如：Meta,广告类型"></label>
+                    </div>
+                    <label>来源<input id="knowledgeSource" maxlength="200" value="user" placeholder="例如：投放团队经验"></label>
+                    <label>正文（支持 Markdown）<textarea id="knowledgeContent" maxlength="60000" placeholder="# 规则说明\n\n写下可复用的业务规则、例子和边界。"></textarea></label>
+                    <div class="workspace-form-actions"><span class="workspace-form-status" id="knowledgeWriteStatus">保存后先作为草稿，不会立即影响 Agent。</span><div class="knowledge-compose-actions"><button type="button" onclick="saveKnowledgeDocument(false)">保存草稿</button><button type="button" onclick="saveKnowledgeDocument(true)">保存并发布</button></div></div>
+                </div>
             </div>
-            <label>来源<input id="knowledgeSource" maxlength="200" value="user" placeholder="例如：投放团队经验"></label>
-            <label>正文（支持 Markdown）<textarea id="knowledgeContent" maxlength="60000" placeholder="# 规则说明\n\n写下可复用的业务规则、例子和边界。"></textarea></label>
-            <div class="workspace-form-actions"><span class="workspace-form-status" id="knowledgeWriteStatus">保存后先作为草稿，不会立即影响 Agent。</span><div class="knowledge-compose-actions"><button type="button" onclick="saveKnowledgeDocument(false)">保存草稿</button><button type="button" onclick="saveKnowledgeDocument(true)">保存并发布</button></div></div>
-        </div>
-        <div class="knowledge-results" id="knowledgeResults"></div>
-    </section>
+        </section>
+    </div>
     <!-- 左侧边栏 -->
     <aside class="sidebar">
         <button class="new-chat-btn" onclick="newChat()">
@@ -1786,10 +1822,11 @@
                         <div class="skill-eval-summary" id="skillEvalSummary">选择一个版本，或新建一个标准 Skill 目录。</div>
                         <button class="btn btn-secondary" type="button" onclick="addSkillFile()">+ 添加文件</button>
                         <span class="spacer"></span>
-                        <button class="btn btn-secondary" type="button" onclick="evaluateSelectedSkill()">Skill-up 评测</button>
-                        <button class="btn btn-secondary" type="button" onclick="unpublishSelectedSkill()">下线</button>
-                        <button class="btn btn-primary" type="button" onclick="saveSkillDraft()">保存为新版本</button>
-                        <button class="btn btn-primary" type="button" onclick="publishSelectedSkill()">发布 / 回滚</button>
+                        <button class="btn btn-secondary" id="skillEvaluateButton" type="button" onclick="evaluateSelectedSkill()">Skill-up 评测</button>
+                        <button class="btn btn-secondary" id="skillUnpublishButton" type="button" onclick="unpublishSelectedSkill()">下线</button>
+                        <button class="btn btn-primary" id="skillSaveButton" type="button" onclick="saveSkillDraft()">保存为新版本</button>
+                        <button class="btn btn-primary" id="skillPublishButton" type="button" onclick="publishSelectedSkill()">发布 / 回滚</button>
+                        <button class="btn btn-secondary" id="skillCloneButton" type="button" onclick="cloneSelectedBuiltin()">复制为新版本</button>
                     </div>
                 </div>
             </div>
@@ -1810,6 +1847,7 @@
             selected: null,
             detail: null,
             files: [],
+            readOnly: false,
             evaluationTimer: null,
         };
 
@@ -1849,12 +1887,16 @@
         let workspaceMode = { mode: '', loading: false };
 
         function closeWorkspacePopovers() {
-            for (const [popoverId, buttonId] of [['modePopover', 'modeToggleButton'], ['filterPopover', 'filterToggleButton'], ['knowledgePopover', 'knowledgeNavButton']]) {
+            for (const [popoverId, buttonId] of [['modePopover', 'modeToggleButton'], ['filterPopover', 'filterToggleButton']]) {
                 document.getElementById(popoverId)?.classList.remove('active');
                 const button = document.getElementById(buttonId);
                 button?.classList.remove('active');
                 button?.setAttribute('aria-expanded', 'false');
             }
+            document.getElementById('knowledgeOverlay')?.classList.remove('active');
+            document.getElementById('knowledgeOverlay')?.setAttribute('aria-hidden', 'true');
+            document.getElementById('knowledgeNavButton')?.classList.remove('active');
+            document.getElementById('knowledgeNavButton')?.setAttribute('aria-expanded', 'false');
         }
 
         function toggleWorkspacePopover(popoverId, buttonId) {
@@ -1914,7 +1956,16 @@
         }
 
         function toggleKnowledgePopover() {
-            toggleWorkspacePopover('knowledgePopover', 'knowledgeNavButton');
+            const overlay = document.getElementById('knowledgeOverlay');
+            if (!overlay) return;
+            const open = overlay.classList.contains('active');
+            closeWorkspacePopovers();
+            if (!open) {
+                overlay.classList.add('active');
+                overlay.setAttribute('aria-hidden', 'false');
+                document.getElementById('knowledgeNavButton')?.classList.add('active');
+                document.getElementById('knowledgeNavButton')?.setAttribute('aria-expanded', 'true');
+            }
             const keyInput = document.getElementById('knowledgeApiKey');
             if (keyInput && !keyInput.value) keyInput.value = serviceApiKey;
         }
@@ -2687,15 +2738,20 @@
             serviceApiKey = document.getElementById('skillApiKey').value.trim();
             try {
                 const data = await apiFetch('/skills?limit=200');
-                skillState.versions = data.skills || [];
+                const managedSkills = Array.isArray(data.managed_skills) ? data.managed_skills : (data.skills || []);
+                const builtinSkills = Array.isArray(data.builtin_skills) ? data.builtin_skills : [];
+                skillState.versions = [...managedSkills, ...builtinSkills];
                 renderSkillList();
                 if (select) {
-                    await selectSkillVersion(select.skillName, select.version);
+                    await selectSkillVersion(select.skillName, select.version, select.source);
                 } else if (skillState.selected) {
                     const stillExists = skillState.versions.some(item =>
-                        item.skill_name === skillState.selected.skillName && item.version === skillState.selected.version
+                        item.skill_name === skillState.selected.skillName && item.version === skillState.selected.version && (item.source || 'managed') === (skillState.selected.source || 'managed')
                     );
-                    if (stillExists) await selectSkillVersion(skillState.selected.skillName, skillState.selected.version);
+                    if (stillExists) await selectSkillVersion(skillState.selected.skillName, skillState.selected.version, skillState.selected.source);
+                } else if (data.builtin_skills?.length) {
+                    const firstBuiltin = data.builtin_skills[0];
+                    await selectSkillVersion(firstBuiltin.skill_name, firstBuiltin.version, 'builtin');
                 }
                 if (!skillState.versions.length) newSkillDraft();
             } catch (error) {
@@ -2744,9 +2800,9 @@
                     meta.append(version, digest);
                     const status = document.createElement('span');
                     status.className = `skill-status ${item.status || ''}`;
-                    status.textContent = skillStatusLabel(item.status);
+                    status.textContent = item.source === 'builtin' ? '内置 · 只读' : skillStatusLabel(item.status);
                     button.append(meta, status);
-                    button.addEventListener('click', () => selectSkillVersion(item.skill_name, item.version));
+                    button.addEventListener('click', () => selectSkillVersion(item.skill_name, item.version, item.source));
                     group.appendChild(button);
                 }
                 list.appendChild(group);
@@ -2758,6 +2814,7 @@
             skillState.evaluationTimer = null;
             skillState.selected = null;
             skillState.detail = null;
+            skillState.readOnly = false;
             skillState.files = [{
                 path: 'SKILL.md', encoding: 'utf-8',
                 content: '---\nname: new-skill\ndescription: Describe what this Skill does\nplatform: multi_platform\n---\n\n# Instructions\n\nDescribe the business workflow in natural language.\n',
@@ -2767,6 +2824,7 @@
             document.getElementById('skillEvalSummary').textContent = '草稿不会影响已发布 Skill；保存时请使用新的语义化版本号。';
             renderSkillList();
             renderSkillFiles();
+            updateSkillEditorState();
             clearSkillNotice();
         }
 
@@ -2782,11 +2840,15 @@
             } catch (_) { return value || ''; }
         }
 
-        async function selectSkillVersion(skillName, version) {
+        async function selectSkillVersion(skillName, version, source = 'managed') {
             try {
-                const data = await apiFetch(`/skills/${encodeURIComponent(skillName)}/versions/${encodeURIComponent(version)}`);
-                skillState.selected = { skillName, version };
+                const endpoint = source === 'builtin'
+                    ? `/skills/builtin/${encodeURIComponent(skillName)}/versions/${encodeURIComponent(version)}`
+                    : `/skills/${encodeURIComponent(skillName)}/versions/${encodeURIComponent(version)}`;
+                const data = await apiFetch(endpoint);
+                skillState.selected = { skillName, version, source: source || data.source || 'managed' };
                 skillState.detail = data;
+                skillState.readOnly = skillState.selected.source === 'builtin';
                 skillState.files = Object.entries(data.files || {}).map(([path, value]) => ({
                     path,
                     encoding: value && value.encoding === 'base64' && !likelyTextPath(path) ? 'base64' : 'utf-8',
@@ -2797,7 +2859,37 @@
                 renderSkillList();
                 renderSkillFiles();
                 renderSkillEvaluation(data);
+                updateSkillEditorState();
             } catch (error) { showSkillNotice(error.message, true); }
+        }
+
+        function updateSkillEditorState() {
+            const readOnly = skillState.readOnly;
+            const nameInput = document.getElementById('skillNameInput');
+            const versionInput = document.getElementById('skillVersionInput');
+            if (nameInput) nameInput.readOnly = readOnly;
+            if (versionInput) versionInput.readOnly = readOnly;
+            document.getElementById('skillSaveButton')?.toggleAttribute('disabled', readOnly);
+            document.getElementById('skillEvaluateButton')?.toggleAttribute('disabled', readOnly || !skillState.selected);
+            document.getElementById('skillPublishButton')?.toggleAttribute('disabled', readOnly || !skillState.selected);
+            document.getElementById('skillUnpublishButton')?.toggleAttribute('disabled', readOnly || !skillState.selected);
+            document.getElementById('skillCloneButton')?.toggleAttribute('disabled', !readOnly);
+        }
+
+        function cloneSelectedBuiltin() {
+            if (!skillState.selected || skillState.selected.source !== 'builtin') return;
+            const parts = String(skillState.selected.version).split('.').map(value => Number.parseInt(value, 10));
+            const nextVersion = parts.length === 3 && parts.every(Number.isInteger)
+                ? `${parts[0]}.${parts[1]}.${parts[2] + 1}` : '1.0.0';
+            skillState.selected = null;
+            skillState.detail = null;
+            skillState.readOnly = false;
+            document.getElementById('skillVersionInput').value = nextVersion;
+            document.getElementById('skillEvalSummary').textContent = '已复制内置 Skill；请编辑内容并保存为新的托管版本。';
+            renderSkillList();
+            renderSkillFiles();
+            updateSkillEditorState();
+            showSkillNotice('已复制内置 Skill。修改后点击“保存为新版本”，不会改动部署内置版本。');
         }
 
         function renderSkillFiles() {
@@ -2810,17 +2902,20 @@
                 header.className = 'skill-file-row-header';
                 const path = document.createElement('input');
                 path.type = 'text'; path.placeholder = 'references/guide.md'; path.value = file.path;
+                path.readOnly = skillState.readOnly;
                 path.addEventListener('input', () => { file.path = path.value; });
                 const encoding = document.createElement('select');
                 encoding.innerHTML = '<option value="utf-8">UTF-8 文本</option><option value="base64">Base64 二进制</option>';
                 encoding.value = file.encoding;
+                encoding.disabled = skillState.readOnly;
                 encoding.addEventListener('change', () => { file.encoding = encoding.value; });
                 const remove = document.createElement('button');
                 remove.type = 'button'; remove.textContent = '删除';
+                remove.disabled = skillState.readOnly;
                 remove.addEventListener('click', () => { skillState.files.splice(index, 1); renderSkillFiles(); });
                 header.append(path, encoding, remove);
                 const content = document.createElement('textarea');
-                content.spellcheck = false; content.value = file.content;
+                content.spellcheck = false; content.value = file.content; content.readOnly = skillState.readOnly;
                 content.addEventListener('input', () => { file.content = content.value; });
                 const hint = document.createElement('div');
                 hint.className = 'skill-file-hint';
@@ -2831,6 +2926,7 @@
         }
 
         function addSkillFile() {
+            if (skillState.readOnly) return;
             skillState.files.push({ path: 'references/new.md', encoding: 'utf-8', content: '' });
             renderSkillFiles();
             const rows = document.querySelectorAll('.skill-file-row');
@@ -2849,6 +2945,10 @@
         }
 
         async function saveSkillDraft() {
+            if (skillState.readOnly) {
+                showSkillNotice('内置 Skill 只能复制为新的托管版本后再编辑。', true);
+                return;
+            }
             try {
                 const skillName = document.getElementById('skillNameInput').value.trim().toLowerCase();
                 const version = document.getElementById('skillVersionInput').value.trim();
@@ -2881,6 +2981,10 @@
 
         function renderSkillEvaluation(detail) {
             const summary = document.getElementById('skillEvalSummary');
+            if (detail.source === 'builtin') {
+                summary.textContent = `部署内置版本 · ${detail.location || '标准 Skill 目录'} · 只读；复制后可作为租户新版本编辑。`;
+                return;
+            }
             const evalStatus = detail.evaluation_status || 'not_run';
             const runId = detail.evaluation_run_id ? ` · run ${detail.evaluation_run_id.slice(0, 10)}…` : '';
             const release = detail.status === 'published' ? '已发布' : detail.status === 'archived' ? '已归档' : '草稿';
@@ -3336,9 +3440,12 @@
         }
 
         document.addEventListener('click', (event) => {
-            if (!event.target.closest('.global-actions') && !event.target.closest('.workspace-nav') && !event.target.closest('.workspace-popover')) {
+            if (!event.target.closest('.global-actions') && !event.target.closest('.workspace-nav') && !event.target.closest('.workspace-popover') && !event.target.closest('.knowledge-overlay')) {
                 closeWorkspacePopovers();
             }
+        });
+        document.getElementById('knowledgeOverlay')?.addEventListener('click', (event) => {
+            if (event.target.id === 'knowledgeOverlay') closeWorkspacePopovers();
         });
         document.addEventListener('keydown', (event) => {
             if (event.key === 'Escape') closeWorkspacePopovers();

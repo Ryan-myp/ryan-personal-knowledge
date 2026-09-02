@@ -12,6 +12,7 @@ registry and its policy gates.
 from __future__ import annotations
 
 import base64
+import copy
 import hashlib
 import io
 import json
@@ -76,6 +77,131 @@ _EVAL_CAPACITY = threading.BoundedSemaphore(_EVAL_MAX_WORKERS + _EVAL_MAX_QUEUE)
 # transactional/lease implementation rather than relying on this lock.
 _PUBLICATION_LOCKS: dict[tuple[str, str, str], threading.RLock] = {}
 _PUBLICATION_LOCKS_GUARD = threading.RLock()
+
+
+class BuiltinSkillCatalog:
+    """Read-only catalog for Skills shipped with the Agent.
+
+    Built-in Skills live in the deployment-owned standard directory and are
+    not tenant records.  Keeping this catalog separate from
+    ``ManagedSkillManager`` makes that boundary explicit: the UI can browse
+    the same package a Runtime uses, while edits still have to become a new
+    immutable managed version.
+    """
+
+    def __init__(self, root: str | os.PathLike[str]):
+        self.root = Path(root).expanduser().resolve()
+        self._records: Optional[list[dict[str, Any]]] = None
+
+    def refresh(self) -> None:
+        """Drop the deployment snapshot after an intentional package update."""
+        self._records = None
+
+    def _skill_directories(self) -> list[Path]:
+        if not self.root.is_dir():
+            return []
+        return sorted(
+            {
+                skill_file.parent.resolve()
+                for skill_file in self.root.rglob("SKILL.md")
+                if skill_file.is_file() and not skill_file.is_symlink()
+            },
+            key=lambda path: str(path),
+        )
+
+    @staticmethod
+    def _identity(contract: SkillContract, directory: Path) -> tuple[str, str, str]:
+        if contract.context_only:
+            metadata = contract.raw_yaml.get("business", {})
+            if not isinstance(metadata, Mapping):
+                metadata = {}
+            name = str(metadata.get("name") or directory.name).strip().lower()
+            description = str(metadata.get("description") or "业务上下文 Skill").strip()
+            version = str(metadata.get("version") or "builtin").strip()
+            return name, description, version
+        return (
+            str(contract.name or directory.name).strip(),
+            str(contract.description or "").strip(),
+            str(contract.version or "builtin").strip(),
+        )
+
+    @staticmethod
+    def _read_files(directory: Path) -> dict[str, bytes]:
+        files: dict[str, bytes] = {}
+        for path in sorted(directory.rglob("*")):
+            if path.is_symlink() or not path.is_file():
+                continue
+            relative = path.relative_to(directory).as_posix()
+            files[relative] = path.read_bytes()
+        # ``normalize_skill_files`` is the HTTP decoder and therefore accepts
+        # text or encoded objects rather than already-decoded bytes. Round
+        # trip through its encoded representation so the read-only catalog
+        # shares the same package boundary without changing file contents.
+        normalize_skill_files(encode_skill_files(files))
+        return dict(sorted(files.items()))
+
+    def _public(self, directory: Path, include_files: bool = False) -> Optional[dict[str, Any]]:
+        try:
+            contract = SkillContract(str(directory)).load()
+            name, description, version = self._identity(contract, directory)
+            files = self._read_files(directory)
+            digest = skill_package_digest(files)
+        except (OSError, UnicodeError, ValueError, SkillPackageError, yaml.YAMLError):
+            return None
+        relative = directory.relative_to(self.root).as_posix()
+        result: dict[str, Any] = {
+            "version_id": f"builtin:{digest[:24]}",
+            "tenant_id": None,
+            "skill_name": name,
+            "version": version,
+            "status": "builtin",
+            "source": "builtin",
+            "editable": False,
+            "description": description,
+            "location": relative,
+            "sha256": digest,
+            "created_by": "deployment",
+            "created_at": None,
+            "published_at": None,
+            "evaluation_status": "not_applicable",
+            "evaluation_run_id": None,
+            "evaluation_report": None,
+            "files": encode_skill_files(files) if include_files else sorted(files),
+        }
+        return result
+
+    def _snapshot(self) -> list[dict[str, Any]]:
+        if self._records is None:
+            records: list[dict[str, Any]] = []
+            for directory in self._skill_directories():
+                item = self._public(directory, include_files=True)
+                if item:
+                    records.append(item)
+            self._records = records
+        return self._records
+
+    def list_versions(
+        self, skill_name: Optional[str] = None, limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        normalized = str(skill_name or "").strip().lower()
+        result: list[dict[str, Any]] = []
+        for record in self._snapshot():
+            item = copy.deepcopy(record)
+            if normalized and item["skill_name"].lower() != normalized:
+                continue
+            item["files"] = sorted(item["files"])
+            result.append(item)
+            if len(result) >= max(1, min(int(limit), 200)):
+                break
+        return result
+
+    def get_version(
+        self, skill_name: str, version: str,
+    ) -> Optional[dict[str, Any]]:
+        for item in self._snapshot():
+            if item["skill_name"].lower() == str(skill_name).strip().lower() and item["version"] == version:
+                return copy.deepcopy(item)
+        return None
 
 
 def _publication_lock_key(store: Any, tenant_id: str, skill_name: str) -> tuple[str, str, str]:
@@ -344,6 +470,8 @@ class ManagedSkillManager:
                 "evaluation_status", "evaluation_run_id", "evaluation_report",
             )
         }
+        result["source"] = "managed"
+        result["editable"] = True
         files = version.get("files") or {}
         result["files"] = files if include_files else sorted(files)
         return result

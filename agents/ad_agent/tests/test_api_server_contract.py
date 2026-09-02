@@ -122,6 +122,8 @@ def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
         "/sessions/${encodeURIComponent(targetSessionId)}?limit=500",
         "refreshConversationHistory", "loadConversation", "检索总结",
         "保存并发布", "/knowledge/documents", "formatKnowledgeMarkdown",
+        "knowledgeOverlay", "knowledge-console", "内置 · 只读", "复制为新版本",
+        "/skills/builtin/", "managed_skills", "builtin_skills", "当前操作员",
     ):
         assert marker in html
     # The browser may hold the service API key in memory, but the page must
@@ -650,6 +652,16 @@ def test_managed_skill_api_versions_and_publishing_are_tenant_scoped(monkeypatch
         response = client.get("/skills", headers=headers)
         assert response.status_code == 200
         assert response.json()["skills"][0]["status"] == "published"
+        assert response.json()["managed_skills"][0]["source"] == "managed"
+        assert any(item["source"] == "builtin" for item in response.json()["builtin_skills"])
+
+        response = client.get(
+            "/skills/builtin/google-ads-api-expert/versions/1.0.0",
+            headers=headers,
+        )
+        assert response.status_code == 200
+        assert response.json()["editable"] is False
+        assert response.json()["files"]["SKILL.md"]["encoding"] == "base64"
 
     assert "growth-skill" in managed_runtime.get_managed_skills()
     assert managed_runtime.registry.list_all() == []

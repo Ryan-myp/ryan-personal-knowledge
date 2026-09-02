@@ -39,7 +39,11 @@ from agents.ad_agent.core.auth import RequestPrincipal
 from agents.ad_agent.core.plugin_package import PluginPackageError
 from agents.ad_agent.core.memory import MEMORY_KINDS
 from agents.ad_agent.plugin_management import PluginPackageManager
-from agents.ad_agent.skill_management import ManagedSkillManager, SkillPackageError
+from agents.ad_agent.skill_management import (
+    BuiltinSkillCatalog,
+    ManagedSkillManager,
+    SkillPackageError,
+)
 from agents.ad_agent.knowledge_management import (
     KnowledgeDocumentError,
     ManagedKnowledgeManager,
@@ -48,6 +52,10 @@ from agents.ad_agent.knowledge_management import (
 # 配置路径
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
 TEMPLATE_PATH = Path(__file__).parent / "templates" / "chat.html"
+BUILTIN_SKILLS_ROOT = Path(__file__).parent / "skills"
+# Deployment-owned catalog. It is read-only and intentionally independent of
+# tenant Skill persistence; the Runtime remains the execution source of truth.
+builtin_skill_catalog = BuiltinSkillCatalog(BUILTIN_SKILLS_ROOT)
 
 # 全局 runtime
 runtime: Optional[AgentRuntime] = None
@@ -1120,13 +1128,20 @@ async def list_managed_skills(
     skill_name: Optional[str] = Query(None, max_length=64),
     limit: int = Query(50, ge=1, le=200),
 ):
-    """List versions visible to the authenticated tenant."""
+    """List tenant versions together with deployment-owned built-in Skills."""
     principal = _authorize_request(x_api_key, http_request)
     _require_skill_permission(principal, "skills.read")
     manager = _skill_manager_or_503()
+    managed = manager.list_versions(principal.tenant_id, skill_name, limit)
+    builtin = builtin_skill_catalog.list_versions(skill_name, limit)
     return {
         "tenant_id": principal.tenant_id,
-        "skills": manager.list_versions(principal.tenant_id, skill_name, limit),
+        # Keep managed records first for API consumers that previously read
+        # ``skills`` as the tenant list. The explicit partitions remove any
+        # ambiguity for new consumers and the UI.
+        "skills": managed + builtin,
+        "managed_skills": managed,
+        "builtin_skills": builtin,
     }
 
 
@@ -1192,6 +1207,22 @@ async def list_managed_skill_versions(
         "skill_name": skill_name,
         "versions": manager.list_versions(principal.tenant_id, skill_name, limit),
     }
+
+
+@app.get("/skills/builtin/{skill_name}/versions/{version}", tags=["skills"])
+async def get_builtin_skill_version(
+    skill_name: str,
+    version: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Read one deployment-owned Skill package without enabling edits."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_skill_permission(principal, "skills.read")
+    result = builtin_skill_catalog.get_version(skill_name, version)
+    if not result:
+        raise HTTPException(status_code=404, detail="Builtin Skill version not found")
+    return result
 
 
 @app.get("/skills/{skill_name}/versions/{version}", tags=["skills"])
