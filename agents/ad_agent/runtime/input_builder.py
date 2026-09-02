@@ -127,11 +127,48 @@ class ToolInputBuilder:
         return str(lookup_tool) if lookup_tool else None
 
     @staticmethod
+    def _schema_at_path(properties: Any, field_name: str) -> dict[str, Any]:
+        """Resolve a dotted property path without provider-specific branches."""
+        current = properties
+        for part in str(field_name or "").split("."):
+            if not part or not isinstance(current, dict):
+                return {}
+            current = current.get(part)
+        return current if isinstance(current, dict) else {}
+
+    @staticmethod
+    def _value_at_path(mapping: Any, field_name: str) -> Any:
+        """Read a dotted value path from a provider input object."""
+        current = mapping
+        for part in str(field_name or "").split("."):
+            if not part or not isinstance(current, dict) or part not in current:
+                return None
+            current = current[part]
+        return current
+
+    @classmethod
+    def _iter_schema_fields(
+        cls, properties: Any, prefix: str = "",
+    ) -> list[tuple[str, dict[str, Any]]]:
+        """Flatten object properties so nested lookup fields stay addressable."""
+        fields: list[tuple[str, dict[str, Any]]] = []
+        if not isinstance(properties, dict):
+            return fields
+        for name, schema in properties.items():
+            if not isinstance(schema, dict):
+                continue
+            path = f"{prefix}.{name}" if prefix else str(name)
+            fields.append((path, schema))
+            if schema.get("type") == "object":
+                fields.extend(cls._iter_schema_fields(schema.get("properties"), path))
+        return fields
+
+    @staticmethod
     def lookup_tools_for_fields(tool_def: Any, fields: list[str]) -> dict[str, str]:
         properties = getattr(tool_def.input_schema, "properties", {}) or {}
         result: dict[str, str] = {}
         for field in fields or []:
-            spec = properties.get(field, {})
+            spec = ToolInputBuilder._schema_at_path(properties, field)
             lookup_tool = ToolInputBuilder.lookup_tool_for_schema_field(spec)
             if lookup_tool:
                 result[field] = lookup_tool
@@ -143,13 +180,11 @@ class ToolInputBuilder:
         targets = []
         for candidate in self.services.registry.list_all():
             schema = getattr(candidate, "input_schema", None)
-            for field_name, field_schema in (
+            for field_name, field_schema in self._iter_schema_fields(
                 getattr(schema, "properties", {}) or {}
-            ).items():
-                if "." in str(field_name) or not isinstance(field_schema, dict):
-                    continue
+            ):
                 if self.lookup_tool_for_schema_field(field_schema) == source_tool_name:
-                    targets.append((candidate, str(field_name), field_schema))
+                    targets.append((candidate, field_name, field_schema))
         return targets
 
     @staticmethod
@@ -172,7 +207,8 @@ class ToolInputBuilder:
         configured = field_schema.get("selection_value_fields")
         if isinstance(configured, (list, tuple)):
             return [str(value) for value in configured]
-        singular = field_name[:-1] if field_name.endswith("_ids") else field_name
+        leaf_name = field_name.rsplit(".", 1)[-1]
+        singular = leaf_name[:-1] if leaf_name.endswith("_ids") else leaf_name
         return [singular, "id", "value", "code"]
 
     @staticmethod
@@ -295,7 +331,7 @@ class ToolInputBuilder:
         properties = getattr(tool_def.input_schema, "properties", {}) or {}
         for raw_field_name, token_input in raw_tokens.items():
             field_name = str(raw_field_name)
-            field_schema = properties.get(field_name)
+            field_schema = self._schema_at_path(properties, field_name)
             source_tool = self.lookup_tool_for_schema_field(field_schema)
             if not source_tool:
                 errors.append(
@@ -340,18 +376,35 @@ class ToolInputBuilder:
             if len(resolved) != len(tokens):
                 continue
             value = resolved if is_array else resolved[0]
-            if field_name in tool_input and tool_input[field_name] != value:
+            current = tool_input
+            path_parts = [part for part in field_name.split(".") if part]
+            for part in path_parts[:-1]:
+                current = current.get(part) if isinstance(current, dict) else None
+            current_value = (
+                current.get(path_parts[-1])
+                if path_parts and isinstance(current, dict)
+                else None
+            )
+            if current_value is not None and current_value != value:
                 errors.append(f"{field_name} does not match its selection token")
                 continue
-            tool_input[field_name] = value
+            target = tool_input
+            for part in path_parts[:-1]:
+                child = target.get(part)
+                if not isinstance(child, dict):
+                    child = {}
+                    target[part] = child
+                target = child
+            if path_parts:
+                target[path_parts[-1]] = value
 
         if self.services.execution_mode == "live" and tool_def.is_write_tool:
-            for field_name, field_schema in properties.items():
+            for field_name, field_schema in self._iter_schema_fields(properties):
                 if (
                     self.lookup_tool_for_schema_field(field_schema)
                     and field_schema.get("type")
                     in {"string", "number", "integer", "array"}
-                    and field_name in tool_input
+                    and self._value_at_path(tool_input, field_name) is not None
                     and field_name not in raw_tokens
                 ):
                     errors.append(

@@ -1510,6 +1510,28 @@
         .creation-card-field input, .creation-card-field select, .creation-card-field textarea { min-height: 32px; padding: 7px 9px; border-radius: 7px; transition: border-color .18s ease, box-shadow .18s ease; }
         .creation-card-field textarea { min-height: 72px; line-height: 1.55; }
         .creation-card-field input:focus, .creation-card-field select:focus, .creation-card-field textarea:focus { box-shadow: 0 0 0 3px var(--accent-light); }
+        .lookup-picker { display: grid; gap: 7px; }
+        .lookup-picker-toolbar { display: flex; align-items: stretch; gap: 6px; }
+        .lookup-picker-toolbar input { min-width: 0; flex: 1; }
+        .lookup-picker-search { flex: 0 0 auto; min-width: 58px; padding: 6px 9px; border: 1px solid var(--accent); border-radius: 7px; color: #fff; background: var(--accent); cursor: pointer; font: inherit; font-size: 10px; font-weight: 650; }
+        .lookup-picker-search:hover { background: var(--accent-hover); }
+        .lookup-picker-search:disabled { opacity: .5; cursor: not-allowed; }
+        .lookup-picker-status { color: var(--text-muted); font-size: 9px; line-height: 1.35; }
+        .lookup-picker-results { display: grid; gap: 4px; max-height: 168px; overflow-y: auto; padding: 4px; border: 1px solid var(--border-light); border-radius: 8px; background: var(--bg-primary); }
+        .lookup-picker-results:empty { display: none; }
+        .lookup-option { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 7px 8px; border: 1px solid transparent; border-radius: 6px; color: var(--text-secondary); background: transparent; cursor: pointer; text-align: left; font: inherit; font-size: 10px; }
+        .lookup-option:hover, .lookup-option.selected { border-color: rgba(99, 102, 241, .3); color: var(--text-primary); background: var(--accent-light); }
+        .lookup-option-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .lookup-option-value { flex: 0 0 auto; max-width: 46%; overflow: hidden; color: var(--text-muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+        .lookup-picker-selected { display: flex; flex-wrap: wrap; gap: 5px; }
+        .lookup-selection-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 4px 7px; border: 1px solid rgba(99, 102, 241, .28); border-radius: 999px; color: var(--text-primary); background: var(--accent-light); font-size: 9px; }
+        .lookup-selection-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .lookup-selection-chip button { width: 15px; height: 15px; padding: 0; border: 0; border-radius: 50%; color: var(--text-secondary); background: transparent; cursor: pointer; line-height: 15px; }
+        .lookup-selection-chip button:hover { color: var(--error); background: var(--error-light); }
+        .blueprint-field .lookup-picker-search { padding-block: 7px; }
+        .structured-object-row .lookup-picker { margin-top: 1px; }
+        .structured-object-row .lookup-picker-toolbar input { min-height: 30px; }
+        .structured-object-row .lookup-picker-results { max-height: 132px; }
         .creation-card-account {
             margin: 14px 18px 0;
             padding: 12px 13px;
@@ -2731,6 +2753,9 @@
             loading: false,
             accountId: '',
             localFiles: {},
+            selectionTokens: {},
+            selectionTokenTools: {},
+            lookupOptions: {},
         };
 
         const TRACE_STATUS_LABELS = {
@@ -4068,7 +4093,10 @@
             const fieldPath = parts.join('.');
             const tool = blueprintState.tools.find(item => item.name === toolName);
             let schema = tool?.input_schema?.properties || {};
-            for (const part of fieldPath.split('.')) schema = schema?.[part]?.properties || schema?.[part] || {};
+            for (const part of fieldPath.split('.')) {
+                if (!part) continue;
+                schema = schema?.[part] || {};
+            }
             return { toolName, fieldPath, schema: schema || {} };
         }
 
@@ -4123,7 +4151,258 @@
             return rawValue === '' ? undefined : rawValue;
         }
 
-        function renderStructuredObjectEditor(schema, value, onChange, metadata = null) {
+        function ensureLookupSessionId() {
+            if (sessionId) return sessionId;
+            try {
+                sessionId = crypto.randomUUID();
+            } catch (_) {
+                sessionId = `web-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            }
+            return sessionId;
+        }
+
+        function lookupValueKey(value) {
+            if (value === undefined || value === null) return '';
+            return JSON.stringify(value, (_, item) => item, 0);
+        }
+
+        function lookupFieldValue(field, context = {}) {
+            if (typeof context.getValue === 'function') return context.getValue();
+            return field.value;
+        }
+
+        function lookupFieldName(field, context = {}) {
+            return String(context.fieldName || field.provider_field || field.path || '').trim();
+        }
+
+        function lookupToolName(field, context = {}) {
+            return String(
+                context.targetToolName || field.tool || field.lookup_tool || field.lookup?.tool || ''
+            ).trim();
+        }
+
+        function lookupIsMultiple(field, context = {}) {
+            if (context.multiple !== undefined) return Boolean(context.multiple);
+            return Boolean(field.lookup_multiple || field.control === 'multiselect');
+        }
+
+        function lookupSelectedValues(field, context = {}) {
+            const value = lookupFieldValue(field, context);
+            if (lookupIsMultiple(field, context)) return Array.isArray(value) ? value : [];
+            return value === undefined || value === null || value === '' ? [] : [value];
+        }
+
+        function lookupOptionLabel(option) {
+            return String(option?.label ?? option?.name ?? option?.value ?? '');
+        }
+
+        function lookupOptionValue(option) {
+            return option?.value;
+        }
+
+        function lookupOptionMatches(option, query) {
+            if (!query) return true;
+            return `${lookupOptionLabel(option)} ${lookupOptionValue(option) ?? ''}`
+                .toLowerCase().includes(query.toLowerCase());
+        }
+
+        function lookupSelectionTokensFor(context, field) {
+            const store = context.selectionTokens || {};
+            const key = lookupFieldName(field, context);
+            const value = store[key];
+            if (lookupIsMultiple(field, context)) return Array.isArray(value) ? value : [];
+            return value ? [value] : [];
+        }
+
+        function renderLookupPicker(field, context = {}) {
+            const picker = document.createElement('div');
+            picker.className = 'lookup-picker';
+            const fieldName = lookupFieldName(field, context);
+            const toolName = lookupToolName(field, context);
+            const multiple = lookupIsMultiple(field, context);
+            const accountId = () => String(
+                typeof context.getAccountId === 'function' ? context.getAccountId() : context.accountId || ''
+            ).trim();
+            const optionsStore = context.optionsStore || {};
+            const optionsKey = `${toolName}:${fieldName}`;
+            let options = Array.isArray(optionsStore[optionsKey]) ? optionsStore[optionsKey] : [];
+
+            const toolbar = document.createElement('div');
+            toolbar.className = 'lookup-picker-toolbar';
+            const searchInput = document.createElement('input');
+            searchInput.type = 'search';
+            searchInput.autocomplete = 'off';
+            searchInput.placeholder = '输入名称或 ID 筛选，再查询可用项';
+            const searchButton = document.createElement('button');
+            searchButton.type = 'button';
+            searchButton.className = 'lookup-picker-search';
+            searchButton.textContent = '查询';
+            toolbar.append(searchInput, searchButton);
+            picker.appendChild(toolbar);
+
+            const status = document.createElement('div');
+            status.className = 'lookup-picker-status';
+            picker.appendChild(status);
+            const results = document.createElement('div');
+            results.className = 'lookup-picker-results';
+            picker.appendChild(results);
+            const selected = document.createElement('div');
+            selected.className = 'lookup-picker-selected';
+            picker.appendChild(selected);
+
+            const getSelected = () => lookupSelectedValues(field, context);
+            const tokenStore = context.selectionTokens || {};
+
+            function optionForValue(value) {
+                return options.find(option => lookupValueKey(lookupOptionValue(option)) === lookupValueKey(value))
+                    || { value, label: String(value ?? '') };
+            }
+
+            function renderSelected() {
+                selected.replaceChildren();
+                const values = getSelected();
+                const tokens = lookupSelectionTokensFor(context, field);
+                values.forEach((value, index) => {
+                    const option = optionForValue(value);
+                    const chip = document.createElement('span');
+                    chip.className = 'lookup-selection-chip';
+                    const label = document.createElement('span');
+                    label.textContent = `${lookupOptionLabel(option)} · ${value}`;
+                    const remove = document.createElement('button');
+                    remove.type = 'button';
+                    remove.setAttribute('aria-label', `移除 ${lookupOptionLabel(option)}`);
+                    remove.textContent = '×';
+                    remove.onclick = () => {
+                        const next = multiple ? values.filter((_, valueIndex) => valueIndex !== index) : [];
+                        const nextTokens = multiple ? tokens.filter((_, tokenIndex) => tokenIndex !== index) : [];
+                        commitSelection(next, nextTokens, null);
+                    };
+                    chip.append(label, remove);
+                    selected.appendChild(chip);
+                });
+                if (!values.length) {
+                    const empty = document.createElement('span');
+                    empty.className = 'lookup-picker-status';
+                    empty.textContent = '尚未选择；请选择查询结果中的项目。';
+                    selected.appendChild(empty);
+                }
+            }
+
+            function renderResults() {
+                results.replaceChildren();
+                const selectedKeys = new Set(getSelected().map(lookupValueKey));
+                const query = searchInput.value.trim();
+                const visible = options.filter(option => lookupOptionMatches(option, query));
+                if (!visible.length) {
+                    status.textContent = options.length ? '没有匹配的项目，请换一个名称或 ID。' : '点击“查询”加载该账户下的可用项。';
+                    return;
+                }
+                status.textContent = `已加载 ${options.length} 项${query ? `，当前显示 ${visible.length} 项` : ''}`;
+                visible.slice(0, 100).forEach(option => {
+                    const value = lookupOptionValue(option);
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = `lookup-option${selectedKeys.has(lookupValueKey(value)) ? ' selected' : ''}`;
+                    button.disabled = !multiple && selectedKeys.has(lookupValueKey(value));
+                    const label = document.createElement('span');
+                    label.className = 'lookup-option-label';
+                    label.textContent = lookupOptionLabel(option);
+                    const id = document.createElement('span');
+                    id.className = 'lookup-option-value';
+                    id.textContent = String(value ?? '');
+                    button.append(label, id);
+                    button.onclick = () => {
+                        const current = getSelected();
+                        const currentTokens = lookupSelectionTokensFor(context, field);
+                        if (multiple) {
+                            if (current.some(item => lookupValueKey(item) === lookupValueKey(value))) return;
+                            commitSelection([...current, value], [...currentTokens, option.selection_token || ''], option);
+                        } else {
+                            commitSelection([value], [option.selection_token || ''], option);
+                        }
+                    };
+                    results.appendChild(button);
+                });
+            }
+
+            function commitSelection(values, tokens, option) {
+                const nextValue = multiple ? values : (values[0] ?? undefined);
+                const nextTokens = multiple ? tokens : (tokens[0] || undefined);
+                const key = lookupFieldName(field, context);
+                if (nextTokens) tokenStore[key] = nextTokens;
+                else delete tokenStore[key];
+                if (typeof context.onSelection === 'function') {
+                    context.onSelection({ value: nextValue, tokens: nextTokens, option });
+                }
+                renderSelected();
+                renderResults();
+            }
+
+            async function queryOptions() {
+                const account = accountId();
+                if (!account) {
+                    status.textContent = '请先填写广告账户 ID，再查询该账户下的可用项。';
+                    searchButton.disabled = true;
+                    return;
+                }
+                if (!toolName || !fieldName || !context.platform) {
+                    status.textContent = '当前字段缺少受控查询配置，暂时无法加载选项。';
+                    return;
+                }
+                searchButton.disabled = true;
+                status.textContent = '正在查询该账户的可用项…';
+                try {
+                    ensureLookupSessionId();
+                    const params = new URLSearchParams({
+                        platform: String(context.platform), field: fieldName,
+                        tool_name: toolName, account_id: account, session_id: sessionId,
+                    });
+                    const response = await authenticatedFetch(`/parameter-options/resolve?${params.toString()}`);
+                    const body = await response.text();
+                    let data = {};
+                    try { data = body ? JSON.parse(body) : {}; } catch (_) { data = {}; }
+                    if (!response.ok) throw new Error(data.detail || data.error || `查询失败（${response.status}）`);
+                    options = Array.isArray(data.options) ? data.options : [];
+                    optionsStore[optionsKey] = options;
+                    renderResults();
+                    renderSelected();
+                } catch (error) {
+                    status.textContent = error.message || '暂时无法查询可用项，请稍后重试。';
+                } finally {
+                    searchButton.disabled = false;
+                    refreshLookupAccountState(picker);
+                }
+            }
+
+            searchInput.addEventListener('input', renderResults);
+            searchButton.addEventListener('click', queryOptions);
+            picker.dataset.accountRequired = 'true';
+            picker.dataset.accountValue = accountId();
+            refreshLookupAccountState(picker);
+            renderSelected();
+            renderResults();
+            return picker;
+        }
+
+        function refreshLookupAccountState(root = document) {
+            const accountInput = root?.closest?.('.creation-card')?.querySelector('.creation-card-account input')
+                || root?.querySelector?.('.creation-card-account input')
+                || document.getElementById('blueprintAccountInput');
+            const account = String(accountInput?.value || '').trim();
+            (root?.matches?.('.lookup-picker') ? [root] : root?.querySelectorAll?.('.lookup-picker') || []).forEach(picker => {
+                picker.dataset.accountValue = account;
+                const button = picker.querySelector('.lookup-picker-search');
+                if (button && !button.disabled) button.disabled = !account;
+                if (!account) {
+                    const status = picker.querySelector('.lookup-picker-status');
+                    if (status && !picker.querySelector('.lookup-picker-results:not(:empty)')) {
+                        status.textContent = '请先填写广告账户 ID，再查询该账户下的可用项。';
+                    }
+                }
+            });
+        }
+
+        function renderStructuredObjectEditor(schema, value, onChange, metadata = null, lookupContext = null) {
             const editor = document.createElement('div');
             editor.className = 'structured-object-editor';
             const properties = metadata || schema?.properties || {};
@@ -4137,7 +4416,28 @@
                 row.appendChild(label);
                 let control;
                 const options = Array.isArray(spec.enum) ? spec.enum : [];
-                if (options.length) {
+                if (spec.lookup_tool || spec.lookup?.tool) {
+                    const childPath = [lookupContext?.fieldPath, name].filter(Boolean).join('.');
+                    control = renderLookupPicker({
+                        ...spec, path: childPath, provider_field: childPath,
+                        tool: lookupContext?.targetToolName,
+                        lookup: { tool: spec.lookup_tool || spec.lookup?.tool },
+                        lookup_multiple: spec.type === 'array',
+                        value: current[name],
+                    }, {
+                        ...lookupContext,
+                        fieldName: childPath,
+                        targetToolName: lookupContext?.targetToolName,
+                        multiple: spec.type === 'array',
+                        getValue: () => current[name],
+                        onSelection: ({ value: selectedValue, tokens }) => {
+                            if (selectedValue === undefined) delete current[name];
+                            else current[name] = selectedValue;
+                            onChange({ ...current });
+                            lookupContext?.onSelection?.({ fieldName: childPath, tokens });
+                        },
+                    });
+                } else if (options.length) {
                     control = document.createElement('select');
                     const empty = document.createElement('option');
                     empty.value = ''; empty.textContent = spec.required ? '请选择…' : '不设置';
@@ -4164,6 +4464,7 @@
                     control.value = current[name] === undefined ? '' : String(current[name]);
                 }
                 const commit = () => {
+                    if (spec.lookup_tool || spec.lookup?.tool) return;
                     const value = control.type === 'checkbox' ? control.checked : parseStructuredObjectChild(spec, control.value.trim());
                     if (value === undefined) delete current[name]; else current[name] = value;
                     onChange({ ...current });
@@ -4183,6 +4484,7 @@
 
         function blueprintDraftPlatformParams(blueprint) {
             const values = {};
+            const scopedSelectionTokens = {};
             const evaluated = new Map((blueprintState.evaluation?.fields || []).map(item => [item.path, item]));
             for (const field of (blueprint?.fields || [])) {
                 if (field.visible === false) continue;
@@ -4198,6 +4500,16 @@
                     setCreationNestedValue(values[toolName], fieldPath || field.path, value);
                 }
             }
+            Object.entries(blueprintState.selectionTokens || {}).forEach(([fieldName, token]) => {
+                const toolName = blueprintState.selectionTokenTools?.[fieldName];
+                if (!toolName || !token) return;
+                scopedSelectionTokens[toolName] = scopedSelectionTokens[toolName] || {};
+                scopedSelectionTokens[toolName][fieldName] = token;
+            });
+            Object.entries(scopedSelectionTokens).forEach(([toolName, tokens]) => {
+                values[toolName] = values[toolName] || {};
+                values[toolName].selection_tokens = tokens;
+            });
             return { [blueprint.provider]: values };
         }
 
@@ -4327,6 +4639,9 @@
             blueprintState.previousValues = {};
             blueprintState.evaluation = null;
             blueprintState.localFiles = {};
+            blueprintState.selectionTokens = {};
+            blueprintState.selectionTokenTools = {};
+            blueprintState.lookupOptions = {};
             const selector = item.selector;
             const initialValue = selectorValue || selector?.values?.[0];
             if (selector?.field && initialValue !== undefined) blueprintState.values[selector.field] = initialValue;
@@ -4345,7 +4660,10 @@
             const accountInput = document.getElementById('blueprintAccountInput');
             if (accountInput) {
                 accountInput.value = blueprintState.accountId || '';
-                accountInput.oninput = () => { blueprintState.accountId = accountInput.value.trim(); };
+                accountInput.oninput = () => {
+                    blueprintState.accountId = accountInput.value.trim();
+                    refreshLookupAccountState(document.getElementById('blueprintFields'));
+                };
             }
             renderBlueprintSelector();
             renderBlueprintFields(blueprintState.evaluation);
@@ -4456,14 +4774,51 @@
                     control.disabled = true;
                     control.value = displayValue === undefined ? (options[0] || '') : String(displayValue);
                 } else if (field.source === 'lookup') {
-                    control = document.createElement('input');
-                    control.placeholder = '动态选项将在受控 lookup 接入后加载';
-                    control.disabled = true;
+                    const lookupRef = blueprintToolFieldSchema(field.tool_ref);
+                    const lookupKey = lookupRef.fieldPath || field.path;
+                    control = renderLookupPicker({ ...field, value: displayValue, tool: lookupRef.toolName }, {
+                        platform: blueprint.provider,
+                        accountId: blueprintState.accountId,
+                        getAccountId: () => blueprintState.accountId,
+                        targetToolName: lookupRef.toolName,
+                        fieldName: lookupKey,
+                        selectionTokens: blueprintState.selectionTokens,
+                        optionsStore: blueprintState.lookupOptions,
+                        onSelection: ({ value, tokens }) => {
+                            if (tokens) {
+                                blueprintState.selectionTokens[lookupKey] = tokens;
+                                blueprintState.selectionTokenTools[lookupKey] = lookupRef.toolName;
+                            } else {
+                                delete blueprintState.selectionTokens[lookupKey];
+                                delete blueprintState.selectionTokenTools[lookupKey];
+                            }
+                            updateBlueprintField(field, value);
+                        },
+                    });
                 } else if (schema.type === 'object') {
                     control = renderStructuredObjectEditor(
                         schema,
                         displayValue,
-                        value => updateBlueprintField(field, JSON.stringify(value)),
+                        value => updateBlueprintField(field, value),
+                        null,
+                        {
+                            platform: blueprint.provider,
+                            accountId: blueprintState.accountId,
+                            getAccountId: () => blueprintState.accountId,
+                            targetToolName: blueprintToolFieldSchema(field.tool_ref).toolName,
+                            fieldPath: blueprintToolFieldSchema(field.tool_ref).fieldPath,
+                            selectionTokens: blueprintState.selectionTokens,
+                            optionsStore: blueprintState.lookupOptions,
+                            onSelection: ({ fieldName, tokens }) => {
+                                if (tokens) {
+                                    blueprintState.selectionTokens[fieldName] = tokens;
+                                    blueprintState.selectionTokenTools[fieldName] = blueprintToolFieldSchema(field.tool_ref).toolName;
+                                } else {
+                                    delete blueprintState.selectionTokens[fieldName];
+                                    delete blueprintState.selectionTokenTools[fieldName];
+                                }
+                            },
+                        },
                     );
                 } else if (field.presentation === 'text_list') {
                     control = document.createElement('textarea');
@@ -4501,7 +4856,7 @@
                 source.className = 'blueprint-field-source';
                 source.textContent = field.presentation === 'derived_readonly'
                     ? '已根据当前入口自动匹配'
-                    : field.source === 'lookup'
+                    : field.source === 'lookup' || field.control === 'lookup'
                         ? '需要从指定账户中选择'
                         : (field.presentation === 'asset_picker' || field.presentation === 'file_reference')
                             ? '本地素材草稿，不会自动上传'
@@ -4527,7 +4882,9 @@
             if (rawValue === '') {
                 delete blueprintState.values[field.path];
             } else {
-                blueprintState.values[field.path] = parsePresentedValue(field, rawValue, schema);
+                blueprintState.values[field.path] = typeof rawValue === 'string'
+                    ? parsePresentedValue(field, rawValue, schema)
+                    : rawValue;
             }
             blueprintState.previousValues = prior;
             await evaluateBlueprintDraft(field.path);
@@ -4549,7 +4906,13 @@
                 });
                 blueprintState.evaluation = evaluation;
                 if (allowReset && evaluation.reset_fields?.length) {
-                    for (const path of evaluation.reset_fields) delete blueprintState.values[path];
+                    for (const path of evaluation.reset_fields) {
+                        delete blueprintState.values[path];
+                        const resetField = blueprint.fields?.find(item => item.path === path);
+                        const resetKey = resetField ? blueprintToolFieldSchema(resetField.tool_ref).fieldPath : path;
+                        delete blueprintState.selectionTokens[resetKey];
+                        delete blueprintState.selectionTokenTools[resetKey];
+                    }
                     showBlueprintNotice(`已根据字段变化清理 ${evaluation.reset_fields.length} 个不再适用的下游参数。`);
                     await evaluateBlueprintDraft(changedPath, false);
                     return;
@@ -4572,6 +4935,9 @@
             blueprintState.previousValues = {};
             blueprintState.evaluation = null;
             blueprintState.localFiles = {};
+            blueprintState.selectionTokens = {};
+            blueprintState.selectionTokenTools = {};
+            blueprintState.lookupOptions = {};
             showBlueprintNotice('');
             renderBlueprintEditor();
         }
@@ -4993,6 +5359,7 @@
 
         function creationCardParams(card) {
             const values = {};
+            const scopedSelectionTokens = {};
             (card.fields || []).forEach(field => {
                 if (field.visible === false || field.value === undefined || field.value === null || field.value === '') return;
                 setCreationNestedValue(values, field.provider_field || field.path, field.value);
@@ -5004,6 +5371,16 @@
                     values[field.tool] = values[field.tool] || {};
                     setCreationNestedValue(values[field.tool], field.provider_field || field.path, field.value);
                 }
+            });
+            Object.entries(card.selection_tokens || {}).forEach(([fieldName, token]) => {
+                const toolName = card.selection_token_tools?.[fieldName];
+                if (!toolName || !token) return;
+                scopedSelectionTokens[toolName] = scopedSelectionTokens[toolName] || {};
+                scopedSelectionTokens[toolName][fieldName] = token;
+            });
+            Object.entries(scopedSelectionTokens).forEach(([toolName, tokens]) => {
+                values[toolName] = values[toolName] || {};
+                values[toolName].selection_tokens = tokens;
             });
             return { [card.provider]: values };
         }
@@ -5041,7 +5418,12 @@
                         || JSON.stringify(previous.options || []) !== JSON.stringify(next.options || []);
                 });
                 (card.fields || []).forEach(field => {
-                    if (reset.has(field.path)) field.value = undefined;
+                    if (reset.has(field.path)) {
+                        field.value = undefined;
+                        const resetKey = field.provider_field || field.path;
+                        delete card.selection_tokens?.[resetKey];
+                        delete card.selection_token_tools?.[resetKey];
+                    }
                     const state = (evaluation.fields || []).find(item => item.path === field.path);
                     if (state) {
                         field.visible = state.visible;
@@ -5347,6 +5729,7 @@
             accountInput.addEventListener('input', () => {
                 card.account_id = accountInput.value.trim();
                 updateCreationCardIndicators(wrapper, card);
+                refreshLookupAccountState(wrapper);
             });
             const accountHint = document.createElement('small');
             accountHint.textContent = '请填写你确认过的账户；系统不会替你猜测或自动选择。';
@@ -5459,6 +5842,32 @@
                         if (Array.isArray(field.value) ? field.value.map(String).includes(node.value) : String(field.value ?? '') === node.value) node.selected = true;
                         control.appendChild(node);
                     });
+                } else if (field.control === 'lookup') {
+                    if (!card.selection_tokens) card.selection_tokens = {};
+                    if (!card.selection_token_tools) card.selection_token_tools = {};
+                    control = renderLookupPicker(field, {
+                        platform: card.provider,
+                        accountId: card.account_id,
+                        getAccountId: () => card.account_id,
+                        targetToolName: field.tool,
+                        fieldName: field.provider_field || field.path,
+                        selectionTokens: card.selection_tokens,
+                        optionsStore: card.lookup_options || (card.lookup_options = {}),
+                        onSelection: ({ value, tokens }) => {
+                            const key = field.provider_field || field.path;
+                            field.value = value;
+                            if (tokens) {
+                                card.selection_tokens[key] = tokens;
+                                card.selection_token_tools[key] = field.tool;
+                            } else {
+                                delete card.selection_tokens[key];
+                                delete card.selection_token_tools[key];
+                            }
+                            creationCardState.set(card.id, card);
+                            scheduleCreationCardEvaluation(card, field.path);
+                            updateCreationCardIndicators(wrapper, card);
+                        },
+                    });
                 } else if (field.control === 'checkbox') {
                     control = document.createElement('input');
                     control.type = 'checkbox';
@@ -5479,6 +5888,25 @@
                             updateCreationCardIndicators(wrapper, card);
                         },
                         field.object_properties || {},
+                        {
+                            platform: card.provider,
+                            accountId: card.account_id,
+                            getAccountId: () => card.account_id,
+                            targetToolName: field.tool,
+                            fieldPath: field.provider_field,
+                            selectionTokens: card.selection_tokens || (card.selection_tokens = {}),
+                            optionsStore: card.lookup_options || (card.lookup_options = {}),
+                            onSelection: ({ fieldName, tokens }) => {
+                                if (!card.selection_token_tools) card.selection_token_tools = {};
+                                if (tokens) {
+                                    card.selection_tokens[fieldName] = tokens;
+                                    card.selection_token_tools[fieldName] = field.tool;
+                                } else {
+                                    delete card.selection_tokens[fieldName];
+                                    delete card.selection_token_tools[fieldName];
+                                }
+                            },
+                        },
                     );
                 } else if (field.control === 'json') {
                     control = document.createElement('textarea');
@@ -5488,7 +5916,6 @@
                     control = document.createElement('input');
                     control.type = field.control === 'number' ? 'number' : 'text';
                     control.value = creationCardValueText(field.value);
-                    if (field.control === 'lookup') control.placeholder = '可填写已知 ID；列表选择将在受控查询接入后提供';
                 }
                 control.dataset.path = field.path;
                 const updateValue = () => {
@@ -5504,14 +5931,14 @@
                     const status = wrapper.querySelector('.creation-card-status');
                     updateCreationCardIndicators(wrapper, card);
                 };
-                if (field.control !== 'asset_picker' && field.control !== 'file_reference' && field.control !== 'derived_readonly' && field.control !== 'object_editor') control.addEventListener('change', updateValue);
-                if (field.control === 'text' || field.control === 'text_list' || field.control === 'number' || field.control === 'lookup') control.addEventListener('input', updateValue);
+                if (field.control !== 'asset_picker' && field.control !== 'file_reference' && field.control !== 'derived_readonly' && field.control !== 'object_editor' && field.control !== 'lookup') control.addEventListener('change', updateValue);
+                if (field.control === 'text' || field.control === 'text_list' || field.control === 'number') control.addEventListener('input', updateValue);
                 item.appendChild(control);
                 const source = document.createElement('div');
                 source.className = 'source';
                 source.textContent = field.control === 'derived_readonly'
                     ? '由当前广告系列类型自动匹配'
-                    : field.source === 'lookup' ? '需要从指定账户中选择'
+                    : field.source === 'lookup' || field.control === 'lookup' ? '需要从指定账户中选择'
                         : (field.control === 'asset_picker' || field.control === 'file_reference') ? '本地素材草稿'
                             : field.control === 'object_editor' ? '按字段填写，系统会按 Tool Schema 组装'
                                 : '可直接填写';

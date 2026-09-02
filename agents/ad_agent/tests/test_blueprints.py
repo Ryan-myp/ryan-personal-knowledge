@@ -306,6 +306,31 @@ def test_creation_cards_expose_account_boundary_and_friendly_asset_controls():
     assert "object_properties" in fields["campaign.app_campaign_setting"]
 
 
+def test_google_app_nested_dynamic_field_exposes_lookup_metadata():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_google_capability())
+    intent = ParsedIntent(
+        "create_campaign", "创建 Google App Engagement 广告", ["google-ads"],
+        campaign_type="APP", platform_params={"google-ads": {"campaign_type": "APP"}},
+    )
+
+    card = runtime.build_creation_ui(intent)["cards"][0]
+    settings = next(
+        field for field in card["fields"]
+        if field["path"] == "campaign.app_campaign_setting"
+    )
+    selective = settings["object_properties"]["selective_optimization"]
+    assert selective["lookup_tool"] == "google_list_conversion_actions"
+    assert selective["type"] == "array"
+
+    catalog = runtime.list_parameter_options(
+        "google-ads", "app_campaign_setting.selective_optimization",
+        "google_create_campaign",
+    )
+    assert catalog[0]["source"] == "lookup"
+    assert catalog[0]["lookup_tool"] == "google_list_conversion_actions"
+
+
 def test_cascade_hides_and_requires_app_fields_for_app_objective():
     blueprint = load_blueprint_file(BLUEPRINT_PATH)
     result = BlueprintCascadeEngine().evaluate(

@@ -1476,7 +1476,7 @@ class AgentRuntime:
         errors: list[str] = []
         for tool in definitions.values():
             properties = getattr(tool.input_schema, "properties", {}) or {}
-            for field_name, field_schema in properties.items():
+            for field_name, field_schema in self.input_builder._iter_schema_fields(properties):
                 lookup_tool = self.input_builder.lookup_tool_for_schema_field(
                     field_schema
                 )

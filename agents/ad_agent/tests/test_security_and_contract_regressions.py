@@ -1204,6 +1204,29 @@ def test_live_dynamic_parameter_rejects_unattested_raw_value():
     assert any("selection_token" in error for error in errors)
 
 
+def test_live_nested_dynamic_parameter_rejects_unattested_raw_value():
+    runtime = AgentRuntime(
+        require_llm=False,
+        whitelist_validator=whitelist(**{"google-ads": ["g1"]}),
+        execution_mode=ExecutionMode.LIVE.value,
+        allow_live_writes=True,
+        selection_token_secret="selection-secret-1234",
+    )
+    capability = create_google_capability()
+    runtime.register_capability(capability)
+    definition = next(
+        definition for definition, _ in capability.register_tools()
+        if definition.name == "google_create_campaign"
+    )
+    errors = runtime.input_builder.apply_selection_tokens(
+        definition,
+        {"app_campaign_setting": {"selective_optimization": ["customers/1/conversionActions/2"]}},
+        {},
+        ToolContext(session_id="s1", user_id="u1", account_id="g1"),
+    )
+    assert any("selective_optimization" in error for error in errors)
+
+
 def test_provider_status_is_normalized_before_dry_run_update_plan():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"tiktok": ["t1"], "google-ads": ["g1"]}

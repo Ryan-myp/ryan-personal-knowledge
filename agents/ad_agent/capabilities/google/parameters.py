@@ -472,6 +472,10 @@ def google_app_campaign_setting_schema() -> dict[str, Any]:
         "selective_optimization": _field(
             "array", "Conversion action resource names used for App Engagement",
             minItems=1, items={"type": "string", "minLength": 1},
+            lookup_tool="google_list_conversion_actions",
+            lookup_result_key="conversion_actions",
+            selection_value_fields=["resource_name", "conversion_action_id", "id"],
+            selection_label_fields=["name", "resource_name", "id"],
         ),
     }, "Google App Campaign settings", required=["app_id", "app_store"])
 

@@ -83,7 +83,10 @@ def _control_for(field: Mapping[str, Any], schema: Mapping[str, Any], options: l
     presentation = str(field.get("presentation") or "").strip().lower()
     if presentation in _PRESENTATIONS:
         return presentation
-    if str(field.get("source") or "").lower() == "lookup":
+    lookup_tool = schema.get("lookup_tool")
+    if not lookup_tool and isinstance(schema.get("lookup"), Mapping):
+        lookup_tool = schema["lookup"].get("tool")
+    if str(field.get("source") or "").lower() == "lookup" or lookup_tool:
         return "lookup"
     if options:
         return "multiselect" if schema.get("type") == "array" else "select"
@@ -321,6 +324,7 @@ class CreationCardBuilder:
                 "label": str(field.get("label") or path),
                 "description": str(field.get("description") or schema.get("description") or ""),
                 "control": _control_for(field, schema, options),
+                "lookup_multiple": schema.get("type") == "array",
                 "required": bool(state.get("required", field.get("required", False))),
                 "visible": bool(state.get("visible", True)),
                 "state": state.get("state", "optional"),
@@ -340,10 +344,14 @@ class CreationCardBuilder:
                     str(name): {
                         key: value
                         for key, value in {
-                            "type": spec.get("type", "string"),
+                        "type": spec.get("type", "string"),
                             "description": spec.get("description", ""),
                             "enum": spec.get("enum"),
                             "items": spec.get("items"),
+                            "lookup_tool": spec.get("lookup_tool"),
+                            "lookup_result_key": spec.get("lookup_result_key"),
+                            "selection_value_fields": spec.get("selection_value_fields"),
+                            "selection_label_fields": spec.get("selection_label_fields"),
                             "required": name in (schema.get("required") or []),
                         }.items()
                         if value not in (None, "", {}, [])
@@ -351,8 +359,10 @@ class CreationCardBuilder:
                     for name, spec in properties.items()
                     if isinstance(spec, Mapping) and not _SENSITIVE_FIELD.search(str(name))
                 }
-            if item["source"] == "lookup":
+            if item["control"] == "lookup":
                 lookup = field.get("lookup_tool") or schema.get("lookup_tool")
+                if not lookup and isinstance(schema.get("lookup"), Mapping):
+                    lookup = schema["lookup"].get("tool")
                 item["lookup"] = {
                     "tool": str(lookup or ""),
                     "read_only": True,
