@@ -47,6 +47,22 @@ def test_trace_does_not_copy_credentials_or_raw_exception_text():
     assert "access_token" not in payload
 
 
+def test_trace_snapshot_is_available_without_an_observer():
+    trace = ExecutionTrace(turn_id="turn-snapshot")
+
+    trace.start()
+    trace.stage_status("intent", "Intent 识别", "running", safe_input={"request": "查询报表"})
+    trace.stage_status("intent", "Intent 识别", "succeeded", safe_output={"intent_type": "report"})
+    trace.done("succeeded")
+
+    snapshot = trace.snapshot()
+    assert snapshot["turn_id"] == "turn-snapshot"
+    assert snapshot["status"] == "succeeded"
+    assert [event["type"] for event in snapshot["events"]] == [
+        "start", "stage_started", "stage_status", "done"
+    ]
+
+
 def test_trace_emits_real_lifecycle_stages_and_keeps_plan_metadata():
     events = []
     plan = ExecutionPlan(

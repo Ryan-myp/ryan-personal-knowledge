@@ -92,6 +92,7 @@ class ExecutionTrace:
         self._stage_started_at: dict[str, float] = {}
         self._node_occurrences: dict[tuple[str, str], list[dict[str, Any]]] = {}
         self._node_cursor: dict[tuple[str, str], int] = {}
+        self._events: list[dict[str, Any]] = []
         self.plan: dict[str, Any] = {"schema_version": "1.0", "intent_type": "", "nodes": []}
 
     @property
@@ -99,8 +100,6 @@ class ExecutionTrace:
         return callable(self.callback)
 
     def _emit(self, event_type: str, **payload: Any) -> None:
-        if not self.enabled:
-            return
         self._sequence += 1
         event = {
             "type": event_type,
@@ -117,12 +116,36 @@ class ExecutionTrace:
                 event[key] = _safe_metadata(value)
             else:
                 event[key] = _safe_metadata(value)
+        self._events.append(event)
+        if len(self._events) > 256:
+            self._events.pop(0)
+        if not self.enabled:
+            return
         try:
             self.callback(event)  # type: ignore[misc]
         except Exception:
             # Observers (including a disconnected SSE client) are never part
             # of the Runtime's execution correctness boundary.
             return
+
+    @property
+    def events(self) -> list[dict[str, Any]]:
+        """Return the bounded, already-sanitized event history for persistence."""
+        return [dict(event) for event in self._events]
+
+    def snapshot(self) -> dict[str, Any]:
+        """Return a durable, provider-neutral snapshot of this turn's trace."""
+        status = "unknown"
+        for event in reversed(self._events):
+            if event.get("type") == "done":
+                status = str(event.get("status") or status)
+                break
+        return {
+            "trace_id": self.trace_id,
+            "turn_id": self.turn_id,
+            "status": status,
+            "events": self.events,
+        }
 
     def start(self) -> None:
         self._emit("start", status="running", safe_metadata={"input_received": True})

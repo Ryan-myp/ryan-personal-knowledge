@@ -2231,6 +2231,7 @@ class AgentRuntime:
     def persist_conversation_turn(
         self, session: "SessionContext", turn_id: str,
         user_input: str, reply: str,
+        execution_trace: Optional[ExecutionTrace] = None,
     ) -> None:
         """Persist a complete sanitized turn and keep bounded model context.
 
@@ -2250,15 +2251,25 @@ class AgentRuntime:
         self._session_manager.record_conversation_message(
             session.session_id, turn_id, "assistant", safe_reply
         )
+        metadata = {
+            "execution_mode": self.execution_mode,
+            "read_only_mode": self._read_only_mode,
+            "tenant_id": session.ctx.metadata.get("tenant_id", "default"),
+            "message_count": len(session.messages),
+            "messages": self._redact_for_persistence(session.messages[-20:]),
+        }
+        if execution_trace is not None:
+            traces = session.ctx.metadata.get("execution_traces", {})
+            traces = dict(traces) if isinstance(traces, dict) else {}
+            traces[str(turn_id)] = execution_trace.snapshot()
+            # Keep durable trace context bounded just like the recent message
+            # window. The full live stream remains available to observers.
+            traces = dict(list(traces.items())[-20:])
+            session.ctx.metadata["execution_traces"] = traces
+            metadata["execution_traces"] = traces
         self._session_manager.update_session(
             session.session_id,
-            {
-                "execution_mode": self.execution_mode,
-                "read_only_mode": self._read_only_mode,
-                "tenant_id": session.ctx.metadata.get("tenant_id", "default"),
-                "message_count": len(session.messages),
-                "messages": self._redact_for_persistence(session.messages[-20:]),
-            },
+            metadata,
         )
 
     def _persist_tool_result(
@@ -2763,9 +2774,11 @@ class AgentRuntime:
             protected_paths = self.security.validate_input_redline(platform_params)
             if protected_paths:
                 error = "请求包含禁止传入的凭证/账户配置字段：" + ", ".join(protected_paths)
-                self.persist_conversation_turn(session, turn_id, safe_user_input, error)
                 trace.error(reason="protected_input")
                 trace.done("failed", safe_metadata={"reason": "protected_input"})
+                self.persist_conversation_turn(
+                    session, turn_id, safe_user_input, error, execution_trace=trace
+                )
                 return {
                     "session_id": session_id,
                     "turn_id": turn_id,
@@ -2796,9 +2809,11 @@ class AgentRuntime:
         policy_errors = self._validate_policies(intent)
         if policy_errors:
             reply = "❌ 业务策略阻止本次请求：" + "；".join(policy_errors)
-            self.persist_conversation_turn(session, turn_id, safe_user_input, reply)
             trace.error(reason="policy_blocked")
             trace.done("failed", safe_metadata={"reason": "policy_blocked"})
+            self.persist_conversation_turn(
+                session, turn_id, safe_user_input, reply, execution_trace=trace
+            )
             return {
                 "session_id": session_id,
                 "turn_id": turn_id,
@@ -2892,7 +2907,6 @@ class AgentRuntime:
         )
         if parameter_errors:
             reply = "❌ 参数契约阻止本次请求：" + "；".join(parameter_errors)
-            self.persist_conversation_turn(session, turn_id, safe_user_input, reply)
             first_tool = next(
                 (tool for tools in tool_plan.values() for tool in tools), None
             )
@@ -2907,6 +2921,9 @@ class AgentRuntime:
             trace.all_nodes_status("failed", reason="parameter_contract")
             trace.reply()
             trace.done("failed", safe_metadata={"reason": "parameter_contract"})
+            self.persist_conversation_turn(
+                session, turn_id, safe_user_input, reply, execution_trace=trace
+            )
             return {
                 "session_id": session_id,
                 "turn_id": turn_id,
@@ -2950,10 +2967,12 @@ class AgentRuntime:
                     if callable(preflight_reply)
                     else "跨渠道创建 preflight 未通过；已停止所有渠道的创建。"
                 )
-                self.persist_conversation_turn(session, turn_id, safe_user_input, reply)
                 trace.all_nodes_status("failed", reason="preflight_blocked")
                 trace.reply()
                 trace.done("failed", safe_metadata={"reason": "preflight_blocked"})
+                self.persist_conversation_turn(
+                    session, turn_id, safe_user_input, reply, execution_trace=trace
+                )
                 return {
                     "session_id": session_id,
                     "turn_id": turn_id,
@@ -3093,7 +3112,10 @@ class AgentRuntime:
                 "failed" if has_structured_request or intent_type != "chat" else "succeeded",
                 safe_metadata={"tool_count": 0},
             )
-            self.persist_conversation_turn(session, turn_id, safe_user_input, no_tool_reply)
+            self.persist_conversation_turn(
+                session, turn_id, safe_user_input, no_tool_reply,
+                execution_trace=trace,
+            )
             return {
                 "session_id": session_id,
                 "turn_id": turn_id,
@@ -3903,7 +3925,9 @@ class AgentRuntime:
         )
         
         # Step 6: 记录消息历史
-        self.persist_conversation_turn(session, turn_id, safe_user_input, reply)
+        self.persist_conversation_turn(
+            session, turn_id, safe_user_input, reply, execution_trace=trace
+        )
         
         return {
             "session_id": session_id,
@@ -4094,7 +4118,91 @@ class AgentRuntime:
             legacy = metadata.get("messages")
             messages = legacy if isinstance(legacy, list) else []
         summary = self._conversation_summary(session, messages)
-        return {**summary, "messages": messages}
+        traces = metadata.get("execution_traces")
+        if not isinstance(traces, dict) or not traces:
+            # Older sessions predate durable lifecycle snapshots. Rebuild a
+            # tool-level trace from the already-sanitized audit records so
+            # opening an existing conversation still shows what ran.
+            traces = self._legacy_execution_traces(session_id)
+        return {
+            **summary,
+            "messages": messages,
+            "execution_traces": traces if isinstance(traces, dict) else {},
+        }
+
+    def _legacy_execution_traces(self, session_id: str) -> dict[str, dict[str, Any]]:
+        """Build a bounded compatibility trace from durable Tool audit rows."""
+        if not self._session_manager:
+            return {}
+        records = list(reversed(self._session_manager.get_session_history(
+            session_id, limit=200
+        )))
+        grouped: dict[str, list[Any]] = {}
+        for record in records:
+            turn_id = str(getattr(record, "turn_id", "") or "legacy")
+            grouped.setdefault(turn_id, []).append(record)
+        snapshots: dict[str, dict[str, Any]] = {}
+        for turn_id, turn_records in list(grouped.items())[-20:]:
+            nodes = []
+            events = [{
+                "type": "start", "event_type": "start", "trace_id": f"legacy:{turn_id}",
+                "turn_id": turn_id, "seq": 1, "status": "running",
+                "safe_metadata": {"source": "durable_tool_audit"},
+            }]
+            sequence = 1
+            for index, record in enumerate(turn_records, start=1):
+                tool_name = str(getattr(record, "tool_name", "") or "Tool")
+                platform = str(getattr(record, "platform", "") or "")
+                node_id = f"legacy-node-{index:04d}"
+                nodes.append({
+                    "node_id": node_id, "sequence": index,
+                    "platform": platform, "tool": tool_name,
+                    "action": "", "resource_type": "",
+                    "depends_on": [nodes[-1]["node_id"]] if nodes else [],
+                })
+                sequence += 1
+                events.append({
+                    "type": "node_started", "event_type": "node_started",
+                    "trace_id": f"legacy:{turn_id}", "turn_id": turn_id,
+                    "seq": sequence, "node_id": node_id, "platform": platform,
+                    "tool": tool_name, "status": "running",
+                    "safe_input": self._redact_for_persistence(getattr(record, "input_data", {})),
+                })
+                sequence += 1
+                success = bool(getattr(record, "success", False))
+                events.append({
+                    "type": "node_status", "event_type": "node_status",
+                    "trace_id": f"legacy:{turn_id}", "turn_id": turn_id,
+                    "seq": sequence, "node_id": node_id, "platform": platform,
+                    "tool": tool_name, "status": "succeeded" if success else "failed",
+                    "safe_input": self._redact_for_persistence(getattr(record, "input_data", {})),
+                    "safe_output": self._redact_for_persistence(getattr(record, "output_data", {})),
+                    "safe_metadata": {
+                        "reason": self._redact_for_persistence(getattr(record, "error", "")),
+                        "source": "durable_tool_audit",
+                    },
+                })
+            sequence += 1
+            final_status = "succeeded" if all(
+                bool(getattr(record, "success", False)) for record in turn_records
+            ) else "failed"
+            events.append({
+                "type": "done", "event_type": "done",
+                "trace_id": f"legacy:{turn_id}", "turn_id": turn_id,
+                "seq": sequence, "status": final_status,
+                "safe_metadata": {"source": "durable_tool_audit"},
+            })
+            snapshots[turn_id] = {
+                "trace_id": f"legacy:{turn_id}", "turn_id": turn_id,
+                "status": final_status, "events": [
+                    {"type": "plan", "event_type": "plan", "trace_id": f"legacy:{turn_id}",
+                     "turn_id": turn_id, "seq": 2, "status": "planned",
+                     "execution_plan": {"schema_version": "1.0", "intent_type": "legacy",
+                                         "nodes": nodes}},
+                    *events,
+                ],
+            }
+        return snapshots
     
     def _ensure_session(
         self,
@@ -4130,6 +4238,9 @@ class AgentRuntime:
             )
             session = SessionContext(session_id, ctx)
             ctx.metadata["tenant_id"] = str(tenant_id or "default")
+            stored_traces = persisted_metadata.get("execution_traces")
+            if isinstance(stored_traces, dict):
+                ctx.metadata["execution_traces"] = stored_traces
             session.messages = persisted_metadata.get("messages", [])[-20:]
             ctx.messages = list(session.messages)
             if self._session_manager and persisted:

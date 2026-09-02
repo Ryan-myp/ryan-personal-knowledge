@@ -107,6 +107,18 @@
             background: var(--bg-hover);
             border-color: var(--accent);
         }
+
+        .knowledge-nav-btn {
+            margin-top: 0;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-light);
+            color: var(--text-primary);
+        }
+
+        .knowledge-nav-btn:hover {
+            background: var(--bg-hover);
+            border-color: #2f8f83;
+        }
         
         .chat-history {
             flex: 1;
@@ -1416,7 +1428,7 @@
         .knowledge-compose-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
         .knowledge-compose-actions { display: flex; justify-content: flex-end; gap: 8px; }
         .sidebar { grid-column: 1; grid-row: 2 / 4; min-height: 0; width: 228px; background: #121212; }
-        .sidebar-header { justify-content: flex-start; padding: 14px 16px; min-height: 58px; }
+        .sidebar-header { display: none; }
         .sidebar-brand { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
         .sidebar-header .app-name { display: block; font-size: 14px; }
         .sidebar-subtitle { color: var(--text-muted); font-size: 10px; }
@@ -1589,14 +1601,6 @@
     </section>
     <!-- 左侧边栏 -->
     <aside class="sidebar">
-        <div class="sidebar-header">
-            <div class="logo">A</div>
-            <div class="sidebar-brand">
-                <span class="app-name">AI Ops Agent</span>
-                <span class="sidebar-subtitle">广告投放工作区</span>
-            </div>
-        </div>
-        
         <button class="new-chat-btn" onclick="newChat()">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -2242,6 +2246,26 @@
             renderExecutionTrace();
         }
 
+        function restoreExecutionTrace(traceHistory) {
+            const snapshots = Object.values(traceHistory || {})
+                .filter(item => item && Array.isArray(item.events) && item.events.length);
+            resetExecutionTrace();
+            if (!snapshots.length) {
+                updateTraceHeader('unknown', '该历史对话暂无可恢复的执行轨迹');
+                return;
+            }
+            // A conversation can contain several turns; the right panel is
+            // the detail view for the most recent turn, matching the live UI.
+            const snapshot = snapshots[snapshots.length - 1];
+            for (const event of snapshot.events) applyExecutionEvent(event);
+            const done = [...snapshot.events].reverse().find(event => event.type === 'done');
+            updateTraceHeader(
+                done?.status || snapshot.status || 'succeeded',
+                '已恢复本次对话最近一轮的执行轨迹',
+            );
+            renderExecutionTrace();
+        }
+
         function toggleTracePanel() {
             traceState.collapsed = !traceState.collapsed;
             if (traceState.collapsed) {
@@ -2594,7 +2618,7 @@
                     empty.textContent = '这个对话还没有可展示的消息。';
                     container.appendChild(empty);
                 }
-                resetExecutionTrace();
+                restoreExecutionTrace(data.execution_traces);
                 renderConversationHistory();
             } catch (error) {
                 addMessage(error?.message || '对话加载失败，请稍后重试。', 'agent', null, true);

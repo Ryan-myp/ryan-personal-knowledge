@@ -886,6 +886,16 @@ class TestRuntimeQuery:
             ("user", "请总结一下今天的投放情况"),
             ("assistant", result["reply"]),
         ]
+        persisted_session = rt._session_manager.get_session(result["session_id"])
+        metadata = json.loads(persisted_session["metadata"])
+        trace_snapshot = metadata["execution_traces"][result["turn_id"]]
+        assert trace_snapshot["events"]
+        assert trace_snapshot["events"][-1]["type"] == "done"
+
+        conversation = rt.get_conversation(
+            result["session_id"], "conversation-user"
+        )
+        assert conversation["execution_traces"][result["turn_id"]]["events"]
 
 
 class TestSafeWriteExecution:
