@@ -233,6 +233,62 @@ def test_explicit_blueprint_submission_waits_for_required_fields_before_executio
     assert result["response_source"] == "creation_card"
 
 
+def test_creation_submission_validates_asset_minimums_before_any_tool_runs():
+    validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+    validator.allowed_accounts = {"google-ads": ["123"]}
+    runtime = AgentRuntime(require_llm=False, whitelist_validator=validator)
+    runtime.register_capability(create_google_capability())
+
+    result = runtime.run(
+        "创建 Google App 广告",
+        session_id="creation-asset-preflight",
+        user_id="test-user",
+        account_id="123",
+        platform_params={"google-ads": {
+            "campaign_name": "App campaign",
+            "campaign_type": "APP",
+            "advertising_channel_type": "MULTI_CHANNEL",
+            "advertising_channel_sub_type": "APP_CAMPAIGN",
+            "app_campaign_setting": {
+                "app_id": "com.example.app",
+                "app_store": "GOOGLE_APP_STORE",
+            },
+            "bidding_strategy": "MAXIMIZE_CONVERSIONS",
+            "daily_budget": 50,
+            "google_create_campaign": {
+                "campaign_name": "App campaign",
+                "campaign_type": "APP",
+                "advertising_channel_type": "MULTI_CHANNEL",
+                "advertising_channel_sub_type": "APP_CAMPAIGN",
+                "app_campaign_setting": {
+                    "app_id": "com.example.app",
+                    "app_store": "GOOGLE_APP_STORE",
+                },
+                "bidding_strategy": "MAXIMIZE_CONVERSIONS",
+                "daily_budget": 50,
+            },
+            "google_create_app_ad_group": {
+                "name": "App group",
+                "type": "SEARCH_STANDARD",
+            },
+            "google_create_app_ad": {
+                "name": "App ad",
+                "headlines": ["Only one headline"],
+                "descriptions": ["Only one description"],
+            },
+        }},
+        creation_blueprint_id="google-ads.app",
+        creation_blueprint_version="1.0.0",
+    )
+
+    assert result["results"] == []
+    assert result["workflow_id"] is None
+    assert result["response_source"] == "creation_validation"
+    assert "标题素材（每行一条）至少需要 2 项" in result["reply"]
+    assert "描述素材（每行一条）至少需要 2 项" in result["reply"]
+    assert result["creation_validation"]["status"] == "blocked"
+
+
 def test_creation_cards_expose_account_boundary_and_friendly_asset_controls():
     runtime = AgentRuntime(require_llm=False, offline_mode=True)
     runtime.register_capability(create_google_capability())

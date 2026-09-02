@@ -1642,6 +1642,32 @@
         .confirm-btn.confirm:hover {
             background: var(--accent-hover);
         }
+
+        /* Keep confirmations in the same visual language as creation cards:
+           indigo for the primary action and neutral surfaces. */
+        .confirm-card {
+            margin: 14px auto 0;
+            border: 1px solid rgba(99, 102, 241, .42);
+            border-radius: 14px;
+            background: var(--bg-secondary);
+            box-shadow: 0 12px 32px rgba(0, 0, 0, .18), 0 0 0 1px rgba(99, 102, 241, .04);
+        }
+        .confirm-card-header {
+            padding: 16px 18px 13px;
+            background: linear-gradient(135deg, rgba(99, 102, 241, .09), transparent 58%);
+        }
+        .confirm-icon { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 1px solid rgba(99, 102, 241, .28); border-radius: 8px; color: var(--accent); background: var(--accent-light); font-size: 14px; }
+        .confirm-title { color: var(--text-primary); font-size: 14px; font-weight: 680; }
+        .confirm-card-body { padding: 16px 18px; color: var(--text-secondary); font-size: 12px; line-height: 1.65; }
+        .confirm-card-body p { margin: 0; }
+        .confirm-card-body p + p { margin-top: 8px; }
+        .confirm-card-body strong { color: var(--text-primary); font-weight: 680; }
+        .confirm-card-footer { gap: 8px; padding: 12px 18px; background: var(--bg-tertiary); }
+        .confirm-btn { min-height: 32px; padding: 7px 13px; border-radius: 8px; font-size: 11px; font-weight: 650; }
+        .confirm-btn.cancel { color: var(--text-secondary); background: var(--bg-primary); border: 1px solid var(--border-light); }
+        .confirm-btn.cancel:hover { color: var(--text-primary); border-color: var(--accent); background: var(--accent-light); }
+        .confirm-btn.confirm { color: #fff; background: var(--accent); box-shadow: 0 4px 12px rgba(99, 102, 241, .22); }
+        .confirm-btn.confirm:hover { background: var(--accent-hover); }
         
         /* 滚动条 */
         ::-webkit-scrollbar {
@@ -2684,6 +2710,7 @@
         let workspaceTheme = 'dark';
         const creationCardState = new Map();
         const creationCardEvaluationTimers = new Map();
+        const creationCardEvaluationRevisions = new Map();
         let pendingBlueprintRequest = null;
         let pendingCreationReview = null;
         const skillState = {
@@ -3549,7 +3576,8 @@
             sessionId = data.session_id || sessionId;
             selectedConversationId = sessionId;
             const results = data.results || [];
-            const hasCreationCards = Boolean(data.ui?.cards?.length);
+            const creationNeedsCorrection = data.response_source === 'creation_card' || data.response_source === 'creation_validation';
+            const hasCreationCards = Boolean(data.ui?.cards?.length) && (!requestParams?.creation_blueprint_id || creationNeedsCorrection);
             if (data.needs_confirmation && data.confirmation_payload && !hasCreationCards) {
                 showConfirm(data.confirmation_payload, {
                     user_input: requestParams.user_input,
@@ -4990,6 +5018,8 @@
 
         async function evaluateCreationCard(card, changedPath) {
             if (!card.blueprint_id) return;
+            const revision = (creationCardEvaluationRevisions.get(card.id) || 0) + 1;
+            creationCardEvaluationRevisions.set(card.id, revision);
             try {
                 const response = await authenticatedFetch(`/creation-blueprints/${encodeURIComponent(card.blueprint_id)}/evaluate`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -4997,7 +5027,19 @@
                 });
                 if (!response.ok) throw new Error(`参数检查失败（${response.status}）`);
                 const evaluation = await response.json();
+                // Typing can queue more than one request when the local
+                // service is busy. Never let an older response roll a draft
+                // back over a newer value.
+                if (creationCardEvaluationRevisions.get(card.id) !== revision) return;
                 const reset = new Set(evaluation.reset_fields || []);
+                const previousFields = new Map((card.fields || []).map(field => [field.path, field]));
+                const structuralChange = reset.size > 0 || (evaluation.fields || []).some(next => {
+                    const previous = previousFields.get(next.path);
+                    return !previous
+                        || previous.visible !== next.visible
+                        || previous.required !== next.required
+                        || JSON.stringify(previous.options || []) !== JSON.stringify(next.options || []);
+                });
                 (card.fields || []).forEach(field => {
                     if (reset.has(field.path)) field.value = undefined;
                     const state = (evaluation.fields || []).find(item => item.path === field.path);
@@ -5011,7 +5053,36 @@
                 card.invalid_fields = evaluation.invalid_fields || [];
                 card.ready = Boolean(evaluation.ready);
                 const current = document.querySelector(`.creation-card[data-card-id="${CSS.escape(card.id)}"]`);
-                if (current) current.replaceWith(renderCreationCard(card));
+                if (current) {
+                    if (!structuralChange) {
+                        updateCreationCardFieldStates(current, card);
+                        updateCreationCardIndicators(current, card);
+                        return;
+                    }
+                    // Cascade evaluation updates field visibility and
+                    // requirements, but replacing the whole card must not
+                    // make a person lose focus while typing. Restore the
+                    // active control and its caret after the structural
+                    // update completes.
+                    const active = document.activeElement;
+                    const isInsideCard = Boolean(active && current.contains(active));
+                    const focusPath = isInsideCard
+                        ? (active.dataset?.path || (active.closest('.creation-card-account') ? '__account__' : ''))
+                        : '';
+                    const selectionStart = isInsideCard && typeof active.selectionStart === 'number' ? active.selectionStart : null;
+                    const selectionEnd = isInsideCard && typeof active.selectionEnd === 'number' ? active.selectionEnd : null;
+                    const replacement = renderCreationCard(card);
+                    current.replaceWith(replacement);
+                    const target = focusPath === '__account__'
+                        ? replacement.querySelector('.creation-card-account input')
+                        : focusPath ? replacement.querySelector(`[data-path="${CSS.escape(focusPath)}"]`) : null;
+                    if (target && !target.disabled) {
+                        target.focus({ preventScroll: true });
+                        if (selectionStart !== null && typeof target.setSelectionRange === 'function') {
+                            target.setSelectionRange(selectionStart, selectionEnd ?? selectionStart);
+                        }
+                    }
+                }
             } catch (error) {
                 // A transient UI evaluation error does not alter the draft;
                 // the next chat submission still passes through the server
@@ -5156,7 +5227,7 @@
             const review = document.createElement('div');
             review.id = 'confirmCard';
             review.className = 'confirm-card';
-            review.innerHTML = `<div class="confirm-card-header"><span class="confirm-icon">✓</span><span class="confirm-title">请确认创建参数</span></div><div class="confirm-card-body"><p>即将为账户 <strong>${escapeHtml(card.account_id)}</strong> 提交“${escapeHtml(card.title || '广告')}”的创建计划。</p><p>请确认账户、预算、定向和素材均无误。${workspaceMode.mode === 'live' ? '当前为受控执行模式，后续仍会进行安全确认。' : '当前为安全预览模式，只生成本地模拟结果，不会调用广告平台。'}</p></div><div class="confirm-card-footer"><button class="confirm-btn cancel" onclick="cancelCreationReview()">返回修改</button><button class="confirm-btn confirm" onclick="confirmCreationSubmission()">确认并提交</button></div>`;
+            review.innerHTML = `<div class="confirm-card-header"><span class="confirm-icon">✓</span><span class="confirm-title">请确认创建计划</span></div><div class="confirm-card-body"><p>即将为账户 <strong>${escapeHtml(card.account_id)}</strong> 提交“${escapeHtml(card.title || '广告')}”的创建计划。</p><p>请确认账户、预算、定向和素材均无误。${workspaceMode.mode === 'live' ? '确认后将提交到广告平台。' : '当前为预览状态，不会修改线上账户。'}</p></div><div class="confirm-card-footer"><button class="confirm-btn cancel" onclick="cancelCreationReview()">返回修改</button><button class="confirm-btn confirm" onclick="confirmCreationSubmission()">确认创建</button></div>`;
             document.getElementById('confirmCardContainer').appendChild(review);
             review.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
@@ -5184,7 +5255,7 @@
                 creation_blueprint_id: card.blueprint_id || null,
                 creation_blueprint_version: card.blueprint_version || null,
             };
-            addMessage('已确认参数，正在生成创建计划…', 'agent');
+            addMessage('确认创建', 'user');
             addLoading();
             startExecutionTrace(userInput);
             try {
@@ -5197,6 +5268,16 @@
                 markTraceFailed(error.message);
                 addMessage('提交失败：' + error.message, 'agent', null, true);
             }
+        }
+
+        function updateCreationCardFieldStates(wrapper, card) {
+            (card.fields || []).forEach(field => {
+                const item = wrapper.querySelector(`[data-field-path="${CSS.escape(field.path)}"]`);
+                if (!item) return;
+                item.classList.toggle('missing', field.state === 'missing');
+                item.classList.toggle('invalid', field.state === 'invalid');
+                item.classList.toggle('hidden', field.visible === false);
+            });
         }
 
         function renderCreationCard(card) {
@@ -5282,6 +5363,7 @@
             fields.className = 'creation-card-fields';
             (card.fields || []).forEach(field => {
                 const item = document.createElement('div');
+                item.dataset.fieldPath = field.path;
                 const wideField = ['asset_picker', 'file_reference', 'text_list', 'object_editor', 'json'].includes(field.control);
                 item.className = `creation-card-field${wideField ? ' wide' : ''}${field.visible === false ? ' hidden' : ''}${field.state === 'missing' ? ' missing' : ''}${field.state === 'invalid' ? ' invalid' : ''}`;
                 const label = document.createElement('label');
@@ -5673,8 +5755,10 @@
             const card = document.getElementById('confirmCard');
             if (card) card.remove();
             
-            // 添加确认消息到聊天
-            addMessage('✅ 已确认，正在执行...', 'agent');
+            // The confirmation is a user action. Keep it as a user message
+            // so the transcript does not invent a second Agent turn.
+            addMessage('确认并继续执行', 'user');
+            addLoading();
             startExecutionTrace(originalRequest?.user_input || '确认并继续执行');
             
             // 发送带参数的请求 - 使用原始 user_input
@@ -5710,10 +5794,12 @@
                 }
                 
                 const data = await streamChatRequest(requestParams);
+                removeLoading();
                 renderStreamResult(data, requestParams);
                 await refreshConversationHistory({ silent: true });
                 
             } catch (error) {
+                removeLoading();
                 markTraceFailed(error.message);
                 addMessage('❌ 请求失败: ' + error.message, 'agent', null, true);
             }

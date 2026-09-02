@@ -44,6 +44,30 @@ class AdAgentResponseRenderer:
             return "需要确认：部分操作需要您的确认才能继续。"
 
         analysis = analysis or {}
+        simulated_writes = [
+            result for result in results
+            if isinstance(result.get("data"), dict)
+            and result["data"].get("simulated")
+            and result["data"].get("operation") in {"create", "update", "delete"}
+        ]
+        if simulated_writes:
+            operation = "删除" if any(
+                item.get("data", {}).get("operation") == "delete"
+                for item in simulated_writes
+            ) else "更新" if str(getattr(intent, "intent_type", "")).startswith("update") else "创建"
+            if fail_count:
+                return (
+                    f"{operation}预览未通过，本次没有修改广告账户。\n"
+                    "请先补充或调整创建参数，再重新提交。"
+                )
+            return (
+                f"已生成{operation}预览（共 {len(simulated_writes)} 个广告资源），"
+                "当前不会修改广告账户。确认信息和参数无误后，才会进入正式执行。\n"
+                + "\n".join(
+                    f"  - {self._resource_label(result.get('resource_type'))}：已准备"
+                    for result in simulated_writes
+                )
+            )
         if intent.intent_type in {"cross_channel_overview", "cross_channel_compare"}:
             aggregate = analysis.get("cross_channel_summary")
             if aggregate is None:
@@ -71,32 +95,6 @@ class AdAgentResponseRenderer:
                 + "\n".join(
                     f"  - {self._friendly_error(result)}"
                     for result in results if not result.get("success")
-                )
-            )
-
-        simulated_results = [
-            result for result in results
-            if isinstance(result.get("data"), dict)
-            and result["data"].get("simulated")
-            and result["data"].get("operation") in {"create", "update", "delete"}
-        ]
-        if simulated_results and len(simulated_results) == len(results):
-            if any(
-                item.get("data", {}).get("operation") == "delete"
-                for item in simulated_results
-            ):
-                operation = "删除"
-            elif str(getattr(intent, "intent_type", "")).startswith("update"):
-                operation = "更新"
-            else:
-                operation = "创建"
-            return (
-                f"已为你生成{operation}方案（共 {len(simulated_results)} 个广告资源），"
-                "当前只展示预览，尚未修改广告账户。\n"
-                + "\n".join(
-                    f"  - [{result.get('platform', '?')}] {result['tool']} → "
-                    f"{self._planned_identifier(result)}"
-                    for result in simulated_results
                 )
             )
 
@@ -256,6 +254,14 @@ class AdAgentResponseRenderer:
         if lines:
             return "\n".join(lines)
         return "查询已完成，但暂时没有可展示的数据。你可以缩小时间范围或补充查询条件。"
+
+    @staticmethod
+    def _resource_label(resource_type: Any) -> str:
+        return {
+            "campaign": "广告系列",
+            "ad_group": "广告组",
+            "ad": "广告创意",
+        }.get(str(resource_type or "").lower(), "广告资源")
 
     @staticmethod
     def _planned_identifier(result: dict[str, Any]) -> str:
