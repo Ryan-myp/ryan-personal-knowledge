@@ -1456,6 +1456,10 @@
         .knowledge-console .knowledge-summary-body { font-size: 12px; }
         .knowledge-console .knowledge-compose { flex-shrink: 0; margin: 0 20px 16px; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-tertiary); }
         .knowledge-console .knowledge-empty { min-height: 130px; display: grid; place-items: center; font-size: 12px; }
+        .knowledge-results.view-hidden { display: none; }
+        .knowledge-file-row { display: flex; align-items: center; gap: 10px; }
+        .knowledge-file-row input[type="file"] { max-width: 280px; color: var(--text-secondary); font-size: 11px; }
+        .knowledge-file-hint { color: var(--text-muted); font-size: 10px; line-height: 1.45; }
         .skill-editor-footer button:disabled { opacity: .42; cursor: not-allowed; }
         .skill-editor input[readonly], .skill-editor textarea[readonly] { color: var(--text-secondary); background: #191919; }
         .sidebar { grid-column: 1; grid-row: 2 / 4; min-height: 0; width: 228px; background: #121212; }
@@ -1624,7 +1628,7 @@
                     <div class="workspace-form-actions"><span class="workspace-form-status" id="knowledgeStatus">输入关键词后搜索已发布知识。</span><button type="button" onclick="searchKnowledge()">搜索</button></div>
                     <div class="workspace-form-actions" style="margin-top:10px;">
                         <span class="workspace-filter-summary">知识文档发布后才会被 Agent 使用</span>
-                        <button type="button" onclick="toggleKnowledgeComposer()">写入知识库</button>
+                        <button type="button" id="knowledgeComposeToggle" onclick="toggleKnowledgeComposer()">写入知识库</button>
                     </div>
                 </div>
                 <div class="knowledge-results" id="knowledgeResults"></div>
@@ -1639,6 +1643,12 @@
                         </label>
                         <label>版本<input id="knowledgeVersion" maxlength="80" value="1.0.0" placeholder="1.0.0"></label>
                         <label>标签<input id="knowledgeTags" maxlength="500" placeholder="用逗号分隔，例如：Meta,广告类型"></label>
+                    </div>
+                    <div class="knowledge-file-row">
+                        <label>导入文件
+                            <input id="knowledgeFileInput" type="file" accept=".md,.markdown,.txt,.yaml,.yml,.json,.csv,text/markdown,text/plain,application/json,text/yaml" onchange="handleKnowledgeFileUpload(event)">
+                        </label>
+                        <span class="knowledge-file-hint">支持 Markdown、TXT、YAML、JSON、CSV；文件只会读取为正文，不会执行。</span>
                     </div>
                     <label>来源<input id="knowledgeSource" maxlength="200" value="user" placeholder="例如：投放团队经验"></label>
                     <label>正文（支持 Markdown）<textarea id="knowledgeContent" maxlength="60000" placeholder="# 规则说明\n\n写下可复用的业务规则、例子和边界。"></textarea></label>
@@ -2027,9 +2037,52 @@
 
         function toggleKnowledgeComposer() {
             const composer = document.getElementById('knowledgeComposer');
-            if (!composer) return;
-            const active = composer.classList.toggle('active');
+            const results = document.getElementById('knowledgeResults');
+            const toggle = document.getElementById('knowledgeComposeToggle');
+            if (!composer || !results) return;
+            const active = !composer.classList.contains('active');
+            composer.classList.toggle('active', active);
+            results.classList.toggle('view-hidden', active);
+            if (toggle) toggle.textContent = active ? '返回检索' : '写入知识库';
             if (active) document.getElementById('knowledgeTitle')?.focus();
+        }
+
+        function showKnowledgeSearchView() {
+            const composer = document.getElementById('knowledgeComposer');
+            const results = document.getElementById('knowledgeResults');
+            const toggle = document.getElementById('knowledgeComposeToggle');
+            composer?.classList.remove('active');
+            results?.classList.remove('view-hidden');
+            if (toggle) toggle.textContent = '写入知识库';
+        }
+
+        async function handleKnowledgeFileUpload(event) {
+            const input = event.target;
+            const file = input?.files?.[0];
+            if (!file) return;
+            const extension = file.name.includes('.') ? file.name.split('.').pop().toLowerCase() : '';
+            const supported = new Set(['md', 'markdown', 'txt', 'yaml', 'yml', 'json', 'csv']);
+            try {
+                if (!supported.has(extension)) throw new Error('目前只支持 Markdown、TXT、YAML、JSON、CSV 文件。');
+                if (file.size > 60000 * 4) throw new Error('文件过大，请上传不超过 240 KB 的文本文件。');
+                const content = await file.text();
+                if (!content.trim()) throw new Error('文件内容为空，请选择有正文的文件。');
+                if (content.length > 60000) throw new Error('文件正文超过 60,000 字，请精简后再上传。');
+                const titleInput = document.getElementById('knowledgeTitle');
+                if (titleInput && !titleInput.value.trim()) {
+                    titleInput.value = file.name.replace(/\.[^.]+$/, '');
+                }
+                const contentInput = document.getElementById('knowledgeContent');
+                if (contentInput) {
+                    contentInput.value = content;
+                    contentInput.dispatchEvent(new Event('input'));
+                }
+                setKnowledgeWriteStatus(`已导入 ${file.name}，请检查内容后保存。`);
+            } catch (error) {
+                setKnowledgeWriteStatus(error.message || '文件读取失败，请检查文件格式。', true);
+            } finally {
+                input.value = '';
+            }
         }
 
         function formatKnowledgeMarkdown(markdown) {
@@ -2119,6 +2172,7 @@
         }
 
         async function searchKnowledge() {
+            showKnowledgeSearchView();
             const query = document.getElementById('knowledgeQuery')?.value.trim() || '';
             const platform = document.getElementById('knowledgePlatform')?.value || '';
             if (!query) {
