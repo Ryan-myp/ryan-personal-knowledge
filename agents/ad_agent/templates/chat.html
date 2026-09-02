@@ -1414,6 +1414,10 @@
         .knowledge-summary { margin-top: 10px; padding: 11px 12px; border: 1px solid #2c5672; border-radius: 9px; background: linear-gradient(135deg, rgba(35, 83, 111, .38), rgba(11, 32, 49, .8)); }
         .knowledge-summary-label { color: #7ce3bb; font-size: 10px; font-weight: 650; }
         .knowledge-summary-body { margin-top: 6px; color: #d4e5f2; font-size: 11px; line-height: 1.65; }
+        .knowledge-summary-body h3, .knowledge-summary-body h4 { margin: 8px 0 4px; color: #edf7ff; font-size: 12px; font-weight: 650; }
+        .knowledge-summary-body ul { margin: 5px 0 5px 18px; }
+        .knowledge-summary-body strong { color: #f3f8ff; }
+        .knowledge-summary-body code { padding: 1px 3px; border-radius: 3px; color: #c4b5fd; background: #101a2c; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
         .knowledge-result-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
         .knowledge-result-badge { flex-shrink: 0; padding: 3px 5px; border-radius: 4px; color: #a9c8ff; background: rgba(67, 109, 181, .25); font-size: 9px; }
         .knowledge-result-details { margin-top: 8px; border-top: 1px solid #19364d; padding-top: 7px; }
@@ -2077,7 +2081,9 @@
                 summaryCard.innerHTML = '<div class="knowledge-summary-label">检索总结</div>';
                 const summaryBody = document.createElement('div');
                 summaryBody.className = 'knowledge-summary-body';
-                summaryBody.textContent = summary;
+                // Summary is LLM-generated Markdown too; escape first inside
+                // formatKnowledgeMarkdown so formatting cannot introduce HTML.
+                summaryBody.innerHTML = formatKnowledgeMarkdown(summary);
                 summaryCard.appendChild(summaryBody);
                 container.appendChild(summaryCard);
             }
