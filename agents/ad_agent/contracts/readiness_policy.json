@@ -1,0 +1,22 @@
+{
+  "format_version": 1,
+  "default_profile": "local",
+  "profiles": {
+    "local": [
+      "code_contract",
+      "dry_run"
+    ],
+    "release": [
+      "code_contract",
+      "dry_run",
+      "provider_e2e",
+      "live_verified"
+    ]
+  },
+  "evidence_policy": {
+    "code_contract": "Registry schema, capability audit and versioned Tool snapshot",
+    "dry_run": "Local provider contract harness and Skill-up Runtime cases",
+    "provider_e2e": "Operation-specific evidence from a controlled provider test account",
+    "live_verified": "Operation-specific evidence with approved live write controls"
+  }
+}

@@ -221,6 +221,37 @@ Provider live lookup 返回的动态选项会附带短时 `selection_token`。�
 
 当前核心 Harness 已具备：受限 Tool/Skill 契约、统一 Runtime 执行入口、Skill-owned Policy/Feature 扩展、权限/账户白名单、dry-run、显式确认、持久化幂等、workflow checkpoint/lease/recovery、Provider 回查入口、LLM 输出后的二次 schema 校验，以及下一回合可用的脱敏 Tool 结果上下文。另有 `scripts/audit_capabilities.py`、`scripts/validate_contracts.py` 和 `contracts/builtin_tools.json` 提供 API Surface、版本化契约快照、Provider 方法覆盖率和 drift gate。跨渠道批量状态保持为 `ACTIVE/PAUSED` 中性值，最终字段和值由所选 Tool 的 Provider Schema 映射。结论是“核心骨架符合，尚未达到生产闭环”，不能把当前 294 个工具数或单元测试通过当成 Provider live 已验证。
 
+#### 发布就绪门禁与证据分层
+
+现在使用统一的 readiness 报告把四层证据分开，避免把 Tool 数量或本地模拟结果当成线上能力：
+
+| 层级 | 证明什么 | 本地是否可运行 |
+|------|----------|----------------|
+| `code_contract` | Capability、Tool schema、权限、版本和 snapshot 一致 | 是 |
+| `dry_run` | Runtime → Tool → Capability → Client 的本地调用链和 Skill-up case | 是 |
+| `provider_e2e` | 指定渠道测试账户上的逐接口真实读写证据 | 否（需受控环境） |
+| `live_verified` | 经过 live fuse、白名单、确认和审计的逐接口证据 | 否（需批准环境） |
+
+本地默认门禁：
+
+```bash
+python3 agents/ad_agent/scripts/release_readiness.py --profile local
+```
+
+本地 Provider contract harness 使用记录型 Client，不产生任何外部请求：
+
+```bash
+python3 agents/ad_agent/scripts/provider_contract_harness.py
+```
+
+`release` profile 会要求后两层证据；在尚未接入受控 Provider E2E 证据前，失败是预期的，不能通过改 Tool 数量或把本地 stub 标成 live 来绕过：
+
+```bash
+python3 agents/ad_agent/scripts/release_readiness.py --profile release
+```
+
+门禁规则位于 [`contracts/readiness_policy.json`](./contracts/readiness_policy.json)，Provider 本地场景位于 [`contracts/provider_contract_scenarios.json`](./contracts/provider_contract_scenarios.json)。新增渠道时只需新增自己的 Capability、Tool 和对应的本地场景证据；Runtime/中心 Router 不增加渠道分支。
+
 当前已增加统一 `PluginRegistry`：所有内置 Capability、Runtime Feature、Response Renderer、受信任可执行 Skill 和租户托管 Skill 都登记为带 `PluginManifest` 的扩展，并提供依赖排序、版本约束、启停/卸载和安全快照；`GET /plugins` 只返回 Manifest 与生命周期元数据。这个阶段完成的是插件内核和兼容适配，不代表已经支持任意第三方代码热加载。
 
 插件包可以使用根目录 `plugin.manifest.json` 描述 `PluginManifest`、文件 SHA-256、整体

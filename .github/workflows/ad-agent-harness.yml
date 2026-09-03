@@ -41,6 +41,8 @@ jobs:
         run: python agents/ad_agent/scripts/audit_capabilities.py
       - name: Audit creation blueprints and lookup sources
         run: python agents/ad_agent/scripts/audit_creation_contracts.py --strict-guided
+      - name: Run evidence-based local readiness gate
+        run: python agents/ad_agent/scripts/release_readiness.py --profile local
       - name: Run contract and golden tests
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"

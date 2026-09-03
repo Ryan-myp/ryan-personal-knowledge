@@ -1,0 +1,26 @@
+[
+  {
+    "platform": "meta",
+    "tool_name": "meta_list_campaigns",
+    "account_field": "account_id",
+    "account_id": "contract-meta-account"
+  },
+  {
+    "platform": "google-ads",
+    "tool_name": "google_list_campaigns",
+    "account_field": "customer_id",
+    "account_id": "contract-google-account"
+  },
+  {
+    "platform": "tiktok",
+    "tool_name": "tiktok_list_campaigns",
+    "account_field": "account_id",
+    "account_id": "contract-tiktok-account"
+  },
+  {
+    "platform": "dv360",
+    "tool_name": "dv360_list_campaigns",
+    "account_field": "advertiser_id",
+    "account_id": "contract-dv360-account"
+  }
+]
