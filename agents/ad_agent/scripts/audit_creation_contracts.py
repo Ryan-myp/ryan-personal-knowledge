@@ -16,6 +16,7 @@ import argparse
 import json
 import re
 import sys
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -65,6 +66,10 @@ _PARENT_OR_CONTEXT_FIELDS = {
 _UPLOAD_FIELDS = {
     "file_path", "file_paths", "file_url", "image_url", "video_url", "image_uri",
 }
+_SOURCE_KINDS = (
+    "enum", "lookup", "manual_entry", "upload", "context", "inherited",
+    "free_text", "structured", "unclassified",
+)
 
 
 def _tool_definition(registry: Any, name: str) -> Any:
@@ -83,17 +88,63 @@ def _lookup_name(spec: Mapping[str, Any]) -> str:
     return str(value or "").strip()
 
 
-def _field_source(spec: Mapping[str, Any], inherited: bool = False) -> str:
+def _has_static_options(spec: Mapping[str, Any]) -> bool:
+    """Return whether a schema publishes a finite provider-owned option set."""
+    if isinstance(spec.get("enum"), list):
+        return True
+    items = spec.get("items")
+    if isinstance(items, Mapping) and isinstance(items.get("enum"), list):
+        return True
+    # ``known_values`` is used for provider vocabularies that intentionally
+    # also accept a custom value (for example a custom conversion event).  It
+    # is still a discoverable enum source; the report preserves allow_custom.
+    return isinstance(spec.get("known_values"), list)
+
+
+def _explicit_field_source(spec: Mapping[str, Any]) -> bool:
+    """Whether a parent object should pass a source hint to nested fields."""
+    lookup = _lookup_name(spec)
+    return bool(
+        lookup
+        or _has_static_options(spec)
+        or isinstance(spec.get("manual_entry"), Mapping)
+        or str(spec.get("type") or "") in {"file", "file_reference"}
+    )
+
+
+def _field_source(
+    spec: Mapping[str, Any],
+    field_name: str = "",
+    inherited: bool = False,
+) -> str:
+    """Classify how a creation field can obtain its value.
+
+    This is deliberately an audit taxonomy, not Runtime routing.  It makes a
+    provider contract legible to a form/LLM consumer while keeping ordinary
+    user-entered names, dates and numbers distinct from provider-owned IDs.
+    Explicit schema metadata always wins over the conservative name-based
+    context fallback.
+    """
     if _lookup_name(spec):
         return "lookup"
+    if _has_static_options(spec):
+        return "enum"
     if isinstance(spec.get("manual_entry"), Mapping):
         return "manual_entry"
+    leaf = str(field_name or "").rsplit(".", 1)[-1].replace("[]", "")
+    if leaf in _PARENT_OR_CONTEXT_FIELDS:
+        return "context"
+    if leaf in _UPLOAD_FIELDS or str(spec.get("type") or "") in {"file", "file_reference"}:
+        return "upload"
     if inherited:
         return "inherited"
     if spec.get("ui_hidden"):
-        return "hidden"
-    if str(spec.get("type") or "") in {"file", "file_reference"}:
-        return "upload"
+        return "context"
+    field_type = spec.get("type")
+    if isinstance(field_type, str) and field_type in {"string", "number", "integer", "boolean"}:
+        return "free_text"
+    if (isinstance(field_type, str) and field_type in {"object", "array"}) or isinstance(field_type, list):
+        return "structured"
     return ""
 
 
@@ -107,7 +158,7 @@ def _iter_fields(
         if not isinstance(raw_spec, Mapping):
             continue
         path = f"{prefix}.{name}" if prefix else str(name)
-        own_source = bool(_field_source(raw_spec))
+        own_source = _explicit_field_source(raw_spec)
         yield path, raw_spec, inherited_source or own_source
         nested = raw_spec.get("properties")
         if isinstance(nested, Mapping):
@@ -130,6 +181,35 @@ def _needs_source(path: str, spec: Mapping[str, Any]) -> bool:
     if name in _PARENT_OR_CONTEXT_FIELDS or name in _UPLOAD_FIELDS:
         return False
     return bool(_RESOURCE_FIELD.search(name) or name in _RESOURCE_NAMES)
+
+
+def _source_details(spec: Mapping[str, Any]) -> dict[str, Any]:
+    """Expose only safe, declarative facts useful for contract review."""
+    details: dict[str, Any] = {}
+    enum = spec.get("enum")
+    if isinstance(enum, list):
+        details["option_count"] = len(enum)
+    items = spec.get("items")
+    if isinstance(items, Mapping) and isinstance(items.get("enum"), list):
+        details["option_count"] = len(items["enum"])
+    if isinstance(spec.get("known_values"), list):
+        details["known_value_count"] = len(spec["known_values"])
+    if spec.get("allow_custom") is not None:
+        details["allow_custom"] = bool(spec["allow_custom"])
+    lookup_name = _lookup_name(spec)
+    if lookup_name:
+        details["lookup_tool"] = lookup_name
+    if isinstance(spec.get("manual_entry"), Mapping):
+        manual = spec["manual_entry"]
+        details["manual_entry"] = {
+            key: value for key, value in manual.items()
+            if key in {"source", "instructions", "example", "format"}
+        }
+    if spec.get("minItems") is not None:
+        details["min_items"] = spec["minItems"]
+    if spec.get("maxItems") is not None:
+        details["max_items"] = spec["maxItems"]
+    return details
 
 
 def _format_tokens(value: Any) -> set[str]:
@@ -225,10 +305,56 @@ def _audit_blueprint_coverage(runtime: AgentRuntime) -> dict[str, Any]:
     return by_provider
 
 
+def _blueprint_required_field_gaps(
+    runtime: AgentRuntime, blueprint: Any,
+) -> list[dict[str, str]]:
+    """Check that a Blueprint's effective form contains required Tool fields.
+
+    ``CreationCardBuilder.expand_blueprint`` is the supported composition
+    point: a concise provider Blueprint may inherit safe schema fields there.
+    The audit checks the expanded result, so it catches a real missing field
+    without forcing every provider to duplicate its Tool schema in JSON.
+    """
+    try:
+        expanded = runtime.creation_card_builder.expand_blueprint(blueprint)
+    except Exception as exc:
+        return [{"tool": "<blueprint>", "field": f"expansion failed: {exc}"}]
+    refs = {str(field.get("tool_ref")) for field in expanded.fields}
+    gaps: list[dict[str, str]] = []
+    for tool_name in blueprint.tools:
+        definition = _tool_definition(runtime.registry, tool_name)
+        if definition is None:
+            continue
+        schema = getattr(definition, "input_schema", None)
+        properties = getattr(schema, "properties", {}) or {}
+        required = set(getattr(schema, "required", []) or [])
+        required.update(getattr(schema, "provider_required", []) or [])
+        parent_field = str(getattr(definition, "parent_resource_id_field", "") or "")
+        resource_id_field = str(getattr(definition, "resource_id_field", "") or "")
+        for field_name in sorted(required):
+            spec = properties.get(field_name)
+            if not isinstance(spec, Mapping):
+                continue
+            if (
+                field_name in _PARENT_OR_CONTEXT_FIELDS
+                or field_name in {parent_field, resource_id_field}
+                or spec.get("ui_hidden") is True
+            ):
+                continue
+            tool_ref = f"{tool_name}.{field_name}"
+            if tool_ref not in refs:
+                gaps.append({"tool": tool_name, "field": field_name})
+    return gaps
+
+
 def audit_creation_contracts(runtime: AgentRuntime) -> dict[str, Any]:
     issues: list[str] = []
     lookup_contracts: list[dict[str, Any]] = []
     unresolved_fields: list[dict[str, str]] = []
+    source_counts: dict[str, Counter[str]] = defaultdict(Counter)
+    field_sources: list[dict[str, Any]] = []
+    unclassified_fields: list[dict[str, str]] = []
+    blueprint_required_gaps: list[dict[str, str]] = []
     selector_groups: dict[tuple[str, str, tuple[Any, ...]], list[Any]] = {}
     creation_tools = [
         definition
@@ -251,6 +377,16 @@ def audit_creation_contracts(runtime: AgentRuntime) -> dict[str, Any]:
             validate_blueprint_against_tools(blueprint, runtime.registry)
         except Exception as exc:
             issues.append(f"{blueprint.blueprint_id}@{blueprint.version}: {exc}")
+        for gap in _blueprint_required_field_gaps(runtime, blueprint):
+            item = {
+                "blueprint": f"{blueprint.blueprint_id}@{blueprint.version}",
+                **gap,
+            }
+            blueprint_required_gaps.append(item)
+            issues.append(
+                f"{item['blueprint']}: required Tool field is absent from effective Blueprint: "
+                f"{item['tool']}.{item['field']}"
+            )
 
     selector_overlaps: list[dict[str, Any]] = []
     for (provider, dimension, values), blueprints in selector_groups.items():
@@ -271,6 +407,38 @@ def audit_creation_contracts(runtime: AgentRuntime) -> dict[str, Any]:
     for definition in creation_tools:
         properties = getattr(getattr(definition, "input_schema", None), "properties", {})
         for path, spec, inherited_source in _iter_fields(properties or {}):
+            source = _field_source(spec, path, inherited_source)
+            provider = str(getattr(definition, "platform", "") or "")
+            source_counts[provider][source or "unclassified"] += 1
+            field_item = {
+                "provider": provider,
+                "tool": definition.name,
+                "field": path,
+                "source": source or "unclassified",
+                "type": spec.get("type"),
+                "required": path.rsplit(".", 1)[-1].replace("[]", "") in set(
+                    getattr(getattr(definition, "input_schema", None), "required", []) or []
+                ) | set(
+                    getattr(getattr(definition, "input_schema", None), "provider_required", []) or []
+                ),
+            }
+            details = _source_details(spec)
+            if details:
+                field_item["details"] = details
+            field_sources.append(field_item)
+            if not source:
+                unclassified_fields.append({
+                    "tool": definition.name,
+                    "field": path,
+                })
+            if _needs_source(path, spec) and source not in {
+                "lookup", "manual_entry", "upload", "context", "inherited",
+            }:
+                unresolved_fields.append({
+                    "tool": definition.name,
+                    "field": path,
+                    "source": source or "unclassified",
+                })
             lookup_name = _lookup_name(spec)
             if lookup_name:
                 lookup = _tool_definition(runtime.registry, lookup_name)
@@ -279,13 +447,20 @@ def audit_creation_contracts(runtime: AgentRuntime) -> dict[str, Any]:
                     "field": path,
                     "lookup_tool": lookup_name,
                     "read_only": bool(lookup and getattr(lookup, "effect_class", None) == ToolEffect.READ),
+                    "same_provider": bool(
+                        lookup and str(getattr(lookup, "platform", "")).casefold()
+                        == provider.casefold()
+                    ),
                 })
                 if lookup is None:
                     issues.append(f"{definition.name}.{path}: lookup Tool is not registered: {lookup_name}")
                 elif getattr(lookup, "effect_class", None) != ToolEffect.READ:
                     issues.append(f"{definition.name}.{path}: lookup Tool must be read-only: {lookup_name}")
-            if _needs_source(path, spec) and not inherited_source:
-                unresolved_fields.append({"tool": definition.name, "field": path})
+                elif str(getattr(lookup, "platform", "")).casefold() != provider.casefold():
+                    issues.append(
+                        f"{definition.name}.{path}: lookup Tool must belong to provider "
+                        f"{provider}: {lookup_name}"
+                    )
 
     for item in unresolved_fields:
         issues.append(
@@ -293,13 +468,26 @@ def audit_creation_contracts(runtime: AgentRuntime) -> dict[str, Any]:
         )
 
     blueprint_coverage = _audit_blueprint_coverage(runtime)
+    source_count_dict = {
+        provider: {
+            source: counts.get(source, 0)
+            for source in _SOURCE_KINDS
+            if counts.get(source, 0)
+        }
+        for provider, counts in sorted(source_counts.items())
+    }
     return {
         "creation_tool_count": len(creation_tools),
         "blueprint_count": len(runtime.creation_blueprints.list()),
         "lookup_contract_count": len(lookup_contracts),
         "lookup_contracts": lookup_contracts,
+        "field_source_counts": source_count_dict,
+        "field_source_total": sum(sum(counts.values()) for counts in source_counts.values()),
+        "field_sources": field_sources,
+        "unclassified_fields": unclassified_fields,
         "selector_overlaps": selector_overlaps,
         "unresolved_fields": unresolved_fields,
+        "blueprint_required_gaps": blueprint_required_gaps,
         "blueprint_coverage": blueprint_coverage,
         "issues": issues,
     }
@@ -342,6 +530,15 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"- {provider}: {coverage['mapped_count']}/{coverage['format_count']} "
                 f"formats mapped{suffix}"
+            )
+        print("字段来源分布：")
+        for provider, counts in report["field_source_counts"].items():
+            summary = ", ".join(f"{source}={count}" for source, count in counts.items())
+            print(f"- {provider}: {summary}")
+        if report["unclassified_fields"]:
+            print(
+                f"未分类字段：{len(report['unclassified_fields'])}；"
+                "请补充 enum/lookup/manual_entry 或明确字段类型"
             )
         if report["issues"]:
             print("发现问题：")

@@ -11,6 +11,7 @@ from agents.ad_agent.scripts.validate_contracts import (
     build_runtime,
     verify_snapshot,
 )
+from agents.ad_agent.core.interfaces import ToolDefinition, ToolEffect, ToolSchema
 
 import copy
 import json
@@ -175,6 +176,118 @@ def test_creation_contract_audit_closes_blueprint_and_lookup_sources_without_io(
         and item["read_only"]
         for item in report["lookup_contracts"]
     )
+
+
+def test_creation_contract_audit_reports_field_source_distribution():
+    report = audit_creation_contracts(build_creation_runtime())
+
+    assert report["field_source_total"] > 0
+    assert report["unclassified_fields"] == []
+    for provider, counts in report["field_source_counts"].items():
+        assert counts["enum"] > 0, provider
+        assert counts["free_text"] > 0, provider
+    assert any(
+        item["provider"] == "tiktok"
+        and item["source"] == "lookup"
+        and item["details"]["lookup_tool"] == "tiktok_list_apps"
+        for item in report["field_sources"]
+    )
+    assert all(
+        item["same_provider"]
+        for item in report["lookup_contracts"]
+    )
+
+
+def test_creation_contract_audit_rejects_resource_field_without_value_source():
+    runtime = build_creation_runtime()
+    runtime.registry.register(
+        ToolDefinition(
+            name="test_create_ad_with_unresolved_asset",
+            skill="test",
+            platform="meta",
+            description="test-only create Tool",
+            input_schema=ToolSchema(
+                required=["asset_id"],
+                properties={"asset_id": {"type": "string"}},
+            ),
+            action="create",
+            resource_type="ad",
+            intent_types=["test_create_ad"],
+            effect_class=ToolEffect.EXTERNAL_WRITE,
+            live_support=False,
+        ),
+        object(),
+    )
+
+    report = audit_creation_contracts(runtime)
+
+    assert {
+        "tool": "test_create_ad_with_unresolved_asset",
+        "field": "asset_id",
+        "source": "free_text",
+    } in report["unresolved_fields"]
+    assert any(
+        "test_create_ad_with_unresolved_asset.asset_id" in issue
+        for issue in report["issues"]
+    )
+
+
+def test_creation_contract_audit_rejects_cross_provider_lookup():
+    runtime = build_creation_runtime()
+    runtime.registry.register(
+        ToolDefinition(
+            name="test_google_lookup",
+            skill="test",
+            platform="google-ads",
+            description="test-only lookup Tool",
+            input_schema=ToolSchema(
+                required=[],
+                properties={"items": {"type": "array"}},
+            ),
+            action="list",
+            resource_type="asset",
+            intent_types=["test_list_assets"],
+            effect_class=ToolEffect.READ,
+        ),
+        object(),
+    )
+    runtime.registry.register(
+        ToolDefinition(
+            name="test_meta_create_ad",
+            skill="test",
+            platform="meta",
+            description="test-only create Tool",
+            input_schema=ToolSchema(
+                required=["asset_id"],
+                properties={
+                    "asset_id": {
+                        "type": "string",
+                        "lookup_tool": "test_google_lookup",
+                    },
+                },
+            ),
+            action="create",
+            resource_type="ad",
+            intent_types=["test_create_ad"],
+            effect_class=ToolEffect.EXTERNAL_WRITE,
+            live_support=False,
+        ),
+        object(),
+    )
+
+    report = audit_creation_contracts(runtime)
+
+    assert any(
+        "test_meta_create_ad.asset_id" in issue
+        and "must belong to provider meta" in issue
+        for issue in report["issues"]
+    )
+    lookup = next(
+        item for item in report["lookup_contracts"]
+        if item["tool"] == "test_meta_create_ad"
+    )
+    assert lookup["read_only"] is True
+    assert lookup["same_provider"] is False
 
 
 def test_contract_snapshot_is_deterministic_and_partitioned_by_platform():

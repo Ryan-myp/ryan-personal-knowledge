@@ -230,6 +230,13 @@ Provider live lookup 返回的动态选项会附带短时 `selection_token`。�
 Capability 包约定自动发现渠道，输出 action/resource 矩阵和创建链，不是 Runtime 的第二套
 渠道注册表。
 
+创建参数还可用 `python3 agents/ad_agent/scripts/audit_creation_contracts.py --strict-guided`
+做发布前审计。它会逐字段报告 `enum` 固定选项、`lookup` 动态查询、`manual_entry` 人工
+录入、`upload` 素材上传、`context` 账户/父级上下文、`inherited` 级联继承、`free_text`
+自由输入和 `structured` 结构化输入，并检查资源字段是否缺少受控来源、Lookup 是否为同
+渠道只读 Tool，以及 Blueprint 展开后的必填字段是否完整。新增 Provider 字段不需要修改
+Runtime；只要补齐自身 Tool Schema/Lookup/Blueprint，审计即可自动发现缺口。
+
 插件生命周期可通过 Runtime SDK 或 `GET /plugins` 检查；注册表不会绕过 ToolRegistry 的
 Schema、权限、账户、dry-run、确认、幂等和审计门禁。后续仍需补可信插件的
 沙箱/独立进程和生产级运行时探针。受信任部署宿主的 `PluginLoader.upgrade()` 已提供
