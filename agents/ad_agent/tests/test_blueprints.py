@@ -250,6 +250,120 @@ def test_google_video_ad_group_type_is_derived_from_video_format():
     assert "ad_group.type" not in result["missing_fields"]
 
 
+def test_creation_cards_expose_complete_schema_limits_and_provider_source_groups():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_google_capability())
+    intent = ParsedIntent(
+        "create_campaign", "创建 Google Search 广告", ["google-ads"],
+        campaign_type="SEARCH",
+        platform_params={"google-ads": {"campaign_type": "SEARCH"}},
+    )
+    card = runtime.build_creation_ui(intent)["cards"][0]
+    fields = {item["path"]: item for item in card["fields"]}
+    assert len(card["fields"]) > 11
+    assert fields["ad.headlines"]["constraints"]["minItems"] == 3
+    assert fields["ad.headlines"]["constraints"]["items"]["maxLength"] == 30
+    assert fields["campaign.daily_budget"]["constraints"]["minimum"] == 0
+    source_groups = [
+        item for item in card["constraints"]
+        if item["tool"] == "google_create_campaign" and item["type"] == "any_of"
+    ]
+    assert source_groups
+    assert source_groups[0]["satisfied"] is False
+    assert "campaign.daily_budget" in card["missing_fields"]
+
+
+def test_tiktok_creation_card_does_not_truncate_provider_parameter_catalog():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_tiktok_capability())
+    intent = ParsedIntent(
+        "create_campaign", "创建 TikTok 商品销售广告", ["tiktok"],
+        platform_params={"tiktok": {"objective": "PRODUCT_SALES"}},
+    )
+    card = runtime.build_creation_ui(intent)["cards"][0]
+    fields = {item["path"]: item for item in card["fields"]}
+    assert len(card["fields"]) > 80
+    assert fields["ad_group.audience_ids"]["control"] == "lookup"
+    assert fields["ad_group.audience_ids"]["lookup"]["tool"] == "tiktok_list_audiences"
+    assert fields["ad_group.device_price_ranges"]["control"] == "json"
+
+
+def test_meta_nested_targeting_and_app_event_guidance_are_renderable():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_meta_capability())
+    intent = ParsedIntent(
+        "create_campaign", "创建 Meta 转化广告", ["meta"],
+        platform_params={"meta": {
+            "objective": "OUTCOME_CONVERSIONS",
+            "optimization_goal": "OFFSITE_CONVERSIONS",
+        }},
+    )
+    card = runtime.build_creation_ui(intent)["cards"][0]
+    targeting = next(item for item in card["fields"] if item["path"] == "ad_set.targeting")
+    geo = targeting["object_properties"]["geo_locations"]
+    assert geo["properties"]["regions"]["lookup_tool"] == "meta_search_targeting_options"
+    assert geo["properties"]["regions"]["lookup_defaults"] == {"type": "adgeolocation"}
+    promoted = next(item for item in card["fields"] if item["path"] == "ad_set.promoted_object")
+    assert promoted["object_properties"]["application_id"]["manual_entry"]["source"] == "external_provider_identifier"
+    assert promoted["object_properties"]["custom_event_type"]["enum"]
+    assert promoted["object_properties"]["custom_event_str"]["manual_entry"]
+
+
+def test_declared_resource_fields_inherit_provider_lookup_metadata():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_meta_capability())
+    intent = ParsedIntent(
+        "create_campaign", "创建 Meta 商品广告", ["meta"],
+        platform_params={"meta": {"objective": "PRODUCT_CATALOG_SALES"}},
+    )
+    card = runtime.build_creation_ui(intent)["cards"][0]
+    fields = {item["path"]: item for item in card["fields"]}
+    # These fields are explicitly listed in the Blueprint, but their lookup
+    # source is owned by the Tool/Capability contract.
+    assert fields["ad.page_id"]["control"] == "lookup"
+    assert fields["ad.page_id"]["lookup"]["tool"] == "meta_list_pages"
+    assert fields["ad.product_set_id"]["control"] == "lookup"
+
+
+def test_creation_catalog_covers_provider_reference_sources_across_channels():
+    google = AgentRuntime(require_llm=False, offline_mode=True)
+    google.register_capability(create_google_capability())
+    shopping = google.build_creation_ui(ParsedIntent(
+        "create_campaign", "创建 Google Shopping 广告", ["google-ads"],
+        platform_params={"google-ads": {"ad_format": "SHOPPING"}},
+    ))["cards"][0]
+    shopping_fields = {item["path"]: item for item in shopping["fields"]}
+    assert shopping_fields["product_group.parent_criterion_id"]["control"] == "lookup"
+
+    tiktok = AgentRuntime(require_llm=False, offline_mode=True)
+    tiktok.register_capability(create_tiktok_capability())
+    lead = tiktok.build_creation_ui(ParsedIntent(
+        "create_campaign", "创建 TikTok 线索广告", ["tiktok"],
+        platform_params={"tiktok": {"objective": "LEAD_GENERATION"}},
+    ))["cards"][0]
+    lead_fields = {item["path"]: item for item in lead["fields"]}
+    assert lead_fields["ad.tracking_pixel_id"]["control"] == "lookup"
+
+    sales = tiktok.build_creation_ui(ParsedIntent(
+        "create_campaign", "创建 TikTok 商品广告", ["tiktok"],
+        platform_params={"tiktok": {"objective": "PRODUCT_SALES"}},
+    ))["cards"][0]
+    sales_fields = {item["path"]: item for item in sales["fields"]}
+    assert sales_fields["ad.call_to_action_id"]["manual_entry"]["source"] == "external_provider_identifier"
+    assert sales_fields["ad.identity_type"]["source"] == "enum"
+
+
+def test_lookup_catalog_applies_provider_defaults_without_network_call():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_meta_capability())
+    catalog = runtime.list_parameter_options(
+        "meta", "targeting.geo_locations.regions", "meta_create_adset"
+    )[0]
+    assert catalog["lookup_tool"] == "meta_search_targeting_options"
+    assert catalog["query_field"] == "query"
+    assert catalog["lookup_defaults"] == {"type": "adgeolocation"}
+
+
 def test_blueprint_submission_composes_declared_parent_child_tools():
     runtime = AgentRuntime(require_llm=False, offline_mode=True)
     runtime.register_capability(create_google_capability())

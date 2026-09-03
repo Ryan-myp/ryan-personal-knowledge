@@ -4125,6 +4125,21 @@
             return String(option);
         }
 
+        function schemaConstraintHint(schema) {
+            if (!schema || typeof schema !== 'object') return '';
+            const hints = [];
+            if (schema.minItems !== undefined) hints.push(`至少 ${schema.minItems} 项`);
+            if (schema.maxItems !== undefined) hints.push(`最多 ${schema.maxItems} 项`);
+            if (schema.minLength !== undefined) hints.push(`最少 ${schema.minLength} 个字符`);
+            if (schema.maxLength !== undefined) hints.push(`最多 ${schema.maxLength} 个字符`);
+            if (schema.minimum !== undefined) hints.push(`最小值 ${schema.minimum}`);
+            if (schema.maximum !== undefined) hints.push(`最大值 ${schema.maximum}`);
+            if (schema.items?.minLength !== undefined) hints.push(`每项最少 ${schema.items.minLength} 个字符`);
+            if (schema.items?.maxLength !== undefined) hints.push(`每项最多 ${schema.items.maxLength} 个字符`);
+            if (schema.known_values && schema.allow_custom) hints.push('可选标准值，也可填写自定义值');
+            return hints.join('；');
+        }
+
         function presentedLines(value) {
             if (!Array.isArray(value)) return value ? String(value) : '';
             return value.map(item => {
@@ -4238,9 +4253,16 @@
             return option?.value;
         }
 
+        function lookupOptionValueText(value) {
+            if (value && typeof value === 'object') {
+                return String(value.id ?? value.audience_id ?? value.value ?? JSON.stringify(value));
+            }
+            return String(value ?? '');
+        }
+
         function lookupOptionMatches(option, query) {
             if (!query) return true;
-            return `${lookupOptionLabel(option)} ${lookupOptionValue(option) ?? ''}`
+            return `${lookupOptionLabel(option)} ${lookupOptionValueText(lookupOptionValue(option))}`
                 .toLowerCase().includes(query.toLowerCase());
         }
 
@@ -4306,7 +4328,7 @@
                     const chip = document.createElement('span');
                     chip.className = 'lookup-selection-chip';
                     const label = document.createElement('span');
-                    label.textContent = `${lookupOptionLabel(option)} · ${value}`;
+                    label.textContent = `${lookupOptionLabel(option)} · ${lookupOptionValueText(value)}`;
                     const remove = document.createElement('button');
                     remove.type = 'button';
                     remove.setAttribute('aria-label', `移除 ${lookupOptionLabel(option)}`);
@@ -4348,7 +4370,7 @@
                     label.textContent = lookupOptionLabel(option);
                     const id = document.createElement('span');
                     id.className = 'lookup-option-value';
-                    id.textContent = String(value ?? '');
+                    id.textContent = lookupOptionValueText(value);
                     button.append(label, id);
                     button.onclick = () => {
                         const current = getSelected();
@@ -4456,16 +4478,24 @@
                 const row = document.createElement('div');
                 row.className = 'structured-object-row';
                 const label = document.createElement('label');
-                label.textContent = spec.description ? `${name} · ${spec.description}` : name;
+                const specHint = schemaConstraintHint(spec);
+                const specDescription = [spec.description, specHint ? `参数限制：${specHint}` : '']
+                    .filter(Boolean).join('；');
+                label.textContent = specDescription ? `${name} · ${specDescription}` : name;
                 row.appendChild(label);
                 let control;
-                const options = Array.isArray(spec.enum) ? spec.enum : [];
+                const options = Array.isArray(spec.enum)
+                    ? spec.enum
+                    : Array.isArray(spec.items?.enum) ? spec.items.enum : [];
                 if (spec.lookup_tool || spec.lookup?.tool) {
                     const childPath = [lookupContext?.fieldPath, name].filter(Boolean).join('.');
                     control = renderLookupPicker({
                         ...spec, path: childPath, provider_field: childPath,
                         tool: lookupContext?.targetToolName,
-                        lookup: { tool: spec.lookup_tool || spec.lookup?.tool },
+                        lookup: {
+                            tool: spec.lookup_tool || spec.lookup?.tool,
+                            query_field: spec.lookup_query_field || spec.lookup?.query_field,
+                        },
                         lookup_multiple: spec.type === 'array',
                         value: current[name],
                     }, {
@@ -4481,26 +4511,46 @@
                             lookupContext?.onSelection?.({ fieldName: childPath, tokens });
                         },
                     });
-                } else if (state.options_state === 'awaiting_dependency' || state.options_state === 'no_matching_rule') {
+                } else if (spec.type === 'object' && spec.properties && typeof spec.properties === 'object') {
+                    const childPath = [lookupContext?.fieldPath, name].filter(Boolean).join('.');
+                    control = renderStructuredObjectEditor(
+                        spec,
+                        current[name],
+                        selectedValue => {
+                            if (selectedValue === undefined) delete current[name];
+                            else current[name] = selectedValue;
+                            onChange({ ...current });
+                        },
+                        null,
+                        {
+                            ...(lookupContext || {}),
+                            fieldPath: childPath,
+                        },
+                    );
+                } else if (spec.options_state === 'awaiting_dependency' || spec.options_state === 'no_matching_rule') {
                     control = document.createElement('select');
                     control.disabled = true;
                     const waiting = document.createElement('option');
                     waiting.value = '';
-                    waiting.textContent = state.options_state === 'awaiting_dependency'
+                    waiting.textContent = spec.options_state === 'awaiting_dependency'
                         ? '请先完成上游选择…' : '当前组合暂无可用选项';
                     control.appendChild(waiting);
                 } else if (options.length) {
                     control = document.createElement('select');
+                    if (spec.type === 'array') control.multiple = true;
                     const empty = document.createElement('option');
-                    empty.value = ''; empty.textContent = spec.required ? '请选择…' : '不设置';
-                    control.appendChild(empty);
+                    if (spec.type !== 'array') {
+                        empty.value = ''; empty.textContent = spec.required ? '请选择…' : '不设置';
+                        control.appendChild(empty);
+                    }
                     options.forEach(option => {
                         const item = document.createElement('option');
                         item.value = String(option);
                         item.textContent = spec.option_labels?.[String(option)] || String(option);
+                        if (spec.type === 'array' && Array.isArray(current[name]) && current[name].map(String).includes(String(option))) item.selected = true;
                         control.appendChild(item);
                     });
-                    control.value = current[name] === undefined ? '' : String(current[name]);
+                    if (spec.type !== 'array') control.value = current[name] === undefined ? '' : String(current[name]);
                 } else if (spec.type === 'boolean') {
                     control = document.createElement('input');
                     control.type = 'checkbox'; control.checked = Boolean(current[name]);
@@ -4526,11 +4576,17 @@
                 }
                 const commit = () => {
                     if (spec.lookup_tool || spec.lookup?.tool) return;
-                    const value = control.type === 'checkbox' ? control.checked : parseStructuredObjectChild(spec, control.value.trim());
+                    const value = control.type === 'checkbox'
+                        ? control.checked
+                        : control.tagName === 'SELECT' && control.multiple
+                            ? Array.from(control.selectedOptions).map(option => option.value)
+                            : parseStructuredObjectChild(spec, control.value.trim());
                     if (value === undefined) delete current[name]; else current[name] = value;
                     onChange({ ...current });
                 };
-                control.addEventListener(control.type === 'checkbox' || control.tagName === 'SELECT' ? 'change' : 'input', commit);
+                if (!(spec.type === 'object' && spec.properties && typeof spec.properties === 'object')) {
+                    control.addEventListener(control.type === 'checkbox' || control.tagName === 'SELECT' ? 'change' : 'input', commit);
+                }
                 row.appendChild(control);
                 editor.appendChild(row);
             });
@@ -4737,9 +4793,30 @@
             container.replaceChildren();
             const stateMap = new Map((evaluation?.fields || []).map(item => [item.path, item]));
             for (const field of (blueprint.fields || [])) {
+                const fieldRef = blueprintToolFieldSchema(field.tool_ref);
+                const schema = fieldRef.schema || {};
+                const sourceTool = (blueprintState.tools || []).find(item => item.name === fieldRef.toolName);
+                const schemaRequired = Boolean(
+                    schema.required ||
+                    sourceTool?.input_schema?.required?.includes?.(fieldRef.fieldPath)
+                );
+                const fieldSource = schema.lookup_tool || schema.lookup?.tool
+                    ? 'lookup'
+                    : field.source || (schema.enum || schema.items?.enum ? 'enum' : 'tool_schema');
+                const fieldView = {
+                    ...field,
+                    source: fieldSource,
+                    presentation: field.presentation || schema.presentation,
+                    accept: field.accept || schema.accept,
+                    lookup_tool: field.lookup_tool || schema.lookup_tool,
+                    lookup_result_key: field.lookup_result_key || schema.lookup_result_key,
+                    lookup_query_field: field.lookup_query_field || schema.lookup_query_field,
+                    lookup_defaults: field.lookup_defaults || schema.lookup_defaults,
+                    manual_entry: field.manual_entry || schema.manual_entry,
+                };
                 const state = stateMap.get(field.path) || {
                     visible: true,
-                    required: Boolean(field.required),
+                    required: Boolean(field.required || schemaRequired),
                     state: 'optional',
                 };
                 const wrapper = document.createElement('div');
@@ -4754,18 +4831,20 @@
                     label.appendChild(required);
                 }
                 wrapper.appendChild(label);
-                if (field.description) {
+                const fieldHint = schemaConstraintHint(schema);
+                const fieldDescription = [field.description || schema.description, fieldHint ? `参数限制：${fieldHint}` : '']
+                    .filter(Boolean).join('；');
+                if (fieldDescription) {
                     const help = document.createElement('div');
                     help.className = 'blueprint-field-help';
-                    help.textContent = field.description;
+                    help.textContent = fieldDescription;
                     wrapper.appendChild(help);
                 }
-                const schema = blueprintToolFieldSchema(field.tool_ref).schema || {};
-                const options = blueprintOptions(field, state);
+                const options = blueprintOptions(fieldView, state);
                 const displayValue = state.value !== undefined && state.value !== null
                     ? state.value : blueprintState.values[field.path];
                 let control;
-                if (field.presentation === 'file_reference') {
+                if (fieldView.presentation === 'file_reference') {
                     control = document.createElement('div');
                     control.className = 'asset-picker';
                     const idInput = document.createElement('input');
@@ -4775,7 +4854,7 @@
                     idInput.addEventListener('change', () => updateBlueprintField(field, idInput.value.trim()));
                     const fileInput = document.createElement('input');
                     fileInput.type = 'file';
-                    fileInput.accept = field.accept || '*/*';
+                    fileInput.accept = fieldView.accept || '*/*';
                     fileInput.addEventListener('change', () => {
                         const file = fileInput.files?.[0];
                         if (!file) return;
@@ -4793,13 +4872,13 @@
                     note.className = 'asset-picker-note';
                     note.textContent = '本地文件仅用于准备素材，不会自动上传；执行前仍需对应平台素材 ID。';
                     control.appendChild(note);
-                } else if (field.presentation === 'asset_picker') {
+                } else if (fieldView.presentation === 'asset_picker') {
                     control = document.createElement('div');
                     control.className = 'asset-picker';
                     const fileInput = document.createElement('input');
                     fileInput.type = 'file';
                     fileInput.multiple = true;
-                    fileInput.accept = field.accept || '*/*';
+                    fileInput.accept = fieldView.accept || '*/*';
                     fileInput.addEventListener('change', () => {
                         const existing = Array.isArray(blueprintState.values[field.path]) ? blueprintState.values[field.path] : [];
                         const selected = Array.from(fileInput.files || []).map(file => ({
@@ -4828,20 +4907,20 @@
                     note.className = 'asset-picker-note';
                     note.textContent = '可选择本地文件加入草稿；当前只保存文件信息，不上传到广告平台。';
                     control.appendChild(note);
-                } else if (field.presentation === 'derived_readonly') {
+                } else if (fieldView.presentation === 'derived_readonly') {
                     control = document.createElement('input');
                     control.className = 'derived-readonly';
                     control.readOnly = true;
                     control.disabled = true;
                     control.value = displayValue === undefined ? (options[0] || '') : String(displayValue);
-                } else if (field.source === 'lookup') {
+                } else if (fieldView.source === 'lookup') {
                     const lookupRef = blueprintToolFieldSchema(field.tool_ref);
                     const lookupKey = lookupRef.fieldPath || field.path;
-                    control = renderLookupPicker({ ...field, value: displayValue, tool: lookupRef.toolName }, {
+                    control = renderLookupPicker({ ...fieldView, value: displayValue, tool: lookupRef.toolName }, {
                         platform: blueprint.provider,
                         accountId: blueprintState.accountId,
                         getAccountId: () => blueprintState.accountId,
-                        accountRequired: lookupSourceAccountRequired(field.lookup_tool || lookupRef.schema?.lookup_tool || lookupRef.schema?.lookup?.tool),
+                        accountRequired: lookupSourceAccountRequired(fieldView.lookup_tool || lookupRef.schema?.lookup_tool || lookupRef.schema?.lookup?.tool),
                         getLookupContext: blueprintLookupContext,
                         targetToolName: lookupRef.toolName,
                         fieldName: lookupKey,

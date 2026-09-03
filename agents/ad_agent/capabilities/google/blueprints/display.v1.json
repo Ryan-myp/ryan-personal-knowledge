@@ -17,6 +17,7 @@
     {"path": "ad_group.name", "tool_ref": "google_create_ad_group.name", "label": "广告组名称", "required": true},
     {"path": "ad_group.type", "tool_ref": "google_create_ad_group.type", "label": "广告组类型（自动匹配）", "required": true, "source": "enum", "options": ["DISPLAY_STANDARD"], "presentation": "derived_readonly"},
     {"path": "ad_group.targeting", "tool_ref": "google_create_ad_group.targeting", "label": "定向", "required": false},
+    {"path": "ad.ad_type", "tool_ref": "google_create_responsive_display_ad.ad_type", "label": "广告格式（自动匹配）", "required": true, "source": "enum", "options": ["RESPONSIVE_DISPLAY_AD"], "presentation": "derived_readonly"},
     {"path": "ad.name", "tool_ref": "google_create_responsive_display_ad.name", "label": "广告名称", "required": true},
     {"path": "ad.final_url", "tool_ref": "google_create_responsive_display_ad.final_url", "label": "最终到达网址", "required": true},
     {"path": "ad.headlines", "tool_ref": "google_create_responsive_display_ad.headlines", "label": "短标题（每行一条）", "required": true, "presentation": "text_list", "value_shape": "object_text"},

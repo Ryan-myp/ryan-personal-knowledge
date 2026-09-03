@@ -107,8 +107,26 @@ def meta_targeting_schema() -> dict[str, Any]:
     return _object({
         "geo_locations": _object({
             "countries": _field("array", "ISO country codes", items={"type": "string"}),
-            "regions": _field("array", "Region IDs", items=_object({"key": _field("string")}, "Region reference")),
-            "cities": _field("array", "City references", items=_object({"key": _field("string")}, "City reference")),
+            "regions": _field(
+                "array", "Region IDs; search by region name",
+                items=_object({"key": _field("string")}, "Region reference"),
+                lookup_tool="meta_search_targeting_options",
+                lookup_result_key="targeting_options",
+                lookup_query_field="query",
+                lookup_defaults={"type": "adgeolocation"},
+                selection_value_fields=["key", "id", "value"],
+                selection_label_fields=["name", "label", "key", "id"],
+            ),
+            "cities": _field(
+                "array", "City references; search by city name",
+                items=_object({"key": _field("string")}, "City reference"),
+                lookup_tool="meta_search_targeting_options",
+                lookup_result_key="targeting_options",
+                lookup_query_field="query",
+                lookup_defaults={"type": "adgeolocation"},
+                selection_value_fields=["key", "id", "value"],
+                selection_label_fields=["name", "label", "key", "id"],
+            ),
             "location_types": _field("array", "Location semantics", items={"type": "string", "enum": ["home", "recent"]}),
         }, "Geographic targeting"),
         "age_min": _field("integer", "Minimum age", minimum=13, maximum=65),
@@ -119,8 +137,18 @@ def meta_targeting_schema() -> dict[str, Any]:
         "publisher_platforms": _field("array", "Publisher platforms", items={"type": "string", "enum": ["facebook", "instagram", "audience_network", "messenger"]}),
         "facebook_positions": _field("array", "Facebook placements", items={"type": "string"}),
         "instagram_positions": _field("array", "Instagram placements", items={"type": "string"}),
-        "custom_audiences": _field("array", "Included custom audiences", items=audience_ref),
-        "excluded_custom_audiences": _field("array", "Excluded custom audiences", items=audience_ref),
+        "custom_audiences": _field(
+            "array", "Included custom audiences", items=audience_ref,
+            lookup_tool="meta_list_audiences", lookup_result_key="audiences",
+            selection_value_fields=["id", "audience_id"],
+            selection_label_fields=["name", "audience_name", "id"],
+        ),
+        "excluded_custom_audiences": _field(
+            "array", "Excluded custom audiences", items=audience_ref,
+            lookup_tool="meta_list_audiences", lookup_result_key="audiences",
+            selection_value_fields=["id", "audience_id"],
+            selection_label_fields=["name", "audience_name", "id"],
+        ),
         "flexible_spec": _field("array", "Interest/behavior groups", items={"type": "object", "additionalProperties": True}),
     }, "Meta ad set targeting")
 
@@ -595,7 +623,14 @@ def meta_promoted_object_schema() -> dict[str, Any]:
             selection_label_fields=["name", "id"],
         ),
         "custom_event_type": _field("string", "Conversion event", enum=META_CUSTOM_EVENT_TYPES),
-        "custom_event_str": _field("string", "Provider custom event name"),
+        "custom_event_str": _field(
+            "string", "Provider custom event name",
+            manual_entry={
+                "title": "Meta 自定义事件名",
+                "instructions": "标准事件请直接选择上面的选项；自定义事件名由你的 Pixel/应用上报定义，请按事件源中的原始名称填写。",
+                "source": "provider_event_source",
+            },
+        ),
     }, "Meta promoted object")
 
 

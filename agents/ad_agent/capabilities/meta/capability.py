@@ -124,6 +124,10 @@ META_LOOKUP_CONTRACTS = {
             ["id", "custom_conversion_id"],
             ["name", "custom_conversion_name", "id"],
         ),
+        "business_id": _meta_lookup(
+            "meta_list_businesses", "businesses", ["id", "business_id"],
+            ["name", "business_name", "id"],
+        ),
         # Meta Marketing API does not provide a general app catalog for this
         # field, and there is no safe Page/Post enumeration in this package.
         # Show an explicit manual input guide instead of inventing a lookup.
@@ -139,6 +143,13 @@ META_LOOKUP_CONTRACTS = {
             "manual_entry": {
                 "title": "Facebook 帖子 ID",
                 "instructions": "当前能力未接入 Page 帖子检索，请粘贴需要推广的帖子 ID；不会根据名称猜测。",
+                "source": "external_provider_identifier",
+            },
+        },
+        "event_source_group": {
+            "manual_entry": {
+                "title": "Meta 事件源组 ID",
+                "instructions": "请从 Meta Events Manager 或业务数据源配置中复制事件源组 ID；当前能力没有可按广告账户枚举的事件源组接口。",
                 "source": "external_provider_identifier",
             },
         },
@@ -1345,6 +1356,7 @@ class MetaCapability(BaseCapability):
             platform="meta",
             description="查询 Meta Custom Audience 列表。",
             input_schema=ToolSchema(
+                required=["account_id"],
                 properties={"account_id": {"type": "string"}, "limit": {"type": "integer"}},
             ),
             action="list", resource_type="audience", intent_types=["list_audiences"],

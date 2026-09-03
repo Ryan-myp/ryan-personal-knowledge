@@ -1080,9 +1080,12 @@ class AgentRuntime:
         selector_dimension: Optional[str] = None, selector_value: Any = None,
     ) -> list[dict[str, Any]]:
         """Return provider-owned creation metadata without making network calls."""
-        return self.creation_blueprints.to_dict(
-            provider, ad_format, selector_dimension, selector_value
-        )
+        return [
+            self.creation_card_builder.expand_blueprint(blueprint).to_dict()
+            for blueprint in self.creation_blueprints.list(
+                provider, ad_format, selector_dimension, selector_value
+            )
+        ]
 
     def resolve_creation_blueprint(
         self,
@@ -1099,7 +1102,10 @@ class AgentRuntime:
             values=values,
             version=version,
         )
-        return blueprint.to_dict() if blueprint is not None else None
+        return (
+            self.creation_card_builder.expand_blueprint(blueprint).to_dict()
+            if blueprint is not None else None
+        )
 
     def evaluate_creation_blueprint(
         self,
@@ -1114,6 +1120,7 @@ class AgentRuntime:
         blueprint = self.creation_blueprints.get(blueprint_id, version)
         if blueprint is None:
             raise KeyError(f"creation blueprint not found: {blueprint_id}@{version or 'latest'}")
+        blueprint = self.creation_card_builder.expand_blueprint(blueprint)
         # The cascade engine stays provider-neutral. Runtime only supplies the
         # enum portion of the already-registered Tool schema so a Blueprint can
         # use ``option_rules`` even when its base options are inherited from a
@@ -1484,6 +1491,9 @@ class AgentRuntime:
             if account_field in properties and account_value:
                 input_data[account_field] = account_value
                 break
+        for field_name, default_value in (catalog.lookup_defaults or {}).items():
+            if field_name in properties and field_name not in input_data:
+                input_data[str(field_name)] = copy.deepcopy(default_value)
         context_values = dict(lookup_context or {})
         dependencies = list(catalog.dependencies or ())
         for dependency in dependencies:

@@ -53,6 +53,9 @@ class ParameterCatalog:
     dependencies: tuple[dict[str, Any], ...] = ()
     manual_entry: Optional[dict[str, Any]] = None
     query_field: Optional[str] = None
+    # Provider-owned fixed inputs for a lookup source, such as a targeting
+    # search category.  They are declarative defaults, never executable code.
+    lookup_defaults: Optional[dict[str, Any]] = None
 
     def to_dict(self) -> dict[str, Any]:
         result = {
@@ -75,6 +78,8 @@ class ParameterCatalog:
                 result["manual_entry"] = dict(self.manual_entry)
             if self.query_field:
                 result["query_field"] = self.query_field
+            if self.lookup_defaults:
+                result["lookup_defaults"] = dict(self.lookup_defaults)
         if self.description:
             result["description"] = self.description
         return result
@@ -122,6 +127,10 @@ class ParameterCatalogRegistry:
                     if catalog.manual_entry is not None else None
                 ),
                 query_field=catalog.query_field,
+                lookup_defaults=(
+                    dict(catalog.lookup_defaults)
+                    if catalog.lookup_defaults is not None else None
+                ),
                 tool_name=tool_name,
             )
 
@@ -207,6 +216,10 @@ class ParameterCatalogRegistry:
                         query_field=(
                             str(spec["lookup_query_field"])
                             if spec.get("lookup_query_field") else None
+                        ),
+                        lookup_defaults=(
+                            dict(spec["lookup_defaults"])
+                            if isinstance(spec.get("lookup_defaults"), dict) else None
                         ),
                         tool_name=tool_name,
                     )

@@ -627,7 +627,13 @@ def google_campaign_schema() -> dict[str, Any]:
                 intent_field="campaign_type",
                 intent_map=GOOGLE_CHANNEL_TYPE_INTENT_MAP,
             ),
-            "campaign_type": _field("string", "Channel type input alias", enum=GOOGLE_CHANNEL_INPUT_TYPES),
+            # Compatibility input alias for intent/planner payloads.  The
+            # creation card exposes the canonical advertising_channel_type;
+            # App's selector may still reference this field explicitly.
+            "campaign_type": _field(
+                "string", "Channel type input alias", enum=GOOGLE_CHANNEL_INPUT_TYPES,
+                ui_hidden=True,
+            ),
             "advertising_channel_sub_type": _field(
                 "string", "Channel subtype (App campaigns and Performance Max)",
                 enum=GOOGLE_CHANNEL_SUB_TYPES,
@@ -712,6 +718,9 @@ def google_campaign_schema() -> dict[str, Any]:
             {"id": "travel_setting_dependency", "if": {"advertising_channel_type": "TRAVEL"},
              "required": ["travel_campaign_settings"],
              "message": "TRAVEL requires travel_campaign_settings"},
+            {"id": "local_services_setting_dependency", "if": {"advertising_channel_type": "LOCAL_SERVICES"},
+             "required": ["local_services_campaign_settings"],
+             "message": "LOCAL_SERVICES requires local_services_campaign_settings"},
         ],
     }
 
@@ -724,7 +733,7 @@ def google_ad_group_schema() -> dict[str, Any]:
             "campaign_id": _field("string", "Parent Campaign ID"),
             "campaign_type": _field(
                 "string", "Parent campaign type used to select the provider ad-group default",
-                enum=GOOGLE_CHANNEL_INPUT_TYPES,
+                enum=GOOGLE_CHANNEL_INPUT_TYPES, ui_hidden=True,
             ),
             "name": _field("string", "Ad group name", maxLength=255),
             "type": _field("string", "Ad group type", enum=[

@@ -125,6 +125,10 @@ TIKTOK_LOOKUP_CONTRACTS = {
             "tiktok_list_pixels", "pixels", ["pixel_id", "id", "code"],
             ["pixel_name", "name", "display_name", "id"],
         ),
+        "tracking_pixel_id": _tiktok_lookup(
+            "tiktok_list_pixels", "pixels", ["pixel_id", "id", "code"],
+            ["pixel_name", "name", "display_name", "id"],
+        ),
         "location_ids": _tiktok_lookup(
             "tiktok_list_locations", "locations", ["location_id", "id", "country_code", "code"],
             ["location_name", "name", "country_name", "country_code"], account_required=False,
@@ -213,6 +217,62 @@ TIKTOK_LOOKUP_CONTRACTS = {
             "manual_entry": {
                 "title": "TikTok Shop 店铺 ID",
                 "instructions": "当前未接入店铺目录查询，请从 TikTok Shop/Ads Manager 复制店铺 ID。",
+                "source": "external_provider_identifier",
+            },
+        },
+        "call_to_action_id": {
+            "manual_entry": {
+                "title": "TikTok 行动号召 ID",
+                "instructions": "请使用 TikTok Ads Manager 或创意接口返回的 CTA ID；当前能力没有独立的 CTA 目录接口，不会根据文字猜测。",
+                "source": "external_provider_identifier",
+            },
+        },
+        "interest_keyword_ids": {
+            "manual_entry": {
+                "title": "TikTok 兴趣关键词 ID",
+                "instructions": "请先通过兴趣关键词推荐或 Ads Manager 获取关键词 ID，再粘贴到这里；当前推荐接口不是稳定的 ID 目录。",
+                "source": "provider_recommendation_result",
+            },
+        },
+        "purchase_intention_keyword_ids": {
+            "manual_entry": {
+                "title": "TikTok 购买意向关键词 ID",
+                "instructions": "请先通过购买意向关键词推荐或 Ads Manager 获取关键词 ID，再粘贴到这里；不会根据关键词名称猜测 ID。",
+                "source": "provider_recommendation_result",
+            },
+        },
+        "contextual_tag_ids": {
+            "manual_entry": {
+                "title": "TikTok 上下文标签 ID",
+                "instructions": "请从 TikTok Ads Manager 的上下文定向配置中复制标签 ID；当前能力没有独立标签目录接口。",
+                "source": "external_provider_identifier",
+            },
+        },
+        "blocked_pangle_app_ids": {
+            "manual_entry": {
+                "title": "Pangle 屏蔽应用 ID",
+                "instructions": "请粘贴需要屏蔽的 Pangle 应用 ID；当前能力没有可按广告账户枚举的 Pangle 应用目录。",
+                "source": "external_provider_identifier",
+            },
+        },
+        "sku_ids": {
+            "manual_entry": {
+                "title": "TikTok 商品 SKU",
+                "instructions": "请从已选择的商品目录/店铺导出或复制 SKU；当前能力没有商品 SKU 列表接口。",
+                "source": "external_provider_identifier",
+            },
+        },
+        "item_group_ids": {
+            "manual_entry": {
+                "title": "TikTok 商品组 ID",
+                "instructions": "请从商品目录或 TikTok Shop 复制商品组 ID；不会根据商品名称猜测。",
+                "source": "external_provider_identifier",
+            },
+        },
+        "shopping_ads_video_package_id": {
+            "manual_entry": {
+                "title": "TikTok Shopping 视频包 ID",
+                "instructions": "请从 TikTok Shopping Ads 创意资产中复制视频包 ID；当前能力没有独立的视频包目录接口。",
                 "source": "external_provider_identifier",
             },
         },

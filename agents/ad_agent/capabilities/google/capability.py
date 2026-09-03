@@ -138,6 +138,15 @@ GOOGLE_LOOKUP_CONTRACTS = {
                 "label": "所属商品广告组", "required": True,
             }],
         ),
+        "parent_criterion_id": _google_lookup(
+            "google_list_product_groups", "product_groups",
+            ["id", "product_group_id", "criterion_id", "resource_name"],
+            ["name", "product_group_name", "criterion_id", "id"],
+            depends_on=[{
+                "input_field": "ad_group_id", "value_path": "ad_group_id",
+                "label": "所属商品广告组", "required": True,
+            }],
+        ),
         "feed_id": _google_lookup(
             "google_list_feeds", "feeds", ["id", "feed_id", "resource_name"],
             ["name", "feed_name", "id"],
@@ -373,6 +382,14 @@ class GoogleCapability(BaseCapability):
         experiment_update_schema = google_experiment_update_schema()
         feed_schema = google_feed_schema()
         conversion_goal_schema = google_conversion_goal_schema()
+        search_ad_contract = google_ad_schema()
+        search_ad_properties = {
+            key: search_ad_contract["properties"][key]
+            for key in (
+                "ad_group_id", "name", "headlines", "descriptions", "final_url",
+                "ad_type", "path1", "path2", "responsive_search_ad", "status",
+            )
+        }
 
         def _experiment_input(data: dict[str, Any]) -> dict[str, Any]:
             return {
@@ -1093,15 +1110,14 @@ class GoogleCapability(BaseCapability):
                 platform="google-ads", skill="google-ads-api-expert",
                 name="google_create_search_ad", description="创建 Google Responsive Search Ad；默认仅生成 dry-run 计划。",
                 method_name="create_search_ad", result_key="ad_id",
-                properties={
-                    "ad_group_id": {"type": "string"},
-                    "headlines": {"type": "array", "items": {"type": "string"}},
-                    "descriptions": {"type": "array", "items": {"type": "string"}},
-                    "final_url": {"type": "string"}, "ad_type": {"type": "string"},
-                    "path1": {"type": "string"}, "path2": {"type": "string"},
-                    "responsive_search_ad": {"type": "object"}, "status": {"type": "string"},
-                }, required=["ad_group_id", "headlines", "descriptions", "final_url"],
+                properties=search_ad_properties,
+                # Search Ad's existing client method identifies the ad by its
+                # parent ad group and does not accept/require the generic
+                # management-contract ``name`` field.  Keep that distinction
+                # explicit while reusing the provider-owned field schemas.
+                required=["ad_group_id", "headlines", "descriptions", "final_url"],
                 provider_required=["headlines", "descriptions", "final_url"],
+                conditional_rules=search_ad_contract["conditional_rules"],
                 action="create", resource_type="ad", parent_resource_type="ad_group",
                 resource_id_field="ad_id", parent_resource_id_field="ad_group_id",
                 intent_types=["create_search_ad"], traits=["write", "ad"], write=True,

@@ -860,7 +860,7 @@ def tiktok_ad_schema() -> dict[str, Any]:
                 selection_value_fields=["identity_id", "id"],
                 selection_label_fields=["display_name", "name", "id"],
             ),
-            "identity_type": _field("string", "TikTok identity type"),
+            "identity_type": _field("string", "TikTok identity type", enum=TIKTOK_IDENTITY_TYPES),
             "tiktok_item_id": _field("string", "Owned TikTok post ID for Spark creative"),
             "deeplink": _field("string", "App deep link"),
             "deeplink_type": _field("string", "Deep link behavior"),

@@ -239,6 +239,13 @@ class ToolInputBuilder:
         cls, item: Any, field_name: str, field_schema: dict[str, Any],
     ) -> tuple[Any, str] | None:
         if isinstance(item, dict):
+            # Some provider targeting contracts accept an array of structured
+            # references (for example Meta's ``custom_audiences`` expects
+            # ``[{"id": ..., "name": ...}]``). Keep the provider's allowed
+            # object shape in the signed selection instead of flattening it to
+            # a bare ID that would fail the ToolSchema at submit time.
+            item_schema = field_schema.get("items") if field_schema.get("type") == "array" else None
+            item_properties = item_schema.get("properties") if isinstance(item_schema, dict) else None
             value = next(
                 (
                     item[key]
@@ -257,6 +264,14 @@ class ToolInputBuilder:
                 ),
                 value,
             )
+            if isinstance(item_properties, dict):
+                structured_value = {
+                    str(key): item[key]
+                    for key in item_properties
+                    if item.get(key) not in (None, "")
+                }
+                if structured_value:
+                    return structured_value, str(label)
             return value, str(label)
         if item not in (None, "") and isinstance(item, (str, int, float)):
             return item, str(item)
@@ -277,11 +292,6 @@ class ToolInputBuilder:
             field_type = field_schema.get("type")
             item_schema = field_schema.get("items") if field_type == "array" else None
             if field_type not in {"string", "number", "integer", "array"}:
-                continue
-            if (
-                field_type == "array" and item_schema
-                and item_schema.get("type") not in {"string", "number", "integer"}
-            ):
                 continue
             values = result.data.get(
                 self._lookup_result_key(tool_def.name, field_schema)

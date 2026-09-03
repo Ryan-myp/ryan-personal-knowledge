@@ -35,6 +35,7 @@
     {"path": "campaign.daily_budget", "tool_ref": "google_create_campaign.daily_budget", "label": "日预算", "required": true},
     {"path": "ad_group.name", "tool_ref": "google_create_ad_group.name", "label": "广告组名称", "required": true},
     {"path": "ad_group.type", "tool_ref": "google_create_ad_group.type", "label": "广告组类型（自动匹配）", "required": true, "source": "enum", "options": ["SEARCH_STANDARD"], "presentation": "derived_readonly"},
+    {"path": "ad.ad_type", "tool_ref": "google_create_search_ad.ad_type", "label": "广告格式（自动匹配）", "required": true, "source": "enum", "options": ["RESPONSIVE_SEARCH_AD"], "presentation": "derived_readonly"},
     {"path": "ad.headlines", "tool_ref": "google_create_search_ad.headlines", "label": "标题", "required": true},
     {"path": "ad.descriptions", "tool_ref": "google_create_search_ad.descriptions", "label": "描述", "required": true},
     {"path": "ad.final_url", "tool_ref": "google_create_search_ad.final_url", "label": "最终到达网址", "required": true}
