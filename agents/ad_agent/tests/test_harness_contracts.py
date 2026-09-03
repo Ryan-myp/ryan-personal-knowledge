@@ -1135,6 +1135,51 @@ def test_tool_timeout_returns_explicit_timed_out_result_and_signals_handler():
     assert observed["event"].is_set() is True
 
 
+def test_write_tool_timeout_is_unknown_and_requires_reconciliation():
+    class SlowWriteHandler:
+        def execute(self, _ctx, _input):
+            time.sleep(0.01)
+            return ToolResult.ok({"provider_id": "should-not-be-trusted"})
+
+    runtime = AgentRuntime(require_llm=False)
+    definition = ToolDefinition(
+        name="slow_write",
+        skill="test",
+        platform="meta",
+        description="timeout test",
+        input_schema=ToolSchema(),
+        effect_class=ToolEffect.EXTERNAL_WRITE,
+        timeout_seconds=0.001,
+    )
+    runtime.registry.register(definition, SlowWriteHandler())
+    result = runtime.tool_executor.execute(
+        ToolContext("timeout-write-session", "u1"), "slow_write", {}
+    )
+
+    assert result.success is False
+    assert result.data["execution_status"] == "unknown"
+    assert result.data["requires_reconciliation"] is True
+    assert "不能直接重试" in result.error
+
+
+def test_execution_mode_overrides_are_isolated_by_principal():
+    runtime = AgentRuntime(require_llm=False, execution_mode="dry_run")
+    runtime.set_execution_mode("live", tenant_id="tenant-a", user_id="operator-a")
+
+    assert runtime.get_execution_mode("tenant-a", "operator-a") == "live"
+    assert runtime.get_execution_mode("tenant-a", "operator-b") == "dry_run"
+    assert runtime.get_execution_mode("tenant-b", "operator-a") == "dry_run"
+    assert runtime.execution_mode == "dry_run"
+
+
+def test_store_records_explicit_schema_migrations():
+    store = AdAgentStore(":memory:")
+    rows = store._get_conn().execute(
+        "SELECT version FROM schema_migrations ORDER BY version"
+    ).fetchall()
+    assert [int(row[0]) for row in rows] == [1, 2, 3]
+
+
 def test_golden_intent_cases_remain_deterministic():
     cases = json.loads(
         (Path(__file__).parents[1] / "evals" / "golden_cases.json").read_text(

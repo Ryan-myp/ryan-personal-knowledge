@@ -22,6 +22,7 @@ from .models import (
     CampaignRecord, ConversationMessageRecord, KnowledgeDocumentRecord,
     TaskRecord, ToolCallRecord,
 )
+from .errors import PersistenceConflictError
 from ..core.memory import MemoryRecord
 
 logger = logging.getLogger(__name__)
@@ -69,7 +70,18 @@ class AdAgentStore:
     Thread-safe: each connection is independent, read/write operations are locked.
     """
     
+    # Schema changes are tracked explicitly even while SQLite remains the
+    # current single-process backend. This keeps the PersistenceBackend
+    # boundary stable and gives a future MySQL/PostgreSQL adapter a concrete
+    # migration contract instead of relying on scattered PRAGMA checks.
+    SCHEMA_VERSION = 3
+
     SCHEMA = """
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+        version INTEGER PRIMARY KEY,
+        applied_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS sessions (
         session_id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
@@ -341,28 +353,50 @@ class AdAgentStore:
         return self._conn
     
     def _init_db(self):
-        """Initialize table structure"""
+        """Initialize the latest schema and apply versioned migrations."""
         with self._lock:
             conn = self._get_conn()
             conn.executescript(self.SCHEMA)
-            # Backward-compatible migration for databases created before
-            # account scoping was added.  This only changes local schema; it
-            # never reads, rewrites, or derives values from credentials.
-            columns = {
-                row[1] for row in conn.execute("PRAGMA table_info(campaign_state)")
+            applied = {
+                int(row[0])
+                for row in conn.execute("SELECT version FROM schema_migrations")
             }
-            if "account_id" not in columns:
-                conn.execute("ALTER TABLE campaign_state ADD COLUMN account_id TEXT")
-            workflow_columns = {
-                row[1] for row in conn.execute("PRAGMA table_info(workflows)")
-            }
-            if "lease_owner" not in workflow_columns:
-                conn.execute("ALTER TABLE workflows ADD COLUMN lease_owner TEXT")
-            if "lease_expires_at" not in workflow_columns:
-                conn.execute("ALTER TABLE workflows ADD COLUMN lease_expires_at TEXT")
-            item_columns = {
-                row[1] for row in conn.execute("PRAGMA table_info(workflow_items)")
-            }
+            for version in range(1, self.SCHEMA_VERSION + 1):
+                if version in applied:
+                    continue
+                self._apply_migration(conn, version)
+                conn.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                    (version, datetime.now(timezone.utc).isoformat()),
+                )
+            conn.commit()
+
+    @staticmethod
+    def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+        """Read legacy columns through a single migration-only helper."""
+        return {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})")}
+
+    @classmethod
+    def _add_column_if_missing(
+        cls, conn: sqlite3.Connection, table: str, column: str, definition: str,
+    ) -> None:
+        if column not in cls._table_columns(conn, table):
+            # Names and definitions are class-owned constants, never user input.
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+    @classmethod
+    def _apply_migration(cls, conn: sqlite3.Connection, version: int) -> None:
+        """Apply one idempotent compatibility migration.
+
+        The latest ``SCHEMA`` creates these columns for new databases. The
+        guarded ALTERs exist only for databases created by earlier revisions.
+        """
+        if version == 1:
+            cls._add_column_if_missing(conn, "campaign_state", "account_id", "TEXT")
+        elif version == 2:
+            cls._add_column_if_missing(conn, "workflows", "lease_owner", "TEXT")
+            cls._add_column_if_missing(conn, "workflows", "lease_expires_at", "TEXT")
+        elif version == 3:
             for column, definition in {
                 "account_id": "TEXT",
                 "resource_type": "TEXT",
@@ -372,11 +406,9 @@ class AdAgentStore:
                 "provider_resource_id": "TEXT",
                 "logical_resource_id": "TEXT",
             }.items():
-                if column not in item_columns:
-                    conn.execute(
-                        f"ALTER TABLE workflow_items ADD COLUMN {column} {definition}"
-                    )
-            conn.commit()
+                cls._add_column_if_missing(conn, "workflow_items", column, definition)
+        else:
+            raise ValueError(f"Unsupported schema migration: {version}")
     
     def close(self):
         """Close database connection"""
@@ -1529,22 +1561,27 @@ class AdAgentStore:
         data = record.to_dict()
         with self._lock:
             conn = self._get_conn()
-            conn.execute(
-                """INSERT INTO knowledge_documents
-                   (document_id, tenant_id, title, content, platform, layer,
-                    knowledge_type, source, source_ref, version, confidence,
-                    tags, status, created_by, created_at, updated_at, published_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    data["document_id"], data["tenant_id"], data["title"],
-                    data["content"], data["platform"], data["layer"],
-                    data["knowledge_type"], data["source"], data["source_ref"],
-                    data["version"], data["confidence"],
-                    json.dumps(data["tags"], ensure_ascii=False), data["status"],
-                    data["created_by"], data["created_at"], data["updated_at"],
-                    data["published_at"],
-                ),
-            )
+            try:
+                conn.execute(
+                    """INSERT INTO knowledge_documents
+                       (document_id, tenant_id, title, content, platform, layer,
+                        knowledge_type, source, source_ref, version, confidence,
+                        tags, status, created_by, created_at, updated_at, published_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        data["document_id"], data["tenant_id"], data["title"],
+                        data["content"], data["platform"], data["layer"],
+                        data["knowledge_type"], data["source"], data["source_ref"],
+                        data["version"], data["confidence"],
+                        json.dumps(data["tags"], ensure_ascii=False), data["status"],
+                        data["created_by"], data["created_at"], data["updated_at"],
+                        data["published_at"],
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise PersistenceConflictError(
+                    "knowledge document violates a persistence constraint"
+                ) from exc
             conn.commit()
             return self._knowledge_row(
                 conn.execute(

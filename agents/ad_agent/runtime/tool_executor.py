@@ -92,12 +92,27 @@ class ToolExecutor:
 
         def timeout_result() -> ToolResult:
             cancel_event.set()
+            is_uncertain_write = bool(definition.is_write_tool)
+            status = "unknown" if is_uncertain_write else "timed_out"
+            data = {
+                "execution_status": status,
+                "timeout": True,
+            }
+            if is_uncertain_write:
+                data.update({
+                    "requires_reconciliation": True,
+                    "provider_state": "unknown",
+                })
             return ToolResult(
                 success=False,
-                data={"execution_status": "timed_out"},
+                data=data,
                 error=(
                     f"工具 {tool_name} 执行超过限制（最多 "
                     f"{float(getattr(definition, 'timeout_seconds', 30.0)):.3g} 秒）"
+                    + (
+                        "；这是外部写操作，结果未知，必须先进行状态核对，不能直接重试"
+                        if is_uncertain_write else ""
+                    )
                 ),
             )
 
@@ -244,23 +259,33 @@ class ToolExecutor:
                     f"Tool '{tool_name}' has no executable handler"
                 )
 
-            if definition.is_read_tool:
-                executor = ThreadPoolExecutor(
-                    max_workers=1, thread_name_prefix="ad-agent-tool"
+            # Both read and write handlers run behind the same cooperative
+            # deadline. A Python thread cannot be force-killed; when a write
+            # exceeds the deadline ``timeout_result`` deliberately reports an
+            # unknown provider state so recovery/reconciliation can decide the
+            # next action instead of treating it as safely retryable.
+            executor = ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="ad-agent-tool"
+            )
+            future = executor.submit(invoke)
+            try:
+                result = future.result(
+                    timeout=max(deadline - time.monotonic(), 0.001)
                 )
-                future = executor.submit(invoke)
-                try:
-                    result = future.result(
-                        timeout=max(deadline - time.monotonic(), 0.001)
-                    )
-                except FutureTimeoutError:
-                    return timeout_result()
-                finally:
-                    executor.shutdown(wait=False, cancel_futures=True)
-            else:
-                result = invoke()
+            except FutureTimeoutError:
+                return timeout_result()
+            finally:
+                executor.shutdown(wait=False, cancel_futures=True)
+            if not isinstance(result, ToolResult):
+                # A Capability implementation must return the common result
+                # contract. Fail closed here so an arbitrary handler return
+                # value cannot be mistaken for successful provider evidence.
+                result = ToolResult.error(
+                    f"工具 {tool_name} 返回了无效结果；必须返回 ToolResult"
+                )
             if time.monotonic() > deadline:
                 return timeout_result()
+            result = self.services.security.enforce_result_limit(result, definition)
             return self.services.security.apply_read_data_boundary(
                 tool_name, result
             )

@@ -578,7 +578,9 @@ def test_plugin_only_channel_auto_discovers_without_capability_or_central_config
 
     runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
 
-    assert runtime.auto_load_skills(str(skill_root)) == 1
+    assert runtime.auto_load_skills(
+        str(skill_root), allow_executable_plugins=True,
+    ) == 1
     assert [tool.name for tool in runtime.registry.list_all()] == [
         "new_network_list_campaigns"
     ]
@@ -620,13 +622,36 @@ def test_standard_skill_discovery_does_not_require_category_directories(tmp_path
 
     runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
 
-    assert runtime.auto_load_skills(str(skill_root)) == 1
+    assert runtime.auto_load_skills(
+        str(skill_root), allow_executable_plugins=True,
+    ) == 1
     assert [tool.name for tool in runtime.registry.list_all()] == [
         "new_network_plan"
     ]
     loaded = runtime.skill_loader.get("campaign-planning")
     assert loaded is not None
     assert loaded.reference_documents["references/rules.md"] == "Planning guidance"
+
+
+def test_untrusted_skill_root_is_advisory_only_by_default(tmp_path):
+    """User-managed directories must not import code or discover capabilities."""
+    skill_root = tmp_path / "managed-skills"
+    skill_dir = skill_root / "meta-guidance"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: meta-guidance\nplatform: meta\n---\n\nGuidance only.\n",
+        encoding="utf-8",
+    )
+    marker = tmp_path / "imported"
+    (skill_dir / "tools.py").write_text(
+        f"from pathlib import Path\nPath({str(marker)!r}).write_text('imported')\n",
+        encoding="utf-8",
+    )
+
+    runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
+    assert runtime.auto_load_skills(str(skill_root)) == 0
+    assert not marker.exists()
+    assert runtime.registry.list_all() == []
 
 
 def test_skill_loader_normalizes_root_paths_for_idempotent_reload(tmp_path):

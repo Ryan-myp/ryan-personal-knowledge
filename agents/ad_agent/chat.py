@@ -159,7 +159,11 @@ def main():
     # 渠道 Skill 只提供专家上下文；Runtime 按目录约定自动发现对应
     # Capability，并按渠道约定创建 Client。新增渠道无需修改 CLI 的中心列表。
     skills_root = Path(__file__).parent / "skills"
-    runtime.auto_load_skills(str(skills_root), credentials)
+    runtime.auto_load_skills(
+        str(skills_root), credentials,
+        allow_executable_plugins=True,
+        allow_capability_discovery=True,
+    )
 
     print_banner()
     platforms = runtime.registry.list_all_platforms()

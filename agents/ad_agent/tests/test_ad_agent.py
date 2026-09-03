@@ -2082,7 +2082,9 @@ class TestIterationContracts:
         )
 
         rt = AgentRuntime(require_llm=False, enforce_account_scope=False)
-        assert rt.auto_load_skills(str(skill_root)) == 1
+        assert rt.auto_load_skills(
+            str(skill_root), allow_executable_plugins=True,
+        ) == 1
         assert [tool.name for tool in rt.registry.list_all()] == ["custom_insight"]
         result = rt.tool_executor.execute(
             ToolContext("s1", "u1"), "custom_insight", {}

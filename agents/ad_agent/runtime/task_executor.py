@@ -243,23 +243,41 @@ class TaskExecutor:
                 cancellation_requested = cancel_event.is_set() or bool(
                     current and current.status == "cancelling"
                 )
+                deadline_exceeded = context.remaining_seconds() == 0.0
+                workflow_id = (
+                    safe_result.get("workflow_id")
+                    if isinstance(safe_result, dict) else None
+                )
                 if cancellation_requested:
                     self.store.update_task(
                         task_id, "cancelled", result=safe_result,
-                        workflow_id=(
-                            safe_result.get("workflow_id")
-                            if isinstance(safe_result, dict) else None
-                        ),
+                        workflow_id=workflow_id,
                         metadata={"completed_after_cancellation": True},
                         expected_statuses=["running", "cancelling"],
+                    )
+                elif deadline_exceeded:
+                    # The handler may have completed an external write before
+                    # returning. Do not report a late result as success; make
+                    # recovery/reconciliation explicit to the operator.
+                    self.store.update_task(
+                        task_id,
+                        "recovery_required",
+                        result=safe_result,
+                        workflow_id=workflow_id,
+                        error=(
+                            "任务超过执行时限；外部副作用状态未知，"
+                            "请先核对工作流后再处理"
+                        ),
+                        metadata={
+                            "deadline_exceeded": True,
+                            "provider_state": "unknown",
+                        },
+                        expected_statuses=["running"],
                     )
                 else:
                     self.store.update_task(
                         task_id, "succeeded", result=safe_result,
-                        workflow_id=(
-                            safe_result.get("workflow_id")
-                            if isinstance(safe_result, dict) else None
-                        ),
+                        workflow_id=workflow_id,
                         expected_statuses=["running"],
                     )
             except Exception as exc:
@@ -267,9 +285,19 @@ class TaskExecutor:
                 cancellation_requested = cancel_event.is_set() or bool(
                     current and current.status == "cancelling"
                 )
+                deadline_exceeded = context.remaining_seconds() == 0.0
+                status = (
+                    "cancelled" if cancellation_requested
+                    else "recovery_required" if deadline_exceeded
+                    else "failed"
+                )
                 self.store.update_task(
-                    task_id, "cancelled" if cancellation_requested else "failed",
+                    task_id, status,
                     error=self._safe_error(exc),
+                    metadata=(
+                        {"deadline_exceeded": True, "provider_state": "unknown"}
+                        if deadline_exceeded else None
+                    ),
                     expected_statuses=["running", "cancelling"],
                 )
             finally:

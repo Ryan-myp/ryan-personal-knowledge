@@ -9,6 +9,7 @@ import logging
 import hmac
 import asyncio
 import queue
+import inspect
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -24,7 +25,7 @@ from fastapi import FastAPI, HTTPException, Header, Request, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Literal, Optional
 from starlette.concurrency import run_in_threadpool
 
 # Keep local credentials and model selection outside source control while
@@ -273,7 +274,11 @@ def _init_runtime():
         
         # 自动加载 Skills
         skills_root = Path(__file__).parent / "skills"
-        runtime.auto_load_skills(str(skills_root), credentials)
+        runtime.auto_load_skills(
+            str(skills_root), credentials,
+            allow_executable_plugins=True,
+            allow_capability_discovery=True,
+        )
 
         # Published user Skills are standard directory snapshots loaded as
         # advisory context only. They never replace or add provider Tools.
@@ -342,10 +347,12 @@ class ChatRequest(BaseModel):
     platform_params: Optional[dict] = None
     creation_blueprint_id: Optional[str] = Field(default=None, max_length=200)
     creation_blueprint_version: Optional[str] = Field(default=None, max_length=32)
+    # Per-turn override; omitted requests use the principal-scoped setting.
+    execution_mode: Optional[Literal["dry_run", "live"]] = None
 
 
 class ExecutionModeRequest(BaseModel):
-    """Request to change the process-local Runtime execution mode."""
+    """Request to change the authenticated principal's Runtime mode."""
 
     mode: str = Field(min_length=1, max_length=16)
 
@@ -441,13 +448,38 @@ def _live_mode_unavailable_reason() -> Optional[str]:
     return None
 
 
+def _principal_execution_mode(principal: RequestPrincipal) -> str:
+    """Resolve scoped mode while keeping lightweight embedding fakes compatible."""
+    if runtime is None:
+        return "dry_run"
+    getter = getattr(runtime, "get_execution_mode", None)
+    if callable(getter):
+        return str(getter(principal.tenant_id, principal.user_id))
+    return str(getattr(runtime, "execution_mode", "dry_run"))
+
+
+def _set_principal_execution_mode(principal: RequestPrincipal, mode: str) -> None:
+    """Set scoped mode without requiring legacy Runtime test doubles to change."""
+    setter = getattr(runtime, "set_execution_mode", None)
+    if not callable(setter):
+        raise RuntimeError("Runtime 不支持执行模式设置")
+    try:
+        parameters = inspect.signature(setter).parameters
+    except (TypeError, ValueError):
+        parameters = {}
+    if "tenant_id" in parameters and "user_id" in parameters:
+        setter(mode, tenant_id=principal.tenant_id, user_id=principal.user_id)
+    else:
+        setter(mode)
+
+
 @app.post("/settings/execution-mode", tags=["settings"])
 async def change_execution_mode(
     request: ExecutionModeRequest,
     http_request: Request,
     x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
 ):
-    """Change the in-process mode without changing deployment config.
+    """Change the authenticated principal's mode without changing deployment config.
 
     Selecting live is an operational capability, not a UI-only preference.
     The endpoint keeps the existing environment, permission and Runtime
@@ -466,18 +498,18 @@ async def change_execution_mode(
         if reason:
             raise HTTPException(status_code=409, detail=reason)
     try:
-        await run_in_threadpool(runtime.set_execution_mode, mode)
+        await run_in_threadpool(_set_principal_execution_mode, principal, mode)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     live_reason = _live_mode_unavailable_reason()
     return {
-        "mode": runtime.execution_mode,
+        "mode": _principal_execution_mode(principal),
         "execution_mode_options": ["dry_run", "live"],
         "live_mode_available": live_reason is None,
         "live_mode_reason": live_reason,
         "message": (
             "已切换到安全预览模式"
-            if runtime.execution_mode == "dry_run"
+            if _principal_execution_mode(principal) == "dry_run"
             else "已切换到受控 live 模式；写操作仍需账户、权限和二次确认"
         ),
     }
@@ -631,6 +663,7 @@ async def chat(
             confirmation_payload=request.confirmation_payload,
             creation_blueprint_id=request.creation_blueprint_id,
             creation_blueprint_version=request.creation_blueprint_version,
+            execution_mode=request.execution_mode,
             principal=principal,
         )
         return JSONResponse(content=result)
@@ -1593,6 +1626,7 @@ class ChatStreamRequest(BaseModel):
     platform_params: Optional[dict] = None
     creation_blueprint_id: Optional[str] = Field(default=None, max_length=200)
     creation_blueprint_version: Optional[str] = Field(default=None, max_length=32)
+    execution_mode: Optional[Literal["dry_run", "live"]] = None
 
 
 class WorkflowReconcileRequest(BaseModel):
@@ -1665,6 +1699,7 @@ async def chat_stream(
                     confirmation_payload=request.confirmation_payload,
                     creation_blueprint_id=request.creation_blueprint_id,
                     creation_blueprint_version=request.creation_blueprint_version,
+                    execution_mode=request.execution_mode,
                     principal=principal,
                     event_callback=observe,
                 )

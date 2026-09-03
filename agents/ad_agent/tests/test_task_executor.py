@@ -128,3 +128,23 @@ def test_stale_running_task_is_recovery_required_and_not_auto_replayed():
     executor.start()
     assert executor.get("stale").status == "recovery_required"
     executor.shutdown()
+
+
+def test_task_deadline_never_reports_late_handler_as_success():
+    store = AdAgentStore(":memory:")
+    executor = TaskExecutor(
+        store, max_workers=1, max_queue=0, task_timeout_seconds=0.01,
+    )
+
+    def late_handler(_context):
+        time.sleep(0.03)
+        return {"provider_write": "possibly_completed"}
+
+    executor.register_handler("late", late_handler)
+    task, _ = executor.submit("late", {}, tenant_id="t", user_id="u")
+    final = _wait_for(executor, task.task_id, {"recovery_required"}, timeout=1)
+
+    assert final.status == "recovery_required"
+    assert final.metadata["deadline_exceeded"] is True
+    assert final.metadata["provider_state"] == "unknown"
+    executor.shutdown()

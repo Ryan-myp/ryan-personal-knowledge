@@ -54,7 +54,7 @@ PluginRegistry 是 Harness 的扩展控制面，不是第二个 Tool Router。�
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐    │
 │  │ IntentParser    │  │ IntentRouter    │  │ ToolRegistry             │    │
 │  │ 意图解析         │→│ 路由分发         │→ │ 工具注册/执行            │    │
-│  │ - LLM 结构化解析    │ │ - 发现式路由   │  │ 286 tools              │    │
+│  │ - LLM 结构化解析    │ │ - 发现式路由   │  │ 294 tools              │    │
 │  │ - 上下文反馈         │ │ - 确定性执行   │  │ - 受控 Runtime gates     │    │
 │  └─────────────────┘  └─────────────────┘  └─────────────────────────┘    │
 │                                                                             │
@@ -337,7 +337,7 @@ ToolDefinition 的自描述元数据，Runtime 再执行 schema、权限、账�
 
 ## 五、安全机制与执行模式
 
-默认 `execution_mode=dry_run`。所有写工具在 dry-run 中只由 Runtime 生成本地模拟 ID，不进入 Handler/API Client；live 写入必须同时满足测试账户白名单和 `confirmed=True`。读操作可按平台账户查询，但生产环境仍应由调用方限制账户范围。
+默认 `execution_mode=dry_run`。所有写工具在 dry-run 中只由 Runtime 生成本地模拟 ID，不进入 Handler/API Client；live 写入必须同时满足测试账户白名单和 `confirmed=True`。HTTP 模式按租户和用户隔离，单回合可以显式覆盖，但不会修改其他请求；读操作可按平台账户查询，但生产环境仍应由调用方限制账户范围。
 
 ### 1. 账户白名单
 ```python
@@ -529,7 +529,11 @@ skills/
 ```python
 # api_server.py 初始化（生产入口注入 LLM；离线评测才显式 require_llm=False）
 runtime = AgentRuntime(llm_client=create_llm_client(...), require_llm=True)
-runtime.auto_load_skills(str(skills_root), credentials)
+runtime.auto_load_skills(
+    str(skills_root), credentials,
+    allow_executable_plugins=True,
+    allow_capability_discovery=True,
+)
 
 # 输出: ✅ 已加载当前 Skill 根目录下发现的 Skills
 ```
@@ -537,6 +541,11 @@ runtime.auto_load_skills(str(skills_root), credentials)
 ### 3. Skill 解析逻辑
 
 `SkillContract` 类支持多种 SKILL.md frontmatter 格式：
+
+自动发现默认只加载标准 Skill 文本和声明式资料。只有受信部署入口显式传入
+`allow_executable_plugins=True, allow_capability_discovery=True` 时，Runtime 才会导入
+插件代码或发现内置渠道 Capability；管理端上传目录永远走 advisory-only 路径，不能把
+`tools.py`、`scripts/` 或渠道 frontmatter 变成可执行能力。
 
 1. **Frontmatter 解析**：
    - 嵌套格式: `skill: {name: ..., description: ..., platform: ...}`

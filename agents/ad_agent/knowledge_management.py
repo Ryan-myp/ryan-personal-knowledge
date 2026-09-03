@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import re
 import json
-import sqlite3
 import uuid
 from datetime import datetime
 from typing import Any, Iterable, Mapping, Optional
@@ -22,6 +21,7 @@ from .core.knowledge import (
 )
 from .core.platform import normalize_platform
 from .persistence.models import KnowledgeDocumentRecord
+from .persistence.errors import PersistenceConflictError
 
 
 class KnowledgeDocumentError(ValueError):
@@ -187,7 +187,7 @@ class ManagedKnowledgeManager:
         )
         try:
             saved = self.store.create_knowledge_document(record)
-        except sqlite3.IntegrityError as exc:
+        except PersistenceConflictError as exc:
             raise KnowledgeDocumentError(
                 "同一知识标题的版本已存在，请递增 version 后再保存"
             ) from exc

@@ -11,6 +11,10 @@ from typing import Optional, Dict, Any
 logger = logging.getLogger(__name__)
 
 
+class LLMStructuredOutputError(ValueError):
+    """The model response could not satisfy a structured JSON contract."""
+
+
 class LLMClient:
     """
     LLM 客户端，封装 OpenAI API 调用。
@@ -83,7 +87,10 @@ class LLMClient:
             )
             return response.choices[0].message.content or ""
         except Exception as e:
-            logger.error(f"LLM 调用失败: {e}")
+            # Provider exception text can contain request URLs or headers.
+            # Keep logs useful without copying model/provider payloads into
+            # the application log stream.
+            logger.error("LLM 调用失败: %s", type(e).__name__)
             raise
     
     def call_json(self, messages: list[dict], temperature: float = 0.1) -> dict:
@@ -103,11 +110,20 @@ class LLMClient:
         json_str = self._extract_json(text)
         if json_str:
             try:
-                return json.loads(json_str)
+                value = json.loads(json_str)
             except json.JSONDecodeError as e:
-                logger.error(f"JSON 解析失败: {e}, 原始响应: {text}")
-        
-        return {"raw": text}
+                logger.error("LLM JSON 解析失败: %s", type(e).__name__)
+            else:
+                if isinstance(value, dict):
+                    return value
+                logger.error("LLM JSON 顶层类型不是 object")
+
+        # A raw model string is not a valid structured result. Returning it
+        # as a normal dict is a contract footgun: callers may interpret the
+        # presence of a response as a successful parse and skip validation.
+        raise LLMStructuredOutputError(
+            "LLM response did not contain a valid JSON object"
+        )
     
     @staticmethod
     def _extract_json(text: str) -> Optional[str]:

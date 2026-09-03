@@ -150,7 +150,7 @@ capability = create_meta_capability(api_client)
 runtime.register_capability(capability)
 ```
 
-切换到 `execution_mode="live"` 前，必须确认 `agents/ad_agent/config.yaml` 中已配置目标测试账号白名单，并先取得当前写入计划返回的 `confirmation_payload`，随后以同一 payload 调用 `runtime.run(..., confirmed=True, confirmation_payload=payload)`。HTTP API 会拒绝缺少该 payload 的确认请求。不要通过凭证内容自动扩大白名单；凭证只保存在进程内，不写入 SQLite。写操作（创建、更新、删除、暂停/恢复及批量写）即使白名单只有一个账户，也必须在当前请求中显式传入目标账户；单账户自动兜底只适用于只读查询，避免误选广告主。
+切换到 `execution_mode="live"` 前，必须确认 `agents/ad_agent/config.yaml` 中已配置目标测试账号白名单，并先取得当前写入计划返回的 `confirmation_payload`，随后以同一 payload 调用 `runtime.run(..., confirmed=True, confirmation_payload=payload)`。HTTP API 会拒绝缺少该 payload 的确认请求。HTTP 的执行模式按租户和用户隔离，单回合也可以通过 `execution_mode` 覆盖；不要通过凭证内容自动扩大白名单，凭证只保存在进程内，不写入 SQLite。写操作（创建、更新、删除、暂停/恢复及批量写）即使白名单只有一个账户，也必须在当前请求中显式传入目标账户；单账户自动兜底只适用于只读查询，避免误选广告主。
 
 当前所有 Campaign/下级资源创建默认只生成 dry-run 计划；DV360 IO/Line Item 更新、Google PMax Asset Group 以及部分下级资源更新没有经过验证的 live adapter，live 会明确返回不支持。DV360 Campaign 创建尚未建设，API Surface 会将其标为 planned，Runtime 不会路由到不可执行的假 Tool。读取请求在没有 Provider Client 时默认 fail-closed，只有显式 `offline_mode=True` 才会返回离线 fixture。
 

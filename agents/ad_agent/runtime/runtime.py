@@ -23,6 +23,7 @@ import threading
 import logging
 import importlib.util
 import inspect
+from contextvars import ContextVar
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping, Optional
@@ -84,6 +85,13 @@ from ..persistence.models import ToolCallRecord
 from .reconciliation import ToolReadbackReconciler
 
 logger = logging.getLogger(__name__)
+
+# A request-scoped mode must not be read from mutable process-global state.
+# The Runtime value remains the deployment default; ``run`` installs the
+# effective principal/request mode in this context variable.
+_execution_mode_context: ContextVar[Optional[str]] = ContextVar(
+    "ad_agent_execution_mode", default=None
+)
 
 
 # ─── Agent Runtime ─────────────────────────────────────────────
@@ -254,6 +262,8 @@ class AgentRuntime:
         self._managed_skill_lock = threading.RLock()
         self._skill_factories: dict[str, callable] = {}  # platform -> Capability factory
         self._credentials: dict = {}  # API 凭证配置
+        self._execution_mode_lock = threading.RLock()
+        self._execution_mode_overrides: dict[tuple[str, str], str] = {}
         base_knowledge_provider = knowledge_provider or LocalMarkdownKnowledgeProvider(
             Path(__file__).resolve().parent.parent / "knowledge_base"
         )
@@ -302,7 +312,7 @@ class AgentRuntime:
         if execution_mode not in {mode.value for mode in ExecutionMode}:
             raise ValueError(f"Unsupported execution_mode: {execution_mode}")
         # dry_run 是安全默认值；只有调用方显式指定 live 才允许进入真实写入分支。
-        self.execution_mode = execution_mode
+        self._execution_mode = self._validate_execution_mode(execution_mode)
         # ``ToolDefinition.live_support`` describes adapter intent, but is not
         # an approval.  Keep a separate, code-side allowlist so an unverified
         # write can never become live merely because a definition defaulted to
@@ -400,11 +410,56 @@ class AgentRuntime:
         if read_only_mode:
             logger.info("🔒 只读模式已启用，仅允许查询操作")
 
-    def set_execution_mode(self, execution_mode: str) -> None:
-        """设置执行模式。外部请求不能通过 user_input 修改此值。"""
-        if execution_mode not in {mode.value for mode in ExecutionMode}:
+    @staticmethod
+    def _validate_execution_mode(execution_mode: str) -> str:
+        mode = str(execution_mode or "").strip().lower()
+        if mode not in {item.value for item in ExecutionMode}:
             raise ValueError(f"Unsupported execution_mode: {execution_mode}")
-        self.execution_mode = execution_mode
+        return mode
+
+    @property
+    def execution_mode(self) -> str:
+        """Return the request mode, falling back to the deployment default."""
+        return _execution_mode_context.get() or self._execution_mode
+
+    @execution_mode.setter
+    def execution_mode(self, value: str) -> None:
+        self._execution_mode = self._validate_execution_mode(value)
+
+    def set_execution_mode(
+        self,
+        execution_mode: str,
+        *,
+        tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> None:
+        """Set a deployment default or an isolated principal override.
+
+        The one-argument form remains available to local/CLI callers. HTTP
+        callers should provide both identity dimensions to avoid changing the
+        mode observed by another principal in the same process.
+        """
+        mode = self._validate_execution_mode(execution_mode)
+        tenant = str(tenant_id or "").strip()
+        user = str(user_id or "").strip()
+        with self._execution_mode_lock:
+            if tenant and user:
+                self._execution_mode_overrides[(tenant, user)] = mode
+            else:
+                self._execution_mode = mode
+
+    def get_execution_mode(
+        self, tenant_id: Optional[str] = None, user_id: Optional[str] = None,
+    ) -> str:
+        """Resolve a principal-scoped override over the deployment default."""
+        tenant = str(tenant_id or "").strip()
+        user = str(user_id or "").strip()
+        with self._execution_mode_lock:
+            if tenant and user:
+                return self._execution_mode_overrides.get(
+                    (tenant, user), self._execution_mode
+                )
+            return self._execution_mode
 
     def set_policies(self, policies: Optional[Iterable[RuntimePolicy]]) -> None:
         """Replace Skill-owned policies without interpreting their vocabulary."""
@@ -2324,20 +2379,29 @@ class AgentRuntime:
             return getter(tool_name, self._registry_execution_token)
         return self.registry.get(tool_name)
 
-    def auto_load_skills(self, skills_root: str, credentials: dict = None) -> int:
+    def auto_load_skills(
+        self,
+        skills_root: str,
+        credentials: dict = None,
+        *,
+        allow_executable_plugins: bool = False,
+        allow_capability_discovery: bool = False,
+    ) -> int:
         """
         自动加载 skills 目录下的所有 Skills。
         
         策略：
         1. 按标准 Agent Skill 约定发现所有包含 SKILL.md 的目录（可在根目录或任意层级）
         2. 业务上下文 Skill 只作为策略上下文，不注册执行工具
-        3. 有受控插件的 Skill 通过统一 Runtime 注册工具
-        4. 没有插件但能按包约定发现 Capability 的渠道 Skill，加载该 Capability
+        3. 只有受信部署根显式允许时，插件 Skill 才能注册工具
+        4. 只有受信部署根显式允许时，渠道 Skill 才能发现 Capability
         5. 其他 Skill 只保留为自然语言上下文，不会因文件名或 workflow.yaml 变成工具
         
         Args:
             skills_root: Skills 根目录路径
             credentials: API 凭证配置
+            allow_executable_plugins: 是否允许导入受信插件代码；用户上传目录必须为 False。
+            allow_capability_discovery: 是否允许从该目录发现内置渠道 Capability。
             
         Returns:
             成功加载的 Skill 数量
@@ -2385,10 +2449,17 @@ class AgentRuntime:
                     # subject to the same registry, schema, account and write
                     # gates as built-in capabilities.
                     api_client = None
-                    provider_credentials = self._credentials_for_platform(
-                        platform, credentials
+                    # Advisory/user-managed roots must not even receive a
+                    # Provider client. Credentials and client construction
+                    # belong only to the trusted deployment path.
+                    provider_credentials = (
+                        self._credentials_for_platform(platform, credentials)
+                        if (allow_executable_plugins or allow_capability_discovery)
+                        else {}
                     )
-                    if provider_credentials:
+                    if provider_credentials and (
+                        allow_executable_plugins or allow_capability_discovery
+                    ):
                         try:
                             from ..api_clients.factory import create_platform_client
                             api_client = create_platform_client(
@@ -2396,7 +2467,10 @@ class AgentRuntime:
                             )
                         except Exception as e:
                             logger.debug(f"创建 {platform} API Client 失败: {e}")
-                    plugin_skill = self._load_skill_plugin(skill_dir, api_client)
+                    plugin_skill = (
+                        self._load_skill_plugin(skill_dir, api_client)
+                        if allow_executable_plugins else None
+                    )
                     if plugin_skill is not None:
                         before_tool_count = len(self.registry.list_all())
                         registered = self.register_skill(
@@ -2422,6 +2496,8 @@ class AgentRuntime:
                     # SkillContract as ``context_only`` and never reaches
                     # this loop.
                     try:
+                        if not allow_capability_discovery:
+                            continue
                         from ..capabilities.factory import create_capability
                         canonical = self._canonical_platform(platform)
                         capability = self._discover_capability(canonical, api_client)
@@ -3009,7 +3085,7 @@ class AgentRuntime:
         allowed_fields = {
             "user_input", "session_id", "account_id", "platform_params",
             "confirmed", "confirmation_payload", "creation_blueprint_id",
-            "creation_blueprint_version",
+            "creation_blueprint_version", "execution_mode",
         }
         unknown = sorted(set(payload) - allowed_fields)
         if unknown:
@@ -3017,6 +3093,8 @@ class AgentRuntime:
         platform_params = payload.get("platform_params")
         if platform_params is not None and not isinstance(platform_params, dict):
             raise ValueError("platform_params must be an object")
+        if payload.get("execution_mode") is not None:
+            self._validate_execution_mode(payload.get("execution_mode"))
         safe_payload = self._redact_for_persistence({
             "user_input": user_input,
             "session_id": payload.get("session_id"),
@@ -3024,6 +3102,7 @@ class AgentRuntime:
             "platform_params": platform_params,
             "creation_blueprint_id": payload.get("creation_blueprint_id"),
             "creation_blueprint_version": payload.get("creation_blueprint_version"),
+            "execution_mode": payload.get("execution_mode"),
             "confirmed": False,
             "confirmation_payload": None,
         })
@@ -3064,6 +3143,7 @@ class AgentRuntime:
             platform_params=payload.get("platform_params"),
             creation_blueprint_id=payload.get("creation_blueprint_id"),
             creation_blueprint_version=payload.get("creation_blueprint_version"),
+            execution_mode=payload.get("execution_mode"),
             confirmed=False,
             confirmation_payload=None,
             principal=principal,
@@ -3153,6 +3233,7 @@ class AgentRuntime:
         tenant_id: Optional[str] = None,
         cancellation_event: Optional[threading.Event] = None,
         event_callback: Optional[ExecutionEventCallback] = None,
+        execution_mode: Optional[str] = None,
     ) -> dict:
         """Execute one turn while serializing turns for the same session.
 
@@ -3163,34 +3244,42 @@ class AgentRuntime:
         self.assert_llm_ready()
         lock = self._get_session_lock(session_id or "__new_session__")
         effective_user_id = principal.user_id if principal is not None else user_id
+        effective_tenant_id = (
+            principal.tenant_id if principal is not None else (tenant_id or "default")
+        )
+        requested_mode = (
+            self._validate_execution_mode(execution_mode)
+            if execution_mode is not None
+            else self.get_execution_mode(effective_tenant_id, effective_user_id)
+        )
         effective_permissions = (
             principal.permissions if principal is not None else self._granted_permissions
         )
         effective_account_scope = (
             principal.account_scope if principal is not None else None
         )
-        with lock:
-            return self._run_unlocked(
-                user_input=user_input,
-                session_id=session_id,
-                user_id=effective_user_id,
-                account_id=account_id,
-                credentials=credentials,
-                platform_params=platform_params,
-                confirmed=confirmed,
-                confirmation_payload=confirmation_payload,
-                creation_blueprint_id=creation_blueprint_id,
-                creation_blueprint_version=creation_blueprint_version,
-                granted_permissions=effective_permissions,
-                account_scope=effective_account_scope,
-                tenant_id=(
-                    principal.tenant_id
-                    if principal is not None
-                    else (tenant_id or "default")
-                ),
-                cancellation_event=cancellation_event,
-                event_callback=event_callback,
-            )
+        mode_token = _execution_mode_context.set(requested_mode)
+        try:
+            with lock:
+                return self._run_unlocked(
+                    user_input=user_input,
+                    session_id=session_id,
+                    user_id=effective_user_id,
+                    account_id=account_id,
+                    credentials=credentials,
+                    platform_params=platform_params,
+                    confirmed=confirmed,
+                    confirmation_payload=confirmation_payload,
+                    creation_blueprint_id=creation_blueprint_id,
+                    creation_blueprint_version=creation_blueprint_version,
+                    granted_permissions=effective_permissions,
+                    account_scope=effective_account_scope,
+                    tenant_id=effective_tenant_id,
+                    cancellation_event=cancellation_event,
+                    event_callback=event_callback,
+                )
+        finally:
+            _execution_mode_context.reset(mode_token)
 
     def _run_unlocked(
         self,
@@ -3260,6 +3349,9 @@ class AgentRuntime:
         turn_deadline = time.monotonic() + self.turn_timeout_seconds
         session.ctx.metadata["turn_deadline"] = turn_deadline
         session.ctx.metadata["tenant_id"] = str(tenant_id or "default")
+        # Make the resolved mode explicit to handlers and trace/persistence
+        # adapters without exposing the mutable Runtime default.
+        session.ctx.metadata["execution_mode"] = self.execution_mode
         if cancellation_event is not None:
             session.ctx.metadata["task_cancel_event"] = cancellation_event
         else:

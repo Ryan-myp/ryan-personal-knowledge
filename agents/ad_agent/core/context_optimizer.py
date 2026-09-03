@@ -1,10 +1,11 @@
 """
-core/context_optimizer.py - LLM 上下文优化器
+core/context_optimizer.py - legacy compatibility facade for context selection
 
-核心功能：
-1. 根据用户意图动态选择相关工具和专家知识
-2. 构建精简的 system prompt，避免信息过载
-3. 注入平台特定的最佳实践
+The production Runtime uses ``DynamicToolSelector`` directly. This module is
+kept for older embedding callers, but is deliberately not another routing or
+context policy implementation. New Runtime features must be added to the
+provider-neutral selector and Runtime context builder instead of growing this
+legacy facade.
 """
 
 import logging
@@ -38,7 +39,7 @@ class OptimizedContext:
 
 class ContextOptimizer:
     """
-    LLM 上下文优化器
+    Backward-compatible adapter for older local callers.
     
     工作原理：
     1. 解析用户意图

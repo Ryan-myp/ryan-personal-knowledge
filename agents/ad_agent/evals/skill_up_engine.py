@@ -181,7 +181,11 @@ def run(session_input: Mapping[str, Any]) -> Dict[str, Any]:
         os.environ.get("AD_AGENT_BASE_SKILLS_ROOT")
         or root / "agents" / "ad_agent" / "skills"
     ).resolve()
-    runtime.auto_load_skills(str(base_skills_root))
+    runtime.auto_load_skills(
+        str(base_skills_root),
+        allow_executable_plugins=True,
+        allow_capability_discovery=True,
+    )
     if skills_root != base_skills_root:
         # A managed package is context only.  Do not pass its root through
         # auto_load_skills: that discovery seam is intentionally allowed to
