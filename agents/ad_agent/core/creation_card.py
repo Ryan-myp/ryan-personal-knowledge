@@ -656,7 +656,7 @@ class CreationCardBuilder:
                 if visibility is not None:
                     field["visible_when"] = visibility
                 for key in (
-                    "default", "option_labels", "manual_entry", "lookup_tool",
+                    "default", "option_labels", "option_aliases", "manual_entry", "lookup_tool",
                     "lookup_result_key", "selection_value_fields", "selection_label_fields",
                     "lookup_account_required", "lookup_dependencies", "lookup_query_field",
                     "lookup_defaults",
@@ -721,7 +721,7 @@ class CreationCardBuilder:
         # the form and execution validation.
         all_fields = existing_fields + generated
         field_metadata = (
-            "default", "option_labels", "manual_entry", "lookup_tool",
+            "default", "option_labels", "option_aliases", "manual_entry", "lookup_tool",
             "lookup_result_key", "selection_value_fields", "selection_label_fields",
             "lookup_account_required", "lookup_dependencies", "lookup_query_field",
             "lookup_defaults", "accept", "presentation", "value_shape",
@@ -831,10 +831,34 @@ class CreationCardBuilder:
         value = str(getattr(intent, "intent_type", "") or "").strip().lower()
         return value == "create_campaign" or value.startswith("create_")
 
-    def llm_context(self, max_chars: int = 3500) -> str:
-        """Return bounded Blueprint metadata for intent parsing only."""
+    def llm_context(
+        self,
+        max_chars: int = 3500,
+        providers: Optional[list[str] | tuple[str, ...] | set[str]] = None,
+    ) -> str:
+        """Return bounded Blueprint metadata for intent parsing only.
+
+        When a channel has already been mentioned, keep the same bounded
+        context budget but spend it on that channel's complete creation
+        catalog. Without this scope, a large multi-provider catalog can be
+        truncated before the relevant Blueprint and force the LLM to guess a
+        format that the UI could have declared exactly.
+        """
         lines: list[str] = []
-        for raw_blueprint in self.blueprints.list()[:40]:
+        provider_set = {
+            normalize_platform(str(provider))
+            for provider in (providers or ())
+            if str(provider or "").strip()
+        }
+        blueprints = self.blueprints.list()
+        if provider_set:
+            scoped = [
+                item for item in blueprints
+                if normalize_platform(item.provider) in provider_set
+            ]
+            if scoped:
+                blueprints = scoped
+        for raw_blueprint in blueprints[:40]:
             blueprint = self.expand_blueprint(raw_blueprint)
             selector = blueprint.selector or {}
             selector_text = ""
@@ -850,10 +874,32 @@ class CreationCardBuilder:
                 if _SENSITIVE_FIELD.search(str(field.get("path"))) or _SENSITIVE_FIELD.search(schema_path):
                     continue
                 field_type = schema.get("type", "string")
+                options = _options(field, schema)
+                option_labels = field.get("option_labels") or schema.get("option_labels") or {}
+                option_aliases = field.get("option_aliases") or schema.get("option_aliases") or {}
+                option_context = []
+                for option in options[:12]:
+                    label = (
+                        option_labels.get(str(option), option)
+                        if isinstance(option_labels, Mapping) else option
+                    )
+                    aliases = (
+                        option_aliases.get(str(option), [])
+                        if isinstance(option_aliases, Mapping) else []
+                    )
+                    if isinstance(aliases, str):
+                        aliases = [aliases]
+                    option_context.append({
+                        "value": option,
+                        "label": label,
+                        "aliases": list(aliases)[:4]
+                        if isinstance(aliases, (list, tuple, set)) else [],
+                    })
+                required_suffix = ",required" if field.get("required") else ""
+                options_suffix = f",options={option_context}" if option_context else ""
                 fields.append(
                     f"{field['path']}->{tool_name}.{schema_path}"
-                    f"({field_type}{',required' if field.get('required') else ''}"
-                    f"{',options=' + str(_options(field, schema)[:12]) if _options(field, schema) else ''})"
+                    f"({field_type}{required_suffix}{options_suffix})"
                 )
             lines.append(
                 f"provider={blueprint.provider}; id={blueprint.blueprint_id}; "
@@ -938,14 +984,31 @@ class CreationCardBuilder:
         # a selector card instead of silently choosing a creative variant.
         raw_input = str(getattr(intent, "raw_input", "") or "")
         scored: list[tuple[int, AdCreationBlueprint, Any]] = []
-        for blueprint, selector_value in matching:
-            scores = [
+        # Evaluate declared natural-language terms against the full candidate
+        # set, not only against selector matches.  This is what lets a user
+        # say “App conversion” before a provider-specific canonical enum has
+        # been emitted by the parser.  A term may choose a Blueprint, but it
+        # still must resolve to one legal selector value.
+        for blueprint in candidates:
+            selector = blueprint.selector or {}
+            selector_options = _selector_options(selector)
+            selector_value = None
+            selector_scores: list[int] = []
+            for option in selector_options:
+                for phrase in (option.get("value"), option.get("label")):
+                    normalized_phrase = _normalized(phrase)
+                    if normalized_phrase and normalized_phrase in _normalized(raw_input):
+                        selector_scores.append(len(normalized_phrase))
+                        selector_value = option.get("value")
+            if selector_value is None and len(selector.get("values", [])) == 1:
+                selector_value = selector["values"][0]
+            term_scores = [
                 len(_normalized(term))
                 for term in blueprint.match_terms
                 if _normalized(term) and _normalized(term) in _normalized(raw_input)
             ]
-            if scores:
-                scored.append((max(scores), blueprint, selector_value))
+            if term_scores and selector_value is not None:
+                scored.append((max(term_scores + selector_scores), blueprint, selector_value))
         if scored:
             best_score = max(item[0] for item in scored)
             best = [item for item in scored if item[0] == best_score]
@@ -1188,6 +1251,13 @@ class CreationCardBuilder:
                         str(option): _option_label(field, option) for option in options
                         if str(option) in field["option_labels"]
                     }
+                option_aliases = field.get("option_aliases") or schema.get("option_aliases")
+                if isinstance(option_aliases, Mapping):
+                    item["option_aliases"] = {
+                        str(option): _copy_json(option_aliases[str(option)])
+                        for option in options
+                        if str(option) in option_aliases
+                    }
             if field.get("options_from"):
                 item["options_from"] = list(field["options_from"])
             if state.get("options_state"):
@@ -1216,6 +1286,7 @@ class CreationCardBuilder:
                             "source": _schema_field_source(spec),
                             "enum": spec.get("enum"),
                             "option_labels": spec.get("option_labels"),
+                            "option_aliases": spec.get("option_aliases"),
                             "items": spec.get("items"),
                             "lookup_tool": spec.get("lookup_tool"),
                             "lookup_result_key": spec.get("lookup_result_key"),

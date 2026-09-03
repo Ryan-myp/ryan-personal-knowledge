@@ -5,6 +5,7 @@
   "ad_format": "link_conversion",
   "title": "Meta 转化链接广告",
   "description": "引导创建 Meta Conversion Campaign、Ad Set 和链接广告。",
+  "match_terms": ["转化广告", "网站转化", "conversion campaign", "link conversion"],
   "selector": {
     "dimension": "objective",
     "field": "campaign.objective",

@@ -617,7 +617,18 @@ class AgentRuntime:
             context = {}
         # Blueprints are bounded declarative context for the LLM. They do not
         # register Tools and cannot execute lookup/provider operations.
-        context["creation_blueprints"] = self.creation_card_builder.llm_context()
+        # Reuse the selector's registry-derived platform scope so the LLM gets
+        # the complete relevant Blueprint catalog within a bounded prompt.
+        # The fallback remains the full bounded catalog when no platform is
+        # known yet (for example, “create an app campaign”).
+        raw_platforms = context.get("platforms")
+        provider_scope = [
+            item.strip() for item in str(raw_platforms or "").split(",")
+            if item.strip()
+        ]
+        context["creation_blueprints"] = self.creation_card_builder.llm_context(
+            providers=provider_scope or None
+        )
         return context
 
     def _optimize_tool_selection(
@@ -1212,8 +1223,15 @@ class AgentRuntime:
         return {blueprint_platform: ordered}, None
 
     @staticmethod
-    def creation_ui_reply(ui: Mapping[str, Any]) -> str:
-        """Business-facing copy for an incomplete creation draft."""
+    def creation_ui_reply(ui: Mapping[str, Any], user_input: str = "") -> str:
+        """Explain an incomplete creation draft in operator-friendly language.
+
+        The card remains the rich interaction surface, but this reply is a
+        complete text fallback.  It describes legal enum choices, lookup
+        selection, manual-ID boundaries and cascade dependencies so an
+        operator can continue without opening the card.
+        """
+        is_english = bool(user_input) and not re.search(r"[\u3400-\u9fff]", user_input)
         cards = ui.get("cards") if isinstance(ui, Mapping) else []
         titles = [
             str(card.get("title") or "广告创建")
@@ -1226,14 +1244,44 @@ class AgentRuntime:
         ]
         if selector_cards:
             provider = str(selector_cards[0].get("provider") or "目标平台")
+            selector = selector_cards[0]
+            missing_account = bool(selector_cards[0].get("account_required") and not selector_cards[0].get("account_id"))
+            choices: list[str] = []
+            for field in selector.get("fields") or []:
+                if not isinstance(field, Mapping):
+                    continue
+                options = field.get("options") or []
+                labels = []
+                for option in options[:8]:
+                    if isinstance(option, Mapping):
+                        labels.append(str(option.get("label") or option.get("value")))
+                    else:
+                        labels.append(str(option))
+                if labels:
+                    choices.append(f"{field.get('label') or '广告类型'}：" + "、".join(labels))
+            if is_english:
+                choice_text = " ".join(f"{item}." for item in choices)
+                account_text = "Provide the advertiser/account ID (it is never guessed). " if missing_account else ""
+                options_text = f"Available choices: {choice_text} " if choice_text else ""
+                return (
+                    f"I identified a {provider} ad creation request. {account_text}"
+                    f"{options_text}Choose a campaign goal or ad format, then I will show only the parameters"
+                    " allowed for that combination. You can also continue in plain language."
+                    " Once the details are complete, I will show a final preview and wait for your confirmation before submitting."
+                )
+            choice_text = "；".join(choices)
+            account_text = "请提供要操作的广告账户 ID（请人工填写，系统不会猜测账户）。" if missing_account else ""
+            options_text = f"当前可选：{choice_text}。" if choice_text else ""
             return (
-                f"我已经识别到你要在 {provider} 创建广告。"
-                "创建之前还需要你：请提供要操作的广告账户 ID，并在下方选择推广目标或广告类型；"
-                "选定后，我会只展示与该类型匹配的参数。"
+                f"我识别到你要在 {provider} 创建广告。{account_text}{options_text}"
+                "你可以直接用文字继续补充目标、类型和参数；选定后我只展示该组合允许的字段。"
+                "信息完整后，我会先给你看最终方案，等你确认后才提交创建。"
             )
         subject = titles[0] if len(titles) == 1 else "广告创建参数"
         pending_labels: list[str] = []
         invalid_labels: list[str] = []
+        pending_fields: list[Mapping[str, Any]] = []
+        invalid_fields: list[Mapping[str, Any]] = []
         account_missing = False
         for card in cards or []:
             if not isinstance(card, Mapping):
@@ -1252,8 +1300,10 @@ class AgentRuntime:
                 if path in invalid_paths or field.get("state") == "invalid":
                     if label not in invalid_labels:
                         invalid_labels.append(label)
+                        invalid_fields.append(field)
                 elif field.get("required") and is_empty and label not in pending_labels:
                     pending_labels.append(label)
+                    pending_fields.append(field)
 
         # Keep account scope visible even when the Blueprint has no other
         # missing fields. It is a user decision, not an inferred default.
@@ -1266,17 +1316,81 @@ class AgentRuntime:
         detail = "、".join(visible_labels)
         if remaining > 0:
             detail += f"等另外 {remaining} 项"
+        def field_help(field: Mapping[str, Any], english: bool = False) -> str:
+            label = str(field.get("label") or field.get("path") or "parameter")
+            options = field.get("options") or []
+            if options:
+                rendered = []
+                option_labels = field.get("option_labels") or {}
+                for option in options[:6]:
+                    if isinstance(option, Mapping):
+                        value = option.get("value")
+                        shown = option.get("label") or option_labels.get(str(value)) or value
+                    else:
+                        value = option
+                        shown = option_labels.get(str(value), value)
+                    rendered.append(str(shown) if str(shown) == str(value) else f"{shown} ({value})")
+                suffix = " or more" if len(options) > 6 else ""
+                return f"{label}: " + ", ".join(rendered) + suffix
+            lookup = field.get("lookup")
+            if isinstance(lookup, Mapping) or str(field.get("source") or "").lower() == "lookup":
+                tool = str((lookup or {}).get("tool") or "resource list") if isinstance(lookup, Mapping) else "resource list"
+                if english:
+                    return f"{label}: choose from the current account list (search is available; do not type an unknown ID)."
+                return f"{label}：可从当前账户的列表中搜索选择，系统不会猜测 ID。"
+            manual = field.get("manual_entry")
+            if isinstance(manual, Mapping):
+                instructions = str(manual.get("instructions") or "请提供已在平台中配置的值")
+                return f"{label}: {instructions}" if english else f"{label}：{instructions}"
+            dependencies = field.get("missing_option_dependencies") or []
+            if dependencies:
+                dep_text = ", ".join(str(item) for item in dependencies)
+                return f"{label}: choose {dep_text} first" if english else f"{label}：请先完成 {dep_text}"
+            constraints = field.get("constraints") or {}
+            if constraints:
+                hints = []
+                if constraints.get("minimum") is not None:
+                    hints.append(f">= {constraints['minimum']}" if english else f"至少 {constraints['minimum']}")
+                if constraints.get("maximum") is not None:
+                    hints.append(f"<= {constraints['maximum']}" if english else f"最多 {constraints['maximum']}")
+                if hints:
+                    return f"{label} ({', '.join(hints)})"
+            return label
+
+        focus_fields = invalid_fields[:4] if invalid_fields else pending_fields[:6]
+        if is_english:
+            if invalid_labels:
+                action = "Please correct"
+            elif pending_labels:
+                action = "Please provide"
+            else:
+                action = "You can review the preview"
+            details = "; ".join(field_help(field, True) for field in focus_fields)
+            if account_missing:
+                details = "Account/advertiser ID (enter it manually; it will not be guessed)" + ("; " + details if details else "")
+            if not details:
+                details = ", ".join(visible_labels)
+            return (
+                f"I identified {subject}. {action}: {details}. "
+                "You may reply in plain language, for example: “Use account [ID], choose Android, "
+                "optimize for app installs, and set a daily budget of 100.” "
+                "I will validate the combination, show a final preview, and submit only after your confirmation."
+            )
         if invalid_labels:
-            action = "请先调整标记为需要修改的参数"
+            action = "请先修改"
         elif pending_labels:
-            action = "请在下方卡片中选择或填写这些内容"
+            action = "还需要补充"
         else:
             action = "你可以先查看下方预览"
-        if detail:
-            action += f"：{detail}"
+        details = "；".join(field_help(field) for field in focus_fields)
+        if account_missing:
+            details = "请提供要操作的广告账户 ID（请人工填写，系统不会猜测）" + ("；" + details if details else "")
+        if not details:
+            details = detail
         return (
-            f"我已经识别到你要创建{subject}，并把平台规则、广告类型和可联动的参数整理到下方卡片。"
-            f"{action}。填写完整后，我会先展示最终预览，只有你确认后才会提交创建。"
+            f"我识别到你要创建{subject}。{action}：{details}。"
+            "你也可以直接用文字继续，例如“账户 ID 是 [账户ID]，选择 Android，优化安装量，日预算 100”。"
+            "我会先校验参数组合并展示最终方案，只有你明确确认后才会提交创建。"
         )
 
     def _creation_contract_preflight(
@@ -3485,13 +3599,12 @@ class AgentRuntime:
                     break
         creation_account_missing = missing_account_platform is not None
 
-        # A natural-language dry-run with an explicitly supplied account may
-        # still be used to inspect a provider validation preview. Its card can
-        # contain fields that are not part of the selected Tool chain (for
-        # example a broader catalog card), so only an explicit Blueprint form
-        # submission makes card readiness a hard execution gate. The initial
-        # conversational request is still blocked whenever it lacks an
-        # account, which is the safety boundary visible to the user.
+        # A selected Blueprint is a parameter-collection boundary. If a
+        # required field is still missing, stop here before the generic
+        # parameter validator/workflow can turn the draft into a failed Tool
+        # result. For an unselected natural-language request, retain the
+        # existing generic Tool dry-run contract; its provider schema remains
+        # the final source of validation.
         creation_needs_input = bool(
             creation_ui.get("cards")
             and (
@@ -3516,7 +3629,7 @@ class AgentRuntime:
                 else None
             )
             reply = (
-                self.creation_ui_reply(creation_ui)
+                self.creation_ui_reply(creation_ui, safe_user_input)
                 if creation_ui.get("cards")
                 else (
                     account_payload["question"]
@@ -3554,6 +3667,7 @@ class AgentRuntime:
                 # while API clients can still use this payload to understand
                 # why the plan is paused.
                 "needs_confirmation": bool(account_payload),
+                "needs_input": True,
                 "confirmation_payload": account_payload,
                 "workflow_id": None,
                 "ui": creation_ui,
@@ -3564,7 +3678,7 @@ class AgentRuntime:
         )
         if parameter_errors:
             reply = (
-                self.creation_ui_reply(creation_ui)
+                self.creation_ui_reply(creation_ui, safe_user_input)
                 if creation_ui.get("needs_input")
                 else "❌ 参数契约阻止本次请求：" + "；".join(parameter_errors)
             )
@@ -3738,7 +3852,7 @@ class AgentRuntime:
                     and item["confirmation_payload"].get("type") == "ask_account"
                     for item in preflight_results
                 ):
-                    reply = self.creation_ui_reply(creation_ui)
+                    reply = self.creation_ui_reply(creation_ui, safe_user_input)
                 trace.all_nodes_status("failed", reason="preflight_blocked")
                 trace.reply()
                 trace.done("failed", safe_metadata={"reason": "preflight_blocked"})
@@ -3866,7 +3980,7 @@ class AgentRuntime:
             else:
                 response_source = "renderer"
             if creation_ui.get("needs_input"):
-                no_tool_reply = self.creation_ui_reply(creation_ui)
+                no_tool_reply = self.creation_ui_reply(creation_ui, safe_user_input)
                 response_source = "creation_card"
             trace.stage_status(
                 "reply",
@@ -4692,7 +4806,7 @@ class AgentRuntime:
             and item["confirmation_payload"].get("type") == "ask_account"
             for item in results
         ):
-            reply, response_source = self.creation_ui_reply(creation_ui), "creation_card"
+            reply, response_source = self.creation_ui_reply(creation_ui, safe_user_input), "creation_card"
         else:
             reply, response_source = self._render_response(
                 safe_user_input,

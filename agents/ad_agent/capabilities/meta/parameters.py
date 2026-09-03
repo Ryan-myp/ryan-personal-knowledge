@@ -785,6 +785,17 @@ def meta_campaign_schema() -> dict[str, Any]:
             "name": _field("string", "Campaign name", maxLength=400),
             "objective": _field(
                 "string", "Campaign objective", enum=META_OBJECTIVES,
+                option_aliases={
+                    "OUTCOME_SALES": ["sales campaign", "product sales", "销售广告", "商品销售"],
+                    "OUTCOME_LEADS": ["lead generation", "lead gen", "潜在客户", "线索获客"],
+                    "OUTCOME_TRAFFIC": ["traffic campaign", "website traffic", "流量广告", "网站流量"],
+                    "OUTCOME_AWARENESS": ["brand awareness", "awareness campaign", "品牌曝光", "品牌认知"],
+                    "OUTCOME_ENGAGEMENT": ["engagement campaign", "互动广告"],
+                    "OUTCOME_APP_PROMOTION": ["app promotion", "app conversion", "app install", "App 转化", "App 广告", "应用推广", "应用转化"],
+                    "OUTCOME_CONVERSIONS": ["conversion campaign", "转化广告", "网站转化"],
+                    "OUTCOME_MESSAGES": ["messaging campaign", "message ads", "消息广告", "私信广告"],
+                    "PRODUCT_CATALOG_SALES": ["catalog sales", "catalog ad", "商品目录销售", "目录广告"],
+                },
                 intent_field="objective", intent_map={
                     "sales": "OUTCOME_SALES", "leads": "OUTCOME_LEADS",
                     "traffic": "OUTCOME_TRAFFIC", "brand": "OUTCOME_AWARENESS",

@@ -5,6 +5,7 @@
   "ad_format": "catalog_sales",
   "title": "Meta 商品目录销售广告",
   "description": "按 Meta 销售目标选择商品目录和商品集，创建目录广告。",
+  "match_terms": ["商品目录销售", "目录广告", "catalog sales", "catalog ad"],
   "selector": {
     "dimension": "objective",
     "field": "campaign.objective",

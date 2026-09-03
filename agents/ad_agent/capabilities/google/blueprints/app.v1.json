@@ -5,6 +5,7 @@
   "ad_format": "APP",
   "title": "Google App 广告",
   "description": "Google App Campaign 使用专属的 App 设置、广告组和素材字段。",
+  "match_terms": ["App 广告", "App 转化", "app campaign", "app conversion", "app install"],
   "selector": {"dimension": "ad_format", "field": "campaign.campaign_type", "values": ["APP"], "label": "Google 广告系列类型", "options": [{"value": "APP", "label": "应用"}]},
   "tools": ["google_create_campaign", "google_create_app_ad_group", "google_create_app_ad"],
   "resources": ["campaign", "ad_group", "ad"],

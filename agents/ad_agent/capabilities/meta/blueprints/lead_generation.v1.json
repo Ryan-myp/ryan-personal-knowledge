@@ -5,6 +5,7 @@
   "ad_format": "lead_generation",
   "title": "Meta 潜在客户广告",
   "description": "按 Meta 潜在客户目标创建广告组，并绑定 Facebook Instant Form。",
+  "match_terms": ["潜在客户", "线索获客", "lead generation", "lead gen"],
   "selector": {
     "dimension": "objective",
     "field": "campaign.objective",

@@ -195,6 +195,16 @@ def tiktok_campaign_schema() -> dict[str, Any]:
             "name": _field("string", "Campaign name; max 60 characters"),
             "objective_type": _field(
                 "string", "Campaign optimization objective", enum=TIKTOK_OBJECTIVE_TYPES,
+                option_aliases={
+                    "APP_PROMOTION": ["app promotion", "app conversion", "app install", "App 转化", "App 广告", "应用推广", "应用转化", "应用安装"],
+                    "PRODUCT_SALES": ["product sales", "product ad", "商品销售", "商品广告"],
+                    "TRAFFIC": ["traffic campaign", "website traffic", "流量广告", "网站流量"],
+                    "VIDEO_VIEWS": ["video views", "video view", "视频观看", "视频播放"],
+                    "REACH": ["reach campaign", "brand awareness", "覆盖", "品牌曝光"],
+                    "LEAD_GENERATION": ["lead generation", "lead gen", "潜在客户", "线索获客", "表单获客"],
+                    "ENGAGEMENT": ["engagement campaign", "互动广告"],
+                    "APP_INSTALL": ["app install campaign", "应用安装广告"],
+                },
                 intent_field="objective", intent_map={
                     "sales": "PRODUCT_SALES",
                     "leads": "LEAD_GENERATION",
@@ -202,10 +212,22 @@ def tiktok_campaign_schema() -> dict[str, Any]:
                     "brand": "REACH",
                 },
             ),
-            "campaign_type": _field("string", "Campaign type", enum=TIKTOK_CAMPAIGN_TYPES),
+            "campaign_type": _field(
+                "string", "Campaign type", enum=TIKTOK_CAMPAIGN_TYPES,
+                option_aliases={
+                    "REGULAR_CAMPAIGN": ["regular campaign", "standard campaign", "常规广告系列", "普通广告系列"],
+                    "IOS14_CAMPAIGN": ["ios14 campaign", "ios 14 campaign", "iOS14 广告系列"],
+                },
+            ),
             "campaign_automation_type": _field("string", "Automation mode", enum=TIKTOK_AUTOMATION_TYPES),
             "budget_restriction": _field("string", "Budget restriction", enum=TIKTOK_BUDGET_RESTRICTIONS),
-            "budget_mode": _field("string", "Budget mode", enum=TIKTOK_BUDGET_MODES),
+            "budget_mode": _field(
+                "string", "Budget mode", enum=TIKTOK_BUDGET_MODES,
+                option_aliases={
+                    "BUDGET_MODE_DAY": ["daily budget", "day budget", "日预算", "每天预算"],
+                    "BUDGET_MODE_TOTAL": ["lifetime budget", "total budget", "总预算", "生命周期预算"],
+                },
+            ),
             "budget": _field(
                 "number", "Daily/lifetime budget in user currency", minimum=0,
                 **_ui_equals("budget_mode", "BUDGET_MODE_TOTAL"),
@@ -220,6 +242,10 @@ def tiktok_campaign_schema() -> dict[str, Any]:
             "app_promotion_type": _field(
                 "string", "App promotion mode; only for app campaigns",
                 enum=TIKTOK_APP_PROMOTION_TYPES,
+                option_aliases={
+                    "APP_ACQUISITION": ["app acquisition", "app user acquisition", "应用获客", "应用拉新"],
+                    "APP_RETARGETING": ["app retargeting", "应用再营销", "应用召回"],
+                },
                 **_ui_equals("objective_type", "APP_PROMOTION"),
             ),
             "status": _field("integer", "Campaign status: 1 active, 0 paused", enum=[0, 1]),
@@ -605,7 +631,16 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
         "properties": {
             "campaign_id": _field("string", "Parent campaign ID"),
             "name": _field("string", "Ad group name; max 60 characters"),
-            "promotion_type": _field("string", "Promotion destination", enum=TIKTOK_PROMOTION_TYPES),
+            "promotion_type": _field(
+                "string", "Promotion destination", enum=TIKTOK_PROMOTION_TYPES,
+                option_aliases={
+                    "APP_ANDROID": ["android", "android app", "android application", "安卓", "安卓应用"],
+                    "APP_IOS": ["ios", "ios app", "ios application", "苹果", "苹果应用"],
+                    "WEBSITE": ["website", "网站"],
+                    "LEAD_FORM": ["lead form", "表单"],
+                    "CATALOG": ["catalog", "商品目录"],
+                },
+            ),
             "app_id": _field(
                 "string", "App ID returned by TikTok app lookup",
                 lookup_tool="tiktok_list_apps", lookup_result_key="apps",
@@ -648,6 +683,15 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
             ),
             "optimization_goal": _field(
                 "string", "Ad group optimization goal", enum=TIKTOK_OPTIMIZATION_GOALS,
+                option_aliases={
+                    "INSTALL": ["install", "app installs", "应用安装", "安装量", "优化安装"],
+                    "IN_APP_EVENT": ["in app event", "in-app event", "应用内事件"],
+                    "CONVERSION": ["conversion", "conversions", "转化"],
+                    "CLICK": ["click", "clicks", "点击"],
+                    "REACH": ["reach", "覆盖"],
+                    "VIDEO_VIEW": ["video view", "video views", "视频观看"],
+                    "LEAD_GENERATION": ["lead generation", "潜在客户", "线索"],
+                },
             ),
             "conversion_id": _field(
                 "integer", "Conversion event ID returned by TikTok lookup",
@@ -708,6 +752,10 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
             ),
             "operating_systems": _field(
                 "array", "Operating systems", enum=None,
+                option_aliases={
+                    "ANDROID": ["android", "安卓"],
+                    "IOS": ["ios", "iOS", "苹果"],
+                },
                 items={"type": "string", "enum": TIKTOK_OPERATING_SYSTEMS},
             ),
             "age_groups": _field(

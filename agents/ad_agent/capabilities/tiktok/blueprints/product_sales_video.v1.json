@@ -5,6 +5,7 @@
   "ad_format": "SINGLE_VIDEO",
   "title": "TikTok 商品销售视频广告",
   "description": "按 TikTok 商品销售目标选择推广方式、商品来源、优化目标和素材。",
+  "match_terms": ["商品销售", "商品广告", "product sales", "product ad"],
   "selector": {"dimension": "objective", "field": "campaign.objective_type", "values": ["PRODUCT_SALES", "SHOP_PURCHASES", "CATALOG_SALES"], "label": "TikTok 推广目标", "options": [{"value": "PRODUCT_SALES", "label": "商品销售"}, {"value": "SHOP_PURCHASES", "label": "Shop 购买"}, {"value": "CATALOG_SALES", "label": "目录销售"}]},
   "tools": ["tiktok_create_campaign", "tiktok_create_product_sales_adgroup", "tiktok_create_product_sales_ad"],
   "resources": ["campaign", "ad_group", "ad"],

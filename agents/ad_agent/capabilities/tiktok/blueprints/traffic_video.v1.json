@@ -5,6 +5,7 @@
   "ad_format": "SINGLE_VIDEO",
   "title": "TikTok 流量视频广告",
   "description": "按 TikTok 流量目标配置网站推广、点击优化、出价和定向。",
+  "match_terms": ["流量广告", "网站流量", "traffic campaign", "website traffic"],
   "selector": {"dimension": "objective", "field": "campaign.objective_type", "values": ["TRAFFIC", "WEB_CONVERSIONS"], "label": "TikTok 推广目标", "options": [{"value": "TRAFFIC", "label": "流量"}, {"value": "WEB_CONVERSIONS", "label": "网站转化"}]},
   "tools": ["tiktok_create_campaign", "tiktok_create_adgroup", "tiktok_create_single_video_ad"],
   "resources": ["campaign", "ad_group", "ad"],

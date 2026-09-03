@@ -709,6 +709,18 @@ def google_campaign_schema() -> dict[str, Any]:
             "campaign_name": _field("string", "Campaign name", maxLength=255),
             "advertising_channel_type": _field(
                 "string", "Channel type", enum=GOOGLE_CHANNEL_TYPES,
+                option_aliases={
+                    "SEARCH": ["search campaign", "搜索广告", "搜索广告系列"],
+                    "DISPLAY": ["display campaign", "展示广告", "展示广告系列"],
+                    "SHOPPING": ["shopping campaign", "shopping ads", "购物广告", "商品广告"],
+                    "VIDEO": ["video campaign", "video ads", "视频广告"],
+                    "MULTI_CHANNEL": ["app campaign", "app promotion", "app conversion", "应用广告", "应用转化"],
+                    "LOCAL": ["local campaign", "本地广告"],
+                    "SMART": ["smart campaign", "智能广告"],
+                    "DEMAND_GEN": ["demand gen", "demand generation", "需求开发"],
+                    "PERFORMANCE_MAX": ["performance max", "pmax", "效果最大化"],
+                    "TRAVEL": ["travel campaign", "旅游广告"],
+                },
                 input_aliases=["campaign_type"], default="SEARCH",
                 intent_field="campaign_type",
                 intent_map=GOOGLE_CHANNEL_TYPE_INTENT_MAP,
@@ -718,6 +730,12 @@ def google_campaign_schema() -> dict[str, Any]:
             # App's selector may still reference this field explicitly.
             "campaign_type": _field(
                 "string", "Channel type input alias", enum=GOOGLE_CHANNEL_INPUT_TYPES,
+                option_aliases={
+                    "APP": ["app campaign", "app conversion", "应用广告", "应用转化"],
+                    "SHOPPING": ["shopping ads", "购物广告", "商品广告"],
+                    "SEARCH": ["search ads", "搜索广告"],
+                    "VIDEO": ["video ads", "视频广告"],
+                },
                 ui_hidden=True,
             ),
             "advertising_channel_sub_type": _field(

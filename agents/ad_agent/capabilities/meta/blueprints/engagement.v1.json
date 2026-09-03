@@ -5,6 +5,7 @@
   "ad_format": "ENGAGEMENT",
   "title": "Meta 互动广告",
   "description": "选择帖子互动或视频观看目标；帖子和视频资源分别按平台能力查询或明确输入。",
+  "match_terms": ["互动广告", "帖子互动", "engagement campaign", "post engagement"],
   "selector": {"dimension": "objective", "field": "campaign.objective", "values": ["OUTCOME_ENGAGEMENT"], "label": "Meta 推广目标", "options": [{"value": "OUTCOME_ENGAGEMENT", "label": "互动"}]},
   "tools": ["meta_create_campaign", "meta_create_adset", "meta_create_engagement_ad"],
   "resources": ["campaign", "ad_set", "ad"],

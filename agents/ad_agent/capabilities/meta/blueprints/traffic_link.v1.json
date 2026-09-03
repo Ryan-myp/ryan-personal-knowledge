@@ -5,6 +5,7 @@
   "ad_format": "link_traffic",
   "title": "Meta 流量链接广告",
   "description": "按 Meta 流量目标创建 Campaign、Ad Set 和链接广告。",
+  "match_terms": ["流量广告", "网站流量", "traffic campaign", "link traffic"],
   "selector": {
     "dimension": "objective",
     "field": "campaign.objective",

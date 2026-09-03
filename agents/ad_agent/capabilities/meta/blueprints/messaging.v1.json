@@ -5,6 +5,7 @@
   "ad_format": "MESSAGING",
   "title": "Meta 消息广告",
   "description": "选择消息目标、消息目的地和对应 CTA，Page 使用账户下可推广的 Page 列表。",
+  "match_terms": ["消息广告", "私信广告", "messaging campaign", "message ads"],
   "selector": {"dimension": "objective", "field": "campaign.objective", "values": ["OUTCOME_MESSAGES"], "label": "Meta 推广目标", "options": [{"value": "OUTCOME_MESSAGES", "label": "消息"}]},
   "tools": ["meta_create_campaign", "meta_create_adset", "meta_create_messaging_ad"],
   "resources": ["campaign", "ad_set", "ad"],

@@ -553,6 +553,174 @@ class TestIntentParser:
         assert intent.platform_params["tiktok"]["campaign_type"] == "REGULAR_CAMPAIGN"
         assert intent.platform_params["tiktok"]["budget_mode"] == "BUDGET_MODE_DAY"
 
+    def test_rule_parser_understands_multilingual_creation_phrases_from_schema(self):
+        from agents.ad_agent.core.intent import LLMIntentParser
+        from agents.ad_agent.capabilities.tiktok.parameters import (
+            tiktok_campaign_schema, tiktok_adgroup_schema, tiktok_app_ad_schema,
+        )
+
+        parser = LLMIntentParser()
+        parser.register_tool_schemas(
+            "tiktok",
+            [tiktok_campaign_schema(), tiktok_adgroup_schema(), tiktok_app_ad_schema()],
+        )
+        intent = parser.parse(
+            "创建 TikTok App 转化广告，选择 Android，投放给 18 到 35 岁用户，日预算 100",
+            None,
+        )
+
+        values = intent.platform_params["tiktok"]
+        assert values["objective_type"] == "APP_PROMOTION"
+        assert values["operating_systems"] == ["ANDROID"]
+        assert values["age_groups"] == ["AGE_18_24", "AGE_25_34", "AGE_35_44"]
+        assert values["daily_budget"] == 100.0
+        assert "app_id" not in values
+
+        english = parser.parse(
+            "Create a TikTok app conversion campaign for an Android app, daily budget 100",
+            None,
+        )
+        assert english.platform_params["tiktok"]["objective_type"] == "APP_PROMOTION"
+        assert english.platform_params["tiktok"]["promotion_type"] == "APP_ANDROID"
+
+        assert "updates" not in english.platform_params["tiktok"]
+
+    def test_llm_enum_alias_is_normalized_but_dynamic_resource_is_not_guessed(self):
+        from agents.ad_agent.core.intent import LLMIntentParser
+        from agents.ad_agent.capabilities.tiktok.parameters import tiktok_adgroup_schema
+
+        parser = LLMIntentParser()
+        parser.register_tool_schemas("tiktok", [tiktok_adgroup_schema()])
+        normalized = parser._normalize_intent({
+            "intent_type": "create_campaign",
+            "platforms": ["tiktok"],
+            "platform_params": {
+                "tiktok": {
+                    "promotion_type": "Android app",
+                    "app_id": "my app",
+                    "operating_systems": ["Android"],
+                }
+            },
+        })
+
+        values = normalized["platform_params"]["tiktok"]
+        assert values["promotion_type"] == "APP_ANDROID"
+        assert values["operating_systems"] == ["ANDROID"]
+        assert values["app_id"] == "my app"
+
+    def test_llm_result_is_enriched_from_user_language_without_trusting_model_resource_ids(self):
+        """Explicit IDs and schema enums survive a sparse LLM extraction."""
+        from agents.ad_agent.capabilities.tiktok.parameters import (
+            tiktok_campaign_schema, tiktok_adgroup_schema, tiktok_app_ad_schema,
+        )
+
+        class SparseLLM:
+            def call(self, messages):
+                return json.dumps({
+                    "intent_type": "create_campaign",
+                    "platforms": ["tiktok"],
+                    "platform_params": {
+                        "tiktok": {
+                            "app_id": "model-placeholder",
+                            "promotion_type": "Android app",
+                            "operating_systems": ["Android"],
+                        }
+                    },
+                })
+
+        parser = LLMIntentParser(SparseLLM())
+        parser.register_tool_schemas("tiktok", [
+            tiktok_campaign_schema(), tiktok_adgroup_schema(), tiktok_app_ad_schema(),
+        ])
+        intent = parser.parse(
+            "创建 TikTok App 转化广告，App ID 是 app-123，选择 Android，日预算 100",
+            None,
+        )
+
+        values = intent.platform_params["tiktok"]
+        assert values["app_id"] == "app-123"
+        assert values["objective_type"] == "APP_PROMOTION"
+        assert values["promotion_type"] == "APP_ANDROID"
+        assert values["operating_systems"] == ["ANDROID"]
+        assert values["daily_budget"] == 100.0
+
+    def test_llm_normalizes_enum_values_inside_object_array_items(self):
+        from agents.ad_agent.capabilities.tiktok.parameters import tiktok_app_ad_schema
+
+        class CreativeLLM:
+            def call(self, messages):
+                return json.dumps({
+                    "intent_type": "create_campaign",
+                    "platforms": ["tiktok"],
+                    "platform_params": {
+                        "tiktok": {"media": [{"type": "image"}]}
+                    },
+                })
+
+        parser = LLMIntentParser(CreativeLLM())
+        parser.register_tool_schemas("tiktok", [tiktok_app_ad_schema()])
+        intent = parser.parse("Create a TikTok app ad with an image", None)
+        assert intent.platform_params["tiktok"]["media"][0]["type"] == "IMAGE"
+
+    def test_single_platform_plain_language_accepts_explicit_account_and_resource_ids(self):
+        from agents.ad_agent.capabilities.tiktok.parameters import (
+            tiktok_campaign_schema, tiktok_adgroup_schema,
+        )
+
+        parser = LLMIntentParser()
+        parser.register_tool_schemas("tiktok", [
+            tiktok_campaign_schema(), tiktok_adgroup_schema(),
+        ])
+        intent = parser.parse(
+            "TikTok ad group，账户 ID 是 advertiser-7，App ID 是 app-123，Pixel ID: px-9",
+            None,
+        )
+        values = intent.platform_params["tiktok"]
+        assert values["account_id"] == "advertiser-7"
+        assert values["app_id"] == "app-123"
+        assert values["pixel_id"] == "px-9"
+        assert "id" not in values
+
+    def test_creation_reply_is_a_complete_text_fallback_for_chinese_and_english(self):
+        from agents.ad_agent.runtime.runtime import AgentRuntime
+
+        ui = {
+            "cards": [{
+                "title": "TikTok App 转化视频广告",
+                "provider": "tiktok",
+                "account_required": True,
+                "account_id": None,
+                "fields": [
+                    {
+                        "path": "campaign.objective_type",
+                        "label": "推广目标",
+                        "required": True,
+                        "value": "APP_PROMOTION",
+                        "options": [{"value": "APP_PROMOTION", "label": "应用推广"}],
+                    },
+                    {
+                        "path": "ad_group.app_id",
+                        "label": "App",
+                        "required": True,
+                        "value": None,
+                        "source": "lookup",
+                        "lookup": {"tool": "tiktok_list_apps"},
+                    },
+                ],
+            }],
+        }
+
+        chinese = AgentRuntime.creation_ui_reply(ui, "创建 TikTok App 转化广告")
+        assert "广告账户 ID" in chinese
+        assert "列表中搜索选择" in chinese
+        assert "不会猜测 ID" in chinese
+        assert "确认后才会提交" in chinese
+
+        english = AgentRuntime.creation_ui_reply(ui, "Create a TikTok app conversion campaign")
+        assert "account" in english.lower()
+        assert "current account list" in english
+        assert "confirmation" in english.lower()
+
     def test_bare_campaign_phrase_is_not_copied_between_channels(self):
         parser = LLMIntentParser()
         intent = parser.parse("跨渠道暂停 Meta 和 Google campaign 12345", None)

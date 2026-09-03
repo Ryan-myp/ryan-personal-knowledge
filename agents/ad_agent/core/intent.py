@@ -15,7 +15,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 import yaml
 from .interfaces import (
     ToolContext, ParsedIntent, IntentParser, IntentRouter,
@@ -72,6 +72,16 @@ Provider 输入字段。不要把 `action`、`operation`、`resource_type`、`to
 - brand：品牌曝光
 
 平台说明：只能从当前 Runtime 已注册的平台中选择；平台 Skill 会提供自然语言别名和参数语义。
+
+语言和参数识别要求：用户可能使用中文、英文或中英混合表达。请理解自然语言
+中的广告目标、广告形式、预算模式、年龄段、设备和优化目标，并将能唯一映射的值
+转换成当前 schema/Blueprint 声明的 canonical enum；不能把中文直译成未声明的字段。
+广告创建是级联参数：上游目标/广告类型确定后，只填写该组合允许的下游参数；不确定
+或存在多个合法组合时保留待选择状态，并在缺参说明中列出选项。App、Pixel、事件、
+Audience、Page、Catalog、素材等动态资源必须通过已声明的只读 lookup 选择，不能
+凭“我的 App”“my audience”或名称生成 ID。用户不使用卡片时，也要能够继续用自然
+语言补充，例如“账户是 123，选 Android，日预算 100”；参数收齐后只能生成预览，
+必须等待用户明确确认才进入写操作。
 
 广告创建蓝图说明：如果用户要创建广告，优先依据下方 Blueprint 选择正确的
 渠道入口和广告类型。Blueprint/Tool 中声明的字段名是唯一事实来源；不要自造
@@ -245,20 +255,380 @@ age_min、age_max 或其他未声明的 Provider 字段。对于平台只能提�
                 self._platform_aliases[text] = canonical
 
     def register_tool_schemas(self, platform: str, schemas: list[dict] | tuple[dict, ...]) -> None:
-        """Publish provider fields so rule parsing also remains extensible."""
+        """Publish provider fields so rule parsing also remains extensible.
+
+        The parser does not own a provider field table.  It keeps a bounded,
+        provider-published view of the registered schemas so a user can say
+        ``app conversion`` or ``日预算`` without having to spell the wire
+        enum/key.  Nested fields are indexed by their dotted path; assignment
+        back into ``platform_params`` preserves that object shape for the
+        normal ToolInputBuilder.
+        """
         value = str(platform or "").strip().lower()
         canonical = parser_platform(value)
         if not canonical:
             return
         self.register_platforms([canonical])
         fields = self._platform_field_specs.setdefault(canonical, {})
+
+        def merge_spec(previous: Optional[dict], current: dict) -> dict:
+            """Merge duplicated schema metadata without inventing values.
+
+            A platform exposes the same field in several Tools.  Keeping the
+            union of provider-declared enum/label metadata avoids last-tool
+            wins behaviour while the selected Tool still performs the final
+            closed-schema validation later in the Runtime.
+            """
+            if not previous:
+                return dict(current)
+            merged = dict(previous)
+            for key in ("enum", "input_aliases", "intent_aliases"):
+                values: list[Any] = []
+                for source in (previous.get(key), current.get(key)):
+                    if isinstance(source, list):
+                        values.extend(source)
+                if values:
+                    merged[key] = list(dict.fromkeys(values))
+            for key in ("option_labels", "option_aliases"):
+                mappings: dict[str, Any] = {}
+                for source in (previous.get(key), current.get(key)):
+                    if isinstance(source, dict):
+                        mappings.update(source)
+                if mappings:
+                    merged[key] = mappings
+            # Keep the richer schema attributes where they are available.
+            for key, item in current.items():
+                if key not in merged or merged[key] in (None, "", [], {}):
+                    merged[key] = item
+            return merged
+
+        def publish(properties: Any, prefix: str = "") -> None:
+            if not isinstance(properties, dict):
+                return
+            for field_name, raw_spec in properties.items():
+                if not isinstance(raw_spec, dict):
+                    continue
+                field = str(field_name)
+                path = f"{prefix}.{field}" if prefix else field
+                fields[path] = merge_spec(fields.get(path), dict(raw_spec))
+                nested = raw_spec.get("properties")
+                if isinstance(nested, dict):
+                    publish(nested, path)
+                # JSON Schema keeps object properties inside array ``items``.
+                # Indexing them makes LLM output normalization work for
+                # creative/media collections as well, without teaching Core
+                # the shape of any provider payload.
+                items = raw_spec.get("items")
+                if isinstance(items, dict) and isinstance(items.get("properties"), dict):
+                    publish(items["properties"], path)
+
         for schema in schemas or []:
             properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
-            if not isinstance(properties, dict):
+            publish(properties)
+
+    @staticmethod
+    def _schema_options(spec: Any) -> list[Any]:
+        if not isinstance(spec, dict):
+            return []
+        enum = spec.get("enum")
+        if isinstance(enum, list):
+            return list(enum)
+        items = spec.get("items")
+        if isinstance(items, dict) and isinstance(items.get("enum"), list):
+            return list(items["enum"])
+        return []
+
+    @staticmethod
+    def _phrase(value: Any) -> str:
+        """Normalize a human phrase while retaining Chinese characters."""
+        return " ".join(
+            str(value or "").strip().casefold().replace("_", " ").replace("-", " ").split()
+        )
+
+    @classmethod
+    def _option_aliases(
+        cls, spec: dict, option: Any, *, include_canonical: bool = True
+    ) -> list[str]:
+        metadata = spec
+        items = spec.get("items") if isinstance(spec, dict) else None
+        if isinstance(items, dict):
+            # Array enums keep their option labels/aliases on ``items`` in
+            # standard JSON Schema.  Accepting both placements keeps Tool
+            # authors free to use their existing schema style.
+            metadata = {**items, **spec}
+        aliases: list[str] = [str(option)]
+        labels = metadata.get("option_labels")
+        if isinstance(labels, dict):
+            label = labels.get(str(option))
+            if label is None:
+                label = labels.get(option)
+            if label:
+                aliases.append(str(label))
+        declared = metadata.get("option_aliases")
+        if isinstance(declared, dict):
+            values = declared.get(str(option), declared.get(option, []))
+            if isinstance(values, str):
+                values = [values]
+            if isinstance(values, (list, tuple, set)):
+                aliases.extend(str(value) for value in values)
+        # The canonical wire spelling is also a useful English phrase.  Do
+        # not split arbitrary IDs or short values into unsafe guesses.
+        canonical = cls._phrase(option)
+        if include_canonical and len(canonical) >= 3:
+            aliases.append(canonical)
+        return list(dict.fromkeys(alias for alias in aliases if cls._phrase(alias)))
+
+    @classmethod
+    def _option_matches_text(cls, text: str, alias: str) -> bool:
+        phrase = cls._phrase(alias)
+        if not phrase:
+            return False
+        haystack = cls._phrase(text)
+        if re.search(r"[\u3400-\u9fff]", phrase):
+            return phrase in haystack
+        # English aliases need token boundaries so ``app`` does not match an
+        # unrelated word.  Short provider enums such as CPC/IOS are still
+        # supported when they occur as complete tokens.
+        return re.search(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])", haystack) is not None
+
+    @classmethod
+    def _field_option_matches_text(
+        cls, text: str, field: str, alias: str
+    ) -> bool:
+        """Match an alias in the field's natural-language context.
+
+        Short words such as “转化/conversion” are valid for many provider
+        fields.  For optimization/bidding fields, require an adjacent goal
+        cue when the alias itself is short; this prevents “App 转化广告” from
+        also filling a downstream optimization goal before the user chooses
+        it.  The rule is field-shape based and provider-neutral.
+        """
+        if not cls._option_matches_text(text, alias):
+            return False
+        leaf = str(field).rsplit(".", 1)[-1].casefold()
+        if not any(marker in leaf for marker in ("optimization", "goal", "bidding", "bid")):
+            return True
+        phrase = cls._phrase(alias)
+        if len(phrase) > 8:
+            return True
+        if any(marker in phrase for marker in ("优化", "目标", "optimize", "optimization", "goal")):
+            return True
+        haystack = cls._phrase(text)
+        for match in re.finditer(re.escape(phrase), haystack):
+            prefix = haystack[max(0, match.start() - 24):match.start()]
+            if any(marker in prefix for marker in ("优化", "目标", "optimize", "optimization", "goal", "for")):
+                return True
+        return False
+
+    @classmethod
+    def _normalize_declared_value(cls, value: Any, spec: dict) -> Any:
+        """Map a model/user phrase to one provider-declared enum value.
+
+        A value is changed only when exactly one canonical option has the
+        best matching declared alias.  This makes the normalization useful
+        for both Chinese and English model output without turning a dynamic
+        resource name or ID into a guessed provider value.
+        """
+        mapping = spec.get("intent_map")
+        if isinstance(mapping, dict) and isinstance(value, str):
+            for key, mapped in mapping.items():
+                if cls._phrase(value) == cls._phrase(key):
+                    value = mapped
+                    break
+        options = cls._schema_options(spec)
+        if not options:
+            if isinstance(value, list):
+                return [cls._normalize_declared_value(item, spec) for item in value]
+            return value
+        values = value if isinstance(value, list) else [value]
+        normalized: list[Any] = []
+        for item in values:
+            if item in options:
+                normalized.append(item)
                 continue
-            for field, spec in properties.items():
-                if isinstance(spec, dict):
-                    fields[str(field)] = dict(spec)
+            matches: list[tuple[int, Any]] = []
+            for option in options:
+                for alias in cls._option_aliases(spec, option):
+                    if cls._phrase(item) == cls._phrase(alias):
+                        matches.append((len(cls._phrase(alias)), option))
+            if matches:
+                best_length = max(length for length, _option in matches)
+                best = list(dict.fromkeys(
+                    option for length, option in matches if length == best_length
+                ))
+                normalized.append(best[0] if len(best) == 1 else item)
+            else:
+                normalized.append(item)
+        return normalized if isinstance(value, list) else normalized[0]
+
+    def _semantic_parameter_values(
+        self, user_input: str, platforms: list[str], params: dict[str, dict]
+    ) -> None:
+        """Extract only uniquely declared enum meanings from natural language.
+
+        This is a schema-driven safety net for local/fallback parsing.  The
+        production path remains LLM-first, but both paths converge on the
+        same canonical values.  Dynamic lookup fields are intentionally absent
+        here: phrases such as "my app" can never become an invented ID.
+        """
+        for platform in platforms:
+            platform_specs = self._platform_field_specs.get(platform, {})
+
+            def is_array_item_path(field_path: str) -> bool:
+                """Do not materialize ``items.properties`` as an object.
+
+                A phrase such as “视频” may identify a media item's type, but
+                without a collection item it must not turn an array Tool input
+                into ``{"media": {"type": ...}}``. The structured card/LLM
+                can still submit the complete collection explicitly.
+                """
+                parts = str(field_path).split(".")
+                for index in range(1, len(parts)):
+                    parent = platform_specs.get(".".join(parts[:index]))
+                    if isinstance(parent, Mapping) and parent.get("type") == "array":
+                        items = parent.get("items")
+                        if isinstance(items, Mapping) and isinstance(items.get("properties"), Mapping):
+                            return True
+                return False
+
+            for field, spec in platform_specs.items():
+                if field == "updates" or field.startswith("updates."):
+                    continue
+                if is_array_item_path(field):
+                    continue
+                # Compatibility aliases such as Google's hidden
+                # ``campaign_type`` are consumed by ToolInputBuilder, not
+                # selected as a second conversational value.  The visible
+                # Blueprint selector/match_terms remains responsible for
+                # choosing that variant.
+                if spec.get("ui_hidden") is True:
+                    continue
+                options = self._schema_options(spec)
+                if not options or field in params[platform]:
+                    continue
+                candidates: list[tuple[int, Any]] = []
+                # Conversational extraction uses explicit provider aliases or
+                # human labels.  Canonical wire spellings remain accepted by
+                # the normalizer, but are not scanned here: otherwise a
+                # phrase such as “daily budget” could also set a different
+                # optional enum called DAILY_BUDGET.
+                for option in options:
+                    for alias in self._option_aliases(
+                        spec, option, include_canonical=False
+                    ):
+                        if not spec.get("option_aliases") and not spec.get("option_labels") and not (
+                            isinstance(spec.get("items"), dict)
+                            and (spec["items"].get("option_aliases") or spec["items"].get("option_labels"))
+                        ):
+                            continue
+                        if self._field_option_matches_text(user_input, field, alias):
+                            candidates.append((len(self._phrase(alias)), option))
+                if not candidates:
+                    continue
+                best_length = max(length for length, _option in candidates)
+                best = list(dict.fromkeys(
+                    option for length, option in candidates if length == best_length
+                ))
+                # An ambiguous phrase must remain a user choice.  The card
+                # will show all legal options and the next turn can clarify.
+                is_array = spec.get("type") == "array"
+                if is_array:
+                    self._assign_parameter(
+                        params[platform], field,
+                        list(dict.fromkeys(option for _length, option in candidates
+                                           if _length == best_length)),
+                    )
+                elif len(best) == 1:
+                    self._assign_parameter(params[platform], field, best[0])
+
+            # Common age ranges are represented differently by providers:
+            # some expose min/max integers, others expose enum groups.  The
+            # shape is derived from the schema, not a provider branch.
+            range_match = re.search(
+                r"(?<!\d)(\d{1,3})\s*(?:到|至|至多|to|through|-)\s*(\d{1,3})(?!\d)",
+                user_input,
+                re.IGNORECASE,
+            )
+            if range_match:
+                lower, upper = int(range_match.group(1)), int(range_match.group(2))
+                specs = self._platform_field_specs.get(platform, {})
+                shallow_leaves = {
+                    field.rsplit(".", 1)[-1]
+                    for field in specs
+                    if "." not in field
+                }
+                age_min_fields = [
+                    field for field in specs if field.rsplit(".", 1)[-1] == "age_min"
+                ]
+                age_max_fields = [
+                    field for field in specs if field.rsplit(".", 1)[-1] == "age_max"
+                ]
+                for field in age_min_fields:
+                    if field == "updates" or field.startswith("updates."):
+                        continue
+                    if self._value_at_parameter(params[platform], field) is None:
+                        self._assign_parameter(params[platform], field, lower)
+                for field in age_max_fields:
+                    if field == "updates" or field.startswith("updates."):
+                        continue
+                    if self._value_at_parameter(params[platform], field) is None:
+                        self._assign_parameter(params[platform], field, upper)
+                for field, spec in specs.items():
+                    if field == "updates" or field.startswith("updates."):
+                        continue
+                    if "." in field and field.rsplit(".", 1)[-1] in shallow_leaves:
+                        continue
+                    if self._value_at_parameter(params[platform], field) is not None or not field.rsplit(".", 1)[-1].endswith("age_groups"):
+                        continue
+                    groups = []
+                    for option in self._schema_options(spec):
+                        match = re.search(r"(?:AGE|age)[_ -]?(\d{1,3})[_ -](\d{1,3}|\+)", str(option))
+                        if not match:
+                            continue
+                        start = int(match.group(1))
+                        end = upper if match.group(2) == "+" else int(match.group(2))
+                        if start <= upper and end >= lower:
+                            groups.append(option)
+                    if groups:
+                        self._assign_parameter(params[platform], field, groups)
+
+            budget_match = re.search(
+                r"(?:日预算|每天预算|daily\s+budget|per\s+day)\s*(?:是|为|=|:|：)?\s*(\d+(?:\.\d+)?)",
+                user_input,
+                re.IGNORECASE,
+            )
+            if budget_match:
+                for field in self._platform_field_specs.get(platform, {}):
+                    if field == "updates" or field.startswith("updates."):
+                        continue
+                    if field.rsplit(".", 1)[-1] == "daily_budget":
+                        if self._value_at_parameter(params[platform], field) is None:
+                            self._assign_parameter(
+                                params[platform], field, float(budget_match.group(1))
+                            )
+
+    @staticmethod
+    def _assign_parameter(target: dict[str, Any], field: str, value: Any) -> None:
+        parts = [part for part in str(field).split(".") if part]
+        if not parts:
+            return
+        current = target
+        for part in parts[:-1]:
+            child = current.get(part)
+            if not isinstance(child, dict):
+                child = {}
+                current[part] = child
+            current = child
+        current[parts[-1]] = value
+
+    @staticmethod
+    def _value_at_parameter(target: Mapping[str, Any], field: str) -> Any:
+        current: Any = target
+        for part in str(field).split("."):
+            if not isinstance(current, Mapping) or part not in current:
+                return None
+            current = current[part]
+        return current
     
     def inject_llm(self, llm_client) -> None:
         """注入自定义 LLM 客户端"""
@@ -356,6 +726,16 @@ age_min、age_max 或其他未声明的 Provider 字段。对于平台只能提�
             data = json.loads(json_str)
             data.setdefault("raw_input", user_input)
             normalized = self._normalize_intent(data)
+            # The model is the primary interpreter, but provider-owned schema
+            # semantics are the deterministic safety net.  Re-read values that
+            # are explicitly present in the user's sentence so a model that
+            # returns only ``objective`` (or a human label such as ``Android
+            # app``) still converges on the same canonical Tool input as the
+            # card path.  This is deliberately schema-driven: it cannot add a
+            # field or invent a dynamic resource ID.
+            normalized = self._enrich_intent_from_user_input(
+                normalized, user_input
+            )
             intent = ParsedIntent(**normalized)
             if self._needs_intent_repair(intent):
                 repaired = self._repair_intent_with_llm(
@@ -546,6 +926,123 @@ age_min、age_max 或其他未声明的 Provider 字段。对于平台只能提�
     @staticmethod
     def _canonical_catalog_platform(platform: Any) -> str:
         return parser_platform(str(platform or "").strip().lower())
+
+    @staticmethod
+    def _merge_missing_values(
+        extracted: Any, model_value: Any,
+    ) -> Any:
+        """Merge deterministic user-text extraction under model output.
+
+        A non-empty LLM value wins. Empty values are treated as omitted so a
+        model is not required to echo every field that the user supplied. The
+        recursive merge is important for nested provider objects while list
+        values remain atomic (the model may have intentionally chosen a
+        narrower list).
+        """
+        if isinstance(extracted, Mapping) and isinstance(model_value, Mapping):
+            merged = dict(extracted)
+            for key, value in model_value.items():
+                if key in merged:
+                    merged[key] = LLMIntentParser._merge_missing_values(
+                        merged[key], value
+                    )
+                else:
+                    merged[key] = value
+            return merged
+        if model_value in (None, "", [], {}):
+            return extracted
+        return model_value
+
+    @classmethod
+    def _overlay_explicit_dynamic_values(
+        cls,
+        explicit: Any,
+        merged: Any,
+        specs: Mapping[str, Mapping[str, Any]],
+        prefix: str = "",
+    ) -> Any:
+        """Give an explicitly typed resource ID precedence over model text.
+
+        The LLM may summarize a user's request with a placeholder such as
+        ``my-app``. If the user also wrote ``App ID app-123``, the typed value
+        is authoritative. This overlay applies only to account/resource ID
+        fields declared by Tool metadata; ordinary enum choices remain under
+        the normal semantic/model merge.
+        """
+        if not isinstance(explicit, Mapping) or not isinstance(merged, Mapping):
+            return merged
+        result = dict(merged)
+        for key, explicit_value in explicit.items():
+            path = f"{prefix}.{key}" if prefix else str(key)
+            spec = specs.get(path)
+            leaf = str(key).rsplit(".", 1)[-1]
+            lookup = (
+                spec.get("lookup_tool")
+                or (
+                    spec.get("lookup", {}).get("tool")
+                    if isinstance(spec, Mapping) and isinstance(spec.get("lookup"), Mapping)
+                    else None
+                )
+            ) if isinstance(spec, Mapping) else None
+            is_identifier = leaf in {
+                "account_id", "advertiser_id", "customer_id", "manager_customer_id",
+                "campaign_id", "ad_group_id", "adgroup_id", "ad_id", "app_id",
+                "pixel_id", "audience_id", "page_id", "conversion_id", "catalog_id",
+                "product_set_id", "form_id", "post_id", "identity_id", "video_id",
+                "resource_name", "image_hash",
+            } or leaf.endswith("_id")
+            if explicit_value not in (None, "", [], {}) and (lookup or is_identifier):
+                result[str(key)] = explicit_value
+            elif isinstance(explicit_value, Mapping) and isinstance(result.get(key), Mapping):
+                result[str(key)] = cls._overlay_explicit_dynamic_values(
+                    explicit_value, result[key], specs, path
+                )
+        return result
+
+    def _enrich_intent_from_user_input(
+        self, normalized: dict[str, Any], user_input: str,
+    ) -> dict[str, Any]:
+        """Complete an LLM result with only declared, explicit user values."""
+        result = dict(normalized or {})
+        platforms = list(result.get("platforms") or [])
+        if not platforms:
+            # Platform aliases are published by Skills/Capabilities. This is
+            # useful when the model omitted platforms, but never broadens a
+            # model-selected platform set.
+            platforms = self._detect_platforms(user_input)
+            result["platforms"] = platforms
+        if not platforms:
+            return result
+
+        extracted = self._extract_params_from_input(user_input, platforms)
+        model_params = result.get("platform_params")
+        result["platform_params"] = self._merge_missing_values(
+            extracted,
+            model_params if isinstance(model_params, Mapping) else {},
+        )
+        for platform in platforms:
+            result["platform_params"].setdefault(platform, {})
+            result["platform_params"][platform] = self._overlay_explicit_dynamic_values(
+                extracted.get(platform, {}) if isinstance(extracted, Mapping) else {},
+                result["platform_params"].get(platform, {}),
+                self._platform_field_specs.get(platform, {}),
+            )
+
+        # ``campaign_type`` is a generic intent field. When a provider schema
+        # explicitly declares that it is the intent source, normalize labels
+        # such as “app conversion” to the provider's canonical selector value.
+        # No provider name or campaign table is kept in Core.
+        generic_type = result.get("campaign_type")
+        if generic_type not in (None, ""):
+            for platform in platforms:
+                for field, spec in self._platform_field_specs.get(platform, {}).items():
+                    if spec.get("intent_field") != "campaign_type":
+                        continue
+                    candidate = self._normalize_declared_value(generic_type, spec)
+                    if candidate in self._schema_options(spec):
+                        result["campaign_type"] = candidate
+                        break
+        return result
     
     def _parse_with_rules(self, user_input: str) -> ParsedIntent:
         """
@@ -595,17 +1092,18 @@ age_min、age_max 或其他未声明的 Provider 字段。对于平台只能提�
         # 从用户输入中提取参数（支持中文和英文）
         platform_params = self._extract_params_from_input(user_input, platforms)
         
-        return ParsedIntent(
-            intent_type=intent_type,
-            raw_input=user_input,
-            platforms=platforms,
-            objective=objective,
-            campaign_type=campaign_type,
-            budget=budget,
-            date_range=date_range,
-            creative_materials=materials,
-            platform_params=platform_params,
-        )
+        normalized = self._normalize_intent({
+            "intent_type": intent_type,
+            "raw_input": user_input,
+            "platforms": platforms,
+            "objective": objective,
+            "campaign_type": campaign_type,
+            "budget": budget,
+            "date_range": date_range,
+            "creative_materials": materials,
+            "platform_params": platform_params,
+        })
+        return ParsedIntent(**self._enrich_intent_from_user_input(normalized, user_input))
 
     def _detect_intent_type(self, text: str) -> str:
         """检测意图类型（注意顺序：更具体的规则放在前面）"""
@@ -834,6 +1332,71 @@ age_min、age_max 或其他未声明的 Provider 字段。对于平台只能提�
             )
             if account_match:
                 params[platform][account_key] = account_match.group(1)
+
+        # A continuation turn often contains only “account ID is …” or
+        # “App ID: …” and omits the provider name.  For a single active
+        # platform this is unambiguous; for multiple platforms we keep the
+        # strict qualified form above so IDs can never cross channels.
+        if len(platforms) == 1:
+            platform = platforms[0]
+            field_specs = self._platform_field_specs.get(platform, {})
+            account_keys = [
+                key for key in field_specs
+                if key in {"account_id", "advertiser_id", "customer_id"}
+            ]
+            if account_keys:
+                account_phrase = "|".join(
+                    re.escape(value) for value in (
+                        "account id", "advertiser id", "customer id",
+                        "ad account id", "账户 id", "账户ID", "广告账户 id",
+                    )
+                )
+                generic_account = re.search(
+                    rf"(?:{account_phrase})\s*(?:是|为|=|:|：)?\s*([A-Za-z0-9][\w-]*)",
+                    user_input,
+                    re.IGNORECASE,
+                )
+                if generic_account:
+                    params[platform].setdefault(account_keys[0], generic_account.group(1))
+
+            # Explicit dynamic resource IDs are safe to accept as user input;
+            # unlike “my app” they are not inferred.  The set of fields comes
+            # from the registered Tool schemas, and provider-specific Chinese
+            # labels can be published with ``input_aliases``.
+            def is_array_item_path(field_path: str) -> bool:
+                parts = str(field_path).split(".")
+                for index in range(1, len(parts)):
+                    parent = field_specs.get(".".join(parts[:index]))
+                    if isinstance(parent, Mapping) and parent.get("type") == "array":
+                        items = parent.get("items")
+                        if isinstance(items, Mapping) and isinstance(items.get("properties"), Mapping):
+                            return True
+                return False
+
+            for key, spec in field_specs.items():
+                leaf = str(key).rsplit(".", 1)[-1]
+                if not (
+                    leaf.endswith("_id") or leaf in {"image_hash", "resource_name"}
+                ) or key in params[platform] or is_array_item_path(key):
+                    continue
+                aliases = [leaf.replace("_", " ")]
+                declared_aliases = spec.get("input_aliases") if isinstance(spec, dict) else None
+                if isinstance(declared_aliases, str):
+                    aliases.append(declared_aliases)
+                elif isinstance(declared_aliases, (list, tuple, set)):
+                    aliases.extend(str(alias) for alias in declared_aliases)
+                alias_pattern = "|".join(re.escape(alias) for alias in aliases if alias)
+                if not alias_pattern:
+                    continue
+                identifier = re.search(
+                    rf"(?:{alias_pattern})\s*(?:是|为|=|:|：)?\s*([A-Za-z0-9][\w:.-]*)",
+                    user_input,
+                    re.IGNORECASE,
+                )
+                if identifier:
+                    self._assign_parameter(
+                        params[platform], key, identifier.group(1)
+                    )
         
         # campaign_id 提取 - 支持多种格式
         # 格式1: campaign_id=12345 或 campaign_id: 12345
@@ -917,7 +1480,7 @@ age_min、age_max 或其他未声明的 Provider 字段。对于平台只能提�
             )
             if key.lower() not in {
             "campaign_id", "campaign_ids", "ad_group_id", "adgroup_id", "ad_id",
-            "account_id", "customer_id", "advertiser_id", "budget", "status",
+            "account_id", "customer_id", "advertiser_id", "budget", "status", "id",
             }
         }
 
@@ -965,9 +1528,9 @@ age_min、age_max 或其他未声明的 Provider 字段。对于平台只能提�
                     )
                 match = qualified or unqualified
                 if match:
-                    params[platform][key] = parse_parameter_value(
+                    self._assign_parameter(params[platform], key, parse_parameter_value(
                         key, match.group(1), field_specs.get(key)
-                    )
+                    ))
         
         # campaign_name 提取 - 支持 "名称=xxx"、"name: xxx"、"：xxx"、"详情: xxx" 等格式
         name_patterns = [
@@ -1018,7 +1581,10 @@ age_min、age_max 或其他未声明的 Provider 字段。对于平台只能提�
                 break
 
         # 更新请求的最小结构化参数，避免把自然语言原样交给 Handler。
-        if any(kw in text for kw in ["更新", "修改", "编辑", "update", "modify", "edit", "暂停", "恢复", "启用"]):
+        is_creation_request = any(
+            kw in text for kw in ["创建", "新建", "投放", "launch", "create", "promote"]
+        )
+        if not is_creation_request and any(kw in text for kw in ["更新", "修改", "编辑", "update", "modify", "edit", "暂停", "恢复", "启用"]):
             updates = {}
             status_match = re.search(r'(?:状态|status)[=：:\s]+([\w-]+)', text, re.IGNORECASE)
             if status_match:
@@ -1036,6 +1602,12 @@ age_min、age_max 或其他未声明的 Provider 字段。对于平台只能提�
                     # TikTok campaign_group_status vs Meta status) must never
                     # mutate the object that another channel receives.
                     params[p]["updates"] = dict(updates)
+
+        # The explicit ``field=value`` syntax above is useful for power users;
+        # this second pass handles ordinary conversational phrases such as
+        # “TikTok App 转化广告，18 到 35 岁，日预算 100”.  It only writes
+        # values that a currently registered Tool schema declares.
+        self._semantic_parameter_values(user_input, platforms, params)
         
         return params
     
@@ -1204,11 +1776,32 @@ age_min、age_max 或其他未声明的 Provider 字段。对于平台只能提�
                     # explicitly declare either name in its own schema.
                     "operation", "note",
                 }
-                normalized_params[normalized] = {
-                    field: field_value
-                    for field, field_value in platform_values.items()
-                    if field not in control_fields or field in declared_fields
-                }
+                def normalize_values(current: Any, prefix: str = "") -> Any:
+                    if isinstance(current, dict):
+                        result: dict[str, Any] = {}
+                        for field, field_value in current.items():
+                            field_name = str(field)
+                            path = f"{prefix}.{field_name}" if prefix else field_name
+                            spec = declared_fields.get(path)
+                            if field_name in control_fields and path not in declared_fields:
+                                continue
+                            if spec is not None:
+                                field_value = self._normalize_declared_value(
+                                    field_value, spec
+                                )
+                            if isinstance(field_value, (dict, list)):
+                                field_value = normalize_values(field_value, path)
+                            result[field_name] = field_value
+                        return result
+                    if isinstance(current, list):
+                        return [
+                            normalize_values(item, prefix)
+                            if isinstance(item, (dict, list)) else item
+                            for item in current
+                        ]
+                    return current
+
+                normalized_params[normalized] = normalize_values(platform_values)
         for p in normalized_platforms:
             normalized_params.setdefault(p, {})
         data["platform_params"] = normalized_params

@@ -5,6 +5,7 @@
   "ad_format": "SINGLE_VIDEO",
   "title": "TikTok 潜在客户视频广告",
   "description": "TikTok 先确定潜在客户目标，再配置表单推广方式、优化和定向。",
+  "match_terms": ["潜在客户", "线索获客", "表单获客", "lead generation", "lead gen"],
   "selector": {"dimension": "objective", "field": "campaign.objective_type", "values": ["LEAD_GENERATION"], "label": "TikTok 推广目标", "options": [{"value": "LEAD_GENERATION", "label": "潜在客户"}]},
   "tools": ["tiktok_create_campaign", "tiktok_create_adgroup", "tiktok_create_lead_ad"],
   "resources": ["campaign", "ad_group", "ad"],
