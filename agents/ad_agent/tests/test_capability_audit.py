@@ -148,10 +148,15 @@ def test_creation_contract_audit_closes_blueprint_and_lookup_sources_without_io(
     report = audit_creation_contracts(build_creation_runtime())
 
     assert report["issues"] == []
-    assert report["blueprint_count"] == 24
+    assert report["blueprint_count"] == 26
     assert report["creation_tool_count"] > 0
     assert report["lookup_contract_count"] > 0
     assert not report["unresolved_fields"]
+    assert report["blueprint_coverage"]["tiktok"]["unmapped_guided_formats"] == []
+    assert not next(
+        row for row in report["blueprint_coverage"]["tiktok"]["formats"]
+        if row["format_id"] == "brand.topview"
+    )["blueprints"]
     assert report["selector_overlaps"] == [{
         "provider": "google-ads",
         "dimension": "ad_format",

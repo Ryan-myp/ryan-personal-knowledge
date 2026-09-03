@@ -3344,6 +3344,38 @@ class AgentRuntime:
                 "parameters": self._redact_for_persistence(intent.platform_params or {}),
             },
         )
+        # A credential-shaped field can arrive through the LLM/parser output
+        # even when it was originally pasted in natural language.  Redaction
+        # protects the value, but must not turn the request into a normal
+        # creation flow.  Reject the structured intent before Skill loading,
+        # account resolution, lookup planning, or Tool execution.
+        parsed_protected_paths = self.security.validate_input_redline(
+            intent.platform_params or {}
+        )
+        if parsed_protected_paths:
+            error = (
+                "请求包含禁止传入的凭证/账户配置字段："
+                + ", ".join(parsed_protected_paths)
+            )
+            trace.error(reason="protected_input")
+            trace.done("failed", safe_metadata={"reason": "protected_input"})
+            self.persist_conversation_turn(
+                session, turn_id, safe_user_input, error,
+                execution_trace=trace,
+            )
+            return {
+                "session_id": session_id,
+                "turn_id": turn_id,
+                "timestamp": datetime.now().isoformat(),
+                "intent": None,
+                "tool_plan": {},
+                "tool_selection": None,
+                "results": [],
+                "reply": "❌ 参数契约阻止本次请求：" + error,
+                "needs_confirmation": False,
+                "confirmation_payload": None,
+                "policy_errors": [error],
+            }
         # Refresh advisory context with the parsed intent.  This changes only
         # the model-facing explanation/context; IntentRouter remains the sole
         # authority for the executable plan below.

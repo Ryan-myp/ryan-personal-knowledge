@@ -664,6 +664,18 @@ def test_generic_token_is_a_red_line_in_structured_inputs():
     assert "token" in result["policy_errors"][0]
 
 
+def test_credential_in_natural_language_is_rejected_after_parser_redaction():
+    runtime = AgentRuntime(require_llm=False)
+    result = runtime.run(
+        "创建 TikTok campaign，目标=APP_PROMOTION，access_token=natural-language-secret",
+    )
+
+    assert result["results"] == []
+    assert "参数契约阻止" in result["reply"]
+    assert "access_token" in result["reply"]
+    assert "natural-language-secret" not in str(result)
+
+
 def test_account_configuration_fields_are_only_allowed_as_top_level_selectors():
     runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
     calls = []

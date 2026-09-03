@@ -214,7 +214,7 @@ Provider live lookup 返回的动态选项会附带短时 `selection_token`。�
 
 ### Harness Engineering 评估
 
-当前核心 Harness 已具备：受限 Tool/Skill 契约、统一 Runtime 执行入口、Skill-owned Policy/Feature 扩展、权限/账户白名单、dry-run、显式确认、持久化幂等、workflow checkpoint/lease/recovery、Provider 回查入口、LLM 输出后的二次 schema 校验，以及下一回合可用的脱敏 Tool 结果上下文。另有 `scripts/audit_capabilities.py`、`scripts/validate_contracts.py` 和 `contracts/builtin_tools.json` 提供 API Surface、版本化契约快照、Provider 方法覆盖率和 drift gate。跨渠道批量状态保持为 `ACTIVE/PAUSED` 中性值，最终字段和值由所选 Tool 的 Provider Schema 映射。结论是“核心骨架符合，尚未达到生产闭环”，不能把当前 269 个工具数或单元测试通过当成 Provider live 已验证。
+当前核心 Harness 已具备：受限 Tool/Skill 契约、统一 Runtime 执行入口、Skill-owned Policy/Feature 扩展、权限/账户白名单、dry-run、显式确认、持久化幂等、workflow checkpoint/lease/recovery、Provider 回查入口、LLM 输出后的二次 schema 校验，以及下一回合可用的脱敏 Tool 结果上下文。另有 `scripts/audit_capabilities.py`、`scripts/validate_contracts.py` 和 `contracts/builtin_tools.json` 提供 API Surface、版本化契约快照、Provider 方法覆盖率和 drift gate。跨渠道批量状态保持为 `ACTIVE/PAUSED` 中性值，最终字段和值由所选 Tool 的 Provider Schema 映射。结论是“核心骨架符合，尚未达到生产闭环”，不能把当前 294 个工具数或单元测试通过当成 Provider live 已验证。
 
 当前已增加统一 `PluginRegistry`：所有内置 Capability、Runtime Feature、Response Renderer、受信任可执行 Skill 和租户托管 Skill 都登记为带 `PluginManifest` 的扩展，并提供依赖排序、版本约束、启停/卸载和安全快照；`GET /plugins` 只返回 Manifest 与生命周期元数据。这个阶段完成的是插件内核和兼容适配，不代表已经支持任意第三方代码热加载。
 

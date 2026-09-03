@@ -2,7 +2,7 @@ id: tiktok-campaign-dry-run
 title: TikTok campaign uses the registered Tool and dry-run boundary
 tag: functional_test
 input:
-  prompt: "创建 TikTok campaign; name=skill-up-app; objective_type=APP_PROMOTION; campaign_type=REGULAR_CAMPAIGN; budget_mode=BUDGET_MODE_DAY; daily_budget=100; app_promotion_type=APP_ACQUISITION"
+  prompt: "创建 TikTok campaign; account_id=7397068114548195329; name=skill-up-app; objective_type=APP_PROMOTION; campaign_type=REGULAR_CAMPAIGN; budget_mode=BUDGET_MODE_DAY; daily_budget=100; app_promotion_type=APP_ACQUISITION"
 expect:
   exit_code: 0
   must_contain:

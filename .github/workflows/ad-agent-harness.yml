@@ -36,7 +36,11 @@ jobs:
       - name: Compile Python sources
         run: python -m compileall -q agents/ad_agent
       - name: Validate executable tool contracts
-        run: python agents/ad_agent/scripts/validate_contracts.py
+        run: python agents/ad_agent/scripts/validate_contracts.py --check-snapshot agents/ad_agent/contracts/builtin_tools.json
+      - name: Audit provider capability coverage
+        run: python agents/ad_agent/scripts/audit_capabilities.py
+      - name: Audit creation blueprints and lookup sources
+        run: python agents/ad_agent/scripts/audit_creation_contracts.py --strict-guided
       - name: Run contract and golden tests
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"

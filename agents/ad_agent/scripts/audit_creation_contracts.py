@@ -132,6 +132,99 @@ def _needs_source(path: str, spec: Mapping[str, Any]) -> bool:
     return bool(_RESOURCE_FIELD.search(name) or name in _RESOURCE_NAMES)
 
 
+def _format_tokens(value: Any) -> set[str]:
+    """Return comparable tokens for provider format identifiers.
+
+    Format identifiers intentionally remain provider-owned.  This helper is
+    only for reporting whether a catalog entry has a Blueprint candidate; it
+    does not create a routing alias or make the Runtime infer a provider
+    format.  For example, ``link_traffic`` and ``traffic`` can be shown as a
+    related family while still remaining distinct contracts.
+    """
+    return {
+        token
+        for token in re.split(r"[^a-z0-9]+", str(value or "").casefold())
+        if token
+    }
+
+
+def _blueprint_match_score(entry: Mapping[str, Any], blueprint: Any) -> int:
+    """Score a non-authoritative catalog-to-Blueprint relationship.
+
+    Exact and family matches are preferred.  Shared Tool references are a
+    useful fallback for formats such as TikTok App/Lead variants, whose
+    Blueprint selects the family through an objective rather than repeating
+    the catalog's format id.  The score is surfaced as audit evidence only.
+    """
+    format_id = str(entry.get("format_id") or "")
+    category = str(entry.get("category") or "")
+    blueprint_format = str(getattr(blueprint, "ad_format", "") or "")
+    if format_id.casefold() == blueprint_format.casefold():
+        return 100
+    if category and category.casefold() == blueprint_format.casefold():
+        return 80
+    entry_tokens = _format_tokens(format_id) | _format_tokens(category)
+    blueprint_tokens = _format_tokens(blueprint_format)
+    if entry_tokens & blueprint_tokens:
+        return 60
+    entry_tools = {str(item) for item in (entry.get("tool_names") or [])}
+    blueprint_tools = {str(item) for item in (getattr(blueprint, "tools", ()) or ())}
+    if entry_tools & blueprint_tools:
+        return 20
+    return 0
+
+
+def _audit_blueprint_coverage(runtime: AgentRuntime) -> dict[str, Any]:
+    """Report format-to-Blueprint coverage without changing execution rules.
+
+    A catalog can legitimately be partial or declared-only, so missing
+    Blueprint mappings are gaps rather than hard contract errors.  Keeping
+    them explicit prevents the UI/planner from presenting a format as a
+    guided creation flow merely because a broad Tool exists.
+    """
+    by_provider: dict[str, dict[str, Any]] = {}
+    for provider in sorted(getattr(runtime, "ad_format_catalogs", {}) or {}):
+        catalogs = runtime.list_ad_formats(platform=provider)
+        blueprints = runtime.creation_blueprints.list(provider=provider)
+        rows: list[dict[str, Any]] = []
+        missing_guided: list[str] = []
+        for entry in catalogs:
+            candidates = sorted(
+                (
+                    (score, blueprint)
+                    for blueprint in blueprints
+                    if (score := _blueprint_match_score(entry, blueprint)) > 0
+                ),
+                key=lambda item: (-item[0], item[1].blueprint_id, item[1].version),
+            )
+            mapped = [
+                {
+                    "blueprint_id": blueprint.blueprint_id,
+                    "version": blueprint.version,
+                    "score": score,
+                }
+                for score, blueprint in candidates
+            ]
+            coverage = str(entry.get("coverage") or "")
+            if coverage in {
+                "supported_dry_run", "partial_dry_run"
+            } and not mapped:
+                missing_guided.append(str(entry.get("format_id") or ""))
+            rows.append({
+                "format_id": entry.get("format_id"),
+                "coverage": coverage,
+                "blueprints": mapped,
+            })
+        mapped_count = sum(1 for row in rows if row["blueprints"])
+        by_provider[provider] = {
+            "format_count": len(rows),
+            "mapped_count": mapped_count,
+            "unmapped_guided_formats": missing_guided,
+            "formats": rows,
+        }
+    return by_provider
+
+
 def audit_creation_contracts(runtime: AgentRuntime) -> dict[str, Any]:
     issues: list[str] = []
     lookup_contracts: list[dict[str, Any]] = []
@@ -199,6 +292,7 @@ def audit_creation_contracts(runtime: AgentRuntime) -> dict[str, Any]:
             f"{item['tool']}.{item['field']}: provider resource field needs lookup_tool or manual_entry"
         )
 
+    blueprint_coverage = _audit_blueprint_coverage(runtime)
     return {
         "creation_tool_count": len(creation_tools),
         "blueprint_count": len(runtime.creation_blueprints.list()),
@@ -206,6 +300,7 @@ def audit_creation_contracts(runtime: AgentRuntime) -> dict[str, Any]:
         "lookup_contracts": lookup_contracts,
         "selector_overlaps": selector_overlaps,
         "unresolved_fields": unresolved_fields,
+        "blueprint_coverage": blueprint_coverage,
         "issues": issues,
     }
 
@@ -226,6 +321,11 @@ def build_runtime() -> AgentRuntime:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="print the full JSON report")
+    parser.add_argument(
+        "--strict-guided",
+        action="store_true",
+        help="fail when a supported/partial ad format has no Blueprint candidate",
+    )
     args = parser.parse_args(argv)
     report = audit_creation_contracts(build_runtime())
     if args.json:
@@ -236,10 +336,25 @@ def main(argv: list[str] | None = None) -> int:
             f"{report['blueprint_count']} blueprints, "
             f"{report['lookup_contract_count']} lookup contracts"
         )
+        for provider, coverage in report["blueprint_coverage"].items():
+            missing = coverage["unmapped_guided_formats"]
+            suffix = f"；待补 Blueprint: {', '.join(missing)}" if missing else ""
+            print(
+                f"- {provider}: {coverage['mapped_count']}/{coverage['format_count']} "
+                f"formats mapped{suffix}"
+            )
         if report["issues"]:
             print("发现问题：")
             for issue in report["issues"]:
                 print(f"- {issue}")
+    guided_gaps = [
+        f"{provider}:{format_id}"
+        for provider, coverage in report["blueprint_coverage"].items()
+        for format_id in coverage["unmapped_guided_formats"]
+    ]
+    if args.strict_guided and guided_gaps:
+        print("缺少引导 Blueprint：" + ", ".join(guided_gaps))
+        return 1
     return 1 if report["issues"] else 0
 
 

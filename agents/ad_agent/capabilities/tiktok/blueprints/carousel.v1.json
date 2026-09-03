@@ -1,0 +1,35 @@
+{
+  "id": "tiktok.carousel",
+  "version": "1.0.0",
+  "provider": "tiktok",
+  "ad_format": "CAROUSEL",
+  "title": "TikTok Carousel 广告",
+  "description": "配置至少两张图片的轮播广告；素材可从已上传的 TikTok 图片资产中选择。",
+  "match_terms": ["Carousel", "轮播广告", "多图广告", "图片轮播"],
+  "tools": ["tiktok_create_campaign", "tiktok_create_adgroup", "tiktok_create_carousel_ad"],
+  "resources": ["campaign", "ad_group", "ad"],
+  "fields": [
+    {"path": "campaign.name", "tool_ref": "tiktok_create_campaign.name", "label": "Campaign 名称", "required": true},
+    {"path": "campaign.objective_type", "tool_ref": "tiktok_create_campaign.objective_type", "label": "推广目标", "required": true, "source": "enum", "options": ["PRODUCT_SALES", "TRAFFIC", "WEB_CONVERSIONS", "APP_PROMOTION"]},
+    {"path": "campaign.campaign_type", "tool_ref": "tiktok_create_campaign.campaign_type", "label": "Campaign 类型", "required": true, "source": "enum", "options": ["REGULAR_CAMPAIGN", "IOS14_CAMPAIGN"]},
+    {"path": "campaign.budget_mode", "tool_ref": "tiktok_create_campaign.budget_mode", "label": "预算模式", "required": true, "source": "enum", "options": ["BUDGET_MODE_DAY", "BUDGET_MODE_TOTAL"]},
+    {"path": "campaign.daily_budget", "tool_ref": "tiktok_create_campaign.daily_budget", "label": "日预算", "required_when": {"field": "campaign.budget_mode", "equals": "BUDGET_MODE_DAY"}},
+    {"path": "ad_group.name", "tool_ref": "tiktok_create_adgroup.name", "label": "广告组名称", "required": true},
+    {"path": "ad_group.campaign_id", "tool_ref": "tiktok_create_adgroup.campaign_id", "label": "所属 Campaign", "required": true, "source": "lookup", "lookup_tool": "tiktok_list_campaigns"},
+    {"path": "ad_group.promotion_type", "tool_ref": "tiktok_create_adgroup.promotion_type", "label": "推广方式", "required": true, "source": "enum", "options": ["WEBSITE", "CATALOG"]},
+    {"path": "ad_group.optimization_goal", "tool_ref": "tiktok_create_adgroup.optimization_goal", "label": "优化目标", "required": true, "source": "enum", "options": ["CLICK", "PRODUCT_SALES", "SHOP_PURCHASES", "CATALOG_SALES", "VALUE", "WEB_CONVERSIONS"]},
+    {"path": "ad_group.billing_event", "tool_ref": "tiktok_create_adgroup.billing_event", "label": "计费事件", "required": true, "source": "enum", "options": ["CPC", "OCPM"]},
+    {"path": "ad_group.budget_mode", "tool_ref": "tiktok_create_adgroup.budget_mode", "label": "广告组预算模式", "required": true, "source": "enum", "options": ["BUDGET_MODE_DAY", "BUDGET_MODE_INFINITE"]},
+    {"path": "ad_group.budget", "tool_ref": "tiktok_create_adgroup.budget", "label": "广告组预算", "required": true},
+    {"path": "ad_group.location_ids", "tool_ref": "tiktok_create_adgroup.location_ids", "label": "投放地区", "required": true, "source": "lookup", "lookup_tool": "tiktok_list_locations"},
+    {"path": "ad_group.placement_type", "tool_ref": "tiktok_create_adgroup.placement_type", "label": "版位模式", "required": true, "source": "enum", "options": ["PLACEMENT_TYPE_NORMAL", "PLACEMENT_TYPE_AUTOMATIC"]},
+    {"path": "ad_group.bid_type", "tool_ref": "tiktok_create_adgroup.bid_type", "label": "出价方式", "required": true, "source": "enum", "options": ["BID_TYPE_NO_BID", "BID_TYPE_CUSTOM", "BID_TYPE_MAX_CONVERSION"]},
+    {"path": "ad.name", "tool_ref": "tiktok_create_carousel_ad.name", "label": "广告名称", "required": true},
+    {"path": "ad.ad_format", "tool_ref": "tiktok_create_carousel_ad.ad_format", "label": "素材形式", "required": true, "source": "enum", "options": ["CAROUSEL"], "presentation": "derived_readonly"},
+    {"path": "ad.image_ids", "tool_ref": "tiktok_create_carousel_ad.image_ids", "label": "轮播图片（至少 2 张）", "required": true, "source": "lookup", "lookup_tool": "tiktok_list_images", "presentation": "asset_picker", "min_items": 2},
+    {"path": "ad.text", "tool_ref": "tiktok_create_carousel_ad.text", "label": "广告文案", "required": true, "presentation": "object_editor"}
+  ],
+  "rules": [
+    {"id": "objective_changed", "when": {"field": "campaign.objective_type", "changed": true}, "reset": ["ad_group.optimization_goal", "ad_group.billing_event"]}
+  ]
+}
