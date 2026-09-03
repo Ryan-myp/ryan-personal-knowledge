@@ -181,7 +181,16 @@ class SimpleToolRegistry(ToolRegistry):
         
         # 所有工具统一执行 Schema 校验，避免只依赖 Handler 自己实现校验。
         if defn.input_schema:
-            errors = validate_tool_input(defn.input_schema, input_data)
+            # A direct registry call is an execution seam, not a dry-run
+            # preview.  Write Tools must enforce their Provider contract here
+            # too, otherwise a caller could reach an argument builder with a
+            # missing provider field (or a live adapter) outside Runtime's
+            # normal policy path.
+            errors = validate_tool_input(
+                defn.input_schema,
+                input_data,
+                include_provider_contract=bool(defn.is_write_tool),
+            )
             if errors:
                 return ToolResult.error(f"Input validation failed: {errors}")
 

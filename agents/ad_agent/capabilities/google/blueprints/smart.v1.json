@@ -1,0 +1,26 @@
+{
+  "id": "google-ads.smart",
+  "version": "1.0.0",
+  "provider": "google-ads",
+  "ad_format": "SMART",
+  "title": "Google Smart Campaign 广告",
+  "description": "配置 Smart Campaign 的落地页、标题和描述素材。",
+  "selector": {"dimension": "ad_format", "field": "campaign.advertising_channel_type", "values": ["SMART"], "label": "Google 广告系列类型", "options": [{"value": "SMART", "label": "Smart Campaign"}]},
+  "tools": ["google_create_campaign", "google_create_specialized_ad_group", "google_create_smart_campaign_ad"],
+  "resources": ["campaign", "ad_group", "ad"],
+  "fields": [
+    {"path": "campaign.campaign_name", "tool_ref": "google_create_campaign.campaign_name", "label": "Campaign 名称", "required": true},
+    {"path": "campaign.advertising_channel_type", "tool_ref": "google_create_campaign.advertising_channel_type", "label": "广告系列类型（已根据入口匹配）", "required": true, "source": "enum", "options": ["SMART"], "presentation": "derived_readonly"},
+    {"path": "campaign.bidding_strategy", "tool_ref": "google_create_campaign.bidding_strategy", "label": "出价策略", "required": true, "source": "enum", "options": ["MAXIMIZE_CONVERSIONS", "TARGET_CPA"]},
+    {"path": "campaign.target_cpa_micros", "tool_ref": "google_create_campaign.target_cpa_micros", "label": "目标 CPA（微单位）", "visible_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_CPA"}, "required_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_CPA"}},
+    {"path": "campaign.daily_budget", "tool_ref": "google_create_campaign.daily_budget", "label": "日预算", "required": true},
+    {"path": "ad_group.name", "tool_ref": "google_create_specialized_ad_group.name", "label": "广告组名称", "required": true},
+    {"path": "ad_group.campaign_type", "tool_ref": "google_create_specialized_ad_group.campaign_type", "label": "广告组所属类型（自动匹配）", "required": true, "source": "enum", "options": ["SMART"], "presentation": "derived_readonly"},
+    {"path": "ad_group.type", "tool_ref": "google_create_specialized_ad_group.type", "label": "广告组类型（自动匹配）", "required": true, "source": "enum", "options": ["SMART_CAMPAIGN_ADS"], "presentation": "derived_readonly"},
+    {"path": "ad.name", "tool_ref": "google_create_smart_campaign_ad.name", "label": "广告名称", "required": true},
+    {"path": "ad.final_url", "tool_ref": "google_create_smart_campaign_ad.final_url", "label": "最终到达网址", "required": true},
+    {"path": "ad.headlines", "tool_ref": "google_create_smart_campaign_ad.headlines", "label": "标题素材（必须 3 条）", "required": true, "presentation": "text_list", "value_shape": "object_text"},
+    {"path": "ad.descriptions", "tool_ref": "google_create_smart_campaign_ad.descriptions", "label": "描述素材（必须 2 条）", "required": true, "presentation": "text_list", "value_shape": "object_text"}
+  ],
+  "rules": [{"id": "campaign_type_is_fixed", "when": {"field": "campaign.advertising_channel_type", "equals": "SMART"}, "preserve": ["campaign.advertising_channel_type", "ad_group.campaign_type", "ad_group.type"]}]
+}

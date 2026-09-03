@@ -8,6 +8,7 @@ the Runtime does not need a channel-specific form or field table.
 from __future__ import annotations
 
 import re
+import json
 from typing import Any, Mapping, Optional
 
 from .blueprint import (
@@ -30,6 +31,7 @@ _MAX_FIELDS = 160
 _MAX_OPTIONS = 100
 _PRESENTATIONS = {
     "text_list", "asset_picker", "file_reference", "derived_readonly",
+    "object_editor",
 }
 _SENSITIVE_FIELD = re.compile(
     r"(?:access[_-]?token|refresh[_-]?token|client[_-]?secret|app[_-]?secret|"
@@ -275,6 +277,41 @@ def _lookup_metadata(
     return result
 
 
+def _merge_conditions(*conditions: Any) -> Optional[dict[str, Any]]:
+    """Combine provider applicability and workflow visibility declaratively."""
+    normalized = [
+        _copy_json(condition)
+        for condition in conditions
+        if isinstance(condition, Mapping) and condition
+    ]
+    if not normalized:
+        return None
+
+    # A Blueprint may already describe the same condition that a Provider
+    # schema publishes.  Keep the composition semantics (all conditions must
+    # hold), but flatten and de-duplicate equivalent clauses so clients do not
+    # receive noisy ``all: [same, same]`` metadata.
+    clauses: list[dict[str, Any]] = []
+    for condition in normalized:
+        if isinstance(condition.get("all"), list):
+            clauses.extend(
+                item for item in condition["all"]
+                if isinstance(item, Mapping) and item
+            )
+        else:
+            clauses.append(condition)
+    unique: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for clause in clauses:
+        key = json.dumps(clause, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        if key not in seen:
+            seen.add(key)
+            unique.append(clause)
+    if len(unique) == 1:
+        return unique[0]
+    return {"all": unique}
+
+
 class CreationCardBuilder:
     """Build bounded parameter cards from registered declarative metadata."""
 
@@ -479,6 +516,28 @@ class CreationCardBuilder:
                             blocking.append(first_path)
         return constraints, blocking
 
+    def _schema_visibility(
+        self,
+        schema: Mapping[str, Any],
+        prefix: str,
+        known_paths: set[str],
+        alias_paths: Mapping[str, str],
+    ) -> Optional[dict[str, Any]]:
+        """Translate provider-owned UI applicability into Blueprint paths.
+
+        ``ui_visible_when`` is metadata, not executable logic.  It uses the
+        same compact condition vocabulary as ToolSchema conditional rules,
+        but is intentionally consumed only by the presentation layer.  The
+        provider can therefore keep one field contract while each creation
+        surface hides parameters that do not belong to the selected format.
+        """
+        condition = schema.get("ui_visible_when")
+        if not isinstance(condition, Mapping):
+            return None
+        return self._blueprint_condition(
+            condition, prefix, known_paths, alias_paths
+        )
+
     def expand_blueprint(self, blueprint: AdCreationBlueprint) -> AdCreationBlueprint:
         """Expose every safe top-level create parameter in a Blueprint form.
 
@@ -591,6 +650,11 @@ class CreationCardBuilder:
                     "source": _schema_field_source(raw_schema),
                     "auto_exposed": True,
                 }
+                visibility = self._schema_visibility(
+                    raw_schema, prefix, known_paths, alias_paths
+                )
+                if visibility is not None:
+                    field["visible_when"] = visibility
                 for key in (
                     "default", "option_labels", "manual_entry", "lookup_tool",
                     "lookup_result_key", "selection_value_fields", "selection_label_fields",
@@ -686,6 +750,19 @@ class CreationCardBuilder:
                 if field.get(key) is None and schema.get(key) is not None:
                     field[key] = _copy_json(schema[key])
 
+            provider_visibility = self._schema_visibility(
+                schema,
+                prefix_by_tool.get(tool_name, "resource"),
+                known_paths,
+                alias_paths,
+            )
+            if provider_visibility is not None:
+                merged_visibility = _merge_conditions(
+                    field.get("visible_when"), provider_visibility
+                )
+                if merged_visibility is not None:
+                    field["visible_when"] = merged_visibility
+
             # A declared field may omit a provider conditional because the
             # Blueprint only described its happy path.  Project the schema's
             # declarative rule when the Blueprint has not provided one.
@@ -765,6 +842,8 @@ class CreationCardBuilder:
                 selector_text = (
                     f"; selector={selector.get('dimension')}:{selector.get('values', [])}"
                 )
+            if blueprint.match_terms:
+                selector_text += f"; match_terms={list(blueprint.match_terms)}"
             fields = []
             for field in blueprint.fields[:30]:
                 tool_name, schema_path, schema = _schema_for_ref(self.tools, field["tool_ref"])
@@ -812,6 +891,19 @@ class CreationCardBuilder:
     def _resolve(self, intent: ParsedIntent, provider: str) -> tuple[Optional[AdCreationBlueprint], Any, dict[str, Any]]:
         provider_values = _provider_values(intent, provider)
         candidates = self.blueprints.list(provider=provider)
+        # A caller may already know the provider-owned format (for example
+        # ``DEMAND_GEN_CAROUSEL``).  This is more specific than the campaign
+        # channel selector and must win before natural-language matching.
+        explicit_format = provider_values.get("ad_format")
+        if explicit_format is not None:
+            explicit_matches = [
+                blueprint for blueprint in candidates
+                if _normalized(explicit_format) == _normalized(blueprint.ad_format)
+            ]
+            if len(explicit_matches) == 1:
+                return explicit_matches[0], provider_values, explicit_matches[0].ad_format
+
+        matching: list[tuple[AdCreationBlueprint, Any]] = []
         for blueprint in candidates:
             selector = blueprint.selector
             if selector is None:
@@ -829,10 +921,38 @@ class CreationCardBuilder:
                 if selected is None and dimension in {"ad_format", "campaign_type"}:
                     selected = getattr(intent, "campaign_type", None)
             if selected in selector.get("values", []):
-                return blueprint, provider_values, selected
+                matching.append((blueprint, selected))
+                continue
             for option in _selector_options(selector):
                 if _normalized(selected) in {_normalized(option["value"]), _normalized(option["label"])}:
-                    return blueprint, provider_values, option["value"]
+                    matching.append((blueprint, option["value"]))
+                    break
+
+        if len(matching) == 1:
+            blueprint, selector_value = matching[0]
+            return blueprint, provider_values, selector_value
+
+        # Blueprint authors can declare format-specific phrases without
+        # adding provider/channel branches to Runtime.  Only a unique best
+        # match is accepted; a generic request such as "Demand Gen" remains
+        # a selector card instead of silently choosing a creative variant.
+        raw_input = str(getattr(intent, "raw_input", "") or "")
+        scored: list[tuple[int, AdCreationBlueprint, Any]] = []
+        for blueprint, selector_value in matching:
+            scores = [
+                len(_normalized(term))
+                for term in blueprint.match_terms
+                if _normalized(term) and _normalized(term) in _normalized(raw_input)
+            ]
+            if scores:
+                scored.append((max(scores), blueprint, selector_value))
+        if scored:
+            best_score = max(item[0] for item in scored)
+            best = [item for item in scored if item[0] == best_score]
+            if len(best) == 1:
+                _, blueprint, selector_value = best[0]
+                return blueprint, provider_values, selector_value
+
         if len(candidates) == 1 and candidates[0].selector is None:
             return candidates[0], provider_values, None
         return None, provider_values, None
@@ -843,6 +963,37 @@ class CreationCardBuilder:
         candidates = [item for item in self.blueprints.list(provider=provider) if item.selector]
         if not candidates:
             return None
+        # If the conversation already supplied a valid parent selector, keep
+        # the card scoped to that branch.  Invalid or unknown values retain
+        # the full catalog so the user can correct them instead of receiving
+        # an empty card.  This is generic over selector dimensions and does
+        # not contain provider/channel names.
+        scoped: list[AdCreationBlueprint] = []
+        for blueprint in candidates:
+            selector = blueprint.selector or {}
+            dimension = str(selector.get("dimension") or "")
+            selected = provider_values.get(dimension)
+            if dimension == "ad_format" and provider_values.get("ad_format") is not None:
+                if _normalized(provider_values.get("ad_format")) == _normalized(blueprint.ad_format):
+                    scoped.append(blueprint)
+                continue
+            if selected is None:
+                for field in blueprint.fields:
+                    if str(field.get("path")) == str(selector.get("field")):
+                        selected = self._field_value(intent, provider_values, field)
+                        break
+            options = _selector_options(selector)
+            if selected is None:
+                continue
+            if selected in selector.get("values", []) or any(
+                _normalized(selected) in {
+                    _normalized(option["value"]), _normalized(option["label"])
+                }
+                for option in options
+            ):
+                scoped.append(blueprint)
+        if scoped:
+            candidates = scoped
         dimensions: dict[str, dict[str, Any]] = {}
         for blueprint in candidates:
             selector = blueprint.selector or {}
@@ -863,6 +1014,11 @@ class CreationCardBuilder:
             for option in _selector_options(selector):
                 if option not in entry["options"]:
                     entry["options"].append(option)
+                entry.setdefault("blueprint_options", []).append({
+                    "blueprint_id": blueprint.blueprint_id,
+                    "label": blueprint.title,
+                    "selector_value": option.get("value"),
+                })
         if not dimensions:
             return None
         fields = []
@@ -872,17 +1028,51 @@ class CreationCardBuilder:
                 current = provider_values.get(dimension)
             if current is None:
                 current = getattr(intent, "objective", None) if dimension == "objective" else getattr(intent, "campaign_type", None)
+            blueprint_options = item.get("blueprint_options", [])
+            duplicated_values = {
+                value for value in (
+                    option.get("selector_value") for option in blueprint_options
+                )
+                if sum(
+                    1 for option in blueprint_options
+                    if option.get("selector_value") == value
+                ) > 1
+            }
+            if duplicated_values:
+                # Keep the underlying provider selector value in metadata,
+                # but use the immutable Blueprint ID as the UI value so two
+                # variants sharing one campaign type remain selectable.
+                options = [
+                    {
+                        "value": option["blueprint_id"],
+                        "label": option["label"],
+                        "blueprint_id": option["blueprint_id"],
+                        "selector_value": option["selector_value"],
+                    }
+                    for option in blueprint_options
+                ]
+                selection_kind = "blueprint_variant"
+            else:
+                options = item["options"]
+                selection_kind = "provider_selector"
             valid_values = {option.get("value") for option in item["options"]}
             is_valid = current in valid_values or any(
                 _normalized(current) == _normalized(option.get("value"))
                 or _normalized(current) == _normalized(option.get("label"))
                 for option in item["options"]
             )
+            # A shared provider value (such as DEMAND_GEN) identifies the
+            # campaign family, not the concrete Blueprint.  Do not count it
+            # as a completed choice when the card must ask for a variant.
+            card_value = (
+                None if selection_kind == "blueprint_variant" else current
+            )
             fields.append({
                 "path": item["path"], "provider_field": item["provider_field"],
                 "tool": "", "label": item["label"], "control": "select",
-                "required": True, "state": "missing" if current is None else "set" if is_valid else "invalid",
-                "value": current, "options": item["options"], "source": "blueprint",
+                "required": True, "state": "missing" if card_value is None else "set" if is_valid else "invalid",
+                "value": card_value, "options": options, "source": "blueprint",
+                "selection_kind": selection_kind,
             })
         return {
             "type": "ad_creation_selector", "version": "1.0", "id": f"{provider}.creation-selector",
@@ -915,6 +1105,17 @@ class CreationCardBuilder:
             schema_options = _options(field, schema)
             if schema_options:
                 option_sources[str(field["path"])] = schema_options
+            # Resolve one-value derived fields before evaluating visibility.
+            # Otherwise a format-specific field such as Search headlines is
+            # evaluated against a missing ``ad_type`` and is hidden even
+            # though the Blueprint has already fixed that value.
+            path = str(field["path"])
+            if (
+                values.get(path) is None
+                and field.get("presentation") == "derived_readonly"
+                and len(schema_options) == 1
+            ):
+                values[path] = schema_options[0]
         evaluation = self.cascade.evaluate(blueprint, values, option_sources=option_sources)
         state_by_path = {item["path"]: item for item in evaluation.get("fields", [])}
         fields: list[dict[str, Any]] = []
@@ -960,6 +1161,8 @@ class CreationCardBuilder:
                 "value": value,
                 "source": field.get("source", "tool_schema"),
             }
+            if field.get("visible_when") is not None:
+                item["visible_when"] = _copy_json(field["visible_when"])
             constraints = _schema_constraints(schema)
             if constraints:
                 item["constraints"] = constraints
@@ -993,7 +1196,16 @@ class CreationCardBuilder:
                     state.get("missing_option_dependencies") or []
                 )
             if item["control"] == "object_editor":
-                properties = schema.get("properties") or {}
+                # An object editor may represent one object or a collection of
+                # objects (for example a Meta carousel or TikTok media list).
+                # In the latter case the item schema is the editor contract.
+                object_schema = schema
+                if (
+                    schema.get("type") == "array"
+                    and isinstance(schema.get("items"), Mapping)
+                ):
+                    object_schema = schema["items"]
+                properties = object_schema.get("properties") or {}
                 item["object_properties"] = {
                     str(name): {
                         key: value
@@ -1014,17 +1226,38 @@ class CreationCardBuilder:
                             "lookup_query_field": spec.get("lookup_query_field"),
                             "lookup_defaults": spec.get("lookup_defaults"),
                             "manual_entry": spec.get("manual_entry"),
+                            # Nested editors use the same declarative contract
+                            # as top-level fields.  Keep presentation and
+                            # provider applicability here instead of forcing a
+                            # frontend to fall back to an opaque JSON editor.
+                            "presentation": spec.get("presentation"),
+                            "value_shape": spec.get("value_shape"),
+                            "accept": spec.get("accept"),
+                            "ui_visible_when": spec.get("ui_visible_when"),
+                            "default": spec.get("default"),
+                            "minLength": spec.get("minLength"),
+                            "maxLength": spec.get("maxLength"),
+                            "minimum": spec.get("minimum"),
+                            "maximum": spec.get("maximum"),
                             "constraints": _schema_constraints(spec),
                             "properties": _copy_json(spec.get("properties") or {})
                             if isinstance(spec.get("properties"), Mapping) else None,
                             "additional_properties": spec.get("additionalProperties"),
-                            "required": name in (schema.get("required") or []),
+                            "required": name in (object_schema.get("required") or []),
                         }.items()
                         if value not in (None, "", {}, [])
                     }
                     for name, spec in properties.items()
                     if isinstance(spec, Mapping) and not _SENSITIVE_FIELD.search(str(name))
                 }
+            elif (
+                schema.get("type") == "array"
+                and isinstance(schema.get("items"), Mapping)
+                and isinstance(schema["items"].get("properties"), Mapping)
+            ):
+                # Preserve nested controls even when the collection itself is
+                # rendered by a specialized asset picker.
+                item["item_properties"] = _copy_json(schema["items"]["properties"])
             if item["control"] == "lookup":
                 item["lookup"] = {
                     **_lookup_metadata(self.tools, schema, field),

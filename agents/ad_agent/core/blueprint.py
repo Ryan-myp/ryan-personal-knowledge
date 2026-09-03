@@ -23,6 +23,7 @@ class BlueprintValidationError(ValueError):
 _SAFE_SOURCES = {"tool_schema", "enum", "lookup", "static"}
 _SAFE_PRESENTATIONS = {
     "text_list", "asset_picker", "file_reference", "derived_readonly",
+    "object_editor",
 }
 _FORBIDDEN_KEYS = {
     "script", "scripts", "command", "commands", "exec", "execute",
@@ -132,6 +133,7 @@ class AdCreationBlueprint:
     fields: tuple[dict[str, Any], ...]
     rules: tuple[dict[str, Any], ...]
     selector: Optional[dict[str, Any]]
+    match_terms: tuple[str, ...]
     raw: dict[str, Any]
 
     @classmethod
@@ -146,6 +148,19 @@ class AdCreationBlueprint:
         provider = _require_non_empty(document.get("provider"), "provider")
         ad_format = _require_non_empty(document.get("ad_format"), "ad_format")
         title = str(document.get("title") or blueprint_id).strip()
+
+        match_terms_value = document.get("match_terms", [])
+        if not isinstance(match_terms_value, list):
+            raise BlueprintValidationError("match_terms must be a list")
+        match_terms: list[str] = []
+        for index, value in enumerate(match_terms_value):
+            term = str(value or "").strip()
+            if not term:
+                raise BlueprintValidationError(f"match_terms[{index}] must be non-empty")
+            if len(term) > 120:
+                raise BlueprintValidationError(f"match_terms[{index}] is too long")
+            if term.casefold() not in {item.casefold() for item in match_terms}:
+                match_terms.append(term)
 
         tools_value = document.get("tools")
         if not isinstance(tools_value, list) or not tools_value:
@@ -359,6 +374,7 @@ class AdCreationBlueprint:
         raw["provider"] = provider
         raw["ad_format"] = ad_format
         raw["title"] = title
+        raw["match_terms"] = list(match_terms)
         raw["tools"] = list(tools)
         raw["fields"] = fields
         raw["rules"] = rules
@@ -376,6 +392,7 @@ class AdCreationBlueprint:
             fields=tuple(_copy_json(fields)),
             rules=tuple(_copy_json(rules)),
             selector=_copy_json(selector) if selector is not None else None,
+            match_terms=tuple(match_terms),
             raw=raw,
         )
 
@@ -622,6 +639,16 @@ class BlueprintRegistry:
             ]
         matching: list[AdCreationBlueprint] = []
         for blueprint in candidates:
+            # ``ad_format`` is a provider-owned variant identifier.  It is
+            # intentionally separate from the selector's campaign/channel
+            # field, because several ad formats can share one provider value
+            # (for example four Demand Gen creative variants).
+            requested_format = requested.get("ad_format")
+            if requested_format is None:
+                requested_format = nested_values.get("ad_format")
+            if requested_format is not None and str(requested_format).strip().casefold() == blueprint.ad_format.casefold():
+                matching.append(blueprint)
+                continue
             selector = blueprint.selector
             if selector is None:
                 if not requested:

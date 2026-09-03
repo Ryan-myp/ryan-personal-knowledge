@@ -4069,16 +4069,19 @@
             return data;
         }
 
-        function openBlueprintManager(provider = null, selectorValue = null) {
+        function openBlueprintManager(provider = null, selectorValue = null, blueprintId = null) {
             closeWorkspacePopovers();
             const overlay = document.getElementById('blueprintOverlay');
             if (!overlay) return;
             overlay.classList.add('active');
             overlay.setAttribute('aria-hidden', 'false');
-            loadCreationBlueprints().then(() => {
+            loadCreationBlueprints(blueprintId || null).then(() => {
                 if (!provider) return;
                 const item = blueprintState.items.find(candidate =>
-                    candidate.provider === provider && (!selectorValue || (candidate.selector?.values || []).map(String).includes(String(selectorValue)))
+                    candidate.provider === provider && (
+                        (blueprintId && candidate.id === blueprintId)
+                        || (!blueprintId && (!selectorValue || (candidate.selector?.values || []).map(String).includes(String(selectorValue))))
+                    )
                 );
                 if (item) selectBlueprint(item.id, selectorValue);
             });
@@ -6186,8 +6189,16 @@
                 return;
             }
             if (action === 'open_form') {
-                const selected = card.fields?.find(field => field.value)?.value || null;
-                openBlueprintManager(card.provider, selected);
+                const selectionField = card.fields?.find(field => field.selection_kind === 'blueprint_variant');
+                const selectedOption = selectionField?.options?.find(option => option.value === selectionField.value);
+                const selected = selectedOption?.selector_value
+                    || card.fields?.find(field => field.value)?.value
+                    || null;
+                openBlueprintManager(
+                    card.provider,
+                    selected,
+                    selectedOption?.blueprint_id || null,
+                );
                 return;
             }
             if (action === 'validate') {

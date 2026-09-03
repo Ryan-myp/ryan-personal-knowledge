@@ -371,8 +371,8 @@ def test_public_tool_contract_includes_operational_and_json_schema_fields():
              "budget_mode": "BUDGET_MODE_DAY", "campaign_type": "REGULAR_CAMPAIGN",
              "promotion_type": "WEBSITE", "billing_event": "OCPM", "budget": 100,
              "location_ids": ["US"], "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
-             "bid_type": "BID_TYPE_NO_BID", "landing_url": "https://example.com",
-             "media": {"video_id": "v1"}},
+                 "bid_type": "BID_TYPE_NO_BID", "landing_url": "https://example.com",
+                 "media": [{"video_id": "v1"}]},
             [
                 "tiktok_create_campaign",
                 "tiktok_create_product_sales_adgroup",

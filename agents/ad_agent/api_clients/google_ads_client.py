@@ -3489,10 +3489,25 @@ class GoogleAdsAPIClient(BasePlatformClient):
     ) -> dict[str, Any]:
         if not isinstance(carousel_cards, list) or len(carousel_cards) < 2:
             raise ValueError("carousel_cards must contain at least 2 cards")
+        normalized_cards: list[dict[str, Any]] = []
+        for index, card in enumerate(carousel_cards):
+            if not isinstance(card, dict) or not card:
+                raise ValueError(f"carousel_cards[{index}] must be a non-empty object")
+            normalized = self._camel_case_keys(card)
+            # The public Tool accepts either an Asset resource-name string or
+            # an object.  Normalize strings at this provider boundary so the
+            # v24 carousel payload always contains typed Asset references.
+            for asset_key in (
+                "marketingImageAsset", "squareMarketingImageAsset",
+                "portraitMarketingImageAsset",
+            ):
+                if isinstance(normalized.get(asset_key), str):
+                    normalized[asset_key] = self._asset_reference(normalized[asset_key])
+            normalized_cards.append(normalized)
         payload: dict[str, Any] = {
             "headline": self._text_asset(headline),
             "description": self._text_asset(description),
-            "carouselCards": [self._camel_case_keys(card) for card in carousel_cards],
+            "carouselCards": normalized_cards,
         }
         if business_name:
             payload["businessName"] = business_name

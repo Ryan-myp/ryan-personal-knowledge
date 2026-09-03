@@ -1,0 +1,24 @@
+{
+  "id": "google-ads.travel",
+  "version": "1.0.0",
+  "provider": "google-ads",
+  "ad_format": "TRAVEL",
+  "title": "Google Travel 广告",
+  "description": "配置关联的 Travel 账号后创建 Travel 广告。",
+  "selector": {"dimension": "ad_format", "field": "campaign.advertising_channel_type", "values": ["TRAVEL"], "label": "Google 广告系列类型", "options": [{"value": "TRAVEL", "label": "Travel"}]},
+  "tools": ["google_create_campaign", "google_create_specialized_ad_group", "google_create_travel_ad"],
+  "resources": ["campaign", "ad_group", "ad"],
+  "fields": [
+    {"path": "campaign.campaign_name", "tool_ref": "google_create_campaign.campaign_name", "label": "Campaign 名称", "required": true},
+    {"path": "campaign.advertising_channel_type", "tool_ref": "google_create_campaign.advertising_channel_type", "label": "广告系列类型（已根据入口匹配）", "required": true, "source": "enum", "options": ["TRAVEL"], "presentation": "derived_readonly"},
+    {"path": "campaign.bidding_strategy", "tool_ref": "google_create_campaign.bidding_strategy", "label": "出价策略", "required": true, "source": "enum", "options": ["MAXIMIZE_CONVERSIONS", "TARGET_CPA"]},
+    {"path": "campaign.target_cpa_micros", "tool_ref": "google_create_campaign.target_cpa_micros", "label": "目标 CPA（微单位）", "visible_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_CPA"}, "required_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_CPA"}},
+    {"path": "campaign.daily_budget", "tool_ref": "google_create_campaign.daily_budget", "label": "日预算", "required": true},
+    {"path": "campaign.travel_campaign_settings", "tool_ref": "google_create_campaign.travel_campaign_settings", "label": "Travel 账号设置", "required": true, "presentation": "object_editor"},
+    {"path": "ad_group.name", "tool_ref": "google_create_specialized_ad_group.name", "label": "广告组名称", "required": true},
+    {"path": "ad_group.campaign_type", "tool_ref": "google_create_specialized_ad_group.campaign_type", "label": "广告组所属类型（自动匹配）", "required": true, "source": "enum", "options": ["TRAVEL"], "presentation": "derived_readonly"},
+    {"path": "ad_group.type", "tool_ref": "google_create_specialized_ad_group.type", "label": "广告组类型（自动匹配）", "required": true, "source": "enum", "options": ["TRAVEL_ADS"], "presentation": "derived_readonly"},
+    {"path": "ad.name", "tool_ref": "google_create_travel_ad.name", "label": "广告名称", "required": true}
+  ],
+  "rules": [{"id": "campaign_type_is_fixed", "when": {"field": "campaign.advertising_channel_type", "equals": "TRAVEL"}, "preserve": ["campaign.advertising_channel_type", "ad_group.campaign_type", "ad_group.type"]}]
+}

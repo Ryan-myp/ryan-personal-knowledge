@@ -185,6 +185,15 @@ def _field(field_type: Any, description: str = "", **kwargs: Any) -> dict[str, A
     return value
 
 
+def _ui_when(field: str, *values: str) -> dict[str, Any]:
+    """Declare a provider-field applicability rule for creation cards."""
+    return {"ui_visible_when": {"field": field, "in": list(values)}}
+
+
+def _ui_equals(field: str, value: str) -> dict[str, Any]:
+    return {"ui_visible_when": {"field": field, "equals": value}}
+
+
 def _object(
     properties: dict[str, Any], description: str, *,
     additional_properties: bool = False, required: list[str] | None = None,
@@ -198,6 +207,53 @@ def _object(
     if required:
         schema["required"] = list(required)
     return schema
+
+
+def _google_asset_ref_item(description: str) -> dict[str, Any]:
+    """A reusable Asset reference that can be selected or pasted explicitly.
+
+    Google ad payloads accept either an Asset resource name/object or, in the
+    dry-run contract, a provider-shaped object.  Keeping the lookup metadata
+    on the item as well as on the surrounding array is important for nested
+    editors such as Demand Gen carousel cards.
+    """
+    return _field(
+        ["string", "object"], description,
+        additionalProperties=True,
+        lookup_tool="google_list_assets",
+        lookup_result_key="assets",
+        lookup_account_required=True,
+        selection_value_fields=["resource_name", "asset_id", "id"],
+        selection_label_fields=["name", "text", "resource_name", "id"],
+        presentation="asset_picker",
+    )
+
+
+def _google_asset_refs(description: str, *, min_items: int = 1) -> dict[str, Any]:
+    """Build an account-scoped, multi-select Asset reference field."""
+    return _field(
+        "array", description, minItems=min_items,
+        items=_google_asset_ref_item(description),
+        lookup_tool="google_list_assets", lookup_result_key="assets",
+        lookup_account_required=True,
+        selection_value_fields=["resource_name", "asset_id", "id"],
+        selection_label_fields=["name", "text", "resource_name", "id"],
+        presentation="asset_picker",
+    )
+
+
+def _google_text_assets(
+    description: str, *, min_items: int = 1, max_items: int | None = None,
+) -> dict[str, Any]:
+    """Build a text-asset list that renders as editable lines in A2UI."""
+    kwargs: dict[str, Any] = {"minItems": min_items, "presentation": "text_list"}
+    if max_items is not None:
+        kwargs["maxItems"] = max_items
+    return _field(
+        "array", description,
+        items={"type": ["string", "object"], "additionalProperties": True},
+        **kwargs,
+    )
 
 
 def google_campaign_budget_schema() -> dict[str, Any]:
@@ -501,9 +557,27 @@ def google_app_campaign_setting_schema() -> dict[str, Any]:
 def google_shopping_setting_schema() -> dict[str, Any]:
     """Closed contract for Merchant Center-backed Shopping campaigns."""
     return _object({
-        "merchant_id": _field("integer", "Merchant Center ID", minimum=1),
-        "sales_country": _field("string", "Shopping sales country", minLength=2, maxLength=3),
-        "marketing_language": _field("string", "Shopping marketing language", minLength=2, maxLength=5),
+        "merchant_id": _field(
+            "integer", "Merchant Center ID", minimum=1,
+            manual_entry={
+                "title": "Merchant Center ID",
+                "instructions": "请输入已关联到 Google Ads 账号的 Merchant Center ID；当前 Capability 没有 Merchant Center 列表接口。",
+            },
+        ),
+        "sales_country": _field(
+            "string", "Shopping sales country", minLength=2, maxLength=3,
+            manual_entry={
+                "title": "销售国家/地区",
+                "instructions": "请输入 Merchant Center feed 中配置的国家/地区代码，例如 US、GB。",
+            },
+        ),
+        "marketing_language": _field(
+            "string", "Shopping marketing language", minLength=2, maxLength=5,
+            manual_entry={
+                "title": "营销语言",
+                "instructions": "请输入 Merchant Center feed 支持的语言代码，例如 en、zh。",
+            },
+        ),
         "priority": _field("integer", "Shopping campaign priority", minimum=0, maximum=100),
         "exclude_offline_store_locations": _field("boolean", "Exclude offline store locations"),
     }, "Google Shopping settings", required=["merchant_id", "sales_country", "marketing_language"])
@@ -532,7 +606,13 @@ def google_demand_gen_campaign_setting_schema() -> dict[str, Any]:
 def google_hotel_setting_schema() -> dict[str, Any]:
     """Hotel Center linkage required by Hotel campaigns."""
     return _object({
-        "hotel_center_id": _field("string", "Hotel Center account ID", minLength=1),
+        "hotel_center_id": _field(
+            "string", "Hotel Center account ID", minLength=1,
+            manual_entry={
+                "title": "Hotel Center 账号 ID",
+                "instructions": "请输入已关联到 Google Ads 的 Hotel Center 账号 ID；当前 Capability 没有 Hotel Center 列表接口。",
+            },
+        ),
         "disable_hotel_setting": _field(
             "boolean", "Disable Hotel Center settings for this campaign",
         ),
@@ -552,7 +632,13 @@ def google_local_campaign_setting_schema() -> dict[str, Any]:
 def google_travel_campaign_setting_schema() -> dict[str, Any]:
     """Travel account linkage required by Travel campaigns."""
     return _object({
-        "travel_account_id": _field("string", "Travel account ID", minLength=1),
+        "travel_account_id": _field(
+            "string", "Travel account ID", minLength=1,
+            manual_entry={
+                "title": "Travel 账号 ID",
+                "instructions": "请输入已关联到 Google Ads 的 Travel 账号 ID；当前 Capability 没有 Travel 账号列表接口。",
+            },
+        ),
     }, "Google Travel campaign settings", required=["travel_account_id"])
 
 
@@ -637,41 +723,94 @@ def google_campaign_schema() -> dict[str, Any]:
             "advertising_channel_sub_type": _field(
                 "string", "Channel subtype (App campaigns and Performance Max)",
                 enum=GOOGLE_CHANNEL_SUB_TYPES,
+                **_ui_when("advertising_channel_type", "MULTI_CHANNEL"),
             ),
             "bidding_strategy": _field(
                 "string", "Bidding strategy", enum=GOOGLE_BIDDING_STRATEGIES,
                 default="MAXIMIZE_CONVERSIONS",
             ),
             "daily_budget": _field("number", "Daily budget in account currency", minimum=0),
-            "budget": _field("number", "Daily budget alias", minimum=0),
+            "budget": _field(
+                "number", "Daily budget alias", minimum=0, ui_hidden=True,
+            ),
             "status": _field("string", "Campaign status", enum=GOOGLE_STATUSES),
-            "target_cpa_micros": _field("integer", "Target CPA in micros", minimum=1),
-            "target_roas": _field("number", "Target ROAS", minimum=0.01),
-            "target_impression_share": _field("number", "Target impression share", minimum=0, maximum=1),
-            "networks": _field("array", "Serving networks", items={"type": "string", "enum": GOOGLE_TARGETING_NETWORKS}),
-            "app_campaign_setting": google_app_campaign_setting_schema(),
-            "shopping_setting": google_shopping_setting_schema(),
-            "campaign_goal_setting": google_campaign_goal_setting_schema(),
-            "video_setting": google_video_setting_schema(),
-            "demand_gen_campaign_settings": google_demand_gen_campaign_setting_schema(),
-            "hotel_setting": google_hotel_setting_schema(),
-            "local_campaign_setting": google_local_campaign_setting_schema(),
-            "travel_campaign_settings": google_travel_campaign_setting_schema(),
-            "local_services_campaign_settings": google_local_services_campaign_setting_schema(),
+            "target_cpa_micros": _field(
+                "integer", "Target CPA in micros", minimum=1,
+                **_ui_equals("bidding_strategy", "TARGET_CPA"),
+            ),
+            "target_roas": _field(
+                "number", "Target ROAS", minimum=0.01,
+                **_ui_equals("bidding_strategy", "TARGET_ROAS"),
+            ),
+            "target_impression_share": _field(
+                "number", "Target impression share", minimum=0, maximum=1,
+                **_ui_equals("bidding_strategy", "TARGET_IMPRESSION_SHARE"),
+            ),
+            "networks": _field(
+                "array", "Serving networks", items={"type": "string", "enum": GOOGLE_TARGETING_NETWORKS},
+                **_ui_when("advertising_channel_type", "SEARCH", "DISPLAY"),
+            ),
+            "app_campaign_setting": {
+                **google_app_campaign_setting_schema(),
+                **_ui_when("advertising_channel_type", "MULTI_CHANNEL"),
+            },
+            "shopping_setting": {
+                **google_shopping_setting_schema(),
+                **_ui_equals("advertising_channel_type", "SHOPPING"),
+            },
+            "campaign_goal_setting": {
+                **google_campaign_goal_setting_schema(),
+                **_ui_equals("advertising_channel_type", "PERFORMANCE_MAX"),
+            },
+            "video_setting": {
+                **google_video_setting_schema(),
+                **_ui_equals("advertising_channel_type", "VIDEO"),
+            },
+            "demand_gen_campaign_settings": {
+                **google_demand_gen_campaign_setting_schema(),
+                **_ui_equals("advertising_channel_type", "DEMAND_GEN"),
+            },
+            "hotel_setting": {
+                **google_hotel_setting_schema(),
+                **_ui_equals("advertising_channel_type", "HOTEL"),
+            },
+            "local_campaign_setting": {
+                **google_local_campaign_setting_schema(),
+                **_ui_equals("advertising_channel_type", "LOCAL"),
+            },
+            "travel_campaign_settings": {
+                **google_travel_campaign_setting_schema(),
+                **_ui_equals("advertising_channel_type", "TRAVEL"),
+            },
+            "local_services_campaign_settings": {
+                **google_local_services_campaign_setting_schema(),
+                **_ui_equals("advertising_channel_type", "LOCAL_SERVICES"),
+            },
             "targeting_setting": google_targeting_setting_schema(),
-            "network_setting": google_network_setting_schema(),
+            "network_setting": {
+                **google_network_setting_schema(),
+                **_ui_when("advertising_channel_type", "SEARCH", "DISPLAY"),
+            },
             "final_url_suffix": _field("string", "Final URL suffix for tracking"),
             "start_date": _field("string", "YYYY-MM-DD start date"),
             "end_date": _field("string", "YYYY-MM-DD end date"),
             "target_impression_share_location": _field(
                 "string", "Target search result location",
                 enum=GOOGLE_TARGET_IMPRESSION_SHARE_LOCATIONS,
+                **_ui_equals("bidding_strategy", "TARGET_IMPRESSION_SHARE"),
             ),
             "cpc_bid_ceiling_micros": _field(
                 "integer", "Maximum CPC bid for Target Impression Share", minimum=1,
+                **_ui_equals("bidding_strategy", "TARGET_IMPRESSION_SHARE"),
             ),
-            "target_cpm_micros": _field("integer", "Target CPM in account micros", minimum=1),
-            "target_cpv_micros": _field("integer", "Target CPV in account micros", minimum=1),
+            "target_cpm_micros": _field(
+                "integer", "Target CPM in account micros", minimum=1,
+                **_ui_equals("bidding_strategy", "TARGET_CPM"),
+            ),
+            "target_cpv_micros": _field(
+                "integer", "Target CPV in account micros", minimum=1,
+                **_ui_when("bidding_strategy", "MANUAL_CPV", "TARGET_CPV"),
+            ),
         },
         "conditional_rules": [
             {"id": "target_cpa_dependency", "if": {"bidding_strategy": "TARGET_CPA"},
@@ -742,11 +881,18 @@ def google_ad_group_schema() -> dict[str, Any]:
                 "VIDEO_TRUE_VIEW_IN_DISPLAY", "VIDEO_RESPONSIVE", "SMART_CAMPAIGN_ADS",
                 "TRAVEL_ADS", "YOUTUBE_AUDIO",
             ], default="SEARCH_STANDARD"),
-            "cpc_bid": _field("number", "CPC bid in account currency", minimum=0),
-            "cpc_bid_micros": _field("integer", "CPC bid in micros", minimum=0),
+            "cpc_bid": _field(
+                "number", "CPC bid in account currency", minimum=0,
+                **_ui_when("campaign_type", "SEARCH", "DISPLAY", "SHOPPING"),
+            ),
+            "cpc_bid_micros": _field(
+                "integer", "CPC bid in micros", minimum=0,
+                **_ui_when("campaign_type", "SEARCH", "DISPLAY", "SHOPPING"),
+            ),
             "status": _field("string", "Ad group status", enum=GOOGLE_STATUSES),
             "targeting": _field("object", "Ad group targeting", additionalProperties=True),
-            "demand_gen_ad_group_settings": _object({
+            "demand_gen_ad_group_settings": {
+                **_object({
                 "channel_controls": _object({
                     "channel_config": _field(
                         "string", "Demand Gen channel configuration",
@@ -764,7 +910,9 @@ def google_ad_group_schema() -> dict[str, Any]:
                         )
                     }, "Selected Demand Gen channels"),
                 }, "Demand Gen channel controls"),
-            }, "Demand Gen ad group settings"),
+                }, "Demand Gen ad group settings"),
+                **_ui_equals("campaign_type", "DEMAND_GEN"),
+            },
         },
         "conditional_rules": [
             {"id": "demand_gen_ad_group_setting_dependency",
@@ -800,10 +948,7 @@ def google_app_ad_group_schema() -> dict[str, Any]:
 
 def google_app_ad_schema() -> dict[str, Any]:
     """Dry-run contract for the Google ``Ad.appAd`` asset payload."""
-    asset = _field(
-        "array", "Existing Google Asset references", minItems=1,
-        items={"type": "object", "additionalProperties": True},
-    )
+    asset = _google_asset_refs("Existing Google Asset references")
     return {
         "required": ["ad_group_id", "name", "headlines", "descriptions"],
         "provider_required": ["headlines", "descriptions"],
@@ -812,11 +957,13 @@ def google_app_ad_schema() -> dict[str, Any]:
             "name": _field("string", "App ad name", maxLength=255),
             "headlines": _field(
                 "array", "App ad headline text assets", minItems=2, maxItems=5,
-                items={"type": "object", "additionalProperties": True},
+                items={"type": ["string", "object"], "additionalProperties": True},
+                presentation="text_list",
             ),
             "descriptions": _field(
                 "array", "App ad description text assets", minItems=2, maxItems=5,
-                items={"type": "object", "additionalProperties": True},
+                items={"type": ["string", "object"], "additionalProperties": True},
+                presentation="text_list",
             ),
             "images": asset,
             "videos": asset,
@@ -877,15 +1024,33 @@ def google_campaign_criterion_item_schema() -> dict[str, Any]:
         "bid_modifier": _field("number", "Optional bid modifier", minimum=0),
         "location_id": _field(
             "string", "Google geo target constant ID or resource name", minLength=1,
+            manual_entry={
+                "title": "地理位置常量 ID",
+                "instructions": "请从 Google Ads 地理位置目标列表或 Google Ads UI 复制常量 ID/资源名；当前没有本 Capability 的地理位置目录 Tool。",
+                "source": "provider_geo_target",
+            },
         ),
         "language_id": _field(
             "string", "Google language constant ID or resource name", minLength=1,
+            manual_entry={
+                "title": "语言常量 ID",
+                "instructions": "请从 Google Ads 语言目标列表或 UI 复制常量 ID/资源名；当前没有本 Capability 的语言目录 Tool。",
+                "source": "provider_language_target",
+            },
         ),
         "user_list_id": _field(
             "string", "Google UserList ID or resource name", minLength=1,
+            lookup_tool="google_list_user_lists", lookup_result_key="user_lists",
+            selection_value_fields=["resource_name", "user_list_id", "id"],
+            selection_label_fields=["name", "resource_name", "id"],
         ),
         "user_interest_id": _field(
             "string", "Google UserInterest ID or resource name", minLength=1,
+            manual_entry={
+                "title": "用户兴趣 ID",
+                "instructions": "请从 Google Ads 用户兴趣目标列表或 UI 复制 ID/资源名；当前没有本 Capability 的用户兴趣目录 Tool。",
+                "source": "provider_user_interest",
+            },
         ),
         "age_range": _field("string", "Age range", enum=GOOGLE_AGE_RANGES),
         "gender": _field("string", "Gender", enum=GOOGLE_GENDERS),
@@ -902,6 +1067,11 @@ def google_campaign_criterion_item_schema() -> dict[str, Any]:
         "placement_url": _field("string", "Placement URL", minLength=1),
         "topic_id": _field(
             "string", "Google topic constant ID or resource name", minLength=1,
+            manual_entry={
+                "title": "主题目标 ID",
+                "instructions": "请从 Google Ads 主题目标列表或 UI 复制主题常量 ID/资源名；当前没有本 Capability 的主题目录 Tool。",
+                "source": "provider_topic_target",
+            },
         ),
     }, "CampaignCriterion specification", additional_properties=False) | {
         "required": ["criterion_type"],
@@ -1032,14 +1202,37 @@ def google_ad_schema() -> dict[str, Any]:
             "ad_group_id": _field("string", "Parent Ad Group ID"),
             "name": _field("string", "Ad name", maxLength=255),
             "ad_type": _field("string", "Ad format", enum=["RESPONSIVE_SEARCH_AD", "EXPANDED_TEXT_AD", "RESPONSIVE_DISPLAY_AD", "VIDEO"]),
-            "headlines": _field("array", "Ad headlines", minItems=3, maxItems=15, items={"type": "string", "minLength": 1, "maxLength": 30}),
-            "descriptions": _field("array", "Ad descriptions", minItems=2, maxItems=4, items={"type": "string", "minLength": 1, "maxLength": 90}),
+            "headlines": _field(
+                "array", "Ad headlines", minItems=3, maxItems=15,
+                items={"type": "string", "minLength": 1, "maxLength": 30},
+                **_ui_equals("ad_type", "RESPONSIVE_SEARCH_AD"),
+            ),
+            "descriptions": _field(
+                "array", "Ad descriptions", minItems=2, maxItems=4,
+                items={"type": "string", "minLength": 1, "maxLength": 90},
+                **_ui_equals("ad_type", "RESPONSIVE_SEARCH_AD"),
+            ),
             "final_url": _field("string", "Final URL", minLength=1),
-            "path1": _field("string", "Display path 1", maxLength=15),
-            "path2": _field("string", "Display path 2", maxLength=15),
-            "responsive_search_ad": _field("object", "Responsive Search Ad payload", additionalProperties=True),
-            "responsive_display_ad": _field("object", "Responsive Display Ad payload", additionalProperties=True),
-            "video": _field("object", "Video ad payload", additionalProperties=True),
+            "path1": _field(
+                "string", "Display path 1", maxLength=15,
+                **_ui_when("ad_type", "RESPONSIVE_SEARCH_AD", "EXPANDED_TEXT_AD"),
+            ),
+            "path2": _field(
+                "string", "Display path 2", maxLength=15,
+                **_ui_when("ad_type", "RESPONSIVE_SEARCH_AD", "EXPANDED_TEXT_AD"),
+            ),
+            "responsive_search_ad": {
+                **_field("object", "Responsive Search Ad payload", additionalProperties=True),
+                **_ui_equals("ad_type", "RESPONSIVE_SEARCH_AD"),
+            },
+            "responsive_display_ad": {
+                **_field("object", "Responsive Display Ad payload", additionalProperties=True),
+                **_ui_equals("ad_type", "RESPONSIVE_DISPLAY_AD"),
+            },
+            "video": {
+                **_field("object", "Video ad payload", additionalProperties=True),
+                **_ui_equals("ad_type", "VIDEO"),
+            },
             "status": _field("string", "Ad status", enum=GOOGLE_STATUSES),
         },
         "conditional_rules": [
@@ -1056,10 +1249,7 @@ def google_responsive_display_ad_schema() -> dict[str, Any]:
         "description": "Text or provider asset object",
         "additionalProperties": True,
     }
-    image_asset = _field(
-        "array", "Provider image asset references", minItems=1,
-        items={"type": "object", "additionalProperties": True},
-    )
+    image_asset = _google_asset_refs("Provider image asset references")
     return {
         "required": ["ad_group_id", "name", "final_url", "headlines", "long_headline", "descriptions", "business_name"],
         "provider_required": ["headlines", "long_headline", "descriptions", "business_name"],
@@ -1067,16 +1257,28 @@ def google_responsive_display_ad_schema() -> dict[str, Any]:
             "ad_group_id": _field("string", "Parent Display ad group ID"),
             "name": _field("string", "Ad name", maxLength=255),
             "ad_type": _field("string", "Ad format", enum=["RESPONSIVE_DISPLAY_AD"], default="RESPONSIVE_DISPLAY_AD"),
-            "headlines": _field("array", "Short headline assets", minItems=3, maxItems=5, items=text_asset),
+            "headlines": _field(
+                "array", "Short headline assets", minItems=3, maxItems=5,
+                items=text_asset, presentation="text_list",
+            ),
             "long_headline": text_asset,
-            "descriptions": _field("array", "Description assets", minItems=1, maxItems=5, items=text_asset),
+            "descriptions": _field(
+                "array", "Description assets", minItems=1, maxItems=5,
+                items=text_asset, presentation="text_list",
+            ),
             "business_name": _field("string", "Advertiser business name", minLength=1, maxLength=25),
             "marketing_images": image_asset,
             "square_marketing_images": image_asset,
             "logos": image_asset,
             "landscape_logos": image_asset,
             "videos": _field(
-                "array", "YouTube video asset references", items={"type": ["string", "object"], "additionalProperties": True},
+                "array", "YouTube video asset references",
+                items=_google_asset_ref_item("YouTube video asset reference"),
+                lookup_tool="google_list_assets", lookup_result_key="assets",
+                lookup_account_required=True,
+                selection_value_fields=["resource_name", "asset_id", "id"],
+                selection_label_fields=["name", "text", "resource_name", "id"],
+                presentation="asset_picker",
             ),
             "call_to_action_text": _field("string", "Optional call to action"),
             "main_color": _field("string", "Optional main color"),
@@ -1100,7 +1302,15 @@ def google_video_ad_schema() -> dict[str, Any]:
             "video_ad_format": _field(
                 "string", "Video format", enum=GOOGLE_VIDEO_AD_FORMATS,
             ),
-            "video_id": _field("string", "YouTube video ID", minLength=1),
+            "video_id": _field(
+                "string", "YouTube video ID", minLength=1,
+                manual_entry={
+                    "title": "YouTube 视频 ID",
+                    "instructions": "Google Ads 当前没有可直接用于此字段的 YouTube 视频目录查询；请粘贴 YouTube URL 中的 11 位视频 ID。",
+                    "example": "dQw4w9WgXcQ",
+                    "source": "external_youtube_identifier",
+                },
+            ),
             "final_url": _field("string", "Final URL", minLength=1),
             "display_url": _field("string", "Optional display URL"),
             "action_button_label": _field("string", "Optional CTA button label"),
@@ -1112,20 +1322,11 @@ def google_video_ad_schema() -> dict[str, Any]:
 
 
 def _google_ad_text_assets(description: str, *, min_items: int = 1, max_items: int | None = None) -> dict[str, Any]:
-    kwargs: dict[str, Any] = {"minItems": min_items}
-    if max_items is not None:
-        kwargs["maxItems"] = max_items
-    return _field(
-        "array", description, items={"type": ["string", "object"], "additionalProperties": True},
-        **kwargs,
-    )
+    return _google_text_assets(description, min_items=min_items, max_items=max_items)
 
 
 def _google_ad_asset_refs(description: str, *, min_items: int = 1) -> dict[str, Any]:
-    return _field(
-        "array", description, minItems=min_items,
-        items={"type": ["string", "object"], "additionalProperties": True},
-    )
+    return _google_asset_refs(description, min_items=min_items)
 
 
 def google_demand_gen_multi_asset_ad_schema() -> dict[str, Any]:
@@ -1154,6 +1355,9 @@ def google_demand_gen_multi_asset_ad_schema() -> dict[str, Any]:
 
 def google_demand_gen_carousel_ad_schema() -> dict[str, Any]:
     """Demand Gen carousel ad contract backed by ``Ad.demandGenCarouselAd``."""
+    carousel_asset = _google_asset_ref_item(
+        "Carousel card image Asset resource name or reference"
+    )
     return {
         "required": ["ad_group_id", "name", "final_url", "headline", "description", "carousel_cards"],
         "provider_required": ["headline", "description", "carousel_cards"],
@@ -1164,17 +1368,29 @@ def google_demand_gen_carousel_ad_schema() -> dict[str, Any]:
             "headline": _field("string", "Carousel headline", minLength=1),
             "description": _field("string", "Carousel description", minLength=1),
             "business_name": _field("string", "Advertiser business name", minLength=1, maxLength=25),
-            "logo_image": _field("object", "Logo image asset reference", additionalProperties=True),
+            "logo_image": _google_asset_ref_item("Logo image asset reference"),
             "call_to_action_text": _field("string", "Call to action text"),
             "carousel_cards": _field(
                 "array", "Demand Gen carousel cards", minItems=2, maxItems=10,
+                presentation="object_editor",
                 items=_object({
                     "headline": _field("string", "Card headline", minLength=1),
-                    "marketing_image_asset": _field("string", "1.91:1 image Asset resource name"),
-                    "square_marketing_image_asset": _field("string", "1:1 image Asset resource name"),
-                    "portrait_marketing_image_asset": _field("string", "4:5 image Asset resource name"),
-                    "call_to_action_text": _field("string", "Card call to action"),
-                }, "Demand Gen carousel card", additional_properties=False),
+                    "marketing_image_asset": carousel_asset,
+                    "square_marketing_image_asset": _google_asset_ref_item(
+                        "1:1 image Asset resource name or reference"
+                    ),
+                    "portrait_marketing_image_asset": _google_asset_ref_item(
+                        "4:5 image Asset resource name or reference"
+                    ),
+                    "call_to_action_text": _field(
+                        "string", "Card call to action", enum=[
+                            "AUTOMATED", "BOOK_NOW", "CONTACT_US", "DOWNLOAD",
+                            "GET_OFFER", "GET_QUOTE", "LEARN_MORE", "SHOP_NOW",
+                            "SIGN_UP", "SUBSCRIBE", "WATCH_MORE",
+                        ],
+                    ),
+                }, "Demand Gen carousel card", additional_properties=False,
+                   required=["headline"]),
             ),
             "status": _field("string", "Ad status", enum=GOOGLE_STATUSES),
         },
@@ -1214,11 +1430,20 @@ def google_demand_gen_product_ad_schema() -> dict[str, Any]:
             "ad_group_id": _field("string", "Parent Demand Gen ad group ID", minLength=1),
             "name": _field("string", "Ad name", minLength=1, maxLength=255),
             "final_url": _field("string", "Optional final URL override", minLength=1),
-            "headline": _field("object", "Product ad headline asset", additionalProperties=True),
-            "description": _field("object", "Product ad description asset", additionalProperties=True),
-            "business_name": _field("object", "Business name text asset", additionalProperties=True),
-            "logo_image": _field("object", "Logo image asset", additionalProperties=True),
-            "call_to_action": _field("object", "Call-to-action asset", additionalProperties=True),
+            "headline": _field(
+                ["string", "object"], "Product ad headline asset",
+                additionalProperties=True,
+            ),
+            "description": _field(
+                ["string", "object"], "Product ad description asset",
+                additionalProperties=True,
+            ),
+            "business_name": _field(
+                ["string", "object"], "Business name text asset",
+                additionalProperties=True,
+            ),
+            "logo_image": _google_asset_ref_item("Logo image asset"),
+            "call_to_action": _google_asset_ref_item("Call-to-action asset"),
             "breadcrumb1": _field("string", "Display breadcrumb 1"),
             "breadcrumb2": _field("string", "Display breadcrumb 2"),
             "status": _field("string", "Ad status", enum=GOOGLE_STATUSES),
@@ -1722,7 +1947,12 @@ def google_campaign_asset_schema() -> dict[str, Any]:
         "properties": {
             "customer_id": _field("string", "Google Ads customer ID"),
             "campaign_id": _field("string", "Parent Campaign ID", minLength=1),
-            "asset_id": _field("string", "Reusable Google Asset ID", minLength=1),
+            "asset_id": _field(
+                "string", "Reusable Google Asset ID", minLength=1,
+                lookup_tool="google_list_assets", lookup_result_key="assets",
+                selection_value_fields=["resource_name", "asset_id", "id"],
+                selection_label_fields=["name", "text", "resource_name", "id"],
+            ),
             "field_type": _field(
                 "string", "Campaign asset field type",
                 enum=GOOGLE_CAMPAIGN_ASSET_FIELD_TYPES,
@@ -1743,7 +1973,12 @@ def google_asset_group_asset_schema() -> dict[str, Any]:
             "asset_group_id": _field(
                 "string", "Parent Performance Max Asset Group ID", minLength=1
             ),
-            "asset_id": _field("string", "Reusable Google Asset ID", minLength=1),
+            "asset_id": _field(
+                "string", "Reusable Google Asset ID", minLength=1,
+                lookup_tool="google_list_assets", lookup_result_key="assets",
+                selection_value_fields=["resource_name", "asset_id", "id"],
+                selection_label_fields=["name", "text", "resource_name", "id"],
+            ),
             "field_type": _field(
                 "string", "Asset group asset field type",
                 enum=GOOGLE_ASSET_GROUP_ASSET_FIELD_TYPES,
@@ -1757,7 +1992,6 @@ def google_asset_group_asset_schema() -> dict[str, Any]:
 
 
 def google_asset_group_schema() -> dict[str, Any]:
-    asset = _field("array", "Asset references", minItems=1, items={"type": "object", "additionalProperties": True})
     return {
         "required": [
             "campaign_id", "name", "asset_group_type", "final_urls",
@@ -1773,12 +2007,12 @@ def google_asset_group_schema() -> dict[str, Any]:
             "asset_group_type": _field("string", "Asset group type", enum=GOOGLE_ASSET_GROUP_TYPES),
             "final_urls": _field("array", "Asset group landing page URLs", minItems=1, maxItems=20, items={"type": "string", "minLength": 1}),
             "final_mobile_urls": _field("array", "Optional mobile landing page URLs", maxItems=20, items={"type": "string", "minLength": 1}),
-            "headlines": _field("array", "Text headline assets or existing Asset references", minItems=3, maxItems=15, items={"type": "object", "additionalProperties": True}),
-            "long_headlines": _field("array", "Long headline assets or existing Asset references", minItems=1, maxItems=5, items={"type": "object", "additionalProperties": True}),
-            "descriptions": _field("array", "Description assets", minItems=2, maxItems=5, items={"type": "object", "additionalProperties": True}),
-            "images": asset,
-            "videos": asset,
-            "logos": asset,
+            "headlines": _google_text_assets("Text headline assets or existing Asset references", min_items=3, max_items=15),
+            "long_headlines": _google_text_assets("Long headline assets or existing Asset references", min_items=1, max_items=5),
+            "descriptions": _google_text_assets("Description assets", min_items=2, max_items=5),
+            "images": _google_asset_refs("Performance Max image assets"),
+            "videos": _google_asset_refs("Performance Max video assets"),
+            "logos": _google_asset_refs("Performance Max logo assets"),
             "status": _field("string", "Asset group status", enum=GOOGLE_STATUSES),
         },
     }

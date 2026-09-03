@@ -113,7 +113,16 @@ class DV360Capability(BaseCapability):
                 platform="dv360", skill="dv360-api", name="dv360_create_creative",
                 description="创建 DV360 Creative；默认仅生成 dry-run 计划。", method_name="create_creative",
                 result_key="creative_id", properties={"advertiser_id": {"type": "string"},
-                "creative": {"type": "object"}}, required=["advertiser_id", "creative"], action="create",
+                "creative": {
+                    "type": "object",
+                    "description": "DV360 Creative provider payload",
+                    "additionalProperties": True,
+                    "manual_entry": {
+                        "title": "DV360 Creative Payload",
+                        "instructions": "请填写已按 DV360 Creative API 准备好的对象；DV360 专用字段暂按现有能力保留为高级 Provider 输入。",
+                        "source": "provider_creative_payload",
+                    },
+                }}, required=["advertiser_id", "creative"], action="create",
                 resource_type="creative", resource_id_field="creative_id", intent_types=["create_creative"],
                 traits=["write", "creative"], write=True,
                 provider_required=["creative"],

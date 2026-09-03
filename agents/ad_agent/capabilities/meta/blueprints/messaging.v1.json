@@ -1,0 +1,35 @@
+{
+  "id": "meta.messaging",
+  "version": "1.0.0",
+  "provider": "meta",
+  "ad_format": "MESSAGING",
+  "title": "Meta 消息广告",
+  "description": "选择消息目标、消息目的地和对应 CTA，Page 使用账户下可推广的 Page 列表。",
+  "selector": {"dimension": "objective", "field": "campaign.objective", "values": ["OUTCOME_MESSAGES"], "label": "Meta 推广目标", "options": [{"value": "OUTCOME_MESSAGES", "label": "消息"}]},
+  "tools": ["meta_create_campaign", "meta_create_adset", "meta_create_messaging_ad"],
+  "resources": ["campaign", "ad_set", "ad"],
+  "fields": [
+    {"path": "campaign.name", "tool_ref": "meta_create_campaign.name", "label": "Campaign 名称", "required": true},
+    {"path": "campaign.objective", "tool_ref": "meta_create_campaign.objective", "label": "推广目标（已根据入口匹配）", "required": true, "source": "enum", "options": ["OUTCOME_MESSAGES"], "presentation": "derived_readonly"},
+    {"path": "campaign.special_ad_categories", "tool_ref": "meta_create_campaign.special_ad_categories", "label": "特殊广告类别", "required": true, "source": "enum", "options": ["NONE", "EMPLOYMENT", "HOUSING", "CREDIT"]},
+    {"path": "campaign.buying_type", "tool_ref": "meta_create_campaign.buying_type", "label": "购买类型", "required": true, "source": "enum", "options": ["AUCTION", "RESERVED"]},
+    {"path": "campaign.daily_budget", "tool_ref": "meta_create_campaign.daily_budget", "label": "日预算", "required_when": {"field": "campaign.buying_type", "not_in": ["RESERVED"]}},
+    {"path": "campaign.lifetime_budget", "tool_ref": "meta_create_campaign.lifetime_budget", "label": "生命周期预算", "required_when": {"field": "campaign.buying_type", "equals": "RESERVED"}},
+    {"path": "ad_set.name", "tool_ref": "meta_create_adset.name", "label": "Ad Set 名称", "required": true},
+    {"path": "ad_set.optimization_goal", "tool_ref": "meta_create_adset.optimization_goal", "label": "优化目标", "required": true, "source": "enum", "options": ["MESSAGES"], "presentation": "derived_readonly"},
+    {"path": "ad_set.billing_event", "tool_ref": "meta_create_adset.billing_event", "label": "计费事件", "required": true, "source": "enum", "options": ["IMPRESSIONS"]},
+    {"path": "ad_set.messaging_apps", "tool_ref": "meta_create_adset.messaging_apps", "label": "消息目的地", "required": true, "source": "enum", "options": ["MESSENGER", "WHATSAPP", "INSTAGRAM_DIRECT"]},
+    {"path": "ad_set.targeting", "tool_ref": "meta_create_adset.targeting", "label": "受众定向", "required": true, "presentation": "object_editor"},
+    {"path": "ad_set.daily_budget", "tool_ref": "meta_create_adset.daily_budget", "label": "Ad Set 日预算", "required": true},
+    {"path": "ad.name", "tool_ref": "meta_create_messaging_ad.name", "label": "广告名称", "required": true},
+    {"path": "ad.page_id", "tool_ref": "meta_create_messaging_ad.page_id", "label": "Facebook Page", "required": true, "source": "lookup", "lookup_tool": "meta_list_pages"},
+    {"path": "ad.messaging_app", "tool_ref": "meta_create_messaging_ad.messaging_app", "label": "消息目的地（与 Ad Set 保持一致）", "required": true, "source": "enum", "options": ["MESSENGER", "WHATSAPP", "INSTAGRAM_DIRECT"]},
+    {"path": "ad.call_to_action_type", "tool_ref": "meta_create_messaging_ad.call_to_action_type", "label": "行动号召", "required": true, "source": "enum", "options": ["SEND_MESSAGE", "WHATSAPP"]},
+    {"path": "ad.message", "tool_ref": "meta_create_messaging_ad.message", "label": "主要文案", "required": false},
+    {"path": "ad.link", "tool_ref": "meta_create_messaging_ad.link", "label": "落地页链接", "required": false}
+  ],
+  "rules": [
+    {"id": "whatsapp_cta", "when": {"field": "ad.messaging_app", "equals": "WHATSAPP"}, "ask": ["ad.call_to_action_type"]},
+    {"id": "messaging_destination_changed", "when": {"field": "ad_set.messaging_apps", "changed": true}, "reset": ["ad.messaging_app", "ad.call_to_action_type"]}
+  ]
+}

@@ -95,6 +95,34 @@ def test_creation_tools_publish_provider_payload_requirements():
     assert any("daily_budget" in error for error in errors)
 
 
+def test_meta_link_ad_requires_the_selected_media_asset_source():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_meta_capability().register_tools()
+    }
+    schema = definitions["meta_create_traffic_ad"].input_schema
+
+    image_errors = validate_tool_input(
+        schema,
+        {
+            "adset_id": "adset-1", "name": "image ad", "page_id": "page-1",
+            "link": "https://example.test", "media_type": "IMAGE",
+        },
+        include_provider_contract=True,
+    )
+    assert any("image_hash" in error for error in image_errors)
+
+    video_errors = validate_tool_input(
+        schema,
+        {
+            "adset_id": "adset-1", "name": "video ad", "page_id": "page-1",
+            "link": "https://example.test", "media_type": "VIDEO",
+        },
+        include_provider_contract=True,
+    )
+    assert any("video_id" in error for error in video_errors)
+
+
 def test_tiktok_image_upload_builds_official_multipart_payload(tmp_path):
     image = tmp_path / "creative.png"
     image.write_bytes(b"image-bytes")
@@ -3783,6 +3811,101 @@ def test_google_video_ad_builds_format_specific_payload():
         client.create_video_ad(
             "123", "Invalid", "UNKNOWN", "video", "https://example.test"
         )
+
+
+def test_google_demand_gen_multi_asset_payload_preserves_text_and_asset_refs():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "1234"})
+    operations = []
+    client._mutate = lambda resource, operation: (
+        operations.append((resource, operation)) or {
+                "data": {"results": [{"resourceName": "customers/1234/adGroupAds/123~1"}]}
+        }
+    )
+
+    result = client.create_demand_gen_multi_asset_ad(
+        "123", "Demand Gen assets", "https://example.test",
+        ["Install now", {"text": "Try it today"}],
+        ["Fast setup", "Secure by design"], "Example App",
+        marketing_images=["customers/g1/assets/11"],
+        logo_images=[{"asset": "customers/g1/assets/12"}],
+        call_to_action_text="INSTALL",
+    )
+    ad = result["operation"]["adGroupAds"]["create"]["ad"]
+    payload = ad["demandGenMultiAssetAd"]
+    assert payload["headlines"] == [{"text": "Install now"}, {"text": "Try it today"}]
+    assert payload["descriptions"] == [{"text": "Fast setup"}, {"text": "Secure by design"}]
+    assert payload["marketingImages"] == [{"asset": "customers/g1/assets/11"}]
+    assert payload["logoImages"] == [{"asset": "customers/g1/assets/12"}]
+    assert payload["callToActionText"] == "INSTALL"
+
+
+def test_google_demand_gen_carousel_payload_converts_nested_card_keys():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "1234"})
+    operations = []
+    client._mutate = lambda resource, operation: (
+        operations.append((resource, operation)) or {
+                "data": {"results": [{"resourceName": "customers/1234/adGroupAds/123~2"}]}
+        }
+    )
+
+    result = client.create_demand_gen_carousel_ad(
+        "123", "Carousel", "https://example.test", "Shop now", "Featured products",
+        [{
+            "headline": "First card",
+            "marketing_image_asset": {"asset": "customers/g1/assets/20"},
+            "square_marketing_image_asset": {"asset": "customers/g1/assets/21"},
+            "call_to_action_text": "SHOP_NOW",
+        }, {
+            "headline": "Second card",
+            "marketing_image_asset": "customers/g1/assets/22",
+        }],
+        logo_image="customers/g1/assets/23",
+    )
+    payload = result["operation"]["adGroupAds"]["create"]["ad"]["demandGenCarouselAd"]
+    assert payload["carouselCards"][0]["marketingImageAsset"] == {
+        "asset": "customers/g1/assets/20"
+    }
+    assert payload["carouselCards"][0]["squareMarketingImageAsset"] == {
+        "asset": "customers/g1/assets/21"
+    }
+    assert payload["carouselCards"][0]["callToActionText"] == "SHOP_NOW"
+    assert payload["carouselCards"][1]["marketingImageAsset"] == {
+        "asset": "customers/g1/assets/22"
+    }
+    assert payload["logoImage"] == {"asset": "customers/g1/assets/23"}
+
+
+def test_google_demand_gen_video_and_product_payloads_use_typed_assets():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "1234"})
+    operations = []
+    client._mutate = lambda resource, operation: (
+        operations.append((resource, operation)) or {
+                "data": {"results": [{"resourceName": "customers/1234/adGroupAds/123~3"}]}
+        }
+    )
+
+    result = client.create_demand_gen_video_responsive_ad(
+        "123", "Video", "Example App", ["customers/g1/assets/31"],
+        ["Headline"], ["Description"], long_headlines=["Long headline"],
+        logo_images=["customers/g1/assets/32"],
+    )
+    video = result["operation"]["adGroupAds"]["create"]["ad"]["demandGenVideoResponsiveAd"]
+    assert video["videos"] == [{"asset": "customers/g1/assets/31"}]
+    assert video["headlines"] == [{"text": "Headline"}]
+    assert video["longHeadlines"] == [{"text": "Long headline"}]
+    assert video["logoImages"] == [{"asset": "customers/g1/assets/32"}]
+
+    result = client.create_demand_gen_product_ad(
+        "123", "Product", {"text": "Product headline"}, "Product description",
+        "Example Store", {"asset": "customers/g1/assets/33"},
+        "customers/g1/assets/34",
+    )
+    product = result["operation"]["adGroupAds"]["create"]["ad"]["demandGenProductAd"]
+    assert product["headline"] == {"text": "Product headline"}
+    assert product["description"] == {"text": "Product description"}
+    assert product["businessName"] == {"text": "Example Store"}
+    assert product["logoImage"] == {"asset": "customers/g1/assets/33"}
+    assert product["callToAction"] == {"asset": "customers/g1/assets/34"}
 
 
 def test_google_reads_accept_raw_and_extracted_search_payloads():

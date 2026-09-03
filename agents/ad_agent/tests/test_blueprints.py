@@ -60,6 +60,51 @@ def test_blueprint_registry_resolves_each_provider_entry_dimension_without_route
     ) is None
 
 
+def test_demand_gen_variants_resolve_by_explicit_format_or_declared_terms():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_google_capability())
+
+    assert runtime.resolve_creation_blueprint(
+        "google-ads", selector_values={"ad_format": "DEMAND_GEN_PRODUCT"}
+    )["id"] == "google-ads.demand_gen_product"
+
+    cases = {
+        "创建 Google Demand Gen 轮播广告": "google-ads.demand_gen_carousel",
+        "创建 Google Demand Gen 多素材广告": "google-ads.demand_gen_multi_asset",
+        "创建 Google Demand Gen 视频响应式广告": "google-ads.demand_gen_video_responsive",
+        "创建 Google Demand Gen 商品广告": "google-ads.demand_gen_product",
+    }
+    for text, expected in cases.items():
+        card = runtime.build_creation_ui(ParsedIntent(
+            "create_campaign", text, ["google-ads"],
+            campaign_type="DEMAND_GEN",
+            platform_params={"google-ads": {"campaign_type": "DEMAND_GEN"}},
+        ))["cards"][0]
+        assert card["blueprint_id"] == expected
+
+
+def test_demand_gen_without_variant_returns_specific_blueprint_choices():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_google_capability())
+    card = runtime.build_creation_ui(ParsedIntent(
+        "create_campaign", "创建 Google Demand Gen 广告", ["google-ads"],
+        campaign_type="DEMAND_GEN",
+        platform_params={"google-ads": {"campaign_type": "DEMAND_GEN"}},
+    ))["cards"][0]
+
+    assert card["type"] == "ad_creation_selector"
+    field = card["fields"][0]
+    assert field["selection_kind"] == "blueprint_variant"
+    assert field["value"] is None
+    assert field["state"] == "missing"
+    assert {option["blueprint_id"] for option in field["options"]} == {
+        "google-ads.demand_gen_carousel",
+        "google-ads.demand_gen_multi_asset",
+        "google-ads.demand_gen_product",
+        "google-ads.demand_gen_video_responsive",
+    }
+
+
 def test_blueprint_field_options_are_declared_and_invalid_selection_is_not_ready():
     blueprint = load_blueprint_file(
         Path(__file__).parents[1]
@@ -218,6 +263,40 @@ def test_google_entry_type_is_not_repeated_at_ad_group_level():
     assert "ad_group.type" not in result["missing_fields"]
 
 
+def test_provider_applicability_hides_unrelated_google_fields_and_keeps_derived_format_fields_visible():
+    """Provider UI rules must narrow the card without Runtime channel branches."""
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_google_capability())
+    card = runtime.build_creation_ui(ParsedIntent(
+        "create_campaign", "创建 Google Search 广告", ["google-ads"],
+        platform_params={"google-ads": {"ad_format": "SEARCH"}},
+    ))["cards"][0]
+    fields = {item["path"]: item for item in card["fields"]}
+
+    assert fields["ad.headlines"]["visible"] is True
+    assert fields["ad.descriptions"]["visible"] is True
+    assert fields["campaign.shopping_setting"]["visible"] is False
+    assert fields["campaign.app_campaign_setting"]["visible"] is False
+    assert fields["campaign.target_cpa_micros"]["visible"] is False
+
+
+def test_provider_applicability_switches_tiktok_asset_controls_by_selected_format():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_tiktok_capability())
+    card = runtime.build_creation_ui(ParsedIntent(
+        "create_campaign", "创建 TikTok 商品视频广告", ["tiktok"],
+        platform_params={"tiktok": {
+            "objective": "PRODUCT_SALES", "ad_format": "SINGLE_VIDEO",
+        }},
+    ))["cards"][0]
+    fields = {item["path"]: item for item in card["fields"]}
+
+    assert fields["ad.video_id"]["visible"] is True
+    assert fields["ad.video_id"]["control"] == "lookup"
+    assert fields["ad.image_ids"]["visible"] is False
+    assert fields["ad.spark_post_id"]["visible"] is False
+
+
 def test_all_google_blueprints_make_ad_group_type_provider_derived():
     runtime = AgentRuntime(require_llm=False, offline_mode=True)
     runtime.register_capability(create_google_capability())
@@ -307,6 +386,43 @@ def test_meta_nested_targeting_and_app_event_guidance_are_renderable():
     assert promoted["object_properties"]["application_id"]["manual_entry"]["source"] == "external_provider_identifier"
     assert promoted["object_properties"]["custom_event_type"]["enum"]
     assert promoted["object_properties"]["custom_event_str"]["manual_entry"]
+
+
+def test_creation_contracts_expose_provider_resource_sources_and_fixed_placements():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_meta_capability())
+    intent = ParsedIntent(
+        "create_campaign", "创建 Meta 转化广告", ["meta"],
+        platform_params={"meta": {"objective": "OUTCOME_CONVERSIONS"}},
+    )
+    card = runtime.build_creation_ui(intent)["cards"][0]
+    targeting = next(item for item in card["fields"] if item["path"] == "ad_set.targeting")
+    properties = targeting["object_properties"]
+    assert properties["geo_locations"]["properties"]["countries"]["lookup_tool"] == (
+        "meta_search_targeting_options"
+    )
+    assert properties["facebook_positions"]["items"]["enum"]
+    assert properties["instagram_positions"]["items"]["enum"]
+
+    link = runtime.list_creation_blueprints("meta", "link_conversion")[0]
+    link_field = next(
+        item for item in link["fields"] if item["path"] == "ad.image_hash"
+    )
+    assert link_field["lookup_tool"] == "meta_list_image_assets"
+
+
+def test_provider_and_blueprint_visibility_conditions_are_deduplicated():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_meta_capability())
+    intent = ParsedIntent(
+        "create_campaign", "创建 Meta 转化广告", ["meta"],
+        platform_params={"meta": {"objective": "OUTCOME_CONVERSIONS"}},
+    )
+    card = runtime.build_creation_ui(intent)["cards"][0]
+    visibility = next(
+        item for item in card["fields"] if item["path"] == "campaign.daily_budget"
+    )["visible_when"]
+    assert visibility == {"not": {"field": "campaign.buying_type", "equals": "RESERVED"}}
 
 
 def test_declared_resource_fields_inherit_provider_lookup_metadata():
@@ -546,6 +662,35 @@ def test_google_app_nested_dynamic_field_exposes_lookup_metadata():
         "GOOGLE_APP_STORE": "Google Play",
         "APPLE_APP_STORE": "Apple App Store",
     }
+
+
+def test_nested_creation_assets_keep_provider_sources_and_controls():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_google_capability())
+    intent = ParsedIntent(
+        "create_campaign", "创建 Google Demand Gen 轮播广告", ["google-ads"],
+        campaign_type="DEMAND_GEN",
+        platform_params={"google-ads": {"campaign_type": "DEMAND_GEN"}},
+    )
+    card = runtime.build_creation_ui(intent)["cards"][0]
+    fields = {item["path"]: item for item in card["fields"]}
+    carousel = fields["ad.carousel_cards"]
+    card_props = carousel["object_properties"]
+    assert card_props["marketing_image_asset"]["lookup_tool"] == "google_list_assets"
+    assert card_props["marketing_image_asset"]["presentation"] == "asset_picker"
+
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_tiktok_capability())
+    tiktok_intent = ParsedIntent(
+        "create_campaign", "创建 TikTok 视频广告", ["tiktok"],
+        campaign_type="TRAFFIC",
+        platform_params={"tiktok": {"objective_type": "TRAFFIC"}},
+    )
+    tiktok_card = runtime.build_creation_ui(tiktok_intent)["cards"][0]
+    tiktok_fields = {item["path"]: item for item in tiktok_card["fields"]}
+    media = tiktok_fields["ad.media"]
+    assert media["manual_entry"]["source"] == "provider_media_payload"
+    assert media["item_properties"]["image_id"]["lookup_tool"] == "tiktok_list_images"
 
 
 def test_cascade_hides_and_requires_app_fields_for_app_objective():

@@ -68,6 +68,29 @@ def _google_lookup(tool: str, result_key: str, values: list[str], labels: list[s
     return metadata
 
 
+def _build_specialized_ad_args(
+    data: dict[str, Any], positional: list[str], optional: list[str], tool_name: str,
+) -> tuple[tuple[Any, ...], dict[str, Any]]:
+    """Build typed-ad arguments without leaking a Python ``KeyError``.
+
+    Provider requirements are validated by Runtime/Registry before normal
+    execution.  This second guard protects direct Capability handler calls and
+    turns a partially assembled conversational draft into an actionable
+    validation error instead of an internal exception.
+    """
+    missing = [
+        key for key in positional
+        if data.get(key) in (None, "", {}, [])
+    ]
+    if missing:
+        raise ValueError(
+            f"{tool_name} requires provider fields: {', '.join(missing)}"
+        )
+    return tuple(data[key] for key in positional), {
+        key: data.get(key) for key in optional
+    }
+
+
 # The mapping is provider-owned metadata, not Runtime routing.  It covers
 # every reusable Google resource ID exposed by the Capability, including
 # standalone lifecycle Tools and the creation blueprints.
@@ -1444,9 +1467,8 @@ class GoogleCapability(BaseCapability):
                     "in": channel_types,
                 }],
                 traits=["write", "ad", "specialized_campaign"], write=True, live_support=False,
-                argument_builder=lambda _ctx, data, p=positional, o=optional: (
-                    tuple(data[key] for key in p),
-                    {key: data.get(key) for key in o},
+                argument_builder=lambda _ctx, data, p=positional, o=optional: _build_specialized_ad_args(
+                    data, p, o, name
                 ),
             )
 

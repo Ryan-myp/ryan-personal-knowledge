@@ -2,6 +2,10 @@ from agents.ad_agent.scripts.audit_capabilities import (
     _covered_tool_names,
     audit_capabilities,
 )
+from agents.ad_agent.scripts.audit_creation_contracts import (
+    audit_creation_contracts,
+    build_runtime as build_creation_runtime,
+)
 from agents.ad_agent.scripts.validate_contracts import (
     build_contract_snapshot,
     build_runtime,
@@ -138,6 +142,34 @@ def test_capability_audit_keeps_client_method_tool_surface_chain_complete():
         for method, coverage in methods.items():
             assert coverage["tools"], f"{platform}:{method} has no Tool"
             assert coverage["surface_entries"], f"{platform}:{method} has no Surface entry"
+
+
+def test_creation_contract_audit_closes_blueprint_and_lookup_sources_without_io():
+    report = audit_creation_contracts(build_creation_runtime())
+
+    assert report["issues"] == []
+    assert report["blueprint_count"] == 24
+    assert report["creation_tool_count"] > 0
+    assert report["lookup_contract_count"] > 0
+    assert not report["unresolved_fields"]
+    assert report["selector_overlaps"] == [{
+        "provider": "google-ads",
+        "dimension": "ad_format",
+        "values": ["DEMAND_GEN"],
+        "blueprints": [
+            "google-ads.demand_gen_carousel",
+            "google-ads.demand_gen_multi_asset",
+            "google-ads.demand_gen_product",
+            "google-ads.demand_gen_video_responsive",
+        ],
+    }]
+    assert any(
+        item["tool"] == "meta_create_adset"
+        and item["field"] == "targeting.custom_audiences"
+        and item["lookup_tool"] == "meta_list_audiences"
+        and item["read_only"]
+        for item in report["lookup_contracts"]
+    )
 
 
 def test_contract_snapshot_is_deterministic_and_partitioned_by_platform():

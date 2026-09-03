@@ -1,0 +1,30 @@
+{
+  "id": "google-ads.local",
+  "version": "1.0.0",
+  "provider": "google-ads",
+  "ad_format": "LOCAL",
+  "title": "Google Local 广告",
+  "description": "配置商家位置来源、广告组和本地广告素材。",
+  "selector": {"dimension": "ad_format", "field": "campaign.advertising_channel_type", "values": ["LOCAL"], "label": "Google 广告系列类型", "options": [{"value": "LOCAL", "label": "Local"}]},
+  "tools": ["google_create_campaign", "google_create_specialized_ad_group", "google_create_local_ad"],
+  "resources": ["campaign", "ad_group", "ad"],
+  "fields": [
+    {"path": "campaign.campaign_name", "tool_ref": "google_create_campaign.campaign_name", "label": "Campaign 名称", "required": true},
+    {"path": "campaign.advertising_channel_type", "tool_ref": "google_create_campaign.advertising_channel_type", "label": "广告系列类型（已根据入口匹配）", "required": true, "source": "enum", "options": ["LOCAL"], "presentation": "derived_readonly"},
+    {"path": "campaign.bidding_strategy", "tool_ref": "google_create_campaign.bidding_strategy", "label": "出价策略", "required": true, "source": "enum", "options": ["MAXIMIZE_CONVERSIONS", "TARGET_CPA"]},
+    {"path": "campaign.target_cpa_micros", "tool_ref": "google_create_campaign.target_cpa_micros", "label": "目标 CPA（微单位）", "visible_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_CPA"}, "required_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_CPA"}},
+    {"path": "campaign.daily_budget", "tool_ref": "google_create_campaign.daily_budget", "label": "日预算", "required": true},
+    {"path": "campaign.local_campaign_setting", "tool_ref": "google_create_campaign.local_campaign_setting", "label": "商家位置来源", "required": true, "presentation": "object_editor"},
+    {"path": "ad_group.name", "tool_ref": "google_create_specialized_ad_group.name", "label": "广告组名称", "required": true},
+    {"path": "ad_group.campaign_type", "tool_ref": "google_create_specialized_ad_group.campaign_type", "label": "广告组所属类型（自动匹配）", "required": true, "source": "enum", "options": ["LOCAL"], "presentation": "derived_readonly"},
+    {"path": "ad_group.type", "tool_ref": "google_create_specialized_ad_group.type", "label": "广告组类型（自动匹配）", "required": true, "source": "enum", "options": ["SMART_CAMPAIGN_ADS"], "presentation": "derived_readonly"},
+    {"path": "ad.name", "tool_ref": "google_create_local_ad.name", "label": "广告名称", "required": true},
+    {"path": "ad.final_url", "tool_ref": "google_create_local_ad.final_url", "label": "最终到达网址", "required": true},
+    {"path": "ad.headlines", "tool_ref": "google_create_local_ad.headlines", "label": "标题素材（至少 3 条）", "required": true, "presentation": "text_list", "value_shape": "object_text"},
+    {"path": "ad.descriptions", "tool_ref": "google_create_local_ad.descriptions", "label": "描述素材（至少 2 条）", "required": true, "presentation": "text_list", "value_shape": "object_text"},
+    {"path": "ad.logo_images", "tool_ref": "google_create_local_ad.logo_images", "label": "Logo 图片", "required": false, "source": "lookup", "lookup_tool": "google_list_assets", "presentation": "asset_picker", "accept": "image/*"},
+    {"path": "ad.marketing_images", "tool_ref": "google_create_local_ad.marketing_images", "label": "营销图片", "required": false, "source": "lookup", "lookup_tool": "google_list_assets", "presentation": "asset_picker", "accept": "image/*"},
+    {"path": "ad.videos", "tool_ref": "google_create_local_ad.videos", "label": "视频素材", "required": false, "source": "lookup", "lookup_tool": "google_list_assets", "presentation": "asset_picker", "accept": "video/*"}
+  ],
+  "rules": [{"id": "campaign_type_is_fixed", "when": {"field": "campaign.advertising_channel_type", "equals": "LOCAL"}, "preserve": ["campaign.advertising_channel_type", "ad_group.campaign_type", "ad_group.type"]}]
+}

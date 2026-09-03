@@ -93,6 +93,99 @@ def _field(
     return value
 
 
+def _ui_when(field: str, *values: str) -> dict[str, Any]:
+    """Declare a provider-field applicability rule for creation cards."""
+    return {"ui_visible_when": {"field": field, "in": list(values)}}
+
+
+def _ui_equals(field: str, value: str) -> dict[str, Any]:
+    return {"ui_visible_when": {"field": field, "equals": value}}
+
+
+def _tiktok_media_field(description: str) -> dict[str, Any]:
+    """Advanced media payload with typed asset alternatives.
+
+    The common ``video_id``/``image_ids`` fields remain the preferred UI
+    controls.  This shape is for provider versions that require a media
+    object and keeps its asset sources discoverable instead of presenting an
+    unbounded JSON blob as the only option.
+    """
+    return _field(
+        "array", description,
+        minItems=1,
+        items={
+            "type": "object",
+            "properties": {
+                "type": _field("string", "Media type", enum=["IMAGE", "VIDEO"]),
+                "image_id": _field(
+                    "string", "Uploaded TikTok image ID", minLength=1,
+                    lookup_tool="tiktok_list_images", lookup_result_key="images",
+                    selection_value_fields=["image_id", "id"],
+                    selection_label_fields=["file_name", "image_name", "name", "id"],
+                ),
+                "video_id": _field(
+                    "string", "Uploaded TikTok video ID", minLength=1,
+                    lookup_tool="tiktok_list_videos", lookup_result_key="videos",
+                    selection_value_fields=["video_id", "id"],
+                    selection_label_fields=["file_name", "video_name", "name", "id"],
+                ),
+                "image_url": _field("string", "Provider-accessible image URL", minLength=1),
+                "video_url": _field("string", "Provider-accessible video URL", minLength=1),
+            },
+            "additionalProperties": True,
+        },
+        manual_entry={
+            "title": "高级素材对象",
+            "instructions": "优先选择 video_id/image_ids 或先上传素材；仅当 TikTok 版本要求额外 media 字段时填写此高级对象。URL 必须可被 TikTok 访问。",
+            "source": "provider_media_payload",
+        },
+        presentation="asset_picker",
+    )
+
+
+def _tiktok_creatives_field(description: str) -> dict[str, Any]:
+    """Advanced creative list with the stable fields used by ad/create."""
+    return _field(
+        "array", description,
+        minItems=1,
+        items={
+            "type": "object",
+            "properties": {
+                "creative_type": _field("string", "Creative type", enum=TIKTOK_CREATIVE_TYPES),
+                "ad_text": _field("string", "Primary ad text", minLength=1, maxLength=100),
+                "display_name": _field("string", "Creative display name", maxLength=512),
+                "call_to_action": _field("string", "Call to action"),
+                "identity_id": _field(
+                    "string", "TikTok identity ID", minLength=1,
+                    lookup_tool="tiktok_list_identities", lookup_result_key="identities",
+                    selection_value_fields=["identity_id", "id"],
+                    selection_label_fields=["display_name", "name", "id"],
+                ),
+            },
+            "additionalProperties": True,
+        },
+        manual_entry={
+            "title": "高级 Creative 列表",
+            "instructions": "优先使用页面上的素材、文案和身份选择；只有 Provider 版本需要额外 creative 字段时才编辑此列表。",
+            "source": "provider_creative_payload",
+        },
+        presentation="object_editor",
+    )
+
+
+def _tiktok_text_field() -> dict[str, Any]:
+    return _field(
+        "object", "Ad copy payload",
+        properties={
+            "ad_text": _field("string", "Primary ad text", minLength=1, maxLength=100),
+            "display_name": _field("string", "Creative display name", maxLength=512),
+            "call_to_action": _field("string", "Call to action"),
+        },
+        additionalProperties=True,
+        presentation="object_editor",
+    )
+
+
 def tiktok_campaign_schema() -> dict[str, Any]:
     return {
         "required": ["account_id", "name", "objective_type", "budget_mode", "campaign_type"],
@@ -113,16 +206,21 @@ def tiktok_campaign_schema() -> dict[str, Any]:
             "campaign_automation_type": _field("string", "Automation mode", enum=TIKTOK_AUTOMATION_TYPES),
             "budget_restriction": _field("string", "Budget restriction", enum=TIKTOK_BUDGET_RESTRICTIONS),
             "budget_mode": _field("string", "Budget mode", enum=TIKTOK_BUDGET_MODES),
-            "budget": _field("number", "Daily/lifetime budget in user currency", minimum=0),
+            "budget": _field(
+                "number", "Daily/lifetime budget in user currency", minimum=0,
+                **_ui_equals("budget_mode", "BUDGET_MODE_TOTAL"),
+            ),
             "daily_budget": _field(
                 "number", "Daily budget in user currency", minimum=0,
                 # The common ParsedIntent carries a generic budget value;
                 # this provider field is the wire-level daily-budget variant.
                 intent_aliases=["budget"],
+                **_ui_equals("budget_mode", "BUDGET_MODE_DAY"),
             ),
             "app_promotion_type": _field(
                 "string", "App promotion mode; only for app campaigns",
                 enum=TIKTOK_APP_PROMOTION_TYPES,
+                **_ui_equals("objective_type", "APP_PROMOTION"),
             ),
             "status": _field("integer", "Campaign status: 1 active, 0 paused", enum=[0, 1]),
         },
@@ -513,20 +611,41 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
                 lookup_tool="tiktok_list_apps", lookup_result_key="apps",
                 selection_value_fields=["app_id", "id"],
                 selection_label_fields=["app_name", "name", "display_name"],
+                **_ui_when("promotion_type", "APP_ANDROID", "APP_IOS"),
             ),
-            "landing_url": _field("string", "Website landing URL"),
+            "landing_url": _field(
+                "string", "Website landing URL",
+                **_ui_equals("promotion_type", "WEBSITE"),
+            ),
             "billing_event": _field("string", "Billing event", enum=TIKTOK_BILLING_EVENTS),
             "bid_type": _field("string", "Bid mode", enum=TIKTOK_BID_TYPES),
-            "bid_amount": _field("number", "Manual bid amount", minimum=0),
+            "bid_amount": _field(
+                "number", "Manual bid amount", minimum=0,
+                **_ui_equals("bid_type", "BID_TYPE_CUSTOM"),
+            ),
             "bid_price": _field(
                 "number", "Provider bid price; required for custom bid strategies", minimum=0,
+                **_ui_equals("bid_type", "BID_TYPE_CUSTOM"),
             ),
             "conversion_bid_price": _field(
                 "number", "Target cost per conversion for OCPM custom bidding", minimum=0,
+                **{"ui_visible_when": {"all": [
+                    {"field": "bid_type", "equals": "BID_TYPE_CUSTOM"},
+                    {"field": "billing_event", "equals": "OCPM"},
+                ]}},
             ),
-            "deep_cpa_bid": _field("number", "Deep CPA bid", minimum=0),
-            "roas_bid": _field("number", "ROAS target for value optimization", minimum=0),
-            "deep_bid_type": _field("string", "Deep optimization goal", enum=TIKTOK_DEEP_BID_TYPES),
+            "deep_cpa_bid": _field(
+                "number", "Deep CPA bid", minimum=0,
+                **_ui_when("deep_bid_type", "AEO", "OCC"),
+            ),
+            "roas_bid": _field(
+                "number", "ROAS target for value optimization", minimum=0,
+                **_ui_equals("deep_bid_type", "ROAS"),
+            ),
+            "deep_bid_type": _field(
+                "string", "Deep optimization goal", enum=TIKTOK_DEEP_BID_TYPES,
+                **_ui_when("promotion_type", "APP_ANDROID", "APP_IOS"),
+            ),
             "optimization_goal": _field(
                 "string", "Ad group optimization goal", enum=TIKTOK_OPTIMIZATION_GOALS,
             ),
@@ -539,9 +658,18 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
             ),
             "optimization_event": _field(
                 "string", "Provider conversion event used for optimization",
+                manual_entry={
+                    "title": "优化事件",
+                    "instructions": "请填写 TikTok Pixel/Events API 中已配置的事件名称；如账号支持事件查询，请先从转化列表确认。",
+                    "source": "provider_conversion_event",
+                },
             ),
             "pixel_id": _field(
                 "string", "TikTok Pixel ID for landing-page tracking",
+                lookup_tool="tiktok_list_pixels", lookup_result_key="pixels",
+                selection_value_fields=["pixel_id", "id", "code"],
+                selection_label_fields=["pixel_name", "name", "display_name", "id"],
+                **_ui_when("promotion_type", "WEBSITE", "CATALOG"),
             ),
             "placement_type": _field("string", "Placement mode", enum=TIKTOK_PLACEMENT_TYPES),
             "placements": _field(
@@ -551,6 +679,7 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
             "promotion_website_type": _field(
                 "string", "TikTok native Instant Page type",
                 enum=["TIKTOK_NATIVE_PAGE"],
+                **_ui_equals("promotion_type", "WEBSITE"),
             ),
             "budget_mode": _field("string", "Ad group budget mode", enum=TIKTOK_BUDGET_MODES[:3]),
             "budget_optmize_on": _field("boolean", "Enable Campaign Budget Optimization"),
@@ -569,6 +698,7 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
                 # The common ParsedIntent carries a generic budget value;
                 # this provider field is the wire-level daily-budget variant.
                 intent_aliases=["budget"],
+                ui_hidden=True,
             ),
             "location_ids": _field(
                 "array", "Country/region IDs", items={"type": "string"},
@@ -586,7 +716,9 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
             "gender": _field("string", "Gender targeting", enum=TIKTOK_GENDERS),
             "auto_targeting_enabled": _field("boolean", "Enable automatic targeting"),
             "targeting": _field(
-                "object", "Provider targeting object; use structured fields above for known dimensions",
+                "object",
+                "Provider targeting object; select known dimensions below or use an advanced provider field",
+                properties=tiktok_targeting_fields(), additionalProperties=True,
             ),
             "tracking_url": _field("string", "Tracking URL"),
             "status": _field("integer", "Ad group status: 1 active, 0 paused", enum=[0, 1]),
@@ -595,12 +727,14 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
                 lookup_tool="tiktok_list_catalogs", lookup_result_key="catalogs",
                 selection_value_fields=["catalog_id", "id"],
                 selection_label_fields=["catalog_name", "name", "id"],
+                **_ui_equals("promotion_type", "CATALOG"),
             ),
             "product_set_id": _field(
                 "string", "TikTok product set ID",
                 lookup_tool="tiktok_list_product_sets", lookup_result_key="product_sets",
                 selection_value_fields=["product_set_id", "id"],
                 selection_label_fields=["product_set_name", "name", "id"],
+                **_ui_equals("promotion_type", "CATALOG"),
             ),
             "brand_safety_type": _field(
                 "string", "TikTok brand safety type",
@@ -610,18 +744,52 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
                 "string", "Brand safety verification partner",
                 enum=["IAS", "OPEN_SLATE"],
             ),
-            "audience_ids": _field("array", "Included audience IDs", items={"type": "string"}),
-            "excluded_audience_ids": _field("array", "Excluded audience IDs", items={"type": "string"}),
+            "audience_ids": _field(
+                "array", "Included audience IDs",
+                items={"type": "string", "minLength": 1},
+                lookup_tool="tiktok_list_audiences", lookup_result_key="audiences",
+                selection_value_fields=["audience_id", "id"],
+                selection_label_fields=["audience_name", "name", "id"],
+            ),
+            "excluded_audience_ids": _field(
+                "array", "Excluded audience IDs",
+                items={"type": "string", "minLength": 1},
+                lookup_tool="tiktok_list_audiences", lookup_result_key="audiences",
+                selection_value_fields=["audience_id", "id"],
+                selection_label_fields=["audience_name", "name", "id"],
+            ),
             "interest_category_ids": _field(
                 "array", "Interest category IDs", items={"type": "string"},
                 lookup_tool="tiktok_list_interest_categories", lookup_result_key="interest_categories",
                 selection_value_fields=["interest_category_id", "category_id", "id"],
                 selection_label_fields=["interest_category_name", "category_name", "name", "id"],
             ),
-            "interest_keyword_ids": _field("array", "Interest keyword IDs", items={"type": "string"}),
-            "interest_keywords": _field("array", "Interest keyword values", items={"type": "string"}),
+            "interest_keyword_ids": _field(
+                "array", "Interest keyword IDs; values depend on the account and market",
+                items={"type": "string", "minLength": 1},
+                manual_entry={
+                    "title": "兴趣关键词 ID",
+                    "instructions": "当前没有独立的关键词目录接口；请从 TikTok Ads Manager 或 Provider 返回结果复制关键词 ID。",
+                    "source": "provider_targeting_identifier",
+                },
+            ),
+            "interest_keywords": _field(
+                "array", "Interest keyword values",
+                items={"type": "string", "minLength": 1},
+                manual_entry={
+                    "title": "兴趣关键词",
+                    "instructions": "请输入要匹配的关键词；关键词是否可用由 TikTok 账号、地区和语言限制决定。",
+                    "source": "provider_targeting_keyword",
+                },
+            ),
             "purchase_intention_keyword_ids": _field(
-                "array", "Purchase intention keyword IDs", items={"type": "string"},
+                "array", "Purchase intention keyword IDs",
+                items={"type": "string", "minLength": 1},
+                manual_entry={
+                    "title": "购买意向关键词 ID",
+                    "instructions": "当前没有独立的购买意向关键词目录接口；请复制 TikTok 返回或 Ads Manager 中的 ID。",
+                    "source": "provider_targeting_identifier",
+                },
             ),
             "device_model_ids": _field(
                 "array", "Device model IDs", items={"type": "string"},
@@ -633,7 +801,15 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
                 "array", "Language targeting values", items={"type": "string"},
                 lookup_tool="tiktok_list_languages", lookup_result_key="languages",
             ),
-            "network_types": _field("array", "Network types", items={"type": "string"}),
+            "network_types": _field(
+                "array", "Network types; values depend on the TikTok account and market",
+                items={"type": "string", "minLength": 1},
+                manual_entry={
+                    "title": "网络类型",
+                    "instructions": "TikTok 当前没有稳定的通用网络类型目录接口；请从账户可用定向选项中选择或复制值。",
+                    "source": "provider_targeting_option",
+                },
+            ),
             "min_android_version": _field("string", "Minimum Android version"),
             "min_ios_version": _field("string", "Minimum iOS version"),
             "ios14_targeting": _field(
@@ -642,8 +818,20 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
             ),
             "device_price_ranges": _field(
                 "array", "Device price range values", items={"type": "integer"},
+                manual_entry={
+                    "title": "设备价格区间",
+                    "instructions": "设备价格区间由 TikTok 市场和账户配置决定；当前没有独立目录接口，请按 Provider 支持的数值填写。",
+                    "source": "provider_targeting_option",
+                },
             ),
-            "contextual_tag_ids": _field("array", "Contextual targeting tag IDs", items={"type": "string"}),
+            "contextual_tag_ids": _field(
+                "array", "Contextual targeting tag IDs", items={"type": "string", "minLength": 1},
+                manual_entry={
+                    "title": "上下文标签 ID",
+                    "instructions": "当前没有独立的上下文标签目录接口；请从 TikTok 可用定向选项复制标签 ID。",
+                    "source": "provider_targeting_identifier",
+                },
+            ),
             "targeting_expansion": _field("object", "Targeting expansion settings", additionalProperties=True),
             "household_income": _field("string", "Household income targeting value"),
             "spending_power": _field("string", "Spending power targeting value"),
@@ -655,13 +843,36 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
             "dayparting": _field("string", "Dayparting schedule"),
             "frequency": _field("number", "Frequency cap", minimum=0),
             "frequency_schedule": _field("string", "Frequency cap schedule"),
-            "product_source": _field("string", "Shopping product source", enum=TIKTOK_PRODUCT_SOURCES),
-            "shopping_ads_type": _field("string", "Shopping ads type", enum=TIKTOK_SHOPPING_ADS_TYPES),
-            "shopping_ads_retargeting_type": _field("string", "Shopping ads retargeting type"),
+            "product_source": _field(
+                "string", "Shopping product source", enum=TIKTOK_PRODUCT_SOURCES,
+                **_ui_equals("promotion_type", "CATALOG"),
+            ),
+            "shopping_ads_type": _field(
+                "string", "Shopping ads type", enum=TIKTOK_SHOPPING_ADS_TYPES,
+                **_ui_equals("promotion_type", "CATALOG"),
+            ),
+            "shopping_ads_retargeting_type": _field(
+                "string", "Shopping ads retargeting type",
+                manual_entry={
+                    "title": "商品再营销类型",
+                    "instructions": "可选值受 TikTok 商品广告版本和账号配置影响；请从 Provider 可用选项中选择或复制。",
+                    "source": "provider_shopping_option",
+                },
+                **_ui_equals("promotion_type", "CATALOG"),
+            ),
             "shopping_ads_retargeting_actions_days": _field(
                 "integer", "Shopping ads retargeting lookback days", minimum=0,
+                **_ui_equals("promotion_type", "CATALOG"),
             ),
-            "store_id": _field("string", "TikTok Shop or Storefront ID"),
+            "store_id": _field(
+                "string", "TikTok Shop or Storefront ID", minLength=1,
+                manual_entry={
+                    "title": "TikTok Shop / Storefront ID",
+                    "instructions": "当前没有通用 Shop 列表接口；请从 TikTok Shop/Business Center 复制店铺 ID。",
+                    "source": "provider_store_identifier",
+                },
+                **_ui_equals("product_source", "STORE"),
+            ),
             "is_hfss": _field("boolean", "Whether the product is high fat, salt or sugar"),
         },
         "conditional_rules": [
@@ -821,23 +1032,41 @@ def tiktok_ad_schema() -> dict[str, Any]:
             # TikTok accepts a single media object in some versions and a
             # list of assets in others; keep both shapes explicit so a
             # provider field is not silently discarded by closed validation.
-            "media": _field(["array", "object"], "TikTok media asset payload", items={"type": "object"}),
-            "creatives": _field("array", "Creative list", items={"type": "object"}),
-            "text": _field("object", "Ad copy payload", additionalProperties=True),
+            "media": _tiktok_media_field("TikTok media asset payload"),
+            "creatives": _tiktok_creatives_field("Creative list"),
+            "text": _tiktok_text_field(),
             "video_id": _field(
                 "string", "Video asset ID", minLength=1,
                 lookup_tool="tiktok_list_videos", lookup_result_key="videos",
                 selection_value_fields=["video_id", "id"],
                 selection_label_fields=["file_name", "video_name", "name", "id"],
+                **_ui_equals("ad_format", "SINGLE_VIDEO"),
             ),
             "image_ids": _field(
                 "array", "Image asset IDs", items={"type": "string", "minLength": 1},
                 lookup_tool="tiktok_list_images", lookup_result_key="images",
                 selection_value_fields=["image_id", "id"],
                 selection_label_fields=["file_name", "image_name", "name", "id"],
+                **_ui_when("ad_format", "SINGLE_IMAGE", "CAROUSEL"),
             ),
-            "spark_post_id": _field("string", "Spark post ID"),
-            "page_id": _field("string", "TikTok Instant Page or Instant Form page ID", minLength=1),
+            "spark_post_id": _field(
+                "string", "Spark post ID",
+                manual_entry={
+                    "title": "Spark 帖子 ID",
+                    "instructions": "请提供已授权可推广的 TikTok 帖子 ID；当前没有通用帖子列表接口。",
+                    "source": "provider_spark_post",
+                },
+                **_ui_equals("ad_format", "SPARK_AD"),
+            ),
+            "page_id": _field(
+                "string", "TikTok Instant Page or Instant Form page ID", minLength=1,
+                manual_entry={
+                    "title": "TikTok 页面/表单 ID",
+                    "instructions": "请从 TikTok Ads Manager 复制对应 Instant Page 或 Instant Form ID。",
+                    "source": "provider_page_identifier",
+                },
+                **_ui_equals("ad_format", "LEAD_FORM"),
+            ),
             "catalog_id": _field(
                 "string", "TikTok catalog ID", minLength=1,
                 lookup_tool="tiktok_list_catalogs", lookup_result_key="catalogs",
@@ -850,8 +1079,22 @@ def tiktok_ad_schema() -> dict[str, Any]:
                 selection_value_fields=["product_set_id", "id"],
                 selection_label_fields=["product_set_name", "name", "id"],
             ),
-            "call_to_action": _field("string", "Call to action"),
-            "call_to_action_id": _field("string", "Provider call-to-action ID"),
+            "call_to_action": _field(
+                "string", "Call to action",
+                manual_entry={
+                    "title": "行动号召",
+                    "instructions": "可用行动号召由 TikTok 广告目标、地区和素材格式决定；请从卡片中的可用值或 Ads Manager 选择。",
+                    "source": "provider_cta_option",
+                },
+            ),
+            "call_to_action_id": _field(
+                "string", "Provider call-to-action ID",
+                manual_entry={
+                    "title": "行动号召 ID",
+                    "instructions": "当前没有独立的 CTA 目录接口；请从 TikTok 返回或 Ads Manager 复制 CTA ID。",
+                    "source": "provider_cta_identifier",
+                },
+            ),
             "creative_type": _field("string", "Provider creative type", enum=TIKTOK_CREATIVE_TYPES),
             "ad_text": _field("string", "Provider ad text"),
             "identity_id": _field(
@@ -859,9 +1102,21 @@ def tiktok_ad_schema() -> dict[str, Any]:
                 lookup_tool="tiktok_list_identities", lookup_result_key="identities",
                 selection_value_fields=["identity_id", "id"],
                 selection_label_fields=["display_name", "name", "id"],
+                **_ui_equals("ad_format", "SPARK_AD"),
             ),
-            "identity_type": _field("string", "TikTok identity type", enum=TIKTOK_IDENTITY_TYPES),
-            "tiktok_item_id": _field("string", "Owned TikTok post ID for Spark creative"),
+            "identity_type": _field(
+                "string", "TikTok identity type", enum=TIKTOK_IDENTITY_TYPES,
+                **_ui_equals("ad_format", "SPARK_AD"),
+            ),
+            "tiktok_item_id": _field(
+                "string", "Owned TikTok post ID for Spark creative",
+                manual_entry={
+                    "title": "TikTok 帖子 ID",
+                    "instructions": "请提供该身份下已授权的有机帖子 ID；当前没有通用帖子列表接口。",
+                    "source": "provider_spark_post",
+                },
+                **_ui_equals("ad_format", "SPARK_AD"),
+            ),
             "deeplink": _field("string", "App deep link"),
             "deeplink_type": _field("string", "Deep link behavior"),
             "click_tracking_url": _field("string", "Click tracking URL"),
@@ -871,15 +1126,40 @@ def tiktok_ad_schema() -> dict[str, Any]:
             "dynamic_destination": _field("string", "Dynamic landing page destination"),
             "dynamic_format": _field("string", "Dynamic creative format"),
             "product_specific_type": _field("string", "Shopping product selection mode"),
-            "sku_ids": _field("array", "Shopping SKU IDs", items={"type": "string"}),
-            "item_group_ids": _field("array", "Shopping item group IDs", items={"type": "string"}),
+            "sku_ids": _field(
+                "array", "Shopping SKU IDs", items={"type": "string", "minLength": 1},
+                manual_entry={
+                    "title": "商品 SKU ID",
+                    "instructions": "当前没有通用 SKU 列表接口；请从 TikTok 商品库或商品集查询结果复制 SKU ID。",
+                    "source": "provider_product_identifier",
+                },
+                **_ui_when("ad_format", "SINGLE_VIDEO", "SINGLE_IMAGE", "CAROUSEL"),
+            ),
+            "item_group_ids": _field(
+                "array", "Shopping item group IDs", items={"type": "string", "minLength": 1},
+                manual_entry={
+                    "title": "商品组 ID",
+                    "instructions": "当前没有通用商品组列表接口；请从 TikTok 商品库或商品集查询结果复制商品组 ID。",
+                    "source": "provider_product_identifier",
+                },
+                **_ui_when("ad_format", "SINGLE_VIDEO", "SINGLE_IMAGE", "CAROUSEL"),
+            ),
             "shopping_ads_deeplink_type": _field("string", "Shopping ads deep link behavior"),
             "shopping_ads_fallback_type": _field("string", "Shopping ads fallback behavior"),
             "shopping_ads_video_package_id": _field("string", "Shopping ads video package ID"),
             "shopping_ads_word_set": _field("array", "Shopping ads word set IDs", items={"type": "integer"}),
-            "promotional_music_disabled": _field("boolean", "Disable promotional music for Spark creative"),
-            "item_duet_status": _field("string", "Spark duet status", enum=TIKTOK_OPERATION_STATUSES),
-            "item_stitch_status": _field("string", "Spark stitch status", enum=TIKTOK_OPERATION_STATUSES),
+            "promotional_music_disabled": _field(
+                "boolean", "Disable promotional music for Spark creative",
+                **_ui_equals("ad_format", "SPARK_AD"),
+            ),
+            "item_duet_status": _field(
+                "string", "Spark duet status", enum=TIKTOK_OPERATION_STATUSES,
+                **_ui_equals("ad_format", "SPARK_AD"),
+            ),
+            "item_stitch_status": _field(
+                "string", "Spark stitch status", enum=TIKTOK_OPERATION_STATUSES,
+                **_ui_equals("ad_format", "SPARK_AD"),
+            ),
             "instant_product_page_used": _field("boolean", "Use TikTok instant product page"),
             "playable_url": _field("string", "Playable ad URL"),
             "status": _field("integer", "Ad status: 1 active, 0 paused", enum=[0, 1]),
@@ -939,7 +1219,16 @@ def tiktok_product_sales_ad_schema() -> dict[str, Any]:
         "string", "Product Sales destination source",
         enum=["CATALOG", "STORE", "SHOWCASE"],
     )
-    properties["store_id"] = _field("string", "TikTok Shop or Storefront ID", minLength=1)
+    properties["store_id"] = {
+        "type": "string",
+        "description": "TikTok Shop or Storefront ID",
+        "minLength": 1,
+        "manual_entry": {
+            "title": "TikTok Shop / Storefront ID",
+            "instructions": "当前没有通用 Shop 列表接口；请从 TikTok Shop/Business Center 复制店铺 ID。",
+            "source": "provider_store_identifier",
+        },
+    }
     return {
         "required": list(base["required"]),
         "provider_required": list(base["provider_required"]),
@@ -982,7 +1271,15 @@ def _tiktok_format_ad_schema(
     properties["ad_format"] = _field(
         "string", "Fixed TikTok ad format for this Tool", enum=[format_name]
     )
-    properties.update(asset_properties)
+    for field_name, field_schema in asset_properties.items():
+        # Keep applicability/lookup metadata from the shared contract when a
+        # format-specific view tightens the asset shape (for example the
+        # single-video Tool replacing the generic media field).
+        base_schema = properties.get(field_name)
+        properties[field_name] = {
+            **(base_schema if isinstance(base_schema, dict) else {}),
+            **field_schema,
+        }
     return {
         "required": ["adgroup_id", "name"],
         "provider_required": ["campaign_id"],
@@ -996,8 +1293,8 @@ def tiktok_single_video_ad_schema() -> dict[str, Any]:
     return _tiktok_format_ad_schema(
         "SINGLE_VIDEO", "TikTok single-video ad", {
             "video_id": _field("string", "Uploaded TikTok video asset ID", minLength=1),
-            "media": _field("array", "Single-video media payload", items={"type": "object"}),
-            "creatives": _field("array", "Single-video creative payload", items={"type": "object"}),
+            "media": _tiktok_media_field("Single-video media payload"),
+            "creatives": _tiktok_creatives_field("Single-video creative payload"),
         },
     )
 
@@ -1008,8 +1305,8 @@ def tiktok_single_image_ad_schema() -> dict[str, Any]:
             "image_ids": _field(
                 "array", "Uploaded TikTok image asset IDs", items={"type": "string"}, minItems=1,
             ),
-            "media": _field("array", "Single-image media payload", items={"type": "object"}),
-            "creatives": _field("array", "Single-image creative payload", items={"type": "object"}),
+            "media": _tiktok_media_field("Single-image media payload"),
+            "creatives": _tiktok_creatives_field("Single-image creative payload"),
         },
     )
 
@@ -1021,8 +1318,8 @@ def tiktok_carousel_ad_schema() -> dict[str, Any]:
                 "array", "Carousel image asset IDs (at least two)",
                 items={"type": "string"}, minItems=2,
             ),
-            "media": _field("array", "Carousel media/card payload", items={"type": "object"}),
-            "creatives": _field("array", "Carousel creative/card payload", items={"type": "object"}),
+            "media": _tiktok_media_field("Carousel media/card payload"),
+            "creatives": _tiktok_creatives_field("Carousel creative/card payload"),
         },
     )
 
@@ -1041,7 +1338,14 @@ def tiktok_lead_ad_schema() -> dict[str, Any]:
             "campaign_id": _field("string", "Parent campaign ID"),
             "adgroup_id": _field("string", "Parent ad group ID"),
             "name": _field("string", "Ad name"),
-            "page_id": _field("string", "TikTok Instant Page / Instant Form page ID", minLength=1),
+            "page_id": _field(
+                "string", "TikTok Instant Page / Instant Form page ID", minLength=1,
+                manual_entry={
+                    "title": "TikTok Instant Page / Form ID",
+                    "instructions": "请从 TikTok Ads Manager 或 Instant Page Editor 复制已发布的页面/表单 ID；当前 Capability 没有稳定的页面列表接口。",
+                    "source": "provider_instant_page",
+                },
+            ),
             "landing_page_url": _field("string", "Optional fallback landing URL"),
             "tracking_url": _field("string", "Tracking URL"),
             "conversion_id": _field(
@@ -1050,15 +1354,20 @@ def tiktok_lead_ad_schema() -> dict[str, Any]:
                 selection_value_fields=["conversion_id", "id"],
                 selection_label_fields=["conversion_name", "name", "event_name"],
             ),
-            "media": _field("array", "Lead ad media assets", items={"type": "object"}),
-            "creatives": _field("array", "Lead ad creative list", items={"type": "object"}),
-            "text": _field("object", "Ad copy payload", additionalProperties=True),
+            "media": _tiktok_media_field("Lead ad media assets"),
+            "creatives": _tiktok_creatives_field("Lead ad creative list"),
+            "text": _tiktok_text_field(),
             "call_to_action": _field("string", "Lead form call to action"),
             "status": _field("integer", "Ad status: 1 active, 0 paused", enum=[0, 1]),
             "operation_status": _field(
                 "string", "Provider creation status", enum=["ENABLE", "DISABLE"],
             ),
-            "tracking_pixel_id": _field("integer", "TikTok tracking Pixel ID", minimum=0),
+            "tracking_pixel_id": _field(
+                "integer", "TikTok tracking Pixel ID", minimum=0,
+                lookup_tool="tiktok_list_pixels", lookup_result_key="pixels",
+                selection_value_fields=["pixel_id", "id", "code"],
+                selection_label_fields=["pixel_name", "name", "display_name", "id"],
+            ),
         },
     }
 
@@ -1102,11 +1411,16 @@ def tiktok_app_ad_schema() -> dict[str, Any]:
                 selection_value_fields=["conversion_id", "id"],
                 selection_label_fields=["conversion_name", "name", "event_name"],
             ),
-            "media": _field("array", "App ad media assets", items={"type": "object"}),
-            "creatives": _field("array", "App ad creative list", items={"type": "object"}),
-            "text": _field("object", "Ad copy payload", additionalProperties=True),
+            "media": _tiktok_media_field("App ad media assets"),
+            "creatives": _tiktok_creatives_field("App ad creative list"),
+            "text": _tiktok_text_field(),
             "call_to_action": _field("string", "App ad call to action"),
-            "identity_id": _field("string", "TikTok identity ID"),
+            "identity_id": _field(
+                "string", "TikTok identity ID", minLength=1,
+                lookup_tool="tiktok_list_identities", lookup_result_key="identities",
+                selection_value_fields=["identity_id", "id"],
+                selection_label_fields=["display_name", "name", "id"],
+            ),
             "status": _field("integer", "Ad status: 1 active, 0 paused", enum=[0, 1]),
         },
     }

@@ -1,0 +1,31 @@
+{
+  "id": "meta.engagement",
+  "version": "1.0.0",
+  "provider": "meta",
+  "ad_format": "ENGAGEMENT",
+  "title": "Meta 互动广告",
+  "description": "选择帖子互动或视频观看目标；帖子和视频资源分别按平台能力查询或明确输入。",
+  "selector": {"dimension": "objective", "field": "campaign.objective", "values": ["OUTCOME_ENGAGEMENT"], "label": "Meta 推广目标", "options": [{"value": "OUTCOME_ENGAGEMENT", "label": "互动"}]},
+  "tools": ["meta_create_campaign", "meta_create_adset", "meta_create_engagement_ad"],
+  "resources": ["campaign", "ad_set", "ad"],
+  "fields": [
+    {"path": "campaign.name", "tool_ref": "meta_create_campaign.name", "label": "Campaign 名称", "required": true},
+    {"path": "campaign.objective", "tool_ref": "meta_create_campaign.objective", "label": "推广目标（已根据入口匹配）", "required": true, "source": "enum", "options": ["OUTCOME_ENGAGEMENT"], "presentation": "derived_readonly"},
+    {"path": "campaign.special_ad_categories", "tool_ref": "meta_create_campaign.special_ad_categories", "label": "特殊广告类别", "required": true, "source": "enum", "options": ["NONE", "EMPLOYMENT", "HOUSING", "CREDIT"]},
+    {"path": "campaign.buying_type", "tool_ref": "meta_create_campaign.buying_type", "label": "购买类型", "required": true, "source": "enum", "options": ["AUCTION", "RESERVED"]},
+    {"path": "campaign.daily_budget", "tool_ref": "meta_create_campaign.daily_budget", "label": "日预算", "required": true},
+    {"path": "ad_set.name", "tool_ref": "meta_create_adset.name", "label": "Ad Set 名称", "required": true},
+    {"path": "ad_set.optimization_goal", "tool_ref": "meta_create_adset.optimization_goal", "label": "优化目标", "required": true, "source": "enum", "options": ["POST_ENGAGEMENT", "VIDEO_VIEWS"], "options_from": ["campaign.objective"], "option_rules": [{"when": {"field": "campaign.objective", "equals": "OUTCOME_ENGAGEMENT"}, "options": ["POST_ENGAGEMENT", "VIDEO_VIEWS"]}]},
+    {"path": "ad_set.billing_event", "tool_ref": "meta_create_adset.billing_event", "label": "计费事件", "required": true, "source": "enum", "options": ["IMPRESSIONS", "THRUPLAY"], "options_from": ["ad_set.optimization_goal"], "option_rules": [{"when": {"field": "ad_set.optimization_goal", "equals": "POST_ENGAGEMENT"}, "options": ["IMPRESSIONS"]}, {"when": {"field": "ad_set.optimization_goal", "equals": "VIDEO_VIEWS"}, "options": ["THRUPLAY", "IMPRESSIONS"]}]},
+    {"path": "ad_set.targeting", "tool_ref": "meta_create_adset.targeting", "label": "受众定向", "required": true, "presentation": "object_editor"},
+    {"path": "ad_set.daily_budget", "tool_ref": "meta_create_adset.daily_budget", "label": "Ad Set 日预算", "required": true},
+    {"path": "ad.name", "tool_ref": "meta_create_engagement_ad.name", "label": "广告名称", "required": true},
+    {"path": "ad.page_id", "tool_ref": "meta_create_engagement_ad.page_id", "label": "Facebook Page", "required": true, "source": "lookup", "lookup_tool": "meta_list_pages"},
+    {"path": "ad.engagement_type", "tool_ref": "meta_create_engagement_ad.engagement_type", "label": "互动形式", "required": true, "source": "enum", "options": ["POST_ENGAGEMENT", "VIDEO_VIEWS"]},
+    {"path": "ad.post_id", "tool_ref": "meta_create_engagement_ad.post_id", "label": "Facebook 帖子 ID", "required_when": {"field": "ad.engagement_type", "equals": "POST_ENGAGEMENT"}},
+    {"path": "ad.video_id", "tool_ref": "meta_create_engagement_ad.video_id", "label": "视频素材", "required_when": {"field": "ad.engagement_type", "equals": "VIDEO_VIEWS"}, "source": "lookup", "lookup_tool": "meta_list_video_assets", "presentation": "asset_picker", "accept": "video/*"},
+    {"path": "ad.call_to_action_type", "tool_ref": "meta_create_engagement_ad.call_to_action_type", "label": "行动号召", "required_when": {"field": "ad.engagement_type", "equals": "VIDEO_VIEWS"}, "source": "enum", "options": ["WATCH_VIDEO"]},
+    {"path": "ad.message", "tool_ref": "meta_create_engagement_ad.message", "label": "主要文案", "required": false}
+  ],
+  "rules": [{"id": "engagement_type_changed", "when": {"field": "ad.engagement_type", "changed": true}, "reset": ["ad.post_id", "ad.video_id", "ad.call_to_action_type"]}]
+}

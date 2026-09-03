@@ -30,6 +30,17 @@ META_AD_FORMATS = ["LINK", "VIDEO", "CAROUSEL", "LEAD", "CATALOG"]
 META_MESSAGING_APPS = ["MESSENGER", "WHATSAPP", "INSTAGRAM_DIRECT"]
 META_SPECIAL_AD_CATEGORIES = ["NONE", "EMPLOYMENT", "HOUSING", "CREDIT"]
 META_STATUS = ["ACTIVE", "PAUSED"]
+META_DEVICE_PLATFORMS = ["mobile", "desktop"]
+META_PUBLISHER_PLATFORMS = ["facebook", "instagram", "audience_network", "messenger"]
+META_FACEBOOK_POSITIONS = [
+    "feed", "right_hand_column", "marketplace", "video_feeds", "story",
+    "search", "instream_video", "facebook_reels", "facebook_reels_overlay",
+    "profile_feed",
+]
+META_INSTAGRAM_POSITIONS = [
+    "stream", "story", "explore", "explore_home", "profile_feed", "reels",
+    "ig_search", "reels_overlay",
+]
 META_CUSTOM_EVENT_TYPES = [
     "PURCHASE", "LEAD", "COMPLETE_REGISTRATION", "ADD_TO_CART",
     "INITIATE_CHECKOUT", "VIEW_CONTENT", "SEARCH", "SUBSCRIBE",
@@ -73,7 +84,7 @@ META_LEAD_FORM_QUESTION_TYPES = [
 ]
 META_TARGETING_SEARCH_TYPES = [
     "adinterest", "adgeolocation", "adlocale", "adzipcode",
-    "adworkposition", "adtargetingcategory",
+    "adworkposition", "adworkemployer", "adtargetingcategory",
 ]
 
 
@@ -81,6 +92,15 @@ def _field(field_type: Any, description: str = "", **kwargs: Any) -> dict[str, A
     value = {"type": field_type, "description": description}
     value.update(kwargs)
     return value
+
+
+def _ui_when(field: str, *values: str) -> dict[str, Any]:
+    """Declare a provider-field applicability rule for creation cards."""
+    return {"ui_visible_when": {"field": field, "in": list(values)}}
+
+
+def _ui_equals(field: str, value: str) -> dict[str, Any]:
+    return {"ui_visible_when": {"field": field, "equals": value}}
 
 
 def _object(
@@ -98,6 +118,38 @@ def _object(
     return schema
 
 
+def _meta_targeting_option_list(description: str, targeting_type: str) -> dict[str, Any]:
+    """A searchable Meta targeting dimension for ``flexible_spec``."""
+    return _field(
+        "array", description,
+        items=_object({
+            "id": _field("string", "Meta targeting option ID"),
+            "key": _field("string", "Meta targeting option key"),
+            "name": _field("string", "Targeting option name"),
+        }, "Meta targeting option", additional_properties=True),
+        lookup_tool="meta_search_targeting_options",
+        lookup_result_key="targeting_options",
+        lookup_query_field="query",
+        lookup_defaults={"type": targeting_type},
+        selection_value_fields=["key", "id", "value"],
+        selection_label_fields=["name", "label", "key", "id"],
+        presentation="lookup",
+    )
+
+
+def _meta_asset_ref(
+    description: str, lookup_tool: str, result_key: str,
+    value_fields: list[str], label_fields: list[str],
+) -> dict[str, Any]:
+    """Provider resource reference used by nested Meta creative objects."""
+    return _field(
+        "string", description, minLength=1,
+        lookup_tool=lookup_tool, lookup_result_key=result_key,
+        selection_value_fields=value_fields,
+        selection_label_fields=label_fields,
+    )
+
+
 def meta_targeting_schema() -> dict[str, Any]:
     """Known Meta targeting dimensions; IDs remain provider/account scoped."""
     audience_ref = _object({
@@ -106,7 +158,16 @@ def meta_targeting_schema() -> dict[str, Any]:
     }, "Custom audience reference")
     return _object({
         "geo_locations": _object({
-            "countries": _field("array", "ISO country codes", items={"type": "string"}),
+            "countries": _field(
+                "array", "ISO country codes; search by country name or code",
+                items={"type": "string", "minLength": 2, "maxLength": 3},
+                lookup_tool="meta_search_targeting_options",
+                lookup_result_key="targeting_options",
+                lookup_query_field="query",
+                lookup_defaults={"type": "adgeolocation"},
+                selection_value_fields=["key", "id", "value", "country_code"],
+                selection_label_fields=["name", "label", "country_name", "key"],
+            ),
             "regions": _field(
                 "array", "Region IDs; search by region name",
                 items=_object({"key": _field("string")}, "Region reference"),
@@ -132,11 +193,32 @@ def meta_targeting_schema() -> dict[str, Any]:
         "age_min": _field("integer", "Minimum age", minimum=13, maximum=65),
         "age_max": _field("integer", "Maximum age", minimum=13, maximum=65),
         "genders": _field("array", "1 male, 2 female", items={"type": "integer", "enum": [1, 2]}),
-        "locales": _field("array", "Locale IDs", items={"type": "integer", "minimum": 0}),
-        "device_platforms": _field("array", "Device platforms", items={"type": "string", "enum": ["mobile", "desktop"]}),
-        "publisher_platforms": _field("array", "Publisher platforms", items={"type": "string", "enum": ["facebook", "instagram", "audience_network", "messenger"]}),
-        "facebook_positions": _field("array", "Facebook placements", items={"type": "string"}),
-        "instagram_positions": _field("array", "Instagram placements", items={"type": "string"}),
+        "locales": _field(
+            "array", "Meta locale IDs; search by language name",
+            items={"type": "integer", "minimum": 0},
+            lookup_tool="meta_search_targeting_options",
+            lookup_result_key="targeting_options",
+            lookup_query_field="query",
+            lookup_defaults={"type": "adlocale"},
+            selection_value_fields=["key", "id", "value"],
+            selection_label_fields=["name", "label", "locale", "id"],
+        ),
+        "device_platforms": _field(
+            "array", "Device platforms",
+            items={"type": "string", "enum": META_DEVICE_PLATFORMS},
+        ),
+        "publisher_platforms": _field(
+            "array", "Publisher platforms",
+            items={"type": "string", "enum": META_PUBLISHER_PLATFORMS},
+        ),
+        "facebook_positions": _field(
+            "array", "Facebook placements",
+            items={"type": "string", "enum": META_FACEBOOK_POSITIONS},
+        ),
+        "instagram_positions": _field(
+            "array", "Instagram placements",
+            items={"type": "string", "enum": META_INSTAGRAM_POSITIONS},
+        ),
         "custom_audiences": _field(
             "array", "Included custom audiences", items=audience_ref,
             lookup_tool="meta_list_audiences", lookup_result_key="audiences",
@@ -149,7 +231,21 @@ def meta_targeting_schema() -> dict[str, Any]:
             selection_value_fields=["id", "audience_id"],
             selection_label_fields=["name", "audience_name", "id"],
         ),
-        "flexible_spec": _field("array", "Interest/behavior groups", items={"type": "object", "additionalProperties": True}),
+        "flexible_spec": _field(
+            "array", "Interest/behavior groups; choose values from Meta targeting search",
+            items=_object({
+                "interests": _meta_targeting_option_list("兴趣", "adinterest"),
+                "behaviors": _meta_targeting_option_list("行为", "adtargetingcategory"),
+                "life_events": _meta_targeting_option_list("人生大事", "adtargetingcategory"),
+                "industries": _meta_targeting_option_list("行业", "adtargetingcategory"),
+                "work_employers": _meta_targeting_option_list("雇主", "adworkemployer"),
+                "work_positions": _meta_targeting_option_list("职位", "adworkposition"),
+                "education_schools": _meta_targeting_option_list("学校", "adtargetingcategory"),
+                "education_majors": _meta_targeting_option_list("专业", "adtargetingcategory"),
+            }, "Meta flexible targeting group", additional_properties=True),
+            minItems=1,
+            presentation="object_editor",
+        ),
     }, "Meta ad set targeting")
 
 
@@ -187,10 +283,36 @@ def meta_audience_schema() -> dict[str, Any]:
             "retention_days": _field("integer", "Website/event retention window", minimum=1, maximum=180),
             "rule": _field("object", "Meta website/event audience rule", additionalProperties=True),
             "prefill": _field("boolean", "Prefill audience with prior events"),
-            "pixel_id": _field("string", "Meta Pixel source ID"),
-            "event_source_group": _field("string", "Meta event source group ID"),
-            "origin_audience_id": _field("string", "Source Custom Audience ID for Lookalike"),
-            "country": _field("string", "Two-letter lookalike country code", minLength=2, maxLength=2),
+            "pixel_id": _field(
+                "string", "Meta Pixel source ID",
+                lookup_tool="meta_list_pixels", lookup_result_key="pixels",
+                selection_value_fields=["id", "pixel_id"],
+                selection_label_fields=["name", "id"],
+            ),
+            "event_source_group": _field(
+                "string", "Meta event source group ID; provide the ID from Events Manager",
+                minLength=1,
+                manual_entry={
+                    "title": "事件源组 ID",
+                    "instructions": "Meta 当前没有稳定的通用事件源组列表接口；请从 Events Manager 复制该事件源组 ID。",
+                    "source": "provider_event_source",
+                },
+            ),
+            "origin_audience_id": _field(
+                "string", "Source Custom Audience ID for Lookalike",
+                lookup_tool="meta_list_audiences", lookup_result_key="audiences",
+                selection_value_fields=["id", "audience_id"],
+                selection_label_fields=["name", "audience_name", "id"],
+            ),
+            "country": _field(
+                "string", "Two-letter ISO lookalike country code",
+                minLength=2, maxLength=2,
+                manual_entry={
+                    "title": "相似受众国家/地区",
+                    "instructions": "请输入两位 ISO 国家代码，例如 US、GB；Meta 没有为该字段提供可复用的账号列表接口。",
+                    "example": "US",
+                },
+            ),
             "ratio": _field("number", "Lookalike ratio", minimum=0.01, maximum=0.20),
             "lookalike_type": _field("string", "Lookalike expansion type", enum=META_LOOKALIKE_TYPES),
             "limit": _field("integer", "Maximum number of audiences", minimum=1, maximum=1000),
@@ -272,7 +394,11 @@ def meta_catalog_schema() -> dict[str, Any]:
         "account_id": _field("string", "Meta ad account ID"),
         "catalog_id": _field("string", "Meta Product Catalog ID", minLength=1),
         "business_id": _field(
-            "string", "Meta Business ID used only for Catalog creation", minLength=1
+            "string", "Meta Business ID used only for Catalog creation", minLength=1,
+            manual_entry={
+                "title": "Business ID",
+                "instructions": "请输入有权创建 Catalog 的 Meta Business ID，或先通过 Business 查询结果选择。",
+            },
         ),
         "name": _field("string", "Catalog name", minLength=1, maxLength=200),
         "vertical": _field("string", "Catalog vertical", enum=META_CATALOG_VERTICALS),
@@ -545,12 +671,27 @@ def meta_creative_schema() -> dict[str, Any]:
     return {
         "properties": {
             "account_id": _field("string", "Meta ad account ID"),
-            "creative_id": _field("string", "Meta Creative ID", minLength=1),
+            "creative_id": _field(
+                "string", "Meta Creative ID", minLength=1,
+                lookup_tool="meta_list_creatives", lookup_result_key="creatives",
+                selection_value_fields=["id", "creative_id"],
+                selection_label_fields=["name", "id"],
+            ),
             "name": _field("string", "Creative name", minLength=1, maxLength=400),
-            "page_id": _field("string", "Facebook Page ID"),
+            "page_id": _field(
+                "string", "Facebook Page ID", minLength=1,
+                lookup_tool="meta_list_pages", lookup_result_key="pages",
+                selection_value_fields=["id", "page_id"],
+                selection_label_fields=["name", "id"],
+            ),
             "link": _field("string", "Destination URL"),
             "message": _field("string", "Primary text"),
-            "image_hash": _field("string", "Uploaded image hash"),
+            "image_hash": _field(
+                "string", "Uploaded image hash",
+                lookup_tool="meta_list_image_assets", lookup_result_key="images",
+                selection_value_fields=["hash", "image_hash", "id"],
+                selection_label_fields=["name", "hash", "id"],
+            ),
             "image_url": _field("string", "Image URL for create"),
             "fields": _field("array", "Fields to return", items={"type": "string"}),
             "limit": _field("integer", "Maximum number of creatives", minimum=1, maximum=1000),
@@ -655,9 +796,18 @@ def meta_campaign_schema() -> dict[str, Any]:
                 ["array", "string"], "Special ad category; use NONE when not applicable",
                 items={"type": "string", "enum": META_SPECIAL_AD_CATEGORIES},
             ),
-            "daily_budget": _field("number", "Daily budget", minimum=0),
-            "lifetime_budget": _field("number", "Lifetime budget", minimum=0),
-            "budget": _field("number", "User-facing daily budget alias", minimum=0),
+            "daily_budget": _field(
+                "number", "Daily budget", minimum=0,
+                ui_visible_when={"not": {"field": "buying_type", "equals": "RESERVED"}},
+            ),
+            "lifetime_budget": _field(
+                "number", "Lifetime budget", minimum=0,
+                **_ui_equals("buying_type", "RESERVED"),
+            ),
+            "budget": _field(
+                "number", "User-facing daily budget alias", minimum=0,
+                ui_hidden=True,
+            ),
             "spend_cap": _field("number", "Campaign spend cap", minimum=0),
             "start_time": _field("string", "ISO-8601 start time"),
             "end_time": _field("string", "ISO-8601 end time"),
@@ -666,10 +816,23 @@ def meta_campaign_schema() -> dict[str, Any]:
                 lookup_tool="meta_list_catalogs", lookup_result_key="catalogs",
                 selection_value_fields=["id", "catalog_id"],
                 selection_label_fields=["name", "id"],
+                **_ui_when("objective", "PRODUCT_CATALOG_SALES"),
             ),
-            "conversion_specs": _field("array", "Conversion event specifications", items={"type": "object", "additionalProperties": True}),
+            "conversion_specs": _field(
+                "array", "Conversion event specifications",
+                items=_object({
+                    "action_type": _field("string", "Meta conversion action type", enum=META_CUSTOM_EVENT_TYPES),
+                    "event_type": _field("string", "Meta conversion event name", enum=META_CUSTOM_EVENT_TYPES),
+                    "event_source": _meta_asset_ref(
+                        "Pixel or app event source ID", "meta_list_pixels", "pixels",
+                        ["id", "pixel_id"], ["name", "id"],
+                    ),
+                }, "Meta conversion specification", additional_properties=True),
+                **_ui_when("objective", "OUTCOME_CONVERSIONS", "CONVERSIONS"),
+            ),
             "messaging_apps": _field(
-                "array", "Messaging destinations", items={"type": "string", "enum": ["MESSENGER", "WHATSAPP", "INSTAGRAM_DIRECT"]}
+                "array", "Messaging destinations", items={"type": "string", "enum": ["MESSENGER", "WHATSAPP", "INSTAGRAM_DIRECT"]},
+                **_ui_equals("objective", "OUTCOME_MESSAGES"),
             ),
         },
         "conditional_rules": [
@@ -694,28 +857,48 @@ def meta_adset_schema() -> dict[str, Any]:
             "targeting": meta_targeting_schema(),
             "optimization_goal": _field("string", "Optimization goal", enum=META_OPTIMIZATION_GOALS),
             "billing_event": _field("string", "Billing event", enum=META_BILLING_EVENTS),
-            "bid_strategy": _field("string", "Bid strategy", enum=META_BID_STRATEGIES),
-            "bidding_strategy": _field("string", "Bid strategy alias", enum=META_BID_STRATEGIES),
+            "bid_strategy": _field(
+                "string", "Bid strategy", enum=META_BID_STRATEGIES,
+                input_aliases=["bidding_strategy"],
+            ),
+            "bidding_strategy": _field(
+                "string", "Bid strategy alias", enum=META_BID_STRATEGIES,
+                ui_hidden=True,
+            ),
             "roas_average_floor": _field(
                 "number", "Minimum ROAS floor for LOWEST_COST_WITH_MIN_ROAS", minimum=0.01,
             ),
-            "promoted_object": meta_promoted_object_schema(),
+            "promoted_object": {
+                **meta_promoted_object_schema(),
+                **_ui_when("optimization_goal", "OFFSITE_CONVERSIONS", "VALUE", "APP_INSTALLS"),
+            },
             "daily_budget": _field("number", "Daily budget", minimum=0),
             "lifetime_budget": _field("number", "Lifetime budget", minimum=0),
-            "budget": _field("number", "User-facing daily budget alias", minimum=0),
-            "bid_amount": _field("number", "Bid amount", minimum=0),
+            "budget": _field(
+                "number", "User-facing daily budget alias", minimum=0,
+                ui_hidden=True,
+            ),
+            "bid_amount": _field(
+                "number", "Bid amount", minimum=0,
+                **_ui_when("bid_strategy", "LOWEST_COST_WITH_BID_CAP", "COST_CAP"),
+            ),
             "status": _field("string", "Initial delivery status", enum=META_STATUS),
             "start_time": _field("string", "ISO-8601 start time"),
             "end_time": _field("string", "ISO-8601 end time"),
-            "lead_gen_config": _field("object", "Instant Form configuration", additionalProperties=True),
+            "lead_gen_config": {
+                **_field("object", "Instant Form configuration", additionalProperties=True),
+                **_ui_when("optimization_goal", "LEAD_GENERATION", "LEADS"),
+            },
             "product_set_id": _field(
                 "string", "Catalog product set ID",
                 lookup_tool="meta_list_product_sets", lookup_result_key="product_sets",
                 selection_value_fields=["id", "product_set_id"],
                 selection_label_fields=["name", "id"],
+                **_ui_when("optimization_goal", "PRODUCT_CATALOG_SALES", "CATALOG_SALES"),
             ),
             "messaging_apps": _field(
-                "array", "Messaging destinations", items={"type": "string", "enum": ["MESSENGER", "WHATSAPP", "INSTAGRAM_DIRECT"]}
+                "array", "Messaging destinations", items={"type": "string", "enum": ["MESSENGER", "WHATSAPP", "INSTAGRAM_DIRECT"]},
+                **_ui_equals("optimization_goal", "MESSAGES"),
             ),
         },
         "conditional_rules": [
@@ -778,6 +961,33 @@ def meta_adset_schema() -> dict[str, Any]:
 
 
 def meta_ad_schema() -> dict[str, Any]:
+    image_ref = _meta_asset_ref(
+        "Uploaded image hash", "meta_list_image_assets", "images",
+        ["hash", "image_hash", "id"], ["name", "hash", "id"],
+    )
+    video_ref = _meta_asset_ref(
+        "Uploaded video ID", "meta_list_video_assets", "videos",
+        ["video_id", "id"], ["title", "name", "video_id", "id"],
+    )
+    cta_value = _object({
+        "link": _field("string", "CTA destination URL", minLength=1),
+        "app_link": _field("string", "CTA app deep link"),
+        "lead_gen_form_id": _meta_asset_ref(
+            "Instant Form ID", "meta_list_lead_forms", "lead_forms",
+            ["id", "form_id"], ["name", "id"],
+        ),
+    }, "Meta CTA destination", additional_properties=True)
+    carousel_attachment = _object({
+        "link": _field("string", "Card destination URL", minLength=1),
+        "name": _field("string", "Card headline"),
+        "description": _field("string", "Card description"),
+        "image_hash": image_ref,
+        "video_id": video_ref,
+        "call_to_action": _object({
+            "type": _field("string", "Card CTA type", enum=META_CTA_TYPES),
+            "value": cta_value,
+        }, "Carousel card CTA", additional_properties=True),
+    }, "Meta carousel attachment", additional_properties=True)
     return {
         "required": ["adset_id", "name"],
         # ``media`` is a supported provider-side shortcut for a simple image
@@ -790,37 +1000,80 @@ def meta_ad_schema() -> dict[str, Any]:
             "adset_id": _field("string", "Parent Ad Set ID"),
             "name": _field("string", "Ad name", maxLength=400),
             "ad_format": _field("string", "Inline creative format", enum=META_AD_FORMATS),
-            "creative_id": _field("string", "Existing Creative ID"),
+            "creative_id": _field(
+                "string", "Existing Creative ID", minLength=1,
+                lookup_tool="meta_list_creatives", lookup_result_key="creatives",
+                selection_value_fields=["id", "creative_id"],
+                selection_label_fields=["name", "id"],
+            ),
             "object_story_spec": _object({
-                "page_id": _field("string", "Page ID"),
+                "page_id": _field(
+                    "string", "Page ID", minLength=1,
+                    lookup_tool="meta_list_pages", lookup_result_key="pages",
+                    selection_value_fields=["id", "page_id"],
+                    selection_label_fields=["name", "id"],
+                ),
                 "link_data": _object({
                     "link": _field("string", "Destination URL"),
                     "message": _field("string", "Primary text"),
                     "name": _field("string", "Headline"),
                     "description": _field("string", "Description"),
-                    "image_hash": _field("string", "Uploaded image hash"),
+                    "image_hash": image_ref,
                     "call_to_action": _object({
                         "type": _field("string", "Call to action type", enum=META_CTA_TYPES),
-                        "value": _field("object", "Call to action destination", additionalProperties=True),
-                    }, "Link ad call to action"),
+                        "value": cta_value,
+                    }, "Link ad call to action", additional_properties=True),
                 }, "Link ad story"),
                 "video_data": _object({
-                    "video_id": _field("string", "Video ID"),
+                    "video_id": video_ref,
                     "message": _field("string", "Primary text"),
                     "title": _field("string", "Video title"),
                     "call_to_action": _object({
                         "type": _field("string", "Call to action type", enum=META_CTA_TYPES),
-                        "value": _field("object", "Call to action destination", additionalProperties=True),
-                    }, "Video ad call to action"),
+                        "value": cta_value,
+                    }, "Video ad call to action", additional_properties=True),
                 }, "Video ad story"),
-                "carousel_data": _field("object", "Carousel ad story", additionalProperties=True),
-                "lead_gen": _field("object", "Lead generation creative", additionalProperties=True),
+                "carousel_data": _object({
+                    "link": _field("string", "Carousel fallback URL"),
+                    "message": _field("string", "Carousel primary text"),
+                    "name": _field("string", "Carousel headline"),
+                    "description": _field("string", "Carousel description"),
+                    "child_attachments": _field(
+                        "array", "Carousel cards", minItems=2, maxItems=10,
+                        items=carousel_attachment,
+                        presentation="object_editor",
+                    ),
+                }, "Carousel ad story", additional_properties=True),
+                "lead_gen": _object({
+                    "page_id": _meta_asset_ref(
+                        "Facebook Page ID", "meta_list_pages", "pages",
+                        ["id", "page_id"], ["name", "id"],
+                    ),
+                    "form_id": _meta_asset_ref(
+                        "Published Instant Form ID", "meta_list_lead_forms", "lead_forms",
+                        ["id", "form_id"], ["name", "id"],
+                    ),
+                }, "Lead generation creative reference", additional_properties=True),
             }, "Meta object story specification"),
-            "creative": _object({}, "Creative reference or inline payload", additional_properties=True),
+            "creative": {
+                **_object({}, "Creative reference or inline payload", additional_properties=True),
+                "manual_entry": {
+                    "title": "高级 Creative Payload",
+                    "instructions": "可直接选择已有 Creative；只有 Provider 已明确要求内联字段时才填写此高级 JSON。优先使用已声明的 Page、素材和 CTA 字段。",
+                    "source": "provider_inline_creative",
+                },
+            },
             "media": _field(
                 "array", "Simple media shortcut; the first item must contain a provider URL",
-                minItems=1, items=_object({
-                    "type": _field("string", "Media type"),
+                minItems=1,
+                manual_entry={
+                    "title": "素材 URL 快捷方式",
+                    "instructions": "优先上传并选择 Meta image_hash/video_id；此字段仅用于 Meta 可直接抓取的 HTTPS 素材 URL。",
+                    "source": "provider_media_url",
+                },
+                presentation="asset_picker",
+                items=_object({
+                    "type": _field("string", "Media type", enum=["image", "video"]),
                     "url": _field("string", "Provider-accessible media URL", minLength=1),
                 }, "Meta media item", additional_properties=True, required=["url"]),
             ),
@@ -875,7 +1128,12 @@ def meta_catalog_ad_schema() -> dict[str, Any]:
         "properties": {
             "adset_id": _field("string", "Parent Meta Ad Set ID"),
             "name": _field("string", "Ad name", maxLength=400),
-            "page_id": _field("string", "Facebook Page ID", minLength=1),
+            "page_id": _field(
+                "string", "Facebook Page ID", minLength=1,
+                lookup_tool="meta_list_pages", lookup_result_key="pages",
+                selection_value_fields=["id", "page_id"],
+                selection_label_fields=["name", "id"],
+            ),
             "product_set_id": _field(
                 "string", "Meta product set ID", minLength=1,
                 lookup_tool="meta_list_product_sets",
@@ -912,7 +1170,12 @@ def meta_messaging_ad_schema() -> dict[str, Any]:
         "properties": {
             "adset_id": _field("string", "Parent Meta Ad Set ID"),
             "name": _field("string", "Ad name", maxLength=400),
-            "page_id": _field("string", "Facebook Page ID", minLength=1),
+            "page_id": _field(
+                "string", "Facebook Page ID", minLength=1,
+                lookup_tool="meta_list_pages", lookup_result_key="pages",
+                selection_value_fields=["id", "page_id"],
+                selection_label_fields=["name", "id"],
+            ),
             "messaging_app": _field(
                 "string", "Click-to-message destination",
                 enum=META_MESSAGING_APPS,
@@ -968,8 +1231,20 @@ def meta_link_ad_schema() -> dict[str, Any]:
                 "string", "Link creative media type", enum=["IMAGE", "VIDEO"],
                 default="IMAGE",
             ),
-            "image_hash": _field("string", "Uploaded image hash", minLength=1),
-            "video_id": _field("string", "Uploaded video ID", minLength=1),
+            "image_hash": _field(
+                "string", "Uploaded image hash", minLength=1,
+                lookup_tool="meta_list_image_assets", lookup_result_key="images",
+                selection_value_fields=["hash", "image_hash", "id"],
+                selection_label_fields=["name", "hash", "id"],
+                **_ui_equals("media_type", "IMAGE"),
+            ),
+            "video_id": _field(
+                "string", "Uploaded video ID", minLength=1,
+                lookup_tool="meta_list_video_assets", lookup_result_key="videos",
+                selection_value_fields=["video_id", "id"],
+                selection_label_fields=["title", "name", "video_id", "id"],
+                **_ui_equals("media_type", "VIDEO"),
+            ),
             "message": _field("string", "Primary text"),
             "headline": _field("string", "Headline"),
             "description": _field("string", "Description"),
@@ -981,6 +1256,12 @@ def meta_link_ad_schema() -> dict[str, Any]:
             "status": _field("string", "Initial delivery status", enum=META_STATUS),
         },
         "conditional_rules": [
+            {
+                "id": "image_link_requires_image_hash",
+                "if": {"media_type": "IMAGE"},
+                "required": ["image_hash"],
+                "message": "IMAGE link creatives require image_hash",
+            },
             {
                 "id": "video_link_requires_video_id",
                 "if": {"media_type": "VIDEO"},
@@ -999,13 +1280,30 @@ def meta_engagement_ad_schema() -> dict[str, Any]:
         "properties": {
             "adset_id": _field("string", "Parent Meta Ad Set ID"),
             "name": _field("string", "Ad name", maxLength=400),
-            "page_id": _field("string", "Facebook Page ID", minLength=1),
+            "page_id": _field(
+                "string", "Facebook Page ID", minLength=1,
+                lookup_tool="meta_list_pages", lookup_result_key="pages",
+                selection_value_fields=["id", "page_id"],
+                selection_label_fields=["name", "id"],
+            ),
             "engagement_type": _field(
                 "string", "Engagement creative type",
                 enum=["POST_ENGAGEMENT", "VIDEO_VIEWS"],
             ),
-            "post_id": _field("string", "Existing Page post ID", minLength=1),
-            "video_id": _field("string", "Video ID", minLength=1),
+            "post_id": _field(
+                "string", "Existing Page post ID", minLength=1,
+                manual_entry={
+                    "title": "帖子 ID",
+                    "instructions": "请提供该 Facebook Page 上已有帖子的 ID；当前 Capability 没有通用 Page 帖子列表接口。",
+                    "source": "provider_page_post",
+                },
+            ),
+            "video_id": _field(
+                "string", "Video ID", minLength=1,
+                lookup_tool="meta_list_video_assets", lookup_result_key="videos",
+                selection_value_fields=["video_id", "id"],
+                selection_label_fields=["title", "name", "video_id", "id"],
+            ),
             "message": _field("string", "Primary text"),
             "headline": _field("string", "Video title"),
             "call_to_action_type": _field(
