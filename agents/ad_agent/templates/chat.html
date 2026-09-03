@@ -1498,6 +1498,7 @@
         }
         .creation-card-state.ready { color: var(--success); border-color: rgba(34, 197, 94, .28); background: var(--success-light); }
         .creation-card-state.invalid { color: var(--error); border-color: rgba(239, 68, 68, .28); background: var(--error-light); }
+        .creation-card-state.error { color: var(--error); border-color: rgba(239, 68, 68, .28); background: var(--error-light); }
         .creation-card-title { margin-top: 7px; font-size: 16px; font-weight: 680; letter-spacing: -.01em; }
         .creation-card-meta { color: var(--text-secondary); font-size: 11px; line-height: 1.45; }
         .creation-card-context { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
@@ -4480,6 +4481,52 @@
             });
         }
 
+        function clearAccountScopedLookupValues(value, properties) {
+            if (Array.isArray(value)) {
+                return value.map(item => clearAccountScopedLookupValues(item, properties));
+            }
+            if (!value || typeof value !== 'object' || !properties || typeof properties !== 'object') {
+                return value;
+            }
+            const result = { ...value };
+            Object.entries(properties).forEach(([name, spec]) => {
+                if (!spec || typeof spec !== 'object') return;
+                if (spec.lookup_tool || spec.source === 'lookup' || spec.lookup) {
+                    delete result[name];
+                    return;
+                }
+                if (spec.properties && result[name] && typeof result[name] === 'object') {
+                    result[name] = clearAccountScopedLookupValues(result[name], spec.properties);
+                } else if (spec.items?.properties && Array.isArray(result[name])) {
+                    result[name] = clearAccountScopedLookupValues(result[name], spec.items.properties);
+                }
+            });
+            return result;
+        }
+
+        function resetAccountScopedSelections(card) {
+            let changed = false;
+            card.lookup_options = {};
+            card.selection_tokens = {};
+            card.selection_token_tools = {};
+            (card.fields || []).forEach(field => {
+                if (!field || field.visible === false) return;
+                if (field.control === 'lookup' && field.lookup?.account_required !== false && !creationCardValueEmpty(field.value)) {
+                    field.value = undefined;
+                    field.state = 'missing';
+                    changed = true;
+                }
+                if (field.object_properties && !creationCardValueEmpty(field.value)) {
+                    const cleared = clearAccountScopedLookupValues(field.value, field.object_properties);
+                    if (JSON.stringify(cleared) !== JSON.stringify(field.value)) {
+                        field.value = cleared;
+                        changed = true;
+                    }
+                }
+            });
+            return changed;
+        }
+
         function renderStructuredObjectEditor(schema, value, onChange, metadata = null, lookupContext = null) {
             // Arrays of provider objects are first-class form values (for
             // example carousel cards and asset lists).  Keep the collection
@@ -5710,6 +5757,10 @@
             );
             const revision = (creationCardEvaluationRevisions.get(card.id) || 0) + 1;
             creationCardEvaluationRevisions.set(card.id, revision);
+            card.validation_pending = true;
+            delete card.validation_error;
+            const pendingWrapper = document.querySelector(`.creation-card[data-card-id="${CSS.escape(card.id)}"]`);
+            if (pendingWrapper) updateCreationCardIndicators(pendingWrapper, card);
             try {
                 const response = await authenticatedFetch(`/creation-blueprints/${encodeURIComponent(card.blueprint_id)}/evaluate`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -5750,6 +5801,8 @@
                     ...(evaluation.invalid_fields || []), ...localInvalidPaths,
                 ])];
                 card.ready = Boolean(evaluation.ready) && localInvalidPaths.size === 0;
+                card.validation_pending = false;
+                delete card.validation_error;
                 const current = document.querySelector(`.creation-card[data-card-id="${CSS.escape(card.id)}"]`);
                 if (current) {
                     if (!structuralChange) {
@@ -5785,12 +5838,23 @@
                 // the next chat submission still passes through the server
                 // Tool schema and authoritative cascade validation.
                 console.debug('creation card evaluation failed', error);
+                if (creationCardEvaluationRevisions.get(card.id) === revision) {
+                    card.validation_pending = false;
+                    card.ready = false;
+                    card.validation_error = '参数检查暂时失败，请点击“检查参数”重试。';
+                    const current = document.querySelector(`.creation-card[data-card-id="${CSS.escape(card.id)}"]`);
+                    if (current) updateCreationCardIndicators(current, card);
+                }
             }
         }
 
         function scheduleCreationCardEvaluation(card, path) {
             const prior = creationCardEvaluationTimers.get(card.id);
             if (prior) window.clearTimeout(prior);
+            card.validation_pending = true;
+            delete card.validation_error;
+            const current = document.querySelector(`.creation-card[data-card-id="${CSS.escape(card.id)}"]`);
+            if (current) updateCreationCardIndicators(current, card);
             const timer = window.setTimeout(() => {
                 creationCardEvaluationTimers.delete(card.id);
                 evaluateCreationCard(card, path);
@@ -5833,6 +5897,8 @@
         function creationCardStatus(card) {
             const invalid = creationCardInvalidLabels(card);
             const pending = creationCardPendingLabels(card);
+            if (card.validation_pending) return '正在检查刚刚修改的参数，请稍候…';
+            if (card.validation_error) return card.validation_error;
             if (invalid.length) return `有 ${invalid.length} 项需要调整：${invalid.slice(0, 3).join('、')}${invalid.length > 3 ? '等' : ''}`;
             if (pending.length) return `还需要补充 ${pending.length} 项：${pending.slice(0, 3).join('、')}${pending.length > 3 ? '等' : ''}`;
             return card.ready ? '必填参数已齐全，可以先查看预览' : '参数草稿已保存，可以继续补充';
@@ -5840,6 +5906,8 @@
 
         function creationCardStatusKind(card) {
             if (!String(card.account_id || '').trim()) return 'account';
+            if (card.validation_pending) return 'checking';
+            if (card.validation_error) return 'error';
             if (creationCardInvalidLabels(card).length) return 'invalid';
             if ((card.missing_fields || []).length) return 'waiting';
             return card.ready ? 'ready' : 'draft';
@@ -5848,7 +5916,7 @@
         function creationCardStatusLabel(card) {
             const kind = creationCardStatusKind(card);
             const pending = creationCardPendingLabels(card).length;
-            return kind === 'ready' ? '可提交' : kind === 'invalid' ? `需调整 ${Math.max(1, creationCardInvalidLabels(card).length)} 项` : pending ? `待补充 ${pending} 项` : '待检查';
+            return kind === 'ready' ? '可提交' : kind === 'checking' ? '检查中…' : kind === 'error' ? '检查失败' : kind === 'invalid' ? `需调整 ${Math.max(1, creationCardInvalidLabels(card).length)} 项` : pending ? `待补充 ${pending} 项` : '待检查';
         }
 
         function creationCardProgress(card) {
@@ -5861,7 +5929,7 @@
         }
 
         function creationCardCanSubmit(card) {
-            return Boolean(String(card.account_id || '').trim() && card.ready && !(card.missing_fields || []).length && !(card.invalid_fields || []).length && !(card.fields || []).some(field => field.local_error));
+            return Boolean(String(card.account_id || '').trim() && !card.validation_pending && !card.validation_error && card.ready && !(card.missing_fields || []).length && !(card.invalid_fields || []).length && !(card.fields || []).some(field => field.local_error));
         }
 
         function updateCreationCardIndicators(wrapper, card) {
@@ -5918,7 +5986,7 @@
                 addMessage('请先填写本次要操作的广告账户 ID，再提交创建。', 'agent', null, true);
                 return;
             }
-            if (!card.ready || card.missing_fields?.length || card.invalid_fields?.length || (card.fields || []).some(field => field.local_error)) {
+            if (!card.ready || card.validation_pending || card.validation_error || card.missing_fields?.length || card.invalid_fields?.length || (card.fields || []).some(field => field.local_error)) {
                 addMessage('还有必填参数或联动参数需要补充，请先完成卡片中的标记项。', 'agent', null, true);
                 return;
             }
@@ -6067,7 +6135,26 @@
             accountInput.placeholder = `请输入本次要操作的${creationAccountLabel(card.provider)}`;
             accountInput.value = card.account_id || '';
             accountInput.addEventListener('input', () => {
+                const previousAccount = String(card.account_id || '').trim();
                 card.account_id = accountInput.value.trim();
+                if (previousAccount !== card.account_id) {
+                    delete card.validation_error;
+                    card.ready = false;
+                    const selectionsReset = resetAccountScopedSelections(card);
+                    if (selectionsReset) {
+                        const cursor = typeof accountInput.selectionStart === 'number' ? accountInput.selectionStart : null;
+                        const replacement = renderCreationCard(card);
+                        wrapper.replaceWith(replacement);
+                        const nextInput = replacement.querySelector('.creation-card-account input');
+                        if (nextInput) {
+                            nextInput.focus({ preventScroll: true });
+                            if (cursor !== null && typeof nextInput.setSelectionRange === 'function') nextInput.setSelectionRange(cursor, cursor);
+                        }
+                        if (card.blueprint_id) scheduleCreationCardEvaluation(card, null);
+                        return;
+                    }
+                    if (card.blueprint_id) scheduleCreationCardEvaluation(card, null);
+                }
                 updateCreationCardIndicators(wrapper, card);
                 refreshLookupAccountState(wrapper);
             });
