@@ -1164,12 +1164,73 @@ def test_write_tool_timeout_is_unknown_and_requires_reconciliation():
 
 def test_execution_mode_overrides_are_isolated_by_principal():
     runtime = AgentRuntime(require_llm=False, execution_mode="dry_run")
-    runtime.set_execution_mode("live", tenant_id="tenant-a", user_id="operator-a")
+    try:
+        runtime.set_execution_mode("live", tenant_id="tenant-a", user_id="operator-a")
 
-    assert runtime.get_execution_mode("tenant-a", "operator-a") == "live"
-    assert runtime.get_execution_mode("tenant-a", "operator-b") == "dry_run"
-    assert runtime.get_execution_mode("tenant-b", "operator-a") == "dry_run"
-    assert runtime.execution_mode == "dry_run"
+        assert runtime.get_execution_mode("tenant-a", "operator-a") == "live"
+        assert runtime.get_execution_mode("tenant-a", "operator-b") == "dry_run"
+        assert runtime.get_execution_mode("tenant-b", "operator-a") == "dry_run"
+        assert runtime.execution_mode == "dry_run"
+    finally:
+        if runtime.task_executor:
+            runtime.task_executor.shutdown(wait=True)
+
+
+def test_execution_mode_preference_survives_runtime_restart(tmp_path):
+    db_path = tmp_path / "execution-mode.db"
+    store = AdAgentStore(str(db_path))
+    first = AgentRuntime(
+        require_llm=False, execution_mode="dry_run", persistence_store=store,
+    )
+    first.set_execution_mode("live", tenant_id="tenant-a", user_id="operator-a")
+    assert store.get_execution_mode("tenant-a", "operator-a") == "live"
+    first.task_executor.shutdown(wait=True)
+    store.close()
+
+    restarted_store = AdAgentStore(str(db_path))
+    second = AgentRuntime(
+        require_llm=False, execution_mode="dry_run", persistence_store=restarted_store,
+    )
+    try:
+        assert second.get_execution_mode("tenant-a", "operator-a") == "live"
+        assert second.get_execution_mode("tenant-a", "operator-b") == "dry_run"
+        assert second.get_execution_mode("tenant-b", "operator-a") == "dry_run"
+    finally:
+        second.task_executor.shutdown(wait=True)
+        restarted_store.close()
+
+
+def test_invalid_persisted_execution_mode_fails_back_to_deployment_default():
+    store = AdAgentStore(":memory:")
+    store.set_execution_mode("tenant-a", "operator-a", "not-a-mode")
+    runtime = AgentRuntime(
+        require_llm=False, execution_mode="dry_run", persistence_store=store,
+    )
+    try:
+        assert runtime.get_execution_mode("tenant-a", "operator-a") == "dry_run"
+    finally:
+        runtime.task_executor.shutdown(wait=True)
+        store.close()
+
+
+def test_execution_mode_cache_is_bounded_and_expires(monkeypatch):
+    import agents.ad_agent.runtime.runtime as runtime_module
+
+    runtime = AgentRuntime(require_llm=False, execution_mode="dry_run")
+    try:
+        for index in range(runtime_module._EXECUTION_MODE_CACHE_MAX_ENTRIES + 25):
+            runtime.set_execution_mode(
+                "dry_run", tenant_id="tenant-a", user_id=f"operator-{index}"
+            )
+        assert len(runtime._execution_mode_cache) == runtime_module._EXECUTION_MODE_CACHE_MAX_ENTRIES
+        assert ("tenant-a", "operator-0") not in runtime._execution_mode_cache
+
+        runtime.set_execution_mode("live", tenant_id="tenant-a", user_id="operator-expiring")
+        monkeypatch.setattr(runtime_module.time, "monotonic", lambda: 10_000_000)
+        assert runtime.get_execution_mode("tenant-a", "operator-expiring") == "dry_run"
+    finally:
+        if runtime.task_executor:
+            runtime.task_executor.shutdown(wait=True)
 
 
 def test_store_records_explicit_schema_migrations():
@@ -1177,7 +1238,7 @@ def test_store_records_explicit_schema_migrations():
     rows = store._get_conn().execute(
         "SELECT version FROM schema_migrations ORDER BY version"
     ).fetchall()
-    assert [int(row[0]) for row in rows] == [1, 2, 3]
+    assert [int(row[0]) for row in rows] == [1, 2, 3, 4]
 
 
 def test_golden_intent_cases_remain_deterministic():

@@ -23,6 +23,7 @@ import threading
 import logging
 import importlib.util
 import inspect
+from collections import OrderedDict
 from contextvars import ContextVar
 from pathlib import Path
 from types import MappingProxyType
@@ -92,6 +93,8 @@ logger = logging.getLogger(__name__)
 _execution_mode_context: ContextVar[Optional[str]] = ContextVar(
     "ad_agent_execution_mode", default=None
 )
+_EXECUTION_MODE_CACHE_TTL_SECONDS = 5.0
+_EXECUTION_MODE_CACHE_MAX_ENTRIES = 1024
 
 
 # ─── Agent Runtime ─────────────────────────────────────────────
@@ -263,7 +266,12 @@ class AgentRuntime:
         self._skill_factories: dict[str, callable] = {}  # platform -> Capability factory
         self._credentials: dict = {}  # API 凭证配置
         self._execution_mode_lock = threading.RLock()
-        self._execution_mode_overrides: dict[tuple[str, str], str] = {}
+        # Principal preferences are cached only as a bounded-in-process
+        # acceleration layer. The PersistenceBackend remains the source of
+        # truth so a Runtime restart does not silently reset a user's mode.
+        self._execution_mode_cache: OrderedDict[
+            tuple[str, str], tuple[str, float]
+        ] = OrderedDict()
         base_knowledge_provider = knowledge_provider or LocalMarkdownKnowledgeProvider(
             Path(__file__).resolve().parent.parent / "knowledge_base"
         )
@@ -379,6 +387,7 @@ class AgentRuntime:
         self._session_manager: Optional[SessionManager] = None
         self._memory_manager: Optional[MemoryManager] = None
         if persistence_store:
+            self._persistence_store = persistence_store
             self._session_manager = SessionManager(persistence_store)
             if all(callable(getattr(persistence_store, method, None)) for method in (
                 "save_memory", "search_memories", "delete_memory"
@@ -386,6 +395,8 @@ class AgentRuntime:
                 self._memory_manager = MemoryManager(persistence_store)
             if self.write_guard and hasattr(self.write_guard, "bind_store"):
                 self.write_guard.bind_store(persistence_store)
+        else:
+            self._persistence_store = None
 
         # 只读模式：只注册 READ 类工具，跳过写保护检查
         self._read_only_mode = read_only_mode
@@ -444,9 +455,34 @@ class AgentRuntime:
         user = str(user_id or "").strip()
         with self._execution_mode_lock:
             if tenant and user:
-                self._execution_mode_overrides[(tenant, user)] = mode
+                self._cache_execution_mode((tenant, user), mode)
+                store = self._persistence_store
+                persist = getattr(store, "set_execution_mode", None)
+                if callable(persist):
+                    try:
+                        persist(tenant, user, mode)
+                    except Exception:
+                        # A preference write must never turn a safe mode
+                        # switch into an unsafe fallback or mutate process
+                        # state for another principal. Keep the in-memory
+                        # value for this process and expose the backend issue
+                        # via structured logging for later observability.
+                        logger.warning(
+                            "Failed to persist execution mode preference",
+                            extra={"tenant_id": tenant, "user_id": user},
+                            exc_info=True,
+                        )
             else:
                 self._execution_mode = mode
+
+    def _cache_execution_mode(self, key: tuple[str, str], mode: str) -> None:
+        """Cache a mode briefly without allowing principal cardinality leaks."""
+        self._execution_mode_cache.pop(key, None)
+        self._execution_mode_cache[key] = (
+            mode, time.monotonic() + _EXECUTION_MODE_CACHE_TTL_SECONDS
+        )
+        while len(self._execution_mode_cache) > _EXECUTION_MODE_CACHE_MAX_ENTRIES:
+            self._execution_mode_cache.popitem(last=False)
 
     def get_execution_mode(
         self, tenant_id: Optional[str] = None, user_id: Optional[str] = None,
@@ -456,9 +492,34 @@ class AgentRuntime:
         user = str(user_id or "").strip()
         with self._execution_mode_lock:
             if tenant and user:
-                return self._execution_mode_overrides.get(
-                    (tenant, user), self._execution_mode
-                )
+                key = (tenant, user)
+                cached = self._execution_mode_cache.get(key)
+                if cached:
+                    cached_mode, expires_at = cached
+                    if time.monotonic() < expires_at:
+                        self._execution_mode_cache.move_to_end(key)
+                        return cached_mode
+                    self._execution_mode_cache.pop(key, None)
+                persisted = getattr(self._persistence_store, "get_execution_mode", None)
+                if callable(persisted):
+                    try:
+                        stored = persisted(tenant, user)
+                        if stored is not None:
+                            mode = self._validate_execution_mode(stored)
+                            self._cache_execution_mode(key, mode)
+                            return mode
+                    except ValueError:
+                        logger.warning(
+                            "Ignoring invalid persisted execution mode preference",
+                            extra={"tenant_id": tenant, "user_id": user},
+                        )
+                    except Exception:
+                        logger.warning(
+                            "Failed to load execution mode preference",
+                            extra={"tenant_id": tenant, "user_id": user},
+                            exc_info=True,
+                        )
+                return self._execution_mode
             return self._execution_mode
 
     def set_policies(self, policies: Optional[Iterable[RuntimePolicy]]) -> None:

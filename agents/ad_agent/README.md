@@ -254,7 +254,7 @@ Schema、权限、账户、dry-run、确认、幂等和审计门禁。后续仍�
 - Plugin 包控制面已支持租户隔离、版本不可变、摘要校验、依赖激活门禁和发布回滚；
   已支持标准 ZIP 导入和不执行代码的完整性/依赖健康检查；仍待补可信插件的沙箱/独立
   进程、签名来源策略的部署配置和生产级运行时探针。
-- SQLite 当前按单进程使用；未来 MySQL/PostgreSQL backend 需要实现同一接口的共享事务、幂等 reservation 和 lease 原子语义，并补多实例并发测试。
+- SQLite 当前按单进程使用；未来 MySQL/PostgreSQL backend 需要实现同一接口的共享事务、幂等 reservation、lease 和 principal execution-mode preference 原子语义，并补多实例并发测试。
 - Provider schema 目前以代码契约为准，已接入本地版本化快照和代码契约 drift gate；尚未接入 Provider API schema 拉取和真实测试账户 E2E。动态组合约束仍需按渠道逐项补齐。
 - 部分 workflow 只标记 `compensation_required` 并转人工复核，尚无经过 Provider 验证的自动补偿执行器；这属于刻意的安全降级，不是已完成能力。
 - live 还需要凭证轮换/授权中心、合作方级配额策略，以及 Provider 调用级别的真正可中断

@@ -65,6 +65,17 @@ class PersistenceBackend(Protocol):
     def mark_write_executed(self, idempotency_key: str) -> None: ...
     def release_write(self, idempotency_key: str) -> None: ...
 
+    # -- Runtime configuration -----------------------------------------
+    # Execution mode is a principal-scoped preference. Persisting ``live``
+    # never grants permission to perform a live write; deployment gates,
+    # permissions, account scope and confirmation remain Runtime concerns.
+    def get_execution_mode(
+        self, tenant_id: str, user_id: str,
+    ) -> Optional[str]: ...
+    def set_execution_mode(
+        self, tenant_id: str, user_id: str, mode: str,
+    ) -> None: ...
+
     def create_workflow(
         self, workflow_id: str, session_id: str, intent_type: str,
         execution_mode: str, status: str = "planned",

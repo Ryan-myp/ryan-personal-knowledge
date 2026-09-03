@@ -74,7 +74,7 @@ class AdAgentStore:
     # current single-process backend. This keeps the PersistenceBackend
     # boundary stable and gives a future MySQL/PostgreSQL adapter a concrete
     # migration contract instead of relying on scattered PRAGMA checks.
-    SCHEMA_VERSION = 3
+    SCHEMA_VERSION = 4
 
     SCHEMA = """
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -335,6 +335,16 @@ class AdAgentStore:
         consumed_at TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_approvals_session ON approvals(session_id, status);
+
+    CREATE TABLE IF NOT EXISTS execution_mode_preferences (
+        tenant_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_execution_mode_preferences_updated
+        ON execution_mode_preferences(updated_at DESC);
     """
     
     def __init__(self, db_path: str = ":memory:"):
@@ -407,6 +417,19 @@ class AdAgentStore:
                 "logical_resource_id": "TEXT",
             }.items():
                 cls._add_column_if_missing(conn, "workflow_items", column, definition)
+        elif version == 4:
+            # The table is created by the latest schema above. Keeping this
+            # migration explicit makes the schema history complete for old
+            # databases and leaves room for backend-specific migrations.
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS execution_mode_preferences (
+                    tenant_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    mode TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (tenant_id, user_id)
+                )"""
+            )
         else:
             raise ValueError(f"Unsupported schema migration: {version}")
     
@@ -416,6 +439,56 @@ class AdAgentStore:
             if self._conn:
                 self._conn.close()
                 self._conn = None
+
+    # -- Runtime configuration -----------------------------------------
+
+    def get_execution_mode(
+        self, tenant_id: str, user_id: str,
+    ) -> Optional[str]:
+        """Read a principal-scoped execution-mode preference.
+
+        The store returns the opaque persisted value; Runtime owns validation
+        and the safety decision about whether that value may be used. Keeping
+        that policy out of SQLite makes the same contract usable by another
+        persistence backend.
+        """
+        tenant = str(tenant_id or "").strip()
+        user = str(user_id or "").strip()
+        if not tenant or not user:
+            return None
+        with self._lock:
+            row = self._get_conn().execute(
+                """SELECT mode FROM execution_mode_preferences
+                   WHERE tenant_id = ? AND user_id = ?""",
+                (tenant, user),
+            ).fetchone()
+            return str(row[0]) if row and row[0] is not None else None
+
+    def set_execution_mode(
+        self, tenant_id: str, user_id: str, mode: str,
+    ) -> None:
+        """Upsert a principal-scoped execution-mode preference."""
+        tenant = str(tenant_id or "").strip()
+        user = str(user_id or "").strip()
+        if not tenant or not user:
+            raise ValueError("tenant_id and user_id are required")
+        with self._lock:
+            conn = self._get_conn()
+            conn.execute(
+                """INSERT INTO execution_mode_preferences
+                   (tenant_id, user_id, mode, updated_at)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(tenant_id, user_id) DO UPDATE SET
+                     mode = excluded.mode,
+                     updated_at = excluded.updated_at""",
+                (
+                    tenant,
+                    user,
+                    str(mode),
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            conn.commit()
 
     # -- Generic asynchronous Agent tasks -------------------------------
 
