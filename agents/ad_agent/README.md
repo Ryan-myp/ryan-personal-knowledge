@@ -259,7 +259,9 @@ Schema、权限、账户、dry-run、确认、幂等和审计门禁。后续仍�
 - 部分 workflow 只标记 `compensation_required` 并转人工复核，尚无经过 Provider 验证的自动补偿执行器；这属于刻意的安全降级，不是已完成能力。
 - live 还需要凭证轮换/授权中心、合作方级配额策略，以及 Provider 调用级别的真正可中断
   能力；当前异步 worker 已支持任务级 cooperative cancellation，但无法强制终止一个
-  已进入底层网络调用的线程。
+  已进入底层网络调用的线程。ToolExecutor 已对这类超时中的后台调用设置有界容量，
+  防止连续网络阻塞造成线程无界增长；容量耗尽时会明确返回资源繁忙，不伪装成 Provider
+  结果。
 - 当前四个 Client 已提供版本元数据和 adapter 接口，Capability 注册与能力审计会校验 Client、Capability、Tool 三者的 Provider contract；每个平台目前仍只声明一个实际支持版本。升级时仍需要在渠道 Client 增加真实新版本、请求/响应 adapter、Provider contract 回归和测试账户 E2E，不能只修改 Tool 上的版本字符串。
 
 因此下一阶段应优先做“Provider schema 对照 + 测试账户 E2E”，再逐个把工具加入 `live_approved_tools`，而不是一次性开放全部渠道写入。代码契约漂移可先通过以下 release gate：

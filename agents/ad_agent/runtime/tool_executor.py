@@ -23,6 +23,10 @@ class ToolExecutor:
 
     def __init__(self, services: RuntimeServices):
         self.services = services
+        # A timed-out Python handler cannot be force-killed safely. Bound the
+        # number of such lingering invocations so repeated provider/network
+        # stalls cannot create an unbounded number of background threads.
+        self._in_flight_capacity = threading.BoundedSemaphore(64)
 
     def execute(
         self,
@@ -264,10 +268,26 @@ class ToolExecutor:
             # exceeds the deadline ``timeout_result`` deliberately reports an
             # unknown provider state so recovery/reconciliation can decide the
             # next action instead of treating it as safely retryable.
+            if not self._in_flight_capacity.acquire(blocking=False):
+                return ToolResult(
+                    success=False,
+                    data={"execution_status": "capacity_exceeded"},
+                    error="当前工具执行资源已达到上限，请稍后重试",
+                )
             executor = ThreadPoolExecutor(
                 max_workers=1, thread_name_prefix="ad-agent-tool"
             )
-            future = executor.submit(invoke)
+            try:
+                future = executor.submit(invoke)
+            except Exception:
+                self._in_flight_capacity.release()
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise
+
+            # Release only when the actual handler thread exits. Releasing in
+            # the timeout path would allow every timed-out call to create one
+            # more thread while the old provider call is still running.
+            future.add_done_callback(lambda _future: self._in_flight_capacity.release())
             try:
                 result = future.result(
                     timeout=max(deadline - time.monotonic(), 0.001)

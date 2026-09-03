@@ -4,6 +4,7 @@ import json
 import sqlite3
 from pathlib import Path
 import time
+import threading
 from datetime import datetime, timedelta
 import pytest
 
@@ -1160,6 +1161,42 @@ def test_write_tool_timeout_is_unknown_and_requires_reconciliation():
     assert result.data["execution_status"] == "unknown"
     assert result.data["requires_reconciliation"] is True
     assert "不能直接重试" in result.error
+
+
+def test_tool_timeout_capacity_stays_reserved_until_handler_exits():
+    from agents.ad_agent.runtime.tool_executor import ToolExecutor
+
+    finished = threading.Event()
+
+    class SlowHandler:
+        def execute(self, _ctx, _input):
+            finished.wait(2)
+            return ToolResult.ok({"late": True})
+
+    runtime = AgentRuntime(require_llm=False)
+    definition = ToolDefinition(
+        name="bounded_slow_read",
+        skill="test",
+        platform="meta",
+        description="bounded timeout test",
+        input_schema=ToolSchema(),
+        effect_class=ToolEffect.READ,
+        timeout_seconds=0.001,
+    )
+    runtime.registry.register(definition, SlowHandler())
+    runtime.tool_executor = ToolExecutor(runtime.services)
+    runtime.tool_executor._in_flight_capacity = threading.BoundedSemaphore(1)
+
+    first = runtime.tool_executor.execute(
+        ToolContext("bounded-timeout-session", "u1"), "bounded_slow_read", {}
+    )
+    second = runtime.tool_executor.execute(
+        ToolContext("bounded-timeout-session", "u1"), "bounded_slow_read", {}
+    )
+    finished.set()
+
+    assert first.data["execution_status"] == "timed_out"
+    assert second.data["execution_status"] == "capacity_exceeded"
 
 
 def test_execution_mode_overrides_are_isolated_by_principal():
