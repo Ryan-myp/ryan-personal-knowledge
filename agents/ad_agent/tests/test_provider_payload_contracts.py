@@ -43,6 +43,7 @@ def test_creation_tools_publish_provider_payload_requirements():
     assert definitions["dv360"]["dv360_create_creative"].input_schema.provider_required == [
         "creative"
     ]
+    assert definitions["dv360"]["dv360_create_creative"].input_schema.properties["creative"]["presentation"] == "advanced_json"
     assert definitions["dv360"]["dv360_create_line_item_assigned_targeting_option"].input_schema.provider_required == [
         "targeting_type", "assigned_targeting_option"
     ]

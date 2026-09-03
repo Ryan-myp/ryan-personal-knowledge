@@ -117,6 +117,7 @@ class DV360Capability(BaseCapability):
                     "type": "object",
                     "description": "DV360 Creative provider payload",
                     "additionalProperties": True,
+                    "presentation": "advanced_json",
                     "manual_entry": {
                         "title": "DV360 Creative Payload",
                         "instructions": "请填写已按 DV360 Creative API 准备好的对象；DV360 专用字段暂按现有能力保留为高级 Provider 输入。",

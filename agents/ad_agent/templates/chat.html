@@ -1450,6 +1450,7 @@
         .creation-card-field .structured-object-editor { background: var(--bg-secondary); }
         .creation-card-field input:focus, .creation-card-field select:focus, .creation-card-field textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-light); }
         .creation-card-field .source { margin-top: 5px; color: var(--text-muted); font-size: 9px; line-height: 1.35; }
+        .creation-card-field-error { margin-top: 7px; color: var(--error); font-size: 10px; line-height: 1.45; }
         .creation-card-account { margin: 0 16px 3px; padding: 9px; border: 1px solid rgba(245, 158, 11, .35); border-radius: 8px; background: rgba(245, 158, 11, .07); }
         .creation-card-account label { display: block; margin-bottom: 5px; color: var(--text-primary); font-size: 11px; font-weight: 650; }
         .creation-card-account input { width: 100%; min-height: 32px; padding: 6px 8px; border: 1px solid var(--border-light); border-radius: 6px; color: var(--text-primary); background: var(--bg-primary); font: inherit; font-size: 11px; }
@@ -5589,7 +5590,18 @@
                 return field.value_shape === 'object_text' ? lines.map(text => ({ text })) : lines;
             }
             if (field.control === 'json' || field.control === 'advanced_json') {
-                try { return JSON.parse(rawValue); } catch (_) { return rawValue; }
+                if (!String(rawValue || '').trim()) {
+                    delete field.local_error;
+                    return undefined;
+                }
+                try {
+                    const value = JSON.parse(rawValue);
+                    delete field.local_error;
+                    return value;
+                } catch (_) {
+                    field.local_error = '格式不正确，请填写有效的 JSON 对象或数组。';
+                    return rawValue;
+                }
             }
             if (field.control === 'number') return rawValue === '' ? undefined : Number(rawValue);
             return rawValue === '' ? undefined : rawValue;
@@ -5678,6 +5690,9 @@
 
         async function evaluateCreationCard(card, changedPath) {
             if (!card.blueprint_id) return;
+            const localInvalidPaths = new Set(
+                (card.fields || []).filter(field => field.local_error).map(field => field.path)
+            );
             const revision = (creationCardEvaluationRevisions.get(card.id) || 0) + 1;
             creationCardEvaluationRevisions.set(card.id, revision);
             try {
@@ -5713,10 +5728,13 @@
                         field.required = state.required;
                         field.state = state.state;
                     }
+                    if (field.local_error) field.state = 'invalid';
                 });
                 card.missing_fields = evaluation.missing_fields || [];
-                card.invalid_fields = evaluation.invalid_fields || [];
-                card.ready = Boolean(evaluation.ready);
+                card.invalid_fields = [...new Set([
+                    ...(evaluation.invalid_fields || []), ...localInvalidPaths,
+                ])];
+                card.ready = Boolean(evaluation.ready) && localInvalidPaths.size === 0;
                 const current = document.querySelector(`.creation-card[data-card-id="${CSS.escape(card.id)}"]`);
                 if (current) {
                     if (!structuralChange) {
@@ -5787,7 +5805,7 @@
 
         function creationCardInvalidLabels(card) {
             const invalidPaths = new Set(card.invalid_fields || []);
-            return (card.fields || []).filter(field => field.visible !== false && (invalidPaths.has(field.path) || field.state === 'invalid')).map(field => field.label || field.path || '参数').filter((label, index, labels) => labels.indexOf(label) === index);
+            return (card.fields || []).filter(field => field.visible !== false && (invalidPaths.has(field.path) || field.state === 'invalid' || field.local_error)).map(field => field.label || field.path || '参数').filter((label, index, labels) => labels.indexOf(label) === index);
         }
 
         function creationProviderLabel(provider) {
@@ -5808,7 +5826,7 @@
 
         function creationCardStatusKind(card) {
             if (!String(card.account_id || '').trim()) return 'account';
-            if ((card.invalid_fields || []).length) return 'invalid';
+            if (creationCardInvalidLabels(card).length) return 'invalid';
             if ((card.missing_fields || []).length) return 'waiting';
             return card.ready ? 'ready' : 'draft';
         }
@@ -5816,12 +5834,12 @@
         function creationCardStatusLabel(card) {
             const kind = creationCardStatusKind(card);
             const pending = creationCardPendingLabels(card).length;
-            return kind === 'ready' ? '可提交' : kind === 'invalid' ? `需调整 ${Math.max(1, (card.invalid_fields || []).length)} 项` : pending ? `待补充 ${pending} 项` : '待检查';
+            return kind === 'ready' ? '可提交' : kind === 'invalid' ? `需调整 ${Math.max(1, creationCardInvalidLabels(card).length)} 项` : pending ? `待补充 ${pending} 项` : '待检查';
         }
 
         function creationCardProgress(card) {
             const requiredFields = (card.fields || []).filter(field => field.visible !== false && field.required);
-            const completedFields = requiredFields.filter(field => !creationCardValueEmpty(field.value) && !(card.invalid_fields || []).includes(field.path)).length;
+            const completedFields = requiredFields.filter(field => !creationCardValueEmpty(field.value) && !field.local_error && field.state !== 'invalid' && !(card.invalid_fields || []).includes(field.path)).length;
             const accountCompleted = String(card.account_id || '').trim() ? 1 : 0;
             const total = requiredFields.length + 1;
             const completed = completedFields + accountCompleted;
@@ -5829,7 +5847,7 @@
         }
 
         function creationCardCanSubmit(card) {
-            return Boolean(String(card.account_id || '').trim() && card.ready && !(card.missing_fields || []).length && !(card.invalid_fields || []).length);
+            return Boolean(String(card.account_id || '').trim() && card.ready && !(card.missing_fields || []).length && !(card.invalid_fields || []).length && !(card.fields || []).some(field => field.local_error));
         }
 
         function updateCreationCardIndicators(wrapper, card) {
@@ -5882,7 +5900,7 @@
                 addMessage('请先填写本次要操作的广告账户 ID，再提交创建。', 'agent', null, true);
                 return;
             }
-            if (!card.ready || card.missing_fields?.length || card.invalid_fields?.length) {
+            if (!card.ready || card.missing_fields?.length || card.invalid_fields?.length || (card.fields || []).some(field => field.local_error)) {
                 addMessage('还有必填参数或联动参数需要补充，请先完成卡片中的标记项。', 'agent', null, true);
                 return;
             }
@@ -5906,10 +5924,19 @@
             const card = pendingCreationReview;
             pendingCreationReview = null;
             document.getElementById('confirmCard')?.remove();
-            if (card) submitCreationCard(card);
+            if (!card) return;
+            if (!creationCardCanSubmit(card)) {
+                addMessage('参数已发生变化，请回到卡片完成检查后再确认创建。', 'agent', null, true);
+                return;
+            }
+            submitCreationCard(card);
         }
 
         async function submitCreationCard(card) {
+            if (!creationCardCanSubmit(card)) {
+                addMessage('当前参数还未通过检查，请先完成卡片中的必填项和格式校验。', 'agent', null, true);
+                return;
+            }
             const userInput = `提交“${card.title || card.provider + '广告'}”创建计划`;
             const requestParams = {
                 user_input: userInput,
@@ -5939,9 +5966,21 @@
             (card.fields || []).forEach(field => {
                 const item = wrapper.querySelector(`[data-field-path="${CSS.escape(field.path)}"]`);
                 if (!item) return;
+                const invalid = Boolean(field.local_error) || field.state === 'invalid' || (card.invalid_fields || []).includes(field.path);
                 item.classList.toggle('missing', field.state === 'missing');
-                item.classList.toggle('invalid', field.state === 'invalid');
+                item.classList.toggle('invalid', invalid);
                 item.classList.toggle('hidden', field.visible === false);
+                let error = item.querySelector('.creation-card-field-error');
+                if (field.local_error) {
+                    if (!error) {
+                        error = document.createElement('div');
+                        error.className = 'creation-card-field-error';
+                        item.appendChild(error);
+                    }
+                    error.textContent = field.local_error;
+                } else if (error) {
+                    error.remove();
+                }
             });
         }
 
@@ -6031,7 +6070,7 @@
                 const item = document.createElement('div');
                 item.dataset.fieldPath = field.path;
                 const wideField = ['asset_picker', 'file_reference', 'text_list', 'object_editor', 'json', 'advanced_json'].includes(field.control);
-                item.className = `creation-card-field${wideField ? ' wide' : ''}${field.visible === false ? ' hidden' : ''}${field.state === 'missing' ? ' missing' : ''}${field.state === 'invalid' ? ' invalid' : ''}`;
+                item.className = `creation-card-field${wideField ? ' wide' : ''}${field.visible === false ? ' hidden' : ''}${field.state === 'missing' ? ' missing' : ''}${field.state === 'invalid' || field.local_error ? ' invalid' : ''}`;
                 const label = document.createElement('label');
                 label.textContent = field.label || field.path;
                 if (field.required) {
@@ -6248,6 +6287,12 @@
                     const instructions = field.manual_entry.instructions || '该字段当前没有可用的受控列表查询。';
                     help.innerHTML = `<strong>${escapeHtml(title)}</strong><br>${escapeHtml(instructions)}${field.manual_entry.example ? `<br>示例：${escapeHtml(field.manual_entry.example)}` : ''}`;
                     item.appendChild(help);
+                }
+                if (field.local_error) {
+                    const error = document.createElement('div');
+                    error.className = 'creation-card-field-error';
+                    error.textContent = field.local_error;
+                    item.appendChild(error);
                 }
                 fields.appendChild(item);
             });

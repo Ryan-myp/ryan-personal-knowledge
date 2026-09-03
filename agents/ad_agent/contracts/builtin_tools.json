@@ -1,9 +1,9 @@
 {
-  "digest": "50430737ff4b622d8682319609206037846e88648713ea9d674d7fa1cf9bd682",
+  "digest": "0f7041d341216882a16f4c05594f5f3e3ca5a0762cb932e1c201ef4460fb6af4",
   "format_version": 1,
   "platforms": {
     "dv360": {
-      "digest": "75b33fcb5a026d94b7a5677a7c2a1a0134d4aa030892444493a19dbec2e41271",
+      "digest": "ae44a80a71482caa44772462a8e197871cdb331ee52074abe7536b0fa675032a",
       "tool_count": 31,
       "tools": [
         {
@@ -134,6 +134,7 @@
                   "source": "provider_creative_payload",
                   "title": "DV360 Creative Payload"
                 },
+                "presentation": "advanced_json",
                 "type": "object"
               }
             },
