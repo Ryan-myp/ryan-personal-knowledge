@@ -23,8 +23,8 @@
     {"path": "campaign.buying_type", "tool_ref": "meta_create_campaign.buying_type", "label": "购买类型", "required": true, "source": "enum"},
     {"path": "campaign.daily_budget", "tool_ref": "meta_create_campaign.daily_budget", "label": "日预算", "required": true},
     {"path": "ad_set.name", "tool_ref": "meta_create_adset.name", "label": "广告组名称", "required": true},
-    {"path": "ad_set.optimization_goal", "tool_ref": "meta_create_adset.optimization_goal", "label": "优化目标", "required": true, "source": "enum", "options_from": ["campaign.objective"]},
-    {"path": "ad_set.billing_event", "tool_ref": "meta_create_adset.billing_event", "label": "计费事件", "required": true, "source": "enum", "options_from": ["ad_set.optimization_goal"]},
+    {"path": "ad_set.optimization_goal", "tool_ref": "meta_create_adset.optimization_goal", "label": "优化目标", "description": "只展示当前推广目标支持的优化方式。", "required": true, "source": "enum", "options_from": ["campaign.objective"], "option_rules": [{"when": {"field": "campaign.objective", "in": ["OUTCOME_CONVERSIONS", "CONVERSIONS"]}, "options": ["OFFSITE_CONVERSIONS", "CONVERSIONS"]}], "option_labels": {"OFFSITE_CONVERSIONS": "网站转化", "CONVERSIONS": "转化事件"}},
+    {"path": "ad_set.billing_event", "tool_ref": "meta_create_adset.billing_event", "label": "计费事件", "description": "计费事件会随优化目标自动收敛到可用选项。", "required": true, "source": "enum", "options_from": ["ad_set.optimization_goal"], "option_rules": [{"when": {"field": "ad_set.optimization_goal", "in": ["OFFSITE_CONVERSIONS", "CONVERSIONS"]}, "options": ["IMPRESSIONS"]}], "option_labels": {"IMPRESSIONS": "展示（按展示计费）"}},
     {"path": "ad_set.targeting", "tool_ref": "meta_create_adset.targeting", "label": "定向", "required": true},
     {
       "path": "ad_set.promoted_object",
@@ -36,7 +36,7 @@
     {"path": "ad.name", "tool_ref": "meta_create_conversion_ad.name", "label": "广告名称", "required": true},
     {"path": "ad.page_id", "tool_ref": "meta_create_conversion_ad.page_id", "label": "Facebook Page", "required": true},
     {"path": "ad.link", "tool_ref": "meta_create_conversion_ad.link", "label": "落地页链接", "required": true},
-    {"path": "ad.media_type", "tool_ref": "meta_create_conversion_ad.media_type", "label": "素材类型", "required": true, "source": "enum"},
+    {"path": "ad.media_type", "tool_ref": "meta_create_conversion_ad.media_type", "label": "素材类型", "required": true, "source": "enum", "options": ["IMAGE", "VIDEO"], "option_labels": {"IMAGE": "图片", "VIDEO": "视频"}},
     {"path": "ad.image_hash", "tool_ref": "meta_create_conversion_ad.image_hash", "label": "图片素材 ID / 本地文件草稿", "presentation": "file_reference", "accept": "image/*", "visible_when": {"field": "ad.media_type", "equals": "IMAGE"}, "required_when": {"field": "ad.media_type", "equals": "IMAGE"}},
     {
       "path": "ad.video_id",

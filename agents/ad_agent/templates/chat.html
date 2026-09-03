@@ -4102,13 +4102,27 @@
             return { toolName, fieldPath, schema: schema || {} };
         }
 
-        function blueprintOptions(field) {
+        function blueprintOptions(field, evaluatedState = null) {
+            // An evaluated empty list is meaningful: the parent selector is
+            // still missing. Do not fall back to the provider's full enum or
+            // the cascade would look dynamic while showing invalid values.
+            if (evaluatedState && Object.prototype.hasOwnProperty.call(evaluatedState, 'options')) {
+                return Array.isArray(evaluatedState.options) ? evaluatedState.options : [];
+            }
             const schema = blueprintToolFieldSchema(field.tool_ref).schema || {};
             const arraySchema = schema.type === 'array' || (Array.isArray(schema.type) && schema.type.includes('array'));
             if (Array.isArray(field.options) && !arraySchema) return field.options;
             if (Array.isArray(schema.enum)) return schema.enum;
             if (Array.isArray(schema.items?.enum)) return schema.items.enum;
             return [];
+        }
+
+        function blueprintOptionLabel(field, option) {
+            const labels = field?.option_labels;
+            if (labels && typeof labels === 'object') {
+                return labels[String(option)] || String(option);
+            }
+            return String(option);
         }
 
         function presentedLines(value) {
@@ -4467,6 +4481,14 @@
                             lookupContext?.onSelection?.({ fieldName: childPath, tokens });
                         },
                     });
+                } else if (state.options_state === 'awaiting_dependency' || state.options_state === 'no_matching_rule') {
+                    control = document.createElement('select');
+                    control.disabled = true;
+                    const waiting = document.createElement('option');
+                    waiting.value = '';
+                    waiting.textContent = state.options_state === 'awaiting_dependency'
+                        ? '请先完成上游选择…' : '当前组合暂无可用选项';
+                    control.appendChild(waiting);
                 } else if (options.length) {
                     control = document.createElement('select');
                     const empty = document.createElement('option');
@@ -4474,7 +4496,8 @@
                     control.appendChild(empty);
                     options.forEach(option => {
                         const item = document.createElement('option');
-                        item.value = String(option); item.textContent = String(option);
+                        item.value = String(option);
+                        item.textContent = spec.option_labels?.[String(option)] || String(option);
                         control.appendChild(item);
                     });
                     control.value = current[name] === undefined ? '' : String(current[name]);
@@ -4528,7 +4551,7 @@
                 if (field.visible === false) continue;
                 let value = blueprintState.values[field.path];
                 if (value === undefined) value = evaluated.get(field.path)?.value;
-                const options = blueprintOptions(field);
+                const options = blueprintOptions(field, evaluated.get(field.path));
                 if (value === undefined && field.presentation === 'derived_readonly' && options.length === 1) value = options[0];
                 if (value === undefined || value === null || value === '') continue;
                 const { toolName, fieldPath } = blueprintToolFieldSchema(field.tool_ref);
@@ -4738,7 +4761,7 @@
                     wrapper.appendChild(help);
                 }
                 const schema = blueprintToolFieldSchema(field.tool_ref).schema || {};
-                const options = blueprintOptions(field);
+                const options = blueprintOptions(field, state);
                 const displayValue = state.value !== undefined && state.value !== null
                     ? state.value : blueprintState.values[field.path];
                 let control;
@@ -4874,7 +4897,7 @@
                     for (const option of options) {
                         const optionNode = document.createElement('option');
                         optionNode.value = String(option);
-                        optionNode.textContent = String(option);
+                        optionNode.textContent = blueprintOptionLabel(field, option);
                         control.appendChild(optionNode);
                     }
                 } else if (schema.type === 'object' || schema.type === 'array' || Array.isArray(schema.type)) {
@@ -4895,7 +4918,12 @@
                 wrapper.appendChild(control);
                 const source = document.createElement('div');
                 source.className = 'blueprint-field-source';
-                source.textContent = field.presentation === 'derived_readonly'
+                const dependencyLabels = (state.missing_option_dependencies || []).map(path =>
+                    blueprint.fields?.find(item => item.path === path)?.label || path
+                );
+                source.textContent = state.options_state === 'awaiting_dependency'
+                    ? `请先完成：${dependencyLabels.join('、') || '上游选择'}`
+                    : field.presentation === 'derived_readonly'
                     ? '已根据当前入口自动匹配'
                     : field.source === 'lookup' || field.control === 'lookup'
                         ? '需要从指定账户中选择'
@@ -5908,13 +5936,20 @@
                     if (field.control === 'select') {
                         const empty = document.createElement('option');
                         empty.value = '';
-                        empty.textContent = field.required ? '请选择…' : '不设置';
+                        empty.textContent = field.options_state === 'awaiting_dependency'
+                            ? '请先完成上游选择…'
+                            : field.options_state === 'no_matching_rule'
+                                ? '当前组合暂无可用选项'
+                                : field.required ? '请选择…' : '不设置';
                         control.appendChild(empty);
+                    }
+                    if (field.options_state === 'awaiting_dependency' || field.options_state === 'no_matching_rule') {
+                        control.disabled = true;
                     }
                     options.forEach(option => {
                         const node = document.createElement('option');
                         node.value = creationCardValueText(option.value);
-                        node.textContent = option.label || node.value;
+                        node.textContent = field.option_labels?.[String(option.value)] || option.label || node.value;
                         if (Array.isArray(field.value) ? field.value.map(String).includes(node.value) : String(field.value ?? '') === node.value) node.selected = true;
                         control.appendChild(node);
                     });

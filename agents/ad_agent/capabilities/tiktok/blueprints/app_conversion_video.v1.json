@@ -102,7 +102,10 @@
         "equals": "APP_PROMOTION"
       },
       "source": "enum",
-      "options": ["APP_ANDROID", "APP_IOS"]
+      "options": ["APP_ANDROID", "APP_IOS"],
+      "options_from": ["campaign.objective_type"],
+      "option_rules": [{"when": {"field": "campaign.objective_type", "equals": "APP_PROMOTION"}, "options": ["APP_ANDROID", "APP_IOS"]}],
+      "option_labels": {"APP_ANDROID": "Android 应用", "APP_IOS": "iOS 应用"}
     },
     {
       "path": "ad_group.app_id",
@@ -130,7 +133,9 @@
         "campaign.objective_type",
         "ad_group.promotion_type",
         "ad_group.optimization_goal"
-      ]
+      ],
+      "option_rules": [{"when": {"field": "ad_group.optimization_goal", "in": ["INSTALL", "IN_APP_EVENT", "CONVERSION"]}, "options": ["OCPM"]}],
+      "option_labels": {"OCPM": "优化千次展示（oCPM）"}
     },
     {
       "path": "ad_group.optimization_goal",
@@ -142,7 +147,9 @@
       "options_from": [
         "campaign.objective_type",
         "ad_group.promotion_type"
-      ]
+      ],
+      "option_rules": [{"when": {"field": "ad_group.promotion_type", "in": ["APP_ANDROID", "APP_IOS"]}, "options": ["INSTALL", "IN_APP_EVENT", "CONVERSION"]}],
+      "option_labels": {"INSTALL": "应用安装", "IN_APP_EVENT": "应用内事件", "CONVERSION": "转化"}
     },
     {
       "path": "ad_group.bid_type",
@@ -166,7 +173,10 @@
         "in": ["APP_ANDROID", "APP_IOS"]
       },
       "source": "enum",
-      "options": ["AEO", "OCC", "ROAS"]
+      "options": ["AEO", "OCC", "ROAS"],
+      "options_from": ["ad_group.optimization_goal"],
+      "option_rules": [{"when": {"field": "ad_group.optimization_goal", "equals": "INSTALL"}, "options": ["AEO"]}, {"when": {"field": "ad_group.optimization_goal", "equals": "IN_APP_EVENT"}, "options": ["OCC"]}, {"when": {"field": "ad_group.optimization_goal", "equals": "CONVERSION"}, "options": ["ROAS"]}],
+      "option_labels": {"AEO": "应用事件优化", "OCC": "应用内转化优化", "ROAS": "广告支出回报"}
     },
     {
       "path": "ad_group.conversion_id",
@@ -234,7 +244,10 @@
         "in": ["APP_ANDROID", "APP_IOS"]
       },
       "source": "enum",
-      "options": ["ANDROID", "IOS"]
+      "options": ["ANDROID", "IOS"],
+      "options_from": ["ad_group.promotion_type"],
+      "option_rules": [{"when": {"field": "ad_group.promotion_type", "equals": "APP_ANDROID"}, "options": ["ANDROID"]}, {"when": {"field": "ad_group.promotion_type", "equals": "APP_IOS"}, "options": ["IOS"]}],
+      "option_labels": {"ANDROID": "Android", "IOS": "iOS"}
     },
     {
       "path": "ad_group.budget_mode",
@@ -272,7 +285,10 @@
       "label": "广告 App 平台",
       "required": true,
       "source": "enum",
-      "options": ["APP_ANDROID", "APP_IOS"]
+      "options": ["APP_ANDROID", "APP_IOS"],
+      "options_from": ["ad_group.promotion_type"],
+      "option_rules": [{"when": {"field": "ad_group.promotion_type", "equals": "APP_ANDROID"}, "options": ["APP_ANDROID"]}, {"when": {"field": "ad_group.promotion_type", "equals": "APP_IOS"}, "options": ["APP_IOS"]}],
+      "option_labels": {"APP_ANDROID": "Android 应用", "APP_IOS": "iOS 应用"}
     },
     {
       "path": "ad.operating_systems",
@@ -280,7 +296,10 @@
       "label": "广告操作系统",
       "required": true,
       "source": "enum",
-      "options": ["ANDROID", "IOS"]
+      "options": ["ANDROID", "IOS"],
+      "options_from": ["ad.promotion_type"],
+      "option_rules": [{"when": {"field": "ad.promotion_type", "equals": "APP_ANDROID"}, "options": ["ANDROID"]}, {"when": {"field": "ad.promotion_type", "equals": "APP_IOS"}, "options": ["IOS"]}],
+      "option_labels": {"ANDROID": "Android", "IOS": "iOS"}
     },
     {
       "path": "ad.media",

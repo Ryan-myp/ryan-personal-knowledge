@@ -458,16 +458,34 @@ def google_campaign_budget_update_schema() -> dict[str, Any]:
 def google_app_campaign_setting_schema() -> dict[str, Any]:
     """Closed contract for the settings specific to App campaigns."""
     return _object({
-        "app_id": _field("string", "Google Play package name or iOS App Store ID", minLength=1),
-        "app_store": _field("string", "App store", enum=GOOGLE_APP_STORES),
+        "app_id": _field(
+            "string", "Google Play package name or iOS App Store ID", minLength=1,
+            manual_entry={
+                "title": "应用标识",
+                "instructions": "Google App Campaign 需要应用包名或 App Store ID；当前 Google Ads Capability 未声明通用应用列表查询 Tool，请提供已在账号中关联的应用标识。",
+                "example": "com.example.app",
+            },
+        ),
+        "app_store": _field(
+            "string", "App store", enum=GOOGLE_APP_STORES,
+            option_labels={"GOOGLE_APP_STORE": "Google Play", "APPLE_APP_STORE": "Apple App Store"},
+        ),
         "bidding_strategy_type": _field(
             "string", "App campaign bidding strategy", enum=GOOGLE_APP_BIDDING_TYPES,
+            option_labels={
+                "TARGET_CPA": "目标 CPA", "TARGET_ROAS": "目标 ROAS",
+                "MAXIMIZE_CONVERSIONS": "最大化转化次数",
+                "MAXIMIZE_CONVERSION_VALUE": "最大化转化价值",
+            },
         ),
         "bidding_strategy_goal_type": _field(
             "string", "App campaign optimization goal", enum=[
                 "OPTIMIZE_INSTALLS_TARGET_INSTALL_COST",
                 "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_INSTALL_COST",
-            ],
+            ], option_labels={
+                "OPTIMIZE_INSTALLS_TARGET_INSTALL_COST": "优化安装量（目标安装成本）",
+                "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_INSTALL_COST": "优化应用内转化（目标安装成本）",
+            },
         ),
         "selective_optimization": _field(
             "array", "Conversion action resource names used for App Engagement",

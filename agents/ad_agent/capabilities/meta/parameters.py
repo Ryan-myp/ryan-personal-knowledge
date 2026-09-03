@@ -568,11 +568,32 @@ def meta_video_asset_schema() -> dict[str, Any]:
 
 def meta_promoted_object_schema() -> dict[str, Any]:
     return _object({
-        "pixel_id": _field("string", "Meta Pixel ID"),
-        "application_id": _field("string", "Meta application ID"),
+        "pixel_id": _field(
+            "string", "Meta Pixel ID",
+            lookup_tool="meta_list_pixels", lookup_result_key="pixels",
+            selection_value_fields=["id", "pixel_id"],
+            selection_label_fields=["name", "id"],
+        ),
+        "application_id": _field(
+            "string", "Meta application ID",
+            manual_entry={
+                "title": "应用 ID",
+                "instructions": "当前 Meta Capability 未声明通用应用列表查询 Tool，请提供已在 Meta 账号中关联的应用 ID。",
+            },
+        ),
         "object_store_url": _field("string", "App store URL"),
-        "product_set_id": _field("string", "Catalog product set ID"),
-        "page_id": _field("string", "Facebook Page ID"),
+        "product_set_id": _field(
+            "string", "Catalog product set ID",
+            lookup_tool="meta_list_product_sets", lookup_result_key="product_sets",
+            selection_value_fields=["id", "product_set_id"],
+            selection_label_fields=["name", "id"],
+        ),
+        "page_id": _field(
+            "string", "Facebook Page ID",
+            lookup_tool="meta_list_pages", lookup_result_key="pages",
+            selection_value_fields=["id", "page_id"],
+            selection_label_fields=["name", "id"],
+        ),
         "custom_event_type": _field("string", "Conversion event", enum=META_CUSTOM_EVENT_TYPES),
         "custom_event_str": _field("string", "Provider custom event name"),
     }, "Meta promoted object")
@@ -786,8 +807,18 @@ def meta_lead_ad_schema() -> dict[str, Any]:
         "properties": {
             "adset_id": _field("string", "Parent Meta Ad Set ID"),
             "name": _field("string", "Ad name", maxLength=400),
-            "page_id": _field("string", "Facebook Page ID", minLength=1),
-            "form_id": _field("string", "Published Instant Form ID", minLength=1),
+            "page_id": _field(
+                "string", "Facebook Page ID", minLength=1,
+                lookup_tool="meta_list_pages", lookup_result_key="pages",
+                selection_value_fields=["id", "page_id"],
+                selection_label_fields=["name", "id"],
+            ),
+            "form_id": _field(
+                "string", "Published Instant Form ID", minLength=1,
+                lookup_tool="meta_list_lead_forms", lookup_result_key="lead_forms",
+                selection_value_fields=["id", "form_id"],
+                selection_label_fields=["name", "id"],
+            ),
             "link": _field("string", "Optional destination URL"),
             "message": _field("string", "Primary text"),
             "headline": _field("string", "Headline"),
@@ -891,7 +922,12 @@ def meta_link_ad_schema() -> dict[str, Any]:
         "properties": {
             "adset_id": _field("string", "Parent Meta Ad Set ID"),
             "name": _field("string", "Ad name", maxLength=400),
-            "page_id": _field("string", "Facebook Page ID", minLength=1),
+            "page_id": _field(
+                "string", "Facebook Page ID", minLength=1,
+                lookup_tool="meta_list_pages", lookup_result_key="pages",
+                selection_value_fields=["id", "page_id"],
+                selection_label_fields=["name", "id"],
+            ),
             "link": _field("string", "Destination URL", minLength=1),
             "media_type": _field(
                 "string", "Link creative media type", enum=["IMAGE", "VIDEO"],

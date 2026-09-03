@@ -12,7 +12,7 @@
     {"path": "campaign.campaign_name", "tool_ref": "google_create_campaign.campaign_name", "label": "Campaign 名称", "required": true},
     {"path": "campaign.advertising_channel_type", "tool_ref": "google_create_campaign.advertising_channel_type", "label": "广告系列类型（已根据入口匹配）", "required": true, "source": "enum", "options": ["SHOPPING"], "presentation": "derived_readonly"},
     {"path": "campaign.shopping_setting", "tool_ref": "google_create_campaign.shopping_setting", "label": "Merchant Center 设置", "required": true},
-    {"path": "campaign.bidding_strategy", "tool_ref": "google_create_campaign.bidding_strategy", "label": "出价策略", "required": true, "source": "enum", "options": ["MAXIMIZE_CONVERSION_VALUE", "TARGET_ROAS", "MANUAL_CPC"]},
+    {"path": "campaign.bidding_strategy", "tool_ref": "google_create_campaign.bidding_strategy", "label": "出价策略", "required": true, "source": "enum", "options": ["MAXIMIZE_CONVERSION_VALUE", "TARGET_ROAS", "MANUAL_CPC"], "option_labels": {"MAXIMIZE_CONVERSION_VALUE": "最大化转化价值", "TARGET_ROAS": "目标 ROAS", "MANUAL_CPC": "人工 CPC"}},
     {"path": "campaign.target_roas", "tool_ref": "google_create_campaign.target_roas", "label": "目标 ROAS", "visible_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_ROAS"}, "required_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_ROAS"}},
     {"path": "campaign.daily_budget", "tool_ref": "google_create_campaign.daily_budget", "label": "日预算", "required": true},
     {"path": "ad_group.name", "tool_ref": "google_create_ad_group.name", "label": "广告组名称", "required": true},

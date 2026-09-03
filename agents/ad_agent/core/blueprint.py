@@ -211,6 +211,51 @@ class AdCreationBlueprint:
                 _validate_condition(normalized["visible_when"], f"{location}.visible_when")
             if "required_when" in normalized:
                 _validate_condition(normalized["required_when"], f"{location}.required_when")
+            if "options_from" in normalized:
+                dependencies = normalized["options_from"]
+                if (
+                    not isinstance(dependencies, list)
+                    or not dependencies
+                    or not all(isinstance(value, str) and value.strip() for value in dependencies)
+                ):
+                    raise BlueprintValidationError(
+                        f"{location}.options_from must be a non-empty list of field paths"
+                    )
+                normalized["options_from"] = [str(value).strip() for value in dependencies]
+            if "option_rules" in normalized:
+                option_rules = normalized["option_rules"]
+                if not isinstance(option_rules, list) or not option_rules:
+                    raise BlueprintValidationError(f"{location}.option_rules must be a non-empty list")
+                checked_rules: list[dict[str, Any]] = []
+                for rule_index, option_rule in enumerate(option_rules):
+                    rule_location = f"{location}.option_rules[{rule_index}]"
+                    if not isinstance(option_rule, Mapping):
+                        raise BlueprintValidationError(f"{rule_location} must be an object")
+                    if "when" not in option_rule:
+                        raise BlueprintValidationError(f"{rule_location}.when is required")
+                    _validate_condition(option_rule["when"], f"{rule_location}.when")
+                    options = option_rule.get("options")
+                    if not isinstance(options, list) or not options:
+                        raise BlueprintValidationError(
+                            f"{rule_location}.options must be a non-empty list"
+                        )
+                    if any(isinstance(value, (Mapping, list, tuple, set)) for value in options):
+                        raise BlueprintValidationError(
+                            f"{rule_location}.options must contain scalar values"
+                        )
+                    if len({json.dumps(value, sort_keys=True) for value in options}) != len(options):
+                        raise BlueprintValidationError(f"{rule_location}.options must not contain duplicates")
+                    checked = dict(option_rule)
+                    checked["options"] = _copy_json(options)
+                    checked_rules.append(checked)
+                normalized["option_rules"] = checked_rules
+            if "option_labels" in normalized:
+                labels = normalized["option_labels"]
+                if not isinstance(labels, Mapping):
+                    raise BlueprintValidationError(f"{location}.option_labels must be an object")
+                if any(not isinstance(label, str) or not label.strip() for label in labels.values()):
+                    raise BlueprintValidationError(f"{location}.option_labels values must be non-empty strings")
+                normalized["option_labels"] = _copy_json(dict(labels))
             fields.append(normalized)
 
         field_paths = {str(item["path"]) for item in fields}
@@ -262,6 +307,17 @@ class AdCreationBlueprint:
                 if unknown:
                     raise BlueprintValidationError(
                         f"fields[{index}].{condition_key} references unknown fields: {sorted(unknown)}"
+                    )
+            for dependency in field.get("options_from", []) or []:
+                if dependency not in field_paths:
+                    raise BlueprintValidationError(
+                        f"fields[{index}].options_from references unknown field: {dependency}"
+                    )
+            for rule_index, option_rule in enumerate(field.get("option_rules", []) or []):
+                unknown = _condition_fields(option_rule["when"]) - field_paths
+                if unknown:
+                    raise BlueprintValidationError(
+                        f"fields[{index}].option_rules[{rule_index}].when references unknown fields: {sorted(unknown)}"
                     )
 
         rules_value = document.get("rules", [])
@@ -397,15 +453,24 @@ def validate_blueprint_against_tools(
         if isinstance(field_schema, Mapping):
             field_schemas[str(field["path"])] = field_schema
             declared_options = field.get("options")
+            allowed = field_schema.get("enum")
+            if not isinstance(allowed, list) and isinstance(field_schema.get("items"), Mapping):
+                allowed = field_schema["items"].get("enum")
             if isinstance(declared_options, list):
-                allowed = field_schema.get("enum")
-                if not isinstance(allowed, list) and isinstance(field_schema.get("items"), Mapping):
-                    allowed = field_schema["items"].get("enum")
                 if isinstance(allowed, list):
                     unsupported = set(declared_options) - set(allowed)
                     if unsupported:
                         raise BlueprintValidationError(
                             f"unsupported options for {tool_ref}: {sorted(unsupported, key=str)}"
+                        )
+            for rule_index, option_rule in enumerate(field.get("option_rules", []) or []):
+                rule_options = option_rule.get("options", [])
+                if isinstance(allowed, list):
+                    unsupported = set(rule_options) - set(allowed)
+                    if unsupported:
+                        raise BlueprintValidationError(
+                            f"unsupported option rule values for {tool_ref}"
+                            f"[{rule_index}]: {sorted(unsupported, key=str)}"
                         )
         if str(getattr(definition, "platform", "")).strip().lower() != blueprint.provider.lower():
             raise BlueprintValidationError(
@@ -691,6 +756,7 @@ class BlueprintCascadeEngine:
         *,
         previous_values: Optional[Mapping[str, Any]] = None,
         changed_fields: Optional[Iterable[str]] = None,
+        option_sources: Optional[Mapping[str, Iterable[Any]]] = None,
     ) -> dict[str, Any]:
         current = dict(values) if isinstance(values, Mapping) else {}
         # Materialize declarative derived values into an evaluation-only copy
@@ -728,6 +794,43 @@ class BlueprintCascadeEngine:
         def unique(items: list[str]) -> list[str]:
             return list(dict.fromkeys(items))
 
+        def options_for(field: Mapping[str, Any]) -> tuple[list[Any], str, list[str]]:
+            """Resolve a field's effective options from declarative metadata.
+
+            ``option_rules`` is intentionally a small, data-only contract. A
+            missing dependency never falls back to the complete provider enum;
+            the UI must first collect the parent selection. ``option_sources``
+            lets Runtime supply the registered Tool schema enum without making
+            this engine aware of providers or Tool registries.
+            """
+            path = str(field["path"])
+            declared = field.get("options")
+            base = list(declared) if isinstance(declared, list) else []
+            source_options = option_sources.get(path) if option_sources else None
+            if not base and isinstance(source_options, (list, tuple, set)):
+                base = list(source_options)
+            option_rules = field.get("option_rules") or []
+            if not option_rules:
+                return base, "available" if base else "unconstrained", []
+            matched: list[Any] = []
+            matched_count = 0
+            for option_rule in option_rules:
+                if _condition_matches(option_rule["when"], current, changed):
+                    matched_count += 1
+                    matched.extend(option_rule.get("options", []))
+            if matched_count:
+                return list(dict.fromkeys(matched)), "available", []
+            dependencies = [str(item) for item in field.get("options_from", []) or []]
+            missing_dependencies = [
+                dependency for dependency in dependencies
+                if not _has_value(_value_at(current, dependency))
+            ]
+            return [], "awaiting_dependency" if missing_dependencies else "no_matching_rule", missing_dependencies
+
+        resolved_options: dict[str, tuple[list[Any], str, list[str]]] = {
+            str(field["path"]): options_for(field) for field in blueprint.fields
+        }
+
         field_states: list[dict[str, Any]] = []
         missing: list[str] = []
         invalid: list[str] = []
@@ -749,13 +852,13 @@ class BlueprintCascadeEngine:
                 and len(field["options"]) == 1
             ):
                 value = field["options"][0]
-            is_invalid = (
-                visible
-                and
-                _has_submittable_value(value)
-                and isinstance(field.get("options"), list)
-                and value not in field["options"]
+            options, options_state, missing_dependencies = resolved_options[path]
+            is_array = isinstance(value, (list, tuple, set))
+            is_invalid = visible and _has_submittable_value(value) and bool(options) and (
+                any(item not in options for item in value) if is_array else value not in options
             )
+            if visible and _has_submittable_value(value) and options_state in {"awaiting_dependency", "no_matching_rule"}:
+                is_invalid = True
             if is_invalid:
                 invalid.append(path)
             is_missing = visible and required and not _has_submittable_value(value)
@@ -773,10 +876,17 @@ class BlueprintCascadeEngine:
                 "value": _copy_json(value),
                 "source": field.get("source", "tool_schema"),
             }
-            if "options" in field:
-                item["options"] = _copy_json(field["options"])
+            if "options" in field or "option_rules" in field:
+                item["options"] = _copy_json(options)
+            elif options:
+                item["options"] = _copy_json(options)
             if "options_from" in field:
                 item["options_from"] = _copy_json(field["options_from"])
+            if "option_rules" in field:
+                item["options_state"] = options_state
+                item["missing_option_dependencies"] = _copy_json(missing_dependencies)
+            if "option_labels" in field:
+                item["option_labels"] = _copy_json(field["option_labels"])
             field_states.append(item)
 
         reset = unique(reset)

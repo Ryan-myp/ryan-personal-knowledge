@@ -107,6 +107,101 @@ def test_google_bidding_strategy_cascade_requires_only_matching_target():
     assert "campaign.target_cpa_micros" in result["missing_fields"]
 
 
+def test_meta_objective_cascade_resolves_optimization_and_billing_options():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_meta_capability())
+
+    result = runtime.evaluate_creation_blueprint(
+        "meta.conversion_link",
+        {"campaign.objective": "OUTCOME_CONVERSIONS"},
+    )
+    states = {item["path"]: item for item in result["fields"]}
+    assert states["ad_set.optimization_goal"]["options"] == [
+        "OFFSITE_CONVERSIONS", "CONVERSIONS"
+    ]
+    assert states["ad_set.billing_event"]["options_state"] == "awaiting_dependency"
+    assert states["ad_set.billing_event"]["options"] == []
+
+    result = runtime.evaluate_creation_blueprint(
+        "meta.conversion_link",
+        {
+            "campaign.objective": "OUTCOME_CONVERSIONS",
+            "ad_set.optimization_goal": "OFFSITE_CONVERSIONS",
+        },
+    )
+    states = {item["path"]: item for item in result["fields"]}
+    assert states["ad_set.billing_event"]["options"] == ["IMPRESSIONS"]
+    assert states["ad_set.billing_event"]["option_labels"]["IMPRESSIONS"] == "展示（按展示计费）"
+
+
+def test_meta_blueprint_lookup_declarations_are_carried_to_creation_card():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_meta_capability())
+    intent = ParsedIntent(
+        "create_campaign", "创建 Meta 潜在客户广告", ["meta"],
+        platform_params={"meta": {"objective": "OUTCOME_LEADS"}},
+    )
+    card = runtime.build_creation_ui(intent)["cards"][0]
+    page = next(item for item in card["fields"] if item["path"] == "ad.page_id")
+    assert page["lookup"]["tool"] == "meta_list_pages"
+
+    conversion_intent = ParsedIntent(
+        "create_campaign", "创建 Meta 转化广告", ["meta"],
+        platform_params={"meta": {
+            "objective": "OUTCOME_CONVERSIONS",
+            "optimization_goal": "OFFSITE_CONVERSIONS",
+        }},
+    )
+    conversion_card = runtime.build_creation_ui(conversion_intent)["cards"][0]
+    promoted = next(item for item in conversion_card["fields"] if item["path"] == "ad_set.promoted_object")
+    assert promoted["object_properties"]["pixel_id"]["lookup_tool"] == "meta_list_pixels"
+
+
+def test_tiktok_cascade_filters_app_options_and_clears_incompatible_value():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_tiktok_capability())
+    result = runtime.evaluate_creation_blueprint(
+        "tiktok.app_conversion_video",
+        {
+            "campaign.objective_type": "APP_PROMOTION",
+            "ad_group.promotion_type": "APP_ANDROID",
+            "ad_group.optimization_goal": "INSTALL",
+            "ad_group.deep_bid_type": "ROAS",
+        },
+    )
+    states = {item["path"]: item for item in result["fields"]}
+    assert states["ad_group.optimization_goal"]["options"] == [
+        "INSTALL", "IN_APP_EVENT", "CONVERSION"
+    ]
+    assert states["ad_group.deep_bid_type"]["options"] == ["AEO"]
+    assert "ad_group.deep_bid_type" in result["invalid_fields"]
+
+    ios = runtime.evaluate_creation_blueprint(
+        "tiktok.app_conversion_video",
+        {
+            "campaign.objective_type": "APP_PROMOTION",
+            "ad_group.promotion_type": "APP_IOS",
+            "ad.promotion_type": "APP_IOS",
+        },
+    )
+    ios_states = {item["path"]: item for item in ios["fields"]}
+    assert ios_states["ad_group.operating_systems"]["options"] == ["IOS"]
+    assert ios_states["ad.operating_systems"]["options"] == ["IOS"]
+
+
+def test_google_search_blueprint_exposes_format_specific_bidding_catalog():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_google_capability())
+    blueprint = runtime.creation_blueprints.get("google-ads.search")
+    assert blueprint is not None
+    field = next(item for item in blueprint.fields if item["path"] == "campaign.bidding_strategy")
+    assert field["options"] == [
+        "MANUAL_CPC", "MAXIMIZE_CLICKS", "MAXIMIZE_CONVERSIONS",
+        "TARGET_CPA", "TARGET_ROAS", "TARGET_IMPRESSION_SHARE",
+    ]
+    assert field["option_labels"]["MAXIMIZE_CLICKS"] == "最大化点击次数"
+
+
 def test_google_entry_type_is_not_repeated_at_ad_group_level():
     runtime = AgentRuntime(require_llm=False, offline_mode=True)
     runtime.register_capability(create_google_capability())
@@ -329,6 +424,14 @@ def test_google_app_nested_dynamic_field_exposes_lookup_metadata():
     )
     assert catalog[0]["source"] == "lookup"
     assert catalog[0]["lookup_tool"] == "google_list_conversion_actions"
+
+    app_store = runtime.list_parameter_options(
+        "google-ads", "app_campaign_setting.app_store", "google_create_campaign"
+    )
+    assert {item["value"]: item["label"] for item in app_store[0]["options"]} == {
+        "GOOGLE_APP_STORE": "Google Play",
+        "APPLE_APP_STORE": "Apple App Store",
+    }
 
 
 def test_cascade_hides_and_requires_app_fields_for_app_objective():

@@ -164,11 +164,19 @@ class ParameterCatalogRegistry:
             if enum is None and isinstance(items, dict):
                 enum = items.get("enum")
             if enum is not None:
+                labels = spec.get("option_labels") or {}
                 self.register(
                     ParameterCatalog(
                         platform=normalized,
                         field=str(field),
-                        options=tuple(ParameterOption(value=item) for item in enum),
+                        options=tuple(
+                            ParameterOption(
+                                value=item,
+                                label=str(labels.get(str(item), item))
+                                if isinstance(labels, dict) else str(item),
+                            )
+                            for item in enum
+                        ),
                         source="tool_schema",
                         version=str(spec.get("version", "schema")),
                         description=str(spec.get("description", "")),

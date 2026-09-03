@@ -58,7 +58,7 @@ from ..core.knowledge import KnowledgeProvider, LocalMarkdownKnowledgeProvider
 from ..knowledge_management import ManagedKnowledgeProvider
 from ..core.memory import MemoryManager
 from ..core.parameter_catalog import ParameterCatalogRegistry
-from ..core.blueprint import BlueprintRegistry, BlueprintCascadeEngine
+from ..core.blueprint import BlueprintRegistry, BlueprintCascadeEngine, _schema_at_path
 from ..core.creation_card import CreationCardBuilder
 from ..core.parameter_selection import (
     ParameterSelectionSigner,
@@ -1114,11 +1114,30 @@ class AgentRuntime:
         blueprint = self.creation_blueprints.get(blueprint_id, version)
         if blueprint is None:
             raise KeyError(f"creation blueprint not found: {blueprint_id}@{version or 'latest'}")
+        # The cascade engine stays provider-neutral. Runtime only supplies the
+        # enum portion of the already-registered Tool schema so a Blueprint can
+        # use ``option_rules`` even when its base options are inherited from a
+        # Tool rather than duplicated in JSON.
+        option_sources: dict[str, list[Any]] = {}
+        for field in blueprint.fields:
+            tool_name, schema_path = str(field["tool_ref"]).split(".", 1)
+            try:
+                definition, _handler = self._get_registered_tool(tool_name)
+            except (KeyError, LookupError, ValueError):
+                continue
+            properties = getattr(getattr(definition, "input_schema", None), "properties", {}) or {}
+            schema = _schema_at_path(properties, schema_path) or {}
+            enum = schema.get("enum") if isinstance(schema, Mapping) else None
+            if not isinstance(enum, list) and isinstance(schema, Mapping) and isinstance(schema.get("items"), Mapping):
+                enum = schema["items"].get("enum")
+            if isinstance(enum, list):
+                option_sources[str(field["path"])] = list(enum)
         return self.blueprint_cascade.evaluate(
             blueprint,
             values,
             previous_values=previous_values,
             changed_fields=changed_fields,
+            option_sources=option_sources,
         )
 
     def build_creation_ui(self, intent: ParsedIntent) -> dict[str, Any]:

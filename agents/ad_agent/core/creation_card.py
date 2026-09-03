@@ -79,6 +79,20 @@ def _options(field: Mapping[str, Any], schema: Mapping[str, Any]) -> list[Any]:
     return []
 
 
+def _option_label(field: Mapping[str, Any], option: Any) -> str:
+    labels = field.get("option_labels")
+    if isinstance(labels, Mapping):
+        label = labels.get(str(option))
+        if label is None:
+            try:
+                label = labels.get(option)
+            except TypeError:
+                label = None
+        if label:
+            return str(label)
+    return str(option)
+
+
 def _control_for(field: Mapping[str, Any], schema: Mapping[str, Any], options: list[Any]) -> str:
     presentation = str(field.get("presentation") or "").strip().lower()
     if presentation in _PRESENTATIONS:
@@ -124,7 +138,11 @@ def _normalized(value: Any) -> str:
     return " ".join(str(value or "").strip().lower().replace("_", " ").split())
 
 
-def _lookup_metadata(tool_registry: Any, schema: Mapping[str, Any]) -> dict[str, Any]:
+def _lookup_metadata(
+    tool_registry: Any,
+    schema: Mapping[str, Any],
+    field: Optional[Mapping[str, Any]] = None,
+) -> dict[str, Any]:
     """Return provider-owned lookup metadata plus the source Tool contract.
 
     The source Tool is intentionally inspected here instead of inferred from
@@ -132,7 +150,12 @@ def _lookup_metadata(tool_registry: Any, schema: Mapping[str, Any]) -> dict[str,
     swap its endpoint without adding a Runtime/provider branch.
     """
     lookup = schema.get("lookup") if isinstance(schema.get("lookup"), Mapping) else {}
-    lookup_tool = schema.get("lookup_tool") or lookup.get("tool")
+    field = field if isinstance(field, Mapping) else {}
+    lookup_tool = (
+        schema.get("lookup_tool")
+        or lookup.get("tool")
+        or field.get("lookup_tool")
+    )
     if not lookup_tool:
         return {}
     result: dict[str, Any] = {"tool": str(lookup_tool), "read_only": True}
@@ -145,6 +168,10 @@ def _lookup_metadata(tool_registry: Any, schema: Mapping[str, Any]) -> dict[str,
         value = schema.get(source_key)
         if value is None and isinstance(lookup, Mapping):
             value = lookup.get(result_key)
+        if value is None:
+            value = field.get(source_key)
+            if value is None and isinstance(field.get("lookup"), Mapping):
+                value = field["lookup"].get(result_key)
         if value is not None:
             result[result_key] = value
     manual_entry = schema.get("manual_entry")
@@ -332,7 +359,13 @@ class CreationCardBuilder:
             if _SENSITIVE_FIELD.search(str(field.get("path"))):
                 continue
             values[str(field["path"])] = self._field_value(intent, provider_values, field)
-        evaluation = self.cascade.evaluate(blueprint, values)
+        option_sources: dict[str, list[Any]] = {}
+        for field in blueprint.fields[:_MAX_FIELDS]:
+            _tool_name, _schema_path, schema = _schema_for_ref(self.tools, field["tool_ref"])
+            schema_options = _options(field, schema)
+            if schema_options:
+                option_sources[str(field["path"])] = schema_options
+        evaluation = self.cascade.evaluate(blueprint, values, option_sources=option_sources)
         state_by_path = {item["path"]: item for item in evaluation.get("fields", [])}
         fields: list[dict[str, Any]] = []
         for field in blueprint.fields[:_MAX_FIELDS]:
@@ -341,7 +374,11 @@ class CreationCardBuilder:
             if _SENSITIVE_FIELD.search(path) or _SENSITIVE_FIELD.search(schema_path):
                 continue
             state = dict(state_by_path.get(path) or {})
-            options = _options(field, schema)
+            options = (
+                list(state["options"])
+                if "options" in state
+                else _options(field, schema)
+            )
             value = values.get(path)
             if value is None:
                 # Cascade-derived readonly fields (for example a Google
@@ -360,7 +397,12 @@ class CreationCardBuilder:
                 "tool": tool_name,
                 "label": str(field.get("label") or path),
                 "description": str(field.get("description") or schema.get("description") or ""),
-                "control": _control_for(field, schema, options),
+                "control": (
+                    "select"
+                    if field.get("option_rules")
+                    and state.get("options_state") in {"awaiting_dependency", "no_matching_rule"}
+                    else _control_for(field, schema, options)
+                ),
                 "lookup_multiple": schema.get("type") == "array",
                 "required": bool(state.get("required", field.get("required", False))),
                 "visible": bool(state.get("visible", True)),
@@ -373,8 +415,24 @@ class CreationCardBuilder:
                     item[metadata_key] = field[metadata_key]
             if options:
                 item["options"] = [
+                    # ``label`` remains the stable wire-facing value for
+                    # existing A2UI consumers. ``option_labels`` carries the
+                    # provider-owned human label without changing that
+                    # compatibility contract.
                     {"value": option, "label": str(option)} for option in options
                 ]
+                if isinstance(field.get("option_labels"), Mapping):
+                    item["option_labels"] = {
+                        str(option): _option_label(field, option) for option in options
+                        if str(option) in field["option_labels"]
+                    }
+            if field.get("options_from"):
+                item["options_from"] = list(field["options_from"])
+            if state.get("options_state"):
+                item["options_state"] = state["options_state"]
+                item["missing_option_dependencies"] = list(
+                    state.get("missing_option_dependencies") or []
+                )
             if item["control"] == "object_editor":
                 properties = schema.get("properties") or {}
                 item["object_properties"] = {
@@ -384,6 +442,7 @@ class CreationCardBuilder:
                         "type": spec.get("type", "string"),
                             "description": spec.get("description", ""),
                             "enum": spec.get("enum"),
+                            "option_labels": spec.get("option_labels"),
                             "items": spec.get("items"),
                             "lookup_tool": spec.get("lookup_tool"),
                             "lookup_result_key": spec.get("lookup_result_key"),
@@ -402,7 +461,7 @@ class CreationCardBuilder:
                 }
             if item["control"] == "lookup":
                 item["lookup"] = {
-                    **_lookup_metadata(self.tools, schema),
+                    **_lookup_metadata(self.tools, schema, field),
                     "status": "available_without_call",
                 }
             elif isinstance(field.get("manual_entry"), Mapping):
