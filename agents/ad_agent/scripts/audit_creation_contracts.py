@@ -212,6 +212,29 @@ def _source_details(spec: Mapping[str, Any]) -> dict[str, Any]:
     return details
 
 
+def _is_opaque_structured_field(spec: Mapping[str, Any]) -> bool:
+    """Whether a structured field has no child contract for a guided form."""
+    field_type = spec.get("type")
+    if field_type == "object":
+        return not isinstance(spec.get("properties"), Mapping)
+    if field_type != "array":
+        return False
+    items = spec.get("items")
+    if not isinstance(items, Mapping):
+        return True
+    item_type = items.get("type")
+    if item_type == "object":
+        return not isinstance(items.get("properties"), Mapping)
+    if isinstance(item_type, list):
+        # ``["string", "object"]`` is a deliberate provider shorthand for
+        # text-or-asset references and is already renderable as a text/asset
+        # picker.  Only a pure object union is opaque here.
+        normalized_types = {str(value) for value in item_type}
+        if normalized_types == {"object"}:
+            return not isinstance(items.get("properties"), Mapping)
+    return False
+
+
 def _format_tokens(value: Any) -> set[str]:
     """Return comparable tokens for provider format identifiers.
 
@@ -354,7 +377,9 @@ def audit_creation_contracts(runtime: AgentRuntime) -> dict[str, Any]:
     source_counts: dict[str, Counter[str]] = defaultdict(Counter)
     field_sources: list[dict[str, Any]] = []
     unclassified_fields: list[dict[str, str]] = []
+    structured_guidance_gaps: list[dict[str, Any]] = []
     blueprint_required_gaps: list[dict[str, str]] = []
+    blueprint_field_usage: dict[str, list[str]] = defaultdict(list)
     selector_groups: dict[tuple[str, str, tuple[Any, ...]], list[Any]] = {}
     creation_tools = [
         definition
@@ -363,6 +388,17 @@ def audit_creation_contracts(runtime: AgentRuntime) -> dict[str, Any]:
     ]
 
     for blueprint in runtime.creation_blueprints.list():
+        blueprint_key = f"{blueprint.blueprint_id}@{blueprint.version}"
+        try:
+            expanded = runtime.creation_card_builder.expand_blueprint(blueprint)
+            for field in expanded.fields:
+                tool_ref = str(field.get("tool_ref") or "")
+                if tool_ref and blueprint_key not in blueprint_field_usage[tool_ref]:
+                    blueprint_field_usage[tool_ref].append(blueprint_key)
+        except Exception:
+            # The required-field helper below records expansion failures as a
+            # contract issue; do not duplicate that error in this index.
+            pass
         selector = blueprint.selector or {}
         if selector:
             selector_groups.setdefault(
@@ -426,6 +462,22 @@ def audit_creation_contracts(runtime: AgentRuntime) -> dict[str, Any]:
             if details:
                 field_item["details"] = details
             field_sources.append(field_item)
+            if (
+                _is_opaque_structured_field(spec)
+                and not isinstance(spec.get("manual_entry"), Mapping)
+                and spec.get("ui_hidden") is not True
+            ):
+                structured_guidance_gaps.append({
+                    "provider": provider,
+                    "tool": definition.name,
+                    "field": path,
+                    "required": field_item["required"],
+                    "blueprints": list(blueprint_field_usage.get(
+                        f"{definition.name}.{path}", []
+                    )),
+                    "additional_properties": spec.get("additionalProperties"),
+                    "description_present": bool(str(spec.get("description") or "").strip()),
+                })
             if not source:
                 unclassified_fields.append({
                     "tool": definition.name,
@@ -485,6 +537,7 @@ def audit_creation_contracts(runtime: AgentRuntime) -> dict[str, Any]:
         "field_source_total": sum(sum(counts.values()) for counts in source_counts.values()),
         "field_sources": field_sources,
         "unclassified_fields": unclassified_fields,
+        "structured_guidance_gaps": structured_guidance_gaps,
         "selector_overlaps": selector_overlaps,
         "unresolved_fields": unresolved_fields,
         "blueprint_required_gaps": blueprint_required_gaps,
@@ -539,6 +592,12 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"未分类字段：{len(report['unclassified_fields'])}；"
                 "请补充 enum/lookup/manual_entry 或明确字段类型"
+            )
+        if report["structured_guidance_gaps"]:
+            print(
+                "结构化引导缺口："
+                f"{len(report['structured_guidance_gaps'])} 个 object/对象数组缺少子字段 Schema "
+                "或人工录入说明"
             )
         if report["issues"]:
             print("发现问题：")

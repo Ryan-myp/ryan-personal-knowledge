@@ -42,7 +42,9 @@
 - `scripts/audit_creation_contracts.py` 已补充创建字段来源审计：逐字段区分固定枚举、同渠道
   只读 Lookup、人工录入、素材上传、账户/父级上下文、级联继承、自由输入和结构化输入，
   并检查资源字段来源、跨渠道 Lookup 以及 Blueprint 展开后的必填字段完整性；该审计仍是
-  发布门禁，不参与 Runtime 路由。
+  发布门禁，不参与 Runtime 路由。对于缺少子字段 Schema、只能退化为 JSON 的结构化字段，
+  审计会额外列出字段是否必填及是否出现在 Blueprint 中，作为后续按渠道补齐表单契约的
+  清单。
 - 每个渠道 Capability 包另有 `api_surface.py`，声明已实现与计划中的官方资源操作；审计会
   检查已实现项是否同时存在 Client 方法、覆盖映射和 executable Tool，并把计划项显式列为
   后续建设缺口。

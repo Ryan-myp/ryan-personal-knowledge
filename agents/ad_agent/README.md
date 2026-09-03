@@ -235,7 +235,9 @@ Capability 包约定自动发现渠道，输出 action/resource 矩阵和创建�
 录入、`upload` 素材上传、`context` 账户/父级上下文、`inherited` 级联继承、`free_text`
 自由输入和 `structured` 结构化输入，并检查资源字段是否缺少受控来源、Lookup 是否为同
 渠道只读 Tool，以及 Blueprint 展开后的必填字段是否完整。新增 Provider 字段不需要修改
-Runtime；只要补齐自身 Tool Schema/Lookup/Blueprint，审计即可自动发现缺口。
+Runtime；只要补齐自身 Tool Schema/Lookup/Blueprint，审计即可自动发现缺口。对于没有子
+字段 Schema、只能退化成 JSON 的对象参数，审计还会单独列出结构化引导缺口，并标记它是否
+出现在现有 Blueprint 中，避免把高级 Provider Payload 误呈现为完整表单。
 
 插件生命周期可通过 Runtime SDK 或 `GET /plugins` 检查；注册表不会绕过 ToolRegistry 的
 Schema、权限、账户、dry-run、确认、幂等和审计门禁。后续仍需补可信插件的
