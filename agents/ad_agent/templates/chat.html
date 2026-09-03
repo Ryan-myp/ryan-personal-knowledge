@@ -5596,6 +5596,21 @@
                 }
                 try {
                     const value = JSON.parse(rawValue);
+                    const expectedShape = String(field.json_shape || '').toLowerCase();
+                    const isObject = value !== null && typeof value === 'object' && !Array.isArray(value);
+                    const isArray = Array.isArray(value);
+                    if (expectedShape === 'object' && !isObject) {
+                        field.local_error = '这里需要填写 JSON 对象，例如 {"key":"value"}。';
+                        return rawValue;
+                    }
+                    if (expectedShape === 'array' && !isArray) {
+                        field.local_error = '这里需要填写 JSON 数组，例如 [{"key":"value"}]。';
+                        return rawValue;
+                    }
+                    if (expectedShape === 'object_or_array' && !isObject && !isArray) {
+                        field.local_error = '这里需要填写 JSON 对象或数组。';
+                        return rawValue;
+                    }
                     delete field.local_error;
                     return value;
                 } catch (_) {
@@ -5738,7 +5753,6 @@
                 const current = document.querySelector(`.creation-card[data-card-id="${CSS.escape(card.id)}"]`);
                 if (current) {
                     if (!structuralChange) {
-                        updateCreationCardFieldStates(current, card);
                         updateCreationCardIndicators(current, card);
                         return;
                     }
@@ -5851,6 +5865,10 @@
         }
 
         function updateCreationCardIndicators(wrapper, card) {
+            // Keep field-level feedback synchronous with the local draft. In
+            // particular, malformed advanced JSON must be visible before the
+            // debounced cascade request returns.
+            updateCreationCardFieldStates(wrapper, card);
             const status = wrapper.querySelector('.creation-card-status');
             if (status) status.textContent = creationCardStatus(card);
             const nextValue = wrapper.querySelector('.creation-card-next-value');
@@ -6246,7 +6264,9 @@
                 } else if (field.control === 'json' || field.control === 'advanced_json') {
                     control = document.createElement('textarea');
                     control.className = field.control === 'advanced_json' ? 'advanced-json-editor' : '';
-                    control.placeholder = Array.isArray(field.value) ? '[...]' : '{...}';
+                    control.placeholder = field.json_shape === 'array' ? '[...]'
+                        : field.json_shape === 'object_or_array' ? '{...} 或 [...]'
+                            : '{...}';
                     control.value = creationCardValueText(field.value);
                 } else {
                     control = document.createElement('input');

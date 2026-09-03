@@ -14,7 +14,9 @@ from agents.ad_agent.core.blueprint import (
     BlueprintValidationError,
     load_blueprint_file,
 )
+from agents.ad_agent.core.creation_card import CreationCardBuilder
 from agents.ad_agent.core.interfaces import ParsedIntent, ToolDefinition, ToolSchema, ToolEffect
+from agents.ad_agent.core.tool_registry import SimpleToolRegistry
 from agents.ad_agent.runtime.account_policy import AccountWhitelistValidator
 from agents.ad_agent.runtime.runtime import AgentRuntime
 
@@ -656,6 +658,61 @@ def test_creation_cards_expose_account_boundary_and_friendly_asset_controls():
     assert fields["ad.images"]["control"] == "asset_picker"
     assert fields["campaign.app_campaign_setting"]["control"] == "object_editor"
     assert "object_properties" in fields["campaign.app_campaign_setting"]
+
+
+def test_creation_cards_publish_outer_shape_for_advanced_provider_payloads():
+    tool_registry = SimpleToolRegistry()
+    tool_registry.register(
+        ToolDefinition(
+            name="test_create_payload",
+            skill="test",
+            platform="test",
+            description="test payload",
+            input_schema=ToolSchema(
+                properties={
+                    "object_payload": {"type": "object", "presentation": "advanced_json"},
+                    "array_payload": {"type": "array", "presentation": "advanced_json"},
+                },
+                required=["object_payload", "array_payload"],
+            ),
+            action="create",
+            resource_type="test_payload",
+            intent_types=["create_test_payload"],
+        ),
+        lambda _context, _data: None,
+    )
+    blueprint_registry = BlueprintRegistry()
+    blueprint_registry.register(
+        AdCreationBlueprint.from_dict({
+            "id": "test.payload",
+            "version": "1.0.0",
+            "provider": "test",
+            "ad_format": "PAYLOAD",
+            "title": "测试高级 Payload",
+            "tools": ["test_create_payload"],
+            "fields": [
+                {
+                    "path": "payload.object",
+                    "tool_ref": "test_create_payload.object_payload",
+                    "required": True,
+                },
+                {
+                    "path": "payload.array",
+                    "tool_ref": "test_create_payload.array_payload",
+                    "required": True,
+                },
+            ],
+        }),
+        tool_registry=tool_registry,
+    )
+    card = CreationCardBuilder(blueprint_registry, tool_registry).build(
+        ParsedIntent("create_test_payload", "测试高级 Payload", ["test"])
+    )[0]
+    fields = {item["path"]: item for item in card["fields"]}
+    assert fields["payload.object"]["control"] == "advanced_json"
+    assert fields["payload.object"]["json_shape"] == "object"
+    assert fields["payload.array"]["control"] == "advanced_json"
+    assert fields["payload.array"]["json_shape"] == "array"
 
 
 def test_google_app_nested_dynamic_field_exposes_lookup_metadata():

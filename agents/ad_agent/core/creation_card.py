@@ -33,6 +33,31 @@ _PRESENTATIONS = {
     "text_list", "asset_picker", "file_reference", "derived_readonly",
     "object_editor", "advanced_json",
 }
+
+
+def _json_shape(field: Mapping[str, Any], schema: Mapping[str, Any]) -> Optional[str]:
+    """Return the declared JSON container shape for an editable payload.
+
+    Advanced payload fields are intentionally open-ended, but their outer
+    JSON container is still known from the Provider Tool schema.  Publishing
+    that small piece of metadata lets a client catch object/array swaps before
+    the draft reaches the server without duplicating provider rules in UI.
+    """
+    declared = str(field.get("json_shape") or schema.get("json_shape") or "").strip().lower()
+    if declared in {"object", "array", "object_or_array"}:
+        return declared
+    schema_type = schema.get("type")
+    if schema_type == "object":
+        return "object"
+    if schema_type == "array":
+        return "array"
+    if isinstance(schema_type, list):
+        types = {str(item).lower() for item in schema_type}
+        if {"object", "array"}.issubset(types):
+            return "object_or_array"
+    return None
+
+
 _SENSITIVE_FIELD = re.compile(
     r"(?:access[_-]?token|refresh[_-]?token|client[_-]?secret|app[_-]?secret|"
     r"private[_-]?key|developer[_-]?token|bc[_-]?id|partner[_-]?id|perter[_-]?id|mcc)",
@@ -660,7 +685,7 @@ class CreationCardBuilder:
                     "lookup_result_key", "selection_value_fields", "selection_label_fields",
                     "lookup_account_required", "lookup_dependencies", "lookup_query_field",
                     "lookup_defaults",
-                    "accept", "presentation", "value_shape",
+                    "accept", "presentation", "value_shape", "json_shape",
                 ):
                     if key == "presentation" and raw_schema.get(key) not in _PRESENTATIONS:
                         continue
@@ -724,7 +749,7 @@ class CreationCardBuilder:
             "default", "option_labels", "option_aliases", "manual_entry", "lookup_tool",
             "lookup_result_key", "selection_value_fields", "selection_label_fields",
             "lookup_account_required", "lookup_dependencies", "lookup_query_field",
-            "lookup_defaults", "accept", "presentation", "value_shape",
+            "lookup_defaults", "accept", "presentation", "value_shape", "json_shape",
         )
         for field in all_fields:
             tool_ref = str(field.get("tool_ref") or "")
@@ -1238,6 +1263,9 @@ class CreationCardBuilder:
             for metadata_key in ("presentation", "value_shape", "accept"):
                 if field.get(metadata_key) is not None:
                     item[metadata_key] = field[metadata_key]
+            json_shape = _json_shape(field, schema)
+            if json_shape and item["control"] in {"json", "advanced_json"}:
+                item["json_shape"] = json_shape
             if options:
                 item["options"] = [
                     # ``label`` remains the stable wire-facing value for
