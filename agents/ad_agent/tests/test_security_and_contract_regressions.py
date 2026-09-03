@@ -1181,6 +1181,104 @@ def test_parameter_options_resolver_reuses_lookup_tool_boundaries():
     assert selection["options"][0]["selection_token"].startswith("ps1.")
 
 
+def test_global_tiktok_app_lookup_needs_no_account_and_selection_is_portable():
+    calls = []
+
+    class LookupClient:
+        platform = "tiktok"
+
+        def list_apps(self, filtering=None, page_size=20):
+            calls.append((filtering, page_size))
+            return [{"app_id": "app-global", "app_name": "Global App"}]
+
+    runtime = AgentRuntime(
+        require_llm=False,
+        whitelist_validator=whitelist(tiktok=["t1"]),
+        selection_token_secret="selection-secret-1234",
+    )
+    runtime.register_capability(create_tiktok_capability(LookupClient()))
+
+    selection = runtime.resolve_parameter_options(
+        "tiktok", "app_id", "tiktok_create_adgroup",
+        session_id="global-app", user_id="u1",
+    )
+    option = selection["options"][0]
+    assert option["value"] == "app-global"
+    assert calls == [(None, 20)]
+
+    definition = runtime.registry.get("tiktok_create_adgroup")[0]
+    tool_input = {"app_id": option["value"]}
+    errors = runtime.input_builder.apply_selection_tokens(
+        definition,
+        tool_input,
+        {"selection_tokens": {"app_id": option["selection_token"]}},
+        ToolContext(session_id="global-app", user_id="u1", account_id="t1"),
+    )
+    assert errors == []
+    assert tool_input["app_id"] == "app-global"
+
+
+def test_nested_google_manual_app_identifier_is_explicit_not_a_fake_lookup():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_google_capability())
+    definition = runtime.registry.get("google_create_campaign")[0]
+    app_id = definition.input_schema.properties["app_campaign_setting"]["properties"]["app_id"]
+
+    assert "lookup_tool" not in app_id
+    assert app_id["manual_entry"]["source"] == "external_store_identifier"
+    assert "Google Ads API" in app_id["manual_entry"]["instructions"]
+
+
+def test_lookup_dependency_is_checked_before_meta_provider_call():
+    calls = []
+
+    class LookupClient:
+        platform = "meta"
+
+        def list_product_sets(self, *args, **kwargs):
+            calls.append((args, kwargs))
+            return [{"id": "ps-1", "name": "Product Set"}]
+
+    runtime = AgentRuntime(
+        require_llm=False,
+        whitelist_validator=whitelist(meta=["m1"]),
+    )
+    runtime.register_capability(create_meta_capability(LookupClient()))
+
+    with pytest.raises(ValueError, match="所属商品目录"):
+        runtime.resolve_parameter_options(
+            "meta", "product_set_id", "meta_create_adset", "m1",
+            session_id="meta-dependency", user_id="u1",
+        )
+    assert calls == []
+
+
+def test_lookup_dependency_context_is_forwarded_to_google_provider_tool():
+    calls = []
+
+    class LookupClient:
+        platform = "google-ads"
+
+        def list_ad_groups(self, campaign_id, page_size=100):
+            calls.append((campaign_id, page_size))
+            return [{"id": "ag-1", "name": "Search Group"}]
+
+    runtime = AgentRuntime(
+        require_llm=False,
+        whitelist_validator=whitelist(**{"google-ads": ["g1"]}),
+        selection_token_secret="selection-secret-1234",
+    )
+    runtime.register_capability(create_google_capability(LookupClient()))
+
+    selection = runtime.resolve_parameter_options(
+        "google-ads", "ad_group_id", "google_create_ad", "g1",
+        lookup_context={"campaign_id": "c-1"},
+        session_id="google-dependency", user_id="u1",
+    )
+    assert selection["options"][0]["value"] == "ag-1"
+    assert calls == [("c-1", 100)]
+
+
 def test_live_dynamic_parameter_rejects_unattested_raw_value():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"tiktok": ["t1"]}

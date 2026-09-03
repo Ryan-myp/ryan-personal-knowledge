@@ -1,11 +1,13 @@
 """
 capabilities/meta/capability.py - Meta Capability 定义
 """
+from __future__ import annotations
+
 import logging
 from pathlib import Path
 from typing import Optional
 from ...core.interfaces import ToolDefinition, ToolSchema, RiskLevel, ToolEffect, ReplayPolicy, ToolHandler
-from ..base import BaseCapability, CampaignUpdateHandler
+from ..base import BaseCapability, CampaignUpdateHandler, apply_lookup_contracts
 from ..provider_tools import account_from, bind_provider_method, method_tool
 from .campaigns import MetaListCampaignsHandler, MetaGetCampaignHandler, MetaCreateCampaignHandler
 from .ad_sets import MetaListAdSetsHandler, MetaGetAdSetHandler, MetaCreateAdSetHandler
@@ -34,6 +36,114 @@ from ...core.blueprint import load_blueprint_file
 from ..update_contracts import meta_updates
 
 logger = logging.getLogger(__name__)
+
+
+def _meta_lookup(tool: str, result_key: str, values: list[str], labels: list[str], *, depends_on: list[dict] | None = None) -> dict:
+    metadata = {
+        "lookup_tool": tool,
+        "lookup_result_key": result_key,
+        "selection_value_fields": values,
+        "selection_label_fields": labels,
+    }
+    if depends_on:
+        metadata["lookup_dependencies"] = depends_on
+    return metadata
+
+
+# Provider-owned identifier catalog used by every Meta lifecycle Tool and
+# creation Blueprint.  The Runtime consumes only the resulting schema data;
+# it does not know Meta's hierarchy or Graph resource names.
+META_LOOKUP_CONTRACTS = {
+    "*": {
+        "campaign_id": _meta_lookup(
+            "meta_list_campaigns", "campaigns", ["id", "campaign_id"],
+            ["name", "campaign_name", "id"],
+        ),
+        "adset_id": _meta_lookup(
+            "meta_list_ad_sets", "ad_sets", ["id", "adset_id"],
+            ["name", "adset_name", "id"], depends_on=[{
+                "input_field": "campaign_id", "value_path": "campaign_id",
+                "label": "所属 Campaign", "required": True,
+            }],
+        ),
+        "ad_id": _meta_lookup(
+            "meta_list_ads", "ads", ["id", "ad_id"],
+            ["name", "ad_name", "id"], depends_on=[{
+                "input_field": "adset_id", "value_path": "adset_id",
+                "label": "所属 Ad Set", "required": True,
+            }],
+        ),
+        "page_id": _meta_lookup(
+            "meta_list_pages", "pages", ["id", "page_id"],
+            ["name", "page_name", "id"],
+        ),
+        "pixel_id": _meta_lookup(
+            "meta_list_pixels", "pixels", ["id", "pixel_id"],
+            ["name", "pixel_name", "id"],
+        ),
+        "creative_id": _meta_lookup(
+            "meta_list_creatives", "creatives", ["id", "creative_id"],
+            ["name", "creative_name", "id"],
+        ),
+        "image_hash": _meta_lookup(
+            "meta_list_image_assets", "image_assets", ["hash", "id", "image_hash"],
+            ["name", "filename", "hash", "id"],
+        ),
+        "video_id": _meta_lookup(
+            "meta_list_video_assets", "video_assets", ["id", "video_id"],
+            ["title", "name", "video_id", "id"],
+        ),
+        "catalog_id": _meta_lookup(
+            "meta_list_catalogs", "catalogs", ["id", "catalog_id"],
+            ["name", "catalog_name", "id"],
+        ),
+        "product_set_id": _meta_lookup(
+            "meta_list_product_sets", "product_sets", ["id", "product_set_id"],
+            ["name", "product_set_name", "id"], depends_on=[{
+                "input_field": "catalog_id", "value_path": "catalog_id",
+                "label": "所属商品目录", "required": True,
+            }],
+        ),
+        "form_id": _meta_lookup(
+            "meta_list_lead_forms", "lead_forms", ["id", "form_id"],
+            ["name", "form_name", "id"], depends_on=[{
+                "input_field": "page_id", "value_path": "page_id",
+                "label": "所属 Facebook Page", "required": True,
+            }],
+        ),
+        "audience_id": _meta_lookup(
+            "meta_list_audiences", "audiences", ["id", "audience_id"],
+            ["name", "audience_name", "id"],
+        ),
+        "origin_audience_id": _meta_lookup(
+            "meta_list_audiences", "audiences", ["id", "audience_id"],
+            ["name", "audience_name", "id"],
+        ),
+        "custom_conversion_id": _meta_lookup(
+            "meta_list_custom_conversions", "custom_conversions",
+            ["id", "custom_conversion_id"],
+            ["name", "custom_conversion_name", "id"],
+        ),
+        # Meta Marketing API does not provide a general app catalog for this
+        # field, and there is no safe Page/Post enumeration in this package.
+        # Show an explicit manual input guide instead of inventing a lookup.
+        "application_id": {
+            "manual_entry": {
+                "title": "Meta 应用 ID",
+                "instructions": "请从 Meta for Developers 的应用设置中复制 App ID；广告账户列表接口不会返回应用目录。",
+                "example": "123456789012345",
+                "source": "external_provider_identifier",
+            },
+        },
+        "post_id": {
+            "manual_entry": {
+                "title": "Facebook 帖子 ID",
+                "instructions": "当前能力未接入 Page 帖子检索，请粘贴需要推广的帖子 ID；不会根据名称猜测。",
+                "source": "external_provider_identifier",
+            },
+        },
+    },
+}
 
 
 def _meta_update_adapter(client, ctx, resource_type, resource_id, _parent_id, updates):
@@ -1339,7 +1449,7 @@ class MetaCapability(BaseCapability):
 
         tools.extend(self._extended_provider_tools(api_client))
 
-        return tools
+        return apply_lookup_contracts(tools, META_LOOKUP_CONTRACTS)
 
 def create_meta_capability(api_client: Optional[MetaAPIClient] = None) -> MetaCapability:
     cap = MetaCapability()

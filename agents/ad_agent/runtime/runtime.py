@@ -1394,13 +1394,15 @@ class AgentRuntime:
         platform: str,
         field: str,
         tool_name: str,
-        account_id: str,
+        account_id: Optional[str] = None,
         *,
         session_id: Optional[str] = None,
         user_id: str = "parameter-options",
         tenant_id: str = "default",
         account_scope: Optional[Mapping[str, set[str]]] = None,
         granted_permissions: Optional[set[str] | frozenset[str]] = None,
+        lookup_context: Optional[Mapping[str, Any]] = None,
+        query: Optional[str] = None,
     ) -> dict[str, Any]:
         """Resolve one dynamic catalog through a registered read Tool.
 
@@ -1424,29 +1426,87 @@ class AgentRuntime:
             raise PermissionError("parameter lookup source must be read-only")
         if self._canonical_platform(definition.platform) != actual_platform:
             raise ValueError("parameter lookup source belongs to a different platform")
-        if not account_id:
-            raise ValueError("dynamic parameter lookup requires account_id")
-        allowed, account_error = self._validate_account_with_principal(
-            actual_platform, str(account_id), False, account_scope
+        account_value = str(account_id or "").strip()
+        source_properties = getattr(definition.input_schema, "properties", {}) or {}
+        source_required = set(getattr(definition.input_schema, "required", []) or [])
+        account_fields = {"account_id", "advertiser_id", "customer_id"}
+        # A provider may explicitly declare that a reference catalog is
+        # global (for example TikTok Apps or locations), even when a shared
+        # source schema contains an optional account-shaped field.  The
+        # provider contract wins over Runtime inference; absent an explicit
+        # declaration we conservatively require the account when the source
+        # Tool does.
+        account_required = (
+            bool(catalog.account_required)
+            if catalog.account_required is not None
+            else bool(source_required.intersection(account_fields))
         )
-        if not allowed:
-            raise PermissionError(account_error)
+        if account_required and not account_value:
+            raise ValueError("该查询需要先提供广告账户 ID，才能加载可用选项")
+        if account_value:
+            allowed, account_error = self._validate_account_with_principal(
+                actual_platform, account_value, False, account_scope
+            )
+            if not allowed:
+                raise PermissionError(account_error)
         permissions = self._granted_permissions if granted_permissions is None else frozenset(granted_permissions)
         permission_error = self._check_tool_permissions(definition, permissions)
         if permission_error:
             raise PermissionError(permission_error)
 
         session = self._ensure_session(
-            session_id or str(uuid.uuid4()), user_id, str(account_id),
+            session_id or str(uuid.uuid4()), user_id, account_value,
             None, tenant_id=tenant_id,
         )
-        session.ctx.account_id = str(account_id)
+        session.ctx.account_id = account_value
         input_data: dict[str, Any] = {}
-        properties = getattr(definition.input_schema, "properties", {}) or {}
+        properties = source_properties
         for account_field in ("account_id", "advertiser_id", "customer_id"):
-            if account_field in properties:
-                input_data[account_field] = str(account_id)
+            if account_field in properties and account_value:
+                input_data[account_field] = account_value
                 break
+        context_values = dict(lookup_context or {})
+        dependencies = list(catalog.dependencies or ())
+        for dependency in dependencies:
+            if not isinstance(dependency, Mapping):
+                raise ValueError("lookup dependency metadata must be an object")
+            input_field = str(
+                dependency.get("input_field") or dependency.get("field") or ""
+            ).strip()
+            value_path = str(
+                dependency.get("value_path") or dependency.get("source_field")
+                or input_field
+            ).strip()
+            if not input_field or input_field not in properties:
+                raise ValueError(
+                    f"lookup dependency points to undeclared source field: {input_field or value_path}"
+                )
+            value = context_values.get(value_path)
+            if value is None and "." in value_path:
+                value = self.input_builder._value_at_path(context_values, value_path)
+            if value in (None, "", [], {}):
+                if dependency.get("required", True):
+                    label = str(dependency.get("label") or value_path)
+                    raise ValueError(f"请先选择或填写{label}，再加载当前字段的可用选项")
+                continue
+            input_data[input_field] = value
+        query_field = catalog.query_field
+        if query and query_field:
+            if query_field not in properties:
+                raise ValueError(f"lookup query field is not declared by source Tool: {query_field}")
+            input_data[query_field] = str(query).strip()
+        missing_source = sorted(
+            field_name for field_name in source_required
+            if field_name not in input_data
+            and not (
+                field_name in account_fields
+                and catalog.account_required is False
+            )
+        )
+        if missing_source:
+            raise ValueError(
+                "当前查询还缺少必要的上级条件：" + "、".join(missing_source)
+            )
         result = self.tool_executor.execute(session.ctx, source_tool, input_data)
         result = self.input_builder.decorate_lookup_result(
             definition, result, session.ctx, actual_platform

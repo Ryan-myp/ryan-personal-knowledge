@@ -1528,6 +1528,8 @@
         .lookup-selection-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .lookup-selection-chip button { width: 15px; height: 15px; padding: 0; border: 0; border-radius: 50%; color: var(--text-secondary); background: transparent; cursor: pointer; line-height: 15px; }
         .lookup-selection-chip button:hover { color: var(--error); background: var(--error-light); }
+        .manual-entry-help { margin-top: 5px; padding: 7px 9px; border: 1px solid var(--border-light); border-radius: 7px; color: var(--text-muted); background: var(--bg-secondary); font-size: 10px; line-height: 1.45; }
+        .manual-entry-help strong { color: var(--text-secondary); font-weight: 650; }
         .blueprint-field .lookup-picker-search { padding-block: 7px; }
         .structured-object-row .lookup-picker { margin-top: 1px; }
         .structured-object-row .lookup-picker-toolbar input { min-height: 30px; }
@@ -4186,6 +4188,28 @@
             return Boolean(field.lookup_multiple || field.control === 'multiselect');
         }
 
+        function lookupAccountRequired(field, context = {}) {
+            if (context.accountRequired !== undefined) return Boolean(context.accountRequired);
+            if (field?.lookup?.account_required !== undefined) return Boolean(field.lookup.account_required);
+            if (field?.lookup_account_required !== undefined) return Boolean(field.lookup_account_required);
+            return true;
+        }
+
+        function lookupSourceAccountRequired(toolName) {
+            const tool = (blueprintState.tools || []).find(item => item.name === toolName);
+            const required = tool?.input_schema?.required || [];
+            return required.some(name => ['account_id', 'advertiser_id', 'customer_id'].includes(name));
+        }
+
+        function lookupContextValues(context = {}) {
+            if (typeof context.getLookupContext === 'function') {
+                const value = context.getLookupContext();
+                return value && typeof value === 'object' ? value : {};
+            }
+            return context.lookupContext && typeof context.lookupContext === 'object'
+                ? context.lookupContext : {};
+        }
+
         function lookupSelectedValues(field, context = {}) {
             const value = lookupFieldValue(field, context);
             if (lookupIsMultiple(field, context)) return Array.isArray(value) ? value : [];
@@ -4223,6 +4247,7 @@
             const accountId = () => String(
                 typeof context.getAccountId === 'function' ? context.getAccountId() : context.accountId || ''
             ).trim();
+            const accountRequired = lookupAccountRequired(field, context);
             const optionsStore = context.optionsStore || {};
             const optionsKey = `${toolName}:${fieldName}`;
             let options = Array.isArray(optionsStore[optionsKey]) ? optionsStore[optionsKey] : [];
@@ -4340,7 +4365,7 @@
 
             async function queryOptions() {
                 const account = accountId();
-                if (!account) {
+                if (!account && accountRequired) {
                     status.textContent = '请先填写广告账户 ID，再查询该账户下的可用项。';
                     searchButton.disabled = true;
                     return;
@@ -4355,8 +4380,12 @@
                     ensureLookupSessionId();
                     const params = new URLSearchParams({
                         platform: String(context.platform), field: fieldName,
-                        tool_name: toolName, account_id: account, session_id: sessionId,
+                        tool_name: toolName, session_id: sessionId,
                     });
+                    if (account) params.set('account_id', account);
+                    const lookupContext = lookupContextValues(context);
+                    if (Object.keys(lookupContext).length) params.set('lookup_context', JSON.stringify(lookupContext));
+                    if (field?.lookup?.query_field && searchInput.value.trim()) params.set('query', searchInput.value.trim());
                     const response = await authenticatedFetch(`/parameter-options/resolve?${params.toString()}`);
                     const body = await response.text();
                     let data = {};
@@ -4376,7 +4405,7 @@
 
             searchInput.addEventListener('input', renderResults);
             searchButton.addEventListener('click', queryOptions);
-            picker.dataset.accountRequired = 'true';
+            picker.dataset.accountRequired = accountRequired ? 'true' : 'false';
             picker.dataset.accountValue = accountId();
             refreshLookupAccountState(picker);
             renderSelected();
@@ -4392,8 +4421,9 @@
             (root?.matches?.('.lookup-picker') ? [root] : root?.querySelectorAll?.('.lookup-picker') || []).forEach(picker => {
                 picker.dataset.accountValue = account;
                 const button = picker.querySelector('.lookup-picker-search');
-                if (button && !button.disabled) button.disabled = !account;
-                if (!account) {
+                const accountRequired = picker.dataset.accountRequired !== 'false';
+                if (button && !button.disabled) button.disabled = accountRequired && !account;
+                if (!account && accountRequired) {
                     const status = picker.querySelector('.lookup-picker-status');
                     if (status && !picker.querySelector('.lookup-picker-results:not(:empty)')) {
                         status.textContent = '请先填写广告账户 ID，再查询该账户下的可用项。';
@@ -4462,6 +4492,14 @@
                     control = document.createElement('input');
                     control.type = spec.type === 'number' || spec.type === 'integer' ? 'number' : 'text';
                     control.value = current[name] === undefined ? '' : String(current[name]);
+                }
+                if (spec.manual_entry && typeof spec.manual_entry === 'object') {
+                    const help = document.createElement('div');
+                    help.className = 'manual-entry-help';
+                    const title = spec.manual_entry.title || '需要手动提供的外部标识';
+                    const instructions = spec.manual_entry.instructions || '该字段当前没有可用的受控列表查询。';
+                    help.innerHTML = `<strong>${escapeHtml(title)}</strong><br>${escapeHtml(instructions)}${spec.manual_entry.example ? `<br>示例：${escapeHtml(spec.manual_entry.example)}` : ''}`;
+                    row.appendChild(help);
                 }
                 const commit = () => {
                     if (spec.lookup_tool || spec.lookup?.tool) return;
@@ -4780,6 +4818,8 @@
                         platform: blueprint.provider,
                         accountId: blueprintState.accountId,
                         getAccountId: () => blueprintState.accountId,
+                        accountRequired: lookupSourceAccountRequired(field.lookup_tool || lookupRef.schema?.lookup_tool || lookupRef.schema?.lookup?.tool),
+                        getLookupContext: blueprintLookupContext,
                         targetToolName: lookupRef.toolName,
                         fieldName: lookupKey,
                         selectionTokens: blueprintState.selectionTokens,
@@ -4807,6 +4847,7 @@
                             getAccountId: () => blueprintState.accountId,
                             targetToolName: blueprintToolFieldSchema(field.tool_ref).toolName,
                             fieldPath: blueprintToolFieldSchema(field.tool_ref).fieldPath,
+                            getLookupContext: blueprintLookupContext,
                             selectionTokens: blueprintState.selectionTokens,
                             optionsStore: blueprintState.lookupOptions,
                             onSelection: ({ fieldName, tokens }) => {
@@ -5357,6 +5398,41 @@
             });
         }
 
+        // Lookup dependencies are declared by the provider schema.  The
+        // picker receives the current form values through this generic
+        // projection; it does not know Meta/Google/TikTok field names.
+        function lookupContextFromFields(fields) {
+            const context = {};
+            (fields || []).forEach(field => {
+                if (!field || field.value === undefined || field.value === null || field.value === '') return;
+                const path = field.provider_field || field.path;
+                if (path) setCreationNestedValue(context, path, field.value);
+                if (field.path) context[field.path] = field.value;
+                const leaf = String(path || '').split('.').pop();
+                if (leaf && context[leaf] === undefined) context[leaf] = field.value;
+                if (field.value && typeof field.value === 'object' && !Array.isArray(field.value)) {
+                    Object.entries(field.value).forEach(([key, value]) => {
+                        if (value !== undefined && value !== null && value !== '') context[key] = value;
+                    });
+                }
+            });
+            return context;
+        }
+
+        function blueprintLookupContext() {
+            const context = { ...(blueprintState.values || {}) };
+            Object.entries(context).forEach(([path, value]) => {
+                const leaf = String(path).split('.').pop();
+                if (leaf && context[leaf] === undefined) context[leaf] = value;
+                if (value && typeof value === 'object' && !Array.isArray(value)) {
+                    Object.entries(value).forEach(([key, child]) => {
+                        if (child !== undefined && child !== null && child !== '') context[key] = child;
+                    });
+                }
+            });
+            return context;
+        }
+
         function creationCardParams(card) {
             const values = {};
             const scopedSelectionTokens = {};
@@ -5849,6 +5925,8 @@
                         platform: card.provider,
                         accountId: card.account_id,
                         getAccountId: () => card.account_id,
+                        accountRequired: field.lookup?.account_required,
+                        getLookupContext: () => lookupContextFromFields(card.fields),
                         targetToolName: field.tool,
                         fieldName: field.provider_field || field.path,
                         selectionTokens: card.selection_tokens,
@@ -5894,6 +5972,8 @@
                             getAccountId: () => card.account_id,
                             targetToolName: field.tool,
                             fieldPath: field.provider_field,
+                            accountRequired: field.lookup?.account_required,
+                            getLookupContext: () => lookupContextFromFields(card.fields),
                             selectionTokens: card.selection_tokens || (card.selection_tokens = {}),
                             optionsStore: card.lookup_options || (card.lookup_options = {}),
                             onSelection: ({ fieldName, tokens }) => {
@@ -5943,6 +6023,14 @@
                             : field.control === 'object_editor' ? '按字段填写，系统会按 Tool Schema 组装'
                                 : '可直接填写';
                 item.appendChild(source);
+                if (field.manual_entry && typeof field.manual_entry === 'object') {
+                    const help = document.createElement('div');
+                    help.className = 'manual-entry-help';
+                    const title = field.manual_entry.title || '需要手动提供的外部标识';
+                    const instructions = field.manual_entry.instructions || '该字段当前没有可用的受控列表查询。';
+                    help.innerHTML = `<strong>${escapeHtml(title)}</strong><br>${escapeHtml(instructions)}${field.manual_entry.example ? `<br>示例：${escapeHtml(field.manual_entry.example)}` : ''}`;
+                    item.appendChild(help);
+                }
                 fields.appendChild(item);
             });
             wrapper.appendChild(fields);

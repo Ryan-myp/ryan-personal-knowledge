@@ -1,11 +1,13 @@
 """
 capabilities/google/capability.py - Google Capability 定义
 """
+from __future__ import annotations
+
 import logging
 from pathlib import Path
 from typing import Any, Optional
 from ...core.interfaces import ToolDefinition, ToolSchema, RiskLevel, ToolEffect, ReplayPolicy, ToolHandler
-from ..base import BaseCapability, CampaignUpdateHandler
+from ..base import BaseCapability, CampaignUpdateHandler, apply_lookup_contracts
 from ..provider_tools import bind_provider_method, method_tool
 from .campaigns import (
     GoogleListCampaignsHandler,
@@ -51,6 +53,140 @@ from ...core.blueprint import load_blueprint_file
 from ..update_contracts import google_updates
 
 logger = logging.getLogger(__name__)
+
+
+def _google_lookup(tool: str, result_key: str, values: list[str], labels: list[str], *, depends_on: list[dict] | None = None) -> dict:
+    """Build a declarative Google resource picker contract."""
+    metadata = {
+        "lookup_tool": tool,
+        "lookup_result_key": result_key,
+        "selection_value_fields": values,
+        "selection_label_fields": labels,
+    }
+    if depends_on:
+        metadata["lookup_dependencies"] = depends_on
+    return metadata
+
+
+# The mapping is provider-owned metadata, not Runtime routing.  It covers
+# every reusable Google resource ID exposed by the Capability, including
+# standalone lifecycle Tools and the creation blueprints.
+GOOGLE_LOOKUP_CONTRACTS = {
+    "*": {
+        "campaign_id": _google_lookup(
+            "google_list_campaigns", "campaigns", ["id", "campaign_id", "resource_name"],
+            ["name", "campaign_name", "id"],
+        ),
+        "ad_group_id": _google_lookup(
+            "google_list_ad_groups", "ad_groups", ["id", "ad_group_id", "resource_name"],
+            ["name", "ad_group_name", "id"], depends_on=[{
+                "input_field": "campaign_id", "value_path": "campaign_id",
+                "label": "所属 Campaign", "required": True,
+            }],
+        ),
+        "ad_id": _google_lookup(
+            "google_list_ads", "ads", ["id", "ad_id", "resource_name"],
+            ["name", "ad_name", "id"], depends_on=[{
+                "input_field": "ad_group_id", "value_path": "ad_group_id",
+                "label": "所属广告组", "required": True,
+            }],
+        ),
+        "asset_group_id": _google_lookup(
+            "google_list_asset_groups", "asset_groups", ["id", "asset_group_id", "resource_name"],
+            ["name", "asset_group_name", "id"], depends_on=[{
+                "input_field": "campaign_id", "value_path": "campaign_id",
+                "label": "所属 Campaign", "required": True,
+            }],
+        ),
+        "asset_id": _google_lookup(
+            "google_list_assets", "assets", ["id", "asset_id", "resource_name"],
+            ["name", "asset_name", "id"],
+        ),
+        "budget_id": _google_lookup(
+            "google_list_campaign_budgets", "budgets", ["id", "budget_id", "resource_name"],
+            ["name", "budget_name", "id"],
+        ),
+        "conversion_action_id": _google_lookup(
+            "google_list_conversion_actions", "conversion_actions",
+            ["id", "conversion_action_id", "resource_name"],
+            ["name", "conversion_action_name", "id"],
+        ),
+        "bidding_strategy_id": _google_lookup(
+            "google_list_bidding_strategies", "bidding_strategies",
+            ["id", "bidding_strategy_id", "resource_name"],
+            ["name", "bidding_strategy_name", "id"],
+        ),
+        "user_list_id": _google_lookup(
+            "google_list_user_lists", "user_lists", ["id", "user_list_id", "resource_name"],
+            ["name", "user_list_name", "id"],
+        ),
+        "experiment_id": _google_lookup(
+            "google_list_experiments", "experiments", ["id", "experiment_id", "resource_name"],
+            ["name", "experiment_name", "id"],
+        ),
+        "criterion_id": _google_lookup(
+            "google_list_campaign_criteria", "criteria", ["id", "criterion_id", "resource_name"],
+            ["name", "criterion_name", "id"], depends_on=[{
+                "input_field": "campaign_id", "value_path": "campaign_id",
+                "label": "所属 Campaign", "required": True,
+            }],
+        ),
+        "product_group_id": _google_lookup(
+            "google_list_product_groups", "product_groups", ["id", "product_group_id", "resource_name"],
+            ["name", "product_group_name", "id"], depends_on=[{
+                "input_field": "ad_group_id", "value_path": "ad_group_id",
+                "label": "所属商品广告组", "required": True,
+            }],
+        ),
+        "feed_id": _google_lookup(
+            "google_list_feeds", "feeds", ["id", "feed_id", "resource_name"],
+            ["name", "feed_name", "id"],
+        ),
+        "feed_item_resource_name": _google_lookup(
+            "google_list_feed_items", "feed_items",
+            ["resource_name", "feed_item_resource_name", "id"],
+            ["name", "feed_item_name", "resource_name", "id"], depends_on=[{
+                "input_field": "feed_id", "value_path": "feed_id",
+                "label": "所属 Feed", "required": True,
+            }],
+        ),
+        # Google Ads API does not expose a customer-scoped App catalog.  An
+        # App ID is an external store identifier and must never be fabricated
+        # from a campaign/account lookup.
+        "app_id": {
+            "manual_entry": {
+                "title": "外部应用标识",
+                "instructions": "Google Play 填应用包名（例如 com.example.app）；Apple App Store 填数字 App Store ID。Google Ads API 没有可按账户列出的应用列表。",
+                "example": "com.example.app 或 1234567890",
+                "source": "external_store_identifier",
+            },
+        },
+        "merchant_id": {
+            "manual_entry": {
+                "title": "Merchant Center ID",
+                "instructions": "该 ID 来自 Merchant Center，不属于 Google Ads 可枚举资源，请从 Merchant Center 账户设置中复制。",
+                "example": "1234567890",
+                "source": "external_provider_identifier",
+            },
+        },
+        "video_id": {
+            "manual_entry": {
+                "title": "YouTube 视频 ID",
+                "instructions": "Google Ads API 当前不提供可直接用于此字段的 YouTube 视频目录查询，请粘贴 YouTube 视频 URL 中的 11 位视频 ID。",
+                "example": "dQw4w9WgXcQ",
+                "source": "external_youtube_identifier",
+            },
+        },
+        "youtube_video_id": {
+            "manual_entry": {
+                "title": "YouTube 视频 ID",
+                "instructions": "请粘贴 YouTube 视频 URL 中的 11 位视频 ID。",
+                "example": "dQw4w9WgXcQ",
+                "source": "external_youtube_identifier",
+            },
+        },
+    },
+}
 
 
 def _google_update_adapter(client, ctx, resource_type, resource_id, _parent_id, updates):
@@ -1919,7 +2055,7 @@ class GoogleCapability(BaseCapability):
 
         tools.extend(self._extended_provider_tools(api_client))
 
-        return tools
+        return apply_lookup_contracts(tools, GOOGLE_LOOKUP_CONTRACTS)
 
 def create_google_capability(api_client: Optional[GoogleAdsAPIClient] = None) -> GoogleCapability:
     cap = GoogleCapability()

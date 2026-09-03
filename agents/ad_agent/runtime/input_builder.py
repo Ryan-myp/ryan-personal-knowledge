@@ -221,6 +221,19 @@ class ToolInputBuilder:
             "location_name", "country_name",
         ]
 
+    @staticmethod
+    def _selection_account_id(field_schema: dict[str, Any], ctx: ToolContext) -> str:
+        """Return the account binding used by a provider selection token.
+
+        A provider-owned catalog can explicitly be global (for example a
+        TikTok App or location catalog).  Such a selection is intentionally
+        portable across the account chosen later in the creation form.  All
+        other selections remain bound to the active account.
+        """
+        if field_schema.get("lookup_account_required") is False:
+            return ""
+        return str(ctx.account_id or "")
+
     @classmethod
     def _extract_selection_option(
         cls, item: Any, field_name: str, field_schema: dict[str, Any],
@@ -293,7 +306,7 @@ class ToolInputBuilder:
                 token, expires_at = self.services.parameter_selection_signer.issue(
                     session_id=ctx.session_id,
                     user_id=ctx.user_id,
-                    account_id=str(ctx.account_id or ""),
+                    account_id=self._selection_account_id(field_schema, ctx),
                     platform=platform,
                     tool_name=target_tool.name,
                     field=field_name,
@@ -362,7 +375,7 @@ class ToolInputBuilder:
                             token,
                             session_id=ctx.session_id,
                             user_id=ctx.user_id,
-                            account_id=str(ctx.account_id or ""),
+                            account_id=self._selection_account_id(field_schema, ctx),
                             platform=self.services.canonical_platform(
                                 tool_def.platform
                             ),
@@ -398,7 +411,19 @@ class ToolInputBuilder:
             if path_parts:
                 target[path_parts[-1]] = value
 
-        if self.services.execution_mode == "live" and tool_def.is_write_tool:
+        # Resource identifiers on update/delete/pause operations may be
+        # entered by an operator and are still protected by the normal live
+        # confirmation and write gates.  Provider lookup attestations are
+        # mandatory for creation/upload payloads, where an unverified
+        # external identifier could otherwise be silently attached to a new
+        # resource.  Keeping this distinction also preserves manual ID
+        # workflows for existing-resource operations while allowing the UI to
+        # offer the same lookup picker everywhere.
+        if (
+            self.services.execution_mode == "live"
+            and tool_def.is_write_tool
+            and str(getattr(tool_def, "action", "")).lower() in {"create", "upload"}
+        ):
             for field_name, field_schema in self._iter_schema_fields(properties):
                 if (
                     self.lookup_tool_for_schema_field(field_schema)

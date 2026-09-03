@@ -842,7 +842,7 @@ def test_ad_formats_endpoint_exposes_metadata_only(fake_server):
     assert response.json()["formats"][0]["format_id"] == "demo"
 
 
-def test_parameter_options_resolve_requires_account_id(fake_server):
+def test_parameter_options_resolve_allows_global_catalog_without_account_id(fake_server):
     with TestClient(api_server.app) as client:
         response = client.get(
             "/parameter-options/resolve",
@@ -853,8 +853,9 @@ def test_parameter_options_resolve_requires_account_id(fake_server):
                 "tool_name": "tiktok_create_adgroup",
             },
         )
-    assert response.status_code == 422
-    assert fake_server.parameter_option_calls == []
+    assert response.status_code == 200
+    assert response.json()["options"][0]["value"] == "app-1"
+    assert fake_server.parameter_option_calls[0]["account_id"] is None
 
 
 def test_managed_skill_api_versions_and_publishing_are_tenant_scoped(monkeypatch, tmp_path):

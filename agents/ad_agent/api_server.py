@@ -1777,7 +1777,9 @@ async def resolve_parameter_options(
     platform: str = Query(..., min_length=1, max_length=50),
     field: str = Query(..., min_length=1, max_length=100),
     tool_name: str = Query(..., min_length=1, max_length=150),
-    account_id: str = Query(..., min_length=1, max_length=200),
+    account_id: Optional[str] = Query(None, max_length=200),
+    lookup_context: Optional[str] = Query(None, max_length=8000),
+    query: Optional[str] = Query(None, max_length=200),
     session_id: Optional[str] = Query(None, max_length=200),
     x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
 ):
@@ -1791,12 +1793,23 @@ async def resolve_parameter_options(
     if not runtime:
         raise HTTPException(status_code=503, detail="服务未初始化")
     try:
+        context = {}
+        if lookup_context:
+            try:
+                decoded = json.loads(lookup_context)
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(status_code=422, detail="查询上下文不是有效的 JSON") from exc
+            if not isinstance(decoded, dict):
+                raise HTTPException(status_code=422, detail="查询上下文必须是对象")
+            context = decoded
         return await run_in_threadpool(
             runtime.resolve_parameter_options,
             platform=platform,
             field=field,
             tool_name=tool_name,
             account_id=account_id,
+            lookup_context=context,
+            query=query,
             session_id=session_id,
             user_id=principal.user_id,
             tenant_id=principal.tenant_id,

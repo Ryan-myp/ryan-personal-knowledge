@@ -46,6 +46,13 @@ class ParameterCatalog:
     lookup_tool: Optional[str] = None
     description: str = ""
     tool_name: Optional[str] = None
+    # Provider-owned lookup UX metadata.  These are data contracts only: the
+    # Runtime still validates the source Tool and builds its input from the
+    # declared schema before executing it.
+    account_required: Optional[bool] = None
+    dependencies: tuple[dict[str, Any], ...] = ()
+    manual_entry: Optional[dict[str, Any]] = None
+    query_field: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         result = {
@@ -60,6 +67,14 @@ class ParameterCatalog:
             result["tool_name"] = self.tool_name
         if self.lookup_tool:
             result["lookup_tool"] = self.lookup_tool
+            if self.account_required is not None:
+                result["account_required"] = bool(self.account_required)
+            if self.dependencies:
+                result["dependencies"] = [dict(item) for item in self.dependencies]
+            if self.manual_entry:
+                result["manual_entry"] = dict(self.manual_entry)
+            if self.query_field:
+                result["query_field"] = self.query_field
         if self.description:
             result["description"] = self.description
         return result
@@ -100,6 +115,13 @@ class ParameterCatalogRegistry:
                 version=str(catalog.version),
                 lookup_tool=catalog.lookup_tool,
                 description=catalog.description,
+                account_required=catalog.account_required,
+                dependencies=tuple(dict(item) for item in catalog.dependencies),
+                manual_entry=(
+                    dict(catalog.manual_entry)
+                    if catalog.manual_entry is not None else None
+                ),
+                query_field=catalog.query_field,
                 tool_name=tool_name,
             )
 
@@ -165,6 +187,19 @@ class ParameterCatalogRegistry:
                         version=str(spec.get("version", "provider")),
                         lookup_tool=str(lookup_tool),
                         description=str(spec.get("description", "")),
+                        account_required=spec.get("lookup_account_required"),
+                        dependencies=tuple(
+                            dict(item) for item in (spec.get("lookup_dependencies") or [])
+                            if isinstance(item, dict)
+                        ),
+                        manual_entry=(
+                            dict(spec["manual_entry"])
+                            if isinstance(spec.get("manual_entry"), dict) else None
+                        ),
+                        query_field=(
+                            str(spec["lookup_query_field"])
+                            if spec.get("lookup_query_field") else None
+                        ),
                         tool_name=tool_name,
                     )
                 )

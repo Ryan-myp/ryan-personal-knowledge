@@ -11,6 +11,7 @@ import hashlib
 import importlib
 import inspect
 import threading
+import copy
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Any, Callable, Optional
@@ -49,6 +50,69 @@ def call_with_optional_page_size(
     if name is None or limit is None:
         return method(*args)
     return method(*args, **{name: limit})
+
+
+def apply_lookup_contracts(
+    tools: list[tuple[ToolDefinition, ToolHandler]],
+    contracts: dict[str, dict[str, dict[str, Any]]],
+) -> list[tuple[ToolDefinition, ToolHandler]]:
+    """Attach provider-owned lookup metadata to registered Tool schemas.
+
+    ``contracts`` lives beside a provider Capability and is deliberately
+    keyed by Tool/schema paths.  The shared Runtime only consumes the
+    resulting declarative metadata; it never infers a lookup endpoint from a
+    field name.  ``*`` applies a contract to every Tool in that Capability,
+    which keeps a newly exposed operation covered without duplicating dozens
+    of identical field declarations.
+    """
+    merged: dict[str, dict[str, dict[str, Any]]] = {}
+    for scope in ("*",):
+        for path, metadata in (contracts.get(scope) or {}).items():
+            merged[f"*.{path}"] = copy.deepcopy(metadata)
+    for tool_name, fields in contracts.items():
+        if tool_name == "*":
+            continue
+        for path, metadata in (fields or {}).items():
+            merged[f"{tool_name}.{path}"] = copy.deepcopy(metadata)
+
+    def schema_paths(properties: Any, prefix: str = "") -> list[tuple[str, dict[str, Any]]]:
+        """Flatten object properties, including nested provider settings."""
+        result: list[tuple[str, dict[str, Any]]] = []
+        if not isinstance(properties, dict):
+            return result
+        for name, schema in properties.items():
+            if not isinstance(schema, dict):
+                continue
+            path = f"{prefix}.{name}" if prefix else str(name)
+            result.append((path, schema))
+            if schema.get("type") == "object":
+                result.extend(schema_paths(schema.get("properties"), path))
+            item_schema = schema.get("items")
+            if isinstance(item_schema, dict) and item_schema.get("type") == "object":
+                result.extend(schema_paths(item_schema.get("properties"), f"{path}[]"))
+        return result
+
+    for definition, _handler in tools:
+        properties = getattr(definition.input_schema, "properties", {}) or {}
+        for path, target in schema_paths(properties):
+            leaf = path.rsplit(".", 1)[-1].replace("[]", "")
+            for key, metadata in merged.items():
+                if key.startswith("*"):
+                    contract_path = key[2:] if key.startswith("*.") else key
+                    matches = path == contract_path or (
+                        "." not in contract_path and leaf == contract_path
+                    )
+                else:
+                    tool_name, contract_path = key.split(".", 1)
+                    matches = (
+                        definition.name == tool_name
+                        and (path == contract_path or (
+                            "." not in contract_path and leaf == contract_path
+                        ))
+                    )
+                if matches:
+                    target.update(copy.deepcopy(metadata))
+    return tools
 
 
 class BaseCapability(CapabilityModule, ABC):

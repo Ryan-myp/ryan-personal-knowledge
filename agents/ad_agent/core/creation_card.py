@@ -124,6 +124,43 @@ def _normalized(value: Any) -> str:
     return " ".join(str(value or "").strip().lower().replace("_", " ").split())
 
 
+def _lookup_metadata(tool_registry: Any, schema: Mapping[str, Any]) -> dict[str, Any]:
+    """Return provider-owned lookup metadata plus the source Tool contract.
+
+    The source Tool is intentionally inspected here instead of inferred from
+    a field name.  This means a provider can use a non-standard identifier or
+    swap its endpoint without adding a Runtime/provider branch.
+    """
+    lookup = schema.get("lookup") if isinstance(schema.get("lookup"), Mapping) else {}
+    lookup_tool = schema.get("lookup_tool") or lookup.get("tool")
+    if not lookup_tool:
+        return {}
+    result: dict[str, Any] = {"tool": str(lookup_tool), "read_only": True}
+    for source_key, result_key in (
+        ("lookup_result_key", "result_key"),
+        ("lookup_account_required", "account_required"),
+        ("lookup_dependencies", "dependencies"),
+        ("lookup_query_field", "query_field"),
+    ):
+        value = schema.get(source_key)
+        if value is None and isinstance(lookup, Mapping):
+            value = lookup.get(result_key)
+        if value is not None:
+            result[result_key] = value
+    manual_entry = schema.get("manual_entry")
+    if isinstance(manual_entry, Mapping):
+        result["manual_entry"] = dict(manual_entry)
+
+    definition = _tool_definition(tool_registry, str(lookup_tool))
+    if definition is not None:
+        required = set(getattr(getattr(definition, "input_schema", None), "required", []) or [])
+        if "account_required" not in result:
+            result["account_required"] = bool(
+                required.intersection({"account_id", "advertiser_id", "customer_id"})
+            )
+    return result
+
+
 class CreationCardBuilder:
     """Build bounded parameter cards from registered declarative metadata."""
 
@@ -352,6 +389,10 @@ class CreationCardBuilder:
                             "lookup_result_key": spec.get("lookup_result_key"),
                             "selection_value_fields": spec.get("selection_value_fields"),
                             "selection_label_fields": spec.get("selection_label_fields"),
+                            "lookup_account_required": spec.get("lookup_account_required"),
+                            "lookup_dependencies": spec.get("lookup_dependencies"),
+                            "lookup_query_field": spec.get("lookup_query_field"),
+                            "manual_entry": spec.get("manual_entry"),
                             "required": name in (schema.get("required") or []),
                         }.items()
                         if value not in (None, "", {}, [])
@@ -360,14 +401,14 @@ class CreationCardBuilder:
                     if isinstance(spec, Mapping) and not _SENSITIVE_FIELD.search(str(name))
                 }
             if item["control"] == "lookup":
-                lookup = field.get("lookup_tool") or schema.get("lookup_tool")
-                if not lookup and isinstance(schema.get("lookup"), Mapping):
-                    lookup = schema["lookup"].get("tool")
                 item["lookup"] = {
-                    "tool": str(lookup or ""),
-                    "read_only": True,
+                    **_lookup_metadata(self.tools, schema),
                     "status": "available_without_call",
                 }
+            elif isinstance(field.get("manual_entry"), Mapping):
+                item["manual_entry"] = dict(field["manual_entry"])
+            elif isinstance(schema.get("manual_entry"), Mapping):
+                item["manual_entry"] = dict(schema["manual_entry"])
             fields.append(item)
         return {
             "type": "ad_creation_form", "version": "1.0",

@@ -1,11 +1,13 @@
 """
 capabilities/tiktok/capability.py - TikTok Capability 定义
 """
+from __future__ import annotations
+
 import logging
 from pathlib import Path
 from typing import Optional
 from ...core.interfaces import ToolDefinition, ToolSchema, RiskLevel, ToolEffect, ReplayPolicy, ToolHandler
-from ..base import BaseCapability, CampaignUpdateHandler
+from ..base import BaseCapability, CampaignUpdateHandler, apply_lookup_contracts
 from ..provider_tools import account_from, bind_provider_method, method_tool
 from .campaigns import (
     TikTokListCampaignsHandler,
@@ -72,6 +74,150 @@ from .parameters import (
 from ..update_contracts import tiktok_updates
 
 logger = logging.getLogger(__name__)
+
+
+def _tiktok_lookup(tool: str, result_key: str, values: list[str], labels: list[str], *, depends_on: list[dict] | None = None, account_required: bool | None = None) -> dict:
+    metadata = {
+        "lookup_tool": tool,
+        "lookup_result_key": result_key,
+        "selection_value_fields": values,
+        "selection_label_fields": labels,
+    }
+    if depends_on:
+        metadata["lookup_dependencies"] = depends_on
+    if account_required is not None:
+        metadata["lookup_account_required"] = account_required
+    return metadata
+
+
+# Complete reusable-resource picker metadata for the TikTok Capability.  The
+# source endpoints are fixed here next to the provider adapter; the common
+# Runtime only validates and executes the declared read Tool.
+TIKTOK_LOOKUP_CONTRACTS = {
+    "*": {
+        "campaign_id": _tiktok_lookup(
+            "tiktok_list_campaigns", "campaigns", ["campaign_id", "id"],
+            ["campaign_name", "name", "id"],
+        ),
+        "adgroup_id": _tiktok_lookup(
+            "tiktok_list_adgroups", "ad_groups", ["adgroup_id", "ad_group_id", "id"],
+            ["adgroup_name", "ad_group_name", "name", "id"], depends_on=[{
+                "input_field": "campaign_id", "value_path": "campaign_id",
+                "label": "所属 Campaign", "required": True,
+            }],
+        ),
+        "ad_id": _tiktok_lookup(
+            "tiktok_list_ads", "ads", ["ad_id", "id"],
+            ["ad_name", "name", "id"], depends_on=[{
+                "input_field": "adgroup_id", "value_path": "adgroup_id",
+                "label": "所属 Ad Group", "required": True,
+            }],
+        ),
+        "app_id": _tiktok_lookup(
+            "tiktok_list_apps", "apps", ["app_id", "id"],
+            ["app_name", "name", "display_name", "id"], account_required=False,
+        ),
+        "conversion_id": _tiktok_lookup(
+            "tiktok_list_conversions", "conversions", ["conversion_id", "id"],
+            ["conversion_name", "name", "event_name", "id"],
+        ),
+        "pixel_id": _tiktok_lookup(
+            "tiktok_list_pixels", "pixels", ["pixel_id", "id", "code"],
+            ["pixel_name", "name", "display_name", "id"],
+        ),
+        "location_ids": _tiktok_lookup(
+            "tiktok_list_locations", "locations", ["location_id", "id", "country_code", "code"],
+            ["location_name", "name", "country_name", "country_code"], account_required=False,
+        ),
+        "audience_id": _tiktok_lookup(
+            "tiktok_list_audiences", "audiences", ["audience_id", "id"],
+            ["name", "audience_name", "id"],
+        ),
+        "audience_ids": _tiktok_lookup(
+            "tiktok_list_audiences", "audiences", ["audience_id", "id"],
+            ["name", "audience_name", "id"],
+        ),
+        "excluded_audience_ids": _tiktok_lookup(
+            "tiktok_list_audiences", "audiences", ["audience_id", "id"],
+            ["name", "audience_name", "id"],
+        ),
+        "interest_category_ids": _tiktok_lookup(
+            "tiktok_list_interest_categories", "interest_categories",
+            ["interest_category_id", "category_id", "id"],
+            ["interest_category_name", "category_name", "name", "id"],
+        ),
+        "device_model_ids": _tiktok_lookup(
+            "tiktok_list_device_models", "device_models", ["device_model_id", "id"],
+            ["device_model_name", "name", "id"],
+        ),
+        "device_ids": _tiktok_lookup(
+            "tiktok_list_devices", "devices", ["device_id", "id"],
+            ["device_name", "name", "id"], account_required=False,
+        ),
+        "carrier_ids": _tiktok_lookup(
+            "tiktok_list_carriers", "carriers", ["carrier_id", "id"],
+            ["carrier_name", "name", "id"], account_required=False,
+        ),
+        "browser_ids": _tiktok_lookup(
+            "tiktok_list_browsers", "browsers", ["browser_id", "id"],
+            ["browser_name", "name", "id"], account_required=False,
+        ),
+        "video_id": _tiktok_lookup(
+            "tiktok_list_videos", "videos", ["video_id", "id"],
+            ["file_name", "video_name", "name", "id"],
+        ),
+        "image_ids": _tiktok_lookup(
+            "tiktok_list_images", "images", ["image_id", "id"],
+            ["file_name", "image_name", "name", "id"],
+        ),
+        "identity_id": _tiktok_lookup(
+            "tiktok_list_identities", "identities", ["identity_id", "id"],
+            ["display_name", "name", "id"],
+        ),
+        "catalog_id": _tiktok_lookup(
+            "tiktok_list_catalogs", "catalogs", ["catalog_id", "id"],
+            ["catalog_name", "name", "id"],
+        ),
+        "product_set_id": _tiktok_lookup(
+            "tiktok_list_product_sets", "product_sets", ["product_set_id", "id"],
+            ["product_set_name", "name", "id"], depends_on=[{
+                "input_field": "catalog_id", "value_path": "catalog_id",
+                "label": "所属商品目录", "required": True,
+            }],
+        ),
+        # TikTok's current capability has no Page/Post/Shop listing Tool.
+        # Keep these as guided manual identifiers rather than pretending a
+        # generic app/catalog query can return them.
+        "page_id": {
+            "manual_entry": {
+                "title": "TikTok 页面或表单 ID",
+                "instructions": "当前能力未接入页面目录查询，请粘贴 TikTok Ads Manager 中的页面/表单 ID。",
+                "source": "external_provider_identifier",
+            },
+        },
+        "spark_post_id": {
+            "manual_entry": {
+                "title": "Spark 帖子 ID",
+                "instructions": "请粘贴已授权的 Spark 帖子标识（通常为 post_id@user_id）；不会根据名称猜测。",
+                "source": "external_provider_identifier",
+            },
+        },
+        "tiktok_item_id": {
+            "manual_entry": {
+                "title": "TikTok 帖子 ID",
+                "instructions": "当前未接入帖子目录查询，请从 TikTok Ads Manager 复制帖子 ID。",
+                "source": "external_provider_identifier",
+            },
+        },
+        "store_id": {
+            "manual_entry": {
+                "title": "TikTok Shop 店铺 ID",
+                "instructions": "当前未接入店铺目录查询，请从 TikTok Shop/Ads Manager 复制店铺 ID。",
+                "source": "external_provider_identifier",
+            },
+        },
+    },
+}
 
 
 def _tiktok_update_adapter(client, ctx, resource_type, resource_id, parent_id, updates):
@@ -1341,7 +1487,7 @@ class TikTokCapability(BaseCapability):
 
         tools.extend(self._extended_provider_tools(api_client))
 
-        return tools
+        return apply_lookup_contracts(tools, TIKTOK_LOOKUP_CONTRACTS)
 
 def create_tiktok_capability(api_client: Optional[TikTokAPIClient] = None) -> TikTokCapability:
     cap = TikTokCapability()
