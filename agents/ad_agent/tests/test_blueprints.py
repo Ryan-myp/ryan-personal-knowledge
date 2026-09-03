@@ -311,6 +311,28 @@ def test_all_google_blueprints_make_ad_group_type_provider_derived():
         assert field.get("source") == "enum"
 
 
+def test_google_demand_gen_does_not_expose_a_second_ad_group_type_selector():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_google_capability())
+    for blueprint_id in (
+        "google-ads.demand_gen_multi_asset",
+        "google-ads.demand_gen_carousel",
+        "google-ads.demand_gen_video_responsive",
+        "google-ads.demand_gen_product",
+    ):
+        blueprint = runtime.creation_blueprints.get(blueprint_id)
+        field = next(item for item in blueprint.fields if item["path"] == "ad_group.type")
+        assert field["presentation"] == "derived_readonly"
+        assert field["options"] == ["SEARCH_STANDARD"]
+        card = runtime.build_creation_ui(ParsedIntent(
+            "create_campaign", "创建 Google Demand Gen 广告", ["google-ads"],
+            platform_params={"google-ads": {"ad_format": blueprint.ad_format}},
+        ))["cards"][0]
+        type_field = next(item for item in card["fields"] if item["path"] == "ad_group.type")
+        assert type_field["control"] == "derived_readonly"
+        assert type_field["options"] == [{"value": "SEARCH_STANDARD", "label": "SEARCH_STANDARD"}]
+
+
 def test_google_video_ad_group_type_is_derived_from_video_format():
     blueprint = load_blueprint_file(
         Path(__file__).parents[1]

@@ -9,6 +9,7 @@ import hashlib
 import json
 import logging
 import math
+import re
 import threading
 from typing import Any, Optional
 from .interfaces import (
@@ -391,15 +392,45 @@ def validate_tool_input(
 
     # Conditional rules model provider relationships such as
     # objective_type=APP_PROMOTION -> promotion_type must be APP_ANDROID and
-    # app_id/deep_bid_type are required. Keep equality-only matching here so
-    # the contract remains deterministic and safe to expose as JSON.
+    # app_id/deep_bid_type are required. The compact operators are data-only
+    # and shared with Blueprint conditions, so a provider can publish a
+    # complete allowed-value matrix without a Core/provider branch.
+    def condition_matches(conditions: Any) -> bool:
+        if not isinstance(conditions, dict):
+            return False
+        if "all" in conditions:
+            return all(condition_matches(item) for item in conditions["all"])
+        if "any" in conditions:
+            return any(condition_matches(item) for item in conditions["any"])
+        if "not" in conditions:
+            return not condition_matches(conditions["not"])
+        for field_name, expected in conditions.items():
+            actual = value_at(field_name)
+            if isinstance(expected, dict):
+                if "equals" in expected and actual != expected["equals"]:
+                    return False
+                if "in" in expected and actual not in expected["in"]:
+                    return False
+                if "not_in" in expected and actual in expected["not_in"]:
+                    return False
+                if "exists" in expected:
+                    present = not is_missing(actual)
+                    if present != bool(expected["exists"]):
+                        return False
+                if "contains" in expected:
+                    if not isinstance(actual, (list, tuple, set, str)):
+                        return False
+                    if expected["contains"] not in actual:
+                        return False
+            elif actual != expected:
+                return False
+        return True
+
     for rule in schema.conditional_rules:
         if not isinstance(rule, dict):
             continue
         conditions = rule.get("if", rule.get("when", {}))
-        if not isinstance(conditions, dict):
-            continue
-        if any(data.get(key) != expected for key, expected in conditions.items()):
+        if not condition_matches(conditions):
             continue
 
         for field_name in rule.get("required", rule.get("required_fields", [])) or []:
@@ -413,7 +444,11 @@ def validate_tool_input(
         if isinstance(allowed, dict):
             for field_name, values in allowed.items():
                 field_value = value_at(field_name)
-                if field_value is not None and field_value not in values:
+                if isinstance(field_value, (list, tuple, set)):
+                    valid = all(item in values for item in field_value)
+                else:
+                    valid = field_value in values
+                if field_value is not None and not valid:
                     errors.append(
                         rule.get("message")
                         or f"Field '{field_name}' must be one of {list(values)} when {conditions}"
@@ -466,6 +501,18 @@ def validate_tool_input(
         enum = field_schema.get("enum")
         if enum is not None and value not in enum:
             errors.append(f"Field '{path}' must be one of {list(enum)}, got {value!r}")
+
+        pattern = field_schema.get("pattern")
+        if pattern is not None and isinstance(value, str):
+            try:
+                matches = re.fullmatch(str(pattern), value)
+            except re.error:
+                errors.append(f"Field '{path}' has an invalid validation pattern")
+            else:
+                if matches is None:
+                    errors.append(
+                        f"Field '{path}' does not match the required format"
+                    )
 
         if isinstance(value, (str, list, dict)):
             min_length = field_schema.get("minLength", field_schema.get("minItems"))

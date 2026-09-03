@@ -928,15 +928,32 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
                 "id": "app_android_dependencies",
                 "if": {"promotion_type": "APP_ANDROID"},
                 "required": ["app_id", "deep_bid_type", "operating_systems"],
-                "allowed": {"billing_event": ["OCPM"]},
+                "allowed": {
+                    "billing_event": ["OCPM"],
+                    "optimization_goal": ["INSTALL", "IN_APP_EVENT", "CONVERSION"],
+                    "operating_systems": ["ANDROID"],
+                },
                 "message": "APP_ANDROID requires app_id, deep_bid_type, operating_systems and billing_event=OCPM",
             },
             {
                 "id": "app_ios_dependencies",
                 "if": {"promotion_type": "APP_IOS"},
                 "required": ["app_id", "deep_bid_type", "operating_systems"],
-                "allowed": {"billing_event": ["OCPM"]},
+                "allowed": {
+                    "billing_event": ["OCPM"],
+                    "optimization_goal": ["INSTALL", "IN_APP_EVENT", "CONVERSION"],
+                    "operating_systems": ["IOS"],
+                },
                 "message": "APP_IOS requires app_id, deep_bid_type, operating_systems and billing_event=OCPM",
+            },
+            {
+                "id": "lead_form_dependencies",
+                "if": {"promotion_type": "LEAD_FORM"},
+                "allowed": {
+                    "optimization_goal": ["LEAD_GENERATION"],
+                    "billing_event": ["OCPM", "CPM"],
+                },
+                "message": "LEAD_FORM requires optimization_goal=LEAD_GENERATION and billing_event=OCPM or CPM",
             },
             {
                 "id": "website_dependencies",
@@ -979,6 +996,34 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
                 "if": {"ios14_targeting": "IOS14_PLUS"},
                 "required": ["min_ios_version"],
                 "message": "ios14_targeting=IOS14_PLUS requires min_ios_version",
+            },
+            {
+                "id": "click_optimization_billing",
+                "if": {"optimization_goal": "CLICK"},
+                "allowed": {"billing_event": ["CPC"]},
+                "message": "CLICK optimization requires billing_event=CPC",
+            },
+            {
+                "id": "conversion_optimization_billing",
+                "if": {"optimization_goal": {"in": [
+                    "INSTALL", "IN_APP_EVENT", "CONVERSION", "WEB_CONVERSIONS",
+                ]}},
+                "allowed": {"billing_event": ["OCPM"]},
+                "message": "Conversion optimization requires billing_event=OCPM",
+            },
+            {
+                "id": "lead_optimization_billing",
+                "if": {"optimization_goal": "LEAD_GENERATION"},
+                "allowed": {"billing_event": ["OCPM", "CPM"]},
+                "message": "LEAD_GENERATION supports billing_event=OCPM or CPM",
+            },
+            {
+                "id": "commerce_optimization_billing",
+                "if": {"optimization_goal": {"in": [
+                    "VALUE", "PRODUCT_SALES", "SHOP_PURCHASES", "CATALOG_SALES",
+                ]}},
+                "allowed": {"billing_event": ["OCPM", "CPC"]},
+                "message": "Commerce optimization supports billing_event=OCPM or CPC",
             },
         ],
     }

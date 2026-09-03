@@ -19,6 +19,7 @@
     {"path": "campaign.demand_gen_campaign_settings", "tool_ref": "google_create_campaign.demand_gen_campaign_settings", "label": "Demand Gen 广告系列设置", "required": true, "presentation": "object_editor"},
     {"path": "ad_group.name", "tool_ref": "google_create_specialized_ad_group.name", "label": "广告组名称", "required": true},
     {"path": "ad_group.campaign_type", "tool_ref": "google_create_specialized_ad_group.campaign_type", "label": "广告组所属类型（自动匹配）", "required": true, "source": "enum", "options": ["DEMAND_GEN"], "presentation": "derived_readonly"},
+    {"path": "ad_group.type", "tool_ref": "google_create_specialized_ad_group.type", "label": "广告组类型（由 Demand Gen 自动确定）", "required": true, "source": "enum", "options": ["SEARCH_STANDARD"], "presentation": "derived_readonly"},
     {"path": "ad_group.demand_gen_ad_group_settings", "tool_ref": "google_create_specialized_ad_group.demand_gen_ad_group_settings", "label": "Demand Gen 广告组版位设置", "required": true, "presentation": "object_editor"},
     {"path": "ad.name", "tool_ref": "google_create_demand_gen_multi_asset_ad.name", "label": "广告名称", "required": true},
     {"path": "ad.final_url", "tool_ref": "google_create_demand_gen_multi_asset_ad.final_url", "label": "最终到达网址", "required": true},

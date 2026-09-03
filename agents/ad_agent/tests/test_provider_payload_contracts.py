@@ -2182,6 +2182,55 @@ def test_tiktok_adgroup_contract_exposes_optimization_targeting_and_schedule_fie
     assert validate_tool_input(schema, base, include_provider_contract=True) == []
 
 
+def test_provider_creation_contracts_reject_incompatible_cascade_values():
+    meta = next(
+        definition for definition, _handler in create_meta_capability().register_tools()
+        if definition.name == "meta_create_adset"
+    )
+    meta_errors = validate_tool_input(meta.input_schema, {
+        "campaign_id": "c1", "name": "Video set", "optimization_goal": "VIDEO_VIEWS",
+        "billing_event": "LINK_CLICKS", "targeting": {"geo_locations": {"countries": ["US"]}},
+    }, include_provider_contract=True)
+    assert any("Video-view optimization" in error for error in meta_errors)
+
+    tiktok = next(
+        definition for definition, _handler in create_tiktok_capability().register_tools()
+        if definition.name == "tiktok_create_adgroup"
+    )
+    tiktok_errors = validate_tool_input(tiktok.input_schema, {
+        "campaign_id": "c1", "name": "Android app", "promotion_type": "APP_ANDROID",
+        "billing_event": "CPC", "optimization_goal": "VALUE",
+        "bid_type": "BID_TYPE_NO_BID", "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
+        "budget_mode": "BUDGET_MODE_DAY", "budget": 50, "location_ids": ["US"],
+        "app_id": "app-1", "deep_bid_type": "AEO", "operating_systems": ["ANDROID"],
+    }, include_provider_contract=True)
+    assert any("APP_ANDROID" in error for error in tiktok_errors)
+    assert any("billing_event" in error for error in tiktok_errors)
+
+
+def test_google_external_identifiers_are_format_checked_without_fake_lookups():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_google_capability().register_tools()
+    }
+    campaign = definitions["google_create_campaign"].input_schema
+    app_setting = campaign.properties["app_campaign_setting"]["properties"]
+    app_errors = validate_tool_input(campaign, {
+        "account_id": "g1", "name": "App campaign", "objective": "MULTI_CHANNEL",
+        "special_ad_categories": "NONE", "budget": 10,
+        "app_campaign_setting": {"app_id": "not an id", "app_store": "GOOGLE_APP_STORE"},
+    }, include_provider_contract=False)
+    assert any("app_campaign_setting.app_id" in error for error in app_errors)
+    assert "lookup_tool" not in app_setting["app_id"]
+
+    asset = definitions["google_create_asset"].input_schema
+    video_errors = validate_tool_input(asset, {
+        "customer_id": "g1", "asset_type": "YOUTUBE_VIDEO",
+        "youtube_video_id": "too-short", "youtube_video_title": "Video",
+    }, include_provider_contract=False)
+    assert any("youtube_video_id" in error for error in video_errors)
+
+
 def test_tiktok_ad_contract_exposes_lookup_backed_assets_and_provider_creative_fields():
     definition = next(
         definition for definition, _handler in create_tiktok_capability().register_tools()

@@ -967,6 +967,35 @@ def meta_adset_schema() -> dict[str, Any]:
                 "required": ["roas_average_floor"],
                 "message": "LOWEST_COST_WITH_MIN_ROAS requires roas_average_floor",
             },
+            {
+                "id": "billing_event_for_link_clicks",
+                "if": {"optimization_goal": "LINK_CLICKS"},
+                "allowed": {"billing_event": ["IMPRESSIONS", "LINK_CLICKS"]},
+                "message": "LINK_CLICKS only supports IMPRESSIONS or LINK_CLICKS billing",
+            },
+            {
+                "id": "billing_event_for_landing_page_views",
+                "if": {"optimization_goal": "LANDING_PAGE_VIEWS"},
+                "allowed": {"billing_event": ["IMPRESSIONS"]},
+                "message": "LANDING_PAGE_VIEWS only supports IMPRESSIONS billing",
+            },
+            {
+                "id": "billing_event_for_video_views",
+                "if": {"optimization_goal": {"in": ["VIDEO_VIEWS", "THRUPLAY", "THRU_PLAY"]}},
+                "allowed": {"billing_event": ["IMPRESSIONS", "THRUPLAY"]},
+                "message": "Video-view optimization only supports IMPRESSIONS or THRUPLAY billing",
+            },
+            {
+                "id": "billing_event_for_impression_optimized_goals",
+                "if": {"optimization_goal": {"in": [
+                    "APP_INSTALLS", "OFFSITE_CONVERSIONS", "VALUE", "LEAD_GENERATION",
+                    "LEADS", "IMPRESSIONS", "REACH", "POST_ENGAGEMENT", "EVENT_RESPONSES",
+                    "CONVERSIONS", "MESSAGES", "PAGE_LIKES", "PRODUCT_CATALOG_SALES",
+                    "CATALOG_SALES",
+                ]}},
+                "allowed": {"billing_event": ["IMPRESSIONS"]},
+                "message": "This optimization goal only supports IMPRESSIONS billing",
+            },
         ],
     }
 

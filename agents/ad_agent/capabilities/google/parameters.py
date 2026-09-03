@@ -516,10 +516,12 @@ def google_app_campaign_setting_schema() -> dict[str, Any]:
     return _object({
         "app_id": _field(
             "string", "Google Play package name or iOS App Store ID", minLength=1,
+            maxLength=255, pattern=r"[A-Za-z0-9][A-Za-z0-9._-]*",
             manual_entry={
                 "title": "应用标识",
-                "instructions": "Google App Campaign 需要应用包名或 App Store ID；当前 Google Ads Capability 未声明通用应用列表查询 Tool，请提供已在账号中关联的应用标识。",
-                "example": "com.example.app",
+                "instructions": "Google Play 填应用包名（通常形如 com.example.app）；Apple App Store 填纯数字 App Store ID。Google Ads API 不提供可按账户枚举的应用列表，请选择应用商店后粘贴已关联的标识。",
+                "example": "com.example.app 或 1234567890",
+                "source": "external_store_identifier",
             },
         ),
         "app_store": _field(
@@ -1321,10 +1323,11 @@ def google_video_ad_schema() -> dict[str, Any]:
                 "string", "Video format", enum=GOOGLE_VIDEO_AD_FORMATS,
             ),
             "video_id": _field(
-                "string", "YouTube video ID", minLength=1,
+                "string", "YouTube video ID", minLength=11, maxLength=11,
+                pattern=r"[A-Za-z0-9_-]{11}",
                 manual_entry={
                     "title": "YouTube 视频 ID",
-                    "instructions": "Google Ads 当前没有可直接用于此字段的 YouTube 视频目录查询；请粘贴 YouTube URL 中的 11 位视频 ID。",
+                    "instructions": "Google Ads 当前没有可直接用于此字段的 YouTube 视频目录查询，请从 YouTube URL 中复制 v= 后的 11 位 ID（不要粘贴完整 URL）。",
                     "example": "dQw4w9WgXcQ",
                     "source": "external_youtube_identifier",
                 },
@@ -1938,7 +1941,16 @@ def google_asset_create_schema() -> dict[str, Any]:
             "text": _field("string", "Text asset content", minLength=1),
             "file_path": _field("string", "Local image or HTML5 ZIP file path", minLength=1),
             "mime_type": _field("string", "Image MIME enum", enum=GOOGLE_ASSET_IMAGE_MIME_TYPES),
-            "youtube_video_id": _field("string", "11-character YouTube video ID", minLength=11, maxLength=11),
+            "youtube_video_id": _field(
+                "string", "11-character YouTube video ID", minLength=11, maxLength=11,
+                pattern=r"[A-Za-z0-9_-]{11}",
+                manual_entry={
+                    "title": "YouTube 视频 ID",
+                    "instructions": "请从 YouTube URL 中复制 v= 后的 11 位 ID；不能使用完整 URL 或视频标题。",
+                    "example": "dQw4w9WgXcQ",
+                    "source": "external_youtube_identifier",
+                },
+            ),
             "youtube_video_title": _field("string", "YouTube video title", minLength=1),
             "final_urls": _field("array", "Optional final URLs", items={"type": "string"}),
             "final_mobile_urls": _field("array", "Optional final mobile URLs", items={"type": "string"}),
