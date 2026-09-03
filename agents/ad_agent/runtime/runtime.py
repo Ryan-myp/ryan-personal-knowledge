@@ -564,6 +564,12 @@ class AgentRuntime:
         """Expose the persistence abstraction to management services."""
         return self._session_manager.store if self._session_manager else None
 
+    def close(self, wait: bool = False) -> None:
+        """Release Runtime-owned workers through one generic lifecycle seam."""
+        executor = self.task_executor
+        if executor is not None:
+            executor.shutdown(wait=wait)
+
     @property
     def memory_manager(self) -> Optional[MemoryManager]:
         """Expose the optional, provider-neutral Agent Memory service."""

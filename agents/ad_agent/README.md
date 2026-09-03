@@ -154,8 +154,9 @@ runtime.register_capability(capability)
 
 当前所有 Campaign/下级资源创建默认只生成 dry-run 计划；DV360 IO/Line Item 更新、Google PMax Asset Group 以及部分下级资源更新没有经过验证的 live adapter，live 会明确返回不支持。DV360 Campaign 创建尚未建设，API Surface 会将其标为 planned，Runtime 不会路由到不可执行的假 Tool。读取请求在没有 Provider Client 时默认 fail-closed，只有显式 `offline_mode=True` 才会返回离线 fixture。
 
-页面顶部的“执行模式”面板可以切换当前服务进程的 `dry_run` / `live` 模式；该选择不修改
-`config.yaml`，重启服务后恢复配置值。切换 live 需要当前身份同时拥有 `ads.plan`、
+页面顶部的“执行模式”面板可以切换当前 principal 的 `dry_run` / `live` 模式；该选择不修改
+`config.yaml`，而是按 tenant/user 通过 `PersistenceBackend` 持久化，重启服务后仍保持。
+切换 live 需要当前身份同时拥有 `ads.plan`、
 `ads.write`，并满足 `AD_AGENT_ENABLE_LIVE=1`、`allow_live_writes: true` 和非只读配置。
 模式切换本身不会调用广告平台 API；live 写操作仍必须显式账户、命中测试白名单，并携带
 当前计划的二次确认信息。
@@ -185,6 +186,10 @@ Provider timeout、连接错误、限流和 5xx 等无法确认最终结果的�
 幂等 reservation 并进入 `recovery_required`，避免恢复流程绕过原有审批和幂等门禁。HTTP
 reconcile 还需要显式 `ads.reconcile`（或 `ads.write`）权限；`verified` 不是权限，
 而是恢复 worker 对观测来源完成校验后的声明。
+
+部署探针使用 `GET /health` 做进程存活检查，使用 `GET /readyz` 做请求就绪检查。后者会
+检查 Runtime、必需的 LLM 和 Tool Registry 是否已完成初始化，不会调用 Provider，也不会
+返回凭证；ASGI 生命周期结束时会关闭 Runtime-owned TaskExecutor，避免热重载留下后台任务。
 
 Workflow 在执行前预登记 write item，并通过 upsert checkpoint 更新状态；当前 SQLite
 实现由 `PersistenceBackend` 接口隔离，后续可替换 MySQL/PostgreSQL backend，不需要改 Runtime。

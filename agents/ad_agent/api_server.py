@@ -315,9 +315,25 @@ async def lifespan(_app: FastAPI):
             # Fail ASGI startup instead of serving a process that reports
             # healthy while every data endpoint is unusable.
             raise RuntimeError("ad-agent Runtime 初始化失败")
+    active_runtime = runtime
     try:
         yield
     finally:
+        # Runtime owns the durable worker lifecycle. Shut it down through the
+        # generic lifecycle seam so ASGI reloads/tests do not leave task
+        # workers holding SQLite connections or provider-adjacent state.
+        close = getattr(active_runtime, "close", None)
+        if callable(close):
+            close(wait=True)
+        else:
+            executor = getattr(active_runtime, "task_executor", None)
+            shutdown = getattr(executor, "shutdown", None)
+            if callable(shutdown):
+                shutdown(wait=True)
+        if runtime is active_runtime:
+            # Permit a later ASGI lifespan (reload/test restart) to create a
+            # fresh Runtime instead of reusing one whose workers are closed.
+            runtime = None
         print("👋 ad-agent 服务已停止")
 
 
@@ -433,6 +449,43 @@ async def health():
         "live_mode_reason": live_reason,
         "platforms": list(platforms), "tools": len(tools),
     }
+
+
+@app.get("/readyz", tags=["health"])
+async def readiness():
+    """Return whether the Agent can accept normal requests.
+
+    ``/health`` is intentionally a liveness endpoint: a process can be alive
+    while still booting or missing its model. ``/readyz`` is the deployment
+    gate and checks the Runtime state and model dependency without making any
+    Provider request or exposing credentials.
+    """
+    state = runtime_status.get("state", "not_initialized")
+    runtime_ready = runtime is not None and state in {"ready", "not_initialized"}
+    if runtime is not None and state == "not_initialized":
+        # Embedded/test callers may inject an already-created Runtime without
+        # going through _init_runtime().
+        state = "ready"
+    model_required = bool(getattr(runtime, "require_llm", False)) if runtime else False
+    model_ready = not model_required or getattr(runtime, "_llm", None) is not None
+    try:
+        tool_count = len(runtime.registry.list_all()) if runtime else 0
+    except Exception:
+        tool_count = 0
+    checks = {
+        "runtime": runtime_ready,
+        "llm": model_ready,
+        "tool_registry": tool_count > 0,
+    }
+    ready = all(checks.values()) and state == "ready"
+    payload = {
+        "status": "ready" if ready else "not_ready",
+        "state": state,
+        "checks": checks,
+        "error": runtime_status.get("error"),
+        "service": "ad-agent",
+    }
+    return JSONResponse(status_code=200 if ready else 503, content=payload)
 
 
 def _live_mode_unavailable_reason() -> Optional[str]:

@@ -162,8 +162,9 @@ def run(session_input: Mapping[str, Any]) -> Dict[str, Any]:
     # Bootstrap with an empty loader root, then use the public discovery seam
     # once. This registers provider schemas before parsing (important for
     # numeric/array fields) without loading the same Skill files twice.
+    store = AdAgentStore(":memory:")
     runtime = AgentRuntime(
-        persistence_store=AdAgentStore(":memory:"),
+        persistence_store=store,
         skill_roots=[str(skills_root / ".skill-up-bootstrap")],
         # skill-up's Runtime engine intentionally uses deterministic rule
         # parsing for offline contract evaluation. This is an explicit test
@@ -196,13 +197,20 @@ def run(session_input: Mapping[str, Any]) -> Dict[str, Any]:
         if (skills_root / "SKILL.md").is_file():
             runtime.load_managed_skill(str(skills_root), tenant_id="skill-up")
     started = time.monotonic()
-    runtime_result = runtime.run(
-        user_input=prompt,
-        session_id="skill-up:" + str(session_input.get("case_id") or "case"),
-        user_id="skill-up-eval",
-        tenant_id="skill-up",
-    )
-    duration_ms = max(int((time.monotonic() - started) * 1000), 0)
+    try:
+        runtime_result = runtime.run(
+            user_input=prompt,
+            session_id="skill-up:" + str(session_input.get("case_id") or "case"),
+            user_id="skill-up-eval",
+            tenant_id="skill-up",
+        )
+        duration_ms = max(int((time.monotonic() - started) * 1000), 0)
+    finally:
+        # Evaluation is often run repeatedly by the management API. Release
+        # the Runtime-owned lifecycle and in-memory SQLite connection after
+        # each case so a suite cannot accumulate hidden workers/connections.
+        runtime.close(wait=True)
+        store.close()
     return _session_result(
         session_input=session_input,
         messages=messages,

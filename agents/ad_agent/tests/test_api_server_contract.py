@@ -130,6 +130,29 @@ def test_health_is_safe_and_does_not_require_api_key(fake_server, monkeypatch):
     assert payload["live_mode_reason"] == "服务未开启 live 环境开关"
 
 
+def test_readiness_exposes_model_and_runtime_gate_without_provider_calls(fake_server):
+    fake_server.registry.list_all = lambda: [object()]
+    with TestClient(api_server.app) as client:
+        response = client.get("/readyz")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ready"
+    assert payload["checks"]["runtime"] is True
+    assert payload["checks"]["llm"] is True
+    assert payload["checks"]["tool_registry"] is True
+
+
+def test_readiness_rejects_missing_required_model(fake_server):
+    fake_server.registry.list_all = lambda: [object()]
+    fake_server.require_llm = True
+    fake_server._llm = None
+    with TestClient(api_server.app) as client:
+        response = client.get("/readyz")
+    assert response.status_code == 503
+    assert response.json()["status"] == "not_ready"
+    assert response.json()["checks"]["llm"] is False
+
+
 def test_execution_mode_change_requires_planning_permission(monkeypatch, fake_server):
     monkeypatch.setenv(
         "AD_AGENT_API_KEY_PRINCIPALS",
