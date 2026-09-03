@@ -209,6 +209,70 @@ def _object(
     return schema
 
 
+def _google_ad_group_targeting_schema() -> dict[str, Any]:
+    """Known AdGroup.targetingSetting fields for the creation form.
+
+    Google keeps granular criteria (locations, audiences and demographics) in
+    CampaignCriterion resources.  This object is only the AdGroup-level
+    restriction switch, so the form must not pretend it can create criteria
+    by accepting an arbitrary targeting blob.
+    """
+    return _object({
+        "target_restrictions": _field(
+            "array", "Ad group targeting restrictions", minItems=1,
+            items=_object({
+                "targeting_dimension": _field(
+                    "string", "Dimension to restrict", enum=GOOGLE_TARGETING_DIMENSIONS,
+                ),
+                "bid_only": _field(
+                    "boolean", "Bid only instead of restricting reach",
+                ),
+            }, "Targeting restriction", required=["targeting_dimension"]),
+        ),
+    }, "Google AdGroup targeting settings")
+
+
+def _google_responsive_search_payload_schema() -> dict[str, Any]:
+    """Typed subset of Google ResponsiveSearchAdInfo.
+
+    The text assets and pinning fields are stable API concepts.  Unknown
+    provider additions remain allowed and are explicitly labelled advanced,
+    rather than being silently discarded by the client adapter.
+    """
+    text_asset = _object({
+        "text": _field("string", "Text asset", minLength=1),
+        "pinned_field": _field(
+            "string", "Optional pinned RSA field",
+            enum=[
+                "HEADLINE_1", "HEADLINE_2", "HEADLINE_3",
+                "DESCRIPTION_1", "DESCRIPTION_2",
+            ],
+        ),
+    }, "Google text asset", additional_properties=False, required=["text"])
+    return _field(
+        "object", "Responsive Search Ad payload",
+        properties={
+            "headlines": _field(
+                "array", "Responsive Search Ad headlines", minItems=3, maxItems=15,
+                items=text_asset,
+            ),
+            "descriptions": _field(
+                "array", "Responsive Search Ad descriptions", minItems=2, maxItems=4,
+                items=text_asset,
+            ),
+            "path1": _field("string", "Display path 1", maxLength=15),
+            "path2": _field("string", "Display path 2", maxLength=15),
+        },
+        additionalProperties=True,
+        presentation="object_editor",
+        manual_entry={
+            "title": "高级 RSA 字段",
+            "instructions": "优先填写上方标题、描述和路径字段；只有 Google Ads API 版本要求额外 ResponsiveSearchAdInfo 字段时才填写此对象。未知字段不会被自动猜测。",
+            "source": "google_responsive_search_ad_payload",
+        },
+    )
+
+
 def _google_asset_ref_item(description: str) -> dict[str, Any]:
     """A reusable Asset reference that can be selected or pasted explicitly.
 
@@ -652,8 +716,14 @@ def google_local_services_campaign_setting_schema() -> dict[str, Any]:
     """
     return _object({
         "category_bids": _field(
-            "array", "Local Services category bids",
+            "array", "Local Services category bids advanced payload",
             items={"type": "object", "additionalProperties": False},
+            presentation="advanced_json",
+            manual_entry={
+                "title": "Local Services 类目出价",
+                "instructions": "类目 ID 和出价字段由 Local Services 账户及 API 版本决定；请粘贴 Google 返回的对象数组，系统不会替你猜测类目。",
+                "source": "google_local_services_category_bids",
+            },
         ),
     }, "Google Local Services campaign settings")
 
@@ -910,7 +980,7 @@ def google_ad_group_schema() -> dict[str, Any]:
                 **_ui_when("campaign_type", "SEARCH", "DISPLAY", "SHOPPING"),
             ),
             "status": _field("string", "Ad group status", enum=GOOGLE_STATUSES),
-            "targeting": _field("object", "Ad group targeting", additionalProperties=True),
+            "targeting": _google_ad_group_targeting_schema(),
             "demand_gen_ad_group_settings": {
                 **_object({
                 "channel_controls": _object({
@@ -1242,15 +1312,31 @@ def google_ad_schema() -> dict[str, Any]:
                 **_ui_when("ad_type", "RESPONSIVE_SEARCH_AD", "EXPANDED_TEXT_AD"),
             ),
             "responsive_search_ad": {
-                **_field("object", "Responsive Search Ad payload", additionalProperties=True),
+                **_google_responsive_search_payload_schema(),
                 **_ui_equals("ad_type", "RESPONSIVE_SEARCH_AD"),
             },
             "responsive_display_ad": {
-                **_field("object", "Responsive Display Ad payload", additionalProperties=True),
+                **_field(
+                    "object", "Responsive Display Ad 高级 payload；优先使用专用字段",
+                    additionalProperties=True, presentation="advanced_json",
+                    manual_entry={
+                        "title": "高级 Responsive Display 字段",
+                        "instructions": "优先使用标题、长标题、描述和素材字段；仅当 Google Ads API 版本要求额外字段时填写 JSON 对象。",
+                        "source": "google_responsive_display_ad_payload",
+                    },
+                ),
                 **_ui_equals("ad_type", "RESPONSIVE_DISPLAY_AD"),
             },
             "video": {
-                **_field("object", "Video ad payload", additionalProperties=True),
+                **_field(
+                    "object", "Video Ad 高级 payload；优先使用视频格式和视频 ID",
+                    additionalProperties=True, presentation="advanced_json",
+                    manual_entry={
+                        "title": "高级 Video Ad 字段",
+                        "instructions": "优先使用视频格式、YouTube 视频 ID、落地页和 CTA 字段；仅当 Provider 版本要求额外字段时填写 JSON 对象。",
+                        "source": "google_video_ad_payload",
+                    },
+                ),
                 **_ui_equals("ad_type", "VIDEO"),
             },
             "status": _field("string", "Ad status", enum=GOOGLE_STATUSES),
@@ -1336,7 +1422,15 @@ def google_video_ad_schema() -> dict[str, Any]:
             "display_url": _field("string", "Optional display URL"),
             "action_button_label": _field("string", "Optional CTA button label"),
             "action_headline": _field("string", "Optional CTA headline"),
-            "companion_banner": _field("object", "Optional companion banner", additionalProperties=True),
+            "companion_banner": _field(
+                "object", "Optional companion banner advanced payload",
+                additionalProperties=True, presentation="advanced_json",
+                manual_entry={
+                    "title": "高级伴随横幅字段",
+                    "instructions": "Google 视频广告的伴随横幅字段受广告格式和 API 版本影响；优先使用已上传素材 ID，只有 Provider 明确要求额外对象时才填写。",
+                    "source": "google_companion_banner_payload",
+                },
+            ),
             "status": _field("string", "Ad status", enum=GOOGLE_STATUSES),
         },
     }
@@ -2060,16 +2154,28 @@ def google_feed_schema() -> dict[str, Any]:
                 enum=["UNKNOWN", "USER", "GOOGLE"],
             ),
             "attributes": _field(
-                "array", "Feed attribute definitions",
+                "array", "Feed attribute definitions advanced payload",
                 items={"type": "object", "additionalProperties": True},
+                presentation="advanced_json",
+                manual_entry={
+                    "title": "Feed 属性定义",
+                    "instructions": "Feed 属性的 name、type 等字段必须与 Google FeedAttribute 版本契约一致；请使用 Google 返回或已审核的对象数组。",
+                    "source": "google_feed_attribute_payload",
+                },
             ),
             "feed_item_resource_name": _field(
                 "string", "FeedItem resource name",
                 minLength=1,
             ),
             "attribute_values": _field(
-                "array", "FeedItem attribute values",
+                "array", "FeedItem attribute values advanced payload",
                 items={"type": "object", "additionalProperties": True},
+                presentation="advanced_json",
+                manual_entry={
+                    "title": "FeedItem 属性值",
+                    "instructions": "属性值必须引用目标 Feed 的 attribute_id，并使用与 FeedAttribute 类型匹配的值字段；请按已审核的 Google payload 填写。",
+                    "source": "google_feed_item_attribute_payload",
+                },
             ),
             "limit": _field(
                 "integer", "Maximum number of rows",

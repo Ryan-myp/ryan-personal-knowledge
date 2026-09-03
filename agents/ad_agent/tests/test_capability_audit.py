@@ -196,19 +196,23 @@ def test_creation_contract_audit_reports_field_source_distribution():
         item["same_provider"]
         for item in report["lookup_contracts"]
     )
-    assert any(
-        item["provider"] == "google-ads"
-        and item["tool"] == "google_create_ad_group"
+    assert not any(
+        item["tool"] == "google_create_ad_group"
         and item["field"] == "targeting"
-        and item["required"] is False
-        and item["description_present"] is True
         for item in report["structured_guidance_gaps"]
     )
     assert any(
-        item["tool"] == "google_create_ad_group"
-        and item["field"] == "targeting"
-        and item["blueprints"]
-        for item in report["structured_guidance_gaps"]
+        item["provider"] == "google-ads"
+        and item["tool"] == "google_create_ad"
+        and item["field"] == "responsive_display_ad"
+        and item["presentation"] == "advanced_json"
+        for item in report["advanced_structured_fields"]
+    )
+    assert any(
+        item["provider"] == "dv360"
+        and item["tool"] == "dv360_create_report"
+        and item["field"] == "report"
+        for item in report["advanced_structured_fields"]
     )
 
 

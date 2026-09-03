@@ -378,6 +378,7 @@ def audit_creation_contracts(runtime: AgentRuntime) -> dict[str, Any]:
     field_sources: list[dict[str, Any]] = []
     unclassified_fields: list[dict[str, str]] = []
     structured_guidance_gaps: list[dict[str, Any]] = []
+    advanced_structured_fields: list[dict[str, Any]] = []
     blueprint_required_gaps: list[dict[str, str]] = []
     blueprint_field_usage: dict[str, list[str]] = defaultdict(list)
     selector_groups: dict[tuple[str, str, tuple[Any, ...]], list[Any]] = {}
@@ -478,6 +479,29 @@ def audit_creation_contracts(runtime: AgentRuntime) -> dict[str, Any]:
                     "additional_properties": spec.get("additionalProperties"),
                     "description_present": bool(str(spec.get("description") or "").strip()),
                 })
+            elif (
+                _is_opaque_structured_field(spec)
+                and isinstance(spec.get("manual_entry"), Mapping)
+                and spec.get("ui_hidden") is not True
+            ):
+                # An open Provider payload is intentionally not guessed into
+                # a fake enum/object contract. Keep it visible in the audit
+                # so a future API-version owner can replace the advanced
+                # editor with a verified child schema.
+                advanced_structured_fields.append({
+                    "provider": provider,
+                    "tool": definition.name,
+                    "field": path,
+                    "required": field_item["required"],
+                    "blueprints": list(blueprint_field_usage.get(
+                        f"{definition.name}.{path}", []
+                    )),
+                    "presentation": spec.get("presentation", ""),
+                    "manual_source": (
+                        spec.get("manual_entry", {}).get("source", "")
+                        if isinstance(spec.get("manual_entry"), Mapping) else ""
+                    ),
+                })
             if not source:
                 unclassified_fields.append({
                     "tool": definition.name,
@@ -538,6 +562,7 @@ def audit_creation_contracts(runtime: AgentRuntime) -> dict[str, Any]:
         "field_sources": field_sources,
         "unclassified_fields": unclassified_fields,
         "structured_guidance_gaps": structured_guidance_gaps,
+        "advanced_structured_fields": advanced_structured_fields,
         "selector_overlaps": selector_overlaps,
         "unresolved_fields": unresolved_fields,
         "blueprint_required_gaps": blueprint_required_gaps,
@@ -598,6 +623,12 @@ def main(argv: list[str] | None = None) -> int:
                 "结构化引导缺口："
                 f"{len(report['structured_guidance_gaps'])} 个 object/对象数组缺少子字段 Schema "
                 "或人工录入说明"
+            )
+        if report["advanced_structured_fields"]:
+            print(
+                "高级结构化字段："
+                f"{len(report['advanced_structured_fields'])} 个 Provider 开放 payload "
+                "保留高级编辑入口，待版本化契约补齐后再下沉为字段控件"
             )
         if report["issues"]:
             print("发现问题：")

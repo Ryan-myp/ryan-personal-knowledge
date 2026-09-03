@@ -541,6 +541,12 @@ def tiktok_creative_portfolio_schema() -> dict[str, Any]:
                 "array", "Portfolio content records",
                 items={"type": "object", "additionalProperties": True},
                 minItems=1, maxItems=100,
+                presentation="advanced_json",
+                manual_entry={
+                    "title": "Creative Portfolio 内容",
+                    "instructions": "内容字段由 creative_portfolio_type 决定（如 CTA、CARD、PRODUCT_CARD），请按 TikTok 当前版本返回的对象结构填写；未知字段不会被系统猜测。",
+                    "source": "tiktok_creative_portfolio_payload",
+                },
             ),
         },
     }
@@ -880,7 +886,15 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
                     "source": "provider_targeting_identifier",
                 },
             ),
-            "targeting_expansion": _field("object", "Targeting expansion settings", additionalProperties=True),
+            "targeting_expansion": _field(
+                "object", "Targeting expansion advanced settings",
+                additionalProperties=True, presentation="advanced_json",
+                manual_entry={
+                    "title": "TikTok 定向扩展高级配置",
+                    "instructions": "定向扩展字段会随 TikTok objective、市场和 API 版本变化；优先使用上方已声明的定向字段，仅在拿到当前版本 Provider payload 时粘贴对象。",
+                    "source": "tiktok_targeting_expansion_payload",
+                },
+            ),
             "household_income": _field("string", "Household income targeting value"),
             "spending_power": _field("string", "Spending power targeting value"),
             "blocked_pangle_app_ids": _field("array", "Blocked Pangle app IDs", items={"type": "string"}),

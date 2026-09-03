@@ -1381,6 +1381,14 @@
         .structured-object-editor { display: grid; gap: 7px; padding: 8px; border: 1px solid var(--border-light); border-radius: 7px; background: var(--bg-primary); }
         .structured-object-row { display: grid; gap: 4px; }
         .structured-object-row label { color: var(--text-muted); font-size: 10px; line-height: 1.35; }
+        .structured-object-collection { display: grid; gap: 8px; }
+        .structured-object-collection-list { display: grid; gap: 8px; }
+        .structured-object-item { padding: 8px; border: 1px solid var(--border-light); border-radius: 8px; background: var(--bg-primary); }
+        .structured-object-item-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; color: var(--text-secondary); font-size: 11px; }
+        .structured-object-add, .structured-object-remove { border: 1px solid var(--border-light); border-radius: 6px; padding: 5px 8px; color: var(--text-secondary); background: var(--bg-secondary); font: inherit; font-size: 11px; cursor: pointer; }
+        .structured-object-add:hover, .structured-object-remove:hover { color: var(--text-primary); border-color: var(--accent); }
+        .structured-object-add:disabled { opacity: .5; cursor: not-allowed; }
+        .advanced-json-editor { min-height: 120px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; line-height: 1.5; }
         .structured-object-row input, .structured-object-row select, .structured-object-row textarea { min-height: 30px; padding: 6px 8px; border: 1px solid var(--border-light); border-radius: 6px; color: var(--text-primary); background: var(--bg-secondary); font: inherit; font-size: 11px; }
         .structured-object-row textarea { min-height: 48px; resize: vertical; }
         .structured-object-row input[type="checkbox"] { width: 16px; min-height: 16px; }
@@ -4472,6 +4480,68 @@
         }
 
         function renderStructuredObjectEditor(schema, value, onChange, metadata = null, lookupContext = null) {
+            // Arrays of provider objects are first-class form values (for
+            // example carousel cards and asset lists).  Keep the collection
+            // wrapper here so every provider gets the same add/remove UX;
+            // no channel-specific renderer is needed.
+            if (schema?.type === 'array' && schema.items?.properties) {
+                const collection = document.createElement('div');
+                collection.className = 'structured-object-collection';
+                const itemProperties = metadata || schema.items.properties || {};
+                const items = Array.isArray(value) ? value.map(item => ({ ...(item || {}) })) : [];
+                const list = document.createElement('div');
+                list.className = 'structured-object-collection-list';
+
+                const renderItems = () => {
+                    list.replaceChildren();
+                    items.forEach((itemValue, index) => {
+                        const itemBox = document.createElement('div');
+                        itemBox.className = 'structured-object-item';
+                        const itemHead = document.createElement('div');
+                        itemHead.className = 'structured-object-item-head';
+                        const itemTitle = document.createElement('strong');
+                        itemTitle.textContent = `第 ${index + 1} 项`;
+                        const remove = document.createElement('button');
+                        remove.type = 'button';
+                        remove.className = 'structured-object-remove';
+                        remove.textContent = '移除';
+                        remove.addEventListener('click', () => {
+                            items.splice(index, 1);
+                            onChange(items.length ? items.map(item => ({ ...item })) : undefined);
+                            renderItems();
+                        });
+                        itemHead.append(itemTitle, remove);
+                        itemBox.appendChild(itemHead);
+                        itemBox.appendChild(renderStructuredObjectEditor(
+                            schema.items,
+                            itemValue,
+                            nextValue => {
+                                items[index] = nextValue || {};
+                                onChange(items.map(item => ({ ...item })));
+                            },
+                            itemProperties,
+                            lookupContext,
+                        ));
+                        list.appendChild(itemBox);
+                    });
+                };
+
+                const add = document.createElement('button');
+                add.type = 'button';
+                add.className = 'structured-object-add';
+                add.textContent = '＋ 新增一项';
+                add.disabled = schema.maxItems !== undefined && items.length >= Number(schema.maxItems);
+                add.addEventListener('click', () => {
+                    if (schema.maxItems !== undefined && items.length >= Number(schema.maxItems)) return;
+                    items.push({});
+                    onChange(items.map(item => ({ ...item })));
+                    renderItems();
+                    add.disabled = schema.maxItems !== undefined && items.length >= Number(schema.maxItems);
+                });
+                collection.append(list, add);
+                renderItems();
+                return collection;
+            }
             const editor = document.createElement('div');
             editor.className = 'structured-object-editor';
             const properties = metadata || schema?.properties || {};
@@ -4485,6 +4555,12 @@
                 const specDescription = [spec.description, specHint ? `参数限制：${specHint}` : '']
                     .filter(Boolean).join('；');
                 label.textContent = specDescription ? `${name} · ${specDescription}` : name;
+                if (spec.required) {
+                    const required = document.createElement('span');
+                    required.className = 'required';
+                    required.textContent = ' *';
+                    label.appendChild(required);
+                }
                 row.appendChild(label);
                 let control;
                 const options = Array.isArray(spec.enum)
@@ -4514,7 +4590,9 @@
                             lookupContext?.onSelection?.({ fieldName: childPath, tokens });
                         },
                     });
-                } else if (spec.type === 'object' && spec.properties && typeof spec.properties === 'object') {
+                } else if (
+                    spec.type === 'object' && spec.properties && typeof spec.properties === 'object'
+                ) {
                     const childPath = [lookupContext?.fieldPath, name].filter(Boolean).join('.');
                     control = renderStructuredObjectEditor(
                         spec,
@@ -4529,6 +4607,22 @@
                             ...(lookupContext || {}),
                             fieldPath: childPath,
                         },
+                    );
+                } else if (
+                    spec.type === 'array' && spec.items?.properties
+                    && typeof spec.items.properties === 'object'
+                ) {
+                    const childPath = [lookupContext?.fieldPath, name].filter(Boolean).join('.');
+                    control = renderStructuredObjectEditor(
+                        spec,
+                        current[name],
+                        selectedValue => {
+                            if (selectedValue === undefined) delete current[name];
+                            else current[name] = selectedValue;
+                            onChange({ ...current });
+                        },
+                        null,
+                        { ...(lookupContext || {}), fieldPath: childPath },
                     );
                 } else if (spec.options_state === 'awaiting_dependency' || spec.options_state === 'no_matching_rule') {
                     control = document.createElement('select');
@@ -4587,7 +4681,10 @@
                     if (value === undefined) delete current[name]; else current[name] = value;
                     onChange({ ...current });
                 };
-                if (!(spec.type === 'object' && spec.properties && typeof spec.properties === 'object')) {
+                if (!(
+                    (spec.type === 'object' && spec.properties && typeof spec.properties === 'object')
+                    || (spec.type === 'array' && spec.items?.properties)
+                )) {
                     control.addEventListener(control.type === 'checkbox' || control.tagName === 'SELECT' ? 'change' : 'input', commit);
                 }
                 row.appendChild(control);
@@ -5478,7 +5575,7 @@
         
         function creationCardValueText(value) {
             if (value === undefined || value === null) return '';
-            return typeof value === 'object' ? JSON.stringify(value) : String(value);
+            return typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value);
         }
 
         function creationCardDisplayValue(field) {
@@ -5491,7 +5588,7 @@
                 const lines = String(rawValue || '').split(/\r?\n/).map(item => item.trim()).filter(Boolean);
                 return field.value_shape === 'object_text' ? lines.map(text => ({ text })) : lines;
             }
-            if (field.control === 'json') {
+            if (field.control === 'json' || field.control === 'advanced_json') {
                 try { return JSON.parse(rawValue); } catch (_) { return rawValue; }
             }
             if (field.control === 'number') return rawValue === '' ? undefined : Number(rawValue);
@@ -5933,7 +6030,7 @@
             (card.fields || []).forEach(field => {
                 const item = document.createElement('div');
                 item.dataset.fieldPath = field.path;
-                const wideField = ['asset_picker', 'file_reference', 'text_list', 'object_editor', 'json'].includes(field.control);
+                const wideField = ['asset_picker', 'file_reference', 'text_list', 'object_editor', 'json', 'advanced_json'].includes(field.control);
                 item.className = `creation-card-field${wideField ? ' wide' : ''}${field.visible === false ? ' hidden' : ''}${field.state === 'missing' ? ' missing' : ''}${field.state === 'invalid' ? ' invalid' : ''}`;
                 const label = document.createElement('label');
                 label.textContent = field.label || field.path;
@@ -6074,7 +6171,9 @@
                     control.value = creationCardDisplayValue(field);
                 } else if (field.control === 'object_editor') {
                     control = renderStructuredObjectEditor(
-                        null,
+                        field.object_shape === 'array'
+                            ? { type: 'array', items: { type: 'object', properties: field.object_properties || {} } }
+                            : { type: 'object', properties: field.object_properties || {} },
                         field.value,
                         value => {
                             field.value = value;
@@ -6105,8 +6204,9 @@
                             },
                         },
                     );
-                } else if (field.control === 'json') {
+                } else if (field.control === 'json' || field.control === 'advanced_json') {
                     control = document.createElement('textarea');
+                    control.className = field.control === 'advanced_json' ? 'advanced-json-editor' : '';
                     control.placeholder = Array.isArray(field.value) ? '[...]' : '{...}';
                     control.value = creationCardValueText(field.value);
                 } else {
@@ -6129,7 +6229,7 @@
                     updateCreationCardIndicators(wrapper, card);
                 };
                 if (field.control !== 'asset_picker' && field.control !== 'file_reference' && field.control !== 'derived_readonly' && field.control !== 'object_editor' && field.control !== 'lookup') control.addEventListener('change', updateValue);
-                if (field.control === 'text' || field.control === 'text_list' || field.control === 'number') control.addEventListener('input', updateValue);
+                if (field.control === 'text' || field.control === 'text_list' || field.control === 'number' || field.control === 'advanced_json') control.addEventListener('input', updateValue);
                 item.appendChild(control);
                 const source = document.createElement('div');
                 source.className = 'source';
@@ -6138,7 +6238,8 @@
                     : field.source === 'lookup' || field.control === 'lookup' ? '需要从指定账户中选择'
                         : (field.control === 'asset_picker' || field.control === 'file_reference') ? '本地素材草稿'
                             : field.control === 'object_editor' ? '按字段填写，系统会按 Tool Schema 组装'
-                                : '可直接填写';
+                                : field.control === 'advanced_json' ? '高级 Provider 字段；请使用已审核的当前版本 payload'
+                                    : '可直接填写';
                 item.appendChild(source);
                 if (field.manual_entry && typeof field.manual_entry === 'object') {
                     const help = document.createElement('div');

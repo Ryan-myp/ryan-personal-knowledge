@@ -365,6 +365,11 @@ def test_creation_cards_expose_complete_schema_limits_and_provider_source_groups
     assert fields["ad.headlines"]["constraints"]["minItems"] == 3
     assert fields["ad.headlines"]["constraints"]["items"]["maxLength"] == 30
     assert fields["campaign.daily_budget"]["constraints"]["minimum"] == 0
+    targeting = fields["ad_group.targeting"]
+    assert targeting["control"] == "object_editor"
+    assert targeting["object_properties"]["target_restrictions"]["items"]["properties"][
+        "targeting_dimension"
+    ]["enum"]
     source_groups = [
         item for item in card["constraints"]
         if item["tool"] == "google_create_campaign" and item["type"] == "any_of"
@@ -697,6 +702,8 @@ def test_nested_creation_assets_keep_provider_sources_and_controls():
     card = runtime.build_creation_ui(intent)["cards"][0]
     fields = {item["path"]: item for item in card["fields"]}
     carousel = fields["ad.carousel_cards"]
+    assert carousel["object_shape"] == "array"
+    assert carousel["object_max_items"] == 10
     card_props = carousel["object_properties"]
     assert card_props["marketing_image_asset"]["lookup_tool"] == "google_list_assets"
     assert card_props["marketing_image_asset"]["presentation"] == "asset_picker"

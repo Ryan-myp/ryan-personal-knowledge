@@ -31,7 +31,7 @@ _MAX_FIELDS = 160
 _MAX_OPTIONS = 100
 _PRESENTATIONS = {
     "text_list", "asset_picker", "file_reference", "derived_readonly",
-    "object_editor",
+    "object_editor", "advanced_json",
 }
 _SENSITIVE_FIELD = re.compile(
     r"(?:access[_-]?token|refresh[_-]?token|client[_-]?secret|app[_-]?secret|"
@@ -1321,6 +1321,10 @@ class CreationCardBuilder:
                     for name, spec in properties.items()
                     if isinstance(spec, Mapping) and not _SENSITIVE_FIELD.search(str(name))
                 }
+                if schema.get("type") == "array":
+                    item["object_shape"] = "array"
+                    item["object_min_items"] = schema.get("minItems")
+                    item["object_max_items"] = schema.get("maxItems")
             elif (
                 schema.get("type") == "array"
                 and isinstance(schema.get("items"), Mapping)

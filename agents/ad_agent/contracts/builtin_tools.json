@@ -1,9 +1,9 @@
 {
-  "digest": "ca8ce076d697a4f1dc24b5458bfd3af8a42b65afeec16a1d1999ef78d22032c7",
+  "digest": "50430737ff4b622d8682319609206037846e88648713ea9d674d7fa1cf9bd682",
   "format_version": 1,
   "platforms": {
     "dv360": {
-      "digest": "b35ff957ac427f464fe3b62959f9cb7afcf1551c00426cbed3d12eaee1f6aec0",
+      "digest": "75b33fcb5a026d94b7a5677a7c2a1a0134d4aa030892444493a19dbec2e41271",
       "tool_count": 31,
       "tools": [
         {
@@ -480,6 +480,14 @@
                 "type": "string"
               },
               "assigned_targeting_option": {
+                "additionalProperties": true,
+                "description": "DV360 TargetingOption assignment payload",
+                "manual_entry": {
+                  "instructions": "DV360 的 targetingOptionDetails 由 targeting_type 决定；定向深度建设暂缓，请使用当前 DV360 返回或已审核的对象 payload。",
+                  "source": "dv360_assigned_targeting_option_payload",
+                  "title": "DV360 定向绑定高级配置"
+                },
+                "presentation": "advanced_json",
                 "type": "object"
               },
               "line_item_id": {
@@ -542,6 +550,14 @@
                 "type": "string"
               },
               "report": {
+                "additionalProperties": true,
+                "description": "DV360 asynchronous report definition",
+                "manual_entry": {
+                  "instructions": "报表 dimensions、metricColumns、时间范围和过滤器会随 DV360 报表版本变化；请使用已审核的报表定义。",
+                  "source": "dv360_report_definition_payload",
+                  "title": "DV360 报表定义高级配置"
+                },
+                "presentation": "advanced_json",
                 "type": "object"
               }
             },
@@ -2005,7 +2021,7 @@
       ]
     },
     "google-ads": {
-      "digest": "e533b612144443b3e9f3221f394ce7b3ae54b53d71937b79aebd5a54d3286ab0",
+      "digest": "a02c5467da0309569b78d668abaca7a93a20537706b5a70e34d47b273d5f3a1d",
       "tool_count": 108,
       "tools": [
         {
@@ -2142,7 +2158,13 @@
               },
               "responsive_display_ad": {
                 "additionalProperties": true,
-                "description": "Responsive Display Ad payload",
+                "description": "Responsive Display Ad 高级 payload；优先使用专用字段",
+                "manual_entry": {
+                  "instructions": "优先使用标题、长标题、描述和素材字段；仅当 Google Ads API 版本要求额外字段时填写 JSON 对象。",
+                  "source": "google_responsive_display_ad_payload",
+                  "title": "高级 Responsive Display 字段"
+                },
+                "presentation": "advanced_json",
                 "type": "object",
                 "ui_visible_when": {
                   "equals": "RESPONSIVE_DISPLAY_AD",
@@ -2152,6 +2174,88 @@
               "responsive_search_ad": {
                 "additionalProperties": true,
                 "description": "Responsive Search Ad payload",
+                "manual_entry": {
+                  "instructions": "优先填写上方标题、描述和路径字段；只有 Google Ads API 版本要求额外 ResponsiveSearchAdInfo 字段时才填写此对象。未知字段不会被自动猜测。",
+                  "source": "google_responsive_search_ad_payload",
+                  "title": "高级 RSA 字段"
+                },
+                "presentation": "object_editor",
+                "properties": {
+                  "descriptions": {
+                    "description": "Responsive Search Ad descriptions",
+                    "items": {
+                      "additionalProperties": false,
+                      "description": "Google text asset",
+                      "properties": {
+                        "pinned_field": {
+                          "description": "Optional pinned RSA field",
+                          "enum": [
+                            "HEADLINE_1",
+                            "HEADLINE_2",
+                            "HEADLINE_3",
+                            "DESCRIPTION_1",
+                            "DESCRIPTION_2"
+                          ],
+                          "type": "string"
+                        },
+                        "text": {
+                          "description": "Text asset",
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "text"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 4,
+                    "minItems": 2,
+                    "type": "array"
+                  },
+                  "headlines": {
+                    "description": "Responsive Search Ad headlines",
+                    "items": {
+                      "additionalProperties": false,
+                      "description": "Google text asset",
+                      "properties": {
+                        "pinned_field": {
+                          "description": "Optional pinned RSA field",
+                          "enum": [
+                            "HEADLINE_1",
+                            "HEADLINE_2",
+                            "HEADLINE_3",
+                            "DESCRIPTION_1",
+                            "DESCRIPTION_2"
+                          ],
+                          "type": "string"
+                        },
+                        "text": {
+                          "description": "Text asset",
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "text"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 15,
+                    "minItems": 3,
+                    "type": "array"
+                  },
+                  "path1": {
+                    "description": "Display path 1",
+                    "maxLength": 15,
+                    "type": "string"
+                  },
+                  "path2": {
+                    "description": "Display path 2",
+                    "maxLength": 15,
+                    "type": "string"
+                  }
+                },
                 "type": "object",
                 "ui_visible_when": {
                   "equals": "RESPONSIVE_SEARCH_AD",
@@ -2169,7 +2273,13 @@
               },
               "video": {
                 "additionalProperties": true,
-                "description": "Video ad payload",
+                "description": "Video Ad 高级 payload；优先使用视频格式和视频 ID",
+                "manual_entry": {
+                  "instructions": "优先使用视频格式、YouTube 视频 ID、落地页和 CTA 字段；仅当 Provider 版本要求额外字段时填写 JSON 对象。",
+                  "source": "google_video_ad_payload",
+                  "title": "高级 Video Ad 字段"
+                },
+                "presentation": "advanced_json",
                 "type": "object",
                 "ui_visible_when": {
                   "equals": "VIDEO",
@@ -2404,8 +2514,47 @@
                 "type": "string"
               },
               "targeting": {
-                "additionalProperties": true,
-                "description": "Ad group targeting",
+                "additionalProperties": false,
+                "description": "Google AdGroup targeting settings",
+                "properties": {
+                  "target_restrictions": {
+                    "description": "Ad group targeting restrictions",
+                    "items": {
+                      "additionalProperties": false,
+                      "description": "Targeting restriction",
+                      "properties": {
+                        "bid_only": {
+                          "description": "Bid only instead of restricting reach",
+                          "type": "boolean"
+                        },
+                        "targeting_dimension": {
+                          "description": "Dimension to restrict",
+                          "enum": [
+                            "AUDIENCE",
+                            "AGE_RANGE",
+                            "GENDER",
+                            "INCOME_RANGE",
+                            "PARENTAL_STATUS",
+                            "PLACEMENT",
+                            "TOPIC",
+                            "USER_INTEREST",
+                            "CUSTOM_AFFINITY",
+                            "CUSTOM_INTENT",
+                            "KEYWORD",
+                            "LOCATION"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "targeting_dimension"
+                      ],
+                      "type": "object"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
                 "type": "object"
               },
               "type": {
@@ -4130,11 +4279,17 @@
                 "description": "Google Local Services campaign settings",
                 "properties": {
                   "category_bids": {
-                    "description": "Local Services category bids",
+                    "description": "Local Services category bids advanced payload",
                     "items": {
                       "additionalProperties": false,
                       "type": "object"
                     },
+                    "manual_entry": {
+                      "instructions": "类目 ID 和出价字段由 Local Services 账户及 API 版本决定；请粘贴 Google 返回的对象数组，系统不会替你猜测类目。",
+                      "source": "google_local_services_category_bids",
+                      "title": "Local Services 类目出价"
+                    },
+                    "presentation": "advanced_json",
                     "type": "array"
                   }
                 },
@@ -6558,19 +6713,31 @@
             "conditional_rules": [],
             "properties": {
               "attribute_values": {
-                "description": "FeedItem attribute values",
+                "description": "FeedItem attribute values advanced payload",
                 "items": {
                   "additionalProperties": true,
                   "type": "object"
                 },
+                "manual_entry": {
+                  "instructions": "属性值必须引用目标 Feed 的 attribute_id，并使用与 FeedAttribute 类型匹配的值字段；请按已审核的 Google payload 填写。",
+                  "source": "google_feed_item_attribute_payload",
+                  "title": "FeedItem 属性值"
+                },
+                "presentation": "advanced_json",
                 "type": "array"
               },
               "attributes": {
-                "description": "Feed attribute definitions",
+                "description": "Feed attribute definitions advanced payload",
                 "items": {
                   "additionalProperties": true,
                   "type": "object"
                 },
+                "manual_entry": {
+                  "instructions": "Feed 属性的 name、type 等字段必须与 Google FeedAttribute 版本契约一致；请使用 Google 返回或已审核的对象数组。",
+                  "source": "google_feed_attribute_payload",
+                  "title": "Feed 属性定义"
+                },
+                "presentation": "advanced_json",
                 "type": "array"
               },
               "customer_id": {
@@ -6689,19 +6856,31 @@
             "conditional_rules": [],
             "properties": {
               "attribute_values": {
-                "description": "FeedItem attribute values",
+                "description": "FeedItem attribute values advanced payload",
                 "items": {
                   "additionalProperties": true,
                   "type": "object"
                 },
+                "manual_entry": {
+                  "instructions": "属性值必须引用目标 Feed 的 attribute_id，并使用与 FeedAttribute 类型匹配的值字段；请按已审核的 Google payload 填写。",
+                  "source": "google_feed_item_attribute_payload",
+                  "title": "FeedItem 属性值"
+                },
+                "presentation": "advanced_json",
                 "type": "array"
               },
               "attributes": {
-                "description": "Feed attribute definitions",
+                "description": "Feed attribute definitions advanced payload",
                 "items": {
                   "additionalProperties": true,
                   "type": "object"
                 },
+                "manual_entry": {
+                  "instructions": "Feed 属性的 name、type 等字段必须与 Google FeedAttribute 版本契约一致；请使用 Google 返回或已审核的对象数组。",
+                  "source": "google_feed_attribute_payload",
+                  "title": "Feed 属性定义"
+                },
+                "presentation": "advanced_json",
                 "type": "array"
               },
               "customer_id": {
@@ -8497,6 +8676,88 @@
               "responsive_search_ad": {
                 "additionalProperties": true,
                 "description": "Responsive Search Ad payload",
+                "manual_entry": {
+                  "instructions": "优先填写上方标题、描述和路径字段；只有 Google Ads API 版本要求额外 ResponsiveSearchAdInfo 字段时才填写此对象。未知字段不会被自动猜测。",
+                  "source": "google_responsive_search_ad_payload",
+                  "title": "高级 RSA 字段"
+                },
+                "presentation": "object_editor",
+                "properties": {
+                  "descriptions": {
+                    "description": "Responsive Search Ad descriptions",
+                    "items": {
+                      "additionalProperties": false,
+                      "description": "Google text asset",
+                      "properties": {
+                        "pinned_field": {
+                          "description": "Optional pinned RSA field",
+                          "enum": [
+                            "HEADLINE_1",
+                            "HEADLINE_2",
+                            "HEADLINE_3",
+                            "DESCRIPTION_1",
+                            "DESCRIPTION_2"
+                          ],
+                          "type": "string"
+                        },
+                        "text": {
+                          "description": "Text asset",
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "text"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 4,
+                    "minItems": 2,
+                    "type": "array"
+                  },
+                  "headlines": {
+                    "description": "Responsive Search Ad headlines",
+                    "items": {
+                      "additionalProperties": false,
+                      "description": "Google text asset",
+                      "properties": {
+                        "pinned_field": {
+                          "description": "Optional pinned RSA field",
+                          "enum": [
+                            "HEADLINE_1",
+                            "HEADLINE_2",
+                            "HEADLINE_3",
+                            "DESCRIPTION_1",
+                            "DESCRIPTION_2"
+                          ],
+                          "type": "string"
+                        },
+                        "text": {
+                          "description": "Text asset",
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "text"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 15,
+                    "minItems": 3,
+                    "type": "array"
+                  },
+                  "path1": {
+                    "description": "Display path 1",
+                    "maxLength": 15,
+                    "type": "string"
+                  },
+                  "path2": {
+                    "description": "Display path 2",
+                    "maxLength": 15,
+                    "type": "string"
+                  }
+                },
                 "type": "object",
                 "ui_visible_when": {
                   "equals": "RESPONSIVE_SEARCH_AD",
@@ -8860,8 +9121,47 @@
                 "type": "string"
               },
               "targeting": {
-                "additionalProperties": true,
-                "description": "Ad group targeting",
+                "additionalProperties": false,
+                "description": "Google AdGroup targeting settings",
+                "properties": {
+                  "target_restrictions": {
+                    "description": "Ad group targeting restrictions",
+                    "items": {
+                      "additionalProperties": false,
+                      "description": "Targeting restriction",
+                      "properties": {
+                        "bid_only": {
+                          "description": "Bid only instead of restricting reach",
+                          "type": "boolean"
+                        },
+                        "targeting_dimension": {
+                          "description": "Dimension to restrict",
+                          "enum": [
+                            "AUDIENCE",
+                            "AGE_RANGE",
+                            "GENDER",
+                            "INCOME_RANGE",
+                            "PARENTAL_STATUS",
+                            "PLACEMENT",
+                            "TOPIC",
+                            "USER_INTEREST",
+                            "CUSTOM_AFFINITY",
+                            "CUSTOM_INTENT",
+                            "KEYWORD",
+                            "LOCATION"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "targeting_dimension"
+                      ],
+                      "type": "object"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
                 "type": "object"
               },
               "type": {
@@ -9203,7 +9503,13 @@
               },
               "companion_banner": {
                 "additionalProperties": true,
-                "description": "Optional companion banner",
+                "description": "Optional companion banner advanced payload",
+                "manual_entry": {
+                  "instructions": "Google 视频广告的伴随横幅字段受广告格式和 API 版本影响；优先使用已上传素材 ID，只有 Provider 明确要求额外对象时才填写。",
+                  "source": "google_companion_banner_payload",
+                  "title": "高级伴随横幅字段"
+                },
+                "presentation": "advanced_json",
                 "type": "object"
               },
               "display_url": {
@@ -10225,19 +10531,31 @@
             "conditional_rules": [],
             "properties": {
               "attribute_values": {
-                "description": "FeedItem attribute values",
+                "description": "FeedItem attribute values advanced payload",
                 "items": {
                   "additionalProperties": true,
                   "type": "object"
                 },
+                "manual_entry": {
+                  "instructions": "属性值必须引用目标 Feed 的 attribute_id，并使用与 FeedAttribute 类型匹配的值字段；请按已审核的 Google payload 填写。",
+                  "source": "google_feed_item_attribute_payload",
+                  "title": "FeedItem 属性值"
+                },
+                "presentation": "advanced_json",
                 "type": "array"
               },
               "attributes": {
-                "description": "Feed attribute definitions",
+                "description": "Feed attribute definitions advanced payload",
                 "items": {
                   "additionalProperties": true,
                   "type": "object"
                 },
+                "manual_entry": {
+                  "instructions": "Feed 属性的 name、type 等字段必须与 Google FeedAttribute 版本契约一致；请使用 Google 返回或已审核的对象数组。",
+                  "source": "google_feed_attribute_payload",
+                  "title": "Feed 属性定义"
+                },
+                "presentation": "advanced_json",
                 "type": "array"
               },
               "customer_id": {
@@ -10354,19 +10672,31 @@
             "conditional_rules": [],
             "properties": {
               "attribute_values": {
-                "description": "FeedItem attribute values",
+                "description": "FeedItem attribute values advanced payload",
                 "items": {
                   "additionalProperties": true,
                   "type": "object"
                 },
+                "manual_entry": {
+                  "instructions": "属性值必须引用目标 Feed 的 attribute_id，并使用与 FeedAttribute 类型匹配的值字段；请按已审核的 Google payload 填写。",
+                  "source": "google_feed_item_attribute_payload",
+                  "title": "FeedItem 属性值"
+                },
+                "presentation": "advanced_json",
                 "type": "array"
               },
               "attributes": {
-                "description": "Feed attribute definitions",
+                "description": "Feed attribute definitions advanced payload",
                 "items": {
                   "additionalProperties": true,
                   "type": "object"
                 },
+                "manual_entry": {
+                  "instructions": "Feed 属性的 name、type 等字段必须与 Google FeedAttribute 版本契约一致；请使用 Google 返回或已审核的对象数组。",
+                  "source": "google_feed_attribute_payload",
+                  "title": "Feed 属性定义"
+                },
+                "presentation": "advanced_json",
                 "type": "array"
               },
               "customer_id": {
@@ -11786,19 +12116,31 @@
             "conditional_rules": [],
             "properties": {
               "attribute_values": {
-                "description": "FeedItem attribute values",
+                "description": "FeedItem attribute values advanced payload",
                 "items": {
                   "additionalProperties": true,
                   "type": "object"
                 },
+                "manual_entry": {
+                  "instructions": "属性值必须引用目标 Feed 的 attribute_id，并使用与 FeedAttribute 类型匹配的值字段；请按已审核的 Google payload 填写。",
+                  "source": "google_feed_item_attribute_payload",
+                  "title": "FeedItem 属性值"
+                },
+                "presentation": "advanced_json",
                 "type": "array"
               },
               "attributes": {
-                "description": "Feed attribute definitions",
+                "description": "Feed attribute definitions advanced payload",
                 "items": {
                   "additionalProperties": true,
                   "type": "object"
                 },
+                "manual_entry": {
+                  "instructions": "Feed 属性的 name、type 等字段必须与 Google FeedAttribute 版本契约一致；请使用 Google 返回或已审核的对象数组。",
+                  "source": "google_feed_attribute_payload",
+                  "title": "Feed 属性定义"
+                },
+                "presentation": "advanced_json",
                 "type": "array"
               },
               "customer_id": {
@@ -11915,19 +12257,31 @@
             "conditional_rules": [],
             "properties": {
               "attribute_values": {
-                "description": "FeedItem attribute values",
+                "description": "FeedItem attribute values advanced payload",
                 "items": {
                   "additionalProperties": true,
                   "type": "object"
                 },
+                "manual_entry": {
+                  "instructions": "属性值必须引用目标 Feed 的 attribute_id，并使用与 FeedAttribute 类型匹配的值字段；请按已审核的 Google payload 填写。",
+                  "source": "google_feed_item_attribute_payload",
+                  "title": "FeedItem 属性值"
+                },
+                "presentation": "advanced_json",
                 "type": "array"
               },
               "attributes": {
-                "description": "Feed attribute definitions",
+                "description": "Feed attribute definitions advanced payload",
                 "items": {
                   "additionalProperties": true,
                   "type": "object"
                 },
+                "manual_entry": {
+                  "instructions": "Feed 属性的 name、type 等字段必须与 Google FeedAttribute 版本契约一致；请使用 Google 返回或已审核的对象数组。",
+                  "source": "google_feed_attribute_payload",
+                  "title": "Feed 属性定义"
+                },
+                "presentation": "advanced_json",
                 "type": "array"
               },
               "customer_id": {
@@ -13445,19 +13799,31 @@
             "conditional_rules": [],
             "properties": {
               "attribute_values": {
-                "description": "FeedItem attribute values",
+                "description": "FeedItem attribute values advanced payload",
                 "items": {
                   "additionalProperties": true,
                   "type": "object"
                 },
+                "manual_entry": {
+                  "instructions": "属性值必须引用目标 Feed 的 attribute_id，并使用与 FeedAttribute 类型匹配的值字段；请按已审核的 Google payload 填写。",
+                  "source": "google_feed_item_attribute_payload",
+                  "title": "FeedItem 属性值"
+                },
+                "presentation": "advanced_json",
                 "type": "array"
               },
               "attributes": {
-                "description": "Feed attribute definitions",
+                "description": "Feed attribute definitions advanced payload",
                 "items": {
                   "additionalProperties": true,
                   "type": "object"
                 },
+                "manual_entry": {
+                  "instructions": "Feed 属性的 name、type 等字段必须与 Google FeedAttribute 版本契约一致；请使用 Google 返回或已审核的对象数组。",
+                  "source": "google_feed_attribute_payload",
+                  "title": "Feed 属性定义"
+                },
+                "presentation": "advanced_json",
                 "type": "array"
               },
               "customer_id": {
@@ -13575,19 +13941,31 @@
             "conditional_rules": [],
             "properties": {
               "attribute_values": {
-                "description": "FeedItem attribute values",
+                "description": "FeedItem attribute values advanced payload",
                 "items": {
                   "additionalProperties": true,
                   "type": "object"
                 },
+                "manual_entry": {
+                  "instructions": "属性值必须引用目标 Feed 的 attribute_id，并使用与 FeedAttribute 类型匹配的值字段；请按已审核的 Google payload 填写。",
+                  "source": "google_feed_item_attribute_payload",
+                  "title": "FeedItem 属性值"
+                },
+                "presentation": "advanced_json",
                 "type": "array"
               },
               "attributes": {
-                "description": "Feed attribute definitions",
+                "description": "Feed attribute definitions advanced payload",
                 "items": {
                   "additionalProperties": true,
                   "type": "object"
                 },
+                "manual_entry": {
+                  "instructions": "Feed 属性的 name、type 等字段必须与 Google FeedAttribute 版本契约一致；请使用 Google 返回或已审核的对象数组。",
+                  "source": "google_feed_attribute_payload",
+                  "title": "Feed 属性定义"
+                },
+                "presentation": "advanced_json",
                 "type": "array"
               },
               "customer_id": {
@@ -15593,19 +15971,31 @@
             "conditional_rules": [],
             "properties": {
               "attribute_values": {
-                "description": "FeedItem attribute values",
+                "description": "FeedItem attribute values advanced payload",
                 "items": {
                   "additionalProperties": true,
                   "type": "object"
                 },
+                "manual_entry": {
+                  "instructions": "属性值必须引用目标 Feed 的 attribute_id，并使用与 FeedAttribute 类型匹配的值字段；请按已审核的 Google payload 填写。",
+                  "source": "google_feed_item_attribute_payload",
+                  "title": "FeedItem 属性值"
+                },
+                "presentation": "advanced_json",
                 "type": "array"
               },
               "attributes": {
-                "description": "Feed attribute definitions",
+                "description": "Feed attribute definitions advanced payload",
                 "items": {
                   "additionalProperties": true,
                   "type": "object"
                 },
+                "manual_entry": {
+                  "instructions": "Feed 属性的 name、type 等字段必须与 Google FeedAttribute 版本契约一致；请使用 Google 返回或已审核的对象数组。",
+                  "source": "google_feed_attribute_payload",
+                  "title": "Feed 属性定义"
+                },
+                "presentation": "advanced_json",
                 "type": "array"
               },
               "customer_id": {
@@ -15763,11 +16153,17 @@
                 "additionalProperties": false,
                 "properties": {
                   "attribute_values": {
-                    "description": "FeedItem attribute values",
+                    "description": "FeedItem attribute values advanced payload",
                     "items": {
                       "additionalProperties": true,
                       "type": "object"
                     },
+                    "manual_entry": {
+                      "instructions": "属性值必须引用目标 Feed 的 attribute_id，并使用与 FeedAttribute 类型匹配的值字段；请按已审核的 Google payload 填写。",
+                      "source": "google_feed_item_attribute_payload",
+                      "title": "FeedItem 属性值"
+                    },
+                    "presentation": "advanced_json",
                     "type": "array"
                   }
                 },
@@ -16239,7 +16635,7 @@
       ]
     },
     "meta": {
-      "digest": "d3d77edc4221c86c1538727ec88d0574e8eea8d52c078400c18365f433500a74",
+      "digest": "84b8192a8dd98a70704ab37debf015b9f9e00bf9366c95d9c7a1f0af5311eec7",
       "tool_count": 76,
       "tools": [
         {
@@ -17191,7 +17587,49 @@
               },
               "lead_gen_config": {
                 "additionalProperties": true,
-                "description": "Instant Form configuration",
+                "description": "Meta lead generation configuration",
+                "properties": {
+                  "form_id": {
+                    "description": "Published Instant Form",
+                    "lookup_dependencies": [
+                      {
+                        "input_field": "page_id",
+                        "label": "所属 Facebook Page",
+                        "required": true,
+                        "value_path": "page_id"
+                      }
+                    ],
+                    "lookup_result_key": "lead_forms",
+                    "lookup_tool": "meta_list_lead_forms",
+                    "minLength": 1,
+                    "selection_label_fields": [
+                      "name",
+                      "form_name",
+                      "id"
+                    ],
+                    "selection_value_fields": [
+                      "id",
+                      "form_id"
+                    ],
+                    "type": "string"
+                  },
+                  "page_id": {
+                    "description": "Facebook Page used by the lead flow",
+                    "lookup_result_key": "pages",
+                    "lookup_tool": "meta_list_pages",
+                    "minLength": 1,
+                    "selection_label_fields": [
+                      "name",
+                      "page_name",
+                      "id"
+                    ],
+                    "selection_value_fields": [
+                      "id",
+                      "page_id"
+                    ],
+                    "type": "string"
+                  }
+                },
                 "type": "object",
                 "ui_visible_when": {
                   "field": "optimization_goal",
@@ -18196,6 +18634,12 @@
               "rule": {
                 "additionalProperties": true,
                 "description": "Meta website/event audience rule",
+                "manual_entry": {
+                  "instructions": "规则结构取决于 Pixel、事件源和 Meta API 版本；请使用已审核的事件规则对象，系统不会替你推断事件字段。",
+                  "source": "meta_audience_rule_expression",
+                  "title": "受众规则高级配置"
+                },
+                "presentation": "advanced_json",
                 "type": "object"
               },
               "subtype": {
@@ -20289,6 +20733,12 @@
               "filter": {
                 "additionalProperties": true,
                 "description": "Meta product set filter expression",
+                "manual_entry": {
+                  "instructions": "过滤字段和操作符由 Catalog 商品类型及 Meta API 版本决定；优先从 Meta 返回结果或已审核模板复制，系统不会猜测表达式。",
+                  "source": "meta_product_set_filter_expression",
+                  "title": "Product Set 过滤表达式"
+                },
+                "presentation": "advanced_json",
                 "type": "object"
               },
               "name": {
@@ -25004,6 +25454,12 @@
                   "filter": {
                     "additionalProperties": true,
                     "description": "Meta product set filter expression",
+                    "manual_entry": {
+                      "instructions": "请使用与当前 Catalog 商品类型匹配的已审核过滤表达式。",
+                      "source": "meta_product_set_filter_expression",
+                      "title": "Product Set 过滤表达式"
+                    },
+                    "presentation": "advanced_json",
                     "type": "object"
                   },
                   "name": {
@@ -25187,6 +25643,12 @@
               "rule": {
                 "additionalProperties": true,
                 "description": "Meta website/event audience rule",
+                "manual_entry": {
+                  "instructions": "规则结构取决于 Pixel、事件源和 Meta API 版本；请使用已审核的事件规则对象，系统不会替你推断事件字段。",
+                  "source": "meta_audience_rule_expression",
+                  "title": "受众规则高级配置"
+                },
+                "presentation": "advanced_json",
                 "type": "object"
               },
               "subtype": {
@@ -25457,7 +25919,7 @@
       ]
     },
     "tiktok": {
-      "digest": "e8da86ac919f44b4cd3b9bf51a51662085b87dcab7d6fcf8cd9de49014226c88",
+      "digest": "dd2419ec4a792bf005ec8395acbb8b329a2f9900c378a0e767f541d3e1918b4a",
       "tool_count": 79,
       "tools": [
         {
@@ -27366,7 +27828,13 @@
               },
               "targeting_expansion": {
                 "additionalProperties": true,
-                "description": "Targeting expansion settings",
+                "description": "Targeting expansion advanced settings",
+                "manual_entry": {
+                  "instructions": "定向扩展字段会随 TikTok objective、市场和 API 版本变化；优先使用上方已声明的定向字段，仅在拿到当前版本 Provider payload 时粘贴对象。",
+                  "source": "tiktok_targeting_expansion_payload",
+                  "title": "TikTok 定向扩展高级配置"
+                },
+                "presentation": "advanced_json",
                 "type": "object"
               },
               "tracking_url": {
@@ -28853,8 +29321,14 @@
                   "additionalProperties": true,
                   "type": "object"
                 },
+                "manual_entry": {
+                  "instructions": "内容字段由 creative_portfolio_type 决定（如 CTA、CARD、PRODUCT_CARD），请按 TikTok 当前版本返回的对象结构填写；未知字段不会被系统猜测。",
+                  "source": "tiktok_creative_portfolio_payload",
+                  "title": "Creative Portfolio 内容"
+                },
                 "maxItems": 100,
                 "minItems": 1,
+                "presentation": "advanced_json",
                 "type": "array"
               }
             },
@@ -31338,7 +31812,13 @@
               },
               "targeting_expansion": {
                 "additionalProperties": true,
-                "description": "Targeting expansion settings",
+                "description": "Targeting expansion advanced settings",
+                "manual_entry": {
+                  "instructions": "定向扩展字段会随 TikTok objective、市场和 API 版本变化；优先使用上方已声明的定向字段，仅在拿到当前版本 Provider payload 时粘贴对象。",
+                  "source": "tiktok_targeting_expansion_payload",
+                  "title": "TikTok 定向扩展高级配置"
+                },
+                "presentation": "advanced_json",
                 "type": "object"
               },
               "tracking_url": {

@@ -150,6 +150,20 @@ def _meta_asset_ref(
     )
 
 
+def _meta_lead_gen_config_schema() -> dict[str, Any]:
+    """Known account/page/form references for lead ad-set configuration."""
+    return _object({
+        "page_id": _meta_asset_ref(
+            "Facebook Page used by the lead flow", "meta_list_pages", "pages",
+            ["id", "page_id"], ["name", "id"],
+        ),
+        "form_id": _meta_asset_ref(
+            "Published Instant Form", "meta_list_lead_forms", "lead_forms",
+            ["id", "form_id"], ["name", "id"],
+        ),
+    }, "Meta lead generation configuration", additional_properties=True)
+
+
 def meta_targeting_schema() -> dict[str, Any]:
     """Known Meta targeting dimensions; IDs remain provider/account scoped."""
     audience_ref = _object({
@@ -281,7 +295,15 @@ def meta_audience_schema() -> dict[str, Any]:
                 "string", "Source of customer-file data", enum=META_CUSTOMER_FILE_SOURCES,
             ),
             "retention_days": _field("integer", "Website/event retention window", minimum=1, maximum=180),
-            "rule": _field("object", "Meta website/event audience rule", additionalProperties=True),
+            "rule": _field(
+                "object", "Meta website/event audience rule",
+                additionalProperties=True, presentation="advanced_json",
+                manual_entry={
+                    "title": "受众规则高级配置",
+                    "instructions": "规则结构取决于 Pixel、事件源和 Meta API 版本；请使用已审核的事件规则对象，系统不会替你推断事件字段。",
+                    "source": "meta_audience_rule_expression",
+                },
+            ),
             "prefill": _field("boolean", "Prefill audience with prior events"),
             "pixel_id": _field(
                 "string", "Meta Pixel source ID",
@@ -431,7 +453,12 @@ def meta_product_set_schema() -> dict[str, Any]:
             "name": _field("string", "Product Set name", minLength=1, maxLength=200),
             "filter": _field(
                 "object", "Meta product set filter expression",
-                additionalProperties=True,
+                additionalProperties=True, presentation="advanced_json",
+                manual_entry={
+                    "title": "Product Set 过滤表达式",
+                    "instructions": "过滤字段和操作符由 Catalog 商品类型及 Meta API 版本决定；优先从 Meta 返回结果或已审核模板复制，系统不会猜测表达式。",
+                    "source": "meta_product_set_filter_expression",
+                },
             ),
             "fields": _field("array", "Fields to return", items={"type": "string"}),
             "limit": _field("integer", "Maximum number of records", minimum=1, maximum=1000),
@@ -439,7 +466,12 @@ def meta_product_set_schema() -> dict[str, Any]:
                 "name": _field("string", "Product Set name", minLength=1, maxLength=200),
                 "filter": _field(
                     "object", "Meta product set filter expression",
-                    additionalProperties=True,
+                    additionalProperties=True, presentation="advanced_json",
+                    manual_entry={
+                        "title": "Product Set 过滤表达式",
+                        "instructions": "请使用与当前 Catalog 商品类型匹配的已审核过滤表达式。",
+                        "source": "meta_product_set_filter_expression",
+                    },
                 ),
             }, "Supported Product Set update fields"),
         },
@@ -897,7 +929,7 @@ def meta_adset_schema() -> dict[str, Any]:
             "start_time": _field("string", "ISO-8601 start time"),
             "end_time": _field("string", "ISO-8601 end time"),
             "lead_gen_config": {
-                **_field("object", "Instant Form configuration", additionalProperties=True),
+                **_meta_lead_gen_config_schema(),
                 **_ui_when("optimization_goal", "LEAD_GENERATION", "LEADS"),
             },
             "product_set_id": _field(

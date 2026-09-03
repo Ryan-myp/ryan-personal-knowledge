@@ -23,7 +23,7 @@ class BlueprintValidationError(ValueError):
 _SAFE_SOURCES = {"tool_schema", "enum", "lookup", "static"}
 _SAFE_PRESENTATIONS = {
     "text_list", "asset_picker", "file_reference", "derived_readonly",
-    "object_editor",
+    "object_editor", "advanced_json",
 }
 _FORBIDDEN_KEYS = {
     "script", "scripts", "command", "commands", "exec", "execute",
