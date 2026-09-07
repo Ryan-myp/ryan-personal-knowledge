@@ -13,9 +13,55 @@ import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from typing import Any, Optional
 
-from ..core.interfaces import ToolResult
+from ..core.interfaces import ToolDefinition, ToolError, ToolResult
 from ..core.tool_registry import validate_tool_input
 from ..core.features import RuntimeServices
+from ..api_clients.base import APIError, AuthError, RateLimitError, TemporaryError
+
+
+def classify_error(error: Exception, tool: ToolDefinition) -> ToolError:
+    """Map execution failures to stable recovery semantics.
+
+    A timeout/transport failure during a write is never safely retryable: the
+    provider may have accepted the request before the client lost the reply.
+    Reads can be retried, while auth/input failures are terminal until the
+    caller changes the request or credentials through trusted configuration.
+    """
+    message = str(error)
+    if isinstance(error, (TimeoutError, FutureTimeoutError)):
+        if tool.is_write_tool:
+            return ToolError(
+                "provider_result_unknown", "PROVIDER_RESULT_UNKNOWN", message,
+                "Reconcile provider state before any retry",
+            )
+        return ToolError("retriable", "TIMEOUT", message, "Retry automatically")
+    if isinstance(error, AuthError):
+        return ToolError(
+            "non_retriable", "AUTH_EXPIRED", message,
+            "Refresh credentials through trusted configuration",
+        )
+    if isinstance(error, RateLimitError):
+        return ToolError("retriable", "RATE_LIMIT", message, "Retry with backoff")
+    if isinstance(error, TemporaryError):
+        if tool.is_write_tool:
+            return ToolError(
+                "provider_result_unknown", "PROVIDER_RESULT_UNKNOWN", message,
+                "Reconcile provider state before any retry",
+            )
+        return ToolError(
+            "retriable", "PROVIDER_TEMPORARY_ERROR", message,
+            "Retry with backoff",
+        )
+    if isinstance(error, APIError) and int(getattr(error, "status_code", 0) or 0) >= 500:
+        if tool.is_write_tool:
+            return ToolError(
+                "provider_result_unknown", "PROVIDER_RESULT_UNKNOWN", message,
+                "Reconcile provider state before any retry",
+            )
+        return ToolError("retriable", "PROVIDER_5XX", message, "Retry with backoff")
+    if isinstance(error, (ValueError, TypeError, PermissionError)):
+        return ToolError("non_retriable", "INVALID_REQUEST", message, "Fix the request")
+    return ToolError("non_retriable", "TOOL_EXECUTION_ERROR", message, "Inspect the error")
 
 
 class ToolExecutor:
@@ -117,6 +163,9 @@ class ToolExecutor:
                         "；这是外部写操作，结果未知，必须先进行状态核对，不能直接重试"
                         if is_uncertain_write else ""
                     )
+                ),
+                error_detail=classify_error(
+                    TimeoutError(f"tool {tool_name} exceeded deadline"), definition
                 ),
             )
 
@@ -301,8 +350,11 @@ class ToolExecutor:
                 # provider payload details before Runtime persistence gets a
                 # chance to redact it.
                 safe_error = self.services.redact(str(exc))
+                detail = classify_error(exc, definition)
                 return self.services.security.sanitize_result(
-                    ToolResult.error(f"工具 {tool_name} 执行失败：{safe_error}")
+                    ToolResult.error(
+                        f"工具 {tool_name} 执行失败：{safe_error}", detail=detail
+                    )
                 )
             finally:
                 executor.shutdown(wait=False, cancel_futures=True)

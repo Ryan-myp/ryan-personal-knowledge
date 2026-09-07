@@ -104,6 +104,40 @@ class ToolCallRecord:
 
 
 @dataclass
+class OutboxEvent:
+    """Durable workflow event waiting for an external publisher."""
+
+    event_id: str
+    run_id: str
+    event_type: str
+    payload: dict[str, Any] = field(default_factory=dict)
+    status: str = "pending"
+    retry_count: int = 0
+    next_retry_at: str | None = None
+    created_at: str = ""
+    claimed_by: str | None = None
+    claimed_at: str | None = None
+    last_error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        value = asdict(self)
+        value["payload"] = json.loads(json.dumps(self.payload or {}, ensure_ascii=False))
+        return value
+
+    @classmethod
+    def from_row(cls, row: Any) -> "OutboxEvent":
+        data = dict(row) if isinstance(row, dict) else dict(row)
+        payload = data.get("payload")
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload or "{}")
+            except (TypeError, ValueError):
+                payload = {}
+        data["payload"] = payload if isinstance(payload, dict) else {}
+        return cls(**data)
+
+
+@dataclass
 class ConversationMessageRecord:
     """One durable, sanitized user/assistant message in a session."""
 

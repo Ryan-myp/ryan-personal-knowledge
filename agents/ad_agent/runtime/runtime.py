@@ -79,6 +79,7 @@ from .session_context import SessionContext
 from .capability_context import CapabilityContextWrapper
 from .security import RuntimeSecurity
 from .tool_executor import ToolExecutor
+from .outbox import OutboxPublisher
 from .task_executor import TaskExecutionContext, TaskExecutor
 from ..persistence.session_manager import SessionManager
 from ..persistence.interfaces import PersistenceBackend
@@ -397,6 +398,7 @@ class AgentRuntime:
                 self.write_guard.bind_store(persistence_store)
         else:
             self._persistence_store = None
+        self.outbox = OutboxPublisher(self._session_manager) if self._session_manager else None
 
         # 只读模式：只注册 READ 类工具，跳过写保护检查
         self._read_only_mode = read_only_mode
@@ -4642,6 +4644,12 @@ class AgentRuntime:
                         self.security.confirmation_plan(
                             session_id, session.ctx.user_id, session.ctx.account_id,
                             tool_def, tool_input,
+                            preview={
+                                "tool": tool_def.name,
+                                "platform": actual_platform,
+                                "account_id": session.ctx.account_id,
+                                "input": self._redact_for_persistence(tool_input),
+                            },
                         ),
                         create=not confirmed,
                     )
@@ -4754,15 +4762,22 @@ class AgentRuntime:
 
                 # 使用最终规范化后的输入生成幂等键，保证 reserve 与成功后的
                 # mark_executed 使用同一组字段；不能使用原始自然语言参数。
+                write_reservation = None
                 if (
                     self.execution_mode == ExecutionMode.LIVE.value
                     and not self._read_only_mode
                     and tool_def.is_write_tool
                     and self.write_guard
                 ):
-                    allowed, reason = self.write_guard.reserve_write(
-                        session.ctx, tool_def, tool_input
-                    )
+                    reserve_record = getattr(self.write_guard, "reserve_write_record", None)
+                    if callable(reserve_record):
+                        allowed, reason, write_reservation = reserve_record(
+                            session.ctx, tool_def, tool_input
+                        )
+                    else:
+                        allowed, reason = self.write_guard.reserve_write(
+                            session.ctx, tool_def, tool_input
+                        )
                     if not allowed:
                         results.append({
                             "tool": tool_def.name,
@@ -4837,6 +4852,10 @@ class AgentRuntime:
                 result_index = len(results)
                 safe_result_data = self._redact_for_persistence(result.data)
                 safe_result_error = self._redact_for_persistence(result.error)
+                safe_error_detail = self._redact_for_persistence(
+                    result.error_detail.to_dict()
+                    if getattr(result, "error_detail", None) else None
+                )
                 results.append({
                     "tool": tool_def.name,
                     "platform": platform,
@@ -4851,6 +4870,7 @@ class AgentRuntime:
                     "success": result.success,
                     "data": safe_result_data,
                     "error": safe_result_error,
+                    "error_detail": safe_error_detail,
                     "needs_confirmation": result.requires_confirmation,
                 })
                 execution_status = (
@@ -4893,6 +4913,7 @@ class AgentRuntime:
                     success=result.success,
                     data=safe_result_data,
                     error=safe_result_error,
+                    error_detail=result.error_detail,
                     requires_confirmation=result.requires_confirmation,
                     card_payload=self._redact_for_persistence(result.card_payload),
                     simulated=result.simulated,
@@ -4908,7 +4929,10 @@ class AgentRuntime:
                     and tool_def.is_write_tool
                     and self.write_guard and hasattr(self.write_guard, "mark_executed")
                 ):
-                    self.write_guard.mark_executed(tool_def.name, tool_input, session.ctx.user_id)
+                    if write_reservation is not None and hasattr(self.write_guard, "finalize"):
+                        self.write_guard.finalize(write_reservation, result)
+                    else:
+                        self.write_guard.mark_executed(tool_def.name, tool_input, session.ctx.user_id)
                     if expected_confirmation and incoming_confirmation_payload:
                         if self._session_manager:
                             self._session_manager.consume_approval(
@@ -4923,9 +4947,12 @@ class AgentRuntime:
                     and hasattr(self.write_guard, "release_write")
                     and not self.security.is_uncertain_provider_failure(tool_def, result)
                 ):
-                    self.write_guard.release_write(
-                        tool_def.name, tool_input, session.ctx.user_id
-                    )
+                    if write_reservation is not None and hasattr(self.write_guard, "finalize"):
+                        self.write_guard.finalize(write_reservation, result)
+                    else:
+                        self.write_guard.release_write(
+                            tool_def.name, tool_input, session.ctx.user_id
+                        )
 
                 # 记录安全审计信息，并保存本地模拟 Campaign 状态。
                 self._persist_tool_result(

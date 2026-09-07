@@ -1,11 +1,11 @@
 {
   "id": "tiktok.app_conversion_video",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "provider": "tiktok",
   "ad_format": "SINGLE_VIDEO",
-  "title": "TikTok App 转化视频广告",
-  "description": "引导创建 TikTok App Promotion 视频广告的 Campaign、Ad Group 和 Ad 参数。",
-  "match_terms": ["App 转化", "应用转化", "App promotion", "app conversion", "app install"],
+  "title": "TikTok App Promotion Smart+ 广告",
+  "description": "使用 TikTok Upgraded Smart+ API 创建 App Promotion 广告；App、系统、优化目标和素材按渠道规则级联选择。",
+  "match_terms": ["App 转化", "应用转化", "App promotion", "app conversion", "app install", "应用推广"],
   "selector": {
     "dimension": "objective",
     "field": "campaign.objective_type",
@@ -14,375 +14,53 @@
     "options": [{"value": "APP_PROMOTION", "label": "应用推广"}]
   },
   "tools": [
-    "tiktok_create_campaign",
-    "tiktok_create_adgroup",
-    "tiktok_create_app_ad"
+    "tiktok_smart_plus_create_campaign",
+    "tiktok_smart_plus_create_adgroup",
+    "tiktok_smart_plus_create_ad"
   ],
-  "resources": [
-    "campaign",
-    "ad_group",
-    "ad"
-  ],
+  "resources": ["campaign", "ad_group", "ad"],
   "fields": [
-    {
-      "path": "campaign.name",
-      "tool_ref": "tiktok_create_campaign.name",
-      "label": "Campaign 名称",
-      "required": true,
-      "source": "tool_schema"
-    },
-    {
-      "path": "campaign.objective_type",
-      "tool_ref": "tiktok_create_campaign.objective_type",
-      "label": "推广目标（已根据入口匹配）",
-      "description": "决定后续可选的推广方式、优化目标和转化设置。",
-      "required": true,
-      "source": "enum",
-      "presentation": "derived_readonly",
-      "options": ["APP_PROMOTION"]
-    },
-    {
-      "path": "campaign.campaign_type",
-      "tool_ref": "tiktok_create_campaign.campaign_type",
-      "label": "Campaign 类型",
-      "required": true,
-      "source": "enum",
-      "options": ["REGULAR_CAMPAIGN", "IOS14_CAMPAIGN"]
-    },
-    {
-      "path": "campaign.budget_mode",
-      "tool_ref": "tiktok_create_campaign.budget_mode",
-      "label": "预算模式",
-      "required": true,
-      "source": "enum",
-      "options": ["BUDGET_MODE_DAY", "BUDGET_MODE_INFINITE", "BUDGET_MODE_TOTAL"]
-    },
-    {
-      "path": "campaign.daily_budget",
-      "tool_ref": "tiktok_create_campaign.daily_budget",
-      "label": "日预算",
-      "required_when": {
-        "field": "campaign.budget_mode",
-        "equals": "BUDGET_MODE_DAY"
-      },
-      "source": "tool_schema"
-    },
-    {
-      "path": "campaign.app_promotion_type",
-      "tool_ref": "tiktok_create_campaign.app_promotion_type",
-      "label": "App 推广方式",
-      "visible_when": {
-        "field": "campaign.objective_type",
-        "equals": "APP_PROMOTION"
-      },
-      "required_when": {
-        "field": "campaign.objective_type",
-        "equals": "APP_PROMOTION"
-      },
-      "source": "enum",
-      "options": ["APP_ACQUISITION", "APP_RETARGETING"]
-    },
-    {
-      "path": "ad_group.name",
-      "tool_ref": "tiktok_create_adgroup.name",
-      "label": "广告组名称",
-      "required": true,
-      "source": "tool_schema"
-    },
-    {
-      "path": "ad_group.promotion_type",
-      "tool_ref": "tiktok_create_adgroup.promotion_type",
-      "label": "推广方式",
-      "description": "App Promotion 下选择 Android 或 iOS。",
-      "visible_when": {
-        "field": "campaign.objective_type",
-        "equals": "APP_PROMOTION"
-      },
-      "required_when": {
-        "field": "campaign.objective_type",
-        "equals": "APP_PROMOTION"
-      },
-      "source": "enum",
-      "options": ["APP_ANDROID", "APP_IOS"],
-      "options_from": ["campaign.objective_type"],
-      "option_rules": [{"when": {"field": "campaign.objective_type", "equals": "APP_PROMOTION"}, "options": ["APP_ANDROID", "APP_IOS"]}],
-      "option_labels": {"APP_ANDROID": "Android 应用", "APP_IOS": "iOS 应用"}
-    },
-    {
-      "path": "ad_group.app_id",
-      "tool_ref": "tiktok_create_adgroup.app_id",
-      "label": "推广 App",
-      "visible_when": {
-        "field": "campaign.objective_type",
-        "equals": "APP_PROMOTION"
-      },
-      "required_when": {
-        "field": "campaign.objective_type",
-        "equals": "APP_PROMOTION"
-      },
-      "source": "lookup",
-      "lookup_tool": "tiktok_list_apps"
-    },
-    {
-      "path": "ad_group.billing_event",
-      "tool_ref": "tiktok_create_adgroup.billing_event",
-      "label": "计费事件",
-      "required": true,
-      "source": "enum",
-      "options": ["OCPM"],
-      "options_from": [
-        "campaign.objective_type",
-        "ad_group.promotion_type",
-        "ad_group.optimization_goal"
-      ],
-      "option_rules": [{"when": {"field": "ad_group.optimization_goal", "in": ["INSTALL", "IN_APP_EVENT", "CONVERSION"]}, "options": ["OCPM"]}],
-      "option_labels": {"OCPM": "优化千次展示（oCPM）"}
-    },
-    {
-      "path": "ad_group.optimization_goal",
-      "tool_ref": "tiktok_create_adgroup.optimization_goal",
-      "label": "优化目标",
-      "required": true,
-      "source": "enum",
-      "options": ["INSTALL", "IN_APP_EVENT", "CONVERSION"],
-      "options_from": [
-        "campaign.objective_type",
-        "ad_group.promotion_type"
-      ],
-      "option_rules": [{"when": {"field": "ad_group.promotion_type", "in": ["APP_ANDROID", "APP_IOS"]}, "options": ["INSTALL", "IN_APP_EVENT", "CONVERSION"]}],
-      "option_labels": {"INSTALL": "应用安装", "IN_APP_EVENT": "应用内事件", "CONVERSION": "转化"}
-    },
-    {
-      "path": "ad_group.bid_type",
-      "tool_ref": "tiktok_create_adgroup.bid_type",
-      "label": "出价方式",
-      "required": true,
-      "source": "enum",
-      "options": ["BID_TYPE_NO_BID", "BID_TYPE_CUSTOM", "BID_TYPE_MAX_CONVERSION"]
-    },
-    {
-      "path": "ad_group.deep_bid_type",
-      "tool_ref": "tiktok_create_adgroup.deep_bid_type",
-      "label": "深度优化目标",
-      "description": "App 转化广告需要选择安装、应用内事件或回报目标。",
-      "visible_when": {
-        "field": "ad_group.promotion_type",
-        "in": ["APP_ANDROID", "APP_IOS"]
-      },
-      "required_when": {
-        "field": "ad_group.promotion_type",
-        "in": ["APP_ANDROID", "APP_IOS"]
-      },
-      "source": "enum",
-      "options": ["AEO", "OCC", "ROAS"],
-      "options_from": ["ad_group.optimization_goal"],
-      "option_rules": [{"when": {"field": "ad_group.optimization_goal", "equals": "INSTALL"}, "options": ["AEO"]}, {"when": {"field": "ad_group.optimization_goal", "equals": "IN_APP_EVENT"}, "options": ["OCC"]}, {"when": {"field": "ad_group.optimization_goal", "equals": "CONVERSION"}, "options": ["ROAS"]}],
-      "option_labels": {"AEO": "应用事件优化", "OCC": "应用内转化优化", "ROAS": "广告支出回报"}
-    },
-    {
-      "path": "ad_group.conversion_id",
-      "tool_ref": "tiktok_create_adgroup.conversion_id",
-      "label": "转化事件",
-      "visible_when": {
-        "field": "ad_group.optimization_goal",
-        "in": ["CONVERSION", "INSTALL", "IN_APP_EVENT", "WEB_CONVERSIONS"]
-      },
-      "required_when": {
-        "field": "ad_group.optimization_goal",
-        "in": ["CONVERSION", "INSTALL", "IN_APP_EVENT", "WEB_CONVERSIONS"]
-      },
-      "source": "lookup",
-      "lookup_tool": "tiktok_list_conversions"
-    },
-    {
-      "path": "ad_group.placement_type",
-      "tool_ref": "tiktok_create_adgroup.placement_type",
-      "label": "版位模式",
-      "required": true,
-      "source": "enum",
-      "options": ["PLACEMENT_TYPE_NORMAL", "PLACEMENT_TYPE_AUTOMATIC"]
-    },
-    {
-      "path": "ad_group.placements",
-      "tool_ref": "tiktok_create_adgroup.placements",
-      "label": "投放版位",
-      "visible_when": {
-        "field": "ad_group.placement_type",
-        "equals": "PLACEMENT_TYPE_NORMAL"
-      },
-      "required_when": {
-        "field": "ad_group.placement_type",
-        "equals": "PLACEMENT_TYPE_NORMAL"
-      },
-      "source": "enum",
-      "options": ["PLACEMENT_TIKTOK", "PLACEMENT_PANGLE", "PLACEMENT_GLOBAL_APP_BUNDLE"]
-    },
-    {
-      "path": "ad_group.location_ids",
-      "tool_ref": "tiktok_create_adgroup.location_ids",
-      "label": "投放地区",
-      "required": true,
-      "source": "lookup",
-      "lookup_tool": "tiktok_list_regions"
-    },
-    {
-      "path": "ad_group.age_groups",
-      "tool_ref": "tiktok_create_adgroup.age_groups",
-      "label": "年龄范围",
-      "description": "TikTok 按年龄段投放；当前契约不能精确到单岁，18—35 岁需按可用年龄段确认是否覆盖 35 岁。",
-      "source": "enum"
-    },
-    {
-      "path": "ad_group.operating_systems",
-      "tool_ref": "tiktok_create_adgroup.operating_systems",
-      "label": "操作系统",
-      "visible_when": {
-        "field": "ad_group.promotion_type",
-        "in": ["APP_ANDROID", "APP_IOS"]
-      },
-      "required_when": {
-        "field": "ad_group.promotion_type",
-        "in": ["APP_ANDROID", "APP_IOS"]
-      },
-      "source": "enum",
-      "options": ["ANDROID", "IOS"],
-      "options_from": ["ad_group.promotion_type"],
-      "option_rules": [{"when": {"field": "ad_group.promotion_type", "equals": "APP_ANDROID"}, "options": ["ANDROID"]}, {"when": {"field": "ad_group.promotion_type", "equals": "APP_IOS"}, "options": ["IOS"]}],
-      "option_labels": {"ANDROID": "Android", "IOS": "iOS"}
-    },
-    {
-      "path": "ad_group.budget_mode",
-      "tool_ref": "tiktok_create_adgroup.budget_mode",
-      "label": "广告组预算模式",
-      "required": true,
-      "source": "enum",
-      "options": ["BUDGET_MODE_DAY", "BUDGET_MODE_INFINITE", "BUDGET_MODE_DYNAMIC_DAILY_BUDGET"]
-    },
-    {
-      "path": "ad_group.budget",
-      "tool_ref": "tiktok_create_adgroup.budget",
-      "label": "广告组预算",
-      "required": true,
-      "source": "tool_schema"
-    },
-    {
-      "path": "ad_group.schedule_type",
-      "tool_ref": "tiktok_create_adgroup.schedule_type",
-      "label": "投放时间设置",
-      "required": true,
-      "source": "enum",
-      "options": ["SCHEDULE_FROM_NOW", "SCHEDULE_START_END"]
-    },
-    {
-      "path": "ad_group.schedule_start_time",
-      "tool_ref": "tiktok_create_adgroup.schedule_start_time",
-      "label": "开始投放时间",
-      "required": true
-    },
-    {
-      "path": "ad.name",
-      "tool_ref": "tiktok_create_app_ad.name",
-      "label": "广告名称",
-      "required": true,
-      "source": "tool_schema"
-    },
-    {
-      "path": "ad.app_id",
-      "tool_ref": "tiktok_create_app_ad.app_id",
-      "label": "广告 App",
-      "required": true,
-      "source": "lookup",
-      "lookup_tool": "tiktok_list_apps"
-    },
-    {
-      "path": "ad.promotion_type",
-      "tool_ref": "tiktok_create_app_ad.promotion_type",
-      "label": "广告 App 平台",
-      "required": true,
-      "source": "enum",
-      "options": ["APP_ANDROID", "APP_IOS"],
-      "options_from": ["ad_group.promotion_type"],
-      "option_rules": [{"when": {"field": "ad_group.promotion_type", "equals": "APP_ANDROID"}, "options": ["APP_ANDROID"]}, {"when": {"field": "ad_group.promotion_type", "equals": "APP_IOS"}, "options": ["APP_IOS"]}],
-      "option_labels": {"APP_ANDROID": "Android 应用", "APP_IOS": "iOS 应用"}
-    },
-    {
-      "path": "ad.operating_systems",
-      "tool_ref": "tiktok_create_app_ad.operating_systems",
-      "label": "广告操作系统",
-      "required": true,
-      "source": "enum",
-      "options": ["ANDROID", "IOS"],
-      "options_from": ["ad.promotion_type"],
-      "option_rules": [{"when": {"field": "ad.promotion_type", "equals": "APP_ANDROID"}, "options": ["ANDROID"]}, {"when": {"field": "ad.promotion_type", "equals": "APP_IOS"}, "options": ["IOS"]}],
-      "option_labels": {"ANDROID": "Android", "IOS": "iOS"}
-    },
-    {
-      "path": "ad.media",
-      "tool_ref": "tiktok_create_app_ad.media",
-      "label": "视频素材",
-      "required": true,
-      "source": "tool_schema",
-      "presentation": "asset_picker",
-      "accept": "video/*"
-    }
+    {"path": "campaign.campaign_name", "tool_ref": "tiktok_smart_plus_create_campaign.campaign_name", "label": "Campaign 名称", "required": true},
+    {"path": "campaign.objective_type", "tool_ref": "tiktok_smart_plus_create_campaign.objective_type", "label": "推广目标", "required": true, "source": "enum", "options": ["APP_PROMOTION"], "presentation": "derived_readonly"},
+    {"path": "campaign.app_promotion_type", "tool_ref": "tiktok_smart_plus_create_campaign.app_promotion_type", "label": "App 推广方式", "required": true, "source": "enum", "options": ["APP_INSTALL", "APP_RETARGETING", "MINIS"]},
+    {"path": "campaign.app_id", "tool_ref": "tiktok_smart_plus_create_campaign.app_id", "label": "推广 App", "required": true, "source": "lookup", "lookup_tool": "tiktok_list_apps"},
+    {"path": "campaign.campaign_type", "tool_ref": "tiktok_smart_plus_create_campaign.campaign_type", "label": "Campaign 类型", "required": true, "source": "enum", "options": ["REGULAR_CAMPAIGN", "IOS14_CAMPAIGN"]},
+    {"path": "campaign.budget_optimize_on", "tool_ref": "tiktok_smart_plus_create_campaign.budget_optimize_on", "label": "Campaign 预算优化", "source": "enum", "options": [true, false]},
+    {"path": "campaign.budget_mode", "tool_ref": "tiktok_smart_plus_create_campaign.budget_mode", "label": "预算模式", "required": true, "source": "enum", "options": ["BUDGET_MODE_DYNAMIC_DAILY_BUDGET", "BUDGET_MODE_TOTAL"]},
+    {"path": "campaign.budget", "tool_ref": "tiktok_smart_plus_create_campaign.budget", "label": "预算", "required": true},
+    {"path": "ad_group.adgroup_name", "tool_ref": "tiktok_smart_plus_create_adgroup.adgroup_name", "label": "广告组名称", "required": true},
+    {"path": "ad_group.promotion_type", "tool_ref": "tiktok_smart_plus_create_adgroup.promotion_type", "label": "推广位置", "required": true, "source": "enum", "options": ["APP_ANDROID", "APP_IOS"]},
+    {"path": "ad_group.app_id", "tool_ref": "tiktok_smart_plus_create_adgroup.app_id", "label": "推广 App", "required": true, "source": "lookup", "lookup_tool": "tiktok_list_apps"},
+    {"path": "ad_group.optimization_goal", "tool_ref": "tiktok_smart_plus_create_adgroup.optimization_goal", "label": "优化目标", "required": true, "source": "enum", "options": ["INSTALL", "IN_APP_EVENT", "VALUE"], "options_from": ["campaign.app_promotion_type"]},
+    {"path": "ad_group.optimization_event", "tool_ref": "tiktok_smart_plus_create_adgroup.optimization_event", "label": "应用内事件", "required_when": {"field": "ad_group.optimization_goal", "in": ["IN_APP_EVENT", "VALUE"]}, "source": "lookup", "lookup_tool": "tiktok_list_conversions"},
+    {"path": "ad_group.app_attribution_source", "tool_ref": "tiktok_smart_plus_create_adgroup.app_attribution_source", "label": "归因来源", "source": "enum", "options": ["MMP", "SAN"]},
+    {"path": "ad_group.billing_event", "tool_ref": "tiktok_smart_plus_create_adgroup.billing_event", "label": "计费事件", "required": true, "source": "enum", "options": ["OCPM"]},
+    {"path": "ad_group.bid_type", "tool_ref": "tiktok_smart_plus_create_adgroup.bid_type", "label": "出价方式", "required": true, "source": "enum", "options": ["BID_TYPE_NO_BID", "BID_TYPE_CUSTOM"]},
+    {"path": "ad_group.bid_price", "tool_ref": "tiktok_smart_plus_create_adgroup.bid_price", "label": "出价", "required_when": {"field": "ad_group.bid_type", "equals": "BID_TYPE_CUSTOM"}},
+    {"path": "ad_group.deep_bid_type", "tool_ref": "tiktok_smart_plus_create_adgroup.deep_bid_type", "label": "深度优化", "source": "enum", "options": ["AEO", "OCC", "ROAS", "VO_HIGHEST_VALUE", "VO_MIN_ROAS"], "options_from": ["ad_group.optimization_goal"], "option_rules": [{"when": {"field": "ad_group.optimization_goal", "equals": "INSTALL"}, "options": ["AEO"]}, {"when": {"field": "ad_group.optimization_goal", "equals": "IN_APP_EVENT"}, "options": ["OCC"]}, {"when": {"field": "ad_group.optimization_goal", "equals": "VALUE"}, "options": ["VO_HIGHEST_VALUE", "VO_MIN_ROAS"]}]},
+    {"path": "ad_group.location_ids", "tool_ref": "tiktok_smart_plus_create_adgroup.location_ids", "label": "投放地区", "required": true, "source": "lookup", "lookup_tool": "tiktok_list_regions"},
+    {"path": "ad_group.age_groups", "tool_ref": "tiktok_smart_plus_create_adgroup.age_groups", "label": "年龄段", "source": "enum", "options": ["AGE_13_17", "AGE_18_24", "AGE_25_34", "AGE_35_44", "AGE_45_54", "AGE_55_64", "AGE_65+"]},
+    {"path": "ad_group.operating_systems", "tool_ref": "tiktok_smart_plus_create_adgroup.operating_systems", "label": "操作系统", "required": true, "source": "enum", "options": ["ANDROID", "IOS"], "options_from": ["ad_group.promotion_type"], "option_rules": [{"when": {"field": "ad_group.promotion_type", "equals": "APP_ANDROID"}, "options": ["ANDROID"]}, {"when": {"field": "ad_group.promotion_type", "equals": "APP_IOS"}, "options": ["IOS"]}]},
+    {"path": "ad_group.budget_mode", "tool_ref": "tiktok_smart_plus_create_adgroup.budget_mode", "label": "广告组预算模式", "required": true, "source": "enum", "options": ["BUDGET_MODE_DYNAMIC_DAILY_BUDGET", "BUDGET_MODE_TOTAL", "BUDGET_MODE_INFINITE"]},
+    {"path": "ad_group.budget", "tool_ref": "tiktok_smart_plus_create_adgroup.budget", "label": "广告组预算", "required": true},
+    {"path": "ad_group.schedule_type", "tool_ref": "tiktok_smart_plus_create_adgroup.schedule_type", "label": "投放时间", "required": true, "source": "enum", "options": ["SCHEDULE_FROM_NOW", "SCHEDULE_START_END"]},
+    {"path": "ad_group.schedule_start_time", "tool_ref": "tiktok_smart_plus_create_adgroup.schedule_start_time", "label": "开始时间", "required": true},
+    {"path": "ad_group.schedule_end_time", "tool_ref": "tiktok_smart_plus_create_adgroup.schedule_end_time", "label": "结束时间", "required_when": {"field": "ad_group.schedule_type", "equals": "SCHEDULE_START_END"}},
+    {"path": "ad.ad_name", "tool_ref": "tiktok_smart_plus_create_ad.ad_name", "label": "广告名称", "required": true},
+    {"path": "ad.ad_format", "tool_ref": "tiktok_smart_plus_create_ad.ad_format", "label": "素材形式", "required": true, "source": "enum", "options": ["SINGLE_VIDEO", "SINGLE_IMAGE", "CAROUSEL_ADS"]},
+    {"path": "ad.video_id", "tool_ref": "tiktok_smart_plus_create_ad.video_id", "label": "视频素材", "source": "lookup", "lookup_tool": "tiktok_list_videos", "presentation": "asset_picker", "accept": "video/*", "visible_when": {"field": "ad.ad_format", "equals": "SINGLE_VIDEO"}},
+    {"path": "ad.image_ids", "tool_ref": "tiktok_smart_plus_create_ad.image_ids", "label": "图片素材", "source": "lookup", "lookup_tool": "tiktok_list_images", "presentation": "asset_picker", "accept": "image/*", "visible_when": {"field": "ad.ad_format", "in": ["SINGLE_IMAGE", "CAROUSEL_ADS"]}},
+    {"path": "ad.tiktok_item_id", "tool_ref": "tiktok_smart_plus_create_ad.tiktok_item_id", "label": "Spark 帖子（可选）"},
+    {"path": "ad.ad_text", "tool_ref": "tiktok_smart_plus_create_ad.ad_text", "label": "广告文案", "required": true},
+    {"path": "ad.identity_type", "tool_ref": "tiktok_smart_plus_create_ad.identity_type", "label": "广告身份类型", "required": true, "source": "enum", "options": ["AUTH_CODE", "TT_USER", "BC_AUTH_TT"]},
+    {"path": "ad.identity_id", "tool_ref": "tiktok_smart_plus_create_ad.identity_id", "label": "广告身份", "required": true, "source": "lookup", "lookup_tool": "tiktok_list_identities"},
+    {"path": "ad.call_to_action_id", "tool_ref": "tiktok_smart_plus_create_ad.call_to_action_id", "label": "行动号召", "required": true},
+    {"path": "ad.deeplink", "tool_ref": "tiktok_smart_plus_create_ad.deeplink", "label": "App 深链"}
   ],
   "rules": [
-    {
-      "id": "objective_changed",
-      "when": {
-        "field": "campaign.objective_type",
-        "changed": true
-      },
-      "reset": [
-        "campaign.app_promotion_type",
-        "ad_group.promotion_type",
-        "ad_group.app_id",
-        "ad_group.billing_event",
-        "ad_group.optimization_goal",
-        "ad_group.conversion_id",
-        "ad_group.operating_systems",
-        "ad.app_id",
-        "ad.promotion_type",
-        "ad.operating_systems"
-      ],
-      "revalidate": [
-        "ad_group.budget_mode",
-        "ad_group.budget",
-        "ad.media"
-      ]
-    },
-    {
-      "id": "promotion_type_changed",
-      "when": {
-        "field": "ad_group.promotion_type",
-        "changed": true
-      },
-      "reset": [
-        "ad_group.app_id",
-        "ad_group.billing_event",
-        "ad_group.optimization_goal",
-        "ad_group.conversion_id",
-        "ad_group.operating_systems",
-        "ad.app_id",
-        "ad.promotion_type",
-        "ad.operating_systems"
-      ]
-    },
-    {
-      "id": "optimization_goal_changed",
-      "when": {
-        "field": "ad_group.optimization_goal",
-        "changed": true
-      },
-      "reset": ["ad_group.billing_event", "ad_group.conversion_id"]
-    },
-    {
-      "id": "placement_mode_changed",
-      "when": {
-        "field": "ad_group.placement_type",
-        "changed": true
-      },
-      "reset": ["ad_group.placements"]
-    }
+    {"id": "objective_changed", "when": {"field": "campaign.objective_type", "changed": true}, "reset": ["ad_group.app_id", "ad_group.promotion_type", "ad_group.optimization_goal", "ad_group.optimization_event", "ad_group.operating_systems", "ad_group.deep_bid_type"]},
+    {"id": "promotion_type_changed", "when": {"field": "ad_group.promotion_type", "changed": true}, "reset": ["ad_group.operating_systems"]},
+    {"id": "optimization_goal_changed", "when": {"field": "ad_group.optimization_goal", "changed": true}, "reset": ["ad_group.optimization_event", "ad_group.deep_bid_type"]},
+    {"id": "schedule_type_changed", "when": {"field": "ad_group.schedule_type", "changed": true}, "reset": ["ad_group.schedule_end_time"]}
   ]
 }

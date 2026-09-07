@@ -354,6 +354,7 @@ class CreationCardBuilder:
     def _blueprint_condition(
         condition: Any, prefix: str, known_paths: Optional[set[str]] = None,
         alias_paths: Optional[Mapping[str, str]] = None,
+        field_paths: Optional[Mapping[str, str]] = None,
     ) -> Optional[dict[str, Any]]:
         """Translate a ToolSchema condition into a Blueprint condition.
 
@@ -367,7 +368,7 @@ class CreationCardBuilder:
             items = [
                 item for item in (
                     CreationCardBuilder._blueprint_condition(
-                        value, prefix, known_paths, alias_paths
+                        value, prefix, known_paths, alias_paths, field_paths
                     )
                     for value in condition.get("all", [])
                 ) if item is not None
@@ -377,7 +378,7 @@ class CreationCardBuilder:
             items = [
                 item for item in (
                     CreationCardBuilder._blueprint_condition(
-                        value, prefix, known_paths, alias_paths
+                        value, prefix, known_paths, alias_paths, field_paths
                     )
                     for value in condition.get("any", [])
                 ) if item is not None
@@ -385,7 +386,7 @@ class CreationCardBuilder:
             return {"any": items} if items else None
         if "not" in condition:
             nested = CreationCardBuilder._blueprint_condition(
-                condition.get("not"), prefix, known_paths, alias_paths
+                condition.get("not"), prefix, known_paths, alias_paths, field_paths
             )
             return {"not": nested} if nested else None
         if "field" in condition:
@@ -394,7 +395,7 @@ class CreationCardBuilder:
                 return None
             result = dict(condition)
             result["field"] = CreationCardBuilder._condition_path(
-                field, prefix, known_paths, alias_paths
+                field, prefix, known_paths, alias_paths, field_paths
             )
             return result
         if not condition:
@@ -403,7 +404,7 @@ class CreationCardBuilder:
             "all": [
                 {
                     "field": CreationCardBuilder._condition_path(
-                        field, prefix, known_paths, alias_paths
+                        field, prefix, known_paths, alias_paths, field_paths
                     ),
                     "equals": value,
                 }
@@ -415,9 +416,13 @@ class CreationCardBuilder:
     def _condition_path(
         field: str, prefix: str, known_paths: Optional[set[str]] = None,
         alias_paths: Optional[Mapping[str, str]] = None,
+        field_paths: Optional[Mapping[str, str]] = None,
     ) -> str:
         if "." in field:
             return field
+        explicit_path = (field_paths or {}).get(field)
+        if explicit_path:
+            return explicit_path
         candidate = f"{prefix}.{field}"
         if not known_paths or candidate in known_paths:
             return candidate
@@ -547,6 +552,7 @@ class CreationCardBuilder:
         prefix: str,
         known_paths: set[str],
         alias_paths: Mapping[str, str],
+        field_paths: Optional[Mapping[str, str]] = None,
     ) -> Optional[dict[str, Any]]:
         """Translate provider-owned UI applicability into Blueprint paths.
 
@@ -560,7 +566,7 @@ class CreationCardBuilder:
         if not isinstance(condition, Mapping):
             return None
         return self._blueprint_condition(
-            condition, prefix, known_paths, alias_paths
+            condition, prefix, known_paths, alias_paths, field_paths
         )
 
     def expand_blueprint(self, blueprint: AdCreationBlueprint) -> AdCreationBlueprint:
@@ -578,11 +584,32 @@ class CreationCardBuilder:
         declared_paths = {str(field.get("path")) for field in existing_fields}
         known_paths = {str(field.get("path")) for field in existing_fields}
         prefix_by_tool: dict[str, str] = {}
+        explicit_field_paths: dict[str, dict[str, list[str]]] = {}
         for field in existing_fields:
-            tool_name, _, _ = _schema_for_ref(self.tools, str(field.get("tool_ref")))
+            tool_name, schema_path, _ = _schema_for_ref(
+                self.tools, str(field.get("tool_ref"))
+            )
             path = str(field.get("path") or "")
             if tool_name and "." in path:
                 prefix_by_tool.setdefault(tool_name, path.split(".", 1)[0])
+                field_name = schema_path.rsplit(".", 1)[-1]
+                explicit_field_paths.setdefault(tool_name, {}).setdefault(
+                    field_name, []
+                ).append(path)
+
+        # A single Tool may intentionally be presented at multiple hierarchy
+        # levels (for example one atomic provider operation may expose
+        # campaign, ad_group and ad fields).  Keep the explicit Blueprint
+        # placement for condition translation instead of assuming that the
+        # first prefix is the correct owner of every field.
+        unique_field_paths: dict[str, dict[str, str]] = {
+            tool_name: {
+                field_name: paths[0]
+                for field_name, paths in fields.items()
+                if len(set(paths)) == 1
+            }
+            for tool_name, fields in explicit_field_paths.items()
+        }
 
         # Build the complete safe path catalog before translating conditional
         # rules.  Tool schemas are allowed to declare a condition on a field
@@ -647,6 +674,7 @@ class CreationCardBuilder:
             schema_object = getattr(definition, "input_schema", None)
             properties = properties_by_tool.get(tool_name, {})
             prefix = prefix_by_tool[tool_name]
+            field_paths = unique_field_paths.get(tool_name, {})
             required = set(getattr(schema_object, "required", []) or [])
             required.update(getattr(schema_object, "provider_required", []) or [])
             parent_field = str(getattr(definition, "parent_resource_id_field", "") or "")
@@ -676,7 +704,7 @@ class CreationCardBuilder:
                     "auto_exposed": True,
                 }
                 visibility = self._schema_visibility(
-                    raw_schema, prefix, known_paths, alias_paths
+                    raw_schema, prefix, known_paths, alias_paths, field_paths
                 )
                 if visibility is not None:
                     field["visible_when"] = visibility
@@ -699,7 +727,7 @@ class CreationCardBuilder:
                         continue
                     condition = self._blueprint_condition(
                         rule.get("if", rule.get("when", {})), prefix,
-                        known_paths, alias_paths,
+                        known_paths, alias_paths, field_paths,
                     )
                     if condition is None:
                         continue
@@ -780,6 +808,7 @@ class CreationCardBuilder:
                 prefix_by_tool.get(tool_name, "resource"),
                 known_paths,
                 alias_paths,
+                unique_field_paths.get(tool_name, {}),
             )
             if provider_visibility is not None:
                 merged_visibility = _merge_conditions(
@@ -805,6 +834,7 @@ class CreationCardBuilder:
                     condition = self._blueprint_condition(
                         rule.get("if", rule.get("when", {})), prefix,
                         known_paths, alias_paths,
+                        unique_field_paths.get(tool_name, {}),
                     )
                     if condition is None:
                         continue

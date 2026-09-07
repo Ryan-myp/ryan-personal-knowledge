@@ -144,6 +144,7 @@ class WorkflowCoordinator:
         failed_sequences: list[int] = []
         unsupported_sequences: list[int] = []
         unknown_sequences: list[int] = []
+        retriable_sequences: list[int] = []
         occurrences: dict[str, int] = {}
         for item in results:
             name = str(item.get("tool") or "")
@@ -174,16 +175,22 @@ class WorkflowCoordinator:
                 continue
             item_sequences.append(item_sequence)
             data = item.get("data") if isinstance(item.get("data"), dict) else {}
+            error_detail = item.get("error_detail") if isinstance(item.get("error_detail"), dict) else {}
+            error_category = str(error_detail.get("category") or "")
             if item.get("skipped"):
                 status = "skipped"
             elif data.get("execution_status") == "unsupported":
                 status = "unsupported"
                 unsupported_sequences.append(item_sequence)
-            elif data.get("execution_status") in {
+            elif error_category == "provider_result_unknown" or data.get("execution_status") in {
                 "unknown", "timed_out", "transport_unknown",
             }:
                 status = "unknown"
                 unknown_sequences.append(item_sequence)
+            elif error_category == "retriable":
+                status = "failed"
+                failed_sequences.append(item_sequence)
+                retriable_sequences.append(item_sequence)
             elif item.get("needs_confirmation"):
                 status = "awaiting_confirmation"
             elif item.get("success"):
@@ -326,6 +333,7 @@ class WorkflowCoordinator:
                 "write_item_count": len(item_sequences),
                 "successful_items": len(successful_sequences),
                 "failed_items": len(failed_sequences),
+                "retriable_items": retriable_sequences,
                 "planning_error_count": len(planning_errors),
                 "compensation_required": compensation_required,
                 "compensation_policy": "manual_review_required",

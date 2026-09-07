@@ -48,16 +48,16 @@ def test_skill_up_adapter_returns_standard_result_and_runtime_evidence(tmp_path)
             "role": "user",
             "content": (
                 "创建 TikTok campaign; account_id=7397068114548195329; "
-                "name=adapter-test; "
+                "campaign_name=adapter-test; "
                 "objective_type=APP_PROMOTION; campaign_type=REGULAR_CAMPAIGN; "
-                "budget_mode=BUDGET_MODE_DAY; daily_budget=100; "
-                "app_promotion_type=APP_ACQUISITION"
+                "budget_mode=BUDGET_MODE_DYNAMIC_DAILY_BUDGET; budget=100; "
+                "app_promotion_type=APP_INSTALL; app_id=app-1"
             ),
         }],
     })
 
     assert result["exit_code"] == 0
-    assert "tiktok_create_campaign" in result["final_message"]
+    assert "tiktok_smart_plus_create_campaign" in result["final_message"]
     assert '"mode": "dry_run"' in result["final_message"]
     assert (tmp_path / "outputs" / "ad-agent-runtime-result.json").exists()
     persisted = json.loads(

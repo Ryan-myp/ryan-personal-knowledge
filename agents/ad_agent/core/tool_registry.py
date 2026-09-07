@@ -43,6 +43,13 @@ class SimpleToolRegistry(ToolRegistry):
         """注册一个工具"""
         with self._lock:
             if definition.name in self._tools:
+                existing = self._tools[definition.name][0]
+                if existing.contract_hash != definition.contract_hash:
+                    raise ValueError(
+                        f"Tool '{definition.name}' contract hash mismatch: "
+                        f"registered={existing.contract_hash}, "
+                        f"incoming={definition.contract_hash}"
+                    )
                 raise ValueError(f"Tool '{definition.name}' already registered")
 
             self._tools[definition.name] = (definition, handler)

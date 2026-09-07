@@ -264,19 +264,41 @@ class SessionManager:
     def create_approval(
         self, plan_fingerprint: str, token: str, session_id: str,
         user_id: str, account_id: str, tool_name: str, expires_at: str,
+        input_hash: Optional[str] = None, preview_hash: Optional[str] = None,
+        request_hash: Optional[str] = None, contract_hash: Optional[str] = None,
     ) -> None:
         self.store.create_approval(
             plan_fingerprint, token, session_id, user_id, account_id,
-            tool_name, expires_at,
+            tool_name, expires_at, input_hash, preview_hash,
+            request_hash, contract_hash,
         )
 
     def validate_approval(
         self, plan_fingerprint: str, token: str, session_id: str,
         user_id: str, account_id: str, tool_name: str,
+        input_hash: Optional[str] = None, preview_hash: Optional[str] = None,
+        request_hash: Optional[str] = None, contract_hash: Optional[str] = None,
     ) -> tuple[bool, str]:
         return self.store.validate_approval(
             plan_fingerprint, token, session_id, user_id, account_id, tool_name,
+            input_hash, preview_hash, request_hash, contract_hash,
         )
+
+    def publish_outbox_event(
+        self, run_id: str, event_type: str, payload: dict[str, Any],
+    ) -> str:
+        """Persist a workflow event through the backend abstraction."""
+        import uuid
+        from .models import OutboxEvent
+
+        event_id = str(uuid.uuid4())
+        self.store.insert_outbox_event(
+            OutboxEvent(
+                event_id=event_id, run_id=str(run_id),
+                event_type=str(event_type), payload=dict(payload or {}),
+            )
+        )
+        return event_id
 
     def consume_approval(self, plan_fingerprint: str, token: str) -> bool:
         return self.store.consume_approval(plan_fingerprint, token)

@@ -36,6 +36,30 @@ class TikTokAPIClient(BasePlatformClient):
     BASE_URL = "https://business-api.tiktok.com"
     API_VERSION = "v1.3"
     SUPPORTED_API_VERSIONS = (API_VERSION,)
+    # TikTok's current all-in-one Spark Ads surface replaces the legacy
+    # campaign/adgroup/ad creation chain for these objectives.  Keep this
+    # catalog next to the Provider adapter so Runtime does not grow a
+    # TikTok-specific objective branch.
+    ALL_IN_ONE_SPARK_OBJECTIVES = {
+        "REACH": {"REACH"},
+        "VIDEO_VIEWS": {"ENGAGED_VIEW"},
+        "ENGAGEMENT": {"FOLLOWERS", "PAGE_VISIT"},
+    }
+    SMART_PLUS_OBJECTIVE_MAP = {
+        "APP_PROMOTION": "APP_PROMOTION",
+        "WEB_CONVERSIONS": "WEB_CONVERSIONS",
+        "LEAD_GENERATION": "LEAD_GENERATION",
+        # Product/UI aliases. TikTok's Upgraded Smart+ API represents web
+        # Traffic and Sales under WEB_CONVERSIONS.
+        "TRAFFIC": "WEB_CONVERSIONS",
+        "SALES": "WEB_CONVERSIONS",
+        "PRODUCT_SALES": "WEB_CONVERSIONS",
+    }
+    SMART_PLUS_GOALS = {
+        "APP_PROMOTION": {"INSTALL", "IN_APP_EVENT", "VALUE"},
+        "WEB_CONVERSIONS": {"CLICK", "CONVERT", "TRAFFIC_LANDING_PAGE_VIEW", "VALUE"},
+        "LEAD_GENERATION": {"LEAD_GENERATION", "CLICK", "CONVERSATION"},
+    }
     
     def __init__(
         self,
@@ -991,6 +1015,339 @@ class TikTokAPIClient(BasePlatformClient):
         payload = self._data_section(result)
         resource_id = payload.get('ad_id') if isinstance(payload, dict) else None
         return self.require_resource_id(resource_id, "TikTok Spark Ad create")
+
+    def _smart_plus_status(self, payload: dict[str, Any]) -> str:
+        value = payload.get("operation_status", payload.get("status", "DISABLE"))
+        if value in (0, "0", "PAUSED", "DISABLE", "DISABLED", None, ""):
+            return "DISABLE"
+        if value in (1, "1", "ACTIVE", "ENABLE", "ENABLED"):
+            return "ENABLE"
+        raise ValueError("TikTok Smart+ operation_status must be ENABLE or DISABLE")
+
+    def _smart_plus_objective(self, value: Any) -> tuple[str, str]:
+        public = str(value or "").strip().upper()
+        provider = self.SMART_PLUS_OBJECTIVE_MAP.get(public)
+        if not provider:
+            raise ValueError(
+                "TikTok Upgraded Smart+ supports APP_PROMOTION, WEB_CONVERSIONS "
+                "and LEAD_GENERATION (Traffic/Sales map to WEB_CONVERSIONS)"
+            )
+        return public, provider
+
+    @staticmethod
+    def _smart_plus_response(result: Any, resource: str) -> dict[str, Any]:
+        data = TikTokAPIClient._data_section(result)
+        if not isinstance(data, dict):
+            raise APIError(f"TikTok Smart+ {resource} create returned an invalid response")
+        return data
+
+    def create_smart_plus_campaign(
+        self, advertiser_id: str, campaign: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Create an Upgraded Smart+ campaign using the current endpoint."""
+        if not isinstance(campaign, dict):
+            raise ValueError("TikTok Smart+ campaign payload must be an object")
+        public_objective, objective = self._smart_plus_objective(
+            campaign.get("objective_type") or campaign.get("objective")
+        )
+        campaign = {**campaign, "request_id": str(campaign.get("request_id") or time.time_ns())}
+        for field in ("request_id", "campaign_name"):
+            if campaign.get(field) in (None, ""):
+                raise ValueError(f"TikTok Smart+ campaign requires {field}")
+        if public_objective == "APP_PROMOTION":
+            for field in ("app_promotion_type", "app_id"):
+                if campaign.get(field) in (None, "", []):
+                    raise ValueError(f"APP_PROMOTION requires {field}")
+        if objective == "WEB_CONVERSIONS":
+            destination = str(campaign.get("sales_destination") or "").upper()
+            if public_objective == "TRAFFIC":
+                destination = "WEBSITE"
+            if not destination:
+                raise ValueError("WEB_CONVERSIONS requires sales_destination")
+            campaign = {**campaign, "sales_destination": destination}
+
+        wire_fields = {
+            "request_id", "operation_status", "objective_type", "app_promotion_type",
+            "sales_destination", "is_search_campaign", "catalog_enabled", "catalog_type",
+            "campaign_type", "is_promotional_campaign", "app_id", "gaming_ad_compliance_agreement",
+            "campaign_app_profile_page_state", "disable_skan_campaign", "campaign_name",
+            "special_industries", "budget_optimize_on", "budget_mode", "budget",
+            "budget_auto_adjust_strategy", "budget_auto_adjust_max_amount",
+            "smart_plus_adgroup_mode",
+        }
+        data = {"advertiser_id": str(advertiser_id)}
+        data.update({
+            key: value for key, value in campaign.items()
+            if key in wire_fields and value not in (None, "", [])
+        })
+        data["objective_type"] = objective
+        data["operation_status"] = self._smart_plus_status(campaign)
+        if public_objective == "TRAFFIC":
+            data["sales_destination"] = "WEBSITE"
+        self.acquire_rate_limit(self._rate_limiter)
+        result = self.request("POST", "smart_plus/campaign/create/", data=data)
+        response = self._smart_plus_response(result, "campaign")
+        if not response.get("campaign_id"):
+            raise APIError("TikTok Smart+ campaign response missing campaign_id")
+        return response
+
+    def create_smart_plus_adgroup(
+        self, advertiser_id: str, campaign_id: str, adgroup: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Create an Upgraded Smart+ ad group using the current endpoint."""
+        if not isinstance(adgroup, dict):
+            raise ValueError("TikTok Smart+ ad group payload must be an object")
+        adgroup = {**adgroup, "request_id": str(adgroup.get("request_id") or time.time_ns())}
+        for field in (
+            "request_id", "adgroup_name", "promotion_type", "optimization_goal",
+            "bid_type", "billing_event", "schedule_type", "schedule_start_time",
+        ):
+            if adgroup.get(field) in (None, "", []):
+                raise ValueError(f"TikTok Smart+ ad group requires {field}")
+        objective = str(adgroup.get("objective_type") or "WEB_CONVERSIONS").upper()
+        public_objective, provider_objective = self._smart_plus_objective(objective)
+        goal = str(adgroup.get("optimization_goal") or "").upper()
+        allowed = self.SMART_PLUS_GOALS[provider_objective]
+        if goal not in allowed:
+            raise ValueError(
+                f"optimization_goal={goal} is not valid for {public_objective}; "
+                f"expected one of {sorted(allowed)}"
+            )
+        if public_objective == "APP_PROMOTION":
+            if adgroup.get("promotion_type") not in {"APP_ANDROID", "APP_IOS"}:
+                raise ValueError("APP_PROMOTION requires promotion_type=APP_ANDROID or APP_IOS")
+            if adgroup.get("app_id") in (None, "", []):
+                raise ValueError("APP_PROMOTION requires app_id")
+            if adgroup.get("billing_event") != "OCPM":
+                raise ValueError("APP_PROMOTION requires billing_event=OCPM")
+            if goal == "IN_APP_EVENT" and adgroup.get("optimization_event") in (None, ""):
+                raise ValueError("IN_APP_EVENT requires optimization_event")
+        elif public_objective == "TRAFFIC" and adgroup.get("promotion_type") != "WEBSITE":
+            raise ValueError("TRAFFIC requires promotion_type=WEBSITE")
+        locations = adgroup.get("location_ids")
+        if not adgroup.get("saved_audience_id") and (
+            not isinstance(locations, list) or not locations
+        ):
+            raise ValueError("TikTok Smart+ ad group requires location_ids or saved_audience_id")
+        if adgroup.get("bid_type") == "BID_TYPE_CUSTOM":
+            bid_field = "conversion_bid_price" if goal in {"CONVERT", "TRAFFIC_LANDING_PAGE_VIEW"} else "bid_price"
+            if adgroup.get(bid_field) in (None, ""):
+                raise ValueError(f"BID_TYPE_CUSTOM requires {bid_field}")
+        if adgroup.get("schedule_type") == "SCHEDULE_START_END" and not adgroup.get("schedule_end_time"):
+            raise ValueError("SCHEDULE_START_END requires schedule_end_time")
+
+        wire_fields = {
+            "request_id", "operation_status", "adgroup_name", "catalog_id", "product_set_id",
+            "promotion_type", "promotion_target_type", "optimization_goal", "optimization_event",
+            "app_attribution_source", "app_data_source", "app_id", "location_ids",
+            "saved_audience_id", "gender", "age_groups", "operating_systems", "placement_type",
+            "placements", "targeting_optimization_mode", "bid_type", "bid_price",
+            "conversion_bid_price", "deep_bid_type", "roas_bid", "billing_event", "budget_mode",
+            "budget", "schedule_type", "schedule_start_time", "schedule_end_time", "frequency",
+            "frequency_schedule", "identity_type", "identity_id", "identity_authorized_bc_id",
+            "pixel_id", "tracking_pixel_id",
+        }
+        data = {"advertiser_id": str(advertiser_id), "campaign_id": str(campaign_id)}
+        data.update({
+            key: value for key, value in adgroup.items()
+            if key in wire_fields and value not in (None, "", [])
+        })
+        data["operation_status"] = self._smart_plus_status(adgroup)
+        self.acquire_rate_limit(self._rate_limiter)
+        result = self.request("POST", "smart_plus/adgroup/create/", data=data)
+        response = self._smart_plus_response(result, "adgroup")
+        if not response.get("adgroup_id"):
+            raise APIError("TikTok Smart+ ad group response missing adgroup_id")
+        return response
+
+    def create_smart_plus_ad(
+        self, advertiser_id: str, campaign_id: str, adgroup_id: str,
+        ad: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Create an Upgraded Smart+ ad with a closed creative contract."""
+        if not isinstance(ad, dict):
+            raise ValueError("TikTok Smart+ ad payload must be an object")
+        ad = {**ad, "request_id": str(ad.get("request_id") or time.time_ns())}
+        for field in ("request_id", "ad_name"):
+            if ad.get(field) in (None, ""):
+                raise ValueError(f"TikTok Smart+ ad requires {field}")
+        if not any(ad.get(field) not in (None, "", []) for field in ("tiktok_item_id", "video_id", "image_ids")):
+            raise ValueError("TikTok Smart+ ad requires tiktok_item_id, video_id or image_ids")
+        if ad.get("identity_type") in {"TT_USER", "BC_AUTH_TT", "AUTH_CODE"} and not ad.get("identity_id"):
+            raise ValueError("Spark Ads require identity_id")
+        if ad.get("identity_type") == "BC_AUTH_TT" and not ad.get("identity_authorized_bc_id"):
+            raise ValueError("identity_type=BC_AUTH_TT requires identity_authorized_bc_id")
+
+        wire_fields = {
+            "request_id", "operation_status", "ad_name", "ad_format", "tiktok_item_id",
+            "video_id", "image_ids", "ad_text", "identity_type", "identity_id",
+            "identity_authorized_bc_id", "call_to_action_id", "landing_page_url", "deeplink",
+            "dark_post_status",
+        }
+        data = {
+            "advertiser_id": str(advertiser_id),
+            "campaign_id": str(campaign_id),
+            "adgroup_id": str(adgroup_id),
+        }
+        data.update({
+            key: value for key, value in ad.items()
+            if key in wire_fields and value not in (None, "", [])
+        })
+        data["operation_status"] = self._smart_plus_status(ad)
+        self.acquire_rate_limit(self._rate_limiter)
+        result = self.request("POST", "smart_plus/ad/create/", data=data)
+        response = self._smart_plus_response(result, "ad")
+        if not response.get("smart_plus_ad_id") and not response.get("ad_id"):
+            raise APIError("TikTok Smart+ ad response missing smart_plus_ad_id")
+        return response
+
+    def create_all_in_one_spark_ad(
+        self, advertiser_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Create a current TikTok all-in-one Spark Ads campaign.
+
+        TikTok documents ``business/spark_ad/create`` as the current one-step
+        surface for Reach, Video Views and Community Interaction. It
+        creates the Campaign, Ad Group and Spark Ad in one provider request;
+        it is not the legacy ``campaign/create`` + ``adgroup/create`` +
+        ``ad/create`` chain.
+
+        The method intentionally accepts a provider-shaped payload rather than
+        reconstructing one from a generic Runtime object.  The Capability owns
+        the closed Tool schema, while this adapter owns provider conditionals
+        and the endpoint contract.
+        """
+        if not isinstance(payload, dict):
+            raise ValueError("TikTok all-in-one Spark Ads payload must be an object")
+
+        normalized = dict(payload)
+        objective = str(normalized.get("objective_type") or "").upper()
+        goals = self.ALL_IN_ONE_SPARK_OBJECTIVES.get(objective)
+        if goals is None:
+            raise ValueError(
+                "TikTok all-in-one Spark Ads supports objective_type "
+                "REACH, VIDEO_VIEWS or ENGAGEMENT"
+            )
+        optimization_goal = str(normalized.get("optimization_goal") or "").upper()
+        if optimization_goal not in goals:
+            raise ValueError(
+                f"optimization_goal={optimization_goal or '<empty>'} is not valid "
+                f"for objective_type={objective}; expected one of {sorted(goals)}"
+            )
+
+        for field in (
+            "campaign_name", "adgroup_name", "ad_name", "budget_mode",
+            "budget", "schedule_type", "schedule_start_time", "bid_type",
+            "identity_type", "identity_id", "tiktok_item_id",
+        ):
+            if normalized.get(field) in (None, "", []):
+                raise ValueError(f"TikTok all-in-one Spark Ads requires {field}")
+
+        location_ids = normalized.get("location_ids")
+        saved_audience_id = normalized.get("saved_audience_id")
+        if not saved_audience_id and (
+            not isinstance(location_ids, list) or not location_ids
+        ):
+            raise ValueError(
+                "TikTok all-in-one Spark Ads requires location_ids or saved_audience_id"
+            )
+
+        budget_mode = str(normalized.get("budget_mode") or "").upper()
+        if budget_mode not in {"BUDGET_MODE_DAY", "BUDGET_MODE_TOTAL"}:
+            raise ValueError(
+                "all-in-one Spark Ads budget_mode must be BUDGET_MODE_DAY or BUDGET_MODE_TOTAL"
+            )
+        try:
+            normalized["budget"] = float(normalized["budget"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError("TikTok Spark Ads budget must be numeric") from exc
+        if normalized["budget"] <= 0:
+            raise ValueError("TikTok Spark Ads budget must be greater than zero")
+
+        schedule_type = str(normalized.get("schedule_type") or "").upper()
+        if schedule_type not in {"SCHEDULE_FROM_NOW", "SCHEDULE_START_END"}:
+            raise ValueError(
+                "all-in-one Spark Ads schedule_type must be SCHEDULE_FROM_NOW or SCHEDULE_START_END"
+            )
+        if budget_mode == "BUDGET_MODE_TOTAL" and schedule_type != "SCHEDULE_START_END":
+            raise ValueError(
+                "BUDGET_MODE_TOTAL requires schedule_type=SCHEDULE_START_END"
+            )
+        if schedule_type == "SCHEDULE_START_END" and not normalized.get("schedule_end_time"):
+            raise ValueError(
+                "SCHEDULE_START_END requires schedule_end_time"
+            )
+
+        bid_type = str(normalized.get("bid_type") or "").upper()
+        if bid_type not in {"BID_TYPE_NO_BID", "BID_TYPE_CUSTOM"}:
+            raise ValueError(
+                "all-in-one Spark Ads bid_type must be BID_TYPE_NO_BID or BID_TYPE_CUSTOM"
+            )
+        if bid_type == "BID_TYPE_CUSTOM":
+            bid_field = (
+                "conversion_bid_price"
+                if optimization_goal in {"TRAFFIC_LANDING_PAGE_VIEW", "FOLLOWERS"}
+                else "bid_price"
+            )
+            if normalized.get(bid_field) in (None, ""):
+                raise ValueError(
+                    f"bid_type=BID_TYPE_CUSTOM requires {bid_field} for {optimization_goal}"
+                )
+
+        if objective == "REACH":
+            for field in ("frequency", "frequency_schedule"):
+                if normalized.get(field) in (None, ""):
+                    raise ValueError(f"Reach Spark Ads requires {field}")
+
+        if optimization_goal in {"CLICK", "TRAFFIC_LANDING_PAGE_VIEW"}:
+            for field in ("call_to_action", "landing_page_url"):
+                if normalized.get(field) in (None, ""):
+                    raise ValueError(
+                        f"{optimization_goal} Spark Ads requires {field}"
+                    )
+        elif optimization_goal == "PAGE_VISIT":
+            if normalized.get("call_to_action") in (None, ""):
+                raise ValueError("PAGE_VISIT Spark Ads requires call_to_action")
+        elif normalized.get("call_to_action") and not normalized.get("landing_page_url"):
+            raise ValueError(
+                "landing_page_url is required when call_to_action is specified"
+            )
+
+        if str(normalized.get("identity_type") or "").upper() == "BC_AUTH_TT" and not normalized.get(
+            "identity_authorized_bc_id"
+        ):
+            raise ValueError(
+                "identity_type=BC_AUTH_TT requires identity_authorized_bc_id"
+            )
+
+        # Do not forward Runtime-only fields or silently pass arbitrary input
+        # through to a provider endpoint.  Add a field here only after it is
+        # present in the official v1.3 contract and the Tool schema.
+        wire_fields = {
+            "campaign_name", "objective_type", "adgroup_name", "saved_audience_id",
+            "location_ids", "gender", "age_groups", "budget_mode", "budget",
+            "schedule_type", "schedule_start_time", "schedule_end_time",
+            "optimization_goal", "frequency", "frequency_schedule", "bid_type",
+            "bid_price", "conversion_bid_price", "ad_name", "identity_type",
+            "identity_id", "identity_authorized_bc_id", "tiktok_item_id",
+            "call_to_action", "landing_page_url",
+        }
+        data = {"advertiser_id": str(advertiser_id)}
+        data.update({
+            key: value for key, value in normalized.items()
+            if key in wire_fields and value not in (None, "", [])
+        })
+        self.acquire_rate_limit(self._rate_limiter)
+        result = self.request("POST", "business/spark_ad/create/", data=data)
+        payload_data = self._data_section(result)
+        if not isinstance(payload_data, dict):
+            raise APIError("TikTok all-in-one Spark Ads returned an invalid response")
+        for resource in ("campaign_id", "adgroup_id", "ad_id"):
+            if not payload_data.get(resource):
+                raise APIError(
+                    f"TikTok all-in-one Spark Ads response missing {resource}"
+                )
+        return payload_data
     
     # ==================== 报表查询 ====================
     

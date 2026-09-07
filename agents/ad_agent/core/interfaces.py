@@ -13,6 +13,8 @@ from enum import Enum
 import re
 from typing import Any, Callable, Mapping, Optional
 
+from .security import sha256_json
+
 
 # ─── 核心数据类型 ───────────────────────────────────────────────
 
@@ -171,6 +173,10 @@ class ToolDefinition:
     # edit for that upgrade.
     contract_version: str = "1"
     provider_api_version: Optional[str] = None
+    # Immutable fingerprint of the public input contract.  It is calculated
+    # from ToolSchema rather than provider/channel names, so Registry and
+    # approval code can detect schema drift without a central router.
+    contract_hash: str = ""
 
     def __post_init__(self) -> None:
         if self.timeout_seconds <= 0:
@@ -180,6 +186,14 @@ class ToolDefinition:
         self.contract_version = str(self.contract_version or "1")
         if self.provider_api_version is not None:
             self.provider_api_version = str(self.provider_api_version)
+        calculated_contract_hash = sha256_json(
+            self.input_schema.to_dict() if self.input_schema else None
+        )
+        if self.contract_hash and str(self.contract_hash) != calculated_contract_hash:
+            raise ValueError(
+                f"Tool '{self.name}' contract_hash does not match input_schema"
+            )
+        self.contract_hash = calculated_contract_hash
         if self.live_support is None:
             self.live_support = not self.is_write_tool
         if self.replay_policy is None:
@@ -263,11 +277,44 @@ class ToolDefinition:
             "readback_tool": self.readback_tool,
             "contract_version": self.contract_version,
             "provider_api_version": self.provider_api_version,
+            "contract_hash": self.contract_hash,
             "input_schema": self.input_schema.to_dict() if self.input_schema else None,
         }
 
 
 # ─── 执行结果 ───────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class ToolError:
+    """Structured, provider-neutral error classification.
+
+    ``ToolResult.error`` remains a string for API/backward compatibility;
+    callers that need recovery semantics should use ``error_detail``.
+    """
+
+    category: str
+    code: str
+    message: str
+    suggestion: str = ""
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "category": self.category,
+            "code": self.code,
+            "message": self.message,
+            "suggestion": self.suggestion,
+        }
+
+
+@dataclass(frozen=True)
+class WriteReservation:
+    """Binding returned by a write guard until a provider result is known."""
+
+    idempotency_key: str
+    request_hash: str
+    tool_name: str
+    account_id: str
+
 
 class ToolResult:
     """工具执行结果 - 使用普通类避免 dataclass 字段/方法名冲突"""
@@ -280,10 +327,12 @@ class ToolResult:
         requires_confirmation: bool = False,
         card_payload: Optional[dict] = None,
         simulated: bool = False,
+        error_detail: Optional[ToolError] = None,
     ):
         self.success = success
         self.data = data or {}
         self.error = error
+        self.error_detail = error_detail
         self.requires_confirmation = requires_confirmation
         self.card_payload = card_payload
         self.simulated = simulated
@@ -293,8 +342,10 @@ class ToolResult:
         return cls(success=True, data=data)
     
     @classmethod
-    def error(cls, message: str) -> "ToolResult":
-        return cls(success=False, error=message)
+    def error(
+        cls, message: str, *, detail: Optional[ToolError] = None,
+    ) -> "ToolResult":
+        return cls(success=False, error=message, error_detail=detail)
     
     @classmethod
     def needs_confirmation(cls, card_payload: dict) -> "ToolResult":
@@ -310,6 +361,9 @@ class ToolResult:
             "success": self.success,
             "data": self.data,
             "error": self.error,
+            "error_detail": (
+                self.error_detail.to_dict() if self.error_detail else None
+            ),
             "requires_confirmation": self.requires_confirmation,
             "card_payload": self.card_payload,
             "simulated": self.simulated,
@@ -691,6 +745,16 @@ class WriteGuard(ABC):
         返回 (是否允许, 拒绝原因)
         """
         pass
+
+    def finalize(
+        self, reservation: WriteReservation, result: ToolResult,
+    ) -> None:
+        """Finalize a reservation when implemented by an enhanced guard.
+
+        The default is intentionally a no-op so existing provider guards stay
+        source-compatible; Runtime retains the legacy mark/release fallback.
+        """
+        return None
 
 
 # ─── Intent 相关 ────────────────────────────────────────────────

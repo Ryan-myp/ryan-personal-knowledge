@@ -72,6 +72,31 @@ TIKTOK_INTEREST_AUDIENCE_TYPES = ["GENERAL_INTEREST", "PURCHASE_INTENTION"]
 TIKTOK_IDENTITY_TYPES = ["CUSTOMIZED_USER", "AUTH_CODE", "TT_USER"]
 TIKTOK_PIXEL_OBJECT_TYPES = ["WEBSITE", "APP"]
 
+# Current v1.3 all-in-one Spark Ads surface.  This is intentionally separate
+# from the legacy campaign/ad-group objective catalog: the provider exposes a
+# different request shape and the Capability must not accidentally send these
+# objectives through the deprecated three-step chain.
+TIKTOK_ALL_IN_ONE_SPARK_OBJECTIVES = [
+    "REACH", "VIDEO_VIEWS", "ENGAGEMENT",
+]
+TIKTOK_ALL_IN_ONE_SPARK_GOALS = [
+    "REACH", "CLICK", "TRAFFIC_LANDING_PAGE_VIEW", "ENGAGED_VIEW",
+    "FOLLOWERS", "PAGE_VISIT",
+]
+
+# TikTok's current Upgraded Smart+ API uses a three-resource workflow.  The
+# user-facing Traffic/Sales aliases are intentionally kept in the provider
+# catalog: the API represents web Traffic and Sales as WEB_CONVERSIONS with
+# different ad-group destinations/optimization goals.
+TIKTOK_SMART_PLUS_OBJECTIVES = [
+    "APP_PROMOTION", "WEB_CONVERSIONS", "LEAD_GENERATION",
+    "TRAFFIC", "SALES", "PRODUCT_SALES",
+]
+TIKTOK_SMART_PLUS_OPTIMIZATION_GOALS = [
+    "CLICK", "INSTALL", "IN_APP_EVENT", "VALUE", "CONVERT",
+    "TRAFFIC_LANDING_PAGE_VIEW", "CONVERSATION", "LEAD_GENERATION",
+]
+
 
 def _field(
     field_type: str,
@@ -1576,6 +1601,333 @@ def tiktok_app_ad_schema() -> dict[str, Any]:
                 selection_label_fields=["display_name", "name", "id"],
             ),
             "status": _field("integer", "Ad status: 1 active, 0 paused", enum=[0, 1]),
+        },
+    }
+
+
+def tiktok_all_in_one_spark_ad_schema() -> dict[str, Any]:
+    """Contract for TikTok's current one-step Spark Ads creation endpoint.
+
+    The provider creates campaign, ad group and Spark Ad atomically from the
+    caller's perspective.  Keep the fields flat because that is the official
+    wire shape; Blueprints can still present them under campaign/ad-group/ad
+    sections without making Runtime understand TikTok hierarchy details.
+    """
+    return {
+        "required": [
+            "campaign_name", "objective_type", "adgroup_name", "budget_mode",
+            "budget", "schedule_type", "schedule_start_time",
+            "optimization_goal", "bid_type", "ad_name", "identity_type",
+            "identity_id", "tiktok_item_id",
+        ],
+        "provider_required": [
+            "campaign_name", "objective_type", "adgroup_name", "budget_mode",
+            "budget", "schedule_type", "schedule_start_time",
+            "optimization_goal", "bid_type", "ad_name", "identity_type",
+            "identity_id", "tiktok_item_id",
+        ],
+        "provider_any_of": [["location_ids", "saved_audience_id"]],
+        "conditional_rules": [
+            {
+                "if": {"objective_type": "REACH"},
+                "required": ["frequency", "frequency_schedule"],
+            },
+            {
+                "if": {"optimization_goal": "TRAFFIC_LANDING_PAGE_VIEW"},
+                "required": ["landing_page_url", "call_to_action"],
+            },
+            {
+                "if": {"optimization_goal": "CLICK"},
+                "required": ["landing_page_url", "call_to_action"],
+            },
+            {
+                "if": {"optimization_goal": "PAGE_VISIT"},
+                "required": ["call_to_action"],
+            },
+            {
+                "if": {"bid_type": "BID_TYPE_CUSTOM"},
+                "required": ["bid_price"],
+            },
+            {
+                "if": {"identity_type": "BC_AUTH_TT"},
+                "required": ["identity_authorized_bc_id"],
+            },
+            {
+                "if": {"objective_type": "REACH"},
+                "allowed": {"optimization_goal": ["REACH"]},
+            },
+            {
+                "if": {"objective_type": "VIDEO_VIEWS"},
+                "allowed": {"optimization_goal": ["ENGAGED_VIEW"]},
+            },
+            {
+                "if": {"objective_type": "ENGAGEMENT"},
+                "allowed": {"optimization_goal": ["FOLLOWERS", "PAGE_VISIT"]},
+            },
+        ],
+        "properties": {
+            "campaign_name": _field(
+                "string", "Campaign name; TikTok limit is 512 characters",
+                minLength=1, maxLength=512,
+            ),
+            "objective_type": _field(
+                "string", "Advertising objective",
+                enum=TIKTOK_ALL_IN_ONE_SPARK_OBJECTIVES,
+                option_labels={
+                    "REACH": "覆盖",
+                    "VIDEO_VIEWS": "视频观看",
+                    "ENGAGEMENT": "社区互动",
+                },
+                option_aliases={
+                    "REACH": ["reach", "覆盖", "触达"],
+                    "VIDEO_VIEWS": ["video views", "视频观看", "播放量"],
+                    "ENGAGEMENT": ["engagement", "community interaction", "社区互动"],
+                },
+            ),
+            "adgroup_name": _field(
+                "string", "Ad group name; TikTok limit is 512 characters",
+                minLength=1, maxLength=512,
+            ),
+            "saved_audience_id": _field(
+                "string", "Saved Audience ID returned by TikTok",
+                minLength=1, lookup_tool="tiktok_list_audiences", lookup_result_key="audiences",
+            ),
+            "location_ids": _field(
+                "array", "TikTok location IDs; choose from the provider lookup",
+                minItems=1, items={"type": "string"},
+                lookup_tool="tiktok_list_regions", lookup_result_key="regions",
+                selection_value_fields=["location_id", "id", "country_code", "code"],
+                selection_label_fields=["location_name", "name", "country_name", "country_code"],
+            ),
+            "gender": _field("string", "Gender targeting", enum=TIKTOK_GENDERS),
+            "age_groups": _field(
+                "array", "Age groups to target",
+                items={"type": "string", "enum": TIKTOK_AGE_GROUPS},
+            ),
+            "budget_mode": _field(
+                "string", "Ad group budget mode",
+                enum=["BUDGET_MODE_DAY", "BUDGET_MODE_TOTAL"],
+            ),
+            "budget": _field("number", "Ad group budget in account currency", minimum=0),
+            "schedule_type": _field(
+                "string", "Schedule type",
+                enum=["SCHEDULE_START_END", "SCHEDULE_FROM_NOW"],
+            ),
+            "schedule_start_time": _field(
+                "string", "UTC start time: YYYY-MM-DD HH:MM:SS",
+            ),
+            "schedule_end_time": _field(
+                "string", "UTC end time when using SCHEDULE_START_END",
+            ),
+            "optimization_goal": _field(
+                "string", "Optimization goal; options depend on objective",
+                enum=TIKTOK_ALL_IN_ONE_SPARK_GOALS,
+                option_labels={
+                    "REACH": "覆盖",
+                    "CLICK": "点击",
+                    "TRAFFIC_LANDING_PAGE_VIEW": "落地页浏览",
+                    "ENGAGED_VIEW": "有效观看",
+                    "FOLLOWERS": "关注",
+                    "PAGE_VISIT": "主页访问",
+                },
+            ),
+            "frequency": _field(
+                "number", "Maximum impressions per frequency window",
+                minimum=1,
+            ),
+            "frequency_schedule": _field(
+                "number", "Frequency window in days",
+                minimum=1,
+            ),
+            "bid_type": _field(
+                "string", "Bidding strategy",
+                enum=["BID_TYPE_NO_BID", "BID_TYPE_CUSTOM"],
+            ),
+            "bid_price": _field(
+                "number", "Cost cap for reach, click or engaged view",
+                minimum=0,
+            ),
+            "conversion_bid_price": _field(
+                "number", "Target conversion cost for LPV or followers",
+                minimum=0,
+            ),
+            "ad_name": _field(
+                "string", "Spark Ad name; TikTok limit is 512 characters",
+                minLength=1, maxLength=512,
+            ),
+            "identity_type": _field(
+                "string", "TikTok identity type",
+                enum=["AUTH_CODE", "TT_USER", "BC_AUTH_TT"],
+            ),
+            "identity_id": _field(
+                "string", "Identity ID returned by the identity lookup",
+                minLength=1, lookup_tool="tiktok_list_identities",
+                lookup_result_key="identities",
+                selection_value_fields=["identity_id", "id"],
+                selection_label_fields=["display_name", "name", "id"],
+            ),
+            "identity_authorized_bc_id": _field(
+                "string", "Authorized Business Center selected from the identity lookup",
+                minLength=1, lookup_tool="tiktok_list_identities", lookup_result_key="identities",
+                selection_value_fields=["authorized_bc_id", "bc_id", "id"],
+                selection_label_fields=["business_center_name", "display_name", "name", "authorized_bc_id"],
+            ),
+            "tiktok_item_id": _field(
+                "string", "Authorized TikTok post ID used by Spark Ads",
+                minLength=1,
+            ),
+            "call_to_action": _field(
+                "string", "TikTok call-to-action enum value",
+            ),
+            "landing_page_url": _field(
+                "string", "Landing page URL",
+            ),
+        },
+    }
+
+
+def tiktok_smart_plus_campaign_schema() -> dict[str, Any]:
+    """Closed contract for ``smart_plus/campaign/create``.
+
+    Traffic and Sales are conversational aliases.  The client maps them to
+    TikTok's documented ``WEB_CONVERSIONS`` campaign objective and validates
+    the destination/optimization cascade at the provider boundary.
+    """
+    return {
+        "required": ["campaign_name", "objective_type"],
+        "provider_required": ["campaign_name", "objective_type"],
+        "conditional_rules": [
+            {"if": {"objective_type": "APP_PROMOTION"}, "required": ["app_promotion_type"]},
+            {"if": {"objective_type": "WEB_CONVERSIONS"}, "required": ["sales_destination"]},
+            {"if": {"objective_type": "SALES"}, "required": ["sales_destination"]},
+            {"if": {"objective_type": "PRODUCT_SALES"}, "required": ["sales_destination"]},
+            {"if": {"objective_type": "APP_PROMOTION"}, "required": ["app_id"], "message": "APP_PROMOTION requires app_id"},
+        ],
+        "properties": {
+            "request_id": _field("string", "System-generated idempotency key", minLength=1, ui_hidden=True),
+            "campaign_name": _field("string", "Campaign name", minLength=1, maxLength=512),
+            "objective_type": _field(
+                "string", "Business objective or Smart+ API objective",
+                enum=TIKTOK_SMART_PLUS_OBJECTIVES,
+                option_labels={
+                    "APP_PROMOTION": "App promotion",
+                    "WEB_CONVERSIONS": "Web conversions",
+                    "LEAD_GENERATION": "Lead generation",
+                    "TRAFFIC": "Traffic",
+                    "SALES": "Sales",
+                    "PRODUCT_SALES": "Product sales",
+                },
+            ),
+            "operation_status": _field("string", "Create status", enum=["DISABLE", "ENABLE"], default="DISABLE"),
+            "app_promotion_type": _field("string", "App promotion type", enum=["APP_INSTALL", "APP_RETARGETING", "MINIS"]),
+            "sales_destination": _field("string", "Sales destination", enum=["WEBSITE", "APP", "WEB_AND_APP", "TIKTOK_SHOP"]),
+            "is_search_campaign": _field("boolean", "Create a Search Ads campaign"),
+            "catalog_enabled": _field("boolean", "Use a product catalog"),
+            "catalog_type": _field("string", "Catalog type", enum=["ECOMMERCE", "TRAVEL_ENTERTAINMENT", "MINI_SERIES", "GENERIC", "ONLINE_TO_OFFLINE"]),
+            "campaign_type": _field("string", "Campaign type", enum=["REGULAR_CAMPAIGN", "IOS14_CAMPAIGN"]),
+            "app_id": _field(
+                "string", "App ID returned by tiktok_list_apps", minLength=1,
+                lookup_tool="tiktok_list_apps", lookup_result_key="apps",
+                selection_value_fields=["app_id", "id"],
+                selection_label_fields=["app_name", "name", "display_name", "id"],
+            ),
+            "special_industries": _field("array", "Restricted industry categories", items={"type": "string", "enum": ["HOUSING", "EMPLOYMENT", "CREDIT"]}),
+            "budget_optimize_on": _field("boolean", "Campaign Budget Optimization"),
+            "budget_mode": _field("string", "Campaign budget mode", enum=["BUDGET_MODE_DYNAMIC_DAILY_BUDGET", "BUDGET_MODE_TOTAL", "BUDGET_MODE_INFINITE", "BUDGET_MODE_DAY"]),
+            "budget": _field("number", "Campaign budget", minimum=0),
+            "budget_auto_adjust_strategy": _field("string", "Automatic budget adjustment", enum=["AUTO_BUDGET_INCREASE", "UNSET"]),
+            "smart_plus_adgroup_mode": _field("string", "Smart+ ad group mode", enum=["SINGLE", "MULTIPLE"]),
+        },
+    }
+
+
+def tiktok_smart_plus_adgroup_schema() -> dict[str, Any]:
+    """Closed contract for ``smart_plus/adgroup/create``."""
+    return {
+        "required": [
+            "campaign_id", "adgroup_name", "promotion_type",
+            "optimization_goal", "bid_type", "billing_event",
+            "schedule_type", "schedule_start_time",
+        ],
+        "provider_required": [
+            "campaign_id", "adgroup_name", "promotion_type",
+            "optimization_goal", "bid_type", "billing_event",
+            "schedule_type", "schedule_start_time",
+        ],
+        "provider_any_of": [["location_ids", "saved_audience_id"]],
+        "properties": {
+            "request_id": _field("string", "System-generated idempotency key", minLength=1, ui_hidden=True),
+            "campaign_id": _field("string", "Parent Smart+ campaign ID", minLength=1),
+            "adgroup_name": _field("string", "Ad group name", minLength=1, maxLength=512),
+            "operation_status": _field("string", "Create status", enum=["DISABLE", "ENABLE"], default="DISABLE"),
+            "promotion_type": _field("string", "Optimization location", enum=["APP_ANDROID", "APP_IOS", "WEBSITE", "CATALOG", "TIKTOK_SHOP", "MINI_APP", "MINI_GAME", "NATIVE_SERIES", "LEAD_GENERATION", "LEAD_GEN_CLICK_TO_TT_DIRECT_MESSAGE", "LEAD_GEN_CLICK_TO_SOCIAL_MEDIA_APP_MESSAGE"]),
+            "promotion_target_type": _field("string", "Lead optimization location", enum=["INSTANT_PAGE", "EXTERNAL_WEBSITE"]),
+            "optimization_goal": _field("string", "Optimization goal", enum=TIKTOK_SMART_PLUS_OPTIMIZATION_GOALS),
+            "optimization_event": _field("string", "Pixel or app optimization event"),
+            "app_attribution_source": _field("string", "App attribution source", enum=["MMP", "SAN"]),
+            "app_data_source": _field("string", "App data source"),
+            "app_id": _field(
+                "string", "App ID returned by tiktok_list_apps", minLength=1,
+                lookup_tool="tiktok_list_apps", lookup_result_key="apps",
+                selection_value_fields=["app_id", "id"],
+                selection_label_fields=["app_name", "name", "display_name", "id"],
+            ),
+            "catalog_id": _field("string", "Catalog ID returned by tiktok_list_catalogs", minLength=1, lookup_tool="tiktok_list_catalogs", lookup_result_key="catalogs"),
+            "product_set_id": _field("string", "Product set ID", minLength=1),
+            "location_ids": _field("array", "TikTok location IDs", minItems=1, items={"type": "string"}, lookup_tool="tiktok_list_regions", lookup_result_key="regions", selection_value_fields=["location_id", "id", "country_code", "code"], selection_label_fields=["location_name", "name", "country_name", "country_code"]),
+            "saved_audience_id": _field("string", "Saved Audience ID", minLength=1, lookup_tool="tiktok_list_audiences", lookup_result_key="audiences"),
+            "gender": _field("string", "Gender", enum=TIKTOK_GENDERS),
+            "age_groups": _field("array", "Age groups", items={"type": "string", "enum": TIKTOK_AGE_GROUPS}),
+            "operating_systems": _field("array", "Operating systems", items={"type": "string", "enum": TIKTOK_OPERATING_SYSTEMS}),
+            "placement_type": _field("string", "Placement mode", enum=TIKTOK_PLACEMENT_TYPES),
+            "placements": _field("array", "Placements", items={"type": "string", "enum": TIKTOK_PLACEMENTS}),
+            "targeting_optimization_mode": _field("string", "Targeting optimization mode", enum=["AUTOMATIC", "MANUAL"]),
+            "bid_type": _field("string", "Bid type", enum=["BID_TYPE_NO_BID", "BID_TYPE_CUSTOM"]),
+            "bid_price": _field("number", "Bid price", minimum=0),
+            "conversion_bid_price": _field("number", "Conversion bid price", minimum=0),
+            "deep_bid_type": _field("string", "Deep bid type", enum=["AEO", "OCC", "ROAS", "VO_HIGHEST_VALUE", "VO_MIN_ROAS"]),
+            "roas_bid": _field("number", "ROAS bid", minimum=0),
+            "billing_event": _field("string", "Billing event", enum=["CPM", "CPC", "OCPM", "CPV"]),
+            "budget_mode": _field("string", "Ad group budget mode", enum=["BUDGET_MODE_DYNAMIC_DAILY_BUDGET", "BUDGET_MODE_TOTAL", "BUDGET_MODE_INFINITE", "BUDGET_MODE_DAY"]),
+            "budget": _field("number", "Ad group budget", minimum=0),
+            "schedule_type": _field("string", "Schedule type", enum=TIKTOK_SCHEDULE_TYPES),
+            "schedule_start_time": _field("string", "UTC start time"),
+            "schedule_end_time": _field("string", "UTC end time"),
+            "frequency": _field("number", "Frequency cap", minimum=1),
+            "frequency_schedule": _field("number", "Frequency window in days", minimum=1),
+            "identity_type": _field("string", "Identity type", enum=["CUSTOMIZED_USER", "AUTH_CODE", "TT_USER", "BC_AUTH_TT"]),
+            "identity_id": _field("string", "Identity ID", minLength=1, lookup_tool="tiktok_list_identities", lookup_result_key="identities"),
+            "identity_authorized_bc_id": _field("string", "Authorized Business Center selected from the identity lookup", minLength=1, lookup_tool="tiktok_list_identities", lookup_result_key="identities", selection_value_fields=["authorized_bc_id", "bc_id", "id"], selection_label_fields=["business_center_name", "display_name", "name", "authorized_bc_id"]),
+            "pixel_id": _field("string", "Pixel ID", minLength=1, lookup_tool="tiktok_list_pixels", lookup_result_key="pixels"),
+            "tracking_pixel_id": _field("string", "Tracking Pixel ID", minLength=1, lookup_tool="tiktok_list_pixels", lookup_result_key="pixels"),
+        },
+    }
+
+
+def tiktok_smart_plus_ad_schema() -> dict[str, Any]:
+    """Closed contract for ``smart_plus/ad/create``."""
+    return {
+        "required": ["campaign_id", "adgroup_id", "ad_name"],
+        "provider_required": ["campaign_id", "adgroup_id", "ad_name"],
+        "provider_any_of": [["tiktok_item_id", "video_id", "image_ids"]],
+        "properties": {
+            "request_id": _field("string", "System-generated idempotency key", minLength=1, ui_hidden=True),
+            "campaign_id": _field("string", "Parent Smart+ campaign ID", minLength=1),
+            "adgroup_id": _field("string", "Parent Smart+ ad group ID", minLength=1),
+            "ad_name": _field("string", "Ad name", minLength=1, maxLength=512),
+            "operation_status": _field("string", "Create status", enum=["DISABLE", "ENABLE"], default="DISABLE"),
+            "ad_format": _field("string", "Ad format", enum=["SINGLE_VIDEO", "SINGLE_IMAGE", "CAROUSEL_ADS"]),
+            "tiktok_item_id": _field("string", "Authorized TikTok post ID", minLength=1),
+            "video_id": _field("string", "Uploaded TikTok video ID", minLength=1, lookup_tool="tiktok_list_videos", lookup_result_key="videos"),
+            "image_ids": _field("array", "Uploaded TikTok image IDs", items={"type": "string"}, lookup_tool="tiktok_list_images", lookup_result_key="images"),
+            "ad_text": _field("string", "Primary ad text", minLength=1, maxLength=100),
+            "identity_type": _field("string", "Identity type", enum=["CUSTOMIZED_USER", "AUTH_CODE", "TT_USER", "BC_AUTH_TT"]),
+            "identity_id": _field("string", "Identity ID", minLength=1, lookup_tool="tiktok_list_identities", lookup_result_key="identities"),
+            "identity_authorized_bc_id": _field("string", "Authorized Business Center selected from the identity lookup", minLength=1, lookup_tool="tiktok_list_identities", lookup_result_key="identities", selection_value_fields=["authorized_bc_id", "bc_id", "id"], selection_label_fields=["business_center_name", "display_name", "name", "authorized_bc_id"]),
+            "call_to_action_id": _field("string", "CTA ID"),
+            "landing_page_url": _field("string", "Landing page URL"),
+            "deeplink": _field("string", "App deep link"),
+            "dark_post_status": _field("string", "Ads-only mode", enum=["ON", "OFF"]),
         },
     }
 

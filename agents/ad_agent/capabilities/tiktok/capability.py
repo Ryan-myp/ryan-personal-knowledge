@@ -64,6 +64,10 @@ from .parameters import (
     tiktok_single_video_ad_schema,
     tiktok_single_image_ad_schema,
     tiktok_carousel_ad_schema,
+    tiktok_all_in_one_spark_ad_schema,
+    tiktok_smart_plus_campaign_schema,
+    tiktok_smart_plus_adgroup_schema,
+    tiktok_smart_plus_ad_schema,
     tiktok_targeting_update_schema,
     TIKTOK_OBJECTIVE_TYPES,
     TIKTOK_PLACEMENTS,
@@ -344,7 +348,12 @@ class TikTokCapability(BaseCapability):
         "create_single_video_ad": ["tiktok_create_single_video_ad"],
         "create_single_image_ad": ["tiktok_create_single_image_ad"],
         "create_carousel_ad": ["tiktok_create_carousel_ad"],
-        "create_app_ad": ["tiktok_create_app_ad"], "create_spark_ad": ["tiktok_spark_ads_create"],
+        "create_app_ad": ["tiktok_create_app_ad"],
+        "create_all_in_one_spark_ad": ["tiktok_create_all_in_one_spark_ad"],
+        "create_smart_plus_campaign": ["tiktok_smart_plus_create_campaign"],
+        "create_smart_plus_adgroup": ["tiktok_smart_plus_create_adgroup"],
+        "create_smart_plus_ad": ["tiktok_smart_plus_create_ad"],
+        "create_spark_ad": ["tiktok_spark_ads_create"],
         "get_campaign_report": ["tiktok_get_campaign_report"], "get_adgroup_report": ["tiktok_get_adgroup_report"],
         "list_audiences": ["tiktok_list_audiences"], "get_audience": ["tiktok_get_audience"],
         "create_audience": ["tiktok_create_audience"],
@@ -892,7 +901,12 @@ class TikTokCapability(BaseCapability):
                 provider_any_of=tiktok_app_ad_schema()["provider_any_of"],
                 action="create", resource_type="ad", parent_resource_type="ad_group",
                 resource_id_field="ad_id", parent_resource_id_field="adgroup_id",
-                intent_types=["create_app_ad", "create_campaign"],
+                # App Promotion is now composed by the Upgraded Smart+ chain
+                # for the generic create-campaign flow.  Keep this legacy
+                # endpoint available only when a caller explicitly asks for
+                # the app-ad action; otherwise it would compete with the
+                # Smart+ ad Tool during objective-based discovery.
+                intent_types=["create_app_ad"],
                 activation_rules=[
                     {"field": "objective", "aliases": ["objective_type"], "in": [
                         "APP_PROMOTION", "APP_INSTALL", "app",
@@ -1017,6 +1031,13 @@ class TikTokCapability(BaseCapability):
     def register_tools(self) -> list[tuple[ToolDefinition, ToolHandler]]:
         tools = []
         api_client = getattr(self, '_api_client', None)
+        # These objectives are composed by the current Upgraded Smart+ chain.
+        # Keep the provider-owned set next to the Tool registrations so
+        # legacy ad-format Tools cannot become parallel nodes when a complete
+        # Smart+ request also contains a video/image format.
+        smart_plus_objectives = [
+            "APP_PROMOTION", "WEB_CONVERSIONS", "TRAFFIC", "SALES", "PRODUCT_SALES",
+        ]
 
         # List Campaigns
         tools.append((ToolDefinition(
@@ -1075,6 +1096,13 @@ class TikTokCapability(BaseCapability):
             live_support=True,
             resource_id_field="campaign_id",
             readback_tool="tiktok_get_campaign",
+            activation_rules=[{
+                "if": {
+                    "objective_type": {"aliases": ["objective"], "not_in": [
+                        "APP_PROMOTION", "TRAFFIC", "SALES", "PRODUCT_SALES", "WEB_CONVERSIONS",
+                    ]},
+                },
+            }],
         ), TikTokCreateCampaignHandler(api_client)))
 
         # List Ad Groups
@@ -1136,7 +1164,9 @@ class TikTokCapability(BaseCapability):
             readback_tool="tiktok_get_adgroup",
             activation_rules=[{
                 "if": {
-                    "objective_type": {"aliases": ["objective"], "not_in": ["PRODUCT_SALES", "sales"]},
+                    "objective_type": {"aliases": ["objective"], "not_in": [
+                        "APP_PROMOTION", "TRAFFIC", "SALES", "PRODUCT_SALES", "WEB_CONVERSIONS", "sales",
+                    ]},
                     "product_source": {"not_in": ["CATALOG", "STORE", "SHOWCASE"]},
                     "catalog_id": {"exists": False},
                     "product_set_id": {"exists": False},
@@ -1163,7 +1193,11 @@ class TikTokCapability(BaseCapability):
             conditional_rules=product_sales_adgroup["conditional_rules"],
             action="create", resource_type="ad_group", parent_resource_type="campaign",
             resource_id_field="adgroup_id", parent_resource_id_field="campaign_id",
-            intent_types=["create_product_sales_adgroup", "create_campaign"],
+            # Product Sales is composed by Smart+ for objective-based
+            # campaign creation. This typed legacy contract remains available
+            # for an explicit create_product_sales_adgroup request, but must
+            # not be selected as a parallel node.
+            intent_types=["create_product_sales_adgroup"],
             activation_rules=[
                 {"field": "objective_type", "aliases": ["objective"], "in": ["PRODUCT_SALES", "sales"]},
                 {"field": "product_source", "in": ["CATALOG", "STORE", "SHOWCASE"]},
@@ -1248,6 +1282,7 @@ class TikTokCapability(BaseCapability):
                     ]},
                     "objective": {"aliases": ["objective_type"], "not_in": [
                         "leads", "LEAD_GENERATION", "APP_PROMOTION", "APP_INSTALL", "app",
+                        "TRAFFIC", "SALES", "WEB_CONVERSIONS",
                         "PRODUCT_SALES", "sales",
                     ]},
                     "promotion_type": {"not_in": ["LEAD_FORM", "APP_ANDROID", "APP_IOS"]},
@@ -1279,7 +1314,10 @@ class TikTokCapability(BaseCapability):
             conditional_rules=product_sales_ad["conditional_rules"],
             action="create", resource_type="ad", parent_resource_type="ad_group",
             resource_id_field="ad_id", parent_resource_id_field="adgroup_id",
-            intent_types=["create_product_sales_ad", "create_campaign"],
+            # Product Sales is composed by Smart+ for objective-based campaign
+            # creation. Keep this legacy endpoint explicit-only so it cannot
+            # be selected alongside Smart+.
+            intent_types=["create_product_sales_ad"],
             activation_rules=[
                 {"field": "objective_type", "aliases": ["objective"], "in": ["PRODUCT_SALES", "sales"]},
                 {"field": "product_source", "in": ["CATALOG", "STORE", "SHOWCASE"]},
@@ -1315,7 +1353,13 @@ class TikTokCapability(BaseCapability):
                 readback_tool="tiktok_get_ad",
                 intent_types=[intent_name, "create_campaign"],
                 activation_rules=[{
-                    "field": "ad_format", "aliases": ["creative_type"], "in": [format_name],
+                    "if": {
+                        "ad_format": {"aliases": ["creative_type"], "in": [format_name]},
+                        "objective": {
+                            "aliases": ["objective_type"],
+                            "not_in": smart_plus_objectives,
+                        },
+                    },
                 }],
                 traits=["write", "ad", format_name.lower()],
                 write=True,
@@ -1369,6 +1413,113 @@ class TikTokCapability(BaseCapability):
             traits=["read", "audience"],
         ), TikTokListAudiencesHandler(api_client)))
 
+        all_in_one_schema = tiktok_all_in_one_spark_ad_schema()
+        tools.append(method_tool(
+            platform="tiktok", skill="tiktok-ads-api-expert",
+            name="tiktok_create_all_in_one_spark_ad",
+            description=(
+                "使用 TikTok v1.3 当前的一步 Spark Ads 接口创建 Campaign、Ad Group 和 Spark Ad；"
+                "覆盖 Reach、Traffic、Video views、Community interaction。默认仅生成 dry-run 计划。"
+            ),
+            method_name="create_all_in_one_spark_ad", result_key="creation",
+            properties={"account_id": {"type": "string"}, **all_in_one_schema["properties"]},
+            required=["account_id"] + all_in_one_schema["required"],
+            provider_required=all_in_one_schema["provider_required"],
+            provider_any_of=all_in_one_schema["provider_any_of"],
+            conditional_rules=all_in_one_schema["conditional_rules"],
+            action="create", resource_type="campaign", resource_id_field="campaign_id",
+            intent_types=["create_all_in_one_spark_ad", "create_campaign"],
+            activation_rules=[{
+                "field": "objective_type",
+                "in": ["REACH", "VIDEO_VIEWS", "ENGAGEMENT"],
+            }],
+            traits=["write", "campaign", "ad_group", "ad", "spark", "smart_plus", "business/spark_ad/create"],
+            write=True, live_support=False, provider_api_version="v1.3",
+            readback_tool="tiktok_list_campaigns",
+            argument_builder=lambda ctx, data: ((account(ctx, data), {
+                key: data[key] for key in all_in_one_schema["properties"] if key in data
+            }), {}),
+        ))
+
+        # Upgraded Smart+ is the current TikTok creation contract.  It is a
+        # three-resource API, so each level remains an independent Tool and
+        # Blueprint can compose the dependency chain without a Runtime
+        # objective branch.  Business aliases (Traffic/Sales/Product Sales)
+        # are normalized by TikTokAPIClient at the Provider boundary.
+        smart_plus_campaign = tiktok_smart_plus_campaign_schema()
+        tools.append(method_tool(
+            platform="tiktok", skill="tiktok-ads-api-expert",
+            name="tiktok_smart_plus_create_campaign",
+            description=(
+                "使用 TikTok Upgraded Smart+ Campaign API 创建广告系列；支持 App、Web/Traffic、"
+                "Sales 和 Product Sales，默认生成暂停状态的 dry-run 计划。"
+            ),
+            method_name="create_smart_plus_campaign", result_key="campaign",
+            properties={"account_id": {"type": "string"}, **smart_plus_campaign["properties"]},
+            required=["account_id"] + smart_plus_campaign["required"],
+            provider_required=smart_plus_campaign["provider_required"],
+            conditional_rules=smart_plus_campaign["conditional_rules"],
+            action="create", resource_type="campaign", resource_id_field="campaign_id",
+            intent_types=["create_smart_plus_campaign", "create_campaign"],
+            activation_rules=[{"field": "objective_type", "in": smart_plus_objectives}],
+            traits=["write", "campaign", "smart_plus", "smart_plus/campaign/create"],
+            write=True, live_support=False, provider_api_version="v1.3",
+            readback_tool="tiktok_get_campaign",
+            argument_builder=lambda ctx, data: ((account(ctx, data), {
+                key: data[key] for key in smart_plus_campaign["properties"] if key in data
+            }), {}),
+        ))
+
+        smart_plus_adgroup = tiktok_smart_plus_adgroup_schema()
+        tools.append(method_tool(
+            platform="tiktok", skill="tiktok-ads-api-expert",
+            name="tiktok_smart_plus_create_adgroup",
+            description=(
+                "使用 TikTok Upgraded Smart+ Ad Group API 创建广告组；定向、优化目标、"
+                "出价和排期由渠道级联规则校验，默认只生成 dry-run 计划。"
+            ),
+            method_name="create_smart_plus_adgroup", result_key="adgroup",
+            properties={"account_id": {"type": "string"}, **smart_plus_adgroup["properties"]},
+            required=["account_id"] + smart_plus_adgroup["required"],
+            provider_required=smart_plus_adgroup["provider_required"],
+            provider_any_of=smart_plus_adgroup["provider_any_of"],
+            action="create", resource_type="ad_group", parent_resource_type="campaign",
+            resource_id_field="adgroup_id", parent_resource_id_field="campaign_id",
+            intent_types=["create_smart_plus_adgroup", "create_campaign", "create_adgroup"],
+            activation_rules=[{"field": "objective_type", "in": smart_plus_objectives}],
+            traits=["write", "ad_group", "smart_plus", "smart_plus/adgroup/create"],
+            write=True, live_support=False, provider_api_version="v1.3",
+            readback_tool="tiktok_get_adgroup",
+            argument_builder=lambda ctx, data: ((account(ctx, data), data["campaign_id"], {
+                key: data[key] for key in smart_plus_adgroup["properties"] if key in data
+            }), {}),
+        ))
+
+        smart_plus_ad = tiktok_smart_plus_ad_schema()
+        tools.append(method_tool(
+            platform="tiktok", skill="tiktok-ads-api-expert",
+            name="tiktok_smart_plus_create_ad",
+            description=(
+                "使用 TikTok Upgraded Smart+ Ad API 创建广告和素材；支持 Spark 帖子、视频、"
+                "图片等渠道素材引用，默认只生成 dry-run 计划。"
+            ),
+            method_name="create_smart_plus_ad", result_key="ad",
+            properties={"account_id": {"type": "string"}, **smart_plus_ad["properties"]},
+            required=["account_id"] + smart_plus_ad["required"],
+            provider_required=smart_plus_ad["provider_required"],
+            provider_any_of=smart_plus_ad["provider_any_of"],
+            action="create", resource_type="ad", parent_resource_type="ad_group",
+            resource_id_field="smart_plus_ad_id", parent_resource_id_field="adgroup_id",
+            intent_types=["create_smart_plus_ad", "create_campaign", "create_ad"],
+            activation_rules=[{"field": "objective_type", "in": smart_plus_objectives}],
+            traits=["write", "ad", "smart_plus", "smart_plus/ad/create"],
+            write=True, live_support=False, provider_api_version="v1.3",
+            readback_tool="tiktok_get_ad",
+            argument_builder=lambda ctx, data: ((account(ctx, data), data["campaign_id"], data["adgroup_id"], {
+                key: data[key] for key in smart_plus_ad["properties"] if key in data
+            }), {}),
+        ))
+
         tools.append((ToolDefinition(
             name="tiktok_spark_ads_create",
             skill="tiktok-ads-api-expert",
@@ -1393,9 +1544,21 @@ class TikTokCapability(BaseCapability):
             parent_resource_type="ad_group",
             parent_resource_id_field="adgroup_id",
             activation_rules=[{
-                "field": "spark_post_id", "aliases": ["tiktok_item_id"], "exists": True,
+                "if": {
+                    "spark_post_id": {"aliases": ["tiktok_item_id"], "exists": True},
+                    "objective": {
+                        "aliases": ["objective_type"],
+                        "not_in": smart_plus_objectives,
+                    },
+                },
             }, {
-                "field": "ad_format", "in": ["SPARK_AD", "SPARK"],
+                "if": {
+                    "ad_format": {"in": ["SPARK_AD", "SPARK"]},
+                    "objective": {
+                        "aliases": ["objective_type"],
+                        "not_in": smart_plus_objectives,
+                    },
+                },
             }],
         ), TikTokSparkAdsCreateHandler(api_client)))
 

@@ -19,7 +19,7 @@ from typing import Any, Callable, Optional
 from ..core.interfaces import (
     ToolContext, ToolResult, ToolDefinition, ToolHandler,
     CapabilityModule, CapabilityContext, CapabilityRuntime,
-    WriteGuard, RiskLevel, ToolEffect
+    WriteGuard, WriteReservation, RiskLevel, ToolEffect
 )
 from ..core.tool_registry import SimpleToolRegistry
 from ..core.security import protected_update_paths
@@ -385,6 +385,7 @@ class SimpleIdempotencyGuard(WriteGuard):
         self._max_retries = max_retries
         self._store = store
         self._lock = threading.RLock()
+        self._reservations: dict[str, WriteReservation] = {}
 
     def bind_store(self, store) -> None:
         """Attach the Runtime's SQLite store without changing the API."""
@@ -397,8 +398,29 @@ class SimpleIdempotencyGuard(WriteGuard):
         input_data: dict[str, Any]
     ) -> tuple[bool, Optional[str]]:
         """检查是否允许写入"""
-        # 生成幂等键
+        allowed, reason, _reservation = self.reserve_write_record(
+            ctx, tool_def, input_data
+        )
+        return allowed, reason
+
+    def reserve_write_record(
+        self,
+        ctx: ToolContext,
+        tool_def: ToolDefinition,
+        input_data: dict[str, Any],
+    ) -> tuple[bool, Optional[str], Optional[WriteReservation]]:
+        """Reserve and return a request-bound reservation for Runtime."""
         key = self._generate_key(tool_def.name, input_data, ctx.user_id)
+        from ..core.security import request_hash, sha256_json
+        reservation = WriteReservation(
+            idempotency_key=key,
+            request_hash=request_hash(
+                tool_def.platform, ctx.account_id, tool_def.name,
+                sha256_json(input_data),
+            ),
+            tool_name=tool_def.name,
+            account_id=str(ctx.account_id or ""),
+        )
         
         # Check executed and in-flight reservations atomically.  The previous
         # check-then-mark sequence allowed concurrent requests to pass the
@@ -409,12 +431,15 @@ class SimpleIdempotencyGuard(WriteGuard):
             if last_run:
                 elapsed = (now - last_run).total_seconds()
                 if elapsed < 300:  # 5-minute window
-                    return False, f"Duplicate write detected for '{tool_def.name}' (last run {elapsed:.0f}s ago)"
-            if self._store is not None and not self._store.reserve_write(key, 300):
-                return False, f"Duplicate write detected for '{tool_def.name}' (persistent reservation)"
+                    return False, f"Duplicate write detected for '{tool_def.name}' (last run {elapsed:.0f}s ago)", None
+            if self._store is not None and not self._store.reserve_write(
+                key, 300, reservation.request_hash
+            ):
+                return False, f"Duplicate write detected for '{tool_def.name}' (persistent reservation)", None
             self._reserved[key] = now
+            self._reservations[key] = reservation
 
-        return True, None
+        return True, None, reservation
     
     def _generate_key(self, tool_name: str, input_data: dict, user_id: str) -> str:
         """生成幂等键"""
@@ -437,8 +462,37 @@ class SimpleIdempotencyGuard(WriteGuard):
         key = self._generate_key(tool_name, input_data, user_id)
         with self._lock:
             self._reserved.pop(key, None)
+            self._reservations.pop(key, None)
             if self._store is not None:
                 self._store.release_write(key)
+
+    def finalize(self, reservation: WriteReservation, result: ToolResult) -> None:
+        """Bind the provider result to the exact reservation/request hash."""
+        with self._lock:
+            current = self._reservations.get(reservation.idempotency_key)
+            if current != reservation:
+                return
+            if result.success and not result.simulated:
+                self._reserved.pop(reservation.idempotency_key, None)
+                self._reservations.pop(reservation.idempotency_key, None)
+                self._executed[reservation.idempotency_key] = datetime.now()
+                if self._store is not None:
+                    self._store.mark_write_executed(
+                        reservation.idempotency_key, reservation.request_hash
+                    )
+            elif getattr(result, "data", {}).get("execution_status") in {
+                "unknown", "timed_out", "transport_unknown",
+            }:
+                # Keep the durable reservation until reconciliation or an
+                # explicit operator decision; retrying could duplicate a write.
+                return
+            else:
+                self._reserved.pop(reservation.idempotency_key, None)
+                self._reservations.pop(reservation.idempotency_key, None)
+                if self._store is not None:
+                    self._store.release_write(
+                        reservation.idempotency_key, reservation.request_hash
+                    )
 
 
 class CampaignUpdateHandler(ToolHandler):

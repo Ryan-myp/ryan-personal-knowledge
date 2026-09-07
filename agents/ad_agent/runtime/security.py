@@ -8,12 +8,15 @@ import time
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
-from ..core.interfaces import ExecutionMode, ToolResult
+from ..core.interfaces import ExecutionMode, ToolError, ToolResult
 from ..core.security import (
     PROTECTED_INPUT_FIELDS,
+    canonical_json,
     normalize_field_name,
     protected_field_paths,
     protected_update_paths,
+    request_hash,
+    sha256_json,
 )
 
 
@@ -60,6 +63,14 @@ class RuntimeSecurity:
         redact = self.runtime._redact_for_persistence
         result.data = redact(result.data)
         result.error = redact(result.error)
+        if result.error_detail:
+            detail = result.error_detail
+            result.error_detail = ToolError(
+                category=detail.category,
+                code=detail.code,
+                message=str(redact(detail.message)),
+                suggestion=str(redact(detail.suggestion)),
+            )
         result.card_payload = redact(result.card_payload)
         return result
 
@@ -70,9 +81,15 @@ class RuntimeSecurity:
         account_id: str,
         tool_def: Any,
         input_data: dict,
-    ) -> dict[str, str]:
-        normalized = json.dumps(
-            input_data, sort_keys=True, default=str, separators=(",", ":")
+        preview: Optional[dict] = None,
+    ) -> dict[str, Any]:
+        normalized = canonical_json(input_data)
+        input_digest = sha256_json(input_data)
+        preview_payload = preview if preview is not None else input_data
+        preview_digest = sha256_json(preview_payload)
+        request_digest = request_hash(
+            getattr(tool_def, "platform", ""), account_id,
+            getattr(tool_def, "name", ""), input_digest,
         )
         idempotency_key = hashlib.sha256(
             f"{user_id}:{tool_def.name}:{normalized}".encode("utf-8")
@@ -93,12 +110,17 @@ class RuntimeSecurity:
             "plan_fingerprint": fingerprint,
             "confirmation_token": token,
             "idempotency_key": idempotency_key,
+            "input_hash": input_digest,
+            "preview_hash": preview_digest,
+            "request_hash": request_digest,
+            "contract_hash": str(getattr(tool_def, "contract_hash", "") or ""),
+            "preview": preview_payload,
         }
 
     def prepare_confirmation(
-        self, expected: dict[str, str], create: bool = False,
+        self, expected: dict[str, Any], create: bool = False,
         ttl_seconds: int = 600,
-    ) -> dict[str, str]:
+    ) -> dict[str, Any]:
         manager = self.runtime._session_manager
         if not manager:
             if create:
@@ -119,12 +141,14 @@ class RuntimeSecurity:
                 expected["account_id"],
                 expected["tool"],
                 expires_at,
+                expected.get("input_hash"), expected.get("preview_hash"),
+                expected.get("request_hash"), expected.get("contract_hash"),
             )
             return {**expected, "expires_at": expires_at}
         return expected
 
     def validate_confirmation_record(
-        self, expected: dict[str, str], payload: dict
+        self, expected: dict[str, Any], payload: dict
     ) -> tuple[bool, str]:
         manager = self.runtime._session_manager
         if not manager:
@@ -136,11 +160,13 @@ class RuntimeSecurity:
             expected.get("user_id", ""),
             expected["account_id"],
             expected["tool"],
+            expected.get("input_hash"), expected.get("preview_hash"),
+            expected.get("request_hash"), expected.get("contract_hash"),
         )
 
     @staticmethod
     def confirmation_matches(
-        payload: Optional[dict], expected: dict[str, str]
+        payload: Optional[dict], expected: dict[str, Any]
     ) -> bool:
         if not isinstance(payload, dict) or payload.get("type") != "confirm_write":
             return False
@@ -149,6 +175,7 @@ class RuntimeSecurity:
             for key in (
                 "session_id", "user_id", "account_id", "tool",
                 "plan_fingerprint", "confirmation_token", "idempotency_key",
+                "input_hash", "preview_hash", "request_hash", "contract_hash",
             )
         )
 

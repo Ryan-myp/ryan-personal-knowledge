@@ -2047,10 +2047,16 @@ class SimpleIntentRouter(IntentRouter):
         if not rules:
             return True
         # An explicitly requested specialized intent is already an
-        # unambiguous route. Activation predicates only narrow the generic
-        # ``create_campaign`` composition path.
+        # unambiguous route. The three generic composition intents are
+        # different: they can match several provider-owned Tools and must
+        # still be narrowed by the provider-published activation predicates.
+        # This keeps the rule data-driven without adding a provider or
+        # objective branch to Core.
+        generic_composition_intents = {
+            "create_campaign", "create_adgroup", "create_ad",
+        }
         if (
-            str(getattr(intent, "intent_type", "")) != "create_campaign"
+            str(getattr(intent, "intent_type", "")) not in generic_composition_intents
             and str(getattr(intent, "intent_type", ""))
             in set(getattr(definition, "intent_types", []) or [])
         ):

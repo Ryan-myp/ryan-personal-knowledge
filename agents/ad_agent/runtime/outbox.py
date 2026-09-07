@@ -1,0 +1,92 @@
+"""Durable workflow event publishing and delivery helpers.
+
+The outbox is deliberately a backend/service seam. It does not know about a
+provider or add a second Runtime router. SSE remains a request-scoped view;
+this module is the durable hand-off for a later SSE/Webhook/metrics sink.
+"""
+
+from __future__ import annotations
+
+import threading
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable, Optional
+
+from ..persistence.models import OutboxEvent
+
+
+class OutboxPublisher:
+    """Persist sanitized events through ``SessionManager``."""
+
+    def __init__(self, session_manager: Any):
+        self.session_manager = session_manager
+
+    def publish(self, run_id: str, event_type: str, payload: dict[str, Any]) -> str:
+        if not self.session_manager:
+            raise RuntimeError("outbox requires a persistence-backed SessionManager")
+        return self.session_manager.publish_outbox_event(run_id, event_type, payload)
+
+
+class OutboxConsumer:
+    """Bounded background consumer with explicit ack/retry semantics."""
+
+    def __init__(
+        self,
+        store: Any,
+        publish: Callable[[OutboxEvent], None],
+        *,
+        poll_interval: float = 0.25,
+        batch_size: int = 20,
+        max_backoff_seconds: float = 60.0,
+    ):
+        self.store = store
+        self.publish = publish
+        self.poll_interval = max(0.01, float(poll_interval))
+        self.batch_size = max(1, min(int(batch_size), 100))
+        self.max_backoff_seconds = max(0.1, float(max_backoff_seconds))
+        self.consumer_id = f"outbox:{id(self)}"
+        self._stop = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+
+    def drain_once(self) -> int:
+        delivered = 0
+        events = self.store.claim_outbox_events(self.batch_size, self.consumer_id)
+        for event in events:
+            try:
+                self.publish(event)
+            except Exception:
+                delay = min(
+                    self.max_backoff_seconds,
+                    max(0.1, 2 ** min(int(event.retry_count), 8)),
+                )
+                next_retry = (
+                    datetime.now(timezone.utc) + timedelta(seconds=delay)
+                ).isoformat()
+                self.store.mark_outbox_retry(
+                    # Delivery exceptions may contain provider payloads or
+                    # credentials; keep the durable retry record generic.
+                    event.event_id, next_retry, "outbox delivery failed"
+                )
+            else:
+                if self.store.mark_outbox_delivered(event.event_id):
+                    delivered += 1
+        return delivered
+
+    def start(self) -> None:
+        if self._thread and self._thread.is_alive():
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(
+            target=self._run, name="ad-agent-outbox", daemon=True
+        )
+        self._thread.start()
+
+    def stop(self, timeout: float = 2.0) -> None:
+        self._stop.set()
+        if self._thread:
+            self._thread.join(max(0.0, float(timeout)))
+        self._thread = None
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            self.drain_once()
+            self._stop.wait(self.poll_interval)

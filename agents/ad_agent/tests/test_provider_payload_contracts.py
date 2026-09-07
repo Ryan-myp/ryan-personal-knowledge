@@ -2356,6 +2356,134 @@ def test_tiktok_typed_ad_tools_validate_assets_and_fix_format_payloads():
     assert definitions["tiktok_create_single_image_ad"].live_support is False
 
 
+def test_tiktok_upgraded_smart_plus_uses_current_three_step_contract():
+    client = TikTokAPIClient({"access_token": "test"})
+    seen = []
+
+    def request(method, endpoint, data=None, **kwargs):
+        seen.append((method, endpoint, data))
+        if endpoint.endswith("campaign/create/"):
+            return {"code": 0, "data": {"campaign_id": "sp-c1"}}
+        if endpoint.endswith("adgroup/create/"):
+            return {"code": 0, "data": {"adgroup_id": "sp-g1"}}
+        return {"code": 0, "data": {"smart_plus_ad_id": "sp-a1"}}
+
+    client.request = request
+    campaign = client.create_smart_plus_campaign("t1", {
+        "campaign_name": "Traffic Smart+",
+        "objective_type": "TRAFFIC",
+        "budget_optimize_on": True,
+        "budget_mode": "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
+        "budget": 100,
+    })
+    assert campaign["campaign_id"] == "sp-c1"
+    assert seen[0][1] == "smart_plus/campaign/create/"
+    assert seen[0][2]["objective_type"] == "WEB_CONVERSIONS"
+    assert seen[0][2]["sales_destination"] == "WEBSITE"
+    assert seen[0][2]["operation_status"] == "DISABLE"
+    assert isinstance(seen[0][2]["request_id"], str)
+
+    adgroup = client.create_smart_plus_adgroup("t1", "sp-c1", {
+        "objective_type": "TRAFFIC",
+        "adgroup_name": "Traffic group",
+        "promotion_type": "WEBSITE",
+        "optimization_goal": "TRAFFIC_LANDING_PAGE_VIEW",
+        "bid_type": "BID_TYPE_CUSTOM",
+        "conversion_bid_price": 2,
+        "billing_event": "OCPM",
+        "schedule_type": "SCHEDULE_FROM_NOW",
+        "schedule_start_time": "2026-09-07 00:00:00",
+        "location_ids": ["US"],
+    })
+    assert adgroup["adgroup_id"] == "sp-g1"
+    assert seen[1][1] == "smart_plus/adgroup/create/"
+    assert seen[1][2]["campaign_id"] == "sp-c1"
+    assert "objective_type" not in seen[1][2]
+    assert seen[1][2]["operation_status"] == "DISABLE"
+
+    ad = client.create_smart_plus_ad("t1", "sp-c1", "sp-g1", {
+        "ad_name": "Traffic creative",
+        "tiktok_item_id": "item-1",
+        "identity_type": "AUTH_CODE",
+        "identity_id": "identity-1",
+    })
+    assert ad["smart_plus_ad_id"] == "sp-a1"
+    assert seen[2][1] == "smart_plus/ad/create/"
+    assert seen[2][2]["campaign_id"] == "sp-c1"
+    assert seen[2][2]["adgroup_id"] == "sp-g1"
+    assert seen[2][2]["operation_status"] == "DISABLE"
+
+
+def test_tiktok_upgraded_smart_plus_rejects_invalid_cascades_and_exposes_tools():
+    client = TikTokAPIClient({"access_token": "test"})
+    with pytest.raises(ValueError, match="not valid"):
+        client.create_smart_plus_adgroup("t1", "c1", {
+            "objective_type": "TRAFFIC", "adgroup_name": "bad",
+            "promotion_type": "WEBSITE", "optimization_goal": "INSTALL",
+            "bid_type": "BID_TYPE_NO_BID", "billing_event": "OCPM",
+            "schedule_type": "SCHEDULE_FROM_NOW",
+            "schedule_start_time": "2026-09-07 00:00:00", "location_ids": ["US"],
+        })
+
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_tiktok_capability().register_tools()
+    }
+    assert definitions["tiktok_smart_plus_create_campaign"].live_support is False
+    assert definitions["tiktok_smart_plus_create_adgroup"].live_support is False
+    assert definitions["tiktok_smart_plus_create_ad"].live_support is False
+    assert definitions["tiktok_smart_plus_create_campaign"].provider_api_version == "v1.3"
+    assert definitions["tiktok_smart_plus_create_adgroup"].input_schema.properties["location_ids"]["lookup_tool"] == "tiktok_list_regions"
+
+
+def test_tiktok_app_and_sales_use_smart_plus_with_paused_defaults():
+    client = TikTokAPIClient({"access_token": "test"})
+    seen = []
+
+    def request(method, endpoint, data=None, **kwargs):
+        seen.append((method, endpoint, data))
+        if endpoint.endswith("campaign/create/"):
+            return {"code": 0, "data": {"campaign_id": f"c-{len(seen)}"}}
+        if endpoint.endswith("adgroup/create/"):
+            return {"code": 0, "data": {"adgroup_id": f"g-{len(seen)}"}}
+        return {"code": 0, "data": {"smart_plus_ad_id": f"a-{len(seen)}"}}
+
+    client.request = request
+    client.create_smart_plus_campaign("t1", {
+        "campaign_name": "App Smart+", "objective_type": "APP_PROMOTION",
+        "app_promotion_type": "APP_INSTALL", "app_id": "app-1",
+    })
+    client.create_smart_plus_adgroup("t1", "c-1", {
+        "objective_type": "APP_PROMOTION", "adgroup_name": "App group",
+        "promotion_type": "APP_ANDROID", "app_id": "app-1",
+        "optimization_goal": "INSTALL", "bid_type": "BID_TYPE_NO_BID",
+        "billing_event": "OCPM", "schedule_type": "SCHEDULE_FROM_NOW",
+        "schedule_start_time": "2026-09-07 00:00:00", "location_ids": ["US"],
+    })
+    client.create_smart_plus_campaign("t1", {
+        "campaign_name": "Sales Smart+", "objective_type": "SALES",
+        "sales_destination": "WEBSITE",
+    })
+    client.create_smart_plus_adgroup("t1", "c-3", {
+        "objective_type": "SALES", "adgroup_name": "Sales group",
+        "promotion_type": "WEBSITE", "optimization_goal": "VALUE",
+        "bid_type": "BID_TYPE_NO_BID", "billing_event": "OCPM",
+        "schedule_type": "SCHEDULE_FROM_NOW",
+        "schedule_start_time": "2026-09-07 00:00:00", "location_ids": ["US"],
+    })
+
+    assert [item[1] for item in seen] == [
+        "smart_plus/campaign/create/", "smart_plus/adgroup/create/",
+        "smart_plus/campaign/create/", "smart_plus/adgroup/create/",
+    ]
+    assert seen[0][2]["objective_type"] == "APP_PROMOTION"
+    assert seen[0][2]["operation_status"] == "DISABLE"
+    assert seen[1][2]["promotion_type"] == "APP_ANDROID"
+    assert seen[2][2]["objective_type"] == "WEB_CONVERSIONS"
+    assert seen[2][2]["sales_destination"] == "WEBSITE"
+    assert seen[3][2]["optimization_goal"] == "VALUE"
+
+
 def test_tiktok_ad_queries_use_scoped_filter_and_create_accepts_ad_ids():
     client = TikTokAPIClient({"access_token": "test"})
     seen = []

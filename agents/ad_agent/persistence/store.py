@@ -15,12 +15,14 @@ import hashlib
 import re
 import threading
 import time
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, List
 
 from .models import (
     CampaignRecord, ConversationMessageRecord, KnowledgeDocumentRecord,
     TaskRecord, ToolCallRecord,
+    OutboxEvent,
 )
 from .errors import PersistenceConflictError
 from ..core.memory import MemoryRecord
@@ -74,7 +76,7 @@ class AdAgentStore:
     # current single-process backend. This keeps the PersistenceBackend
     # boundary stable and gives a future MySQL/PostgreSQL adapter a concrete
     # migration contract instead of relying on scattered PRAGMA checks.
-    SCHEMA_VERSION = 4
+    SCHEMA_VERSION = 7
 
     SCHEMA = """
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -294,6 +296,7 @@ class AdAgentStore:
 
     CREATE TABLE IF NOT EXISTS write_reservations (
         idempotency_key TEXT PRIMARY KEY,
+        request_hash TEXT,
         status TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -332,9 +335,29 @@ class AdAgentStore:
         expires_at TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'pending',
         created_at TEXT NOT NULL,
-        consumed_at TEXT
+        consumed_at TEXT,
+        input_hash TEXT,
+        preview_hash TEXT,
+        request_hash TEXT,
+        contract_hash TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_approvals_session ON approvals(session_id, status);
+
+    CREATE TABLE IF NOT EXISTS outbox_events (
+        event_id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        next_retry_at TEXT,
+        created_at TEXT NOT NULL,
+        claimed_by TEXT,
+        claimed_at TEXT,
+        last_error TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_outbox_pending
+        ON outbox_events(status, next_retry_at, created_at);
 
     CREATE TABLE IF NOT EXISTS execution_mode_preferences (
         tenant_id TEXT NOT NULL,
@@ -429,6 +452,38 @@ class AdAgentStore:
                     updated_at TEXT NOT NULL,
                     PRIMARY KEY (tenant_id, user_id)
                 )"""
+            )
+        elif version == 5:
+            for column, definition in {
+                "input_hash": "TEXT",
+                "preview_hash": "TEXT",
+                "request_hash": "TEXT",
+                "contract_hash": "TEXT",
+            }.items():
+                cls._add_column_if_missing(conn, "approvals", column, definition)
+        elif version == 6:
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS outbox_events (
+                    event_id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    retry_count INTEGER NOT NULL DEFAULT 0,
+                    next_retry_at TEXT,
+                    created_at TEXT NOT NULL,
+                    claimed_by TEXT,
+                    claimed_at TEXT,
+                    last_error TEXT
+                )"""
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_outbox_pending "
+                "ON outbox_events(status, next_retry_at, created_at)"
+            )
+        elif version == 7:
+            cls._add_column_if_missing(
+                conn, "write_reservations", "request_hash", "TEXT"
             )
         else:
             raise ValueError(f"Unsupported schema migration: {version}")
@@ -758,7 +813,10 @@ class AdAgentStore:
 
     # -- Write idempotency -------------------------------------------------
 
-    def reserve_write(self, idempotency_key: str, ttl_seconds: int = 300) -> bool:
+    def reserve_write(
+        self, idempotency_key: str, ttl_seconds: int = 300,
+        request_hash: Optional[str] = None,
+    ) -> bool:
         """Atomically reserve a write key across Runtime processes.
 
         Both pending and executed reservations block a duplicate within the
@@ -769,10 +827,12 @@ class AdAgentStore:
             conn = self._get_conn()
             now = datetime.now()
             row = conn.execute(
-                "SELECT status, updated_at FROM write_reservations WHERE idempotency_key = ?",
+                "SELECT status, updated_at, request_hash FROM write_reservations WHERE idempotency_key = ?",
                 (idempotency_key,),
             ).fetchone()
             if row:
+                if row["request_hash"] and request_hash and str(row["request_hash"]) != str(request_hash):
+                    return False
                 try:
                     age = (now - datetime.fromisoformat(row["updated_at"])).total_seconds()
                 except (TypeError, ValueError):
@@ -782,29 +842,131 @@ class AdAgentStore:
             timestamp = now.isoformat()
             conn.execute(
                 "INSERT OR REPLACE INTO write_reservations "
-                "(idempotency_key, status, created_at, updated_at) VALUES (?, ?, ?, ?)",
-                (idempotency_key, "pending", timestamp, timestamp),
+                "(idempotency_key, request_hash, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                (idempotency_key, request_hash, "pending", timestamp, timestamp),
             )
             conn.commit()
             return True
 
-    def mark_write_executed(self, idempotency_key: str) -> None:
+    def mark_write_executed(
+        self, idempotency_key: str, request_hash: Optional[str] = None,
+    ) -> None:
         with self._lock:
             conn = self._get_conn()
             conn.execute(
-                "UPDATE write_reservations SET status = ?, updated_at = ? WHERE idempotency_key = ?",
-                ("executed", datetime.now().isoformat(), idempotency_key),
+                "UPDATE write_reservations SET status = ?, updated_at = ? "
+                "WHERE idempotency_key = ? AND (request_hash IS NULL OR request_hash = ?)",
+                ("executed", datetime.now().isoformat(), idempotency_key, request_hash),
             )
             conn.commit()
 
-    def release_write(self, idempotency_key: str) -> None:
+    def release_write(
+        self, idempotency_key: str, request_hash: Optional[str] = None,
+    ) -> None:
         with self._lock:
             conn = self._get_conn()
             conn.execute(
-                "DELETE FROM write_reservations WHERE idempotency_key = ? AND status = ?",
-                (idempotency_key, "pending"),
+                "DELETE FROM write_reservations WHERE idempotency_key = ? AND status = ? "
+                "AND (request_hash IS NULL OR request_hash = ?)",
+                (idempotency_key, "pending", request_hash),
             )
             conn.commit()
+
+    # -- Durable workflow outbox -----------------------------------------
+
+    def insert_outbox_event(self, event: OutboxEvent) -> None:
+        """Insert an already-sanitized event exactly once."""
+        now = str(event.created_at or datetime.now(timezone.utc).isoformat())
+        payload = json.dumps(
+            event.payload or {}, ensure_ascii=False, sort_keys=True, default=str
+        )
+        with self._lock:
+            conn = self._get_conn()
+            conn.execute(
+                """INSERT OR IGNORE INTO outbox_events
+                   (event_id, run_id, event_type, payload, status, retry_count,
+                    next_retry_at, created_at, claimed_by, claimed_at, last_error)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)""",
+                (
+                    str(event.event_id), str(event.run_id), str(event.event_type),
+                    payload, str(event.status or "pending"), int(event.retry_count or 0),
+                    event.next_retry_at, now,
+                ),
+            )
+            conn.commit()
+
+    def claim_outbox_events(
+        self, limit: int = 20, consumer_id: Optional[str] = None,
+    ) -> list[OutboxEvent]:
+        """Atomically claim pending events for one SQLite consumer.
+
+        SQLite has no ``SKIP LOCKED``. The backend-wide lock plus conditional
+        status updates gives this single-process backend the same no-duplicate
+        claim guarantee; a future SQL backend can replace this method with
+        row-level locking without changing Runtime code.
+        """
+        bounded_limit = max(1, min(int(limit), 100))
+        owner = str(consumer_id or f"consumer:{uuid.uuid4().hex}")
+        now = datetime.now(timezone.utc)
+        stale_before = (now - timedelta(minutes=5)).isoformat()
+        now_text = now.isoformat()
+        with self._lock:
+            conn = self._get_conn()
+            conn.execute(
+                """UPDATE outbox_events
+                   SET status = 'pending', claimed_by = NULL, claimed_at = NULL
+                   WHERE status = 'claimed' AND claimed_at IS NOT NULL
+                     AND claimed_at < ?""",
+                (stale_before,),
+            )
+            rows = conn.execute(
+                """SELECT * FROM outbox_events
+                   WHERE status = 'pending'
+                     AND (next_retry_at IS NULL OR next_retry_at <= ?)
+                   ORDER BY created_at ASC LIMIT ?""",
+                (now_text, bounded_limit),
+            ).fetchall()
+            events: list[OutboxEvent] = []
+            for row in rows:
+                cursor = conn.execute(
+                    """UPDATE outbox_events SET status = 'claimed', claimed_by = ?,
+                       claimed_at = ? WHERE event_id = ? AND status = 'pending'""",
+                    (owner, now_text, str(row["event_id"])),
+                )
+                if cursor.rowcount == 1:
+                    claimed = dict(row)
+                    claimed.update({
+                        "status": "claimed", "claimed_by": owner,
+                        "claimed_at": now_text,
+                    })
+                    events.append(OutboxEvent.from_row(claimed))
+            conn.commit()
+            return events
+
+    def mark_outbox_delivered(self, event_id: str) -> bool:
+        with self._lock:
+            cursor = self._get_conn().execute(
+                """UPDATE outbox_events SET status = 'delivered',
+                   claimed_by = NULL, claimed_at = NULL
+                   WHERE event_id = ? AND status = 'claimed'""",
+                (str(event_id),),
+            )
+            self._get_conn().commit()
+            return cursor.rowcount == 1
+
+    def mark_outbox_retry(
+        self, event_id: str, next_retry_at: str, error: Optional[str] = None,
+    ) -> bool:
+        with self._lock:
+            cursor = self._get_conn().execute(
+                """UPDATE outbox_events SET status = 'pending',
+                   retry_count = retry_count + 1, next_retry_at = ?,
+                   last_error = ?, claimed_by = NULL, claimed_at = NULL
+                   WHERE event_id = ? AND status = 'claimed'""",
+                (str(next_retry_at), str(error) if error else None, str(event_id)),
+            )
+            self._get_conn().commit()
+            return cursor.rowcount == 1
 
     # -- Approval records --------------------------------------------------
 
@@ -815,6 +977,8 @@ class AdAgentStore:
     def create_approval(
         self, plan_fingerprint: str, token: str, session_id: str,
         user_id: str, account_id: str, tool_name: str, expires_at: str,
+        input_hash: Optional[str] = None, preview_hash: Optional[str] = None,
+        request_hash: Optional[str] = None, contract_hash: Optional[str] = None,
     ) -> None:
         now = datetime.now().isoformat()
         with self._lock:
@@ -822,12 +986,14 @@ class AdAgentStore:
             conn.execute(
                 """INSERT OR IGNORE INTO approvals
                    (plan_fingerprint, token_hash, session_id, user_id, account_id,
-                    tool_name, expires_at, status, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)""",
+                   tool_name, expires_at, status, created_at, input_hash,
+                   preview_hash, request_hash, contract_hash)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)""",
                 (
                     plan_fingerprint, self._token_hash(token), str(session_id),
                     str(user_id), str(account_id or ""), str(tool_name),
-                    str(expires_at), now,
+                    str(expires_at), now, input_hash, preview_hash,
+                    request_hash, contract_hash,
                 ),
             )
             conn.commit()
@@ -843,6 +1009,8 @@ class AdAgentStore:
     def validate_approval(
         self, plan_fingerprint: str, token: str, session_id: str,
         user_id: str, account_id: str, tool_name: str,
+        input_hash: Optional[str] = None, preview_hash: Optional[str] = None,
+        request_hash: Optional[str] = None, contract_hash: Optional[str] = None,
     ) -> tuple[bool, str]:
         row = self.get_approval(plan_fingerprint)
         if not row:
@@ -859,6 +1027,13 @@ class AdAgentStore:
             return False, "approval account mismatch"
         if str(row.get("tool_name")) != str(tool_name):
             return False, "approval tool mismatch"
+        for field, expected in (
+            ("input_hash", input_hash), ("preview_hash", preview_hash),
+            ("request_hash", request_hash), ("contract_hash", contract_hash),
+        ):
+            stored = row.get(field)
+            if stored and str(stored) != str(expected or ""):
+                return False, f"approval {field} mismatch"
         try:
             if datetime.fromisoformat(str(row.get("expires_at"))) <= datetime.now():
                 return False, "approval expired"
@@ -1894,7 +2069,21 @@ class AdAgentStore:
                     metadata, created_at, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (workflow_id, session_id, intent_type, execution_mode, status,
-                 json.dumps(metadata or {}), now, now),
+                json.dumps(metadata or {}), now, now),
+            )
+            conn.execute(
+                """INSERT OR IGNORE INTO outbox_events
+                   (event_id, run_id, event_type, payload, created_at)
+                   VALUES (?, ?, 'workflow.created', ?, ?)""",
+                (
+                    str(uuid.uuid4()), str(workflow_id),
+                    json.dumps({
+                        "workflow_id": str(workflow_id),
+                        "status": str(status),
+                        "metadata": metadata or {},
+                    }, ensure_ascii=False, sort_keys=True, default=str),
+                    now,
+                ),
             )
             conn.commit()
 
@@ -1921,7 +2110,17 @@ class AdAgentStore:
             # a recovery worker must acquire a fresh lease through the atomic
             # claim method instead of inheriting the old Runtime lease.
             lease_sql = ", lease_owner = NULL, lease_expires_at = NULL" if status != "running" else ""
+            merged_metadata = {}
             if metadata is None:
+                existing = conn.execute(
+                    "SELECT metadata FROM workflows WHERE workflow_id = ?",
+                    (workflow_id,),
+                ).fetchone()
+                if existing and existing[0]:
+                    try:
+                        merged_metadata = json.loads(existing[0]) or {}
+                    except (TypeError, ValueError):
+                        merged_metadata = {}
                 cursor = conn.execute(
                     f"UPDATE workflows SET status = ?, updated_at = ?{lease_sql} WHERE workflow_id = ?",
                     (status, datetime.now().isoformat(), workflow_id),
@@ -1942,6 +2141,22 @@ class AdAgentStore:
                     f"""UPDATE workflows SET status = ?, metadata = ?, updated_at = ?{lease_sql}
                        WHERE workflow_id = ?""",
                     (status, json.dumps(merged_metadata), datetime.now().isoformat(), workflow_id),
+                )
+            if cursor.rowcount > 0:
+                conn.execute(
+                    """INSERT INTO outbox_events
+                       (event_id, run_id, event_type, payload, created_at)
+                       VALUES (?, ?, 'workflow.updated', ?, ?)""",
+                    (
+                        str(uuid.uuid4()), str(workflow_id),
+                        json.dumps({
+                            "workflow_id": str(workflow_id),
+                            "from_status": current_status,
+                            "status": str(status),
+                            "metadata": merged_metadata,
+                        }, ensure_ascii=False, sort_keys=True, default=str),
+                        datetime.now().isoformat(),
+                    ),
                 )
             conn.commit()
             return cursor.rowcount > 0

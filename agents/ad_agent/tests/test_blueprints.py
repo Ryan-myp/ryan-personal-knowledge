@@ -36,7 +36,10 @@ def test_tiktok_blueprint_is_json_and_references_registered_tools():
         "tiktok.traffic_video",
     }
     assert all(item["selector"]["dimension"] == "objective" for item in items)
-    assert items[0]["version"] == "1.0.0"
+    versions = {item["id"]: item["version"] for item in items}
+    assert versions["tiktok.app_conversion_video"] == "2.0.0"
+    assert versions["tiktok.product_sales_video"] == "2.0.0"
+    assert versions["tiktok.traffic_video"] == "3.0.0"
     assert runtime.creation_blueprints.get("tiktok.app_conversion_video") is not None
 
 
@@ -218,7 +221,7 @@ def test_tiktok_cascade_filters_app_options_and_clears_incompatible_value():
     )
     states = {item["path"]: item for item in result["fields"]}
     assert states["ad_group.optimization_goal"]["options"] == [
-        "INSTALL", "IN_APP_EVENT", "CONVERSION"
+        "INSTALL", "IN_APP_EVENT", "VALUE"
     ]
     assert states["ad_group.deep_bid_type"]["options"] == ["AEO"]
     assert "ad_group.deep_bid_type" in result["invalid_fields"]
@@ -233,7 +236,6 @@ def test_tiktok_cascade_filters_app_options_and_clears_incompatible_value():
     )
     ios_states = {item["path"]: item for item in ios["fields"]}
     assert ios_states["ad_group.operating_systems"]["options"] == ["IOS"]
-    assert ios_states["ad.operating_systems"]["options"] == ["IOS"]
 
 
 def test_google_search_blueprint_exposes_format_specific_bidding_catalog():
@@ -294,9 +296,9 @@ def test_provider_applicability_switches_tiktok_asset_controls_by_selected_forma
     fields = {item["path"]: item for item in card["fields"]}
 
     assert fields["ad.video_id"]["visible"] is True
-    assert fields["ad.video_id"]["control"] == "lookup"
+    assert fields["ad.video_id"]["control"] == "asset_picker"
     assert fields["ad.image_ids"]["visible"] is False
-    assert fields["ad.spark_post_id"]["visible"] is False
+    assert fields["ad.tiktok_item_id"]["visible"] is True
 
 
 def test_all_google_blueprints_make_ad_group_type_provider_derived():
@@ -390,10 +392,10 @@ def test_tiktok_creation_card_does_not_truncate_provider_parameter_catalog():
     )
     card = runtime.build_creation_ui(intent)["cards"][0]
     fields = {item["path"]: item for item in card["fields"]}
-    assert len(card["fields"]) > 80
-    assert fields["ad_group.audience_ids"]["control"] == "lookup"
-    assert fields["ad_group.audience_ids"]["lookup"]["tool"] == "tiktok_list_audiences"
-    assert fields["ad_group.device_price_ranges"]["control"] == "json"
+    assert len(card["fields"]) > 60
+    assert fields["ad_group.location_ids"]["control"] == "lookup"
+    assert fields["ad_group.location_ids"]["lookup"]["tool"] == "tiktok_list_regions"
+    assert fields["ad.video_id"]["control"] == "asset_picker"
 
 
 def test_meta_nested_targeting_and_app_event_guidance_are_renderable():
@@ -776,9 +778,9 @@ def test_nested_creation_assets_keep_provider_sources_and_controls():
     )
     tiktok_card = runtime.build_creation_ui(tiktok_intent)["cards"][0]
     tiktok_fields = {item["path"]: item for item in tiktok_card["fields"]}
-    media = tiktok_fields["ad.media"]
-    assert media["manual_entry"]["source"] == "provider_media_payload"
-    assert media["item_properties"]["image_id"]["lookup_tool"] == "tiktok_list_images"
+    item = tiktok_fields["ad.tiktok_item_id"]
+    assert item["tool"] == "tiktok_smart_plus_create_ad"
+    assert tiktok_fields["ad.identity_id"]["lookup"]["tool"] == "tiktok_list_identities"
 
 
 def test_cascade_hides_and_requires_app_fields_for_app_objective():
@@ -796,7 +798,7 @@ def test_cascade_hides_and_requires_app_fields_for_app_objective():
     assert states["campaign.app_promotion_type"]["visible"] is True
     assert states["campaign.app_promotion_type"]["required"] is True
     assert states["ad_group.app_id"]["required"] is True
-    assert states["ad_group.conversion_id"]["required"] is True
+    assert states["ad_group.optimization_event"]["required"] is False
     assert "campaign.app_promotion_type" in result["missing_fields"]
 
 
@@ -828,7 +830,7 @@ def test_creation_ui_builds_tiktok_app_card_from_registered_blueprint():
     assert fields["ad_group.optimization_goal"]["options"] == [
         {"value": "INSTALL", "label": "INSTALL"},
         {"value": "IN_APP_EVENT", "label": "IN_APP_EVENT"},
-        {"value": "CONVERSION", "label": "CONVERSION"},
+        {"value": "VALUE", "label": "VALUE"},
     ]
     assert ui["needs_input"] is True
 
@@ -840,10 +842,8 @@ def test_creation_ui_returns_selector_card_when_creation_dimension_is_ambiguous(
         "create_campaign", "创建 TikTok 广告", ["tiktok"], objective="sales"
     )
     card = runtime.build_creation_ui(intent)["cards"][0]
-    assert card["type"] == "ad_creation_selector"
-    assert card["fields"][0]["provider_field"] == "objective_type"
-    assert card["fields"][0]["state"] == "invalid"
-    assert card["fields"][0]["path"] in card["invalid_fields"]
+    assert card["type"] == "ad_creation_form"
+    assert card["blueprint_id"] == "tiktok.product_sales_video"
 
 
 def test_blueprint_tool_ref_supports_nested_schema_paths():

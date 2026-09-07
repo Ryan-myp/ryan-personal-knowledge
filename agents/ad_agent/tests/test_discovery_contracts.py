@@ -205,7 +205,22 @@ def test_google_app_campaign_chain_is_dry_run_ready():
         (
             "tiktok",
             {"objective_type": "APP_PROMOTION"},
-            ["tiktok_create_campaign", "tiktok_create_adgroup", "tiktok_create_app_ad"],
+            ["tiktok_smart_plus_create_campaign", "tiktok_smart_plus_create_adgroup", "tiktok_smart_plus_create_ad"],
+        ),
+        (
+            "tiktok",
+            {"objective_type": "TRAFFIC"},
+            ["tiktok_smart_plus_create_campaign", "tiktok_smart_plus_create_adgroup", "tiktok_smart_plus_create_ad"],
+        ),
+        (
+            "tiktok",
+            {"objective_type": "SALES"},
+            ["tiktok_smart_plus_create_campaign", "tiktok_smart_plus_create_adgroup", "tiktok_smart_plus_create_ad"],
+        ),
+        (
+            "tiktok",
+            {"objective_type": "WEB_CONVERSIONS"},
+            ["tiktok_smart_plus_create_campaign", "tiktok_smart_plus_create_adgroup", "tiktok_smart_plus_create_ad"],
         ),
         (
             "tiktok",
@@ -218,13 +233,13 @@ def test_google_app_campaign_chain_is_dry_run_ready():
             ["tiktok_create_campaign", "tiktok_create_adgroup", "tiktok_spark_ads_create"],
         ),
         (
-            "tiktok",
-            {"objective_type": "PRODUCT_SALES"},
-            [
-                "tiktok_create_campaign",
-                "tiktok_create_product_sales_adgroup",
-                "tiktok_create_product_sales_ad",
-            ],
+                "tiktok",
+                {"objective_type": "PRODUCT_SALES"},
+                [
+                    "tiktok_smart_plus_create_campaign",
+                    "tiktok_smart_plus_create_adgroup",
+                    "tiktok_smart_plus_create_ad",
+                ],
         ),
     ],
 )
@@ -242,6 +257,51 @@ def test_meta_and_tiktok_campaign_routes_select_specialized_ad_chain(
     )
 
     assert [definition.name for definition in routed[platform]] == expected_tools
+
+
+def test_tiktok_legacy_app_and_product_tools_are_explicit_only():
+    runtime = AgentRuntime(require_llm=False)
+    runtime.register_capability(create_tiktok_capability())
+
+    app_route = runtime.intent_router.route(
+        ParsedIntent("create_app_ad", "create app ad", ["tiktok"]),
+        runtime.registry,
+    )
+    assert [definition.name for definition in app_route["tiktok"]] == [
+        "tiktok_create_app_ad",
+    ]
+
+    product_route = runtime.intent_router.route(
+        ParsedIntent("create_product_sales_ad", "create product sales ad", ["tiktok"]),
+        runtime.registry,
+    )
+    assert [definition.name for definition in product_route["tiktok"]] == [
+        "tiktok_create_product_sales_ad",
+    ]
+
+
+@pytest.mark.parametrize(
+    "intent_type, expected_tool",
+    [
+        ("create_adgroup", "tiktok_smart_plus_create_adgroup"),
+        ("create_ad", "tiktok_smart_plus_create_ad"),
+    ],
+)
+def test_tiktok_smart_plus_objective_narrows_generic_child_routes(
+    intent_type, expected_tool,
+):
+    runtime = AgentRuntime(require_llm=False)
+    runtime.register_capability(create_tiktok_capability())
+    routed = runtime.intent_router.route(
+        ParsedIntent(
+            intent_type,
+            "create TikTok Traffic child resource",
+            ["tiktok"],
+            platform_params={"tiktok": {"objective_type": "TRAFFIC"}},
+        ),
+        runtime.registry,
+    )
+    assert [definition.name for definition in routed["tiktok"]] == [expected_tool]
 
 
 def test_meta_campaign_only_route_does_not_expand_hierarchy():

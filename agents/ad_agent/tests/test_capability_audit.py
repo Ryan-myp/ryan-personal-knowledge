@@ -37,7 +37,7 @@ def test_capability_audit_discovers_all_installed_channels_without_issues():
     assert report["issues"] == []
     assert report["tool_count"] >= 124
     assert set(report["platforms"]) == {"meta", "google-ads", "tiktok", "dv360"}
-    assert report["platforms"]["tiktok"]["actions"]["create:ad_group"] == 2
+    assert report["platforms"]["tiktok"]["actions"]["create:ad_group"] == 3
     assert report["platforms"]["dv360"]["actions"]["create:line_item"] == 1
     assert all(
         item["intent_types"]

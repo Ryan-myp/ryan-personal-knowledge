@@ -367,18 +367,21 @@ def test_public_tool_contract_includes_operational_and_json_schema_fields():
         ),
         (
             "tiktok", "t1", create_tiktok_capability,
-            {"account_id": "t1", "name": "smoke", "objective_type": "PRODUCT_SALES",
-             "budget_mode": "BUDGET_MODE_DAY", "campaign_type": "REGULAR_CAMPAIGN",
-             "promotion_type": "WEBSITE", "billing_event": "OCPM", "budget": 100,
-             "location_ids": ["US"], "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
-                 "bid_type": "BID_TYPE_NO_BID", "landing_url": "https://example.com",
-                 "media": [{"video_id": "v1"}], "identity_id": "identity-1",
-                 "schedule_type": "SCHEDULE_FROM_NOW",
-                 "schedule_start_time": "2026-09-07 00:00:00"},
+            {"account_id": "t1", "campaign_name": "smoke", "objective_type": "PRODUCT_SALES",
+             "sales_destination": "WEBSITE", "budget_mode": "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
+             "campaign_type": "REGULAR_CAMPAIGN", "budget": 100,
+             "adgroup_name": "smoke group", "promotion_type": "WEBSITE",
+             "optimization_goal": "VALUE", "billing_event": "OCPM",
+             "location_ids": ["US"], "bid_type": "BID_TYPE_NO_BID",
+             "schedule_type": "SCHEDULE_FROM_NOW",
+             "schedule_start_time": "2026-09-07 00:00:00",
+             "ad_name": "smoke ad", "ad_format": "SINGLE_VIDEO", "video_id": "v1",
+             "identity_type": "AUTH_CODE", "identity_id": "identity-1",
+             "call_to_action_id": "cta-1", "landing_page_url": "https://example.com"},
             [
-                "tiktok_create_campaign",
-                "tiktok_create_product_sales_adgroup",
-                "tiktok_create_product_sales_ad",
+                "tiktok_smart_plus_create_campaign",
+                "tiktok_smart_plus_create_adgroup",
+                "tiktok_smart_plus_create_ad",
             ],
         ),
     ],
@@ -419,28 +422,32 @@ def test_tiktok_cross_channel_create_maps_daily_budget_to_adgroup_budget():
         platform_params={
             "tiktok": {
                 "account_id": "t1",
-                "name": "daily-budget-chain",
+                "campaign_name": "daily-budget-chain",
                 "objective_type": "PRODUCT_SALES",
+                "sales_destination": "WEBSITE",
                 "campaign_type": "REGULAR_CAMPAIGN",
-                "budget_mode": "BUDGET_MODE_DAY",
-                "daily_budget": 100,
+                "budget_mode": "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
+                "budget": 100,
+                "adgroup_name": "daily-budget-group",
                 "promotion_type": "WEBSITE",
+                "optimization_goal": "VALUE",
                 "billing_event": "OCPM",
                 "location_ids": ["US"],
-                "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
                 "bid_type": "BID_TYPE_NO_BID",
-                "landing_url": "https://example.com",
-                "media": {"video_id": "v1"}, "identity_id": "identity-1",
                 "schedule_type": "SCHEDULE_FROM_NOW",
                 "schedule_start_time": "2026-09-07 00:00:00",
+                "ad_name": "daily-budget-ad", "ad_format": "SINGLE_VIDEO",
+                "video_id": "v1", "identity_type": "AUTH_CODE",
+                "identity_id": "identity-1", "call_to_action_id": "cta-1",
+                "landing_page_url": "https://example.com",
             },
         },
     )
 
     assert [item["tool"] for item in result["results"]] == [
-        "tiktok_create_campaign",
-        "tiktok_create_product_sales_adgroup",
-        "tiktok_create_product_sales_ad",
+        "tiktok_smart_plus_create_campaign",
+        "tiktok_smart_plus_create_adgroup",
+        "tiktok_smart_plus_create_ad",
     ]
     ad_group = result["results"][1]
     assert ad_group["success"] is True
@@ -500,7 +507,7 @@ def test_cross_channel_create_preflight_blocks_all_chains_before_execution():
     assert all("simulated" not in item["data"] for item in result["results"])
     assert any(
         item["platform"] == "tiktok"
-        and item["tool"] == "tiktok_create_adgroup"
+        and item["tool"] == "tiktok_smart_plus_create_campaign"
         and "app_id" in item["data"]["missing_fields"]
         for item in result["results"]
     )
@@ -1152,7 +1159,10 @@ def test_live_lookup_mints_context_bound_selection_token_for_dry_run_create():
         user_id="u1",
         account_id="t1",
     )
-    selection = lookup["results"][0]["data"]["parameter_selections"][0]
+    selection = next(
+        item for item in lookup["results"][0]["data"]["parameter_selections"]
+        if item["tool_name"] == "tiktok_smart_plus_create_campaign"
+    )
     option = selection["options"][0]
     assert option["value"] == "app-1"
     assert option["selection_token"] != "<redacted>"
@@ -1166,33 +1176,45 @@ def test_live_lookup_mints_context_bound_selection_token_for_dry_run_create():
             "tiktok": {
                 "campaign_name": "App acquisition",
                 "objective_type": "APP_PROMOTION",
-                "app_promotion_type": "APP_ACQUISITION",
+                "app_promotion_type": "APP_INSTALL",
                 "campaign_type": "REGULAR_CAMPAIGN",
-                "budget_mode": "BUDGET_MODE_DAY",
-                "daily_budget": 50,
-                "tiktok_create_adgroup": {
-                    "name": "Android group",
+                "budget_mode": "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
+                "budget": 50,
+                "tiktok_smart_plus_create_campaign": {
+                    "selection_tokens": {"app_id": option["selection_token"]},
+                },
+                "tiktok_smart_plus_create_adgroup": {
+                    "adgroup_name": "Android group",
                     "promotion_type": "APP_ANDROID",
+                    "optimization_goal": "INSTALL",
                     "billing_event": "OCPM",
                     "bid_type": "BID_TYPE_NO_BID",
-                    "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
-                    "budget_mode": "BUDGET_MODE_DAY",
+                    "budget_mode": "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
                     "budget": 50,
-                    "daily_budget": 50,
                     "location_ids": ["US"],
-                    "deep_bid_type": "AEO",
                     "operating_systems": ["ANDROID"],
-                    "selection_tokens": {"app_id": option["selection_token"]},
+                    "schedule_type": "SCHEDULE_FROM_NOW",
+                    "schedule_start_time": "2026-09-07 00:00:00",
+                },
+                "tiktok_smart_plus_create_ad": {
+                    "ad_name": "App acquisition ad",
+                    "video_id": "video-1",
                 },
             }
         },
     )
+    campaign = next(
+        item for item in planned["results"]
+        if item.get("tool") == "tiktok_smart_plus_create_campaign"
+    )
+    assert campaign["success"] is True
+    assert campaign["data"]["input"]["app_id"] == "app-1"
+
     adgroup = next(
         item for item in planned["results"]
-        if item.get("tool") == "tiktok_create_adgroup"
+        if item.get("tool") == "tiktok_smart_plus_create_adgroup"
     )
     assert adgroup["success"] is True
-    assert adgroup["data"]["input"]["app_id"] == "app-1"
 
 
 def test_parameter_options_resolver_reuses_lookup_tool_boundaries():
@@ -1474,12 +1496,14 @@ def test_common_business_objective_uses_skill_owned_provider_mapping():
         platform_params={
             "tiktok": {
                 "campaign_name": "Sales",
+                "sales_destination": "WEBSITE",
                 "campaign_type": "REGULAR_CAMPAIGN",
-                "budget_mode": "BUDGET_MODE_DAY",
-                "daily_budget": 50,
+                "budget_mode": "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
+                "budget": 50,
             }
         },
     )
+    assert tiktok["results"][0]["tool"] == "tiktok_smart_plus_create_campaign"
     tiktok_input = tiktok["results"][0]["data"]["input"]
     assert tiktok_input["objective_type"] == "PRODUCT_SALES"
 
