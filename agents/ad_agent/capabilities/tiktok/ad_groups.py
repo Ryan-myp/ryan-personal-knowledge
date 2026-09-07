@@ -83,7 +83,11 @@ class TikTokCreateAdGroupHandler(ToolHandler):
                 return ToolResult.ok({
                     "adgroup_id": adgroup_id,
                     "name": input_data.get("name"),
-                    "status": "ENABLED",
+                    # TikTok uses numeric ad_group_status: 0=PAUSED,
+                    # 1=ENABLE.  Reflect the submitted state in the
+                    # capability result instead of claiming every create is
+                    # enabled.
+                    "status": "PAUSED" if input_data.get("status", 0) in (0, "0", "PAUSED") else "ENABLED",
                 })
             except Exception as e:
                 return ToolResult.error(f"Failed to create TikTok adgroup: {e}")

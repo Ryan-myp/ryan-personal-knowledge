@@ -51,6 +51,15 @@ class TikTokAPIClient(BasePlatformClient):
         # 速率限制: 100次/分钟
         self._rate_limiter = RateLimiter(max_requests=100, period=60)
 
+    @staticmethod
+    def _normalize_status(value: Any) -> int:
+        """Normalize the public status aliases to TikTok's 0/1 field."""
+        if value in (0, "0", "PAUSED", "DISABLE", "DISABLED"):
+            return 0
+        if value in (1, "1", "ACTIVE", "ENABLE", "ENABLED"):
+            return 1
+        raise ValueError("TikTok campaign status must be 0/1 or PAUSED/ACTIVE")
+
     @classmethod
     def _resolve_api_version(cls, requested: Any = None) -> str:
         version = str(requested or cls.API_VERSION).strip()
@@ -249,7 +258,10 @@ class TikTokAPIClient(BasePlatformClient):
         }
         if filtering:
             data['filtering'] = filtering
-        return self._list_pages('campaign/get/', data)
+        # Consume a bounded number of provider pages. Runtime applies the
+        # response-size limit for cards; the client must still be able to
+        # read back a newly-created resource that is not on page one.
+        return self._list_pages('campaign/get/', data, max_pages=100)
     
     def get_campaign(self, advertiser_id: str, campaign_id: str) -> dict:
         """获取 Campaign 详情"""
@@ -273,7 +285,7 @@ class TikTokAPIClient(BasePlatformClient):
         - campaign_automation_type: 自动化类型 (MANUAL, SMART_PLUS, etc.)
         - campaign_group_status: 状态 (0=PAUSED, 1=ACTIVE)
         - budget_restriction: 预算限制 (NO_LIMITATION, DAILY_BUDGET, LIFETIME_BUDGET)
-        - daily_budget: 每日预算（账户货币；发送给 API 时转换为分）
+        - daily_budget: 每日预算（账户货币；TikTok v1.3 的 wire 字段为 budget）
         - app_promotion_type: APP 推广类型 (APP_RETARGETING, APP_ACQUISITION)
         """
         self.acquire_rate_limit(self._rate_limiter)
@@ -282,18 +294,26 @@ class TikTokAPIClient(BasePlatformClient):
             'campaign_name': campaign.get('name', 'Untitled Campaign'),
             'objective_type': campaign.get('objective_type', 'TRAFFIC'),
             'campaign_automation_type': campaign.get('campaign_automation_type', 'MANUAL'),
-            'campaign_group_status': campaign.get('status', 1),
+            # New-structure Campaigns use operation_status on the create
+            # endpoint. campaign_group_status is an older update-era field
+            # and is silently ignored by the current provider contract.
+            'operation_status': (
+                'DISABLE'
+                if self._normalize_status(campaign.get('status', 0)) == 0
+                else 'ENABLE'
+            ),
             'budget_restriction': campaign.get('budget_restriction', 'NO_LIMITATION'),
             'budget_mode': campaign.get('budget_mode', 'BUDGET_MODE_INFINITE'),
             'campaign_type': campaign.get('campaign_type', 'REGULAR_CAMPAIGN'),
         }
-        # 预算输入使用账户货币、API 使用分。预算模式决定发送日预算
-        # 还是总预算，避免把 ``budget`` 原样透传后由服务端猜单位。
+        # ``daily_budget`` is a Runtime-facing semantic alias. TikTok v1.3
+        # expects the account-currency amount in the wire field ``budget``
+        # for both daily and total budget modes.
         budget_mode = campaign.get('budget_mode')
         if campaign.get('daily_budget') is not None:
-            data['daily_budget'] = int(float(campaign['daily_budget']) * 100)
+            data['budget'] = float(campaign['daily_budget'])
         elif budget_mode == 'BUDGET_MODE_TOTAL' and campaign.get('budget') is not None:
-            data['budget'] = int(float(campaign['budget']) * 100)
+            data['budget'] = float(campaign['budget'])
         if campaign.get('app_promotion_type'):
             data['app_promotion_type'] = campaign['app_promotion_type']
         # Preserve the explicit creation contract.  Previously these fields
@@ -316,23 +336,42 @@ class TikTokAPIClient(BasePlatformClient):
         daily_budget = normalized_updates.pop('daily_budget', None)
         budget = normalized_updates.pop('budget', None)
         if daily_budget is not None:
-            normalized_updates['daily_budget'] = int(float(daily_budget) * 100)
+            normalized_updates['budget'] = float(daily_budget)
         elif budget is not None:
-            normalized_updates['budget'] = int(float(budget) * 100)
+            normalized_updates['budget'] = float(budget)
         data = {
             'advertiser_id': str(advertiser_id),
-            'campaign_id': int(campaign_id),
+            # TikTok v1.3 models hierarchy IDs as strings on create.  Do not
+            # coerce them to integers: large IDs are opaque provider values
+            # and the API rejects numeric JSON for this field.
+            'campaign_id': str(campaign_id),
             'campaign': normalized_updates,
         }
         return self.request('POST', 'campaign/update/', data=data)
     
     def pause_campaign(self, advertiser_id: str, campaign_id: str) -> dict:
         """暂停 Campaign"""
-        return self.update_campaign(advertiser_id, campaign_id, {'campaign_group_status': 0})
+        self.acquire_rate_limit(self._rate_limiter)
+        return self.request(
+            'POST', 'campaign/status/update/',
+            data={
+                'advertiser_id': str(advertiser_id),
+                'campaign_ids': [str(campaign_id)],
+                'operation_status': 'DISABLE',
+            },
+        )
     
     def resume_campaign(self, advertiser_id: str, campaign_id: str) -> dict:
         """恢复 Campaign"""
-        return self.update_campaign(advertiser_id, campaign_id, {'campaign_group_status': 1})
+        self.acquire_rate_limit(self._rate_limiter)
+        return self.request(
+            'POST', 'campaign/status/update/',
+            data={
+                'advertiser_id': str(advertiser_id),
+                'campaign_ids': [str(campaign_id)],
+                'operation_status': 'ENABLE',
+            },
+        )
     
     def delete_campaign(self, advertiser_id: str, campaign_id: str) -> dict:
         """删除 Campaign"""
@@ -349,12 +388,21 @@ class TikTokAPIClient(BasePlatformClient):
         """获取 Ad Group 列表"""
         data = {
             'advertiser_id': str(advertiser_id),
-            'campaign_id': int(campaign_id),
+            'campaign_id': str(campaign_id),
             'page_size': page_size,
         }
         if filtering:
             data['filtering'] = filtering
-        return self._list_pages('adgroup/get/', data)
+        rows = self._list_pages('adgroup/get/', data, max_pages=100)
+        # TikTok may return an account-wide page despite campaign_id. Enforce
+        # the parent relation locally so lookup cards and get operations can
+        # never show another Campaign's Ad Groups.
+        wanted = str(campaign_id)
+        return [
+            row for row in rows
+            if isinstance(row, dict)
+            and str(row.get('campaign_id') or row.get('campaignId') or '') == wanted
+        ]
     
     def get_adgroup(self, advertiser_id: str, campaign_id: str, adgroup_id: str) -> dict:
         """获取 Ad Group 详情"""
@@ -366,25 +414,34 @@ class TikTokAPIClient(BasePlatformClient):
         raise APIError(f"TikTok ad group {adgroup_id} was not found")
     
     def create_adgroup(self, advertiser_id: str, campaign_id: str, adgroup: dict) -> str:
-        """创建 Ad Group"""
+        """创建 Ad Group。
+
+        TikTok v1.3's ``adgroup/create`` request is a flat provider payload;
+        only the HTTP envelope is shared.  The previous nested ``ad_group``
+        object caused required fields such as ``schedule_type`` to be
+        invisible to TikTok and made the dry-run contract diverge from live
+        behavior.
+        """
         self.acquire_rate_limit(self._rate_limiter)
         budget_mode = adgroup.get('budget_mode')
         data = {
             'advertiser_id': str(advertiser_id),
-            'campaign_id': int(campaign_id),
-            'ad_group': {
-                'ad_group_name': adgroup['name'],
-                'ad_group_status': adgroup.get('status', 1),
-                'tracking_url': adgroup.get('tracking_url', ''),
-                'bid_amount': int(adgroup.get('bid_amount', 500)),  # 单位为分
-            }
+            # Hierarchy IDs are opaque strings in TikTok v1.3 create
+            # contracts; numeric JSON is rejected by the provider.
+            'campaign_id': str(campaign_id),
+            'adgroup_name': adgroup['name'],
+            'operation_status': (
+                'DISABLE'
+                if adgroup.get('status', 0) in (0, '0', 'PAUSED', 'DISABLE')
+                else 'ENABLE'
+            ),
         }
         daily_budget = adgroup.get('daily_budget')
         budget = adgroup.get('budget')
         if daily_budget is not None:
-            data['ad_group']['daily_budget'] = int(float(daily_budget) * 100)
+            data['budget'] = float(daily_budget)
         elif budget is not None and budget_mode != 'BUDGET_MODE_INFINITE':
-            data['ad_group']['budget'] = int(float(budget) * 100)
+            data['budget'] = float(budget)
         # New callers use the symbolic values from the parameter catalog;
         # keep the old numeric promote_object_type field for compatibility.
         for key in (
@@ -409,7 +466,13 @@ class TikTokAPIClient(BasePlatformClient):
             'shopping_ads_retargeting_actions_days', 'store_id', 'is_hfss',
         ):
             if key in adgroup and adgroup[key] not in (None, ''):
-                data['ad_group'][key] = adgroup[key]
+                data[key] = adgroup[key]
+        # The creation contract calls these wire fields start_time/end_time;
+        # schedule_* names are the stable Runtime-facing aliases.
+        if adgroup.get('schedule_start_time'):
+            data['start_time'] = adgroup['schedule_start_time']
+        if adgroup.get('schedule_end_time'):
+            data['end_time'] = adgroup['schedule_end_time']
         if adgroup.get('promotion_type') == 'CATALOG':
             if not str(adgroup.get('catalog_id') or '').strip():
                 raise ValueError('TikTok CATALOG promotion requires catalog_id')
@@ -417,11 +480,14 @@ class TikTokAPIClient(BasePlatformClient):
                 raise ValueError('TikTok CATALOG promotion requires product_set_id')
         # 定向
         if adgroup.get('targeting'):
-            data['ad_group']['targeting'] = adgroup['targeting']
+            data['targeting'] = adgroup['targeting']
         
         result = self.request('POST', 'adgroup/create/', data=data)
         payload = self._data_section(result)
-        resource_id = payload.get('ad_group_id') if isinstance(payload, dict) else None
+        resource_id = (
+            payload.get('adgroup_id') or payload.get('ad_group_id')
+            if isinstance(payload, dict) else None
+        )
         return self.require_resource_id(resource_id, "TikTok ad group create")
 
     def create_product_sales_adgroup(
@@ -463,8 +529,8 @@ class TikTokAPIClient(BasePlatformClient):
             normalized_updates['budget'] = int(float(budget) * 100)
         data = {
             'advertiser_id': str(advertiser_id),
-            'campaign_id': int(campaign_id),
-            'ad_group_id': int(adgroup_id),
+            'campaign_id': str(campaign_id),
+            'ad_group_id': str(adgroup_id),
             'ad_group': normalized_updates,
         }
         return self.request('POST', 'adgroup/update/', data=data)
@@ -581,10 +647,22 @@ class TikTokAPIClient(BasePlatformClient):
         """获取 Ad 列表"""
         data = {
             'advertiser_id': str(advertiser_id),
-            'ad_group_id': int(adgroup_id),
+            'ad_group_id': str(adgroup_id),
             'page_size': page_size,
         }
-        return self._list_pages('ad/get/', data)
+        rows = self._list_pages('ad/get/', data, max_pages=100)
+        # Apply the same defense for an account-wide Ad page.
+        wanted = str(adgroup_id)
+        return [
+            row for row in rows
+            if isinstance(row, dict)
+            and str(
+                row.get('adgroup_id')
+                or row.get('ad_group_id')
+                or row.get('adgroupId')
+                or ''
+            ) == wanted
+        ]
     
     def get_ad(self, advertiser_id: str, adgroup_id: str, ad_id: str) -> dict:
         """获取 Ad 详情"""
@@ -596,27 +674,42 @@ class TikTokAPIClient(BasePlatformClient):
         raise APIError(f"TikTok ad {ad_id} was not found")
     
     def create_ad(self, advertiser_id: str, campaign_id: str, adgroup_id: str, ad: dict) -> str:
-        """创建 Ad"""
+        """创建 Ad using TikTok v1.3's creative-list payload.
+
+        TikTok's ``ad/create/`` endpoint has a flat request envelope, but the
+        actual ad fields are required inside ``creatives``. The public Tool
+        input stays flat and this client performs the provider translation.
+        """
         self.acquire_rate_limit(self._rate_limiter)
-        data = {
-            'advertiser_id': str(advertiser_id),
-            'campaign_id': int(campaign_id),
-            'ad_group_id': int(adgroup_id),
-            'ad': {
-                'ad_name': ad.get('name', 'Untitled Ad'),
-                'ad_status': ad.get('status', 1),
-                'landing_page_url': ad.get('landing_page_url', ''),
-                'conversion_id': ad.get('conversion_id', 0),
-            }
-        }
-        # 素材
-        if ad.get('media'):
-            data['ad']['media'] = ad['media']
-        if ad.get('creatives'):
-            data['ad']['creatives'] = ad['creatives']
+        creative = {}
+        supplied_creatives = ad.get('creatives')
+        if isinstance(supplied_creatives, list) and supplied_creatives:
+            if not isinstance(supplied_creatives[0], dict):
+                raise ValueError('creatives must contain objects')
+            creative = dict(supplied_creatives[0])
+        elif isinstance(supplied_creatives, dict):
+            creative = dict(supplied_creatives)
+
+        creative.update({
+            'ad_name': ad.get('name', creative.get('ad_name', 'Untitled Ad')),
+            'operation_status': ad.get(
+                'operation_status',
+                'DISABLE' if ad.get('status', 0) in (0, '0', 'PAUSED', 'DISABLE') else 'ENABLE',
+            ),
+        })
+        if ad.get('landing_page_url'):
+            creative['landing_page_url'] = ad['landing_page_url']
+        if ad.get('conversion_id') is not None:
+            creative['conversion_id'] = ad['conversion_id']
         if ad.get('text'):
-            data['ad']['text'] = ad['text']
-        # Keep every field declared by the provider-owned ad contracts.  The
+            text_payload = ad['text']
+            creative['ad_text'] = (
+                text_payload.get('ad_text')
+                if isinstance(text_payload, dict) else text_payload
+            )
+        if ad.get('media'):
+            creative['media'] = ad['media']
+        # Keep every field declared by the provider-owned ad contracts. The
         # generic adapter remains useful for formats without a dedicated
         # builder, but it must not silently discard a valid provider field.
         for key in (
@@ -636,9 +729,18 @@ class TikTokAPIClient(BasePlatformClient):
             'item_duet_status', 'item_stitch_status', 'instant_product_page_used',
             'playable_url',
         ):
-            if key in ad and ad[key] not in (None, ''):
-                data['ad'][key] = ad[key]
-        
+            if key != 'status' and key in ad and ad[key] not in (None, ''):
+                creative[key] = ad[key]
+        if creative.get('ad_format') and not creative.get('creative_type'):
+            creative.pop('creative_type', None)
+        if ad.get('ad_text') and not creative.get('ad_text'):
+            creative['ad_text'] = ad['ad_text']
+
+        data = {
+            'advertiser_id': str(advertiser_id),
+            'adgroup_id': str(adgroup_id),
+            'creatives': [creative],
+        }
         result = self.request('POST', 'ad/create/', data=data)
         payload = self._data_section(result)
         resource_id = payload.get('ad_id') if isinstance(payload, dict) else None
@@ -1325,7 +1427,11 @@ class TikTokAPIClient(BasePlatformClient):
             raise ValueError("objective_type is required")
         params: dict[str, Any] = {
             'advertiser_id': advertiser_id,
-            'placements': placements,
+            # TikTok's query decoder expects the repeated structured value as
+            # a JSON array string. Passing a Python list through requests
+            # produces ``placements=PLACEMENT_TIKTOK`` and the provider
+            # rejects it with error 40002.
+            'placements': json.dumps(placements, separators=(',', ':')),
             'objective_type': objective_type,
         }
         for key, value in (
@@ -1344,7 +1450,10 @@ class TikTokAPIClient(BasePlatformClient):
         if isinstance(payload, list):
             return payload
         if isinstance(payload, dict):
-            return payload.get('list', payload.get('regions', payload.get('locations', [])))
+            return payload.get(
+                'region_info',
+                payload.get('list', payload.get('regions', payload.get('locations', []))),
+            )
         return []
     
     # ==================== 设备定向查询 ====================
@@ -1417,17 +1526,24 @@ class TikTokAPIClient(BasePlatformClient):
         )
     
     def list_videos(self, advertiser_id: str, filtering: list = None, page_size: int = 20) -> list:
-        """获取视频列表"""
-        self.acquire_rate_limit(self._rate_limiter)
+        """获取广告素材库视频列表。
+
+        ``video/get/`` is not a v1.3 ad-asset endpoint.  TikTok's current
+        contract exposes advertiser-owned ad videos through
+        ``file/video/ad/search/``; keeping that mapping here means the
+        capability and Skill do not need to know provider endpoint details.
+        """
         data = {
             'advertiser_id': str(advertiser_id),
             'page_size': page_size,
         }
         if filtering:
             data['filtering'] = filtering
-        result = self.request('GET', 'video/get/', params=data)
-        payload = self._data_section(result)
-        return payload.get('list', []) if isinstance(payload, dict) else []
+        # Asset rows contain preview URLs and can be much larger than normal
+        # resource rows.  Return one bounded page here; callers can narrow
+        # with ``filtering`` and request another page through the provider
+        # adapter without overflowing Runtime's result budget.
+        return self._list_pages('file/video/ad/search/', data, max_pages=1)
 
     def get_video(self, advertiser_id: str, video_id: str) -> dict:
         """Get one video asset through the existing video/get endpoint."""
@@ -1454,17 +1570,14 @@ class TikTokAPIClient(BasePlatformClient):
         )
     
     def list_images(self, advertiser_id: str, filtering: list = None, page_size: int = 20) -> list:
-        """获取图片列表"""
-        self.acquire_rate_limit(self._rate_limiter)
+        """获取广告素材库图片列表。"""
         data = {
             'advertiser_id': str(advertiser_id),
             'page_size': page_size,
         }
         if filtering:
             data['filtering'] = filtering
-        result = self.request('GET', 'image/get/', params=data)
-        payload = self._data_section(result)
-        return payload.get('list', []) if isinstance(payload, dict) else []
+        return self._list_pages('file/image/ad/search/', data, max_pages=1)
 
     def get_image(self, advertiser_id: str, image_id: str) -> dict:
         """Get one image asset through the existing image/get endpoint."""

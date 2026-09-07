@@ -1112,7 +1112,7 @@ def test_existing_creation_contracts_keep_provider_specific_fixes():
         for definition, _handler in create_tiktok_capability().register_tools()
     }
     assert tiktok_definitions["tiktok_create_ad"].input_schema.provider_required == [
-        "campaign_id"
+        "campaign_id", "identity_id"
     ]
 
     dv360_definitions = {
@@ -2069,14 +2069,15 @@ def test_tiktok_ad_creation_preserves_existing_schema_fields():
         "ad_format": "SINGLE_VIDEO",
         "creatives": [{"video_id": "video-1"}],
         "media": [{"video_id": "video-1"}],
-        "text": {"primary_text": "Install now"},
+        "text": {"ad_text": "Install now"},
         "status": 0,
     })
 
-    ad = payloads[-1]["ad"]
+    assert payloads[-1]["adgroup_id"] == "202"
+    ad = payloads[-1]["creatives"][0]
     assert ad["ad_format"] == "SINGLE_VIDEO"
-    assert ad["creatives"] == [{"video_id": "video-1"}]
-    assert ad["status"] == 0
+    assert ad["video_id"] == "video-1"
+    assert ad["ad_text"] == "Install now"
     assert ad["landing_page_url"] == "https://example.test"
     client.request = lambda method, endpoint, data=None, **kwargs: (
         payloads.append(data) or {"ad_group_id": "ag-1"}
@@ -2094,11 +2095,11 @@ def test_tiktok_ad_creation_preserves_existing_schema_fields():
         "optimization_event": "LEAD_GENERATION",
         "pixel_id": "pixel-1",
     })
-    assert payloads[-1]["ad_group"]["conversion_id"] == 42
-    assert payloads[-1]["ad_group"]["placements"] == ["PLACEMENT_TIKTOK"]
-    assert payloads[-1]["ad_group"]["promotion_website_type"] == "TIKTOK_NATIVE_PAGE"
-    assert payloads[-1]["ad_group"]["optimization_event"] == "LEAD_GENERATION"
-    assert payloads[-1]["ad_group"]["pixel_id"] == "pixel-1"
+    assert payloads[-1]["conversion_id"] == 42
+    assert payloads[-1]["placements"] == ["PLACEMENT_TIKTOK"]
+    assert payloads[-1]["promotion_website_type"] == "TIKTOK_NATIVE_PAGE"
+    assert payloads[-1]["optimization_event"] == "LEAD_GENERATION"
+    assert payloads[-1]["pixel_id"] == "pixel-1"
 
 
 def test_tiktok_catalog_adgroup_contract_requires_and_forwards_product_selection():
@@ -2129,8 +2130,8 @@ def test_tiktok_catalog_adgroup_contract_requires_and_forwards_product_selection
         **base, "catalog_id": "catalog-1", "product_set_id": "set-1",
     })
     assert result == "ag-1"
-    assert payloads[-1]["ad_group"]["catalog_id"] == "catalog-1"
-    assert payloads[-1]["ad_group"]["product_set_id"] == "set-1"
+    assert payloads[-1]["catalog_id"] == "catalog-1"
+    assert payloads[-1]["product_set_id"] == "set-1"
     with pytest.raises(ValueError, match="CATALOG promotion requires catalog_id"):
         client.create_adgroup("t1", "101", {**base, "product_set_id": "set-1"})
 
@@ -2162,6 +2163,8 @@ def test_tiktok_product_sales_tools_cover_catalog_and_shop_destinations():
         "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
         "budget_mode": "BUDGET_MODE_DAY", "budget": 50,
         "location_ids": ["US"],
+        "schedule_type": "SCHEDULE_FROM_NOW",
+        "schedule_start_time": "2026-09-07 00:00:00",
     }
     errors = validate_tool_input(
         adgroup.input_schema, base, include_provider_contract=True,
@@ -2179,8 +2182,8 @@ def test_tiktok_product_sales_tools_cover_catalog_and_shop_destinations():
     )
     assert client.create_product_sales_adgroup("t1", "101", base) == "ag-1"
     assert payloads[-1][1] == "adgroup/create/"
-    assert payloads[-1][2]["ad_group"]["product_source"] == "STORE"
-    assert payloads[-1][2]["ad_group"]["store_id"] == "shop-1"
+    assert payloads[-1][2]["product_source"] == "STORE"
+    assert payloads[-1][2]["store_id"] == "shop-1"
 
     client.request = lambda method, endpoint, data=None, **kwargs: (
         payloads.append((method, endpoint, data)) or {"ad_id": "ad-1"}
@@ -2190,7 +2193,7 @@ def test_tiktok_product_sales_tools_cover_catalog_and_shop_destinations():
         "ad_format": "SINGLE_VIDEO", "video_id": "video-1",
     }) == "ad-1"
     assert payloads[-1][1] == "ad/create/"
-    assert payloads[-1][2]["ad"]["video_id"] == "video-1"
+    assert payloads[-1][2]["creatives"][0]["video_id"] == "video-1"
 
 
 def test_tiktok_product_selection_validation_uses_product_set_lookup():
@@ -2231,6 +2234,8 @@ def test_tiktok_adgroup_contract_exposes_optimization_targeting_and_schedule_fie
         "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
         "budget_mode": "BUDGET_MODE_DAY", "budget": 50,
         "location_ids": ["US"], "landing_url": "https://example.test",
+        "schedule_type": "SCHEDULE_FROM_NOW",
+        "schedule_start_time": "2026-09-07 00:00:00",
     }
     errors = validate_tool_input(schema, base, include_provider_contract=True)
     assert any("conversion_bid_price" in error for error in errors)
@@ -2297,6 +2302,7 @@ def test_tiktok_ad_contract_exposes_lookup_backed_assets_and_provider_creative_f
     assert schema.properties["image_ids"]["lookup_tool"] == "tiktok_list_images"
     assert schema.properties["catalog_id"]["lookup_tool"] == "tiktok_list_catalogs"
     assert schema.properties["identity_id"]["lookup_tool"] == "tiktok_list_identities"
+    assert "identity_id" in schema.provider_required
     assert "SINGLE_VIDEO" in schema.properties["creative_type"]["enum"]
     assert "tiktok_item_id" in schema.properties
 
@@ -2311,7 +2317,8 @@ def test_tiktok_ad_contract_exposes_lookup_backed_assets_and_provider_creative_f
         "call_to_action_id": "cta-1", "identity_id": "identity-1",
         "deeplink": "myapp://home", "operation_status": "ENABLE",
     })
-    ad = payloads[-1]["ad"]
+    assert payloads[-1]["adgroup_id"] == "202"
+    ad = payloads[-1]["creatives"][0]
     assert ad["creative_type"] == "SINGLE_VIDEO"
     assert ad["ad_text"] == "Try it"
     assert ad["call_to_action_id"] == "cta-1"
@@ -2330,7 +2337,7 @@ def test_tiktok_typed_ad_tools_validate_assets_and_fix_format_payloads():
     client.create_carousel_ad(
         "t1", "101", "202", {"name": "Carousel", "image_ids": ["i1", "i2"]}
     )
-    assert [payload[2]["ad"]["ad_format"] for payload in payloads] == [
+    assert [payload[2]["creatives"][0]["ad_format"] for payload in payloads] == [
         "SINGLE_VIDEO", "SINGLE_IMAGE", "CAROUSEL",
     ]
     with pytest.raises(ValueError, match="at least 2"):
@@ -2425,7 +2432,7 @@ def test_tiktok_lead_ad_builds_instant_page_payload():
     }) == "lead-ad-1"
     method, endpoint, data = payloads[-1]
     assert (method, endpoint) == ("POST", "ad/create/")
-    ad = data["ad"]
+    ad = data["creatives"][0]
     assert ad["page_id"] == 9001
     assert "form_id" not in ad
     assert "promote_object" not in ad
@@ -2633,7 +2640,7 @@ def test_tiktok_app_ad_builds_app_install_promote_object_and_checks_os():
         "media": [{"video_id": "video-1"}],
         "deep_link": "myapp://home",
     }) == "app-ad-1"
-    ad = payloads[-1][2]["ad"]
+    ad = payloads[-1][2]["creatives"][0]
     assert ad["app_id"] == "app-1"
     assert ad["promotion_type"] == "APP_ANDROID"
     assert ad["operating_systems"] == ["ANDROID"]
@@ -2679,7 +2686,7 @@ def test_tiktok_targeting_tool_exposes_lookup_backed_schema_and_is_dry_run_only(
     nested = targeting.input_schema.properties["updates"]
     assert nested["additionalProperties"] is False
     assert nested["properties"]["location_ids"]["lookup_tool"] == (
-        "tiktok_list_locations"
+        "tiktok_list_regions"
     )
     assert nested["properties"]["interest_category_ids"]["lookup_tool"] == (
         "tiktok_list_interest_categories"
@@ -2732,7 +2739,7 @@ def test_tiktok_tool_region_uses_contextual_official_endpoint():
     calls = []
     client.request = lambda method, endpoint, params=None, **kwargs: (
         calls.append((method, endpoint, params)) or {
-            "code": 0, "message": "OK", "data": {"list": [{"location_id": "US"}]}
+            "code": 0, "message": "OK", "data": {"region_info": [{"location_id": "US"}]}
         }
     )
 
@@ -2742,11 +2749,27 @@ def test_tiktok_tool_region_uses_contextual_official_endpoint():
     ) == [{"location_id": "US"}]
     assert calls == [("GET", "tool/region/", {
         "advertiser_id": "123",
-        "placements": ["PLACEMENT_TIKTOK"],
+        "placements": '["PLACEMENT_TIKTOK"]',
         "objective_type": "LEAD_GENERATION",
         "promotion_target_type": "INSTANT_PAGE",
         "level_range": "TO_COUNTRY",
     })]
+
+
+def test_tiktok_tool_region_serializes_placements_and_reads_region_info():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    client.request = lambda method, endpoint, params=None, **kwargs: (
+        calls.append((method, endpoint, params)) or {
+            "code": 0, "message": "OK",
+            "data": {"region_info": [{"location_id": "953987", "name": "South Africa"}]},
+        }
+    )
+
+    assert client.list_regions(
+        "7397068114548195329", ["PLACEMENT_TIKTOK"], "TRAFFIC",
+    ) == [{"location_id": "953987", "name": "South Africa"}]
+    assert calls[0][2]["placements"] == '["PLACEMENT_TIKTOK"]'
 
 
 def test_tiktok_report_failure_and_missing_task_are_not_silent_successes():

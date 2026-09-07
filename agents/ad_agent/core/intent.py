@@ -1321,6 +1321,28 @@ age_min、age_max 或其他未声明的 Provider 字段。对于平台只能提�
         if any(kw in text for kw in ["asset group", "asset_group", "素材组", "资产组"]):
             if any(kw in text for kw in ["创建", "新建", "create", "add"]):
                 return "create_asset_group"
+        # An explicitly requested child Ad format is an Ad-level action. Do
+        # not route it into the full Campaign -> Ad Group composition path;
+        # the caller may already have selected the parent resources in the
+        # creation card. Generic "创建广告" remains the full campaign flow.
+        ad_level_markers = [
+            "单视频广告", "单图广告", "轮播广告", "视频广告", "图片广告",
+            "single video", "single_image", "single image", "carousel ad",
+            "create ad", "new ad",
+        ]
+        campaign_level_markers = ["广告系列", "campaign", "广告活动"]
+        if (
+            any(kw in text for kw in ["创建", "新建", "create", "add"])
+            and any(marker in text for marker in ad_level_markers)
+            and not any(marker in text for marker in campaign_level_markers)
+        ):
+            if any(marker in text for marker in ["单视频广告", "视频广告", "single video"]):
+                return "create_single_video_ad"
+            if any(marker in text for marker in ["单图广告", "图片广告", "single image", "single_image"]):
+                return "create_single_image_ad"
+            if any(marker in text for marker in ["轮播广告", "carousel ad", "carousel"]):
+                return "create_carousel_ad"
+            return "create_ad"
         if any(kw in text for kw in ["创意", "creative", "素材"]) and any(
             kw in text for kw in ["创建", "新建", "create", "add"]
         ):

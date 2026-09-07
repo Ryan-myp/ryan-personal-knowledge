@@ -1774,7 +1774,9 @@ class AgentRuntime:
             )
         result = self.tool_executor.execute(session.ctx, source_tool, input_data)
         result = self.input_builder.decorate_lookup_result(
-            definition, result, session.ctx, actual_platform
+            definition, result, session.ctx, actual_platform,
+            target_tool_name=tool_name,
+            target_field=field,
         )
         result = self.security.enforce_result_limit(result, definition)
         if not result.success:

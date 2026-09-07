@@ -223,7 +223,7 @@
       "label": "投放地区",
       "required": true,
       "source": "lookup",
-      "lookup_tool": "tiktok_list_locations"
+      "lookup_tool": "tiktok_list_regions"
     },
     {
       "path": "ad_group.age_groups",
@@ -264,6 +264,20 @@
       "label": "广告组预算",
       "required": true,
       "source": "tool_schema"
+    },
+    {
+      "path": "ad_group.schedule_type",
+      "tool_ref": "tiktok_create_adgroup.schedule_type",
+      "label": "投放时间设置",
+      "required": true,
+      "source": "enum",
+      "options": ["SCHEDULE_FROM_NOW", "SCHEDULE_START_END"]
+    },
+    {
+      "path": "ad_group.schedule_start_time",
+      "tool_ref": "tiktok_create_adgroup.schedule_start_time",
+      "label": "开始投放时间",
+      "required": true
     },
     {
       "path": "ad.name",

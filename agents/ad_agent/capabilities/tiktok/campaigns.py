@@ -121,7 +121,7 @@ class TikTokCreateCampaignHandler(ToolHandler):
                 return ToolResult.ok({
                     "campaign_id": campaign_id,
                     "name": input_data.get("name"),
-                    "status": input_data.get("status", 1),
+                    "status": input_data.get("status", 0),
                 })
             except Exception as e:
                 return ToolResult.error(f"Failed to create TikTok campaign: {e}")

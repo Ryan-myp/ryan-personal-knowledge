@@ -288,6 +288,8 @@ class ToolInputBuilder:
     def decorate_lookup_result(
         self, tool_def: Any, result: ToolResult, ctx: ToolContext,
         platform: str,
+        target_tool_name: Optional[str] = None,
+        target_field: Optional[str] = None,
     ) -> ToolResult:
         if not result.success or not isinstance(result.data, dict):
             return result
@@ -297,6 +299,15 @@ class ToolInputBuilder:
         for target_tool, field_name, field_schema in self._lookup_targets_for_tool(
             tool_def.name
         ):
+            # An explicit picker only needs one target field. Decorating a
+            # large provider catalog for every creation Tool multiplies the
+            # short-lived signed tokens and can exceed the result budget
+            # before the caller gets its options. The conversational path
+            # keeps the all-target behavior; the picker path narrows it.
+            if target_tool_name and target_tool.name != target_tool_name:
+                continue
+            if target_field and field_name != target_field:
+                continue
             field_type = field_schema.get("type")
             item_schema = field_schema.get("items") if field_type == "array" else None
             if field_type not in {"string", "number", "integer", "array"}:
@@ -354,7 +365,18 @@ class ToolInputBuilder:
     def apply_selection_tokens(
         self, tool_def: Any, tool_input: dict[str, Any],
         platform_params: dict[str, Any], ctx: ToolContext,
+        trusted_state_fields: Optional[set[str]] = None,
     ) -> list[str]:
+        """Resolve picker tokens and enforce dynamic-ID provenance.
+
+        IDs copied directly from a request must be attested by a provider
+        lookup before a live create/upload.  A parent ID produced by an
+        earlier successful create in the same Runtime session is already a
+        trusted provider result, however, and must be allowed to flow to the
+        next node of the same creation chain without forcing the user to
+        select the newly-created resource again.
+        """
+        trusted_state_fields = trusted_state_fields or set()
         raw_tokens = platform_params.get("selection_tokens") or {}
         if not isinstance(raw_tokens, dict):
             return ["selection_tokens must be an object"]
@@ -449,6 +471,7 @@ class ToolInputBuilder:
                     in {"string", "number", "integer", "array"}
                     and self._value_at_path(tool_input, field_name) is not None
                     and field_name not in raw_tokens
+                    and field_name not in trusted_state_fields
                 ):
                     errors.append(
                         f"live 写入字段 {field_name} 必须使用 provider lookup 返回的 selection_token"
@@ -478,6 +501,7 @@ class ToolInputBuilder:
             )
 
         properties = getattr(tool_def.input_schema, "properties", {}) or {}
+        trusted_state_fields: set[str] = set()
         for field_name, schema in properties.items():
             for candidate in self.input_candidates(
                 field_name, schema, platform_params.keys()
@@ -513,6 +537,7 @@ class ToolInputBuilder:
                     )
                     if scoped_value is not None:
                         tool_input[field_name] = scoped_value
+                        trusted_state_fields.add(field_name)
                         break
                     if (
                         not scoped_keys_exist
@@ -520,6 +545,7 @@ class ToolInputBuilder:
                         and protected[candidate] not in (None, "")
                     ):
                         tool_input[field_name] = protected[candidate]
+                        trusted_state_fields.add(field_name)
                         break
 
         # Project the generic ParsedIntent fields only through metadata owned
@@ -588,7 +614,8 @@ class ToolInputBuilder:
             )
 
         selection_errors = self.apply_selection_tokens(
-            tool_def, tool_input, platform_params, ctx
+            tool_def, tool_input, platform_params, ctx,
+            trusted_state_fields=trusted_state_fields,
         ) if ctx is not None else []
         missing = [
             field_name for field_name in (tool_def.input_schema.required or [])

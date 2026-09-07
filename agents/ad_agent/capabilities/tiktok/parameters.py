@@ -23,7 +23,7 @@ TIKTOK_BUDGET_MODES = [
 ]
 TIKTOK_BUDGET_RESTRICTIONS = ["NO_LIMITATION", "DAILY_BUDGET", "LIFETIME_BUDGET"]
 TIKTOK_PROMOTION_TYPES = [
-    "APP_ANDROID", "APP_IOS", "WEBSITE", "LEAD_FORM", "CONTENT", "CATALOG",
+    "APP_ANDROID", "APP_IOS", "WEBSITE", "WEBSITE_OR_DISPLAY", "LEAD_FORM", "CATALOG",
 ]
 TIKTOK_PLACEMENTS = ["PLACEMENT_TIKTOK", "PLACEMENT_PANGLE", "PLACEMENT_GLOBAL_APP_BUNDLE"]
 TIKTOK_BID_TYPES = ["BID_TYPE_NO_BID", "BID_TYPE_CUSTOM", "BID_TYPE_MAX_CONVERSION"]
@@ -633,6 +633,7 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
         ],
         "provider_required": [
             "promotion_type", "billing_event", "budget_mode", "budget", "location_ids",
+            "schedule_type", "schedule_start_time",
         ],
         "properties": {
             "campaign_id": _field("string", "Parent campaign ID"),
@@ -643,6 +644,7 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
                     "APP_ANDROID": ["android", "android app", "android application", "安卓", "安卓应用"],
                     "APP_IOS": ["ios", "ios app", "ios application", "苹果", "苹果应用"],
                     "WEBSITE": ["website", "网站"],
+                    "WEBSITE_OR_DISPLAY": ["website or display", "网站或展示"],
                     "LEAD_FORM": ["lead form", "表单"],
                     "CATALOG": ["catalog", "商品目录"],
                 },
@@ -752,7 +754,19 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
             ),
             "location_ids": _field(
                 "array", "Country/region IDs", items={"type": "string"},
-                lookup_tool="tiktok_list_locations", lookup_result_key="locations",
+                # TikTok's supported v1.3 source is the contextual
+                # ``tool/region`` API. It must be queried after the campaign
+                # objective and placements are known; Runtime passes those
+                # dependencies through lookup_context.
+                lookup_tool="tiktok_list_regions", lookup_result_key="regions",
+                lookup_dependencies=[
+                    {"input_field": "placements", "value_path": "placements", "label": "投放版位"},
+                    {"input_field": "objective_type", "value_path": "objective_type", "label": "推广目标"},
+                ],
+                lookup_defaults={
+                    "placements": ["PLACEMENT_TIKTOK"],
+                    "level_range": "TO_COUNTRY",
+                },
                 selection_value_fields=["location_id", "id", "country_code", "code"],
                 selection_label_fields=["location_name", "name", "country_name", "country_code"],
             ),
@@ -903,8 +917,8 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
             "schedule_start_time": _field("string", "Scheduled start time"),
             "schedule_end_time": _field("string", "Scheduled end time"),
             "dayparting": _field("string", "Dayparting schedule"),
-            "frequency": _field("number", "Frequency cap", minimum=0),
-            "frequency_schedule": _field("string", "Frequency cap schedule"),
+            "frequency": _field("integer", "Frequency cap", minimum=1),
+            "frequency_schedule": _field("integer", "Frequency cap schedule", minimum=1),
             "product_source": _field(
                 "string", "Shopping product source", enum=TIKTOK_PRODUCT_SOURCES,
                 **_ui_equals("promotion_type", "CATALOG"),
@@ -971,9 +985,22 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
             },
             {
                 "id": "website_dependencies",
-                "if": {"promotion_type": "WEBSITE"},
+                "if": {"promotion_type": {"in": ["WEBSITE", "WEBSITE_OR_DISPLAY"]}},
                 "required": ["landing_url"],
                 "message": "WEBSITE requires landing_url",
+            },
+            {
+                "id": "schedule_end_time_required",
+                "if": {"schedule_type": "SCHEDULE_START_END"},
+                "required": ["schedule_end_time"],
+                "message": "schedule_type=SCHEDULE_START_END requires schedule_end_time",
+            },
+            {
+                "id": "reach_frequency_cap_required",
+                "if": {"optimization_goal": "REACH"},
+                "required": ["frequency", "frequency_schedule"],
+                "allowed": {"pacing": ["PACING_MODE_SMOOTH"]},
+                "message": "REACH requires frequency, frequency_schedule and smooth pacing",
             },
             {
                 "id": "custom_bid_requires_amount",
@@ -1071,8 +1098,16 @@ def tiktok_targeting_fields() -> dict[str, Any]:
     return {
         "location_ids": _field(
             "array", "Selected location IDs",
-            items={"type": "string"}, lookup_tool="tiktok_list_locations",
-            lookup_result_key="locations",
+            items={"type": "string"}, lookup_tool="tiktok_list_regions",
+            lookup_result_key="regions",
+            lookup_dependencies=[
+                {"input_field": "placements", "value_path": "placements", "label": "投放版位"},
+                {"input_field": "objective_type", "value_path": "objective_type", "label": "推广目标"},
+            ],
+            lookup_defaults={
+                "placements": ["PLACEMENT_TIKTOK"],
+                "level_range": "TO_COUNTRY",
+            },
             selection_value_fields=["location_id", "id", "country_code", "code"],
             selection_label_fields=["location_name", "name", "country_name", "country_code"],
         ),
@@ -1122,7 +1157,10 @@ def tiktok_targeting_fields() -> dict[str, Any]:
 def tiktok_ad_schema() -> dict[str, Any]:
     return {
         "required": ["adgroup_id", "name"],
-        "provider_required": ["campaign_id"],
+        # TikTok validates identity inside creatives for regular Ad creates;
+        # keep it provider-required so the Runtime asks for a real identity
+        # selection before reaching the write endpoint.
+        "provider_required": ["campaign_id", "identity_id"],
         "provider_any_of": [["media", "creatives"]],
         "properties": {
             "adgroup_id": _field("string", "Parent ad group ID"),

@@ -76,7 +76,12 @@ from ..update_contracts import tiktok_updates
 logger = logging.getLogger(__name__)
 
 
-def _tiktok_lookup(tool: str, result_key: str, values: list[str], labels: list[str], *, depends_on: list[dict] | None = None, account_required: bool | None = None) -> dict:
+def _tiktok_lookup(
+    tool: str, result_key: str, values: list[str], labels: list[str], *,
+    depends_on: list[dict] | None = None,
+    account_required: bool | None = None,
+    lookup_defaults: dict | None = None,
+) -> dict:
     metadata = {
         "lookup_tool": tool,
         "lookup_result_key": result_key,
@@ -87,6 +92,8 @@ def _tiktok_lookup(tool: str, result_key: str, values: list[str], labels: list[s
         metadata["lookup_dependencies"] = depends_on
     if account_required is not None:
         metadata["lookup_account_required"] = account_required
+    if lookup_defaults:
+        metadata["lookup_defaults"] = dict(lookup_defaults)
     return metadata
 
 
@@ -100,7 +107,11 @@ TIKTOK_LOOKUP_CONTRACTS = {
             ["campaign_name", "name", "id"],
         ),
         "adgroup_id": _tiktok_lookup(
-            "tiktok_list_adgroups", "ad_groups", ["adgroup_id", "ad_group_id", "id"],
+            # The list Tool's public result contract is ``adgroups``. Keep
+            # the lookup catalog aligned with the handler instead of using
+            # a guessed pluralization that would silently hide live rows
+            # from creation pickers.
+            "tiktok_list_adgroups", "adgroups", ["adgroup_id", "ad_group_id", "id"],
             ["adgroup_name", "ad_group_name", "name", "id"], depends_on=[{
                 "input_field": "campaign_id", "value_path": "campaign_id",
                 "label": "所属 Campaign", "required": True,
@@ -130,8 +141,15 @@ TIKTOK_LOOKUP_CONTRACTS = {
             ["pixel_name", "name", "display_name", "id"],
         ),
         "location_ids": _tiktok_lookup(
-            "tiktok_list_locations", "locations", ["location_id", "id", "country_code", "code"],
-            ["location_name", "name", "country_name", "country_code"], account_required=False,
+            "tiktok_list_regions", "regions", ["location_id", "id", "country_code", "code"],
+            ["location_name", "name", "country_name", "country_code"], depends_on=[
+                {"input_field": "placements", "value_path": "placements", "label": "投放版位", "required": True},
+                {"input_field": "objective_type", "value_path": "objective_type", "label": "推广目标", "required": True},
+            ],
+            lookup_defaults={
+                "placements": ["PLACEMENT_TIKTOK"],
+                "level_range": "TO_COUNTRY",
+            },
         ),
         "audience_id": _tiktok_lookup(
             "tiktok_list_audiences", "audiences", ["audience_id", "id"],
@@ -1054,8 +1072,9 @@ class TikTokCapability(BaseCapability):
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "campaign"],
-            live_support=False,
+            live_support=True,
             resource_id_field="campaign_id",
+            readback_tool="tiktok_get_campaign",
         ), TikTokCreateCampaignHandler(api_client)))
 
         # List Ad Groups
@@ -1106,14 +1125,15 @@ class TikTokCapability(BaseCapability):
             description="创建 TikTok Ads Ad Group。",
             input_schema=ToolSchema(**tiktok_adgroup_schema()),
             action="create", resource_type="ad_group", parent_resource_type="campaign",
-            intent_types=["create_campaign"],
+            intent_types=["create_campaign", "create_adgroup"],
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "adgroup"],
-            live_support=False,
+            live_support=True,
             resource_id_field="adgroup_id",
             parent_resource_id_field="campaign_id",
+            readback_tool="tiktok_get_adgroup",
             activation_rules=[{
                 "if": {
                     "objective_type": {"aliases": ["objective"], "not_in": ["PRODUCT_SALES", "sales"]},
@@ -1209,14 +1229,18 @@ class TikTokCapability(BaseCapability):
             description="创建 TikTok Ads Ad。",
             input_schema=ToolSchema(**tiktok_ad_schema()),
             action="create", resource_type="ad", parent_resource_type="ad_group",
-            intent_types=["create_campaign"],
+            # Generic Ad creation is the fallback node of the full campaign
+            # composition. Explicit format requests are routed to their
+            # typed Tool so one user turn cannot plan two Ad writes.
+            intent_types=["create_campaign", "create_ad"],
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "ad"],
-            live_support=False,
+            live_support=True,
             resource_id_field="ad_id",
             parent_resource_id_field="adgroup_id",
+            readback_tool="tiktok_get_ad",
             activation_rules=[{
                 "if": {
                     "ad_format": {"aliases": ["creative_type"], "not_in": [
@@ -1288,12 +1312,18 @@ class TikTokCapability(BaseCapability):
                 provider_any_of=schema["provider_any_of"],
                 action="create", resource_type="ad", parent_resource_type="ad_group",
                 resource_id_field="ad_id", parent_resource_id_field="adgroup_id",
+                readback_tool="tiktok_get_ad",
                 intent_types=[intent_name, "create_campaign"],
                 activation_rules=[{
                     "field": "ad_format", "aliases": ["creative_type"], "in": [format_name],
                 }],
                 traits=["write", "ad", format_name.lower()],
                 write=True,
+                # The single-video adapter is the first typed Ad path
+                # verified against the TikTok test advertiser. Other typed
+                # formats remain dry-run-only until their own provider
+                # contracts are exercised.
+                live_support=(format_name == "SINGLE_VIDEO"),
                 argument_builder=lambda ctx, data: ((
                     account_from(ctx, data), data["campaign_id"], data["adgroup_id"], {
                         key: value for key, value in data.items()
@@ -1547,6 +1577,12 @@ class TikTokCapability(BaseCapability):
 
         tools.extend(self._extended_provider_tools(api_client))
 
+        # ``method_tool`` creates ProviderMethodHandlers without a client so
+        # the same definition can be reused with injected adapters. Bind the
+        # Capability-owned client to every registered Tool here, not only to
+        # the later extension list; otherwise typed Ad Tools pass planning
+        # but fail closed as provider-unavailable at live execution time.
+        tools = [bind_provider_method(tool, api_client) for tool in tools]
         return apply_lookup_contracts(tools, TIKTOK_LOOKUP_CONTRACTS)
 
 def create_tiktok_capability(api_client: Optional[TikTokAPIClient] = None) -> TikTokCapability:

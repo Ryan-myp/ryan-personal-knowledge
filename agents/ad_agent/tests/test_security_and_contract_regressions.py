@@ -372,7 +372,9 @@ def test_public_tool_contract_includes_operational_and_json_schema_fields():
              "promotion_type": "WEBSITE", "billing_event": "OCPM", "budget": 100,
              "location_ids": ["US"], "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
                  "bid_type": "BID_TYPE_NO_BID", "landing_url": "https://example.com",
-                 "media": [{"video_id": "v1"}]},
+                 "media": [{"video_id": "v1"}], "identity_id": "identity-1",
+                 "schedule_type": "SCHEDULE_FROM_NOW",
+                 "schedule_start_time": "2026-09-07 00:00:00"},
             [
                 "tiktok_create_campaign",
                 "tiktok_create_product_sales_adgroup",
@@ -428,7 +430,9 @@ def test_tiktok_cross_channel_create_maps_daily_budget_to_adgroup_budget():
                 "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
                 "bid_type": "BID_TYPE_NO_BID",
                 "landing_url": "https://example.com",
-                "media": {"video_id": "v1"},
+                "media": {"video_id": "v1"}, "identity_id": "identity-1",
+                "schedule_type": "SCHEDULE_FROM_NOW",
+                "schedule_start_time": "2026-09-07 00:00:00",
             },
         },
     )
@@ -887,7 +891,7 @@ def test_tiktok_creation_contract_exposes_enums_and_conditional_dependencies():
     assert "APP_PROMOTION" in campaign.properties["objective_type"]["enum"]
     assert "APP_ANDROID" in adgroup.properties["promotion_type"]["enum"]
     assert adgroup.properties["app_id"]["lookup_tool"] == "tiktok_list_apps"
-    assert adgroup.properties["location_ids"]["lookup_tool"] == "tiktok_list_locations"
+    assert adgroup.properties["location_ids"]["lookup_tool"] == "tiktok_list_regions"
     assert adgroup.conditional_rules
 
     valid = {
@@ -1006,9 +1010,32 @@ def test_provider_budget_aliases_are_normalized_before_api_payload():
         "budget_mode": "BUDGET_MODE_TOTAL",
         "budget": 12.5,
     }) == "campaign-1"
-    assert tiktok_payloads[-1]["budget"] == 1250
+    assert tiktok_payloads[-1]["budget"] == 12.5
+    assert tiktok_payloads[-1]["operation_status"] == "DISABLE"
     tiktok.update_campaign("t1", "123", {"budget": 15.25})
-    assert tiktok_payloads[-1]["campaign"]["budget"] == 1525
+    assert tiktok_payloads[-1]["campaign"]["budget"] == 15.25
+
+
+def test_tiktok_parent_scoped_reads_filter_provider_broad_pages_locally():
+    client = TikTokAPIClient({})
+    client._list_pages = lambda endpoint, params, max_pages=1: (
+        [
+            {"campaign_id": "101", "adgroup_id": "ag-1"},
+            {"campaign_id": "202", "adgroup_id": "ag-2"},
+        ]
+        if endpoint == "adgroup/get/"
+        else [
+            {"adgroup_id": "ag-1", "ad_id": "ad-1"},
+            {"adgroup_id": "ag-2", "ad_id": "ad-2"},
+        ]
+    )
+
+    assert client.list_adgroups("t1", "101") == [
+        {"campaign_id": "101", "adgroup_id": "ag-1"}
+    ]
+    assert client.list_ads("t1", "ag-1") == [
+        {"adgroup_id": "ag-1", "ad_id": "ad-1"}
+    ]
 
 
 def test_update_contract_rejects_unknown_nested_provider_fields():
@@ -1193,6 +1220,53 @@ def test_parameter_options_resolver_reuses_lookup_tool_boundaries():
     assert selection["options"][0]["selection_token"].startswith("ps1.")
 
 
+def test_tiktok_adgroup_lookup_populates_specialized_ad_creation_picker():
+    class LookupClient:
+        platform = "tiktok"
+
+        def list_adgroups(self, advertiser_id, campaign_id, page_size=20):
+            return [{
+                "campaign_id": campaign_id,
+                "adgroup_id": "group-1",
+                "adgroup_name": "Traffic group",
+            }]
+
+    runtime = AgentRuntime(
+        require_llm=False,
+        whitelist_validator=whitelist(tiktok=["t1"]),
+        selection_token_secret="selection-secret-1234",
+    )
+    runtime.register_capability(create_tiktok_capability(LookupClient()))
+
+    selection = runtime.resolve_parameter_options(
+        "tiktok",
+        "adgroup_id",
+        "tiktok_create_single_video_ad",
+        "t1",
+        session_id="ad-picker-session",
+        user_id="u1",
+        lookup_context={"campaign_id": "campaign-1"},
+    )
+
+    assert selection["source_tool"] == "tiktok_list_adgroups"
+    assert selection["options"][0]["value"] == "group-1"
+    assert selection["options"][0]["label"] == "Traffic group"
+
+
+def test_tiktok_typed_ad_tool_binds_injected_provider_client():
+    class ProviderClient:
+        platform = "tiktok"
+
+    client = ProviderClient()
+    definition, handler = next(
+        item for item in create_tiktok_capability(client).register_tools()
+        if item[0].name == "tiktok_create_single_video_ad"
+    )
+
+    assert definition.live_support is True
+    assert handler.client is client
+
+
 def test_global_tiktok_app_lookup_needs_no_account_and_selection_is_portable():
     calls = []
 
@@ -1312,6 +1386,30 @@ def test_live_dynamic_parameter_rejects_unattested_raw_value():
         ToolContext(session_id="s1", user_id="u1", account_id="t1"),
     )
     assert any("selection_token" in error for error in errors)
+
+
+def test_live_creation_chain_trusts_parent_id_from_prior_runtime_result():
+    """A provider-created parent must flow to the next node without a second picker."""
+    validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+    validator.allowed_accounts = {"tiktok": ["t1"]}
+    runtime = AgentRuntime(
+        require_llm=False,
+        whitelist_validator=validator,
+        execution_mode=ExecutionMode.LIVE.value,
+        allow_live_writes=True,
+        selection_token_secret="selection-secret-1234",
+    )
+    runtime.register_capability(create_tiktok_capability())
+    definition = runtime.registry.get("tiktok_create_adgroup")[0]
+    tool_input = {"campaign_id": "created-by-prior-node"}
+    errors = runtime.input_builder.apply_selection_tokens(
+        definition,
+        tool_input,
+        {},
+        ToolContext(session_id="s1", user_id="u1", account_id="t1"),
+        trusted_state_fields={"campaign_id"},
+    )
+    assert errors == []
 
 
 def test_live_nested_dynamic_parameter_rejects_unattested_raw_value():

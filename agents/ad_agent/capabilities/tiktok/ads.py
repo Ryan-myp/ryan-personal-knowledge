@@ -58,7 +58,7 @@ class TikTokGetAdHandler(ToolHandler):
                 "ad": {
                     "id": ad_id,
                     "name": "Test Ad",
-                    "status": input_data.get("status", 1),
+                    "status": input_data.get("status", 0),
                 },
                 "data_status": "offline_no_client",
                 "simulated": True,
