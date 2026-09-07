@@ -244,6 +244,28 @@ def test_meta_and_tiktok_campaign_routes_select_specialized_ad_chain(
     assert [definition.name for definition in routed[platform]] == expected_tools
 
 
+def test_meta_campaign_only_route_does_not_expand_hierarchy():
+    runtime = AgentRuntime(require_llm=False)
+    runtime.register_capability(create_meta_capability())
+    routed = runtime.intent_router.route(
+        ParsedIntent(
+            "create_campaign_only", "create campaign only", ["meta"],
+            platform_params={"meta": {
+                "objective": "OUTCOME_SALES",
+                "special_ad_categories": ["NONE"],
+                "daily_budget": 10,
+                "status": "PAUSED",
+                "name": "campaign-only",
+            }},
+        ),
+        runtime.registry,
+    )
+
+    assert [definition.name for definition in routed["meta"]] == [
+        "meta_create_campaign",
+    ]
+
+
 def test_resource_results_follow_declared_parent_fields_across_channels():
     cases = [
         ("meta", "meta_create_campaign", "meta_create_adset", "campaign_id", "c-meta", "adset_id", "s-meta"),

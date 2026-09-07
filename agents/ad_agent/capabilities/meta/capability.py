@@ -1207,7 +1207,14 @@ class MetaCapability(BaseCapability):
             platform="meta",
             description="创建 Meta Campaign。",
             input_schema=ToolSchema(**_paused_create_schema(meta_campaign_schema())),
-            action="create", resource_type="campaign", intent_types=["create_campaign"],
+            # ``create_campaign`` is the normal provider-composed hierarchy
+            # flow.  ``create_campaign_only`` is a provider-owned lifecycle
+            # intent for operators that explicitly want only the Campaign
+            # resource (for example a controlled API smoke test).  Keeping
+            # the distinction in Tool metadata lets the generic Router select
+            # one Tool without adding a Meta branch to Runtime.
+            action="create", resource_type="campaign",
+            intent_types=["create_campaign", "create_campaign_only"],
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
